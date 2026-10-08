@@ -11,8 +11,10 @@ mod file_api;
 mod file_job;
 mod pointers;
 mod runtime;
+mod selection_api;
 mod session;
 mod session_api;
+pub use selection_api::*;
 mod storage_api;
 pub use api::*;
 use error::{boundary, query_boundary, ApiError, ApiResult};
@@ -104,6 +106,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                 abi_major: PAINT_ABI_MAJOR,
                 features: PAINT_FEATURE_DOCUMENT
                     | PAINT_FEATURE_CLIPPING
+                    | PAINT_FEATURE_SELECTION
                     | PAINT_FEATURE_HISTORY
                     | PAINT_FEATURE_LINEAR_TILE_READ
                     | PAINT_FEATURE_EVENTS

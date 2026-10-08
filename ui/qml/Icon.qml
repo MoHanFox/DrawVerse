@@ -10,6 +10,8 @@ Item {
     // Code-native vectors use a fixed view box; no font glyphs or icon-font dependency.
     readonly property var paths: ({
         move: "M12 2V22M2 12H22M8 6L12 2L16 6M8 18L12 22L16 18M6 8L2 12L6 16M18 8L22 12L18 16",
+        rectangleSelection: "M3 7V3H7M10 3H14M17 3H21V7M21 10V14M21 17V21H17M14 21H10M7 21H3V17M3 14V10",
+        ellipseSelection: "M4 7Q5 4 8 3M11 2H13M16 3Q19 4 20 7M21 10V14M20 17Q19 20 16 21M13 22H11M8 21Q5 20 4 17M3 14V10",
         brush: "M9 14L17 3Q19 1 21 3Q23 5 21 7L12 16ZM9 14Q5 13 5 17Q5 20 2 21Q10 23 12 16",
         eraser: "M3 15L13 3Q14 2 15 3L21 9Q22 10 21 11L12 21H8ZM8 10L17 19M12 21H22",
         undo: "M8 4L3 9L8 14M3 9H14Q21 9 21 16V20",

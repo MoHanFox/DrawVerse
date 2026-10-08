@@ -10,7 +10,7 @@ ApplicationWindow {
     visible: true
     flags: Qt.Tool | Qt.FramelessWindowHint
     title: "DrawVerse · 工具"
-    width: 38; height: 274; minimumWidth:38;maximumWidth:38;minimumHeight:274;maximumHeight:274
+    width: 38; height: 304; minimumWidth:38;maximumWidth:38;minimumHeight:304;maximumHeight:304
     x:Workspace.toolStripX;y:Workspace.toolStripY
     color:Theme.panelBar
     ToolStrip {anchors.fill:parent;anchors.margins:1;canvasView:root.canvasView}

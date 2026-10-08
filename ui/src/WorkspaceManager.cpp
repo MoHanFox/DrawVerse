@@ -213,7 +213,7 @@ void WorkspaceManager::beginDrag(const QString &group,const QString &panel,bool 
 void WorkspaceManager::beginToolStripDrag(){beginDrag("__toolstrip",{},true);}
 void WorkspaceManager::updateToolStripPosition(int x,int y) {
     QPoint position(x,y);QScreen *screen=QGuiApplication::screenAt(position);if(!screen)screen=QGuiApplication::primaryScreen();
-    if(screen){const auto rect=screen->availableGeometry();position.setX(std::clamp(x,rect.left(),std::max(rect.left(),rect.right()-37)));position.setY(std::clamp(y,rect.top(),std::max(rect.top(),rect.bottom()-273)));}
+    if(screen){const auto rect=screen->availableGeometry();position.setX(std::clamp(x,rect.left(),std::max(rect.left(),rect.right()-37)));position.setY(std::clamp(y,rect.top(),std::max(rect.top(),rect.bottom()-303)));}
     if(m_toolPosition==position)return;
     m_toolPosition=position;emit toolStripChanged();
 }

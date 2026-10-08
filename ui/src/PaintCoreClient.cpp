@@ -56,8 +56,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 7) {
-            emit failure(QStringLiteral("剪贴蒙版需要核心 ABI 1.7 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 8) {
+            emit failure(QStringLiteral("选区工具需要核心 ABI 1.8 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -77,7 +77,7 @@ public:
         auto caps = dto<PaintCapabilities>();
         if (!check(paint_core_capabilities(m_core, &caps))) return;
         constexpr uint64_t required = PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
-        if ((caps.features & required) != required) { emit failure(QStringLiteral("当前核心缺少异步视口能力")); return; }
+        if ((caps.features & (required | PAINT_FEATURE_SELECTION)) != (required | PAINT_FEATURE_SELECTION)) { emit failure(QStringLiteral("当前核心缺少异步视口或选区能力")); return; }
         auto desc = dto<PaintDocumentDesc>(); desc.width = 960; desc.height = 640;
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
         if (!check(paint_session_create(m_core, &desc, &m_session))) return;
@@ -118,7 +118,7 @@ signals:
     void brushPreviewReady(QString id,quint64 token,QString image);
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
     void storageDone(bool success);
-    void metadata(PaintSessionInfo info, QVariantList layers);
+    void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection);
     void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request);
     void failure(QString message);
     void completed(bool workerThread);
@@ -207,8 +207,20 @@ private:
             auto entry=layers.first().toMap();entry.insert("clipped",clipping.enabled!=0);
             entry.insert("clipBase",QVariant::fromValue<qulonglong>(clipping.base_layer_id));layers[0]=entry;
         }
+        auto summary=dto<PaintSelectionInfo>();
+        auto status=paint_session_selection_info(m_core,m_session,info.publication,&summary);
+        if(status==PAINT_BUSY) return false;
+        if(!check(status)) return false;
+        QVariantList steps;
+        for(uint32_t index=0;index<summary.step_count;++index) {
+            auto step=dto<PaintSelectionStep>();
+            status=paint_session_selection_step(m_core,m_session,info.publication,index,&step);
+            if(status==PAINT_BUSY) return false;
+            if(!check(status)) return false;
+            steps.append(QVariantMap{{"operation",step.operation},{"shape",step.shape},{"x",step.x},{"y",step.y},{"width",step.width},{"height",step.height}});
+        }
         m_connection->metadataPending.store(true);
-        emit metadata(info, layers); m_publication = info.publication;
+        emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}}); m_publication = info.publication;
         return true;
     }
     void poll() {
@@ -414,7 +426,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         m_storageBusy=false; emit storageChanged(); emit storageFinished(success);
     });
     connect(&m_thread, &QThread::started, m_worker, &BackendWorker::boot);
-    connect(m_worker, &BackendWorker::metadata, this, [this](PaintSessionInfo info, QVariantList layers) {
+    connect(m_worker, &BackendWorker::metadata, this, [this](PaintSessionInfo info, QVariantList layers, QVariantMap selection) {
         m_connection->metadataPending.store(false);
         const bool propertiesChanged = info.document_generation != m_generation
             || static_cast<int>(info.width) != m_width || static_cast<int>(info.height) != m_height
@@ -431,6 +443,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         if (info.completed_sequence >= m_pendingMutation) m_pendingMutation = 0;
         if (info.completed_sequence >= m_pendingLayer) m_pendingLayer=0;
         m_active = info.active_layer_id;
+        if(m_selection!=selection) {m_selection=std::move(selection);emit selectionChanged();}
         if (changedLayers) {
             m_layers = std::move(layers);
             if(!m_collapsedGroups.isEmpty()) {
@@ -564,8 +577,28 @@ void PaintCoreClient::setBrushColor(const QColor &c) { if (c.isValid() && c != m
 void PaintCoreClient::setBrushRadius(qreal r) {m_brushLibrary->setRadius(r);}
 void PaintCoreClient::setBrushOpacity(qreal o) {m_brushLibrary->setOpacity(o);}
 void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
-void PaintCoreClient::setEraser(bool e) { if (e != m_eraser || m_moveTool) { m_eraser = e; m_moveTool=false; emit brushChanged(); } }
-void PaintCoreClient::setMoveTool(bool enabled) { if(enabled!=m_moveTool && !m_drawing) { m_moveTool=enabled; emit brushChanged(); } }
+void PaintCoreClient::setEraser(bool e) { if (!m_drawing && (e != m_eraser || m_moveTool || m_selectionTool)) { m_eraser = e; m_moveTool=false; m_selectionTool=0; emit brushChanged(); } }
+void PaintCoreClient::setMoveTool(bool enabled) { if(!m_drawing && (enabled!=m_moveTool || (enabled && m_selectionTool))) { m_moveTool=enabled; if(enabled)m_selectionTool=0; emit brushChanged(); } }
+void PaintCoreClient::setSelectionTool(int tool) {
+    if(tool<0 || tool>2 || m_drawing || tool==m_selectionTool) return;
+    m_selectionTool=tool;if(tool){m_moveTool=false;m_eraser=false;}emit brushChanged();
+}
+bool PaintCoreClient::submitSelection(quint32 action,QRectF rect,int shape,int operation) {
+    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing) return false;
+    auto request=dto<PaintSelectionEdit>();request.action=action;
+    if(action==PAINT_SELECTION_SHAPE) {request.shape=static_cast<uint32_t>(shape);request.operation=static_cast<uint32_t>(operation);request.antialias=1;request.x=rect.x();request.y=rect.y();request.width=rect.width();request.height=rect.height();}
+    uint64_t sequence=0;
+    QMutexLocker lock(&m_connection->mutex);
+    if(!m_connection->session) return false;
+    const auto status=paint_session_edit_selection(m_connection->core,m_connection->session,&request,&sequence);
+    lock.unlock();
+    if(status!=PAINT_OK){showError(immediateError(status));return false;}
+    m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
+}
+bool PaintCoreClient::editSelection(QRectF rect,int shape,int operation) {return submitSelection(PAINT_SELECTION_SHAPE,rect,shape,operation);}
+bool PaintCoreClient::selectAll(){return submitSelection(PAINT_SELECTION_ALL);}
+bool PaintCoreClient::clearSelection(){return submitSelection(PAINT_SELECTION_CLEAR);}
+bool PaintCoreClient::invertSelection(){return submitSelection(PAINT_SELECTION_INVERT);}
 bool PaintCoreClient::beginStroke(const InputSample &s) {
     if (!m_ready || m_drawing || layerEditBusy()) return false;
     for(const auto &value:m_layers) { const auto layer=value.toMap(); if(layer.value("id").toULongLong()!=m_active) continue;

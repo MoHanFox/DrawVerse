@@ -28,6 +28,7 @@ pub(crate) enum Operation {
     NewWhite(u32, u32),
     Mask(u64),
     Clipping(u64, bool),
+    Selection(crate::selection_api::Edit),
     Drop(u64, u64, u32),
     Begin(Brush, InputPoint, u64),
     Move(InputPoint),
@@ -58,6 +59,7 @@ pub(crate) struct LayerState {
     pub clipping: PaintLayerClipping,
 }
 pub(crate) struct Publication {
+    pub selection: paint_core::Selection,
     pub info: PaintSessionInfo,
     pub layers: Vec<LayerState>,
     pub error: String,
@@ -457,6 +459,7 @@ fn publish(
         })
         .collect();
     Publication {
+        selection: doc.selection().clone(),
         info: PaintSessionInfo {
             struct_size: std::mem::size_of::<PaintSessionInfo>() as u32,
             flags: PAINT_SESSION_RUNNING | if modified { PAINT_SESSION_MODIFIED } else { 0 },
@@ -519,6 +522,7 @@ impl Engine {
                 | Operation::NewWhite(..)
                 | Operation::Mask(_)
                 | Operation::Clipping(..)
+                | Operation::Selection(..)
                 | Operation::Drop(..)
                 | Operation::Cancel(_)
                 | Operation::Undo
@@ -565,6 +569,22 @@ impl Engine {
                 let r = self.document.revision();
                 self.document.set_layer_clipping(id, enabled)?;
                 self.modified |= r != self.document.revision();
+            }
+            Operation::Selection(edit) => {
+                let revision = self.document.revision();
+                let (w, h) = self.document.dimensions();
+                let next = match edit {
+                    crate::selection_api::Edit::Shape(shape, op) => {
+                        self.document.selection().apply(shape, op, w, h)?
+                    }
+                    crate::selection_api::Edit::All => paint_core::Selection::all(w, h),
+                    crate::selection_api::Edit::Clear => paint_core::Selection::default(),
+                    crate::selection_api::Edit::Invert => {
+                        self.document.selection().inverted(w, h)?
+                    }
+                };
+                self.document.set_selection(next)?;
+                self.modified |= revision != self.document.revision();
             }
             Operation::Drop(id, target, placement) => {
                 let r = self.document.revision();

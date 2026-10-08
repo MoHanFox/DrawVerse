@@ -127,6 +127,15 @@ ApplicationWindow {
             Action { text: "重做"; shortcut: "Ctrl+Shift+Z"; enabled: PaintClient.redoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.redo() }
         }
         Menu {
+            title: "选择"
+            Action { text: "矩形选框（M）"; enabled: PaintClient.ready && !PaintClient.drawing; onTriggered: PaintClient.selectionTool=1 }
+            Action { text: "椭圆选框（Shift+M）"; enabled: PaintClient.ready && !PaintClient.drawing; onTriggered: PaintClient.selectionTool=2 }
+            MenuSeparator {}
+            Action { objectName:"selectionAllAction"; text: "全选"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.selectAll() }
+            Action { objectName:"selectionClearAction"; text: "取消选择"; enabled: PaintClient.selectionEnabled && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.clearSelection() }
+            Action { objectName:"selectionInvertAction"; text: "反向选择"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.invertSelection() }
+        }
+        Menu {
             title: "视图"
             Action { text: "适合窗口"; onTriggered: canvas.fitToView() }
             Action { text: "实际像素"; onTriggered: canvas.actualSize() }
@@ -167,9 +176,10 @@ ApplicationWindow {
         objectName: "brushOptionsBar"
         height: 28; color: Theme.raised
         RowLayout {
+            visible: !PaintClient.selectionTool
             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
-            Icon { name: PaintClient.moveTool ? "move" : PaintClient.eraser ? "eraser" : "brush"; Layout.preferredWidth: 17; Layout.preferredHeight: 17 }
-            Label { text: PaintClient.moveTool ? "移动图层" : PaintClient.eraser ? "橡皮擦" : "画笔"; color: Theme.text; Layout.preferredWidth: 42 }
+            Icon { name: PaintClient.selectionTool ? (PaintClient.selectionTool===2 ? "ellipseSelection":"rectangleSelection") : PaintClient.moveTool ? "move" : PaintClient.eraser ? "eraser" : "brush"; Layout.preferredWidth: 17; Layout.preferredHeight: 17 }
+            Label { text: PaintClient.selectionTool ? (PaintClient.selectionTool===2?"椭圆选框":"矩形选框") : PaintClient.moveTool ? "移动图层" : PaintClient.eraser ? "橡皮擦" : "画笔"; color: Theme.text; Layout.preferredWidth: 42 }
             Rectangle { width: 1; height: 22; color: Theme.line }
             Label { text: "大小"; color: Theme.muted }
             CompactSpinBox { objectName: "brushRadius"; from: 1; to: 512; value: Math.round(PaintClient.brushRadius*2); editable: true; implicitWidth: 76; implicitHeight: 20; onValueModified: PaintClient.brushRadius=value/2 }
@@ -182,6 +192,16 @@ ApplicationWindow {
             Item { Layout.fillWidth: true }
             IconButton { glyph: "settings"; tooltip: "性能与暂存盘"; onClicked: storagePreferences.open() }
             IconButton { glyph: "plus"; tooltip: "创建自定义面板"; onClicked: panelDialog.open() }
+        }
+        RowLayout {
+            visible: PaintClient.selectionTool>0
+            anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:12;spacing:8
+            Icon {name:PaintClient.selectionTool===2?"ellipseSelection":"rectangleSelection";Layout.preferredWidth:17;Layout.preferredHeight:17}
+            CompactComboBox {model:["矩形选框","椭圆选框"];currentIndex:Math.max(0,PaintClient.selectionTool-1);implicitWidth:90;implicitHeight:20;onActivated:PaintClient.selectionTool=currentIndex+1}
+            Label {text:"Shift 添加 · Alt 减去 · Shift+Alt 相交";color:Theme.muted}
+            Item {Layout.fillWidth:true}
+            ToolButton {text:"全选";enabled:PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy;onClicked:PaintClient.selectAll()}
+            ToolButton {text:"取消选择";enabled:PaintClient.selectionEnabled && !PaintClient.drawing && !PaintClient.layerEditBusy;onClicked:PaintClient.clearSelection()}
         }
         Rectangle { anchors.bottom: parent.bottom; height: 1; width: parent.width; color: Theme.panelBar }
     }
@@ -224,6 +244,12 @@ ApplicationWindow {
                         Rectangle { x: canvas.documentRect.x+8; y: canvas.documentRect.y+10; width: canvas.documentRect.width; height: canvas.documentRect.height; color: "#0c0d0f" }
                         TransparencyGrid { objectName: "canvasTransparency"; x: canvas.documentRect.x; y: canvas.documentRect.y; width: canvas.documentRect.width; height: canvas.documentRect.height }
                         PaintCanvas { id: canvas; initialFitRatio: .76; objectName: "mainCanvas"; anchors.fill: parent; client: PaintClient; focus: true; enabled: !root.savingBeforeAction && !closeDialog.opened }
+                        Loader {
+                            objectName:"selectionOutlineLoader";anchors.fill:parent
+                            // No painted item or texture exists while selection is inactive.
+                            active:PaintClient.selectionEnabled || (canvas.selectionPreview.width>0 && canvas.selectionPreview.height>0)
+                            sourceComponent:SelectionOutline {objectName:"selectionOutline";enabledSelection:PaintClient.selectionEnabled;steps:PaintClient.selectionSteps;documentRect:canvas.documentRect;zoom:canvas.zoom;preview:canvas.selectionPreview;previewKind:canvas.selectionPreviewKind}
+                        }
                         BusyIndicator { objectName: "canvasBusy"; anchors.centerIn: parent; running: !PaintClient.ready; visible: running }
                     }
                 }
@@ -258,6 +284,11 @@ ApplicationWindow {
         Rectangle {anchors.fill:parent;color:"#3023b5ee";border.color:Theme.accent;border.width:2;visible:parent.containsDrag && !Workspace.dockingSuppressed}
     }
     Shortcut { sequence: "V"; enabled: canvas.activeFocus; onActivated: PaintClient.moveTool=true }
+    Shortcut { sequence: "M"; enabled:canvas.activeFocus && !PaintClient.drawing; onActivated:PaintClient.selectionTool=1 }
+    Shortcut { sequence: "Shift+M"; enabled:canvas.activeFocus && !PaintClient.drawing; onActivated:PaintClient.selectionTool=PaintClient.selectionTool===2?1:2 }
+    Shortcut { sequence:StandardKey.SelectAll; enabled:canvas.activeFocus && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.selectAll() }
+    Shortcut { sequence:Qt.platform.os==="osx"?"Meta+D":"Ctrl+D"; enabled:canvas.activeFocus && PaintClient.selectionEnabled && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.clearSelection() }
+    Shortcut { sequence:Qt.platform.os==="osx"?"Meta+Shift+I":"Ctrl+Shift+I"; enabled:canvas.activeFocus && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.invertSelection() }
     Shortcut { sequence: "B"; enabled: canvas.activeFocus; onActivated: PaintClient.eraser=false }
     Shortcut { sequence: "E"; enabled: canvas.activeFocus; onActivated: PaintClient.eraser=true }
     Shortcut { sequence: "F"; enabled: canvas.activeFocus; onActivated: canvas.fitToView() }

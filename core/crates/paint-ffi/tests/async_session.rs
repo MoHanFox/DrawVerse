@@ -31,6 +31,164 @@ struct Harness {
 }
 
 #[test]
+fn selection_abi_publication_validation_history_and_stroke_gate() {
+    assert_eq!(size_of::<PaintSelectionEdit>(), 64);
+    assert_eq!(offset_of!(PaintSelectionEdit, x), 32);
+    assert_eq!(size_of::<PaintSelectionInfo>(), 16);
+    assert_eq!(size_of::<PaintSelectionStep>(), 48);
+    let h = Harness::new(64, 64);
+    let mut request = PaintSelectionEdit {
+        width: 32.,
+        height: 64.,
+        antialias: 1,
+        ..dto!(PaintSelectionEdit)
+    };
+    let mut seq = 0;
+    unsafe {
+        for bad in [
+            PaintSelectionEdit {
+                width: -1.,
+                ..request
+            },
+            PaintSelectionEdit {
+                shape: 3,
+                ..request
+            },
+            PaintSelectionEdit {
+                reserved: [1, 0, 0],
+                ..request
+            },
+            PaintSelectionEdit {
+                x: f64::NAN,
+                ..request
+            },
+        ] {
+            seq = 999;
+            assert_eq!(
+                paint_session_edit_selection(h.core, h.session, &bad, &mut seq),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(seq, 0);
+        }
+        assert_eq!(
+            paint_session_edit_selection(h.core, h.session, &request, &mut seq),
+            PAINT_OK
+        );
+        let state = h.wait(seq);
+        assert_eq!(state.undo_depth, 1);
+        let mut selection = dto!(PaintSelectionInfo);
+        assert_eq!(
+            paint_session_selection_info(h.core, h.session, state.publication, &mut selection),
+            PAINT_OK
+        );
+        assert_eq!((selection.enabled, selection.step_count), (1, 1));
+        let mut step = dto!(PaintSelectionStep);
+        assert_eq!(
+            paint_session_selection_step(h.core, h.session, state.publication, 0, &mut step),
+            PAINT_OK
+        );
+        assert_eq!(step.width, 32.);
+        assert_eq!(
+            paint_session_selection_info(
+                h.core,
+                h.session,
+                state.publication + 999,
+                &mut selection
+            ),
+            PAINT_BUSY
+        );
+        assert_eq!(selection.enabled, 0);
+        assert_eq!(
+            paint_session_selection_step(h.core, h.session, state.publication, 99, &mut step),
+            PAINT_NOT_FOUND
+        );
+        let stroke = h.wait(h.stroke(32., 32.));
+        assert_eq!(stroke.undo_depth, 2);
+        let view = PaintViewport {
+            enabled: 1,
+            width: 64.,
+            height: 64.,
+            pixel_width: 64,
+            pixel_height: 64,
+            document_generation: stroke.document_generation,
+            ..dto!(PaintViewport)
+        };
+        let mut request_id = 0;
+        assert_eq!(
+            paint_session_set_viewport(h.core, h.session, &view, &mut request_id),
+            PAINT_OK
+        );
+        let pixels = h.pixels(0, h.frame(0, stroke.revision));
+        assert!(pixels[(32 * 64 + 28) * 4 + 3] > 0);
+        assert_eq!(pixels[(32 * 64 + 36) * 4 + 3], 0);
+        h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        let state = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(
+            paint_session_selection_info(h.core, h.session, state.publication, &mut selection),
+            PAINT_OK
+        );
+        assert_eq!(selection.enabled, 0);
+        h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_REDO,
+            ..dto!(PaintCommand)
+        }));
+        let begin = PaintCommand {
+            kind: PAINT_COMMAND_BEGIN_STROKE,
+            stroke: PaintStrokeDesc {
+                mode: PAINT_MODE_PAINT,
+                radius: 8.,
+                opacity: 1.,
+                spacing: 0.15,
+                linear_rgba: [1., 0., 0., 1.],
+                ..dto!(PaintStrokeDesc)
+            },
+            point: PaintPoint {
+                x: 16.,
+                y: 16.,
+                pressure: 1.,
+                tool: PAINT_TOOL_MOUSE,
+                ..dto!(PaintPoint)
+            },
+            ..dto!(PaintCommand)
+        };
+        h.wait(h.submit(begin));
+        request = PaintSelectionEdit {
+            action: PAINT_SELECTION_CLEAR,
+            ..dto!(PaintSelectionEdit)
+        };
+        assert_eq!(
+            paint_session_edit_selection(h.core, h.session, &request, &mut seq),
+            PAINT_OK
+        );
+        let state = h.wait(seq);
+        assert_eq!(state.last_error_status, PAINT_BUSY);
+        assert_eq!(state.stroke_active, 1);
+        h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_END_STROKE,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(h.info().undo_depth, 2);
+        let state = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_NEW_DOCUMENT,
+            width: 64,
+            height: 64,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(
+            paint_session_selection_info(h.core, h.session, state.publication, &mut selection),
+            PAINT_OK
+        );
+        assert_eq!((selection.enabled, selection.step_count), (0, 0));
+    }
+}
+
+#[test]
 fn clipping_abi_layout_validation_fifo_publication_and_undo() {
     assert_eq!(size_of::<PaintLayerClipping>(), 16);
     assert_eq!(offset_of!(PaintLayerClipping, base_layer_id), 8);

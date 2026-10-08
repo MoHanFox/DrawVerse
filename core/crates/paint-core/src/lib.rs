@@ -9,6 +9,7 @@ mod history_storage;
 mod layer;
 mod page_pool;
 mod pixel;
+mod selection;
 mod tile;
 
 pub use appearance::{
@@ -20,4 +21,8 @@ pub use error::{Error, Result};
 pub use layer::{ImportedLayer, Layer, LayerId, LayerProperties};
 pub use page_pool::StorageStats;
 pub use pixel::Pixel;
+pub use selection::{
+    Selection, SelectionKind, SelectionOperation, SelectionShape, SelectionStep,
+    MAX_SELECTION_STEPS,
+};
 pub use tile::{Tile, TileCoord, TILE_BYTES, TILE_SIZE};

@@ -2,13 +2,14 @@
 
 Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘画软件项目。
 
-已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.7.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
+已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.8.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
 
 - [架构与工作区设计](docs/architecture.md) / [模块状态](docs/roadmap.md)
 - [FFI 方案](docs/ffi-design.md) / [正式契约](contracts/abi.md) / [生成头](ui/include/paint_api.h)
 - [最新 FFI 验证](docs/ffi-validation.md) / [首轮内核历史验证](docs/validation.md)
 - [QML UI 设计](docs/qml-ui-design.md) / [UI 验证与启动说明](docs/qml-ui-validation.md)
 - [参考图 UI / 停靠设计](docs/reference-ui-design.md) / [最新工作区验收](docs/reference-ui-validation.md)
+- [矩形/椭圆选区设计](docs/selection-design.md) / [选区验收](docs/selection-validation.md)
 - [画笔库与当前画笔设置](docs/brush-library-design.md) / [画笔模块验收](docs/brush-library-validation.md)
 - [任务与 CPU 视口设计](docs/task-render-design.md) / [最新模块验证](docs/task-render-validation.md)
 - [绘画性能修复设计](docs/painting-performance-design.md) / [修复前后实测](docs/painting-performance-validation.md)
@@ -21,7 +22,7 @@ Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘
 
 ## 当前能力
 
-64×64 稀疏瓦片、线性预乘 RGBA32F、多图层、16 级隔离图层组、可编辑图层/组蒙版、连续剪贴蒙版、拖放排序和归组、稀疏白色背景、27 种混合模式、可见性/不透明度/填充、透明像素锁/位置锁/完全锁、非破坏性整数移动、压感圆笔刷、橡皮擦、距离插值、取消、图层与笔触撤销/重做、历史/瓦片预算、脏区域、只读快照。
+64×64 稀疏瓦片、线性预乘 RGBA32F、多图层、16 级隔离图层组、可编辑图层/组蒙版、连续剪贴蒙版、拖放排序和归组、稀疏白色背景、27 种混合模式、可见性/不透明度/填充、透明像素锁/位置锁/完全锁、非破坏性整数移动、矩形/椭圆选区与组合/反选、压感圆笔刷、橡皮擦、距离插值、取消、图层与笔触撤销/重做、历史/瓦片预算、脏区域、只读快照。
 
 C ABI 保留原同步文档/事件/线性读取，新增异步 session、FIFO 命令、原子元数据、四槽视口及完整 sRGB 显示帧。任务池支持有界优先级、协作取消与 panic 隔离，文档单线程独占写入；Renderer 在快照上合成和稀疏 LOD。core/task/render 禁 unsafe，core 使用已锁定的 tempfile 管理磁盘历史，caller-memory/回调 unsafe 限于 paint-ffi。cbindgen 为独立构建工具依赖，固定版本与 Cargo.lock。
 
@@ -37,7 +38,7 @@ QML 新建每边支持 1–1,000,000 像素，只为可见区域和导航分配�
 
 图层顶部提供混合模式、不透明度、填充和三个锁；百分比键入或拖滑条松手一次提交。图层列表按可见行创建，空闲 200ms 后后台更新原始内容缩略图；绘画时取消。V 选择移动工具，拖动松开提交一次移动，方向键 1px、Shift 10px、Esc 取消。移出画布的内容保留，移动后仍可绘画。外观、锁和移动均可撤销，OpenRaster 保存这些参数。混合采用线性 sRGB 公共公式，未实现 Photoshop 特殊八种混合的 Fill 曲线，不承诺 Photoshop 逐像素一致。
 
-未实现选区/一般变换、独立 Wintab 适配与真实硬件验收、ICC/16F/HDR/Rust GPU、PSD/自有格式、Python SDK。文件菜单已接入打开、保存/另存 OpenRaster、图片导出和取消任务；新建/打开/退出可先保存当前绘画。当前布局为左右列垂直分割与浮动标签组，组高和列宽已保存，任意二维嵌套分割树后续扩展；<8ms / 60–120fps 为后续性能验收目标。
+未实现自由套索/羽化/魔棒/一般变换、独立 Wintab 适配与真实硬件验收、ICC/16F/HDR/Rust GPU、PSD/自有格式、Python SDK。文件菜单已接入打开、保存/另存 OpenRaster、图片导出和取消任务；新建/打开/退出可先保存当前绘画。当前布局为左右列垂直分割与浮动标签组，组高和列宽已保存，任意二维嵌套分割树后续扩展；<8ms / 60–120fps 为后续性能验收目标。
 
 文件模块支持 PNG 8/16 位导入、JPEG/WebP 导入和三格式 8 位合成导出；JPEG 使用线性白色背景，WebP 无损编码。OpenRaster 保留平面及嵌套隔离图层组、名称、顺序、可见性、不透明度及活动节点，并以 DrawVerse 层扩展 v1 保留填充、混合模式、三种锁、位置与溶解种子，保留画布外内容；标准定义的 15 种 Normal/颜色混合使用 SVG 名称互通，其他模式由扩展保存；合成预览为最终效果，但外部读者可能忽略扩展。以 8 位 sRGB 保存，不是 32F 无损原生格式。带 ICC、自定义 PNG 色彩元数据、动画、穿透组或未知混合/合成运算的文件会明确拒绝。栅格边长 ≤16,384、像素 ≤134,217,728（128M），输入 ≤256 MiB、解码器分配预算 1GiB；ORA 总节点 ≤256、嵌套 ≤16 级，图层总栅格亦受预算限制。保存先写同目录临时文件再原子替换，失败保留旧文件。详细范围与验证见 [IO 设计](docs/io-design.md) / [组验收](docs/groups-validation.md)。
 
@@ -98,3 +99,6 @@ Windows 产物为 core/target/release/paint_ffi.lib（staticlib）、paint_ffi.d
 可传 `python tools/check.py --cargo <路径> --cmake <路径>`；rustc/链接器仍须有效 PATH。CMake 可配置 DRAWVERSE_CARGO_EXECUTABLE 与 DRAWVERSE_CARGO_TARGET_DIR。保持旧 build tree 的 generator 不变。
 
 后续模块先设计再实现，并补对应 Rust / Qt Test / pytest；禁止空实现或假成功。暂存盘设置、图层控制、隔离图层组与透明棋盘格已完成；下一模块继续深化文档模型（选区与变换），之后色彩/GPU/PSD；插件最后完成。
+
+
+选区：M 矩形，Shift+M 切换椭圆；拖动时 Shift 添加，Alt/Option 减去，Shift+Alt/Option 相交。Esc 取消拖动，Ctrl/Command+A 全选、Ctrl/Command+D 取消、Ctrl/Command+Shift+I 反选。边界使用静态黑白虚线，选区限制笔刷/擦除/蒙版，不裁剪导出。最多64个几何步骤，替换重置步骤，超限拒绝并保护当前选区；套索、羽化和魔棒继续后续实现。选区随 OpenRaster 扩展 v4 保存。

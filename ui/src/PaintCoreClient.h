@@ -53,6 +53,9 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool eraser READ eraser WRITE setEraser NOTIFY brushChanged)
     Q_PROPERTY(bool moveTool READ moveTool WRITE setMoveTool NOTIFY brushChanged)
     Q_PROPERTY(bool layerEditBusy READ layerEditBusy NOTIFY stateChanged)
+    Q_PROPERTY(bool selectionEnabled READ selectionEnabled NOTIFY selectionChanged)
+    Q_PROPERTY(QVariantList selectionSteps READ selectionSteps NOTIFY selectionChanged)
+    Q_PROPERTY(int selectionTool READ selectionTool WRITE setSelectionTool NOTIFY brushChanged)
 public:
     explicit PaintCoreClient(QObject *parent = nullptr, const QString &settingsFile = {});
     ~PaintCoreClient() override;
@@ -88,6 +91,14 @@ public:
     bool moveTool() const { return m_moveTool; }
     bool layerEditBusy() const { return m_pendingLayer != 0; }
     void setMoveTool(bool enabled);
+    bool selectionEnabled() const { return m_selection.value("enabled").toBool(); }
+    QVariantList selectionSteps() const { return m_selection.value("steps").toList(); }
+    int selectionTool() const { return m_selectionTool; }
+    void setSelectionTool(int tool);
+    Q_INVOKABLE bool editSelection(QRectF rectangle, int shape, int operation);
+    Q_INVOKABLE bool selectAll();
+    Q_INVOKABLE bool clearSelection();
+    Q_INVOKABLE bool invertSelection();
     const QImage &frame(int view = 0) const { return m_frames[view == 1 ? 1 : 0]; }
     QRectF frameRegion(int view = 0) const { return m_regions[view == 1 ? 1 : 0]; }
     quint64 frameRevision(int view = 0) const { return m_frameRevisions[view == 1 ? 1 : 0]; }
@@ -141,6 +152,7 @@ signals:
     void layersChanged();
     void groupExpansionChanged();
     void brushChanged();
+    void selectionChanged();
     void errorChanged();
     void frameChanged();
     void stopped();
@@ -153,6 +165,7 @@ private:
     bool submitFile(const QUrl &path, int kind, int format);
     bool setAppearance(quint64 id, const QString &field, const QVariant &value);
     bool submitGroup(quint32 kind, quint64 id, quint64 parent, const QString &name = {});
+    bool submitSelection(quint32 action, QRectF rectangle = {}, int shape = 0, int operation = 0);
     QSet<quint64> m_collapsedGroups;
     QVariantMap m_storageSettings, m_activeStorageSettings, m_storageInfo;
     QString m_storageMessage;
@@ -177,6 +190,8 @@ private:
     BrushLibrary *m_brushLibrary = nullptr;
     bool m_eraser = false;
     bool m_moveTool = false;
+    int m_selectionTool = 0;
+    QVariantMap m_selection;
     QImage m_frames[2];
     QRectF m_regions[2], m_requestedRegions[2];
     QSize m_requestedPixels[2];

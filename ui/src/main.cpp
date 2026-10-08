@@ -1,5 +1,6 @@
 #include "CanvasItem.h"
 #include "ColorWheelItem.h"
+#include "SelectionOverlay.h"
 #include "WorkspaceManager.h"
 #include "PaintingBenchmark.h"
 #include <QGuiApplication>
@@ -28,6 +29,7 @@ int main(int argc,char **argv) {
     app.setPalette(palette);
     qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");
     qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
+    qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
     const QStringList arguments=app.arguments();
     const int previewIndex=arguments.indexOf("--preview");
     const QString previewPath=previewIndex>=0 && previewIndex+1<arguments.size()?arguments[previewIndex+1]:QString();

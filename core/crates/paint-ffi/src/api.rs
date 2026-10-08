@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 7;
+pub const PAINT_ABI_MINOR: u32 = 8;
 pub const PAINT_ABI_PATCH: u32 = 0;
 pub const PAINT_WORKING_LINEAR_SRGB: u32 = 1;
 pub const PAINT_STORAGE_RGBA32F_PREMULTIPLIED: u32 = 1;
@@ -405,6 +405,52 @@ pub const PAINT_COMMAND_ADD_MASK: u32 = 13;
 pub const PAINT_LAYER_MASK: u32 = 2;
 pub const PAINT_FEATURE_MASKS: u64 = 1024;
 pub const PAINT_FEATURE_CLIPPING: u64 = 2048;
+pub const PAINT_FEATURE_SELECTION: u64 = 4096;
+pub const PAINT_SELECTION_SHAPE: u32 = 0;
+pub const PAINT_SELECTION_CLEAR: u32 = 1;
+pub const PAINT_SELECTION_ALL: u32 = 2;
+pub const PAINT_SELECTION_INVERT: u32 = 3;
+pub const PAINT_SELECTION_REPLACE: u32 = 0;
+pub const PAINT_SELECTION_ADD: u32 = 1;
+pub const PAINT_SELECTION_SUBTRACT: u32 = 2;
+pub const PAINT_SELECTION_INTERSECT: u32 = 3;
+pub const PAINT_SELECTION_STEP_INVERT: u32 = 4;
+pub const PAINT_SELECTION_RECTANGLE: u32 = 0;
+pub const PAINT_SELECTION_ELLIPSE: u32 = 1;
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintSelectionEdit {
+    pub struct_size: u32,
+    pub action: u32,
+    pub operation: u32,
+    pub shape: u32,
+    pub antialias: u32,
+    pub reserved: [u32; 3],
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintSelectionInfo {
+    pub struct_size: u32,
+    pub enabled: u32,
+    pub step_count: u32,
+    pub reserved: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintSelectionStep {
+    pub struct_size: u32,
+    pub operation: u32,
+    pub shape: u32,
+    pub antialias: u32,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
 /// ABI 1.7 additive clipping query/edit. base_layer_id is query-only (0 if orphaned).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]

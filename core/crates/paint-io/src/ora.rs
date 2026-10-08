@@ -225,13 +225,15 @@ fn parse_node(
         local,
     })
 }
-fn parse_stack(xml: &[u8]) -> Result<(u32, u32, Vec<LayerSpec>, bool)> {
+type ParsedStack = (u32, u32, Vec<LayerSpec>, bool, paint_core::Selection);
+fn parse_stack(xml: &[u8]) -> Result<ParsedStack> {
     let mut reader = Reader::from_reader(xml);
     reader.config_mut().trim_text(true);
     let mut width = 0;
     let mut height = 0;
     let mut owned = false;
     let mut extension_version = 0;
+    let mut selection = paint_core::Selection::default();
     let mut editable = false;
     let mut image_seen = false;
     let mut image_open = false;
@@ -258,12 +260,17 @@ fn parse_stack(xml: &[u8]) -> Result<(u32, u32, Vec<LayerSpec>, bool)> {
                 editable = marker == 2;
                 if let Some(ns) = a.remove("xmlns:dv") {
                     extension_version = number::<u32>(&mut a, "dv:version", Some(1))?;
-                    if ns != "urn:drawverse:layers:1" || !matches!(extension_version, 1..=3) {
+                    if ns != "urn:drawverse:layers:1" || !matches!(extension_version, 1..=4) {
                         return Err(Error::Unsupported(
                             "DrawVerse layer extension version".into(),
                         ));
                     }
                     owned = true;
+                }
+                if owned && extension_version >= 4 {
+                    if let Some(text) = a.remove("dv:selection") {
+                        selection = paint_core::Selection::from_text(&text)?;
+                    }
                 }
                 a.remove("version");
                 a.remove("name");
@@ -394,7 +401,7 @@ fn parse_stack(xml: &[u8]) -> Result<(u32, u32, Vec<LayerSpec>, bool)> {
     {
         return Err(Error::Invalid("mask extension requires explicit IDs"));
     }
-    Ok((width, height, layers, editable))
+    Ok((width, height, layers, editable, selection))
 }
 pub(crate) fn decode(
     bytes: &[u8],
@@ -477,16 +484,16 @@ pub(crate) fn decode(
         return Err(Error::Invalid("missing merged image/thumbnail"));
     }
     let standard = entry(&mut zip, "stack.xml", 1024 * 1024)?;
-    let (sw, sh, standard_specs, use_manifest) = parse_stack(&standard)?;
-    let (w, h, specs) = if use_manifest {
-        let (w, h, specs, nested) =
+    let (sw, sh, standard_specs, use_manifest, standard_selection) = parse_stack(&standard)?;
+    let (w, h, specs, selection) = if use_manifest {
+        let (w, h, specs, nested, selection) =
             parse_stack(&entry(&mut zip, "drawverse/stack.xml", 1024 * 1024)?)?;
         if nested || (sw, sh) != (w, h) {
             return Err(Error::Invalid("manifest/fallback conflict"));
         }
-        (w, h, specs)
+        (w, h, specs, selection)
     } else {
-        (sw, sh, standard_specs)
+        (sw, sh, standard_specs, standard_selection)
     };
     let active = specs.iter().position(|l| l.selected).unwrap_or(0);
     let mut layers = Vec::new();
@@ -559,6 +566,7 @@ pub(crate) fn decode(
     )?;
     document.set_import_nodes(&hierarchy)?;
     document.set_import_clipping(&clipping)?;
+    document.initialize_selection(selection)?;
     Ok(document)
 }
 fn escaped(s: &str) -> Result<String> {
@@ -594,7 +602,7 @@ pub(crate) fn encode(
     )?;
     zip.write_all(b"image/openraster")?;
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-    let mut xml=format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><image w=\"{}\" h=\"{}\" version=\"0.0.6\" xmlns:dv=\"urn:drawverse:layers:1\" dv:version=\"3\"><stack>",snapshot.width,snapshot.height);
+    let mut xml=format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><image w=\"{}\" h=\"{}\" version=\"0.0.6\" xmlns:dv=\"urn:drawverse:layers:1\" dv:version=\"4\" dv:selection=\"{}\"><stack>",snapshot.width,snapshot.height,snapshot.selection().to_text());
     let mut pixels = 0u64;
     let mut open_groups = Vec::new();
     for (index, layer) in snapshot.layers().iter().rev().enumerate() {

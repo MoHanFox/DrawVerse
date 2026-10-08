@@ -12,6 +12,10 @@ pub(crate) struct TileChange {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Command {
+    Selection {
+        before: crate::Selection,
+        after: crate::Selection,
+    },
     /// Only empty groups may be added/removed by this metadata-only command.
     Structure {
         before: Vec<Layer>,
@@ -110,7 +114,7 @@ pub(crate) const MAX_DISK_HISTORY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 impl Command {
     fn verify_tiles(&self) -> Result<()> {
         match self {
-            Self::Structure { .. } => {}
+            Self::Structure { .. } | Self::Selection { .. } => {}
             Self::RemoveTree { layers, .. } => {
                 for layer in layers {
                     for tile in layer.tiles.values() {
@@ -137,6 +141,7 @@ impl Command {
     pub fn bytes(&self) -> usize {
         // Conservative bound: count both before and after even when shared by adjacent commands.
         let payload = match self {
+            Self::Selection { before, after } => (before.steps().len() + after.steps().len()) * 64,
             Self::Structure { before, after } => {
                 before.iter().chain(after).map(|l| l.name.len() + 128).sum()
             }

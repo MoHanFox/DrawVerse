@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 7
+#define PAINT_ABI_MINOR 8
 
 #define PAINT_ABI_PATCH 0
 
@@ -75,6 +75,8 @@
 
 #define PAINT_FEATURE_MASKS 1024
 
+#define PAINT_FEATURE_SELECTION 4096
+
 #define PAINT_FEATURE_STORAGE_SETTINGS 128
 
 #define PAINT_FILE_AUTO 0
@@ -132,6 +134,28 @@
 #define PAINT_MODE_ERASE 2
 
 #define PAINT_MODE_PAINT 1
+
+#define PAINT_SELECTION_ADD 1
+
+#define PAINT_SELECTION_ALL 2
+
+#define PAINT_SELECTION_CLEAR 1
+
+#define PAINT_SELECTION_ELLIPSE 1
+
+#define PAINT_SELECTION_INTERSECT 3
+
+#define PAINT_SELECTION_INVERT 3
+
+#define PAINT_SELECTION_RECTANGLE 0
+
+#define PAINT_SELECTION_REPLACE 0
+
+#define PAINT_SELECTION_SHAPE 0
+
+#define PAINT_SELECTION_STEP_INVERT 4
+
+#define PAINT_SELECTION_SUBTRACT 2
 
 #define PAINT_SESSION_FAILED 4
 
@@ -297,6 +321,19 @@ typedef struct PaintLayerDrop {
   uint64_t target_id;
 } PaintLayerDrop;
 
+typedef struct PaintSelectionEdit {
+  uint32_t struct_size;
+  uint32_t action;
+  uint32_t operation;
+  uint32_t shape;
+  uint32_t antialias;
+  uint32_t reserved[3];
+  double x;
+  double y;
+  double width;
+  double height;
+} PaintSelectionEdit;
+
 typedef struct PaintFileJobInfo {
   uint32_t struct_size;
   uint32_t state;
@@ -408,6 +445,24 @@ typedef struct PaintLayerHierarchy {
   uint32_t depth;
   uint32_t effective_locks;
 } PaintLayerHierarchy;
+
+typedef struct PaintSelectionInfo {
+  uint32_t struct_size;
+  uint32_t enabled;
+  uint32_t step_count;
+  uint32_t reserved;
+} PaintSelectionInfo;
+
+typedef struct PaintSelectionStep {
+  uint32_t struct_size;
+  uint32_t operation;
+  uint32_t shape;
+  uint32_t antialias;
+  double x;
+  double y;
+  double width;
+  double height;
+} PaintSelectionStep;
 
 typedef struct PaintViewport {
   uint32_t struct_size;
@@ -714,6 +769,16 @@ PaintStatus paint_session_drop_layer(struct PaintCore *core,
                                      uint64_t *out_sequence);
 
 /**
+ * ABI 1.8: enqueue a geometric selection edit, copied and validated before returning.
+ * # Safety
+ * Initialize request size and writable sequence; follow contracts/abi.md ownership rules.
+ */
+PaintStatus paint_session_edit_selection(struct PaintCore *core,
+                                         struct PaintSession *session,
+                                         const struct PaintSelectionEdit *request,
+                                         uint64_t *out_sequence);
+
+/**
  * Read the latest asynchronous execution error. Synchronous submission errors use paint_error_message.
  * # Safety
  * Follow UTF-8 buffer contract; error sequence must match session_info.
@@ -875,6 +940,27 @@ PaintStatus paint_session_read_frame(struct PaintCore *core,
                                      uint64_t request_id,
                                      uint64_t frame_id,
                                      struct PaintTile *out_tile);
+
+/**
+ * ABI 1.8: query selection summary tied to exactly one immutable publication.
+ * # Safety
+ * Initialize output size and follow aligned writable memory/handle contracts.
+ */
+PaintStatus paint_session_selection_info(struct PaintCore *core,
+                                         struct PaintSession *session,
+                                         uint64_t publication,
+                                         struct PaintSelectionInfo *out);
+
+/**
+ * ABI 1.8: query one bounded selection step; inversion uses zero geometry.
+ * # Safety
+ * Initialize output size; index must belong to the same queried publication.
+ */
+PaintStatus paint_session_selection_step(struct PaintCore *core,
+                                         struct PaintSession *session,
+                                         uint64_t publication,
+                                         uint32_t index,
+                                         struct PaintSelectionStep *out);
 
 /**
  * ABI 1.4: FIFO appearance edit; validate/copy DTO before return, actor enforces locks.

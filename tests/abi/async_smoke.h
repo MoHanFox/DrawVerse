@@ -28,6 +28,11 @@ ABI_ASSERT(sizeof(PaintLayerDrop)==24,"layer drop layout drift");
 ABI_ASSERT(offsetof(PaintLayerDrop,target_id)==16,"drop target offset drift");
 ABI_ASSERT(sizeof(PaintLayerClipping)==16,"clipping layout drift");
 ABI_ASSERT(offsetof(PaintLayerClipping,base_layer_id)==8,"clipping base offset drift");
+ABI_ASSERT(sizeof(PaintSelectionEdit)==64,"selection edit layout drift");
+ABI_ASSERT(offsetof(PaintSelectionEdit,x)==32,"selection geometry offset drift");
+ABI_ASSERT(sizeof(PaintSelectionInfo)==16,"selection info layout drift");
+ABI_ASSERT(sizeof(PaintSelectionStep)==48,"selection step layout drift");
+ABI_ASSERT(offsetof(PaintSelectionStep,x)==16,"selection step offset drift");
 #undef ABI_ASSERT
 #define ASYNC_CHECK(test) do { if (!(test)) { fprintf(stderr, "Async ABI check failed at line %d: %s\n", __LINE__, #test); return 1; } } while (0)
 
@@ -196,6 +201,18 @@ static int async_smoke(PaintCore *core) {
         ASYNC_CHECK(paint_session_layer_clipping(core,session,info.publication+99,info.active_layer_id,&clipping)==PAINT_BUSY);
         clipping.enabled=2;sequence=999;
         ASYNC_CHECK(paint_session_set_layer_clipping(core,session,info.active_layer_id,&clipping,&sequence)==PAINT_INVALID_ARGUMENT && sequence==0);
+    }
+    {
+        PaintSelectionEdit selection;PaintSelectionInfo summary;PaintSelectionStep step;
+        memset(&selection,0,sizeof(selection));selection.struct_size=sizeof(selection);selection.action=PAINT_SELECTION_SHAPE;selection.shape=PAINT_SELECTION_ELLIPSE;selection.antialias=1;selection.x=10;selection.y=12;selection.width=30;selection.height=20;
+        ASYNC_CHECK(paint_session_edit_selection(core,session,&selection,&sequence)==PAINT_OK);
+        start=clock();do{info.struct_size=sizeof(info);ASYNC_CHECK(paint_session_info(core,session,&info)==PAINT_OK);ASYNC_CHECK(clock()-start<5*CLOCKS_PER_SEC);}while(info.completed_sequence<sequence);
+        ASYNC_CHECK(info.last_error_status==PAINT_OK);
+        memset(&summary,0,sizeof(summary));summary.struct_size=sizeof(summary);ASYNC_CHECK(paint_session_selection_info(core,session,info.publication,&summary)==PAINT_OK && summary.enabled==1 && summary.step_count==1);
+        memset(&step,0,sizeof(step));step.struct_size=sizeof(step);ASYNC_CHECK(paint_session_selection_step(core,session,info.publication,0,&step)==PAINT_OK && step.shape==PAINT_SELECTION_ELLIPSE && step.width==30);
+        ASYNC_CHECK(paint_session_selection_info(core,session,info.publication+99,&summary)==PAINT_BUSY);
+        ASYNC_CHECK(paint_session_selection_step(core,session,info.publication,999,&step)==PAINT_NOT_FOUND);
+        selection.width=-1;sequence=999;ASYNC_CHECK(paint_session_edit_selection(core,session,&selection,&sequence)==PAINT_INVALID_ARGUMENT && sequence==0);
     }
     ASYNC_CHECK(remove(DRAWVERSE_ABI_SMOKE_FILE) == 0);
     ASYNC_CHECK(paint_session_destroy(core, &session) == PAINT_OK && session == NULL);

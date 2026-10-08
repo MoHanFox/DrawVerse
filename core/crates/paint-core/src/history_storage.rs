@@ -436,8 +436,17 @@ fn read_appearance(r: &mut impl Read) -> Result<crate::LayerAppearance> {
     Ok(a)
 }
 fn encode_command(w: &mut impl Write, command: &Command) -> io::Result<()> {
-    w.write_all(b"DVH5")?;
+    w.write_all(b"DVH6")?;
     match command {
+        Command::Selection { before, after } => {
+            put_u8(w, 8)?;
+            for selection in [before, after] {
+                let text = selection.to_text();
+                put_u32(w, text.len() as u32)?;
+                w.write_all(text.as_bytes())?;
+            }
+            Ok(())
+        }
         Command::Structure { before, after } => {
             put_u8(w, 6)?;
             for nodes in [before, after] {
@@ -499,10 +508,26 @@ fn encode_command(w: &mut impl Write, command: &Command) -> io::Result<()> {
     }
 }
 fn decode_command<R: Read>(r: &mut CheckedReader<R>) -> Result<Command> {
-    if &get::<4>(r)? != b"DVH5" {
+    if &get::<4>(r)? != b"DVH6" {
         return Err(invalid());
     }
     match u8_value(r)? {
+        8 => {
+            let mut selections = Vec::new();
+            for _ in 0..2 {
+                let count = u32_value(r)? as usize;
+                if count > 32768 {
+                    return Err(invalid());
+                }
+                let mut bytes = vec![0; count];
+                r.read_exact(&mut bytes).map_err(storage_error)?;
+                let text = std::str::from_utf8(&bytes).map_err(|_| invalid())?;
+                selections.push(crate::Selection::from_text(text).map_err(|_| invalid())?);
+            }
+            let after = selections.pop().expect("two selections");
+            let before = selections.pop().expect("two selections");
+            Ok(Command::Selection { before, after })
+        }
         6 => {
             let mut sets = Vec::new();
             for _ in 0..2 {
@@ -622,6 +647,40 @@ pub(crate) fn decode_page(bytes: &[u8]) -> Result<Vec<Pixel>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn selection_disk_roundtrip_and_corruption_are_checked() {
+        let shape = crate::SelectionShape {
+            kind: crate::SelectionKind::Ellipse,
+            x: 1.25,
+            y: 2.5,
+            width: 50.,
+            height: 30.,
+            antialias: true,
+        };
+        let before = crate::Selection::default();
+        let after = before
+            .apply(shape, crate::SelectionOperation::Replace, 100, 100)
+            .unwrap()
+            .inverted(100, 100)
+            .unwrap();
+        let command = Command::Selection {
+            before: before.clone(),
+            after: after.clone(),
+        };
+        let mut payload = Payload::encode(&command, 0).unwrap();
+        match payload.decode().unwrap() {
+            Command::Selection {
+                before: b,
+                after: a,
+            } => {
+                assert_eq!(b, before);
+                assert_eq!(a, after);
+            }
+            _ => panic!("selection tag"),
+        }
+        payload.truncate_for_test();
+        assert!(payload.decode().is_err());
+    }
     fn command(noisy: bool) -> Command {
         let pixels = (0..4096)
             .map(|i| {

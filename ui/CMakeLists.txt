@@ -4,6 +4,7 @@ set(CMAKE_AUTOMOC ON)
 add_library(drawverse_ui STATIC
     src/PaintCoreClient.h src/PaintCoreClient.cpp
     src/CanvasItem.h src/CanvasItem.cpp
+    src/SelectionOverlay.h src/SelectionOverlay.cpp
     src/ColorWheelItem.h src/ColorWheelItem.cpp
     src/BrushLibrary.h src/BrushLibrary.cpp
     src/WorkspaceManager.h src/WorkspaceManager.cpp)
@@ -37,6 +38,7 @@ add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     referencePresetUsesCompactNativeFloatingWindows
     toolStripFloatsDocksPersistsAndTabsJoinContent
     brushLibrarySettingsAndEnginePreviewsShareSelectionAcrossWindows
+    selectionsDragCombineUndoConstrainAndPersist
     -o "${CMAKE_BINARY_DIR}/qt-ui-highdpi.txt,txt" -o "-,txt")
 set_tests_properties(qt_ui_highdpi PROPERTIES TIMEOUT 90
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=2")

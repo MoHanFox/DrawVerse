@@ -116,7 +116,8 @@ fn v2_masks_remain_readable_and_invalid_clipping_metadata_is_rejected() {
                 let s = String::from_utf8(bytes.clone()).unwrap();
                 match case {
                     0 => s
-                        .replace("dv:version=\"3\"", "dv:version=\"2\"")
+                        .replace("dv:version=\"4\"", "dv:version=\"2\"")
+                        .replace(" dv:selection=\"1|0\"", "")
                         .replace(" dv:clipped=\"0\"", ""),
                     1 => s.replace("dv:clipped=\"0\"", "dv:clipped=\"2\""),
                     _ => s

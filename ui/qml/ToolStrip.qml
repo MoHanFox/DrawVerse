@@ -7,7 +7,7 @@ Rectangle {
     objectName: "toolStrip"
     property var canvasView
     color: Theme.strip
-    implicitWidth: 36; implicitHeight: 270
+    implicitWidth: 36; implicitHeight: 300
     Item {
         objectName: "toolStripGrip"
         width: parent.width; height: 10
@@ -24,7 +24,8 @@ Rectangle {
     Column {
         anchors.horizontalCenter:parent.horizontalCenter;anchors.top:parent.top;anchors.topMargin:12;spacing:4
         IconButton {objectName:"moveLayerTool";width:26;height:26;glyph:"move";checkable:true;checked:PaintClient.moveTool;onClicked:PaintClient.moveTool=true;tooltip:"移动图层 V"}
-        IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;checked:!PaintClient.eraser && !PaintClient.moveTool;onClicked:PaintClient.eraser=false;tooltip:"画笔 B"}
+        IconButton {objectName:"selectionTool";width:26;height:26;glyph:PaintClient.selectionTool===2?"ellipseSelection":"rectangleSelection";checkable:true;checked:PaintClient.selectionTool>0;onClicked:PaintClient.selectionTool=PaintClient.selectionTool===1?2:1;tooltip:"矩形 / 椭圆选区 M · Shift+M 切换"}
+        IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;checked:!PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool;onClicked:PaintClient.eraser=false;tooltip:"画笔 B"}
         IconButton {objectName:"eraserTool";width:26;height:26;glyph:"eraser";checkable:true;checked:PaintClient.eraser && !PaintClient.moveTool;onClicked:PaintClient.eraser=true;tooltip:"橡皮擦 E"}
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         IconButton {width:26;height:26;glyph:"undo";enabled:PaintClient.undoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.undo();tooltip:"撤销 Ctrl+Z"}

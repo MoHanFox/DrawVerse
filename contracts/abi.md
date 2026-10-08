@@ -1,4 +1,4 @@
-# C ABI 1.7.0 契约
+# C ABI 1.8.0 契约
 
 ## ABI 1.5 图层组
 
@@ -16,11 +16,11 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 ## 版本与类型
 
-全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/7/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
+全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/8/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
 
 初始化 DTO 为零并写 struct_size=sizeof(本调用者结构)，输入至少含已发布前缀。库只访问已知前缀；过小为 INVALID_ARGUMENT，不覆盖调用者内存；扩展尾部保持不变。输出 struct_size 写库已知大小。reserved 必须为零；未知 mode/tool/format 为 UNSUPPORTED。输入 capability 位保留未知位，圆笔刷只实际使用 pressure，客户端为无压力设备提供 pressure=1。
 
-已发布字段布局、语义、所有权、线程契约不能更改。破坏性修改提升 ABI 主版本；兼容新增函数/能力/新结构提升次版本。现有 DTO 不重新排序或更换字段类型。客户端启动先 version 再 capabilities，按位检查所需功能并忽略未知能力位。当前能力为 document/history/linear tile read/events/async session/CPU viewport/file IO/storage settings/layer appearance/layer groups及 masks/clipping（1/2/4/8/16/32/64/128/256/512/1024/2048），无 GPU。
+已发布字段布局、语义、所有权、线程契约不能更改。破坏性修改提升 ABI 主版本；兼容新增函数/能力/新结构提升次版本。现有 DTO 不重新排序或更换字段类型。客户端启动先 version 再 capabilities，按位检查所需功能并忽略未知能力位。当前能力为 document/history/linear tile read/events/async session/CPU viewport/file IO/storage settings/layer appearance/layer groups及 masks/clipping/selection（1/2/4/8/16/32/64/128/256/512/1024/2048/4096），无 GPU。
 
 ## 错误
 
@@ -136,3 +136,14 @@ paint_session_layer_clipping(core,session,publication,layer_id,out) 读取一致
 paint_session_set_layer_clipping(core,session,layer_id,options,out_sequence) 输入 enabled=0/1、base_layer_id 必须 0；同步复制小 DTO 并立即验证，输出 sequence 先清 0；actor 校验 idle、所属祖先完全锁、节点类型与创建时下层基底。失败不改状态/历史；重复值无历史。蒙版节点不能剪贴。修改进入 FIFO、撤销屏障和 modified 状态；基底依当前同级层序动态解析，不跨组引用、不烘焙像素。蒙版 owner 内部仍有独立节点，UI 仅合并呈现。
 
 剪贴链在父隔离组合成前保持基底 alpha：像素蒙版先作用于基底/上层源，连续剪贴层在基底颜色上混合，最后一次性应用基底 opacity/fill/blend。关闭或透明基底不显示上层，剪贴层隐藏不切断链。结构/删除历史保存剪贴标志；临时无损历史 DVH5 不属于对外工程文件。ORA dv:version=3 保存 dv:clipped，仍读取 v1/v2；有剪贴使用可编辑原始栈及合成预览。
+
+
+## ABI 1.8 几何选区
+
+能力位 PAINT_FEATURE_SELECTION=4096，所有旧 DTO/函数保留。PaintSelectionEdit=64 字节（x 偏移32），PaintSelectionInfo=16，PaintSelectionStep=48（x 偏移16）。均初始化 struct_size、其余字段为零。request 无指针，调用返回前复制；out_sequence 在拒绝时为0，OK 仅表示排入 FIFO。
+
+paint_session_edit_selection 的 action 为 Shape=0 / Clear=1 / All=2 / Invert=3。Shape 时 operation 为 Replace=0 / Add=1 / Subtract=2 / Intersect=3；shape Rectangle=0 / Ellipse=1，antialias=0/1。几何为文档浮点坐标，finite 且绝对值不超过2,000,000，宽高必须正。非 Shape 的所有无关字段（operation、shape、antialias、geometry）为零；reserved[3] 始终零。未知参数不入队；活动笔触或超过64步骤等执行错误通过 session publication 报告，旧选区保留，不取消进行中的笔触。
+
+paint_session_selection_info/selection_step 使用与 layer_info 相同的 exact publication，过期为 BUSY 并清空输出；不存在步骤为 NOT_FOUND。Invert 步骤 operation=4，shape/antialias/geometry 为零。步骤仅供显示，核心负责覆盖与绘画。enabled=0 表示不限制；enabled=1 且没有覆盖像素表示禁止绘画，不能将两者混同。默认禁用，新建清空；选区编辑使用统一历史、modified 规则和 revision，选择工具切换本身不改文档。当前选区作用于文档坐标的笔刷、擦除和蒙版绘画，不裁剪显示/导出或图层整数移动。
+
+查询不暴露内部分配或句柄；调用者输出内存/生命周期/回调规则沿用本契约。旧同步 API 没有选区编辑入口；扩展功能通过异步 session 提供。OpenRaster 扩展 v4 保留选择步骤，图片导出保留完整画布像素。

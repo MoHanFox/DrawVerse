@@ -183,10 +183,14 @@ pub struct DocumentSnapshot {
     pub height: u32,
     pub revision: u64,
     layers: Vec<Layer>,
+    selection: crate::Selection,
     pool: Arc<crate::page_pool::PagePool>,
 }
 
 impl DocumentSnapshot {
+    pub fn selection(&self) -> &crate::Selection {
+        &self.selection
+    }
     pub fn layers(&self) -> &[Layer] {
         &self.layers
     }
@@ -241,6 +245,7 @@ pub struct Document {
     stroke: Option<Stroke>,
     revision: u64,
     dirty: DirtyTiles,
+    selection: crate::Selection,
 }
 
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
@@ -445,6 +450,7 @@ impl Document {
             options,
             history: History::default(),
             stroke: None,
+            selection: crate::Selection::default(),
             revision: 0,
             dirty: DirtyTiles {
                 all: true,
@@ -484,6 +490,32 @@ impl Document {
     pub fn revision(&self) -> u64 {
         self.revision
     }
+    pub fn selection(&self) -> &crate::Selection {
+        &self.selection
+    }
+    pub fn set_selection(&mut self, selection: crate::Selection) -> Result<()> {
+        self.idle()?;
+        if self.selection == selection {
+            return Ok(());
+        }
+        self.commit(Command::Selection {
+            before: self.selection.clone(),
+            after: selection.clone(),
+        })?;
+        self.selection = selection;
+        self.bump_revision();
+        Ok(())
+    }
+    pub fn initialize_selection(&mut self, selection: crate::Selection) -> Result<()> {
+        self.idle()?;
+        if self.revision != 0 || self.history_depth() != (0, 0) {
+            return Err(Error::InvalidArgument(
+                "selection initialization after edits",
+            ));
+        }
+        self.selection = selection;
+        Ok(())
+    }
     pub fn tile_count(&self) -> usize {
         self.layers.iter().map(Layer::tile_count).sum()
     }
@@ -514,6 +546,7 @@ impl Document {
             height: self.height,
             revision: self.revision,
             layers: self.layers.clone(),
+            selection: self.selection.clone(),
         }
     }
 
@@ -558,6 +591,7 @@ impl Document {
         layer.parent = 0;
         *layers.last_mut().expect("preview root") = layer;
         Ok(DocumentSnapshot {
+            selection: crate::Selection::default(),
             pool: Arc::clone(&self.pool),
             width: self.width,
             height: self.height,
@@ -997,6 +1031,20 @@ impl Document {
     }
 
     fn dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
+        // Specialize once per dab: an inactive selection adds no pixel-loop
+        // geometry branches or coverage multiplication to the original hot path.
+        if self.selection.enabled() {
+            self.dab_with_selection::<true>(stroke, point)
+        } else {
+            self.dab_with_selection::<false>(stroke, point)
+        }
+    }
+
+    fn dab_with_selection<const SELECTED: bool>(
+        &mut self,
+        stroke: &mut Stroke,
+        point: InputPoint,
+    ) -> Result<bool> {
         let radius = f64::from(stroke.brush.radius * point.pressure);
         let flow = stroke.brush.opacity * point.pressure;
         if radius == 0.0 || flow == 0.0 {
@@ -1049,6 +1097,17 @@ impl Document {
                 let mut pixels: Option<Vec<Pixel>> = None;
                 for y in y0.max(ty * 64)..y1.min((ty + 1) * 64) {
                     for x in x0.max(tx * 64)..x1.min((tx + 1) * 64) {
+                        let selected = if SELECTED {
+                            self.selection.coverage(
+                                (x + i64::from(appearance.offset_x)) as f64 + 0.5,
+                                (y + i64::from(appearance.offset_y)) as f64 + 0.5,
+                            )
+                        } else {
+                            1.
+                        };
+                        if selected == 0. {
+                            continue;
+                        }
                         let distance = (x as f64 + 0.5 - px).hypot(y as f64 + 0.5 - py);
                         let coverage = (radius + 0.5 - distance).clamp(0., 1.) as f32;
                         if coverage == 0. {
@@ -1058,7 +1117,11 @@ impl Document {
                         let before = source
                             .as_ref()
                             .map_or(self.layers[index].default_pixel(x, y), |p| p[offset]);
-                        let amount = coverage * flow;
+                        let amount = if SELECTED {
+                            coverage * flow * selected
+                        } else {
+                            coverage * flow
+                        };
                         let after = if mask {
                             let (tone, a) = stroke.mask_paint.expect("mask brush target");
                             let hide = if erase { 0. } else { tone };
@@ -1174,6 +1237,14 @@ impl Document {
 
     fn apply_history(&mut self, command: &Command, forward: bool) {
         match command {
+            Command::Selection { before, after } => {
+                self.selection = if forward {
+                    after.clone()
+                } else {
+                    before.clone()
+                };
+                self.bump_revision();
+            }
             Command::Structure { before, after } => {
                 self.apply_structure(if forward { after } else { before });
                 self.dirty_all();
