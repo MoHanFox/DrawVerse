@@ -1,0 +1,20 @@
+[workspace]
+members = ["crates/paint-storage", "crates/paint-core", "crates/paint-task", "crates/paint-render", "crates/paint-io", "crates/paint-ffi", "tools/paint-api-gen"]
+default-members = ["crates/paint-core", "crates/paint-task", "crates/paint-render", "crates/paint-io", "crates/paint-ffi"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[profile.release]
+lto = "thin"
+# Future FFI needs unwind containment; do not use panic=abort.
+panic = "unwind"

@@ -1,0 +1,11 @@
+[package]
+name = "paint-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Managed scratch directories, process leases, free-space checks and cleanup"
+[dependencies]
+tempfile = "=3.27.0"
+fs2 = "=0.4.3"
+[lints]
+workspace = true

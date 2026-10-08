@@ -1,0 +1,13 @@
+[package]
+name = "paint-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "UI-independent sparse painting document and transactional history"
+
+[dependencies]
+paint-storage = { path = "../paint-storage" }
+tempfile = "=3.27.0"
+
+[lints]
+workspace = true

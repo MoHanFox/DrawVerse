@@ -1,0 +1,11 @@
+[package]
+name = "paint-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Bounded sparse snapshot rendering and CPU display backend"
+[dependencies]
+paint-core = { path = "../paint-core" }
+paint-task = { path = "../paint-task" }
+[lints]
+workspace = true

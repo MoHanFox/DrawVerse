@@ -1,0 +1,8 @@
+[package]
+name = "paint-task"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Bounded CPU scheduling, cancellation, and serial document execution"
+[lints]
+workspace = true
