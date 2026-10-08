@@ -10,6 +10,7 @@
 #include <QTimer>
 #include <QPalette>
 #include <QIcon>
+#include <QTemporaryDir>
 #include <cmath>
 
 int main(int argc,char **argv) {
@@ -27,13 +28,15 @@ int main(int argc,char **argv) {
     app.setPalette(palette);
     qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");
     qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
-    PaintCoreClient client;
     const QStringList arguments=app.arguments();
     const int previewIndex=arguments.indexOf("--preview");
     const QString previewPath=previewIndex>=0 && previewIndex+1<arguments.size()?arguments[previewIndex+1]:QString();
     const int benchmarkIndex=arguments.indexOf("--benchmark");
     const QString benchmarkPath=benchmarkIndex>=0 && benchmarkIndex+1<arguments.size()?arguments[benchmarkIndex+1]:QString();
     const QString testPath=!benchmarkPath.isEmpty()?benchmarkPath:previewPath;
+    QTemporaryDir testPreferences;
+    if(!testPath.isEmpty() && !testPreferences.isValid())return 1;
+    PaintCoreClient client(nullptr,testPath.isEmpty()?QString():testPreferences.filePath("preferences.ini"));
     WorkspaceManager workspace(testPath.isEmpty()?QString():testPath+".workspace.ini");
     if(!previewPath.isEmpty()) workspace.resetLayout();
     QQmlApplicationEngine engine;

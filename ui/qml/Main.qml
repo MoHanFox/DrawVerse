@@ -171,8 +171,8 @@ ApplicationWindow {
             Icon { name: PaintClient.moveTool ? "move" : PaintClient.eraser ? "eraser" : "brush"; Layout.preferredWidth: 17; Layout.preferredHeight: 17 }
             Label { text: PaintClient.moveTool ? "移动图层" : PaintClient.eraser ? "橡皮擦" : "画笔"; color: Theme.text; Layout.preferredWidth: 42 }
             Rectangle { width: 1; height: 22; color: Theme.line }
-            Label { text: "半径"; color: Theme.muted }
-            CompactSpinBox { objectName: "brushRadius"; from: 1; to: 256; value: Math.round(PaintClient.brushRadius); editable: true; implicitWidth: 76; implicitHeight: 20; onValueModified: PaintClient.brushRadius=value }
+            Label { text: "大小"; color: Theme.muted }
+            CompactSpinBox { objectName: "brushRadius"; from: 1; to: 512; value: Math.round(PaintClient.brushRadius*2); editable: true; implicitWidth: 76; implicitHeight: 20; onValueModified: PaintClient.brushRadius=value/2 }
             Label { text: "px"; color: Theme.muted }
             Label { text: "不透明度"; color: Theme.muted }
             CompactSlider { from: .01; to: 1; value: PaintClient.brushOpacity; Layout.preferredWidth: 95; onMoved: PaintClient.brushOpacity=value }

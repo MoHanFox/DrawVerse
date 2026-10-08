@@ -9,6 +9,7 @@ Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘
 - [最新 FFI 验证](docs/ffi-validation.md) / [首轮内核历史验证](docs/validation.md)
 - [QML UI 设计](docs/qml-ui-design.md) / [UI 验证与启动说明](docs/qml-ui-validation.md)
 - [参考图 UI / 停靠设计](docs/reference-ui-design.md) / [最新工作区验收](docs/reference-ui-validation.md)
+- [画笔库与当前画笔设置](docs/brush-library-design.md) / [画笔模块验收](docs/brush-library-validation.md)
 - [任务与 CPU 视口设计](docs/task-render-design.md) / [最新模块验证](docs/task-render-validation.md)
 - [绘画性能修复设计](docs/painting-performance-design.md) / [修复前后实测](docs/painting-performance-validation.md)
 - [图层控制设计](docs/layers-design.md) / [图层控制验收](docs/layers-validation.md)

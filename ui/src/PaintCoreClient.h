@@ -1,4 +1,5 @@
 #pragma once
+#include "BrushLibrary.h"
 #include <QColor>
 #include <QImage>
 #include <QObject>
@@ -47,6 +48,8 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QColor brushColor READ brushColor WRITE setBrushColor NOTIFY brushChanged)
     Q_PROPERTY(qreal brushRadius READ brushRadius WRITE setBrushRadius NOTIFY brushChanged)
     Q_PROPERTY(qreal brushOpacity READ brushOpacity WRITE setBrushOpacity NOTIFY brushChanged)
+    Q_PROPERTY(qreal brushSpacing READ brushSpacing WRITE setBrushSpacing NOTIFY brushChanged)
+    Q_PROPERTY(BrushLibrary* brushLibrary READ brushLibrary CONSTANT)
     Q_PROPERTY(bool eraser READ eraser WRITE setEraser NOTIFY brushChanged)
     Q_PROPERTY(bool moveTool READ moveTool WRITE setMoveTool NOTIFY brushChanged)
     Q_PROPERTY(bool layerEditBusy READ layerEditBusy NOTIFY stateChanged)
@@ -79,6 +82,8 @@ public:
     QColor brushColor() const { return m_color; }
     qreal brushRadius() const { return m_radius; }
     qreal brushOpacity() const { return m_opacity; }
+    qreal brushSpacing() const {return m_spacing;}
+    BrushLibrary *brushLibrary() const {return m_brushLibrary;}
     bool eraser() const { return m_eraser; }
     bool moveTool() const { return m_moveTool; }
     bool layerEditBusy() const { return m_pendingLayer != 0; }
@@ -92,6 +97,7 @@ public:
     void setBrushColor(const QColor &color);
     void setBrushRadius(qreal radius);
     void setBrushOpacity(qreal opacity);
+    void setBrushSpacing(qreal spacing);
     void setEraser(bool eraser);
     bool beginStroke(const InputSample &sample);
     void strokeTo(const InputSample &sample);
@@ -167,6 +173,8 @@ private:
     QString m_error;
     QColor m_color{"#2ea99d"};
     qreal m_radius = 12, m_opacity = 1;
+    qreal m_spacing = .15;
+    BrushLibrary *m_brushLibrary = nullptr;
     bool m_eraser = false;
     bool m_moveTool = false;
     QImage m_frames[2];

@@ -60,6 +60,7 @@ public:
             emit failure(QStringLiteral("剪贴蒙版需要核心 ABI 1.7 或兼容后续版本")); return;
         }
         auto settings = preferences();
+        emit brushPreferences(settings->value("brushes/state").toByteArray());
         m_saved = QVariantMap{{"directory", settings->value("storage/directory", "")},
             {"memoryMiB", settings->value("storage/memoryMiB", 256)},
             {"scratchGiB", settings->value("storage/scratchGiB", 8)},
@@ -88,6 +89,11 @@ public:
     // Disk queries and QSettings synchronization stay on the backend thread.
     void inspectStorage() { evaluateStorage(m_saved, false); }
     void saveStorage(const QVariantMap &values) { evaluateStorage(values, true); }
+    void saveBrushPreferences(const QByteArray &json){auto settings=preferences();settings->setValue("brushes/state",json);settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存画笔设置，请检查配置目录权限"));}
+    void queueBrushPreview(const QString &id,quint64 token,qreal radius,qreal opacity,qreal spacing) {
+        m_brushQueue.removeIf([&](const QVariant &v){return v.toMap().value("id")==id;});
+        m_brushQueue.append(QVariantMap{{"id",id},{"token",token},{"radius",radius},{"opacity",opacity},{"spacing",spacing}});
+    }
     void referencePreview(quint64 id, bool add) {
         if(add) {
             if(m_previewReferences.contains(id)) ++m_previewReferences[id];
@@ -102,11 +108,14 @@ public:
         m_stopped = true; m_timer->stop();
         { QMutexLocker lock(&m_connection->mutex); m_connection->session = nullptr; m_connection->core = nullptr; }
         // Release the GUI lock before cancellation and thread joins.
+        if(m_brushSession) check(paint_session_destroy(m_core,&m_brushSession));
         if (m_session) check(paint_session_destroy(m_core, &m_session));
         if (m_core) check(paint_core_destroy(&m_core));
         emit finished();
     }
 signals:
+    void brushPreferences(QByteArray json);
+    void brushPreviewReady(QString id,quint64 token,QString image);
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
     void storageDone(bool success);
     void metadata(PaintSessionInfo info, QVariantList layers);
@@ -210,6 +219,8 @@ private:
         if ((info.publication != m_publication || info.flags != m_flags) && !publish(info)) return;
         m_flags = info.flags;
         pollPreviews(info);
+        if(info.stroke_active && !m_brushJob.isEmpty())m_brushClock.restart();
+        if(!info.stroke_active && m_previewClock.elapsed()-m_quietSince>=200) pollBrushPreview();
         if (info.completed_sequence != m_completed) {
             m_completed = info.completed_sequence; emit completed(QThread::currentThread() == thread());
         }
@@ -325,6 +336,44 @@ private:
         view.pixel_height=std::max(1u,static_cast<uint32_t>(std::round(info.height*scale)));
         if(paint_session_set_layer_preview(m_core,m_session,layerId,&view,&m_previewRequest)==PAINT_OK) m_previewLayer=layerId;
     }
+    // Preview documents run in their own Rust actor; no mutation of the user's document.
+    void pollBrushPreview() {
+        if(m_brushJob.isEmpty()) {
+            if(m_brushQueue.isEmpty())return;
+            m_brushJob=m_brushQueue.takeFirst().toMap();m_brushRequest=0;m_brushClock.restart();
+            if(!m_brushSession){auto desc=dto<PaintDocumentDesc>();desc.width=240;desc.height=60;desc.working_space=PAINT_WORKING_LINEAR_SRGB;desc.pixel_format=PAINT_STORAGE_RGBA32F_PREMULTIPLIED;if(paint_session_create(m_core,&desc,&m_brushSession)!=PAINT_OK){finishBrushPreview({});return;}}
+            auto command=dto<PaintCommand>();command.kind=PAINT_COMMAND_NEW_DOCUMENT;command.width=240;command.height=60;
+            if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}
+            command=dto<PaintCommand>();command.kind=PAINT_COMMAND_BEGIN_STROKE;command.stroke=dto<PaintStrokeDesc>();command.stroke.mode=PAINT_MODE_PAINT;
+            command.stroke.radius=static_cast<float>(std::clamp(m_brushJob.value("radius").toDouble()*.35,2.,18.));command.stroke.opacity=m_brushJob.value("opacity").toFloat();command.stroke.spacing=m_brushJob.value("spacing").toFloat();
+            for(auto &v:command.stroke.linear_rgba)v=1;
+            for(int i=0;i<=32;++i){const double t=i/32.;InputSample sample;sample.position={20+200*t,30+8*std::sin(t*6.283185307)};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;command.point=point(sample);command.kind=i==0?PAINT_COMMAND_BEGIN_STROKE:PAINT_COMMAND_STROKE_TO;if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}}
+            command=dto<PaintCommand>();command.kind=PAINT_COMMAND_END_STROKE;if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}
+            return;
+        }
+        if(m_brushClock.elapsed()>3000){finishBrushPreview({});return;}
+        auto info=dto<PaintSessionInfo>();if(paint_session_info(m_core,m_brushSession,&info)!=PAINT_OK){finishBrushPreview({});return;}
+        if(info.completed_sequence<m_brushSequence)return;
+        if(info.last_error_status!=PAINT_OK){finishBrushPreview({});return;}
+        if(!m_brushRequest){auto view=dto<PaintViewport>();view.view_id=0;view.enabled=1;view.width=240;view.height=60;view.pixel_width=240;view.pixel_height=60;view.document_generation=info.document_generation;if(paint_session_set_viewport(m_core,m_brushSession,&view,&m_brushRequest)!=PAINT_OK)finishBrushPreview({});return;}
+        auto frame=dto<PaintFrameInfo>();const auto status=paint_session_frame_info(m_core,m_brushSession,0,&frame);if(status==PAINT_BUSY)return;
+        if(status!=PAINT_OK){finishBrushPreview({});return;}
+        if(frame.request_id!=m_brushRequest || frame.document_generation!=info.document_generation || frame.revision!=info.revision)return;
+        QImage image(240,60,QImage::Format_RGBA8888_Premultiplied);auto tile=dto<PaintTile>();tile.format=PAINT_TILE_RGBA8_SRGB_PREMULTIPLIED;tile.data=image.bits();tile.capacity=image.sizeInBytes();tile.stride=image.bytesPerLine();
+        if(paint_session_read_frame(m_core,m_brushSession,0,frame.request_id,frame.frame_id,&tile)!=PAINT_OK){finishBrushPreview({});return;}
+        QByteArray png;QBuffer output(&png);output.open(QIODevice::WriteOnly);if(!image.save(&output,"PNG")){finishBrushPreview({});return;}finishBrushPreview(QStringLiteral("data:image/png;base64,")+QString::fromLatin1(png.toBase64()));
+    }
+    void finishBrushPreview(const QString &image) {
+        emit brushPreviewReady(m_brushJob.value("id").toString(),m_brushJob.value("token").toULongLong(),image);
+        if(m_brushSession){auto view=dto<PaintViewport>();view.view_id=0;uint64_t ignored=0;paint_session_set_viewport(m_core,m_brushSession,&view,&ignored);}
+        if(image.isEmpty() && m_brushSession)paint_session_destroy(m_core,&m_brushSession);
+        m_brushJob.clear();m_brushRequest=0;
+    }
+    PaintSession *m_brushSession=nullptr;
+    QVariantList m_brushQueue;
+    QVariantMap m_brushJob;
+    uint64_t m_brushSequence=0,m_brushRequest=0;
+    QElapsedTimer m_brushClock;
     QHash<quint64,QString> m_thumbnails;
     QHash<quint64,quint64> m_thumbnailRevisions;
     QHash<quint64,int> m_previewReferences;
@@ -348,9 +397,15 @@ private:
 };
 
 PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) : QObject(parent), m_connection(std::make_shared<BackendConnection>()) {
+    m_brushLibrary=new BrushLibrary(this);
     qRegisterMetaType<PaintSessionInfo>();
     qRegisterMetaType<PaintFileJobInfo>();
     m_worker = new BackendWorker(m_connection, settingsFile); m_worker->moveToThread(&m_thread);
+    connect(m_worker,&BackendWorker::brushPreferences,m_brushLibrary,[this](const QByteArray &json){if(!json.isEmpty())m_brushLibrary->restore(json);});
+    connect(m_worker,&BackendWorker::brushPreviewReady,m_brushLibrary,&BrushLibrary::acceptPreview);
+    connect(m_brushLibrary,&BrushLibrary::persistRequested,m_worker,&BackendWorker::saveBrushPreferences);
+    connect(m_brushLibrary,&BrushLibrary::previewRequested,m_worker,&BackendWorker::queueBrushPreview);
+    connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{m_radius=m_brushLibrary->radius();m_opacity=m_brushLibrary->opacity();m_spacing=m_brushLibrary->spacing();emit brushChanged();});
     connect(m_worker,&BackendWorker::storageState,this,[this](QVariantMap saved,QVariantMap active,QVariantMap info,QString message) {
         m_storageSettings=std::move(saved); m_activeStorageSettings=std::move(active);
         m_storageInfo=std::move(info); m_storageMessage=std::move(message); emit storageChanged();
@@ -451,7 +506,7 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
         command.stroke = dto<PaintStrokeDesc>(); // Layer 0 resolves active layer in execution order.
         command.stroke.mode = m_eraser || sample.tool == PAINT_TOOL_ERASER ? PAINT_MODE_ERASE : PAINT_MODE_PAINT;
         command.stroke.radius = static_cast<float>(m_radius); command.stroke.opacity = static_cast<float>(m_opacity);
-        command.stroke.spacing = .15f;
+        command.stroke.spacing = static_cast<float>(m_spacing);
         command.stroke.linear_rgba[0] = linear(m_color.redF()); command.stroke.linear_rgba[1] = linear(m_color.greenF());
         command.stroke.linear_rgba[2] = linear(m_color.blueF()); command.stroke.linear_rgba[3] = m_color.alphaF();
     }
@@ -506,8 +561,9 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
 void PaintCoreClient::showError(const QString &error) { m_error = error; emit errorChanged(); }
 void PaintCoreClient::clearError() { m_error.clear(); emit errorChanged(); }
 void PaintCoreClient::setBrushColor(const QColor &c) { if (c.isValid() && c != m_color) { m_color = c; emit brushChanged(); } }
-void PaintCoreClient::setBrushRadius(qreal r) { if (std::isfinite(r)) { m_radius = std::clamp(r, .5, 256.); emit brushChanged(); } }
-void PaintCoreClient::setBrushOpacity(qreal o) { if (std::isfinite(o)) { m_opacity = std::clamp(o, 0., 1.); emit brushChanged(); } }
+void PaintCoreClient::setBrushRadius(qreal r) {m_brushLibrary->setRadius(r);}
+void PaintCoreClient::setBrushOpacity(qreal o) {m_brushLibrary->setOpacity(o);}
+void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
 void PaintCoreClient::setEraser(bool e) { if (e != m_eraser || m_moveTool) { m_eraser = e; m_moveTool=false; emit brushChanged(); } }
 void PaintCoreClient::setMoveTool(bool enabled) { if(enabled!=m_moveTool && !m_drawing) { m_moveTool=enabled; emit brushChanged(); } }
 bool PaintCoreClient::beginStroke(const InputSample &s) {
