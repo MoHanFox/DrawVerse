@@ -92,7 +92,11 @@ void CanvasItem::fitToView() {
     if (!m_client || width() < 1 || height() < 1) return;
     const qreal margin = m_interactive ? 64 : 8;
     m_zoom = std::clamp(std::min((width() - margin) / m_client->documentWidth(), (height() - margin) / m_client->documentHeight()), .00001, 8.);
+    if(m_fitPending) m_zoom*=m_initialFitRatio;
     m_pan = {}; m_fitPending = false; emit viewChanged(); update();
+}
+void CanvasItem::setInitialFitRatio(qreal ratio) {
+    if(std::isfinite(ratio)) m_initialFitRatio=std::clamp(ratio,qreal(.1),qreal(1));
 }
 void CanvasItem::actualSize() { m_zoom = 1; m_pan = {}; emit viewChanged(); update(); }
 void CanvasItem::geometryChange(const QRectF &geometry, const QRectF &old) {

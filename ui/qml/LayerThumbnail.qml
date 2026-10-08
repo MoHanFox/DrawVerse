@@ -7,7 +7,7 @@ Rectangle {
     property var node
     property bool selected: false
     signal clicked(int modifiers)
-    width: 49; height: 34
+    width: 34; height: 24
     color: Theme.surface
     border.color: selected ? "#ffffff" : Theme.muted
     border.width: selected ? 2 : 1

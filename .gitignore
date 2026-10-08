@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 .venv/
 *.user
+/.idea/
+/cmake-build-*/
+/aqtinstall.log

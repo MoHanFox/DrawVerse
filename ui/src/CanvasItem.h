@@ -12,6 +12,7 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(qreal zoom READ zoom NOTIFY viewChanged)
     Q_PROPERTY(QRectF documentRect READ documentRect NOTIFY viewChanged)
     Q_PROPERTY(bool interactive READ interactive WRITE setInteractive NOTIFY interactiveChanged)
+    Q_PROPERTY(qreal initialFitRatio READ initialFitRatio WRITE setInitialFitRatio NOTIFY viewChanged)
 public:
     explicit CanvasItem(QQuickItem *parent = nullptr);
     ~CanvasItem() override;
@@ -21,6 +22,8 @@ public:
     QRectF documentRect() const;
     bool interactive() const { return m_interactive; }
     void setInteractive(bool enabled);
+    qreal initialFitRatio() const { return m_initialFitRatio; }
+    void setInitialFitRatio(qreal ratio);
     QPointF documentPoint(QPointF local) const;
     Q_INVOKABLE void fitToView();
     Q_INVOKABLE void actualSize();
@@ -54,6 +57,7 @@ private:
     QTimer m_viewTimer;
     QMetaObject::Connection m_dpiConnection;
     qreal m_zoom = 1;
+    qreal m_initialFitRatio = 1;
     QPointF m_pan, m_last;
     QPointF m_moveStart;
     bool m_moving = false;

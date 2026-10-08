@@ -1,4 +1,5 @@
 #include "CanvasItem.h"
+#include "ColorWheelItem.h"
 #include "WorkspaceManager.h"
 #include "PaintingBenchmark.h"
 #include <QGuiApplication>
@@ -8,6 +9,7 @@
 #include <QQuickStyle>
 #include <QTimer>
 #include <QPalette>
+#include <QIcon>
 #include <cmath>
 
 int main(int argc,char **argv) {
@@ -15,14 +17,16 @@ int main(int argc,char **argv) {
     app.setOrganizationName("DrawVerse"); app.setApplicationName("DrawVerse");
     if(app.arguments().contains("--migrate-workspace")) { WorkspaceManager workspace; workspace.saveLayout(); return 0; }
     Q_INIT_RESOURCE(ui_resources);
+    app.setWindowIcon(QIcon(":/qml/assets/logo.png"));
     QQuickStyle::setStyle("Basic");
     QPalette palette;
-    palette.setColor(QPalette::Window,QColor("#23292f")); palette.setColor(QPalette::WindowText,QColor("#e4e8ec"));
-    palette.setColor(QPalette::Base,QColor("#181c20")); palette.setColor(QPalette::Text,QColor("#e4e8ec"));
-    palette.setColor(QPalette::Button,QColor("#2d353d")); palette.setColor(QPalette::ButtonText,QColor("#e4e8ec"));
-    palette.setColor(QPalette::Highlight,QColor("#294e4b")); palette.setColor(QPalette::HighlightedText,QColor("#55cab8"));
+    palette.setColor(QPalette::Window,QColor("#1c1e21")); palette.setColor(QPalette::WindowText,QColor("#bababa"));
+    palette.setColor(QPalette::Base,QColor("#111214")); palette.setColor(QPalette::Text,QColor("#bababa"));
+    palette.setColor(QPalette::Button,QColor("#25262b")); palette.setColor(QPalette::ButtonText,QColor("#bababa"));
+    palette.setColor(QPalette::Highlight,QColor("#3b3d42")); palette.setColor(QPalette::HighlightedText,QColor("#23b5ee"));
     app.setPalette(palette);
     qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");
+    qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
     PaintCoreClient client;
     const QStringList arguments=app.arguments();
     const int previewIndex=arguments.indexOf("--preview");
@@ -37,9 +41,14 @@ int main(int argc,char **argv) {
     engine.rootContext()->setContextProperty("Workspace",&workspace);
     engine.load(QUrl("qrc:/qml/Main.qml"));
     if(engine.rootObjects().isEmpty()) return 1;
+    auto *mainWindow=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+    if(workspace.needsReferenceLayout() || !testPath.isEmpty()) {
+        workspace.applyReferenceLayout(mainWindow->x(),mainWindow->y(),mainWindow->width(),mainWindow->height());
+        client.setBrushColor(QColor("#f5e3ce"));
+        if(testPath.isEmpty())workspace.saveLayout();
+    }
     QObject::connect(&client,&PaintCoreClient::stopped,&app,&QCoreApplication::quit);
     if(!benchmarkPath.isEmpty()) {
-        workspace.resetLayout();
         startPaintingBenchmark(client,*qobject_cast<QQuickWindow*>(engine.rootObjects().first()),benchmarkPath);
     }
     if(!previewPath.isEmpty()) {

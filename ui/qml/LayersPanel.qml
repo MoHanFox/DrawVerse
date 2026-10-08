@@ -6,7 +6,7 @@ import "."
 ColumnLayout {
     id: root
     objectName: "layersPanel"
-    spacing: 5
+    spacing: 3
     property var selected: {
         const layers=PaintClient.layers
         for(let i=0;i<layers.length;i++) if(layers[i].id===PaintClient.activeLayer) return layers[i]
@@ -38,6 +38,11 @@ ColumnLayout {
         return i>=0 && i+1<siblings.length ? siblings[i+1] : null
     }
     function canClip(layer) { return layer.clipped || lowerSibling(layer)!==null }
+    function upperSibling(layer) {
+        const siblings=PaintClient.layers.filter(function(l){return !l.mask && l.parent===layer.parent})
+        const i=siblings.findIndex(function(l){return l.id===layer.id})
+        return i>0 ? siblings[i-1] : null
+    }
     property var dragHovered: null
     function dropToRoot(payload) {
         const source=Number(payload.split(":")[1])
@@ -59,16 +64,17 @@ ColumnLayout {
     TextField {
         id: search
         objectName: "layerSearch"
-        Layout.fillWidth: true; implicitHeight: 28
+        Layout.fillWidth: true; implicitHeight: 20
         placeholderText: "搜索图层名称"; placeholderTextColor: Theme.muted; selectByMouse: true
-        color: Theme.text; font.pixelSize: 11
+        color: Theme.text; font.pixelSize: 9
+        background: Rectangle {color:Theme.input;border.color:search.activeFocus?Theme.accent:Theme.line;radius:2}
     }
     RowLayout {
         Layout.fillWidth: true; spacing: 4
-        ComboBox {
+        CompactComboBox {
             id: blend
             objectName: "layerBlendMode"
-            Layout.fillWidth: true; Layout.minimumWidth: 72; implicitHeight: 28
+            Layout.fillWidth: true; Layout.minimumWidth: 48; implicitHeight: 20
             enabled: root.unlocked
             model: ["正常","溶解","变暗","正片叠底","颜色加深","线性加深","深色","变亮","滤色","颜色减淡","线性减淡（添加）","浅色","叠加","柔光","强光","亮光","线性光","点光","实色混合","差值","排除","减去","划分","色相","饱和度","颜色","明度"]
             currentIndex: root.control.blendMode
@@ -77,22 +83,22 @@ ColumnLayout {
             popup.width: Math.max(185,blend.width)
             ToolTip.visible: hovered; ToolTip.text: "图层混合模式"
         }
-        Label { text: "不透明度"; color: Theme.muted; font.pixelSize: 10 }
+        Label { text: "不透明度"; color: Theme.muted; font.pixelSize: 9 }
         LayerPercent {
-            objectName: "layerOpacity"; Layout.preferredWidth: 73
+            objectName: "layerOpacity"; Layout.preferredWidth: 52
             fraction: root.control.opacity; enabled: root.unlocked
             onCommitted: fraction => PaintClient.setLayerProperties(root.control.id,root.control.visible,fraction)
         }
     }
     RowLayout {
         Layout.fillWidth: true; spacing: 3
-        Label { text: "锁定："; color: Theme.muted; font.pixelSize: 10 }
+        Label { text: "锁定："; color: Theme.muted; font.pixelSize: 9 }
         LayerLock { objectName: "lockTransparency"; kind: 1; selected: (root.control.locks & 1)!==0; enabled: root.editable && !root.parentLocked && !root.control.group; onClicked: PaintClient.setLayerLocks(root.control.id,root.control.locks ^ 1) }
         LayerLock { objectName: "lockPosition"; kind: 2; selected: (root.control.locks & 2)!==0; enabled: root.editable && !root.parentLocked; onClicked: PaintClient.setLayerLocks(root.control.id,root.control.locks ^ 2) }
         LayerLock { objectName: "lockAll"; kind: 4; selected: (root.control.locks & 4)!==0; enabled: root.editable && !root.parentLocked; onClicked: PaintClient.setLayerLocks(root.control.id,root.control.locks ^ 4) }
         Item { Layout.fillWidth: true }
-        Label { text: "填充"; color: Theme.muted; font.pixelSize: 10 }
-        LayerPercent { objectName: "layerFill"; Layout.preferredWidth: 73; enabled: root.unlocked; fraction: root.control.fill; onCommitted: fraction => PaintClient.setLayerFill(root.control.id,fraction) }
+        Label { text: "填充"; color: Theme.muted; font.pixelSize: 9 }
+        LayerPercent { objectName: "layerFill"; Layout.preferredWidth: 52; enabled: root.unlocked; fraction: root.control.fill; onCommitted: fraction => PaintClient.setLayerFill(root.control.id,fraction) }
     }
     RowLayout {
         visible:root.selected.mask;Layout.fillWidth:true
@@ -107,7 +113,7 @@ ColumnLayout {
     ListView {
         id: layerList
         objectName: "layerList"
-        Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 1; cacheBuffer: 46
+        Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 1; cacheBuffer: 34
         model: {
             const all=PaintClient.layers.filter(function(l){return !l.mask}); const query=search.text.toLowerCase()
             if(query.length>0) return all.filter(function(layer) { return layer.name.toLowerCase().indexOf(query)>=0 })
@@ -143,7 +149,7 @@ ColumnLayout {
                     id: row
                     required property var modelData
                     objectName: "layerRow:"+modelData.id
-                    width: layerList.width; height: 46
+                    width: layerList.width; height: 34
                     property var maskNode: root.masksByOwner[modelData.id] || null
                     property bool active: PaintClient.activeLayer===modelData.id || (maskNode!==null && PaintClient.activeLayer===maskNode.id)
                     Component.onCompleted: { if(!modelData.group) PaintClient.requestLayerPreview(modelData.id) }
@@ -151,10 +157,16 @@ ColumnLayout {
                     color: active ? Theme.selected : Theme.surface
                     MouseArea {
                         objectName:"layerDragHandle:"+row.modelData.id
-                        anchors.fill:parent;property point origin
-                        onPressed:mouse=>{origin=Qt.point(mouse.x,mouse.y)}
-                        onPositionChanged:mouse=>{if(pressed && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10) PaintClient.beginLayerDrag(row.modelData.id)}
-                        onClicked:PaintClient.selectLayer(row.modelData.id)
+                        anchors.fill:parent;property point origin;property bool clippingGesture:false
+                        onPressed:mouse=>{
+                            origin=Qt.point(mouse.x,mouse.y);clippingGesture=false
+                            if(root.editable && (mouse.modifiers & Qt.AltModifier) && mouse.y<5) {
+                                const upper=root.upperSibling(row.modelData)
+                                if(upper && !(upper.effectiveLocks & 4)){clippingGesture=true;PaintClient.setLayerClipping(upper.id,!upper.clipped)}
+                            }
+                        }
+                        onPositionChanged:mouse=>{if(pressed && !clippingGesture && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10) PaintClient.beginLayerDrag(row.modelData.id)}
+                        onClicked:if(!clippingGesture)PaintClient.selectLayer(row.modelData.id)
                     }
                     MouseArea {
                         id: clippingBoundary
@@ -185,30 +197,22 @@ ColumnLayout {
                     Rectangle {width:parent.width;height:2;y:row.dropPlacement===1?0:parent.height-2;color:Theme.accent;visible:layerDrop.containsDrag && row.dropPlacement!==0}
                     Timer {interval:600;running:layerDrop.containsDrag && row.dropPlacement===0 && PaintClient.collapsedGroups.indexOf(row.modelData.id)>=0;onTriggered:PaintClient.toggleGroupExpanded(row.modelData.id)}
                     RowLayout {
-                        anchors.fill: parent; anchors.leftMargin: 3; anchors.rightMargin: 8; spacing: 8
+                        anchors.fill: parent; anchors.leftMargin: 3; anchors.rightMargin: 4; spacing: 3
                         ToolButton {
                             objectName: "layerVisibility:"+row.modelData.id
-                            implicitWidth: 25; implicitHeight: 28; enabled: root.editable
+                            implicitWidth: 20; implicitHeight: 20; enabled: root.editable
+                            padding: 2
                             onClicked: PaintClient.setLayerProperties(row.modelData.id,!row.modelData.visible,row.modelData.opacity)
                             ToolTip.visible: hovered; ToolTip.text: row.modelData.visible ? "隐藏图层" : "显示图层"
-                            contentItem: Canvas {
-                                id: eye; property bool shown: row.modelData.visible
-                                onShownChanged: requestPaint()
-                                onPaint: {
-                                    const c=getContext("2d"); c.reset(); if(!shown) return
-                                    c.translate(width/2,height/2); c.strokeStyle=Theme.text; c.fillStyle=Theme.text; c.lineWidth=1.5
-                                    c.beginPath(); c.moveTo(-9,0); c.quadraticCurveTo(0,-10,9,0); c.quadraticCurveTo(0,10,-9,0); c.stroke()
-                                    c.beginPath(); c.arc(0,0,3,0,Math.PI*2); c.fill()
-                                }
-                            }
+                            contentItem: Icon {name:"eye";visible:row.modelData.visible}
                         }
-                        Item { objectName:"layerIndent:"+row.modelData.id; Layout.preferredWidth: row.modelData.depth*16; height:34
+                        Item { objectName:"layerIndent:"+row.modelData.id; Layout.preferredWidth: row.modelData.depth*12; height:24
                             Rectangle {visible:row.modelData.depth>0;anchors.right:parent.right;width:1;height:parent.height;color:Theme.line}
                             Rectangle {visible:row.modelData.depth>0;anchors.right:parent.right;anchors.verticalCenter:parent.verticalCenter;width:8;height:1;color:Theme.line}
                         }
                         ToolButton {
                             objectName: "groupExpand:"+row.modelData.id
-                            implicitWidth: 16; implicitHeight: 28; visible: row.modelData.group
+                            implicitWidth: 16; implicitHeight: 20; visible: row.modelData.group
                             text: PaintClient.collapsedGroups.indexOf(row.modelData.id)>=0 ? "▸" : "▾"
                             onClicked: PaintClient.toggleGroupExpanded(row.modelData.id)
                             ToolTip.visible: hovered; ToolTip.text: "展开 / 折叠图层组"
@@ -245,7 +249,7 @@ ColumnLayout {
                                 else PaintClient.selectLayer(row.maskNode.id)
                             }
                         }
-                        Label { objectName:"layerName:"+row.modelData.id; text:row.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.text; font.pixelSize: 12; font.bold: row.modelData.group; font.underline:root.clippingBases[row.modelData.id]===true }
+                        Label { objectName:"layerName:"+row.modelData.id; text:row.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.text; font.pixelSize: 9; font.bold: row.modelData.group; font.underline:root.clippingBases[row.modelData.id]===true }
                         LayerLock { kind: (row.modelData.effectiveLocks & 4) ? 4 : (row.modelData.effectiveLocks & 2) ? 2 : 1; passiveIcon: true; selected: true; visible: row.modelData.effectiveLocks!==0; enabled: false; implicitWidth: 18; implicitHeight: 18 }
                     }
                 }
@@ -255,19 +259,19 @@ ColumnLayout {
         onTriggered:{const row=root.dragHovered;if(!row)return;const p=row.mapToItem(layerList,row.dropPoint.x,row.dropPoint.y);const delta=p.y<20?-16:p.y>layerList.height-20?16:0;if(delta)layerList.contentY=Math.max(0,Math.min(Math.max(0,layerList.contentHeight-layerList.height),layerList.contentY+delta))}
     }
     DropArea {
-        objectName:"layerRootDrop";Layout.fillWidth:true;Layout.preferredHeight:18
+        objectName:"layerRootDrop";Layout.fillWidth:true;Layout.preferredHeight:10
         keys:["application/x-drawverse-layer"];enabled:root.editable
         Rectangle {anchors.fill:parent;color:parent.containsDrag?Theme.selected:"transparent";border.color:parent.containsDrag?Theme.accent:"transparent"}
         Label {anchors.centerIn:parent;text:parent.containsDrag?"移出到顶层底部":"";color:Theme.text;font.pixelSize:10}
         onDropped:d=>{if(root.dropToRoot(d.getDataAsString("application/x-drawverse-layer")))d.acceptProposedAction()}
     }
     RowLayout {
-        Label { text: PaintClient.layers.filter(function(l){return !l.mask}).length+" 图层"; font.pixelSize: 10; color: Theme.muted; Layout.fillWidth: true }
-        Button { objectName:"addLayerMask";text:"蒙版";implicitHeight:28;implicitWidth:42;enabled:root.unlocked && !root.selected.mask && !PaintClient.layers.some(function(l){return l.mask && l.parent===root.selected.id});onClicked:PaintClient.addMask(root.selected.id);ToolTip.visible:hovered;ToolTip.text:"添加白色蒙版（黑隐藏，白显示）" }
-        Button { objectName: "groupLayer"; text: "分组"; implicitHeight: 28; implicitWidth: 46; enabled: root.unlocked && !root.selected.mask; onClicked: PaintClient.groupLayer(root.selected.id,"组 "+(PaintClient.layers.filter(function(layer) { return layer.group }).length+1)); ToolTip.visible: hovered; ToolTip.text: "将所选图层或组放入新组（隔离合成）" }
-        Button { objectName: "layerGroupMenu"; text: "⋯"; implicitWidth: 28; implicitHeight: 28; enabled: root.unlocked; onClicked: groupMenu.popup() }
-        Button { text: "+"; implicitWidth: 35; implicitHeight: 28; enabled: root.editable; objectName:"addDefaultLayer";onClicked: PaintClient.addDefaultLayer(); ToolTip.visible: hovered; ToolTip.text: "新建图层" }
-        Button { objectName: "deleteLayer"; text: "删除"; implicitHeight: 28; enabled: root.unlocked && PaintClient.layers.length>1; onClicked: PaintClient.removeLayer(root.selected.id) }
+        Label { text: PaintClient.layers.filter(function(l){return !l.mask}).length+" 图层"; font.pixelSize: 9; color: Theme.muted; Layout.fillWidth: true }
+        IconButton { objectName:"addLayerMask";glyph:"mask";tooltip:"添加白色蒙版";implicitHeight:28;implicitWidth:28;enabled:root.unlocked && !root.selected.mask && !PaintClient.layers.some(function(l){return l.mask && l.parent===root.selected.id});onClicked:PaintClient.addMask(root.selected.id);ToolTip.visible:hovered;ToolTip.text:"添加白色蒙版（黑隐藏，白显示）" }
+        IconButton { objectName: "groupLayer"; glyph: "folder"; tooltip: "新建图层组"; implicitHeight: 20; implicitWidth: 28; enabled: root.unlocked && !root.selected.mask; onClicked: PaintClient.groupLayer(root.selected.id,"组 "+(PaintClient.layers.filter(function(layer) { return layer.group }).length+1)); ToolTip.visible: hovered; ToolTip.text: "将所选图层或组放入新组（隔离合成）" }
+        IconButton { objectName: "layerGroupMenu"; glyph: "menu"; tooltip: "图层菜单"; implicitWidth: 28; implicitHeight: 20; enabled: root.unlocked; onClicked: groupMenu.popup() }
+        IconButton { glyph: "plus"; tooltip: "新建图层"; implicitWidth: 28; implicitHeight: 20; enabled: root.editable; objectName:"addDefaultLayer";onClicked: PaintClient.addDefaultLayer(); ToolTip.visible: hovered; ToolTip.text: "新建图层" }
+        IconButton { objectName: "deleteLayer"; glyph: "trash"; tooltip: "删除图层"; implicitHeight: 20; enabled: root.unlocked && PaintClient.layers.length>1; onClicked: PaintClient.removeLayer(root.selected.id) }
     }
     Menu {
         id: groupMenu

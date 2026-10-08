@@ -8,13 +8,13 @@ ToolButton {
     property bool selected: false
     property bool passiveIcon: false
     padding: passiveIcon ? 1 : 3
-    implicitWidth: 25; implicitHeight: 26
+    implicitWidth: 19; implicitHeight: 20
     ToolTip.visible: hovered
     ToolTip.text: kind===1 ? "锁定透明像素" : kind===2 ? "锁定位置" : "全部锁定"
     background: Rectangle { radius: 3; color: root.passiveIcon ? "transparent" : root.selected ? Theme.selected : root.hovered ? Theme.raised : "transparent"; border.color: !root.passiveIcon && root.selected ? Theme.accent : "transparent" }
     contentItem: Canvas {
         id: icon
-        implicitWidth: 18; implicitHeight: 18
+        implicitWidth: 14; implicitHeight: 14
         Connections { target: root; function onSelectedChanged() { icon.requestPaint() } function onEnabledChanged() { icon.requestPaint() } function onKindChanged() { icon.requestPaint() } }
         onPaint: {
             const c=getContext("2d"); c.reset()

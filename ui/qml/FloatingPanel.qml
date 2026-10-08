@@ -6,8 +6,12 @@ ApplicationWindow {
     id: root
     required property var groupData
     property var canvasView
+    property int expandedHeight: groupData.height
     visible: true
-    title: "DrawVerse · "+Workspace.panelDefinition(groupData.active).title
+    flags: Qt.Tool | Qt.FramelessWindowHint
+    font.family: Qt.platform.os==="windows" ? "Microsoft YaHei UI" : "sans-serif"
+    font.pixelSize: 10
+    title: "DrawVerse · "+Workspace.panelDefinition(panelGroup.selected).title
     color: Theme.background
     palette.window: Theme.surface
     palette.windowText: Theme.text
@@ -18,9 +22,22 @@ ApplicationWindow {
     palette.highlight: Theme.selected
     palette.highlightedText: Theme.accent
     x: groupData.x; y: groupData.y; width: groupData.width; height: groupData.height
-    minimumWidth: 240; minimumHeight: Math.max(200,panelGroup.minimumPanelHeight+12)
-    PanelGroup { id:panelGroup;anchors.fill: parent; anchors.margins: 6; groupData: root.groupData; canvasView: root.canvasView }
-    function remember() { if (visible) Workspace.updateGeometry(groupData.id,x,y,width,height) }
+    minimumWidth: 150; minimumHeight: panelGroup.minimumPanelHeight+4
+    PanelGroup { id:panelGroup;anchors.fill: parent; anchors.margins: 2; groupData: root.groupData; canvasView: root.canvasView }
+    Connections {
+        target: panelGroup
+        function onCollapsedChanged() {
+            if(panelGroup.collapsed) root.expandedHeight=root.height
+            Qt.callLater(() => { root.height=panelGroup.collapsed ? panelGroup.minimumPanelHeight+4 : root.expandedHeight })
+        }
+    }
+    ResizeFrame {targetWindow:root}
+    Component.onCompleted: if(panelGroup.collapsed) height=panelGroup.minimumPanelHeight+4
+    function updateLayout(data) {
+        groupData=data; x=data.x; y=data.y; width=data.width; expandedHeight=data.height
+        height=panelGroup.collapsed ? panelGroup.minimumPanelHeight+4 : data.height
+    }
+    function remember() { if (visible) Workspace.updateGeometry(groupData.id,x,y,width,panelGroup.collapsed ? expandedHeight : height) }
     onXChanged: remember()
     onYChanged: remember()
     onWidthChanged: remember()

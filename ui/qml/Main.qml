@@ -10,11 +10,16 @@ ApplicationWindow {
     id: root
     objectName: "mainWindow"
     visible: true
-    width: 1480; height: 940; minimumWidth: 980; minimumHeight: 660
+    flags: Qt.Window | Qt.FramelessWindowHint
+    width: 1480; height: 780; minimumWidth: 980; minimumHeight: 640
+    x: Screen.virtualX+Math.max(16,(Screen.width-width)/2)
+    y: Screen.virtualY+Math.max(16,(Screen.height-height)/3)
     title: "DrawVerse · "+PaintClient.documentName+(PaintClient.modified ? " *" : "")
-    color: Theme.background
+    color: "transparent"
+    readonly property int cornerRadius: visibility===Window.Maximized ? 0 : Theme.windowRadius
+    background: Rectangle {color:Theme.background;radius:root.cornerRadius}
     font.family: Qt.platform.os === "windows" ? "Microsoft YaHei UI" : "sans-serif"
-    font.pixelSize: 12
+    font.pixelSize: 10
     palette.window: Theme.surface
     palette.windowText: Theme.text
     palette.base: Theme.background
@@ -28,6 +33,28 @@ ApplicationWindow {
     property url pendingOpen: ""
     property bool savingBeforeAction: false
     property string fileNotice: ""
+    property var floatingWindows: ({})
+    property var toolsWindow: null
+    function syncTools() {
+        if(Workspace.toolsFloating && !toolsWindow) toolsWindow=toolsFactory.createObject(root,{canvasView:canvas})
+        else if(!Workspace.toolsFloating && toolsWindow) {toolsWindow.visible=false;toolsWindow.destroy();toolsWindow=null}
+    }
+    function syncFloating() {
+        const groups=Workspace.floatingGroups, live={}
+        for(let i=0;i<groups.length;i++) {
+            const g=groups[i]; live[g.id]=true
+            if(floatingWindows[g.id]) floatingWindows[g.id].updateLayout(g)
+            else floatingWindows[g.id]=floatingFactory.createObject(root,{groupData:g})
+        }
+        for(const id in floatingWindows) if(!live[id]) {
+            floatingWindows[id].visible=false; floatingWindows[id].destroy(); delete floatingWindows[id]
+        }
+    }
+    Component.onCompleted: {syncFloating();syncTools()}
+    Connections {target:Workspace;function onToolStripChanged(){root.syncTools()}}
+    Component {id:toolsFactory;ToolStripWindow {}}
+    Connections { target: Workspace; function onGroupsChanged() { root.syncFloating() } }
+    Component { id: floatingFactory; FloatingPanel { canvasView: canvas } }
     function executePending() {
         const action = pendingAction
         pendingAction = ""; savingBeforeAction = false
@@ -54,8 +81,34 @@ ApplicationWindow {
         if (PaintClient.fileBusy) busyCloseDialog.open()
         else requestAction("close")
     }
+    ResizeFrame {targetWindow:root}
     StoragePreferences { id: storagePreferences; objectName: "storagePreferences" }
     menuBar: MenuBar {
+        implicitHeight: 28; leftPadding: 30; rightPadding: 100
+        background: Rectangle {
+            color: Theme.strip
+            radius: root.cornerRadius
+            Rectangle {anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:parent.height/2;color:parent.color}
+            MouseArea {
+                anchors.fill: parent
+                onPressed: root.startSystemMove()
+                onDoubleClicked: {if(root.visibility===Window.Maximized)root.showNormal();else root.showMaximized()}
+            }
+            Row {
+                anchors.right: parent.right; height: parent.height
+                IconButton { objectName:"windowMinimize";width:32;height:28;padding:10;glyph:"minimize";tooltip:"最小化";onClicked:root.showMinimized() }
+                IconButton { objectName:"windowMaximize";width:32;height:28;padding:10;glyph:root.visibility===Window.Maximized?"restore":"maximize";tooltip:"最大化 / 还原";onClicked:{if(root.visibility===Window.Maximized)root.showNormal();else root.showMaximized()} }
+                IconButton { objectName:"windowClose";width:32;height:28;padding:10;glyph:"close";tooltip:"关闭";onClicked:root.close() }
+            }
+            Image { objectName: "applicationLogo"; x: 8; y: 5; width: 18; height: 18; source: "assets/logo.png"; fillMode: Image.PreserveAspectFit; mipmap: true }
+        }
+        delegate: MenuBarItem {
+            id: menuEntry
+            implicitHeight: 28; implicitWidth:contentItem.implicitWidth+16
+            leftPadding:8;rightPadding:8;font.pixelSize:9
+            contentItem: Text { text: menuEntry.text; font: menuEntry.font; color: menuEntry.highlighted ? "#eeeeee" : Theme.text; verticalAlignment: Text.AlignVCenter }
+            background: Rectangle { color: menuEntry.highlighted ? Theme.hover : "transparent" }
+        }
         Menu {
             title: "文件"
             Action { text: "新建画布…"; shortcut: StandardKey.New; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: newDialog.open() }
@@ -79,33 +132,58 @@ ApplicationWindow {
             Action { text: "实际像素"; onTriggered: canvas.actualSize() }
         }
         Menu {
+            id: windowMenu
+            title: "窗口"
+            Action {text:"工具条归位";enabled:Workspace.toolsFloating;onTriggered:Workspace.dockToolStrip("drawverse-tools-v1")}
+            MenuSeparator {}
+            Instantiator {
+                model: Workspace.allPanels
+                delegate: MenuItem {
+                    required property string modelData
+                    objectName: "windowPanel:"+modelData
+                    text: Workspace.panelDefinition(modelData).title
+                    checkable: true; checked: Workspace.visiblePanels.indexOf(modelData)>=0
+                    onTriggered: {
+                        if(checked) Workspace.showPanel(modelData)
+                        else {
+                            const groups=Workspace.leftGroups.concat(Workspace.rightGroups,Workspace.floatingGroups)
+                            for(let i=0;i<groups.length;i++) if(groups[i].panels.indexOf(modelData)>=0) { Workspace.hidePanel(groups[i].id,modelData); break }
+                        }
+                    }
+                }
+                onObjectAdded: (index,object) => windowMenu.insertItem(index,object)
+                onObjectRemoved: (index,object) => windowMenu.removeItem(object)
+            }
+        }
+        Menu {
             title: "工作区"
             Action { text: "自定义面板…"; onTriggered: panelDialog.open() }
             Action { text: "保存当前布局"; onTriggered: Workspace.saveLayout() }
-            Action { text: "恢复默认布局"; onTriggered: Workspace.resetLayout() }
+            Action { text: "参考图布局"; onTriggered: Workspace.applyReferenceLayout(root.x,root.y,root.width,root.height) }
+            Action { text: "双列停靠布局"; onTriggered: Workspace.resetLayout() }
         }
     }
     header: Rectangle {
-        height: 64; color: Theme.surface
+        objectName: "brushOptionsBar"
+        height: 28; color: Theme.raised
         RowLayout {
-            anchors.fill: parent; anchors.leftMargin: 20; anchors.rightMargin: 20; spacing: 18
-            Row {
-                spacing: 3
-                Label { text: "DRAW"; color: Theme.text; font.pixelSize: 18; font.weight: Font.DemiBold; font.letterSpacing: 2 }
-                Label { text: "VERSE"; color: Theme.accent; font.pixelSize: 18; font.weight: Font.Light; font.letterSpacing: 2 }
-            }
-            Rectangle { width: 1; height: 28; color: Theme.line }
-            Label { text: PaintClient.moveTool ? "移动图层" : PaintClient.eraser ? "橡皮擦" : "压感圆笔"; color: Theme.text }
+            anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
+            Icon { name: PaintClient.moveTool ? "move" : PaintClient.eraser ? "eraser" : "brush"; Layout.preferredWidth: 17; Layout.preferredHeight: 17 }
+            Label { text: PaintClient.moveTool ? "移动图层" : PaintClient.eraser ? "橡皮擦" : "画笔"; color: Theme.text; Layout.preferredWidth: 42 }
+            Rectangle { width: 1; height: 22; color: Theme.line }
             Label { text: "半径"; color: Theme.muted }
-            SpinBox { from: 1; to: 256; value: Math.round(PaintClient.brushRadius); editable: true; implicitWidth: 105; onValueModified: PaintClient.brushRadius=value }
+            CompactSpinBox { objectName: "brushRadius"; from: 1; to: 256; value: Math.round(PaintClient.brushRadius); editable: true; implicitWidth: 76; implicitHeight: 20; onValueModified: PaintClient.brushRadius=value }
+            Label { text: "px"; color: Theme.muted }
             Label { text: "不透明度"; color: Theme.muted }
-            Slider { from: .01; to: 1; value: PaintClient.brushOpacity; Layout.preferredWidth: 115; onMoved: PaintClient.brushOpacity=value }
-            Label { text: Math.round(PaintClient.brushOpacity*100)+"%"; color: Theme.muted; Layout.preferredWidth: 36 }
-            Rectangle { width: 28; height: 28; radius: 6; color: PaintClient.brushColor; border.color: Theme.muted }
+            CompactSlider { from: .01; to: 1; value: PaintClient.brushOpacity; Layout.preferredWidth: 95; onMoved: PaintClient.brushOpacity=value }
+            Label { text: Math.round(PaintClient.brushOpacity*100)+"%"; color: Theme.text; Layout.preferredWidth: 36 }
+            Rectangle { width: 16; height: 16; color: PaintClient.brushColor; border.color: Theme.muted }
+            Label { text: "压感"; color: Theme.muted }
             Item { Layout.fillWidth: true }
-            Button { text: "+ 自定义面板"; onClicked: panelDialog.open() }
+            IconButton { glyph: "settings"; tooltip: "性能与暂存盘"; onClicked: storagePreferences.open() }
+            IconButton { glyph: "plus"; tooltip: "创建自定义面板"; onClicked: panelDialog.open() }
         }
-        Rectangle { anchors.bottom: parent.bottom; height: 1; width: parent.width; color: Theme.line }
+        Rectangle { anchors.bottom: parent.bottom; height: 1; width: parent.width; color: Theme.panelBar }
     }
     ColumnLayout {
         anchors.fill: parent; spacing: 0
@@ -119,99 +197,65 @@ ApplicationWindow {
         }
         RowLayout {
             Layout.fillWidth: true; Layout.fillHeight: true; spacing: 0
-            Rectangle {
-                Layout.fillHeight: true; Layout.preferredWidth: 62; color: Theme.surface
-                Column {
-                    anchors.horizontalCenter: parent.horizontalCenter; anchors.top: parent.top; anchors.topMargin: 18; spacing: 10
-                    ToolButton { objectName: "moveLayerTool"; width: 44; height: 44; text: "✥"; font.pixelSize: 26; checkable: true; checked: PaintClient.moveTool; onClicked: PaintClient.moveTool=true; ToolTip.visible: hovered; ToolTip.text: "移动图层 V（松开提交；方向键 1px / Shift 10px）" }
-                    ToolButton { width: 44; height: 44; text: "✎"; font.pixelSize: 26; checkable: true; checked: !PaintClient.eraser && !PaintClient.moveTool; onClicked: PaintClient.eraser=false; ToolTip.visible: hovered; ToolTip.text: "画笔 B" }
-                    ToolButton { width: 44; height: 44; text: "▱"; font.pixelSize: 26; checkable: true; checked: PaintClient.eraser && !PaintClient.moveTool; onClicked: PaintClient.eraser=true; ToolTip.visible: hovered; ToolTip.text: "橡皮擦 E" }
-                    Rectangle { width: 28; height: 1; color: Theme.line; anchors.horizontalCenter: parent.horizontalCenter }
-                    ToolButton { width: 44; height: 40; text: "↶"; font.pixelSize: 22; enabled: PaintClient.undoDepth>0 && !PaintClient.drawing; onClicked: PaintClient.undo(); ToolTip.visible: hovered; ToolTip.text: "撤销" }
-                    ToolButton { width: 44; height: 40; text: "↷"; font.pixelSize: 22; enabled: PaintClient.redoDepth>0 && !PaintClient.drawing; onClicked: PaintClient.redo() }
-                }
-                Column {
-                    anchors.bottom: parent.bottom; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottomMargin: 24; spacing: 5
-                    Rectangle { width: 32; height: 32; radius: 6; color: PaintClient.brushColor; border.color: Theme.muted }
-                    Text { text: "B / E"; color: Theme.muted; font.pixelSize: 10 }
-                }
-            }
+            ToolStrip {Layout.fillHeight:true;Layout.preferredWidth:36;visible:!Workspace.toolsFloating;canvasView:canvas}
             SplitView {
                 Layout.fillWidth: true; Layout.fillHeight: true; orientation: Qt.Horizontal
-                handle: Rectangle { implicitWidth: 6; color: SplitHandle.pressed ? Theme.accent : Theme.background }
-                Rectangle {
-                    id: leftDock
-                    SplitView.preferredWidth: Workspace.leftGroups.length>0 ? 270 : 18
-                    SplitView.minimumWidth: Workspace.leftGroups.length>0 ? 240 : 18
-                    SplitView.maximumWidth: Workspace.leftGroups.length>0 ? 520 : 18
-                    color: leftDrop.containsDrag ? Theme.selected : Theme.background
-                    DropArea {
-                        id: leftDrop; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
-                        width: Workspace.leftGroups.length>0 ? 4 : parent.width
-                        keys: ["application/x-drawverse-panel"]
-                        onDropped: d => { if(Workspace.dockPayload(d.getDataAsString("application/x-drawverse-panel"),"left")) d.acceptProposedAction() }
-                    }
-                    SplitView {
-                        anchors.fill: parent; anchors.margins: 4; orientation: Qt.Vertical
-                        Repeater {
-                            model: Workspace.leftGroups
-                            PanelGroup { required property var modelData; groupData: modelData; canvasView: canvas; SplitView.fillHeight: true; SplitView.minimumHeight: minimumPanelHeight }
-                        }
-                    }
+                handle: Rectangle { implicitWidth: 4; color: SplitHandle.hovered || SplitHandle.pressed ? Theme.accent : Theme.panelBar }
+                DockColumn {
+                    side: "left"; groups: Workspace.leftGroups; canvasView: canvas
+                    SplitView.preferredWidth: implicitWidth
+                    SplitView.minimumWidth: empty ? 6 : collapsed ? 28 : 150
+                    SplitView.maximumWidth: empty ? 6 : collapsed ? 28 : 520
                 }
                 ColumnLayout {
                     SplitView.fillWidth: true; SplitView.minimumWidth: 400; spacing: 0
                     Rectangle {
-                        Layout.fillWidth: true; height: 42; color: Theme.surface
-                        RowLayout {
-                            anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16
-                            Rectangle { width: 6; height: 6; radius: 3; color: PaintClient.modified ? Theme.accent : Theme.muted }
-                            Label { text: PaintClient.documentName+(PaintClient.modified ? " *" : ""); color: Theme.text }
-                            Label { text: " / "+PaintClient.documentWidth+" × "+PaintClient.documentHeight; color: Theme.muted; font.pixelSize: 11 }
-                            Item { Layout.fillWidth: true }
-                            Label { text: "线性 sRGB  ·  32F"; color: Theme.muted; font.pixelSize: 10 }
+                        Layout.fillWidth: true; height: 22; color: Theme.strip
+                        Rectangle {
+                            objectName:"documentTab";x:6;y:2;width:Math.min(parent.width-35,documentTitle.implicitWidth+24);height:parent.height-2
+                            color:Theme.background;radius:Theme.documentTabRadius
+                            Rectangle {anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:parent.radius;color:parent.color}
+                            Label {id:documentTitle;anchors.centerIn:parent;font.pixelSize:9;text:PaintClient.documentName+(PaintClient.modified?" *":"")+"  @ "+Math.round(canvas.zoom*100)+"% · "+PaintClient.documentWidth+" × "+PaintClient.documentHeight;color:Theme.text}
                         }
+                        IconButton {anchors.right:parent.right;width:24;height:22;padding:4;glyph:"plus";tooltip:"新建画布";onClicked:newDialog.open()}
                     }
                     Rectangle {
-                        Layout.fillWidth: true; Layout.fillHeight: true; color: "#15191d"; clip: true
-                        Rectangle { x: canvas.documentRect.x+8; y: canvas.documentRect.y+10; width: canvas.documentRect.width; height: canvas.documentRect.height; color: "#0e1114" }
+                        Layout.fillWidth: true; Layout.fillHeight: true; color: Theme.background; clip: true
+                        Rectangle { x: canvas.documentRect.x+8; y: canvas.documentRect.y+10; width: canvas.documentRect.width; height: canvas.documentRect.height; color: "#0c0d0f" }
                         TransparencyGrid { objectName: "canvasTransparency"; x: canvas.documentRect.x; y: canvas.documentRect.y; width: canvas.documentRect.width; height: canvas.documentRect.height }
-                        PaintCanvas { id: canvas; objectName: "mainCanvas"; anchors.fill: parent; client: PaintClient; focus: true; enabled: !root.savingBeforeAction && !closeDialog.opened }
-                        Label { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 14; text: PaintClient.moveTool ? "拖动松开移动图层  ·  方向键 1 px / Shift 10 px  ·  Esc 取消" : "空格 / 中键平移    ·    滚轮缩放    ·    F 适合窗口"; color: Theme.muted; font.pixelSize: 10 }
+                        PaintCanvas { id: canvas; initialFitRatio: .76; objectName: "mainCanvas"; anchors.fill: parent; client: PaintClient; focus: true; enabled: !root.savingBeforeAction && !closeDialog.opened }
                         BusyIndicator { objectName: "canvasBusy"; anchors.centerIn: parent; running: !PaintClient.ready; visible: running }
                     }
                 }
-                Rectangle {
-                    SplitView.preferredWidth: 305; SplitView.minimumWidth: 260; SplitView.maximumWidth: 520
-                    color: rightDrop.containsDrag ? Theme.selected : Theme.background
-                    DropArea {
-                        id: rightDrop; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 8
-                        keys: ["application/x-drawverse-panel"]
-                        onDropped: d => { if (Workspace.dockPayload(d.getDataAsString("application/x-drawverse-panel"),"right")) d.acceptProposedAction() }
-                    }
-                    SplitView {
-                        anchors.fill: parent; anchors.margins: 8; orientation: Qt.Vertical
-                        handle: Rectangle { implicitHeight: 8; color: SplitHandle.pressed ? Theme.accent : Theme.background }
-                        Repeater {
-                            model: Workspace.rightGroups
-                            PanelGroup { required property var modelData; groupData: modelData; canvasView: canvas; SplitView.fillHeight: true; SplitView.minimumHeight: minimumPanelHeight }
-                        }
-                    }
+                DockColumn {
+                    side: "right"; groups: Workspace.rightGroups; canvasView: canvas
+                    SplitView.preferredWidth: implicitWidth
+                    SplitView.minimumWidth: empty ? 6 : collapsed ? 28 : 190
+                    SplitView.maximumWidth: empty ? 6 : collapsed ? 28 : 520
                 }
             }
         }
         Rectangle {
-            Layout.fillWidth: true; height: 30; color: Theme.surface
+            Layout.fillWidth: true; height: 22; color: Theme.strip;radius:root.cornerRadius
+            Rectangle {anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;height:parent.height/2;color:parent.color}
             RowLayout {
                 anchors.fill: parent; anchors.leftMargin: 18; anchors.rightMargin: 18
                 Label { text: PaintClient.closing ? "正在关闭核心…" : PaintClient.fileBusy ? "正在读写文件…" : PaintClient.drawing ? "绘画中" : root.fileNotice.length ? root.fileNotice : "就绪"; color: Theme.accent; font.pixelSize: 10 }
                 ToolButton { text: "取消文件任务"; visible: PaintClient.fileBusy; onClicked: PaintClient.cancelFile() }
-                Label { text: "  ·  Rust CPU 视口 / Qt Quick 显示"; color: Theme.muted; font.pixelSize: 10 }
+                Label { text: "  "+PaintClient.documentWidth+" × "+PaintClient.documentHeight+" px  ·  sRGB / 32F"; color: Theme.muted; font.pixelSize: 10 }
                 Item { Layout.fillWidth: true }
-                Label { text: "拖动面板标签组合 · 双击浮动 · 拖动顶部圆点移动整组"; color: Theme.muted; font.pixelSize: 10 }
+                Label { text: "空格平移  ·  滚轮缩放"; color: Theme.muted; font.pixelSize: 10 }
                 Label { text: "   "+Math.round(canvas.zoom*100)+"%"; color: Theme.text; font.pixelSize: 10 }
             }
         }
+    }
+    DropArea {
+        objectName:"toolStripDockTarget";x:0;y:0;width:Workspace.toolsFloating?28:36;height:root.contentItem.height-22
+        keys:["application/x-drawverse-tool-strip"]
+        onEntered:drag=>{drag.accepted=!Workspace.dockingSuppressed}
+        onPositionChanged:drag=>{drag.accepted=!Workspace.dockingSuppressed}
+        onDropped:drop=>{if(!Workspace.dockingSuppressed && Workspace.dockToolStrip(drop.getDataAsString("application/x-drawverse-tool-strip")))drop.acceptProposedAction()}
+        Rectangle {anchors.fill:parent;color:"#3023b5ee";border.color:Theme.accent;border.width:2;visible:parent.containsDrag && !Workspace.dockingSuppressed}
     }
     Shortcut { sequence: "V"; enabled: canvas.activeFocus; onActivated: PaintClient.moveTool=true }
     Shortcut { sequence: "B"; enabled: canvas.activeFocus; onActivated: PaintClient.eraser=false }
@@ -219,10 +263,6 @@ ApplicationWindow {
     Shortcut { sequence: "F"; enabled: canvas.activeFocus; onActivated: canvas.fitToView() }
     Shortcut { sequence: "Esc"; enabled: PaintClient.drawing; onActivated: PaintClient.cancelStroke() }
     Shortcut { sequence: Qt.platform.os === "osx" ? "Meta+Alt+G" : "Ctrl+Alt+G"; context:Qt.ApplicationShortcut; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy; onActivated: PaintClient.toggleActiveClipping() }
-    Instantiator {
-        model: Workspace.floatingGroups
-        delegate: FloatingPanel { required property var modelData; groupData: modelData; canvasView: canvas }
-    }
     Dialog {
         id: newDialog
         title: "新建画布"; modal: true; anchors.centerIn: parent; width: 390
@@ -231,8 +271,8 @@ ApplicationWindow {
         ColumnLayout {
             width: parent.width; spacing: 14
             Label { text: "新建前可保存当前绘画。大画布按需分配瓦片。"; wrapMode: Text.WordWrap; Layout.fillWidth: true; color: Theme.muted }
-            RowLayout { Label { text: "宽度" } SpinBox { id: newWidth; from: 1; to: 1000000; value: 960; editable: true } }
-            RowLayout { Label { text: "高度" } SpinBox { id: newHeight; from: 1; to: 1000000; value: 640; editable: true } }
+            RowLayout { Label { text: "宽度" } CompactSpinBox { id: newWidth; from: 1; to: 1000000; value: 960; editable: true } }
+            RowLayout { Label { text: "高度" } CompactSpinBox { id: newHeight; from: 1; to: 1000000; value: 640; editable: true } }
             CheckBox {id:transparentBackground;objectName:"transparentBackground";text:"透明背景";checked:false}
             Label { text: "默认白色背景 · 线性 sRGB · RGBA 32F"; color: Theme.muted; font.pixelSize: 11 }
         }
@@ -245,7 +285,7 @@ ApplicationWindow {
         ColumnLayout {
             width: parent.width; spacing: 12
             TextField { id: panelName; placeholderText: "面板名称"; text: "自定义色板"; maximumLength: 80; Layout.fillWidth: true }
-            ComboBox { id: panelKind; model: ["色板","画笔参数"]; Layout.fillWidth: true }
+            CompactComboBox { id: panelKind; model: ["色板","画笔参数"]; Layout.fillWidth: true }
             Label { text: "可自由组合、浮动为独立窗口，随工作区保存。"; wrapMode: Text.WordWrap; Layout.fillWidth: true; color: Theme.muted }
         }
     }
