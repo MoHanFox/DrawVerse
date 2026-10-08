@@ -5,6 +5,7 @@ Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘
 已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.8.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
 
 - [架构与工作区设计](docs/architecture.md) / [模块状态](docs/roadmap.md)
+- [跨平台检出和构建一致性](docs/build-reproducibility.md)
 - [FFI 方案](docs/ffi-design.md) / [正式契约](contracts/abi.md) / [生成头](ui/include/paint_api.h)
 - [最新 FFI 验证](docs/ffi-validation.md) / [首轮内核历史验证](docs/validation.md)
 - [QML UI 设计](docs/qml-ui-design.md) / [UI 验证与启动说明](docs/qml-ui-validation.md)
@@ -46,7 +47,7 @@ QML 新建每边支持 1–1,000,000 像素，只为可见区域和导航分配�
 
 ## 环境
 
-Rust >=1.85（rustfmt、clippy），CMake >=3.24，Python >=3.9（标准库验证脚本），C11/C++20 编译器及平台链接工具。首次生成器编译需下载锁定 crates，不需要全局安装 cbindgen。
+Git（检出规则测试）、Rust >=1.85（rustfmt、clippy），CMake >=3.24，Python >=3.9（标准库验证脚本），C11/C++20 编译器及平台链接工具。首次生成器编译需下载锁定 crates，不需要全局安装 cbindgen。
 
 UI 需要 Qt >=6.5 的 Core/Gui/Qml/Quick/QuickControls2/Test。本机实测 Qt 6.8.3 MSVC x64。Windows 可运行 `powershell -ExecutionPolicy Bypass -File tools/setup-qt.ps1` 安装项目内 SDK（Python >=3.10），不会改全局环境；也可指定已有 SDK。其他平台使用原生 Qt SDK。
 

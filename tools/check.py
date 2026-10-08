@@ -19,6 +19,11 @@ def main() -> int:
         print("Cargo not found. Activate Rust + platform linker, or pass --cargo PATH.", file=sys.stderr)
         return 2
     root = Path(__file__).resolve().parents[1]
+    print("+ Python tooling checkout tests", flush=True)
+    tooling = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests/tooling"],
+                             cwd=root, check=False)
+    if tooling.returncode:
+        return tooling.returncode
     cmake = shutil.which(args.cmake)
     if cmake is None:
         print("CMake not found; native C11/C++20 ABI checks cannot run.", file=sys.stderr)

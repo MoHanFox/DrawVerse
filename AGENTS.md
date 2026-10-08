@@ -3,6 +3,7 @@
 跨平台绘画应用：Rust 内核 → 稳定 C ABI → C++20 / Qt 6.5+ UI；Python 插件最后实施。
 
 - 当前阶段与验证命令：`README.md`、`docs/roadmap.md`。
+- 检出/构建规则：`.gitattributes` / `docs/build-reproducibility.md`；文本 LF，生成头严格字节检查，每个工作树独立 Cargo target，tools/check.py 包含真实 Git 检出测试。
 - 架构、UI 停靠与兼容性：`docs/architecture.md`。
 - 正式 C ABI：`core/crates/paint-ffi/src/api.rs` / `ui/include/paint_api.h`；契约在 `contracts/abi.md`。
 - `contracts/paint-api-v1.draft.h` 仅为历史设计；FFI 方案/验收在 `docs/ffi-design.md`。
