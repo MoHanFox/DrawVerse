@@ -117,14 +117,15 @@ Rectangle {
                 id: panelMenuButton; objectName: "panelMenu:"+root.groupData.id
                 anchors.right: parent.right; width: 22; height: 20; padding: 6
                 glyph: "menu"; tooltip: "面板菜单"; onClicked: panelMenu.popup()
-                Menu {
+                GlassMenu {
                     id: panelMenu
-                    MenuItem { text: "浮动当前面板"; onTriggered: Qt.callLater(() => Workspace.detachPanel(root.groupData.id,root.selected)) }
-                    MenuItem { text: root.groupData.location==="floating" ? "返回工作区" : "浮动整个面板组"; onTriggered: Qt.callLater(() => { if(root.groupData.location==="floating") Workspace.returnGroup(root.groupData.id); else Workspace.detachGroup(root.groupData.id) }) }
+                    objectName: "panelOperationsMenu:"+root.groupData.id
+                    GlassMenuItem { text: "浮动当前面板"; onTriggered: Qt.callLater(() => Workspace.detachPanel(root.groupData.id,root.selected)) }
+                    GlassMenuItem { text: root.groupData.location==="floating" ? "返回工作区" : "浮动整个面板组"; onTriggered: Qt.callLater(() => { if(root.groupData.location==="floating") Workspace.returnGroup(root.groupData.id); else Workspace.detachGroup(root.groupData.id) }) }
                     MenuSeparator {}
-                    MenuItem { text: root.collapsed ? "展开面板组" : "折叠为标签"; onTriggered: Workspace.setGroupCollapsed(root.groupData.id,!root.collapsed) }
-                    MenuItem { text: "关闭当前面板"; onTriggered: Qt.callLater(() => Workspace.hidePanel(root.groupData.id,root.selected)) }
-                    MenuItem { text: "关闭面板组"; onTriggered: Qt.callLater(() => Workspace.hidePanel(root.groupData.id)) }
+                    GlassMenuItem { text: root.collapsed ? "展开面板组" : "折叠为标签"; onTriggered: Workspace.setGroupCollapsed(root.groupData.id,!root.collapsed) }
+                    GlassMenuItem { text: "关闭当前面板"; onTriggered: Qt.callLater(() => Workspace.hidePanel(root.groupData.id,root.selected)) }
+                    GlassMenuItem { text: "关闭面板组"; onTriggered: Qt.callLater(() => Workspace.hidePanel(root.groupData.id)) }
                 }
             }
         }

@@ -3,6 +3,7 @@
 #include "SelectionOverlay.h"
 #include "WorkspaceManager.h"
 #include "UiScale.h"
+#include "FrostedSurface.h"
 #include <QtTest>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -37,6 +38,88 @@ QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
 class UiTests final : public QObject {
     Q_OBJECT
 private slots:
+    void frostedBackdropBlursEdgesPreservesFlatColorAndBoundsCache() {
+        QImage flat(32,16,QImage::Format_ARGB32_Premultiplied); flat.fill(QColor(20,40,60));
+        QCOMPARE(FrostedSurface::blurredBackdrop(flat),flat);
+        QImage edge(32,16,QImage::Format_ARGB32_Premultiplied); edge.fill(Qt::black);
+        QPainter painter(&edge); painter.fillRect(16,0,16,16,Qt::white); painter.end();
+        const auto blurred=FrostedSurface::blurredBackdrop(edge);
+        QVERIFY(blurred.pixelColor(15,8).red()>0);
+        QVERIFY(blurred.pixelColor(16,8).red()<255);
+        QCOMPARE(blurred.pixelColor(0,8),QColor(Qt::black));
+        QCOMPARE(blurred.pixelColor(31,8),QColor(Qt::white));
+        QImage impulse(33,33,QImage::Format_ARGB32_Premultiplied); impulse.fill(Qt::black);
+        impulse.setPixelColor(16,16,Qt::white);
+        const auto gaussian=FrostedSurface::blurredBackdrop(impulse);
+        QVERIFY(gaussian.pixelColor(16,16).red()>gaussian.pixelColor(17,16).red());
+        QVERIFY(gaussian.pixelColor(17,16).red()>gaussian.pixelColor(18,16).red());
+        QCOMPARE(gaussian.pixelColor(15,16),gaussian.pixelColor(17,16));
+        QImage large(2048,1024,QImage::Format_ARGB32_Premultiplied); large.fill(Qt::white);
+        large.setDevicePixelRatio(2);
+        const auto bounded=FrostedSurface::blurredBackdrop(large);
+        QCOMPARE(bounded.size(),QSize(512,256)); QCOMPARE(bounded.devicePixelRatio(),qreal(1));
+        QVERIFY(FrostedSurface::blurredBackdrop({}).isNull());
+    }
+    void frostedSurfaceKeepsOnlyTopCornersRoundAndFlatTintAt75Percent() {
+        FrostedSurface surface; surface.setWidth(60); surface.setHeight(28);
+        QColor tint("#202226"); tint.setAlphaF(.75); surface.setTint(tint); surface.setTopCornersOnly(true);
+        QImage image(60,28,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
+        QPainter painter(&image); surface.paint(&painter); painter.end();
+        QCOMPARE(image.pixelColor(0,0).alpha(),0); QCOMPARE(image.pixelColor(59,0).alpha(),0);
+        QVERIFY(std::abs(image.pixelColor(0,27).alphaF()-.75)<.005);
+        QVERIFY(std::abs(image.pixelColor(59,27).alphaF()-.75)<.005);
+        QCOMPARE(image.pixelColor(30,2),image.pixelColor(30,25));
+        surface.setTopCornersOnly(false); image.fill(Qt::transparent); painter.begin(&image); surface.paint(&painter); painter.end();
+        QCOMPARE(image.pixelColor(0,27).alpha(),0);
+    }
+    void glassMenusCaptureReleaseAndKeepKeyboardAndFloatingActions() {
+        QTemporaryDir temp; PaintCoreClient client(nullptr,temp.filePath("storage.ini"));
+        WorkspaceManager workspace(temp.filePath("layout.ini")); QQmlApplicationEngine engine;
+        QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors) warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client); engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.load(QUrl("qrc:/qml/Main.qml")); QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); QVERIFY(window); QTRY_VERIFY(client.ready());
+        auto *bar=qobject_cast<FrostedSurface*>(findVisualItem(window->contentItem(),"menuBarGlassBackground"));
+        QVERIFY(bar); QVERIFY(bar->tint().alpha()>0 && bar->tint().alpha()<255); QCOMPARE(bar->radius(),qreal(10));
+        QCOMPARE(bar->tint().name(),QString("#202226")); QVERIFY(std::abs(bar->tint().alphaF()-.75)<.001); QVERIFY(bar->topCornersOnly());
+        auto *entry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:工作区")); QVERIFY(entry);
+        auto *menu=window->findChild<QObject*>("workspaceMenu"); QVERIFY(menu);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,entry->mapToScene({entry->width()/2,entry->height()/2}).toPoint());
+        QTRY_VERIFY(menu->property("opened").toBool());
+        QCOMPARE(QGuiApplication::allWindows().size(),1);
+        auto *glass=qobject_cast<FrostedSurface*>(menu->property("background").value<QObject*>()); QVERIFY(glass);
+        QVERIFY(glass->hasBackdrop()); QCOMPARE(glass->radius(),qreal(10)); QVERIFY(glass->tint().alpha()<255);
+        QCOMPARE(glass->tint().name(),QString("#1c1e21")); QVERIFY(std::abs(glass->tint().alphaF()-.75)<.001); QVERIFY(!glass->topCornersOnly());
+        auto *list=qobject_cast<QQuickItem*>(menu->property("contentItem").value<QObject*>()); QVERIFY(list);
+        auto *row=findVisualItem(list,QStringLiteral("glassMenuItem:自定义面板…")); QVERIFY(row);
+        auto *label=qobject_cast<QQuickItem*>(row->property("contentItem").value<QObject*>()); QVERIFY(label);
+        QCOMPARE(row->property("topPadding").toReal(),qreal(3)); QCOMPARE(row->property("bottomPadding").toReal(),qreal(3));
+        QCOMPARE(row->implicitHeight()-label->implicitHeight(),qreal(6));
+        const auto preview=qEnvironmentVariable("DRAWVERSE_MENU_PREVIEW");
+        if(!preview.isEmpty()) { QTest::qWait(100); QVERIFY(window->grabWindow().save(preview)); }
+        QTest::keyClick(window,Qt::Key_Escape); QTRY_VERIFY(!menu->property("visible").toBool()); QVERIFY(!glass->hasBackdrop());
+        auto *windowEntry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:窗口")); QVERIFY(windowEntry);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,windowEntry->mapToScene({windowEntry->width()/2,windowEntry->height()/2}).toPoint());
+        auto *windowMenu=window->findChild<QObject*>("windowMenu"); QVERIFY(windowMenu); QTRY_VERIFY(windowMenu->property("opened").toBool());
+        auto *panelItem=windowMenu->findChild<QObject*>("windowPanel:color"); QVERIFY(panelItem); QVERIFY(panelItem->property("checked").toBool());
+        QTest::keyClick(window,Qt::Key_Escape); QTRY_VERIFY(!windowMenu->property("visible").toBool());
+        const auto group=workspace.rightGroups().first().toMap().value("id").toString(); workspace.detachPanel(group,"color");
+        QTRY_COMPARE(QGuiApplication::allWindows().size(),2);
+        QQuickWindow *floating=nullptr; for(auto *candidate:QGuiApplication::allWindows()) if(candidate!=window) floating=qobject_cast<QQuickWindow*>(candidate);
+        QVERIFY(floating); const auto floatingId=workspace.floatingGroups().first().toMap().value("id").toString();
+        auto *button=findVisualItem(floating->contentItem(),"panelMenu:"+floatingId); QVERIFY(button);
+        // Synthetic clicks do not activate a native Qt Tool window like real clicks do.
+        floating->requestActivate(); QTRY_VERIFY(floating->isActive());
+        QTest::mouseClick(floating,Qt::LeftButton,Qt::NoModifier,button->mapToScene({button->width()/2,button->height()/2}).toPoint());
+        auto *panelMenu=floating->findChild<QObject*>("panelOperationsMenu:"+floatingId); QVERIFY(panelMenu); QTRY_VERIFY(panelMenu->property("opened").toBool());
+        QCOMPARE(QGuiApplication::allWindows().size(),2);
+        QTRY_VERIFY(panelMenu->property("activeFocus").toBool());
+        auto *floatingGlass=qobject_cast<FrostedSurface*>(panelMenu->property("background").value<QObject*>()); QVERIFY(floatingGlass); QVERIFY(floatingGlass->hasBackdrop());
+        QTest::keyClick(floating,Qt::Key_Down); QTest::keyClick(floating,Qt::Key_Escape);
+        QTRY_VERIFY(!panelMenu->property("visible").toBool()); QVERIFY(!floatingGlass->hasBackdrop());
+        QCOMPARE(warnings,QStringList()); QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
+    }
     void uiScaleAppliesToMainPanelAndToolWindowsWithoutChangingLayout() {
         QTemporaryDir temp;
         PaintCoreClient client(nullptr,temp.filePath("storage.ini"));
@@ -102,7 +185,7 @@ private slots:
         QTest::mousePress(window,Qt::LeftButton,Qt::ShiftModifier,position({96,16}));QTest::mouseMove(window,position({120,40}));QTest::mouseRelease(window,Qt::LeftButton,Qt::ShiftModifier,position({120,40}));QTRY_COMPARE(client.undoDepth(),3);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.selectionSteps().last().toMap().value("operation").toInt(),1);QTRY_VERIFY(outline() && outline()->documentPath().contains({108,28}));
         QTest::mousePress(window,Qt::LeftButton,Qt::ShiftModifier|Qt::AltModifier,position({8,8}));QTest::mouseMove(window,position({50,100}));QTest::mouseRelease(window,Qt::LeftButton,Qt::ShiftModifier|Qt::AltModifier,position({50,100}));QTRY_COMPARE(client.undoDepth(),4);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.selectionSteps().last().toMap().value("operation").toInt(),3);client.undo();QTRY_COMPARE(client.undoDepth(),3);QTRY_VERIFY(!client.layerEditBusy());
         QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,position({8,8}));QTest::mouseMove(window,position({120,120}));QTest::keyClick(window,Qt::Key_Escape);QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,position({120,120}));QVERIFY(canvas->selectionPreview().isEmpty());QCOMPARE(client.undoDepth(),3);
-        QTest::keyClick(window,Qt::Key_B);QTRY_COMPARE(client.selectionTool(),0);client.setBrushRadius(5);client.setBrushColor(Qt::black);InputSample sample;sample.position={8,48};QVERIFY(client.beginStroke(sample));sample.position={120,48};client.strokeTo(sample);client.endStroke();QTRY_COMPARE(client.undoDepth(),4);QTRY_VERIFY(!client.layerEditBusy());client.requestViewport(0,{0,0,128,128},{128,128});QTRY_VERIFY(client.frame().size()==QSize(128,128) && client.frameRevision()>=client.revision());QVERIFY(client.frame().pixelColor(24,48).alpha()>0);QCOMPARE(client.frame().pixelColor(48,48).alpha(),0);QCOMPARE(client.frame().pixelColor(100,48).alpha(),0);
+        QTest::keyClick(window,Qt::Key_B);QTRY_COMPARE(client.selectionTool(),0);client.setBrushRadius(5);client.setBrushColor(Qt::black);InputSample sample;sample.position={8,48};QVERIFY(client.beginStroke(sample));sample.position={120,48};client.strokeTo(sample);client.endStroke();QTRY_COMPARE(client.undoDepth(),4);QTRY_VERIFY(!client.layerEditBusy());canvas->setClient(nullptr);client.requestViewport(0,{0,0,128,128},{128,128});QTRY_VERIFY(client.frame().size()==QSize(128,128) && client.frameRevision()>=client.revision());QVERIFY(client.frame().pixelColor(24,48).alpha()>0);QCOMPARE(client.frame().pixelColor(48,48).alpha(),0);QCOMPARE(client.frame().pixelColor(100,48).alpha(),0);canvas->setClient(&client);canvas->actualSize();
         const auto savedSteps=client.selectionSteps();QSignalSpy files(&client,&PaintCoreClient::fileFinished);const auto path=QUrl::fromLocalFile(temp.filePath("selection.ora"));QVERIFY(client.saveDocument(path));QTRY_COMPARE(files.size(),1);QVERIFY(files.last()[0].toBool());QVERIFY(client.clearSelection());QTRY_VERIFY(!client.selectionEnabled());QTRY_VERIFY(!client.layerEditBusy());client.undo();QTRY_VERIFY(client.selectionEnabled());QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.selectionSteps(),savedSteps);
         const auto generation=client.generation();QVERIFY(client.openDocument(path));QTRY_COMPARE(files.size(),2);QVERIFY(files.last()[0].toBool());QTRY_VERIFY(client.generation()>generation);QTRY_VERIFY(client.ready());QCOMPARE(client.selectionSteps(),savedSteps);QCOMPARE(client.undoDepth(),0);
         workspace.floatToolStrip(250,150);QTRY_COMPARE(QGuiApplication::allWindows().size(),2);QQuickWindow *floating=nullptr;for(auto *w:QGuiApplication::allWindows())if(w!=window)floating=qobject_cast<QQuickWindow*>(w);QVERIFY(floating);auto *tool=findVisualItem(floating->contentItem(),"selectionTool");QVERIFY(tool);QTest::mouseClick(floating,Qt::LeftButton,Qt::NoModifier,tool->mapToScene({tool->width()/2,tool->height()/2}).toPoint());QTRY_COMPARE(client.selectionTool(),1);
@@ -133,7 +216,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);const auto image=[](const QString &url){QImage result;result.loadFromData(QByteArray::fromBase64(url.mid(url.indexOf(',')+1).toLatin1()));return result;};const auto opaque=image(library->selectedPreview());QVERIFY(!opaque.isNull());QCOMPARE(opaque.size(),QSize(240,60));QVERIFY(opaque.pixelColor(0,0).alpha()==0);int alpha=0;for(int y=0;y<60;++y)for(int x=0;x<240;++x)alpha+=opaque.pixelColor(x,y).alpha();QVERIFY(alpha>1000);
         library->setOpacity(.15);QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);const auto transparent=image(library->selectedPreview());QVERIFY(!transparent.isNull());int fadedAlpha=0;for(int y=0;y<60;++y)for(int x=0;x<240;++x)fadedAlpha+=transparent.pixelColor(x,y).alpha();QVERIFY(fadedAlpha<alpha);QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),undo);QCOMPARE(client.modified(),modified);
         library->setSpacing(.6);QCOMPARE(client.brushSpacing(),qreal(.6));QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);QVERIFY(image(library->selectedPreview())!=transparent);QVERIFY(library->select("round-pressure"));QCOMPARE(client.brushRadius(),qreal(12));QVERIFY(library->select("round-fine"));QCOMPARE(client.brushRadius(),qreal(20));QCOMPARE(client.brushOpacity(),qreal(.15));
-        client.newTransparentDocument(128,128);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(client.ready());client.setBrushColor(Qt::black);InputSample sample;sample.position={20,64};sample.pressure=.6f;sample.tool=1;QVERIFY(client.beginStroke(sample));sample.position={100,64};client.strokeTo(sample);client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.requestViewport(0,{0,0,128,128},{128,128});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(128,128));const int paintedAlpha=client.frame().pixelColor(60,64).alpha();QVERIFY(paintedAlpha>0 && paintedAlpha<250);
+        client.newTransparentDocument(128,128);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(client.ready());client.setBrushColor(Qt::black);InputSample sample;sample.position={20,64};sample.pressure=.6f;sample.tool=1;QVERIFY(client.beginStroke(sample));sample.position={100,64};client.strokeTo(sample);client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());auto *previewCanvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(previewCanvas);previewCanvas->setClient(nullptr);client.requestViewport(0,{0,0,128,128},{128,128});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(128,128));const int paintedAlpha=client.frame().pixelColor(60,64).alpha();QVERIFY(paintedAlpha>0 && paintedAlpha<250);previewCanvas->setClient(&client);
         const auto copy=library->saveCopy(QStringLiteral("保留的画笔"));QVERIFY(!copy.isEmpty());QTRY_COMPARE(label->property("text").toString(),QStringLiteral("保留的画笔"));
         const auto preview=qEnvironmentVariable("DRAWVERSE_BRUSH_PREVIEW");if(!preview.isEmpty()){QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);floating->resize(250,560);QTest::qWait(250);QVERIFY(floating->grabWindow().save(preview+".library.png"));auto settingsGroup=workspace.leftGroups().first().toMap().value("id").toString();workspace.detachGroup(settingsGroup);QTRY_COMPARE(QGuiApplication::allWindows().size(),3);for(auto *w:QGuiApplication::allWindows())if(auto *q=qobject_cast<QQuickWindow*>(w))if(findVisualItem(q->contentItem(),"selectedBrushName")){q->resize(280,440);QTest::qWait(200);QVERIFY(q->grabWindow().save(preview+".settings.png"));}}
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);PaintCoreClient reloaded(nullptr,preferences);QTRY_VERIFY(reloaded.ready());QTRY_COMPARE(reloaded.brushLibrary()->selectedId(),copy);QCOMPARE(reloaded.brushRadius(),qreal(20));QCOMPARE(reloaded.brushSpacing(),qreal(.6));QSignalSpy stoppedAgain(&reloaded,&PaintCoreClient::stopped);reloaded.shutdown();QTRY_COMPARE(stoppedAgain.size(),1);
@@ -981,6 +1064,7 @@ int main(int argc,char **argv) {
     QQuickStyle::setStyle("Basic"); qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");
     qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
     qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
+    qmlRegisterType<FrostedSurface>("DrawVerse",1,0,"FrostedSurface");
     UiTests tests; return QTest::qExec(&tests,argc,argv);
 }
 #include "ui_tests.moc"

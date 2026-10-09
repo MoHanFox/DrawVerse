@@ -273,22 +273,22 @@ ColumnLayout {
         IconButton { glyph: "plus"; tooltip: "新建图层"; implicitWidth: 28; implicitHeight: 20; enabled: root.editable; objectName:"addDefaultLayer";onClicked: PaintClient.addDefaultLayer(); ToolTip.visible: hovered; ToolTip.text: "新建图层" }
         IconButton { objectName: "deleteLayer"; glyph: "trash"; tooltip: "删除图层"; implicitHeight: 20; enabled: root.unlocked && PaintClient.layers.length>1; onClicked: PaintClient.removeLayer(root.selected.id) }
     }
-    Menu {
+    GlassMenu {
         id: groupMenu
         objectName: "groupOperationsMenu"
-        MenuItem { objectName:"toggleLayerClipping";text:root.control.clipped ? "释放剪贴蒙版" : "创建剪贴蒙版";enabled:root.unlocked && root.canClip(root.control);onTriggered:PaintClient.setLayerClipping(root.control.id,!root.control.clipped) }
-        MenuItem { objectName:"disableLayerMask";text:root.masksByOwner[root.control.id] && root.masksByOwner[root.control.id].visible ? "停用图层蒙版" : "启用图层蒙版";enabled:root.unlocked && root.masksByOwner[root.control.id]!==undefined;onTriggered:{const m=root.masksByOwner[root.control.id];PaintClient.setLayerProperties(m.id,!m.visible,m.opacity)} }
-        MenuItem { objectName:"deleteLayerMask";text:"删除图层蒙版";enabled:root.unlocked && root.masksByOwner[root.control.id]!==undefined;onTriggered:PaintClient.removeLayer(root.masksByOwner[root.control.id].id) }
+        GlassMenuItem { objectName:"toggleLayerClipping";text:root.control.clipped ? "释放剪贴蒙版" : "创建剪贴蒙版";enabled:root.unlocked && root.canClip(root.control);onTriggered:PaintClient.setLayerClipping(root.control.id,!root.control.clipped) }
+        GlassMenuItem { objectName:"disableLayerMask";text:root.masksByOwner[root.control.id] && root.masksByOwner[root.control.id].visible ? "停用图层蒙版" : "启用图层蒙版";enabled:root.unlocked && root.masksByOwner[root.control.id]!==undefined;onTriggered:{const m=root.masksByOwner[root.control.id];PaintClient.setLayerProperties(m.id,!m.visible,m.opacity)} }
+        GlassMenuItem { objectName:"deleteLayerMask";text:"删除图层蒙版";enabled:root.unlocked && root.masksByOwner[root.control.id]!==undefined;onTriggered:PaintClient.removeLayer(root.masksByOwner[root.control.id].id) }
         MenuSeparator {}
-        MenuItem { objectName: "ungroupLayer"; text: "解组（移除组属性）"; enabled: root.selected.group && !PaintClient.layers.some(function(l){return l.mask && l.parent===root.selected.id}); onTriggered: PaintClient.ungroupLayer(root.selected.id) }
-        MenuItem { objectName: "moveLayerOut"; text: "移出到上一级"; enabled: root.selected.parent!==0 && !root.selected.mask; onTriggered: {
+        GlassMenuItem { objectName: "ungroupLayer"; text: "解组（移除组属性）"; enabled: root.selected.group && !PaintClient.layers.some(function(l){return l.mask && l.parent===root.selected.id}); onTriggered: PaintClient.ungroupLayer(root.selected.id) }
+        GlassMenuItem { objectName: "moveLayerOut"; text: "移出到上一级"; enabled: root.selected.parent!==0 && !root.selected.mask; onTriggered: {
             const parent=PaintClient.layers.find(function(layer) { return layer.id===root.selected.parent })
             if(parent) PaintClient.reparentLayer(root.selected.id,parent.parent)
         } }
         MenuSeparator {}
         Instantiator {
             model: groupMenu.visible ? PaintClient.layers.filter(function(layer) { return layer.group }) : []
-            delegate: MenuItem {
+            delegate: GlassMenuItem {
                 required property var modelData
                 objectName: "moveLayerInto:"+modelData.id
                 text: "移入："+modelData.name; enabled: !root.selected.mask && root.canMoveInto(modelData)

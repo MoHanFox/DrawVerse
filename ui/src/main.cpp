@@ -4,6 +4,7 @@
 #include "WorkspaceManager.h"
 #include "PaintingBenchmark.h"
 #include "UiScale.h"
+#include "FrostedSurface.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -32,6 +33,7 @@ int main(int argc,char **argv) {
     qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");
     qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
     qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
+    qmlRegisterType<FrostedSurface>("DrawVerse",1,0,"FrostedSurface");
     const QStringList arguments=app.arguments();
     const int previewIndex=arguments.indexOf("--preview");
     const QString previewPath=previewIndex>=0 && previewIndex+1<arguments.size()?arguments[previewIndex+1]:QString();

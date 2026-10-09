@@ -84,11 +84,13 @@ ApplicationWindow {
     ResizeFrame {targetWindow:root}
     StoragePreferences { id: storagePreferences; objectName: "storagePreferences" }
     menuBar: MenuBar {
+        objectName: "mainMenuBar"
         implicitHeight: 28; leftPadding: 30; rightPadding: 100
-        background: Rectangle {
-            color: Theme.strip
-            radius: root.cornerRadius
-            Rectangle {anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:parent.height/2;color:parent.color}
+        background: FrostedSurface {
+            objectName: "menuBarGlassBackground"
+            tint: Theme.menuBarGlass
+            topCornersOnly: true
+            radius: root.visibility===Window.Maximized ? 0 : Theme.menuRadius
             MouseArea {
                 anchors.fill: parent
                 onPressed: root.startSystemMove()
@@ -104,12 +106,13 @@ ApplicationWindow {
         }
         delegate: MenuBarItem {
             id: menuEntry
+            objectName: "menuEntry:"+text
             implicitHeight: 28; implicitWidth:contentItem.implicitWidth+16
             leftPadding:8;rightPadding:8;font.pixelSize:9
             contentItem: Text { text: menuEntry.text; font: menuEntry.font; color: menuEntry.highlighted ? "#eeeeee" : Theme.text; verticalAlignment: Text.AlignVCenter }
-            background: Rectangle { color: menuEntry.highlighted ? Theme.hover : "transparent" }
+            background: Rectangle { radius: 5; color: menuEntry.highlighted ? Theme.hover : "transparent" }
         }
-        Menu {
+        GlassMenu {
             title: "文件"
             Action { text: "新建画布…"; shortcut: StandardKey.New; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: newDialog.open() }
             Action { text: "打开…"; shortcut: StandardKey.Open; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: openDialog.open() }
@@ -120,13 +123,13 @@ ApplicationWindow {
             MenuSeparator {}
             Action { text: "退出"; onTriggered: root.close() }
         }
-        Menu {
+        GlassMenu {
             title: "编辑"
             Action { text: "性能与暂存盘…"; enabled: !PaintClient.closing; onTriggered: storagePreferences.open() }
             Action { text: "撤销"; shortcut: StandardKey.Undo; enabled: PaintClient.undoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.undo() }
             Action { text: "重做"; shortcut: "Ctrl+Shift+Z"; enabled: PaintClient.redoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.redo() }
         }
-        Menu {
+        GlassMenu {
             title: "选择"
             Action { text: "矩形选框（M）"; enabled: PaintClient.ready && !PaintClient.drawing; onTriggered: PaintClient.selectionTool=1 }
             Action { text: "椭圆选框（Shift+M）"; enabled: PaintClient.ready && !PaintClient.drawing; onTriggered: PaintClient.selectionTool=2 }
@@ -135,19 +138,20 @@ ApplicationWindow {
             Action { objectName:"selectionClearAction"; text: "取消选择"; enabled: PaintClient.selectionEnabled && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.clearSelection() }
             Action { objectName:"selectionInvertAction"; text: "反向选择"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.invertSelection() }
         }
-        Menu {
+        GlassMenu {
             title: "视图"
             Action { text: "适合窗口"; onTriggered: canvas.fitToView() }
             Action { text: "实际像素"; onTriggered: canvas.actualSize() }
         }
-        Menu {
+        GlassMenu {
             id: windowMenu
+            objectName: "windowMenu"
             title: "窗口"
             Action {text:"工具条归位";enabled:Workspace.toolsFloating;onTriggered:Workspace.dockToolStrip("drawverse-tools-v1")}
             MenuSeparator {}
             Instantiator {
                 model: Workspace.allPanels
-                delegate: MenuItem {
+                delegate: GlassMenuItem {
                     required property string modelData
                     objectName: "windowPanel:"+modelData
                     text: Workspace.panelDefinition(modelData).title
@@ -164,7 +168,8 @@ ApplicationWindow {
                 onObjectRemoved: (index,object) => windowMenu.removeItem(object)
             }
         }
-        Menu {
+        GlassMenu {
+            objectName: "workspaceMenu"
             title: "工作区"
             Action { text: "自定义面板…"; onTriggered: panelDialog.open() }
             Action { text: "保存当前布局"; onTriggered: Workspace.saveLayout() }

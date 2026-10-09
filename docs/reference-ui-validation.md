@@ -1,5 +1,15 @@
 # 参考图 QML 与停靠验收（2026-10-09）
 
+## 普通高斯菜单与紧凑行距（2026-10-09）
+
+菜单栏底色恢复 #202226，子菜单恢复 #1c1e21，底色不透明度 75%。去掉高光和亮边；菜单栏上方两角圆角、下方直角，最大化时无圆角；子菜单四角圆角。菜单项随文字高度布局，上下各 3px，总文字行间距 6px，保留字号与 1.1 倍缩放。
+
+FrostedSurface 对打开前的 Qt 所属窗口显示帧执行有界、可分离高斯模糊；缓存最长边 512px，菜单关闭即释放，没有持续抓帧。Qt 6.8+ 显式使用 Popup.Item，旧版本保留同窗弹出路径，主窗和浮窗共用材质。窗口拖动、系统按钮及原有菜单动作保留。
+
+python tools/check.py 完整通过（artifacts/gaussian-menu-final-check.log）；随后修正 Windows 自动化测试需先激活工具浮窗的前置条件，最终六组 CTest 全通过（artifacts/gaussian-menu-final-ctest.log）。34 项 Qt 测试、14 项两倍 DPI 测试通过，不计初始化/清理；包含高斯核扩散、常色保持、缓存上限、75% 底色、上下角形状、6px 行距、菜单缓存释放与键盘回归。两项既有像素断言临时断开 CanvasItem，让手动 128px 读帧独占视口槽，消除与实时 DPR 请求的竞争，不修改应用绘画行为。
+
+实际 Windows 菜单交互单测通过（artifacts/gaussian-menu-final-windows.txt），工作区菜单截图 artifacts/gaussian-menu-final.png 已检查。build/qt 常用启动目录已同步构建；Rust、ABI、文档像素与布局格式未修改。
+
 ## UI 整体放大 1.1 倍（2026-10-09）
 
 应用与 Qt Test 在创建 QGuiApplication 前共用 UiScale.h，将 Qt 全局缩放乘以 1.1，保留系统 DPI、外部倍率和现有 QML 逻辑布局。新增真实 QML 回归覆盖主窗、颜色浮窗、工具浮窗的 DPR、截图物理尺寸和布局保存恢复。普通 offscreen 为 1.1，两倍 DPI 为 2.2，原有鼠标/数位板、选区、图层及跨窗口拖放全部通过。
