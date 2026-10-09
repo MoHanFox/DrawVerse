@@ -10,21 +10,21 @@ Rectangle {
     property var canvasView
     property bool flyout: false
     signal dismissRequested()
+    signal slideRequested(real globalY)
     property string selected: groupData.active
-    property bool collapsed: groupData.collapsed || false
-    onGroupDataChanged: { selected=groupData.active; collapsed=groupData.collapsed || false }
-    readonly property int minimumPanelHeight: collapsed ? (groupData.columnFirst?8:0)+groupData.panels.length*22 : Workspace.panelDefinition(selected).kind === "layers" ? 250 : Workspace.panelDefinition(selected).kind === "brush-settings" ? 260 : 120
+    onGroupDataChanged: selected=groupData.active
+    readonly property int minimumPanelHeight: Workspace.panelDefinition(selected).kind === "layers" ? 250 : Workspace.panelDefinition(selected).kind === "brush-settings" ? 260 : 120
     property string dropMode: "merge"
     property string beforePanel: ""
     color: Theme.surface; clip: true
-    implicitHeight: collapsed ? minimumPanelHeight : groupData.dockHeight || 320
-    onHeightChanged: if(!collapsed) Workspace.updateDockHeight(groupData.id,Math.round(height))
+    implicitHeight: groupData.dockHeight || 320
+    onHeightChanged: if(!flyout) Workspace.updateDockHeight(groupData.id,Math.round(height))
     Connections {
         target: Workspace
         function onGroupStateChanged(group) {
             if(group!==root.groupData.id) return
             const data=Workspace.groupDefinition(group)
-            root.selected=data.active; root.collapsed=data.collapsed
+            root.selected=data.active
         }
     }
     function specialDrop(d) {
@@ -69,11 +69,11 @@ Rectangle {
                 onPressed: mouse => start=Qt.point(mouse.x,mouse.y)
                 onPositionChanged: mouse => {
                     if(pressed && !PaintClient.drawing && Math.abs(mouse.x-start.x)+Math.abs(mouse.y-start.y)>8) {
-                        const id=root.groupData.id
-                        Qt.callLater(() => Workspace.beginDrag(id,"",true))
+                        if(root.flyout)root.slideRequested(mapToGlobal(mouse.x,mouse.y).y)
+                        else {const id=root.groupData.id;Qt.callLater(() => Workspace.beginDrag(id,"",true))}
                     }
                 }
-                onDoubleClicked: Workspace.setGroupCollapsed(root.groupData.id,!root.collapsed)
+                onDoubleClicked: {root.dismissRequested();Workspace.setColumnCollapsed(root.groupData.id,!root.flyout)}
             }
             Row {
                 anchors.right: parent.right; height: parent.height
@@ -83,16 +83,11 @@ Rectangle {
                     width:visible?16:0;height:8;padding:1;glyph:"collapse";tooltip:"折叠为图标"
                     onClicked:Workspace.setColumnCollapsed(root.groupData.id,true)
                 }
-                IconButton {
-                    objectName: "groupCollapse:"+root.groupData.id
-                    width: 16; height: 8; padding: 1; glyph: root.collapsed ? "expand" : "collapse"
-                    tooltip: root.collapsed ? "展开面板组" : "折叠为标签"
-                    onClicked: { if(root.flyout) root.dismissRequested(); else Workspace.setGroupCollapsed(root.groupData.id,!root.collapsed) }
-                }
+
             }
         }
         Rectangle {
-            Layout.fillWidth: true; implicitHeight: 20; color:root.groupData.panels.length===1?Theme.surface:Theme.strip; visible: !root.collapsed
+            Layout.fillWidth: true; implicitHeight: 20; color:root.groupData.panels.length===1?Theme.surface:Theme.strip; visible: true
             Flickable {
                 id: tabStrip
                 anchors.left: parent.left;anchors.leftMargin:root.groupData.panels.length>1?4:0; anchors.right: panelMenuButton.left; y:root.groupData.panels.length>1?2:0;height: parent.height-y
@@ -117,7 +112,6 @@ Rectangle {
                                 onPressed: mouse => {
                                     start=Qt.point(mouse.x,mouse.y)
                                     root.selected=modelData; Workspace.setActive(root.groupData.id,modelData)
-                                    if(root.collapsed) Workspace.setGroupCollapsed(root.groupData.id,false)
                                 }
                                 onPositionChanged: mouse => {
                                     if(pressed && !PaintClient.drawing && Math.abs(mouse.x-start.x)+Math.abs(mouse.y-start.y)>8) {
@@ -125,7 +119,7 @@ Rectangle {
                                         Qt.callLater(() => Workspace.beginDrag(id,panel,false))
                                     }
                                 }
-                                onDoubleClicked: Workspace.setGroupCollapsed(root.groupData.id,!root.collapsed)
+                                onDoubleClicked: {root.dismissRequested();Workspace.setColumnCollapsed(root.groupData.id,!root.flyout)}
                             }
                         }
                     }
@@ -135,7 +129,7 @@ Rectangle {
                 id: panelMenuButton; objectName: "panelMenu:"+root.groupData.id
                 anchors.right: parent.right; width: 22; height: 20; padding: 6
                 glyph: "menu"; tooltip: "面板菜单"; onClicked: {
-                    if(root.groupData.location==="floating") panelMenu.popupBeside(root)
+                    if(root.flyout || root.groupData.location==="floating") panelMenu.popupBeside(root)
                     else panelMenu.popup()
                 }
                 GlassMenu {
@@ -144,35 +138,13 @@ Rectangle {
                     GlassMenuItem { text: "浮动当前面板"; onTriggered: Qt.callLater(() => Workspace.detachPanel(root.groupData.id,root.selected)) }
                     GlassMenuItem { text: root.groupData.location==="floating" ? "返回工作区" : "浮动整个面板组"; onTriggered: Qt.callLater(() => { if(root.groupData.location==="floating") Workspace.returnGroup(root.groupData.id); else Workspace.detachGroup(root.groupData.id) }) }
                     MenuSeparator {}
-                    GlassMenuItem { text: root.collapsed ? "展开面板组" : "折叠为标签"; onTriggered: Workspace.setGroupCollapsed(root.groupData.id,!root.collapsed) }
+                    GlassMenuItem { text: "折叠为图标"; onTriggered: {root.dismissRequested();Workspace.setColumnCollapsed(root.groupData.id,true)} }
                     GlassMenuItem { text: "关闭当前面板"; onTriggered: Qt.callLater(() => Workspace.hidePanel(root.groupData.id,root.selected)) }
                     GlassMenuItem { text: "关闭面板组"; onTriggered: Qt.callLater(() => Workspace.hidePanel(root.groupData.id)) }
                 }
             }
         }
-        Column {
-            visible: root.collapsed; Layout.fillWidth: true
-            Repeater {
-                model: root.groupData.panels
-                Rectangle {
-                    required property string modelData
-                    objectName: "collapsedPanel:"+modelData
-                    width: parent.width; height: 22
-                    color: root.selected===modelData ? Theme.selected : Theme.strip
-                    Row { anchors.verticalCenter: parent.verticalCenter; x: 7; spacing: 7
-                        Icon { name: Workspace.panelDefinition(modelData).kind==="brush-settings" ? "brush" : Workspace.panelDefinition(modelData).kind; width: 12; height: 12 }
-                        Text { text: Workspace.panelDefinition(modelData).title; color: Theme.text; font.pixelSize: 9 }
-                    }
-                    MouseArea {
-                        anchors.fill: parent; property point start
-                        onPressed: mouse => start=Qt.point(mouse.x,mouse.y)
-                        onPositionChanged: mouse => { if(pressed && !PaintClient.drawing && Math.abs(mouse.x-start.x)+Math.abs(mouse.y-start.y)>8) {const id=root.groupData.id,panel=modelData;Qt.callLater(()=>Workspace.beginDrag(id,panel,false))} }
-                        onClicked: {root.selected=modelData;Workspace.setActive(root.groupData.id,modelData);Workspace.setGroupCollapsed(root.groupData.id,false)}
-                    }
-                }
-            }
-        }
-        PanelContent { Layout.fillWidth: true; Layout.fillHeight: true; visible: !root.collapsed; panelId: root.selected; canvasView: root.canvasView }
+        PanelContent { Layout.fillWidth: true; Layout.fillHeight: true; visible: true; panelId: root.selected; canvasView: root.canvasView }
     }
     DropArea {
         id: drop; anchors.fill: parent; keys: ["application/x-drawverse-panel","application/x-drawverse-tool-strip"]

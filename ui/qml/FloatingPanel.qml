@@ -31,7 +31,7 @@ ApplicationWindow {
         initializing=true;windowData=data;x=data.x;y=data.y;expandedWidth=data.width;width=data.icons?data.minimumWidth:data.width;expandedHeight=data.height
         height=data.collapsed?collapsedHeight:data.height;initializing=false;docks.refresh();remember()
     }
-    Component.onCompleted:{if(windowData.collapsed)height=collapsedHeight;initializing=false}
+    Component.onCompleted:{if(windowData.icons)width=windowData.minimumWidth;if(windowData.collapsed)height=collapsedHeight;initializing=false}
     Connections {
         target:Workspace
         function onGroupStateChanged(group){

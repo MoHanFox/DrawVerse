@@ -40,15 +40,15 @@ Item {
         objectName:root.hostId==="main"?"toolStripDockTarget":"emptyDockTarget:"+root.hostId
         anchors.fill:parent;z:-1
         keys:["application/x-drawverse-panel","application/x-drawverse-tool-strip"]
-        onEntered:d=>d.accepted=root.hostId==="main" && !Workspace.dockingSuppressed && !PaintClient.drawing && (d.x<20 || d.x>root.width-20)
-        onPositionChanged:d=>d.accepted=root.hostId==="main" && !Workspace.dockingSuppressed && !PaintClient.drawing && (d.x<20 || d.x>root.width-20)
+        onEntered:d=>d.accepted=root.hostId==="main" && !Workspace.dockingSuppressed && !PaintClient.drawing && (d.x<36 || d.x>root.width-36)
+        onPositionChanged:d=>d.accepted=root.hostId==="main" && !Workspace.dockingSuppressed && !PaintClient.drawing && (d.x<36 || d.x>root.width-36)
         onDropped:d=> {
             if(Workspace.dockingSuppressed || PaintClient.drawing) return
-            if(root.hostId!=="main" || d.x>=20 && d.x<=root.width-20)return
-            const side=d.x<20?"left":"right"
+            if(root.hostId!=="main" || d.x>=36 && d.x<=root.width-36)return
+            const side=d.x<36?"left":"right"
             const ok=d.formats.indexOf("application/x-drawverse-tool-strip")>=0?Workspace.dockToolStrip(d.getDataAsString("application/x-drawverse-tool-strip"),side):Workspace.dockPayload(d.getDataAsString("application/x-drawverse-panel"),side)
             if(ok)d.acceptProposedAction()
         }
     }
-    Rectangle {visible:root.hostId==="main" && Workspace.dragTarget.indexOf("__workspace_")===0;x:Workspace.dragTarget.endsWith("right")?root.width-20:0;width:20;height:root.height;color:"#2423b5ee";border.color:Theme.accent;border.width:1}
+    Rectangle {visible:root.hostId==="main" && Workspace.dragTarget.indexOf("__workspace_")===0;x:Workspace.dragTarget.endsWith("right")?root.width-36:0;width:36;height:root.height;color:"#2423b5ee";border.color:Theme.accent;border.width:1}
 }

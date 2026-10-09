@@ -11,7 +11,8 @@ Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘
 - [QML UI 设计](docs/qml-ui-design.md) / [UI 验证与启动说明](docs/qml-ui-validation.md)
 - [参考图 UI / 停靠设计](docs/reference-ui-design.md) / [菜单与材质验收](docs/reference-ui-validation.md)
 - [画布与工具条自由停靠](docs/flexible-docking-design.md) / [最新工作区验收](docs/flexible-docking-validation.md)
-- [多文档与面板列设计](docs/document-workspace-design.md) / [当前工作区验收](docs/document-workspace-validation.md)
+- [多文档与面板列设计](docs/document-workspace-design.md) / [工作区验收](docs/document-workspace-validation.md)
+- [图标列与临时面板修复](docs/icon-rail-design.md) / [当前交互验收](docs/icon-rail-validation.md)
 - [矩形/椭圆选区设计](docs/selection-design.md) / [选区验收](docs/selection-validation.md)
 - [画笔库与当前画笔设置](docs/brush-library-design.md) / [画笔模块验收](docs/brush-library-validation.md)
 - [任务与 CPU 视口设计](docs/task-render-design.md) / [最新模块验证](docs/task-render-validation.md)
@@ -33,7 +34,7 @@ C ABI 保留原同步文档/事件/线性读取，新增异步 session、FIFO �
 
 绘画性能回退已修复：源瓦片合成与显示编码按身份复用，稀疏矩形输出；QML 图层只在定义/属性变化时更新模型。固定 600 点压感场景进程累计 CPU 时间下降约 90%，画面更新间隔 p95 从 96ms 降至 17ms；这是本机固定负载实测。每视口缓存计账上限 96 MiB，四槽最多 384 MiB，另有容器开销与现有文档/帧预算。
 
-QML 窗口提供压感圆笔/橡皮擦/移动图层、多图层、选区、撤销/重做和颜色/画笔/图层/历史/导航面板。新建/打开添加独立文档，各自保留真实 session、文件任务、历史与视口；工具面板随活动文档切换。画布只与画布组合为浮窗标签，通过主文档区上边缘归位；工具面板不能挂到画布上。全部画布浮动或关闭时工作区保留 #17191C 留空区。工具条可在工作区两侧及任意工具面板两侧停靠；垂直面板共用最上方导航栏，整体折叠为图标，内部为 1px 可拖分隔线；单组折叠/关闭在面板菜单中操作。实际浮窗跟随鼠标，位置与停靠预览即时更新，Esc 还原，Ctrl/Command 暂停停靠，自己不作为目标。布局 v6 保存工具树、图标列和浮窗，旧布局迁移保留工具面板。关闭文档/退出逐个处理未保存文档，工作区布局不自动重建文档像素。数位板经 QTabletEvent 接入并抑制合成鼠标。详见 [设计](docs/document-workspace-design.md) / [验收](docs/document-workspace-validation.md)。
+QML 窗口提供压感圆笔/橡皮擦/移动图层、多图层、选区、撤销/重做和颜色/画笔/图层/历史/导航面板。新建/打开添加独立文档，各自保留真实 session、文件任务、历史与视口；工具面板随活动文档切换。画布只与画布组合为浮窗标签，通过主文档区上边缘归位；工具面板不能挂到画布上。全部画布浮动或关闭时工作区保留 #17191C 留空区。工具条可在工作区两侧及任意工具面板两侧停靠；垂直面板共用最上方导航栏，整体折叠为图标，内部为 1px 可拖分隔线；面板列仅保留图标折叠，接收新组继承图标状态；图标可直接拖出，临时面板可切换、侧边上下滑动并点击空白关闭。主工作区左右边缘在画布独占或无画布时仍接收工具归位。单画布浮窗只有一行标题，多个画布组合时恢复窗口标题与文档标签，标题显示该浮窗活动文档名；新建入口保留在文件菜单，文档条加号移除。关闭在面板菜单中操作。实际浮窗跟随鼠标，位置与停靠预览即时更新，Esc 还原，Ctrl/Command 暂停停靠，自己不作为目标。布局 v6 保存工具树、图标列和浮窗，旧布局迁移保留工具面板。关闭文档/退出逐个处理未保存文档，工作区布局不自动重建文档像素。数位板经 QTabletEvent 接入并抑制合成鼠标。详见 [设计](docs/document-workspace-design.md) / [验收](docs/document-workspace-validation.md)。
 
 QML 新建每边支持 1–1,000,000 像素，只为可见区域和导航分配显示帧，每槽输出最多 4,194,304 像素（RGBA8 16 MiB），不按文档尺寸分配整张 QImage。Qt 接收队列每槽至多一张待处理帧。瓦片/历史仍有资源预算，尺寸上限不代表能无限量填满画布。当前 CPU 降采样为全局对齐的 2^LOD 方块平均；任意比例精细重采样后续优化。
 

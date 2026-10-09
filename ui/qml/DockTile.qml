@@ -32,30 +32,51 @@ Item {
     Component {
         id:rail
         Rectangle {
-            color:Theme.panelBar
+            id:railRoot;color:Theme.panelBar
+            property var peek:null
+            function openPanel(panel){
+                const same=peek && peek.visible && peek.selectedPanel===panel
+                Workspace.setActive(root.layoutData.id,panel)
+                if(same){peek.close();return}
+                if(!peek)peek=flyoutFactory.createObject(railRoot,{ownerTile:root,canvasView:root.workspace.canvasView})
+                peek.showPanel(panel)
+            }
+            Component.onDestruction:if(peek){peek.destroy();peek=null}
             IconButton {objectName:"dockCollapse:"+root.layoutData.location;visible:root.layoutData.columnFirst;width:28;height:10;padding:2;glyph:"expand";tooltip:"展开面板列";onClicked:Workspace.setColumnCollapsed(root.layoutData.id,false)}
+            MouseArea {
+                anchors.top:parent.top;anchors.left:parent.left;width:12;height:12;visible:root.layoutData.columnFirst
+                property point start
+                onPressed:m=>start=Qt.point(m.x,m.y)
+                onPositionChanged:m=>{if(pressed && Math.abs(m.x-start.x)+Math.abs(m.y-start.y)>8)Qt.callLater(()=>Workspace.beginDrag(root.layoutData.id,"",true))}
+            }
             Column {
                 y:root.layoutData.columnFirst?12:0;width:parent.width
                 Repeater {
                     model:root.layoutData.panels
                     IconButton {
-                        required property string modelData
+                        id:railButton;required property string modelData
                         objectName:"railPanel:"+modelData;width:28;height:28;padding:7
-                        glyph:Workspace.panelDefinition(modelData).kind;tooltip:Workspace.panelDefinition(modelData).title
-                        onClicked:{Workspace.setActive(root.layoutData.id,modelData);if(root.layoutData.location==="floating")Workspace.setColumnCollapsed(root.layoutData.id,false);else peek.open()}
+                        checked:railRoot.peek && railRoot.peek.visible && railRoot.peek.selectedPanel===modelData
+                        glyph:Workspace.panelDefinition(modelData).kind==="brush-settings"?"settings":Workspace.panelDefinition(modelData).kind;tooltip:Workspace.panelDefinition(modelData).title
+                        MouseArea {
+                            objectName:"railGrip:"+railButton.modelData;anchors.fill:parent
+                            property point start;property bool moving:false
+                            onPressed:m=>{start=Qt.point(m.x,m.y);moving=false}
+                            onPositionChanged:m=>{
+                                if(pressed && !moving && !PaintClient.drawing && Math.abs(m.x-start.x)+Math.abs(m.y-start.y)>8){
+                                    moving=true;if(railRoot.peek)railRoot.peek.close()
+                                    const id=root.layoutData.id,panel=railButton.modelData;Qt.callLater(()=>Workspace.beginDrag(id,panel,false))
+                                }
+                            }
+                            onClicked:if(!moving)railRoot.openPanel(railButton.modelData)
+                        }
                     }
                 }
             }
-            Popup {
-                id:peek;x:root.layoutData.location==="left"?root.width:-width;y:0
-                width:root.layoutData.location==="left"?Workspace.leftDockWidth:Workspace.rightDockWidth
-                height:Math.max(280,Math.min(root.height,620));padding:1
-                closePolicy:Popup.CloseOnEscape|Popup.CloseOnPressOutside
-                background:Rectangle {color:Theme.surface;border.color:Theme.line}
-                contentItem:Loader {active:peek.visible;sourceComponent:PanelGroup {groupData:root.layoutData;canvasView:root.workspace.canvasView;flyout:true;onDismissRequested:peek.close()}}
-            }
+            Component {id:flyoutFactory;PanelFlyout {id:flyout;onClosing: {Workspace.watchPanelFlyout(flyout,ownerTile,false);if(railRoot.peek===flyout)railRoot.peek=null;Qt.callLater(()=>flyout.destroy())}}}
         }
     }
+
     DropArea {
         id:drop;anchors.fill:parent;enabled:!root.isCanvas && (root.isTools || root.layoutData.rail)
         keys:["application/x-drawverse-panel","application/x-drawverse-tool-strip"]

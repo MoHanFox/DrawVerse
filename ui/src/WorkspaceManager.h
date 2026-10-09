@@ -32,6 +32,7 @@ class WorkspaceManager final : public QObject {
 public:
     Q_INVOKABLE QRect availableScreenGeometry(QWindow *window) const;
     Q_INVOKABLE void watchMenuWindow(QWindow *window, bool visible);
+    Q_INVOKABLE void watchPanelFlyout(QWindow *window,QQuickItem *owner,bool visible);
     Q_INVOKABLE bool setMenuBarBlur(QWindow *window, bool enabled);
     Q_INVOKABLE bool setWindowCornerRadius(QWindow *window, int radius);
     explicit WorkspaceManager(const QString &settingsFile = {}, QObject *parent = nullptr);
@@ -73,7 +74,6 @@ public:
     Q_INVOKABLE void beginDrag(const QString &group, const QString &panel, bool whole);
     Q_INVOKABLE bool dockPayload(const QString &payload, const QString &location, const QString &target = {},
                                 const QString &placement = "merge", const QString &beforePanel = {});
-    Q_INVOKABLE void setGroupCollapsed(const QString &group, bool collapsed);
     Q_INVOKABLE void updateDockHeight(const QString &group, int height);
     Q_INVOKABLE void hidePanel(const QString &group, const QString &panel = {});
     Q_INVOKABLE void showPanel(const QString &panel);
@@ -120,6 +120,8 @@ private:
     bool m_toolsFloating = false;
     QPoint m_toolPosition{100,100};
     QPointer<QWindow> m_menuWindow;
+    QPointer<QWindow> m_panelFlyout;
+    QPointer<QQuickItem> m_flyoutOwner;
     QMap<QString,DockTree::Node> m_docks;
     QHash<QString,QRect> m_windowGeometry;
     QSet<QString> m_iconGroups;
@@ -132,6 +134,7 @@ private:
     QHash<QString,QRect> m_beforeWindows;
     QList<Group> m_beforeGroups;
     QSet<QString> m_beforeIcons;
+    bool isIconGroup(const QString &group) const;
     void initializeDocks();
     QString hostFor(const QString &group) const;
     void removeDock(const QString &group);

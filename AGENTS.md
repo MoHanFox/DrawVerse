@@ -13,6 +13,7 @@
 - 最新参考图 UI / 停靠：`docs/reference-ui-design.md` / `docs/reference-ui-validation.md`；无边框紧凑工作区、原生浮窗、工具条拖放、布局 v4。用户要求每个模块验证后 commit 并推送 origin/master，持续推进；Python 插件最后。
 - 最新自由停靠：`docs/flexible-docking-design.md` / `docs/flexible-docking-validation.md`；画布、面板组和工具条共用主窗/浮窗分割树，空分支收缩，布局 v5，替代固定左右列；只有一个可移换父项的主画布实例。
 - 最新文档工作区 / 面板列：`docs/document-workspace-design.md` / `docs/document-workspace-validation.md`；多个独立 PaintCoreClient 文档、画布浮窗标签、工具列统一图标折叠、实际原生窗口拖动、布局 v6。画布与工具面板互不接收，主窗保留 #17191C 文档留空区。
+- 最新图标列 / 临时面板：`docs/icon-rail-design.md` / `docs/icon-rail-validation.md`；主工作区边缘优先归位、唯一图标折叠模式与状态继承、图标直接拖出、侧边临时窗切换/滑动/空白关闭、单画布浮窗一行标题。
 - 最新几何选区：`docs/selection-design.md` / `docs/selection-validation.md`；ABI 1.8、有界几何、笔刷/擦除/蒙版限制、历史与 ORA v4、QML 静态轮廓。
 - 最新画笔库 / 设置关联：`docs/brush-library-design.md` / `docs/brush-library-validation.md`；共享活动预设、真实异步引擎预览、直径/间距单位转换、后台保存；高级笔尖未实现。
 - 当前任务/CPU 视口与异步 ABI：`docs/task-render-design.md` / `docs/task-render-validation.md`，Qt 不再使用 C++ 绘画队列或整张文档缓存。

@@ -10,6 +10,7 @@
 #include <QSettings>
 #include <QUuid>
 #include <QMouseEvent>
+#include <QKeyEvent>
 #include <QSet>
 #include <QDropEvent>
 #include <QQuickItem>
@@ -30,6 +31,16 @@ QRect WorkspaceManager::availableScreenGeometry(QWindow *window) const {
 void WorkspaceManager::watchMenuWindow(QWindow *window,bool visible) {
     if(visible) m_menuWindow=window;
     else if(m_menuWindow==window) m_menuWindow.clear();
+}
+void WorkspaceManager::watchPanelFlyout(QWindow *window,QQuickItem *owner,bool visible) {
+    if(visible) {
+        if(m_panelFlyout && m_panelFlyout!=window)m_panelFlyout->close();
+        m_panelFlyout=window;m_flyoutOwner=owner;
+    } else if(m_panelFlyout==window){m_panelFlyout.clear();m_flyoutOwner.clear();}
+}
+bool WorkspaceManager::isIconGroup(const QString &group) const {
+    const int at=index(group);
+    return at>=0 && (m_iconGroups.contains(group) || (m_groups[at].location=="left" && m_leftCollapsed) || (m_groups[at].location=="right" && m_rightCollapsed));
 }
 bool WorkspaceManager::setWindowCornerRadius(QWindow *window,int radius) {
 #ifdef Q_OS_WIN
@@ -73,7 +84,15 @@ WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent)
     qApp->installEventFilter(this);
     connect(&m_windowDrag,&WindowDrag::moved,this,[this](QPoint global,bool suppressed) {
         QString target,placement;
-        if(!suppressed)for(auto it=m_targets.cbegin();it!=m_targets.cend();++it) {
+        if(target.isEmpty() && !suppressed && m_workspaceArea && m_workspaceArea->isVisible() && m_workspaceArea->window() && m_workspaceArea->window()->isVisible()) {
+            const QRectF area(m_workspaceArea->mapToGlobal({0,0}),QSizeF(m_workspaceArea->width(),m_workspaceArea->height()));
+            if(area.adjusted(-12,0,12,0).contains(global)) {
+                const auto x=global.x()-area.x();
+                if(x<36)target="__workspace_left";else if(x>area.width()-36)target="__workspace_right";
+                if(!target.isEmpty())placement=target.endsWith("left")?"left":"right";
+            }
+        }
+        if(target.isEmpty() && !suppressed)for(auto it=m_targets.cbegin();it!=m_targets.cend();++it) {
             auto *item=it.value().data();if(!item || !item->isVisible() || !item->window() || !item->window()->isVisible() || m_dragGroups.contains(it.key()) || hostFor(it.key())==m_dragHost)continue;
             const QRectF area(item->mapToGlobal({0,0}),QSizeF(item->width(),item->height()));
             if(!area.contains(global))continue;
@@ -84,14 +103,6 @@ WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent)
             else if(at.x()>area.width()-24)placement="right";
             else placement=m_dragGroups.contains("__toolstrip")?(at.x()<area.width()/2?"left":"right"):"merge";
             break;
-        }
-        if(target.isEmpty() && !suppressed && m_workspaceArea && m_workspaceArea->isVisible()) {
-            const QRectF area(m_workspaceArea->mapToGlobal({0,0}),QSizeF(m_workspaceArea->width(),m_workspaceArea->height()));
-            if(area.contains(global)) {
-                const auto x=global.x()-area.x();
-                if(x<20)target="__workspace_left";else if(x>area.width()-20)target="__workspace_right";
-                if(!target.isEmpty())placement=target.endsWith("left")?"left":"right";
-            }
         }
         m_dockingSuppressed=suppressed;m_dragTarget=target;m_dragPlacement=placement;emit dragModifiersChanged();
     });
@@ -144,7 +155,8 @@ void WorkspaceManager::applyReferenceLayout(int x,int y,int width,int height) {
     }
     m_groups.append({newId(),"right",{"history"},"history",{x+width-210,y+60,190,220},"right",false,qRound(height*.29)});
     m_groups.append({newId(),"right",{"layers","navigator"},"layers",{x+width-210,y+290,190,400},"right",false,qRound(height*.65)});
-    m_groups.append({newId(),"floating",{"brush","brush-settings"},"brush-settings",safeGeometry({x+70,y+100,150,360}),"left",true,360});
+    m_groups.append({newId(),"floating",{"brush","brush-settings"},"brush-settings",safeGeometry({x+70,y+100,150,360}),"left",false,360});
+    m_iconGroups.insert(m_groups.last().id);
     m_groups.append({newId(),"floating",{"color"},"color",safeGeometry({x+qRound(width*.18),y+70,155,235}),"right",false,235});
     m_leftCollapsed=false; m_rightCollapsed=false; m_leftWidth=180; m_rightWidth=190; m_uiRevision=2;
     m_toolsFloating=false;emit toolStripChanged();
@@ -245,7 +257,7 @@ QVariantList WorkspaceManager::floatingWindows() const {
         const auto minimum=dockMinimum(it.value());
         QStringList panels;
         for(const auto &id:ids) panels.append(groupDefinition(id).value("panels").toStringList());
-        const bool collapsed=std::all_of(ids.cbegin(),ids.cend(),[this](const auto &id){return index(id)>=0 && m_groups[index(id)].collapsed;});
+        const bool collapsed=std::all_of(ids.cbegin(),ids.cend(),[this](const auto &id){return isIconGroup(id);});
         const bool icons=std::all_of(ids.cbegin(),ids.cend(),[this](const auto &id){return m_iconGroups.contains(id);});
         result.append(QVariantMap{{"id",it.key()},{"groups",ids},{"panels",panels},{"single",ids.size()==1},{"icons",icons},
             {"collapsed",collapsed},{"compactHeight",minimum.height()+2},
@@ -263,8 +275,7 @@ QSizeF WorkspaceManager::dockMinimum(const DockTree::Node &node) const {
         const int at=index(id);if(at<0)return {};
         const auto &g=m_groups[at];
         const bool first=columnGroups(id).first()==id;
-        if(m_iconGroups.contains(id) || (g.location=="left" && m_leftCollapsed) || (g.location=="right" && m_rightCollapsed)) return {28,qreal((first?12:0)+28*g.panels.size())};
-        if(g.collapsed)return {150,qreal((first?8:0)+22*g.panels.size())};
+        if(isIconGroup(id)) return {28,qreal((first?12:0)+28*g.panels.size())};
         const auto kind=panelDefinition(g.active).value("kind").toString();
         return {g.location=="right"?190.:150.,kind=="layers"?250.:kind=="brush-settings"?260.:120.};
     }
@@ -274,10 +285,10 @@ QSizeF WorkspaceManager::dockMinimum(const DockTree::Node &node) const {
 }
 QVariantList WorkspaceManager::layoutItems(const QString &host,int width,int height) const {
     QVariantList result;
-    const auto rail=[&](const QString &id) { const int at=index(id); return at>=0 && (m_iconGroups.contains(id) || (m_groups[at].location=="left" && m_leftCollapsed) || (m_groups[at].location=="right" && m_rightCollapsed)); };
-    std::function<bool(const DockTree::Node&,bool)> compact=[&](const auto &node,bool horizontal) {
+    const auto rail=[&](const QString &id) {return isIconGroup(id);};
+    std::function<bool(const DockTree::Node&,bool)> compact=[&](const auto &node,bool) {
         const auto ids=DockTree::leaves(node);
-        return !ids.isEmpty() && std::all_of(ids.cbegin(),ids.cend(),[&](const auto &id){const int at=index(id);return rail(id) || (!horizontal && at>=0 && m_groups[at].collapsed);});
+        return !ids.isEmpty() && std::all_of(ids.cbegin(),ids.cend(),[&](const auto &id){return rail(id);});
     };
     std::function<void(const DockTree::Node&,QRectF)> visit=[&](const auto &node,QRectF rect) {
         if(node.isEmpty()) return;
@@ -325,7 +336,7 @@ QVariantMap WorkspaceManager::groupDefinition(const QString &id) const {
     const auto &g=m_groups[i];
     return {{"id",g.id},{"host",hostFor(id)},{"location",g.location},{"panels",g.panels},{"active",g.active},
             {"x",g.geometry.x()},{"y",g.geometry.y()},{"width",g.geometry.width()},{"height",g.geometry.height()},
-            {"collapsed",g.collapsed},{"dockHeight",g.dockHeight}};
+            {"collapsed",false},{"icons",isIconGroup(g.id)},{"dockHeight",g.dockHeight}};
 }
 QVariantList WorkspaceManager::groupsAt(const QString &location) const {
     QVariantList result;
@@ -357,10 +368,6 @@ void WorkspaceManager::setActive(const QString &group,const QString &panel) {
     m_groups[i].active=panel; emit groupStateChanged(group);
     // Selection and collapse never destroy floating windows or active controls.
 }
-void WorkspaceManager::setGroupCollapsed(const QString &group,bool collapsed) {
-    const int i=index(group); if(i<0 || m_groups[i].collapsed==collapsed) return;
-    m_groups[i].collapsed=collapsed; emit groupStateChanged(group);emit layoutChanged();
-}
 void WorkspaceManager::updateDockHeight(const QString &group,int height) {
     const int i=index(group); if(i>=0 && !m_groups[i].collapsed && m_groups[i].location!="floating" && height>80)
         m_groups[i].dockHeight=std::clamp(height,100,2000);
@@ -387,6 +394,7 @@ bool WorkspaceManager::dockPayload(const QString &data,const QString &location,c
         syncToolsLocation(); emit groupsChanged(); return true;
     }
     const QString mode=targetSpecial && placement=="merge"?QStringLiteral("right"):placement;
+    const bool targetIcons=isIconGroup(target) || (target.isEmpty() && std::any_of(m_groups.cbegin(),m_groups.cend(),[&](const auto &g){return g.location==location && isIconGroup(g.id);}));
     const auto original=m_groups[from];
     const bool whole=object.value("whole").toBool(false);
     if(!whole && !original.panels.contains(panel)) return false;
@@ -414,6 +422,7 @@ bool WorkspaceManager::dockPayload(const QString &data,const QString &location,c
         to=index(target);
         const int at=to<0?m_groups.size():to+(mode=="after" || mode=="bottom" || mode=="right"?1:0);
         m_groups.insert(at,g);
+        if(targetIcons)m_iconGroups.insert(g.id);
         addDock(g.id,location,target,mode);
     } else {
         for(const auto &id:moving) m_groups[from].panels.removeAll(id);
@@ -432,11 +441,10 @@ bool WorkspaceManager::dockPayload(const QString &data,const QString &location,c
                     location=="left" || location=="right"?location:original.home,false,original.dockHeight};
             const int at=to<0?m_groups.size():to+(mode=="after" || mode=="bottom" || mode=="right"?1:0);
             m_groups.insert(at,g);
+            if(targetIcons)m_iconGroups.insert(g.id);
             addDock(g.id,location,target,mode);
         }
     }
-    if(location=="left") setLeftCollapsed(false);
-    if(location=="right") setRightCollapsed(false);
     syncToolsLocation();emit groupsChanged(); return true;
 }
 void WorkspaceManager::hidePanel(const QString &group,const QString &panel) {
@@ -457,8 +465,8 @@ void WorkspaceManager::hidePanel(const QString &group,const QString &panel) {
 }
 void WorkspaceManager::showPanel(const QString &panel) {
     for(const auto &g:m_groups) if(g.panels.contains(panel)) {
-        if(g.location!="hidden") { setActive(g.id,panel); setGroupCollapsed(g.id,false);
-            if(g.location=="left")setLeftCollapsed(false); if(g.location=="right")setRightCollapsed(false); return; }
+        if(g.location!="hidden") { setActive(g.id,panel);
+            return; }
         const auto home=g.home;
         QString target;
         for(const auto &candidate:m_groups) if(candidate.location==home){target=candidate.id;break;}
@@ -471,7 +479,7 @@ void WorkspaceManager::beginDrag(const QString &group,const QString &panel,bool 
     const auto oldHost=hostFor(group);const auto cursor=QCursor::pos();
     QString host=oldHost;
     const bool one=DockTree::leaves(m_docks.value(oldHost)).size()==1;
-    if(oldHost=="main" || (!whole && (!one || (index(group)>=0 && m_groups[index(group)].panels.size()>1)))) {
+    if(oldHost=="main" || (!whole && (!one || isIconGroup(group) || (index(group)>=0 && m_groups[index(group)].panels.size()>1)))) {
         if(whole && group!="__toolstrip") {
             const auto column=columnGroups(group);QString first;
             for(const auto &id:column) {
@@ -514,6 +522,23 @@ bool WorkspaceManager::eventFilter(QObject *,QEvent *event) {
             return true;
         }
     }
+    if(m_panelFlyout && m_panelFlyout->isVisible()) {
+        if(event->type()==QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key()==Qt::Key_Escape) {m_panelFlyout->close();return true;}
+        if(event->type()==QEvent::MouseButtonPress) {
+            const auto global=static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
+            if(!m_panelFlyout->geometry().contains(global)) {
+                if(m_flyoutOwner) {
+                    const QRectF rail(m_flyoutOwner->mapToGlobal({0,0}),QSizeF(m_flyoutOwner->width(),m_flyoutOwner->height()));
+                    if(rail.contains(global))return false;
+                    for(auto it=m_targets.cbegin();it!=m_targets.cend();++it)if(isIconGroup(it.key()) && it.value() && it.value()->isVisible()) {
+                        auto *item=it.value().data();const QRectF other(item->mapToGlobal({0,0}),QSizeF(item->width(),item->height()));
+                        if(other.contains(global))return false;
+                    }
+                }
+                m_panelFlyout->close();return true;
+            }
+        }
+    }
     if(event->type()==QEvent::DragEnter || event->type()==QEvent::DragMove || event->type()==QEvent::Drop) {
         const auto *drop=static_cast<QDropEvent*>(event);
         if(drop->mimeData()->hasFormat("application/x-drawverse-panel") || drop->mimeData()->hasFormat("application/x-drawverse-tool-strip")) {
@@ -532,7 +557,9 @@ void WorkspaceManager::detachPanel(const QString &group,const QString &panel) { 
 void WorkspaceManager::returnGroup(const QString &group) {
     if(group=="__canvas" || group=="__toolstrip") { dockPayload(payload(group,{},true),"main");return; }
     const int i=index(group); if(i<0) return;
-    const auto home=m_groups[i].home;removeDock(group);m_groups[i].location=home;addDock(group,home,{},"after");syncToolsLocation();emit groupsChanged();
+    const auto home=m_groups[i].home;
+    for(const auto &g:m_groups)if(g.location==home && isIconGroup(g.id)){m_iconGroups.insert(group);break;}
+    removeDock(group);m_groups[i].location=home;addDock(group,home,{},"after");syncToolsLocation();emit groupsChanged();
 }
 void WorkspaceManager::returnWindow(const QString &host) {
     if(host=="main") return;
@@ -568,7 +595,7 @@ void WorkspaceManager::updateGeometry(const QString &id,int x,int y,int w,int h)
 void WorkspaceManager::saveLayout() const {
     QJsonArray groups;
     for(const auto &g:m_groups) groups.append(QJsonObject{{"id",g.id},{"location",g.location},{"panels",QJsonArray::fromStringList(g.panels)},
-                                                        {"active",g.active},{"home",g.home},{"collapsed",g.collapsed},{"dockHeight",g.dockHeight},{"x",g.geometry.x()},{"y",g.geometry.y()},{"width",g.geometry.width()},{"height",g.geometry.height()}});
+                                                        {"active",g.active},{"home",g.home},{"collapsed",false},{"dockHeight",g.dockHeight},{"x",g.geometry.x()},{"y",g.geometry.y()},{"width",g.geometry.width()},{"height",g.geometry.height()}});
     QJsonObject panels; for(auto it=m_panels.cbegin();it!=m_panels.cend();++it) panels.insert(it.key(),QJsonObject::fromVariantMap(it.value()));
     QSettings settings(m_settingsFile.isEmpty()?QSettings::NativeFormat:QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse");
     QJsonObject docks,windows;
@@ -674,6 +701,7 @@ bool WorkspaceManager::restoreLayout() {
         }
         if(!inMain)docks["main"]=DockTree::split(docks.value("main"),DockTree::leaf("__canvas"),"horizontal",.25);
     }
+    for(auto &g:restored)if(g.collapsed){icons.insert(g.id);g.collapsed=false;migrated=true;}
     m_iconGroups=icons;
     m_panels=restoredPanels; m_groups=restored;
     m_uiRevision=root.value("uiRevision").toInt(0);
@@ -685,6 +713,9 @@ bool WorkspaceManager::restoreLayout() {
     m_toolsFloating=root.value("toolsFloating").toBool(false);emit toolStripChanged();
     if(root.value("version").toInt()>=5) {m_docks=docks;m_windowGeometry=windows;syncToolsLocation();}
     else initializeDocks();
+    const auto oldIcons=m_iconGroups;
+    for(const auto &id:oldIcons)for(const auto &member:columnGroups(id))m_iconGroups.insert(member);
+    migrated=migrated || oldIcons!=m_iconGroups;
     emit dockMetricsChanged();
     if(migrated) saveLayout();
     emit groupsChanged(); return true;
