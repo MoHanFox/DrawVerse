@@ -2,6 +2,7 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Test)
 set(CMAKE_AUTOMOC ON)
 
 add_library(drawverse_ui STATIC
+    src/UiScale.h
     src/PaintCoreClient.h src/PaintCoreClient.cpp
     src/CanvasItem.h src/CanvasItem.cpp
     src/SelectionOverlay.h src/SelectionOverlay.cpp
@@ -29,6 +30,7 @@ set_target_properties(qt_ui_tests PROPERTIES WIN32_EXECUTABLE FALSE)
 add_test(NAME qt_ui_tests COMMAND qt_ui_tests -o "${CMAKE_BINARY_DIR}/qt-ui-tests.txt,txt" -o "-,txt")
 set_tests_properties(qt_ui_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
+    uiScaleAppliesToMainPanelAndToolWindowsWithoutChangingLayout
     layerControlsCommitOnceAndWorkInFloatingPanels moveToolMouseKeyboardAndPositionLock
     transparentCanvasAndNavigatorUseCheckerboardWithoutChangingPixels
     groupsCollapseMoveUndoAndSaveWorkAcrossFloatingPanels

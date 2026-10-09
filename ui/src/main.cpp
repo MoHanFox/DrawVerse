@@ -3,6 +3,7 @@
 #include "SelectionOverlay.h"
 #include "WorkspaceManager.h"
 #include "PaintingBenchmark.h"
+#include "UiScale.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -15,6 +16,7 @@
 #include <cmath>
 
 int main(int argc,char **argv) {
+    configureUiScale();
     QGuiApplication app(argc,argv);
     app.setOrganizationName("DrawVerse"); app.setApplicationName("DrawVerse");
     if(app.arguments().contains("--migrate-workspace")) { WorkspaceManager workspace; workspace.saveLayout(); return 0; }

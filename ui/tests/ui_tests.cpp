@@ -2,6 +2,7 @@
 #include "ColorWheelItem.h"
 #include "SelectionOverlay.h"
 #include "WorkspaceManager.h"
+#include "UiScale.h"
 #include <QtTest>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -36,6 +37,48 @@ QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
 class UiTests final : public QObject {
     Q_OBJECT
 private slots:
+    void uiScaleAppliesToMainPanelAndToolWindowsWithoutChangingLayout() {
+        QTemporaryDir temp;
+        PaintCoreClient client(nullptr,temp.filePath("storage.ini"));
+        WorkspaceManager workspace(temp.filePath("layout.ini"));
+        QQmlApplicationEngine engine;
+        QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors) {
+            for(const auto &error:errors) warnings.append(error.toString());
+        });
+        engine.rootContext()->setContextProperty("PaintClient",&client);
+        engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.load(QUrl("qrc:/qml/Main.qml"));
+        QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window); QTRY_VERIFY(client.ready());
+        auto *options=findVisualItem(window->contentItem(),"brushOptionsBar");
+        QVERIFY(options); QCOMPARE(options->height(),qreal(28));
+        const auto group=workspace.rightGroups().first().toMap().value("id").toString();
+        workspace.detachPanel(group,"color");
+        workspace.floatToolStrip(window->x()+60,window->y()+80);
+        QTRY_COMPARE(QGuiApplication::allWindows().size(),3);
+        const qreal expected=qEnvironmentVariable("QT_SCALE_FACTOR").toDouble();
+        QVERIFY(expected>=1.1);
+        for(auto *nativeWindow:QGuiApplication::allWindows()) {
+            auto *quick=qobject_cast<QQuickWindow*>(nativeWindow); QVERIFY(quick);
+            if(qEnvironmentVariable("QT_QPA_PLATFORM")=="offscreen")
+                QVERIFY(std::abs(quick->devicePixelRatio()-expected)<.000001);
+            QCOMPARE(quick->devicePixelRatio(),window->devicePixelRatio());
+            QTRY_VERIFY(!quick->grabWindow().isNull());
+            const auto image=quick->grabWindow();
+            QVERIFY(std::abs(image.width()-quick->width()*quick->devicePixelRatio())<=1);
+            QVERIFY(std::abs(image.height()-quick->height()*quick->devicePixelRatio())<=1);
+        }
+        QCOMPARE(workspace.floatingGroups().first().toMap().value("panels").toStringList(),QStringList{"color"});
+        workspace.saveLayout();
+        WorkspaceManager restored(temp.filePath("layout.ini"));
+        QCOMPARE(restored.floatingGroups(),workspace.floatingGroups());
+        QVERIFY(restored.toolsFloating());
+        QCOMPARE(warnings,QStringList());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);
+        client.shutdown(); QTRY_COMPARE(stopped.size(),1);
+    }
     void selectionOutlineCombinesInDocumentCoordinatesWithoutRedrawOnIdenticalState() {
         SelectionOverlay item;item.setDocumentRect({20,30,200,200});item.setZoom(2);
         const auto step=[](int op,int shape,QRectF r){return QVariantMap{{"operation",op},{"shape",shape},{"x",r.x()},{"y",r.y()},{"width",r.width()},{"height",r.height()}};};
@@ -928,6 +971,7 @@ private slots:
     }
 };
 int main(int argc,char **argv) {
+    configureUiScale();
 #ifdef Q_OS_WIN
     // Offscreen does not use the Windows font database. Use installed system fonts.
     if (qEnvironmentVariable("QT_QPA_PLATFORM") == "offscreen")
