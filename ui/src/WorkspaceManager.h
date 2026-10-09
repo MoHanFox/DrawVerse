@@ -29,6 +29,7 @@ class WorkspaceManager final : public QObject, public QAbstractNativeEventFilter
     Q_PROPERTY(QString dragTarget READ dragTarget NOTIFY dragModifiersChanged)
     Q_PROPERTY(QString dragPlacement READ dragPlacement NOTIFY dragModifiersChanged)
     Q_PROPERTY(bool dragging READ dragging NOTIFY dragModifiersChanged)
+    Q_PROPERTY(QStringList dragGroups READ dragGroups NOTIFY dragModifiersChanged)
     Q_PROPERTY(bool toolsFloating READ toolsFloating NOTIFY toolStripChanged)
     Q_PROPERTY(int toolStripX READ toolStripX NOTIFY toolStripChanged)
     Q_PROPERTY(int toolStripY READ toolStripY NOTIFY toolStripChanged)
@@ -60,6 +61,7 @@ public:
     QString dragTarget() const {return m_dragTarget;}
     QString dragPlacement() const {return m_dragPlacement;}
     bool dragging() const {return m_windowDrag.active();}
+    QStringList dragGroups() const {return m_dragGroups;}
     Q_INVOKABLE void registerTarget(const QString &group,QQuickItem *item);
     Q_INVOKABLE void registerWorkspace(QQuickItem *item);
     Q_INVOKABLE QStringList columnGroups(const QString &group) const;
@@ -129,9 +131,7 @@ private:
     QPointer<QWindow> m_glassWindow;
     quintptr m_glassHandle=0;
     MenuBlurLayer m_menuBlur{this};
-    QPointer<QWindow> m_panelFlyout;
-    QPointer<QQuickItem> m_flyoutOwner;
-    quint64 m_flyoutRevision=0;
+    QList<QPointer<QWindow>> m_panelFlyouts;
     QMap<QString,DockTree::Node> m_docks;
     QHash<QString,QRect> m_windowGeometry;
     QSet<QString> m_iconGroups;
@@ -149,7 +149,7 @@ private:
     void initializeDocks();
     QString hostFor(const QString &group) const;
     void removeDock(const QString &group);
-    void addDock(const QString &group,const QString &location,const QString &target,const QString &edge);
+    void addDock(const QString &group,const QString &location,const QString &target,const QString &edge,bool independentColumn=false);
     void syncToolsLocation();
     QSizeF dockMinimum(const DockTree::Node &node) const;
 };

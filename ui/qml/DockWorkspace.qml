@@ -17,7 +17,7 @@ Item {
         for(let i=0;i<items.length;i++) {
             const data=items[i];live[data.id]=true
             if(views[data.id]) views[data.id].updateLayout(data)
-            else views[data.id]=(data.kind==="leaf"?leafFactory:splitFactory).createObject(root,{layoutData:data,workspace:root})
+            else views[data.id]=(data.kind==="leaf"?leafFactory:data.kind==="railBackground"?railBackgroundFactory:splitFactory).createObject(root,{layoutData:data,workspace:root})
         }
         for(const id in views) if(!live[id]) {
             if(views[id].releaseCanvas) views[id].releaseCanvas()
@@ -36,6 +36,17 @@ Item {
     }
     Component {id:leafFactory;DockTile {}}
     Component {id:splitFactory;DockDivider {}}
+    Component {
+        id:railBackgroundFactory
+        Rectangle {
+            required property var layoutData
+            property var workspace
+            objectName:layoutData.id
+            x:layoutData.rect.x;y:layoutData.rect.y;width:layoutData.rect.width;height:layoutData.rect.height
+            z:-.5;color:Theme.surface
+            function updateLayout(data){layoutData=data}
+        }
+    }
     DropArea {
         objectName:root.hostId==="main"?"toolStripDockTarget":"emptyDockTarget:"+root.hostId
         anchors.fill:parent;z:-1

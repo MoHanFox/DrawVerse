@@ -30,7 +30,7 @@ Rectangle {
     Connections {
         target: Workspace
         function onGroupStateChanged(group) {
-            if(group!==root.groupData.id) return
+            if(root.flyout || group!==root.groupData.id) return
             const data=Workspace.groupDefinition(group)
             root.selected=data.active
         }
@@ -93,6 +93,11 @@ Rectangle {
                     visible:!root.flyout
                     width:visible?16:0;height:8;padding:1;glyph:"collapse";tooltip:"折叠为图标"
                     onClicked:Workspace.setColumnCollapsed(root.groupData.id,true)
+                }
+                IconButton {
+                    objectName:"flyoutRetract:"+root.selected
+                    visible:root.flyout;width:visible?16:0;height:8;padding:1;glyph:"collapse";tooltip:"收回面板"
+                    onClicked:root.dismissRequested()
                 }
 
             }

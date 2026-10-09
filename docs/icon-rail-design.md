@@ -1,5 +1,6 @@
 # 图标列与画布标题交互修复（2026-10-09）
 
+后续图标列行为以 [persistent-panel-rails-design.md](persistent-panel-rails-design.md) 为准：支持多开、空白/失焦不收回、单图标独立内容、浮动列高度及归位状态保留。以下唯一临时窗及空白关闭条款已被取代。
 后续更新：参考图布局预设已删除，默认布局为双列停靠；窗口恢复、统一边缘吸附和标签排序以 [window-recovery-design.md](window-recovery-design.md) 为准。
 仅修改 Qt / QML UI，不改核心或 ABI。主工作区自身的左右边缘接收浮动工具面板，无论文档区域是否独占或为空；画布主体仍不接收工具停靠。边缘吸附包含靠近外边界的容差，且有实时预览。
 

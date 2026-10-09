@@ -13,6 +13,7 @@ Item {
     readonly property bool isTools:layoutData.id==="__toolstrip"
     function updateLayout(data){layoutData=data;if(isCanvas && workspace.canvasPane.parent!==canvasHost)workspace.canvasPane.attach(canvasHost)}
     function releaseCanvas(){if(isCanvas && workspace.canvasPane.parent===canvasHost)workspace.canvasPane.park()}
+    function iconAnchor(panel){return contentLoader.item && contentLoader.item.iconAnchor?contentLoader.item.iconAnchor(panel):mapToGlobal(0,0)}
     function locateDrop(x,y){
         const distance=Math.min(x,width-x,y,height-y)
         if(distance===x)dropMode="left"
@@ -23,6 +24,7 @@ Item {
     Item {id:canvasHost;anchors.fill:parent;visible:root.isCanvas}
     Component.onCompleted:{if(isCanvas)workspace.canvasPane.attach(canvasHost);else Workspace.registerTarget(layoutData.id,root)}
     Loader {
+        id:contentLoader
         anchors.fill:parent;active:!root.isCanvas
         sourceComponent:root.isTools?tools:root.layoutData.rail?rail:panel
     }
@@ -35,15 +37,16 @@ Item {
         id:rail
         Rectangle {
             id:railRoot;objectName:"iconRail:"+root.layoutData.id;color:Theme.surface
-            property var peek:null
+            property var peeks:({})
+            function iconAnchor(panel){for(let i=0;i<icons.count;i++){const icon=icons.itemAt(i);if(icon.modelData===panel)return icon.mapToGlobal(0,0)}return root.mapToGlobal(0,0)}
+            function removePeek(panel,window){if(peeks[panel]===window){const next=Object.assign({},peeks);delete next[panel];peeks=next}}
             function openPanel(panel){
-                const same=peek && peek.visible && peek.selectedPanel===panel
                 Workspace.setActive(root.layoutData.id,panel)
-                if(same){peek.close();return}
-                if(!peek)peek=flyoutFactory.createObject(railRoot,{ownerTile:root,canvasView:root.workspace.canvasView})
+                let peek=peeks[panel]
+                if(!peek){peek=flyoutFactory.createObject(railRoot,{ownerTile:root,panelKey:panel,canvasView:root.workspace.canvasView});const next=Object.assign({},peeks);next[panel]=peek;peeks=next}
                 peek.showPanel(panel)
             }
-            Component.onDestruction:if(peek){peek.destroy();peek=null}
+            Component.onDestruction:{for(const panel in peeks)if(peeks[panel])peeks[panel].destroy();peeks=({})}
             IconButton {objectName:"dockCollapse:"+root.layoutData.location;visible:root.layoutData.columnFirst;width:28;height:10;padding:2;glyph:"expand";tooltip:"展开面板列";onClicked:Workspace.setColumnCollapsed(root.layoutData.id,false)}
             MouseArea {
                 anchors.top:parent.top;anchors.left:parent.left;width:12;height:12;visible:root.layoutData.columnFirst
@@ -54,11 +57,12 @@ Item {
             Column {
                 y:root.layoutData.columnFirst?12:0;width:parent.width
                 Repeater {
+                    id:icons
                     model:root.layoutData.panels
                     IconButton {
                         id:railButton;required property string modelData
                         objectName:"railPanel:"+modelData;width:28;height:28;padding:7
-                        checked:railRoot.peek && railRoot.peek.visible && railRoot.peek.selectedPanel===modelData
+                        checked:!!railRoot.peeks[modelData] && railRoot.peeks[modelData].visible
                         glyph:Workspace.panelDefinition(modelData).kind==="brush-settings"?"settings":Workspace.panelDefinition(modelData).kind;tooltip:Workspace.panelDefinition(modelData).title
                         MouseArea {
                             objectName:"railGrip:"+railButton.modelData;anchors.fill:parent
@@ -66,7 +70,7 @@ Item {
                             onPressed:m=>{start=Qt.point(m.x,m.y);moving=false}
                             onPositionChanged:m=>{
                                 if(pressed && !moving && !PaintClient.drawing && Math.abs(m.x-start.x)+Math.abs(m.y-start.y)>8){
-                                    moving=true;if(railRoot.peek)railRoot.peek.close()
+                                    moving=true;if(railRoot.peeks[railButton.modelData])railRoot.peeks[railButton.modelData].close()
                                     const id=root.layoutData.id,panel=railButton.modelData;Qt.callLater(()=>Workspace.beginDrag(id,panel,false))
                                 }
                             }
@@ -75,7 +79,7 @@ Item {
                     }
                 }
             }
-            Component {id:flyoutFactory;PanelFlyout {id:flyout;onClosing: {Workspace.watchPanelFlyout(flyout,ownerTile,false);if(railRoot.peek===flyout)railRoot.peek=null;Qt.callLater(()=>flyout.destroy())}}}
+            Component {id:flyoutFactory;PanelFlyout {id:flyout;onClosing: {Workspace.watchPanelFlyout(flyout,ownerTile,false);railRoot.removePeek(panelKey,flyout);visible=false;Qt.callLater(()=>flyout.destroy())}}}
         }
     }
 
