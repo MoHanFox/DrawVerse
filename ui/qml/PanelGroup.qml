@@ -27,10 +27,19 @@ Rectangle {
             root.selected=data.active; root.collapsed=data.collapsed
         }
     }
-    function locateDrop(x,y) {
+    function specialDrop(d) {
+        if(d.formats.indexOf("application/x-drawverse-tool-strip")>=0)return true
+        const data=d.getDataAsString("application/x-drawverse-panel")
+        if(data.length>1024)return false
+        try{return JSON.parse(data).group==="__canvas"}catch(e){return false}
+    }
+    function locateDrop(x,y,special) {
         beforePanel=""
         if(y<5) dropMode="before"
         else if(y>height-10) dropMode="after"
+        else if(special) dropMode=x<width/2?"left":"right"
+        else if(y>=28 && x<Math.min(24,width*.18)) dropMode="left"
+        else if(y>=28 && x>width-Math.min(24,width*.18)) dropMode="right"
         else {
             dropMode="merge"
             if(y<28) {
@@ -48,11 +57,12 @@ Rectangle {
             Layout.fillWidth: true; implicitHeight: 8; color: Theme.strip
             MouseArea {
                 objectName: "groupGrip:"+root.groupData.id
+                enabled: !PaintClient.drawing
                 anchors.fill: parent
                 property point start
                 onPressed: mouse => start=Qt.point(mouse.x,mouse.y)
                 onPositionChanged: mouse => {
-                    if(pressed && Math.abs(mouse.x-start.x)+Math.abs(mouse.y-start.y)>8) {
+                    if(pressed && !PaintClient.drawing && Math.abs(mouse.x-start.x)+Math.abs(mouse.y-start.y)>8) {
                         const id=root.groupData.id
                         Qt.callLater(() => Workspace.beginDrag(id,"",true))
                     }
@@ -61,6 +71,12 @@ Rectangle {
             }
             Row {
                 anchors.right: parent.right; height: parent.height
+                IconButton {
+                    objectName:"dockCollapse:"+root.groupData.location
+                    visible:!root.flyout && (root.groupData.location==="left" || root.groupData.location==="right")
+                    width:visible?16:0;height:8;padding:1;glyph:"collapse";tooltip:"折叠为图标"
+                    onClicked:if(root.groupData.location==="left")Workspace.leftCollapsed=true;else Workspace.rightCollapsed=true
+                }
                 IconButton {
                     objectName: "groupCollapse:"+root.groupData.id
                     width: 16; height: 8; padding: 1; glyph: root.collapsed ? "expand" : "collapse"
@@ -102,7 +118,7 @@ Rectangle {
                                     if(root.collapsed) Workspace.setGroupCollapsed(root.groupData.id,false)
                                 }
                                 onPositionChanged: mouse => {
-                                    if(pressed && Math.abs(mouse.x-start.x)+Math.abs(mouse.y-start.y)>8) {
+                                    if(pressed && !PaintClient.drawing && Math.abs(mouse.x-start.x)+Math.abs(mouse.y-start.y)>8) {
                                         const id=root.groupData.id, panel=modelData
                                         Qt.callLater(() => Workspace.beginDrag(id,panel,false))
                                     }
@@ -148,7 +164,7 @@ Rectangle {
                     MouseArea {
                         anchors.fill: parent; property point start
                         onPressed: mouse => start=Qt.point(mouse.x,mouse.y)
-                        onPositionChanged: mouse => { if(pressed && Math.abs(mouse.x-start.x)+Math.abs(mouse.y-start.y)>8) {const id=root.groupData.id,panel=modelData;Qt.callLater(()=>Workspace.beginDrag(id,panel,false))} }
+                        onPositionChanged: mouse => { if(pressed && !PaintClient.drawing && Math.abs(mouse.x-start.x)+Math.abs(mouse.y-start.y)>8) {const id=root.groupData.id,panel=modelData;Qt.callLater(()=>Workspace.beginDrag(id,panel,false))} }
                         onClicked: {root.selected=modelData;Workspace.setActive(root.groupData.id,modelData);Workspace.setGroupCollapsed(root.groupData.id,false)}
                     }
                 }
@@ -157,21 +173,25 @@ Rectangle {
         PanelContent { Layout.fillWidth: true; Layout.fillHeight: true; visible: !root.collapsed; panelId: root.selected; canvasView: root.canvasView }
     }
     DropArea {
-        id: drop; anchors.fill: parent; keys: ["application/x-drawverse-panel"]
-        onEntered: d => { d.accepted=!Workspace.dockingSuppressed; root.locateDrop(d.x,d.y) }
-        onPositionChanged: d => { d.accepted=!Workspace.dockingSuppressed; root.locateDrop(d.x,d.y) }
+        id: drop; anchors.fill: parent; keys: ["application/x-drawverse-panel","application/x-drawverse-tool-strip"]
+        onEntered: d => { d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing; root.locateDrop(d.x,d.y,root.specialDrop(d)) }
+        onPositionChanged: d => { d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing; root.locateDrop(d.x,d.y,root.specialDrop(d)) }
         onDropped: d => {
-            root.locateDrop(d.x,d.y)
-            if(!Workspace.dockingSuppressed && Workspace.dockPayload(d.getDataAsString("application/x-drawverse-panel"),root.groupData.location,root.groupData.id,root.dropMode,root.beforePanel)) d.acceptProposedAction()
+            root.locateDrop(d.x,d.y,root.specialDrop(d))
+            if(Workspace.dockingSuppressed || PaintClient.drawing)return
+            const tools=d.formats.indexOf("application/x-drawverse-tool-strip")>=0
+            const mode=tools && root.dropMode==="merge"?(d.x<root.width/2?"left":"right"):root.dropMode
+            const ok=tools?Workspace.dockToolStrip(d.getDataAsString("application/x-drawverse-tool-strip"),root.groupData.location,root.groupData.id,mode):Workspace.dockPayload(d.getDataAsString("application/x-drawverse-panel"),root.groupData.location,root.groupData.id,root.dropMode,root.beforePanel)
+            if(ok)d.acceptProposedAction()
         }
     }
     Rectangle {
         objectName: "dockPreview:"+root.groupData.id; visible: drop.containsDrag
-        x: 1; width: root.width-2
+        x: root.dropMode==="right" ? root.width*.65 : 1; width: root.dropMode==="left" || root.dropMode==="right" ? root.width*.35 : root.width-2
         y: root.dropMode==="after" ? root.height*0.65 : root.dropMode==="merge" ? 8 : 0
-        height: root.dropMode==="merge" ? root.height-9 : root.height*.35
+        height: root.dropMode==="merge" ? root.height-9 : root.dropMode==="left" || root.dropMode==="right" ? root.height : root.height*.35
         color: "#2423b5ee"; border.color: Theme.accent; border.width: 2
-        Text { anchors.centerIn: parent; color: "#e6f6ff"; font.pixelSize: 11; text: root.dropMode==="before" ? "停靠到上方" : root.dropMode==="after" ? "停靠到下方" : root.beforePanel ? "插入标签" : "合并为标签" }
+        Text { anchors.centerIn: parent; color: "#e6f6ff"; font.pixelSize: 11; text: root.dropMode==="before" ? "停靠到上方" : root.dropMode==="after" ? "停靠到下方" : root.dropMode==="left"?"停靠到左侧":root.dropMode==="right"?"停靠到右侧":root.beforePanel ? "插入标签" : "合并为标签" }
     }
     Rectangle {
         visible: drop.containsDrag && root.dropMode==="merge" && root.beforePanel.length>0

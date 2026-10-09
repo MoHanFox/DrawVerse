@@ -54,20 +54,18 @@ ApplicationWindow {
     property bool savingBeforeAction: false
     property string fileNotice: ""
     property var floatingWindows: ({})
-    property var toolsWindow: null
-    function syncTools() {
-        if(Workspace.toolsFloating && !toolsWindow) toolsWindow=toolsFactory.createObject(root,{canvasView:canvas})
-        else if(!Workspace.toolsFloating && toolsWindow) {toolsWindow.visible=false;toolsWindow.destroy();toolsWindow=null}
-    }
+    readonly property var canvas: documentPane.canvasView
+    Item {id:canvasParking;visible:false}
+    CanvasPane {id:documentPane;parent:canvasParking;parkingParent:canvasParking;mainWindow:root;savingBlocked:root.savingBeforeAction || closeDialog.opened;onNewDocumentRequested:newDialog.open()}
     function syncFloating() {
-        const groups=Workspace.floatingGroups, live={}
+        const groups=Workspace.floatingWindows, live={}
         for(let i=0;i<groups.length;i++) {
             const g=groups[i]; live[g.id]=true
             if(floatingWindows[g.id]) floatingWindows[g.id].updateLayout(g)
-            else floatingWindows[g.id]=floatingFactory.createObject(root,{groupData:g})
+            else floatingWindows[g.id]=floatingFactory.createObject(root,{windowData:g,canvasPane:documentPane,canvasView:canvas})
         }
         for(const id in floatingWindows) if(!live[id]) {
-            floatingWindows[id].visible=false; floatingWindows[id].destroy(); delete floatingWindows[id]
+            floatingWindows[id].releaseCanvas();floatingWindows[id].visible=false; floatingWindows[id].destroy(); delete floatingWindows[id]
         }
     }
     property bool menuBarBlurActive: false
@@ -78,12 +76,10 @@ ApplicationWindow {
         menuBarBlurActive=Workspace.setMenuBarBlur(root,true)
         windowCornersReady=true
         updateWindowCorners()
-        syncFloating();syncTools()
+        syncFloating()
     }
-    Connections {target:Workspace;function onToolStripChanged(){root.syncTools()}}
-    Component {id:toolsFactory;ToolStripWindow {}}
     Connections { target: Workspace; function onGroupsChanged() { root.syncFloating() } }
-    Component { id: floatingFactory; FloatingPanel { canvasView: canvas } }
+    Component { id: floatingFactory; FloatingPanel {} }
     function executePending() {
         const action = pendingAction
         pendingAction = ""; savingBeforeAction = false
@@ -187,6 +183,8 @@ ApplicationWindow {
             objectName: "windowMenu"
             title: "窗口"
             Action {text:"工具条归位";enabled:Workspace.toolsFloating;onTriggered:Workspace.dockToolStrip("drawverse-tools-v1")}
+            Action {text:"浮动画布";enabled:!PaintClient.drawing;onTriggered:Workspace.detachGroup("__canvas")}
+            Action {text:"画布返回工作区";enabled:!PaintClient.drawing;onTriggered:Workspace.returnGroup("__canvas")}
             MenuSeparator {}
             Instantiator {
                 model: Workspace.allPanels
@@ -212,8 +210,8 @@ ApplicationWindow {
             title: "工作区"
             Action { text: "自定义面板…"; onTriggered: panelDialog.open() }
             Action { text: "保存当前布局"; onTriggered: Workspace.saveLayout() }
-            Action { text: "参考图布局"; onTriggered: Workspace.applyReferenceLayout(root.x,root.y,root.width,root.height) }
-            Action { text: "双列停靠布局"; onTriggered: Workspace.resetLayout() }
+            Action { text: "参考图布局"; enabled:!PaintClient.drawing;onTriggered: Workspace.applyReferenceLayout(root.x,root.y,root.width,root.height) }
+            Action { text: "双列停靠布局"; enabled:!PaintClient.drawing;onTriggered: Workspace.resetLayout() }
         }
     }
     header: Rectangle {
@@ -261,49 +259,7 @@ ApplicationWindow {
         }
         RowLayout {
             Layout.fillWidth: true; Layout.fillHeight: true; spacing: 0
-            ToolStrip {Layout.fillHeight:true;Layout.preferredWidth:36;visible:!Workspace.toolsFloating;canvasView:canvas}
-            SplitView {
-                Layout.fillWidth: true; Layout.fillHeight: true; orientation: Qt.Horizontal
-                handle: Rectangle { implicitWidth: 4; color: SplitHandle.hovered || SplitHandle.pressed ? Theme.accent : Theme.panelBar }
-                DockColumn {
-                    side: "left"; groups: Workspace.leftGroups; canvasView: canvas
-                    SplitView.preferredWidth: implicitWidth
-                    SplitView.minimumWidth: empty ? 6 : collapsed ? 28 : 150
-                    SplitView.maximumWidth: empty ? 6 : collapsed ? 28 : 520
-                }
-                ColumnLayout {
-                    SplitView.fillWidth: true; SplitView.minimumWidth: 400; spacing: 0
-                    Rectangle {
-                        Layout.fillWidth: true; height: 22; color: Theme.strip
-                        Rectangle {
-                            objectName:"documentTab";x:6;y:2;width:Math.min(parent.width-35,documentTitle.implicitWidth+24);height:parent.height-2
-                            color:Theme.background;radius:Theme.documentTabRadius
-                            Rectangle {anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:parent.radius;color:parent.color}
-                            Label {id:documentTitle;anchors.centerIn:parent;font.pixelSize:9;text:PaintClient.documentName+(PaintClient.modified?" *":"")+"  @ "+Math.round(canvas.zoom*100)+"% · "+PaintClient.documentWidth+" × "+PaintClient.documentHeight;color:Theme.text}
-                        }
-                        IconButton {anchors.right:parent.right;width:24;height:22;padding:4;glyph:"plus";tooltip:"新建画布";onClicked:newDialog.open()}
-                    }
-                    Rectangle {
-                        Layout.fillWidth: true; Layout.fillHeight: true; color: Theme.background; clip: true
-                        Rectangle { x: canvas.documentRect.x+8; y: canvas.documentRect.y+10; width: canvas.documentRect.width; height: canvas.documentRect.height; color: "#0c0d0f" }
-                        TransparencyGrid { objectName: "canvasTransparency"; x: canvas.documentRect.x; y: canvas.documentRect.y; width: canvas.documentRect.width; height: canvas.documentRect.height }
-                        PaintCanvas { id: canvas; initialFitRatio: .76; objectName: "mainCanvas"; anchors.fill: parent; client: PaintClient; focus: true; enabled: !root.savingBeforeAction && !closeDialog.opened }
-                        Loader {
-                            objectName:"selectionOutlineLoader";anchors.fill:parent
-                            // No painted item or texture exists while selection is inactive.
-                            active:PaintClient.selectionEnabled || (canvas.selectionPreview.width>0 && canvas.selectionPreview.height>0)
-                            sourceComponent:SelectionOutline {objectName:"selectionOutline";enabledSelection:PaintClient.selectionEnabled;steps:PaintClient.selectionSteps;documentRect:canvas.documentRect;zoom:canvas.zoom;preview:canvas.selectionPreview;previewKind:canvas.selectionPreviewKind}
-                        }
-                        BusyIndicator { objectName: "canvasBusy"; anchors.centerIn: parent; running: !PaintClient.ready; visible: running }
-                    }
-                }
-                DockColumn {
-                    side: "right"; groups: Workspace.rightGroups; canvasView: canvas
-                    SplitView.preferredWidth: implicitWidth
-                    SplitView.minimumWidth: empty ? 6 : collapsed ? 28 : 190
-                    SplitView.maximumWidth: empty ? 6 : collapsed ? 28 : 520
-                }
-            }
+            DockWorkspace {objectName:"mainDockWorkspace";Layout.fillWidth:true;Layout.fillHeight:true;canvasPane:documentPane;canvasView:canvas}
         }
         Rectangle {
             Layout.fillWidth: true; height: 22; color: Theme.strip;radius:root.cornerRadius
@@ -319,25 +275,17 @@ ApplicationWindow {
             }
         }
     }
-    DropArea {
-        objectName:"toolStripDockTarget";x:0;y:0;width:Workspace.toolsFloating?28:36;height:root.contentItem.height-22
-        keys:["application/x-drawverse-tool-strip"]
-        onEntered:drag=>{drag.accepted=!Workspace.dockingSuppressed}
-        onPositionChanged:drag=>{drag.accepted=!Workspace.dockingSuppressed}
-        onDropped:drop=>{if(!Workspace.dockingSuppressed && Workspace.dockToolStrip(drop.getDataAsString("application/x-drawverse-tool-strip")))drop.acceptProposedAction()}
-        Rectangle {anchors.fill:parent;color:"#3023b5ee";border.color:Theme.accent;border.width:2;visible:parent.containsDrag && !Workspace.dockingSuppressed}
-    }
-    Shortcut { sequence: "V"; enabled: canvas.activeFocus; onActivated: PaintClient.moveTool=true }
-    Shortcut { sequence: "M"; enabled:canvas.activeFocus && !PaintClient.drawing; onActivated:PaintClient.selectionTool=1 }
-    Shortcut { sequence: "Shift+M"; enabled:canvas.activeFocus && !PaintClient.drawing; onActivated:PaintClient.selectionTool=PaintClient.selectionTool===2?1:2 }
-    Shortcut { sequence:StandardKey.SelectAll; enabled:canvas.activeFocus && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.selectAll() }
-    Shortcut { sequence:Qt.platform.os==="osx"?"Meta+D":"Ctrl+D"; enabled:canvas.activeFocus && PaintClient.selectionEnabled && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.clearSelection() }
-    Shortcut { sequence:Qt.platform.os==="osx"?"Meta+Shift+I":"Ctrl+Shift+I"; enabled:canvas.activeFocus && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.invertSelection() }
-    Shortcut { sequence: "B"; enabled: canvas.activeFocus; onActivated: PaintClient.eraser=false }
-    Shortcut { sequence: "E"; enabled: canvas.activeFocus; onActivated: PaintClient.eraser=true }
-    Shortcut { sequence: "F"; enabled: canvas.activeFocus; onActivated: canvas.fitToView() }
-    Shortcut { sequence: "Esc"; enabled: PaintClient.drawing; onActivated: PaintClient.cancelStroke() }
-    Shortcut { sequence: Qt.platform.os === "osx" ? "Meta+Alt+G" : "Ctrl+Alt+G"; context:Qt.ApplicationShortcut; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy; onActivated: PaintClient.toggleActiveClipping() }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "V"; enabled: canvas.activeFocus; onActivated: PaintClient.moveTool=true }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "M"; enabled:canvas.activeFocus && !PaintClient.drawing; onActivated:PaintClient.selectionTool=1 }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "Shift+M"; enabled:canvas.activeFocus && !PaintClient.drawing; onActivated:PaintClient.selectionTool=PaintClient.selectionTool===2?1:2 }
+    Shortcut { context:Qt.ApplicationShortcut; sequence:StandardKey.SelectAll; enabled:canvas.activeFocus && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.selectAll() }
+    Shortcut { context:Qt.ApplicationShortcut; sequence:Qt.platform.os==="osx"?"Meta+D":"Ctrl+D"; enabled:canvas.activeFocus && PaintClient.selectionEnabled && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.clearSelection() }
+    Shortcut { context:Qt.ApplicationShortcut; sequence:Qt.platform.os==="osx"?"Meta+Shift+I":"Ctrl+Shift+I"; enabled:canvas.activeFocus && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.invertSelection() }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "B"; enabled: canvas.activeFocus; onActivated: PaintClient.eraser=false }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "E"; enabled: canvas.activeFocus; onActivated: PaintClient.eraser=true }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "F"; enabled: canvas.activeFocus; onActivated: canvas.fitToView() }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "Esc"; enabled: PaintClient.drawing; onActivated: PaintClient.cancelStroke() }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: Qt.platform.os === "osx" ? "Meta+Alt+G" : "Ctrl+Alt+G"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy; onActivated: PaintClient.toggleActiveClipping() }
     Dialog {
         id: newDialog
         title: "新建画布"; modal: true; anchors.centerIn: parent; width: 390

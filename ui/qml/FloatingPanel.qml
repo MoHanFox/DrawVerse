@@ -1,49 +1,54 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Window
 import "."
 ApplicationWindow {
     id: root
-    required property var groupData
+    required property var windowData
+    property var canvasPane
     property var canvasView
-    property int expandedHeight: groupData.height
-    visible: true
-    flags: Qt.Tool | Qt.FramelessWindowHint
-    font.family: Qt.platform.os==="windows" ? "Microsoft YaHei UI" : "sans-serif"
-    font.pixelSize: 10
-    title: "DrawVerse · "+Workspace.panelDefinition(panelGroup.selected).title
-    color: Theme.background
-    palette.window: Theme.surface
-    palette.windowText: Theme.text
-    palette.base: Theme.background
-    palette.text: Theme.text
-    palette.button: Theme.raised
-    palette.buttonText: Theme.text
-    palette.highlight: Theme.selected
-    palette.highlightedText: Theme.accent
-    x: groupData.x; y: groupData.y; width: groupData.width; height: groupData.height
-    minimumWidth: 150; minimumHeight: panelGroup.minimumPanelHeight+4
-    PanelGroup { id:panelGroup;anchors.fill: parent; anchors.margins: 2; groupData: root.groupData; canvasView: root.canvasView }
+    property bool initializing: true
+    property int expandedHeight: windowData.height
+    readonly property bool onlyTools:windowData.groups.length===1 && windowData.groups[0]==="__toolstrip"
+    readonly property int collapsedHeight:windowData.collapsed?8+windowData.panels.length*22+4:60
+    objectName:onlyTools?"floatingToolStrip":"floatingDock:"+windowData.id
+    visible:true;flags:Qt.Tool|Qt.FramelessWindowHint
+    font.family:Qt.platform.os==="windows"?"Microsoft YaHei UI":"sans-serif";font.pixelSize:10
+    title:"DrawVerse · "+windowData.panels.map(p=>Workspace.panelDefinition(p).title).join(" / ")
+    color:Theme.panelBar
+    palette.window:Theme.surface;palette.windowText:Theme.text;palette.base:Theme.background;palette.text:Theme.text
+    palette.button:Theme.raised;palette.buttonText:Theme.text;palette.highlight:Theme.selected;palette.highlightedText:Theme.accent
+    x:windowData.x;y:windowData.y;width:windowData.width;height:windowData.height
+    minimumWidth:onlyTools?38:Math.min(windowData.minimumWidth,Workspace.availableScreenGeometry(root).width)
+    minimumHeight:windowData.collapsed?collapsedHeight:onlyTools?304:Math.min(windowData.minimumHeight,Workspace.availableScreenGeometry(root).height)
+    maximumWidth:onlyTools?38:16777215
+    maximumHeight:onlyTools?304:16777215
+    DockWorkspace {id:docks;anchors.fill:parent;anchors.margins:root.onlyTools?1:2;hostId:root.windowData.id;canvasPane:root.canvasPane;canvasView:root.canvasView}
+    ResizeFrame {targetWindow:root}
+    function releaseCanvas(){docks.releaseCanvas()}
+    function updateLayout(data) {
+        initializing=true;windowData=data;x=data.x;y=data.y;width=data.width;expandedHeight=data.height
+        height=data.collapsed?collapsedHeight:data.height;initializing=false;docks.refresh();remember()
+    }
+    Component.onCompleted:{if(windowData.collapsed)height=collapsedHeight;initializing=false}
     Connections {
-        target: panelGroup
-        function onCollapsedChanged() {
-            if(panelGroup.collapsed) root.expandedHeight=root.height
-            Qt.callLater(() => { root.height=panelGroup.collapsed ? panelGroup.minimumPanelHeight+4 : root.expandedHeight })
+        target:Workspace
+        function onGroupStateChanged(group){
+            if(root.windowData.groups.indexOf(group)<0 || !root.windowData.single)return
+            const collapsed=Workspace.groupDefinition(group).collapsed
+            if(collapsed && !root.windowData.collapsed)root.expandedHeight=root.height
+            const live=Workspace.floatingWindows
+            for(let i=0;i<live.length;i++)if(live[i].id===root.windowData.id){root.windowData=live[i];break}
+            Qt.callLater(()=>root.height=collapsed?root.collapsedHeight:root.expandedHeight)
         }
     }
-    ResizeFrame {targetWindow:root}
-    Component.onCompleted: if(panelGroup.collapsed) height=panelGroup.minimumPanelHeight+4
-    function updateLayout(data) {
-        groupData=data; x=data.x; y=data.y; width=data.width; expandedHeight=data.height
-        height=panelGroup.collapsed ? panelGroup.minimumPanelHeight+4 : data.height
+    function remember(){
+        if(!visible || initializing)return
+        if(onlyTools){
+            Workspace.updateToolStripPosition(x,y)
+            initializing=true;x=Workspace.toolStripX;y=Workspace.toolStripY;initializing=false
+        }
+        Workspace.updateGeometry(windowData.id,x,y,width,windowData.collapsed?expandedHeight:height)
     }
-    function remember() { if (visible) Workspace.updateGeometry(groupData.id,x,y,width,panelGroup.collapsed ? expandedHeight : height) }
-    onXChanged: remember()
-    onYChanged: remember()
-    onWidthChanged: remember()
-    onHeightChanged: remember()
-    onClosing: event => {
-        if (PaintClient.closing) { event.accepted=true; return }
-        event.accepted=false; Qt.callLater(() => Workspace.returnGroup(groupData.id))
-    }
+    onXChanged:remember();onYChanged:remember();onWidthChanged:remember();onHeightChanged:remember()
+    onClosing:event=>{if(PaintClient.closing){event.accepted=true;return}event.accepted=false;if(!PaintClient.drawing)Qt.callLater(()=>Workspace.returnWindow(windowData.id))}
 }

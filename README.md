@@ -9,7 +9,8 @@ Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘
 - [FFI 方案](docs/ffi-design.md) / [正式契约](contracts/abi.md) / [生成头](ui/include/paint_api.h)
 - [最新 FFI 验证](docs/ffi-validation.md) / [首轮内核历史验证](docs/validation.md)
 - [QML UI 设计](docs/qml-ui-design.md) / [UI 验证与启动说明](docs/qml-ui-validation.md)
-- [参考图 UI / 停靠设计](docs/reference-ui-design.md) / [最新工作区验收](docs/reference-ui-validation.md)
+- [参考图 UI / 停靠设计](docs/reference-ui-design.md) / [菜单与材质验收](docs/reference-ui-validation.md)
+- [画布与工具条自由停靠](docs/flexible-docking-design.md) / [最新工作区验收](docs/flexible-docking-validation.md)
 - [矩形/椭圆选区设计](docs/selection-design.md) / [选区验收](docs/selection-validation.md)
 - [画笔库与当前画笔设置](docs/brush-library-design.md) / [画笔模块验收](docs/brush-library-validation.md)
 - [任务与 CPU 视口设计](docs/task-render-design.md) / [最新模块验证](docs/task-render-validation.md)
@@ -31,7 +32,7 @@ C ABI 保留原同步文档/事件/线性读取，新增异步 session、FIFO �
 
 绘画性能回退已修复：源瓦片合成与显示编码按身份复用，稀疏矩形输出；QML 图层只在定义/属性变化时更新模型。固定 600 点压感场景进程累计 CPU 时间下降约 90%，画面更新间隔 p95 从 96ms 降至 17ms；这是本机固定负载实测。每视口缓存计账上限 96 MiB，四槽最多 384 MiB，另有容器开销与现有文档/帧预算。
 
-QML 窗口提供压感圆笔/橡皮擦/移动图层工具、画布缩放与平移、多图层、撤销/重做、颜色/画笔/画笔设置/图层/历史/导航面板。拖标签合并或排序，上下边缘拆分组，拖顶部细条移动整组；拖到空白处浮动，Esc 取消、Ctrl/Command 暂停停靠。左右列可折叠为图标，单击展开临时面板。工具条可单独拖出和归位。可创建色板/画笔参数面板，布局 v4 保存组、列宽、高度、关闭/折叠与浮窗位置。参考图预设将颜色和两行折叠画笔放在独立浮窗，历史与图层置于右侧；另提供双列预设。筆记已移除，旧布局升级保留自定义面板。关闭浮窗归回主窗。数位板通道经 QTabletEvent 接入，并抑制合成鼠标重复输入。
+QML 窗口提供压感圆笔/橡皮擦/移动图层工具、画布缩放与平移、多图层、撤销/重做、颜色/画笔/画笔设置/图层/历史/导航面板。画布可独立拖出，工具条可在工作区两侧或任意面板两侧停靠；面板可在画布或其他面板的上下左右分割，也可合并/排序为工具标签。主窗与组合浮窗共用分割树，移走面板自动收缩空分支；Esc 取消，Ctrl/Command 暂停停靠。画布只有一个实例，浮动和归位保留绘画、缩放/平移及选区。面板可折叠为标签/图标，单击图标临时展开。布局 v5 保存分隔比例、标签/折叠和浮窗位置，v1–v4 迁移保留原有面板。关闭浮窗归回主窗。数位板通道经 QTabletEvent 接入，并抑制合成鼠标重复输入。设计与验证见 [自由停靠](docs/flexible-docking-design.md) / [验收](docs/flexible-docking-validation.md)。
 
 QML 新建每边支持 1–1,000,000 像素，只为可见区域和导航分配显示帧，每槽输出最多 4,194,304 像素（RGBA8 16 MiB），不按文档尺寸分配整张 QImage。Qt 接收队列每槽至多一张待处理帧。瓦片/历史仍有资源预算，尺寸上限不代表能无限量填满画布。当前 CPU 降采样为全局对齐的 2^LOD 方块平均；任意比例精细重采样后续优化。
 
@@ -39,7 +40,7 @@ QML 新建每边支持 1–1,000,000 像素，只为可见区域和导航分配�
 
 图层顶部提供混合模式、不透明度、填充和三个锁；百分比键入或拖滑条松手一次提交。图层列表按可见行创建，空闲 200ms 后后台更新原始内容缩略图；绘画时取消。V 选择移动工具，拖动松开提交一次移动，方向键 1px、Shift 10px、Esc 取消。移出画布的内容保留，移动后仍可绘画。外观、锁和移动均可撤销，OpenRaster 保存这些参数。混合采用线性 sRGB 公共公式，未实现 Photoshop 特殊八种混合的 Fill 曲线，不承诺 Photoshop 逐像素一致。
 
-未实现自由套索/羽化/魔棒/一般变换、独立 Wintab 适配与真实硬件验收、ICC/16F/HDR/Rust GPU、PSD/自有格式、Python SDK。文件菜单已接入打开、保存/另存 OpenRaster、图片导出和取消任务；新建/打开/退出可先保存当前绘画。当前布局为左右列垂直分割与浮动标签组，组高和列宽已保存，任意二维嵌套分割树后续扩展；<8ms / 60–120fps 为后续性能验收目标。
+未实现自由套索/羽化/魔棒/一般变换、独立 Wintab 适配与真实硬件验收、ICC/16F/HDR/Rust GPU、PSD/自有格式、Python SDK。文件菜单已接入打开、保存/另存 OpenRaster、图片导出和取消任务；新建/打开/退出可先保存当前绘画。主窗与浮窗的二维分割和布局 v5 已接入；<8ms / 60–120fps 为后续性能验收目标。
 
 文件模块支持 PNG 8/16 位导入、JPEG/WebP 导入和三格式 8 位合成导出；JPEG 使用线性白色背景，WebP 无损编码。OpenRaster 保留平面及嵌套隔离图层组、名称、顺序、可见性、不透明度及活动节点，并以 DrawVerse 层扩展 v1 保留填充、混合模式、三种锁、位置与溶解种子，保留画布外内容；标准定义的 15 种 Normal/颜色混合使用 SVG 名称互通，其他模式由扩展保存；合成预览为最终效果，但外部读者可能忽略扩展。以 8 位 sRGB 保存，不是 32F 无损原生格式。带 ICC、自定义 PNG 色彩元数据、动画、穿透组或未知混合/合成运算的文件会明确拒绝。栅格边长 ≤16,384、像素 ≤134,217,728（128M），输入 ≤256 MiB、解码器分配预算 1GiB；ORA 总节点 ≤256、嵌套 ≤16 级，图层总栅格亦受预算限制。保存先写同目录临时文件再原子替换，失败保留旧文件。详细范围与验证见 [IO 设计](docs/io-design.md) / [组验收](docs/groups-validation.md)。
 

@@ -4,6 +4,8 @@
 #include <QHash>
 #include <QRect>
 #include <QPointer>
+#include <QMap>
+#include "DockTree.h"
 class QWindow;
 
 class WorkspaceManager final : public QObject {
@@ -11,6 +13,7 @@ class WorkspaceManager final : public QObject {
     Q_PROPERTY(QVariantList leftGroups READ leftGroups NOTIFY groupsChanged)
     Q_PROPERTY(QVariantList rightGroups READ rightGroups NOTIFY groupsChanged)
     Q_PROPERTY(QVariantList floatingGroups READ floatingGroups NOTIFY groupsChanged)
+    Q_PROPERTY(QVariantList floatingWindows READ floatingWindows NOTIFY groupsChanged)
     Q_PROPERTY(QStringList visiblePanels READ visiblePanels NOTIFY groupsChanged)
     Q_PROPERTY(QStringList allPanels READ allPanels NOTIFY groupsChanged)
     Q_PROPERTY(bool leftCollapsed READ leftCollapsed WRITE setLeftCollapsed NOTIFY dockMetricsChanged)
@@ -30,6 +33,10 @@ public:
     QVariantList leftGroups() const { return groupsAt("left"); }
     QVariantList rightGroups() const { return groupsAt("right"); }
     QVariantList floatingGroups() const { return groupsAt("floating"); }
+    QVariantList floatingWindows() const;
+    Q_INVOKABLE QVariantList layoutItems(const QString &host,int width,int height) const;
+    Q_INVOKABLE void setSplitRatio(const QString &host,const QString &split,double ratio);
+    Q_INVOKABLE void returnWindow(const QString &host);
     QStringList visiblePanels() const;
     QStringList allPanels() const;
     bool leftCollapsed() const { return m_leftCollapsed; }
@@ -43,7 +50,7 @@ public:
     Q_INVOKABLE void beginToolStripDrag();
     Q_INVOKABLE void floatToolStrip(int x,int y);
     Q_INVOKABLE void updateToolStripPosition(int x,int y);
-    Q_INVOKABLE bool dockToolStrip(const QString &payload);
+    Q_INVOKABLE bool dockToolStrip(const QString &payload,const QString &location="main",const QString &target={},const QString &placement="left");
     void setLeftCollapsed(bool value);
     void setRightCollapsed(bool value);
     void setLeftDockWidth(int value);
@@ -74,6 +81,7 @@ signals:
     void groupStateChanged(const QString &group);
     void dragModifiersChanged();
     void toolStripChanged();
+    void layoutChanged();
 protected:
     bool eventFilter(QObject *, QEvent *event) override;
 private:
@@ -101,4 +109,12 @@ private:
     bool m_toolsFloating = false;
     QPoint m_toolPosition{100,100};
     QPointer<QWindow> m_menuWindow;
+    QMap<QString,DockTree::Node> m_docks;
+    QHash<QString,QRect> m_windowGeometry;
+    void initializeDocks();
+    QString hostFor(const QString &group) const;
+    void removeDock(const QString &group);
+    void addDock(const QString &group,const QString &location,const QString &target,const QString &edge);
+    void syncToolsLocation();
+    QSizeF dockMinimum(const DockTree::Node &node) const;
 };

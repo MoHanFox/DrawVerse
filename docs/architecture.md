@@ -63,7 +63,7 @@ Rust crate 的依赖有向无环：paint-core 为纯模型库；paint-color 不�
 
 Qt 文档确认 QMainWindow 支持 nested/tabbed docks 与布局状态保存：[QMainWindow](https://doc.qt.io/qt-6/qmainwindow.html)、[QDockWidget](https://doc.qt.io/qt-6/qdockwidget.html)。
 
-主窗与浮窗采用 QML ApplicationWindow，WorkspaceManager 维护稳定 panel-id 的注册表和拥有组。当前支持左右停靠列的垂直分割、标签组合、单面板/整组浮动、重新并回主窗、自定义色板/画笔参数面板（笔记已移除，旧布局迁移到 v2）、布局恢复。关闭浮窗归回主窗。屏幕恢复修正越界窗口；布局版本独立于文档版本。最后一轮 Python 使用声明式面板数据经消息队列更新，不能调用 Qt。
+主窗与浮窗采用 QML ApplicationWindow，WorkspaceManager 维护稳定 panel-id 的注册表、标签组与每个窗口的二维分割树。画布、工具条和工具标签组都是叶节点，可在任意面板四边停靠，移走后自动收缩空分支，主窗没有预留空停靠列。浮窗可包含多个分割组，关闭时全部归回主窗。唯一主画布在窗口之间移换父项，保留缩放/平移和异步视口；控件与窗口按 ID 增量维护。布局 v5 保存分割比例、标签和窗口几何，完整验证后恢复，v1–v4 按原位置迁移。屏幕恢复修正越界窗口；布局版本独立于文档版本。设计见 flexible-docking-design.md。最后一轮 Python 使用声明式面板数据经消息队列更新，不能调用 Qt。
 
 画布比较：QQuickItem 适合 QML、需遵守 scene graph 线程约束；QOpenGLWidget 适合 Widgets；直接 QRhi 与版本/API 耦合。当前使用 QQuickItem 显示 worker 合成的 CPU 图像，由 Qt scene graph 创建纹理并支持软件后端；尚未接入 Rust GPU 合成。后续 GPU 先读回有界显示瓦片，再优化平台纹理共享。
 
