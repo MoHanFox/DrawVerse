@@ -86,7 +86,7 @@ ApplicationWindow {
     menuBar: MenuBar {
         objectName: "mainMenuBar"
         implicitHeight: 28; leftPadding: 30; rightPadding: 100
-        background: FrostedSurface {
+        background: MenuSurface {
             objectName: "menuBarGlassBackground"
             tint: Theme.menuBarGlass
             topCornersOnly: true
@@ -110,7 +110,7 @@ ApplicationWindow {
             implicitHeight: 28; implicitWidth:contentItem.implicitWidth+16
             leftPadding:8;rightPadding:8;font.pixelSize:9
             contentItem: Text { text: menuEntry.text; font: menuEntry.font; color: menuEntry.highlighted ? "#eeeeee" : Theme.text; verticalAlignment: Text.AlignVCenter }
-            background: Rectangle { radius: 5; color: menuEntry.highlighted ? Theme.hover : "transparent" }
+            background: Rectangle { radius: 0; color: menuEntry.highlighted ? Theme.hover : "transparent" }
         }
         GlassMenu {
             title: "文件"

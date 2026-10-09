@@ -3,6 +3,7 @@
 #include <QVariantList>
 #include <QHash>
 #include <QRect>
+class QWindow;
 
 class WorkspaceManager final : public QObject {
     Q_OBJECT
@@ -20,6 +21,7 @@ class WorkspaceManager final : public QObject {
     Q_PROPERTY(int toolStripX READ toolStripX NOTIFY toolStripChanged)
     Q_PROPERTY(int toolStripY READ toolStripY NOTIFY toolStripChanged)
 public:
+    Q_INVOKABLE QRect availableScreenGeometry(QWindow *window) const;
     explicit WorkspaceManager(const QString &settingsFile = {}, QObject *parent = nullptr);
     QVariantList leftGroups() const { return groupsAt("left"); }
     QVariantList rightGroups() const { return groupsAt("right"); }

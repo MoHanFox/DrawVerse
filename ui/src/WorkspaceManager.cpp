@@ -1,6 +1,7 @@
 #include "WorkspaceManager.h"
 #include <QGuiApplication>
 #include <QScreen>
+#include <QWindow>
 #include <QCursor>
 #include <QDrag>
 #include <QMimeData>
@@ -20,6 +21,10 @@
 #endif
 
 namespace { QString newId() { return QUuid::createUuid().toString(QUuid::WithoutBraces); } }
+QRect WorkspaceManager::availableScreenGeometry(QWindow *window) const {
+    auto *screen=window?window->screen():QGuiApplication::primaryScreen();
+    return screen?screen->availableGeometry():QRect{};
+}
 WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent) : QObject(parent), m_settingsFile(settingsFile) {
     qApp->installEventFilter(this);
     resetLayout(); if(!restoreLayout()) m_uiRevision=0;

@@ -3,7 +3,7 @@ set(CMAKE_AUTOMOC ON)
 
 add_library(drawverse_ui STATIC
     src/UiScale.h
-    src/FrostedSurface.h src/FrostedSurface.cpp
+    src/MenuSurface.h src/MenuSurface.cpp
     src/PaintCoreClient.h src/PaintCoreClient.cpp
     src/CanvasItem.h src/CanvasItem.cpp
     src/SelectionOverlay.h src/SelectionOverlay.cpp
@@ -17,7 +17,7 @@ target_link_libraries(drawverse_ui PUBLIC Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick
 
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES qml/qmldir qml/Theme.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml
-          qml/FloatingPanel.qml qml/ToolStrip.qml qml/ToolStripWindow.qml qml/PanelContent.qml qml/DockColumn.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/assets/logo.png qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/LayerLock.qml
+          qml/SideMenuWindow.qml qml/FloatingPanel.qml qml/ToolStrip.qml qml/ToolStripWindow.qml qml/PanelContent.qml qml/DockColumn.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/assets/logo.png qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/LayerLock.qml
           qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/assets/transparency.png)
 
 qt_add_executable(drawverse src/main.cpp src/PaintingBenchmark.h src/PaintingBenchmark.cpp)
@@ -32,7 +32,7 @@ add_test(NAME qt_ui_tests COMMAND qt_ui_tests -o "${CMAKE_BINARY_DIR}/qt-ui-test
 set_tests_properties(qt_ui_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     uiScaleAppliesToMainPanelAndToolWindowsWithoutChangingLayout
-    glassMenusCaptureReleaseAndKeepKeyboardAndFloatingActions
+    menusReopenWithoutGhostsAndFloatBesidePanels
     layerControlsCommitOnceAndWorkInFloatingPanels moveToolMouseKeyboardAndPositionLock
     transparentCanvasAndNavigatorUseCheckerboardWithoutChangingPixels
     groupsCollapseMoveUndoAndSaveWorkAcrossFloatingPanels

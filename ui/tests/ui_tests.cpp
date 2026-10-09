@@ -3,7 +3,7 @@
 #include "SelectionOverlay.h"
 #include "WorkspaceManager.h"
 #include "UiScale.h"
-#include "FrostedSurface.h"
+#include "MenuSurface.h"
 #include <QtTest>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -24,6 +24,7 @@
 #include <QDragMoveEvent>
 #include <QWheelEvent>
 #include <QPainter>
+#include <QScreen>
 #include <cmath>
 #include <limits>
 
@@ -38,41 +39,23 @@ QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
 class UiTests final : public QObject {
     Q_OBJECT
 private slots:
-    void frostedBackdropBlursEdgesPreservesFlatColorAndBoundsCache() {
-        QImage flat(32,16,QImage::Format_ARGB32_Premultiplied); flat.fill(QColor(20,40,60));
-        QCOMPARE(FrostedSurface::blurredBackdrop(flat),flat);
-        QImage edge(32,16,QImage::Format_ARGB32_Premultiplied); edge.fill(Qt::black);
-        QPainter painter(&edge); painter.fillRect(16,0,16,16,Qt::white); painter.end();
-        const auto blurred=FrostedSurface::blurredBackdrop(edge);
-        QVERIFY(blurred.pixelColor(15,8).red()>0);
-        QVERIFY(blurred.pixelColor(16,8).red()<255);
-        QCOMPARE(blurred.pixelColor(0,8),QColor(Qt::black));
-        QCOMPARE(blurred.pixelColor(31,8),QColor(Qt::white));
-        QImage impulse(33,33,QImage::Format_ARGB32_Premultiplied); impulse.fill(Qt::black);
-        impulse.setPixelColor(16,16,Qt::white);
-        const auto gaussian=FrostedSurface::blurredBackdrop(impulse);
-        QVERIFY(gaussian.pixelColor(16,16).red()>gaussian.pixelColor(17,16).red());
-        QVERIFY(gaussian.pixelColor(17,16).red()>gaussian.pixelColor(18,16).red());
-        QCOMPARE(gaussian.pixelColor(15,16),gaussian.pixelColor(17,16));
-        QImage large(2048,1024,QImage::Format_ARGB32_Premultiplied); large.fill(Qt::white);
-        large.setDevicePixelRatio(2);
-        const auto bounded=FrostedSurface::blurredBackdrop(large);
-        QCOMPARE(bounded.size(),QSize(512,256)); QCOMPARE(bounded.devicePixelRatio(),qreal(1));
-        QVERIFY(FrostedSurface::blurredBackdrop({}).isNull());
-    }
-    void frostedSurfaceKeepsOnlyTopCornersRoundAndFlatTintAt75Percent() {
-        FrostedSurface surface; surface.setWidth(60); surface.setHeight(28);
-        QColor tint("#202226"); tint.setAlphaF(.75); surface.setTint(tint); surface.setTopCornersOnly(true);
+    void menuSurfaceKeepsOnlyTopCornersRoundAndFlatTintAt50Percent() {
+        MenuSurface surface; surface.setWidth(60); surface.setHeight(28);
+        QColor tint("#202226"); tint.setAlphaF(.5); surface.setTint(tint); surface.setTopCornersOnly(true);
         QImage image(60,28,QImage::Format_ARGB32_Premultiplied); image.fill(Qt::transparent);
         QPainter painter(&image); surface.paint(&painter); painter.end();
         QCOMPARE(image.pixelColor(0,0).alpha(),0); QCOMPARE(image.pixelColor(59,0).alpha(),0);
-        QVERIFY(std::abs(image.pixelColor(0,27).alphaF()-.75)<.005);
-        QVERIFY(std::abs(image.pixelColor(59,27).alphaF()-.75)<.005);
+        QVERIFY(std::abs(image.pixelColor(0,27).alphaF()-.5)<.005);
+        QVERIFY(std::abs(image.pixelColor(59,27).alphaF()-.5)<.005);
         QCOMPARE(image.pixelColor(30,2),image.pixelColor(30,25));
         surface.setTopCornersOnly(false); image.fill(Qt::transparent); painter.begin(&image); surface.paint(&painter); painter.end();
         QCOMPARE(image.pixelColor(0,27).alpha(),0);
+        surface.setRadius(0); painter.begin(&image); surface.paint(&painter); painter.end();
+        QVERIFY(image.pixelColor(0,0).alpha()>0);
+        surface.setRadius(10); painter.begin(&image); surface.paint(&painter); painter.end();
+        QCOMPARE(image.pixelColor(0,0).alpha(),0); // Repaint clears former square corners.
     }
-    void glassMenusCaptureReleaseAndKeepKeyboardAndFloatingActions() {
+    void menusReopenWithoutGhostsAndFloatBesidePanels() {
         QTemporaryDir temp; PaintCoreClient client(nullptr,temp.filePath("storage.ini"));
         WorkspaceManager workspace(temp.filePath("layout.ini")); QQmlApplicationEngine engine;
         QStringList warnings;
@@ -80,16 +63,18 @@ private slots:
         engine.rootContext()->setContextProperty("PaintClient",&client); engine.rootContext()->setContextProperty("Workspace",&workspace);
         engine.load(QUrl("qrc:/qml/Main.qml")); QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); QVERIFY(window); QTRY_VERIFY(client.ready());
-        auto *bar=qobject_cast<FrostedSurface*>(findVisualItem(window->contentItem(),"menuBarGlassBackground"));
+        auto *bar=qobject_cast<MenuSurface*>(findVisualItem(window->contentItem(),"menuBarGlassBackground"));
         QVERIFY(bar); QVERIFY(bar->tint().alpha()>0 && bar->tint().alpha()<255); QCOMPARE(bar->radius(),qreal(10));
-        QCOMPARE(bar->tint().name(),QString("#202226")); QVERIFY(std::abs(bar->tint().alphaF()-.75)<.001); QVERIFY(bar->topCornersOnly());
+        QCOMPARE(bar->tint().name(),QString("#202226")); QVERIFY(std::abs(bar->tint().alphaF()-.5)<.001); QVERIFY(bar->topCornersOnly());
         auto *entry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:工作区")); QVERIFY(entry);
+        auto *focus=qobject_cast<QQuickItem*>(entry->property("background").value<QObject*>()); QVERIFY(focus);
+        QCOMPARE(focus->property("radius").toReal(),qreal(0));
         auto *menu=window->findChild<QObject*>("workspaceMenu"); QVERIFY(menu);
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,entry->mapToScene({entry->width()/2,entry->height()/2}).toPoint());
         QTRY_VERIFY(menu->property("opened").toBool());
         QCOMPARE(QGuiApplication::allWindows().size(),1);
-        auto *glass=qobject_cast<FrostedSurface*>(menu->property("background").value<QObject*>()); QVERIFY(glass);
-        QVERIFY(glass->hasBackdrop()); QCOMPARE(glass->radius(),qreal(10)); QVERIFY(glass->tint().alpha()<255);
+        auto *glass=qobject_cast<MenuSurface*>(menu->property("background").value<QObject*>()); QVERIFY(glass);
+        QCOMPARE(glass->radius(),qreal(10)); QVERIFY(glass->tint().alpha()<255);
         QCOMPARE(glass->tint().name(),QString("#1c1e21")); QVERIFY(std::abs(glass->tint().alphaF()-.75)<.001); QVERIFY(!glass->topCornersOnly());
         auto *list=qobject_cast<QQuickItem*>(menu->property("contentItem").value<QObject*>()); QVERIFY(list);
         auto *row=findVisualItem(list,QStringLiteral("glassMenuItem:自定义面板…")); QVERIFY(row);
@@ -98,7 +83,22 @@ private slots:
         QCOMPARE(row->implicitHeight()-label->implicitHeight(),qreal(6));
         const auto preview=qEnvironmentVariable("DRAWVERSE_MENU_PREVIEW");
         if(!preview.isEmpty()) { QTest::qWait(100); QVERIFY(window->grabWindow().save(preview)); }
-        QTest::keyClick(window,Qt::Key_Escape); QTRY_VERIFY(!menu->property("visible").toBool()); QVERIFY(!glass->hasBackdrop());
+        QTest::keyClick(window,Qt::Key_Escape); QTRY_VERIFY(!menu->property("visible").toBool());
+        const auto menuImage=[&] {
+            const auto image=window->grabWindow();
+            const auto position=glass->mapToScene({0,0}); const auto dpr=window->devicePixelRatio();
+            return image.copy(QRect(qRound(position.x()*dpr),qRound(position.y()*dpr),qRound(glass->width()*dpr),qRound(glass->height()*dpr)));
+        };
+        QVERIFY(QMetaObject::invokeMethod(menu,"open")); QTRY_VERIFY(menu->property("opened").toBool());
+        QTest::qWait(30); const auto firstMenu=menuImage(); QVERIFY(!firstMenu.isNull());
+        for(int cycle=0;cycle<6;++cycle) {
+            QVERIFY(QMetaObject::invokeMethod(menu,"close")); QTRY_VERIFY(!menu->property("visible").toBool());
+            QVERIFY(QMetaObject::invokeMethod(menu,"open")); QTRY_VERIFY(menu->property("opened").toBool());
+            QTRY_COMPARE(menuImage(),firstMenu); QCOMPARE(bar->radius(),qreal(10));
+        }
+        QVERIFY(QMetaObject::invokeMethod(menu,"close")); QTRY_VERIFY(!menu->property("visible").toBool());
+        window->showMaximized(); QTRY_COMPARE(bar->radius(),qreal(0));
+        window->showNormal(); QTRY_COMPARE(bar->radius(),qreal(10));
         auto *windowEntry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:窗口")); QVERIFY(windowEntry);
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,windowEntry->mapToScene({windowEntry->width()/2,windowEntry->height()/2}).toPoint());
         auto *windowMenu=window->findChild<QObject*>("windowMenu"); QVERIFY(windowMenu); QTRY_VERIFY(windowMenu->property("opened").toBool());
@@ -108,16 +108,32 @@ private slots:
         QTRY_COMPARE(QGuiApplication::allWindows().size(),2);
         QQuickWindow *floating=nullptr; for(auto *candidate:QGuiApplication::allWindows()) if(candidate!=window) floating=qobject_cast<QQuickWindow*>(candidate);
         QVERIFY(floating); const auto floatingId=workspace.floatingGroups().first().toMap().value("id").toString();
+        floating->resize(150,300); floating->setPosition(floating->screen()->availableGeometry().topLeft()+QPoint(10,10));
         auto *button=findVisualItem(floating->contentItem(),"panelMenu:"+floatingId); QVERIFY(button);
         // Synthetic clicks do not activate a native Qt Tool window like real clicks do.
         floating->requestActivate(); QTRY_VERIFY(floating->isActive());
+        QTRY_VERIFY(button->mapToScene({button->width()/2,button->height()/2}).x()<floating->width());
         QTest::mouseClick(floating,Qt::LeftButton,Qt::NoModifier,button->mapToScene({button->width()/2,button->height()/2}).toPoint());
         auto *panelMenu=floating->findChild<QObject*>("panelOperationsMenu:"+floatingId); QVERIFY(panelMenu); QTRY_VERIFY(panelMenu->property("opened").toBool());
-        QCOMPARE(QGuiApplication::allWindows().size(),2);
+        QTRY_COMPARE(QGuiApplication::allWindows().size(),3);
+        auto *host=qobject_cast<QQuickWindow*>(panelMenu->property("sideWindow").value<QObject*>()); QVERIFY(host);
+        QTRY_VERIFY(host->isVisible());
+        QVERIFY(host->x()>=floating->x()+floating->width() || host->x()+host->width()<=floating->x());
+        QTRY_VERIFY(host->isActive());
         QTRY_VERIFY(panelMenu->property("activeFocus").toBool());
-        auto *floatingGlass=qobject_cast<FrostedSurface*>(panelMenu->property("background").value<QObject*>()); QVERIFY(floatingGlass); QVERIFY(floatingGlass->hasBackdrop());
-        QTest::keyClick(floating,Qt::Key_Down); QTest::keyClick(floating,Qt::Key_Escape);
-        QTRY_VERIFY(!panelMenu->property("visible").toBool()); QVERIFY(!floatingGlass->hasBackdrop());
+        auto *floatingGlass=qobject_cast<MenuSurface*>(panelMenu->property("background").value<QObject*>()); QVERIFY(floatingGlass);
+        if(!preview.isEmpty()) { QTest::qWait(30); QVERIFY(host->grabWindow().save(preview+".side.png")); }
+        QTest::keyClick(host,Qt::Key_Down); QTest::keyClick(host,Qt::Key_Escape);
+        QTRY_VERIFY(!panelMenu->property("visible").toBool());
+        QTRY_COMPARE(QGuiApplication::allWindows().size(),2);
+        floating->setX(floating->screen()->availableGeometry().right()-floating->width());
+        QTest::mouseClick(floating,Qt::LeftButton,Qt::NoModifier,button->mapToScene({button->width()/2,button->height()/2}).toPoint());
+        QTRY_VERIFY(panelMenu->property("opened").toBool());
+        host=qobject_cast<QQuickWindow*>(panelMenu->property("sideWindow").value<QObject*>()); QVERIFY(host);
+        QVERIFY(host->x()+host->width()<=floating->x());
+        auto *returnItem=findVisualItem(host->contentItem(),QStringLiteral("glassMenuItem:返回工作区")); QVERIFY(returnItem);
+        QTest::mouseClick(host,Qt::LeftButton,Qt::NoModifier,returnItem->mapToScene({returnItem->width()/2,returnItem->height()/2}).toPoint());
+        QTRY_COMPARE(workspace.floatingGroups().size(),0); QTRY_COMPARE(QGuiApplication::allWindows().size(),1);
         QCOMPARE(warnings,QStringList()); QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
     }
     void uiScaleAppliesToMainPanelAndToolWindowsWithoutChangingLayout() {
@@ -1064,7 +1080,7 @@ int main(int argc,char **argv) {
     QQuickStyle::setStyle("Basic"); qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");
     qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
     qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
-    qmlRegisterType<FrostedSurface>("DrawVerse",1,0,"FrostedSurface");
+    qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");
     UiTests tests; return QTest::qExec(&tests,argc,argv);
 }
 #include "ui_tests.moc"

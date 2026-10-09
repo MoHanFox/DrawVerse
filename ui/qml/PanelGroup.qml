@@ -116,7 +116,10 @@ Rectangle {
             IconButton {
                 id: panelMenuButton; objectName: "panelMenu:"+root.groupData.id
                 anchors.right: parent.right; width: 22; height: 20; padding: 6
-                glyph: "menu"; tooltip: "面板菜单"; onClicked: panelMenu.popup()
+                glyph: "menu"; tooltip: "面板菜单"; onClicked: {
+                    if(root.groupData.location==="floating") panelMenu.popupBeside(root)
+                    else panelMenu.popup()
+                }
                 GlassMenu {
                     id: panelMenu
                     objectName: "panelOperationsMenu:"+root.groupData.id
