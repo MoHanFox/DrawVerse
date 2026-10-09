@@ -27,6 +27,9 @@
 #include <QScreen>
 #include <cmath>
 #include <limits>
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#endif
 
 namespace {
 class BlurTestBackdrop final : public QQuickPaintedItem {
@@ -73,6 +76,12 @@ private slots:
         QVERIFY(image.pixelColor(0,0).alpha()>0);
         surface.setRadius(10); painter.begin(&image); surface.paint(&painter); painter.end();
         QCOMPARE(image.pixelColor(0,0).alpha(),0); // Repaint clears former square corners.
+        surface.setTopRightCornerOnly(true); surface.setTint(QColor("#d8323e"));
+        painter.begin(&image); surface.paint(&painter); painter.end();
+        QCOMPARE(image.pixelColor(0,0),QColor("#d8323e"));
+        QCOMPARE(image.pixelColor(59,0).alpha(),0);
+        QCOMPARE(image.pixelColor(0,27),QColor("#d8323e"));
+        QCOMPARE(image.pixelColor(59,27),QColor("#d8323e"));
     }
     void menusReopenWithoutGhostsAndFloatBesidePanels() {
         QTemporaryDir temp; PaintCoreClient client(nullptr,temp.filePath("storage.ini"));
@@ -96,6 +105,19 @@ private slots:
         else QTRY_COMPARE(barPixel(),QColor(16,17,19)); // Software grab is RGB32 on a black clear surface.
         QCOMPARE(window->grabWindow().pixelColor(qRound(window->width()*window->devicePixelRatio()/2),
                  qRound(60*window->devicePixelRatio())).alpha(),255);
+        auto *closeButton=findVisualItem(window->contentItem(),"windowClose"); QVERIFY(closeButton);
+        auto *closeBackground=qobject_cast<MenuSurface*>(closeButton->property("background").value<QObject*>()); QVERIFY(closeBackground);
+        QCOMPARE(closeBackground->radius(),qreal(10)); QVERIFY(closeBackground->topRightCornerOnly());
+        QCOMPARE(closeBackground->tint(),QColor("#d8323e"));
+        QCOMPARE(closeButton->property("contentItem").value<QObject*>()->property("color").value<QColor>(),QColor(Qt::white));
+        const auto closeCenter=closeButton->mapToScene({closeButton->width()/2,closeButton->height()/2}).toPoint();
+        QTest::mouseMove(window,closeCenter);
+        QTRY_VERIFY(closeButton->property("hovered").toBool()); QTRY_COMPARE(closeBackground->tint(),QColor("#f04450"));
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,closeCenter);
+        QTRY_COMPARE(closeBackground->tint(),QColor("#b5222c"));
+        QTest::mouseMove(window,QPoint(500,50));
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,QPoint(500,50));
+        QTRY_COMPARE(closeBackground->tint(),QColor("#d8323e")); QVERIFY(window->isVisible());
         auto *entry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:工作区")); QVERIFY(entry);
         auto *focus=qobject_cast<QQuickItem*>(entry->property("background").value<QObject*>()); QVERIFY(focus);
         QCOMPARE(focus->property("radius").toReal(),qreal(0));
@@ -135,8 +157,10 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(menu,"close")); QTRY_VERIFY(!menu->property("visible").toBool());
         const auto normalGeometry=window->geometry();
         window->showMaximized(); QTRY_COMPARE(bar->radius(),qreal(0));
+        QCOMPARE(closeBackground->radius(),qreal(0));
         QTRY_COMPARE(window->geometry(),window->screen()->availableGeometry());
         window->showNormal(); QTRY_COMPARE(bar->radius(),qreal(10));
+        QCOMPARE(closeBackground->radius(),qreal(10));
         QTRY_COMPARE(window->geometry(),normalGeometry);
         auto *windowEntry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:窗口")); QVERIFY(windowEntry);
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,windowEntry->mapToScene({windowEntry->width()/2,windowEntry->height()/2}).toPoint());
@@ -225,6 +249,27 @@ private slots:
             QVERIFY(!workspace.setMenuBarBlur(window,true));
         } else {
             QVERIFY(window->property("menuBarBlurActive").toBool());
+#ifdef Q_OS_WIN
+            const auto hasRoundedNativeCorners=[&] {
+                const auto handle=reinterpret_cast<HWND>(window->winId());
+                RECT bounds{}; if(!GetWindowRect(handle,&bounds)) return false;
+                const auto region=CreateRectRgn(0,0,0,0);
+                const int radius=qRound(10*window->devicePixelRatio());
+                const bool rounded=GetWindowRgn(handle,region)==COMPLEXREGION
+                    && !PtInRegion(region,0,0) && !PtInRegion(region,bounds.right-bounds.left-1,0)
+                    && !PtInRegion(region,radius/2,0) && PtInRegion(region,radius,0)
+                    && PtInRegion(region,(bounds.right-bounds.left)/2,0)
+                    && PtInRegion(region,(bounds.right-bounds.left)/2,bounds.bottom-bounds.top-1);
+                DeleteObject(region); return rounded;
+            };
+            QTRY_VERIFY(hasRoundedNativeCorners());
+            const auto originalGeometry=window->geometry();
+            window->resize(1000,650); QTRY_VERIFY(hasRoundedNativeCorners());
+            window->showMaximized(); QTRY_COMPARE(window->geometry(),window->screen()->availableGeometry());
+            QTRY_VERIFY(!hasRoundedNativeCorners());
+            window->showNormal(); QTRY_VERIFY(hasRoundedNativeCorners());
+            window->setGeometry(originalGeometry); QTRY_VERIFY(hasRoundedNativeCorners());
+#endif
             QQuickWindow backdrop;
             backdrop.setFlags(Qt::Window|Qt::FramelessWindowHint); backdrop.setColor(Qt::black);
             backdrop.setGeometry(window->geometry());
@@ -243,12 +288,29 @@ private slots:
                 return edge;
             };
             QVERIFY(workspace.setMenuBarBlur(window,false)); const auto sharp=capture(); QVERIFY(!sharp.isNull());
+            const auto sharpTitle=window->screen()->grabWindow(0,window->x(),window->y(),window->width(),28).toImage();
+            QVERIFY(!sharpTitle.isNull());
             QVERIFY(workspace.setMenuBarBlur(window,true)); const auto blurred=capture(); QVERIFY(!blurred.isNull());
             const auto preview=qEnvironmentVariable("DRAWVERSE_MENU_PREVIEW");
-            if(!preview.isEmpty()) { QVERIFY(sharp.save(preview+".sharp.png")); QVERIFY(blurred.save(preview+".blur.png")); }
+            if(!preview.isEmpty()) {
+                QVERIFY(sharp.save(preview+".sharp.png")); QVERIFY(blurred.save(preview+".blur.png"));
+                QVERIFY(window->grabWindow().save(preview+".render.png"));
+                QVERIFY(window->screen()->grabWindow(0,window->x(),window->y(),window->width(),28).save(preview+".title.png"));
+            }
             const auto evidence=QString("Sharp edge=%1, blurred edge=%2").arg(sharpestEdge(sharp)).arg(sharpestEdge(blurred));
             QVERIFY2(sharpestEdge(sharp)>100,qPrintable(evidence));
             QVERIFY2(sharpestEdge(blurred)<sharpestEdge(sharp)/2,qPrintable(evidence));
+            const auto title=window->screen()->grabWindow(0,window->x(),window->y(),window->width(),28).toImage();
+            QVERIFY(!title.isNull());
+            // The excluded corner keeps the backdrop (including the system shadow).
+            const auto corner=title.pixelColor(0,0),sourceCorner=sharpTitle.pixelColor(0,0);
+            QVERIFY(std::abs(corner.hueF()-sourceCorner.hueF())<.005);
+            QVERIFY(corner.valueF()>=sourceCorner.valueF()*.8 && corner.valueF()<=sourceCorner.valueF());
+            QVERIFY(corner.green()>190 && corner.red()<40);
+            const auto dpr=title.devicePixelRatio();
+            const auto red=title.pixelColor(title.width()-qRound(5*dpr),qRound(20*dpr));
+            QVERIFY(red.red()>180 && red.green()<90 && red.blue()<100);
+            if(!preview.isEmpty()) QVERIFY(title.save(preview+".title.png"));
         }
         QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
     }

@@ -23,6 +23,10 @@ void MenuSurface::setTopCornersOnly(bool value) {
     if(m_topCornersOnly==value) return;
     m_topCornersOnly=value; update(); emit materialChanged();
 }
+void MenuSurface::setTopRightCornerOnly(bool value) {
+    if(m_topRightCornerOnly==value) return;
+    m_topRightCornerOnly=value; update(); emit materialChanged();
+}
 void MenuSurface::paint(QPainter *painter) {
     const QRectF rect(0,0,width(),height());
     painter->save();
@@ -30,9 +34,10 @@ void MenuSurface::paint(QPainter *painter) {
     painter->fillRect(rect,Qt::transparent);
     painter->setCompositionMode(QPainter::CompositionMode_SourceOver);
     QPainterPath shape; shape.addRoundedRect(rect,m_radius,m_radius);
-    if(m_topCornersOnly) {
+    if(m_topCornersOnly || m_topRightCornerOnly) {
         shape.setFillRule(Qt::WindingFill);
         shape.addRect(0,height()/2,width(),height()/2);
+        if(m_topRightCornerOnly) shape.addRect(0,0,width()/2,height());
     }
     painter->setRenderHint(QPainter::Antialiasing);
     painter->fillPath(shape,m_tint); painter->restore();

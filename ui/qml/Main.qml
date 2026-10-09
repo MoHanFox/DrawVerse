@@ -14,7 +14,16 @@ ApplicationWindow {
     width: 1480; height: 780; minimumWidth: 980; minimumHeight: 640
     title: "DrawVerse · "+PaintClient.documentName+(PaintClient.modified ? " *" : "")
     color: "transparent"
-    readonly property int cornerRadius: visibility===Window.Maximized ? 0 : Theme.windowRadius
+    readonly property int cornerRadius: visibility===Window.Maximized || visibility===Window.FullScreen ? 0 : Theme.windowRadius
+    property bool windowCornersReady: false
+    function updateWindowCorners() {
+        if(windowCornersReady) Workspace.setWindowCornerRadius(root,cornerRadius)
+    }
+    onCornerRadiusChanged: Qt.callLater(updateWindowCorners)
+    onWidthChanged: Qt.callLater(updateWindowCorners)
+    onHeightChanged: Qt.callLater(updateWindowCorners)
+    onScreenChanged: Qt.callLater(updateWindowCorners)
+    Screen.onDevicePixelRatioChanged: Qt.callLater(updateWindowCorners)
     background: Item {
         // Keep the translucent menu bar clear of the opaque workspace backing.
         Rectangle {
@@ -67,6 +76,8 @@ ApplicationWindow {
         x=Screen.virtualX+Math.max(16,(Screen.width-width)/2)
         y=Screen.virtualY+Math.max(16,(Screen.height-height)/3)
         menuBarBlurActive=Workspace.setMenuBarBlur(root,true)
+        windowCornersReady=true
+        updateWindowCorners()
         syncFloating();syncTools()
     }
     Connections {target:Workspace;function onToolStripChanged(){root.syncTools()}}
@@ -108,7 +119,7 @@ ApplicationWindow {
             objectName: "menuBarGlassBackground"
             tint: Theme.menuBarGlass
             topCornersOnly: true
-            radius: root.visibility===Window.Maximized ? 0 : Theme.menuRadius
+            radius: root.cornerRadius
             MouseArea {
                 anchors.fill: parent
                 onPressed: root.startSystemMove()
@@ -118,7 +129,17 @@ ApplicationWindow {
                 anchors.right: parent.right; height: parent.height
                 IconButton { objectName:"windowMinimize";width:32;height:28;padding:10;glyph:"minimize";tooltip:"最小化";onClicked:root.showMinimized() }
                 IconButton { objectName:"windowMaximize";width:32;height:28;padding:10;glyph:root.visibility===Window.Maximized?"restore":"maximize";tooltip:"最大化 / 还原";onClicked:{if(root.visibility===Window.Maximized)root.showNormal();else root.showMaximized()} }
-                IconButton { objectName:"windowClose";width:32;height:28;padding:10;glyph:"close";tooltip:"关闭";onClicked:root.close() }
+                IconButton {
+                    id: closeButton
+                    objectName:"windowClose";width:32;height:28;padding:10;glyph:"close";tooltip:"关闭";onClicked:root.close()
+                    background: MenuSurface {
+                        objectName: "windowCloseBackground"
+                        radius: root.cornerRadius
+                        topRightCornerOnly: true
+                        tint: closeButton.down ? "#b5222c" : closeButton.hovered ? "#f04450" : "#d8323e"
+                    }
+                    contentItem: Icon { name: "close"; color: "#ffffff" }
+                }
             }
             Image { objectName: "applicationLogo"; x: 8; y: 5; width: 18; height: 18; source: "assets/logo.png"; fillMode: Image.PreserveAspectFit; mipmap: true }
         }

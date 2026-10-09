@@ -31,6 +31,25 @@ void WorkspaceManager::watchMenuWindow(QWindow *window,bool visible) {
     if(visible) m_menuWindow=window;
     else if(m_menuWindow==window) m_menuWindow.clear();
 }
+bool WorkspaceManager::setWindowCornerRadius(QWindow *window,int radius) {
+#ifdef Q_OS_WIN
+    if(!window || QGuiApplication::platformName()!=QStringLiteral("windows")) return false;
+    const auto handle=reinterpret_cast<HWND>(window->winId());
+    if(radius<=0) return SetWindowRgn(handle,nullptr,TRUE)!=0;
+    RECT bounds{};
+    if(!GetWindowRect(handle,&bounds)) return false;
+    const int diameter=qRound(2*std::clamp(radius,0,64)*window->devicePixelRatio());
+    // Regions use physical outer-window coordinates and also clip compositor blur.
+    const auto region=CreateRoundRectRgn(0,0,bounds.right-bounds.left+1,bounds.bottom-bounds.top+1,diameter,diameter);
+    if(!region) return false;
+    if(SetWindowRgn(handle,region,TRUE)!=0) return true; // Windows owns region now.
+    DeleteObject(region);
+    return false;
+#else
+    Q_UNUSED(window); Q_UNUSED(radius);
+    return false;
+#endif
+}
 bool WorkspaceManager::setMenuBarBlur(QWindow *window,bool enabled) {
 #ifdef Q_OS_WIN
     if(!window || QGuiApplication::platformName()!=QStringLiteral("windows")) return false;

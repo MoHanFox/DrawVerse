@@ -25,6 +25,7 @@ public:
     Q_INVOKABLE QRect availableScreenGeometry(QWindow *window) const;
     Q_INVOKABLE void watchMenuWindow(QWindow *window, bool visible);
     Q_INVOKABLE bool setMenuBarBlur(QWindow *window, bool enabled);
+    Q_INVOKABLE bool setWindowCornerRadius(QWindow *window, int radius);
     explicit WorkspaceManager(const QString &settingsFile = {}, QObject *parent = nullptr);
     QVariantList leftGroups() const { return groupsAt("left"); }
     QVariantList rightGroups() const { return groupsAt("right"); }
