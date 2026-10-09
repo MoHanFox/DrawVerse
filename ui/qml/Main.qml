@@ -131,7 +131,7 @@ ApplicationWindow {
         x=Screen.virtualX+Math.max(16,(Screen.width-width)/2)
         y=Screen.virtualY+Math.max(16,(Screen.height-height)/3)
         normalGeometry=Qt.rect(x,y,width,height)
-        menuBarBlurActive=Workspace.setMenuBarBlur(root,true)
+        menuBarBlurActive=Workspace.setMenuBarBlur(root,true,root.menuBar.height)
         windowCornersReady=true
         updateWindowCorners()
         syncFloating()
@@ -184,8 +184,9 @@ ApplicationWindow {
             topCornersOnly: true
             radius: root.cornerRadius
             MouseArea {
+                objectName:"mainWindowDragArea"
                 anchors.fill: parent
-                onPressed: root.startSystemMove()
+                onPressed: if(root.visibility!==Window.Maximized && root.visibility!==Window.FullScreen)root.startSystemMove()
                 onDoubleClicked: {if(root.visibility===Window.Maximized)root.showNormal();else root.showMaximized()}
             }
             Row {

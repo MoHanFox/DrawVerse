@@ -20,7 +20,6 @@
 #include <QTimer>
 #include <functional>
 #include <algorithm>
-#include <bit>
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
 #endif
@@ -54,6 +53,7 @@ bool WorkspaceManager::setWindowCornerRadius(QWindow *window,int radius) {
 #ifdef Q_OS_WIN
     if(!window || QGuiApplication::platformName()!=QStringLiteral("windows")) return false;
     const auto handle=reinterpret_cast<HWND>(window->winId());
+    if(window==m_glassWindow)m_menuBlur.setRadius(radius);
     // An iconic HWND has a tiny shell rectangle; applying a region there breaks
     // its restore placement and can leave only the Windows minimized caption.
     if(IsIconic(handle) || window->visibility()==QWindow::Minimized)return false;
@@ -72,23 +72,13 @@ bool WorkspaceManager::setWindowCornerRadius(QWindow *window,int radius) {
     return false;
 #endif
 }
-bool WorkspaceManager::setMenuBarBlur(QWindow *window,bool enabled) {
+bool WorkspaceManager::setMenuBarBlur(QWindow *window,bool enabled,int height) {
 #ifdef Q_OS_WIN
     if(!window || QGuiApplication::platformName()!=QStringLiteral("windows")) return false;
     m_glassWindow=window;m_glassHandle=window->winId();
-    // The Windows compositor blurs live content behind the alpha surface.
-    // Opaque workspace pixels cover the effect; only the menu bar reveals it.
-    struct AccentPolicy { int state,flags; DWORD gradient; int animation; };
-    struct CompositionData { int attribute; void *data; SIZE_T size; };
-    using SetComposition=BOOL(WINAPI *)(HWND,const CompositionData *);
-    const auto module=GetModuleHandleW(L"user32.dll");
-    const auto apply=std::bit_cast<SetComposition>(GetProcAddress(module,"SetWindowCompositionAttribute"));
-    if(!apply) return false;
-    AccentPolicy accent{enabled?3:0,0,0,0}; // ACCENT_ENABLE_BLURBEHIND / ACCENT_DISABLED
-    CompositionData data{19,&accent,sizeof(accent)}; // WCA_ACCENT_POLICY
-    return apply(reinterpret_cast<HWND>(window->winId()),&data)!=FALSE;
+    return m_menuBlur.setEnabled(window,enabled,height);
 #else
-    Q_UNUSED(window); Q_UNUSED(enabled);
+    Q_UNUSED(window); Q_UNUSED(enabled);Q_UNUSED(height);
     return false;
 #endif
 }
@@ -127,6 +117,12 @@ bool WorkspaceManager::nativeEventFilter(const QByteArray &eventType,void *messa
     if(eventType!="windows_generic_MSG" || !m_glassWindow)return false;
     const auto *msg=static_cast<MSG*>(message);
     if(reinterpret_cast<quintptr>(msg->hwnd)!=m_glassHandle)return false;
+    if(msg->message==WM_SYSCOMMAND && (msg->wParam&0xfff0)==SC_MOVE &&
+       (IsZoomed(msg->hwnd) || m_glassWindow->visibility()==QWindow::Maximized || m_glassWindow->visibility()==QWindow::FullScreen)) {*result=0;return true;}
+    if((msg->message==WM_SYSCOMMAND && (msg->wParam&0xfff0)==SC_MINIMIZE) ||
+       (msg->message==WM_WINDOWPOSCHANGING && (reinterpret_cast<WINDOWPOS*>(msg->lParam)->flags&SWP_HIDEWINDOW)) ||
+       (msg->message==WM_SIZE && msg->wParam==SIZE_MINIMIZED) || (msg->message==WM_SHOWWINDOW && !msg->wParam))m_menuBlur.hide();
+    else if(msg->message==WM_WINDOWPOSCHANGED || msg->message==WM_SIZE || msg->message==WM_ACTIVATE || msg->message==WM_DPICHANGED)m_menuBlur.sync();
     // DefWindowProc paints an iconic caption into even a frameless alpha
     // surface during minimize/restore. DWM keeps those pixels behind our menu.
     // The QML title bar owns this window's entire non-client presentation.
@@ -568,6 +564,7 @@ bool WorkspaceManager::dockToolStrip(const QString &data,const QString &location
     return dockPayload(payload("__toolstrip",{},true),location,target,placement);
 }
 bool WorkspaceManager::eventFilter(QObject *watched,QEvent *event) {
+    if(watched==m_glassWindow && event->type()==QEvent::Hide)m_menuBlur.hide();
     if(m_menuWindow && m_menuWindow->isVisible() && event->type()==QEvent::MouseButtonPress) {
         const auto *press=static_cast<QMouseEvent*>(event);
         if(!m_menuWindow->geometry().contains(press->globalPosition().toPoint())) {

@@ -15,3 +15,9 @@
 日志：artifacts/brush-library-check.log、brush-library-native.txt、brush-library-performance.json。构建/运行/测试命令沿用 README。
 
 本轮 Rust/C ABI 无修改，使用现有 ABI 1.7 及圆笔引擎。纹理、散布、角度/圆度、硬度、混色笔刷和 ABR 尚未实现，因此没有显示对应假控件；后续需核心笔刷模块和格式支持。macOS/Linux 与真实硬件待跨平台验收。Python 插件未开始，不创建虚假 pytest。
+
+## 橡皮擦与画笔共享预设修复（2026-10-10）
+
+画笔库预设点击删除强制 `PaintClient.eraser=false`，选择预设只更新共享 BrushLibrary。橡皮擦/画笔切换仍由工具条决定，预设、大小、透明度与间距共用。
+
+brushPresetClicksKeepEraserAndShareActualStrokeSettings：在透明文档实际画线，启用橡皮擦并通过 QML 点击另一个预设，确认工具仍为橡皮擦；修改共享参数后实际擦除使中心 alpha 降低，再点击画笔工具确认预设/参数保持，实际绘画使 alpha 提升。普通、两倍 DPI 与 Windows 原生后端通过。完整 tools/check.py 全部通过（普通含生命周期 49 项、两倍 DPI 27 项），本轮日志和原生验收见 [menu-blur-layer-validation.md](menu-blur-layer-validation.md)。Rust/C ABI 无修改，继续使用 ABI 1.8.0。

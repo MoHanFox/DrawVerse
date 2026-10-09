@@ -15,6 +15,7 @@ Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘
 - [图标列与临时面板修复](docs/icon-rail-design.md) / [当前交互验收](docs/icon-rail-validation.md)
 - [窗口恢复 / 边缘吸附设计](docs/window-recovery-design.md) / [当前验收](docs/window-recovery-validation.md)
 - [任务栏 / 原生标题残留修复](docs/taskbar-window-design.md) / [当前验收](docs/taskbar-window-validation.md)
+- [菜单底层圆角模糊 / 最大化拖动](docs/menu-blur-layer-design.md) / [当前验收](docs/menu-blur-layer-validation.md)
 - [矩形/椭圆选区设计](docs/selection-design.md) / [选区验收](docs/selection-validation.md)
 - [画笔库与当前画笔设置](docs/brush-library-design.md) / [画笔模块验收](docs/brush-library-validation.md)
 - [任务与 CPU 视口设计](docs/task-render-design.md) / [最新模块验证](docs/task-render-validation.md)

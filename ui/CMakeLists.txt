@@ -7,6 +7,7 @@ add_library(drawverse_ui STATIC
     src/DockTree.h src/DockTree.cpp
     src/UiScale.h
     src/MenuSurface.h src/MenuSurface.cpp
+    src/MenuBlurLayer.h src/MenuBlurLayer.cpp
     src/PaintCoreClient.h src/PaintCoreClient.cpp
     src/CanvasItem.h src/CanvasItem.cpp
     src/SelectionOverlay.h src/SelectionOverlay.cpp
@@ -17,6 +18,9 @@ target_compile_features(drawverse_ui PUBLIC cxx_std_20)
 target_include_directories(drawverse_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(drawverse_ui PUBLIC Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2
     PRIVATE drawverse_ffi_static)
+if(WIN32)
+    target_link_libraries(drawverse_ui PRIVATE dwmapi windowsapp CoreMessaging)
+endif()
 
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES qml/qmldir qml/Theme.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml
@@ -36,6 +40,8 @@ add_test(NAME qt_ui_tests COMMAND qt_ui_tests -o "${CMAKE_BINARY_DIR}/qt-ui-test
 set_tests_properties(qt_ui_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     mainWindowRestoresWithoutNativeFrameOrClippedContent
+    maximizedMainWindowIgnoresTitleBarDrag nativeMenuBlurLayerFollowsWindowAndHidesBeforeMinimize
+    brushPresetClicksKeepEraserAndShareActualStrokeSettings
     dockSeparatorsUseThinDarkGrayAcrossMainAndFloatingColumns
     draggingPanelsSelectsNearestExposedEdgeAndShowsEdgeGlow
     panelTabsSwapWithinTheirBarBeforeDetaching

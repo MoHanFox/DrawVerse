@@ -8,6 +8,7 @@
 #include <QMap>
 #include "DockTree.h"
 #include "WindowDrag.h"
+#include "MenuBlurLayer.h"
 class QQuickItem;
 class QWindow;
 
@@ -36,7 +37,8 @@ public:
     Q_INVOKABLE QRect availableScreenGeometry(QWindow *window) const;
     Q_INVOKABLE void watchMenuWindow(QWindow *window, bool visible);
     Q_INVOKABLE void watchPanelFlyout(QWindow *window,QQuickItem *owner,bool visible);
-    Q_INVOKABLE bool setMenuBarBlur(QWindow *window, bool enabled);
+    Q_INVOKABLE bool setMenuBarBlur(QWindow *window, bool enabled,int height=28);
+    quintptr menuBlurWindowHandle() const {return m_menuBlur.nativeHandle();}
     Q_INVOKABLE bool setWindowCornerRadius(QWindow *window, int radius);
     explicit WorkspaceManager(const QString &settingsFile = {}, QObject *parent = nullptr);
     ~WorkspaceManager() override;
@@ -126,6 +128,7 @@ private:
     QPointer<QWindow> m_menuWindow;
     QPointer<QWindow> m_glassWindow;
     quintptr m_glassHandle=0;
+    MenuBlurLayer m_menuBlur{this};
     QPointer<QWindow> m_panelFlyout;
     QPointer<QQuickItem> m_flyoutOwner;
     quint64 m_flyoutRevision=0;

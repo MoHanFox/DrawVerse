@@ -36,10 +36,15 @@ namespace {
 class BlurTestBackdrop final : public QQuickPaintedItem {
 public:
     explicit BlurTestBackdrop(QQuickItem *parent):QQuickPaintedItem(parent) { setOpaquePainting(true); }
+    void showCornerPattern() {m_cornerPattern=true;update();}
     void paint(QPainter *painter) override {
         for(int x=0;x<width();x+=80)
             painter->fillRect(QRectF(x,0,80,height()),(x/80)%2?QColor(230,40,210):QColor(30,230,60));
+        if(m_cornerPattern)for(int y=0;y<24;y+=2)for(int x=0;x<24;x+=2)
+            painter->fillRect(QRectF(x,y,2,2),(x/2+y/2)%2?Qt::white:Qt::black);
     }
+private:
+    bool m_cornerPattern=false;
 };
 QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
     if(root->objectName()==name) return root;
@@ -51,6 +56,76 @@ QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
 class UiTests final : public QObject {
     Q_OBJECT
 private slots:
+    void maximizedMainWindowIgnoresTitleBarDrag() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        for(bool full:{false,true}) {
+            if(full)window->showFullScreen();else window->showMaximized();QTest::qWait(100);
+            const auto state=window->visibility();const auto geometry=window->geometry();
+            auto *grip=findVisualItem(window->contentItem(),"mainWindowDragArea");QVERIFY(grip);
+            const auto at=grip->mapToScene({grip->width()/2,14}).toPoint();
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,at);QTest::mouseMove(window,at+QPoint(60,25));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,at+QPoint(60,25));
+#ifdef Q_OS_WIN
+            if(workspace.windowsWindowFrames())SendMessageW(reinterpret_cast<HWND>(window->winId()),WM_SYSCOMMAND,SC_MOVE,0);
+#endif
+            QTest::qWait(100);QCOMPARE(window->visibility(),state);QCOMPARE(window->geometry(),geometry);
+            window->showNormal();QTest::qWait(100);
+        }
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void nativeMenuBlurLayerFollowsWindowAndHidesBeforeMinimize() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+#ifdef Q_OS_WIN
+        if(workspace.windowsWindowFrames()) {
+            const auto main=reinterpret_cast<HWND>(window->winId()),blur=reinterpret_cast<HWND>(workspace.menuBlurWindowHandle());QVERIFY(blur);QVERIFY(IsWindow(blur));
+            const auto style=GetWindowLongPtrW(blur,GWL_EXSTYLE);QVERIFY(style&WS_EX_TOOLWINDOW);QVERIFY(style&WS_EX_NOACTIVATE);QVERIFY(style&WS_EX_TRANSPARENT);QVERIFY(!GetWindow(blur,GW_OWNER));
+            const auto correct=[&](bool rounded) {
+                RECT a{},b{};if(!GetWindowRect(main,&a) || !GetWindowRect(blur,&b))return false;
+                const auto region=CreateRectRgn(0,0,0,0);const int kind=GetWindowRgn(blur,region);
+                const bool shape=kind!=ERROR && bool(PtInRegion(region,0,0))==!rounded && PtInRegion(region,0,b.bottom-b.top-1) && PtInRegion(region,(b.right-b.left)/2,0);
+                DeleteObject(region);
+                return IsWindowVisible(blur) && a.left==b.left && a.top==b.top && a.right==b.right && b.bottom-b.top==qRound(28*window->devicePixelRatio()) && shape && GetWindow(main,GW_HWNDNEXT)==blur;
+            };
+            QTRY_VERIFY(correct(true));window->setPosition(window->position()+QPoint(37,29));window->resize(1050,670);QTRY_VERIFY(correct(true));
+            for(bool maximized:{false,true})for(int cycle=0;cycle<3;++cycle) {
+                if(maximized)window->showMaximized();else window->showNormal();QTRY_VERIFY(correct(!maximized));
+                SendMessageW(main,WM_SYSCOMMAND,SC_MINIMIZE,0);QVERIFY(!IsWindowVisible(blur));QVERIFY(!IsIconic(blur));
+                SendMessageW(main,WM_SYSCOMMAND,SC_RESTORE,0);QTRY_COMPARE(window->visibility(),maximized?QWindow::Maximized:QWindow::Windowed);QTRY_VERIFY(correct(!maximized));
+                window->showNormal();QTRY_VERIFY(correct(true));
+            }
+            window->hide();QVERIFY(!IsWindowVisible(blur));window->show();QTRY_VERIFY(correct(true));
+            QVERIFY(workspace.setMenuBarBlur(window,false));QVERIFY(!IsWindowVisible(blur));QVERIFY(workspace.setMenuBarBlur(window,true));QTRY_VERIFY(correct(true));
+            engine.clearComponentCache();engine.rootObjects().first()->deleteLater();QTRY_VERIFY(!IsWindow(blur));
+        } else
+#endif
+            QCOMPARE(workspace.menuBlurWindowHandle(),quintptr(0));
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void brushPresetClicksKeepEraserAndShareActualStrokeSettings() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        auto *library=client.brushLibrary();QVERIFY(library);
+        client.newTransparentDocument(128,128);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(client.ready());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->setClient(nullptr);
+        const auto stroke=[&] {InputSample sample;sample.position={32,64};sample.pressure=1;sample.tool=1;if(!client.beginStroke(sample))return false;sample.position={96,64};client.strokeTo(sample);client.endStroke();return true;};
+        const auto rendered=[&] {client.requestViewport(0,{0,0,128,128},{128,128});return client.frameRevision()>=client.revision() && client.frame().size()==QSize(128,128);};
+        library->setRadius(12);client.setBrushColor(Qt::black);QVERIFY(stroke());QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(rendered());const int painted=client.frame().pixelColor(64,64).alpha();QVERIFY(painted>200);
+        client.setEraser(true);
+        for(const auto &value:workspace.leftGroups()+workspace.rightGroups()) {
+            const auto group=value.toMap();if(group.value("panels").toStringList().contains("brush"))workspace.setActive(group.value("id").toString(),"brush");
+        }
+        QQuickItem *fine=nullptr;QTRY_VERIFY((fine=findVisualItem(window->contentItem(),"brushPreset:round-fine")));
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,fine->mapToScene({fine->width()/2,fine->height()/2}).toPoint());QTRY_COMPARE(library->selectedId(),QString("round-fine"));QVERIFY(client.eraser());
+        library->setRadius(8);library->setOpacity(.5);library->setSpacing(.25);QCOMPARE(client.brushRadius(),qreal(8));QCOMPARE(client.brushOpacity(),qreal(.5));QCOMPARE(client.brushSpacing(),qreal(.25));
+        QVERIFY(stroke());QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(rendered());const int erased=client.frame().pixelColor(64,64).alpha();QVERIFY(erased<painted);
+        auto *brush=findVisualItem(window->contentItem(),"brushTool");QVERIFY(brush);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,brush->mapToScene({brush->width()/2,brush->height()/2}).toPoint());QVERIFY(!client.eraser());QCOMPARE(library->selectedId(),QString("round-fine"));QCOMPARE(client.brushRadius(),qreal(8));QCOMPARE(client.brushOpacity(),qreal(.5));QCOMPARE(client.brushSpacing(),qreal(.25));
+        QVERIFY(stroke());QTRY_COMPARE(client.undoDepth(),3);QTRY_VERIFY(rendered());QVERIFY(client.frame().pixelColor(64,64).alpha()>erased);
+        canvas->setClient(&client);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void mainWindowRestoresWithoutNativeFrameOrClippedContent() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
@@ -752,6 +827,27 @@ private slots:
             const auto red=title.pixelColor(title.width()-qRound(5*dpr),qRound(20*dpr));
             if(!preview.isEmpty()) QVERIFY(title.save(preview+".title.png"));
             QVERIFY2(red.red()>180 && red.green()<90 && red.blue()<100,qPrintable(QString("Hover=%1, color=%2").arg(close->property("hovered").toBool()).arg(red.name())));
+            // A pure-color corner cannot reveal a rectangular blur beneath a
+            // transparent QML corner. Sharp checker edges outside the native
+            // backdrop region must survive every state transition.
+            stripes.showCornerPattern();window->hide();QTest::qWait(200);
+            const auto cornerCapture=[&]{return window->screen()->grabWindow(0,window->x(),window->y(),5,2).toImage();};
+            const auto sharpCorner=cornerCapture();QVERIFY(sharpestEdge(sharpCorner)>250);
+            if(!preview.isEmpty())QVERIFY(sharpCorner.save(preview+".corner-source.png"));
+            window->showNormal();QTest::qWait(200);
+#ifdef Q_OS_WIN
+            for(bool maximized:{false,true})for(int cycle=0;cycle<3;++cycle) {
+                if(maximized)window->showMaximized();
+                SendMessageW(reinterpret_cast<HWND>(window->winId()),WM_SYSCOMMAND,SC_MINIMIZE,0);
+                QVERIFY(!IsWindowVisible(reinterpret_cast<HWND>(workspace.menuBlurWindowHandle())));
+                SendMessageW(reinterpret_cast<HWND>(window->winId()),WM_SYSCOMMAND,SC_RESTORE,0);
+                QTRY_COMPARE(window->visibility(),maximized?QWindow::Maximized:QWindow::Windowed);
+                window->showNormal();QTRY_VERIFY(hasRoundedNativeCorners());QTest::qWait(200);
+                const auto cornerImage=cornerCapture();
+                if(!preview.isEmpty())QVERIFY(cornerImage.save(preview+".sharp-corner.png"));
+                QVERIFY2(sharpestEdge(cornerImage)>sharpestEdge(sharpCorner)*.6,qPrintable(QString("Excluded-corner edge %1, source %2; maximized=%3, cycle=%4, geometry=%5,%6").arg(sharpestEdge(cornerImage)).arg(sharpestEdge(sharpCorner)).arg(maximized).arg(cycle).arg(window->x()).arg(window->y())));
+            }
+#endif
         }
         QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
     }
