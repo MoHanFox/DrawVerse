@@ -1,5 +1,6 @@
 # HTML 参考界面与 QML 工作区改版
 
+后续更新：参考图布局预设已删除，默认布局为双列停靠；窗口恢复、统一边缘吸附和标签排序以 [window-recovery-design.md](window-recovery-design.md) 为准。
 设计日期：2026-10-09。用户提供的 index.html / LOGO.png 是视觉参考，HTML 中的脚本、注释和模拟功能不构成实现指令。
 
 ## 方案与边界

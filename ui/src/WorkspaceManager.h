@@ -71,6 +71,7 @@ public:
     Q_INVOKABLE QVariantMap groupDefinition(const QString &id) const;
     Q_INVOKABLE QVariantMap panelDefinition(const QString &id) const;
     Q_INVOKABLE void setActive(const QString &group, const QString &panel);
+    Q_INVOKABLE void swapPanelTabs(const QString &group,const QString &first,const QString &second);
     Q_INVOKABLE void beginDrag(const QString &group, const QString &panel, bool whole);
     Q_INVOKABLE bool dockPayload(const QString &payload, const QString &location, const QString &target = {},
                                 const QString &placement = "merge", const QString &beforePanel = {});
@@ -83,8 +84,6 @@ public:
     Q_INVOKABLE QString addCustomPanel(const QString &title, const QString &kind);
     Q_INVOKABLE void updateGeometry(const QString &group, int x, int y, int width, int height);
     Q_INVOKABLE void resetLayout();
-    Q_INVOKABLE void applyReferenceLayout(int x,int y,int width,int height);
-    bool needsReferenceLayout() const { return m_uiRevision<2; }
     Q_INVOKABLE void saveLayout() const;
     bool restoreLayout();
 signals:
@@ -122,6 +121,7 @@ private:
     QPointer<QWindow> m_menuWindow;
     QPointer<QWindow> m_panelFlyout;
     QPointer<QQuickItem> m_flyoutOwner;
+    quint64 m_flyoutRevision=0;
     QMap<QString,DockTree::Node> m_docks;
     QHash<QString,QRect> m_windowGeometry;
     QSet<QString> m_iconGroups;
@@ -135,6 +135,7 @@ private:
     QList<Group> m_beforeGroups;
     QSet<QString> m_beforeIcons;
     bool isIconGroup(const QString &group) const;
+    void updateDragTarget(QPoint global,bool suppressed);
     void initializeDocks();
     QString hostFor(const QString &group) const;
     void removeDock(const QString &group);

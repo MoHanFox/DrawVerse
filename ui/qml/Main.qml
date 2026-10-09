@@ -17,7 +17,17 @@ ApplicationWindow {
     readonly property int cornerRadius: visibility===Window.Maximized || visibility===Window.FullScreen ? 0 : Theme.windowRadius
     property bool windowCornersReady: false
     function updateWindowCorners() {
-        if(windowCornersReady) Workspace.setWindowCornerRadius(root,cornerRadius)
+        if(windowCornersReady && visibility!==Window.Minimized && visibility!==Window.Hidden) Workspace.setWindowCornerRadius(root,cornerRadius)
+    }
+    property int restoredVisibility:Window.Windowed
+    property bool restoringFromMinimize:false
+    onVisibilityChanged: visibility=>{
+        if(visibility===Window.Minimized)restoringFromMinimize=true
+        else if(visibility!==Window.Hidden) {
+            if(restoringFromMinimize && restoredVisibility===Window.Maximized && visibility!==Window.Maximized) {
+                restoringFromMinimize=false;Qt.callLater(()=>root.showMaximized())
+            } else {restoringFromMinimize=false;restoredVisibility=visibility;Qt.callLater(updateWindowCorners)}
+        }
     }
     onCornerRadiusChanged: Qt.callLater(updateWindowCorners)
     onWidthChanged: Qt.callLater(updateWindowCorners)
@@ -250,8 +260,7 @@ ApplicationWindow {
             title: "工作区"
             Action { objectName:"customPanelAction"; text: "自定义面板…"; onTriggered: panelDialog.open() }
             Action { text: "保存当前布局"; onTriggered: Workspace.saveLayout() }
-            Action { text: "参考图布局"; enabled:!PaintClient.drawing;onTriggered: Workspace.applyReferenceLayout(root.x,root.y,root.width,root.height) }
-            Action { text: "双列停靠布局"; enabled:!PaintClient.drawing;onTriggered: Workspace.resetLayout() }
+            Action { objectName:"defaultLayoutAction";text: "默认布局"; enabled:!PaintClient.drawing;onTriggered: Workspace.resetLayout() }
         }
     }
     header: Rectangle {

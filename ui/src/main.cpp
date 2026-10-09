@@ -53,12 +53,6 @@ int main(int argc,char **argv) {
     engine.rootContext()->setContextProperty("Workspace",&workspace);
     engine.load(QUrl("qrc:/qml/Main.qml"));
     if(engine.rootObjects().isEmpty()) return 1;
-    auto *mainWindow=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
-    if(workspace.needsReferenceLayout() || !testPath.isEmpty()) {
-        workspace.applyReferenceLayout(mainWindow->x(),mainWindow->y(),mainWindow->width(),mainWindow->height());
-        client.setBrushColor(QColor("#f5e3ce"));
-        if(testPath.isEmpty())workspace.saveLayout();
-    }
     if(!testPath.isEmpty())QObject::connect(&client,&PaintCoreClient::stopped,&app,&QCoreApplication::quit);
     if(!benchmarkPath.isEmpty()) {
         startPaintingBenchmark(client,*qobject_cast<QQuickWindow*>(engine.rootObjects().first()),benchmarkPath);

@@ -2,7 +2,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QPoint>
-class QWindow;
+#include <QWindow>
 
 // Moves the real native window while retaining the pointer through reparenting.
 class WindowDrag final : public QObject {
@@ -11,6 +11,7 @@ public:
     explicit WindowDrag(QObject *parent=nullptr):QObject(parent) {}
     ~WindowDrag() override;
     bool active() const {return !m_window.isNull();}
+    QWindow *window() const {return m_window.data();}
     void start(QWindow *window,QPoint global,QPoint offset);
     void finish(bool cancelled=false);
 signals:

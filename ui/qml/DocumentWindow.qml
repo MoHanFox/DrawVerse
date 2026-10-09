@@ -9,13 +9,13 @@ ApplicationWindow {
     objectName:"documentWindow:"+windowData.id
     visible:true;flags:Qt.Window|Qt.FramelessWindowHint
     x:windowData.x;y:windowData.y;width:windowData.width;height:windowData.height
-    minimumWidth:320;minimumHeight:200;color:Theme.background
+    minimumWidth:320;minimumHeight:200;color:Theme.strip
     font.family:Qt.platform.os==="windows"?"Microsoft YaHei UI":"sans-serif";font.pixelSize:10
     property var activeDocument:documents.client(windowData.active)
     readonly property bool multipleDocuments:windowData.documents.length>1
     title:activeDocument?activeDocument.documentName+(activeDocument.modified?" *":""):"DrawVerse"
     property bool initializing:true
-    function remember(){if(!initializing && visible)documents.updateGeometry(windowData.id,x,y,width,height)}
+    function remember(){if(!initializing && visible && visibility!==Window.Minimized)documents.updateGeometry(windowData.id,x,y,width,height)}
     function updateLayout(data){initializing=true;windowData=data;x=data.x;y=data.y;width=data.width;height=data.height;initializing=false;area.refresh()}
     function releaseCanvas(){area.releaseCanvas()}
     Component.onCompleted:initializing=false

@@ -30,6 +30,7 @@ ApplicationWindow {
         selectedPanel=panel;groupData=Workspace.groupDefinition(ownerTile.layoutData.id)
         if(!visible){positionSide(ownerTile.mapToGlobal(0,0).y);visible=true}
         Workspace.watchPanelFlyout(root,ownerTile,true)
+        raise();requestActivate()
     }
     Connections {
         target:Workspace

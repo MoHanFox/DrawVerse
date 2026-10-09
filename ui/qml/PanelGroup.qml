@@ -16,6 +16,14 @@ Rectangle {
     readonly property int minimumPanelHeight: Workspace.panelDefinition(selected).kind === "layers" ? 250 : Workspace.panelDefinition(selected).kind === "brush-settings" ? 260 : 120
     property string dropMode: "merge"
     property string beforePanel: ""
+    property bool reorderDrop:false
+    property string tabDragPanel:""
+    property string tabDropTarget:""
+    function finishTabDrag(commit) {
+        const first=tabDragPanel,second=tabDropTarget,id=groupData.id
+        tabDragPanel="";tabDropTarget=""
+        if(commit && first && second && first!==second)Workspace.swapPanelTabs(id,first,second)
+    }
     color: Theme.surface; clip: true
     implicitHeight: groupData.dockHeight || 320
     onHeightChanged: if(!flyout) Workspace.updateDockHeight(groupData.id,Math.round(height))
@@ -28,24 +36,21 @@ Rectangle {
         }
     }
     function specialDrop(d) {
+        reorderDrop=false
         if(d.formats.indexOf("application/x-drawverse-tool-strip")>=0)return true
         const data=d.getDataAsString("application/x-drawverse-panel")
         if(data.length>1024)return false
-        try{return JSON.parse(data).group==="__canvas"}catch(e){return false}
+        try{const parsed=JSON.parse(data);reorderDrop=parsed.group===root.groupData.id && !parsed.whole;return parsed.group==="__canvas"}catch(e){return false}
     }
     function acceptsDrop(d){
         if(Workspace.dockingSuppressed || PaintClient.drawing)return false
+        if(d.y>=28 && Math.min(d.x,width-d.x,d.y,height-d.y)>24)return false
         if(d.formats.indexOf("application/x-drawverse-tool-strip")>=0)return root.groupData.id!=="__toolstrip"
         try {const data=JSON.parse(d.getDataAsString("application/x-drawverse-panel"));return data.group!=="__canvas" && (data.group!==root.groupData.id || !data.whole && d.y<28 && root.groupData.panels.length>1)}catch(e){return false}
     }
     function locateDrop(x,y,special) {
         beforePanel=""
-        if(y<5) dropMode="before"
-        else if(y>height-10) dropMode="after"
-        else if(special) dropMode=x<width/2?"left":"right"
-        else if(y>=28 && x<Math.min(24,width*.18)) dropMode="left"
-        else if(y>=28 && x>width-Math.min(24,width*.18)) dropMode="right"
-        else {
+        if(!special && y>=8 && y<28 && (reorderDrop || x>24 && x<width-24)) {
             dropMode="merge"
             if(y<28) {
                 const p=tabRow.mapFromItem(root,x,y)
@@ -54,6 +59,12 @@ Rectangle {
                     if(p.x<tab.x+tab.width/2) { beforePanel=tab.modelData; break }
                 }
             }
+        } else {
+            const distance=Math.min(x,width-x,y,height-y)
+            if(distance===x)dropMode="left"
+            else if(distance===width-x)dropMode="right"
+            else if(distance===y)dropMode="before"
+            else dropMode="after"
         }
     }
     ColumnLayout {
@@ -106,19 +117,36 @@ Rectangle {
                             // Only the top corners round; the active tab joins its content.
                             Rectangle {anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:parent.radius;color:parent.color}
                             Text { id:label; anchors.centerIn: parent; text: Workspace.panelDefinition(modelData).title; color: root.selected===modelData ? "#eeeeee" : Theme.muted; font.pixelSize: 9 }
+                            Rectangle {anchors.bottom:parent.bottom;width:parent.width;height:2;color:Theme.accent;visible:root.tabDragPanel.length>0 && root.tabDropTarget===modelData && root.tabDragPanel!==modelData}
                             MouseArea {
+                                objectName:"panelTabGrip:"+modelData
                                 anchors.fill: parent
+                                preventStealing:true
                                 property point start
+                                property bool moving:false
                                 onPressed: mouse => {
-                                    start=Qt.point(mouse.x,mouse.y)
+                                    start=Qt.point(mouse.x,mouse.y);moving=false;root.finishTabDrag(false)
                                     root.selected=modelData; Workspace.setActive(root.groupData.id,modelData)
                                 }
                                 onPositionChanged: mouse => {
                                     if(pressed && !PaintClient.drawing && Math.abs(mouse.x-start.x)+Math.abs(mouse.y-start.y)>8) {
-                                        const id=root.groupData.id, panel=modelData
-                                        Qt.callLater(() => Workspace.beginDrag(id,panel,false))
+                                        const at=mapToItem(tabStrip,mouse.x,mouse.y)
+                                        if(at.x>=-8 && at.x<=tabStrip.width+8 && at.y>=-8 && at.y<=tabStrip.height+8) {
+                                            moving=true;root.tabDragPanel=modelData;root.tabDropTarget=""
+                                            const rowAt=mapToItem(tabRow,mouse.x,mouse.y)
+                                            for(let i=0;i<tabRepeater.count;i++) {
+                                                const tab=tabRepeater.itemAt(i)
+                                                if(rowAt.x>=tab.x && rowAt.x<=tab.x+tab.width){root.tabDropTarget=tab.modelData;break}
+                                            }
+                                        } else {
+                                            moving=true;root.finishTabDrag(false)
+                                            const id=root.groupData.id, panel=modelData
+                                            Qt.callLater(() => Workspace.beginDrag(id,panel,false))
+                                        }
                                     }
                                 }
+                                onReleased:root.finishTabDrag(moving)
+                                onCanceled:root.finishTabDrag(false)
                                 onDoubleClicked: {root.dismissRequested();Workspace.setColumnCollapsed(root.groupData.id,!root.flyout)}
                             }
                         }
@@ -159,14 +187,10 @@ Rectangle {
             if(ok)d.acceptProposedAction()
         }
     }
-    Rectangle {
+    DockEdgePreview {
         objectName: "dockPreview:"+root.groupData.id; visible: drop.containsDrag || Workspace.dragTarget===root.groupData.id
-        property string mode:Workspace.dragTarget===root.groupData.id?Workspace.dragPlacement:root.dropMode
-        x: mode==="right" ? root.width*.65 : 1; width: mode==="left" || mode==="right" ? root.width*.35 : root.width-2
-        y: mode==="after" ? root.height*0.65 : mode==="merge" ? 8 : 0
-        height: mode==="merge" ? root.height-9 : mode==="left" || mode==="right" ? root.height : root.height*.35
-        color: "#2423b5ee"; border.color: Theme.accent; border.width: 2
-        Text { anchors.centerIn: parent; color: "#e6f6ff"; font.pixelSize: 11; text: root.dropMode==="before" ? "停靠到上方" : root.dropMode==="after" ? "停靠到下方" : root.dropMode==="left"?"停靠到左侧":root.dropMode==="right"?"停靠到右侧":root.beforePanel ? "插入标签" : "合并为标签" }
+        anchors.fill:parent
+        mode:Workspace.dragTarget===root.groupData.id?Workspace.dragPlacement:root.dropMode
     }
     Rectangle {
         visible: drop.containsDrag && root.dropMode==="merge" && root.beforePanel.length>0

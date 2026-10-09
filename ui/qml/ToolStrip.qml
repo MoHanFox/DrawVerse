@@ -18,7 +18,6 @@ Rectangle {
             onPressed:mouse=>origin=Qt.point(mouse.x,mouse.y)
             onPositionChanged:mouse=>{if(pressed && !PaintClient.drawing && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8)Qt.callLater(()=>Workspace.beginToolStripDrag())}
             onDoubleClicked:{if(PaintClient.drawing)return;if(Workspace.toolsFloating)Workspace.dockToolStrip("drawverse-tools-v1");else Workspace.floatToolStrip(mapToGlobal(20,20).x,mapToGlobal(20,20).y)}
-            ToolTip.visible:containsMouse;ToolTip.delay:600;ToolTip.text:"拖动工具条 · 双击浮动 / 归位";hoverEnabled:true
         }
     }
     Column {

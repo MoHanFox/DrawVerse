@@ -10,6 +10,8 @@
 #include <QSettings>
 #include <QUuid>
 #include <QMouseEvent>
+#include <QTouchEvent>
+#include <QTabletEvent>
 #include <QKeyEvent>
 #include <QSet>
 #include <QDropEvent>
@@ -34,8 +36,11 @@ void WorkspaceManager::watchMenuWindow(QWindow *window,bool visible) {
 }
 void WorkspaceManager::watchPanelFlyout(QWindow *window,QQuickItem *owner,bool visible) {
     if(visible) {
-        if(m_panelFlyout && m_panelFlyout!=window)m_panelFlyout->close();
+        if(m_panelFlyout && m_panelFlyout!=window){m_panelFlyout->hide();m_panelFlyout->close();}
         m_panelFlyout=window;m_flyoutOwner=owner;
+        ++m_flyoutRevision;
+        // Reinstall last so transient dismissal precedes other application input filters.
+        qApp->removeEventFilter(this);qApp->installEventFilter(this);
     } else if(m_panelFlyout==window){m_panelFlyout.clear();m_flyoutOwner.clear();}
 }
 bool WorkspaceManager::isIconGroup(const QString &group) const {
@@ -46,6 +51,9 @@ bool WorkspaceManager::setWindowCornerRadius(QWindow *window,int radius) {
 #ifdef Q_OS_WIN
     if(!window || QGuiApplication::platformName()!=QStringLiteral("windows")) return false;
     const auto handle=reinterpret_cast<HWND>(window->winId());
+    // An iconic HWND has a tiny shell rectangle; applying a region there breaks
+    // its restore placement and can leave only the Windows minimized caption.
+    if(IsIconic(handle) || window->visibility()==QWindow::Minimized)return false;
     if(radius<=0) return SetWindowRgn(handle,nullptr,TRUE)!=0;
     RECT bounds{};
     if(!GetWindowRect(handle,&bounds)) return false;
@@ -83,28 +91,7 @@ bool WorkspaceManager::setMenuBarBlur(QWindow *window,bool enabled) {
 WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent) : QObject(parent), m_settingsFile(settingsFile),m_windowDrag(this) {
     qApp->installEventFilter(this);
     connect(&m_windowDrag,&WindowDrag::moved,this,[this](QPoint global,bool suppressed) {
-        QString target,placement;
-        if(target.isEmpty() && !suppressed && m_workspaceArea && m_workspaceArea->isVisible() && m_workspaceArea->window() && m_workspaceArea->window()->isVisible()) {
-            const QRectF area(m_workspaceArea->mapToGlobal({0,0}),QSizeF(m_workspaceArea->width(),m_workspaceArea->height()));
-            if(area.adjusted(-12,0,12,0).contains(global)) {
-                const auto x=global.x()-area.x();
-                if(x<36)target="__workspace_left";else if(x>area.width()-36)target="__workspace_right";
-                if(!target.isEmpty())placement=target.endsWith("left")?"left":"right";
-            }
-        }
-        if(target.isEmpty() && !suppressed)for(auto it=m_targets.cbegin();it!=m_targets.cend();++it) {
-            auto *item=it.value().data();if(!item || !item->isVisible() || !item->window() || !item->window()->isVisible() || m_dragGroups.contains(it.key()) || hostFor(it.key())==m_dragHost)continue;
-            const QRectF area(item->mapToGlobal({0,0}),QSizeF(item->width(),item->height()));
-            if(!area.contains(global))continue;
-            const auto at=QPointF(global)-area.topLeft();target=it.key();
-            if(at.y()<8)placement="before";
-            else if(at.y()>area.height()-12)placement="after";
-            else if(at.x()<24)placement="left";
-            else if(at.x()>area.width()-24)placement="right";
-            else placement=m_dragGroups.contains("__toolstrip")?(at.x()<area.width()/2?"left":"right"):"merge";
-            break;
-        }
-        m_dockingSuppressed=suppressed;m_dragTarget=target;m_dragPlacement=placement;emit dragModifiersChanged();
+        updateDragTarget(global,suppressed);
     });
     connect(&m_windowDrag,&WindowDrag::finished,this,[this](bool cancelled) {
         const auto target=m_dragTarget,placement=m_dragPlacement;const auto moving=m_dragGroups;
@@ -125,7 +112,64 @@ WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent)
             if(mode!="merge")previous=id;
         }
     });
-    resetLayout(); if(!restoreLayout()) m_uiRevision=0;
+    resetLayout(); restoreLayout();
+}
+void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
+    QString target,placement; qreal best=25;
+    auto *moving=m_windowDrag.window();
+    const QRectF movingRect=moving?QRectF(moving->geometry()):QRectF();
+    const auto exposed=[&](QWindow *window,QPointF point) {
+#ifdef Q_OS_WIN
+        if(QGuiApplication::platformName()=="windows") {
+            const auto all=QGuiApplication::allWindows();
+            for(auto handle=GetTopWindow(nullptr);handle;handle=GetWindow(handle,GW_HWNDNEXT))
+                for(auto *w:all)if(w!=moving && w->isVisible() && w->visibility()!=QWindow::Minimized && reinterpret_cast<HWND>(w->winId())==handle && w->geometry().contains(point.toPoint()))return w==window;
+        }
+#endif
+        Q_UNUSED(window); Q_UNUSED(point);return true;
+    };
+    const auto consider=[&](const QString &id,QQuickItem *item,bool workspace) {
+        if(!item || !item->isVisible() || !item->window() || !item->window()->isVisible() || item->window()->visibility()==QWindow::Minimized)return;
+        const QRectF area(item->mapToGlobal({0,0}),QSizeF(item->width(),item->height()));
+        const auto offer=[&](qreal distance,const QString &edge,QPointF contact) {
+            contact.setX(std::clamp(contact.x(),area.left()+1,area.right()-1));
+            contact.setY(std::clamp(contact.y(),area.top()+1,area.bottom()-1));
+            if(distance<=24 && distance<best && exposed(item->window(),contact)) {
+                best=distance;target=workspace?"__workspace_"+edge:id;placement=edge;
+            }
+        };
+        const auto at=QPointF(global)-area.topLeft();
+        if(area.adjusted(-24,-24,24,24).contains(global)) {
+            if(global.y()>=area.top() && global.y()<=area.bottom()) {
+                offer(std::abs(at.x()),"left",{area.left(),qreal(global.y())});
+                offer(std::abs(at.x()-area.width()),"right",{area.right(),qreal(global.y())});
+            }
+            if(!workspace && global.x()>=area.left() && global.x()<=area.right()) {
+                // Tabs remain a deliberate merge target; the panel body never is.
+                if(!m_dragGroups.contains("__toolstrip") && at.y()>=8 && at.y()<28 && at.x()>24 && at.x()<area.width()-24)offer(0,"merge",global);
+                else offer(std::abs(at.y()),"before",{qreal(global.x()),area.top()});
+                offer(std::abs(at.y()-area.height()),"after",{qreal(global.x()),area.bottom()});
+            }
+        }
+        // The dragged window edge can reach a target before its pointer does.
+        const auto overlapY=std::min(area.bottom(),movingRect.bottom())-std::max(area.top(),movingRect.top());
+        const auto overlapX=std::min(area.right(),movingRect.right())-std::max(area.left(),movingRect.left());
+        if(overlapY>12) {
+            if(movingRect.center().x()<area.left())offer(std::abs(movingRect.right()-area.left()),"left",{area.left(),std::clamp(movingRect.center().y(),area.top(),area.bottom())});
+            if(movingRect.center().x()>area.right())offer(std::abs(movingRect.left()-area.right()),"right",{area.right(),std::clamp(movingRect.center().y(),area.top(),area.bottom())});
+        }
+        if(!workspace && overlapX>12) {
+            if(movingRect.center().y()<area.top())offer(std::abs(movingRect.bottom()-area.top()),"before",{std::clamp(movingRect.center().x(),area.left(),area.right()),area.top()});
+            if(movingRect.center().y()>area.bottom())offer(std::abs(movingRect.top()-area.bottom()),"after",{std::clamp(movingRect.center().x(),area.left(),area.right()),area.bottom()});
+        }
+    };
+    if(!suppressed) {
+        // Main outer edges win ties, but covered edges do not steal another host.
+        consider({},m_workspaceArea,true);
+        for(auto it=m_targets.cbegin();it!=m_targets.cend();++it)
+            if(!m_dragGroups.contains(it.key()) && hostFor(it.key())!=m_dragHost)consider(it.key(),it.value(),false);
+    }
+    m_dockingSuppressed=suppressed;m_dragTarget=target;m_dragPlacement=placement;emit dragModifiersChanged();
 }
 void WorkspaceManager::resetLayout() {
     m_iconGroups.clear();
@@ -142,26 +186,6 @@ void WorkspaceManager::resetLayout() {
     initializeDocks();
     emit dockMetricsChanged();
     emit groupsChanged();
-}
-void WorkspaceManager::applyReferenceLayout(int x,int y,int width,int height) {
-    m_iconGroups.clear();
-    const QStringList builtins{"color","brush","brush-settings","layers","history","navigator"};
-    // Keep custom panels and their geometry while arranging the built-in workspace.
-    for(auto it=m_groups.begin();it!=m_groups.end();) {
-        it->panels.removeIf([&](const QString &id){return builtins.contains(id);});
-        if(it->panels.isEmpty()){it=m_groups.erase(it);continue;}
-        if(!it->panels.contains(it->active))it->active=it->panels.first();
-        ++it;
-    }
-    m_groups.append({newId(),"right",{"history"},"history",{x+width-210,y+60,190,220},"right",false,qRound(height*.29)});
-    m_groups.append({newId(),"right",{"layers","navigator"},"layers",{x+width-210,y+290,190,400},"right",false,qRound(height*.65)});
-    m_groups.append({newId(),"floating",{"brush","brush-settings"},"brush-settings",safeGeometry({x+70,y+100,150,360}),"left",false,360});
-    m_iconGroups.insert(m_groups.last().id);
-    m_groups.append({newId(),"floating",{"color"},"color",safeGeometry({x+qRound(width*.18),y+70,155,235}),"right",false,235});
-    m_leftCollapsed=false; m_rightCollapsed=false; m_leftWidth=180; m_rightWidth=190; m_uiRevision=2;
-    m_toolsFloating=false;emit toolStripChanged();
-    initializeDocks();
-    emit dockMetricsChanged(); emit groupsChanged();
 }
 int WorkspaceManager::index(const QString &id) const { for (int i=0;i<m_groups.size();++i) if(m_groups[i].id==id) return i; return -1; }
 QString WorkspaceManager::hostFor(const QString &group) const {
@@ -368,6 +392,12 @@ void WorkspaceManager::setActive(const QString &group,const QString &panel) {
     m_groups[i].active=panel; emit groupStateChanged(group);
     // Selection and collapse never destroy floating windows or active controls.
 }
+void WorkspaceManager::swapPanelTabs(const QString &group,const QString &first,const QString &second) {
+    const int at=index(group);if(at<0 || first==second)return;
+    auto &panels=m_groups[at].panels;const auto a=panels.indexOf(first),b=panels.indexOf(second);
+    if(a<0 || b<0)return;
+    panels.swapItemsAt(a,b);emit groupsChanged();
+}
 void WorkspaceManager::updateDockHeight(const QString &group,int height) {
     const int i=index(group); if(i>=0 && !m_groups[i].collapsed && m_groups[i].location!="floating" && height>80)
         m_groups[i].dockHeight=std::clamp(height,100,2000);
@@ -514,7 +544,7 @@ bool WorkspaceManager::dockToolStrip(const QString &data,const QString &location
     if(data!="drawverse-tools-v1")return false;
     return dockPayload(payload("__toolstrip",{},true),location,target,placement);
 }
-bool WorkspaceManager::eventFilter(QObject *,QEvent *event) {
+bool WorkspaceManager::eventFilter(QObject *watched,QEvent *event) {
     if(m_menuWindow && m_menuWindow->isVisible() && event->type()==QEvent::MouseButtonPress) {
         const auto *press=static_cast<QMouseEvent*>(event);
         if(!m_menuWindow->geometry().contains(press->globalPosition().toPoint())) {
@@ -524,13 +554,20 @@ bool WorkspaceManager::eventFilter(QObject *,QEvent *event) {
     }
     if(m_panelFlyout && m_panelFlyout->isVisible()) {
         if(event->type()==QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key()==Qt::Key_Escape) {m_panelFlyout->close();return true;}
-        if(event->type()==QEvent::MouseButtonPress) {
-            const auto global=static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
+        if((watched==m_panelFlyout && event->type()==QEvent::WindowDeactivate) || event->type()==QEvent::ApplicationDeactivate) {
+            const auto previous=m_panelFlyout;const auto revision=m_flyoutRevision;
+            QTimer::singleShot(0,this,[this,previous,revision]{if(previous && previous==m_panelFlyout && revision==m_flyoutRevision)previous->close();});
+        }
+        if(event->type()==QEvent::MouseButtonPress || event->type()==QEvent::TabletPress || event->type()==QEvent::TouchBegin) {
+            QPoint global;
+            if(event->type()==QEvent::MouseButtonPress)global=static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
+            else if(event->type()==QEvent::TabletPress)global=static_cast<QTabletEvent*>(event)->globalPosition().toPoint();
+            else {const auto *touch=static_cast<QTouchEvent*>(event);if(touch->points().isEmpty())return false;global=touch->points().first().globalPosition().toPoint();}
             if(!m_panelFlyout->geometry().contains(global)) {
                 if(m_flyoutOwner) {
                     const QRectF rail(m_flyoutOwner->mapToGlobal({0,0}),QSizeF(m_flyoutOwner->width(),m_flyoutOwner->height()));
                     if(rail.contains(global))return false;
-                    for(auto it=m_targets.cbegin();it!=m_targets.cend();++it)if(isIconGroup(it.key()) && it.value() && it.value()->isVisible()) {
+                    for(auto it=m_targets.cbegin();it!=m_targets.cend();++it)if(isIconGroup(it.key()) && it.value() && it.value()->isVisible() && it.value()->window() && it.value()->window()->isVisible()) {
                         auto *item=it.value().data();const QRectF other(item->mapToGlobal({0,0}),QSizeF(item->width(),item->height()));
                         if(other.contains(global))return false;
                     }

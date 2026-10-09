@@ -100,3 +100,7 @@ Renderer trait 由 paint-render 提供，输入 RenderRequest + DocumentSnapshot
 paint-io 解码先核验尺寸、像素/压缩预算；PNG/JPEG/WebP 为平面图，ORA 分层交换，PSD 阶段性支持矩阵需告知不支持项，自有格式保存完整模型与版本。保存写同目录临时文件，flush 后替换；加载/保存都走任务句柄。
 
 插件最后实施，默认每插件独立进程与有界 JSON-RPC；大像素使用受限共享缓冲，主进程验证尺寸/格式/权限/revision 后原子提交。超时/崩溃取消事务、杀进程并上报；stdout/stderr 不与协议混流。权限清单由宿主授权，文件与网络经代理。进程隔离仅抗崩溃，不等于安全沙箱：Windows AppContainer/受限令牌与 Job Object、macOS 受限 helper、Linux namespaces/seccomp 为独立验收项；平台隔离不可用时禁用不可信插件。PyO3 嵌入只能作为可信轻量可选模式，不宣称可保证崩溃隔离。
+
+## 窗口恢复与统一边缘吸附（2026-10-09）
+
+主窗最小化恢复保留无边框、内容及最大化状态；原生圆角裁剪不处理 iconic HWND。图标临时面板全应用唯一，外部鼠标/触控/数位笔与失焦关闭；旧窗延迟关闭不影响新窗。工具面板四边与主区两边使用统一 24px 最近边判定，拖动窗口边界参与，遮挡和自身排除，窄边发光；正文合并改为标题区操作。单画布标题与按钮同色、图标栏背景统一 surface、删除工具条拖动提示。标签在栏内优先交换位置，越出栏再拆为浮窗，图标临时面板同样支持。参考图布局 API 与自动初始化删除，双列停靠作为默认布局，保存的用户布局仍可恢复。设计与验收见 [window-recovery-design.md](window-recovery-design.md) / [window-recovery-validation.md](window-recovery-validation.md)。

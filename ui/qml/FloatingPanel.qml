@@ -41,7 +41,7 @@ ApplicationWindow {
         }
     }
     function remember(){
-        if(!visible || initializing)return
+        if(!visible || initializing || visibility===Window.Minimized)return
         if(onlyTools){
             Workspace.updateToolStripPosition(x,y)
             initializing=true;x=Workspace.toolStripX;y=Workspace.toolStripY;initializing=false

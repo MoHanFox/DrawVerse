@@ -39,7 +39,7 @@ Rectangle {
                         property var docClient:root.documents.client(modelData)
                         objectName:"documentTab:"+modelData
                         width:root.singleFloating?tabs.width-root.titleControlsWidth:Math.max(100,Math.min(320,titleMetrics.advanceWidth+28));height:22
-                        color:root.groupData.active===modelData?Theme.background:Theme.tabInactive
+                        color:root.singleFloating?Theme.strip:root.groupData.active===modelData?Theme.background:Theme.tabInactive
                         TextMetrics {id:titleMetrics;font:title.font;text:title.text}
                         Text {id:title;x:10;anchors.verticalCenter:parent.verticalCenter;width:parent.width-30;elide:Text.ElideRight;font.pixelSize:9;color:Theme.text;text:docClient?docClient.documentName+(docClient.modified?" *":"")+"  @ "+Math.round((root.presentation.paneFor(modelData)?root.presentation.paneFor(modelData).canvasView.zoom:1)*100)+"% · "+docClient.documentWidth+" × "+docClient.documentHeight:""}
                         MouseArea {

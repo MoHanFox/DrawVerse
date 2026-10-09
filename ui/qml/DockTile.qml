@@ -14,9 +14,11 @@ Item {
     function updateLayout(data){layoutData=data;if(isCanvas && workspace.canvasPane.parent!==canvasHost)workspace.canvasPane.attach(canvasHost)}
     function releaseCanvas(){if(isCanvas && workspace.canvasPane.parent===canvasHost)workspace.canvasPane.park()}
     function locateDrop(x,y){
-        if(y<Math.min(30,height*.18))dropMode="top"
-        else if(y>height-Math.min(30,height*.18))dropMode="bottom"
-        else dropMode=x<width/2?"left":"right"
+        const distance=Math.min(x,width-x,y,height-y)
+        if(distance===x)dropMode="left"
+        else if(distance===width-x)dropMode="right"
+        else if(distance===y)dropMode="before"
+        else dropMode="after"
     }
     Item {id:canvasHost;anchors.fill:parent;visible:root.isCanvas}
     Component.onCompleted:{if(isCanvas)workspace.canvasPane.attach(canvasHost);else Workspace.registerTarget(layoutData.id,root)}
@@ -32,7 +34,7 @@ Item {
     Component {
         id:rail
         Rectangle {
-            id:railRoot;color:Theme.panelBar
+            id:railRoot;objectName:"iconRail:"+root.layoutData.id;color:Theme.surface
             property var peek:null
             function openPanel(panel){
                 const same=peek && peek.visible && peek.selectedPanel===panel
@@ -80,21 +82,18 @@ Item {
     DropArea {
         id:drop;anchors.fill:parent;enabled:!root.isCanvas && (root.isTools || root.layoutData.rail)
         keys:["application/x-drawverse-panel","application/x-drawverse-tool-strip"]
-        onEntered:d=>{d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing;root.locateDrop(d.x,d.y)}
-        onPositionChanged:d=>{d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing;root.locateDrop(d.x,d.y)}
+        onEntered:d=>{d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing && Math.min(d.x,width-d.x,d.y,height-d.y)<=24;root.locateDrop(d.x,d.y)}
+        onPositionChanged:d=>{d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing && Math.min(d.x,width-d.x,d.y,height-d.y)<=24;root.locateDrop(d.x,d.y)}
         onDropped:d=> {
-            if(Workspace.dockingSuppressed || PaintClient.drawing)return
+            if(Workspace.dockingSuppressed || PaintClient.drawing || Math.min(d.x,width-d.x,d.y,height-d.y)>24)return
             root.locateDrop(d.x,d.y)
             const ok=d.formats.indexOf("application/x-drawverse-tool-strip")>=0?Workspace.dockToolStrip(d.getDataAsString("application/x-drawverse-tool-strip"),root.layoutData.location,root.layoutData.id,root.dropMode):Workspace.dockPayload(d.getDataAsString("application/x-drawverse-panel"),root.layoutData.location,root.layoutData.id,root.dropMode)
             if(ok)d.acceptProposedAction()
         }
     }
-    Rectangle {
-        objectName:"dockPreview:"+root.layoutData.id;visible:(drop.containsDrag || Workspace.dragTarget===root.layoutData.id) && !Workspace.dockingSuppressed
-        property string mode:Workspace.dragTarget===root.layoutData.id?Workspace.dragPlacement:root.dropMode
-        x:mode==="right"?root.width*.65:0;y:mode==="bottom" || mode==="after"?root.height*.65:0
-        width:mode==="left" || mode==="right"?root.width*.35:root.width
-        height:mode==="top" || mode==="bottom" || mode==="before" || mode==="after"?root.height*.35:root.height
-        color:"#2423b5ee";border.color:Theme.accent;border.width:2
+    DockEdgePreview {
+        objectName:"dockPreview:"+root.layoutData.id;anchors.fill:parent
+        visible:(root.isTools || root.layoutData.rail) && (drop.containsDrag || Workspace.dragTarget===root.layoutData.id) && !Workspace.dockingSuppressed
+        mode:Workspace.dragTarget===root.layoutData.id?Workspace.dragPlacement:root.dropMode
     }
 }
