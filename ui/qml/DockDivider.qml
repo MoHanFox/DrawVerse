@@ -6,7 +6,7 @@ Rectangle {
     required property var workspace
     objectName:"dockDivider:"+layoutData.id
     x:layoutData.rect.x;y:layoutData.rect.y;width:layoutData.rect.width;height:layoutData.rect.height
-    z:2;color:mouse.containsMouse || mouse.pressed?Theme.accent:Theme.line
+    z:2;color:mouse.containsMouse || mouse.pressed?Theme.accent:Theme.dockSeparator
     function updateLayout(data){layoutData=data}
     MouseArea {
         id:mouse;anchors.fill:parent;anchors.margins:-2;hoverEnabled:true

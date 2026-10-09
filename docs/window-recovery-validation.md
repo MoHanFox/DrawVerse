@@ -2,6 +2,8 @@
 
 设计见 [window-recovery-design.md](window-recovery-design.md)。仅修改 Qt/C++/QML，Rust 和 ABI 1.8.0 未修改，布局继续使用 v6。
 
+任务栏能力与恢复后的原生标题框残留后续修复见 [taskbar-window-validation.md](taskbar-window-validation.md)，新增真实合成菜单像素比较。
+
 ## 实现结果
 
 主窗跳过最小化/隐藏时的圆角裁剪，C++ 同时检查 IsIconic，避免对 Windows 的最小化小矩形设置区域。QML 记录最小化前的显示状态并恢复最大化，解决 Qt 无边框最大化的原生恢复丢失状态。文档与工具浮窗最小化期间不记录临时几何。

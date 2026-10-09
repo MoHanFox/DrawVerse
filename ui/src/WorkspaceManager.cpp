@@ -26,6 +26,9 @@
 #endif
 
 namespace { QString newId() { return QUuid::createUuid().toString(QUuid::WithoutBraces); } }
+bool WorkspaceManager::windowsWindowFrames() const {
+    return QGuiApplication::platformName()==QStringLiteral("windows");
+}
 QRect WorkspaceManager::availableScreenGeometry(QWindow *window) const {
     auto *screen=window?window->screen():QGuiApplication::primaryScreen();
     return screen?screen->availableGeometry():QRect{};
@@ -72,6 +75,7 @@ bool WorkspaceManager::setWindowCornerRadius(QWindow *window,int radius) {
 bool WorkspaceManager::setMenuBarBlur(QWindow *window,bool enabled) {
 #ifdef Q_OS_WIN
     if(!window || QGuiApplication::platformName()!=QStringLiteral("windows")) return false;
+    m_glassWindow=window;m_glassHandle=window->winId();
     // The Windows compositor blurs live content behind the alpha surface.
     // Opaque workspace pixels cover the effect; only the menu bar reveals it.
     struct AccentPolicy { int state,flags; DWORD gradient; int animation; };
@@ -90,6 +94,7 @@ bool WorkspaceManager::setMenuBarBlur(QWindow *window,bool enabled) {
 }
 WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent) : QObject(parent), m_settingsFile(settingsFile),m_windowDrag(this) {
     qApp->installEventFilter(this);
+    qApp->installNativeEventFilter(this);
     connect(&m_windowDrag,&WindowDrag::moved,this,[this](QPoint global,bool suppressed) {
         updateDragTarget(global,suppressed);
     });
@@ -113,6 +118,24 @@ WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent)
         }
     });
     resetLayout(); restoreLayout();
+}
+WorkspaceManager::~WorkspaceManager() {
+    qApp->removeNativeEventFilter(this);
+}
+bool WorkspaceManager::nativeEventFilter(const QByteArray &eventType,void *message,qintptr *result) {
+#ifdef Q_OS_WIN
+    if(eventType!="windows_generic_MSG" || !m_glassWindow)return false;
+    const auto *msg=static_cast<MSG*>(message);
+    if(reinterpret_cast<quintptr>(msg->hwnd)!=m_glassHandle)return false;
+    // DefWindowProc paints an iconic caption into even a frameless alpha
+    // surface during minimize/restore. DWM keeps those pixels behind our menu.
+    // The QML title bar owns this window's entire non-client presentation.
+    if(msg->message==WM_NCPAINT || msg->message==WM_NCCALCSIZE) {*result=0;return true;}
+    if(msg->message==WM_NCACTIVATE) {*result=TRUE;return true;}
+#else
+    Q_UNUSED(eventType);Q_UNUSED(message);Q_UNUSED(result);
+#endif
+    return false;
 }
 void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
     QString target,placement; qreal best=25;

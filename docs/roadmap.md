@@ -62,3 +62,5 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 ## 窗口恢复与统一边缘吸附（2026-10-09）
 
 主窗最小化恢复保留无边框、内容及最大化状态；原生圆角裁剪不处理 iconic HWND。图标临时面板全应用唯一，外部鼠标/触控/数位笔与失焦关闭；旧窗延迟关闭不影响新窗。工具面板四边与主区两边使用统一 24px 最近边判定，拖动窗口边界参与，遮挡和自身排除，窄边发光；正文合并改为标题区操作。单画布标题与按钮同色、图标栏背景统一 surface、删除工具条拖动提示。标签在栏内优先交换位置，越出栏再拆为浮窗，图标临时面板同样支持。参考图布局 API 与自动初始化删除，双列停靠作为默认布局，保存的用户布局仍可恢复。设计与验收见 [window-recovery-design.md](window-recovery-design.md) / [window-recovery-validation.md](window-recovery-validation.md)。
+
+主窗补齐系统最小化/最大化能力，并仅对其 HWND 过滤非客户区绘制，防止恢复后系统标题框写入半透明菜单。真实合成像素回归覆盖普通/最大化恢复后的模糊和圆角；工具面板及面板列统一灰黑细分隔。设计与验收见 [taskbar-window-design.md](taskbar-window-design.md) / [taskbar-window-validation.md](taskbar-window-validation.md)。

@@ -56,7 +56,15 @@ private slots:
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+#ifdef Q_OS_WIN
+        if(QGuiApplication::platformName()=="windows") {
+            const auto style=GetWindowLongPtrW(reinterpret_cast<HWND>(window->winId()),GWL_STYLE);
+            QVERIFY2(style&WS_MINIMIZEBOX,"Taskbar minimization requires WS_MINIMIZEBOX on the frameless HWND");
+            QVERIFY(style&WS_MAXIMIZEBOX);QVERIFY(style&WS_SYSMENU);QVERIFY(!(style&WS_CAPTION));
+        }
+#endif
         for(bool maximized:{false,true})for(int cycle=0;cycle<3;++cycle) {
+            const auto normalBefore=window->geometry();
             if(maximized)window->showMaximized();else window->showNormal();QTest::qWait(80);
             const auto before=window->geometry();
 #ifdef Q_OS_WIN
@@ -66,7 +74,20 @@ private slots:
                 {auto *minimize=findVisualItem(window->contentItem(),"windowMinimize");QVERIFY(minimize);QVERIFY(QMetaObject::invokeMethod(minimize,"clicked"));}
             QTRY_COMPARE(window->visibility(),QWindow::Minimized);QTest::qWait(80);
 #ifdef Q_OS_WIN
-            if(QGuiApplication::platformName()=="windows")ShowWindow(reinterpret_cast<HWND>(window->winId()),SW_RESTORE);
+            if(QGuiApplication::platformName()=="windows" && maximized && cycle==2) {
+                const auto handle=reinterpret_cast<HWND>(window->winId());
+                // A second taskbar action can arrive before the queued Qt
+                // maximized-state restoration; it must stay minimized.
+                SendMessageW(handle,WM_SYSCOMMAND,SC_RESTORE,0);
+                SendMessageW(handle,WM_SYSCOMMAND,SC_MINIMIZE,0);
+                QTest::qWait(100);QTRY_COMPARE(window->visibility(),QWindow::Minimized);QVERIFY(IsIconic(handle));
+            }
+            if(QGuiApplication::platformName()=="windows") {
+                const auto handle=reinterpret_cast<HWND>(window->winId());QVERIFY(IsIconic(handle));
+                RECT bounds{};QVERIFY(GetWindowRect(handle,&bounds));
+                QVERIFY2(!QRect(bounds.left,bounds.top,bounds.right-bounds.left,bounds.bottom-bounds.top).intersects(before),"Minimization must remove the window, including its native iconic caption, from the workspace");
+                SendMessageW(handle,WM_SYSCOMMAND,SC_RESTORE,0);
+            }
             else
 #endif
                 {if(maximized)window->showMaximized();else window->showNormal();}
@@ -74,15 +95,44 @@ private slots:
 #ifdef Q_OS_WIN
             if(QGuiApplication::platformName()=="windows") {
                 const auto handle=reinterpret_cast<HWND>(window->winId());RECT outer{},inner{};QVERIFY(GetWindowRect(handle,&outer));QVERIFY(GetClientRect(handle,&inner));
+                QVERIFY(!(GetWindowLongPtrW(handle,GWL_STYLE)&WS_CAPTION));QVERIFY(!IsIconic(handle));
                 QCOMPARE(inner.right,outer.right-outer.left);QCOMPARE(inner.bottom,outer.bottom-outer.top);
                 const auto region=CreateRectRgn(0,0,0,0);const int kind=GetWindowRgn(handle,region);
-                const bool centerVisible=kind==ERROR || PtInRegion(region,inner.right/2,inner.bottom/2);DeleteObject(region);QVERIFY(centerVisible);
+                const bool centerVisible=kind==ERROR || PtInRegion(region,inner.right/2,inner.bottom/2);
+                const bool rounded=kind==COMPLEXREGION && !PtInRegion(region,0,0) && !PtInRegion(region,inner.right-1,0);
+                DeleteObject(region);QVERIFY(centerVisible);QCOMPARE(rounded,!maximized);
             }
 #endif
             const auto image=window->grabWindow();QVERIFY(!image.isNull());QVERIFY(std::abs(image.width()-qRound(window->width()*window->devicePixelRatio()))<=1);QVERIFY(std::abs(image.height()-qRound(window->height()*window->devicePixelRatio()))<=1);QVERIFY(image.pixelColor(image.width()/2,image.height()/2).alpha()>240);
             auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);QVERIFY(canvas->width()>0);QVERIFY(canvas->height()>0);
+            if(maximized) {window->showNormal();QTRY_COMPARE(window->geometry(),normalBefore);}
         }
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void dockSeparatorsUseThinDarkGrayAcrossMainAndFloatingColumns() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        const auto check=[&](QQuickWindow *host,const QString &id) {
+            int count=0;
+            for(const auto &value:workspace.layoutItems(id,host->width(),host->height())) {
+                const auto data=value.toMap();if(data.value("kind")!="split")continue;
+                auto *divider=findVisualItem(host->contentItem(),"dockDivider:"+data.value("id").toString());
+                if(!divider || divider->property("color").value<QColor>()!=QColor("#2b2d31"))return false;
+                if(data.value("axis")=="horizontal"?divider->width()!=1:divider->height()!=1)return false;
+                ++count;
+            }
+            return count>0;
+        };
+        QTest::mouseMove(window,{500,300});QTRY_VERIFY(check(window,"main"));
+        const auto first=workspace.leftGroups().first().toMap().value("id").toString(),second=workspace.rightGroups().first().toMap().value("id").toString();
+        workspace.detachGroup(first);
+        const auto payload=QString::fromUtf8(QJsonDocument(QJsonObject{{"group",second},{"whole",true}}).toJson());
+        QVERIFY(workspace.dockPayload(payload,"floating",first,"after"));
+        QQuickWindow *floating=nullptr;
+        QTRY_VERIFY((floating=window->findChild<QQuickWindow*>("floatingDock:"+first)));
+        QTest::mouseMove(floating,{100,100});QTRY_VERIFY(check(floating,first));
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void flexibleDockTreeSupportsFourEdgesAndValidatesPersistence() {
         QTemporaryDir temp;const auto path=temp.filePath("docks.ini");WorkspaceManager workspace(path);
@@ -443,7 +493,8 @@ private slots:
         auto *closeButton=findVisualItem(window->contentItem(),"windowClose"); QVERIFY(closeButton);
         auto *closeBackground=qobject_cast<MenuSurface*>(closeButton->property("background").value<QObject*>()); QVERIFY(closeBackground);
         QCOMPARE(closeBackground->radius(),qreal(10)); QVERIFY(closeBackground->topRightCornerOnly());
-        QCOMPARE(closeBackground->tint(),QColor(Qt::transparent));
+        QTest::mouseMove(window,QPoint(500,100));
+        QTRY_COMPARE(closeBackground->tint(),QColor(Qt::transparent));
         QCOMPARE(closeButton->property("contentItem").value<QObject*>()->property("color").value<QColor>(),QColor(Qt::white));
         const auto closeCenter=closeButton->mapToScene({closeButton->width()/2,closeButton->height()/2}).toPoint();
         window->raise();window->requestActivate();QTRY_VERIFY(window->isActive());
@@ -608,10 +659,12 @@ private slots:
             QTRY_VERIFY(hasRoundedNativeCorners());
             const auto originalGeometry=window->geometry();
             window->resize(1000,650); QTRY_VERIFY(hasRoundedNativeCorners());
+            QTRY_COMPARE(window->property("normalGeometry").toRect(),window->geometry());
             window->showMaximized(); QTRY_COMPARE(window->geometry(),window->screen()->availableGeometry());
             QTRY_VERIFY(!hasRoundedNativeCorners());
             window->showNormal(); QTRY_VERIFY(hasRoundedNativeCorners());
             window->setGeometry(originalGeometry); QTRY_VERIFY(hasRoundedNativeCorners());
+            QTRY_COMPARE(window->property("normalGeometry").toRect(),originalGeometry);
 #endif
             QQuickWindow backdrop;
             backdrop.setFlags(Qt::Window|Qt::FramelessWindowHint); backdrop.setColor(Qt::black);
@@ -649,6 +702,40 @@ private slots:
             const auto evidence=QString("Sharp edge=%1, blurred edge=%2").arg(sharpestEdge(sharp)).arg(sharpestEdge(blurred));
             QVERIFY2(sharpestEdge(sharp)>100,qPrintable(evidence));
             QVERIFY2(sharpestEdge(blurred)<sharpestEdge(sharp)/2,qPrintable(evidence));
+#ifdef Q_OS_WIN
+            // Verify actual compositor pixels after restore, not just the QML
+            // surface: a leaked Windows iconic caption or square blur patch
+            // can be invisible in QQuickWindow::grabWindow().
+            const auto originalTitle=window->screen()->grabWindow(0,window->x(),window->y(),window->width(),28).toImage();
+            if(!preview.isEmpty())QVERIFY(originalTitle.save(preview+".original.png"));
+            const QRect captionArea(qRound(12*originalTitle.devicePixelRatio()),qRound(3*originalTitle.devicePixelRatio()),qRound(230*originalTitle.devicePixelRatio()),qRound(22*originalTitle.devicePixelRatio()));
+            for(bool maximized:{false,true})for(int cycle=0;cycle<3;++cycle) {
+                if(maximized)window->showMaximized();else window->showNormal();
+                QTest::qWait(300);
+                const auto before=window->geometry();
+                const auto beforeTitle=window->screen()->grabWindow(0,window->x(),window->y(),window->width(),28).toImage();
+                const auto expectedVisibility=maximized?QWindow::Maximized:QWindow::Windowed;
+                SendMessageW(reinterpret_cast<HWND>(window->winId()),WM_SYSCOMMAND,SC_MINIMIZE,0);
+                QTRY_COMPARE(window->visibility(),QWindow::Minimized);
+                SendMessageW(reinterpret_cast<HWND>(window->winId()),WM_SYSCOMMAND,SC_RESTORE,0);
+                QTRY_COMPARE(window->visibility(),expectedVisibility);QTRY_COMPARE(window->geometry(),before);
+                QTRY_COMPARE(hasRoundedNativeCorners(),!maximized);window->raise();window->requestActivate();
+                const auto restored=capture();QVERIFY(sharpestEdge(restored)<sharpestEdge(sharp)/2);
+                const auto restoredTitle=window->screen()->grabWindow(0,window->x(),window->y(),window->width(),28).toImage();
+                const auto corner=restoredTitle.pixelColor(0,0);if(!maximized)QVERIFY(corner.green()>190 && corner.red()<40);
+                // The native caption occupies the left side. Its restored
+                // pixels must match the original custom title/menu rendering.
+                if(!preview.isEmpty())QVERIFY(restoredTitle.save(preview+".restored.png"));
+                QVERIFY(restoredTitle.rect().contains(captionArea));
+                for(int y=captionArea.top();y<=captionArea.bottom();++y)for(int x=captionArea.left();x<=captionArea.right();++x) {
+                    const auto a=beforeTitle.pixelColor(x,y),b=restoredTitle.pixelColor(x,y);
+                    // DWM may round a text blend by one channel level on restore.
+                    // A system caption changes hundreds of pixels by much more.
+                    QVERIFY2(std::abs(a.red()-b.red())<=2 && std::abs(a.green()-b.green())<=2 && std::abs(a.blue()-b.blue())<=2,qPrintable(QString("Restored caption pixel differs at %1,%2: %3 -> %4").arg(x).arg(y).arg(a.name()).arg(b.name())));
+                }
+            }
+            window->showNormal();QTRY_COMPARE(window->geometry(),originalGeometry);QTRY_VERIFY(hasRoundedNativeCorners());QTest::qWait(300);
+#endif
             auto *close=findVisualItem(window->contentItem(),"windowClose");QVERIFY(close);
             const auto closeCenter=close->mapToScene({close->width()/2,close->height()/2}).toPoint();
             QCursor::setPos(window->mapToGlobal(closeCenter));

@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QAbstractNativeEventFilter>
 #include <QVariantList>
 #include <QHash>
 #include <QRect>
@@ -10,8 +11,9 @@
 class QQuickItem;
 class QWindow;
 
-class WorkspaceManager final : public QObject {
+class WorkspaceManager final : public QObject, public QAbstractNativeEventFilter {
     Q_OBJECT
+    Q_PROPERTY(bool windowsWindowFrames READ windowsWindowFrames CONSTANT)
     Q_PROPERTY(QVariantList leftGroups READ leftGroups NOTIFY groupsChanged)
     Q_PROPERTY(QVariantList rightGroups READ rightGroups NOTIFY groupsChanged)
     Q_PROPERTY(QVariantList floatingGroups READ floatingGroups NOTIFY groupsChanged)
@@ -30,12 +32,15 @@ class WorkspaceManager final : public QObject {
     Q_PROPERTY(int toolStripX READ toolStripX NOTIFY toolStripChanged)
     Q_PROPERTY(int toolStripY READ toolStripY NOTIFY toolStripChanged)
 public:
+    bool windowsWindowFrames() const;
     Q_INVOKABLE QRect availableScreenGeometry(QWindow *window) const;
     Q_INVOKABLE void watchMenuWindow(QWindow *window, bool visible);
     Q_INVOKABLE void watchPanelFlyout(QWindow *window,QQuickItem *owner,bool visible);
     Q_INVOKABLE bool setMenuBarBlur(QWindow *window, bool enabled);
     Q_INVOKABLE bool setWindowCornerRadius(QWindow *window, int radius);
     explicit WorkspaceManager(const QString &settingsFile = {}, QObject *parent = nullptr);
+    ~WorkspaceManager() override;
+    bool nativeEventFilter(const QByteArray &eventType,void *message,qintptr *result) override;
     QVariantList leftGroups() const { return groupsAt("left"); }
     QVariantList rightGroups() const { return groupsAt("right"); }
     QVariantList floatingGroups() const { return groupsAt("floating"); }
@@ -119,6 +124,8 @@ private:
     bool m_toolsFloating = false;
     QPoint m_toolPosition{100,100};
     QPointer<QWindow> m_menuWindow;
+    QPointer<QWindow> m_glassWindow;
+    quintptr m_glassHandle=0;
     QPointer<QWindow> m_panelFlyout;
     QPointer<QQuickItem> m_flyoutOwner;
     quint64 m_flyoutRevision=0;

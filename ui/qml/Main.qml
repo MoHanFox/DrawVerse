@@ -10,7 +10,7 @@ ApplicationWindow {
     id: root
     objectName: "mainWindow"
     visible: true
-    flags: Qt.Window | Qt.FramelessWindowHint
+    flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowSystemMenuHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
     width: 1480; height: 780; minimumWidth: 980; minimumHeight: 640
     title: "DrawVerse"+(documents.activeId.length?" · "+PaintClient.documentName+(PaintClient.modified ? " *" : ""):"")
     color: "transparent"
@@ -21,17 +21,33 @@ ApplicationWindow {
     }
     property int restoredVisibility:Window.Windowed
     property bool restoringFromMinimize:false
+    property bool restoringNormalGeometry:false
+    property rect normalGeometry:Qt.rect(0,0,1480,780)
+    function rememberNormalGeometry() {
+        if(windowCornersReady && visibility===Window.Windowed && !restoringFromMinimize && !restoringNormalGeometry)
+            normalGeometry=Qt.rect(x,y,width,height)
+    }
     onVisibilityChanged: visibility=>{
         if(visibility===Window.Minimized)restoringFromMinimize=true
         else if(visibility!==Window.Hidden) {
             if(restoringFromMinimize && restoredVisibility===Window.Maximized && visibility!==Window.Maximized) {
-                restoringFromMinimize=false;Qt.callLater(()=>root.showMaximized())
+                Qt.callLater(()=>{
+                    if(root.visibility!==Window.Windowed || !restoringFromMinimize)return
+                    root.showMaximized();restoringFromMinimize=false
+                })
+            } else if(Workspace.windowsWindowFrames && visibility===Window.Windowed && restoredVisibility===Window.Maximized) {
+                restoringFromMinimize=false;restoringNormalGeometry=true
+                root.x=normalGeometry.x;root.y=normalGeometry.y
+                root.width=normalGeometry.width;root.height=normalGeometry.height
+                restoringNormalGeometry=false;restoredVisibility=Window.Windowed;Qt.callLater(updateWindowCorners)
             } else {restoringFromMinimize=false;restoredVisibility=visibility;Qt.callLater(updateWindowCorners)}
         }
     }
     onCornerRadiusChanged: Qt.callLater(updateWindowCorners)
-    onWidthChanged: Qt.callLater(updateWindowCorners)
-    onHeightChanged: Qt.callLater(updateWindowCorners)
+    onXChanged:Qt.callLater(rememberNormalGeometry)
+    onYChanged:Qt.callLater(rememberNormalGeometry)
+    onWidthChanged: {Qt.callLater(updateWindowCorners);Qt.callLater(rememberNormalGeometry)}
+    onHeightChanged: {Qt.callLater(updateWindowCorners);Qt.callLater(rememberNormalGeometry)}
     onScreenChanged: Qt.callLater(updateWindowCorners)
     Screen.onDevicePixelRatioChanged: Qt.callLater(updateWindowCorners)
     background: Item {
@@ -114,6 +130,7 @@ ApplicationWindow {
         // Set initial placement once; live size bindings move maximized windows.
         x=Screen.virtualX+Math.max(16,(Screen.width-width)/2)
         y=Screen.virtualY+Math.max(16,(Screen.height-height)/3)
+        normalGeometry=Qt.rect(x,y,width,height)
         menuBarBlurActive=Workspace.setMenuBarBlur(root,true)
         windowCornersReady=true
         updateWindowCorners()
