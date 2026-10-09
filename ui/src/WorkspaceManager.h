@@ -6,6 +6,8 @@
 #include <QPointer>
 #include <QMap>
 #include "DockTree.h"
+#include "WindowDrag.h"
+class QQuickItem;
 class QWindow;
 
 class WorkspaceManager final : public QObject {
@@ -21,6 +23,9 @@ class WorkspaceManager final : public QObject {
     Q_PROPERTY(int leftDockWidth READ leftDockWidth WRITE setLeftDockWidth NOTIFY dockMetricsChanged)
     Q_PROPERTY(int rightDockWidth READ rightDockWidth WRITE setRightDockWidth NOTIFY dockMetricsChanged)
     Q_PROPERTY(bool dockingSuppressed READ dockingSuppressed NOTIFY dragModifiersChanged)
+    Q_PROPERTY(QString dragTarget READ dragTarget NOTIFY dragModifiersChanged)
+    Q_PROPERTY(QString dragPlacement READ dragPlacement NOTIFY dragModifiersChanged)
+    Q_PROPERTY(bool dragging READ dragging NOTIFY dragModifiersChanged)
     Q_PROPERTY(bool toolsFloating READ toolsFloating NOTIFY toolStripChanged)
     Q_PROPERTY(int toolStripX READ toolStripX NOTIFY toolStripChanged)
     Q_PROPERTY(int toolStripY READ toolStripY NOTIFY toolStripChanged)
@@ -44,6 +49,13 @@ public:
     int leftDockWidth() const { return m_leftWidth; }
     int rightDockWidth() const { return m_rightWidth; }
     bool dockingSuppressed() const { return m_dockingSuppressed; }
+    QString dragTarget() const {return m_dragTarget;}
+    QString dragPlacement() const {return m_dragPlacement;}
+    bool dragging() const {return m_windowDrag.active();}
+    Q_INVOKABLE void registerTarget(const QString &group,QQuickItem *item);
+    Q_INVOKABLE void registerWorkspace(QQuickItem *item);
+    Q_INVOKABLE QStringList columnGroups(const QString &group) const;
+    Q_INVOKABLE void setColumnCollapsed(const QString &group,bool collapsed);
     bool toolsFloating() const {return m_toolsFloating;}
     int toolStripX() const {return m_toolPosition.x();}
     int toolStripY() const {return m_toolPosition.y();}
@@ -101,8 +113,7 @@ private:
     QString m_settingsFile;
     QList<Group> m_groups;
     QHash<QString,QVariantMap> m_panels;
-    bool m_dragCancelled = false;
-    bool m_dragActive = false, m_dockingSuppressed = false;
+    bool m_dockingSuppressed = false;
     bool m_leftCollapsed = false, m_rightCollapsed = false;
     int m_leftWidth = 230, m_rightWidth = 300;
     int m_uiRevision = 0;
@@ -111,6 +122,16 @@ private:
     QPointer<QWindow> m_menuWindow;
     QMap<QString,DockTree::Node> m_docks;
     QHash<QString,QRect> m_windowGeometry;
+    QSet<QString> m_iconGroups;
+    QMap<QString,QPointer<QQuickItem>> m_targets;
+    QPointer<QQuickItem> m_workspaceArea;
+    WindowDrag m_windowDrag;
+    QString m_dragTarget,m_dragPlacement,m_dragHost;
+    QStringList m_dragGroups;
+    QMap<QString,DockTree::Node> m_beforeDocks;
+    QHash<QString,QRect> m_beforeWindows;
+    QList<Group> m_beforeGroups;
+    QSet<QString> m_beforeIcons;
     void initializeDocks();
     QString hostFor(const QString &group) const;
     void removeDock(const QString &group);

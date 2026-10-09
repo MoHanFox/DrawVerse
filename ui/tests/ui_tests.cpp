@@ -2,6 +2,7 @@
 #include "ColorWheelItem.h"
 #include "SelectionOverlay.h"
 #include "WorkspaceManager.h"
+#include "DocumentManager.h"
 #include "UiScale.h"
 #include "MenuSurface.h"
 #include <QtTest>
@@ -51,76 +52,45 @@ class UiTests final : public QObject {
     Q_OBJECT
 private slots:
     void flexibleDockTreeSupportsFourEdgesAndValidatesPersistence() {
-        QTemporaryDir temp; const auto path=temp.filePath("docks.ini"); WorkspaceManager workspace(path);
+        QTemporaryDir temp;const auto path=temp.filePath("docks.ini");WorkspaceManager workspace(path);
         const auto data=[](const QString &id){return QString::fromUtf8(QJsonDocument(QJsonObject{{"group",id},{"whole",true}}).toJson());};
-        const auto rect=[&](const QString &host,const QString &id) {
-            for(const auto &v:workspace.layoutItems(host,1400,800)) if(v.toMap().value("id")==id) return v.toMap().value("rect").toRectF();
-            return QRectF();
-        };
-        for(const auto &v:workspace.leftGroups()+workspace.rightGroups()) {
+        const auto rect=[&](const QString &host,const QString &id){for(const auto &v:workspace.layoutItems(host,1400,800))if(v.toMap().value("id")==id)return v.toMap().value("rect").toRectF();return QRectF();};
+        for(const auto &v:workspace.leftGroups()+workspace.rightGroups())for(const auto &edge:QStringList{"left","right"}) {
             const auto target=v.toMap().value("id").toString(),location=v.toMap().value("location").toString();
-            for(const auto &edge:QStringList{"left","right"}) {
-                QVERIFY(workspace.dockToolStrip("drawverse-tools-v1",location,target,edge));QVERIFY(!workspace.toolsFloating());
-                const auto a=rect("main","__toolstrip"),b=rect("main",target);QCOMPARE(a.width(),qreal(36));
-                if(edge=="left")QVERIFY(a.right()<=b.left()-3);else QVERIFY(b.right()<=a.left()-3);
-            }
+            QVERIFY(workspace.dockToolStrip("drawverse-tools-v1",location,target,edge));const auto a=rect("main","__toolstrip"),b=rect("main",target);QCOMPARE(a.width(),qreal(36));
+            if(edge=="left")QVERIFY(a.right()<=b.left()-1);else QVERIFY(b.right()<=a.left()-1);
         }
-        QVERIFY(workspace.dockToolStrip("drawverse-tools-v1","center","__canvas","right"));
-        QVERIFY(rect("main","__canvas").right()<=rect("main","__toolstrip").left()-3);
+        QVERIFY(!workspace.dockToolStrip("drawverse-tools-v1","center","__canvas","right"));
+        QVERIFY(!workspace.dockPayload(data("__canvas"),"floating"));
         for(const auto &edge:QStringList{"left","right","top","bottom"}) {
-            workspace.resetLayout();
-            const auto source=workspace.leftGroups().first().toMap().value("id").toString(),target=workspace.rightGroups().first().toMap().value("id").toString();
-            QVERIFY(workspace.dockPayload(data(source),"right",target,edge));
-            const auto a=rect("main",source),b=rect("main",target); QVERIFY(!a.isEmpty() && !b.isEmpty());
-            if(edge=="left") QVERIFY(a.right()<=b.left()-3);
-            if(edge=="right") QVERIFY(b.right()<=a.left()-3);
-            if(edge=="top") QVERIFY(a.bottom()<=b.top()-3);
-            if(edge=="bottom") QVERIFY(b.bottom()<=a.top()-3);
-            QVERIFY(!a.intersects(b));
+            workspace.resetLayout();const auto source=workspace.leftGroups().first().toMap().value("id").toString(),target=workspace.rightGroups().first().toMap().value("id").toString();
+            QVERIFY(workspace.dockPayload(data(source),"right",target,edge));const auto a=rect("main",source),b=rect("main",target);QVERIFY(!a.intersects(b));
+            if(edge=="left")QVERIFY(a.right()<=b.left()-1);if(edge=="right")QVERIFY(b.right()<=a.left()-1);
+            if(edge=="top")QVERIFY(a.bottom()<=b.top()-1);if(edge=="bottom")QVERIFY(b.bottom()<=a.top()-1);
         }
-        workspace.resetLayout();
-        const auto left=workspace.leftGroups().first().toMap().value("id").toString(); workspace.detachGroup(left);
-        const auto tools=rect("main","__toolstrip"),canvas=rect("main","__canvas");
-        QCOMPARE(canvas.left(),tools.right()+4); // No empty left column survives.
-        workspace.returnGroup(left);workspace.detachGroup("__canvas");
-        QCOMPARE(workspace.floatingWindows().size(),1);
+        workspace.resetLayout();const auto left=workspace.leftGroups().first().toMap().value("id").toString();workspace.detachGroup(left);
+        QCOMPARE(rect("main","__canvas").left(),rect("main","__toolstrip").right()+1);
         const auto color=workspace.rightGroups().first().toMap().value("id").toString();
-        QVERIFY(workspace.dockPayload(data(color),"floating","__canvas","left"));
-        QCOMPARE(workspace.floatingWindows().size(),1); QCOMPARE(workspace.groupDefinition(color).value("host").toString(),QString("__canvas"));
-        for(const auto &edge:QStringList{"left","right"}) {
-            QVERIFY(workspace.dockToolStrip("drawverse-tools-v1","floating",color,edge));
-            QCOMPARE(workspace.floatingWindows().size(),1);QVERIFY(workspace.toolsFloating());
-            const auto a=rect("__canvas","__toolstrip"),b=rect("__canvas",color);
-            QCOMPARE(a.width(),qreal(36));
-            if(edge=="left") QVERIFY(a.right()<=b.left()-3);else QVERIFY(b.right()<=a.left()-3);
-        }
-        workspace.detachGroup("__canvas");QCOMPARE(workspace.floatingWindows().size(),2);
-        QVERIFY(workspace.groupDefinition("__canvas").value("host")!=workspace.groupDefinition(color).value("host"));
-        QVERIFY(workspace.dockPayload(data("__canvas"),"floating",color,"right"));QCOMPARE(workspace.floatingWindows().size(),1);
-        const auto layout=workspace.layoutItems("__canvas",1400,800);
-        workspace.saveLayout();WorkspaceManager restored(path);
-        QCOMPARE(restored.layoutItems("__canvas",1400,800),layout);
-        QCOMPARE(restored.floatingWindows().size(),1);QVERIFY(restored.toolsFloating());
+        QVERIFY(workspace.dockPayload(data(color),"floating",left,"after"));QCOMPARE(workspace.columnGroups(color),QStringList({left,color}));
+        workspace.setGroupCollapsed(left,true);workspace.setGroupCollapsed(color,true);
+        const auto a=rect(left,left),b=rect(left,color);QCOMPARE(b.top(),a.bottom()+1);QVERIFY(b.bottom()<200);
+        workspace.setColumnCollapsed(color,true);workspace.saveLayout();const auto layout=workspace.layoutItems(left,1400,800);WorkspaceManager restored(path);QCOMPARE(restored.layoutItems(left,1400,800),layout);
         QSettings settings(path,QSettings::IniFormat);const auto valid=QJsonDocument::fromJson(settings.value("workspace").toByteArray()).object();
-        for(const auto &invalid:QStringList{"duplicate","missing","ratio","window","geometry"}) {
+        QCOMPARE(valid.value("version").toInt(),6);
+        for(const auto &invalid:QStringList{"duplicate","missing","ratio","window","geometry","icons"}) {
             auto root=valid;auto docks=root.value("docks").toObject();
-            if(invalid=="duplicate") docks.insert("main",DockTree::leaf("__canvas"));
-            if(invalid=="missing") docks.insert("__canvas",DockTree::leaf(color));
-            if(invalid=="ratio") {auto node=docks.value("__canvas").toObject();node.insert("ratio",1.5);docks.insert("__canvas",node);}
-            if(invalid=="window") docks.insert("orphan",DockTree::leaf("unknown"));
-            if(invalid=="geometry") {auto windows=root.value("windows").toObject();windows.insert("__canvas",QJsonObject{{"width",-1}});root.insert("windows",windows);}
+            if(invalid=="duplicate")docks.insert(left,DockTree::leaf("__canvas"));
+            if(invalid=="missing")docks.insert(left,DockTree::leaf(color));
+            if(invalid=="ratio"){auto node=docks.value(left).toObject();node.insert("ratio",1.5);docks.insert(left,node);}
+            if(invalid=="window")docks.insert("orphan",DockTree::leaf("unknown"));
+            if(invalid=="geometry"){auto windows=root.value("windows").toObject();windows.insert(left,QJsonObject{{"width",-1}});root.insert("windows",windows);}
+            if(invalid=="icons")root.insert("iconGroups",QJsonArray{"unknown"});
             root.insert("docks",docks);settings.setValue("workspace",QJsonDocument(root).toJson());settings.sync();
-            const auto previous=restored.layoutItems("__canvas",1400,800);
-            QVERIFY(!restored.restoreLayout());QCOMPARE(restored.layoutItems("__canvas",1400,800),previous);
+            QVERIFY(!restored.restoreLayout());QCOMPARE(restored.layoutItems(left,1400,800),layout);
         }
-        settings.setValue("workspace",QJsonDocument(valid).toJson());settings.sync();
-        restored.returnWindow("__canvas");QCOMPARE(restored.floatingWindows().size(),0);QVERIFY(!restored.toolsFloating());
-        // Legacy columns convert to trees while preserving panel/window identities.
-        auto legacy=valid;legacy.insert("version",4);legacy.remove("docks");legacy.remove("windows");
-        settings.setValue("workspace",QJsonDocument(legacy).toJson());settings.sync();WorkspaceManager migrated(path);
-        QVERIFY(!migrated.layoutItems("main",1400,800).isEmpty());
-        QCOMPARE(migrated.visiblePanels().size(),6);
-        settings.sync();QCOMPARE(QJsonDocument::fromJson(settings.value("workspace").toByteArray()).object().value("version").toInt(),5);
+        auto oldTree=valid;oldTree.insert("version",5);oldTree.remove("iconGroups");auto mixed=oldTree.value("docks").toObject();auto mainTree=mixed.value("main").toObject();QVERIFY(DockTree::remove(mainTree,"__canvas"));mixed.insert("main",mainTree);mixed.insert(left,DockTree::split(mixed.value(left).toObject(),DockTree::leaf("__canvas"),"horizontal",.5));oldTree.insert("docks",mixed);settings.setValue("workspace",QJsonDocument(oldTree).toJson());settings.sync();WorkspaceManager separated(path);QCOMPARE(separated.groupDefinition("__canvas").value("host").toString(),QString("main"));QCOMPARE(separated.columnGroups(left),QStringList({left,color}));QCOMPARE(separated.floatingWindows().size(),1);
+        auto legacy=valid;legacy.insert("version",4);legacy.remove("docks");legacy.remove("windows");settings.setValue("workspace",QJsonDocument(legacy).toJson());settings.sync();WorkspaceManager migrated(path);QCOMPARE(migrated.visiblePanels().size(),6);
+        settings.sync();QCOMPARE(QJsonDocument::fromJson(settings.value("workspace").toByteArray()).object().value("version").toInt(),6);
     }
     void floatingCanvasAndToolsDockAcrossNativeWindows() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
@@ -149,60 +119,77 @@ private slots:
         const auto panAt=canvas->mapToScene({canvas->width()/2,canvas->height()/2}).toPoint();
         QTest::mousePress(floating,Qt::MiddleButton,Qt::NoModifier,panAt);QTest::mouseMove(floating,panAt+QPoint(12,8));QTest::mouseRelease(floating,Qt::MiddleButton,Qt::NoModifier,panAt+QPoint(12,8));
         const auto pan=canvas->documentRect().center()-QPointF(canvas->width()/2,canvas->height()/2);QCOMPARE(pan,QPointF(12,8));
-        const auto drop=[&](QQuickWindow *window,const QString &target,const QByteArray &mimeType,const QByteArray &payload,const QPointF &local) {
-            auto *item=findVisualItem(window->contentItem(),target);if(!item)return false;
-            const auto pos=item->mapToScene(local).toPoint();QMimeData mime;mime.setData(QString::fromUtf8(mimeType),payload);
-            QDragEnterEvent enter(pos,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(window,&enter);if(!enter.isAccepted())return false;
-            QDragMoveEvent move(pos,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(window,&move);
-            QDropEvent event(pos,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(window,&event);return event.isAccepted();
-        };
-        const auto color=workspace.rightGroups().first().toMap().value("id").toString();
-        const auto payload=QJsonDocument(QJsonObject{{"group",color},{"whole",true}}).toJson();
-        QVERIFY(drop(floating,"dockTile:__canvas","application/x-drawverse-panel",payload,{4,100}));
-        QTRY_VERIFY(findVisualItem(floating->contentItem(),"dockGroup:"+color));QCOMPARE(QGuiApplication::allWindows().size(),2);QVERIFY(retainedWindow);QCOMPARE(retained.data(),canvas);QCOMPARE(canvas->zoom(),zoom);
-        auto *colorPanel=findVisualItem(floating->contentItem(),"dockGroup:"+color);QVERIFY(colorPanel);
-        QVERIFY(drop(floating,"dockGroup:"+color,"application/x-drawverse-tool-strip","drawverse-tools-v1",{colorPanel->width()-4,100}));
-        QTRY_VERIFY(findVisualItem(floating->contentItem(),"toolStrip"));QVERIFY(workspace.toolsFloating());QCOMPARE(QGuiApplication::allWindows().size(),2);
-        workspace.detachGroup("__canvas");QTRY_COMPARE(QGuiApplication::allWindows().size(),3);QTRY_VERIFY(canvas->window()!=floating);
-        auto *canvasWindow=canvas->window();QVERIFY(canvasWindow);canvasWindow->requestActivate();QTRY_VERIFY(canvasWindow->isActive());
+        auto *documents=main->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QCOMPARE(documents->windows().size(),1);
+        const auto first=documents->activeId(),host=documents->windows().first().toMap().value("id").toString();
+        const auto second=documents->newDocument(96,48,true);QVERIFY(!second.isEmpty());auto *other=documents->client(second);QVERIFY(other && other!=&client);QTRY_VERIFY(other->ready() && other->documentWidth()==96);
+        other->setBrushColor(Qt::blue);other->setBrushRadius(3);InputSample sample;sample.position={20,20};QVERIFY(other->beginStroke(sample));other->endStroke();QTRY_COMPARE(other->undoDepth(),1);QCOMPARE(client.undoDepth(),1);
+        const auto url=QUrl::fromLocalFile(temp.filePath("second.ora"));QSignalSpy files(other,&PaintCoreClient::fileFinished);QVERIFY(other->saveDocument(url));QTRY_COMPARE_WITH_TIMEOUT(files.size(),1,10000);QVERIFY(files.first().first().toBool());
+        QVERIFY(documents->moveDocument(second,host));QTRY_COMPARE(documents->windows().size(),1);QTRY_COMPARE(QGuiApplication::allWindows().size(),2);
+        QVERIFY(documents->activate(first));QTRY_COMPARE(canvas->window(),floating);QCOMPARE(retained.data(),canvas);QCOMPARE(canvas->zoom(),zoom);QCOMPARE(canvas->documentRect().center()-QPointF(canvas->width()/2,canvas->height()/2),pan);
+        // Each document keeps its own frame, history and layer tree in a tab group.
+        QVERIFY(documents->activate(second));other->undo();QTRY_COMPARE(other->undoDepth(),0);QCOMPARE(client.undoDepth(),1);QVERIFY(documents->activate(first));
+        auto *empty=findVisualItem(main->contentItem(),"documentArea:main");QVERIFY(empty);QCOMPARE(empty->property("color").value<QColor>(),QColor("#17191C"));
+        const auto tile=workspace.groupDefinition(workspace.leftGroups().first().toMap().value("id").toString());QVERIFY(tile.value("host")=="main");
         QPointingDevice pen("Floating tablet",2001,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,2);
         const auto tabletAt=canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(48,40)*canvas->zoom());
-        QTabletEvent tabletPress(QEvent::TabletPress,&pen,tabletAt,canvasWindow->mapToGlobal(tabletAt.toPoint()),.75,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,Qt::LeftButton);
-        QCoreApplication::sendEvent(canvasWindow,&tabletPress);QVERIFY(tabletPress.isAccepted());
-        QTabletEvent tabletRelease(QEvent::TabletRelease,&pen,tabletAt,canvasWindow->mapToGlobal(tabletAt.toPoint()),0,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,Qt::NoButton);
-        QCoreApplication::sendEvent(canvasWindow,&tabletRelease);QVERIFY(tabletRelease.isAccepted());QTRY_COMPARE(client.undoDepth(),2);
-        const auto canvasPayload=QJsonDocument(QJsonObject{{"group","__canvas"},{"whole",true}}).toJson();
-        colorPanel=findVisualItem(floating->contentItem(),"dockGroup:"+color);QVERIFY(colorPanel);
-        QVERIFY(drop(floating,"dockGroup:"+color,"application/x-drawverse-panel",canvasPayload,{colorPanel->width()-4,100}));
-        QTRY_COMPARE(QGuiApplication::allWindows().size(),2);QTRY_COMPARE(canvas->window(),floating);QVERIFY(retainedWindow);
-        QCOMPARE(canvas->documentRect().center()-QPointF(canvas->width()/2,canvas->height()/2),pan);
-        // The high-DPI offscreen monitor is very narrow; give the divider space
-        // beyond both children's minimum widths before testing user resizing.
-        floating->resize(900,650);QTRY_COMPARE(floating->width(),900);
-        QPointer<QQuickItem> retainedColor=findVisualItem(floating->contentItem(),"dockGroup:"+color);QVERIFY(retainedColor);
-        const auto colorWidth=[&] {
-            for(const auto &v:workspace.layoutItems(workspace.groupDefinition(color).value("host").toString(),floating->width()-4,floating->height()-4))
-                if(v.toMap().value("id")==color)return v.toMap().value("rect").toRectF().width();
-            return qreal(0);
-        };
-        QTRY_COMPARE(retainedColor->width(),colorWidth());QVERIFY(retainedColor->width()>200);
-        const auto oldWidth=retainedColor->width();QQuickItem *divider=nullptr;
-        for(const auto &v:workspace.layoutItems(workspace.groupDefinition(color).value("host").toString(),floating->width()-4,floating->height()-4)) {
-            const auto item=v.toMap();const auto area=item.value("area").toRectF();
-            if(item.value("kind")=="split" && item.value("axis")=="horizontal" && area.width()<floating->width()-8 && area.width()>floating->width()*.7) {
-                divider=findVisualItem(floating->contentItem(),"dockDivider:"+item.value("id").toString());break;
-            }
-        }
-        QVERIFY(divider);const auto dividerAt=divider->mapToScene({divider->width()/2,divider->height()/2}).toPoint();
-        QSignalSpy resized(&workspace,&WorkspaceManager::layoutChanged);
-        QTest::mousePress(floating,Qt::LeftButton,Qt::NoModifier,dividerAt);
-        QVERIFY(divider->childItems().first()->property("pressed").toBool());
-        QTest::mouseMove(floating,dividerAt-QPoint(24,0));QTest::mouseRelease(floating,Qt::LeftButton,Qt::NoModifier,dividerAt-QPoint(24,0));
-        QVERIFY(!resized.isEmpty());QTRY_VERIFY(retainedColor->width()<oldWidth-10);QCOMPARE(findVisualItem(floating->contentItem(),"dockGroup:"+color),retainedColor.data());
-        auto *tool=findVisualItem(floating->contentItem(),"eraserTool");QVERIFY(tool);QTest::mouseClick(floating,Qt::LeftButton,Qt::NoModifier,tool->mapToScene({tool->width()/2,tool->height()/2}).toPoint());QTRY_VERIFY(client.eraser());
-        client.selectAll();QTRY_VERIFY(client.selectionEnabled());QTRY_VERIFY(findVisualItem(floating->contentItem(),"selectionOutline"));
+        QTabletEvent press(QEvent::TabletPress,&pen,tabletAt,floating->mapToGlobal(tabletAt.toPoint()),.75,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,Qt::LeftButton);QCoreApplication::sendEvent(floating,&press);QVERIFY(press.isAccepted());
+        QTabletEvent release(QEvent::TabletRelease,&pen,tabletAt,floating->mapToGlobal(tabletAt.toPoint()),0,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,Qt::NoButton);QCoreApplication::sendEvent(floating,&release);QTRY_COMPARE(client.undoDepth(),2);
+        QVERIFY(!documents->closeDocument(first));QCOMPARE(documents->documents().size(),2);
         const auto preview=qEnvironmentVariable("DRAWVERSE_DOCK_PREVIEW");if(!preview.isEmpty()){QTest::qWait(100);QVERIFY(floating->grabWindow().save(preview));}
-        floating->close();QTRY_COMPARE(QGuiApplication::allWindows().size(),1);QTRY_COMPARE(canvas->window(),main);QVERIFY(retained);QCOMPARE(canvas->zoom(),zoom);QVERIFY(!workspace.toolsFloating());
+        const auto original=floating->position();const auto gripAt=QPoint(24,10);QTest::mousePress(floating,Qt::LeftButton,Qt::NoModifier,gripAt);documents->beginDrag(first,true);QTRY_VERIFY(documents->dragging());
+        QTest::mouseMove(floating,gripAt+QPoint(16,12));QTRY_VERIFY(floating->position()!=original);QVERIFY(documents->dragTarget().isEmpty());QTest::keyClick(floating,Qt::Key_Escape);QTRY_VERIFY(!documents->dragging());QTRY_COMPARE(floating->position(),original);QTest::mouseRelease(floating,Qt::LeftButton,Qt::NoModifier,gripAt);
+        QTest::mousePress(floating,Qt::LeftButton,Qt::NoModifier,gripAt);documents->beginDrag(first,true);QTRY_VERIFY(documents->dragging());
+        const auto body=empty->mapToGlobal({empty->width()/2,100}).toPoint();QTest::mouseMove(floating,floating->mapFromGlobal(body));QVERIFY(documents->dragTarget().isEmpty());
+        const auto edge=empty->mapToGlobal({empty->width()/2,10}).toPoint();QTest::mouseMove(floating,floating->mapFromGlobal(edge));QTRY_COMPARE(documents->dragTarget(),QString("main"));QTest::mouseRelease(floating,Qt::LeftButton,Qt::NoModifier,floating->mapFromGlobal(edge));
+        QTRY_COMPARE(QGuiApplication::allWindows().size(),1);QTRY_COMPARE(canvas->window(),main);QVERIFY(retainedWindow.isNull());QCOMPARE(canvas->zoom(),zoom);
+        const auto opened=documents->openDocument(url);QVERIFY(!opened.isEmpty());auto *reopened=documents->client(opened);QVERIFY(reopened);QTRY_VERIFY(reopened->ready() && !reopened->fileBusy() && reopened->documentUrl()==url);QCOMPARE(reopened->documentWidth(),96);QCOMPARE(reopened->undoDepth(),0);
+        // A later save failure must not reuse the initial-open failure handler.
+        QSignalSpy reopenedFiles(reopened,&PaintCoreClient::fileFinished);
+        QVERIFY(main->setProperty("savingBeforeAction",true));QVERIFY(main->setProperty("exiting",true));QVERIFY(main->setProperty("pendingAction","closeDocument"));
+        QVERIFY(reopened->saveDocument(QUrl::fromLocalFile(temp.filePath("second.ora/blocked.ora"))));
+        QTRY_COMPARE_WITH_TIMEOUT(reopenedFiles.size(),1,10000);QVERIFY(!reopenedFiles.first().first().toBool());
+        QCOMPARE(documents->documents().size(),3);QCOMPARE(documents->client(opened),reopened);QVERIFY(reopened->ready());
+        QVERIFY(!main->property("exiting").toBool());QVERIFY(!main->property("savingBeforeAction").toBool());QVERIFY(main->property("pendingAction").toString().isEmpty());
+        QSignalSpy openFailures(documents,&DocumentManager::fileFailed);
+        const auto missing=documents->openDocument(QUrl::fromLocalFile(temp.filePath("missing.ora")));QVERIFY(!missing.isEmpty());
+        QTRY_COMPARE_WITH_TIMEOUT(openFailures.size(),1,10000);QTRY_COMPARE(documents->documents().size(),3);QVERIFY(!documents->client(missing));
+        documents->requestClose(first);auto *unsaved=main->findChild<QObject*>("unsavedDocumentDialog");QVERIFY(unsaved);QTRY_VERIFY(unsaved->property("opened").toBool());QVERIFY(!documents->activate(second));QVERIFY(QMetaObject::invokeMethod(unsaved,"reject"));QTRY_VERIFY(!unsaved->property("opened").toBool());QCOMPARE(documents->documents().size(),3);
+        // Closing the application first resolves the correct document, even with a file task running.
+        QSignalSpy exitFiles(&client,&PaintCoreClient::fileFinished);
+        QVERIFY(client.saveDocument(QUrl::fromLocalFile(temp.filePath("first.ora"))));QVERIFY(client.fileBusy());
+        QVERIFY(QMetaObject::invokeMethod(main,"close"));auto *busy=main->findChild<QObject*>("busyDocumentDialog");QVERIFY(busy);
+        QTRY_VERIFY(busy->property("opened").toBool());QCOMPARE(main->property("pendingDocument").toString(),first);QCOMPARE(main->property("pendingAction").toString(),QString("closeDocument"));
+        QVERIFY(QMetaObject::invokeMethod(busy,"reject"));QTRY_VERIFY(!busy->property("opened").toBool());QVERIFY(!main->property("exiting").toBool());QCOMPARE(documents->documents().size(),3);
+        QTRY_COMPARE_WITH_TIMEOUT(exitFiles.size(),1,10000);QVERIFY(exitFiles.first().first().toBool());
+        QVERIFY(documents->closeDocument(first,true));QVERIFY(documents->closeDocument(second,true));QVERIFY(documents->closeDocument(opened));QCOMPARE(documents->documents().size(),0);
+        const auto fresh=documents->newDocument(24,24);QVERIFY(!fresh.isEmpty());QTRY_VERIFY(documents->client(fresh)->ready() && documents->client(fresh)->documentWidth()==24);QVERIFY(documents->closeDocument(fresh,true));
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void panelColumnsUseOneHeaderAndDragTheActualWindow() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("workspace.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        const auto first=workspace.leftGroups().first().toMap().value("id").toString();workspace.detachGroup(first);workspace.detachPanel(first,"brush-settings");
+        QString second;for(const auto &v:workspace.floatingGroups())if(v.toMap().value("active")=="brush-settings")second=v.toMap().value("id").toString();QVERIFY(!second.isEmpty());
+        const auto payload=QString::fromUtf8(QJsonDocument(QJsonObject{{"group",second},{"whole",true}}).toJson());QVERIFY(workspace.dockPayload(payload,"floating",first,"after"));
+        QTRY_COMPARE(QGuiApplication::allWindows().size(),2);QQuickWindow *floating=nullptr;for(auto *w:QGuiApplication::allWindows())if(w!=main)floating=qobject_cast<QQuickWindow*>(w);QVERIFY(floating);
+        auto *top=findVisualItem(floating->contentItem(),"columnHeader:"+first),*bottom=findVisualItem(floating->contentItem(),"columnHeader:"+second);QVERIFY(top && bottom);QVERIFY(top->isVisible());QVERIFY(!bottom->isVisible());
+        const auto expanded=floating->size();workspace.setGroupCollapsed(first,true);workspace.setGroupCollapsed(second,true);
+        QTRY_VERIFY(floating->height()<100);auto *a=findVisualItem(floating->contentItem(),"dockGroup:"+first),*b=findVisualItem(floating->contentItem(),"dockGroup:"+second);QVERIFY(a && b);QTRY_COMPARE(b->mapToScene({0,0}).y(),a->mapToScene({0,0}).y()+a->height()+1);
+        workspace.setColumnCollapsed(second,true);QTRY_COMPARE(floating->width(),30);QTRY_VERIFY(findVisualItem(floating->contentItem(),"railPanel:brush-settings"));
+        auto *icon=findVisualItem(floating->contentItem(),"railPanel:brush-settings");QTest::mouseClick(floating,Qt::LeftButton,Qt::NoModifier,icon->mapToScene({14,14}).toPoint());QTRY_COMPARE(floating->width(),expanded.width());
+        workspace.setGroupCollapsed(first,false);workspace.setGroupCollapsed(second,false);QTRY_COMPARE(floating->height(),expanded.height());
+        const auto before=floating->position();floating->requestActivate();QTRY_VERIFY(floating->isActive());
+        const auto at=QPoint(30,4);QTest::mousePress(floating,Qt::LeftButton,Qt::NoModifier,at);workspace.beginDrag(first,"",true);QTRY_VERIFY(workspace.dragging());
+        QTest::mouseMove(floating,at+QPoint(12,16));QTRY_VERIFY(floating->position()!=before);QVERIFY(workspace.dragTarget().isEmpty());
+        const auto live=workspace.floatingWindows().first().toMap();QCOMPARE(live.value("x").toInt(),floating->x());QCOMPARE(live.value("y").toInt(),floating->y());
+        QTest::keyClick(floating,Qt::Key_Escape);QTRY_VERIFY(!workspace.dragging());QTRY_COMPARE(floating->position(),before);QTest::mouseRelease(floating,Qt::LeftButton,Qt::NoModifier,at);
+        // A release near a different panel dynamically docks the whole column.
+        const auto target=workspace.rightGroups().first().toMap().value("id").toString();auto *targetItem=findVisualItem(main->contentItem(),"dockGroup:"+target);QVERIFY(targetItem);
+        QTest::mousePress(floating,Qt::LeftButton,Qt::NoModifier,at);workspace.beginDrag(first,"",true);QTRY_VERIFY(workspace.dragging());
+        const auto global=targetItem->mapToGlobal({4,60}).toPoint();QTest::mouseMove(floating,floating->mapFromGlobal(global));QTRY_COMPARE(workspace.dragTarget(),target);QCOMPARE(workspace.dragPlacement(),QString("left"));
+        QTest::mouseRelease(floating,Qt::LeftButton,Qt::NoModifier,floating->mapFromGlobal(global));QTRY_VERIFY(!workspace.dragging());QTRY_COMPARE(QGuiApplication::allWindows().size(),1);QCOMPARE(workspace.groupDefinition(first).value("host").toString(),QString("main"));QCOMPARE(workspace.columnGroups(first),QStringList({first,second}));
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void closingOlderPopupDoesNotUntrackNewPopup() {
@@ -271,7 +258,7 @@ private slots:
         auto *closeButton=findVisualItem(window->contentItem(),"windowClose"); QVERIFY(closeButton);
         auto *closeBackground=qobject_cast<MenuSurface*>(closeButton->property("background").value<QObject*>()); QVERIFY(closeBackground);
         QCOMPARE(closeBackground->radius(),qreal(10)); QVERIFY(closeBackground->topRightCornerOnly());
-        QCOMPARE(closeBackground->tint(),QColor("#d8323e"));
+        QCOMPARE(closeBackground->tint(),QColor(Qt::transparent));
         QCOMPARE(closeButton->property("contentItem").value<QObject*>()->property("color").value<QColor>(),QColor(Qt::white));
         const auto closeCenter=closeButton->mapToScene({closeButton->width()/2,closeButton->height()/2}).toPoint();
         window->raise();window->requestActivate();QTRY_VERIFY(window->isActive());
@@ -281,7 +268,7 @@ private slots:
         QTRY_COMPARE(closeBackground->tint(),QColor("#b5222c"));
         QTest::mouseMove(window,QPoint(500,50));
         QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,QPoint(500,50));
-        QTRY_COMPARE(closeBackground->tint(),QColor("#d8323e")); QVERIFY(window->isVisible());
+        QTRY_COMPARE(closeBackground->tint(),QColor(Qt::transparent)); QVERIFY(window->isVisible());
         auto *entry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:工作区")); QVERIFY(entry);
         auto *focus=qobject_cast<QQuickItem*>(entry->property("background").value<QObject*>()); QVERIFY(focus);
         QCOMPARE(focus->property("radius").toReal(),qreal(0));
@@ -326,6 +313,7 @@ private slots:
         window->showNormal(); QTRY_COMPARE(bar->radius(),qreal(10));
         QCOMPARE(closeBackground->radius(),qreal(10));
         QTRY_COMPARE(window->geometry(),normalGeometry);
+        window->raise();window->requestActivate();QTRY_VERIFY(window->isActive());
         auto *windowEntry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:窗口")); QVERIFY(windowEntry);
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,windowEntry->mapToScene({windowEntry->width()/2,windowEntry->height()/2}).toPoint());
         auto *windowMenu=window->findChild<QObject*>("windowMenu"); QVERIFY(windowMenu); QTRY_VERIFY(windowMenu->property("opened").toBool());
@@ -413,6 +401,9 @@ private slots:
             QVERIFY(!workspace.setMenuBarBlur(window,true));
         } else {
             QVERIFY(window->property("menuBarBlurActive").toBool());
+            const auto available=window->screen()->availableGeometry();
+            window->resize(std::min(window->width(),available.width()),std::min(window->height(),available.height()));
+            window->setPosition(available.topLeft());QTest::qWait(100);
 #ifdef Q_OS_WIN
             const auto hasRoundedNativeCorners=[&] {
                 const auto handle=reinterpret_cast<HWND>(window->winId());
@@ -439,6 +430,12 @@ private slots:
             backdrop.setGeometry(window->geometry());
             BlurTestBackdrop stripes(backdrop.contentItem()); stripes.setSize(backdrop.size());
             backdrop.show(); backdrop.raise(); window->raise(); window->requestActivate(); QTRY_VERIFY(window->isActive());
+#ifdef Q_OS_WIN
+            // Desktop capture needs both test windows above other applications,
+            // independently of Windows' foreground activation restrictions.
+            SetWindowPos(reinterpret_cast<HWND>(backdrop.winId()),HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+            SetWindowPos(reinterpret_cast<HWND>(window->winId()),HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+#endif
             const auto capture=[&] {
                 QTest::qWait(300);
                 return window->screen()->grabWindow(0,window->x()+500,window->y()+8,320,12).toImage();
@@ -464,6 +461,11 @@ private slots:
             const auto evidence=QString("Sharp edge=%1, blurred edge=%2").arg(sharpestEdge(sharp)).arg(sharpestEdge(blurred));
             QVERIFY2(sharpestEdge(sharp)>100,qPrintable(evidence));
             QVERIFY2(sharpestEdge(blurred)<sharpestEdge(sharp)/2,qPrintable(evidence));
+            auto *close=findVisualItem(window->contentItem(),"windowClose");QVERIFY(close);
+            const auto closeCenter=close->mapToScene({close->width()/2,close->height()/2}).toPoint();
+            QCursor::setPos(window->mapToGlobal(closeCenter));
+            QTest::mouseMove(window,closeCenter);QTRY_VERIFY(close->property("hovered").toBool());
+            QTest::qWait(100); // Let the compositor present the new hover color.
             const auto title=window->screen()->grabWindow(0,window->x(),window->y(),window->width(),28).toImage();
             QVERIFY(!title.isNull());
             // The excluded corner keeps the backdrop (including the system shadow).
@@ -473,8 +475,8 @@ private slots:
             QVERIFY(corner.green()>190 && corner.red()<40);
             const auto dpr=title.devicePixelRatio();
             const auto red=title.pixelColor(title.width()-qRound(5*dpr),qRound(20*dpr));
-            QVERIFY(red.red()>180 && red.green()<90 && red.blue()<100);
             if(!preview.isEmpty()) QVERIFY(title.save(preview+".title.png"));
+            QVERIFY2(red.red()>180 && red.green()<90 && red.blue()<100,qPrintable(QString("Hover=%1, color=%2").arg(close->property("hovered").toBool()).arg(red.name())));
         }
         QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
     }
@@ -618,7 +620,7 @@ private slots:
             const auto g=v.toMap();QQuickItem *panel=nullptr;
             for(auto *w:QGuiApplication::allWindows())if(auto *quick=qobject_cast<QQuickWindow*>(w))if((panel=findVisualItem(quick->contentItem(),"dockGroup:"+g.value("id").toString()))){if(g.value("active")=="color")colorWindow=quick;else brushWindow=quick;break;}
         }
-        QVERIFY(colorWindow && brushWindow);QCOMPARE(colorWindow->width(),155);QTRY_COMPARE(brushWindow->height(),56);QVERIFY(colorWindow->flags().testFlag(Qt::FramelessWindowHint));QVERIFY(brushWindow->flags().testFlag(Qt::FramelessWindowHint));
+        QVERIFY(colorWindow && brushWindow);QCOMPARE(colorWindow->width(),155);QTRY_COMPARE(brushWindow->height(),54);QVERIFY(colorWindow->flags().testFlag(Qt::FramelessWindowHint));QVERIFY(brushWindow->flags().testFlag(Qt::FramelessWindowHint));
         auto *wheel=qobject_cast<ColorWheelItem*>(findVisualItem(colorWindow->contentItem(),"colorWheel"));QVERIFY(wheel);QTRY_VERIFY(wheel->height()>=100);QVERIFY(findVisualItem(brushWindow->contentItem(),"collapsedPanel:brush-settings"));
         QPointer<QQuickWindow> retained=colorWindow;workspace.saveLayout();WorkspaceManager restored(path);QCOMPARE(restored.floatingGroups().size(),2);QVERIFY(!restored.needsReferenceLayout());
         const auto preview=qEnvironmentVariable("DRAWVERSE_REFERENCE_PREVIEW");
@@ -702,9 +704,9 @@ private slots:
         workspace.resetLayout();QTest::qWait(80);first=workspace.rightGroups().first().toMap().value("id").toString();
         auto click=[&](const QString &name){auto *item=findVisualItem(window->contentItem(),name);if(!item)return false;QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,item->mapToScene({item->width()/2,item->height()/2}).toPoint());return true;};
         QVERIFY(click("groupCollapse:"+first));QTRY_VERIFY(workspace.groupDefinition(first).value("collapsed").toBool());QTRY_VERIFY(findVisualItem(window->contentItem(),"dockGroup:"+first)->height()<=45);QTRY_VERIFY(findVisualItem(window->contentItem(),"collapsedPanel:color")->isVisible() && findVisualItem(window->contentItem(),"collapsedPanel:color")->mapToScene({0,0}).y()>=findVisualItem(window->contentItem(),"dockGroup:"+first)->mapToScene({0,0}).y()+8);QVERIFY(click("collapsedPanel:color"));QTRY_VERIFY(!workspace.groupDefinition(first).value("collapsed").toBool());
-        QVERIFY(click("dockCollapse:right"));QTRY_VERIFY(workspace.rightCollapsed());QTRY_VERIFY(findVisualItem(window->contentItem(),"railPanel:layers")->isVisible());QVERIFY(capture(".collapsed"));
-        QVERIFY(click("railPanel:layers"));QVERIFY(workspace.rightCollapsed());QTRY_VERIFY(findVisualItem(window->contentItem(),"layerList"));QTRY_VERIFY(findVisualItem(window->contentItem(),"layerList")->isVisible());QVERIFY(capture(".peek"));
-        QVERIFY(click("dockCollapse:right"));QTRY_VERIFY(!workspace.rightCollapsed());
+        QVERIFY(click("dockCollapse:right"));QTRY_VERIFY(findVisualItem(window->contentItem(),"railPanel:layers"));QTRY_VERIFY(findVisualItem(window->contentItem(),"railPanel:layers")->isVisible());QVERIFY(capture(".collapsed"));
+        QVERIFY(click("railPanel:layers"));QVERIFY(findVisualItem(window->contentItem(),"railPanel:layers"));QTRY_VERIFY(findVisualItem(window->contentItem(),"layerList"));QTRY_VERIFY(findVisualItem(window->contentItem(),"layerList")->isVisible());QVERIFY(capture(".peek"));
+        QVERIFY(click("dockCollapse:right"));QTRY_VERIFY(!findVisualItem(window->contentItem(),"railPanel:layers"));
         workspace.hidePanel(first,"color");QTRY_VERIFY(!workspace.visiblePanels().contains("color"));workspace.showPanel("color");QTRY_VERIFY(workspace.visiblePanels().contains("color"));
         const auto brush=workspace.leftGroups().first().toMap().value("id").toString();workspace.detachGroup(brush);QTRY_COMPARE(QGuiApplication::allWindows().size(),2);
         QQuickWindow *floating=nullptr;for(auto *w:QGuiApplication::allWindows())if(w!=window)floating=qobject_cast<QQuickWindow*>(w);QVERIFY(floating);
@@ -979,8 +981,18 @@ private slots:
         engine.load(QUrl("qrc:/qml/Main.qml")); QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
         QTRY_VERIFY_WITH_TIMEOUT(client.ready() && !client.storageBusy(),10000);
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); QVERIFY(window);
+        auto *options=findVisualItem(window->contentItem(),"brushOptionsBar");QVERIFY(options);
+        for(auto *item:options->findChildren<QObject*>()) {
+            QVERIFY(item->property("tooltip").toString()!=QStringLiteral("性能与暂存盘"));
+            QVERIFY(item->property("tooltip").toString()!=QStringLiteral("创建自定义面板"));
+        }
+        auto *customAction=window->findChild<QObject*>("customPanelAction");QVERIFY(customAction);
+        auto *customDialog=window->findChild<QObject*>("customPanelDialog");QVERIFY(customDialog);
+        QVERIFY(QMetaObject::invokeMethod(customAction,"triggered"));QTRY_VERIFY(customDialog->property("opened").toBool());
+        QVERIFY(QMetaObject::invokeMethod(customDialog,"reject"));QTRY_VERIFY(!customDialog->property("opened").toBool());
+        auto *storageAction=window->findChild<QObject*>("storagePreferencesAction");QVERIFY(storageAction);QVERIFY(storageAction->property("enabled").toBool());
         auto *dialog=window->findChild<QObject*>("storagePreferences"); QVERIFY(dialog);
-        QVERIFY(QMetaObject::invokeMethod(dialog,"open")); QTRY_VERIFY(!client.storageBusy());
+        QVERIFY(QMetaObject::invokeMethod(storageAction,"triggered"));QTRY_VERIFY(dialog->property("opened").toBool());QTRY_VERIFY(!client.storageBusy());
         auto *memory=dialog->findChild<QObject*>("storageMemory"); QVERIFY(memory); QCOMPARE(memory->property("currentIndex").toInt(),2);
         auto *scratch=dialog->findChild<QObject*>("storageScratch"); QVERIFY(scratch); QCOMPARE(scratch->property("value").toInt(),8);
         auto *reserve=dialog->findChild<QObject*>("storageReserve"); QVERIFY(reserve); QCOMPARE(reserve->property("value").toInt(),512);
@@ -1312,7 +1324,7 @@ private slots:
         QVERIFY(migrated.panelDefinition("floating-note").isEmpty());
         QCOMPARE(migrated.rightGroups().first().toMap().value("active").toString(),QString("color"));
         settings.sync(); const auto saved=QJsonDocument::fromJson(settings.value("workspace").toByteArray()).object();
-        QCOMPARE(saved.value("version").toInt(),5); QVERIFY(!saved.value("panels").toObject().contains("old-note"));
+        QCOMPARE(saved.value("version").toInt(),6); QVERIFY(!saved.value("panels").toObject().contains("old-note"));
         WorkspaceManager reopened(path); QCOMPARE(reopened.floatingGroups().size(),1);
     }
     void queueBackpressureRollsBack() {
@@ -1424,6 +1436,7 @@ int main(int argc,char **argv) {
     qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
     qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
     qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");
+    qmlRegisterType<DocumentManager>("DrawVerse",1,0,"DocumentManager");
     UiTests tests; return QTest::qExec(&tests,argc,argv);
 }
 #include "ui_tests.moc"

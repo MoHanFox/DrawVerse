@@ -2,6 +2,7 @@
 #include "ColorWheelItem.h"
 #include "SelectionOverlay.h"
 #include "WorkspaceManager.h"
+#include "DocumentManager.h"
 #include "PaintingBenchmark.h"
 #include "UiScale.h"
 #include "MenuSurface.h"
@@ -35,6 +36,7 @@ int main(int argc,char **argv) {
     qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
     qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
     qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");
+    qmlRegisterType<DocumentManager>("DrawVerse",1,0,"DocumentManager");
     const QStringList arguments=app.arguments();
     const int previewIndex=arguments.indexOf("--preview");
     const QString previewPath=previewIndex>=0 && previewIndex+1<arguments.size()?arguments[previewIndex+1]:QString();
@@ -57,7 +59,7 @@ int main(int argc,char **argv) {
         client.setBrushColor(QColor("#f5e3ce"));
         if(testPath.isEmpty())workspace.saveLayout();
     }
-    QObject::connect(&client,&PaintCoreClient::stopped,&app,&QCoreApplication::quit);
+    if(!testPath.isEmpty())QObject::connect(&client,&PaintCoreClient::stopped,&app,&QCoreApplication::quit);
     if(!benchmarkPath.isEmpty()) {
         startPaintingBenchmark(client,*qobject_cast<QQuickWindow*>(engine.rootObjects().first()),benchmarkPath);
     }

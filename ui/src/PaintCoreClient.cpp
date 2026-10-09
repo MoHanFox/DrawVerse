@@ -408,7 +408,7 @@ private:
     bool m_stopped = false;
 };
 
-PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) : QObject(parent), m_connection(std::make_shared<BackendConnection>()) {
+PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) : QObject(parent), m_settingsFile(settingsFile), m_connection(std::make_shared<BackendConnection>()) {
     m_brushLibrary=new BrushLibrary(this);
     qRegisterMetaType<PaintSessionInfo>();
     qRegisterMetaType<PaintFileJobInfo>();

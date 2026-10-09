@@ -58,6 +58,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(int selectionTool READ selectionTool WRITE setSelectionTool NOTIFY brushChanged)
 public:
     explicit PaintCoreClient(QObject *parent = nullptr, const QString &settingsFile = {});
+    QString settingsFile() const { return m_settingsFile; }
     ~PaintCoreClient() override;
     QVariantMap storageSettings() const { return m_storageSettings; }
     QVariantMap activeStorageSettings() const { return m_activeStorageSettings; }
@@ -170,6 +171,7 @@ private:
     QVariantMap m_storageSettings, m_activeStorageSettings, m_storageInfo;
     QString m_storageMessage;
     bool m_storageBusy = true;
+    QString m_settingsFile;
     QThread m_thread;
     BackendWorker *m_worker = nullptr;
     std::shared_ptr<BackendConnection> m_connection;

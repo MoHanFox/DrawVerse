@@ -12,7 +12,7 @@ ApplicationWindow {
     visible: true
     flags: Qt.Window | Qt.FramelessWindowHint
     width: 1480; height: 780; minimumWidth: 980; minimumHeight: 640
-    title: "DrawVerse · "+PaintClient.documentName+(PaintClient.modified ? " *" : "")
+    title: "DrawVerse"+(documents.activeId.length?" · "+PaintClient.documentName+(PaintClient.modified ? " *" : ""):"")
     color: "transparent"
     readonly property int cornerRadius: visibility===Window.Maximized || visibility===Window.FullScreen ? 0 : Theme.windowRadius
     property bool windowCornersReady: false
@@ -54,15 +54,44 @@ ApplicationWindow {
     property bool savingBeforeAction: false
     property string fileNotice: ""
     property var floatingWindows: ({})
-    readonly property var canvas: documentPane.canvasView
+    property var documentWindows: ({})
+    property var documentPanes: ({})
+    property string initialDocumentId:""
+    property var canvas: documentPane.canvasView
+    signal newDocumentRequested()
+    onNewDocumentRequested:newDialog.open()
+    readonly property bool documentsBlocked:root.savingBeforeAction || closeDialog.opened || busyCloseDialog.opened || saveDialog.visible || exportDialog.visible
+    DocumentManager {id:documents;objectName:"documentManager";interactionBlocked:root.documentsBlocked}
     Item {id:canvasParking;visible:false}
-    CanvasPane {id:documentPane;parent:canvasParking;parkingParent:canvasParking;mainWindow:root;savingBlocked:root.savingBeforeAction || closeDialog.opened;onNewDocumentRequested:newDialog.open()}
+    CanvasPane {id:documentPane;parent:canvasParking;initialDocument:true;parkingParent:canvasParking;mainWindow:root;savingBlocked:root.documentsBlocked}
+    function paneFor(id){return documentPanes[id] || null}
+    function isInitial(id){return id===initialDocumentId}
+    function syncDocuments(){
+        const live={},all=documents.documents
+        for(let i=0;i<all.length;i++) {
+            const d=all[i];live[d.id]=true
+            if(!documentPanes[d.id]) {
+                if(!initialDocumentId){initialDocumentId=d.id;documentPane.documentId=d.id;documentPanes[d.id]=documentPane}
+                else documentPanes[d.id]=documentFactory.createObject(canvasParking,{documentId:d.id,ownClient:d.client,parkingParent:canvasParking,mainWindow:root,savingBlocked:Qt.binding(()=>root.documentsBlocked)})
+            }
+        }
+        for(const id in documentPanes)if(!live[id]) {documentPanes[id].park();if(id!==initialDocumentId)documentPanes[id].destroy();delete documentPanes[id]}
+        const windows=documents.windows,keep={}
+        for(let i=0;i<windows.length;i++) {const g=windows[i];keep[g.id]=true;if(documentWindows[g.id])documentWindows[g.id].updateLayout(g);else documentWindows[g.id]=documentWindowFactory.createObject(root,{windowData:g,documents:documents,presentation:root})}
+        for(const id in documentWindows)if(!keep[id]){documentWindows[id].releaseCanvas();documentWindows[id].visible=false;documentWindows[id].destroy();delete documentWindows[id]}
+        const active=paneFor(documents.activeId);canvas=active?active.canvasView:documentPane.canvasView
+        if(mainDocumentArea)mainDocumentArea.refresh()
+    }
+    Component {id:documentFactory;CanvasPane {}}
+    Component {id:documentWindowFactory;DocumentWindow {}}
+    DocumentArea {id:mainDocumentArea;parent:canvasParking;documents:documents;presentation:root;function park(){parent=canvasParking}function attach(host){parent=host;width=Qt.binding(()=>host.width);height=Qt.binding(()=>host.height)}}
+    Connections {target:documents;function onDocumentsChanged(){root.syncDocuments()}function onGroupsChanged(){root.syncDocuments()}function onActiveChanged(){root.syncDocuments()}function onCloseRequested(id){documents.activate(id);root.pendingDocument=id;root.requestAction("closeDocument")}function onFileFailed(message){root.fileNotice=message}function onStopped(){Qt.quit()}}
     function syncFloating() {
         const groups=Workspace.floatingWindows, live={}
         for(let i=0;i<groups.length;i++) {
             const g=groups[i]; live[g.id]=true
             if(floatingWindows[g.id]) floatingWindows[g.id].updateLayout(g)
-            else floatingWindows[g.id]=floatingFactory.createObject(root,{windowData:g,canvasPane:documentPane,canvasView:canvas})
+            else floatingWindows[g.id]=floatingFactory.createObject(root,{windowData:g,canvasPane:mainDocumentArea,canvasView:Qt.binding(()=>root.canvas),appClosing:Qt.binding(()=>root.quitting)})
         }
         for(const id in floatingWindows) if(!live[id]) {
             floatingWindows[id].releaseCanvas();floatingWindows[id].visible=false; floatingWindows[id].destroy(); delete floatingWindows[id]
@@ -70,6 +99,8 @@ ApplicationWindow {
     }
     property bool menuBarBlurActive: false
     Component.onCompleted: {
+        documentPane.ownClient=PaintClient
+        documents.configure(PaintClient,root)
         // Set initial placement once; live size bindings move maximized windows.
         x=Screen.virtualX+Math.max(16,(Screen.width-width)/2)
         y=Screen.virtualY+Math.max(16,(Screen.height-height)/3)
@@ -80,31 +111,40 @@ ApplicationWindow {
     }
     Connections { target: Workspace; function onGroupsChanged() { root.syncFloating() } }
     Component { id: floatingFactory; FloatingPanel {} }
+    onActiveChanged:if(active && documents.activeId && documents.group("main").active && documents.activeId!==documents.group("main").active)documents.activate(documents.group("main").active)
+    property string pendingDocument:""
+    property bool exiting:false
+    function nextExit(){
+        if(documents.documents.length){pendingDocument=documents.documents[0].id;documents.activate(pendingDocument);requestAction("closeDocument")}
+        else quitApp()
+    }
     function executePending() {
         const action = pendingAction
         pendingAction = ""; savingBeforeAction = false
-        if (action === "close") quitApp()
-        else if (action === "open") PaintClient.openDocument(pendingOpen)
-        else if (action === "new") { if(transparentBackground.checked) PaintClient.newTransparentDocument(newWidth.value,newHeight.value); else PaintClient.newDocument(newWidth.value,newHeight.value) }
+        if (action === "close") {exiting=true;nextExit()}
+        else if(action==="closeDocument") {documents.closeDocument(pendingDocument,true);pendingDocument="";if(exiting)Qt.callLater(nextExit)}
+        else if (action === "open") documents.openDocument(pendingOpen)
+        else if (action === "new") documents.newDocument(newWidth.value,newHeight.value,transparentBackground.checked)
     }
     function requestAction(action) {
         pendingAction = action
-        if (PaintClient.modified) closeDialog.open()
+        if (action==="close") {executePending();return}
+        if (action==="closeDocument" && PaintClient.fileBusy) busyCloseDialog.open()
+        else if (action==="closeDocument" && PaintClient.modified) closeDialog.open()
         else executePending()
     }
     function saveCurrent() {
         if (PaintClient.documentUrl.toString().length > 0) {
-            if (!PaintClient.saveDocument(PaintClient.documentUrl)) savingBeforeAction = false
+            if (!PaintClient.saveDocument(PaintClient.documentUrl)) {savingBeforeAction=false;pendingAction="";exiting=false}
         } else saveDialog.open()
     }
-    function quitApp() { Workspace.saveLayout(); quitting=true; PaintClient.shutdown() }
+    function quitApp() { Workspace.saveLayout(); quitting=true; documents.shutdown() }
     onClosing: event => {
-        if (PaintClient.closing) { event.accepted=true; return }
+        if (quitting || (documents.documents.length<=1 && PaintClient.closing)) { event.accepted=true; return }
         event.accepted=false
         if (quitting) return
         if (PaintClient.drawing) PaintClient.endStroke()
-        if (PaintClient.fileBusy) busyCloseDialog.open()
-        else requestAction("close")
+        requestAction("close")
     }
     ResizeFrame {targetWindow:root}
     StoragePreferences { id: storagePreferences; objectName: "storagePreferences" }
@@ -132,7 +172,7 @@ ApplicationWindow {
                         objectName: "windowCloseBackground"
                         radius: root.cornerRadius
                         topRightCornerOnly: true
-                        tint: closeButton.down ? "#b5222c" : closeButton.hovered ? "#f04450" : "#d8323e"
+                        tint: closeButton.down ? "#b5222c" : closeButton.hovered ? "#f04450" : "transparent"
                     }
                     contentItem: Icon { name: "close"; color: "#ffffff" }
                 }
@@ -149,8 +189,8 @@ ApplicationWindow {
         }
         GlassMenu {
             title: "文件"
-            Action { text: "新建画布…"; shortcut: StandardKey.New; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: newDialog.open() }
-            Action { text: "打开…"; shortcut: StandardKey.Open; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: openDialog.open() }
+            Action { text: "新建画布…"; shortcut: StandardKey.New; enabled: !documents.activeId.length || PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: newDialog.open() }
+            Action { text: "打开…"; shortcut: StandardKey.Open; enabled: !documents.activeId.length || PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: openDialog.open() }
             MenuSeparator {}
             Action { text: "保存"; shortcut: StandardKey.Save; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: root.saveCurrent() }
             Action { text: "另存为 OpenRaster…"; shortcut: StandardKey.SaveAs; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: saveDialog.open() }
@@ -160,7 +200,7 @@ ApplicationWindow {
         }
         GlassMenu {
             title: "编辑"
-            Action { text: "性能与暂存盘…"; enabled: !PaintClient.closing; onTriggered: storagePreferences.open() }
+            Action { objectName:"storagePreferencesAction"; text: "性能与暂存盘…"; enabled: !PaintClient.closing; onTriggered: storagePreferences.open() }
             Action { text: "撤销"; shortcut: StandardKey.Undo; enabled: PaintClient.undoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.undo() }
             Action { text: "重做"; shortcut: "Ctrl+Shift+Z"; enabled: PaintClient.redoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.redo() }
         }
@@ -183,8 +223,8 @@ ApplicationWindow {
             objectName: "windowMenu"
             title: "窗口"
             Action {text:"工具条归位";enabled:Workspace.toolsFloating;onTriggered:Workspace.dockToolStrip("drawverse-tools-v1")}
-            Action {text:"浮动画布";enabled:!PaintClient.drawing;onTriggered:Workspace.detachGroup("__canvas")}
-            Action {text:"画布返回工作区";enabled:!PaintClient.drawing;onTriggered:Workspace.returnGroup("__canvas")}
+            Action {text:"浮动画布";enabled:documents.activeId.length>0 && !PaintClient.drawing;onTriggered:documents.floatDocument(documents.activeId)}
+            Action {text:"画布返回工作区";enabled:documents.activeId.length>0 && !PaintClient.drawing;onTriggered:documents.moveDocument(documents.activeId,"main")}
             MenuSeparator {}
             Instantiator {
                 model: Workspace.allPanels
@@ -208,7 +248,7 @@ ApplicationWindow {
         GlassMenu {
             objectName: "workspaceMenu"
             title: "工作区"
-            Action { text: "自定义面板…"; onTriggered: panelDialog.open() }
+            Action { objectName:"customPanelAction"; text: "自定义面板…"; onTriggered: panelDialog.open() }
             Action { text: "保存当前布局"; onTriggered: Workspace.saveLayout() }
             Action { text: "参考图布局"; enabled:!PaintClient.drawing;onTriggered: Workspace.applyReferenceLayout(root.x,root.y,root.width,root.height) }
             Action { text: "双列停靠布局"; enabled:!PaintClient.drawing;onTriggered: Workspace.resetLayout() }
@@ -232,8 +272,6 @@ ApplicationWindow {
             Rectangle { width: 16; height: 16; color: PaintClient.brushColor; border.color: Theme.muted }
             Label { text: "压感"; color: Theme.muted }
             Item { Layout.fillWidth: true }
-            IconButton { glyph: "settings"; tooltip: "性能与暂存盘"; onClicked: storagePreferences.open() }
-            IconButton { glyph: "plus"; tooltip: "创建自定义面板"; onClicked: panelDialog.open() }
         }
         RowLayout {
             visible: PaintClient.selectionTool>0
@@ -259,7 +297,7 @@ ApplicationWindow {
         }
         RowLayout {
             Layout.fillWidth: true; Layout.fillHeight: true; spacing: 0
-            DockWorkspace {objectName:"mainDockWorkspace";Layout.fillWidth:true;Layout.fillHeight:true;canvasPane:documentPane;canvasView:canvas}
+            DockWorkspace {objectName:"mainDockWorkspace";Layout.fillWidth:true;Layout.fillHeight:true;canvasPane:mainDocumentArea;canvasView:canvas}
         }
         Rectangle {
             Layout.fillWidth: true; height: 22; color: Theme.strip;radius:root.cornerRadius
@@ -287,13 +325,13 @@ ApplicationWindow {
     Shortcut { context:Qt.ApplicationShortcut; sequence: "Esc"; enabled: PaintClient.drawing; onActivated: PaintClient.cancelStroke() }
     Shortcut { context:Qt.ApplicationShortcut; sequence: Qt.platform.os === "osx" ? "Meta+Alt+G" : "Ctrl+Alt+G"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy; onActivated: PaintClient.toggleActiveClipping() }
     Dialog {
-        id: newDialog
+        id: newDialog;objectName:"newDocumentDialog"
         title: "新建画布"; modal: true; anchors.centerIn: parent; width: 390
         standardButtons: Dialog.Ok | Dialog.Cancel
         onAccepted: root.requestAction("new")
         ColumnLayout {
             width: parent.width; spacing: 14
-            Label { text: "新建前可保存当前绘画。大画布按需分配瓦片。"; wrapMode: Text.WordWrap; Layout.fillWidth: true; color: Theme.muted }
+            Label { text: "创建独立文档，当前绘画保持打开。大画布按需分配瓦片。"; wrapMode: Text.WordWrap; Layout.fillWidth: true; color: Theme.muted }
             RowLayout { Label { text: "宽度" } CompactSpinBox { id: newWidth; from: 1; to: 1000000; value: 960; editable: true } }
             RowLayout { Label { text: "高度" } CompactSpinBox { id: newHeight; from: 1; to: 1000000; value: 640; editable: true } }
             CheckBox {id:transparentBackground;objectName:"transparentBackground";text:"透明背景";checked:false}
@@ -301,7 +339,7 @@ ApplicationWindow {
         }
     }
     Dialog {
-        id: panelDialog
+        id: panelDialog; objectName:"customPanelDialog"
         title: "创建自定义面板"; modal: true; anchors.centerIn: parent; width: 390
         standardButtons: Dialog.Ok | Dialog.Cancel
         onAccepted: Workspace.addCustomPanel(panelName.text,["palette","brush"][panelKind.currentIndex])
@@ -313,32 +351,33 @@ ApplicationWindow {
         }
     }
     Dialog {
-        id: closeDialog
+        id: closeDialog;objectName:"unsavedDocumentDialog"
         title: "保存当前绘画？"; modal: true; anchors.centerIn: parent; width: 390
         standardButtons: Dialog.Save | Dialog.Discard | Dialog.Cancel
         onAccepted: { root.savingBeforeAction=true; root.saveCurrent() }
         onDiscarded: root.executePending()
-        onRejected: { root.pendingAction=""; root.savingBeforeAction=false }
+        onRejected: { root.pendingAction=""; root.savingBeforeAction=false;root.exiting=false }
         Label { text: "当前绘画尚未保存。OpenRaster 保存图层，工作区布局会保留。"; width: parent.width; wrapMode: Text.WordWrap; color: Theme.muted }
     }
     Dialog {
-        id: busyCloseDialog
+        id: busyCloseDialog;objectName:"busyDocumentDialog"
         title: "文件操作尚未完成"; modal: true; anchors.centerIn: parent; width: 390
         standardButtons: Dialog.Discard | Dialog.Cancel
-        onDiscarded: root.quitApp()
+        onDiscarded: root.executePending()
+        onRejected: {root.pendingAction="";root.exiting=false}
         Label { text: "关闭会取消未完成的文件任务，并丢弃尚未保存的绘画。"; width: parent.width; wrapMode: Text.WordWrap; color: Theme.muted }
     }
     FileDialogs.FileDialog {
         id: openDialog; title: "打开绘画或图片"
         nameFilters: ["绘画与图片 (*.ora *.png *.jpg *.jpeg *.webp)"]
-        onAccepted: { root.pendingOpen=selectedFile; root.requestAction("open") }
+        onAccepted: { root.pendingOpen=selectedFile; Qt.callLater(()=>root.requestAction("open")) }
     }
     FileDialogs.FileDialog {
         id: saveDialog; title: "保存图层 · OpenRaster（8 位 sRGB）"
         fileMode: FileDialogs.FileDialog.SaveFile; defaultSuffix: "ora"
         nameFilters: ["OpenRaster (*.ora)"]
-        onAccepted: { if (!PaintClient.saveDocument(selectedFile)) root.savingBeforeAction=false }
-        onRejected: { root.savingBeforeAction=false; root.pendingAction="" }
+        onAccepted: { if (!PaintClient.saveDocument(selectedFile)) {root.savingBeforeAction=false;root.pendingAction="";root.exiting=false} }
+        onRejected: { root.savingBeforeAction=false; root.pendingAction="";root.exiting=false }
     }
     FileDialogs.FileDialog {
         id: exportDialog; title: "导出合成图 · JPEG 使用白色背景"
@@ -355,7 +394,7 @@ ApplicationWindow {
                 root.savingBeforeAction=false
                 if (success && !PaintClient.modified) root.executePending()
                 else {
-                    root.pendingAction=""
+                    root.pendingAction="";root.exiting=false
                     if (success) root.fileNotice="保存期间又有修改，请再次保存后继续"
                 }
             }

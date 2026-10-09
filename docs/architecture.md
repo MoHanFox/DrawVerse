@@ -63,7 +63,7 @@ Rust crate 的依赖有向无环：paint-core 为纯模型库；paint-color 不�
 
 Qt 文档确认 QMainWindow 支持 nested/tabbed docks 与布局状态保存：[QMainWindow](https://doc.qt.io/qt-6/qmainwindow.html)、[QDockWidget](https://doc.qt.io/qt-6/qdockwidget.html)。
 
-主窗与浮窗采用 QML ApplicationWindow，WorkspaceManager 维护稳定 panel-id 的注册表、标签组与每个窗口的二维分割树。画布、工具条和工具标签组都是叶节点，可在任意面板四边停靠，移走后自动收缩空分支，主窗没有预留空停靠列。浮窗可包含多个分割组，关闭时全部归回主窗。唯一主画布在窗口之间移换父项，保留缩放/平移和异步视口；控件与窗口按 ID 增量维护。布局 v5 保存分割比例、标签和窗口几何，完整验证后恢复，v1–v4 按原位置迁移。屏幕恢复修正越界窗口；布局版本独立于文档版本。设计见 flexible-docking-design.md。最后一轮 Python 使用声明式面板数据经消息队列更新，不能调用 Qt。
+主窗与浮窗采用 QML ApplicationWindow。WorkspaceManager 管理工具标签组、工具条和原生浮窗的二维分割树；垂直工具列共用顶部栏，全部收起按最小高度排列，布局 v6 保存树、图标状态与几何。主窗中的 __canvas 叶是始终保留的文档区域，并非可停靠到工具树的文档；旧 v5 混合画布/工具树迁移时将画布分离。DocumentManager 管理独立 PaintCoreClient 文档、主区/浮窗标签与活动文档；每个 CanvasPane 始终绑定自己的客户端，GUI 公共工具通过活动客户端访问 C ABI，切换只替换 QML 工具上下文而不重建文档。UI 所有权明确保留在 C++，关闭异步停止对应后台线程，退出等待全部停止。WindowDrag 捕获鼠标移动实际 QWindow，取消恢复模型快照；画布与工具有分离的目标集合，当前拖动窗口不在候选中。主窗无文档时保留 #17191C 留空区。设计见 document-workspace-design.md。最后一轮 Python 使用声明式面板数据经消息队列更新，不能调用 Qt。
 
 画布比较：QQuickItem 适合 QML、需遵守 scene graph 线程约束；QOpenGLWidget 适合 Widgets；直接 QRhi 与版本/API 耦合。当前使用 QQuickItem 显示 worker 合成的 CPU 图像，由 Qt scene graph 创建纹理并支持软件后端；尚未接入 Rust GPU 合成。后续 GPU 先读回有界显示瓦片，再优化平台纹理共享。
 

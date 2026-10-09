@@ -26,7 +26,7 @@ Item {
     }
     onWidthChanged: Qt.callLater(refresh)
     onHeightChanged: Qt.callLater(refresh)
-    Component.onCompleted: {ready=true;refresh()}
+    Component.onCompleted: {ready=true;refresh();if(hostId==="main")Workspace.registerWorkspace(root)}
     Component.onDestruction: releaseCanvas()
     Connections {
         target:Workspace
@@ -40,12 +40,15 @@ Item {
         objectName:root.hostId==="main"?"toolStripDockTarget":"emptyDockTarget:"+root.hostId
         anchors.fill:parent;z:-1
         keys:["application/x-drawverse-panel","application/x-drawverse-tool-strip"]
-        onEntered:d=>d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing
-        onPositionChanged:d=>d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing
+        onEntered:d=>d.accepted=root.hostId==="main" && !Workspace.dockingSuppressed && !PaintClient.drawing && (d.x<20 || d.x>root.width-20)
+        onPositionChanged:d=>d.accepted=root.hostId==="main" && !Workspace.dockingSuppressed && !PaintClient.drawing && (d.x<20 || d.x>root.width-20)
         onDropped:d=> {
             if(Workspace.dockingSuppressed || PaintClient.drawing) return
-            const ok=d.formats.indexOf("application/x-drawverse-tool-strip")>=0?Workspace.dockToolStrip(d.getDataAsString("application/x-drawverse-tool-strip")):Workspace.dockPayload(d.getDataAsString("application/x-drawverse-panel"),"main")
+            if(root.hostId!=="main" || d.x>=20 && d.x<=root.width-20)return
+            const side=d.x<20?"left":"right"
+            const ok=d.formats.indexOf("application/x-drawverse-tool-strip")>=0?Workspace.dockToolStrip(d.getDataAsString("application/x-drawverse-tool-strip"),side):Workspace.dockPayload(d.getDataAsString("application/x-drawverse-panel"),side)
             if(ok)d.acceptProposedAction()
         }
     }
+    Rectangle {visible:root.hostId==="main" && Workspace.dragTarget.indexOf("__workspace_")===0;x:Workspace.dragTarget.endsWith("right")?root.width-20:0;width:20;height:root.height;color:"#2423b5ee";border.color:Theme.accent;border.width:1}
 }

@@ -13,10 +13,10 @@ Rectangle {
     property string selected: groupData.active
     property bool collapsed: groupData.collapsed || false
     onGroupDataChanged: { selected=groupData.active; collapsed=groupData.collapsed || false }
-    readonly property int minimumPanelHeight: collapsed ? 8+groupData.panels.length*22 : Workspace.panelDefinition(selected).kind === "layers" ? 250 : Workspace.panelDefinition(selected).kind === "brush-settings" ? 260 : 120
+    readonly property int minimumPanelHeight: collapsed ? (groupData.columnFirst?8:0)+groupData.panels.length*22 : Workspace.panelDefinition(selected).kind === "layers" ? 250 : Workspace.panelDefinition(selected).kind === "brush-settings" ? 260 : 120
     property string dropMode: "merge"
     property string beforePanel: ""
-    color: Theme.surface; border.color: Theme.panelBar; clip: true
+    color: Theme.surface; clip: true
     implicitHeight: collapsed ? minimumPanelHeight : groupData.dockHeight || 320
     onHeightChanged: if(!collapsed) Workspace.updateDockHeight(groupData.id,Math.round(height))
     Connections {
@@ -32,6 +32,11 @@ Rectangle {
         const data=d.getDataAsString("application/x-drawverse-panel")
         if(data.length>1024)return false
         try{return JSON.parse(data).group==="__canvas"}catch(e){return false}
+    }
+    function acceptsDrop(d){
+        if(Workspace.dockingSuppressed || PaintClient.drawing)return false
+        if(d.formats.indexOf("application/x-drawverse-tool-strip")>=0)return root.groupData.id!=="__toolstrip"
+        try {const data=JSON.parse(d.getDataAsString("application/x-drawverse-panel"));return data.group!=="__canvas" && (data.group!==root.groupData.id || !data.whole && d.y<28 && root.groupData.panels.length>1)}catch(e){return false}
     }
     function locateDrop(x,y,special) {
         beforePanel=""
@@ -54,7 +59,8 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent; spacing: 0
         Rectangle {
-            Layout.fillWidth: true; implicitHeight: 8; color: Theme.strip
+            objectName:"columnHeader:"+root.groupData.id
+            Layout.fillWidth: true; implicitHeight:8;visible:root.flyout || root.groupData.columnFirst;color:Theme.strip
             MouseArea {
                 objectName: "groupGrip:"+root.groupData.id
                 enabled: !PaintClient.drawing
@@ -73,19 +79,15 @@ Rectangle {
                 anchors.right: parent.right; height: parent.height
                 IconButton {
                     objectName:"dockCollapse:"+root.groupData.location
-                    visible:!root.flyout && (root.groupData.location==="left" || root.groupData.location==="right")
+                    visible:!root.flyout
                     width:visible?16:0;height:8;padding:1;glyph:"collapse";tooltip:"折叠为图标"
-                    onClicked:if(root.groupData.location==="left")Workspace.leftCollapsed=true;else Workspace.rightCollapsed=true
+                    onClicked:Workspace.setColumnCollapsed(root.groupData.id,true)
                 }
                 IconButton {
                     objectName: "groupCollapse:"+root.groupData.id
                     width: 16; height: 8; padding: 1; glyph: root.collapsed ? "expand" : "collapse"
                     tooltip: root.collapsed ? "展开面板组" : "折叠为标签"
                     onClicked: { if(root.flyout) root.dismissRequested(); else Workspace.setGroupCollapsed(root.groupData.id,!root.collapsed) }
-                }
-                IconButton {
-                    width: 16; height: 8; padding: 1; glyph: "close"; tooltip: "关闭面板组"
-                    onClicked: Qt.callLater(() => Workspace.hidePanel(root.groupData.id))
                 }
             }
         }
@@ -174,11 +176,11 @@ Rectangle {
     }
     DropArea {
         id: drop; anchors.fill: parent; keys: ["application/x-drawverse-panel","application/x-drawverse-tool-strip"]
-        onEntered: d => { d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing; root.locateDrop(d.x,d.y,root.specialDrop(d)) }
-        onPositionChanged: d => { d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing; root.locateDrop(d.x,d.y,root.specialDrop(d)) }
+        onEntered: d => { d.accepted=root.acceptsDrop(d); root.locateDrop(d.x,d.y,root.specialDrop(d)) }
+        onPositionChanged: d => { d.accepted=root.acceptsDrop(d); root.locateDrop(d.x,d.y,root.specialDrop(d)) }
         onDropped: d => {
             root.locateDrop(d.x,d.y,root.specialDrop(d))
-            if(Workspace.dockingSuppressed || PaintClient.drawing)return
+            if(!root.acceptsDrop(d))return
             const tools=d.formats.indexOf("application/x-drawverse-tool-strip")>=0
             const mode=tools && root.dropMode==="merge"?(d.x<root.width/2?"left":"right"):root.dropMode
             const ok=tools?Workspace.dockToolStrip(d.getDataAsString("application/x-drawverse-tool-strip"),root.groupData.location,root.groupData.id,mode):Workspace.dockPayload(d.getDataAsString("application/x-drawverse-panel"),root.groupData.location,root.groupData.id,root.dropMode,root.beforePanel)
@@ -186,10 +188,11 @@ Rectangle {
         }
     }
     Rectangle {
-        objectName: "dockPreview:"+root.groupData.id; visible: drop.containsDrag
-        x: root.dropMode==="right" ? root.width*.65 : 1; width: root.dropMode==="left" || root.dropMode==="right" ? root.width*.35 : root.width-2
-        y: root.dropMode==="after" ? root.height*0.65 : root.dropMode==="merge" ? 8 : 0
-        height: root.dropMode==="merge" ? root.height-9 : root.dropMode==="left" || root.dropMode==="right" ? root.height : root.height*.35
+        objectName: "dockPreview:"+root.groupData.id; visible: drop.containsDrag || Workspace.dragTarget===root.groupData.id
+        property string mode:Workspace.dragTarget===root.groupData.id?Workspace.dragPlacement:root.dropMode
+        x: mode==="right" ? root.width*.65 : 1; width: mode==="left" || mode==="right" ? root.width*.35 : root.width-2
+        y: mode==="after" ? root.height*0.65 : mode==="merge" ? 8 : 0
+        height: mode==="merge" ? root.height-9 : mode==="left" || mode==="right" ? root.height : root.height*.35
         color: "#2423b5ee"; border.color: Theme.accent; border.width: 2
         Text { anchors.centerIn: parent; color: "#e6f6ff"; font.pixelSize: 11; text: root.dropMode==="before" ? "停靠到上方" : root.dropMode==="after" ? "停靠到下方" : root.dropMode==="left"?"停靠到左侧":root.dropMode==="right"?"停靠到右侧":root.beforePanel ? "插入标签" : "合并为标签" }
     }

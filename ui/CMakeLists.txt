@@ -2,6 +2,8 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Test)
 set(CMAKE_AUTOMOC ON)
 
 add_library(drawverse_ui STATIC
+    src/WindowDrag.h src/WindowDrag.cpp
+    src/DocumentManager.h src/DocumentManager.cpp
     src/DockTree.h src/DockTree.cpp
     src/UiScale.h
     src/MenuSurface.h src/MenuSurface.cpp
@@ -18,7 +20,7 @@ target_link_libraries(drawverse_ui PUBLIC Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick
 
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES qml/qmldir qml/Theme.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml
-          qml/CanvasPane.qml qml/DockWorkspace.qml qml/DockTile.qml qml/DockDivider.qml
+          qml/CanvasPane.qml qml/DocumentArea.qml qml/DocumentWindow.qml qml/DockWorkspace.qml qml/DockTile.qml qml/DockDivider.qml
           qml/SideMenuWindow.qml qml/FloatingPanel.qml qml/ToolStrip.qml qml/PanelContent.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/assets/logo.png qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/LayerLock.qml
           qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/assets/transparency.png)
 
@@ -34,6 +36,7 @@ add_test(NAME qt_ui_tests COMMAND qt_ui_tests -o "${CMAKE_BINARY_DIR}/qt-ui-test
 set_tests_properties(qt_ui_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     floatingCanvasAndToolsDockAcrossNativeWindows
+    panelColumnsUseOneHeaderAndDragTheActualWindow
     uiScaleAppliesToMainPanelAndToolWindowsWithoutChangingLayout
     menusReopenWithoutGhostsAndFloatBesidePanels
     layerControlsCommitOnceAndWorkInFloatingPanels moveToolMouseKeyboardAndPositionLock

@@ -47,6 +47,10 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 画布、工具条和工具标签组共用主窗及原生浮窗的二维分割树，四边停靠、标签合并/排序和空分支收缩；移走最后一个面板不留固定列。画布为唯一可移换父项的实例，保留异步绘画、缩放/平移、选区与压感输入；工具条可在任意面板两侧放置。布局 v5 保存比例和窗口几何，v1–v4 迁移保留既有内容。设计与验收见 flexible-docking-design.md / flexible-docking-validation.md。仅 UI 层修改，Python 插件仍最后。
 
 
+### 7i. 多文档工作区与面板列
+
+多个独立文档通过已有 PaintCoreClient / C ABI session 实施，主区与浮窗标签保留各自绘画/历史/文件任务和视口。画布/工具互拒，上边缘归位，#17191C 留空文档区；工具列顶部唯一导航栏、整体图标折叠、1px 分隔线与实际浮窗拖动。布局 v6 迁移旧工具布局；关闭/退出处理全部未保存文档。设计与验收见 document-workspace-design.md / document-workspace-validation.md；Rust/ABI 未改，Python 最后。
+
 ### 8a. 几何选区
 
 矩形/椭圆、组合/反选、文档坐标绘画限制、统一历史、ABI 1.8、ORA v4、Qt 鼠标/数位笔/浮动工具条/高 DPI 已验证。无选区不创建轮廓绘制项，笔刷走专用快路径；600点同环境基准保持原有CPU与交互更新水平。见 selection-design.md / selection-validation.md。后续推进一般变换、核心高级笔刷、色彩/GPU、PSD、自有格式及跨平台构建；插件最后。

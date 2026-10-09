@@ -19,7 +19,7 @@ Item {
         else dropMode=x<width/2?"left":"right"
     }
     Item {id:canvasHost;anchors.fill:parent;visible:root.isCanvas}
-    Component.onCompleted:if(isCanvas)workspace.canvasPane.attach(canvasHost)
+    Component.onCompleted:{if(isCanvas)workspace.canvasPane.attach(canvasHost);else Workspace.registerTarget(layoutData.id,root)}
     Loader {
         anchors.fill:parent;active:!root.isCanvas
         sourceComponent:root.isTools?tools:root.layoutData.rail?rail:panel
@@ -33,16 +33,16 @@ Item {
         id:rail
         Rectangle {
             color:Theme.panelBar
-            IconButton {objectName:"dockCollapse:"+root.layoutData.location;width:28;height:10;padding:2;glyph:"expand";tooltip:"展开面板列";onClicked:if(root.layoutData.location==="left")Workspace.leftCollapsed=false;else Workspace.rightCollapsed=false}
+            IconButton {objectName:"dockCollapse:"+root.layoutData.location;visible:root.layoutData.columnFirst;width:28;height:10;padding:2;glyph:"expand";tooltip:"展开面板列";onClicked:Workspace.setColumnCollapsed(root.layoutData.id,false)}
             Column {
-                y:12;width:parent.width
+                y:root.layoutData.columnFirst?12:0;width:parent.width
                 Repeater {
                     model:root.layoutData.panels
                     IconButton {
                         required property string modelData
                         objectName:"railPanel:"+modelData;width:28;height:28;padding:7
                         glyph:Workspace.panelDefinition(modelData).kind;tooltip:Workspace.panelDefinition(modelData).title
-                        onClicked:{Workspace.setActive(root.layoutData.id,modelData);peek.open()}
+                        onClicked:{Workspace.setActive(root.layoutData.id,modelData);if(root.layoutData.location==="floating")Workspace.setColumnCollapsed(root.layoutData.id,false);else peek.open()}
                     }
                 }
             }
@@ -57,7 +57,7 @@ Item {
         }
     }
     DropArea {
-        id:drop;anchors.fill:parent;enabled:root.isCanvas || root.isTools || root.layoutData.rail
+        id:drop;anchors.fill:parent;enabled:!root.isCanvas && (root.isTools || root.layoutData.rail)
         keys:["application/x-drawverse-panel","application/x-drawverse-tool-strip"]
         onEntered:d=>{d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing;root.locateDrop(d.x,d.y)}
         onPositionChanged:d=>{d.accepted=!Workspace.dockingSuppressed && !PaintClient.drawing;root.locateDrop(d.x,d.y)}
@@ -69,10 +69,11 @@ Item {
         }
     }
     Rectangle {
-        objectName:"dockPreview:"+root.layoutData.id;visible:drop.containsDrag && !Workspace.dockingSuppressed
-        x:root.dropMode==="right"?root.width*.65:0;y:root.dropMode==="bottom"?root.height*.65:0
-        width:root.dropMode==="left" || root.dropMode==="right"?root.width*.35:root.width
-        height:root.dropMode==="top" || root.dropMode==="bottom"?root.height*.35:root.height
+        objectName:"dockPreview:"+root.layoutData.id;visible:(drop.containsDrag || Workspace.dragTarget===root.layoutData.id) && !Workspace.dockingSuppressed
+        property string mode:Workspace.dragTarget===root.layoutData.id?Workspace.dragPlacement:root.dropMode
+        x:mode==="right"?root.width*.65:0;y:mode==="bottom" || mode==="after"?root.height*.65:0
+        width:mode==="left" || mode==="right"?root.width*.35:root.width
+        height:mode==="top" || mode==="bottom" || mode==="before" || mode==="after"?root.height*.35:root.height
         color:"#2423b5ee";border.color:Theme.accent;border.width:2
     }
 }

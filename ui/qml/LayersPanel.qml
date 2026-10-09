@@ -102,10 +102,6 @@ ColumnLayout {
     }
     RowLayout {
         visible:root.selected.mask;Layout.fillWidth:true
-        Label {text:"蒙版";color:Theme.muted;font.pixelSize:10}
-        Button {objectName:"maskPaintBlack";text:"黑";implicitWidth:28;implicitHeight:25;onClicked:PaintClient.setBrushColor("#000000");ToolTip.visible:hovered;ToolTip.text:"黑色隐藏"}
-        Button {objectName:"maskPaintWhite";text:"白";implicitWidth:28;implicitHeight:25;onClicked:PaintClient.setBrushColor("#ffffff");ToolTip.visible:hovered;ToolTip.text:"白色恢复显示"}
-        Item {Layout.fillWidth:true}
         Label {text:"密度";color:Theme.muted;font.pixelSize:10}
         LayerPercent {objectName:"maskDensity";Layout.preferredWidth:73;fraction:root.selected.opacity;enabled:root.unlocked;onCommitted:fraction=>PaintClient.setLayerProperties(root.selected.id,root.selected.visible,fraction)}
     }
