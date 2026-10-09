@@ -8,24 +8,7 @@ find_program(DRAWVERSE_CARGO_EXECUTABLE NAMES cargo REQUIRED)
 find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
 find_package(Threads REQUIRED)
 
-# Some localized MSVC installations emit UTF-8 while CMake's compiler detection
-# decodes the prefix using the ANSI code page. Ninja then loses all header deps.
-# Probe the actual bytes instead of hard-coding a compiler language or code page.
-if(MSVC AND CMAKE_GENERATOR MATCHES "Ninja")
-    set(include_probe "${CMAKE_BINARY_DIR}/CMakeFiles/drawverse-includes-probe.c")
-    file(WRITE "${include_probe}" "#include <stddef.h>\nint drawverse_include_probe;\n")
-    execute_process(COMMAND "${CMAKE_C_COMPILER}" /nologo /showIncludes /Zs /utf-8 "${include_probe}"
-        RESULT_VARIABLE include_result OUTPUT_VARIABLE include_output ERROR_VARIABLE include_error
-        ENCODING NONE)
-    if(NOT include_result EQUAL 0)
-        message(FATAL_ERROR "MSVC include dependency probe failed: ${include_error}")
-    endif()
-    string(REGEX MATCH "(^|\n)([^\r\n]*: +)([A-Za-z]:[\\\\/][^\r\n]*stddef[.]h)" include_line "${include_output}")
-    if(NOT include_line)
-        message(FATAL_ERROR "Cannot detect MSVC /showIncludes prefix; refusing an unsafe incremental build")
-    endif()
-    set(CMAKE_CL_SHOWINCLUDES_PREFIX "${CMAKE_MATCH_2}")
-endif()
+include(cmake/MsvcNinjaDependencies.cmake)
 set(DRAWVERSE_CARGO_TARGET_DIR "${CMAKE_SOURCE_DIR}/core/target" CACHE PATH "Rust build output directory")
 
 if(WIN32 AND NOT MSVC)

@@ -99,6 +99,8 @@ Windows 产物为 core/target/release/paint_ffi.lib（staticlib）、paint_ffi.d
 
 可传 `python tools/check.py --cargo <路径> --cmake <路径>`；rustc/链接器仍须有效 PATH。CMake 可配置 DRAWVERSE_CARGO_EXECUTABLE 与 DRAWVERSE_CARGO_TARGET_DIR。保持旧 build tree 的 generator 不变。
 
+CLion 从仓库根目录的 `CMakeLists.txt` 加载，不能单独加载 `ui`。Windows 工具链选 Visual Studio、架构 `amd64`，C/C++ 编译器应为 `Hostx64/x64/cl.exe`；CMake profile 也须选择该工具链。UI 配置添加 `-DDRAWVERSE_BUILD_UI=ON` 与 `-DCMAKE_PREFIX_PATH=<Qt MSVC x64 SDK>`。从 MinGW/x86/ARM64 切换后执行 Reset Cache and Reload Project。中文 MSVC 在无终端 IDE 中的依赖输出由项目统一处理，见 [CLion 构建修复](docs/build-reproducibility.md)。
+
 后续模块先设计再实现，并补对应 Rust / Qt Test / pytest；禁止空实现或假成功。暂存盘设置、图层控制、隔离图层组与透明棋盘格已完成；下一模块继续深化文档模型（选区与变换），之后色彩/GPU/PSD；插件最后完成。
 
 
