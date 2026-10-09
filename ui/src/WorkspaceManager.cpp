@@ -11,11 +11,13 @@
 #include <QSettings>
 #include <QUuid>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QSet>
 #include <QPainter>
 #include <QPixmap>
 #include <QDropEvent>
 #include <algorithm>
+#include <bit>
 #ifdef Q_OS_WIN
 #include <QtCore/qt_windows.h>
 #endif
@@ -24,6 +26,29 @@ namespace { QString newId() { return QUuid::createUuid().toString(QUuid::Without
 QRect WorkspaceManager::availableScreenGeometry(QWindow *window) const {
     auto *screen=window?window->screen():QGuiApplication::primaryScreen();
     return screen?screen->availableGeometry():QRect{};
+}
+void WorkspaceManager::watchMenuWindow(QWindow *window,bool visible) {
+    if(visible) m_menuWindow=window;
+    else if(m_menuWindow==window) m_menuWindow.clear();
+}
+bool WorkspaceManager::setMenuBarBlur(QWindow *window,bool enabled) {
+#ifdef Q_OS_WIN
+    if(!window || QGuiApplication::platformName()!=QStringLiteral("windows")) return false;
+    // The Windows compositor blurs live content behind the alpha surface.
+    // Opaque workspace pixels cover the effect; only the menu bar reveals it.
+    struct AccentPolicy { int state,flags; DWORD gradient; int animation; };
+    struct CompositionData { int attribute; void *data; SIZE_T size; };
+    using SetComposition=BOOL(WINAPI *)(HWND,const CompositionData *);
+    const auto module=GetModuleHandleW(L"user32.dll");
+    const auto apply=std::bit_cast<SetComposition>(GetProcAddress(module,"SetWindowCompositionAttribute"));
+    if(!apply) return false;
+    AccentPolicy accent{enabled?3:0,0,0,0}; // ACCENT_ENABLE_BLURBEHIND / ACCENT_DISABLED
+    CompositionData data{19,&accent,sizeof(accent)}; // WCA_ACCENT_POLICY
+    return apply(reinterpret_cast<HWND>(window->winId()),&data)!=FALSE;
+#else
+    Q_UNUSED(window); Q_UNUSED(enabled);
+    return false;
+#endif
 }
 WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent) : QObject(parent), m_settingsFile(settingsFile) {
     qApp->installEventFilter(this);
@@ -225,6 +250,13 @@ void WorkspaceManager::updateToolStripPosition(int x,int y) {
 void WorkspaceManager::floatToolStrip(int x,int y){updateToolStripPosition(x,y);if(!m_toolsFloating){m_toolsFloating=true;emit toolStripChanged();}}
 bool WorkspaceManager::dockToolStrip(const QString &data){if(data!="drawverse-tools-v1")return false;if(m_toolsFloating){m_toolsFloating=false;emit toolStripChanged();}return true;}
 bool WorkspaceManager::eventFilter(QObject *,QEvent *event) {
+    if(m_menuWindow && m_menuWindow->isVisible() && event->type()==QEvent::MouseButtonPress) {
+        const auto *press=static_cast<QMouseEvent*>(event);
+        if(!m_menuWindow->geometry().contains(press->globalPosition().toPoint())) {
+            m_menuWindow->close();
+            return true;
+        }
+    }
     if(m_dragActive && event->type()==QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key()==Qt::Key_Escape) m_dragCancelled=true;
     if(event->type()==QEvent::DragEnter || event->type()==QEvent::DragMove || event->type()==QEvent::Drop) {
         const auto *drop=static_cast<QDropEvent*>(event);

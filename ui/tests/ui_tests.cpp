@@ -29,6 +29,14 @@
 #include <limits>
 
 namespace {
+class BlurTestBackdrop final : public QQuickPaintedItem {
+public:
+    explicit BlurTestBackdrop(QQuickItem *parent):QQuickPaintedItem(parent) { setOpaquePainting(true); }
+    void paint(QPainter *painter) override {
+        for(int x=0;x<width();x+=80)
+            painter->fillRect(QRectF(x,0,80,height()),(x/80)%2?QColor(230,40,210):QColor(30,230,60));
+    }
+};
 QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
     if(root->objectName()==name) return root;
     for(auto *item:root->childItems()) if(auto *found=findVisualItem(item,name)) return found;
@@ -39,6 +47,17 @@ QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
 class UiTests final : public QObject {
     Q_OBJECT
 private slots:
+    void closingOlderPopupDoesNotUntrackNewPopup() {
+        QTemporaryDir temp; WorkspaceManager workspace(temp.filePath("layout.ini"));
+        QWindow older,newer; older.setGeometry(10,10,60,60); newer.setGeometry(200,10,60,60);
+        older.show(); newer.show(); QTRY_VERIFY(older.isVisible()); QTRY_VERIFY(newer.isVisible());
+        workspace.watchMenuWindow(&older,true);
+        workspace.watchMenuWindow(&newer,true);
+        workspace.watchMenuWindow(&older,false);
+        QTest::mouseClick(&older,Qt::LeftButton,Qt::NoModifier,QPoint(5,5));
+        QTRY_VERIFY(!newer.isVisible()); QVERIFY(older.isVisible());
+        workspace.watchMenuWindow(&newer,false); older.close();
+    }
     void menuSurfaceKeepsOnlyTopCornersRoundAndFlatTintAt50Percent() {
         MenuSurface surface; surface.setWidth(60); surface.setHeight(28);
         QColor tint("#202226"); tint.setAlphaF(.5); surface.setTint(tint); surface.setTopCornersOnly(true);
@@ -66,6 +85,17 @@ private slots:
         auto *bar=qobject_cast<MenuSurface*>(findVisualItem(window->contentItem(),"menuBarGlassBackground"));
         QVERIFY(bar); QVERIFY(bar->tint().alpha()>0 && bar->tint().alpha()<255); QCOMPARE(bar->radius(),qreal(10));
         QCOMPARE(bar->tint().name(),QString("#202226")); QVERIFY(std::abs(bar->tint().alphaF()-.5)<.001); QVERIFY(bar->topCornersOnly());
+        const auto barPixel=[&] {
+            const auto image=window->grabWindow();
+            const auto point=bar->mapToScene({bar->width()/2,bar->height()/2})*window->devicePixelRatio();
+            return image.pixelColor(point.toPoint());
+        };
+        auto *body=findVisualItem(window->contentItem(),"opaqueWorkspaceBackground"); QVERIFY(body);
+        QCOMPARE(body->mapToScene({0,0}).y(),bar->height());
+        if(window->grabWindow().hasAlphaChannel()) QTRY_COMPARE(barPixel().alpha(),128);
+        else QTRY_COMPARE(barPixel(),QColor(16,17,19)); // Software grab is RGB32 on a black clear surface.
+        QCOMPARE(window->grabWindow().pixelColor(qRound(window->width()*window->devicePixelRatio()/2),
+                 qRound(60*window->devicePixelRatio())).alpha(),255);
         auto *entry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:工作区")); QVERIFY(entry);
         auto *focus=qobject_cast<QQuickItem*>(entry->property("background").value<QObject*>()); QVERIFY(focus);
         QCOMPARE(focus->property("radius").toReal(),qreal(0));
@@ -74,13 +104,14 @@ private slots:
         QTRY_VERIFY(menu->property("opened").toBool());
         QCOMPARE(QGuiApplication::allWindows().size(),1);
         auto *glass=qobject_cast<MenuSurface*>(menu->property("background").value<QObject*>()); QVERIFY(glass);
-        QCOMPARE(glass->radius(),qreal(10)); QVERIFY(glass->tint().alpha()<255);
-        QCOMPARE(glass->tint().name(),QString("#1c1e21")); QVERIFY(std::abs(glass->tint().alphaF()-.75)<.001); QVERIFY(!glass->topCornersOnly());
+        QCOMPARE(glass->radius(),qreal(0)); QCOMPARE(glass->tint().alpha(),255);
+        QCOMPARE(glass->tint().name(),QString("#1c1e21")); QVERIFY(!glass->topCornersOnly());
         auto *list=qobject_cast<QQuickItem*>(menu->property("contentItem").value<QObject*>()); QVERIFY(list);
         auto *row=findVisualItem(list,QStringLiteral("glassMenuItem:自定义面板…")); QVERIFY(row);
         auto *label=qobject_cast<QQuickItem*>(row->property("contentItem").value<QObject*>()); QVERIFY(label);
         QCOMPARE(row->property("topPadding").toReal(),qreal(3)); QCOMPARE(row->property("bottomPadding").toReal(),qreal(3));
         QCOMPARE(row->implicitHeight()-label->implicitHeight(),qreal(6));
+        QCOMPARE(row->property("background").value<QObject*>()->property("radius").toReal(),qreal(0));
         const auto preview=qEnvironmentVariable("DRAWVERSE_MENU_PREVIEW");
         if(!preview.isEmpty()) { QTest::qWait(100); QVERIFY(window->grabWindow().save(preview)); }
         QTest::keyClick(window,Qt::Key_Escape); QTRY_VERIFY(!menu->property("visible").toBool());
@@ -91,14 +122,22 @@ private slots:
         };
         QVERIFY(QMetaObject::invokeMethod(menu,"open")); QTRY_VERIFY(menu->property("opened").toBool());
         QTest::qWait(30); const auto firstMenu=menuImage(); QVERIFY(!firstMenu.isNull());
+        QCOMPARE(firstMenu.pixelColor(0,0).alpha(),255);
+        QCOMPARE(firstMenu.pixelColor(firstMenu.width()-1,firstMenu.height()-1).alpha(),255);
+        auto *options=findVisualItem(window->contentItem(),"brushOptionsBar"); QVERIFY(options);
+        options->setVisible(false); QTRY_COMPARE(menuImage(),firstMenu);
+        options->setVisible(true); QTRY_COMPARE(menuImage(),firstMenu);
         for(int cycle=0;cycle<6;++cycle) {
             QVERIFY(QMetaObject::invokeMethod(menu,"close")); QTRY_VERIFY(!menu->property("visible").toBool());
             QVERIFY(QMetaObject::invokeMethod(menu,"open")); QTRY_VERIFY(menu->property("opened").toBool());
             QTRY_COMPARE(menuImage(),firstMenu); QCOMPARE(bar->radius(),qreal(10));
         }
         QVERIFY(QMetaObject::invokeMethod(menu,"close")); QTRY_VERIFY(!menu->property("visible").toBool());
+        const auto normalGeometry=window->geometry();
         window->showMaximized(); QTRY_COMPARE(bar->radius(),qreal(0));
+        QTRY_COMPARE(window->geometry(),window->screen()->availableGeometry());
         window->showNormal(); QTRY_COMPARE(bar->radius(),qreal(10));
+        QTRY_COMPARE(window->geometry(),normalGeometry);
         auto *windowEntry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:窗口")); QVERIFY(windowEntry);
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,windowEntry->mapToScene({windowEntry->width()/2,windowEntry->height()/2}).toPoint());
         auto *windowMenu=window->findChild<QObject*>("windowMenu"); QVERIFY(windowMenu); QTRY_VERIFY(windowMenu->property("opened").toBool());
@@ -122,10 +161,49 @@ private slots:
         QTRY_VERIFY(host->isActive());
         QTRY_VERIFY(panelMenu->property("activeFocus").toBool());
         auto *floatingGlass=qobject_cast<MenuSurface*>(panelMenu->property("background").value<QObject*>()); QVERIFY(floatingGlass);
+        QCOMPARE(floatingGlass->radius(),qreal(0)); QCOMPARE(floatingGlass->tint().alpha(),255);
+        QVERIFY(panelMenu->setProperty("currentIndex",-1));
+        const auto sideFrame=[](QQuickWindow *popup) {
+            auto frame=popup->grabWindow();
+            // Offscreen RGB32 readback at fractional DPR has an unpainted
+            // rounding fringe of up to one logical pixel on the right/bottom.
+            if(QGuiApplication::platformName()==QStringLiteral("offscreen") &&
+               !frame.hasAlphaChannel() && std::fmod(popup->devicePixelRatio(),1)!=0) {
+                const int fringe=static_cast<int>(std::ceil(popup->devicePixelRatio()));
+                frame=frame.copy(0,0,frame.width()-fringe,frame.height()-fringe);
+            }
+            return frame;
+        };
+        QTest::qWait(100); const auto firstSide=sideFrame(host); QVERIFY(!firstSide.isNull());
+        QCOMPARE(firstSide.pixelColor(0,0).alpha(),255);
+        QCOMPARE(firstSide.pixelColor(firstSide.width()-1,firstSide.height()-1).alpha(),255);
         if(!preview.isEmpty()) { QTest::qWait(30); QVERIFY(host->grabWindow().save(preview+".side.png")); }
         QTest::keyClick(host,Qt::Key_Down); QTest::keyClick(host,Qt::Key_Escape);
         QTRY_VERIFY(!panelMenu->property("visible").toBool());
         QTRY_COMPARE(QGuiApplication::allWindows().size(),2);
+        for(int cycle=0;cycle<3;++cycle) {
+            QTest::mouseClick(floating,Qt::LeftButton,Qt::NoModifier,button->mapToScene({button->width()/2,button->height()/2}).toPoint());
+            QTRY_VERIFY(panelMenu->property("opened").toBool());
+            host=qobject_cast<QQuickWindow*>(panelMenu->property("sideWindow").value<QObject*>()); QVERIFY(host);
+            QVERIFY(panelMenu->setProperty("currentIndex",-1));
+            if(!preview.isEmpty()) {
+                QVERIFY(firstSide.save(preview+".side-expected.png"));
+                QVERIFY(sideFrame(host).save(preview+".side-reopened.png"));
+            }
+            const bool sameFrame=QTest::qWaitFor([&]{return sideFrame(host)==firstSide;},5000);
+            if(!sameFrame) {
+                firstSide.save("menu-side-expected.png"); sideFrame(host).save("menu-side-reopened.png");
+                qInfo()<<"Side dimensions"<<firstSide.size()<<sideFrame(host).size();
+            }
+            QVERIFY(sameFrame);
+            // Both owner-panel space and the main canvas dismiss the popup.
+            auto *outside=cycle%2==0?floating:window;
+            const QPoint blank=outside==floating?QPoint(5,250):QPoint(500,500);
+            QTest::mouseClick(outside,Qt::LeftButton,Qt::NoModifier,blank);
+            QTRY_VERIFY(!panelMenu->property("visible").toBool());
+            QTRY_COMPARE(QGuiApplication::allWindows().size(),2);
+            QCOMPARE(client.modified(),false);
+        }
         floating->setX(floating->screen()->availableGeometry().right()-floating->width());
         QTest::mouseClick(floating,Qt::LeftButton,Qt::NoModifier,button->mapToScene({button->width()/2,button->height()/2}).toPoint());
         QTRY_VERIFY(panelMenu->property("opened").toBool());
@@ -135,6 +213,44 @@ private slots:
         QTest::mouseClick(host,Qt::LeftButton,Qt::NoModifier,returnItem->mapToScene({returnItem->width()/2,returnItem->height()/2}).toPoint());
         QTRY_COMPARE(workspace.floatingGroups().size(),0); QTRY_COMPARE(QGuiApplication::allWindows().size(),1);
         QCOMPARE(warnings,QStringList()); QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
+    }
+    void nativeMenuBarBlursLiveBackdropWithoutMenuSnapshots() {
+        QTemporaryDir temp; PaintCoreClient client(nullptr,temp.filePath("storage.ini"));
+        WorkspaceManager workspace(temp.filePath("layout.ini")); QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client); engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.load(QUrl("qrc:/qml/Main.qml")); QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); QVERIFY(window); QTRY_VERIFY(client.ready());
+        if(QGuiApplication::platformName()!=QStringLiteral("windows")) {
+            QVERIFY(!window->property("menuBarBlurActive").toBool());
+            QVERIFY(!workspace.setMenuBarBlur(window,true));
+        } else {
+            QVERIFY(window->property("menuBarBlurActive").toBool());
+            QQuickWindow backdrop;
+            backdrop.setFlags(Qt::Window|Qt::FramelessWindowHint); backdrop.setColor(Qt::black);
+            backdrop.setGeometry(window->geometry());
+            BlurTestBackdrop stripes(backdrop.contentItem()); stripes.setSize(backdrop.size());
+            backdrop.show(); backdrop.raise(); window->raise(); window->requestActivate(); QTRY_VERIFY(window->isActive());
+            const auto capture=[&] {
+                QTest::qWait(300);
+                return window->screen()->grabWindow(0,window->x()+500,window->y()+8,320,12).toImage();
+            };
+            const auto sharpestEdge=[](const QImage &image) {
+                int edge=0; const int row=image.height()/2;
+                for(int x=1;x<image.width();++x) {
+                    const auto a=image.pixelColor(x-1,row),b=image.pixelColor(x,row);
+                    edge=std::max(edge,std::abs(a.red()-b.red())+std::abs(a.green()-b.green())+std::abs(a.blue()-b.blue()));
+                }
+                return edge;
+            };
+            QVERIFY(workspace.setMenuBarBlur(window,false)); const auto sharp=capture(); QVERIFY(!sharp.isNull());
+            QVERIFY(workspace.setMenuBarBlur(window,true)); const auto blurred=capture(); QVERIFY(!blurred.isNull());
+            const auto preview=qEnvironmentVariable("DRAWVERSE_MENU_PREVIEW");
+            if(!preview.isEmpty()) { QVERIFY(sharp.save(preview+".sharp.png")); QVERIFY(blurred.save(preview+".blur.png")); }
+            const auto evidence=QString("Sharp edge=%1, blurred edge=%2").arg(sharpestEdge(sharp)).arg(sharpestEdge(blurred));
+            QVERIFY2(sharpestEdge(sharp)>100,qPrintable(evidence));
+            QVERIFY2(sharpestEdge(blurred)<sharpestEdge(sharp)/2,qPrintable(evidence));
+        }
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
     }
     void uiScaleAppliesToMainPanelAndToolWindowsWithoutChangingLayout() {
         QTemporaryDir temp;
@@ -1071,6 +1187,7 @@ private slots:
 };
 int main(int argc,char **argv) {
     configureUiScale();
+    QQuickWindow::setDefaultAlphaBuffer(true);
 #ifdef Q_OS_WIN
     // Offscreen does not use the Windows font database. Use installed system fonts.
     if (qEnvironmentVariable("QT_QPA_PLATFORM") == "offscreen")

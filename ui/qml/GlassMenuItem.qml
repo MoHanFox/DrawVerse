@@ -12,7 +12,7 @@ MenuItem {
     background: Rectangle {
         implicitWidth: 200
         implicitHeight: 0
-        radius: 6
+        radius: 0
         color: control.down ? Theme.selected : control.highlighted ? Theme.hover : "transparent"
     }
 }

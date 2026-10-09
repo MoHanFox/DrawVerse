@@ -18,7 +18,7 @@ QtObject {
     readonly property int documentTabRadius: 5
     readonly property color hover: "#303237"
     readonly property color disabled: "#5c6066"
-    readonly property color menuGlass: Qt.rgba(surface.r,surface.g,surface.b,.75)
+    readonly property color menuGlass: surface
     readonly property color menuBarGlass: Qt.rgba(strip.r,strip.g,strip.b,.5)
     readonly property int menuRadius: 10
 }

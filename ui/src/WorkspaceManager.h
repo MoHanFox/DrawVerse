@@ -3,6 +3,7 @@
 #include <QVariantList>
 #include <QHash>
 #include <QRect>
+#include <QPointer>
 class QWindow;
 
 class WorkspaceManager final : public QObject {
@@ -22,6 +23,8 @@ class WorkspaceManager final : public QObject {
     Q_PROPERTY(int toolStripY READ toolStripY NOTIFY toolStripChanged)
 public:
     Q_INVOKABLE QRect availableScreenGeometry(QWindow *window) const;
+    Q_INVOKABLE void watchMenuWindow(QWindow *window, bool visible);
+    Q_INVOKABLE bool setMenuBarBlur(QWindow *window, bool enabled);
     explicit WorkspaceManager(const QString &settingsFile = {}, QObject *parent = nullptr);
     QVariantList leftGroups() const { return groupsAt("left"); }
     QVariantList rightGroups() const { return groupsAt("right"); }
@@ -96,4 +99,5 @@ private:
     int m_uiRevision = 0;
     bool m_toolsFloating = false;
     QPoint m_toolPosition{100,100};
+    QPointer<QWindow> m_menuWindow;
 };

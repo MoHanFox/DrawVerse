@@ -12,12 +12,23 @@ ApplicationWindow {
     visible: true
     flags: Qt.Window | Qt.FramelessWindowHint
     width: 1480; height: 780; minimumWidth: 980; minimumHeight: 640
-    x: Screen.virtualX+Math.max(16,(Screen.width-width)/2)
-    y: Screen.virtualY+Math.max(16,(Screen.height-height)/3)
     title: "DrawVerse · "+PaintClient.documentName+(PaintClient.modified ? " *" : "")
     color: "transparent"
     readonly property int cornerRadius: visibility===Window.Maximized ? 0 : Theme.windowRadius
-    background: Rectangle {color:Theme.background;radius:root.cornerRadius}
+    background: Item {
+        // Keep the translucent menu bar clear of the opaque workspace backing.
+        Rectangle {
+            objectName: "opaqueWorkspaceBackground"
+            y: root.menuBar.height
+            width: parent.width; height: parent.height-y
+            color: Theme.background; radius: root.cornerRadius
+        }
+        Rectangle {
+            y: root.menuBar.height
+            width: parent.width; height: root.cornerRadius
+            color: Theme.background
+        }
+    }
     font.family: Qt.platform.os === "windows" ? "Microsoft YaHei UI" : "sans-serif"
     font.pixelSize: 10
     palette.window: Theme.surface
@@ -50,7 +61,14 @@ ApplicationWindow {
             floatingWindows[id].visible=false; floatingWindows[id].destroy(); delete floatingWindows[id]
         }
     }
-    Component.onCompleted: {syncFloating();syncTools()}
+    property bool menuBarBlurActive: false
+    Component.onCompleted: {
+        // Set initial placement once; live size bindings move maximized windows.
+        x=Screen.virtualX+Math.max(16,(Screen.width-width)/2)
+        y=Screen.virtualY+Math.max(16,(Screen.height-height)/3)
+        menuBarBlurActive=Workspace.setMenuBarBlur(root,true)
+        syncFloating();syncTools()
+    }
     Connections {target:Workspace;function onToolStripChanged(){root.syncTools()}}
     Component {id:toolsFactory;ToolStripWindow {}}
     Connections { target: Workspace; function onGroupsChanged() { root.syncFloating() } }

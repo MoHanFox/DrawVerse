@@ -14,7 +14,7 @@ Menu {
     delegate: GlassMenuItem {}
     background: MenuSurface {
         objectName: "menuGlassBackground"
-        radius: Theme.menuRadius
+        radius: 0
         tint: Theme.menuGlass
     }
     function popupBeside(panel) {

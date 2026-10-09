@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
+import "."
 
 ApplicationWindow {
     id: host
@@ -10,7 +11,7 @@ ApplicationWindow {
     required property Item originalParent
     transientParent: anchorItem.Window.window
     flags: Qt.Popup | Qt.FramelessWindowHint
-    color: "transparent"
+    color: Theme.surface
     background: null
     font: anchorItem.Window.window.font
     palette: anchorItem.Window.window.palette
@@ -36,6 +37,10 @@ ApplicationWindow {
         requestActivate()
         menu.popup(contentItem,Qt.point(0,0))
     }
-    onVisibleChanged: if (!visible && menu.visible) menu.close()
+    onVisibleChanged: {
+        Workspace.watchMenuWindow(host,visible)
+        if (!visible && menu.visible) menu.close()
+    }
+    onActiveChanged: if (!active && menu.opened) menu.close()
     onClosing: menu.close()
 }
