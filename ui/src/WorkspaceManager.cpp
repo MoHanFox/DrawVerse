@@ -61,7 +61,8 @@ bool WorkspaceManager::setWindowCornerRadius(QWindow *window,int radius) {
     RECT bounds{};
     if(!GetWindowRect(handle,&bounds)) return false;
     const int diameter=qRound(2*std::clamp(radius,0,64)*window->devicePixelRatio());
-    // Regions use physical outer-window coordinates and also clip compositor blur.
+    // Clip the Qt surface in physical window coordinates; the separate
+    // backdrop visual owns the actual blur clip.
     const auto region=CreateRoundRectRgn(0,0,bounds.right-bounds.left+1,bounds.bottom-bounds.top+1,diameter,diameter);
     if(!region) return false;
     if(SetWindowRgn(handle,region,TRUE)!=0) return true; // Windows owns region now.
@@ -118,7 +119,7 @@ bool WorkspaceManager::nativeEventFilter(const QByteArray &eventType,void *messa
     const auto *msg=static_cast<MSG*>(message);
     if(reinterpret_cast<quintptr>(msg->hwnd)!=m_glassHandle)return false;
     if(msg->message==WM_SYSCOMMAND && (msg->wParam&0xfff0)==SC_MOVE &&
-       (IsZoomed(msg->hwnd) || m_glassWindow->visibility()==QWindow::Maximized || m_glassWindow->visibility()==QWindow::FullScreen)) {*result=0;return true;}
+       m_glassWindow->visibility()==QWindow::FullScreen) {*result=0;return true;}
     if((msg->message==WM_SYSCOMMAND && (msg->wParam&0xfff0)==SC_MINIMIZE) ||
        (msg->message==WM_WINDOWPOSCHANGING && (reinterpret_cast<WINDOWPOS*>(msg->lParam)->flags&SWP_HIDEWINDOW)) ||
        (msg->message==WM_SIZE && msg->wParam==SIZE_MINIMIZED) || (msg->message==WM_SHOWWINDOW && !msg->wParam))m_menuBlur.hide();

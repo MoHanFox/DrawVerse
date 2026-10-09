@@ -26,6 +26,7 @@
 #include <QWheelEvent>
 #include <QPainter>
 #include <QScreen>
+#include <QScopeGuard>
 #include <cmath>
 #include <limits>
 #ifdef Q_OS_WIN
@@ -56,22 +57,70 @@ QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
 class UiTests final : public QObject {
     Q_OBJECT
 private slots:
-    void maximizedMainWindowIgnoresTitleBarDrag() {
+    void maximizedTitleBarDragRestoresAndFollowsPointer() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
-        for(bool full:{false,true}) {
-            if(full)window->showFullScreen();else window->showMaximized();QTest::qWait(100);
-            const auto state=window->visibility();const auto geometry=window->geometry();
-            auto *grip=findVisualItem(window->contentItem(),"mainWindowDragArea");QVERIFY(grip);
-            const auto at=grip->mapToScene({grip->width()/2,14}).toPoint();
-            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,at);QTest::mouseMove(window,at+QPoint(60,25));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,at+QPoint(60,25));
+        window->resize(1050,670);window->setPosition(window->screen()->availableGeometry().topLeft()+QPoint(80,70));
+        QTRY_COMPARE(window->property("normalGeometry").toRect(),window->geometry());
+        const auto normalSize=window->size();
+        auto *grip=findVisualItem(window->contentItem(),"mainWindowDragArea");QVERIFY(grip);
+        const auto titleAt=[&](qreal fraction) {
+            qreal first=30;
+            for(const auto &title:QStringList{"文件","编辑","选择","视图","窗口","工作区"})if(auto *entry=findVisualItem(window->contentItem(),"menuEntry:"+title))first=std::max(first,entry->mapToScene({entry->width(),0}).x()+8);
+            const qreal last=grip->width()-106;
+            // The offscreen two-DPI screen can be narrower than the app's
+            // minimum width. Its logo-side gap remains a real draggable area.
+            return QPoint(first<=last?qRound(first+(last-first)*fraction):(fraction<.65?2:6),14);
+        };
+        for(qreal fraction:{.55,.75}) {
+            window->showMaximized();QTRY_COMPARE(window->visibility(),QWindow::Maximized);QTest::qWait(80);
+            const auto at=titleAt(fraction);
+            const auto pressGlobal=window->mapToGlobal(at);
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,at);QVERIFY(grip->property("pressed").toBool());QCOMPARE(window->visibility(),QWindow::Maximized);
+            QTest::mouseMove(window,at+QPoint(1,1));QCOMPARE(window->visibility(),QWindow::Maximized);
+            const auto global=pressGlobal+QPoint(90,70),offset=QPoint(qRound(normalSize.width()*qreal(at.x())/grip->width()),14);
+            QTest::mouseMove(window,window->mapFromGlobal(global));QTRY_COMPARE(window->visibility(),QWindow::Windowed);QCOMPARE(window->size(),normalSize);QTRY_COMPARE(window->position(),global-offset);
+            const auto next=global+QPoint(-40,30);QTest::mouseMove(window,window->mapFromGlobal(next));QTRY_COMPARE(window->position(),next-offset);
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,window->mapFromGlobal(next));
+            QTRY_COMPARE(window->property("normalGeometry").toRect(),window->geometry());
+            const auto moved=window->geometry();window->showMinimized();QTRY_COMPARE(window->visibility(),QWindow::Minimized);
 #ifdef Q_OS_WIN
-            if(workspace.windowsWindowFrames())SendMessageW(reinterpret_cast<HWND>(window->winId()),WM_SYSCOMMAND,SC_MOVE,0);
+            if(workspace.windowsWindowFrames())SendMessageW(reinterpret_cast<HWND>(window->winId()),WM_SYSCOMMAND,SC_RESTORE,0);else
 #endif
-            QTest::qWait(100);QCOMPARE(window->visibility(),state);QCOMPARE(window->geometry(),geometry);
-            window->showNormal();QTest::qWait(100);
+                window->showNormal();
+            QTRY_COMPARE(window->visibility(),QWindow::Windowed);QTRY_COMPARE(window->geometry(),moved);
         }
+#ifdef Q_OS_WIN
+        if(workspace.windowsWindowFrames()) {
+            window->showMaximized();QTRY_COMPARE(window->visibility(),QWindow::Maximized);
+            const auto handle=reinterpret_cast<HWND>(window->winId());
+            SetWindowPos(handle,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);window->requestActivate();QTRY_VERIFY(window->isActive());
+            POINT physical{qRound(grip->width()*.65*window->devicePixelRatio()),qRound(14*window->devicePixelRatio())};ClientToScreen(handle,&physical);SetCursorPos(physical.x,physical.y);
+            INPUT down{};down.type=INPUT_MOUSE;down.mi.dwFlags=MOUSEEVENTF_LEFTDOWN;
+            const auto release=qScopeGuard([]{INPUT up{};up.type=INPUT_MOUSE;up.mi.dwFlags=MOUSEEVENTF_LEFTUP;SendInput(1,&up,sizeof(INPUT));});
+            QCOMPARE(SendInput(1,&down,sizeof(INPUT)),UINT(1));QTRY_VERIFY(grip->property("pressed").toBool());QCOMPARE(window->visibility(),QWindow::Maximized);
+            SetCursorPos(physical.x+qRound(100*window->devicePixelRatio()),physical.y+qRound(90*window->devicePixelRatio()));
+            QTRY_COMPARE(window->visibility(),QWindow::Windowed);QCOMPARE(window->size(),normalSize);
+            const auto offset=QPoint(qRound(normalSize.width()*grip->property("pressFraction").toReal()),qRound(grip->property("pressY").toReal()));
+            QTRY_VERIFY((window->position()-(QCursor::pos()-offset)).manhattanLength()<=2);
+            const auto firstPosition=window->position(),firstCursor=QCursor::pos();GetCursorPos(&physical);
+            SetCursorPos(physical.x+qRound(40*window->devicePixelRatio()),physical.y+qRound(25*window->devicePixelRatio()));
+            QTRY_VERIFY((window->position()-(firstPosition+QCursor::pos()-firstCursor)).manhattanLength()<=2);
+            const auto rounded=[](HWND hwnd) {const auto region=CreateRectRgn(0,0,0,0);const bool result=GetWindowRgn(hwnd,region)==COMPLEXREGION && !PtInRegion(region,0,0);DeleteObject(region);return result;};
+            const auto blur=reinterpret_cast<HWND>(workspace.menuBlurWindowHandle());QVERIFY(blur);QTRY_VERIFY(rounded(handle) && rounded(blur));
+            RECT mainBounds{},blurBounds{};QVERIFY(GetWindowRect(handle,&mainBounds));QVERIFY(GetWindowRect(blur,&blurBounds));QCOMPARE(blurBounds.left,mainBounds.left);QCOMPARE(blurBounds.top,mainBounds.top);QCOMPARE(blurBounds.right,mainBounds.right);
+        }
+#endif
+        window->showMaximized();QTest::qWait(80);QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,titleAt(.5));QTRY_COMPARE(window->visibility(),QWindow::Windowed);QCOMPARE(window->size(),normalSize);
+        window->showFullScreen();QTest::qWait(80);const auto fullGeometry=window->geometry();const auto fullAt=titleAt(.5);
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,fullAt);QTest::mouseMove(window,fullAt+QPoint(60,25));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,fullAt+QPoint(60,25));QCOMPARE(window->visibility(),QWindow::FullScreen);QCOMPARE(window->geometry(),fullGeometry);
+#ifdef Q_OS_WIN
+        if(workspace.windowsWindowFrames()) {
+            SendMessageW(reinterpret_cast<HWND>(window->winId()),WM_SYSCOMMAND,SC_MOVE,0);QCOMPARE(window->visibility(),QWindow::FullScreen);
+        }
+#endif
+        window->showNormal();
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void nativeMenuBlurLayerFollowsWindowAndHidesBeforeMinimize() {

@@ -186,8 +186,33 @@ ApplicationWindow {
             MouseArea {
                 objectName:"mainWindowDragArea"
                 anchors.fill: parent
-                onPressed: if(root.visibility!==Window.Maximized && root.visibility!==Window.FullScreen)root.startSystemMove()
-                onDoubleClicked: {if(root.visibility===Window.Maximized)root.showNormal();else root.showMaximized()}
+                property bool restoreDrag:false
+                property bool movingRestored:false
+                property point pressGlobal
+                property real pressFraction:0
+                property real pressY:0
+                property point moveOffset
+                onPressed: mouse=>{
+                    restoreDrag=root.visibility===Window.Maximized;movingRestored=false
+                    pressGlobal=mapToGlobal(mouse.x,mouse.y)
+                    pressFraction=mouse.x/width;pressY=mouse.y
+                    if(!restoreDrag && root.visibility!==Window.FullScreen)root.startSystemMove()
+                }
+                onPositionChanged: mouse=>{
+                    if(!pressed || !restoreDrag)return
+                    const global=mapToGlobal(mouse.x,mouse.y)
+                    if(!movingRestored) {
+                        if(Math.abs(global.x-pressGlobal.x)+Math.abs(global.y-pressGlobal.y)<Qt.styleHints.startDragDistance)return
+                        root.showNormal()
+                        root.updateWindowCorners()
+                        moveOffset=Qt.point(Math.round(root.width*pressFraction),pressY)
+                        movingRestored=true
+                    }
+                    root.x=Math.round(global.x-moveOffset.x);root.y=Math.round(global.y-moveOffset.y)
+                }
+                onReleased:{restoreDrag=false;movingRestored=false}
+                onCanceled:{restoreDrag=false;movingRestored=false}
+                onDoubleClicked: {restoreDrag=false;movingRestored=false;if(root.visibility===Window.Maximized)root.showNormal();else root.showMaximized()}
             }
             Row {
                 anchors.right: parent.right; height: parent.height

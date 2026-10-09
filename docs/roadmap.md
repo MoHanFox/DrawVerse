@@ -65,4 +65,4 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 
 主窗补齐系统最小化/最大化能力，并仅对其 HWND 过滤非客户区绘制，防止恢复后系统标题框写入半透明菜单。真实合成像素回归覆盖普通/最大化恢复后的模糊和圆角；工具面板及面板列统一灰黑细分隔。设计与验收见 [taskbar-window-design.md](taskbar-window-design.md) / [taskbar-window-validation.md](taskbar-window-validation.md)。
 
-菜单底层矩形模糊进一步改为独立非交互 HWND 承载 HostBackdropBrush，通过合成视觉的上方圆角裁剪真实模糊；最小化前隐藏，恢复不参与主窗状态过渡。新增高频黑白格真实屏幕像素回归，最大化/全屏拖动保持状态。笔刷预设选择不再切换工具，画笔与橡皮擦继续共用预设和参数，并验证实际绘画/擦除。见 [menu-blur-layer-design.md](menu-blur-layer-design.md) / [menu-blur-layer-validation.md](menu-blur-layer-validation.md) 及画笔库验收。
+菜单底层矩形模糊进一步改为独立非交互 HWND 承载 HostBackdropBrush，通过合成视觉的上方圆角裁剪真实模糊；最小化前隐藏，恢复不参与主窗状态过渡。新增高频黑白格真实屏幕像素回归。按用户澄清，最大化标题栏拖动越过阈值后恢复普通尺寸并继续跟随鼠标，全屏保持状态。笔刷预设选择不再切换工具，画笔与橡皮擦继续共用预设和参数，并验证实际绘画/擦除。见 [menu-blur-layer-design.md](menu-blur-layer-design.md) / [menu-blur-layer-validation.md](menu-blur-layer-validation.md) 及画笔库验收。

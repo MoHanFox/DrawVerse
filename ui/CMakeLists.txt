@@ -40,7 +40,7 @@ add_test(NAME qt_ui_tests COMMAND qt_ui_tests -o "${CMAKE_BINARY_DIR}/qt-ui-test
 set_tests_properties(qt_ui_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     mainWindowRestoresWithoutNativeFrameOrClippedContent
-    maximizedMainWindowIgnoresTitleBarDrag nativeMenuBlurLayerFollowsWindowAndHidesBeforeMinimize
+    maximizedTitleBarDragRestoresAndFollowsPointer nativeMenuBlurLayerFollowsWindowAndHidesBeforeMinimize
     brushPresetClicksKeepEraserAndShareActualStrokeSettings
     dockSeparatorsUseThinDarkGrayAcrossMainAndFloatingColumns
     draggingPanelsSelectsNearestExposedEdgeAndShowsEdgeGlow
