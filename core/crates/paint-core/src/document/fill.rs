@@ -67,15 +67,11 @@ impl Document {
         if min_x > max_x || min_y > max_y {
             return Ok(false);
         }
-        // One brush that still covers the whole region: the mask below decides which pixels are
-        // written, and the radius stays large enough that the circular falloff never clips a corner
-        // of the region's bounding box.
-        let centre_x = (f64::from(min_x) + f64::from(max_x) + 1.) / 2.;
-        let centre_y = (f64::from(min_y) + f64::from(max_y) + 1.) / 2.;
-        let radius =
-            (f64::from(max_x - min_x + 1).hypot(f64::from(max_y - min_y + 1)) / 2. + 1.) as f32;
+        // Sweep the region with a grid of dabs small enough to pass brush validation. One huge
+        // circle is not an option: its radius exceeds the brush limit as soon as the region is wider
+        // than a few hundred pixels, which is most fills. The mask still decides the exact pixels.
         let brush = Brush {
-            radius,
+            radius: DAB_RADIUS,
             color,
             opacity,
             ..Default::default()
@@ -84,8 +80,31 @@ impl Document {
         // selection, including the error paths inside the stroke lifecycle.
         self.begin_fill_selection(selection);
         let result = (|| -> crate::Result<bool> {
-            self.begin_stroke(brush, InputPoint::new(centre_x, centre_y, 1.))?;
-            let changed = self.end_stroke()?;
+            let mut first = true;
+            let mut changed = false;
+            // Start at the centre of the bounds so a small region is always covered by one dab, then
+            // step outwards on the grid from there.
+            let centre_x = (f64::from(min_x) + f64::from(max_x) + 1.) / 2.;
+            let centre_y = (f64::from(min_y) + f64::from(max_y) + 1.) / 2.;
+            let step = f64::from(DAB_STEP);
+            let mut y = centre_y - step * ((centre_y - f64::from(min_y)) / step).floor();
+            while y <= f64::from(max_y) {
+                let mut x = centre_x - step * ((centre_x - f64::from(min_x)) / step).floor();
+                while x <= f64::from(max_x) {
+                    let point = InputPoint::new(x, y, 1.);
+                    if first {
+                        self.begin_stroke(brush, point)?;
+                        first = false;
+                    } else {
+                        self.stroke_to(point)?;
+                    }
+                    x += step;
+                }
+                y += step;
+            }
+            if !first {
+                changed = self.end_stroke()?;
+            }
             Ok(changed)
         })();
         self.end_fill_selection();
@@ -93,9 +112,13 @@ impl Document {
     }
 }
 
+/// Dab size and spacing for the fill sweep. Radius 48 with a 64 step gives each dab a 68px
+/// diagonal reach against a 45px cell half-diagonal, so the grid tiles the region without gaps.
+const DAB_RADIUS: f32 = 48.;
+const DAB_STEP: u32 = 64;
+
 /// Bounding box of a rasterized shape, in document pixels.
-fn shape_bounds(shape: &SelectionShape) -> crate::Result<(u32, u32, u32, u32)> {
-    if !shape.validate().is_ok() {
+fn shape_bounds(shape: &SelectionShape) -> crate::Result<(u32, u32, u32, u32)> {    if !shape.validate().is_ok() {
         return Err(Error::InvalidArgument("invalid fill region"));
     }
     let min_x = shape.x.max(0.).floor() as u32;

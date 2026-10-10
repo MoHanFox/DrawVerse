@@ -1377,6 +1377,27 @@ private slots:
         client.undo();QTRY_VERIFY(!client.layerEditBusy());QTest::qWait(120);
         QVERIFY2(client.sampleDocumentPixel(20,20).red()>200,"undo did not restore the pre-fill pixels");
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }    void bucketSlotSelectionTurnsOffBrushEraserAndSelection() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        auto *bucket=qobject_cast<QQuickItem*>(findVisualItem(main->contentItem(),"bucketTool"));QVERIFY(bucket);
+        // Start from the brush, then click the bucket slot exactly like a user.
+        client.setEraser(false);client.setSelectionTool(0);QTRY_VERIFY(!client.bucketTool());
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,bucket->mapToScene(QPointF(bucket->width()/2,bucket->height()/2)).toPoint());
+        QTRY_VERIFY(client.bucketTool());
+        QVERIFY2(!client.eraser(),"bucket left the eraser active");
+        QCOMPARE(client.selectionTool(),0);
+        QVERIFY(!client.moveTool());
+        // The brush slot must read as unchecked while the bucket owns the canvas.
+        auto *brushSlot=qobject_cast<QQuickItem*>(findVisualItem(main->contentItem(),"brushTool"));QVERIFY(brushSlot);
+        QTRY_VERIFY(!brushSlot->property("checked").toBool());
+        // Switching back to the brush clears the bucket.
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,brushSlot->mapToScene(QPointF(brushSlot->width()/2,brushSlot->height()/2)).toPoint());
+        QTRY_VERIFY(!client.bucketTool());
+        // A selection shape also takes over from the bucket.
+        client.setBucketTool(true);QTRY_VERIFY(client.bucketTool());
+        client.setSelectionTool(4);QTRY_VERIFY(!client.bucketTool());QCOMPARE(client.selectionTool(),4);
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }    void selectionOutlineMarchesWhileVisibleAndStopsOtherwise() {
         QQuickWindow window;window.setObjectName("antsHost");window.setColor(Qt::transparent);
         auto *item=new SelectionOverlay();item->setObjectName("antsOverlay");item->setParentItem(window.contentItem());

@@ -676,6 +676,32 @@ void PaintCoreClient::setSelectionTool(int tool) {
     if(tool<0 || tool>4 || m_drawing || tool==m_selectionTool) return;
     m_selectionTool=tool;if(tool){m_moveTool=false;m_eraser=false;m_bucketTool=false;}emit brushChanged();
 }
+void PaintCoreClient::activateBrush() {
+    if(m_drawing) return;
+    setBucketTool(false); setMoveTool(false);
+    if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
+    setEraser(false);
+}
+void PaintCoreClient::activateEraser() {
+    if(m_drawing) return;
+    setBucketTool(false); setMoveTool(false);
+    if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
+    setEraser(true);
+}
+void PaintCoreClient::activateBucket() {
+    if(m_drawing) return;
+    setMoveTool(false);
+    if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
+    setEraser(false);
+    setBucketTool(true);
+}
+void PaintCoreClient::activateMoveTool() {
+    if(m_drawing) return;
+    setBucketTool(false);
+    if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
+    setEraser(false);
+    setMoveTool(true);
+}
 void PaintCoreClient::setBucketContiguous(bool contiguous) {
     if(m_bucketContiguous==contiguous) return;
     m_bucketContiguous=contiguous; emit brushChanged();

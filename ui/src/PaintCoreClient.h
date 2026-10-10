@@ -110,6 +110,13 @@ public:
     void setBucketTolerance(int tolerance);
     bool bucketContiguous() const { return m_bucketContiguous; }
     void setBucketContiguous(bool contiguous);
+    /// Tool-slot activation: exactly one painting/selection tool stays active. QML handlers must not
+    /// clear the other tools themselves, because a statement block inside a single-line binding does
+    /// not parse.
+    Q_INVOKABLE void activateBrush();
+    Q_INVOKABLE void activateEraser();
+    Q_INVOKABLE void activateBucket();
+    Q_INVOKABLE void activateMoveTool();
     bool moveTool() const { return m_moveTool; }
     bool layerEditBusy() const { return m_pendingLayer != 0; }
     void setMoveTool(bool enabled);
