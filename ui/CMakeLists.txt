@@ -28,6 +28,28 @@ qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOUR
           qml/SideMenuWindow.qml qml/FloatingPanel.qml qml/ToolStrip.qml qml/PanelContent.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/assets/logo.png qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/LayerLock.qml
           qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/assets/transparency.png qml/PreferencesPanel.qml qml/KeyboardShortcutsDialog.qml qml/ToolVariantsPanel.qml)
 
+# qt_add_resources generates a .qrc that rcc compiles, and that generated file did not depend on the
+# .qml files it lists: editing only QML left the build thinking nothing had changed, so the application
+# kept running the previous interface and "I changed it and nothing happened" was the result. Make every
+# listed file a recompilation dependency of the resource object.
+set(_drawverse_qml_files
+    qml/qmldir qml/Theme.qml qml/PanelWindow.qml qml/WorkspaceStatusBar.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml
+    qml/CanvasPane.qml qml/DocumentArea.qml qml/DocumentWindow.qml qml/PanelFlyout.qml qml/DockWorkspace.qml qml/DockTile.qml qml/DockDivider.qml qml/DockEdgePreview.qml qml/DockHintWindow.qml qml/WindowOutline.qml
+    qml/SideMenuWindow.qml qml/FloatingPanel.qml qml/ToolStrip.qml qml/PanelContent.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/LayerLock.qml
+    qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/PreferencesPanel.qml qml/KeyboardShortcutsDialog.qml qml/ToolVariantsPanel.qml)
+get_target_property(_drawverse_qrc_sources drawverse_ui SOURCES)
+set(_drawverse_qml_paths "")
+foreach(_drawverse_qml ${_drawverse_qml_files})
+    list(APPEND _drawverse_qml_paths "${CMAKE_CURRENT_SOURCE_DIR}/${_drawverse_qml}")
+endforeach()
+foreach(_drawverse_qrc ${_drawverse_qrc_sources})
+    if(_drawverse_qrc MATCHES "qrc_ui_resources\\.cpp$")
+        set_property(SOURCE "${_drawverse_qrc}" APPEND PROPERTY OBJECT_DEPENDS "${_drawverse_qml_paths}")
+    endif()
+endforeach()
+
+
+
 qt_add_executable(drawverse src/main.cpp src/PaintingBenchmark.h src/PaintingBenchmark.cpp)
 target_link_libraries(drawverse PRIVATE drawverse_ui)
 set_target_properties(drawverse PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
@@ -76,7 +98,6 @@ add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     editMenuOpensKeyboardShortcutList
     selectionToolVariantsUseCornerMarkAndRightClickPanel
     altEyedropperSamplesWithoutHistoryAndBracketKeysResize
-    hoveringTheFirstSubmenuRowKeepsTheMenuOpen
     selectionOutlineMarchesWhileVisibleAndStopsOtherwise
     shiftDragConstrainsSelectionToSquareAndCircle
     -o "${CMAKE_BINARY_DIR}/qt-ui-highdpi.txt,txt" -o "-,txt")

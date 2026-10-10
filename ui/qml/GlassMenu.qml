@@ -12,8 +12,7 @@ Menu {
     margins: 6
     // A menu closes when the user clicks elsewhere or presses Escape, never because the pointer moved
     // or the host briefly lost activation. The defaults (CloseOnReleaseOutside plus QQuickPopup's own
-    // close-on-deactivate) dismissed these menus while the pointer was still on the first row, and the
-    // focus then fell back to the first menu-bar entry.
+    // close-on-deactivate) dismissed these menus while the pointer was still inside them.
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     // Qt 6.5 already uses item popups; Qt 6.8+ can also choose native/windows.
     Component.onCompleted: if ("popupType" in control) control.popupType=topLevel?Popup.Window:Popup.Item

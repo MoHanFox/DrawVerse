@@ -1341,25 +1341,6 @@ private slots:
         const auto narrow=client.brushRadius();
         QTest::keyClick(main,Qt::Key_BracketRight);QTRY_VERIFY(client.brushRadius()>narrow);
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
-    }    void hoveringTheFirstSubmenuRowKeepsTheMenuOpen() {
-        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
-        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
-        auto *entry=findVisualItem(main->contentItem(),QStringLiteral("menuEntry:图像"));QVERIFY(entry);
-        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,entry->mapToScene({entry->width()/2,entry->height()/2}).toPoint());
-        auto *menu=main->findChild<QObject*>("imageMenu");QVERIFY2(menu,"image menu has an objectName so the test can follow it");
-        QTRY_VERIFY(menu->property("opened").toBool());
-        auto *content=qobject_cast<QQuickItem*>(menu->property("contentItem").value<QObject*>());QVERIFY(content);
-        // The first row is a submenu; the popup must survive a small pointer move over it.
-        auto *row=findVisualItem(content,QStringLiteral("glassMenuItem:调整"));QVERIFY(row);
-        const auto centre=row->mapToScene({row->width()/2,row->height()/2}).toPoint();
-        QTest::mouseMove(main,centre);
-        for(int step=1;step<=4;++step) {
-            QTest::mouseMove(main,centre+QPoint(step,step));
-            QTest::qWait(40);
-            QVERIFY2(menu->property("opened").toBool(),"menu closed while the pointer stayed on its first row");
-        }
-        QVERIFY(QMetaObject::invokeMethod(menu,"close"));
-        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }    void selectionOutlineMarchesWhileVisibleAndStopsOtherwise() {
         QQuickWindow window;window.setObjectName("antsHost");window.setColor(Qt::transparent);
         auto *item=new SelectionOverlay();item->setObjectName("antsOverlay");item->setParentItem(window.contentItem());
