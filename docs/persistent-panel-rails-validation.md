@@ -1,5 +1,7 @@
 # 常驻图标面板列验收（2026-10-10）
 
+后续验收见 [panel-presentation-validation.md](panel-presentation-validation.md)：同图标再次点击现为收回，本文记录前版已验证的行为；多开与空白不关闭仍保留。
+
 设计见 [persistent-panel-rails-design.md](persistent-panel-rails-design.md)。仅修改 Qt/QML；核心、ABI 1.8.0 与布局 v6 不变。按本次用户说明，取代之前“全应用唯一临时窗、空白/失焦收回”的行为。
 
 每个图标对应独立原生工具窗，内容只显示对应面板；同组/不同组可同时打开，改变来源活动标签不改变其他已打开面板。重复点击已打开图标调用 raise/requestActivate，Windows 原生 Z 顺序断言验证最近点击位于其他面板之前。空白和窗口失去激活保持打开，收回按钮与面板内 Escape 仅关闭该窗；图标拖出、展开列、移除来源或销毁工作区清理对应窗口。

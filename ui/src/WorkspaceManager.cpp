@@ -43,6 +43,14 @@ void WorkspaceManager::watchPanelFlyout(QWindow *window,QQuickItem *owner,bool v
         if(window && !m_panelFlyouts.contains(window))m_panelFlyouts.append(window);
     } else m_panelFlyouts.removeAll(window);
 }
+QVariantMap WorkspaceManager::panelView(const QString &panel) const {
+    const auto it=m_panelViews.constFind(panel);if(it==m_panelViews.cend())return {};
+    return {{"width",it->size.width()},{"height",it->size.height()},{"offset",it->offset}};
+}
+void WorkspaceManager::updatePanelView(const QString &panel,int width,int height,int offset) {
+    if(!m_panels.contains(panel) || width<60 || width>3000 || height<60 || height>2000 || std::abs(qint64(offset))>4000)return;
+    m_panelViews.insert(panel,{{width,height},offset});
+}
 bool WorkspaceManager::isIconGroup(const QString &group) const {
     const int at=index(group);
     return at>=0 && (m_iconGroups.contains(group) || (m_groups[at].location=="left" && m_leftCollapsed) || (m_groups[at].location=="right" && m_rightCollapsed));
@@ -190,6 +198,7 @@ void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
     m_dockingSuppressed=suppressed;m_dragTarget=target;m_dragPlacement=placement;emit dragModifiersChanged();
 }
 void WorkspaceManager::resetLayout() {
+    m_panelViews.clear();
     m_iconGroups.clear();
     m_panels.clear();
     const QStringList ids{"color","brush","layers","history","navigator","brush-settings"};
@@ -658,11 +667,14 @@ void WorkspaceManager::saveLayout() const {
     QJsonObject panels; for(auto it=m_panels.cbegin();it!=m_panels.cend();++it) panels.insert(it.key(),QJsonObject::fromVariantMap(it.value()));
     QSettings settings(m_settingsFile.isEmpty()?QSettings::NativeFormat:QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse");
     QJsonObject docks,windows;
+    QJsonObject panelViews;
+    for(auto it=m_panelViews.cbegin();it!=m_panelViews.cend();++it)panelViews.insert(it.key(),QJsonObject{{"width",it->size.width()},{"height",it->size.height()},{"offset",it->offset}});
     for(auto it=m_docks.cbegin();it!=m_docks.cend();++it) docks.insert(it.key(),it.value());
     for(auto it=m_windowGeometry.cbegin();it!=m_windowGeometry.cend();++it) { const auto r=it.value();windows.insert(it.key(),QJsonObject{{"x",r.x()},{"y",r.y()},{"width",r.width()},{"height",r.height()}}); }
     const QJsonObject layout{{"version",6},{"iconGroups",QJsonArray::fromStringList(m_iconGroups.values())},{"docks",docks},{"windows",windows},{"groups",groups},{"panels",panels},{"uiRevision",m_uiRevision},{"leftWidth",m_leftWidth},{"rightWidth",m_rightWidth},{"leftCollapsed",m_leftCollapsed},{"rightCollapsed",m_rightCollapsed},{"toolsFloating",m_toolsFloating},{"toolX",m_toolPosition.x()},{"toolY",m_toolPosition.y()}};
-    if(!m_settingsFile.isEmpty()) { QSettings file(m_settingsFile,QSettings::IniFormat); file.setValue("workspace",QJsonDocument(layout).toJson(QJsonDocument::Compact)); }
-    else settings.setValue("workspace",QJsonDocument(layout).toJson(QJsonDocument::Compact));
+    auto saved=layout;saved.insert("panelViews",panelViews);
+    if(!m_settingsFile.isEmpty()) { QSettings file(m_settingsFile,QSettings::IniFormat); file.setValue("workspace",QJsonDocument(saved).toJson(QJsonDocument::Compact)); }
+    else settings.setValue("workspace",QJsonDocument(saved).toJson(QJsonDocument::Compact));
 }
 bool WorkspaceManager::restoreLayout() {
     QSettings settings(QSettings::NativeFormat,QSettings::UserScope,"DrawVerse","DrawVerse");
@@ -763,6 +775,12 @@ bool WorkspaceManager::restoreLayout() {
     for(auto &g:restored)if(g.collapsed){icons.insert(g.id);g.collapsed=false;migrated=true;}
     m_iconGroups=icons;
     m_panels=restoredPanels; m_groups=restored;
+    m_panelViews.clear();
+    const auto views=root.value("panelViews").toObject();
+    for(auto it=views.constBegin();it!=views.constEnd();++it) {
+        const auto view=it.value().toObject();const int w=view.value("width").toInt(-1),h=view.value("height").toInt(-1),offset=view.value("offset").toInt(5000);
+        if(m_panels.contains(it.key()) && w>=60 && w<=3000 && h>=60 && h<=2000 && std::abs(qint64(offset))<=4000)m_panelViews.insert(it.key(),{{w,h},offset});
+    }
     m_uiRevision=root.value("uiRevision").toInt(0);
     m_leftWidth=std::clamp(root.value("leftWidth").toInt(180),150,520);
     m_rightWidth=std::clamp(root.value("rightWidth").toInt(190),190,520);

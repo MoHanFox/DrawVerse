@@ -70,3 +70,7 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 ## 常驻图标面板列（2026-10-10）
 
 取代唯一临时面板和空白/失焦关闭：同列每个图标可打开独立常驻面板，允许多开，最近点击置顶；显式收回或 Escape 关闭。展开面板独立调整宽高，导航沿列侧边滑动，短浮动图标列不压缩面板高度。图标列背景和空白统一 #1C1E21，保留可调列高；整个浮动列归位为独立主窗列，展开/图标状态与树结构保留。普通标签排序、单图标拖出及布局 v6 保持。见 [persistent-panel-rails-design.md](persistent-panel-rails-design.md) / [persistent-panel-rails-validation.md](persistent-panel-rails-validation.md)。
+
+## 面板状态与紧凑信息栏（2026-10-10）
+
+同图标再次点击收回对应面板，其他打开面板不受影响；独立宽高与来源列侧边偏移通过布局 v6 可选 panelViews 保存，收回再打开和重启恢复继承。描边/分隔统一 #1B1C1F，标签圆角 3px，拖动栏与标签栏背景 #05080A，浮动时背景 75% 不透明，正文不透明。底栏显示工具、共享画笔预设、文档尺寸、图层数，以及中心缩小/放大、单小数百分比和适配；工具条适合窗口按钮删除，菜单/F 保留。见 [panel-presentation-design.md](panel-presentation-design.md) / [panel-presentation-validation.md](panel-presentation-validation.md)。

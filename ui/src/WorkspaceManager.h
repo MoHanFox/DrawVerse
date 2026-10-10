@@ -38,6 +38,8 @@ public:
     Q_INVOKABLE QRect availableScreenGeometry(QWindow *window) const;
     Q_INVOKABLE void watchMenuWindow(QWindow *window, bool visible);
     Q_INVOKABLE void watchPanelFlyout(QWindow *window,QQuickItem *owner,bool visible);
+    Q_INVOKABLE QVariantMap panelView(const QString &panel) const;
+    Q_INVOKABLE void updatePanelView(const QString &panel,int width,int height,int offset);
     Q_INVOKABLE bool setMenuBarBlur(QWindow *window, bool enabled,int height=28);
     quintptr menuBlurWindowHandle() const {return m_menuBlur.nativeHandle();}
     Q_INVOKABLE bool setWindowCornerRadius(QWindow *window, int radius);
@@ -132,6 +134,8 @@ private:
     quintptr m_glassHandle=0;
     MenuBlurLayer m_menuBlur{this};
     QList<QPointer<QWindow>> m_panelFlyouts;
+    struct PanelView {QSize size;int offset=0;};
+    QHash<QString,PanelView> m_panelViews;
     QMap<QString,DockTree::Node> m_docks;
     QHash<QString,QRect> m_windowGeometry;
     QSet<QString> m_iconGroups;

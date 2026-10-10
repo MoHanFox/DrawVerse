@@ -29,6 +29,7 @@ public:
     QPointF documentPoint(QPointF local) const;
     Q_INVOKABLE void fitToView();
     Q_INVOKABLE void actualSize();
+    Q_INVOKABLE void zoomBy(qreal factor);
     QRectF selectionPreview() const { return m_selecting ? QRectF(m_selectionStart,m_selectionEnd).normalized() : QRectF(); }
     int selectionPreviewKind() const { return m_selectionKind; }
     Q_INVOKABLE void cancelSelectionDrag();
@@ -53,6 +54,7 @@ private:
     void refresh();
     void requestView();
     void observeScreen(QScreen *screen);
+    void zoomAround(qreal factor,QPointF position);
     bool beginLayerMove(QPointF local);
     void finishLayerMove(QPointF local);
     bool beginSelection(QPointF local, Qt::KeyboardModifiers modifiers);

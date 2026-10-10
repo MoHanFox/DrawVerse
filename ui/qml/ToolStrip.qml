@@ -29,7 +29,6 @@ Rectangle {
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         IconButton {width:26;height:26;glyph:"undo";enabled:PaintClient.undoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.undo();tooltip:"撤销 Ctrl+Z"}
         IconButton {width:26;height:26;glyph:"redo";enabled:PaintClient.redoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.redo();tooltip:"重做 Ctrl+Shift+Z"}
-        IconButton {width:26;height:26;glyph:"fit";onClicked:root.canvasView.fitToView();tooltip:"适合窗口 F"}
     }
-    Rectangle {width:22;height:22;color:PaintClient.brushColor;border.color:Theme.muted;anchors.bottom:parent.bottom;anchors.bottomMargin:12;anchors.horizontalCenter:parent.horizontalCenter}
+    Rectangle {width:22;height:22;color:PaintClient.brushColor;border.color:Theme.line;anchors.bottom:parent.bottom;anchors.bottomMargin:12;anchors.horizontalCenter:parent.horizontalCenter}
 }

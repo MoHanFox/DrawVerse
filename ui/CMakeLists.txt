@@ -23,7 +23,7 @@ if(WIN32)
 endif()
 
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
-    FILES qml/qmldir qml/Theme.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml
+    FILES qml/qmldir qml/Theme.qml qml/WorkspaceStatusBar.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml
           qml/CanvasPane.qml qml/DocumentArea.qml qml/DocumentWindow.qml qml/PanelFlyout.qml qml/DockWorkspace.qml qml/DockTile.qml qml/DockDivider.qml qml/DockEdgePreview.qml
           qml/SideMenuWindow.qml qml/FloatingPanel.qml qml/ToolStrip.qml qml/PanelContent.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/assets/logo.png qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/LayerLock.qml
           qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/assets/transparency.png)
@@ -49,6 +49,8 @@ add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     panelColumnsUseOneHeaderAndDragTheActualWindow
     iconRailsSwitchSlideDismissAndDragPanels
     floatingIconRailsKeepBackgroundSidePanelsAndReturnState
+    panelPresentationRemembersFlyoutsAndPaintsActualHeaderAlpha
+    compactStatusReflectsDocumentAndZoomControlsPreserveCenter
     panelsReturnToCanvasOnlyAndEmptyWorkspaceEdges
     uiScaleAppliesToMainPanelAndToolWindowsWithoutChangingLayout
     menusReopenWithoutGhostsAndFloatBesidePanels

@@ -24,8 +24,8 @@ Item {
                 Layout.fillWidth: true; spacing: 6
                 Item {
                     Layout.preferredWidth: 36; Layout.preferredHeight: 48
-                    Rectangle {x:9;y:14;width:25;height:25;color:"white";border.color:Theme.muted}
-                    Rectangle {width:25;height:25;color:PaintClient.brushColor;border.color:Theme.text
+                    Rectangle {x:9;y:14;width:25;height:25;color:"white";border.color:Theme.line}
+                    Rectangle {width:25;height:25;color:PaintClient.brushColor;border.color:Theme.line
                         MouseArea {anchors.fill:parent;onDoubleClicked:hexPopup.open();hoverEnabled:true;ToolTip.visible:containsMouse;ToolTip.text:"双击输入 HEX 颜色"}
                     }
                 }

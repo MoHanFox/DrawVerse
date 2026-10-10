@@ -14,6 +14,6 @@ Slider {
         y: control.topPadding+control.availableHeight/2-height/2
         width: 9; height: 12; radius: 2
         color: control.pressed ? "#eeeeee" : Theme.text
-        border.color: Theme.background
+        border.color: Theme.line
     }
 }

@@ -321,7 +321,7 @@ ApplicationWindow {
             Label { text: "不透明度"; color: Theme.muted }
             CompactSlider { from: .01; to: 1; value: PaintClient.brushOpacity; Layout.preferredWidth: 95; onMoved: PaintClient.brushOpacity=value }
             Label { text: Math.round(PaintClient.brushOpacity*100)+"%"; color: Theme.text; Layout.preferredWidth: 36 }
-            Rectangle { width: 16; height: 16; color: PaintClient.brushColor; border.color: Theme.muted }
+            Rectangle { width: 16; height: 16; color: PaintClient.brushColor; border.color: Theme.line }
             Label { text: "压感"; color: Theme.muted }
             Item { Layout.fillWidth: true }
         }
@@ -351,18 +351,10 @@ ApplicationWindow {
             Layout.fillWidth: true; Layout.fillHeight: true; spacing: 0
             DockWorkspace {objectName:"mainDockWorkspace";Layout.fillWidth:true;Layout.fillHeight:true;canvasPane:mainDocumentArea;canvasView:canvas}
         }
-        Rectangle {
-            Layout.fillWidth: true; height: 22; color: Theme.strip;radius:root.cornerRadius
-            Rectangle {anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;height:parent.height/2;color:parent.color}
-            RowLayout {
-                anchors.fill: parent; anchors.leftMargin: 18; anchors.rightMargin: 18
-                Label { text: PaintClient.closing ? "正在关闭核心…" : PaintClient.fileBusy ? "正在读写文件…" : PaintClient.drawing ? "绘画中" : root.fileNotice.length ? root.fileNotice : "就绪"; color: Theme.accent; font.pixelSize: 10 }
-                ToolButton { text: "取消文件任务"; visible: PaintClient.fileBusy; onClicked: PaintClient.cancelFile() }
-                Label { text: "  "+PaintClient.documentWidth+" × "+PaintClient.documentHeight+" px  ·  sRGB / 32F"; color: Theme.muted; font.pixelSize: 10 }
-                Item { Layout.fillWidth: true }
-                Label { text: "空格平移  ·  滚轮缩放"; color: Theme.muted; font.pixelSize: 10 }
-                Label { text: "   "+Math.round(canvas.zoom*100)+"%"; color: Theme.text; font.pixelSize: 10 }
-            }
+        WorkspaceStatusBar {
+            Layout.fillWidth:true
+            client:PaintClient;canvasView:root.canvas;hasDocument:documents.activeId.length>0
+            cornerRadius:root.cornerRadius;notice:root.fileNotice
         }
     }
     Shortcut { context:Qt.ApplicationShortcut; sequence: "V"; enabled: canvas.activeFocus; onActivated: PaintClient.moveTool=true }

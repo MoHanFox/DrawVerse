@@ -14,7 +14,8 @@ ApplicationWindow {
     visible:true;flags:Qt.Tool|Qt.FramelessWindowHint
     font.family:Qt.platform.os==="windows"?"Microsoft YaHei UI":"sans-serif";font.pixelSize:10
     title:"DrawVerse · "+windowData.panels.map(p=>Workspace.panelDefinition(p).title).join(" / ")
-    color:windowData.icons?Theme.surface:Theme.line
+    color:windowData.icons?Theme.surface:"transparent";background:null
+    Rectangle {anchors.fill:parent;color:"transparent";border.color:Theme.line}
     palette.window:Theme.surface;palette.windowText:Theme.text;palette.base:Theme.background;palette.text:Theme.text
     palette.button:Theme.raised;palette.buttonText:Theme.text;palette.highlight:Theme.selected;palette.highlightedText:Theme.accent
     x:windowData.x;y:windowData.y;width:windowData.width;height:windowData.height

@@ -21,7 +21,7 @@ Control {
             horizontalAlignment: Text.AlignRight
             selectByMouse: true
             validator: RegularExpressionValidator { regularExpression: /(?:100|[0-9]{1,2})%?/ }
-            background: Rectangle { color: Theme.input; border.color: edit.activeFocus ? Theme.accent : Theme.line; radius: 2 }
+            background: Rectangle { color: Theme.input; border.color: Theme.line; radius: 2 }
             color: Theme.text; font.pixelSize: 9
             function commit() {
                 if(acceptableInput) root.committed(parseInt(text)/100)

@@ -41,7 +41,7 @@ ColumnLayout {
             objectName:"brushPreset:"+modelData.id
             width:ListView.view.width;height:58
             color:root.library.selectedId===modelData.id?Theme.selected:Theme.surface
-            border.color:root.library.selectedId===modelData.id?Theme.accent:Theme.line
+            border.color:Theme.line
             Image {anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:4;height:35;source:modelData.preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
             Text {x:6;y:40;width:parent.width-12;text:modelData.name;color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
             MouseArea {anchors.fill:parent;onClicked:root.library.select(modelData.id)}

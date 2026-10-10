@@ -9,7 +9,7 @@ Rectangle {
     signal clicked(int modifiers)
     width: 34; height: 24
     color: Theme.surface
-    border.color: selected ? "#ffffff" : Theme.muted
+    border.color: Theme.line
     border.width: selected ? 2 : 1
     clip: true
     // Checkerboard is restricted to the actual fitted image. An opaque image

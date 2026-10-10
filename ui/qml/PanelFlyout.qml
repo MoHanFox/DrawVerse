@@ -11,8 +11,11 @@ ApplicationWindow {
     property var groupData:({id:"",panels:[],active:"",dockHeight:320})
     readonly property var sourceWindow:ownerTile.Window.window
     property real lastSourceY:0
+    property bool positioning:false
+    property bool restoring:false
     objectName:"panelFlyout:"+groupData.id+":"+panelKey
-    flags:Qt.Tool|Qt.FramelessWindowHint;visible:false;color:Theme.line
+    flags:Qt.Tool|Qt.FramelessWindowHint;visible:false;color:"transparent";background:null
+    Rectangle {anchors.fill:parent;color:"transparent";border.color:Theme.line}
     font.family:Qt.platform.os==="windows"?"Microsoft YaHei UI":"sans-serif";font.pixelSize:10
     readonly property string panelKind:Workspace.panelDefinition(panelKey).kind
     minimumWidth:Math.min(190,Workspace.availableScreenGeometry(root).width)
@@ -20,8 +23,10 @@ ApplicationWindow {
     width:320
     height:panelKind==="brush" || panelKind==="brush-settings"?540:440
     function refreshGroup(){const data=Workspace.groupDefinition(ownerTile.layoutData.id);groupData=Object.assign({},data,{panels:[panelKey],active:panelKey})}
+    function remember(){if(visible && !positioning && !restoring && ownerTile)Workspace.updatePanelView(panelKey,width,height,Math.round(y-ownerTile.mapToGlobal(0,0).y))}
     function positionSide(wantedY){
-        if(!ownerTile)return
+        if(!ownerTile || positioning)return
+        positioning=true
         const at=ownerTile.mapToGlobal(0,0),bounds=Workspace.availableScreenGeometry(root)
         const floating=ownerTile.layoutData.location==="floating"
         const area=ownerTile.workspace,areaTop=area.mapToGlobal(0,0).y
@@ -36,20 +41,26 @@ ApplicationWindow {
         const screenHigh=Math.max(low,bottom-height)
         const navLow=floating?Math.max(low,Math.min(at.y,screenHigh)):low
         const navHigh=floating?Math.max(navLow,Math.min(screenHigh,at.y+ownerTile.height-8)):screenHigh
-        y=Math.max(navLow,Math.min(wantedY,navHigh))
+        y=Math.round(Math.max(navLow,Math.min(wantedY,navHigh)))
+        positioning=false;remember()
     }
     function showPanel(panel){
         selectedPanel=panel;refreshGroup()
         if(!visible){
+            restoring=true
             lastSourceY=sourceWindow.y
-            const anchor=ownerTile.iconAnchor(panel).y,bounds=Workspace.availableScreenGeometry(root)
-            if(ownerTile.layoutData.location==="floating")height=Math.min(height,Math.max(minimumHeight,bounds.y+bounds.height-anchor))
+            const view=Workspace.panelView(panel),bounds=Workspace.availableScreenGeometry(root)
+            const anchor=view.width?ownerTile.mapToGlobal(0,0).y+view.offset:ownerTile.iconAnchor(panel).y
+            if(view.width){width=Math.max(minimumWidth,view.width);height=Math.max(minimumHeight,view.height)}
+            else if(ownerTile.layoutData.location==="floating")height=Math.min(height,Math.max(minimumHeight,bounds.y+bounds.height-anchor))
             positionSide(anchor);visible=true
+            restoring=false;remember()
         }
         Workspace.watchPanelFlyout(root,ownerTile,true);raise();requestActivate()
     }
     onWidthChanged:if(visible)positionSide(y)
     onHeightChanged:if(visible)positionSide(y)
+    onYChanged:remember()
     Connections {
         target:root.sourceWindow
         function onXChanged(){if(root.visible)root.positionSide(root.y)}

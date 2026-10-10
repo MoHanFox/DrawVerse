@@ -67,7 +67,7 @@ ColumnLayout {
         Layout.fillWidth: true; implicitHeight: 20
         placeholderText: "搜索图层名称"; placeholderTextColor: Theme.muted; selectByMouse: true
         color: Theme.text; font.pixelSize: 9
-        background: Rectangle {color:Theme.input;border.color:search.activeFocus?Theme.accent:Theme.line;radius:2}
+        background: Rectangle {color:Theme.input;border.color:Theme.line;radius:2}
     }
     RowLayout {
         Layout.fillWidth: true; spacing: 4

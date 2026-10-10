@@ -9,6 +9,8 @@ Rectangle {
     required property var groupData
     property var canvasView
     property bool flyout: false
+    readonly property bool floating:flyout || groupData.location==="floating"
+    readonly property color barColor:floating?Theme.floatingPanelBar:Theme.panelBar
     signal dismissRequested()
     signal slideRequested(real globalY)
     property string selected: groupData.active
@@ -24,7 +26,8 @@ Rectangle {
         tabDragPanel="";tabDropTarget=""
         if(commit && first && second && first!==second)Workspace.swapPanelTabs(id,first,second)
     }
-    color: Theme.surface; clip: true
+    color:floating?"transparent":Theme.surface;clip:true
+    Rectangle {y:contents.y;width:parent.width;height:parent.height-y;color:Theme.surface}
     implicitHeight: groupData.dockHeight || 320
     onHeightChanged: if(!flyout) Workspace.updateDockHeight(groupData.id,Math.round(height))
     Connections {
@@ -71,7 +74,7 @@ Rectangle {
         anchors.fill: parent; spacing: 0
         Rectangle {
             objectName:"columnHeader:"+root.groupData.id
-            Layout.fillWidth: true; implicitHeight:8;visible:root.flyout || root.groupData.columnFirst;color:Theme.strip
+            Layout.fillWidth: true; implicitHeight:8;visible:root.flyout || root.groupData.columnFirst;color:root.barColor
             MouseArea {
                 objectName: "groupGrip:"+root.groupData.id
                 enabled: !PaintClient.drawing
@@ -103,7 +106,8 @@ Rectangle {
             }
         }
         Rectangle {
-            Layout.fillWidth: true; implicitHeight: 20; color:root.groupData.panels.length===1?Theme.surface:Theme.strip; visible: true
+            objectName:"panelTabBar:"+root.groupData.id
+            Layout.fillWidth: true; implicitHeight: 20; color:root.barColor; visible: true
             Flickable {
                 id: tabStrip
                 anchors.left: parent.left;anchors.leftMargin:root.groupData.panels.length>1?4:0; anchors.right: panelMenuButton.left; y:root.groupData.panels.length>1?2:0;height: parent.height-y
@@ -117,7 +121,7 @@ Rectangle {
                             required property string modelData
                             objectName: "panelTab:"+modelData
                             width: Math.max(38,label.implicitWidth+16); height: tabRow.height
-                            color: root.selected===modelData ? Theme.surface : Theme.tabInactive
+                            color:root.groupData.panels.length===1?"transparent":root.selected===modelData?Theme.surface:Theme.tabInactive
                             radius:root.groupData.panels.length>1?Theme.panelTabRadius:0
                             // Only the top corners round; the active tab joins its content.
                             Rectangle {anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:parent.radius;color:parent.color}
@@ -177,7 +181,7 @@ Rectangle {
                 }
             }
         }
-        PanelContent { Layout.fillWidth: true; Layout.fillHeight: true; visible: true; panelId: root.selected; canvasView: root.canvasView }
+        PanelContent {id:contents;Layout.fillWidth: true; Layout.fillHeight: true; visible: true; panelId: root.selected; canvasView: root.canvasView }
     }
     DropArea {
         id: drop; anchors.fill: parent; keys: ["application/x-drawverse-panel","application/x-drawverse-tool-strip"]

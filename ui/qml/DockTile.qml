@@ -43,6 +43,7 @@ Item {
             function openPanel(panel){
                 Workspace.setActive(root.layoutData.id,panel)
                 let peek=peeks[panel]
+                if(peek && peek.visible){peek.close();return}
                 if(!peek){peek=flyoutFactory.createObject(railRoot,{ownerTile:root,panelKey:panel,canvasView:root.workspace.canvasView});const next=Object.assign({},peeks);next[panel]=peek;peeks=next}
                 peek.showPanel(panel)
             }
@@ -79,7 +80,7 @@ Item {
                     }
                 }
             }
-            Component {id:flyoutFactory;PanelFlyout {id:flyout;onClosing: {Workspace.watchPanelFlyout(flyout,ownerTile,false);railRoot.removePeek(panelKey,flyout);visible=false;Qt.callLater(()=>flyout.destroy())}}}
+            Component {id:flyoutFactory;PanelFlyout {id:flyout;onClosing: {flyout.remember();Workspace.watchPanelFlyout(flyout,ownerTile,false);railRoot.removePeek(panelKey,flyout);visible=false;Qt.callLater(()=>flyout.destroy())}}}
         }
     }
 

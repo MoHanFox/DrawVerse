@@ -99,6 +99,15 @@ void CanvasItem::setInitialFitRatio(qreal ratio) {
     if(std::isfinite(ratio)) m_initialFitRatio=std::clamp(ratio,qreal(.1),qreal(1));
 }
 void CanvasItem::actualSize() { m_zoom = 1; m_pan = {}; emit viewChanged(); update(); }
+void CanvasItem::zoomBy(qreal factor) {zoomAround(factor,{width()/2,height()/2});}
+void CanvasItem::zoomAround(qreal factor,QPointF position) {
+    if(!m_interactive || !m_client || !std::isfinite(factor) || factor<=0 || width()<=0 || height()<=0)return;
+    const auto doc=documentPoint(position);
+    const auto next=std::clamp(m_zoom*factor,.00001,8.);
+    if(next==m_zoom)return;
+    m_zoom=next;m_pan+=position-(documentRect().topLeft()+doc*m_zoom);
+    emit viewChanged();update();
+}
 void CanvasItem::geometryChange(const QRectF &geometry, const QRectF &old) {
     QQuickItem::geometryChange(geometry, old);
     if (!m_interactive || m_fitPending) fitToView();
@@ -182,10 +191,7 @@ void CanvasItem::mouseUngrabEvent() {
 }
 void CanvasItem::wheelEvent(QWheelEvent *e) {
     if (!m_interactive) { e->ignore(); return; }
-    const QPointF doc = documentPoint(e->position());
-    m_zoom = std::clamp(m_zoom * std::pow(1.15, e->angleDelta().y() / 120.), .00001, 8.);
-    m_pan += e->position() - (documentRect().topLeft() + doc * m_zoom);
-    emit viewChanged(); update(); e->accept();
+    zoomAround(std::pow(1.15,e->angleDelta().y()/120.),e->position());e->accept();
 }
 void CanvasItem::keyPressEvent(QKeyEvent *e) {
     if (e->key() == Qt::Key_Space) { m_space = true; e->accept(); }

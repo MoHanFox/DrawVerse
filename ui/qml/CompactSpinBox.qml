@@ -6,7 +6,7 @@ SpinBox {
     implicitWidth: 90; implicitHeight: 26
     leftPadding: 23; rightPadding: 23; topPadding: 3; bottomPadding: 3
     font.pixelSize: 10
-    background: Rectangle { color: Theme.input; border.color: control.activeFocus ? Theme.accent : Theme.line; radius: 2 }
+    background: Rectangle { color: Theme.input; border.color: Theme.line; radius: 2 }
     contentItem: TextInput {
         objectName: control.objectName+"Text"
         text: control.displayText; font: control.font; color: Theme.text
