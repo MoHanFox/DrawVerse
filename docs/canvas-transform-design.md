@@ -23,13 +23,18 @@
 
 ## 未决问题（本轮未能收敛，需专门排查）
 
-1. **尺寸发布未传到 UI**。直接在 Qt 里调用 `transformCanvas(0)` 返回成功，内核侧已用插桩确认操作真的执行了（`DBG before (32, 16) 0` → 第二次 `(16, 32)`），但 `PaintCoreClient::documentWidth()` 始终停留在旧值（32）。核心测试证明 `Document::dimensions()` 会更新，因此问题在**会话发布/客户端轮询**这一段（`paint_session_info` 的 width/height 或 `PaintCoreClient` 对 `metadata` 的处理），不在变换本身。因为发布不更新，用户此时看到的画布尺寸也不会变，所以这项功能**还不能算可用**。
-2. **取色器取样在测试环境下取到全黑**。`CanvasItem::pickColorAt` 读的是已渲染帧（`m_image` + `m_imageRegion`），测试里帧为 71×71、区域 64×64，但取到 `#000000`。需要确认离屏/软件后端下帧是否真的填充，或改为走 ABI 取样（`paint_session_sample_pixel` 之类的只读接口，不会进历史）。
+1. **尺寸发布未传到 UI（已缩小范围）**。新增的会话级回归 `transform_command_publishes_the_new_canvas_size`（`paint-ffi` 的 `actor_tests`）证明：通过 `Session::submit(Operation::Transform(..))` 提交后，**发布确实会带上新尺寸**（(32,16) → (16,32)，逆时针再回到 (32,16)），worker 保持 `Running`，不会 panic。同时 Qt 侧插桩显示：命令**已提交**（真实序列号）、worker 侧**确实执行了变换**，但客户端此后**没有收到任何新发布**，`paint_session_info` 也仍返回旧尺寸。
+   因此问题**不在内核、不在 ABI、不在 worker 发布循环**，而在 Qt 客户端这一段（`metadataPending` 门闩、`publish()` 的 `paint_session_info(publication)` 调用、或 UI 事件循环与 worker 的交互）。
+   本轮曾怀疑是 `catch_unwind` 捕获 panic 后线程退出（那会导致"提交后再无发布"），但上面的会话测试排除了它。
+   临时插桩（`qWarning`/`eprintln!`）已全部移除，工作区无调试残留。
+2. **取色器取样在测试环境下取到全黑**。`CanvasItem::pickColorAt` 读的是已渲染帧（`m_image` + `m_imageRegion`），测试里帧为 71×71、区域 64×64，但取到 `#000000`。计划改为走 ABI 只读取样：`Document::sample_pixel` 已在 `paint-core` 落地（只读、不进历史、不标脏），只差 `paint_session_sample_pixel` 导出与客户端接线。
 
 两者的 Qt 用例都**没有提交**（失败的测试不入库）：`canvasRotateAndFlipGoThroughTheMenuActionsAndUndoInOneStep` 与 `altEyedropperSamplesWithoutHistoryAndBracketKeysResize` 已从 `ui/tests/ui_tests.cpp` 与 CTest 列表中移除，待问题收敛后连同修复一起补回。
 
 ## 下一步
 
-1. 先解决"发布未更新"：在 `paint_session_info` 返回路径与 `PaintCoreClient` 的 `metadata` 槽上各加一条断言级验证，定位是后端没发布还是前端没采纳；修好后把旋转用例补回。
+1. 在 Qt 客户端这一段继续查：`publish()` 里对 `paint_session_info(publication)` 的调用是否会因 `PAINT_BUSY` 提前 return（那会把整次发布丢弃，且 `m_publication` 不推进，之后 `info.publication != m_publication` 才会再次尝试——但若 `metadataPending` 一直是 true 就永远不再尝试）。这是当前最可疑的一处。
 2. 取色器改为 ABI 只读取样，避免依赖渲染帧；随后补回对应用例。
 3. 之后再回到队列：油漆桶、涂抹、高斯模糊、Ctrl+T、结构性调整、液化、.vbr 笔刷、PS 色相/饱和度·曲线·色阶。
+
+> 附：用户确认"移动图层有时会报错"的机制是——创建剪贴蒙版后把底层（基底）移走，剪贴层失去基底就会报错。这正是 `docs/layer-selection-design.md` 与 `clipping.rs` 里"基底消失时级联释放剪贴层"那条规则的来源，已实现并推送（`139dee3`）。

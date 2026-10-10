@@ -989,6 +989,45 @@ impl StampedFrame {
 mod actor_tests {
     use super::*;
     use std::{thread, time::Instant};
+    /// The published session size must follow a canvas transform, and the worker must stay alive:
+    /// a panic inside the command would kill the whole document worker, which is exactly the
+    /// symptom seen from Qt (command submitted, nothing published afterwards).
+    #[test]
+    fn transform_command_publishes_the_new_canvas_size() {
+        let session = Session::new(32, 16).unwrap();
+        let sequence = session.submit(Operation::Transform(0)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let info = session.info();
+            if info.completed_sequence >= sequence {
+                assert_eq!((info.width, info.height), (16, 32));
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "transform never completed: completed={} wanted={sequence}",
+                info.completed_sequence
+            );
+            assert_eq!(info.flags & PAINT_SESSION_FAILED, 0, "worker failed");
+            thread::sleep(Duration::from_millis(1));
+        }
+        // The worker stays healthy and accepts the next command.
+        assert_eq!(session.sender.state(), WorkerState::Running);
+        session.submit(Operation::Transform(1)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let info = session.info();
+            if info.completed_sequence >= 2 {
+                assert_eq!((info.width, info.height), (32, 16));
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "second transform never completed"
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
     #[test]
     fn panicked_session_reports_failure_and_remains_releasable() {
         let session = Session::new(64, 64).unwrap();
