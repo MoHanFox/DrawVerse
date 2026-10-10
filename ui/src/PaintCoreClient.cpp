@@ -659,27 +659,25 @@ void PaintCoreClient::setSelectionTool(int tool) {
     emit brushChanged();
 }
 void PaintCoreClient::activateBrush() {
-    if(m_drawing) return;
+    // Switching tools must work even mid-stroke; the stroke keeps its own brush until it ends.
     setMoveTool(false);
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(false);
 }
 void PaintCoreClient::activateEraser() {
-    if(m_drawing) return;
     setMoveTool(false);
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(true);
 }
 
 void PaintCoreClient::activateMoveTool() {
-    if(m_drawing) return;
-   
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(false);
     setMoveTool(true);
 }
 void PaintCoreClient::activateMarquee() {
-    if(m_drawing) return;
+    // Tool activation never depends on the stroke state: refusing to switch while a stroke is in
+    // flight left the strip stuck on a tool the user had already left.
     // The slot keeps whichever marquee shape was last picked instead of resetting to the rectangle.
     const int shape = (m_selectionTool==1 || m_selectionTool==2) ? m_selectionTool : m_marqueeShape;
     setMoveTool(false); setEraser(false);

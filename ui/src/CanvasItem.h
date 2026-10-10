@@ -110,6 +110,9 @@ private:
     quint64 m_selectionGeneration = 0;
     int m_selectionKind = 0, m_selectionOperation = 0;
     bool m_selectionConstrained = false;
+    /// Alt is held: the pointer acts as the eyedropper and shows a crosshair.
+    bool m_altHeld = false;
+    void setAltHeld(bool held);
     bool m_selecting = false;
     bool m_interactive = true, m_space = false, m_panning = false, m_stroke = false, m_tablet = false, m_fitPending = true;
     QElapsedTimer m_clock;

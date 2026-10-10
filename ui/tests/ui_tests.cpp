@@ -1323,7 +1323,12 @@ private slots:
         QTest::mouseRelease(main,Qt::LeftButton,Qt::AltModifier,center);
         QTRY_VERIFY(client.brushColor().red()>150 && client.brushColor().green()<90);
         QCOMPARE(client.undoDepth(),historyBefore);QCOMPARE(client.revision(),revisionBefore);
-        // Bracket keys resize the active painting tool.
+        // Alt is the eyedropper: the brush ring goes away and the pointer becomes a crosshair.
+        canvas->forceActiveFocus();
+        QTest::keyPress(main,Qt::Key_Alt);QTest::qWait(40);
+        QVERIFY2(!canvas->brushCursorVisible(),"brush ring still shown while Alt is held");
+        QCOMPARE(canvas->cursor().shape(),Qt::CrossCursor);
+        QTest::keyRelease(main,Qt::Key_Alt);QTest::qWait(40);        // Bracket keys resize the active painting tool.
         client.setBrushRadius(20);const auto wide=client.brushRadius();
         QTest::keyClick(main,Qt::Key_BracketLeft);QTRY_VERIFY(client.brushRadius()<wide);
         const auto narrow=client.brushRadius();

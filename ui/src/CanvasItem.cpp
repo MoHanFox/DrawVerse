@@ -79,11 +79,13 @@ QRectF CanvasItem::brushCursorRect() const {
     return {m_cursorPosition-QPointF(radius,radius),QSizeF(radius*2,radius*2)};
 }
 bool CanvasItem::brushCursorVisible() const {
-    return m_cursorInside && !m_capsLock && m_interactive && m_client && !m_client->moveTool() && !m_client->selectionTool() && !m_space && !spaceHeld && !m_panning && isVisible();
+    // Alt is the eyedropper: the pointer becomes a crosshair and the brush ring goes away, so the
+    // user can see exactly which pixel will be sampled.
+    return m_cursorInside && !m_capsLock && !m_altHeld && m_interactive && m_client && !m_client->moveTool() && !m_client->selectionTool() && !m_space && !spaceHeld && !m_panning && isVisible();
 }
 bool CanvasItem::spacePanning() const { return m_space || spaceHeld; }
 void CanvasItem::refreshBrushCursor() {
-    setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && m_client->moveTool()?Qt::SizeAllCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
+    setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && m_client->moveTool()?Qt::SizeAllCursor:m_altHeld?Qt::CrossCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
     emit brushCursorChanged();
 }
 void CanvasItem::setSpacePanning(bool held) {
@@ -280,6 +282,7 @@ void CanvasItem::wheelEvent(QWheelEvent *e) {
 }
 void CanvasItem::keyPressEvent(QKeyEvent *e) {
     if (e->key() == Qt::Key_Space) {setKeySpace(true);refreshBrushCursor(); e->accept(); }
+    else if (e->key() == Qt::Key_Alt) {setAltHeld(true); e->accept(); }
     else if (e->key() == Qt::Key_Escape) { if(m_selecting) cancelSelectionDrag();else if (m_client) m_client->cancelStroke(); m_stroke = false; m_tablet = false; m_moving=false; e->accept(); }
     else if(m_client && m_client->moveTool() && !m_moving && e->key()>=Qt::Key_Left && e->key()<=Qt::Key_Down) {
         const int step=e->modifiers().testFlag(Qt::ShiftModifier) ? 10 : 1;
@@ -288,7 +291,17 @@ void CanvasItem::keyPressEvent(QKeyEvent *e) {
     }
     else QQuickItem::keyPressEvent(e);
 }
-void CanvasItem::keyReleaseEvent(QKeyEvent *e) { if (e->key() == Qt::Key_Space) {setKeySpace(false);setSpacePanning(false);refreshBrushCursor();} else QQuickItem::keyReleaseEvent(e); }
+void CanvasItem::keyReleaseEvent(QKeyEvent *e) {
+    if (e->key() == Qt::Key_Space) {setKeySpace(false);setSpacePanning(false);refreshBrushCursor();}
+    else if (e->key() == Qt::Key_Alt) {setAltHeld(false); e->accept();}
+    else QQuickItem::keyReleaseEvent(e);
+}
+void CanvasItem::setAltHeld(bool held) {
+    if(m_altHeld==held) return;
+    m_altHeld=held;
+    // The eyedropper takes over the pointer: a crosshair instead of the brush outline.
+    refreshBrushCursor();
+}
 bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if(event->type()==QEvent::ApplicationDeactivate){setKeySpace(false);setSpacePanning(false);refreshBrushCursor();}
     if(m_interactive && isVisible() && (event->type()==QEvent::KeyPress || event->type()==QEvent::KeyRelease)) {
