@@ -7,12 +7,12 @@ namespace {
 // Dash pattern in device pixels. The white line is stroked in screen space so the pattern stays a
 // constant size at any zoom; a document-space pattern stretches with zoom into a near-solid line.
 // A short dash against a longer gap keeps the ants clearly dotted instead of reading as a line.
-constexpr int kDashOn = 3;
-constexpr int kDashGap = 6;
+constexpr int kDashOn = 4;
+constexpr int kDashGap = 4;
 constexpr int kDashPeriod = kDashOn + kDashGap;
 constexpr int kPhaseStep = 1;
 // One step every 60ms: a calm crawl rather than a busy strobing outline.
-constexpr int kTickMs = 60;
+constexpr int kTickMs = 80;
 }
 
 SelectionOverlay::SelectionOverlay(QQuickItem *parent):QQuickPaintedItem(parent){

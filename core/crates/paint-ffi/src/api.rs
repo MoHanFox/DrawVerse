@@ -50,6 +50,8 @@ pub const PAINT_HISTORY_ELLIPSE_SELECTION: u32 = 20;
 /// ABI 1.12: freehand lasso path and magic-wand region.
 pub const PAINT_HISTORY_LASSO_SELECTION: u32 = 21;
 pub const PAINT_HISTORY_MAGIC_SELECTION: u32 = 22;
+/// Automatic release of clipped layers whose base went away.
+pub const PAINT_HISTORY_RELEASE_CLIPPING: u32 = 23;
 pub const PAINT_ABI_PATCH: u32 = 0;
 pub const PAINT_WORKING_LINEAR_SRGB: u32 = 1;
 pub const PAINT_STORAGE_RGBA32F_PREMULTIPLIED: u32 = 1;

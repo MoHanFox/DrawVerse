@@ -2,6 +2,7 @@
 //! Pixels are linear premultiplied RGBA32F; display conversion is external.
 mod appearance;
 mod brush;
+mod clipping;
 mod document;
 mod error;
 mod history;

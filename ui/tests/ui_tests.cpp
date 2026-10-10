@@ -1302,7 +1302,34 @@ private slots:
         QCOMPARE(CanvasItem::constrainedRect({-30,-30},{10,-60}),QRectF(-30,-70,40,40));
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
-    void selectionOutlineMarchesWhileVisibleAndStopsOtherwise() {        QQuickWindow window;window.setObjectName("antsHost");window.setColor(Qt::transparent);
+    void altEyedropperSamplesWithoutHistoryAndBracketKeysResize() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
+        auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();main->requestActivate();QTest::qWait(60);
+        // The eyedropper belongs to the painting tools: make sure no selection tool owns the press.
+        client.setSelectionTool(0);QTRY_COMPARE(client.selectionTool(),0);client.setMoveTool(false);client.setEraser(false);
+        // Paint a known colour so the eyedropper has something exact to pick.
+        client.setBrushRadius(6);client.setBrushColor(QColor("#c81e3a"));
+        InputSample stroke;stroke.position={32,32};stroke.pressure=1;
+        QVERIFY(client.beginStroke(stroke));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());
+        const auto center=canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(32,32)*canvas->zoom()).toPoint();
+        client.setBrushColor(QColor("#1188ee"));QTRY_COMPARE(client.brushColor(),QColor("#1188ee"));
+        const auto historyBefore=client.undoDepth();const auto revisionBefore=client.revision();
+        // Alt is the eyedropper: it adopts the sampled colour and writes nothing to the document.
+        QTest::mousePress(main,Qt::LeftButton,Qt::AltModifier,center);
+        QTest::mouseRelease(main,Qt::LeftButton,Qt::AltModifier,center);
+        qWarning("DBG frame=%dx%d region=%f,%f %fx%f zoom=%f color=%s",client.frame().width(),client.frame().height(),client.frameRegion().x(),client.frameRegion().y(),client.frameRegion().width(),client.frameRegion().height(),canvas->zoom(),qPrintable(client.brushColor().name()));QTRY_VERIFY(client.brushColor().red()>150 && client.brushColor().green()<90);
+        QCOMPARE(client.undoDepth(),historyBefore);QCOMPARE(client.revision(),revisionBefore);
+        // Bracket keys resize the active painting tool within the supported range.
+        client.setBrushRadius(20);const auto wide=client.brushRadius();
+        QTest::keyClick(main,Qt::Key_BracketLeft);QTRY_VERIFY(client.brushRadius()<wide);
+        const auto narrow=client.brushRadius();
+        QTest::keyClick(main,Qt::Key_BracketRight);QTRY_VERIFY(client.brushRadius()>narrow);
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void selectionOutlineMarchesWhileVisibleAndStopsOtherwise() {
+        QQuickWindow window;window.setObjectName("antsHost");window.setColor(Qt::transparent);
         auto *item=new SelectionOverlay();item->setObjectName("antsOverlay");item->setParentItem(window.contentItem());
         item->setDocumentRect({0,0,64,64});item->setZoom(1);
         const auto step=[](int op,int shape,QRectF r){return QVariantMap{{"operation",op},{"shape",shape},{"x",r.x()},{"y",r.y()},{"width",r.width()},{"height",r.height()}};};

@@ -424,12 +424,28 @@ impl Document {
             .collect();
         debug_assert!(previous.values().all(|l| l.group && l.tiles.is_empty()));
     }
-    fn commit_structure(&mut self, after: Vec<Layer>) -> Result<()> {
-        validate(&after)?;
-        self.commit(Command::Structure {
+    pub(crate) fn commit_structure(&mut self, after: Vec<Layer>) -> Result<()> {
+        let action = Command::Structure {
             before: self.structure(),
             after: after.clone(),
-        })?;
+        }
+        .action();
+        self.commit_structure_entry(after, action)
+    }
+    /// Commit a validated structure with an explicit history label, so a repair can explain itself.
+    pub(crate) fn commit_structure_entry(
+        &mut self,
+        after: Vec<Layer>,
+        action: crate::HistoryAction,
+    ) -> Result<()> {
+        validate(&after)?;
+        self.commit_with_action(
+            Command::Structure {
+                before: self.structure(),
+                after: after.clone(),
+            },
+            action,
+        )?;
         self.apply_structure(&after);
         self.ensure_active_layer();
         self.dirty_all();
@@ -657,14 +673,17 @@ impl Document {
             nodes.iter().position(|l| l.id == parent).expect("group")
         };
         nodes.splice(index..index, moved);
+        // A move can leave clipped layers whose base went elsewhere. Repair that here so a dropped
+        // layer never sits in a state the compositor would silently ignore, and so the repair and
+        // the move are one undoable step. The parent/clip pair decides whether anything changed.
         if nodes
             .iter()
-            .map(|n| (n.id, n.parent))
-            .eq(self.layers.iter().map(|n| (n.id, n.parent)))
+            .map(|n| (n.id, n.parent, n.clipped))
+            .eq(self.layers.iter().map(|n| (n.id, n.parent, n.clipped)))
         {
             return Ok(());
         }
-        self.commit_structure(nodes)
+        self.commit_repaired_structure(nodes).map(|_| ())
     }
     /// Import validates all parent IDs/order/depth before the document is exposed.
     pub fn set_import_hierarchy(&mut self, hierarchy: &[(u64, bool)]) -> Result<()> {

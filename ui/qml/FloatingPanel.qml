@@ -11,7 +11,10 @@ PanelWindow {
     property int expandedWidth:windowData.width
     readonly property bool onlyTools:windowData.groups.length===1 && windowData.groups[0]==="__toolstrip"
     objectName:onlyTools?"floatingToolStrip":"floatingDock:"+windowData.id
-    visible:true;flags:Qt.Tool|Qt.FramelessWindowHint
+    // A real top-level window, not a Qt.Tool: Windows gives tool windows the WS_EX_TOOLWINDOW style,
+    // which hides them from capture sources such as OBS. It can still be activated, which the
+    // window drag and the dock interactions rely on.
+    visible:true;flags:Qt.Window|Qt.FramelessWindowHint
     title:"DrawVerse · "+windowData.panels.map(p=>Workspace.panelDefinition(p).title).join(" / ")
     color:windowData.icons?Theme.surface:"transparent"
     Rectangle {anchors.fill:parent;color:"transparent";border.color:Theme.line}

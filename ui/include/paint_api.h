@@ -146,6 +146,11 @@
 
 #define PAINT_HISTORY_MOVE_LAYER 13
 
+/**
+ * Automatic release of clipped layers whose base went away.
+ */
+#define PAINT_HISTORY_RELEASE_CLIPPING 23
+
 #define PAINT_HISTORY_REMOVE_LAYER 8
 
 #define PAINT_HISTORY_REPARENT 16

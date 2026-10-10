@@ -32,6 +32,8 @@ pub enum HistoryAction {
     LassoSelection = 21,
     /// Colour-similarity flood fill.
     MagicSelection = 22,
+    /// Automatic release of clipped layers whose base went away.
+    ReleaseClipping = 23,
 }
 
 #[derive(Clone, Debug)]

@@ -86,6 +86,9 @@ private:
     /// Lasso path in document coordinates, for the client to rasterize on the session worker.
     Q_INVOKABLE QVariantList pathPoints() const;
     Q_PROPERTY(QVariantList pathPreview READ pathPoints NOTIFY selectionDragChanged)
+    /// Eyedropper: sample the already rendered frame at a local point. Returns an invalid colour
+    /// outside the document. Read-only, never touches history or the document revision.
+    Q_INVOKABLE QColor pickColorAt(QPointF local) const;
     void finishSelection(QPointF local,Qt::KeyboardModifiers modifiers);
     PaintCoreClient *m_client = nullptr;
     QPointer<QQuickWindow> m_observedWindow;

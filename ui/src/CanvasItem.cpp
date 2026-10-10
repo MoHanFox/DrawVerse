@@ -220,13 +220,32 @@ QRectF CanvasItem::constrainedRect(QPointF anchor,QPointF corner) {    // Square
     const qreal y=corner.y()>=anchor.y()?anchor.y():anchor.y()-side;
     return QRectF(x,y,side,side);
 }
-QRectF CanvasItem::selectionPreviewRect() const {
-    auto rect=QRectF(m_selectionStart,m_selectionEnd).normalized();
+QRectF CanvasItem::selectionPreviewRect() const {    auto rect=QRectF(m_selectionStart,m_selectionEnd).normalized();
     if(!m_selectionConstrained)return rect;
     return constrainedRect(m_selectionStart,m_selectionEnd);
 }
 QVariantList CanvasItem::pathPoints() const {
     QVariantList rows;for(const auto &point:m_pathPoints){rows.append(QVariantList{point.x(),point.y()});}return rows;
+}
+QColor CanvasItem::pickColorAt(QPointF local) const {
+    if (m_image.isNull() || m_imageRegion.isEmpty() || !m_client) return {};
+    const auto document = documentPoint(local);
+    const int x = int(std::floor(document.x())), y = int(std::floor(document.y()));
+    if (x < 0 || y < 0 || x >= m_client->documentWidth() || y >= m_client->documentHeight()) return {};
+    // The frame may be downscaled to the viewport budget, so map the document pixel into it.
+    const auto fx = qreal(m_image.width()) / qMax(qreal(1), m_imageRegion.width());
+    const auto fy = qreal(m_image.height()) / qMax(qreal(1), m_imageRegion.height());
+    const int sx = std::clamp(int(std::round((qreal(x) - m_imageRegion.x()) * fx)), 0, m_image.width() - 1);
+    const int sy = std::clamp(int(std::round((qreal(y) - m_imageRegion.y()) * fy)), 0, m_image.height() - 1);
+    QColor picked = m_image.pixelColor(sx, sy);
+    // Frames arrive premultiplied; undo that so the sampled colour matches what was painted.
+    if (picked.alpha() > 0 && picked.alpha() < 255) {
+        const auto a = qreal(picked.alpha()) / 255.;
+        picked = QColor::fromRgbF(std::clamp(picked.redF() / a, 0., 1.),
+                                  std::clamp(picked.greenF() / a, 0., 1.),
+                                  std::clamp(picked.blueF() / a, 0., 1.));
+    }
+    return picked;
 }
 void CanvasItem::finishSelection(QPointF local,Qt::KeyboardModifiers modifiers) {
     if(!m_selecting) return;
@@ -253,6 +272,13 @@ void CanvasItem::mousePressEvent(QMouseEvent *e) {
         e->accept();return;
     }
     forceActiveFocus(); m_last = e->position();
+    // Alt is the eyedropper: sample the rendered frame and adopt the colour as the foreground.
+    // Nothing is written to the document, so this never creates history.
+    if (e->button() == Qt::LeftButton && e->modifiers().testFlag(Qt::AltModifier) && !m_client->selectionTool()) {
+        const auto picked = pickColorAt(e->position());
+        if (picked.isValid()) { m_client->setBrushColor(picked); emit viewChanged(); }
+        e->accept(); return;
+    }
     if (e->button() == Qt::MiddleButton || m_space || spaceHeld) { m_panning = true; e->accept(); return; }
     if(m_client->selectionTool() && documentRect().contains(e->position())) {e->setAccepted(beginSelection(e->position(),e->modifiers()));return;}
     if (m_client->moveTool() && documentRect().contains(e->position())) { e->setAccepted(beginLayerMove(e->position())); return; }

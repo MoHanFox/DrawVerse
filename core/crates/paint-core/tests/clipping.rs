@@ -130,9 +130,14 @@ fn masks_groups_positions_locks_and_orphan_reorder_follow_current_siblings() {
     assert_eq!(d.pixel(16, 16), Pixel::TRANSPARENT);
     assert_eq!(d.pixel(48, 16).alpha(), 0.5);
     d.drop_layer(2, group, 2).unwrap();
+    // Dropped to the very end of the group it has no unclipped sibling below any more, so the clip
+    // is released instead of being left as a layer the compositor would silently ignore.
+    assert!(!d.layer(2).unwrap().is_clipped());
     assert_eq!(d.layer_clipping_bases()[0], 0);
-    assert_eq!(d.pixel(48, 16).components(), [0., 0.5, 0., 0.5]);
+    assert_eq!(d.pixel(48, 16).components(), [0.5, 0.5, 0., 1.]);
     d.undo().unwrap();
+    // One undo restores both the position and the clip.
+    assert!(d.layer(2).unwrap().is_clipped());
     assert_eq!(d.pixel(48, 16).components(), [0.5, 0., 0., 0.5]);
     d.reparent_layer(2, group).unwrap();
     assert_eq!(
