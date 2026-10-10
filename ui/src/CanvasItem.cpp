@@ -228,26 +228,13 @@ QVariantList CanvasItem::pathPoints() const {
     QVariantList rows;for(const auto &point:m_pathPoints){rows.append(QVariantList{point.x(),point.y()});}return rows;
 }
 QColor CanvasItem::pickColorAt(QPointF local) const {
-    if (m_image.isNull() || m_imageRegion.isEmpty() || !m_client) return {};
+    if(!m_client) return {};
+    // Sampling goes through the ABI so it reads the composited document, not a possibly downscaled
+    // or not-yet-rendered frame. Read-only: no history entry, no revision change.
     const auto document = documentPoint(local);
-    const int x = int(std::floor(document.x())), y = int(std::floor(document.y()));
-    if (x < 0 || y < 0 || x >= m_client->documentWidth() || y >= m_client->documentHeight()) return {};
-    // The frame may be downscaled to the viewport budget, so map the document pixel into it.
-    const auto fx = qreal(m_image.width()) / qMax(qreal(1), m_imageRegion.width());
-    const auto fy = qreal(m_image.height()) / qMax(qreal(1), m_imageRegion.height());
-    const int sx = std::clamp(int(std::round((qreal(x) - m_imageRegion.x()) * fx)), 0, m_image.width() - 1);
-    const int sy = std::clamp(int(std::round((qreal(y) - m_imageRegion.y()) * fy)), 0, m_image.height() - 1);
-    QColor picked = m_image.pixelColor(sx, sy);
-    // Frames arrive premultiplied; undo that so the sampled colour matches what was painted.
-    if (picked.alpha() > 0 && picked.alpha() < 255) {
-        const auto a = qreal(picked.alpha()) / 255.;
-        picked = QColor::fromRgbF(std::clamp(picked.redF() / a, 0., 1.),
-                                  std::clamp(picked.greenF() / a, 0., 1.),
-                                  std::clamp(picked.blueF() / a, 0., 1.));
-    }
-    return picked;
-}
-void CanvasItem::finishSelection(QPointF local,Qt::KeyboardModifiers modifiers) {
+    if(document.x() < 0 || document.y() < 0 || document.x() >= m_client->documentWidth() || document.y() >= m_client->documentHeight()) return {};
+    return m_client->sampleDocumentPixel(document.x(), document.y());
+}void CanvasItem::finishSelection(QPointF local,Qt::KeyboardModifiers modifiers) {
     if(!m_selecting) return;
     // Keep the shift constraint rather than resetting the modifiers: the release position decides
     // the committed square/circle together with the anchor.

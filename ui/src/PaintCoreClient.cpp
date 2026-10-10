@@ -256,14 +256,21 @@ public:
             steps.append(QVariantMap{{"operation",step.operation},{"shape",step.shape},{"x",step.x},{"y",step.y},{"width",step.width},{"height",step.height}});
         }
         QVariantList history;
-        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区")};
-        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection"};
+        // One entry per HistoryAction discriminant, in order. A missing entry used to fail the whole
+        // publish ("无法识别的历史操作"), which silently froze every later UI update, so the list must
+        // cover every kind the core can report and the check below treats the rest as unknown text.
+        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索选区"),QStringLiteral("魔棒选区"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("画布旋转")};
+        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","redo"};
         for(uint32_t depth=0;depth<=info.undo_depth+info.redo_depth;++depth) {
             auto entry=dto<PaintHistoryEntry>();auto historyStatus=paint_session_history_entry(m_core,m_session,info.publication,depth,&entry);
             if(historyStatus==PAINT_BUSY)return false;if(!check(historyStatus))return false;
             if(entry.kind==PAINT_HISTORY_TRUNCATED)continue;
-            if(entry.kind>=static_cast<uint32_t>(names.size())){emit failure(QStringLiteral("无法识别的历史操作"));return false;}
-            history.append(QVariantMap{{"depth",entry.depth},{"kind",entry.kind},{"title",names[entry.kind]},{"icon",icons[entry.kind]}});
+            // An unknown kind is shown as generically as possible instead of aborting the publication:
+            // dropping it would leave the canvas, layer list and selection stale for good.
+            const bool known=entry.kind<static_cast<uint32_t>(names.size());
+            history.append(QVariantMap{{"depth",entry.depth},{"kind",entry.kind},
+                {"title",known?names[entry.kind]:QStringLiteral("未知操作")},
+                {"icon",known?icons[entry.kind]:QStringLiteral("page")}});
         }
         m_connection->metadataPending.store(true);
         emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}},history); m_publication = info.publication;
@@ -739,6 +746,18 @@ void PaintCoreClient::cancelStroke() {
 }
 void PaintCoreClient::undo() { if (m_ready && !m_drawing) submit(Undo); }
 void PaintCoreClient::redo() { if (m_ready && !m_drawing) submit(Redo); }
+QColor PaintCoreClient::sampleDocumentPixel(qreal x, qreal y) const {
+    if(!m_connection || m_closing || !std::isfinite(x) || !std::isfinite(y)) return {};
+    float rgba[4]={0,0,0,0};
+    QMutexLocker lock(&m_connection->mutex);
+    if(!m_connection->session) return {};
+    // View 0 is the main canvas frame the user is looking at.
+    if(paint_session_sample_pixel(m_connection->core,m_connection->session,0,
+                                  qint64(std::floor(x)),qint64(std::floor(y)),rgba)!=PAINT_OK) return {};
+    if(!(rgba[3]>0.f)) return QColor(0,0,0,0);
+    return QColor::fromRgbF(std::clamp(qreal(rgba[0]),0.,1.),std::clamp(qreal(rgba[1]),0.,1.),
+                            std::clamp(qreal(rgba[2]),0.,1.),std::clamp(qreal(rgba[3]),0.,1.));
+}
 bool PaintCoreClient::transformCanvas(int kind) {
     // The session serialises this call, so the canvas is already transformed when it returns: there
     // is no in-flight edit to wait for, and marking one would block every later layer edit.

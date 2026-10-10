@@ -28,6 +28,17 @@ pub(crate) unsafe fn write<T>(pointer: *mut T, value: T) -> ApiResult<()> {
     Ok(())
 }
 
+/// Copy a fixed-size slice into caller memory, after validating pointer and alignment.
+pub(crate) unsafe fn write_slice<T: Copy>(pointer: *mut T, values: &[T]) -> ApiResult<()> {
+    valid_pointer(pointer)?;
+    if pointer.addr() % std::mem::align_of::<T>() != 0 {
+        return Err(ApiError::invalid("output pointer is misaligned"));
+    }
+    // SAFETY: the caller guarantees writable storage for exactly `values.len()` elements.
+    unsafe { std::ptr::copy_nonoverlapping(values.as_ptr(), pointer, values.len()) };
+    Ok(())
+}
+
 pub(crate) unsafe fn sized_pointer<T>(pointer: *const T) -> ApiResult<()> {
     valid_pointer(pointer)?;
     // SAFETY: each public ABI DTO begins with initialized u32 struct_size.

@@ -207,6 +207,31 @@ pub unsafe extern "C" fn paint_session_set_history_limit(
         pointers::write(out_sequence, sequence)
     })
 }
+/// ABI 1.12: read one pixel of an already rendered viewport for the eyedropper. Read-only: the
+/// sample never enters history, never marks dirty tiles and never bumps the revision. Coordinates
+/// outside the rendered region are clamped to its edge.
+/// # Safety
+/// `out_rgba` must be writable for four floats; follow session lifetime contracts.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_sample_pixel(
+    core: *mut PaintCore,
+    handle: *mut PaintSession,
+    view: u32,
+    x: i64,
+    y: i64,
+    out_rgba: *mut f32,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        if out_rgba.is_null() || out_rgba.addr() % std::mem::align_of::<f32>() != 0 {
+            return Err(ApiError::invalid(
+                "sample output must be aligned and non-NULL",
+            ));
+        }
+        runtime::outside_callback()?;
+        let pixels = session(core, handle)?.sample_pixel(view, x, y)?;
+        pointers::write_slice(out_rgba, &pixels)
+    })
+}
 /// Read published immutable metadata; never waits for the document computation lock.
 /// # Safety
 /// Follow initialized output DTO and session lifetime contracts.

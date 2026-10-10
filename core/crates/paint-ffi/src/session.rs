@@ -404,6 +404,10 @@ impl Session {
         drop(old);
         Ok(id)
     }
+    /// One pixel of a rendered frame, for the eyedropper. Read-only: no history, no dirty tiles.
+    pub fn sample_pixel(&self, slot: u32, x: i64, y: i64) -> ApiResult<[f32; 4]> {
+        self.frame(slot)?.sample(x, y)
+    }
     pub fn frame(&self, slot: u32) -> ApiResult<Arc<StampedFrame>> {
         if self.sender.state() == WorkerState::Panicked {
             return Err(ApiError::internal());
@@ -959,6 +963,36 @@ impl Engine {
     }
 }
 impl StampedFrame {
+    /// One pixel of this already rendered frame, un-premultiplied straight RGBA. Used by the
+    /// eyedropper so sampling never touches the document or the history.
+    pub fn sample(&self, x: i64, y: i64) -> ApiResult<[f32; 4]> {
+        // The region is in document coordinates and may be fractional; sample its pixel grid.
+        let origin_x = self.frame.region.x.floor() as i64;
+        let origin_y = self.frame.region.y.floor() as i64;
+        let width = self.frame.width;
+        let height = self.frame.height;
+        if width == 0 || height == 0 {
+            return Err(ApiError::new(PAINT_NOT_FOUND, "frame has no pixels"));
+        }
+        // Clamp to the rendered region so a pointer just outside still samples the edge pixel.
+        let px = (x - origin_x).clamp(0, i64::from(width) - 1) as u32;
+        let py = (y - origin_y).clamp(0, i64::from(height) - 1) as u32;
+        let bytes = self.bytes();
+        let index = ((py as usize) * (width as usize) + (px as usize)) * 4;
+        let Some(pixel) = bytes.get(index..index + 4) else {
+            return Err(ApiError::new(PAINT_NOT_FOUND, "frame pixel out of range"));
+        };
+        let alpha = f32::from(pixel[3]) / 255.;
+        if alpha <= 0. {
+            return Ok([0.; 4]);
+        }
+        Ok([
+            f32::from(pixel[0]) / 255. / alpha,
+            f32::from(pixel[1]) / 255. / alpha,
+            f32::from(pixel[2]) / 255. / alpha,
+            alpha,
+        ])
+    }
     pub fn bytes(&self) -> &[u8] {
         match &self.frame.pixels {
             FramePixels::Srgb(bytes) => bytes,

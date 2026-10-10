@@ -1079,6 +1079,20 @@ PaintStatus paint_session_read_frame(struct PaintCore *core,
                                      struct PaintTile *out_tile);
 
 /**
+ * ABI 1.12: read one pixel of an already rendered viewport for the eyedropper. Read-only: the
+ * sample never enters history, never marks dirty tiles and never bumps the revision. Coordinates
+ * outside the rendered region are clamped to its edge.
+ * # Safety
+ * `out_rgba` must be writable for four floats; follow session lifetime contracts.
+ */
+PaintStatus paint_session_sample_pixel(struct PaintCore *core,
+                                       struct PaintSession *handle,
+                                       uint32_t view,
+                                       int64_t x,
+                                       int64_t y,
+                                       float *out_rgba);
+
+/**
  * ABI 1.8: query selection summary tied to exactly one immutable publication.
  * # Safety
  * Initialize output size and follow aligned writable memory/handle contracts.

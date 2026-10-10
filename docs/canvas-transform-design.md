@@ -23,18 +23,35 @@
 
 ## 未决问题（本轮未能收敛，需专门排查）
 
-1. **尺寸发布未传到 UI（已缩小范围）**。新增的会话级回归 `transform_command_publishes_the_new_canvas_size`（`paint-ffi` 的 `actor_tests`）证明：通过 `Session::submit(Operation::Transform(..))` 提交后，**发布确实会带上新尺寸**（(32,16) → (16,32)，逆时针再回到 (32,16)），worker 保持 `Running`，不会 panic。同时 Qt 侧插桩显示：命令**已提交**（真实序列号）、worker 侧**确实执行了变换**，但客户端此后**没有收到任何新发布**，`paint_session_info` 也仍返回旧尺寸。
-   因此问题**不在内核、不在 ABI、不在 worker 发布循环**，而在 Qt 客户端这一段（`metadataPending` 门闩、`publish()` 的 `paint_session_info(publication)` 调用、或 UI 事件循环与 worker 的交互）。
-   本轮曾怀疑是 `catch_unwind` 捕获 panic 后线程退出（那会导致"提交后再无发布"），但上面的会话测试排除了它。
-   临时插桩（`qWarning`/`eprintln!`）已全部移除，工作区无调试残留。
-2. **取色器取样在测试环境下取到全黑**。`CanvasItem::pickColorAt` 读的是已渲染帧（`m_image` + `m_imageRegion`），测试里帧为 71×71、区域 64×64，但取到 `#000000`。计划改为走 ABI 只读取样：`Document::sample_pixel` 已在 `paint-core` 落地（只读、不进历史、不标脏），只差 `paint_session_sample_pixel` 导出与客户端接线。
+## 真因与修复（已收敛）
 
-两者的 Qt 用例都**没有提交**（失败的测试不入库）：`canvasRotateAndFlipGoThroughTheMenuActionsAndUndoInOneStep` 与 `altEyedropperSamplesWithoutHistoryAndBracketKeysResize` 已从 `ui/tests/ui_tests.cpp` 与 CTest 列表中移除，待问题收敛后连同修复一起补回。
+**根因：`PaintCoreClient::publish()` 的历史名称表没跟着 `HistoryAction` 扩展。**
+
+`names` / `icons` 只覆盖 kind 0–19，而本轮先后新增了 `EllipseSelection`(20)、`LassoSelection`(21)、`MagicSelection`(22)、`ReleaseClipping`(23)、`TransformCanvas`(24)。旧代码遇到表外 kind 时直接
+
+```cpp
+if(entry.kind>=static_cast<uint32_t>(names.size())){emit failure(QStringLiteral("无法识别的历史操作"));return false;}
+```
+
+于是**任何新操作一进历史，整次发布就被丢弃**：画布尺寸、图层列表、选区、历史全部停在旧状态，`m_publication` 也不推进。这正好解释两件事——旋转提交成功且 worker 确实执行了、但 UI 永远收不到新尺寸；以及用户观感上的"移动图层有时会报错"（移走剪贴基底产生的 `ReleaseClipping` 落在表外，直接触发那句失败提示）。
+
+**修复**
+
+1. 名称与图标表补齐到 kind 24（套索选区、魔棒选区、释放剪贴蒙版、画布旋转）；
+2. 表外 kind **不再中断发布**，改为显示"未知操作"与通用图标——任何一个未知历史类型都不应该冻结整个 UI；
+3. 新增会话级回归 `transform_command_publishes_the_new_canvas_size`（`paint-ffi` 的 `actor_tests`）：提交变换后发布带上新尺寸、两次变换尺寸正确、worker 保持 `Running`。
+
+**取色器**：`CanvasItem::pickColorAt` 不再读可能未渲染或已降采样的帧，改为走新 ABI `paint_session_sample_pixel(view, x, y, out_rgba)`（只读，不进历史、不标脏、不改 revision），离屏与软件后端下同样有效。注意核心 `Document::sample_pixel` 那条路用不了——发布结构里不保存文档指针，所以取样读的是"已渲染帧"这一路。
+
+两个 Qt 用例 `canvasRotateAndFlipGoThroughTheMenuActionsAndUndoInOneStep` 与 `altEyedropperSamplesWithoutHistoryAndBracketKeysResize` **已补回测试套件**并通过（含 `R` 快捷键断言、Alt 取色不产生历史、`[`/`]` 调尺寸）。
+
+## 验收
+
+- Rust：`quarter_turns_swap_dimensions_and_rotate_content`、`counter_clockwise_is_the_inverse_of_clockwise`、`flips_mirror_without_changing_dimensions`、`transform_is_one_undoable_step_including_the_size`、`sparsity_and_layer_order_survive_a_transform`、`transform_command_publishes_the_new_canvas_size`。
+- Qt：`canvasRotateAndFlipGoThroughTheMenuActionsAndUndoInOneStep`（菜单动作 + `R` + 一次撤销还原像素与尺寸 + 翻转保持尺寸）、`altEyedropperSamplesWithoutHistoryAndBracketKeysResize`（取样准确、无历史、无 revision 变化、括号键调尺寸）。
 
 ## 下一步
 
-1. 在 Qt 客户端这一段继续查：`publish()` 里对 `paint_session_info(publication)` 的调用是否会因 `PAINT_BUSY` 提前 return（那会把整次发布丢弃，且 `m_publication` 不推进，之后 `info.publication != m_publication` 才会再次尝试——但若 `metadataPending` 一直是 true 就永远不再尝试）。这是当前最可疑的一处。
-2. 取色器改为 ABI 只读取样，避免依赖渲染帧；随后补回对应用例。
-3. 之后再回到队列：油漆桶、涂抹、高斯模糊、Ctrl+T、结构性调整、液化、.vbr 笔刷、PS 色相/饱和度·曲线·色阶。
+- 队列继续：油漆桶、涂抹、高斯模糊、Ctrl+T、结构性调整、液化、.vbr 笔刷、PS 色相/饱和度·曲线·色阶。
 
 > 附：用户确认"移动图层有时会报错"的机制是——创建剪贴蒙版后把底层（基底）移走，剪贴层失去基底就会报错。这正是 `docs/layer-selection-design.md` 与 `clipping.rs` 里"基底消失时级联释放剪贴层"那条规则的来源，已实现并推送（`139dee3`）。

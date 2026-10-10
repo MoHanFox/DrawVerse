@@ -143,6 +143,8 @@ public:
     void pruneSelectedLayers();
     /// Whole-canvas rotate/flip; `kind` is PAINT_CANVAS_TRANSFORM_*.
     Q_INVOKABLE bool transformCanvas(int kind);
+    /// Eyedropper: sample the composited pixel at document coordinates. Read-only, no history.
+    Q_INVOKABLE QColor sampleDocumentPixel(qreal x, qreal y) const;
     Q_INVOKABLE void setLayerProperties(quint64 id, bool visible, qreal opacity);
     Q_INVOKABLE bool setLayerFill(quint64 id, qreal fill);
     Q_INVOKABLE bool setLayerBlend(quint64 id, int blend);
