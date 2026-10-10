@@ -749,6 +749,16 @@ bool PaintCoreClient::transformCanvas(int kind) {
       status=paint_session_transform_canvas(m_connection->core,m_connection->session,quint32(kind),&sequence);
       if(status!=PAINT_OK) error=immediateError(status); }
     if(status!=PAINT_OK) { showError(error); return false; }
+    
+    // The worker publishes the new size on its next tick, which the poll below would eventually pick
+    // up. Read the session directly as well so the UI shows the rotated canvas immediately instead
+    // of keeping the old width for a frame.
+    { QMutexLocker lock(&m_connection->mutex);
+      auto info=dto<PaintSessionInfo>();
+      if(m_connection->session && paint_session_info(m_connection->core,m_connection->session,&info)==PAINT_OK
+         && (int(info.width)!=m_width || int(info.height)!=m_height)) {
+          m_width=int(info.width); m_height=int(info.height);
+      } }
     m_modified=true; emit stateChanged(); return true;
 }
 void PaintCoreClient::addLayer(const QString &name) {
@@ -809,7 +819,7 @@ bool PaintCoreClient::setAppearance(quint64 id,const QString &field,const QVaria
       status=paint_session_set_layer_appearance(m_connection->core,m_connection->session,id,&options,&sequence);
       if(status!=PAINT_OK) error=immediateError(status);
     }
-    if(status!=PAINT_OK) { qWarning("DBG status=%d",int(status)); showError(error); return false; }
+    if(status!=PAINT_OK) { showError(error); return false; }
     m_pendingLayer=m_pendingMutation=sequence; m_modified=true; emit stateChanged(); return true;
 }
 bool PaintCoreClient::setLayerFill(quint64 id,qreal fill) { return std::isfinite(fill) && fill>=0 && fill<=1 && setAppearance(id,"fill",fill); }
@@ -845,7 +855,7 @@ bool PaintCoreClient::moveLayer(quint64 id,int dx,int dy) {
       status=paint_session_move_layer(m_connection->core,m_connection->session,id,dx,dy,&sequence);
       if(status!=PAINT_OK) error=immediateError(status);
     }
-    if(status!=PAINT_OK) { qWarning("DBG status=%d",int(status)); showError(error); return false; }
+    if(status!=PAINT_OK) { showError(error); return false; }
     m_pendingLayer=m_pendingMutation=sequence; m_modified=true; emit stateChanged(); return true;
 }
 bool PaintCoreClient::submitGroup(quint32 kind,quint64 id,quint64 parent,const QString &name) {
