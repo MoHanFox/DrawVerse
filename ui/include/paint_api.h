@@ -204,11 +204,6 @@
 #define PAINT_SELECTION_MASK 3
 
 /**
- * ABI 1.12: content-derived selection edits.
- */
-#define PAINT_SELECTION_PATH_MAGIC 1
-
-/**
  * ABI 1.12: rasterized shapes. The geometry fields stay the bounding box for old callers.
  */
 #define PAINT_SELECTION_POLYGON 2
@@ -399,28 +394,6 @@ typedef struct PaintSelectionEdit {
   double width;
   double height;
 } PaintSelectionEdit;
-
-/**
- * ABI 1.12: the seed point of a content-derived selection, in document pixels.
- */
-typedef struct PaintSelectionPoint {
-  double x;
-  double y;
-} PaintSelectionPoint;
-
-/**
- * ABI 1.12: a freehand path (lasso) or a seed point (magic wand) with tolerance.
- */
-typedef struct PaintSelectionPath {
-  uint32_t struct_size;
-  uint32_t edit_kind;
-  uint32_t operation;
-  uint32_t antialias;
-  uint32_t point_count;
-  uint32_t tolerance;
-  uint32_t reserved[2];
-  const struct PaintSelectionPoint *points;
-} PaintSelectionPath;
 
 typedef struct PaintFileJobInfo {
   uint32_t struct_size;
@@ -877,18 +850,6 @@ PaintStatus paint_session_edit_selection(struct PaintCore *core,
                                          uint64_t *out_sequence);
 
 /**
- * ABI 1.12: enqueue a freehand-path (lasso) or content-derived (magic wand) selection edit.
- * Points are copied and validated before returning; the session resolves the region off the UI thread.
- * # Safety
- * `request` must point to an initialized `PaintSelectionPath`; `points` must be a readable array of
- * `point_count` initialized points; `out_sequence` must be writable.
- */
-PaintStatus paint_session_edit_selection_path(struct PaintCore *core,
-                                              struct PaintSession *session,
-                                              const struct PaintSelectionPath *request,
-                                              uint64_t *out_sequence);
-
-/**
  * Read the latest asynchronous execution error. Synchronous submission errors use paint_error_message.
  * # Safety
  * Follow UTF-8 buffer contract; error sequence must match session_info.
@@ -1078,9 +1039,9 @@ PaintStatus paint_session_sample_pixel(struct PaintCore *core,
                                        float *out_rgba);
 
 /**
- * ABI 1.8: query selection summary tied to exactly one immutable publication.
+ * Read the published selection summary for one publication id.
  * # Safety
- * Initialize output size and follow aligned writable memory/handle contracts.
+ * `out` must point to an initialized `PaintSelectionInfo`; follow session lifetime contracts.
  */
 PaintStatus paint_session_selection_info(struct PaintCore *core,
                                          struct PaintSession *session,

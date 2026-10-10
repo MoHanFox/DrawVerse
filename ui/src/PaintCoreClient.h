@@ -108,8 +108,6 @@ public:
     Q_INVOKABLE void activateMoveTool();
     /// Marquee keeps the last rectangle/ellipse choice; the lasso and the wand are their own tools.
     Q_INVOKABLE void activateMarquee();
-    Q_INVOKABLE void activateLasso();
-    Q_INVOKABLE void activateWand();
     bool moveTool() const { return m_moveTool; }
     bool layerEditBusy() const { return m_pendingLayer != 0; }
     void setMoveTool(bool enabled);

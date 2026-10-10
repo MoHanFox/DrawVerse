@@ -28,6 +28,11 @@ pub(crate) unsafe fn write<T>(pointer: *mut T, value: T) -> ApiResult<()> {
     Ok(())
 }
 
+/// Reject a byte count that cannot be represented as a `usize` on this target.
+pub(crate) fn length(bytes: u64) -> ApiResult<usize> {
+    usize::try_from(bytes).map_err(|_| ApiError::invalid("length exceeds address space"))
+}
+
 /// Copy a fixed-size slice into caller memory, after validating pointer and alignment.
 pub(crate) unsafe fn write_slice<T: Copy>(pointer: *mut T, values: &[T]) -> ApiResult<()> {
     valid_pointer(pointer)?;
@@ -63,33 +68,6 @@ pub(crate) unsafe fn reset_sized<T>(pointer: *mut T, value: T) -> ApiResult<()> 
         sized_pointer(pointer)?;
         write(pointer, value)
     }
-}
-
-/// Read a caller-owned array of POD DTOs. `count` is bounded by the caller's protocol limit before
-/// any memory is touched, so a hostile count cannot make the backend read out of bounds.
-pub(crate) unsafe fn dto_slice<T: Copy>(
-    pointer: *const T,
-    count: usize,
-) -> ApiResult<&'static [T]> {
-    const MAX_DTO_ITEMS: usize = 65536;
-    if count > MAX_DTO_ITEMS {
-        return Err(ApiError::invalid("DTO array exceeds the item limit"));
-    }
-    if count == 0 {
-        return Ok(&[]);
-    }
-    if pointer.is_null() || pointer.addr() % align_of::<T>() != 0 {
-        return Err(ApiError::invalid("NULL or misaligned DTO array"));
-    }
-    // SAFETY: the caller guarantees `count` readable initialized T values behind this pointer.
-    Ok(unsafe { std::slice::from_raw_parts(pointer, count) })
-}
-
-pub(crate) fn length(value: u64) -> ApiResult<usize> {
-    if value > isize::MAX as u64 {
-        return Err(ApiError::invalid("buffer length exceeds addressable range"));
-    }
-    usize::try_from(value).map_err(|_| ApiError::invalid("buffer length exceeds platform range"))
 }
 
 pub(crate) unsafe fn utf8(pointer: *const u8, len: u64) -> ApiResult<String> {

@@ -238,8 +238,8 @@ public:
         // One entry per HistoryAction discriminant, in order. A missing entry used to fail the whole
         // publish ("无法识别的历史操作"), which silently froze every later UI update, so the list must
         // cover every kind the core can report and the check below treats the rest as unknown text.
-        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索选区"),QStringLiteral("魔棒选区"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("画布旋转")};
-        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","redo"};
+        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("画布旋转")};
+        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","layers","redo"};
         for(uint32_t depth=0;depth<=info.undo_depth+info.redo_depth;++depth) {
             auto entry=dto<PaintHistoryEntry>();auto historyStatus=paint_session_history_entry(m_core,m_session,info.publication,depth,&entry);
             if(historyStatus==PAINT_BUSY)return false;if(!check(historyStatus))return false;
@@ -652,7 +652,7 @@ void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
 void PaintCoreClient::setEraser(bool e) { if (!m_drawing && (e != m_eraser || m_moveTool || m_selectionTool)) { m_eraser = e; m_brushLibrary->setEraser(e); m_moveTool=false; m_selectionTool=0; emit brushChanged(); } }
 void PaintCoreClient::setMoveTool(bool enabled) { if(!m_drawing && (enabled!=m_moveTool || (enabled && m_selectionTool))) { m_moveTool=enabled; if(enabled)m_selectionTool=0; emit brushChanged(); } }
 void PaintCoreClient::setSelectionTool(int tool) {
-    if(tool<0 || tool>4 || m_drawing || tool==m_selectionTool) return;
+    if(tool<0 || tool>2 || m_drawing || tool==m_selectionTool) return;
     m_selectionTool=tool;
     if(tool==1 || tool==2) m_marqueeShape=tool;   // remembered for the next marquee activation
     if(tool){m_moveTool=false;m_eraser=false;}
@@ -685,16 +685,7 @@ void PaintCoreClient::activateMarquee() {
     setMoveTool(false); setEraser(false);
     setSelectionTool(shape);
 }
-void PaintCoreClient::activateLasso() {
-    if(m_drawing) return;
-    setMoveTool(false); setEraser(false);
-    setSelectionTool(3);
-}
-void PaintCoreClient::activateWand() {
-    if(m_drawing) return;
-    setMoveTool(false); setEraser(false);
-    setSelectionTool(4);
-}
+
 
 
 

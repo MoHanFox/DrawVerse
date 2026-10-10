@@ -604,7 +604,7 @@ impl Document {
     pub fn selection(&self) -> &crate::Selection {
         &self.selection
     }
-    /// Apply an already-rasterized selection shape (polygon or wand region).
+    /// Apply an already-rasterized selection shape.
     pub fn set_selection_path(
         &mut self,
         shape: crate::SelectionShape,
@@ -616,16 +616,6 @@ impl Document {
         self.set_selection_with_action(next, action)
     }
     /// Freehand lasso: rasterize the closed path and apply it.
-    /// Magic wand: flood fill from the seed and apply the resulting region.
-    pub fn set_selection_magic(&mut self, seed_x: u32, seed_y: u32, tolerance: u32) -> Result<()> {
-        let tolerance = f64::from(tolerance) / 255.;
-        let shape = crate::wand_shape(self, seed_x, seed_y, tolerance as f32)?;
-        self.set_selection_path(
-            shape,
-            crate::SelectionOperation::Replace,
-            crate::HistoryAction::MagicSelection,
-        )
-    }
     pub fn set_selection(&mut self, selection: crate::Selection) -> Result<()> {
         self.set_selection_with_action(selection, crate::HistoryAction::Selection)
     }

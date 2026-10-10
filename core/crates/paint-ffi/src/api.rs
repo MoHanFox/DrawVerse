@@ -456,9 +456,7 @@ pub const PAINT_SELECTION_ELLIPSE: u32 = 1;
 /// ABI 1.12: rasterized shapes. The geometry fields stay the bounding box for old callers.
 pub const PAINT_SELECTION_POLYGON: u32 = 2;
 pub const PAINT_SELECTION_MASK: u32 = 3;
-/// ABI 1.12: content-derived selection edits.
-pub const PAINT_SELECTION_PATH_MAGIC: u32 = 1;
-/// ABI 1.12: the seed point of a content-derived selection, in document pixels.
+
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct PaintSelectionPoint {

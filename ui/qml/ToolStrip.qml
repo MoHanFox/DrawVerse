@@ -49,7 +49,7 @@ Rectangle {
             ToolVariantsPanel { id: variants; parent: root; canvasView: root.canvasView }
         }
         IconButton {objectName:"lassoTool";width:26;height:26;glyph:"lassoSelection";checkable:true;checked:false;enabled:false;tooltip:"套索（待支持）"}
-        IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;checked:PaintClient.selectionTool===4;onClicked:PaintClient.activateWand();tooltip:"魔棒 W · 点击选取相近颜色" }
+        IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;checked:false;enabled:false;tooltip:"魔棒（待支持）" }
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         // Every slot clears the others: leaving a second tool active made the strip show the brush
         // while the bucket still owned the canvas.

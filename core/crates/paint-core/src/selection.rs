@@ -6,20 +6,17 @@ pub const MAX_SELECTION_STEPS: usize = 64;
 /// per pixel, i.e. 4096x4096). Larger regions must fail loudly instead of exhausting memory.
 pub const MAX_SELECTION_MASK_BYTES: usize = 16 * 1024 * 1024;
 /// Lasso paths are sampled by the UI; the cap bounds both memory and rasterization work.
-/// Magic-wand tolerance is a per-channel 0..=255 threshold over the composited document.
-pub const MAX_WAND_TOLERANCE: u32 = 255;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SelectionKind {
     Rectangle,
     Ellipse,
-    /// Freehand path: rasterized once into `mask`, then behaves like any other shape.
-    /// Pixel region derived from document content (magic wand).
+    /// Pixel region carried by a mask, as persisted by earlier versions.
     Mask,
 }
 
 impl SelectionKind {
-    /// Geometry-only shapes answer `coverage` analytically; the other two use the mask.
+    /// Geometry-only shapes answer `coverage` analytically; a mask region is stored per pixel.
     pub fn is_geometric(self) -> bool {
         matches!(self, SelectionKind::Rectangle | SelectionKind::Ellipse)
     }
