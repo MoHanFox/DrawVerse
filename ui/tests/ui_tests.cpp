@@ -1346,6 +1346,37 @@ private slots:
         const auto narrow=client.brushRadius();
         QTest::keyClick(main,Qt::Key_BracketRight);QTRY_VERIFY(client.brushRadius()>narrow);
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }    void paintBucketFillsAConnectedRegionInOneUndoableStep() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
+        auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();main->requestActivate();QTest::qWait(60);
+        // A white square the bucket can flood.
+        client.setSelectionTool(0);client.setMoveTool(false);client.setEraser(false);
+        client.setBrushRadius(6);client.setBrushColor(QColor("#ffffff"));
+        InputSample stroke;stroke.position={20,20};stroke.pressure=1;
+        QVERIFY(client.beginStroke(stroke));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());QTest::qWait(120);
+        QVERIFY2(client.sampleDocumentPixel(20,20).red()>200,qPrintable(client.sampleDocumentPixel(20,20).name()));
+        // The bucket tool takes over the canvas and fills on press.
+        // The bucket tool takes over the canvas and fills on press.
+        client.setBucketTool(true);QTRY_VERIFY(client.bucketTool());
+        QVERIFY(findVisualItem(main->contentItem(),"bucketTool"));
+        client.setBrushColor(QColor("#1e8ac8"));client.setBucketTolerance(24);
+        const auto depthBefore=client.undoDepth();
+        QTest::mousePress(main,Qt::LeftButton,Qt::NoModifier,canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(20,20)*canvas->zoom()).toPoint());
+        QTest::mouseRelease(main,Qt::LeftButton,Qt::NoModifier,canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(20,20)*canvas->zoom()).toPoint());
+        QTRY_COMPARE(client.undoDepth(),depthBefore+1);QTRY_VERIFY(!client.layerEditBusy());
+        const auto filled=client.sampleDocumentPixel(20,20);
+        QVERIFY2(filled.blue()>150 && filled.red()<120,qPrintable(filled.name()));
+        // Alt is still the eyedropper and never fills.
+        const auto depthAfterFill=client.undoDepth();
+        QTest::mousePress(main,Qt::LeftButton,Qt::AltModifier,canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(20,20)*canvas->zoom()).toPoint());
+        QTest::mouseRelease(main,Qt::LeftButton,Qt::AltModifier,canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(20,20)*canvas->zoom()).toPoint());
+        QTest::qWait(120);QCOMPARE(client.undoDepth(),depthAfterFill);
+        // One undo restores the pre-fill colour.
+        client.undo();QTRY_VERIFY(!client.layerEditBusy());QTest::qWait(120);
+        QVERIFY2(client.sampleDocumentPixel(20,20).red()>200,"undo did not restore the pre-fill pixels");
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }    void selectionOutlineMarchesWhileVisibleAndStopsOtherwise() {
         QQuickWindow window;window.setObjectName("antsHost");window.setColor(Qt::transparent);
         auto *item=new SelectionOverlay();item->setObjectName("antsOverlay");item->setParentItem(window.contentItem());

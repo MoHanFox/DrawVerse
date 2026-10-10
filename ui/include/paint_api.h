@@ -134,6 +134,11 @@
 
 #define PAINT_HISTORY_ERASER 2
 
+/**
+ * ABI 1.13: paint-bucket fill of a similar region.
+ */
+#define PAINT_HISTORY_FILL 25
+
 #define PAINT_HISTORY_GROUP 14
 
 #define PAINT_HISTORY_INITIAL 0
@@ -955,6 +960,22 @@ PaintStatus paint_session_file_submit(struct PaintCore *core,
                                       struct PaintSession *session,
                                       const struct PaintFileRequest *request,
                                       uint64_t *out_job);
+
+/**
+ * ABI 1.13: enqueue a paint-bucket fill of the region similar to one seed point. The colour is the
+ * session's active brush colour, so the bucket and the brush never disagree about it.
+ * # Safety
+ * `out_sequence` must be writable; follow session ownership contracts.
+ */
+PaintStatus paint_session_fill_region(struct PaintCore *core,
+                                      struct PaintSession *session,
+                                      double x,
+                                      double y,
+                                      uint32_t tolerance,
+                                      uint32_t contiguous,
+                                      float opacity,
+                                      const float *color,
+                                      uint64_t *out_sequence);
 
 /**
  * Return the latest complete frame. BUSY while pending/disabled. No partial frame is exposed.

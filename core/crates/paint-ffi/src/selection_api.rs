@@ -142,6 +142,57 @@ fn path_model(value: PaintSelectionPath) -> ApiResult<Path> {
         antialias,
     })
 }
+/// ABI 1.13: enqueue a paint-bucket fill of the region similar to one seed point. The colour is the
+/// session's active brush colour, so the bucket and the brush never disagree about it.
+/// # Safety
+/// `out_sequence` must be writable; follow session ownership contracts.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_fill_region(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    x: f64,
+    y: f64,
+    tolerance: u32,
+    contiguous: u32,
+    opacity: f32,
+    color: *const f32,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        if !x.is_finite() || !y.is_finite() || x < 0. || y < 0. || x > 1_000_000. || y > 1_000_000.
+        {
+            return Err(ApiError::invalid("fill seed outside the coordinate budget"));
+        }
+        if tolerance > paint_core::MAX_WAND_TOLERANCE {
+            return Err(ApiError::invalid("fill tolerance"));
+        }
+        if contiguous > 1 {
+            return Err(ApiError::invalid("fill contiguous flag"));
+        }
+        if !opacity.is_finite() || !(0. ..=1.).contains(&opacity) {
+            return Err(ApiError::invalid("fill opacity"));
+        }
+        let channels = pointers::dto_slice(color, 4)?;
+        let mut rgba = [0f32; 4];
+        rgba.copy_from_slice(channels);
+        if rgba.iter().any(|channel| !channel.is_finite()) {
+            return Err(ApiError::invalid("fill colour"));
+        }
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .submit(Operation::Fill(
+                x,
+                y,
+                tolerance,
+                contiguous != 0,
+                opacity,
+                rgba,
+            ))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
 /// ABI 1.12: enqueue a freehand-path (lasso) or content-derived (magic wand) selection edit.
 /// Points are copied and validated before returning; the session resolves the region off the UI thread.
 /// # Safety

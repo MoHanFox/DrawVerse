@@ -259,6 +259,14 @@ void CanvasItem::mousePressEvent(QMouseEvent *e) {
         e->accept();return;
     }
     forceActiveFocus(); m_last = e->position();
+    // The paint bucket fills on press: no drag state, and the region is resolved on the worker.
+    if (m_client->bucketTool() && e->button() == Qt::LeftButton) {
+        if (!documentRect().contains(e->position())) { e->accept(); return; }
+        const auto document = documentPoint(e->position());
+        m_client->fillRegion(document.x(), document.y(), m_client->bucketTolerance(),
+                             m_client->bucketContiguous(), m_client->brushOpacity());
+        e->accept(); return;
+    }
     // Alt is the eyedropper: sample the rendered frame and adopt the colour as the foreground.
     // Nothing is written to the document, so this never creates history.
     if (e->button() == Qt::LeftButton && e->modifiers().testFlag(Qt::AltModifier) && !m_client->selectionTool()) {

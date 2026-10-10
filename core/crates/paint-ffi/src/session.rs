@@ -44,6 +44,8 @@ pub(crate) enum Operation {
     Translate(u64, i32, i32),
     /// Whole-canvas rotate/flip, encoded as a `CanvasTransform` discriminant.
     Transform(u32),
+    /// Paint-bucket fill: seed, tolerance, contiguous flag, opacity and the brush colour.
+    Fill(f64, f64, u32, bool, f32, [f32; 4]),
     Group(u64, String),
     Ungroup(u64),
     Reparent(u64, u64),
@@ -771,6 +773,27 @@ impl Engine {
                 let revision = self.document.revision();
                 self.document
                     .transform_canvas(paint_core::CanvasTransform::from_raw(kind)?)?;
+                self.modified |= revision != self.document.revision();
+            }
+            Operation::Fill(x, y, tolerance, contiguous, opacity, color) => {
+                // The bucket paints with the active brush colour, which the client owns and passes
+                // here, so the two never disagree about it.
+                let (width, height) = self.document.dimensions();
+                if x < 0. || y < 0. || x >= f64::from(width) || y >= f64::from(height) {
+                    return Err(ApiError::invalid("fill seed outside document"));
+                }
+                // The client passes straight (un-premultiplied) RGBA, like the colour pickers do.
+                let color = paint_core::Pixel::from_straight(color)?;
+                let revision = self.document.revision();
+                let tolerance = f64::from(tolerance) / 255.;
+                self.document.fill_region(
+                    x as u32,
+                    y as u32,
+                    tolerance as f32,
+                    contiguous,
+                    color,
+                    opacity,
+                )?;
                 self.modified |= revision != self.document.revision();
             }
             Operation::Group(id, name) => {

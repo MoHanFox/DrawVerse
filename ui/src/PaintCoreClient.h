@@ -57,6 +57,9 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QVariantList recentColors READ recentColors NOTIFY recentColorsChanged)
     Q_PROPERTY(int historyLimit READ historyLimit WRITE setHistoryLimit NOTIFY historyLimitChanged)
     Q_PROPERTY(bool eraser READ eraser WRITE setEraser NOTIFY brushChanged)
+    Q_PROPERTY(bool bucketTool READ bucketTool WRITE setBucketTool NOTIFY brushChanged)
+    Q_PROPERTY(int bucketTolerance READ bucketTolerance WRITE setBucketTolerance NOTIFY brushChanged)
+    Q_PROPERTY(bool bucketContiguous READ bucketContiguous WRITE setBucketContiguous NOTIFY brushChanged)
     Q_PROPERTY(bool moveTool READ moveTool WRITE setMoveTool NOTIFY brushChanged)
     Q_PROPERTY(bool layerEditBusy READ layerEditBusy NOTIFY stateChanged)
     Q_PROPERTY(bool selectionEnabled READ selectionEnabled NOTIFY selectionChanged)
@@ -100,6 +103,13 @@ public:
     BrushLibrary *brushLibrary() const {return m_brushLibrary;}
     QVariantList recentColors() const;
     bool eraser() const { return m_eraser; }
+    bool bucketTool() const { return m_bucketTool; }
+    void setBucketTool(bool enabled);
+    /// Paint-bucket parameters, kept next to the client so the canvas and any panel agree on them.
+    int bucketTolerance() const { return m_bucketTolerance; }
+    void setBucketTolerance(int tolerance);
+    bool bucketContiguous() const { return m_bucketContiguous; }
+    void setBucketContiguous(bool contiguous);
     bool moveTool() const { return m_moveTool; }
     bool layerEditBusy() const { return m_pendingLayer != 0; }
     void setMoveTool(bool enabled);
@@ -145,6 +155,8 @@ public:
     Q_INVOKABLE bool transformCanvas(int kind);
     /// Eyedropper: sample the composited pixel at document coordinates. Read-only, no history.
     Q_INVOKABLE QColor sampleDocumentPixel(qreal x, qreal y) const;
+    /// Paint bucket: fill the region similar to the seed with the active brush colour.
+    Q_INVOKABLE bool fillRegion(qreal x, qreal y, int tolerance, bool contiguous, qreal opacity);
     Q_INVOKABLE void setLayerProperties(quint64 id, bool visible, qreal opacity);
     Q_INVOKABLE bool setLayerFill(quint64 id, qreal fill);
     Q_INVOKABLE bool setLayerBlend(quint64 id, int blend);
@@ -230,6 +242,9 @@ private:
     qreal m_spacing = .15;
     BrushLibrary *m_brushLibrary = nullptr;
     bool m_eraser = false;
+    bool m_bucketTool = false;
+    int m_bucketTolerance = 32;
+    bool m_bucketContiguous = true;
     bool m_moveTool = false;
     int m_selectionTool = 0;
     QVariantMap m_selection;

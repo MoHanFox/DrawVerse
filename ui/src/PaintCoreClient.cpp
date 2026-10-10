@@ -673,8 +673,23 @@ void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
 void PaintCoreClient::setEraser(bool e) { if (!m_drawing && (e != m_eraser || m_moveTool || m_selectionTool)) { m_eraser = e; m_brushLibrary->setEraser(e); m_moveTool=false; m_selectionTool=0; emit brushChanged(); } }
 void PaintCoreClient::setMoveTool(bool enabled) { if(!m_drawing && (enabled!=m_moveTool || (enabled && m_selectionTool))) { m_moveTool=enabled; if(enabled)m_selectionTool=0; emit brushChanged(); } }
 void PaintCoreClient::setSelectionTool(int tool) {
-    if(tool<0 || tool>2 || m_drawing || tool==m_selectionTool) return;
-    m_selectionTool=tool;if(tool){m_moveTool=false;m_eraser=false;}emit brushChanged();
+    if(tool<0 || tool>4 || m_drawing || tool==m_selectionTool) return;
+    m_selectionTool=tool;if(tool){m_moveTool=false;m_eraser=false;m_bucketTool=false;}emit brushChanged();
+}
+void PaintCoreClient::setBucketContiguous(bool contiguous) {
+    if(m_bucketContiguous==contiguous) return;
+    m_bucketContiguous=contiguous; emit brushChanged();
+}
+void PaintCoreClient::setBucketTolerance(int tolerance) {
+    const auto clamped=std::clamp(tolerance,0,255);
+    if(m_bucketTolerance==clamped) return;
+    m_bucketTolerance=clamped; emit brushChanged();
+}
+void PaintCoreClient::setBucketTool(bool enabled) {
+    if(m_drawing || (enabled==m_bucketTool && (!enabled || (!m_moveTool && !m_eraser && !m_selectionTool)))) return;
+    m_bucketTool=enabled;
+    if(enabled) {m_moveTool=false;m_eraser=false;m_selectionTool=0;}
+    emit brushChanged();
 }
 bool PaintCoreClient::submitSelection(quint32 action,QRectF rect,int shape,int operation) {
     if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing) return false;
@@ -746,6 +761,21 @@ void PaintCoreClient::cancelStroke() {
 }
 void PaintCoreClient::undo() { if (m_ready && !m_drawing) submit(Undo); }
 void PaintCoreClient::redo() { if (m_ready && !m_drawing) submit(Redo); }
+bool PaintCoreClient::fillRegion(qreal x,qreal y,int tolerance,bool contiguous,qreal opacity) {
+    if(!m_ready || m_drawing || layerEditBusy() || fileBusy() || m_closing) return false;
+    if(!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(opacity)) return false;
+    if(x<0 || y<0 || x>=m_width || y>=m_height) return false;
+    if(tolerance<0 || tolerance>255 || opacity<=0 || opacity>1) return false;
+    const auto straight=m_color;   // the bucket paints with the active brush colour
+    const float rgba[4]={float(straight.redF()),float(straight.greenF()),float(straight.blueF()),float(straight.alphaF())};
+    uint64_t sequence=0; PaintStatus status; QString error;
+    { QMutexLocker lock(&m_connection->mutex); if(!m_connection->session) return false;
+      status=paint_session_fill_region(m_connection->core,m_connection->session,x,y,quint32(tolerance),
+                                       contiguous?1u:0u,float(opacity),rgba,&sequence);
+      if(status!=PAINT_OK) error=immediateError(status); }
+    if(status!=PAINT_OK) { showError(error); return false; }
+    m_pendingLayer=m_pendingMutation=sequence; m_modified=true; emit stateChanged(); return true;
+}
 QColor PaintCoreClient::sampleDocumentPixel(qreal x, qreal y) const {
     if(!m_connection || m_closing || !std::isfinite(x) || !std::isfinite(y)) return {};
     float rgba[4]={0,0,0,0};
