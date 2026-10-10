@@ -11,6 +11,7 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(PaintCoreClient *client READ client WRITE setClient NOTIFY clientChanged)
     Q_PROPERTY(qreal zoom READ zoom NOTIFY viewChanged)
     Q_PROPERTY(QRectF documentRect READ documentRect NOTIFY viewChanged)
+    Q_PROPERTY(QRectF visibleDocumentRect READ visibleDocumentRect NOTIFY viewChanged)
     Q_PROPERTY(bool interactive READ interactive WRITE setInteractive NOTIFY interactiveChanged)
     Q_PROPERTY(qreal initialFitRatio READ initialFitRatio WRITE setInitialFitRatio NOTIFY viewChanged)
     Q_PROPERTY(QRectF selectionPreview READ selectionPreview NOTIFY selectionDragChanged)
@@ -22,6 +23,7 @@ public:
     void setClient(PaintCoreClient *client);
     qreal zoom() const { return m_zoom; }
     QRectF documentRect() const;
+    QRectF visibleDocumentRect() const;
     bool interactive() const { return m_interactive; }
     void setInteractive(bool enabled);
     qreal initialFitRatio() const { return m_initialFitRatio; }

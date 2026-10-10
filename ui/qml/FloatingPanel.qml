@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import "."
-ApplicationWindow {
+PanelWindow {
     id: root
     required property var windowData
     property var canvasPane
@@ -12,12 +12,10 @@ ApplicationWindow {
     readonly property bool onlyTools:windowData.groups.length===1 && windowData.groups[0]==="__toolstrip"
     objectName:onlyTools?"floatingToolStrip":"floatingDock:"+windowData.id
     visible:true;flags:Qt.Tool|Qt.FramelessWindowHint
-    font.family:Qt.platform.os==="windows"?"Microsoft YaHei UI":"sans-serif";font.pixelSize:10
     title:"DrawVerse · "+windowData.panels.map(p=>Workspace.panelDefinition(p).title).join(" / ")
-    color:windowData.icons?Theme.surface:"transparent";background:null
+    color:windowData.icons?Theme.surface:"transparent"
     Rectangle {anchors.fill:parent;color:"transparent";border.color:Theme.line}
-    palette.window:Theme.surface;palette.windowText:Theme.text;palette.base:Theme.background;palette.text:Theme.text
-    palette.button:Theme.raised;palette.buttonText:Theme.text;palette.highlight:Theme.selected;palette.highlightedText:Theme.accent
+    Rectangle {objectName:"floatingColumnBody";x:1;y:windowData.icons?1:29;width:parent.width-2;height:parent.height-y-1;color:Theme.surface}
     x:windowData.x;y:windowData.y;width:windowData.width;height:windowData.height
     minimumWidth:onlyTools?38:Math.min(windowData.minimumWidth,Workspace.availableScreenGeometry(root).width)
     minimumHeight:onlyTools?304:Math.min(windowData.minimumHeight,Workspace.availableScreenGeometry(root).height)

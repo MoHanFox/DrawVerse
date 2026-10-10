@@ -6,6 +6,7 @@ Item {
     property string hostId: "main"
     property var canvasPane
     property var canvasView
+    property var flyoutHost:null
     property var views: ({})
     property bool ready: false
     function releaseCanvas() {
@@ -16,8 +17,9 @@ Item {
         const items=Workspace.layoutItems(hostId,Math.round(width),Math.round(height)), live={}
         for(let i=0;i<items.length;i++) {
             const data=items[i];live[data.id]=true
+            if(views[data.id] && views[data.id].layoutData.kind!==data.kind){views[data.id].visible=false;views[data.id].destroy();delete views[data.id]}
             if(views[data.id]) views[data.id].updateLayout(data)
-            else views[data.id]=(data.kind==="leaf"?leafFactory:data.kind==="railBackground"?railBackgroundFactory:splitFactory).createObject(root,{layoutData:data,workspace:root})
+            else views[data.id]=(data.kind==="leaf"?leafFactory:data.kind==="railBackground"?railBackgroundFactory:data.kind==="railSeparator"?separatorFactory:splitFactory).createObject(root,{layoutData:data,workspace:root})
         }
         for(const id in views) if(!live[id]) {
             if(views[id].releaseCanvas) views[id].releaseCanvas()
@@ -36,6 +38,17 @@ Item {
     }
     Component {id:leafFactory;DockTile {}}
     Component {id:splitFactory;DockDivider {}}
+    Component {
+        id:separatorFactory
+        Item {
+            required property var layoutData
+            property var workspace
+            objectName:"railCategorySeparator:"+layoutData.id
+            x:layoutData.rect.x;y:layoutData.rect.y;width:layoutData.rect.width;height:layoutData.rect.height
+            function updateLayout(data){layoutData=data}
+            Rectangle {objectName:"railSeparatorLine";anchors.centerIn:parent;width:18;height:1;color:Theme.line}
+        }
+    }
     Component {
         id:railBackgroundFactory
         Rectangle {
@@ -62,4 +75,11 @@ Item {
         }
     }
     DockEdgePreview {objectName:"workspaceDockPreview";anchors.fill:parent;visible:root.hostId==="main" && Workspace.dragTarget.indexOf("__workspace_")===0;mode:Workspace.dragTarget.endsWith("right")?"right":"left"}
+    DockEdgePreview {
+        objectName:"dockColumnPreview:"+root.hostId
+        readonly property point origin:root.mapFromGlobal(Workspace.dragPreviewRect.x,Workspace.dragPreviewRect.y)
+        x:origin.x;y:origin.y;width:Workspace.dragPreviewRect.width;height:Workspace.dragPreviewRect.height
+        visible:Workspace.dragPlacement.indexOf("column-")===0 && Workspace.groupDefinition(Workspace.dragTarget).host===root.hostId
+        mode:Workspace.dragPlacement.endsWith("left")?"left":"right"
+    }
 }

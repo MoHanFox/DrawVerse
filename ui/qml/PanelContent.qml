@@ -116,27 +116,22 @@ Item {
                 interval:20;repeat:true;running:historyContent.targetDepth>=0
                 onTriggered:{if(historyContent.targetDepth===PaintClient.undoDepth){historyContent.targetDepth=-1;return}if(!PaintClient.ready||PaintClient.drawing||PaintClient.fileBusy||PaintClient.layerEditBusy)return;if(historyContent.targetDepth<PaintClient.undoDepth)PaintClient.undo();else PaintClient.redo()}
             }
-            RowLayout {
-                Layout.fillWidth:true
-                Item {Layout.fillWidth:true}
-                IconButton {glyph:"undo";implicitWidth:22;implicitHeight:20;tooltip:"撤销 Ctrl+Z";enabled:PaintClient.undoDepth>0&&!PaintClient.drawing;onClicked:{historyContent.targetDepth=-1;PaintClient.undo()}}
-                IconButton {glyph:"redo";implicitWidth:22;implicitHeight:20;tooltip:"重做 Ctrl+Shift+Z";enabled:PaintClient.redoDepth>0&&!PaintClient.drawing;onClicked:{historyContent.targetDepth=-1;PaintClient.redo()}}
-            }
         }
     }
     Component {
         id: navigatorPanel
-        ColumnLayout {
+        Rectangle {
+            objectName:"navigatorPreview";color:Theme.background;radius:2;clip:true
+            TransparencyGrid {objectName:"navigatorTransparency";x:mini.documentRect.x;y:mini.documentRect.y;width:mini.documentRect.width;height:mini.documentRect.height}
+            PaintCanvas {id:mini;objectName:"navigatorCanvas";anchors.fill:parent;client:PaintClient;interactive:false}
             Rectangle {
-                Layout.fillWidth: true; Layout.preferredHeight: 170; color: Theme.background; radius: 2
-                TransparencyGrid { objectName: "navigatorTransparency"; x: mini.documentRect.x; y: mini.documentRect.y; width: mini.documentRect.width; height: mini.documentRect.height }
-                PaintCanvas { id: mini; objectName: "navigatorCanvas"; anchors.fill: parent; client: PaintClient; interactive: false }
+                objectName:"navigatorViewFrame"
+                readonly property rect region:root.canvasView?root.canvasView.visibleDocumentRect:Qt.rect(0,0,0,0)
+                x:mini.documentRect.x+region.x*mini.zoom;y:mini.documentRect.y+region.y*mini.zoom
+                width:region.width*mini.zoom;height:region.height*mini.zoom
+                visible:region.width>0 && region.height>0 && root.canvasView && root.canvasView.visible && root.canvasView.client===PaintClient
+                color:"transparent";border.color:"#ff3434";border.width:1;radius:2
             }
-            Label { text: PaintClient.documentWidth+" × "+PaintClient.documentHeight+" px"; color: Theme.muted }
-            Label { text: root.canvasView ? Math.round(root.canvasView.zoom*100)+"%" : ""; color: Theme.text; font.pixelSize: 18 }
-            Button { text: "适合窗口  F"; Layout.fillWidth: true; onClicked: { if (root.canvasView) root.canvasView.fitToView() } }
-            Button { text: "实际像素  100%"; Layout.fillWidth: true; onClicked: { if (root.canvasView) root.canvasView.actualSize() } }
-            Item { Layout.fillHeight: true }
         }
     }
 }

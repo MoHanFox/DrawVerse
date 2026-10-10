@@ -28,6 +28,7 @@ class WorkspaceManager final : public QObject, public QAbstractNativeEventFilter
     Q_PROPERTY(bool dockingSuppressed READ dockingSuppressed NOTIFY dragModifiersChanged)
     Q_PROPERTY(QString dragTarget READ dragTarget NOTIFY dragModifiersChanged)
     Q_PROPERTY(QString dragPlacement READ dragPlacement NOTIFY dragModifiersChanged)
+    Q_PROPERTY(QRectF dragPreviewRect READ dragPreviewRect NOTIFY dragModifiersChanged)
     Q_PROPERTY(bool dragging READ dragging NOTIFY dragModifiersChanged)
     Q_PROPERTY(QStringList dragGroups READ dragGroups NOTIFY dragModifiersChanged)
     Q_PROPERTY(bool toolsFloating READ toolsFloating NOTIFY toolStripChanged)
@@ -62,11 +63,16 @@ public:
     bool dockingSuppressed() const { return m_dockingSuppressed; }
     QString dragTarget() const {return m_dragTarget;}
     QString dragPlacement() const {return m_dragPlacement;}
+    QRectF dragPreviewRect() const {return m_dragPreviewRect;}
     bool dragging() const {return m_windowDrag.active();}
     QStringList dragGroups() const {return m_dragGroups;}
     Q_INVOKABLE void registerTarget(const QString &group,QQuickItem *item);
     Q_INVOKABLE void registerWorkspace(QQuickItem *item);
     Q_INVOKABLE QStringList columnGroups(const QString &group) const;
+    Q_INVOKABLE QStringList categoryGroups(const QString &group) const;
+    Q_INVOKABLE QString groupForPanel(const QString &panel) const;
+    Q_INVOKABLE QVariantMap categoryDefinition(const QString &group) const;
+    Q_INVOKABLE QString sidePlacement(const QString &group,const QString &edge) const;
     Q_INVOKABLE void setColumnCollapsed(const QString &group,bool collapsed);
     bool toolsFloating() const {return m_toolsFloating;}
     int toolStripX() const {return m_toolPosition.x();}
@@ -144,6 +150,7 @@ private:
     WindowDrag m_windowDrag;
     QString m_dragTarget,m_dragPlacement,m_dragHost;
     QStringList m_dragGroups;
+    QRectF m_dragPreviewRect;
     QMap<QString,DockTree::Node> m_beforeDocks;
     QHash<QString,QRect> m_beforeWindows;
     QList<Group> m_beforeGroups;
@@ -155,5 +162,8 @@ private:
     void removeDock(const QString &group);
     void addDock(const QString &group,const QString &location,const QString &target,const QString &edge,bool independentColumn=false);
     void syncToolsLocation();
-    QSizeF dockMinimum(const DockTree::Node &node) const;
+    QSizeF dockMinimum(const DockTree::Node &node,bool expanded=false) const;
+    DockTree::Node categoryTree(const QString &group) const;
+    QRectF columnRect(const QString &group) const;
+    bool dockColumn(const QString &host,const QString &location,const QString &target,const QString &edge);
 };

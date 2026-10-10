@@ -10,7 +10,7 @@ Rectangle {
     property var canvasView
     property bool flyout: false
     readonly property bool floating:flyout || groupData.location==="floating"
-    readonly property color barColor:floating?Theme.floatingPanelBar:Theme.panelBar
+    readonly property color barColor:floating && (flyout || groupData.columnFirst)?Theme.floatingPanelBar:Theme.panelBar
     signal dismissRequested()
     signal slideRequested(real globalY)
     property string selected: groupData.active
@@ -33,7 +33,7 @@ Rectangle {
     Connections {
         target: Workspace
         function onGroupStateChanged(group) {
-            if(root.flyout || group!==root.groupData.id) return
+            if(group!==root.groupData.id) return
             const data=Workspace.groupDefinition(group)
             root.selected=data.active
         }
@@ -69,6 +69,7 @@ Rectangle {
             else if(distance===y)dropMode="before"
             else dropMode="after"
         }
+        dropMode=Workspace.sidePlacement(root.groupData.id,dropMode)
     }
     ColumnLayout {
         anchors.fill: parent; spacing: 0
@@ -87,7 +88,7 @@ Rectangle {
                         else {const id=root.groupData.id;Qt.callLater(() => Workspace.beginDrag(id,"",true))}
                     }
                 }
-                onDoubleClicked: {root.dismissRequested();Workspace.setColumnCollapsed(root.groupData.id,!root.flyout)}
+                onDoubleClicked: {if(root.flyout)root.dismissRequested();else Workspace.setColumnCollapsed(root.groupData.id,true)}
             }
             Row {
                 anchors.right: parent.right; height: parent.height
@@ -197,7 +198,7 @@ Rectangle {
         }
     }
     DockEdgePreview {
-        objectName: "dockPreview:"+root.groupData.id; visible: drop.containsDrag || Workspace.dragTarget===root.groupData.id
+        objectName: "dockPreview:"+root.groupData.id; visible: (drop.containsDrag || Workspace.dragTarget===root.groupData.id) && !Workspace.dragPlacement.startsWith("column-")
         anchors.fill:parent
         mode:Workspace.dragTarget===root.groupData.id?Workspace.dragPlacement:root.dropMode
     }

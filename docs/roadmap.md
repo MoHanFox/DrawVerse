@@ -74,3 +74,7 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 ## 面板状态与紧凑信息栏（2026-10-10）
 
 同图标再次点击收回对应面板，其他打开面板不受影响；独立宽高与来源列侧边偏移通过布局 v6 可选 panelViews 保存，收回再打开和重启恢复继承。描边/分隔统一 #1B1C1F，标签圆角 3px，拖动栏与标签栏背景 #05080A，浮动时背景 75% 不透明，正文不透明。底栏显示工具、共享画笔预设、文档尺寸、图层数，以及中心缩小/放大、单小数百分比和适配；工具条适合窗口按钮删除，菜单/F 保留。见 [panel-presentation-design.md](panel-presentation-design.md) / [panel-presentation-validation.md](panel-presentation-validation.md)。
+
+## 面板分组与统一内容（2026-10-10）
+
+外侧边停靠生成独立整列，内侧边并列属于同组；标签与并列组合一起打开，不同组图标间居中灰黑线。多组常驻、再次点击当前图标或双击顶栏收回，来源列保持折叠；整列拖动/归位/保存保留左右树和状态。浮动展开列仅顶层栏 75% 不透明，下方栏和空白不透明。共用 PanelContent/PanelGroup 与 PanelWindow 调色板，导航仅预览和实时红色视口框，历史移除撤销/重做按钮；按用户后续要求保留历史逐条跳转。见 [panel-categories-design.md](panel-categories-design.md) / [panel-categories-validation.md](panel-categories-validation.md)。

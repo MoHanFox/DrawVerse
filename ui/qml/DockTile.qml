@@ -14,15 +14,17 @@ Item {
     function updateLayout(data){layoutData=data;if(isCanvas && workspace.canvasPane.parent!==canvasHost)workspace.canvasPane.attach(canvasHost)}
     function releaseCanvas(){if(isCanvas && workspace.canvasPane.parent===canvasHost)workspace.canvasPane.park()}
     function iconAnchor(panel){return contentLoader.item && contentLoader.item.iconAnchor?contentLoader.item.iconAnchor(panel):mapToGlobal(0,0)}
+    function removeFlyout(window){if(contentLoader.item && contentLoader.item.removePeek)contentLoader.item.removePeek(window)}
     function locateDrop(x,y){
         const distance=Math.min(x,width-x,y,height-y)
         if(distance===x)dropMode="left"
         else if(distance===width-x)dropMode="right"
         else if(distance===y)dropMode="before"
         else dropMode="after"
+        dropMode=Workspace.sidePlacement(root.layoutData.id,dropMode)
     }
     Item {id:canvasHost;anchors.fill:parent;visible:root.isCanvas}
-    Component.onCompleted:{if(isCanvas)workspace.canvasPane.attach(canvasHost);else Workspace.registerTarget(layoutData.id,root)}
+    Component.onCompleted:{if(isCanvas)workspace.canvasPane.attach(canvasHost);else if(!workspace.flyoutHost)Workspace.registerTarget(layoutData.id,root)}
     Loader {
         id:contentLoader
         anchors.fill:parent;active:!root.isCanvas
@@ -31,23 +33,28 @@ Item {
     Component {id:tools;ToolStrip {canvasView:root.workspace.canvasView}}
     Component {
         id:panel
-        PanelGroup {groupData:root.layoutData;canvasView:root.workspace.canvasView}
+        PanelGroup {
+            groupData:root.layoutData;canvasView:root.workspace.canvasView;flyout:!!root.workspace.flyoutHost
+            onDismissRequested:if(root.workspace.flyoutHost)root.workspace.flyoutHost.close()
+            onSlideRequested:globalY=>{if(root.workspace.flyoutHost)root.workspace.flyoutHost.positionSide(globalY-4)}
+        }
     }
     Component {
         id:rail
         Rectangle {
             id:railRoot;objectName:"iconRail:"+root.layoutData.id;color:Theme.surface
             property var peeks:({})
+            property var flyoutFactory:Qt.createComponent("PanelFlyout.qml")
             function iconAnchor(panel){for(let i=0;i<icons.count;i++){const icon=icons.itemAt(i);if(icon.modelData===panel)return icon.mapToGlobal(0,0)}return root.mapToGlobal(0,0)}
-            function removePeek(panel,window){if(peeks[panel]===window){const next=Object.assign({},peeks);delete next[panel];peeks=next}}
+            function removePeek(window){const next=Object.assign({},peeks);for(const panel in next)if(next[panel]===window)delete next[panel];peeks=next}
             function openPanel(panel){
-                Workspace.setActive(root.layoutData.id,panel)
                 let peek=peeks[panel]
-                if(peek && peek.visible){peek.close();return}
-                if(!peek){peek=flyoutFactory.createObject(railRoot,{ownerTile:root,panelKey:panel,canvasView:root.workspace.canvasView});const next=Object.assign({},peeks);next[panel]=peek;peeks=next}
+                if(peek && peek.visible && peek.selectedPanel===panel){peek.close();return}
+                Workspace.setActive(Workspace.groupForPanel(panel),panel)
+                if(!peek){peek=flyoutFactory.createObject(railRoot,{ownerTile:root,panelKey:panel,canvasView:Qt.binding(()=>root.workspace.canvasView)});const next=Object.assign({},peeks);for(const key of Workspace.categoryDefinition(root.layoutData.id).panels)next[key]=peek;peeks=next}
                 peek.showPanel(panel)
             }
-            Component.onDestruction:{for(const panel in peeks)if(peeks[panel])peeks[panel].destroy();peeks=({})}
+            Component.onDestruction:{const windows=[];for(const panel in peeks)if(peeks[panel] && windows.indexOf(peeks[panel])<0)windows.push(peeks[panel]);for(const window of windows)window.destroy();peeks=({})}
             IconButton {objectName:"dockCollapse:"+root.layoutData.location;visible:root.layoutData.columnFirst;width:28;height:10;padding:2;glyph:"expand";tooltip:"展开面板列";onClicked:Workspace.setColumnCollapsed(root.layoutData.id,false)}
             MouseArea {
                 anchors.top:parent.top;anchors.left:parent.left;width:12;height:12;visible:root.layoutData.columnFirst
@@ -72,7 +79,7 @@ Item {
                             onPositionChanged:m=>{
                                 if(pressed && !moving && !PaintClient.drawing && Math.abs(m.x-start.x)+Math.abs(m.y-start.y)>8){
                                     moving=true;if(railRoot.peeks[railButton.modelData])railRoot.peeks[railButton.modelData].close()
-                                    const id=root.layoutData.id,panel=railButton.modelData;Qt.callLater(()=>Workspace.beginDrag(id,panel,false))
+                                    const id=Workspace.groupForPanel(railButton.modelData),panel=railButton.modelData;Qt.callLater(()=>Workspace.beginDrag(id,panel,false))
                                 }
                             }
                             onClicked:if(!moving)railRoot.openPanel(railButton.modelData)
@@ -80,7 +87,6 @@ Item {
                     }
                 }
             }
-            Component {id:flyoutFactory;PanelFlyout {id:flyout;onClosing: {flyout.remember();Workspace.watchPanelFlyout(flyout,ownerTile,false);railRoot.removePeek(panelKey,flyout);visible=false;Qt.callLater(()=>flyout.destroy())}}}
         }
     }
 
@@ -98,7 +104,7 @@ Item {
     }
     DockEdgePreview {
         objectName:"dockPreview:"+root.layoutData.id;anchors.fill:parent
-        visible:(root.isTools || root.layoutData.rail) && (drop.containsDrag || Workspace.dragTarget===root.layoutData.id) && !Workspace.dockingSuppressed
+        visible:(root.isTools || root.layoutData.rail) && (drop.containsDrag || Workspace.dragTarget===root.layoutData.id) && !Workspace.dockingSuppressed && !Workspace.dragPlacement.startsWith("column-")
         mode:Workspace.dragTarget===root.layoutData.id?Workspace.dragPlacement:root.dropMode
     }
 }

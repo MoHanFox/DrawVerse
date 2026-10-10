@@ -42,6 +42,23 @@ bool insert(Node &node,const QString &target,const QString &group,const QString 
     if(insert(second,target,group,edge)) { node.insert("second",second); return true; }
     return false;
 }
+bool insertAround(Node &node,const QStringList &targets,const QString &group,const QString &edge,bool row) {
+    return insertBlock(node,targets,leaf(group),edge,row);
+}
+bool insertBlock(Node &node,const QStringList &targets,Node block,const QString &edge,bool row) {
+    if(node.isEmpty() || targets.isEmpty())return false;
+    if(leaves(node)==targets) {
+        const bool before=edge=="left" || edge=="before" || edge=="top";
+        const bool horizontal=edge=="left" || edge=="right";
+        node=split(before?block:node,before?node:block,horizontal?"horizontal":"vertical",before?.3:.7);
+        if(row && horizontal)node.insert("role","row");
+        return true;
+    }
+    auto first=node.value("first").toObject(),second=node.value("second").toObject();
+    if(insertBlock(first,targets,block,edge,row)){node.insert("first",first);return true;}
+    if(insertBlock(second,targets,block,edge,row)){node.insert("second",second);return true;}
+    return false;
+}
 bool setRatio(Node &node,const QString &id,double ratio) {
     if(node.isEmpty() || node.contains("group")) return false;
     if(node.value("id").toString()==id) { node.insert("ratio",std::clamp(ratio,.05,.95)); node.insert("preferred",QString()); return true; }
@@ -60,7 +77,10 @@ bool validate(const Node &node,const QSet<QString> &allowed,QSet<QString> &seen,
     }
     const auto id=node.value("id").toString(),axis=node.value("axis").toString(),preferred=node.value("preferred").toString();
     const auto ratio=node.value("ratio").toDouble(-1);
-    if(id.isEmpty() || id.size()>128 || splits.contains(id) || (axis!="horizontal" && axis!="vertical") ||
+    const auto role=node.value("role").toString();
+    if((node.contains("role") && (role!="row" || axis!="horizontal" || !preferred.isEmpty())) ||
+       (role=="row" && (leaves(node).contains("__canvas") || leaves(node).contains("__toolstrip"))) ||
+       id.isEmpty() || id.size()>128 || splits.contains(id) || (axis!="horizontal" && axis!="vertical") ||
        !std::isfinite(ratio) || ratio<.05 || ratio>.95 ||
        !QStringList{"","left","right","toolsFirst","toolsSecond"}.contains(preferred)) return false;
     splits.insert(id);

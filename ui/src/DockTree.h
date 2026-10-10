@@ -11,6 +11,8 @@ Node split(Node first,Node second,const QString &axis,double ratio=.5,const QStr
 QStringList leaves(const Node &node);
 bool remove(Node &node,const QString &group);
 bool insert(Node &node,const QString &target,const QString &group,const QString &edge);
+bool insertAround(Node &node,const QStringList &targets,const QString &group,const QString &edge,bool row=false);
+bool insertBlock(Node &node,const QStringList &targets,Node block,const QString &edge,bool row=false);
 bool setRatio(Node &node,const QString &id,double ratio);
 bool validate(const Node &node,const QSet<QString> &allowed,QSet<QString> &seen,QSet<QString> &splits,int depth=0);
 }

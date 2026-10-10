@@ -2,28 +2,27 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
 import "."
-ApplicationWindow {
+PanelWindow {
     id:root
     required property var ownerTile
     required property string panelKey
     property var canvasView
     property string selectedPanel:panelKey
-    property var groupData:({id:"",panels:[],active:"",dockHeight:320})
+    property var groupData:({id:"",panels:[],groups:[],dockHeight:320})
     readonly property var sourceWindow:ownerTile.Window.window
     property real lastSourceY:0
     property bool positioning:false
     property bool restoring:false
     objectName:"panelFlyout:"+groupData.id+":"+panelKey
-    flags:Qt.Tool|Qt.FramelessWindowHint;visible:false;color:"transparent";background:null
+    flags:Qt.Tool|Qt.FramelessWindowHint;visible:false;color:"transparent"
     Rectangle {anchors.fill:parent;color:"transparent";border.color:Theme.line}
-    font.family:Qt.platform.os==="windows"?"Microsoft YaHei UI":"sans-serif";font.pixelSize:10
     readonly property string panelKind:Workspace.panelDefinition(panelKey).kind
-    minimumWidth:Math.min(190,Workspace.availableScreenGeometry(root).width)
-    minimumHeight:Math.min(panelKind==="layers"?278:panelKind==="brush-settings"?288:148,Workspace.availableScreenGeometry(root).height)
+    minimumWidth:Math.min(Math.max(190,groupData.minimumWidth||190),Workspace.availableScreenGeometry(root).width)
+    minimumHeight:Math.min(Math.max(148,groupData.minimumHeight||148),Workspace.availableScreenGeometry(root).height)
     width:320
     height:panelKind==="brush" || panelKind==="brush-settings"?540:440
-    function refreshGroup(){const data=Workspace.groupDefinition(ownerTile.layoutData.id);groupData=Object.assign({},data,{panels:[panelKey],active:panelKey})}
-    function remember(){if(visible && !positioning && !restoring && ownerTile)Workspace.updatePanelView(panelKey,width,height,Math.round(y-ownerTile.mapToGlobal(0,0).y))}
+    function refreshGroup(){groupData=Workspace.categoryDefinition(ownerTile.layoutData.id)}
+    function remember(){if(visible && !positioning && !restoring && ownerTile)for(const panel of groupData.panels)Workspace.updatePanelView(panel,width,height,Math.round(y-ownerTile.mapToGlobal(0,0).y))}
     function positionSide(wantedY){
         if(!ownerTile || positioning)return
         positioning=true
@@ -45,7 +44,7 @@ ApplicationWindow {
         positioning=false;remember()
     }
     function showPanel(panel){
-        selectedPanel=panel;refreshGroup()
+        selectedPanel=panel;refreshGroup();Workspace.setActive(Workspace.groupForPanel(panel),panel)
         if(!visible){
             restoring=true
             lastSourceY=sourceWindow.y
@@ -73,19 +72,16 @@ ApplicationWindow {
     }
     Connections {
         target:Workspace
-        function onGroupStateChanged(id){if(id===root.groupData.id)root.refreshGroup()}
+        function onGroupStateChanged(id){if(root.groupData.groups.indexOf(id)>=0){root.selectedPanel=Workspace.groupDefinition(id).active;root.refreshGroup()}}
         function onGroupsChanged(){
-            const data=Workspace.groupDefinition(root.groupData.id)
-            if(!data.id || !data.icons || data.panels.indexOf(root.panelKey)<0)root.close()
+            const data=Workspace.categoryDefinition(root.groupData.id)
+            if(!Workspace.groupDefinition(root.groupData.id).icons || data.panels.indexOf(root.panelKey)<0 || data.groups.join("|")!==root.groupData.groups.join("|"))root.close()
             else {root.refreshGroup();if(root.visible)root.positionSide(root.y)}
         }
         function onDragModifiersChanged(){if(Workspace.dragging && Workspace.dragGroups.indexOf(root.groupData.id)>=0)root.close()}
     }
-    PanelGroup {
-        anchors.fill:parent;anchors.margins:1;groupData:root.groupData;canvasView:root.canvasView;flyout:true
-        onDismissRequested:root.close()
-        onSlideRequested:globalY=>root.positionSide(globalY-4)
-    }
+    DockWorkspace {anchors.fill:parent;anchors.margins:1;hostId:"__category:"+root.ownerTile.layoutData.id;canvasPane:root.ownerTile.workspace.canvasPane;canvasView:root.canvasView;flyoutHost:root}
     ResizeFrame {objectName:"panelFlyoutResizeFrame";targetWindow:root}
+    onClosing:{remember();Workspace.watchPanelFlyout(root,ownerTile,false);ownerTile.removeFlyout(root);visible=false;Qt.callLater(()=>root.destroy())}
     Component.onDestruction:Workspace.watchPanelFlyout(root,ownerTile,false)
 }

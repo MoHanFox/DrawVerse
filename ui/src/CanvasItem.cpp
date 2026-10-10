@@ -88,6 +88,10 @@ QRectF CanvasItem::documentRect() const {
     return {QPointF((width() - size.width()) / 2, (height() - size.height()) / 2) + m_pan, size};
 }
 QPointF CanvasItem::documentPoint(QPointF local) const { return (local - documentRect().topLeft()) / m_zoom; }
+QRectF CanvasItem::visibleDocumentRect() const {
+    if(!m_client || width()<=0 || height()<=0 || m_zoom<=0)return {};
+    return QRectF(documentPoint({0,0}),QSizeF(width()/m_zoom,height()/m_zoom)).intersected(QRectF(0,0,m_client->documentWidth(),m_client->documentHeight()));
+}
 void CanvasItem::fitToView() {
     if (!m_client || width() < 1 || height() < 1) return;
     const qreal margin = m_interactive ? 64 : 8;
