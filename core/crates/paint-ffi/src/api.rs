@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 11;
+pub const PAINT_ABI_MINOR: u32 = 12;
 
 /// ABI 1.10: metadata for one retained history boundary/operation.
 #[repr(C)]
@@ -52,6 +52,12 @@ pub const PAINT_HISTORY_LASSO_SELECTION: u32 = 21;
 pub const PAINT_HISTORY_MAGIC_SELECTION: u32 = 22;
 /// Automatic release of clipped layers whose base went away.
 pub const PAINT_HISTORY_RELEASE_CLIPPING: u32 = 23;
+/// Whole-canvas orientation changes for paint_session_transform_canvas.
+pub const PAINT_CANVAS_TRANSFORM_ROTATE_90_CW: u32 = 0;
+pub const PAINT_CANVAS_TRANSFORM_ROTATE_90_CCW: u32 = 1;
+pub const PAINT_CANVAS_TRANSFORM_ROTATE_180: u32 = 2;
+pub const PAINT_CANVAS_TRANSFORM_FLIP_HORIZONTAL: u32 = 3;
+pub const PAINT_CANVAS_TRANSFORM_FLIP_VERTICAL: u32 = 4;
 pub const PAINT_ABI_PATCH: u32 = 0;
 pub const PAINT_WORKING_LINEAR_SRGB: u32 = 1;
 pub const PAINT_STORAGE_RGBA32F_PREMULTIPLIED: u32 = 1;

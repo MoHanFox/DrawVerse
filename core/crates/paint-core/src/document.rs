@@ -12,6 +12,7 @@ pub const MAX_DIMENSION: u32 = 1_000_000;
 const MAX_DABS_PER_SEGMENT: usize = 8192;
 const MAX_PIXEL_VISITS_PER_SEGMENT: usize = 8_000_000;
 pub(crate) mod groups;
+pub(crate) mod transform;
 
 #[derive(Clone, Copy, Debug)]
 pub struct DocumentOptions {
@@ -1437,6 +1438,19 @@ impl Document {
             Command::Structure { before, after } => {
                 self.apply_structure(if forward { after } else { before });
                 self.dirty_all();
+            }
+            Command::Transform {
+                before,
+                after,
+                before_size,
+                after_size,
+            } => {
+                let (layers, size) = if forward {
+                    (after, *after_size)
+                } else {
+                    (before, *before_size)
+                };
+                self.apply_transform(layers, size);
             }
             Command::RemoveTree { index, layers } => {
                 if forward {

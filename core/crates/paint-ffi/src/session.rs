@@ -42,6 +42,8 @@ pub(crate) enum Operation {
     Properties(u64, LayerProperties),
     Appearance(u64, paint_core::LayerAppearance),
     Translate(u64, i32, i32),
+    /// Whole-canvas rotate/flip, encoded as a `CanvasTransform` discriminant.
+    Transform(u32),
     Group(u64, String),
     Ungroup(u64),
     Reparent(u64, u64),
@@ -759,6 +761,12 @@ impl Engine {
             Operation::Translate(id, x, y) => {
                 let revision = self.document.revision();
                 self.document.move_layer(id, x, y)?;
+                self.modified |= revision != self.document.revision();
+            }
+            Operation::Transform(kind) => {
+                let revision = self.document.revision();
+                self.document
+                    .transform_canvas(paint_core::CanvasTransform::from_raw(kind)?)?;
                 self.modified |= revision != self.document.revision();
             }
             Operation::Group(id, name) => {

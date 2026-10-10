@@ -34,6 +34,8 @@ pub enum HistoryAction {
     MagicSelection = 22,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
+    /// Whole-canvas rotate or flip.
+    TransformCanvas = 24,
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +63,13 @@ pub(crate) enum Command {
     Stroke {
         layer: LayerId,
         changes: Vec<TileChange>,
+    },
+    /// Whole-canvas orientation change: the layer stacks plus both canvas dimensions.
+    Transform {
+        before: Vec<Layer>,
+        after: Vec<Layer>,
+        before_size: (u32, u32),
+        after_size: (u32, u32),
     },
     AddLayer {
         index: usize,
@@ -159,6 +168,7 @@ impl Command {
         use HistoryAction::*;
         match self {
             Self::Stroke { .. } => Brush,
+            Self::Transform { .. } => TransformCanvas,
             Self::Selection { .. } => Selection,
             Self::AddLayer { layer, .. } => {
                 if layer.mask {
@@ -200,6 +210,13 @@ impl Command {
     fn verify_tiles(&self) -> Result<()> {
         match self {
             Self::Structure { .. } | Self::Selection { .. } => {}
+            Self::Transform { before, after, .. } => {
+                for layer in before.iter().chain(after) {
+                    for tile in layer.tiles.values() {
+                        drop(tile.try_pixels()?);
+                    }
+                }
+            }
             Self::RemoveTree { layers, .. } => {
                 for layer in layers {
                     for tile in layer.tiles.values() {
@@ -235,6 +252,11 @@ impl Command {
                 .map(|l| l.tiles.len() * TILE_BYTES + l.name.len() + 128)
                 .sum(),
             Self::Stroke { changes, .. } => changes.len() * (2 * TILE_BYTES + 128),
+            Self::Transform { before, after, .. } => before
+                .iter()
+                .chain(after)
+                .map(|l| l.tiles.len() * TILE_BYTES + l.name.len() + 128)
+                .sum(),
             Self::AddLayer { layer, .. } | Self::RemoveLayer { layer, .. } => {
                 layer.tiles.len() * TILE_BYTES + layer.name.len()
             }

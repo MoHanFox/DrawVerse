@@ -16,9 +16,22 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 11
+#define PAINT_ABI_MINOR 12
 
 #define PAINT_ABI_PATCH 0
+
+#define PAINT_CANVAS_TRANSFORM_FLIP_HORIZONTAL 3
+
+#define PAINT_CANVAS_TRANSFORM_FLIP_VERTICAL 4
+
+#define PAINT_CANVAS_TRANSFORM_ROTATE_180 2
+
+#define PAINT_CANVAS_TRANSFORM_ROTATE_90_CCW 1
+
+/**
+ * Whole-canvas orientation changes for paint_session_transform_canvas.
+ */
+#define PAINT_CANVAS_TRANSFORM_ROTATE_90_CW 0
 
 #define PAINT_COMMAND_ADD_LAYER 8
 
@@ -1165,6 +1178,17 @@ PaintStatus paint_session_submit(struct PaintCore *core,
                                  struct PaintSession *handle,
                                  const struct PaintCommand *command,
                                  uint64_t *out_sequence);
+
+/**
+ * ABI 1.13: rotate or flip the whole canvas. Quarter turns swap the canvas dimensions; one undo
+ * restores both the pixels and the size.
+ * # Safety
+ * Provide a writable sequence pointer; follow session ownership contract.
+ */
+PaintStatus paint_session_transform_canvas(struct PaintCore *core,
+                                           struct PaintSession *session,
+                                           uint32_t kind,
+                                           uint64_t *out_sequence);
 
 /**
  * ABI 1.3: inspect a candidate configuration without changing a running core. Worker thread only.

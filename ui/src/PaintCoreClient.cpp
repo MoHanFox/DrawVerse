@@ -500,7 +500,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         if (info.completed_sequence >= m_pendingLayer) m_pendingLayer=0;
         // A lasso/wand edit is a busy layer edit too: keep the panel and painting idled until the
         // worker published the resulting selection.
-        if (m_pendingSelPath != 0 && info.completed_sequence >= m_pendingSelPath) m_pendingSelPath = 0;
+
         m_active = info.active_layer_id;
         if(m_history!=history){m_history=std::move(history);emit historyChanged();}
         if(m_selection!=selection) {m_selection=std::move(selection);emit selectionChanged();}
@@ -683,7 +683,7 @@ bool PaintCoreClient::submitSelection(quint32 action,QRectF rect,int shape,int o
 }
 bool PaintCoreClient::editSelection(QRectF rect,int shape,int operation) {return submitSelection(PAINT_SELECTION_SHAPE,rect,shape,operation);}
 bool PaintCoreClient::editSelectionPath(const QVariantList &points,int operation) {
-    if(!m_ready || m_drawing || m_pendingSelPath || m_closing || !m_worker) return false;
+    if(!m_ready || m_drawing || layerEditBusy() || fileBusy() || m_closing || !m_worker) return false;
     if(points.size()<3 || points.size()>4096) return false;
     QVector<QPointF> flat;flat.reserve(points.size());
     for(const auto &value:points) {
@@ -693,22 +693,25 @@ bool PaintCoreClient::editSelectionPath(const QVariantList &points,int operation
         if(!std::isfinite(x) || !std::isfinite(y) || std::abs(x)>4096 || std::abs(y)>4096) return false;
         flat.append(QPointF(x,y));
     }
-    const auto worker=m_worker;
-    QMetaObject::invokeMethod(worker,[worker,flat,operation]{
-        if(!worker->submitSelectionPath(flat,operation))emit worker->failedSelectionPath();
-    },Qt::QueuedConnection);
-    m_pendingSelPath=1;return true;
+    // The worker owns the session, so the sequence comes back from it; a local placeholder would
+    // never be cleared by the poll and would keep every layer edit busy forever.
+    quint64 sequence=0;
+    if(!QMetaObject::invokeMethod(m_worker,[this,flat,operation,&sequence]{
+        sequence=m_worker->submitSelectionPath(flat,operation);
+    },Qt::BlockingQueuedConnection)) return false;
+    if(sequence==0) { showError(QStringLiteral("套索选区提交失败")); return false; }
+    m_pendingLayer=sequence; emit stateChanged(); return true;
 }
 bool PaintCoreClient::magicWandSelection(qreal x,qreal y,int tolerance,int operation) {
-    if(!m_ready || m_drawing || m_pendingSelPath || m_closing || !m_worker) return false;
+    if(!m_ready || m_drawing || layerEditBusy() || fileBusy() || m_closing || !m_worker) return false;
     if(!std::isfinite(x) || !std::isfinite(y) || tolerance<0 || tolerance>255) return false;
-    const auto worker=m_worker;
-    QMetaObject::invokeMethod(worker,[worker,x,y,tolerance,operation]{
-        if(!worker->submitMagicWand(x,y,tolerance,operation))emit worker->failedSelectionPath();
-    },Qt::QueuedConnection);
-    m_pendingSelPath=1;return true;
-}
-bool PaintCoreClient::selectAll(){return submitSelection(PAINT_SELECTION_ALL);}
+    quint64 sequence=0;
+    if(!QMetaObject::invokeMethod(m_worker,[this,x,y,tolerance,operation,&sequence]{
+        sequence=m_worker->submitMagicWand(x,y,tolerance,operation);
+    },Qt::BlockingQueuedConnection)) return false;
+    if(sequence==0) { showError(QStringLiteral("魔棒选区提交失败")); return false; }
+    m_pendingLayer=sequence; emit stateChanged(); return true;
+}bool PaintCoreClient::selectAll(){return submitSelection(PAINT_SELECTION_ALL);}
 bool PaintCoreClient::clearSelection(){return submitSelection(PAINT_SELECTION_CLEAR);}
 bool PaintCoreClient::invertSelection(){return submitSelection(PAINT_SELECTION_INVERT);}
 bool PaintCoreClient::beginStroke(const InputSample &s) {
@@ -736,6 +739,18 @@ void PaintCoreClient::cancelStroke() {
 }
 void PaintCoreClient::undo() { if (m_ready && !m_drawing) submit(Undo); }
 void PaintCoreClient::redo() { if (m_ready && !m_drawing) submit(Redo); }
+bool PaintCoreClient::transformCanvas(int kind) {
+    // The session serialises this call, so the canvas is already transformed when it returns: there
+    // is no in-flight edit to wait for, and marking one would block every later layer edit.
+    if(!m_ready || m_drawing || layerEditBusy() || fileBusy() || m_closing) return false;
+    if(kind<0 || kind>4) return false;
+    uint64_t sequence=0; PaintStatus status; QString error;
+    { QMutexLocker lock(&m_connection->mutex); if(!m_connection->session) return false;
+      status=paint_session_transform_canvas(m_connection->core,m_connection->session,quint32(kind),&sequence);
+      if(status!=PAINT_OK) error=immediateError(status); }
+    if(status!=PAINT_OK) { showError(error); return false; }
+    m_modified=true; emit stateChanged(); return true;
+}
 void PaintCoreClient::addLayer(const QString &name) {
     if (m_ready && !m_drawing && !layerEditBusy() && submit(Add, {}, 0, name) && m_collapsedGroups.remove(m_active)) emit groupExpansionChanged();
 }
@@ -794,7 +809,7 @@ bool PaintCoreClient::setAppearance(quint64 id,const QString &field,const QVaria
       status=paint_session_set_layer_appearance(m_connection->core,m_connection->session,id,&options,&sequence);
       if(status!=PAINT_OK) error=immediateError(status);
     }
-    if(status!=PAINT_OK) { showError(error); return false; }
+    if(status!=PAINT_OK) { qWarning("DBG status=%d",int(status)); showError(error); return false; }
     m_pendingLayer=m_pendingMutation=sequence; m_modified=true; emit stateChanged(); return true;
 }
 bool PaintCoreClient::setLayerFill(quint64 id,qreal fill) { return std::isfinite(fill) && fill>=0 && fill<=1 && setAppearance(id,"fill",fill); }
@@ -830,7 +845,7 @@ bool PaintCoreClient::moveLayer(quint64 id,int dx,int dy) {
       status=paint_session_move_layer(m_connection->core,m_connection->session,id,dx,dy,&sequence);
       if(status!=PAINT_OK) error=immediateError(status);
     }
-    if(status!=PAINT_OK) { showError(error); return false; }
+    if(status!=PAINT_OK) { qWarning("DBG status=%d",int(status)); showError(error); return false; }
     m_pendingLayer=m_pendingMutation=sequence; m_modified=true; emit stateChanged(); return true;
 }
 bool PaintCoreClient::submitGroup(quint32 kind,quint64 id,quint64 parent,const QString &name) {

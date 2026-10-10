@@ -404,7 +404,7 @@ impl Document {
             .unwrap_or(end);
         Ok(start..end + 1)
     }
-    fn structure(&self) -> Vec<Layer> {
+    pub(crate) fn structure(&self) -> Vec<Layer> {
         self.layers.iter().map(Layer::metadata).collect()
     }
     pub(super) fn apply_structure(&mut self, nodes: &[Layer]) {

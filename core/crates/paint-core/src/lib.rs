@@ -18,6 +18,7 @@ pub use appearance::{
     blend_pixel, BlendMode, LayerAppearance, LOCK_ALL, LOCK_POSITION, LOCK_TRANSPARENCY,
 };
 pub use brush::{Brush, BrushMode, InputPoint, Tool};
+pub use document::transform::CanvasTransform;
 pub use document::{DirtyTiles, Document, DocumentOptions, DocumentSnapshot, MAX_DIMENSION};
 pub use error::{Error, Result};
 pub use history::HistoryAction;

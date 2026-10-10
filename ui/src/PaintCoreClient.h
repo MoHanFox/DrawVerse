@@ -101,7 +101,7 @@ public:
     QVariantList recentColors() const;
     bool eraser() const { return m_eraser; }
     bool moveTool() const { return m_moveTool; }
-    bool layerEditBusy() const { return m_pendingLayer != 0 || m_pendingSelPath != 0; }
+    bool layerEditBusy() const { return m_pendingLayer != 0; }
     void setMoveTool(bool enabled);
     bool selectionEnabled() const { return m_selection.value("enabled").toBool(); }
     QVariantList selectionSteps() const { return m_selection.value("steps").toList(); }
@@ -141,6 +141,8 @@ public:
     Q_INVOKABLE void selectLayers(quint64 id, int modifiers);
     QVariantList selectedLayers() const;
     void pruneSelectedLayers();
+    /// Whole-canvas rotate/flip; `kind` is PAINT_CANVAS_TRANSFORM_*.
+    Q_INVOKABLE bool transformCanvas(int kind);
     Q_INVOKABLE void setLayerProperties(quint64 id, bool visible, qreal opacity);
     Q_INVOKABLE bool setLayerFill(quint64 id, qreal fill);
     Q_INVOKABLE bool setLayerBlend(quint64 id, int blend);
@@ -212,7 +214,7 @@ private:
     int m_nextDefaultLayer = 1;
     quint64 m_pendingLayer = 0;
     /// Sequence of an in-flight lasso/wand selection edit; non-zero keeps layer edits busy.
-    quint64 m_pendingSelPath = 0;
+
     QVariantList m_layers;
     QList<quint64> m_selectedLayers;
     QString m_error;

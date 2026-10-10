@@ -438,6 +438,18 @@ fn read_appearance(r: &mut impl Read) -> Result<crate::LayerAppearance> {
 fn encode_command(w: &mut impl Write, command: &Command) -> io::Result<()> {
     w.write_all(b"DVH6")?;
     match command {
+        // A canvas transform is a structure change plus the two canvas sizes, and the regenerated
+        // pixels live in the stack itself, so it encodes exactly like a structure command.
+        Command::Transform { before, after, .. } => {
+            put_u8(w, 6)?;
+            for nodes in [before, after] {
+                put_u32(w, nodes.len() as u32)?;
+                for (index, node) in nodes.iter().enumerate() {
+                    encode_layer(w, index, node)?;
+                }
+            }
+            Ok(())
+        }
         Command::Selection { before, after } => {
             put_u8(w, 8)?;
             for selection in [before, after] {
