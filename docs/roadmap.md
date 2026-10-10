@@ -78,3 +78,5 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 ## 面板分组与统一内容（2026-10-10）
 
 外侧边停靠生成独立整列，内侧边并列属于同组；标签与并列组合一起打开，不同组图标间居中灰黑线。多组常驻、再次点击当前图标或双击顶栏收回，来源列保持折叠；整列拖动/归位/保存保留左右树和状态。浮动展开列仅顶层栏 75% 不透明，下方栏和空白不透明。共用 PanelContent/PanelGroup 与 PanelWindow 调色板，导航仅预览和实时红色视口框，历史移除撤销/重做按钮；按用户后续要求保留历史逐条跳转。见 [panel-categories-design.md](panel-categories-design.md) / [panel-categories-validation.md](panel-categories-validation.md)。
+
+最新工作区调整见 [workspace-tools-design.md](workspace-tools-design.md) 与 [workspace-tools-validation.md](workspace-tools-validation.md)：工具列整列停靠与限定宽度、鼠标磁吸/外侧提示、展开收起的像素位置保持、置顶菜单、独立工具大小、固定真实预览、颜色/轮廓/空格交互。布局 v6 和 ABI 1.8 保持，历史逐条跳转保留。

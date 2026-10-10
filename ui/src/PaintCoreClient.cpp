@@ -574,10 +574,12 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
 void PaintCoreClient::showError(const QString &error) { m_error = error; emit errorChanged(); }
 void PaintCoreClient::clearError() { m_error.clear(); emit errorChanged(); }
 void PaintCoreClient::setBrushColor(const QColor &c) { if (c.isValid() && c != m_color) { m_color = c; emit brushChanged(); } }
+void PaintCoreClient::setSecondaryBrushColor(const QColor &c){if(c.isValid() && c!=m_secondaryColor){m_secondaryColor=c;emit brushChanged();}}
+void PaintCoreClient::swapBrushColors(){std::swap(m_color,m_secondaryColor);emit brushChanged();}
 void PaintCoreClient::setBrushRadius(qreal r) {m_brushLibrary->setRadius(r);}
 void PaintCoreClient::setBrushOpacity(qreal o) {m_brushLibrary->setOpacity(o);}
 void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
-void PaintCoreClient::setEraser(bool e) { if (!m_drawing && (e != m_eraser || m_moveTool || m_selectionTool)) { m_eraser = e; m_moveTool=false; m_selectionTool=0; emit brushChanged(); } }
+void PaintCoreClient::setEraser(bool e) { if (!m_drawing && (e != m_eraser || m_moveTool || m_selectionTool)) { m_eraser = e; m_brushLibrary->setEraser(e); m_moveTool=false; m_selectionTool=0; emit brushChanged(); } }
 void PaintCoreClient::setMoveTool(bool enabled) { if(!m_drawing && (enabled!=m_moveTool || (enabled && m_selectionTool))) { m_moveTool=enabled; if(enabled)m_selectionTool=0; emit brushChanged(); } }
 void PaintCoreClient::setSelectionTool(int tool) {
     if(tool<0 || tool>2 || m_drawing || tool==m_selectionTool) return;

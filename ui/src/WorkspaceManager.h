@@ -32,12 +32,14 @@ class WorkspaceManager final : public QObject, public QAbstractNativeEventFilter
     Q_PROPERTY(bool dragging READ dragging NOTIFY dragModifiersChanged)
     Q_PROPERTY(QStringList dragGroups READ dragGroups NOTIFY dragModifiersChanged)
     Q_PROPERTY(bool toolsFloating READ toolsFloating NOTIFY toolStripChanged)
+    Q_PROPERTY(int toolStripWidth READ toolStripWidth WRITE setToolStripWidth NOTIFY toolStripChanged)
     Q_PROPERTY(int toolStripX READ toolStripX NOTIFY toolStripChanged)
     Q_PROPERTY(int toolStripY READ toolStripY NOTIFY toolStripChanged)
 public:
     bool windowsWindowFrames() const;
     Q_INVOKABLE QRect availableScreenGeometry(QWindow *window) const;
     Q_INVOKABLE void watchMenuWindow(QWindow *window, bool visible);
+    Q_INVOKABLE void promoteMenuWindow(QQuickItem *content);
     Q_INVOKABLE void watchPanelFlyout(QWindow *window,QQuickItem *owner,bool visible);
     Q_INVOKABLE QVariantMap panelView(const QString &panel) const;
     Q_INVOKABLE void updatePanelView(const QString &panel,int width,int height,int offset);
@@ -75,6 +77,8 @@ public:
     Q_INVOKABLE QString sidePlacement(const QString &group,const QString &edge) const;
     Q_INVOKABLE void setColumnCollapsed(const QString &group,bool collapsed);
     bool toolsFloating() const {return m_toolsFloating;}
+    int toolStripWidth() const {return m_toolWidth;}
+    void setToolStripWidth(int width);
     int toolStripX() const {return m_toolPosition.x();}
     int toolStripY() const {return m_toolPosition.y();}
     Q_INVOKABLE void beginToolStripDrag();
@@ -133,6 +137,7 @@ private:
     bool m_leftCollapsed = false, m_rightCollapsed = false;
     int m_leftWidth = 230, m_rightWidth = 300;
     int m_uiRevision = 0;
+    int m_toolWidth=36;
     bool m_toolsFloating = false;
     QPoint m_toolPosition{100,100};
     QPointer<QWindow> m_menuWindow;

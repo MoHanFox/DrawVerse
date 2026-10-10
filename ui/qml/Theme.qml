@@ -4,6 +4,7 @@ QtObject {
     readonly property color background: "#17191c"
     readonly property color surface: "#1c1e21"
     readonly property color raised: "#25262b"
+    readonly property color windowOutline: "#63666b"
     readonly property color line: "#1b1c1f"
     readonly property color dockSeparator: line
     readonly property color text: "#bababa"
@@ -17,10 +18,10 @@ QtObject {
     readonly property color tabInactive: "#111214"
     readonly property int windowRadius: 10
     readonly property int panelTabRadius: 3
-    readonly property int documentTabRadius: 3
+    readonly property int documentTabRadius: 10
     readonly property color hover: "#303237"
     readonly property color disabled: "#5c6066"
     readonly property color menuGlass: surface
-    readonly property color menuBarGlass: Qt.rgba(strip.r,strip.g,strip.b,.5)
+    readonly property color menuBarGlass: Qt.rgba(panelBar.r,panelBar.g,panelBar.b,.75)
     readonly property int menuRadius: 10
 }

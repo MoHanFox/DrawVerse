@@ -55,12 +55,15 @@ Item {
                 peek.showPanel(panel)
             }
             Component.onDestruction:{const windows=[];for(const panel in peeks)if(peeks[panel] && windows.indexOf(peeks[panel])<0)windows.push(peeks[panel]);for(const window of windows)window.destroy();peeks=({})}
-            IconButton {objectName:"dockCollapse:"+root.layoutData.location;visible:root.layoutData.columnFirst;width:28;height:10;padding:2;glyph:"expand";tooltip:"展开面板列";onClicked:Workspace.setColumnCollapsed(root.layoutData.id,false)}
-            MouseArea {
-                anchors.top:parent.top;anchors.left:parent.left;width:12;height:12;visible:root.layoutData.columnFirst
-                property point start
-                onPressed:m=>start=Qt.point(m.x,m.y)
-                onPositionChanged:m=>{if(pressed && Math.abs(m.x-start.x)+Math.abs(m.y-start.y)>8)Qt.callLater(()=>Workspace.beginDrag(root.layoutData.id,"",true))}
+            IconButton {
+                objectName:"dockCollapse:"+root.layoutData.location;visible:root.layoutData.columnFirst;width:28;height:10;padding:2;glyph:"expand";tooltip:"展开面板列 · 按住拖动"
+                MouseArea {
+                    objectName:"railExpandGrip:"+root.layoutData.id;anchors.fill:parent;enabled:!PaintClient.drawing
+                    property point start;property bool moving:false
+                    onPressed:m=>{start=Qt.point(m.x,m.y);moving=false}
+                    onPositionChanged:m=>{if(pressed && !moving && Math.abs(m.x-start.x)+Math.abs(m.y-start.y)>8){moving=true;const id=root.layoutData.id;Qt.callLater(()=>Workspace.beginDrag(id,"",true))}}
+                    onClicked:if(!moving)Workspace.setColumnCollapsed(root.layoutData.id,false)
+                }
             }
             Column {
                 y:root.layoutData.columnFirst?12:0;width:parent.width

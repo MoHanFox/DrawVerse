@@ -14,6 +14,7 @@ Rectangle {
         onPositionChanged:m=> {
             if(!pressed || PaintClient.drawing)return
             const at=mapToItem(root.workspace,m.x,m.y),area=root.layoutData.area
+            if(root.layoutData.toolsSide){Workspace.toolStripWidth=Math.round(root.layoutData.toolsSide==="first"?at.x-area.x:area.x+area.width-at.x);return}
             Workspace.setSplitRatio(root.workspace.hostId,root.layoutData.id,root.layoutData.axis==="horizontal"?(at.x-area.x)/area.width:(at.y-area.y)/area.height)
         }
     }

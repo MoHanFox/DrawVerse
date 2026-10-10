@@ -12,6 +12,8 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(qreal zoom READ zoom NOTIFY viewChanged)
     Q_PROPERTY(QRectF documentRect READ documentRect NOTIFY viewChanged)
     Q_PROPERTY(QRectF visibleDocumentRect READ visibleDocumentRect NOTIFY viewChanged)
+    Q_PROPERTY(QRectF brushCursorRect READ brushCursorRect NOTIFY brushCursorChanged)
+    Q_PROPERTY(bool brushCursorVisible READ brushCursorVisible NOTIFY brushCursorChanged)
     Q_PROPERTY(bool interactive READ interactive WRITE setInteractive NOTIFY interactiveChanged)
     Q_PROPERTY(qreal initialFitRatio READ initialFitRatio WRITE setInitialFitRatio NOTIFY viewChanged)
     Q_PROPERTY(QRectF selectionPreview READ selectionPreview NOTIFY selectionDragChanged)
@@ -24,6 +26,8 @@ public:
     qreal zoom() const { return m_zoom; }
     QRectF documentRect() const;
     QRectF visibleDocumentRect() const;
+    QRectF brushCursorRect() const;
+    bool brushCursorVisible() const;
     bool interactive() const { return m_interactive; }
     void setInteractive(bool enabled);
     qreal initialFitRatio() const { return m_initialFitRatio; }
@@ -32,6 +36,8 @@ public:
     Q_INVOKABLE void fitToView();
     Q_INVOKABLE void actualSize();
     Q_INVOKABLE void zoomBy(qreal factor);
+    Q_INVOKABLE void captureLayoutPosition();
+    Q_INVOKABLE void restoreLayoutPosition();
     QRectF selectionPreview() const { return m_selecting ? QRectF(m_selectionStart,m_selectionEnd).normalized() : QRectF(); }
     int selectionPreviewKind() const { return m_selectionKind; }
     Q_INVOKABLE void cancelSelectionDrag();
@@ -40,6 +46,7 @@ signals:
     void viewChanged();
     void interactiveChanged();
     void selectionDragChanged();
+    void brushCursorChanged();
 protected:
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
     void geometryChange(const QRectF &geometry, const QRectF &old) override;
@@ -50,12 +57,16 @@ protected:
     void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
+    void hoverEnterEvent(QHoverEvent *event) override;
+    void hoverMoveEvent(QHoverEvent *event) override;
+    void hoverLeaveEvent(QHoverEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 private:
     InputSample mouseSample(QPointF local, Qt::MouseButtons buttons);
     void refresh();
     void requestView();
     void observeScreen(QScreen *screen);
+    void refreshBrushCursor();
     void zoomAround(qreal factor,QPointF position);
     bool beginLayerMove(QPointF local);
     void finishLayerMove(QPointF local);
@@ -72,6 +83,12 @@ private:
     qreal m_zoom = 1;
     qreal m_initialFitRatio = 1;
     QPointF m_pan, m_last;
+    QPointF m_layoutOrigin;
+    QPointer<QQuickWindow> m_layoutWindow;
+    quint64 m_layoutGeneration=0;
+    bool m_layoutCaptured=false;
+    QPointF m_cursorPosition;
+    bool m_cursorInside=false,m_capsLock=false;
     QPointF m_moveStart;
     bool m_moving = false;
     quint64 m_moveLayer = 0, m_moveGeneration = 0;

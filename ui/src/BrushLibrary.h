@@ -25,6 +25,7 @@ public:
     qreal opacity() const;
     qreal spacing() const;
     void setRadius(qreal value);
+    void setEraser(bool eraser);
     void setOpacity(qreal value);
     void setSpacing(qreal value);
     Q_INVOKABLE bool select(const QString &id);
@@ -48,5 +49,7 @@ private:
     void changed();
     QList<Preset> m_presets;
     QString m_selected="round-pressure";
+    qreal m_toolRadii[2]={12,12};
+    bool m_eraser=false;
     quint64 m_nextToken=16;
 };

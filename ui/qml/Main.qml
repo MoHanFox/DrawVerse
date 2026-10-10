@@ -50,6 +50,7 @@ ApplicationWindow {
     onHeightChanged: {Qt.callLater(updateWindowCorners);Qt.callLater(rememberNormalGeometry)}
     onScreenChanged: Qt.callLater(updateWindowCorners)
     Screen.onDevicePixelRatioChanged: Qt.callLater(updateWindowCorners)
+    Rectangle {objectName:"applicationWindowOutline";parent:Overlay.overlay;anchors.fill:parent;z:900;color:"transparent";radius:root.cornerRadius;border.color:Theme.windowOutline;border.width:1}
     background: Item {
         // Keep the translucent menu bar clear of the opaque workspace backing.
         Rectangle {
@@ -80,6 +81,16 @@ ApplicationWindow {
     property bool savingBeforeAction: false
     property string fileNotice: ""
     property var floatingWindows: ({})
+    property var dockingHint:null
+    Component {id:hintFactory;DockHintWindow {}}
+    function updateDockHint(){
+        let edge=Workspace.dragPlacement.replace("column-","")
+        const rect=Workspace.dragPreviewRect
+        if(!Workspace.dragging || !Workspace.dragTarget || ["left","right","before","after"].indexOf(edge)<0 || rect.width<=0 || rect.height<=0){if(dockingHint){dockingHint.visible=false;dockingHint.destroy();dockingHint=null}return}
+        if(!dockingHint)dockingHint=hintFactory.createObject(root,{targetRect:rect,edge:edge})
+        else {dockingHint.targetRect=rect;dockingHint.edge=edge}
+    }
+    Connections {target:Workspace;function onDragModifiersChanged(){root.updateDockHint()}}
     property var documentWindows: ({})
     property var documentPanes: ({})
     property string initialDocumentId:""
@@ -188,19 +199,23 @@ ApplicationWindow {
                 anchors.fill: parent
                 property bool restoreDrag:false
                 property bool movingRestored:false
+                property bool movingNormal:false
                 property point pressGlobal
                 property real pressFraction:0
                 property real pressY:0
                 property point moveOffset
                 onPressed: mouse=>{
-                    restoreDrag=root.visibility===Window.Maximized;movingRestored=false
+                    restoreDrag=root.visibility===Window.Maximized;movingRestored=false;movingNormal=false
                     pressGlobal=mapToGlobal(mouse.x,mouse.y)
                     pressFraction=mouse.x/width;pressY=mouse.y
-                    if(!restoreDrag && root.visibility!==Window.FullScreen)root.startSystemMove()
                 }
                 onPositionChanged: mouse=>{
-                    if(!pressed || !restoreDrag)return
+                    if(!pressed || root.visibility===Window.FullScreen)return
                     const global=mapToGlobal(mouse.x,mouse.y)
+                    if(!restoreDrag) {
+                        if(!movingNormal && Math.abs(global.x-pressGlobal.x)+Math.abs(global.y-pressGlobal.y)>=Qt.styleHints.startDragDistance){movingNormal=true;root.startSystemMove()}
+                        return
+                    }
                     if(!movingRestored) {
                         if(Math.abs(global.x-pressGlobal.x)+Math.abs(global.y-pressGlobal.y)<Qt.styleHints.startDragDistance)return
                         root.showNormal()
@@ -210,9 +225,9 @@ ApplicationWindow {
                     }
                     root.x=Math.round(global.x-moveOffset.x);root.y=Math.round(global.y-moveOffset.y)
                 }
-                onReleased:{restoreDrag=false;movingRestored=false}
-                onCanceled:{restoreDrag=false;movingRestored=false}
-                onDoubleClicked: {restoreDrag=false;movingRestored=false;if(root.visibility===Window.Maximized)root.showNormal();else root.showMaximized()}
+                onReleased:{restoreDrag=false;movingRestored=false;movingNormal=false}
+                onCanceled:{restoreDrag=false;movingRestored=false;movingNormal=false}
+                onDoubleClicked: {restoreDrag=false;movingRestored=false;movingNormal=false;if(root.visibility===Window.Maximized)root.showNormal();else root.showMaximized()}
             }
             Row {
                 anchors.right: parent.right; height: parent.height
@@ -241,6 +256,7 @@ ApplicationWindow {
             background: Rectangle { radius: 0; color: menuEntry.highlighted ? Theme.hover : "transparent" }
         }
         GlassMenu {
+            objectName:"fileMenuPopup";topLevel:true
             title: "文件"
             Action { text: "新建画布…"; shortcut: StandardKey.New; enabled: !documents.activeId.length || PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: newDialog.open() }
             Action { text: "打开…"; shortcut: StandardKey.Open; enabled: !documents.activeId.length || PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: openDialog.open() }
@@ -252,12 +268,14 @@ ApplicationWindow {
             Action { text: "退出"; onTriggered: root.close() }
         }
         GlassMenu {
+            topLevel:true
             title: "编辑"
             Action { objectName:"storagePreferencesAction"; text: "性能与暂存盘…"; enabled: !PaintClient.closing; onTriggered: storagePreferences.open() }
             Action { text: "撤销"; shortcut: StandardKey.Undo; enabled: PaintClient.undoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.undo() }
             Action { text: "重做"; shortcut: "Ctrl+Shift+Z"; enabled: PaintClient.redoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.redo() }
         }
         GlassMenu {
+            topLevel:true
             title: "选择"
             Action { text: "矩形选框（M）"; enabled: PaintClient.ready && !PaintClient.drawing; onTriggered: PaintClient.selectionTool=1 }
             Action { text: "椭圆选框（Shift+M）"; enabled: PaintClient.ready && !PaintClient.drawing; onTriggered: PaintClient.selectionTool=2 }
@@ -267,11 +285,13 @@ ApplicationWindow {
             Action { objectName:"selectionInvertAction"; text: "反向选择"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.invertSelection() }
         }
         GlassMenu {
+            topLevel:true
             title: "视图"
             Action { text: "适合窗口"; onTriggered: canvas.fitToView() }
             Action { text: "实际像素"; onTriggered: canvas.actualSize() }
         }
         GlassMenu {
+            topLevel:true
             id: windowMenu
             objectName: "windowMenu"
             title: "窗口"
@@ -299,6 +319,7 @@ ApplicationWindow {
             }
         }
         GlassMenu {
+            topLevel:true
             objectName: "workspaceMenu"
             title: "工作区"
             Action { objectName:"customPanelAction"; text: "自定义面板…"; onTriggered: panelDialog.open() }
@@ -308,7 +329,7 @@ ApplicationWindow {
     }
     header: Rectangle {
         objectName: "brushOptionsBar"
-        height: 28; color: Theme.raised
+        height: 36; color: Theme.raised
         RowLayout {
             visible: !PaintClient.selectionTool
             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8

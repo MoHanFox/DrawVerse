@@ -13,6 +13,7 @@ Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘
 - [画布与工具条自由停靠](docs/flexible-docking-design.md) / [最新工作区验收](docs/flexible-docking-validation.md)
 - [多文档与面板列设计](docs/document-workspace-design.md) / [工作区验收](docs/document-workspace-validation.md)
 - [常驻图标面板列](docs/persistent-panel-rails-design.md) / [当前交互验收](docs/persistent-panel-rails-validation.md)
+- [工具列与画布交互](docs/workspace-tools-design.md) / [当前界面与交互验收](docs/workspace-tools-validation.md)
 - [面板分组与统一渲染](docs/panel-categories-design.md) / [分组与导航验收](docs/panel-categories-validation.md)
 - [面板状态与紧凑信息栏](docs/panel-presentation-design.md) / [当前样式与交互验收](docs/panel-presentation-validation.md)
 - [图标列前版交互](docs/icon-rail-design.md) / [前版交互验收](docs/icon-rail-validation.md)

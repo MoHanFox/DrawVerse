@@ -14,6 +14,8 @@ Item {
     }
     function refresh() {
         if(!ready || !canvasPane) return
+        const view=hostId==="main"?canvasView:null
+        if(view)view.captureLayoutPosition()
         const items=Workspace.layoutItems(hostId,Math.round(width),Math.round(height)), live={}
         for(let i=0;i<items.length;i++) {
             const data=items[i];live[data.id]=true
@@ -25,6 +27,7 @@ Item {
             if(views[id].releaseCanvas) views[id].releaseCanvas()
             views[id].visible=false;views[id].destroy();delete views[id]
         }
+        if(view)Qt.callLater(()=>{if(view && typeof view.restoreLayoutPosition==="function")view.restoreLayoutPosition()})
     }
     onWidthChanged: Qt.callLater(refresh)
     onHeightChanged: Qt.callLater(refresh)

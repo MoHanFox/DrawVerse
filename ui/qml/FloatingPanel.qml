@@ -19,8 +19,8 @@ PanelWindow {
     x:windowData.x;y:windowData.y;width:windowData.width;height:windowData.height
     minimumWidth:onlyTools?38:Math.min(windowData.minimumWidth,Workspace.availableScreenGeometry(root).width)
     minimumHeight:onlyTools?304:Math.min(windowData.minimumHeight,Workspace.availableScreenGeometry(root).height)
-    maximumWidth:onlyTools?38:windowData.icons?windowData.minimumWidth:16777215
-    maximumHeight:onlyTools?304:16777215
+    maximumWidth:onlyTools?74:windowData.icons?windowData.minimumWidth:16777215
+    maximumHeight:16777215
     DockWorkspace {id:docks;anchors.fill:parent;anchors.margins:1;hostId:root.windowData.id;canvasPane:root.canvasPane;canvasView:root.canvasView}
     ResizeFrame {targetWindow:root}
     function releaseCanvas(){docks.releaseCanvas()}

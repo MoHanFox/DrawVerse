@@ -45,6 +45,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QVariantList layers READ layers NOTIFY layersChanged)
     Q_PROPERTY(QVariantList collapsedGroups READ collapsedGroups NOTIFY groupExpansionChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
+    Q_PROPERTY(QColor secondaryBrushColor READ secondaryBrushColor WRITE setSecondaryBrushColor NOTIFY brushChanged)
     Q_PROPERTY(QColor brushColor READ brushColor WRITE setBrushColor NOTIFY brushChanged)
     Q_PROPERTY(qreal brushRadius READ brushRadius WRITE setBrushRadius NOTIFY brushChanged)
     Q_PROPERTY(qreal brushOpacity READ brushOpacity WRITE setBrushOpacity NOTIFY brushChanged)
@@ -84,6 +85,9 @@ public:
     QVariantList collapsedGroups() const;
     QString lastError() const { return m_error; }
     QColor brushColor() const { return m_color; }
+    QColor secondaryBrushColor() const {return m_secondaryColor;}
+    void setSecondaryBrushColor(const QColor &color);
+    Q_INVOKABLE void swapBrushColors();
     qreal brushRadius() const { return m_radius; }
     qreal brushOpacity() const { return m_opacity; }
     qreal brushSpacing() const {return m_spacing;}
@@ -186,6 +190,7 @@ private:
     quint64 m_pendingLayer = 0;
     QVariantList m_layers;
     QString m_error;
+    QColor m_secondaryColor=Qt::white;
     QColor m_color{"#2ea99d"};
     qreal m_radius = 12, m_opacity = 1;
     qreal m_spacing = .15;

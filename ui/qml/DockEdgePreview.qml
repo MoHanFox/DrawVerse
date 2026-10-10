@@ -5,6 +5,8 @@ Item {
     property string mode:"left"
     readonly property bool vertical:mode==="left" || mode==="right"
     readonly property bool far:mode==="right" || mode==="bottom" || mode==="after"
+    // Side hints are rendered by DockHintWindow outside the native target.
+    opacity:mode==="merge"?1:0
     Rectangle {
         x:root.vertical && root.far?root.width-width:0
         y:!root.vertical && root.far?root.height-height:0

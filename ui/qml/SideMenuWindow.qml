@@ -9,8 +9,9 @@ ApplicationWindow {
     required property var menu
     required property Item anchorItem
     required property Item originalParent
+    property bool belowAnchor:false
     transientParent: anchorItem.Window.window
-    flags: Qt.Popup | Qt.FramelessWindowHint
+    flags: Qt.Popup | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
     color: Theme.surface
     background: null
     font: anchorItem.Window.window.font
@@ -29,6 +30,12 @@ ApplicationWindow {
         width=Math.min(menu.implicitWidth,useRight?rightSpace:leftSpace)
         x=useRight?right.x:left.x-width
         y=Math.max(area.y+6,Math.min(right.y,area.y+area.height-height-6))
+        if(belowAnchor) {
+            const below=anchorItem.mapToGlobal(Qt.point(0,anchorItem.height))
+            width=Math.min(menu.implicitWidth,area.width-12)
+            x=Math.max(area.x+6,Math.min(below.x,area.x+area.width-width-6))
+            y=Math.max(area.y+6,Math.min(below.y,area.y+area.height-height-6))
+        }
         menu.parent=contentItem
         menu.margins=0
         menu.width=width

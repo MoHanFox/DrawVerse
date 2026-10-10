@@ -27,7 +27,7 @@ Rectangle {
     Component.onDestruction:releaseCanvas()
     Connections {target:root.documents;function onGroupsChanged(){root.refresh()}function onDocumentsChanged(){root.refresh()}}
     Rectangle {
-        id:tabs;objectName:"documentTitleRow:"+root.hostId;height:groupData.documents.length?22:0;width:parent.width;color:Theme.strip
+        id:tabs;objectName:"documentTitleRow:"+root.hostId;height:groupData.documents.length?28:0;width:parent.width;color:Theme.strip
         Flickable {
             anchors.left:parent.left;anchors.right:parent.right;anchors.rightMargin:root.titleControlsWidth;height:parent.height;contentWidth:tabRow.width;clip:true
             Row {
@@ -38,8 +38,9 @@ Rectangle {
                         required property string modelData
                         property var docClient:root.documents.client(modelData)
                         objectName:"documentTab:"+modelData
-                        width:root.singleFloating?tabs.width-root.titleControlsWidth:Math.max(100,Math.min(320,titleMetrics.advanceWidth+28));height:22
+                        width:root.singleFloating?tabs.width-root.titleControlsWidth:Math.max(100,Math.min(320,titleMetrics.advanceWidth+28));height:25;y:3;radius:root.singleFloating?0:Theme.documentTabRadius
                         color:root.singleFloating?Theme.strip:root.groupData.active===modelData?Theme.background:Theme.tabInactive
+                        Rectangle {anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:parent.radius;color:parent.color}
                         TextMetrics {id:titleMetrics;font:title.font;text:title.text}
                         Text {id:title;x:10;anchors.verticalCenter:parent.verticalCenter;width:parent.width-30;elide:Text.ElideRight;font.pixelSize:9;color:Theme.text;text:docClient?docClient.documentName+(docClient.modified?" *":"")+"  @ "+Math.round((root.presentation.paneFor(modelData)?root.presentation.paneFor(modelData).canvasView.zoom:1)*100)+"% · "+docClient.documentWidth+" × "+docClient.documentHeight:""}
                         MouseArea {
@@ -49,7 +50,7 @@ Rectangle {
                             onPositionChanged:m=>{if(pressed && Math.abs(m.x-start.x)+Math.abs(m.y-start.y)>8)Qt.callLater(()=>root.documents.beginDrag(modelData,root.singleFloating))}
                             onDoubleClicked:{if(root.hostId==="main")root.documents.floatDocument(modelData);else root.documents.moveDocument(modelData,"main")}
                         }
-                        IconButton {visible:!root.singleFloating;anchors.right:parent.right;width:20;height:22;padding:6;glyph:"close";tooltip:"关闭画布";onClicked:root.documents.requestClose(modelData)}
+                        IconButton {visible:!root.singleFloating;anchors.right:parent.right;width:20;height:25;padding:6;glyph:"close";tooltip:"关闭画布";onClicked:root.documents.requestClose(modelData)}
                     }
                 }
             }
