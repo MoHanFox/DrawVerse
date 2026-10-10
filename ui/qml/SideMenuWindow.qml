@@ -48,27 +48,10 @@ ApplicationWindow {
         Workspace.watchMenuWindow(host,visible)
         if (!visible && menu.visible) menu.close()
     }
-    // A menu must only close when the user really left it. Losing activation is not enough: the host
-    // briefly loses it while a submenu opens, while the pointer moves inside the menu, and while a
-    // transient child of the menu bar takes focus. Closing on that dismissed the menu under the
-    // cursor and left the highlight on the first menu-bar entry. Decide from the pointer position
-    // instead, and only when the newly active window is outside the menu's own family.
-    onActiveChanged: {
-        if (active || !menu.opened) return
-        const owner = anchorItem ? anchorItem.Window.window : null
-        const activeWindow = Window.activeWindow
-        if (activeWindow === host || activeWindow === owner) return
-        if (activeWindow && activeWindow.transientParent && (activeWindow.transientParent === host || activeWindow.transientParent === owner)) return
-        // Pointer still inside this menu or its owner: the focus change was incidental.
-        if (containsPointer(host) || (owner && containsPointer(owner))) return
-        menu.close()
-    }
-    function containsPointer(window) {
-        if (!window || !window.visible) return false
-        // Workspace reports the global pointer; Qt.styleHints has no mouse position property.
-        const global = Workspace.globalCursorPosition()
-        const point = window.mapFromGlobal(global)
-        return point.x >= 0 && point.y >= 0 && point.x < window.width && point.y < window.height
-    }
+    // Deliberately no onActiveChanged close. Every close path that watched activation fired while the
+    // pointer was still inside the menu: the host is a Qt.Popup window that loses activation when a
+    // submenu opens or the pointer moves, and the menu then dismissed itself and the focus fell back
+    // to the first menu-bar entry. The popup's own closePolicy (Escape or a press outside) is the only
+    // thing that decides now.
     onClosing: menu.close()
 }
