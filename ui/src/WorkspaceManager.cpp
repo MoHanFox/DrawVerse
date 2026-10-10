@@ -28,6 +28,7 @@ namespace { QString newId() { return QUuid::createUuid().toString(QUuid::Without
 bool WorkspaceManager::windowsWindowFrames() const {
     return QGuiApplication::platformName()==QStringLiteral("windows");
 }
+QPoint WorkspaceManager::globalCursorPosition() const { return QCursor::pos(); }
 QRect WorkspaceManager::availableScreenGeometry(QWindow *window) const {
     auto *screen=window?window->screen():QGuiApplication::primaryScreen();
     return screen?screen->availableGeometry():QRect{};

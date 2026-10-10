@@ -48,17 +48,27 @@ ApplicationWindow {
         Workspace.watchMenuWindow(host,visible)
         if (!visible && menu.visible) menu.close()
     }
-    // A menu must only close when the user really left it. The host briefly loses activation while a
-    // submenu opens or while the pointer moves inside the first row, and closing on that transient
-    // state dismissed the menu under the cursor. Only a window outside the menu's own family counts.
+    // A menu must only close when the user really left it. Losing activation is not enough: the host
+    // briefly loses it while a submenu opens, while the pointer moves inside the menu, and while a
+    // transient child of the menu bar takes focus. Closing on that dismissed the menu under the
+    // cursor and left the highlight on the first menu-bar entry. Decide from the pointer position
+    // instead, and only when the newly active window is outside the menu's own family.
     onActiveChanged: {
         if (active || !menu.opened) return
         const owner = anchorItem ? anchorItem.Window.window : null
         const activeWindow = Window.activeWindow
         if (activeWindow === host || activeWindow === owner) return
-        // A submenu or flyout belonging to this menu keeps it open.
         if (activeWindow && activeWindow.transientParent && (activeWindow.transientParent === host || activeWindow.transientParent === owner)) return
+        // Pointer still inside this menu or its owner: the focus change was incidental.
+        if (containsPointer(host) || (owner && containsPointer(owner))) return
         menu.close()
+    }
+    function containsPointer(window) {
+        if (!window || !window.visible) return false
+        // Workspace reports the global pointer; Qt.styleHints has no mouse position property.
+        const global = Workspace.globalCursorPosition()
+        const point = window.mapFromGlobal(global)
+        return point.x >= 0 && point.y >= 0 && point.x < window.width && point.y < window.height
     }
     onClosing: menu.close()
 }

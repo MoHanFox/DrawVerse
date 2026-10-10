@@ -1323,7 +1323,14 @@ private slots:
         QTest::mouseRelease(main,Qt::LeftButton,Qt::AltModifier,center);
         QTRY_VERIFY(client.brushColor().red()>150 && client.brushColor().green()<90);
         QCOMPARE(client.undoDepth(),historyBefore);QCOMPARE(client.revision(),revisionBefore);
-        // Alt is the eyedropper: the brush ring goes away and the pointer becomes a crosshair.
+        // Switching away from the marquee and back keeps the chosen shape instead of resetting it.
+        client.setSelectionTool(2);QTRY_COMPARE(client.selectionTool(),2);
+        client.activateBrush();QTRY_VERIFY(!client.selectionTool());
+        client.activateMarquee();QTRY_COMPARE(client.selectionTool(),2);
+        client.setSelectionTool(1);QTRY_COMPARE(client.selectionTool(),1);
+        client.activateEraser();QTRY_VERIFY(!client.selectionTool());
+        client.activateMarquee();QTRY_COMPARE(client.selectionTool(),1);
+        client.setSelectionTool(0);QTRY_VERIFY(!client.selectionTool());        // Alt is the eyedropper: the brush ring goes away and the pointer becomes a crosshair.
         canvas->forceActiveFocus();
         QTest::keyPress(main,Qt::Key_Alt);QTest::qWait(40);
         QVERIFY2(!canvas->brushCursorVisible(),"brush ring still shown while Alt is held");

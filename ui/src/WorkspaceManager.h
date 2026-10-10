@@ -38,6 +38,9 @@ class WorkspaceManager final : public QObject, public QAbstractNativeEventFilter
 public:
     bool windowsWindowFrames() const;
     Q_INVOKABLE QRect availableScreenGeometry(QWindow *window) const;
+    /// Global pointer position, for deciding whether a focus change happened while the user was
+    /// still inside a menu.
+    Q_INVOKABLE QPoint globalCursorPosition() const;
     Q_INVOKABLE void watchMenuWindow(QWindow *window, bool visible);
     Q_INVOKABLE void promoteMenuWindow(QQuickItem *content);
     Q_INVOKABLE void watchPanelFlyout(QWindow *window,QQuickItem *owner,bool visible);

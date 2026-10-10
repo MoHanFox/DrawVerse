@@ -649,20 +649,29 @@ void PaintCoreClient::swapBrushColors(){
 void PaintCoreClient::setBrushRadius(qreal r) {m_brushLibrary->setRadius(r);}
 void PaintCoreClient::setBrushOpacity(qreal o) {m_brushLibrary->setOpacity(o);}
 void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
-void PaintCoreClient::setEraser(bool e) { if (!m_drawing && (e != m_eraser || m_moveTool || m_selectionTool)) { m_eraser = e; m_brushLibrary->setEraser(e); m_moveTool=false; m_selectionTool=0; emit brushChanged(); } }
-void PaintCoreClient::setMoveTool(bool enabled) { if(!m_drawing && (enabled!=m_moveTool || (enabled && m_selectionTool))) { m_moveTool=enabled; if(enabled)m_selectionTool=0; emit brushChanged(); } }
+// Each setter owns exactly one flag. Clearing the sibling tools here used to erase the marquee's
+// remembered shape, so switching to the brush and back reset the user's rectangle/ellipse choice.
+// Exclusivity is the activate* helpers' job, where the intent is explicit.
+void PaintCoreClient::setEraser(bool e) {
+    if(m_drawing || e==m_eraser) return;
+    m_eraser=e; m_brushLibrary->setEraser(e); emit brushChanged();
+}
+void PaintCoreClient::setMoveTool(bool enabled) {
+    if(m_drawing || enabled==m_moveTool) return;
+    m_moveTool=enabled; emit brushChanged();
+}
 void PaintCoreClient::setSelectionTool(int tool) {
     if(tool<0 || tool>2 || m_drawing || tool==m_selectionTool) return;
     m_selectionTool=tool;
-    if(tool==1 || tool==2) m_marqueeShape=tool;   // remembered for the next marquee activation
-    if(tool){m_moveTool=false;m_eraser=false;}
+    if(tool==1 || tool==2) m_marqueeShape=tool;   // remembered while other tools are active
     emit brushChanged();
 }
 void PaintCoreClient::activateBrush() {
     // Switching tools must work even mid-stroke; the stroke keeps its own brush until it ends.
+    // The marquee's remembered shape survives here, because only the flags change.
+    setEraser(false);
     setMoveTool(false);
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
-    setEraser(false);
 }
 void PaintCoreClient::activateEraser() {
     setMoveTool(false);
