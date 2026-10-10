@@ -13,6 +13,8 @@
 ABI_ASSERT(sizeof(PaintCommand) == 176, "command layout drift");
 ABI_ASSERT(offsetof(PaintCommand, point) == 64, "nested point offset drift");
 ABI_ASSERT(sizeof(PaintSessionInfo) == 104, "session info layout drift");
+ABI_ASSERT(sizeof(PaintHistoryEntry) == 16, "history entry layout drift");
+ABI_ASSERT(offsetof(PaintHistoryEntry, depth) == 8, "history depth offset drift");
 ABI_ASSERT(sizeof(PaintViewport) == 64, "viewport layout drift");
 ABI_ASSERT(sizeof(PaintFrameInfo) == 96, "frame layout drift");
 ABI_ASSERT(sizeof(PaintFileRequest) == 64, "file request layout drift");
@@ -49,6 +51,7 @@ static int async_smoke(PaintCore *core) {
     PaintFileRequest file_request;
     PaintFileJobInfo file_info;
     PaintLayerAppearance appearance;
+    PaintHistoryEntry history;
     uint64_t job_id = 0;
     uint64_t sequence = 0, request = 0, required = 0;
     uint8_t pixel[4] = {0}, name[1024] = {0};
@@ -75,6 +78,9 @@ static int async_smoke(PaintCore *core) {
         ASYNC_CHECK(clock() - start < 5 * CLOCKS_PER_SEC);
     } while (info.completed_sequence < sequence);
     ASYNC_CHECK(info.undo_depth == 1 && info.layer_count == 1 && info.document_generation == 1);
+    memset(&history, 0, sizeof(history)); history.struct_size = sizeof(history);
+    ASYNC_CHECK(paint_session_history_entry(core,session,info.publication,1,&history)==PAINT_OK);
+    ASYNC_CHECK(history.kind==PAINT_HISTORY_BRUSH && history.depth==1 && history.reserved==0);
     memset(&layer, 0, sizeof(layer)); layer.struct_size = sizeof(layer);
     ASYNC_CHECK(paint_session_layer_info(core, session, info.publication, 0, &layer) == PAINT_OK);
     ASYNC_CHECK(paint_session_layer_name(core, session, info.publication, layer.layer_id, name, sizeof(name), &required) == PAINT_OK);

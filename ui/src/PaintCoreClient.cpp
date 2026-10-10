@@ -56,8 +56,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 9) {
-            emit failure(QStringLiteral("图层悬停预览需要核心 ABI 1.9 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 10) {
+            emit failure(QStringLiteral("历史操作名称需要核心 ABI 1.10 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -118,7 +118,7 @@ signals:
     void brushPreviewReady(QString id,quint64 token,QString image);
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
     void storageDone(bool success);
-    void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection);
+    void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history);
     void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request);
     void failure(QString message);
     void completed(bool workerThread);
@@ -219,8 +219,18 @@ private:
             if(!check(status)) return false;
             steps.append(QVariantMap{{"operation",step.operation},{"shape",step.shape},{"x",step.x},{"y",step.y},{"width",step.width},{"height",step.height}});
         }
+        QVariantList history;
+        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区")};
+        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection"};
+        for(uint32_t depth=0;depth<=info.undo_depth+info.redo_depth;++depth) {
+            auto entry=dto<PaintHistoryEntry>();auto historyStatus=paint_session_history_entry(m_core,m_session,info.publication,depth,&entry);
+            if(historyStatus==PAINT_BUSY)return false;if(!check(historyStatus))return false;
+            if(entry.kind==PAINT_HISTORY_TRUNCATED)continue;
+            if(entry.kind>=static_cast<uint32_t>(names.size())){emit failure(QStringLiteral("无法识别的历史操作"));return false;}
+            history.append(QVariantMap{{"depth",entry.depth},{"kind",entry.kind},{"title",names[entry.kind]},{"icon",icons[entry.kind]}});
+        }
         m_connection->metadataPending.store(true);
-        emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}}); m_publication = info.publication;
+        emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}},history); m_publication = info.publication;
         return true;
     }
     void poll() {
@@ -426,7 +436,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         m_storageBusy=false; emit storageChanged(); emit storageFinished(success);
     });
     connect(&m_thread, &QThread::started, m_worker, &BackendWorker::boot);
-    connect(m_worker, &BackendWorker::metadata, this, [this](PaintSessionInfo info, QVariantList layers, QVariantMap selection) {
+    connect(m_worker, &BackendWorker::metadata, this, [this](PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history) {
         m_connection->metadataPending.store(false);
         const bool propertiesChanged = info.document_generation != m_generation
             || static_cast<int>(info.width) != m_width || static_cast<int>(info.height) != m_height
@@ -445,6 +455,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         if (info.completed_sequence >= m_pendingMutation) m_pendingMutation = 0;
         if (info.completed_sequence >= m_pendingLayer) m_pendingLayer=0;
         m_active = info.active_layer_id;
+        if(m_history!=history){m_history=std::move(history);emit historyChanged();}
         if(m_selection!=selection) {m_selection=std::move(selection);emit selectionChanged();}
         if (changedLayers) {
             m_layers = std::move(layers);

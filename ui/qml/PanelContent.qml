@@ -89,19 +89,19 @@ Item {
             ListView {
                 objectName:"historyList"
                 Layout.fillWidth:true;Layout.fillHeight:true;clip:true
-                model:Math.min(256,PaintClient.undoDepth+PaintClient.redoDepth+1)
-                property int offset:Math.max(0,PaintClient.undoDepth+PaintClient.redoDepth+1-256)
-                currentIndex:Math.max(0,PaintClient.undoDepth-offset)
-                onCurrentIndexChanged:Qt.callLater(()=>positionViewAtIndex(currentIndex,ListView.Contain))
+                model:PaintClient.historyEntries
+                currentIndex:PaintClient.historyEntries.findIndex(entry=>entry.depth===PaintClient.undoDepth)
+                onCurrentIndexChanged:if(currentIndex>=0)Qt.callLater(()=>positionViewAtIndex(currentIndex,ListView.Contain))
                 delegate:Rectangle {
                     required property int index
-                    property int depth:index+ListView.view.offset
+                    required property var modelData
+                    property int depth:modelData.depth
                     width:ListView.view.width;height:24
                     objectName:"historyEntry:"+depth
                     color:depth===PaintClient.undoDepth?Theme.selected:"transparent"
                     Row {anchors.verticalCenter:parent.verticalCenter;x:5;spacing:7
-                        Icon {name:depth===0?"page":"history";width:12;height:12;color:depth>PaintClient.undoDepth?Theme.disabled:Theme.text}
-                        Text {text:depth===0?"初始状态":"操作 "+depth;color:depth>PaintClient.undoDepth?Theme.disabled:Theme.text;font.pixelSize:9}
+                        Icon {objectName:"historyIcon:"+depth;name:modelData.icon;width:12;height:12;color:depth>PaintClient.undoDepth?Theme.disabled:Theme.text}
+                        Text {objectName:"historyTitle:"+depth;text:modelData.title;color:depth>PaintClient.undoDepth?Theme.disabled:Theme.text;font.pixelSize:9}
                     }
                     MouseArea {anchors.fill:parent;enabled:!PaintClient.drawing&&!PaintClient.fileBusy;onClicked:historyContent.targetDepth=parent.depth}
                 }

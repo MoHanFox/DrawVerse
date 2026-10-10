@@ -59,6 +59,7 @@ pub(crate) struct LayerState {
     pub clipping: PaintLayerClipping,
 }
 pub(crate) struct Publication {
+    pub history: Vec<PaintHistoryEntry>,
     pub selection: paint_core::Selection,
     pub info: PaintSessionInfo,
     pub layers: Vec<LayerState>,
@@ -514,6 +515,17 @@ fn publish(
             ..Default::default()
         },
         layers,
+        history: doc
+            .history_actions()
+            .into_iter()
+            .enumerate()
+            .map(|(depth, action)| PaintHistoryEntry {
+                struct_size: std::mem::size_of::<PaintHistoryEntry>() as u32,
+                kind: action as u32,
+                depth: depth as u32,
+                reserved: 0,
+            })
+            .collect(),
         error: error.map_or_else(String::new, |e| e.1.message.clone()),
     }
 }
@@ -609,6 +621,20 @@ impl Engine {
             Operation::Selection(edit) => {
                 let revision = self.document.revision();
                 let (w, h) = self.document.dimensions();
+                let action = match &edit {
+                    crate::selection_api::Edit::Shape(shape, _) => {
+                        if shape.kind == paint_core::SelectionKind::Ellipse {
+                            paint_core::HistoryAction::EllipseSelection
+                        } else {
+                            paint_core::HistoryAction::Selection
+                        }
+                    }
+                    crate::selection_api::Edit::All => paint_core::HistoryAction::SelectAll,
+                    crate::selection_api::Edit::Clear => paint_core::HistoryAction::Deselect,
+                    crate::selection_api::Edit::Invert => {
+                        paint_core::HistoryAction::InvertSelection
+                    }
+                };
                 let next = match edit {
                     crate::selection_api::Edit::Shape(shape, op) => {
                         self.document.selection().apply(shape, op, w, h)?
@@ -619,7 +645,7 @@ impl Engine {
                         self.document.selection().inverted(w, h)?
                     }
                 };
-                self.document.set_selection(next)?;
+                self.document.set_selection_with_action(next, action)?;
                 self.modified |= revision != self.document.revision();
             }
             Operation::Drop(id, target, placement) => {

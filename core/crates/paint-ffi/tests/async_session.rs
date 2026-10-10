@@ -31,6 +31,104 @@ struct Harness {
 }
 
 #[test]
+fn history_entry_metadata_has_exact_publication_tool_labels_and_stable_redo() {
+    assert_eq!(size_of::<PaintHistoryEntry>(), 16);
+    assert_eq!(offset_of!(PaintHistoryEntry, depth), 8);
+    let h = Harness::new(32, 32);
+    h.wait(h.stroke(16., 16.));
+    let mut sequence = 0;
+    unsafe {
+        assert_eq!(
+            paint_session_edit_selection(
+                h.core,
+                h.session,
+                &PaintSelectionEdit {
+                    action: PAINT_SELECTION_ALL,
+                    ..dto!(PaintSelectionEdit)
+                },
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+    }
+    h.wait(sequence);
+    h.submit(PaintCommand {
+        kind: PAINT_COMMAND_BEGIN_STROKE,
+        stroke: PaintStrokeDesc {
+            mode: PAINT_MODE_ERASE,
+            radius: 2.,
+            opacity: 1.,
+            spacing: 0.15,
+            linear_rgba: [0., 0., 0., 1.],
+            ..dto!(PaintStrokeDesc)
+        },
+        point: PaintPoint {
+            x: 16.,
+            y: 16.,
+            pressure: 1.,
+            tool: PAINT_TOOL_ERASER,
+            ..dto!(PaintPoint)
+        },
+        ..dto!(PaintCommand)
+    });
+    let state = h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_END_STROKE,
+        ..dto!(PaintCommand)
+    }));
+    unsafe {
+        for (depth, kind) in [
+            PAINT_HISTORY_INITIAL,
+            PAINT_HISTORY_BRUSH,
+            PAINT_HISTORY_SELECT_ALL,
+            PAINT_HISTORY_ERASER,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut entry = dto!(PaintHistoryEntry);
+            assert_eq!(
+                paint_session_history_entry(
+                    h.core,
+                    h.session,
+                    state.publication,
+                    depth as u32,
+                    &mut entry
+                ),
+                PAINT_OK
+            );
+            assert_eq!(
+                (entry.kind, entry.depth, entry.reserved),
+                (kind, depth as u32, 0)
+            );
+        }
+        let undone = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        let mut entry = PaintHistoryEntry {
+            kind: 999,
+            depth: 999,
+            ..dto!(PaintHistoryEntry)
+        };
+        assert_eq!(
+            paint_session_history_entry(h.core, h.session, state.publication, 3, &mut entry),
+            PAINT_BUSY
+        );
+        assert_eq!((entry.kind, entry.depth), (0, 0));
+        assert_eq!(
+            paint_session_history_entry(h.core, h.session, undone.publication, 3, &mut entry),
+            PAINT_OK
+        );
+        assert_eq!(entry.kind, PAINT_HISTORY_ERASER);
+        assert_eq!(
+            paint_session_history_entry(h.core, h.session, undone.publication, 99, &mut entry),
+            PAINT_NOT_FOUND
+        );
+        assert_eq!((entry.kind, entry.depth), (0, 0));
+    }
+}
+
+#[test]
 fn blend_preview_is_composite_non_mutating_replaceable_and_validated() {
     let h = Harness::new(32, 32);
     h.submit(PaintCommand {

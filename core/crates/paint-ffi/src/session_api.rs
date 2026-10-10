@@ -24,6 +24,34 @@ fn publication(
     }
     Ok(publication)
 }
+/// ABI 1.10: read retained operation metadata from the exact publication.
+/// Depth zero is INITIAL or TRUNCATED; remaining indices are chronological operations.
+/// # Safety
+/// Initialize output size and follow session/publication lifetime contracts.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_history_entry(
+    core: *mut PaintCore,
+    handle: *mut PaintSession,
+    expected_publication: u64,
+    index: u32,
+    out_entry: *mut PaintHistoryEntry,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::reset_sized(
+            out_entry,
+            PaintHistoryEntry {
+                struct_size: size_of::<PaintHistoryEntry>() as u32,
+                ..Default::default()
+            },
+        )?;
+        let state = publication(core, handle, expected_publication)?;
+        let entry = state
+            .history
+            .get(index as usize)
+            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "history entry not found"))?;
+        pointers::write(out_entry, *entry)
+    })
+}
 /// ABI 1.1: create an owning async document session. Creation/destruction run off the UI thread.
 /// # Safety
 /// Follow writable output, initialized DTO, and core lifetime contracts in contracts/abi.md.

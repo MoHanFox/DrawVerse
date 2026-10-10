@@ -2,6 +2,8 @@
 
 每轮先补设计，再实现、运行测试并记录结果；已交付第 1–5 阶段，QML 已接 Rust 任务与 CPU 视口渲染；插件层最后完成。
 
+真实历史名称：[设计](history-labels-design.md) / [验收](history-labels-validation.md)，ABI 1.10 提供保留历史的真实工具类型与裁剪边界，名称/图标不再从撤销深度猜测，逐条回放保留。
+
 最新界面细化：[设计](panel-refinement-design.md) / [验收](panel-refinement-validation.md)，ABI 1.9 混合悬停快照、拆分浮窗尺寸保持、即时交换颜色、共享紧凑控件、外描边与数位板悬停轮廓。
 
 | 顺序 | 模块 | 状态 | 验收门槛 |

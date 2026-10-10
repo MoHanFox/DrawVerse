@@ -3,6 +3,33 @@ use crate::{
 };
 use std::{collections::VecDeque, sync::Arc};
 
+/// Stable operation metadata; reading it never materializes history pixel payloads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum HistoryAction {
+    Initial = 0,
+    Brush = 1,
+    Eraser = 2,
+    SelectAll = 3,
+    Selection = 4,
+    Deselect = 5,
+    InvertSelection = 6,
+    AddLayer = 7,
+    RemoveLayer = 8,
+    LayerProperties = 9,
+    LayerBlend = 10,
+    LayerFill = 11,
+    LayerLocks = 12,
+    MoveLayer = 13,
+    Group = 14,
+    Ungroup = 15,
+    Reparent = 16,
+    Mask = 17,
+    Clipping = 18,
+    Truncated = 19,
+    EllipseSelection = 20,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct TileChange {
     pub coord: TileCoord,
@@ -51,8 +78,8 @@ pub(crate) enum Command {
 
 #[derive(Debug)]
 pub(crate) enum StoredCommand {
-    Inline(Command),
-    Encoded(Payload),
+    Inline(Command, HistoryAction),
+    Encoded(Payload, HistoryAction),
 }
 impl StoredCommand {
     #[cfg(test)]
@@ -65,13 +92,12 @@ impl StoredCommand {
         storage: Arc<paint_storage::ScratchSpace>,
     ) -> Result<Self> {
         if command.bytes() <= max_bytes {
-            Ok(Self::Inline(command.clone()))
+            Ok(Self::Inline(command.clone(), command.action()))
         } else {
-            Ok(Self::Encoded(Payload::encode_in(
-                command,
-                max_bytes - 128,
-                storage,
-            )?))
+            Ok(Self::Encoded(
+                Payload::encode_in(command, max_bytes - 128, storage)?,
+                command.action(),
+            ))
         }
     }
     #[cfg(test)]
@@ -83,7 +109,7 @@ impl StoredCommand {
         pool: Option<&Arc<crate::page_pool::PagePool>>,
     ) -> Result<Command> {
         match self {
-            Self::Inline(command) => {
+            Self::Inline(command, _) => {
                 // Inline history now retains identities, including cold pages.
                 // Validate those pages before moving either history stack.
                 command.verify_tiles()?;
@@ -92,26 +118,79 @@ impl StoredCommand {
                 }
                 Ok(command.clone())
             }
-            Self::Encoded(payload) => payload.decode_in(pool),
+            Self::Encoded(payload, _) => payload.decode_in(pool),
         }
     }
     fn bytes(&self) -> usize {
         match self {
-            Self::Inline(command) => command.bytes(),
-            Self::Encoded(payload) => payload.memory_bytes() + 128,
+            Self::Inline(command, _) => command.bytes(),
+            Self::Encoded(payload, _) => payload.memory_bytes() + 128,
         }
     }
     fn disk_bytes(&self) -> u64 {
         match self {
-            Self::Inline(_) => 0,
-            Self::Encoded(payload) => payload.disk_bytes(),
+            Self::Inline(..) => 0,
+            Self::Encoded(payload, _) => payload.disk_bytes(),
         }
+    }
+    pub fn action(&self) -> HistoryAction {
+        match self {
+            Self::Inline(_, a) | Self::Encoded(_, a) => *a,
+        }
+    }
+    pub fn with_action(mut self, action: HistoryAction) -> Self {
+        match &mut self {
+            Self::Inline(_, a) | Self::Encoded(_, a) => *a = action,
+        };
+        self
     }
 }
 
 pub(crate) const MAX_DISK_HISTORY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
 impl Command {
+    pub fn action(&self) -> HistoryAction {
+        use HistoryAction::*;
+        match self {
+            Self::Stroke { .. } => Brush,
+            Self::Selection { .. } => Selection,
+            Self::AddLayer { layer, .. } => {
+                if layer.mask {
+                    Mask
+                } else {
+                    AddLayer
+                }
+            }
+            Self::RemoveLayer { .. } | Self::RemoveTree { .. } => RemoveLayer,
+            Self::Properties { .. } => LayerProperties,
+            Self::Appearance { before, after, .. } => {
+                if before.offset_x != after.offset_x || before.offset_y != after.offset_y {
+                    MoveLayer
+                } else if before.blend != after.blend {
+                    LayerBlend
+                } else if before.fill != after.fill {
+                    LayerFill
+                } else {
+                    LayerLocks
+                }
+            }
+            Self::Structure { before, after } => {
+                if after.len() > before.len() {
+                    Group
+                } else if after.len() < before.len() {
+                    Ungroup
+                } else if before
+                    .iter()
+                    .zip(after)
+                    .any(|(a, b)| a.clipped != b.clipped)
+                {
+                    Clipping
+                } else {
+                    Reparent
+                }
+            }
+        }
+    }
     fn verify_tiles(&self) -> Result<()> {
         match self {
             Self::Structure { .. } | Self::Selection { .. } => {}
@@ -165,6 +244,7 @@ pub(crate) struct History {
     pub redo: Vec<StoredCommand>,
     pub bytes: usize,
     pub disk_bytes: u64,
+    pub evicted: bool,
 }
 
 impl History {
@@ -183,6 +263,7 @@ impl History {
             || self.undo.len() > max_commands
         {
             if let Some(oldest) = self.undo.pop_front() {
+                self.evicted = true;
                 self.bytes -= oldest.bytes();
                 self.disk_bytes -= oldest.disk_bytes();
             } else {
@@ -206,11 +287,13 @@ mod tests {
             }],
         };
         let first = StoredCommand::prepare(&command, 128).unwrap();
-        let second = StoredCommand::prepare(&command, 128).unwrap();
-        let StoredCommand::Encoded(a) = &first else {
+        let second = StoredCommand::prepare(&command, 128)
+            .unwrap()
+            .with_action(HistoryAction::Eraser);
+        let StoredCommand::Encoded(a, _) = &first else {
             unreachable!()
         };
-        let StoredCommand::Encoded(b) = &second else {
+        let StoredCommand::Encoded(b, _) = &second else {
             unreachable!()
         };
         let paths = (a.disk_path_for_test(), b.disk_path_for_test());
@@ -220,6 +303,7 @@ mod tests {
         history.commit(second, 1024, 100);
         history.trim(1024, 100, length);
         assert_eq!(history.undo.len(), 1);
+        assert_eq!(history.undo.back().unwrap().action(), HistoryAction::Eraser);
         assert_eq!(history.disk_bytes, length);
         assert!(!paths.0.exists());
         assert!(paths.1.exists());

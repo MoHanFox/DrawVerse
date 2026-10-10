@@ -111,7 +111,7 @@ mod history_failure_tests {
             } else {
                 doc.history.undo.back_mut().unwrap()
             };
-            let StoredCommand::Encoded(payload) = stored else {
+            let StoredCommand::Encoded(payload, _) = stored else {
                 unreachable!()
             };
             payload.truncate_for_test();
@@ -268,6 +268,68 @@ fn blend_preview_snapshot_shares_tiles_without_mutating_document() {
     assert!(snapshot
         .with_layer_blend(9999, crate::BlendMode::Multiply)
         .is_err());
+}
+
+#[test]
+fn history_actions_survive_encoded_eviction_undo_redo_and_branching() {
+    use crate::HistoryAction::*;
+    let mut doc = Document::with_options(
+        128,
+        32,
+        DocumentOptions {
+            max_history_bytes: 2 * TILE_BYTES + 256,
+            max_history_commands: 3,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let point = InputPoint::new(16., 16., 1.);
+    for i in 0..150 {
+        doc.begin_stroke(
+            crate::Brush {
+                radius: 1.,
+                color: if i % 2 == 0 {
+                    Pixel::WHITE
+                } else {
+                    Pixel::from_straight([0., 0., 0., 1.]).unwrap()
+                },
+                ..Default::default()
+            },
+            point,
+        )
+        .unwrap();
+        doc.stroke_to(InputPoint::new(80., 16., 1.)).unwrap();
+        assert!(doc.end_stroke().unwrap());
+    }
+    assert_eq!(doc.history_depth(), (3, 0));
+    assert_eq!(doc.history_actions(), vec![Truncated, Brush, Brush, Brush]);
+    assert!(matches!(
+        doc.history.undo.back(),
+        Some(StoredCommand::Encoded(..))
+    ));
+    doc.begin_stroke(
+        crate::Brush {
+            radius: 1.,
+            mode: BrushMode::Erase,
+            ..Default::default()
+        },
+        point,
+    )
+    .unwrap();
+    doc.stroke_to(InputPoint::new(80., 16., 1.)).unwrap();
+    doc.end_stroke().unwrap();
+    let actions = doc.history_actions();
+    assert_eq!(actions.last(), Some(&Eraser));
+    doc.undo().unwrap();
+    assert_eq!(doc.history_actions(), actions);
+    doc.redo().unwrap();
+    assert_eq!(doc.history_actions(), actions);
+    doc.undo().unwrap();
+    doc.set_selection_with_action(crate::Selection::all(128, 32), SelectAll)
+        .unwrap();
+    assert_eq!(doc.history_depth(), (3, 0));
+    assert_eq!(doc.history_actions().last(), Some(&SelectAll));
+    assert!(!doc.history_actions().contains(&Eraser));
 }
 
 #[derive(Debug)]
@@ -543,14 +605,24 @@ impl Document {
         &self.selection
     }
     pub fn set_selection(&mut self, selection: crate::Selection) -> Result<()> {
+        self.set_selection_with_action(selection, crate::HistoryAction::Selection)
+    }
+    pub fn set_selection_with_action(
+        &mut self,
+        selection: crate::Selection,
+        action: crate::HistoryAction,
+    ) -> Result<()> {
         self.idle()?;
         if self.selection == selection {
             return Ok(());
         }
-        self.commit(Command::Selection {
-            before: self.selection.clone(),
-            after: selection.clone(),
-        })?;
+        self.commit_with_action(
+            Command::Selection {
+                before: self.selection.clone(),
+                after: selection.clone(),
+            },
+            action,
+        )?;
         self.selection = selection;
         self.bump_revision();
         Ok(())
@@ -570,6 +642,21 @@ impl Document {
     }
     pub fn history_depth(&self) -> (usize, usize) {
         (self.history.undo.len(), self.history.redo.len())
+    }
+    pub fn history_actions(&self) -> Vec<crate::HistoryAction> {
+        let mut actions = vec![if self.history.evicted {
+            crate::HistoryAction::Truncated
+        } else {
+            crate::HistoryAction::Initial
+        }];
+        actions.extend(
+            self.history
+                .undo
+                .iter()
+                .chain(self.history.redo.iter().rev())
+                .map(StoredCommand::action),
+        );
+        actions
     }
     pub fn history_bytes(&self) -> usize {
         self.history.bytes
@@ -705,13 +792,17 @@ impl Document {
     }
 
     fn commit(&mut self, command: Command) -> Result<()> {
+        let action = command.action();
+        self.commit_with_action(command, action)
+    }
+    fn commit_with_action(&mut self, command: Command, action: crate::HistoryAction) -> Result<()> {
         let stored = StoredCommand::prepare_in(
             &command,
             self.options.max_history_bytes,
             self.pool.storage(),
         )?;
         self.history.commit(
-            stored,
+            stored.with_action(action),
             self.options.max_history_bytes,
             self.options.max_history_commands,
         );
@@ -1036,7 +1127,12 @@ impl Document {
             layer: stroke.layer,
             changes,
         };
-        if let Err(error) = self.commit(command.clone()) {
+        let action = if stroke.brush.mode == BrushMode::Erase {
+            crate::HistoryAction::Eraser
+        } else {
+            crate::HistoryAction::Brush
+        };
+        if let Err(error) = self.commit_with_action(command.clone(), action) {
             // History preparation failed before eviction. Restore all touched
             // tiles, retain the old history, and leave no half-committed stroke.
             self.apply_history(&command, false);
@@ -1401,7 +1497,7 @@ mod paging_failures {
         doc.end_stroke().unwrap();
         assert!(matches!(
             doc.history.undo.back(),
-            Some(StoredCommand::Inline(_))
+            Some(StoredCommand::Inline(..))
         ));
         let pixel = doc.try_pixel(16, 16).unwrap();
         let revision = doc.revision();

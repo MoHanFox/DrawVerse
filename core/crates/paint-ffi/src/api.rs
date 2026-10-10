@@ -15,7 +15,38 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 9;
+pub const PAINT_ABI_MINOR: u32 = 10;
+
+/// ABI 1.10: metadata for one retained history boundary/operation.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintHistoryEntry {
+    pub struct_size: u32,
+    pub kind: u32,
+    pub depth: u32,
+    pub reserved: u32,
+}
+pub const PAINT_HISTORY_INITIAL: u32 = 0;
+pub const PAINT_HISTORY_BRUSH: u32 = 1;
+pub const PAINT_HISTORY_ERASER: u32 = 2;
+pub const PAINT_HISTORY_SELECT_ALL: u32 = 3;
+pub const PAINT_HISTORY_SELECTION: u32 = 4;
+pub const PAINT_HISTORY_DESELECT: u32 = 5;
+pub const PAINT_HISTORY_INVERT_SELECTION: u32 = 6;
+pub const PAINT_HISTORY_ADD_LAYER: u32 = 7;
+pub const PAINT_HISTORY_REMOVE_LAYER: u32 = 8;
+pub const PAINT_HISTORY_LAYER_PROPERTIES: u32 = 9;
+pub const PAINT_HISTORY_LAYER_BLEND: u32 = 10;
+pub const PAINT_HISTORY_LAYER_FILL: u32 = 11;
+pub const PAINT_HISTORY_LAYER_LOCKS: u32 = 12;
+pub const PAINT_HISTORY_MOVE_LAYER: u32 = 13;
+pub const PAINT_HISTORY_GROUP: u32 = 14;
+pub const PAINT_HISTORY_UNGROUP: u32 = 15;
+pub const PAINT_HISTORY_REPARENT: u32 = 16;
+pub const PAINT_HISTORY_MASK: u32 = 17;
+pub const PAINT_HISTORY_CLIPPING: u32 = 18;
+pub const PAINT_HISTORY_TRUNCATED: u32 = 19;
+pub const PAINT_HISTORY_ELLIPSE_SELECTION: u32 = 20;
 pub const PAINT_ABI_PATCH: u32 = 0;
 pub const PAINT_WORKING_LINEAR_SRGB: u32 = 1;
 pub const PAINT_STORAGE_RGBA32F_PREMULTIPLIED: u32 = 1;

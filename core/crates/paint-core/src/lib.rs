@@ -18,6 +18,7 @@ pub use appearance::{
 pub use brush::{Brush, BrushMode, InputPoint, Tool};
 pub use document::{DirtyTiles, Document, DocumentOptions, DocumentSnapshot, MAX_DIMENSION};
 pub use error::{Error, Result};
+pub use history::HistoryAction;
 pub use layer::{ImportedLayer, Layer, LayerId, LayerProperties};
 pub use page_pool::StorageStats;
 pub use pixel::Pixel;

@@ -31,6 +31,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool storageBusy READ storageBusy NOTIFY storageChanged)
     Q_PROPERTY(QString storageMessage READ storageMessage NOTIFY storageChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList historyEntries READ historyEntries NOTIFY historyChanged)
     Q_PROPERTY(bool drawing READ drawing NOTIFY stateChanged)
     Q_PROPERTY(bool closing READ closing NOTIFY stateChanged)
     Q_PROPERTY(bool modified READ modified NOTIFY stateChanged)
@@ -58,6 +59,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QVariantList selectionSteps READ selectionSteps NOTIFY selectionChanged)
     Q_PROPERTY(int selectionTool READ selectionTool WRITE setSelectionTool NOTIFY brushChanged)
 public:
+    QVariantList historyEntries() const {return m_history;}
     explicit PaintCoreClient(QObject *parent = nullptr, const QString &settingsFile = {});
     QString settingsFile() const { return m_settingsFile; }
     ~PaintCoreClient() override;
@@ -153,6 +155,7 @@ public:
     Q_INVOKABLE void clearError();
     Q_INVOKABLE void shutdown();
 signals:
+    void historyChanged();
     void storageChanged();
     void storageFinished(bool success);
     void stateChanged();
@@ -201,6 +204,7 @@ private:
     bool m_moveTool = false;
     int m_selectionTool = 0;
     QVariantMap m_selection;
+    QVariantList m_history;
     QImage m_frames[2];
     QRectF m_regions[2], m_requestedRegions[2];
     QSize m_requestedPixels[2];

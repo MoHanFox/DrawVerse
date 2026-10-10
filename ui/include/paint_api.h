@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 9
+#define PAINT_ABI_MINOR 10
 
 #define PAINT_ABI_PATCH 0
 
@@ -108,6 +108,48 @@
 #define PAINT_GROUP_UNGROUP 2
 
 #define PAINT_GROUP_WRAP 1
+
+#define PAINT_HISTORY_ADD_LAYER 7
+
+#define PAINT_HISTORY_BRUSH 1
+
+#define PAINT_HISTORY_CLIPPING 18
+
+#define PAINT_HISTORY_DESELECT 5
+
+#define PAINT_HISTORY_ELLIPSE_SELECTION 20
+
+#define PAINT_HISTORY_ERASER 2
+
+#define PAINT_HISTORY_GROUP 14
+
+#define PAINT_HISTORY_INITIAL 0
+
+#define PAINT_HISTORY_INVERT_SELECTION 6
+
+#define PAINT_HISTORY_LAYER_BLEND 10
+
+#define PAINT_HISTORY_LAYER_FILL 11
+
+#define PAINT_HISTORY_LAYER_LOCKS 12
+
+#define PAINT_HISTORY_LAYER_PROPERTIES 9
+
+#define PAINT_HISTORY_MASK 17
+
+#define PAINT_HISTORY_MOVE_LAYER 13
+
+#define PAINT_HISTORY_REMOVE_LAYER 8
+
+#define PAINT_HISTORY_REPARENT 16
+
+#define PAINT_HISTORY_SELECTION 4
+
+#define PAINT_HISTORY_SELECT_ALL 3
+
+#define PAINT_HISTORY_TRUNCATED 19
+
+#define PAINT_HISTORY_UNGROUP 15
 
 #define PAINT_INPUT_BUTTONS 16
 
@@ -391,6 +433,16 @@ typedef struct PaintGroupRequest {
   const uint8_t *name;
   uint64_t name_length;
 } PaintGroupRequest;
+
+/**
+ * ABI 1.10: metadata for one retained history boundary/operation.
+ */
+typedef struct PaintHistoryEntry {
+  uint32_t struct_size;
+  uint32_t kind;
+  uint32_t depth;
+  uint32_t reserved;
+} PaintHistoryEntry;
 
 typedef struct PaintSessionInfo {
   uint32_t struct_size;
@@ -850,6 +902,18 @@ PaintStatus paint_session_group(struct PaintCore *core,
                                 struct PaintSession *session,
                                 const struct PaintGroupRequest *request,
                                 uint64_t *out_sequence);
+
+/**
+ * ABI 1.10: read retained operation metadata from the exact publication.
+ * Depth zero is INITIAL or TRUNCATED; remaining indices are chronological operations.
+ * # Safety
+ * Initialize output size and follow session/publication lifetime contracts.
+ */
+PaintStatus paint_session_history_entry(struct PaintCore *core,
+                                        struct PaintSession *handle,
+                                        uint64_t expected_publication,
+                                        uint32_t index,
+                                        struct PaintHistoryEntry *out_entry);
 
 /**
  * Read published immutable metadata; never waits for the document computation lock.

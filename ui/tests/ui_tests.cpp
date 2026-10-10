@@ -63,6 +63,26 @@ QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
 class UiTests final : public QObject {
     Q_OBJECT
 private slots:
+    void historyUsesRealToolLabelsAndHidesEvictedInitialState() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(32,32);QTRY_COMPARE(client.documentWidth(),32);QTRY_VERIFY(client.ready());for(auto *canvas:window->findChildren<CanvasItem*>())canvas->setClient(nullptr);
+        QTRY_COMPARE(client.historyEntries().size(),1);QCOMPARE(client.historyEntries().first().toMap().value("title").toString(),QString("初始状态"));
+        client.setBrushRadius(1);InputSample sample;sample.position={16,16};sample.pressure=1;
+        for(int i=0;i<150;++i) {
+            const auto previous=client.revision();client.setBrushColor(i%2?Qt::black:Qt::white);QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_VERIFY(client.revision()>previous);QTRY_VERIFY(!client.layerEditBusy());
+        }
+        QVERIFY(client.undoDepth()>0 && client.undoDepth()<=100);QCOMPARE(client.redoDepth(),0);
+        QTRY_COMPARE(client.historyEntries().size(),client.undoDepth());
+        for(const auto &value:client.historyEntries()){const auto record=value.toMap();QCOMPARE(record.value("title").toString(),QString("画笔"));QCOMPARE(record.value("icon").toString(),QString("brush"));QVERIFY(record.value("depth").toInt()>0);}
+        client.selectAll();QTRY_COMPARE(client.historyEntries().last().toMap().value("title").toString(),QString("全选"));
+        client.setEraser(true);QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.historyEntries().last().toMap().value("title").toString(),QString("橡皮擦"));QCOMPARE(client.historyEntries().last().toMap().value("icon").toString(),QString("eraser"));
+        const auto records=client.historyEntries();client.undo();QTRY_COMPARE(client.redoDepth(),1);QCOMPARE(client.historyEntries(),records);client.redo();QTRY_COMPARE(client.redoDepth(),0);QCOMPARE(client.historyEntries(),records);
+        const auto group=workspace.groupForPanel("history");workspace.setActive(group,"history");QQuickItem *title=nullptr;QTRY_VERIFY((title=findVisualItem(window->contentItem(),"historyTitle:"+QString::number(client.undoDepth()))));QCOMPARE(title->property("text").toString(),QString("橡皮擦"));
+        auto *icon=findVisualItem(window->contentItem(),"historyIcon:"+QString::number(client.undoDepth()));QVERIFY(icon);QCOMPARE(icon->property("name").toString(),QString("eraser"));QVERIFY(!findVisualItem(window->contentItem(),"historyEntry:0"));
+        QQuickItem *previous=nullptr;QTRY_VERIFY((previous=findVisualItem(window->contentItem(),"historyEntry:"+QString::number(client.undoDepth()-1))));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,previous->mapToScene({20,12}).toPoint());QTRY_COMPARE(client.redoDepth(),1);QCOMPARE(client.historyEntries(),records);
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void tabletHoverTracksOutlineThroughWindowAndItemDelivery() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();client.setBrushRadius(7);
         QHoverEvent mouse(QEvent::HoverMove,{50,60},canvas->mapToGlobal({50,60}),{40,50});QCoreApplication::sendEvent(canvas,&mouse);const bool initiallyVisible=canvas->brushCursorVisible();if(!initiallyVisible)QTest::keyClick(window,Qt::Key_CapsLock);QVERIFY(canvas->brushCursorVisible());

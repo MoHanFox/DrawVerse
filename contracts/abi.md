@@ -1,4 +1,10 @@
-# C ABI 1.9.0 契约
+# C ABI 1.10.0 契约
+
+## ABI 1.10 历史操作元数据
+
+新增 16 字节 PaintHistoryEntry（u32 struct_size/kind/depth/reserved，depth 偏移 8）与 paint_session_history_entry(core,session,expected_publication,index,out_entry)。索引 0 到 undo_depth+redo_depth 表示保留历史的时间顺序：0 是 INITIAL 或 TRUNCATED 边界，1 起为真实操作。kind 使用生成头中的 PAINT_HISTORY_* 常量（0–20）。画笔、橡皮、全选、矩形/椭圆选区、取消/反选及图层操作来自已提交命令，不从深度推测。
+
+元数据与 Inline/Encoded 历史命令一起移动，撤销/重做保留标签，分支丢弃重做标签，裁剪后深度 0 标记 TRUNCATED，客户端不再将它显示为初始状态。读取无需访问/解码磁盘像素，不改变历史。发布不匹配返回 BUSY，越界 NOT_FOUND，失败重置输出；世代改变由新的 publication 隔离。既有 DTO、接口和命令磁盘格式保持。
 
 ## ABI 1.9 混合模式显示预览
 
@@ -22,7 +28,7 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 ## 版本与类型
 
-全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/9/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
+全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/10/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
 
 初始化 DTO 为零并写 struct_size=sizeof(本调用者结构)，输入至少含已发布前缀。库只访问已知前缀；过小为 INVALID_ARGUMENT，不覆盖调用者内存；扩展尾部保持不变。输出 struct_size 写库已知大小。reserved 必须为零；未知 mode/tool/format 为 UNSUPPORTED。输入 capability 位保留未知位，圆笔刷只实际使用 pressure，客户端为无压力设备提供 pressure=1。
 
