@@ -1,6 +1,7 @@
 #pragma once
 #include "PaintCoreClient.h"
 #include <QQuickItem>
+#include <QVector>
 #include <QElapsedTimer>
 #include <QTimer>
 #include <QPointer>
@@ -41,7 +42,10 @@ public:
     Q_INVOKABLE void zoomBy(qreal factor);
     Q_INVOKABLE void captureLayoutPosition();
     Q_INVOKABLE void restoreLayoutPosition();
-    QRectF selectionPreview() const { return m_selecting ? QRectF(m_selectionStart,m_selectionEnd).normalized() : QRectF(); }
+    /// Normalized drag rectangle; Shift constrains it to a square (circle for the ellipse tool).
+    QRectF selectionPreview() const { return m_selecting ? selectionPreviewRect() : QRectF(); }
+    /// Shift constraint: keep the anchor corner and grow the shorter side to the longer one.
+    static QRectF constrainedRect(QPointF anchor,QPointF corner);
     int selectionPreviewKind() const { return m_selectionKind; }
     Q_INVOKABLE void cancelSelectionDrag();
 signals:
@@ -77,8 +81,12 @@ private:
     bool beginLayerMove(QPointF local);
     void finishLayerMove(QPointF local);
     bool beginSelection(QPointF local, Qt::KeyboardModifiers modifiers);
-    void updateSelection(QPointF local);
-    void finishSelection(QPointF local);
+    void updateSelection(QPointF local,Qt::KeyboardModifiers modifiers);
+    QRectF selectionPreviewRect() const;
+    /// Lasso path in document coordinates, for the client to rasterize on the session worker.
+    Q_INVOKABLE QVariantList pathPoints() const;
+    Q_PROPERTY(QVariantList pathPreview READ pathPoints NOTIFY selectionDragChanged)
+    void finishSelection(QPointF local,Qt::KeyboardModifiers modifiers);
     PaintCoreClient *m_client = nullptr;
     QPointer<QQuickWindow> m_observedWindow;
     QImage m_image;
@@ -101,6 +109,12 @@ private:
     QPointF m_selectionStart, m_selectionEnd;
     quint64 m_selectionGeneration = 0;
     int m_selectionKind = 0, m_selectionOperation = 0;
+    bool m_selectionConstrained = false;
+    // Lasso (3) / magic wand (4) capture state; `m_wandTolerance` mirrors the panel setting.
+    QVector<QPointF> m_pathPoints;
+    QPointF m_wandPoint;
+    int m_pathKind = 0, m_pathOperation = 0, m_wandTolerance = 32;
+    bool m_collectingPath = false;
     bool m_selecting = false;
     bool m_interactive = true, m_space = false, m_panning = false, m_stroke = false, m_tablet = false, m_fitPending = true;
     QElapsedTimer m_clock;

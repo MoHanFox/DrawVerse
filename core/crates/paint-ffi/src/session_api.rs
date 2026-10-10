@@ -184,6 +184,29 @@ pub unsafe extern "C" fn paint_session_submit(
         pointers::write(out_sequence, sequence)
     })
 }
+/// ABI 1.11: retarget the per-document history command limit. Accepted like a command and applied
+/// in order on the session worker; a smaller limit evicts the oldest undo records and the history
+/// boundary becomes unreachable (no fake initial state). Returns the accepted sequence.
+/// # Safety
+/// Follow session lifetime contracts; serialize with other submit calls for this session.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_set_history_limit(
+    core: *mut PaintCore,
+    handle: *mut PaintSession,
+    max_commands: u32,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        if max_commands == 0 {
+            return Err(ApiError::invalid("history limit must be positive"));
+        }
+        let sequence =
+            session(core, handle)?.submit(Operation::HistoryLimit(max_commands as usize))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
 /// Read published immutable metadata; never waits for the document computation lock.
 /// # Safety
 /// Follow initialized output DTO and session lifetime contracts.

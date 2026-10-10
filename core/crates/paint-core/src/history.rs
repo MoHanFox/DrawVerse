@@ -28,6 +28,10 @@ pub enum HistoryAction {
     Clipping = 18,
     Truncated = 19,
     EllipseSelection = 20,
+    /// Freehand lasso path.
+    LassoSelection = 21,
+    /// Colour-similarity flood fill.
+    MagicSelection = 22,
 }
 
 #[derive(Clone, Debug)]
@@ -271,6 +275,26 @@ impl History {
             }
         }
     }
+    /// Applying a smaller command limit evicts the oldest undo records and marks the boundary
+    /// unreachable, exactly like committing past the limit. The redo branch is dropped, since a
+    /// record that no longer fits behind the new limit cannot stay redoable.
+    pub fn apply_command_limit(&mut self, max_commands: usize) {
+        if max_commands == 0 {
+            return;
+        }
+        self.bytes -= self.redo.iter().map(StoredCommand::bytes).sum::<usize>();
+        self.disk_bytes -= self.redo.iter().map(StoredCommand::disk_bytes).sum::<u64>();
+        self.redo.clear();
+        while self.undo.len() > max_commands {
+            if let Some(oldest) = self.undo.pop_front() {
+                self.evicted = true;
+                self.bytes -= oldest.bytes();
+                self.disk_bytes -= oldest.disk_bytes();
+            } else {
+                break;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -310,5 +334,70 @@ mod tests {
         history.undo.back().unwrap().materialize().unwrap();
         drop(history);
         assert!(!paths.1.exists());
+    }
+    #[test]
+    fn lowering_the_command_limit_evicts_oldest_and_drops_redo() {
+        let command = Command::Stroke {
+            layer: 1,
+            changes: vec![TileChange {
+                coord: TileCoord { x: 0, y: 0 },
+                before: None,
+                after: Some(Arc::new(Tile::default())),
+            }],
+        };
+        let mut history = History::default();
+        for index in 0..5 {
+            let action = if index % 2 == 0 {
+                HistoryAction::Brush
+            } else {
+                HistoryAction::Eraser
+            };
+            history.commit(
+                StoredCommand::prepare(&command, 4096)
+                    .unwrap()
+                    .with_action(action),
+                1 << 20,
+                100,
+            );
+        }
+        assert_eq!(history.undo.len(), 5);
+        assert!(!history.evicted);
+        // A smaller limit keeps the newest records and marks the boundary unreachable.
+        history.apply_command_limit(2);
+        assert_eq!(history.undo.len(), 2);
+        assert!(history.evicted);
+        // Command 5 (index 4) is a brush, so the brush is the newest surviving record.
+        assert_eq!(history.undo.back().unwrap().action(), HistoryAction::Brush);
+        // Dropping the newest three leaves an eraser at the evicted boundary.
+        assert_eq!(history.redo.len(), 0);
+        // Undoing twice would present the erased records again; the limit change drops that branch.
+        let first = StoredCommand::prepare(&command, 4096)
+            .unwrap()
+            .with_action(HistoryAction::Brush);
+        let mut branched = History::default();
+        branched.commit(first, 1 << 20, 100);
+        branched.commit(
+            StoredCommand::prepare(&command, 4096)
+                .unwrap()
+                .with_action(HistoryAction::Eraser),
+            1 << 20,
+            100,
+        );
+        // Simulate one undo: the newest record moves to the redo branch.
+        let moved = branched.undo.pop_back().unwrap();
+        branched.bytes -= moved.bytes();
+        branched.disk_bytes -= moved.disk_bytes();
+        branched.redo.push(moved);
+        assert_eq!((branched.undo.len(), branched.redo.len()), (1, 1));
+        branched.apply_command_limit(1);
+        assert_eq!((branched.undo.len(), branched.redo.len()), (1, 0));
+        // A zero limit is rejected by the caller, so it must never silently wipe the history.
+        history.apply_command_limit(0);
+        assert_eq!(history.undo.len(), 2);
+        // Raising the limit only affects future commits.
+        let before = history.bytes;
+        history.apply_command_limit(64);
+        assert_eq!(history.undo.len(), 2);
+        assert_eq!(history.bytes, before);
     }
 }

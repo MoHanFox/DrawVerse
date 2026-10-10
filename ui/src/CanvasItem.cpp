@@ -198,23 +198,60 @@ bool CanvasItem::beginSelection(QPointF local,Qt::KeyboardModifiers modifiers) {
     if(!m_client || !m_client->ready() || m_client->drawing() || m_client->layerEditBusy() || m_client->fileBusy()) return false;
     m_selectionStart=m_selectionEnd=documentPoint(local);m_selectionGeneration=m_client->generation();
     m_selectionKind=m_client->selectionTool()-1;
+    // Shift adds to the selection; the square/circle constraint comes from Shift during the drag,
+    // matching the usual "hold Shift while dragging" gesture but never blocking additive selection.
     const bool add=modifiers.testFlag(Qt::ShiftModifier),subtract=modifiers.testFlag(Qt::AltModifier);
     m_selectionOperation=add ? (subtract ? 3 : 1) : (subtract ? 2 : 0);
+    m_selectionConstrained=false;
     m_selecting=true;emit selectionDragChanged();return true;
 }
-void CanvasItem::updateSelection(QPointF local) {
+void CanvasItem::updateSelection(QPointF local,Qt::KeyboardModifiers modifiers) {
     if(!m_selecting || !m_client) return;
     const auto point=documentPoint(local);
-    m_selectionEnd={std::clamp(point.x(),qreal(0),qreal(m_client->documentWidth())),std::clamp(point.y(),qreal(0),qreal(m_client->documentHeight()))};emit selectionDragChanged();
+    m_selectionEnd={std::clamp(point.x(),qreal(0),qreal(m_client->documentWidth())),std::clamp(point.y(),qreal(0),qreal(m_client->documentHeight()))};
+    const bool constrained=modifiers.testFlag(Qt::ShiftModifier);
+    if(constrained!=m_selectionConstrained){m_selectionConstrained=constrained;emit selectionDragChanged();}
+    else emit selectionDragChanged();
 }
-void CanvasItem::finishSelection(QPointF local) {
+QRectF CanvasItem::constrainedRect(QPointF anchor,QPointF corner) {    // Square/circle: the pressed corner stays put and the box grows along the drag direction until
+    // both sides match, so the shape follows the pointer instead of drifting.
+    const qreal side=qMax(qAbs(corner.x()-anchor.x()),qAbs(corner.y()-anchor.y()));
+    const qreal x=corner.x()>=anchor.x()?anchor.x():anchor.x()-side;
+    const qreal y=corner.y()>=anchor.y()?anchor.y():anchor.y()-side;
+    return QRectF(x,y,side,side);
+}
+QRectF CanvasItem::selectionPreviewRect() const {
+    auto rect=QRectF(m_selectionStart,m_selectionEnd).normalized();
+    if(!m_selectionConstrained)return rect;
+    return constrainedRect(m_selectionStart,m_selectionEnd);
+}
+QVariantList CanvasItem::pathPoints() const {
+    QVariantList rows;for(const auto &point:m_pathPoints){rows.append(QVariantList{point.x(),point.y()});}return rows;
+}
+void CanvasItem::finishSelection(QPointF local,Qt::KeyboardModifiers modifiers) {
     if(!m_selecting) return;
-    updateSelection(local);const auto rect=selectionPreview();cancelSelectionDrag();
+    // Keep the shift constraint rather than resetting the modifiers: the release position decides
+    // the committed square/circle together with the anchor.
+    updateSelection(local,modifiers);const auto rect=selectionPreview();cancelSelectionDrag();
     if(m_client && m_client->generation()==m_selectionGeneration && rect.width()>=1 && rect.height()>=1) m_client->editSelection(rect,m_selectionKind,m_selectionOperation);
 }
 void CanvasItem::cancelSelectionDrag(){if(m_selecting){m_selecting=false;emit selectionDragChanged();}}
 void CanvasItem::mousePressEvent(QMouseEvent *e) {
     if (!m_interactive || !m_client || e->source() != Qt::MouseEventNotSynthesized) { e->ignore(); return; }
+    if(m_client->selectionTool()>2 && e->button()==Qt::LeftButton && documentRect().contains(e->position())) {
+        // Lasso collects a freehand path; the magic wand resolves one seed region. Both are
+        // submitted to the session worker on release so the UI thread never touches pixels.
+        if(!m_client->ready() || m_client->drawing() || m_client->layerEditBusy() || m_client->fileBusy()) {e->ignore();return;}
+        forceActiveFocus();
+        const bool add=e->modifiers().testFlag(Qt::ShiftModifier),subtract=e->modifiers().testFlag(Qt::AltModifier);
+        m_pathOperation=add?(subtract?3:1):(subtract?2:0);
+        m_pathPoints.clear();m_pathPoints.append(documentPoint(e->position()));
+        m_collectingPath=m_client->selectionTool()==3;
+        m_pathKind=m_client->selectionTool();
+        emit selectionDragChanged();
+        if(!m_collectingPath) {m_pathOperation=m_pathOperation;m_wandPoint=documentPoint(e->position());}
+        e->accept();return;
+    }
     forceActiveFocus(); m_last = e->position();
     if (e->button() == Qt::MiddleButton || m_space || spaceHeld) { m_panning = true; e->accept(); return; }
     if(m_client->selectionTool() && documentRect().contains(e->position())) {e->setAccepted(beginSelection(e->position(),e->modifiers()));return;}
@@ -223,14 +260,33 @@ void CanvasItem::mousePressEvent(QMouseEvent *e) {
     e->setAccepted(m_stroke);
 }
 void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
+    if(m_pathKind>2 && (m_collectingPath || m_pathKind==4) && (e->buttons()&Qt::LeftButton)) {
+        const auto point=documentPoint(e->position());
+        m_cursorPosition=e->position();m_cursorInside=true;
+        if(m_collectingPath) {
+            // Sample by screen distance so a slow drag does not burn the point budget.
+            const auto &last=m_pathPoints.last();
+            if(QLineF(last,point).length()>=1.5 && m_pathPoints.size()<4096) m_pathPoints.append(point);
+        }
+        m_wandPoint=point;
+        emit selectionDragChanged();
+        e->accept();return;
+    }
     m_cursorInside=contains(e->position());m_cursorPosition=e->position();refreshBrushCursor();
     if (m_panning) { m_pan += e->position() - m_last; m_last = e->position(); emit viewChanged(); update(); }
-    else if(m_selecting && !m_tablet) updateSelection(e->position());
+    else if(m_selecting && !m_tablet) updateSelection(e->position(),e->modifiers());
     else if (m_stroke && !m_tablet) m_client->strokeTo(mouseSample(e->position(), e->buttons()));
     e->accept();
 }
 void CanvasItem::mouseReleaseEvent(QMouseEvent *e) {
-    if(m_selecting && !m_tablet) finishSelection(e->position());
+    if(m_pathKind>2) {
+        const bool committed=m_pathKind==3 ? (m_pathPoints.size()>=3 && m_client->editSelectionPath(pathPoints(),m_pathOperation))
+                                           : m_client->magicWandSelection(m_wandPoint.x(),m_wandPoint.y(),m_wandTolerance,m_pathOperation);
+        m_pathKind=0;m_collectingPath=false;m_pathPoints.clear();
+        emit selectionDragChanged();
+        e->setAccepted(committed);return;
+    }
+    if(m_selecting && !m_tablet) finishSelection(e->position(),e->modifiers());
     if(m_moving && !m_tablet) finishLayerMove(e->position());
     if (m_stroke && !m_tablet) { m_client->strokeTo(mouseSample(e->position(), e->buttons())); m_client->endStroke(); m_stroke = false; }
     m_panning = false;refreshBrushCursor(); e->accept();
@@ -302,8 +358,8 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if (!m_tablet && (event->type() != QEvent::TabletPress || !documentRect().contains(local))) return false;
     if(m_client->selectionTool() || m_selecting) {
         if(event->type()==QEvent::TabletPress) {forceActiveFocus();m_tablet=beginSelection(local,e->modifiers());}
-        else if(event->type()==QEvent::TabletMove) updateSelection(local);
-        else if(event->type()==QEvent::TabletRelease) {finishSelection(local);m_tablet=false;}
+        else if(event->type()==QEvent::TabletMove) updateSelection(local,e->modifiers());
+        else if(event->type()==QEvent::TabletRelease) {finishSelection(local,e->modifiers());m_tablet=false;}
         e->accept();return true;
     }
     if(m_client->moveTool() || m_moving) {

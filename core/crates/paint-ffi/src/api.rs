@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 10;
+pub const PAINT_ABI_MINOR: u32 = 11;
 
 /// ABI 1.10: metadata for one retained history boundary/operation.
 #[repr(C)]
@@ -47,6 +47,9 @@ pub const PAINT_HISTORY_MASK: u32 = 17;
 pub const PAINT_HISTORY_CLIPPING: u32 = 18;
 pub const PAINT_HISTORY_TRUNCATED: u32 = 19;
 pub const PAINT_HISTORY_ELLIPSE_SELECTION: u32 = 20;
+/// ABI 1.12: freehand lasso path and magic-wand region.
+pub const PAINT_HISTORY_LASSO_SELECTION: u32 = 21;
+pub const PAINT_HISTORY_MAGIC_SELECTION: u32 = 22;
 pub const PAINT_ABI_PATCH: u32 = 0;
 pub const PAINT_WORKING_LINEAR_SRGB: u32 = 1;
 pub const PAINT_STORAGE_RGBA32F_PREMULTIPLIED: u32 = 1;
@@ -448,6 +451,32 @@ pub const PAINT_SELECTION_INTERSECT: u32 = 3;
 pub const PAINT_SELECTION_STEP_INVERT: u32 = 4;
 pub const PAINT_SELECTION_RECTANGLE: u32 = 0;
 pub const PAINT_SELECTION_ELLIPSE: u32 = 1;
+/// ABI 1.12: rasterized shapes. The geometry fields stay the bounding box for old callers.
+pub const PAINT_SELECTION_POLYGON: u32 = 2;
+pub const PAINT_SELECTION_MASK: u32 = 3;
+/// ABI 1.12: free-path and content-derived selection edits.
+pub const PAINT_SELECTION_PATH_POLYGON: u32 = 0;
+pub const PAINT_SELECTION_PATH_MAGIC: u32 = 1;
+/// ABI 1.12: one point of a selection path, in document pixels.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintSelectionPoint {
+    pub x: f64,
+    pub y: f64,
+}
+/// ABI 1.12: a freehand path (lasso) or a seed point (magic wand) with tolerance.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintSelectionPath {
+    pub struct_size: u32,
+    pub edit_kind: u32,
+    pub operation: u32,
+    pub antialias: u32,
+    pub point_count: u32,
+    pub tolerance: u32,
+    pub reserved: [u32; 2],
+    pub points: *const PaintSelectionPoint,
+}
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct PaintSelectionEdit {

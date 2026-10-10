@@ -186,6 +186,8 @@ ApplicationWindow {
     }
     ResizeFrame {targetWindow:root}
     StoragePreferences { id: storagePreferences; objectName: "storagePreferences" }
+    PreferencesPanel { id: preferencesDialog; objectName: "preferencesDialog" }
+    KeyboardShortcutsDialog { id: shortcutsDialog; objectName: "keyboardShortcuts" }
     menuBar: MenuBar {
         objectName: "mainMenuBar"
         implicitHeight: 28; leftPadding: 30; rightPadding: 100
@@ -263,16 +265,58 @@ ApplicationWindow {
             MenuSeparator {}
             Action { text: "保存"; shortcut: StandardKey.Save; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: root.saveCurrent() }
             Action { text: "另存为 OpenRaster…"; shortcut: StandardKey.SaveAs; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: saveDialog.open() }
-            Action { text: "导出图片…"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: exportDialog.open() }
+            MenuSeparator {}
+            Action { text: "导出为 PNG…"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: exportDialog.open() }
+            Action { text: "导出 WebP…"; enabled: false }
+            Action { text: "导出 JPEG…"; enabled: false }
+            Action { text: "导出 TIFF…（待支持）"; enabled: false }
+            Action { text: "导出 GIF…（待支持）"; enabled: false }
+            MenuSeparator {}
+            Action { text: "置入…（待支持）"; enabled: false }
             MenuSeparator {}
             Action { text: "退出"; onTriggered: root.close() }
         }
         GlassMenu {
             topLevel:true
             title: "编辑"
-            Action { objectName:"storagePreferencesAction"; text: "性能与暂存盘…"; enabled: !PaintClient.closing; onTriggered: storagePreferences.open() }
+            Action { objectName:"storagePreferencesAction"; text: "首选项…"; shortcut: "Ctrl+K"; enabled: !PaintClient.closing; onTriggered: preferencesDialog.open() }
+            Action { objectName:"keyboardShortcutsAction"; text: "键盘快捷键…"; enabled: !PaintClient.closing; onTriggered: shortcutsDialog.open() }
+            MenuSeparator {}
             Action { text: "撤销"; shortcut: StandardKey.Undo; enabled: PaintClient.undoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.undo() }
             Action { text: "重做"; shortcut: "Ctrl+Shift+Z"; enabled: PaintClient.redoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.redo() }
+        }
+        GlassMenu {
+            topLevel:true
+            title: "图像"
+            Action { text: "图像大小…（待支持）"; enabled: false }
+            Action { objectName:"adjustCurvesAction"; text: "调整 · 曲线…（待支持）"; enabled: false }
+            Action { objectName:"adjustLevelsAction"; text: "调整 · 色阶…（待支持）"; enabled: false }
+            Action { objectName:"adjustHsvAction"; text: "调整 · 色相/饱和度/明度…（待支持）"; enabled: false }
+            MenuSeparator {}
+            Action { objectName:"canvasSizeAction"; text: "画布大小…（待支持）"; enabled: false }
+            MenuSeparator {}
+            Action { objectName:"canvasRotateCwAction"; text: "画布旋转 · 顺时针 90°（待支持）"; enabled: false }
+            Action { objectName:"canvasRotateCcwAction"; text: "画布旋转 · 逆时针 90°（待支持）"; enabled: false }
+            Action { objectName:"canvasFlipVerticalAction"; text: "画布旋转 · 垂直翻转（待支持）"; enabled: false }
+            Action { objectName:"canvasFlipHorizontalAction"; text: "画布旋转 · 水平翻转（待支持）"; enabled: false }
+            MenuSeparator {}
+            Action { text: "图像大小…（待支持）"; enabled: false }
+            Action { text: "裁剪…（待支持）"; enabled: false }
+            Action { text: "拼合图像（待支持）"; enabled: false }
+            Action { text: "使选区居中（待支持）"; enabled: false }
+        }
+        GlassMenu {
+            topLevel:true
+            title: "图层"
+            Action { text: "新建图层"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.addDefaultLayer() }
+            Action { text: "复制图层（待支持）"; enabled: false }
+            Action { text: "删除图层"; enabled: PaintClient.ready && !PaintClient.drawing && PaintClient.layers.length>1; onTriggered: PaintClient.removeLayer(PaintClient.activeLayer) }
+            MenuSeparator {}
+            Action { text: "新建组"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.groupLayer(PaintClient.activeLayer,"组") }
+            Action { text: "解组（移除组属性）"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.ungroupLayer(PaintClient.activeLayer) }
+            MenuSeparator {}
+            Action { text: "添加白色蒙版"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.addMask(PaintClient.activeLayer) }
+            Action { text: "创建剪贴蒙版"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy && !PaintClient.layerEditBusy; onTriggered: PaintClient.toggleActiveClipping() }
         }
         GlassMenu {
             topLevel:true
@@ -286,9 +330,22 @@ ApplicationWindow {
         }
         GlassMenu {
             topLevel:true
-            title: "视图"
-            Action { text: "适合窗口"; onTriggered: canvas.fitToView() }
-            Action { text: "实际像素"; onTriggered: canvas.actualSize() }
+            title: "滤镜"
+            GlassMenu {
+                objectName: "filterBlurSubmenu"
+                title: "模糊"
+                Action { objectName:"filterGaussianBlurAction"; text: "高斯模糊…（待支持）"; enabled: false }
+                Action { text: "动感模糊…（待支持）"; enabled: false }
+                Action { text: "径向模糊…（待支持）"; enabled: false }
+                Action { text: "方框模糊…（待支持）"; enabled: false }
+            }
+            Action { text: "锐化…（待支持）"; enabled: false }
+            Action { text: "杂色…（待支持）"; enabled: false }
+            Action { text: "风格化…（待支持）"; enabled: false }
+            MenuSeparator {}
+            Action { text: "像素化…（待支持）"; enabled: false }
+            Action { text: "扭曲…（待支持）"; enabled: false }
+            Action { text: "渲染…（待支持）"; enabled: false }
         }
         GlassMenu {
             topLevel:true
@@ -298,7 +355,16 @@ ApplicationWindow {
             Action {text:"工具条归位";enabled:Workspace.toolsFloating;onTriggered:Workspace.dockToolStrip("drawverse-tools-v1")}
             Action {text:"浮动画布";enabled:documents.activeId.length>0 && !PaintClient.drawing;onTriggered:documents.floatDocument(documents.activeId)}
             Action {text:"画布返回工作区";enabled:documents.activeId.length>0 && !PaintClient.drawing;onTriggered:documents.moveDocument(documents.activeId,"main")}
-            MenuSeparator {}
+            MenuSeparator {
+                objectName:"windowMenuSeparator:tools"
+                contentItem: Rectangle { implicitWidth: 200; implicitHeight: 1; color: Theme.line }
+            }
+            Action { text: "适合窗口"; shortcut: "F"; onTriggered: canvas.fitToView() }
+            Action { text: "实际像素"; onTriggered: canvas.actualSize() }
+            MenuSeparator {
+                objectName:"windowMenuSeparator:view"
+                contentItem: Rectangle { implicitWidth: 200; implicitHeight: 1; color: Theme.line }
+            }
             Instantiator {
                 model: Workspace.allPanels
                 delegate: GlassMenuItem {
@@ -317,11 +383,6 @@ ApplicationWindow {
                 onObjectAdded: (index,object) => windowMenu.insertItem(index,object)
                 onObjectRemoved: (index,object) => windowMenu.removeItem(object)
             }
-        }
-        GlassMenu {
-            topLevel:true
-            objectName: "workspaceMenu"
-            title: "工作区"
             Action { objectName:"customPanelAction"; text: "自定义面板…"; onTriggered: panelDialog.open() }
             Action { text: "保存当前布局"; onTriggered: Workspace.saveLayout() }
             Action { objectName:"defaultLayoutAction";text: "默认布局"; enabled:!PaintClient.drawing;onTriggered: Workspace.resetLayout() }

@@ -56,11 +56,12 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 10) {
-            emit failure(QStringLiteral("历史操作名称需要核心 ABI 1.10 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 11) {
+            emit failure(QStringLiteral("历史条数上限需要核心 ABI 1.11 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
+        m_historyLimit = std::clamp(settings->value("history/limit", 100).toInt(), 10, 1000);
         m_saved = QVariantMap{{"directory", settings->value("storage/directory", "")},
             {"memoryMiB", settings->value("storage/memoryMiB", 256)},
             {"scratchGiB", settings->value("storage/scratchGiB", 8)},
@@ -82,6 +83,11 @@ public:
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
         if (!check(paint_session_create(m_core, &desc, &m_session))) return;
         { QMutexLocker lock(&m_connection->mutex); m_connection->core = m_core; m_connection->session = m_session; }
+        // The persisted history limit applies from the first document of this run.
+        if (m_historyLimit > 0 && m_historyLimit != 100) {
+            quint64 sequence = 0;
+            if (!check(paint_session_set_history_limit(m_core, m_session, quint32(m_historyLimit), &sequence))) return;
+        }
         auto initial=dto<PaintCommand>();initial.kind=PAINT_COMMAND_NEW_WHITE_DOCUMENT;initial.width=960;initial.height=640;
         if(!check(paint_session_submit(m_core,m_session,&initial,&m_bootSequence))) return;
         m_previewClock.start(); poll(); m_timer->start();
@@ -90,8 +96,17 @@ public:
     void inspectStorage() { evaluateStorage(m_saved, false); }
     void saveStorage(const QVariantMap &values) { evaluateStorage(values, true); }
     void saveBrushPreferences(const QByteArray &json){auto settings=preferences();settings->setValue("brushes/state",json);settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存画笔设置，请检查配置目录权限"));}
-    void queueBrushPreview(const QString &id,quint64 token,qreal radius,qreal opacity,qreal spacing) {
-        m_brushQueue.removeIf([&](const QVariant &v){return v.toMap().value("id")==id;});
+    void storeHistoryLimit(int commands) {
+        auto settings=preferences();settings->setValue("history/limit",commands);settings->sync();
+        if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存历史条数上限，请检查配置目录权限"));
+    }
+    void applyHistoryLimit() {
+        if(m_stopped || !m_session)return;
+        quint64 sequence=0;
+        if(!check(paint_session_set_history_limit(m_core,m_session,quint32(m_historyLimit),&sequence)))
+            emit failure(QStringLiteral("无法应用历史条数上限"));
+    }
+    void queueBrushPreview(const QString &id,quint64 token,qreal radius,qreal opacity,qreal spacing) {        m_brushQueue.removeIf([&](const QVariant &v){return v.toMap().value("id")==id;});
         m_brushQueue.append(QVariantMap{{"id",id},{"token",token},{"radius",radius},{"opacity",opacity},{"spacing",spacing}});
     }
     void referencePreview(quint64 id, bool add) {
@@ -124,7 +139,28 @@ signals:
     void completed(bool workerThread);
     void finished();
     void fileResult(PaintFileJobInfo info, QString message);
-private:
+    void failedSelectionPath();
+public:
+    /// Lasso path: rasterized on the session worker so the UI thread never walks the mask.
+    bool submitSelectionPath(const QVector<QPointF> &points,int operation) {
+        if(m_stopped || !m_session || points.isEmpty() || points.size()>4096)return false;
+        QVector<PaintSelectionPoint> flat;flat.reserve(points.size());
+        for(const auto &point:points)flat.append({point.x(),point.y()});
+        auto request=dto<PaintSelectionPath>();
+        request.edit_kind=PAINT_SELECTION_PATH_POLYGON;request.operation=quint32(operation);
+        request.point_count=quint32(flat.size());request.points=flat.constData();
+        quint64 sequence=0;
+        return check(paint_session_edit_selection_path(m_core,m_session,&request,&sequence));
+    }
+    bool submitMagicWand(qreal x,qreal y,int tolerance,int operation) {
+        if(m_stopped || !m_session)return false;
+        const PaintSelectionPoint seed{x,y};
+        auto request=dto<PaintSelectionPath>();
+        request.edit_kind=PAINT_SELECTION_PATH_MAGIC;request.operation=quint32(operation);
+        request.point_count=1;request.tolerance=quint32(tolerance);request.points=&seed;
+        quint64 sequence=0;
+        return check(paint_session_edit_selection_path(m_core,m_session,&request,&sequence));
+    }
     std::unique_ptr<QSettings> preferences() const {
         if (!m_settingsFile.isEmpty()) return std::make_unique<QSettings>(m_settingsFile, QSettings::IniFormat);
         return std::make_unique<QSettings>(QSettings::IniFormat, QSettings::UserScope, "DrawVerse", "DrawVerse");
@@ -341,7 +377,10 @@ private:
                     if(victim==m_thumbnails.end()) break;
                     m_thumbnailRevisions.remove(victim.key()); m_thumbnails.erase(victim);
                 }
-                m_publication=0; // publish changed previews, never a drawing-time model refresh
+                // Publish immediately: the panel expects its thumbnail right away, and deferring the
+                // publication only moved the stall, it did not remove it.
+                m_publication=0;
+                if(++m_previewBatch>=64) m_previewBatch=0;
             }
             disablePreview(info); ++m_previewIndex;
         }
@@ -353,7 +392,7 @@ private:
         if(paint_session_layer_appearance(m_core,m_session,info.publication,layerId,&appearance)!=PAINT_OK) { ++m_previewIndex; return; }
         auto view=dto<PaintViewport>(); view.view_id=2; view.enabled=1; view.document_generation=info.document_generation;
         view.width=info.width; view.height=info.height;
-        const double scale=64./std::max(info.width,info.height);
+        const double scale=48./std::max(info.width,info.height);
         view.pixel_width=std::max(1u,static_cast<uint32_t>(std::round(info.width*scale)));
         view.pixel_height=std::max(1u,static_cast<uint32_t>(std::round(info.height*scale)));
         if(paint_session_set_layer_preview(m_core,m_session,layerId,&view,&m_previewRequest)==PAINT_OK) m_previewLayer=layerId;
@@ -404,9 +443,13 @@ private:
     qint64 m_quietSince=0;
     quint64 m_previewGeneration=0,m_seenGeneration=0,m_seenRevision=0,m_previewRequest=0,m_previewLayer=0;
     qsizetype m_previewIndex=0;
+    // Thumbnails are published in small batches: one repaint per few previews instead of per preview.
+    int m_previewBatch=0;
     uint64_t m_bootSequence=0;
     QString m_settingsFile;
     QVariantMap m_saved, m_active;
+    // Persisted history command limit, loaded with the other preferences on boot.
+    int m_historyLimit = 100;
     std::shared_ptr<BackendConnection> m_connection;
     QTimer *m_timer;
     PaintCore *m_core = nullptr;
@@ -428,6 +471,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
     connect(m_brushLibrary,&BrushLibrary::persistRequested,m_worker,&BackendWorker::saveBrushPreferences);
     connect(m_brushLibrary,&BrushLibrary::previewRequested,m_worker,&BackendWorker::queueBrushPreview);
     connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{m_radius=m_brushLibrary->radius();m_opacity=m_brushLibrary->opacity();m_spacing=m_brushLibrary->spacing();emit brushChanged();});
+    connect(m_brushLibrary,&BrushLibrary::recentColorsChanged,this,&PaintCoreClient::recentColorsChanged);
     connect(m_worker,&BackendWorker::storageState,this,[this](QVariantMap saved,QVariantMap active,QVariantMap info,QString message) {
         m_storageSettings=std::move(saved); m_activeStorageSettings=std::move(active);
         m_storageInfo=std::move(info); m_storageMessage=std::move(message); emit storageChanged();
@@ -454,6 +498,9 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         m_undo = static_cast<int>(info.undo_depth); m_redo = static_cast<int>(info.redo_depth);
         if (info.completed_sequence >= m_pendingMutation) m_pendingMutation = 0;
         if (info.completed_sequence >= m_pendingLayer) m_pendingLayer=0;
+        // A lasso/wand edit is a busy layer edit too: keep the panel and painting idled until the
+        // worker published the resulting selection.
+        if (m_pendingSelPath != 0 && info.completed_sequence >= m_pendingSelPath) m_pendingSelPath = 0;
         m_active = info.active_layer_id;
         if(m_history!=history){m_history=std::move(history);emit historyChanged();}
         if(m_selection!=selection) {m_selection=std::move(selection);emit selectionChanged();}
@@ -479,6 +526,8 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         // Pixel revisions arrive through frameChanged. Keep QML's layer delegates
         // alive throughout a stroke; notify their model only for metadata changes.
         if (changedLayers) emit layersChanged();
+        // Structural changes (delete, undo, paste, merge) must not leave stale selected ids.
+        if (changedLayers) pruneSelectedLayers();
         if (propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
     });
     connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request) {
@@ -589,9 +638,28 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
 }
 void PaintCoreClient::showError(const QString &error) { m_error = error; emit errorChanged(); }
 void PaintCoreClient::clearError() { m_error.clear(); emit errorChanged(); }
-void PaintCoreClient::setBrushColor(const QColor &c) { if (c.isValid() && c != m_color) { m_color = c; emit brushChanged(); } }
+QVariantList PaintCoreClient::recentColors() const {return m_brushLibrary->recentColors();}
+void PaintCoreClient::setHistoryLimit(int commands) {
+    const int next=std::clamp(commands,10,1000);
+    if(next==m_historyLimit)return;
+    m_historyLimit=next;
+    emit historyLimitChanged();
+    if(m_worker)QMetaObject::invokeMethod(m_worker,[worker=m_worker,next]{worker->storeHistoryLimit(next);},Qt::QueuedConnection);
+}
+void PaintCoreClient::applyHistoryLimit() {
+    // Persist the preference and make it take effect on the open document as well.
+    if(m_worker)QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->applyHistoryLimit();},Qt::QueuedConnection);
+}
+void PaintCoreClient::setBrushColor(const QColor &c) {
+    // Picking a colour is only a preview: the swatch row advances when the pixel stroke commits.
+    if (c.isValid() && c != m_color) { m_color = c; emit brushChanged(); }
+}
 void PaintCoreClient::setSecondaryBrushColor(const QColor &c){if(c.isValid() && c!=m_secondaryColor){m_secondaryColor=c;emit brushChanged();}}
-void PaintCoreClient::swapBrushColors(){std::swap(m_color,m_secondaryColor);emit brushChanged();}
+void PaintCoreClient::swapBrushColors(){
+    // Swapping selects a colour; the recent swatch row only advances on a committed stroke.
+    std::swap(m_color,m_secondaryColor);
+    emit brushChanged();
+}
 void PaintCoreClient::setBrushRadius(qreal r) {m_brushLibrary->setRadius(r);}
 void PaintCoreClient::setBrushOpacity(qreal o) {m_brushLibrary->setOpacity(o);}
 void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
@@ -614,6 +682,32 @@ bool PaintCoreClient::submitSelection(quint32 action,QRectF rect,int shape,int o
     m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
 }
 bool PaintCoreClient::editSelection(QRectF rect,int shape,int operation) {return submitSelection(PAINT_SELECTION_SHAPE,rect,shape,operation);}
+bool PaintCoreClient::editSelectionPath(const QVariantList &points,int operation) {
+    if(!m_ready || m_drawing || m_pendingSelPath || m_closing || !m_worker) return false;
+    if(points.size()<3 || points.size()>4096) return false;
+    QVector<QPointF> flat;flat.reserve(points.size());
+    for(const auto &value:points) {
+        const auto pair=value.toList();
+        if(pair.size()!=2) return false;
+        const auto x=pair[0].toDouble(),y=pair[1].toDouble();
+        if(!std::isfinite(x) || !std::isfinite(y) || std::abs(x)>4096 || std::abs(y)>4096) return false;
+        flat.append(QPointF(x,y));
+    }
+    const auto worker=m_worker;
+    QMetaObject::invokeMethod(worker,[worker,flat,operation]{
+        if(!worker->submitSelectionPath(flat,operation))emit worker->failedSelectionPath();
+    },Qt::QueuedConnection);
+    m_pendingSelPath=1;return true;
+}
+bool PaintCoreClient::magicWandSelection(qreal x,qreal y,int tolerance,int operation) {
+    if(!m_ready || m_drawing || m_pendingSelPath || m_closing || !m_worker) return false;
+    if(!std::isfinite(x) || !std::isfinite(y) || tolerance<0 || tolerance>255) return false;
+    const auto worker=m_worker;
+    QMetaObject::invokeMethod(worker,[worker,x,y,tolerance,operation]{
+        if(!worker->submitMagicWand(x,y,tolerance,operation))emit worker->failedSelectionPath();
+    },Qt::QueuedConnection);
+    m_pendingSelPath=1;return true;
+}
 bool PaintCoreClient::selectAll(){return submitSelection(PAINT_SELECTION_ALL);}
 bool PaintCoreClient::clearSelection(){return submitSelection(PAINT_SELECTION_CLEAR);}
 bool PaintCoreClient::invertSelection(){return submitSelection(PAINT_SELECTION_INVERT);}
@@ -624,12 +718,15 @@ bool PaintCoreClient::beginStroke(const InputSample &s) {
         if(layer.value("effectiveLocks").toUInt() & PAINT_LOCK_ALL) {showError(QStringLiteral("当前图层或所属组已完全锁定，请先解锁"));return false;}
     }
     m_dropStroke = false; if (!submit(Begin, s)) return false;
+    m_strokeColor = m_color;
     m_drawing = true; emit stateChanged(); return true;
 }
 void PaintCoreClient::strokeTo(const InputSample &s) { if (m_drawing && !m_dropStroke) submit(Move, s); }
 void PaintCoreClient::endStroke() {
     if (!m_drawing) return;
     if (!m_dropStroke) submit(End);
+    // A committed stroke is what makes the colour "recently used"; a cancelled one never shows up.
+    if (!m_dropStroke && m_strokeColor.isValid()) m_brushLibrary->useColor(m_strokeColor.name(QColor::HexArgb));
     m_drawing = false; emit stateChanged();
 }
 void PaintCoreClient::cancelStroke() {
@@ -644,6 +741,41 @@ void PaintCoreClient::addLayer(const QString &name) {
 }
 void PaintCoreClient::removeLayer(quint64 id) { if (m_ready && !m_drawing) submit(Remove, {}, id); }
 void PaintCoreClient::selectLayer(quint64 id) { if (m_ready && !m_drawing) submit(Select, {}, id); }
+QVariantList PaintCoreClient::selectedLayers() const {
+    QVariantList rows;for(const auto id:m_selectedLayers)rows.append(id);return rows;
+}
+void PaintCoreClient::selectLayers(quint64 id, int modifiers) {
+    const bool additive=(modifiers&int(Qt::ControlModifier))!=0 || (modifiers&int(Qt::MetaModifier))!=0;
+    const bool range=(modifiers&int(Qt::ShiftModifier))!=0;
+    // Only real, non-mask layers take part; masks follow their owner.
+    QList<quint64> order;
+    for(const auto &value:m_layers) {const auto layer=value.toMap();if(!layer.value("mask").toBool())order.append(layer.value("id").toULongLong());}
+    if(!order.contains(id))return;
+    if(range && m_active!=0 && order.contains(m_active)) {
+        const int from=order.indexOf(m_active),to=order.indexOf(id);
+        QList<quint64> span;
+        for(int i=qMin(from,to);i<=qMax(from,to);++i)span.append(order[i]);
+        m_selectedLayers=span;
+    } else if(additive) {
+        if(m_selectedLayers.contains(id)) {
+            if(m_selectedLayers.size()==1)return; // Never leave the panel with no selection.
+            m_selectedLayers.removeAll(id);
+        } else m_selectedLayers.append(id);
+    } else if(m_selectedLayers!=QList<quint64>{id}) {
+        m_selectedLayers={id};
+    } else {
+        return;
+    }
+    emit selectedLayersChanged();
+    selectLayer(id);
+}
+void PaintCoreClient::pruneSelectedLayers() {
+    QList<quint64> live;
+    for(const auto &value:m_layers) {const auto layer=value.toMap();if(!layer.value("mask").toBool())live.append(layer.value("id").toULongLong());}
+    QList<quint64> kept;for(const auto id:m_selectedLayers)if(live.contains(id))kept.append(id);
+    if(kept.isEmpty() && m_active!=0)kept.append(m_active);
+    if(kept!=m_selectedLayers) {m_selectedLayers=kept;emit selectedLayersChanged();}
+}
 void PaintCoreClient::setLayerProperties(quint64 id, bool v, qreal opacity) {
     if (m_ready && !m_drawing && !layerEditBusy() && std::isfinite(opacity)) submit(Properties, {}, id, {}, std::clamp(opacity, 0., 1.), v);
 }

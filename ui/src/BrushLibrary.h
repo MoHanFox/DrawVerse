@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QVariantList>
+#include <QStringList>
 #include <QHash>
 
 // UI preferences only. Engine access and preview work stay in PaintCoreClient.
@@ -14,6 +15,7 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(qreal radius READ radius WRITE setRadius NOTIFY settingsChanged)
     Q_PROPERTY(qreal opacity READ opacity WRITE setOpacity NOTIFY settingsChanged)
     Q_PROPERTY(qreal spacing READ spacing WRITE setSpacing NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantList recentColors READ recentColors NOTIFY recentColorsChanged)
 public:
     explicit BrushLibrary(QObject *parent=nullptr);
     QVariantList presets() const;
@@ -24,11 +26,13 @@ public:
     qreal radius() const;
     qreal opacity() const;
     qreal spacing() const;
+    QVariantList recentColors() const;
     void setRadius(qreal value);
     void setEraser(bool eraser);
     void setOpacity(qreal value);
     void setSpacing(qreal value);
     Q_INVOKABLE bool select(const QString &id);
+    Q_INVOKABLE bool useColor(const QString &color);
     Q_INVOKABLE QString saveCopy(const QString &name);
     Q_INVOKABLE bool rename(const QString &id,const QString &name);
     Q_INVOKABLE bool remove(const QString &id);
@@ -40,6 +44,7 @@ public:
 signals:
     void settingsChanged();
     void presetsChanged();
+    void recentColorsChanged();
     void persistRequested(QByteArray json);
     void previewRequested(QString id,quint64 token,qreal radius,qreal opacity,qreal spacing);
 private:
@@ -50,6 +55,8 @@ private:
     QList<Preset> m_presets;
     QString m_selected="round-pressure";
     qreal m_toolRadii[2]={12,12};
+    // Most recently used colours first; the colour panel shows them as its swatch row.
+    QStringList m_recentColors;
     bool m_eraser=false;
     quint64 m_nextToken=16;
 };

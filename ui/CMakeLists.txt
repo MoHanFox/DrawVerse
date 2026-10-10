@@ -26,7 +26,7 @@ qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOUR
     FILES qml/qmldir qml/Theme.qml qml/PanelWindow.qml qml/WorkspaceStatusBar.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml
           qml/CanvasPane.qml qml/DocumentArea.qml qml/DocumentWindow.qml qml/PanelFlyout.qml qml/DockWorkspace.qml qml/DockTile.qml qml/DockDivider.qml qml/DockEdgePreview.qml qml/DockHintWindow.qml qml/WindowOutline.qml
           qml/SideMenuWindow.qml qml/FloatingPanel.qml qml/ToolStrip.qml qml/PanelContent.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/assets/logo.png qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/LayerLock.qml
-          qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/assets/transparency.png)
+          qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/assets/transparency.png qml/PreferencesPanel.qml qml/KeyboardShortcutsDialog.qml qml/ToolVariantsPanel.qml)
 
 qt_add_executable(drawverse src/main.cpp src/PaintingBenchmark.h src/PaintingBenchmark.cpp)
 target_link_libraries(drawverse PRIVATE drawverse_ui)
@@ -73,6 +73,10 @@ add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     selectionsDragCombineUndoConstrainAndPersist
     panelTabsRetractWithoutExpandingRailsAndKeepSharedPresentation
     textFieldsKeepSpaceAndHistoryReplayStaysStepped
+    editMenuOpensKeyboardShortcutList
+    selectionToolVariantsUseCornerMarkAndRightClickPanel
+    selectionOutlineMarchesWhileVisibleAndStopsOtherwise
+    shiftDragConstrainsSelectionToSquareAndCircle
     -o "${CMAKE_BINARY_DIR}/qt-ui-highdpi.txt,txt" -o "-,txt")
 set_tests_properties(qt_ui_highdpi PROPERTIES TIMEOUT 90
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=2")

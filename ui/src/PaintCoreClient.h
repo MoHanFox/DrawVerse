@@ -44,6 +44,8 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(int redoDepth READ redoDepth NOTIFY stateChanged)
     Q_PROPERTY(quint64 activeLayer READ activeLayer NOTIFY stateChanged)
     Q_PROPERTY(QVariantList layers READ layers NOTIFY layersChanged)
+    // Panel-level multi-selection. Not document state: never written to history or disk.
+    Q_PROPERTY(QVariantList selectedLayers READ selectedLayers NOTIFY selectedLayersChanged)
     Q_PROPERTY(QVariantList collapsedGroups READ collapsedGroups NOTIFY groupExpansionChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
     Q_PROPERTY(QColor secondaryBrushColor READ secondaryBrushColor WRITE setSecondaryBrushColor NOTIFY brushChanged)
@@ -52,6 +54,8 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(qreal brushOpacity READ brushOpacity WRITE setBrushOpacity NOTIFY brushChanged)
     Q_PROPERTY(qreal brushSpacing READ brushSpacing WRITE setBrushSpacing NOTIFY brushChanged)
     Q_PROPERTY(BrushLibrary* brushLibrary READ brushLibrary CONSTANT)
+    Q_PROPERTY(QVariantList recentColors READ recentColors NOTIFY recentColorsChanged)
+    Q_PROPERTY(int historyLimit READ historyLimit WRITE setHistoryLimit NOTIFY historyLimitChanged)
     Q_PROPERTY(bool eraser READ eraser WRITE setEraser NOTIFY brushChanged)
     Q_PROPERTY(bool moveTool READ moveTool WRITE setMoveTool NOTIFY brushChanged)
     Q_PROPERTY(bool layerEditBusy READ layerEditBusy NOTIFY stateChanged)
@@ -94,15 +98,19 @@ public:
     qreal brushOpacity() const { return m_opacity; }
     qreal brushSpacing() const {return m_spacing;}
     BrushLibrary *brushLibrary() const {return m_brushLibrary;}
+    QVariantList recentColors() const;
     bool eraser() const { return m_eraser; }
     bool moveTool() const { return m_moveTool; }
-    bool layerEditBusy() const { return m_pendingLayer != 0; }
+    bool layerEditBusy() const { return m_pendingLayer != 0 || m_pendingSelPath != 0; }
     void setMoveTool(bool enabled);
     bool selectionEnabled() const { return m_selection.value("enabled").toBool(); }
     QVariantList selectionSteps() const { return m_selection.value("steps").toList(); }
     int selectionTool() const { return m_selectionTool; }
     void setSelectionTool(int tool);
     Q_INVOKABLE bool editSelection(QRectF rectangle, int shape, int operation);
+    /// Lasso path (freehand polygon) and magic-wand seed; both are resolved on the session worker.
+    Q_INVOKABLE bool editSelectionPath(const QVariantList &points, int operation);
+    Q_INVOKABLE bool magicWandSelection(qreal x, qreal y, int tolerance, int operation);
     Q_INVOKABLE bool selectAll();
     Q_INVOKABLE bool clearSelection();
     Q_INVOKABLE bool invertSelection();
@@ -112,6 +120,9 @@ public:
     quint64 revision() const { return m_revision; }
     quint64 generation() const { return m_generation; }
     void requestViewport(int view, QRectF region, QSize physicalPixels, bool enabled = true);
+    int historyLimit() const {return m_historyLimit;}
+    void setHistoryLimit(int commands);
+    Q_INVOKABLE void applyHistoryLimit();
     void setBrushColor(const QColor &color);
     void setBrushRadius(qreal radius);
     void setBrushOpacity(qreal opacity);
@@ -126,6 +137,10 @@ public:
     Q_INVOKABLE void addLayer(const QString &name);
     Q_INVOKABLE void removeLayer(quint64 id);
     Q_INVOKABLE void selectLayer(quint64 id);
+    /// Click selection: plain replaces, Ctrl/Cmd toggles, Shift selects the visible span.
+    Q_INVOKABLE void selectLayers(quint64 id, int modifiers);
+    QVariantList selectedLayers() const;
+    void pruneSelectedLayers();
     Q_INVOKABLE void setLayerProperties(quint64 id, bool visible, qreal opacity);
     Q_INVOKABLE bool setLayerFill(quint64 id, qreal fill);
     Q_INVOKABLE bool setLayerBlend(quint64 id, int blend);
@@ -160,8 +175,11 @@ signals:
     void storageFinished(bool success);
     void stateChanged();
     void layersChanged();
+    void selectedLayersChanged();
     void groupExpansionChanged();
     void brushChanged();
+    void recentColorsChanged();
+    void historyLimitChanged();
     void selectionChanged();
     void errorChanged();
     void frameChanged();
@@ -193,11 +211,18 @@ private:
     quint64 m_generation = 0, m_revision = 0, m_pendingNew = 0, m_pendingMutation = 0;
     int m_nextDefaultLayer = 1;
     quint64 m_pendingLayer = 0;
+    /// Sequence of an in-flight lasso/wand selection edit; non-zero keeps layer edits busy.
+    quint64 m_pendingSelPath = 0;
     QVariantList m_layers;
+    QList<quint64> m_selectedLayers;
     QString m_error;
     QColor m_secondaryColor=Qt::white;
     QColor m_color{"#2ea99d"};
+    // Colour of the stroke in progress: recent colours only advance on a committed stroke.
+    QColor m_strokeColor;
     qreal m_radius = 12, m_opacity = 1;
+    // Per-document history command limit; persisted as a preference and applied to new sessions.
+    int m_historyLimit = 100;
     qreal m_spacing = .15;
     BrushLibrary *m_brushLibrary = nullptr;
     bool m_eraser = false;

@@ -1,4 +1,5 @@
 #include "BrushLibrary.h"
+#include <QColor>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -13,6 +14,23 @@ BrushLibrary::BrushLibrary(QObject *parent):QObject(parent) {
                {"round-fine",QStringLiteral("细线圆笔"),3,1,.15,true,{},1,0,{}},
                {"round-translucent",QStringLiteral("透明圆笔"),18,.25,.15,true,{},1,0,{}},
                {"round-wide",QStringLiteral("宽幅圆笔"),48,1,.25,true,{},1,0,{}}};
+    m_recentColors={QStringLiteral("#000000"),QStringLiteral("#3a3a3a"),QStringLiteral("#6e6e6e"),QStringLiteral("#a8a8a8"),
+                    QStringLiteral("#d8d8d8"),QStringLiteral("#ffffff"),QStringLiteral("#8c2b2b"),QStringLiteral("#d6453f"),
+                    QStringLiteral("#f08a3c"),QStringLiteral("#f5d14e"),QStringLiteral("#7fb84b"),QStringLiteral("#3e9e7a")};
+}
+QVariantList BrushLibrary::recentColors() const {QVariantList rows;for(const auto &c:m_recentColors)rows.append(c);return rows;}
+bool BrushLibrary::useColor(const QString &color) {
+    const QColor parsed(color);
+    if(!parsed.isValid())return false;
+    const auto normalized=parsed.name(QColor::HexArgb);
+    // Already the most recent colour: nothing to reorder or persist.
+    if(!m_recentColors.isEmpty() && m_recentColors.first()==normalized)return false;
+    m_recentColors.removeAll(normalized);
+    m_recentColors.prepend(normalized);
+    while(m_recentColors.size()>12)m_recentColors.removeLast();
+    emit recentColorsChanged();
+    emit persistRequested(snapshot());
+    return true;
 }
 int BrushLibrary::index(const QString &id) const {for(int i=0;i<m_presets.size();++i)if(m_presets[i].id==id)return i;return -1;}
 QString BrushLibrary::selectedName() const{return m_presets[index(m_selected)].name;}
@@ -49,7 +67,8 @@ void BrushLibrary::retryPreview(){auto &p=m_presets[index(m_selected)];p.preview
 void BrushLibrary::acceptPreview(const QString &id,quint64 token,const QString &image){const int i=index(id);if(i<0 || m_presets[i].token!=token)return;m_presets[i].requested=0;m_presets[i].preview=image;m_presets[i].error=image.isEmpty()?QStringLiteral("预览暂不可用"):QString();emit presetsChanged();}
 QByteArray BrushLibrary::snapshot() const {
     QJsonArray rows;for(const auto &p:m_presets)rows.append(QJsonObject{{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opacity},{"spacing",p.spacing}});
-    return QJsonDocument(QJsonObject{{"version",1},{"selected",m_selected},{"presets",rows},{"toolRadii",QJsonArray{m_toolRadii[0],m_toolRadii[1]}}}).toJson(QJsonDocument::Compact);
+    return QJsonDocument(QJsonObject{{"version",1},{"selected",m_selected},{"presets",rows},{"toolRadii",QJsonArray{m_toolRadii[0],m_toolRadii[1]}},
+                                     {"recentColors",QJsonArray::fromStringList(m_recentColors)}}).toJson(QJsonDocument::Compact);
 }
 bool BrushLibrary::restore(const QByteArray &json) {
     if(json.size()>65536)return false;
@@ -68,5 +87,17 @@ bool BrushLibrary::restore(const QByteArray &json) {
         brush=sizes[0].toDouble(std::numeric_limits<double>::quiet_NaN());eraser=sizes[1].toDouble(std::numeric_limits<double>::quiet_NaN());
         if(!std::isfinite(brush) || !std::isfinite(eraser) || brush<.5 || brush>256 || eraser<.5 || eraser>256)return false;
     }
-    m_presets=restored;m_selected=selected;m_toolRadii[0]=brush;m_toolRadii[1]=eraser;emit settingsChanged();emit presetsChanged();return true;
+    m_presets=restored;m_selected=selected;m_toolRadii[0]=brush;m_toolRadii[1]=eraser;
+    // Optional: older brush state has no recent colours and keeps the built-in defaults.
+    if(root.contains("recentColors")) {
+        if(!root.value("recentColors").isArray())return false;
+        QStringList recent;
+        for(const auto &value:root.value("recentColors").toArray()) {
+            const QColor parsed(value.toString());
+            if(!parsed.isValid() || recent.size()>=12)return false;
+            recent.append(parsed.name(QColor::HexArgb));
+        }
+        m_recentColors=recent;
+    }
+    emit settingsChanged();emit presetsChanged();emit recentColorsChanged();return true;
 }

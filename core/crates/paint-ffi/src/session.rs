@@ -45,6 +45,9 @@ pub(crate) enum Operation {
     Group(u64, String),
     Ungroup(u64),
     Reparent(u64, u64),
+    HistoryLimit(usize),
+    /// ABI 1.12: freehand lasso path or magic-wand seed, resolved on the session worker.
+    SelectionPath(crate::selection_api::Path),
 }
 #[derive(Clone)]
 struct Command {
@@ -652,6 +655,27 @@ impl Engine {
                 let r = self.document.revision();
                 self.document.drop_layer(id, target, placement)?;
                 self.modified |= r != self.document.revision();
+            }
+            Operation::HistoryLimit(max_commands) => {
+                self.document.set_max_history_commands(max_commands)?;
+            }
+            Operation::SelectionPath(path) => {
+                let revision = self.document.revision();
+                match path.kind {
+                    PAINT_SELECTION_PATH_POLYGON => {
+                        self.document
+                            .set_selection_polygon(&path.points, path.operation)?;
+                    }
+                    _ => {
+                        let [x, y] = path.points[0];
+                        self.document.set_selection_magic(
+                            x.max(0.) as u32,
+                            y.max(0.) as u32,
+                            path.tolerance,
+                        )?;
+                    }
+                }
+                self.modified |= revision != self.document.revision();
             }
             Operation::NewWhite(w, h) => {
                 self.apply(Operation::New(w, h))?;

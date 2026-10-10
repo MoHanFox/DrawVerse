@@ -40,22 +40,22 @@ fn model(value: PaintSelectionEdit) -> ApiResult<Edit> {
         PAINT_SELECTION_INTERSECT => SelectionOperation::Intersect,
         _ => return Err(ApiError::invalid("selection operation")),
     };
-    let shape = SelectionShape {
-        kind: match value.shape {
+    let shape = SelectionShape::geometry(
+        match value.shape {
             PAINT_SELECTION_RECTANGLE => SelectionKind::Rectangle,
             PAINT_SELECTION_ELLIPSE => SelectionKind::Ellipse,
             _ => return Err(ApiError::invalid("selection shape")),
         },
-        antialias: match value.antialias {
+        value.x,
+        value.y,
+        value.width,
+        value.height,
+        match value.antialias {
             0 => false,
             1 => true,
             _ => return Err(ApiError::invalid("selection antialias")),
         },
-        x: value.x,
-        y: value.y,
-        width: value.width,
-        height: value.height,
-    };
+    );
     shape.validate()?;
     Ok(Edit::Shape(shape, operation))
 }
@@ -76,6 +76,92 @@ pub unsafe extern "C" fn paint_session_edit_selection(
         let sequence = runtime::registry()?
             .session(core, session)?
             .submit(Operation::Selection(edit))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+#[derive(Clone)]
+pub(crate) struct Path {
+    pub kind: u32,
+    pub points: Vec<[f64; 2]>,
+    pub tolerance: u32,
+    pub operation: SelectionOperation,
+    /// Validated for protocol compatibility; rasterized paths are intentionally hard-edged.
+    #[allow(dead_code)]
+    pub antialias: bool,
+}
+fn path_model(value: PaintSelectionPath) -> ApiResult<Path> {
+    if value.reserved != [0; 2] {
+        return Err(ApiError::invalid("selection path reserved fields"));
+    }
+    let operation = match value.operation {
+        PAINT_SELECTION_REPLACE => SelectionOperation::Replace,
+        PAINT_SELECTION_ADD => SelectionOperation::Add,
+        PAINT_SELECTION_SUBTRACT => SelectionOperation::Subtract,
+        PAINT_SELECTION_INTERSECT => SelectionOperation::Intersect,
+        _ => return Err(ApiError::invalid("selection operation")),
+    };
+    let antialias = match value.antialias {
+        0 => false,
+        1 => true,
+        _ => return Err(ApiError::invalid("selection antialias")),
+    };
+    let points = unsafe { pointers::dto_slice(value.points, value.point_count as usize)? };
+    let points: Vec<[f64; 2]> = points.iter().map(|p| [p.x, p.y]).collect();
+    match value.edit_kind {
+        PAINT_SELECTION_PATH_POLYGON => {
+            if points.len() < 3 || points.len() > paint_core::MAX_SELECTION_POINTS {
+                return Err(ApiError::invalid("selection path point count"));
+            }
+            if points.iter().any(|p| {
+                !p[0].is_finite() || !p[1].is_finite() || p[0].abs() > 4096. || p[1].abs() > 4096.
+            }) {
+                return Err(ApiError::invalid("selection path point"));
+            }
+            if value.tolerance != 0 {
+                return Err(ApiError::invalid("polygon path carries a tolerance"));
+            }
+        }
+        PAINT_SELECTION_PATH_MAGIC => {
+            if points.len() != 1 {
+                return Err(ApiError::invalid("magic selection takes one seed point"));
+            }
+            if !points[0][0].is_finite() || !points[0][1].is_finite() {
+                return Err(ApiError::invalid("selection path point"));
+            }
+            if value.tolerance > paint_core::MAX_WAND_TOLERANCE {
+                return Err(ApiError::invalid("magic selection tolerance"));
+            }
+        }
+        _ => return Err(ApiError::invalid("selection path kind")),
+    }
+    Ok(Path {
+        kind: value.edit_kind,
+        points,
+        tolerance: value.tolerance,
+        operation,
+        antialias,
+    })
+}
+/// ABI 1.12: enqueue a freehand-path (lasso) or content-derived (magic wand) selection edit.
+/// Points are copied and validated before returning; the session resolves the region off the UI thread.
+/// # Safety
+/// `request` must point to an initialized `PaintSelectionPath`; `points` must be a readable array of
+/// `point_count` initialized points; `out_sequence` must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_edit_selection_path(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    request: *const PaintSelectionPath,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        let value = pointers::read_sized(request)?;
+        let path = path_model(value)?;
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .submit(Operation::SelectionPath(path))?;
         pointers::write(out_sequence, sequence)
     })
 }
@@ -151,8 +237,13 @@ pub unsafe extern "C" fn paint_session_selection_step(
             },
             ..Default::default()
         };
-        if let Some(s) = step.shape {
-            value.shape = u32::from(s.kind == SelectionKind::Ellipse);
+        if let Some(s) = step.shape.as_ref() {
+            value.shape = match s.kind {
+                SelectionKind::Rectangle => PAINT_SELECTION_RECTANGLE,
+                SelectionKind::Ellipse => PAINT_SELECTION_ELLIPSE,
+                SelectionKind::Polygon => PAINT_SELECTION_POLYGON,
+                SelectionKind::Mask => PAINT_SELECTION_MASK,
+            };
             value.antialias = u32::from(s.antialias);
             value.x = s.x;
             value.y = s.y;

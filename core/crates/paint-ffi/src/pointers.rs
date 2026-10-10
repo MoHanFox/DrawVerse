@@ -54,6 +54,26 @@ pub(crate) unsafe fn reset_sized<T>(pointer: *mut T, value: T) -> ApiResult<()> 
     }
 }
 
+/// Read a caller-owned array of POD DTOs. `count` is bounded by the caller's protocol limit before
+/// any memory is touched, so a hostile count cannot make the backend read out of bounds.
+pub(crate) unsafe fn dto_slice<T: Copy>(
+    pointer: *const T,
+    count: usize,
+) -> ApiResult<&'static [T]> {
+    const MAX_DTO_ITEMS: usize = 65536;
+    if count > MAX_DTO_ITEMS {
+        return Err(ApiError::invalid("DTO array exceeds the item limit"));
+    }
+    if count == 0 {
+        return Ok(&[]);
+    }
+    if pointer.is_null() || pointer.addr() % align_of::<T>() != 0 {
+        return Err(ApiError::invalid("NULL or misaligned DTO array"));
+    }
+    // SAFETY: the caller guarantees `count` readable initialized T values behind this pointer.
+    Ok(unsafe { std::slice::from_raw_parts(pointer, count) })
+}
+
 pub(crate) fn length(value: u64) -> ApiResult<usize> {
     if value > isize::MAX as u64 {
         return Err(ApiError::invalid("buffer length exceeds addressable range"));

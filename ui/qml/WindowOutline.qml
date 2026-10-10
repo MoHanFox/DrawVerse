@@ -5,7 +5,9 @@ Window {
     id:root
     required property var hostWindow
     objectName:"applicationOutlineWindow"
-    flags:Qt.ToolTip|Qt.FramelessWindowHint|Qt.WindowTransparentForInput|Qt.WindowDoesNotAcceptFocus
+    // A plain tool window, not a popup: a ToolTip hint would stay above panel flyouts and
+    // menus and its transparent interior would cover their content.
+    flags:Qt.Tool|Qt.FramelessWindowHint|Qt.WindowTransparentForInput|Qt.WindowDoesNotAcceptFocus
     color:"transparent"
     visible:hostWindow.visible && hostWindow.visibility===Window.Windowed
     x:hostWindow.x-1;y:hostWindow.y-1

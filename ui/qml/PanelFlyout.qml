@@ -20,7 +20,9 @@ PanelWindow {
     minimumWidth:Math.min(Math.max(190,groupData.minimumWidth||190),Workspace.availableScreenGeometry(root).width)
     minimumHeight:Math.min(Math.max(148,groupData.minimumHeight||148),Workspace.availableScreenGeometry(root).height)
     width:320
-    height:panelKind==="brush" || panelKind==="brush-settings"?540:440
+    // Each panel kind opens at the height it needs; the frame itself never pads the body to fill the screen.
+    readonly property real idealHeight:panelKind==="brush-settings"?260:panelKind==="brush"?420:panelKind==="navigator"?300:panelKind==="history"?380:360
+    height:Math.min(idealHeight,Workspace.availableScreenGeometry(root).height)
     function refreshGroup(){groupData=Workspace.categoryDefinition(ownerTile.layoutData.id)}
     function remember(){if(visible && !positioning && !restoring && ownerTile)for(const panel of groupData.panels)Workspace.updatePanelView(panel,width,height,Math.round(y-ownerTile.mapToGlobal(0,0).y))}
     function positionSide(wantedY){

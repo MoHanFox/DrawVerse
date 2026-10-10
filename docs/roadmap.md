@@ -86,3 +86,7 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 最新工作区调整见 [workspace-tools-design.md](workspace-tools-design.md) 与 [workspace-tools-validation.md](workspace-tools-validation.md)：工具列整列停靠与限定宽度、鼠标磁吸/外侧提示、展开收起的像素位置保持、置顶菜单、独立工具大小、固定真实预览、颜色/轮廓/空格交互。布局 v6 和 ABI 1.8 保持，历史逐条跳转保留。
 
 标签双击只收回当前呈现、不再展开来源图标列（页头与标签一致），并补齐浮动栏 75% 不透明度、文本输入保留空格、历史 20ms 逐条回放的真实断言。见 [panel-tab-collapse-design.md](panel-tab-collapse-design.md) / [panel-tab-collapse-validation.md](panel-tab-collapse-validation.md)；仅 UI/测试修改，ABI 1.10 与布局 v6 不变。
+
+顶部菜单改为 `文件 · 编辑 · 图像 · 图层 · 选择 · 滤镜 · 窗口`（工作区并入窗口、删除视图），编辑→首选项打开左侧分类侧栏对话框（性能 / 历史 / 界面），未实现项按"待支持"标注。历史条数上限做成真实设置：`paint-core` 运行时裁剪最旧记录并标记边界不可达，ABI 1.11 新增 `paint_session_set_history_limit`，`PaintCoreClient.historyLimit` 持久化并即时应用。展开窗不再自动补长，最近颜色只在下笔提交后更新。见 [menus-preferences-design.md](menus-preferences-design.md)、[panel-length-and-snap-design.md](panel-length-and-snap-design.md)。
+
+同一工具的多形态合并到一个槽位：图标右下角小三角提示可切换，右键弹出悬浮面板列出全部形态，点击面板项才切换，点工具栏图标只激活当前形态（选区槽位含矩形/椭圆，套索待支持）。见 [tool-variants-design.md](tool-variants-design.md)；编辑→键盘快捷键只读展示真实绑定。

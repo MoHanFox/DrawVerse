@@ -9,14 +9,7 @@ fn ora_selection_roundtrip_does_not_crop_pixels_or_create_history() {
     let token = CancellationToken::default();
     let mut doc = Document::new(48, 32).unwrap();
     doc.initialize_white_background().unwrap();
-    let shape = SelectionShape {
-        kind: SelectionKind::Ellipse,
-        x: 4.25,
-        y: 3.5,
-        width: 20.,
-        height: 12.,
-        antialias: true,
-    };
+    let shape = SelectionShape::geometry(SelectionKind::Ellipse, 4.25, 3.5, 20., 12., true);
     let selection = Selection::default()
         .apply(shape, SelectionOperation::Replace, 48, 32)
         .unwrap()

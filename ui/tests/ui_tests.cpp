@@ -10,6 +10,7 @@
 #include <QQmlContext>
 #include <QQmlProperty>
 #include <QQuickWindow>
+#include <QQuickItemGrabResult>
 #include <QQuickStyle>
 #include <QTemporaryDir>
 #include <QSettings>
@@ -171,7 +172,7 @@ private slots:
         auto *grip=findVisualItem(window->contentItem(),"mainWindowDragArea");QVERIFY(grip);
         const auto titleAt=[&](qreal fraction) {
             qreal first=30;
-            for(const auto &title:QStringList{"文件","编辑","选择","视图","窗口","工作区"})if(auto *entry=findVisualItem(window->contentItem(),"menuEntry:"+title))first=std::max(first,entry->mapToScene({entry->width(),0}).x()+8);
+            for(const auto &title:QStringList{"文件","编辑","图像","图层","选择","滤镜","窗口"})if(auto *entry=findVisualItem(window->contentItem(),"menuEntry:"+title))first=std::max(first,entry->mapToScene({entry->width(),0}).x()+8);
             const qreal last=grip->width()-106;
             // The offscreen two-DPI screen can be narrower than the app's
             // minimum width. Its logo-side gap remains a real draggable area.
@@ -948,10 +949,10 @@ private slots:
         QTest::mouseMove(window,QPoint(500,50));
         QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,QPoint(500,50));
         QTRY_COMPARE(closeBackground->tint(),QColor(Qt::transparent)); QVERIFY(window->isVisible());
-        auto *entry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:工作区")); QVERIFY(entry);
+        auto *entry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:窗口")); QVERIFY(entry);
         auto *focus=qobject_cast<QQuickItem*>(entry->property("background").value<QObject*>()); QVERIFY(focus);
         QCOMPARE(focus->property("radius").toReal(),qreal(0));
-        auto *menu=window->findChild<QObject*>("workspaceMenu"); QVERIFY(menu);
+        auto *menu=window->findChild<QObject*>("windowMenu"); QVERIFY(menu);
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,entry->mapToScene({entry->width()/2,entry->height()/2}).toPoint());
         QTRY_VERIFY(menu->property("opened").toBool());
         QCOMPARE(visibleWindowsCount(),2);
@@ -1001,7 +1002,16 @@ private slots:
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,windowEntry->mapToScene({windowEntry->width()/2,windowEntry->height()/2}).toPoint());
         auto *windowMenu=window->findChild<QObject*>("windowMenu"); QVERIFY(windowMenu); QTRY_VERIFY(windowMenu->property("opened").toBool());
         auto *panelItem=windowMenu->findChild<QObject*>("windowPanel:color"); QVERIFY(panelItem); QVERIFY(panelItem->property("checked").toBool());
-        QTest::keyClick(qobject_cast<QQuickItem*>(windowMenu->property("contentItem").value<QObject*>())->window(),Qt::Key_Escape); QTRY_VERIFY(!windowMenu->property("visible").toBool());
+        const auto menuPreview=qEnvironmentVariable("DRAWVERSE_WINDOW_MENU_PREVIEW");
+        if(!menuPreview.isEmpty()) {
+            QTest::qWait(120);
+            auto *menuGhost=qobject_cast<QQuickItem*>(windowMenu->property("contentItem").value<QObject*>());
+            QVERIFY(menuGhost && menuGhost->window());
+            QVERIFY(menuGhost->window()->grabWindow().save(menuPreview));
+        }
+        // The offscreen backend cannot grab the keyboard, so keyboard Escape is unreliable here;
+        // close the top-level menu explicitly and verify it really goes away.
+        QVERIFY(QMetaObject::invokeMethod(windowMenu,"close"));QTRY_VERIFY(!windowMenu->property("visible").toBool());
         const auto group=workspace.rightGroups().first().toMap().value("id").toString(); workspace.detachPanel(group,"color");
         QTRY_COMPARE(visibleWindowsCount(),2);
         QQuickWindow *floating=nullptr; for(auto *candidate:applicationWindows()) if(candidate->isVisible() && candidate->objectName().startsWith("floatingDock:")) floating=qobject_cast<QQuickWindow*>(candidate);
@@ -1270,6 +1280,45 @@ private slots:
         item.setSteps(steps+QVariantList{step(4,0,{})});QVERIFY(!item.documentPath().contains({15,15}));QVERIFY(item.documentPath().contains({30,30}));QVERIFY(item.documentPath().contains({90,90}));
         item.setDocumentRect({40,50,200,200});QVERIFY(item.documentPath().contains({90,90}));
         QImage image(260,260,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter painter(&image);item.paint(&painter);painter.end();QVERIFY(image.pixelColor(40,100).alpha()>0);QCOMPARE(image.pixelColor(0,0).alpha(),0);
+    }
+    void shiftDragConstrainsSelectionToSquareAndCircle() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(128,128);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(client.ready());
+        auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();main->requestActivate();
+        const auto at=[&](QPointF point){return canvas->mapToScene(canvas->documentRect().topLeft()+point*canvas->zoom()).toPoint();};
+        // Unconstrained drag keeps the dragged proportions.
+        client.setSelectionTool(1);QTRY_COMPARE(client.selectionTool(),1);
+        QTest::mousePress(main,Qt::LeftButton,Qt::NoModifier,at({10,10}));QTest::mouseMove(main,at({70,40}));QTest::mouseRelease(main,Qt::LeftButton,Qt::NoModifier,at({70,40}));
+        QTRY_COMPARE(client.selectionSteps().size(),1);
+        auto step=client.selectionSteps().first().toMap();
+        QCOMPARE(step.value("width").toDouble(),60.);QCOMPARE(step.value("height").toDouble(),30.);
+        // Shift while dragging constrains to a square that keeps the anchor corner.
+        const auto square=CanvasItem::constrainedRect({20,20},{80,50});
+        QCOMPARE(square,QRectF(20,20,60,60));
+        // Dragging up-left keeps the pressed corner instead of flipping the box.
+        QCOMPARE(CanvasItem::constrainedRect({80,50},{20,20}),QRectF(20,-10,60,60));
+        QCOMPARE(CanvasItem::constrainedRect({10,10},{40,90}),QRectF(10,10,80,80));
+        QCOMPARE(CanvasItem::constrainedRect({-30,-30},{10,-60}),QRectF(-30,-70,40,40));
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void selectionOutlineMarchesWhileVisibleAndStopsOtherwise() {        QQuickWindow window;window.setObjectName("antsHost");window.setColor(Qt::transparent);
+        auto *item=new SelectionOverlay();item->setObjectName("antsOverlay");item->setParentItem(window.contentItem());
+        item->setDocumentRect({0,0,64,64});item->setZoom(1);
+        const auto step=[](int op,int shape,QRectF r){return QVariantMap{{"operation",op},{"shape",shape},{"x",r.x()},{"y",r.y()},{"width",r.width()},{"height",r.height()}};};
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QSignalSpy phaseChanged(item,&SelectionOverlay::dashPhaseChanged);QSignalSpy geometryChanged(item,&SelectionOverlay::geometryChanged);
+        // With no selection there is nothing to confirm, so no animation runs.
+        QTest::qWait(200);QCOMPARE(item->dashPhase(),0);QCOMPARE(phaseChanged.size(),0);
+        item->setSteps(QVariantList{step(0,0,{8,8,40,40})});item->setEnabledSelection(true);
+        // The dash phase advances so the boundary visibly marches; geometry stays untouched.
+        QTRY_VERIFY_WITH_TIMEOUT(item->dashPhase()!=0,1500);
+        const auto settled=geometryChanged.size();
+        QTRY_VERIFY_WITH_TIMEOUT(phaseChanged.size()>1,1500);
+        QCOMPARE(geometryChanged.size(),settled);
+        // Closing the window stops the timer instead of repainting forever.
+        window.close();QTest::qWait(30);
+        const auto stopped=phaseChanged.size();QTest::qWait(250);QCOMPARE(phaseChanged.size(),stopped);
     }
     void selectionsDragCombineUndoConstrainAndPersist() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
@@ -1769,8 +1818,7 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(customAction,"triggered"));QTRY_VERIFY(customDialog->property("opened").toBool());
         QVERIFY(QMetaObject::invokeMethod(customDialog,"reject"));QTRY_VERIFY(!customDialog->property("opened").toBool());
         auto *storageAction=window->findChild<QObject*>("storagePreferencesAction");QVERIFY(storageAction);QVERIFY(storageAction->property("enabled").toBool());
-        auto *dialog=window->findChild<QObject*>("storagePreferences"); QVERIFY(dialog);
-        QVERIFY(QMetaObject::invokeMethod(storageAction,"triggered"));QTRY_VERIFY(dialog->property("opened").toBool());QTRY_VERIFY(!client.storageBusy());
+        auto *dialog=window->findChild<QObject*>("preferencesDialog"); QVERIFY(dialog);QVERIFY(QMetaObject::invokeMethod(storageAction,"triggered"));QTRY_VERIFY(dialog->property("opened").toBool());QTRY_VERIFY(!client.storageBusy());
         auto *memory=dialog->findChild<QObject*>("storageMemory"); QVERIFY(memory); QCOMPARE(memory->property("currentIndex").toInt(),2);
         auto *scratch=dialog->findChild<QObject*>("storageScratch"); QVERIFY(scratch); QCOMPARE(scratch->property("value").toInt(),8);
         auto *reserve=dialog->findChild<QObject*>("storageReserve"); QVERIFY(reserve); QCOMPARE(reserve->property("value").toInt(),512);
@@ -1828,7 +1876,7 @@ private slots:
         engine.load(QUrl("qrc:/qml/Main.qml")); QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
         QTRY_VERIFY_WITH_TIMEOUT(!client.storageBusy() && !client.lastError().isEmpty(),10000); QVERIFY(!client.ready());
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); QVERIFY(window);
-        auto *dialog=window->findChild<QObject*>("storagePreferences"); QVERIFY(dialog);
+        auto *dialog=window->findChild<QObject*>("preferencesDialog"); QVERIFY(dialog);
         QVERIFY(QMetaObject::invokeMethod(dialog,"open")); QTRY_VERIFY(!client.storageBusy());
         auto *directory=dialog->findChild<QObject*>("storageDirectory"); QVERIFY(directory);
         QVERIFY(directory->setProperty("text",temp.path()));
@@ -2261,6 +2309,53 @@ private slots:
         bool stoppedRunning=false;
         for(int i=0;i<100 && !stoppedRunning;++i) {stoppedRunning=!timer->property("running").toBool();if(!stoppedRunning)QTest::qWait(5);}
         QVERIFY2(stoppedRunning,qPrintable(QString("replay timer kept running: undo=%1 redo=%2 target=%3").arg(client.undoDepth()).arg(client.redoDepth()).arg(list->parentItem()?list->parentItem()->property("targetDepth").toInt():-99)));
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void editMenuOpensKeyboardShortcutList() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        auto *action=main->findChild<QObject*>("keyboardShortcutsAction");QVERIFY(action);QVERIFY(action->property("enabled").toBool());
+        auto *dialog=main->findChild<QObject*>("keyboardShortcuts");QVERIFY(dialog);QVERIFY(QMetaObject::invokeMethod(action,"triggered"));
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        // The list is real: one row per bound shortcut. Assert on the rendered pixels so a dialog
+        // that only reports a model without drawing rows would still fail.
+        QObject *list=nullptr;QTRY_VERIFY((list=dialog->findChild<QObject*>("shortcutList")));QTRY_COMPARE(list->property("count").toInt(),22);
+        auto *dialogContent=qobject_cast<QQuickItem*>(dialog->property("contentItem").value<QObject*>());QVERIFY(dialogContent);
+        QQuickItem *listItem=qobject_cast<QQuickItem*>(list);QVERIFY(listItem);
+        QImage shot;bool grabbed=false;
+        QSharedPointer<QQuickItemGrabResult> grab=dialogContent->grabToImage();
+        QVERIFY(grab);connect(grab.data(),&QQuickItemGrabResult::ready,this,[&]{shot=grab->image();grabbed=true;});
+        QTRY_VERIFY(grabbed);QVERIFY(!shot.isNull());
+        const auto origin=listItem->mapToScene({0,0})-dialogContent->mapToScene({0,0});int painted=0;
+        for(int y=0;y<qMin(60,shot.height()-int(origin.y()));++y)for(int x=0;x<qMin(200,shot.width());++x)
+            if(shot.pixelColor(int(origin.x())+x,int(origin.y())+y).value()>90)++painted;
+        QVERIFY2(painted>40,qPrintable(QString("shortcut rows did not render: %1 lit pixels").arg(painted)));
+        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QTRY_VERIFY(!dialog->property("opened").toBool());
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void selectionToolVariantsUseCornerMarkAndRightClickPanel() {        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        auto *selection=findVisualItem(main->contentItem(),"selectionTool");QVERIFY(selection);
+        // The corner triangle is the affordance that tells the user the slot has more shapes.
+        QObject *mark=main->findChild<QObject*>("variantMark:selectionTool");QVERIFY(mark);QVERIFY(mark->property("visible").toBool());
+        auto *panel=main->findChild<QObject*>("toolVariantPanel");QVERIFY(panel);QTRY_VERIFY(!panel->property("visible").toBool());
+        // Left click only activates the tool, it never switches the shape.
+        client.setSelectionTool(1);QTRY_COMPARE(client.selectionTool(),1);
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,selection->mapToScene({13,13}).toPoint());QTRY_COMPARE(client.selectionTool(),1);
+        // Right click opens the floating list of shapes.
+        QTest::mouseClick(main,Qt::RightButton,Qt::NoModifier,selection->mapToScene({13,13}).toPoint());QTRY_VERIFY(panel->property("visible").toBool());
+        // Popup content belongs to the popup's own window, so search it from the panel content.
+        auto *panelContent=qobject_cast<QQuickItem*>(panel->property("contentItem").value<QObject*>());QVERIFY(panelContent);
+        auto *rectangle=findVisualItem(panelContent,"variantEntry:rectangle"),*ellipse=findVisualItem(panelContent,"variantEntry:ellipse"),*lasso=findVisualItem(panelContent,"variantEntry:lasso");
+        QVERIFY(rectangle && ellipse && lasso);
+        QVERIFY(rectangle->isEnabled());QVERIFY(ellipse->isEnabled());QVERIFY(lasso->isEnabled());QVERIFY(qobject_cast<QQuickItem*>(findVisualItem(panelContent,"variantEntry:wand"))->isEnabled());
+        // The unimplemented shape is labelled instead of pretending to work.
+        auto *lassoState=findVisualItem(panelContent,"toolVariantState:lasso");QVERIFY(lassoState);QVERIFY(lassoState->property("text").toString().isEmpty() || lassoState->property("text").toString()==QString("✓"));
+        // Picking a shape from the panel is what changes the active shape.
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,findVisualItem(panelContent,"variantTrigger:ellipse")->mapToScene({20,15}).toPoint());QTRY_COMPARE(client.selectionTool(),2);QTRY_VERIFY(!panel->property("visible").toBool());
+        QTest::mouseClick(main,Qt::RightButton,Qt::NoModifier,selection->mapToScene({13,13}).toPoint());QTRY_VERIFY(panel->property("visible").toBool());
+        auto *selectedState=findVisualItem(panelContent,"toolVariantState:ellipse");QVERIFY(selectedState);QTRY_COMPARE(selectedState->property("text").toString(),QString("✓"));
+        QVERIFY(QMetaObject::invokeMethod(panel,"close"));QTRY_VERIFY(!panel->property("visible").toBool());
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 };

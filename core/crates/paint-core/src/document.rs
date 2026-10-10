@@ -604,6 +604,36 @@ impl Document {
     pub fn selection(&self) -> &crate::Selection {
         &self.selection
     }
+    /// Apply an already-rasterized selection shape (polygon or wand region).
+    pub fn set_selection_path(
+        &mut self,
+        shape: crate::SelectionShape,
+        operation: crate::SelectionOperation,
+        action: crate::HistoryAction,
+    ) -> Result<()> {
+        let (width, height) = (self.width, self.height);
+        let next = self.selection.apply(shape, operation, width, height)?;
+        self.set_selection_with_action(next, action)
+    }
+    /// Freehand lasso: rasterize the closed path and apply it.
+    pub fn set_selection_polygon(
+        &mut self,
+        points: &[[f64; 2]],
+        operation: crate::SelectionOperation,
+    ) -> Result<()> {
+        let shape = crate::polygon_shape(points, self.width, self.height)?;
+        self.set_selection_path(shape, operation, crate::HistoryAction::LassoSelection)
+    }
+    /// Magic wand: flood fill from the seed and apply the resulting region.
+    pub fn set_selection_magic(&mut self, seed_x: u32, seed_y: u32, tolerance: u32) -> Result<()> {
+        let tolerance = f64::from(tolerance) / 255.;
+        let shape = crate::wand_shape(self, seed_x, seed_y, tolerance as f32)?;
+        self.set_selection_path(
+            shape,
+            crate::SelectionOperation::Replace,
+            crate::HistoryAction::MagicSelection,
+        )
+    }
     pub fn set_selection(&mut self, selection: crate::Selection) -> Result<()> {
         self.set_selection_with_action(selection, crate::HistoryAction::Selection)
     }
@@ -663,6 +693,20 @@ impl Document {
     }
     pub fn history_disk_bytes(&self) -> u64 {
         self.history.disk_bytes
+    }
+    /// Retarget the per-document command limit. A smaller limit evicts the oldest undo records
+    /// immediately and marks the original boundary unreachable; a larger limit only affects
+    /// future commits. Rejected while a stroke is being recorded so history stays consistent.
+    pub fn set_max_history_commands(&mut self, max_commands: usize) -> Result<()> {
+        if max_commands == 0 {
+            return Err(Error::InvalidArgument("history limit must be positive"));
+        }
+        if self.stroke.is_some() {
+            return Err(Error::Busy);
+        }
+        self.options.max_history_commands = max_commands;
+        self.history.apply_command_limit(max_commands);
+        Ok(())
     }
     pub fn stroke_active(&self) -> bool {
         self.stroke.is_some()

@@ -23,7 +23,33 @@ Rectangle {
     Column {
         anchors.horizontalCenter:parent.horizontalCenter;anchors.top:parent.top;anchors.topMargin:12;spacing:4
         IconButton {objectName:"moveLayerTool";width:26;height:26;glyph:"move";checkable:true;checked:PaintClient.moveTool;onClicked:PaintClient.moveTool=true;tooltip:"移动图层 V"}
-        IconButton {objectName:"selectionTool";width:26;height:26;glyph:PaintClient.selectionTool===2?"ellipseSelection":"rectangleSelection";checkable:true;checked:PaintClient.selectionTool>0;onClicked:PaintClient.selectionTool=PaintClient.selectionTool===1?2:1;tooltip:"矩形 / 椭圆选区 M · Shift+M 切换"}
+        // Several shapes share one slot: click activates the current shape, right-click picks another.
+        IconButton {
+            id: selectionToolButton
+            objectName:"selectionTool";width:26;height:26
+            glyph:PaintClient.selectionTool===2?"ellipseSelection":PaintClient.selectionTool===3?"lassoSelection":PaintClient.selectionTool>=4?"wand":"rectangleSelection"
+            checkable:true;checked:PaintClient.selectionTool>0
+            onClicked:PaintClient.selectionTool=PaintClient.selectionTool>0?PaintClient.selectionTool:1
+            tooltip:"选区工具 M · 右键切换形态"
+            hasVariants:true
+            function openVariants() {
+                variants.toolTitle="选区工具"
+                // Build a real list of entries; the panel looks each one up by index.
+                const rows=[]
+                rows.push({id:"rectangle",label:"矩形选框",icon:"rectangleSelection",pending:false,selected:PaintClient.selectionTool===1,apply:function(){PaintClient.selectionTool=1}})
+                rows.push({id:"ellipse",label:"椭圆选框",icon:"ellipseSelection",pending:false,selected:PaintClient.selectionTool===2,apply:function(){PaintClient.selectionTool=2}})
+                rows.push({id:"lasso",label:"套索",icon:"lassoSelection",pending:false,selected:PaintClient.selectionTool===3,apply:function(){PaintClient.selectionTool=3}})
+                rows.push({id:"wand",label:"魔棒",icon:"wand",pending:false,selected:PaintClient.selectionTool===4,apply:function(){PaintClient.selectionTool=4}})
+                variants.entries=rows
+                variants.open()
+            }
+            TapHandler {
+                objectName:"selectionToolVariantArea"
+                acceptedButtons:Qt.RightButton
+                onTapped:selectionToolButton.openVariants()
+            }
+            ToolVariantsPanel { id: variants; parent: root; canvasView: root.canvasView }
+        }
         IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;checked:!PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool;onClicked:PaintClient.eraser=false;tooltip:"画笔 B"}
         IconButton {objectName:"eraserTool";width:26;height:26;glyph:"eraser";checkable:true;checked:PaintClient.eraser && !PaintClient.moveTool;onClicked:PaintClient.eraser=true;tooltip:"橡皮擦 E"}
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}

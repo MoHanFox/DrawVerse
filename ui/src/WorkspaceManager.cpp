@@ -153,9 +153,11 @@ bool WorkspaceManager::nativeEventFilter(const QByteArray &eventType,void *messa
 void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
     QString target,placement;QRectF preview; qreal best=25;
     auto *moving=m_windowDrag.window();
-    const auto exposed=[&](QWindow *window,QPointF point) {
+    const auto exposed=[&](QWindow *window,QPointF point,bool workspace) {
 #ifdef Q_OS_WIN
-        if(QGuiApplication::platformName()=="windows") {
+        // The workspace is the outer frame: a docked pane sitting against its edge must not
+        // shadow the column target, or only the first snapped floating window would ever land.
+        if(!workspace && QGuiApplication::platformName()=="windows") {
             const auto all=QGuiApplication::allWindows();
             // Overlay windows (window outline, dock hint, menu blur) are topmost but input
             // transparent; they cover the whole workspace and must not shadow the real target.
@@ -164,7 +166,7 @@ void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
                     !w->flags().testFlag(Qt::WindowTransparentForInput) && reinterpret_cast<HWND>(w->winId())==handle && w->geometry().contains(point.toPoint()))return w==window;
         }
 #endif
-        Q_UNUSED(window); Q_UNUSED(point);return true;
+        Q_UNUSED(window); Q_UNUSED(point); Q_UNUSED(workspace); return true;
     };
     const auto consider=[&](const QString &id,QQuickItem *item,bool workspace,QRectF columnArea=QRectF()) {
         if(!item || !item->isVisible() || !item->window() || !item->window()->isVisible() || item->window()->visibility()==QWindow::Minimized)return;
@@ -173,7 +175,7 @@ void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
         const auto offer=[&](qreal distance,const QString &edge,QPointF contact) {
             contact.setX(std::clamp(contact.x(),area.left()+1,area.right()-1));
             contact.setY(std::clamp(contact.y(),area.top()+1,area.bottom()-1));
-            if(distance<=24 && distance<best && exposed(item->window(),contact)) {
+            if(distance<=24 && distance<best && exposed(item->window(),contact,workspace)) {
                 best=distance;target=workspace?"__workspace_"+edge:id;placement=workspace?edge:wholeColumn?"column-"+edge:sidePlacement(id,edge);
                 preview=placement.startsWith("column-")?columnRect(id):area;
             }

@@ -11,6 +11,7 @@ mod page_pool;
 mod pixel;
 mod selection;
 mod tile;
+mod wand;
 
 pub use appearance::{
     blend_pixel, BlendMode, LayerAppearance, LOCK_ALL, LOCK_POSITION, LOCK_TRANSPARENCY,
@@ -23,7 +24,9 @@ pub use layer::{ImportedLayer, Layer, LayerId, LayerProperties};
 pub use page_pool::StorageStats;
 pub use pixel::Pixel;
 pub use selection::{
-    Selection, SelectionKind, SelectionOperation, SelectionShape, SelectionStep,
-    MAX_SELECTION_STEPS,
+    mask_shape, polygon_shape, Selection, SelectionKind, SelectionMask, SelectionOperation,
+    SelectionShape, SelectionStep, MAX_SELECTION_MASK_BYTES, MAX_SELECTION_POINTS,
+    MAX_SELECTION_STEPS, MAX_WAND_TOLERANCE,
 };
 pub use tile::{Tile, TileCoord, TILE_BYTES, TILE_SIZE};
+pub use wand::wand_shape;

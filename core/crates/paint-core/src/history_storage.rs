@@ -649,14 +649,14 @@ mod tests {
     use super::*;
     #[test]
     fn selection_disk_roundtrip_and_corruption_are_checked() {
-        let shape = crate::SelectionShape {
-            kind: crate::SelectionKind::Ellipse,
-            x: 1.25,
-            y: 2.5,
-            width: 50.,
-            height: 30.,
-            antialias: true,
-        };
+        let shape = crate::SelectionShape::geometry(
+            crate::SelectionKind::Ellipse,
+            1.25,
+            2.5,
+            50.,
+            30.,
+            true,
+        );
         let before = crate::Selection::default();
         let after = before
             .apply(shape, crate::SelectionOperation::Replace, 100, 100)

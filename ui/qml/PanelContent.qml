@@ -64,11 +64,13 @@ Item {
                 color:PaintClient.brushColor;onPicked:color=>PaintClient.brushColor=color
             }
             GridLayout {
+                objectName:"recentColorGrid"
                 visible:parent.height>245
                 Layout.fillWidth:true;columns:12;rowSpacing:2;columnSpacing:2
                 Repeater {
-                    model:["#000000","#3a3a3a","#6e6e6e","#a8a8a8","#d8d8d8","#ffffff","#8c2b2b","#d6453f","#f08a3c","#f5d14e","#7fb84b","#3e9e7a"]
-                    Rectangle {required property string modelData;Layout.fillWidth:true;Layout.preferredHeight:12;color:modelData
+                    // Recently used colours, newest first. Empty on a fresh profile.
+                    model:PaintClient.recentColors
+                    Rectangle {required property string modelData;Layout.fillWidth:true;Layout.preferredHeight:12;color:modelData;border.color:Theme.line
                         MouseArea {anchors.fill:parent;onClicked:PaintClient.brushColor=modelData}
                     }
                 }

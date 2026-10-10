@@ -148,9 +148,14 @@ ColumnLayout {
                     width: layerList.width; height: 34
                     property var maskNode: root.masksByOwner[modelData.id] || null
                     property bool active: PaintClient.activeLayer===modelData.id || (maskNode!==null && PaintClient.activeLayer===maskNode.id)
+                    // Multi-selection lives in the client; the active row is drawn with a border so
+                    // "selected" and "active" stay distinguishable.
+                    property bool multiSelected: PaintClient.selectedLayers.indexOf(modelData.id)>=0
                     Component.onCompleted: { if(!modelData.group) PaintClient.requestLayerPreview(modelData.id) }
                     Component.onDestruction: { if(!modelData.group) PaintClient.releaseLayerPreview(modelData.id) }
-                    color: active ? Theme.selected : Theme.surface
+                    color: multiSelected ? Theme.selected : Theme.surface
+                    border.width: active ? 1 : 0
+                    border.color: Theme.accent
                     MouseArea {
                         objectName:"layerDragHandle:"+row.modelData.id
                         anchors.fill:parent;property point origin;property bool clippingGesture:false
@@ -162,7 +167,7 @@ ColumnLayout {
                             }
                         }
                         onPositionChanged:mouse=>{if(pressed && !clippingGesture && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10) PaintClient.beginLayerDrag(row.modelData.id)}
-                        onClicked:if(!clippingGesture)PaintClient.selectLayer(row.modelData.id)
+                        onClicked:if(!clippingGesture)PaintClient.selectLayers(row.modelData.id,Number(mouse.modifiers))
                     }
                     MouseArea {
                         id: clippingBoundary

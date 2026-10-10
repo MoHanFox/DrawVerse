@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 10
+#define PAINT_ABI_MINOR 11
 
 #define PAINT_ABI_PATCH 0
 
@@ -127,6 +127,11 @@
 
 #define PAINT_HISTORY_INVERT_SELECTION 6
 
+/**
+ * ABI 1.12: freehand lasso path and magic-wand region.
+ */
+#define PAINT_HISTORY_LASSO_SELECTION 21
+
 #define PAINT_HISTORY_LAYER_BLEND 10
 
 #define PAINT_HISTORY_LAYER_FILL 11
@@ -134,6 +139,8 @@
 #define PAINT_HISTORY_LAYER_LOCKS 12
 
 #define PAINT_HISTORY_LAYER_PROPERTIES 9
+
+#define PAINT_HISTORY_MAGIC_SELECTION 22
 
 #define PAINT_HISTORY_MASK 17
 
@@ -188,6 +195,20 @@
 #define PAINT_SELECTION_INTERSECT 3
 
 #define PAINT_SELECTION_INVERT 3
+
+#define PAINT_SELECTION_MASK 3
+
+#define PAINT_SELECTION_PATH_MAGIC 1
+
+/**
+ * ABI 1.12: free-path and content-derived selection edits.
+ */
+#define PAINT_SELECTION_PATH_POLYGON 0
+
+/**
+ * ABI 1.12: rasterized shapes. The geometry fields stay the bounding box for old callers.
+ */
+#define PAINT_SELECTION_POLYGON 2
 
 #define PAINT_SELECTION_RECTANGLE 0
 
@@ -375,6 +396,28 @@ typedef struct PaintSelectionEdit {
   double width;
   double height;
 } PaintSelectionEdit;
+
+/**
+ * ABI 1.12: one point of a selection path, in document pixels.
+ */
+typedef struct PaintSelectionPoint {
+  double x;
+  double y;
+} PaintSelectionPoint;
+
+/**
+ * ABI 1.12: a freehand path (lasso) or a seed point (magic wand) with tolerance.
+ */
+typedef struct PaintSelectionPath {
+  uint32_t struct_size;
+  uint32_t edit_kind;
+  uint32_t operation;
+  uint32_t antialias;
+  uint32_t point_count;
+  uint32_t tolerance;
+  uint32_t reserved[2];
+  const struct PaintSelectionPoint *points;
+} PaintSelectionPath;
 
 typedef struct PaintFileJobInfo {
   uint32_t struct_size;
@@ -831,6 +874,18 @@ PaintStatus paint_session_edit_selection(struct PaintCore *core,
                                          uint64_t *out_sequence);
 
 /**
+ * ABI 1.12: enqueue a freehand-path (lasso) or content-derived (magic wand) selection edit.
+ * Points are copied and validated before returning; the session resolves the region off the UI thread.
+ * # Safety
+ * `request` must point to an initialized `PaintSelectionPath`; `points` must be a readable array of
+ * `point_count` initialized points; `out_sequence` must be writable.
+ */
+PaintStatus paint_session_edit_selection_path(struct PaintCore *core,
+                                              struct PaintSession *session,
+                                              const struct PaintSelectionPath *request,
+                                              uint64_t *out_sequence);
+
+/**
  * Read the latest asynchronous execution error. Synchronous submission errors use paint_error_message.
  * # Safety
  * Follow UTF-8 buffer contract; error sequence must match session_info.
@@ -1038,6 +1093,18 @@ PaintStatus paint_session_set_blend_preview(struct PaintCore *core,
                                             uint32_t blend_mode,
                                             const struct PaintViewport *viewport,
                                             uint64_t *out_request);
+
+/**
+ * ABI 1.11: retarget the per-document history command limit. Accepted like a command and applied
+ * in order on the session worker; a smaller limit evicts the oldest undo records and the history
+ * boundary becomes unreachable (no fake initial state). Returns the accepted sequence.
+ * # Safety
+ * Follow session lifetime contracts; serialize with other submit calls for this session.
+ */
+PaintStatus paint_session_set_history_limit(struct PaintCore *core,
+                                            struct PaintSession *handle,
+                                            uint32_t max_commands,
+                                            uint64_t *out_sequence);
 
 /**
  * ABI 1.4: FIFO appearance edit; validate/copy DTO before return, actor enforces locks.
