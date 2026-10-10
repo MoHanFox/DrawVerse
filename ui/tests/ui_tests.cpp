@@ -2200,6 +2200,69 @@ private slots:
         QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
         QVERIFY(window->close()); QVERIFY(!window->isVisible());
     }
+    void panelTabsRetractWithoutExpandingRailsAndKeepSharedPresentation() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        // The default right column groups navigator/layers/history with the shared colour panel.
+        const auto navigator=workspace.groupForPanel("navigator");
+        QVERIFY(!navigator.isEmpty());QVERIFY(!workspace.groupForPanel("color").isEmpty());
+        for(const auto &id:workspace.columnGroups(navigator))workspace.setColumnCollapsed(id,true);
+        for(const auto &id:workspace.columnGroups(navigator))QVERIFY(workspace.groupDefinition(id).value("icons").toBool());
+        auto *icon=findVisualItem(main->contentItem(),"railPanel:navigator");QVERIFY(icon);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,icon->mapToScene({14,14}).toPoint());
+        auto flyout=[&]()->QQuickWindow*{for(auto *window:applicationWindows())if(window->isVisible() && window->objectName().startsWith("panelFlyout:") && window->objectName().endsWith(":navigator"))return qobject_cast<QQuickWindow*>(window);return nullptr;};QTRY_VERIFY(flyout());
+        QPointer<QQuickWindow> row=flyout();
+        // Other already-open category windows stay untouched.
+        auto *colorIcon=findVisualItem(main->contentItem(),"railPanel:color");QVERIFY(colorIcon);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,colorIcon->mapToScene({14,14}).toPoint());
+        auto other=[&]()->QQuickWindow*{for(auto *window:applicationWindows())if(window->isVisible() && window->objectName().startsWith("panelFlyout:") && window->objectName().endsWith(":color") && window!=row)return qobject_cast<QQuickWindow*>(window);return nullptr;};QTRY_VERIFY(other());QPointer<QQuickWindow> otherRow=other();
+        // Request 11: the shared top drag/tab bar of a floating column is translucent 75%; the docked bar stays opaque.
+        auto *flyoutBar=findVisualItem(row->contentItem(),"panelTabBar:"+navigator);QVERIFY(flyoutBar);QVERIFY(std::abs(flyoutBar->property("color").value<QColor>().alphaF()-.75)<.01);
+        // Request 6: double clicking the header retracts this presentation without re-expanding the source rail.
+        auto *header=findVisualItem(row->contentItem(),"groupGrip:"+navigator);QVERIFY(header);QTest::mouseDClick(row,Qt::LeftButton,Qt::NoModifier,header->mapToScene({10,4}).toPoint());QTRY_VERIFY(row.isNull());
+        for(const auto &id:workspace.columnGroups(navigator))QVERIFY(workspace.groupDefinition(id).value("icons").toBool());
+        QVERIFY(icon->isVisible());QCOMPARE(workspace.groupDefinition(navigator).value("icons").toBool(),true);QVERIFY(!otherRow.isNull());
+        // Request 6: a panel tab double click retracts the same way and must not expand the collapsed rail.
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,icon->mapToScene({14,14}).toPoint());QTRY_VERIFY(flyout());row=flyout();
+        auto *tab=findVisualItem(row->contentItem(),"panelTab:layers");QVERIFY(tab);QTest::mouseDClick(row,Qt::LeftButton,Qt::NoModifier,tab->mapToScene({8,10}).toPoint());QTRY_VERIFY(row.isNull());
+        for(const auto &id:workspace.columnGroups(navigator))QVERIFY(workspace.groupDefinition(id).value("icons").toBool());
+        QVERIFY(!otherRow.isNull());QVERIFY(workspace.groupDefinition(workspace.groupForPanel("color")).value("icons").toBool());
+        otherRow->close();QTRY_VERIFY(otherRow.isNull());
+        // Docked columns keep their semantics: a tab double click still collapses the column into its icon rail.
+        workspace.setColumnCollapsed(navigator,false);
+        auto *dockedBar=findVisualItem(main->contentItem(),"panelTabBar:"+navigator);QVERIFY(dockedBar);QTRY_VERIFY(std::abs(dockedBar->property("color").value<QColor>().alphaF()-1.)<.01);
+        auto *dockedTab=findVisualItem(main->contentItem(),"panelTab:layers");QVERIFY(dockedTab);QTest::mouseDClick(main,Qt::LeftButton,Qt::NoModifier,dockedTab->mapToScene({8,10}).toPoint());
+        QTRY_VERIFY(workspace.groupDefinition(navigator).value("icons").toBool());for(const auto &id:workspace.columnGroups(navigator))QVERIFY(workspace.groupDefinition(id).value("icons").toBool());
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void textFieldsKeepSpaceAndHistoryReplayStaysStepped() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(48,48);QTRY_COMPARE(client.documentWidth(),48);QTRY_VERIFY(client.ready());client.setBrushRadius(3);client.setBrushColor(Qt::black);
+        // Request 25: a focused text input keeps space while the canvas stays out of the shared pan state.
+        auto *view=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(view);
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick.Controls\nTextField { objectName:\"spacePanField\" }",QUrl());
+        auto *field=qobject_cast<QQuickItem*>(component.create(engine.rootContext()));
+        QVERIFY(field);field->setParentItem(main->contentItem());field->setWidth(120);field->setHeight(24);field->setProperty("text",QString("78"));field->forceActiveFocus();QTRY_COMPARE(main->activeFocusItem(),field);
+        const auto undoBefore=client.undoDepth();QTest::keyClick(main,Qt::Key_Space);QVERIFY(!view->spacePanning());QTRY_COMPARE(field->property("text").toString(),QString("78 "));QCOMPARE(client.undoDepth(),undoBefore);
+        QTest::keyClick(main,Qt::Key_Backspace);QTRY_COMPARE(field->property("text").toString(),QString("78"));
+        // Request 27: four replay steps must be observable one at a time, not an instant jump.
+        const auto group=workspace.groupForPanel("history");workspace.setActive(group,"history");
+        auto *historyTab=findVisualItem(main->contentItem(),"panelTab:history");QVERIFY(historyTab);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,historyTab->mapToScene({8,10}).toPoint());QTRY_VERIFY(findVisualItem(main->contentItem(),"historyList"));
+        client.setBrushRadius(3);InputSample sample;sample.position={24,24};sample.pressure=1;
+        for(int i=0;i<4;++i) {const auto stroke=i+1;client.setBrushColor(i%2?Qt::black:Qt::white);QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),stroke);QTRY_VERIFY(!client.layerEditBusy());}
+        QQuickItem *list=findVisualItem(main->contentItem(),"historyList");QVERIFY(list);QTRY_VERIFY(list->property("count").toInt()>0);
+        auto *timer=main->findChild<QObject*>("historyReplayTimer");QVERIFY(timer);QCOMPARE(timer->property("interval").toInt(),20);QVERIFY(!timer->property("running").toBool());
+        auto *previous=findVisualItem(main->contentItem(),"historyEntry:0");QVERIFY(previous);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,previous->mapToScene({20,12}).toPoint());
+        QTRY_VERIFY(timer->property("running").toBool());
+        QList<int> seen;QStringList trace;
+        for(int i=0;i<40;++i) {const int depth=client.undoDepth();if(seen.isEmpty() || seen.last()!=depth){seen.append(depth);trace.append(QString::number(depth));}if(depth==0)break;QTest::qWait(5);}
+        QTRY_COMPARE(client.undoDepth(),0);QCOMPARE(client.redoDepth(),4);
+        QVERIFY2(seen.size()>=3 && seen.first()==4 && seen.last()==0,qPrintable("single-step replay did not walk through every depth: "+trace.join(",")));
+        bool stoppedRunning=false;
+        for(int i=0;i<100 && !stoppedRunning;++i) {stoppedRunning=!timer->property("running").toBool();if(!stoppedRunning)QTest::qWait(5);}
+        QVERIFY2(stoppedRunning,qPrintable(QString("replay timer kept running: undo=%1 redo=%2 target=%3").arg(client.undoDepth()).arg(client.redoDepth()).arg(list->parentItem()?list->parentItem()->property("targetDepth").toInt():-99)));
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
 };
 int main(int argc,char **argv) {
     configureUiScale();

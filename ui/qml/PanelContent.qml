@@ -108,6 +108,7 @@ Item {
                 ScrollBar.vertical:ScrollBar {}
             }
             Timer {
+                objectName:"historyReplayTimer"
                 interval:20;repeat:true;running:historyContent.targetDepth>=0
                 onTriggered:{if(historyContent.targetDepth===PaintClient.undoDepth){historyContent.targetDepth=-1;return}if(!PaintClient.ready||PaintClient.drawing||PaintClient.fileBusy||PaintClient.layerEditBusy)return;if(historyContent.targetDepth<PaintClient.undoDepth)PaintClient.undo();else PaintClient.redo()}
             }

@@ -14,6 +14,7 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(QRectF visibleDocumentRect READ visibleDocumentRect NOTIFY viewChanged)
     Q_PROPERTY(QRectF brushCursorRect READ brushCursorRect NOTIFY brushCursorChanged)
     Q_PROPERTY(bool brushCursorVisible READ brushCursorVisible NOTIFY brushCursorChanged)
+    Q_PROPERTY(bool spacePanning READ spacePanning NOTIFY spacePanningChanged)
     Q_PROPERTY(bool interactive READ interactive WRITE setInteractive NOTIFY interactiveChanged)
     Q_PROPERTY(qreal initialFitRatio READ initialFitRatio WRITE setInitialFitRatio NOTIFY viewChanged)
     Q_PROPERTY(QRectF selectionPreview READ selectionPreview NOTIFY selectionDragChanged)
@@ -28,6 +29,8 @@ public:
     QRectF visibleDocumentRect() const;
     QRectF brushCursorRect() const;
     bool brushCursorVisible() const;
+    // Application wide space-pan state (combines the focused key with the global hold).
+    bool spacePanning() const;
     bool interactive() const { return m_interactive; }
     void setInteractive(bool enabled);
     qreal initialFitRatio() const { return m_initialFitRatio; }
@@ -47,6 +50,7 @@ signals:
     void interactiveChanged();
     void selectionDragChanged();
     void brushCursorChanged();
+    void spacePanningChanged();
 protected:
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
     void geometryChange(const QRectF &geometry, const QRectF &old) override;
@@ -67,6 +71,8 @@ private:
     void requestView();
     void observeScreen(QScreen *screen);
     void refreshBrushCursor();
+    void setSpacePanning(bool held);
+    void setKeySpace(bool held);
     void zoomAround(qreal factor,QPointF position);
     bool beginLayerMove(QPointF local);
     void finishLayerMove(QPointF local);

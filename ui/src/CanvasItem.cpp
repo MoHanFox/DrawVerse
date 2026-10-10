@@ -16,11 +16,12 @@
 #endif
 
 namespace {
-bool spaceHeld=false;
 class CanvasNode final : public QSGSimpleTextureNode {
 public:
     qint64 imageKey = 0;
 };
+// Application-wide space-pan hold: the canvas that owns keyboard focus raises it, every canvas observes it.
+bool spaceHeld=false;
 }
 
 CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
@@ -80,9 +81,20 @@ QRectF CanvasItem::brushCursorRect() const {
 bool CanvasItem::brushCursorVisible() const {
     return m_cursorInside && !m_capsLock && m_interactive && m_client && !m_client->moveTool() && !m_client->selectionTool() && !m_space && !spaceHeld && !m_panning && isVisible();
 }
+bool CanvasItem::spacePanning() const { return m_space || spaceHeld; }
 void CanvasItem::refreshBrushCursor() {
     setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && m_client->moveTool()?Qt::SizeAllCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
     emit brushCursorChanged();
+}
+void CanvasItem::setSpacePanning(bool held) {
+    // Space panning is application wide: every canvas reports the shared hold.
+    const bool changed=(m_space || spaceHeld)!=(m_space || held);spaceHeld=held;
+    if(changed)emit spacePanningChanged();
+}
+void CanvasItem::setKeySpace(bool held) {
+    // The focused canvas owns this half of the state; the global hold covers every other canvas.
+    const bool changed=(m_space || spaceHeld)!=(held || spaceHeld);m_space=held;
+    if(changed)emit spacePanningChanged();
 }
 void CanvasItem::hoverEnterEvent(QHoverEvent *event){m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();}
 void CanvasItem::hoverMoveEvent(QHoverEvent *event){m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();}
@@ -232,7 +244,7 @@ void CanvasItem::wheelEvent(QWheelEvent *e) {
     zoomAround(std::pow(1.15,e->angleDelta().y()/120.),e->position());e->accept();
 }
 void CanvasItem::keyPressEvent(QKeyEvent *e) {
-    if (e->key() == Qt::Key_Space) { m_space = true;refreshBrushCursor(); e->accept(); }
+    if (e->key() == Qt::Key_Space) {setKeySpace(true);refreshBrushCursor(); e->accept(); }
     else if (e->key() == Qt::Key_Escape) { if(m_selecting) cancelSelectionDrag();else if (m_client) m_client->cancelStroke(); m_stroke = false; m_tablet = false; m_moving=false; e->accept(); }
     else if(m_client && m_client->moveTool() && !m_moving && e->key()>=Qt::Key_Left && e->key()<=Qt::Key_Down) {
         const int step=e->modifiers().testFlag(Qt::ShiftModifier) ? 10 : 1;
@@ -241,16 +253,16 @@ void CanvasItem::keyPressEvent(QKeyEvent *e) {
     }
     else QQuickItem::keyPressEvent(e);
 }
-void CanvasItem::keyReleaseEvent(QKeyEvent *e) { if (e->key() == Qt::Key_Space) {m_space = false;refreshBrushCursor();} else QQuickItem::keyReleaseEvent(e); }
+void CanvasItem::keyReleaseEvent(QKeyEvent *e) { if (e->key() == Qt::Key_Space) {setKeySpace(false);setSpacePanning(false);refreshBrushCursor();} else QQuickItem::keyReleaseEvent(e); }
 bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
-    if(event->type()==QEvent::ApplicationDeactivate){spaceHeld=false;refreshBrushCursor();}
+    if(event->type()==QEvent::ApplicationDeactivate){setKeySpace(false);setSpacePanning(false);refreshBrushCursor();}
     if(m_interactive && isVisible() && (event->type()==QEvent::KeyPress || event->type()==QEvent::KeyRelease)) {
         auto *key=static_cast<QKeyEvent*>(event);
         if(key->key()==Qt::Key_Space && !key->isAutoRepeat()) {
             auto *focused=qobject_cast<QQuickWindow*>(QGuiApplication::focusWindow());
             auto *item=focused?focused->activeFocusItem():nullptr;
             if(event->type()==QEvent::KeyPress && item && item->flags().testFlag(QQuickItem::ItemAcceptsInputMethod))return false;
-            spaceHeld=event->type()==QEvent::KeyPress;m_space=false;refreshBrushCursor();key->accept();return true;
+            setKeySpace(event->type()==QEvent::KeyPress);setSpacePanning(event->type()==QEvent::KeyPress);refreshBrushCursor();key->accept();return true;
         }
     }
     if(event->type()==QEvent::TabletLeaveProximity){m_cursorInside=false;refreshBrushCursor();return false;}
@@ -271,7 +283,8 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
 #endif
     if (event->type() == QEvent::WindowDeactivate) {
         if (m_stroke) m_client->cancelStroke();
-        m_stroke = m_tablet = m_panning = m_space = m_moving = false;
+        m_stroke = m_tablet = m_panning = m_moving = false;
+        setKeySpace(false);setSpacePanning(false);
         m_cursorInside=false;refreshBrushCursor();
         cancelSelectionDrag();
     }

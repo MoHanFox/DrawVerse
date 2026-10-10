@@ -157,7 +157,8 @@ Rectangle {
                                 }
                                 onReleased:root.finishTabDrag(moving)
                                 onCanceled:root.finishTabDrag(false)
-                                onDoubleClicked: {root.dismissRequested();Workspace.setColumnCollapsed(root.groupData.id,!root.flyout)}
+                                // Double click only retracts this presentation; it never re-expands the source rail.
+                                onDoubleClicked: {if(root.flyout)root.dismissRequested();else Workspace.setColumnCollapsed(root.groupData.id,true)}
                             }
                         }
                     }

@@ -71,6 +71,8 @@ add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     toolStripFloatsDocksPersistsAndTabsJoinContent
     brushLibrarySettingsAndEnginePreviewsShareSelectionAcrossWindows
     selectionsDragCombineUndoConstrainAndPersist
+    panelTabsRetractWithoutExpandingRailsAndKeepSharedPresentation
+    textFieldsKeepSpaceAndHistoryReplayStaysStepped
     -o "${CMAKE_BINARY_DIR}/qt-ui-highdpi.txt,txt" -o "-,txt")
 set_tests_properties(qt_ui_highdpi PROPERTIES TIMEOUT 90
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=2")
