@@ -26,7 +26,7 @@ Rectangle {
     Loader {
         objectName:"selectionOutlineLoader";anchors.fill:parent
         active:root.ownClient.selectionEnabled || canvas.selectionPreview.width>0 && canvas.selectionPreview.height>0
-        sourceComponent:SelectionOutline {objectName:"selectionOutline";enabledSelection:root.ownClient.selectionEnabled;steps:root.ownClient.selectionSteps;documentRect:canvas.documentRect;zoom:canvas.zoom;viewRotation:canvas.viewRotation;preview:canvas.selectionPreview;previewKind:canvas.selectionPreviewKind}
+        sourceComponent:SelectionOutline {objectName:"selectionOutline";enabledSelection:root.ownClient.selectionEnabled;steps:root.ownClient.selectionSteps;documentRect:canvas.documentRect;zoom:canvas.zoom;preview:canvas.selectionPreview;previewKind:canvas.selectionPreviewKind}
     }
     BusyIndicator {objectName:"canvasBusy";anchors.centerIn:parent;running:!root.ownClient.ready;visible:running}
     Shortcut {sequences:[StandardKey.Undo];context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.drawing;onActivated:root.ownClient.undo()}

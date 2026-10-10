@@ -295,14 +295,10 @@ ApplicationWindow {
             MenuSeparator {}
             Action { objectName:"canvasSizeAction"; text: "画布大小…（待支持）"; enabled: false }
             MenuSeparator {}
-            Action {
-                objectName:"canvasRotateCwAction"; text: "画布旋转 · 顺时针 90°"
-                enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy
-                onTriggered: PaintClient.transformCanvas(0)
-            }
-            Action { objectName:"canvasRotateCcwAction"; text: "画布旋转 · 逆时针 90°"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.transformCanvas(1) }
-            Action { objectName:"canvasFlipVerticalAction"; text: "画布旋转 · 垂直翻转"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.transformCanvas(4) }
-            Action { objectName:"canvasFlipHorizontalAction"; text: "画布旋转 · 水平翻转"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.transformCanvas(3) }
+            Action { objectName:"canvasRotateCwAction"; text: "画布旋转 · 顺时针 90°（待支持）"; enabled: false }
+            Action { objectName:"canvasRotateCcwAction"; text: "画布旋转 · 逆时针 90°（待支持）"; enabled: false }
+            Action { objectName:"canvasFlipVerticalAction"; text: "画布旋转 · 垂直翻转（待支持）"; enabled: false }
+            Action { objectName:"canvasFlipHorizontalAction"; text: "画布旋转 · 水平翻转（待支持）"; enabled: false }
             MenuSeparator {}
             Action { text: "图像大小…（待支持）"; enabled: false }
             Action { text: "裁剪…（待支持）"; enabled: false }
@@ -443,9 +439,6 @@ ApplicationWindow {
         }
     }
     Shortcut { context:Qt.ApplicationShortcut; sequence: "V"; enabled: canvas.activeFocus; onActivated: PaintClient.moveTool=true }
-    // R is the view-rotation tool, like Photoshop: it turns the view, never the document.
-    Shortcut { context:Qt.ApplicationShortcut; sequence: "R"; enabled: canvas.activeFocus && !PaintClient.drawing; onActivated: PaintClient.activateRotateView() }
-    Shortcut { context:Qt.ApplicationShortcut; sequence: "Shift+R"; enabled: canvas.activeFocus && !PaintClient.drawing; onActivated: canvas.resetViewRotation() }
     // Brush size for the active painting tool, including the eraser and the smudge tool.
     Shortcut {
         context: Qt.ApplicationShortcut; sequence: "["; enabled: canvas.activeFocus && !PaintClient.drawing

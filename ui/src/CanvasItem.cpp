@@ -1,8 +1,6 @@
 #include "CanvasItem.h"
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
-#include <QSGTransformNode>
-#include <QMatrix4x4>
 #include <QTabletEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
@@ -18,12 +16,8 @@
 #endif
 
 namespace {
-// A transform node wraps the texture node so the view rotation is a scene-graph matrix: the document
-// pixels are never copied or resampled on the CPU to rotate the view.
-class CanvasNode final : public QSGTransformNode {
+class CanvasNode final : public QSGSimpleTextureNode {
 public:
-    CanvasNode() { appendChildNode(&texture); }
-    QSGSimpleTextureNode texture;
     qint64 imageKey = 0;
 };
 // Application-wide space-pan hold: the canvas that owns keyboard focus raises it, every canvas observes it.
@@ -127,29 +121,7 @@ QRectF CanvasItem::documentRect() const {
     const QSizeF size(m_client->documentWidth() * m_zoom, m_client->documentHeight() * m_zoom);
     return {QPointF((width() - size.width()) / 2, (height() - size.height()) / 2) + m_pan, size};
 }
-QPointF CanvasItem::documentPoint(QPointF local) const {
-    // Every input path goes through here, so the view rotation has to be undone first: otherwise the
-    // brush would paint where the rotated picture is not.
-    if (m_viewRotation != 0.) {
-        const auto centre = localCentre();
-        const auto offset = local - centre;
-        const auto radians = qDegreesToRadians(-m_viewRotation);
-        const auto cos = std::cos(radians), sin = std::sin(radians);
-        local = centre + QPointF(offset.x() * cos - offset.y() * sin, offset.x() * sin + offset.y() * cos);
-    }
-    return (local - documentRect().topLeft()) / m_zoom;
-}
-QPointF CanvasItem::scenePoint(QPointF document) const {
-    auto local = documentRect().topLeft() + document * m_zoom;
-    if (m_viewRotation != 0.) {
-        const auto centre = localCentre();
-        const auto offset = local - centre;
-        const auto radians = qDegreesToRadians(m_viewRotation);
-        const auto cos = std::cos(radians), sin = std::sin(radians);
-        local = centre + QPointF(offset.x() * cos - offset.y() * sin, offset.x() * sin + offset.y() * cos);
-    }
-    return local;
-}
+QPointF CanvasItem::documentPoint(QPointF local) const { return (local - documentRect().topLeft()) / m_zoom; }
 QRectF CanvasItem::visibleDocumentRect() const {
     if(!m_client || width()<=0 || height()<=0 || m_zoom<=0)return {};
     return QRectF(documentPoint({0,0}),QSizeF(width()/m_zoom,height()/m_zoom)).intersected(QRectF(0,0,m_client->documentWidth(),m_client->documentHeight()));
@@ -193,48 +165,23 @@ void CanvasItem::restoreLayoutPosition() {
 QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     auto *node = static_cast<CanvasNode *>(old);
     if (m_image.isNull() || !window()) { delete node; return nullptr; }
-    if (!node) { node = new CanvasNode; node->texture.setOwnsTexture(true); node->texture.setFiltering(QSGTexture::Linear); }
+    if (!node) { node = new CanvasNode; node->setOwnsTexture(true); node->setFiltering(QSGTexture::Linear); }
     // The scene graph owns GPU resources; no graphics objects cross the GUI/worker boundary.
     if (node->imageKey != m_image.cacheKey()) {
         QSGTexture *texture = window()->createTextureFromImage(m_image);
         if (!texture) { delete node; return nullptr; }
         // setTexture deletes the previous texture when ownsTexture is true.
-        node->texture.setTexture(texture); node->imageKey = m_image.cacheKey();
+        node->setTexture(texture); node->imageKey = m_image.cacheKey();
     }
     // A viewport frame covers only its document-space region, never the whole canvas.
-    node->texture.setRect(QRectF(documentRect().topLeft() + m_imageRegion.topLeft() * m_zoom,
+    node->setRect(QRectF(documentRect().topLeft() + m_imageRegion.topLeft() * m_zoom,
                                  m_imageRegion.size() * m_zoom));
-    // Rotate the whole canvas around the viewport centre. documentPoint() undoes exactly this, so
-    // painting still lands under the pointer at any angle.
-    if (m_viewRotation != 0.) {
-        const auto centre = localCentre();
-        QMatrix4x4 matrix;
-        matrix.translate(centre.x(), centre.y());
-        matrix.rotate(m_viewRotation, 0., 0., 1.);
-        matrix.translate(-centre.x(), -centre.y());
-        node->setMatrix(matrix);
-    } else {
-        node->setMatrix(QMatrix4x4());
-    }
     return node;
 }
 InputSample CanvasItem::mouseSample(QPointF local, Qt::MouseButtons buttons) {
     InputSample s; s.position = documentPoint(local); s.buttons = static_cast<quint32>(buttons);
     s.capabilities = 16; s.timestamp = static_cast<quint64>(m_clock.nsecsElapsed()); return s;
 }
-void CanvasItem::setViewRotation(qreal degrees) {
-    if (!std::isfinite(degrees)) return;
-    // Keep the angle in a friendly range so the status readout does not drift to 359.99.
-    auto normalised = std::fmod(degrees, 360.);
-    if (normalised > 180.) normalised -= 360.;
-    if (normalised < -180.) normalised += 360.;
-    if (qFuzzyCompare(normalised + 1., m_viewRotation + 1.)) return;
-    m_viewRotation = normalised;
-    update();
-    emit viewChanged();
-}
-void CanvasItem::rotateViewBy(qreal degrees) { setViewRotation(m_viewRotation + degrees); }
-void CanvasItem::resetViewRotation() { setViewRotation(0.); }
 bool CanvasItem::beginLayerMove(QPointF local) {
     if(!m_client || !m_client->ready() || m_client->drawing() || m_client->layerEditBusy()) return false;
     m_moveStart=documentPoint(local); m_moveLayer=m_client->activeLayer(); m_moveGeneration=m_client->generation();
@@ -278,9 +225,7 @@ QRectF CanvasItem::selectionPreviewRect() const {    auto rect=QRectF(m_selectio
     if(!m_selectionConstrained)return rect;
     return constrainedRect(m_selectionStart,m_selectionEnd);
 }
-QVariantList CanvasItem::pathPoints() const {
-    QVariantList rows;for(const auto &point:m_pathPoints){rows.append(QVariantList{point.x(),point.y()});}return rows;
-}
+
 QColor CanvasItem::pickColorAt(QPointF local) const {
     if(!m_client) return {};
     // Sampling goes through the ABI so it reads the composited document, not a possibly downscaled
@@ -298,39 +243,7 @@ QColor CanvasItem::pickColorAt(QPointF local) const {
 void CanvasItem::cancelSelectionDrag(){if(m_selecting){m_selecting=false;emit selectionDragChanged();}}
 void CanvasItem::mousePressEvent(QMouseEvent *e) {
     if (!m_interactive || !m_client || e->source() != Qt::MouseEventNotSynthesized) { e->ignore(); return; }
-    if(m_client->selectionTool()>2 && e->button()==Qt::LeftButton && documentRect().contains(e->position())) {
-        // Lasso collects a freehand path; the magic wand resolves one seed region. Both are
-        // submitted to the session worker on release so the UI thread never touches pixels.
-        if(!m_client->ready() || m_client->drawing() || m_client->layerEditBusy() || m_client->fileBusy()) {e->ignore();return;}
-        forceActiveFocus();
-        const bool add=e->modifiers().testFlag(Qt::ShiftModifier),subtract=e->modifiers().testFlag(Qt::AltModifier);
-        m_pathOperation=add?(subtract?3:1):(subtract?2:0);
-        m_pathPoints.clear();m_pathPoints.append(documentPoint(e->position()));
-        m_collectingPath=m_client->selectionTool()==3;
-        m_pathKind=m_client->selectionTool();
-        emit selectionDragChanged();
-        if(!m_collectingPath) {m_pathOperation=m_pathOperation;m_wandPoint=documentPoint(e->position());}
-        e->accept();return;
-    }
     forceActiveFocus(); m_last = e->position();
-    // The view-rotation tool drags the view angle. Alt resets it to zero, which is how the same tool
-    // gets back to an upright canvas without touching the document.
-    if (m_client->rotateViewTool() && e->button() == Qt::LeftButton) {
-        if (e->modifiers().testFlag(Qt::AltModifier)) { resetViewRotation(); e->accept(); return; }
-        m_rotateViewing = true;
-        const auto centre = localCentre();
-        m_rotateStartAngle = std::atan2(e->position().y() - centre.y(), e->position().x() - centre.x());
-        m_rotateStartRotation = m_viewRotation;
-        e->accept(); return;
-    }
-    // The paint bucket fills on press: no drag state, and the region is resolved on the worker.
-    if (m_client->bucketTool() && e->button() == Qt::LeftButton) {
-        if (!documentRect().contains(e->position())) { e->accept(); return; }
-        const auto document = documentPoint(e->position());
-        m_client->fillRegion(document.x(), document.y(), m_client->bucketTolerance(),
-                             m_client->bucketContiguous(), m_client->brushOpacity());
-        e->accept(); return;
-    }
     // Alt is the eyedropper: sample the rendered frame and adopt the colour as the foreground.
     // Nothing is written to the document, so this never creates history.
     if (e->button() == Qt::LeftButton && e->modifiers().testFlag(Qt::AltModifier) && !m_client->selectionTool()) {
@@ -345,27 +258,6 @@ void CanvasItem::mousePressEvent(QMouseEvent *e) {
     e->setAccepted(m_stroke);
 }
 void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
-    if (m_rotateViewing) {
-        const auto centre = localCentre();
-        // Too close to the pivot the angle would jump wildly, so ignore that sliver.
-        if (QLineF(centre, e->position()).length() > 1.) {
-            const auto angle = std::atan2(e->position().y() - centre.y(), e->position().x() - centre.x());
-            setViewRotation(m_rotateStartRotation + qRadiansToDegrees(angle - m_rotateStartAngle));
-        }
-        e->accept(); return;
-    }
-    if(m_pathKind>2 && (m_collectingPath || m_pathKind==4) && (e->buttons()&Qt::LeftButton)) {
-        const auto point=documentPoint(e->position());
-        m_cursorPosition=e->position();m_cursorInside=true;
-        if(m_collectingPath) {
-            // Sample by screen distance so a slow drag does not burn the point budget.
-            const auto &last=m_pathPoints.last();
-            if(QLineF(last,point).length()>=1.5 && m_pathPoints.size()<4096) m_pathPoints.append(point);
-        }
-        m_wandPoint=point;
-        emit selectionDragChanged();
-        e->accept();return;
-    }
     m_cursorInside=contains(e->position());m_cursorPosition=e->position();refreshBrushCursor();
     if (m_panning) { m_pan += e->position() - m_last; m_last = e->position(); emit viewChanged(); update(); }
     else if(m_selecting && !m_tablet) updateSelection(e->position(),e->modifiers());
@@ -373,14 +265,6 @@ void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
     e->accept();
 }
 void CanvasItem::mouseReleaseEvent(QMouseEvent *e) {
-    if (m_rotateViewing) { m_rotateViewing=false; e->accept(); return; }
-    if(m_pathKind>2) {
-        const bool committed=m_pathKind==3 ? (m_pathPoints.size()>=3 && m_client->editSelectionPath(pathPoints(),m_pathOperation))
-                                           : m_client->magicWandSelection(m_wandPoint.x(),m_wandPoint.y(),m_wandTolerance,m_pathOperation);
-        m_pathKind=0;m_collectingPath=false;m_pathPoints.clear();
-        emit selectionDragChanged();
-        e->setAccepted(committed);return;
-    }
     if(m_selecting && !m_tablet) finishSelection(e->position(),e->modifiers());
     if(m_moving && !m_tablet) finishLayerMove(e->position());
     if (m_stroke && !m_tablet) { m_client->strokeTo(mouseSample(e->position(), e->buttons())); m_client->endStroke(); m_stroke = false; }

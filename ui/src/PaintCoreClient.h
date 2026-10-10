@@ -57,9 +57,6 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QVariantList recentColors READ recentColors NOTIFY recentColorsChanged)
     Q_PROPERTY(int historyLimit READ historyLimit WRITE setHistoryLimit NOTIFY historyLimitChanged)
     Q_PROPERTY(bool eraser READ eraser WRITE setEraser NOTIFY brushChanged)
-    Q_PROPERTY(bool bucketTool READ bucketTool WRITE setBucketTool NOTIFY brushChanged)
-    Q_PROPERTY(int bucketTolerance READ bucketTolerance WRITE setBucketTolerance NOTIFY brushChanged)
-    Q_PROPERTY(bool bucketContiguous READ bucketContiguous WRITE setBucketContiguous NOTIFY brushChanged)
     Q_PROPERTY(bool moveTool READ moveTool WRITE setMoveTool NOTIFY brushChanged)
     Q_PROPERTY(bool layerEditBusy READ layerEditBusy NOTIFY stateChanged)
     Q_PROPERTY(bool selectionEnabled READ selectionEnabled NOTIFY selectionChanged)
@@ -103,28 +100,16 @@ public:
     BrushLibrary *brushLibrary() const {return m_brushLibrary;}
     QVariantList recentColors() const;
     bool eraser() const { return m_eraser; }
-    bool bucketTool() const { return m_bucketTool; }
-    void setBucketTool(bool enabled);
-    /// Paint-bucket parameters, kept next to the client so the canvas and any panel agree on them.
-    int bucketTolerance() const { return m_bucketTolerance; }
-    void setBucketTolerance(int tolerance);
-    bool bucketContiguous() const { return m_bucketContiguous; }
-    void setBucketContiguous(bool contiguous);
     /// Tool-slot activation: exactly one painting/selection tool stays active. QML handlers must not
     /// clear the other tools themselves, because a statement block inside a single-line binding does
     /// not parse.
     Q_INVOKABLE void activateBrush();
     Q_INVOKABLE void activateEraser();
-    Q_INVOKABLE void activateBucket();
     Q_INVOKABLE void activateMoveTool();
     /// Marquee keeps the last rectangle/ellipse choice; the lasso and the wand are their own tools.
     Q_INVOKABLE void activateMarquee();
     Q_INVOKABLE void activateLasso();
     Q_INVOKABLE void activateWand();
-    /// View rotation tool: drag to rotate the view; the document is untouched.
-    Q_INVOKABLE void activateRotateView();
-    Q_PROPERTY(bool rotateViewTool READ rotateViewTool NOTIFY brushChanged)
-    bool rotateViewTool() const { return m_rotateViewTool; }
     bool moveTool() const { return m_moveTool; }
     bool layerEditBusy() const { return m_pendingLayer != 0; }
     void setMoveTool(bool enabled);
@@ -133,9 +118,6 @@ public:
     int selectionTool() const { return m_selectionTool; }
     void setSelectionTool(int tool);
     Q_INVOKABLE bool editSelection(QRectF rectangle, int shape, int operation);
-    /// Lasso path (freehand polygon) and magic-wand seed; both are resolved on the session worker.
-    Q_INVOKABLE bool editSelectionPath(const QVariantList &points, int operation);
-    Q_INVOKABLE bool magicWandSelection(qreal x, qreal y, int tolerance, int operation);
     Q_INVOKABLE bool selectAll();
     Q_INVOKABLE bool clearSelection();
     Q_INVOKABLE bool invertSelection();
@@ -166,12 +148,8 @@ public:
     Q_INVOKABLE void selectLayers(quint64 id, int modifiers);
     QVariantList selectedLayers() const;
     void pruneSelectedLayers();
-    /// Whole-canvas rotate/flip; `kind` is PAINT_CANVAS_TRANSFORM_*.
-    Q_INVOKABLE bool transformCanvas(int kind);
     /// Eyedropper: sample the composited pixel at document coordinates. Read-only, no history.
     Q_INVOKABLE QColor sampleDocumentPixel(qreal x, qreal y) const;
-    /// Paint bucket: fill the region similar to the seed with the active brush colour.
-    Q_INVOKABLE bool fillRegion(qreal x, qreal y, int tolerance, bool contiguous, qreal opacity);
     Q_INVOKABLE void setLayerProperties(quint64 id, bool visible, qreal opacity);
     Q_INVOKABLE bool setLayerFill(quint64 id, qreal fill);
     Q_INVOKABLE bool setLayerBlend(quint64 id, int blend);
@@ -257,12 +235,8 @@ private:
     qreal m_spacing = .15;
     BrushLibrary *m_brushLibrary = nullptr;
     bool m_eraser = false;
-    bool m_bucketTool = false;
-    int m_bucketTolerance = 32;
-    bool m_bucketContiguous = true;
     /// Last marquee shape (1 rectangle, 2 ellipse) so the slot does not reset when re-activated.
     int m_marqueeShape = 1;
-    bool m_rotateViewTool = false;
     bool m_moveTool = false;
     int m_selectionTool = 0;
     QVariantMap m_selection;

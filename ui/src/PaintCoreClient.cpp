@@ -139,28 +139,7 @@ signals:
     void completed(bool workerThread);
     void finished();
     void fileResult(PaintFileJobInfo info, QString message);
-    void failedSelectionPath();
 public:
-    /// Lasso path: rasterized on the session worker so the UI thread never walks the mask.
-    bool submitSelectionPath(const QVector<QPointF> &points,int operation) {
-        if(m_stopped || !m_session || points.isEmpty() || points.size()>4096)return false;
-        QVector<PaintSelectionPoint> flat;flat.reserve(points.size());
-        for(const auto &point:points)flat.append({point.x(),point.y()});
-        auto request=dto<PaintSelectionPath>();
-        request.edit_kind=PAINT_SELECTION_PATH_POLYGON;request.operation=quint32(operation);
-        request.point_count=quint32(flat.size());request.points=flat.constData();
-        quint64 sequence=0;
-        return check(paint_session_edit_selection_path(m_core,m_session,&request,&sequence));
-    }
-    bool submitMagicWand(qreal x,qreal y,int tolerance,int operation) {
-        if(m_stopped || !m_session)return false;
-        const PaintSelectionPoint seed{x,y};
-        auto request=dto<PaintSelectionPath>();
-        request.edit_kind=PAINT_SELECTION_PATH_MAGIC;request.operation=quint32(operation);
-        request.point_count=1;request.tolerance=quint32(tolerance);request.points=&seed;
-        quint64 sequence=0;
-        return check(paint_session_edit_selection_path(m_core,m_session,&request,&sequence));
-    }
     std::unique_ptr<QSettings> preferences() const {
         if (!m_settingsFile.isEmpty()) return std::make_unique<QSettings>(m_settingsFile, QSettings::IniFormat);
         return std::make_unique<QSettings>(QSettings::IniFormat, QSettings::UserScope, "DrawVerse", "DrawVerse");
@@ -676,31 +655,25 @@ void PaintCoreClient::setSelectionTool(int tool) {
     if(tool<0 || tool>4 || m_drawing || tool==m_selectionTool) return;
     m_selectionTool=tool;
     if(tool==1 || tool==2) m_marqueeShape=tool;   // remembered for the next marquee activation
-    if(tool){m_moveTool=false;m_eraser=false;m_bucketTool=false;}
+    if(tool){m_moveTool=false;m_eraser=false;}
     emit brushChanged();
 }
 void PaintCoreClient::activateBrush() {
     if(m_drawing) return;
-    setBucketTool(false); setMoveTool(false); m_rotateViewTool=false;
+    setMoveTool(false);
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(false);
 }
 void PaintCoreClient::activateEraser() {
     if(m_drawing) return;
-    setBucketTool(false); setMoveTool(false); m_rotateViewTool=false;
+    setMoveTool(false);
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(true);
 }
-void PaintCoreClient::activateBucket() {
-    if(m_drawing) return;
-    setMoveTool(false); m_rotateViewTool=false;
-    if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
-    setEraser(false);
-    setBucketTool(true);
-}
+
 void PaintCoreClient::activateMoveTool() {
     if(m_drawing) return;
-    setBucketTool(false); m_rotateViewTool=false;
+   
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(false);
     setMoveTool(true);
@@ -709,41 +682,22 @@ void PaintCoreClient::activateMarquee() {
     if(m_drawing) return;
     // The slot keeps whichever marquee shape was last picked instead of resetting to the rectangle.
     const int shape = (m_selectionTool==1 || m_selectionTool==2) ? m_selectionTool : m_marqueeShape;
-    setBucketTool(false); setMoveTool(false); setEraser(false); m_rotateViewTool=false;
+    setMoveTool(false); setEraser(false);
     setSelectionTool(shape);
 }
 void PaintCoreClient::activateLasso() {
     if(m_drawing) return;
-    setBucketTool(false); setMoveTool(false); setEraser(false); m_rotateViewTool=false;
+    setMoveTool(false); setEraser(false);
     setSelectionTool(3);
 }
 void PaintCoreClient::activateWand() {
     if(m_drawing) return;
-    setBucketTool(false); setMoveTool(false); setEraser(false); m_rotateViewTool=false;
+    setMoveTool(false); setEraser(false);
     setSelectionTool(4);
 }
-void PaintCoreClient::activateRotateView() {
-    if(m_drawing) return;
-    setBucketTool(false); setMoveTool(false); setEraser(false);
-    if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
-    if(m_rotateViewTool) return;
-    m_rotateViewTool=true; emit brushChanged();
-}
-void PaintCoreClient::setBucketContiguous(bool contiguous) {
-    if(m_bucketContiguous==contiguous) return;
-    m_bucketContiguous=contiguous; emit brushChanged();
-}
-void PaintCoreClient::setBucketTolerance(int tolerance) {
-    const auto clamped=std::clamp(tolerance,0,255);
-    if(m_bucketTolerance==clamped) return;
-    m_bucketTolerance=clamped; emit brushChanged();
-}
-void PaintCoreClient::setBucketTool(bool enabled) {
-    if(m_drawing || (enabled==m_bucketTool && (!enabled || (!m_moveTool && !m_eraser && !m_selectionTool)))) return;
-    m_bucketTool=enabled;
-    if(enabled) {m_moveTool=false;m_eraser=false;m_selectionTool=0;}
-    emit brushChanged();
-}
+
+
+
 bool PaintCoreClient::submitSelection(quint32 action,QRectF rect,int shape,int operation) {
     if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing) return false;
     auto request=dto<PaintSelectionEdit>();request.action=action;
@@ -757,36 +711,8 @@ bool PaintCoreClient::submitSelection(quint32 action,QRectF rect,int shape,int o
     m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
 }
 bool PaintCoreClient::editSelection(QRectF rect,int shape,int operation) {return submitSelection(PAINT_SELECTION_SHAPE,rect,shape,operation);}
-bool PaintCoreClient::editSelectionPath(const QVariantList &points,int operation) {
-    if(!m_ready || m_drawing || layerEditBusy() || fileBusy() || m_closing || !m_worker) return false;
-    if(points.size()<3 || points.size()>4096) return false;
-    QVector<QPointF> flat;flat.reserve(points.size());
-    for(const auto &value:points) {
-        const auto pair=value.toList();
-        if(pair.size()!=2) return false;
-        const auto x=pair[0].toDouble(),y=pair[1].toDouble();
-        if(!std::isfinite(x) || !std::isfinite(y) || std::abs(x)>4096 || std::abs(y)>4096) return false;
-        flat.append(QPointF(x,y));
-    }
-    // The worker owns the session, so the sequence comes back from it; a local placeholder would
-    // never be cleared by the poll and would keep every layer edit busy forever.
-    quint64 sequence=0;
-    if(!QMetaObject::invokeMethod(m_worker,[this,flat,operation,&sequence]{
-        sequence=m_worker->submitSelectionPath(flat,operation);
-    },Qt::BlockingQueuedConnection)) return false;
-    if(sequence==0) { showError(QStringLiteral("套索选区提交失败")); return false; }
-    m_pendingLayer=sequence; emit stateChanged(); return true;
-}
-bool PaintCoreClient::magicWandSelection(qreal x,qreal y,int tolerance,int operation) {
-    if(!m_ready || m_drawing || layerEditBusy() || fileBusy() || m_closing || !m_worker) return false;
-    if(!std::isfinite(x) || !std::isfinite(y) || tolerance<0 || tolerance>255) return false;
-    quint64 sequence=0;
-    if(!QMetaObject::invokeMethod(m_worker,[this,x,y,tolerance,operation,&sequence]{
-        sequence=m_worker->submitMagicWand(x,y,tolerance,operation);
-    },Qt::BlockingQueuedConnection)) return false;
-    if(sequence==0) { showError(QStringLiteral("魔棒选区提交失败")); return false; }
-    m_pendingLayer=sequence; emit stateChanged(); return true;
-}bool PaintCoreClient::selectAll(){return submitSelection(PAINT_SELECTION_ALL);}
+
+bool PaintCoreClient::selectAll(){return submitSelection(PAINT_SELECTION_ALL);}
 bool PaintCoreClient::clearSelection(){return submitSelection(PAINT_SELECTION_CLEAR);}
 bool PaintCoreClient::invertSelection(){return submitSelection(PAINT_SELECTION_INVERT);}
 bool PaintCoreClient::beginStroke(const InputSample &s) {
@@ -814,21 +740,7 @@ void PaintCoreClient::cancelStroke() {
 }
 void PaintCoreClient::undo() { if (m_ready && !m_drawing) submit(Undo); }
 void PaintCoreClient::redo() { if (m_ready && !m_drawing) submit(Redo); }
-bool PaintCoreClient::fillRegion(qreal x,qreal y,int tolerance,bool contiguous,qreal opacity) {
-    if(!m_ready || m_drawing || layerEditBusy() || fileBusy() || m_closing) return false;
-    if(!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(opacity)) return false;
-    if(x<0 || y<0 || x>=m_width || y>=m_height) return false;
-    if(tolerance<0 || tolerance>255 || opacity<=0 || opacity>1) return false;
-    const auto straight=m_color;   // the bucket paints with the active brush colour
-    const float rgba[4]={float(straight.redF()),float(straight.greenF()),float(straight.blueF()),float(straight.alphaF())};
-    uint64_t sequence=0; PaintStatus status; QString error;
-    { QMutexLocker lock(&m_connection->mutex); if(!m_connection->session) return false;
-      status=paint_session_fill_region(m_connection->core,m_connection->session,x,y,quint32(tolerance),
-                                       contiguous?1u:0u,float(opacity),rgba,&sequence);
-      if(status!=PAINT_OK) error=immediateError(status); }
-    if(status!=PAINT_OK) { showError(error); return false; }
-    m_pendingLayer=m_pendingMutation=sequence; m_modified=true; emit stateChanged(); return true;
-}
+
 QColor PaintCoreClient::sampleDocumentPixel(qreal x, qreal y) const {
     if(!m_connection || m_closing || !std::isfinite(x) || !std::isfinite(y)) return {};
     float rgba[4]={0,0,0,0};
@@ -840,28 +752,6 @@ QColor PaintCoreClient::sampleDocumentPixel(qreal x, qreal y) const {
     if(!(rgba[3]>0.f)) return QColor(0,0,0,0);
     return QColor::fromRgbF(std::clamp(qreal(rgba[0]),0.,1.),std::clamp(qreal(rgba[1]),0.,1.),
                             std::clamp(qreal(rgba[2]),0.,1.),std::clamp(qreal(rgba[3]),0.,1.));
-}
-bool PaintCoreClient::transformCanvas(int kind) {
-    // The session serialises this call, so the canvas is already transformed when it returns: there
-    // is no in-flight edit to wait for, and marking one would block every later layer edit.
-    if(!m_ready || m_drawing || layerEditBusy() || fileBusy() || m_closing) return false;
-    if(kind<0 || kind>4) return false;
-    uint64_t sequence=0; PaintStatus status; QString error;
-    { QMutexLocker lock(&m_connection->mutex); if(!m_connection->session) return false;
-      status=paint_session_transform_canvas(m_connection->core,m_connection->session,quint32(kind),&sequence);
-      if(status!=PAINT_OK) error=immediateError(status); }
-    if(status!=PAINT_OK) { showError(error); return false; }
-    
-    // The worker publishes the new size on its next tick, which the poll below would eventually pick
-    // up. Read the session directly as well so the UI shows the rotated canvas immediately instead
-    // of keeping the old width for a frame.
-    { QMutexLocker lock(&m_connection->mutex);
-      auto info=dto<PaintSessionInfo>();
-      if(m_connection->session && paint_session_info(m_connection->core,m_connection->session,&info)==PAINT_OK
-         && (int(info.width)!=m_width || int(info.height)!=m_height)) {
-          m_width=int(info.width); m_height=int(info.height);
-      } }
-    m_modified=true; emit stateChanged(); return true;
 }
 void PaintCoreClient::addLayer(const QString &name) {
     if (m_ready && !m_drawing && !layerEditBusy() && submit(Add, {}, 0, name) && m_collapsedGroups.remove(m_active)) emit groupExpansionChanged();

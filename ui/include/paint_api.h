@@ -20,19 +20,6 @@
 
 #define PAINT_ABI_PATCH 0
 
-#define PAINT_CANVAS_TRANSFORM_FLIP_HORIZONTAL 3
-
-#define PAINT_CANVAS_TRANSFORM_FLIP_VERTICAL 4
-
-#define PAINT_CANVAS_TRANSFORM_ROTATE_180 2
-
-#define PAINT_CANVAS_TRANSFORM_ROTATE_90_CCW 1
-
-/**
- * Whole-canvas orientation changes for paint_session_transform_canvas.
- */
-#define PAINT_CANVAS_TRANSFORM_ROTATE_90_CW 0
-
 #define PAINT_COMMAND_ADD_LAYER 8
 
 #define PAINT_COMMAND_ADD_MASK 13
@@ -134,11 +121,6 @@
 
 #define PAINT_HISTORY_ERASER 2
 
-/**
- * ABI 1.13: paint-bucket fill of a similar region.
- */
-#define PAINT_HISTORY_FILL 25
-
 #define PAINT_HISTORY_GROUP 14
 
 #define PAINT_HISTORY_INITIAL 0
@@ -221,12 +203,10 @@
 
 #define PAINT_SELECTION_MASK 3
 
-#define PAINT_SELECTION_PATH_MAGIC 1
-
 /**
- * ABI 1.12: free-path and content-derived selection edits.
+ * ABI 1.12: content-derived selection edits.
  */
-#define PAINT_SELECTION_PATH_POLYGON 0
+#define PAINT_SELECTION_PATH_MAGIC 1
 
 /**
  * ABI 1.12: rasterized shapes. The geometry fields stay the bounding box for old callers.
@@ -421,7 +401,7 @@ typedef struct PaintSelectionEdit {
 } PaintSelectionEdit;
 
 /**
- * ABI 1.12: one point of a selection path, in document pixels.
+ * ABI 1.12: the seed point of a content-derived selection, in document pixels.
  */
 typedef struct PaintSelectionPoint {
   double x;
@@ -962,22 +942,6 @@ PaintStatus paint_session_file_submit(struct PaintCore *core,
                                       uint64_t *out_job);
 
 /**
- * ABI 1.13: enqueue a paint-bucket fill of the region similar to one seed point. The colour is the
- * session's active brush colour, so the bucket and the brush never disagree about it.
- * # Safety
- * `out_sequence` must be writable; follow session ownership contracts.
- */
-PaintStatus paint_session_fill_region(struct PaintCore *core,
-                                      struct PaintSession *session,
-                                      double x,
-                                      double y,
-                                      uint32_t tolerance,
-                                      uint32_t contiguous,
-                                      float opacity,
-                                      const float *color,
-                                      uint64_t *out_sequence);
-
-/**
  * Return the latest complete frame. BUSY while pending/disabled. No partial frame is exposed.
  * # Safety
  * Follow initialized output and session lifetime contracts.
@@ -1213,17 +1177,6 @@ PaintStatus paint_session_submit(struct PaintCore *core,
                                  struct PaintSession *handle,
                                  const struct PaintCommand *command,
                                  uint64_t *out_sequence);
-
-/**
- * ABI 1.13: rotate or flip the whole canvas. Quarter turns swap the canvas dimensions; one undo
- * restores both the pixels and the size.
- * # Safety
- * Provide a writable sequence pointer; follow session ownership contract.
- */
-PaintStatus paint_session_transform_canvas(struct PaintCore *core,
-                                           struct PaintSession *session,
-                                           uint32_t kind,
-                                           uint64_t *out_sequence);
 
 /**
  * ABI 1.3: inspect a candidate configuration without changing a running core. Worker thread only.

@@ -37,15 +37,6 @@ public:
     qreal initialFitRatio() const { return m_initialFitRatio; }
     void setInitialFitRatio(qreal ratio);
     QPointF documentPoint(QPointF local) const;
-    /// Local position of a document point, including the view rotation. Only for drawing overlays
-    /// that have to follow the rotated view; edits still go through documentPoint.
-    Q_INVOKABLE QPointF scenePoint(QPointF document) const;
-    /// View rotation in degrees; drawing and painting follow it, the document does not change.
-    Q_PROPERTY(qreal viewRotation READ viewRotation WRITE setViewRotation NOTIFY viewChanged)
-    qreal viewRotation() const { return m_viewRotation; }
-    void setViewRotation(qreal degrees);
-    Q_INVOKABLE void rotateViewBy(qreal degrees);
-    Q_INVOKABLE void resetViewRotation();
     Q_INVOKABLE void fitToView();
     Q_INVOKABLE void actualSize();
     Q_INVOKABLE void zoomBy(qreal factor);
@@ -92,9 +83,6 @@ private:
     bool beginSelection(QPointF local, Qt::KeyboardModifiers modifiers);
     void updateSelection(QPointF local,Qt::KeyboardModifiers modifiers);
     QRectF selectionPreviewRect() const;
-    /// Lasso path in document coordinates, for the client to rasterize on the session worker.
-    Q_INVOKABLE QVariantList pathPoints() const;
-    Q_PROPERTY(QVariantList pathPreview READ pathPoints NOTIFY selectionDragChanged)
     /// Eyedropper: sample the already rendered frame at a local point. Returns an invalid colour
     /// outside the document. Read-only, never touches history or the document revision.
     Q_INVOKABLE QColor pickColorAt(QPointF local) const;
@@ -107,10 +95,6 @@ private:
     QTimer m_viewTimer;
     QMetaObject::Connection m_dpiConnection;
     qreal m_zoom = 1;
-    qreal m_viewRotation = 0;
-    bool m_rotateViewing = false;
-    qreal m_rotateStartAngle = 0, m_rotateStartRotation = 0;
-    QPointF localCentre() const { return QPointF(width() / 2., height() / 2.); }
     qreal m_initialFitRatio = 1;
     QPointF m_pan, m_last;
     QPointF m_layoutOrigin;
@@ -126,11 +110,6 @@ private:
     quint64 m_selectionGeneration = 0;
     int m_selectionKind = 0, m_selectionOperation = 0;
     bool m_selectionConstrained = false;
-    // Lasso (3) / magic wand (4) capture state; `m_wandTolerance` mirrors the panel setting.
-    QVector<QPointF> m_pathPoints;
-    QPointF m_wandPoint;
-    int m_pathKind = 0, m_pathOperation = 0, m_wandTolerance = 32;
-    bool m_collectingPath = false;
     bool m_selecting = false;
     bool m_interactive = true, m_space = false, m_panning = false, m_stroke = false, m_tablet = false, m_fitPending = true;
     QElapsedTimer m_clock;

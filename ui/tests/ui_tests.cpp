@@ -1302,24 +1302,7 @@ private slots:
         QCOMPARE(CanvasItem::constrainedRect({-30,-30},{10,-60}),QRectF(-30,-70,40,40));
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
-    void canvasRotateAndFlipGoThroughTheMenuActionsAndUndoInOneStep() {
-        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
-        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
-        client.newTransparentDocument(32,16);QTRY_COMPARE(client.documentWidth(),32);QTRY_COMPARE(client.documentHeight(),16);QTRY_VERIFY(client.ready());
-        auto *rotate=main->findChild<QObject*>("canvasRotateCwAction");QVERIFY(rotate);QVERIFY(rotate->property("enabled").toBool());
-        QCOMPARE(rotate->property("shortcut").toString(),QString());
-        QVERIFY(QMetaObject::invokeMethod(rotate,"trigger"));
-        QTRY_COMPARE(client.documentWidth(),16);QTRY_COMPARE(client.documentHeight(),32);
-        // One undo restores pixels and size together.
-        client.undo();QTRY_COMPARE(client.documentWidth(),32);QTRY_COMPARE(client.documentHeight(),16);
-        // Flipping keeps the dimensions and is a single history step.
-        auto *flip=main->findChild<QObject*>("canvasFlipVerticalAction");QVERIFY(flip);
-        const auto before=client.undoDepth();
-        QVERIFY(QMetaObject::invokeMethod(flip,"trigger"));
-        QTRY_COMPARE(client.undoDepth(),before+1);
-        QCOMPARE(client.documentWidth(),32);QCOMPARE(client.documentHeight(),16);
-        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
-    }    void altEyedropperSamplesWithoutHistoryAndBracketKeysResize() {
+    void altEyedropperSamplesWithoutHistoryAndBracketKeysResize() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
         client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
@@ -1345,87 +1328,6 @@ private slots:
         QTest::keyClick(main,Qt::Key_BracketLeft);QTRY_VERIFY(client.brushRadius()<wide);
         const auto narrow=client.brushRadius();
         QTest::keyClick(main,Qt::Key_BracketRight);QTRY_VERIFY(client.brushRadius()>narrow);
-        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
-    }    void paintBucketFillsAConnectedRegionInOneUndoableStep() {
-        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
-        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
-        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
-        auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();main->requestActivate();QTest::qWait(60);
-        // A white square the bucket can flood.
-        client.setSelectionTool(0);client.setMoveTool(false);client.setEraser(false);
-        client.setBrushRadius(6);client.setBrushColor(QColor("#ffffff"));
-        InputSample stroke;stroke.position={20,20};stroke.pressure=1;
-        QVERIFY(client.beginStroke(stroke));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());QTest::qWait(120);
-        QVERIFY2(client.sampleDocumentPixel(20,20).red()>200,qPrintable(client.sampleDocumentPixel(20,20).name()));
-        // The bucket tool takes over the canvas and fills on press.
-        // The bucket tool takes over the canvas and fills on press.
-        client.setBucketTool(true);QTRY_VERIFY(client.bucketTool());
-        QVERIFY(findVisualItem(main->contentItem(),"bucketTool"));
-        client.setBrushColor(QColor("#1e8ac8"));client.setBucketTolerance(24);
-        const auto depthBefore=client.undoDepth();
-        QTest::mousePress(main,Qt::LeftButton,Qt::NoModifier,canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(20,20)*canvas->zoom()).toPoint());
-        QTest::mouseRelease(main,Qt::LeftButton,Qt::NoModifier,canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(20,20)*canvas->zoom()).toPoint());
-        QTRY_COMPARE(client.undoDepth(),depthBefore+1);QTRY_VERIFY(!client.layerEditBusy());
-        const auto filled=client.sampleDocumentPixel(20,20);
-        QVERIFY2(filled.blue()>150 && filled.red()<120,qPrintable(filled.name()));
-        // Alt is still the eyedropper and never fills.
-        const auto depthAfterFill=client.undoDepth();
-        QTest::mousePress(main,Qt::LeftButton,Qt::AltModifier,canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(20,20)*canvas->zoom()).toPoint());
-        QTest::mouseRelease(main,Qt::LeftButton,Qt::AltModifier,canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(20,20)*canvas->zoom()).toPoint());
-        QTest::qWait(120);QCOMPARE(client.undoDepth(),depthAfterFill);
-        // One undo restores the pre-fill colour.
-        client.undo();QTRY_VERIFY(!client.layerEditBusy());QTest::qWait(120);
-        QVERIFY2(client.sampleDocumentPixel(20,20).red()>200,"undo did not restore the pre-fill pixels");
-        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
-    }    void bucketSlotSelectionTurnsOffBrushEraserAndSelection() {
-        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
-        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
-        auto *bucket=qobject_cast<QQuickItem*>(findVisualItem(main->contentItem(),"bucketTool"));QVERIFY(bucket);
-        // Start from the brush, then click the bucket slot exactly like a user.
-        client.setEraser(false);client.setSelectionTool(0);QTRY_VERIFY(!client.bucketTool());
-        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,bucket->mapToScene(QPointF(bucket->width()/2,bucket->height()/2)).toPoint());
-        QTRY_VERIFY(client.bucketTool());
-        QVERIFY2(!client.eraser(),"bucket left the eraser active");
-        QCOMPARE(client.selectionTool(),0);
-        QVERIFY(!client.moveTool());
-        // The brush slot must read as unchecked while the bucket owns the canvas.
-        auto *brushSlot=qobject_cast<QQuickItem*>(findVisualItem(main->contentItem(),"brushTool"));QVERIFY(brushSlot);
-        QTRY_VERIFY(!brushSlot->property("checked").toBool());
-        // Switching back to the brush clears the bucket.
-        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,brushSlot->mapToScene(QPointF(brushSlot->width()/2,brushSlot->height()/2)).toPoint());
-        QTRY_VERIFY(!client.bucketTool());
-        // A selection shape also takes over from the bucket.
-        client.setBucketTool(true);QTRY_VERIFY(client.bucketTool());
-        client.setSelectionTool(4);QTRY_VERIFY(!client.bucketTool());QCOMPARE(client.selectionTool(),4);
-        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
-    }    void viewRotationTurnsTheViewWithoutTouchingTheDocumentAndKeepsInputAligned() {
-        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
-        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
-        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
-        auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();main->requestActivate();QTest::qWait(60);
-        // The rotate-view slot exists and the R shortcut belongs to it, not to the 图像 rotation.
-        QVERIFY(findVisualItem(main->contentItem(),"rotateViewTool"));
-        QCOMPARE(client.rotateViewTool(),false);
-        const auto revision=client.revision();const auto undo=client.undoDepth();
-        // Rotating the view is view-only: no document revision, no history, no size change.
-        canvas->setViewRotation(30.);
-        QCOMPARE(canvas->viewRotation(),30.);
-        QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),undo);
-        QCOMPARE(client.documentWidth(),64);QCOMPARE(client.documentHeight(),64);
-        // Input stays aligned: the document point under a local position round-trips through the view
-        // rotation, which is what keeps the brush under the pointer.
-        const QPointF document(20.,12.);
-        const auto local=canvas->scenePoint(document);
-        const auto back=canvas->documentPoint(local);
-        QVERIFY2(qAbs(back.x()-document.x())<0.01 && qAbs(back.y()-document.y())<0.01,
-                 qPrintable(QString("round trip %1,%2 -> %3,%4").arg(back.x()).arg(back.y()).arg(document.x()).arg(document.y())));
-        // A full turn returns to upright, and the reset helper clears any angle.
-        canvas->rotateViewBy(330.);QVERIFY(qAbs(canvas->viewRotation())<0.01);
-        canvas->setViewRotation(-45.);QCOMPARE(canvas->viewRotation(),-45.);
-        canvas->resetViewRotation();QCOMPARE(canvas->viewRotation(),0.);
-        // Every painting tool activation takes the view tool back off.
-        client.activateRotateView();QTRY_VERIFY(client.rotateViewTool());
-        client.activateBrush();QTRY_VERIFY(!client.rotateViewTool());
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }    void selectionOutlineMarchesWhileVisibleAndStopsOtherwise() {
         QQuickWindow window;window.setObjectName("antsHost");window.setColor(Qt::transparent);
@@ -2475,9 +2377,10 @@ private slots:
         auto *rectangle=findVisualItem(panelContent,"variantEntry:rectangle"),*ellipse=findVisualItem(panelContent,"variantEntry:ellipse");
         QVERIFY(rectangle && ellipse);
         QVERIFY(rectangle->isEnabled());QVERIFY(ellipse->isEnabled());
-        // The lasso and the wand are separate tools with their own slots, not shapes of the marquee.
-        QVERIFY(findVisualItem(main->contentItem(),"lassoTool"));
+        // The wand is its own tool; the lasso slot is present but marked unsupported.
         QVERIFY(findVisualItem(main->contentItem(),"wandTool"));
+        auto *lassoSlot=qobject_cast<QQuickItem*>(findVisualItem(main->contentItem(),"lassoTool"));
+        QVERIFY(lassoSlot);QVERIFY(!lassoSlot->isEnabled());
         QVERIFY(!findVisualItem(panelContent,"variantEntry:lasso"));
         QVERIFY(!findVisualItem(panelContent,"variantEntry:wand"));
         // Picking a shape from the panel is what changes the active shape.

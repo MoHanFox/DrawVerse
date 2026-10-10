@@ -232,30 +232,6 @@ pub unsafe extern "C" fn paint_session_move_layer(
     })
 }
 
-/// ABI 1.13: rotate or flip the whole canvas. Quarter turns swap the canvas dimensions; one undo
-/// restores both the pixels and the size.
-/// # Safety
-/// Provide a writable sequence pointer; follow session ownership contract.
-#[no_mangle]
-pub unsafe extern "C" fn paint_session_transform_canvas(
-    core: *mut PaintCore,
-    session: *mut PaintSession,
-    kind: u32,
-    out_sequence: *mut u64,
-) -> PaintStatus {
-    boundary(|| unsafe {
-        pointers::write(out_sequence, 0)?;
-        runtime::outside_callback()?;
-        // Validate before touching the document so an unknown kind cannot submit half a queue.
-        paint_core::CanvasTransform::from_raw(kind)
-            .map_err(|_| ApiError::invalid("unknown canvas transform"))?;
-        let sequence = runtime::registry()?
-            .session(core, session)?
-            .submit(Operation::Transform(kind))?;
-        pointers::write(out_sequence, sequence)
-    })
-}
-
 /// ABI 1.6: atomic subtree reorder/reparent; IDs and placement are copied immediately.
 /// # Safety
 /// Initialize input DTO and provide writable sequence; follow session ownership contract.

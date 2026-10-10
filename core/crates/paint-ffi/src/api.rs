@@ -52,14 +52,6 @@ pub const PAINT_HISTORY_LASSO_SELECTION: u32 = 21;
 pub const PAINT_HISTORY_MAGIC_SELECTION: u32 = 22;
 /// Automatic release of clipped layers whose base went away.
 pub const PAINT_HISTORY_RELEASE_CLIPPING: u32 = 23;
-/// Whole-canvas orientation changes for paint_session_transform_canvas.
-pub const PAINT_CANVAS_TRANSFORM_ROTATE_90_CW: u32 = 0;
-pub const PAINT_CANVAS_TRANSFORM_ROTATE_90_CCW: u32 = 1;
-pub const PAINT_CANVAS_TRANSFORM_ROTATE_180: u32 = 2;
-pub const PAINT_CANVAS_TRANSFORM_FLIP_HORIZONTAL: u32 = 3;
-pub const PAINT_CANVAS_TRANSFORM_FLIP_VERTICAL: u32 = 4;
-/// ABI 1.13: paint-bucket fill of a similar region.
-pub const PAINT_HISTORY_FILL: u32 = 25;
 pub const PAINT_ABI_PATCH: u32 = 0;
 pub const PAINT_WORKING_LINEAR_SRGB: u32 = 1;
 pub const PAINT_STORAGE_RGBA32F_PREMULTIPLIED: u32 = 1;
@@ -464,10 +456,9 @@ pub const PAINT_SELECTION_ELLIPSE: u32 = 1;
 /// ABI 1.12: rasterized shapes. The geometry fields stay the bounding box for old callers.
 pub const PAINT_SELECTION_POLYGON: u32 = 2;
 pub const PAINT_SELECTION_MASK: u32 = 3;
-/// ABI 1.12: free-path and content-derived selection edits.
-pub const PAINT_SELECTION_PATH_POLYGON: u32 = 0;
+/// ABI 1.12: content-derived selection edits.
 pub const PAINT_SELECTION_PATH_MAGIC: u32 = 1;
-/// ABI 1.12: one point of a selection path, in document pixels.
+/// ABI 1.12: the seed point of a content-derived selection, in document pixels.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct PaintSelectionPoint {

@@ -42,10 +42,6 @@ pub(crate) enum Operation {
     Properties(u64, LayerProperties),
     Appearance(u64, paint_core::LayerAppearance),
     Translate(u64, i32, i32),
-    /// Whole-canvas rotate/flip, encoded as a `CanvasTransform` discriminant.
-    Transform(u32),
-    /// Paint-bucket fill: seed, tolerance, contiguous flag, opacity and the brush colour.
-    Fill(f64, f64, u32, bool, f32, [f32; 4]),
     Group(u64, String),
     Ungroup(u64),
     Reparent(u64, u64),
@@ -669,20 +665,13 @@ impl Engine {
             }
             Operation::SelectionPath(path) => {
                 let revision = self.document.revision();
-                match path.kind {
-                    PAINT_SELECTION_PATH_POLYGON => {
-                        self.document
-                            .set_selection_polygon(&path.points, path.operation)?;
-                    }
-                    _ => {
-                        let [x, y] = path.points[0];
-                        self.document.set_selection_magic(
-                            x.max(0.) as u32,
-                            y.max(0.) as u32,
-                            path.tolerance,
-                        )?;
-                    }
-                }
+                // Only the magic wand resolves a region now: the freehand lasso is not supported.
+                let [x, y] = path.points[0];
+                self.document.set_selection_magic(
+                    x.max(0.) as u32,
+                    y.max(0.) as u32,
+                    path.tolerance,
+                )?;
                 self.modified |= revision != self.document.revision();
             }
             Operation::NewWhite(w, h) => {
@@ -767,33 +756,6 @@ impl Engine {
             Operation::Translate(id, x, y) => {
                 let revision = self.document.revision();
                 self.document.move_layer(id, x, y)?;
-                self.modified |= revision != self.document.revision();
-            }
-            Operation::Transform(kind) => {
-                let revision = self.document.revision();
-                self.document
-                    .transform_canvas(paint_core::CanvasTransform::from_raw(kind)?)?;
-                self.modified |= revision != self.document.revision();
-            }
-            Operation::Fill(x, y, tolerance, contiguous, opacity, color) => {
-                // The bucket paints with the active brush colour, which the client owns and passes
-                // here, so the two never disagree about it.
-                let (width, height) = self.document.dimensions();
-                if x < 0. || y < 0. || x >= f64::from(width) || y >= f64::from(height) {
-                    return Err(ApiError::invalid("fill seed outside document"));
-                }
-                // The client passes straight (un-premultiplied) RGBA, like the colour pickers do.
-                let color = paint_core::Pixel::from_straight(color)?;
-                let revision = self.document.revision();
-                let tolerance = f64::from(tolerance) / 255.;
-                self.document.fill_region(
-                    x as u32,
-                    y as u32,
-                    tolerance as f32,
-                    contiguous,
-                    color,
-                    opacity,
-                )?;
                 self.modified |= revision != self.document.revision();
             }
             Operation::Group(id, name) => {
@@ -1046,45 +1008,6 @@ impl StampedFrame {
 mod actor_tests {
     use super::*;
     use std::{thread, time::Instant};
-    /// The published session size must follow a canvas transform, and the worker must stay alive:
-    /// a panic inside the command would kill the whole document worker, which is exactly the
-    /// symptom seen from Qt (command submitted, nothing published afterwards).
-    #[test]
-    fn transform_command_publishes_the_new_canvas_size() {
-        let session = Session::new(32, 16).unwrap();
-        let sequence = session.submit(Operation::Transform(0)).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            let info = session.info();
-            if info.completed_sequence >= sequence {
-                assert_eq!((info.width, info.height), (16, 32));
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "transform never completed: completed={} wanted={sequence}",
-                info.completed_sequence
-            );
-            assert_eq!(info.flags & PAINT_SESSION_FAILED, 0, "worker failed");
-            thread::sleep(Duration::from_millis(1));
-        }
-        // The worker stays healthy and accepts the next command.
-        assert_eq!(session.sender.state(), WorkerState::Running);
-        session.submit(Operation::Transform(1)).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            let info = session.info();
-            if info.completed_sequence >= 2 {
-                assert_eq!((info.width, info.height), (32, 16));
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "second transform never completed"
-            );
-            thread::sleep(Duration::from_millis(1));
-        }
-    }
     #[test]
     fn panicked_session_reports_failure_and_remains_releasable() {
         let session = Session::new(64, 64).unwrap();

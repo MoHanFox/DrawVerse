@@ -48,17 +48,15 @@ Rectangle {
             }
             ToolVariantsPanel { id: variants; parent: root; canvasView: root.canvasView }
         }
-        // View rotation: rotates what the user sees without changing a single document pixel.
-        IconButton {objectName:"rotateViewTool";width:26;height:26;glyph:"redo";checkable:true;checked:PaintClient.rotateViewTool;onClicked:PaintClient.activateRotateView();tooltip:"旋转视图 R · 只转视图不改图像，Alt 点击复位"}
+        IconButton {objectName:"lassoTool";width:26;height:26;glyph:"lassoSelection";checkable:true;checked:false;enabled:false;tooltip:"套索（待支持）"}
+        IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;checked:PaintClient.selectionTool===4;onClicked:PaintClient.activateWand();tooltip:"魔棒 W · 点击选取相近颜色" }
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
-        IconButton {objectName:"lassoTool";width:26;height:26;glyph:"lassoSelection";checkable:true;checked:PaintClient.selectionTool===3;onClicked:PaintClient.activateLasso();tooltip:"套索 L · 自由手绘选区"}
-        IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;checked:PaintClient.selectionTool===4;onClicked:PaintClient.activateWand();tooltip:"魔棒 W · 点击选取相近颜色"}
         // Every slot clears the others: leaving a second tool active made the strip show the brush
         // while the bucket still owned the canvas.
         IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;checked:!PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool && !PaintClient.bucketTool;onClicked:PaintClient.activateBrush();tooltip:"画笔 B"}
         IconButton {objectName:"eraserTool";width:26;height:26;glyph:"eraser";checkable:true;checked:PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool && !PaintClient.bucketTool;onClicked:PaintClient.activateEraser();tooltip:"橡皮擦 E"}
         // The bucket is a painting tool, not a selection shape, so it gets its own slot.
-        IconButton {objectName:"bucketTool";width:26;height:26;glyph:"bucket";checkable:true;checked:PaintClient.bucketTool;onClicked:PaintClient.activateBucket();tooltip:"油漆桶 G · 点击填充相近区域"}
+        IconButton {objectName:"bucketTool";width:26;height:26;glyph:"bucket";checkable:true;checked:false;enabled:false;tooltip:"油漆桶（待支持）"}
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         IconButton {width:26;height:26;glyph:"undo";enabled:PaintClient.undoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.undo();tooltip:"撤销 Ctrl+Z"}
         IconButton {width:26;height:26;glyph:"redo";enabled:PaintClient.redoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.redo();tooltip:"重做 Ctrl+Shift+Z"}

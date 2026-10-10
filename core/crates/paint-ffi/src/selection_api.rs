@@ -81,9 +81,13 @@ pub unsafe extern "C" fn paint_session_edit_selection(
 }
 #[derive(Clone)]
 pub(crate) struct Path {
+    /// Validated for protocol compatibility; only the magic wand resolves a region now.
+    #[allow(dead_code)]
     pub kind: u32,
     pub points: Vec<[f64; 2]>,
     pub tolerance: u32,
+    /// Validated for protocol compatibility; the wand always replaces the selection.
+    #[allow(dead_code)]
     pub operation: SelectionOperation,
     /// Validated for protocol compatibility; rasterized paths are intentionally hard-edged.
     #[allow(dead_code)]
@@ -108,19 +112,6 @@ fn path_model(value: PaintSelectionPath) -> ApiResult<Path> {
     let points = unsafe { pointers::dto_slice(value.points, value.point_count as usize)? };
     let points: Vec<[f64; 2]> = points.iter().map(|p| [p.x, p.y]).collect();
     match value.edit_kind {
-        PAINT_SELECTION_PATH_POLYGON => {
-            if points.len() < 3 || points.len() > paint_core::MAX_SELECTION_POINTS {
-                return Err(ApiError::invalid("selection path point count"));
-            }
-            if points.iter().any(|p| {
-                !p[0].is_finite() || !p[1].is_finite() || p[0].abs() > 4096. || p[1].abs() > 4096.
-            }) {
-                return Err(ApiError::invalid("selection path point"));
-            }
-            if value.tolerance != 0 {
-                return Err(ApiError::invalid("polygon path carries a tolerance"));
-            }
-        }
         PAINT_SELECTION_PATH_MAGIC => {
             if points.len() != 1 {
                 return Err(ApiError::invalid("magic selection takes one seed point"));
@@ -140,57 +131,6 @@ fn path_model(value: PaintSelectionPath) -> ApiResult<Path> {
         tolerance: value.tolerance,
         operation,
         antialias,
-    })
-}
-/// ABI 1.13: enqueue a paint-bucket fill of the region similar to one seed point. The colour is the
-/// session's active brush colour, so the bucket and the brush never disagree about it.
-/// # Safety
-/// `out_sequence` must be writable; follow session ownership contracts.
-#[no_mangle]
-pub unsafe extern "C" fn paint_session_fill_region(
-    core: *mut PaintCore,
-    session: *mut PaintSession,
-    x: f64,
-    y: f64,
-    tolerance: u32,
-    contiguous: u32,
-    opacity: f32,
-    color: *const f32,
-    out_sequence: *mut u64,
-) -> PaintStatus {
-    boundary(|| unsafe {
-        pointers::write(out_sequence, 0)?;
-        runtime::outside_callback()?;
-        if !x.is_finite() || !y.is_finite() || x < 0. || y < 0. || x > 1_000_000. || y > 1_000_000.
-        {
-            return Err(ApiError::invalid("fill seed outside the coordinate budget"));
-        }
-        if tolerance > paint_core::MAX_WAND_TOLERANCE {
-            return Err(ApiError::invalid("fill tolerance"));
-        }
-        if contiguous > 1 {
-            return Err(ApiError::invalid("fill contiguous flag"));
-        }
-        if !opacity.is_finite() || !(0. ..=1.).contains(&opacity) {
-            return Err(ApiError::invalid("fill opacity"));
-        }
-        let channels = pointers::dto_slice(color, 4)?;
-        let mut rgba = [0f32; 4];
-        rgba.copy_from_slice(channels);
-        if rgba.iter().any(|channel| !channel.is_finite()) {
-            return Err(ApiError::invalid("fill colour"));
-        }
-        let sequence = runtime::registry()?
-            .session(core, session)?
-            .submit(Operation::Fill(
-                x,
-                y,
-                tolerance,
-                contiguous != 0,
-                opacity,
-                rgba,
-            ))?;
-        pointers::write(out_sequence, sequence)
     })
 }
 /// ABI 1.12: enqueue a freehand-path (lasso) or content-derived (magic wand) selection edit.
@@ -292,7 +232,6 @@ pub unsafe extern "C" fn paint_session_selection_step(
             value.shape = match s.kind {
                 SelectionKind::Rectangle => PAINT_SELECTION_RECTANGLE,
                 SelectionKind::Ellipse => PAINT_SELECTION_ELLIPSE,
-                SelectionKind::Polygon => PAINT_SELECTION_POLYGON,
                 SelectionKind::Mask => PAINT_SELECTION_MASK,
             };
             value.antialias = u32::from(s.antialias);

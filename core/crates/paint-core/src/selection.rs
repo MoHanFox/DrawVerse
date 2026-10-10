@@ -6,7 +6,6 @@ pub const MAX_SELECTION_STEPS: usize = 64;
 /// per pixel, i.e. 4096x4096). Larger regions must fail loudly instead of exhausting memory.
 pub const MAX_SELECTION_MASK_BYTES: usize = 16 * 1024 * 1024;
 /// Lasso paths are sampled by the UI; the cap bounds both memory and rasterization work.
-pub const MAX_SELECTION_POINTS: usize = 4096;
 /// Magic-wand tolerance is a per-channel 0..=255 threshold over the composited document.
 pub const MAX_WAND_TOLERANCE: u32 = 255;
 
@@ -15,7 +14,6 @@ pub enum SelectionKind {
     Rectangle,
     Ellipse,
     /// Freehand path: rasterized once into `mask`, then behaves like any other shape.
-    Polygon,
     /// Pixel region derived from document content (magic wand).
     Mask,
 }
@@ -89,7 +87,7 @@ pub struct SelectionShape {
     pub width: f64,
     pub height: f64,
     pub antialias: bool,
-    /// Present for `Polygon`/`Mask`; the geometry above is then the bounding box.
+    /// Present for `Mask`; the geometry above is then the bounding box.
     pub mask: Option<SelectionMask>,
 }
 
@@ -133,7 +131,7 @@ impl SelectionShape {
     pub fn coverage(self, x: f64, y: f64) -> f32 {
         if let Some(mask) = self.mask {
             // Mask shapes are addressed by integer pixel: the stored value is the pixel center's
-            // coverage, produced by rasterization (polygon) or flood fill (wand).
+            // coverage, produced by the flood fill (wand).
             let px = x.floor();
             let py = y.floor();
             if !px.is_finite() || !py.is_finite() {
@@ -181,106 +179,6 @@ impl SelectionShape {
         }
         inside as f32 / 16.
     }
-}
-
-/// Even-odd point-in-polygon test at a pixel center.
-fn inside_polygon(points: &[[f64; 2]], x: f64, y: f64) -> bool {
-    let mut inside = false;
-    let mut previous = points.len() - 1;
-    for current in 0..points.len() {
-        let [xi, yi] = points[current];
-        let [xj, yj] = points[previous];
-        if (yi > y) != (yj > y) {
-            let cross = (xj - xi) * (y - yi) / (yj - yi) + xi;
-            if x < cross {
-                inside = !inside;
-            }
-        }
-        previous = current;
-    }
-    inside
-}
-
-fn polygon_is_simple(points: &[[f64; 2]]) -> bool {
-    // A closed path with at least three distinct vertices and finite coordinates. Self-touching
-    // paths are allowed: the even-odd rule gives a deterministic result either way.
-    let mut distinct = Vec::with_capacity(points.len());
-    for point in points {
-        if !point[0].is_finite()
-            || !point[1].is_finite()
-            || point[0].abs() > 2_000_000.
-            || point[1].abs() > 2_000_000.
-        {
-            return false;
-        }
-        if distinct.last().is_none_or(|last| *last != *point) {
-            distinct.push(*point);
-        }
-    }
-    distinct.len() >= 3
-}
-
-/// Rasterize a closed polygon into a selection shape. Coordinates are document pixels and are
-/// clipped to the document; the returned geometry is the bounding box of the produced mask.
-pub fn polygon_shape(points: &[[f64; 2]], width: u32, height: u32) -> Result<SelectionShape> {
-    if points.len() < 3 || points.len() > MAX_SELECTION_POINTS {
-        return Err(Error::InvalidArgument("invalid selection point count"));
-    }
-    if !polygon_is_simple(points) {
-        return Err(Error::InvalidArgument("invalid selection path"));
-    }
-    let clamp = |value: f64, limit: u32| value.clamp(0., f64::from(limit));
-    let mut min_x = f64::from(width);
-    let mut min_y = f64::from(height);
-    let mut max_x = 0f64;
-    let mut max_y = 0f64;
-    for point in points {
-        let x = clamp(point[0], width);
-        let y = clamp(point[1], height);
-        min_x = min_x.min(x);
-        min_y = min_y.min(y);
-        max_x = max_x.max(x);
-        max_y = max_y.max(y);
-    }
-    let left = min_x.floor() as u32;
-    let top = min_y.floor() as u32;
-    let right = (max_x.ceil() as u32).min(width);
-    let bottom = (max_y.ceil() as u32).min(height);
-    if right <= left || bottom <= top {
-        return Err(Error::InvalidArgument("empty selection path"));
-    }
-    let mask_width = right - left;
-    let mask_height = bottom - top;
-    let bytes = (mask_width as usize) * (mask_height as usize);
-    if bytes > MAX_SELECTION_MASK_BYTES {
-        return Err(Error::ResourceLimit("selection mask size"));
-    }
-    let mut coverage = vec![0u8; bytes];
-    for row in 0..mask_height {
-        let y = f64::from(top + row) + 0.5;
-        for column in 0..mask_width {
-            let x = f64::from(left + column) + 0.5;
-            if inside_polygon(points, x, y) {
-                coverage[(row as usize) * (mask_width as usize) + (column as usize)] = 1;
-            }
-        }
-    }
-    if !coverage.contains(&1) {
-        return Err(Error::InvalidArgument("empty selection path"));
-    }
-    Ok(SelectionShape {
-        kind: SelectionKind::Polygon,
-        x: f64::from(left),
-        y: f64::from(top),
-        width: f64::from(mask_width),
-        height: f64::from(mask_height),
-        antialias: false,
-        mask: Some(SelectionMask::from_coverage(
-            mask_width,
-            mask_height,
-            coverage,
-        )?),
-    })
 }
 
 /// Wrap a flood-filled pixel region as a `Mask` shape anchored at `(left, top)`.
@@ -535,7 +433,6 @@ impl Selection {
                 let kind = match s.kind {
                     SelectionKind::Rectangle => 0,
                     SelectionKind::Ellipse => 1,
-                    SelectionKind::Polygon => 2,
                     SelectionKind::Mask => 3,
                 };
                 text.push_str(&format!(
@@ -600,7 +497,6 @@ impl Selection {
             let kind = match fields[1] {
                 "0" => SelectionKind::Rectangle,
                 "1" => SelectionKind::Ellipse,
-                "2" if version >= 2 => SelectionKind::Polygon,
                 "3" if version >= 2 => SelectionKind::Mask,
                 _ => return Err(invalid()),
             };
