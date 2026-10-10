@@ -33,6 +33,18 @@ pub fn wand_shape(
     seed_y: u32,
     tolerance: f32,
 ) -> Result<SelectionShape> {
+    wand_shape_with(document, seed_x, seed_y, tolerance, true)
+}
+
+/// As [`wand_shape`], but a non-contiguous fill takes every similar pixel in the document instead of
+/// only the connected ones. The paint bucket offers both, and the two must share one implementation.
+pub fn wand_shape_with(
+    document: &Document,
+    seed_x: u32,
+    seed_y: u32,
+    tolerance: f32,
+    contiguous: bool,
+) -> Result<SelectionShape> {
     if !tolerance.is_finite() || !(0. ..=1.).contains(&tolerance) {
         return Err(Error::InvalidArgument("invalid wand tolerance"));
     }
@@ -55,60 +67,77 @@ pub fn wand_shape(
         ))
     };
 
-    // Scanline flood fill: each stack entry is a horizontal run of matching pixels.
-    let mut stack = vec![(seed_x, seed_y)];
     let mut min_x = width;
     let mut min_y = height;
     let mut max_x = 0u32;
     let mut max_y = 0u32;
-    while let Some((start_x, row)) = stack.pop() {
-        if filled[index(start_x, row)] != 0 {
-            continue;
+    if !contiguous {
+        // Whole-document similarity pass: every matching pixel, connected or not.
+        for y in 0..height {
+            for x in 0..width {
+                if !matches(document, x, y)? {
+                    continue;
+                }
+                filled[index(x, y)] = 1;
+                min_x = min_x.min(x);
+                max_x = max_x.max(x);
+                min_y = min_y.min(y);
+                max_y = max_y.max(y);
+            }
         }
-        let mut left = start_x;
-        while left > 0 && filled[index(left - 1, row)] == 0 && matches(document, left - 1, row)? {
-            left -= 1;
-        }
-        let mut right = start_x;
-        while right + 1 < width
-            && filled[index(right + 1, row)] == 0
-            && matches(document, right + 1, row)?
-        {
-            right += 1;
-        }
-        if !matches(document, start_x, row)? {
-            continue;
-        }
-        for x in left..=right {
-            filled[index(x, row)] = 1;
-        }
-        min_x = min_x.min(left);
-        max_x = max_x.max(right);
-        min_y = min_y.min(row);
-        max_y = max_y.max(row);
-        if row > 0 {
-            seed_row(
-                document,
-                &filled,
-                left,
-                right,
-                row - 1,
-                width,
-                &matches,
-                &mut stack,
-            )?;
-        }
-        if row + 1 < height {
-            seed_row(
-                document,
-                &filled,
-                left,
-                right,
-                row + 1,
-                width,
-                &matches,
-                &mut stack,
-            )?;
+    } else {
+        // Scanline flood fill: each stack entry is a horizontal run of matching pixels.
+        let mut stack = vec![(seed_x, seed_y)];
+        while let Some((start_x, row)) = stack.pop() {
+            if filled[index(start_x, row)] != 0 {
+                continue;
+            }
+            let mut left = start_x;
+            while left > 0 && filled[index(left - 1, row)] == 0 && matches(document, left - 1, row)?
+            {
+                left -= 1;
+            }
+            let mut right = start_x;
+            while right + 1 < width
+                && filled[index(right + 1, row)] == 0
+                && matches(document, right + 1, row)?
+            {
+                right += 1;
+            }
+            if !matches(document, start_x, row)? {
+                continue;
+            }
+            for x in left..=right {
+                filled[index(x, row)] = 1;
+            }
+            min_x = min_x.min(left);
+            max_x = max_x.max(right);
+            min_y = min_y.min(row);
+            max_y = max_y.max(row);
+            if row > 0 {
+                seed_row(
+                    document,
+                    &filled,
+                    left,
+                    right,
+                    row - 1,
+                    width,
+                    &matches,
+                    &mut stack,
+                )?;
+            }
+            if row + 1 < height {
+                seed_row(
+                    document,
+                    &filled,
+                    left,
+                    right,
+                    row + 1,
+                    width,
+                    &matches,
+                    &mut stack,
+                )?;
+            }
         }
     }
     if max_x < min_x || max_y < min_y {

@@ -11,6 +11,7 @@ use std::{
 pub const MAX_DIMENSION: u32 = 1_000_000;
 const MAX_DABS_PER_SEGMENT: usize = 8192;
 const MAX_PIXEL_VISITS_PER_SEGMENT: usize = 8_000_000;
+pub(crate) mod fill;
 pub(crate) mod groups;
 pub(crate) mod transform;
 
@@ -358,6 +359,11 @@ pub struct Document {
     revision: u64,
     dirty: DirtyTiles,
     selection: crate::Selection,
+    /// Temporary region override used by the paint bucket: while set, dabs are clipped by this
+    /// region instead of the document's own selection, which the fill must never disturb.
+    fill_selection: Option<crate::Selection>,
+    /// Whether the stroke in flight came from a fill, so its history entry is labelled as one.
+    filling: bool,
 }
 
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
@@ -563,6 +569,8 @@ impl Document {
             history: History::default(),
             stroke: None,
             selection: crate::Selection::default(),
+            fill_selection: None,
+            filling: false,
             revision: 0,
             dirty: DirtyTiles {
                 all: true,
@@ -1172,7 +1180,10 @@ impl Document {
             layer: stroke.layer,
             changes,
         };
-        let action = if stroke.brush.mode == BrushMode::Erase {
+        let action = if self.filling {
+            // A fill writes through the stroke path, but its history entry must say so.
+            crate::HistoryAction::Fill
+        } else if stroke.brush.mode == BrushMode::Erase {
             crate::HistoryAction::Eraser
         } else {
             crate::HistoryAction::Brush
@@ -1223,7 +1234,12 @@ impl Document {
     fn dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
         // Specialize once per dab: an inactive selection adds no pixel-loop
         // geometry branches or coverage multiplication to the original hot path.
-        if self.selection.enabled() {
+        // A fill supplies its own region, so the document's selection is never consulted there.
+        let active = self
+            .fill_selection
+            .as_ref()
+            .map_or_else(|| self.selection.enabled(), crate::Selection::enabled);
+        if active {
             self.dab_with_selection::<true>(stroke, point)
         } else {
             self.dab_with_selection::<false>(stroke, point)
@@ -1288,7 +1304,8 @@ impl Document {
                 for y in y0.max(ty * 64)..y1.min((ty + 1) * 64) {
                     for x in x0.max(tx * 64)..x1.min((tx + 1) * 64) {
                         let selected = if SELECTED {
-                            self.selection.coverage(
+                            let region = self.fill_selection.as_ref().unwrap_or(&self.selection);
+                            region.coverage(
                                 (x + i64::from(appearance.offset_x)) as f64 + 0.5,
                                 (y + i64::from(appearance.offset_y)) as f64 + 0.5,
                             )

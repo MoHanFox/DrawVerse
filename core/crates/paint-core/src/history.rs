@@ -36,6 +36,8 @@ pub enum HistoryAction {
     ReleaseClipping = 23,
     /// Whole-canvas rotate or flip.
     TransformCanvas = 24,
+    /// Paint-bucket fill of a similar region.
+    Fill = 25,
 }
 
 #[derive(Clone, Debug)]

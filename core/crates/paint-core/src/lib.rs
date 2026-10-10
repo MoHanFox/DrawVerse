@@ -31,4 +31,4 @@ pub use selection::{
     MAX_SELECTION_STEPS, MAX_WAND_TOLERANCE,
 };
 pub use tile::{Tile, TileCoord, TILE_BYTES, TILE_SIZE};
-pub use wand::wand_shape;
+pub use wand::{wand_shape, wand_shape_with};
