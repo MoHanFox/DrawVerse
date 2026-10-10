@@ -681,26 +681,26 @@ void PaintCoreClient::setSelectionTool(int tool) {
 }
 void PaintCoreClient::activateBrush() {
     if(m_drawing) return;
-    setBucketTool(false); setMoveTool(false);
+    setBucketTool(false); setMoveTool(false); m_rotateViewTool=false;
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(false);
 }
 void PaintCoreClient::activateEraser() {
     if(m_drawing) return;
-    setBucketTool(false); setMoveTool(false);
+    setBucketTool(false); setMoveTool(false); m_rotateViewTool=false;
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(true);
 }
 void PaintCoreClient::activateBucket() {
     if(m_drawing) return;
-    setMoveTool(false);
+    setMoveTool(false); m_rotateViewTool=false;
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(false);
     setBucketTool(true);
 }
 void PaintCoreClient::activateMoveTool() {
     if(m_drawing) return;
-    setBucketTool(false);
+    setBucketTool(false); m_rotateViewTool=false;
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(false);
     setMoveTool(true);
@@ -709,18 +709,25 @@ void PaintCoreClient::activateMarquee() {
     if(m_drawing) return;
     // The slot keeps whichever marquee shape was last picked instead of resetting to the rectangle.
     const int shape = (m_selectionTool==1 || m_selectionTool==2) ? m_selectionTool : m_marqueeShape;
-    setBucketTool(false); setMoveTool(false); setEraser(false);
+    setBucketTool(false); setMoveTool(false); setEraser(false); m_rotateViewTool=false;
     setSelectionTool(shape);
 }
 void PaintCoreClient::activateLasso() {
     if(m_drawing) return;
-    setBucketTool(false); setMoveTool(false); setEraser(false);
+    setBucketTool(false); setMoveTool(false); setEraser(false); m_rotateViewTool=false;
     setSelectionTool(3);
 }
 void PaintCoreClient::activateWand() {
     if(m_drawing) return;
-    setBucketTool(false); setMoveTool(false); setEraser(false);
+    setBucketTool(false); setMoveTool(false); setEraser(false); m_rotateViewTool=false;
     setSelectionTool(4);
+}
+void PaintCoreClient::activateRotateView() {
+    if(m_drawing) return;
+    setBucketTool(false); setMoveTool(false); setEraser(false);
+    if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
+    if(m_rotateViewTool) return;
+    m_rotateViewTool=true; emit brushChanged();
 }
 void PaintCoreClient::setBucketContiguous(bool contiguous) {
     if(m_bucketContiguous==contiguous) return;

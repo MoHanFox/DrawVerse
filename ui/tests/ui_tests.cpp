@@ -1307,7 +1307,7 @@ private slots:
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
         client.newTransparentDocument(32,16);QTRY_COMPARE(client.documentWidth(),32);QTRY_COMPARE(client.documentHeight(),16);QTRY_VERIFY(client.ready());
         auto *rotate=main->findChild<QObject*>("canvasRotateCwAction");QVERIFY(rotate);QVERIFY(rotate->property("enabled").toBool());
-        QCOMPARE(rotate->property("shortcut").toString(),QString("R"));
+        QCOMPARE(rotate->property("shortcut").toString(),QString());
         QVERIFY(QMetaObject::invokeMethod(rotate,"trigger"));
         QTRY_COMPARE(client.documentWidth(),16);QTRY_COMPARE(client.documentHeight(),32);
         // One undo restores pixels and size together.
@@ -1397,6 +1397,35 @@ private slots:
         // A selection shape also takes over from the bucket.
         client.setBucketTool(true);QTRY_VERIFY(client.bucketTool());
         client.setSelectionTool(4);QTRY_VERIFY(!client.bucketTool());QCOMPARE(client.selectionTool(),4);
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }    void viewRotationTurnsTheViewWithoutTouchingTheDocumentAndKeepsInputAligned() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
+        auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();main->requestActivate();QTest::qWait(60);
+        // The rotate-view slot exists and the R shortcut belongs to it, not to the 图像 rotation.
+        QVERIFY(findVisualItem(main->contentItem(),"rotateViewTool"));
+        QCOMPARE(client.rotateViewTool(),false);
+        const auto revision=client.revision();const auto undo=client.undoDepth();
+        // Rotating the view is view-only: no document revision, no history, no size change.
+        canvas->setViewRotation(30.);
+        QCOMPARE(canvas->viewRotation(),30.);
+        QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),undo);
+        QCOMPARE(client.documentWidth(),64);QCOMPARE(client.documentHeight(),64);
+        // Input stays aligned: the document point under a local position round-trips through the view
+        // rotation, which is what keeps the brush under the pointer.
+        const QPointF document(20.,12.);
+        const auto local=canvas->scenePoint(document);
+        const auto back=canvas->documentPoint(local);
+        QVERIFY2(qAbs(back.x()-document.x())<0.01 && qAbs(back.y()-document.y())<0.01,
+                 qPrintable(QString("round trip %1,%2 -> %3,%4").arg(back.x()).arg(back.y()).arg(document.x()).arg(document.y())));
+        // A full turn returns to upright, and the reset helper clears any angle.
+        canvas->rotateViewBy(330.);QVERIFY(qAbs(canvas->viewRotation())<0.01);
+        canvas->setViewRotation(-45.);QCOMPARE(canvas->viewRotation(),-45.);
+        canvas->resetViewRotation();QCOMPARE(canvas->viewRotation(),0.);
+        // Every painting tool activation takes the view tool back off.
+        client.activateRotateView();QTRY_VERIFY(client.rotateViewTool());
+        client.activateBrush();QTRY_VERIFY(!client.rotateViewTool());
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }    void selectionOutlineMarchesWhileVisibleAndStopsOtherwise() {
         QQuickWindow window;window.setObjectName("antsHost");window.setColor(Qt::transparent);

@@ -29,6 +29,11 @@ void SelectionOverlay::componentComplete(){
     syncAnimation();
 }
 void SelectionOverlay::setSteps(const QVariantList &steps){if(steps==m_steps)return;m_steps=steps;rebuild();}
+void SelectionOverlay::setViewRotation(qreal degrees){
+    if(!std::isfinite(degrees))return;
+    if(qFuzzyCompare(degrees+1.,m_viewRotation+1.))return;
+    m_viewRotation=degrees;update();emit geometryChanged();
+}
 void SelectionOverlay::setEnabledSelection(bool enabled){if(m_enabled==enabled)return;m_enabled=enabled;syncAnimation();update();emit geometryChanged();}
 void SelectionOverlay::setDocumentRect(QRectF rect){if(rect==m_documentRect)return;const bool sizeChanged=rect.size()!=m_documentRect.size();m_documentRect=rect;if(sizeChanged)rebuild();else{update();emit geometryChanged();}}
 void SelectionOverlay::setPreview(QRectF rect){if(rect==m_preview)return;m_preview=rect;syncAnimation();update();emit geometryChanged();}
@@ -72,6 +77,14 @@ void SelectionOverlay::paint(QPainter *painter){
     if(!m_enabled && m_preview.isEmpty())return;
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setBrush(Qt::NoBrush);
+    // The canvas rotates its view around the viewport centre; the outline has to ride along, which is
+    // the same transform the scene-graph node applies to the pixels.
+    if(m_viewRotation!=0.) {
+        const QPointF centre(width()/2.,height()/2.);
+        painter->translate(centre);
+        painter->rotate(m_viewRotation);
+        painter->translate(-centre);
+    }
     // Solid black underlay in document space: it hugs the selection exactly.
     painter->save();
     painter->translate(m_documentRect.topLeft());painter->scale(m_zoom,m_zoom);

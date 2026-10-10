@@ -37,6 +37,15 @@ public:
     qreal initialFitRatio() const { return m_initialFitRatio; }
     void setInitialFitRatio(qreal ratio);
     QPointF documentPoint(QPointF local) const;
+    /// Local position of a document point, including the view rotation. Only for drawing overlays
+    /// that have to follow the rotated view; edits still go through documentPoint.
+    Q_INVOKABLE QPointF scenePoint(QPointF document) const;
+    /// View rotation in degrees; drawing and painting follow it, the document does not change.
+    Q_PROPERTY(qreal viewRotation READ viewRotation WRITE setViewRotation NOTIFY viewChanged)
+    qreal viewRotation() const { return m_viewRotation; }
+    void setViewRotation(qreal degrees);
+    Q_INVOKABLE void rotateViewBy(qreal degrees);
+    Q_INVOKABLE void resetViewRotation();
     Q_INVOKABLE void fitToView();
     Q_INVOKABLE void actualSize();
     Q_INVOKABLE void zoomBy(qreal factor);
@@ -98,6 +107,10 @@ private:
     QTimer m_viewTimer;
     QMetaObject::Connection m_dpiConnection;
     qreal m_zoom = 1;
+    qreal m_viewRotation = 0;
+    bool m_rotateViewing = false;
+    qreal m_rotateStartAngle = 0, m_rotateStartRotation = 0;
+    QPointF localCentre() const { return QPointF(width() / 2., height() / 2.); }
     qreal m_initialFitRatio = 1;
     QPointF m_pan, m_last;
     QPointF m_layoutOrigin;

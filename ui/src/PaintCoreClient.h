@@ -121,6 +121,10 @@ public:
     Q_INVOKABLE void activateMarquee();
     Q_INVOKABLE void activateLasso();
     Q_INVOKABLE void activateWand();
+    /// View rotation tool: drag to rotate the view; the document is untouched.
+    Q_INVOKABLE void activateRotateView();
+    Q_PROPERTY(bool rotateViewTool READ rotateViewTool NOTIFY brushChanged)
+    bool rotateViewTool() const { return m_rotateViewTool; }
     bool moveTool() const { return m_moveTool; }
     bool layerEditBusy() const { return m_pendingLayer != 0; }
     void setMoveTool(bool enabled);
@@ -258,6 +262,7 @@ private:
     bool m_bucketContiguous = true;
     /// Last marquee shape (1 rectangle, 2 ellipse) so the slot does not reset when re-activated.
     int m_marqueeShape = 1;
+    bool m_rotateViewTool = false;
     bool m_moveTool = false;
     int m_selectionTool = 0;
     QVariantMap m_selection;

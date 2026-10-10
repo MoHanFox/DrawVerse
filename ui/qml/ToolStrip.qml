@@ -48,6 +48,9 @@ Rectangle {
             }
             ToolVariantsPanel { id: variants; parent: root; canvasView: root.canvasView }
         }
+        // View rotation: rotates what the user sees without changing a single document pixel.
+        IconButton {objectName:"rotateViewTool";width:26;height:26;glyph:"redo";checkable:true;checked:PaintClient.rotateViewTool;onClicked:PaintClient.activateRotateView();tooltip:"旋转视图 R · 只转视图不改图像，Alt 点击复位"}
+        Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         IconButton {objectName:"lassoTool";width:26;height:26;glyph:"lassoSelection";checkable:true;checked:PaintClient.selectionTool===3;onClicked:PaintClient.activateLasso();tooltip:"套索 L · 自由手绘选区"}
         IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;checked:PaintClient.selectionTool===4;onClicked:PaintClient.activateWand();tooltip:"魔棒 W · 点击选取相近颜色"}
         // Every slot clears the others: leaving a second tool active made the strip show the brush

@@ -18,6 +18,8 @@ class SelectionOverlay : public QQuickPaintedItem {
     Q_PROPERTY(QRectF preview READ preview WRITE setPreview NOTIFY geometryChanged)
     Q_PROPERTY(int previewKind READ previewKind WRITE setPreviewKind NOTIFY geometryChanged)
     Q_PROPERTY(qreal zoom READ zoom WRITE setZoom NOTIFY geometryChanged)
+    /// View rotation in degrees; the outline has to follow the rotated canvas, not the document.
+    Q_PROPERTY(qreal viewRotation READ viewRotation WRITE setViewRotation NOTIFY geometryChanged)
     Q_PROPERTY(int dashPhase READ dashPhase NOTIFY dashPhaseChanged)
 public:
     explicit SelectionOverlay(QQuickItem *parent=nullptr);
@@ -27,6 +29,8 @@ public:
     QRectF preview() const{return m_preview;}
     int previewKind() const{return m_previewKind;}
     qreal zoom() const{return m_zoom;}
+    qreal viewRotation() const{return m_viewRotation;}
+    void setViewRotation(qreal degrees);
     int dashPhase() const{return m_phase;}
     void setSteps(const QVariantList &steps);
     void setEnabledSelection(bool enabled);
@@ -50,6 +54,7 @@ private:
     QPainterPath m_path;
     QRectF m_documentRect,m_preview;
     qreal m_zoom=1;
+    qreal m_viewRotation=0;
     int m_previewKind=0;
     int m_phase=0;
     bool m_enabled=false;
