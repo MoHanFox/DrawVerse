@@ -286,7 +286,7 @@ ApplicationWindow {
             Action { text: "重做"; shortcut: "Ctrl+Shift+Z"; enabled: PaintClient.redoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.redo() }
         }
         GlassMenu {
-            topLevel:true
+            objectName:"imageMenu";topLevel:true
             title: "图像"
             // Grouped like Photoshop's 图像 menu: adjustments, then canvas, then image-level edits.
             GlassMenu {
@@ -430,8 +430,6 @@ ApplicationWindow {
             CompactComboBox {model:["矩形选框","椭圆选框"];currentIndex:Math.max(0,PaintClient.selectionTool-1);implicitWidth:90;implicitHeight:20;onActivated:PaintClient.selectionTool=currentIndex+1}
             Label {text:"Shift 添加 · Alt 减去 · Shift+Alt 相交";color:Theme.muted}
             Item {Layout.fillWidth:true}
-            ToolButton {text:"全选";enabled:PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy;onClicked:PaintClient.selectAll()}
-            ToolButton {text:"取消选择";enabled:PaintClient.selectionEnabled && !PaintClient.drawing && !PaintClient.layerEditBusy;onClicked:PaintClient.clearSelection()}
         }
         Rectangle { anchors.bottom: parent.bottom; height: 1; width: parent.width; color: Theme.panelBar }
     }

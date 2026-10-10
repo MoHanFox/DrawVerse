@@ -76,6 +76,7 @@ add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     editMenuOpensKeyboardShortcutList
     selectionToolVariantsUseCornerMarkAndRightClickPanel
     altEyedropperSamplesWithoutHistoryAndBracketKeysResize
+    hoveringTheFirstSubmenuRowKeepsTheMenuOpen
     selectionOutlineMarchesWhileVisibleAndStopsOtherwise
     shiftDragConstrainsSelectionToSquareAndCircle
     -o "${CMAKE_BINARY_DIR}/qt-ui-highdpi.txt,txt" -o "-,txt")

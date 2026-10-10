@@ -48,6 +48,17 @@ ApplicationWindow {
         Workspace.watchMenuWindow(host,visible)
         if (!visible && menu.visible) menu.close()
     }
-    onActiveChanged: if (!active && menu.opened) menu.close()
+    // A menu must only close when the user really left it. The host briefly loses activation while a
+    // submenu opens or while the pointer moves inside the first row, and closing on that transient
+    // state dismissed the menu under the cursor. Only a window outside the menu's own family counts.
+    onActiveChanged: {
+        if (active || !menu.opened) return
+        const owner = anchorItem ? anchorItem.Window.window : null
+        const activeWindow = Window.activeWindow
+        if (activeWindow === host || activeWindow === owner) return
+        // A submenu or flyout belonging to this menu keeps it open.
+        if (activeWindow && activeWindow.transientParent && (activeWindow.transientParent === host || activeWindow.transientParent === owner)) return
+        menu.close()
+    }
     onClosing: menu.close()
 }
