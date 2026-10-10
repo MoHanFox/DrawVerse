@@ -2443,11 +2443,14 @@ private slots:
         QTest::mouseClick(main,Qt::RightButton,Qt::NoModifier,selection->mapToScene({13,13}).toPoint());QTRY_VERIFY(panel->property("visible").toBool());
         // Popup content belongs to the popup's own window, so search it from the panel content.
         auto *panelContent=qobject_cast<QQuickItem*>(panel->property("contentItem").value<QObject*>());QVERIFY(panelContent);
-        auto *rectangle=findVisualItem(panelContent,"variantEntry:rectangle"),*ellipse=findVisualItem(panelContent,"variantEntry:ellipse"),*lasso=findVisualItem(panelContent,"variantEntry:lasso");
-        QVERIFY(rectangle && ellipse && lasso);
-        QVERIFY(rectangle->isEnabled());QVERIFY(ellipse->isEnabled());QVERIFY(lasso->isEnabled());QVERIFY(qobject_cast<QQuickItem*>(findVisualItem(panelContent,"variantEntry:wand"))->isEnabled());
-        // The unimplemented shape is labelled instead of pretending to work.
-        auto *lassoState=findVisualItem(panelContent,"toolVariantState:lasso");QVERIFY(lassoState);QVERIFY(lassoState->property("text").toString().isEmpty() || lassoState->property("text").toString()==QString("✓"));
+        auto *rectangle=findVisualItem(panelContent,"variantEntry:rectangle"),*ellipse=findVisualItem(panelContent,"variantEntry:ellipse");
+        QVERIFY(rectangle && ellipse);
+        QVERIFY(rectangle->isEnabled());QVERIFY(ellipse->isEnabled());
+        // The lasso and the wand are separate tools with their own slots, not shapes of the marquee.
+        QVERIFY(findVisualItem(main->contentItem(),"lassoTool"));
+        QVERIFY(findVisualItem(main->contentItem(),"wandTool"));
+        QVERIFY(!findVisualItem(panelContent,"variantEntry:lasso"));
+        QVERIFY(!findVisualItem(panelContent,"variantEntry:wand"));
         // Picking a shape from the panel is what changes the active shape.
         QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,findVisualItem(panelContent,"variantTrigger:ellipse")->mapToScene({20,15}).toPoint());QTRY_COMPARE(client.selectionTool(),2);QTRY_VERIFY(!panel->property("visible").toBool());
         QTest::mouseClick(main,Qt::RightButton,Qt::NoModifier,selection->mapToScene({13,13}).toPoint());QTRY_VERIFY(panel->property("visible").toBool());

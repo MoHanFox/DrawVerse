@@ -674,7 +674,10 @@ void PaintCoreClient::setEraser(bool e) { if (!m_drawing && (e != m_eraser || m_
 void PaintCoreClient::setMoveTool(bool enabled) { if(!m_drawing && (enabled!=m_moveTool || (enabled && m_selectionTool))) { m_moveTool=enabled; if(enabled)m_selectionTool=0; emit brushChanged(); } }
 void PaintCoreClient::setSelectionTool(int tool) {
     if(tool<0 || tool>4 || m_drawing || tool==m_selectionTool) return;
-    m_selectionTool=tool;if(tool){m_moveTool=false;m_eraser=false;m_bucketTool=false;}emit brushChanged();
+    m_selectionTool=tool;
+    if(tool==1 || tool==2) m_marqueeShape=tool;   // remembered for the next marquee activation
+    if(tool){m_moveTool=false;m_eraser=false;m_bucketTool=false;}
+    emit brushChanged();
 }
 void PaintCoreClient::activateBrush() {
     if(m_drawing) return;
@@ -701,6 +704,23 @@ void PaintCoreClient::activateMoveTool() {
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(false);
     setMoveTool(true);
+}
+void PaintCoreClient::activateMarquee() {
+    if(m_drawing) return;
+    // The slot keeps whichever marquee shape was last picked instead of resetting to the rectangle.
+    const int shape = (m_selectionTool==1 || m_selectionTool==2) ? m_selectionTool : m_marqueeShape;
+    setBucketTool(false); setMoveTool(false); setEraser(false);
+    setSelectionTool(shape);
+}
+void PaintCoreClient::activateLasso() {
+    if(m_drawing) return;
+    setBucketTool(false); setMoveTool(false); setEraser(false);
+    setSelectionTool(3);
+}
+void PaintCoreClient::activateWand() {
+    if(m_drawing) return;
+    setBucketTool(false); setMoveTool(false); setEraser(false);
+    setSelectionTool(4);
 }
 void PaintCoreClient::setBucketContiguous(bool contiguous) {
     if(m_bucketContiguous==contiguous) return;

@@ -117,6 +117,10 @@ public:
     Q_INVOKABLE void activateEraser();
     Q_INVOKABLE void activateBucket();
     Q_INVOKABLE void activateMoveTool();
+    /// Marquee keeps the last rectangle/ellipse choice; the lasso and the wand are their own tools.
+    Q_INVOKABLE void activateMarquee();
+    Q_INVOKABLE void activateLasso();
+    Q_INVOKABLE void activateWand();
     bool moveTool() const { return m_moveTool; }
     bool layerEditBusy() const { return m_pendingLayer != 0; }
     void setMoveTool(bool enabled);
@@ -252,6 +256,8 @@ private:
     bool m_bucketTool = false;
     int m_bucketTolerance = 32;
     bool m_bucketContiguous = true;
+    /// Last marquee shape (1 rectangle, 2 ellipse) so the slot does not reset when re-activated.
+    int m_marqueeShape = 1;
     bool m_moveTool = false;
     int m_selectionTool = 0;
     QVariantMap m_selection;

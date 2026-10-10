@@ -23,23 +23,21 @@ Rectangle {
     Column {
         anchors.horizontalCenter:parent.horizontalCenter;anchors.top:parent.top;anchors.topMargin:12;spacing:4
         IconButton {objectName:"moveLayerTool";width:26;height:26;glyph:"move";checkable:true;checked:PaintClient.moveTool;onClicked:PaintClient.activateMoveTool();tooltip:"移动图层 V"}
-        // Several shapes share one slot: click activates the current shape, right-click picks another.
+        // Rectangle and ellipse stay one slot with a right-click shape picker. The lasso and the
+        // magic wand are separate tools, not shapes of the marquee, so each gets its own slot.
         IconButton {
             id: selectionToolButton
             objectName:"selectionTool";width:26;height:26
-            glyph:PaintClient.selectionTool===2?"ellipseSelection":PaintClient.selectionTool===3?"lassoSelection":PaintClient.selectionTool>=4?"wand":"rectangleSelection"
-            checkable:true;checked:PaintClient.selectionTool>0
-            onClicked:PaintClient.selectionTool=PaintClient.selectionTool>0?PaintClient.selectionTool:1
-            tooltip:"选区工具 M · 右键切换形态"
+            glyph:PaintClient.selectionTool===2?"ellipseSelection":"rectangleSelection"
+            checkable:true;checked:PaintClient.selectionTool===1||PaintClient.selectionTool===2
+            onClicked:PaintClient.activateMarquee()
+            tooltip:"选框工具 M · 右键切换矩形/椭圆"
             hasVariants:true
             function openVariants() {
-                variants.toolTitle="选区工具"
-                // Build a real list of entries; the panel looks each one up by index.
+                variants.toolTitle="选框工具"
                 const rows=[]
                 rows.push({id:"rectangle",label:"矩形选框",icon:"rectangleSelection",pending:false,selected:PaintClient.selectionTool===1,apply:function(){PaintClient.selectionTool=1}})
                 rows.push({id:"ellipse",label:"椭圆选框",icon:"ellipseSelection",pending:false,selected:PaintClient.selectionTool===2,apply:function(){PaintClient.selectionTool=2}})
-                rows.push({id:"lasso",label:"套索",icon:"lassoSelection",pending:false,selected:PaintClient.selectionTool===3,apply:function(){PaintClient.selectionTool=3}})
-                rows.push({id:"wand",label:"魔棒",icon:"wand",pending:false,selected:PaintClient.selectionTool===4,apply:function(){PaintClient.selectionTool=4}})
                 variants.entries=rows
                 variants.open()
             }
@@ -50,6 +48,8 @@ Rectangle {
             }
             ToolVariantsPanel { id: variants; parent: root; canvasView: root.canvasView }
         }
+        IconButton {objectName:"lassoTool";width:26;height:26;glyph:"lassoSelection";checkable:true;checked:PaintClient.selectionTool===3;onClicked:PaintClient.activateLasso();tooltip:"套索 L · 自由手绘选区"}
+        IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;checked:PaintClient.selectionTool===4;onClicked:PaintClient.activateWand();tooltip:"魔棒 W · 点击选取相近颜色"}
         // Every slot clears the others: leaving a second tool active made the strip show the brush
         // while the bucket still owned the canvas.
         IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;checked:!PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool && !PaintClient.bucketTool;onClicked:PaintClient.activateBrush();tooltip:"画笔 B"}
