@@ -288,20 +288,37 @@ ApplicationWindow {
         GlassMenu {
             topLevel:true
             title: "图像"
+            // Grouped like Photoshop's 图像 menu: adjustments, then canvas, then image-level edits.
+            GlassMenu {
+                objectName: "imageAdjustSubmenu"
+                title: "调整"
+                Action { objectName:"adjustCurvesAction"; text: "曲线…（待支持）"; enabled: false }
+                Action { objectName:"adjustLevelsAction"; text: "色阶…（待支持）"; enabled: false }
+                Action { objectName:"adjustHsvAction"; text: "色相/饱和度/明度…（待支持）"; enabled: false }
+                MenuSeparator {}
+                Action { text: "亮度/对比度…（待支持）"; enabled: false }
+                Action { text: "去色（待支持）"; enabled: false }
+                Action { text: "反相（待支持）"; enabled: false }
+            }
+            GlassMenu {
+                objectName: "imageCanvasSubmenu"
+                title: "画布"
+                Action { objectName:"canvasSizeAction"; text: "画布大小…（待支持）"; enabled: false }
+                GlassMenu {
+                    objectName: "imageCanvasRotateSubmenu"
+                    title: "画布旋转"
+                    Action { objectName:"canvasRotateCwAction"; text: "顺时针 90°（待支持）"; enabled: false }
+                    Action { objectName:"canvasRotateCcwAction"; text: "逆时针 90°（待支持）"; enabled: false }
+                    Action { objectName:"canvasRotate180Action"; text: "180°（待支持）"; enabled: false }
+                    MenuSeparator {}
+                    Action { objectName:"canvasFlipHorizontalAction"; text: "水平翻转（待支持）"; enabled: false }
+                    Action { objectName:"canvasFlipVerticalAction"; text: "垂直翻转（待支持）"; enabled: false }
+                }
+                Action { text: "裁剪…（待支持）"; enabled: false }
+                Action { text: "裁切…（待支持）"; enabled: false }
+            }
+            MenuSeparator {}
             Action { text: "图像大小…（待支持）"; enabled: false }
-            Action { objectName:"adjustCurvesAction"; text: "调整 · 曲线…（待支持）"; enabled: false }
-            Action { objectName:"adjustLevelsAction"; text: "调整 · 色阶…（待支持）"; enabled: false }
-            Action { objectName:"adjustHsvAction"; text: "调整 · 色相/饱和度/明度…（待支持）"; enabled: false }
-            MenuSeparator {}
-            Action { objectName:"canvasSizeAction"; text: "画布大小…（待支持）"; enabled: false }
-            MenuSeparator {}
-            Action { objectName:"canvasRotateCwAction"; text: "画布旋转 · 顺时针 90°（待支持）"; enabled: false }
-            Action { objectName:"canvasRotateCcwAction"; text: "画布旋转 · 逆时针 90°（待支持）"; enabled: false }
-            Action { objectName:"canvasFlipVerticalAction"; text: "画布旋转 · 垂直翻转（待支持）"; enabled: false }
-            Action { objectName:"canvasFlipHorizontalAction"; text: "画布旋转 · 水平翻转（待支持）"; enabled: false }
-            MenuSeparator {}
-            Action { text: "图像大小…（待支持）"; enabled: false }
-            Action { text: "裁剪…（待支持）"; enabled: false }
             Action { text: "拼合图像（待支持）"; enabled: false }
             Action { text: "使选区居中（待支持）"; enabled: false }
         }
