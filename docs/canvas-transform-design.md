@@ -45,6 +45,18 @@ if(entry.kind>=static_cast<uint32_t>(names.size())){emit failure(QStringLiteral(
 
 两个 Qt 用例 `canvasRotateAndFlipGoThroughTheMenuActionsAndUndoInOneStep` 与 `altEyedropperSamplesWithoutHistoryAndBracketKeysResize` **已补回测试套件**并通过（含 `R` 快捷键断言、Alt 取色不产生历史、`[`/`]` 调尺寸）。
 
+## 已知缺陷：多瓦片图层旋转会丢内容（未修）
+
+手工测试发现：960×640 的画布上画一笔（43,394 个着色像素），执行 90° 顺时针旋转后画布正确变成 640×960，但着色像素只剩 10,768 个——**大量内容被丢弃**，而且残余内容落在错误的位置（网格采样只在一个点上看到颜色）。
+
+已确认的边界：
+
+- 单元测试 `transform.rs` 的五个用例全部通过——它们都在 16×8 / 64×64 这类**单瓦片**范围内，覆盖不到多瓦片重排；
+- 背景图层（`initialize_white_background`）旋转后是 150 个瓦片、614,400 个不透明像素，与 640×960 完全吻合，说明"瓦片数量与遍历范围"这一层是对的；
+- 因此缺陷在 `transform_layer` 的多瓦片读写路径上（源瓦片索引 / 目标瓦片落位），而不是坐标映射本身——`CanvasTransform::map` 的逆映射在小文档上已被验证。
+
+**结论：图像菜单的画布旋转/翻转在修好这条之前不应作为可用功能交付。** 用户真正要的是**旋转视图工具**（只转视图、不动像素），那条路径不碰图层瓦片，因此不受本缺陷影响，优先级更高。修复本缺陷需要一条**多瓦片**回归用例（例如 200×120 文档画一条跨四块瓦片的笔画，旋转后逐像素比对集合是否满足双射），先写用例再改实现。
+
 ## 验收
 
 - Rust：`quarter_turns_swap_dimensions_and_rotate_content`、`counter_clockwise_is_the_inverse_of_clockwise`、`flips_mirror_without_changing_dimensions`、`transform_is_one_undoable_step_including_the_size`、`sparsity_and_layer_order_survive_a_transform`、`transform_command_publishes_the_new_canvas_size`。
