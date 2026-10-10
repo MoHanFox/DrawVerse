@@ -312,7 +312,18 @@ void WorkspaceManager::initializeDocks() {
 }
 void WorkspaceManager::removeDock(const QString &group) {
     const auto host=hostFor(group); if(host.isEmpty()) return;
+    const auto geometry=m_windowGeometry.value(host);
+    const auto previous=host=="main"?QVariantList{}:layoutItems(host,geometry.width()-2,geometry.height()-2);
     auto &tree=m_docks[host]; DockTree::remove(tree,group);
+    if(host!="main" && !tree.isEmpty()) {
+        QRectF remaining;
+        for(const auto &entry:previous) {
+            const auto item=entry.toMap();
+            if(item.value("kind")=="leaf" && item.value("id")!=group)
+                remaining=remaining.united(item.value("rect").toRectF());
+        }
+        if(!remaining.isEmpty())m_windowGeometry[host]=QRect(geometry.topLeft()+remaining.topLeft().toPoint(),remaining.size().toSize()+QSize(2,2));
+    }
     if(DockTree::leaves(tree)==QStringList{"__toolstrip"} && host!="main")m_windowGeometry[host].setWidth(m_toolWidth+2);
     if(tree.isEmpty() && host!="main") { m_docks.remove(host); m_windowGeometry.remove(host); }
 }

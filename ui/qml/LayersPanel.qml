@@ -78,9 +78,9 @@ ColumnLayout {
             enabled: root.unlocked
             model: ["正常","溶解","变暗","正片叠底","颜色加深","线性加深","深色","变亮","滤色","颜色减淡","线性减淡（添加）","浅色","叠加","柔光","强光","亮光","线性光","点光","实色混合","差值","排除","减去","划分","色相","饱和度","颜色","明度"]
             currentIndex: root.control.blendMode
-            onActivated: PaintClient.setLayerBlend(root.control.id,currentIndex)
-            popup.height: Math.min(460,blend.count*28+8)
-            popup.width: Math.max(185,blend.width)
+            onOptionHovered:index=>{if(index>=0)PaintClient.previewLayerBlend(root.control.id,index);else PaintClient.clearLayerBlendPreview()}
+            onMenuClosed:PaintClient.clearLayerBlendPreview()
+            onActivated: {PaintClient.clearLayerBlendPreview();PaintClient.setLayerBlend(root.control.id,currentIndex)}
             ToolTip.visible: hovered; ToolTip.text: "图层混合模式"
         }
         Label { text: "不透明度"; color: Theme.muted; font.pixelSize: 9 }

@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 8
+#define PAINT_ABI_MINOR 9
 
 #define PAINT_ABI_PATCH 0
 
@@ -961,6 +961,19 @@ PaintStatus paint_session_selection_step(struct PaintCore *core,
                                          uint64_t publication,
                                          uint32_t index,
                                          struct PaintSelectionStep *out);
+
+/**
+ * ABI 1.9: non-mutating full composite blend preview in view slot 0/1.
+ * A regular set_viewport replaces/clears the override; requests retain normal generation semantics.
+ * # Safety
+ * Follow initialized viewport, writable output and session lifetime contracts.
+ */
+PaintStatus paint_session_set_blend_preview(struct PaintCore *core,
+                                            struct PaintSession *session,
+                                            uint64_t layer_id,
+                                            uint32_t blend_mode,
+                                            const struct PaintViewport *viewport,
+                                            uint64_t *out_request);
 
 /**
  * ABI 1.4: FIFO appearance edit; validate/copy DTO before return, actor enforces locks.

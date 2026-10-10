@@ -33,13 +33,15 @@ Control {
     }
     Popup {
         id: popup
-        y: root.height; x: root.width-width; width: 170; padding: 10
+        objectName:root.objectName+"Popup"
+        y: root.height; x: root.width-width; width: 127.5; padding: 7.5
+        background:Rectangle {color:Theme.surface;border.color:Theme.line;radius:2}
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: slider.value=root.fraction*100
         contentItem: CompactSlider {
             id: slider
             objectName: root.objectName+"Slider"
-            from: 0; to: 100; stepSize: 1
+            from: 0; to: 100; stepSize: 1; sizeFactor:.75
             onPressedChanged: if(!pressed) root.committed(value/100)
             Keys.onReleased: event => { if([Qt.Key_Left,Qt.Key_Right,Qt.Key_Home,Qt.Key_End].indexOf(event.key)>=0) root.committed(value/100) }
         }

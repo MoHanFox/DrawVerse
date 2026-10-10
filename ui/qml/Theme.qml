@@ -7,6 +7,7 @@ QtObject {
     readonly property color windowOutline: "#63666b"
     readonly property color line: "#1b1c1f"
     readonly property color dockSeparator: line
+    readonly property color categorySeparator: "#3b3d42"
     readonly property color text: "#bababa"
     readonly property color muted: "#949494"
     readonly property color accent: "#23b5ee"

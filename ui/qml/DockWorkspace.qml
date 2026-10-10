@@ -49,7 +49,7 @@ Item {
             objectName:"railCategorySeparator:"+layoutData.id
             x:layoutData.rect.x;y:layoutData.rect.y;width:layoutData.rect.width;height:layoutData.rect.height
             function updateLayout(data){layoutData=data}
-            Rectangle {objectName:"railSeparatorLine";anchors.centerIn:parent;width:18;height:1;color:Theme.line}
+            Rectangle {objectName:"railSeparatorLine";anchors.centerIn:parent;width:18;height:1;color:Theme.categorySeparator}
         }
     }
     Component {

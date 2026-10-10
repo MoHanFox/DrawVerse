@@ -50,7 +50,7 @@ ApplicationWindow {
     onHeightChanged: {Qt.callLater(updateWindowCorners);Qt.callLater(rememberNormalGeometry)}
     onScreenChanged: Qt.callLater(updateWindowCorners)
     Screen.onDevicePixelRatioChanged: Qt.callLater(updateWindowCorners)
-    Rectangle {objectName:"applicationWindowOutline";parent:Overlay.overlay;anchors.fill:parent;z:900;color:"transparent";radius:root.cornerRadius;border.color:Theme.windowOutline;border.width:1}
+    WindowOutline {hostWindow:root}
     background: Item {
         // Keep the translucent menu bar clear of the opaque workspace backing.
         Rectangle {
@@ -342,7 +342,6 @@ ApplicationWindow {
             Label { text: "不透明度"; color: Theme.muted }
             CompactSlider { from: .01; to: 1; value: PaintClient.brushOpacity; Layout.preferredWidth: 95; onMoved: PaintClient.brushOpacity=value }
             Label { text: Math.round(PaintClient.brushOpacity*100)+"%"; color: Theme.text; Layout.preferredWidth: 36 }
-            Rectangle { width: 16; height: 16; color: PaintClient.brushColor; border.color: Theme.line }
             Label { text: "压感"; color: Theme.muted }
             Item { Layout.fillWidth: true }
         }

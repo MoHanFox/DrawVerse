@@ -31,6 +31,146 @@ struct Harness {
 }
 
 #[test]
+fn blend_preview_is_composite_non_mutating_replaceable_and_validated() {
+    let h = Harness::new(32, 32);
+    h.submit(PaintCommand {
+        kind: PAINT_COMMAND_BEGIN_STROKE,
+        stroke: PaintStrokeDesc {
+            mode: PAINT_MODE_PAINT,
+            radius: 8.,
+            opacity: 1.,
+            spacing: 0.15,
+            linear_rgba: [0., 0., 0., 1.],
+            ..dto!(PaintStrokeDesc)
+        },
+        point: PaintPoint {
+            x: 16.,
+            y: 16.,
+            pressure: 1.,
+            tool: PAINT_TOOL_MOUSE,
+            ..dto!(PaintPoint)
+        },
+        ..dto!(PaintCommand)
+    });
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_END_STROKE,
+        ..dto!(PaintCommand)
+    }));
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_ADD_LAYER,
+        text: b"red".as_ptr(),
+        text_length: 3,
+        ..dto!(PaintCommand)
+    }));
+    let top = h.info().active_layer_id;
+    let state = h.wait(h.stroke(16., 16.));
+    let view = PaintViewport {
+        enabled: 1,
+        document_generation: state.document_generation,
+        width: 32.,
+        height: 32.,
+        pixel_width: 32,
+        pixel_height: 32,
+        ..dto!(PaintViewport)
+    };
+    let mut request = 0;
+    unsafe {
+        for (layer, mode, slot, status) in [
+            (0, 3, 0, PAINT_INVALID_ARGUMENT),
+            (9999, 3, 0, PAINT_NOT_FOUND),
+            (top, 27, 0, PAINT_INVALID_ARGUMENT),
+            (top, 3, 2, PAINT_INVALID_ARGUMENT),
+        ] {
+            request = 999;
+            assert_eq!(
+                paint_session_set_blend_preview(
+                    h.core,
+                    h.session,
+                    layer,
+                    mode,
+                    &PaintViewport {
+                        view_id: slot,
+                        ..view
+                    },
+                    &mut request
+                ),
+                status
+            );
+            assert_eq!(request, 0);
+        }
+        for slot in 0..2 {
+            let v = PaintViewport {
+                view_id: slot,
+                ..view
+            };
+            assert_eq!(
+                paint_session_set_blend_preview(h.core, h.session, top, 3, &v, &mut request),
+                PAINT_OK
+            );
+            let frame = h.frame(slot, state.revision);
+            assert_eq!(frame.request_id, request);
+            let pixels = h.pixels(slot, frame);
+            assert_eq!(
+                &pixels[(16 * 32 + 16) * 4..(16 * 32 + 16) * 4 + 4],
+                &[0, 0, 0, 255]
+            );
+            // Replacing a pending preview with the regular viewport cancels the override.
+            assert_eq!(
+                paint_session_set_blend_preview(h.core, h.session, top, 8, &v, &mut request),
+                PAINT_OK
+            );
+            assert_eq!(
+                paint_session_set_viewport(h.core, h.session, &v, &mut request),
+                PAINT_OK
+            );
+            let frame = h.frame(slot, state.revision);
+            assert_eq!(frame.request_id, request);
+            let pixels = h.pixels(slot, frame);
+            assert_eq!(
+                &pixels[(16 * 32 + 16) * 4..(16 * 32 + 16) * 4 + 4],
+                &[255, 0, 0, 255]
+            );
+        }
+        let after = h.info();
+        assert_eq!(
+            (
+                after.revision,
+                after.undo_depth,
+                after.redo_depth,
+                after.completed_sequence
+            ),
+            (
+                state.revision,
+                state.undo_depth,
+                state.redo_depth,
+                state.completed_sequence
+            )
+        );
+        let mut appearance = dto!(PaintLayerAppearance);
+        assert_eq!(
+            paint_session_layer_appearance(
+                h.core,
+                h.session,
+                after.publication,
+                top,
+                &mut appearance
+            ),
+            PAINT_OK
+        );
+        assert_eq!(appearance.blend_mode, 0);
+        let stale = PaintViewport {
+            document_generation: state.document_generation + 1,
+            ..view
+        };
+        assert_eq!(
+            paint_session_set_blend_preview(h.core, h.session, top, 3, &stale, &mut request),
+            PAINT_BUSY
+        );
+        assert_eq!(request, 0);
+    }
+}
+
+#[test]
 fn selection_abi_publication_validation_history_and_stroke_gate() {
     assert_eq!(size_of::<PaintSelectionEdit>(), 64);
     assert_eq!(offset_of!(PaintSelectionEdit, x), 32);

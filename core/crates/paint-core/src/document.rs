@@ -188,6 +188,18 @@ pub struct DocumentSnapshot {
 }
 
 impl DocumentSnapshot {
+    /// Temporary appearance override; shares all pixels and never changes the document/history.
+    pub fn with_layer_blend(mut self, id: LayerId, blend: crate::BlendMode) -> Result<Self> {
+        let layer = self
+            .layers
+            .iter_mut()
+            .find(|layer| layer.id == id && !layer.mask)
+            .ok_or(Error::InvalidArgument(
+                "blend preview requires a non-mask layer",
+            ))?;
+        layer.appearance.blend = blend;
+        Ok(self)
+    }
     pub fn selection(&self) -> &crate::Selection {
         &self.selection
     }
@@ -219,6 +231,43 @@ impl DocumentSnapshot {
     pub fn trim_storage(&self) -> Result<()> {
         self.pool.trim()
     }
+}
+
+#[test]
+fn blend_preview_snapshot_shares_tiles_without_mutating_document() {
+    let mut doc = Document::new(32, 32).unwrap();
+    doc.begin_stroke(Brush::default(), InputPoint::new(16., 16., 1.))
+        .unwrap();
+    doc.end_stroke().unwrap();
+    let top = doc.add_layer("red").unwrap();
+    doc.begin_stroke(
+        Brush {
+            color: Pixel::from_straight([1., 0., 0., 1.]).unwrap(),
+            ..Brush::default()
+        },
+        InputPoint::new(16., 16., 1.),
+    )
+    .unwrap();
+    doc.end_stroke().unwrap();
+    let snapshot = doc.snapshot();
+    let revision = doc.revision();
+    let history = doc.history_depth();
+    let preview = snapshot
+        .clone()
+        .with_layer_blend(top, crate::BlendMode::Multiply)
+        .unwrap();
+    assert_eq!(preview.pixel(16, 16).components(), [0., 0., 0., 1.]);
+    assert_eq!(snapshot.pixel(16, 16).components(), [1., 0., 0., 1.]);
+    assert_eq!(doc.snapshot().pixel(16, 16), snapshot.pixel(16, 16));
+    assert_eq!(doc.revision(), revision);
+    assert_eq!(doc.history_depth(), history);
+    assert!(Arc::ptr_eq(
+        snapshot.layers[1].tiles.values().next().unwrap(),
+        preview.layers[1].tiles.values().next().unwrap()
+    ));
+    assert!(snapshot
+        .with_layer_blend(9999, crate::BlendMode::Multiply)
+        .is_err());
 }
 
 #[derive(Debug)]

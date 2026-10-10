@@ -1,4 +1,10 @@
-# C ABI 1.8.0 契约
+# C ABI 1.9.0 契约
+
+## ABI 1.9 混合模式显示预览
+
+`paint_session_set_blend_preview(core,session,layer_id,blend_mode,viewport,out_request)` 只覆盖视口槽 0/1 的完整文档合成快照，使用既有 0–26 混合编号与 PaintViewport DTO。必须指定存在的非蒙版图层/组；零 ID、非法混合或非 0/1 槽返回 INVALID_ARGUMENT，不存在/蒙版 ID 返回 NOT_FOUND，旧 document_generation 返回 BUSY；失败清零 out_request。调用者内存只在本次调用读取/写入，不保留。
+
+预览共享快照瓦片，只修改快照副本的外观。文档修订、图层元数据、历史、modified 与文件保存不受影响；返回递增的该槽 request_id，沿用异步帧读取、取消和旧帧拒绝。再次调用替换预览，普通 paint_session_set_viewport 清除覆盖，enabled=0 释放帧，新文档清空覆盖。新增函数向后兼容，既有 DTO/函数/能力位保留，Qt 预览客户端要求版本至少 1.9。
 
 ## ABI 1.5 图层组
 
@@ -16,7 +22,7 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 ## 版本与类型
 
-全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/8/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
+全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/9/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
 
 初始化 DTO 为零并写 struct_size=sizeof(本调用者结构)，输入至少含已发布前缀。库只访问已知前缀；过小为 INVALID_ARGUMENT，不覆盖调用者内存；扩展尾部保持不变。输出 struct_size 写库已知大小。reserved 必须为零；未知 mode/tool/format 为 UNSUPPORTED。输入 capability 位保留未知位，圆笔刷只实际使用 pressure，客户端为无压力设备提供 pressure=1。
 

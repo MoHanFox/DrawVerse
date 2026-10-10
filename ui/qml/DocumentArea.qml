@@ -29,7 +29,7 @@ Rectangle {
     Rectangle {
         id:tabs;objectName:"documentTitleRow:"+root.hostId;height:groupData.documents.length?28:0;width:parent.width;color:Theme.strip
         Flickable {
-            anchors.left:parent.left;anchors.right:parent.right;anchors.rightMargin:root.titleControlsWidth;height:parent.height;contentWidth:tabRow.width;clip:true
+            anchors.left:parent.left;anchors.leftMargin:root.singleFloating?0:8;anchors.right:parent.right;anchors.rightMargin:root.titleControlsWidth;height:parent.height;contentWidth:tabRow.width;clip:true
             Row {
                 id:tabRow;spacing:3;height:parent.height
                 Repeater {
@@ -39,7 +39,7 @@ Rectangle {
                         property var docClient:root.documents.client(modelData)
                         objectName:"documentTab:"+modelData
                         width:root.singleFloating?tabs.width-root.titleControlsWidth:Math.max(100,Math.min(320,titleMetrics.advanceWidth+28));height:25;y:3;radius:root.singleFloating?0:Theme.documentTabRadius
-                        color:root.singleFloating?Theme.strip:root.groupData.active===modelData?Theme.background:Theme.tabInactive
+                        color:root.singleFloating?Theme.strip:Theme.raised
                         Rectangle {anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:parent.radius;color:parent.color}
                         TextMetrics {id:titleMetrics;font:title.font;text:title.text}
                         Text {id:title;x:10;anchors.verticalCenter:parent.verticalCenter;width:parent.width-30;elide:Text.ElideRight;font.pixelSize:9;color:Theme.text;text:docClient?docClient.documentName+(docClient.modified?" *":"")+"  @ "+Math.round((root.presentation.paneFor(modelData)?root.presentation.paneFor(modelData).canvasView.zoom:1)*100)+"% · "+docClient.documentWidth+" × "+docClient.documentHeight:""}

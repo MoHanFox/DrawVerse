@@ -127,6 +127,8 @@ public:
     Q_INVOKABLE void setLayerProperties(quint64 id, bool visible, qreal opacity);
     Q_INVOKABLE bool setLayerFill(quint64 id, qreal fill);
     Q_INVOKABLE bool setLayerBlend(quint64 id, int blend);
+    Q_INVOKABLE void previewLayerBlend(quint64 id, int blend);
+    Q_INVOKABLE void clearLayerBlendPreview();
     Q_INVOKABLE bool setLayerLocks(quint64 id, int locks);
     Q_INVOKABLE bool moveLayer(quint64 id, int dx, int dy);
     Q_INVOKABLE bool addMask(quint64 id);
@@ -204,4 +206,6 @@ private:
     QSize m_requestedPixels[2];
     quint64 m_requests[2]{}, m_frameRevisions[2]{};
     bool m_viewEnabled[2]{};
+    quint64 m_blendPreviewLayer = 0;
+    int m_blendPreviewMode = 0;
 };

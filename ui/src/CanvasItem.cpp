@@ -34,7 +34,7 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
     connect(&m_viewTimer, &QTimer::timeout, this, &CanvasItem::requestView);
     connect(this, &CanvasItem::viewChanged, this, [this] { if (!m_viewTimer.isActive()) m_viewTimer.start(); });
     connect(this,&CanvasItem::viewChanged,this,&CanvasItem::refreshBrushCursor);
-    connect(this, &QQuickItem::windowChanged, this, [this](QQuickWindow *window) {
+    const auto observeWindow=[this](QQuickWindow *window) {
         if (m_observedWindow) { m_observedWindow->removeEventFilter(this); disconnect(m_observedWindow, nullptr, this, nullptr); }
         m_observedWindow = window;
         if (window) {
@@ -42,7 +42,9 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
         }
         observeScreen(window ? window->screen() : nullptr);
         m_viewTimer.start();
-    });
+    };
+    connect(this, &QQuickItem::windowChanged, this, observeWindow);
+    observeWindow(window());
 }
 void CanvasItem::observeScreen(QScreen *screen) {
     disconnect(m_dpiConnection);
@@ -50,6 +52,7 @@ void CanvasItem::observeScreen(QScreen *screen) {
     m_viewTimer.start();
 }
 CanvasItem::~CanvasItem() {
+    qApp->removeEventFilter(this);
     if (m_observedWindow) m_observedWindow->removeEventFilter(this);
     if (m_client && !m_interactive) m_client->requestViewport(1, {}, {}, false);
 }
@@ -250,7 +253,13 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
             spaceHeld=event->type()==QEvent::KeyPress;m_space=false;refreshBrushCursor();key->accept();return true;
         }
     }
-    if (watched != m_observedWindow) return false;
+    if(event->type()==QEvent::TabletLeaveProximity){m_cursorInside=false;refreshBrushCursor();return false;}
+    const bool tabletEvent=event->type()==QEvent::TabletPress || event->type()==QEvent::TabletMove || event->type()==QEvent::TabletRelease;
+    if(tabletEvent) {
+        const auto item=qobject_cast<QQuickItem*>(watched);
+        const auto receiver=item?item->window():qobject_cast<QQuickWindow*>(watched);
+        if(receiver!=m_observedWindow)return false;
+    } else if (watched != m_observedWindow) return false;
     if (event->type() == QEvent::ScreenChangeInternal || event->type() == QEvent::Resize) m_viewTimer.start();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
     if (event->type() == QEvent::DevicePixelRatioChange) m_viewTimer.start();
@@ -269,8 +278,14 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if (event->type() != QEvent::TabletPress && event->type() != QEvent::TabletMove && event->type() != QEvent::TabletRelease) return false;
     if (!isEnabled() || !isVisible()) return false;
     auto *e = static_cast<QTabletEvent *>(event);
-    const QPointF local = mapFromScene(e->position());
+    // Qt Quick may deliver tablet input to an item, whose position is item-local.
+    // The global position is shared by both native-window and item delivery paths.
+    const QPointF local = mapFromGlobal(e->globalPosition());
     m_cursorInside=contains(local);m_cursorPosition=local;refreshBrushCursor();
+    if(!m_tablet && event->type()==QEvent::TabletMove) {
+        if(!m_cursorInside)return false;
+        e->accept();return true; // avoid synthesized mouse hover replacing pen position
+    }
     if (!m_tablet && (event->type() != QEvent::TabletPress || !documentRect().contains(local))) return false;
     if(m_client->selectionTool() || m_selecting) {
         if(event->type()==QEvent::TabletPress) {forceActiveFocus();m_tablet=beginSelection(local,e->modifiers());}

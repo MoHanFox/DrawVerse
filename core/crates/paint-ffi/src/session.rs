@@ -66,6 +66,7 @@ pub(crate) struct Publication {
 }
 struct ViewSlot {
     preview_layer: u64,
+    blend_preview: Option<(u64, paint_core::BlendMode)>,
     request_id: u64,
     generation: u64,
     request: Option<RenderRequest>,
@@ -140,6 +141,7 @@ impl Session {
             publication: Mutex::new(Arc::new(initial)),
             views: Mutex::new(std::array::from_fn(|_| ViewSlot {
                 preview_layer: 0,
+                blend_preview: None,
                 request_id: 0,
                 generation: 1,
                 request: None,
@@ -313,6 +315,38 @@ impl Session {
         self.viewport_for_layer(view, 0)
     }
     pub fn viewport_for_layer(&self, view: PaintViewport, layer: u64) -> ApiResult<u64> {
+        self.viewport_options(view, layer, None)
+    }
+    pub fn blend_preview(
+        &self,
+        view: PaintViewport,
+        layer: u64,
+        blend: paint_core::BlendMode,
+    ) -> ApiResult<u64> {
+        if view.view_id > 1 || layer == 0 {
+            return Err(ApiError::invalid(
+                "blend previews require slot 0/1 and an explicit layer",
+            ));
+        }
+        let publication = self.publication();
+        if !publication
+            .layers
+            .iter()
+            .any(|l| l.info.layer_id == layer && l.hierarchy.kind != PAINT_LAYER_MASK)
+        {
+            return Err(ApiError::new(
+                PAINT_NOT_FOUND,
+                "blend preview layer not found",
+            ));
+        }
+        self.viewport_options(view, 0, Some((layer, blend)))
+    }
+    fn viewport_options(
+        &self,
+        view: PaintViewport,
+        layer: u64,
+        blend_preview: Option<(u64, paint_core::BlendMode)>,
+    ) -> ApiResult<u64> {
         if layer != 0 && (view.view_id < 2 || view.pixel_width > 96 || view.pixel_height > 96) {
             return Err(ApiError::invalid(
                 "previews require slot 2/3 and at most 96px per edge",
@@ -356,6 +390,7 @@ impl Session {
             .ok_or_else(ApiError::internal)?;
         slot.generation = view.document_generation;
         slot.preview_layer = layer;
+        slot.blend_preview = blend_preview;
         slot.request = (view.enabled == 1).then_some(request);
         let old = slot.frame.take();
         let id = slot.request_id;
@@ -495,6 +530,7 @@ impl Engine {
             slot.generation = self.generation;
             slot.request = None;
             slot.preview_layer = 0;
+            slot.blend_preview = None;
             removed.push(slot.frame.take());
         }
         slots[0].request = Some(RenderRequest {
@@ -818,6 +854,7 @@ impl Engine {
             }
             let request_id = slot.request_id;
             let preview_layer = slot.preview_layer;
+            let blend_preview = slot.blend_preview;
             if self.failed_views[index]
                 == Some((request_id, self.generation, self.document.revision()))
             {
@@ -831,6 +868,14 @@ impl Engine {
                     Ok(snapshot) => snapshot,
                     Err(_) => continue, // deleted layer; caller disables/replaces this slot
                 }
+            };
+            let snapshot = if let Some((layer, blend)) = blend_preview {
+                match snapshot.with_layer_blend(layer, blend) {
+                    Ok(snapshot) => snapshot,
+                    Err(_) => continue,
+                }
+            } else {
+                snapshot
             };
             let renderer = Arc::clone(&self.renderers[index]);
             let revision = snapshot.revision;

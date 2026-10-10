@@ -20,17 +20,15 @@ Item {
         id: colorPanel
         ColumnLayout {
             spacing: 3
-            Timer {id:swapTimer;interval:Qt.styleHints.mouseDoubleClickInterval;onTriggered:PaintClient.swapBrushColors()}
             RowLayout {
                 Layout.fillWidth: true; spacing: 6
                 Item {
                     Layout.preferredWidth: 36; Layout.preferredHeight: 48
                     Rectangle {objectName:"secondaryColorSwatch";x:9;y:14;width:25;height:25;color:PaintClient.secondaryBrushColor;border.color:Theme.line
-                        MouseArea {anchors.fill:parent;onClicked:swapTimer.restart();onDoubleClicked:{swapTimer.stop();hexPopup.secondary=true;hexPopup.open()} }
+                        MouseArea {anchors.fill:parent;onClicked:PaintClient.swapBrushColors()}
                     }
                     Rectangle {objectName:"foregroundColorSwatch";width:25;height:25;color:PaintClient.brushColor;border.color:Theme.line
-                        MouseArea {anchors.fill:parent;onClicked:swapTimer.restart();onDoubleClicked:{swapTimer.stop();hexPopup.secondary=false;hexPopup.open()}
-                            hoverEnabled:true;ToolTip.visible:containsMouse;ToolTip.text:"单击交换颜色 · 双击输入 HEX 颜色"}
+                        MouseArea {anchors.fill:parent;onClicked:PaintClient.swapBrushColors()}
                     }
                 }
                 ColumnLayout {
@@ -73,14 +71,6 @@ Item {
                     Rectangle {required property string modelData;Layout.fillWidth:true;Layout.preferredHeight:12;color:modelData
                         MouseArea {anchors.fill:parent;onClicked:PaintClient.brushColor=modelData}
                     }
-                }
-            }
-            Popup {
-                id:hexPopup;property bool secondary:false;width:160;closePolicy:Popup.CloseOnEscape|Popup.CloseOnPressOutside
-                onOpened:{contentItem.text=String(secondary?PaintClient.secondaryBrushColor:PaintClient.brushColor).toUpperCase();contentItem.forceActiveFocus();contentItem.selectAll()}
-                contentItem:TextField {objectName:"brushColorHex";selectByMouse:true;maximumLength:7
-                    validator:RegularExpressionValidator {regularExpression:/#[0-9a-fA-F]{6}/}
-                    onAccepted:{if(acceptableInput){if(hexPopup.secondary)PaintClient.secondaryBrushColor=text;else PaintClient.brushColor=text;hexPopup.close()}}
                 }
             }
         }

@@ -102,6 +102,30 @@ pub unsafe extern "C" fn paint_session_set_layer_preview(
         pointers::write(out_request, request)
     })
 }
+/// ABI 1.9: non-mutating full composite blend preview in view slot 0/1.
+/// A regular set_viewport replaces/clears the override; requests retain normal generation semantics.
+/// # Safety
+/// Follow initialized viewport, writable output and session lifetime contracts.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_set_blend_preview(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    layer_id: u64,
+    blend_mode: u32,
+    viewport: *const PaintViewport,
+    out_request: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_request, 0)?;
+        runtime::outside_callback()?;
+        let blend = BlendMode::from_id(blend_mode)?;
+        let view = pointers::read_sized(viewport)?;
+        let request = runtime::registry()?
+            .session(core, session)?
+            .blend_preview(view, layer_id, blend)?;
+        pointers::write(out_request, request)
+    })
+}
 pub(crate) fn dto(a: LayerAppearance) -> PaintLayerAppearance {
     PaintLayerAppearance {
         struct_size: size_of::<PaintLayerAppearance>() as u32,

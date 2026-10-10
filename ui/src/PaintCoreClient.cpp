@@ -56,8 +56,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 8) {
-            emit failure(QStringLiteral("选区工具需要核心 ABI 1.8 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 9) {
+            emit failure(QStringLiteral("图层悬停预览需要核心 ABI 1.9 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -435,6 +435,8 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         const bool wasReady = m_ready, wasModified = modified(), wasLayerBusy=layerEditBusy();
         const bool changedLayers = m_layers != layers;
         const bool changedGeneration = info.document_generation != m_generation;
+        if(changedGeneration)m_blendPreviewLayer=0;
+        else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
         if(changedGeneration) m_nextDefaultLayer=1;
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
         m_generation = info.document_generation;
@@ -509,6 +511,7 @@ void PaintCoreClient::shutdown() {
 }
 bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, const QString &text, qreal amount, bool flag) {
     if (m_closing || !m_ready) return false;
+    clearLayerBlendPreview();
     auto command = dto<PaintCommand>(); command.kind = static_cast<uint32_t>(type); command.layer_id = id;
     const auto utf8 = text.toUtf8(); command.text = reinterpret_cast<const uint8_t *>(utf8.constData());
     command.text_length = static_cast<uint64_t>(utf8.size());
@@ -563,7 +566,9 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
     {
         QMutexLocker lock(&m_connection->mutex);
         if (!m_connection->session) return;
-        status = paint_session_set_viewport(m_connection->core, m_connection->session, &viewport, &request);
+        status = m_blendPreviewLayer && enabled
+            ? paint_session_set_blend_preview(m_connection->core,m_connection->session,m_blendPreviewLayer,static_cast<uint32_t>(m_blendPreviewMode),&viewport,&request)
+            : paint_session_set_viewport(m_connection->core, m_connection->session, &viewport, &request);
         if (status != PAINT_OK && status != PAINT_BUSY) error = immediateError(status);
     }
     if (status == PAINT_OK) {
@@ -633,6 +638,7 @@ void PaintCoreClient::setLayerProperties(quint64 id, bool v, qreal opacity) {
 }
 bool PaintCoreClient::setAppearance(quint64 id,const QString &field,const QVariant &value) {
     if(!m_ready || m_drawing || layerEditBusy()) return false;
+    clearLayerBlendPreview();
     QVariantMap layer;
     for(const auto &entry:m_layers) if(entry.toMap().value("id").toULongLong()==id) { layer=entry.toMap(); break; }
     if(layer.isEmpty()) return false;
@@ -650,6 +656,23 @@ bool PaintCoreClient::setAppearance(quint64 id,const QString &field,const QVaria
 }
 bool PaintCoreClient::setLayerFill(quint64 id,qreal fill) { return std::isfinite(fill) && fill>=0 && fill<=1 && setAppearance(id,"fill",fill); }
 bool PaintCoreClient::setLayerBlend(quint64 id,int blend) { return blend>=0 && blend<=26 && setAppearance(id,"blendMode",blend); }
+void PaintCoreClient::previewLayerBlend(quint64 id,int blend) {
+    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || blend<0 || blend>26)return;
+    bool found=false;
+    for(const auto &value:m_layers) {const auto layer=value.toMap();if(layer.value("id").toULongLong()==id && !layer.value("mask").toBool() && !(layer.value("effectiveLocks").toUInt()&PAINT_LOCK_ALL))found=true;}
+    if(!found || (m_blendPreviewLayer==id && m_blendPreviewMode==blend))return;
+    m_blendPreviewLayer=id;m_blendPreviewMode=blend;
+    for(int view=0;view<2;++view)if(m_viewEnabled[view]) {
+        m_requests[view]=0;requestViewport(view,m_requestedRegions[view],m_requestedPixels[view]);
+    }
+}
+void PaintCoreClient::clearLayerBlendPreview() {
+    if(!m_blendPreviewLayer)return;
+    m_blendPreviewLayer=0;
+    for(int view=0;view<2;++view)if(m_viewEnabled[view]) {
+        m_requests[view]=0;requestViewport(view,m_requestedRegions[view],m_requestedPixels[view]);
+    }
+}
 bool PaintCoreClient::setLayerLocks(quint64 id,int locks) { return locks>=0 && locks<=7 && setAppearance(id,"locks",locks); }
 void PaintCoreClient::requestLayerPreview(quint64 id) {
     if(!m_closing) QMetaObject::invokeMethod(m_worker,[worker=m_worker,id]{worker->referencePreview(id,true);},Qt::QueuedConnection);
@@ -760,6 +783,7 @@ bool PaintCoreClient::openDocument(const QUrl &path) { return submitFile(path, P
 bool PaintCoreClient::saveDocument(const QUrl &path, int format) { return submitFile(path, PAINT_FILE_SAVE, format); }
 bool PaintCoreClient::submitFile(const QUrl &path, int kind, int format) {
     if (!m_ready || m_drawing || m_fileBusy || m_closing) return false;
+    clearLayerBlendPreview();
     if (!path.isLocalFile() || path.toLocalFile().isEmpty()) { showError(QStringLiteral("请选择本地文件")); return false; }
     auto request = dto<PaintFileRequest>(); request.kind = static_cast<uint32_t>(kind);
     request.format = static_cast<uint32_t>(format); request.quality = 95; request.document_generation = m_generation;
