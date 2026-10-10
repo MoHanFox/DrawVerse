@@ -157,8 +157,11 @@ void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
 #ifdef Q_OS_WIN
         if(QGuiApplication::platformName()=="windows") {
             const auto all=QGuiApplication::allWindows();
+            // Overlay windows (window outline, dock hint, menu blur) are topmost but input
+            // transparent; they cover the whole workspace and must not shadow the real target.
             for(auto handle=GetTopWindow(nullptr);handle;handle=GetWindow(handle,GW_HWNDNEXT))
-                for(auto *w:all)if(w!=moving && w->objectName()!=QStringLiteral("dockingHintWindow") && w->isVisible() && w->visibility()!=QWindow::Minimized && reinterpret_cast<HWND>(w->winId())==handle && w->geometry().contains(point.toPoint()))return w==window;
+                for(auto *w:all)if(w!=moving && w->isVisible() && w->visibility()!=QWindow::Minimized &&
+                    !w->flags().testFlag(Qt::WindowTransparentForInput) && reinterpret_cast<HWND>(w->winId())==handle && w->geometry().contains(point.toPoint()))return w==window;
         }
 #endif
         Q_UNUSED(window); Q_UNUSED(point);return true;
