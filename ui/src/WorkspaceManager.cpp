@@ -105,9 +105,10 @@ WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent)
         updateDragTarget(global,suppressed);
     });
     connect(&m_windowDrag,&WindowDrag::finished,this,[this](bool cancelled) {
+        m_pointerButtons&=~Qt::MouseButtons(Qt::LeftButton);
         const auto target=m_dragTarget,placement=m_dragPlacement,host=m_dragHost;const auto moving=m_dragGroups;
         m_dragHost.clear();m_dragGroups.clear();m_dragTarget.clear();m_dragPlacement.clear();m_dockingSuppressed=false;emit dragModifiersChanged();
-        if(cancelled){m_docks=m_beforeDocks;m_windowGeometry=m_beforeWindows;m_groups=m_beforeGroups;m_iconGroups=m_beforeIcons;syncToolsLocation();emit groupsChanged();return;}
+        if(cancelled){m_docks=m_beforeDocks;m_windowGeometry=m_beforeWindows;m_groups=m_beforeGroups;m_iconGroups=m_beforeIcons;m_retainedHeights=m_beforeRetainedHeights;syncToolsLocation();emit groupsChanged();return;}
         if(target.isEmpty())return;
         if(target.startsWith("__workspace_")) {
             const auto side=target.endsWith("left")?QStringLiteral("left"):QStringLiteral("right");
@@ -125,6 +126,7 @@ WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent)
             if(mode!="merge")previous=id;
         }
     });
+    connect(&m_titleDrag,&WindowDrag::finished,this,[this]{m_pointerButtons&=~Qt::MouseButtons(Qt::LeftButton);});
     resetLayout(); restoreLayout();
 }
 WorkspaceManager::~WorkspaceManager() {
@@ -302,6 +304,7 @@ void WorkspaceManager::setColumnCollapsed(const QString &group,bool collapsed) {
 void WorkspaceManager::registerTarget(const QString &group,QQuickItem *item){if(group!="__canvas")m_targets[group]=item;}
 void WorkspaceManager::registerWorkspace(QQuickItem *item){m_workspaceArea=item;}
 void WorkspaceManager::initializeDocks() {
+    m_retainedHeights.clear();
     m_docks.clear(); m_windowGeometry.clear();
     DockTree::Node left,right;
     int leftHeight=0,rightHeight=0;
@@ -312,12 +315,19 @@ void WorkspaceManager::initializeDocks() {
     }
     auto main=DockTree::split(DockTree::leaf("__canvas"),right,"horizontal",.8,"right");
     main=DockTree::split(left,main,"horizontal",.15,"left");
-    if(m_toolsFloating) { m_docks.insert("__toolstrip",DockTree::leaf("__toolstrip"));m_windowGeometry.insert("__toolstrip",QRect(m_toolPosition,QSize(m_toolWidth+2,304))); }
+    if(m_toolsFloating) { m_docks.insert("__toolstrip",DockTree::leaf("__toolstrip"));m_windowGeometry.insert("__toolstrip",QRect(m_toolPosition,QSize(m_toolWidth+2,382))); }
     else main=DockTree::split(DockTree::leaf("__toolstrip"),main,"horizontal",.05,"toolsFirst");
     m_docks.insert("main",main);
 }
 void WorkspaceManager::removeDock(const QString &group) {
     const auto host=hostFor(group); if(host.isEmpty()) return;
+    const auto column=columnGroups(group);
+    if(index(group)>=0)for(const auto &id:column) {
+        if(id==group || index(id)<0 || isIconGroup(id))continue;
+        const auto item=m_targets.value(id);
+        if(item && item->height()>0)m_retainedHeights.insert(id,item->height());
+    }
+    m_retainedHeights.remove(group);
     const auto geometry=m_windowGeometry.value(host);
     const auto previous=host=="main"?QVariantList{}:layoutItems(host,geometry.width()-2,geometry.height()-2);
     auto &tree=m_docks[host]; DockTree::remove(tree,group);
@@ -369,9 +379,9 @@ void WorkspaceManager::addDock(const QString &group,const QString &location,cons
     }
     if(location=="floating") {
         const int at=index(group);
-        const auto size=at>=0?m_groups[at].geometry.size():group=="__canvas"?QSize(900,650):QSize(m_toolWidth+2,304);
+        const auto size=at>=0?m_groups[at].geometry.size():group=="__canvas"?QSize(900,650):QSize(m_toolWidth+2,382);
         auto geometry=safeGeometry(QRect(QCursor::pos()-QPoint(24,12),size));
-        if(group=="__toolstrip") geometry=QRect(m_toolPosition,QSize(m_toolWidth+2,304));
+        if(group=="__toolstrip") geometry=QRect(m_toolPosition,QSize(m_toolWidth+2,382));
         const auto host=m_docks.contains(group)?newId():group;
         m_docks.insert(host,DockTree::leaf(group));m_windowGeometry.insert(host,geometry);
         if(at>=0) m_groups[at].geometry=geometry;
@@ -397,7 +407,7 @@ void WorkspaceManager::addDock(const QString &group,const QString &location,cons
 }
 void WorkspaceManager::syncToolsLocation() {
     const auto host=hostFor("__toolstrip"); const bool floating=host!="main";
-    if(floating) m_toolPosition=m_windowGeometry.value(host,QRect(m_toolPosition,QSize(m_toolWidth+2,304))).topLeft();
+    if(floating) m_toolPosition=m_windowGeometry.value(host,QRect(m_toolPosition,QSize(m_toolWidth+2,382))).topLeft();
     m_toolsFloating=floating; emit toolStripChanged();
 }
 QVariantList WorkspaceManager::floatingWindows() const {
@@ -424,7 +434,7 @@ QSizeF WorkspaceManager::dockMinimum(const DockTree::Node &node,bool expanded) c
     if(node.contains("group")) {
         const auto id=node.value("group").toString();
         if(id=="__canvas") return {320,200};
-        if(id=="__toolstrip") return {qreal(m_toolWidth),280};
+        if(id=="__toolstrip") return {qreal(m_toolWidth),380};
         const int at=index(id);if(at<0)return {};
         const auto &g=m_groups[at];
         const bool first=columnGroups(id).first()==id;
@@ -447,6 +457,17 @@ QVariantList WorkspaceManager::layoutItems(const QString &host,int width,int hei
     const bool expanded=host.startsWith("__category:");
     const auto tree=expanded?categoryTree(host.mid(11)):m_docks.value(host);
     const auto rail=[&](const QString &id) {return !expanded && isIconGroup(id);};
+    std::function<qreal(const DockTree::Node&)> retainedHeight=[&](const auto &node)->qreal {
+        if(expanded || node.isEmpty())return -1;
+        if(node.contains("group")) {
+            const auto id=node.value("group").toString();
+            if(rail(id))return dockMinimum(node).height();
+            return m_retainedHeights.value(id,-1);
+        }
+        const auto a=retainedHeight(node.value("first").toObject()),b=retainedHeight(node.value("second").toObject());
+        if(a<0 || b<0)return -1;
+        return node.value("axis")=="horizontal"?std::max(a,b):a+b+1;
+    };
     std::function<bool(const DockTree::Node&,bool)> compact=[&](const auto &node,bool) {
         const auto ids=DockTree::leaves(node);
         return !ids.isEmpty() && std::all_of(ids.cbegin(),ids.cend(),[&](const auto &id){return rail(id);});
@@ -454,6 +475,11 @@ QVariantList WorkspaceManager::layoutItems(const QString &host,int width,int hei
     std::function<void(const DockTree::Node&,QRectF,bool)> visit=[&](const auto &node,QRectF rect,bool inRail) {
         if(node.isEmpty()) return;
         const bool allRail=compact(node,false);
+        const auto savedHeight=retainedHeight(node);
+        if(savedHeight>0 && !allRail && rect.height()>savedHeight) {
+            result.append(QVariantMap{{"id","__panelBackground:"+DockTree::leaves(node).first()},{"kind","railBackground"},{"rect",rect}});
+            rect.setHeight(savedHeight);
+        }
         if(allRail && !inRail)result.append(QVariantMap{{"id","__railBackground:"+DockTree::leaves(node).first()},{"kind","railBackground"},{"rect",rect}});
         if(allRail && node.value("role")=="row") {
             const auto ids=DockTree::leaves(node);auto data=groupDefinition(ids.first());QStringList panels;
@@ -474,6 +500,11 @@ QVariantList WorkspaceManager::layoutItems(const QString &host,int width,int hei
         if(!horizontal && allRail)rect.setHeight(std::min(rect.height(),amin.height()+bmin.height()+gap));
         const qreal space=std::max(qreal(0),(horizontal?rect.width():rect.height())-gap);
         qreal a=space*node.value("ratio").toDouble(.5);
+        if(!horizontal) {
+            const auto ah=retainedHeight(first),bh=retainedHeight(second);
+            if(ah>0)a=ah;
+            else if(bh>0)a=space-bh;
+        }
         const auto preferred=node.value("preferred").toString();
         if(horizontal && preferred=="left") a=m_leftCollapsed?28:m_leftWidth;
         if(horizontal && preferred=="right") a=space-(m_rightCollapsed?28:m_rightWidth);
@@ -498,11 +529,21 @@ void WorkspaceManager::setToolStripWidth(int width) {
 }
 void WorkspaceManager::setSplitRatio(const QString &host,const QString &split,double ratio) {
     if(!std::isfinite(ratio) || !m_docks.contains(host)) return;
-    if(DockTree::setRatio(m_docks[host],split,ratio)) emit layoutChanged();
+    if(DockTree::setRatio(m_docks[host],split,ratio)) {
+        std::function<void(const DockTree::Node&)> resetLengths=[&](const auto &node) {
+            if(node.value("id")==split) {
+                if(node.value("axis")=="vertical")for(const auto &id:DockTree::leaves(node))m_retainedHeights.remove(id);
+                return;
+            }
+            if(!node.contains("group")){resetLengths(node.value("first").toObject());resetLengths(node.value("second").toObject());}
+        };
+        resetLengths(m_docks[host]);
+        emit layoutChanged();
+    }
 }
 QVariantMap WorkspaceManager::groupDefinition(const QString &id) const {
     if(id=="__canvas" || id=="__toolstrip") {
-        const auto host=hostFor(id); const auto geometry=m_windowGeometry.value(host,id=="__canvas"?QRect(100,100,900,650):QRect(100,100,38,304));
+        const auto host=hostFor(id); const auto geometry=m_windowGeometry.value(host,id=="__canvas"?QRect(100,100,900,650):QRect(100,100,38,382));
         return {{"id",id},{"host",host},{"location",host=="main"?"center":"floating"},{"panels",QStringList{id}},{"active",id},
                 {"x",geometry.x()},{"y",geometry.y()},{"width",geometry.width()},{"height",geometry.height()},{"collapsed",false}};
     }
@@ -663,6 +704,7 @@ void WorkspaceManager::showPanel(const QString &panel) {
 void WorkspaceManager::beginDrag(const QString &group,const QString &panel,bool whole) {
     if(m_windowDrag.active() || !m_dragHost.isEmpty() || group=="__canvas" || (index(group)<0 && group!="__toolstrip"))return;
     m_beforeDocks=m_docks;m_beforeWindows=m_windowGeometry;m_beforeGroups=m_groups;m_beforeIcons=m_iconGroups;
+    m_beforeRetainedHeights=m_retainedHeights;
     const auto oldHost=hostFor(group);const auto cursor=QCursor::pos();
     QString host=oldHost;
     const bool one=DockTree::leaves(m_docks.value(oldHost)).size()==1;
@@ -690,14 +732,14 @@ void WorkspaceManager::beginDrag(const QString &group,const QString &panel,bool 
         for(auto *window:QGuiApplication::allWindows())if(window->objectName()=="floatingDock:"+host ||
             (m_dragGroups==QStringList{"__toolstrip"} && window->objectName()=="floatingToolStrip")) {
             const auto offset=host==oldHost?cursor-m_beforeWindows.value(host).topLeft():QPoint(24,4);
-            m_windowDrag.start(window,cursor,offset);break;
+            m_windowDrag.start(window,cursor,offset,m_pointerButtons.testFlag(Qt::LeftButton));break;
         }
     });
 }
 void WorkspaceManager::beginToolStripDrag(){beginDrag("__toolstrip",{},true);}
 void WorkspaceManager::updateToolStripPosition(int x,int y) {
     QPoint position(x,y);QScreen *screen=QGuiApplication::screenAt(position);if(!screen)screen=QGuiApplication::primaryScreen();
-    if(screen){const auto rect=screen->availableGeometry();position.setX(std::clamp(x,rect.left(),std::max(rect.left(),rect.right()-37)));position.setY(std::clamp(y,rect.top(),std::max(rect.top(),rect.bottom()-303)));}
+    if(screen){const auto rect=screen->availableGeometry();position.setX(std::clamp(x,rect.left(),std::max(rect.left(),rect.right()-37)));position.setY(std::clamp(y,rect.top(),std::max(rect.top(),rect.bottom()-381)));}
     if(m_toolPosition==position)return;
     m_toolPosition=position;emit toolStripChanged();
 }
@@ -707,6 +749,8 @@ bool WorkspaceManager::dockToolStrip(const QString &data,const QString &location
     return dockPayload(payload("__toolstrip",{},true),location,target,placement);
 }
 bool WorkspaceManager::eventFilter(QObject *watched,QEvent *event) {
+    if(event->type()==QEvent::MouseButtonPress)m_pointerButtons|=static_cast<QMouseEvent*>(event)->button();
+    else if(event->type()==QEvent::MouseButtonRelease)m_pointerButtons&=~Qt::MouseButtons(static_cast<QMouseEvent*>(event)->button());
     if(watched==m_glassWindow && event->type()==QEvent::Hide)m_menuBlur.hide();
     if(m_menuWindow && m_menuWindow->isVisible() && event->type()==QEvent::MouseButtonPress) {
         const auto *press=static_cast<QMouseEvent*>(event);
@@ -730,6 +774,9 @@ bool WorkspaceManager::eventFilter(QObject *watched,QEvent *event) {
         }
     }
     return false;
+}
+void WorkspaceManager::continueRestoredWindowDrag(QWindow *window,QPoint global,QPoint offset) {
+    m_titleDrag.start(window,global,offset,m_pointerButtons.testFlag(Qt::LeftButton));
 }
 void WorkspaceManager::detachGroup(const QString &group) { dockPayload(payload(group,{},true),"floating"); }
 void WorkspaceManager::detachPanel(const QString &group,const QString &panel) { dockPayload(payload(group,panel,false),"floating"); }
@@ -793,7 +840,8 @@ void WorkspaceManager::saveLayout() const {
     for(auto it=m_docks.cbegin();it!=m_docks.cend();++it) docks.insert(it.key(),it.value());
     for(auto it=m_windowGeometry.cbegin();it!=m_windowGeometry.cend();++it) { const auto r=it.value();windows.insert(it.key(),QJsonObject{{"x",r.x()},{"y",r.y()},{"width",r.width()},{"height",r.height()}}); }
     const QJsonObject layout{{"version",6},{"iconGroups",QJsonArray::fromStringList(m_iconGroups.values())},{"docks",docks},{"windows",windows},{"groups",groups},{"panels",panels},{"uiRevision",m_uiRevision},{"leftWidth",m_leftWidth},{"rightWidth",m_rightWidth},{"leftCollapsed",m_leftCollapsed},{"rightCollapsed",m_rightCollapsed},{"toolsFloating",m_toolsFloating},{"toolX",m_toolPosition.x()},{"toolY",m_toolPosition.y()}};
-    auto saved=layout;saved.insert("panelViews",panelViews);saved.insert("toolWidth",m_toolWidth);
+    QJsonObject heights;for(auto it=m_retainedHeights.cbegin();it!=m_retainedHeights.cend();++it)if(index(it.key())>=0)heights.insert(it.key(),it.value());
+    auto saved=layout;saved.insert("panelViews",panelViews);saved.insert("toolWidth",m_toolWidth);saved.insert("retainedHeights",heights);
     if(!m_settingsFile.isEmpty()) { QSettings file(m_settingsFile,QSettings::IniFormat); file.setValue("workspace",QJsonDocument(saved).toJson(QJsonDocument::Compact)); }
     else settings.setValue("workspace",QJsonDocument(saved).toJson(QJsonDocument::Compact));
 }
@@ -896,6 +944,12 @@ bool WorkspaceManager::restoreLayout() {
     for(auto &g:restored)if(g.collapsed){icons.insert(g.id);g.collapsed=false;migrated=true;}
     m_iconGroups=icons;
     m_panels=restoredPanels; m_groups=restored;
+    m_retainedHeights.clear();
+    const auto heights=root.value("retainedHeights").toObject();
+    for(auto it=heights.begin();it!=heights.end();++it) {
+        const auto height=it.value().toDouble(-1);
+        if(groupIds.contains(it.key()) && std::isfinite(height) && height>0 && height<=4000)m_retainedHeights.insert(it.key(),height);
+    }
     m_panelViews.clear();
     const auto views=root.value("panelViews").toObject();
     for(auto it=views.constBegin();it!=views.constEnd();++it) {

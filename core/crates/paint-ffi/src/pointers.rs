@@ -28,9 +28,21 @@ pub(crate) unsafe fn write<T>(pointer: *mut T, value: T) -> ApiResult<()> {
     Ok(())
 }
 
-/// Reject a byte count that cannot be represented as a `usize` on this target.
+/// Rust allocations and pointer offsets cannot span more than isize::MAX bytes.
 pub(crate) fn length(bytes: u64) -> ApiResult<usize> {
+    if bytes > isize::MAX as u64 {
+        return Err(ApiError::invalid("buffer length exceeds addressable range"));
+    }
     usize::try_from(bytes).map_err(|_| ApiError::invalid("length exceeds address space"))
+}
+
+#[cfg(test)]
+#[test]
+fn buffer_lengths_obey_rust_pointer_offset_limits() {
+    assert_eq!(length(0).unwrap(), 0);
+    assert_eq!(length(isize::MAX as u64).unwrap(), isize::MAX as usize);
+    assert!(length(isize::MAX as u64 + 1).is_err());
+    assert!(length(u64::MAX).is_err());
 }
 
 /// Copy a fixed-size slice into caller memory, after validating pointer and alignment.

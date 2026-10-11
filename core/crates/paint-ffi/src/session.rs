@@ -938,17 +938,19 @@ impl StampedFrame {
     /// One pixel of this already rendered frame, un-premultiplied straight RGBA. Used by the
     /// eyedropper so sampling never touches the document or the history.
     pub fn sample(&self, x: i64, y: i64) -> ApiResult<[f32; 4]> {
-        // The region is in document coordinates and may be fractional; sample its pixel grid.
-        let origin_x = self.frame.region.x.floor() as i64;
-        let origin_y = self.frame.region.y.floor() as i64;
         let width = self.frame.width;
         let height = self.frame.height;
         if width == 0 || height == 0 {
             return Err(ApiError::new(PAINT_NOT_FOUND, "frame has no pixels"));
         }
         // Clamp to the rendered region so a pointer just outside still samples the edge pixel.
-        let px = (x - origin_x).clamp(0, i64::from(width) - 1) as u32;
-        let py = (y - origin_y).clamp(0, i64::from(height) - 1) as u32;
+        // Document pixels and frame pixels differ with zoom, LOD and device scale. Map the
+        // document pixel centre through the actual fractional region, without integer overflow.
+        let region = self.frame.region;
+        let px = (((x as f64 + 0.5 - region.x) / region.width * f64::from(width)).floor())
+            .clamp(0., f64::from(width - 1)) as u32;
+        let py = (((y as f64 + 0.5 - region.y) / region.height * f64::from(height)).floor())
+            .clamp(0., f64::from(height - 1)) as u32;
         let bytes = self.bytes();
         let index = ((py as usize) * (width as usize) + (px as usize)) * 4;
         let Some(pixel) = bytes.get(index..index + 4) else {
@@ -995,6 +997,43 @@ impl StampedFrame {
 mod actor_tests {
     use super::*;
     use std::{thread, time::Instant};
+    #[test]
+    fn eyedropper_maps_document_pixels_to_scaled_fractional_viewports() {
+        let mut frame = StampedFrame {
+            id: 1,
+            request_id: 1,
+            generation: 1,
+            frame: RenderFrame {
+                region: Region {
+                    x: 10.25,
+                    y: 20.25,
+                    width: 2.,
+                    height: 2.,
+                },
+                width: 2,
+                height: 2,
+                revision: 1,
+                lod: 1,
+                pixels: FramePixels::Srgb(vec![
+                    255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 64, 32, 0, 128,
+                ]),
+            },
+        };
+        assert_eq!(frame.sample(10, 20).unwrap(), [1., 0., 0., 1.]);
+        assert_eq!(frame.sample(11, 20).unwrap(), [0., 1., 0., 1.]);
+        // Downscaled output: each output pixel represents two document pixels per axis.
+        frame.frame.region.width = 4.;
+        frame.frame.region.height = 4.;
+        assert_eq!(frame.sample(12, 20).unwrap(), [0., 1., 0., 1.]);
+        assert_eq!(frame.sample(10, 22).unwrap(), [0., 0., 1., 1.]);
+        // Enlarged/DPI output: two output pixels per document pixel, with a fractional origin.
+        frame.frame.region.width = 1.;
+        frame.frame.region.height = 1.;
+        assert_eq!(frame.sample(10, 20).unwrap(), [1., 0., 0., 1.]);
+        assert_eq!(frame.sample(i64::MIN, i64::MIN).unwrap(), [1., 0., 0., 1.]);
+        let edge = frame.sample(i64::MAX, i64::MAX).unwrap();
+        assert_eq!(edge, [0.5, 0.25, 0., 128. / 255.]);
+    }
     #[test]
     fn panicked_session_reports_failure_and_remains_releasable() {
         let session = Session::new(64, 64).unwrap();

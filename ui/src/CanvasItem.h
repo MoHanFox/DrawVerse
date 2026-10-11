@@ -15,6 +15,8 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(QRectF visibleDocumentRect READ visibleDocumentRect NOTIFY viewChanged)
     Q_PROPERTY(QRectF brushCursorRect READ brushCursorRect NOTIFY brushCursorChanged)
     Q_PROPERTY(bool brushCursorVisible READ brushCursorVisible NOTIFY brushCursorChanged)
+    Q_PROPERTY(bool eyedropperCursorVisible READ eyedropperCursorVisible NOTIFY brushCursorChanged)
+    Q_PROPERTY(QPointF cursorPosition READ cursorPosition NOTIFY brushCursorChanged)
     Q_PROPERTY(bool spacePanning READ spacePanning NOTIFY spacePanningChanged)
     Q_PROPERTY(bool interactive READ interactive WRITE setInteractive NOTIFY interactiveChanged)
     Q_PROPERTY(qreal initialFitRatio READ initialFitRatio WRITE setInitialFitRatio NOTIFY viewChanged)
@@ -30,6 +32,8 @@ public:
     QRectF visibleDocumentRect() const;
     QRectF brushCursorRect() const;
     bool brushCursorVisible() const;
+    bool eyedropperCursorVisible() const;
+    QPointF cursorPosition() const {return m_cursorPosition;}
     // Application wide space-pan state (combines the focused key with the global hold).
     bool spacePanning() const;
     bool interactive() const { return m_interactive; }
@@ -103,6 +107,7 @@ private:
     bool m_layoutCaptured=false;
     QPointF m_cursorPosition;
     bool m_cursorInside=false,m_capsLock=false;
+    bool m_picking=false;
     QPointF m_moveStart;
     bool m_moving = false;
     quint64 m_moveLayer = 0, m_moveGeneration = 0;

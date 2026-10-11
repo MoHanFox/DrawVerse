@@ -46,6 +46,7 @@ public:
     Q_INVOKABLE bool setMenuBarBlur(QWindow *window, bool enabled,int height=28);
     quintptr menuBlurWindowHandle() const {return m_menuBlur.nativeHandle();}
     Q_INVOKABLE bool setWindowCornerRadius(QWindow *window, int radius);
+    Q_INVOKABLE void continueRestoredWindowDrag(QWindow *window,QPoint global,QPoint offset);
     explicit WorkspaceManager(const QString &settingsFile = {}, QObject *parent = nullptr);
     ~WorkspaceManager() override;
     bool nativeEventFilter(const QByteArray &eventType,void *message,qintptr *result) override;
@@ -147,12 +148,15 @@ private:
     QList<QPointer<QWindow>> m_panelFlyouts;
     struct PanelView {QSize size;int offset=0;};
     QHash<QString,PanelView> m_panelViews;
+    QHash<QString,qreal> m_retainedHeights;
     QMap<QString,DockTree::Node> m_docks;
     QHash<QString,QRect> m_windowGeometry;
     QSet<QString> m_iconGroups;
     QMap<QString,QPointer<QQuickItem>> m_targets;
     QPointer<QQuickItem> m_workspaceArea;
     WindowDrag m_windowDrag;
+    WindowDrag m_titleDrag{this};
+    Qt::MouseButtons m_pointerButtons;
     QString m_dragTarget,m_dragPlacement,m_dragHost;
     QStringList m_dragGroups;
     QRectF m_dragPreviewRect;
@@ -160,6 +164,7 @@ private:
     QHash<QString,QRect> m_beforeWindows;
     QList<Group> m_beforeGroups;
     QSet<QString> m_beforeIcons;
+    QHash<QString,qreal> m_beforeRetainedHeights;
     bool isIconGroup(const QString &group) const;
     void updateDragTarget(QPoint global,bool suppressed);
     void initializeDocks();

@@ -2,8 +2,9 @@
 
 Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘画软件项目。
 
-已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.10.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
+已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.12.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
 
+- [遗留功能修复与工具栏吸色](docs/deepseek-recovery-design.md) / [验证](docs/deepseek-recovery-validation.md)
 - [架构与工作区设计](docs/architecture.md) / [模块状态](docs/roadmap.md)
 - [真实历史名称和初始状态边界](docs/history-labels-design.md) / [验证](docs/history-labels-validation.md)
 - [面板细化、混合悬停预览与数位板轮廓](docs/panel-refinement-design.md) / [验证](docs/panel-refinement-validation.md)

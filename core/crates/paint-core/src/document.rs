@@ -870,6 +870,13 @@ impl Document {
         } else {
             self.layers[selected].parent
         };
+        if !self.layers[selected].group {
+            layer.clipped = self.layers[selected].clipped
+                || self.layers[index..]
+                    .iter()
+                    .find(|node| !node.mask && node.parent == layer.parent)
+                    .is_some_and(|node| node.clipped);
+        }
         self.check_ancestors(layer.parent, crate::LOCK_ALL)?;
         if layer.parent != 0 && self.layer_hierarchy(layer.parent)?.1 >= 16 {
             return Err(Error::ResourceLimit("group nesting exceeds 16"));

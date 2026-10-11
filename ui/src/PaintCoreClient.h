@@ -62,6 +62,9 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool selectionEnabled READ selectionEnabled NOTIFY selectionChanged)
     Q_PROPERTY(QVariantList selectionSteps READ selectionSteps NOTIFY selectionChanged)
     Q_PROPERTY(int selectionTool READ selectionTool WRITE setSelectionTool NOTIFY brushChanged)
+    Q_PROPERTY(int marqueeShape READ marqueeShape NOTIFY brushChanged)
+    Q_PROPERTY(bool eyedropperTool READ eyedropperTool NOTIFY brushChanged)
+    Q_PROPERTY(QVariantMap layerThumbnails READ layerThumbnails NOTIFY layerThumbnailsChanged)
 public:
     QVariantList historyEntries() const {return m_history;}
     explicit PaintCoreClient(QObject *parent = nullptr, const QString &settingsFile = {});
@@ -106,6 +109,8 @@ public:
     Q_INVOKABLE void activateBrush();
     Q_INVOKABLE void activateEraser();
     Q_INVOKABLE void activateMoveTool();
+    Q_INVOKABLE void activateEyedropper();
+    bool eyedropperTool() const {return m_eyedropperTool;}
     /// Marquee keeps the last rectangle/ellipse choice; the lasso and the wand are their own tools.
     Q_INVOKABLE void activateMarquee();
     bool moveTool() const { return m_moveTool; }
@@ -114,6 +119,8 @@ public:
     bool selectionEnabled() const { return m_selection.value("enabled").toBool(); }
     QVariantList selectionSteps() const { return m_selection.value("steps").toList(); }
     int selectionTool() const { return m_selectionTool; }
+    int marqueeShape() const { return m_marqueeShape; }
+    QVariantMap layerThumbnails() const { return m_layerThumbnails; }
     void setSelectionTool(int tool);
     Q_INVOKABLE bool editSelection(QRectF rectangle, int shape, int operation);
     Q_INVOKABLE bool selectAll();
@@ -182,6 +189,7 @@ signals:
     void storageFinished(bool success);
     void stateChanged();
     void layersChanged();
+    void layerThumbnailsChanged();
     void selectedLayersChanged();
     void groupExpansionChanged();
     void brushChanged();
@@ -221,6 +229,7 @@ private:
     /// Sequence of an in-flight lasso/wand selection edit; non-zero keeps layer edits busy.
 
     QVariantList m_layers;
+    QVariantMap m_layerThumbnails;
     QList<quint64> m_selectedLayers;
     QString m_error;
     QColor m_secondaryColor=Qt::white;
@@ -236,6 +245,7 @@ private:
     /// Last marquee shape (1 rectangle, 2 ellipse) so the slot does not reset when re-activated.
     int m_marqueeShape = 1;
     bool m_moveTool = false;
+    bool m_eyedropperTool = false;
     int m_selectionTool = 0;
     QVariantMap m_selection;
     QVariantList m_history;

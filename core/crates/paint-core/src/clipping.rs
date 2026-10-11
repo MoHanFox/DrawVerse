@@ -6,6 +6,42 @@
 //! compositor silently ignores them, the document repairs the chain and reports what it unclipped.
 
 use crate::{Document, Layer};
+use std::collections::BTreeMap;
+
+fn bases(layers: &[Layer]) -> BTreeMap<u64, u64> {
+    let mut siblings = BTreeMap::new();
+    let mut result = BTreeMap::new();
+    for layer in layers.iter().filter(|layer| !layer.mask) {
+        if layer.clipped {
+            result.insert(layer.id, siblings.get(&layer.parent).copied().unwrap_or(0));
+        } else {
+            siblings.insert(layer.parent, layer.id);
+        }
+    }
+    result
+}
+
+/// Compare both stacks before releasing anything: an orphan cannot become another clip's base
+/// merely because it was visited first. Reordering must not silently adopt an unrelated base.
+pub(crate) fn repair_changed_bases(before: &[Layer], after: &[Layer]) -> (Vec<Layer>, Vec<u64>) {
+    let old = bases(before);
+    let new = bases(after);
+    let mut nodes = after.to_vec();
+    let mut released = Vec::new();
+    for node in &mut nodes {
+        if node.clipped
+            && old
+                .get(&node.id)
+                .is_some_and(|base| new.get(&node.id) != Some(base))
+        {
+            node.clipped = false;
+            released.push(node.id);
+        }
+    }
+    let (nodes, orphans) = repair(&nodes);
+    released.extend(orphans);
+    (nodes, released)
+}
 
 /// Unclip every orphaned clipped layer. `layers` is the candidate new stack, so the pass can run
 /// before the change is committed and the whole repair still lands as one history entry.
@@ -35,10 +71,9 @@ pub(crate) fn repair(layers: &[Layer]) -> (Vec<Layer>, Vec<u64>) {
 
 impl Document {
     /// Repair orphaned clips after a structural change and record one history entry describing it.
-    /// Moving the base of a clip chain moves the clipped layers with it, so a moved base keeps its
-    /// chain intact and only genuinely orphaned layers are released.
+    /// Clips keep their flag only while their original same-parent base remains below them.
     pub(crate) fn commit_repaired_structure(&mut self, nodes: Vec<Layer>) -> crate::Result<()> {
-        let (nodes, repaired) = repair(&nodes);
+        let (nodes, repaired) = repair_changed_bases(&self.structure(), &nodes);
         if repaired.is_empty() {
             return self.commit_structure(nodes);
         }

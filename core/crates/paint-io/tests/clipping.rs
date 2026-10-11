@@ -117,7 +117,10 @@ fn v2_masks_remain_readable_and_invalid_clipping_metadata_is_rejected() {
                 match case {
                     0 => s
                         .replace("dv:version=\"4\"", "dv:version=\"2\"")
-                        .replace(" dv:selection=\"1|0\"", "")
+                        .replace(
+                            &format!(" dv:selection=\"{}\"", d.selection().to_text()),
+                            "",
+                        )
                         .replace(" dv:clipped=\"0\"", ""),
                     1 => s.replace("dv:clipped=\"0\"", "dv:clipped=\"2\""),
                     _ => s
@@ -132,7 +135,12 @@ fn v2_masks_remain_readable_and_invalid_clipping_metadata_is_rejected() {
         }
         out.finish().unwrap();
         if case == 0 {
-            load(&path, &token).unwrap();
+            let old = load(&path, &token).unwrap();
+            assert_eq!(
+                old.layers().iter().filter(|layer| layer.is_mask()).count(),
+                1
+            );
+            assert!(!old.selection().enabled());
         } else {
             assert!(load(&path, &token).is_err());
         }

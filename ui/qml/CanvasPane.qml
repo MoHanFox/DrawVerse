@@ -28,6 +28,15 @@ Rectangle {
         active:root.ownClient.selectionEnabled || canvas.selectionPreview.width>0 && canvas.selectionPreview.height>0
         sourceComponent:SelectionOutline {objectName:"selectionOutline";enabledSelection:root.ownClient.selectionEnabled;steps:root.ownClient.selectionSteps;documentRect:canvas.documentRect;zoom:canvas.zoom;preview:canvas.selectionPreview;previewKind:canvas.selectionPreviewKind}
     }
+    Item {
+        objectName:"eyedropperCursor";z:11
+        x:canvas.cursorPosition.x-8;y:canvas.cursorPosition.y-8;width:17;height:17
+        visible:canvas.eyedropperCursorVisible
+        Rectangle {x:0;y:7;width:17;height:3;color:"black"}
+        Rectangle {x:7;y:0;width:3;height:17;color:"black"}
+        Rectangle {x:1;y:8;width:15;height:1;color:"white"}
+        Rectangle {x:8;y:1;width:1;height:15;color:"white"}
+    }
     BusyIndicator {objectName:"canvasBusy";anchors.centerIn:parent;running:!root.ownClient.ready;visible:running}
     Shortcut {sequences:[StandardKey.Undo];context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.drawing;onActivated:root.ownClient.undo()}
     Shortcut {sequences:[StandardKey.Redo];context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.drawing;onActivated:root.ownClient.redo()}

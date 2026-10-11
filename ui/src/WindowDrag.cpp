@@ -5,14 +5,14 @@
 #include <QKeyEvent>
 
 WindowDrag::~WindowDrag(){if(m_window)m_window->setMouseGrabEnabled(false);}
-void WindowDrag::start(QWindow *window,QPoint global,QPoint offset) {
+void WindowDrag::start(QWindow *window,QPoint global,QPoint offset,bool buttonHeld) {
     if(active() || !window)return;
     m_window=window;m_offset=offset;m_last=global;
     m_suppressed=false;qApp->installEventFilter(this);
     window->raise();window->requestActivate();window->setMouseGrabEnabled(true);
     window->setPosition(global-offset);emit moved(global,false);
     // A very fast release can precede the deferred window creation/grab.
-    if(!QGuiApplication::mouseButtons().testFlag(Qt::LeftButton))finish();
+    if(!buttonHeld)finish();
 }
 void WindowDrag::finish(bool cancelled) {
     if(!active())return;

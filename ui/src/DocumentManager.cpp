@@ -139,7 +139,7 @@ void DocumentManager::beginDrag(const QString &id,bool whole) {
     QTimer::singleShot(0,this,[this,host,cursor] {
         for(auto *window:QGuiApplication::allWindows())if(window->objectName()=="documentWindow:"+host) {
             const auto offset=m_dragGroups.contains(host)?cursor-m_dragGroups.value(host).geometry.topLeft():QPoint(24,12);
-            m_drag.start(window,cursor,offset);break;
+            m_drag.start(window,cursor,offset,QGuiApplication::mouseButtons().testFlag(Qt::LeftButton));break;
         }
     });
 }

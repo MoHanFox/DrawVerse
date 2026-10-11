@@ -224,6 +224,7 @@ ApplicationWindow {
                         root.updateWindowCorners()
                         moveOffset=Qt.point(Math.round(root.width*pressFraction),pressY)
                         movingRestored=true
+                        Workspace.continueRestoredWindowDrag(root,global,moveOffset)
                     }
                     root.x=Math.round(global.x-moveOffset.x);root.y=Math.round(global.y-moveOffset.y)
                 }
@@ -391,7 +392,7 @@ ApplicationWindow {
         objectName: "brushOptionsBar"
         height: 36; color: Theme.raised
         RowLayout {
-            visible: !PaintClient.selectionTool
+            visible: !PaintClient.selectionTool && !PaintClient.eyedropperTool
             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
             Icon { name: PaintClient.selectionTool ? (PaintClient.selectionTool===2 ? "ellipseSelection":"rectangleSelection") : PaintClient.moveTool ? "move" : PaintClient.eraser ? "eraser" : "brush"; Layout.preferredWidth: 17; Layout.preferredHeight: 17 }
             Label { text: PaintClient.selectionTool ? (PaintClient.selectionTool===2?"椭圆选框":"矩形选框") : PaintClient.moveTool ? "移动图层" : PaintClient.eraser ? "橡皮擦" : "画笔"; color: Theme.text; Layout.preferredWidth: 42 }
@@ -411,6 +412,14 @@ ApplicationWindow {
             Icon {name:PaintClient.selectionTool===2?"ellipseSelection":"rectangleSelection";Layout.preferredWidth:17;Layout.preferredHeight:17}
             CompactComboBox {model:["矩形选框","椭圆选框"];currentIndex:Math.max(0,PaintClient.selectionTool-1);implicitWidth:90;implicitHeight:20;onActivated:PaintClient.selectionTool=currentIndex+1}
             Label {text:"Shift 添加 · Alt 减去 · Shift+Alt 相交";color:Theme.muted}
+            Item {Layout.fillWidth:true}
+        }
+        RowLayout {
+            visible:PaintClient.eyedropperTool
+            anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:12;spacing:8
+            Icon {name:"eyedropper";Layout.preferredWidth:17;Layout.preferredHeight:17}
+            Label {text:"吸色";color:Theme.text}
+            Label {text:"点击画布采样合成颜色";color:Theme.muted}
             Item {Layout.fillWidth:true}
         }
         Rectangle { anchors.bottom: parent.bottom; height: 1; width: parent.width; color: Theme.panelBar }
@@ -435,7 +444,7 @@ ApplicationWindow {
             cornerRadius:root.cornerRadius;notice:root.fileNotice
         }
     }
-    Shortcut { context:Qt.ApplicationShortcut; sequence: "V"; enabled: canvas.activeFocus; onActivated: PaintClient.moveTool=true }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "V"; enabled: canvas.activeFocus; onActivated: PaintClient.activateMoveTool() }
     // Brush size for the active painting tool, including the eraser and the smudge tool.
     Shortcut {
         context: Qt.ApplicationShortcut; sequence: "["; enabled: canvas.activeFocus && !PaintClient.drawing
@@ -450,8 +459,9 @@ ApplicationWindow {
     Shortcut { context:Qt.ApplicationShortcut; sequence:StandardKey.SelectAll; enabled:canvas.activeFocus && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.selectAll() }
     Shortcut { context:Qt.ApplicationShortcut; sequence:Qt.platform.os==="osx"?"Meta+D":"Ctrl+D"; enabled:canvas.activeFocus && PaintClient.selectionEnabled && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.clearSelection() }
     Shortcut { context:Qt.ApplicationShortcut; sequence:Qt.platform.os==="osx"?"Meta+Shift+I":"Ctrl+Shift+I"; enabled:canvas.activeFocus && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.invertSelection() }
-    Shortcut { context:Qt.ApplicationShortcut; sequence: "B"; enabled: canvas.activeFocus; onActivated: PaintClient.eraser=false }
-    Shortcut { context:Qt.ApplicationShortcut; sequence: "E"; enabled: canvas.activeFocus; onActivated: PaintClient.eraser=true }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "B"; enabled: canvas.activeFocus; onActivated: PaintClient.activateBrush() }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "E"; enabled: canvas.activeFocus; onActivated: PaintClient.activateEraser() }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: "I"; enabled: canvas.activeFocus; onActivated: PaintClient.activateEyedropper() }
     Shortcut { context:Qt.ApplicationShortcut; sequence: "F"; enabled: canvas.activeFocus; onActivated: canvas.fitToView() }
     Shortcut { context:Qt.ApplicationShortcut; sequence: "Esc"; enabled: PaintClient.drawing; onActivated: PaintClient.cancelStroke() }
     Shortcut { context:Qt.ApplicationShortcut; sequence: Qt.platform.os === "osx" ? "Meta+Alt+G" : "Ctrl+Alt+G"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy; onActivated: PaintClient.toggleActiveClipping() }

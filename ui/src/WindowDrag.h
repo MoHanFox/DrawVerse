@@ -12,7 +12,7 @@ public:
     ~WindowDrag() override;
     bool active() const {return !m_window.isNull();}
     QWindow *window() const {return m_window.data();}
-    void start(QWindow *window,QPoint global,QPoint offset);
+    void start(QWindow *window,QPoint global,QPoint offset,bool buttonHeld);
     void finish(bool cancelled=false);
 signals:
     void moved(QPoint global,bool suppressed);

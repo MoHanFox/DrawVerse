@@ -81,7 +81,8 @@ fn clipping_preserves_base_alpha_chain_opacity_blend_and_raw_preview() {
     d.undo().unwrap();
     d.undo().unwrap();
     d.undo().unwrap();
-    assert!(!d.layer(a).unwrap().is_clipped());
+    // The new layer inherits the existing chain at insertion, before its first stroke.
+    assert!(d.layer(a).unwrap().is_clipped());
     d.redo().unwrap();
     assert!(d.layer(a).unwrap().is_clipped());
     d.set_layer_properties(
@@ -140,10 +141,9 @@ fn masks_groups_positions_locks_and_orphan_reorder_follow_current_siblings() {
     assert!(d.layer(2).unwrap().is_clipped());
     assert_eq!(d.pixel(48, 16).components(), [0.5, 0., 0., 0.5]);
     d.reparent_layer(2, group).unwrap();
-    assert_eq!(
-        d.layer_clipping_bases().iter().copied().find(|&b| b != 0),
-        Some(1)
-    );
+    assert!(!d.layer(2).unwrap().is_clipped());
+    assert!(d.layer_clipping_bases().iter().all(|&b| b == 0));
+    d.set_layer_clipping(2, true).unwrap();
     let mut a = d.layer(group).unwrap().appearance();
     a.locks = LOCK_ALL;
     d.set_layer_appearance(group, a).unwrap();
@@ -152,6 +152,55 @@ fn masks_groups_positions_locks_and_orphan_reorder_follow_current_siblings() {
         Err(Error::LayerLocked)
     ));
     assert!(d.set_layer_clipping(mask, true).is_err());
+}
+
+#[test]
+fn inserted_layer_inherits_chain_and_undo_restores_original_base() {
+    let mut d = doc();
+    d.set_layer_clipping(2, true).unwrap();
+    d.set_active_layer(1).unwrap();
+    let depth = d.history_depth().0;
+    let inserted = d.add_layer("inside chain").unwrap();
+    assert!(d.layer(inserted).unwrap().is_clipped());
+    assert_eq!(d.layer_clipping_bases(), vec![0, 1, 1]);
+    assert_eq!(d.history_depth().0, depth + 1);
+    d.undo().unwrap();
+    assert!(d.layer(inserted).is_none());
+    assert_eq!(d.layer_clipping_bases(), vec![0, 1]);
+    d.redo().unwrap();
+    assert!(d.layer(inserted).unwrap().is_clipped());
+}
+
+#[test]
+fn moving_base_releases_original_chain_even_when_another_base_remains() {
+    let mut d = doc();
+    d.set_layer_clipping(2, true).unwrap();
+    // Insert an independent base below the chain; restoring the selection doesn't edit history.
+    let other = d.add_layer("other").unwrap();
+    d.set_layer_clipping(other, false).unwrap();
+    d.drop_layer(other, 1, 2).unwrap();
+    let depth = d.history_depth().0;
+    d.drop_layer(1, 2, 1).unwrap();
+    assert!(!d.layer(2).unwrap().is_clipped());
+    assert_eq!(d.history_depth().0, depth + 1);
+    d.undo().unwrap();
+    assert!(d.layer(2).unwrap().is_clipped());
+    assert_eq!(d.layer_clipping_bases(), vec![0, 0, 1]);
+    d.redo().unwrap();
+    assert!(!d.layer(2).unwrap().is_clipped());
+}
+
+#[test]
+fn moving_clip_to_a_different_base_releases_only_the_moved_clip() {
+    let mut d = doc();
+    d.set_layer_clipping(2, true).unwrap();
+    let other = d.add_layer("other base").unwrap();
+    d.set_layer_clipping(other, false).unwrap();
+    d.drop_layer(2, other, 1).unwrap();
+    assert!(!d.layer(2).unwrap().is_clipped());
+    d.undo().unwrap();
+    assert!(d.layer(2).unwrap().is_clipped());
+    assert_eq!(d.layer_clipping_bases(), vec![0, 1, 0]);
 }
 #[test]
 fn invalid_creation_is_atomic_and_disk_delete_history_preserves_clipping() {

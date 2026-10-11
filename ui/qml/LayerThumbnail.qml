@@ -25,7 +25,7 @@ Rectangle {
         id: preview
         objectName: "layerThumbnail:" + (root.node ? root.node.id : 0)
         anchors.fill: parent; anchors.margins: 2
-        source: root.node ? root.node.thumbnail || "" : ""
+        source: root.node ? PaintClient.layerThumbnails[String(root.node.id)] || root.node.thumbnail || "" : ""
         fillMode: Image.PreserveAspectFit; asynchronous: true
     }
     Text { anchors.centerIn: parent; text: "×"; color: "#ea6b67"; font.pixelSize: 26; visible: root.node && root.node.mask && !root.node.visible }

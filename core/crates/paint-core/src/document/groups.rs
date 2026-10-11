@@ -515,7 +515,7 @@ impl Document {
                 .expect("target outside subtree")
         };
         nodes.splice(index..index, moved);
-        self.commit_structure(nodes)
+        self.commit_repaired_structure(nodes)
     }
     /// Removing the group discards its compositing properties; children stay unbaked.
     pub fn ungroup_layer(&mut self, id: u64) -> Result<()> {

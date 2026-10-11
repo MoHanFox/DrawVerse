@@ -134,6 +134,7 @@ signals:
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
     void storageDone(bool success);
     void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history);
+    void thumbnailReady(quint64 generation, quint64 revision, quint64 layer, QString image);
     void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request);
     void failure(QString message);
     void completed(bool workerThread);
@@ -248,8 +249,8 @@ public:
             // dropping it would leave the canvas, layer list and selection stale for good.
             const bool known=entry.kind<static_cast<uint32_t>(names.size());
             history.append(QVariantMap{{"depth",entry.depth},{"kind",entry.kind},
-                {"title",known?names[entry.kind]:QStringLiteral("未知操作")},
-                {"icon",known?icons[entry.kind]:QStringLiteral("page")}});
+                {"title",entry.kind==PAINT_HISTORY_RELEASE_CLIPPING?QStringLiteral("释放剪贴蒙版"):known?names[entry.kind]:QStringLiteral("未知操作")},
+                {"icon",entry.kind==PAINT_HISTORY_RELEASE_CLIPPING?QStringLiteral("layers"):known?icons[entry.kind]:QStringLiteral("page")}});
         }
         m_connection->metadataPending.store(true);
         emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}},history); m_publication = info.publication;
@@ -363,10 +364,9 @@ public:
                     if(victim==m_thumbnails.end()) break;
                     m_thumbnailRevisions.remove(victim.key()); m_thumbnails.erase(victim);
                 }
-                // Publish immediately: the panel expects its thumbnail right away, and deferring the
-                // publication only moved the stall, it did not remove it.
-                m_publication=0;
-                if(++m_previewBatch>=64) m_previewBatch=0;
+                // A preview changes no document metadata. Updating the entire layer list here
+                // rebuilt every visible delegate, which re-requested all previews on every image.
+                emit thumbnailReady(info.document_generation,info.revision,m_previewLayer,m_thumbnails[m_previewLayer]);
             }
             disablePreview(info); ++m_previewIndex;
         }
@@ -429,8 +429,6 @@ public:
     qint64 m_quietSince=0;
     quint64 m_previewGeneration=0,m_seenGeneration=0,m_seenRevision=0,m_previewRequest=0,m_previewLayer=0;
     qsizetype m_previewIndex=0;
-    // Thumbnails are published in small batches: one repaint per few previews instead of per preview.
-    int m_previewBatch=0;
     uint64_t m_bootSequence=0;
     QString m_settingsFile;
     QVariantMap m_saved, m_active;
@@ -475,7 +473,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         const bool wasReady = m_ready, wasModified = modified(), wasLayerBusy=layerEditBusy();
         const bool changedLayers = m_layers != layers;
         const bool changedGeneration = info.document_generation != m_generation;
-        if(changedGeneration)m_blendPreviewLayer=0;
+        if(changedGeneration){m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
         else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
         if(changedGeneration) m_nextDefaultLayer=1;
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
@@ -515,6 +513,16 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         // Structural changes (delete, undo, paste, merge) must not leave stale selected ids.
         if (changedLayers) pruneSelectedLayers();
         if (propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
+    });
+    connect(m_worker,&BackendWorker::thumbnailReady,this,[this](quint64 generation,quint64 revision,quint64 id,const QString &image) {
+        if(m_closing || generation!=m_generation || revision!=m_revision)return;
+        for(auto &value:m_layers) {
+            auto layer=value.toMap();
+            if(layer.value("id").toULongLong()!=id)continue;
+            layer.insert("thumbnail",image);value=layer;
+            m_layerThumbnails.insert(QString::number(id),image);
+            emit layerThumbnailsChanged();return;
+        }
     });
     connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request) {
         m_connection->framePending[view].store(false);
@@ -649,48 +657,56 @@ void PaintCoreClient::swapBrushColors(){
 void PaintCoreClient::setBrushRadius(qreal r) {m_brushLibrary->setRadius(r);}
 void PaintCoreClient::setBrushOpacity(qreal o) {m_brushLibrary->setOpacity(o);}
 void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
-// Each setter owns exactly one flag. Clearing the sibling tools here used to erase the marquee's
-// remembered shape, so switching to the brush and back reset the user's rectangle/ellipse choice.
-// Exclusivity is the activate* helpers' job, where the intent is explicit.
+// Active tools are exclusive; the remembered marquee shape is separate from these flags.
 void PaintCoreClient::setEraser(bool e) {
-    if(m_drawing || e==m_eraser) return;
+    if(m_drawing || (e==m_eraser && !m_moveTool && !m_selectionTool && !m_eyedropperTool)) return;
+    m_moveTool=false;m_selectionTool=0;m_eyedropperTool=false;
     m_eraser=e; m_brushLibrary->setEraser(e); emit brushChanged();
 }
 void PaintCoreClient::setMoveTool(bool enabled) {
     if(m_drawing || enabled==m_moveTool) return;
+    if(enabled){m_selectionTool=0;m_eyedropperTool=false;m_eraser=false;m_brushLibrary->setEraser(false);}
     m_moveTool=enabled; emit brushChanged();
 }
 void PaintCoreClient::setSelectionTool(int tool) {
     if(tool<0 || tool>2 || m_drawing || tool==m_selectionTool) return;
     m_selectionTool=tool;
-    if(tool==1 || tool==2) m_marqueeShape=tool;   // remembered while other tools are active
+    if(tool==1 || tool==2) {m_marqueeShape=tool;m_moveTool=false;m_eyedropperTool=false;m_eraser=false;m_brushLibrary->setEraser(false);}
     emit brushChanged();
 }
 void PaintCoreClient::activateBrush() {
-    // Switching tools must work even mid-stroke; the stroke keeps its own brush until it ends.
-    // The marquee's remembered shape survives here, because only the flags change.
+    if(m_drawing)return;
+    if(m_eyedropperTool){m_eyedropperTool=false;emit brushChanged();}
+    // Tool changes wait for the current stroke; the remembered marquee shape survives.
     setEraser(false);
     setMoveTool(false);
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
 }
 void PaintCoreClient::activateEraser() {
+    if(m_drawing)return;
+    if(m_eyedropperTool){m_eyedropperTool=false;emit brushChanged();}
     setMoveTool(false);
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(true);
 }
 
 void PaintCoreClient::activateMoveTool() {
+    if(m_drawing)return;
+    if(m_eyedropperTool){m_eyedropperTool=false;emit brushChanged();}
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(false);
     setMoveTool(true);
 }
 void PaintCoreClient::activateMarquee() {
-    // Tool activation never depends on the stroke state: refusing to switch while a stroke is in
-    // flight left the strip stuck on a tool the user had already left.
-    // The slot keeps whichever marquee shape was last picked instead of resetting to the rectangle.
+    if(m_drawing)return;
+    // Activating the slot restores its remembered shape.
     const int shape = (m_selectionTool==1 || m_selectionTool==2) ? m_selectionTool : m_marqueeShape;
     setMoveTool(false); setEraser(false);
     setSelectionTool(shape);
+}
+void PaintCoreClient::activateEyedropper() {
+    if(m_drawing)return;
+    activateBrush();m_eyedropperTool=true;emit brushChanged();
 }
 
 

@@ -7,7 +7,7 @@ Rectangle {
     objectName: "toolStrip"
     property var canvasView
     color: Theme.strip
-    implicitWidth: 36; implicitHeight: 300
+    implicitWidth: 36; implicitHeight: 380
     Item {
         objectName: "toolStripGrip"
         width: parent.width; height: 10
@@ -28,7 +28,7 @@ Rectangle {
         IconButton {
             id: selectionToolButton
             objectName:"selectionTool";width:26;height:26
-            glyph:PaintClient.selectionTool===2?"ellipseSelection":"rectangleSelection"
+            glyph:PaintClient.marqueeShape===2?"ellipseSelection":"rectangleSelection"
             checkable:true;checked:PaintClient.selectionTool===1||PaintClient.selectionTool===2
             onClicked:PaintClient.activateMarquee()
             tooltip:"选框工具 M · 右键切换矩形/椭圆"
@@ -36,8 +36,8 @@ Rectangle {
             function openVariants() {
                 variants.toolTitle="选框工具"
                 const rows=[]
-                rows.push({id:"rectangle",label:"矩形选框",icon:"rectangleSelection",pending:false,selected:PaintClient.selectionTool===1,apply:function(){PaintClient.selectionTool=1}})
-                rows.push({id:"ellipse",label:"椭圆选框",icon:"ellipseSelection",pending:false,selected:PaintClient.selectionTool===2,apply:function(){PaintClient.selectionTool=2}})
+                rows.push({id:"rectangle",label:"矩形选框",icon:"rectangleSelection",pending:false,selected:PaintClient.marqueeShape===1,apply:function(){PaintClient.selectionTool=1}})
+                rows.push({id:"ellipse",label:"椭圆选框",icon:"ellipseSelection",pending:false,selected:PaintClient.marqueeShape===2,apply:function(){PaintClient.selectionTool=2}})
                 variants.entries=rows
                 variants.open()
             }
@@ -53,10 +53,11 @@ Rectangle {
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         // Every slot clears the others: leaving a second tool active made the strip show the brush
         // while the bucket still owned the canvas.
-        IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;checked:!PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool && !PaintClient.bucketTool;onClicked:PaintClient.activateBrush();tooltip:"画笔 B"}
-        IconButton {objectName:"eraserTool";width:26;height:26;glyph:"eraser";checkable:true;checked:PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool && !PaintClient.bucketTool;onClicked:PaintClient.activateEraser();tooltip:"橡皮擦 E"}
+        IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;checked:!PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool && !PaintClient.eyedropperTool;onClicked:PaintClient.activateBrush();tooltip:"画笔 B"}
+        IconButton {objectName:"eraserTool";width:26;height:26;glyph:"eraser";checkable:true;checked:PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool;onClicked:PaintClient.activateEraser();tooltip:"橡皮擦 E"}
         // The bucket is a painting tool, not a selection shape, so it gets its own slot.
         IconButton {objectName:"bucketTool";width:26;height:26;glyph:"bucket";checkable:true;checked:false;enabled:false;tooltip:"油漆桶（待支持）"}
+        IconButton {objectName:"eyedropperTool";width:26;height:26;glyph:"eyedropper";checkable:true;checked:PaintClient.eyedropperTool;onClicked:PaintClient.activateEyedropper();tooltip:"吸色 I · Alt 临时吸色"}
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         IconButton {width:26;height:26;glyph:"undo";enabled:PaintClient.undoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.undo();tooltip:"撤销 Ctrl+Z"}
         IconButton {width:26;height:26;glyph:"redo";enabled:PaintClient.redoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.redo();tooltip:"重做 Ctrl+Shift+Z"}

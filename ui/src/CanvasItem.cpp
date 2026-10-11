@@ -81,11 +81,15 @@ QRectF CanvasItem::brushCursorRect() const {
 bool CanvasItem::brushCursorVisible() const {
     // Alt is the eyedropper: the pointer becomes a crosshair and the brush ring goes away, so the
     // user can see exactly which pixel will be sampled.
-    return m_cursorInside && !m_capsLock && !m_altHeld && m_interactive && m_client && !m_client->moveTool() && !m_client->selectionTool() && !m_space && !spaceHeld && !m_panning && isVisible();
+    return m_cursorInside && !m_capsLock && !m_altHeld && m_interactive && m_client && !m_client->eyedropperTool() && !m_client->moveTool() && !m_client->selectionTool() && !m_space && !spaceHeld && !m_panning && isVisible();
 }
 bool CanvasItem::spacePanning() const { return m_space || spaceHeld; }
+bool CanvasItem::eyedropperCursorVisible() const {
+    return m_cursorInside && m_interactive && m_client && (m_altHeld || m_client->eyedropperTool()) && !m_client->selectionTool()
+        && !m_client->moveTool() && !spacePanning() && !m_panning && isVisible();
+}
 void CanvasItem::refreshBrushCursor() {
-    setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && m_client->moveTool()?Qt::SizeAllCursor:m_altHeld?Qt::CrossCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
+    setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && m_client->moveTool()?Qt::SizeAllCursor:eyedropperCursorVisible()?Qt::BlankCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
     emit brushCursorChanged();
 }
 void CanvasItem::setSpacePanning(bool held) {
@@ -230,8 +234,8 @@ QRectF CanvasItem::selectionPreviewRect() const {    auto rect=QRectF(m_selectio
 
 QColor CanvasItem::pickColorAt(QPointF local) const {
     if(!m_client) return {};
-    // Sampling goes through the ABI so it reads the composited document, not a possibly downscaled
-    // or not-yet-rendered frame. Read-only: no history entry, no revision change.
+    // The ABI maps document coordinates into the current composited viewport frame.
+    // Read-only: no history entry, no revision change.
     const auto document = documentPoint(local);
     if(document.x() < 0 || document.y() < 0 || document.x() >= m_client->documentWidth() || document.y() >= m_client->documentHeight()) return {};
     return m_client->sampleDocumentPixel(document.x(), document.y());
@@ -246,14 +250,15 @@ void CanvasItem::cancelSelectionDrag(){if(m_selecting){m_selecting=false;emit se
 void CanvasItem::mousePressEvent(QMouseEvent *e) {
     if (!m_interactive || !m_client || e->source() != Qt::MouseEventNotSynthesized) { e->ignore(); return; }
     forceActiveFocus(); m_last = e->position();
+    m_cursorInside=contains(e->position());m_cursorPosition=e->position();refreshBrushCursor();
+    if (e->button() == Qt::MiddleButton || m_space || spaceHeld) { m_panning = true; e->accept(); return; }
     // Alt is the eyedropper: sample the rendered frame and adopt the colour as the foreground.
     // Nothing is written to the document, so this never creates history.
-    if (e->button() == Qt::LeftButton && e->modifiers().testFlag(Qt::AltModifier) && !m_client->selectionTool()) {
+    if (e->button() == Qt::LeftButton && (e->modifiers().testFlag(Qt::AltModifier) || m_client->eyedropperTool()) && !m_client->selectionTool() && !m_client->moveTool()) {
         const auto picked = pickColorAt(e->position());
         if (picked.isValid()) { m_client->setBrushColor(picked); emit viewChanged(); }
         e->accept(); return;
     }
-    if (e->button() == Qt::MiddleButton || m_space || spaceHeld) { m_panning = true; e->accept(); return; }
     if(m_client->selectionTool() && documentRect().contains(e->position())) {e->setAccepted(beginSelection(e->position(),e->modifiers()));return;}
     if (m_client->moveTool() && documentRect().contains(e->position())) { e->setAccepted(beginLayerMove(e->position())); return; }
     if (documentRect().contains(e->position())) m_stroke = m_client->beginStroke(mouseSample(e->position(), e->buttons()));
@@ -303,9 +308,10 @@ void CanvasItem::setAltHeld(bool held) {
     refreshBrushCursor();
 }
 bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
-    if(event->type()==QEvent::ApplicationDeactivate){setKeySpace(false);setSpacePanning(false);refreshBrushCursor();}
+    if(event->type()==QEvent::ApplicationDeactivate){setKeySpace(false);setSpacePanning(false);setAltHeld(false);refreshBrushCursor();}
     if(m_interactive && isVisible() && (event->type()==QEvent::KeyPress || event->type()==QEvent::KeyRelease)) {
         auto *key=static_cast<QKeyEvent*>(event);
+        if(key->key()==Qt::Key_Alt && !key->isAutoRepeat())setAltHeld(event->type()==QEvent::KeyPress);
         if(key->key()==Qt::Key_Space && !key->isAutoRepeat()) {
             auto *focused=qobject_cast<QQuickWindow*>(QGuiApplication::focusWindow());
             auto *item=focused?focused->activeFocusItem():nullptr;
@@ -332,6 +338,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if (event->type() == QEvent::WindowDeactivate) {
         if (m_stroke) m_client->cancelStroke();
         m_stroke = m_tablet = m_panning = m_moving = false;
+        m_picking=false;setAltHeld(false);
         setKeySpace(false);setSpacePanning(false);
         m_cursorInside=false;refreshBrushCursor();
         cancelSelectionDrag();
@@ -343,11 +350,23 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     // The global position is shared by both native-window and item delivery paths.
     const QPointF local = mapFromGlobal(e->globalPosition());
     m_cursorInside=contains(local);m_cursorPosition=local;refreshBrushCursor();
+    if(event->type()!=QEvent::TabletRelease)setAltHeld(e->modifiers().testFlag(Qt::AltModifier));
     if(!m_tablet && event->type()==QEvent::TabletMove) {
         if(!m_cursorInside)return false;
         e->accept();return true; // avoid synthesized mouse hover replacing pen position
     }
     if (!m_tablet && (event->type() != QEvent::TabletPress || !documentRect().contains(local))) return false;
+    if(m_panning || spacePanning()) {
+        if(event->type()==QEvent::TabletPress){m_last=local;m_panning=m_tablet=true;}
+        else if(event->type()==QEvent::TabletMove){m_pan+=local-m_last;m_last=local;emit viewChanged();update();}
+        else {m_tablet=m_panning=false;refreshBrushCursor();}
+        e->accept();return true;
+    }
+    if(m_picking || ((m_altHeld || m_client->eyedropperTool()) && !m_client->selectionTool() && !m_client->moveTool())) {
+        if(event->type()==QEvent::TabletPress){m_picking=m_tablet=true;const auto color=pickColorAt(local);if(color.isValid())m_client->setBrushColor(color);}
+        else if(event->type()==QEvent::TabletRelease)m_picking=m_tablet=false;
+        e->accept();return true;
+    }
     if(m_client->selectionTool() || m_selecting) {
         if(event->type()==QEvent::TabletPress) {forceActiveFocus();m_tablet=beginSelection(local,e->modifiers());}
         else if(event->type()==QEvent::TabletMove) updateSelection(local,e->modifiers());

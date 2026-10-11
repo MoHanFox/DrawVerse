@@ -1,8 +1,10 @@
 # DeepSeek 未完成清单（2026-10-11）
 
+2026-10-11 修复交付见 [设计](deepseek-recovery-design.md) / [验收](deepseek-recovery-validation.md)：独立工具栏吸色（I）与 Alt 十字、DPI 采样、选框记忆/工具互斥、剪贴链修复、剩余面板高度、缩略图通知、FFI 长度边界及旧 ORA v2 兼容已处理。以下保留原清单及用户批注作为历史记录；GPU/液化/.vbr/图层复制合并本轮暂缓。
+
 本轮由 DeepSeek 实施的工作与遗留问题汇总。状态按代码实际状态核对（`git log` 截至 `5b0252b`）。
 
-分缓解、未定位根因**：缩略图分辨率 64px → 48px，发布节奏做了收敛。真正的耗时剖析（逐层 PNG 编码 + base64 + 发布重绘）未做。
+**部分缓解、未定位根因**：缩略图分辨率 64px → 48px，发布节奏做了收敛。真正的耗时剖析（逐层 PNG 编码 + base64 + 发布重绘）未做。
 
 ### 4. 移动图层偶发报错
 
@@ -65,7 +67,7 @@
 
 ## 六、工程与流程问题（本轮暴露）
 
-- `cmake --build --target deploy_qt` **只部署不重编**，多次导致"旧二进制当新版本"交付给用户测试。改用完整构建目标后正常。
+- 历史交付曾出现旧二进制问题；当前代码核对：`deploy_qt` 已显式 `DEPENDS drawverse qt_ui_tests`，会先构建应用及测试。QML 资源依赖也已保留，不能再把该目标描述为“只部署不重编”。
 - 中途误删 `drawverse-diagnostics.log`，使用户只能提供旧文件，浪费两轮诊断。
 - 所有临时诊断代码（QML 日志、`Workspace.diagnose`、`buildStamp`、`itemGlobalRect`、`focusWindowTitle`、`globalCursorPosition`）已全部移除，仓库无残留。
 

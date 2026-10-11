@@ -1,4 +1,16 @@
-# C ABI 1.10.0 契约
+# C ABI 1.12.0 契约
+
+## ABI 1.12 视口吸色
+
+`paint_session_sample_pixel(core, session, view, x, y, out_rgba)` 读取已完成合成视口的显示颜色；x/y 是文档整数像素坐标，按像素中心通过实际浮点视口区域换算到输出图像。支持不同缩放、LOD、设备 DPI 和分数原点，区域外坐标夹到输出边缘。输出为四个 f32，sRGB 非预乘 RGBA；透明像素返回全零。
+
+视口槽为 0–3；未完成/禁用或过期世代/修订返回 BUSY，非法槽返回 INVALID_ARGUMENT。`out_rgba` 必须非空、按 f32 对齐且可写四个浮点数；失败不写像素。只读操作不进入历史，不增加修订、不标记文档修改。读取的是显示帧，缩小视图时包含渲染器的 LOD 结果，不是独立的原分辨率像素查询。Qt 主画布和独立吸色工具均经 PaintCoreClient 使用此接口。
+
+本版本仍保留部分已退役功能的 DTO/常量以避免生成头漂移；套索、魔棒、油漆桶和旋转相关功能没有可调用实现，UI 标为待支持。历史编号 21/22 不产生；自动释放剪贴为 `PAINT_HISTORY_RELEASE_CLIPPING=23`。
+
+## ABI 1.11 历史条数上限
+
+`paint_session_set_history_limit(core, session, max_commands, out_sequence)` 以 FIFO 命令修改最多保留的历史操作数；零上限为 INVALID_ARGUMENT，失败 sequence 为零。执行时裁剪最旧记录，裁剪边界查询为 TRUNCATED，不能伪装成可返回的初始状态；设置自身不添加历史操作。Qt 默认 100，偏好允许 10–1000 并持久化。
 
 ## ABI 1.10 历史操作元数据
 
