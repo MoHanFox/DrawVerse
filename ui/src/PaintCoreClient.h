@@ -69,6 +69,12 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(int lassoShape READ lassoShape NOTIFY brushChanged)
     Q_PROPERTY(int marqueeShape READ marqueeShape NOTIFY brushChanged)
     Q_PROPERTY(bool eyedropperTool READ eyedropperTool NOTIFY brushChanged)
+    Q_PROPERTY(bool bucketTool READ bucketTool NOTIFY brushChanged)
+    Q_PROPERTY(qreal bucketOpacity READ bucketOpacity WRITE setBucketOpacity NOTIFY bucketOptionsChanged)
+    Q_PROPERTY(int bucketTolerance READ bucketTolerance WRITE setBucketTolerance NOTIFY bucketOptionsChanged)
+    Q_PROPERTY(bool bucketAntialias READ bucketAntialias WRITE setBucketAntialias NOTIFY bucketOptionsChanged)
+    Q_PROPERTY(bool bucketContiguous READ bucketContiguous WRITE setBucketContiguous NOTIFY bucketOptionsChanged)
+    Q_PROPERTY(bool bucketAllLayers READ bucketAllLayers WRITE setBucketAllLayers NOTIFY bucketOptionsChanged)
     Q_PROPERTY(QVariantMap layerThumbnails READ layerThumbnails NOTIFY layerThumbnailsChanged)
 public:
     QVariantList historyEntries() const {return m_history;}
@@ -115,6 +121,19 @@ public:
     Q_INVOKABLE void activateEraser();
     Q_INVOKABLE void activateMoveTool();
     Q_INVOKABLE void activateEyedropper();
+    Q_INVOKABLE void activateBucket();
+    bool bucketTool() const {return m_bucketTool;}
+    qreal bucketOpacity() const {return m_bucketOpacity;}
+    int bucketTolerance() const {return m_bucketTolerance;}
+    bool bucketAntialias() const {return m_bucketAntialias;}
+    bool bucketContiguous() const {return m_bucketContiguous;}
+    bool bucketAllLayers() const {return m_bucketAllLayers;}
+    void setBucketOpacity(qreal value);
+    void setBucketTolerance(int value);
+    void setBucketAntialias(bool value);
+    void setBucketContiguous(bool value);
+    void setBucketAllLayers(bool value);
+    bool bucketFill(QPointF position);
     bool eyedropperTool() const {return m_eyedropperTool;}
     /// Marquee keeps the last rectangle/ellipse choice; the lasso and the wand are their own tools.
     Q_INVOKABLE void activateMarquee();
@@ -217,6 +236,7 @@ signals:
     void historyLimitChanged();
     void selectionChanged();
     void selectionOptionsChanged();
+    void bucketOptionsChanged();
     void errorChanged();
     void frameChanged();
     void stopped();
@@ -275,6 +295,10 @@ private:
     bool m_selectionAntialias = true;
     bool m_moveTool = false;
     bool m_eyedropperTool = false;
+    bool m_bucketTool = false;
+    qreal m_bucketOpacity = 1;
+    int m_bucketTolerance = 0;
+    bool m_bucketAntialias = true, m_bucketContiguous = true, m_bucketAllLayers = false;
     int m_selectionTool = 0;
     QVariantMap m_selection;
     QVariantList m_history;

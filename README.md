@@ -6,6 +6,7 @@ Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘
 
 - [共用选区参数、自由和多边形套索](docs/lasso-selection-design.md) / [验证](docs/lasso-selection-validation.md)
 - [框选与套索绘画/擦除性能](docs/selection-performance-design.md) / [验证](docs/selection-performance-validation.md)
+- [油漆桶与填充参数](docs/bucket-design.md) / [验证](docs/bucket-validation.md)
 - [首行菜单悬停、即时混合预览与多选建组](docs/menu-hover-grouping-design.md) / [验证](docs/menu-hover-grouping-validation.md)
 - [面板收起后尺寸保持](docs/panel-fold-sizing-design.md) / [验证](docs/panel-fold-sizing-validation.md)
 - [悬停分类菜单、组删除选择与图层批量操作](docs/menu-layer-batch-design.md) / [验证](docs/menu-layer-batch-validation.md)

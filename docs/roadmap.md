@@ -6,6 +6,8 @@
 
 框选与套索内画笔/橡皮性能优化：[设计](selection-performance-design.md) / [验收](selection-performance-validation.md)；选区按行覆盖与有界缓存，保留原路径、AA、羽化与组合规则，无 ABI/文件格式变更。
 
+油漆桶：[设计](bucket-design.md) / [验收](bucket-validation.md)，ABI 1.16；独立不透明度、默认容差 0、AA、四邻接连续/全局填充、可见合成取样仅写活动层、选区与锁、原子撤销历史。
+
 最新菜单悬停与多选建组：[设计](menu-hover-grouping-design.md) / [验收](menu-hover-grouping-validation.md)，ABI 1.14；混合预览按列表指针位置统一更新，原生菜单完整鼠标坐标转发，首行跨边移动保持菜单链，多选一次建组与撤销。
 
 最新面板收起尺寸修复：[设计](panel-fold-sizing-design.md) / [验收](panel-fold-sizing-validation.md)；工具条与相邻面板不自动补位，浮窗收窄，展开宽度可随布局 v6 保存恢复。

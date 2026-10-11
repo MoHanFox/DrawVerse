@@ -30,6 +30,7 @@ pub enum HistoryAction {
     EllipseSelection = 20,
     LassoSelection = 21,
     PolygonSelection = 24,
+    Bucket = 25,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }

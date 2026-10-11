@@ -6,12 +6,14 @@ compile_error!("DrawVerse ABI v1 supports 64-bit targets only");
 mod api;
 mod layer_api;
 pub use layer_api::*;
+mod bucket_api;
 mod error;
 mod file_api;
 mod file_job;
 mod pointers;
 mod runtime;
 mod selection_api;
+pub use bucket_api::*;
 mod session;
 mod session_api;
 pub use selection_api::*;
@@ -107,6 +109,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                 features: PAINT_FEATURE_DOCUMENT
                     | PAINT_FEATURE_CLIPPING
                     | PAINT_FEATURE_SELECTION
+                    | PAINT_FEATURE_BUCKET
                     | PAINT_FEATURE_HISTORY
                     | PAINT_FEATURE_LINEAR_TILE_READ
                     | PAINT_FEATURE_EVENTS

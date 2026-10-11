@@ -361,6 +361,10 @@ pub struct Document {
     selection_cache: crate::selection::SelectionCoverageCache,
 }
 
+#[path = "bucket.rs"]
+mod bucket;
+pub use bucket::BucketFill;
+
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
     if layers.iter().any(|l| l.group || l.mask || l.clipped) {
         return Ok(composite_row(layers, x, y, 1)?[0]);

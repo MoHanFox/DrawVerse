@@ -29,6 +29,7 @@ pub(crate) enum Operation {
     Mask(u64),
     Clipping(u64, bool),
     Selection(crate::selection_api::Edit),
+    Bucket(paint_core::BucketFill),
     Drop(u64, u64, u32),
     DropBatch(Vec<u64>, u64, u32),
     RemoveBatch(Vec<u64>, bool),
@@ -579,6 +580,7 @@ impl Engine {
                 | Operation::Mask(_)
                 | Operation::Clipping(..)
                 | Operation::Selection(..)
+                | Operation::Bucket(..)
                 | Operation::Drop(..)
                 | Operation::DropBatch(..)
                 | Operation::RemoveBatch(..)
@@ -617,6 +619,9 @@ impl Engine {
     }
     fn apply(&mut self, operation: Operation) -> ApiResult<()> {
         match operation {
+            Operation::Bucket(options) => {
+                self.modified |= self.document.bucket_fill(options)?;
+            }
             Operation::File(request) => self.files.start(request, &self.document, self.generation),
             #[cfg(test)]
             Operation::PanicForTest => panic!("actor panic injection"),

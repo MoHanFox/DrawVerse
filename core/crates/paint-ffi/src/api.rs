@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 15;
+pub const PAINT_ABI_MINOR: u32 = 16;
 
 /// ABI 1.10: metadata for one retained history boundary/operation.
 #[repr(C)]
@@ -53,6 +53,25 @@ pub const PAINT_HISTORY_MAGIC_SELECTION: u32 = 22;
 /// Automatic release of clipped layers whose base went away.
 pub const PAINT_HISTORY_RELEASE_CLIPPING: u32 = 23;
 pub const PAINT_HISTORY_POLYGON_SELECTION: u32 = 24;
+pub const PAINT_HISTORY_BUCKET: u32 = 25;
+
+pub const PAINT_FEATURE_BUCKET: u64 = 8192;
+/// ABI 1.16: single atomic fill; booleans are exactly 0 or 1, reserved fields zero.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintBucketFill {
+    pub struct_size: u32,
+    pub reserved: u32,
+    pub x: u32,
+    pub y: u32,
+    pub linear_rgba: [f32; 4],
+    pub opacity: f32,
+    pub tolerance: u32,
+    pub antialias: u32,
+    pub contiguous: u32,
+    pub all_layers: u32,
+    pub reserved_tail: [u32; 3],
+}
 pub const PAINT_ABI_PATCH: u32 = 0;
 pub const PAINT_WORKING_LINEAR_SRGB: u32 = 1;
 pub const PAINT_STORAGE_RGBA32F_PREMULTIPLIED: u32 = 1;

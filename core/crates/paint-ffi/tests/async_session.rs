@@ -25,6 +25,80 @@ macro_rules! dto {
         }
     };
 }
+
+#[test]
+fn bucket_dto_validation_copy_real_pixels_and_single_history() {
+    assert_eq!(size_of::<PaintBucketFill>(), 64);
+    assert_eq!(offset_of!(PaintBucketFill, linear_rgba), 16);
+    let h = Harness::new(32, 32);
+    let mut request = PaintBucketFill {
+        x: 0,
+        y: 0,
+        linear_rgba: [1., 0., 0., 1.],
+        opacity: 1.,
+        antialias: 1,
+        contiguous: 1,
+        ..dto!(PaintBucketFill)
+    };
+    let mut sequence = 99;
+    unsafe {
+        assert_eq!(
+            paint_session_bucket_fill(h.core, h.session, ptr::null(), &mut sequence),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        for field in 0..5 {
+            let mut bad = request;
+            match field {
+                0 => bad.reserved = 1,
+                1 => bad.tolerance = 256,
+                2 => bad.contiguous = 2,
+                3 => bad.opacity = f32::NAN,
+                _ => bad.struct_size = 4,
+            };
+            assert_eq!(
+                paint_session_bucket_fill(h.core, h.session, &bad, &mut sequence),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(sequence, 0);
+        }
+        assert_eq!(
+            paint_session_bucket_fill(h.core, h.session, &request, &mut sequence),
+            PAINT_OK
+        );
+        request.linear_rgba = [0., 1., 0., 1.];
+        let info = h.wait(sequence);
+        assert_eq!(info.last_error_status, PAINT_OK);
+        assert_eq!(info.undo_depth, 1);
+        let frame = h.frame(0, info.revision);
+        let bytes = h.pixels(0, frame);
+        assert!(bytes.chunks_exact(4).all(|p| p == [255, 0, 0, 255]));
+        let mut history = dto!(PaintHistoryEntry);
+        assert_eq!(
+            paint_session_history_entry(h.core, h.session, info.publication, 1, &mut history),
+            PAINT_OK
+        );
+        assert_eq!(history.kind, PAINT_HISTORY_BUCKET);
+        let undo = h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        });
+        let info = h.wait(undo);
+        assert_eq!(info.undo_depth, 0);
+        assert!(h
+            .pixels(0, h.frame(0, info.revision))
+            .iter()
+            .all(|b| *b == 0));
+        request.x = 32;
+        assert_eq!(
+            paint_session_bucket_fill(h.core, h.session, &request, &mut sequence),
+            PAINT_OK
+        );
+        let info = h.wait(sequence);
+        assert_eq!(info.last_error_status, PAINT_INVALID_ARGUMENT);
+        assert_eq!(info.undo_depth, 0);
+    }
+}
 #[test]
 fn batch_layer_abi_copies_ids_rejects_bad_buffers_and_commits_one_step() {
     let h = Harness::new(32, 32);

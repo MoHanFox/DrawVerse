@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 15
+#define PAINT_ABI_MINOR 16
 
 #define PAINT_ABI_PATCH 0
 
@@ -54,6 +54,8 @@
 #define PAINT_EVENT_DOCUMENT_STATE_CHANGED 2
 
 #define PAINT_FEATURE_ASYNC_SESSION 16
+
+#define PAINT_FEATURE_BUCKET 8192
 
 #define PAINT_FEATURE_CLIPPING 2048
 
@@ -112,6 +114,8 @@
 #define PAINT_HISTORY_ADD_LAYER 7
 
 #define PAINT_HISTORY_BRUSH 1
+
+#define PAINT_HISTORY_BUCKET 25
 
 #define PAINT_HISTORY_CLIPPING 18
 
@@ -380,6 +384,23 @@ typedef struct PaintLayerInfo {
   uint64_t name_length;
   uint64_t allocated_tiles;
 } PaintLayerInfo;
+
+/**
+ * ABI 1.16: single atomic fill; booleans are exactly 0 or 1, reserved fields zero.
+ */
+typedef struct PaintBucketFill {
+  uint32_t struct_size;
+  uint32_t reserved;
+  uint32_t x;
+  uint32_t y;
+  float linear_rgba[4];
+  float opacity;
+  uint32_t tolerance;
+  uint32_t antialias;
+  uint32_t contiguous;
+  uint32_t all_layers;
+  uint32_t reserved_tail[3];
+} PaintBucketFill;
 
 /**
  * placement: 0=inside group/root, 1=above sibling, 2=below sibling.
@@ -850,6 +871,17 @@ PaintStatus paint_layer_set_properties(struct PaintCore *core,
                                        uint64_t layer_id,
                                        uint32_t visible,
                                        float opacity);
+
+/**
+ * Copy, validate and enqueue an atomic fill; no pixel work on the submitting thread.
+ * # Safety
+ * Caller must provide aligned, valid, nonoverlapping sized request and writable sequence.
+ * Session/core must remain live; caller-memory access follows contracts/abi.md.
+ */
+PaintStatus paint_session_bucket_fill(struct PaintCore *core,
+                                      struct PaintSession *session,
+                                      const struct PaintBucketFill *request,
+                                      uint64_t *out_sequence);
 
 /**
  * ABI 1.1: create an owning async document session. Creation/destruction run off the UI thread.

@@ -82,7 +82,7 @@ QRectF CanvasItem::brushCursorRect() const {
 bool CanvasItem::brushCursorVisible() const {
     // Alt is the eyedropper: the pointer becomes a crosshair and the brush ring goes away, so the
     // user can see exactly which pixel will be sampled.
-    return m_cursorInside && !m_capsLock && !m_altHeld && m_interactive && m_client && !m_client->eyedropperTool() && !m_client->moveTool() && !m_client->selectionTool() && !m_space && !spaceHeld && !m_panning && isVisible();
+    return m_cursorInside && !m_capsLock && !m_altHeld && m_interactive && m_client && !m_client->eyedropperTool() && !m_client->bucketTool() && !m_client->moveTool() && !m_client->selectionTool() && !m_space && !spaceHeld && !m_panning && isVisible();
 }
 bool CanvasItem::spacePanning() const { return m_space || spaceHeld; }
 bool CanvasItem::eyedropperCursorVisible() const {
@@ -292,6 +292,7 @@ void CanvasItem::mousePressEvent(QMouseEvent *e) {
         e->accept(); return;
     }
     if(e->button()!=Qt::LeftButton){e->ignore();return;}
+    if(m_client->bucketTool() && documentRect().contains(e->position())) {e->setAccepted(m_client->bucketFill(documentPoint(e->position())));return;}
     if(m_client->selectionTool() && documentRect().contains(e->position())) {e->setAccepted(beginSelection(e->position(),e->modifiers()));return;}
     if (m_client->moveTool() && documentRect().contains(e->position())) { e->setAccepted(beginLayerMove(e->position())); return; }
     if (documentRect().contains(e->position())) m_stroke = m_client->beginStroke(mouseSample(e->position(), e->buttons()));
@@ -327,6 +328,7 @@ void CanvasItem::keyPressEvent(QKeyEvent *e) {
     else if(m_selecting && m_selectionKind==3 && (e->key()==Qt::Key_Return || e->key()==Qt::Key_Enter)) {finishPolygon();e->accept();}
     else if(m_selecting && m_selectionKind==3 && e->key()==Qt::Key_Backspace) {if(!m_selectionPoints.isEmpty())m_selectionPoints.removeLast();if(m_selectionPoints.isEmpty())cancelSelectionDrag();else emit selectionDragChanged();e->accept();}
     else if (e->key() == Qt::Key_Alt) {setAltHeld(true); e->accept(); }
+    else if(m_client && e->key()==Qt::Key_G && e->modifiers()==Qt::NoModifier) {m_client->activateBucket();e->accept();}
     else if (e->key() == Qt::Key_Escape) { if(m_selecting) cancelSelectionDrag();else if (m_client) m_client->cancelStroke(); m_stroke = false; m_tablet = false; m_moving=false; e->accept(); }
     else if(m_client && m_client->moveTool() && !m_moving && e->key()>=Qt::Key_Left && e->key()<=Qt::Key_Down) {
         const int step=e->modifiers().testFlag(Qt::ShiftModifier) ? 10 : 1;
@@ -411,6 +413,11 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         if(event->type()==QEvent::TabletPress) {forceActiveFocus();m_tablet=beginSelection(local,e->modifiers());}
         else if(event->type()==QEvent::TabletMove) updateSelection(local,e->modifiers());
         else if(event->type()==QEvent::TabletRelease) {finishSelection(local,e->modifiers());m_tablet=false;}
+        e->accept();return true;
+    }
+    if(m_client->bucketTool()) {
+        if(event->type()==QEvent::TabletPress){forceActiveFocus();m_client->bucketFill(documentPoint(local));m_tablet=true;}
+        else if(event->type()==QEvent::TabletRelease)m_tablet=false;
         e->accept();return true;
     }
     if(m_client->moveTool() || m_moving) {

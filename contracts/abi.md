@@ -20,7 +20,7 @@ Drop placement 沿用 0=组内顶端（target=0 时为根顶端）、1=目标同
 
 视口槽为 0–3；未完成/禁用或过期世代/修订返回 BUSY，非法槽返回 INVALID_ARGUMENT。`out_rgba` 必须非空、按 f32 对齐且可写四个浮点数；失败不写像素。只读操作不进入历史，不增加修订、不标记文档修改。读取的是显示帧，缩小视图时包含渲染器的 LOD 结果，不是独立的原分辨率像素查询。Qt 主画布和独立吸色工具均经 PaintCoreClient 使用此接口。
 
-本版本仍保留部分已退役功能的 DTO/常量以避免生成头漂移；套索、魔棒、油漆桶和旋转相关功能没有可调用实现，UI 标为待支持。历史编号 21/22 不产生；自动释放剪贴为 `PAINT_HISTORY_RELEASE_CLIPPING=23`。
+本版本仍保留部分已退役功能的 DTO/常量以避免生成头漂移；魔棒和旋转相关功能没有可调用实现，UI 标为待支持。历史编号 22 不产生；自动释放剪贴为 `PAINT_HISTORY_RELEASE_CLIPPING=23`。
 
 ## ABI 1.11 历史条数上限
 
@@ -54,7 +54,7 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 ## 版本与类型
 
-全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/15/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
+全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/16/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
 
 初始化 DTO 为零并写 struct_size=sizeof(本调用者结构)，输入至少含已发布前缀。库只访问已知前缀；过小为 INVALID_ARGUMENT，不覆盖调用者内存；扩展尾部保持不变。输出 struct_size 写库已知大小。reserved 必须为零；未知 mode/tool/format 为 UNSUPPORTED。输入 capability 位保留未知位，圆笔刷只实际使用 pressure，客户端为无压力设备提供 pressure=1。
 
@@ -194,3 +194,9 @@ PaintSelectionShapeEdit=72 字节：struct_size/shape/operation/antialias/tool/p
 paint_session_edit_selection_shape 同步复制、校验 request 及所有路径点后提交既有 FIFO 选区命令，返回前不保留 caller 指针。所有空/未对齐指针、数量、形状/工具、参数失败清空 out_sequence；OK 只表示入队，仍查询完成序号和错误状态。无变化不创建历史。历史21为套索、24为多边形套索，20为椭圆、4为矩形；22保留未实现魔棒，不产生。
 
 PaintSelectionDetails=16字节，struct_size(0)、point_count(4)、feather(8)。paint_session_selection_details(core,session,publication,index,out,points,capacity) 与 selection_step 同一 publication，不一致返回 BUSY；容量不足返回 BUFFER_TOO_SMALL 并给出 point_count，不写点缓冲；NULL/0可查询需求。足够容量一次复制所有点，无点形状不解引用点缓冲。输出调用者需保证 capacity 可写点，生命周期与旧查询相同。选区文本 v3 保存半径/路径，读取 v1/v2；磁盘历史和 ORA v4 仍使用有界选区文本。旧核心拒绝未知文本版本，不静默丢失新选区。
+
+## ABI 1.16：油漆桶
+
+新增 64 字节 PaintBucketFill，offset 16 的 linear_rgba 为 straight linear sRGB，opacity 0–1、tolerance 0–255；坐标为文档像素索引。antialias/contiguous/all_layers 均只接受 0/1，reserved 和 reserved_tail 为零。新增 PAINT_FEATURE_BUCKET=8192 和历史 PAINT_HISTORY_BUCKET=25。paint_session_bucket_fill 复制并校验 DTO 后返回队列 sequence，像素填充由串行 actor 异步执行；完成/失败通过既有 session publication 和 last_error 读取。
+
+种子越界、组目标、完全锁、蒙版 all_layers 取样、资源/存储错误均不提交像素；无变化不生成历史。all_layers 使用填充前的可见合成，仅写活动层；默认以当前层原始像素（不含显示 opacity/fill）比较。选区及 alpha lock 生效，整次填充只产生一条历史。容差按 straight sRGB/alpha 最大差 0–255，AA 在阈值之外一色阶内软化覆盖，透明色比较忽略 RGB。工作量与错误语义见 docs/bucket-design.md，旧 ABI DTO 和函数保持不变。

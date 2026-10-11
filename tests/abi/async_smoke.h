@@ -11,6 +11,8 @@
 #define ABI_ASSERT _Static_assert
 #endif
 ABI_ASSERT(sizeof(PaintCommand) == 176, "command layout drift");
+ABI_ASSERT(sizeof(PaintBucketFill)==64,"bucket layout drift");
+ABI_ASSERT(offsetof(PaintBucketFill,linear_rgba)==16,"bucket color offset drift");
 ABI_ASSERT(offsetof(PaintCommand, point) == 64, "nested point offset drift");
 ABI_ASSERT(sizeof(PaintSessionInfo) == 104, "session info layout drift");
 ABI_ASSERT(sizeof(PaintHistoryEntry) == 16, "history entry layout drift");
@@ -232,6 +234,19 @@ static int async_smoke(PaintCore *core) {
         memset(&details,0,sizeof(details));details.struct_size=sizeof(details);
         ASYNC_CHECK(paint_session_selection_details(core,session,info.publication,0,&details,NULL,0)==PAINT_BUFFER_TOO_SMALL && details.point_count==3);
         ASYNC_CHECK(paint_session_selection_details(core,session,info.publication,0,&details,copied,3)==PAINT_OK && copied[0].x==8 && details.feather==3);
+    }
+    {
+        PaintBucketFill fill;PaintHistoryEntry bucket_history;
+        memset(&command,0,sizeof(command));command.struct_size=sizeof(command);command.kind=PAINT_COMMAND_NEW_DOCUMENT;command.width=32;command.height=32;
+        ASYNC_CHECK(paint_session_submit(core,session,&command,&sequence)==PAINT_OK);
+        start=clock();do{info.struct_size=sizeof(info);ASYNC_CHECK(paint_session_info(core,session,&info)==PAINT_OK);ASYNC_CHECK(clock()-start<5*CLOCKS_PER_SEC);}while(info.completed_sequence<sequence);
+        memset(&fill,0,sizeof(fill));fill.struct_size=sizeof(fill);fill.linear_rgba[0]=fill.linear_rgba[3]=1;fill.opacity=1;fill.antialias=fill.contiguous=1;
+        ASYNC_CHECK(paint_session_bucket_fill(core,session,&fill,&sequence)==PAINT_OK);
+        start=clock();do{info.struct_size=sizeof(info);ASYNC_CHECK(paint_session_info(core,session,&info)==PAINT_OK);ASYNC_CHECK(clock()-start<5*CLOCKS_PER_SEC);}while(info.completed_sequence<sequence);
+        ASYNC_CHECK(info.last_error_status==PAINT_OK && info.undo_depth==1);
+        memset(&bucket_history,0,sizeof(bucket_history));bucket_history.struct_size=sizeof(bucket_history);
+        ASYNC_CHECK(paint_session_history_entry(core,session,info.publication,1,&bucket_history)==PAINT_OK && bucket_history.kind==PAINT_HISTORY_BUCKET);
+        fill.tolerance=256;sequence=99;ASYNC_CHECK(paint_session_bucket_fill(core,session,&fill,&sequence)==PAINT_INVALID_ARGUMENT && sequence==0);
     }
     ASYNC_CHECK(remove(DRAWVERSE_ABI_SMOKE_FILE) == 0);
     ASYNC_CHECK(paint_session_destroy(core, &session) == PAINT_OK && session == NULL);
