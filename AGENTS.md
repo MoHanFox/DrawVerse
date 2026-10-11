@@ -2,6 +2,8 @@
 
 跨平台绘画应用：Rust 内核 → 稳定 C ABI → C++20 / Qt 6.5+ UI；Python 插件最后实施。
 
+- 最新选区绘画性能：`docs/selection-performance-design.md` / `docs/selection-performance-validation.md`；框选/套索按行覆盖与有界缓存、画笔和橡皮共用、保留 AA/羽化/组合像素结果，无 ABI 变更。
+
 - 最新共用选区与套索：`docs/lasso-selection-design.md` / `docs/lasso-selection-validation.md`；ABI 1.15、自由/多边形套索、四种组合与羽化/AA 共用、路径索引与历史/ORA、鼠标和数位板采集。
 
 - 最新菜单悬停与多选建组：`docs/menu-hover-grouping-design.md` / `docs/menu-hover-grouping-validation.md`；ABI 1.14、统一指针预览、原生菜单完整坐标转发、首行跨边回归、多选一次建组与撤销。

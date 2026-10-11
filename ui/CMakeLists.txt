@@ -94,6 +94,7 @@ add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     toolStripFloatsDocksPersistsAndTabsJoinContent
     brushLibrarySettingsAndEnginePreviewsShareSelectionAcrossWindows
     lassoPolygonAndMarqueeShareOptionsHistoryAndPersistence
+    denseLassoPaintingUpdatesFramesAndRestoresSelectionAfterUndo
     polygonDoubleClickClosureAndTabletFreehandUseSameInputPath
     selectionsDragCombineUndoConstrainAndPersist
     panelTabsRetractWithoutExpandingRailsAndKeepSharedPresentation

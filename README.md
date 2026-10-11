@@ -5,6 +5,7 @@ Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘
 已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.15.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
 
 - [共用选区参数、自由和多边形套索](docs/lasso-selection-design.md) / [验证](docs/lasso-selection-validation.md)
+- [框选与套索绘画/擦除性能](docs/selection-performance-design.md) / [验证](docs/selection-performance-validation.md)
 - [首行菜单悬停、即时混合预览与多选建组](docs/menu-hover-grouping-design.md) / [验证](docs/menu-hover-grouping-validation.md)
 - [面板收起后尺寸保持](docs/panel-fold-sizing-design.md) / [验证](docs/panel-fold-sizing-validation.md)
 - [悬停分类菜单、组删除选择与图层批量操作](docs/menu-layer-batch-design.md) / [验证](docs/menu-layer-batch-validation.md)
@@ -56,7 +57,7 @@ QML 新建每边支持 1–1,000,000 像素，只为可见区域和导航分配�
 
 图层顶部提供混合模式、不透明度、填充和三个锁；百分比键入或拖滑条松手一次提交。图层列表按可见行创建，空闲 200ms 后后台更新原始内容缩略图；绘画时取消。V 选择移动工具，拖动松开提交一次移动，方向键 1px、Shift 10px、Esc 取消。移出画布的内容保留，移动后仍可绘画。外观、锁和移动均可撤销，OpenRaster 保存这些参数。混合采用线性 sRGB 公共公式，未实现 Photoshop 特殊八种混合的 Fill 曲线，不承诺 Photoshop 逐像素一致。
 
-未实现自由套索/羽化/魔棒/一般变换、独立 Wintab 适配与真实硬件验收、ICC/16F/HDR/Rust GPU、PSD/自有格式、Python SDK。文件菜单已接入打开、保存/另存 OpenRaster、图片导出和取消任务；新建/打开/退出可先保存当前绘画。工具主窗与浮窗的二维分割、多文档画布标签和布局 v6 已接入；<8ms / 60–120fps 为后续性能验收目标。
+未实现魔棒/一般变换、独立 Wintab 适配与真实硬件验收、ICC/16F/HDR/Rust GPU、PSD/自有格式、Python SDK。文件菜单已接入打开、保存/另存 OpenRaster、图片导出和取消任务；新建/打开/退出可先保存当前绘画。工具主窗与浮窗的二维分割、多文档画布标签和布局 v6 已接入；<8ms / 60–120fps 为后续性能验收目标。
 
 文件模块支持 PNG 8/16 位导入、JPEG/WebP 导入和三格式 8 位合成导出；JPEG 使用线性白色背景，WebP 无损编码。OpenRaster 保留平面及嵌套隔离图层组、名称、顺序、可见性、不透明度及活动节点，并以 DrawVerse 层扩展 v1 保留填充、混合模式、三种锁、位置与溶解种子，保留画布外内容；标准定义的 15 种 Normal/颜色混合使用 SVG 名称互通，其他模式由扩展保存；合成预览为最终效果，但外部读者可能忽略扩展。以 8 位 sRGB 保存，不是 32F 无损原生格式。带 ICC、自定义 PNG 色彩元数据、动画、穿透组或未知混合/合成运算的文件会明确拒绝。栅格边长 ≤16,384、像素 ≤134,217,728（128M），输入 ≤256 MiB、解码器分配预算 1GiB；ORA 总节点 ≤256、嵌套 ≤16 级，图层总栅格亦受预算限制。保存先写同目录临时文件再原子替换，失败保留旧文件。详细范围与验证见 [IO 设计](docs/io-design.md) / [组验收](docs/groups-validation.md)。
 
@@ -105,6 +106,8 @@ ctest --test-dir build/qt -C Release -R "^abi_" --output-on-failure
 # 原生绘画性能测量：真实 QML 窗口、压感输入与进程 CPU 时间
 python tools/measure_painting.py build/qt/bin/Release/drawverse.exe artifacts/painting-ui.json
 cargo run --manifest-path core/Cargo.toml -p paint-render --example painting_bench --release --locked
+# 框选/4096 点套索画笔及橡皮：首轮冷缓存，后两轮重用，撤销恢复相同像素
+cargo run --manifest-path core/Cargo.toml -p paint-core --example selection_performance --release --locked
 # 8K 全幅单笔 / 驻留预算 / 冷热概览 / 完整撤销重做
 cargo run --manifest-path core/Cargo.toml -p paint-render --example paging_bench --release --locked
 

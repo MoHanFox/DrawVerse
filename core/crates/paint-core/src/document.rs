@@ -358,6 +358,7 @@ pub struct Document {
     revision: u64,
     dirty: DirtyTiles,
     selection: crate::Selection,
+    selection_cache: crate::selection::SelectionCoverageCache,
 }
 
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
@@ -563,6 +564,7 @@ impl Document {
             history: History::default(),
             stroke: None,
             selection: crate::Selection::default(),
+            selection_cache: Default::default(),
             revision: 0,
             dirty: DirtyTiles {
                 all: true,
@@ -637,6 +639,7 @@ impl Document {
             action,
         )?;
         self.selection = selection;
+        self.selection_cache.clear();
         self.bump_revision();
         Ok(())
     }
@@ -648,6 +651,7 @@ impl Document {
             ));
         }
         self.selection = selection;
+        self.selection_cache.clear();
         Ok(())
     }
     pub fn tile_count(&self) -> usize {
@@ -1275,12 +1279,21 @@ impl Document {
                 let mut updates = Vec::new();
                 let mut pixels: Option<Vec<Pixel>> = None;
                 for y in y0.max(ty * 64)..y1.min((ty + 1) * 64) {
-                    for x in x0.max(tx * 64)..x1.min((tx + 1) * 64) {
+                    let start_x = x0.max(tx * 64);
+                    let end_x = x1.min((tx + 1) * 64);
+                    let selection_row = if SELECTED {
+                        self.selection_cache.row(
+                            &self.selection,
+                            start_x + i64::from(appearance.offset_x),
+                            y + i64::from(appearance.offset_y),
+                            (end_x - start_x) as usize,
+                        )
+                    } else {
+                        [1.; 64]
+                    };
+                    for x in start_x..end_x {
                         let selected = if SELECTED {
-                            self.selection.coverage(
-                                (x + i64::from(appearance.offset_x)) as f64 + 0.5,
-                                (y + i64::from(appearance.offset_y)) as f64 + 0.5,
-                            )
+                            selection_row[(x - start_x) as usize]
                         } else {
                             1.
                         };
@@ -1422,6 +1435,7 @@ impl Document {
                 } else {
                     before.clone()
                 };
+                self.selection_cache.clear();
                 self.bump_revision();
             }
             Command::Structure { before, after } => {

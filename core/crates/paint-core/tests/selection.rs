@@ -297,3 +297,222 @@ fn long_polygon_index_matches_unindexed_coverage() {
         }
     }
 }
+
+#[test]
+fn batched_coverage_matches_scalar_at_vertices_crossings_and_fractional_edges() {
+    let mut paths = vec![
+        vec![[0.5, 0.5], [40.5, 0.5], [40.5, 40.5], [0.5, 40.5]],
+        vec![
+            [0.125, 1.375],
+            [41.25, 2.5],
+            [7.5, 15.5],
+            [12.25, 47.5],
+            [-4.5, 37.25],
+        ],
+        vec![[0.5, 0.5], [40.5, 40.5], [0.5, 40.5], [40.5, 0.5]],
+        vec![
+            [0.5, 0.5],
+            [40.5, 0.5],
+            [40.5, 10.5],
+            [10.5, 10.5],
+            [10.5, 40.5],
+            [0.5, 40.5],
+        ],
+        (0..256)
+            .map(|i| {
+                let a = i as f64 * std::f64::consts::TAU / 256.;
+                [22. + 20. * a.cos(), 23. + 21. * a.sin()]
+            })
+            .collect(),
+    ];
+    // Deterministic unsorted polygons also exercise overlapping and repeated crossings.
+    let mut seed = 0x1963_7d2bu32;
+    for _ in 0..24 {
+        paths.push(
+            (0..12)
+                .map(|_| {
+                    let mut coordinate = || {
+                        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                        (seed % 5600) as f64 / 100. - 6.
+                    };
+                    [coordinate(), coordinate()]
+                })
+                .collect(),
+        );
+    }
+    for points in paths {
+        for aa in [false, true] {
+            for feather in [0., 0.75, 8.] {
+                let shape = SelectionShape::polygon(points.clone(), aa, feather).unwrap();
+                let selection = Selection::default()
+                    .apply(shape, Op::Replace, 128, 128)
+                    .unwrap();
+                for y in -10..58 {
+                    for x in [-33.5, -0.5, 0.125, 0.5, 63.5] {
+                        let mut row = vec![0.; 129];
+                        selection.coverage_span(x, y as f64 + 0.5, &mut row);
+                        for (i, value) in row.into_iter().enumerate() {
+                            let expected = selection.coverage(x + i as f64, y as f64 + 0.5);
+                            assert!(
+                                (value - expected).abs() < 1e-6,
+                                "x={} y={} aa={} feather={} actual={} expected={}",
+                                x + i as f64,
+                                y as f64 + 0.5,
+                                aa,
+                                feather,
+                                value,
+                                expected
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn batched_boolean_selection_and_real_dabs_preserve_scalar_pixels() {
+    let shape = SelectionShape::polygon(vec![[4., 3.], [58., 7.], [25., 60.]], true, 3.).unwrap();
+    let selection = Selection::default()
+        .apply(shape, Op::Replace, 64, 64)
+        .unwrap();
+    for op in [Op::Add, Op::Subtract, Op::Intersect] {
+        let combined = selection
+            .apply(rect(15.25, 15.5, 20., 30.), op, 64, 64)
+            .unwrap()
+            .inverted(64, 64)
+            .unwrap();
+        for y in 0..64 {
+            let mut row = [0.; 64];
+            combined.coverage_span(0.5, y as f64 + 0.5, &mut row);
+            for (x, &value) in row.iter().enumerate() {
+                assert!((value - combined.coverage(x as f64 + 0.5, y as f64 + 0.5)).abs() < 1e-6);
+            }
+        }
+    }
+    let mut doc = Document::new(64, 64).unwrap();
+    doc.set_selection(selection.clone()).unwrap();
+    let brush = Brush {
+        radius: 24.,
+        opacity: 0.5,
+        ..Brush::default()
+    };
+    doc.begin_stroke(brush, InputPoint::new(32., 32., 1.))
+        .unwrap();
+    doc.end_stroke().unwrap();
+    for y in 0..64 {
+        for x in 0..64 {
+            let distance = (x as f64 + 0.5 - 32.).hypot(y as f64 + 0.5 - 32.);
+            let expected = (24.5 - distance).clamp(0., 1.) as f32
+                * 0.5
+                * selection.coverage(x as f64 + 0.5, y as f64 + 0.5);
+            assert!((doc.pixel(x, y).alpha() - expected).abs() < 1e-6);
+        }
+    }
+    doc.undo().unwrap();
+    assert_eq!(doc.pixel(32, 32).alpha(), 0.);
+    doc.set_selection(Selection::default()).unwrap();
+    doc.begin_stroke(brush, InputPoint::new(32., 32., 1.))
+        .unwrap();
+    doc.end_stroke().unwrap();
+    assert_eq!(doc.pixel(32, 32).alpha(), 0.5);
+    doc.undo().unwrap();
+    doc.undo().unwrap();
+    assert_eq!(doc.selection(), &selection);
+    doc.begin_stroke(brush, InputPoint::new(32., 32., 1.))
+        .unwrap();
+    doc.cancel_stroke().unwrap();
+    assert_eq!(doc.pixel(32, 32).alpha(), 0.);
+    doc.move_layer(1, 3, -7).unwrap();
+    doc.begin_stroke(brush, InputPoint::new(32., 32., 1.))
+        .unwrap();
+    doc.end_stroke().unwrap();
+    assert!((doc.pixel(32, 32).alpha() - selection.coverage(32.5, 32.5) * 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn cached_paint_and_erase_match_scalar_with_offsets_and_selection_changes() {
+    for kind in [
+        SelectionKind::Rectangle,
+        SelectionKind::Ellipse,
+        SelectionKind::Polygon,
+    ] {
+        for feather in [0., 3.] {
+            let mut shape = if kind == SelectionKind::Polygon {
+                SelectionShape::polygon(vec![[8.25, 5.5], [59.5, 12.25], [27.5, 61.5]], true, 0.)
+                    .unwrap()
+            } else {
+                let mut shape = SelectionShape::geometry(kind, 8.25, 5.5, 51.25, 56., true);
+                shape.feather = feather;
+                shape
+            };
+            // Mutating an existing polygon's feather must also tolerate a stale edge index.
+            shape.feather = feather;
+            let selection = Selection::default()
+                .apply(shape, Op::Replace, 64, 64)
+                .unwrap();
+            for mode in [BrushMode::Paint, BrushMode::Erase] {
+                let mut doc = Document::new(64, 64).unwrap();
+                doc.move_layer(1, 17, -9).unwrap();
+                if mode == BrushMode::Erase {
+                    doc.begin_stroke(
+                        Brush {
+                            radius: 100.,
+                            ..Brush::default()
+                        },
+                        InputPoint::new(32., 32., 1.),
+                    )
+                    .unwrap();
+                    doc.end_stroke().unwrap();
+                }
+                doc.set_selection(selection.clone()).unwrap();
+                let brush = Brush {
+                    radius: 28.,
+                    opacity: 0.5,
+                    mode,
+                    ..Brush::default()
+                };
+                for active in [
+                    selection.clone(),
+                    selection.inverted(64, 64).unwrap(),
+                    Selection::default(),
+                    selection.clone(),
+                ] {
+                    doc.set_selection(active.clone()).unwrap();
+                    for _ in 0..2 {
+                        doc.begin_stroke(brush, InputPoint::new(32., 32., 1.))
+                            .unwrap();
+                        doc.end_stroke().unwrap();
+                        for y in 0..64 {
+                            for x in 0..64 {
+                                let distance = (x as f64 + 0.5 - 32.).hypot(y as f64 + 0.5 - 32.);
+                                let flow = (28.5 - distance).clamp(0., 1.) as f32
+                                    * 0.5
+                                    * active.coverage(x as f64 + 0.5, y as f64 + 0.5);
+                                let expected = if mode == BrushMode::Erase {
+                                    1. - flow
+                                } else {
+                                    flow
+                                };
+                                assert!(
+                                    (doc.pixel(x, y).alpha() - expected).abs() < 1e-6,
+                                    "{kind:?} {mode:?} feather={feather} ({x},{y})"
+                                );
+                            }
+                        }
+                        let painted = doc.snapshot();
+                        doc.undo().unwrap();
+                        doc.redo().unwrap();
+                        for y in 0..64 {
+                            for x in 0..64 {
+                                assert_eq!(doc.pixel(x, y), painted.pixel(x, y));
+                            }
+                        }
+                        doc.undo().unwrap();
+                    }
+                }
+            }
+        }
+    }
+}

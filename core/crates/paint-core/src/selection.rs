@@ -318,6 +318,144 @@ impl SelectionShape {
             -distance
         }
     }
+
+    fn polygon_edges(&self, y: f64, mut visit: impl FnMut([f64; 2], [f64; 2])) {
+        let index = self.index.as_ref().filter(|index| {
+            Arc::ptr_eq(&index.points, &self.points)
+                && index.feather == self.feather
+                && index.y == self.y
+                && index.height == self.height
+        });
+        let row = index.map(|index| {
+            let margin = self.feather + 1.;
+            let bin = ((y - self.y + margin) / (self.height + 2. * margin) * 64.)
+                .floor()
+                .clamp(0., 63.) as usize;
+            index.rows[bin].as_slice()
+        });
+        for position in 0..row.map_or(self.points.len(), |r| r.len()) {
+            let i = row.map_or(position, |r| r[position]);
+            visit(
+                self.points[(i + self.points.len() - 1) % self.points.len()],
+                self.points[i],
+            );
+        }
+    }
+    /// Fill one subpixel sample row with the even-odd polygon rule. Edge work is per row,
+    /// not per pixel; spans share exactly the same sample positions as scalar coverage.
+    fn polygon_sample_row(&self, x: f64, y: f64, weight: f32, output: &mut [f32]) {
+        let mut crossings = Vec::new();
+        let mut boundaries = Vec::new();
+        self.polygon_edges(y, |a, b| {
+            if (a[1] > y) != (b[1] > y) {
+                crossings.push(a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+            }
+            if a[1] == y && b[1] == y {
+                boundaries.push((a[0].min(b[0]), a[0].max(b[0])));
+            }
+            // Vertices on the last scanline still belong to a closed boundary.
+            if a[1] == y {
+                boundaries.push((a[0], a[0]));
+            }
+        });
+        crossings.sort_unstable_by(f64::total_cmp);
+        let mut covered = vec![false; output.len()];
+        for (left, right) in crossings
+            .chunks_exact(2)
+            .map(|pair| (pair[0], pair[1]))
+            .chain(boundaries.iter().copied())
+        {
+            let start = (left - x).ceil().clamp(0., output.len() as f64) as usize;
+            let end = ((right - x).floor() + 1.).clamp(0., output.len() as f64) as usize;
+            if start < end {
+                covered[start..end].fill(true);
+            }
+            // At exact subpixel crossings floating point projection may distinguish the
+            // boundary from its mathematical line; retain the existing scalar decision.
+            for edge in [left, right] {
+                let offset = (edge - x).round();
+                if offset >= 0. && offset < output.len() as f64 && (x + offset - edge).abs() < 1e-10
+                {
+                    covered[offset as usize] = self.distance(x + offset, y) >= 0.;
+                }
+            }
+        }
+        // A horizontal boundary's projection can round just outside the shape.
+        // Preserve the scalar result for this exceptional row, after all spans.
+        for (left, right) in boundaries {
+            let start = (left - x).ceil().clamp(0., output.len() as f64) as usize;
+            let end = ((right - x).floor() + 1.).clamp(0., output.len() as f64) as usize;
+            for (i, inside) in covered.iter_mut().enumerate().take(end).skip(start) {
+                *inside = self.distance(x + i as f64, y) >= 0.;
+            }
+        }
+        for (value, inside) in output.iter_mut().zip(covered) {
+            if inside {
+                *value += weight;
+            }
+        }
+    }
+    fn coverage_span(&self, x: f64, y: f64, output: &mut [f32]) {
+        output.fill(0.);
+        if y < self.y - self.feather - 1.
+            || y > self.y + self.height + self.feather + 1.
+            || x + (output.len() as f64) < self.x - self.feather - 1.
+            || x > self.x + self.width + self.feather + 1.
+        {
+            return;
+        }
+        if self.kind != SelectionKind::Polygon {
+            for (i, value) in output.iter_mut().enumerate() {
+                *value = self.coverage(x + i as f64, y);
+            }
+            return;
+        }
+        if self.feather > 0. {
+            self.polygon_sample_row(x, y, 1., output);
+            let mut distances = vec![self.feather * self.feather; output.len()];
+            self.polygon_edges(y, |a, b| {
+                let dx = b[0] - a[0];
+                let dy = b[1] - a[1];
+                let length = dx * dx + dy * dy;
+                let start = (a[0].min(b[0]) - self.feather - x)
+                    .ceil()
+                    .clamp(0., output.len() as f64) as usize;
+                let end = ((a[0].max(b[0]) + self.feather - x).floor() + 1.)
+                    .clamp(0., output.len() as f64) as usize;
+                for (i, nearest) in distances.iter_mut().enumerate().take(end).skip(start) {
+                    let px = x + i as f64 - a[0];
+                    let py = y - a[1];
+                    let t = if length > 0. {
+                        (px * dx + py * dy) / length
+                    } else {
+                        0.
+                    }
+                    .clamp(0., 1.);
+                    let ex = px - t * dx;
+                    let ey = py - t * dy;
+                    *nearest = nearest.min(ex * ex + ey * ey);
+                }
+            });
+            for (value, squared) in output.iter_mut().zip(distances) {
+                let sign = if *value > 0. { 1. } else { -1. };
+                let t = (0.5 + sign * squared.sqrt() / (2. * self.feather)).clamp(0., 1.);
+                *value = (t * t * (3. - 2. * t)) as f32;
+            }
+        } else if self.antialias {
+            for sy in 0..4 {
+                for sx in 0..4 {
+                    self.polygon_sample_row(
+                        x - 0.5 + (sx as f64 + 0.5) * 0.25,
+                        y - 0.5 + (sy as f64 + 0.5) * 0.25,
+                        1. / 16.,
+                        output,
+                    );
+                }
+            }
+        } else {
+            self.polygon_sample_row(x, y, 1., output);
+        }
+    }
     pub fn coverage(&self, x: f64, y: f64) -> f32 {
         if x < self.x - self.feather - 1.
             || x > self.x + self.width + self.feather + 1.
@@ -650,6 +788,30 @@ impl Selection {
         }
         value
     }
+
+    /// Coverage for consecutive document pixel centers. Shared by all selection tools.
+    pub fn coverage_span(&self, x: f64, y: f64, output: &mut [f32]) {
+        if !self.enabled {
+            output.fill(1.);
+            return;
+        }
+        output.fill(0.);
+        let mut shape = vec![0.; output.len()];
+        for step in self.steps.iter() {
+            if let Some(s) = &step.shape {
+                s.coverage_span(x, y, &mut shape);
+            }
+            for (value, &coverage) in output.iter_mut().zip(&shape) {
+                *value = match step.operation {
+                    SelectionOperation::Replace => coverage,
+                    SelectionOperation::Add => value.max(coverage),
+                    SelectionOperation::Subtract => (*value - coverage).max(0.),
+                    SelectionOperation::Intersect => value.min(coverage),
+                    SelectionOperation::Invert => 1. - *value,
+                };
+            }
+        }
+    }
     pub fn to_text(&self) -> String {
         let mut text = format!("3|{}", u8::from(self.enabled));
         for step in self.steps.iter() {
@@ -817,5 +979,108 @@ impl Selection {
             });
         }
         Self::from_steps(enabled, steps)
+    }
+}
+
+// Auxiliary working set only: never serialized, retained by snapshots or stored in history.
+const COVERAGE_BLOCK: usize = 64;
+const MAX_COVERAGE_BLOCKS: usize = 4096;
+#[derive(Debug, Default)]
+pub(crate) struct SelectionCoverageCache {
+    identity: Option<Selection>,
+    blocks: std::collections::HashMap<(i64, i64), Arc<[f32; COVERAGE_BLOCK]>>,
+    order: std::collections::VecDeque<(i64, i64)>,
+}
+impl SelectionCoverageCache {
+    pub(crate) fn clear(&mut self) {
+        *self = Self::default();
+    }
+    fn block(&mut self, selection: &Selection, x: i64, y: i64) -> Arc<[f32; COVERAGE_BLOCK]> {
+        if !self.identity.as_ref().is_some_and(|old| {
+            old.enabled == selection.enabled && Arc::ptr_eq(&old.steps, &selection.steps)
+        }) {
+            self.blocks.clear();
+            self.order.clear();
+            self.identity = Some(selection.clone());
+        }
+        let key = (x.div_euclid(COVERAGE_BLOCK as i64), y);
+        if let Some(block) = self.blocks.get(&key) {
+            return block.clone();
+        }
+        let mut values = [0.; COVERAGE_BLOCK];
+        selection.coverage_span(
+            (key.0 * COVERAGE_BLOCK as i64) as f64 + 0.5,
+            y as f64 + 0.5,
+            &mut values,
+        );
+        let block = Arc::new(values);
+        if self.blocks.len() == MAX_COVERAGE_BLOCKS {
+            let oldest = self
+                .order
+                .pop_front()
+                .expect("nonempty bounded coverage cache");
+            self.blocks.remove(&oldest);
+        }
+        self.order.push_back(key);
+        self.blocks.insert(key, block.clone());
+        block
+    }
+    pub(crate) fn row(
+        &mut self,
+        selection: &Selection,
+        x: i64,
+        y: i64,
+        length: usize,
+    ) -> [f32; COVERAGE_BLOCK] {
+        debug_assert!(length <= COVERAGE_BLOCK);
+        let mut result = [0.; COVERAGE_BLOCK];
+        let mut done = 0;
+        while done < length {
+            let column = x + done as i64;
+            let offset = column.rem_euclid(COVERAGE_BLOCK as i64) as usize;
+            let count = (COVERAGE_BLOCK - offset).min(length - done);
+            let block = self.block(selection, column, y);
+            result[done..done + count].copy_from_slice(&block[offset..offset + count]);
+            done += count;
+        }
+        result
+    }
+}
+
+#[cfg(test)]
+mod coverage_cache_tests {
+    use super::*;
+    #[test]
+    fn cache_reuses_blocks_bounds_memory_and_invalidates_only_with_selection_identity() {
+        let triangle =
+            SelectionShape::polygon(vec![[0., 0.], [80., 0.], [0., 80.]], true, 4.).unwrap();
+        let selection = Selection::default()
+            .apply(triangle, SelectionOperation::Replace, 1000000, 1000000)
+            .unwrap();
+        let mut cache = SelectionCoverageCache::default();
+        let first = cache.block(&selection, 0, 10);
+        let hit = cache.block(&selection, 0, 10);
+        assert!(Arc::ptr_eq(&first, &hit));
+        let row = cache.row(&selection, -5, 10, 64);
+        for (i, &value) in row.iter().enumerate() {
+            assert!((value - selection.coverage(-4.5 + i as f64, 10.5)).abs() < 1e-6);
+        }
+        for y in 100..(100 + MAX_COVERAGE_BLOCKS as i64) {
+            cache.row(&selection, 0, y, 64);
+        }
+        assert_eq!(cache.blocks.len(), MAX_COVERAGE_BLOCKS);
+        assert_eq!(cache.order.len(), MAX_COVERAGE_BLOCKS);
+        assert!(!cache.blocks.contains_key(&(0, 10)));
+        let inverted = selection.inverted(1000000, 1000000).unwrap();
+        let reverse = cache.block(&inverted, 0, 10);
+        assert_eq!(cache.blocks.len(), 1);
+        for (a, b) in first.iter().zip(reverse.iter()) {
+            assert!((a + b - 1.).abs() < 1e-6);
+        }
+        let restored = cache.block(&selection, 0, 10);
+        assert_eq!(&*first, &*restored);
+        assert!(!Arc::ptr_eq(&first, &restored));
+        cache.clear();
+        assert!(cache.blocks.is_empty() && cache.order.is_empty() && cache.identity.is_none());
     }
 }

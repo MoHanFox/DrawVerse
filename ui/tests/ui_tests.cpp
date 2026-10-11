@@ -63,7 +63,18 @@ QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
 
 class UiTests final : public QObject {
     Q_OBJECT
+    QTemporaryDir m_preferences;
 private slots:
+    void initTestCase() {
+        QVERIFY(m_preferences.isValid());
+        QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,m_preferences.path());
+        QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,m_preferences.path());
+    }
+    void init() {
+        QSettings settings(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse");
+        QVERIFY(settings.fileName().startsWith(m_preferences.path()+"/"));
+        settings.clear();settings.sync();QCOMPARE(settings.status(),QSettings::NoError);
+    }
     void foldedNeighboursKeepTheirSizes_data() {
         QTest::addColumn<int>("toolWidth");for(int width:{36,55,72})QTest::newRow(qPrintable(QString::number(width)))<<width;
     }
@@ -1611,6 +1622,72 @@ private slots:
         const auto stopped=phaseChanged.size();QTest::qWait(250);QCOMPARE(phaseChanged.size(),stopped);
     }
 
+    void denseLassoPaintingUpdatesFramesAndRestoresSelectionAfterUndo() {
+        QTemporaryDir temp;
+        PaintCoreClient client(nullptr,temp.filePath("selection.ini"));
+        QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(1024,1024);
+        QTRY_VERIFY(client.ready() && client.documentWidth()==1024);
+        client.requestViewport(0,{0,0,1024,1024},{1024,1024});
+        QVector<QPointF> points;
+        for(int i=0;i<4096;++i) {
+            const double angle=i*6.283185307179586/4096;
+            points.append({512+410*std::cos(angle),512+410*std::sin(angle)});
+        }
+        client.activateBrush();client.setBrushRadius(32);client.setBrushColor(Qt::black);
+        for(const double feather:{0.,8.}) {
+            client.setSelectionFeather(feather);
+            QVERIFY(client.editSelectionPath(points,0,false));
+            QTRY_VERIFY(!client.layerEditBusy());
+            const auto depth=client.undoDepth();
+            QCOMPARE(client.selectionSteps().last().toMap().value("points").toList().size(),4096);
+            int ticks=0;
+            QTimer heartbeat;heartbeat.setInterval(1);
+            connect(&heartbeat,&QTimer::timeout,this,[&]{++ticks;});heartbeat.start();
+            InputSample sample;sample.position={180,512};
+            QVERIFY(client.beginStroke(sample));
+            for(int i=1;i<=120;++i) {
+                sample.position={180+i*5.5,512+std::sin(i*.07)*160};
+                client.strokeTo(sample);
+            }
+            client.endStroke();
+            QTRY_COMPARE_WITH_TIMEOUT(client.undoDepth(),depth+1,10000);
+            QTRY_VERIFY_WITH_TIMEOUT(client.frameRevision()>=client.revision(),10000);
+            heartbeat.stop();QVERIFY(ticks>0);
+            QCOMPARE(client.frame().size(),QSize(1024,1024));
+            QVERIFY(client.frame().pixelColor(180,512).alpha()>0);
+            QCOMPARE(client.frame().pixelColor(10,10).alpha(),0);
+            client.activateEraser();client.setBrushRadius(32);
+            const auto paintedAlpha=client.frame().pixelColor(180,512).alpha();
+            sample.position={180,512};QVERIFY(client.beginStroke(sample));client.endStroke();
+            QTRY_COMPARE_WITH_TIMEOUT(client.undoDepth(),depth+2,10000);
+            QTRY_VERIFY_WITH_TIMEOUT(client.frameRevision()>=client.revision(),10000);
+            QVERIFY(client.frame().pixelColor(180,512).alpha()<paintedAlpha);
+            QCOMPARE(client.frame().pixelColor(10,10).alpha(),0);
+            client.undo();QTRY_COMPARE(client.undoDepth(),depth+1);
+            QTRY_VERIFY(client.frameRevision()>=client.revision());
+            QCOMPARE(client.frame().pixelColor(180,512).alpha(),paintedAlpha);
+            client.activateBrush();
+            client.undo();QTRY_COMPARE(client.undoDepth(),depth);
+            QTRY_VERIFY(client.frameRevision()>=client.revision());
+            QCOMPARE(client.frame().pixelColor(180,512).alpha(),0);
+            // Clearing and undoing the selection must invalidate the coverage cache.
+            QVERIFY(client.clearSelection());QTRY_VERIFY(!client.layerEditBusy());
+            QVERIFY(!client.selectionEnabled());
+            client.undo();QTRY_COMPARE(client.undoDepth(),depth);
+            QTRY_VERIFY(client.selectionEnabled() && !client.layerEditBusy());
+            sample.position={100,512};QVERIFY(client.beginStroke(sample));client.endStroke();
+            QTRY_COMPARE(client.undoDepth(),depth+1);
+            QTRY_VERIFY(client.frameRevision()>=client.revision());
+            QCOMPARE(client.frame().pixelColor(80,512).alpha(),0);
+            QVERIFY(client.frame().pixelColor(110,512).alpha()>0);
+            client.undo();QTRY_COMPARE(client.undoDepth(),depth);
+            QTRY_VERIFY(!client.layerEditBusy());
+        }
+        QVERIFY(client.lastError().isEmpty());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);
+        client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void lassoPolygonAndMarqueeShareOptionsHistoryAndPersistence() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
@@ -1904,7 +1981,9 @@ private slots:
         client.undo();QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!layer(top).value("clipped").toBool());client.redo();QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(layer(top).value("clipped").toBool());
         QVERIFY(client.addMask(1));QTRY_COMPARE(client.layers().size(),3);QTRY_VERIFY(!client.layerEditBusy());const auto mask=client.activeLayer();
         auto *list=findVisualItem(window->contentItem(),"layerList");QVERIFY(list);QTRY_COMPARE(list->property("count").toInt(),2);QVERIFY(!findVisualItem(window->contentItem(),"layerRow:"+QString::number(mask)));
-        auto *raw=findVisualItem(window->contentItem(),"layerThumbnail:1");auto *maskThumb=findVisualItem(window->contentItem(),"layerThumbnail:"+QString::number(mask));QVERIFY(raw && maskThumb);QVERIFY(maskThumb->mapToScene({0,0}).x()>raw->mapToScene({raw->width(),0}).x());QCOMPARE(maskThumb->mapToScene({0,0}).y(),raw->mapToScene({0,0}).y());
+        auto *raw=findVisualItem(window->contentItem(),"layerThumbnail:1");auto *maskThumb=findVisualItem(window->contentItem(),"layerThumbnail:"+QString::number(mask));QVERIFY(raw && maskThumb);
+        // Delegate creation precedes the asynchronous Row layout, especially at high DPI.
+        QTRY_VERIFY(maskThumb->mapToScene({0,0}).x()>raw->mapToScene({raw->width(),0}).x());QTRY_COMPARE(maskThumb->mapToScene({0,0}).y(),raw->mapToScene({0,0}).y());
         auto hit=[&](QQuickWindow *w,quint64 id,Qt::KeyboardModifiers modifiers=Qt::NoModifier){QTest::qWait(50);auto *i=findVisualItem(w->contentItem(),"layerThumbnailHit:"+QString::number(id));if(!i || !i->isVisible())return false;QTest::mouseClick(w,Qt::LeftButton,modifiers,i->mapToScene({i->width()/2,i->height()/2}).toPoint());return true;};
         QTRY_VERIFY(list->height()>=46);
         QVERIFY(hit(window,1));QTRY_COMPARE(client.activeLayer(),quint64(1));QTRY_VERIFY(!client.layerEditBusy());QVERIFY(hit(window,mask));QTRY_COMPARE(client.activeLayer(),mask);QTRY_VERIFY(!client.layerEditBusy());
