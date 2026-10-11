@@ -1697,6 +1697,7 @@ private slots:
         QTest::keyClick(window,Qt::Key_G);QTRY_VERIFY(client.bucketTool());QVERIFY(!client.eraser() && !client.selectionTool() && !client.moveTool() && !client.eyedropperTool());
         QCOMPARE(client.bucketTolerance(),0);QCOMPARE(client.bucketOpacity(),1.);QVERIFY(client.bucketAntialias() && client.bucketContiguous() && !client.bucketAllLayers());
         auto *bar=findVisualItem(window->contentItem(),"bucketOptionsBar");QVERIFY(bar && bar->isVisible());
+        auto *bucketIcon=findVisualItem(window->contentItem(),"bucketOptionsIcon");QVERIFY(bucketIcon && bucketIcon->isVisible());QCOMPARE(bucketIcon->property("name").toString(),QStringLiteral("bucket"));QCOMPARE(bucketIcon->width(),17.);QCOMPARE(bucketIcon->height(),17.);
         auto *statusTool=findVisualItem(window->contentItem(),"statusTool");QVERIFY(statusTool);QCOMPARE(statusTool->property("text").toString(),QStringLiteral("工具  油漆桶工具"));
         const auto preview=qEnvironmentVariable("DRAWVERSE_BUCKET_PREVIEW");if(!preview.isEmpty()){QTest::qWait(100);QVERIFY(window->grabWindow().save(preview));}
         auto toggle=[&](const QString &name){auto *item=findVisualItem(window->contentItem(),name);if(!item)return false;QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,item->mapToScene({7,item->height()/2}).toPoint());return true;};

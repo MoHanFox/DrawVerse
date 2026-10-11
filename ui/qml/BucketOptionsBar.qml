@@ -8,6 +8,7 @@ RowLayout {
     objectName:"bucketOptionsBar"
     required property var client
     spacing:8
+    Icon {objectName:"bucketOptionsIcon";name:"bucket";Layout.preferredWidth:17;Layout.preferredHeight:17}
     Label {text:"不透明度：";color:Theme.muted}
     LayerPercent {
         objectName:"bucketOpacity";fraction:root.client.bucketOpacity
