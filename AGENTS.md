@@ -2,6 +2,8 @@
 
 跨平台绘画应用：Rust 内核 → 稳定 C ABI → C++20 / Qt 6.5+ UI；Python 插件最后实施。
 
+- 最新面板折叠尺寸保持：`docs/panel-fold-sizing-design.md` / `docs/panel-fold-sizing-validation.md`；布局 v6 可选 retainedWidths，折叠仅压缩自身、工具栏宽度优先、浮窗收窄、相邻宽高与展开尺寸保持、显式调整解除保持。
+
 - 最新菜单分类与图层批量修复：`docs/menu-layer-batch-design.md` / `docs/menu-layer-batch-validation.md`；ABI 1.13、共享悬停侧向子菜单、组删除双选择、原子多选删除/拖放、拖入剪贴链自动继承、图层面板首开异步创建。
 - 最新遗留修复与吸色：`docs/deepseek-recovery-design.md` / `docs/deepseek-recovery-validation.md`；ABI 1.12、I 独立吸色与 Alt 临时吸色、DPI/视口坐标修复、剪贴链插层/基底变化、缩略图独立通知、剩余面板高度和恢复拖动。GPU/液化/.vbr/图层复制合并本轮暂缓。
 - 当前阶段与验证命令：`README.md`、`docs/roadmap.md`。

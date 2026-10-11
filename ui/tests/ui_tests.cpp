@@ -64,6 +64,37 @@ QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
 class UiTests final : public QObject {
     Q_OBJECT
 private slots:
+    void foldedNeighboursKeepTheirSizes_data() {
+        QTest::addColumn<int>("toolWidth");for(int width:{36,55,72})QTest::newRow(qPrintable(QString::number(width)))<<width;
+    }
+    void foldedNeighboursKeepTheirSizes() {
+        QFETCH(int,toolWidth);QTemporaryDir temp;const auto path=temp.filePath("layout.ini");PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(path);QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());QTRY_VERIFY(client.ready());
+        const auto brush=workspace.groupForPanel("brush");workspace.detachGroup(brush);workspace.setToolStripWidth(toolWidth);QVERIFY(workspace.dockToolStrip("drawverse-tools-v1","floating",brush,"left"));
+        QQuickWindow *floating=nullptr;QTRY_VERIFY([&]{for(auto *w:applicationWindows())if(w->objectName()=="floatingDock:"+brush)floating=qobject_cast<QQuickWindow*>(w);return floating!=nullptr;}());floating->resize(420,650);QTest::qWait(50);
+        auto *tools=findVisualItem(floating->contentItem(),"dockTile:__toolstrip");QVERIFY(tools);QTRY_COMPARE(tools->width(),qreal(toolWidth));const auto expanded=floating->geometry();
+        workspace.setColumnCollapsed(brush,true);QTRY_COMPARE(tools->width(),qreal(toolWidth));QTRY_COMPARE(floating->width(),toolWidth+31);QCOMPARE(floating->position(),expanded.topLeft());QCOMPARE(floating->height(),expanded.height());
+        const auto preview=qEnvironmentVariable("DRAWVERSE_FOLD_SIZE_PREVIEW");if(!preview.isEmpty()){QTest::qWait(50);QVERIFY(floating->grabWindow().save(preview+"."+QString::number(toolWidth)+".png"));}
+        const auto adjusted=toolWidth==36?72:36;workspace.setToolStripWidth(adjusted);QTRY_COMPARE(tools->width(),qreal(adjusted));QTRY_COMPARE(floating->width(),adjusted+31);workspace.setToolStripWidth(toolWidth);QTRY_COMPARE(floating->width(),toolWidth+31);
+        workspace.saveLayout();WorkspaceManager restored(path);const auto saved=restored.floatingWindows().first().toMap();QCOMPARE(saved.value("width").toInt(),toolWidth+31);restored.setColumnCollapsed(brush,false);QCOMPARE(restored.floatingWindows().first().toMap().value("width").toInt(),expanded.width());
+        QSettings settings(path,QSettings::IniFormat);auto legacy=QJsonDocument::fromJson(settings.value("workspace").toByteArray()).object();legacy.remove("retainedWidths");auto windows=legacy.value("windows").toObject();auto oldWindow=windows.value(brush).toObject();oldWindow.insert("width",expanded.width());windows.insert(brush,oldWindow);legacy.insert("windows",windows);settings.setValue("workspace",QJsonDocument(legacy).toJson());settings.sync();WorkspaceManager migrated(path);QCOMPARE(migrated.floatingWindows().first().toMap().value("width").toInt(),toolWidth+31);migrated.setColumnCollapsed(brush,false);QCOMPARE(migrated.floatingWindows().first().toMap().value("width").toInt(),std::min(expanded.width(),floating->screen()->availableGeometry().width()));
+        for(int i=0;i<3;++i){workspace.setColumnCollapsed(brush,false);QTRY_COMPARE(floating->geometry(),expanded);QTRY_COMPARE(tools->width(),qreal(toolWidth));workspace.setColumnCollapsed(brush,true);QTRY_COMPARE(floating->width(),toolWidth+31);}
+        workspace.setColumnCollapsed(brush,false);QTRY_COMPARE(floating->geometry(),expanded);QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void independentFoldedColumnsKeepExpandedNeighboursAndRestore() {
+        QTemporaryDir temp;const auto path=temp.filePath("layout.ini");PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(path);QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());QTRY_VERIFY(client.ready());
+        const auto brush=workspace.groupForPanel("brush"),color=workspace.groupForPanel("color");workspace.detachGroup(brush);workspace.detachGroup(color);
+        const auto payload=QString::fromUtf8(QJsonDocument(QJsonObject{{"group",color},{"whole",true}}).toJson());QVERIFY(workspace.dockPayload(payload,"floating",brush,"column-right"));
+        QQuickWindow *floating=nullptr;QTRY_VERIFY([&]{for(auto *w:applicationWindows())if(w->objectName()=="floatingDock:"+brush)floating=qobject_cast<QQuickWindow*>(w);return floating!=nullptr;}());floating->resize(610,550);QTest::qWait(50);
+        auto *a=findVisualItem(floating->contentItem(),"dockTile:"+brush),*b=findVisualItem(floating->contentItem(),"dockTile:"+color);QVERIFY(a && b);QTRY_COMPARE(floating->size(),QSize(610,550));QTRY_COMPARE(a->height(),qreal(548));QTRY_COMPARE(b->height(),qreal(548));QTRY_VERIFY(std::abs(a->width()+b->width()-607)<1);const auto original=floating->geometry();const auto as=a->size(),bs=b->size();QCOMPARE(workspace.columnGroups(brush),QStringList{brush});
+        // Native host sizes are integral; split ratios can give fractional logical pixels.
+        const auto sameSize=[](QSizeF x,QSizeF y){return std::abs(x.width()-y.width())<1 && std::abs(x.height()-y.height())<1;};
+        workspace.setColumnCollapsed(brush,true);QTRY_VERIFY2(sameSize(b->size(),bs),qPrintable(QString("neighbour %1x%2 expected %3x%4; host %5x%6").arg(b->width()).arg(b->height()).arg(bs.width()).arg(bs.height()).arg(floating->width()).arg(floating->height())));QTRY_COMPARE(floating->width(),qRound(bs.width())+31);QCOMPARE(floating->height(),original.height());
+        workspace.setColumnCollapsed(color,true);QTRY_COMPARE(floating->width(),59);workspace.saveLayout();WorkspaceManager restored(path);restored.setColumnCollapsed(brush,false);restored.setColumnCollapsed(color,false);QCOMPARE(restored.floatingWindows().first().toMap().value("width").toInt(),original.width());
+        workspace.setColumnCollapsed(brush,false);QTRY_VERIFY(sameSize(a->size(),as));workspace.setColumnCollapsed(color,false);QTRY_COMPARE(floating->geometry(),original);QTRY_VERIFY(sameSize(b->size(),bs));
+        workspace.setColumnCollapsed(brush,true);QTRY_VERIFY(sameSize(b->size(),bs));const auto expandedHeight=b->height();floating->resize(floating->width()+30,floating->height()+40);QTRY_VERIFY(b->width()>bs.width());QTRY_VERIFY(b->height()>expandedHeight);QTRY_COMPARE(b->height(),qreal(floating->height()-2));const auto manual=b->size();workspace.setColumnCollapsed(brush,false);QTRY_VERIFY(sameSize(b->size(),manual));
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void categorizedMenusHoverIntoCompactNativeSubmenus_data() {
         QTest::addColumn<bool>("fallback");QTest::newRow("window-popups")<<false;QTest::newRow("side-window-fallback")<<true;
     }

@@ -130,7 +130,7 @@ private:
     QVariantList groupsAt(const QString &location) const;
     QString payload(const QString &group, const QString &panel, bool whole) const;
     int index(const QString &id) const;
-    QRect safeGeometry(QRect geometry) const;
+    QRect safeGeometry(QRect geometry,int minimumWidth=150) const;
     QString m_settingsFile;
     QList<Group> m_groups;
     QHash<QString,QVariantMap> m_panels;
@@ -149,6 +149,7 @@ private:
     struct PanelView {QSize size;int offset=0;};
     QHash<QString,PanelView> m_panelViews;
     QHash<QString,qreal> m_retainedHeights;
+    QHash<QString,qreal> m_retainedWidths;
     QMap<QString,DockTree::Node> m_docks;
     QHash<QString,QRect> m_windowGeometry;
     QSet<QString> m_iconGroups;
@@ -165,9 +166,13 @@ private:
     QList<Group> m_beforeGroups;
     QSet<QString> m_beforeIcons;
     QHash<QString,qreal> m_beforeRetainedHeights;
+    QHash<QString,qreal> m_beforeRetainedWidths;
     bool isIconGroup(const QString &group) const;
     void updateDragTarget(QPoint global,bool suppressed);
     void initializeDocks();
+    void retainDockSizes(const QString &host);
+    qreal retainedDockWidth(const DockTree::Node &node) const;
+    void fitFloatingDockWidth(const QString &host);
     QString hostFor(const QString &group) const;
     void removeDock(const QString &group);
     void addDock(const QString &group,const QString &location,const QString &target,const QString &edge,bool independentColumn=false);

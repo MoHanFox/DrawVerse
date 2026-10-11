@@ -61,6 +61,7 @@ set_target_properties(qt_ui_tests PROPERTIES WIN32_EXECUTABLE FALSE)
 add_test(NAME qt_ui_tests COMMAND qt_ui_tests -o "${CMAKE_BINARY_DIR}/qt-ui-tests.txt,txt" -o "-,txt")
 set_tests_properties(qt_ui_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
+    foldedNeighboursKeepTheirSizes independentFoldedColumnsKeepExpandedNeighboursAndRestore
     mainWindowRestoresWithoutNativeFrameOrClippedContent
     maximizedTitleBarDragRestoresAndFollowsPointer nativeMenuBlurLayerFollowsWindowAndHidesBeforeMinimize
     brushPresetClicksKeepEraserAndShareActualStrokeSettings

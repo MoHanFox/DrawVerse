@@ -2,6 +2,8 @@
 
 每轮先补设计，再实现、运行测试并记录结果；已交付第 1–5 阶段，QML 已接 Rust 任务与 CPU 视口渲染；插件层最后完成。
 
+最新面板收起尺寸修复：[设计](panel-fold-sizing-design.md) / [验收](panel-fold-sizing-validation.md)；工具条与相邻面板不自动补位，浮窗收窄，展开宽度可随布局 v6 保存恢复。
+
 最新菜单与批量图层修复：[设计](menu-layer-batch-design.md) / [验收](menu-layer-batch-validation.md)，ABI 1.13；悬停侧向分类菜单、组删除保留内容/删除子树选择、原子多选删除/拖放与剪贴链继承，图层面板首开异步创建。
 
 最新遗留修复：[设计](deepseek-recovery-design.md) / [验收](deepseek-recovery-validation.md)，保留 ABI 1.12；独立工具栏吸色、缩放/DPI 坐标、剪贴链重排、面板剩余高度和缩略图通知。GPU、液化、.vbr 与图层复制/合并按用户确认另立模块。
