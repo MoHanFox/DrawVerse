@@ -57,8 +57,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 14) {
-            emit failure(QStringLiteral("图层多选建组需要核心 ABI 1.14 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 15) {
+            emit failure(QStringLiteral("套索和羽化选区需要核心 ABI 1.15 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -234,14 +234,18 @@ public:
             status=paint_session_selection_step(m_core,m_session,info.publication,index,&step);
             if(status==PAINT_BUSY) return false;
             if(!check(status)) return false;
-            steps.append(QVariantMap{{"operation",step.operation},{"shape",step.shape},{"x",step.x},{"y",step.y},{"width",step.width},{"height",step.height}});
+            auto details=dto<PaintSelectionDetails>();QVector<PaintSelectionPoint> path(step.shape==PAINT_SELECTION_POLYGON?4096:0);
+            status=paint_session_selection_details(m_core,m_session,info.publication,index,&details,path.data(),static_cast<uint32_t>(path.size()));
+            if(status==PAINT_BUSY)return false;if(!check(status))return false;
+            QVariantList points;for(uint32_t i=0;i<details.point_count;++i)points.append(QPointF(path[i].x,path[i].y));
+            steps.append(QVariantMap{{"points",points},{"feather",details.feather},{"antialias",step.antialias!=0},{"operation",step.operation},{"shape",step.shape},{"x",step.x},{"y",step.y},{"width",step.width},{"height",step.height}});
         }
         QVariantList history;
         // One entry per HistoryAction discriminant, in order. A missing entry used to fail the whole
         // publish ("无法识别的历史操作"), which silently froze every later UI update, so the list must
         // cover every kind the core can report and the check below treats the rest as unknown text.
-        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("画布旋转")};
-        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","layers","redo"};
+        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索")};
+        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection"};
         for(uint32_t depth=0;depth<=info.undo_depth+info.redo_depth;++depth) {
             auto entry=dto<PaintHistoryEntry>();auto historyStatus=paint_session_history_entry(m_core,m_session,info.publication,depth,&entry);
             if(historyStatus==PAINT_BUSY)return false;if(!check(historyStatus))return false;
@@ -676,9 +680,12 @@ void PaintCoreClient::setMoveTool(bool enabled) {
     m_moveTool=enabled; emit brushChanged();
 }
 void PaintCoreClient::setSelectionTool(int tool) {
-    if(tool<0 || tool>2 || m_drawing || tool==m_selectionTool) return;
+    if(tool<0 || tool>4 || m_drawing || tool==m_selectionTool) return;
     m_selectionTool=tool;
-    if(tool==1 || tool==2) {m_marqueeShape=tool;m_moveTool=false;m_eyedropperTool=false;m_eraser=false;m_brushLibrary->setEraser(false);}
+    if(tool>0) {
+        if(tool<=2)m_marqueeShape=tool;else m_lassoShape=tool;
+        m_moveTool=false;m_eyedropperTool=false;m_eraser=false;m_brushLibrary->setEraser(false);
+    }
     emit brushChanged();
 }
 void PaintCoreClient::activateBrush() {
@@ -711,6 +718,10 @@ void PaintCoreClient::activateMarquee() {
     setMoveTool(false); setEraser(false);
     setSelectionTool(shape);
 }
+void PaintCoreClient::activateLasso() {setSelectionTool(m_lassoShape);}
+void PaintCoreClient::setSelectionOperation(int operation) {if(operation<0 || operation>3 || operation==m_selectionOperation)return;m_selectionOperation=operation;emit selectionOptionsChanged();}
+void PaintCoreClient::setSelectionFeather(qreal feather) {if(!std::isfinite(feather) || feather<0 || feather>1000 || feather==m_selectionFeather)return;m_selectionFeather=feather;emit selectionOptionsChanged();}
+void PaintCoreClient::setSelectionAntialias(bool enabled) {if(enabled==m_selectionAntialias)return;m_selectionAntialias=enabled;emit selectionOptionsChanged();}
 void PaintCoreClient::activateEyedropper() {
     if(m_drawing)return;
     activateBrush();m_eyedropperTool=true;emit brushChanged();
@@ -731,7 +742,32 @@ bool PaintCoreClient::submitSelection(quint32 action,QRectF rect,int shape,int o
     if(status!=PAINT_OK){showError(immediateError(status));return false;}
     m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
 }
-bool PaintCoreClient::editSelection(QRectF rect,int shape,int operation) {return submitSelection(PAINT_SELECTION_SHAPE,rect,shape,operation);}
+bool PaintCoreClient::submitSelectionShape(const PaintSelectionShapeEdit &request) {
+    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing)return false;
+    uint64_t sequence=0;
+    QMutexLocker lock(&m_connection->mutex);
+    if(!m_connection->session)return false;
+    const auto status=paint_session_edit_selection_shape(m_connection->core,m_connection->session,&request,&sequence);
+    lock.unlock();
+    if(status!=PAINT_OK){showError(immediateError(status));return false;}
+    m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
+}
+bool PaintCoreClient::editSelection(QRectF rect,int shape,int operation) {
+    auto request=dto<PaintSelectionShapeEdit>();
+    request.shape=static_cast<uint32_t>(shape);request.operation=static_cast<uint32_t>(operation);
+    request.antialias=m_selectionAntialias;request.feather=m_selectionFeather;
+    request.x=rect.x();request.y=rect.y();request.width=rect.width();request.height=rect.height();
+    return submitSelectionShape(request);
+}
+bool PaintCoreClient::editSelectionPath(const QVector<QPointF> &points,int operation,bool polygonal) {
+    QVector<PaintSelectionPoint> path;
+    path.reserve(points.size());for(const auto &p:points)path.append({p.x(),p.y()});
+    auto request=dto<PaintSelectionShapeEdit>();
+    request.shape=PAINT_SELECTION_POLYGON;request.tool=polygonal?2u:1u;request.operation=static_cast<uint32_t>(operation);
+    request.antialias=m_selectionAntialias;request.feather=m_selectionFeather;
+    request.point_count=static_cast<uint32_t>(path.size());request.points=path.constData();
+    return submitSelectionShape(request);
+}
 
 bool PaintCoreClient::selectAll(){return submitSelection(PAINT_SELECTION_ALL);}
 bool PaintCoreClient::clearSelection(){return submitSelection(PAINT_SELECTION_CLEAR);}

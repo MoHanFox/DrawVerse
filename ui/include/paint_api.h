@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 14
+#define PAINT_ABI_MINOR 15
 
 #define PAINT_ABI_PATCH 0
 
@@ -145,6 +145,8 @@
 #define PAINT_HISTORY_MASK 17
 
 #define PAINT_HISTORY_MOVE_LAYER 13
+
+#define PAINT_HISTORY_POLYGON_SELECTION 24
 
 /**
  * Automatic release of clipped layers whose base went away.
@@ -402,6 +404,30 @@ typedef struct PaintSelectionEdit {
   double height;
 } PaintSelectionEdit;
 
+typedef struct PaintSelectionPoint {
+  double x;
+  double y;
+} PaintSelectionPoint;
+
+/**
+ * ABI 1.15: shared rectangle/ellipse/polygon selection settings. tool=0 geometry,
+ * 1 freehand lasso, 2 polygonal lasso. Points are copied before return.
+ */
+typedef struct PaintSelectionShapeEdit {
+  uint32_t struct_size;
+  uint32_t shape;
+  uint32_t operation;
+  uint32_t antialias;
+  uint32_t tool;
+  uint32_t point_count;
+  double feather;
+  double x;
+  double y;
+  double width;
+  double height;
+  const struct PaintSelectionPoint *points;
+} PaintSelectionShapeEdit;
+
 typedef struct PaintFileJobInfo {
   uint32_t struct_size;
   uint32_t state;
@@ -523,6 +549,12 @@ typedef struct PaintLayerHierarchy {
   uint32_t depth;
   uint32_t effective_locks;
 } PaintLayerHierarchy;
+
+typedef struct PaintSelectionDetails {
+  uint32_t struct_size;
+  uint32_t point_count;
+  double feather;
+} PaintSelectionDetails;
 
 typedef struct PaintSelectionInfo {
   uint32_t struct_size;
@@ -870,6 +902,16 @@ PaintStatus paint_session_edit_selection(struct PaintCore *core,
                                          uint64_t *out_sequence);
 
 /**
+ * ABI 1.15: submit any supported selection shape through the common selection engine.
+ * # Safety
+ * Sized request, readable point_count points for polygons, writable sequence and valid handles.
+ */
+PaintStatus paint_session_edit_selection_shape(struct PaintCore *core,
+                                               struct PaintSession *session,
+                                               const struct PaintSelectionShapeEdit *request,
+                                               uint64_t *out_sequence);
+
+/**
  * Read the latest asynchronous execution error. Synchronous submission errors use paint_error_message.
  * # Safety
  * Follow UTF-8 buffer contract; error sequence must match session_info.
@@ -1083,6 +1125,20 @@ PaintStatus paint_session_sample_pixel(struct PaintCore *core,
                                        int64_t x,
                                        int64_t y,
                                        float *out_rgba);
+
+/**
+ * ABI 1.15: copied feather/path for the same publication as selection_step.
+ * On BUFFER_TOO_SMALL details contains the required point count; no point is written.
+ * # Safety
+ * Initialize details size; supply capacity writable points (or null with capacity zero).
+ */
+PaintStatus paint_session_selection_details(struct PaintCore *core,
+                                            struct PaintSession *session,
+                                            uint64_t publication,
+                                            uint32_t index,
+                                            struct PaintSelectionDetails *out,
+                                            struct PaintSelectionPoint *points,
+                                            uint32_t capacity);
 
 /**
  * Read the published selection summary for one publication id.

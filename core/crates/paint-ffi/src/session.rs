@@ -640,6 +640,7 @@ impl Engine {
                             paint_core::HistoryAction::Selection
                         }
                     }
+                    crate::selection_api::Edit::Styled(_, _, action) => *action,
                     crate::selection_api::Edit::All => paint_core::HistoryAction::SelectAll,
                     crate::selection_api::Edit::Clear => paint_core::HistoryAction::Deselect,
                     crate::selection_api::Edit::Invert => {
@@ -647,7 +648,8 @@ impl Engine {
                     }
                 };
                 let next = match edit {
-                    crate::selection_api::Edit::Shape(shape, op) => {
+                    crate::selection_api::Edit::Shape(shape, op)
+                    | crate::selection_api::Edit::Styled(shape, op, _) => {
                         self.document.selection().apply(shape, op, w, h)?
                     }
                     crate::selection_api::Edit::All => paint_core::Selection::all(w, h),

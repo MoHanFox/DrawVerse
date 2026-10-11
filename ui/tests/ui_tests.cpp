@@ -1610,6 +1610,49 @@ private slots:
         window.close();QTest::qWait(30);
         const auto stopped=phaseChanged.size();QTest::qWait(250);QCOMPARE(phaseChanged.size(),stopped);
     }
+
+    void lassoPolygonAndMarqueeShareOptionsHistoryAndPersistence() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());client.newTransparentDocument(128,128);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(client.ready());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();window->requestActivate();QTest::qWait(80);
+        const auto at=[&](QPointF p){return canvas->mapToScene(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
+        client.setSelectionTool(3);auto *options=findVisualItem(window->contentItem(),"selectionOptionsBar");QVERIFY(options);QTRY_VERIFY(options->isVisible());
+        for(int i=0;i<4;++i){auto *button=findVisualItem(options,QString("selectionMode:%1").arg(i));QVERIFY(button);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,button->mapToScene({13,13}).toPoint());QCOMPARE(client.selectionOperation(),i);}
+        auto *featherText=findVisualItem(options,"selectionFeatherText");QVERIFY(featherText);featherText->forceActiveFocus();QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier);QTest::keyClick(window,Qt::Key_4);QTest::keyClick(window,Qt::Key_2);QTest::keyClick(window,Qt::Key_Return);QTRY_COMPARE(client.selectionFeather(),42.);
+        auto *antialias=findVisualItem(options,"selectionAntialias");QVERIFY(antialias);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,antialias->mapToScene({6,6}).toPoint());QTRY_VERIFY(!client.selectionAntialias());
+        client.setSelectionOperation(0);client.setSelectionFeather(3);canvas->forceActiveFocus();
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,at({16,16}));QTest::mouseMove(window,at({96,16}));QTest::mouseMove(window,at({16,96}));QVERIFY(canvas->selectionPreviewPoints().size()>=3);QCOMPARE(client.undoDepth(),0);QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,at({16,16}));
+        QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());auto step=client.selectionSteps().last().toMap();QCOMPARE(step.value("shape").toInt(),2);QCOMPARE(step.value("feather").toDouble(),3.);QVERIFY(!step.value("antialias").toBool());QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QString::fromUtf8("套索"));
+        auto *outline=qobject_cast<SelectionOverlay*>(findVisualItem(window->contentItem(),"selectionOutline"));QVERIFY(outline);QTRY_VERIFY(outline->documentPath().contains({30,30}));QVERIFY(!outline->documentPath().contains({90,90}));
+        auto *lassoButton=findVisualItem(window->contentItem(),"lassoTool");QVERIFY(lassoButton);
+        QTest::mouseClick(window,Qt::RightButton,Qt::NoModifier,lassoButton->mapToScene({13,13}).toPoint());auto *variants=window->findChild<QObject*>("lassoVariantPanel");QVERIFY(variants);QTRY_VERIFY(variants->property("visible").toBool());auto *variantContent=qobject_cast<QQuickItem*>(variants->property("contentItem").value<QObject*>());QVERIFY(variantContent);auto *polygon=findVisualItem(variantContent,"variantTrigger:polygon");QVERIFY(polygon);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,polygon->mapToScene({20,15}).toPoint());QTRY_COMPARE(client.selectionTool(),4);QTRY_VERIFY(!variants->property("visible").toBool());
+        canvas->forceActiveFocus();QCOMPARE(client.selectionFeather(),3.);QCOMPARE(client.selectionOperation(),0);QVERIFY(!client.selectionAntialias());
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({32,32}));QVERIFY(!canvas->selectionPreviewPoints().isEmpty());
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({100,32}));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({100,100}));QCOMPARE(client.undoDepth(),1);
+        QTest::keyClick(window,Qt::Key_Backspace);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({100,100}));QTest::keyClick(window,Qt::Key_Return);
+        QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());QVERIFY(canvas->selectionPreviewPoints().isEmpty());QCOMPARE(client.historyEntries().last().toMap().value("kind").toInt(),24);QCOMPARE(client.selectionSteps().last().toMap().value("points").toList().size(),3);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({16,16}));QTest::keyClick(window,Qt::Key_Escape);QVERIFY(canvas->selectionPreviewPoints().isEmpty());QCOMPARE(client.undoDepth(),2);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({16,16}));client.activateBrush();QVERIFY(canvas->selectionPreviewPoints().isEmpty());client.activateLasso();QCOMPARE(client.selectionTool(),4);
+        client.setSelectionTool(1);QCOMPARE(client.selectionFeather(),3.);client.setSelectionOperation(1);QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,at({4,4}));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,at({16,16}));QTRY_COMPARE(client.undoDepth(),3);QTRY_VERIFY(!client.layerEditBusy());step=client.selectionSteps().last().toMap();QCOMPARE(step.value("operation").toInt(),1);QCOMPARE(step.value("feather").toDouble(),3.);
+        const auto saved=client.selectionSteps();QSignalSpy files(&client,&PaintCoreClient::fileFinished);const auto path=QUrl::fromLocalFile(temp.filePath("lasso.ora"));QVERIFY(client.saveDocument(path));QTRY_COMPARE(files.size(),1);QVERIFY(files.last()[0].toBool());QVERIFY(client.clearSelection());QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.openDocument(path));QTRY_COMPARE(files.size(),2);QVERIFY(files.last()[0].toBool());QTRY_VERIFY(client.ready());QCOMPARE(client.selectionSteps(),saved);
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void polygonDoubleClickClosureAndTabletFreehandUseSameInputPath() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());client.newTransparentDocument(128,128);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(client.ready());auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();window->requestActivate();QTest::qWait(80);
+        const auto at=[&](QPointF p){return canvas->mapToScene(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
+        client.setSelectionTool(4);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({20,20}));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({100,20}));QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,at({20,100}));QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.selectionSteps().last().toMap().value("points").toList().size(),3);
+        // Space changes only the viewport, never completes a partially collected polygon.
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({40,40}));const auto points=canvas->selectionPreviewPoints();QTest::keyPress(window,Qt::Key_Space);QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,at({60,60}));QTest::mouseMove(window,at({65,65}));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,at({65,65}));QTest::keyRelease(window,Qt::Key_Space);QCOMPARE(client.undoDepth(),1);QCOMPARE(canvas->selectionPreviewPoints().size(),points.size());QTest::keyClick(window,Qt::Key_Escape);canvas->actualSize();
+        client.setSelectionTool(3);QPointingDevice pen("test pen",321,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto send=[&](QEvent::Type type,QPointF p){const QPointF local=at(p);QTabletEvent event(type,&pen,local,window->mapToGlobal(local.toPoint()),.7,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(window,&event);return event.isAccepted();};
+        QVERIFY(send(QEvent::TabletPress,{24,24}));QVERIFY(send(QEvent::TabletMove,{104,24}));QVERIFY(send(QEvent::TabletMove,{24,104}));QVERIFY(send(QEvent::TabletRelease,{24,24}));QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.historyEntries().last().toMap().value("kind").toInt(),21);
+        client.setSelectionTool(4);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({20,20}));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({100,20}));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({20,100}));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({20,20}));QTRY_COMPARE(client.undoDepth(),3);QTRY_VERIFY(!client.layerEditBusy());QVERIFY(canvas->selectionPreviewPoints().isEmpty());
+        client.setSelectionTool(4);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({20,20}));QTest::keyClick(window,Qt::Key_Return);QCOMPARE(client.undoDepth(),3);QVERIFY(canvas->selectionPreviewPoints().isEmpty());
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void selectionsDragCombineUndoConstrainAndPersist() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
@@ -2639,10 +2682,10 @@ private slots:
         auto *rectangle=findVisualItem(panelContent,"variantEntry:rectangle"),*ellipse=findVisualItem(panelContent,"variantEntry:ellipse");
         QVERIFY(rectangle && ellipse);
         QVERIFY(rectangle->isEnabled());QVERIFY(ellipse->isEnabled());
-        // The wand is its own tool; the lasso slot is present but marked unsupported.
+        // The wand remains unsupported; the lasso is now a separate usable family.
         QVERIFY(findVisualItem(main->contentItem(),"wandTool"));
         auto *lassoSlot=qobject_cast<QQuickItem*>(findVisualItem(main->contentItem(),"lassoTool"));
-        QVERIFY(lassoSlot);QVERIFY(!lassoSlot->isEnabled());
+        QVERIFY(lassoSlot);QVERIFY(lassoSlot->isEnabled());
         QVERIFY(!findVisualItem(panelContent,"variantEntry:lasso"));
         QVERIFY(!findVisualItem(panelContent,"variantEntry:wand"));
         // Picking a shape from the panel is what changes the active shape.

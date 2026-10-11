@@ -2,6 +2,8 @@
 
 跨平台绘画应用：Rust 内核 → 稳定 C ABI → C++20 / Qt 6.5+ UI；Python 插件最后实施。
 
+- 最新共用选区与套索：`docs/lasso-selection-design.md` / `docs/lasso-selection-validation.md`；ABI 1.15、自由/多边形套索、四种组合与羽化/AA 共用、路径索引与历史/ORA、鼠标和数位板采集。
+
 - 最新菜单悬停与多选建组：`docs/menu-hover-grouping-design.md` / `docs/menu-hover-grouping-validation.md`；ABI 1.14、统一指针预览、原生菜单完整坐标转发、首行跨边回归、多选一次建组与撤销。
 
 - 最新面板折叠尺寸保持：`docs/panel-fold-sizing-design.md` / `docs/panel-fold-sizing-validation.md`；布局 v6 可选 retainedWidths，折叠仅压缩自身、工具栏宽度优先、浮窗收窄、相邻宽高与展开尺寸保持、显式调整解除保持。

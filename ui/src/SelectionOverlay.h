@@ -15,6 +15,7 @@ class SelectionOverlay : public QQuickPaintedItem {
     Q_PROPERTY(QVariantList steps READ steps WRITE setSteps NOTIFY geometryChanged)
     Q_PROPERTY(bool enabledSelection READ enabledSelection WRITE setEnabledSelection NOTIFY geometryChanged)
     Q_PROPERTY(QRectF documentRect READ documentRect WRITE setDocumentRect NOTIFY geometryChanged)
+    Q_PROPERTY(QVariantList previewPoints READ previewPoints WRITE setPreviewPoints NOTIFY geometryChanged)
     Q_PROPERTY(QRectF preview READ preview WRITE setPreview NOTIFY geometryChanged)
     Q_PROPERTY(int previewKind READ previewKind WRITE setPreviewKind NOTIFY geometryChanged)
     Q_PROPERTY(qreal zoom READ zoom WRITE setZoom NOTIFY geometryChanged)
@@ -24,6 +25,8 @@ public:
     QVariantList steps() const{return m_steps;}
     bool enabledSelection() const{return m_enabled;}
     QRectF documentRect() const{return m_documentRect;}
+    QVariantList previewPoints() const {return m_previewPoints;}
+    void setPreviewPoints(const QVariantList &points);
     QRectF preview() const{return m_preview;}
     int previewKind() const{return m_previewKind;}
     qreal zoom() const{return m_zoom;}
@@ -46,7 +49,8 @@ private:
     void rebuild();
     void syncAnimation();
     static QPainterPath previewPath(const QRectF &rect,int kind);
-    QVariantList m_steps;
+    QVariantList m_steps,m_previewPoints;
+    QPainterPath currentPreview() const;
     QPainterPath m_path;
     QRectF m_documentRect,m_preview;
     qreal m_zoom=1;

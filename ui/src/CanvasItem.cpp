@@ -9,6 +9,7 @@
 #include <QGuiApplication>
 #include <QPointingDevice>
 #include <QScreen>
+#include <QLineF>
 #include <algorithm>
 #include <cmath>
 #ifdef Q_OS_WIN
@@ -103,7 +104,7 @@ void CanvasItem::setKeySpace(bool held) {
     if(changed)emit spacePanningChanged();
 }
 void CanvasItem::hoverEnterEvent(QHoverEvent *event){m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();}
-void CanvasItem::hoverMoveEvent(QHoverEvent *event){m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();}
+void CanvasItem::hoverMoveEvent(QHoverEvent *event){m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();if(m_selecting && m_selectionKind==3)updateSelection(event->position(),event->modifiers());}
 void CanvasItem::hoverLeaveEvent(QHoverEvent *event){Q_UNUSED(event);m_cursorInside=false;refreshBrushCursor();}
 void CanvasItem::refresh() {
     if (!m_client) return;
@@ -203,20 +204,29 @@ void CanvasItem::finishLayerMove(QPointF local) {
 }
 bool CanvasItem::beginSelection(QPointF local,Qt::KeyboardModifiers modifiers) {
     if(!m_client || !m_client->ready() || m_client->drawing() || m_client->layerEditBusy() || m_client->fileBusy()) return false;
+    if(m_selecting && m_selectionKind==3) {
+        const auto point=documentPoint(local);
+        if(m_selectionPoints.size()>=3 && QLineF(point,m_selectionPoints.first()).length()*m_zoom<=6)finishPolygon();
+        else {appendSelectionPoint(point);m_selectionEnd=point;emit selectionDragChanged();}
+        return true;
+    }
     m_selectionStart=m_selectionEnd=documentPoint(local);m_selectionGeneration=m_client->generation();
+    m_selectionPoints.clear();
     m_selectionKind=m_client->selectionTool()-1;
     // Shift adds to the selection; the square/circle constraint comes from Shift during the drag,
     // matching the usual "hold Shift while dragging" gesture but never blocking additive selection.
     const bool add=modifiers.testFlag(Qt::ShiftModifier),subtract=modifiers.testFlag(Qt::AltModifier);
-    m_selectionOperation=add ? (subtract ? 3 : 1) : (subtract ? 2 : 0);
+    m_selectionOperation=add ? (subtract ? 3 : 1) : (subtract ? 2 : m_client->selectionOperation());
     m_selectionConstrained=false;
+    if(m_selectionKind>=2)appendSelectionPoint(m_selectionStart);
     m_selecting=true;emit selectionDragChanged();return true;
 }
 void CanvasItem::updateSelection(QPointF local,Qt::KeyboardModifiers modifiers) {
     if(!m_selecting || !m_client) return;
     const auto point=documentPoint(local);
     m_selectionEnd={std::clamp(point.x(),qreal(0),qreal(m_client->documentWidth())),std::clamp(point.y(),qreal(0),qreal(m_client->documentHeight()))};
-    const bool constrained=modifiers.testFlag(Qt::ShiftModifier);
+    if(m_selectionKind==2)appendSelectionPoint(m_selectionEnd);
+    const bool constrained=m_selectionKind<2 && modifiers.testFlag(Qt::ShiftModifier);
     if(constrained!=m_selectionConstrained){m_selectionConstrained=constrained;emit selectionDragChanged();}
     else emit selectionDragChanged();
 }
@@ -243,10 +253,32 @@ QColor CanvasItem::pickColorAt(QPointF local) const {
     if(!m_selecting) return;
     // Keep the shift constraint rather than resetting the modifiers: the release position decides
     // the committed square/circle together with the anchor.
-    updateSelection(local,modifiers);const auto rect=selectionPreview();cancelSelectionDrag();
+    updateSelection(local,modifiers);
+    if(m_selectionKind==3)return;
+    if(m_selectionKind==2) {
+        const auto points=m_selectionPoints;cancelSelectionDrag();
+        if(m_client && m_client->generation()==m_selectionGeneration && points.size()>=3)m_client->editSelectionPath(points,m_selectionOperation,false);
+        return;
+    }
+    const auto rect=selectionPreview();cancelSelectionDrag();
     if(m_client && m_client->generation()==m_selectionGeneration && rect.width()>=1 && rect.height()>=1) m_client->editSelection(rect,m_selectionKind,m_selectionOperation);
 }
-void CanvasItem::cancelSelectionDrag(){if(m_selecting){m_selecting=false;emit selectionDragChanged();}}
+void CanvasItem::appendSelectionPoint(QPointF point) {
+    if(m_selectionPoints.size()>4096)return;
+    if(m_selectionPoints.isEmpty() || QLineF(point,m_selectionPoints.last()).length()*m_zoom>=1)m_selectionPoints.append(point);
+}
+QVariantList CanvasItem::selectionPreviewPoints() const {
+    QVariantList points;if(!m_selecting || m_selectionKind<2)return points;
+    for(const auto &point:m_selectionPoints)points.append(point);
+    if(m_selectionKind==3)points.append(m_selectionEnd);
+    return points;
+}
+void CanvasItem::finishPolygon() {
+    if(!m_selecting || m_selectionKind!=3)return;
+    const auto points=m_selectionPoints;cancelSelectionDrag();
+    if(m_client && m_client->generation()==m_selectionGeneration && points.size()>=3)m_client->editSelectionPath(points,m_selectionOperation,true);
+}
+void CanvasItem::cancelSelectionDrag(){if(m_selecting){m_selecting=false;m_selectionPoints.clear();emit selectionDragChanged();}}
 void CanvasItem::mousePressEvent(QMouseEvent *e) {
     if (!m_interactive || !m_client || e->source() != Qt::MouseEventNotSynthesized) { e->ignore(); return; }
     forceActiveFocus(); m_last = e->position();
@@ -259,10 +291,15 @@ void CanvasItem::mousePressEvent(QMouseEvent *e) {
         if (picked.isValid()) { m_client->setBrushColor(picked); emit viewChanged(); }
         e->accept(); return;
     }
+    if(e->button()!=Qt::LeftButton){e->ignore();return;}
     if(m_client->selectionTool() && documentRect().contains(e->position())) {e->setAccepted(beginSelection(e->position(),e->modifiers()));return;}
     if (m_client->moveTool() && documentRect().contains(e->position())) { e->setAccepted(beginLayerMove(e->position())); return; }
     if (documentRect().contains(e->position())) m_stroke = m_client->beginStroke(mouseSample(e->position(), e->buttons()));
     e->setAccepted(m_stroke);
+}
+void CanvasItem::mouseDoubleClickEvent(QMouseEvent *e) {
+    if(m_selecting && m_selectionKind==3 && e->button()==Qt::LeftButton){appendSelectionPoint(documentPoint(e->position()));finishPolygon();e->accept();return;}
+    QQuickItem::mouseDoubleClickEvent(e);
 }
 void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
     m_cursorInside=contains(e->position());m_cursorPosition=e->position();refreshBrushCursor();
@@ -272,14 +309,14 @@ void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
     e->accept();
 }
 void CanvasItem::mouseReleaseEvent(QMouseEvent *e) {
-    if(m_selecting && !m_tablet) finishSelection(e->position(),e->modifiers());
+    if(!m_panning && m_selecting && !m_tablet) finishSelection(e->position(),e->modifiers());
     if(m_moving && !m_tablet) finishLayerMove(e->position());
     if (m_stroke && !m_tablet) { m_client->strokeTo(mouseSample(e->position(), e->buttons())); m_client->endStroke(); m_stroke = false; }
     m_panning = false;refreshBrushCursor(); e->accept();
 }
 void CanvasItem::mouseUngrabEvent() {
     if (m_stroke && m_client) m_client->cancelStroke();
-    m_stroke = false; m_panning = false; m_moving=false;cancelSelectionDrag();refreshBrushCursor();
+    m_stroke = false; m_panning = false; m_moving=false;if(m_selectionKind!=3)cancelSelectionDrag();refreshBrushCursor();
 }
 void CanvasItem::wheelEvent(QWheelEvent *e) {
     if (!m_interactive) { e->ignore(); return; }
@@ -287,6 +324,8 @@ void CanvasItem::wheelEvent(QWheelEvent *e) {
 }
 void CanvasItem::keyPressEvent(QKeyEvent *e) {
     if (e->key() == Qt::Key_Space) {setKeySpace(true);refreshBrushCursor(); e->accept(); }
+    else if(m_selecting && m_selectionKind==3 && (e->key()==Qt::Key_Return || e->key()==Qt::Key_Enter)) {finishPolygon();e->accept();}
+    else if(m_selecting && m_selectionKind==3 && e->key()==Qt::Key_Backspace) {if(!m_selectionPoints.isEmpty())m_selectionPoints.removeLast();if(m_selectionPoints.isEmpty())cancelSelectionDrag();else emit selectionDragChanged();e->accept();}
     else if (e->key() == Qt::Key_Alt) {setAltHeld(true); e->accept(); }
     else if (e->key() == Qt::Key_Escape) { if(m_selecting) cancelSelectionDrag();else if (m_client) m_client->cancelStroke(); m_stroke = false; m_tablet = false; m_moving=false; e->accept(); }
     else if(m_client && m_client->moveTool() && !m_moving && e->key()>=Qt::Key_Left && e->key()<=Qt::Key_Down) {
@@ -353,6 +392,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if(event->type()!=QEvent::TabletRelease)setAltHeld(e->modifiers().testFlag(Qt::AltModifier));
     if(!m_tablet && event->type()==QEvent::TabletMove) {
         if(!m_cursorInside)return false;
+        if(m_selecting && m_selectionKind==3)updateSelection(local,e->modifiers());
         e->accept();return true; // avoid synthesized mouse hover replacing pen position
     }
     if (!m_tablet && (event->type() != QEvent::TabletPress || !documentRect().contains(local))) return false;

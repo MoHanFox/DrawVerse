@@ -144,3 +144,21 @@ pub(crate) unsafe fn layer_ids(pointer: *const u64, count: u32) -> ApiResult<Vec
     }
     Ok(ids)
 }
+
+/// Copy a bounded polygon; caller storage is never retained by the actor.
+pub(crate) unsafe fn selection_points(
+    pointer: *const crate::api::PaintSelectionPoint,
+    count: u32,
+) -> ApiResult<Vec<[f64; 2]>> {
+    if count < 3 || count as usize > 4096 {
+        return Err(ApiError::invalid("selection path count"));
+    }
+    valid_pointer(pointer)?;
+    // SAFETY: caller promises count initialized readable points; alignment and limit checked.
+    Ok(
+        unsafe { std::slice::from_raw_parts(pointer, count as usize) }
+            .iter()
+            .map(|p| [p.x, p.y])
+            .collect(),
+    )
+}

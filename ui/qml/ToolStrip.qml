@@ -31,7 +31,7 @@ Rectangle {
             glyph:PaintClient.marqueeShape===2?"ellipseSelection":"rectangleSelection"
             checkable:true;checked:PaintClient.selectionTool===1||PaintClient.selectionTool===2
             onClicked:PaintClient.activateMarquee()
-            tooltip:"选框工具 M · 右键切换矩形/椭圆"
+            tooltip:"选框工具 · 右键切换矩形/椭圆"
             hasVariants:true
             function openVariants() {
                 variants.toolTitle="选框工具"
@@ -48,7 +48,22 @@ Rectangle {
             }
             ToolVariantsPanel { id: variants; parent: root; canvasView: root.canvasView }
         }
-        IconButton {objectName:"lassoTool";width:26;height:26;glyph:"lassoSelection";checkable:true;checked:false;enabled:false;tooltip:"套索（待支持）"}
+        IconButton {
+            id:lassoButton;objectName:"lassoTool";width:26;height:26
+            glyph:PaintClient.lassoShape===4?"polygonSelection":"lassoSelection"
+            checkable:true;checked:PaintClient.selectionTool>=3;hasVariants:true
+            onClicked:PaintClient.activateLasso();tooltip:"套索工具 · 右键切换子类"
+            function openVariants() {
+                lassoVariants.toolTitle="套索工具"
+                lassoVariants.entries=[
+                    {id:"lasso",label:"套索",icon:"lassoSelection",pending:false,selected:PaintClient.lassoShape===3,apply:function(){PaintClient.selectionTool=3}},
+                    {id:"polygon",label:"多边形套索",icon:"polygonSelection",pending:false,selected:PaintClient.lassoShape===4,apply:function(){PaintClient.selectionTool=4}}
+                ]
+                lassoVariants.open()
+            }
+            TapHandler {acceptedButtons:Qt.RightButton;onTapped:lassoButton.openVariants()}
+            ToolVariantsPanel {id:lassoVariants;objectName:"lassoVariantPanel";parent:root;canvasView:root.canvasView}
+        }
         IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;checked:false;enabled:false;tooltip:"魔棒（待支持）" }
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         // Every slot clears the others: leaving a second tool active made the strip show the brush

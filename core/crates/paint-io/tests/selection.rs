@@ -13,6 +13,14 @@ fn ora_selection_roundtrip_does_not_crop_pixels_or_create_history() {
     let selection = Selection::default()
         .apply(shape, SelectionOperation::Replace, 48, 32)
         .unwrap()
+        .apply(
+            SelectionShape::polygon(vec![[0., 0.], [30., 0.], [25., 20.], [0., 30.]], true, 3.)
+                .unwrap(),
+            SelectionOperation::Add,
+            48,
+            32,
+        )
+        .unwrap()
         .inverted(48, 32)
         .unwrap();
     doc.set_selection(selection.clone()).unwrap();

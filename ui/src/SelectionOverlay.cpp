@@ -32,12 +32,13 @@ void SelectionOverlay::setSteps(const QVariantList &steps){if(steps==m_steps)ret
 void SelectionOverlay::setEnabledSelection(bool enabled){if(m_enabled==enabled)return;m_enabled=enabled;syncAnimation();update();emit geometryChanged();}
 void SelectionOverlay::setDocumentRect(QRectF rect){if(rect==m_documentRect)return;const bool sizeChanged=rect.size()!=m_documentRect.size();m_documentRect=rect;if(sizeChanged)rebuild();else{update();emit geometryChanged();}}
 void SelectionOverlay::setPreview(QRectF rect){if(rect==m_preview)return;m_preview=rect;syncAnimation();update();emit geometryChanged();}
+void SelectionOverlay::setPreviewPoints(const QVariantList &points){if(points==m_previewPoints)return;m_previewPoints=points;syncAnimation();update();emit geometryChanged();}
 void SelectionOverlay::setPreviewKind(int kind){if(kind==m_previewKind)return;m_previewKind=kind;update();emit geometryChanged();}
 void SelectionOverlay::setZoom(qreal zoom){if(!std::isfinite(zoom)||zoom<=0||zoom==m_zoom)return;m_zoom=zoom;rebuild();}
 void SelectionOverlay::syncAnimation(){
     // Marching ants only run while the owning window is actually on screen, so a hidden window,
     // a minimized window or a torn-down test scene never repaints forever.
-    const bool hasOutline=m_enabled||!m_preview.isEmpty();
+    const bool hasOutline=m_enabled||!m_preview.isEmpty()||!m_previewPoints.isEmpty();
     QQuickWindow *host=window();
     const bool shown=host && host->isVisible() && host->visibility()!=QWindow::Minimized;
     const bool active=hasOutline&&shown;
@@ -63,13 +64,17 @@ void SelectionOverlay::rebuild(){
     for(const auto &entry:m_steps){
         const auto step=entry.toMap();const int operation=step.value("operation").toInt();
         QPainterPath shape;const QRectF rect(step.value("x").toDouble(),step.value("y").toDouble(),step.value("width").toDouble(),step.value("height").toDouble());
-        if(step.value("shape").toInt()==1)shape.addEllipse(rect);else shape.addRect(rect);
+        if(step.value("shape").toInt()==2) {
+            const auto points=step.value("points").toList();
+            for(qsizetype i=0;i<points.size();++i){const auto p=points[i].toPointF();if(i==0)shape.moveTo(p);else shape.lineTo(p);}
+            shape.closeSubpath();shape.setFillRule(Qt::OddEvenFill);
+        } else if(step.value("shape").toInt()==1)shape.addEllipse(rect);else shape.addRect(rect);
         switch(operation){case 0:m_path=shape;break;case 1:m_path=m_path.united(shape);break;case 2:m_path=m_path.subtracted(shape);break;case 3:m_path=m_path.intersected(shape);break;case 4:m_path=full.subtracted(m_path);break;default:break;}
     }
     m_path=m_path.intersected(full);syncAnimation();update();emit geometryChanged();
 }
 void SelectionOverlay::paint(QPainter *painter){
-    if(!m_enabled && m_preview.isEmpty())return;
+    if(!m_enabled && m_preview.isEmpty() && m_previewPoints.isEmpty())return;
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setBrush(Qt::NoBrush);
     // Solid black underlay in document space: it hugs the selection exactly.
@@ -78,7 +83,7 @@ void SelectionOverlay::paint(QPainter *painter){
     QPen black(Qt::black,2);black.setCosmetic(true);
     painter->setPen(black);
     if(m_enabled)painter->drawPath(m_path);
-    if(!m_preview.isEmpty())painter->drawPath(previewPath(m_preview,m_previewKind));
+    if(!m_preview.isEmpty() || !m_previewPoints.isEmpty())painter->drawPath(currentPreview());
     painter->restore();
     // Dashed white ants in screen space, so the dash length and the marching speed do not depend
     // on the document zoom.
@@ -88,10 +93,18 @@ void SelectionOverlay::paint(QPainter *painter){
     white.setDashOffset(m_phase);
     painter->setPen(white);
     if(m_enabled)painter->drawPath(toScreen.map(m_path));
-    if(!m_preview.isEmpty())painter->drawPath(toScreen.map(previewPath(m_preview,m_previewKind)));
+    if(!m_preview.isEmpty() || !m_previewPoints.isEmpty())painter->drawPath(toScreen.map(currentPreview()));
 }
 QPainterPath SelectionOverlay::previewPath(const QRectF &rect,int kind){
     QPainterPath path;
     if(kind==1)path.addEllipse(rect);else path.addRect(rect);
+    return path;
+}
+
+QPainterPath SelectionOverlay::currentPreview() const {
+    if(m_previewKind<2)return previewPath(m_preview,m_previewKind);
+    QPainterPath path;for(qsizetype i=0;i<m_previewPoints.size();++i){const auto p=m_previewPoints[i].toPointF();if(i==0)path.moveTo(p);else path.lineTo(p);}
+    // The rubber band is open until commit; the closing edge is also shown for freehand paths.
+    if(m_previewKind==2 && m_previewPoints.size()>2)path.closeSubpath();
     return path;
 }

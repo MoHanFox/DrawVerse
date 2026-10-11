@@ -723,6 +723,14 @@ mod tests {
         let after = before
             .apply(shape, crate::SelectionOperation::Replace, 100, 100)
             .unwrap()
+            .apply(
+                crate::SelectionShape::polygon(vec![[2., 3.], [70., 4.], [5., 60.]], true, 5.)
+                    .unwrap(),
+                crate::SelectionOperation::Add,
+                100,
+                100,
+            )
+            .unwrap()
             .inverted(100, 100)
             .unwrap();
         let command = Command::Selection {

@@ -1763,3 +1763,107 @@ fn async_file_input_validation_and_open_cannot_clobber_subsequent_edits() {
         );
     }
 }
+
+#[test]
+fn common_selection_abi_copies_lasso_points_and_publishes_settings() {
+    assert_eq!(size_of::<PaintSelectionShapeEdit>(), 72);
+    assert_eq!(offset_of!(PaintSelectionShapeEdit, feather), 24);
+    assert_eq!(size_of::<PaintSelectionDetails>(), 16);
+    let h = Harness::new(64, 64);
+    let mut path = vec![
+        PaintSelectionPoint { x: 8., y: 8. },
+        PaintSelectionPoint { x: 56., y: 8. },
+        PaintSelectionPoint { x: 8., y: 56. },
+    ];
+    let mut request = PaintSelectionShapeEdit {
+        shape: PAINT_SELECTION_POLYGON,
+        tool: 2,
+        antialias: 1,
+        feather: 3.,
+        point_count: 3,
+        points: path.as_ptr(),
+        ..dto!(PaintSelectionShapeEdit)
+    };
+    let mut sequence = 999;
+    unsafe {
+        request.point_count = 4097;
+        assert_eq!(
+            paint_session_edit_selection_shape(h.core, h.session, &request, &mut sequence),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        request.point_count = 3;
+        request.points = ptr::null();
+        assert_eq!(
+            paint_session_edit_selection_shape(h.core, h.session, &request, &mut sequence),
+            PAINT_INVALID_ARGUMENT
+        );
+        request.points = path.as_ptr();
+        assert_eq!(
+            paint_session_edit_selection_shape(h.core, h.session, &request, &mut sequence),
+            PAINT_OK
+        );
+        for point in &mut path {
+            point.x = 999.;
+            point.y = 999.;
+        }
+        let info = h.wait(sequence);
+        assert_eq!(info.undo_depth, 1);
+        let mut details = dto!(PaintSelectionDetails);
+        assert_eq!(
+            paint_session_selection_details(
+                h.core,
+                h.session,
+                info.publication,
+                0,
+                &mut details,
+                ptr::null_mut(),
+                0
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert_eq!(details.point_count, 3);
+        assert_eq!(details.feather, 3.);
+        let mut copied = [PaintSelectionPoint::default(); 3];
+        assert_eq!(
+            paint_session_selection_details(
+                h.core,
+                h.session,
+                info.publication,
+                0,
+                &mut details,
+                copied.as_mut_ptr(),
+                3
+            ),
+            PAINT_OK
+        );
+        assert_eq!(copied[0].x, 8.);
+        assert_eq!(copied[1].x, 56.);
+        let mut entry = dto!(PaintHistoryEntry);
+        assert_eq!(
+            paint_session_history_entry(h.core, h.session, info.publication, 1, &mut entry),
+            PAINT_OK
+        );
+        assert_eq!(entry.kind, PAINT_HISTORY_POLYGON_SELECTION);
+        assert_eq!(
+            paint_session_selection_details(
+                h.core,
+                h.session,
+                info.publication.wrapping_sub(1),
+                0,
+                &mut details,
+                copied.as_mut_ptr(),
+                3
+            ),
+            PAINT_BUSY
+        );
+        let revision = info.revision;
+        request.feather = -1.;
+        request.points = path.as_ptr();
+        assert_eq!(
+            paint_session_edit_selection_shape(h.core, h.session, &request, &mut sequence),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(h.info().revision, revision);
+    }
+}

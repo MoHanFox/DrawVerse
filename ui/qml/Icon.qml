@@ -14,6 +14,12 @@ Item {
         ellipseSelection: "M4 7Q5 4 8 3M11 2H13M16 3Q19 4 20 7M21 10V14M20 17Q19 20 16 21M13 22H11M8 21Q5 20 4 17M3 14V10",
         wand: "M9 3L20 8L9 13L9 3ZM9 6L3 12L9 18M14 12H21M14 16H21M14 20H19",
         bucket: "M5 11L12 4L19 11L12 18ZM12 4V2M5 11L2 14M14 18Q14 22 17 22Q20 22 20 19M12 18L14 20",
+        polygonSelection: "M4 5L18 3L22 13L13 20L3 16Z M3 16L6 22",
+        selectionNew: "M4 4H18V18H4Z",
+        selectionAdd: "M3 3H14V9H21V21H9V14H3Z",
+        selectionSubtract: "M9 9H22V22H9Z",
+        selectionIntersect: "M3 3H16V16H3Z M9 9H22V22H9Z M9 9H16V16H9Z",
+        check: "M3 12L9 18L21 5",
         lassoSelection: "M12 3Q4 3 3 9Q2 15 9 17Q14 18.5 19 17Q22 16 21 12M12 3Q19 3 20 8M9 17Q10 19 10 21M15 19Q16 21 15 22",
         brush: "M9 14L17 3Q19 1 21 3Q23 5 21 7L12 16ZM9 14Q5 13 5 17Q5 20 2 21Q10 23 12 16",
         eraser: "M3 15L13 3Q14 2 15 3L21 9Q22 10 21 11L12 21H8ZM8 10L17 19M12 21H22",
@@ -55,9 +61,14 @@ Item {
         Shape {
             anchors.fill: parent
             ShapePath {
+                strokeColor:"transparent";strokeWidth:0
+                fillColor:root.name==="selectionSubtract"?root.color:"transparent"
+                PathSvg {path:"M3 3H16V9H9V16H3Z"}
+            }
+            ShapePath {
                 strokeColor: root.color; strokeWidth: 1.6
                 capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin
-                fillColor: "transparent"
+                fillColor: root.name==="selectionNew" || root.name==="selectionAdd" ? root.color : "transparent"
                 PathSvg { path: root.paths[root.name] || root.paths.page }
             }
         }

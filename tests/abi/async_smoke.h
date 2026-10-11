@@ -30,6 +30,9 @@ ABI_ASSERT(sizeof(PaintLayerDrop)==24,"layer drop layout drift");
 ABI_ASSERT(offsetof(PaintLayerDrop,target_id)==16,"drop target offset drift");
 ABI_ASSERT(sizeof(PaintLayerClipping)==16,"clipping layout drift");
 ABI_ASSERT(offsetof(PaintLayerClipping,base_layer_id)==8,"clipping base offset drift");
+ABI_ASSERT(sizeof(PaintSelectionShapeEdit)==72,"shared selection edit layout drift");
+ABI_ASSERT(offsetof(PaintSelectionShapeEdit,feather)==24,"selection feather offset drift");
+ABI_ASSERT(sizeof(PaintSelectionDetails)==16,"selection details layout drift");
 ABI_ASSERT(sizeof(PaintSelectionEdit)==64,"selection edit layout drift");
 ABI_ASSERT(offsetof(PaintSelectionEdit,x)==32,"selection geometry offset drift");
 ABI_ASSERT(sizeof(PaintSelectionInfo)==16,"selection info layout drift");
@@ -219,6 +222,16 @@ static int async_smoke(PaintCore *core) {
         ASYNC_CHECK(paint_session_selection_info(core,session,info.publication+99,&summary)==PAINT_BUSY);
         ASYNC_CHECK(paint_session_selection_step(core,session,info.publication,999,&step)==PAINT_NOT_FOUND);
         selection.width=-1;sequence=999;ASYNC_CHECK(paint_session_edit_selection(core,session,&selection,&sequence)==PAINT_INVALID_ARGUMENT && sequence==0);
+    }
+    {
+        PaintSelectionShapeEdit selection;PaintSelectionDetails details;PaintSelectionPoint path[3]={{8,8},{56,8},{8,56}},copied[3];
+        memset(&selection,0,sizeof(selection));selection.struct_size=sizeof(selection);selection.shape=PAINT_SELECTION_POLYGON;selection.tool=2;selection.antialias=1;selection.feather=3;selection.point_count=3;selection.points=path;
+        ASYNC_CHECK(paint_session_edit_selection_shape(core,session,&selection,&sequence)==PAINT_OK);path[0].x=999;
+        start=clock();do{info.struct_size=sizeof(info);ASYNC_CHECK(paint_session_info(core,session,&info)==PAINT_OK);ASYNC_CHECK(clock()-start<5*CLOCKS_PER_SEC);}while(info.completed_sequence<sequence);
+        ASYNC_CHECK(info.last_error_status==PAINT_OK);
+        memset(&details,0,sizeof(details));details.struct_size=sizeof(details);
+        ASYNC_CHECK(paint_session_selection_details(core,session,info.publication,0,&details,NULL,0)==PAINT_BUFFER_TOO_SMALL && details.point_count==3);
+        ASYNC_CHECK(paint_session_selection_details(core,session,info.publication,0,&details,copied,3)==PAINT_OK && copied[0].x==8 && details.feather==3);
     }
     ASYNC_CHECK(remove(DRAWVERSE_ABI_SMOKE_FILE) == 0);
     ASYNC_CHECK(paint_session_destroy(core, &session) == PAINT_OK && session == NULL);

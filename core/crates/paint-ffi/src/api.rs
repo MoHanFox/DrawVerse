@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 14;
+pub const PAINT_ABI_MINOR: u32 = 15;
 
 /// ABI 1.10: metadata for one retained history boundary/operation.
 #[repr(C)]
@@ -52,6 +52,7 @@ pub const PAINT_HISTORY_LASSO_SELECTION: u32 = 21;
 pub const PAINT_HISTORY_MAGIC_SELECTION: u32 = 22;
 /// Automatic release of clipped layers whose base went away.
 pub const PAINT_HISTORY_RELEASE_CLIPPING: u32 = 23;
+pub const PAINT_HISTORY_POLYGON_SELECTION: u32 = 24;
 pub const PAINT_ABI_PATCH: u32 = 0;
 pub const PAINT_WORKING_LINEAR_SRGB: u32 = 1;
 pub const PAINT_STORAGE_RGBA32F_PREMULTIPLIED: u32 = 1;
@@ -531,3 +532,29 @@ pub struct PaintLayerDrop {
 /// ABI 1.13: delete selected subtrees, or unwrap selected groups while retaining children.
 pub const PAINT_REMOVE_SUBTREES: u32 = 0;
 pub const PAINT_REMOVE_KEEP_GROUP_CHILDREN: u32 = 1;
+
+/// ABI 1.15: shared rectangle/ellipse/polygon selection settings. tool=0 geometry,
+/// 1 freehand lasso, 2 polygonal lasso. Points are copied before return.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintSelectionShapeEdit {
+    pub struct_size: u32,
+    pub shape: u32,
+    pub operation: u32,
+    pub antialias: u32,
+    pub tool: u32,
+    pub point_count: u32,
+    pub feather: f64,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub points: *const PaintSelectionPoint,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintSelectionDetails {
+    pub struct_size: u32,
+    pub point_count: u32,
+    pub feather: f64,
+}

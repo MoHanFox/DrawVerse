@@ -412,13 +412,10 @@ ApplicationWindow {
             Label { text: "压感"; color: Theme.muted }
             Item { Layout.fillWidth: true }
         }
-        RowLayout {
-            visible: PaintClient.selectionTool>0
-            anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:12;spacing:8
-            Icon {name:PaintClient.selectionTool===2?"ellipseSelection":"rectangleSelection";Layout.preferredWidth:17;Layout.preferredHeight:17}
-            CompactComboBox {model:["矩形选框","椭圆选框"];currentIndex:Math.max(0,PaintClient.selectionTool-1);implicitWidth:90;implicitHeight:20;onActivated:PaintClient.selectionTool=currentIndex+1}
-            Label {text:"Shift 添加 · Alt 减去 · Shift+Alt 相交";color:Theme.muted}
-            Item {Layout.fillWidth:true}
+        SelectionOptionsBar {
+            visible:PaintClient.selectionTool>0
+            anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:12
+            client:PaintClient
         }
         RowLayout {
             visible:PaintClient.eyedropperTool

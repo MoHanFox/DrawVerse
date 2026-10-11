@@ -1,1 +1,3 @@
 singleton Theme 1.0 Theme.qml
+
+SelectionOptionsBar 1.0 SelectionOptionsBar.qml

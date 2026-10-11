@@ -54,7 +54,7 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 ## 版本与类型
 
-全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/10/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
+全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/15/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
 
 初始化 DTO 为零并写 struct_size=sizeof(本调用者结构)，输入至少含已发布前缀。库只访问已知前缀；过小为 INVALID_ARGUMENT，不覆盖调用者内存；扩展尾部保持不变。输出 struct_size 写库已知大小。reserved 必须为零；未知 mode/tool/format 为 UNSUPPORTED。输入 capability 位保留未知位，圆笔刷只实际使用 pressure，客户端为无压力设备提供 pressure=1。
 
@@ -185,3 +185,12 @@ paint_session_edit_selection 的 action 为 Shape=0 / Clear=1 / All=2 / Invert=3
 paint_session_selection_info/selection_step 使用与 layer_info 相同的 exact publication，过期为 BUSY 并清空输出；不存在步骤为 NOT_FOUND。Invert 步骤 operation=4，shape/antialias/geometry 为零。步骤仅供显示，核心负责覆盖与绘画。enabled=0 表示不限制；enabled=1 且没有覆盖像素表示禁止绘画，不能将两者混同。默认禁用，新建清空；选区编辑使用统一历史、modified 规则和 revision，选择工具切换本身不改文档。当前选区作用于文档坐标的笔刷、擦除和蒙版绘画，不裁剪显示/导出或图层整数移动。
 
 查询不暴露内部分配或句柄；调用者输出内存/生命周期/回调规则沿用本契约。旧同步 API 没有选区编辑入口；扩展功能通过异步 session 提供。OpenRaster 扩展 v4 保留选择步骤，图片导出保留完整画布像素。
+
+
+## ABI 1.15：共用形状参数和套索
+
+PaintSelectionShapeEdit=72 字节：struct_size/shape/operation/antialias/tool/point_count（0–20），feather（24），x/y/width/height（32–56），points（64）。shape=0 矩形、1 椭圆、2 多边形；前两种 tool/point_count=0、points=NULL，多边形 tool=1 自由套索或2 多边形套索，矩形字段全0。operation=0/1/2/3，antialias=0/1，feather 为有限的文档像素半径0–1000。路径3–4096点、坐标有限且绝对值不超过2000000，非共线；选区总路径点数不超过4096（actor拒绝超过预算）。奇偶填充支持凹形及自交，羽化用对称 smoothstep 距离过渡，50%边界不移动。旧几何编辑接口默认羽化0保持既有语义和 DTO 大小。
+
+paint_session_edit_selection_shape 同步复制、校验 request 及所有路径点后提交既有 FIFO 选区命令，返回前不保留 caller 指针。所有空/未对齐指针、数量、形状/工具、参数失败清空 out_sequence；OK 只表示入队，仍查询完成序号和错误状态。无变化不创建历史。历史21为套索、24为多边形套索，20为椭圆、4为矩形；22保留未实现魔棒，不产生。
+
+PaintSelectionDetails=16字节，struct_size(0)、point_count(4)、feather(8)。paint_session_selection_details(core,session,publication,index,out,points,capacity) 与 selection_step 同一 publication，不一致返回 BUSY；容量不足返回 BUFFER_TOO_SMALL 并给出 point_count，不写点缓冲；NULL/0可查询需求。足够容量一次复制所有点，无点形状不解引用点缓冲。输出调用者需保证 capacity 可写点，生命周期与旧查询相同。选区文本 v3 保存半径/路径，读取 v1/v2；磁盘历史和 ORA v4 仍使用有界选区文本。旧核心拒绝未知文本版本，不静默丢失新选区。

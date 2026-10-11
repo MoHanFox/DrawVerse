@@ -21,6 +21,7 @@ struct InputSample {
 };
 class BackendWorker;
 struct BackendConnection;
+struct PaintSelectionShapeEdit;
 
 // The only UI-facing core service. Owns no model pointers on the GUI thread.
 class PaintCoreClient final : public QObject {
@@ -62,6 +63,10 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool selectionEnabled READ selectionEnabled NOTIFY selectionChanged)
     Q_PROPERTY(QVariantList selectionSteps READ selectionSteps NOTIFY selectionChanged)
     Q_PROPERTY(int selectionTool READ selectionTool WRITE setSelectionTool NOTIFY brushChanged)
+    Q_PROPERTY(int selectionOperation READ selectionOperation WRITE setSelectionOperation NOTIFY selectionOptionsChanged)
+    Q_PROPERTY(qreal selectionFeather READ selectionFeather WRITE setSelectionFeather NOTIFY selectionOptionsChanged)
+    Q_PROPERTY(bool selectionAntialias READ selectionAntialias WRITE setSelectionAntialias NOTIFY selectionOptionsChanged)
+    Q_PROPERTY(int lassoShape READ lassoShape NOTIFY brushChanged)
     Q_PROPERTY(int marqueeShape READ marqueeShape NOTIFY brushChanged)
     Q_PROPERTY(bool eyedropperTool READ eyedropperTool NOTIFY brushChanged)
     Q_PROPERTY(QVariantMap layerThumbnails READ layerThumbnails NOTIFY layerThumbnailsChanged)
@@ -113,12 +118,21 @@ public:
     bool eyedropperTool() const {return m_eyedropperTool;}
     /// Marquee keeps the last rectangle/ellipse choice; the lasso and the wand are their own tools.
     Q_INVOKABLE void activateMarquee();
+    Q_INVOKABLE void activateLasso();
     bool moveTool() const { return m_moveTool; }
     bool layerEditBusy() const { return m_pendingLayer != 0; }
     void setMoveTool(bool enabled);
     bool selectionEnabled() const { return m_selection.value("enabled").toBool(); }
     QVariantList selectionSteps() const { return m_selection.value("steps").toList(); }
     int selectionTool() const { return m_selectionTool; }
+    int selectionOperation() const {return m_selectionOperation;}
+    qreal selectionFeather() const {return m_selectionFeather;}
+    bool selectionAntialias() const {return m_selectionAntialias;}
+    int lassoShape() const {return m_lassoShape;}
+    void setSelectionOperation(int operation);
+    void setSelectionFeather(qreal feather);
+    void setSelectionAntialias(bool enabled);
+    bool editSelectionPath(const QVector<QPointF> &points, int operation, bool polygonal);
     int marqueeShape() const { return m_marqueeShape; }
     QVariantMap layerThumbnails() const { return m_layerThumbnails; }
     void setSelectionTool(int tool);
@@ -202,6 +216,7 @@ signals:
     void recentColorsChanged();
     void historyLimitChanged();
     void selectionChanged();
+    void selectionOptionsChanged();
     void errorChanged();
     void frameChanged();
     void stopped();
@@ -214,6 +229,7 @@ private:
     bool submitFile(const QUrl &path, int kind, int format);
     bool setAppearance(quint64 id, const QString &field, const QVariant &value);
     bool submitGroup(quint32 kind, quint64 id, quint64 parent, const QString &name = {});
+    bool submitSelectionShape(const PaintSelectionShapeEdit &request);
     bool submitSelection(quint32 action, QRectF rectangle = {}, int shape = 0, int operation = 0);
     QSet<quint64> m_collapsedGroups;
     QVariantMap m_storageSettings, m_activeStorageSettings, m_storageInfo;
@@ -253,7 +269,10 @@ private:
     BrushLibrary *m_brushLibrary = nullptr;
     bool m_eraser = false;
     /// Last marquee shape (1 rectangle, 2 ellipse) so the slot does not reset when re-activated.
-    int m_marqueeShape = 1;
+    int m_marqueeShape = 1, m_lassoShape = 3;
+    int m_selectionOperation = 0;
+    qreal m_selectionFeather = 0;
+    bool m_selectionAntialias = true;
     bool m_moveTool = false;
     bool m_eyedropperTool = false;
     int m_selectionTool = 0;

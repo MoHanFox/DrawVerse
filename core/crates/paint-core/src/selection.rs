@@ -2,6 +2,8 @@ use crate::{Error, Result};
 use std::sync::Arc;
 
 pub const MAX_SELECTION_STEPS: usize = 64;
+pub const MAX_SELECTION_POINTS: usize = 4096;
+pub const MAX_SELECTION_FEATHER: f64 = 1000.;
 /// Masks are per-pixel coverage; the cap keeps a single selection step bounded (16 MiB at 1 byte
 /// per pixel, i.e. 4096x4096). Larger regions must fail loudly instead of exhausting memory.
 pub const MAX_SELECTION_MASK_BYTES: usize = 16 * 1024 * 1024;
@@ -11,6 +13,7 @@ pub const MAX_SELECTION_MASK_BYTES: usize = 16 * 1024 * 1024;
 pub enum SelectionKind {
     Rectangle,
     Ellipse,
+    Polygon,
     /// Pixel region carried by a mask, as persisted by earlier versions.
     Mask,
 }
@@ -18,7 +21,10 @@ pub enum SelectionKind {
 impl SelectionKind {
     /// Geometry-only shapes answer `coverage` analytically; a mask region is stored per pixel.
     pub fn is_geometric(self) -> bool {
-        matches!(self, SelectionKind::Rectangle | SelectionKind::Ellipse)
+        matches!(
+            self,
+            SelectionKind::Rectangle | SelectionKind::Ellipse | SelectionKind::Polygon
+        )
     }
 }
 
@@ -77,6 +83,14 @@ impl SelectionMask {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+struct PolygonIndex {
+    points: Arc<[[f64; 2]]>,
+    feather: f64,
+    y: f64,
+    height: f64,
+    rows: Vec<Vec<usize>>,
+}
+#[derive(Clone, Debug, PartialEq)]
 pub struct SelectionShape {
     pub kind: SelectionKind,
     pub x: f64,
@@ -84,6 +98,9 @@ pub struct SelectionShape {
     pub width: f64,
     pub height: f64,
     pub antialias: bool,
+    pub feather: f64,
+    pub points: Arc<[[f64; 2]]>,
+    index: Option<Arc<PolygonIndex>>,
     /// Present for `Mask`; the geometry above is then the bounding box.
     pub mask: Option<SelectionMask>,
 }
@@ -105,10 +122,108 @@ impl SelectionShape {
             width,
             height,
             antialias,
+            feather: 0.,
+            points: Arc::from([]),
+            index: None,
             mask: None,
         }
     }
+    pub fn polygon(points: Vec<[f64; 2]>, antialias: bool, feather: f64) -> Result<Self> {
+        if points.len() < 3 || points.len() > MAX_SELECTION_POINTS {
+            return Err(Error::InvalidArgument("selection path count"));
+        }
+        let mut left = f64::INFINITY;
+        let mut top = f64::INFINITY;
+        let mut right = f64::NEG_INFINITY;
+        let mut bottom = f64::NEG_INFINITY;
+        for [x, y] in &points {
+            if !x.is_finite() || !y.is_finite() || x.abs() > 2_000_000. || y.abs() > 2_000_000. {
+                return Err(Error::InvalidArgument("selection path coordinate"));
+            }
+            left = left.min(*x);
+            top = top.min(*y);
+            right = right.max(*x);
+            bottom = bottom.max(*y);
+        }
+        let mut shape = Self::geometry(
+            SelectionKind::Polygon,
+            left,
+            top,
+            right - left,
+            bottom - top,
+            antialias,
+        );
+        shape.points = points.into();
+        shape.feather = feather;
+        shape.validate()?;
+        shape.index_polygon();
+        Ok(shape)
+    }
+    fn index_polygon(&mut self) {
+        if self.kind != SelectionKind::Polygon {
+            return;
+        }
+        let margin = self.feather + 1.;
+        let top = self.y - margin;
+        let step = (self.height + 2. * margin) / 64.;
+        let mut rows = vec![Vec::new(); 64];
+        for i in 0..self.points.len() {
+            let a = self.points[(i + self.points.len() - 1) % self.points.len()];
+            let b = self.points[i];
+            let first = ((a[1].min(b[1]) - margin - top) / step)
+                .floor()
+                .clamp(0., 63.) as usize;
+            let last = ((a[1].max(b[1]) + margin - top) / step)
+                .floor()
+                .clamp(0., 63.) as usize;
+            for row in &mut rows[first..=last] {
+                row.push(i);
+            }
+        }
+        self.index = Some(Arc::new(PolygonIndex {
+            points: self.points.clone(),
+            feather: self.feather,
+            y: self.y,
+            height: self.height,
+            rows,
+        }));
+    }
     pub fn validate(&self) -> Result<()> {
+        if !self.feather.is_finite() || !(0. ..=MAX_SELECTION_FEATHER).contains(&self.feather) {
+            return Err(Error::InvalidArgument("selection feather"));
+        }
+        if self.kind == SelectionKind::Polygon {
+            if self.points.len() < 3 || self.points.len() > MAX_SELECTION_POINTS {
+                return Err(Error::InvalidArgument("selection path count"));
+            }
+            for [x, y] in self.points.iter() {
+                if !x.is_finite()
+                    || !y.is_finite()
+                    || *x < self.x
+                    || *x > self.x + self.width
+                    || *y < self.y
+                    || *y > self.y + self.height
+                {
+                    return Err(Error::InvalidArgument("selection path bounds"));
+                }
+            }
+            let a = self.points[0];
+            let b = self
+                .points
+                .iter()
+                .find(|p| **p != a)
+                .ok_or(Error::InvalidArgument("degenerate selection"))?;
+            if !self.points.iter().any(|p| {
+                ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])).abs() > 1e-9
+            }) {
+                return Err(Error::InvalidArgument("degenerate selection"));
+            }
+        } else if !self.points.is_empty() {
+            return Err(Error::InvalidArgument("unexpected selection path"));
+        }
+        if self.kind == SelectionKind::Mask && self.feather != 0. {
+            return Err(Error::InvalidArgument("mask feather unsupported"));
+        }
         if !self.kind.is_geometric() && self.mask.is_none() {
             return Err(Error::InvalidArgument("rasterized selection needs a mask"));
         }
@@ -125,8 +240,115 @@ impl SelectionShape {
         }
         Ok(())
     }
-    pub fn coverage(self, x: f64, y: f64) -> f32 {
-        if let Some(mask) = self.mask {
+    /// Shared shape boundary distance, positive inside. Polygon fill uses the even-odd rule.
+    fn distance(&self, x: f64, y: f64) -> f64 {
+        if self.kind == SelectionKind::Polygon {
+            let mut inside = false;
+            let mut nearest = f64::INFINITY;
+            let indexed = self.index.as_ref().filter(|index| {
+                Arc::ptr_eq(&index.points, &self.points)
+                    && index.feather == self.feather
+                    && index.y == self.y
+                    && index.height == self.height
+            });
+            let row = indexed.map(|index| {
+                let margin = self.feather + 1.;
+                let bin = ((y - self.y + margin) / (self.height + 2. * margin) * 64.)
+                    .floor()
+                    .clamp(0., 63.) as usize;
+                index.rows[bin].as_slice()
+            });
+            let count = row.map_or(self.points.len(), |indices| indices.len());
+            for position in 0..count {
+                let i = row.map_or(position, |indices| indices[position]);
+                let a = self.points[(i + self.points.len() - 1) % self.points.len()];
+                let b = self.points[i];
+                let dx = b[0] - a[0];
+                let dy = b[1] - a[1];
+                let length = dx * dx + dy * dy;
+                let t = if length > 0. {
+                    ((x - a[0]) * dx + (y - a[1]) * dy) / length
+                } else {
+                    0.
+                }
+                .clamp(0., 1.);
+                nearest = nearest.min((x - a[0] - t * dx).hypot(y - a[1] - t * dy));
+                if (a[1] > y) != (b[1] > y) && x < a[0] + (y - a[1]) * dx / dy {
+                    inside = !inside;
+                }
+            }
+            return if inside { nearest } else { -nearest };
+        }
+        let rx = self.width * 0.5;
+        let ry = self.height * 0.5;
+        let dx = (x - self.x - rx).abs();
+        let dy = (y - self.y - ry).abs();
+        if self.kind == SelectionKind::Rectangle {
+            let qx = dx - rx;
+            let qy = dy - ry;
+            return -(qx.max(0.).hypot(qy.max(0.)) + qx.max(qy).min(0.));
+        }
+        // Closest point on the first-quadrant ellipse, bounded search independent of canvas size.
+        let metric = |angle: f64| (dx - rx * angle.cos()).hypot(dy - ry * angle.sin());
+        let mut best = 0usize;
+        for i in 1..=16 {
+            if metric(i as f64 * std::f64::consts::FRAC_PI_2 / 16.)
+                < metric(best as f64 * std::f64::consts::FRAC_PI_2 / 16.)
+            {
+                best = i;
+            }
+        }
+        let mut low = best.saturating_sub(1) as f64 * std::f64::consts::FRAC_PI_2 / 16.;
+        let mut high = (best + 1).min(16) as f64 * std::f64::consts::FRAC_PI_2 / 16.;
+        for _ in 0..24 {
+            let a = low + (high - low) / 3.;
+            let b = high - (high - low) / 3.;
+            if metric(a) < metric(b) {
+                high = b;
+            } else {
+                low = a;
+            }
+        }
+        let distance = metric((low + high) * 0.5)
+            .min(metric(0.))
+            .min(metric(std::f64::consts::FRAC_PI_2));
+        if (dx / rx).powi(2) + (dy / ry).powi(2) <= 1. {
+            distance
+        } else {
+            -distance
+        }
+    }
+    pub fn coverage(&self, x: f64, y: f64) -> f32 {
+        if x < self.x - self.feather - 1.
+            || x > self.x + self.width + self.feather + 1.
+            || y < self.y - self.feather - 1.
+            || y > self.y + self.height + self.feather + 1.
+        {
+            return 0.;
+        }
+        if self.feather > 0. {
+            let t = (0.5 + self.distance(x, y) / (2. * self.feather)).clamp(0., 1.);
+            return (t * t * (3. - 2. * t)) as f32;
+        }
+        if self.kind == SelectionKind::Polygon {
+            let d = self.distance(x, y);
+            if !self.antialias || d.abs() > std::f64::consts::FRAC_1_SQRT_2 {
+                return f32::from(d >= 0.);
+            }
+            let mut inside = 0u32;
+            for sy in 0..4 {
+                for sx in 0..4 {
+                    inside += u32::from(
+                        self.distance(
+                            x - 0.5 + (sx as f64 + 0.5) * 0.25,
+                            y - 0.5 + (sy as f64 + 0.5) * 0.25,
+                        ) >= 0.,
+                    );
+                }
+            }
+            return inside as f32 / 16.;
+        }
+        if let Some(mask) = &self.mask {
             // Mask shapes are addressed by integer pixel: the stored value is the pixel center's
             // coverage, produced by the flood fill (wand).
             let px = x.floor();
@@ -194,6 +416,9 @@ pub fn mask_shape(
         width: f64::from(width),
         height: f64::from(height),
         antialias: false,
+        feather: 0.,
+        points: Arc::from([]),
+        index: None,
         mask: Some(mask),
     })
 }
@@ -302,6 +527,15 @@ impl Selection {
         if enabled && steps.is_empty() {
             return Err(Error::InvalidArgument("enabled selection has no steps"));
         }
+        if steps
+            .iter()
+            .filter_map(|s| s.shape.as_ref())
+            .map(|s| s.points.len())
+            .sum::<usize>()
+            > MAX_SELECTION_POINTS
+        {
+            return Err(Error::ResourceLimit("selection path budget"));
+        }
         for step in &steps {
             match (step.operation, step.shape.as_ref()) {
                 (SelectionOperation::Invert, None) => {}
@@ -405,7 +639,7 @@ impl Selection {
         }
         let mut value = 0f32;
         for step in self.steps.iter() {
-            let shape = step.shape.as_ref().map_or(0., |s| s.clone().coverage(x, y));
+            let shape = step.shape.as_ref().map_or(0., |s| s.coverage(x, y));
             value = match step.operation {
                 SelectionOperation::Replace => shape,
                 SelectionOperation::Add => value.max(shape),
@@ -417,7 +651,7 @@ impl Selection {
         value
     }
     pub fn to_text(&self) -> String {
-        let mut text = format!("2|{}", u8::from(self.enabled));
+        let mut text = format!("3|{}", u8::from(self.enabled));
         for step in self.steps.iter() {
             let op = match step.operation {
                 SelectionOperation::Replace => 0,
@@ -430,6 +664,7 @@ impl Selection {
                 let kind = match s.kind {
                     SelectionKind::Rectangle => 0,
                     SelectionKind::Ellipse => 1,
+                    SelectionKind::Polygon => 2,
                     SelectionKind::Mask => 3,
                 };
                 text.push_str(&format!(
@@ -440,6 +675,15 @@ impl Selection {
                     s.width,
                     s.height
                 ));
+                text.push_str(&format!(",{}", s.feather));
+                if s.kind == SelectionKind::Polygon {
+                    let points: Vec<_> = s
+                        .points
+                        .iter()
+                        .map(|p| format!("{}:{}", p[0], p[1]))
+                        .collect();
+                    text.push_str(&format!(",{}", points.join("/")));
+                }
                 if let Some(mask) = s.mask.as_ref() {
                     text.push_str(&format!(",{}", mask_to_text(mask)));
                 }
@@ -461,6 +705,8 @@ impl Selection {
             "1|1" => (1, true),
             "2|0" => (2, false),
             "2|1" => (2, true),
+            "3|0" => (3, false),
+            "3|1" => (3, true),
             _ => return Err(invalid()),
         };
         let mut steps = Vec::new();
@@ -494,6 +740,7 @@ impl Selection {
             let kind = match fields[1] {
                 "0" => SelectionKind::Rectangle,
                 "1" => SelectionKind::Ellipse,
+                "2" if version >= 3 => SelectionKind::Polygon,
                 "3" if version >= 2 => SelectionKind::Mask,
                 _ => return Err(invalid()),
             };
@@ -506,28 +753,67 @@ impl Selection {
             let y: f64 = fields[4].parse().map_err(|_| invalid())?;
             let width: f64 = fields[5].parse().map_err(|_| invalid())?;
             let height: f64 = fields[6].parse().map_err(|_| invalid())?;
+            let feather = if version >= 3 {
+                fields
+                    .get(7)
+                    .ok_or_else(invalid)?
+                    .parse::<f64>()
+                    .map_err(|_| invalid())?
+            } else {
+                0.
+            };
+            let payload = if version >= 3 { 8 } else { 7 };
+            let points = if kind == SelectionKind::Polygon {
+                let encoded = fields.get(payload).ok_or_else(invalid)?;
+                if encoded.split('/').count() > MAX_SELECTION_POINTS {
+                    return Err(invalid());
+                }
+                let parsed: Result<Vec<[f64; 2]>> = encoded
+                    .split('/')
+                    .map(|point| {
+                        let (x, y) = point.split_once(':').ok_or_else(invalid)?;
+                        Ok([
+                            x.parse().map_err(|_| invalid())?,
+                            y.parse().map_err(|_| invalid())?,
+                        ])
+                    })
+                    .collect();
+                Arc::from(parsed?)
+            } else {
+                Arc::from([])
+            };
             let mask = if kind.is_geometric() {
-                if fields.len() != 7 {
+                if fields.len() != payload + usize::from(kind == SelectionKind::Polygon) {
                     return Err(invalid());
                 }
                 None
             } else {
-                if fields.len() != 8 || width < 1. || height < 1. {
+                if fields.len() != payload + 1 || width < 1. || height < 1. {
                     return Err(invalid());
                 }
-                Some(mask_from_text(fields[7], width as u32, height as u32)?)
+                Some(mask_from_text(
+                    fields[payload],
+                    width as u32,
+                    height as u32,
+                )?)
             };
+            let mut shape = SelectionShape {
+                kind,
+                x,
+                y,
+                width,
+                height,
+                antialias,
+                feather,
+                points,
+                mask,
+                index: None,
+            };
+            shape.validate()?;
+            shape.index_polygon();
             steps.push(SelectionStep {
                 operation,
-                shape: Some(SelectionShape {
-                    kind,
-                    x,
-                    y,
-                    width,
-                    height,
-                    antialias,
-                    mask,
-                }),
+                shape: Some(shape),
             });
         }
         Self::from_steps(enabled, steps)

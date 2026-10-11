@@ -21,6 +21,7 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(bool interactive READ interactive WRITE setInteractive NOTIFY interactiveChanged)
     Q_PROPERTY(qreal initialFitRatio READ initialFitRatio WRITE setInitialFitRatio NOTIFY viewChanged)
     Q_PROPERTY(QRectF selectionPreview READ selectionPreview NOTIFY selectionDragChanged)
+    Q_PROPERTY(QVariantList selectionPreviewPoints READ selectionPreviewPoints NOTIFY selectionDragChanged)
     Q_PROPERTY(int selectionPreviewKind READ selectionPreviewKind NOTIFY selectionDragChanged)
 public:
     explicit CanvasItem(QQuickItem *parent = nullptr);
@@ -50,6 +51,7 @@ public:
     QRectF selectionPreview() const { return m_selecting ? selectionPreviewRect() : QRectF(); }
     /// Shift constraint: keep the anchor corner and grow the shorter side to the longer one.
     static QRectF constrainedRect(QPointF anchor,QPointF corner);
+    QVariantList selectionPreviewPoints() const;
     int selectionPreviewKind() const { return m_selectionKind; }
     Q_INVOKABLE void cancelSelectionDrag();
 signals:
@@ -63,6 +65,7 @@ protected:
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
     void geometryChange(const QRectF &geometry, const QRectF &old) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseUngrabEvent() override;
@@ -90,6 +93,9 @@ private:
     /// Eyedropper: sample the already rendered frame at a local point. Returns an invalid colour
     /// outside the document. Read-only, never touches history or the document revision.
     Q_INVOKABLE QColor pickColorAt(QPointF local) const;
+    void finishPolygon();
+    void appendSelectionPoint(QPointF point);
+    QVector<QPointF> m_selectionPoints;
     void finishSelection(QPointF local,Qt::KeyboardModifiers modifiers);
     PaintCoreClient *m_client = nullptr;
     QPointer<QQuickWindow> m_observedWindow;
