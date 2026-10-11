@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 13
+#define PAINT_ABI_MINOR 14
 
 #define PAINT_ABI_PATCH 0
 
@@ -941,6 +941,20 @@ PaintStatus paint_session_group(struct PaintCore *core,
                                 struct PaintSession *session,
                                 const struct PaintGroupRequest *request,
                                 uint64_t *out_sequence);
+
+/**
+ * ABI 1.14: atomically wrap selected subtrees in one new group.
+ * # Safety
+ * Provide 1–4096 aligned readable IDs, readable UTF-8 name bytes and a nonoverlapping writable
+ * sequence. Input buffers are copied before return; follow session ownership.
+ */
+PaintStatus paint_session_group_layers(struct PaintCore *core,
+                                       struct PaintSession *session,
+                                       const uint64_t *ids,
+                                       uint32_t count,
+                                       const uint8_t *name,
+                                       uint64_t name_length,
+                                       uint64_t *out_sequence);
 
 /**
  * ABI 1.10: read retained operation metadata from the exact publication.

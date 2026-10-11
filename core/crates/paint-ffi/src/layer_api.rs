@@ -312,6 +312,32 @@ pub unsafe extern "C" fn paint_session_set_layer_clipping(
     })
 }
 
+/// ABI 1.14: atomically wrap selected subtrees in one new group.
+/// # Safety
+/// Provide 1–4096 aligned readable IDs, readable UTF-8 name bytes and a nonoverlapping writable
+/// sequence. Input buffers are copied before return; follow session ownership.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_group_layers(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    ids: *const u64,
+    count: u32,
+    name: *const u8,
+    name_length: u64,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        let ids = pointers::layer_ids(ids, count)?;
+        let name = pointers::utf8(name, name_length)?;
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .submit(Operation::GroupBatch(ids, name))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+
 /// ABI 1.13: atomic batch reorder/reparent. The input IDs are copied immediately.
 /// # Safety
 /// Provide 1–4096 aligned readable IDs and a nonoverlapping writable sequence. Follow session ownership.

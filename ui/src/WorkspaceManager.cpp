@@ -35,7 +35,7 @@ QRect WorkspaceManager::availableScreenGeometry(QWindow *window) const {
 }
 void WorkspaceManager::watchMenuWindow(QWindow *window,bool visible) {
     m_menuWindows.removeAll(nullptr);
-    if(visible && window && !m_menuWindows.contains(window))m_menuWindows.append(window);
+    if(visible && window && window!=m_glassWindow && window->objectName()!="mainWindow" && !m_menuWindows.contains(window))m_menuWindows.append(window);
     else if(!visible)m_menuWindows.removeAll(window);
 }
 void WorkspaceManager::promoteMenuWindow(QQuickItem *content) {
@@ -808,14 +808,23 @@ bool WorkspaceManager::eventFilter(QObject *watched,QEvent *event) {
     else if(event->type()==QEvent::MouseButtonRelease)m_pointerButtons&=~Qt::MouseButtons(static_cast<QMouseEvent*>(event)->button());
     if(watched==m_glassWindow && event->type()==QEvent::Hide)m_menuBlur.hide();
     if(event->type()==QEvent::MouseMove && qobject_cast<QWindow*>(watched) && m_menuWindows.contains(qobject_cast<QWindow*>(watched))) {
-        // A generic Qt.Popup host grabs native input for the whole fallback chain. Route moves
-        // over an ancestor host back to that host, like Qt 6.8's own menu popup windows do.
+        // Both native Qt menu popups and fallback hosts grab input for the entire chain.
+        // Qt 6.8 forwards only scenePosition to an ancestor, leaving position in child-window
+        // coordinates. On the first row that stale y falls inside the menu bar and opens File.
+        // Route a fresh event with both coordinates mapped before Qt's popup forwarding runs.
         const auto *move=static_cast<QMouseEvent*>(event);
         QWindow *target=nullptr;
         for(auto it=m_menuWindows.crbegin();it!=m_menuWindows.crend();++it)
             if(*it && (*it)->isVisible() && (*it)->geometry().contains(move->globalPosition().toPoint())){target=it->data();break;}
+        if(!target) {
+            // The menu owner also exists without the optional Windows blur background.
+            for(auto *owner=qobject_cast<QWindow*>(watched);owner && !target;owner=owner->transientParent()) {
+                auto *bar=owner->findChild<QQuickItem*>("mainMenuBar");
+                if(bar && bar->window()==owner && bar->contains(bar->mapFromGlobal(move->globalPosition())))target=owner;
+            }
+        }
         if(target && target!=watched) {
-            QMouseEvent routed(QEvent::MouseMove,move->globalPosition()-target->position(),move->globalPosition(),
+            QMouseEvent routed(QEvent::MouseMove,target->mapFromGlobal(move->globalPosition()),move->globalPosition(),
                                move->button(),move->buttons(),move->modifiers(),move->pointingDevice());
             routed.setTimestamp(move->timestamp());
             QCoreApplication::sendEvent(target,&routed);

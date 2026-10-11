@@ -10,6 +10,7 @@ Menu {
     property bool topLevel:false
     property var cascadeParent:null
     property bool windowPopupsAvailable: false
+    property var inputWindow:null
     padding: 6
     margins: 6
     // A menu closes when the user clicks elsewhere or presses Escape, never because the pointer moved
@@ -33,7 +34,21 @@ Menu {
             sideWindow.showMenu()
         }
     }
-    onOpened:if(topLevel || cascadeParent)Qt.callLater(()=>Workspace.promoteMenuWindow(control.contentItem))
+    function trackInputWindow() {
+        if(!topLevel && !cascadeParent)return
+        const window=control.contentItem.Window.window
+        if(inputWindow && inputWindow!==window)Workspace.watchMenuWindow(inputWindow,false)
+        inputWindow=window
+        Workspace.watchMenuWindow(window,true)
+    }
+    onVisibleChanged: {
+        if(visible)trackInputWindow()
+        else if(inputWindow){Workspace.watchMenuWindow(inputWindow,false);inputWindow=null}
+    }
+    onOpened:if(topLevel || cascadeParent) {
+        trackInputWindow()
+        Qt.callLater(()=>Workspace.promoteMenuWindow(control.contentItem))
+    }
     delegate: GlassMenuItem {}
     function openChild(child) {
         for(let i=0;i<count;i++) {
@@ -54,6 +69,7 @@ Menu {
     }
     Component { id:sideFactory; SideMenuWindow {} }
     onClosed: {
+        if(inputWindow){Workspace.watchMenuWindow(inputWindow,false);inputWindow=null}
         if (!sideWindow) return
         const host=sideWindow
         sideWindow=null

@@ -115,16 +115,44 @@ private slots:
         };
         auto *image=main->findChild<QObject*>("imageMenu"),*adjust=main->findChild<QObject*>("imageAdjustSubmenu"),*rotate=main->findChild<QObject*>("imageRotateSubmenu");QVERIFY(image && adjust && rotate);
         if(fallback)for(const auto &name:{"imageMenu","imageAdjustSubmenu","imageRotateSubmenu","filterMenu","filterBlurSubmenu"})main->findChild<QObject*>(name)->setProperty("windowPopupsAvailable",false);
-        QVERIFY(QMetaObject::invokeMethod(image,"open"));QTRY_VERIFY(image->property("opened").toBool());auto *row=hover(image,"调整");QVERIFY(row);QTRY_VERIFY(row->property("hovered").toBool());QTRY_VERIFY(adjust->property("opened").toBool());
+        auto *entry=findVisualItem(main->contentItem(),"menuEntry:图像");QVERIFY(entry);
+        QTRY_COMPARE(main->position(),area.topLeft());QTRY_VERIFY(main->isExposed());QTest::qWait(50);
+        if(QGuiApplication::platformName()!="offscreen"){QCursor::setPos(entry->mapToGlobal({entry->width()/2,14}).toPoint());QTest::qWait(30);}
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,entry->mapToScene({entry->width()/2,14}).toPoint());QTRY_VERIFY(image->property("opened").toBool());auto *row=hover(image,"调整");QVERIFY(row);QTRY_VERIFY(row->property("hovered").toBool());QTRY_VERIFY(adjust->property("opened").toBool());
         auto *arrow=qobject_cast<QQuickItem*>(row->property("arrow").value<QObject*>());QVERIFY(arrow);QCOMPARE(arrow->width(),qreal(6));QCOMPARE(arrow->height(),qreal(8));QVERIFY(row->height()<30);
         auto *parentContent=qobject_cast<QQuickItem*>(image->property("contentItem").value<QObject*>()),*childContent=qobject_cast<QQuickItem*>(adjust->property("contentItem").value<QObject*>());QVERIFY(parentContent && childContent);QVERIFY(childContent->window()!=parentContent->window());
         if(fallback){QVERIFY(image->property("sideWindow").value<QObject*>());QVERIFY(adjust->property("sideWindow").value<QObject*>());}
         const auto preview=qEnvironmentVariable("DRAWVERSE_MENU_LAYER_PREVIEW");if(!preview.isEmpty() && !fallback){QTest::qWait(50);QVERIFY(childContent->window()->grabWindow().save(preview+".menu.png"));}
         const auto childGeometry=childContent->window()->geometry();QVERIFY(area.adjusted(-1,-1,1,1).contains(childGeometry));
+        // Cross the first row's edge gradually, with the menu bar actively owning the chain.
+        const auto start=row->mapToGlobal({row->width()-12,row->height()/2}).toPoint();
+        const auto finish=childContent->mapToGlobal({20,10}).toPoint();
+        QPointer<QQuickWindow> parentHost=parentContent->window(),childHost=childContent->window();
+        const int distance=std::max(std::abs(finish.x()-start.x()),std::abs(finish.y()-start.y()));
+        for(int step=1;step<=distance;++step) {
+            const auto global=start+(finish-start)*qreal(step)/distance;
+            auto *host=childGeometry.contains(global)?childHost.data():parentHost.data();QVERIFY2(host,"menu host vanished during first-row traversal");
+            QTest::mouseMove(host,host->mapFromGlobal(global),1);
+            QVERIFY2(image->property("opened").toBool(),qPrintable(QString("first-row move %1/%2 at %3,%4 (start %5,%6 child %7,%8) closed parent").arg(step).arg(distance).arg(global.x()).arg(global.y()).arg(start.x()).arg(start.y()).arg(childGeometry.x()).arg(childGeometry.y())));
+            QVERIFY(!main->findChild<QObject*>("fileMenuPopup")->property("visible").toBool());
+        }
+        if(QGuiApplication::platformName()!="offscreen") {
+            // Exercise real native hover dispatch, including popup mouse grabs.
+            QCursor::setPos(start);QTest::qWait(30);
+            for(int step=1;step<=distance;++step) {
+                QCursor::setPos(start+(finish-start)*qreal(step)/distance);QTest::qWait(5);
+                QVERIFY2(image->property("opened").toBool(),qPrintable(QString("native first-row move %1/%2 closed parent").arg(step).arg(distance)));
+                QVERIFY(!main->findChild<QObject*>("fileMenuPopup")->property("visible").toBool());
+            }
+        }
         QTest::mouseMove(childContent->window(),childContent->mapToScene({20,10}).toPoint());QVERIFY(image->property("opened").toBool());QVERIFY(adjust->property("opened").toBool());
         auto *rotateRow=hover(image,"画布旋转");QVERIFY(rotateRow);QTRY_VERIFY(rotateRow->property("hovered").toBool());QTRY_VERIFY(rotate->property("opened").toBool());QTRY_VERIFY(!adjust->property("visible").toBool());
         QVERIFY(!main->findChild<QObject*>("canvasRotateCwAction")->property("enabled").toBool());
-        QVERIFY(QMetaObject::invokeMethod(image,"close"));QTRY_VERIFY(!rotate->property("visible").toBool());
+        auto *fileEntry=findVisualItem(main->contentItem(),"menuEntry:文件");QVERIFY(fileEntry);
+        auto *rotateContent=qobject_cast<QQuickItem*>(rotate->property("contentItem").value<QObject*>());QVERIFY(rotateContent && rotateContent->window());
+        QTest::mouseMove(rotateContent->window(),rotateContent->window()->mapFromGlobal(fileEntry->mapToGlobal({fileEntry->width()/2,14}).toPoint()));
+        auto *file=main->findChild<QObject*>("fileMenuPopup");QTRY_VERIFY(file->property("opened").toBool());QTRY_VERIFY(!image->property("visible").toBool());QTRY_VERIFY(!rotate->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(file,"close"));
         auto *filter=main->findChild<QObject*>("filterMenu"),*blur=main->findChild<QObject*>("filterBlurSubmenu");QVERIFY(filter && blur);
         QVERIFY(QMetaObject::invokeMethod(filter,"open"));QTRY_VERIFY(filter->property("opened").toBool());QVERIFY(hover(filter,"模糊"));QTRY_VERIFY(blur->property("opened").toBool());
 #ifdef Q_OS_WIN
@@ -161,6 +189,26 @@ private slots:
         client.undo();QTRY_COMPARE(client.layers().size(),5);QTRY_VERIFY(!client.layerEditBusy());client.selectLayers(group,0);QTRY_VERIFY(!client.layerEditBusy());client.requestSelectedLayerRemoval();
         client.newTransparentDocument(32,32);QTRY_COMPARE(client.documentWidth(),32);QTRY_VERIFY(client.ready());QVERIFY(!client.confirmSelectedLayerRemoval(2));QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QCOMPARE(client.layers().size(),1);
         QVERIFY(!client.acceptLayerDrop(payload,0,0));QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void newGroupContainsWholeSelectionFromBothUiEntrypoints() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
+        for(int i=0;i<3;++i){client.addLayer(QString("L%1").arg(i));QTRY_COMPARE(client.layers().size(),i+2);QTRY_VERIFY(!client.layerEditBusy());}
+        for(bool menu:{false,true}) {
+            client.selectLayers(2,0);QTRY_VERIFY(!client.layerEditBusy());client.selectLayers(4,Qt::ControlModifier);QTRY_VERIFY(!client.layerEditBusy());
+            QCOMPARE(client.selectedLayers().size(),2);const auto depth=client.undoDepth();
+            if(menu) {auto *action=main->findChild<QObject*>("newLayerGroupAction");QVERIFY(action);QVERIFY(QMetaObject::invokeMethod(action,"trigger"));}
+            else {QQuickItem *button=nullptr;QTRY_VERIFY((button=findVisualItem(main->contentItem(),"groupLayer")));QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,button->mapToScene({button->width()/2,button->height()/2}).toPoint());}
+            QTRY_COMPARE(client.layers().size(),5);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);
+            const auto group=client.activeLayer();QCOMPARE(client.selectedLayers(),QVariantList{QVariant::fromValue(group)});
+            for(const auto &value:client.layers()) {const auto layer=value.toMap();const auto id=layer.value("id").toULongLong();if(id==2 || id==4)QCOMPARE(layer.value("parent").toULongLong(),group);if(id==1 || id==3)QCOMPARE(layer.value("parent").toULongLong(),quint64(0));}
+            client.undo();QTRY_COMPARE(client.layers().size(),4);QTRY_VERIFY(!client.layerEditBusy());
+            for(const auto &value:client.layers())QCOMPARE(value.toMap().value("parent").toULongLong(),quint64(0));
+            client.redo();QTRY_COMPARE(client.layers().size(),5);QTRY_VERIFY(!client.layerEditBusy());client.undo();QTRY_COMPARE(client.layers().size(),4);QTRY_VERIFY(!client.layerEditBusy());
+        }
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void firstLayersPanelOpenIncubatesWithoutBlockingTheEventLoop() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));QTRY_VERIFY(client.ready());
@@ -275,29 +323,57 @@ private slots:
             QCOMPARE(window.value("y").toInt(),100+remaining.topLeft().toPoint().y());
         }
     }
+    void layerBlendHoverPreviewsWithoutHistoryAndCommitsOnce_data() {
+        QTest::addColumn<bool>("floating");QTest::newRow("docked")<<false;QTest::newRow("floating")<<true;
+    }
     void layerBlendHoverPreviewsWithoutHistoryAndCommitsOnce() {
+        QFETCH(bool,floating);
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
         client.newTransparentDocument(32,32);QTRY_COMPARE(client.documentWidth(),32);QTRY_VERIFY(client.ready());
         client.setBrushRadius(8);client.setBrushColor(Qt::black);InputSample sample;sample.position={16,16};sample.pressure=1;QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);
         client.addLayer("red");QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());client.setBrushColor(Qt::red);QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),3);QTRY_VERIFY(!client.layerEditBusy());
-        for(auto *canvas:window->findChildren<CanvasItem*>())canvas->setClient(nullptr);
-        client.requestViewport(0,{0,0,32,32},{32,32});client.requestViewport(1,{0,0,32,32},{32,32});
-        QTRY_VERIFY(client.frame().size()==QSize(32,32) && client.frame(1).size()==QSize(32,32));QTRY_COMPARE(client.frame().pixelColor(16,16),QColor(Qt::red));
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();
+        // Keep the real canvas connected: hover must repaint without any viewport scroll.
+        QTRY_VERIFY(!client.frame().isNull());
+        const auto center=[&](int view){const auto image=client.frame(view);return image.isNull()?QColor():image.pixelColor(image.width()/2,image.height()/2);};
+        QTRY_COMPARE(center(0),QColor(Qt::red));
+        client.requestViewport(1,{0,0,32,32},{32,32});QTRY_COMPARE(center(1),QColor(Qt::red));
         const auto revision=client.revision();const auto depth=client.undoDepth();const auto top=client.activeLayer();
-        auto *combo=findVisualItem(window->contentItem(),"layerBlendMode");QVERIFY(combo);auto *popup=combo->property("popup").value<QObject*>();QVERIFY(popup);
+        QQuickWindow *panelWindow=window;
+        if(floating) {
+            workspace.detachPanel(workspace.groupForPanel("layers"),"layers");const auto group=workspace.groupForPanel("layers");panelWindow=nullptr;
+            QTRY_VERIFY([&]{for(auto *w:applicationWindows())if(w->objectName()=="floatingDock:"+group && w->isVisible())panelWindow=qobject_cast<QQuickWindow*>(w);return panelWindow!=nullptr;}());
+        }
+        QQuickItem *combo=nullptr;QTRY_VERIFY((combo=findVisualItem(panelWindow->contentItem(),"layerBlendMode")));auto *popup=combo->property("popup").value<QObject*>();QVERIFY(popup);
         auto hoverMultiply=[&]()->QQuickItem* {
             if(!QMetaObject::invokeMethod(popup,"open"))return nullptr;
             auto *content=qobject_cast<QQuickItem*>(popup->property("contentItem").value<QObject*>());if(!content)return nullptr;
-            QTest::qWait(30);auto *option=findVisualItem(content,"layerBlendModeOption:3");if(option)QTest::mouseMove(window,option->mapToScene({20,10}).toPoint());return option;
+            QTest::qWait(30);auto *option=findVisualItem(content,"layerBlendModeOption:3");if(option)QTest::mouseMove(panelWindow,option->mapToScene({20,10}).toPoint());return option;
         };
         auto *option=hoverMultiply();QVERIFY(option);QCOMPARE(option->height(),qreal(20));
-        QTRY_COMPARE(client.frame().pixelColor(16,16),QColor(Qt::black));QTRY_COMPARE(client.frame(1).pixelColor(16,16),QColor(Qt::black));QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),depth);
+        QTRY_COMPARE(center(0),QColor(Qt::black));QTRY_COMPARE(center(1),QColor(Qt::black));QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),depth);
+        auto *content=qobject_cast<QQuickItem*>(popup->property("contentItem").value<QObject*>());QVERIFY(content);
+        for(int index:{0,3,0,3}) {
+            auto *next=findVisualItem(content,"layerBlendModeOption:"+QString::number(index));QVERIFY(next);
+            QTest::mouseMove(panelWindow,next->mapToScene({20,10}).toPoint());
+            QTRY_COMPARE(center(0),index==3?QColor(Qt::black):QColor(Qt::red));
+            QTRY_COMPARE(center(1),index==3?QColor(Qt::black):QColor(Qt::red));
+            QCOMPARE(client.undoDepth(),depth);QCOMPARE(client.revision(),revision);
+        }
+        // Opening on a later current item can move the list under a stationary pointer.
+        // Exercise that placement/scroll change without relying on a wheel event to refresh hover.
+        auto *normal=findVisualItem(content,"layerBlendModeOption:0");QVERIFY(normal);
+        QTest::mouseMove(panelWindow,normal->mapToScene({20,10}).toPoint());QTRY_COMPARE(center(0),QColor(Qt::red));
+        QVERIFY(content->setProperty("contentY",qreal(60)));QTRY_COMPARE(content->property("contentY").toReal(),qreal(60));
+        QTRY_COMPARE(center(0),QColor(Qt::black));QTRY_COMPARE(center(1),QColor(Qt::black));
+        QVERIFY(content->setProperty("contentY",qreal(0)));QTRY_COMPARE(center(0),QColor(Qt::red));QTRY_COMPARE(center(1),QColor(Qt::red));
+        QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),depth);
         for(const auto &value:client.layers())if(value.toMap().value("id").toULongLong()==top)QCOMPARE(value.toMap().value("blendMode").toInt(),0);
-        QVERIFY(QMetaObject::invokeMethod(popup,"close"));QTRY_COMPARE(client.frame().pixelColor(16,16),QColor(Qt::red));QTRY_COMPARE(client.frame(1).pixelColor(16,16),QColor(Qt::red));QCOMPARE(client.undoDepth(),depth);
-        option=hoverMultiply();QVERIFY(option);QTRY_COMPARE(client.frame().pixelColor(16,16),QColor(Qt::black));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,option->mapToScene({20,10}).toPoint());
-        QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame().pixelColor(16,16),QColor(Qt::black));
+        QVERIFY(QMetaObject::invokeMethod(popup,"close"));QTRY_COMPARE(center(0),QColor(Qt::red));QTRY_COMPARE(center(1),QColor(Qt::red));QCOMPARE(client.undoDepth(),depth);
+        option=hoverMultiply();QVERIFY(option);QTRY_COMPARE(center(0),QColor(Qt::black));QTest::mouseClick(panelWindow,Qt::LeftButton,Qt::NoModifier,option->mapToScene({20,10}).toPoint());
+        QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(center(0),QColor(Qt::black));
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void compactLayerSliderAndHsvMarkersUseSharedStyles() {

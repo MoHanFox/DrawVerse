@@ -385,7 +385,7 @@ impl Document {
         }
         Ok(())
     }
-    fn descendant(&self, child: &Layer, group: u64) -> bool {
+    pub(super) fn descendant(&self, child: &Layer, group: u64) -> bool {
         let mut parent = child.parent;
         while parent != 0 {
             if parent == group {

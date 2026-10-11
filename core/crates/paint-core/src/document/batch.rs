@@ -33,6 +33,77 @@ impl Document {
             .collect())
     }
 
+    /// Wrap selected subtrees once, at their highest branch in the common parent.
+    pub fn group_layers(&mut self, ids: &[u64], name: impl Into<String>) -> Result<u64> {
+        self.idle()?;
+        let name = name.into();
+        if name.is_empty() || name.len() > 1024 || name.contains('\0') {
+            return Err(Error::InvalidArgument("invalid group name"));
+        }
+        if self.layers.len() >= 4096 {
+            return Err(Error::ResourceLimit("layer count"));
+        }
+        let roots = self.batch_roots(ids)?;
+        let mut moved_ids = BTreeSet::new();
+        for &id in &roots {
+            if self.layer(id).expect("selection").mask {
+                return Err(Error::InvalidArgument("cannot group a mask"));
+            }
+            for node in &self.layers[self.subtree(id)?] {
+                self.check_ancestors(node.id, crate::LOCK_ALL)?;
+                moved_ids.insert(node.id);
+            }
+        }
+        let mut parent = self.layer(roots[0]).expect("selection").parent;
+        while parent != 0
+            && roots
+                .iter()
+                .any(|&id| !self.descendant(self.layer(id).expect("selection"), parent))
+        {
+            parent = self.layer(parent).expect("ancestor").parent;
+        }
+        self.check_ancestors(parent, crate::LOCK_ALL)?;
+        let mut branch = *roots.last().expect("nonempty selection");
+        while self.layer(branch).expect("branch").parent != parent {
+            branch = self.layer(branch).expect("branch").parent;
+        }
+        let anchor = self.subtree(branch)?.end;
+        let group_id = self.next_layer_id;
+        let next = group_id
+            .checked_add(1)
+            .ok_or(Error::ResourceLimit("layer IDs"))?;
+        let before = self.structure();
+        let at = before[..anchor]
+            .iter()
+            .filter(|l| !moved_ids.contains(&l.id))
+            .count();
+        let mut nodes: Vec<_> = before
+            .iter()
+            .filter(|l| !moved_ids.contains(&l.id))
+            .cloned()
+            .collect();
+        let mut moved: Vec<_> = before
+            .iter()
+            .filter(|l| moved_ids.contains(&l.id))
+            .cloned()
+            .collect();
+        for node in &mut moved {
+            if roots.contains(&node.id) {
+                node.parent = group_id;
+            }
+        }
+        let mut group = Layer::new(group_id, name);
+        group.group = true;
+        group.parent = parent;
+        moved.push(group);
+        nodes.splice(at..at, moved);
+        let (nodes, _) = crate::clipping::repair_changed_bases(&before, &nodes);
+        self.commit_structure_entry(nodes, crate::HistoryAction::Group)?;
+        self.next_layer_id = next;
+        self.active_layer = group_id;
+        Ok(group_id)
+    }
+
     /// Remove selected subtrees, or just their group containers, as one history record.
     /// A group-only removal discards group attributes/mask and preserves its children.
     pub fn remove_layers(&mut self, ids: &[u64], keep_group_children: bool) -> Result<()> {
@@ -210,6 +281,51 @@ impl Document {
 #[cfg(test)]
 mod failures {
     use super::*;
+    #[test]
+    fn group_history_write_failure_preserves_structure_redo_and_next_id() {
+        let imported = (0..512)
+            .map(|_| crate::ImportedLayer {
+                name: "layer".repeat(200),
+                properties: Default::default(),
+                tiles: Default::default(),
+            })
+            .collect();
+        let mut doc = Document::from_import(
+            64,
+            64,
+            imported,
+            0,
+            DocumentOptions {
+                max_history_bytes: 2 * TILE_BYTES + 256,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let added = doc.add_layer("redo").unwrap();
+        doc.undo().unwrap();
+        let before = doc.structure();
+        let depth = doc.history_depth();
+        let revision = doc.revision();
+        let next = doc.next_layer_id;
+        let active = doc.active_layer;
+        crate::history_storage::fail_writes_for_test(true);
+        let result = doc.group_layers(&[1, 512], "group");
+        crate::history_storage::fail_writes_for_test(false);
+        assert!(matches!(result, Err(Error::HistoryStorage(_))));
+        assert_eq!(
+            doc.structure()
+                .iter()
+                .map(|l| (l.id, l.parent))
+                .collect::<Vec<_>>(),
+            before.iter().map(|l| (l.id, l.parent)).collect::<Vec<_>>()
+        );
+        assert_eq!(doc.history_depth(), depth);
+        assert_eq!(doc.revision(), revision);
+        assert_eq!(doc.next_layer_id, next);
+        assert_eq!(doc.active_layer, active);
+        doc.redo().unwrap();
+        assert!(doc.layer(added).is_some());
+    }
     #[test]
     fn history_write_failure_leaves_the_entire_batch_and_redo_intact() {
         let mut doc = Document::with_options(

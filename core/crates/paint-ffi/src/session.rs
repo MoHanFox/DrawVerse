@@ -45,6 +45,7 @@ pub(crate) enum Operation {
     Appearance(u64, paint_core::LayerAppearance),
     Translate(u64, i32, i32),
     Group(u64, String),
+    GroupBatch(Vec<u64>, String),
     Ungroup(u64),
     Reparent(u64, u64),
     HistoryLimit(usize),
@@ -589,6 +590,7 @@ impl Engine {
                 | Operation::Appearance(..)
                 | Operation::Translate(..)
                 | Operation::Group(..)
+                | Operation::GroupBatch(..)
                 | Operation::Ungroup(..)
                 | Operation::Reparent(..)
                 | Operation::Add(_)
@@ -760,6 +762,10 @@ impl Engine {
             }
             Operation::Group(id, name) => {
                 self.document.group_layer(id, name)?;
+                self.modified = true;
+            }
+            Operation::GroupBatch(ids, name) => {
+                self.document.group_layers(&ids, name)?;
                 self.modified = true;
             }
             Operation::Ungroup(id) => {

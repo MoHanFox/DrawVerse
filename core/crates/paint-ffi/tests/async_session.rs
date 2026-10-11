@@ -122,6 +122,103 @@ struct Harness {
 }
 
 #[test]
+fn batch_group_abi_copies_selection_and_name_and_is_one_undo_step() {
+    let h = Harness::new(32, 32);
+    for _ in 0..3 {
+        h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_ADD_LAYER,
+            text: b"L".as_ptr(),
+            text_length: 1,
+            ..dto!(PaintCommand)
+        }));
+    }
+    let before = h.info();
+    let mut sequence = 99;
+    unsafe {
+        assert_eq!(
+            paint_session_group_layers(
+                h.core,
+                h.session,
+                ptr::null(),
+                1,
+                b"G".as_ptr(),
+                1,
+                &mut sequence
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        let mut selected = [2u64, 4];
+        let mut name = *b"chosen";
+        assert_eq!(
+            paint_session_group_layers(
+                h.core,
+                h.session,
+                selected.as_ptr(),
+                2,
+                name.as_ptr(),
+                name.len() as u64,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        selected.fill(999);
+        name.fill(b'x');
+        let grouped = h.wait(sequence);
+        assert_eq!(grouped.layer_count, before.layer_count + 1);
+        assert_eq!(grouped.undo_depth, before.undo_depth + 1);
+        let group = grouped.active_layer_id;
+        for id in [2, 4] {
+            let mut node = dto!(PaintLayerHierarchy);
+            assert_eq!(
+                paint_session_layer_hierarchy(
+                    h.core,
+                    h.session,
+                    grouped.publication,
+                    id,
+                    &mut node
+                ),
+                PAINT_OK
+            );
+            assert_eq!(node.parent_id, group);
+        }
+        let mut buffer = [0u8; 32];
+        let mut required = 0;
+        assert_eq!(
+            paint_session_layer_name(
+                h.core,
+                h.session,
+                grouped.publication,
+                group,
+                buffer.as_mut_ptr(),
+                buffer.len() as u64,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        assert_eq!(&buffer[..required as usize], b"chosen");
+        let undone = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(undone.layer_count, before.layer_count);
+        for id in [2, 4] {
+            let mut node = dto!(PaintLayerHierarchy);
+            assert_eq!(
+                paint_session_layer_hierarchy(h.core, h.session, undone.publication, id, &mut node),
+                PAINT_OK
+            );
+            assert_eq!(node.parent_id, 0);
+        }
+        let redone = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_REDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(redone.layer_count, grouped.layer_count);
+    }
+}
+
+#[test]
 fn history_entry_metadata_has_exact_publication_tool_labels_and_stable_redo() {
     assert_eq!(size_of::<PaintHistoryEntry>(), 16);
     assert_eq!(offset_of!(PaintHistoryEntry, depth), 8);

@@ -252,6 +252,7 @@ ApplicationWindow {
         }
         delegate: MenuBarItem {
             id: menuEntry
+            hoverEnabled:true
             objectName: "menuEntry:"+text
             implicitHeight: 28; implicitWidth:contentItem.implicitWidth+16
             leftPadding:8;rightPadding:8;font.pixelSize:9
@@ -317,7 +318,7 @@ ApplicationWindow {
             Action { text: "复制图层（待支持）"; enabled: false }
             Action { text: "删除图层"; enabled: PaintClient.ready && !PaintClient.drawing && PaintClient.layers.length>1; onTriggered: PaintClient.requestSelectedLayerRemoval() }
             MenuSeparator {}
-            Action { text: "新建组"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.groupLayer(PaintClient.activeLayer,"组") }
+            Action { objectName:"newLayerGroupAction";text: "新建组"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.groupSelectedLayers("组") }
             Action { text: "解组（移除组属性）"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.ungroupLayer(PaintClient.activeLayer) }
             MenuSeparator {}
             Action { text: "添加白色蒙版"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.addMask(PaintClient.activeLayer) }

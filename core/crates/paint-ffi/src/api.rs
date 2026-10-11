@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 13;
+pub const PAINT_ABI_MINOR: u32 = 14;
 
 /// ABI 1.10: metadata for one retained history boundary/operation.
 #[repr(C)]

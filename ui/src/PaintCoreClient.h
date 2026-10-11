@@ -176,6 +176,7 @@ public:
     Q_INVOKABLE void addDefaultLayer();
     Q_INVOKABLE void newTransparentDocument(int width,int height);
     Q_INVOKABLE bool groupLayer(quint64 id, const QString &name);
+    Q_INVOKABLE bool groupSelectedLayers(const QString &name);
     Q_INVOKABLE bool ungroupLayer(quint64 id);
     Q_INVOKABLE bool reparentLayer(quint64 id, quint64 parent);
     Q_INVOKABLE void toggleGroupExpanded(quint64 id);

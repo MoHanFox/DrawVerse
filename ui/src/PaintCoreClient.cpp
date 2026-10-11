@@ -57,8 +57,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 13) {
-            emit failure(QStringLiteral("图层批量操作需要核心 ABI 1.13 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 14) {
+            emit failure(QStringLiteral("图层多选建组需要核心 ABI 1.14 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -914,6 +914,18 @@ bool PaintCoreClient::submitGroup(quint32 kind,quint64 id,quint64 parent,const Q
     m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
 }
 bool PaintCoreClient::groupLayer(quint64 id,const QString &name) {return submitGroup(PAINT_GROUP_WRAP,id,0,name);}
+bool PaintCoreClient::groupSelectedLayers(const QString &name) {
+    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_selectedLayers.isEmpty())return false;
+    clearLayerBlendPreview();
+    const std::vector<uint64_t> ids(m_selectedLayers.begin(),m_selectedLayers.end());
+    const auto bytes=name.toUtf8();uint64_t sequence=0;PaintStatus status;QString error;
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;
+        status=paint_session_group_layers(m_connection->core,m_connection->session,ids.data(),static_cast<uint32_t>(ids.size()),
+            reinterpret_cast<const uint8_t*>(bytes.constData()),static_cast<uint64_t>(bytes.size()),&sequence);
+        if(status!=PAINT_OK)error=immediateError(status);}
+    if(status!=PAINT_OK){showError(error);return false;}
+    m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
+}
 bool PaintCoreClient::ungroupLayer(quint64 id) {return submitGroup(PAINT_GROUP_UNGROUP,id,0);}
 bool PaintCoreClient::reparentLayer(quint64 id,quint64 parent) {return submitGroup(PAINT_GROUP_REPARENT,id,parent);}
 bool PaintCoreClient::addMask(quint64 id) {return !layerEditBusy() && !m_drawing && !m_fileBusy && submit(AddMask,{},id);}
