@@ -457,6 +457,20 @@ fn encode_command(w: &mut impl Write, command: &Command) -> io::Result<()> {
             }
             Ok(())
         }
+        Command::RemoveBatch {
+            before,
+            after,
+            removed,
+        } => {
+            put_u8(w, 9)?;
+            for nodes in [before, after, removed] {
+                put_u32(w, nodes.len() as u32)?;
+                for (index, node) in nodes.iter().enumerate() {
+                    encode_layer(w, index, node)?;
+                }
+            }
+            Ok(())
+        }
         Command::RemoveTree { index, layers } => {
             put_u8(w, 7)?;
             put_u32(w, *index as u32)?;
@@ -512,6 +526,54 @@ fn decode_command<R: Read>(r: &mut CheckedReader<R>) -> Result<Command> {
         return Err(invalid());
     }
     match u8_value(r)? {
+        9 => {
+            let mut sets = Vec::new();
+            for set in 0..3 {
+                let count = u32_value(r)? as usize;
+                if count == 0 || count > 4096 {
+                    return Err(invalid());
+                }
+                let mut nodes = Vec::with_capacity(count);
+                for i in 0..count {
+                    let (index, node) = decode_layer(r)?;
+                    if index != i || (set < 2 && !node.tiles.is_empty()) {
+                        return Err(invalid());
+                    }
+                    nodes.push(node);
+                }
+                if set < 2 {
+                    crate::document::groups::validate(&nodes).map_err(|_| invalid())?;
+                }
+                sets.push(nodes);
+            }
+            let removed = sets.pop().expect("three sets");
+            let after = sets.pop().expect("three sets");
+            let before = sets.pop().expect("three sets");
+            let ids = |nodes: &[Layer]| {
+                nodes
+                    .iter()
+                    .map(|l| l.id)
+                    .collect::<std::collections::BTreeSet<_>>()
+            };
+            let old = ids(&before);
+            let new = ids(&after);
+            let gone = ids(&removed);
+            if gone.len() != removed.len()
+                || !new.is_subset(&old)
+                || old
+                    .difference(&new)
+                    .copied()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    != gone
+            {
+                return Err(invalid());
+            }
+            Ok(Command::RemoveBatch {
+                before,
+                after,
+                removed,
+            })
+        }
         8 => {
             let mut selections = Vec::new();
             for _ in 0..2 {

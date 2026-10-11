@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 12;
+pub const PAINT_ABI_MINOR: u32 = 13;
 
 /// ABI 1.10: metadata for one retained history boundary/operation.
 #[repr(C)]
@@ -527,3 +527,7 @@ pub struct PaintLayerDrop {
     pub layer_id: u64,
     pub target_id: u64,
 }
+
+/// ABI 1.13: delete selected subtrees, or unwrap selected groups while retaining children.
+pub const PAINT_REMOVE_SUBTREES: u32 = 0;
+pub const PAINT_REMOVE_KEEP_GROUP_CHILDREN: u32 = 1;

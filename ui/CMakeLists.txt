@@ -99,6 +99,9 @@ add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     selectionToolVariantsUseCornerMarkAndRightClickPanel
     closingDockedCategoryKeepsOtherHeightsAndFullToolColumn
     layerThumbnailsUpdateWithoutRebuildingRows
+    categorizedMenusHoverIntoCompactNativeSubmenus
+    selectedLayersDeleteDragAndGroupChoicesAreAtomic
+    firstLayersPanelOpenIncubatesWithoutBlockingTheEventLoop
     altEyedropperSamplesWithoutHistoryAndBracketKeysResize
     selectionOutlineMarchesWhileVisibleAndStopsOtherwise
     shiftDragConstrainsSelectionToSquareAndCircle

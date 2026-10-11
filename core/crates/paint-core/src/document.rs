@@ -11,6 +11,7 @@ use std::{
 pub const MAX_DIMENSION: u32 = 1_000_000;
 const MAX_DABS_PER_SEGMENT: usize = 8192;
 const MAX_PIXEL_VISITS_PER_SEGMENT: usize = 8_000_000;
+mod batch;
 pub(crate) mod groups;
 
 #[derive(Clone, Copy, Debug)]
@@ -1425,6 +1426,21 @@ impl Document {
             }
             Command::Structure { before, after } => {
                 self.apply_structure(if forward { after } else { before });
+                self.dirty_all();
+            }
+            Command::RemoveBatch {
+                before,
+                after,
+                removed,
+            } => {
+                if forward {
+                    let ids: BTreeSet<_> = removed.iter().map(|l| l.id).collect();
+                    self.layers.retain(|l| !ids.contains(&l.id));
+                    self.apply_structure(after);
+                } else {
+                    self.layers.extend(removed.iter().cloned());
+                    self.apply_structure(before);
+                }
                 self.dirty_all();
             }
             Command::RemoveTree { index, layers } => {

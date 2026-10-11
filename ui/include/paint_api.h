@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 12
+#define PAINT_ABI_MINOR 13
 
 #define PAINT_ABI_PATCH 0
 
@@ -188,6 +188,13 @@
 #define PAINT_MODE_ERASE 2
 
 #define PAINT_MODE_PAINT 1
+
+#define PAINT_REMOVE_KEEP_GROUP_CHILDREN 1
+
+/**
+ * ABI 1.13: delete selected subtrees, or unwrap selected groups while retaining children.
+ */
+#define PAINT_REMOVE_SUBTREES 0
 
 #define PAINT_SELECTION_ADD 1
 
@@ -840,6 +847,19 @@ PaintStatus paint_session_drop_layer(struct PaintCore *core,
                                      uint64_t *out_sequence);
 
 /**
+ * ABI 1.13: atomic batch reorder/reparent. The input IDs are copied immediately.
+ * # Safety
+ * Provide 1–4096 aligned readable IDs and a nonoverlapping writable sequence. Follow session ownership.
+ */
+PaintStatus paint_session_drop_layers(struct PaintCore *core,
+                                      struct PaintSession *session,
+                                      const uint64_t *ids,
+                                      uint32_t count,
+                                      uint64_t target,
+                                      uint32_t placement,
+                                      uint64_t *out_sequence);
+
+/**
  * ABI 1.8: enqueue a geometric selection edit, copied and validated before returning.
  * # Safety
  * Initialize request size and writable sequence; follow contracts/abi.md ownership rules.
@@ -1023,6 +1043,18 @@ PaintStatus paint_session_read_frame(struct PaintCore *core,
                                      uint64_t request_id,
                                      uint64_t frame_id,
                                      struct PaintTile *out_tile);
+
+/**
+ * ABI 1.13: atomic batch deletion, with optional group-only removal.
+ * # Safety
+ * Provide 1–4096 aligned readable IDs and a nonoverlapping writable sequence. Follow session ownership.
+ */
+PaintStatus paint_session_remove_layers(struct PaintCore *core,
+                                        struct PaintSession *session,
+                                        const uint64_t *ids,
+                                        uint32_t count,
+                                        uint32_t mode,
+                                        uint64_t *out_sequence);
 
 /**
  * ABI 1.12: read one pixel of an already rendered viewport for the eyedropper. Read-only: the

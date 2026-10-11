@@ -2,6 +2,7 @@
 
 跨平台绘画应用：Rust 内核 → 稳定 C ABI → C++20 / Qt 6.5+ UI；Python 插件最后实施。
 
+- 最新菜单分类与图层批量修复：`docs/menu-layer-batch-design.md` / `docs/menu-layer-batch-validation.md`；ABI 1.13、共享悬停侧向子菜单、组删除双选择、原子多选删除/拖放、拖入剪贴链自动继承、图层面板首开异步创建。
 - 最新遗留修复与吸色：`docs/deepseek-recovery-design.md` / `docs/deepseek-recovery-validation.md`；ABI 1.12、I 独立吸色与 Alt 临时吸色、DPI/视口坐标修复、剪贴链插层/基底变化、缩略图独立通知、剩余面板高度和恢复拖动。GPU/液化/.vbr/图层复制合并本轮暂缓。
 - 当前阶段与验证命令：`README.md`、`docs/roadmap.md`。
 - 最新真实历史标签：`docs/history-labels-design.md` / `docs/history-labels-validation.md`；ABI 1.10、真实工具名称/图标、裁剪后不显示伪初始状态；20ms 逐条历史回放保留。

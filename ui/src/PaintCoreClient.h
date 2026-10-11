@@ -148,6 +148,10 @@ public:
     Q_INVOKABLE void redo();
     Q_INVOKABLE void addLayer(const QString &name);
     Q_INVOKABLE void removeLayer(quint64 id);
+    Q_INVOKABLE void requestSelectedLayerRemoval();
+    Q_INVOKABLE bool confirmSelectedLayerRemoval(int choice);
+    Q_INVOKABLE bool dropSelectedLayers(quint64 target, int placement);
+    Q_INVOKABLE QVariantList layerDragIds(const QString &payload) const;
     Q_INVOKABLE void selectLayer(quint64 id);
     /// Click selection: plain replaces, Ctrl/Cmd toggles, Shift selects the visible span.
     Q_INVOKABLE void selectLayers(quint64 id, int modifiers);
@@ -191,6 +195,7 @@ signals:
     void layersChanged();
     void layerThumbnailsChanged();
     void selectedLayersChanged();
+    void groupDeletionRequested();
     void groupExpansionChanged();
     void brushChanged();
     void recentColorsChanged();
@@ -231,6 +236,10 @@ private:
     QVariantList m_layers;
     QVariantMap m_layerThumbnails;
     QList<quint64> m_selectedLayers;
+    QList<quint64> m_deleteLayers;
+    quint64 m_deleteGeneration = 0, m_deleteRevision = 0;
+    bool removeLayers(const QList<quint64> &ids, bool keepChildren);
+    bool dropLayers(const QList<quint64> &ids, quint64 target, int placement);
     QString m_error;
     QColor m_secondaryColor=Qt::white;
     QColor m_color{"#2ea99d"};

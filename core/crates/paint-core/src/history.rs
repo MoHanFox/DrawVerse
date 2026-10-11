@@ -50,6 +50,11 @@ pub(crate) enum Command {
         before: Vec<Layer>,
         after: Vec<Layer>,
     },
+    RemoveBatch {
+        before: Vec<Layer>,
+        after: Vec<Layer>,
+        removed: Vec<Layer>,
+    },
     RemoveTree {
         index: usize,
         layers: Vec<Layer>,
@@ -163,7 +168,9 @@ impl Command {
                     AddLayer
                 }
             }
-            Self::RemoveLayer { .. } | Self::RemoveTree { .. } => RemoveLayer,
+            Self::RemoveLayer { .. } | Self::RemoveTree { .. } | Self::RemoveBatch { .. } => {
+                RemoveLayer
+            }
             Self::Properties { .. } => LayerProperties,
             Self::Appearance { before, after, .. } => {
                 if before.offset_x != after.offset_x || before.offset_y != after.offset_y {
@@ -196,7 +203,10 @@ impl Command {
     fn verify_tiles(&self) -> Result<()> {
         match self {
             Self::Structure { .. } | Self::Selection { .. } => {}
-            Self::RemoveTree { layers, .. } => {
+            Self::RemoveTree { layers, .. }
+            | Self::RemoveBatch {
+                removed: layers, ..
+            } => {
                 for layer in layers {
                     for tile in layer.tiles.values() {
                         drop(tile.try_pixels()?);
@@ -225,6 +235,21 @@ impl Command {
             Self::Selection { before, after } => (before.steps().len() + after.steps().len()) * 64,
             Self::Structure { before, after } => {
                 before.iter().chain(after).map(|l| l.name.len() + 128).sum()
+            }
+            Self::RemoveBatch {
+                before,
+                after,
+                removed,
+            } => {
+                before
+                    .iter()
+                    .chain(after)
+                    .map(|l| l.name.len() + 128)
+                    .sum::<usize>()
+                    + removed
+                        .iter()
+                        .map(|l| l.tiles.len() * TILE_BYTES + l.name.len() + 128)
+                        .sum::<usize>()
             }
             Self::RemoveTree { layers, .. } => layers
                 .iter()

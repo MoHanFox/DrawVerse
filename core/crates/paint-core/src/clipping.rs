@@ -8,7 +8,7 @@
 use crate::{Document, Layer};
 use std::collections::BTreeMap;
 
-fn bases(layers: &[Layer]) -> BTreeMap<u64, u64> {
+pub(crate) fn bases(layers: &[Layer]) -> BTreeMap<u64, u64> {
     let mut siblings = BTreeMap::new();
     let mut result = BTreeMap::new();
     for layer in layers.iter().filter(|layer| !layer.mask) {

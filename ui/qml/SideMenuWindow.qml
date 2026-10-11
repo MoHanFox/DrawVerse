@@ -14,12 +14,24 @@ ApplicationWindow {
     flags: Qt.Popup | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
     color: Theme.surface
     background: null
-    font: anchorItem.Window.window.font
-    palette: anchorItem.Window.window.palette
     width: menu.implicitWidth
     height: menu.implicitHeight
+    function alignMenu() {
+        if(!visible || !menu.visible)return
+        // A menu-bar open may finish positioning after the fallback reparented it.
+        // The host owns screen placement; its item popup always starts at the host origin.
+        menu.x=0;menu.y=0;menu.width=host.width;menu.height=host.height
+        const popupItem=menu.contentItem.parent
+        if(popupItem){popupItem.x=0;popupItem.y=0}
+    }
+    Connections {
+        target:host.menu
+        function onOpened(){host.alignMenu();Qt.callLater(host.alignMenu)}
+    }
     function showMenu() {
         const owner=anchorItem.Window.window
+        if(!owner)return
+        font=owner.font;palette=owner.palette
         const area=Workspace.availableScreenGeometry(owner)
         height=Math.min(menu.implicitHeight,area.height-12)
         const right=anchorItem.mapToGlobal(Qt.point(anchorItem.width+4,8))

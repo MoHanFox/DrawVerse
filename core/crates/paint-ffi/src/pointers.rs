@@ -129,3 +129,18 @@ pub(crate) unsafe fn copy_row(bytes: &[u8], buffer: *mut u8, offset: usize) {
     // SAFETY: full required capacity/offset validated by read_tile before any copying.
     unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), buffer.add(offset), bytes.len()) };
 }
+
+/// Copy a bounded ID batch before enqueueing; no caller memory survives this call.
+pub(crate) unsafe fn layer_ids(pointer: *const u64, count: u32) -> ApiResult<Vec<u64>> {
+    if count == 0 || count > 4096 {
+        return Err(ApiError::invalid("invalid layer batch count"));
+    }
+    valid_pointer(pointer)?;
+    // SAFETY: caller provides count readable initialized u64s; alignment and bound checked above.
+    let ids = unsafe { std::slice::from_raw_parts(pointer, count as usize) }.to_vec();
+    let unique: std::collections::BTreeSet<_> = ids.iter().copied().collect();
+    if unique.contains(&0) || unique.len() != ids.len() {
+        return Err(ApiError::invalid("zero or duplicate layer IDs"));
+    }
+    Ok(ids)
+}

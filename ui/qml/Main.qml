@@ -287,18 +287,23 @@ ApplicationWindow {
             Action { text: "重做"; shortcut: "Ctrl+Shift+Z"; enabled: PaintClient.redoDepth>0 && !PaintClient.drawing; onTriggered: PaintClient.redo() }
         }
         GlassMenu {
-            objectName:"imageMenu";topLevel:true
+            id:imageMenu;objectName:"imageMenu";topLevel:true
             title: "图像"
-            // Flat list, as before the grouping experiment. Every entry is a disabled placeholder.
-            Action { objectName:"adjustCurvesAction"; text: "调整 · 曲线…（待支持）"; enabled: false }
-            Action { objectName:"adjustLevelsAction"; text: "调整 · 色阶…（待支持）"; enabled: false }
-            Action { objectName:"adjustHsvAction"; text: "调整 · 色相/饱和度/明度…（待支持）"; enabled: false }
+            GlassMenu {
+                objectName:"imageAdjustSubmenu";title:"调整";cascadeParent:imageMenu
+                Action { objectName:"adjustCurvesAction";text:"曲线…（待支持）";enabled:false }
+                Action { objectName:"adjustLevelsAction";text:"色阶…（待支持）";enabled:false }
+                Action { objectName:"adjustHsvAction";text:"色相/饱和度/明度…（待支持）";enabled:false }
+            }
             MenuSeparator {}
-            Action { objectName:"canvasSizeAction"; text: "画布大小…（待支持）"; enabled: false }
-            Action { objectName:"canvasRotateCwAction"; text: "画布旋转 · 顺时针 90°（待支持）"; enabled: false }
-            Action { objectName:"canvasRotateCcwAction"; text: "画布旋转 · 逆时针 90°（待支持）"; enabled: false }
-            Action { objectName:"canvasFlipVerticalAction"; text: "画布旋转 · 垂直翻转（待支持）"; enabled: false }
-            Action { objectName:"canvasFlipHorizontalAction"; text: "画布旋转 · 水平翻转（待支持）"; enabled: false }
+            Action { objectName:"canvasSizeAction";text:"画布大小…（待支持）";enabled:false }
+            GlassMenu {
+                objectName:"imageRotateSubmenu";title:"画布旋转";cascadeParent:imageMenu
+                Action { objectName:"canvasRotateCwAction";text:"顺时针 90°（待支持）";enabled:false }
+                Action { objectName:"canvasRotateCcwAction";text:"逆时针 90°（待支持）";enabled:false }
+                Action { objectName:"canvasFlipVerticalAction";text:"垂直翻转（待支持）";enabled:false }
+                Action { objectName:"canvasFlipHorizontalAction";text:"水平翻转（待支持）";enabled:false }
+            }
             MenuSeparator {}
             Action { text: "图像大小…（待支持）"; enabled: false }
             Action { text: "裁剪…（待支持）"; enabled: false }
@@ -310,7 +315,7 @@ ApplicationWindow {
             title: "图层"
             Action { text: "新建图层"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.addDefaultLayer() }
             Action { text: "复制图层（待支持）"; enabled: false }
-            Action { text: "删除图层"; enabled: PaintClient.ready && !PaintClient.drawing && PaintClient.layers.length>1; onTriggered: PaintClient.removeLayer(PaintClient.activeLayer) }
+            Action { text: "删除图层"; enabled: PaintClient.ready && !PaintClient.drawing && PaintClient.layers.length>1; onTriggered: PaintClient.requestSelectedLayerRemoval() }
             MenuSeparator {}
             Action { text: "新建组"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.groupLayer(PaintClient.activeLayer,"组") }
             Action { text: "解组（移除组属性）"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.ungroupLayer(PaintClient.activeLayer) }
@@ -329,11 +334,11 @@ ApplicationWindow {
             Action { objectName:"selectionInvertAction"; text: "反向选择"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.invertSelection() }
         }
         GlassMenu {
-            topLevel:true
+            id:filterMenu;objectName:"filterMenu";topLevel:true
             title: "滤镜"
             GlassMenu {
                 objectName: "filterBlurSubmenu"
-                title: "模糊"
+                title: "模糊";cascadeParent:filterMenu
                 Action { objectName:"filterGaussianBlurAction"; text: "高斯模糊…（待支持）"; enabled: false }
                 Action { text: "动感模糊…（待支持）"; enabled: false }
                 Action { text: "径向模糊…（待支持）"; enabled: false }
@@ -465,6 +470,25 @@ ApplicationWindow {
     Shortcut { context:Qt.ApplicationShortcut; sequence: "F"; enabled: canvas.activeFocus; onActivated: canvas.fitToView() }
     Shortcut { context:Qt.ApplicationShortcut; sequence: "Esc"; enabled: PaintClient.drawing; onActivated: PaintClient.cancelStroke() }
     Shortcut { context:Qt.ApplicationShortcut; sequence: Qt.platform.os === "osx" ? "Meta+Alt+G" : "Ctrl+Alt+G"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy; onActivated: PaintClient.toggleActiveClipping() }
+    Connections {
+        target:PaintClient
+        function onGroupDeletionRequested() {groupDeleteDialog.owner=PaintClient;groupDeleteDialog.open()}
+    }
+    Dialog {
+        id:groupDeleteDialog;objectName:"groupDeleteDialog"
+        property var owner:null
+        title:"删除图层组";modal:true;anchors.centerIn:parent;width:340
+        background:Rectangle {color:Theme.surface;border.color:Theme.categorySeparator;radius:3}
+        onClosed:{if(owner)owner.confirmSelectedLayerRemoval(0);owner=null}
+        ColumnLayout {
+            width:parent.width;spacing:10
+            Label {text:"如何处理选中的图层组？";color:Theme.text;Layout.fillWidth:true}
+            Label {text:"仅删除组会保留内部图层，移除组的属性及蒙版。";color:Theme.muted;wrapMode:Text.WordWrap;Layout.fillWidth:true;font.pixelSize:10}
+            Button {objectName:"deleteGroupKeepChildren";text:"仅删除组，保留内部图层";Layout.fillWidth:true;onClicked:{groupDeleteDialog.owner.confirmSelectedLayerRemoval(1);groupDeleteDialog.close()}}
+            Button {objectName:"deleteGroupSubtree";text:"删除组及全部图层";Layout.fillWidth:true;onClicked:{groupDeleteDialog.owner.confirmSelectedLayerRemoval(2);groupDeleteDialog.close()}}
+            Button {objectName:"deleteGroupCancel";text:"取消";Layout.fillWidth:true;onClicked:groupDeleteDialog.close()}
+        }
+    }
     Dialog {
         id: newDialog;objectName:"newDocumentDialog"
         title: "新建画布"; modal: true; anchors.centerIn: parent; width: 390

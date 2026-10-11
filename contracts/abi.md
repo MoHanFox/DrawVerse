@@ -1,4 +1,12 @@
-# C ABI 1.12.0 契约
+# C ABI 1.13.0 契约
+
+## ABI 1.13 图层批量操作
+
+新增 `paint_session_drop_layers(core, session, ids, count, target, placement, out_sequence)` 与 `paint_session_remove_layers(core, session, ids, count, mode, out_sequence)`。ids 是按 u64 对齐且可读的 count 个层 ID；count 为 u32，限定 1–4096，禁止零 ID / 重复 ID。在调用返回前复制全部 ID，不保留调用者指针；out_sequence 是非重叠可写 u64，入队前失败清零。
+
+Drop placement 沿用 0=组内顶端（target=0 时为根顶端）、1=目标同级上方、2=目标同级下方。Remove mode 为 `PAINT_REMOVE_SUBTREES=0`（完整子树）或 `PAINT_REMOVE_KEEP_GROUP_CHILDREN=1`（仅移除选中组容器与组蒙版，保留内部图层；选中的普通图层仍删除）。未知 placement/mode、非法数组同步拒绝；不存在 ID、目标循环、锁定、最后像素层及深度限制在 actor 中报告，任何失败都不改变文档/历史。
+
+核心按原堆叠顺序归一化独立根，选择祖先与后代时后代不重复操作，蒙版跟随所有者。整批一次校验、一次提交、一次撤销/重做。移动到同级剪贴节点下方时，在存在下方基底的情况下自动加入上方剪贴链；旧位置丢失原基底的链仍释放剪贴。此规则亦用于既有单层 drop 接口。删除使用私有有界无损暂存，保留移除像素和前后结构；既有 DTO 与 ABI 符号保持兼容。
 
 ## ABI 1.12 视口吸色
 

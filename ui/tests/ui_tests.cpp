@@ -64,6 +64,87 @@ QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
 class UiTests final : public QObject {
     Q_OBJECT
 private slots:
+    void categorizedMenusHoverIntoCompactNativeSubmenus_data() {
+        QTest::addColumn<bool>("fallback");QTest::newRow("window-popups")<<false;QTest::newRow("side-window-fallback")<<true;
+    }
+    void categorizedMenusHoverIntoCompactNativeSubmenus() {
+        QFETCH(bool,fallback);
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));
+        QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        const auto area=main->screen()->availableGeometry();main->setPosition(area.topLeft());main->resize(std::min(1100,area.width()),std::min(700,area.height()));
+        const auto hover=[&](QObject *menu,const QString &text) -> QQuickItem* {
+            auto *content=qobject_cast<QQuickItem*>(menu->property("contentItem").value<QObject*>());if(!content || !content->window())return nullptr;
+            auto *row=findVisualItem(content,"glassMenuItem:"+text);if(!row)return nullptr;
+            QTest::qWait(30);
+            // On a narrow high-DPI screen a submenu may flip left and cover its parent's
+            // center. Hover the exposed trailing edge, where the category arrow lives.
+            QTest::mouseMove(content->window(),row->mapToScene({row->width()-12,row->height()/2}).toPoint());return row;
+        };
+        auto *image=main->findChild<QObject*>("imageMenu"),*adjust=main->findChild<QObject*>("imageAdjustSubmenu"),*rotate=main->findChild<QObject*>("imageRotateSubmenu");QVERIFY(image && adjust && rotate);
+        if(fallback)for(const auto &name:{"imageMenu","imageAdjustSubmenu","imageRotateSubmenu","filterMenu","filterBlurSubmenu"})main->findChild<QObject*>(name)->setProperty("windowPopupsAvailable",false);
+        QVERIFY(QMetaObject::invokeMethod(image,"open"));QTRY_VERIFY(image->property("opened").toBool());auto *row=hover(image,"调整");QVERIFY(row);QTRY_VERIFY(row->property("hovered").toBool());QTRY_VERIFY(adjust->property("opened").toBool());
+        auto *arrow=qobject_cast<QQuickItem*>(row->property("arrow").value<QObject*>());QVERIFY(arrow);QCOMPARE(arrow->width(),qreal(6));QCOMPARE(arrow->height(),qreal(8));QVERIFY(row->height()<30);
+        auto *parentContent=qobject_cast<QQuickItem*>(image->property("contentItem").value<QObject*>()),*childContent=qobject_cast<QQuickItem*>(adjust->property("contentItem").value<QObject*>());QVERIFY(parentContent && childContent);QVERIFY(childContent->window()!=parentContent->window());
+        if(fallback){QVERIFY(image->property("sideWindow").value<QObject*>());QVERIFY(adjust->property("sideWindow").value<QObject*>());}
+        const auto preview=qEnvironmentVariable("DRAWVERSE_MENU_LAYER_PREVIEW");if(!preview.isEmpty() && !fallback){QTest::qWait(50);QVERIFY(childContent->window()->grabWindow().save(preview+".menu.png"));}
+        const auto childGeometry=childContent->window()->geometry();QVERIFY(area.adjusted(-1,-1,1,1).contains(childGeometry));
+        QTest::mouseMove(childContent->window(),childContent->mapToScene({20,10}).toPoint());QVERIFY(image->property("opened").toBool());QVERIFY(adjust->property("opened").toBool());
+        auto *rotateRow=hover(image,"画布旋转");QVERIFY(rotateRow);QTRY_VERIFY(rotateRow->property("hovered").toBool());QTRY_VERIFY(rotate->property("opened").toBool());QTRY_VERIFY(!adjust->property("visible").toBool());
+        QVERIFY(!main->findChild<QObject*>("canvasRotateCwAction")->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(image,"close"));QTRY_VERIFY(!rotate->property("visible").toBool());
+        auto *filter=main->findChild<QObject*>("filterMenu"),*blur=main->findChild<QObject*>("filterBlurSubmenu");QVERIFY(filter && blur);
+        QVERIFY(QMetaObject::invokeMethod(filter,"open"));QTRY_VERIFY(filter->property("opened").toBool());QVERIFY(hover(filter,"模糊"));QTRY_VERIFY(blur->property("opened").toBool());
+#ifdef Q_OS_WIN
+        if(workspace.windowsWindowFrames()){auto *content=qobject_cast<QQuickItem*>(blur->property("contentItem").value<QObject*>());QVERIFY(GetWindowLongPtr(reinterpret_cast<HWND>(content->window()->winId()),GWL_EXSTYLE)&WS_EX_TOPMOST);}
+#endif
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,QPoint(main->width()*.8,main->height()*.8));QTRY_VERIFY(!filter->property("visible").toBool());QTRY_VERIFY(!blur->property("visible").toBool());
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void selectedLayersDeleteDragAndGroupChoicesAreAtomic() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));
+        QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
+        for(int i=0;i<3;++i){client.addLayer(QString("Layer %1").arg(i));QTRY_COMPARE(client.layers().size(),i+2);QTRY_VERIFY(!client.layerEditBusy());}
+        client.selectLayers(2,0);QTRY_VERIFY(!client.layerEditBusy());client.selectLayers(4,Qt::ControlModifier);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.selectedLayers().size(),2);
+        const auto payload=client.layerDragPayload(2);QCOMPARE(client.layerDragIds(payload).size(),2);QCOMPARE(client.layerDragIds("0:2,4").size(),0);QCOMPARE(client.layerDragIds(QString::number(client.generation())+":2,2").size(),0);
+        const int depth=client.undoDepth();QQuickItem *target=nullptr;QTRY_VERIFY((target=findVisualItem(main->contentItem(),"layerRow:1")));
+        const auto point=target->mapToScene({target->width()*.72,target->height()-3}).toPoint();QMimeData mime;mime.setData("application/x-drawverse-layer",payload.toUtf8());
+        QDragEnterEvent enter(point,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(main,&enter);
+        QDragMoveEvent move(point,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(main,&move);
+        QDropEvent drop(point,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(main,&drop);QVERIFY(drop.isAccepted());QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);
+        QCOMPARE(client.layers()[2].toMap().value("id").toULongLong(),quint64(4));QCOMPARE(client.layers()[3].toMap().value("id").toULongLong(),quint64(2));QCOMPARE(client.selectedLayers().size(),2);
+        auto *trash=findVisualItem(main->contentItem(),"deleteLayer");QTRY_VERIFY((trash=findVisualItem(main->contentItem(),"deleteLayer")));QVERIFY(QMetaObject::invokeMethod(trash,"clicked"));QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+2);
+        client.undo();QTRY_COMPARE(client.layers().size(),4);QTRY_VERIFY(!client.layerEditBusy());
+        client.selectLayers(2,0);QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.groupLayer(2,"Group"));QTRY_COMPARE(client.layers().size(),5);QTRY_VERIFY(!client.layerEditBusy());const auto group=client.activeLayer();QCOMPARE(client.selectedLayers(),QVariantList{QVariant::fromValue(group)});
+        auto *dialog=main->findChild<QObject*>("groupDeleteDialog");QVERIFY(dialog);const auto revision=client.revision();
+        client.requestSelectedLayerRemoval();QTRY_VERIFY(dialog->property("opened").toBool());
+        const auto preview=qEnvironmentVariable("DRAWVERSE_MENU_LAYER_PREVIEW");if(!preview.isEmpty()){QTest::qWait(50);QVERIFY(main->grabWindow().save(preview+".group.png"));}
+        QVERIFY(QMetaObject::invokeMethod(main->findChild<QObject*>("deleteGroupCancel"),"clicked"));QTRY_VERIFY(!dialog->property("visible").toBool());QCOMPARE(client.revision(),revision);
+        client.requestSelectedLayerRemoval();QTRY_VERIFY(dialog->property("opened").toBool());QVERIFY(QMetaObject::invokeMethod(main->findChild<QObject*>("deleteGroupKeepChildren"),"clicked"));QTRY_COMPARE(client.layers().size(),4);QTRY_VERIFY(!client.layerEditBusy());
+        const auto kept=client.layers();QVERIFY(std::any_of(kept.begin(),kept.end(),[](const QVariant &v){return v.toMap().value("id").toULongLong()==2;}));
+        client.undo();QTRY_COMPARE(client.layers().size(),5);QTRY_VERIFY(!client.layerEditBusy());client.selectLayers(group,0);QTRY_VERIFY(!client.layerEditBusy());
+        client.requestSelectedLayerRemoval();QTRY_VERIFY(dialog->property("opened").toBool());QVERIFY(QMetaObject::invokeMethod(main->findChild<QObject*>("deleteGroupSubtree"),"clicked"));QTRY_COMPARE(client.layers().size(),3);QTRY_VERIFY(!client.layerEditBusy());
+        client.undo();QTRY_COMPARE(client.layers().size(),5);QTRY_VERIFY(!client.layerEditBusy());client.selectLayers(group,0);QTRY_VERIFY(!client.layerEditBusy());client.requestSelectedLayerRemoval();
+        client.newTransparentDocument(32,32);QTRY_COMPARE(client.documentWidth(),32);QTRY_VERIFY(client.ready());QVERIFY(!client.confirmSelectedLayerRemoval(2));QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QCOMPARE(client.layers().size(),1);
+        QVERIFY(!client.acceptLayerDrop(payload,0,0));QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void firstLayersPanelOpenIncubatesWithoutBlockingTheEventLoop() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));QTRY_VERIFY(client.ready());
+        for(int i=0;i<79;++i){client.addLayer(QString("Layer %1").arg(i));QTRY_COMPARE(client.layers().size(),i+2);QTRY_VERIFY(!client.layerEditBusy());}
+        WorkspaceManager workspace(temp.filePath("layout.ini"));workspace.hidePanel(workspace.groupForPanel("layers"),"layers");workspace.saveLayout();QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTest::qWait(100);
+        QVERIFY(!findVisualItem(main->contentItem(),"layersPanel"));QElapsedTimer timer;timer.start();qint64 previous=0,longest=0;int ticks=0;QTimer heartbeat;heartbeat.setInterval(5);
+        connect(&heartbeat,&QTimer::timeout,this,[&]{const auto now=timer.elapsed();longest=std::max(longest,now-previous);previous=now;++ticks;});heartbeat.start();
+        workspace.showPanel("layers");const auto dispatch=timer.elapsed();QVERIFY2(dispatch<100,qPrintable(QString("opening dispatch blocked for %1 ms").arg(dispatch)));
+        QTRY_VERIFY(findVisualItem(main->contentItem(),"layerRow:80"));QTest::qWait(100);heartbeat.stop();
+        auto *loader=findVisualItem(main->contentItem(),"panelContentLoader:layers");QVERIFY(loader);QVERIFY(loader->property("asynchronous").toBool());QVERIFY(ticks>1);QVERIFY2(longest<200,qPrintable(QString("opening blocked heartbeat for %1 ms").arg(longest)));
+        int instantiated=0;std::function<void(QQuickItem*)> count=[&](QQuickItem *item){if(item->objectName().startsWith("layerRow:"))++instantiated;for(auto *child:item->childItems())count(child);};count(main->contentItem());QVERIFY(instantiated>0 && instantiated<40);
+        qInfo()<<"first layers panel dispatch"<<dispatch<<"ms; longest heartbeat gap"<<longest<<"ms; rows"<<instantiated;
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void automaticClippingReleaseKeepsMetadataAndHistoryLive() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));QTRY_VERIFY(client.ready());
         client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
@@ -192,7 +273,7 @@ private slots:
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
-        auto *opacity=findVisualItem(window->contentItem(),"layerOpacity");QVERIFY(opacity);QVERIFY(QMetaObject::invokeMethod(opacity,"openSlider"));
+        QQuickItem *opacity=nullptr;QTRY_VERIFY((opacity=findVisualItem(window->contentItem(),"layerOpacity")));QVERIFY(QMetaObject::invokeMethod(opacity,"openSlider"));
         auto *popup=opacity->findChild<QObject*>("layerOpacityPopup");QVERIFY(popup);QCOMPARE(popup->property("width").toReal(),qreal(127.5));QCOMPARE(popup->property("padding").toReal(),qreal(7.5));
         auto *slider=qobject_cast<QQuickItem*>(popup->property("contentItem").value<QObject*>());QVERIFY(slider);QCOMPARE(slider->implicitHeight(),qreal(16.5));
         auto *handle=qobject_cast<QQuickItem*>(slider->property("handle").value<QObject*>());QVERIFY(handle);QCOMPARE(handle->width(),qreal(6.75));QCOMPARE(handle->height(),qreal(9));QVERIFY(QMetaObject::invokeMethod(popup,"close"));
@@ -1701,7 +1782,7 @@ private slots:
         client.setBrushColor(Qt::white);QVERIFY(client.beginStroke(point));client.endStroke();QTRY_COMPARE(client.undoDepth(),depth+2);QTRY_VERIFY(client.frameRevision()>=client.revision());QTRY_COMPARE(centerColor(),QColor(Qt::white));client.undo();QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QTRY_COMPARE(centerColor().alpha(),0);
         client.setBrushColor(QColor("#808080"));QVERIFY(client.beginStroke(point));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QTRY_COMPARE(centerColor().alpha(),128);client.undo();QTRY_VERIFY(!client.layerEditBusy());
         client.setLayerProperties(mask,false,1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QTRY_COMPARE(centerColor(),QColor(Qt::white));client.setLayerProperties(mask,true,1);QTRY_VERIFY(!client.layerEditBusy());
-        auto *opacity=findVisualItem(window->contentItem(),"layerOpacity");QVERIFY(opacity);QVERIFY(QMetaObject::invokeMethod(opacity,"committed",Q_ARG(double,.5)));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(layer(1).value("opacity").toFloat(),.5f);QCOMPARE(layer(mask).value("opacity").toFloat(),1.f);client.undo();QTRY_VERIFY(!client.layerEditBusy());
+        QQuickItem *opacity=nullptr;QTRY_VERIFY((opacity=findVisualItem(window->contentItem(),"layerOpacity")));QVERIFY(QMetaObject::invokeMethod(opacity,"committed",Q_ARG(double,.5)));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(layer(1).value("opacity").toFloat(),.5f);QCOMPARE(layer(mask).value("opacity").toFloat(),1.f);client.undo();QTRY_VERIFY(!client.layerEditBusy());
         auto *density=findVisualItem(window->contentItem(),"maskDensity");QVERIFY(density);QVERIFY(QMetaObject::invokeMethod(density,"committed",Q_ARG(double,.5)));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(layer(mask).value("opacity").toFloat(),.5f);QCOMPARE(layer(1).value("opacity").toFloat(),1.f);client.undo();QTRY_VERIFY(!client.layerEditBusy());
         client.selectLayer(1);QTRY_VERIFY(!client.layerEditBusy());client.groupLayer(1,"绘画组");QTRY_COMPARE(client.layers().size(),3);QTRY_VERIFY(!client.layerEditBusy());const auto group=client.activeLayer();QCOMPARE(layer(mask).value("depth").toInt(),2);
         auto *thumbnail=findVisualItem(window->contentItem(),"layerThumbnail:"+QString::number(group));QVERIFY(thumbnail);QVERIFY(!thumbnail->isVisible());
@@ -1738,7 +1819,7 @@ private slots:
         auto *expand=findVisualItem(window->contentItem(),"groupExpand:"+QString::number(group));QVERIFY(expand);QVERIFY(QMetaObject::invokeMethod(expand,"clicked"));QTRY_COMPARE(list->property("count").toInt(),1);QCOMPARE(client.undoDepth(),4);
         const auto dock=workspace.rightGroups().last().toMap().value("id").toString();workspace.detachPanel(dock,"layers");QTRY_COMPARE(applicationWindows().size(),2);
         QQuickWindow *floating=nullptr;for(auto *candidate:applicationWindows()) if(candidate!=window) floating=qobject_cast<QQuickWindow*>(candidate);QVERIFY(floating);
-        list=findVisualItem(floating->contentItem(),"layerList");QVERIFY(list);QTRY_COMPARE(list->property("count").toInt(),1);QTRY_VERIFY((expand=findVisualItem(floating->contentItem(),"groupExpand:"+QString::number(group))));QVERIFY(QMetaObject::invokeMethod(expand,"clicked"));QTRY_COMPARE(list->property("count").toInt(),3);
+        QTRY_VERIFY((list=findVisualItem(floating->contentItem(),"layerList")));QTRY_COMPARE(list->property("count").toInt(),1);QTRY_VERIFY((expand=findVisualItem(floating->contentItem(),"groupExpand:"+QString::number(group))));QVERIFY(QMetaObject::invokeMethod(expand,"clicked"));QTRY_COMPARE(list->property("count").toInt(),3);
         client.selectLayer(group);QTRY_COMPARE(client.activeLayer(),group);QTRY_VERIFY(!client.layerEditBusy());client.setLayerProperties(group,true,.5);QTRY_VERIFY(!client.layerEditBusy());
         QVERIFY(client.moveLayer(group,4,2));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(layer(1).value("offsetX").toInt(),4);QCOMPARE(layer(child).value("offsetY").toInt(),2);
         QVERIFY(client.setLayerLocks(group,4));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(layer(child).value("effectiveLocks").toInt(),4);
@@ -1815,7 +1896,7 @@ private slots:
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); QVERIFY(window);
         QTRY_VERIFY_WITH_TIMEOUT(client.ready(),10000);
         auto layer=[&](){ for(const auto &value:client.layers()) if(value.toMap().value("id").toULongLong()==client.activeLayer()) return value.toMap(); return QVariantMap(); };
-        auto *opacity=findVisualItem(window->contentItem(),"layerOpacity"); QVERIFY(opacity);
+        QQuickItem *opacity=nullptr;QTRY_VERIFY((opacity=findVisualItem(window->contentItem(),"layerOpacity")));
         auto *edit=opacity->findChild<QObject*>("layerOpacityInput"); QVERIFY(edit);
         QVERIFY(edit->setProperty("text","0%")); QVERIFY(QMetaObject::invokeMethod(edit,"commit"));
         QTRY_COMPARE(layer().value("opacity").toFloat(),0.f); QTRY_VERIFY(!client.layerEditBusy()); QCOMPARE(client.undoDepth(),1);
@@ -1847,7 +1928,7 @@ private slots:
         const auto group=workspace.rightGroups().last().toMap().value("id").toString(); workspace.detachPanel(group,"layers");
         QTRY_COMPARE(applicationWindows().size(),2);
         QQuickWindow *floating=nullptr; for(auto *candidate:applicationWindows()) if(candidate!=window) floating=qobject_cast<QQuickWindow*>(candidate);
-        QVERIFY(floating); auto *unlock=findVisualItem(floating->contentItem(),"lockAll"); QVERIFY(unlock);
+        QVERIFY(floating); QQuickItem *unlock=nullptr; QTRY_VERIFY((unlock=findVisualItem(floating->contentItem(),"lockAll")));
         QVERIFY(QMetaObject::invokeMethod(unlock,"clicked")); QTRY_COMPARE(layer().value("locks").toInt(),3); QTRY_VERIFY(!client.layerEditBusy());
         QVERIFY(findVisualItem(floating->contentItem(),"layerOpacity")->isEnabled());
         workspace.returnGroup(workspace.floatingGroups().first().toMap().value("id").toString()); QTRY_COMPARE(applicationWindows().size(),1);
@@ -1883,7 +1964,7 @@ private slots:
         QTest::keyClick(window,Qt::Key_Left,Qt::ShiftModifier); QTRY_COMPARE(layer().value("offsetX").toInt(),10); QTRY_VERIFY(!client.layerEditBusy());
         QVERIFY(client.setLayerLocks(1,2)); QTRY_VERIFY(!client.layerEditBusy()); const auto revision=client.revision();
         QTest::keyClick(window,Qt::Key_Right); QTRY_VERIFY(!client.lastError().isEmpty()); QTRY_VERIFY(!client.layerEditBusy()); QCOMPARE(client.revision(),revision); QCOMPARE(layer().value("offsetX").toInt(),10);
-        client.clearError(); client.setEraser(false); sample.position={2.5,16.5}; QVERIFY(client.beginStroke(sample)); client.endStroke(); QTRY_VERIFY(client.revision()>revision);
+        client.clearError(); client.setEraser(false); sample.position={2.5,16.5}; const auto paintDepth=client.undoDepth(); QVERIFY(client.beginStroke(sample)); client.endStroke(); QTRY_COMPARE(client.undoDepth(),paintDepth+1); QTRY_VERIFY(client.revision()>revision);
         const auto depth=client.undoDepth(); client.setMoveTool(true); QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,pos); QTest::keyClick(window,Qt::Key_Escape); QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,pos+QPoint(10,0)); QTest::qWait(50); QCOMPARE(client.undoDepth(),depth);
         QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
     }

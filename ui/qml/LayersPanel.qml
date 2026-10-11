@@ -45,21 +45,39 @@ ColumnLayout {
     }
     property var dragHovered: null
     function dropToRoot(payload) {
-        const source=Number(payload.split(":")[1])
-        const roots=PaintClient.layers.filter(function(l){return l.parent===0 && !l.mask && l.id!==source})
+        const source=PaintClient.layerDragIds(payload)
+        if(source.length===0)return false
+        const roots=PaintClient.layers.filter(function(l){return l.parent===0 && !l.mask && source.indexOf(l.id)<0})
         return roots.length ? PaintClient.acceptLayerDrop(payload,roots[roots.length-1].id,2) : PaintClient.acceptLayerDrop(payload,0,0)
     }
     function canMoveInto(group) {
-        if(group.id===selected.id || group.id===selected.parent || (group.effectiveLocks & 4)!==0) return false
-        let parent=group.parent
+        if((group.effectiveLocks & 4)!==0)return false
+        const selection=PaintClient.selectedLayers
         const all=PaintClient.layers
+        let parent=group.id
         while(parent!==0) {
-            if(parent===selected.id) return false
-            const ancestor=all.find(function(layer) { return layer.id===parent })
-            if(!ancestor) return false
+            if(selection.indexOf(parent)>=0)return false
+            const ancestor=all.find(layer=>layer.id===parent)
+            if(!ancestor)return false
             parent=ancestor.parent
         }
-        return true
+        return selectedRoots.some(layer=>layer.parent!==group.id)
+    }
+    property var selectedRoots: {
+        const selection=PaintClient.selectedLayers
+        const all=PaintClient.layers
+        const byId={};all.forEach(layer=>{byId[layer.id]=layer})
+        return all.filter(layer=>{
+            if(layer.mask || selection.indexOf(layer.id)<0)return false
+            let parent=layer.parent
+            while(parent!==0) {
+                if(selection.indexOf(parent)>=0)return false
+                const ancestor=byId[parent]
+                if(!ancestor)return false
+                parent=ancestor.parent
+            }
+            return true
+        })
     }
     TextField {
         id: search
@@ -158,16 +176,16 @@ ColumnLayout {
                     border.color: Theme.accent
                     MouseArea {
                         objectName:"layerDragHandle:"+row.modelData.id
-                        anchors.fill:parent;property point origin;property bool clippingGesture:false
+                        anchors.fill:parent;property point origin;property bool clippingGesture:false;property bool dragging:false
                         onPressed:mouse=>{
-                            origin=Qt.point(mouse.x,mouse.y);clippingGesture=false
+                            origin=Qt.point(mouse.x,mouse.y);clippingGesture=false;dragging=false
                             if(root.editable && (mouse.modifiers & Qt.AltModifier) && mouse.y<5) {
                                 const upper=root.upperSibling(row.modelData)
                                 if(upper && !(upper.effectiveLocks & 4)){clippingGesture=true;PaintClient.setLayerClipping(upper.id,!upper.clipped)}
                             }
                         }
-                        onPositionChanged:mouse=>{if(pressed && !clippingGesture && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10) PaintClient.beginLayerDrag(row.modelData.id)}
-                        onClicked:if(!clippingGesture)PaintClient.selectLayers(row.modelData.id,Number(mouse.modifiers))
+                        onPositionChanged:mouse=>{if(pressed && !dragging && !clippingGesture && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10){dragging=true;PaintClient.beginLayerDrag(row.modelData.id)}}
+                        onClicked:if(!clippingGesture && !dragging)PaintClient.selectLayers(row.modelData.id,Number(mouse.modifiers))
                     }
                     MouseArea {
                         id: clippingBoundary
@@ -222,7 +240,7 @@ ColumnLayout {
                         LayerThumbnail {
                             visible:!row.modelData.group
                             node:row.modelData;selected:PaintClient.activeLayer===row.modelData.id
-                            onClicked:modifiers=>PaintClient.selectLayer(row.modelData.id)
+                            onClicked:modifiers=>PaintClient.selectLayers(row.modelData.id,modifiers)
                         }
                         Item {
                             visible:row.maskNode!==null && !row.modelData.group
@@ -272,7 +290,7 @@ ColumnLayout {
         IconButton { objectName: "groupLayer"; glyph: "folder"; tooltip: "新建图层组"; implicitHeight: 20; implicitWidth: 28; enabled: root.unlocked && !root.selected.mask; onClicked: PaintClient.groupLayer(root.selected.id,"组 "+(PaintClient.layers.filter(function(layer) { return layer.group }).length+1)); ToolTip.visible: hovered; ToolTip.text: "将所选图层或组放入新组（隔离合成）" }
         IconButton { objectName: "layerGroupMenu"; glyph: "menu"; tooltip: "图层菜单"; implicitWidth: 28; implicitHeight: 20; enabled: root.unlocked; onClicked: groupMenu.popup() }
         IconButton { glyph: "plus"; tooltip: "新建图层"; implicitWidth: 28; implicitHeight: 20; enabled: root.editable; objectName:"addDefaultLayer";onClicked: PaintClient.addDefaultLayer(); ToolTip.visible: hovered; ToolTip.text: "新建图层" }
-        IconButton { objectName: "deleteLayer"; glyph: "trash"; tooltip: "删除图层"; implicitHeight: 20; enabled: root.unlocked && PaintClient.layers.length>1; onClicked: PaintClient.removeLayer(root.selected.id) }
+        IconButton { objectName: "deleteLayer"; glyph: "trash"; tooltip: "删除图层"; implicitHeight: 20; enabled: root.unlocked && PaintClient.layers.length>1; onClicked: PaintClient.requestSelectedLayerRemoval() }
     }
     GlassMenu {
         id: groupMenu
@@ -284,7 +302,7 @@ ColumnLayout {
         GlassMenuItem { objectName: "ungroupLayer"; text: "解组（移除组属性）"; enabled: root.selected.group && !PaintClient.layers.some(function(l){return l.mask && l.parent===root.selected.id}); onTriggered: PaintClient.ungroupLayer(root.selected.id) }
         GlassMenuItem { objectName: "moveLayerOut"; text: "移出到上一级"; enabled: root.selected.parent!==0 && !root.selected.mask; onTriggered: {
             const parent=PaintClient.layers.find(function(layer) { return layer.id===root.selected.parent })
-            if(parent) PaintClient.reparentLayer(root.selected.id,parent.parent)
+            if(parent) PaintClient.dropSelectedLayers(parent.parent,0)
         } }
         MenuSeparator {}
         Instantiator {
@@ -293,7 +311,7 @@ ColumnLayout {
                 required property var modelData
                 objectName: "moveLayerInto:"+modelData.id
                 text: "移入："+modelData.name; enabled: !root.selected.mask && root.canMoveInto(modelData)
-                onTriggered: PaintClient.reparentLayer(root.selected.id,modelData.id)
+                onTriggered: PaintClient.dropSelectedLayers(modelData.id,0)
             }
             onObjectAdded: (index,object) => groupMenu.insertItem(index+7,object)
             onObjectRemoved: (index,object) => groupMenu.removeItem(object)

@@ -141,7 +141,7 @@ private:
     int m_toolWidth=36;
     bool m_toolsFloating = false;
     QPoint m_toolPosition{100,100};
-    QPointer<QWindow> m_menuWindow;
+    QList<QPointer<QWindow>> m_menuWindows;
     QPointer<QWindow> m_glassWindow;
     quintptr m_glassHandle=0;
     MenuBlurLayer m_menuBlur{this};

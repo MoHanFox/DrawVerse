@@ -34,8 +34,9 @@ QRect WorkspaceManager::availableScreenGeometry(QWindow *window) const {
     return screen?screen->availableGeometry():QRect{};
 }
 void WorkspaceManager::watchMenuWindow(QWindow *window,bool visible) {
-    if(visible) m_menuWindow=window;
-    else if(m_menuWindow==window) m_menuWindow.clear();
+    m_menuWindows.removeAll(nullptr);
+    if(visible && window && !m_menuWindows.contains(window))m_menuWindows.append(window);
+    else if(!visible)m_menuWindows.removeAll(window);
 }
 void WorkspaceManager::promoteMenuWindow(QQuickItem *content) {
     auto *window=content?content->window():nullptr;
@@ -752,10 +753,28 @@ bool WorkspaceManager::eventFilter(QObject *watched,QEvent *event) {
     if(event->type()==QEvent::MouseButtonPress)m_pointerButtons|=static_cast<QMouseEvent*>(event)->button();
     else if(event->type()==QEvent::MouseButtonRelease)m_pointerButtons&=~Qt::MouseButtons(static_cast<QMouseEvent*>(event)->button());
     if(watched==m_glassWindow && event->type()==QEvent::Hide)m_menuBlur.hide();
-    if(m_menuWindow && m_menuWindow->isVisible() && event->type()==QEvent::MouseButtonPress) {
-        const auto *press=static_cast<QMouseEvent*>(event);
-        if(!m_menuWindow->geometry().contains(press->globalPosition().toPoint())) {
-            m_menuWindow->close();
+    if(event->type()==QEvent::MouseMove && qobject_cast<QWindow*>(watched) && m_menuWindows.contains(qobject_cast<QWindow*>(watched))) {
+        // A generic Qt.Popup host grabs native input for the whole fallback chain. Route moves
+        // over an ancestor host back to that host, like Qt 6.8's own menu popup windows do.
+        const auto *move=static_cast<QMouseEvent*>(event);
+        QWindow *target=nullptr;
+        for(auto it=m_menuWindows.crbegin();it!=m_menuWindows.crend();++it)
+            if(*it && (*it)->isVisible() && (*it)->geometry().contains(move->globalPosition().toPoint())){target=it->data();break;}
+        if(target && target!=watched) {
+            QMouseEvent routed(QEvent::MouseMove,move->globalPosition()-target->position(),move->globalPosition(),
+                               move->button(),move->buttons(),move->modifiers(),move->pointingDevice());
+            routed.setTimestamp(move->timestamp());
+            QCoreApplication::sendEvent(target,&routed);
+            return true;
+        }
+    }
+    if(!m_menuWindows.isEmpty() && event->type()==QEvent::MouseButtonPress) {
+        const auto point=static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
+        bool inside=false;
+        for(const auto &window:m_menuWindows)if(window && window->isVisible() && window->geometry().contains(point))inside=true;
+        if(!inside) {
+            const auto windows=m_menuWindows;
+            for(const auto &window:windows)if(window && window->isVisible())window->close();
             return true;
         }
     }

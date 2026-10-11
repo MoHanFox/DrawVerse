@@ -614,77 +614,9 @@ impl Document {
     }
     /// Drop root above/below a sibling, or onto a group's interior. All checks precede commit.
     pub fn drop_layer(&mut self, id: u64, target: u64, placement: u32) -> Result<()> {
-        self.idle()?;
-        let layer = self.layer(id).ok_or(Error::LayerNotFound(id))?;
-        if layer.mask || placement > 2 {
-            return Err(Error::InvalidArgument("invalid drop"));
-        }
-        self.check_ancestors(id, crate::LOCK_ALL)?;
-        let (parent, anchor) = if target == 0 {
-            if placement != 0 {
-                return Err(Error::InvalidArgument("root drop placement"));
-            }
-            (0, None)
-        } else {
-            let to = self.layer(target).ok_or(Error::LayerNotFound(target))?;
-            if to.mask || to.id == id || self.descendant(to, id) {
-                return Err(Error::InvalidArgument("invalid drop target/cycle"));
-            }
-            if placement == 0 {
-                if !to.group {
-                    return Err(Error::InvalidArgument("drop inside requires group"));
-                }
-                (target, None)
-            } else {
-                (to.parent, Some(target))
-            }
-        };
-        self.check_ancestors(parent, crate::LOCK_ALL)?;
-        let mut nodes = self.structure();
-        let range = self.subtree(id)?;
-        let mut moved: Vec<_> = nodes.drain(range).collect();
-        moved.last_mut().expect("root").parent = parent;
-        let index = if let Some(anchor) = anchor {
-            let end = nodes.iter().position(|l| l.id == anchor).expect("anchor") + 1;
-            if placement == 1 {
-                end
-            } else {
-                let mut start = end - 1;
-                while start > 0 {
-                    let mut p = nodes[start - 1].parent;
-                    let mut child = false;
-                    while p != 0 {
-                        if p == anchor {
-                            child = true;
-                            break;
-                        }
-                        p = nodes.iter().find(|l| l.id == p).expect("parent").parent;
-                    }
-                    if !child {
-                        break;
-                    }
-                    start -= 1;
-                }
-                start
-            }
-        } else if parent == 0 {
-            nodes.len()
-        } else {
-            nodes.iter().position(|l| l.id == parent).expect("group")
-        };
-        nodes.splice(index..index, moved);
-        // A move can leave clipped layers whose base went elsewhere. Repair that here so a dropped
-        // layer never sits in a state the compositor would silently ignore, and so the repair and
-        // the move are one undoable step. The parent/clip pair decides whether anything changed.
-        if nodes
-            .iter()
-            .map(|n| (n.id, n.parent, n.clipped))
-            .eq(self.layers.iter().map(|n| (n.id, n.parent, n.clipped)))
-        {
-            return Ok(());
-        }
-        self.commit_repaired_structure(nodes).map(|_| ())
+        self.drop_layers(&[id], target, placement)
     }
+
     /// Import validates all parent IDs/order/depth before the document is exposed.
     pub fn set_import_hierarchy(&mut self, hierarchy: &[(u64, bool)]) -> Result<()> {
         self.set_import_nodes(

@@ -33,9 +33,10 @@ Rectangle {
         objectName: "layerThumbnailHit:" + (root.node ? root.node.id : 0)
         anchors.fill: parent
         property point origin
-        onPressed:mouse=>{origin=Qt.point(mouse.x,mouse.y)}
-        onPositionChanged:mouse=>{if(pressed && root.node && !root.node.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10)PaintClient.beginLayerDrag(root.node.id)}
-        onClicked: mouse => root.clicked(mouse.modifiers)
+        property bool dragging:false
+        onPressed:mouse=>{origin=Qt.point(mouse.x,mouse.y);dragging=false}
+        onPositionChanged:mouse=>{if(pressed && !dragging && root.node && !root.node.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10){dragging=true;PaintClient.beginLayerDrag(root.node.id)}}
+        onClicked: mouse => {if(!dragging)root.clicked(mouse.modifiers)}
         ToolTip.visible: containsMouse
         ToolTip.text: root.node && root.node.mask ? "编辑蒙版 · Shift 点击启用/禁用" : "编辑图层内容"
         hoverEnabled: true

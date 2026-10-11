@@ -30,6 +30,8 @@ pub(crate) enum Operation {
     Clipping(u64, bool),
     Selection(crate::selection_api::Edit),
     Drop(u64, u64, u32),
+    DropBatch(Vec<u64>, u64, u32),
+    RemoveBatch(Vec<u64>, bool),
     Begin(Brush, InputPoint, u64),
     Move(InputPoint),
     End,
@@ -577,6 +579,8 @@ impl Engine {
                 | Operation::Clipping(..)
                 | Operation::Selection(..)
                 | Operation::Drop(..)
+                | Operation::DropBatch(..)
+                | Operation::RemoveBatch(..)
                 | Operation::Cancel(_)
                 | Operation::Undo
                 | Operation::Redo
@@ -652,6 +656,15 @@ impl Engine {
                 };
                 self.document.set_selection_with_action(next, action)?;
                 self.modified |= revision != self.document.revision();
+            }
+            Operation::DropBatch(ids, target, placement) => {
+                let r = self.document.revision();
+                self.document.drop_layers(&ids, target, placement)?;
+                self.modified |= r != self.document.revision();
+            }
+            Operation::RemoveBatch(ids, keep) => {
+                self.document.remove_layers(&ids, keep)?;
+                self.modified = true;
             }
             Operation::Drop(id, target, placement) => {
                 let r = self.document.revision();

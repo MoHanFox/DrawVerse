@@ -311,3 +311,59 @@ pub unsafe extern "C" fn paint_session_set_layer_clipping(
         pointers::write(out_sequence, sequence)
     })
 }
+
+/// ABI 1.13: atomic batch reorder/reparent. The input IDs are copied immediately.
+/// # Safety
+/// Provide 1–4096 aligned readable IDs and a nonoverlapping writable sequence. Follow session ownership.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_drop_layers(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    ids: *const u64,
+    count: u32,
+    target: u64,
+    placement: u32,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        if placement > 2 || (target == 0 && placement != 0) {
+            return Err(ApiError::invalid("invalid layer drop placement"));
+        }
+        let ids = pointers::layer_ids(ids, count)?;
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .submit(Operation::DropBatch(ids, target, placement))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+/// ABI 1.13: atomic batch deletion, with optional group-only removal.
+/// # Safety
+/// Provide 1–4096 aligned readable IDs and a nonoverlapping writable sequence. Follow session ownership.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_remove_layers(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    ids: *const u64,
+    count: u32,
+    mode: u32,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        if mode > PAINT_REMOVE_KEEP_GROUP_CHILDREN {
+            return Err(ApiError::invalid("invalid layer removal mode"));
+        }
+        let ids = pointers::layer_ids(ids, count)?;
+        let sequence =
+            runtime::registry()?
+                .session(core, session)?
+                .submit(Operation::RemoveBatch(
+                    ids,
+                    mode == PAINT_REMOVE_KEEP_GROUP_CHILDREN,
+                ))?;
+        pointers::write(out_sequence, sequence)
+    })
+}

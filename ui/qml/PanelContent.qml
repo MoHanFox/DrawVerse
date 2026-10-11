@@ -11,6 +11,8 @@ Item {
     readonly property var definition: Workspace.panelDefinition(panelId)
     readonly property string kind: definition.kind || ""
     Loader {
+        objectName: "panelContentLoader:"+root.panelId
+        asynchronous: root.kind === "layers"
         anchors.fill: parent
         anchors.margins: 5
         active: root.visible

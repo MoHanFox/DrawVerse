@@ -25,6 +25,97 @@ macro_rules! dto {
         }
     };
 }
+#[test]
+fn batch_layer_abi_copies_ids_rejects_bad_buffers_and_commits_one_step() {
+    let h = Harness::new(32, 32);
+    for _ in 0..3 {
+        h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_ADD_LAYER,
+            text: b"L".as_ptr(),
+            text_length: 1,
+            ..dto!(PaintCommand)
+        }));
+    }
+    let before = h.info();
+    let mut sequence = 99;
+    unsafe {
+        for (pointer, count, mode) in [
+            (ptr::null(), 1, 0),
+            ([1u64].as_ptr(), 0, 0),
+            ([1u64].as_ptr(), 4097, 0),
+            ([1u64].as_ptr(), 1, 9),
+        ] {
+            assert_eq!(
+                paint_session_remove_layers(h.core, h.session, pointer, count, mode, &mut sequence),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(sequence, 0);
+        }
+        let duplicate = [2, 2];
+        assert_eq!(
+            paint_session_drop_layers(
+                h.core,
+                h.session,
+                duplicate.as_ptr(),
+                2,
+                1,
+                2,
+                &mut sequence
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        let mut ids = [2, 4];
+        assert_eq!(
+            paint_session_drop_layers(h.core, h.session, ids.as_ptr(), 2, 1, 2, &mut sequence),
+            PAINT_OK
+        );
+        ids.fill(999); // Must not read caller memory from the actor.
+        let moved = h.wait(sequence);
+        assert_eq!(moved.last_error_status, PAINT_OK);
+        assert_eq!(moved.undo_depth, before.undo_depth + 1);
+        let mut layer = dto!(PaintLayerInfo);
+        for (index, id) in [2, 4, 1, 3].into_iter().enumerate() {
+            assert_eq!(
+                paint_session_layer_info(
+                    h.core,
+                    h.session,
+                    moved.publication,
+                    index as u32,
+                    &mut layer
+                ),
+                PAINT_OK
+            );
+            assert_eq!(layer.layer_id, id);
+        }
+        ids = [2, 4];
+        assert_eq!(
+            paint_session_remove_layers(h.core, h.session, ids.as_ptr(), 2, 0, &mut sequence),
+            PAINT_OK
+        );
+        ids.fill(999);
+        let removed = h.wait(sequence);
+        assert_eq!(removed.layer_count, 2);
+        assert_eq!(removed.undo_depth, moved.undo_depth + 1);
+        let restored = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(restored.layer_count, 4);
+        assert_eq!(restored.undo_depth, moved.undo_depth);
+        let invalid = [1, 999];
+        assert_eq!(
+            paint_session_remove_layers(h.core, h.session, invalid.as_ptr(), 2, 0, &mut sequence),
+            PAINT_OK
+        );
+        let failed = h.wait(sequence);
+        assert_eq!(failed.last_error_status, PAINT_NOT_FOUND);
+        assert_eq!(failed.layer_count, restored.layer_count);
+        assert_eq!(failed.revision, restored.revision);
+        assert_eq!(failed.undo_depth, restored.undo_depth);
+    }
+}
+
 struct Harness {
     core: *mut PaintCore,
     session: *mut PaintSession,

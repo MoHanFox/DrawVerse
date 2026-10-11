@@ -13,6 +13,7 @@
 #include <QMimeData>
 #include <algorithm>
 #include <atomic>
+#include <vector>
 #include <cmath>
 
 Q_DECLARE_METATYPE(PaintSessionInfo)
@@ -56,8 +57,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 11) {
-            emit failure(QStringLiteral("历史条数上限需要核心 ABI 1.11 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 13) {
+            emit failure(QStringLiteral("图层批量操作需要核心 ABI 1.13 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -472,6 +473,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
             || info.active_layer_id != m_active;
         const bool wasReady = m_ready, wasModified = modified(), wasLayerBusy=layerEditBusy();
         const bool changedLayers = m_layers != layers;
+        const bool activeChanged = info.active_layer_id != m_active;
         const bool changedGeneration = info.document_generation != m_generation;
         if(changedGeneration){m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
         else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
@@ -511,7 +513,12 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         // alive throughout a stroke; notify their model only for metadata changes.
         if (changedLayers) emit layersChanged();
         // Structural changes (delete, undo, paste, merge) must not leave stale selected ids.
-        if (changedLayers) pruneSelectedLayers();
+        if(activeChanged && !m_selectedLayers.contains(m_active)) {
+            quint64 selectedId=m_active;
+            for(const auto &value:m_layers){const auto layer=value.toMap();if(layer.value("id").toULongLong()==m_active && layer.value("mask").toBool())selectedId=layer.value("parent").toULongLong();}
+            if(!m_selectedLayers.contains(selectedId)){m_selectedLayers={selectedId};emit selectedLayersChanged();}
+        }
+        if (changedLayers || activeChanged) pruneSelectedLayers();
         if (propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
     });
     connect(m_worker,&BackendWorker::thumbnailReady,this,[this](quint64 generation,quint64 revision,quint64 id,const QString &image) {
@@ -771,6 +778,35 @@ void PaintCoreClient::addLayer(const QString &name) {
     if (m_ready && !m_drawing && !layerEditBusy() && submit(Add, {}, 0, name) && m_collapsedGroups.remove(m_active)) emit groupExpansionChanged();
 }
 void PaintCoreClient::removeLayer(quint64 id) { if (m_ready && !m_drawing) submit(Remove, {}, id); }
+void PaintCoreClient::requestSelectedLayerRemoval() {
+    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy)return;
+    m_deleteLayers=m_selectedLayers;
+    // An active mask is an explicit single-node edit, not a deletion of its owner's selection.
+    bool groups=false;
+    for(const auto &value:m_layers) {
+        const auto layer=value.toMap();const auto id=layer.value("id").toULongLong();
+        if(id==m_active && layer.value("mask").toBool()){m_deleteLayers={id};break;}
+    }
+    for(const auto &value:m_layers) {const auto layer=value.toMap();if(m_deleteLayers.contains(layer.value("id").toULongLong()) && layer.value("group").toBool())groups=true;}
+    m_deleteGeneration=m_generation;m_deleteRevision=m_revision;
+    if(groups)emit groupDeletionRequested();else confirmSelectedLayerRemoval(2);
+}
+bool PaintCoreClient::confirmSelectedLayerRemoval(int choice) {
+    const auto ids=m_deleteLayers;m_deleteLayers.clear();
+    if(choice==0)return true;
+    if(choice<1 || choice>2 || ids.isEmpty() || m_deleteGeneration!=m_generation || m_deleteRevision!=m_revision)return false;
+    return removeLayers(ids,choice==1);
+}
+bool PaintCoreClient::removeLayers(const QList<quint64> &ids,bool keepChildren) {
+    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || ids.isEmpty())return false;
+    const std::vector<uint64_t> input(ids.begin(),ids.end());
+    uint64_t sequence=0;PaintStatus status;QString error;
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;
+        status=paint_session_remove_layers(m_connection->core,m_connection->session,input.data(),static_cast<uint32_t>(input.size()),keepChildren?PAINT_REMOVE_KEEP_GROUP_CHILDREN:PAINT_REMOVE_SUBTREES,&sequence);
+        if(status!=PAINT_OK)error=immediateError(status);}
+    if(status!=PAINT_OK){showError(error);return false;}
+    m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
+}
 void PaintCoreClient::selectLayer(quint64 id) { if (m_ready && !m_drawing) submit(Select, {}, id); }
 QVariantList PaintCoreClient::selectedLayers() const {
     QVariantList rows;for(const auto id:m_selectedLayers)rows.append(id);return rows;
@@ -795,10 +831,11 @@ void PaintCoreClient::selectLayers(quint64 id, int modifiers) {
     } else if(m_selectedLayers!=QList<quint64>{id}) {
         m_selectedLayers={id};
     } else {
+        if(m_active!=id)selectLayer(id);
         return;
     }
     emit selectedLayersChanged();
-    selectLayer(id);
+    selectLayer(m_selectedLayers.contains(id)?id:m_selectedLayers.last());
 }
 void PaintCoreClient::pruneSelectedLayers() {
     QList<quint64> live;
@@ -897,27 +934,46 @@ bool PaintCoreClient::toggleActiveClipping() {
     return false;
 }
 bool PaintCoreClient::dropLayer(quint64 id,quint64 target,int placement) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy) return false;
-    auto r=dto<PaintLayerDrop>();r.layer_id=id;r.target_id=target;r.placement=static_cast<uint32_t>(placement);
+    return dropLayers({id},target,placement);
+}
+bool PaintCoreClient::dropSelectedLayers(quint64 target,int placement) {
+    return dropLayers(m_selectedLayers,target,placement);
+}
+bool PaintCoreClient::dropLayers(const QList<quint64> &ids,quint64 target,int placement) {
+    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || ids.isEmpty())return false;
+    const std::vector<uint64_t> input(ids.begin(),ids.end());
     uint64_t seq=0;PaintStatus status;QString error;
-    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_drop_layer(m_connection->core,m_connection->session,&r,&seq);if(status!=PAINT_OK)error=immediateError(status);}
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;
+        status=paint_session_drop_layers(m_connection->core,m_connection->session,input.data(),static_cast<uint32_t>(input.size()),target,static_cast<uint32_t>(placement),&seq);
+        if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){showError(error);return false;}
     m_pendingLayer=m_pendingMutation=seq;m_modified=true;
     if(placement==0 && m_collapsedGroups.remove(target))emit groupExpansionChanged();
     emit stateChanged();return true;
 }
 QString PaintCoreClient::layerDragPayload(quint64 id) const {
-    return QString::number(m_generation)+":"+QString::number(id);
+    const auto ids=m_selectedLayers.contains(id)?m_selectedLayers:QList<quint64>{id};
+    QStringList encoded;for(const auto layer:ids)encoded.append(QString::number(layer));
+    return QString::number(m_generation)+":"+encoded.join(',');
+}
+QVariantList PaintCoreClient::layerDragIds(const QString &payload) const {
+    const auto parts=payload.split(':');bool generationOk=false;
+    if(parts.size()!=2 || parts[0].toULongLong(&generationOk)!=m_generation || !generationOk)return {};
+    const auto values=parts[1].split(',');if(values.isEmpty() || values.size()>4096)return {};
+    QVariantList result;QSet<quint64> seen;
+    for(const auto &text:values){bool ok=false;const auto id=text.toULongLong(&ok);if(!ok || !id || seen.contains(id))return {};seen.insert(id);result.append(id);}
+    return result;
 }
 bool PaintCoreClient::acceptLayerDrop(const QString &payload,quint64 target,int placement) {
-    const auto parts=payload.split(':');bool ok=false;
-    if(parts.size()!=2 || parts[0].toULongLong()!=m_generation)return false;
-    const auto id=parts[1].toULongLong(&ok);return ok && dropLayer(id,target,placement);
+    const auto values=layerDragIds(payload);QList<quint64> ids;
+    for(const auto &value:values)ids.append(value.toULongLong());
+    return !ids.isEmpty() && dropLayers(ids,target,placement);
 }
 void PaintCoreClient::beginLayerDrag(quint64 id) {
     if(!m_ready || m_drawing || layerEditBusy())return;
     for(const auto &v:m_layers)if(v.toMap().value("id").toULongLong()==id) {
         if(v.toMap().value("mask").toBool() || (v.toMap().value("effectiveLocks").toUInt() & 4))return;
+        if(!m_selectedLayers.contains(id))selectLayers(id,0);
         QDrag drag(this);auto *mime=new QMimeData;mime->setData("application/x-drawverse-layer",layerDragPayload(id).toUtf8());drag.setMimeData(mime);drag.exec(Qt::MoveAction);return;
     }
 }
