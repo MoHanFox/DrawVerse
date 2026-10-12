@@ -1343,7 +1343,7 @@ fn additive_layer_abi_validates_copied_dtos_enforces_locks_and_reads_background_
         assert_eq!(copied.fill, 0.5);
         for bad in [
             PaintLayerAppearance {
-                blend_mode: 27,
+                blend_mode: 28,
                 ..copied
             },
             PaintLayerAppearance { locks: 8, ..copied },
@@ -2133,5 +2133,81 @@ fn common_selection_abi_copies_lasso_points_and_publishes_settings() {
             PAINT_INVALID_ARGUMENT
         );
         assert_eq!(h.info().revision, revision);
+    }
+}
+
+#[test]
+fn pass_through_group_appearance_validation_publication_and_undo() {
+    let h = Harness::new(8, 8);
+    let mut seq = 99;
+    let appearance = PaintLayerAppearance {
+        blend_mode: PAINT_BLEND_PASS_THROUGH,
+        fill: 1.,
+        ..dto!(PaintLayerAppearance)
+    };
+    unsafe {
+        let mut version = dto!(PaintVersion);
+        assert_eq!(paint_core_version(&mut version), PAINT_OK);
+        assert_eq!(version.minor, 19);
+        let mut caps = dto!(PaintCapabilities);
+        assert_eq!(paint_core_capabilities(h.core, &mut caps), PAINT_OK);
+        assert_ne!(caps.features & PAINT_FEATURE_PASS_THROUGH, 0);
+        let name = b"pass";
+        let req = PaintGroupRequest {
+            kind: PAINT_GROUP_WRAP,
+            layer_id: 1,
+            name: name.as_ptr(),
+            name_length: name.len() as u64,
+            struct_size: size_of::<PaintGroupRequest>() as u32,
+            parent_id: 0,
+        };
+        assert_eq!(
+            paint_session_group(h.core, h.session, &req, &mut seq),
+            PAINT_OK
+        );
+        let info = h.wait(seq);
+        let group = info.active_layer_id;
+        assert_eq!(info.last_error_status, PAINT_OK);
+        assert_eq!(
+            paint_session_set_layer_appearance(h.core, h.session, group, &appearance, &mut seq),
+            PAINT_OK
+        );
+        let state = h.wait(seq);
+        assert_eq!(state.last_error_status, PAINT_OK);
+        assert_eq!(state.undo_depth, info.undo_depth + 1);
+        let mut actual = dto!(PaintLayerAppearance);
+        assert_eq!(
+            paint_session_layer_appearance(
+                h.core,
+                h.session,
+                state.publication,
+                group,
+                &mut actual
+            ),
+            PAINT_OK
+        );
+        assert_eq!(actual.blend_mode, 27);
+        let state = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(
+            paint_session_layer_appearance(
+                h.core,
+                h.session,
+                state.publication,
+                group,
+                &mut actual
+            ),
+            PAINT_OK
+        );
+        assert_eq!(actual.blend_mode, 0);
+        assert_eq!(
+            paint_session_set_layer_appearance(h.core, h.session, 1, &appearance, &mut seq),
+            PAINT_OK
+        );
+        let info = h.wait(seq);
+        assert_eq!(info.last_error_status, PAINT_INVALID_ARGUMENT);
+        assert_eq!(info.undo_depth, state.undo_depth);
     }
 }

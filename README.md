@@ -1,5 +1,7 @@
 # DrawVerse
 
+组穿透：[设计](docs/group-pass-through-design.md) / [验收](docs/group-pass-through-validation.md)；选择组后混合模式可设“穿透”，允许组内混合影响组外下层，支持历史/ORA，ABI 1.19。
+
 吸色取色环：[设计](docs/eyedropper-ring-design.md) / [验收](docs/eyedropper-ring-validation.md)；I 或 Alt 按下拖动显示当前取样色与取色前前景色，支持数位笔和显示开关。
 
 涂抹：[设计](docs/smudge-design.md) / [验收](docs/smudge-validation.md)，独立 R 工具、共用笔刷预设/间隔（最低 1%）、强度/压感/所有图层取样/手指绘画；参数说明悬停 1 秒显示，ABI 1.18。

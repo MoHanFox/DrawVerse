@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新组穿透：`docs/group-pass-through-design.md` / `docs/group-pass-through-validation.md`；ABI 1.19、组专用混合模式 27，子层对组外下层合成，opacity/fill/蒙版与剪贴、预览/撤销/ORA；默认仍正常隔离。
+
 - 最新吸色取色环：`docs/eyedropper-ring-design.md` / `docs/eyedropper-ring-validation.md`；按下拖动显示新旧颜色半环与灰色外圈、I/Alt/数位笔共用、显示开关、无 ABI 变更。
 
 - 最新涂抹：`docs/smudge-design.md` / `docs/smudge-validation.md`；ABI 1.18、独立 R 工具复用笔刷、强度/压感/合成取样/手指绘画、最低 1% 间隔；参数说明统一悬停 1 秒。

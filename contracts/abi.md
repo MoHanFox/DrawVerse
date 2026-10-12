@@ -1,4 +1,9 @@
-# C ABI 1.18.0 契约
+# C ABI 1.19.0 契约
+
+## ABI 1.19：组穿透
+
+新增 PAINT_BLEND_PASS_THROUGH=27 与 feature bit 65536。既有 PaintLayerAppearance.blend_mode 及 set/preview 路径支持此值，但只允许组节点；像素层与蒙版拒绝。请求同步校验数值范围，目标类型/锁和层 ID 仍由 actor 异步验证；UI 同步限制组专用选项。组影响范围、opacity/fill/蒙版与剪贴语义见 docs/group-pass-through-design.md。旧混合 0–26、所有 DTO 和函数签名不变。
+
 
 ## ABI 1.18：涂抹
 
@@ -66,7 +71,7 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 ## 版本与类型
 
-全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/18/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
+全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/19/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
 
 初始化 DTO 为零并写 struct_size=sizeof(本调用者结构)，输入至少含已发布前缀。库只访问已知前缀；过小为 INVALID_ARGUMENT，不覆盖调用者内存；扩展尾部保持不变。输出 struct_size 写库已知大小。reserved 必须为零；未知 mode/tool/format 为 UNSUPPORTED。输入 capability 位保留未知位，圆笔刷只实际使用 pressure，客户端为无压力设备提供 pressure=1。
 

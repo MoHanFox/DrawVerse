@@ -119,3 +119,40 @@ fn hidden_or_zero_fill_ancestors_never_read_cold_pixels() {
         assert_eq!(doc.storage_stats().page_reads, reads);
     }
 }
+
+#[test]
+fn pass_through_switch_preview_and_mask_invalidate_cached_backdrop() {
+    let mut doc = Document::new(128, 128).unwrap();
+    paint(&mut doc, [0.2, 0.3, 0.4, 1.]);
+    let top = doc.add_layer("dodge").unwrap();
+    paint(&mut doc, [0.5, 0.25, 0.2, 0.8]);
+    let mut a = doc.layer(top).unwrap().appearance();
+    a.blend = BlendMode::ColorDodge;
+    doc.set_layer_appearance(top, a).unwrap();
+    let flat = doc.pixel(64, 64);
+    let group = doc.group_layer(top, "pass").unwrap();
+    let cached = CachedCpuRenderer::default();
+    let before = render(&cached, &doc, 128);
+    let mut a = doc.layer(group).unwrap().appearance();
+    a.blend = BlendMode::PassThrough;
+    doc.set_layer_appearance(group, a).unwrap();
+    let after = render(&cached, &doc, 128);
+    assert_ne!(before, after);
+    assert_eq!(after, render(&CpuRenderer, &doc, 128));
+    assert_eq!(after[64 * 128 + 64], flat.components());
+    for size in [16, 1] {
+        assert_eq!(
+            render(&cached, &doc, size),
+            render(&CpuRenderer, &doc, size)
+        );
+    }
+    doc.undo().unwrap();
+    assert_eq!(render(&cached, &doc, 128), before);
+    doc.redo().unwrap();
+    assert_eq!(render(&cached, &doc, 128), after);
+    let mask = doc.add_mask(group).unwrap();
+    doc.set_active_layer(mask).unwrap();
+    paint(&mut doc, [0., 0., 0., 1.]);
+    assert_eq!(render(&cached, &doc, 128), render(&CpuRenderer, &doc, 128));
+    assert_eq!(doc.pixel(64, 64).components(), [0.2, 0.3, 0.4, 1.]);
+}

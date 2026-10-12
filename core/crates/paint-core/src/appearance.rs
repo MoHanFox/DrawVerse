@@ -33,11 +33,12 @@ pub enum BlendMode {
     Saturation,
     Color,
     Luminosity,
+    PassThrough,
 }
 impl BlendMode {
     pub fn from_id(id: u32) -> Result<Self> {
         use BlendMode::*;
-        const MODES: [BlendMode; 27] = [
+        const MODES: [BlendMode; 28] = [
             Normal,
             Dissolve,
             Darken,
@@ -65,6 +66,7 @@ impl BlendMode {
             Saturation,
             Color,
             Luminosity,
+            PassThrough,
         ];
         MODES
             .get(id as usize)

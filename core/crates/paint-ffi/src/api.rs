@@ -15,7 +15,9 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 18;
+pub const PAINT_ABI_MINOR: u32 = 19;
+pub const PAINT_FEATURE_PASS_THROUGH: u64 = 65536;
+pub const PAINT_BLEND_PASS_THROUGH: u32 = 27;
 pub const PAINT_FEATURE_SMUDGE: u64 = 32768;
 pub const PAINT_HISTORY_SMUDGE: u32 = 26;
 /// ABI 1.18: same brush/point pipeline, independent strength and sampling options.

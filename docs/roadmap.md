@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+组穿透：[设计](group-pass-through-design.md) / [验收](group-pass-through-validation.md)，ABI 1.19，组专属穿透模式与嵌套/蒙版/剪贴/ORA 支持。
+
 吸色取色环：[设计](eyedropper-ring-design.md) / [验收](eyedropper-ring-validation.md)，复用显示帧取样，鼠标/Alt/数位笔拖动预览新旧颜色。
 
 涂抹：[设计](smudge-design.md) / [验收](smudge-validation.md)，ABI 1.18；独立工具复用画笔管线、强度压感、合成取样、手指绘画与 1% 间隔。

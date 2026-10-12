@@ -1,3 +1,5 @@
+#[path = "pass_through.rs"]
+mod pass_through;
 use super::*;
 
 pub(crate) fn validate(layers: &[Layer]) -> Result<()> {
@@ -11,6 +13,9 @@ pub(crate) fn validate(layers: &[Layer]) -> Result<()> {
     let mut masks = BTreeSet::new();
     let mut spans = BTreeMap::<u64, (usize, usize)>::new();
     for (i, l) in layers.iter().enumerate() {
+        if l.appearance.blend == crate::BlendMode::PassThrough && !l.group {
+            return Err(Error::InvalidArgument("pass through requires a group"));
+        }
         if l.mask
             && (l.group
                 || l.clipped
@@ -97,6 +102,12 @@ fn visibility(layers: &[Layer]) -> Vec<bool> {
 /// Postorder permits isolated group rows to be completed before blending into
 /// their parent. Only one scan and bounded rows; cold pages are pinned per row.
 pub(crate) fn composite_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Result<Vec<Pixel>> {
+    if layers
+        .iter()
+        .any(|l| l.appearance.blend == crate::BlendMode::PassThrough)
+    {
+        return pass_through::composite_row(layers, x, y, count);
+    }
     if layers.iter().any(|l| l.clipped) {
         return clipped_row(layers, x, y, count);
     }

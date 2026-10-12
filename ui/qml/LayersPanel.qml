@@ -94,12 +94,13 @@ ColumnLayout {
             objectName: "layerBlendMode"
             Layout.fillWidth: true; Layout.minimumWidth: 48; implicitHeight: 20
             enabled: root.unlocked
-            model: ["正常","溶解","变暗","正片叠底","颜色加深","线性加深","深色","变亮","滤色","颜色减淡","线性减淡（添加）","浅色","叠加","柔光","强光","亮光","线性光","点光","实色混合","差值","排除","减去","划分","色相","饱和度","颜色","明度"]
+            readonly property var regularModes: ["正常","溶解","变暗","正片叠底","颜色加深","线性加深","深色","变亮","滤色","颜色减淡","线性减淡（添加）","浅色","叠加","柔光","强光","亮光","线性光","点光","实色混合","差值","排除","减去","划分","色相","饱和度","颜色","明度"]
+            model:root.control.group?regularModes.concat(["穿透"]):regularModes
             currentIndex: root.control.blendMode
             onOptionHovered:index=>{if(index>=0)PaintClient.previewLayerBlend(root.control.id,index);else PaintClient.clearLayerBlendPreview()}
             onMenuClosed:PaintClient.clearLayerBlendPreview()
             onActivated: {PaintClient.clearLayerBlendPreview();PaintClient.setLayerBlend(root.control.id,currentIndex)}
-            ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "图层混合模式"
+            ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: root.control.group?"组设为穿透时，组内混合模式可以影响组外下方图层；其他模式隔离合成。":"图层混合模式"
         }
         Label { text: "不透明度"; color: Theme.muted; font.pixelSize: 9 }
         LayerPercent {
@@ -287,7 +288,7 @@ ColumnLayout {
     RowLayout {
         Label { text: PaintClient.layers.filter(function(l){return !l.mask}).length+" 图层"; font.pixelSize: 9; color: Theme.muted; Layout.fillWidth: true }
         IconButton { objectName:"addLayerMask";glyph:"mask";tooltip:"添加白色蒙版";implicitHeight:28;implicitWidth:28;enabled:root.unlocked && !root.selected.mask && !PaintClient.layers.some(function(l){return l.mask && l.parent===root.selected.id});onClicked:PaintClient.addMask(root.selected.id);ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"添加白色蒙版（黑隐藏，白显示）" }
-        IconButton { objectName: "groupLayer"; glyph: "folder"; tooltip: "新建图层组"; implicitHeight: 20; implicitWidth: 28; enabled: root.unlocked && !root.selected.mask; onClicked: PaintClient.groupSelectedLayers("组 "+(PaintClient.layers.filter(function(layer) { return layer.group }).length+1)); ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "将所选图层或组放入新组（隔离合成）" }
+        IconButton { objectName: "groupLayer"; glyph: "folder"; tooltip: "新建图层组"; implicitHeight: 20; implicitWidth: 28; enabled: root.unlocked && !root.selected.mask; onClicked: PaintClient.groupSelectedLayers("组 "+(PaintClient.layers.filter(function(layer) { return layer.group }).length+1)); ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "将所选图层或组放入新组" }
         IconButton { objectName: "layerGroupMenu"; glyph: "menu"; tooltip: "图层菜单"; implicitWidth: 28; implicitHeight: 20; enabled: root.unlocked; onClicked: groupMenu.popup() }
         IconButton { glyph: "plus"; tooltip: "新建图层"; implicitWidth: 28; implicitHeight: 20; enabled: root.editable; objectName:"addDefaultLayer";onClicked: PaintClient.addDefaultLayer(); ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "新建图层" }
         IconButton { objectName: "deleteLayer"; glyph: "trash"; tooltip: "删除图层"; implicitHeight: 20; enabled: root.unlocked && PaintClient.layers.length>1; onClicked: PaintClient.requestSelectedLayerRemoval() }

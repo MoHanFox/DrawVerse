@@ -212,7 +212,8 @@ fn standard_mix_reference_values_and_transparent_premultiplied_boundaries() {
             }
         }
     }
-    assert!(BlendMode::from_id(27).is_err());
+    assert_eq!(BlendMode::from_id(27).unwrap(), BlendMode::PassThrough);
+    assert!(BlendMode::from_id(28).is_err());
 }
 #[test]
 fn cold_spilled_deleted_layer_restores_signed_tiles_and_full_appearance() {

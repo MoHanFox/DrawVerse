@@ -198,6 +198,9 @@ impl DocumentSnapshot {
             .ok_or(Error::InvalidArgument(
                 "blend preview requires a non-mask layer",
             ))?;
+        if blend == crate::BlendMode::PassThrough && !layer.group {
+            return Err(Error::InvalidArgument("pass through requires a group"));
+        }
         layer.appearance.blend = blend;
         Ok(self)
     }
@@ -963,6 +966,9 @@ impl Document {
         self.idle()?;
         after.validate()?;
         let index = self.layer_index(id)?;
+        if after.blend == crate::BlendMode::PassThrough && !self.layers[index].group {
+            return Err(Error::InvalidArgument("pass through requires a group"));
+        }
         let before = self.layers[index].appearance;
         self.check_ancestors(self.layers[index].parent, crate::LOCK_ALL)?;
         if self.layers[index].group

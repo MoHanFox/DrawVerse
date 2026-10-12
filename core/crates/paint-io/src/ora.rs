@@ -91,8 +91,11 @@ fn parse_node(
     parent: Option<usize>,
 ) -> Result<LayerSpec> {
     let mut a = attributes(e)?;
-    if group && a.remove("isolation").as_deref().unwrap_or("isolate") != "isolate" {
-        return Err(Error::Unsupported("non-isolated OpenRaster group".into()));
+    let isolation = a.remove("isolation").unwrap_or_else(|| "isolate".into());
+    if group && isolation != "auto" && isolation != "isolate" {
+        return Err(Error::Unsupported(
+            "unknown OpenRaster group isolation".into(),
+        ));
     }
     let src = if group {
         String::new()
@@ -125,10 +128,22 @@ fn parse_node(
             .as_deref()
             .unwrap_or("svg:src-over"),
     )?;
+    let default_blend = if group
+        && isolation == "auto"
+        && standard == paint_core::BlendMode::Normal
+        && opacity == 1.
+    {
+        paint_core::BlendMode::PassThrough
+    } else {
+        standard
+    };
     let (appearance, local) = if owned {
         let fill = number(&mut a, "dv:fill", Some(1f32))?;
-        let blend =
-            paint_core::BlendMode::from_id(number(&mut a, "dv:blend", Some(standard as u32))?)?;
+        let blend = paint_core::BlendMode::from_id(number(
+            &mut a,
+            "dv:blend",
+            Some(default_blend as u32),
+        )?)?;
         let locks = number(&mut a, "dv:locks", Some(0u32))?;
         let offset_x = number(&mut a, "dv:offset-x", Some(0i32))?;
         let offset_y = number(&mut a, "dv:offset-y", Some(0i32))?;
@@ -147,6 +162,9 @@ fn parse_node(
         if standard != parse_blend(standard_blend(blend))? {
             return Err(Error::Invalid("conflicting blend extension"));
         }
+        if blend == paint_core::BlendMode::PassThrough && (!group || isolation != "auto") {
+            return Err(Error::Invalid("pass through requires auto-isolated group"));
+        }
         options.validate()?;
         if lx.checked_add(offset_x) != Some(x)
             || ly.checked_add(offset_y) != Some(y)
@@ -158,11 +176,11 @@ fn parse_node(
         (Some(options), Some((lx, ly)))
     } else {
         (
-            if standard == paint_core::BlendMode::Normal {
+            if default_blend == paint_core::BlendMode::Normal {
                 None
             } else {
                 Some(paint_core::LayerAppearance {
-                    blend: standard,
+                    blend: default_blend,
                     ..Default::default()
                 })
             },
@@ -636,7 +654,7 @@ pub(crate) fn encode(
                 layer.parent_id(),
                 u32::from(layer.is_clipped())
             );
-            xml.push_str(&format!("<stack{extension} name=\"{}\" opacity=\"{}\" visibility=\"{}\" composite-op=\"{}\" isolation=\"isolate\" selected=\"{}\" dv:fill=\"{}\" dv:blend=\"{}\" dv:locks=\"{}\" dv:opacity=\"{}\" dv:seed=\"{}\">",escaped(layer.name())?,p.opacity*a.fill,if p.visible {"visible"} else {"hidden"},standard_blend(a.blend),layer.id()==active,a.fill,a.blend as u32,a.locks,p.opacity,a.dissolve_seed));
+            xml.push_str(&format!("<stack{extension} name=\"{}\" opacity=\"{}\" visibility=\"{}\" composite-op=\"{}\" isolation=\"{}\" selected=\"{}\" dv:fill=\"{}\" dv:blend=\"{}\" dv:locks=\"{}\" dv:opacity=\"{}\" dv:seed=\"{}\">",escaped(layer.name())?,p.opacity*a.fill,if p.visible {"visible"} else {"hidden"},standard_blend(a.blend),if a.blend==paint_core::BlendMode::PassThrough {"auto"} else {"isolate"},layer.id()==active,a.fill,a.blend as u32,a.locks,p.opacity,a.dissolve_seed));
             open_groups.push(layer.id());
             continue;
         }

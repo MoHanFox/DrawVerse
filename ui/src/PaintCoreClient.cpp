@@ -57,8 +57,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 18) {
-            emit failure(QStringLiteral("涂抹需要核心 ABI 1.18 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 19) {
+            emit failure(QStringLiteral("组穿透需要核心 ABI 1.19 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -953,11 +953,13 @@ bool PaintCoreClient::setAppearance(quint64 id,const QString &field,const QVaria
     m_pendingLayer=m_pendingMutation=sequence; m_modified=true; emit stateChanged(); return true;
 }
 bool PaintCoreClient::setLayerFill(quint64 id,qreal fill) { return std::isfinite(fill) && fill>=0 && fill<=1 && setAppearance(id,"fill",fill); }
-bool PaintCoreClient::setLayerBlend(quint64 id,int blend) { return blend>=0 && blend<=26 && setAppearance(id,"blendMode",blend); }
+bool PaintCoreClient::setLayerBlend(quint64 id,int blend) { if(blend<0 || blend>27)return false;
+    if(blend==27 && !std::any_of(m_layers.begin(),m_layers.end(),[id](const QVariant &v){const auto l=v.toMap();return l.value("id").toULongLong()==id && l.value("group").toBool();}))return false;
+    return setAppearance(id,"blendMode",blend); }
 void PaintCoreClient::previewLayerBlend(quint64 id,int blend) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || blend<0 || blend>26)return;
+    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || blend<0 || blend>27)return;
     bool found=false;
-    for(const auto &value:m_layers) {const auto layer=value.toMap();if(layer.value("id").toULongLong()==id && !layer.value("mask").toBool() && !(layer.value("effectiveLocks").toUInt()&PAINT_LOCK_ALL))found=true;}
+    for(const auto &value:m_layers) {const auto layer=value.toMap();if(layer.value("id").toULongLong()==id && !layer.value("mask").toBool() && (blend!=27 || layer.value("group").toBool()) && !(layer.value("effectiveLocks").toUInt()&PAINT_LOCK_ALL))found=true;}
     if(!found || (m_blendPreviewLayer==id && m_blendPreviewMode==blend))return;
     m_blendPreviewLayer=id;m_blendPreviewMode=blend;
     for(int view=0;view<2;++view)if(m_viewEnabled[view]) {

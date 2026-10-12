@@ -126,7 +126,7 @@ fn nested_ora_preserves_groups_properties_selection_and_raster_exports() {
 }
 
 #[test]
-fn external_isolated_groups_import_but_excessive_depth_and_passthrough_are_rejected() {
+fn external_groups_import_but_excessive_depth_and_unknown_isolation_are_rejected() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("external.ora");
     let token = CancellationToken::default();
@@ -144,7 +144,6 @@ fn external_isolated_groups_import_but_excessive_depth_and_passthrough_are_rejec
         paint_core::BlendMode::Screen
     );
     for group in [
-        "<stack isolation='auto'>",
         "<stack x='1'>",
         "<stack opacity='NaN'>",
         "<stack isolation='unknown'>",
@@ -641,7 +640,6 @@ fn hostile_or_unsupported_openraster_does_not_partially_import() {
     for xml in [
         "<image w='1' h='1'><stack><layer src='../a.png'/></stack></image>",
         "<!DOCTYPE image [<!ENTITY bad SYSTEM 'file:///x'>]><image w='1' h='1'><stack/></image>",
-        "<image w='1' h='1'><stack><stack isolation='auto'><layer src='data/a.png'/></stack></stack></image>",
         "<image w='1' h='1'><stack><layer src='data/a.png' composite-op='svg:dst-in'/></stack></image>",
         "<image w='1' h='1'><stack><layer src='data/a.png' x='1'/></stack></image>",
         "<image w='999999' h='999999'><stack><layer src='data/a.png'/></stack></image>",
@@ -779,4 +777,88 @@ fn archive_budgets_duplicates_and_late_save_failure_are_atomic() {
     ));
     assert_eq!(std::fs::read(&path).unwrap(), b"original");
     assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn pass_through_groups_ora_roundtrip_and_external_auto() {
+    use paint_core::*;
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("pass.ora");
+    let token = CancellationToken::default();
+    let mut doc = Document::new(16, 16).unwrap();
+    let paint = |doc: &mut Document, c: [f32; 4]| {
+        doc.begin_stroke(
+            Brush {
+                radius: 4.,
+                color: Pixel::from_straight(c).unwrap(),
+                ..Brush::default()
+            },
+            InputPoint::new(8., 8., 1.),
+        )
+        .unwrap();
+        doc.end_stroke().unwrap();
+    };
+    paint(&mut doc, [0.2, 0.3, 0.4, 1.]);
+    let top = doc.add_layer("dodge").unwrap();
+    paint(&mut doc, [0.5, 0.25, 0.2, 0.8]);
+    let mut a = doc.layer(top).unwrap().appearance();
+    a.blend = BlendMode::ColorDodge;
+    doc.set_layer_appearance(top, a).unwrap();
+    let group = doc.group_layer(top, "pass").unwrap();
+    let mut a = doc.layer(group).unwrap().appearance();
+    a.blend = BlendMode::PassThrough;
+    a.fill = 0.7;
+    doc.set_layer_appearance(group, a).unwrap();
+    doc.set_layer_properties(
+        group,
+        LayerProperties {
+            visible: true,
+            opacity: 0.5,
+        },
+    )
+    .unwrap();
+    save(
+        &path,
+        &doc.snapshot(),
+        group,
+        options(Format::OpenRaster),
+        &token,
+    )
+    .unwrap();
+    let loaded = load(&path, &token).unwrap();
+    assert!(loaded
+        .layers()
+        .iter()
+        .any(|l| l.is_group() && l.appearance().blend == BlendMode::PassThrough));
+    for y in 0..16 {
+        for x in 0..16 {
+            let a = doc.pixel(x, y).components();
+            let b = loaded.pixel(x, y).components();
+            for i in 0..4 {
+                assert!((a[i] - b[i]).abs() < 0.01);
+            }
+        }
+    }
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("stack.xml").unwrap(), &mut xml).unwrap();
+    assert!(xml.contains("isolation=\"auto\""));
+    assert!(xml.contains("dv:blend=\"27\""));
+    drop(zip);
+    let mut png = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut png)
+        .write_image(&[128, 64, 32, 255], 1, 1, ExtendedColorType::Rgba8)
+        .unwrap();
+    archive(&path,"<image w='1' h='1'><stack><stack isolation='auto'><layer src='data/a.png'/></stack></stack></image>",None,&png);
+    let loaded = load(&path, &token).unwrap();
+    assert_eq!(
+        loaded
+            .layers()
+            .iter()
+            .find(|l| l.is_group())
+            .unwrap()
+            .appearance()
+            .blend,
+        BlendMode::PassThrough
+    );
 }
