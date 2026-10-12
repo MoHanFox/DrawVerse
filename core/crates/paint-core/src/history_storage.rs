@@ -739,6 +739,79 @@ pub(crate) fn decode_page(bytes: &[u8]) -> Result<Vec<Pixel>> {
     Ok(pixels)
 }
 
+/// Versioned clipboard uses the same checked, lossless layer codec as history.
+pub(crate) fn encode_layer_bundle(layers: &[Layer]) -> Result<Vec<u8>> {
+    struct Bounded(Vec<u8>);
+    impl Write for Bounded {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.0.len().saturating_add(bytes.len()) > 256 * 1024 * 1024 {
+                return Err(io::Error::other("layer clipboard exceeds 256MiB"));
+            }
+            self.0.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut w = Bounded(Vec::new());
+    w.write_all(b"DVL1").map_err(storage_error)?;
+    put_u32(&mut w, layers.len() as u32).map_err(storage_error)?;
+    for (i, layer) in layers.iter().enumerate() {
+        encode_layer(&mut w, i, layer).map_err(storage_error)?;
+    }
+    let checksum = hash(HASH_START, &w.0);
+    put_u64(&mut w, checksum).map_err(storage_error)?;
+    Ok(w.0)
+}
+pub(crate) fn decode_layer_bundle(
+    bytes: &[u8],
+    tile_limit: usize,
+    pool: Arc<crate::page_pool::PagePool>,
+) -> Result<Vec<Layer>> {
+    if bytes.len() < 16 || bytes.len() > 256 * 1024 * 1024 {
+        return Err(invalid());
+    }
+    let end = bytes.len() - 8;
+    if hash(HASH_START, &bytes[..end])
+        != u64::from_le_bytes(bytes[end..].try_into().expect("checksum"))
+    {
+        return Err(invalid());
+    }
+    let mut r = CheckedReader {
+        trim_tiles: true,
+        source: Cursor::new(&bytes[..end]),
+        checksum: HASH_START,
+        length: 0,
+        tile_limit,
+        pool: Some(pool),
+    };
+    if &get::<4>(&mut r)? != b"DVL1" {
+        return Err(invalid());
+    }
+    let count = u32_value(&mut r)? as usize;
+    if count == 0 || count > 4096 {
+        return Err(invalid());
+    }
+    let mut layers = Vec::with_capacity(count);
+    let mut tiles = 0;
+    for i in 0..count {
+        let (index, layer) = decode_layer(&mut r)?;
+        if index != i {
+            return Err(invalid());
+        }
+        tiles += layer.tiles.len();
+        if tiles > tile_limit {
+            return Err(invalid());
+        }
+        layers.push(layer);
+    }
+    if r.length != end as u64 {
+        return Err(invalid());
+    }
+    Ok(layers)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -883,77 +956,4 @@ mod tests {
         assert!(writer.write_all(b"more").is_err());
         assert!(writer.file.is_none());
     }
-}
-
-/// Versioned clipboard uses the same checked, lossless layer codec as history.
-pub(crate) fn encode_layer_bundle(layers: &[Layer]) -> Result<Vec<u8>> {
-    struct Bounded(Vec<u8>);
-    impl Write for Bounded {
-        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            if self.0.len().saturating_add(bytes.len()) > 256 * 1024 * 1024 {
-                return Err(io::Error::other("layer clipboard exceeds 256MiB"));
-            }
-            self.0.extend_from_slice(bytes);
-            Ok(bytes.len())
-        }
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-    let mut w = Bounded(Vec::new());
-    w.write_all(b"DVL1").map_err(storage_error)?;
-    put_u32(&mut w, layers.len() as u32).map_err(storage_error)?;
-    for (i, layer) in layers.iter().enumerate() {
-        encode_layer(&mut w, i, layer).map_err(storage_error)?;
-    }
-    let checksum = hash(HASH_START, &w.0);
-    put_u64(&mut w, checksum).map_err(storage_error)?;
-    Ok(w.0)
-}
-pub(crate) fn decode_layer_bundle(
-    bytes: &[u8],
-    tile_limit: usize,
-    pool: Arc<crate::page_pool::PagePool>,
-) -> Result<Vec<Layer>> {
-    if bytes.len() < 16 || bytes.len() > 256 * 1024 * 1024 {
-        return Err(invalid());
-    }
-    let end = bytes.len() - 8;
-    if hash(HASH_START, &bytes[..end])
-        != u64::from_le_bytes(bytes[end..].try_into().expect("checksum"))
-    {
-        return Err(invalid());
-    }
-    let mut r = CheckedReader {
-        trim_tiles: true,
-        source: Cursor::new(&bytes[..end]),
-        checksum: HASH_START,
-        length: 0,
-        tile_limit,
-        pool: Some(pool),
-    };
-    if &get::<4>(&mut r)? != b"DVL1" {
-        return Err(invalid());
-    }
-    let count = u32_value(&mut r)? as usize;
-    if count == 0 || count > 4096 {
-        return Err(invalid());
-    }
-    let mut layers = Vec::with_capacity(count);
-    let mut tiles = 0;
-    for i in 0..count {
-        let (index, layer) = decode_layer(&mut r)?;
-        if index != i {
-            return Err(invalid());
-        }
-        tiles += layer.tiles.len();
-        if tiles > tile_limit {
-            return Err(invalid());
-        }
-        layers.push(layer);
-    }
-    if r.length != end as u64 {
-        return Err(invalid());
-    }
-    Ok(layers)
 }

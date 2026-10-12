@@ -13,7 +13,7 @@ ColumnLayout {
         return {id:0,opacity:1,fill:1,locks:0,effectiveLocks:0,blendMode:0,group:false,mask:false,parent:0}
     }
     property var control: selected.mask ? PaintClient.layers.find(function(l){return l.id===selected.parent}) || selected : selected
-    property bool editable: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy
+    property bool editable: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy
     property bool unlocked: editable && !(control.effectiveLocks & 4)
     property bool parentLocked: {
         let parent=control.parent

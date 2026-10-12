@@ -1,4 +1,14 @@
-# C ABI 1.20.0 契约
+# C ABI 1.21.0 契约
+
+## ABI 1.21：画布液化事务
+
+- `PAINT_FEATURE_LIQUIFY=262144`，`PAINT_SESSION_LIQUIFY=8`，历史种类 30=液化。
+- `paint_session_liquify` FIFO 接收 BEGIN=0/DAB=1/RESET=2/CANCEL=3/COMMIT=4/FOCUS_ON=5/FOCUS_OFF=6；只有 DAB 接收 `PaintLiquifyDab`，其余 descriptor 必须 null。所有指针在返回前复制，OK 只表示入队。
+- `PaintLiquifyDab` 为 176 字节，from/to 位于 48/112；保留既有 DTO 不变。
+- DAB：工具 0推拉/1膨大/2顺时针扭曲/3重建；半径0.5–1000px，强度/密度/速度0.01–1，时间0–250ms，压感0/1，保留字段为0；两个内嵌 PaintPoint 必须完整且合法。
+- BEGIN 拒绝组、继承锁、普通笔触或活动文件任务；预览不改变 modified 或 undo/redo。RESET/CANCEL 精确恢复原层；COMMIT 一次真实像素历史，空确认无历史，历史失败仍可取消。活动期间普通修改返回 BUSY，文件任务以 BUSY 结束；读/渲染继续可用。资源与事务说明见 `docs/liquify-design.md`。
+
+- FOCUS_ON/OFF 仅修改显示快照，真实层可见性和历史不变；确认/取消后恢复全部原可见层。
 
 ## ABI 1.20：图层复制、剪贴板与合并
 

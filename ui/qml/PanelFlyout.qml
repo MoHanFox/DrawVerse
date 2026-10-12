@@ -46,7 +46,15 @@ PanelWindow {
         y=Math.round(Math.max(navLow,Math.min(wantedY,navHigh)))
         positioning=false;remember()
     }
+    property bool retainedLiquifyVisibility:false
+    readonly property bool liquifying:PaintClient.liquifyActive
+    onLiquifyingChanged:{
+        if(liquifying){retainedLiquifyVisibility=visible;if(visible){Workspace.watchPanelFlyout(root,ownerTile,false);hide()}}
+        else if(retainedLiquifyVisibility){retainedLiquifyVisibility=false;visible=true;Workspace.watchPanelFlyout(root,ownerTile,true)}
+    }
     function showPanel(panel){
+        if(liquifying)return
+
         selectedPanel=panel;refreshGroup();Workspace.setActive(Workspace.groupForPanel(panel),panel)
         if(!visible){
             restoring=true

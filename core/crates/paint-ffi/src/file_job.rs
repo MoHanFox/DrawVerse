@@ -94,6 +94,10 @@ pub(crate) struct FileService {
     job: Option<Job>,
 }
 impl FileService {
+    /// Actor-owned work only; a later reserved request must not overtake FIFO commands.
+    pub fn running(&self) -> bool {
+        self.job.is_some()
+    }
     pub fn new(state: Arc<Mutex<FileState>>, pool: Arc<TaskPool>) -> Self {
         Self {
             state,
@@ -105,7 +109,7 @@ impl FileService {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let fail = if state.cancel.is_cancelled() {
             Some(ApiError::new(PAINT_CANCELLED, "file operation cancelled"))
-        } else if request.generation != generation || doc.stroke_active() {
+        } else if request.generation != generation || doc.stroke_active() || doc.liquify_active() {
             Some(ApiError::new(
                 PAINT_BUSY,
                 "document changed or a stroke is active",

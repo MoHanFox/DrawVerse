@@ -34,6 +34,7 @@ pub(crate) enum Operation {
     Drop(u64, u64, u32),
     DropBatch(Vec<u64>, u64, u32),
     RemoveBatch(Vec<u64>, bool),
+    Liquify(u32, Option<paint_core::LiquifyDab>),
     CopyLayers(Vec<u64>),
     PasteLayers(Vec<u8>, u64),
     DuplicateLayers(Vec<u64>),
@@ -525,7 +526,13 @@ fn publish(
         selection: doc.selection().clone(),
         info: PaintSessionInfo {
             struct_size: std::mem::size_of::<PaintSessionInfo>() as u32,
-            flags: PAINT_SESSION_RUNNING | if modified { PAINT_SESSION_MODIFIED } else { 0 },
+            flags: PAINT_SESSION_RUNNING
+                | if modified { PAINT_SESSION_MODIFIED } else { 0 }
+                | if doc.liquify_active() {
+                    PAINT_SESSION_LIQUIFY
+                } else {
+                    0
+                },
             document_generation: generation,
             publication,
             completed_sequence: completed,
@@ -606,6 +613,7 @@ impl Engine {
                 | Operation::PasteLayers(..)
                 | Operation::DuplicateLayers(..)
                 | Operation::MergeLayers(..)
+                | Operation::Liquify(..)
                 | Operation::Cancel(_)
                 | Operation::Undo
                 | Operation::Redo
@@ -640,7 +648,33 @@ impl Engine {
         self.dirty = true;
     }
     fn apply(&mut self, operation: Operation, sequence: u64) -> ApiResult<()> {
+        if self.document.liquify_active()
+            && !matches!(operation, Operation::Liquify(..) | Operation::File(_))
+        {
+            return Err(paint_core::Error::Busy.into());
+        }
         match operation {
+            Operation::Liquify(kind, dab) => match kind {
+                PAINT_LIQUIFY_BEGIN => {
+                    if self.files.running() {
+                        return Err(paint_core::Error::Busy.into());
+                    }
+                    self.document.begin_liquify()?;
+                }
+                PAINT_LIQUIFY_DAB => {
+                    self.document
+                        .liquify_dab(dab.ok_or_else(|| ApiError::invalid("missing dab"))?)?;
+                }
+                PAINT_LIQUIFY_RESET => self.document.reset_liquify()?,
+                PAINT_LIQUIFY_CANCEL => self.document.cancel_liquify()?,
+                PAINT_LIQUIFY_FOCUS_ON | PAINT_LIQUIFY_FOCUS_OFF => self
+                    .document
+                    .set_liquify_focus(kind == PAINT_LIQUIFY_FOCUS_ON)?,
+                PAINT_LIQUIFY_COMMIT => {
+                    self.modified |= self.document.commit_liquify()?;
+                }
+                _ => return Err(ApiError::invalid("liquify action")),
+            },
             Operation::Bucket(options) => {
                 self.modified |= self.document.bucket_fill(options)?;
             }
@@ -970,7 +1004,11 @@ impl Engine {
             }
             drop(slots);
             let snapshot = if preview_layer == 0 {
-                self.document.snapshot()
+                if index < 2 {
+                    self.document.liquify_snapshot()
+                } else {
+                    self.document.snapshot()
+                }
             } else {
                 match self.document.layer_preview(preview_layer) {
                     Ok(snapshot) => snapshot,

@@ -12,6 +12,7 @@
 #define CHECK(condition) do { if (!(condition)) { std::fprintf(stderr, "C++ ABI check failed at line %d: %s\n", __LINE__, #condition); return 1; } } while (false)
 static_assert(std::is_standard_layout_v<PaintPoint>);
 static_assert(sizeof(PaintPoint) == 64 && offsetof(PaintPoint, timestamp_ns) == 56);
+static_assert(std::is_standard_layout_v<PaintLiquifyDab> && sizeof(PaintLiquifyDab) == 176 && offsetof(PaintLiquifyDab, from) == 48 && offsetof(PaintLiquifyDab, to) == 112);
 static_assert(sizeof(PaintStrokeDesc) == 56 && offsetof(PaintStrokeDesc, linear_rgba) == 28);
 static_assert(sizeof(PaintTile) == 56 && offsetof(PaintTile, revision) == 48);
 static_assert(sizeof(PaintEvent) == 56);

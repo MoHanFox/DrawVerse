@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QImage>
 #include <QObject>
+#include <QElapsedTimer>
 #include <QPointF>
 #include <QRectF>
 #include <QSize>
@@ -33,6 +34,15 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QString storageMessage READ storageMessage NOTIFY storageChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
     Q_PROPERTY(QVariantList historyEntries READ historyEntries NOTIFY historyChanged)
+    Q_PROPERTY(bool liquifyActive READ liquifyActive NOTIFY stateChanged)
+    Q_PROPERTY(bool liquifyBusy READ liquifyBusy NOTIFY stateChanged)
+    Q_PROPERTY(int liquifyTool READ liquifyTool WRITE setLiquifyTool NOTIFY liquifyOptionsChanged)
+    Q_PROPERTY(int liquifySize READ liquifySize WRITE setLiquifySize NOTIFY liquifyOptionsChanged)
+    Q_PROPERTY(int liquifyStrength READ liquifyStrength WRITE setLiquifyStrength NOTIFY liquifyOptionsChanged)
+    Q_PROPERTY(int liquifyDensity READ liquifyDensity WRITE setLiquifyDensity NOTIFY liquifyOptionsChanged)
+    Q_PROPERTY(int liquifySpeed READ liquifySpeed WRITE setLiquifySpeed NOTIFY liquifyOptionsChanged)
+    Q_PROPERTY(bool liquifyFocus READ liquifyFocus WRITE setLiquifyFocus NOTIFY liquifyOptionsChanged)
+    Q_PROPERTY(bool liquifyPressure READ liquifyPressure WRITE setLiquifyPressure NOTIFY liquifyOptionsChanged)
     Q_PROPERTY(bool drawing READ drawing NOTIFY stateChanged)
     Q_PROPERTY(bool closing READ closing NOTIFY stateChanged)
     Q_PROPERTY(bool modified READ modified NOTIFY stateChanged)
@@ -46,7 +56,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(quint64 activeLayer READ activeLayer NOTIFY stateChanged)
     Q_PROPERTY(QVariantList layers READ layers NOTIFY layersChanged)
     // Panel-level multi-selection. Not document state: never written to history or disk.
-    Q_PROPERTY(bool layerShortcutsAllowed READ layerShortcutsAllowed NOTIFY stateChanged)
+    Q_PROPERTY(bool layerShortcutsAllowed READ layerShortcutsAllowed NOTIFY layerShortcutsChanged)
     Q_PROPERTY(bool canPasteLayers READ canPasteLayers NOTIFY stateChanged)
     Q_PROPERTY(bool canMergeLayers READ canMergeLayers NOTIFY stateChanged)
     Q_PROPERTY(QString mergeLayersText READ mergeLayersText NOTIFY stateChanged)
@@ -108,7 +118,7 @@ public:
     bool ready() const { return m_ready; }
     bool drawing() const { return m_drawing; }
     bool closing() const { return m_closing; }
-    bool modified() const { return m_modified || m_drawing; }
+    bool modified() const { return m_modified || (m_drawing && !m_liquifyActive); }
     bool fileBusy() const { return m_fileBusy; }
     QString documentName() const;
     QUrl documentUrl() const { return m_documentUrl; }
@@ -215,6 +225,26 @@ public:
     void setBrushOpacity(qreal opacity);
     void setBrushSpacing(qreal spacing);
     void setEraser(bool eraser);
+    bool liquifyActive() const {return m_liquifyActive;}
+    bool liquifyBusy() const {return m_pendingLiquify!=0 || layerEditBusy();}
+    int liquifyTool() const {return m_liquifyTool;}
+    int liquifySize() const {return m_liquifySize;}
+    int liquifyStrength() const {return m_liquifyStrength;}
+    int liquifyDensity() const {return m_liquifyDensity;}
+    int liquifySpeed() const {return m_liquifySpeed;}
+    bool liquifyFocus() const {return m_liquifyFocus;}
+    void setLiquifyFocus(bool value);
+    bool liquifyPressure() const {return m_liquifyPressure;}
+    void setLiquifyTool(int value);
+    void setLiquifySize(int value);
+    void setLiquifyStrength(int value);
+    void setLiquifyDensity(int value);
+    void setLiquifySpeed(int value);
+    void setLiquifyPressure(bool value);
+    Q_INVOKABLE bool beginLiquify();
+    Q_INVOKABLE bool resetLiquify();
+    Q_INVOKABLE bool finishLiquify(bool commit);
+    void liquifyTick();
     bool beginStroke(const InputSample &sample);
     void strokeTo(const InputSample &sample);
     void endStroke();
@@ -272,10 +302,12 @@ public:
     Q_INVOKABLE void clearError();
     Q_INVOKABLE void shutdown();
 signals:
+    void liquifyOptionsChanged();
     void historyChanged();
     void storageChanged();
     void storageFinished(bool success);
     void stateChanged();
+    void layerShortcutsChanged();
     void layersChanged();
     void layerThumbnailsChanged();
     void selectedLayersChanged();
@@ -339,6 +371,15 @@ private:
     QColor m_strokeColor;
     qreal m_radius = 12, m_opacity = 1;
     // Per-document history command limit; persisted as a preference and applied to new sessions.
+    void persistLiquifyOptions();
+    bool submitLiquifyControl(quint32 kind);
+    bool submitLiquifyDab(const InputSample &from,const InputSample &to,int elapsedMs);
+    bool m_liquifyFocus=false,m_liquifyActive=false,m_liquifyPressure=false;
+    int m_liquifyTool=0,m_liquifySize=200,m_liquifyStrength=50,m_liquifyDensity=100,m_liquifySpeed=100;
+    quint64 m_completedSequence=0;
+    quint64 m_pendingLiquify=0,m_lastLiquifyDab=0;
+    InputSample m_liquifyLast;
+    QElapsedTimer m_liquifyClock;
     int m_historyLimit = 100;
     qreal m_spacing = .15;
     BrushLibrary *m_brushLibrary = nullptr;

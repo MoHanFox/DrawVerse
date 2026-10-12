@@ -36,6 +36,7 @@ pub enum HistoryAction {
     DuplicateLayers = 27,
     PasteLayers = 28,
     MergeLayers = 29,
+    Liquify = 30,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }

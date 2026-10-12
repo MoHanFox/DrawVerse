@@ -248,6 +248,19 @@ static int async_smoke(PaintCore *core) {
         ASYNC_CHECK(paint_session_history_entry(core,session,info.publication,1,&bucket_history)==PAINT_OK && bucket_history.kind==PAINT_HISTORY_BUCKET);
         fill.tolerance=256;sequence=99;ASYNC_CHECK(paint_session_bucket_fill(core,session,&fill,&sequence)==PAINT_INVALID_ARGUMENT && sequence==0);
     }
+    {
+        PaintLiquifyDab dab;const uint32_t depth=info.undo_depth;
+        ASYNC_CHECK(paint_session_liquify(core,session,PAINT_LIQUIFY_BEGIN,NULL,&sequence)==PAINT_OK);
+        start=clock();do{info.struct_size=sizeof(info);ASYNC_CHECK(paint_session_info(core,session,&info)==PAINT_OK);ASYNC_CHECK(clock()-start<5*CLOCKS_PER_SEC);}while(info.completed_sequence<sequence);
+        ASYNC_CHECK(info.last_error_status==PAINT_OK && (info.flags&PAINT_SESSION_LIQUIFY));
+        memset(&dab,0,sizeof(dab));dab.struct_size=sizeof(dab);dab.radius=8;dab.strength=.5f;dab.density=dab.speed=1;dab.elapsed_ms=16;dab.from.struct_size=sizeof(PaintPoint);dab.from.tool=PAINT_TOOL_MOUSE;dab.from.x=dab.from.y=16;dab.from.pressure=1;dab.to=dab.from;dab.to.x=20;
+        ASYNC_CHECK(paint_session_liquify(core,session,PAINT_LIQUIFY_DAB,&dab,&sequence)==PAINT_OK);
+        ASYNC_CHECK(paint_session_liquify(core,session,PAINT_LIQUIFY_RESET,NULL,&sequence)==PAINT_OK);
+        ASYNC_CHECK(paint_session_liquify(core,session,PAINT_LIQUIFY_FOCUS_ON,NULL,&sequence)==PAINT_OK);
+        ASYNC_CHECK(paint_session_liquify(core,session,PAINT_LIQUIFY_CANCEL,NULL,&sequence)==PAINT_OK);
+        start=clock();do{info.struct_size=sizeof(info);ASYNC_CHECK(paint_session_info(core,session,&info)==PAINT_OK);ASYNC_CHECK(clock()-start<5*CLOCKS_PER_SEC);}while(info.completed_sequence<sequence);
+        ASYNC_CHECK(info.last_error_status==PAINT_OK && !(info.flags&PAINT_SESSION_LIQUIFY) && info.undo_depth==depth);
+    }
     ASYNC_CHECK(remove(DRAWVERSE_ABI_SMOKE_FILE) == 0);
     ASYNC_CHECK(paint_session_destroy(core, &session) == PAINT_OK && session == NULL);
     ASYNC_CHECK(paint_session_destroy(core, &session) == PAINT_OK);

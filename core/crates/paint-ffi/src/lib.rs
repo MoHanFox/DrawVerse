@@ -4,6 +4,8 @@
 compile_error!("DrawVerse ABI v1 supports 64-bit targets only");
 
 mod api;
+mod liquify_api;
+pub use liquify_api::*;
 mod layer_actions_api;
 pub use layer_actions_api::*;
 mod layer_api;
@@ -118,6 +120,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                     | PAINT_FEATURE_BUCKET
                     | PAINT_FEATURE_WAND
                     | PAINT_FEATURE_SMUDGE
+                    | PAINT_FEATURE_LIQUIFY
                     | PAINT_FEATURE_LAYER_ACTIONS
                     | PAINT_FEATURE_PASS_THROUGH
                     | PAINT_FEATURE_HISTORY

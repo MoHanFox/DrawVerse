@@ -59,11 +59,12 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 20) {
-            emit failure(QStringLiteral("组穿透需要核心 ABI 1.19 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 21) {
+            emit failure(QStringLiteral("液化需要核心 ABI 1.21 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
+        emit liquifyPreferences({{"tool",settings->value("liquify/tool",0)},{"size",settings->value("liquify/size",200)},{"strength",settings->value("liquify/strength",50)},{"density",settings->value("liquify/density",100)},{"speed",settings->value("liquify/speed",100)},{"pressure",settings->value("liquify/pressure",false)}});
         m_historyLimit = std::clamp(settings->value("history/limit", 100).toInt(), 10, 1000);
         m_saved = QVariantMap{{"directory", settings->value("storage/directory", "")},
             {"memoryMiB", settings->value("storage/memoryMiB", 256)},
@@ -99,6 +100,7 @@ public:
     void inspectStorage() { evaluateStorage(m_saved, false); }
     void saveStorage(const QVariantMap &values) { evaluateStorage(values, true); }
     void saveBrushPreferences(const QByteArray &json){auto settings=preferences();settings->setValue("brushes/state",json);settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存画笔设置，请检查配置目录权限"));}
+    void saveLiquifyOptions(const QVariantMap &values) {auto settings=preferences();for(auto it=values.cbegin();it!=values.cend();++it)settings->setValue("liquify/"+it.key(),it.value());settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存液化设置，请检查配置目录权限"));}
     void storeHistoryLimit(int commands) {
         auto settings=preferences();settings->setValue("history/limit",commands);settings->sync();
         if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存历史条数上限，请检查配置目录权限"));
@@ -134,6 +136,7 @@ public:
     void watchLayerCopy(quint64 sequence) {m_layerCopySequence=sequence;}
 signals:
     void layerClipboardReady(QByteArray bytes);
+    void liquifyPreferences(QVariantMap values);
     void brushPreferences(QByteArray json);
     void brushPreviewReady(QString id,quint64 token,QString image);
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
@@ -255,8 +258,8 @@ public:
         // One entry per HistoryAction discriminant, in order. A missing entry used to fail the whole
         // publish ("无法识别的历史操作"), which silently froze every later UI update, so the list must
         // cover every kind the core can report and the check below treats the rest as unknown text.
-        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹"),QStringLiteral("复制图层"),QStringLiteral("粘贴图层"),QStringLiteral("合并图层")};
-        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge","layers","layers","layers"};
+        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹"),QStringLiteral("复制图层"),QStringLiteral("粘贴图层"),QStringLiteral("合并图层"),QStringLiteral("液化")};
+        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge","layers","layers","layers","liquify"};
         for(uint32_t depth=0;depth<=info.undo_depth+info.redo_depth;++depth) {
             auto entry=dto<PaintHistoryEntry>();auto historyStatus=paint_session_history_entry(m_core,m_session,info.publication,depth,&entry);
             if(historyStatus==PAINT_BUSY)return false;if(!check(historyStatus))return false;
@@ -474,11 +477,17 @@ public:
 
 PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) : QObject(parent), m_settingsFile(settingsFile), m_connection(std::make_shared<BackendConnection>()) {
     connect(QGuiApplication::clipboard(),&QClipboard::dataChanged,this,&PaintCoreClient::stateChanged);
-    connect(qGuiApp,&QGuiApplication::focusObjectChanged,this,[this]{emit stateChanged();});
+    // Focus changes can occur inside a QML enabled binding. Notify only the
+    // shortcuts that depend on focus, without reentering document/busy bindings.
+    connect(qGuiApp,&QGuiApplication::focusObjectChanged,this,[this]{emit layerShortcutsChanged();});
+    connect(this,&PaintCoreClient::stateChanged,this,&PaintCoreClient::layerShortcutsChanged);
     m_brushLibrary=new BrushLibrary(this);
     qRegisterMetaType<PaintSessionInfo>();
     qRegisterMetaType<PaintFileJobInfo>();
     m_worker = new BackendWorker(m_connection, settingsFile); m_worker->moveToThread(&m_thread);
+    connect(m_worker,&BackendWorker::liquifyPreferences,this,[this](const QVariantMap &values){
+        m_liquifyTool=std::clamp(values.value("tool").toInt(),0,3);m_liquifySize=std::clamp(values.value("size").toInt(),1,2000);m_liquifyStrength=std::clamp(values.value("strength").toInt(),1,100);m_liquifyDensity=std::clamp(values.value("density").toInt(),1,100);m_liquifySpeed=std::clamp(values.value("speed").toInt(),1,100);m_liquifyPressure=values.value("pressure").toBool();emit liquifyOptionsChanged();
+    });
     connect(m_worker,&BackendWorker::layerClipboardReady,this,[this](const QByteArray &bytes){
         if(m_closing)return;
         m_pendingCopy=0;
@@ -505,6 +514,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
             || static_cast<int>(info.width) != m_width || static_cast<int>(info.height) != m_height
             || static_cast<int>(info.undo_depth) != m_undo || static_cast<int>(info.redo_depth) != m_redo
             || info.active_layer_id != m_active;
+        const bool wasLiquify=m_liquifyActive,wasLiquifyBusy=liquifyBusy();
         const bool wasReady = m_ready, wasModified = modified(), wasLayerBusy=layerEditBusy();
         const bool changedLayers = m_layers != layers;
         const bool activeChanged = info.active_layer_id != m_active;
@@ -513,6 +523,8 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
         if(changedGeneration) m_nextDefaultLayer=1;
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
+        if(info.completed_sequence>=m_pendingLiquify) {m_pendingLiquify=0;m_liquifyActive=(info.flags&PAINT_SESSION_LIQUIFY)!=0;}
+        m_completedSequence=info.completed_sequence;
         m_generation = info.document_generation;
         m_revision = info.revision; m_width = static_cast<int>(info.width); m_height = static_cast<int>(info.height);
         m_undo = static_cast<int>(info.undo_depth); m_redo = static_cast<int>(info.redo_depth);
@@ -553,7 +565,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
             if(!m_selectedLayers.contains(selectedId)){m_selectedLayers={selectedId};emit selectedLayersChanged();}
         }
         if (changedLayers || activeChanged) pruneSelectedLayers();
-        if (propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
+        if (wasLiquify!=m_liquifyActive || wasLiquifyBusy!=liquifyBusy() || propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
     });
     connect(m_worker,&BackendWorker::thumbnailReady,this,[this](quint64 generation,quint64 revision,quint64 id,const QString &image) {
         if(m_closing || generation!=m_generation || revision!=m_revision)return;
@@ -605,7 +617,7 @@ void PaintCoreClient::shutdown() {
     emit stateChanged(); QMetaObject::invokeMethod(m_worker, &BackendWorker::stop, Qt::QueuedConnection);
 }
 bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, const QString &text, qreal amount, bool flag) {
-    if (m_closing || !m_ready) return false;
+    if (m_closing || !m_ready || m_liquifyActive) return false;
     clearLayerBlendPreview();
     auto command = dto<PaintCommand>(); command.kind = static_cast<uint32_t>(type); command.layer_id = id;
     const auto utf8 = text.toUtf8(); command.text = reinterpret_cast<const uint8_t *>(utf8.constData());
@@ -704,17 +716,17 @@ void PaintCoreClient::setBrushOpacity(qreal o) {m_brushLibrary->setOpacity(o);}
 void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
 // Active tools are exclusive; the remembered marquee shape is separate from these flags.
 void PaintCoreClient::setEraser(bool e) {
-    if(m_drawing || (e==m_eraser && !m_moveTool && !m_selectionTool && !m_eyedropperTool && !m_bucketTool && !m_smudgeTool)) return;
+    if(m_drawing || m_liquifyActive || (e==m_eraser && !m_moveTool && !m_selectionTool && !m_eyedropperTool && !m_bucketTool && !m_smudgeTool)) return;
     m_moveTool=false;m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;
     m_eraser=e; m_brushLibrary->setEraser(e); emit brushChanged();
 }
 void PaintCoreClient::setMoveTool(bool enabled) {
-    if(m_drawing || enabled==m_moveTool) return;
+    if(m_drawing || m_liquifyActive || enabled==m_moveTool) return;
     if(enabled){m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;m_eraser=false;m_brushLibrary->setEraser(false);}
     m_moveTool=enabled; emit brushChanged();
 }
 void PaintCoreClient::setSelectionTool(int tool) {
-    if(tool<0 || tool>5 || m_drawing || tool==m_selectionTool) return;
+    if(tool<0 || tool>5 || m_drawing || m_liquifyActive || tool==m_selectionTool) return;
     m_selectionTool=tool;
     if(tool>0) {
         if(tool<=2)m_marqueeShape=tool;else if(tool<=4)m_lassoShape=tool;
@@ -723,7 +735,8 @@ void PaintCoreClient::setSelectionTool(int tool) {
     emit brushChanged();
 }
 void PaintCoreClient::activateBrush() {
-    if(m_drawing)return;
+    if(m_liquifyActive)return;
+    if(m_drawing || m_liquifyActive)return;
     if(m_eyedropperTool){m_eyedropperTool=false;emit brushChanged();}
     // Tool changes wait for the current stroke; the remembered marquee shape survives.
     setEraser(false);
@@ -731,7 +744,7 @@ void PaintCoreClient::activateBrush() {
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
 }
 void PaintCoreClient::activateEraser() {
-    if(m_drawing)return;
+    if(m_drawing || m_liquifyActive)return;
     if(m_eyedropperTool){m_eyedropperTool=false;emit brushChanged();}
     setMoveTool(false);
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
@@ -739,14 +752,14 @@ void PaintCoreClient::activateEraser() {
 }
 
 void PaintCoreClient::activateMoveTool() {
-    if(m_drawing)return;
+    if(m_drawing || m_liquifyActive)return;
     if(m_eyedropperTool){m_eyedropperTool=false;emit brushChanged();}
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
     setEraser(false);
     setMoveTool(true);
 }
 void PaintCoreClient::activateMarquee() {
-    if(m_drawing)return;
+    if(m_drawing || m_liquifyActive)return;
     // Activating the slot restores its remembered shape.
     const int shape = (m_selectionTool==1 || m_selectionTool==2) ? m_selectionTool : m_marqueeShape;
     setMoveTool(false); setEraser(false);
@@ -760,7 +773,7 @@ void PaintCoreClient::setWandAntialias(bool value) {if(value==m_wandAntialias)re
 void PaintCoreClient::setWandContiguous(bool value) {if(value==m_wandContiguous)return;m_wandContiguous=value;emit wandOptionsChanged();}
 void PaintCoreClient::setWandAllLayers(bool value) {if(value==m_wandAllLayers)return;m_wandAllLayers=value;emit wandOptionsChanged();}
 bool PaintCoreClient::selectWand(QPointF position,int operation) {
-    if(m_selectionTool!=5 || !m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing || operation<0 || operation>3)return false;
+    if(m_selectionTool!=5 || !m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy || m_closing || operation<0 || operation>3)return false;
     if(!std::isfinite(position.x()) || !std::isfinite(position.y()) || position.x()<0 || position.y()<0 || position.x()>=m_width || position.y()>=m_height)return false;
     auto request=dto<PaintWandSelection>();request.x=static_cast<uint32_t>(position.x());request.y=static_cast<uint32_t>(position.y());request.sample_size=m_wandSampleSize;request.tolerance=m_wandTolerance;
     request.antialias=m_wandAntialias;request.contiguous=m_wandContiguous;request.all_layers=m_wandAllLayers;request.operation=operation;
@@ -772,13 +785,13 @@ void PaintCoreClient::setSelectionOperation(int operation) {if(operation<0 || op
 void PaintCoreClient::setSelectionFeather(qreal feather) {if(!std::isfinite(feather) || feather<0 || feather>1000 || feather==m_selectionFeather)return;m_selectionFeather=feather;emit selectionOptionsChanged();}
 void PaintCoreClient::setSelectionAntialias(bool enabled) {if(enabled==m_selectionAntialias)return;m_selectionAntialias=enabled;emit selectionOptionsChanged();}
 void PaintCoreClient::activateEyedropper() {
-    if(m_drawing)return;
+    if(m_drawing || m_liquifyActive)return;
     activateBrush();m_eyedropperTool=true;emit brushChanged();
 }
 
 void PaintCoreClient::setSamplingRingEnabled(bool enabled) {if(enabled==m_samplingRingEnabled)return;m_samplingRingEnabled=enabled;emit samplingRingEnabledChanged();}
-void PaintCoreClient::activateBucket() {if(m_drawing)return;activateBrush();m_bucketTool=true;emit brushChanged();}
-void PaintCoreClient::activateSmudge() {if(m_drawing)return;activateBrush();m_smudgeTool=true;emit brushChanged();}
+void PaintCoreClient::activateBucket() {if(m_drawing || m_liquifyActive)return;activateBrush();m_bucketTool=true;emit brushChanged();}
+void PaintCoreClient::activateSmudge() {if(m_drawing || m_liquifyActive)return;activateBrush();m_smudgeTool=true;emit brushChanged();}
 void PaintCoreClient::setSmudgeStrength(qreal value) {if(!std::isfinite(value) || value<0 || value>1 || value==m_smudgeStrength)return;m_smudgeStrength=value;emit smudgeOptionsChanged();}
 void PaintCoreClient::setSmudgePressure(bool value) {if(value==m_smudgePressure)return;m_smudgePressure=value;emit smudgeOptionsChanged();}
 void PaintCoreClient::setSmudgeAllLayers(bool value) {if(value==m_smudgeAllLayers)return;m_smudgeAllLayers=value;emit smudgeOptionsChanged();}
@@ -789,7 +802,7 @@ void PaintCoreClient::setBucketAntialias(bool value) {if(value==m_bucketAntialia
 void PaintCoreClient::setBucketContiguous(bool value) {if(value==m_bucketContiguous)return;m_bucketContiguous=value;emit bucketOptionsChanged();}
 void PaintCoreClient::setBucketAllLayers(bool value) {if(value==m_bucketAllLayers)return;m_bucketAllLayers=value;emit bucketOptionsChanged();}
 bool PaintCoreClient::bucketFill(QPointF position) {
-    if(!m_bucketTool || !m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing)return false;
+    if(!m_bucketTool || !m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy || m_closing)return false;
     if(!std::isfinite(position.x()) || !std::isfinite(position.y()) || position.x()<0 || position.y()<0 || position.x()>=m_width || position.y()>=m_height)return false;
     auto request=dto<PaintBucketFill>();request.x=static_cast<uint32_t>(position.x());request.y=static_cast<uint32_t>(position.y());
     request.linear_rgba[0]=linear(m_color.redF());request.linear_rgba[1]=linear(m_color.greenF());request.linear_rgba[2]=linear(m_color.blueF());request.linear_rgba[3]=m_color.alphaF();
@@ -805,7 +818,7 @@ bool PaintCoreClient::bucketFill(QPointF position) {
 
 
 bool PaintCoreClient::submitSelection(quint32 action,QRectF rect,int shape,int operation) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing) return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy || m_closing) return false;
     auto request=dto<PaintSelectionEdit>();request.action=action;
     if(action==PAINT_SELECTION_SHAPE) {request.shape=static_cast<uint32_t>(shape);request.operation=static_cast<uint32_t>(operation);request.antialias=1;request.x=rect.x();request.y=rect.y();request.width=rect.width();request.height=rect.height();}
     uint64_t sequence=0;
@@ -817,7 +830,7 @@ bool PaintCoreClient::submitSelection(quint32 action,QRectF rect,int shape,int o
     m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
 }
 bool PaintCoreClient::submitSelectionShape(const PaintSelectionShapeEdit &request) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing)return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy || m_closing)return false;
     uint64_t sequence=0;
     QMutexLocker lock(&m_connection->mutex);
     if(!m_connection->session)return false;
@@ -846,8 +859,43 @@ bool PaintCoreClient::editSelectionPath(const QVector<QPointF> &points,int opera
 bool PaintCoreClient::selectAll(){return submitSelection(PAINT_SELECTION_ALL);}
 bool PaintCoreClient::clearSelection(){return submitSelection(PAINT_SELECTION_CLEAR);}
 bool PaintCoreClient::invertSelection(){return submitSelection(PAINT_SELECTION_INVERT);}
+void PaintCoreClient::persistLiquifyOptions() {
+    emit liquifyOptionsChanged();
+    const QVariantMap values{{"tool",m_liquifyTool},{"size",m_liquifySize},{"strength",m_liquifyStrength},{"density",m_liquifyDensity},{"speed",m_liquifySpeed},{"pressure",m_liquifyPressure}};
+    if(m_worker && !m_closing)QMetaObject::invokeMethod(m_worker,[worker=m_worker,values]{worker->saveLiquifyOptions(values);},Qt::QueuedConnection);
+}
+void PaintCoreClient::setLiquifyTool(int v){if(v<0 || v>3 || m_drawing || v==m_liquifyTool)return;m_liquifyTool=v;persistLiquifyOptions();}
+void PaintCoreClient::setLiquifySize(int v){if(v<1 || v>2000 || m_drawing || v==m_liquifySize)return;m_liquifySize=v;persistLiquifyOptions();}
+void PaintCoreClient::setLiquifyStrength(int v){if(v<1 || v>100 || m_drawing || v==m_liquifyStrength)return;m_liquifyStrength=v;persistLiquifyOptions();}
+void PaintCoreClient::setLiquifyDensity(int v){if(v<1 || v>100 || m_drawing || v==m_liquifyDensity)return;m_liquifyDensity=v;persistLiquifyOptions();}
+void PaintCoreClient::setLiquifySpeed(int v){if(v<1 || v>100 || m_drawing || v==m_liquifySpeed)return;m_liquifySpeed=v;persistLiquifyOptions();}
+void PaintCoreClient::setLiquifyPressure(bool v){if(m_drawing || v==m_liquifyPressure)return;m_liquifyPressure=v;persistLiquifyOptions();}
+bool PaintCoreClient::submitLiquifyControl(quint32 kind) {
+    if(!m_ready || m_closing || m_fileBusy || m_drawing || m_pendingLiquify || (layerEditBusy() && kind!=PAINT_LIQUIFY_CANCEL))return false;
+    uint64_t sequence=0;PaintStatus status;QString error;
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_liquify(m_connection->core,m_connection->session,kind,nullptr,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    if(status!=PAINT_OK){showError(error);return false;}
+    m_pendingLiquify=sequence;
+    if(kind==PAINT_LIQUIFY_BEGIN){m_liquifyActive=true;m_liquifyFocus=false;emit liquifyOptionsChanged();}
+    emit stateChanged();return true;
+}
+bool PaintCoreClient::beginLiquify() {
+    if(m_liquifyActive)return false;
+    for(const auto &value:m_layers){const auto l=value.toMap();if(l.value("id").toULongLong()==m_active && (l.value("group").toBool() || l.value("effectiveLocks").toUInt())) {showError(QStringLiteral("液化需要未锁定的像素图层或蒙版"));return false;}}
+    clearLayerBlendPreview();clearError();return submitLiquifyControl(PAINT_LIQUIFY_BEGIN);
+}
+void PaintCoreClient::setLiquifyFocus(bool value){if(value==m_liquifyFocus || !m_liquifyActive)return;if(submitLiquifyControl(value?PAINT_LIQUIFY_FOCUS_ON:PAINT_LIQUIFY_FOCUS_OFF)){m_liquifyFocus=value;emit liquifyOptionsChanged();}}
+bool PaintCoreClient::resetLiquify(){return m_liquifyActive && submitLiquifyControl(PAINT_LIQUIFY_RESET);}
+bool PaintCoreClient::finishLiquify(bool commit){return m_liquifyActive && submitLiquifyControl(commit?PAINT_LIQUIFY_COMMIT:PAINT_LIQUIFY_CANCEL);}
+bool PaintCoreClient::submitLiquifyDab(const InputSample &from,const InputSample &to,int elapsedMs) {
+    auto request=dto<PaintLiquifyDab>();request.tool=m_liquifyTool;request.radius=m_liquifySize*.5f;request.strength=m_liquifyStrength*.01f;request.density=m_liquifyDensity*.01f;request.speed=m_liquifySpeed*.01f;request.pressure_enabled=m_liquifyPressure;request.from=point(from);request.to=point(to);request.elapsed_ms=float(elapsedMs);
+    uint64_t sequence=0;PaintStatus status;QString error;
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_liquify(m_connection->core,m_connection->session,PAINT_LIQUIFY_DAB,&request,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    if(status!=PAINT_OK){showError(error);return false;}m_lastLiquifyDab=sequence;return true;
+}
 bool PaintCoreClient::beginStroke(const InputSample &s) {
-    if (!m_ready || m_drawing || layerEditBusy()) return false;
+    if (!m_ready || m_drawing || layerEditBusy() || m_pendingLiquify) return false;
+    if(m_liquifyActive) {m_dropStroke=false;m_liquifyLast=s;m_liquifyClock.restart();if(!submitLiquifyDab(s,s,16))return false;m_drawing=true;emit stateChanged();return true;}
     for(const auto &value:m_layers) { const auto layer=value.toMap(); if(layer.value("id").toULongLong()!=m_active) continue;
         if(layer.value("group").toBool()) {showError(QStringLiteral("请选中组内像素图层绘画，或先新建图层"));return false;}
         if(layer.value("effectiveLocks").toUInt() & PAINT_LOCK_ALL) {showError(QStringLiteral("当前图层或所属组已完全锁定，请先解锁"));return false;}
@@ -856,9 +904,15 @@ bool PaintCoreClient::beginStroke(const InputSample &s) {
     m_strokeColor = m_smudgeTool && !m_smudgeFingerPainting ? QColor() : m_color;
     m_drawing = true; emit stateChanged(); return true;
 }
-void PaintCoreClient::strokeTo(const InputSample &s) { if (m_drawing && !m_dropStroke) submit(Move, s); }
+void PaintCoreClient::strokeTo(const InputSample &s) {
+    if(!m_drawing || m_dropStroke)return;
+    if(m_liquifyActive){if(submitLiquifyDab(m_liquifyLast,s,std::clamp(int(m_liquifyClock.restart()),0,50)))m_liquifyLast=s;else m_dropStroke=true;}
+    else submit(Move,s);
+}
+void PaintCoreClient::liquifyTick() {if(m_drawing && m_liquifyActive && !m_dropStroke && (m_liquifyTool==1 || m_liquifyTool==2)) {if(!submitLiquifyDab(m_liquifyLast,m_liquifyLast,std::clamp(int(m_liquifyClock.restart()),0,50)))m_dropStroke=true;m_liquifyClock.restart();}}
 void PaintCoreClient::endStroke() {
     if (!m_drawing) return;
+    if(m_liquifyActive){m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(End);
     // A committed stroke is what makes the colour "recently used"; a cancelled one never shows up.
     if (!m_dropStroke && m_strokeColor.isValid()) m_brushLibrary->useColor(m_strokeColor.name(QColor::HexArgb));
@@ -866,6 +920,7 @@ void PaintCoreClient::endStroke() {
 }
 void PaintCoreClient::cancelStroke() {
     if (!m_drawing) return;
+    if(m_liquifyActive){m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(Cancel);
     m_dropStroke = true; m_drawing = false; emit stateChanged();
 }
@@ -889,7 +944,7 @@ void PaintCoreClient::addLayer(const QString &name) {
 }
 void PaintCoreClient::removeLayer(quint64 id) { if (m_ready && !m_drawing) submit(Remove, {}, id); }
 void PaintCoreClient::requestSelectedLayerRemoval() {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy)return;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy)return;
     m_deleteLayers=m_selectedLayers;
     // An active mask is an explicit single-node edit, not a deletion of its owner's selection.
     bool groups=false;
@@ -908,7 +963,7 @@ bool PaintCoreClient::confirmSelectedLayerRemoval(int choice) {
     return removeLayers(ids,choice==1);
 }
 bool PaintCoreClient::removeLayers(const QList<quint64> &ids,bool keepChildren) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || ids.isEmpty())return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy || ids.isEmpty())return false;
     const std::vector<uint64_t> input(ids.begin(),ids.end());
     uint64_t sequence=0;PaintStatus status;QString error;
     {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;
@@ -958,7 +1013,7 @@ void PaintCoreClient::setLayerProperties(quint64 id, bool v, qreal opacity) {
     if (m_ready && !m_drawing && !layerEditBusy() && std::isfinite(opacity)) submit(Properties, {}, id, {}, std::clamp(opacity, 0., 1.), v);
 }
 bool PaintCoreClient::setAppearance(quint64 id,const QString &field,const QVariant &value) {
-    if(!m_ready || m_drawing || layerEditBusy()) return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy()) return false;
     clearLayerBlendPreview();
     QVariantMap layer;
     for(const auto &entry:m_layers) if(entry.toMap().value("id").toULongLong()==id) { layer=entry.toMap(); break; }
@@ -980,7 +1035,7 @@ bool PaintCoreClient::setLayerBlend(quint64 id,int blend) { if(blend<0 || blend>
     if(blend==27 && !std::any_of(m_layers.begin(),m_layers.end(),[id](const QVariant &v){const auto l=v.toMap();return l.value("id").toULongLong()==id && l.value("group").toBool();}))return false;
     return setAppearance(id,"blendMode",blend); }
 void PaintCoreClient::previewLayerBlend(quint64 id,int blend) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || blend<0 || blend>27)return;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy || blend<0 || blend>27)return;
     bool found=false;
     for(const auto &value:m_layers) {const auto layer=value.toMap();if(layer.value("id").toULongLong()==id && !layer.value("mask").toBool() && (blend!=27 || layer.value("group").toBool()) && !(layer.value("effectiveLocks").toUInt()&PAINT_LOCK_ALL))found=true;}
     if(!found || (m_blendPreviewLayer==id && m_blendPreviewMode==blend))return;
@@ -1004,7 +1059,7 @@ void PaintCoreClient::releaseLayerPreview(quint64 id) {
     if(!m_closing) QMetaObject::invokeMethod(m_worker,[worker=m_worker,id]{worker->referencePreview(id,false);},Qt::QueuedConnection);
 }
 bool PaintCoreClient::moveLayer(quint64 id,int dx,int dy) {
-    if(!m_ready || m_drawing || layerEditBusy() || (!dx && !dy)) return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || (!dx && !dy)) return false;
     uint64_t sequence=0; PaintStatus status; QString error;
     { QMutexLocker lock(&m_connection->mutex); if(!m_connection->session) return false;
       status=paint_session_move_layer(m_connection->core,m_connection->session,id,dx,dy,&sequence);
@@ -1015,17 +1070,17 @@ bool PaintCoreClient::moveLayer(quint64 id,int dx,int dy) {
 }
 bool PaintCoreClient::layerShortcutsAllowed() const {
     const auto *focus=QGuiApplication::focusObject();
-    return m_ready && !m_drawing && !layerEditBusy() && !m_fileBusy && !m_closing
+    return m_ready && !m_liquifyActive && !m_drawing && !layerEditBusy() && !m_fileBusy && !m_closing
         && !(focus && (focus->inherits("QQuickTextInput") || focus->inherits("QQuickTextEdit") || focus->property("cursorPosition").isValid()));
 }
-bool PaintCoreClient::canPasteLayers() const {return m_ready && !m_drawing && !layerEditBusy() && !m_fileBusy && QGuiApplication::clipboard()->mimeData()->hasFormat("application/x-drawverse-layers-v1");}
+bool PaintCoreClient::canPasteLayers() const {return m_ready && !m_liquifyActive && !m_drawing && !layerEditBusy() && !m_fileBusy && QGuiApplication::clipboard()->mimeData()->hasFormat("application/x-drawverse-layers-v1");}
 QString PaintCoreClient::mergeLayersText() const {
     if(m_selectedLayers.size()>1)return QStringLiteral("合并图层");
     for(const auto &v:m_layers){const auto l=v.toMap();if(l.value("id").toULongLong()==m_active)return l.value("group").toBool()?QStringLiteral("合并组"):QStringLiteral("向下合并");}
     return QStringLiteral("向下合并");
 }
 bool PaintCoreClient::canMergeLayers() const {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy)return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy)return false;
     QVariantMap active;
     for(const auto &v:m_layers){const auto l=v.toMap();if(l.value("id").toULongLong()==m_active)active=l;
         if(m_selectedLayers.contains(l.value("id").toULongLong()) && (l.value("effectiveLocks").toUInt()&PAINT_LOCK_ALL))return false;}
@@ -1037,7 +1092,7 @@ bool PaintCoreClient::canMergeLayers() const {
     return false;
 }
 bool PaintCoreClient::submitLayerAction(quint32 kind,const QByteArray &bytes) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing)return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy || m_closing)return false;
     clearLayerBlendPreview();
     const std::vector<uint64_t> ids(m_selectedLayers.begin(),m_selectedLayers.end());
     const bool paste=kind==PAINT_LAYER_ACTION_PASTE;
@@ -1059,7 +1114,7 @@ bool PaintCoreClient::duplicateSelectedLayers(){return submitLayerAction(PAINT_L
 bool PaintCoreClient::mergeSelectedLayers(){return canMergeLayers() && submitLayerAction(PAINT_LAYER_ACTION_MERGE);}
 
 bool PaintCoreClient::submitGroup(quint32 kind,quint64 id,quint64 parent,const QString &name) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy) return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy) return false;
     const auto bytes=name.toUtf8();auto request=dto<PaintGroupRequest>();request.kind=kind;request.layer_id=id;request.parent_id=parent;
     if(kind==PAINT_GROUP_WRAP) {request.name=reinterpret_cast<const uint8_t*>(bytes.constData());request.name_length=static_cast<uint64_t>(bytes.size());}
     uint64_t sequence=0;PaintStatus status;QString error;
@@ -1072,7 +1127,7 @@ bool PaintCoreClient::submitGroup(quint32 kind,quint64 id,quint64 parent,const Q
 }
 bool PaintCoreClient::groupLayer(quint64 id,const QString &name) {return submitGroup(PAINT_GROUP_WRAP,id,0,name);}
 bool PaintCoreClient::groupSelectedLayers(const QString &name) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_selectedLayers.isEmpty())return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy || m_selectedLayers.isEmpty())return false;
     clearLayerBlendPreview();
     const std::vector<uint64_t> ids(m_selectedLayers.begin(),m_selectedLayers.end());
     const auto bytes=name.toUtf8();uint64_t sequence=0;PaintStatus status;QString error;
@@ -1087,7 +1142,7 @@ bool PaintCoreClient::ungroupLayer(quint64 id) {return submitGroup(PAINT_GROUP_U
 bool PaintCoreClient::reparentLayer(quint64 id,quint64 parent) {return submitGroup(PAINT_GROUP_REPARENT,id,parent);}
 bool PaintCoreClient::addMask(quint64 id) {return !layerEditBusy() && !m_drawing && !m_fileBusy && submit(AddMask,{},id);}
 bool PaintCoreClient::setLayerClipping(quint64 id,bool enabled) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy) return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy) return false;
     auto options=dto<PaintLayerClipping>();options.enabled=enabled?1u:0u;
     uint64_t seq=0;PaintStatus status;QString error;
     {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;
@@ -1109,7 +1164,7 @@ bool PaintCoreClient::dropSelectedLayers(quint64 target,int placement) {
     return dropLayers(m_selectedLayers,target,placement);
 }
 bool PaintCoreClient::dropLayers(const QList<quint64> &ids,quint64 target,int placement) {
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || ids.isEmpty())return false;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy || ids.isEmpty())return false;
     const std::vector<uint64_t> input(ids.begin(),ids.end());
     uint64_t seq=0;PaintStatus status;QString error;
     {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;
@@ -1139,7 +1194,7 @@ bool PaintCoreClient::acceptLayerDrop(const QString &payload,quint64 target,int 
     return !ids.isEmpty() && dropLayers(ids,target,placement);
 }
 void PaintCoreClient::beginLayerDrag(quint64 id) {
-    if(!m_ready || m_drawing || layerEditBusy())return;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy())return;
     for(const auto &v:m_layers)if(v.toMap().value("id").toULongLong()==id) {
         if(v.toMap().value("mask").toBool() || (v.toMap().value("effectiveLocks").toUInt() & 4))return;
         if(!m_selectedLayers.contains(id))selectLayers(id,0);
@@ -1149,7 +1204,7 @@ void PaintCoreClient::beginLayerDrag(quint64 id) {
 void PaintCoreClient::addDefaultLayer() {
     const auto number=[](int n){const QString digits=QStringLiteral("零一二三四五六七八九");const QString units=QStringLiteral("千百十");QString result;bool zero=false;for(int d=1000,u=0;d>1;d/=10,++u){const int v=n/d;n%=d;if(v){if(zero)result+=digits[0];if(!(d==10 && v==1 && result.isEmpty()))result+=digits[v];result+=units[u];zero=false;}else if(!result.isEmpty() && n)zero=true;}if(n){if(zero)result+=digits[0];result+=digits[n];}return result;};
     // Names do not count groups/masks and do not reuse an existing default name.
-    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy) return;
+    if(!m_ready || m_liquifyActive || m_drawing || layerEditBusy() || m_fileBusy) return;
     QSet<QString> names;
     for(const auto &v:m_layers) names.insert(v.toMap().value("name").toString());
     int serial=m_nextDefaultLayer;QString name;
@@ -1181,7 +1236,7 @@ QString PaintCoreClient::documentName() const {
 bool PaintCoreClient::openDocument(const QUrl &path) { return submitFile(path, PAINT_FILE_OPEN, PAINT_FILE_AUTO); }
 bool PaintCoreClient::saveDocument(const QUrl &path, int format) { return submitFile(path, PAINT_FILE_SAVE, format); }
 bool PaintCoreClient::submitFile(const QUrl &path, int kind, int format) {
-    if (!m_ready || m_drawing || m_fileBusy || m_closing) return false;
+    if (!m_ready || m_liquifyActive || m_drawing || m_fileBusy || m_closing) return false;
     clearLayerBlendPreview();
     if (!path.isLocalFile() || path.toLocalFile().isEmpty()) { showError(QStringLiteral("请选择本地文件")); return false; }
     auto request = dto<PaintFileRequest>(); request.kind = static_cast<uint32_t>(kind);

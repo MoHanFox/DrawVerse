@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 20
+#define PAINT_ABI_MINOR 21
 
 #define PAINT_ABI_PATCH 0
 
@@ -78,6 +78,8 @@
 #define PAINT_FEATURE_LAYER_GROUPS 512
 
 #define PAINT_FEATURE_LINEAR_TILE_READ 4
+
+#define PAINT_FEATURE_LIQUIFY 262144
 
 #define PAINT_FEATURE_MASKS 1024
 
@@ -156,6 +158,8 @@
 
 #define PAINT_HISTORY_LAYER_PROPERTIES 9
 
+#define PAINT_HISTORY_LIQUIFY 30
+
 #define PAINT_HISTORY_MAGIC_SELECTION 22
 
 #define PAINT_HISTORY_MASK 17
@@ -211,6 +215,20 @@
 
 #define PAINT_LAYER_PIXEL 0
 
+#define PAINT_LIQUIFY_BEGIN 0
+
+#define PAINT_LIQUIFY_CANCEL 3
+
+#define PAINT_LIQUIFY_COMMIT 4
+
+#define PAINT_LIQUIFY_DAB 1
+
+#define PAINT_LIQUIFY_FOCUS_OFF 6
+
+#define PAINT_LIQUIFY_FOCUS_ON 5
+
+#define PAINT_LIQUIFY_RESET 2
+
 #define PAINT_LOCK_ALL 4
 
 #define PAINT_LOCK_POSITION 2
@@ -258,6 +276,8 @@
 #define PAINT_SELECTION_SUBTRACT 2
 
 #define PAINT_SESSION_FAILED 4
+
+#define PAINT_SESSION_LIQUIFY 8
 
 #define PAINT_SESSION_MODIFIED 2
 
@@ -609,6 +629,24 @@ typedef struct PaintLayerHierarchy {
   uint32_t depth;
   uint32_t effective_locks;
 } PaintLayerHierarchy;
+
+/**
+ * ABI 1.21: inverse-map liquify input; normalized percentages, diameter/2 radius in pixels.
+ */
+typedef struct PaintLiquifyDab {
+  uint32_t struct_size;
+  uint32_t tool;
+  uint32_t pressure_enabled;
+  uint32_t reserved;
+  float radius;
+  float strength;
+  float density;
+  float speed;
+  float elapsed_ms;
+  uint32_t reserved_tail[3];
+  struct PaintPoint from;
+  struct PaintPoint to;
+} PaintLiquifyDab;
 
 /**
  * ABI 1.17: bounded color-region selection; flags 0/1, reserved zero.
@@ -1190,6 +1228,19 @@ PaintStatus paint_session_layer_name(struct PaintCore *core,
                                      uint8_t *buffer,
                                      uint64_t capacity,
                                      uint64_t *required);
+
+/**
+ * ABI 1.21: begin/preview/reset/cancel/commit a single atomic liquify transaction.
+ * Only DAB requires a descriptor. All other actions require null. OK means queued.
+ * # Safety
+ * Provide initialized readable descriptor/points, writable nonoverlapping sequence and valid
+ * serialized core/session ownership. Input is copied, never retained. No callbacks may reenter.
+ */
+PaintStatus paint_session_liquify(struct PaintCore *core,
+                                  struct PaintSession *session,
+                                  uint32_t kind,
+                                  const struct PaintLiquifyDab *dab,
+                                  uint64_t *out_sequence);
 
 /**
  * ABI 1.4: integer relative non-destructive content translation, checked by the actor.

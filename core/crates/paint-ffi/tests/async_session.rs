@@ -27,6 +27,197 @@ macro_rules! dto {
 }
 
 #[test]
+fn liquify_blocks_edits_and_file_job_finishes_busy_without_writing() {
+    let h = Harness::new(32, 32);
+    let mut sequence = 0;
+    unsafe {
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_BEGIN,
+                ptr::null(),
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        h.wait(sequence);
+    }
+    let failed = h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_UNDO,
+        ..dto!(PaintCommand)
+    }));
+    assert_eq!(failed.last_error_status, PAINT_BUSY);
+    assert_ne!(failed.flags & PAINT_SESSION_LIQUIFY, 0);
+    let path = std::env::temp_dir().join(format!(
+        "drawverse-liquify-{}.ora",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let job = h.file(&path, PAINT_FILE_SAVE, PAINT_FILE_OPENRASTER);
+    let done = h.file_wait(job);
+    assert_eq!(done.state, PAINT_FILE_FAILED);
+    assert_eq!(done.status, PAINT_BUSY);
+    assert!(!path.exists());
+    unsafe {
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_CANCEL,
+                ptr::null(),
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        assert_eq!(h.wait(sequence).flags & PAINT_SESSION_LIQUIFY, 0);
+    }
+    let job = h.file(&path, PAINT_FILE_SAVE, PAINT_FILE_OPENRASTER);
+    assert_eq!(h.file_wait(job).state, PAINT_FILE_SUCCEEDED);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn liquify_abi_validation_preview_cancel_and_single_history() {
+    let h = Harness::new(64, 64);
+    let point = PaintPoint {
+        x: 24.,
+        y: 24.,
+        pressure: 1.,
+        tool: PAINT_TOOL_PEN,
+        ..dto!(PaintPoint)
+    };
+    let brush = PaintStrokeDesc {
+        mode: PAINT_MODE_PAINT,
+        radius: 8.,
+        opacity: 1.,
+        spacing: 0.1,
+        linear_rgba: [1., 0., 0., 1.],
+        ..dto!(PaintStrokeDesc)
+    };
+    let mut seq = 0;
+    unsafe {
+        h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_BEGIN_STROKE,
+            stroke: brush,
+            point,
+            ..dto!(PaintCommand)
+        }));
+        let original = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_END_STROKE,
+            ..dto!(PaintCommand)
+        }));
+        let before = h.pixels(0, h.frame(0, original.revision));
+        let mut dab = PaintLiquifyDab {
+            tool: 0,
+            radius: 16.,
+            strength: 0.5,
+            density: 1.,
+            speed: 1.,
+            elapsed_ms: 16.,
+            from: point,
+            to: PaintPoint { x: 32., ..point },
+            ..dto!(PaintLiquifyDab)
+        };
+        for bad in 0..5 {
+            let mut v = dab;
+            match bad {
+                0 => v.struct_size = 4,
+                1 => v.reserved = 1,
+                2 => v.from.struct_size = 4,
+                3 => v.pressure_enabled = 2,
+                _ => v.strength = f32::NAN,
+            };
+            assert_eq!(
+                paint_session_liquify(h.core, h.session, PAINT_LIQUIFY_DAB, &v, &mut seq),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(seq, 0);
+        }
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_BEGIN,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        let active = h.wait(seq);
+        assert_ne!(active.flags & PAINT_SESSION_LIQUIFY, 0);
+        assert_eq!(
+            paint_session_liquify(h.core, h.session, PAINT_LIQUIFY_DAB, &dab, &mut seq),
+            PAINT_OK
+        );
+        dab.to.x = 0.;
+        let preview = h.wait(seq);
+        assert_eq!(preview.undo_depth, original.undo_depth);
+        assert_eq!(
+            preview.flags & PAINT_SESSION_MODIFIED,
+            original.flags & PAINT_SESSION_MODIFIED
+        );
+        assert_ne!(h.pixels(0, h.frame(0, preview.revision)), before);
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_CANCEL,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        let cancelled = h.wait(seq);
+        assert_eq!(cancelled.flags & PAINT_SESSION_LIQUIFY, 0);
+        assert_eq!(h.pixels(0, h.frame(0, cancelled.revision)), before);
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_BEGIN,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        h.wait(seq);
+        dab.to.x = 32.;
+        assert_eq!(
+            paint_session_liquify(h.core, h.session, PAINT_LIQUIFY_DAB, &dab, &mut seq),
+            PAINT_OK
+        );
+        h.wait(seq);
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_COMMIT,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        let done = h.wait(seq);
+        assert_eq!(done.undo_depth, original.undo_depth + 1);
+        let mut entry = dto!(PaintHistoryEntry);
+        assert_eq!(
+            paint_session_history_entry(
+                h.core,
+                h.session,
+                done.publication,
+                done.undo_depth,
+                &mut entry
+            ),
+            PAINT_OK
+        );
+        assert_eq!(entry.kind, PAINT_HISTORY_LIQUIFY);
+    }
+}
+
+#[test]
 fn smudge_validation_copy_real_pixels_and_single_history() {
     assert_eq!(size_of::<PaintSmudgeStrokeDesc>(), 88);
     assert_eq!(offset_of!(PaintSmudgeStrokeDesc, brush), 32);
@@ -2148,7 +2339,7 @@ fn pass_through_group_appearance_validation_publication_and_undo() {
     unsafe {
         let mut version = dto!(PaintVersion);
         assert_eq!(paint_core_version(&mut version), PAINT_OK);
-        assert_eq!(version.minor, 20);
+        assert_eq!(version.minor, 21);
         let mut caps = dto!(PaintCapabilities);
         assert_eq!(paint_core_capabilities(h.core, &mut caps), PAINT_OK);
         assert_ne!(caps.features & PAINT_FEATURE_PASS_THROUGH, 0);

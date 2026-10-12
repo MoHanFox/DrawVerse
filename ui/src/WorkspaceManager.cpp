@@ -355,7 +355,7 @@ void WorkspaceManager::initializeDocks() {
     }
     auto main=DockTree::split(DockTree::leaf("__canvas"),right,"horizontal",.8,"right");
     main=DockTree::split(left,main,"horizontal",.15,"left");
-    if(m_toolsFloating) { m_docks.insert("__toolstrip",DockTree::leaf("__toolstrip"));m_windowGeometry.insert("__toolstrip",QRect(m_toolPosition,QSize(m_toolWidth+2,382))); }
+    if(m_toolsFloating) { m_docks.insert("__toolstrip",DockTree::leaf("__toolstrip"));m_windowGeometry.insert("__toolstrip",QRect(m_toolPosition,QSize(m_toolWidth+2,412))); }
     else main=DockTree::split(DockTree::leaf("__toolstrip"),main,"horizontal",.05,"toolsFirst");
     m_docks.insert("main",main);
 }
@@ -420,9 +420,9 @@ void WorkspaceManager::addDock(const QString &group,const QString &location,cons
     }
     if(location=="floating") {
         const int at=index(group);
-        const auto size=at>=0?m_groups[at].geometry.size():group=="__canvas"?QSize(900,650):QSize(m_toolWidth+2,382);
+        const auto size=at>=0?m_groups[at].geometry.size():group=="__canvas"?QSize(900,650):QSize(m_toolWidth+2,412);
         auto geometry=safeGeometry(QRect(QCursor::pos()-QPoint(24,12),size));
-        if(group=="__toolstrip") geometry=QRect(m_toolPosition,QSize(m_toolWidth+2,382));
+        if(group=="__toolstrip") geometry=QRect(m_toolPosition,QSize(m_toolWidth+2,412));
         const auto host=m_docks.contains(group)?newId():group;
         m_docks.insert(host,DockTree::leaf(group));m_windowGeometry.insert(host,geometry);
         if(at>=0) m_groups[at].geometry=geometry;
@@ -448,7 +448,7 @@ void WorkspaceManager::addDock(const QString &group,const QString &location,cons
 }
 void WorkspaceManager::syncToolsLocation() {
     const auto host=hostFor("__toolstrip"); const bool floating=host!="main";
-    if(floating) m_toolPosition=m_windowGeometry.value(host,QRect(m_toolPosition,QSize(m_toolWidth+2,382))).topLeft();
+    if(floating) m_toolPosition=m_windowGeometry.value(host,QRect(m_toolPosition,QSize(m_toolWidth+2,412))).topLeft();
     m_toolsFloating=floating; emit toolStripChanged();
 }
 QVariantList WorkspaceManager::floatingWindows() const {
@@ -475,7 +475,7 @@ QSizeF WorkspaceManager::dockMinimum(const DockTree::Node &node,bool expanded) c
     if(node.contains("group")) {
         const auto id=node.value("group").toString();
         if(id=="__canvas") return {320,200};
-        if(id=="__toolstrip") return {qreal(m_toolWidth),380};
+        if(id=="__toolstrip") return {qreal(m_toolWidth),410};
         const int at=index(id);if(at<0)return {};
         const auto &g=m_groups[at];
         const bool first=columnGroups(id).first()==id;
@@ -597,7 +597,7 @@ void WorkspaceManager::setSplitRatio(const QString &host,const QString &split,do
 }
 QVariantMap WorkspaceManager::groupDefinition(const QString &id) const {
     if(id=="__canvas" || id=="__toolstrip") {
-        const auto host=hostFor(id); const auto geometry=m_windowGeometry.value(host,id=="__canvas"?QRect(100,100,900,650):QRect(100,100,38,382));
+        const auto host=hostFor(id); const auto geometry=m_windowGeometry.value(host,id=="__canvas"?QRect(100,100,900,650):QRect(100,100,38,412));
         return {{"id",id},{"host",host},{"location",host=="main"?"center":"floating"},{"panels",QStringList{id}},{"active",id},
                 {"x",geometry.x()},{"y",geometry.y()},{"width",geometry.width()},{"height",geometry.height()},{"collapsed",false}};
     }

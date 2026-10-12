@@ -14,6 +14,7 @@ _Static_assert(sizeof(PaintDocumentInfo) == 64, "document layout drift");
 _Static_assert(sizeof(PaintLayerInfo) == 40, "layer layout drift");
 _Static_assert(sizeof(PaintPoint) == 64, "point layout drift");
 _Static_assert(offsetof(PaintPoint, timestamp_ns) == 56, "point offset drift");
+_Static_assert(sizeof(PaintLiquifyDab) == 176 && offsetof(PaintLiquifyDab, from) == 48 && offsetof(PaintLiquifyDab, to) == 112, "liquify layout drift");
 _Static_assert(sizeof(PaintStrokeDesc) == 56, "stroke layout drift");
 _Static_assert(offsetof(PaintStrokeDesc, linear_rgba) == 28, "color offset drift");
 _Static_assert(sizeof(PaintTile) == 56, "tile layout drift");

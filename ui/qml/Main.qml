@@ -80,6 +80,7 @@ ApplicationWindow {
     property url pendingOpen: ""
     property bool savingBeforeAction: false
     property string fileNotice: ""
+    readonly property bool liquifying:PaintClient.liquifyActive
     property var floatingWindows: ({})
     property var dockingHint:null
     Component {id:hintFactory;DockHintWindow {}}
@@ -98,18 +99,22 @@ ApplicationWindow {
     signal newDocumentRequested()
     onNewDocumentRequested:newDialog.open()
     readonly property bool documentsBlocked:root.savingBeforeAction || closeDialog.opened || busyCloseDialog.opened || saveDialog.visible || exportDialog.visible
-    DocumentManager {id:documents;objectName:"documentManager";interactionBlocked:root.documentsBlocked}
+    DocumentManager {id:documents;objectName:"documentManager";interactionBlocked:root.documentsBlocked || PaintClient.liquifyActive}
     Item {id:canvasParking;visible:false}
-    CanvasPane {id:documentPane;parent:canvasParking;initialDocument:true;parkingParent:canvasParking;mainWindow:root;savingBlocked:root.documentsBlocked}
+    CanvasPane {id:documentPane;parent:canvasParking;initialDocument:true;parkingParent:canvasParking;mainWindow:root;savingBlocked:root.documentsBlocked || PaintClient.liquifyActive && !documentPane.ownClient.liquifyActive}
     function paneFor(id){return documentPanes[id] || null}
     function isInitial(id){return id===initialDocumentId}
+    property bool syncingDocuments:false
     function syncDocuments(){
+        if(syncingDocuments){Qt.callLater(syncDocuments);return}
+        syncingDocuments=true
+        try {
         const live={},all=documents.documents
         for(let i=0;i<all.length;i++) {
             const d=all[i];live[d.id]=true
             if(!documentPanes[d.id]) {
                 if(!initialDocumentId){initialDocumentId=d.id;documentPane.documentId=d.id;documentPanes[d.id]=documentPane}
-                else documentPanes[d.id]=documentFactory.createObject(canvasParking,{documentId:d.id,ownClient:d.client,parkingParent:canvasParking,mainWindow:root,savingBlocked:Qt.binding(()=>root.documentsBlocked)})
+                else documentPanes[d.id]=documentFactory.createObject(canvasParking,{documentId:d.id,ownClient:d.client,parkingParent:canvasParking,mainWindow:root,savingBlocked:Qt.binding(()=>root.documentsBlocked || PaintClient.liquifyActive && !d.client.liquifyActive)})
             }
         }
         for(const id in documentPanes)if(!live[id]) {documentPanes[id].park();if(id!==initialDocumentId)documentPanes[id].destroy();delete documentPanes[id]}
@@ -118,6 +123,7 @@ ApplicationWindow {
         for(const id in documentWindows)if(!keep[id]){documentWindows[id].releaseCanvas();documentWindows[id].visible=false;documentWindows[id].destroy();delete documentWindows[id]}
         const active=paneFor(documents.activeId);canvas=active?active.canvasView:documentPane.canvasView
         if(mainDocumentArea)mainDocumentArea.refresh()
+        } finally {syncingDocuments=false}
     }
     Component {id:documentFactory;CanvasPane {}}
     Component {id:documentWindowFactory;DocumentWindow {}}
@@ -128,7 +134,7 @@ ApplicationWindow {
         for(let i=0;i<groups.length;i++) {
             const g=groups[i]; live[g.id]=true
             if(floatingWindows[g.id]) floatingWindows[g.id].updateLayout(g)
-            else floatingWindows[g.id]=floatingFactory.createObject(root,{windowData:g,canvasPane:mainDocumentArea,canvasView:Qt.binding(()=>root.canvas),appClosing:Qt.binding(()=>root.quitting)})
+            else floatingWindows[g.id]=floatingFactory.createObject(root,{windowData:g,canvasPane:mainDocumentArea,canvasView:Qt.binding(()=>root.canvas),appClosing:Qt.binding(()=>root.quitting),liquifyHidden:Qt.binding(()=>root.liquifying)})
         }
         for(const id in floatingWindows) if(!live[id]) {
             floatingWindows[id].releaseCanvas();floatingWindows[id].visible=false; floatingWindows[id].destroy(); delete floatingWindows[id]
@@ -165,6 +171,8 @@ ApplicationWindow {
         else if (action === "new") documents.newDocument(newWidth.value,newHeight.value,transparentBackground.checked)
     }
     function requestAction(action) {
+        if(liquifying){fileNotice="请先确定或取消液化";return}
+
         pendingAction = action
         if (action==="close") {executePending();return}
         if (action==="closeDocument" && PaintClient.fileBusy) busyCloseDialog.open()
@@ -265,10 +273,10 @@ ApplicationWindow {
             Action { text: "新建画布…"; shortcut: StandardKey.New; enabled: !documents.activeId.length || PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: newDialog.open() }
             Action { text: "打开…"; shortcut: StandardKey.Open; enabled: !documents.activeId.length || PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: openDialog.open() }
             MenuSeparator {}
-            Action { text: "保存"; shortcut: StandardKey.Save; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: root.saveCurrent() }
-            Action { text: "另存为 OpenRaster…"; shortcut: StandardKey.SaveAs; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: saveDialog.open() }
+            Action { text: "保存"; shortcut: StandardKey.Save; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: root.saveCurrent() }
+            Action { text: "另存为 OpenRaster…"; shortcut: StandardKey.SaveAs; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: saveDialog.open() }
             MenuSeparator {}
-            Action { text: "导出为 PNG…"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: exportDialog.open() }
+            Action { text: "导出为 PNG…"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy; onTriggered: exportDialog.open() }
             Action { text: "导出 WebP…"; enabled: false }
             Action { text: "导出 JPEG…"; enabled: false }
             Action { text: "导出 TIFF…（待支持）"; enabled: false }
@@ -314,32 +322,34 @@ ApplicationWindow {
         GlassMenu {
             topLevel:true
             title: "图层"
-            Action { text: "新建图层"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.addDefaultLayer() }
-            Action {objectName:"duplicateLayersAction";text:"复制图层";enabled:PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy;onTriggered:PaintClient.duplicateSelectedLayers()}
-            Action {objectName:"copyLayersAction";text:"拷贝图层";enabled:PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy;onTriggered:PaintClient.copySelectedLayers()}
+            Action { text: "新建图层"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.addDefaultLayer() }
+            Action {objectName:"duplicateLayersAction";text:"复制图层";enabled:!PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy;onTriggered:PaintClient.duplicateSelectedLayers()}
+            Action {objectName:"copyLayersAction";text:"拷贝图层";enabled:!PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy;onTriggered:PaintClient.copySelectedLayers()}
             Action {objectName:"pasteLayersAction";text:"粘贴图层";enabled:PaintClient.canPasteLayers;onTriggered:PaintClient.pasteLayers()}
             Action {objectName:"mergeLayersAction";text:PaintClient.mergeLayersText;enabled:PaintClient.canMergeLayers;onTriggered:PaintClient.mergeSelectedLayers()}
-            Action { text: "删除图层"; enabled: PaintClient.ready && !PaintClient.drawing && PaintClient.layers.length>1; onTriggered: PaintClient.requestSelectedLayerRemoval() }
+            Action { text: "删除图层"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && PaintClient.layers.length>1; onTriggered: PaintClient.requestSelectedLayerRemoval() }
             MenuSeparator {}
-            Action { objectName:"newLayerGroupAction";text: "新建组"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.groupSelectedLayers("组") }
-            Action { text: "解组（移除组属性）"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.ungroupLayer(PaintClient.activeLayer) }
+            Action { objectName:"newLayerGroupAction";text: "新建组"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.groupSelectedLayers("组") }
+            Action { text: "解组（移除组属性）"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.ungroupLayer(PaintClient.activeLayer) }
             MenuSeparator {}
-            Action { text: "添加白色蒙版"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.addMask(PaintClient.activeLayer) }
-            Action { text: "创建剪贴蒙版"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy && !PaintClient.layerEditBusy; onTriggered: PaintClient.toggleActiveClipping() }
+            Action { text: "添加白色蒙版"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.addMask(PaintClient.activeLayer) }
+            Action { text: "创建剪贴蒙版"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy && !PaintClient.layerEditBusy; onTriggered: PaintClient.toggleActiveClipping() }
         }
         GlassMenu {
             topLevel:true
             title: "选择"
-            Action { text: "矩形选框（M）"; enabled: PaintClient.ready && !PaintClient.drawing; onTriggered: PaintClient.selectionTool=1 }
-            Action { text: "椭圆选框（Shift+M）"; enabled: PaintClient.ready && !PaintClient.drawing; onTriggered: PaintClient.selectionTool=2 }
+            Action { text: "矩形选框（M）"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing; onTriggered: PaintClient.selectionTool=1 }
+            Action { text: "椭圆选框（Shift+M）"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing; onTriggered: PaintClient.selectionTool=2 }
             MenuSeparator {}
-            Action { objectName:"selectionAllAction"; text: "全选"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.selectAll() }
+            Action { objectName:"selectionAllAction"; text: "全选"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.selectAll() }
             Action { objectName:"selectionClearAction"; text: "取消选择"; enabled: PaintClient.selectionEnabled && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.clearSelection() }
-            Action { objectName:"selectionInvertAction"; text: "反向选择"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.invertSelection() }
+            Action { objectName:"selectionInvertAction"; text: "反向选择"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.invertSelection() }
         }
         GlassMenu {
             id:filterMenu;objectName:"filterMenu";topLevel:true
             title: "滤镜"
+            Action {objectName:"liquifyAction";text:"液化…";enabled:!PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy;onTriggered:PaintClient.beginLiquify()}
+            MenuSeparator {}
             GlassMenu {
                 objectName: "filterBlurSubmenu"
                 title: "模糊";cascadeParent:filterMenu
@@ -401,7 +411,7 @@ ApplicationWindow {
         objectName: "brushOptionsBar"
         height: 36; color: Theme.raised
         RowLayout {
-            visible: !PaintClient.selectionTool && !PaintClient.eyedropperTool && !PaintClient.bucketTool && !PaintClient.smudgeTool
+            visible: !PaintClient.liquifyActive && !PaintClient.selectionTool && !PaintClient.eyedropperTool && !PaintClient.bucketTool && !PaintClient.smudgeTool
             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
             Icon { name: PaintClient.selectionTool ? (PaintClient.selectionTool===2 ? "ellipseSelection":"rectangleSelection") : PaintClient.moveTool ? "move" : PaintClient.eraser ? "eraser" : "brush"; Layout.preferredWidth: 17; Layout.preferredHeight: 17 }
             Label { text: PaintClient.selectionTool ? (PaintClient.selectionTool===2?"椭圆选框":"矩形选框") : PaintClient.moveTool ? "移动图层" : PaintClient.eraser ? "橡皮擦" : "画笔"; color: Theme.text; Layout.preferredWidth: 42 }
@@ -415,28 +425,29 @@ ApplicationWindow {
             Label { text: "压感"; color: Theme.muted }
             Item { Layout.fillWidth: true }
         }
+        LiquifyOptionsBar {visible:PaintClient.liquifyActive;anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;controller:PaintClient}
         SelectionOptionsBar {
-            visible:PaintClient.selectionTool>0 && PaintClient.selectionTool<5
+            visible:!PaintClient.liquifyActive && PaintClient.selectionTool>0 && PaintClient.selectionTool<5
             anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:12
             client:PaintClient
         }
         BucketOptionsBar {
-            visible:PaintClient.bucketTool
+            visible:!PaintClient.liquifyActive && PaintClient.bucketTool
             anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8
             client:PaintClient
         }
         WandOptionsBar {
-            visible:PaintClient.selectionTool===5
+            visible:!PaintClient.liquifyActive && PaintClient.selectionTool===5
             anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8
             client:PaintClient
         }
         SmudgeOptionsBar {
-            visible:PaintClient.smudgeTool
+            visible:!PaintClient.liquifyActive && PaintClient.smudgeTool
             anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8
             client:PaintClient
         }
         RowLayout {
-            visible:PaintClient.eyedropperTool
+            visible:!PaintClient.liquifyActive && PaintClient.eyedropperTool
             anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:12;spacing:8
             Icon {name:"eyedropper";Layout.preferredWidth:17;Layout.preferredHeight:17}
             Label {text:"吸色";color:Theme.text}
@@ -504,7 +515,7 @@ ApplicationWindow {
     Shortcut { context:Qt.ApplicationShortcut; sequence: "I"; enabled: canvas.activeFocus; onActivated: PaintClient.activateEyedropper() }
     Shortcut { context:Qt.ApplicationShortcut; sequence: "F"; enabled: canvas.activeFocus; onActivated: canvas.fitToView() }
     Shortcut { context:Qt.ApplicationShortcut; sequence: "Esc"; enabled: PaintClient.drawing; onActivated: PaintClient.cancelStroke() }
-    Shortcut { context:Qt.ApplicationShortcut; sequence: Qt.platform.os === "osx" ? "Meta+Alt+G" : "Ctrl+Alt+G"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy; onActivated: PaintClient.toggleActiveClipping() }
+    Shortcut { context:Qt.ApplicationShortcut; sequence: Qt.platform.os === "osx" ? "Meta+Alt+G" : "Ctrl+Alt+G"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy; onActivated: PaintClient.toggleActiveClipping() }
     Connections {
         target:PaintClient
         function onGroupDeletionRequested() {groupDeleteDialog.owner=PaintClient;groupDeleteDialog.open()}

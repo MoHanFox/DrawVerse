@@ -14,14 +14,15 @@ PanelWindow {
     // A real top-level window, not a Qt.Tool: Windows gives tool windows the WS_EX_TOOLWINDOW style,
     // which hides them from capture sources such as OBS. It can still be activated, which the
     // window drag and the dock interactions rely on.
-    visible:true;flags:Qt.Window|Qt.FramelessWindowHint
+    property bool liquifyHidden:false
+    visible:!liquifyHidden;flags:Qt.Window|Qt.FramelessWindowHint
     title:"DrawVerse · "+windowData.panels.map(p=>Workspace.panelDefinition(p).title).join(" / ")
     color:windowData.icons?Theme.surface:"transparent"
     Rectangle {anchors.fill:parent;color:"transparent";border.color:Theme.line}
     Rectangle {objectName:"floatingColumnBody";x:1;y:windowData.icons?1:29;width:parent.width-2;height:parent.height-y-1;color:Theme.surface}
     x:windowData.x;y:windowData.y;width:windowData.width;height:windowData.height
     minimumWidth:onlyTools?38:Math.min(windowData.minimumWidth,Workspace.availableScreenGeometry(root).width)
-    minimumHeight:onlyTools?382:Math.min(windowData.minimumHeight,Workspace.availableScreenGeometry(root).height)
+    minimumHeight:onlyTools?412:Math.min(windowData.minimumHeight,Workspace.availableScreenGeometry(root).height)
     maximumWidth:onlyTools?74:windowData.icons?windowData.minimumWidth:16777215
     maximumHeight:16777215
     DockWorkspace {id:docks;anchors.fill:parent;anchors.margins:1;hostId:root.windowData.id;canvasPane:root.canvasPane;canvasView:root.canvasView}

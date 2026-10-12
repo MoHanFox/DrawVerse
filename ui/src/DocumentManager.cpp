@@ -65,14 +65,14 @@ bool DocumentManager::activate(const QString &id) {
     auto *value=client(id);if(!value)return false;
     if(m_interactionBlocked && !m_active.isEmpty() && id!=m_active)return false;
     if(id==m_active && m_groups.value(m_documents[index(id)].host).active==id)return true;
-    if(auto *old=client(m_active);old && old->drawing())return id==m_active;
+    if(auto *old=client(m_active);old && (old->drawing() || old->liquifyActive()))return id==m_active;
     m_active=id;m_groups[m_documents[index(id)].host].active=id;
     if(m_context && m_context->contextProperty("PaintClient").value<QObject*>()!=value)m_context->setContextProperty("PaintClient",value);
     emit activeChanged();emit groupsChanged();return true;
 }
 QString DocumentManager::create(int width,int height,bool transparent,const QUrl &url) {
     if(m_quitting || !m_initial || width<1 || height<1 || width>1000000 || height>1000000)return {};
-    if(auto *active=activeClient();active && active->drawing())return {};
+    if(auto *active=activeClient();active && (active->drawing() || active->liquifyActive()))return {};
     auto *created=new PaintCoreClient(this,m_initial->settingsFile());track(created);
     const auto id=add(created);auto initialized=std::make_shared<bool>(false);
     connect(created,&PaintCoreClient::stateChanged,this,[created,width,height,transparent,url,initialized] {
@@ -94,8 +94,8 @@ QString DocumentManager::create(int width,int height,bool transparent,const QUrl
 QString DocumentManager::newDocument(int width,int height,bool transparent){return create(width,height,transparent,{});}
 QString DocumentManager::openDocument(const QUrl &url){if(url.isEmpty())return {};return create(960,640,false,url);}
 bool DocumentManager::moveDocument(const QString &id,const QString &host) {
-    const int at=index(id);if(at<0 || !m_groups.contains(host) || m_documents[at].client->drawing())return false;
-    if(auto *active=activeClient();active && active->drawing())return false;
+    const int at=index(id);if(at<0 || !m_groups.contains(host) || (m_documents[at].client->drawing() || m_documents[at].client->liquifyActive()))return false;
+    if(auto *active=activeClient();active && (active->drawing() || active->liquifyActive()))return false;
     const auto old=m_documents[at].host;if(old==host){activate(id);return true;}
     auto &source=m_groups[old];source.documents.removeAll(id);
     if(source.active==id)source.active=source.documents.value(0);
@@ -104,8 +104,8 @@ bool DocumentManager::moveDocument(const QString &id,const QString &host) {
     emit documentsChanged();emit groupsChanged();activate(id);return true;
 }
 void DocumentManager::floatDocument(const QString &id) {
-    if(m_interactionBlocked || !client(id) || client(id)->drawing())return;
-    if(auto *active=activeClient();active && active->drawing())return;
+    if(m_interactionBlocked || !client(id) || (client(id)->drawing() || client(id)->liquifyActive()))return;
+    if(auto *active=activeClient();active && (active->drawing() || active->liquifyActive()))return;
     const auto host=uid();m_groups.insert(host,{});
     auto &geometry=m_groups[host].geometry;geometry.moveTopLeft(QCursor::pos()-QPoint(24,12));
     if(auto *screen=QGuiApplication::screenAt(QCursor::pos()))geometry.moveTopLeft(screen->availableGeometry().topLeft()+QPoint(40,40));
@@ -115,7 +115,7 @@ void DocumentManager::returnWindow(const QString &host){const auto ids=m_groups.
 void DocumentManager::requestClose(const QString &id){if(!m_interactionBlocked && client(id))emit closeRequested(id);}
 bool DocumentManager::closeDocument(const QString &id,bool discard) {
     const int at=index(id);if(at<0)return false;auto *value=m_documents[at].client.data();
-    if(!value || value->drawing() || (!discard && (value->modified() || value->fileBusy())))return false;
+    if(!value || value->drawing() || value->liquifyActive() || (!discard && (value->modified() || value->fileBusy())))return false;
     const auto host=m_documents[at].host;auto &g=m_groups[host];g.documents.removeAll(id);if(g.active==id)g.active=g.documents.value(0);
     if(g.documents.isEmpty() && host!="main")m_groups.remove(host);m_documents.removeAt(at);
     if(m_active==id){m_active.clear();if(!m_documents.isEmpty())activate(m_documents.last().id);else {if(m_context)m_context->setContextProperty("PaintClient",m_initial.data());emit activeChanged();}}
@@ -129,8 +129,8 @@ void DocumentManager::shutdown() {
 void DocumentManager::updateGeometry(const QString &host,int x,int y,int width,int height){if(host!="main" && m_groups.contains(host))m_groups[host].geometry=QRect(x,y,std::clamp(width,320,4000),std::clamp(height,200,3000));}
 void DocumentManager::registerTarget(const QString &host,QQuickItem *item){m_targets[host]=item;}
 void DocumentManager::beginDrag(const QString &id,bool whole) {
-    const int at=index(id);if(at<0 || m_interactionBlocked || m_drag.active() || !m_dragHost.isEmpty() || m_documents[at].client->drawing())return;
-    if(auto *active=activeClient();active && active->drawing())return;
+    const int at=index(id);if(at<0 || m_interactionBlocked || m_drag.active() || !m_dragHost.isEmpty() || (m_documents[at].client->drawing() || m_documents[at].client->liquifyActive()))return;
+    if(auto *active=activeClient();active && (active->drawing() || active->liquifyActive()))return;
     m_dragGroups=m_groups;m_dragDocuments=m_documents;
     auto host=m_documents[at].host;
     if(host=="main" || !whole) {floatDocument(id);host=m_documents[index(id)].host;}

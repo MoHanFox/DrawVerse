@@ -108,6 +108,7 @@ private:
     QImage m_image;
     QRectF m_imageRegion;
     quint64 m_generation = 0;
+    QTimer m_liquifyTimer;
     QTimer m_viewTimer;
     QMetaObject::Connection m_dpiConnection;
     qreal m_zoom = 1;

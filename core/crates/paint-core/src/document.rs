@@ -96,6 +96,44 @@ mod history_failure_tests {
         assert_eq!(doc.layer(1).unwrap().properties().opacity, 1.);
     }
     #[test]
+    fn liquify_history_failure_keeps_cancelable_preview_and_backed_undo_is_exact() {
+        let mut doc = document();
+        let original = pixels(&doc);
+        let depth = doc.history_depth();
+        let dab = crate::LiquifyDab {
+            tool: 0,
+            radius: 100.,
+            strength: 0.5,
+            density: 1.,
+            speed: 1.,
+            pressure_enabled: false,
+            from: InputPoint::new(80., 64., 1.),
+            to: InputPoint::new(104., 64., 1.),
+            elapsed_ms: 16.,
+        };
+        doc.begin_liquify().unwrap();
+        doc.liquify_dab(dab).unwrap();
+        let preview = pixels(&doc);
+        assert_ne!(preview, original);
+        crate::history_storage::fail_writes_for_test(true);
+        let result = doc.commit_liquify();
+        crate::history_storage::fail_writes_for_test(false);
+        assert!(matches!(result, Err(Error::HistoryStorage(_))));
+        assert!(doc.liquify_active());
+        assert_eq!(pixels(&doc), preview);
+        assert_eq!(doc.history_depth(), depth);
+        doc.cancel_liquify().unwrap();
+        assert_eq!(pixels(&doc), original);
+        doc.begin_liquify().unwrap();
+        doc.liquify_dab(dab).unwrap();
+        doc.commit_liquify().unwrap();
+        assert!(doc.history_disk_bytes() > 0);
+        doc.undo().unwrap();
+        assert_eq!(pixels(&doc), original);
+        doc.redo().unwrap();
+        assert_eq!(pixels(&doc), preview);
+    }
+    #[test]
     fn damaged_backing_does_not_partially_undo_or_redo() {
         for redo in [false, true] {
             let mut doc = document();
@@ -360,6 +398,7 @@ pub struct Document {
     options: DocumentOptions,
     history: History,
     stroke: Option<Stroke>,
+    liquify: Option<liquify::LiquifyState>,
     revision: u64,
     dirty: DirtyTiles,
     selection: crate::Selection,
@@ -372,8 +411,11 @@ pub use bucket::BucketFill;
 #[path = "wand.rs"]
 mod wand;
 pub use wand::WandSelection;
+#[path = "liquify.rs"]
+mod liquify;
 #[path = "smudge.rs"]
 mod smudge;
+pub use liquify::LiquifyDab;
 
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
     if layers.iter().any(|l| l.group || l.mask || l.clipped) {
@@ -577,6 +619,7 @@ impl Document {
             options,
             history: History::default(),
             stroke: None,
+            liquify: None,
             selection: crate::Selection::default(),
             selection_cache: Default::default(),
             revision: 0,
@@ -806,7 +849,7 @@ impl Document {
     }
 
     fn idle(&self) -> Result<()> {
-        if self.stroke.is_some() {
+        if self.stroke.is_some() || self.liquify.is_some() {
             Err(Error::Busy)
         } else {
             Ok(())

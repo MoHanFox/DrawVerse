@@ -15,7 +15,34 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 20;
+pub const PAINT_ABI_MINOR: u32 = 21;
+pub const PAINT_FEATURE_LIQUIFY: u64 = 262144;
+pub const PAINT_SESSION_LIQUIFY: u32 = 8;
+pub const PAINT_HISTORY_LIQUIFY: u32 = 30;
+pub const PAINT_LIQUIFY_BEGIN: u32 = 0;
+pub const PAINT_LIQUIFY_DAB: u32 = 1;
+pub const PAINT_LIQUIFY_RESET: u32 = 2;
+pub const PAINT_LIQUIFY_CANCEL: u32 = 3;
+pub const PAINT_LIQUIFY_COMMIT: u32 = 4;
+pub const PAINT_LIQUIFY_FOCUS_ON: u32 = 5;
+pub const PAINT_LIQUIFY_FOCUS_OFF: u32 = 6;
+/// ABI 1.21: inverse-map liquify input; normalized percentages, diameter/2 radius in pixels.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintLiquifyDab {
+    pub struct_size: u32,
+    pub tool: u32,
+    pub pressure_enabled: u32,
+    pub reserved: u32,
+    pub radius: f32,
+    pub strength: f32,
+    pub density: f32,
+    pub speed: f32,
+    pub elapsed_ms: f32,
+    pub reserved_tail: [u32; 3],
+    pub from: PaintPoint,
+    pub to: PaintPoint,
+}
 pub const PAINT_FEATURE_LAYER_ACTIONS: u64 = 131072;
 pub const PAINT_LAYER_ACTION_COPY: u32 = 0;
 pub const PAINT_LAYER_ACTION_PASTE: u32 = 1;

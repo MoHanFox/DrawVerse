@@ -44,6 +44,7 @@ Rectangle {
         Rectangle {x:1;y:8;width:15;height:1;color:"white"}
         Rectangle {x:8;y:1;width:1;height:15;color:"white"}
     }
+    Shortcut {sequence:"Escape";context:Qt.ApplicationShortcut;enabled:root.visible && root.ownClient.liquifyActive && !root.ownClient.drawing;onActivated:root.ownClient.finishLiquify(false)}
     BusyIndicator {objectName:"canvasBusy";anchors.centerIn:parent;running:!root.ownClient.ready;visible:running}
     Shortcut {sequences:[StandardKey.Undo];context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.drawing;onActivated:root.ownClient.undo()}
     Shortcut {sequences:[StandardKey.Redo];context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.drawing;onActivated:root.ownClient.redo()}
