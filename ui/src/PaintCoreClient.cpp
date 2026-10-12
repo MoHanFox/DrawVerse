@@ -728,6 +728,7 @@ void PaintCoreClient::activateMarquee() {
 void PaintCoreClient::activateLasso() {setSelectionTool(m_lassoShape);}
 void PaintCoreClient::setWandSampleSize(int value) {if(!QList<int>{1,3,5,11,31,51,101}.contains(value) || value==m_wandSampleSize)return;m_wandSampleSize=value;emit wandOptionsChanged();}
 void PaintCoreClient::setWandTolerance(int value) {if(value<0 || value>255 || value==m_wandTolerance)return;m_wandTolerance=value;emit wandOptionsChanged();}
+void PaintCoreClient::setWandOperation(int value) {if(value<0 || value>3 || value==m_wandOperation)return;m_wandOperation=value;emit wandOptionsChanged();}
 void PaintCoreClient::setWandAntialias(bool value) {if(value==m_wandAntialias)return;m_wandAntialias=value;emit wandOptionsChanged();}
 void PaintCoreClient::setWandContiguous(bool value) {if(value==m_wandContiguous)return;m_wandContiguous=value;emit wandOptionsChanged();}
 void PaintCoreClient::setWandAllLayers(bool value) {if(value==m_wandAllLayers)return;m_wandAllLayers=value;emit wandOptionsChanged();}

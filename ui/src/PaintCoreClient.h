@@ -72,6 +72,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool bucketTool READ bucketTool NOTIFY brushChanged)
     Q_PROPERTY(int wandSampleSize READ wandSampleSize WRITE setWandSampleSize NOTIFY wandOptionsChanged)
     Q_PROPERTY(int wandTolerance READ wandTolerance WRITE setWandTolerance NOTIFY wandOptionsChanged)
+    Q_PROPERTY(int wandOperation READ wandOperation WRITE setWandOperation NOTIFY wandOptionsChanged)
     Q_PROPERTY(bool wandAntialias READ wandAntialias WRITE setWandAntialias NOTIFY wandOptionsChanged)
     Q_PROPERTY(bool wandContiguous READ wandContiguous WRITE setWandContiguous NOTIFY wandOptionsChanged)
     Q_PROPERTY(bool wandAllLayers READ wandAllLayers WRITE setWandAllLayers NOTIFY wandOptionsChanged)
@@ -153,6 +154,8 @@ public:
     bool selectWand(QPointF position, int operation);
     int wandSampleSize() const {return m_wandSampleSize;}
     int wandTolerance() const {return m_wandTolerance;}
+    int wandOperation() const {return m_wandOperation;}
+    void setWandOperation(int value);
     bool wandAntialias() const {return m_wandAntialias;}
     bool wandContiguous() const {return m_wandContiguous;}
     bool wandAllLayers() const {return m_wandAllLayers;}
@@ -315,6 +318,7 @@ private:
     bool m_eyedropperTool = false;
     bool m_bucketTool = false;
     int m_wandSampleSize=1,m_wandTolerance=10;
+    int m_wandOperation=1;
     bool m_wandAntialias=true,m_wandContiguous=true,m_wandAllLayers=false;
     qreal m_bucketOpacity = 1;
     int m_bucketTolerance = 0;

@@ -292,7 +292,7 @@ void CanvasItem::mousePressEvent(QMouseEvent *e) {
         e->accept(); return;
     }
     if(e->button()!=Qt::LeftButton){e->ignore();return;}
-    if(m_client->selectionTool()==5 && documentRect().contains(e->position())) {const bool add=e->modifiers().testFlag(Qt::ShiftModifier),sub=e->modifiers().testFlag(Qt::AltModifier);e->setAccepted(m_client->selectWand(documentPoint(e->position()),add?(sub?3:1):(sub?2:m_client->selectionOperation())));return;}
+    if(m_client->selectionTool()==5 && documentRect().contains(e->position())) {const bool add=e->modifiers().testFlag(Qt::ShiftModifier),sub=e->modifiers().testFlag(Qt::AltModifier);e->setAccepted(m_client->selectWand(documentPoint(e->position()),add?(sub?3:1):(sub?2:m_client->wandOperation())));return;}
     if(m_client->bucketTool() && documentRect().contains(e->position())) {e->setAccepted(m_client->bucketFill(documentPoint(e->position())));return;}
     if(m_client->selectionTool() && documentRect().contains(e->position())) {e->setAccepted(beginSelection(e->position(),e->modifiers()));return;}
     if (m_client->moveTool() && documentRect().contains(e->position())) { e->setAccepted(beginLayerMove(e->position())); return; }
@@ -412,7 +412,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         e->accept();return true;
     }
     if(m_client->selectionTool()==5) {
-        if(event->type()==QEvent::TabletPress){const bool add=e->modifiers().testFlag(Qt::ShiftModifier),sub=e->modifiers().testFlag(Qt::AltModifier);forceActiveFocus();m_client->selectWand(documentPoint(local),add?(sub?3:1):(sub?2:m_client->selectionOperation()));m_tablet=true;}
+        if(event->type()==QEvent::TabletPress){const bool add=e->modifiers().testFlag(Qt::ShiftModifier),sub=e->modifiers().testFlag(Qt::AltModifier);forceActiveFocus();m_client->selectWand(documentPoint(local),add?(sub?3:1):(sub?2:m_client->wandOperation()));m_tablet=true;}
         else if(event->type()==QEvent::TabletRelease)m_tablet=false;
         e->accept();return true;
     }

@@ -19,8 +19,8 @@ RowLayout {
             objectName:"wandMode:"+index
             Layout.preferredWidth:28;Layout.preferredHeight:28
             glyph:modelData.glyph;tooltip:modelData.title
-            checkable:true;checked:root.client.selectionOperation===index
-            onClicked:root.client.selectionOperation=index
+            checkable:true;checked:root.client.wandOperation===index
+            onClicked:root.client.wandOperation=index
         }
     }
     Rectangle {Layout.preferredWidth:1;Layout.preferredHeight:24;color:Theme.line}
