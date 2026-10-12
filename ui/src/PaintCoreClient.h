@@ -12,6 +12,7 @@
 #include <QUrl>
 #include <QVariantList>
 #include <memory>
+#include <algorithm>
 
 struct InputSample {
     QPointF position;
@@ -105,6 +106,8 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QVariantMap layerThumbnails READ layerThumbnails NOTIFY layerThumbnailsChanged)
 public:
     QVariantList historyEntries() const {return m_history;}
+    Q_INVOKABLE qreal documentHistoryScrollPosition() const {return m_documentHistoryScroll;}
+    Q_INVOKABLE void rememberDocumentHistoryScroll(qreal y) {if(!m_historyLiquify)m_documentHistoryScroll=std::max(qreal(0),y);}
     explicit PaintCoreClient(QObject *parent = nullptr, const QString &settingsFile = {});
     QString settingsFile() const { return m_settingsFile; }
     ~PaintCoreClient() override;
@@ -310,6 +313,7 @@ signals:
     void storageFinished(bool success);
     void stateChanged();
     void layerShortcutsChanged();
+    void historyScopeChanging(bool liquify);
     void layersChanged();
     void layerThumbnailsChanged();
     void selectedLayersChanged();
@@ -375,6 +379,7 @@ private:
     // Per-document history command limit; persisted as a preference and applied to new sessions.
     void persistLiquifyOptions();
     bool submitLiquifyControl(quint32 kind);
+    bool submitLiquifyStrokeMarker(quint32 kind);
     bool submitLiquifyDab(const InputSample &from,const InputSample &to,int elapsedMs);
     bool m_liquifyFocus=false,m_liquifyActive=false,m_liquifyPressure=false;
     int m_liquifyTool=0,m_liquifySize=200,m_liquifyStrength=50,m_liquifyDensity=100,m_liquifySpeed=100;
@@ -406,6 +411,8 @@ private:
     int m_selectionTool = 0;
     QVariantMap m_selection;
     QVariantList m_history;
+    bool m_historyLiquify=false;
+    qreal m_documentHistoryScroll=0;
     QImage m_frames[2];
     QRectF m_regions[2], m_requestedRegions[2];
     QSize m_requestedPixels[2];

@@ -1,4 +1,11 @@
-# C ABI 1.21.0 契约
+# C ABI 1.22.0 契约
+
+## ABI 1.22：液化会话历史
+
+- `paint_session_liquify` 增加 STROKE_BEGIN=7/STROKE_END=8/UNDO=9/REDO=10，descriptor 必须 null。开始/结束按完整笔触生成临时历史；空笔触不记录，RESET 可撤销。结束使用队列保留槽，避免输入拥塞丢失笔触边界。
+- 液化期间 session undo_depth/redo_depth 与历史条目发布会话状态；文档正式历史保留。取消恢复正式 undo/redo，确认只追加一次正式液化。步数沿用文档历史设置，位移差异使用校验暂存 payload。
+- 历史种类 31=推拉/32=膨大/33=扭曲/34=重建/35=重置。既有结构布局与函数签名不变；旧客户端的 DAB/COMMIT 仍可使用。
+- UNDO/REDO 使用严格渲染屏障；笔触边界无像素变化时不阻断有效预览。
 
 ## ABI 1.21：画布液化事务
 
@@ -6,7 +13,7 @@
 - `paint_session_liquify` FIFO 接收 BEGIN=0/DAB=1/RESET=2/CANCEL=3/COMMIT=4/FOCUS_ON=5/FOCUS_OFF=6；只有 DAB 接收 `PaintLiquifyDab`，其余 descriptor 必须 null。所有指针在返回前复制，OK 只表示入队。
 - `PaintLiquifyDab` 为 176 字节，from/to 位于 48/112；保留既有 DTO 不变。
 - DAB：工具 0推拉/1膨大/2顺时针扭曲/3重建；半径0.5–1000px，强度/密度/速度0.01–1，时间0–250ms，压感0/1，保留字段为0；两个内嵌 PaintPoint 必须完整且合法。
-- BEGIN 拒绝组、继承锁、普通笔触或活动文件任务；预览不改变 modified 或 undo/redo。RESET/CANCEL 精确恢复原层；COMMIT 一次真实像素历史，空确认无历史，历史失败仍可取消。活动期间普通修改返回 BUSY，文件任务以 BUSY 结束；读/渲染继续可用。资源与事务说明见 `docs/liquify-design.md`。
+- BEGIN 拒绝组、继承锁、普通笔触或活动文件任务；预览不改变 modified 或正式文档 undo/redo。RESET/CANCEL 精确恢复原层；COMMIT 一次真实像素历史，空确认无历史，历史失败仍可取消。活动期间普通修改返回 BUSY，文件任务以 BUSY 结束；读/渲染继续可用。资源与事务说明见 `docs/liquify-design.md`。
 
 - FOCUS_ON/OFF 仅修改显示快照，真实层可见性和历史不变；确认/取消后恢复全部原可见层。
 

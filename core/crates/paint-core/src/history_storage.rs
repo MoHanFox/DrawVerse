@@ -153,6 +153,58 @@ impl Payload {
             tile_limit: command.bytes() / TILE_BYTES + 2,
         })
     }
+    pub(crate) fn blob_in(
+        memory_limit: usize,
+        storage: Arc<ScratchSpace>,
+        encode: impl FnOnce(&mut dyn Write) -> io::Result<()>,
+    ) -> Result<Self> {
+        let mut writer = BufWriter::new(SpillWriter {
+            storage,
+            memory: Vec::new(),
+            file: None,
+            memory_limit,
+            length: 0,
+            checksum: HASH_START,
+        });
+        encode(&mut writer).map_err(storage_error)?;
+        writer.flush().map_err(storage_error)?;
+        let writer = writer.into_inner().map_err(storage_error)?;
+        Ok(Self {
+            backing: match writer.file {
+                Some(file) => Backing::Disk(file),
+                None => Backing::Memory(writer.memory.into_boxed_slice()),
+            },
+            checksum: writer.checksum,
+            length: writer.length,
+            tile_limit: 0,
+        })
+    }
+    pub(crate) fn read_blob<T>(
+        &self,
+        decode: impl FnOnce(&mut dyn Read) -> Result<T>,
+    ) -> Result<T> {
+        let source: Box<dyn Read> = match &self.backing {
+            Backing::Memory(bytes) => Box::new(Cursor::new(bytes)),
+            Backing::Disk(file) => Box::new(BufReader::new(file.reopen().map_err(storage_error)?)),
+        };
+        let mut reader = CheckedReader {
+            trim_tiles: false,
+            source,
+            checksum: HASH_START,
+            length: 0,
+            tile_limit: 0,
+            pool: None,
+        };
+        let result = decode(&mut reader)?;
+        let mut extra = [0];
+        if reader.read(&mut extra).map_err(storage_error)? != 0
+            || reader.length != self.length
+            || reader.checksum != self.checksum
+        {
+            return Err(invalid());
+        }
+        Ok(result)
+    }
     pub fn memory_bytes(&self) -> usize {
         match &self.backing {
             Backing::Memory(bytes) => bytes.len(),

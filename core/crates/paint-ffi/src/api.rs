@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 21;
+pub const PAINT_ABI_MINOR: u32 = 22;
 pub const PAINT_FEATURE_LIQUIFY: u64 = 262144;
 pub const PAINT_SESSION_LIQUIFY: u32 = 8;
 pub const PAINT_HISTORY_LIQUIFY: u32 = 30;
@@ -26,6 +26,15 @@ pub const PAINT_LIQUIFY_CANCEL: u32 = 3;
 pub const PAINT_LIQUIFY_COMMIT: u32 = 4;
 pub const PAINT_LIQUIFY_FOCUS_ON: u32 = 5;
 pub const PAINT_LIQUIFY_FOCUS_OFF: u32 = 6;
+pub const PAINT_LIQUIFY_STROKE_BEGIN: u32 = 7;
+pub const PAINT_LIQUIFY_STROKE_END: u32 = 8;
+pub const PAINT_LIQUIFY_UNDO: u32 = 9;
+pub const PAINT_LIQUIFY_REDO: u32 = 10;
+pub const PAINT_HISTORY_LIQUIFY_PUSH: u32 = 31;
+pub const PAINT_HISTORY_LIQUIFY_BLOAT: u32 = 32;
+pub const PAINT_HISTORY_LIQUIFY_TWIRL: u32 = 33;
+pub const PAINT_HISTORY_LIQUIFY_RECONSTRUCT: u32 = 34;
+pub const PAINT_HISTORY_LIQUIFY_RESET: u32 = 35;
 /// ABI 1.21: inverse-map liquify input; normalized percentages, diameter/2 radius in pixels.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]

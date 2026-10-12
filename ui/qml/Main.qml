@@ -494,15 +494,6 @@ ApplicationWindow {
     Shortcut {context:Qt.ApplicationShortcut;sequence:Qt.platform.os==="osx"?"Meta+E":"Ctrl+E";enabled:PaintClient.layerShortcutsAllowed && PaintClient.canMergeLayers;onActivated:PaintClient.mergeSelectedLayers()}
     Shortcut {context:Qt.ApplicationShortcut;sequence:Qt.platform.os==="osx"?"Meta+G":"Ctrl+G";enabled:PaintClient.layerShortcutsAllowed;onActivated:PaintClient.groupSelectedLayers("组")}
     Shortcut { context:Qt.ApplicationShortcut; sequence: "V"; enabled: canvas.activeFocus; onActivated: PaintClient.activateMoveTool() }
-    // Brush size for the active painting tool, including the eraser and the smudge tool.
-    Shortcut {
-        context: Qt.ApplicationShortcut; sequence: "["; enabled: canvas.activeFocus && !PaintClient.drawing
-        onActivated: PaintClient.brushRadius = Math.max(0.5, PaintClient.brushRadius / 1.15)
-    }
-    Shortcut {
-        context: Qt.ApplicationShortcut; sequence: "]"; enabled: canvas.activeFocus && !PaintClient.drawing
-        onActivated: PaintClient.brushRadius = Math.min(256, PaintClient.brushRadius * 1.15)
-    }
     Shortcut { context:Qt.ApplicationShortcut; sequence: "M"; enabled:canvas.activeFocus && !PaintClient.drawing; onActivated:PaintClient.selectionTool=1 }
     Shortcut { context:Qt.ApplicationShortcut; sequence: "Shift+M"; enabled:canvas.activeFocus && !PaintClient.drawing; onActivated:PaintClient.selectionTool=PaintClient.selectionTool===2?1:2 }
     Shortcut { context:Qt.ApplicationShortcut; sequence:StandardKey.SelectAll; enabled:canvas.activeFocus && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onActivated:PaintClient.selectAll() }

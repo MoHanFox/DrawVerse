@@ -37,6 +37,11 @@ pub enum HistoryAction {
     PasteLayers = 28,
     MergeLayers = 29,
     Liquify = 30,
+    LiquifyPush = 31,
+    LiquifyBloat = 32,
+    LiquifyTwirl = 33,
+    LiquifyReconstruct = 34,
+    LiquifyReset = 35,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }

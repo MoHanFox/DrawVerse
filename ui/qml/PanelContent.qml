@@ -89,13 +89,19 @@ Item {
             property int targetDepth: -1
             property var generation: PaintClient.generation
             onGenerationChanged: targetDepth=-1
+            property bool restoringHistory:false
+            function restoreHistoryScroll(){restoringHistory=true;Qt.callLater(()=>{historyView.contentY=Math.min(PaintClient.documentHistoryScrollPosition(),Math.max(0,historyView.contentHeight-historyView.height));restoringHistory=false})}
+            Component.onCompleted:if(!PaintClient.liquifyActive)restoreHistoryScroll()
+            Connections {target:PaintClient;function onHistoryScopeChanging(liquify){historyContent.targetDepth=-1;if(!liquify)historyContent.restoringHistory=true}function onHistoryChanged(){if(historyContent.restoringHistory)historyContent.restoreHistoryScroll()}}
             spacing: 1
             ListView {
+                id:historyView
                 objectName:"historyList"
                 Layout.fillWidth:true;Layout.fillHeight:true;clip:true
                 model:PaintClient.historyEntries
                 currentIndex:PaintClient.historyEntries.findIndex(entry=>entry.depth===PaintClient.undoDepth)
-                onCurrentIndexChanged:if(currentIndex>=0)Qt.callLater(()=>positionViewAtIndex(currentIndex,ListView.Contain))
+                onContentYChanged:if(!historyContent.restoringHistory)PaintClient.rememberDocumentHistoryScroll(contentY)
+                onCurrentIndexChanged:if(currentIndex>=0 && !historyContent.restoringHistory)Qt.callLater(()=>{if(!historyContent.restoringHistory)positionViewAtIndex(currentIndex,ListView.Contain)})
                 delegate:Rectangle {
                     required property int index
                     required property var modelData

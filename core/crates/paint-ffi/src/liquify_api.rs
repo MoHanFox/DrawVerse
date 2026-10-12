@@ -20,7 +20,7 @@ pub unsafe extern "C" fn paint_session_liquify(
     boundary(|| unsafe {
         pointers::write(out_sequence, 0)?;
         runtime::outside_callback()?;
-        if kind > PAINT_LIQUIFY_FOCUS_OFF {
+        if kind > PAINT_LIQUIFY_REDO {
             return Err(ApiError::invalid("liquify action"));
         }
         let options = if kind == PAINT_LIQUIFY_DAB {

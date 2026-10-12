@@ -373,3 +373,84 @@ fn wholly_outside_canvas_dab_is_noop() {
     assert_eq!(pixels(&d), before);
     assert!(!d.commit_liquify().unwrap());
 }
+
+#[test]
+fn session_history_groups_strokes_restores_fields_and_preserves_document_history() {
+    let mut d = seed();
+    let original = pixels(&d);
+    let history = d.history_actions();
+    let depth = d.history_depth();
+    d.begin_liquify().unwrap();
+    assert_eq!(d.liquify_history_depth(), Some((0, 0)));
+    d.begin_liquify_stroke().unwrap();
+    d.liquify_dab(dab(0)).unwrap();
+    d.liquify_dab(dab(2)).unwrap();
+    assert!(d.end_liquify_stroke().unwrap());
+    let first = pixels(&d);
+    assert_eq!(d.liquify_history_depth(), Some((1, 0)));
+    assert_eq!(d.history_actions(), history);
+    d.begin_liquify_stroke().unwrap();
+    d.liquify_dab(dab(1)).unwrap();
+    d.end_liquify_stroke().unwrap();
+    let second = pixels(&d);
+    assert!(d.undo_liquify().unwrap());
+    assert_eq!(pixels(&d), first);
+    assert!(d.undo_liquify().unwrap());
+    assert_eq!(pixels(&d), original);
+    assert!(!d.undo_liquify().unwrap());
+    assert!(d.redo_liquify().unwrap());
+    assert!(d.redo_liquify().unwrap());
+    assert_eq!(pixels(&d), second);
+    d.reset_liquify().unwrap();
+    assert_eq!(pixels(&d), original);
+    d.undo_liquify().unwrap();
+    assert_eq!(pixels(&d), second);
+    d.undo_liquify().unwrap();
+    assert_eq!(pixels(&d), first);
+    d.begin_liquify_stroke().unwrap();
+    d.liquify_dab(dab(1)).unwrap();
+    d.end_liquify_stroke().unwrap();
+    assert_eq!(pixels(&d), second);
+    assert_eq!(d.liquify_history_depth(), Some((2, 0)));
+    assert_eq!(d.history_depth(), depth);
+    d.cancel_liquify().unwrap();
+    assert_eq!(pixels(&d), original);
+    assert_eq!(d.history_actions(), history);
+    assert_eq!(d.liquify_history_depth(), None);
+    d.begin_liquify().unwrap();
+    d.begin_liquify_stroke().unwrap();
+    d.liquify_dab(dab(0)).unwrap();
+    d.end_liquify_stroke().unwrap();
+    let after = pixels(&d);
+    d.commit_liquify().unwrap();
+    assert_eq!(d.history_depth().0, depth.0 + 1);
+    d.undo().unwrap();
+    assert_eq!(pixels(&d), original);
+    d.redo().unwrap();
+    assert_eq!(pixels(&d), after);
+}
+#[test]
+fn session_history_limit_and_noop_strokes() {
+    let mut d = seed();
+    d.set_max_history_commands(2).unwrap();
+    d.begin_liquify().unwrap();
+    d.begin_liquify_stroke().unwrap();
+    assert!(!d.end_liquify_stroke().unwrap());
+    let mut boundary = Vec::new();
+    for _ in 0..4 {
+        d.begin_liquify_stroke().unwrap();
+        d.liquify_dab(dab(0)).unwrap();
+        d.end_liquify_stroke().unwrap();
+        boundary.push(pixels(&d));
+    }
+    assert_eq!(d.liquify_history_depth(), Some((2, 0)));
+    assert_eq!(
+        d.liquify_history_actions().unwrap()[0],
+        HistoryAction::Truncated
+    );
+    d.undo_liquify().unwrap();
+    d.undo_liquify().unwrap();
+    assert_eq!(pixels(&d), boundary[1]);
+    assert!(!d.undo_liquify().unwrap());
+    d.cancel_liquify().unwrap();
+}

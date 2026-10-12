@@ -255,6 +255,9 @@ impl Session {
         let result = if matches!(operation, Operation::Cancel(_)) {
             self.sender
                 .send_cancel(command, |c| matches!(c.operation, Operation::Move(_)))
+        } else if matches!(operation, Operation::Liquify(PAINT_LIQUIFY_STROKE_END, _)) {
+            // Reserve closure without discarding any deformation samples.
+            self.sender.send_cancel(command, |_| false)
         } else {
             self.sender.try_send(command)
         };
@@ -484,7 +487,9 @@ fn publish(
     modified: bool,
 ) -> Publication {
     let (width, height) = doc.dimensions();
-    let (undo, redo) = doc.history_depth();
+    let (undo, redo) = doc
+        .liquify_history_depth()
+        .unwrap_or_else(|| doc.history_depth());
     let layers = doc
         .layers()
         .iter()
@@ -550,7 +555,8 @@ fn publish(
         },
         layers,
         history: doc
-            .history_actions()
+            .liquify_history_actions()
+            .unwrap_or_else(|| doc.history_actions())
             .into_iter()
             .enumerate()
             .map(|(depth, action)| PaintHistoryEntry {
@@ -598,8 +604,7 @@ impl Engine {
         let stroke_command = matches!(command.operation, Operation::Move(_) | Operation::End)
             || (matches!(command.operation, Operation::Begin(..))
                 && !self.document.stroke_active());
-        let liquify_control =
-            matches!(command.operation, Operation::Liquify(kind, _) if kind != PAINT_LIQUIFY_DAB);
+        let liquify_control = matches!(command.operation, Operation::Liquify(kind, _) if !matches!(kind,PAINT_LIQUIFY_DAB|PAINT_LIQUIFY_STROKE_BEGIN|PAINT_LIQUIFY_STROKE_END));
         let barrier = matches!(
             command.operation,
             Operation::New(..)
@@ -665,6 +670,16 @@ impl Engine {
                 PAINT_LIQUIFY_DAB => {
                     self.document
                         .liquify_dab(dab.ok_or_else(|| ApiError::invalid("missing dab"))?)?;
+                }
+                PAINT_LIQUIFY_STROKE_BEGIN => self.document.begin_liquify_stroke()?,
+                PAINT_LIQUIFY_STROKE_END => {
+                    self.document.end_liquify_stroke()?;
+                }
+                PAINT_LIQUIFY_UNDO => {
+                    self.document.undo_liquify()?;
+                }
+                PAINT_LIQUIFY_REDO => {
+                    self.document.redo_liquify()?;
                 }
                 PAINT_LIQUIFY_RESET => self.document.reset_liquify()?,
                 PAINT_LIQUIFY_CANCEL => self.document.cancel_liquify()?,

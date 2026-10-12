@@ -148,18 +148,55 @@ fn liquify_abi_validation_preview_cancel_and_single_history() {
         );
         let active = h.wait(seq);
         assert_ne!(active.flags & PAINT_SESSION_LIQUIFY, 0);
+        assert_eq!(active.undo_depth, 0);
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_STROKE_BEGIN,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        h.wait(seq);
         assert_eq!(
             paint_session_liquify(h.core, h.session, PAINT_LIQUIFY_DAB, &dab, &mut seq),
             PAINT_OK
         );
         dab.to.x = 0.;
         let preview = h.wait(seq);
-        assert_eq!(preview.undo_depth, original.undo_depth);
+        assert_eq!(preview.undo_depth, 0);
         assert_eq!(
             preview.flags & PAINT_SESSION_MODIFIED,
             original.flags & PAINT_SESSION_MODIFIED
         );
         assert_ne!(h.pixels(0, h.frame(0, preview.revision)), before);
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_STROKE_END,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        assert_eq!(h.wait(seq).undo_depth, 1);
+        assert_eq!(
+            paint_session_liquify(h.core, h.session, PAINT_LIQUIFY_UNDO, ptr::null(), &mut seq),
+            PAINT_OK
+        );
+        let undone = h.wait(seq);
+        assert_eq!(undone.undo_depth, 0);
+        assert_eq!(undone.redo_depth, 1);
+        assert_eq!(h.pixels(0, h.frame(0, undone.revision)), before);
+        assert_eq!(
+            paint_session_liquify(h.core, h.session, PAINT_LIQUIFY_REDO, ptr::null(), &mut seq),
+            PAINT_OK
+        );
+        assert_eq!(h.wait(seq).undo_depth, 1);
+
         assert_eq!(
             paint_session_liquify(
                 h.core,
@@ -2339,7 +2376,7 @@ fn pass_through_group_appearance_validation_publication_and_undo() {
     unsafe {
         let mut version = dto!(PaintVersion);
         assert_eq!(paint_core_version(&mut version), PAINT_OK);
-        assert_eq!(version.minor, 21);
+        assert_eq!(version.minor, 22);
         let mut caps = dto!(PaintCapabilities);
         assert_eq!(paint_core_capabilities(h.core, &mut caps), PAINT_OK);
         assert_ne!(caps.features & PAINT_FEATURE_PASS_THROUGH, 0);

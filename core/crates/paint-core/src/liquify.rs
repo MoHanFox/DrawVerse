@@ -7,6 +7,101 @@ pub(super) struct LiquifyState {
     original: Layer,
     field: Field,
     focus: bool,
+    checkpoint: Option<Arc<Checkpoint>>,
+    history: Arc<LocalHistory>,
+}
+#[derive(Clone, Debug)]
+struct Checkpoint {
+    layer: Layer,
+    field: Field,
+    action: crate::HistoryAction,
+}
+#[derive(Debug)]
+struct LocalStep {
+    pixels: Vec<TileChange>,
+    fields: crate::history_storage::Payload,
+    action: crate::HistoryAction,
+}
+#[derive(Clone, Debug, Default)]
+struct LocalHistory {
+    undo: std::collections::VecDeque<Arc<LocalStep>>,
+    redo: Vec<Arc<LocalStep>>,
+    evicted: bool,
+}
+fn same_field(a: Option<&Arc<Vec<[f32; 2]>>>, b: Option<&Arc<Vec<[f32; 2]>>>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => Arc::ptr_eq(a, b) || a == b,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod local_history_tests {
+    use super::*;
+    #[test]
+    fn spilled_history_failure_preserves_pending_preview_and_can_retry() {
+        let mut d = Document::with_options(
+            96,
+            96,
+            DocumentOptions {
+                max_history_bytes: 2 * TILE_BYTES + 256,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        d.begin_stroke(
+            Brush {
+                radius: 9.,
+                ..Default::default()
+            },
+            InputPoint::new(40., 40., 1.),
+        )
+        .unwrap();
+        d.end_stroke().unwrap();
+        let image = |d: &Document| {
+            (0..96)
+                .flat_map(|y| (0..96).map(move |x| d.pixel(x, y)))
+                .collect::<Vec<_>>()
+        };
+        let original = image(&d);
+        let formal = d.history_depth();
+        d.begin_liquify().unwrap();
+        d.begin_liquify_stroke().unwrap();
+        d.liquify_dab(LiquifyDab {
+            tool: 0,
+            radius: 24.,
+            strength: 0.5,
+            density: 1.,
+            speed: 1.,
+            pressure_enabled: false,
+            from: InputPoint::new(40., 40., 1.),
+            to: InputPoint::new(48., 44., 1.),
+            elapsed_ms: 100.,
+        })
+        .unwrap();
+        let preview = image(&d);
+        crate::history_storage::fail_writes_for_test(true);
+        let result = d.end_liquify_stroke();
+        crate::history_storage::fail_writes_for_test(false);
+        assert!(matches!(result, Err(Error::HistoryStorage(_))));
+        assert_eq!(image(&d), preview);
+        assert_eq!(d.liquify_history_depth(), Some((0, 0)));
+        assert!(d.end_liquify_stroke().unwrap());
+        assert!(
+            d.liquify.as_ref().unwrap().history.undo[0]
+                .fields
+                .disk_bytes()
+                > 0
+        );
+        d.undo_liquify().unwrap();
+        assert_eq!(image(&d), original);
+        d.redo_liquify().unwrap();
+        assert_eq!(image(&d), preview);
+        d.cancel_liquify().unwrap();
+        assert_eq!(d.history_depth(), formal);
+        assert_eq!(image(&d), original);
+    }
 }
 #[derive(Clone, Copy, Debug)]
 pub struct LiquifyDab {
@@ -177,10 +272,12 @@ impl Document {
             original,
             field: Field::new(),
             focus: false,
+            checkpoint: None,
+            history: Arc::default(),
         });
         Ok(())
     }
-    pub fn reset_liquify(&mut self) -> Result<()> {
+    fn restore_liquify_original(&mut self) -> Result<()> {
         let state = self
             .liquify
             .as_mut()
@@ -193,12 +290,24 @@ impl Document {
         self.dirty_all();
         Ok(())
     }
+    pub fn reset_liquify(&mut self) -> Result<()> {
+        self.end_liquify_stroke()?;
+        self.begin_liquify_stroke()?;
+        if let Some(state) = self.liquify.as_mut() {
+            Arc::make_mut(state.checkpoint.as_mut().expect("checkpoint")).action =
+                crate::HistoryAction::LiquifyReset;
+        }
+        self.restore_liquify_original()?;
+        self.end_liquify_stroke()?;
+        Ok(())
+    }
     pub fn cancel_liquify(&mut self) -> Result<()> {
-        self.reset_liquify()?;
+        self.restore_liquify_original()?;
         self.liquify = None;
         Ok(())
     }
     pub fn commit_liquify(&mut self) -> Result<bool> {
+        self.end_liquify_stroke()?;
         let state = self
             .liquify
             .as_ref()
@@ -265,6 +374,233 @@ impl Document {
         }
         Ok(changed)
     }
+    pub fn begin_liquify_stroke(&mut self) -> Result<()> {
+        let state = self
+            .liquify
+            .as_ref()
+            .ok_or(Error::InvalidArgument("no liquify transaction"))?;
+        if state.checkpoint.is_some() {
+            return Err(Error::Busy);
+        }
+        let layer = self
+            .layer(state.original.id)
+            .expect("liquify layer")
+            .clone();
+        let checkpoint = Checkpoint {
+            layer,
+            field: state.field.clone(),
+            action: crate::HistoryAction::Liquify,
+        };
+        self.liquify.as_mut().expect("state").checkpoint = Some(Arc::new(checkpoint));
+        Ok(())
+    }
+    pub fn end_liquify_stroke(&mut self) -> Result<bool> {
+        let state = self
+            .liquify
+            .as_ref()
+            .ok_or(Error::InvalidArgument("no liquify transaction"))?;
+        let Some(before) = state.checkpoint.as_ref() else {
+            return Ok(false);
+        };
+        let current = self.layer(state.original.id).expect("liquify layer");
+        let keys: BTreeSet<_> = before
+            .field
+            .keys()
+            .chain(state.field.keys())
+            .copied()
+            .collect();
+        let changed: Vec<_> = keys
+            .into_iter()
+            .filter(|key| !same_field(before.field.get(key), state.field.get(key)))
+            .collect();
+        if changed.is_empty() {
+            self.liquify.as_mut().expect("state").checkpoint = None;
+            return Ok(false);
+        }
+        let pixels = changed
+            .iter()
+            .map(|key| TileChange {
+                coord: *key,
+                before: before.layer.tiles.get(key).cloned(),
+                after: current.tiles.get(key).cloned(),
+            })
+            .collect();
+        let fields = crate::history_storage::Payload::blob_in(
+            self.options.max_history_bytes / self.options.max_history_commands,
+            self.storage(),
+            |writer| {
+                writer.write_all(&(changed.len() as u32).to_le_bytes())?;
+                for key in &changed {
+                    writer.write_all(&key.x.to_le_bytes())?;
+                    writer.write_all(&key.y.to_le_bytes())?;
+                    for field in [before.field.get(key), state.field.get(key)] {
+                        writer.write_all(&[u8::from(field.is_some())])?;
+                        if let Some(field) = field {
+                            for vector in field.iter() {
+                                for value in vector {
+                                    writer.write_all(&value.to_le_bytes())?;
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            },
+        )?;
+        let step = Arc::new(LocalStep {
+            pixels,
+            fields,
+            action: before.action,
+        });
+        let state = self.liquify.as_mut().expect("state");
+        let history = Arc::make_mut(&mut state.history);
+        history.redo.clear();
+        history.undo.push_back(step);
+        while history.undo.len() > self.options.max_history_commands
+            || history
+                .undo
+                .iter()
+                .map(|s| s.fields.disk_bytes())
+                .sum::<u64>()
+                > crate::history::MAX_DISK_HISTORY_BYTES
+        {
+            history.undo.pop_front();
+            history.evicted = true;
+        }
+        state.checkpoint = None;
+        Ok(true)
+    }
+    pub fn liquify_history_depth(&self) -> Option<(usize, usize)> {
+        self.liquify
+            .as_ref()
+            .map(|s| (s.history.undo.len(), s.history.redo.len()))
+    }
+    pub fn liquify_history_actions(&self) -> Option<Vec<crate::HistoryAction>> {
+        self.liquify.as_ref().map(|s| {
+            std::iter::once(if s.history.evicted {
+                crate::HistoryAction::Truncated
+            } else {
+                crate::HistoryAction::Initial
+            })
+            .chain(
+                s.history
+                    .undo
+                    .iter()
+                    .chain(s.history.redo.iter().rev())
+                    .map(|step| step.action),
+            )
+            .collect()
+        })
+    }
+    pub fn undo_liquify(&mut self) -> Result<bool> {
+        self.travel_liquify(false)
+    }
+    pub fn redo_liquify(&mut self) -> Result<bool> {
+        self.travel_liquify(true)
+    }
+    fn travel_liquify(&mut self, redo: bool) -> Result<bool> {
+        self.end_liquify_stroke()?;
+        let state = self
+            .liquify
+            .as_ref()
+            .ok_or(Error::InvalidArgument("no liquify transaction"))?;
+        let step = if redo {
+            state.history.redo.last()
+        } else {
+            state.history.undo.back()
+        }
+        .cloned();
+        let Some(step) = step else { return Ok(false) };
+        let mut field = state.field.clone();
+        step.fields.read_blob(|reader| {
+            let mut bytes = [0; 4];
+            reader
+                .read_exact(&mut bytes)
+                .map_err(|e| Error::HistoryStorage(e.to_string()))?;
+            let count = u32::from_le_bytes(bytes) as usize;
+            if count > MAX_FIELD_TILES * 2 {
+                return Err(Error::HistoryStorage(
+                    "invalid liquify history count".into(),
+                ));
+            }
+            for _ in 0..count {
+                reader
+                    .read_exact(&mut bytes)
+                    .map_err(|e| Error::HistoryStorage(e.to_string()))?;
+                let x = u32::from_le_bytes(bytes);
+                reader
+                    .read_exact(&mut bytes)
+                    .map_err(|e| Error::HistoryStorage(e.to_string()))?;
+                let key = TileCoord {
+                    x,
+                    y: u32::from_le_bytes(bytes),
+                };
+                for side in 0..2 {
+                    let mut present = [0];
+                    reader
+                        .read_exact(&mut present)
+                        .map_err(|e| Error::HistoryStorage(e.to_string()))?;
+                    let value = match present[0] {
+                        0 => None,
+                        1 => {
+                            let mut values = vec![[0.; 2]; 4096];
+                            for vector in &mut values {
+                                for value in vector {
+                                    reader
+                                        .read_exact(&mut bytes)
+                                        .map_err(|e| Error::HistoryStorage(e.to_string()))?;
+                                    *value = f32::from_le_bytes(bytes);
+                                    if !value.is_finite() || value.abs() > 2_000_000. {
+                                        return Err(Error::HistoryStorage(
+                                            "invalid liquify history displacement".into(),
+                                        ));
+                                    }
+                                }
+                            }
+                            Some(Arc::new(values))
+                        }
+                        _ => {
+                            return Err(Error::HistoryStorage(
+                                "invalid liquify history flag".into(),
+                            ))
+                        }
+                    };
+                    if side == usize::from(redo) {
+                        if let Some(value) = value {
+                            field.insert(key, value);
+                        } else {
+                            field.remove(&key);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })?;
+        let id = state.original.id;
+        let at = self.layer_index(id)?;
+        let mut layer = self.layers[at].clone();
+        for change in &step.pixels {
+            let value = if redo { &change.after } else { &change.before };
+            if let Some(tile) = value {
+                layer.tiles.insert(change.coord, tile.clone());
+            } else {
+                layer.tiles.remove(&change.coord);
+            }
+        }
+        self.layers[at] = layer;
+        let state = self.liquify.as_mut().expect("state");
+        state.field = field;
+        let history = Arc::make_mut(&mut state.history);
+        if redo {
+            history.redo.pop();
+            history.undo.push_back(step);
+        } else {
+            history.undo.pop_back();
+            history.redo.push(step);
+        }
+        self.dirty_all();
+        Ok(true)
+    }
     pub fn liquify_dab(&mut self, options: LiquifyDab) -> Result<bool> {
         options.validate()?;
         let mut state = self
@@ -273,6 +609,16 @@ impl Document {
             .ok_or(Error::InvalidArgument("no liquify transaction"))?
             .clone();
         let at = self.layer_index(state.original.id)?;
+        if let Some(checkpoint) = state.checkpoint.as_mut() {
+            if checkpoint.action == crate::HistoryAction::Liquify {
+                Arc::make_mut(checkpoint).action = match options.tool {
+                    0 => crate::HistoryAction::LiquifyPush,
+                    1 => crate::HistoryAction::LiquifyBloat,
+                    2 => crate::HistoryAction::LiquifyTwirl,
+                    _ => crate::HistoryAction::LiquifyReconstruct,
+                };
+            }
+        }
         let mut layer = self.layers[at].clone();
         let radius = f64::from(options.radius);
         let distance = (options.to.x - options.from.x).hypot(options.to.y - options.from.y);
