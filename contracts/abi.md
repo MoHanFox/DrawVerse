@@ -1,4 +1,10 @@
-# C ABI 1.17.0 契约
+# C ABI 1.18.0 契约
+
+## ABI 1.18：涂抹
+
+新增 88 字节 `PaintSmudgeStrokeDesc`：struct_size/all_layers/finger_painting/pressure_strength 为 u32，strength 为 f32（有限 0–1），reserved[3] 必须零；offset 32 为既有 56 字节 PaintStrokeDesc（独立 struct_size 校验，mode 必须 PAINT_MODE_PAINT）。布尔只接受 0/1，笔刷 opacity 与 strength 相乘；spacing 最低 0.02，对应直径的 1%。
+
+`paint_session_begin_smudge(core,session,request,point,out_sequence)` 调用内复制所有参数及点，入队前失败 sequence 清零；沿用 stroke_to/end/cancel 和 actor 原子历史。feature bit 32768，历史 SMUDGE=26。旧结构、模式和保留位不变；蒙版禁止 all_layers，图层和选区限制沿用画笔。指针须对齐、可读/可写且输出不重叠输入。
 
 ## ABI 1.17：魔棒
 
@@ -60,7 +66,7 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 ## 版本与类型
 
-全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/17/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
+全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/18/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
 
 初始化 DTO 为零并写 struct_size=sizeof(本调用者结构)，输入至少含已发布前缀。库只访问已知前缀；过小为 INVALID_ARGUMENT，不覆盖调用者内存；扩展尾部保持不变。输出 struct_size 写库已知大小。reserved 必须为零；未知 mode/tool/format 为 UNSUPPORTED。输入 capability 位保留未知位，圆笔刷只实际使用 pressure，客户端为无压力设备提供 pressure=1。
 

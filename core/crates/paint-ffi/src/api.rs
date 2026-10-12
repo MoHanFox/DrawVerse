@@ -15,7 +15,21 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 17;
+pub const PAINT_ABI_MINOR: u32 = 18;
+pub const PAINT_FEATURE_SMUDGE: u64 = 32768;
+pub const PAINT_HISTORY_SMUDGE: u32 = 26;
+/// ABI 1.18: same brush/point pipeline, independent strength and sampling options.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintSmudgeStrokeDesc {
+    pub struct_size: u32,
+    pub all_layers: u32,
+    pub finger_painting: u32,
+    pub pressure_strength: u32,
+    pub strength: f32,
+    pub reserved: [u32; 3],
+    pub brush: PaintStrokeDesc,
+}
 pub const PAINT_FEATURE_WAND: u64 = 16384;
 /// ABI 1.17: bounded color-region selection; flags 0/1, reserved zero.
 #[repr(C)]

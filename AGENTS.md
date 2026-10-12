@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新涂抹：`docs/smudge-design.md` / `docs/smudge-validation.md`；ABI 1.18、独立 R 工具复用笔刷、强度/压感/合成取样/手指绘画、最低 1% 间隔；参数说明统一悬停 1 秒。
+
 跨平台绘画应用：Rust 内核 → 稳定 C ABI → C++20 / Qt 6.5+ UI；Python 插件最后实施。
 
 - 最新魔棒：`docs/wand-design.md` / `docs/wand-validation.md`；ABI 1.17、四种组合/七种取样尺寸/默认容差 10/AA/连续/所有图层、灰度掩码与真实轮廓、历史和持久化。

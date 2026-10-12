@@ -99,7 +99,7 @@ ColumnLayout {
             onOptionHovered:index=>{if(index>=0)PaintClient.previewLayerBlend(root.control.id,index);else PaintClient.clearLayerBlendPreview()}
             onMenuClosed:PaintClient.clearLayerBlendPreview()
             onActivated: {PaintClient.clearLayerBlendPreview();PaintClient.setLayerBlend(root.control.id,currentIndex)}
-            ToolTip.visible: hovered; ToolTip.text: "图层混合模式"
+            ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "图层混合模式"
         }
         Label { text: "不透明度"; color: Theme.muted; font.pixelSize: 9 }
         LayerPercent {
@@ -198,7 +198,7 @@ ColumnLayout {
                             if(mouse.modifiers & Qt.AltModifier)PaintClient.setLayerClipping(row.modelData.id,!row.modelData.clipped)
                             else mouse.accepted=false
                         }
-                        ToolTip.visible:containsMouse
+                        ToolTip.delay:1000;ToolTip.visible:containsMouse
                         ToolTip.text:row.modelData.clipped ? "Alt / Option 点击释放剪贴蒙版" : "Alt / Option 点击创建剪贴蒙版"
                     }
                     property int dropPlacement: 0
@@ -222,7 +222,7 @@ ColumnLayout {
                             implicitWidth: 20; implicitHeight: 20; enabled: root.editable
                             padding: 2
                             onClicked: PaintClient.setLayerProperties(row.modelData.id,!row.modelData.visible,row.modelData.opacity)
-                            ToolTip.visible: hovered; ToolTip.text: row.modelData.visible ? "隐藏图层" : "显示图层"
+                            ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: row.modelData.visible ? "隐藏图层" : "显示图层"
                             contentItem: Icon {name:"eye";visible:row.modelData.visible}
                         }
                         Item { objectName:"layerIndent:"+row.modelData.id; Layout.preferredWidth: row.modelData.depth*12; height:24
@@ -234,7 +234,7 @@ ColumnLayout {
                             implicitWidth: 16; implicitHeight: 20; visible: row.modelData.group
                             text: PaintClient.collapsedGroups.indexOf(row.modelData.id)>=0 ? "▸" : "▾"
                             onClicked: PaintClient.toggleGroupExpanded(row.modelData.id)
-                            ToolTip.visible: hovered; ToolTip.text: "展开 / 折叠图层组"
+                            ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "展开 / 折叠图层组"
                         }
                         Label { objectName:"clippingArrow:"+row.modelData.id;visible:row.modelData.clipped;text:"↳";color:Theme.muted;font.pixelSize:17;Layout.preferredWidth:14 }
                         LayerThumbnail {
@@ -249,7 +249,7 @@ ColumnLayout {
                                 anchors.fill:parent
                                 onPaint:{const c=getContext("2d");c.reset();c.strokeStyle=Theme.muted;c.lineWidth=1.3;c.lineCap="round";c.beginPath();c.moveTo(2,12);c.lineTo(2,6);c.quadraticCurveTo(5,2,8,6);c.lineTo(8,12);c.stroke();c.beginPath();c.moveTo(2,12);c.lineTo(2,18);c.quadraticCurveTo(5,22,8,18);c.lineTo(8,12);c.stroke();c.beginPath();c.moveTo(5,8);c.lineTo(5,16);c.stroke()}
                             }
-                            ToolTip.visible:linkHover.containsMouse;ToolTip.text:"蒙版随图层一起移动"
+                            ToolTip.delay:1000;ToolTip.visible:linkHover.containsMouse;ToolTip.text:"蒙版随图层一起移动"
                             MouseArea{id:linkHover;anchors.fill:parent;hoverEnabled:true;acceptedButtons:Qt.NoButton}
                         }
                         LayerThumbnail {
@@ -286,10 +286,10 @@ ColumnLayout {
     }
     RowLayout {
         Label { text: PaintClient.layers.filter(function(l){return !l.mask}).length+" 图层"; font.pixelSize: 9; color: Theme.muted; Layout.fillWidth: true }
-        IconButton { objectName:"addLayerMask";glyph:"mask";tooltip:"添加白色蒙版";implicitHeight:28;implicitWidth:28;enabled:root.unlocked && !root.selected.mask && !PaintClient.layers.some(function(l){return l.mask && l.parent===root.selected.id});onClicked:PaintClient.addMask(root.selected.id);ToolTip.visible:hovered;ToolTip.text:"添加白色蒙版（黑隐藏，白显示）" }
-        IconButton { objectName: "groupLayer"; glyph: "folder"; tooltip: "新建图层组"; implicitHeight: 20; implicitWidth: 28; enabled: root.unlocked && !root.selected.mask; onClicked: PaintClient.groupSelectedLayers("组 "+(PaintClient.layers.filter(function(layer) { return layer.group }).length+1)); ToolTip.visible: hovered; ToolTip.text: "将所选图层或组放入新组（隔离合成）" }
+        IconButton { objectName:"addLayerMask";glyph:"mask";tooltip:"添加白色蒙版";implicitHeight:28;implicitWidth:28;enabled:root.unlocked && !root.selected.mask && !PaintClient.layers.some(function(l){return l.mask && l.parent===root.selected.id});onClicked:PaintClient.addMask(root.selected.id);ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"添加白色蒙版（黑隐藏，白显示）" }
+        IconButton { objectName: "groupLayer"; glyph: "folder"; tooltip: "新建图层组"; implicitHeight: 20; implicitWidth: 28; enabled: root.unlocked && !root.selected.mask; onClicked: PaintClient.groupSelectedLayers("组 "+(PaintClient.layers.filter(function(layer) { return layer.group }).length+1)); ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "将所选图层或组放入新组（隔离合成）" }
         IconButton { objectName: "layerGroupMenu"; glyph: "menu"; tooltip: "图层菜单"; implicitWidth: 28; implicitHeight: 20; enabled: root.unlocked; onClicked: groupMenu.popup() }
-        IconButton { glyph: "plus"; tooltip: "新建图层"; implicitWidth: 28; implicitHeight: 20; enabled: root.editable; objectName:"addDefaultLayer";onClicked: PaintClient.addDefaultLayer(); ToolTip.visible: hovered; ToolTip.text: "新建图层" }
+        IconButton { glyph: "plus"; tooltip: "新建图层"; implicitWidth: 28; implicitHeight: 20; enabled: root.editable; objectName:"addDefaultLayer";onClicked: PaintClient.addDefaultLayer(); ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "新建图层" }
         IconButton { objectName: "deleteLayer"; glyph: "trash"; tooltip: "删除图层"; implicitHeight: 20; enabled: root.unlocked && PaintClient.layers.length>1; onClicked: PaintClient.requestSelectedLayerRemoval() }
     }
     GlassMenu {

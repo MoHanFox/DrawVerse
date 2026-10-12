@@ -11,6 +11,11 @@ pub enum Tool {
 pub enum BrushMode {
     Paint,
     Erase,
+    Smudge {
+        all_layers: bool,
+        finger_painting: bool,
+        pressure_strength: bool,
+    },
 }
 
 /// Coordinates in document pixels; time is a device-independent monotonic nanosecond count.
@@ -112,7 +117,7 @@ impl Brush {
         for (value, min, max) in [
             (self.radius, 0.5, 256.0),
             (self.opacity, 0.0, 1.0),
-            (self.spacing, 0.05, 1.0),
+            (self.spacing, 0.02, 1.0),
         ] {
             if !value.is_finite() || !(min..=max).contains(&value) {
                 return Err(Error::InvalidArgument(

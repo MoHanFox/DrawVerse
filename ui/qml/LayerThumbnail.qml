@@ -37,7 +37,7 @@ Rectangle {
         onPressed:mouse=>{origin=Qt.point(mouse.x,mouse.y);dragging=false}
         onPositionChanged:mouse=>{if(pressed && !dragging && root.node && !root.node.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10){dragging=true;PaintClient.beginLayerDrag(root.node.id)}}
         onClicked: mouse => {if(!dragging)root.clicked(mouse.modifiers)}
-        ToolTip.visible: containsMouse
+        ToolTip.delay:1000;ToolTip.visible: containsMouse
         ToolTip.text: root.node && root.node.mask ? "编辑蒙版 · Shift 点击启用/禁用" : "编辑图层内容"
         hoverEnabled: true
     }

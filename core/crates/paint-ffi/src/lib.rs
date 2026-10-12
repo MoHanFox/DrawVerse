@@ -7,7 +7,9 @@ mod api;
 mod layer_api;
 pub use layer_api::*;
 mod bucket_api;
+mod smudge_api;
 mod wand_api;
+pub use smudge_api::*;
 pub use wand_api::*;
 mod error;
 mod file_api;
@@ -113,6 +115,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                     | PAINT_FEATURE_SELECTION
                     | PAINT_FEATURE_BUCKET
                     | PAINT_FEATURE_WAND
+                    | PAINT_FEATURE_SMUDGE
                     | PAINT_FEATURE_HISTORY
                     | PAINT_FEATURE_LINEAR_TILE_READ
                     | PAINT_FEATURE_EVENTS

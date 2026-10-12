@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 17
+#define PAINT_ABI_MINOR 18
 
 #define PAINT_ABI_PATCH 0
 
@@ -78,6 +78,8 @@
 #define PAINT_FEATURE_MASKS 1024
 
 #define PAINT_FEATURE_SELECTION 4096
+
+#define PAINT_FEATURE_SMUDGE 32768
 
 #define PAINT_FEATURE_STORAGE_SETTINGS 128
 
@@ -166,6 +168,8 @@
 #define PAINT_HISTORY_SELECTION 4
 
 #define PAINT_HISTORY_SELECT_ALL 3
+
+#define PAINT_HISTORY_SMUDGE 26
 
 #define PAINT_HISTORY_TRUNCATED 19
 
@@ -386,6 +390,19 @@ typedef struct PaintLayerInfo {
   uint64_t name_length;
   uint64_t allocated_tiles;
 } PaintLayerInfo;
+
+/**
+ * ABI 1.18: same brush/point pipeline, independent strength and sampling options.
+ */
+typedef struct PaintSmudgeStrokeDesc {
+  uint32_t struct_size;
+  uint32_t all_layers;
+  uint32_t finger_painting;
+  uint32_t pressure_strength;
+  float strength;
+  uint32_t reserved[3];
+  struct PaintStrokeDesc brush;
+} PaintSmudgeStrokeDesc;
 
 /**
  * ABI 1.16: single atomic fill; booleans are exactly 0 or 1, reserved fields zero.
@@ -889,6 +906,17 @@ PaintStatus paint_layer_set_properties(struct PaintCore *core,
                                        uint64_t layer_id,
                                        uint32_t visible,
                                        float opacity);
+
+/**
+ * Begin an ordinary asynchronous brush stroke with smudge behavior.
+ * # Safety
+ * Live handles, aligned readable sized descriptors/point and nonoverlapping writable sequence required.
+ */
+PaintStatus paint_session_begin_smudge(struct PaintCore *core,
+                                       struct PaintSession *session,
+                                       const struct PaintSmudgeStrokeDesc *request,
+                                       const struct PaintPoint *point,
+                                       uint64_t *out_sequence);
 
 /**
  * Copy, validate and enqueue an atomic fill; no pixel work on the submitting thread.

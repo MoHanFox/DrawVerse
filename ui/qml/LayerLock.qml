@@ -9,7 +9,7 @@ ToolButton {
     property bool passiveIcon: false
     padding: passiveIcon ? 1 : 3
     implicitWidth: 19; implicitHeight: 20
-    ToolTip.visible: hovered
+    ToolTip.delay:1000;ToolTip.visible: hovered
     ToolTip.text: kind===1 ? "锁定透明像素" : kind===2 ? "锁定位置" : "全部锁定"
     background: Rectangle { radius: 3; color: root.passiveIcon ? "transparent" : root.selected ? Theme.selected : root.hovered ? Theme.raised : "transparent"; border.color: !root.passiveIcon && root.selected ? Theme.line : "transparent" }
     contentItem: Canvas {

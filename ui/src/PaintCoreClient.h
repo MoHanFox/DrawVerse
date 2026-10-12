@@ -70,6 +70,11 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(int marqueeShape READ marqueeShape NOTIFY brushChanged)
     Q_PROPERTY(bool eyedropperTool READ eyedropperTool NOTIFY brushChanged)
     Q_PROPERTY(bool bucketTool READ bucketTool NOTIFY brushChanged)
+    Q_PROPERTY(bool smudgeTool READ smudgeTool NOTIFY brushChanged)
+    Q_PROPERTY(qreal smudgeStrength READ smudgeStrength WRITE setSmudgeStrength NOTIFY smudgeOptionsChanged)
+    Q_PROPERTY(bool smudgePressure READ smudgePressure WRITE setSmudgePressure NOTIFY smudgeOptionsChanged)
+    Q_PROPERTY(bool smudgeAllLayers READ smudgeAllLayers WRITE setSmudgeAllLayers NOTIFY smudgeOptionsChanged)
+    Q_PROPERTY(bool smudgeFingerPainting READ smudgeFingerPainting WRITE setSmudgeFingerPainting NOTIFY smudgeOptionsChanged)
     Q_PROPERTY(int wandSampleSize READ wandSampleSize WRITE setWandSampleSize NOTIFY wandOptionsChanged)
     Q_PROPERTY(int wandTolerance READ wandTolerance WRITE setWandTolerance NOTIFY wandOptionsChanged)
     Q_PROPERTY(int wandOperation READ wandOperation WRITE setWandOperation NOTIFY wandOptionsChanged)
@@ -128,6 +133,16 @@ public:
     Q_INVOKABLE void activateMoveTool();
     Q_INVOKABLE void activateEyedropper();
     Q_INVOKABLE void activateBucket();
+    Q_INVOKABLE void activateSmudge();
+    bool smudgeTool() const {return m_smudgeTool;}
+    qreal smudgeStrength() const {return m_smudgeStrength;}
+    bool smudgePressure() const {return m_smudgePressure;}
+    bool smudgeAllLayers() const {return m_smudgeAllLayers;}
+    bool smudgeFingerPainting() const {return m_smudgeFingerPainting;}
+    void setSmudgeStrength(qreal value);
+    void setSmudgePressure(bool value);
+    void setSmudgeAllLayers(bool value);
+    void setSmudgeFingerPainting(bool value);
     bool bucketTool() const {return m_bucketTool;}
     qreal bucketOpacity() const {return m_bucketOpacity;}
     int bucketTolerance() const {return m_bucketTolerance;}
@@ -257,6 +272,7 @@ signals:
     void selectionChanged();
     void selectionOptionsChanged();
     void bucketOptionsChanged();
+    void smudgeOptionsChanged();
     void wandOptionsChanged();
     void errorChanged();
     void frameChanged();
@@ -317,6 +333,8 @@ private:
     bool m_moveTool = false;
     bool m_eyedropperTool = false;
     bool m_bucketTool = false;
+    bool m_smudgeTool=false,m_smudgePressure=true,m_smudgeAllLayers=false,m_smudgeFingerPainting=false;
+    qreal m_smudgeStrength=.5;
     int m_wandSampleSize=1,m_wandTolerance=10;
     int m_wandOperation=1;
     bool m_wandAntialias=true,m_wandContiguous=true,m_wandAllLayers=false;

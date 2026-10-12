@@ -13,7 +13,7 @@ ToolButton {
     padding: 4
     hoverEnabled: true
     ToolTip.visible: hovered && tooltip.length>0
-    ToolTip.delay: 600
+    ToolTip.delay: 1000
     ToolTip.text: tooltip
     Accessible.name: tooltip
     background: Rectangle {

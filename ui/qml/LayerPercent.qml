@@ -4,6 +4,9 @@ import QtQuick.Layouts
 import "."
 
 Control {
+    property string tooltip: ""
+    hoverEnabled:true
+    ToolTip.delay:1000;ToolTip.visible:hovered && tooltip.length>0;ToolTip.text:tooltip
     id: root
     property real fraction: 1
     signal committed(real fraction)

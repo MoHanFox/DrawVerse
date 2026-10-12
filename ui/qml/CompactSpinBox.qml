@@ -2,6 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import "."
 SpinBox {
+    property string tooltip: ""
+    hoverEnabled:true
+    ToolTip.delay:1000;ToolTip.visible:hovered && tooltip.length>0;ToolTip.text:tooltip
     id: control
     implicitWidth: 90; implicitHeight: 26
     leftPadding: 23; rightPadding: 23; topPadding: 3; bottomPadding: 3

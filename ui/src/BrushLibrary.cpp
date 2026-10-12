@@ -46,7 +46,7 @@ void BrushLibrary::changed(){emit settingsChanged();emit presetsChanged();emit p
 void BrushLibrary::update(int field,qreal value) {
     if(!std::isfinite(value))return;
     auto &p=m_presets[index(m_selected)];qreal *target=field==0?&p.radius:field==1?&p.opacity:&p.spacing;
-    value=field==0?std::clamp(value,.5,256.):field==1?std::clamp(value,0.,1.):std::clamp(value,.05,1.);
+    value=field==0?std::clamp(value,.5,256.):field==1?std::clamp(value,0.,1.):std::clamp(value,.02,1.);
     if(*target==value)return;
     *target=value;p.preview.clear();p.error.clear();p.token=++m_nextToken;p.requested=0;changed();
 }
@@ -76,7 +76,7 @@ bool BrushLibrary::restore(const QByteArray &json) {
     if(root.value("version").toInt()!=1 || rows.size()<4 || rows.size()>64)return false;
     const QSet<QString> builtins{"round-pressure","round-fine","round-translucent","round-wide"};QSet<QString> seen;QList<Preset> restored;
     for(const auto &row:rows){const auto p=row.toObject();Preset b;b.id=p.value("id").toString();b.name=p.value("name").toString();b.radius=p.value("radius").toDouble(std::numeric_limits<double>::quiet_NaN());b.opacity=p.value("opacity").toDouble(std::numeric_limits<double>::quiet_NaN());b.spacing=p.value("spacing").toDouble(std::numeric_limits<double>::quiet_NaN());
-        if(b.id.isEmpty() || b.id.size()>64 || seen.contains(b.id) || b.name.trimmed().isEmpty() || b.name.size()>80 || !std::isfinite(b.radius) || b.radius<.5 || b.radius>256 || !std::isfinite(b.opacity) || b.opacity<0 || b.opacity>1 || !std::isfinite(b.spacing) || b.spacing<.05 || b.spacing>1)return false;
+        if(b.id.isEmpty() || b.id.size()>64 || seen.contains(b.id) || b.name.trimmed().isEmpty() || b.name.size()>80 || !std::isfinite(b.radius) || b.radius<.5 || b.radius>256 || !std::isfinite(b.opacity) || b.opacity<0 || b.opacity>1 || !std::isfinite(b.spacing) || b.spacing<.02 || b.spacing>1)return false;
         b.builtin=builtins.contains(b.id);b.token=++m_nextToken;seen.insert(b.id);restored.append(b);}
     const auto selected=root.value("selected").toString();if(!seen.contains(selected) || !seen.contains(builtins))return false;
     const auto sizes=root.value("toolRadii").toArray();

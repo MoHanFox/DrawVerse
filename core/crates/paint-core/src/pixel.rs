@@ -40,6 +40,16 @@ impl Pixel {
     pub fn alpha(self) -> f32 {
         self.0[3]
     }
+    pub(crate) fn mix(self, source: Self, amount: f32) -> Self {
+        let amount = amount.clamp(0., 1.);
+        let alpha = self.0[3] * (1. - amount) + source.0[3] * amount;
+        Self([
+            (self.0[0] * (1. - amount) + source.0[0] * amount).min(alpha),
+            (self.0[1] * (1. - amount) + source.0[1] * amount).min(alpha),
+            (self.0[2] * (1. - amount) + source.0[2] * amount).min(alpha),
+            alpha,
+        ])
+    }
 
     pub fn scaled(self, amount: f32) -> Self {
         let amount = if amount.is_nan() {

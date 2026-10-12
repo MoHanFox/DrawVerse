@@ -2,6 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import "."
 ComboBox {
+    property string tooltip: ""
+    hoverEnabled:true
+    ToolTip.delay:1000;ToolTip.visible:hovered && tooltip.length>0;ToolTip.text:tooltip
     id: control
     implicitHeight: 20
     leftPadding: 5; rightPadding: 16

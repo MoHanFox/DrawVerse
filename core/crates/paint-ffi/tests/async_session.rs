@@ -27,6 +27,90 @@ macro_rules! dto {
 }
 
 #[test]
+fn smudge_validation_copy_real_pixels_and_single_history() {
+    assert_eq!(size_of::<PaintSmudgeStrokeDesc>(), 88);
+    assert_eq!(offset_of!(PaintSmudgeStrokeDesc, brush), 32);
+    let h = Harness::new(8, 8);
+    let mut request = PaintSmudgeStrokeDesc {
+        strength: 0.5,
+        finger_painting: 1,
+        pressure_strength: 1,
+        brush: PaintStrokeDesc {
+            mode: PAINT_MODE_PAINT,
+            radius: 2.,
+            opacity: 1.,
+            spacing: 0.02,
+            linear_rgba: [1., 0., 0., 1.],
+            ..dto!(PaintStrokeDesc)
+        },
+        ..dto!(PaintSmudgeStrokeDesc)
+    };
+    let point = PaintPoint {
+        tool: PAINT_TOOL_PEN,
+        x: 3.,
+        y: 3.,
+        pressure: 1.,
+        ..dto!(PaintPoint)
+    };
+    let mut sequence = 99;
+    unsafe {
+        assert_eq!(
+            paint_session_begin_smudge(h.core, h.session, ptr::null(), &point, &mut sequence),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        for field in 0..6 {
+            let mut bad = request;
+            match field {
+                0 => bad.reserved[0] = 1,
+                1 => bad.all_layers = 2,
+                2 => bad.strength = f32::NAN,
+                3 => bad.brush.struct_size = 4,
+                4 => bad.brush.spacing = 0.019,
+                _ => bad.brush.mode = PAINT_MODE_ERASE,
+            }
+            assert_eq!(
+                paint_session_begin_smudge(h.core, h.session, &bad, &point, &mut sequence),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(sequence, 0);
+        }
+        assert_eq!(
+            paint_session_begin_smudge(h.core, h.session, &request, &point, &mut sequence),
+            PAINT_OK
+        );
+        request.brush.linear_rgba = [0., 1., 0., 1.];
+        assert_eq!(request.brush.linear_rgba[1], 1.);
+        assert_eq!(h.wait(sequence).last_error_status, PAINT_OK);
+        let info = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_END_STROKE,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(info.last_error_status, PAINT_OK);
+        assert_eq!(info.undo_depth, 1);
+        let bytes = h.pixels(0, h.frame(0, info.revision));
+        assert!(bytes
+            .chunks_exact(4)
+            .any(|p| p[0] > 0 && p[1] == 0 && p[3] > 0));
+        let mut history = dto!(PaintHistoryEntry);
+        assert_eq!(
+            paint_session_history_entry(h.core, h.session, info.publication, 1, &mut history),
+            PAINT_OK
+        );
+        assert_eq!(history.kind, PAINT_HISTORY_SMUDGE);
+        let info = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(info.undo_depth, 0);
+        assert!(h
+            .pixels(0, h.frame(0, info.revision))
+            .iter()
+            .all(|b| *b == 0));
+    }
+}
+
+#[test]
 fn bucket_dto_validation_copy_real_pixels_and_single_history() {
     assert_eq!(size_of::<PaintBucketFill>(), 64);
     assert_eq!(offset_of!(PaintBucketFill, linear_rgba), 16);

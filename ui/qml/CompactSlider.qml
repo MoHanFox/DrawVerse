@@ -2,6 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import "."
 Slider {
+    property string tooltip: ""
+    hoverEnabled:true
+    ToolTip.delay:1000;ToolTip.visible:hovered && tooltip.length>0;ToolTip.text:tooltip
     id: control
     property real sizeFactor: 1
     implicitHeight: 22*sizeFactor; leftPadding: 4*sizeFactor; rightPadding: 4*sizeFactor

@@ -57,8 +57,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 17) {
-            emit failure(QStringLiteral("魔棒需要核心 ABI 1.17 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 18) {
+            emit failure(QStringLiteral("涂抹需要核心 ABI 1.18 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -251,8 +251,8 @@ public:
         // One entry per HistoryAction discriminant, in order. A missing entry used to fail the whole
         // publish ("无法识别的历史操作"), which silently froze every later UI update, so the list must
         // cover every kind the core can report and the check below treats the rest as unknown text.
-        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶")};
-        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket"};
+        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹")};
+        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge"};
         for(uint32_t depth=0;depth<=info.undo_depth+info.redo_depth;++depth) {
             auto entry=dto<PaintHistoryEntry>();auto historyStatus=paint_session_history_entry(m_core,m_session,info.publication,depth,&entry);
             if(historyStatus==PAINT_BUSY)return false;if(!check(historyStatus))return false;
@@ -602,7 +602,11 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
     {
         QMutexLocker lock(&m_connection->mutex);
         if (!m_connection->session) return false;
-        status = paint_session_submit(m_connection->core, m_connection->session, &command, &sequence);
+        if(type==Begin && m_smudgeTool) {
+            auto smudge=dto<PaintSmudgeStrokeDesc>();smudge.brush=command.stroke;smudge.brush.mode=PAINT_MODE_PAINT;
+            smudge.strength=static_cast<float>(m_smudgeStrength);smudge.all_layers=m_smudgeAllLayers;smudge.finger_painting=m_smudgeFingerPainting;smudge.pressure_strength=m_smudgePressure;
+            status=paint_session_begin_smudge(m_connection->core,m_connection->session,&smudge,&command.point,&sequence);
+        } else status = paint_session_submit(m_connection->core, m_connection->session, &command, &sequence);
         if (status != PAINT_OK) error = immediateError(status);
     }
     if (status != PAINT_OK) {
@@ -677,13 +681,13 @@ void PaintCoreClient::setBrushOpacity(qreal o) {m_brushLibrary->setOpacity(o);}
 void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
 // Active tools are exclusive; the remembered marquee shape is separate from these flags.
 void PaintCoreClient::setEraser(bool e) {
-    if(m_drawing || (e==m_eraser && !m_moveTool && !m_selectionTool && !m_eyedropperTool && !m_bucketTool)) return;
-    m_moveTool=false;m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;
+    if(m_drawing || (e==m_eraser && !m_moveTool && !m_selectionTool && !m_eyedropperTool && !m_bucketTool && !m_smudgeTool)) return;
+    m_moveTool=false;m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;
     m_eraser=e; m_brushLibrary->setEraser(e); emit brushChanged();
 }
 void PaintCoreClient::setMoveTool(bool enabled) {
     if(m_drawing || enabled==m_moveTool) return;
-    if(enabled){m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_eraser=false;m_brushLibrary->setEraser(false);}
+    if(enabled){m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;m_eraser=false;m_brushLibrary->setEraser(false);}
     m_moveTool=enabled; emit brushChanged();
 }
 void PaintCoreClient::setSelectionTool(int tool) {
@@ -691,7 +695,7 @@ void PaintCoreClient::setSelectionTool(int tool) {
     m_selectionTool=tool;
     if(tool>0) {
         if(tool<=2)m_marqueeShape=tool;else if(tool<=4)m_lassoShape=tool;
-        m_moveTool=false;m_eyedropperTool=false;m_bucketTool=false;m_eraser=false;m_brushLibrary->setEraser(false);
+        m_moveTool=false;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;m_eraser=false;m_brushLibrary->setEraser(false);
     }
     emit brushChanged();
 }
@@ -750,6 +754,11 @@ void PaintCoreClient::activateEyedropper() {
 }
 
 void PaintCoreClient::activateBucket() {if(m_drawing)return;activateBrush();m_bucketTool=true;emit brushChanged();}
+void PaintCoreClient::activateSmudge() {if(m_drawing)return;activateBrush();m_smudgeTool=true;emit brushChanged();}
+void PaintCoreClient::setSmudgeStrength(qreal value) {if(!std::isfinite(value) || value<0 || value>1 || value==m_smudgeStrength)return;m_smudgeStrength=value;emit smudgeOptionsChanged();}
+void PaintCoreClient::setSmudgePressure(bool value) {if(value==m_smudgePressure)return;m_smudgePressure=value;emit smudgeOptionsChanged();}
+void PaintCoreClient::setSmudgeAllLayers(bool value) {if(value==m_smudgeAllLayers)return;m_smudgeAllLayers=value;emit smudgeOptionsChanged();}
+void PaintCoreClient::setSmudgeFingerPainting(bool value) {if(value==m_smudgeFingerPainting)return;m_smudgeFingerPainting=value;emit smudgeOptionsChanged();}
 void PaintCoreClient::setBucketOpacity(qreal value) {if(!std::isfinite(value) || value<0 || value>1 || value==m_bucketOpacity)return;m_bucketOpacity=value;emit bucketOptionsChanged();}
 void PaintCoreClient::setBucketTolerance(int value) {if(value<0 || value>255 || value==m_bucketTolerance)return;m_bucketTolerance=value;emit bucketOptionsChanged();}
 void PaintCoreClient::setBucketAntialias(bool value) {if(value==m_bucketAntialias)return;m_bucketAntialias=value;emit bucketOptionsChanged();}
@@ -820,7 +829,7 @@ bool PaintCoreClient::beginStroke(const InputSample &s) {
         if(layer.value("effectiveLocks").toUInt() & PAINT_LOCK_ALL) {showError(QStringLiteral("当前图层或所属组已完全锁定，请先解锁"));return false;}
     }
     m_dropStroke = false; if (!submit(Begin, s)) return false;
-    m_strokeColor = m_color;
+    m_strokeColor = m_smudgeTool && !m_smudgeFingerPainting ? QColor() : m_color;
     m_drawing = true; emit stateChanged(); return true;
 }
 void PaintCoreClient::strokeTo(const InputSample &s) { if (m_drawing && !m_dropStroke) submit(Move, s); }

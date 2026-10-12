@@ -68,10 +68,11 @@ Rectangle {
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         // Every slot clears the others: leaving a second tool active made the strip show the brush
         // while the bucket still owned the canvas.
-        IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;checked:!PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool && !PaintClient.eyedropperTool && !PaintClient.bucketTool;onClicked:PaintClient.activateBrush();tooltip:"画笔 B"}
+        IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;checked:!PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool && !PaintClient.eyedropperTool && !PaintClient.bucketTool && !PaintClient.smudgeTool;onClicked:PaintClient.activateBrush();tooltip:"画笔 B"}
         IconButton {objectName:"eraserTool";width:26;height:26;glyph:"eraser";checkable:true;checked:PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool;onClicked:PaintClient.activateEraser();tooltip:"橡皮擦 E"}
         // The bucket is a painting tool, not a selection shape, so it gets its own slot.
         IconButton {objectName:"bucketTool";width:26;height:26;glyph:"bucket";checkable:true;checked:PaintClient.bucketTool;onClicked:PaintClient.activateBucket();tooltip:"油漆桶 G"}
+        IconButton {objectName:"smudgeTool";width:26;height:26;glyph:"smudge";checkable:true;checked:PaintClient.smudgeTool;onClicked:PaintClient.activateSmudge();tooltip:"涂抹 R"}
         IconButton {objectName:"eyedropperTool";width:26;height:26;glyph:"eyedropper";checkable:true;checked:PaintClient.eyedropperTool;onClicked:PaintClient.activateEyedropper();tooltip:"吸色 I · Alt 临时吸色"}
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         IconButton {width:26;height:26;glyph:"undo";enabled:PaintClient.undoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.undo();tooltip:"撤销 Ctrl+Z"}

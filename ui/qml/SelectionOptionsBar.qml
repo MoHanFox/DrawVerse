@@ -36,7 +36,7 @@ RowLayout {
     Rectangle {Layout.preferredWidth:1;Layout.preferredHeight:24;color:Theme.line}
     Label {text:"羽化：";color:Theme.muted}
     CompactSpinBox {
-        objectName:"selectionFeather"
+        tooltip:"使选区边缘逐渐过渡，数值为像素半径。";objectName:"selectionFeather"
         from:0;to:1000;editable:true
         validator:RegularExpressionValidator {regularExpression:/[0-9]{1,4}(\s*像素)?/}
         value:Math.round(root.client.selectionFeather)
@@ -47,6 +47,8 @@ RowLayout {
     }
     CheckBox {
         objectName:"selectionAntialias"
+        hoverEnabled:true
+        ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"平滑选区边缘，减少锯齿。"
         text:"消除锯齿";checked:root.client.selectionAntialias
         font.pixelSize:10;padding:0;spacing:6
         onToggled:root.client.selectionAntialias=checked

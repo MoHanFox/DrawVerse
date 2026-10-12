@@ -32,6 +32,7 @@ pub enum HistoryAction {
     MagicSelection = 22,
     PolygonSelection = 24,
     Bucket = 25,
+    Smudge = 26,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }

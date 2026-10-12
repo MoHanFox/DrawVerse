@@ -1688,6 +1688,29 @@ private slots:
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);
         client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void smudgeSharedBrushParametersInputAndDelayedHelp() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("smudge.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();window->requestActivate();QTest::qWait(80);QTest::keyClick(window,Qt::Key_R);QTRY_VERIFY(client.smudgeTool());
+        QCOMPARE(client.smudgeStrength(),.5);QVERIFY(client.smudgePressure() && !client.smudgeAllLayers() && !client.smudgeFingerPainting());auto *bar=findVisualItem(window->contentItem(),"smudgeOptionsBar");QVERIFY(bar && bar->isVisible());
+        auto *preset=findVisualItem(window->contentItem(),"smudgeBrushPreset");QVERIFY(preset);QVERIFY(QMetaObject::invokeMethod(preset,"activated",Q_ARG(int,1)));QVERIFY(client.smudgeTool());QCOMPARE(preset->property("count").toInt(),client.brushLibrary()->presets().size());
+        client.brushLibrary()->setSpacing(.02);QCOMPARE(client.brushSpacing(),.02);BrushLibrary restored;QVERIFY(restored.restore(client.brushLibrary()->snapshot()));QCOMPARE(restored.spacing(),.02);
+        auto *strength=findVisualItem(window->contentItem(),"smudgeStrengthInput");QVERIFY(strength);strength->forceActiveFocus();QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier);QTest::keyClick(window,Qt::Key_8);QTest::keyClick(window,Qt::Key_0);QTest::keyClick(window,Qt::Key_Return);QCOMPARE(client.smudgeStrength(),.8);
+        auto click=[&](const QString &name){auto *item=findVisualItem(window->contentItem(),name);if(!item)return false;QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,item->mapToScene({7,item->height()/2}).toPoint());return true;};
+        QVERIFY(click("smudgePressure"));QVERIFY(!client.smudgePressure());QVERIFY(click("smudgeAllLayers"));QVERIFY(client.smudgeAllLayers());QVERIFY(click("smudgeAllLayers"));QVERIFY(click("smudgeFingerPainting"));QVERIFY(client.smudgeFingerPainting());
+        for(const auto name:{"smudgePressure","smudgeAllLayers","smudgeFingerPainting","wandAntialias","wandContiguous","wandAllLayers","bucketAntialias","bucketContiguous","bucketAllLayers","selectionAntialias"}) {
+            auto *item=findVisualItem(window->contentItem(),name);QVERIFY(item);QCOMPARE(QQmlProperty::read(item,"ToolTip.delay",qmlContext(item)).toInt(),1000);QVERIFY(!QQmlProperty::read(item,"ToolTip.text",qmlContext(item)).toString().isEmpty());
+        }
+        auto *helpItem=findVisualItem(window->contentItem(),"smudgeFingerPainting");auto *tip=QQmlProperty::read(helpItem,"ToolTip.toolTip",qmlContext(helpItem)).value<QObject*>();QVERIFY(tip);QTest::mouseMove(window,{2,100});QTest::mouseMove(window,helpItem->mapToScene({7,helpItem->height()/2}).toPoint());QTRY_VERIFY(helpItem->property("hovered").toBool());QTest::qWait(400);QVERIFY(!tip->property("visible").toBool());QTRY_VERIFY_WITH_TIMEOUT(tip->property("visible").toBool(),1500);QTest::mouseMove(window,{2,100});QTRY_VERIFY(!tip->property("visible").toBool());
+        client.setBrushRadius(4);client.setBrushOpacity(1);client.setBrushColor(Qt::blue);const auto at=[&](QPointF p){return canvas->mapToScene(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,at({20,32}));QTest::mouseMove(window,at({32,32}));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,at({32,32}));QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());
+        QCOMPARE(client.historyEntries().last().toMap().value("kind").toInt(),26);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("涂抹"));
+        const auto pixel=[&](int x,int y){const auto r=client.frameRegion();const auto &f=client.frame();return f.pixelColor(qFloor((x+.5-r.x())*f.width()/r.width()),qFloor((y+.5-r.y())*f.height()/r.height()));};QVERIFY(pixel(20,32).blue()>0);client.undo();QTRY_COMPARE(client.undoDepth(),0);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(pixel(20,32).alpha(),0);
+        client.setSmudgePressure(true);QPointingDevice pen("smudge pen",125,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        for(const auto type:{QEvent::TabletPress,QEvent::TabletMove,QEvent::TabletRelease}) {const auto local=at(type==QEvent::TabletPress?QPointF(20,32):QPointF(32,32));QTabletEvent event(type,&pen,local,window->mapToGlobal(local),.5,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(window,&event);QVERIFY(event.isAccepted());}QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        const auto preview=qEnvironmentVariable("DRAWVERSE_SMUDGE_PREVIEW");if(!preview.isEmpty())QVERIFY(window->grabWindow().save(preview));client.activateBrush();QVERIFY(!client.smudgeTool());QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void bucketOptionsMouseTabletAndFloatingCanvasFillOnce() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("bucket.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
@@ -2791,7 +2814,7 @@ private slots:
         QTRY_VERIFY(dialog->property("opened").toBool());
         // The list is real: one row per bound shortcut. Assert on the rendered pixels so a dialog
         // that only reports a model without drawing rows would still fail.
-        QObject *list=nullptr;QTRY_VERIFY((list=dialog->findChild<QObject*>("shortcutList")));QTRY_COMPARE(list->property("count").toInt(),25);
+        QObject *list=nullptr;QTRY_VERIFY((list=dialog->findChild<QObject*>("shortcutList")));QTRY_COMPARE(list->property("count").toInt(),26);
         auto *dialogContent=qobject_cast<QQuickItem*>(dialog->property("contentItem").value<QObject*>());QVERIFY(dialogContent);
         QQuickItem *listItem=qobject_cast<QQuickItem*>(list);QVERIFY(listItem);
         QImage shot;bool grabbed=false;

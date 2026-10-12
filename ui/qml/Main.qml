@@ -398,7 +398,7 @@ ApplicationWindow {
         objectName: "brushOptionsBar"
         height: 36; color: Theme.raised
         RowLayout {
-            visible: !PaintClient.selectionTool && !PaintClient.eyedropperTool && !PaintClient.bucketTool
+            visible: !PaintClient.selectionTool && !PaintClient.eyedropperTool && !PaintClient.bucketTool && !PaintClient.smudgeTool
             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
             Icon { name: PaintClient.selectionTool ? (PaintClient.selectionTool===2 ? "ellipseSelection":"rectangleSelection") : PaintClient.moveTool ? "move" : PaintClient.eraser ? "eraser" : "brush"; Layout.preferredWidth: 17; Layout.preferredHeight: 17 }
             Label { text: PaintClient.selectionTool ? (PaintClient.selectionTool===2?"椭圆选框":"矩形选框") : PaintClient.moveTool ? "移动图层" : PaintClient.eraser ? "橡皮擦" : "画笔"; color: Theme.text; Layout.preferredWidth: 42 }
@@ -424,6 +424,11 @@ ApplicationWindow {
         }
         WandOptionsBar {
             visible:PaintClient.selectionTool===5
+            anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8
+            client:PaintClient
+        }
+        SmudgeOptionsBar {
+            visible:PaintClient.smudgeTool
             anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8
             client:PaintClient
         }

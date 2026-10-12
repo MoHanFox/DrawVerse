@@ -342,6 +342,7 @@ struct Stroke {
     distance_to_next: f64,
     before: BTreeMap<TileCoord, Option<Arc<Tile>>>,
     mask_paint: Option<(f32, f32)>,
+    first_dab: bool,
 }
 
 #[derive(Debug)]
@@ -367,6 +368,8 @@ pub use bucket::BucketFill;
 #[path = "wand.rs"]
 mod wand;
 pub use wand::WandSelection;
+#[path = "smudge.rs"]
+mod smudge;
 
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
     if layers.iter().any(|l| l.group || l.mask || l.clipped) {
@@ -1020,6 +1023,16 @@ impl Document {
             return Err(Error::InvalidArgument("select a pixel layer to paint"));
         }
         self.check_ancestors(self.active_layer, crate::LOCK_ALL)?;
+        if matches!(
+            brush.mode,
+            BrushMode::Smudge {
+                all_layers: true,
+                ..
+            }
+        ) && self.layer(self.active_layer).expect("active").mask
+        {
+            return Err(Error::InvalidArgument("all-layer smudge sampling on mask"));
+        }
         let mut stroke = Stroke {
             layer: self.active_layer,
             brush,
@@ -1027,6 +1040,7 @@ impl Document {
             last_dab: first,
             distance_to_next: brush.step(),
             before: BTreeMap::new(),
+            first_dab: true,
             mask_paint: if self.layer(self.active_layer).expect("active").mask {
                 let c = brush.color.components();
                 let a = c[3];
@@ -1081,8 +1095,16 @@ impl Document {
             ((distance - current.distance_to_next + 1e-9) / step).floor() as usize + 1
         };
         let diameter = (f64::from(current.brush.radius) * 2.0 + 2.0).ceil() as usize;
+        let sample_cost = if matches!(current.brush.mode, BrushMode::Smudge { .. }) {
+            5
+        } else {
+            1
+        };
         if count > MAX_DABS_PER_SEGMENT
-            || count.saturating_mul(diameter * diameter) > MAX_PIXEL_VISITS_PER_SEGMENT
+            || count
+                .saturating_mul(diameter * diameter)
+                .saturating_mul(sample_cost)
+                > MAX_PIXEL_VISITS_PER_SEGMENT
         {
             // No mutation: a caller may resample a long device segment or cancel the stroke.
             return Err(Error::ResourceLimit(
@@ -1172,10 +1194,10 @@ impl Document {
             layer: stroke.layer,
             changes,
         };
-        let action = if stroke.brush.mode == BrushMode::Erase {
-            crate::HistoryAction::Eraser
-        } else {
-            crate::HistoryAction::Brush
+        let action = match stroke.brush.mode {
+            BrushMode::Erase => crate::HistoryAction::Eraser,
+            BrushMode::Paint => crate::HistoryAction::Brush,
+            BrushMode::Smudge { .. } => crate::HistoryAction::Smudge,
         };
         if let Err(error) = self.commit_with_action(command.clone(), action) {
             // History preparation failed before eviction. Restore all touched
@@ -1236,7 +1258,18 @@ impl Document {
         point: InputPoint,
     ) -> Result<bool> {
         let radius = f64::from(stroke.brush.radius * point.pressure);
-        let flow = stroke.brush.opacity * point.pressure;
+        let flow = stroke.brush.opacity
+            * if matches!(
+                stroke.brush.mode,
+                BrushMode::Smudge {
+                    pressure_strength: false,
+                    ..
+                }
+            ) {
+                1.
+            } else {
+                point.pressure
+            };
         if radius == 0.0 || flow == 0.0 {
             return Ok(false);
         }
@@ -1248,11 +1281,29 @@ impl Document {
         let appearance = self.layers[index].appearance;
         let mask = self.layers[index].mask;
         let alpha_locked = !mask && appearance.locks & crate::LOCK_TRANSPARENCY != 0;
-        let erase = stroke.brush.mode == BrushMode::Erase || point.tool == Tool::Eraser;
+        let erase = stroke.brush.mode == BrushMode::Erase
+            || (point.tool == Tool::Eraser
+                && !matches!(stroke.brush.mode, BrushMode::Smudge { .. }));
         let mut changed = false;
         if x0 >= x1 || y0 >= y1 {
             return Ok(false);
         }
+        if matches!(stroke.brush.mode, BrushMode::Smudge { .. })
+            && !(stroke.first_dab
+                && matches!(
+                    stroke.brush.mode,
+                    BrushMode::Smudge {
+                        finger_painting: true,
+                        ..
+                    }
+                ))
+            && (point.x - stroke.last_dab.x).hypot(point.y - stroke.last_dab.y) < 1e-9
+        {
+            stroke.first_dab = false;
+            return Ok(false);
+        }
+        let smudge = self.prepare_smudge(stroke, point, x0, y0, x1, y1)?;
+        stroke.first_dab = false;
         let (x0, x1) = (
             x0 - i64::from(appearance.offset_x),
             x1 - i64::from(appearance.offset_x),
@@ -1321,7 +1372,31 @@ impl Document {
                         } else {
                             coverage * flow
                         };
-                        let after = if mask {
+                        let after = if let Some(smudge) = &smudge {
+                            let dragged = smudge.at(
+                                x + i64::from(appearance.offset_x),
+                                y + i64::from(appearance.offset_y),
+                            );
+                            if smudge.finger && !mask {
+                                if alpha_locked {
+                                    before.paint_preserving_alpha(dragged, amount)
+                                } else {
+                                    dragged.scaled(amount).over(before)
+                                }
+                            } else if alpha_locked {
+                                before.paint_preserving_alpha(dragged, amount)
+                            } else {
+                                before.mix(
+                                    dragged,
+                                    amount
+                                        * if smudge.finger && mask {
+                                            stroke.mask_paint.expect("mask target").1
+                                        } else {
+                                            1.
+                                        },
+                                )
+                            }
+                        } else if mask {
                             let (tone, a) = stroke.mask_paint.expect("mask brush target");
                             let hide = if erase { 0. } else { tone };
                             let weight = amount * if erase { 1. } else { a };

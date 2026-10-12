@@ -28,7 +28,7 @@ ColumnLayout {
             Label {text:"间距";font.pixelSize:9;color:Theme.text;Layout.fillWidth:true}
             Label {text:(root.library.spacing*50).toFixed(1)+"%";font.pixelSize:9;color:Theme.text}
         }
-        CompactSlider {objectName:"settingsBrushSpacing";Layout.fillWidth:true;from:2.5;to:50;value:root.library.spacing*50;onMoved:root.library.spacing=value/50}
+        CompactSlider {tooltip:"相邻笔尖之间的距离，以笔刷直径的百分比表示；最低 1%。";objectName:"settingsBrushSpacing";Layout.fillWidth:true;from:1;to:50;value:root.library.spacing*50;onMoved:root.library.spacing=value/50}
         Rectangle {Layout.fillWidth:true;height:1;color:Theme.line}
         RowLayout {
             Label {text:"不透明度";font.pixelSize:9;color:Theme.text;Layout.fillWidth:true}
@@ -39,7 +39,7 @@ ColumnLayout {
             objectName:"brushStrokePreview";Layout.fillWidth:true;Layout.preferredHeight:60;color:Theme.selected
             Image {anchors.fill:parent;anchors.margins:4;source:root.library.selectedPreview;fillMode:Image.PreserveAspectFit;asynchronous:true}
             Text {anchors.centerIn:parent;text:root.library.previewMessage;font.pixelSize:9;color:Theme.muted;visible:!root.library.selectedPreview.length}
-            ToolTip.visible:hover.containsMouse;ToolTip.text:"实际引擎压感笔触 · 预览大小按范围缩放"
+            ToolTip.delay:1000;ToolTip.visible:hover.containsMouse;ToolTip.text:"实际引擎压感笔触 · 预览大小按范围缩放"
             MouseArea {id:hover;anchors.fill:parent;hoverEnabled:true;onDoubleClicked:root.library.retryPreview()}
         }
         Label {text:"圆形笔尖 · 压感控制大小与流量";font.pixelSize:8;color:Theme.muted;wrapMode:Text.WordWrap;Layout.fillWidth:true}
