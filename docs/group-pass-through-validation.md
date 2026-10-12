@@ -10,4 +10,6 @@
 
 Rust fmt、core/ffi/io/render all-targets clippy -D warnings、Release 构建及生成头严格字节检查通过；ABI C/C++ smoke 编译链接，本轮未运行其测试。日志 artifacts/pass-build.log、pass-native-1.txt、pass-native-2.txt；截图 artifacts/pass-ui-1.png、pass-ui-2.png，生成物不纳入提交。
 
-保留现有组默认正常/隔离，不迁移旧文件；使用方式是选中组，将混合模式设为“穿透”。穿透与普通组共用属性历史/现有布局，不新增虚假的 fx 实现。ORA 自有扩展精确保留穿透 opacity/fill；只解释标准 stack 的外部应用会按其 isolation/opacity 规则显示，可能与自有扩展合成不同，mergedimage.png 使用本应用的真实结果。本轮未做全量性能基准和独立真实硬件验收。
+新建组默认穿透，不迁移旧文件；使用方式是选中组，将混合模式设为“穿透”。穿透与普通组共用属性历史/现有布局，不新增虚假的 fx 实现。ORA 自有扩展精确保留穿透 opacity/fill；只解释标准 stack 的外部应用会按其 isolation/opacity 规则显示，可能与自有扩展合成不同，mergedimage.png 使用本应用的真实结果。本轮未做全量性能基准和独立真实硬件验收。
+
+后续默认值/顺序调整：按用户要求，新建单层组及多选组默认 mode 27；组菜单首项穿透，第二项正常，通过索引映射保留 ABI 编号。对照回归改为显式正常组。此次只构建更新程序，不运行测试；上述通过记录是调整前的功能验证。

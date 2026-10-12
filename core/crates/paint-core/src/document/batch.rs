@@ -94,6 +94,7 @@ impl Document {
         }
         let mut group = Layer::new(group_id, name);
         group.group = true;
+        group.appearance.blend = crate::BlendMode::PassThrough;
         group.parent = parent;
         moved.push(group);
         nodes.splice(at..at, moved);

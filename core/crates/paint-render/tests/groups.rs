@@ -131,6 +131,9 @@ fn pass_through_switch_preview_and_mask_invalidate_cached_backdrop() {
     doc.set_layer_appearance(top, a).unwrap();
     let flat = doc.pixel(64, 64);
     let group = doc.group_layer(top, "pass").unwrap();
+    let mut a = doc.layer(group).unwrap().appearance();
+    a.blend = BlendMode::Normal;
+    doc.set_layer_appearance(group, a).unwrap();
     let cached = CachedCpuRenderer::default();
     let before = render(&cached, &doc, 128);
     let mut a = doc.layer(group).unwrap().appearance();

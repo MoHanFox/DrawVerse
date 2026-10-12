@@ -95,11 +95,12 @@ ColumnLayout {
             Layout.fillWidth: true; Layout.minimumWidth: 48; implicitHeight: 20
             enabled: root.unlocked
             readonly property var regularModes: ["正常","溶解","变暗","正片叠底","颜色加深","线性加深","深色","变亮","滤色","颜色减淡","线性减淡（添加）","浅色","叠加","柔光","强光","亮光","线性光","点光","实色混合","差值","排除","减去","划分","色相","饱和度","颜色","明度"]
-            model:root.control.group?regularModes.concat(["穿透"]):regularModes
-            currentIndex: root.control.blendMode
-            onOptionHovered:index=>{if(index>=0)PaintClient.previewLayerBlend(root.control.id,index);else PaintClient.clearLayerBlendPreview()}
+            model:root.control.group?["穿透"].concat(regularModes):regularModes
+            currentIndex: root.control.group?(root.control.blendMode===27?0:root.control.blendMode+1):root.control.blendMode
+            function modeAt(index) {return root.control.group?(index===0?27:index-1):index}
+            onOptionHovered:index=>{if(index>=0)PaintClient.previewLayerBlend(root.control.id,modeAt(index));else PaintClient.clearLayerBlendPreview()}
             onMenuClosed:PaintClient.clearLayerBlendPreview()
-            onActivated: {PaintClient.clearLayerBlendPreview();PaintClient.setLayerBlend(root.control.id,currentIndex)}
+            onActivated:index=>{PaintClient.clearLayerBlendPreview();PaintClient.setLayerBlend(root.control.id,modeAt(index))}
             ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: root.control.group?"组设为穿透时，组内混合模式可以影响组外下方图层；其他模式隔离合成。":"图层混合模式"
         }
         Label { text: "不透明度"; color: Theme.muted; font.pixelSize: 9 }

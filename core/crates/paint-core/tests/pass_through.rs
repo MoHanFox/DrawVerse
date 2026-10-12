@@ -39,6 +39,11 @@ fn setup() -> (Document, u64, u64, Pixel, Pixel) {
     mode(&mut d, top, BlendMode::ColorDodge);
     let flat = d.pixel(16, 16);
     let group = d.group_layer(top, "group").unwrap();
+    assert_eq!(
+        d.layer(group).unwrap().appearance().blend,
+        BlendMode::PassThrough
+    );
+    mode(&mut d, group, BlendMode::Normal);
     (d, top, group, backdrop, flat)
 }
 #[test]
@@ -119,6 +124,7 @@ fn nested_isolation_masks_and_internal_clipping_remain_bounded() {
     let (mut d, _top, g, b, flat) = setup();
     mode(&mut d, g, BlendMode::PassThrough);
     let outer = d.group_layer(g, "outer").unwrap();
+    mode(&mut d, outer, BlendMode::Normal);
     assert_ne!(d.pixel(16, 16), flat);
     mode(&mut d, outer, BlendMode::PassThrough);
     near(d.pixel(16, 16), flat);

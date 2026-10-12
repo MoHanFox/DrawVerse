@@ -2167,6 +2167,15 @@ fn pass_through_group_appearance_validation_publication_and_undo() {
         );
         let info = h.wait(seq);
         let group = info.active_layer_id;
+        let normal = PaintLayerAppearance {
+            blend_mode: 0,
+            ..appearance
+        };
+        assert_eq!(
+            paint_session_set_layer_appearance(h.core, h.session, group, &normal, &mut seq),
+            PAINT_OK
+        );
+        let info = h.wait(seq);
         assert_eq!(info.last_error_status, PAINT_OK);
         assert_eq!(
             paint_session_set_layer_appearance(h.core, h.session, group, &appearance, &mut seq),

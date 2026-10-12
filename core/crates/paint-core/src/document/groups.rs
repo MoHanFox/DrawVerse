@@ -484,6 +484,7 @@ impl Document {
         let mut nodes = self.structure();
         let mut group = Layer::new(group_id, name);
         group.group = true;
+        group.appearance.blend = crate::BlendMode::PassThrough;
         group.parent = nodes[range.end - 1].parent;
         nodes[range.end - 1].parent = group_id;
         nodes.insert(range.end, group);

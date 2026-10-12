@@ -54,6 +54,9 @@ fn nested_ora_preserves_groups_properties_selection_and_raster_exports() {
     .unwrap();
     doc.end_stroke().unwrap();
     let outer = doc.group_layer(inner, "Outer").unwrap();
+    let mut isolated = doc.layer(outer).unwrap().appearance();
+    isolated.blend = paint_core::BlendMode::Normal;
+    doc.set_layer_appearance(outer, isolated).unwrap();
     doc.set_layer_properties(
         outer,
         LayerProperties {
