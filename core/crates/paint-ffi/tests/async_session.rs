@@ -100,6 +100,116 @@ fn bucket_dto_validation_copy_real_pixels_and_single_history() {
     }
 }
 #[test]
+fn wand_request_validation_copy_mask_query_history_and_undo() {
+    assert_eq!(size_of::<PaintWandSelection>(), 48);
+    let h = Harness::new(8, 4);
+    let mut sequence = 99;
+    let mut request = PaintWandSelection {
+        sample_size: 1,
+        tolerance: 10,
+        antialias: 1,
+        contiguous: 1,
+        ..dto!(PaintWandSelection)
+    };
+    unsafe {
+        assert_eq!(
+            paint_session_select_wand(h.core, h.session, ptr::null(), &mut sequence),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        for i in 0..6 {
+            let mut bad = request;
+            match i {
+                0 => bad.struct_size = 4,
+                1 => bad.sample_size = 2,
+                2 => bad.tolerance = 256,
+                3 => bad.antialias = 2,
+                4 => bad.operation = 4,
+                _ => bad.reserved[0] = 1,
+            };
+            assert_eq!(
+                paint_session_select_wand(h.core, h.session, &bad, &mut sequence),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(sequence, 0);
+        }
+        assert_eq!(
+            paint_session_select_wand(h.core, h.session, &request, &mut sequence),
+            PAINT_OK
+        );
+        request.x = 999;
+        let info = h.wait(sequence);
+        assert_eq!(info.last_error_status, PAINT_OK);
+        assert_eq!(info.undo_depth, 1);
+        assert_ne!(info.flags & PAINT_SESSION_MODIFIED, 0);
+        let mut length = 0;
+        assert_eq!(
+            paint_session_selection_mask(
+                h.core,
+                h.session,
+                info.publication,
+                0,
+                ptr::null_mut(),
+                0,
+                &mut length
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert_eq!(length, 32);
+        let mut bytes = vec![0; length as usize];
+        assert_eq!(
+            paint_session_selection_mask(
+                h.core,
+                h.session,
+                info.publication,
+                0,
+                bytes.as_mut_ptr(),
+                length,
+                &mut length
+            ),
+            PAINT_OK
+        );
+        assert!(bytes.iter().all(|&v| v == 255));
+        assert_eq!(
+            paint_session_selection_mask(
+                h.core,
+                h.session,
+                info.publication.wrapping_sub(1),
+                0,
+                bytes.as_mut_ptr(),
+                length,
+                &mut length
+            ),
+            PAINT_BUSY
+        );
+        assert_eq!(length, 0);
+        let mut history = dto!(PaintHistoryEntry);
+        assert_eq!(
+            paint_session_history_entry(h.core, h.session, info.publication, 1, &mut history),
+            PAINT_OK
+        );
+        assert_eq!(history.kind, PAINT_HISTORY_MAGIC_SELECTION);
+        let info = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(info.undo_depth, 0);
+        let mut summary = dto!(PaintSelectionInfo);
+        assert_eq!(
+            paint_session_selection_info(h.core, h.session, info.publication, &mut summary),
+            PAINT_OK
+        );
+        assert_eq!(summary.enabled, 0);
+        assert_eq!(
+            paint_session_select_wand(h.core, h.session, &request, &mut sequence),
+            PAINT_OK
+        );
+        let bad = h.wait(sequence);
+        assert_eq!(bad.last_error_status, PAINT_INVALID_ARGUMENT);
+        assert_eq!(bad.undo_depth, 0);
+    }
+}
+#[test]
 fn batch_layer_abi_copies_ids_rejects_bad_buffers_and_commits_one_step() {
     let h = Harness::new(32, 32);
     for _ in 0..3 {

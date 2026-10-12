@@ -1,5 +1,7 @@
 # DrawVerse
 
+魔棒：[设计](docs/wand-design.md) / [验收](docs/wand-validation.md)，W 激活；四种选区组合、七种取样大小、容差/AA/连续/所有图层取样，ABI 1.17。
+
 Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘画软件项目。
 
 已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.15.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。

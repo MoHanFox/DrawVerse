@@ -413,12 +413,17 @@ ApplicationWindow {
             Item { Layout.fillWidth: true }
         }
         SelectionOptionsBar {
-            visible:PaintClient.selectionTool>0
+            visible:PaintClient.selectionTool>0 && PaintClient.selectionTool<5
             anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:12
             client:PaintClient
         }
         BucketOptionsBar {
             visible:PaintClient.bucketTool
+            anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8
+            client:PaintClient
+        }
+        WandOptionsBar {
+            visible:PaintClient.selectionTool===5
             anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8
             client:PaintClient
         }

@@ -292,6 +292,7 @@ void CanvasItem::mousePressEvent(QMouseEvent *e) {
         e->accept(); return;
     }
     if(e->button()!=Qt::LeftButton){e->ignore();return;}
+    if(m_client->selectionTool()==5 && documentRect().contains(e->position())) {const bool add=e->modifiers().testFlag(Qt::ShiftModifier),sub=e->modifiers().testFlag(Qt::AltModifier);e->setAccepted(m_client->selectWand(documentPoint(e->position()),add?(sub?3:1):(sub?2:m_client->selectionOperation())));return;}
     if(m_client->bucketTool() && documentRect().contains(e->position())) {e->setAccepted(m_client->bucketFill(documentPoint(e->position())));return;}
     if(m_client->selectionTool() && documentRect().contains(e->position())) {e->setAccepted(beginSelection(e->position(),e->modifiers()));return;}
     if (m_client->moveTool() && documentRect().contains(e->position())) { e->setAccepted(beginLayerMove(e->position())); return; }
@@ -329,6 +330,7 @@ void CanvasItem::keyPressEvent(QKeyEvent *e) {
     else if(m_selecting && m_selectionKind==3 && e->key()==Qt::Key_Backspace) {if(!m_selectionPoints.isEmpty())m_selectionPoints.removeLast();if(m_selectionPoints.isEmpty())cancelSelectionDrag();else emit selectionDragChanged();e->accept();}
     else if (e->key() == Qt::Key_Alt) {setAltHeld(true); e->accept(); }
     else if(m_client && e->key()==Qt::Key_G && e->modifiers()==Qt::NoModifier) {m_client->activateBucket();e->accept();}
+    else if(m_client && e->key()==Qt::Key_W && e->modifiers()==Qt::NoModifier) {m_client->activateWand();e->accept();}
     else if (e->key() == Qt::Key_Escape) { if(m_selecting) cancelSelectionDrag();else if (m_client) m_client->cancelStroke(); m_stroke = false; m_tablet = false; m_moving=false; e->accept(); }
     else if(m_client && m_client->moveTool() && !m_moving && e->key()>=Qt::Key_Left && e->key()<=Qt::Key_Down) {
         const int step=e->modifiers().testFlag(Qt::ShiftModifier) ? 10 : 1;
@@ -407,6 +409,11 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if(m_picking || ((m_altHeld || m_client->eyedropperTool()) && !m_client->selectionTool() && !m_client->moveTool())) {
         if(event->type()==QEvent::TabletPress){m_picking=m_tablet=true;const auto color=pickColorAt(local);if(color.isValid())m_client->setBrushColor(color);}
         else if(event->type()==QEvent::TabletRelease)m_picking=m_tablet=false;
+        e->accept();return true;
+    }
+    if(m_client->selectionTool()==5) {
+        if(event->type()==QEvent::TabletPress){const bool add=e->modifiers().testFlag(Qt::ShiftModifier),sub=e->modifiers().testFlag(Qt::AltModifier);forceActiveFocus();m_client->selectWand(documentPoint(local),add?(sub?3:1):(sub?2:m_client->selectionOperation()));m_tablet=true;}
+        else if(event->type()==QEvent::TabletRelease)m_tablet=false;
         e->accept();return true;
     }
     if(m_client->selectionTool() || m_selecting) {

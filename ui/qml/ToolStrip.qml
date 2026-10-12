@@ -51,7 +51,7 @@ Rectangle {
         IconButton {
             id:lassoButton;objectName:"lassoTool";width:26;height:26
             glyph:PaintClient.lassoShape===4?"polygonSelection":"lassoSelection"
-            checkable:true;checked:PaintClient.selectionTool>=3;hasVariants:true
+            checkable:true;checked:PaintClient.selectionTool===3||PaintClient.selectionTool===4;hasVariants:true
             onClicked:PaintClient.activateLasso();tooltip:"套索工具 · 右键切换子类"
             function openVariants() {
                 lassoVariants.toolTitle="套索工具"
@@ -64,7 +64,7 @@ Rectangle {
             TapHandler {acceptedButtons:Qt.RightButton;onTapped:lassoButton.openVariants()}
             ToolVariantsPanel {id:lassoVariants;objectName:"lassoVariantPanel";parent:root;canvasView:root.canvasView}
         }
-        IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;checked:false;enabled:false;tooltip:"魔棒（待支持）" }
+        IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;checked:PaintClient.selectionTool===5;onClicked:PaintClient.activateWand();tooltip:"魔棒 W" }
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         // Every slot clears the others: leaving a second tool active made the strip show the brush
         // while the bucket still owned the canvas.

@@ -15,7 +15,23 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 16;
+pub const PAINT_ABI_MINOR: u32 = 17;
+pub const PAINT_FEATURE_WAND: u64 = 16384;
+/// ABI 1.17: bounded color-region selection; flags 0/1, reserved zero.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintWandSelection {
+    pub struct_size: u32,
+    pub x: u32,
+    pub y: u32,
+    pub sample_size: u32,
+    pub tolerance: u32,
+    pub antialias: u32,
+    pub contiguous: u32,
+    pub all_layers: u32,
+    pub operation: u32,
+    pub reserved: [u32; 3],
+}
 
 /// ABI 1.10: metadata for one retained history boundary/operation.
 #[repr(C)]

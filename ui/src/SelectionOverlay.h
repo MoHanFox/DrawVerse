@@ -8,8 +8,7 @@
 
 // Consumes only copied C ABI geometry and paints the selection outline as marching ants: a black
 // underlay with a white dashed line whose dash phase advances, so the user can confirm the region.
-// Rasterized selections (lasso, magic wand) may supply extra boundary segments; the mask itself is
-// never copied here.
+// Magic-wand steps carry bounded copied alpha masks; the half-coverage boundary supplies the path.
 class SelectionOverlay : public QQuickPaintedItem {
     Q_OBJECT
     Q_PROPERTY(QVariantList steps READ steps WRITE setSteps NOTIFY geometryChanged)

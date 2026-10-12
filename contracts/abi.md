@@ -1,4 +1,10 @@
-# C ABI 1.14.0 契约
+# C ABI 1.17.0 契约
+
+## ABI 1.17：魔棒
+
+新增 48 字节 PaintWandSelection：struct_size/x/y/sample_size/tolerance/antialias/contiguous/all_layers/operation 均为 u32，reserved[3] 为零；尺寸只接受 1/3/5/11/31/51/101，容差 0–255，布尔 0/1，operation 0–3（新建/添加/减去/交叉）。paint_session_select_wand 在调用内复制并验证请求，返回队列 sequence（入队前失败归零），actor 原子生成像素选区；坐标越界和资源失败通过既有异步错误发布。新增 feature bit 16384；历史使用已保留的 MAGIC_SELECTION=22。
+
+paint_session_selection_mask(core,session,publication,index,bytes,capacity,out_length) 复制指定步的 row-major u8 覆盖（0–255）；掩码尺寸来自同 publication 的 selection_step。NULL/0 查询返回 BUFFER_TOO_SMALL 和 required length，容量不足不写 bytes；publication 变化返回 BUSY 并清零 length。缓冲和长度指针须可写且不重叠；非掩码步 INVALID_ARGUMENT、无效步 NOT_FOUND。最多 16MiB，无内部借用指针。旧二值选区 mask RLE 仍读取，灰度 mask 用 g 前缀；新核心保留原覆盖，旧核心明确拒绝未知灰度编码。新魔棒限制总编码为现有 1MiB 可持久化预算。
 
 ## ABI 1.14 多选新建组
 
@@ -54,7 +60,7 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 ## 版本与类型
 
-全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/16/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
+全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/17/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
 
 初始化 DTO 为零并写 struct_size=sizeof(本调用者结构)，输入至少含已发布前缀。库只访问已知前缀；过小为 INVALID_ARGUMENT，不覆盖调用者内存；扩展尾部保持不变。输出 struct_size 写库已知大小。reserved 必须为零；未知 mode/tool/format 为 UNSUPPORTED。输入 capability 位保留未知位，圆笔刷只实际使用 pressure，客户端为无压力设备提供 pressure=1。
 
@@ -191,7 +197,7 @@ paint_session_selection_info/selection_step 使用与 layer_info 相同的 exact
 
 PaintSelectionShapeEdit=72 字节：struct_size/shape/operation/antialias/tool/point_count（0–20），feather（24），x/y/width/height（32–56），points（64）。shape=0 矩形、1 椭圆、2 多边形；前两种 tool/point_count=0、points=NULL，多边形 tool=1 自由套索或2 多边形套索，矩形字段全0。operation=0/1/2/3，antialias=0/1，feather 为有限的文档像素半径0–1000。路径3–4096点、坐标有限且绝对值不超过2000000，非共线；选区总路径点数不超过4096（actor拒绝超过预算）。奇偶填充支持凹形及自交，羽化用对称 smoothstep 距离过渡，50%边界不移动。旧几何编辑接口默认羽化0保持既有语义和 DTO 大小。
 
-paint_session_edit_selection_shape 同步复制、校验 request 及所有路径点后提交既有 FIFO 选区命令，返回前不保留 caller 指针。所有空/未对齐指针、数量、形状/工具、参数失败清空 out_sequence；OK 只表示入队，仍查询完成序号和错误状态。无变化不创建历史。历史21为套索、24为多边形套索，20为椭圆、4为矩形；22保留未实现魔棒，不产生。
+paint_session_edit_selection_shape 同步复制、校验 request 及所有路径点后提交既有 FIFO 选区命令，返回前不保留 caller 指针。所有空/未对齐指针、数量、形状/工具、参数失败清空 out_sequence；OK 只表示入队，仍查询完成序号和错误状态。无变化不创建历史。历史21为套索、24为多边形套索，20为椭圆、4为矩形；22为魔棒（ABI 1.17 起产生）。
 
 PaintSelectionDetails=16字节，struct_size(0)、point_count(4)、feather(8)。paint_session_selection_details(core,session,publication,index,out,points,capacity) 与 selection_step 同一 publication，不一致返回 BUSY；容量不足返回 BUFFER_TOO_SMALL 并给出 point_count，不写点缓冲；NULL/0可查询需求。足够容量一次复制所有点，无点形状不解引用点缓冲。输出调用者需保证 capacity 可写点，生命周期与旧查询相同。选区文本 v3 保存半径/路径，读取 v1/v2；磁盘历史和 ORA v4 仍使用有界选区文本。旧核心拒绝未知文本版本，不静默丢失新选区。
 

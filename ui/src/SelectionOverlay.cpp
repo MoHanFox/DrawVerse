@@ -1,6 +1,7 @@
 #include "SelectionOverlay.h"
 #include <QPainter>
 #include <QQuickWindow>
+#include <QRegion>
 #include <cmath>
 
 namespace {
@@ -68,6 +69,14 @@ void SelectionOverlay::rebuild(){
             const auto points=step.value("points").toList();
             for(qsizetype i=0;i<points.size();++i){const auto p=points[i].toPointF();if(i==0)shape.moveTo(p);else shape.lineTo(p);}
             shape.closeSubpath();shape.setFillRule(Qt::OddEvenFill);
+        } else if(step.value("shape").toInt()==3) {
+            const auto mask=step.value("mask").toByteArray();const int w=qRound(rect.width()),h=qRound(rect.height());
+            if(w>0 && h>0 && qint64(w)*h==mask.size()) {
+                QVector<QRect> runs;
+                for(int y=0;y<h;++y){int x=0;while(x<w){while(x<w && static_cast<unsigned char>(mask[y*w+x])<128)++x;const int left=x;while(x<w && static_cast<unsigned char>(mask[y*w+x])>=128)++x;if(x>left)runs.append(QRect(left,y,x-left,1));}}
+                QRegion region;region.setRects(runs.constData(),static_cast<int>(runs.size()));
+                shape.setFillRule(Qt::WindingFill);for(const auto &r:region)shape.addRect(QRectF(r).translated(rect.topLeft()));shape=shape.simplified();
+            }
         } else if(step.value("shape").toInt()==1)shape.addEllipse(rect);else shape.addRect(rect);
         switch(operation){case 0:m_path=shape;break;case 1:m_path=m_path.united(shape);break;case 2:m_path=m_path.subtracted(shape);break;case 3:m_path=m_path.intersected(shape);break;case 4:m_path=full.subtracted(m_path);break;default:break;}
     }

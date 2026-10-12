@@ -2,3 +2,4 @@ singleton Theme 1.0 Theme.qml
 
 SelectionOptionsBar 1.0 SelectionOptionsBar.qml
 BucketOptionsBar 1.0 BucketOptionsBar.qml
+WandOptionsBar 1.0 WandOptionsBar.qml

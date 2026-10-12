@@ -57,8 +57,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 16) {
-            emit failure(QStringLiteral("油漆桶需要核心 ABI 1.16 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 17) {
+            emit failure(QStringLiteral("魔棒需要核心 ABI 1.17 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -238,7 +238,14 @@ public:
             status=paint_session_selection_details(m_core,m_session,info.publication,index,&details,path.data(),static_cast<uint32_t>(path.size()));
             if(status==PAINT_BUSY)return false;if(!check(status))return false;
             QVariantList points;for(uint32_t i=0;i<details.point_count;++i)points.append(QPointF(path[i].x,path[i].y));
-            steps.append(QVariantMap{{"points",points},{"feather",details.feather},{"antialias",step.antialias!=0},{"operation",step.operation},{"shape",step.shape},{"x",step.x},{"y",step.y},{"width",step.width},{"height",step.height}});
+            QByteArray mask;
+            if(step.shape==PAINT_SELECTION_MASK) {
+                uint32_t length=0;status=paint_session_selection_mask(m_core,m_session,info.publication,index,nullptr,0,&length);
+                if(status==PAINT_BUSY)return false;if(status!=PAINT_BUFFER_TOO_SMALL && !check(status))return false;
+                mask.resize(length);status=paint_session_selection_mask(m_core,m_session,info.publication,index,reinterpret_cast<uint8_t*>(mask.data()),length,&length);
+                if(status==PAINT_BUSY)return false;if(!check(status))return false;
+            }
+            steps.append(QVariantMap{{"mask",mask},{"points",points},{"feather",details.feather},{"antialias",step.antialias!=0},{"operation",step.operation},{"shape",step.shape},{"x",step.x},{"y",step.y},{"width",step.width},{"height",step.height}});
         }
         QVariantList history;
         // One entry per HistoryAction discriminant, in order. A missing entry used to fail the whole
@@ -680,10 +687,10 @@ void PaintCoreClient::setMoveTool(bool enabled) {
     m_moveTool=enabled; emit brushChanged();
 }
 void PaintCoreClient::setSelectionTool(int tool) {
-    if(tool<0 || tool>4 || m_drawing || tool==m_selectionTool) return;
+    if(tool<0 || tool>5 || m_drawing || tool==m_selectionTool) return;
     m_selectionTool=tool;
     if(tool>0) {
-        if(tool<=2)m_marqueeShape=tool;else m_lassoShape=tool;
+        if(tool<=2)m_marqueeShape=tool;else if(tool<=4)m_lassoShape=tool;
         m_moveTool=false;m_eyedropperTool=false;m_bucketTool=false;m_eraser=false;m_brushLibrary->setEraser(false);
     }
     emit brushChanged();
@@ -719,6 +726,20 @@ void PaintCoreClient::activateMarquee() {
     setSelectionTool(shape);
 }
 void PaintCoreClient::activateLasso() {setSelectionTool(m_lassoShape);}
+void PaintCoreClient::setWandSampleSize(int value) {if(!QList<int>{1,3,5,11,31,51,101}.contains(value) || value==m_wandSampleSize)return;m_wandSampleSize=value;emit wandOptionsChanged();}
+void PaintCoreClient::setWandTolerance(int value) {if(value<0 || value>255 || value==m_wandTolerance)return;m_wandTolerance=value;emit wandOptionsChanged();}
+void PaintCoreClient::setWandAntialias(bool value) {if(value==m_wandAntialias)return;m_wandAntialias=value;emit wandOptionsChanged();}
+void PaintCoreClient::setWandContiguous(bool value) {if(value==m_wandContiguous)return;m_wandContiguous=value;emit wandOptionsChanged();}
+void PaintCoreClient::setWandAllLayers(bool value) {if(value==m_wandAllLayers)return;m_wandAllLayers=value;emit wandOptionsChanged();}
+bool PaintCoreClient::selectWand(QPointF position,int operation) {
+    if(m_selectionTool!=5 || !m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing || operation<0 || operation>3)return false;
+    if(!std::isfinite(position.x()) || !std::isfinite(position.y()) || position.x()<0 || position.y()<0 || position.x()>=m_width || position.y()>=m_height)return false;
+    auto request=dto<PaintWandSelection>();request.x=static_cast<uint32_t>(position.x());request.y=static_cast<uint32_t>(position.y());request.sample_size=m_wandSampleSize;request.tolerance=m_wandTolerance;
+    request.antialias=m_wandAntialias;request.contiguous=m_wandContiguous;request.all_layers=m_wandAllLayers;request.operation=operation;
+    uint64_t sequence=0;QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;
+    const auto status=paint_session_select_wand(m_connection->core,m_connection->session,&request,&sequence);lock.unlock();
+    if(status!=PAINT_OK){showError(immediateError(status));return false;}m_pendingLayer=m_pendingMutation=sequence;emit stateChanged();return true;
+}
 void PaintCoreClient::setSelectionOperation(int operation) {if(operation<0 || operation>3 || operation==m_selectionOperation)return;m_selectionOperation=operation;emit selectionOptionsChanged();}
 void PaintCoreClient::setSelectionFeather(qreal feather) {if(!std::isfinite(feather) || feather<0 || feather>1000 || feather==m_selectionFeather)return;m_selectionFeather=feather;emit selectionOptionsChanged();}
 void PaintCoreClient::setSelectionAntialias(bool enabled) {if(enabled==m_selectionAntialias)return;m_selectionAntialias=enabled;emit selectionOptionsChanged();}

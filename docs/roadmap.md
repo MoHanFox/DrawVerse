@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+魔棒：[设计](wand-design.md) / [验收](wand-validation.md)，ABI 1.17；真实灰度选区、平均取样、四种组合、轮廓和历史/持久化。
+
 每轮先补设计，再实现、运行测试并记录结果；已交付第 1–5 阶段，QML 已接 Rust 任务与 CPU 视口渲染；插件层最后完成。
 
 最新共用选区与套索：[设计](lasso-selection-design.md) / [验收](lasso-selection-validation.md)，ABI 1.15；矩形/椭圆与自由/多边形套索共用新建、添加、减去、交叉、羽化与消除锯齿。

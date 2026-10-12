@@ -1724,6 +1724,30 @@ private slots:
         floatingCanvas->setClient(nullptr);floating.hide();QCOMPARE(warnings,QStringList());
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void wandOptionsSelectRealMaskOnceAcrossMouseTabletAndFloatingCanvas() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("wand.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
+        // Paint a round island: its true mask outline must exclude the bounding-box corner.
+        client.setBrushRadius(12);client.setBrushColor(Qt::red);QVERIFY(client.beginStroke({{32,32},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();window->requestActivate();QTest::qWait(80);QTest::keyClick(window,Qt::Key_W);QTRY_COMPARE(client.selectionTool(),5);
+        auto *bar=findVisualItem(window->contentItem(),"wandOptionsBar");QVERIFY(bar && bar->isVisible());QVERIFY(!findVisualItem(window->contentItem(),"selectionOptionsBar")->isVisible());QCOMPARE(client.wandSampleSize(),1);QCOMPARE(client.wandTolerance(),10);QVERIFY(client.wandAntialias() && client.wandContiguous() && !client.wandAllLayers());
+        auto *sample=findVisualItem(window->contentItem(),"wandSampleSize");QVERIFY(sample);QCOMPARE(sample->property("count").toInt(),7);QVERIFY(QMetaObject::invokeMethod(sample,"activated",Q_ARG(int,6)));QCOMPARE(client.wandSampleSize(),101);client.setWandSampleSize(1);client.setWandSampleSize(2);QCOMPARE(client.wandSampleSize(),1);
+        auto *tolerance=findVisualItem(window->contentItem(),"wandTolerance");QVERIFY(tolerance);QVERIFY(tolerance->setProperty("value",0));QVERIFY(QMetaObject::invokeMethod(tolerance,"valueModified"));QCOMPARE(client.wandTolerance(),0);client.setWandTolerance(256);QCOMPARE(client.wandTolerance(),0);
+        const auto click=[&](const QString &name){auto *item=findVisualItem(window->contentItem(),name);if(!item)return false;QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,item->mapToScene({7,item->height()/2}).toPoint());return true;};
+        QVERIFY(click("wandAntialias"));QVERIFY(!client.wandAntialias());QVERIFY(click("wandAntialias"));QVERIFY(click("wandContiguous"));QVERIFY(!client.wandContiguous());QVERIFY(click("wandContiguous"));QVERIFY(click("wandAllLayers"));QVERIFY(client.wandAllLayers());QVERIFY(click("wandAllLayers"));
+        QVERIFY(click("wandMode:1"));QCOMPARE(client.selectionOperation(),1);QVERIFY(click("wandMode:0"));
+        const auto at=[&](QPointF p){return canvas->mapToScene(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,at({32,32}));QTest::mouseMove(window,at({2,2}));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,at({2,2}));QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.selectionEnabled());QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("魔棒"));QVERIFY(!client.drawing());
+        auto *outline=window->findChild<SelectionOverlay*>("selectionOutline");QVERIFY(outline);QTRY_VERIFY(outline->documentPath().contains({32.5,32.5}));const auto maskStep=client.selectionSteps().first().toMap();QVERIFY(!outline->documentPath().contains({maskStep.value("x").toDouble()+.5,maskStep.value("y").toDouble()+.5}));QVERIFY(maskStep.value("mask").toByteArray().size()>0);
+        const auto preview=qEnvironmentVariable("DRAWVERSE_WAND_PREVIEW");if(!preview.isEmpty()){QTest::qWait(80);QVERIFY(window->grabWindow().save(preview));}
+        client.undo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());QVERIFY(!client.selectionEnabled());
+        QPointingDevice pen("wand pen",124,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        for(const auto type:{QEvent::TabletPress,QEvent::TabletMove,QEvent::TabletRelease}) {const auto local=at({32,32});QTabletEvent event(type,&pen,local,window->mapToGlobal(local),.2,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(window,&event);QVERIFY(event.isAccepted());}
+        QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());client.undo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        QQuickWindow floating;floating.resize(200,180);auto *floatingCanvas=new CanvasItem(floating.contentItem());floatingCanvas->setSize({200,180});floatingCanvas->setClient(&client);floating.show();floatingCanvas->actualSize();QTest::qWait(80);const auto point=floatingCanvas->mapToScene(floatingCanvas->documentRect().topLeft()+QPointF(32,32)*floatingCanvas->zoom()).toPoint();QTest::mouseClick(&floating,Qt::LeftButton,Qt::NoModifier,point);QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());
+        floatingCanvas->setClient(nullptr);floating.hide();client.activateLasso();QCOMPARE(client.selectionTool(),3);client.activateWand();QCOMPARE(client.wandTolerance(),0);QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void lassoPolygonAndMarqueeShareOptionsHistoryAndPersistence() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
@@ -2767,7 +2791,7 @@ private slots:
         QTRY_VERIFY(dialog->property("opened").toBool());
         // The list is real: one row per bound shortcut. Assert on the rendered pixels so a dialog
         // that only reports a model without drawing rows would still fail.
-        QObject *list=nullptr;QTRY_VERIFY((list=dialog->findChild<QObject*>("shortcutList")));QTRY_COMPARE(list->property("count").toInt(),24);
+        QObject *list=nullptr;QTRY_VERIFY((list=dialog->findChild<QObject*>("shortcutList")));QTRY_COMPARE(list->property("count").toInt(),25);
         auto *dialogContent=qobject_cast<QQuickItem*>(dialog->property("contentItem").value<QObject*>());QVERIFY(dialogContent);
         QQuickItem *listItem=qobject_cast<QQuickItem*>(list);QVERIFY(listItem);
         QImage shot;bool grabbed=false;

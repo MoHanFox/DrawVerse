@@ -38,12 +38,13 @@ pub enum SelectionOperation {
 }
 
 /// Bounding-box coverage for a rasterized shape. `coverage` is clipped per row so that
-/// `coverage.len() == width * height` and only 0/1 values are stored.
+/// `coverage.len() == width * height`; legacy binary and graded alpha masks coexist.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectionMask {
     width: u32,
     height: u32,
     coverage: Arc<[u8]>,
+    graded: bool,
 }
 
 impl SelectionMask {
@@ -62,10 +63,33 @@ impl SelectionMask {
             width,
             height,
             coverage: coverage.into(),
+            graded: false,
         })
     }
     pub fn width(&self) -> u32 {
         self.width
+    }
+    pub fn from_alpha(width: u32, height: u32, coverage: Vec<u8>) -> Result<Self> {
+        let bytes = (width as usize).checked_mul(height as usize);
+        if width == 0
+            || height == 0
+            || bytes != Some(coverage.len())
+            || coverage.len() > MAX_SELECTION_MASK_BYTES
+        {
+            return Err(Error::ResourceLimit("selection alpha mask size"));
+        }
+        Ok(Self {
+            width,
+            height,
+            coverage: coverage.into(),
+            graded: true,
+        })
+    }
+    pub fn alpha_bytes(&self) -> Vec<u8> {
+        self.coverage
+            .iter()
+            .map(|&v| if self.graded { v } else { v * 255 })
+            .collect()
     }
     pub fn height(&self) -> u32 {
         self.height
@@ -79,6 +103,7 @@ impl SelectionMask {
             return 0.;
         }
         f32::from(self.coverage[(y as usize) * (self.width as usize) + (x as usize)])
+            / if self.graded { 255. } else { 1. }
     }
 }
 
@@ -611,19 +636,24 @@ fn mask_to_text(mask: &SelectionMask) -> String {
         runs.push(run_value);
         runs.push(run_length as u8);
     }
-    hex_encode(&runs)
+    format!(
+        "{}{}",
+        if mask.graded { "g" } else { "" },
+        hex_encode(&runs)
+    )
 }
 
 fn mask_from_text(text: &str, width: u32, height: u32) -> Result<SelectionMask> {
     let bytes = (width as usize) * (height as usize);
-    let runs = hex_decode(text)?;
+    let graded = text.starts_with('g');
+    let runs = hex_decode(if graded { &text[1..] } else { text })?;
     let mut coverage = Vec::with_capacity(bytes);
     for pair in runs.chunks(2) {
         if pair.len() != 2 {
             return Err(Error::InvalidArgument("invalid selection mask encoding"));
         }
         let value = pair[0];
-        if value > 1 {
+        if !graded && value > 1 {
             return Err(Error::InvalidArgument("invalid selection mask encoding"));
         }
         let length = usize::from(pair[1]);
@@ -635,7 +665,11 @@ fn mask_from_text(text: &str, width: u32, height: u32) -> Result<SelectionMask> 
     if coverage.len() != bytes {
         return Err(Error::InvalidArgument("selection mask too short"));
     }
-    SelectionMask::from_coverage(width, height, coverage)
+    if graded {
+        SelectionMask::from_alpha(width, height, coverage)
+    } else {
+        SelectionMask::from_coverage(width, height, coverage)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

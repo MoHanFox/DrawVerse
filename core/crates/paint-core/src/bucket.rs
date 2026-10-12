@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::VecDeque;
 
-const MAX_FILL_TILES: usize = 4096;
+pub(super) const MAX_FILL_TILES: usize = 4096;
 const MAX_FILL_PIXELS: u64 = MAX_FILL_TILES as u64 * 4096;
 
 #[derive(Clone, Copy, Debug)]
@@ -31,7 +31,7 @@ fn srgb(value: f32) -> f32 {
         1.055 * value.powf(1. / 2.4) - 0.055
     }
 }
-fn compare_color(pixel: Pixel) -> [f32; 4] {
+pub(super) fn compare_color(pixel: Pixel) -> [f32; 4] {
     let c = pixel.components();
     if c[3] == 0. {
         return [0.; 4];
@@ -43,7 +43,7 @@ fn compare_color(pixel: Pixel) -> [f32; 4] {
         c[3] * 255.,
     ]
 }
-fn match_weight(reference: [f32; 4], pixel: Pixel, options: BucketFill) -> f32 {
+pub(super) fn match_weight(reference: [f32; 4], pixel: Pixel, options: BucketFill) -> f32 {
     let delta = reference
         .into_iter()
         .zip(compare_color(pixel))
@@ -57,7 +57,7 @@ fn match_weight(reference: [f32; 4], pixel: Pixel, options: BucketFill) -> f32 {
         0.
     }
 }
-fn enqueue(
+pub(super) fn enqueue(
     visited: &mut BTreeMap<(u32, u32), [u64; 64]>,
     queue: &mut VecDeque<(u32, u32)>,
     x: u32,

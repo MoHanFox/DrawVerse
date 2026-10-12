@@ -9,7 +9,7 @@ Rectangle {
     property bool hasDocument:true
     property real cornerRadius:0
     property string notice:""
-    readonly property string toolName:client.selectionTool?(client.selectionTool===4?"多边形套索":client.selectionTool===3?"套索":client.selectionTool===2?"椭圆选框":"矩形选框"):client.moveTool?"移动工具":client.eyedropperTool?"吸色工具":client.bucketTool?"油漆桶工具":client.eraser?"橡皮擦工具":"画笔工具"
+    readonly property string toolName:client.selectionTool?(client.selectionTool===5?"魔棒工具":client.selectionTool===4?"多边形套索":client.selectionTool===3?"套索":client.selectionTool===2?"椭圆选框":"矩形选框"):client.moveTool?"移动工具":client.eyedropperTool?"吸色工具":client.bucketTool?"油漆桶工具":client.eraser?"橡皮擦工具":"画笔工具"
     readonly property string operation:client.closing?"正在关闭核心…":client.fileBusy?"正在读写文件…":notice
     implicitHeight:26;color:Theme.surface;radius:cornerRadius;border.color:Theme.line
     Rectangle {x:1;y:1;width:parent.width-2;height:parent.height/2;color:parent.color}

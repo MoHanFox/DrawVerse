@@ -18,7 +18,8 @@ pub use appearance::{
 };
 pub use brush::{Brush, BrushMode, InputPoint, Tool};
 pub use document::{
-    BucketFill, DirtyTiles, Document, DocumentOptions, DocumentSnapshot, MAX_DIMENSION,
+    BucketFill, DirtyTiles, Document, DocumentOptions, DocumentSnapshot, WandSelection,
+    MAX_DIMENSION,
 };
 pub use error::{Error, Result};
 pub use history::HistoryAction;

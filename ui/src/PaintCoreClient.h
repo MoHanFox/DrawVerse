@@ -70,6 +70,11 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(int marqueeShape READ marqueeShape NOTIFY brushChanged)
     Q_PROPERTY(bool eyedropperTool READ eyedropperTool NOTIFY brushChanged)
     Q_PROPERTY(bool bucketTool READ bucketTool NOTIFY brushChanged)
+    Q_PROPERTY(int wandSampleSize READ wandSampleSize WRITE setWandSampleSize NOTIFY wandOptionsChanged)
+    Q_PROPERTY(int wandTolerance READ wandTolerance WRITE setWandTolerance NOTIFY wandOptionsChanged)
+    Q_PROPERTY(bool wandAntialias READ wandAntialias WRITE setWandAntialias NOTIFY wandOptionsChanged)
+    Q_PROPERTY(bool wandContiguous READ wandContiguous WRITE setWandContiguous NOTIFY wandOptionsChanged)
+    Q_PROPERTY(bool wandAllLayers READ wandAllLayers WRITE setWandAllLayers NOTIFY wandOptionsChanged)
     Q_PROPERTY(qreal bucketOpacity READ bucketOpacity WRITE setBucketOpacity NOTIFY bucketOptionsChanged)
     Q_PROPERTY(int bucketTolerance READ bucketTolerance WRITE setBucketTolerance NOTIFY bucketOptionsChanged)
     Q_PROPERTY(bool bucketAntialias READ bucketAntialias WRITE setBucketAntialias NOTIFY bucketOptionsChanged)
@@ -144,6 +149,18 @@ public:
     bool selectionEnabled() const { return m_selection.value("enabled").toBool(); }
     QVariantList selectionSteps() const { return m_selection.value("steps").toList(); }
     int selectionTool() const { return m_selectionTool; }
+    Q_INVOKABLE void activateWand() {setSelectionTool(5);}
+    bool selectWand(QPointF position, int operation);
+    int wandSampleSize() const {return m_wandSampleSize;}
+    int wandTolerance() const {return m_wandTolerance;}
+    bool wandAntialias() const {return m_wandAntialias;}
+    bool wandContiguous() const {return m_wandContiguous;}
+    bool wandAllLayers() const {return m_wandAllLayers;}
+    void setWandSampleSize(int value);
+    void setWandTolerance(int value);
+    void setWandAntialias(bool value);
+    void setWandContiguous(bool value);
+    void setWandAllLayers(bool value);
     int selectionOperation() const {return m_selectionOperation;}
     qreal selectionFeather() const {return m_selectionFeather;}
     bool selectionAntialias() const {return m_selectionAntialias;}
@@ -237,6 +254,7 @@ signals:
     void selectionChanged();
     void selectionOptionsChanged();
     void bucketOptionsChanged();
+    void wandOptionsChanged();
     void errorChanged();
     void frameChanged();
     void stopped();
@@ -296,6 +314,8 @@ private:
     bool m_moveTool = false;
     bool m_eyedropperTool = false;
     bool m_bucketTool = false;
+    int m_wandSampleSize=1,m_wandTolerance=10;
+    bool m_wandAntialias=true,m_wandContiguous=true,m_wandAllLayers=false;
     qreal m_bucketOpacity = 1;
     int m_bucketTolerance = 0;
     bool m_bucketAntialias = true, m_bucketContiguous = true, m_bucketAllLayers = false;

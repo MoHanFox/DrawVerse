@@ -364,6 +364,9 @@ pub struct Document {
 #[path = "bucket.rs"]
 mod bucket;
 pub use bucket::BucketFill;
+#[path = "wand.rs"]
+mod wand;
+pub use wand::WandSelection;
 
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
     if layers.iter().any(|l| l.group || l.mask || l.clipped) {

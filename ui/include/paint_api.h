@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 16
+#define PAINT_ABI_MINOR 17
 
 #define PAINT_ABI_PATCH 0
 
@@ -80,6 +80,8 @@
 #define PAINT_FEATURE_SELECTION 4096
 
 #define PAINT_FEATURE_STORAGE_SETTINGS 128
+
+#define PAINT_FEATURE_WAND 16384
 
 #define PAINT_FILE_AUTO 0
 
@@ -570,6 +572,22 @@ typedef struct PaintLayerHierarchy {
   uint32_t depth;
   uint32_t effective_locks;
 } PaintLayerHierarchy;
+
+/**
+ * ABI 1.17: bounded color-region selection; flags 0/1, reserved zero.
+ */
+typedef struct PaintWandSelection {
+  uint32_t struct_size;
+  uint32_t x;
+  uint32_t y;
+  uint32_t sample_size;
+  uint32_t tolerance;
+  uint32_t antialias;
+  uint32_t contiguous;
+  uint32_t all_layers;
+  uint32_t operation;
+  uint32_t reserved[3];
+} PaintWandSelection;
 
 typedef struct PaintSelectionDetails {
   uint32_t struct_size;
@@ -1159,6 +1177,16 @@ PaintStatus paint_session_sample_pixel(struct PaintCore *core,
                                        float *out_rgba);
 
 /**
+ * Copy and enqueue a magic-wand selection.
+ * # Safety
+ * Live handles, aligned readable sized request and nonoverlapping writable sequence are required.
+ */
+PaintStatus paint_session_select_wand(struct PaintCore *core,
+                                      struct PaintSession *session,
+                                      const struct PaintWandSelection *request,
+                                      uint64_t *out_sequence);
+
+/**
  * ABI 1.15: copied feather/path for the same publication as selection_step.
  * On BUFFER_TOO_SMALL details contains the required point count; no point is written.
  * # Safety
@@ -1181,6 +1209,19 @@ PaintStatus paint_session_selection_info(struct PaintCore *core,
                                          struct PaintSession *session,
                                          uint64_t publication,
                                          struct PaintSelectionInfo *out);
+
+/**
+ * Read a selection step's alpha mask at one publication. Query required length with capacity zero.
+ * # Safety
+ * Writable nonoverlapping length and capacity bytes are required; bytes may be NULL for zero capacity.
+ */
+PaintStatus paint_session_selection_mask(struct PaintCore *core,
+                                         struct PaintSession *session,
+                                         uint64_t publication,
+                                         uint32_t index,
+                                         uint8_t *bytes,
+                                         uint32_t capacity,
+                                         uint32_t *out_length);
 
 /**
  * ABI 1.8: query one bounded selection step; inversion uses zero geometry.

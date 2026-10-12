@@ -30,6 +30,7 @@ pub(crate) enum Operation {
     Clipping(u64, bool),
     Selection(crate::selection_api::Edit),
     Bucket(paint_core::BucketFill),
+    Wand(paint_core::WandSelection),
     Drop(u64, u64, u32),
     DropBatch(Vec<u64>, u64, u32),
     RemoveBatch(Vec<u64>, bool),
@@ -581,6 +582,7 @@ impl Engine {
                 | Operation::Clipping(..)
                 | Operation::Selection(..)
                 | Operation::Bucket(..)
+                | Operation::Wand(..)
                 | Operation::Drop(..)
                 | Operation::DropBatch(..)
                 | Operation::RemoveBatch(..)
@@ -621,6 +623,11 @@ impl Engine {
         match operation {
             Operation::Bucket(options) => {
                 self.modified |= self.document.bucket_fill(options)?;
+            }
+            Operation::Wand(options) => {
+                let revision = self.document.revision();
+                self.document.select_wand(options)?;
+                self.modified |= revision != self.document.revision();
             }
             Operation::File(request) => self.files.start(request, &self.document, self.generation),
             #[cfg(test)]
