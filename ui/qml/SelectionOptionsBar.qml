@@ -45,19 +45,12 @@ RowLayout {
         Layout.preferredWidth:104;Layout.preferredHeight:24
         onValueModified:root.client.selectionFeather=value
     }
-    CheckBox {
+    CompactCheckBox {
         objectName:"selectionAntialias"
-        hoverEnabled:true
-        ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"平滑选区边缘，减少锯齿。"
+        tooltip:"平滑选区边缘，减少锯齿。"
         text:"消除锯齿";checked:root.client.selectionAntialias
         font.pixelSize:10;padding:0;spacing:6
         onToggled:root.client.selectionAntialias=checked
-        indicator:Rectangle {
-            implicitWidth:12;implicitHeight:12;x:0;y:(parent.height-height)/2
-            radius:2;color:parent.checked?Theme.text:Theme.input;border.color:Theme.muted
-            Icon {anchors.fill:parent;anchors.margins:2;name:"check";color:Theme.input;visible:parent.parent.checked}
-        }
-        contentItem:Text {text:parent.text;font:parent.font;color:Theme.text;leftPadding:18;verticalAlignment:Text.AlignVCenter}
     }
     Item {Layout.fillWidth:true}
 }

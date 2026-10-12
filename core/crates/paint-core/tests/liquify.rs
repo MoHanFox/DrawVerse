@@ -305,3 +305,71 @@ fn resource_failure_preserves_preview() {
     assert!(d.liquify_active());
     d.cancel_liquify().unwrap();
 }
+
+fn fingerprint(d: &Document, size: u32) -> u64 {
+    let mut hash = 14695981039346656037u64;
+    for y in 0..size {
+        for x in 0..size {
+            for value in d.pixel(x, y).components() {
+                hash ^= u64::from(value.to_bits());
+                hash = hash.wrapping_mul(1099511628211);
+            }
+        }
+    }
+    hash
+}
+#[test]
+fn liquify_pixel_fingerprint_stays_exact() {
+    let mut d = seed();
+    d.begin_liquify().unwrap();
+    for tool in [0, 2, 1, 0, 3] {
+        d.liquify_dab(dab(tool)).unwrap();
+    }
+    assert_eq!(fingerprint(&d, 96), 16092023011911350864);
+}
+#[test]
+#[ignore = "manual release performance comparison"]
+fn liquify_release_workload() {
+    let mut d = Document::new(512, 512).unwrap();
+    for (x, y) in [(180., 230.), (290., 230.), (240., 320.)] {
+        d.begin_stroke(
+            Brush {
+                radius: 100.,
+                color: Pixel::WHITE,
+                ..Default::default()
+            },
+            InputPoint::new(x, y, 1.),
+        )
+        .unwrap();
+        d.end_stroke().unwrap();
+    }
+    d.begin_liquify().unwrap();
+    let start = std::time::Instant::now();
+    for i in 0..24 {
+        let mut v = dab(i % 3);
+        v.radius = 128.;
+        v.from = InputPoint::new(240. + f64::from(i % 4) * 3., 256., 1.);
+        v.to = InputPoint::new(v.from.x + 8., 260., 1.);
+        d.liquify_dab(v).unwrap();
+    }
+    println!(
+        "liquify 24 dabs {:?}, fingerprint {}",
+        start.elapsed(),
+        fingerprint(&d, 512)
+    );
+    assert_eq!(fingerprint(&d, 512), 5537713511484391265);
+    assert!(d.commit_liquify().unwrap());
+}
+
+#[test]
+fn wholly_outside_canvas_dab_is_noop() {
+    let mut d = seed();
+    let before = pixels(&d);
+    d.begin_liquify().unwrap();
+    let mut v = dab(0);
+    v.from = InputPoint::new(150., 48., 1.);
+    v.to = InputPoint::new(155., 48., 1.);
+    assert!(!d.liquify_dab(v).unwrap());
+    assert_eq!(pixels(&d), before);
+    assert!(!d.commit_liquify().unwrap());
+}

@@ -598,6 +598,8 @@ impl Engine {
         let stroke_command = matches!(command.operation, Operation::Move(_) | Operation::End)
             || (matches!(command.operation, Operation::Begin(..))
                 && !self.document.stroke_active());
+        let liquify_control =
+            matches!(command.operation, Operation::Liquify(kind, _) if kind != PAINT_LIQUIFY_DAB);
         let barrier = matches!(
             command.operation,
             Operation::New(..)
@@ -613,7 +615,6 @@ impl Engine {
                 | Operation::PasteLayers(..)
                 | Operation::DuplicateLayers(..)
                 | Operation::MergeLayers(..)
-                | Operation::Liquify(..)
                 | Operation::Cancel(_)
                 | Operation::Undo
                 | Operation::Redo
@@ -626,7 +627,7 @@ impl Engine {
                 | Operation::Ungroup(..)
                 | Operation::Reparent(..)
                 | Operation::Add(_)
-        );
+        ) || liquify_control;
         let result = self.apply(command.operation, command.sequence);
         if let Err(error) = result {
             if error.status != PAINT_CANCELLED || self.error.is_none() {
@@ -640,7 +641,7 @@ impl Engine {
                 self.floor = self.document.revision();
             }
         }
-        if barrier && old_revision != self.document.revision() {
+        if barrier && (old_revision != self.document.revision() || liquify_control) {
             self.floor = self.document.revision();
         }
         self.shared.floor.store(self.floor, Ordering::Release);
@@ -1109,6 +1110,57 @@ impl StampedFrame {
 mod actor_tests {
     use super::*;
     use std::{thread, time::Instant};
+    #[test]
+    fn liquify_preview_keeps_render_floor_but_controls_advance_it() {
+        let session = Session::new(128, 128).unwrap();
+        let run = |operation| {
+            let seq = session.submit(operation).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while session.info().completed_sequence < seq {
+                assert!(Instant::now() < deadline);
+                thread::sleep(Duration::from_millis(1));
+            }
+            assert_eq!(session.info().last_error_status, PAINT_OK);
+            session.info()
+        };
+        run(Operation::Begin(
+            paint_core::Brush::default(),
+            paint_core::InputPoint::new(40., 40., 1.),
+            0,
+        ));
+        run(Operation::End);
+        run(Operation::Liquify(PAINT_LIQUIFY_BEGIN, None));
+        let floor = session.shared.floor.load(Ordering::Acquire);
+        let dab = paint_core::LiquifyDab {
+            tool: 0,
+            radius: 24.,
+            strength: 0.5,
+            density: 1.,
+            speed: 1.,
+            pressure_enabled: false,
+            from: paint_core::InputPoint::new(40., 40., 1.),
+            to: paint_core::InputPoint::new(48., 44., 1.),
+            elapsed_ms: 16.,
+        };
+        let preview = run(Operation::Liquify(PAINT_LIQUIFY_DAB, Some(dab)));
+        assert!(preview.revision > floor);
+        assert_eq!(session.shared.floor.load(Ordering::Acquire), floor);
+        let committed = run(Operation::Liquify(PAINT_LIQUIFY_COMMIT, None));
+        assert_eq!(
+            session.shared.floor.load(Ordering::Acquire),
+            committed.revision
+        );
+        run(Operation::Liquify(PAINT_LIQUIFY_BEGIN, None));
+        run(Operation::Liquify(PAINT_LIQUIFY_DAB, Some(dab)));
+        let reset = run(Operation::Liquify(PAINT_LIQUIFY_RESET, None));
+        assert_eq!(session.shared.floor.load(Ordering::Acquire), reset.revision);
+        run(Operation::Liquify(PAINT_LIQUIFY_DAB, Some(dab)));
+        let cancelled = run(Operation::Liquify(PAINT_LIQUIFY_CANCEL, None));
+        assert_eq!(
+            session.shared.floor.load(Ordering::Acquire),
+            cancelled.revision
+        );
+    }
     #[test]
     fn eyedropper_maps_document_pixels_to_scaled_fractional_viewports() {
         let mut frame = StampedFrame {

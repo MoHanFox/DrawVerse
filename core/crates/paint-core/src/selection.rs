@@ -1022,14 +1022,20 @@ const MAX_COVERAGE_BLOCKS: usize = 4096;
 #[derive(Debug, Default)]
 pub(crate) struct SelectionCoverageCache {
     identity: Option<Selection>,
-    blocks: std::collections::HashMap<(i64, i64), Arc<[f32; COVERAGE_BLOCK]>>,
-    order: std::collections::VecDeque<(i64, i64)>,
+    blocks: std::collections::HashMap<(i64, i64, bool), Arc<[f32; COVERAGE_BLOCK]>>,
+    order: std::collections::VecDeque<(i64, i64, bool)>,
 }
 impl SelectionCoverageCache {
     pub(crate) fn clear(&mut self) {
         *self = Self::default();
     }
-    fn block(&mut self, selection: &Selection, x: i64, y: i64) -> Arc<[f32; COVERAGE_BLOCK]> {
+    fn block(
+        &mut self,
+        selection: &Selection,
+        x: i64,
+        y: i64,
+        centered: bool,
+    ) -> Arc<[f32; COVERAGE_BLOCK]> {
         if !self.identity.as_ref().is_some_and(|old| {
             old.enabled == selection.enabled && Arc::ptr_eq(&old.steps, &selection.steps)
         }) {
@@ -1037,14 +1043,15 @@ impl SelectionCoverageCache {
             self.order.clear();
             self.identity = Some(selection.clone());
         }
-        let key = (x.div_euclid(COVERAGE_BLOCK as i64), y);
+        let key = (x.div_euclid(COVERAGE_BLOCK as i64), y, centered);
+        let offset = if centered { 0.5 } else { 0.0 };
         if let Some(block) = self.blocks.get(&key) {
             return block.clone();
         }
         let mut values = [0.; COVERAGE_BLOCK];
         selection.coverage_span(
-            (key.0 * COVERAGE_BLOCK as i64) as f64 + 0.5,
-            y as f64 + 0.5,
+            (key.0 * COVERAGE_BLOCK as i64) as f64 + offset,
+            y as f64 + offset,
             &mut values,
         );
         let block = Arc::new(values);
@@ -1066,14 +1073,36 @@ impl SelectionCoverageCache {
         y: i64,
         length: usize,
     ) -> [f32; COVERAGE_BLOCK] {
+        self.row_at(selection, x, y, length, true)
+    }
+    pub(crate) fn corner_row(
+        &mut self,
+        selection: &Selection,
+        x: i64,
+        y: i64,
+        length: usize,
+    ) -> [f32; COVERAGE_BLOCK] {
+        self.row_at(selection, x, y, length, false)
+    }
+    fn row_at(
+        &mut self,
+        selection: &Selection,
+        x: i64,
+        y: i64,
+        length: usize,
+        centered: bool,
+    ) -> [f32; COVERAGE_BLOCK] {
         debug_assert!(length <= COVERAGE_BLOCK);
+        if !selection.enabled {
+            return [1.; COVERAGE_BLOCK];
+        }
         let mut result = [0.; COVERAGE_BLOCK];
         let mut done = 0;
         while done < length {
             let column = x + done as i64;
             let offset = column.rem_euclid(COVERAGE_BLOCK as i64) as usize;
             let count = (COVERAGE_BLOCK - offset).min(length - done);
-            let block = self.block(selection, column, y);
+            let block = self.block(selection, column, y, centered);
             result[done..done + count].copy_from_slice(&block[offset..offset + count]);
             done += count;
         }
@@ -1092,26 +1121,31 @@ mod coverage_cache_tests {
             .apply(triangle, SelectionOperation::Replace, 1000000, 1000000)
             .unwrap();
         let mut cache = SelectionCoverageCache::default();
-        let first = cache.block(&selection, 0, 10);
-        let hit = cache.block(&selection, 0, 10);
+        let first = cache.block(&selection, 0, 10, true);
+        let hit = cache.block(&selection, 0, 10, true);
         assert!(Arc::ptr_eq(&first, &hit));
         let row = cache.row(&selection, -5, 10, 64);
         for (i, &value) in row.iter().enumerate() {
             assert!((value - selection.coverage(-4.5 + i as f64, 10.5)).abs() < 1e-6);
         }
+        let corner = cache.corner_row(&selection, -5, 10, 64);
+        for (i, &value) in corner.iter().enumerate() {
+            assert!((value - selection.coverage(-5. + i as f64, 10.)).abs() < 1e-6);
+        }
+        assert!(!Arc::ptr_eq(&first, &cache.block(&selection, 0, 10, false)));
         for y in 100..(100 + MAX_COVERAGE_BLOCKS as i64) {
             cache.row(&selection, 0, y, 64);
         }
         assert_eq!(cache.blocks.len(), MAX_COVERAGE_BLOCKS);
         assert_eq!(cache.order.len(), MAX_COVERAGE_BLOCKS);
-        assert!(!cache.blocks.contains_key(&(0, 10)));
+        assert!(!cache.blocks.contains_key(&(0, 10, true)));
         let inverted = selection.inverted(1000000, 1000000).unwrap();
-        let reverse = cache.block(&inverted, 0, 10);
+        let reverse = cache.block(&inverted, 0, 10, true);
         assert_eq!(cache.blocks.len(), 1);
         for (a, b) in first.iter().zip(reverse.iter()) {
             assert!((a + b - 1.).abs() < 1e-6);
         }
-        let restored = cache.block(&selection, 0, 10);
+        let restored = cache.block(&selection, 0, 10, true);
         assert_eq!(&*first, &*restored);
         assert!(!Arc::ptr_eq(&first, &restored));
         cache.clear();

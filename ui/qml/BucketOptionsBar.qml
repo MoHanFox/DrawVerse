@@ -24,20 +24,12 @@ RowLayout {
     }
     Repeater {
         model:[{key:"Antialias",note:"平滑填充边缘，减少锯齿。",title:"消除锯齿"},{key:"Contiguous",note:"仅填充与点击位置相连的相似颜色；关闭后填充所有相似颜色。",title:"连续的"},{key:"AllLayers",note:"根据所有可见图层的合成颜色判断填充区域；只修改当前图层。",title:"所有图层"}]
-        CheckBox {
+        CompactCheckBox {
             required property var modelData
-            hoverEnabled:true
-            ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:modelData.note
+            tooltip:modelData.note
             objectName:"bucket"+modelData.key
             text:modelData.title;checked:root.client["bucket"+modelData.key]
             onToggled:root.client["bucket"+modelData.key]=checked
-            font.pixelSize:12;padding:0;spacing:6
-            indicator:Rectangle {
-                implicitWidth:13;implicitHeight:13;x:0;y:(parent.height-height)/2
-                radius:2;color:parent.checked?Theme.text:Theme.input;border.color:Theme.muted
-                Icon {anchors.fill:parent;anchors.margins:2;name:"check";color:Theme.input;visible:parent.parent.checked}
-            }
-            contentItem:Text {text:parent.text;font:parent.font;color:Theme.text;leftPadding:19;verticalAlignment:Text.AlignVCenter}
         }
     }
     Item {Layout.fillWidth:true}

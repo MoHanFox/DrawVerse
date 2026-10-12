@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新液化性能：`docs/liquify-performance-design.md` / `docs/liquify-performance-validation.md`；连续预览非屏障、瓦片批处理与相邻取样缓存、共用选区覆盖缓存保留坐标、紧凑复选框与标题分隔，无 ABI 变更。
+
 - 最新搜索与快捷键：`docs/layer-search-tools-design.md` / `docs/layer-search-tools-validation.md`；组层级搜索、文本编辑与画布焦点区分、快捷键恢复、液化仅滤镜入口及 Enter/Esc、图层拷贝粘贴仅快捷键。
 
 - 最新液化：`docs/liquify-design.md` / `docs/liquify-validation.md`；ABI 1.21、滤镜入口、工具详情栏与图标、稀疏位移场与原始取样、事务历史、保存参数、文档锁定与浮窗隐藏恢复。

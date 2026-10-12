@@ -45,35 +45,64 @@ fn coord(x: i64, y: i64) -> TileCoord {
 fn index(x: i64, y: i64) -> usize {
     (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize
 }
-fn field_at(field: &Field, x: i64, y: i64) -> [f32; 2] {
-    field.get(&coord(x, y)).map_or([0., 0.], |t| t[index(x, y)])
+struct FieldSampler<'a> {
+    field: &'a Field,
+    last: Option<(TileCoord, Option<&'a [[f32; 2]]>)>,
 }
-fn sample_field(field: &Field, x: f64, y: f64) -> [f32; 2] {
-    let ix = x.floor() as i64;
-    let iy = y.floor() as i64;
-    let fx = (x - ix as f64) as f32;
-    let fy = (y - iy as f64) as f32;
-    let a = field_at(field, ix, iy);
-    let b = field_at(field, ix + 1, iy);
-    let c = field_at(field, ix, iy + 1);
-    let d = field_at(field, ix + 1, iy + 1);
-    [0, 1].map(|k| (a[k] * (1. - fx) + b[k] * fx) * (1. - fy) + (c[k] * (1. - fx) + d[k] * fx) * fy)
+impl FieldSampler<'_> {
+    fn at(&mut self, x: i64, y: i64) -> [f32; 2] {
+        let key = coord(x, y);
+        if let Some((old, pixels)) = self.last {
+            if old == key {
+                return pixels.map_or([0., 0.], |v| v[index(x, y)]);
+            }
+        }
+        let tile = self.field.get(&key).map(|v| v.as_slice());
+        self.last = Some((key, tile));
+        tile.map_or([0., 0.], |v| v[index(x, y)])
+    }
+    fn sample(&mut self, x: f64, y: f64) -> [f32; 2] {
+        let ix = x.floor() as i64;
+        let iy = y.floor() as i64;
+        let fx = (x - ix as f64) as f32;
+        let fy = (y - iy as f64) as f32;
+        let a = self.at(ix, iy);
+        let b = self.at(ix + 1, iy);
+        let c = self.at(ix, iy + 1);
+        let d = self.at(ix + 1, iy + 1);
+        [0, 1].map(|k| {
+            (a[k] * (1. - fx) + b[k] * fx) * (1. - fy) + (c[k] * (1. - fx) + d[k] * fx) * fy
+        })
+    }
 }
 struct Source<'a> {
     layer: &'a Layer,
     pins: BTreeMap<TileCoord, Arc<Box<[Pixel]>>>,
+    order: std::collections::VecDeque<TileCoord>,
+    last: Option<(TileCoord, Arc<Box<[Pixel]>>)>,
 }
 impl Source<'_> {
     fn pixel(&mut self, x: i64, y: i64) -> Result<Pixel> {
         let key = coord(x, y);
+        if let Some((old, pixels)) = &self.last {
+            if *old == key {
+                return Ok(pixels[index(x, y)]);
+            }
+        }
         if let Some(tile) = self.layer.tiles.get(&key) {
             if !self.pins.contains_key(&key) {
                 if self.pins.len() >= 256 {
-                    self.pins.pop_first();
+                    if let Some(old) = self.order.pop_front() {
+                        self.pins.remove(&old);
+                    }
                 }
                 self.pins.insert(key, tile.try_pixels()?);
+                self.order.push_back(key);
             }
-            Ok(self.pins[&key][index(x, y)])
+            let pixels = self.pins[&key].clone();
+            let result = pixels[index(x, y)];
+            self.last = Some((key, pixels));
+            Ok(result)
         } else {
             Ok(self.layer.default_pixel(x, y))
         }
@@ -253,6 +282,12 @@ impl Document {
         if steps > 4096 || steps.saturating_mul(area) > MAX_VISITS {
             return Err(Error::ResourceLimit("liquify input work budget"));
         }
+        let mut source = Source {
+            layer: &state.original,
+            pins: BTreeMap::new(),
+            order: Default::default(),
+            last: None,
+        };
         let mut previous = options.from;
         let mut changed = false;
         for step in 1..=steps {
@@ -279,116 +314,137 @@ impl Document {
             let top = (y - radius).floor().max(0.) as i64;
             let right = (x + radius).ceil().min(f64::from(self.width)) as i64;
             let bottom = (y + radius).ceil().min(f64::from(self.height)) as i64;
-            let old_field = state.field.clone();
+            if left >= right || top >= bottom {
+                continue;
+            }
+            let old_field = &state.field;
             let mut fields = BTreeMap::<TileCoord, Vec<[f32; 2]>>::new();
             let mut pixels = BTreeMap::<TileCoord, Vec<Pixel>>::new();
-            let mut source = Source {
-                layer: &state.original,
-                pins: BTreeMap::new(),
+            let mut sampler = FieldSampler {
+                field: old_field,
+                last: None,
             };
-            for py in top..bottom {
-                let mut coverage = vec![0.; (right - left).max(0) as usize];
-                self.selection
-                    .coverage_span(left as f64, py as f64, &mut coverage);
-                for px in left..right {
-                    let vx = px as f64 + 0.5 - x;
-                    let vy = py as f64 + 0.5 - y;
-                    let r = vx.hypot(vy) / radius;
-                    if r >= 1. {
-                        continue;
-                    }
-                    let inner = f64::from(options.density) * 0.9;
-                    let falloff = if r <= inner {
-                        1.
-                    } else {
-                        ((1. - r) / (1. - inner)).powi(2)
-                    };
-                    let weight = amount * falloff * f64::from(coverage[(px - left) as usize]);
-                    if weight <= 0. {
-                        continue;
-                    }
-                    let lx = px - ox;
-                    let ly = py - oy;
-                    let key = coord(lx, ly);
-                    let i = index(lx, ly);
-                    let before = field_at(&old_field, lx, ly);
-                    let after = if options.tool == 3 {
-                        let factor = (1. - weight).max(0.) as f32;
-                        before.map(|v| {
-                            if (v * factor).abs() < 0.0001 {
-                                0.
-                            } else {
-                                v * factor
-                            }
-                        })
-                    } else {
-                        let (tx, ty) = match options.tool {
-                            0 => (-dx * weight, -dy * weight),
-                            1 => {
-                                let factor =
-                                    (-weight * f64::from(options.speed) * time * 2.).exp() - 1.;
-                                (vx * factor, vy * factor)
-                            }
-                            2 => {
-                                let angle = -weight
-                                    * f64::from(options.speed)
-                                    * time
-                                    * std::f64::consts::TAU;
-                                let (s, c) = angle.sin_cos();
-                                (vx * c - vy * s - vx, vx * s + vy * c - vy)
-                            }
-                            _ => unreachable!(),
-                        };
-                        let sampled = sample_field(&old_field, lx as f64 + tx, ly as f64 + ty);
-                        [
-                            (tx + f64::from(sampled[0])) as f32,
-                            (ty + f64::from(sampled[1])) as f32,
-                        ]
-                    };
-                    if after.iter().any(|v| !v.is_finite() || v.abs() > 2_000_000.) {
-                        return Err(Error::ResourceLimit("liquify displacement range"));
-                    }
-                    if after == before {
-                        continue;
-                    }
-                    if !fields.contains_key(&key) {
-                        if old_field.len()
-                            + fields.keys().filter(|k| !old_field.contains_key(k)).count()
-                            >= MAX_FIELD_TILES
-                            && !old_field.contains_key(&key)
-                        {
-                            return Err(Error::ResourceLimit("liquify displacement memory"));
-                        }
-                        fields.insert(
-                            key,
-                            old_field
-                                .get(&key)
-                                .map_or_else(|| vec![[0., 0.]; 4096], |v| v.as_ref().clone()),
+            let mut new_fields = 0usize;
+            for ty in (top - oy).div_euclid(64)..=(bottom - 1 - oy).div_euclid(64) {
+                for tx in (left - ox).div_euclid(64)..=(right - 1 - ox).div_euclid(64) {
+                    let key = TileCoord::from_signed(tx as i32, ty as i32);
+                    let x0 = left.max(tx * 64 + ox);
+                    let x1 = right.min(tx * 64 + ox + 64);
+                    let y0 = top.max(ty * 64 + oy);
+                    let y1 = bottom.min(ty * 64 + oy + 64);
+                    let mut buffers: Option<(Vec<[f32; 2]>, Vec<Pixel>)> = None;
+                    for py in y0..y1 {
+                        let coverage = self.selection_cache.corner_row(
+                            &self.selection,
+                            x0,
+                            py,
+                            (x1 - x0) as usize,
                         );
-                        let original = if let Some(tile) = layer.tiles.get(&key) {
-                            tile.try_pixels()?.to_vec()
-                        } else {
-                            let mut out = Vec::with_capacity(4096);
-                            for sy in 0..64 {
-                                for sx in 0..64 {
-                                    out.push(layer.default_pixel(
-                                        i64::from(key.signed_x()) * 64 + sx,
-                                        i64::from(key.signed_y()) * 64 + sy,
+                        for px in x0..x1 {
+                            let vx = px as f64 + 0.5 - x;
+                            let vy = py as f64 + 0.5 - y;
+                            let r = vx.hypot(vy) / radius;
+                            if r >= 1. {
+                                continue;
+                            }
+                            let inner = f64::from(options.density) * 0.9;
+                            let falloff = if r <= inner {
+                                1.
+                            } else {
+                                ((1. - r) / (1. - inner)).powi(2)
+                            };
+                            let weight = amount * falloff * f64::from(coverage[(px - x0) as usize]);
+                            if weight <= 0. {
+                                continue;
+                            }
+                            let lx = px - ox;
+                            let ly = py - oy;
+                            let i = index(lx, ly);
+                            let before = sampler.at(lx, ly);
+                            let after = if options.tool == 3 {
+                                let factor = (1. - weight).max(0.) as f32;
+                                before.map(|v| {
+                                    if (v * factor).abs() < 0.0001 {
+                                        0.
+                                    } else {
+                                        v * factor
+                                    }
+                                })
+                            } else {
+                                let (tx, ty) = match options.tool {
+                                    0 => (-dx * weight, -dy * weight),
+                                    1 => {
+                                        let factor =
+                                            (-weight * f64::from(options.speed) * time * 2.).exp()
+                                                - 1.;
+                                        (vx * factor, vy * factor)
+                                    }
+                                    2 => {
+                                        let angle = -weight
+                                            * f64::from(options.speed)
+                                            * time
+                                            * std::f64::consts::TAU;
+                                        let (s, c) = angle.sin_cos();
+                                        (vx * c - vy * s - vx, vx * s + vy * c - vy)
+                                    }
+                                    _ => unreachable!(),
+                                };
+                                let sampled = sampler.sample(lx as f64 + tx, ly as f64 + ty);
+                                [
+                                    (tx + f64::from(sampled[0])) as f32,
+                                    (ty + f64::from(sampled[1])) as f32,
+                                ]
+                            };
+                            if after.iter().any(|v| !v.is_finite() || v.abs() > 2_000_000.) {
+                                return Err(Error::ResourceLimit("liquify displacement range"));
+                            }
+                            if after == before {
+                                continue;
+                            }
+                            if buffers.is_none() {
+                                if old_field.len() + new_fields >= MAX_FIELD_TILES
+                                    && !old_field.contains_key(&key)
+                                {
+                                    return Err(Error::ResourceLimit(
+                                        "liquify displacement memory",
                                     ));
                                 }
+                                let field = old_field
+                                    .get(&key)
+                                    .map_or_else(|| vec![[0., 0.]; 4096], |v| v.as_ref().clone());
+                                if !old_field.contains_key(&key) {
+                                    new_fields += 1;
+                                }
+                                let original = if let Some(tile) = layer.tiles.get(&key) {
+                                    tile.try_pixels()?.to_vec()
+                                } else {
+                                    let mut out = Vec::with_capacity(4096);
+                                    for sy in 0..64 {
+                                        for sx in 0..64 {
+                                            out.push(layer.default_pixel(
+                                                i64::from(key.signed_x()) * 64 + sx,
+                                                i64::from(key.signed_y()) * 64 + sy,
+                                            ));
+                                        }
+                                    }
+                                    out
+                                };
+                                buffers = Some((field, original));
                             }
-                            out
-                        };
-                        pixels.insert(key, original);
+                            let (field, pixel) = buffers.as_mut().expect("tile buffers");
+                            field[i] = after;
+                            pixel[i] = source.sample(
+                                lx as f64 + f64::from(after[0]),
+                                ly as f64 + f64::from(after[1]),
+                            )?;
+                        }
                     }
-                    fields.get_mut(&key).expect("field")[i] = after;
-                    pixels.get_mut(&key).expect("pixels")[i] = source.sample(
-                        lx as f64 + f64::from(after[0]),
-                        ly as f64 + f64::from(after[1]),
-                    )?;
+                    if let Some((field, pixel)) = buffers {
+                        fields.insert(key, field);
+                        pixels.insert(key, pixel);
+                    }
                 }
             }
-            drop(source);
             let new_tiles = pixels
                 .keys()
                 .filter(|key| !layer.tiles.contains_key(key))
@@ -416,10 +472,11 @@ impl Document {
                         layer.tiles.insert(key, tile);
                     }
                     state.field.insert(key, Arc::new(field));
-                    self.pool.trim()?;
                 }
             }
+            self.pool.trim()?;
         }
+        drop(source);
         if changed {
             self.layers[at] = layer;
             self.liquify = Some(state);

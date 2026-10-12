@@ -12,6 +12,7 @@ Flickable {
         id:content;height:root.height;spacing:5
         Icon {name:"liquify";Layout.preferredWidth:17;Layout.preferredHeight:17}
         Label {text:"液化";color:Theme.text;font.pixelSize:10}
+        Rectangle {objectName:"liquifyTitleSeparator";Layout.preferredWidth:1;Layout.preferredHeight:22;color:Theme.line}
         Repeater {
             model:[{key:"Push",title:"推拉",icon:"liquifyPush",tool:0},{key:"Bloat",title:"膨大",icon:"liquifyBloat",tool:1},{key:"Twirl",title:"扭曲",icon:"liquifyTwirl",tool:2},{key:"Reconstruct",title:"重建",icon:"liquifyReconstruct",tool:3},{key:"Reset",title:"重置",icon:"undo",tool:4},{key:"Cancel",title:"取消",icon:"close",tool:5},{key:"Commit",title:"确定",icon:"check",tool:6}]
             delegate:ToolButton {
@@ -38,8 +39,8 @@ Flickable {
             }
         }
         IconButton {objectName:"liquifyPressure";glyph:"pressure";Layout.preferredWidth:28;Layout.preferredHeight:26;enabled:!root.controller.liquifyBusy && !root.controller.drawing;checkable:true;checked:root.controller.liquifyPressure;tooltip:checked?"压感已开启：压力控制液化强度":"压感已关闭：点击开启";onClicked:root.controller.liquifyPressure=!root.controller.liquifyPressure}
-        CheckBox {objectName:"liquifyFocus";text:"专注图层";enabled:!root.controller.liquifyBusy && !root.controller.drawing;checked:root.controller.liquifyFocus;font.pixelSize:10;onClicked:{const value=checked;Qt.callLater(()=>root.controller.liquifyFocus=value)}
-            ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"临时隐藏其他图层；退出液化后恢复原来的图层显示"}
+        CompactCheckBox {objectName:"liquifyFocus";text:"专注图层";enabled:!root.controller.liquifyBusy && !root.controller.drawing;checked:root.controller.liquifyFocus;font.pixelSize:10;onClicked:{const value=checked;Qt.callLater(()=>root.controller.liquifyFocus=value)}
+            tooltip:"临时隐藏其他图层；退出液化后恢复原来的图层显示"}
     }
     ScrollBar.horizontal:ScrollBar {height:3;policy:ScrollBar.AsNeeded}
 }

@@ -30,26 +30,18 @@ RowLayout {
         model:["取样点","3 x 3 平均","5 x 5 平均","11 x 11 平均","31 x 31 平均","51 x 51 平均","101 x 101 平均"]
         currentIndex:root.sizes.indexOf(root.client.wandSampleSize)
         Layout.preferredWidth:150;Layout.preferredHeight:24
-        onActivated:root.client.wandSampleSize=root.sizes[index]
+        onActivated:index=>root.client.wandSampleSize=root.sizes[index]
     }
     Label {text:"容差：";color:Theme.muted}
     CompactSpinBox {tooltip:"容差越大，可匹配的颜色差异越大（0–255）。";objectName:"wandTolerance";from:0;to:255;editable:true;value:root.client.wandTolerance;Layout.preferredWidth:60;Layout.preferredHeight:24;onValueModified:root.client.wandTolerance=value}
     Repeater {
         model:[{key:"Antialias",note:"平滑选区边缘，减少锯齿。",title:"消除锯齿"},{key:"Contiguous",note:"仅选择与点击位置相连的相似颜色；关闭后选择整张画布中的相似颜色。",title:"连续"},{key:"AllLayers",note:"根据所有可见图层的合成颜色取样；选区不会改变图层像素。",title:"对所有图层取样"}]
-        CheckBox {
+        CompactCheckBox {
             required property var modelData
-            hoverEnabled:true
-            ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:modelData.note
+            tooltip:modelData.note
             objectName:"wand"+modelData.key
             text:modelData.title;checked:root.client["wand"+modelData.key]
             onToggled:root.client["wand"+modelData.key]=checked
-            font.pixelSize:12;padding:0;spacing:6
-            indicator:Rectangle {
-                implicitWidth:13;implicitHeight:13;x:0;y:(parent.height-height)/2
-                radius:2;color:parent.checked?Theme.text:Theme.input;border.color:Theme.muted
-                Icon {anchors.fill:parent;anchors.margins:2;name:"check";color:Theme.input;visible:parent.parent.checked}
-            }
-            contentItem:Text {text:parent.text;font:parent.font;color:Theme.text;leftPadding:19;verticalAlignment:Text.AlignVCenter}
         }
     }
     Item {Layout.fillWidth:true}
