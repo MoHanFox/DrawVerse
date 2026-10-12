@@ -1,6 +1,6 @@
 # 统一笔刷系统验收计划
 
-状态：2026-10-13，待实施。下列为未来验收条件，没有在本轮运行笔刷功能测试，也不代表 ABR、VBR、高级笔尖或 GPU 已完成。
+状态：2026-10-13，分阶段实施。程序笔尖验收见 [阶段结果](brush-tip-validation.md)；VBR 程序子集结果见 [阶段结果](vbr-procedural-validation.md)。以下为完整系统的验收计划，不能以局部结果代替全部通过。
 
 设计：[brush-system-design.md](brush-system-design.md)；格式：[vbr-format-design.md](vbr-format-design.md)。各实施阶段在本文件追加真实结果、命令、环境和限制，不把计划改写成“已通过”。
 

@@ -1,4 +1,10 @@
-# C ABI 1.25.0 契约
+# C ABI 1.26.0 契约
+
+## ABI 1.26：VBR 程序笔刷 IO
+
+`PAINT_FEATURE_VBR=2097152`。`paint_brush_package_read/write` 是 worker-thread 同步 IO，Qt 后台线程调用；不操作文档或历史，不保留 caller memory。UTF-8 路径最长32768字节，JSON最长2MiB。读取整个 ZIP 验证成功后输出 canonical package JSON；小缓冲返回 BUFFER_TOO_SMALL 并填写 required，大小查询和重读之间文件可以改变。UI 使用固定2MiB缓冲一次读，避免查询/读取竞态。写入验证 JSON 的版本/能力与所有参数，然后同目录临时文件原子替换。
+
+格式对应 [程序子集 Schema](vbr-procedural-v1.schema.json) 与 [设计](../docs/vbr-procedural-design.md)。package JSON 传输体包含 packageId 和完整 brushes 数组；归档 manifest 与每个 preset 分开。暂不支持图片资源/分组/未知扩展，明确拒绝，完整 VBR 总体草案尚未全部实施。
 
 ## ABI 1.25：共用程序笔尖
 

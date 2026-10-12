@@ -91,6 +91,37 @@ QByteArray BrushLibrary::snapshot() const {
     return QJsonDocument(QJsonObject{{"version",2},{"selected",m_selected},{"presets",rows},{"toolRadii",QJsonArray{m_toolRadii[0],m_toolRadii[1]}},
                                      {"recentColors",QJsonArray::fromStringList(m_recentColors)}}).toJson(QJsonDocument::Compact);
 }
+QByteArray BrushLibrary::exportPackage() const {
+    const auto &p=m_presets[index(m_selected)];
+    const QStringList builtins={"round-pressure","round-fine","round-translucent","round-wide"};
+    const int builtin=builtins.indexOf(p.id);
+    const auto id=builtin<0?p.id:QString("dba00000-0000-4000-8000-%1").arg(builtin+1,12,16,QChar('0'));
+    const QJsonObject parameters{{"diameter",p.radius*2},{"spacing",p.spacing/2},{"dabOpacity",p.opacity},{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}};
+    const QJsonObject preset{{"id",id},{"name",p.name},{"engineProfile","drawverse.brush"},{"behaviorVersion",1},{"requiredCapabilities",QJsonArray{"procedural-tip","pressure","dab-flow"}},{"parameters",parameters}};
+    return QJsonDocument(QJsonObject{{"packageId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"brushes",QJsonArray{preset}}}).toJson(QJsonDocument::Compact);
+}
+bool BrushLibrary::importPackage(const QByteArray &json) {
+    if(json.size()>2*1024*1024)return false;
+    const auto package=QJsonDocument::fromJson(json).object();
+    if(!package.value("brushes").isArray())return false;
+    const auto brushes=package.value("brushes").toArray();
+    if(brushes.isEmpty() || brushes.size()+m_presets.size()>64)return false;
+    auto state=QJsonDocument::fromJson(snapshot()).object();auto rows=state.value("presets").toArray();QSet<QString> ids;
+    for(const auto &p:m_presets)ids.insert(p.id);
+    QString selected;
+    for(const auto &value:brushes){
+        const auto b=value.toObject();const auto params=b.value("parameters").toObject();QString id=b.value("id").toString();
+        if(QUuid(id).isNull() || b.value("behaviorVersion").toInt()!=1 || (b.value("engineProfile").toString()!="drawverse.brush" && b.value("engineProfile").toString()!="legacy.round"))return false;
+        if(ids.contains(id))id=QUuid::createUuid().toString(QUuid::WithoutBraces);
+        ids.insert(id);if(selected.isEmpty())selected=id;
+        QJsonObject row{{"id",id},{"name",b.value("name")},{"radius",params.value("diameter").toDouble()/2},{"opacity",params.value("dabOpacity")},{"spacing",params.value("spacing").toDouble()*2}};
+        for(const auto &key:{"hardness","roundness","angle","flow","pressureSize","pressureFlow"})row[key]=params.value(key);
+        rows.append(row);
+    }
+    state["presets"]=rows;state["selected"]=selected;
+    if(!restore(QJsonDocument(state).toJson(QJsonDocument::Compact)))return false;
+    emit persistRequested(snapshot());return true;
+}
 bool BrushLibrary::restore(const QByteArray &json) {
     if(json.size()>65536)return false;
     const auto root=QJsonDocument::fromJson(json).object();const auto rows=root.value("presets").toArray();

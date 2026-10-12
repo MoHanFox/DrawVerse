@@ -88,6 +88,9 @@ pub(crate) unsafe fn utf8(pointer: *const u8, len: u64) -> ApiResult<String> {
 pub(crate) unsafe fn path_utf8(pointer: *const u8, len: u64) -> ApiResult<String> {
     unsafe { bounded_utf8(pointer, len, 32768) }
 }
+pub(crate) unsafe fn brush_json(pointer: *const u8, len: u64) -> ApiResult<String> {
+    unsafe { bounded_utf8(pointer, len, paint_io::vbr::MAX_JSON as usize) }
+}
 unsafe fn bounded_utf8(pointer: *const u8, len: u64, max: usize) -> ApiResult<String> {
     let len = length(len)?;
     if len == 0 || len > max {

@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新 VBR 程序子集：`docs/vbr-procedural-design.md` / `docs/vbr-procedural-validation.md`；ABI 1.26、Rust 有界 ZIP/JSON 与原子 IO、程序预设 UUID/能力/单位、后台导入导出、冲突副本与整包发布；资源/ABR 暂未实现。
+
 - 笔刷系统：`docs/brush-system-design.md` / `docs/brush-system-validation.md` / `docs/vbr-format-design.md`；总体分阶段实施，ABR/VBR 等后续范围见验收计划。
 - 最新程序笔尖：`docs/brush-tip-design.md` / `docs/brush-tip-validation.md`；ABI 1.25、共用编译覆盖、硬度/圆度/角度/流量与压感、旧圆笔兼容、预设 v2 原子恢复、PS 分类面板/真实预览/旋转椭圆光标。
 

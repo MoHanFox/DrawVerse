@@ -1,6 +1,6 @@
 # VBR 原生笔刷格式草案
 
-状态：2026-10-13，待实施、尚未冻结。本文规定拟议格式，不代表已有读写器或 JSON Schema。正式发布前需实现 Schema、解析器及正反例，通过 [笔刷验收计划](brush-system-validation.md) 后冻结首个版本。
+状态：2026-10-13，完整格式尚未冻结。已有程序笔刷可执行子集，见 [阶段设计](vbr-procedural-design.md) 与 [Schema](../contracts/vbr-procedural-v1.schema.json)。图片资源、分组和扩展仍是拟议范围；子集读写器会拒绝这些未实施模块。完整格式发布前按 [笔刷验收计划](brush-system-validation.md) 冻结版本。
 
 VBR 作为 DrawVerse 的公开、跨平台笔刷交换格式，与工程文件分离。一个文件可以包含一个笔刷或一个带分组的笔刷包，均使用 `.vbr` 扩展名。不依赖源 ABR 路径、系统字体、Qt 对象或开发机目录。
 

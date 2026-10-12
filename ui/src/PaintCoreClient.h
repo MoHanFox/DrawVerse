@@ -36,6 +36,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool storageBusy READ storageBusy NOTIFY storageChanged)
     Q_PROPERTY(QString storageMessage READ storageMessage NOTIFY storageChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
+    Q_PROPERTY(bool brushFileBusy READ brushFileBusy NOTIFY brushFileChanged)
     Q_PROPERTY(QVariantList historyEntries READ historyEntries NOTIFY historyChanged)
     Q_PROPERTY(QVariantList transformInitialPoints READ transformInitialPoints NOTIFY transformChanged)
     Q_PROPERTY(int transformReference READ transformReference WRITE setTransformReference NOTIFY transformChanged)
@@ -118,6 +119,9 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool bucketAllLayers READ bucketAllLayers WRITE setBucketAllLayers NOTIFY bucketOptionsChanged)
     Q_PROPERTY(QVariantMap layerThumbnails READ layerThumbnails NOTIFY layerThumbnailsChanged)
 public:
+    bool brushFileBusy() const {return m_brushFileBusy;}
+    Q_INVOKABLE bool importBrushes(const QUrl &path);
+    Q_INVOKABLE bool exportBrush(const QUrl &path);
     QVariantList historyEntries() const {return m_history;}
     Q_INVOKABLE qreal documentHistoryScrollPosition() const {return m_documentHistoryScroll;}
     Q_INVOKABLE void rememberDocumentHistoryScroll(qreal y) {if(!m_historyLiquify)m_documentHistoryScroll=std::max(qreal(0),y);}
@@ -340,6 +344,8 @@ public:
     Q_INVOKABLE void clearError();
     Q_INVOKABLE void shutdown();
 signals:
+    void brushFileChanged();
+    void brushFileFinished(bool success);
     void liquifyOptionsChanged();
     void historyChanged();
     void storageChanged();
@@ -368,6 +374,7 @@ signals:
     void commandCompleted(bool onWorkerThread);
     void fileFinished(bool success);
 private:
+    bool m_brushFileBusy=false;
     bool submit(int type, const InputSample &sample = {}, quint64 id = 0,
                 const QString &text = {}, qreal amount = 0, bool flag = false);
     void showError(const QString &error);

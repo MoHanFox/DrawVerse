@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import "."
 
 ColumnLayout {
@@ -58,6 +59,8 @@ ColumnLayout {
     }
     RowLayout {
         Item {Layout.fillWidth:true}
+        IconButton {objectName:"importBrushPackage";glyph:"folder";tooltip:"导入 VBR 笔刷包";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:importDialog.open()}
+        IconButton {objectName:"exportBrushPackage";glyph:"save";tooltip:"导出当前笔刷为 VBR";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:exportDialog.open()}
         IconButton {glyph:"plus";tooltip:"保存当前设置为新画笔";implicitHeight:22;onClicked:saveDialog.open()}
         IconButton {glyph:"trash";tooltip:"删除自定义画笔";implicitHeight:22;enabled:root.library.presets.some(p=>p.id===root.library.selectedId && !p.builtin);onClicked:root.library.remove(root.library.selectedId)}
     }
@@ -67,6 +70,8 @@ ColumnLayout {
         TextField {id:brushName;placeholderText:"画笔名称";maximumLength:80;text:root.library.selectedName+" 副本"}
         onAccepted:root.library.saveCopy(brushName.text)
     }
+    FileDialog {id:importDialog;title:"导入笔刷包";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.importBrushes(selectedFile)}
+    FileDialog {id:exportDialog;title:"导出当前笔刷";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.exportBrush(selectedFile)}
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
     Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}}
 }

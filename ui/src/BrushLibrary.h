@@ -39,6 +39,8 @@ public:
     bool pressureSize() const;
     bool pressureFlow() const;
     QVariantMap tipSettings() const;
+    QByteArray exportPackage() const;
+    bool importPackage(const QByteArray &json);
     void setHardness(qreal value);
     void setRoundness(qreal value);
     void setAngle(qreal value);

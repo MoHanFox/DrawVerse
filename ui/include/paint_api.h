@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 25
+#define PAINT_ABI_MINOR 26
 
 #define PAINT_ABI_PATCH 0
 
@@ -100,6 +100,8 @@
 #define PAINT_FEATURE_STORAGE_SETTINGS 128
 
 #define PAINT_FEATURE_TRANSFORM 524288
+
+#define PAINT_FEATURE_VBR 2097152
 
 #define PAINT_FEATURE_WAND 16384
 
@@ -842,6 +844,29 @@ typedef struct PaintStorageInfo {
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+/**
+ * Worker-thread synchronous bounded VBR read; returns canonical package JSON.
+ * Size-only calls may return BUFFER_TOO_SMALL. File contents are read afresh per call.
+ * # Safety
+ * Path bytes must be readable for this call; buffer and required must be writable,
+ * correctly sized and nonoverlapping. No caller memory survives the call.
+ */
+PaintStatus paint_brush_package_read(const uint8_t *path,
+                                     uint64_t path_length,
+                                     uint8_t *buffer,
+                                     uint64_t capacity,
+                                     uint64_t *required);
+
+/**
+ * Worker-thread synchronous atomic VBR save of a validated package JSON.
+ * # Safety
+ * Readable bounded UTF-8 path and JSON bytes are required for this call only.
+ */
+PaintStatus paint_brush_package_write(const uint8_t *path,
+                                      uint64_t path_length,
+                                      const uint8_t *json,
+                                      uint64_t json_length);
 
 /**
  * Begin one undoable stroke on desc.layer_id; invalid input preserves active-layer selection.

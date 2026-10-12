@@ -331,6 +331,8 @@ dependencies = [
  "paint-storage",
  "paint-task",
  "quick-xml",
+ "serde",
+ "serde_json",
  "tempfile",
  "zip",
 ]

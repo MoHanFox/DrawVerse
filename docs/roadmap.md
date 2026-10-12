@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+VBR 程序子集：[设计](vbr-procedural-design.md) / [验收](vbr-procedural-validation.md)，ABI 1.26。已实现程序预设包导入/导出与严格验证；图片资源、ABR 与其他模块继续后续阶段。
+
 笔刷系统第一阶段：[程序笔尖设计](brush-tip-design.md) / [验收](brush-tip-validation.md)，ABI 1.25。已接共用程序笔尖、PS 分类设置、真实预览与椭圆光标；VBR、ABR、图片笔尖、动态与湿混继续逐模块实施。
 
 已实现置入图片 → 独立原始图片模型 → 基础自由变换与栅格化，见 [设计](transform-design.md) / [验收](transform-validation.md)。CPU 处理与变换描述分离；GPU 和文字仍为后续模块。

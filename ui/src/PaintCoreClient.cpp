@@ -66,8 +66,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 25) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.25 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 26) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.26 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -141,7 +141,19 @@ public:
         emit finished();
     }
     void watchLayerCopy(quint64 sequence) {m_layerCopySequence=sequence;}
+    void brushFile(QString path,QByteArray package,bool exporting) {
+        if(m_stopped){emit brushFileReady({},QStringLiteral("后端已关闭"),exporting);return;}
+        const auto encoded=path.toUtf8();PaintStatus status;
+        if(exporting)status=paint_brush_package_write(reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<const uint8_t*>(package.constData()),quint64(package.size()));
+        else {
+            package.resize(2*1024*1024);uint64_t required=0;
+            status=paint_brush_package_read(reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required);
+            if(status==PAINT_OK)package.resize(qsizetype(required));
+        }
+        emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting);
+    }
 signals:
+    void brushFileReady(QByteArray package,QString error,bool exporting);
     void layerClipboardReady(QByteArray bytes);
     void liquifyPreferences(QVariantMap values);
     void brushPreferences(QByteArray json);
@@ -508,6 +520,12 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
     });
     connect(m_worker,&BackendWorker::brushPreferences,m_brushLibrary,[this](const QByteArray &json){if(!json.isEmpty())m_brushLibrary->restore(json);});
     connect(m_worker,&BackendWorker::brushPreviewReady,m_brushLibrary,&BrushLibrary::acceptPreview);
+    connect(m_worker,&BackendWorker::brushFileReady,this,[this](const QByteArray &package,const QString &error,bool exporting){
+        bool success=error.isEmpty();
+        if(success && !exporting && !m_brushLibrary->importPackage(package)){success=false;showError(QStringLiteral("导入失败：笔刷库容量不足或包参数无效（最多 64 个预设）"));}
+        if(!error.isEmpty())showError(error);
+        m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
+    });
     connect(m_brushLibrary,&BrushLibrary::persistRequested,m_worker,&BackendWorker::saveBrushPreferences);
     connect(m_brushLibrary,&BrushLibrary::previewRequested,m_worker,&BackendWorker::queueBrushPreview);
     connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{m_radius=m_brushLibrary->radius();m_opacity=m_brushLibrary->opacity();m_spacing=m_brushLibrary->spacing();emit brushChanged();});
@@ -1282,6 +1300,16 @@ QString PaintCoreClient::documentName() const {
     return m_sourceUrl.isEmpty() ? QStringLiteral("未命名") : QFileInfo(m_sourceUrl.toLocalFile()).fileName();
 }
 bool PaintCoreClient::openDocument(const QUrl &path) { return submitFile(path, PAINT_FILE_OPEN, PAINT_FILE_AUTO); }
+bool PaintCoreClient::importBrushes(const QUrl &path) {
+    if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
+    m_brushFileBusy=true;emit brushFileChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile()]{worker->brushFile(path,{},false);},Qt::QueuedConnection);return true;
+}
+bool PaintCoreClient::exportBrush(const QUrl &path) {
+    if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
+    const auto package=m_brushLibrary->exportPackage();m_brushFileBusy=true;emit brushFileChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),package]{worker->brushFile(path,package,true);},Qt::QueuedConnection);return true;
+}
 bool PaintCoreClient::saveDocument(const QUrl &path, int format) { return submitFile(path, PAINT_FILE_SAVE, format); }
 bool PaintCoreClient::submitFile(const QUrl &path, int kind, int format) {
     if (!m_ready || m_liquifyActive || m_transformActive || m_drawing || m_fileBusy || m_closing) return false;

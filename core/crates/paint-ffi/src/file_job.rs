@@ -275,7 +275,7 @@ impl FileService {
         }
     }
 }
-fn io_error(error: paint_io::Error) -> ApiError {
+pub(crate) fn io_error(error: paint_io::Error) -> ApiError {
     let status = match &error {
         paint_io::Error::Io(_) => PAINT_IO_ERROR,
         paint_io::Error::Unsupported(_) => PAINT_UNSUPPORTED,

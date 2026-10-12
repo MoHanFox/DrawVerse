@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:vbr:procedural:1",
+  "title": "DrawVerse VBR 1.0 procedural executable subset",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/manifest"
+    },
+    {
+      "$ref": "#/$defs/preset"
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diameter",
+        "spacing",
+        "dabOpacity",
+        "hardness",
+        "roundness",
+        "angle",
+        "flow",
+        "pressureSize",
+        "pressureFlow"
+      ],
+      "properties": {
+        "diameter": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "spacing": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 0.5
+        },
+        "dabOpacity": {
+          "$ref": "#/$defs/ratio"
+        },
+        "hardness": {
+          "$ref": "#/$defs/ratio"
+        },
+        "roundness": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1
+        },
+        "angle": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "flow": {
+          "$ref": "#/$defs/ratio"
+        },
+        "pressureSize": {
+          "type": "boolean"
+        },
+        "pressureFlow": {
+          "type": "boolean"
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "engineProfile",
+        "behaviorVersion",
+        "requiredCapabilities",
+        "parameters"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "allOf": [
+            {
+              "pattern": "\\S"
+            },
+            {
+              "pattern": "^[^\\u0000]*$"
+            }
+          ]
+        },
+        "engineProfile": {
+          "enum": [
+            "legacy.round",
+            "drawverse.brush"
+          ]
+        },
+        "behaviorVersion": {
+          "const": 1
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "enum": [
+              "procedural-tip",
+              "pressure",
+              "dab-flow"
+            ]
+          }
+        },
+        "parameters": {
+          "$ref": "#/$defs/parameters"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "engineProfile": {
+                "const": "legacy.round"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "properties": {
+                  "hardness": {
+                    "const": 1
+                  },
+                  "roundness": {
+                    "const": 1
+                  },
+                  "angle": {
+                    "const": 0
+                  },
+                  "flow": {
+                    "const": 1
+                  },
+                  "pressureSize": {
+                    "const": true
+                  },
+                  "pressureFlow": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "version",
+        "packageId",
+        "brushes",
+        "groups",
+        "assets"
+      ],
+      "properties": {
+        "format": {
+          "const": "DrawVerseBrush"
+        },
+        "version": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "major",
+            "minor"
+          ],
+          "properties": {
+            "major": {
+              "const": 1
+            },
+            "minor": {
+              "const": 0
+            }
+          }
+        },
+        "packageId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "brushes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "path"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^brushes/[0-9a-f-]{36}\\.json$"
+              }
+            }
+          }
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "assets": {
+          "type": "array",
+          "maxItems": 0
+        }
+      }
+    }
+  }
+}

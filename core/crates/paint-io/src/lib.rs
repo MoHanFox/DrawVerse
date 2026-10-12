@@ -1,6 +1,7 @@
 //! Bounded codecs and atomic files. File operations run on background workers only.
 mod ora;
 mod raster;
+pub mod vbr;
 use paint_core::{Document, DocumentSnapshot};
 use paint_task::CancellationToken;
 use std::{

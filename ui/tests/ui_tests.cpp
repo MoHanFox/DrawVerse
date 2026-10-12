@@ -550,6 +550,16 @@ private slots:
         const auto screenshot=qEnvironmentVariable("DRAWVERSE_BRUSH_PREVIEW");if(!screenshot.isEmpty()){auto group=workspace.leftGroups().first().toMap().value("id").toString();workspace.detachGroup(group);for(auto *w:applicationWindows())if(auto *q=qobject_cast<QQuickWindow*>(w))if(findVisualItem(q->contentItem(),"selectedBrushName")){q->resize(350,440);QTest::qWait(200);QVERIFY(q->grabWindow().save(screenshot+".tip.png"));}}
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void vbrPackageImportExportIsAtomicAndPreservesParameters() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));QTRY_VERIFY(client.ready());
+        auto *library=client.brushLibrary();library->setHardness(.25);library->setRoundness(.3);library->setAngle(-35);library->setFlow(.6);library->setPressureSize(false);library->setSpacing(.02);
+        const auto revision=client.revision();const auto undo=client.undoDepth();const auto path=QUrl::fromLocalFile(temp.filePath("brush.vbr"));QSignalSpy finished(&client,&PaintCoreClient::brushFileFinished);
+        QVERIFY(client.exportBrush(path));QVERIFY(client.brushFileBusy());QVERIFY(!client.exportBrush(path));QTRY_COMPARE(finished.size(),1);QVERIFY(finished.last()[0].toBool());QVERIFY(!client.brushFileBusy());QVERIFY(QFileInfo::exists(path.toLocalFile()));
+        library->setHardness(1);QVERIFY(client.importBrushes(path));QTRY_COMPARE(finished.size(),2);QVERIFY(finished.last()[0].toBool());QCOMPARE(library->presets().size(),5);QCOMPARE(library->hardness(),.25);QCOMPARE(library->roundness(),.3);QCOMPARE(library->angle(),-35.);QCOMPARE(library->flow(),.6);QCOMPARE(library->spacing(),.02);QVERIFY(!library->pressureSize());
+        const auto imported=library->selectedId();QVERIFY(client.importBrushes(path));QTRY_COMPARE(finished.size(),3);QVERIFY(finished.last()[0].toBool());QCOMPARE(library->presets().size(),6);QVERIFY(library->selectedId()!=imported);
+        const auto originalState=library->snapshot();QFile bad(temp.filePath("bad.vbr"));QVERIFY(bad.open(QIODevice::WriteOnly));bad.write("invalid archive");bad.close();QVERIFY(client.importBrushes(QUrl::fromLocalFile(bad.fileName())));QTRY_COMPARE(finished.size(),4);QVERIFY(!finished.last()[0].toBool());QCOMPARE(library->snapshot(),originalState);QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),undo);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void mainWindowRestoresWithoutNativeFrameOrClippedContent() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
