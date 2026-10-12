@@ -15,7 +15,8 @@ PanelWindow {
     property bool restoring:false
     objectName:"panelFlyout:"+groupData.id+":"+panelKey
     // Capturable top-level window: Qt.Tool would set WS_EX_TOOLWINDOW and hide the flyout from OBS.
-    flags:Qt.Window|Qt.FramelessWindowHint|Qt.WindowDoesNotAcceptFocus;visible:false;color:"transparent"
+    // Editable panels must regain native keyboard focus after returning from the canvas.
+    flags:Qt.Window|Qt.FramelessWindowHint;visible:false;color:"transparent"
     Rectangle {anchors.fill:parent;color:"transparent";border.color:Theme.line}
     readonly property string panelKind:Workspace.panelDefinition(panelKey).kind
     minimumWidth:Math.min(Math.max(190,groupData.minimumWidth||190),Workspace.availableScreenGeometry(root).width)

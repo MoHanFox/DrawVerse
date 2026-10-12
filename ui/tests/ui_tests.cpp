@@ -1546,6 +1546,31 @@ private slots:
         QCOMPARE(CanvasItem::constrainedRect({-30,-30},{10,-60}),QRectF(-30,-70,40,40));
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void layerSearchRefocusAfterToolsAndCanvasBlank() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("search.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->requestActivate();QTRY_VERIFY(window->isActive());QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready());
+        QQuickItem *search=nullptr;QTRY_VERIFY((search=findVisualItem(window->contentItem(),"layerSearch")));QTRY_VERIFY(search->width()>40);QTest::qWait(50);
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);auto *tool=findVisualItem(window->contentItem(),"eraserTool");QVERIFY(tool);
+        const auto click=[&](QQuickItem *i){QTest::mouseClick(i->window(),Qt::LeftButton,Qt::NoModifier,i->mapToScene({i->width()/2,i->height()/2}).toPoint());};
+        click(search);QTRY_VERIFY(search->hasActiveFocus());QTest::keyClick(window,Qt::Key_A);QCOMPARE(search->property("text").toString(),QStringLiteral("a"));
+        for(int i=0;i<3;++i){
+            click(tool);QTRY_VERIFY(canvas->hasActiveFocus());QVERIFY(client.eraser());click(search);QTRY_VERIFY(search->hasActiveFocus());QTest::keyClick(window,Qt::Key_B);QCOMPARE(search->property("text").toString(),QStringLiteral("a")+QString(2*i+1,QLatin1Char('b')));QVERIFY(client.eraser());
+            QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,canvas->mapToScene({2,2}).toPoint());QTRY_VERIFY(canvas->hasActiveFocus());click(search);QTRY_VERIFY(search->hasActiveFocus());QTest::keyClick(window,Qt::Key_B);QCOMPARE(search->property("text").toString(),QStringLiteral("a")+QString(2*i+2,QLatin1Char('b')));QVERIFY(client.eraser());
+        }
+        QCOMPARE(findVisualItem(window->contentItem(),"layerSearch"),search);
+        // Icon-expanded panels are separate native windows: send keys to the actual focus window.
+        workspace.setColumnCollapsed(workspace.groupForPanel("layers"),true);
+        QQuickItem *rail=nullptr;QTRY_VERIFY((rail=findVisualItem(window->contentItem(),"railPanel:layers")));click(rail);
+        QQuickWindow *flyout=nullptr;const auto findFlyout=[&](){for(auto *w:applicationWindows())if(w->objectName().startsWith("panelFlyout:") && w->objectName().endsWith(":layers") && w->isVisible())return qobject_cast<QQuickWindow*>(w);return static_cast<QQuickWindow*>(nullptr);};QTRY_VERIFY((flyout=findFlyout()));
+        QTRY_VERIFY((search=findVisualItem(flyout->contentItem(),"layerSearch")));QTRY_VERIFY(search->width()>40);QVERIFY(QTest::qWaitForWindowExposed(flyout));QTest::qWait(50);click(search);QTRY_COMPARE(QGuiApplication::focusWindow(),flyout);QTRY_VERIFY(search->hasActiveFocus());QTest::keyClick(QGuiApplication::focusWindow(),Qt::Key_A);QCOMPARE(search->property("text").toString(),QStringLiteral("a"));
+        for(int i=0;i<3;++i){
+            click(tool);QTRY_COMPARE(QGuiApplication::focusWindow(),window);QTRY_VERIFY(canvas->hasActiveFocus());click(search);QTRY_COMPARE(QGuiApplication::focusWindow(),flyout);QTRY_VERIFY(search->hasActiveFocus());QTest::keyClick(QGuiApplication::focusWindow(),Qt::Key_B);QCOMPARE(search->property("text").toString(),QStringLiteral("a")+QString(2*i+1,QLatin1Char('b')));QVERIFY(client.eraser());
+            window->requestActivate();QTRY_VERIFY(window->isActive());QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,canvas->mapToScene({2,2}).toPoint());QTRY_VERIFY(canvas->hasActiveFocus());click(search);QTRY_COMPARE(QGuiApplication::focusWindow(),flyout);QTRY_VERIFY(search->hasActiveFocus());QTest::keyClick(QGuiApplication::focusWindow(),Qt::Key_B);QCOMPARE(search->property("text").toString(),QStringLiteral("a")+QString(2*i+2,QLatin1Char('b')));QVERIFY(client.eraser());QVERIFY(flyout->isVisible());
+        }
+        QCOMPARE(findVisualItem(flyout->contentItem(),"layerSearch"),search);QCOMPARE(warnings,QStringList());auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void firstLayerSearchClickAndCtrlCanvasPickMove() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("pick.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
