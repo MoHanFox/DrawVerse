@@ -2148,7 +2148,7 @@ fn pass_through_group_appearance_validation_publication_and_undo() {
     unsafe {
         let mut version = dto!(PaintVersion);
         assert_eq!(paint_core_version(&mut version), PAINT_OK);
-        assert_eq!(version.minor, 19);
+        assert_eq!(version.minor, 20);
         let mut caps = dto!(PaintCapabilities);
         assert_eq!(paint_core_capabilities(h.core, &mut caps), PAINT_OK);
         assert_ne!(caps.features & PAINT_FEATURE_PASS_THROUGH, 0);
@@ -2218,5 +2218,149 @@ fn pass_through_group_appearance_validation_publication_and_undo() {
         let info = h.wait(seq);
         assert_eq!(info.last_error_status, PAINT_INVALID_ARGUMENT);
         assert_eq!(info.undo_depth, state.undo_depth);
+    }
+}
+
+#[test]
+fn layer_actions_copy_paste_duplicate_merge_validate_and_keep_fifo_history() {
+    let h = Harness::new(64, 64);
+    h.wait(h.stroke(16., 16.));
+    let ids = [1];
+    let mut sequence = 99;
+    unsafe {
+        assert_eq!(
+            paint_session_layer_action(
+                h.core,
+                h.session,
+                99,
+                ids.as_ptr(),
+                1,
+                0,
+                ptr::null(),
+                0,
+                &mut sequence
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        assert_eq!(
+            paint_session_layer_action(
+                h.core,
+                h.session,
+                PAINT_LAYER_ACTION_COPY,
+                ids.as_ptr(),
+                1,
+                0,
+                ptr::null(),
+                0,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let info = h.wait(sequence);
+        assert_eq!(info.undo_depth, 1);
+        assert_eq!(info.last_error_status, PAINT_OK);
+        let mut size = 0;
+        assert_eq!(
+            paint_session_read_layer_clipboard(
+                h.core,
+                h.session,
+                sequence,
+                ptr::null_mut(),
+                0,
+                &mut size
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert!(size > 16);
+        let mut bytes = vec![0; size as usize];
+        assert_eq!(
+            paint_session_read_layer_clipboard(
+                h.core,
+                h.session,
+                sequence,
+                bytes.as_mut_ptr(),
+                size,
+                &mut size
+            ),
+            PAINT_OK
+        );
+        let other = Harness::new(64, 64);
+        assert_eq!(
+            paint_session_layer_action(
+                other.core,
+                other.session,
+                PAINT_LAYER_ACTION_PASTE,
+                ptr::null(),
+                0,
+                1,
+                bytes.as_ptr(),
+                size,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        bytes.fill(0);
+        let info = other.wait(sequence);
+        assert_eq!(info.last_error_status, PAINT_OK);
+        assert_eq!(info.layer_count, 2);
+        assert_eq!(info.undo_depth, 1);
+        let copied = [info.active_layer_id];
+        assert_eq!(
+            paint_session_layer_action(
+                other.core,
+                other.session,
+                PAINT_LAYER_ACTION_DUPLICATE,
+                copied.as_ptr(),
+                1,
+                0,
+                ptr::null(),
+                0,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let info = other.wait(sequence);
+        assert_eq!(info.layer_count, 3);
+        assert_eq!(info.undo_depth, 2);
+        let selected = [1, copied[0], info.active_layer_id];
+        assert_eq!(
+            paint_session_layer_action(
+                other.core,
+                other.session,
+                PAINT_LAYER_ACTION_MERGE,
+                selected.as_ptr(),
+                3,
+                0,
+                ptr::null(),
+                0,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let info = other.wait(sequence);
+        assert_eq!(info.layer_count, 1);
+        assert_eq!(info.undo_depth, 3);
+        assert_eq!(info.last_error_status, PAINT_OK);
+        let undo = other.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        });
+        assert_eq!(other.wait(undo).layer_count, 3);
+        assert_eq!(
+            paint_session_layer_action(
+                other.core,
+                other.session,
+                PAINT_LAYER_ACTION_PASTE,
+                ptr::null(),
+                0,
+                1,
+                ptr::null(),
+                1,
+                &mut sequence
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
     }
 }

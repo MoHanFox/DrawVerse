@@ -1,4 +1,12 @@
-# C ABI 1.19.0 契约
+# C ABI 1.20.0 契约
+
+## ABI 1.20：图层复制、剪贴板与合并
+
+- `PAINT_FEATURE_LAYER_ACTIONS=131072`。`paint_session_layer_action` FIFO 接收 COPY/PASTE/DUPLICATE/MERGE；COPY 不改 revision/history，其他操作一次原子提交，失败不改变结构、像素或 ID 分配。
+- COPY/DUPLICATE/MERGE：1–4096 个非零唯一 ID，target=0，bytes=null，length=0。父子重叠选择按独立子树去重；复制包含蒙版和属性。
+- PASTE：ids=null、count=0、显式 target≠0、1–256MiB 字节；复制输入后返回，后台校验版本、校验和、层数、像素、层次与资源限制，放在目标（蒙版取其所有者）上方的同一父组。
+- COPY 完成后用 `paint_session_read_layer_clipboard(sequence)` 查询最新成功复制的结果；null/0 查询返回 BUFFER_TOO_SMALL 与长度，成功读取无终止字符。结果留存到下一次成功复制或 session 销毁。Qt 工作线程读取并发布 `application/x-drawverse-layers-v1` MIME，支持跨文档。
+- 历史种类 27=复制、28=粘贴、29=合并。单选普通图层向下合并同级下一层；单选组合并自身；多选合并所有所选子树。内核栅格化内部效果，产出普通图层，穿透组不再对外穿透。
 
 ## ABI 1.19：组穿透
 

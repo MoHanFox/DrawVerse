@@ -11,6 +11,8 @@
 #include <QHash>
 #include <QDrag>
 #include <QMimeData>
+#include <QGuiApplication>
+#include <QClipboard>
 #include <algorithm>
 #include <atomic>
 #include <vector>
@@ -57,7 +59,7 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 19) {
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 20) {
             emit failure(QStringLiteral("组穿透需要核心 ABI 1.19 或兼容后续版本")); return;
         }
         auto settings = preferences();
@@ -129,7 +131,9 @@ public:
         if (m_core) check(paint_core_destroy(&m_core));
         emit finished();
     }
+    void watchLayerCopy(quint64 sequence) {m_layerCopySequence=sequence;}
 signals:
+    void layerClipboardReady(QByteArray bytes);
     void brushPreferences(QByteArray json);
     void brushPreviewReady(QString id,quint64 token,QString image);
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
@@ -251,8 +255,8 @@ public:
         // One entry per HistoryAction discriminant, in order. A missing entry used to fail the whole
         // publish ("无法识别的历史操作"), which silently froze every later UI update, so the list must
         // cover every kind the core can report and the check below treats the rest as unknown text.
-        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹")};
-        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge"};
+        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹"),QStringLiteral("复制图层"),QStringLiteral("粘贴图层"),QStringLiteral("合并图层")};
+        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge","layers","layers","layers"};
         for(uint32_t depth=0;depth<=info.undo_depth+info.redo_depth;++depth) {
             auto entry=dto<PaintHistoryEntry>();auto historyStatus=paint_session_history_entry(m_core,m_session,info.publication,depth,&entry);
             if(historyStatus==PAINT_BUSY)return false;if(!check(historyStatus))return false;
@@ -274,6 +278,16 @@ public:
         if (!check(paint_session_info(m_core, m_session, &info))) return;
         if(info.completed_sequence<m_bootSequence) return;
         if ((info.publication != m_publication || info.flags != m_flags) && !publish(info)) return;
+        if(m_layerCopySequence && info.completed_sequence>=m_layerCopySequence) {
+            uint64_t size=0;
+            auto status=paint_session_read_layer_clipboard(m_core,m_session,m_layerCopySequence,nullptr,0,&size);
+            QByteArray copied;
+            if(status==PAINT_BUFFER_TOO_SMALL && size<=256ull*1024*1024) {
+                QByteArray bytes(static_cast<qsizetype>(size),'\0');
+                if(paint_session_read_layer_clipboard(m_core,m_session,m_layerCopySequence,reinterpret_cast<uint8_t*>(bytes.data()),size,&size)==PAINT_OK)copied=std::move(bytes);
+            }
+            m_layerCopySequence=0;emit layerClipboardReady(copied);
+        }
         m_flags = info.flags;
         pollPreviews(info);
         if(info.stroke_active && !m_brushJob.isEmpty())m_brushClock.restart();
@@ -450,6 +464,7 @@ public:
     QTimer *m_timer;
     PaintCore *m_core = nullptr;
     PaintSession *m_session = nullptr;
+    quint64 m_layerCopySequence=0;
     quint64 m_publication = 0, m_completed = 0, m_errorSequence = 0, m_frames[2]{};
     quint64 m_deliveredFile = 0;
     uint32_t m_flags = 0;
@@ -458,10 +473,18 @@ public:
 };
 
 PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) : QObject(parent), m_settingsFile(settingsFile), m_connection(std::make_shared<BackendConnection>()) {
+    connect(QGuiApplication::clipboard(),&QClipboard::dataChanged,this,&PaintCoreClient::stateChanged);
+    connect(qGuiApp,&QGuiApplication::focusObjectChanged,this,[this]{emit stateChanged();});
     m_brushLibrary=new BrushLibrary(this);
     qRegisterMetaType<PaintSessionInfo>();
     qRegisterMetaType<PaintFileJobInfo>();
     m_worker = new BackendWorker(m_connection, settingsFile); m_worker->moveToThread(&m_thread);
+    connect(m_worker,&BackendWorker::layerClipboardReady,this,[this](const QByteArray &bytes){
+        if(m_closing)return;
+        m_pendingCopy=0;
+        if(!bytes.isEmpty()){auto *mime=new QMimeData;mime->setData("application/x-drawverse-layers-v1",bytes);QGuiApplication::clipboard()->setMimeData(mime);}
+        emit stateChanged();
+    });
     connect(m_worker,&BackendWorker::brushPreferences,m_brushLibrary,[this](const QByteArray &json){if(!json.isEmpty())m_brushLibrary->restore(json);});
     connect(m_worker,&BackendWorker::brushPreviewReady,m_brushLibrary,&BrushLibrary::acceptPreview);
     connect(m_brushLibrary,&BrushLibrary::persistRequested,m_worker,&BackendWorker::saveBrushPreferences);
@@ -921,7 +944,7 @@ void PaintCoreClient::selectLayers(quint64 id, int modifiers) {
         if(m_active!=id)selectLayer(id);
         return;
     }
-    emit selectedLayersChanged();
+    emit selectedLayersChanged();emit stateChanged();
     selectLayer(m_selectedLayers.contains(id)?id:m_selectedLayers.last());
 }
 void PaintCoreClient::pruneSelectedLayers() {
@@ -990,6 +1013,51 @@ bool PaintCoreClient::moveLayer(quint64 id,int dx,int dy) {
     if(status!=PAINT_OK) { showError(error); return false; }
     m_pendingLayer=m_pendingMutation=sequence; m_modified=true; emit stateChanged(); return true;
 }
+bool PaintCoreClient::layerShortcutsAllowed() const {
+    const auto *focus=QGuiApplication::focusObject();
+    return m_ready && !m_drawing && !layerEditBusy() && !m_fileBusy && !m_closing
+        && !(focus && (focus->inherits("QQuickTextInput") || focus->inherits("QQuickTextEdit") || focus->property("cursorPosition").isValid()));
+}
+bool PaintCoreClient::canPasteLayers() const {return m_ready && !m_drawing && !layerEditBusy() && !m_fileBusy && QGuiApplication::clipboard()->mimeData()->hasFormat("application/x-drawverse-layers-v1");}
+QString PaintCoreClient::mergeLayersText() const {
+    if(m_selectedLayers.size()>1)return QStringLiteral("合并图层");
+    for(const auto &v:m_layers){const auto l=v.toMap();if(l.value("id").toULongLong()==m_active)return l.value("group").toBool()?QStringLiteral("合并组"):QStringLiteral("向下合并");}
+    return QStringLiteral("向下合并");
+}
+bool PaintCoreClient::canMergeLayers() const {
+    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy)return false;
+    QVariantMap active;
+    for(const auto &v:m_layers){const auto l=v.toMap();if(l.value("id").toULongLong()==m_active)active=l;
+        if(m_selectedLayers.contains(l.value("id").toULongLong()) && (l.value("effectiveLocks").toUInt()&PAINT_LOCK_ALL))return false;}
+    if(active.isEmpty() || active.value("mask").toBool())return false;
+    if(m_selectedLayers.size()>1 || active.value("group").toBool())return true;
+    bool found=false;
+    for(const auto &v:m_layers){const auto l=v.toMap();if(l.value("id").toULongLong()==m_active){found=true;continue;}
+        if(found && !l.value("mask").toBool() && l.value("parent")==active.value("parent"))return !(l.value("effectiveLocks").toUInt()&PAINT_LOCK_ALL);}
+    return false;
+}
+bool PaintCoreClient::submitLayerAction(quint32 kind,const QByteArray &bytes) {
+    if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy || m_closing)return false;
+    clearLayerBlendPreview();
+    const std::vector<uint64_t> ids(m_selectedLayers.begin(),m_selectedLayers.end());
+    const bool paste=kind==PAINT_LAYER_ACTION_PASTE;
+    if(!paste && ids.empty())return false;
+    uint64_t sequence=0;PaintStatus status;QString error;
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;
+        status=paint_session_layer_action(m_connection->core,m_connection->session,kind,paste?nullptr:ids.data(),paste?0:static_cast<uint32_t>(ids.size()),paste?m_active:0,
+            paste?reinterpret_cast<const uint8_t*>(bytes.constData()):nullptr,paste?static_cast<uint64_t>(bytes.size()):0,&sequence);
+        if(status!=PAINT_OK)error=immediateError(status);}
+    if(status!=PAINT_OK){showError(error);return false;}
+    m_pendingLayer=sequence;
+    if(kind==PAINT_LAYER_ACTION_COPY){m_pendingCopy=sequence;QMetaObject::invokeMethod(m_worker,[worker=m_worker,sequence]{worker->watchLayerCopy(sequence);},Qt::QueuedConnection);}
+    else {m_pendingMutation=sequence;m_modified=true;}
+    emit stateChanged();return true;
+}
+bool PaintCoreClient::copySelectedLayers(){return submitLayerAction(PAINT_LAYER_ACTION_COPY);}
+bool PaintCoreClient::pasteLayers(){return canPasteLayers() && submitLayerAction(PAINT_LAYER_ACTION_PASTE,QGuiApplication::clipboard()->mimeData()->data("application/x-drawverse-layers-v1"));}
+bool PaintCoreClient::duplicateSelectedLayers(){return submitLayerAction(PAINT_LAYER_ACTION_DUPLICATE);}
+bool PaintCoreClient::mergeSelectedLayers(){return canMergeLayers() && submitLayerAction(PAINT_LAYER_ACTION_MERGE);}
+
 bool PaintCoreClient::submitGroup(quint32 kind,quint64 id,quint64 parent,const QString &name) {
     if(!m_ready || m_drawing || layerEditBusy() || m_fileBusy) return false;
     const auto bytes=name.toUtf8();auto request=dto<PaintGroupRequest>();request.kind=kind;request.layer_id=id;request.parent_id=parent;

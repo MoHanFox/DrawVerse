@@ -112,3 +112,5 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 顶部菜单改为 `文件 · 编辑 · 图像 · 图层 · 选择 · 滤镜 · 窗口`（工作区并入窗口、删除视图），编辑→首选项打开左侧分类侧栏对话框（性能 / 历史 / 界面），未实现项按"待支持"标注。历史条数上限做成真实设置：`paint-core` 运行时裁剪最旧记录并标记边界不可达，ABI 1.11 新增 `paint_session_set_history_limit`，`PaintCoreClient.historyLimit` 持久化并即时应用。展开窗不再自动补长，最近颜色只在下笔提交后更新。见 [menus-preferences-design.md](menus-preferences-design.md)、[panel-length-and-snap-design.md](panel-length-and-snap-design.md)。
 
 同一工具的多形态合并到一个槽位：图标右下角小三角提示可切换，右键弹出悬浮面板列出全部形态，点击面板项才切换，点工具栏图标只激活当前形态（选区槽位含矩形/椭圆，套索待支持）。见 [tool-variants-design.md](tool-variants-design.md)；编辑→键盘快捷键只读展示真实绑定。
+
+图层操作（ABI 1.20）：[设计](layer-actions-design.md) / [验收](layer-actions-validation.md)，右键菜单、复制粘贴/合并、缩略图焦点与下边缘拖放修复。

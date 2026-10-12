@@ -162,3 +162,14 @@ pub(crate) unsafe fn selection_points(
             .collect(),
     )
 }
+
+/// Copy bounded clipboard bytes; caller guarantees readable storage for this call.
+pub(crate) unsafe fn layer_clipboard_bytes(pointer: *const u8, count: u64) -> ApiResult<Vec<u8>> {
+    let count = length(count)?;
+    if count == 0 || count > 256 * 1024 * 1024 {
+        return Err(ApiError::invalid("clipboard byte count"));
+    }
+    valid_pointer(pointer)?;
+    // SAFETY: caller guarantees count readable bytes; application bound checked above.
+    Ok(unsafe { std::slice::from_raw_parts(pointer, count) }.to_vec())
+}

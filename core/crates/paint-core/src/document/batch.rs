@@ -2,7 +2,7 @@ use super::*;
 
 impl Document {
     /// Normalize overlapping selections to independent subtree roots, in stack order.
-    fn batch_roots(&self, ids: &[u64]) -> Result<Vec<u64>> {
+    pub(super) fn batch_roots(&self, ids: &[u64]) -> Result<Vec<u64>> {
         if ids.is_empty() || ids.len() > 4096 {
             return Err(Error::InvalidArgument("invalid batch size"));
         }
@@ -193,6 +193,10 @@ impl Document {
             0
         } else {
             let to = self.layer(target).ok_or(Error::LayerNotFound(target))?;
+            // Releasing on the dragged row boundary is a harmless no-op.
+            if roots.contains(&target) && placement != 0 {
+                return Ok(());
+            }
             if to.mask || moved_ids.contains(&target) || (placement == 0 && !to.group) {
                 return Err(Error::InvalidArgument("invalid drop target/cycle"));
             }

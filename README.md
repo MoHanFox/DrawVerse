@@ -134,3 +134,5 @@ CLion 从仓库根目录的 `CMakeLists.txt` 加载，不能单独加载 `ui`。
 
 
 选区：M 矩形，Shift+M 切换椭圆；拖动时 Shift 添加，Alt/Option 减去，Shift+Alt/Option 相交。Esc 取消拖动，Ctrl/Command+A 全选、Ctrl/Command+D 取消、Ctrl/Command+Shift+I 反选。边界使用静态黑白虚线，选区限制笔刷/擦除/蒙版，不裁剪导出。最多64个几何步骤，替换重置步骤，超限拒绝并保护当前选区；套索、羽化和魔棒继续后续实现。选区随 OpenRaster 扩展 v4 保存。
+
+图层操作（ABI 1.20）：[设计](docs/layer-actions-design.md) / [验收](docs/layer-actions-validation.md)。右键菜单、图层与组复制粘贴/合并、缩略图焦点、快捷键与下边缘拖放修复。

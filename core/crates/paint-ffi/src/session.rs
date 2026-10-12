@@ -34,6 +34,10 @@ pub(crate) enum Operation {
     Drop(u64, u64, u32),
     DropBatch(Vec<u64>, u64, u32),
     RemoveBatch(Vec<u64>, bool),
+    CopyLayers(Vec<u64>),
+    PasteLayers(Vec<u8>, u64),
+    DuplicateLayers(Vec<u64>),
+    MergeLayers(Vec<u64>),
     Begin(Brush, InputPoint, u64),
     Move(InputPoint),
     End,
@@ -88,6 +92,7 @@ pub(crate) struct StampedFrame {
 }
 struct Shared {
     publication: Mutex<Arc<Publication>>,
+    clipboard: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     views: Mutex<[ViewSlot; 4]>,
     generation: AtomicU64,
     floor: AtomicU64,
@@ -146,6 +151,7 @@ impl Session {
             generation: AtomicU64::new(1),
             floor: AtomicU64::new(0),
             publication: Mutex::new(Arc::new(initial)),
+            clipboard: Mutex::new(None),
             views: Mutex::new(std::array::from_fn(|_| ViewSlot {
                 preview_layer: 0,
                 blend_preview: None,
@@ -280,6 +286,17 @@ impl Session {
                 ))
             }
             Err(error) => Err(send_error(error)),
+        }
+    }
+    pub fn layer_clipboard(&self, sequence: u64) -> ApiResult<Arc<Vec<u8>>> {
+        let result = self
+            .shared
+            .clipboard
+            .lock()
+            .map_err(|_| ApiError::invalid("clipboard poisoned"))?;
+        match result.as_ref() {
+            Some((id, bytes)) if *id == sequence => Ok(bytes.clone()),
+            _ => Err(ApiError::new(PAINT_NOT_FOUND, "copy result not available")),
         }
     }
     pub fn publication(&self) -> Arc<Publication> {
@@ -586,6 +603,9 @@ impl Engine {
                 | Operation::Drop(..)
                 | Operation::DropBatch(..)
                 | Operation::RemoveBatch(..)
+                | Operation::PasteLayers(..)
+                | Operation::DuplicateLayers(..)
+                | Operation::MergeLayers(..)
                 | Operation::Cancel(_)
                 | Operation::Undo
                 | Operation::Redo
@@ -599,7 +619,7 @@ impl Engine {
                 | Operation::Reparent(..)
                 | Operation::Add(_)
         );
-        let result = self.apply(command.operation);
+        let result = self.apply(command.operation, command.sequence);
         if let Err(error) = result {
             if error.status != PAINT_CANCELLED || self.error.is_none() {
                 self.error = Some((command.sequence, error));
@@ -619,7 +639,7 @@ impl Engine {
         self.completed = command.sequence;
         self.dirty = true;
     }
-    fn apply(&mut self, operation: Operation) -> ApiResult<()> {
+    fn apply(&mut self, operation: Operation, sequence: u64) -> ApiResult<()> {
         match operation {
             Operation::Bucket(options) => {
                 self.modified |= self.document.bucket_fill(options)?;
@@ -678,6 +698,27 @@ impl Engine {
                 self.document.drop_layers(&ids, target, placement)?;
                 self.modified |= r != self.document.revision();
             }
+            Operation::CopyLayers(ids) => {
+                let bytes = self.document.copy_layers(&ids)?;
+                *self
+                    .shared
+                    .clipboard
+                    .lock()
+                    .map_err(|_| ApiError::invalid("clipboard poisoned"))? =
+                    Some((sequence, Arc::new(bytes)));
+            }
+            Operation::PasteLayers(bytes, target) => {
+                self.document.paste_layers(&bytes, target)?;
+                self.modified = true;
+            }
+            Operation::DuplicateLayers(ids) => {
+                self.document.duplicate_layers(&ids)?;
+                self.modified = true;
+            }
+            Operation::MergeLayers(ids) => {
+                self.document.merge_layers(&ids)?;
+                self.modified = true;
+            }
             Operation::RemoveBatch(ids, keep) => {
                 self.document.remove_layers(&ids, keep)?;
                 self.modified = true;
@@ -691,7 +732,7 @@ impl Engine {
                 self.document.set_max_history_commands(max_commands)?;
             }
             Operation::NewWhite(w, h) => {
-                self.apply(Operation::New(w, h))?;
+                self.apply(Operation::New(w, h), sequence)?;
                 self.document.initialize_white_background()?;
             }
             Operation::New(w, h) => {

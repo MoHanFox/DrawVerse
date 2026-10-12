@@ -315,7 +315,10 @@ ApplicationWindow {
             topLevel:true
             title: "图层"
             Action { text: "新建图层"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.addDefaultLayer() }
-            Action { text: "复制图层（待支持）"; enabled: false }
+            Action {objectName:"duplicateLayersAction";text:"复制图层";enabled:PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy;onTriggered:PaintClient.duplicateSelectedLayers()}
+            Action {objectName:"copyLayersAction";text:"拷贝图层";enabled:PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy;onTriggered:PaintClient.copySelectedLayers()}
+            Action {objectName:"pasteLayersAction";text:"粘贴图层";enabled:PaintClient.canPasteLayers;onTriggered:PaintClient.pasteLayers()}
+            Action {objectName:"mergeLayersAction";text:PaintClient.mergeLayersText;enabled:PaintClient.canMergeLayers;onTriggered:PaintClient.mergeSelectedLayers()}
             Action { text: "删除图层"; enabled: PaintClient.ready && !PaintClient.drawing && PaintClient.layers.length>1; onTriggered: PaintClient.requestSelectedLayerRemoval() }
             MenuSeparator {}
             Action { objectName:"newLayerGroupAction";text: "新建组"; enabled: PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.groupSelectedLayers("组") }
@@ -475,6 +478,12 @@ ApplicationWindow {
             cornerRadius:root.cornerRadius;notice:root.fileNotice
         }
     }
+    Shortcut {context:Qt.ApplicationShortcut;sequences:[StandardKey.Copy];enabled:PaintClient.layerShortcutsAllowed;onActivated:PaintClient.copySelectedLayers()}
+    Shortcut {context:Qt.ApplicationShortcut;sequences:[StandardKey.Paste];enabled:PaintClient.layerShortcutsAllowed && PaintClient.canPasteLayers;onActivated:PaintClient.pasteLayers()}
+    Shortcut {context:Qt.ApplicationShortcut;sequence:"Delete";enabled:PaintClient.layerShortcutsAllowed;onActivated:PaintClient.requestSelectedLayerRemoval()}
+    Shortcut {context:Qt.ApplicationShortcut;sequence:Qt.platform.os==="osx"?"Meta+J":"Ctrl+J";enabled:PaintClient.layerShortcutsAllowed;onActivated:PaintClient.duplicateSelectedLayers()}
+    Shortcut {context:Qt.ApplicationShortcut;sequence:Qt.platform.os==="osx"?"Meta+E":"Ctrl+E";enabled:PaintClient.layerShortcutsAllowed && PaintClient.canMergeLayers;onActivated:PaintClient.mergeSelectedLayers()}
+    Shortcut {context:Qt.ApplicationShortcut;sequence:Qt.platform.os==="osx"?"Meta+G":"Ctrl+G";enabled:PaintClient.layerShortcutsAllowed;onActivated:PaintClient.groupSelectedLayers("组")}
     Shortcut { context:Qt.ApplicationShortcut; sequence: "V"; enabled: canvas.activeFocus; onActivated: PaintClient.activateMoveTool() }
     // Brush size for the active painting tool, including the eraser and the smudge tool.
     Shortcut {

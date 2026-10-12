@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图层操作：`docs/layer-actions-design.md` / `docs/layer-actions-validation.md`；ABI 1.20、右键/主菜单、原子复制粘贴/子树合并、缩略图编辑焦点、Delete 与文本焦点保护、下边缘拖放修复。
+
 - 最新组穿透：`docs/group-pass-through-design.md` / `docs/group-pass-through-validation.md`；ABI 1.19、组专用混合模式 27，子层对组外下层合成，opacity/fill/蒙版与剪贴、预览/撤销/ORA；新建组默认穿透、菜单置于正常上方。
 
 - 最新吸色取色环：`docs/eyedropper-ring-design.md` / `docs/eyedropper-ring-validation.md`；按下拖动显示新旧颜色半环与灰色外圈、I/Alt/数位笔共用、显示开关、无 ABI 变更。

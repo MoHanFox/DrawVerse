@@ -43,6 +43,14 @@ ColumnLayout {
         const i=siblings.findIndex(function(l){return l.id===layer.id})
         return i>0 ? siblings[i-1] : null
     }
+    function openLayerContext(id, source, x, y, mask) {
+        root.forceActiveFocus()
+        if(mask)PaintClient.selectLayer(id)
+        else if(PaintClient.selectedLayers.indexOf(id)<0)PaintClient.selectLayers(id,0)
+        else PaintClient.selectLayer(id)
+        const point=source.mapToItem(root,x,y)
+        layerContextMenu.popup(point.x,point.y)
+    }
     property var dragHovered: null
     function dropToRoot(payload) {
         const source=PaintClient.layerDragIds(payload)
@@ -168,17 +176,16 @@ ColumnLayout {
                     width: layerList.width; height: 34
                     property var maskNode: root.masksByOwner[modelData.id] || null
                     property bool active: PaintClient.activeLayer===modelData.id || (maskNode!==null && PaintClient.activeLayer===maskNode.id)
-                    // Multi-selection lives in the client; the active row is drawn with a border so
-                    // "selected" and "active" stay distinguishable.
+                    // Row background shows selection; the thumbnail frame shows the edit target.
                     property bool multiSelected: PaintClient.selectedLayers.indexOf(modelData.id)>=0
-                    Component.onCompleted: { if(!modelData.group) PaintClient.requestLayerPreview(modelData.id) }
-                    Component.onDestruction: { if(!modelData.group) PaintClient.releaseLayerPreview(modelData.id) }
+                    Component.onCompleted: { PaintClient.requestLayerPreview(modelData.id) }
+                    Component.onDestruction: { PaintClient.releaseLayerPreview(modelData.id) }
                     color: multiSelected ? Theme.selected : Theme.surface
-                    border.width: active ? 1 : 0
+                    border.width: 0
                     border.color: Theme.accent
                     MouseArea {
                         objectName:"layerDragHandle:"+row.modelData.id
-                        anchors.fill:parent;property point origin;property bool clippingGesture:false;property bool dragging:false
+                        anchors.fill:parent;acceptedButtons:Qt.LeftButton | Qt.RightButton;property point origin;property bool clippingGesture:false;property bool dragging:false
                         onPressed:mouse=>{
                             origin=Qt.point(mouse.x,mouse.y);clippingGesture=false;dragging=false
                             if(root.editable && (mouse.modifiers & Qt.AltModifier) && mouse.y<5) {
@@ -186,8 +193,11 @@ ColumnLayout {
                                 if(upper && !(upper.effectiveLocks & 4)){clippingGesture=true;PaintClient.setLayerClipping(upper.id,!upper.clipped)}
                             }
                         }
-                        onPositionChanged:mouse=>{if(pressed && !dragging && !clippingGesture && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10){dragging=true;PaintClient.beginLayerDrag(row.modelData.id)}}
-                        onClicked:if(!clippingGesture && !dragging)PaintClient.selectLayers(row.modelData.id,Number(mouse.modifiers))
+                        onPositionChanged:mouse=>{if(pressed && (pressedButtons & Qt.LeftButton) && !dragging && !clippingGesture && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10){dragging=true;PaintClient.beginLayerDrag(row.modelData.id)}}
+                        onClicked:mouse=>{
+                            if(mouse.button===Qt.RightButton)root.openLayerContext(row.modelData.id,row,mouse.x,mouse.y,false)
+                            else if(!clippingGesture && !dragging){root.forceActiveFocus();PaintClient.selectLayers(row.modelData.id,Number(mouse.modifiers))}
+                        }
                     }
                     MouseArea {
                         id: clippingBoundary
@@ -212,7 +222,7 @@ ColumnLayout {
                         onEntered:d=>row.updateDrop(d)
                         onPositionChanged:d=>row.updateDrop(d)
                         onExited:{if(root.dragHovered===row)root.dragHovered=null}
-                        onDropped:d=>{root.dragHovered=null;if(PaintClient.acceptLayerDrop(d.getDataAsString("application/x-drawverse-layer"),row.modelData.id,row.dropPlacement))d.acceptProposedAction()}
+                        onDropped:d=>{row.updateDrop(d);root.dragHovered=null;if(PaintClient.acceptLayerDrop(d.getDataAsString("application/x-drawverse-layer"),row.modelData.id,row.dropPlacement))d.acceptProposedAction()}
                     }
                     Rectangle {anchors.fill:parent;color:"transparent";border.width:2;border.color:Theme.accent;visible:layerDrop.containsDrag && row.dropPlacement===0}
                     Rectangle {width:parent.width;height:2;y:row.dropPlacement===1?0:parent.height-2;color:Theme.accent;visible:layerDrop.containsDrag && row.dropPlacement!==0}
@@ -240,9 +250,10 @@ ColumnLayout {
                         }
                         Label { objectName:"clippingArrow:"+row.modelData.id;visible:row.modelData.clipped;text:"↳";color:Theme.muted;font.pixelSize:17;Layout.preferredWidth:14 }
                         LayerThumbnail {
-                            visible:!row.modelData.group
+                            id:contentThumbnail
                             node:row.modelData;selected:PaintClient.activeLayer===row.modelData.id
-                            onClicked:modifiers=>PaintClient.selectLayers(row.modelData.id,modifiers)
+                            onClicked:modifiers=>{root.forceActiveFocus();PaintClient.selectLayers(row.modelData.id,modifiers)}
+                            onContextRequested:(x,y)=>root.openLayerContext(row.modelData.id,contentThumbnail,x,y,false)
                         }
                         Item {
                             visible:row.maskNode!==null && !row.modelData.group
@@ -255,6 +266,7 @@ ColumnLayout {
                             MouseArea{id:linkHover;anchors.fill:parent;hoverEnabled:true;acceptedButtons:Qt.NoButton}
                         }
                         LayerThumbnail {
+                            id:maskThumbnail
                             objectName:"inlineMask:"+row.modelData.id
                             visible:row.maskNode!==null
                             node:row.maskNode;selected:row.maskNode!==null && PaintClient.activeLayer===row.maskNode.id
@@ -265,7 +277,9 @@ ColumnLayout {
                                 if(requestedMask)PaintClient.requestLayerPreview(requestedMask)
                             }
                             Component.onDestruction:if(requestedMask)PaintClient.releaseLayerPreview(requestedMask)
+                            onContextRequested:(x,y)=>root.openLayerContext(row.maskNode.id,maskThumbnail,x,y,true)
                             onClicked:modifiers=>{
+                                root.forceActiveFocus()
                                 if(modifiers & Qt.ShiftModifier)PaintClient.setLayerProperties(row.maskNode.id,!row.maskNode.visible,row.maskNode.opacity)
                                 else PaintClient.selectLayer(row.maskNode.id)
                             }
@@ -293,6 +307,18 @@ ColumnLayout {
         IconButton { objectName: "layerGroupMenu"; glyph: "menu"; tooltip: "图层菜单"; implicitWidth: 28; implicitHeight: 20; enabled: root.unlocked; onClicked: groupMenu.popup() }
         IconButton { glyph: "plus"; tooltip: "新建图层"; implicitWidth: 28; implicitHeight: 20; enabled: root.editable; objectName:"addDefaultLayer";onClicked: PaintClient.addDefaultLayer(); ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "新建图层" }
         IconButton { objectName: "deleteLayer"; glyph: "trash"; tooltip: "删除图层"; implicitHeight: 20; enabled: root.unlocked && PaintClient.layers.length>1; onClicked: PaintClient.requestSelectedLayerRemoval() }
+    }
+    GlassMenu {
+        id: layerContextMenu; objectName: "layerContextMenu"
+        GlassMenuItem {objectName:"contextMergeLayers";text:PaintClient.mergeLayersText;enabled:PaintClient.canMergeLayers;onTriggered:PaintClient.mergeSelectedLayers()}
+        MenuSeparator {}
+        GlassMenuItem {objectName:"contextClipLayers";text:root.control.clipped?"释放剪切蒙版":"创建剪切蒙版";enabled:root.unlocked && root.canClip(root.control);onTriggered:PaintClient.toggleActiveClipping()}
+        GlassMenuItem {objectName:"contextDuplicateLayers";text:"复制图层";enabled:root.editable;onTriggered:PaintClient.duplicateSelectedLayers()}
+        GlassMenuItem {objectName:"contextCopyLayers";text:"拷贝图层";enabled:root.editable;onTriggered:PaintClient.copySelectedLayers()}
+        GlassMenuItem {objectName:"contextPasteLayers";text:"粘贴图层";enabled:PaintClient.canPasteLayers;onTriggered:PaintClient.pasteLayers()}
+        GlassMenuItem {objectName:"contextDeleteLayers";text:root.selected.mask?"删除蒙版":"删除图层";enabled:root.unlocked;onTriggered:PaintClient.requestSelectedLayerRemoval()}
+        MenuSeparator {}
+        GlassMenuItem {objectName:"contextGroupLayers";text:"从图层创建图层组";enabled:root.unlocked && !root.selected.mask;onTriggered:PaintClient.groupSelectedLayers("组")}
     }
     GlassMenu {
         id: groupMenu

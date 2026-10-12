@@ -33,6 +33,9 @@ pub enum HistoryAction {
     PolygonSelection = 24,
     Bucket = 25,
     Smudge = 26,
+    DuplicateLayers = 27,
+    PasteLayers = 28,
+    MergeLayers = 29,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }
@@ -54,6 +57,12 @@ pub(crate) enum Command {
     Structure {
         before: Vec<Layer>,
         after: Vec<Layer>,
+    },
+    /// Metadata plus pixel payloads for nodes added/removed atomically.
+    ReplaceBatch {
+        before: Vec<Layer>,
+        after: Vec<Layer>,
+        pixels: Vec<Layer>,
     },
     RemoveBatch {
         before: Vec<Layer>,
@@ -173,6 +182,7 @@ impl Command {
                     AddLayer
                 }
             }
+            Self::ReplaceBatch { .. } => MergeLayers,
             Self::RemoveLayer { .. } | Self::RemoveTree { .. } | Self::RemoveBatch { .. } => {
                 RemoveLayer
             }
@@ -208,7 +218,8 @@ impl Command {
     fn verify_tiles(&self) -> Result<()> {
         match self {
             Self::Structure { .. } | Self::Selection { .. } => {}
-            Self::RemoveTree { layers, .. }
+            Self::ReplaceBatch { pixels: layers, .. }
+            | Self::RemoveTree { layers, .. }
             | Self::RemoveBatch {
                 removed: layers, ..
             } => {
@@ -241,7 +252,12 @@ impl Command {
             Self::Structure { before, after } => {
                 before.iter().chain(after).map(|l| l.name.len() + 128).sum()
             }
-            Self::RemoveBatch {
+            Self::ReplaceBatch {
+                before,
+                after,
+                pixels: removed,
+            }
+            | Self::RemoveBatch {
                 before,
                 after,
                 removed,

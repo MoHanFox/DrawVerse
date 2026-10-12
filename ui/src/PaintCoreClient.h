@@ -46,6 +46,10 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(quint64 activeLayer READ activeLayer NOTIFY stateChanged)
     Q_PROPERTY(QVariantList layers READ layers NOTIFY layersChanged)
     // Panel-level multi-selection. Not document state: never written to history or disk.
+    Q_PROPERTY(bool layerShortcutsAllowed READ layerShortcutsAllowed NOTIFY stateChanged)
+    Q_PROPERTY(bool canPasteLayers READ canPasteLayers NOTIFY stateChanged)
+    Q_PROPERTY(bool canMergeLayers READ canMergeLayers NOTIFY stateChanged)
+    Q_PROPERTY(QString mergeLayersText READ mergeLayersText NOTIFY stateChanged)
     Q_PROPERTY(QVariantList selectedLayers READ selectedLayers NOTIFY selectedLayersChanged)
     Q_PROPERTY(QVariantList collapsedGroups READ collapsedGroups NOTIFY groupExpansionChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
@@ -163,7 +167,7 @@ public:
     Q_INVOKABLE void activateMarquee();
     Q_INVOKABLE void activateLasso();
     bool moveTool() const { return m_moveTool; }
-    bool layerEditBusy() const { return m_pendingLayer != 0; }
+    bool layerEditBusy() const { return m_pendingLayer != 0 || m_pendingCopy != 0; }
     void setMoveTool(bool enabled);
     bool selectionEnabled() const { return m_selection.value("enabled").toBool(); }
     QVariantList selectionSteps() const { return m_selection.value("steps").toList(); }
@@ -246,6 +250,14 @@ public:
     Q_INVOKABLE bool acceptLayerDrop(const QString &payload,quint64 target,int placement);
     Q_INVOKABLE void addDefaultLayer();
     Q_INVOKABLE void newTransparentDocument(int width,int height);
+    bool layerShortcutsAllowed() const;
+    bool canPasteLayers() const;
+    bool canMergeLayers() const;
+    QString mergeLayersText() const;
+    Q_INVOKABLE bool copySelectedLayers();
+    Q_INVOKABLE bool pasteLayers();
+    Q_INVOKABLE bool duplicateSelectedLayers();
+    Q_INVOKABLE bool mergeSelectedLayers();
     Q_INVOKABLE bool groupLayer(quint64 id, const QString &name);
     Q_INVOKABLE bool groupSelectedLayers(const QString &name);
     Q_INVOKABLE bool ungroupLayer(quint64 id);
@@ -308,6 +320,8 @@ private:
     quint64 m_active = 1;
     quint64 m_generation = 0, m_revision = 0, m_pendingNew = 0, m_pendingMutation = 0;
     int m_nextDefaultLayer = 1;
+    bool submitLayerAction(quint32 kind, const QByteArray &bytes = {});
+    quint64 m_pendingCopy = 0;
     quint64 m_pendingLayer = 0;
     /// Sequence of an in-flight lasso/wand selection edit; non-zero keeps layer edits busy.
 

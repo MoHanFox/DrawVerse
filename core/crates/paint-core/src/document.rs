@@ -13,6 +13,7 @@ const MAX_DABS_PER_SEGMENT: usize = 8192;
 const MAX_PIXEL_VISITS_PER_SEGMENT: usize = 8_000_000;
 mod batch;
 pub(crate) mod groups;
+mod layer_actions;
 
 #[derive(Clone, Copy, Debug)]
 pub struct DocumentOptions {
@@ -1528,6 +1529,22 @@ impl Document {
             }
             Command::Structure { before, after } => {
                 self.apply_structure(if forward { after } else { before });
+                self.dirty_all();
+            }
+            Command::ReplaceBatch {
+                before,
+                after,
+                pixels,
+            } => {
+                let nodes = if forward { after } else { before };
+                let ids: BTreeSet<_> = nodes.iter().map(|l| l.id).collect();
+                self.layers.retain(|l| ids.contains(&l.id));
+                for layer in pixels {
+                    if ids.contains(&layer.id) && !self.layers.iter().any(|l| l.id == layer.id) {
+                        self.layers.push(layer.clone());
+                    }
+                }
+                self.apply_structure(nodes);
                 self.dirty_all();
             }
             Command::RemoveBatch {

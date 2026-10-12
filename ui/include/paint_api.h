@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 19
+#define PAINT_ABI_MINOR 20
 
 #define PAINT_ABI_PATCH 0
 
@@ -70,6 +70,8 @@
 #define PAINT_FEATURE_FILE_IO 64
 
 #define PAINT_FEATURE_HISTORY 2
+
+#define PAINT_FEATURE_LAYER_ACTIONS 131072
 
 #define PAINT_FEATURE_LAYER_APPEARANCE 256
 
@@ -129,6 +131,8 @@
 
 #define PAINT_HISTORY_DESELECT 5
 
+#define PAINT_HISTORY_DUPLICATE_LAYERS 27
+
 #define PAINT_HISTORY_ELLIPSE_SELECTION 20
 
 #define PAINT_HISTORY_ERASER 2
@@ -156,7 +160,11 @@
 
 #define PAINT_HISTORY_MASK 17
 
+#define PAINT_HISTORY_MERGE_LAYERS 29
+
 #define PAINT_HISTORY_MOVE_LAYER 13
+
+#define PAINT_HISTORY_PASTE_LAYERS 28
 
 #define PAINT_HISTORY_POLYGON_SELECTION 24
 
@@ -188,6 +196,14 @@
 #define PAINT_INPUT_TANGENTIAL_PRESSURE 8
 
 #define PAINT_INPUT_TILT 2
+
+#define PAINT_LAYER_ACTION_COPY 0
+
+#define PAINT_LAYER_ACTION_DUPLICATE 2
+
+#define PAINT_LAYER_ACTION_MERGE 3
+
+#define PAINT_LAYER_ACTION_PASTE 1
 
 #define PAINT_LAYER_GROUP 1
 
@@ -1102,6 +1118,23 @@ PaintStatus paint_session_info(struct PaintCore *core,
                                struct PaintSessionInfo *out_info);
 
 /**
+ * ABI 1.20: atomic layer operation. Paste alone uses bytes and target; other actions use IDs.
+ * OK means queued. Copy returns bytes via read_layer_clipboard after its sequence completes.
+ * # Safety
+ * IDs/bytes must be readable for the declared lengths, with writable nonoverlapping sequence.
+ * No caller pointers are retained. Follow core/session ownership and callback restrictions.
+ */
+PaintStatus paint_session_layer_action(struct PaintCore *core,
+                                       struct PaintSession *session,
+                                       uint32_t kind,
+                                       const uint64_t *ids,
+                                       uint32_t count,
+                                       uint64_t target,
+                                       const uint8_t *bytes,
+                                       uint64_t length,
+                                       uint64_t *out_sequence);
+
+/**
  * ABI 1.4: small immutable layer configuration query, tied to exact publication ID.
  * # Safety
  * Follow initialized output DTO, publication and ownership contracts in contracts/abi.md.
@@ -1181,6 +1214,18 @@ PaintStatus paint_session_read_frame(struct PaintCore *core,
                                      uint64_t request_id,
                                      uint64_t frame_id,
                                      struct PaintTile *out_tile);
+
+/**
+ * Latest successful copy result remains owned by the session. Query with null buffer/zero capacity.
+ * # Safety
+ * Output required must be writable, buffer writable for capacity, outputs nonoverlapping.
+ */
+PaintStatus paint_session_read_layer_clipboard(struct PaintCore *core,
+                                               struct PaintSession *session,
+                                               uint64_t sequence,
+                                               uint8_t *buffer,
+                                               uint64_t capacity,
+                                               uint64_t *required);
 
 /**
  * ABI 1.13: atomic batch deletion, with optional group-only removal.
