@@ -324,8 +324,6 @@ ApplicationWindow {
             title: "图层"
             Action { text: "新建图层"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy; onTriggered: PaintClient.addDefaultLayer() }
             Action {objectName:"duplicateLayersAction";text:"复制图层";enabled:!PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy;onTriggered:PaintClient.duplicateSelectedLayers()}
-            Action {objectName:"copyLayersAction";text:"拷贝图层";enabled:!PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy;onTriggered:PaintClient.copySelectedLayers()}
-            Action {objectName:"pasteLayersAction";text:"粘贴图层";enabled:PaintClient.canPasteLayers;onTriggered:PaintClient.pasteLayers()}
             Action {objectName:"mergeLayersAction";text:PaintClient.mergeLayersText;enabled:PaintClient.canMergeLayers;onTriggered:PaintClient.mergeSelectedLayers()}
             Action { text: "删除图层"; enabled: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && PaintClient.layers.length>1; onTriggered: PaintClient.requestSelectedLayerRemoval() }
             MenuSeparator {}

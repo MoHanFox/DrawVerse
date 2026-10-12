@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 import "."
@@ -7,6 +8,12 @@ ColumnLayout {
     id: root
     objectName: "layersPanel"
     spacing: 3
+    property var canvasView
+    function finishSearch(clear) {
+        if(clear) search.clear()
+        if(canvasView) { canvasView.forceActiveFocus(); canvasView.Window.window.requestActivate() }
+        else root.forceActiveFocus()
+    }
     property var selected: {
         const layers=PaintClient.layers
         for(let i=0;i<layers.length;i++) if(layers[i].id===PaintClient.activeLayer) return layers[i]
@@ -94,6 +101,8 @@ ColumnLayout {
         placeholderText: "搜索图层名称"; placeholderTextColor: Theme.muted; selectByMouse: true
         color: Theme.text; font.pixelSize: 9
         background: Rectangle {color:Theme.input;border.color:Theme.line;radius:2}
+        onAccepted: root.finishSearch(false)
+        Keys.onEscapePressed: event=>{root.finishSearch(true);event.accepted=true}
     }
     RowLayout {
         Layout.fillWidth: true; spacing: 4
@@ -139,8 +148,24 @@ ColumnLayout {
         objectName: "layerList"
         Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 1; cacheBuffer: 34
         model: {
-            const all=PaintClient.layers.filter(function(l){return !l.mask}); const query=search.text.toLowerCase()
-            if(query.length>0) return all.filter(function(layer) { return layer.name.toLowerCase().indexOf(query)>=0 })
+            const all=PaintClient.layers.filter(function(l){return !l.mask}); const query=search.text.trim().toLowerCase()
+            if(query.length>0) {
+                const byId={}, matches={}, shown={}
+                all.forEach(function(layer){byId[layer.id]=layer;if(layer.name.toLowerCase().indexOf(query)>=0){matches[layer.id]=true;shown[layer.id]=true}})
+                all.forEach(function(layer){
+                    let parent=layer.parent
+                    while(parent && byId[parent]) {
+                        if(matches[parent]) shown[layer.id]=true
+                        parent=byId[parent].parent
+                    }
+                })
+                all.forEach(function(layer){
+                    if(!shown[layer.id]) return
+                    let parent=layer.parent
+                    while(parent && byId[parent]) {shown[parent]=true;parent=byId[parent].parent}
+                })
+                return all.filter(function(layer){return !!shown[layer.id]})
+            }
             const collapsed=PaintClient.collapsedGroups
             if(collapsed.length===0) return all
             const parents={}
@@ -152,6 +177,7 @@ ColumnLayout {
             })
         }
         ScrollBar.vertical: ScrollBar {}
+        Label {objectName:"layerSearchEmpty";anchors.centerIn:parent;visible:search.text.trim().length>0 && layerList.count===0;text:"没有匹配的图层";color:Theme.muted;font.pixelSize:10}
         currentIndex: {
             const rows=layerList.model
             for(let i=0;i<rows.length;i++)if(rows[i].id===root.control.id)return i
@@ -314,8 +340,6 @@ ColumnLayout {
         MenuSeparator {}
         GlassMenuItem {objectName:"contextClipLayers";text:root.control.clipped?"释放剪切蒙版":"创建剪切蒙版";enabled:root.unlocked && root.canClip(root.control);onTriggered:PaintClient.toggleActiveClipping()}
         GlassMenuItem {objectName:"contextDuplicateLayers";text:"复制图层";enabled:root.editable;onTriggered:PaintClient.duplicateSelectedLayers()}
-        GlassMenuItem {objectName:"contextCopyLayers";text:"拷贝图层";enabled:root.editable;onTriggered:PaintClient.copySelectedLayers()}
-        GlassMenuItem {objectName:"contextPasteLayers";text:"粘贴图层";enabled:PaintClient.canPasteLayers;onTriggered:PaintClient.pasteLayers()}
         GlassMenuItem {objectName:"contextDeleteLayers";text:root.selected.mask?"删除蒙版":"删除图层";enabled:root.unlocked;onTriggered:PaintClient.requestSelectedLayerRemoval()}
         MenuSeparator {}
         GlassMenuItem {objectName:"contextGroupLayers";text:"从图层创建图层组";enabled:root.unlocked && !root.selected.mask;onTriggered:PaintClient.groupSelectedLayers("组")}

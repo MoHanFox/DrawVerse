@@ -1,10 +1,17 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 import "."
 
 ColumnLayout {
     id:root
+    property var canvasView
+    function finishSearch(clear) {
+        if(clear) search.clear()
+        if(canvasView) {canvasView.forceActiveFocus();canvasView.Window.window.requestActivate()}
+        else root.forceActiveFocus()
+    }
     readonly property var library:PaintClient.brushLibrary
     spacing:4
     RowLayout {
@@ -14,7 +21,7 @@ ColumnLayout {
         Label {text:"px";color:Theme.muted;font.pixelSize:8}
     }
     CompactSlider {Layout.fillWidth:true;from:1;to:512;value:root.library.radius*2;onMoved:root.library.radius=value/2}
-    TextField {id:search;objectName:"brushSearch";Layout.fillWidth:true;implicitHeight:22;font.pixelSize:9;placeholderText:"搜索画笔";color:Theme.text;background:Rectangle {color:Theme.input;border.color:Theme.line}}
+    TextField {id:search;objectName:"brushSearch";Layout.fillWidth:true;implicitHeight:22;font.pixelSize:9;placeholderText:"搜索画笔";color:Theme.text;background:Rectangle {color:Theme.input;border.color:Theme.line} onAccepted:root.finishSearch(false);Keys.onEscapePressed:event=>{root.finishSearch(true);event.accepted=true}}
     RowLayout {
         Layout.fillWidth:true;spacing:2
         Repeater {
@@ -35,7 +42,7 @@ ColumnLayout {
     RowLayout {Icon {name:"folder";width:14;height:14} Label {text:"基础与自定义画笔";font.pixelSize:9;color:Theme.text}}
     ListView {
         objectName:"brushPresetList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:2
-        model:root.library.presets.filter(p=>p.name.toLowerCase().indexOf(search.text.toLowerCase())>=0)
+        model:root.library.presets.filter(p=>p.name.toLowerCase().indexOf(search.text.trim().toLowerCase())>=0)
         delegate:Rectangle {
             required property var modelData
             objectName:"brushPreset:"+modelData.id

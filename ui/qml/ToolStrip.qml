@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import "."
 
@@ -6,8 +7,11 @@ Rectangle {
     id: root
     objectName: "toolStrip"
     property var canvasView
+    function focusCanvas() {
+        if(canvasView) {canvasView.forceActiveFocus();canvasView.Window.window.requestActivate()}
+    }
     color: Theme.strip
-    implicitWidth: 36; implicitHeight: 410
+    implicitWidth: 36; implicitHeight: 380
     Item {
         objectName: "toolStripGrip"
         width: parent.width; height: 10
@@ -22,7 +26,7 @@ Rectangle {
     }
     Column {
         anchors.horizontalCenter:parent.horizontalCenter;anchors.top:parent.top;anchors.topMargin:12;spacing:4
-        IconButton {objectName:"moveLayerTool";width:26;height:26;glyph:"move";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.moveTool;onClicked:PaintClient.activateMoveTool();tooltip:"移动图层 V"}
+        IconButton {objectName:"moveLayerTool";width:26;height:26;glyph:"move";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.moveTool;onClicked:{PaintClient.activateMoveTool();root.focusCanvas()} tooltip:"移动图层 V"}
         // Rectangle and ellipse stay one slot with a right-click shape picker. The lasso and the
         // magic wand are separate tools, not shapes of the marquee, so each gets its own slot.
         IconButton {
@@ -30,7 +34,7 @@ Rectangle {
             objectName:"selectionTool";width:26;height:26
             glyph:PaintClient.marqueeShape===2?"ellipseSelection":"rectangleSelection"
             checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && (PaintClient.selectionTool===1||PaintClient.selectionTool===2)
-            onClicked:PaintClient.activateMarquee()
+            onClicked:{PaintClient.activateMarquee();root.focusCanvas()}
             tooltip:"选框工具 · 右键切换矩形/椭圆"
             hasVariants:true
             function openVariants() {
@@ -52,7 +56,7 @@ Rectangle {
             id:lassoButton;objectName:"lassoTool";width:26;height:26
             glyph:PaintClient.lassoShape===4?"polygonSelection":"lassoSelection"
             checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && (PaintClient.selectionTool===3||PaintClient.selectionTool===4);hasVariants:true
-            onClicked:PaintClient.activateLasso();tooltip:"套索工具 · 右键切换子类"
+            onClicked:{PaintClient.activateLasso();root.focusCanvas()} tooltip:"套索工具 · 右键切换子类"
             function openVariants() {
                 lassoVariants.toolTitle="套索工具"
                 lassoVariants.entries=[
@@ -64,17 +68,16 @@ Rectangle {
             TapHandler {acceptedButtons:Qt.RightButton;onTapped:lassoButton.openVariants()}
             ToolVariantsPanel {id:lassoVariants;objectName:"lassoVariantPanel";parent:root;canvasView:root.canvasView}
         }
-        IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.selectionTool===5;onClicked:PaintClient.activateWand();tooltip:"魔棒 W" }
+        IconButton {objectName:"wandTool";width:26;height:26;glyph:"wand";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.selectionTool===5;onClicked:{PaintClient.activateWand();root.focusCanvas()} tooltip:"魔棒 W" }
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         // Every slot clears the others: leaving a second tool active made the strip show the brush
         // while the bucket still owned the canvas.
-        IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && !PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool && !PaintClient.eyedropperTool && !PaintClient.bucketTool && !PaintClient.smudgeTool;onClicked:PaintClient.activateBrush();tooltip:"画笔 B"}
-        IconButton {objectName:"eraserTool";width:26;height:26;glyph:"eraser";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool;onClicked:PaintClient.activateEraser();tooltip:"橡皮擦 E"}
+        IconButton {objectName:"brushTool";width:26;height:26;glyph:"brush";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && !PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool && !PaintClient.eyedropperTool && !PaintClient.bucketTool && !PaintClient.smudgeTool;onClicked:{PaintClient.activateBrush();root.focusCanvas()} tooltip:"画笔 B"}
+        IconButton {objectName:"eraserTool";width:26;height:26;glyph:"eraser";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.eraser && !PaintClient.moveTool && !PaintClient.selectionTool;onClicked:{PaintClient.activateEraser();root.focusCanvas()} tooltip:"橡皮擦 E"}
         // The bucket is a painting tool, not a selection shape, so it gets its own slot.
-        IconButton {objectName:"bucketTool";width:26;height:26;glyph:"bucket";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.bucketTool;onClicked:PaintClient.activateBucket();tooltip:"油漆桶 G"}
-        IconButton {objectName:"smudgeTool";width:26;height:26;glyph:"smudge";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.smudgeTool;onClicked:PaintClient.activateSmudge();tooltip:"涂抹 R"}
-        IconButton {objectName:"liquifyTool";width:26;height:26;glyph:"liquify";enabled:PaintClient.ready && !PaintClient.drawing && !PaintClient.fileBusy && !PaintClient.layerEditBusy && !PaintClient.liquifyActive;checkable:true;checked:PaintClient.liquifyActive;onClicked:PaintClient.beginLiquify();tooltip:"液化 · 滤镜 > 液化"}
-        IconButton {objectName:"eyedropperTool";width:26;height:26;glyph:"eyedropper";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.eyedropperTool;onClicked:PaintClient.activateEyedropper();tooltip:"吸色 I · Alt 临时吸色"}
+        IconButton {objectName:"bucketTool";width:26;height:26;glyph:"bucket";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.bucketTool;onClicked:{PaintClient.activateBucket();root.focusCanvas()} tooltip:"油漆桶 G"}
+        IconButton {objectName:"smudgeTool";width:26;height:26;glyph:"smudge";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.smudgeTool;onClicked:{PaintClient.activateSmudge();root.focusCanvas()} tooltip:"涂抹 R"}
+        IconButton {objectName:"eyedropperTool";width:26;height:26;glyph:"eyedropper";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.eyedropperTool;onClicked:{PaintClient.activateEyedropper();root.focusCanvas()} tooltip:"吸色 I · Alt 临时吸色"}
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
         IconButton {width:26;height:26;glyph:"undo";enabled:!PaintClient.liquifyActive && PaintClient.undoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.undo();tooltip:"撤销 Ctrl+Z"}
         IconButton {width:26;height:26;glyph:"redo";enabled:!PaintClient.liquifyActive && PaintClient.redoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.redo();tooltip:"重做 Ctrl+Shift+Z"}

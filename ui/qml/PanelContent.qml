@@ -79,9 +79,9 @@ Item {
             }
         }
     }
-    Component { id: brushLibrary; BrushLibraryPanel {} }
+    Component { id: brushLibrary; BrushLibraryPanel {canvasView:root.canvasView} }
     Component { id: brushPanel; BrushSettingsPanel {} }
-    Component { id: layersPanel; LayersPanel {} }
+    Component { id: layersPanel; LayersPanel {canvasView:root.canvasView} }
     Component {
         id: historyPanel
         ColumnLayout {

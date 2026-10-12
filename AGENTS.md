@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新搜索与快捷键：`docs/layer-search-tools-design.md` / `docs/layer-search-tools-validation.md`；组层级搜索、文本编辑与画布焦点区分、快捷键恢复、液化仅滤镜入口及 Enter/Esc、图层拷贝粘贴仅快捷键。
+
 - 最新液化：`docs/liquify-design.md` / `docs/liquify-validation.md`；ABI 1.21、滤镜入口、工具详情栏与图标、稀疏位移场与原始取样、事务历史、保存参数、文档锁定与浮窗隐藏恢复。
 
 - 最新图层操作：`docs/layer-actions-design.md` / `docs/layer-actions-validation.md`；ABI 1.20、右键/主菜单、原子复制粘贴/子树合并、缩略图编辑焦点、Delete 与文本焦点保护、下边缘拖放修复。

@@ -22,7 +22,7 @@ PanelWindow {
     Rectangle {objectName:"floatingColumnBody";x:1;y:windowData.icons?1:29;width:parent.width-2;height:parent.height-y-1;color:Theme.surface}
     x:windowData.x;y:windowData.y;width:windowData.width;height:windowData.height
     minimumWidth:onlyTools?38:Math.min(windowData.minimumWidth,Workspace.availableScreenGeometry(root).width)
-    minimumHeight:onlyTools?412:Math.min(windowData.minimumHeight,Workspace.availableScreenGeometry(root).height)
+    minimumHeight:onlyTools?382:Math.min(windowData.minimumHeight,Workspace.availableScreenGeometry(root).height)
     maximumWidth:onlyTools?74:windowData.icons?windowData.minimumWidth:16777215
     maximumHeight:16777215
     DockWorkspace {id:docks;anchors.fill:parent;anchors.margins:1;hostId:root.windowData.id;canvasPane:root.canvasPane;canvasView:root.canvasView}

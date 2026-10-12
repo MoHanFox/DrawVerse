@@ -1068,10 +1068,14 @@ bool PaintCoreClient::moveLayer(quint64 id,int dx,int dy) {
     if(status!=PAINT_OK) { showError(error); return false; }
     m_pendingLayer=m_pendingMutation=sequence; m_modified=true; emit stateChanged(); return true;
 }
-bool PaintCoreClient::layerShortcutsAllowed() const {
+bool PaintCoreClient::textInputFocused() const {
     const auto *focus=QGuiApplication::focusObject();
+    // CanvasItem also has cursorPosition; that property does not identify a text editor.
+    return focus && (focus->inherits("QQuickTextInput") || focus->inherits("QQuickTextEdit"));
+}
+bool PaintCoreClient::layerShortcutsAllowed() const {
     return m_ready && !m_liquifyActive && !m_drawing && !layerEditBusy() && !m_fileBusy && !m_closing
-        && !(focus && (focus->inherits("QQuickTextInput") || focus->inherits("QQuickTextEdit") || focus->property("cursorPosition").isValid()));
+        && !textInputFocused();
 }
 bool PaintCoreClient::canPasteLayers() const {return m_ready && !m_liquifyActive && !m_drawing && !layerEditBusy() && !m_fileBusy && QGuiApplication::clipboard()->mimeData()->hasFormat("application/x-drawverse-layers-v1");}
 QString PaintCoreClient::mergeLayersText() const {

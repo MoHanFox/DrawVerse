@@ -57,6 +57,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QVariantList layers READ layers NOTIFY layersChanged)
     // Panel-level multi-selection. Not document state: never written to history or disk.
     Q_PROPERTY(bool layerShortcutsAllowed READ layerShortcutsAllowed NOTIFY layerShortcutsChanged)
+    Q_PROPERTY(bool textInputFocused READ textInputFocused NOTIFY layerShortcutsChanged)
     Q_PROPERTY(bool canPasteLayers READ canPasteLayers NOTIFY stateChanged)
     Q_PROPERTY(bool canMergeLayers READ canMergeLayers NOTIFY stateChanged)
     Q_PROPERTY(QString mergeLayersText READ mergeLayersText NOTIFY stateChanged)
@@ -281,6 +282,7 @@ public:
     Q_INVOKABLE void addDefaultLayer();
     Q_INVOKABLE void newTransparentDocument(int width,int height);
     bool layerShortcutsAllowed() const;
+    bool textInputFocused() const;
     bool canPasteLayers() const;
     bool canMergeLayers() const;
     QString mergeLayersText() const;
