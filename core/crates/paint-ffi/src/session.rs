@@ -3,7 +3,7 @@ use crate::{
     api::*,
     error::{ApiError, ApiResult},
 };
-use paint_core::{Brush, Document, InputPoint, LayerProperties};
+use paint_core::{Document, InputPoint, LayerProperties};
 use paint_render::{
     CachedCpuRenderer, FramePixels, PixelFormat, Region, RenderError, RenderFrame, RenderRequest,
     Renderer,
@@ -41,7 +41,7 @@ pub(crate) enum Operation {
     PasteLayers(Vec<u8>, u64),
     DuplicateLayers(Vec<u64>),
     MergeLayers(Vec<u64>),
-    Begin(Brush, InputPoint, u64),
+    Begin(paint_core::BrushDefinition, InputPoint, u64),
     Move(InputPoint),
     End,
     Cancel(bool),
@@ -877,7 +877,7 @@ impl Engine {
                 if layer != 0 {
                     self.document.set_active_layer(layer)?;
                 }
-                if let Err(error) = self.document.begin_stroke(brush, point) {
+                if let Err(error) = self.document.begin_brush_stroke(brush, point) {
                     // Selection must follow the actor's immediate state, not a stale UI hint.
                     if self.document.layer(previous).is_some() {
                         self.document.set_active_layer(previous)?;
@@ -1210,7 +1210,7 @@ mod actor_tests {
             session.info()
         };
         run(Operation::Begin(
-            paint_core::Brush::default(),
+            paint_core::Brush::default().into(),
             paint_core::InputPoint::new(40., 40., 1.),
             0,
         ));

@@ -15,6 +15,12 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(qreal radius READ radius WRITE setRadius NOTIFY settingsChanged)
     Q_PROPERTY(qreal opacity READ opacity WRITE setOpacity NOTIFY settingsChanged)
     Q_PROPERTY(qreal spacing READ spacing WRITE setSpacing NOTIFY settingsChanged)
+    Q_PROPERTY(qreal hardness READ hardness WRITE setHardness NOTIFY settingsChanged)
+    Q_PROPERTY(qreal roundness READ roundness WRITE setRoundness NOTIFY settingsChanged)
+    Q_PROPERTY(qreal angle READ angle WRITE setAngle NOTIFY settingsChanged)
+    Q_PROPERTY(qreal flow READ flow WRITE setFlow NOTIFY settingsChanged)
+    Q_PROPERTY(bool pressureSize READ pressureSize WRITE setPressureSize NOTIFY settingsChanged)
+    Q_PROPERTY(bool pressureFlow READ pressureFlow WRITE setPressureFlow NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList recentColors READ recentColors NOTIFY recentColorsChanged)
 public:
     explicit BrushLibrary(QObject *parent=nullptr);
@@ -26,6 +32,19 @@ public:
     qreal radius() const;
     qreal opacity() const;
     qreal spacing() const;
+    qreal hardness() const;
+    qreal roundness() const;
+    qreal angle() const;
+    qreal flow() const;
+    bool pressureSize() const;
+    bool pressureFlow() const;
+    QVariantMap tipSettings() const;
+    void setHardness(qreal value);
+    void setRoundness(qreal value);
+    void setAngle(qreal value);
+    void setFlow(qreal value);
+    void setPressureSize(bool value);
+    void setPressureFlow(bool value);
     QVariantList recentColors() const;
     void setRadius(qreal value);
     void setEraser(bool eraser);
@@ -46,9 +65,10 @@ signals:
     void presetsChanged();
     void recentColorsChanged();
     void persistRequested(QByteArray json);
-    void previewRequested(QString id,quint64 token,qreal radius,qreal opacity,qreal spacing);
+    void previewRequested(QString id,quint64 token,qreal radius,qreal opacity,qreal spacing,QVariantMap tip);
 private:
-    struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;};
+    struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;};
     int index(const QString &id) const;
     void update(int field,qreal value);
     void changed();

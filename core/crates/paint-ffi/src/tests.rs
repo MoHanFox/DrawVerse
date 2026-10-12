@@ -133,6 +133,9 @@ fn abi_layout_matches_frozen_64_bit_contract() {
     assert_eq!(size_of::<PaintLayerInfo>(), 40);
     assert_eq!(size_of::<PaintPoint>(), 64);
     assert_eq!(size_of::<PaintStrokeDesc>(), 56);
+    assert_eq!(size_of::<PaintBrushTip>(), 40);
+    assert_eq!(size_of::<PaintBrushStrokeDesc>(), 120);
+    assert_eq!(offset_of!(PaintBrushStrokeDesc, tip), 64);
     assert_eq!(size_of::<PaintTile>(), 56);
     assert_eq!(size_of::<PaintEvent>(), 56);
     assert_eq!(align_of::<PaintPoint>(), 8);
@@ -167,7 +170,7 @@ fn capabilities_report_only_real_current_features() {
             ..Default::default()
         };
         assert_eq!(paint_core_version(&mut version), PAINT_OK);
-        assert_eq!((version.major, version.minor, version.patch), (1, 24, 0));
+        assert_eq!((version.major, version.minor, version.patch), (1, 25, 0));
         assert_eq!(caps.features & PAINT_FEATURE_BUCKET, PAINT_FEATURE_BUCKET);
         assert_eq!(
             caps.features & PAINT_FEATURE_CLIPPING,

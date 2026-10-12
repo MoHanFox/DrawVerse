@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+笔刷系统第一阶段：[程序笔尖设计](brush-tip-design.md) / [验收](brush-tip-validation.md)，ABI 1.25。已接共用程序笔尖、PS 分类设置、真实预览与椭圆光标；VBR、ABR、图片笔尖、动态与湿混继续逐模块实施。
+
 已实现置入图片 → 独立原始图片模型 → 基础自由变换与栅格化，见 [设计](transform-design.md) / [验收](transform-validation.md)。CPU 处理与变换描述分离；GPU 和文字仍为后续模块。
 
 液化：[设计](liquify-design.md) / [验收](liquify-validation.md)，ABI 1.21；滤镜入口、画布事务、工具详情栏与图标、推拉/膨大/扭曲/重建、参数保存与压感、文档锁定和浮窗隐藏恢复。

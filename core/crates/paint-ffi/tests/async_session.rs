@@ -27,6 +27,78 @@ macro_rules! dto {
 }
 
 #[test]
+fn advanced_brush_copies_validated_tip_and_preserves_atomic_history() {
+    let h = Harness::new(40, 40);
+    let mut request = PaintBrushStrokeDesc {
+        brush: PaintStrokeDesc {
+            mode: PAINT_MODE_PAINT,
+            radius: 10.,
+            opacity: 1.,
+            spacing: 0.15,
+            linear_rgba: [1., 0., 0., 1.],
+            ..dto!(PaintStrokeDesc)
+        },
+        tip: PaintBrushTip {
+            hardness: 1.,
+            roundness: 0.2,
+            flow: 1.,
+            pressure_size: 1,
+            pressure_flow: 1,
+            ..dto!(PaintBrushTip)
+        },
+        strength: 1.,
+        ..dto!(PaintBrushStrokeDesc)
+    };
+    let point = PaintPoint {
+        x: 20.5,
+        y: 20.5,
+        pressure: 1.,
+        tool: PAINT_TOOL_MOUSE,
+        ..dto!(PaintPoint)
+    };
+    let mut seq = 99;
+    unsafe {
+        request.tip.roundness = 0.;
+        assert_eq!(
+            paint_session_begin_brush(h.core, h.session, &request, &point, &mut seq),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(seq, 0);
+        assert_eq!(h.info().undo_depth, 0);
+        request.tip.roundness = 0.2;
+        assert_eq!(
+            paint_session_begin_brush(h.core, h.session, &request, &point, &mut seq),
+            PAINT_OK
+        );
+        request.tip.roundness = 1.;
+        request.tip.flow = 0.;
+        assert_eq!(request.tip.flow, 0.);
+        assert_eq!(request.tip.roundness, 1.);
+        let ended = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_END_STROKE,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(ended.last_error_status, PAINT_OK);
+        assert_eq!(ended.undo_depth, 1);
+        let frame = h.frame(0, ended.revision);
+        let pixels = h.pixels(0, frame);
+        let alpha = |x: usize, y: usize| pixels[(y * 40 + x) * 4 + 3];
+        assert!(alpha(27, 20) > 200);
+        assert_eq!(alpha(20, 27), 0);
+        let undo = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(undo.undo_depth, 0);
+        let redo = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_REDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(h.pixels(0, h.frame(0, redo.revision)), pixels);
+    }
+}
+
+#[test]
 fn pick_layer_queues_selection_and_one_move_history() {
     let h = Harness::new(32, 32);
     let painted = h.wait(h.stroke(8., 8.));
@@ -2409,7 +2481,7 @@ fn pass_through_group_appearance_validation_publication_and_undo() {
     unsafe {
         let mut version = dto!(PaintVersion);
         assert_eq!(paint_core_version(&mut version), PAINT_OK);
-        assert_eq!(version.minor, 23);
+        assert_eq!(version.minor, PAINT_ABI_MINOR);
         let mut caps = dto!(PaintCapabilities);
         assert_eq!(paint_core_capabilities(h.core, &mut caps), PAINT_OK);
         assert_ne!(caps.features & PAINT_FEATURE_PASS_THROUGH, 0);

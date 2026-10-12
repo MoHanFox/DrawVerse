@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
+import QtQuick.Shapes
 import DrawVerse 1.0
 import "."
 Rectangle {
@@ -17,11 +18,22 @@ Rectangle {
     function attach(host){parent=host;width=Qt.binding(()=>host.width);height=Qt.binding(()=>host.height);visible=true;canvas.forceActiveFocus()}
     TransparencyGrid {objectName:"canvasTransparency";x:canvas.documentRect.x;y:canvas.documentRect.y;width:canvas.documentRect.width;height:canvas.documentRect.height}
     PaintCanvas {id:canvas;initialFitRatio:.76;objectName:root.initialDocument?"mainCanvas":"documentCanvas:"+root.documentId;anchors.fill:parent;client:root.ownClient;focus:true;enabled:!root.savingBlocked}
-    Rectangle {
+    Shape {
         objectName:"brushCursorOutline";z:10
-        x:canvas.brushCursorRect.x;y:canvas.brushCursorRect.y;width:canvas.brushCursorRect.width;height:canvas.brushCursorRect.height
-        visible:canvas.brushCursorVisible;color:"transparent";radius:width/2;border.width:1;border.color:"black"
-        Rectangle {anchors.fill:parent;anchors.margins:1;radius:width/2;color:"transparent";border.width:1;border.color:"white"}
+        id:tipCursor
+        readonly property real aspect:root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.roundness
+        x:canvas.brushCursorRect.x;y:canvas.brushCursorRect.y+(canvas.brushCursorRect.height-height)/2
+        width:canvas.brushCursorRect.width;height:canvas.brushCursorRect.height*aspect
+        rotation:root.ownClient.liquifyActive?0:root.ownClient.brushLibrary.angle
+        visible:canvas.brushCursorVisible
+        ShapePath {
+            strokeWidth:1;strokeColor:"black";fillColor:"transparent"
+            PathAngleArc {centerX:tipCursor.width/2;centerY:tipCursor.height/2;radiusX:tipCursor.width/2;radiusY:tipCursor.height/2;startAngle:0;sweepAngle:360}
+        }
+        ShapePath {
+            strokeWidth:1;strokeColor:"white";fillColor:"transparent"
+            PathAngleArc {centerX:tipCursor.width/2;centerY:tipCursor.height/2;radiusX:Math.max(.5,tipCursor.width/2-1);radiusY:Math.max(.5,tipCursor.height/2-1);startAngle:0;sweepAngle:360}
+        }
     }
     Loader {
         objectName:"selectionOutlineLoader";anchors.fill:parent

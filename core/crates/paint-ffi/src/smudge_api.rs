@@ -42,7 +42,7 @@ pub unsafe extern "C" fn paint_session_begin_smudge(
         point.validate()?;
         let sequence = runtime::registry()?
             .session(core, session)?
-            .submit(Operation::Begin(brush, point, r.brush.layer_id))?;
+            .submit(Operation::Begin(brush.into(), point, r.brush.layer_id))?;
         pointers::write(out_sequence, sequence)
     })
 }

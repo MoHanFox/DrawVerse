@@ -533,6 +533,23 @@ private slots:
         QVERIFY(stroke());QTRY_COMPARE(client.undoDepth(),3);QTRY_VERIFY(rendered());QVERIFY(client.frame().pixelColor(64,64).alpha()>erased);
         canvas->setClient(&client);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void proceduralBrushTipPersistencePreviewCursorAndPixels() {
+        BrushLibrary model;model.setHardness(.3);model.setRoundness(.2);model.setAngle(90);model.setFlow(.4);model.setPressureSize(false);model.setPressureFlow(false);
+        const auto state=model.snapshot();BrushLibrary restored;QVERIFY(restored.restore(state));QCOMPARE(restored.hardness(),.3);QCOMPARE(restored.roundness(),.2);QCOMPARE(restored.angle(),90.);QCOMPARE(restored.flow(),.4);QVERIFY(!restored.pressureSize() && !restored.pressureFlow());
+        const auto restoredState=restored.snapshot();auto bad=QJsonDocument::fromJson(state).object();bad["selected"]="round-fine";bad["recentColors"]=QJsonArray{"invalid color"};QVERIFY(!restored.restore(QJsonDocument(bad).toJson()));QCOMPARE(restored.snapshot(),restoredState);
+        auto old=QJsonDocument::fromJson(state).object();old["version"]=1;QVERIFY(restored.restore(QJsonDocument(old).toJson()));QCOMPARE(restored.hardness(),1.);QCOMPARE(restored.roundness(),1.);QVERIFY(restored.pressureSize() && restored.pressureFlow());
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        auto *library=client.brushLibrary();library->setRadius(10);library->setRoundness(.2);library->setAngle(90);library->setPressureSize(false);library->setPressureFlow(false);
+        library->requestPreview(library->selectedId());QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);const auto first=library->selectedPreview();library->setHardness(.2);library->requestPreview(library->selectedId());QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);QVERIFY(first!=library->selectedPreview());library->setHardness(1);
+        client.newTransparentDocument(40,40);QTRY_COMPARE(client.documentWidth(),40);QTRY_VERIFY(client.ready());auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->setClient(nullptr);
+        InputSample sample;sample.position={20.5,20.5};sample.pressure=.1f;sample.tool=1;QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        client.requestViewport(0,{0,0,40,40},{40,40});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(40,40));QVERIFY(client.frame().pixelColor(20,27).alpha()>200);QCOMPARE(client.frame().pixelColor(27,20).alpha(),0);
+        canvas->setClient(&client);auto *cursor=findVisualItem(window->contentItem(),"brushCursorOutline");QVERIFY(cursor);QCOMPARE(cursor->property("rotation").toDouble(),90.);QVERIFY(std::abs(cursor->height()/cursor->width()-.2)<1e-6);
+        const auto screenshot=qEnvironmentVariable("DRAWVERSE_BRUSH_PREVIEW");if(!screenshot.isEmpty()){auto group=workspace.leftGroups().first().toMap().value("id").toString();workspace.detachGroup(group);for(auto *w:applicationWindows())if(auto *q=qobject_cast<QQuickWindow*>(w))if(findVisualItem(q->contentItem(),"selectedBrushName")){q->resize(350,440);QTest::qWait(200);QVERIFY(q->grabWindow().save(screenshot+".tip.png"));}}
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void mainWindowRestoresWithoutNativeFrameOrClippedContent() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});

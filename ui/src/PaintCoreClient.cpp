@@ -23,6 +23,13 @@ Q_DECLARE_METATYPE(PaintFileJobInfo)
 namespace {
 enum Operation { New = 1, Begin, Move, End, Cancel, Undo, Redo, Add, Remove, Select, Properties, NewWhite, AddMask };
 template<class T> T dto() { T value{}; value.struct_size = sizeof(T); return value; }
+PaintBrushTip brushTip(const QVariantMap &settings) {
+    auto tip=dto<PaintBrushTip>();
+    tip.hardness=settings.value("hardness",1.).toFloat();tip.roundness=settings.value("roundness",1.).toFloat();
+    tip.angle=settings.value("angle",0.).toFloat();tip.flow=settings.value("flow",1.).toFloat();
+    tip.pressure_size=settings.value("pressureSize",true).toBool();tip.pressure_flow=settings.value("pressureFlow",true).toBool();
+    return tip;
+}
 float linear(float v) { return v <= .04045f ? v / 12.92f : std::pow((v + .055f) / 1.055f, 2.4f); }
 QString immediateError(PaintStatus status) {
     uint64_t size = 0; paint_error_message(nullptr, 0, &size);
@@ -59,8 +66,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 21) {
-            emit failure(QStringLiteral("液化需要核心 ABI 1.21 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 25) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.25 或兼容后续版本")); return;
         }
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
@@ -111,8 +118,8 @@ public:
         if(!check(paint_session_set_history_limit(m_core,m_session,quint32(m_historyLimit),&sequence)))
             emit failure(QStringLiteral("无法应用历史条数上限"));
     }
-    void queueBrushPreview(const QString &id,quint64 token,qreal radius,qreal opacity,qreal spacing) {        m_brushQueue.removeIf([&](const QVariant &v){return v.toMap().value("id")==id;});
-        m_brushQueue.append(QVariantMap{{"id",id},{"token",token},{"radius",radius},{"opacity",opacity},{"spacing",spacing}});
+    void queueBrushPreview(const QString &id,quint64 token,qreal radius,qreal opacity,qreal spacing,QVariantMap tip) {        m_brushQueue.removeIf([&](const QVariant &v){return v.toMap().value("id")==id;});
+        m_brushQueue.append(QVariantMap{{"id",id},{"token",token},{"radius",radius},{"opacity",opacity},{"spacing",spacing},{"tip",tip}});
     }
     void referencePreview(quint64 id, bool add) {
         if(add) {
@@ -425,7 +432,10 @@ public:
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_BEGIN_STROKE;command.stroke=dto<PaintStrokeDesc>();command.stroke.mode=PAINT_MODE_PAINT;
             command.stroke.radius=static_cast<float>(std::clamp(m_brushJob.value("radius").toDouble()*.35,2.,18.));command.stroke.opacity=m_brushJob.value("opacity").toFloat();command.stroke.spacing=m_brushJob.value("spacing").toFloat();
             for(auto &v:command.stroke.linear_rgba)v=1;
-            for(int i=0;i<=32;++i){const double t=i/32.;InputSample sample;sample.position={20+200*t,30+8*std::sin(t*6.283185307)};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;command.point=point(sample);command.kind=i==0?PAINT_COMMAND_BEGIN_STROKE:PAINT_COMMAND_STROKE_TO;if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}}
+            auto request=dto<PaintBrushStrokeDesc>();request.brush=command.stroke;request.tip=brushTip(m_brushJob.value("tip").toMap());request.strength=1;
+            for(int i=0;i<=32;++i){const double t=i/32.;InputSample sample;sample.position={20+200*t,30+8*std::sin(t*6.283185307)};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
+                const auto status=i==0?paint_session_begin_brush(m_core,m_brushSession,&request,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
+                if(status!=PAINT_OK){finishBrushPreview({});return;}}
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_END_STROKE;if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}
             return;
         }
@@ -648,10 +658,12 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
     {
         QMutexLocker lock(&m_connection->mutex);
         if (!m_connection->session) return false;
-        if(type==Begin && m_smudgeTool) {
-            auto smudge=dto<PaintSmudgeStrokeDesc>();smudge.brush=command.stroke;smudge.brush.mode=PAINT_MODE_PAINT;
-            smudge.strength=static_cast<float>(m_smudgeStrength);smudge.all_layers=m_smudgeAllLayers;smudge.finger_painting=m_smudgeFingerPainting;smudge.pressure_strength=m_smudgePressure;
-            status=paint_session_begin_smudge(m_connection->core,m_connection->session,&smudge,&command.point,&sequence);
+        if(type==Begin) {
+            auto request=dto<PaintBrushStrokeDesc>();request.brush=command.stroke;request.tip=brushTip(m_brushLibrary->tipSettings());request.strength=1;
+            request.operation=command.stroke.mode==PAINT_MODE_ERASE?PAINT_BRUSH_ERASE:PAINT_BRUSH_PAINT;
+            if(m_smudgeTool){request.operation=PAINT_BRUSH_SMUDGE;request.brush.mode=PAINT_MODE_PAINT;
+                request.strength=static_cast<float>(m_smudgeStrength);request.all_layers=m_smudgeAllLayers;request.finger_painting=m_smudgeFingerPainting;request.pressure_strength=m_smudgePressure;}
+            status=paint_session_begin_brush(m_connection->core,m_connection->session,&request,&command.point,&sequence);
         } else status = paint_session_submit(m_connection->core, m_connection->session, &command, &sequence);
         if (status != PAINT_OK) error = immediateError(status);
     }

@@ -1,7 +1,7 @@
 use crate::{
     history::{Command, History, StoredCommand, TileChange},
-    Brush, BrushMode, Error, InputPoint, Layer, LayerId, LayerProperties, Pixel, Result, Tile,
-    TileCoord, Tool, TILE_BYTES, TILE_SIZE,
+    Brush, BrushDefinition, BrushMode, BrushProgram, Error, InputPoint, Layer, LayerId,
+    LayerProperties, Pixel, Result, Tile, TileCoord, Tool, TILE_BYTES, TILE_SIZE,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -381,6 +381,7 @@ fn history_actions_survive_encoded_eviction_undo_redo_and_branching() {
 struct Stroke {
     layer: LayerId,
     brush: Brush,
+    program: BrushProgram,
     last: InputPoint,
     last_dab: InputPoint,
     distance_to_next: f64,
@@ -1135,8 +1136,23 @@ impl Document {
     }
 
     pub fn begin_stroke(&mut self, brush: Brush, first: InputPoint) -> Result<()> {
+        self.begin_brush_stroke(
+            BrushDefinition {
+                brush,
+                ..BrushDefinition::default()
+            },
+            first,
+        )
+    }
+
+    pub fn begin_brush_stroke(
+        &mut self,
+        definition: BrushDefinition,
+        first: InputPoint,
+    ) -> Result<()> {
         self.idle()?;
-        brush.validate()?;
+        let program = BrushProgram::compile(definition)?;
+        let brush = definition.brush;
         first.validate()?;
         if self
             .layer(self.active_layer)
@@ -1162,6 +1178,7 @@ impl Document {
         let mut stroke = Stroke {
             layer: self.active_layer,
             brush,
+            program,
             last: first,
             last_dab: first,
             distance_to_next: brush.step(),
@@ -1383,18 +1400,33 @@ impl Document {
         stroke: &mut Stroke,
         point: InputPoint,
     ) -> Result<bool> {
-        let radius = f64::from(stroke.brush.radius * point.pressure);
+        let radius = f64::from(
+            stroke.brush.radius
+                * if stroke.program.tip.pressure_size {
+                    point.pressure
+                } else {
+                    1.
+                },
+        );
         let flow = stroke.brush.opacity
-            * if matches!(
-                stroke.brush.mode,
+            * stroke.program.tip.flow
+            * match stroke.brush.mode {
                 BrushMode::Smudge {
-                    pressure_strength: false,
-                    ..
+                    pressure_strength, ..
+                } => {
+                    if pressure_strength {
+                        point.pressure
+                    } else {
+                        1.
+                    }
                 }
-            ) {
-                1.
-            } else {
-                point.pressure
+                _ => {
+                    if stroke.program.tip.pressure_flow {
+                        point.pressure
+                    } else {
+                        1.
+                    }
+                }
             };
         if radius == 0.0 || flow == 0.0 {
             return Ok(false);
@@ -1484,8 +1516,11 @@ impl Document {
                         if selected == 0. {
                             continue;
                         }
-                        let distance = (x as f64 + 0.5 - px).hypot(y as f64 + 0.5 - py);
-                        let coverage = (radius + 0.5 - distance).clamp(0., 1.) as f32;
+                        let coverage = stroke.program.coverage(
+                            x as f64 + 0.5 - px,
+                            y as f64 + 0.5 - py,
+                            radius,
+                        );
                         if coverage == 0. {
                             continue;
                         }

@@ -15,7 +15,36 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 24;
+pub const PAINT_ABI_MINOR: u32 = 25;
+pub const PAINT_FEATURE_BRUSH_TIP: u64 = 1048576;
+pub const PAINT_BRUSH_PAINT: u32 = 0;
+pub const PAINT_BRUSH_ERASE: u32 = 1;
+pub const PAINT_BRUSH_SMUDGE: u32 = 2;
+/// ABI 1.25 procedural tip. All percentages are normalized; angle is degrees.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintBrushTip {
+    pub struct_size: u32,
+    pub hardness: f32,
+    pub roundness: f32,
+    pub angle: f32,
+    pub flow: f32,
+    pub pressure_size: u32,
+    pub pressure_flow: u32,
+    pub reserved: [u32; 3],
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintBrushStrokeDesc {
+    pub struct_size: u32,
+    pub operation: u32,
+    pub brush: PaintStrokeDesc,
+    pub tip: PaintBrushTip,
+    pub strength: f32,
+    pub all_layers: u32,
+    pub finger_painting: u32,
+    pub pressure_strength: u32,
+}
 pub const PAINT_FEATURE_LIQUIFY: u64 = 262144;
 pub const PAINT_FEATURE_TRANSFORM: u64 = 524288;
 pub const PAINT_SESSION_LIQUIFY: u32 = 8;

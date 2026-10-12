@@ -16,11 +16,17 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 24
+#define PAINT_ABI_MINOR 25
 
 #define PAINT_ABI_PATCH 0
 
 #define PAINT_BLEND_PASS_THROUGH 27
+
+#define PAINT_BRUSH_ERASE 1
+
+#define PAINT_BRUSH_PAINT 0
+
+#define PAINT_BRUSH_SMUDGE 2
 
 #define PAINT_COMMAND_ADD_LAYER 8
 
@@ -56,6 +62,8 @@
 #define PAINT_EVENT_DOCUMENT_STATE_CHANGED 2
 
 #define PAINT_FEATURE_ASYNC_SESSION 16
+
+#define PAINT_FEATURE_BRUSH_TIP 1048576
 
 #define PAINT_FEATURE_BUCKET 8192
 
@@ -473,6 +481,31 @@ typedef struct PaintLayerInfo {
   uint64_t name_length;
   uint64_t allocated_tiles;
 } PaintLayerInfo;
+
+/**
+ * ABI 1.25 procedural tip. All percentages are normalized; angle is degrees.
+ */
+typedef struct PaintBrushTip {
+  uint32_t struct_size;
+  float hardness;
+  float roundness;
+  float angle;
+  float flow;
+  uint32_t pressure_size;
+  uint32_t pressure_flow;
+  uint32_t reserved[3];
+} PaintBrushTip;
+
+typedef struct PaintBrushStrokeDesc {
+  uint32_t struct_size;
+  uint32_t operation;
+  struct PaintStrokeDesc brush;
+  struct PaintBrushTip tip;
+  float strength;
+  uint32_t all_layers;
+  uint32_t finger_painting;
+  uint32_t pressure_strength;
+} PaintBrushStrokeDesc;
 
 /**
  * ABI 1.18: same brush/point pipeline, independent strength and sampling options.
@@ -1017,6 +1050,18 @@ PaintStatus paint_layer_set_properties(struct PaintCore *core,
                                        uint64_t layer_id,
                                        uint32_t visible,
                                        float opacity);
+
+/**
+ * Begin paint, erase or smudge with a copied, validated procedural tip.
+ * # Safety
+ * Live handles and aligned readable sized descriptors/point and a nonoverlapping
+ * writable sequence are required. Caller memory is never retained.
+ */
+PaintStatus paint_session_begin_brush(struct PaintCore *core,
+                                      struct PaintSession *session,
+                                      const struct PaintBrushStrokeDesc *request,
+                                      const struct PaintPoint *point,
+                                      uint64_t *out_sequence);
 
 /**
  * Begin an ordinary asynchronous brush stroke with smudge behavior.
