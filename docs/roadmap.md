@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+吸色取色环：[设计](eyedropper-ring-design.md) / [验收](eyedropper-ring-validation.md)，复用显示帧取样，鼠标/Alt/数位笔拖动预览新旧颜色。
+
 涂抹：[设计](smudge-design.md) / [验收](smudge-validation.md)，ABI 1.18；独立工具复用画笔管线、强度压感、合成取样、手指绘画与 1% 间隔。
 
 魔棒：[设计](wand-design.md) / [验收](wand-validation.md)，ABI 1.17；真实灰度选区、平均取样、四种组合、轮廓和历史/持久化。

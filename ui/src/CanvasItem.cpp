@@ -46,6 +46,8 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
         m_viewTimer.start();
     };
     connect(this, &QQuickItem::windowChanged, this, observeWindow);
+    connect(this,&QQuickItem::enabledChanged,this,[this] {if(!isEnabled())endPicking();});
+    connect(this,&QQuickItem::visibleChanged,this,[this] {if(!isVisible())endPicking();});
     observeWindow(window());
 }
 void CanvasItem::observeScreen(QScreen *screen) {
@@ -60,18 +62,21 @@ CanvasItem::~CanvasItem() {
 }
 void CanvasItem::setClient(PaintCoreClient *client) {
     if (m_client == client) return;
+    endPicking();
     if (m_client) disconnect(m_client, nullptr, this, nullptr);
     m_client = client; m_fitPending = true;
     if (client) {
         connect(client, &PaintCoreClient::frameChanged, this, &CanvasItem::refresh);
-        connect(client, &PaintCoreClient::brushChanged, this, [this] { cancelSelectionDrag();refreshBrushCursor(); });
+        connect(client, &PaintCoreClient::brushChanged, this, [this] { cancelSelectionDrag();if(m_picking && !m_altHeld && !m_client->eyedropperTool())endPicking();refreshBrushCursor(); });
         connect(client, &PaintCoreClient::stateChanged, this, [this] { refresh(); emit viewChanged(); });
-        connect(client, &QObject::destroyed, this, [this] { m_client = nullptr; });
+        connect(client, &PaintCoreClient::samplingRingEnabledChanged, this, &CanvasItem::refreshBrushCursor);
+        connect(client, &QObject::destroyed, this, [this] { m_client = nullptr;endPicking();refreshBrushCursor(); });
         refresh();
     }
     refreshBrushCursor();emit clientChanged();
 }
 void CanvasItem::setInteractive(bool enabled) {
+    if(!enabled)endPicking();
     m_interactive = enabled; setAcceptedMouseButtons(enabled ? Qt::LeftButton | Qt::MiddleButton : Qt::NoButton);
     m_fitPending = true; refresh();refreshBrushCursor(); emit interactiveChanged(); emit viewChanged();
 }
@@ -88,6 +93,21 @@ bool CanvasItem::spacePanning() const { return m_space || spaceHeld; }
 bool CanvasItem::eyedropperCursorVisible() const {
     return m_cursorInside && m_interactive && m_client && (m_altHeld || m_client->eyedropperTool()) && !m_client->selectionTool()
         && !m_client->moveTool() && !spacePanning() && !m_panning && isVisible();
+}
+bool CanvasItem::samplingRingVisible() const {
+    return m_picking && m_sampledColor.isValid() && m_client && m_client->samplingRingEnabled() && eyedropperCursorVisible() && documentRect().contains(m_cursorPosition);
+}
+void CanvasItem::beginPicking(QPointF local) {
+    m_previousSampleColor=m_client->brushColor();m_picking=true;updatePicking(local);
+}
+void CanvasItem::updatePicking(QPointF local) {
+    m_cursorPosition=local;m_cursorInside=contains(local);m_sampledColor=pickColorAt(local);
+    if(m_sampledColor.isValid())m_client->setBrushColor(m_sampledColor);
+    refreshBrushCursor();
+}
+void CanvasItem::endPicking() {
+    if(!m_picking)return;
+    m_picking=false;m_tablet=false;m_sampledColor=QColor();emit brushCursorChanged();
 }
 void CanvasItem::refreshBrushCursor() {
     setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && m_client->moveTool()?Qt::SizeAllCursor:eyedropperCursorVisible()?Qt::BlankCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
@@ -108,7 +128,7 @@ void CanvasItem::hoverMoveEvent(QHoverEvent *event){m_cursorInside=true;m_cursor
 void CanvasItem::hoverLeaveEvent(QHoverEvent *event){Q_UNUSED(event);m_cursorInside=false;refreshBrushCursor();}
 void CanvasItem::refresh() {
     if (!m_client) return;
-    if (m_generation != m_client->generation()) { cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
+    if (m_generation != m_client->generation()) { endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
     const int view = m_interactive ? 0 : 1;
     m_image = m_client->frame(view); m_imageRegion = m_client->frameRegion(view);
     if (m_fitPending) fitToView();
@@ -287,8 +307,8 @@ void CanvasItem::mousePressEvent(QMouseEvent *e) {
     // Alt is the eyedropper: sample the rendered frame and adopt the colour as the foreground.
     // Nothing is written to the document, so this never creates history.
     if (e->button() == Qt::LeftButton && (e->modifiers().testFlag(Qt::AltModifier) || m_client->eyedropperTool()) && !m_client->selectionTool() && !m_client->moveTool()) {
-        const auto picked = pickColorAt(e->position());
-        if (picked.isValid()) { m_client->setBrushColor(picked); emit viewChanged(); }
+        if(e->modifiers().testFlag(Qt::AltModifier))setAltHeld(true);
+        beginPicking(e->position());
         e->accept(); return;
     }
     if(e->button()!=Qt::LeftButton){e->ignore();return;}
@@ -306,17 +326,20 @@ void CanvasItem::mouseDoubleClickEvent(QMouseEvent *e) {
 void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
     m_cursorInside=contains(e->position());m_cursorPosition=e->position();refreshBrushCursor();
     if (m_panning) { m_pan += e->position() - m_last; m_last = e->position(); emit viewChanged(); update(); }
+    else if(m_picking && !m_tablet) updatePicking(e->position());
     else if(m_selecting && !m_tablet) updateSelection(e->position(),e->modifiers());
     else if (m_stroke && !m_tablet) m_client->strokeTo(mouseSample(e->position(), e->buttons()));
     e->accept();
 }
 void CanvasItem::mouseReleaseEvent(QMouseEvent *e) {
+    if(m_picking && !m_tablet && e->button()==Qt::LeftButton){updatePicking(e->position());endPicking();e->accept();return;}
     if(!m_panning && m_selecting && !m_tablet) finishSelection(e->position(),e->modifiers());
     if(m_moving && !m_tablet) finishLayerMove(e->position());
     if (m_stroke && !m_tablet) { m_client->strokeTo(mouseSample(e->position(), e->buttons())); m_client->endStroke(); m_stroke = false; }
     m_panning = false;refreshBrushCursor(); e->accept();
 }
 void CanvasItem::mouseUngrabEvent() {
+    endPicking();
     if (m_stroke && m_client) m_client->cancelStroke();
     m_stroke = false; m_panning = false; m_moving=false;if(m_selectionKind!=3)cancelSelectionDrag();refreshBrushCursor();
 }
@@ -348,11 +371,12 @@ void CanvasItem::keyReleaseEvent(QKeyEvent *e) {
 void CanvasItem::setAltHeld(bool held) {
     if(m_altHeld==held) return;
     m_altHeld=held;
+    if(!held && m_client && !m_client->eyedropperTool())endPicking();
     // The eyedropper takes over the pointer: a crosshair instead of the brush outline.
     refreshBrushCursor();
 }
 bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
-    if(event->type()==QEvent::ApplicationDeactivate){setKeySpace(false);setSpacePanning(false);setAltHeld(false);refreshBrushCursor();}
+    if(event->type()==QEvent::ApplicationDeactivate){endPicking();setKeySpace(false);setSpacePanning(false);setAltHeld(false);refreshBrushCursor();}
     if(m_interactive && isVisible() && (event->type()==QEvent::KeyPress || event->type()==QEvent::KeyRelease)) {
         auto *key=static_cast<QKeyEvent*>(event);
         if(key->key()==Qt::Key_Alt && !key->isAutoRepeat())setAltHeld(event->type()==QEvent::KeyPress);
@@ -363,7 +387,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
             setKeySpace(event->type()==QEvent::KeyPress);setSpacePanning(event->type()==QEvent::KeyPress);refreshBrushCursor();key->accept();return true;
         }
     }
-    if(event->type()==QEvent::TabletLeaveProximity){m_cursorInside=false;refreshBrushCursor();return false;}
+    if(event->type()==QEvent::TabletLeaveProximity){endPicking();m_cursorInside=false;refreshBrushCursor();return false;}
     const bool tabletEvent=event->type()==QEvent::TabletPress || event->type()==QEvent::TabletMove || event->type()==QEvent::TabletRelease;
     if(tabletEvent) {
         const auto item=qobject_cast<QQuickItem*>(watched);
@@ -382,7 +406,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if (event->type() == QEvent::WindowDeactivate) {
         if (m_stroke) m_client->cancelStroke();
         m_stroke = m_tablet = m_panning = m_moving = false;
-        m_picking=false;setAltHeld(false);
+        endPicking();setAltHeld(false);
         setKeySpace(false);setSpacePanning(false);
         m_cursorInside=false;refreshBrushCursor();
         cancelSelectionDrag();
@@ -408,8 +432,9 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         e->accept();return true;
     }
     if(m_picking || ((m_altHeld || m_client->eyedropperTool()) && !m_client->selectionTool() && !m_client->moveTool())) {
-        if(event->type()==QEvent::TabletPress){m_picking=m_tablet=true;const auto color=pickColorAt(local);if(color.isValid())m_client->setBrushColor(color);}
-        else if(event->type()==QEvent::TabletRelease)m_picking=m_tablet=false;
+        if(event->type()==QEvent::TabletPress){beginPicking(local);m_tablet=true;}
+        else if(event->type()==QEvent::TabletMove)updatePicking(local);
+        else if(event->type()==QEvent::TabletRelease){updatePicking(local);endPicking();}
         e->accept();return true;
     }
     if(m_client->selectionTool()==5) {

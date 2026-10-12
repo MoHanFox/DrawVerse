@@ -753,6 +753,7 @@ void PaintCoreClient::activateEyedropper() {
     activateBrush();m_eyedropperTool=true;emit brushChanged();
 }
 
+void PaintCoreClient::setSamplingRingEnabled(bool enabled) {if(enabled==m_samplingRingEnabled)return;m_samplingRingEnabled=enabled;emit samplingRingEnabledChanged();}
 void PaintCoreClient::activateBucket() {if(m_drawing)return;activateBrush();m_bucketTool=true;emit brushChanged();}
 void PaintCoreClient::activateSmudge() {if(m_drawing)return;activateBrush();m_smudgeTool=true;emit brushChanged();}
 void PaintCoreClient::setSmudgeStrength(qreal value) {if(!std::isfinite(value) || value<0 || value>1 || value==m_smudgeStrength)return;m_smudgeStrength=value;emit smudgeOptionsChanged();}

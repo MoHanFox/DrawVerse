@@ -28,6 +28,13 @@ Rectangle {
         active:root.ownClient.selectionEnabled || canvas.selectionPreviewPoints.length>0 || canvas.selectionPreview.width>0 && canvas.selectionPreview.height>0
         sourceComponent:SelectionOutline {objectName:"selectionOutline";enabledSelection:root.ownClient.selectionEnabled;steps:root.ownClient.selectionSteps;documentRect:canvas.documentRect;zoom:canvas.zoom;preview:canvas.selectionPreview;previewKind:canvas.selectionPreviewKind;previewPoints:canvas.selectionPreviewPoints}
     }
+    EyedropperRing {
+        objectName:"eyedropperSamplingRing";z:10
+        x:canvas.cursorPosition.x-width/2;y:canvas.cursorPosition.y-height/2
+        visible:canvas.samplingRingVisible
+        sampledColor:canvas.sampledColor
+        previousColor:canvas.previousSampleColor
+    }
     Item {
         objectName:"eyedropperCursor";z:11
         x:canvas.cursorPosition.x-8;y:canvas.cursorPosition.y-8;width:17;height:17

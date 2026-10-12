@@ -4,3 +4,5 @@ SelectionOptionsBar 1.0 SelectionOptionsBar.qml
 BucketOptionsBar 1.0 BucketOptionsBar.qml
 WandOptionsBar 1.0 WandOptionsBar.qml
 SmudgeOptionsBar 1.0 SmudgeOptionsBar.qml
+
+EyedropperRing 1.0 EyedropperRing.qml

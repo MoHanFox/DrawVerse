@@ -1,5 +1,7 @@
 # DrawVerse
 
+吸色取色环：[设计](docs/eyedropper-ring-design.md) / [验收](docs/eyedropper-ring-validation.md)；I 或 Alt 按下拖动显示当前取样色与取色前前景色，支持数位笔和显示开关。
+
 涂抹：[设计](docs/smudge-design.md) / [验收](docs/smudge-validation.md)，独立 R 工具、共用笔刷预设/间隔（最低 1%）、强度/压感/所有图层取样/手指绘画；参数说明悬停 1 秒显示，ABI 1.18。
 
 魔棒：[设计](docs/wand-design.md) / [验收](docs/wand-validation.md)，W 激活；四种选区组合、七种取样大小、容差/AA/连续/所有图层取样，ABI 1.17。

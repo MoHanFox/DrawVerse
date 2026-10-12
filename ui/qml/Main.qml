@@ -437,7 +437,20 @@ ApplicationWindow {
             anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:12;spacing:8
             Icon {name:"eyedropper";Layout.preferredWidth:17;Layout.preferredHeight:17}
             Label {text:"吸色";color:Theme.text}
-            Label {text:"点击画布采样合成颜色";color:Theme.muted}
+            Label {text:"按下并拖动采样合成颜色";color:Theme.muted}
+            CheckBox {
+                objectName:"showSamplingRing";text:"显示取色环";checked:PaintClient.samplingRingEnabled
+                onToggled:PaintClient.samplingRingEnabled=checked
+                hoverEnabled:true;ToolTip.delay:1000;ToolTip.visible:hovered
+                ToolTip.text:"按下取色时，上半环显示当前取样色，下半环显示取色前的前景色。"
+                font.pixelSize:12;padding:0;spacing:6
+                indicator:Rectangle {
+                    implicitWidth:13;implicitHeight:13;x:0;y:(parent.height-height)/2
+                    radius:2;color:parent.checked?Theme.text:Theme.input;border.color:Theme.muted
+                    Icon {anchors.fill:parent;anchors.margins:2;name:"check";color:Theme.input;visible:parent.parent.checked}
+                }
+                contentItem:Text {text:parent.text;font:parent.font;color:Theme.text;leftPadding:19;verticalAlignment:Text.AlignVCenter}
+            }
             Item {Layout.fillWidth:true}
         }
         Rectangle { anchors.bottom: parent.bottom; height: 1; width: parent.width; color: Theme.panelBar }

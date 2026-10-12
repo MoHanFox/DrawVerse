@@ -68,6 +68,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool selectionAntialias READ selectionAntialias WRITE setSelectionAntialias NOTIFY selectionOptionsChanged)
     Q_PROPERTY(int lassoShape READ lassoShape NOTIFY brushChanged)
     Q_PROPERTY(int marqueeShape READ marqueeShape NOTIFY brushChanged)
+    Q_PROPERTY(bool samplingRingEnabled READ samplingRingEnabled WRITE setSamplingRingEnabled NOTIFY samplingRingEnabledChanged)
     Q_PROPERTY(bool eyedropperTool READ eyedropperTool NOTIFY brushChanged)
     Q_PROPERTY(bool bucketTool READ bucketTool NOTIFY brushChanged)
     Q_PROPERTY(bool smudgeTool READ smudgeTool NOTIFY brushChanged)
@@ -155,6 +156,8 @@ public:
     void setBucketContiguous(bool value);
     void setBucketAllLayers(bool value);
     bool bucketFill(QPointF position);
+    bool samplingRingEnabled() const {return m_samplingRingEnabled;}
+    void setSamplingRingEnabled(bool enabled);
     bool eyedropperTool() const {return m_eyedropperTool;}
     /// Marquee keeps the last rectangle/ellipse choice; the lasso and the wand are their own tools.
     Q_INVOKABLE void activateMarquee();
@@ -267,6 +270,7 @@ signals:
     void groupDeletionRequested();
     void groupExpansionChanged();
     void brushChanged();
+    void samplingRingEnabledChanged();
     void recentColorsChanged();
     void historyLimitChanged();
     void selectionChanged();
@@ -332,6 +336,7 @@ private:
     bool m_selectionAntialias = true;
     bool m_moveTool = false;
     bool m_eyedropperTool = false;
+    bool m_samplingRingEnabled = true;
     bool m_bucketTool = false;
     bool m_smudgeTool=false,m_smudgePressure=true,m_smudgeAllLayers=false,m_smudgeFingerPainting=false;
     qreal m_smudgeStrength=.5;

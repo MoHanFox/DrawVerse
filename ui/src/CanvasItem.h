@@ -16,6 +16,9 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(QRectF brushCursorRect READ brushCursorRect NOTIFY brushCursorChanged)
     Q_PROPERTY(bool brushCursorVisible READ brushCursorVisible NOTIFY brushCursorChanged)
     Q_PROPERTY(bool eyedropperCursorVisible READ eyedropperCursorVisible NOTIFY brushCursorChanged)
+    Q_PROPERTY(bool samplingRingVisible READ samplingRingVisible NOTIFY brushCursorChanged)
+    Q_PROPERTY(QColor sampledColor READ sampledColor NOTIFY brushCursorChanged)
+    Q_PROPERTY(QColor previousSampleColor READ previousSampleColor NOTIFY brushCursorChanged)
     Q_PROPERTY(QPointF cursorPosition READ cursorPosition NOTIFY brushCursorChanged)
     Q_PROPERTY(bool spacePanning READ spacePanning NOTIFY spacePanningChanged)
     Q_PROPERTY(bool interactive READ interactive WRITE setInteractive NOTIFY interactiveChanged)
@@ -34,6 +37,9 @@ public:
     QRectF brushCursorRect() const;
     bool brushCursorVisible() const;
     bool eyedropperCursorVisible() const;
+    bool samplingRingVisible() const;
+    QColor sampledColor() const { return m_sampledColor; }
+    QColor previousSampleColor() const { return m_previousSampleColor; }
     QPointF cursorPosition() const {return m_cursorPosition;}
     // Application wide space-pan state (combines the focused key with the global hold).
     bool spacePanning() const;
@@ -114,6 +120,10 @@ private:
     QPointF m_cursorPosition;
     bool m_cursorInside=false,m_capsLock=false;
     bool m_picking=false;
+    QColor m_sampledColor, m_previousSampleColor;
+    void beginPicking(QPointF local);
+    void updatePicking(QPointF local);
+    void endPicking();
     QPointF m_moveStart;
     bool m_moving = false;
     quint64 m_moveLayer = 0, m_moveGeneration = 0;
