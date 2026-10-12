@@ -50,7 +50,9 @@ ApplicationWindow {
             onClicked:root.documents.returnWindow(root.windowData.id)
         }
     }
-    header:Loader {height:active?36:0;active:root.activeDocument && root.activeDocument.liquifyActive;sourceComponent:Component {LiquifyOptionsBar {controller:root.activeDocument}}}
+    header:Loader {height:active?36:0;active:root.activeDocument && (root.activeDocument.liquifyActive || root.activeDocument.transformActive);sourceComponent:root.activeDocument && root.activeDocument.transformActive?transformOptions:liquifyOptions}
+    Component {id:transformOptions;TransformOptionsBar {controller:root.activeDocument}}
+    Component {id:liquifyOptions;LiquifyOptionsBar {controller:root.activeDocument}}
     DocumentArea {id:area;anchors.top:bar.bottom;anchors.bottom:parent.bottom;anchors.left:parent.left;anchors.right:parent.right;anchors.margins:2;hostId:root.windowData.id;titleControlsWidth:root.multipleDocuments?0:64;documents:root.documents;presentation:root.presentation}
     ResizeFrame {targetWindow:root}
 }

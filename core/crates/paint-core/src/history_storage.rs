@@ -92,6 +92,7 @@ impl Write for SpillWriter {
     }
 }
 struct CheckedReader<R> {
+    image_model: bool,
     trim_tiles: bool,
     source: R,
     checksum: u64,
@@ -188,6 +189,7 @@ impl Payload {
             Backing::Disk(file) => Box::new(BufReader::new(file.reopen().map_err(storage_error)?)),
         };
         let mut reader = CheckedReader {
+            image_model: true,
             trim_tiles: false,
             source,
             checksum: HASH_START,
@@ -236,6 +238,7 @@ impl Payload {
         pool: Option<&Arc<crate::page_pool::PagePool>>,
     ) -> Result<Command> {
         let mut reader = CheckedReader {
+            image_model: true,
             trim_tiles: false,
             source,
             checksum: HASH_START,
@@ -429,9 +432,26 @@ fn encode_layer(w: &mut impl Write, index: usize, layer: &Layer) -> io::Result<(
         coordinate(w, *coord)?;
         encode_tile(w, Some(tile))?;
     }
+    put_u8(w, u8::from(layer.placed.is_some()))?;
+    if let Some(image) = &layer.placed {
+        for value in image.bounds {
+            put_u64(w, value.to_bits())?;
+        }
+        put_u8(w, u8::from(image.geometry.warp))?;
+        put_u32(w, image.geometry.interpolation)?;
+        put_u64(w, image.geometry.skew_h.to_bits())?;
+        put_u64(w, image.geometry.skew_v.to_bits())?;
+        for value in image.geometry.points.iter().flatten() {
+            put_u64(w, value.to_bits())?;
+        }
+        encode_layer(w, 0, &image.source)?;
+    }
     Ok(())
 }
 fn decode_layer<R: Read>(r: &mut CheckedReader<R>) -> Result<(usize, Layer)> {
+    decode_layer_depth(r, 0)
+}
+fn decode_layer_depth<R: Read>(r: &mut CheckedReader<R>, depth: usize) -> Result<(usize, Layer)> {
     let index = u32_value(r)? as usize;
     let id = u64_value(r)?;
     let length = u32_value(r)? as usize;
@@ -470,6 +490,48 @@ fn decode_layer<R: Read>(r: &mut CheckedReader<R>) -> Result<(usize, Layer)> {
             return Err(invalid());
         }
     }
+    if r.image_model && boolean(r)? {
+        if depth != 0 || layer.group || layer.mask {
+            return Err(invalid());
+        }
+        let mut bounds = [0.; 4];
+        for v in &mut bounds {
+            *v = f64::from_bits(u64_value(r)?);
+        }
+        if bounds
+            .iter()
+            .any(|v| !v.is_finite() || v.abs() > 2_000_000.)
+            || bounds[2] <= 0.
+            || bounds[3] <= 0.
+        {
+            return Err(invalid());
+        }
+        let warp = boolean(r)?;
+        let interpolation = u32_value(r)?;
+        let skew_h = f64::from_bits(u64_value(r)?);
+        let skew_v = f64::from_bits(u64_value(r)?);
+        let mut points = [[0.; 2]; 16];
+        for v in points.iter_mut().flatten() {
+            *v = f64::from_bits(u64_value(r)?);
+        }
+        let geometry = crate::TransformGeometry {
+            points,
+            warp,
+            skew_h,
+            skew_v,
+            interpolation,
+        };
+        geometry.validate()?;
+        let (_, source) = decode_layer_depth(r, depth + 1)?;
+        if source.group || source.mask {
+            return Err(invalid());
+        }
+        layer.placed = Some(Arc::new(crate::PlacedImage {
+            source,
+            bounds,
+            geometry,
+        }));
+    }
     Ok((index, layer))
 }
 fn appearance(w: &mut impl Write, a: crate::LayerAppearance) -> io::Result<()> {
@@ -493,8 +555,31 @@ fn read_appearance(r: &mut impl Read) -> Result<crate::LayerAppearance> {
     Ok(a)
 }
 fn encode_command(w: &mut impl Write, command: &Command) -> io::Result<()> {
-    w.write_all(b"DVH6")?;
+    w.write_all(b"DVH7")?;
     match command {
+        Command::LayerEdit {
+            before,
+            after,
+            selection,
+        } => {
+            put_u8(w, 11)?;
+            put_u8(w, u8::from(selection.is_some()))?;
+            if let Some((a, b)) = selection {
+                for sel in [a, b] {
+                    let text = sel.to_text();
+                    put_u32(w, text.len() as u32)?;
+                    w.write_all(text.as_bytes())?;
+                }
+            }
+            put_u32(w, before.len() as u32)?;
+            for (i, layer) in before.iter().enumerate() {
+                encode_layer(w, i, layer)?;
+            }
+            for (i, layer) in after.iter().enumerate() {
+                encode_layer(w, i, layer)?;
+            }
+            Ok(())
+        }
         Command::Selection { before, after } => {
             put_u8(w, 8)?;
             for selection in [before, after] {
@@ -591,10 +676,59 @@ fn encode_command(w: &mut impl Write, command: &Command) -> io::Result<()> {
     }
 }
 fn decode_command<R: Read>(r: &mut CheckedReader<R>) -> Result<Command> {
-    if &get::<4>(r)? != b"DVH6" {
+    if &get::<4>(r)? != b"DVH7" {
         return Err(invalid());
     }
     match u8_value(r)? {
+        11 => {
+            let selection = if boolean(r)? {
+                let mut selections = Vec::new();
+                for _ in 0..2 {
+                    let n = u32_value(r)? as usize;
+                    if n > 128 * 1024 * 1024 {
+                        return Err(invalid());
+                    }
+                    let mut bytes = vec![0; n];
+                    r.read_exact(&mut bytes).map_err(storage_error)?;
+                    selections.push(crate::Selection::from_text(
+                        std::str::from_utf8(&bytes).map_err(storage_error)?,
+                    )?);
+                }
+                Some((selections.remove(0), selections.remove(0)))
+            } else {
+                None
+            };
+            let count = u32_value(r)? as usize;
+            if count == 0 || count > 4096 {
+                return Err(invalid());
+            }
+            let mut before = Vec::with_capacity(count);
+            let mut after = Vec::with_capacity(count);
+            for nodes in [&mut before, &mut after] {
+                for i in 0..count {
+                    let (index, layer) = decode_layer(r)?;
+                    if index != i {
+                        return Err(invalid());
+                    }
+                    nodes.push(layer);
+                }
+            }
+            if before.iter().zip(&after).any(|(a, b)| a.id != b.id)
+                || before
+                    .iter()
+                    .map(|l| l.id)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    != count
+            {
+                return Err(invalid());
+            }
+            Ok(Command::LayerEdit {
+                before,
+                after,
+                selection,
+            })
+        }
         tag @ (9 | 10) => {
             let mut sets = Vec::new();
             for set in 0..3 {
@@ -807,7 +941,7 @@ pub(crate) fn encode_layer_bundle(layers: &[Layer]) -> Result<Vec<u8>> {
         }
     }
     let mut w = Bounded(Vec::new());
-    w.write_all(b"DVL1").map_err(storage_error)?;
+    w.write_all(b"DVL2").map_err(storage_error)?;
     put_u32(&mut w, layers.len() as u32).map_err(storage_error)?;
     for (i, layer) in layers.iter().enumerate() {
         encode_layer(&mut w, i, layer).map_err(storage_error)?;
@@ -831,6 +965,7 @@ pub(crate) fn decode_layer_bundle(
         return Err(invalid());
     }
     let mut r = CheckedReader {
+        image_model: true,
         trim_tiles: true,
         source: Cursor::new(&bytes[..end]),
         checksum: HASH_START,
@@ -838,9 +973,11 @@ pub(crate) fn decode_layer_bundle(
         tile_limit,
         pool: Some(pool),
     };
-    if &get::<4>(&mut r)? != b"DVL1" {
+    let version = get::<4>(&mut r)?;
+    if version != *b"DVL2" && version != *b"DVL1" {
         return Err(invalid());
     }
+    r.image_model = version == *b"DVL2";
     let count = u32_value(&mut r)? as usize;
     if count == 0 || count > 4096 {
         return Err(invalid());
@@ -852,7 +989,7 @@ pub(crate) fn decode_layer_bundle(
         if index != i {
             return Err(invalid());
         }
-        tiles += layer.tiles.len();
+        tiles += layer.retained_tile_count();
         if tiles > tile_limit {
             return Err(invalid());
         }

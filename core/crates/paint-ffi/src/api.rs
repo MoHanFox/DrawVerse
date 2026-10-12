@@ -15,8 +15,9 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 22;
+pub const PAINT_ABI_MINOR: u32 = 23;
 pub const PAINT_FEATURE_LIQUIFY: u64 = 262144;
+pub const PAINT_FEATURE_TRANSFORM: u64 = 524288;
 pub const PAINT_SESSION_LIQUIFY: u32 = 8;
 pub const PAINT_HISTORY_LIQUIFY: u32 = 30;
 pub const PAINT_LIQUIFY_BEGIN: u32 = 0;
@@ -652,4 +653,27 @@ pub struct PaintSelectionDetails {
     pub struct_size: u32,
     pub point_count: u32,
     pub feather: f64,
+}
+
+/// ABI 1.23 non-destructive image placement and free transform.
+pub const PAINT_FILE_PLACE: u32 = 3;
+pub const PAINT_SESSION_TRANSFORM: u32 = 16;
+pub const PAINT_TRANSFORM_BEGIN: u32 = 0;
+pub const PAINT_TRANSFORM_UPDATE: u32 = 1;
+pub const PAINT_TRANSFORM_CHECKPOINT: u32 = 2;
+pub const PAINT_TRANSFORM_CANCEL: u32 = 3;
+pub const PAINT_TRANSFORM_COMMIT: u32 = 4;
+pub const PAINT_TRANSFORM_UNDO: u32 = 5;
+pub const PAINT_TRANSFORM_REDO: u32 = 6;
+pub const PAINT_TRANSFORM_RASTERIZE: u32 = 7;
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintTransform {
+    pub struct_size: u32,
+    pub warp: u32,
+    pub interpolation: u32,
+    pub reserved: u32,
+    pub points: [f64; 32],
+    pub skew_h: f64,
+    pub skew_v: f64,
 }

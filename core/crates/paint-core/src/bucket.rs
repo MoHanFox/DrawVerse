@@ -86,6 +86,9 @@ impl Document {
             return Err(Error::InvalidArgument("bucket seed outside document"));
         }
         let index = self.layer_index(self.active_layer)?;
+        if self.layers[index].is_image() {
+            return Err(Error::InvalidArgument("rasterize image before filling"));
+        }
         if self.layers[index].group {
             return Err(Error::InvalidArgument("select a pixel layer to fill"));
         }

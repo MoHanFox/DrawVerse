@@ -48,7 +48,7 @@ impl Document {
         action: crate::HistoryAction,
     ) -> Result<u64> {
         if self.layers.len() + nodes.len() > 4096
-            || self.tile_count() + nodes.iter().map(|l| l.tiles.len()).sum::<usize>()
+            || self.tile_count() + nodes.iter().map(Layer::retained_tile_count).sum::<usize>()
                 > self.options.max_document_tiles
         {
             return Err(Error::ResourceLimit("layer copy count/tiles"));

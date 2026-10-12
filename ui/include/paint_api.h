@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 22
+#define PAINT_ABI_MINOR 23
 
 #define PAINT_ABI_PATCH 0
 
@@ -91,6 +91,8 @@
 
 #define PAINT_FEATURE_STORAGE_SETTINGS 128
 
+#define PAINT_FEATURE_TRANSFORM 524288
+
 #define PAINT_FEATURE_WAND 16384
 
 #define PAINT_FILE_AUTO 0
@@ -104,6 +106,11 @@
 #define PAINT_FILE_OPEN 1
 
 #define PAINT_FILE_OPENRASTER 4
+
+/**
+ * ABI 1.23 non-destructive image placement and free transform.
+ */
+#define PAINT_FILE_PLACE 3
 
 #define PAINT_FILE_PNG 1
 
@@ -301,6 +308,8 @@
 
 #define PAINT_SESSION_RUNNING 1
 
+#define PAINT_SESSION_TRANSFORM 16
+
 #define PAINT_STORAGE_RGBA32F_PREMULTIPLIED 1
 
 #define PAINT_TILE_RGBA32F_LINEAR_PREMULTIPLIED 2
@@ -312,6 +321,22 @@
 #define PAINT_TOOL_MOUSE 3
 
 #define PAINT_TOOL_PEN 1
+
+#define PAINT_TRANSFORM_BEGIN 0
+
+#define PAINT_TRANSFORM_CANCEL 3
+
+#define PAINT_TRANSFORM_CHECKPOINT 2
+
+#define PAINT_TRANSFORM_COMMIT 4
+
+#define PAINT_TRANSFORM_RASTERIZE 7
+
+#define PAINT_TRANSFORM_REDO 6
+
+#define PAINT_TRANSFORM_UNDO 5
+
+#define PAINT_TRANSFORM_UPDATE 1
 
 #define PAINT_WORKING_LINEAR_SRGB 1
 
@@ -738,6 +763,16 @@ typedef struct PaintCommand {
   uint32_t reserved[2];
 } PaintCommand;
 
+typedef struct PaintTransform {
+  uint32_t struct_size;
+  uint32_t warp;
+  uint32_t interpolation;
+  uint32_t reserved;
+  double points[32];
+  double skew_h;
+  double skew_v;
+} PaintTransform;
+
 typedef struct PaintStorageInfo {
   uint32_t struct_size;
   uint32_t removed_runs;
@@ -995,6 +1030,17 @@ PaintStatus paint_session_begin_smudge(struct PaintCore *core,
                                        uint64_t *out_sequence);
 
 /**
+ * Begin one atomic transform for layers or complete group subtrees.
+ * # Safety
+ * Valid owned handles, readable count-element ID array and writable sequence.
+ */
+PaintStatus paint_session_begin_transform_layers(struct PaintCore *core,
+                                                 struct PaintSession *session,
+                                                 const uint64_t *ids,
+                                                 uint64_t count,
+                                                 uint64_t *out_sequence);
+
+/**
  * Copy, validate and enqueue an atomic fill; no pixel work on the submitting thread.
  * # Safety
  * Caller must provide aligned, valid, nonoverlapping sized request and writable sequence.
@@ -1235,6 +1281,17 @@ PaintStatus paint_session_layer_info(struct PaintCore *core,
                                      struct PaintLayerInfo *out_info);
 
 /**
+ * Read an image-layer flag from the same publication as layer metadata.
+ * # Safety
+ * Valid owned handles and writable output scalar.
+ */
+PaintStatus paint_session_layer_is_image(struct PaintCore *core,
+                                         struct PaintSession *session,
+                                         uint64_t publication,
+                                         uint64_t id,
+                                         uint32_t *out);
+
+/**
  * Copy UTF-8 without NUL. NULL/0 capacity query returns required bytes.
  * # Safety
  * Follow nonoverlapping caller buffers and exact publication contract.
@@ -1459,6 +1516,27 @@ PaintStatus paint_session_submit(struct PaintCore *core,
                                  struct PaintSession *handle,
                                  const struct PaintCommand *command,
                                  uint64_t *out_sequence);
+
+/**
+ * Queue a transform operation. UPDATE alone requires geometry; input is copied.
+ * # Safety
+ * Valid owned handles, readable initialized DTO and writable nonoverlapping sequence.
+ */
+PaintStatus paint_session_transform(struct PaintCore *core,
+                                    struct PaintSession *session,
+                                    uint32_t kind,
+                                    const struct PaintTransform *geometry,
+                                    uint64_t *out_sequence);
+
+/**
+ * Read the published transform geometry without waiting for computation.
+ * # Safety
+ * Valid owned handles and writable initialized DTO.
+ */
+PaintStatus paint_session_transform_info(struct PaintCore *core,
+                                         struct PaintSession *session,
+                                         uint64_t publication,
+                                         struct PaintTransform *out);
 
 /**
  * ABI 1.3: inspect a candidate configuration without changing a running core. Worker thread only.

@@ -42,6 +42,9 @@ pub enum HistoryAction {
     LiquifyTwirl = 33,
     LiquifyReconstruct = 34,
     LiquifyReset = 35,
+    PlaceImage = 36,
+    Transform = 37,
+    Rasterize = 38,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }
@@ -55,6 +58,11 @@ pub(crate) struct TileChange {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Command {
+    LayerEdit {
+        selection: Option<(crate::Selection, crate::Selection)>,
+        before: Vec<Layer>,
+        after: Vec<Layer>,
+    },
     Selection {
         before: crate::Selection,
         after: crate::Selection,
@@ -179,6 +187,7 @@ impl Command {
     pub fn action(&self) -> HistoryAction {
         use HistoryAction::*;
         match self {
+            Self::LayerEdit { .. } => Transform,
             Self::Stroke { .. } => Brush,
             Self::Selection { .. } => Selection,
             Self::AddLayer { layer, .. } => {
@@ -223,6 +232,17 @@ impl Command {
     }
     fn verify_tiles(&self) -> Result<()> {
         match self {
+            Self::LayerEdit { before, after, .. } => {
+                for layer in before.iter().chain(after) {
+                    for tile in layer
+                        .tiles
+                        .values()
+                        .chain(layer.placed.iter().flat_map(|p| p.source.tiles.values()))
+                    {
+                        drop(tile.try_pixels()?);
+                    }
+                }
+            }
             Self::Structure { .. } | Self::Selection { .. } => {}
             Self::ReplaceBatch { pixels: layers, .. }
             | Self::RemoveTree { layers, .. }
@@ -230,7 +250,11 @@ impl Command {
                 removed: layers, ..
             } => {
                 for layer in layers {
-                    for tile in layer.tiles.values() {
+                    for tile in layer
+                        .tiles
+                        .values()
+                        .chain(layer.placed.iter().flat_map(|p| p.source.tiles.values()))
+                    {
                         drop(tile.try_pixels()?);
                     }
                 }
@@ -243,7 +267,11 @@ impl Command {
                 }
             }
             Self::AddLayer { layer, .. } | Self::RemoveLayer { layer, .. } => {
-                for tile in layer.tiles.values() {
+                for tile in layer
+                    .tiles
+                    .values()
+                    .chain(layer.placed.iter().flat_map(|p| p.source.tiles.values()))
+                {
                     drop(tile.try_pixels()?);
                 }
             }
@@ -254,10 +282,32 @@ impl Command {
     pub fn bytes(&self) -> usize {
         // Conservative bound: count both before and after even when shared by adjacent commands.
         let payload = match self {
-            Self::Selection { before, after } => (before.steps().len() + after.steps().len()) * 64,
-            Self::Structure { before, after } => {
-                before.iter().chain(after).map(|l| l.name.len() + 128).sum()
+            Self::LayerEdit {
+                before,
+                after,
+                selection,
+            } => {
+                selection
+                    .as_ref()
+                    .map_or(0, |(a, b)| a.to_text().len() + b.to_text().len())
+                    + before
+                        .iter()
+                        .chain(after)
+                        .map(|l| l.retained_tile_count() * TILE_BYTES + 2048)
+                        .sum::<usize>()
             }
+            Self::Selection { before, after } => (before.steps().len() + after.steps().len()) * 64,
+            Self::Structure { before, after } => before
+                .iter()
+                .chain(after)
+                .map(|l| {
+                    l.name.len()
+                        + 128
+                        + l.placed
+                            .as_ref()
+                            .map_or(0, |p| p.source.tiles.len() * TILE_BYTES + 512)
+                })
+                .sum(),
             Self::ReplaceBatch {
                 before,
                 after,
@@ -271,20 +321,26 @@ impl Command {
                 before
                     .iter()
                     .chain(after)
-                    .map(|l| l.name.len() + 128)
+                    .map(|l| {
+                        l.name.len()
+                            + 128
+                            + l.placed
+                                .as_ref()
+                                .map_or(0, |p| p.source.tiles.len() * TILE_BYTES + 512)
+                    })
                     .sum::<usize>()
                     + removed
                         .iter()
-                        .map(|l| l.tiles.len() * TILE_BYTES + l.name.len() + 128)
+                        .map(|l| l.retained_tile_count() * TILE_BYTES + l.name.len() + 128)
                         .sum::<usize>()
             }
             Self::RemoveTree { layers, .. } => layers
                 .iter()
-                .map(|l| l.tiles.len() * TILE_BYTES + l.name.len() + 128)
+                .map(|l| l.retained_tile_count() * TILE_BYTES + l.name.len() + 128)
                 .sum(),
             Self::Stroke { changes, .. } => changes.len() * (2 * TILE_BYTES + 128),
             Self::AddLayer { layer, .. } | Self::RemoveLayer { layer, .. } => {
-                layer.tiles.len() * TILE_BYTES + layer.name.len()
+                layer.retained_tile_count() * TILE_BYTES + layer.name.len()
             }
             Self::Properties { .. } | Self::Appearance { .. } => 0,
         };

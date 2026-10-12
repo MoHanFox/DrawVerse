@@ -34,6 +34,8 @@ pub(crate) enum Operation {
     Drop(u64, u64, u32),
     DropBatch(Vec<u64>, u64, u32),
     RemoveBatch(Vec<u64>, bool),
+    Transform(u32, Option<paint_core::TransformGeometry>),
+    TransformLayers(Vec<u64>),
     Liquify(u32, Option<paint_core::LiquifyDab>),
     CopyLayers(Vec<u64>),
     PasteLayers(Vec<u8>, u64),
@@ -63,6 +65,7 @@ struct Command {
     operation: Operation,
 }
 pub(crate) struct LayerState {
+    pub image: bool,
     pub info: PaintLayerInfo,
     pub name: String,
     pub appearance: paint_core::LayerAppearance,
@@ -70,6 +73,7 @@ pub(crate) struct LayerState {
     pub clipping: PaintLayerClipping,
 }
 pub(crate) struct Publication {
+    pub transform: Option<paint_core::TransformGeometry>,
     pub history: Vec<PaintHistoryEntry>,
     pub selection: paint_core::Selection,
     pub info: PaintSessionInfo,
@@ -257,6 +261,19 @@ impl Session {
                 .send_cancel(command, |c| matches!(c.operation, Operation::Move(_)))
         } else if matches!(operation, Operation::Liquify(PAINT_LIQUIFY_STROKE_END, _)) {
             // Reserve closure without discarding any deformation samples.
+            self.sender.send_cancel(command, |_| false)
+        } else if matches!(operation, Operation::Transform(PAINT_TRANSFORM_UPDATE, _)) {
+            // Absolute previews supersede only an adjacent preview tail, never a checkpoint.
+            self.sender.send_cancel(command, |c| {
+                matches!(c.operation, Operation::Transform(PAINT_TRANSFORM_UPDATE, _))
+            })
+        } else if matches!(
+            operation,
+            Operation::Transform(
+                PAINT_TRANSFORM_CHECKPOINT | PAINT_TRANSFORM_CANCEL | PAINT_TRANSFORM_COMMIT,
+                _
+            )
+        ) {
             self.sender.send_cancel(command, |_| false)
         } else {
             self.sender.try_send(command)
@@ -488,7 +505,8 @@ fn publish(
 ) -> Publication {
     let (width, height) = doc.dimensions();
     let (undo, redo) = doc
-        .liquify_history_depth()
+        .transform_history_depth()
+        .or_else(|| doc.liquify_history_depth())
         .unwrap_or_else(|| doc.history_depth());
     let layers = doc
         .layers()
@@ -496,6 +514,7 @@ fn publish(
         .zip(doc.layer_hierarchies())
         .zip(doc.layer_clipping_bases())
         .map(|((layer, (parent, depth, locks)), base)| LayerState {
+            image: layer.is_image(),
             clipping: PaintLayerClipping {
                 struct_size: std::mem::size_of::<PaintLayerClipping>() as u32,
                 enabled: u32::from(layer.is_clipped()),
@@ -528,10 +547,16 @@ fn publish(
         })
         .collect();
     Publication {
+        transform: doc.transform_geometry(),
         selection: doc.selection().clone(),
         info: PaintSessionInfo {
             struct_size: std::mem::size_of::<PaintSessionInfo>() as u32,
             flags: PAINT_SESSION_RUNNING
+                | if doc.transform_active() {
+                    PAINT_SESSION_TRANSFORM
+                } else {
+                    0
+                }
                 | if modified { PAINT_SESSION_MODIFIED } else { 0 }
                 | if doc.liquify_active() {
                     PAINT_SESSION_LIQUIFY
@@ -555,7 +580,8 @@ fn publish(
         },
         layers,
         history: doc
-            .liquify_history_actions()
+            .transform_history_actions()
+            .or_else(|| doc.liquify_history_actions())
             .unwrap_or_else(|| doc.history_actions())
             .into_iter()
             .enumerate()
@@ -605,34 +631,37 @@ impl Engine {
             || (matches!(command.operation, Operation::Begin(..))
                 && !self.document.stroke_active());
         let liquify_control = matches!(command.operation, Operation::Liquify(kind, _) if !matches!(kind,PAINT_LIQUIFY_DAB|PAINT_LIQUIFY_STROKE_BEGIN|PAINT_LIQUIFY_STROKE_END));
-        let barrier = matches!(
-            command.operation,
-            Operation::New(..)
-                | Operation::NewWhite(..)
-                | Operation::Mask(_)
-                | Operation::Clipping(..)
-                | Operation::Selection(..)
-                | Operation::Bucket(..)
-                | Operation::Wand(..)
-                | Operation::Drop(..)
-                | Operation::DropBatch(..)
-                | Operation::RemoveBatch(..)
-                | Operation::PasteLayers(..)
-                | Operation::DuplicateLayers(..)
-                | Operation::MergeLayers(..)
-                | Operation::Cancel(_)
-                | Operation::Undo
-                | Operation::Redo
-                | Operation::Remove(_)
-                | Operation::Properties(..)
-                | Operation::Appearance(..)
-                | Operation::Translate(..)
-                | Operation::Group(..)
-                | Operation::GroupBatch(..)
-                | Operation::Ungroup(..)
-                | Operation::Reparent(..)
-                | Operation::Add(_)
-        ) || liquify_control;
+        let barrier = matches!(command.operation, Operation::TransformLayers(..))
+            || matches!(command.operation,Operation::Transform(kind,_) if kind!=PAINT_TRANSFORM_UPDATE && kind!=PAINT_TRANSFORM_CHECKPOINT)
+            || matches!(
+                command.operation,
+                Operation::New(..)
+                    | Operation::NewWhite(..)
+                    | Operation::Mask(_)
+                    | Operation::Clipping(..)
+                    | Operation::Selection(..)
+                    | Operation::Bucket(..)
+                    | Operation::Wand(..)
+                    | Operation::Drop(..)
+                    | Operation::DropBatch(..)
+                    | Operation::RemoveBatch(..)
+                    | Operation::PasteLayers(..)
+                    | Operation::DuplicateLayers(..)
+                    | Operation::MergeLayers(..)
+                    | Operation::Cancel(_)
+                    | Operation::Undo
+                    | Operation::Redo
+                    | Operation::Remove(_)
+                    | Operation::Properties(..)
+                    | Operation::Appearance(..)
+                    | Operation::Translate(..)
+                    | Operation::Group(..)
+                    | Operation::GroupBatch(..)
+                    | Operation::Ungroup(..)
+                    | Operation::Reparent(..)
+                    | Operation::Add(_)
+            )
+            || liquify_control;
         let result = self.apply(command.operation, command.sequence);
         if let Err(error) = result {
             if error.status != PAINT_CANCELLED || self.error.is_none() {
@@ -654,12 +683,46 @@ impl Engine {
         self.dirty = true;
     }
     fn apply(&mut self, operation: Operation, sequence: u64) -> ApiResult<()> {
+        if self.document.transform_active()
+            && !matches!(
+                operation,
+                Operation::Transform(..) | Operation::TransformLayers(..) | Operation::File(_)
+            )
+        {
+            return Err(ApiError::new(PAINT_BUSY, "transform active"));
+        }
         if self.document.liquify_active()
             && !matches!(operation, Operation::Liquify(..) | Operation::File(_))
         {
             return Err(paint_core::Error::Busy.into());
         }
         match operation {
+            Operation::TransformLayers(ids) => self.document.begin_transform_layers(&ids)?,
+            Operation::Transform(kind, g) => match kind {
+                PAINT_TRANSFORM_BEGIN => self.document.begin_transform()?,
+                PAINT_TRANSFORM_UPDATE => self
+                    .document
+                    .update_transform(g.ok_or_else(|| ApiError::invalid("missing geometry"))?)?,
+                PAINT_TRANSFORM_CHECKPOINT => {
+                    self.document.checkpoint_transform()?;
+                }
+                PAINT_TRANSFORM_CANCEL => self.document.cancel_transform()?,
+                PAINT_TRANSFORM_COMMIT => {
+                    self.modified |= self.document.commit_transform()?;
+                }
+                PAINT_TRANSFORM_UNDO => {
+                    self.document.undo_transform()?;
+                }
+                PAINT_TRANSFORM_REDO => {
+                    self.document.redo_transform()?;
+                }
+                PAINT_TRANSFORM_RASTERIZE => {
+                    self.modified |= self
+                        .document
+                        .rasterize_image(self.document.active_layer())?;
+                }
+                _ => return Err(ApiError::invalid("transform kind")),
+            },
             Operation::Liquify(kind, dab) => match kind {
                 PAINT_LIQUIFY_BEGIN => {
                     if self.files.running() {
@@ -895,6 +958,7 @@ impl Engine {
             self.generation,
             self.document.revision(),
             self.document.stroke_active(),
+            Some(&mut self.document),
         ) {
             if let Some(document) = document {
                 self.document = document;

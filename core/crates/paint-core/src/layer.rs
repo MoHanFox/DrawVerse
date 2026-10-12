@@ -38,6 +38,7 @@ pub struct Layer {
     pub(crate) mask: bool,
     pub(crate) clipped: bool,
     pub(crate) white: (u32, u32),
+    pub(crate) placed: Option<Arc<crate::PlacedImage>>,
     pub(crate) tiles: BTreeMap<TileCoord, Arc<Tile>>,
 }
 
@@ -51,6 +52,7 @@ impl Layer {
                 dissolve_seed: id as u32,
                 ..Default::default()
             },
+            placed: None,
             tiles: BTreeMap::new(),
             parent: 0,
             group: false,
@@ -60,6 +62,12 @@ impl Layer {
         }
     }
 
+    pub fn is_image(&self) -> bool {
+        self.placed.is_some()
+    }
+    pub fn retained_tile_count(&self) -> usize {
+        self.tiles.len() + self.placed.as_ref().map_or(0, |p| p.source.tiles.len())
+    }
     pub fn id(&self) -> LayerId {
         self.id
     }
@@ -98,6 +106,7 @@ impl Layer {
         node.mask = self.mask;
         node.clipped = self.clipped;
         node.white = self.white;
+        node.placed = self.placed.clone();
         node
     }
     pub fn properties(&self) -> LayerProperties {

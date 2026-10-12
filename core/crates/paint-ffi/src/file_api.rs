@@ -19,18 +19,22 @@ pub unsafe extern "C" fn paint_session_file_submit(
         pointers::write(out_job, 0)?;
         runtime::outside_callback()?;
         let r = pointers::read_sized(request)?;
-        if r.reserved != [0; 2] || !matches!(r.kind, PAINT_FILE_OPEN | PAINT_FILE_SAVE) {
+        if r.reserved != [0; 2]
+            || !matches!(r.kind, PAINT_FILE_OPEN | PAINT_FILE_SAVE | PAINT_FILE_PLACE)
+        {
             return Err(ApiError::invalid("invalid file request"));
         }
         let format = match r.format {
-            PAINT_FILE_AUTO if r.kind == PAINT_FILE_OPEN => paint_io::Format::Png,
+            PAINT_FILE_AUTO if matches!(r.kind, PAINT_FILE_OPEN | PAINT_FILE_PLACE) => {
+                paint_io::Format::Png
+            }
             PAINT_FILE_PNG => paint_io::Format::Png,
             PAINT_FILE_JPEG => paint_io::Format::Jpeg,
             PAINT_FILE_WEBP => paint_io::Format::WebP,
             PAINT_FILE_OPENRASTER => paint_io::Format::OpenRaster,
             _ => return Err(ApiError::new(PAINT_UNSUPPORTED, "file format")),
         };
-        if r.kind == PAINT_FILE_OPEN && r.format != PAINT_FILE_AUTO {
+        if matches!(r.kind, PAINT_FILE_OPEN | PAINT_FILE_PLACE) && r.format != PAINT_FILE_AUTO {
             return Err(ApiError::invalid("open requires signature auto-detection"));
         }
         if r.quality == 0 || r.quality > 100 || r.linear_background[3] != 1. {

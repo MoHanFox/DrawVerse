@@ -9,6 +9,10 @@ Item {
     implicitWidth: 20; implicitHeight: 20
     // Code-native vectors use a fixed view box; no font glyphs or icon-font dependency.
     readonly property var paths: ({
+        transform:"M4 4H20V20H4ZM4 4H7V7H4ZM17 4H20V7H17ZM4 17H7V20H4ZM17 17H20V20H17",
+        warp:"M3 6Q12 1 21 6L19 18Q12 14 5 18ZM9 4L10 16M15 4L14 16M4 10Q12 6 20 10M5 14Q12 10 19 14M3 22Q12 17 21 22",
+        link:"M9 8L6 8Q2 8 2 12Q2 16 6 16H9M15 8H18Q22 8 22 12Q22 16 18 16H15M7 12H17",
+        relativePosition:"M3 20L12 3L21 20ZM12 10V16M9 16H15",
         liquify:"M3 7Q8 1 13 7Q18 13 21 7M3 17Q8 11 13 17Q18 23 21 17",
         liquifyPush:"M2 7Q6 2 9 7Q12 12 15 7M10 16H22M18 12L22 16L18 20",
         liquifyBloat:"M12 9V2M9 5L12 2L15 5M12 15V22M9 19L12 22L15 19M9 12H2M5 9L2 12L5 15M15 12H22M19 9L22 12L19 15",

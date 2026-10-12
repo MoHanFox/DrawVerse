@@ -157,12 +157,17 @@ fn capabilities_report_only_real_current_features() {
             48
         );
         assert_eq!(caps.max_read_tile_edge, 256);
+        assert_eq!(
+            caps.features & PAINT_FEATURE_TRANSFORM,
+            PAINT_FEATURE_TRANSFORM
+        );
+        assert_eq!(size_of::<PaintTransform>(), 288);
         let mut version = PaintVersion {
             struct_size: 16,
             ..Default::default()
         };
         assert_eq!(paint_core_version(&mut version), PAINT_OK);
-        assert_eq!((version.major, version.minor, version.patch), (1, 19, 0));
+        assert_eq!((version.major, version.minor, version.patch), (1, 23, 0));
         assert_eq!(caps.features & PAINT_FEATURE_BUCKET, PAINT_FEATURE_BUCKET);
         assert_eq!(
             caps.features & PAINT_FEATURE_CLIPPING,

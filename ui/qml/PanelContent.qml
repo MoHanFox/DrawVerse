@@ -91,7 +91,7 @@ Item {
             onGenerationChanged: targetDepth=-1
             property bool restoringHistory:false
             function restoreHistoryScroll(){restoringHistory=true;Qt.callLater(()=>{historyView.contentY=Math.min(PaintClient.documentHistoryScrollPosition(),Math.max(0,historyView.contentHeight-historyView.height));restoringHistory=false})}
-            Component.onCompleted:if(!PaintClient.liquifyActive)restoreHistoryScroll()
+            Component.onCompleted:if(!PaintClient.liquifyActive && !PaintClient.transformActive)restoreHistoryScroll()
             Connections {target:PaintClient;function onHistoryScopeChanging(liquify){historyContent.targetDepth=-1;if(!liquify)historyContent.restoringHistory=true}function onHistoryChanged(){if(historyContent.restoringHistory)historyContent.restoreHistoryScroll()}}
             spacing: 1
             ListView {

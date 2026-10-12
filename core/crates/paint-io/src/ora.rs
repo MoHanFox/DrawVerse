@@ -243,7 +243,7 @@ fn parse_node(
         local,
     })
 }
-type ParsedStack = (u32, u32, Vec<LayerSpec>, bool, paint_core::Selection);
+type ParsedStack = (u32, u32, Vec<LayerSpec>, bool, paint_core::Selection, u32);
 fn parse_stack(xml: &[u8]) -> Result<ParsedStack> {
     let mut reader = Reader::from_reader(xml);
     reader.config_mut().trim_text(true);
@@ -278,7 +278,7 @@ fn parse_stack(xml: &[u8]) -> Result<ParsedStack> {
                 editable = marker == 2;
                 if let Some(ns) = a.remove("xmlns:dv") {
                     extension_version = number::<u32>(&mut a, "dv:version", Some(1))?;
-                    if ns != "urn:drawverse:layers:1" || !matches!(extension_version, 1..=4) {
+                    if ns != "urn:drawverse:layers:1" || !matches!(extension_version, 1..=5) {
                         return Err(Error::Unsupported(
                             "DrawVerse layer extension version".into(),
                         ));
@@ -419,7 +419,14 @@ fn parse_stack(xml: &[u8]) -> Result<ParsedStack> {
     {
         return Err(Error::Invalid("mask extension requires explicit IDs"));
     }
-    Ok((width, height, layers, editable, selection))
+    Ok((
+        width,
+        height,
+        layers,
+        editable,
+        selection,
+        extension_version,
+    ))
 }
 pub(crate) fn decode(
     bytes: &[u8],
@@ -502,16 +509,17 @@ pub(crate) fn decode(
         return Err(Error::Invalid("missing merged image/thumbnail"));
     }
     let standard = entry(&mut zip, "stack.xml", 1024 * 1024)?;
-    let (sw, sh, standard_specs, use_manifest, standard_selection) = parse_stack(&standard)?;
-    let (w, h, specs, selection) = if use_manifest {
-        let (w, h, specs, nested, selection) =
+    let (sw, sh, standard_specs, use_manifest, standard_selection, standard_version) =
+        parse_stack(&standard)?;
+    let (w, h, specs, selection, model_version) = if use_manifest {
+        let (w, h, specs, nested, selection, version) =
             parse_stack(&entry(&mut zip, "drawverse/stack.xml", 1024 * 1024)?)?;
         if nested || (sw, sh) != (w, h) {
             return Err(Error::Invalid("manifest/fallback conflict"));
         }
-        (w, h, specs, selection)
+        (w, h, specs, selection, version)
     } else {
-        (sw, sh, standard_specs, standard_selection)
+        (sw, sh, standard_specs, standard_selection, standard_version)
     };
     let active = specs.iter().position(|l| l.selected).unwrap_or(0);
     let mut layers = Vec::new();
@@ -569,13 +577,21 @@ pub(crate) fn decode(
     let active = layers.len() - 1 - active;
     layers.reverse();
     appearances.reverse();
+    if (model_version == 5) != names.contains("drawverse/layers.bin") {
+        return Err(Error::Invalid("image model/version mismatch"));
+    }
+    let model = if model_version == 5 {
+        Some(entry(&mut zip, "drawverse/layers.bin", crate::MAX_INPUT)?)
+    } else {
+        None
+    };
     let mut document = Document::from_import_with_appearance(
         w,
         h,
         layers,
         active,
         options,
-        storage,
+        storage.clone(),
         if has_extension {
             Some(appearances)
         } else {
@@ -584,6 +600,16 @@ pub(crate) fn decode(
     )?;
     document.set_import_nodes(&hierarchy)?;
     document.set_import_clipping(&clipping)?;
+    if let Some(model) = model {
+        document = Document::from_embedded_layers(
+            w,
+            h,
+            &model,
+            document.active_layer(),
+            options,
+            storage,
+        )?;
+    }
     document.initialize_selection(selection)?;
     Ok(document)
 }
@@ -620,7 +646,16 @@ pub(crate) fn encode(
     )?;
     zip.write_all(b"image/openraster")?;
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-    let mut xml=format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><image w=\"{}\" h=\"{}\" version=\"0.0.6\" xmlns:dv=\"urn:drawverse:layers:1\" dv:version=\"4\" dv:selection=\"{}\"><stack>",snapshot.width,snapshot.height,snapshot.selection().to_text());
+    if snapshot.layers().iter().any(|l| l.is_image()) {
+        zip.start_file("drawverse/layers.bin", options)?;
+        zip.write_all(&snapshot.embedded_layers()?)?;
+    }
+    let model_version = if snapshot.layers().iter().any(|l| l.is_image()) {
+        5
+    } else {
+        4
+    };
+    let mut xml=format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><image w=\"{}\" h=\"{}\" version=\"0.0.6\" xmlns:dv=\"urn:drawverse:layers:1\" dv:version=\"{}\" dv:selection=\"{}\"><stack>",snapshot.width,snapshot.height,model_version,snapshot.selection().to_text());
     let mut pixels = 0u64;
     let mut open_groups = Vec::new();
     for (index, layer) in snapshot.layers().iter().rev().enumerate() {

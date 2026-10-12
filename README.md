@@ -1,5 +1,7 @@
 # DrawVerse
 
+置入图片与自由变换：[设计](docs/transform-design.md) / [验收](docs/transform-validation.md)；文件→置入图片，Ctrl+T 变换，Enter/Esc 确认/取消，Ctrl+Z/Ctrl+Shift+Z 会话撤销重做；保留原图，支持组/多选/选区像素、网格与栅格化，ABI 1.23。
+
 组穿透：[设计](docs/group-pass-through-design.md) / [验收](docs/group-pass-through-validation.md)；选择组后混合模式可设“穿透”，允许组内混合影响组外下层，支持历史/ORA，ABI 1.19。
 
 吸色取色环：[设计](docs/eyedropper-ring-design.md) / [验收](docs/eyedropper-ring-validation.md)；I 或 Alt 按下拖动显示当前取样色与取色前前景色，支持数位笔和显示开关。
@@ -10,7 +12,7 @@
 
 Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘画软件项目。
 
-已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.15.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
+已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.23.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
 
 - [画布液化](docs/liquify-design.md) / [验证](docs/liquify-validation.md)
 - [共用选区参数、自由和多边形套索](docs/lasso-selection-design.md) / [验证](docs/lasso-selection-validation.md)

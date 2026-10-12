@@ -14,6 +14,8 @@ const MAX_PIXEL_VISITS_PER_SEGMENT: usize = 8_000_000;
 mod batch;
 pub(crate) mod groups;
 mod layer_actions;
+mod transform;
+pub use transform::{PlacedImage, TransformGeometry};
 
 #[derive(Clone, Copy, Debug)]
 pub struct DocumentOptions {
@@ -399,6 +401,7 @@ pub struct Document {
     history: History,
     stroke: Option<Stroke>,
     liquify: Option<liquify::LiquifyState>,
+    transform: Option<transform::TransformState>,
     revision: u64,
     dirty: DirtyTiles,
     selection: crate::Selection,
@@ -620,6 +623,7 @@ impl Document {
             history: History::default(),
             stroke: None,
             liquify: None,
+            transform: None,
             selection: crate::Selection::default(),
             selection_cache: Default::default(),
             revision: 0,
@@ -712,7 +716,7 @@ impl Document {
         Ok(())
     }
     pub fn tile_count(&self) -> usize {
-        self.layers.iter().map(Layer::tile_count).sum()
+        self.layers.iter().map(Layer::retained_tile_count).sum()
     }
     pub fn history_depth(&self) -> (usize, usize) {
         (self.history.undo.len(), self.history.redo.len())
@@ -849,7 +853,7 @@ impl Document {
     }
 
     fn idle(&self) -> Result<()> {
-        if self.stroke.is_some() || self.liquify.is_some() {
+        if self.stroke.is_some() || self.liquify.is_some() || self.transform.is_some() {
             Err(Error::Busy)
         } else {
             Ok(())
@@ -1069,6 +1073,13 @@ impl Document {
         self.idle()?;
         brush.validate()?;
         first.validate()?;
+        if self
+            .layer(self.active_layer)
+            .expect("active layer")
+            .is_image()
+        {
+            return Err(Error::InvalidArgument("rasterize image before painting"));
+        }
         if self.layer(self.active_layer).expect("active layer").group {
             return Err(Error::InvalidArgument("select a pixel layer to paint"));
         }
@@ -1561,6 +1572,23 @@ impl Document {
 
     fn apply_history(&mut self, command: &Command, forward: bool) {
         match command {
+            Command::LayerEdit {
+                before,
+                after,
+                selection,
+            } => {
+                if let Some((a, b)) = selection {
+                    self.selection = if forward { b.clone() } else { a.clone() };
+                    self.selection_cache.clear();
+                }
+                let layer = if forward { after } else { before };
+                for layer in layer {
+                    if let Some(at) = self.layers.iter().position(|l| l.id == layer.id) {
+                        self.layers[at] = layer.clone();
+                    }
+                }
+                self.dirty_all();
+            }
             Command::Selection { before, after } => {
                 self.selection = if forward {
                     after.clone()

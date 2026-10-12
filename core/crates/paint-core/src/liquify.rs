@@ -265,6 +265,9 @@ impl Document {
             .layer(self.active_layer)
             .ok_or(Error::LayerNotFound(self.active_layer))?
             .clone();
+        if original.is_image() {
+            return Err(Error::InvalidArgument("rasterize image before liquify"));
+        }
         if original.group {
             return Err(Error::InvalidArgument("liquify needs raster layer or mask"));
         }

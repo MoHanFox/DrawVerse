@@ -125,6 +125,9 @@ fn masks_groups_positions_locks_and_orphan_reorder_follow_current_siblings() {
     .unwrap();
     assert_eq!(d.pixel(16, 16).alpha(), 0.5);
     let group = d.group_layer(1, "base group").unwrap();
+    let mut appearance = d.layer(group).unwrap().appearance();
+    appearance.blend = BlendMode::Normal;
+    d.set_layer_appearance(group, appearance).unwrap();
     assert_eq!(d.layer_clipping_bases().last(), Some(&group));
     assert_eq!(d.pixel(16, 16).alpha(), 0.5);
     d.move_layer(group, 32, 0).unwrap();

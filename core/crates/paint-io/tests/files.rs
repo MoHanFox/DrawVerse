@@ -865,3 +865,47 @@ fn pass_through_groups_ora_roundtrip_and_external_auto() {
         BlendMode::PassThrough
     );
 }
+
+#[test]
+fn placed_image_original_float_pixels_survive_ora_and_rescaling() {
+    let files = tempfile::tempdir().unwrap();
+    let token = CancellationToken::default();
+    let source = document();
+    let mut doc = Document::new(34, 38).unwrap();
+    let id = doc
+        .place_image(source.layers()[0].clone(), 17, 19, "image".into())
+        .unwrap();
+    doc.commit_transform().unwrap();
+    let expected = doc.pixel(11, 14);
+    doc.begin_transform().unwrap();
+    let original = doc.transform_geometry().unwrap();
+    let mut small = original.clone();
+    for p in &mut small.points {
+        p[0] = 17. + (p[0] - 17.) * 0.5;
+        p[1] = 19. + (p[1] - 19.) * 0.5;
+    }
+    doc.update_transform(small).unwrap();
+    doc.commit_transform().unwrap();
+    let path = files.path().join("placed.ora");
+    save(
+        &path,
+        &doc.snapshot(),
+        id,
+        ExportOptions {
+            format: Format::OpenRaster,
+            quality: 95,
+            background: [1.; 3],
+        },
+        &token,
+    )
+    .unwrap();
+    let mut loaded = load(&path, &token).unwrap();
+    assert!(loaded.layer(id).unwrap().is_image());
+    loaded.begin_transform().unwrap();
+    loaded.update_transform(original).unwrap();
+    loaded.commit_transform().unwrap();
+    assert_eq!(loaded.pixel(11, 14), expected);
+    loaded.rasterize_image(id).unwrap();
+    loaded.undo().unwrap();
+    assert!(loaded.layer(id).unwrap().is_image());
+}

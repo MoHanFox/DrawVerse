@@ -81,6 +81,7 @@ impl FileState {
 enum Outcome {
     Opened(Box<Document>, paint_io::Format),
     Saved,
+    Placed(paint_core::Layer, u32, u32, String),
 }
 struct Job {
     ticket: TaskTicket<ApiResult<Outcome>>,
@@ -109,7 +110,11 @@ impl FileService {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let fail = if state.cancel.is_cancelled() {
             Some(ApiError::new(PAINT_CANCELLED, "file operation cancelled"))
-        } else if request.generation != generation || doc.stroke_active() || doc.liquify_active() {
+        } else if request.generation != generation
+            || doc.stroke_active()
+            || doc.liquify_active()
+            || doc.transform_active()
+        {
             Some(ApiError::new(
                 PAINT_BUSY,
                 "document changed or a stroke is active",
@@ -135,6 +140,25 @@ impl FileService {
                 paint_io::load_with_storage(&request.path, &cancel, document_options, storage)
                     .map(|(doc, format)| Outcome::Opened(Box::new(doc), format))
                     .map_err(io_error)
+            } else if request.kind == PAINT_FILE_PLACE {
+                let name = request
+                    .path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("置入图片")
+                    .to_owned();
+                paint_io::load_with_storage(&request.path, &cancel, document_options, storage)
+                    .map_err(io_error)
+                    .and_then(|(d, format)| {
+                        if format == paint_io::Format::OpenRaster {
+                            return Err(ApiError::new(
+                                PAINT_UNSUPPORTED,
+                                "place a PNG/JPEG/WebP image",
+                            ));
+                        }
+                        let (w, h) = d.dimensions();
+                        Ok(Outcome::Placed(d.layers()[0].clone(), w, h, name))
+                    })
             } else {
                 paint_io::save(&request.path, &snapshot, active, request.options, &cancel)
                     .map(|()| Outcome::Saved)
@@ -163,6 +187,7 @@ impl FileService {
         generation: u64,
         revision: u64,
         stroke_active: bool,
+        document: Option<&mut Document>,
     ) -> Option<(Option<Document>, bool)> {
         let result = self.job.as_ref()?.ticket.try_take()?;
         let job = self.job.take().unwrap();
@@ -178,6 +203,38 @@ impl FileService {
         });
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         match result {
+            Ok(Outcome::Placed(layer, w, h, name))
+                if job.generation == generation
+                    && job.revision == revision
+                    && !stroke_active
+                    && !state.cancel.is_cancelled() =>
+            {
+                let Some(document) = document else {
+                    state.finish(Some(ApiError::internal()), generation, revision);
+                    return None;
+                };
+                match document.place_image(layer, w, h, name) {
+                    Ok(_) => {
+                        state.finish(None, generation, document.revision());
+                        Some((None, false))
+                    }
+                    Err(e) => {
+                        state.finish(Some(e.into()), generation, revision);
+                        None
+                    }
+                }
+            }
+            Ok(Outcome::Placed(..)) => {
+                state.finish(
+                    Some(ApiError::new(
+                        PAINT_BUSY,
+                        "document changed during placement",
+                    )),
+                    generation,
+                    revision,
+                );
+                None
+            }
             Ok(Outcome::Opened(doc, format))
                 if job.generation == generation && job.revision == revision && !stroke_active =>
             {
@@ -257,7 +314,7 @@ mod tests {
     ) -> Option<(Option<Document>, bool)> {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
-            let result = service.poll(generation, revision, false);
+            let result = service.poll(generation, revision, false, None);
             if service.state.lock().unwrap().info.state >= PAINT_FILE_SUCCEEDED {
                 return result;
             }

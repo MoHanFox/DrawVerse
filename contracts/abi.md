@@ -1,4 +1,15 @@
-# C ABI 1.22.0 契约
+# C ABI 1.23.0 契约
+
+## ABI 1.23：图片模型与自由变换
+
+- `PAINT_FEATURE_TRANSFORM=524288`、`PAINT_SESSION_TRANSFORM=16`。文件任务 `PAINT_FILE_PLACE=3` 导入 PNG/JPEG/WebP 到当前文档并开启待确认变换；不是新建/打开文档，不改变原保存路径，取消不改正式历史或 modified。
+- `PaintTransform` 为 288 字节：前 16 字节为 struct_size/warp/interpolation/reserved；offset16 为 row-major 4×4 文档坐标 double 控制点（32 个值），offset272/280 为水平/垂直斜切角。所有输入在返回前复制；warp 为0/1，interpolation 为0–5，reserved=0，有限坐标±2,000,000、斜切角绝对值小于90度。非网格模式要求凸且非退化四边形。
+- `paint_session_transform` 支持 BEGIN=0/UPDATE=1/CHECKPOINT=2/CANCEL=3/COMMIT=4/UNDO=5/REDO=6/RASTERIZE=7；UPDATE 需要 descriptor，其余必须 null。绝对 UPDATE 仅替换相邻未处理预览尾部，不能跨越 checkpoint；结束操作有队列保留槽。控件操作使用严格渲染屏障。
+- `paint_session_begin_transform_layers` 接收1–4096个非零唯一ID，复制后入队；组包含子树，父子选择去重。全部预览成功才替换目标，整集合一条正式历史。普通单栅格层有选区时变换选区内像素并移动覆盖掩码；组、多选及图片层整体变换。
+- `paint_session_transform_info` 与 `paint_session_layer_is_image` 读取精确 publication；过期返回 BUSY。活动期间发布独立的临时历史，步数沿用历史设置；确认一次正式提交，取消原样恢复正式历史/图层/选区。
+- 历史种类36=置入图片、37=自由变换、38=栅格化。图片保留原始RGBA32F与几何，显示瓦片为派生数据；栅格化显式移除原图并可撤销。未栅格化图片拒绝画笔/橡皮、油漆桶和液化像素写入。
+- 私有历史编码DVH7、层剪贴板DVL2（继续读取DVL1），MIME不变。含图片源的ORA使用扩展v5与校验的`drawverse/layers.bin`；兼容PNG预览与原始浮点模型分离。缺失模型/版本不匹配明确拒绝；纯栅格文档继续v4。
+
 
 ## ABI 1.22：液化会话历史
 
@@ -96,7 +107,7 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 ## 版本与类型
 
-全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/19/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
+全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/23/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
 
 初始化 DTO 为零并写 struct_size=sizeof(本调用者结构)，输入至少含已发布前缀。库只访问已知前缀；过小为 INVALID_ARGUMENT，不覆盖调用者内存；扩展尾部保持不变。输出 struct_size 写库已知大小。reserved 必须为零；未知 mode/tool/format 为 UNSUPPORTED。输入 capability 位保留未知位，圆笔刷只实际使用 pressure，客户端为无压力设备提供 pressure=1。
 

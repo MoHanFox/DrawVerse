@@ -13,7 +13,9 @@
 #include <QVariantList>
 #include <memory>
 #include <algorithm>
+#include <functional>
 
+struct PaintTransform;
 struct InputSample {
     QPointF position;
     float pressure = 1;
@@ -35,6 +37,17 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QString storageMessage READ storageMessage NOTIFY storageChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
     Q_PROPERTY(QVariantList historyEntries READ historyEntries NOTIFY historyChanged)
+    Q_PROPERTY(QVariantList transformInitialPoints READ transformInitialPoints NOTIFY transformChanged)
+    Q_PROPERTY(int transformReference READ transformReference WRITE setTransformReference NOTIFY transformChanged)
+    Q_PROPERTY(bool transformLinked READ transformLinked WRITE setTransformLinked NOTIFY transformChanged)
+    Q_PROPERTY(bool transformActive READ transformActive NOTIFY stateChanged)
+    Q_PROPERTY(bool transformBusy READ transformBusy NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList transformPoints READ transformPoints NOTIFY transformChanged)
+    Q_PROPERTY(bool transformWarp READ transformWarp NOTIFY transformChanged)
+    Q_PROPERTY(qreal transformSkewH READ transformSkewH NOTIFY transformChanged)
+    Q_PROPERTY(qreal transformSkewV READ transformSkewV NOTIFY transformChanged)
+    Q_PROPERTY(int transformInterpolation READ transformInterpolation NOTIFY transformChanged)
+    Q_PROPERTY(bool activeImage READ activeImage NOTIFY stateChanged)
     Q_PROPERTY(bool liquifyActive READ liquifyActive NOTIFY stateChanged)
     Q_PROPERTY(bool liquifyBusy READ liquifyBusy NOTIFY stateChanged)
     Q_PROPERTY(int liquifyTool READ liquifyTool WRITE setLiquifyTool NOTIFY liquifyOptionsChanged)
@@ -229,6 +242,25 @@ public:
     void setBrushOpacity(qreal opacity);
     void setBrushSpacing(qreal spacing);
     void setEraser(bool eraser);
+    QVariantList transformInitialPoints() const {return m_transformInitialPoints;}
+    int transformReference() const {return m_transformReference;}
+    void setTransformReference(int v){if(v>=0 && v<=8 && v!=m_transformReference){m_transformReference=v;emit transformChanged();}}
+    bool transformLinked() const {return m_transformLinked;}
+    void setTransformLinked(bool v){if(v!=m_transformLinked){m_transformLinked=v;emit transformChanged();}}
+    bool transformActive() const {return m_transformActive;}
+    bool transformBusy() const {return m_pendingTransform>m_completedSequence;}
+    QVariantList transformPoints() const {return m_transformPoints;}
+    bool transformWarp() const {return m_transformWarp;}
+    qreal transformSkewH() const {return m_transformSkewH;}
+    qreal transformSkewV() const {return m_transformSkewV;}
+    int transformInterpolation() const {return m_transformInterpolation;}
+    bool activeImage() const {for(const auto &v:m_layers){const auto l=v.toMap();if(l.value("id").toULongLong()==m_active)return l.value("image").toBool();}return false;}
+    Q_INVOKABLE bool placeImage(const QUrl &path);
+    Q_INVOKABLE bool beginTransform();
+    Q_INVOKABLE bool updateTransform(const QVariantList &points,bool warp,int interpolation, qreal skewH=qQNaN(), qreal skewV=qQNaN());
+    Q_INVOKABLE bool checkpointTransform();
+    Q_INVOKABLE bool finishTransform(bool commit);
+    Q_INVOKABLE bool rasterizeImage();
     bool liquifyActive() const {return m_liquifyActive;}
     bool liquifyBusy() const {return m_pendingLiquify!=0 || layerEditBusy();}
     int liquifyTool() const {return m_liquifyTool;}
@@ -313,6 +345,7 @@ signals:
     void storageFinished(bool success);
     void stateChanged();
     void layerShortcutsChanged();
+    void transformChanged();
     void historyScopeChanging(bool liquify);
     void layersChanged();
     void layerThumbnailsChanged();
@@ -379,6 +412,15 @@ private:
     // Per-document history command limit; persisted as a preference and applied to new sessions.
     void persistLiquifyOptions();
     bool submitLiquifyControl(quint32 kind);
+    bool deferTransformAction(std::function<void()> action);
+    std::function<void()> m_afterTransform;
+    bool submitTransform(quint32 kind,const PaintTransform *geometry=nullptr);
+    bool m_transformActive=false,m_transformWarp=false,m_transformPublished=false,m_transformLinked=true;
+    QVariantList m_transformInitialPoints;
+    qreal m_transformSkewH=0,m_transformSkewV=0;
+    int m_transformInterpolation=2,m_transformReference=4;
+    quint64 m_pendingTransform=0,m_lastTransform=0;
+    QVariantList m_transformPoints;
     bool submitLiquifyStrokeMarker(quint32 kind);
     bool submitLiquifyDab(const InputSample &from,const InputSample &to,int elapsedMs);
     bool m_liquifyFocus=false,m_liquifyActive=false,m_liquifyPressure=false;

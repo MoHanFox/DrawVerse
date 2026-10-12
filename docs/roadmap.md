@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+已实现置入图片 → 独立原始图片模型 → 基础自由变换与栅格化，见 [设计](transform-design.md) / [验收](transform-validation.md)。CPU 处理与变换描述分离；GPU 和文字仍为后续模块。
+
 液化：[设计](liquify-design.md) / [验收](liquify-validation.md)，ABI 1.21；滤镜入口、画布事务、工具详情栏与图标、推拉/膨大/扭曲/重建、参数保存与压感、文档锁定和浮窗隐藏恢复。
 
 组穿透：[设计](group-pass-through-design.md) / [验收](group-pass-through-validation.md)，ABI 1.19，组专属穿透模式与嵌套/蒙版/剪贴/ORA 支持。

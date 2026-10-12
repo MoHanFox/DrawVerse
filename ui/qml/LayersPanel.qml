@@ -20,7 +20,7 @@ ColumnLayout {
         return {id:0,opacity:1,fill:1,locks:0,effectiveLocks:0,blendMode:0,group:false,mask:false,parent:0}
     }
     property var control: selected.mask ? PaintClient.layers.find(function(l){return l.id===selected.parent}) || selected : selected
-    property bool editable: !PaintClient.liquifyActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy
+    property bool editable: !PaintClient.liquifyActive && !PaintClient.transformActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy
     property bool unlocked: editable && !(control.effectiveLocks & 4)
     property bool parentLocked: {
         let parent=control.parent
@@ -278,6 +278,7 @@ ColumnLayout {
                         LayerThumbnail {
                             id:contentThumbnail
                             node:row.modelData;selected:PaintClient.activeLayer===row.modelData.id
+                            Rectangle {visible:row.modelData.image===true;width:11;height:11;anchors.right:parent.right;anchors.bottom:parent.bottom;color:Theme.surface;border.color:Theme.muted;border.width:1;Icon{anchors.fill:parent;anchors.margins:1;name:"page"}}
                             onClicked:modifiers=>{root.forceActiveFocus();PaintClient.selectLayers(row.modelData.id,modifiers)}
                             onContextRequested:(x,y)=>root.openLayerContext(row.modelData.id,contentThumbnail,x,y,false)
                         }
@@ -339,6 +340,8 @@ ColumnLayout {
         GlassMenuItem {objectName:"contextMergeLayers";text:PaintClient.mergeLayersText;enabled:PaintClient.canMergeLayers;onTriggered:PaintClient.mergeSelectedLayers()}
         MenuSeparator {}
         GlassMenuItem {objectName:"contextClipLayers";text:root.control.clipped?"释放剪切蒙版":"创建剪切蒙版";enabled:root.unlocked && root.canClip(root.control);onTriggered:PaintClient.toggleActiveClipping()}
+        GlassMenuItem {objectName:"contextRasterizeImage";text:"栅格化图片";visible:PaintClient.activeImage;enabled:root.editable;onTriggered:PaintClient.rasterizeImage()}
+        GlassMenuItem {objectName:"contextFreeTransform";text:"自由变换";enabled:root.editable;onTriggered:PaintClient.beginTransform()}
         GlassMenuItem {objectName:"contextDuplicateLayers";text:"复制图层";enabled:root.editable;onTriggered:PaintClient.duplicateSelectedLayers()}
         GlassMenuItem {objectName:"contextDeleteLayers";text:root.selected.mask?"删除蒙版":"删除图层";enabled:root.unlocked;onTriggered:PaintClient.requestSelectedLayerRemoval()}
         MenuSeparator {}

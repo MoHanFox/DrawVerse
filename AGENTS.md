@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图片与变换：`docs/transform-design.md` / `docs/transform-validation.md`；ABI 1.23、嵌入原始图片模型、Ctrl+T/八点控制/透视与网格、组/多选/选区像素原子变换、会话撤销重做、栅格化与 ORA v5 原图恢复。
+
 - 最新液化历史：`docs/liquify-history-design.md` / `docs/liquify-history-validation.md`；ABI 1.22、整笔触会话撤销/重做、设置步数与校验暂存、历史域和滚动恢复、Ctrl+Z/Ctrl+Shift+Z、[ ] 液化尺寸。
 
 - 最新液化性能：`docs/liquify-performance-design.md` / `docs/liquify-performance-validation.md`；连续预览非屏障、瓦片批处理与相邻取样缓存、共用选区覆盖缓存保留坐标、紧凑复选框与标题分隔，无 ABI 变更。

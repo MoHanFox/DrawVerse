@@ -91,7 +91,7 @@ QRectF CanvasItem::brushCursorRect() const {
 bool CanvasItem::brushCursorVisible() const {
     // Alt is the eyedropper: the pointer becomes a crosshair and the brush ring goes away, so the
     // user can see exactly which pixel will be sampled.
-    return m_cursorInside && !m_capsLock && !m_altHeld && m_interactive && m_client && (m_client->liquifyActive() || (!m_client->eyedropperTool() && !m_client->bucketTool() && !m_client->moveTool() && !m_client->selectionTool())) && !m_space && !spaceHeld && !m_panning && isVisible();
+    return m_cursorInside && !(m_client && m_client->transformActive()) && !m_capsLock && !m_altHeld && m_interactive && m_client && (m_client->liquifyActive() || (!m_client->eyedropperTool() && !m_client->bucketTool() && !m_client->moveTool() && !m_client->selectionTool())) && !m_space && !spaceHeld && !m_panning && isVisible();
 }
 bool CanvasItem::spacePanning() const { return m_space || spaceHeld; }
 bool CanvasItem::eyedropperCursorVisible() const {
@@ -421,6 +421,8 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     }
     if (event->type() != QEvent::TabletPress && event->type() != QEvent::TabletMove && event->type() != QEvent::TabletRelease) return false;
     if (!isEnabled() || !isVisible()) return false;
+    // Let Qt Quick synthesize the same pointer gestures used by transform handles.
+    if (m_client->transformActive()) { event->ignore(); return false; }
     auto *e = static_cast<QTabletEvent *>(event);
     // Qt Quick may deliver tablet input to an item, whose position is item-local.
     // The global position is shared by both native-window and item delivery paths.

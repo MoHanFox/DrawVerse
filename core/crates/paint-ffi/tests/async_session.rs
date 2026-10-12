@@ -860,7 +860,7 @@ fn blend_preview_is_composite_non_mutating_replaceable_and_validated() {
         for (layer, mode, slot, status) in [
             (0, 3, 0, PAINT_INVALID_ARGUMENT),
             (9999, 3, 0, PAINT_NOT_FOUND),
-            (top, 27, 0, PAINT_INVALID_ARGUMENT),
+            (top, 28, 0, PAINT_INVALID_ARGUMENT),
             (top, 3, 2, PAINT_INVALID_ARGUMENT),
         ] {
             request = 999;
@@ -2376,7 +2376,7 @@ fn pass_through_group_appearance_validation_publication_and_undo() {
     unsafe {
         let mut version = dto!(PaintVersion);
         assert_eq!(paint_core_version(&mut version), PAINT_OK);
-        assert_eq!(version.minor, 22);
+        assert_eq!(version.minor, 23);
         let mut caps = dto!(PaintCapabilities);
         assert_eq!(paint_core_capabilities(h.core, &mut caps), PAINT_OK);
         assert_ne!(caps.features & PAINT_FEATURE_PASS_THROUGH, 0);
@@ -2590,5 +2590,111 @@ fn layer_actions_copy_paste_duplicate_merge_validate_and_keep_fifo_history() {
             PAINT_INVALID_ARGUMENT
         );
         assert_eq!(sequence, 0);
+    }
+}
+
+#[test]
+fn transform_abi_session_history_and_atomic_invalid_geometry() {
+    let h = Harness::new(32, 32);
+    let mut sequence = 0;
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_BEGIN_STROKE,
+        stroke: PaintStrokeDesc {
+            mode: PAINT_MODE_PAINT,
+            radius: 4.,
+            opacity: 1.,
+            spacing: 0.15,
+            linear_rgba: [1., 0., 0., 1.],
+            ..dto!(PaintStrokeDesc)
+        },
+        point: PaintPoint {
+            x: 12.,
+            y: 12.,
+            pressure: 1.,
+            tool: PAINT_TOOL_PEN,
+            ..dto!(PaintPoint)
+        },
+        ..dto!(PaintCommand)
+    }));
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_END_STROKE,
+        ..dto!(PaintCommand)
+    }));
+    unsafe {
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_BEGIN,
+                ptr::null(),
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let info = h.wait(sequence);
+        assert_ne!(info.flags & PAINT_SESSION_TRANSFORM, 0);
+        assert_eq!(info.undo_depth, 0);
+        let mut g = dto!(PaintTransform);
+        assert_eq!(
+            paint_session_transform_info(h.core, h.session, info.publication, &mut g),
+            PAINT_OK
+        );
+        let original = g;
+        for i in 0..16 {
+            g.points[i * 2] += 3.;
+        }
+        assert_eq!(
+            paint_session_transform(h.core, h.session, PAINT_TRANSFORM_UPDATE, &g, &mut sequence),
+            PAINT_OK
+        );
+        h.wait(sequence);
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_CHECKPOINT,
+                ptr::null(),
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        assert_eq!(h.wait(sequence).undo_depth, 1);
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_UNDO,
+                ptr::null(),
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let info = h.wait(sequence);
+        assert_eq!(info.redo_depth, 1);
+        let mut restored = dto!(PaintTransform);
+        assert_eq!(
+            paint_session_transform_info(h.core, h.session, info.publication, &mut restored),
+            PAINT_OK
+        );
+        assert_eq!(restored.points, original.points);
+        g.points[0] = f64::NAN;
+        assert_eq!(
+            paint_session_transform(h.core, h.session, PAINT_TRANSFORM_UPDATE, &g, &mut sequence),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_CANCEL,
+                ptr::null(),
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let info = h.wait(sequence);
+        assert_eq!(info.flags & PAINT_SESSION_TRANSFORM, 0);
+        assert_eq!(info.undo_depth, 1);
     }
 }

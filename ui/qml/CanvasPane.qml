@@ -44,6 +44,10 @@ Rectangle {
         Rectangle {x:1;y:8;width:15;height:1;color:"white"}
         Rectangle {x:8;y:1;width:1;height:15;color:"white"}
     }
+    TransformOverlay {id:transformOverlay;anchors.fill:parent;z:15;controller:root.ownClient;canvasView:canvas}
+    Shortcut {sequence:"Ctrl+T";context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.transformActive && !root.ownClient.liquifyActive;onActivated:root.ownClient.beginTransform()}
+    Shortcut {sequence:"Escape";context:Qt.ApplicationShortcut;enabled:root.visible && root.ownClient.transformActive;onActivated:root.ownClient.finishTransform(false)}
+    Shortcut {sequences:["Return","Enter"];context:Qt.ApplicationShortcut;enabled:root.visible && root.ownClient.transformActive && !root.ownClient.textInputFocused;onActivated:root.ownClient.finishTransform(true)}
     Shortcut {sequence:"Escape";context:Qt.ApplicationShortcut;enabled:root.visible && root.ownClient.liquifyActive && !root.ownClient.drawing;onActivated:root.ownClient.finishLiquify(false)}
     Shortcut {sequences:["Return","Enter"];context:Qt.ApplicationShortcut;enabled:root.visible && !root.ownClient.textInputFocused && root.ownClient.liquifyActive && !root.ownClient.drawing && !root.ownClient.liquifyBusy;onActivated:root.ownClient.finishLiquify(true)}
     Shortcut {sequence:"[";context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && !root.ownClient.drawing;onActivated:{if(root.ownClient.liquifyActive)root.ownClient.liquifySize=Math.max(1,Math.min(root.ownClient.liquifySize-1,Math.round(root.ownClient.liquifySize/1.15)));else root.ownClient.brushRadius=Math.max(0.5,root.ownClient.brushRadius/1.15)}}
