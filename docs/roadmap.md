@@ -118,3 +118,10 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 同一工具的多形态合并到一个槽位：图标右下角小三角提示可切换，右键弹出悬浮面板列出全部形态，点击面板项才切换，点工具栏图标只激活当前形态（选区槽位含矩形/椭圆，套索待支持）。见 [tool-variants-design.md](tool-variants-design.md)；编辑→键盘快捷键只读展示真实绑定。
 
 图层操作（ABI 1.20）：[设计](layer-actions-design.md) / [验收](layer-actions-validation.md)，右键菜单、复制粘贴/合并、缩略图焦点与下边缘拖放修复。
+
+
+## 统一笔刷系统规划（2026-10-13，待实施）
+
+设计见 [brush-system-design.md](brush-system-design.md)，VBR 契约草案见 [vbr-format-design.md](vbr-format-design.md)，验收条件见 [brush-system-validation.md](brush-system-validation.md)。当前只完成设计，未实现高级笔刷、ABR/VBR 或 GPU。
+
+按统一定义与旧圆笔迁移 → 路径手感/图片笔尖/描边预览 → 纹理/动态/分级 ABR → 湿混与涂抹 → 实测后 wgpu 的顺序推进。设置面板采用左侧分类、右侧参数、底部真实预览；光标描边为全局显示偏好。每阶段仅展示真实实现的能力，不以格式解析成功代替绘画兼容。

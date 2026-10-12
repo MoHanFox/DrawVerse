@@ -1,5 +1,7 @@
 # DrawVerse
 
+笔刷系统规划（待实施）：[引擎与界面设计](docs/brush-system-design.md)、[VBR 格式草案](docs/vbr-format-design.md)、[分阶段验收计划](docs/brush-system-validation.md)。包含 ABR 导入、共用画笔/橡皮/涂抹、PS 风格分类设置及笔尖描边预览。
+
 置入图片与自由变换：[设计](docs/transform-design.md) / [验收](docs/transform-validation.md)；文件→置入图片，Ctrl+T 变换，Enter/Esc 确认/取消，Ctrl+Z/Ctrl+Shift+Z 会话撤销重做；保留原图，支持组/多选/选区像素、网格与栅格化，ABI 1.23。
 
 组穿透：[设计](docs/group-pass-through-design.md) / [验收](docs/group-pass-through-validation.md)；选择组后混合模式可设“穿透”，允许组内混合影响组外下层，支持历史/ORA，ABI 1.19。

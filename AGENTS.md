@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 待实施笔刷系统：`docs/brush-system-design.md` / `docs/brush-system-validation.md` / `docs/vbr-format-design.md`；统一引擎与旧圆笔迁移、Procreate 类手感、分级 ABR 导入、开放 VBR 草案、PS 分类设置页、全局笔尖光标描边、CPU/wgpu 边界。仅设计，未实施。
+
 - 最新 Ctrl 选层与临时移动：`docs/ctrl-layer-pick-design.md` / `docs/ctrl-layer-pick-validation.md`；ABI 1.24、异步像素命中/原子移动/锁与蒙版、图层搜索首次点击焦点、自由变换共用紧凑输入框。
 
 - 最新图片与变换：`docs/transform-design.md` / `docs/transform-validation.md`；ABI 1.23、嵌入原始图片模型、Ctrl+T/八点控制/透视与网格、组/多选/选区像素原子变换、会话撤销重做、栅格化与 ORA v5 原图恢复。
