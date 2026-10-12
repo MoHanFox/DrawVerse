@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 23
+#define PAINT_ABI_MINOR 24
 
 #define PAINT_ABI_PATCH 0
 
@@ -1325,6 +1325,21 @@ PaintStatus paint_session_liquify(struct PaintCore *core,
 PaintStatus paint_session_move_layer(struct PaintCore *core,
                                      struct PaintSession *session,
                                      uint64_t layer_id,
+                                     int32_t dx,
+                                     int32_t dy,
+                                     uint64_t *out_sequence);
+
+/**
+ * ABI 1.24: asynchronously select the top visible content pixel at document coordinates.
+ * Optional translation is a single normal history entry. Empty pixels are no-ops;
+ * position-locked layers can be selected but remain stationary. No caller memory is retained.
+ * # Safety
+ * Provide writable sequence and follow session lifetime and destruction contracts.
+ */
+PaintStatus paint_session_pick_layer(struct PaintCore *core,
+                                     struct PaintSession *session,
+                                     uint32_t x,
+                                     uint32_t y,
                                      int32_t dx,
                                      int32_t dy,
                                      uint64_t *out_sequence);

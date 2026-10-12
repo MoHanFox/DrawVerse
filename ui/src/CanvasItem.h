@@ -91,7 +91,8 @@ private:
     void setSpacePanning(bool held);
     void setKeySpace(bool held);
     void zoomAround(qreal factor,QPointF position);
-    bool beginLayerMove(QPointF local);
+    bool beginLayerMove(QPointF local, bool pick = false);
+    bool m_pickMoving = false;
     void finishLayerMove(QPointF local);
     bool beginSelection(QPointF local, Qt::KeyboardModifiers modifiers);
     void updateSelection(QPointF local,Qt::KeyboardModifiers modifiers);
@@ -133,7 +134,7 @@ private:
     int m_selectionKind = 0, m_selectionOperation = 0;
     bool m_selectionConstrained = false;
     /// Alt is held: the pointer acts as the eyedropper and shows a crosshair.
-    bool m_altHeld = false;
+    bool m_altHeld = false, m_ctrlHeld = false;
     void setAltHeld(bool held);
     bool m_selecting = false;
     bool m_interactive = true, m_space = false, m_panning = false, m_stroke = false, m_tablet = false, m_fitPending = true;

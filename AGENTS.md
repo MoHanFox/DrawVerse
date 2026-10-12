@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新 Ctrl 选层与临时移动：`docs/ctrl-layer-pick-design.md` / `docs/ctrl-layer-pick-validation.md`；ABI 1.24、异步像素命中/原子移动/锁与蒙版、图层搜索首次点击焦点、自由变换共用紧凑输入框。
+
 - 最新图片与变换：`docs/transform-design.md` / `docs/transform-validation.md`；ABI 1.23、嵌入原始图片模型、Ctrl+T/八点控制/透视与网格、组/多选/选区像素原子变换、会话撤销重做、栅格化与 ORA v5 原图恢复。
 
 - 最新液化历史：`docs/liquify-history-design.md` / `docs/liquify-history-validation.md`；ABI 1.22、整笔触会话撤销/重做、设置步数与校验暂存、历史域和滚动恢复、Ctrl+Z/Ctrl+Shift+Z、[ ] 液化尺寸。

@@ -16,7 +16,7 @@ Control {
     // Draft changes stay in this control; commit exactly once on release/edit.
     contentItem: RowLayout {
         spacing: 0
-        TextField {
+        CompactTextField {
             id: edit
             objectName: root.objectName+"Input"
             Layout.fillWidth: true; implicitWidth: 34

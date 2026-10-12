@@ -30,15 +30,15 @@ Flickable {
         IconButton {glyph:"relativePosition";checkable:true;checked:root.relative;tooltip:"相对当前位置输入 X/Y";onClicked:{root.relative=!root.relative;root.relativeOrigin=root.center(root.p)}}
         Repeater {model:[{key:"X",title:"X:",unit:"px"},{key:"Y",title:"Y:",unit:"px"},{key:"W",title:"W:",unit:"%"},{key:"H",title:"H:",unit:"%"},{key:"A",title:"∠",unit:"°"},{key:"SH",title:"H:",unit:"°"},{key:"SV",title:"V:",unit:"°"}]
             delegate:RowLayout {required property var modelData;spacing:2
-                Label{text:modelData.title;color:Theme.muted}
-                TextField {objectName:"transform"+modelData.key;Layout.preferredWidth:70;implicitHeight:24;font.pixelSize:10;selectByMouse:true;text:root.value(modelData.key).toFixed(2);validator:DoubleValidator{bottom:-2000000;top:2000000;decimals:2} onEditingFinished:{root.apply(modelData.key,Number(text));focus=false} ToolTip.visible:hovered;ToolTip.delay:1000;ToolTip.text:modelData.key==="X"||modelData.key==="Y"?"参考点位置（文档像素）":modelData.key==="W"||modelData.key==="H"?"相对本次变换起始尺寸；负值翻转":modelData.key==="A"?"相对本次起始角度；Shift 拖动按 15° 吸附":"斜切角度"}
-                Label{text:modelData.unit;color:Theme.muted}
+                Label{text:modelData.title;color:Theme.muted;font.pixelSize:9}
+                CompactTextField {objectName:"transform"+modelData.key;Layout.preferredWidth:52;text:root.value(modelData.key).toFixed(2);validator:DoubleValidator{bottom:-2000000;top:2000000;decimals:2} onEditingFinished:{root.apply(modelData.key,Number(text));focus=false} ToolTip.visible:hovered;ToolTip.delay:1000;ToolTip.text:modelData.key==="X"||modelData.key==="Y"?"参考点位置（文档像素）":modelData.key==="W"||modelData.key==="H"?"相对本次变换起始尺寸；负值翻转":modelData.key==="A"?"相对本次起始角度；Shift 拖动按 15° 吸附":"斜切角度"}
+                Label{text:modelData.unit;color:Theme.muted;font.pixelSize:9}
                 IconButton{objectName:modelData.key==="W"?"transformLink":"";visible:modelData.key==="W";glyph:"link";checkable:true;checked:root.linked;tooltip:"保持宽高比例；Shift 临时反转";onClicked:root.controller.transformLinked=checked}
             }
         }
         Rectangle{Layout.preferredWidth:1;Layout.preferredHeight:22;color:Theme.line}
-        Label{text:"插值:";color:Theme.muted}
-        CompactComboBox {objectName:"transformInterpolation";Layout.preferredWidth:136;model:["邻近","两次线性","两次立方","两次立方（较平滑）","两次立方（较锐利）","两次立方（自动）"];currentIndex:controller.transformInterpolation;onActivated:index=>{controller.updateTransform(root.p,controller.transformWarp,index);controller.checkpointTransform()}}
+        Label{text:"插值:";color:Theme.muted;font.pixelSize:9}
+        CompactComboBox {objectName:"transformInterpolation";Layout.preferredWidth:120;implicitHeight:20;model:["邻近","两次线性","两次立方","两次立方（较平滑）","两次立方（较锐利）","两次立方（自动）"];currentIndex:controller.transformInterpolation;onActivated:index=>{controller.updateTransform(root.p,controller.transformWarp,index);controller.checkpointTransform()}}
         ToolButton {objectName:"transformWarp";checkable:true;checked:controller.transformWarp;implicitWidth:32;implicitHeight:26;contentItem:Icon{name:"warp"} onClicked:{controller.updateTransform(root.p,!controller.transformWarp,controller.transformInterpolation);controller.checkpointTransform()} ToolTip.visible:hovered;ToolTip.delay:1000;ToolTip.text:"切换自由变换与网格变形"}
         IconButton {objectName:"transformReset";glyph:"undo";tooltip:"重置本次变换";onClicked:{controller.updateTransform(controller.transformInitialPoints,false,controller.transformInterpolation,0,0);controller.checkpointTransform()}}
         IconButton {objectName:"transformCancel";glyph:"close";tooltip:"取消变换（Esc）";onClicked:controller.finishTransform(false)}

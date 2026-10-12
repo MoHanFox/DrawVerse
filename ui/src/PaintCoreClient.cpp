@@ -1089,6 +1089,17 @@ bool PaintCoreClient::moveLayer(quint64 id,int dx,int dy) {
     if(status!=PAINT_OK) { showError(error); return false; }
     m_pendingLayer=m_pendingMutation=sequence; m_modified=true; emit stateChanged(); return true;
 }
+bool PaintCoreClient::pickLayer(QPointF point,int dx,int dy) {
+    if(!m_ready || m_liquifyActive || m_transformActive || m_drawing || m_fileBusy ||
+       !std::isfinite(point.x()) || !std::isfinite(point.y()) || point.x()<0 || point.y()<0 ||
+       point.x()>=m_width || point.y()>=m_height) return false;
+    uint64_t sequence=0; PaintStatus status;
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;
+     status=paint_session_pick_layer(m_connection->core,m_connection->session,
+         uint32_t(std::floor(point.x())),uint32_t(std::floor(point.y())),dx,dy,&sequence);}
+    if(status!=PAINT_OK)return false;
+    m_pendingLayer=sequence;if(dx || dy)m_pendingMutation=sequence;emit stateChanged();return true;
+}
 bool PaintCoreClient::textInputFocused() const {
     const auto *focus=QGuiApplication::focusObject();
     // CanvasItem also has cursorPosition; that property does not identify a text editor.

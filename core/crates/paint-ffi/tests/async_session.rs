@@ -27,6 +27,39 @@ macro_rules! dto {
 }
 
 #[test]
+fn pick_layer_queues_selection_and_one_move_history() {
+    let h = Harness::new(32, 32);
+    let painted = h.wait(h.stroke(8., 8.));
+    let mut seq = 0;
+    unsafe {
+        assert_eq!(
+            paint_session_pick_layer(h.core, h.session, 8, 8, 0, 0, &mut seq),
+            PAINT_OK
+        );
+        let selected = h.wait(seq);
+        assert_eq!(selected.undo_depth, painted.undo_depth);
+        assert_eq!(selected.active_layer_id, painted.active_layer_id);
+        assert_eq!(
+            paint_session_pick_layer(h.core, h.session, 8, 8, 4, 3, &mut seq),
+            PAINT_OK
+        );
+        let moved = h.wait(seq);
+        assert_eq!(moved.last_error_status, PAINT_OK);
+        assert_eq!(moved.undo_depth, painted.undo_depth + 1);
+        assert_eq!(
+            paint_session_pick_layer(h.core, h.session, 31, 31, 4, 3, &mut seq),
+            PAINT_OK
+        );
+        assert_eq!(h.wait(seq).undo_depth, moved.undo_depth);
+        assert_eq!(
+            paint_session_pick_layer(h.core, h.session, 8, 8, i32::MAX, 0, &mut seq),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(seq, 0);
+    }
+}
+
+#[test]
 fn liquify_blocks_edits_and_file_job_finishes_busy_without_writing() {
     let h = Harness::new(32, 32);
     let mut sequence = 0;

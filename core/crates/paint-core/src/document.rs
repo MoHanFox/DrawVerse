@@ -1063,6 +1063,71 @@ impl Document {
         let before = self.layer(id).ok_or(Error::LayerNotFound(id))?.appearance;
         self.set_layer_appearance(id, before.translated(dx, dy)?)
     }
+    /// Pick visible content, then optionally translate it in one normal history command.
+    /// Empty canvas is a no-op. This runs on the document actor, never the UI thread.
+    pub fn pick_layer(&mut self, x: u32, y: u32, dx: i32, dy: i32) -> Result<Option<LayerId>> {
+        self.idle()?;
+        if x >= self.width || y >= self.height {
+            return Ok(None);
+        }
+        let mut picked = None;
+        for (i, layer) in self.layers.iter().enumerate().rev() {
+            if layer.group || layer.mask || !groups::visible(&self.layers, layer) {
+                continue;
+            }
+            if self.pick_coverage(i, x, y)? > 0. {
+                picked = Some(layer.id);
+                break;
+            }
+        }
+        if let Some(id) = picked {
+            self.set_active_layer(id)?;
+            if (dx != 0 || dy != 0)
+                && self
+                    .check_ancestors(id, crate::LOCK_POSITION | crate::LOCK_ALL)
+                    .is_ok()
+            {
+                self.move_layer(id, dx, dy)?;
+            }
+        }
+        Ok(picked)
+    }
+    fn pick_coverage(&self, i: usize, x: u32, y: u32) -> Result<f32> {
+        let layer = &self.layers[i];
+        let mut alpha = layer.read_canvas_row(x, y, 1)?[0].alpha();
+        let mut node = layer;
+        loop {
+            if let Some(mask) = self.mask_for(node.id).filter(|m| m.properties.visible) {
+                alpha *= 1. - mask.read_canvas_row(x, y, 1)?[0].alpha() * mask.properties.opacity;
+            }
+            if node.parent == 0 || alpha <= 0. {
+                break;
+            }
+            node = self
+                .layer(node.parent)
+                .ok_or(Error::LayerNotFound(node.parent))?;
+        }
+        if layer.clipped {
+            if let Some((base_i, base)) = self.layers[..i]
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, l)| !l.mask && !l.clipped && l.parent == layer.parent)
+            {
+                if !groups::visible(&self.layers, base) {
+                    return Ok(0.);
+                }
+                alpha *= if base.group {
+                    groups::composite_row(&self.layers[self.subtree(base.id)?], x, y, 1)?[0].alpha()
+                } else {
+                    self.pick_coverage(base_i, x, y)?
+                };
+            } else {
+                return Ok(0.);
+            }
+        }
+        Ok(alpha)
+    }
     fn ensure_active_layer(&mut self) {
         if self.layer(self.active_layer).is_none() {
             self.active_layer = self.layers.last().expect("at least one layer").id;

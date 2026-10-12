@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 23;
+pub const PAINT_ABI_MINOR: u32 = 24;
 pub const PAINT_FEATURE_LIQUIFY: u64 = 262144;
 pub const PAINT_FEATURE_TRANSFORM: u64 = 524288;
 pub const PAINT_SESSION_LIQUIFY: u32 = 8;

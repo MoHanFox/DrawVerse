@@ -50,6 +50,7 @@ pub(crate) enum Operation {
     Add(String),
     Remove(u64),
     Select(u64),
+    PickLayer(u32, u32, i32, i32),
     Properties(u64, LayerProperties),
     Appearance(u64, paint_core::LayerAppearance),
     Translate(u64, i32, i32),
@@ -655,6 +656,7 @@ impl Engine {
                     | Operation::Properties(..)
                     | Operation::Appearance(..)
                     | Operation::Translate(..)
+                    | Operation::PickLayer(..)
                     | Operation::Group(..)
                     | Operation::GroupBatch(..)
                     | Operation::Ungroup(..)
@@ -918,6 +920,11 @@ impl Engine {
                 self.modified = true;
             }
             Operation::Select(id) => self.document.set_active_layer(id)?,
+            Operation::PickLayer(x, y, dx, dy) => {
+                let revision = self.document.revision();
+                self.document.pick_layer(x, y, dx, dy)?;
+                self.modified |= revision != self.document.revision();
+            }
             Operation::Appearance(id, value) => {
                 let revision = self.document.revision();
                 self.document.set_layer_appearance(id, value)?;

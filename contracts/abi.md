@@ -1,4 +1,9 @@
-# C ABI 1.23.0 契约
+# C ABI 1.24.0 契约
+
+## ABI 1.24：画布 Ctrl 选层与移动
+
+`paint_session_pick_layer` 复制文档坐标及可选位移，异步命中最上方可见内容图层（考虑透明、蒙版、祖先可见性及剪贴基底）。空白保持选择；位置锁定允许选层但不移动。只选层不增加历史，非零位移复用原子移动历史。所有 caller-memory 写入仍集中在 pointers.rs。
+
 
 ## ABI 1.23：图片模型与自由变换
 
@@ -107,7 +112,7 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 ## 版本与类型
 
-全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/23/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
+全部函数返回 int32_t，包括 version/create/destroy；version 写 out 参数，当前 major/minor/patch=1/24/0。应用版本独立。DTO 全部 repr(C)，只含固定宽度数字和指针；无 enum/bool/size_t/long、Qt/STL/Rust 容器。支持 64 位；32 位 Rust 构建拒绝。
 
 初始化 DTO 为零并写 struct_size=sizeof(本调用者结构)，输入至少含已发布前缀。库只访问已知前缀；过小为 INVALID_ARGUMENT，不覆盖调用者内存；扩展尾部保持不变。输出 struct_size 写库已知大小。reserved 必须为零；未知 mode/tool/format 为 UNSUPPORTED。输入 capability 位保留未知位，圆笔刷只实际使用 pressure，客户端为无压力设备提供 pressure=1。
 

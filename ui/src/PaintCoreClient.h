@@ -307,6 +307,7 @@ public:
     Q_INVOKABLE void clearLayerBlendPreview();
     Q_INVOKABLE bool setLayerLocks(quint64 id, int locks);
     Q_INVOKABLE bool moveLayer(quint64 id, int dx, int dy);
+    bool pickLayer(QPointF point, int dx = 0, int dy = 0);
     Q_INVOKABLE bool addMask(quint64 id);
     Q_INVOKABLE bool setLayerClipping(quint64 id, bool enabled);
     Q_INVOKABLE bool toggleActiveClipping();

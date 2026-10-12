@@ -7,6 +7,36 @@ use crate::{
 use paint_core::{BlendMode, LayerAppearance};
 use std::mem::size_of;
 
+/// ABI 1.24: asynchronously select the top visible content pixel at document coordinates.
+/// Optional translation is a single normal history entry. Empty pixels are no-ops;
+/// position-locked layers can be selected but remain stationary. No caller memory is retained.
+/// # Safety
+/// Provide writable sequence and follow session lifetime and destruction contracts.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_pick_layer(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    x: u32,
+    y: u32,
+    dx: i32,
+    dy: i32,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        if dx.unsigned_abs() > paint_core::MAX_DIMENSION
+            || dy.unsigned_abs() > paint_core::MAX_DIMENSION
+        {
+            return Err(ApiError::invalid("invalid layer translation"));
+        }
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .submit(Operation::PickLayer(x, y, dx, dy))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+
 /// ABI 1.5: hierarchy metadata from the same immutable publication as layer_info.
 /// # Safety
 /// Initialize the output DTO and follow session/publication ownership contracts.

@@ -97,6 +97,10 @@ ColumnLayout {
     TextField {
         id: search
         objectName: "layerSearch"
+        onPressed: {
+            forceActiveFocus(Qt.MouseFocusReason)
+            if(Window.window) Window.window.requestActivate()
+        }
         Layout.fillWidth: true; implicitHeight: 20
         placeholderText: "搜索图层名称"; placeholderTextColor: Theme.muted; selectByMouse: true
         color: Theme.text; font.pixelSize: 9

@@ -11,6 +11,8 @@ Item {
     readonly property var definition: Workspace.panelDefinition(panelId)
     readonly property string kind: definition.kind || ""
     Loader {
+        // Loader is a focus scope, including asynchronously created panel content.
+        focus: true
         objectName: "panelContentLoader:"+root.panelId
         asynchronous: root.kind === "layers"
         anchors.fill: parent
