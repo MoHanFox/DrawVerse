@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新ABR基础转换：`docs/abr-conversion-design.md` / `docs/abr-conversion-validation.md`；严格单位/范围、真实编译/共享覆盖、逐叶支持与未执行报告、外部无动态alpha核对；来源保存/原生Qt入口/动态与PS核验继续后续，无ABI变化。
+
 - 最新ABR样本关联：`docs/abr-association-design.md` / `docs/abr-association-validation.md`；Pascal身份/可变前缀/sampledData严格关联、共享资源/完整来源字段；外部上游诊断像素匹配但资产不分发，参数报告/用户入口继续后续，无ABI变化。
 
 - 最新ABR描述符：`docs/abr-descriptor-design.md` / `docs/abr-descriptor-validation.md`；有界typed tree/单位与引用/显式desc接入、长度与递归拒绝；具体PS参数/样本关联/用户入口/真实授权语料继续后续，无ABI变化。

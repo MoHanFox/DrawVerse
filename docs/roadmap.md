@@ -1,6 +1,8 @@
 # 模块顺序与验收
 
-ABR样本关联：[设计](abr-association-design.md) / [验收](abr-association-validation.md)。Pascal身份/共享覆盖/严格关联已实现；公开外部样本alpha逐像素核对通过但不分发；参数报告/来源保存/用户入口继续后续。
+ABR基础转换：[设计](abr-conversion-design.md) / [验收](abr-conversion-validation.md)。严格参数映射/真实编译/逐叶报告已实现；外部无动态baseline alpha核对通过，但实际样本为部分转换；来源保存/原生Qt入口/动态继续后续。
+
+ABR样本关联：[设计](abr-association-design.md) / [验收](abr-association-validation.md)。Pascal身份/共享覆盖/严格关联已实现；公开外部样本alpha逐像素核对通过但不分发。
 
 ABR描述符：[设计](abr-descriptor-design.md) / [验收](abr-descriptor-validation.md)。typed tree及显式desc读取已接入；PS具体参数/真实授权语料继续后续。
 

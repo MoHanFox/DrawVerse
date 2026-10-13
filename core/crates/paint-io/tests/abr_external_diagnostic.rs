@@ -1,5 +1,10 @@
 //! Opt-in diagnostic for externally held, non-redistributable sample files.
-use paint_io::{abr_association::associate, abr_sampled::decode_sectioned, ps_descriptor::Value};
+use paint_io::{
+    abr_association::associate,
+    abr_conversion::{convert, Status},
+    abr_sampled::decode_sectioned,
+    ps_descriptor::Value,
+};
 use paint_task::CancellationToken;
 #[test]
 #[ignore = "requires DRAWVERSE_ABR_DIAGNOSTIC_FILE; external assets are not vendored"]
@@ -49,6 +54,39 @@ fn external_sample_descriptor_and_pixels_are_inspected_without_claiming_conversi
     assert_eq!(image.dimensions(), (112, 105));
     let alpha = image.pixels().map(|p| p[3]).collect::<Vec<_>>();
     assert_eq!(linked[0].sampled_tip.unwrap().mask.coverage(), alpha);
+    let converted = convert(&linked, &token).unwrap();
+    let brush = &converted[0];
+    assert!(brush.is_partial());
+    assert_eq!(brush.settings.diameter, 112.);
+    assert_eq!(brush.settings.spacing, 0.02);
+    assert_eq!(brush.settings.tip.roundness, 1.);
+    for path in ["szVr.bVTy", "useTexture", "textureDepth"] {
+        assert!(
+            brush
+                .issues
+                .iter()
+                .any(|i| i.path == path && i.status == Status::NotExecuted),
+            "{path}"
+        );
+    }
+    let mut document = paint_core::Document::new(224, 224).unwrap();
+    document
+        .begin_brush_stroke(
+            brush.settings.definition(),
+            paint_core::InputPoint::new(112., 112.5, 1.),
+        )
+        .unwrap();
+    document.end_stroke().unwrap();
+    for y in 0..105 {
+        for x in 0..112 {
+            let expected = f32::from(alpha[(y * 112 + x) as usize]) / 255.;
+            assert!(
+                (document.pixel(56 + x, 60 + y).alpha() - expected).abs() < 0.000003,
+                "baseline pixel {x},{y}"
+            );
+        }
+    }
+    println!("basic diameter/spacing/roundness and native unmodified-alpha baseline verified; {} explicit report items",brush.issues.len());
     for root in &descriptors {
         println!(
             "root {:?}, {} properties",

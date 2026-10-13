@@ -1,5 +1,6 @@
 //! Bounded codecs and atomic files. File operations run on background workers only.
 pub mod abr_association;
+pub mod abr_conversion;
 pub mod abr_sampled;
 pub mod brush_resource;
 pub mod brush_state;
