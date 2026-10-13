@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图片笔尖资源IO：`docs/brush-resource-design.md` / `docs/brush-resource-validation.md`；SHA-256内容身份/不覆盖原子PNG、8/16位覆盖转换与量化标记、Weak缓存/活跃mip预算，资源ID原生库/Qt接入与VBR图片/ABR仍待后续。
+
 - 最新 Qt / 原生笔刷修订桥：`docs/brush-catalog-bridge-design.md` / `docs/brush-catalog-bridge-validation.md`；ABI 1.28、后台状态迁移/独立编译池/准确准备记录、Rust起笔等待与Qt共享库、隔离原生预览/有效状态保存；图片资源/ABR/动态/湿混继续后续。
 
 - 最新原生笔刷库 ABI：`docs/brush-catalog-abi-design.md` / `docs/brush-catalog-abi-validation.md`；ABI 1.27、独立句柄/准确修订/原子目录操作、捕获预设的真实异步笔触及生命周期；Qt 镜像迁移与图片资源接口仍待接入。
