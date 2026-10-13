@@ -84,7 +84,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1 | 2 | 3) {
+    if !matches!(state.version, 1..=3) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
