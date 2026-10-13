@@ -70,8 +70,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 31) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.31 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 32) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.32 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -166,6 +166,14 @@ public:
         if(status==PAINT_OK)path.resize(qsizetype(required));
         emit brushOutlineReady(identity,status==PAINT_OK?QString::fromLatin1(path):QString{},status==PAINT_OK?QString{}:immediateError(status));
     }
+    void inspectBrushSource(QString identity,quint64 token) {
+        const auto bytes=identity.toLatin1();
+        PaintBrushLibrary *library=nullptr;{QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
+        QByteArray record(2*1024*1024,'\0');uint64_t required=0;
+        const auto status=paint_brush_library_source_info(library,reinterpret_cast<const uint8_t*>(bytes.constData()),quint64(bytes.size()),reinterpret_cast<uint8_t*>(record.data()),quint64(record.size()),&required);
+        if(status==PAINT_OK)record.resize(qsizetype(required));
+        emit brushSourceReady(identity,token,status==PAINT_OK?record:QByteArray{},status==PAINT_OK?QString{}:immediateError(status));
+    }
     void importBrushTip(QString path,QString target,int interpretation) {
         PaintBrushLibrary *library=nullptr;
         {QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
@@ -186,6 +194,7 @@ public:
         emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting);
     }
 signals:
+    void brushSourceReady(QString identity,quint64 token,QByteArray record,QString error);
     void brushOutlineReady(QString identity,QString path,QString error);
     void brushTipReady(QString target,QString resource,int depth,QString error);
     void nativeBrushCatalog(quint64 preparation,QByteArray state,QString error);
@@ -607,6 +616,15 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(m_worker,&BackendWorker::brushOutlineReady,this,[this](const QString &identity,const QString &path,const QString &error){
         if(identity!=m_outlineResource || identity!=m_brushLibrary->maskResource())return;
         m_brushOutlinePath=path;m_brushOutlineReady=error.isEmpty();m_brushOutlineMessage=error.isEmpty()?QString{}:QStringLiteral("图片轮廓暂不可用，显示简化轮廓：")+error;emit brushOutlineChanged();
+    });
+    connect(m_worker,&BackendWorker::brushSourceReady,this,[this](const QString &identity,quint64 token,const QByteArray &record,const QString &error){
+        if(m_closing || token!=m_brushSourceToken || identity!=m_brushLibrary->sourceResource())return;
+        m_brushSourceBusy=false;m_brushSourceInfo=error.isEmpty()?QJsonDocument::fromJson(record).object().toVariantMap():QVariantMap{};
+        m_brushSourceMessage=error;emit brushSourceChanged();
+    });
+    connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{
+        const auto identity=m_brushLibrary->sourceResource();if(identity==m_brushSourceIdentity)return;
+        m_brushSourceIdentity=identity;++m_brushSourceToken;m_brushSourceInfo.clear();m_brushSourceMessage.clear();m_brushSourceBusy=false;emit brushSourceChanged();
     });
     connect(m_worker,&BackendWorker::brushTipReady,this,[this](const QString &target,const QString &resource,int depth,const QString &error){
         bool success=error.isEmpty();
@@ -1403,6 +1421,15 @@ QString PaintCoreClient::documentName() const {
     return m_sourceUrl.isEmpty() ? QStringLiteral("未命名") : QFileInfo(m_sourceUrl.toLocalFile()).fileName();
 }
 bool PaintCoreClient::openDocument(const QUrl &path) { return submitFile(path, PAINT_FILE_OPEN, PAINT_FILE_AUTO); }
+bool PaintCoreClient::inspectBrushSource() {
+    if(m_closing || !m_ready)return false;
+    const auto identity=m_brushLibrary->sourceResource();
+    if(identity.isEmpty())return false;
+    if(m_brushSourceBusy && m_brushSourceIdentity==identity)return true;
+    m_brushSourceIdentity=identity;const auto token=++m_brushSourceToken;
+    m_brushSourceInfo.clear();m_brushSourceMessage.clear();m_brushSourceBusy=true;emit brushSourceChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,identity,token]{worker->inspectBrushSource(identity,token);},Qt::QueuedConnection);return true;
+}
 bool PaintCoreClient::importBrushes(const QUrl &path) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
     m_brushFileBusy=true;emit brushFileChanged();
@@ -1432,6 +1459,7 @@ bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
 bool PaintCoreClient::exportBrush(const QUrl &path) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
     const auto package=m_brushLibrary->exportPackage();
+    if(package.isEmpty()){showError(QStringLiteral("当前 VBR 格式尚不能保留 ABR 来源，暂不可导出该笔刷"));return false;}
     m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),package]{worker->brushFile(path,package,true);},Qt::QueuedConnection);return true;
 }

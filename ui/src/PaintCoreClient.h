@@ -38,6 +38,9 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QString storageMessage READ storageMessage NOTIFY storageChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
     Q_PROPERTY(bool brushFileBusy READ brushFileBusy NOTIFY brushFileChanged)
+    Q_PROPERTY(QVariantMap brushSourceInfo READ brushSourceInfo NOTIFY brushSourceChanged)
+    Q_PROPERTY(QString brushSourceMessage READ brushSourceMessage NOTIFY brushSourceChanged)
+    Q_PROPERTY(bool brushSourceBusy READ brushSourceBusy NOTIFY brushSourceChanged)
     Q_PROPERTY(QString brushImportMessage READ brushImportMessage NOTIFY brushFileChanged)
     Q_PROPERTY(QString brushOutlinePath READ brushOutlinePath NOTIFY brushOutlineChanged)
     Q_PROPERTY(QString brushOutlineMessage READ brushOutlineMessage NOTIFY brushOutlineChanged)
@@ -131,6 +134,10 @@ public:
     QString brushOutlinePath() const {return m_brushOutlinePath;}
     QString brushOutlineMessage() const {return m_brushOutlineMessage;}
     bool brushOutlineReady() const {return m_brushOutlineReady;}
+    QVariantMap brushSourceInfo() const {return m_brushSourceInfo;}
+    QString brushSourceMessage() const {return m_brushSourceMessage;}
+    bool brushSourceBusy() const {return m_brushSourceBusy;}
+    Q_INVOKABLE bool inspectBrushSource();
     Q_INVOKABLE bool importBrushes(const QUrl &path);
     Q_INVOKABLE bool importBrushTip(const QUrl &path,int interpretation);
     Q_INVOKABLE bool exportBrush(const QUrl &path);
@@ -360,6 +367,7 @@ signals:
     void brushCursorPreferencesChanged();
     void brushOutlineChanged();
     void brushFileChanged();
+    void brushSourceChanged();
     void brushFileFinished(bool success);
     void liquifyOptionsChanged();
     void historyChanged();
@@ -392,6 +400,10 @@ private:
     bool m_brushPreferencePersistenceEnabled=true;
     bool m_brushFileBusy=false;
     QString m_brushImportMessage;
+    QString m_brushSourceIdentity,m_brushSourceMessage;
+    QVariantMap m_brushSourceInfo;
+    quint64 m_brushSourceToken=0;
+    bool m_brushSourceBusy=false;
     QString m_outlineResource,m_brushOutlinePath,m_brushOutlineMessage;
     bool m_brushOutlineReady=false;
     bool submit(int type, const InputSample &sample = {}, quint64 id = 0,

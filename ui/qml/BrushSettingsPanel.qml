@@ -8,6 +8,13 @@ ColumnLayout {
     id:root
     readonly property var library:PaintClient.brushLibrary
     property int category:0
+    property string inspectedSource:""
+    readonly property var sourceInfo:PaintClient.brushSourceInfo
+    function inspectSource() {
+        inspectedSource=root.library.sourceResource
+        if(inspectedSource.length>0)PaintClient.inspectBrushSource()
+    }
+    onCategoryChanged:if(category===3)inspectSource()
     readonly property real contentHeight:360
     implicitHeight:contentHeight
     spacing:6
@@ -17,7 +24,7 @@ ColumnLayout {
         ColumnLayout {
             Layout.preferredWidth:76;Layout.alignment:Qt.AlignTop;spacing:2
             Repeater {
-                model:["笔尖形状","传递","光标与预览"]
+                model:["笔尖形状","传递","光标与预览","来源与兼容"]
                 Rectangle {
                     required property string modelData
                     required property int index
@@ -82,6 +89,26 @@ ColumnLayout {
                     Label {text:"全局绘画偏好；不随笔刷包导出。CapsLock 切换精确光标。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     Label {text:PaintClient.brushOutlineMessage;visible:text.length>0;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                 }
+                ColumnLayout {
+                    visible:root.category===3;Layout.fillWidth:true;spacing:6
+                    Label {objectName:"brushSourceDescription";textFormat:Text.PlainText;text:root.library.sourceResource.length?"导入时快照 · 当前编辑不会改变来源报告":"此预设没有 ABR 来源记录";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:10}
+                    Button {objectName:"refreshBrushSource";text:PaintClient.brushSourceBusy?"读取中…":"刷新来源";implicitHeight:24;enabled:root.library.sourceResource.length>0 && !PaintClient.brushSourceBusy;onClicked:root.inspectSource()}
+                    Label {objectName:"brushSourceError";textFormat:Text.PlainText;text:PaintClient.brushSourceMessage;visible:text.length>0;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:10}
+                    Label {objectName:"brushSourceName";textFormat:Text.PlainText;visible:root.sourceInfo.originalName!==undefined;text:root.sourceInfo.originalName || "";Layout.fillWidth:true;wrapMode:Text.WrapAnywhere;color:Theme.text;font.pixelSize:10}
+                    Label {textFormat:Text.PlainText;visible:root.sourceInfo.format!==undefined;text:"ABR "+root.sourceInfo.fileVersion+(root.sourceInfo.fileSubversion?"."+root.sourceInfo.fileSubversion:"")+" · "+root.sourceInfo.converter+" v"+root.sourceInfo.converterVersion;Layout.fillWidth:true;wrapMode:Text.WrapAnywhere;color:Theme.muted;font.pixelSize:9}
+                    Label {objectName:"brushSourceBaseline";textFormat:Text.PlainText;visible:root.sourceInfo.baseline!==undefined;text:root.sourceInfo.baseline?"导入大小 "+root.sourceInfo.baseline.diameter+" px · 间距 "+Math.round(root.sourceInfo.baseline.spacing*100)+"%\n圆度 "+Math.round(root.sourceInfo.baseline.roundness*100)+"% · 角度 "+root.sourceInfo.baseline.angle+"° · 流量 "+Math.round(root.sourceInfo.baseline.flow*100)+"%":"";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
+                    Label {text:"兼容报告（"+(root.sourceInfo.report?root.sourceInfo.report.length:0)+" 项）";visible:root.sourceInfo.report!==undefined;color:Theme.text;font.pixelSize:10}
+                    ListView {
+                        objectName:"brushSourceReport";Layout.fillWidth:true;Layout.preferredHeight:160;visible:root.sourceInfo.report!==undefined;clip:true
+                        model:root.sourceInfo.report || [];spacing:6
+                        ScrollBar.vertical:ScrollBar {}
+                        delegate:Text {
+                            required property var modelData
+                            width:ListView.view.width-12;textFormat:Text.PlainText;wrapMode:Text.WrapAnywhere;font.pixelSize:9;color:Theme.muted
+                            text:(modelData.status==="mapped"?"已映射":modelData.status==="approximate"?"近似":"未执行")+" · "+modelData.path+"\n"+modelData.reason
+                        }
+                    }
+                }
             }
         }
     }
@@ -115,5 +142,5 @@ ColumnLayout {
     ColorDialog {id:outerColor;title:"外侧轮廓颜色";selectedColor:root.library.cursorColor;onAccepted:root.library.cursorColor=selectedColor}
     ColorDialog {id:innerColor;title:"内侧轮廓颜色";selectedColor:root.library.cursorSecondaryColor;onAccepted:root.library.cursorSecondaryColor=selectedColor}
     Component.onCompleted:previewDelay.restart()
-    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}}
+    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart();if(root.category===3 && root.inspectedSource!==root.library.sourceResource)root.inspectSource()}}
 }

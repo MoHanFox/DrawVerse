@@ -17,6 +17,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QCryptographicHash>
 #include <QPointingDevice>
 #include <QTabletEvent>
 #include <QDir>
@@ -549,6 +550,48 @@ private slots:
         canvas->setClient(&client);auto *cursor=findVisualItem(window->contentItem(),"brushCursorOutline");QVERIFY(cursor);QCOMPARE(cursor->property("rotation").toDouble(),90.);QVERIFY(std::abs(cursor->height()/cursor->width()-.2)<1e-6);
         const auto screenshot=qEnvironmentVariable("DRAWVERSE_BRUSH_PREVIEW");if(!screenshot.isEmpty()){auto group=workspace.leftGroups().first().toMap().value("id").toString();workspace.detachGroup(group);for(auto *w:applicationWindows())if(auto *q=qobject_cast<QQuickWindow*>(w))if(findVisualItem(q->contentItem(),"selectedBrushName")){q->resize(350,440);QTest::qWait(200);QVERIFY(q->grabWindow().save(screenshot+".tip.png"));}}
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void brushSourceV4PreservesProvenanceAcrossEditsCopiesAndVbrImport() {
+        BrushLibrary model;
+        const auto source=QString(64,QChar('a'));const auto image=QString(64,QChar('b'));
+        auto state=QJsonDocument::fromJson(model.snapshot()).object();auto rows=state.value("presets").toArray();auto row=rows[0].toObject();row["sourceResource"]=source;rows[0]=row;row=rows[3].toObject();row["maskResource"]=image;rows[3]=row;state["version"]=4;state["presets"]=rows;
+        QVERIFY(model.restore(QJsonDocument(state).toJson()));QCOMPARE(model.sourceResource(),source);QCOMPARE(QJsonDocument::fromJson(model.snapshot()).object().value("version").toInt(),4);
+        QVERIFY(model.rename("round-pressure","renamed"));model.setHardness(.3);const auto copy=model.saveCopy("copy");QVERIFY(!copy.isEmpty());QCOMPARE(model.sourceResource(),source);QVERIFY(model.exportPackage().isEmpty());
+        QVERIFY(model.setMaskResource(copy,image));QCOMPARE(model.sourceResource(),source);model.useProceduralTip();QCOMPARE(model.sourceResource(),source);
+        BrushLibrary restored;QVERIFY(restored.restore(model.snapshot()));QCOMPARE(restored.sourceResource(),source);
+        QVERIFY(restored.applyNativeCatalog(model.catalogSnapshot()));QCOMPARE(restored.sourceResource(),source);
+        BrushLibrary imported;auto package=QJsonDocument::fromJson(imported.exportPackage()).object();auto brushes=package.value("brushes").toArray();auto brush=brushes[0].toObject();brush["tipResource"]=image;brushes[0]=brush;package["brushes"]=brushes;
+        QVERIFY(restored.importPackage(QJsonDocument(package).toJson()));QCOMPARE(QJsonDocument::fromJson(restored.snapshot()).object().value("version").toInt(),4);QVERIFY(restored.sourceResource().isEmpty());QVERIFY(restored.select(copy));QCOMPARE(restored.sourceResource(),source);
+        auto invalid=QJsonDocument::fromJson(model.snapshot()).object();invalid["version"]=3;const auto before=restored.snapshot();QVERIFY(!restored.restore(QJsonDocument(invalid).toJson()));QCOMPARE(restored.snapshot(),before);
+        rows=state.value("presets").toArray();row=rows[0].toObject();row["sourceResource"]="../bad";rows[0]=row;state["presets"]=rows;QVERIFY(!restored.restore(QJsonDocument(state).toJson()));QCOMPARE(restored.snapshot(),before);
+    }
+    void brushSourceQueriesUseNativeVerificationAndDiscardStaleResponses() {
+        QTemporaryDir temp;const auto settingsPath=temp.filePath("brush.ini");const auto directory=temp.filePath("brush-resources/sources");QVERIFY(QDir().mkpath(directory));
+        // Opaque generated source header; this tests provenance IO, not complete ABR parsing.
+        const auto original=QByteArray::fromHex("000600022a");const auto originalHash=QString::fromLatin1(QCryptographicHash::hash(original,QCryptographicHash::Sha256).toHex());
+        BrushLibrary model;const auto baseline=QJsonDocument::fromJson(model.exportPackage()).object().value("brushes").toArray()[0].toObject().value("parameters");
+        const QJsonObject info{{"version",1},{"format","abr"},{"originalHash",originalHash},{"fileVersion",6},{"fileSubversion",2},{"presetIndex",0},{"originalName","<b>Original</b>"},{"converter","drawverse.abr.basic"},{"converterVersion",1},{"baseline",baseline},{"tipResource",QJsonValue::Null},{"report",QJsonArray{QJsonObject{{"path","texture.Depth"},{"status","notExecuted"},{"reason","Texture not executed"}}}}};
+        const auto record=QJsonDocument(info).toJson(QJsonDocument::Compact);const auto identity=QString::fromLatin1(QCryptographicHash::hash(record,QCryptographicHash::Sha256).toHex());
+        QFile abr(directory+"/"+originalHash+".abr");QVERIFY(abr.open(QIODevice::WriteOnly));QCOMPARE(abr.write(original),qint64(original.size()));abr.close();
+        QFile json(directory+"/"+identity+".json");QVERIFY(json.open(QIODevice::WriteOnly));QCOMPARE(json.write(record),qint64(record.size()));json.close();
+        auto state=QJsonDocument::fromJson(model.snapshot()).object();auto rows=state.value("presets").toArray();auto row=rows[0].toObject();row["sourceResource"]=identity;rows[0]=row;state["presets"]=rows;state["version"]=4;const auto saved=QJsonDocument(state).toJson(QJsonDocument::Compact);
+        {QSettings settings(settingsPath,QSettings::IniFormat);settings.setValue("brushes/state",saved);settings.sync();}
+        PaintCoreClient client(nullptr,settingsPath);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();QTRY_COMPARE(library->sourceResource(),identity);
+        WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &error:errors)warnings.append(error.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        for(const auto &value:workspace.leftGroups()+workspace.rightGroups()){const auto group=value.toMap();if(group.value("panels").toStringList().contains("brush-settings"))workspace.setActive(group.value("id").toString(),"brush-settings");}
+        QQuickItem *category=nullptr;QTRY_VERIFY((category=findVisualItem(window->contentItem(),"brushCategory:3")));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,category->mapToScene({category->width()/2,category->height()/2}).toPoint());
+        QTRY_VERIFY(!client.brushSourceBusy() && !client.brushSourceInfo().isEmpty());QCOMPARE(client.brushSourceInfo().value("originalName").toString(),QString("<b>Original</b>"));QCOMPARE(client.brushSourceInfo().value("report").toList().size(),1);
+        auto *label=window->findChild<QObject*>("brushSourceName");QVERIFY(label);QCOMPARE(label->property("text").toString(),QString("<b>Original</b>"));QCOMPARE(label->property("textFormat").toInt(),int(Qt::PlainText));
+        library->setRadius(32);library->rename(library->selectedId(),"Edited");QCOMPARE(client.brushSourceInfo().value("baseline").toMap().value("diameter").toDouble(),24.);QVERIFY(!client.brushSourceBusy());
+        QVERIFY(!client.exportBrush(QUrl::fromLocalFile(temp.filePath("source.vbr"))));QVERIFY(!client.brushFileBusy());QVERIFY(!QFileInfo::exists(temp.filePath("source.vbr")));
+        QVERIFY(client.inspectBrushSource());QVERIFY(library->select("round-fine"));QVERIFY(client.brushSourceInfo().isEmpty());QTest::qWait(100);QVERIFY(client.brushSourceInfo().isEmpty());QVERIFY(!client.brushSourceBusy());
+        QVERIFY(library->select("round-pressure"));QTRY_VERIFY(!client.brushSourceInfo().isEmpty());const auto copy=library->saveCopy("Source copy");QVERIFY(!copy.isEmpty());QCOMPARE(library->sourceResource(),identity);
+        library->requestPreview(copy);QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);
+        QVERIFY(abr.open(QIODevice::WriteOnly|QIODevice::Truncate));abr.write("corrupt");abr.close();QVERIFY(client.inspectBrushSource());QTRY_VERIFY(!client.brushSourceBusy());QVERIFY(!client.brushSourceMessage().isEmpty());QVERIFY(client.brushSourceInfo().isEmpty());
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+        QByteArray persisted;{QSettings settings(settingsPath,QSettings::IniFormat);persisted=settings.value("brushes/state").toByteArray();}QVERIFY(persisted.contains("sourceResource"));
+        PaintCoreClient cold(nullptr,settingsPath);QTRY_VERIFY(cold.ready());QTRY_VERIFY_WITH_TIMEOUT(!cold.lastError().isEmpty(),10000);{QSettings settings(settingsPath,QSettings::IniFormat);QCOMPARE(settings.value("brushes/state").toByteArray(),persisted);}QSignalSpy coldStopped(&cold,&PaintCoreClient::stopped);cold.shutdown();QTRY_COMPARE(coldStopped.size(),1);
     }
     void imageBrushImportPreviewPersistenceAndCapturedTarget() {
         QTemporaryDir temp;const auto settingsPath=temp.filePath("brush.ini");

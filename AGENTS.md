@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新笔刷来源界面：`docs/brush-source-ui-design.md` / `docs/brush-source-ui-validation.md`；Qt v4保存/原生目录/副本保留来源、后台导入快照与逐项兼容报告/旧结果拒绝；来源VBR导出明确未支持，ABR用户入口与批量来源继续后续，无ABI变化。
+
 - 最新原生来源准备桥：`docs/brush-source-bridge-design.md` / `docs/brush-source-bridge-validation.md`；ABI1.32、共享来源上下文/v4准确准备、Weak身份凭据/当前与在途独立持有、后台来源报告新校验；Qt/VBR来源/ABR入口继续后续。
 
 - 最新原生来源引用/状态：`docs/brush-source-state-design.md` / `docs/brush-source-state-validation.md`；来源与执行分离/不可变修订/编辑副本保留、v4显式上下文与批次原始验证；准备桥/Qt/VBR与高频来源复用继续后续，无ABI变化。
