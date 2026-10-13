@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 36
+#define PAINT_ABI_MINOR 37
 
 #define PAINT_ABI_PATCH 0
 
@@ -82,6 +82,11 @@
 #define PAINT_FEATURE_CLIPPING 2048
 
 #define PAINT_FEATURE_CPU_VIEWPORT 32
+
+/**
+ * Device and path controlled tip geometry, state v7 / VBR1.5.
+ */
+#define PAINT_FEATURE_DEVICE_TIP_DYNAMICS 4294967296
 
 #define PAINT_FEATURE_DOCUMENT 1
 

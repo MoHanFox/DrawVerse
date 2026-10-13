@@ -66,6 +66,25 @@ ColumnLayout {
                 }
                 ColumnLayout {
                     visible:root.category===1;Layout.fillWidth:true;spacing:5
+                    RowLayout {
+                        Layout.fillWidth:true
+                        Label {text:"角度控制";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
+                        CompactComboBox {
+                            objectName:"settingsAngleControl";implicitWidth:90
+                            readonly property var controls:["fixed","direction","pen-rotation","tilt"]
+                            model:["关闭","方向","笔旋转","笔倾斜"]
+                            currentIndex:controls.indexOf(root.library.angleControl)
+                            onActivated:root.library.angleControl=controls[currentIndex]
+                            tooltip:"相对基础角度叠加路径方向、笔旋转或倾斜方位；缺失设备能力时使用基础角度。"
+                        }
+                    }
+                    CompactCheckBox {objectName:"settingsTiltRoundness";text:"倾斜控制圆度";checked:root.library.tiltRoundness;font.pixelSize:10;onToggled:root.library.tiltRoundness=checked;tooltip:"按笔倾斜缩短短轴；没有倾斜能力时保留基础圆度。关闭后保留最低比例。"}
+                    RowLayout {
+                        Layout.fillWidth:true
+                        Label {text:"最低圆度比例";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
+                        CompactSpinBox {objectName:"settingsMinimumRoundness";from:1;to:100;editable:true;implicitWidth:66;implicitHeight:20;value:Math.round(root.library.minimumRoundness*100);onValueModified:root.library.minimumRoundness=value/100;tooltip:"倾斜圆度相对于基础圆度的最低比例；最终圆度不会低于1%。"}
+                        Label {text:"%";color:Theme.muted;font.pixelSize:9}
+                    }
                     CompactCheckBox {objectName:"settingsPressureSize";text:"大小压感";checked:root.library.pressureSize;font.pixelSize:10;onToggled:root.library.pressureSize=checked;tooltip:"按压力曲线和最低比例控制笔尖大小；关闭后保留曲线。"}
                     PressureCurveEditor {library:root.library;target:"size"}
                 }

@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新设备动态Qt入口：`docs/brush-device-ui-design.md` / `docs/brush-device-ui-validation.md`；ABI1.37/state7/VBR1.5、形状动态参数/真实预览和旋转笔触/复制持久化、解除package临时拒绝；实时动态光标和其余动态湿混继续后续。
+
 - 最新设备笔尖动态IO：`docs/brush-device-io-design.md` / `docs/brush-device-io-validation.md`；state7/VBR1.5/behavior4、独立tipDynamics/严格枚举范围/逐像素恢复、压力与图片来源共存；现有package入口暂拒绝新数据防Qt丢失，原生Qt与光标继续后续，无ABI变化。
 
 - 最新设备笔尖动态内核：`docs/brush-device-dynamics-design.md` / `docs/brush-device-dynamics-validation.md`；不可变角度来源/倾斜圆度、每印章共用几何/图片完整边界、短路径旋转与能力回退；IO非默认明确拒绝，状态/VBR/原生Qt/动态光标继续后续，无ABI变化。

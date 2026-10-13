@@ -1,4 +1,8 @@
-# C ABI 1.36.0 契约
+# C ABI 1.37.0 契约
+
+## ABI1.37：设备笔尖动态入口
+
+`PAINT_FEATURE_DEVICE_TIP_DYNAMICS=4294967296`，features为u64。state7/VBR1.5/behavior4/tip-dynamics接入准确原生准备和Qt镜像；library_package_read/write解除设备对象临时Unsupported边界。曲线和设备控制分别保存，旧C参数编辑保留完整动态；无DTO布局变化。Qt仅校验/展示，不执行几何。实际输入与预览沿同一内核，实时光标pose接口仍在后续范围，见 `docs/brush-device-ui-validation.md`。
 
 设备动态IO阶段：Rust state7/VBR1.5已有独立tipDynamics保存，现有Qt仍只接受state6/behavior3。ABI36 package_read/write对tipDynamics对象暂返回Unsupported（读required=0且不改caller字节，写不改已有目标），不宣称旧Qt已支持新数据；新原生能力和Qt接入后解除边界。无DTO变化，来源/压力包保持原路径。见 `docs/brush-device-io-validation.md`。
 

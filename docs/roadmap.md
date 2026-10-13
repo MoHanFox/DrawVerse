@@ -1,3 +1,5 @@
+设备动态Qt与原生入口：[设计](brush-device-ui-design.md) / [验收](brush-device-ui-validation.md)。ABI1.37、形状动态参数/真正预览/捕获笔触/保存与VBR交换已接；package临时拒绝解除，实时动态光标继续后续。
+
 设备动态保存与VBR：[设计](brush-device-io-design.md) / [验收](brush-device-io-validation.md)。state7/VBR1.5/behavior4、独立几何控制和真实像素恢复已完成；原生Qt/动态光标继续后续，旧文件入口暂拒绝新数据防止配置丢失。
 
 设备笔尖动态内核：[设计](brush-device-dynamics-design.md) / [验收](brush-device-dynamics-validation.md)。方向/笔旋转/倾斜角度与圆度、真实共用几何与能力回退已实现；IO/原生Qt入口/光标继续后续，本阶段不宣称用户功能完成。
