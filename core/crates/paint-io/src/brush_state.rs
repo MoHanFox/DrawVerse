@@ -69,6 +69,12 @@ struct Row {
         deserialize_with = "crate::brush_pressure::present"
     )]
     pressure_dynamics: Option<crate::brush_pressure::PressureParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_tip_dynamics::present"
+    )]
+    tip_dynamics: Option<crate::brush_tip_dynamics::TipParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -136,7 +142,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=6) {
+    if !matches!(state.version, 1..=7) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -189,15 +195,20 @@ fn decode_inner(
                 "pressure dynamics require state v5 or opacity state v6".into(),
             ));
         }
+        if row.tip_dynamics.is_some() && state.version < 7 {
+            return Err(Error::Unsupported("tip dynamics require state v7".into()));
+        }
+        let mut dynamics = row
+            .pressure_dynamics
+            .as_ref()
+            .map(|p| p.core().clone())
+            .unwrap_or_default();
+        dynamics.tip = row.tip_dynamics.map(|p| p.core()).unwrap_or_default();
         entries.push((
             row.id,
             row.name,
             BrushSettings {
-                dynamics: row
-                    .pressure_dynamics
-                    .as_ref()
-                    .map(|p| p.core().clone())
-                    .unwrap_or_default(),
+                dynamics,
                 diameter: row.radius * 2.,
                 opacity: row.opacity,
                 spacing: row.spacing / 2.,
@@ -227,12 +238,17 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
-        if s.dynamics.tip != paint_core::TipDynamics::default() {
-            return Err(Error::Unsupported(
-                "device tip dynamics state IO not implemented".into(),
-            ));
-        }
-        let pressure_dynamics = if s.dynamics != paint_core::BrushDynamics::default() {
+        let tip_dynamics = if s.dynamics.tip != paint_core::TipDynamics::default() {
+            version = version.max(7);
+            Some(crate::brush_tip_dynamics::TipParameters::from_core(
+                s.dynamics.tip,
+            ))
+        } else {
+            None
+        };
+        let mut pressure = s.dynamics.clone();
+        pressure.tip = Default::default();
+        let pressure_dynamics = if pressure != paint_core::BrushDynamics::default() {
             version = version.max(
                 if s.dynamics.pressure_opacity
                     || s.dynamics.opacity != paint_core::PressureControl::default()
@@ -243,7 +259,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
                 },
             );
             Some(crate::brush_pressure::PressureParameters::from_core(
-                &s.dynamics,
+                &pressure,
             ))
         } else {
             None
@@ -279,6 +295,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             mask_resource,
             source_resource,
             pressure_dynamics,
+            tip_dynamics,
         });
     }
     serde_json::to_vec(&State {

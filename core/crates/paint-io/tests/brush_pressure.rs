@@ -36,6 +36,7 @@ fn package() -> Package {
             behavior_version: 2,
             required_capabilities: vec!["procedural-tip".into(), "pressure-curves".into()],
             parameters: Parameters {
+                tip_dynamics: None,
                 diameter: 16.,
                 spacing: 0.01,
                 dab_opacity: 1.,
@@ -54,19 +55,29 @@ fn package() -> Package {
 }
 
 #[test]
-fn unsupported_device_dynamics_cannot_be_silently_saved_as_pressure_only() {
+fn pressure_only_payload_rejects_device_controls_while_state_saves_separate_fields() {
     let mut d = dynamics();
     d.tip = TipDynamics::new(AngleControl::Direction, false, 0.01).unwrap();
     let parameters = PressureParameters::from_core(&d);
     assert!(serde_json::to_vec(&parameters).is_err());
     let mut p = package();
     p.brushes[0].parameters.pressure_dynamics = Some(parameters);
+    assert_eq!(p.brushes[0].parameters.definition().dynamics.tip, d.tip);
     assert!(p.validate().is_err());
     let mut catalog = BrushCatalog::default();
     let mut settings = catalog.selected().settings().clone();
     settings.dynamics = d;
     catalog.edit("round-pressure", settings).unwrap();
-    assert!(brush_state::encode(&catalog).is_err());
+    let state = brush_state::encode(&catalog).unwrap();
+    assert_eq!(
+        brush_state::decode(&state, MAX_CATALOG_MASK_BYTES)
+            .unwrap()
+            .selected()
+            .settings()
+            .dynamics
+            .tip,
+        TipDynamics::new(AngleControl::Direction, false, 0.01).unwrap()
+    );
 }
 
 #[test]
@@ -199,7 +210,7 @@ fn state5_and_vbr13_compile_to_same_pressure_pixels_and_never_downgrade() {
     }
     assert_eq!(state.pixel(16, 16).alpha(), 0.75);
     assert_eq!(state.pixel(21, 16).alpha(), 0.);
-    for version in [0, 1, 2, 5] {
+    for version in [0, 1, 2, vbr_image::MAX_EXECUTABLE_MINOR + 1] {
         assert!(vbr_image::decode(&rewrite(&packed, version), &token).is_err());
     }
     assert!(paint_io::vbr::encode(&package, &token).is_err());

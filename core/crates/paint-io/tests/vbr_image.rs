@@ -28,6 +28,7 @@ fn package(resource: Option<String>) -> Package {
             tip_resource: resource,
             source_resource: None,
             parameters: Parameters {
+                tip_dynamics: None,
                 pressure_dynamics: None,
                 diameter: 16.,
                 spacing: 0.01,
@@ -118,7 +119,10 @@ fn invalid_manifest_resources_references_and_versions_never_publish_partial_bund
             if name == "manifest.json" {
                 let mut json: serde_json::Value = serde_json::from_slice(data).unwrap();
                 match mode {
-                    0 => json["version"]["minor"] = 4.into(),
+                    0 => {
+                        json["version"]["minor"] =
+                            (paint_io::vbr_image::MAX_EXECUTABLE_MINOR + 1).into()
+                    }
                     1 => json["assets"][0]["kind"] = "grain".into(),
                     2 => json["assets"][0]["sha256"] = "0".repeat(64).into(),
                     3 => json["assets"][0]["path"] = "assets/../bad.png".into(),

@@ -1,0 +1,9 @@
+# 设备笔尖动态状态与VBR
+
+状态v7 / VBR1.5 / behavior4 / tip-dynamics：新增独立 tipDynamics 对象，angleControl 为 fixed/direction/pen-rotation/tilt，tiltRoundness 为严格布尔，minimumRoundness 为0.01–1。对象在IO验证后构造不可变内核配置，缺失保持旧默认；显式null、未知枚举/字段、非法范围拒绝。旧版本携带新字段必须拒绝。默认新配置可规范化为无字段，不因读取旧格式自动升级。
+
+几何与压力分别序列化，不把设备动态塞进 pressureDynamics。整包编译合并两类配置，行为4可以只带几何，也可以共存压力曲线和不透明度压感；对应能力必须准确声明。图片资源与完整来源保留原并集和身份，来源converter1基线继续禁止新对象，防止把导入原始行为误写成当前编辑。
+
+IO正常保存所有已执行设备配置。现有Qt模型仍只理解到v6和behavior3，因此ABI36的package旧入口暂时明确拒绝新tipDynamics，读在持久资源前拒绝，写在覆盖目标前拒绝；原生准备/Qt设置/动态光标下一阶段接入，届时升级能力并解除临时边界。本阶段不宣称Qt用户功能可用。
+
+验收：每类角度来源/倾斜圆度的state/VBR恢复后真实像素一致、与压力共存、旧格式不升级、未知/null/范围/版本/能力拒绝、图片与来源共存、原始converter1拒绝，package临时拒绝保持caller缓冲及现有目标；有界与原子保存沿现有实现。其余动态/湿混/ABR动态继续总体计划。

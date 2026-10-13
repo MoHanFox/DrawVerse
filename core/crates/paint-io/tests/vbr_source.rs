@@ -67,6 +67,7 @@ fn bundle() -> ImageBundle {
                     .map(str::to_owned),
                 source_resource: Some(p.source_id().into()),
                 parameters: Parameters {
+                    tip_dynamics: None,
                     pressure_dynamics: None,
                     diameter: s.diameter,
                     spacing: s.spacing,
@@ -91,6 +92,56 @@ fn bundle() -> ImageBundle {
         &token,
     )
     .unwrap()
+}
+
+#[test]
+fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() {
+    let token = CancellationToken::default();
+    let mut input = bundle();
+    let tip =
+        paint_core::TipDynamics::new(paint_core::AngleControl::PenRotation, true, 0.2).unwrap();
+    input.package.brushes[0].parameters.tip_dynamics =
+        Some(paint_io::brush_tip_dynamics::TipParameters::from_core(tip));
+    input.package.brushes[0].behavior_version = 4;
+    input.package.brushes[0]
+        .required_capabilities
+        .push("tip-dynamics".into());
+    let packed = vbr_image::encode(&input, &token).unwrap();
+    let output = vbr_image::decode(&packed, &token).unwrap();
+    assert_eq!(
+        output.sources()[0].original_bytes(),
+        input.sources()[0].original_bytes()
+    );
+    assert_eq!(
+        output.package.brushes[0].source_resource,
+        input.package.brushes[0].source_resource
+    );
+    assert_eq!(
+        output.package.brushes[0].tip_resource,
+        input.package.brushes[0].tip_resource
+    );
+    let mut docs = Vec::new();
+    for bundle in [&input, &output] {
+        let mut doc = Document::new(40, 40).unwrap();
+        let mut point = InputPoint::new(20.5, 20.5, 1.);
+        point.capabilities = 6;
+        point.rotation = 90.;
+        point.tilt_x = 60.;
+        doc.begin_brush_stroke(bundle.definition(0).unwrap(), point)
+            .unwrap();
+        doc.end_stroke().unwrap();
+        docs.push(doc);
+    }
+    for y in 0..40 {
+        for x in 0..40 {
+            assert_eq!(docs[0].pixel(x, y), docs[1].pixel(x, y));
+        }
+    }
+    let mut baseline: paint_io::brush_source::SourceInfo =
+        serde_json::from_slice(input.sources()[0].records().next().unwrap().1).unwrap();
+    baseline.baseline.tip_dynamics =
+        Some(paint_io::brush_tip_dynamics::TipParameters::from_core(tip));
+    assert!(baseline.validate().is_err());
 }
 fn rewrite(bytes: &[u8], mut edit: impl FnMut(&str, &mut Vec<u8>) -> bool) -> Vec<u8> {
     let mut archive = ZipArchive::new(Cursor::new(bytes)).unwrap();
@@ -393,7 +444,10 @@ fn published_source_contract_covers_record_identity_versions_and_asset_roles() {
     );
     let token = CancellationToken::default();
     let bytes = vbr_image::encode(&bundle(), &token).unwrap();
-    for version in [4, 5] {
+    for version in [
+        vbr_image::MAX_EXECUTABLE_MINOR + 1,
+        vbr_image::MAX_EXECUTABLE_MINOR + 2,
+    ] {
         let changed = rewrite(&bytes, |name, data| {
             if name == "manifest.json" {
                 let mut json: serde_json::Value = serde_json::from_slice(data).unwrap();

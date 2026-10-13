@@ -1,5 +1,7 @@
 # C ABI 1.36.0 契约
 
+设备动态IO阶段：Rust state7/VBR1.5已有独立tipDynamics保存，现有Qt仍只接受state6/behavior3。ABI36 package_read/write对tipDynamics对象暂返回Unsupported（读required=0且不改caller字节，写不改已有目标），不宣称旧Qt已支持新数据；新原生能力和Qt接入后解除边界。无DTO变化，来源/压力包保持原路径。见 `docs/brush-device-io-validation.md`。
+
 ## ABI 1.36：独立不透明度压感
 
 `PAINT_FEATURE_OPACITY_PRESSURE=2147483648`（features为u64）。现有目录状态接受v6，package接口支持VBR1.4/behavior3/opacity-pressure。pressureDynamics增加可选opacity对象，curve/minimum沿既有有界控制、enabled为严格布尔；v5不能携带此对象。普通绘画/擦除/蒙版起笔捕获局部压力上限，流量独立，较低压力不反向清除原颜色；涂抹继续强度语义。无DTO布局改变，旧C编辑保留动态，caller-memory边界不变。设计与验收见 `docs/brush-opacity-pressure-design.md` / `docs/brush-opacity-pressure-validation.md`。

@@ -61,6 +61,7 @@ impl ImportBatch {
                 Row {
                     name: &p.name,
                     parameters: crate::vbr::Parameters {
+                        tip_dynamics: None,
                         pressure_dynamics: None,
                         diameter: s.diameter,
                         spacing: s.spacing,

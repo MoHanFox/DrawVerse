@@ -33,18 +33,28 @@ pub struct Parameters {
         deserialize_with = "crate::brush_pressure::present"
     )]
     pub pressure_dynamics: Option<crate::brush_pressure::PressureParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_tip_dynamics::present"
+    )]
+    pub tip_dynamics: Option<crate::brush_tip_dynamics::TipParameters>,
 }
 impl Parameters {
     pub fn definition(&self) -> BrushDefinition {
         self.settings().definition()
     }
     pub fn settings(&self) -> BrushSettings {
+        let mut dynamics = self
+            .pressure_dynamics
+            .as_ref()
+            .map(|p| p.core().clone())
+            .unwrap_or_default();
+        if let Some(tip) = self.tip_dynamics {
+            dynamics.tip = tip.core();
+        }
         BrushSettings {
-            dynamics: self
-                .pressure_dynamics
-                .as_ref()
-                .map(|p| p.core().clone())
-                .unwrap_or_default(),
+            dynamics,
             mask: None,
             diameter: self.diameter,
             spacing: self.spacing,
@@ -163,13 +173,16 @@ impl Package {
                 ));
             }
             let pressure = b.parameters.pressure_dynamics.is_some();
+            let tip_dynamic = b.parameters.tip_dynamics.is_some();
             let opacity = b
                 .parameters
                 .pressure_dynamics
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if opacity {
+                != if tip_dynamic {
+                    4
+                } else if opacity {
                     3
                 } else if pressure {
                     2
@@ -193,6 +206,7 @@ impl Package {
                             | "dab-flow"
                             | "pressure-curves"
                             | "opacity-pressure"
+                            | "tip-dynamics"
                     )
                 })
             {
@@ -213,6 +227,8 @@ impl Package {
                     != b.required_capabilities
                         .iter()
                         .any(|c| c == "opacity-pressure")
+                || tip_dynamic != b.required_capabilities.iter().any(|c| c == "tip-dynamics")
+                || (tip_dynamic && b.engine_profile != "drawverse.brush")
             {
                 return Err(Error::Invalid("VBR pressure behavior/capability"));
             }
@@ -353,6 +369,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
         b.tip_resource.is_some()
             || b.source_resource.is_some()
             || b.parameters.pressure_dynamics.is_some()
+            || b.parameters.tip_dynamics.is_some()
     }) {
         return Err(Error::Unsupported(
             "image VBR requires a resource bundle".into(),
@@ -366,6 +383,7 @@ pub fn encode(package: &Package, token: &CancellationToken) -> Result<Vec<u8>> {
         b.tip_resource.is_some()
             || b.source_resource.is_some()
             || b.parameters.pressure_dynamics.is_some()
+            || b.parameters.tip_dynamics.is_some()
     }) {
         return Err(Error::Unsupported(
             "image VBR requires a resource bundle".into(),

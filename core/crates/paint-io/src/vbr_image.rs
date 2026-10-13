@@ -1,4 +1,4 @@
-//! VBR 1.1/1.2 portable tips and complete provenance. No file extraction or catalogue mutation.
+//! VBR 1.1–1.5 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
 use crate::{
     brush_resource::{decode_verified, valid_id},
     check,
@@ -16,6 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+pub const MAX_EXECUTABLE_MINOR: u32 = 5;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -212,7 +213,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
     let manifest: Manifest = vbr::json(&vbr::read_entry(&mut zip, "manifest.json", MAX_JSON)?)?;
     if manifest.format != "DrawVerseBrush"
         || manifest.version.major != 1
-        || manifest.version.minor > 4
+        || manifest.version.minor > MAX_EXECUTABLE_MINOR
     {
         return Err(Error::Unsupported("VBR format/version".into()));
     }
@@ -240,6 +241,9 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             return Err(Error::Invalid("VBR preset identity mismatch"));
         }
         brushes.push(preset);
+    }
+    if manifest.version.minor < 5 && brushes.iter().any(|b| b.parameters.tip_dynamics.is_some()) {
+        return Err(Error::Unsupported("tip dynamics require VBR1.5".into()));
     }
     if manifest.version.minor < 4
         && brushes.iter().any(|b| {
@@ -344,6 +348,11 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
             .brushes
             .iter()
             .any(|b| b.parameters.pressure_dynamics.is_some())
+        && !bundle
+            .package
+            .brushes
+            .iter()
+            .any(|b| b.parameters.tip_dynamics.is_some())
     {
         return vbr::encode(&bundle.package, token);
     }
@@ -369,7 +378,14 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle.package.brushes.iter().any(|b| {
+            minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.parameters.tip_dynamics.is_some())
+            {
+                5
+            } else if bundle.package.brushes.iter().any(|b| {
                 b.parameters
                     .pressure_dynamics
                     .as_ref()
