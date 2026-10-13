@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新ABR描述符：`docs/abr-descriptor-design.md` / `docs/abr-descriptor-validation.md`；有界typed tree/单位与引用/显式desc接入、长度与递归拒绝；具体PS参数/样本关联/用户入口/真实授权语料继续后续，无ABI变化。
+
 - 最新ABR分节采样：`docs/abr-sections-design.md` / `docs/abr-sections-validation.md`；6/10×1/2有界分节/记录对齐/共用PackBits、原始来源元数据保留；desc执行/用户入口/16位/真实授权语料继续后续，无ABI变化。
 
 - 最新ABR采样读取：`docs/abr-sampled-design.md` / `docs/abr-sampled-validation.md`；Rust1/2采样原始/PackBits/UTF16与来源字段、整包拒绝与真实孔洞测试；尚未接用户入口，6/10/程序/16位/动态报告和授权真实语料继续后续，无ABI变化。

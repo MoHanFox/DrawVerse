@@ -60,6 +60,7 @@ fn both_versions_subversions_and_encodings_preserve_metadata_and_draw_holes() {
                 assert_eq!(parsed.metadata.len(), 3);
                 assert_eq!(&*parsed.metadata[0].bytes, b"uninterpreted descriptor");
                 assert_eq!(&*parsed.metadata[2].bytes, b"second");
+                assert!(parsed.descriptors(&token).is_err());
                 let tip = &parsed.tips[0];
                 assert_eq!(tip.prefix.len(), if subversion == 1 { 47 } else { 301 });
                 assert!(tip.prefix.iter().all(|b| *b == 42));

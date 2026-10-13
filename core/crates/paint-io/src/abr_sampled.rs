@@ -234,6 +234,24 @@ pub struct SectionedAbr {
     pub tips: Vec<SectionedTip>,
     pub metadata: Vec<OpaqueSection>,
 }
+impl SectionedAbr {
+    /// Parse all descriptor sections explicitly; sampling alone proves no setting support.
+    pub fn descriptors(
+        &self,
+        token: &CancellationToken,
+    ) -> Result<Vec<crate::ps_descriptor::Descriptor>> {
+        let mut parsed = Vec::new();
+        for section in &self.metadata {
+            if &section.key == b"desc" {
+                parsed.push(crate::ps_descriptor::decode(&section.bytes, token)?);
+            }
+        }
+        if parsed.is_empty() {
+            return Err(Error::Invalid("ABR descriptor section missing"));
+        }
+        Ok(parsed)
+    }
+}
 pub fn decode_sectioned(bytes: &[u8], token: &CancellationToken) -> Result<SectionedAbr> {
     check(token)?;
     if bytes.len() > 128 * 1024 * 1024 {
