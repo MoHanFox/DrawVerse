@@ -1,4 +1,10 @@
-# C ABI 1.33.0 契约
+# C ABI 1.34.0 契约
+
+## ABI 1.34：VBR来源交换
+
+`PAINT_FEATURE_VBR_SOURCES=536870912`。现有library_package_read/write支持VBR1.2：sourceResource及完整源JSON、原ABR和导入时/当前PNG并集。来源字段为元数据，不执行未支持PS行为。读取全包验证及caller容量/指针通过后才持久资源，caller JSON保持来源引用；required失败保持0，BUFFER_TOO_SMALL给准确长度。当前mask与来源凭据待准确发布采用，只有报告引用的基线mip不长期持有。
+
+写入按来源引用冷读取分组原数据/记录，再收集基线和当前PNG并编译全包，原子目标保存；任何缺失/损坏不能覆盖现有目标。调用者在JSON里提供sourceResource表示要求包含完整原始ABR，可能包含同包其他预设和资源；GUI必须让用户明确选择此范围。无来源输出仍1.0/1.1。无ABI DTO布局变化。
 
 ## ABI 1.33：ABR整包导入
 

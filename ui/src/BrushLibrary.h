@@ -66,7 +66,7 @@ public:
     bool pressureSize() const;
     bool pressureFlow() const;
     QVariantMap tipSettings() const;
-    QByteArray exportPackage() const;
+    QByteArray exportPackage(bool includeSource=false) const;
     bool importPackage(const QByteArray &json);
     bool importAbr(const QByteArray &json);
     void setHardness(qreal value);

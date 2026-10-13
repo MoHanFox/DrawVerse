@@ -70,8 +70,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 33) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.33 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 34) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.34 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -1462,10 +1462,11 @@ bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
     if(status!=PAINT_OK){lock.unlock();showError(immediateError(status));return false;}
     m_brushCatalogConnection->source=source;m_brushCatalogConnection->preparation=preparation;return true;
 }
-bool PaintCoreClient::exportBrush(const QUrl &path) {
+bool PaintCoreClient::exportBrush(const QUrl &path,bool includeSource,const QString &expectedPreset) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
-    const auto package=m_brushLibrary->exportPackage();
-    if(package.isEmpty()){showError(QStringLiteral("当前 VBR 格式尚不能保留 ABR 来源，暂不可导出该笔刷"));return false;}
+    if(!expectedPreset.isEmpty() && expectedPreset!=m_brushLibrary->selectedId()){showError(QStringLiteral("待导出的笔刷已更改，请重新选择导出"));return false;}
+    const auto package=m_brushLibrary->exportPackage(includeSource);
+    if(package.isEmpty()){showError(QStringLiteral("请在导出选项中选择包含原始 ABR 包；原始包可能包含其他预设和资源"));return false;}
     m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),package]{worker->brushFile(path,package,true);},Qt::QueuedConnection);return true;
 }

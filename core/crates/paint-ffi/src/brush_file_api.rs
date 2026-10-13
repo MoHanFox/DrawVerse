@@ -109,15 +109,9 @@ pub unsafe extern "C" fn paint_brush_library_package_read(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
-        if !bundle.sources().is_empty() {
-            return Err(ApiError::new(
-                PAINT_UNSUPPORTED,
-                "VBR source resources are not supported by this interface",
-            ));
-        }
         let bytes = bundle.package.to_json().map_err(io_error)?;
-        pointers::write(required, bytes.len() as u64)?;
         if pointers::length(capacity)? < bytes.len() {
+            pointers::write(required, bytes.len() as u64)?;
             return Err(ApiError::new(
                 PAINT_BUFFER_TOO_SMALL,
                 "VBR JSON buffer too small",
@@ -147,18 +141,36 @@ pub unsafe extern "C" fn paint_brush_library_package_write(
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
         let mut assets = std::collections::BTreeMap::new();
         let token = CancellationToken::default();
-        if package.brushes.iter().any(|b| b.tip_resource.is_some()) {
+        let mut sources = Vec::new();
+        let source_ids = package
+            .brushes
+            .iter()
+            .filter_map(|b| b.source_resource.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        if package.brushes.iter().any(|b| b.tip_resource.is_some()) || !source_ids.is_empty() {
             let store = library.resource_store()?;
-            for preset in &package.brushes {
-                if let Some(id) = &preset.tip_resource {
-                    if !assets.contains_key(id) {
-                        assets.insert(id.clone(), store.encoded(id).map_err(io_error)?);
-                    }
-                }
+            if !source_ids.is_empty() {
+                sources = store
+                    .source_store()
+                    .map_err(io_error)?
+                    .export_batches(&source_ids, &token)
+                    .map_err(io_error)?;
+            }
+            let mut tips = package
+                .brushes
+                .iter()
+                .filter_map(|b| b.tip_resource.clone())
+                .collect::<std::collections::BTreeSet<_>>();
+            for source in &sources {
+                tips.extend(source.tip_ids().map(str::to_owned));
+            }
+            for id in tips {
+                assets.insert(id.clone(), store.encoded(&id).map_err(io_error)?);
             }
         }
         let bundle =
-            paint_io::vbr_image::ImageBundle::new(package, assets, &token).map_err(io_error)?;
+            paint_io::vbr_image::ImageBundle::with_sources(package, assets, sources, &token)
+                .map_err(io_error)?;
         paint_io::vbr_image::save(Path::new(&path), &bundle, &token).map_err(io_error)
     })
 }

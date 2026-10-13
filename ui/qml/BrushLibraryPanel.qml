@@ -13,6 +13,14 @@ ColumnLayout {
         if(canvasView) {canvasView.forceActiveFocus();canvasView.Window.window.requestActivate()}
         else root.forceActiveFocus()
     }
+    property bool includeExportSource:false
+    property string exportPreset:""
+    function beginExport() {
+        includeExportSource=false
+        exportPreset=library.selectedId
+        if(library.sourceResource.length>0){includeOriginal.checked=false;sourceOptions.open()}
+        else exportDialog.open()
+    }
     readonly property var library:PaintClient.brushLibrary
     spacing:4
     RowLayout {
@@ -61,7 +69,7 @@ ColumnLayout {
     RowLayout {
         Item {Layout.fillWidth:true}
         IconButton {objectName:"importBrushPackage";glyph:"folder";tooltip:"导入 VBR / ABR 笔刷包";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:importDialog.open()}
-        IconButton {objectName:"exportBrushPackage";glyph:"save";tooltip:"导出当前笔刷为 VBR";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:exportDialog.open()}
+        IconButton {objectName:"exportBrushPackage";glyph:"save";tooltip:"导出当前笔刷为 VBR";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:root.beginExport()}
         IconButton {glyph:"plus";tooltip:"保存当前设置为新画笔";implicitHeight:22;onClicked:saveDialog.open()}
         IconButton {glyph:"trash";tooltip:"删除自定义画笔";implicitHeight:22;enabled:root.library.presets.some(p=>p.id===root.library.selectedId && !p.builtin);onClicked:root.library.remove(root.library.selectedId)}
     }
@@ -71,8 +79,21 @@ ColumnLayout {
         TextField {id:brushName;placeholderText:"画笔名称";maximumLength:80;text:root.library.selectedName+" 副本"}
         onAccepted:root.library.saveCopy(brushName.text)
     }
+    Dialog {
+        id:sourceOptions;objectName:"brushSourceExportOptions";title:"导出来源范围";modal:true;anchors.centerIn:Overlay.overlay;width:320
+        contentItem:ColumnLayout {
+            spacing:8
+            Label {text:"该笔刷包含 ABR 来源。原始包可能包含其他预设和资源；选择后将完整包含在 VBR 中。";textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.WordWrap;font.pixelSize:10;color:Theme.text}
+            CompactCheckBox {id:includeOriginal;objectName:"includeOriginalAbr";text:"包含原始 ABR 包";font.pixelSize:10;tooltip:"包含全部原始字节以及导入时参数和兼容报告；原始包可能包含其他预设和资源。"}
+        }
+        footer:RowLayout {
+            Item {Layout.fillWidth:true}
+            Button {text:"取消";implicitHeight:24;onClicked:sourceOptions.reject()}
+            Button {objectName:"confirmSourceExport";text:"继续";implicitHeight:24;enabled:includeOriginal.checked;onClicked:{root.includeExportSource=true;sourceOptions.accept();exportDialog.open()}}
+        }
+    }
     FileDialog {id:importDialog;objectName:"brushImportDialog";title:"导入笔刷包";nameFilters:["笔刷包 (*.vbr *.abr)","DrawVerse 笔刷 (*.vbr)","Photoshop 笔刷 (*.abr)"];onAccepted:PaintClient.importBrushes(selectedFile)}
-    FileDialog {id:exportDialog;title:"导出当前笔刷";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.exportBrush(selectedFile)}
+    FileDialog {id:exportDialog;title:"导出当前笔刷";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.exportBrush(selectedFile,root.includeExportSource,root.exportPreset)}
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
     Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}}
 }

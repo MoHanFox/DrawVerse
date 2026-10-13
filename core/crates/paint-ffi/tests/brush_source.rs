@@ -1,11 +1,11 @@
 use paint_ffi::*;
-use paint_task::CancellationToken;
 use paint_io::{
     abr_conversion::ConvertedPreset,
     brush_resource::ResourceStore,
     brush_source::SourceArchive,
     ps_descriptor::{Class, Descriptor},
 };
+use paint_task::CancellationToken;
 use std::{ptr, sync::Arc};
 #[test]
 fn source_query_returns_exact_verified_record_and_clears_outputs_on_failure() {
@@ -114,7 +114,7 @@ fn source_query_returns_exact_verified_record_and_clears_outputs_on_failure() {
 }
 
 #[test]
-fn current_native_reader_explicitly_refuses_source_bundles_without_dropping_provenance() {
+fn native_reader_and_writer_exchange_source_bundles_and_never_drop_provenance() {
     use std::collections::BTreeMap;
     let temp = tempfile::tempdir().unwrap();
     let token = CancellationToken::default();
@@ -151,7 +151,7 @@ fn current_native_reader_explicitly_refuses_source_bundles_without_dropping_prov
             required_capabilities: vec!["procedural-tip".into()],
             parameters: archive.info.baseline,
             tip_resource: None,
-            source_resource: Some(id),
+            source_resource: Some(id.clone()),
         }],
     };
     let bundle = paint_io::vbr_image::ImageBundle::with_sources(
@@ -180,15 +180,68 @@ fn current_native_reader_explicitly_refuses_source_bundles_without_dropping_prov
                 library,
                 encoded.as_ptr(),
                 encoded.len() as u64,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+        assert_eq!(
+            paint_brush_library_package_read(
+                library,
+                encoded.as_ptr(),
+                encoded.len() as u64,
                 output.as_mut_ptr(),
                 output.len() as u64,
                 &mut required
             ),
-            PAINT_UNSUPPORTED
+            PAINT_OK
         );
-        assert_eq!(required, 0);
-        assert!(output.iter().all(|b| *b == 42));
-        assert_eq!(std::fs::read_dir(directory).unwrap().count(), 0);
+        output.truncate(required as usize);
+        assert_eq!(output, bundle.package.to_json().unwrap());
+        let sources = paint_io::brush_source::SourceStore::open(directory.join("sources")).unwrap();
+        assert_eq!(
+            sources.load(&id, &token).unwrap().original(),
+            [0, 6, 0, 2, 42]
+        );
+        let exported = temp.path().join("roundtrip.vbr");
+        let target = exported.to_str().unwrap();
+        assert_eq!(
+            paint_brush_library_package_write(
+                library,
+                target.as_ptr(),
+                target.len() as u64,
+                output.as_ptr(),
+                output.len() as u64
+            ),
+            PAINT_OK
+        );
+        let restored = paint_io::vbr_image::load(&exported, &token).unwrap();
+        assert_eq!(restored.package.to_json().unwrap(), output);
+        assert_eq!(
+            restored.sources()[0].original_bytes(),
+            bundle.sources()[0].original_bytes()
+        );
+        let saved = std::fs::read(&exported).unwrap();
+        std::fs::write(
+            directory
+                .join("sources")
+                .join(format!("{}.abr", restored.sources()[0].original_id())),
+            b"corrupt",
+        )
+        .unwrap();
+        assert_eq!(
+            paint_brush_library_package_write(
+                library,
+                target.as_ptr(),
+                target.len() as u64,
+                output.as_ptr(),
+                output.len() as u64
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(std::fs::read(exported).unwrap(), saved);
         assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
     }
 }

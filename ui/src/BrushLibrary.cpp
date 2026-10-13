@@ -109,15 +109,16 @@ QByteArray BrushLibrary::snapshot() const {
     return QJsonDocument(QJsonObject{{"version",version},{"selected",m_selected},{"presets",rows},{"cursor",QJsonObject{{"outline",m_cursorOutline},{"center",m_cursorCenter},{"hoverOnly",m_cursorHoverOnly},{"width",m_cursorWidth},{"simple",m_cursorSimple},{"color",m_cursorColor},{"secondaryColor",m_cursorSecondaryColor}}},{"toolRadii",QJsonArray{m_toolRadii[0],m_toolRadii[1]}},
                                      {"recentColors",QJsonArray::fromStringList(m_recentColors)}}).toJson(QJsonDocument::Compact);
 }
-QByteArray BrushLibrary::exportPackage() const {
+QByteArray BrushLibrary::exportPackage(bool includeSource) const {
     const auto &p=m_presets[index(m_selected)];
-    if(!p.sourceResource.isEmpty())return {}; // VBR1.1 cannot preserve sources yet.
+    if(!p.sourceResource.isEmpty() && !includeSource)return {};
     const QStringList builtins={"round-pressure","round-fine","round-translucent","round-wide"};
     const int builtin=builtins.indexOf(p.id);
     const auto id=builtin<0?p.id:QString("dba00000-0000-4000-8000-%1").arg(builtin+1,12,16,QChar('0'));
     const QJsonObject parameters{{"diameter",p.radius*2},{"spacing",p.spacing/2},{"dabOpacity",p.opacity},{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}};
     QJsonObject preset{{"id",id},{"name",p.name},{"engineProfile","drawverse.brush"},{"behaviorVersion",1},{"requiredCapabilities",QJsonArray{p.maskResource.isEmpty()?"procedural-tip":"image-tip","pressure","dab-flow"}},{"parameters",parameters}};
     if(!p.maskResource.isEmpty())preset["tipResource"]=p.maskResource;
+    if(!p.sourceResource.isEmpty())preset["sourceResource"]=p.sourceResource;
     return QJsonDocument(QJsonObject{{"packageId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"brushes",QJsonArray{preset}}}).toJson(QJsonDocument::Compact);
 }
 QByteArray BrushLibrary::catalogSnapshot() const {
@@ -148,6 +149,7 @@ bool BrushLibrary::importPackage(const QByteArray &json) {
         QJsonObject row{{"id",id},{"name",b.value("name")},{"radius",params.value("diameter").toDouble()/2},{"opacity",params.value("dabOpacity")},{"spacing",params.value("spacing").toDouble()*2}};
         for(const auto &key:{"hardness","roundness","angle","flow","pressureSize","pressureFlow"})row[key]=params.value(key);
         if(b.contains("tipResource")){row["maskResource"]=b.value("tipResource");state["version"]=std::max(state.value("version").toInt(),3);}
+        if(b.contains("sourceResource")){row["sourceResource"]=b.value("sourceResource");state["version"]=4;}
         rows.append(row);
     }
     state["presets"]=rows;state["selected"]=selected;

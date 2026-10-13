@@ -295,7 +295,7 @@ impl PreparedCatalog {
         Ok(resource)
     }
     pub fn import_bundle(&self, bundle: &paint_io::vbr_image::ImageBundle) -> ApiResult<()> {
-        if bundle.assets().is_empty() {
+        if bundle.assets().is_empty() && bundle.sources().is_empty() {
             return Ok(());
         }
         self.retire_unused_images()?;
@@ -305,13 +305,45 @@ impl PreparedCatalog {
             .take();
         let store = self.resource_store()?;
         let token = paint_task::CancellationToken::default();
+        self.imported_sources
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .take();
         let mut imported = Vec::new();
+        let needed = bundle
+            .package
+            .brushes
+            .iter()
+            .filter_map(|p| p.tip_resource.as_deref())
+            .collect::<std::collections::BTreeSet<_>>();
         for (id, asset) in bundle.assets() {
-            imported.push(
+            let resource = store
+                .put_verified(id, asset.bytes(), &token)
+                .map_err(io_error)?;
+            if needed.contains(id.as_str()) {
+                imported.push(resource);
+            }
+        }
+        let mut source_ids = std::collections::BTreeSet::new();
+        for batch in bundle.sources() {
+            source_ids.extend(
                 store
-                    .put_verified(id, asset.bytes(), &token)
+                    .source_store()
+                    .map_err(io_error)?
+                    .save_batch(batch, &token)
                     .map_err(io_error)?,
             );
+        }
+        if !source_ids.is_empty() {
+            let receipts = store
+                .source_store()
+                .map_err(io_error)?
+                .resolve_references(&source_ids, &token)
+                .map_err(io_error)?;
+            *self
+                .imported_sources
+                .lock()
+                .map_err(|_| ApiError::internal())? = Some(receipts);
         }
         *self.imported.lock().map_err(|_| ApiError::internal())? = Some(imported);
         Ok(())
@@ -455,6 +487,112 @@ mod abr_fixture;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn source_only_bundle_does_not_keep_baseline_pixels_alive_after_import() {
+        use paint_io::{
+            abr_conversion::ConvertedPreset,
+            brush_source::{SourceArchive, SourceBatch},
+            ps_descriptor::{Class, Descriptor},
+            vbr::{Package, Preset},
+        };
+        let descriptor = Descriptor {
+            class: Class {
+                name: String::new(),
+                id: b"null".to_vec(),
+            },
+            entries: Vec::new(),
+        };
+        let original = Arc::new(vec![0, 6, 0, 2, 37]);
+        let token = paint_task::CancellationToken::default();
+        let mask = Arc::new(paint_core::BrushMask::new(8, 8, vec![255; 64]).unwrap());
+        let settings = paint_core::BrushSettings {
+            mask: Some(mask.clone()),
+            ..Default::default()
+        };
+        let converted = ConvertedPreset {
+            name: "baseline",
+            settings,
+            source: &descriptor,
+            issues: Vec::new(),
+        };
+        let archive = SourceArchive::capture(original.clone(), 0, &converted).unwrap();
+        let record = archive.record().unwrap();
+        let source = paint_io::brush_resource::hash(&record);
+        let png = paint_io::brush_resource::encode_mask(&mask).unwrap();
+        let tip = paint_io::brush_resource::hash(&png);
+        let batch = SourceBatch::from_records(
+            original,
+            std::collections::BTreeMap::from([(source.clone(), record)]),
+            &token,
+        )
+        .unwrap();
+        let package = Package {
+            package_id: "12345678-1234-4234-8234-123456789abc".into(),
+            brushes: vec![Preset {
+                id: "12345678-1234-4234-8234-123456789abd".into(),
+                name: "current procedural".into(),
+                engine_profile: "drawverse.brush".into(),
+                behavior_version: 1,
+                required_capabilities: vec!["procedural-tip".into()],
+                parameters: archive.info.baseline,
+                tip_resource: None,
+                source_resource: Some(source.clone()),
+            }],
+        };
+        let bundle = paint_io::vbr_image::ImageBundle::with_sources(
+            package,
+            std::collections::BTreeMap::from([(tip.clone(), png)]),
+            vec![batch],
+            &token,
+        )
+        .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let library = PreparedCatalog::new(BrushCatalog::default());
+        library.bind_resources(temp.path().into()).unwrap();
+        library.import_bundle(&bundle).unwrap();
+        assert!(library
+            .imported
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            library
+                .imported_sources
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .len(),
+            1
+        );
+        let loaded = library
+            .resource_store()
+            .unwrap()
+            .load(&tip, &token)
+            .unwrap();
+        let weak = Arc::downgrade(&loaded.mask);
+        drop(loaded);
+        assert!(weak.upgrade().is_none());
+        let mut catalog = BrushCatalog::default();
+        let preset = &bundle.package.brushes[0];
+        catalog
+            .save_copy(preset.id.clone(), preset.name.clone())
+            .unwrap();
+        catalog
+            .edit(&preset.id, preset.parameters.settings())
+            .unwrap();
+        catalog.set_source(&preset.id, Some(source)).unwrap();
+        let seq = library
+            .submit(String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap())
+            .unwrap();
+        library.ticket(seq).unwrap().wait().unwrap();
+        drop(library.current().unwrap());
+        assert!(library.imported.lock().unwrap().is_none());
+        assert!(library.imported_sources.lock().unwrap().is_none());
+        assert_eq!(library.current_receipts.lock().unwrap().len(), 1);
+    }
     #[test]
     fn abr_handoff_is_adopted_by_mutation_and_sources_remain_owned_by_current() {
         let temp = tempfile::tempdir().unwrap();
