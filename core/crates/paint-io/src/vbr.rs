@@ -60,6 +60,8 @@ pub struct Preset {
     pub parameters: Parameters,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tip_resource: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_resource: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -158,6 +160,12 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR required capabilities".into()));
             }
+            if b.source_resource
+                .as_ref()
+                .is_some_and(|id| !crate::brush_resource::valid_id(id))
+            {
+                return Err(Error::Invalid("VBR source identity"));
+            }
             let definition = b.parameters.definition();
             if let Some(id) = &b.tip_resource {
                 if !crate::brush_resource::valid_id(id)
@@ -197,7 +205,8 @@ pub(crate) fn checked_archive<'a>(
         return Err(Error::Limit("VBR compressed bytes"));
     }
     let mut zip = ZipArchive::new(Cursor::new(bytes))?;
-    if zip.len() > 4096 {
+    // Manifest + 1024 presets + 2048 tips + 1024 records + 1024 originals.
+    if zip.len() > 5121 {
         return Err(Error::Limit("VBR entry count"));
     }
     let mut paths = BTreeSet::new();
@@ -290,7 +299,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
         brushes,
     };
     package.validate()?;
-    if package.brushes.iter().any(|b| b.tip_resource.is_some()) {
+    if package
+        .brushes
+        .iter()
+        .any(|b| b.tip_resource.is_some() || b.source_resource.is_some())
+    {
         return Err(Error::Unsupported(
             "image VBR requires a resource bundle".into(),
         ));
@@ -299,7 +312,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
 }
 pub fn encode(package: &Package, token: &CancellationToken) -> Result<Vec<u8>> {
     package.validate()?;
-    if package.brushes.iter().any(|b| b.tip_resource.is_some()) {
+    if package
+        .brushes
+        .iter()
+        .any(|b| b.tip_resource.is_some() || b.source_resource.is_some())
+    {
         return Err(Error::Unsupported(
             "image VBR requires a resource bundle".into(),
         ));

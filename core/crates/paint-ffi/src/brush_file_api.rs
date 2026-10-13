@@ -109,6 +109,12 @@ pub unsafe extern "C" fn paint_brush_library_package_read(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
+        if !bundle.sources().is_empty() {
+            return Err(ApiError::new(
+                PAINT_UNSUPPORTED,
+                "VBR source resources are not supported by this interface",
+            ));
+        }
         let bytes = bundle.package.to_json().map_err(io_error)?;
         pointers::write(required, bytes.len() as u64)?;
         if pointers::length(capacity)? < bytes.len() {

@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+VBR来源IO：[设计](vbr-source-design.md) / [验收](vbr-source-validation.md)。1.2有界来源资源与当前/基线资源已实现；继续原生Qt明确原包范围导出及完整交换。
+
 ABR用户入口：[设计](abr-entry-design.md) / [验收](abr-entry-validation.md)。ABI1.33，6/10基础整包已接原生Qt并保留来源报告；完整兼容/VBR来源/动态湿混继续后续。
 
 ABR整包IO导入：[设计](abr-import-design.md) / [验收](abr-import-validation.md)。整包转换/编译/图片及来源批次已完成；继续原生Qt用户入口与VBR来源。

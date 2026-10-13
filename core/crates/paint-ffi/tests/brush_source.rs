@@ -1,4 +1,5 @@
 use paint_ffi::*;
+use paint_task::CancellationToken;
 use paint_io::{
     abr_conversion::ConvertedPreset,
     brush_resource::ResourceStore,
@@ -109,5 +110,85 @@ fn source_query_returns_exact_verified_record_and_clears_outputs_on_failure() {
             PAINT_INVALID_HANDLE
         );
         assert_eq!(required, 0);
+    }
+}
+
+#[test]
+fn current_native_reader_explicitly_refuses_source_bundles_without_dropping_provenance() {
+    use std::collections::BTreeMap;
+    let temp = tempfile::tempdir().unwrap();
+    let token = CancellationToken::default();
+    let original = Arc::new(vec![0, 6, 0, 2, 42]);
+    let descriptor = Descriptor {
+        class: Class {
+            name: String::new(),
+            id: b"null".to_vec(),
+        },
+        entries: Vec::new(),
+    };
+    let converted = ConvertedPreset {
+        name: "source",
+        settings: paint_core::BrushSettings::default(),
+        source: &descriptor,
+        issues: Vec::new(),
+    };
+    let archive = SourceArchive::capture(original.clone(), 0, &converted).unwrap();
+    let record = archive.record().unwrap();
+    let id = paint_io::brush_resource::hash(&record);
+    let batch = paint_io::brush_source::SourceBatch::from_records(
+        original,
+        BTreeMap::from([(id.clone(), record)]),
+        &token,
+    )
+    .unwrap();
+    let package = paint_io::vbr::Package {
+        package_id: "12345678-1234-4234-8234-123456789abc".into(),
+        brushes: vec![paint_io::vbr::Preset {
+            id: "12345678-1234-4234-8234-123456789abd".into(),
+            name: "source".into(),
+            engine_profile: "drawverse.brush".into(),
+            behavior_version: 1,
+            required_capabilities: vec!["procedural-tip".into()],
+            parameters: archive.info.baseline,
+            tip_resource: None,
+            source_resource: Some(id),
+        }],
+    };
+    let bundle = paint_io::vbr_image::ImageBundle::with_sources(
+        package,
+        BTreeMap::new(),
+        vec![batch],
+        &token,
+    )
+    .unwrap();
+    let path = temp.path().join("source.vbr");
+    paint_io::vbr_image::save(&path, &bundle, &token).unwrap();
+    unsafe {
+        let mut library = ptr::null_mut();
+        assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+        let directory = temp.path().join("unused");
+        let encoded = directory.to_str().unwrap();
+        assert_eq!(
+            paint_brush_library_bind_resources(library, encoded.as_ptr(), encoded.len() as u64),
+            PAINT_OK
+        );
+        let encoded = path.to_str().unwrap();
+        let mut required = 99;
+        let mut output = vec![42; 2 * 1024 * 1024];
+        assert_eq!(
+            paint_brush_library_package_read(
+                library,
+                encoded.as_ptr(),
+                encoded.len() as u64,
+                output.as_mut_ptr(),
+                output.len() as u64,
+                &mut required
+            ),
+            PAINT_UNSUPPORTED
+        );
+        assert_eq!(required, 0);
+        assert!(output.iter().all(|b| *b == 42));
+        assert_eq!(std::fs::read_dir(directory).unwrap().count(), 0);
+        assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
     }
 }

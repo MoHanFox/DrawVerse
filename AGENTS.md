@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新VBR来源IO：`docs/vbr-source-design.md` / `docs/vbr-source-validation.md`；VBR1.2三角色/原记录SHA/共享原包与当前基线PNG、批次导出/5121条目边界与Schema；旧原生接口明确拒绝防丢来源，原生Qt范围选项/分组动态继续后续，无ABI变化。
+
 - 最新ABR用户入口：`docs/abr-entry-design.md` / `docs/abr-entry-validation.md`；ABI1.33、后台整包交接/准确资源采用、VBR与ABR统一按钮/UUID整包副本、部分数量与来源报告/删除输入后绘画恢复；完整ABR动态/旧参数16位、VBR来源与湿混继续后续。
 
 - 最新ABR整包IO导入：`docs/abr-import-design.md` / `docs/abr-import-validation.md`；6/10全链编译/共享PNG与完整来源批次、单原包保存/总报告边界/顺序与像素验证；原生Qt入口、旧参数/16位与VBR来源继续后续，无ABI变化。

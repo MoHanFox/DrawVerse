@@ -179,6 +179,7 @@ pub struct SourceBatch {
     original: Arc<Vec<u8>>,
     original_id: String,
     records: Vec<(String, Vec<u8>)>,
+    tip_ids: BTreeSet<String>,
 }
 impl SourceBatch {
     pub fn capture(
@@ -194,6 +195,7 @@ impl SourceBatch {
         let original_id = hash(&original);
         let mut tips: BTreeMap<usize, String> = BTreeMap::new();
         let mut records = Vec::new();
+        let mut tip_ids = BTreeSet::new();
         let mut total = 0usize;
         for (index, preset) in presets.iter().enumerate() {
             check(token)?;
@@ -217,6 +219,9 @@ impl SourceBatch {
                 preset,
                 tip_resource,
             )?;
+            if let Some(id) = &info.tip_resource {
+                tip_ids.insert(id.clone());
+            }
             let record = serde_json::to_vec(&info).map_err(|e| Error::Codec(e.to_string()))?;
             total = total.saturating_add(record.len());
             if record.len() > MAX_RECORD || total > 32 * 1024 * 1024 {
@@ -229,7 +234,65 @@ impl SourceBatch {
             original,
             original_id,
             records,
+            tip_ids,
         })
+    }
+    /// Verify portable records against one shared original, preserving record bytes.
+    pub fn from_records(
+        original: Arc<Vec<u8>>,
+        records: BTreeMap<String, Vec<u8>>,
+        token: &CancellationToken,
+    ) -> Result<Self> {
+        check(token)?;
+        if records.is_empty() || records.len() > 1024 {
+            return Err(Error::Limit("brush source batch count"));
+        }
+        let version = header(&original)?;
+        let original_id = hash(&original);
+        let mut tip_ids = BTreeSet::new();
+        let mut total = 0usize;
+        for (id, bytes) in &records {
+            check(token)?;
+            total = total.saturating_add(bytes.len());
+            if bytes.len() > MAX_RECORD || total > 32 * 1024 * 1024 {
+                return Err(Error::Limit("brush source batch record bytes"));
+            }
+            if !valid_id(id) || hash(bytes) != *id {
+                return Err(Error::Invalid("brush source record identity"));
+            }
+            let info: SourceInfo =
+                serde_json::from_slice(bytes).map_err(|e| Error::Codec(e.to_string()))?;
+            info.validate()?;
+            if info.original_hash != original_id
+                || (info.file_version, info.file_subversion) != version
+            {
+                return Err(Error::Invalid("brush source original identity/version"));
+            }
+            if let Some(id) = info.tip_resource {
+                tip_ids.insert(id);
+            }
+        }
+        check(token)?;
+        Ok(Self {
+            original,
+            original_id,
+            records: records.into_iter().collect(),
+            tip_ids,
+        })
+    }
+    pub fn original_id(&self) -> &str {
+        &self.original_id
+    }
+    pub fn original_bytes(&self) -> &[u8] {
+        &self.original
+    }
+    pub fn records(&self) -> impl Iterator<Item = (&str, &[u8])> {
+        self.records
+            .iter()
+            .map(|(id, bytes)| (id.as_str(), bytes.as_slice()))
+    }
+    pub fn tip_ids(&self) -> impl Iterator<Item = &str> {
+        self.tip_ids.iter().map(String::as_str)
     }
     pub fn ids(&self) -> impl Iterator<Item = &str> {
         self.records.iter().map(|(id, _)| id.as_str())
@@ -401,6 +464,46 @@ impl SourceStore {
         }
         check(token)?;
         Ok(batch.ids().map(str::to_owned).collect())
+    }
+    /// Fresh export, grouped by original identity; no per-preset original copies.
+    pub fn export_batches(
+        &self,
+        ids: &BTreeSet<String>,
+        token: &CancellationToken,
+    ) -> Result<Vec<SourceBatch>> {
+        check(token)?;
+        if ids.is_empty() || ids.len() > 1024 {
+            return Err(Error::Limit("brush source reference count"));
+        }
+        let mut groups: BTreeMap<String, BTreeMap<String, Vec<u8>>> = BTreeMap::new();
+        let mut total = 0usize;
+        for id in ids {
+            check(token)?;
+            let record = self.read(id, "json", MAX_RECORD)?;
+            total = total.saturating_add(record.len());
+            if total > 32 * 1024 * 1024 {
+                return Err(Error::Limit("brush source batch record bytes"));
+            }
+            let info: SourceInfo =
+                serde_json::from_slice(&record).map_err(|e| Error::Codec(e.to_string()))?;
+            info.validate()?;
+            groups
+                .entry(info.original_hash)
+                .or_default()
+                .insert(id.clone(), record);
+        }
+        let mut batches = Vec::new();
+        let mut originals = 0usize;
+        for (id, records) in groups {
+            check(token)?;
+            let bytes = self.read(&id, "abr", MAX_ORIGINAL)?;
+            originals = originals.saturating_add(bytes.len());
+            if originals > 256 * 1024 * 1024 {
+                return Err(Error::Limit("brush source original batch bytes"));
+            }
+            batches.push(SourceBatch::from_records(Arc::new(bytes), records, token)?);
+        }
+        Ok(batches)
     }
     pub fn load(&self, id: &str, token: &CancellationToken) -> Result<SourceArchive> {
         check(token)?;
