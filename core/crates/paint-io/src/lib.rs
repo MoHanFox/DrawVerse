@@ -3,6 +3,7 @@ pub mod abr_association;
 pub mod abr_conversion;
 pub mod abr_sampled;
 pub mod brush_resource;
+pub mod brush_source;
 pub mod brush_state;
 mod ora;
 pub mod ps_descriptor;

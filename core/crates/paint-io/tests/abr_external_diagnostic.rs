@@ -87,6 +87,19 @@ fn external_sample_descriptor_and_pixels_are_inspected_without_claiming_conversi
         }
     }
     println!("basic diameter/spacing/roundness and native unmodified-alpha baseline verified; {} explicit report items",brush.issues.len());
+    let archive = paint_io::brush_source::SourceArchive::capture(
+        std::sync::Arc::new(bytes.clone()),
+        0,
+        brush,
+    )
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let store = paint_io::brush_source::SourceStore::open(directory.path().into()).unwrap();
+    let source_id = store.save(&archive, &token).unwrap();
+    let restored = store.load(&source_id, &token).unwrap();
+    assert_eq!(restored.original(), bytes);
+    assert_eq!(restored.info.original_name, brush.name);
+    assert_eq!(restored.info.report.len(), brush.issues.len());
     for root in &descriptors {
         println!(
             "root {:?}, {} properties",
