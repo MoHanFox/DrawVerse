@@ -1,0 +1,298 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:vbr:image:1.1",
+  "title": "DrawVerse VBR 1.1 procedural and image executable subset",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/manifest"
+    },
+    {
+      "$ref": "#/$defs/preset"
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diameter",
+        "spacing",
+        "dabOpacity",
+        "hardness",
+        "roundness",
+        "angle",
+        "flow",
+        "pressureSize",
+        "pressureFlow"
+      ],
+      "properties": {
+        "diameter": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "spacing": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 0.5
+        },
+        "dabOpacity": {
+          "$ref": "#/$defs/ratio"
+        },
+        "hardness": {
+          "$ref": "#/$defs/ratio"
+        },
+        "roundness": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1
+        },
+        "angle": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "flow": {
+          "$ref": "#/$defs/ratio"
+        },
+        "pressureSize": {
+          "type": "boolean"
+        },
+        "pressureFlow": {
+          "type": "boolean"
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "engineProfile",
+        "behaviorVersion",
+        "requiredCapabilities",
+        "parameters"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "allOf": [
+            {
+              "pattern": "\\S"
+            },
+            {
+              "pattern": "^[^\\u0000]*$"
+            }
+          ]
+        },
+        "engineProfile": {
+          "enum": [
+            "legacy.round",
+            "drawverse.brush"
+          ]
+        },
+        "behaviorVersion": {
+          "const": 1
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "enum": [
+              "procedural-tip",
+              "pressure",
+              "dab-flow",
+              "image-tip"
+            ]
+          }
+        },
+        "parameters": {
+          "$ref": "#/$defs/parameters"
+        },
+        "tipResource": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "engineProfile": {
+                "const": "legacy.round"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "properties": {
+                  "hardness": {
+                    "const": 1
+                  },
+                  "roundness": {
+                    "const": 1
+                  },
+                  "angle": {
+                    "const": 0
+                  },
+                  "flow": {
+                    "const": 1
+                  },
+                  "pressureSize": {
+                    "const": true
+                  },
+                  "pressureFlow": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "tipResource"
+            ]
+          },
+          "then": {
+            "properties": {
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "image-tip"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "image-tip"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "version",
+        "packageId",
+        "brushes",
+        "groups",
+        "assets"
+      ],
+      "properties": {
+        "format": {
+          "const": "DrawVerseBrush"
+        },
+        "version": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "major",
+            "minor"
+          ],
+          "properties": {
+            "major": {
+              "const": 1
+            },
+            "minor": {
+              "const": 1
+            }
+          }
+        },
+        "packageId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "brushes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "path"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^brushes/[0-9a-f-]{36}\\.json$"
+              }
+            }
+          }
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "assets": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "path",
+              "sha256",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/hash"
+              },
+              "sha256": {
+                "$ref": "#/$defs/hash"
+              },
+              "kind": {
+                "const": "tip-mask"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^assets/[0-9a-f]{64}\\.png$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

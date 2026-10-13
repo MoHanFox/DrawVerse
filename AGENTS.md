@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新VBR图片资源：`docs/vbr-image-design.md` / `docs/vbr-image-validation.md`；ABI1.31/VBR1.1、完整PNG身份/资源清单/整包编译/多资源交接、Qt跨资源目录导入导出/UUID副本；分组/扩展/ABR/动态湿混继续后续。
+
 - 最新图片笔尖轮廓：`docs/brush-outline-design.md` / `docs/brush-outline-validation.md`；ABI 1.30、0.5阈值/孔洞与多区域/有界几何缓存、Qt当前身份与显示变换、DPI固定描边；超复杂纹理明确简化，图片悬停/动态设备/VBR图片/ABR继续后续。
 
 - 最新图片笔尖Qt接入：`docs/brush-image-ui-design.md` / `docs/brush-image-ui-validation.md`；后台PNG三种解释/捕获目标/持久v3/独立真实预览、图片硬度禁用和程序恢复；图片精确轮廓/VBR图片/ABR/高级动态仍待完成。

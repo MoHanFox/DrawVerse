@@ -70,8 +70,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 30) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.30 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 31) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.31 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -176,10 +176,11 @@ public:
     void brushFile(QString path,QByteArray package,bool exporting) {
         if(m_stopped){emit brushFileReady({},QStringLiteral("后端已关闭"),exporting);return;}
         const auto encoded=path.toUtf8();PaintStatus status;
-        if(exporting)status=paint_brush_package_write(reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<const uint8_t*>(package.constData()),quint64(package.size()));
+        PaintBrushLibrary *library=nullptr;{QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
+        if(exporting)status=paint_brush_library_package_write(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<const uint8_t*>(package.constData()),quint64(package.size()));
         else {
             package.resize(2*1024*1024);uint64_t required=0;
-            status=paint_brush_package_read(reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required);
+            status=paint_brush_library_package_read(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required);
             if(status==PAINT_OK)package.resize(qsizetype(required));
         }
         emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting);
@@ -1431,7 +1432,6 @@ bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
 bool PaintCoreClient::exportBrush(const QUrl &path) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
     const auto package=m_brushLibrary->exportPackage();
-    if(package.isEmpty()){showError(QStringLiteral("图片笔尖的 VBR 资源导出尚未支持"));return false;}
     m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),package]{worker->brushFile(path,package,true);},Qt::QueuedConnection);return true;
 }

@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 30
+#define PAINT_ABI_MINOR 31
 
 #define PAINT_ABI_PATCH 0
 
@@ -110,6 +110,8 @@
 #define PAINT_FEATURE_TRANSFORM 524288
 
 #define PAINT_FEATURE_VBR 2097152
+
+#define PAINT_FEATURE_VBR_IMAGES 67108864
 
 #define PAINT_FEATURE_WAND 16384
 
@@ -973,6 +975,30 @@ PaintStatus paint_brush_library_import_tip_file(struct PaintBrushLibrary *librar
  */
 PaintStatus paint_brush_library_info(struct PaintBrushLibrary *library,
                                      struct PaintBrushLibraryInfo *out);
+
+/**
+ * Background VBR 1.0/1.1 read, storing verified picture resources in the library.
+ * Does not modify the catalogue; caller publishes returned JSON through preparation.
+ * # Safety
+ * Live library, readable path, writable nonoverlapping buffer/required required.
+ */
+PaintStatus paint_brush_library_package_read(struct PaintBrushLibrary *library,
+                                             const uint8_t *path,
+                                             uint64_t path_length,
+                                             uint8_t *buffer,
+                                             uint64_t capacity,
+                                             uint64_t *required);
+
+/**
+ * Background VBR save using immutable resource identities from the library store.
+ * # Safety
+ * Live library and readable bounded path/JSON bytes required for this call only.
+ */
+PaintStatus paint_brush_library_package_write(struct PaintBrushLibrary *library,
+                                              const uint8_t *path,
+                                              uint64_t path_length,
+                                              const uint8_t *json,
+                                              uint64_t json_length);
 
 /**
  * Enqueue a bounded parameter-state copy for background migration/compilation.

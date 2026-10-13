@@ -1,6 +1,8 @@
 # 模块顺序与验收
 
-图片笔尖輪廓：[设计](brush-outline-design.md) / [验收](brush-outline-validation.md)。ABI 1.30，基础0.5覆盖/孔洞与多区域/有界缓存与Qt描边已完成；半透明悬停、复杂细节简化及动态设备继续后续。
+VBR图片资源：[设计](vbr-image-design.md) / [验收](vbr-image-validation.md)。ABI1.31/VBR1.1，完整资源清单/跨资源目录导入导出已接Qt；分组/扩展/ABR/动态湿混继续后续。
+
+图片笔尖轮廓：[设计](brush-outline-design.md) / [验收](brush-outline-validation.md)。ABI 1.30，基础0.5覆盖/孔洞与多区域/有界缓存与Qt描边已完成；半透明悬停、复杂细节简化及动态设备继续后续。
 
 图片笔尖Qt接入：[设计](brush-image-ui-design.md) / [验收](brush-image-ui-validation.md)。PNG导入/捕获目标/v3持久/真实预览已完成；VBR图片资源继续后续。
 

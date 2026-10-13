@@ -564,7 +564,7 @@ private slots:
         const auto copy=library->saveCopy("图片副本");QVERIFY(!copy.isEmpty());QCOMPARE(library->maskResource(),identity);
         library->setRadius(8);library->setPressureSize(false);library->setPressureFlow(false);
         library->requestPreview(copy);QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);const auto preview=library->selectedPreview();
-        QVERIFY(!client.exportBrush(QUrl::fromLocalFile(temp.filePath("image.vbr"))));QVERIFY(!QFileInfo::exists(temp.filePath("image.vbr")));
+        QVERIFY(client.exportBrush(QUrl::fromLocalFile(temp.filePath("image.vbr"))));QTRY_COMPARE(imported.size(),2);QVERIFY(imported.last()[0].toBool());QVERIFY(QFileInfo::exists(temp.filePath("image.vbr")));
         client.newTransparentDocument(40,40);QTRY_COMPARE(client.documentWidth(),40);QTRY_VERIFY(client.ready());
         InputSample sample;sample.position={20.5,20.5};sample.pressure=1;sample.tool=1;QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);
         client.requestViewport(0,{0,0,40,40},{40,40});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(40,40));
@@ -579,6 +579,18 @@ private slots:
         PaintCoreClient missing(nullptr,settingsPath);QTRY_VERIFY(missing.ready());QTRY_VERIFY_WITH_TIMEOUT(!missing.lastError().isEmpty(),10000);
         {QSettings settings(settingsPath,QSettings::IniFormat);QCOMPARE(settings.value("brushes/state").toByteArray(),persisted);}
         QSignalSpy missingStopped(&missing,&PaintCoreClient::stopped);missing.shutdown();QTRY_COMPARE(missingStopped.size(),1);
+    }
+    void vbrImagePackageImportsIntoFreshStoreAndExecutesAfterOriginalRemoval() {
+        QTemporaryDir temp;const auto archive=QUrl::fromLocalFile(temp.filePath("image.vbr"));QString identity;
+        {
+            PaintCoreClient source(nullptr,temp.filePath("source/state.ini"));QTRY_VERIFY(source.ready());QImage image(16,16,QImage::Format_RGBA8888);image.fill(Qt::white);for(int y=6;y<10;++y)for(int x=6;x<10;++x)image.setPixelColor(x,y,Qt::transparent);
+            const auto imagePath=temp.filePath("source.png");QVERIFY(image.save(imagePath));QVERIFY(source.importBrushTip(QUrl::fromLocalFile(imagePath),1));QTRY_VERIFY(!source.brushFileBusy());identity=source.brushLibrary()->maskResource();QVERIFY(!identity.isEmpty());source.brushLibrary()->setRadius(8);source.brushLibrary()->setPressureSize(false);source.brushLibrary()->setPressureFlow(false);
+            QSignalSpy finished(&source,&PaintCoreClient::brushFileFinished);QVERIFY(source.exportBrush(archive));QTRY_COMPARE(finished.size(),1);QVERIFY(finished.last()[0].toBool());QSignalSpy stopped(&source,&PaintCoreClient::stopped);source.shutdown();QTRY_COMPARE(stopped.size(),1);QVERIFY(QFile::remove(imagePath));QVERIFY(QFile::remove(temp.filePath("source/brush-resources/"+identity+".png")));
+        }
+        PaintCoreClient target(nullptr,temp.filePath("target/state.ini"));QTRY_VERIFY(target.ready());QSignalSpy finished(&target,&PaintCoreClient::brushFileFinished);QVERIFY(target.importBrushes(archive));QTRY_COMPARE(finished.size(),1);QVERIFY(finished.last()[0].toBool());QCOMPARE(target.brushLibrary()->maskResource(),identity);QVERIFY(QFileInfo::exists(temp.filePath("target/brush-resources/"+identity+".png")));const auto first=target.brushLibrary()->selectedId();
+        QVERIFY(target.importBrushes(archive));QTRY_COMPARE(finished.size(),2);QVERIFY(finished.last()[0].toBool());QVERIFY(target.brushLibrary()->selectedId()!=first);QCOMPARE(target.brushLibrary()->maskResource(),identity);target.brushLibrary()->setRadius(8);
+        target.newTransparentDocument(40,40);QTRY_COMPARE(target.documentWidth(),40);QTRY_VERIFY(target.ready());InputSample sample;sample.position={20.5,20.5};sample.pressure=1;sample.tool=1;QVERIFY(target.beginStroke(sample));target.endStroke();QTRY_COMPARE(target.undoDepth(),1);target.requestViewport(0,{0,0,40,40},{40,40});QTRY_VERIFY(target.frameRevision()>=target.revision() && target.frame().size()==QSize(40,40));QCOMPARE(target.frame().pixelColor(20,20).alpha(),0);QVERIFY(target.frame().pixelColor(25,20).alpha()>200);
+        target.brushLibrary()->requestPreview(target.brushLibrary()->selectedId());QTRY_VERIFY_WITH_TIMEOUT(!target.brushLibrary()->selectedPreview().isEmpty(),10000);QSignalSpy stopped(&target,&PaintCoreClient::stopped);target.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void imageBrushCursorPreservesHolesTransformsAndScreenWidth() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("state.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;

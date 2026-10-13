@@ -54,6 +54,20 @@ pub fn valid_id(id: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+/// Verify a portable coverage resource without touching a persistent directory.
+pub fn decode_verified(id: &str, bytes: &[u8], token: &CancellationToken) -> Result<StoredMask> {
+    check(token)?;
+    if !valid_id(id) || hash(bytes) != id {
+        return Err(Error::Invalid("brush resource hash identity"));
+    }
+    let (w, h, pixels) = coverage(decoder(bytes)?, Interpretation::Coverage, token)?;
+    let mask = Arc::new(BrushMask::new(w, h, pixels)?.with_resource_id(id.into())?);
+    Ok(StoredMask {
+        id: id.into(),
+        mask,
+        source_depth: bytes[24],
+    })
+}
 fn estimate(width: u32, height: u32) -> usize {
     let (mut width, mut height) = (width, height);
     let mut bytes = 0;

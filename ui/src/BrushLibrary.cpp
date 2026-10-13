@@ -110,12 +110,12 @@ QByteArray BrushLibrary::snapshot() const {
 }
 QByteArray BrushLibrary::exportPackage() const {
     const auto &p=m_presets[index(m_selected)];
-    if(!p.maskResource.isEmpty())return {};
     const QStringList builtins={"round-pressure","round-fine","round-translucent","round-wide"};
     const int builtin=builtins.indexOf(p.id);
     const auto id=builtin<0?p.id:QString("dba00000-0000-4000-8000-%1").arg(builtin+1,12,16,QChar('0'));
     const QJsonObject parameters{{"diameter",p.radius*2},{"spacing",p.spacing/2},{"dabOpacity",p.opacity},{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}};
-    const QJsonObject preset{{"id",id},{"name",p.name},{"engineProfile","drawverse.brush"},{"behaviorVersion",1},{"requiredCapabilities",QJsonArray{"procedural-tip","pressure","dab-flow"}},{"parameters",parameters}};
+    QJsonObject preset{{"id",id},{"name",p.name},{"engineProfile","drawverse.brush"},{"behaviorVersion",1},{"requiredCapabilities",QJsonArray{p.maskResource.isEmpty()?"procedural-tip":"image-tip","pressure","dab-flow"}},{"parameters",parameters}};
+    if(!p.maskResource.isEmpty())preset["tipResource"]=p.maskResource;
     return QJsonDocument(QJsonObject{{"packageId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"brushes",QJsonArray{preset}}}).toJson(QJsonDocument::Compact);
 }
 QByteArray BrushLibrary::catalogSnapshot() const {
@@ -145,6 +145,7 @@ bool BrushLibrary::importPackage(const QByteArray &json) {
         ids.insert(id);if(selected.isEmpty())selected=id;
         QJsonObject row{{"id",id},{"name",b.value("name")},{"radius",params.value("diameter").toDouble()/2},{"opacity",params.value("dabOpacity")},{"spacing",params.value("spacing").toDouble()*2}};
         for(const auto &key:{"hardness","roundness","angle","flow","pressureSize","pressureFlow"})row[key]=params.value(key);
+        if(b.contains("tipResource")){row["maskResource"]=b.value("tipResource");state["version"]=3;}
         rows.append(row);
     }
     state["presets"]=rows;state["selected"]=selected;

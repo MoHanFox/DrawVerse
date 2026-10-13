@@ -58,6 +58,8 @@ pub struct Preset {
     pub behavior_version: u32,
     pub required_capabilities: Vec<String>,
     pub parameters: Parameters,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tip_resource: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -98,13 +100,13 @@ fn uuid(id: &str) -> bool {
         })
         && id != "00000000-0000-0000-0000-000000000000"
 }
-fn json<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T> {
+pub(crate) fn json<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T> {
     if bytes.len() as u64 > MAX_JSON {
         return Err(Error::Limit("brush JSON bytes"));
     }
     serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("VBR JSON: {e}")))
 }
-fn encode_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
+pub(crate) fn encode_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     let bytes = serde_json::to_vec(value).map_err(|e| Error::Codec(e.to_string()))?;
     if bytes.len() as u64 > MAX_JSON {
         return Err(Error::Limit("brush JSON bytes"));
@@ -147,13 +149,26 @@ impl Package {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
             if b.required_capabilities.len() > 16
-                || b.required_capabilities
-                    .iter()
-                    .any(|c| !matches!(c.as_str(), "procedural-tip" | "pressure" | "dab-flow"))
+                || b.required_capabilities.iter().any(|c| {
+                    !matches!(
+                        c.as_str(),
+                        "procedural-tip" | "image-tip" | "pressure" | "dab-flow"
+                    )
+                })
             {
                 return Err(Error::Unsupported("VBR required capabilities".into()));
             }
             let definition = b.parameters.definition();
+            if let Some(id) = &b.tip_resource {
+                if !crate::brush_resource::valid_id(id)
+                    || b.engine_profile != "drawverse.brush"
+                    || !b.required_capabilities.iter().any(|c| c == "image-tip")
+                {
+                    return Err(Error::Invalid("VBR image tip identity/profile/capability"));
+                }
+            } else if b.required_capabilities.iter().any(|c| c == "image-tip") {
+                return Err(Error::Invalid("VBR missing image tip reference"));
+            }
             BrushProgram::compile(definition.clone())?;
             if b.engine_profile == "legacy.round" && definition.tip != BrushTip::default() {
                 return Err(Error::Unsupported(
@@ -172,7 +187,11 @@ fn path_valid(name: &str) -> bool {
             .split('/')
             .all(|p| !p.is_empty() && p != "." && p != "..")
 }
-pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
+type Archive<'a> = (ZipArchive<Cursor<&'a [u8]>>, BTreeSet<String>);
+pub(crate) fn checked_archive<'a>(
+    bytes: &'a [u8],
+    token: &CancellationToken,
+) -> Result<Archive<'a>> {
     check(token)?;
     if bytes.len() as u64 > MAX_PACKAGE {
         return Err(Error::Limit("VBR compressed bytes"));
@@ -205,22 +224,34 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
         expanded = expanded
             .checked_add(entry.size())
             .ok_or(Error::Limit("VBR expanded bytes"))?;
-        if expanded > MAX_EXPANDED || entry.size() > MAX_JSON {
+        if expanded > MAX_EXPANDED || entry.size() > MAX_PACKAGE {
             return Err(Error::Limit("VBR expanded entry bytes"));
         }
     }
-    fn read(zip: &mut ZipArchive<Cursor<&[u8]>>, name: &str) -> Result<Vec<u8>> {
-        let mut entry = zip.by_name(name)?;
-        let mut bytes = Vec::new();
-        Read::by_ref(&mut entry)
-            .take(MAX_JSON + 1)
-            .read_to_end(&mut bytes)?;
-        if bytes.len() as u64 > MAX_JSON {
-            return Err(Error::Limit("VBR JSON bytes"));
-        }
-        Ok(bytes)
+    Ok((zip, paths))
+}
+pub(crate) fn read_entry(
+    zip: &mut ZipArchive<Cursor<&[u8]>>,
+    name: &str,
+    limit: u64,
+) -> Result<Vec<u8>> {
+    let mut entry = zip.by_name(name)?;
+    let expected_size = entry.size();
+    let mut bytes = Vec::new();
+    Read::by_ref(&mut entry)
+        .take(limit + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit {
+        return Err(Error::Limit("VBR entry bytes"));
     }
-    let manifest: Manifest = json(&read(&mut zip, "manifest.json")?)?;
+    if bytes.len() as u64 != expected_size {
+        return Err(Error::Invalid("VBR entry size mismatch"));
+    }
+    Ok(bytes)
+}
+pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
+    let (mut zip, paths) = checked_archive(bytes, token)?;
+    let manifest: Manifest = json(&read_entry(&mut zip, "manifest.json", MAX_JSON)?)?;
     if manifest.format != "DrawVerseBrush"
         || manifest.version.major != 1
         || manifest.version.minor != 0
@@ -245,7 +276,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
         {
             return Err(Error::Invalid("VBR reference"));
         }
-        let preset: Preset = json(&read(&mut zip, &reference.path)?)?;
+        let preset: Preset = json(&read_entry(&mut zip, &reference.path, MAX_JSON)?)?;
         if preset.id != reference.id {
             return Err(Error::Invalid("VBR reference ID mismatch"));
         }
@@ -259,10 +290,20 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
         brushes,
     };
     package.validate()?;
+    if package.brushes.iter().any(|b| b.tip_resource.is_some()) {
+        return Err(Error::Unsupported(
+            "image VBR requires a resource bundle".into(),
+        ));
+    }
     Ok(package)
 }
 pub fn encode(package: &Package, token: &CancellationToken) -> Result<Vec<u8>> {
     package.validate()?;
+    if package.brushes.iter().any(|b| b.tip_resource.is_some()) {
+        return Err(Error::Unsupported(
+            "image VBR requires a resource bundle".into(),
+        ));
+    }
     check(token)?;
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     let manifest = Manifest {

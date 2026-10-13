@@ -131,7 +131,7 @@ pub(crate) struct PreparedCatalog {
     current: Mutex<BrushCatalog>,
     records: Mutex<Records>,
     resources: Mutex<Option<Arc<ResourceStore>>>,
-    imported: Mutex<Option<StoredMask>>,
+    imported: Mutex<Option<Vec<StoredMask>>>,
 }
 impl PreparedCatalog {
     pub fn new(catalog: BrushCatalog) -> Self {
@@ -258,8 +258,30 @@ impl PreparedCatalog {
                 &paint_task::CancellationToken::default(),
             )
             .map_err(io_error)?;
-        *self.imported.lock().map_err(|_| ApiError::internal())? = Some(resource.clone());
+        *self.imported.lock().map_err(|_| ApiError::internal())? = Some(vec![resource.clone()]);
         Ok(resource)
+    }
+    pub fn import_bundle(&self, bundle: &paint_io::vbr_image::ImageBundle) -> ApiResult<()> {
+        if bundle.assets().is_empty() {
+            return Ok(());
+        }
+        self.retire_unused_images()?;
+        self.imported
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .take();
+        let store = self.resource_store()?;
+        let token = paint_task::CancellationToken::default();
+        let mut imported = Vec::new();
+        for (id, asset) in bundle.assets() {
+            imported.push(
+                store
+                    .put_verified(id, asset.bytes(), &token)
+                    .map_err(io_error)?,
+            );
+        }
+        *self.imported.lock().map_err(|_| ApiError::internal())? = Some(imported);
+        Ok(())
     }
     fn publish_ready(&self) -> ApiResult<()> {
         let mut records = self.records.lock().map_err(|_| ApiError::internal())?;
@@ -277,11 +299,13 @@ impl PreparedCatalog {
                     .map_err(|_| ApiError::internal())?
                     .replace_validated((*snapshot).clone());
                 let mut imported = self.imported.lock().map_err(|_| ApiError::internal())?;
-                if imported.as_ref().is_some_and(|resource| {
-                    snapshot.ids().iter().any(|id| {
-                        snapshot.preset(id).is_some_and(|p| {
-                            p.settings().mask.as_ref().and_then(|m| m.resource_id())
-                                == Some(resource.id.as_str())
+                if imported.as_ref().is_some_and(|resources| {
+                    resources.iter().all(|resource| {
+                        snapshot.ids().iter().any(|id| {
+                            snapshot.preset(id).is_some_and(|p| {
+                                p.settings().mask.as_ref().and_then(|m| m.resource_id())
+                                    == Some(resource.id.as_str())
+                            })
                         })
                     })
                 }) {

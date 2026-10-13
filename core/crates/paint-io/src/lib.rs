@@ -4,6 +4,7 @@ pub mod brush_state;
 mod ora;
 mod raster;
 pub mod vbr;
+pub mod vbr_image;
 use paint_core::{Document, DocumentSnapshot};
 use paint_task::CancellationToken;
 use std::{

@@ -6,6 +6,7 @@ fn package() -> Package {
     Package {
         package_id: "12345678-1234-1234-1234-123456789abc".into(),
         brushes: vec![Preset {
+            tip_resource: None,
             id: "12345678-1234-1234-1234-123456789abd".into(),
             name: "椭圆软笔".into(),
             engine_profile: "drawverse.brush".into(),
