@@ -1,6 +1,8 @@
 # 模块顺序与验收
 
-图片笔尖身份与状态：[设计](brush-resource-state-design.md) / [验收](brush-resource-state-validation.md)。v3持久引用与实际绘画已接Rust，继续原生资源目录及Qt图片导入。
+图片笔尖原生资源接口：[设计](brush-resource-abi-design.md) / [验收](brush-resource-abi-validation.md)。ABI 1.29，共享资源目录/v3准备/闲置修订回收已接入；继续Qt图片导入及VBR图片资源。
+
+图片笔尖身份与状态：[设计](brush-resource-state-design.md) / [验收](brush-resource-state-validation.md)。v3持久引用与实际绘画已接Rust。
 
 图片笔尖资源IO：[设计](brush-resource-design.md) / [验收](brush-resource-validation.md)。有界PNG/哈希/持久文件及预算已完成，继续将身份接入笔刷状态和用户图片工具。
 

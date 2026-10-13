@@ -480,3 +480,76 @@ pub unsafe extern "C" fn paint_session_begin_prepared_preset(
         pointers::write(out_sequence, sequence)
     })
 }
+/// Bind one persistent resource directory on a background thread.
+/// # Safety
+/// Live library and readable UTF-8 path bytes required for this call.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_bind_resources(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        runtime::outside_callback()?;
+        let path = pointers::path_utf8(path, path_length)?;
+        let library = runtime::registry()?.brush_library(library)?;
+        library.bind_resources(std::path::PathBuf::from(path))
+    })
+}
+/// Share an existing resource store with an isolated preview library.
+/// # Safety
+/// Both library handles must be live and are never dereferenced by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_share_resources(
+    target: *mut PaintBrushLibrary,
+    source: *mut PaintBrushLibrary,
+) -> PaintStatus {
+    boundary(|| {
+        runtime::outside_callback()?;
+        let source = runtime::registry()?.brush_library(source)?;
+        let store = source.resource_store()?;
+        let target = runtime::registry()?.brush_library(target)?;
+        target.share_resources(store)
+    })
+}
+/// Convert a user PNG into a standard persistent tip and return its hash identity.
+/// Interpretation 0=gray*alpha, 1=alpha, 2=inverse luminance*alpha.
+/// # Safety
+/// Live library/readable path, writable depth/required and buffer of capacity required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_import_tip_file(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    interpretation: u32,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+    source_depth: *mut u32,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(required, 0)?;
+        pointers::write(source_depth, 0)?;
+        runtime::outside_callback()?;
+        let interpretation = match interpretation {
+            0 => paint_io::brush_resource::Interpretation::Coverage,
+            1 => paint_io::brush_resource::Interpretation::Alpha,
+            2 => paint_io::brush_resource::Interpretation::InverseLuminance,
+            _ => return Err(ApiError::invalid("tip interpretation")),
+        };
+        let path = pointers::path_utf8(path, path_length)?;
+        if capacity < 64 {
+            pointers::write(required, 64)?;
+            return Err(ApiError::new(
+                PAINT_BUFFER_TOO_SMALL,
+                "tip identity requires 64 bytes",
+            ));
+        }
+        pointers::valid_pointer(buffer)?;
+        pointers::length(capacity)?;
+        let library = runtime::registry()?.brush_library(library)?;
+        let resource = library.import_file(std::path::PathBuf::from(path), interpretation)?;
+        pointers::write(source_depth, u32::from(resource.source_depth))?;
+        pointers::copy_buffer(resource.id.as_bytes(), buffer, capacity, required)
+    })
+}

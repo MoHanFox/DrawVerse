@@ -383,4 +383,21 @@ impl ResourceStore {
         }
         Ok(bytes)
     }
+    pub fn import_file(
+        &self,
+        path: &Path,
+        interpretation: Interpretation,
+        token: &CancellationToken,
+    ) -> Result<StoredMask> {
+        check(token)?;
+        let mut file = File::open(path)?;
+        if file.metadata()?.len() > MAX_RESOURCE_PNG_BYTES {
+            return Err(Error::Limit("brush PNG bytes"));
+        }
+        let mut bytes = Vec::new();
+        Read::by_ref(&mut file)
+            .take(MAX_RESOURCE_PNG_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        self.import_png(&bytes, interpretation, token)
+    }
 }

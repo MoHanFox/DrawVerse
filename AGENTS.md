@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图片笔尖原生资源接口：`docs/brush-resource-abi-design.md` / `docs/brush-resource-abi-validation.md`；ABI 1.29、后台PNG导入/共享资源目录、v3准确准备、闲置修订释放/重建及在途资源保留；Qt图片控件/VBR图片/ABR仍待接入。
+
 - 最新图片笔尖身份/状态：`docs/brush-resource-state-design.md` / `docs/brush-resource-state-validation.md`；覆盖不可变PNG身份/v3哈希引用/后台资源恢复与整包编译，旧状态保留；原生资源目录/Qt/VBR图片/ABR仍待接入。
 
 - 最新图片笔尖资源IO：`docs/brush-resource-design.md` / `docs/brush-resource-validation.md`；SHA-256内容身份/不覆盖原子PNG、8/16位覆盖转换与量化标记、Weak缓存/活跃mip预算，资源ID原生库/Qt接入与VBR图片/ABR仍待后续。

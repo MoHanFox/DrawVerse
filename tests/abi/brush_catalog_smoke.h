@@ -33,6 +33,8 @@ static int brush_catalog_smoke(void) {
     settings.tip.hardness = 1; settings.tip.roundness = .2f; settings.tip.flow = 1;
     settings.tip.pressure_size = 1; settings.tip.pressure_flow = 1;
     if (paint_brush_library_create(0, &library) != PAINT_OK) return 1;
+    if (paint_brush_library_share_resources(library, library) != PAINT_NOT_FOUND) return 16;
+    if (paint_brush_library_bind_resources(library, NULL, 0) != PAINT_INVALID_ARGUMENT) return 17;
     if (paint_brush_library_info(library, &info) != PAINT_OK || info.preset_count != 4) return 2;
     old_revision = info.revision;
     if (paint_brush_library_text(library, info.revision, 0, 0, text, sizeof(text), &required) != PAINT_OK || required != sizeof(id)-1 || memcmp(text, id, required)) return 3;

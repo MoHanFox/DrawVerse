@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 28
+#define PAINT_ABI_MINOR 29
 
 #define PAINT_ABI_PATCH 0
 
@@ -66,6 +66,8 @@
 #define PAINT_FEATURE_BRUSH_CATALOG 4194304
 
 #define PAINT_FEATURE_BRUSH_PREPARATION 8388608
+
+#define PAINT_FEATURE_BRUSH_RESOURCES 16777216
 
 #define PAINT_FEATURE_BRUSH_TIP 1048576
 
@@ -894,6 +896,15 @@ extern "C" {
 #endif // __cplusplus
 
 /**
+ * Bind one persistent resource directory on a background thread.
+ * # Safety
+ * Live library and readable UTF-8 path bytes required for this call.
+ */
+PaintStatus paint_brush_library_bind_resources(struct PaintBrushLibrary *library,
+                                               const uint8_t *path,
+                                               uint64_t path_length);
+
+/**
  * Copy the active preset to a supplied fresh UUID and name, then select it.
  * # Safety
  * Live library and readable UTF-8 ID/name bytes are required for this call.
@@ -937,6 +948,21 @@ PaintStatus paint_brush_library_edit(struct PaintBrushLibrary *library,
                                      const uint8_t *id,
                                      uint64_t id_length,
                                      const struct PaintBrushSettings *settings);
+
+/**
+ * Convert a user PNG into a standard persistent tip and return its hash identity.
+ * Interpretation 0=gray*alpha, 1=alpha, 2=inverse luminance*alpha.
+ * # Safety
+ * Live library/readable path, writable depth/required and buffer of capacity required.
+ */
+PaintStatus paint_brush_library_import_tip_file(struct PaintBrushLibrary *library,
+                                                const uint8_t *path,
+                                                uint64_t path_length,
+                                                uint32_t interpretation,
+                                                uint8_t *buffer,
+                                                uint64_t capacity,
+                                                uint64_t *required,
+                                                uint32_t *source_depth);
 
 /**
  * Read one consistent small library publication.
@@ -1005,6 +1031,14 @@ PaintStatus paint_brush_library_rename(struct PaintBrushLibrary *library,
 PaintStatus paint_brush_library_select(struct PaintBrushLibrary *library,
                                        const uint8_t *id,
                                        uint64_t id_length);
+
+/**
+ * Share an existing resource store with an isolated preview library.
+ * # Safety
+ * Both library handles must be live and are never dereferenced by the caller.
+ */
+PaintStatus paint_brush_library_share_resources(struct PaintBrushLibrary *target,
+                                                struct PaintBrushLibrary *source);
 
 /**
  * Read UTF-8 identity (field=0) or name (field=1) with caller-buffer semantics.

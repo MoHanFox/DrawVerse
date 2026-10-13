@@ -1,4 +1,12 @@
-# C ABI 1.28.0 契约
+# C ABI 1.29.0 契约
+
+## ABI 1.29：共享图片笔尖资源
+
+`PAINT_FEATURE_BRUSH_RESOURCES=16777216`。后台调用 `paint_brush_library_bind_resources` 为库绑定一次持久目录；相同目录可重复，换目录返回 BUSY。`share_resources(target,source)` 让隔离预览共享同一缓存、驻留预算和不可变资源；源未绑定返回 NOT_FOUND，源库销毁不使目标失效。
+
+`paint_brush_library_import_tip_file` 在调用线程执行有界 PNG 读取/转换，因此调用方必须使用后台线程。interpretation 为 0 灰度×alpha、1 alpha、2 反向亮度×alpha。输出是无 NUL 的64字节 SHA-256 ID，source_depth 为原输入8或16（16说明规范覆盖已量化为8位）。输出先清零；容量不足返回 BUFFER_TOO_SMALL/required=64，不进行文件写入。成功只持久保存资源，不修改预设或文档。
+
+状态准备新增 v3 `maskResource` 引用，目录缺失/资源错误明确失败；程序状态仍输出v2。当前版本、正在使用的笔触和导入交接保留资源。最近64条准备记录中的闲置旧图片快照可释放并保留准确配方，查询时重新异步读取且验证哈希；已经捕获的笔触不受影响。所有旧 DTO 和接口布局保持不变。
 
 ## ABI 1.28：异步准备与准确笔刷修订
 
