@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新ABR采样读取：`docs/abr-sampled-design.md` / `docs/abr-sampled-validation.md`；Rust1/2采样原始/PackBits/UTF16与来源字段、整包拒绝与真实孔洞测试；尚未接用户入口，6/10/程序/16位/动态报告和授权真实语料继续后续，无ABI变化。
+
 - 最新VBR图片资源：`docs/vbr-image-design.md` / `docs/vbr-image-validation.md`；ABI1.31/VBR1.1、完整PNG身份/资源清单/整包编译/多资源交接、Qt跨资源目录导入导出/UUID副本；分组/扩展/ABR/动态湿混继续后续。
 
 - 最新图片笔尖轮廓：`docs/brush-outline-design.md` / `docs/brush-outline-validation.md`；ABI 1.30、0.5阈值/孔洞与多区域/有界几何缓存、Qt当前身份与显示变换、DPI固定描边；超复杂纹理明确简化，图片悬停/动态设备/VBR图片/ABR继续后续。
