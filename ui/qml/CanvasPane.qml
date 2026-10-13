@@ -21,19 +21,28 @@ Rectangle {
     Shape {
         objectName:"brushCursorOutline";z:10
         id:tipCursor
-        readonly property real aspect:root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.roundness
+        readonly property real aspect:root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorSimple?1:root.ownClient.brushLibrary.roundness
         x:canvas.brushCursorRect.x;y:canvas.brushCursorRect.y+(canvas.brushCursorRect.height-height)/2
         width:canvas.brushCursorRect.width;height:canvas.brushCursorRect.height*aspect
-        rotation:root.ownClient.liquifyActive?0:root.ownClient.brushLibrary.angle
-        visible:canvas.brushCursorVisible
+        rotation:root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorSimple?0:root.ownClient.brushLibrary.angle
+        visible:canvas.brushCursorVisible && (root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorOutline)
         ShapePath {
-            strokeWidth:1;strokeColor:"black";fillColor:"transparent"
+            strokeWidth:root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth;strokeColor:root.ownClient.liquifyActive?"black":root.ownClient.brushLibrary.cursorColor;fillColor:"transparent"
             PathAngleArc {centerX:tipCursor.width/2;centerY:tipCursor.height/2;radiusX:tipCursor.width/2;radiusY:tipCursor.height/2;startAngle:0;sweepAngle:360}
         }
         ShapePath {
-            strokeWidth:1;strokeColor:"white";fillColor:"transparent"
-            PathAngleArc {centerX:tipCursor.width/2;centerY:tipCursor.height/2;radiusX:Math.max(.5,tipCursor.width/2-1);radiusY:Math.max(.5,tipCursor.height/2-1);startAngle:0;sweepAngle:360}
+            strokeWidth:root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth;strokeColor:root.ownClient.liquifyActive?"white":root.ownClient.brushLibrary.cursorSecondaryColor;fillColor:"transparent"
+            PathAngleArc {centerX:tipCursor.width/2;centerY:tipCursor.height/2;radiusX:Math.max(.5,tipCursor.width/2-(root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth));radiusY:Math.max(.5,tipCursor.height/2-(root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth));startAngle:0;sweepAngle:360}
         }
+    }
+    Item {
+        objectName:"brushCursorCenterCross";z:11
+        x:canvas.cursorPosition.x-5;y:canvas.cursorPosition.y-5;width:10;height:10
+        visible:canvas.brushCursorVisible && !root.ownClient.liquifyActive && root.ownClient.brushLibrary.cursorCenter
+        Rectangle {x:0;y:4;width:10;height:3;color:"black"}
+        Rectangle {x:4;y:0;width:3;height:10;color:"black"}
+        Rectangle {x:1;y:5;width:8;height:1;color:"white"}
+        Rectangle {x:5;y:1;width:1;height:8;color:"white"}
     }
     Loader {
         objectName:"selectionOutlineLoader";anchors.fill:parent

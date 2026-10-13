@@ -54,6 +54,8 @@ private:
     QList<QPointer<PaintCoreClient>> m_clients;
     QSet<PaintCoreClient*> m_stopped;
     QPointer<PaintCoreClient> m_initial;
+    QPointer<PaintCoreClient> m_brushPreferenceWriter;
+    QByteArray m_brushPreferenceState;
     QPointer<QQmlContext> m_context;
     QMap<QString,QPointer<QQuickItem>> m_targets;
     QString m_active,m_dragTarget,m_dragHost;

@@ -119,6 +119,8 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool bucketAllLayers READ bucketAllLayers WRITE setBucketAllLayers NOTIFY bucketOptionsChanged)
     Q_PROPERTY(QVariantMap layerThumbnails READ layerThumbnails NOTIFY layerThumbnailsChanged)
 public:
+    void setBrushPreferencePersistenceEnabled(bool enabled) {m_brushPreferencePersistenceEnabled=enabled;}
+    void persistBrushPreferences(const QByteArray &state);
     bool brushFileBusy() const {return m_brushFileBusy;}
     Q_INVOKABLE bool importBrushes(const QUrl &path);
     Q_INVOKABLE bool exportBrush(const QUrl &path);
@@ -344,6 +346,7 @@ public:
     Q_INVOKABLE void clearError();
     Q_INVOKABLE void shutdown();
 signals:
+    void brushCursorPreferencesChanged();
     void brushFileChanged();
     void brushFileFinished(bool success);
     void liquifyOptionsChanged();
@@ -374,6 +377,7 @@ signals:
     void commandCompleted(bool onWorkerThread);
     void fileFinished(bool success);
 private:
+    bool m_brushPreferencePersistenceEnabled=true;
     bool m_brushFileBusy=false;
     bool submit(int type, const InputSample &sample = {}, quint64 id = 0,
                 const QString &text = {}, qreal amount = 0, bool flag = false);

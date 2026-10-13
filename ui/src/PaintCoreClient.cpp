@@ -520,13 +520,14 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
     });
     connect(m_worker,&BackendWorker::brushPreferences,m_brushLibrary,[this](const QByteArray &json){if(!json.isEmpty())m_brushLibrary->restore(json);});
     connect(m_worker,&BackendWorker::brushPreviewReady,m_brushLibrary,&BrushLibrary::acceptPreview);
+    connect(m_brushLibrary,&BrushLibrary::cursorChanged,this,&PaintCoreClient::brushCursorPreferencesChanged);
     connect(m_worker,&BackendWorker::brushFileReady,this,[this](const QByteArray &package,const QString &error,bool exporting){
         bool success=error.isEmpty();
         if(success && !exporting && !m_brushLibrary->importPackage(package)){success=false;showError(QStringLiteral("导入失败：笔刷库容量不足或包参数无效（最多 64 个预设）"));}
         if(!error.isEmpty())showError(error);
         m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
     });
-    connect(m_brushLibrary,&BrushLibrary::persistRequested,m_worker,&BackendWorker::saveBrushPreferences);
+    connect(m_brushLibrary,&BrushLibrary::persistRequested,this,&PaintCoreClient::persistBrushPreferences);
     connect(m_brushLibrary,&BrushLibrary::previewRequested,m_worker,&BackendWorker::queueBrushPreview);
     connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{m_radius=m_brushLibrary->radius();m_opacity=m_brushLibrary->opacity();m_spacing=m_brushLibrary->spacing();emit brushChanged();});
     connect(m_brushLibrary,&BrushLibrary::recentColorsChanged,this,&PaintCoreClient::recentColorsChanged);
@@ -1304,6 +1305,10 @@ bool PaintCoreClient::importBrushes(const QUrl &path) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
     m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile()]{worker->brushFile(path,{},false);},Qt::QueuedConnection);return true;
+}
+void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
+    if(!m_brushPreferencePersistenceEnabled || m_closing)return;
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,state]{worker->saveBrushPreferences(state);},Qt::QueuedConnection);
 }
 bool PaintCoreClient::exportBrush(const QUrl &path) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;

@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+笔尖光标：[设置设计](brush-cursor-settings-design.md) / [验收](brush-cursor-settings-validation.md)。全局显示偏好与多文档同步/保存已完成；图片笔尖轮廓和硬件动态待后续引擎阶段。
+
 VBR 程序子集：[设计](vbr-procedural-design.md) / [验收](vbr-procedural-validation.md)，ABI 1.26。已实现程序预设包导入/导出与严格验证；图片资源、ABR 与其他模块继续后续阶段。
 
 笔刷系统第一阶段：[程序笔尖设计](brush-tip-design.md) / [验收](brush-tip-validation.md)，ABI 1.25。已接共用程序笔尖、PS 分类设置、真实预览与椭圆光标；VBR、ABR、图片笔尖、动态与湿混继续逐模块实施。

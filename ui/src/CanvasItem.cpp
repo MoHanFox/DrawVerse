@@ -70,6 +70,7 @@ void CanvasItem::setClient(PaintCoreClient *client) {
     if (client) {
         connect(client, &PaintCoreClient::liquifyOptionsChanged,this,&CanvasItem::refreshBrushCursor);
         connect(client, &PaintCoreClient::stateChanged,this,&CanvasItem::refreshBrushCursor);
+        connect(client, &PaintCoreClient::brushCursorPreferencesChanged,this,&CanvasItem::refreshBrushCursor);
         connect(client, &PaintCoreClient::frameChanged, this, &CanvasItem::refresh);
         connect(client, &PaintCoreClient::brushChanged, this, [this] { cancelSelectionDrag();if(m_picking && !m_altHeld && !m_client->eyedropperTool())endPicking();refreshBrushCursor(); });
         connect(client, &PaintCoreClient::stateChanged, this, [this] { refresh(); emit viewChanged(); });
@@ -89,6 +90,10 @@ QRectF CanvasItem::brushCursorRect() const {
     return {m_cursorPosition-QPointF(radius,radius),QSizeF(radius*2,radius*2)};
 }
 bool CanvasItem::brushCursorVisible() const {
+    if(m_client && !m_client->liquifyActive()){
+        const auto *library=m_client->brushLibrary();
+        if((!library->cursorOutline() && !library->cursorCenter()) || (library->cursorHoverOnly() && m_client->drawing()))return false;
+    }
     // Alt is the eyedropper: the pointer becomes a crosshair and the brush ring goes away, so the
     // user can see exactly which pixel will be sampled.
     return m_cursorInside && !(m_client && m_client->transformActive()) && !m_capsLock && !m_altHeld && !m_ctrlHeld && !m_moving && m_interactive && m_client && (m_client->liquifyActive() || (!m_client->eyedropperTool() && !m_client->bucketTool() && !m_client->moveTool() && !m_client->selectionTool())) && !m_space && !spaceHeld && !m_panning && isVisible();

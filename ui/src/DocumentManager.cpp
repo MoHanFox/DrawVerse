@@ -34,9 +34,28 @@ void DocumentManager::track(PaintCoreClient *client) {
     // application/manager, including the externally supplied first client.
     QQmlEngine::setObjectOwnership(client,QQmlEngine::CppOwnership);
     m_clients.append(client);
+    if(!m_brushPreferenceWriter)m_brushPreferenceWriter=client;
+    client->setBrushPreferencePersistenceEnabled(client==m_brushPreferenceWriter);
+    // One application brush preference state. Restore publishes a copy without
+    // requesting another disk save, so inactive documents cannot overwrite it.
+    connect(client->brushLibrary(),&BrushLibrary::persistRequested,this,[this,client](const QByteArray &state){
+        if(m_quitting)return;
+        m_brushPreferenceState=state;
+        for(const auto &other:m_clients)if(other && other!=client && !m_stopped.contains(other))other->brushLibrary()->restore(state);
+        if(m_brushPreferenceWriter && client!=m_brushPreferenceWriter)m_brushPreferenceWriter->persistBrushPreferences(state);
+    });
+    connect(client,&PaintCoreClient::stateChanged,this,[this,client,initialized=false]() mutable {
+        if(initialized || !client->ready())return;initialized=true;
+        if(!m_brushPreferenceState.isEmpty())client->brushLibrary()->restore(m_brushPreferenceState);
+        else if(m_brushPreferenceWriter && client!=m_brushPreferenceWriter && m_brushPreferenceWriter->ready())client->brushLibrary()->restore(m_brushPreferenceWriter->brushLibrary()->snapshot());
+    });
     connect(client,&PaintCoreClient::stateChanged,this,&DocumentManager::documentsChanged);
     connect(client,&PaintCoreClient::stopped,this,[this,client] {
         m_stopped.insert(client);
+        if(client==m_brushPreferenceWriter && !m_quitting){
+            client->setBrushPreferencePersistenceEnabled(false);m_brushPreferenceWriter=nullptr;
+            for(const auto &other:m_clients)if(other && !m_stopped.contains(other)){m_brushPreferenceWriter=other;other->setBrushPreferencePersistenceEnabled(true);other->persistBrushPreferences(m_brushPreferenceState.isEmpty()?other->brushLibrary()->snapshot():m_brushPreferenceState);break;}
+        }
         if(m_quitting && std::all_of(m_clients.cbegin(),m_clients.cend(),[this](const auto &c){return !c || m_stopped.contains(c);}))emit stopped();
     });
 }
