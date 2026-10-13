@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新压力动态内核：`docs/brush-pressure-design.md` / `docs/brush-pressure-validation.md`；有界不可变曲线/最低比例/精确分段编译、尺寸流量与涂抹强度共用/旧像素与在途快照；旧IO明确拒绝非默认数据，状态ABI/VBR与编辑界面继续后续，无ABI变化。
+
 - 最新VBR来源入口：`docs/vbr-source-entry-design.md` / `docs/vbr-source-entry-validation.md`；ABI1.34、原生完整来源交换/当前与基线PNG、待采用资源/基线mip释放、Qt v4/UUID副本/原ABR范围显式选项与切换保护、跨新仓库重开像素报告；分组扩展/完整动态湿混继续后续。
 
 - 最新VBR来源IO：`docs/vbr-source-design.md` / `docs/vbr-source-validation.md`；VBR1.2三角色/原记录SHA/共享原包与当前基线PNG、批次导出/5121条目边界与Schema；旧原生接口明确拒绝防丢来源，原生Qt范围选项/分组动态继续后续，无ABI变化。

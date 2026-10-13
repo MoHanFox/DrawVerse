@@ -1,6 +1,23 @@
 use paint_core::*;
 use paint_io::brush_state;
 #[test]
+fn unsupported_pressure_controls_including_redundant_nodes_are_not_silently_serialized_away() {
+    let mut catalog = BrushCatalog::default();
+    for points in [
+        vec![(0., 0.), (0.5, 0.2), (1., 1.)],
+        vec![(0., 0.), (0.5, 0.5), (1., 1.)],
+    ] {
+        let mut settings = catalog.selected().settings().clone();
+        settings.dynamics.size =
+            PressureControl::new(PressureCurve::new(points).unwrap(), 0.).unwrap();
+        catalog.edit("round-pressure", settings).unwrap();
+        assert!(matches!(
+            brush_state::encode(&catalog),
+            Err(paint_io::Error::Unsupported(_))
+        ));
+    }
+}
+#[test]
 fn v1_v2_migration_and_canonical_parameters_are_executable() {
     let mut c = BrushCatalog::default();
     let mut s = c.selected().settings().clone();

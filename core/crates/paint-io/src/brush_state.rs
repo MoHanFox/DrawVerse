@@ -178,6 +178,7 @@ fn decode_inner(
             row.id,
             row.name,
             BrushSettings {
+                dynamics: Default::default(),
                 diameter: row.radius * 2.,
                 opacity: row.opacity,
                 spacing: row.spacing / 2.,
@@ -207,6 +208,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        if s.dynamics != paint_core::BrushDynamics::default() {
+            return Err(Error::Unsupported(
+                "brush pressure dynamics are not supported by this state version".into(),
+            ));
+        }
         let mask_resource = if let Some(mask) = &s.mask {
             version = version.max(3);
             Some(

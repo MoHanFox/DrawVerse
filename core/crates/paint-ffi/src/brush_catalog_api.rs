@@ -276,6 +276,7 @@ pub unsafe extern "C" fn paint_brush_library_edit(
                     pressure_flow: t.pressure_flow == 1,
                 },
                 mask: before.settings().mask.clone(),
+                dynamics: before.settings().dynamics.clone(),
             };
             c.edit(&id, settings).map_err(Into::into)
         })

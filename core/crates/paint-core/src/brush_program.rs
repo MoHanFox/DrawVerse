@@ -1,4 +1,6 @@
-use crate::{Brush, BrushMask, Error, Result};
+use crate::{
+    brush_dynamics::CompiledPressureControl, Brush, BrushDynamics, BrushMask, Error, Result,
+};
 use std::sync::Arc;
 
 /// Procedural tip parameters. Defaults preserve the legacy round brush.
@@ -46,6 +48,7 @@ pub struct BrushDefinition {
     pub brush: Brush,
     pub tip: BrushTip,
     pub mask: Option<Arc<BrushMask>>,
+    pub dynamics: BrushDynamics,
 }
 
 impl From<Brush> for BrushDefinition {
@@ -54,6 +57,7 @@ impl From<Brush> for BrushDefinition {
             brush,
             tip: BrushTip::default(),
             mask: None,
+            dynamics: BrushDynamics::default(),
         }
     }
 }
@@ -65,6 +69,8 @@ pub struct BrushProgram {
     sine: f64,
     cosine: f64,
     mask: Option<Arc<BrushMask>>,
+    size_response: Option<CompiledPressureControl>,
+    flow_response: Option<CompiledPressureControl>,
 }
 
 /// Geometry and minification compiled once for one pressure-sized image dab.
@@ -102,9 +108,23 @@ impl BrushProgram {
             sine,
             cosine,
             mask: definition.mask,
+            size_response: definition.dynamics.size.compile(),
+            flow_response: definition.dynamics.flow.compile(),
         })
     }
 
+    #[inline]
+    pub(crate) fn size_pressure(&self, pressure: f32) -> f32 {
+        self.size_response
+            .as_ref()
+            .map_or(pressure, |curve| curve.response(pressure))
+    }
+    #[inline]
+    pub(crate) fn flow_pressure(&self, pressure: f32) -> f32 {
+        self.flow_response
+            .as_ref()
+            .map_or(pressure, |curve| curve.response(pressure))
+    }
     #[inline]
     pub fn coverage(&self, dx: f64, dy: f64, radius: f64) -> f32 {
         if self.has_mask() {

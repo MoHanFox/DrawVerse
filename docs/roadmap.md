@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+压力动态：[设计](brush-pressure-design.md) / [验收](brush-pressure-validation.md)。尺寸/流量压力曲线与最低比例已接统一Rust执行；继续状态/原生与VBR保存、PS分类编辑，再推进其余动态及湿混。
+
 VBR来源入口：[设计](vbr-source-entry-design.md) / [验收](vbr-source-entry-validation.md)。ABI1.34，来源资源交换/原始包范围选项/跨仓库保存与报告已接原生Qt；继续分组扩展及高级动态湿混。
 
 VBR来源IO：[设计](vbr-source-design.md) / [验收](vbr-source-validation.md)。1.2有界来源资源与当前/基线资源已实现；继续原生Qt明确原包范围导出及完整交换。

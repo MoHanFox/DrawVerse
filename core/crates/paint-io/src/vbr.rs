@@ -34,6 +34,7 @@ impl Parameters {
     }
     pub fn settings(&self) -> BrushSettings {
         BrushSettings {
+            dynamics: Default::default(),
             mask: None,
             diameter: self.diameter,
             spacing: self.spacing,

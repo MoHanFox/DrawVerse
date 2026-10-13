@@ -28,6 +28,35 @@ fn archive() -> SourceArchive {
     SourceArchive::capture(bytes, 0, &converted).unwrap()
 }
 #[test]
+fn converter_v1_refuses_to_discard_pressure_controls_from_captured_baselines() {
+    let descriptor = Descriptor {
+        class: Class {
+            name: String::new(),
+            id: b"null".to_vec(),
+        },
+        entries: Vec::new(),
+    };
+    let mut settings = paint_core::BrushSettings::default();
+    settings.dynamics.flow =
+        paint_core::PressureControl::new(paint_core::PressureCurve::default(), 0.3).unwrap();
+    let converted = ConvertedPreset {
+        name: "dynamic",
+        settings,
+        source: &descriptor,
+        issues: Vec::new(),
+    };
+    let original = Arc::new(vec![0, 6, 0, 2, 42]);
+    let token = CancellationToken::default();
+    assert!(matches!(
+        SourceArchive::capture(original.clone(), 0, &converted),
+        Err(paint_io::Error::Unsupported(_))
+    ));
+    assert!(matches!(
+        SourceBatch::capture(original, std::slice::from_ref(&converted), &token),
+        Err(paint_io::Error::Unsupported(_))
+    ));
+}
+#[test]
 fn batch_capture_bounds_all_reports_before_any_storage_and_matches_single_records() {
     use paint_io::{brush_source::SourceBatch, Error};
     let descriptor = Descriptor {

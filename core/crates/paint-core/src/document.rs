@@ -1412,7 +1412,7 @@ impl Document {
         let radius = f64::from(
             stroke.brush.radius
                 * if stroke.program.tip.pressure_size {
-                    point.pressure
+                    stroke.program.size_pressure(point.pressure)
                 } else {
                     1.
                 },
@@ -1424,14 +1424,14 @@ impl Document {
                     pressure_strength, ..
                 } => {
                     if pressure_strength {
-                        point.pressure
+                        stroke.program.flow_pressure(point.pressure)
                     } else {
                         1.
                     }
                 }
                 _ => {
                     if stroke.program.tip.pressure_flow {
-                        point.pressure
+                        stroke.program.flow_pressure(point.pressure)
                     } else {
                         1.
                     }

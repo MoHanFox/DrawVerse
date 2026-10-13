@@ -19,6 +19,7 @@ pub struct BrushSettings {
     pub spacing: f32,
     pub tip: BrushTip,
     pub mask: Option<Arc<BrushMask>>,
+    pub dynamics: crate::BrushDynamics,
 }
 impl Default for BrushSettings {
     fn default() -> Self {
@@ -28,6 +29,7 @@ impl Default for BrushSettings {
             spacing: 0.075,
             tip: BrushTip::default(),
             mask: None,
+            dynamics: crate::BrushDynamics::default(),
         }
     }
 }
@@ -44,6 +46,7 @@ impl BrushSettings {
             },
             tip: self.tip,
             mask: self.mask.clone(),
+            dynamics: self.dynamics.clone(),
         }
     }
 }

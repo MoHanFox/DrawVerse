@@ -2,6 +2,7 @@ use paint_core::*;
 use std::sync::Arc;
 fn definition(mask: Arc<BrushMask>, angle: f32) -> BrushDefinition {
     BrushDefinition {
+        dynamics: Default::default(),
         brush: Brush {
             radius: 8.,
             spacing: 1.,

@@ -4,6 +4,7 @@ fn dot(tip: BrushTip, pressure: f32) -> Document {
     let mut d = Document::new(40, 40).unwrap();
     d.begin_brush_stroke(
         BrushDefinition {
+            dynamics: Default::default(),
             mask: None,
             brush: Brush {
                 radius: 10.,
@@ -119,6 +120,7 @@ fn validation_is_atomic_and_new_tip_history_is_reversible() {
     }
     d.begin_brush_stroke(
         BrushDefinition {
+            dynamics: Default::default(),
             brush: Brush {
                 radius: 10.,
                 mode: BrushMode::Erase,

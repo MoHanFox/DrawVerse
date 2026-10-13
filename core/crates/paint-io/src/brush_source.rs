@@ -120,6 +120,11 @@ impl SourceArchive {
         tip_resource: Option<String>,
     ) -> Result<SourceInfo> {
         let settings = &preset.settings;
+        if settings.dynamics != paint_core::BrushDynamics::default() {
+            return Err(Error::Unsupported(
+                "source pressure dynamics are not represented by converter v1".into(),
+            ));
+        }
         let info = SourceInfo {
             version: 1,
             format: "abr".into(),
