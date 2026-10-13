@@ -28,6 +28,66 @@ fn archive() -> SourceArchive {
     SourceArchive::capture(bytes, 0, &converted).unwrap()
 }
 #[test]
+fn batch_capture_bounds_all_reports_before_any_storage_and_matches_single_records() {
+    use paint_io::{brush_source::SourceBatch, Error};
+    let descriptor = Descriptor {
+        class: Class {
+            name: String::new(),
+            id: b"null".to_vec(),
+        },
+        entries: Vec::new(),
+    };
+    let converted = ConvertedPreset {
+        name: "single",
+        settings: paint_core::BrushSettings::default(),
+        source: &descriptor,
+        issues: Vec::new(),
+    };
+    let original = Arc::new(vec![0, 6, 0, 2, 42]);
+    let token = CancellationToken::default();
+    let single = SourceArchive::capture(original.clone(), 0, &converted).unwrap();
+    let batch =
+        SourceBatch::capture(original.clone(), std::slice::from_ref(&converted), &token).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let store = SourceStore::open(temp.path().into()).unwrap();
+    assert_eq!(
+        store.save_batch(&batch, &token).unwrap(),
+        vec![store.save(&single, &token).unwrap()]
+    );
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 2);
+    let too_many = (0..1025)
+        .map(|_| ConvertedPreset {
+            name: "count",
+            settings: paint_core::BrushSettings::default(),
+            source: &descriptor,
+            issues: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        SourceBatch::capture(original.clone(), &too_many, &token),
+        Err(Error::Limit(_))
+    ));
+    let large = (0..200)
+        .map(|_| ConvertedPreset {
+            name: "large",
+            settings: paint_core::BrushSettings::default(),
+            source: &descriptor,
+            issues: (0..1000)
+                .map(|i| Issue {
+                    path: format!("{}.{i}", "x".repeat(180)),
+                    status: Status::NotExecuted,
+                    reason: "bounded report",
+                })
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        SourceBatch::capture(original, &large, &token),
+        Err(Error::Limit("brush source batch record bytes"))
+    ));
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 2);
+}
+#[test]
 fn receipts_are_weak_scoped_and_fresh_inspection_still_detects_corruption() {
     use std::collections::BTreeSet;
     let temp = tempfile::tempdir().unwrap();

@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新ABR整包IO导入：`docs/abr-import-design.md` / `docs/abr-import-validation.md`；6/10全链编译/共享PNG与完整来源批次、单原包保存/总报告边界/顺序与像素验证；原生Qt入口、旧参数/16位与VBR来源继续后续，无ABI变化。
+
 - 最新笔刷来源界面：`docs/brush-source-ui-design.md` / `docs/brush-source-ui-validation.md`；Qt v4保存/原生目录/副本保留来源、后台导入快照与逐项兼容报告/旧结果拒绝；来源VBR导出明确未支持，ABR用户入口与批量来源继续后续，无ABI变化。
 
 - 最新原生来源准备桥：`docs/brush-source-bridge-design.md` / `docs/brush-source-bridge-validation.md`；ABI1.32、共享来源上下文/v4准确准备、Weak身份凭据/当前与在途独立持有、后台来源报告新校验；Qt/VBR来源/ABR入口继续后续。

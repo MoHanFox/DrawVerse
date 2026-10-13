@@ -129,6 +129,7 @@ pub fn convert<'a>(
         return Err(Error::Limit("ABR converted preset count"));
     }
     let mut output = Vec::new();
+    let mut report_bytes = 0usize;
     for item in linked {
         check(token)?;
         if item.name.trim().is_empty() || item.name.chars().count() > 80 || item.name.contains('\0')
@@ -366,6 +367,16 @@ pub fn convert<'a>(
         }
         if issues.len() > 4096 || issues.iter().map(|i| i.path.len()).sum::<usize>() > 1024 * 1024 {
             return Err(Error::Limit("ABR report budget"));
+        }
+        // Bound accumulation before source serialization; never return truncated reports.
+        report_bytes = report_bytes.saturating_add(
+            issues
+                .iter()
+                .map(|i| i.path.len() + i.reason.len() + 64)
+                .sum::<usize>(),
+        );
+        if report_bytes > 32 * 1024 * 1024 {
+            return Err(Error::Limit("ABR batch report budget"));
         }
         BrushProgram::compile(settings.definition())?;
         output.push(ConvertedPreset {

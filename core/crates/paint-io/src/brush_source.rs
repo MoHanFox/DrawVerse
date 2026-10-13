@@ -102,11 +102,28 @@ impl SourceArchive {
         preset: &ConvertedPreset<'_>,
     ) -> Result<Self> {
         let version = header(&original)?;
+        let tip_resource = preset
+            .settings
+            .mask
+            .as_ref()
+            .map(|mask| encode_mask(mask).map(|png| hash(&png)))
+            .transpose()?;
+        let info =
+            Self::capture_info(hash(&original), version, preset_index, preset, tip_resource)?;
+        Ok(Self { info, original })
+    }
+    fn capture_info(
+        original_hash: String,
+        version: (u16, Option<u16>),
+        preset_index: u32,
+        preset: &ConvertedPreset<'_>,
+        tip_resource: Option<String>,
+    ) -> Result<SourceInfo> {
         let settings = &preset.settings;
         let info = SourceInfo {
             version: 1,
             format: "abr".into(),
-            original_hash: hash(&original),
+            original_hash,
             file_version: version.0,
             file_subversion: version.1,
             preset_index,
@@ -124,11 +141,7 @@ impl SourceArchive {
                 pressure_size: settings.tip.pressure_size,
                 pressure_flow: settings.tip.pressure_flow,
             },
-            tip_resource: settings
-                .mask
-                .as_ref()
-                .map(|mask| encode_mask(mask).map(|png| hash(&png)))
-                .transpose()?,
+            tip_resource,
             report: preset
                 .issues
                 .iter()
@@ -144,7 +157,7 @@ impl SourceArchive {
                 .collect(),
         };
         info.validate()?;
-        Ok(Self { info, original })
+        Ok(info)
     }
     pub fn record(&self) -> Result<Vec<u8>> {
         self.info.validate()?;
@@ -158,6 +171,68 @@ impl SourceArchive {
             return Err(Error::Limit("brush source record bytes"));
         }
         Ok(record)
+    }
+}
+/// Fully validated batch, sharing original bytes and deduplicating tip encoding.
+/// Private records cannot be changed after capture; not a filesystem transaction.
+pub struct SourceBatch {
+    original: Arc<Vec<u8>>,
+    original_id: String,
+    records: Vec<(String, Vec<u8>)>,
+}
+impl SourceBatch {
+    pub fn capture(
+        original: Arc<Vec<u8>>,
+        presets: &[ConvertedPreset<'_>],
+        token: &CancellationToken,
+    ) -> Result<Self> {
+        check(token)?;
+        if presets.is_empty() || presets.len() > 1024 {
+            return Err(Error::Limit("brush source batch count"));
+        }
+        let version = header(&original)?;
+        let original_id = hash(&original);
+        let mut tips: BTreeMap<usize, String> = BTreeMap::new();
+        let mut records = Vec::new();
+        let mut total = 0usize;
+        for (index, preset) in presets.iter().enumerate() {
+            check(token)?;
+            let tip_resource = if let Some(mask) = &preset.settings.mask {
+                let key = Arc::as_ptr(mask) as usize;
+                let identity = if let Some(id) = tips.get(&key) {
+                    id.clone()
+                } else {
+                    let id = hash(&encode_mask(mask)?);
+                    tips.insert(key, id.clone());
+                    id
+                };
+                Some(identity)
+            } else {
+                None
+            };
+            let info = SourceArchive::capture_info(
+                original_id.clone(),
+                version,
+                index as u32,
+                preset,
+                tip_resource,
+            )?;
+            let record = serde_json::to_vec(&info).map_err(|e| Error::Codec(e.to_string()))?;
+            total = total.saturating_add(record.len());
+            if record.len() > MAX_RECORD || total > 32 * 1024 * 1024 {
+                return Err(Error::Limit("brush source batch record bytes"));
+            }
+            records.push((hash(&record), record));
+        }
+        check(token)?;
+        Ok(Self {
+            original,
+            original_id,
+            records,
+        })
+    }
+    pub fn ids(&self) -> impl Iterator<Item = &str> {
+        self.records.iter().map(|(id, _)| id.as_str())
     }
 }
 fn header(bytes: &[u8]) -> Result<(u16, Option<u16>)> {
@@ -230,6 +305,7 @@ impl SourceStore {
         bytes: &[u8],
         limit: usize,
         token: &CancellationToken,
+        check_capacity: bool,
     ) -> Result<()> {
         check(token)?;
         if bytes.len() > limit || hash(bytes) != id {
@@ -240,15 +316,8 @@ impl SourceStore {
             self.read(id, extension, limit)?;
             return Ok(());
         }
-        let mut count = 0;
-        for entry in std::fs::read_dir(&self.directory)? {
-            let path = entry?.path();
-            if path.extension().is_some_and(|e| e == "abr" || e == "json") {
-                count += 1;
-            }
-        }
-        if count >= 4096 {
-            return Err(Error::Limit("brush source file count"));
+        if check_capacity {
+            self.check_capacity(1)?;
         }
         let mut temp = tempfile::Builder::new()
             .prefix(".brush-source-")
@@ -266,6 +335,22 @@ impl SourceStore {
             Err(e) => Err(Error::Io(e.error)),
         }
     }
+    fn check_capacity(&self, additional: usize) -> Result<()> {
+        let mut count = 0usize;
+        for entry in std::fs::read_dir(&self.directory)? {
+            if entry?
+                .path()
+                .extension()
+                .is_some_and(|e| e == "abr" || e == "json")
+            {
+                count += 1;
+            }
+        }
+        if count.saturating_add(additional) > 4096 {
+            return Err(Error::Limit("brush source file count"));
+        }
+        Ok(())
+    }
     pub fn save(&self, archive: &SourceArchive, token: &CancellationToken) -> Result<String> {
         check(token)?;
         let record = archive.record()?;
@@ -280,9 +365,42 @@ impl SourceStore {
             archive.original(),
             MAX_ORIGINAL,
             token,
+            true,
         )?;
-        self.write(&id, "json", &record, MAX_RECORD, token)?;
+        self.write(&id, "json", &record, MAX_RECORD, token, true)?;
         Ok(id)
+    }
+    /// Validate all records before capture, then store one original and all records.
+    /// IO failure may leave unreferenced files; no partial catalog is returned.
+    pub fn save_batch(
+        &self,
+        batch: &SourceBatch,
+        token: &CancellationToken,
+    ) -> Result<Vec<String>> {
+        check(token)?;
+        let _writer = self
+            .writer
+            .lock()
+            .map_err(|_| Error::Invalid("brush source writer lock"))?;
+        let targets = batch
+            .ids()
+            .map(|id| self.path(id, "json"))
+            .chain(std::iter::once(self.path(&batch.original_id, "abr")))
+            .collect::<Result<BTreeSet<_>>>()?;
+        self.check_capacity(targets.iter().filter(|path| !path.exists()).count())?;
+        self.write(
+            &batch.original_id,
+            "abr",
+            &batch.original,
+            MAX_ORIGINAL,
+            token,
+            false,
+        )?;
+        for (id, record) in &batch.records {
+            self.write(id, "json", record, MAX_RECORD, token, false)?;
+        }
+        check(token)?;
+        Ok(batch.ids().map(str::to_owned).collect())
     }
     pub fn load(&self, id: &str, token: &CancellationToken) -> Result<SourceArchive> {
         check(token)?;
@@ -419,8 +537,9 @@ impl SourceStore {
             archive.original(),
             MAX_ORIGINAL,
             token,
+            true,
         )?;
-        self.write(id, "json", record, MAX_RECORD, token)?;
+        self.write(id, "json", record, MAX_RECORD, token, true)?;
         Ok(archive)
     }
 }

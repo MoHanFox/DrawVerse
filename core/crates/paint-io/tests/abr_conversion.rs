@@ -238,3 +238,27 @@ fn huge_unknown_reports_reject_with_a_bound_and_never_hide_the_extra_fields() {
     )
     .is_err());
 }
+
+#[test]
+fn many_individually_valid_reports_are_bounded_before_entire_batch_accumulates() {
+    let mut source = preset();
+    for index in 0..1000 {
+        source.entries.push((
+            format!("{}.{index}", "x".repeat(180)).into_bytes(),
+            Value::Boolean(true),
+        ));
+    }
+    let shape = shape(false);
+    let linked = (0..200)
+        .map(|_| LinkedPreset {
+            name: "same",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+        })
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        convert(&linked, &CancellationToken::default()),
+        Err(paint_io::Error::Limit("ABR batch report budget"))
+    ));
+}

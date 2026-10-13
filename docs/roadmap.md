@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+ABR整包IO导入：[设计](abr-import-design.md) / [验收](abr-import-validation.md)。整包转换/编译/图片及来源批次已完成；继续原生Qt用户入口与VBR来源。
+
 笔刷来源界面：[设计](brush-source-ui-design.md) / [验收](brush-source-ui-validation.md)。v4与后台原生报告已接入Qt；实际ABR入口/批量来源与VBR选择性来源继续后续。
 
 原生来源准备桥：[设计](brush-source-bridge-design.md) / [验收](brush-source-bridge-validation.md)。ABI1.32，共享目录/v4准备/来源报告与有生命周期校验凭据已实现；继续Qt来源与实际ABR入口。

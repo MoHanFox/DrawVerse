@@ -100,6 +100,29 @@ fn external_sample_descriptor_and_pixels_are_inspected_without_claiming_conversi
     assert_eq!(restored.original(), bytes);
     assert_eq!(restored.info.original_name, brush.name);
     assert_eq!(restored.info.report.len(), brush.issues.len());
+    let batch = paint_io::abr_import::ImportBatch::decode(
+        std::sync::Arc::new(bytes.clone()),
+        paint_core::MAX_CATALOG_MASK_BYTES,
+        &token,
+    )
+    .unwrap();
+    assert_eq!(batch.asset_count(), 1);
+    let resources = paint_io::brush_resource::ResourceStore::open(
+        directory.path().join("imported"),
+        paint_core::MAX_CATALOG_MASK_BYTES,
+    )
+    .unwrap();
+    let imported = batch.persist(&resources, &token).unwrap();
+    assert_eq!(imported.len(), 1);
+    assert!(imported[0].is_partial());
+    assert_eq!(imported[0].name(), brush.name);
+    let captured = resources
+        .source_store()
+        .unwrap()
+        .load(imported[0].source_id(), &token)
+        .unwrap();
+    assert_eq!(captured.original(), bytes);
+    assert_eq!(captured.info.report.len(), brush.issues.len());
     for root in &descriptors {
         println!(
             "root {:?}, {} properties",
