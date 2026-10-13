@@ -4,6 +4,7 @@ mod appearance;
 mod brush;
 mod brush_catalog;
 mod brush_mask;
+mod brush_outline;
 mod brush_program;
 mod clipping;
 mod document;
@@ -24,6 +25,7 @@ pub use brush_catalog::{
     BrushCatalog, BrushPreset, BrushSettings, MAX_BRUSH_PRESETS, MAX_CATALOG_MASK_BYTES,
 };
 pub use brush_mask::{BrushMask, MAX_BRUSH_MASK_BYTES, MAX_BRUSH_MASK_EDGE};
+pub use brush_outline::{BrushOutlineSegment, MAX_BRUSH_OUTLINE_SEGMENTS};
 pub use brush_program::{BrushDefinition, BrushProgram, BrushTip};
 pub use document::{
     BucketFill, DirtyTiles, Document, DocumentOptions, DocumentSnapshot, LiquifyDab, PlacedImage,

@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图片笔尖轮廓：`docs/brush-outline-design.md` / `docs/brush-outline-validation.md`；ABI 1.30、0.5阈值/孔洞与多区域/有界几何缓存、Qt当前身份与显示变换、DPI固定描边；超复杂纹理明确简化，图片悬停/动态设备/VBR图片/ABR继续后续。
+
 - 最新图片笔尖Qt接入：`docs/brush-image-ui-design.md` / `docs/brush-image-ui-validation.md`；后台PNG三种解释/捕获目标/持久v3/独立真实预览、图片硬度禁用和程序恢复；图片精确轮廓/VBR图片/ABR/高级动态仍待完成。
 
 - 最新图片笔尖原生资源接口：`docs/brush-resource-abi-design.md` / `docs/brush-resource-abi-validation.md`；ABI 1.29、后台PNG导入/共享资源目录、v3准确准备、闲置修订释放/重建及在途资源保留；Qt图片控件/VBR图片/ABR仍待接入。

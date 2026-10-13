@@ -553,3 +553,29 @@ pub unsafe extern "C" fn paint_brush_library_import_tip_file(
         pointers::copy_buffer(resource.id.as_bytes(), buffer, capacity, required)
     })
 }
+
+/// Background-only cached SVG path for the resource's 50% coverage outline.
+/// Coordinates are unit-diameter, centred at (.5,.5); an empty path is valid.
+/// # Safety
+/// Live library, readable identity and writable buffer/required storage required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_tip_outline(
+    library: *mut PaintBrushLibrary,
+    identity: *const u8,
+    identity_length: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(required, 0)?;
+        runtime::outside_callback()?;
+        let identity = pointers::utf8(identity, identity_length)?;
+        let library = runtime::registry()?.brush_library(library)?;
+        let store = library.resource_store()?;
+        let svg = store
+            .outline_svg(&identity, &paint_task::CancellationToken::default())
+            .map_err(crate::file_job::io_error)?;
+        pointers::copy_buffer(svg.as_bytes(), buffer, capacity, required)
+    })
+}

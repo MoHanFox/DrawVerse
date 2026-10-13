@@ -39,6 +39,9 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
     Q_PROPERTY(bool brushFileBusy READ brushFileBusy NOTIFY brushFileChanged)
     Q_PROPERTY(QString brushImportMessage READ brushImportMessage NOTIFY brushFileChanged)
+    Q_PROPERTY(QString brushOutlinePath READ brushOutlinePath NOTIFY brushOutlineChanged)
+    Q_PROPERTY(QString brushOutlineMessage READ brushOutlineMessage NOTIFY brushOutlineChanged)
+    Q_PROPERTY(bool brushOutlineReady READ brushOutlineReady NOTIFY brushOutlineChanged)
     Q_PROPERTY(QVariantList historyEntries READ historyEntries NOTIFY historyChanged)
     Q_PROPERTY(QVariantList transformInitialPoints READ transformInitialPoints NOTIFY transformChanged)
     Q_PROPERTY(int transformReference READ transformReference WRITE setTransformReference NOTIFY transformChanged)
@@ -125,6 +128,9 @@ public:
     void persistBrushPreferences(const QByteArray &state);
     bool brushFileBusy() const {return m_brushFileBusy;}
     QString brushImportMessage() const {return m_brushImportMessage;}
+    QString brushOutlinePath() const {return m_brushOutlinePath;}
+    QString brushOutlineMessage() const {return m_brushOutlineMessage;}
+    bool brushOutlineReady() const {return m_brushOutlineReady;}
     Q_INVOKABLE bool importBrushes(const QUrl &path);
     Q_INVOKABLE bool importBrushTip(const QUrl &path,int interpretation);
     Q_INVOKABLE bool exportBrush(const QUrl &path);
@@ -352,6 +358,7 @@ public:
     Q_INVOKABLE void shutdown();
 signals:
     void brushCursorPreferencesChanged();
+    void brushOutlineChanged();
     void brushFileChanged();
     void brushFileFinished(bool success);
     void liquifyOptionsChanged();
@@ -385,6 +392,8 @@ private:
     bool m_brushPreferencePersistenceEnabled=true;
     bool m_brushFileBusy=false;
     QString m_brushImportMessage;
+    QString m_outlineResource,m_brushOutlinePath,m_brushOutlineMessage;
+    bool m_brushOutlineReady=false;
     bool submit(int type, const InputSample &sample = {}, quint64 id = 0,
                 const QString &text = {}, qreal amount = 0, bool flag = false);
     void showError(const QString &error);

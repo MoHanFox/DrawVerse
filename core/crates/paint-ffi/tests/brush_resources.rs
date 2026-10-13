@@ -105,6 +105,31 @@ fn resource_import_validates_outputs_before_writing_and_shared_store_outlives_so
         );
         assert_eq!(required, 64);
         assert_eq!(depth, 8);
+        assert_eq!(
+            paint_brush_library_tip_outline(
+                library,
+                id.as_ptr(),
+                64,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert!(required > 0 && required < 4 * 1024 * 1024);
+        let mut path = vec![0; required as usize];
+        assert_eq!(
+            paint_brush_library_tip_outline(
+                library,
+                id.as_ptr(),
+                64,
+                path.as_mut_ptr(),
+                path.len() as u64,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        assert!(std::str::from_utf8(&path).unwrap().starts_with('M'));
         assert!(assets
             .join(format!("{}.png", std::str::from_utf8(&id).unwrap()))
             .exists());

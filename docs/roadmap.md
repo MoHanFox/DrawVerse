@@ -1,6 +1,8 @@
 # 模块顺序与验收
 
-图片笔尖Qt接入：[设计](brush-image-ui-design.md) / [验收](brush-image-ui-validation.md)。PNG导入/捕获目标/v3持久/真实预览已完成；图片轮廓与VBR资源继续后续。
+图片笔尖輪廓：[设计](brush-outline-design.md) / [验收](brush-outline-validation.md)。ABI 1.30，基础0.5覆盖/孔洞与多区域/有界缓存与Qt描边已完成；半透明悬停、复杂细节简化及动态设备继续后续。
+
+图片笔尖Qt接入：[设计](brush-image-ui-design.md) / [验收](brush-image-ui-validation.md)。PNG导入/捕获目标/v3持久/真实预览已完成；VBR图片资源继续后续。
 
 图片笔尖原生资源接口：[设计](brush-resource-abi-design.md) / [验收](brush-resource-abi-validation.md)。ABI 1.29，共享资源目录/v3准备/闲置修订回收已接入。
 

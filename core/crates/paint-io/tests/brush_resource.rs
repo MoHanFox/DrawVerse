@@ -10,6 +10,40 @@ fn png(w: u32, h: u32, pixels: &[u8], color: ExtendedColorType) -> Vec<u8> {
     bytes
 }
 #[test]
+fn outlines_share_immutable_geometry_and_evict_old_entries_without_pinning_masks() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(directory.path().into(), DEFAULT_RESOURCE_BUDGET).unwrap();
+    let token = CancellationToken::default();
+    let mut first = None;
+    for size in 1..=10 {
+        let resource = store
+            .import_png(
+                &png(size, 1, &vec![255; size as usize], ExtendedColorType::L8),
+                Interpretation::Coverage,
+                &token,
+            )
+            .unwrap();
+        let path = store.outline_svg(&resource.id, &token).unwrap();
+        assert!(path.contains('M') && path.contains('L'));
+        assert!(Arc::ptr_eq(
+            &path,
+            &store.outline_svg(&resource.id, &token).unwrap()
+        ));
+        if size == 1 {
+            first = Some((resource.id.clone(), Arc::downgrade(&path)));
+        }
+    }
+    let (id, weak) = first.unwrap();
+    assert!(weak.upgrade().is_none());
+    assert_eq!(store.resident_bytes(), 0);
+    let rebuilt = store.outline_svg(&id, &token).unwrap();
+    assert!(!rebuilt.is_empty());
+    assert!(store.outline_svg("../bad", &token).is_err());
+    let cancelled = CancellationToken::default();
+    cancelled.cancel();
+    assert!(store.outline_svg(&id, &cancelled).is_err());
+}
+#[test]
 fn known_sha_grayscale_alpha_and_sixteen_bit_data_have_exact_coverage() {
     assert_eq!(
         hash(b"abc"),

@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 29
+#define PAINT_ABI_MINOR 30
 
 #define PAINT_ABI_PATCH 0
 
@@ -64,6 +64,8 @@
 #define PAINT_FEATURE_ASYNC_SESSION 16
 
 #define PAINT_FEATURE_BRUSH_CATALOG 4194304
+
+#define PAINT_FEATURE_BRUSH_OUTLINE 33554432
 
 #define PAINT_FEATURE_BRUSH_PREPARATION 8388608
 
@@ -1052,6 +1054,19 @@ PaintStatus paint_brush_library_text(struct PaintBrushLibrary *library,
                                      uint8_t *buffer,
                                      uint64_t capacity,
                                      uint64_t *required);
+
+/**
+ * Background-only cached SVG path for the resource's 50% coverage outline.
+ * Coordinates are unit-diameter, centred at (.5,.5); an empty path is valid.
+ * # Safety
+ * Live library, readable identity and writable buffer/required storage required.
+ */
+PaintStatus paint_brush_library_tip_outline(struct PaintBrushLibrary *library,
+                                            const uint8_t *identity,
+                                            uint64_t identity_length,
+                                            uint8_t *buffer,
+                                            uint64_t capacity,
+                                            uint64_t *required);
 
 /**
  * Worker-thread synchronous bounded VBR read; returns canonical package JSON.

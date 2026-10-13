@@ -1,4 +1,10 @@
-# C ABI 1.29.0 契约
+# C ABI 1.30.0 契约
+
+## ABI 1.30：图片笔尖基础轮廓
+
+`PAINT_FEATURE_BRUSH_OUTLINE=33554432`。`paint_brush_library_tip_outline` 是后台调用，输入64字节资源身份，返回无NUL的SVG path几何。坐标以标称直径归一化、中心(.5,.5)，保持图片比例；caller缩放/圆度/旋转只改变显示，路径不进入文档。输出先清零，容量不足给出required并返回BUFFER_TOO_SMALL；透明覆盖返回OK/required=0。
+
+覆盖阈值固定0.5；线性插值等值线保留孔洞与多个区域，65536线段上限超过则LIMIT_EXCEEDED，不返回截断路径。资源共享仓库缓存最多8条/16MiB几何，不持有覆盖资源。首次提取不持有全局注册表锁；准备中Qt使用简化轮廓，失败明确说明。其余旧DTO和接口保持兼容。
 
 ## ABI 1.29：共享图片笔尖资源
 

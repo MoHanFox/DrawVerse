@@ -21,18 +21,34 @@ Rectangle {
     Shape {
         objectName:"brushCursorOutline";z:10
         id:tipCursor
-        readonly property real aspect:root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorSimple?1:root.ownClient.brushLibrary.roundness
+        readonly property bool imageOutline:!root.ownClient.liquifyActive && !root.ownClient.brushLibrary.cursorSimple && root.ownClient.brushLibrary.maskResource.length>0 && root.ownClient.brushOutlineReady
+        readonly property bool simplified:root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorSimple || root.ownClient.brushLibrary.maskResource.length>0 && !root.ownClient.brushOutlineReady
+        readonly property real aspect:simplified?1:root.ownClient.brushLibrary.roundness
         x:canvas.brushCursorRect.x;y:canvas.brushCursorRect.y+(canvas.brushCursorRect.height-height)/2
         width:canvas.brushCursorRect.width;height:canvas.brushCursorRect.height*aspect
-        rotation:root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorSimple?0:root.ownClient.brushLibrary.angle
+        rotation:simplified?0:root.ownClient.brushLibrary.angle
         visible:canvas.brushCursorVisible && (root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorOutline)
         ShapePath {
-            strokeWidth:root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth;strokeColor:root.ownClient.liquifyActive?"black":root.ownClient.brushLibrary.cursorColor;fillColor:"transparent"
+            strokeWidth:tipCursor.imageOutline?-1:root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth;strokeColor:root.ownClient.liquifyActive?"black":root.ownClient.brushLibrary.cursorColor;fillColor:"transparent"
             PathAngleArc {centerX:tipCursor.width/2;centerY:tipCursor.height/2;radiusX:tipCursor.width/2;radiusY:tipCursor.height/2;startAngle:0;sweepAngle:360}
         }
         ShapePath {
-            strokeWidth:root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth;strokeColor:root.ownClient.liquifyActive?"white":root.ownClient.brushLibrary.cursorSecondaryColor;fillColor:"transparent"
+            strokeWidth:tipCursor.imageOutline?-1:root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth;strokeColor:root.ownClient.liquifyActive?"white":root.ownClient.brushLibrary.cursorSecondaryColor;fillColor:"transparent"
             PathAngleArc {centerX:tipCursor.width/2;centerY:tipCursor.height/2;radiusX:Math.max(.5,tipCursor.width/2-(root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth));radiusY:Math.max(.5,tipCursor.height/2-(root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth));startAngle:0;sweepAngle:360}
+        }
+        ShapePath {
+            objectName:"imageBrushOuterPath"
+            scale:Qt.size(tipCursor.width,tipCursor.height)
+            strokeWidth:tipCursor.imageOutline?root.ownClient.brushLibrary.cursorWidth+2:-1;strokeColor:root.ownClient.brushLibrary.cursorColor;fillColor:"transparent"
+            capStyle:ShapePath.RoundCap
+            PathSvg {path:tipCursor.imageOutline?root.ownClient.brushOutlinePath:""}
+        }
+        ShapePath {
+            objectName:"imageBrushInnerPath"
+            scale:Qt.size(tipCursor.width,tipCursor.height)
+            strokeWidth:tipCursor.imageOutline?root.ownClient.brushLibrary.cursorWidth:-1;strokeColor:root.ownClient.brushLibrary.cursorSecondaryColor;fillColor:"transparent"
+            capStyle:ShapePath.RoundCap
+            PathSvg {path:tipCursor.imageOutline?root.ownClient.brushOutlinePath:""}
         }
     }
     Item {

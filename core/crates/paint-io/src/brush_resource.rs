@@ -8,7 +8,8 @@ use paint_core::{BrushMask, MAX_BRUSH_MASK_EDGE};
 use paint_task::CancellationToken;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
+    fmt::Write as _,
     fs::File,
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
@@ -42,6 +43,7 @@ pub struct ResourceStore {
     directory: PathBuf,
     budget: usize,
     cache: Mutex<BTreeMap<String, Cached>>,
+    outlines: Mutex<VecDeque<(String, Arc<String>)>>,
 }
 pub fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -160,6 +162,7 @@ impl ResourceStore {
             directory,
             budget,
             cache: Mutex::new(BTreeMap::new()),
+            outlines: Mutex::new(VecDeque::new()),
         })
     }
     pub fn directory(&self) -> &Path {
@@ -382,6 +385,44 @@ impl ResourceStore {
             return Err(Error::Invalid("brush resource hash mismatch"));
         }
         Ok(bytes)
+    }
+    /// Immutable display geometry; movement and tool transforms never rescan PNGs.
+    pub fn outline_svg(&self, id: &str, token: &CancellationToken) -> Result<Arc<String>> {
+        check(token)?;
+        let mut cache = self
+            .outlines
+            .lock()
+            .map_err(|_| Error::Invalid("outline cache lock"))?;
+        if let Some(index) = cache.iter().position(|(key, _)| key == id) {
+            let entry = cache.remove(index).expect("cached outline");
+            let result = entry.1.clone();
+            cache.push_back(entry);
+            return Ok(result);
+        }
+        let resource = self.load(id, token)?;
+        let outline = resource.mask.outline()?;
+        check(token)?;
+        let mut svg = String::new();
+        for segment in outline {
+            writeln!(
+                &mut svg,
+                "M{:.8},{:.8}L{:.8},{:.8}",
+                segment.start[0], segment.start[1], segment.end[0], segment.end[1]
+            )
+            .expect("writing to string");
+        }
+        let result = Arc::new(svg);
+        if result.len() > 16 * 1024 * 1024 {
+            return Err(Error::Limit("brush outline bytes"));
+        }
+        while cache.len() >= 8
+            || cache.iter().map(|(_, value)| value.len()).sum::<usize>() + result.len()
+                > 16 * 1024 * 1024
+        {
+            cache.pop_front();
+        }
+        cache.push_back((id.to_owned(), result.clone()));
+        Ok(result)
     }
     pub fn import_file(
         &self,

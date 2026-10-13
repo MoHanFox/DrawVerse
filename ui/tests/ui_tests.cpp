@@ -580,6 +580,32 @@ private slots:
         {QSettings settings(settingsPath,QSettings::IniFormat);QCOMPARE(settings.value("brushes/state").toByteArray(),persisted);}
         QSignalSpy missingStopped(&missing,&PaintCoreClient::stopped);missing.shutdown();QTRY_COMPARE(missingStopped.size(),1);
     }
+    void imageBrushCursorPreservesHolesTransformsAndScreenWidth() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("state.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();
+        QImage tip(32,16,QImage::Format_RGBA8888);tip.fill(Qt::transparent);
+        for(int y=1;y<15;++y)for(int x=1;x<23;++x)tip.setPixelColor(x,y,Qt::white);
+        for(int y=5;y<11;++y)for(int x=7;x<17;++x)tip.setPixelColor(x,y,Qt::transparent);
+        for(int y=4;y<12;++y)for(int x=27;x<31;++x)tip.setPixelColor(x,y,Qt::white);
+        const auto source=temp.filePath("tip.png");QVERIFY(tip.save(source));QVERIFY(client.importBrushTip(QUrl::fromLocalFile(source),1));QTRY_VERIFY(!client.brushFileBusy());QTRY_VERIFY(client.brushOutlineReady());QVERIFY(!client.brushOutlinePath().isEmpty());
+        const auto path=client.brushOutlinePath();auto *library=client.brushLibrary();library->setRadius(64);library->setRoundness(.5);library->setAngle(30);library->setCursorWidth(2);
+        auto *outline=findVisualItem(window->contentItem(),"brushCursorOutline");QVERIFY(outline);QTRY_VERIFY(outline->property("imageOutline").toBool());QCOMPARE(outline->rotation(),30.);QCOMPARE(outline->height()/outline->width(),.5);
+        auto *outer=window->findChild<QObject*>("imageBrushOuterPath");auto *inner=window->findChild<QObject*>("imageBrushInnerPath");QVERIFY(outer && inner);QCOMPARE(outer->property("strokeWidth").toDouble(),4.);QCOMPARE(inner->property("strokeWidth").toDouble(),2.);
+        const auto revision=client.revision();const auto undo=client.undoDepth();QSignalSpy changes(&client,&PaintCoreClient::brushOutlineChanged);
+        QHoverEvent hover(QEvent::HoverMove,{canvas->width()/2,canvas->height()/2},canvas->mapToGlobal({canvas->width()/2,canvas->height()/2}),{0,0});QCoreApplication::sendEvent(canvas,&hover);const bool initial=canvas->brushCursorVisible();if(!initial)QTest::keyClick(window,Qt::Key_CapsLock);QVERIFY(canvas->brushCursorVisible());
+        QTest::mouseMove(window,canvas->mapToScene({canvas->width()/2,canvas->height()/2}).toPoint());QTRY_VERIFY(outline->isVisible());QTest::qWait(120);QVERIFY(outline->isVisible());
+        const auto center=canvas->mapToScene(canvas->cursorPosition());const auto dpr=window->devicePixelRatio();
+        const auto captured=window->grabWindow().copy(QRect((center*dpr).toPoint()-QPoint(qRound(120*dpr),qRound(120*dpr)),QSize(qRound(240*dpr),qRound(240*dpr))));
+        int dark=0;for(int y=0;y<captured.height();++y)for(int x=0;x<captured.width();++x)if(captured.pixelColor(x,y).lightness()<80)++dark;
+        QVERIFY2(dark>20,"image outline must be present in actual rendered pixels");
+        const auto screenshot=qEnvironmentVariable("DRAWVERSE_BRUSH_OUTLINE");if(!screenshot.isEmpty())QVERIFY(captured.save(screenshot));
+        library->setRadius(100);QCOMPARE(client.brushOutlinePath(),path);QCOMPARE(outer->property("strokeWidth").toDouble(),4.);QCOMPARE(changes.size(),0);
+        library->setCursorSimple(true);QVERIFY(!outline->property("imageOutline").toBool());QCOMPARE(outline->height(),outline->width());library->setCursorSimple(false);QVERIFY(outline->property("imageOutline").toBool());
+        QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),undo);if(!initial)QTest::keyClick(window,Qt::Key_CapsLock);
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void vbrPackageImportExportIsAtomicAndPreservesParameters() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));QTRY_VERIFY(client.ready());
         auto *library=client.brushLibrary();library->setHardness(.25);library->setRoundness(.3);library->setAngle(-35);library->setFlow(.6);library->setPressureSize(false);library->setSpacing(.02);

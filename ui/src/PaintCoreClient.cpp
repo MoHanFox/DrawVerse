@@ -70,8 +70,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 29) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.29 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 30) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.30 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -156,6 +156,16 @@ public:
         emit finished();
     }
     void watchLayerCopy(quint64 sequence) {m_layerCopySequence=sequence;}
+    void queueBrushOutline(const QString &identity) {m_pendingOutline=identity;}
+    void pollBrushOutline() {
+        if(m_pendingOutline.isEmpty())return;
+        const auto identity=std::exchange(m_pendingOutline,{});const auto bytes=identity.toLatin1();
+        PaintBrushLibrary *library=nullptr;{QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
+        QByteArray path(4*1024*1024,'\0');uint64_t required=0;
+        const auto status=paint_brush_library_tip_outline(library,reinterpret_cast<const uint8_t*>(bytes.constData()),quint64(bytes.size()),reinterpret_cast<uint8_t*>(path.data()),quint64(path.size()),&required);
+        if(status==PAINT_OK)path.resize(qsizetype(required));
+        emit brushOutlineReady(identity,status==PAINT_OK?QString::fromLatin1(path):QString{},status==PAINT_OK?QString{}:immediateError(status));
+    }
     void importBrushTip(QString path,QString target,int interpretation) {
         PaintBrushLibrary *library=nullptr;
         {QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
@@ -175,6 +185,7 @@ public:
         emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting);
     }
 signals:
+    void brushOutlineReady(QString identity,QString path,QString error);
     void brushTipReady(QString target,QString resource,int depth,QString error);
     void nativeBrushCatalog(quint64 preparation,QByteArray state,QString error);
     void brushFileReady(QByteArray package,QString error,bool exporting);
@@ -323,6 +334,7 @@ public:
     void poll() {
         if (!m_session || m_stopped) return;
         pollBrushState();
+        pollBrushOutline();
         auto info = dto<PaintSessionInfo>();
         if (!check(paint_session_info(m_core, m_session, &info))) return;
         if(info.completed_sequence<m_bootSequence) return;
@@ -531,6 +543,7 @@ public:
     bool m_catalogLease=false;
     QByteArray m_pendingBrushPreferences;
     quint64 m_reportedBrushPreparation=0;
+    QString m_pendingOutline;
     QVariantList m_brushQueue;
     QVariantMap m_brushJob;
     uint64_t m_brushSequence=0,m_brushRequest=0;
@@ -590,6 +603,10 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(!error.isEmpty())showError(error);
     });
     connect(m_worker,&BackendWorker::brushPreviewReady,m_brushLibrary,&BrushLibrary::acceptPreview);
+    connect(m_worker,&BackendWorker::brushOutlineReady,this,[this](const QString &identity,const QString &path,const QString &error){
+        if(identity!=m_outlineResource || identity!=m_brushLibrary->maskResource())return;
+        m_brushOutlinePath=path;m_brushOutlineReady=error.isEmpty();m_brushOutlineMessage=error.isEmpty()?QString{}:QStringLiteral("图片轮廓暂不可用，显示简化轮廓：")+error;emit brushOutlineChanged();
+    });
     connect(m_worker,&BackendWorker::brushTipReady,this,[this](const QString &target,const QString &resource,int depth,const QString &error){
         bool success=error.isEmpty();
         if(success && !m_brushLibrary->setMaskResource(target,resource)){success=false;showError(QStringLiteral("目标笔刷已删除，未应用图片笔尖"));}
@@ -607,6 +624,11 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(m_brushLibrary,&BrushLibrary::persistRequested,this,&PaintCoreClient::persistBrushPreferences);
     connect(m_brushLibrary,&BrushLibrary::previewRequested,m_worker,&BackendWorker::queueBrushPreview);
     connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{m_radius=m_brushLibrary->radius();m_opacity=m_brushLibrary->opacity();m_spacing=m_brushLibrary->spacing();emit brushChanged();});
+    connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{
+        const auto identity=m_brushLibrary->maskResource();if(identity==m_outlineResource)return;
+        m_outlineResource=identity;m_brushOutlinePath.clear();m_brushOutlineMessage.clear();m_brushOutlineReady=false;emit brushOutlineChanged();
+        QMetaObject::invokeMethod(m_worker,[worker=m_worker,identity]{worker->queueBrushOutline(identity);},Qt::QueuedConnection);
+    });
     connect(m_brushLibrary,&BrushLibrary::recentColorsChanged,this,&PaintCoreClient::recentColorsChanged);
     connect(m_worker,&BackendWorker::storageState,this,[this](QVariantMap saved,QVariantMap active,QVariantMap info,QString message) {
         m_storageSettings=std::move(saved); m_activeStorageSettings=std::move(active);
