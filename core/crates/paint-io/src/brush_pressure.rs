@@ -94,6 +94,11 @@ impl Serialize for PressureParameters {
         &self,
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
+        if self.dynamics.tip != paint_core::TipDynamics::default() {
+            return Err(serde::ser::Error::custom(
+                "device tip dynamics are not yet supported by portable pressure data",
+            ));
+        }
         let control = |c: &PressureControl| Control {
             curve: c.curve().points().to_vec(),
             minimum: c.minimum(),
@@ -136,6 +141,7 @@ impl<'de> Deserialize<'de> for PressureParameters {
                 flow,
                 opacity,
                 pressure_opacity,
+                tip: Default::default(),
             },
             has_opacity,
         })

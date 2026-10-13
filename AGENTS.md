@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新设备笔尖动态内核：`docs/brush-device-dynamics-design.md` / `docs/brush-device-dynamics-validation.md`；不可变角度来源/倾斜圆度、每印章共用几何/图片完整边界、短路径旋转与能力回退；IO非默认明确拒绝，状态/VBR/原生Qt/动态光标继续后续，无ABI变化。
+
 - 最新不透明度压感：`docs/brush-opacity-pressure-design.md` / `docs/brush-opacity-pressure-validation.md`；ABI1.36/v6/VBR1.4、独立压力局部整笔上限/曲线最低比例、关闭数据保留、Qt真实像素与交换；其余动态/湿混/ABR动态继续后续。
 
 - 最新独立尺寸与整笔不透明度：`docs/brush-stroke-opacity-design.md` / `docs/brush-stroke-opacity-validation.md`；活动预设拥有实际大小、旧共享断言替换、低不透明度整笔上限与分页覆盖/撤销、数位笔绘画位置优先；独立不透明度压感仍待后续。

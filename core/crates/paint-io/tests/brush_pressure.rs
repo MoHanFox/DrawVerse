@@ -54,6 +54,22 @@ fn package() -> Package {
 }
 
 #[test]
+fn unsupported_device_dynamics_cannot_be_silently_saved_as_pressure_only() {
+    let mut d = dynamics();
+    d.tip = TipDynamics::new(AngleControl::Direction, false, 0.01).unwrap();
+    let parameters = PressureParameters::from_core(&d);
+    assert!(serde_json::to_vec(&parameters).is_err());
+    let mut p = package();
+    p.brushes[0].parameters.pressure_dynamics = Some(parameters);
+    assert!(p.validate().is_err());
+    let mut catalog = BrushCatalog::default();
+    let mut settings = catalog.selected().settings().clone();
+    settings.dynamics = d;
+    catalog.edit("round-pressure", settings).unwrap();
+    assert!(brush_state::encode(&catalog).is_err());
+}
+
+#[test]
 fn opacity_state6_vbr14_versions_flags_and_disabled_data_are_preserved() {
     let mut d = dynamics();
     d.pressure_opacity = true;

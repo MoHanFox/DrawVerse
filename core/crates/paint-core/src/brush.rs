@@ -81,12 +81,55 @@ impl InputPoint {
             x: self.x + (other.x - self.x) * t,
             y: self.y + (other.y - self.y) * t,
             pressure: mix(self.pressure, other.pressure),
-            tilt_x: mix(self.tilt_x, other.tilt_x),
-            tilt_y: mix(self.tilt_y, other.tilt_y),
-            rotation: mix(self.rotation, other.rotation),
+            tilt_x: if self.capabilities & other.capabilities & 2 != 0 {
+                mix(self.tilt_x, other.tilt_x)
+            } else {
+                other.tilt_x
+            },
+            tilt_y: if self.capabilities & other.capabilities & 2 != 0 {
+                mix(self.tilt_y, other.tilt_y)
+            } else {
+                other.tilt_y
+            },
+            rotation: if self.capabilities & other.capabilities & 4 != 0 {
+                let delta = (other.rotation - self.rotation + 180.).rem_euclid(360.) - 180.;
+                (self.rotation + delta * t as f32 + 180.).rem_euclid(360.) - 180.
+            } else {
+                other.rotation
+            },
             tangential_pressure: mix(self.tangential_pressure, other.tangential_pressure),
             ..other
         }
+    }
+}
+
+#[cfg(test)]
+mod device_interpolation_tests {
+    use super::*;
+    #[test]
+    fn shortest_rotation_and_missing_channels_have_explicit_fallbacks() {
+        let mut a = InputPoint::new(0., 0., 1.);
+        let mut b = InputPoint::new(8., 0., 1.);
+        a.capabilities = 4;
+        b.capabilities = 4;
+        a.rotation = 350.;
+        b.rotation = 10.;
+        assert!(a.interpolate(b, 0.5).rotation.abs() < 1e-6);
+        a.capabilities = 0;
+        b.capabilities = 6;
+        b.rotation = 90.;
+        b.tilt_x = 60.;
+        b.tilt_y = 30.;
+        let mid = a.interpolate(b, 0.5);
+        assert_eq!(mid.rotation, 90.);
+        assert_eq!(mid.tilt_x, 60.);
+        assert_eq!(mid.tilt_y, 30.);
+        a.capabilities = 2;
+        a.tilt_x = 0.;
+        a.tilt_y = 0.;
+        let mid = a.interpolate(b, 0.5);
+        assert_eq!(mid.tilt_x, 30.);
+        assert_eq!(mid.tilt_y, 15.);
     }
 }
 

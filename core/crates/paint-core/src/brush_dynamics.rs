@@ -102,10 +102,59 @@ pub struct BrushDynamics {
     pub flow: PressureControl,
     pub opacity: PressureControl,
     pub pressure_opacity: bool,
+    pub tip: TipDynamics,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
-        self.size.is_identity() && self.flow.is_identity() && !self.pressure_opacity
+        self.size.is_identity()
+            && self.flow.is_identity()
+            && !self.pressure_opacity
+            && self.tip == TipDynamics::default()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AngleControl {
+    #[default]
+    Fixed,
+    Direction,
+    PenRotation,
+    Tilt,
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TipDynamics {
+    angle: AngleControl,
+    tilt_roundness: bool,
+    minimum_roundness: f32,
+}
+impl Default for TipDynamics {
+    fn default() -> Self {
+        Self {
+            angle: AngleControl::Fixed,
+            tilt_roundness: false,
+            minimum_roundness: 0.01,
+        }
+    }
+}
+impl TipDynamics {
+    pub fn new(angle: AngleControl, tilt_roundness: bool, minimum_roundness: f32) -> Result<Self> {
+        if !minimum_roundness.is_finite() || !(0.01..=1.).contains(&minimum_roundness) {
+            return Err(Error::InvalidArgument("tip minimum roundness"));
+        }
+        Ok(Self {
+            angle,
+            tilt_roundness,
+            minimum_roundness,
+        })
+    }
+    pub fn angle(self) -> AngleControl {
+        self.angle
+    }
+    pub fn tilt_roundness(self) -> bool {
+        self.tilt_roundness
+    }
+    pub fn minimum_roundness(self) -> f32 {
+        self.minimum_roundness
     }
 }
 #[derive(Clone, Debug)]

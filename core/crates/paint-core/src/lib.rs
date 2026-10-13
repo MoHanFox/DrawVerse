@@ -25,7 +25,9 @@ pub use brush::{Brush, BrushMode, InputPoint, Tool};
 pub use brush_catalog::{
     BrushCatalog, BrushPreset, BrushSettings, MAX_BRUSH_PRESETS, MAX_CATALOG_MASK_BYTES,
 };
-pub use brush_dynamics::{BrushDynamics, PressureControl, PressureCurve};
+pub use brush_dynamics::{
+    AngleControl, BrushDynamics, PressureControl, PressureCurve, TipDynamics,
+};
 pub use brush_mask::{BrushMask, MAX_BRUSH_MASK_BYTES, MAX_BRUSH_MASK_EDGE};
 pub use brush_outline::{BrushOutlineSegment, MAX_BRUSH_OUTLINE_SEGMENTS};
 pub use brush_program::{BrushDefinition, BrushProgram, BrushTip};

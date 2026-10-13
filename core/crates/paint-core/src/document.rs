@@ -385,6 +385,7 @@ struct Stroke {
     last: InputPoint,
     last_dab: InputPoint,
     distance_to_next: f64,
+    direction: Option<f64>,
     before: BTreeMap<TileCoord, Option<Arc<Tile>>>,
     coverage: BTreeMap<TileCoord, Arc<Tile>>,
     mask_paint: Option<(f32, f32)>,
@@ -1183,6 +1184,7 @@ impl Document {
             last: first,
             last_dab: first,
             distance_to_next: brush.step(),
+            direction: None,
             before: BTreeMap::new(),
             coverage: BTreeMap::new(),
             first_dab: true,
@@ -1269,6 +1271,9 @@ impl Document {
             ));
         }
         let mut stroke = self.stroke.take().expect("checked active stroke");
+        if distance > 1e-9 {
+            stroke.direction = Some((point.y - stroke.last.y).atan2(point.x - stroke.last.x));
+        }
         let mut position = stroke.distance_to_next;
         let mut changed = false;
         for _ in 0..count {
@@ -1459,7 +1464,8 @@ impl Document {
         if radius == 0.0 || flow == 0.0 || stroke.brush.opacity == 0. {
             return Ok(false);
         }
-        let (extent_x, extent_y) = stroke.program.extent(radius);
+        let geometry = stroke.program.geometry(point, stroke.direction);
+        let (extent_x, extent_y) = stroke.program.extent(radius, geometry);
         let x0 = ((point.x - extent_x - 1.0).floor() as i64).clamp(0, i64::from(self.width));
         let y0 = ((point.y - extent_y - 1.0).floor() as i64).clamp(0, i64::from(self.height));
         let x1 = ((point.x + extent_x + 1.0).ceil() as i64).clamp(0, i64::from(self.width));
@@ -1504,7 +1510,7 @@ impl Document {
             point.y - f64::from(appearance.offset_y),
         );
         let mask_dab = if IMAGED {
-            stroke.program.mask_dab(radius)
+            stroke.program.mask_dab_with_geometry(radius, geometry)
         } else {
             None
         };
@@ -1572,10 +1578,11 @@ impl Document {
                                 .expect("compiled image dab")
                                 .coverage(x as f64 + 0.5 - px, y as f64 + 0.5 - py)
                         } else {
-                            stroke.program.procedural_coverage(
+                            stroke.program.procedural_coverage_with_geometry(
                                 x as f64 + 0.5 - px,
                                 y as f64 + 0.5 - py,
                                 radius,
+                                geometry,
                             )
                         };
                         if coverage == 0. {

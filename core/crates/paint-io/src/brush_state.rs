@@ -227,6 +227,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        if s.dynamics.tip != paint_core::TipDynamics::default() {
+            return Err(Error::Unsupported(
+                "device tip dynamics state IO not implemented".into(),
+            ));
+        }
         let pressure_dynamics = if s.dynamics != paint_core::BrushDynamics::default() {
             version = version.max(
                 if s.dynamics.pressure_opacity

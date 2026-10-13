@@ -1,3 +1,5 @@
+设备笔尖动态内核：[设计](brush-device-dynamics-design.md) / [验收](brush-device-dynamics-validation.md)。方向/笔旋转/倾斜角度与圆度、真实共用几何与能力回退已实现；IO/原生Qt入口/光标继续后续，本阶段不宣称用户功能完成。
+
 独立不透明度压感：[设计](brush-opacity-pressure-design.md) / [验收](brush-opacity-pressure-validation.md)。ABI1.36/v6/VBR1.4、压力局部上限、独立流量、Qt开关与曲线及真实起笔已完成；其余设备/随机动态和湿混继续后续。
 
 独立笔刷尺寸与整笔不透明度：[设计](brush-stroke-opacity-design.md) / [验收](brush-stroke-opacity-validation.md)。每预设大小、低不透明度整笔上限、数位笔位置保护已完成；独立不透明度压力已在后续阶段完成，见本页最新入口。
