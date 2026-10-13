@@ -1,5 +1,9 @@
 # DrawVerse
 
+- 最新独立尺寸与整笔不透明度：`docs/brush-stroke-opacity-design.md` / `docs/brush-stroke-opacity-validation.md`；活动预设拥有实际大小、旧共享断言替换、低不透明度整笔上限与分页覆盖/撤销、数位笔绘画位置优先；独立不透明度压感仍待后续。
+
+- 最新压力曲线入口：`docs/brush-pressure-ui-design.md` / `docs/brush-pressure-ui-validation.md`；ABI1.35、Qt v5/形状动态与传递曲线、原生真实预览与VBR1.3往返；解除package临时拒绝，其余动态/湿混继续后续。
+
 - 最新压力动态IO：`docs/brush-pressure-io-design.md` / `docs/brush-pressure-io-validation.md`；v5/有界验证DTO、VBR1.3/行为2/pressure-curves、旧版本不升级/节点保留/源图共存与真实像素、准确原生准备；旧package暂拒绝压力防丢数据，ABI/Qt曲线继续后续，无ABI变化。
 
 - 最新压力动态内核：`docs/brush-pressure-design.md` / `docs/brush-pressure-validation.md`；有界不可变曲线/最低比例/精确分段编译、尺寸流量与涂抹强度共用/旧像素与在途快照；旧IO明确拒绝非默认数据，状态ABI/VBR与编辑界面继续后续，无ABI变化。

@@ -1,0 +1,83 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import "."
+
+ColumnLayout {
+    id:root
+    required property var library
+    required property string target
+    property string prefix:target==="size"?"pressureSize":"pressureFlow"
+    readonly property var control:library.pressureDynamics[target]
+    readonly property var points:control.curve
+    property int selected:0
+    readonly property var selectedPoint:points[Math.min(selected,points.length-1)]
+    Layout.fillWidth:true;spacing:4
+    function copyPoints(){var result=[];for(var i=0;i<points.length;++i)result.push([Number(points[i][0]),Number(points[i][1])]);return result}
+    function movePoint(index,x,y) {
+        var data=copyPoints()
+        if(index===0 || index===data.length-1)x=data[index][0]
+        if(index>0 && index<data.length-1 && (x<=data[index-1][0] || x>=data[index+1][0]))return false
+        data[index]=[x,y]
+        return library.setPressureControl(target,data,control.minimum)
+    }
+    function addPoint(x,y) {
+        if(points.length>=17 || x<=0 || x>=1)return
+        var data=copyPoints(),index=0
+        while(index<data.length && data[index][0]<x)index++
+        data.splice(index,0,[x,y])
+        if(library.setPressureControl(target,data,control.minimum))selected=index
+    }
+    function addMiddle(){var i=Math.min(selected,points.length-2);addPoint((points[i][0]+points[i+1][0])/2,(points[i][1]+points[i+1][1])/2)}
+    function removePoint(){if(selected<=0 || selected>=points.length-1)return;var data=copyPoints();data.splice(selected,1);if(library.setPressureControl(target,data,control.minimum))selected=Math.max(0,selected-1)}
+    Label {text:"压力响应曲线";color:Theme.text;font.pixelSize:10}
+    Canvas {
+        id:graph;objectName:root.prefix+"Curve";Layout.fillWidth:true;Layout.preferredHeight:84
+        readonly property real margin:7
+        function px(x){return margin+x*(width-2*margin)}
+        function py(y){return height-margin-y*(height-2*margin)}
+        function inputX(x){return Math.max(0,Math.min(1,(x-margin)/Math.max(1,width-2*margin)))}
+        function inputY(y){return Math.max(0,Math.min(1,(height-margin-y)/Math.max(1,height-2*margin)))}
+        onPaint:{
+            var ctx=getContext("2d");ctx.reset();ctx.fillStyle=Theme.input;ctx.fillRect(0,0,width,height)
+            ctx.strokeStyle=Theme.line;ctx.lineWidth=1
+            for(var i=0;i<=4;++i){ctx.beginPath();ctx.moveTo(px(i/4),py(0));ctx.lineTo(px(i/4),py(1));ctx.stroke();ctx.beginPath();ctx.moveTo(px(0),py(i/4));ctx.lineTo(px(1),py(i/4));ctx.stroke()}
+            ctx.strokeStyle=Theme.text;ctx.lineWidth=1.5;ctx.beginPath()
+            for(i=0;i<root.points.length;++i){var p=root.points[i];if(i===0)ctx.moveTo(px(p[0]),py(p[1]));else ctx.lineTo(px(p[0]),py(p[1]))}ctx.stroke()
+            for(i=0;i<root.points.length;++i){p=root.points[i];ctx.fillStyle=i===root.selected?"#4e96ff":Theme.text;ctx.beginPath();ctx.arc(px(p[0]),py(p[1]),3,0,Math.PI*2);ctx.fill()}
+        }
+        onWidthChanged:requestPaint()
+        onHeightChanged:requestPaint()
+        MouseArea {
+            anchors.fill:parent;hoverEnabled:true;property bool moving:false
+            ToolTip.delay:1000;ToolTip.visible:containsMouse;ToolTip.text:"拖动控制点；双击增加控制点。横轴输入压力，纵轴输出比例。"
+            onPressed:mouse=>{var nearest=-1,distance=100;for(var i=0;i<root.points.length;++i){var dx=mouse.x-graph.px(root.points[i][0]),dy=mouse.y-graph.py(root.points[i][1]);var d=dx*dx+dy*dy;if(d<distance){distance=d;nearest=i}}moving=nearest>=0;if(moving)root.selected=nearest}
+            onPositionChanged:mouse=>{if(pressed && moving)root.movePoint(root.selected,graph.inputX(mouse.x),graph.inputY(mouse.y))}
+            onReleased:moving=false
+            onCanceled:moving=false
+            onDoubleClicked:mouse=>root.addPoint(graph.inputX(mouse.x),graph.inputY(mouse.y))
+        }
+    }
+    RowLayout {
+        Layout.fillWidth:true;spacing:3
+        IconButton {objectName:root.prefix+"Add";glyph:"plus";implicitWidth:22;implicitHeight:20;enabled:root.points.length<17;tooltip:"在选中点后的区间增加控制点";onClicked:root.addMiddle()}
+        IconButton {objectName:root.prefix+"Delete";glyph:"trash";implicitWidth:22;implicitHeight:20;enabled:root.selected>0 && root.selected<root.points.length-1;tooltip:"删除选中的内部控制点";onClicked:root.removePoint()}
+        Button {objectName:root.prefix+"Reset";text:"默认";implicitHeight:20;Layout.fillWidth:true;onClicked:{root.library.resetPressureControl(root.target);root.selected=0}}
+    }
+    RowLayout {
+        Layout.fillWidth:true;spacing:3
+        Label {text:"X";color:Theme.muted;font.pixelSize:9}
+        CompactTextField {objectName:root.prefix+"X";Layout.fillWidth:true;implicitHeight:20;text:(root.selectedPoint[0]*100).toFixed(3);enabled:root.selected>0 && root.selected<root.points.length-1;validator:DoubleValidator {bottom:0;top:100;decimals:3;locale:"C"} onEditingFinished:root.movePoint(root.selected,Number(text)/100,root.selectedPoint[1])}
+        Label {text:"Y";color:Theme.muted;font.pixelSize:9}
+        CompactTextField {objectName:root.prefix+"Y";Layout.fillWidth:true;implicitHeight:20;text:(root.selectedPoint[1]*100).toFixed(3);validator:DoubleValidator {bottom:0;top:100;decimals:3;locale:"C"} onEditingFinished:root.movePoint(root.selected,root.selectedPoint[0],Number(text)/100)}
+    }
+    RowLayout {
+        Layout.fillWidth:true
+        Label {text:"最低比例";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
+        CompactSpinBox {objectName:root.prefix+"Minimum";from:0;to:100;editable:true;implicitWidth:66;implicitHeight:20;value:Math.round(root.control.minimum*100);onValueModified:root.library.setPressureControl(root.target,root.points,value/100);tooltip:"最低比例与曲线输出组合；只在对应压感开关开启时执行。"}
+        Label {text:"%";color:Theme.muted;font.pixelSize:9}
+    }
+    Connections {target:root.library;function onSettingsChanged(){root.selected=Math.min(root.selected,root.points.length-1);graph.requestPaint()}}
+    onSelectedChanged:graph.requestPaint()
+    Component.onCompleted:graph.requestPaint()
+}

@@ -1,4 +1,10 @@
-# C ABI 1.34.0 契约
+# C ABI 1.35.0 契约
+
+## ABI 1.35：压力动态入口与整笔不透明度修复
+
+`PAINT_FEATURE_PRESSURE_DYNAMICS=1073741824`。现有 library package 读写支持 VBR1.3 / behavior2 / pressure-curves，Qt 保存并编辑 v5 尺寸/流量曲线。没有 DTO 布局变化，生成头由 cbindgen 管理。
+
+用户要求修正普通绘画/擦除/蒙版的 opacity 为整笔上限，tip.flow 与流量压力仍控制印章累积；旧字段位置不变，旧低不透明度笔触行为有意修正，历史像素保持原样。涂抹继续运输强度语义。每个预设拥有实际 radius。实现与边界见 `docs/brush-stroke-opacity-design.md`。
 
 ## ABI 1.34：VBR来源交换
 

@@ -1,3 +1,7 @@
+独立笔刷尺寸与整笔不透明度：[设计](brush-stroke-opacity-design.md) / [验收](brush-stroke-opacity-validation.md)。每预设大小、低不透明度整笔上限、数位笔位置保护已完成；独立不透明度压力控制继续后续。
+
+压力曲线入口：[设计](brush-pressure-ui-design.md) / [验收](brush-pressure-ui-validation.md)。ABI1.35、Qt v5与VBR1.3接入；其余动态/湿混继续后续。
+
 # 模块顺序与验收
 
 压力动态IO：[设计](brush-pressure-io-design.md) / [验收](brush-pressure-io-validation.md)。v5状态/VBR1.3及准确准备已接有界曲线；继续ABI能力与PS曲线编辑界面，再推进其余动态湿混。

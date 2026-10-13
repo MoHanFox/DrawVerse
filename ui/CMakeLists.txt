@@ -23,7 +23,7 @@ if(WIN32)
 endif()
 
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
-    FILES qml/qmldir qml/Theme.qml qml/PanelWindow.qml qml/WorkspaceStatusBar.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml
+    FILES qml/qmldir qml/Theme.qml qml/PanelWindow.qml qml/WorkspaceStatusBar.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml qml/PressureCurveEditor.qml
           qml/CanvasPane.qml qml/LiquifyOptionsBar.qml qml/TransformOptionsBar.qml qml/TransformOverlay.qml qml/EyedropperRing.qml qml/DocumentArea.qml qml/DocumentWindow.qml qml/PanelFlyout.qml qml/DockWorkspace.qml qml/DockTile.qml qml/DockDivider.qml qml/DockEdgePreview.qml qml/DockHintWindow.qml qml/WindowOutline.qml
           qml/SideMenuWindow.qml qml/FloatingPanel.qml qml/ToolStrip.qml qml/SelectionOptionsBar.qml qml/BucketOptionsBar.qml qml/WandOptionsBar.qml qml/SmudgeOptionsBar.qml qml/PanelContent.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactCheckBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/assets/logo.png qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/CompactTextField.qml qml/LayerLock.qml
           qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/assets/transparency.png qml/PreferencesPanel.qml qml/KeyboardShortcutsDialog.qml qml/ToolVariantsPanel.qml)
@@ -33,7 +33,7 @@ qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOUR
 # kept running the previous interface and "I changed it and nothing happened" was the result. Make every
 # listed file a recompilation dependency of the resource object.
 set(_drawverse_qml_files
-    qml/qmldir qml/Theme.qml qml/PanelWindow.qml qml/WorkspaceStatusBar.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml
+    qml/qmldir qml/Theme.qml qml/PanelWindow.qml qml/WorkspaceStatusBar.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml qml/PressureCurveEditor.qml
     qml/CanvasPane.qml qml/LiquifyOptionsBar.qml qml/TransformOptionsBar.qml qml/TransformOverlay.qml qml/EyedropperRing.qml qml/DocumentArea.qml qml/DocumentWindow.qml qml/PanelFlyout.qml qml/DockWorkspace.qml qml/DockTile.qml qml/DockDivider.qml qml/DockEdgePreview.qml qml/DockHintWindow.qml qml/WindowOutline.qml
           qml/SideMenuWindow.qml qml/FloatingPanel.qml qml/ToolStrip.qml qml/SelectionOptionsBar.qml qml/BucketOptionsBar.qml qml/WandOptionsBar.qml qml/SmudgeOptionsBar.qml qml/PanelContent.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactCheckBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/CompactTextField.qml qml/LayerLock.qml
     qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/PreferencesPanel.qml qml/KeyboardShortcutsDialog.qml qml/ToolVariantsPanel.qml)

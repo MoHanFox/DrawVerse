@@ -132,9 +132,9 @@ void CanvasItem::setKeySpace(bool held) {
     const bool changed=(m_space || spaceHeld)!=(held || spaceHeld);m_space=held;
     if(changed)emit spacePanningChanged();
 }
-void CanvasItem::hoverEnterEvent(QHoverEvent *event){m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();}
-void CanvasItem::hoverMoveEvent(QHoverEvent *event){m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();if(m_selecting && m_selectionKind==3)updateSelection(event->position(),event->modifiers());}
-void CanvasItem::hoverLeaveEvent(QHoverEvent *event){Q_UNUSED(event);m_cursorInside=false;refreshBrushCursor();}
+void CanvasItem::hoverEnterEvent(QHoverEvent *event){if(m_tablet)return;m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();}
+void CanvasItem::hoverMoveEvent(QHoverEvent *event){if(m_tablet)return;m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();if(m_selecting && m_selectionKind==3)updateSelection(event->position(),event->modifiers());}
+void CanvasItem::hoverLeaveEvent(QHoverEvent *event){Q_UNUSED(event);if(m_tablet)return;m_cursorInside=false;refreshBrushCursor();}
 void CanvasItem::refresh() {
     if (!m_client) return;
     if (m_generation != m_client->generation()) { endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
@@ -346,6 +346,7 @@ void CanvasItem::mouseDoubleClickEvent(QMouseEvent *e) {
     QQuickItem::mouseDoubleClickEvent(e);
 }
 void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
+    if(m_tablet){e->accept();return;}
     m_cursorInside=contains(e->position());m_cursorPosition=e->position();refreshBrushCursor();
     if (m_panning) { m_pan += e->position() - m_last; m_last = e->position(); emit viewChanged(); update(); }
     else if(m_picking && !m_tablet) updatePicking(e->position());

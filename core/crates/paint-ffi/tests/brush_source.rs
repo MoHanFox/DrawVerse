@@ -247,7 +247,7 @@ fn native_reader_and_writer_exchange_source_bundles_and_never_drop_provenance() 
 }
 
 #[test]
-fn pressure_packages_are_explicitly_rejected_until_frontend_can_preserve_curves() {
+fn pressure_packages_round_trip_through_native_entry() {
     use std::collections::BTreeMap;
     let temp = tempfile::tempdir().unwrap();
     let token = CancellationToken::default();
@@ -304,10 +304,10 @@ fn pressure_packages_are_explicitly_rejected_until_frontend_can_preserve_curves(
                 output.len() as u64,
                 &mut required
             ),
-            PAINT_UNSUPPORTED
+            PAINT_OK
         );
-        assert_eq!(required, 0);
-        assert!(output.iter().all(|b| *b == 42));
+        let data = paint_io::vbr::Package::from_json(&output[..required as usize]).unwrap();
+        assert!(data.brushes[0].parameters.pressure_dynamics.is_some());
         let encoded = target.to_str().unwrap();
         assert_eq!(
             paint_brush_library_package_write(
@@ -317,9 +317,13 @@ fn pressure_packages_are_explicitly_rejected_until_frontend_can_preserve_curves(
                 json.as_ptr(),
                 json.len() as u64
             ),
-            PAINT_UNSUPPORTED
+            PAINT_OK
         );
-        assert_eq!(std::fs::read(target).unwrap(), b"old");
+        let loaded = paint_io::vbr_image::load(&target, &token).unwrap();
+        assert!(loaded.package.brushes[0]
+            .parameters
+            .pressure_dynamics
+            .is_some());
         assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
     }
 }

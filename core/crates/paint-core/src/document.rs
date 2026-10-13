@@ -386,6 +386,7 @@ struct Stroke {
     last_dab: InputPoint,
     distance_to_next: f64,
     before: BTreeMap<TileCoord, Option<Arc<Tile>>>,
+    coverage: BTreeMap<TileCoord, Arc<Tile>>,
     mask_paint: Option<(f32, f32)>,
     first_dab: bool,
 }
@@ -1183,6 +1184,7 @@ impl Document {
             last_dab: first,
             distance_to_next: brush.step(),
             before: BTreeMap::new(),
+            coverage: BTreeMap::new(),
             first_dab: true,
             mask_paint: if self.layer(self.active_layer).expect("active").mask {
                 let c = brush.color.components();
@@ -1417,7 +1419,9 @@ impl Document {
                     1.
                 },
         );
-        let flow = stroke.brush.opacity
+        let capped =
+            stroke.brush.opacity < 1. && !matches!(stroke.brush.mode, BrushMode::Smudge { .. });
+        let flow = if capped { 1. } else { stroke.brush.opacity }
             * stroke.program.tip.flow
             * match stroke.brush.mode {
                 BrushMode::Smudge {
@@ -1509,6 +1513,22 @@ impl Document {
                         .is_some_and(Tile::can_edit_private);
                 let mut updates = Vec::new();
                 let mut pixels: Option<Vec<Pixel>> = None;
+                let original = if capped {
+                    stroke
+                        .before
+                        .get(&coord)
+                        .and_then(Option::as_ref)
+                        .map(|t| t.try_pixels())
+                        .transpose()?
+                } else {
+                    None
+                };
+                let prior_coverage = stroke
+                    .coverage
+                    .get(&coord)
+                    .map(|t| t.try_pixels())
+                    .transpose()?;
+                let mut coverage_updates = Vec::new();
                 for y in y0.max(ty * 64)..y1.min((ty + 1) * 64) {
                     let start_x = x0.max(tx * 64);
                     let end_x = x1.min((tx + 1) * 64);
@@ -1550,10 +1570,31 @@ impl Document {
                         let before = source
                             .as_ref()
                             .map_or(self.layers[index].default_pixel(x, y), |p| p[offset]);
-                        let amount = if SELECTED {
+                        let mut amount = if SELECTED {
                             coverage * flow * selected
                         } else {
                             coverage * flow
+                        };
+                        let base = if capped {
+                            let previous =
+                                prior_coverage.as_ref().map_or(0., |p| p[offset].alpha());
+                            let accumulated = previous + coverage * flow * (1. - previous);
+                            if accumulated != previous {
+                                coverage_updates.push((
+                                    offset,
+                                    Pixel::from_straight([0., 0., 0., accumulated])?,
+                                ));
+                            }
+                            amount = accumulated * stroke.brush.opacity * selected;
+                            if stroke.before.contains_key(&coord) {
+                                original
+                                    .as_ref()
+                                    .map_or(self.layers[index].default_pixel(x, y), |p| p[offset])
+                            } else {
+                                before
+                            }
+                        } else {
+                            before
                         };
                         let after = if let Some(smudge) = &smudge {
                             let dragged = smudge.at(
@@ -1587,14 +1628,14 @@ impl Document {
                                 0.,
                                 0.,
                                 0.,
-                                before.alpha() * (1. - weight) + hide * weight,
+                                base.alpha() * (1. - weight) + hide * weight,
                             ])?
                         } else if alpha_locked {
-                            before.paint_preserving_alpha(stroke.brush.color, amount)
+                            base.paint_preserving_alpha(stroke.brush.color, amount)
                         } else if erase {
-                            before.scaled(1. - amount)
+                            base.scaled(1. - amount)
                         } else {
-                            stroke.brush.color.scaled(amount).over(before)
+                            stroke.brush.color.scaled(amount).over(base)
                         };
                         if before == after {
                             continue;
@@ -1620,6 +1661,38 @@ impl Document {
                         }
                     }
                 }
+                if !coverage_updates.is_empty() {
+                    if stroke
+                        .coverage
+                        .get(&coord)
+                        .is_some_and(Tile::can_edit_private)
+                    {
+                        Tile::edit_private(
+                            stroke.coverage.get_mut(&coord).expect("coverage tile"),
+                            &self.pool,
+                            &coverage_updates,
+                        )?;
+                    } else {
+                        if !stroke.coverage.contains_key(&coord)
+                            && stroke.coverage.len() >= self.options.max_document_tiles
+                        {
+                            return Err(Error::ResourceLimit(
+                                "stroke coverage tile limit; entire stroke rolled back",
+                            ));
+                        }
+                        let mut values = prior_coverage
+                            .as_ref()
+                            .map_or_else(|| vec![Pixel::TRANSPARENT; 4096], |p| p.to_vec());
+                        for (offset, value) in coverage_updates {
+                            values[offset] = value;
+                        }
+                        let tile = Arc::new(Tile::from_pixels(values)?);
+                        self.pool.attach(&tile)?;
+                        stroke.coverage.insert(coord, tile);
+                    }
+                }
+                drop(prior_coverage);
+                drop(original);
                 drop(source);
                 if !updates.is_empty() {
                     Tile::edit_private(
