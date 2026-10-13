@@ -2,6 +2,7 @@
 use crate::{check, Error, Result};
 use paint_core::{BrushMask, MAX_BRUSH_MASK_EDGE, MAX_CATALOG_MASK_BYTES};
 use paint_task::CancellationToken;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 pub struct SampledTip {
@@ -223,6 +224,7 @@ pub struct OpaqueSection {
     pub bytes: Box<[u8]>,
 }
 pub struct SectionedTip {
+    pub id: String,
     pub prefix: Box<[u8]>,
     pub bounds: [i32; 4],
     pub mask: Arc<BrushMask>,
@@ -270,6 +272,7 @@ pub fn decode_sectioned(bytes: &[u8], token: &CancellationToken) -> Result<Secti
     let mut sampled = false;
     let mut resident = 0;
     let mut sections = 0;
+    let mut identities = BTreeSet::new();
     while !file.done() {
         check(token)?;
         sections += 1;
@@ -307,12 +310,24 @@ pub fn decode_sectioned(bytes: &[u8], token: &CancellationToken) -> Result<Secti
                 bytes: samples.take(length)?,
                 offset: 0,
             };
-            let prefix = record.take(if subversion == 1 { 47 } else { 301 })?.into();
+            let id_length = record.u8()? as usize;
+            let id_bytes = record.take(id_length)?;
+            if id_bytes.is_empty() || id_bytes.contains(&0) || !id_bytes.is_ascii() {
+                return Err(Error::Unsupported("ABR sample identity encoding".into()));
+            }
+            let id = String::from_utf8(id_bytes.to_vec()).expect("validated ASCII identity");
+            if !identities.insert(id.clone()) {
+                return Err(Error::Invalid("duplicate ABR sample identity"));
+            }
+            let prefix_length = 1 + id_length + if subversion == 1 { 10 } else { 264 };
+            record.take(if subversion == 1 { 10 } else { 264 })?;
+            let prefix = record.bytes[..prefix_length].into();
             let bounds = [record.i32()?, record.i32()?, record.i32()?, record.i32()?];
             let mask = mask(&mut record, bounds, token, &mut resident)?;
             let trailing_metadata = record.take(record.bytes.len() - record.offset)?.into();
             samples.take((4 - length % 4) % 4)?;
             tips.push(SectionedTip {
+                id,
                 prefix,
                 bounds,
                 mask,
@@ -320,7 +335,7 @@ pub fn decode_sectioned(bytes: &[u8], token: &CancellationToken) -> Result<Secti
             });
         }
     }
-    if tips.is_empty() {
+    if tips.is_empty() && !metadata.iter().any(|section| &section.key == b"desc") {
         return Err(Error::Invalid("ABR missing sampled tips"));
     }
     check(token)?;

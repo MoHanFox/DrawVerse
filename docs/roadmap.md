@@ -1,6 +1,8 @@
 # 模块顺序与验收
 
-ABR描述符：[设计](abr-descriptor-design.md) / [验收](abr-descriptor-validation.md)。typed tree及显式desc读取已接入；PS具体参数/样本关联/用户入口/真实授权语料继续后续。
+ABR样本关联：[设计](abr-association-design.md) / [验收](abr-association-validation.md)。Pascal身份/共享覆盖/严格关联已实现；公开外部样本alpha逐像素核对通过但不分发；参数报告/来源保存/用户入口继续后续。
+
+ABR描述符：[设计](abr-descriptor-design.md) / [验收](abr-descriptor-validation.md)。typed tree及显式desc读取已接入；PS具体参数/真实授权语料继续后续。
 
 ABR分节采样：[设计](abr-sections-design.md) / [验收](abr-sections-validation.md)。6/10子版本1/2有界分节与采样已实现；16位/真实授权语料继续后续。
 

@@ -22,6 +22,8 @@ fn sectioned_samples_and_descriptors_keep_independent_names_and_pixel_resources(
     descriptor.extend([0, 65, 0, 66]);
     section(b"desc", &descriptor, &mut file);
     let mut sample = vec![0; 47];
+    sample[0] = 36;
+    sample[1..37].fill(b'A');
     for bound in [0i32, 0, 1, 1] {
         sample.extend(bound.to_be_bytes());
     }

@@ -13,8 +13,10 @@ fn fixture(version: u16, subversion: u16, rle: bool) -> Vec<u8> {
     output.extend(subversion.to_be_bytes());
     section(b"desc", b"uninterpreted descriptor", &mut output);
     let mut samples = Vec::new();
-    for _ in 0..2 {
+    for index in 0..2 {
         let mut record = vec![42; if subversion == 1 { 47 } else { 301 }];
+        record[0] = 36;
+        record[1] = b'A' + index;
         for bound in [-1i32, -2, 7, 6] {
             record.extend(bound.to_be_bytes());
         }
@@ -63,7 +65,9 @@ fn both_versions_subversions_and_encodings_preserve_metadata_and_draw_holes() {
                 assert!(parsed.descriptors(&token).is_err());
                 let tip = &parsed.tips[0];
                 assert_eq!(tip.prefix.len(), if subversion == 1 { 47 } else { 301 });
-                assert!(tip.prefix.iter().all(|b| *b == 42));
+                assert_eq!(tip.prefix[0], 36);
+                assert_eq!(tip.prefix[1], b'A');
+                assert!(tip.prefix[2..].iter().all(|b| *b == 42));
                 assert_eq!(&*tip.trailing_metadata, b"extra");
                 assert_eq!(tip.bounds, [-1, -2, 7, 6]);
                 let mut d = paint_core::Document::new(32, 32).unwrap();
@@ -118,4 +122,35 @@ fn section_and_record_lengths_never_cross_bounds_or_return_partial_data() {
     let cancelled = CancellationToken::default();
     cancelled.cancel();
     assert!(decode_sectioned(&bytes, &cancelled).is_err());
+}
+#[test]
+fn sample_ids_are_variable_pascal_fields_and_duplicates_are_rejected() {
+    let token = CancellationToken::default();
+    let mut output = vec![0, 6, 0, 1];
+    let mut samples = Vec::new();
+    for id in [b"short".as_slice(), b"longer-variable-identity".as_slice()] {
+        let mut record = vec![id.len() as u8];
+        record.extend(id);
+        record.extend([0; 10]);
+        for bound in [0i32, 0, 1, 1] {
+            record.extend(bound.to_be_bytes());
+        }
+        record.extend(8u16.to_be_bytes());
+        record.extend([0, 255]);
+        samples.extend((record.len() as u32).to_be_bytes());
+        samples.extend(&record);
+        samples.resize(samples.len() + (4 - record.len() % 4) % 4, 0);
+    }
+    section(b"samp", &samples, &mut output);
+    let parsed = decode_sectioned(&output, &token).unwrap();
+    assert_eq!(parsed.tips[0].id, "short");
+    assert_eq!(parsed.tips[1].id, "longer-variable-identity");
+    assert_eq!(parsed.tips[0].prefix.len(), 16);
+    let first_length = u32::from_be_bytes(samples[..4].try_into().unwrap()) as usize;
+    let first_total = 4 + first_length.div_ceil(4) * 4;
+    let mut repeated = samples[..first_total].to_vec();
+    repeated.extend_from_within(..);
+    let mut duplicate = vec![0, 6, 0, 1];
+    section(b"samp", &repeated, &mut duplicate);
+    assert!(decode_sectioned(&duplicate, &token).is_err());
 }
