@@ -14,7 +14,7 @@ use std::{
     fs::File,
     io::{Read, Write},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 const MAX_ORIGINAL: usize = 128 * 1024 * 1024;
 const MAX_RECORD: usize = 2 * 1024 * 1024;
@@ -178,6 +178,17 @@ fn header(bytes: &[u8]) -> Result<(u16, Option<u16>)> {
 pub struct SourceStore {
     directory: PathBuf,
     writer: Mutex<()>,
+    verified: Mutex<BTreeMap<String, Weak<ValidatedSource>>>,
+}
+/// Namespace-local proof of a captured identity, not an execution instruction.
+#[derive(Debug)]
+pub struct ValidatedSource {
+    id: String,
+}
+impl ValidatedSource {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
 }
 impl SourceStore {
     pub fn open(directory: PathBuf) -> Result<Self> {
@@ -185,6 +196,7 @@ impl SourceStore {
         Ok(Self {
             directory,
             writer: Mutex::new(()),
+            verified: Mutex::new(BTreeMap::new()),
         })
     }
     fn path(&self, id: &str, extension: &str) -> Result<PathBuf> {
@@ -290,6 +302,20 @@ impl SourceStore {
         check(token)?;
         self.read(id, "json", MAX_RECORD)
     }
+    /// Freshly verify the same record bytes returned to the inspector.
+    pub fn verified_record(&self, id: &str, token: &CancellationToken) -> Result<Vec<u8>> {
+        check(token)?;
+        let bytes = self.read(id, "json", MAX_RECORD)?;
+        let info: SourceInfo =
+            serde_json::from_slice(&bytes).map_err(|e| Error::Codec(e.to_string()))?;
+        info.validate()?;
+        let original = self.read(&info.original_hash, "abr", MAX_ORIGINAL)?;
+        if header(&original)? != (info.file_version, info.file_subversion) {
+            return Err(Error::Invalid("brush source original version"));
+        }
+        check(token)?;
+        Ok(bytes)
+    }
     /// Verify one restore batch without rereading a shared original per preset.
     /// Only verified identities/headers survive between records, not large originals.
     pub fn validate_references(
@@ -322,6 +348,50 @@ impl SourceStore {
         }
         check(token)?;
         Ok(())
+    }
+    pub fn resolve_references(
+        &self,
+        ids: &BTreeSet<String>,
+        token: &CancellationToken,
+    ) -> Result<Vec<Arc<ValidatedSource>>> {
+        check(token)?;
+        if ids.len() > 1024 {
+            return Err(Error::Limit("brush source reference count"));
+        }
+        let mut cache = self
+            .verified
+            .lock()
+            .map_err(|_| Error::Invalid("brush source validation cache"))?;
+        cache.retain(|_, weak| weak.strong_count() > 0);
+        let retained = ids
+            .iter()
+            .filter_map(|id| {
+                cache
+                    .get(id)
+                    .and_then(Weak::upgrade)
+                    .map(|receipt| (id.clone(), receipt))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let missing = ids
+            .iter()
+            .filter(|id| !retained.contains_key(*id))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        self.validate_references(&missing, token)?;
+        let mut output = Vec::with_capacity(ids.len());
+        for id in ids {
+            check(token)?;
+            let receipt = retained
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| Arc::new(ValidatedSource { id: id.clone() }));
+            if cache.len() >= 4096 && !cache.contains_key(id) {
+                cache.pop_first();
+            }
+            cache.insert(id.clone(), Arc::downgrade(&receipt));
+            output.push(receipt);
+        }
+        Ok(output)
     }
     /// Import a portable source pair only after complete identity/schema validation.
     pub fn put_verified(

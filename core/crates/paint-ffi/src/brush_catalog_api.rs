@@ -579,3 +579,33 @@ pub unsafe extern "C" fn paint_brush_library_tip_outline(
         pointers::copy_buffer(svg.as_bytes(), buffer, capacity, required)
     })
 }
+
+/// Read verified import-time source/report JSON on a background thread.
+/// Original ABR bytes are not exposed; each query verifies files afresh.
+/// # Safety
+/// Live library, readable identity and nonoverlapping writable buffer/required required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_source_info(
+    library: *mut PaintBrushLibrary,
+    identity: *const u8,
+    identity_length: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(required, 0)?;
+        runtime::outside_callback()?;
+        let identity = pointers::utf8(identity, identity_length)?;
+        let library = runtime::registry()?.brush_library(library)?;
+        let sources = library
+            .resource_store()?
+            .source_store()
+            .map_err(crate::file_job::io_error)?;
+        let token = paint_task::CancellationToken::default();
+        let bytes = sources
+            .verified_record(&identity, &token)
+            .map_err(crate::file_job::io_error)?;
+        pointers::copy_buffer(&bytes, buffer, capacity, required)
+    })
+}

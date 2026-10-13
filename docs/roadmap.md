@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+原生来源准备桥：[设计](brush-source-bridge-design.md) / [验收](brush-source-bridge-validation.md)。ABI1.32，共享目录/v4准备/来源报告与有生命周期校验凭据已实现；继续Qt来源与实际ABR入口。
+
 原生来源引用/状态：[设计](brush-source-state-design.md) / [验收](brush-source-state-validation.md)。目录保留/v4状态/批次验证已实现；原生准备桥/Qt/VBR与高频来源复用继续后续。
 
 笔刷来源资源：[设计](brush-source-design.md) / [验收](brush-source-validation.md)。完整来源/导入时快照/报告资源存取已实现。

@@ -1,4 +1,10 @@
-# C ABI 1.31.0 契约
+# C ABI 1.32.0 契约
+
+## ABI 1.32：笔刷来源准备桥
+
+`PAINT_FEATURE_BRUSH_SOURCES=134217728`。绑定的图片资源目录下使用 `sources` 来源命名空间；准备状态支持 v4/sourceResource。首次完整校验、共享仓库中的存活身份凭据复用，当前修订与已捕获任务独立持有；凭据不包含大原始字节，不进入绘画参数。冷恢复仍完整校验，失败保留上一合法目录。
+
+`paint_brush_library_source_info` 是后台同步调用，输入64字符来源身份，返回原JSON记录（无NUL，最多2MiB），每次重新校验记录及原始ABR文件；不输出原始ABR。先清零required，容量不足返回BUFFER_TOO_SMALL及准确长度，其他失败不写buffer。外部文件损坏不会改变已捕获修订，但查看/冷恢复必须报错。Qt v4/报告与ABR入口后续接入。
 
 ## ABI 1.31：VBR 图片资源
 

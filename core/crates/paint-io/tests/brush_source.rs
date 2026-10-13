@@ -28,6 +28,37 @@ fn archive() -> SourceArchive {
     SourceArchive::capture(bytes, 0, &converted).unwrap()
 }
 #[test]
+fn receipts_are_weak_scoped_and_fresh_inspection_still_detects_corruption() {
+    use std::collections::BTreeSet;
+    let temp = tempfile::tempdir().unwrap();
+    let store = SourceStore::open(temp.path().into()).unwrap();
+    let token = CancellationToken::default();
+    let original = archive();
+    let id = store.save(&original, &token).unwrap();
+    let ids = BTreeSet::from([id.clone()]);
+    let first = store.resolve_references(&ids, &token).unwrap();
+    let weak = Arc::downgrade(&first[0]);
+    assert_eq!(first[0].id(), id);
+    let second = store.resolve_references(&ids, &token).unwrap();
+    assert!(Arc::ptr_eq(&first[0], &second[0]));
+    let record = temp.path().join(format!("{id}.json"));
+    std::fs::write(record, b"corrupt").unwrap();
+    assert!(store.verified_record(&id, &token).is_err());
+    assert!(store.validate_references(&ids, &token).is_err());
+    assert!(SourceStore::open(temp.path().into())
+        .unwrap()
+        .resolve_references(&ids, &token)
+        .is_err());
+    assert!(store.resolve_references(&ids, &token).is_ok());
+    let cancelled = CancellationToken::default();
+    cancelled.cancel();
+    assert!(store.resolve_references(&ids, &cancelled).is_err());
+    drop(first);
+    drop(second);
+    assert!(weak.upgrade().is_none());
+    assert!(store.resolve_references(&ids, &token).is_err());
+}
+#[test]
 fn immutable_source_and_import_time_report_roundtrip_without_original_path() {
     let temp = tempfile::tempdir().unwrap();
     let store = SourceStore::open(temp.path().join("sources")).unwrap();

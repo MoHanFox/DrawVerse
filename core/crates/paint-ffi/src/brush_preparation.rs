@@ -6,6 +6,7 @@ use crate::{
 };
 use paint_core::BrushCatalog;
 use paint_io::brush_resource::{Interpretation, ResourceStore, StoredMask};
+use paint_io::brush_source::ValidatedSource;
 use paint_task::{Priority, TaskError, TaskPool, TaskTicket};
 use std::{
     collections::VecDeque,
@@ -43,22 +44,31 @@ struct Recipe {
     json: String,
     budget: usize,
     resources: Option<Arc<ResourceStore>>,
+    anchors: Arc<Mutex<Vec<Arc<ValidatedSource>>>>,
 }
 impl Recipe {
     fn start(self) -> ApiResult<TaskTicket<ApiResult<Arc<BrushCatalog>>>> {
         pool()?
             .submit(Priority::Interactive, move |token| {
-                Ok(match self.resources {
-                    Some(resources) => paint_io::brush_state::decode_with_resources(
-                        self.json.as_bytes(),
-                        self.budget,
-                        &resources,
-                        &token,
-                    ),
-                    None => paint_io::brush_state::decode(self.json.as_bytes(), self.budget),
+                let result = match self.resources {
+                    Some(resources) => resources.source_store().and_then(|sources| {
+                        paint_io::brush_state::decode_captured(
+                            self.json.as_bytes(),
+                            self.budget,
+                            &resources,
+                            &sources,
+                            &token,
+                        )
+                    }),
+                    None => paint_io::brush_state::decode(self.json.as_bytes(), self.budget)
+                        .map(|catalog| (catalog, Vec::new())),
                 }
-                .map(Arc::new)
-                .map_err(io_error))
+                .map_err(io_error)
+                .and_then(|(catalog, receipts)| {
+                    *self.anchors.lock().map_err(|_| ApiError::internal())? = receipts;
+                    Ok(Arc::new(catalog))
+                });
+                Ok(result)
             })
             .map_err(task_error)
     }
@@ -97,6 +107,17 @@ impl CatalogTicket {
             }
         }
     }
+    fn source_receipts(&self) -> ApiResult<Vec<Arc<ValidatedSource>>> {
+        let state = self.state.lock().map_err(|_| ApiError::internal())?;
+        match &state.recipe {
+            Some(recipe) => Ok(recipe
+                .anchors
+                .lock()
+                .map_err(|_| ApiError::internal())?
+                .clone()),
+            None => Ok(Vec::new()),
+        }
+    }
     fn retire_image(&self) -> ApiResult<()> {
         let mut state = self.state.lock().map_err(|_| ApiError::internal())?;
         if state.result.is_none() {
@@ -110,14 +131,21 @@ impl CatalogTicket {
                 result.as_ref().is_ok_and(|catalog| {
                     Arc::strong_count(catalog) == 1
                         && catalog.ids().iter().any(|id| {
-                            catalog
-                                .preset(id)
-                                .is_some_and(|p| p.settings().mask.is_some())
+                            catalog.preset(id).is_some_and(|p| {
+                                p.settings().mask.is_some() || p.source_resource().is_some()
+                            })
                         })
                 })
             })
         {
             state.result = None;
+            if let Some(recipe) = &state.recipe {
+                recipe
+                    .anchors
+                    .lock()
+                    .map_err(|_| ApiError::internal())?
+                    .clear();
+            }
         }
         Ok(())
     }
@@ -129,6 +157,7 @@ struct Records {
 }
 pub(crate) struct PreparedCatalog {
     current: Mutex<BrushCatalog>,
+    current_receipts: Mutex<Vec<Arc<ValidatedSource>>>,
     records: Mutex<Records>,
     resources: Mutex<Option<Arc<ResourceStore>>>,
     imported: Mutex<Option<Vec<StoredMask>>>,
@@ -137,6 +166,7 @@ impl PreparedCatalog {
     pub fn new(catalog: BrushCatalog) -> Self {
         Self {
             current: Mutex::new(catalog),
+            current_receipts: Mutex::new(Vec::new()),
             records: Mutex::new(Records {
                 next: 1,
                 published: 0,
@@ -154,6 +184,7 @@ impl PreparedCatalog {
         let recipe = Recipe {
             json,
             budget,
+            anchors: Arc::new(Mutex::new(Vec::new())),
             resources: self
                 .resources
                 .lock()
@@ -294,10 +325,16 @@ impl PreparedCatalog {
         let sequence = *sequence;
         match ticket.try_result() {
             Ok(snapshot) => {
+                let receipts = ticket.source_receipts()?;
+                let mut held = self
+                    .current_receipts
+                    .lock()
+                    .map_err(|_| ApiError::internal())?;
                 self.current
                     .lock()
                     .map_err(|_| ApiError::internal())?
                     .replace_validated((*snapshot).clone());
+                *held = receipts;
                 let mut imported = self.imported.lock().map_err(|_| ApiError::internal())?;
                 if imported.as_ref().is_some_and(|resources| {
                     resources.iter().all(|resource| {
@@ -332,7 +369,13 @@ impl PreparedCatalog {
             match ticket.try_result() {
                 Ok(snapshot) => {
                     if sequence > records.published {
+                        let receipts = ticket.source_receipts()?;
+                        let mut held = self
+                            .current_receipts
+                            .lock()
+                            .map_err(|_| ApiError::internal())?;
                         current.replace_validated((*snapshot).clone());
+                        *held = receipts;
                         records.published = sequence;
                     }
                 }
@@ -346,6 +389,90 @@ impl PreparedCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn source_receipts_follow_current_and_captured_tickets_then_revalidate_cold() {
+        use paint_io::{
+            abr_conversion::ConvertedPreset,
+            brush_source::SourceArchive,
+            ps_descriptor::{Class, Descriptor},
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let library = PreparedCatalog::new(BrushCatalog::default());
+        library
+            .bind_resources(directory.path().join("assets"))
+            .unwrap();
+        let store = library.resource_store().unwrap();
+        let sources = store.source_store().unwrap();
+        assert!(Arc::ptr_eq(&sources, &store.source_store().unwrap()));
+        let descriptor = Descriptor {
+            class: Class {
+                name: String::new(),
+                id: b"null".to_vec(),
+            },
+            entries: Vec::new(),
+        };
+        let converted = ConvertedPreset {
+            name: "source",
+            settings: paint_core::BrushSettings::default(),
+            source: &descriptor,
+            issues: Vec::new(),
+        };
+        let archive =
+            SourceArchive::capture(Arc::new(vec![0, 6, 0, 2, 37]), 0, &converted).unwrap();
+        let token = paint_task::CancellationToken::default();
+        let id = sources.save(&archive, &token).unwrap();
+        let mut catalog = BrushCatalog::default();
+        catalog
+            .set_source("round-pressure", Some(id.clone()))
+            .unwrap();
+        let json = String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap();
+        let seq = library.submit(json.clone()).unwrap();
+        let captured = library.ticket(seq).unwrap();
+        let snapshot = captured.wait().unwrap();
+        assert_eq!(snapshot.selected().source_resource(), Some(id.as_str()));
+        let receipt = captured.source_receipts().unwrap().pop().unwrap();
+        let weak = Arc::downgrade(&receipt);
+        drop(receipt);
+        drop(snapshot);
+        drop(library.current().unwrap());
+        let record = directory
+            .path()
+            .join("assets/sources")
+            .join(format!("{id}.json"));
+        std::fs::write(&record, b"corrupt").unwrap();
+        let second = library.submit(json.clone()).unwrap();
+        let second_ticket = library.ticket(second).unwrap();
+        second_ticket.wait().unwrap();
+        assert!(Arc::ptr_eq(
+            &captured.source_receipts().unwrap()[0],
+            &second_ticket.source_receipts().unwrap()[0]
+        ));
+        drop(library.current().unwrap());
+        assert!(sources.verified_record(&id, &token).is_err());
+        let round =
+            String::from_utf8(paint_io::brush_state::encode(&BrushCatalog::default()).unwrap())
+                .unwrap();
+        let third = library.submit(round).unwrap();
+        library.ticket(third).unwrap().wait().unwrap();
+        drop(library.current().unwrap());
+        drop(second_ticket);
+        library.retire_unused_images().unwrap();
+        assert!(weak.upgrade().is_some()); // captured ticket independently owns proof
+        drop(library);
+        assert!(weak.upgrade().is_some());
+        drop(captured);
+        assert!(weak.upgrade().is_none());
+        let cold = PreparedCatalog::new(BrushCatalog::default());
+        cold.share_resources(store).unwrap();
+        let bad = cold.submit(json).unwrap();
+        assert!(cold.ticket(bad).unwrap().wait().is_err());
+        assert!(cold
+            .current()
+            .unwrap()
+            .selected()
+            .source_resource()
+            .is_none());
+    }
     #[test]
     fn image_revisions_release_unused_pixels_and_rebuild_exact_resources() {
         use paint_core::{BrushMask, Document, InputPoint};

@@ -66,12 +66,14 @@ struct Row {
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
+        false,
         bytes,
         mask_budget,
         None,
         None,
         &CancellationToken::default(),
     )
+    .map(|(catalog, _)| catalog)
 }
 pub fn decode_with_resources(
     bytes: &[u8],
@@ -79,7 +81,8 @@ pub fn decode_with_resources(
     resources: &ResourceStore,
     token: &CancellationToken,
 ) -> Result<BrushCatalog> {
-    decode_inner(bytes, mask_budget, Some(resources), None, token)
+    decode_inner(false, bytes, mask_budget, Some(resources), None, token)
+        .map(|(catalog, _)| catalog)
 }
 pub fn decode_with_sources(
     bytes: &[u8],
@@ -88,15 +91,40 @@ pub fn decode_with_sources(
     sources: &SourceStore,
     token: &CancellationToken,
 ) -> Result<BrushCatalog> {
-    decode_inner(bytes, mask_budget, resources, Some(sources), token)
+    decode_inner(false, bytes, mask_budget, resources, Some(sources), token)
+        .map(|(catalog, _)| catalog)
+}
+/// Capture verified immutable source identities for prepared revision lifetimes.
+pub fn decode_captured(
+    bytes: &[u8],
+    mask_budget: usize,
+    resources: &ResourceStore,
+    sources: &SourceStore,
+    token: &CancellationToken,
+) -> Result<(
+    BrushCatalog,
+    Vec<std::sync::Arc<crate::brush_source::ValidatedSource>>,
+)> {
+    decode_inner(
+        true,
+        bytes,
+        mask_budget,
+        Some(resources),
+        Some(sources),
+        token,
+    )
 }
 fn decode_inner(
+    captured: bool,
     bytes: &[u8],
     mask_budget: usize,
     resources: Option<&ResourceStore>,
     sources: Option<&SourceStore>,
     token: &CancellationToken,
-) -> Result<BrushCatalog> {
+) -> Result<(
+    BrushCatalog,
+    Vec<std::sync::Arc<crate::brush_source::ValidatedSource>>,
+)> {
     if bytes.len() > 2 * 1024 * 1024 {
         return Err(Error::Limit("brush state bytes"));
     }
@@ -160,12 +188,16 @@ fn decode_inner(
         ));
     }
     let catalog = BrushCatalog::from_entries_with_sources(entries, state.selected, mask_budget)?;
+    let mut receipts = Vec::new();
     if !references.is_empty() {
-        sources
-            .ok_or(Error::Unsupported("brush source store is required".into()))?
-            .validate_references(&references, token)?;
+        let sources = sources.ok_or(Error::Unsupported("brush source store is required".into()))?;
+        if captured {
+            receipts = sources.resolve_references(&references, token)?;
+        } else {
+            sources.validate_references(&references, token)?;
+        }
     }
-    Ok(catalog)
+    Ok((catalog, receipts))
 }
 pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
     let mut presets = Vec::new();

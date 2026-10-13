@@ -44,6 +44,7 @@ pub struct ResourceStore {
     budget: usize,
     cache: Mutex<BTreeMap<String, Cached>>,
     outlines: Mutex<VecDeque<(String, Arc<String>)>>,
+    sources: Mutex<Option<Arc<crate::brush_source::SourceStore>>>,
 }
 pub fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -177,10 +178,24 @@ impl ResourceStore {
             budget,
             cache: Mutex::new(BTreeMap::new()),
             outlines: Mutex::new(VecDeque::new()),
+            sources: Mutex::new(None),
         })
     }
     pub fn directory(&self) -> &Path {
         &self.directory
+    }
+    /// Shared source verification context, initialized on the caller's worker.
+    pub fn source_store(&self) -> Result<Arc<crate::brush_source::SourceStore>> {
+        let mut sources = self
+            .sources
+            .lock()
+            .map_err(|_| Error::Invalid("brush source store lock"))?;
+        if sources.is_none() {
+            *sources = Some(Arc::new(crate::brush_source::SourceStore::open(
+                self.directory.join("sources"),
+            )?));
+        }
+        Ok(sources.as_ref().expect("initialized source store").clone())
     }
     pub fn resident_bytes(&self) -> usize {
         self.cache

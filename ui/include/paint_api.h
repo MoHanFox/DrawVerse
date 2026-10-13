@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 31
+#define PAINT_ABI_MINOR 32
 
 #define PAINT_ABI_PATCH 0
 
@@ -70,6 +70,8 @@
 #define PAINT_FEATURE_BRUSH_PREPARATION 8388608
 
 #define PAINT_FEATURE_BRUSH_RESOURCES 16777216
+
+#define PAINT_FEATURE_BRUSH_SOURCES 134217728
 
 #define PAINT_FEATURE_BRUSH_TIP 1048576
 
@@ -1067,6 +1069,19 @@ PaintStatus paint_brush_library_select(struct PaintBrushLibrary *library,
  */
 PaintStatus paint_brush_library_share_resources(struct PaintBrushLibrary *target,
                                                 struct PaintBrushLibrary *source);
+
+/**
+ * Read verified import-time source/report JSON on a background thread.
+ * Original ABR bytes are not exposed; each query verifies files afresh.
+ * # Safety
+ * Live library, readable identity and nonoverlapping writable buffer/required required.
+ */
+PaintStatus paint_brush_library_source_info(struct PaintBrushLibrary *library,
+                                            const uint8_t *identity,
+                                            uint64_t identity_length,
+                                            uint8_t *buffer,
+                                            uint64_t capacity,
+                                            uint64_t *required);
 
 /**
  * Read UTF-8 identity (field=0) or name (field=1) with caller-buffer semantics.
