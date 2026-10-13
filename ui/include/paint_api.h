@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 27
+#define PAINT_ABI_MINOR 28
 
 #define PAINT_ABI_PATCH 0
 
@@ -64,6 +64,8 @@
 #define PAINT_FEATURE_ASYNC_SESSION 16
 
 #define PAINT_FEATURE_BRUSH_CATALOG 4194304
+
+#define PAINT_FEATURE_BRUSH_PREPARATION 8388608
 
 #define PAINT_FEATURE_BRUSH_TIP 1048576
 
@@ -910,6 +912,16 @@ PaintStatus paint_brush_library_copy(struct PaintBrushLibrary *library,
 PaintStatus paint_brush_library_create(uint64_t mask_budget_bytes, struct PaintBrushLibrary **out);
 
 /**
+ * Read last valid canonical parameter state; pending/failed drafts do not erase it.
+ * # Safety
+ * Live library, writable required and buffer of capacity bytes required.
+ */
+PaintStatus paint_brush_library_current_state(struct PaintBrushLibrary *library,
+                                              uint8_t *buffer,
+                                              uint64_t capacity,
+                                              uint64_t *required);
+
+/**
  * Destroy a library; already captured stroke definitions remain alive.
  * # Safety
  * library must be a readable/writable aligned pointer slot with a live handle.
@@ -933,6 +945,27 @@ PaintStatus paint_brush_library_edit(struct PaintBrushLibrary *library,
  */
 PaintStatus paint_brush_library_info(struct PaintBrushLibrary *library,
                                      struct PaintBrushLibraryInfo *out);
+
+/**
+ * Enqueue a bounded parameter-state copy for background migration/compilation.
+ * # Safety
+ * Live library, readable JSON bytes and nonoverlapping writable sequence required.
+ */
+PaintStatus paint_brush_library_prepare_state(struct PaintBrushLibrary *library,
+                                              const uint8_t *json,
+                                              uint64_t json_length,
+                                              uint64_t *out_sequence);
+
+/**
+ * Read canonical state of one exact prepared record. BUSY means still compiling.
+ * # Safety
+ * Live library, writable required and buffer of capacity bytes required.
+ */
+PaintStatus paint_brush_library_prepared_state(struct PaintBrushLibrary *library,
+                                               uint64_t sequence,
+                                               uint8_t *buffer,
+                                               uint64_t capacity,
+                                               uint64_t *required);
 
 /**
  * Read preset parameters at an exact library revision; stale reads return BUSY.
@@ -1228,6 +1261,21 @@ PaintStatus paint_session_begin_brush(struct PaintCore *core,
                                       const struct PaintBrushStrokeDesc *request,
                                       const struct PaintPoint *point,
                                       uint64_t *out_sequence);
+
+/**
+ * Begin after an exact prepared revision, with waiting confined to Rust workers.
+ * # Safety
+ * Live handles, readable ID, sized aligned tool/point and writable sequence required.
+ */
+PaintStatus paint_session_begin_prepared_preset(struct PaintCore *core,
+                                                struct PaintSession *session,
+                                                struct PaintBrushLibrary *library,
+                                                uint64_t preparation,
+                                                const uint8_t *id,
+                                                uint64_t id_length,
+                                                const struct PaintBrushToolDesc *tool,
+                                                const struct PaintPoint *point,
+                                                uint64_t *out_sequence);
 
 /**
  * Capture a preset for one asynchronous paint, erase or smudge stroke.

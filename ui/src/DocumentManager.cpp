@@ -92,7 +92,7 @@ bool DocumentManager::activate(const QString &id) {
 QString DocumentManager::create(int width,int height,bool transparent,const QUrl &url) {
     if(m_quitting || !m_initial || width<1 || height<1 || width>1000000 || height>1000000)return {};
     if(auto *active=activeClient();active && (active->drawing() || active->liquifyActive() || active->transformActive()))return {};
-    auto *created=new PaintCoreClient(this,m_initial->settingsFile());track(created);
+    auto *created=new PaintCoreClient(this,m_initial->settingsFile(),m_initial->brushCatalogConnection());track(created);
     const auto id=add(created);auto initialized=std::make_shared<bool>(false);
     connect(created,&PaintCoreClient::stateChanged,this,[created,width,height,transparent,url,initialized] {
         if(*initialized || !created->ready())return;

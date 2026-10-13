@@ -49,7 +49,7 @@ pub(crate) struct Registry {
     documents: HashMap<usize, Arc<DocumentState>>,
     subscriptions: HashMap<usize, Arc<SubscriptionState>>,
     sessions: HashMap<usize, (usize, Arc<Session>)>,
-    brush_libraries: HashMap<usize, Arc<Mutex<paint_core::BrushCatalog>>>,
+    brush_libraries: HashMap<usize, Arc<crate::brush_preparation::PreparedCatalog>>,
     // Stable addresses are the ABI tokens. Keeping tombstones prevents stale-pointer ABA.
     #[allow(clippy::vec_box)]
     tokens: Vec<Box<u8>>,
@@ -70,14 +70,16 @@ impl Registry {
         catalog: paint_core::BrushCatalog,
     ) -> ApiResult<*mut PaintBrushLibrary> {
         let token = self.token::<PaintBrushLibrary>()?;
-        self.brush_libraries
-            .insert(token.addr(), Arc::new(Mutex::new(catalog)));
+        self.brush_libraries.insert(
+            token.addr(),
+            Arc::new(crate::brush_preparation::PreparedCatalog::new(catalog)),
+        );
         Ok(token)
     }
     pub fn brush_library(
         &self,
         library: *mut PaintBrushLibrary,
-    ) -> ApiResult<Arc<Mutex<paint_core::BrushCatalog>>> {
+    ) -> ApiResult<Arc<crate::brush_preparation::PreparedCatalog>> {
         self.brush_libraries
             .get(&library.addr())
             .cloned()

@@ -42,6 +42,12 @@ pub(crate) enum Operation {
     DuplicateLayers(Vec<u64>),
     MergeLayers(Vec<u64>),
     Begin(paint_core::BrushDefinition, InputPoint, u64),
+    BeginPrepared(
+        Arc<crate::brush_preparation::CatalogTicket>,
+        String,
+        PaintBrushToolDesc,
+        InputPoint,
+    ),
     Move(InputPoint),
     End,
     Cancel(bool),
@@ -282,7 +288,10 @@ impl Session {
         match result {
             Ok(()) => {
                 ingress.sequence = sequence;
-                if matches!(operation, Operation::Begin(..)) {
+                if matches!(
+                    operation,
+                    Operation::Begin(..) | Operation::BeginPrepared(..)
+                ) {
                     ingress.aborted = false;
                 }
                 if matches!(operation, Operation::Cancel(_)) {
@@ -629,8 +638,10 @@ impl Engine {
     fn execute(&mut self, command: Command) {
         let old_revision = self.document.revision();
         let stroke_command = matches!(command.operation, Operation::Move(_) | Operation::End)
-            || (matches!(command.operation, Operation::Begin(..))
-                && !self.document.stroke_active());
+            || (matches!(
+                command.operation,
+                Operation::Begin(..) | Operation::BeginPrepared(..)
+            ) && !self.document.stroke_active());
         let liquify_control = matches!(command.operation, Operation::Liquify(kind, _) if !matches!(kind,PAINT_LIQUIFY_DAB|PAINT_LIQUIFY_STROKE_BEGIN|PAINT_LIQUIFY_STROKE_END));
         let barrier = matches!(command.operation, Operation::TransformLayers(..))
             || matches!(command.operation,Operation::Transform(kind,_) if kind!=PAINT_TRANSFORM_UPDATE && kind!=PAINT_TRANSFORM_CHECKPOINT)
@@ -867,6 +878,15 @@ impl Engine {
                 self.floor = 0;
                 self.error = None;
                 self.default_view();
+            }
+            Operation::BeginPrepared(ticket, id, tool, point) => {
+                self.aborted = false;
+                let library = ticket.wait()?;
+                let preset = library
+                    .preset(&id)
+                    .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "prepared brush preset"))?;
+                let definition = crate::brush_catalog_api::tool_definition(&preset, tool)?;
+                self.apply(Operation::Begin(definition, point, tool.layer_id), sequence)?;
             }
             Operation::Begin(brush, point, layer) => {
                 self.aborted = false;

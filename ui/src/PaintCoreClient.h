@@ -25,6 +25,7 @@ struct InputSample {
 };
 class BackendWorker;
 struct BackendConnection;
+struct BrushCatalogConnection;
 struct PaintSelectionShapeEdit;
 
 // The only UI-facing core service. Owns no model pointers on the GUI thread.
@@ -127,7 +128,8 @@ public:
     QVariantList historyEntries() const {return m_history;}
     Q_INVOKABLE qreal documentHistoryScrollPosition() const {return m_documentHistoryScroll;}
     Q_INVOKABLE void rememberDocumentHistoryScroll(qreal y) {if(!m_historyLiquify)m_documentHistoryScroll=std::max(qreal(0),y);}
-    explicit PaintCoreClient(QObject *parent = nullptr, const QString &settingsFile = {});
+    explicit PaintCoreClient(QObject *parent = nullptr, const QString &settingsFile = {},std::shared_ptr<BrushCatalogConnection> brushCatalog = {});
+    std::shared_ptr<BrushCatalogConnection> brushCatalogConnection() const {return m_brushCatalogConnection;}
     QString settingsFile() const { return m_settingsFile; }
     ~PaintCoreClient() override;
     QVariantMap storageSettings() const { return m_storageSettings; }
@@ -395,6 +397,8 @@ private:
     QThread m_thread;
     BackendWorker *m_worker = nullptr;
     std::shared_ptr<BackendConnection> m_connection;
+    std::shared_ptr<BrushCatalogConnection> m_brushCatalogConnection;
+    bool synchronizeBrushCatalog(const QByteArray &state);
     bool m_ready = false, m_drawing = false, m_closing = false, m_modified = false, m_dropStroke = false;
     bool m_fileBusy = false, m_fileOpening = false, m_backendFailed = false;
     QUrl m_documentUrl, m_sourceUrl, m_fileUrl;

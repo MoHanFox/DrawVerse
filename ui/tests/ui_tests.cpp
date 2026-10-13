@@ -560,6 +560,20 @@ private slots:
         const auto originalState=library->snapshot();QFile bad(temp.filePath("bad.vbr"));QVERIFY(bad.open(QIODevice::WriteOnly));bad.write("invalid archive");bad.close();QVERIFY(client.importBrushes(QUrl::fromLocalFile(bad.fileName())));QTRY_COMPARE(finished.size(),4);QVERIFY(!finished.last()[0].toBool());QCOMPARE(library->snapshot(),originalState);QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),undo);
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void nativeBrushRevisionStartsImmediatelyAndBadMigrationKeepsFile() {
+        QTemporaryDir temp;const auto path=temp.filePath("state.ini");
+        PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());client.newTransparentDocument(40,40);QTRY_COMPARE(client.documentWidth(),40);QTRY_VERIFY(client.ready());
+        auto *library=client.brushLibrary();library->setRadius(10);library->setPressureSize(false);library->setPressureFlow(false);library->setFlow(1);
+        library->setRoundness(.2);library->setAngle(0);
+        InputSample sample;sample.position={20.5,20.5};sample.pressure=.1f;sample.tool=1;
+        QVERIFY(client.beginStroke(sample));library->setRoundness(1);library->setFlow(0);client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        client.requestViewport(0,{0,0,40,40},{40,40});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(40,40));QVERIFY(client.frame().pixelColor(27,20).alpha()>200);QCOMPARE(client.frame().pixelColor(20,27).alpha(),0);
+        client.undo();QTRY_COMPARE(client.undoDepth(),0);library->setRoundness(.2);library->setAngle(90);library->setFlow(1);QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.requestViewport(0,{0,0,40,40},{40,40});QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(client.frame().pixelColor(20,27).alpha()>200);QCOMPARE(client.frame().pixelColor(27,20).alpha(),0);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+        BrushLibrary old;const auto copy=old.saveCopy("Old custom");QVERIFY(!copy.isEmpty());auto invalid=QJsonDocument::fromJson(old.snapshot()).object();auto rows=invalid.value("presets").toArray();auto row=rows.last().toObject();row["id"]="not-a-uuid";rows[rows.size()-1]=row;invalid["presets"]=rows;invalid["selected"]="not-a-uuid";const auto bad=QJsonDocument(invalid).toJson(QJsonDocument::Compact);const auto badPath=temp.filePath("bad.ini");{QSettings settings(badPath,QSettings::IniFormat);settings.setValue("brushes/state",bad);settings.sync();}
+        PaintCoreClient recovered(nullptr,badPath);QTRY_VERIFY(recovered.ready());QTRY_VERIFY_WITH_TIMEOUT(recovered.lastError().contains("UUID"),10000);QTRY_COMPARE(recovered.brushLibrary()->presets().size(),4);{QSettings settings(badPath,QSettings::IniFormat);QCOMPARE(settings.value("brushes/state").toByteArray(),bad);}
+        QVERIFY(recovered.beginStroke(sample));recovered.endStroke();QTRY_COMPARE(recovered.undoDepth(),1);QSignalSpy recoveredStopped(&recovered,&PaintCoreClient::stopped);recovered.shutdown();QTRY_COMPARE(recoveredStopped.size(),1);
+    }
     void brushCursorPreferencesAreGlobalPersistentAndNeverExported() {
         BrushLibrary model;QSignalSpy preview(&model,&BrushLibrary::previewRequested);QSignalSpy settings(&model,&BrushLibrary::settingsChanged);
         model.setCursorCenter(true);model.setCursorHoverOnly(true);model.setCursorWidth(3);model.setCursorOutline(false);model.setCursorSimple(true);model.setCursorColor("#123456");model.setCursorSecondaryColor("#abcdef");QCOMPARE(settings.size(),0);QCOMPARE(preview.size(),0);

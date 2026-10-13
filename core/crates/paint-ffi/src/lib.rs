@@ -6,6 +6,7 @@ compile_error!("DrawVerse ABI v1 supports 64-bit targets only");
 mod api;
 mod brush_api;
 mod brush_catalog_api;
+mod brush_preparation;
 pub use brush_api::*;
 pub use brush_catalog_api::*;
 mod brush_file_api;
@@ -132,6 +133,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                     | PAINT_FEATURE_BRUSH_TIP
                     | PAINT_FEATURE_VBR
                     | PAINT_FEATURE_BRUSH_CATALOG
+                    | PAINT_FEATURE_BRUSH_PREPARATION
                     | PAINT_FEATURE_LIQUIFY
                     | PAINT_FEATURE_LAYER_ACTIONS
                     | PAINT_FEATURE_PASS_THROUGH

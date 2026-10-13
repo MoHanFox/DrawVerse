@@ -82,6 +82,8 @@ public:
     Q_INVOKABLE void retryPreview();
     bool restore(const QByteArray &json);
     QByteArray snapshot() const;
+    QByteArray catalogSnapshot() const;
+    bool applyNativeCatalog(const QByteArray &json);
     void acceptPreview(const QString &id,quint64 token,const QString &image);
 signals:
     void cursorChanged();

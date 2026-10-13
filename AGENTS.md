@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新 Qt / 原生笔刷修订桥：`docs/brush-catalog-bridge-design.md` / `docs/brush-catalog-bridge-validation.md`；ABI 1.28、后台状态迁移/独立编译池/准确准备记录、Rust起笔等待与Qt共享库、隔离原生预览/有效状态保存；图片资源/ABR/动态/湿混继续后续。
+
 - 最新原生笔刷库 ABI：`docs/brush-catalog-abi-design.md` / `docs/brush-catalog-abi-validation.md`；ABI 1.27、独立句柄/准确修订/原子目录操作、捕获预设的真实异步笔触及生命周期；Qt 镜像迁移与图片资源接口仍待接入。
 
 - 最新 Rust 笔刷库模型：`docs/brush-catalog-design.md` / `docs/brush-catalog-validation.md`；验证编译/不可变修订、原子目录操作、旧预设兼容、1024预设/共享资源预算；原生库 ABI 与 Qt 完整迁移仍待接入。

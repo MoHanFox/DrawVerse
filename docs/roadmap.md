@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+Qt / 原生修订桥：[设计](brush-catalog-bridge-design.md) / [验收](brush-catalog-bridge-validation.md)，ABI 1.28。画布与预览已接原生定义，旧参数后台迁移与有效状态保存已完成；继续图片持久资源与 VBR/ABR 接入。
+
 原生笔刷库：[ABI设计](brush-catalog-abi-design.md) / [验收](brush-catalog-abi-validation.md)，ABI 1.27。已接独立库与实际笔触快照；继续推进 Qt 目录镜像/资源存储、VBR图片与ABR。
 
 Rust 笔刷库模型：[设计](brush-catalog-design.md) / [验收](brush-catalog-validation.md)。不可变预设和原子库操作/资源预算已完成；下一阶段接库 ABI、Qt 镜像、持久图片资源及 ABR。

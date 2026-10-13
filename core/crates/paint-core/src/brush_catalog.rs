@@ -102,7 +102,7 @@ impl BrushPreset {
         &self.program
     }
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BrushCatalog {
     presets: BTreeMap<String, Arc<BrushPreset>>,
     order: Vec<String>,
@@ -143,6 +143,44 @@ impl Default for BrushCatalog {
     }
 }
 impl BrushCatalog {
+    pub fn from_entries(
+        entries: Vec<(String, String, BrushSettings)>,
+        selected: String,
+        mask_budget: usize,
+    ) -> Result<Self> {
+        let mut restored = Self::with_mask_budget(mask_budget)?;
+        if entries.len() < 4 || entries.len() > MAX_BRUSH_PRESETS {
+            return Err(Error::ResourceLimit("brush catalog count"));
+        }
+        let mut seen = BTreeSet::new();
+        let mut order = Vec::new();
+        let mut presets = BTreeMap::new();
+        for (id, name, settings) in entries {
+            if !seen.insert(id.clone()) {
+                return Err(Error::InvalidArgument("duplicate brush preset ID"));
+            }
+            let builtin = BUILTINS.contains(&id.as_str());
+            let preset = if builtin {
+                BrushPreset::build(id.clone(), name, settings, true)?
+            } else {
+                BrushPreset::new(id.clone(), name, settings)?
+            };
+            order.push(id.clone());
+            presets.insert(id, Arc::new(preset));
+        }
+        if !BUILTINS.iter().all(|id| seen.contains(*id)) || !seen.contains(&selected) {
+            return Err(Error::InvalidArgument("missing built-in or selected brush"));
+        }
+        restored.order = order;
+        restored.presets = presets;
+        restored.selected = selected;
+        restored.resource_budget(std::iter::empty(), None)?;
+        Ok(restored)
+    }
+    pub fn replace_validated(&mut self, mut catalog: Self) {
+        catalog.revision = self.revision + 1;
+        *self = catalog;
+    }
     fn resource_budget<'a>(
         &'a self,
         additional: impl Iterator<Item = &'a BrushSettings>,

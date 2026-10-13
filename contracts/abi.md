@@ -1,4 +1,12 @@
-# C ABI 1.27.0 契约
+# C ABI 1.28.0 契约
+
+## ABI 1.28：异步准备与准确笔刷修订
+
+`PAINT_FEATURE_BRUSH_PREPARATION=8388608`。`paint_brush_library_prepare_state` 是小型异步提交，复制最多2MiB参数状态JSON并返回准备序号；解析/编译在独立2线程、32项队列的元数据池完成。v1/v2迁移整包验证，未知字段/非法参数/缺少内置/身份冲突拒绝。同步目录修改在准备未完成时返回 BUSY；任务失败不覆盖上一合法目录。
+
+`paint_brush_library_prepared_state` 读取准确序号的 canonical v2状态，准备中 BUSY，失败保留错误码；`current_state` 读取上一合法状态。最近64条记录可查询，裁剪后 NOT_FOUND；文档已捕获的记录不受裁剪影响。状态排除全局/工具偏好，当前图片资源需要后续资源编解码器，禁止恢复时悄悄移除图片。
+
+`paint_session_begin_prepared_preset` 捕获准确准备记录，等待只发生在 Rust 文档执行线程。Move/End/Cancel依原顺序排队，GUI不阻塞或丢起笔。编辑/销毁库或新提交不能改变该笔参数；准备失败明确报错，不替换默认笔刷。旧同步入口与DTO仍可用。
 
 ## ABI 1.27：独立原生笔刷库
 

@@ -15,7 +15,8 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 27;
+pub const PAINT_ABI_MINOR: u32 = 28;
+pub const PAINT_FEATURE_BRUSH_PREPARATION: u64 = 8388608;
 pub const PAINT_FEATURE_BRUSH_CATALOG: u64 = 4194304;
 pub struct PaintBrushLibrary {
     _private: u8,

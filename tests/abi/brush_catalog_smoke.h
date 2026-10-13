@@ -2,6 +2,7 @@
 #define DRAWVERSE_BRUSH_CATALOG_SMOKE_H
 #include <stddef.h>
 #include <string.h>
+#include <time.h>
 #ifdef __cplusplus
 static_assert(sizeof(PaintBrushSettings) == 64 && offsetof(PaintBrushSettings, tip) == 24);
 static_assert(sizeof(PaintBrushPresetInfo) == 64 && sizeof(PaintBrushLibraryInfo) == 32);
@@ -20,6 +21,10 @@ static int brush_catalog_smoke(void) {
     const char copy[] = "12345678-1234-4234-8234-123456789abc";
     uint64_t old_revision, required = 0;
     uint8_t text[64];
+    uint8_t state[4096];
+    uint64_t preparation = 0, state_size = 0;
+    PaintStatus status;
+    clock_t started;
     memset(&info, 0, sizeof(info)); info.struct_size = sizeof(info);
     memset(&preset, 0, sizeof(preset)); preset.struct_size = sizeof(preset);
     memset(&settings, 0, sizeof(settings)); settings.struct_size = sizeof(settings);
@@ -38,6 +43,14 @@ static int brush_catalog_smoke(void) {
     if (paint_brush_library_remove(library, (const uint8_t *)id, sizeof(id)-1) != PAINT_INVALID_ARGUMENT) return 8;
     if (paint_brush_library_copy(library, (const uint8_t *)copy, sizeof(copy)-1, (const uint8_t *)"ABI copy", 8) != PAINT_OK) return 9;
     if (paint_brush_library_info(library, &info) != PAINT_OK || info.preset_count != 5 || info.selected_index != 4) return 10;
+    if (paint_brush_library_current_state(library, state, sizeof(state), &state_size) != PAINT_OK) return 12;
+    if (paint_brush_library_prepare_state(library, state, state_size, &preparation) != PAINT_OK || !preparation) return 13;
+    started = clock();
+    do {
+        status = paint_brush_library_prepared_state(library, preparation, state, sizeof(state), &state_size);
+        if (clock() - started > 5 * CLOCKS_PER_SEC) return 14;
+    } while (status == PAINT_BUSY);
+    if (status != PAINT_OK) return 15;
     if (paint_brush_library_destroy(&library) != PAINT_OK || library != NULL) return 11;
     return 0;
 }

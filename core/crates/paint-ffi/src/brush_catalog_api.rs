@@ -12,7 +12,7 @@ fn catalog<T>(
     op: impl FnOnce(&mut BrushCatalog) -> ApiResult<T>,
 ) -> ApiResult<T> {
     let state = runtime::registry()?.brush_library(library)?;
-    let mut library = state.lock().map_err(|_| ApiError::internal())?;
+    let mut library = state.current()?;
     if revision != 0 && revision != library.revision() {
         return Err(ApiError::new(PAINT_BUSY, "brush library revision expired"));
     }
@@ -24,6 +24,53 @@ fn preset(catalog: &BrushCatalog, index: u32) -> ApiResult<Arc<BrushPreset>> {
         .get(index as usize)
         .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "brush preset index"))?;
     catalog.preset(id).ok_or_else(ApiError::internal)
+}
+fn catalog_mut<T>(
+    library: *mut PaintBrushLibrary,
+    op: impl FnOnce(&mut BrushCatalog) -> ApiResult<T>,
+) -> ApiResult<T> {
+    runtime::registry()?.brush_library(library)?.mutate(op)
+}
+pub(crate) fn validate_tool(t: PaintBrushToolDesc) -> ApiResult<()> {
+    if t.reserved != 0
+        || t.all_layers > 1
+        || t.finger_painting > 1
+        || t.pressure_strength > 1
+        || !t.strength.is_finite()
+        || !(0. ..=1.).contains(&t.strength)
+        || t.operation > PAINT_BRUSH_SMUDGE
+    {
+        return Err(ApiError::invalid("brush tool parameters"));
+    }
+    paint_core::Brush {
+        radius: t.radius,
+        color: Pixel::from_straight(t.linear_rgba)?,
+        ..paint_core::Brush::default()
+    }
+    .validate()?;
+    Ok(())
+}
+pub(crate) fn tool_definition(
+    preset: &BrushPreset,
+    t: PaintBrushToolDesc,
+) -> ApiResult<paint_core::BrushDefinition> {
+    validate_tool(t)?;
+    let mut definition = preset.settings().definition();
+    definition.brush.radius = t.radius;
+    definition.brush.color = Pixel::from_straight(t.linear_rgba)?;
+    definition.brush.mode = match t.operation {
+        PAINT_BRUSH_PAINT => BrushMode::Paint,
+        PAINT_BRUSH_ERASE => BrushMode::Erase,
+        _ => {
+            definition.brush.opacity *= t.strength;
+            BrushMode::Smudge {
+                all_layers: t.all_layers == 1,
+                finger_painting: t.finger_painting == 1,
+                pressure_strength: t.pressure_strength == 1,
+            }
+        }
+    };
+    Ok(definition)
 }
 fn tip(t: BrushTip) -> PaintBrushTip {
     PaintBrushTip {
@@ -55,6 +102,7 @@ pub unsafe extern "C" fn paint_brush_library_create(
     boundary(|| unsafe {
         pointers::write(out, std::ptr::null_mut())?;
         runtime::outside_callback()?;
+        crate::brush_preparation::warm_pool()?;
         let library = if mask_budget_bytes == 0 {
             BrushCatalog::default()
         } else {
@@ -185,7 +233,7 @@ pub unsafe extern "C" fn paint_brush_library_select(
     boundary(|| unsafe {
         runtime::outside_callback()?;
         let id = pointers::utf8(id, id_length)?;
-        catalog(library, 0, |c| c.select(&id).map_err(Into::into))
+        catalog_mut(library, |c| c.select(&id).map_err(Into::into))
     })
 }
 /// Atomically edit parameters, retaining an existing immutable image resource.
@@ -211,7 +259,7 @@ pub unsafe extern "C" fn paint_brush_library_edit(
         {
             return Err(ApiError::invalid("brush settings reserved/flags"));
         }
-        catalog(library, 0, |c| {
+        catalog_mut(library, |c| {
             let before = c
                 .preset(&id)
                 .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "brush preset"))?;
@@ -248,7 +296,7 @@ pub unsafe extern "C" fn paint_brush_library_rename(
         runtime::outside_callback()?;
         let id = pointers::utf8(id, id_length)?;
         let name = pointers::utf8(name, name_length)?;
-        catalog(library, 0, |c| c.rename(&id, name).map_err(Into::into))
+        catalog_mut(library, |c| c.rename(&id, name).map_err(Into::into))
     })
 }
 /// Copy the active preset to a supplied fresh UUID and name, then select it.
@@ -266,7 +314,7 @@ pub unsafe extern "C" fn paint_brush_library_copy(
         runtime::outside_callback()?;
         let id = pointers::utf8(id, id_length)?;
         let name = pointers::utf8(name, name_length)?;
-        catalog(library, 0, |c| c.save_copy(id, name).map_err(Into::into))
+        catalog_mut(library, |c| c.save_copy(id, name).map_err(Into::into))
     })
 }
 /// Remove a user preset; built-ins are protected.
@@ -281,7 +329,7 @@ pub unsafe extern "C" fn paint_brush_library_remove(
     boundary(|| unsafe {
         runtime::outside_callback()?;
         let id = pointers::utf8(id, id_length)?;
-        catalog(library, 0, |c| c.remove(&id).map_err(Into::into))
+        catalog_mut(library, |c| c.remove(&id).map_err(Into::into))
     })
 }
 /// Capture a preset for one asynchronous paint, erase or smudge stroke.
@@ -313,7 +361,7 @@ pub unsafe extern "C" fn paint_session_begin_preset(
         {
             return Err(ApiError::invalid("brush tool parameters"));
         }
-        let preset = catalog(library, 0, |c| {
+        let preset = catalog_mut(library, |c| {
             c.preset(&id)
                 .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "brush preset"))
         })?;
@@ -339,6 +387,96 @@ pub unsafe extern "C" fn paint_session_begin_preset(
         let sequence = runtime::registry()?
             .session(core, session)?
             .submit(Operation::Begin(definition, point, t.layer_id))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+
+/// Enqueue a bounded parameter-state copy for background migration/compilation.
+/// # Safety
+/// Live library, readable JSON bytes and nonoverlapping writable sequence required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_prepare_state(
+    library: *mut PaintBrushLibrary,
+    json: *const u8,
+    json_length: u64,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        let json = pointers::brush_json(json, json_length)?;
+        let library = runtime::registry()?.brush_library(library)?;
+        let sequence = library.submit(json)?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+/// Read canonical state of one exact prepared record. BUSY means still compiling.
+/// # Safety
+/// Live library, writable required and buffer of capacity bytes required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_prepared_state(
+    library: *mut PaintBrushLibrary,
+    sequence: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(required, 0)?;
+        let library = runtime::registry()?.brush_library(library)?;
+        let snapshot = library.ticket(sequence)?.try_result()?;
+        let bytes = paint_io::brush_state::encode(&snapshot).map_err(crate::file_job::io_error)?;
+        drop(library.current()?);
+        pointers::copy_buffer(&bytes, buffer, capacity, required)
+    })
+}
+/// Read last valid canonical parameter state; pending/failed drafts do not erase it.
+/// # Safety
+/// Live library, writable required and buffer of capacity bytes required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_current_state(
+    library: *mut PaintBrushLibrary,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(required, 0)?;
+        let library = runtime::registry()?.brush_library(library)?;
+        let state = library.current()?;
+        let bytes = paint_io::brush_state::encode(&state).map_err(crate::file_job::io_error)?;
+        pointers::copy_buffer(&bytes, buffer, capacity, required)
+    })
+}
+/// Begin after an exact prepared revision, with waiting confined to Rust workers.
+/// # Safety
+/// Live handles, readable ID, sized aligned tool/point and writable sequence required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_begin_prepared_preset(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    library: *mut PaintBrushLibrary,
+    preparation: u64,
+    id: *const u8,
+    id_length: u64,
+    tool: *const PaintBrushToolDesc,
+    point: *const PaintPoint,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        let id = pointers::utf8(id, id_length)?;
+        let tool = pointers::read_sized(tool)?;
+        validate_tool(tool)?;
+        let point = crate::point(pointers::read_sized(point)?)?;
+        point.validate()?;
+        let ticket = runtime::registry()?
+            .brush_library(library)?
+            .ticket(preparation)?;
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .submit(Operation::BeginPrepared(ticket, id, tool, point))?;
         pointers::write(out_sequence, sequence)
     })
 }

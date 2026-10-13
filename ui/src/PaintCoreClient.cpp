@@ -13,10 +13,13 @@
 #include <QMimeData>
 #include <QGuiApplication>
 #include <QClipboard>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <algorithm>
 #include <atomic>
 #include <vector>
 #include <cmath>
+#include <utility>
 
 Q_DECLARE_METATYPE(PaintSessionInfo)
 Q_DECLARE_METATYPE(PaintFileJobInfo)
@@ -56,19 +59,27 @@ struct BackendConnection {
     std::atomic_bool metadataPending{false};
     std::atomic<quint64> fileJob{0};
 };
+struct BrushCatalogConnection {
+    QMutex mutex;
+    PaintBrushLibrary *library=nullptr;
+    quint64 preparation=0;
+    int workers=0;
+    QByteArray source,preferences;
+};
 class BackendWorker final : public QObject {
     Q_OBJECT
 public:
-    explicit BackendWorker(std::shared_ptr<BackendConnection> connection, QString settingsFile) : m_settingsFile(std::move(settingsFile)), m_connection(std::move(connection)) {
+    explicit BackendWorker(std::shared_ptr<BackendConnection> connection, QString settingsFile,std::shared_ptr<BrushCatalogConnection> catalog) : m_catalog(std::move(catalog)),m_settingsFile(std::move(settingsFile)), m_connection(std::move(connection)) {
         m_timer = new QTimer(this); m_timer->setInterval(16);
         connect(m_timer, &QTimer::timeout, this, &BackendWorker::poll);
     }
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 26) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.26 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 28) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.28 或兼容后续版本")); return;
         }
+        {QMutexLocker lock(&m_catalog->mutex);if(!m_catalog->library && !check(paint_brush_library_create(0,&m_catalog->library)))return;++m_catalog->workers;m_catalogLease=true;}
         auto settings = preferences();
         emit brushPreferences(settings->value("brushes/state").toByteArray());
         emit liquifyPreferences({{"tool",settings->value("liquify/tool",0)},{"size",settings->value("liquify/size",200)},{"strength",settings->value("liquify/strength",50)},{"density",settings->value("liquify/density",100)},{"speed",settings->value("liquify/speed",100)},{"pressure",settings->value("liquify/pressure",false)}});
@@ -106,7 +117,7 @@ public:
     // Disk queries and QSettings synchronization stay on the backend thread.
     void inspectStorage() { evaluateStorage(m_saved, false); }
     void saveStorage(const QVariantMap &values) { evaluateStorage(values, true); }
-    void saveBrushPreferences(const QByteArray &json){auto settings=preferences();settings->setValue("brushes/state",json);settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存画笔设置，请检查配置目录权限"));}
+    void saveBrushPreferences(const QByteArray &json){m_pendingBrushPreferences=json;pollBrushState();}
     void saveLiquifyOptions(const QVariantMap &values) {auto settings=preferences();for(auto it=values.cbegin();it!=values.cend();++it)settings->setValue("liquify/"+it.key(),it.value());settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存液化设置，请检查配置目录权限"));}
     void storeHistoryLimit(int commands) {
         auto settings=preferences();settings->setValue("history/limit",commands);settings->sync();
@@ -133,11 +144,14 @@ public:
     void stop() {
         if (m_stopped) return;
         m_stopped = true; m_timer->stop();
+        while(!m_pendingBrushPreferences.isEmpty()){pollBrushState();if(!m_pendingBrushPreferences.isEmpty())QThread::msleep(1);}
         { QMutexLocker lock(&m_connection->mutex); m_connection->session = nullptr; m_connection->core = nullptr; }
         // Release the GUI lock before cancellation and thread joins.
         if(m_brushSession) check(paint_session_destroy(m_core,&m_brushSession));
+        if(m_previewCatalog)check(paint_brush_library_destroy(&m_previewCatalog));
         if (m_session) check(paint_session_destroy(m_core, &m_session));
         if (m_core) check(paint_core_destroy(&m_core));
+        {QMutexLocker lock(&m_catalog->mutex);if(m_catalogLease && --m_catalog->workers==0){check(paint_brush_library_destroy(&m_catalog->library));m_catalog->preparation=0;m_catalog->source.clear();}m_catalogLease=false;}
         emit finished();
     }
     void watchLayerCopy(quint64 sequence) {m_layerCopySequence=sequence;}
@@ -153,6 +167,7 @@ public:
         emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting);
     }
 signals:
+    void nativeBrushCatalog(quint64 preparation,QByteArray state,QString error);
     void brushFileReady(QByteArray package,QString error,bool exporting);
     void layerClipboardReady(QByteArray bytes);
     void liquifyPreferences(QVariantMap values);
@@ -298,6 +313,7 @@ public:
     }
     void poll() {
         if (!m_session || m_stopped) return;
+        pollBrushState();
         auto info = dto<PaintSessionInfo>();
         if (!check(paint_session_info(m_core, m_session, &info))) return;
         if(info.completed_sequence<m_bootSequence) return;
@@ -434,6 +450,25 @@ public:
         if(paint_session_set_layer_preview(m_core,m_session,layerId,&view,&m_previewRequest)==PAINT_OK) m_previewLayer=layerId;
     }
     // Preview documents run in their own Rust actor; no mutation of the user's document.
+    void pollBrushState() {
+        PaintBrushLibrary *library=nullptr;quint64 preparation=0;QByteArray wanted;
+        {QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;preparation=m_catalog->preparation;wanted=m_catalog->preferences;}
+        if(!library || !preparation){m_pendingBrushPreferences.clear();return;}
+        if(m_pendingBrushPreferences.isEmpty() && preparation==m_reportedBrushPreparation)return;
+        QByteArray canonical(2*1024*1024,'\0');uint64_t required=0;
+        const auto status=paint_brush_library_prepared_state(library,preparation,reinterpret_cast<uint8_t*>(canonical.data()),quint64(canonical.size()),&required);
+        if(status==PAINT_BUSY)return;
+        QString error;
+        if(status!=PAINT_OK){error=immediateError(status);if(paint_brush_library_current_state(library,reinterpret_cast<uint8_t*>(canonical.data()),quint64(canonical.size()),&required)!=PAINT_OK)canonical.clear();}
+        if(!canonical.isEmpty())canonical.resize(qsizetype(required));
+        if(preparation!=m_reportedBrushPreparation){m_reportedBrushPreparation=preparation;emit nativeBrushCatalog(preparation,canonical,error);}
+        if(!m_pendingBrushPreferences.isEmpty()){
+            const auto pending=std::exchange(m_pendingBrushPreferences,{});
+            if(pending!=wanted || !error.isEmpty())return;
+            auto root=QJsonDocument::fromJson(pending).object();const auto native=QJsonDocument::fromJson(canonical).object();root["presets"]=native.value("presets");root["selected"]=native.value("selected");root["version"]=2;
+            auto settings=preferences();settings->setValue("brushes/state",QJsonDocument(root).toJson(QJsonDocument::Compact));settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存画笔设置，请检查配置目录权限"));
+        }
+    }
     void pollBrushPreview() {
         if(m_brushJob.isEmpty()) {
             if(m_brushQueue.isEmpty())return;
@@ -444,9 +479,13 @@ public:
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_BEGIN_STROKE;command.stroke=dto<PaintStrokeDesc>();command.stroke.mode=PAINT_MODE_PAINT;
             command.stroke.radius=static_cast<float>(std::clamp(m_brushJob.value("radius").toDouble()*.35,2.,18.));command.stroke.opacity=m_brushJob.value("opacity").toFloat();command.stroke.spacing=m_brushJob.value("spacing").toFloat();
             for(auto &v:command.stroke.linear_rgba)v=1;
-            auto request=dto<PaintBrushStrokeDesc>();request.brush=command.stroke;request.tip=brushTip(m_brushJob.value("tip").toMap());request.strength=1;
+            if(!m_previewCatalog && paint_brush_library_create(0,&m_previewCatalog)!=PAINT_OK){finishBrushPreview({});return;}
+            auto settings=dto<PaintBrushSettings>();settings.diameter=48;settings.opacity=command.stroke.opacity;settings.spacing=command.stroke.spacing/2;settings.tip=brushTip(m_brushJob.value("tip").toMap());
+            const QByteArray presetId="round-pressure";
+            if(paint_brush_library_edit(m_previewCatalog,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&settings)!=PAINT_OK){finishBrushPreview({});return;}
+            auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
             for(int i=0;i<=32;++i){const double t=i/32.;InputSample sample;sample.position={20+200*t,30+8*std::sin(t*6.283185307)};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
-                const auto status=i==0?paint_session_begin_brush(m_core,m_brushSession,&request,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
+                const auto status=i==0?paint_session_begin_preset(m_core,m_brushSession,m_previewCatalog,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
                 if(status!=PAINT_OK){finishBrushPreview({});return;}}
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_END_STROKE;if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}
             return;
@@ -470,6 +509,11 @@ public:
         m_brushJob.clear();m_brushRequest=0;
     }
     PaintSession *m_brushSession=nullptr;
+    PaintBrushLibrary *m_previewCatalog=nullptr;
+    std::shared_ptr<BrushCatalogConnection> m_catalog;
+    bool m_catalogLease=false;
+    QByteArray m_pendingBrushPreferences;
+    quint64 m_reportedBrushPreparation=0;
     QVariantList m_brushQueue;
     QVariantMap m_brushJob;
     uint64_t m_brushSequence=0,m_brushRequest=0;
@@ -499,7 +543,7 @@ public:
     bool m_stopped = false;
 };
 
-PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) : QObject(parent), m_settingsFile(settingsFile), m_connection(std::make_shared<BackendConnection>()) {
+PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,std::shared_ptr<BrushCatalogConnection> brushCatalog) : QObject(parent), m_settingsFile(settingsFile), m_connection(std::make_shared<BackendConnection>()),m_brushCatalogConnection(brushCatalog?std::move(brushCatalog):std::make_shared<BrushCatalogConnection>()) {
     connect(QGuiApplication::clipboard(),&QClipboard::dataChanged,this,&PaintCoreClient::stateChanged);
     // Focus changes can occur inside a QML enabled binding. Notify only the
     // shortcuts that depend on focus, without reentering document/busy bindings.
@@ -508,7 +552,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
     m_brushLibrary=new BrushLibrary(this);
     qRegisterMetaType<PaintSessionInfo>();
     qRegisterMetaType<PaintFileJobInfo>();
-    m_worker = new BackendWorker(m_connection, settingsFile); m_worker->moveToThread(&m_thread);
+    m_worker = new BackendWorker(m_connection, settingsFile,m_brushCatalogConnection); m_worker->moveToThread(&m_thread);
     connect(m_worker,&BackendWorker::liquifyPreferences,this,[this](const QVariantMap &values){
         m_liquifyTool=std::clamp(values.value("tool").toInt(),0,3);m_liquifySize=std::clamp(values.value("size").toInt(),1,2000);m_liquifyStrength=std::clamp(values.value("strength").toInt(),1,100);m_liquifyDensity=std::clamp(values.value("density").toInt(),1,100);m_liquifySpeed=std::clamp(values.value("speed").toInt(),1,100);m_liquifyPressure=values.value("pressure").toBool();emit liquifyOptionsChanged();
     });
@@ -518,12 +562,21 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile) :
         if(!bytes.isEmpty()){auto *mime=new QMimeData;mime->setData("application/x-drawverse-layers-v1",bytes);QGuiApplication::clipboard()->setMimeData(mime);}
         emit stateChanged();
     });
-    connect(m_worker,&BackendWorker::brushPreferences,m_brushLibrary,[this](const QByteArray &json){if(!json.isEmpty())m_brushLibrary->restore(json);});
+    connect(m_worker,&BackendWorker::brushPreferences,m_brushLibrary,[this](const QByteArray &json){
+        QByteArray source=json;{QMutexLocker lock(&m_brushCatalogConnection->mutex);if(!m_brushCatalogConnection->preferences.isEmpty())source=m_brushCatalogConnection->preferences;}
+        if(!source.isEmpty() && !m_brushLibrary->restore(source))showError(QStringLiteral("无法恢复笔刷设置，原配置已保留"));
+        synchronizeBrushCatalog(m_brushLibrary->snapshot());
+    });
+    connect(m_worker,&BackendWorker::nativeBrushCatalog,this,[this](quint64 preparation,const QByteArray &state,const QString &error){
+        {QMutexLocker lock(&m_brushCatalogConnection->mutex);if(preparation!=m_brushCatalogConnection->preparation)return;}
+        if(!state.isEmpty() && m_brushLibrary->applyNativeCatalog(state)){QMutexLocker lock(&m_brushCatalogConnection->mutex);if(preparation==m_brushCatalogConnection->preparation)m_brushCatalogConnection->source=error.isEmpty()?m_brushLibrary->catalogSnapshot():QByteArray{};}
+        if(!error.isEmpty())showError(error);
+    });
     connect(m_worker,&BackendWorker::brushPreviewReady,m_brushLibrary,&BrushLibrary::acceptPreview);
     connect(m_brushLibrary,&BrushLibrary::cursorChanged,this,&PaintCoreClient::brushCursorPreferencesChanged);
     connect(m_worker,&BackendWorker::brushFileReady,this,[this](const QByteArray &package,const QString &error,bool exporting){
         bool success=error.isEmpty();
-        if(success && !exporting && !m_brushLibrary->importPackage(package)){success=false;showError(QStringLiteral("导入失败：笔刷库容量不足或包参数无效（最多 64 个预设）"));}
+        if(success && !exporting && !m_brushLibrary->importPackage(package)){success=false;showError(QStringLiteral("导入失败：笔刷库容量不足或包参数无效（最多 1024 个预设）"));}
         if(!error.isEmpty())showError(error);
         m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
     });
@@ -666,6 +719,7 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
     if (type == Properties) { command.visible = flag ? 1 : 0; command.opacity = static_cast<float>(amount); }
     if (type == Move || type == Begin) command.point = point(sample);
     if (type == Begin) {
+        if(!synchronizeBrushCatalog(m_brushLibrary->snapshot()))return false;
         command.stroke = dto<PaintStrokeDesc>(); // Layer 0 resolves active layer in execution order.
         command.stroke.mode = m_eraser || sample.tool == PAINT_TOOL_ERASER ? PAINT_MODE_ERASE : PAINT_MODE_PAINT;
         command.stroke.radius = static_cast<float>(m_radius); command.stroke.opacity = static_cast<float>(m_opacity);
@@ -678,11 +732,12 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
         QMutexLocker lock(&m_connection->mutex);
         if (!m_connection->session) return false;
         if(type==Begin) {
-            auto request=dto<PaintBrushStrokeDesc>();request.brush=command.stroke;request.tip=brushTip(m_brushLibrary->tipSettings());request.strength=1;
+            auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;std::copy(std::begin(command.stroke.linear_rgba),std::end(command.stroke.linear_rgba),std::begin(request.linear_rgba));request.strength=1;
             request.operation=command.stroke.mode==PAINT_MODE_ERASE?PAINT_BRUSH_ERASE:PAINT_BRUSH_PAINT;
-            if(m_smudgeTool){request.operation=PAINT_BRUSH_SMUDGE;request.brush.mode=PAINT_MODE_PAINT;
+            if(m_smudgeTool){request.operation=PAINT_BRUSH_SMUDGE;
                 request.strength=static_cast<float>(m_smudgeStrength);request.all_layers=m_smudgeAllLayers;request.finger_painting=m_smudgeFingerPainting;request.pressure_strength=m_smudgePressure;}
-            status=paint_session_begin_brush(m_connection->core,m_connection->session,&request,&command.point,&sequence);
+            const auto presetId=m_brushLibrary->selectedId().toUtf8();QMutexLocker catalogLock(&m_brushCatalogConnection->mutex);
+            status=paint_session_begin_prepared_preset(m_connection->core,m_connection->session,m_brushCatalogConnection->library,m_brushCatalogConnection->preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&command.point,&sequence);
         } else status = paint_session_submit(m_connection->core, m_connection->session, &command, &sequence);
         if (status != PAINT_OK) error = immediateError(status);
     }
@@ -1308,7 +1363,19 @@ bool PaintCoreClient::importBrushes(const QUrl &path) {
 }
 void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
     if(!m_brushPreferencePersistenceEnabled || m_closing)return;
+    {QMutexLocker lock(&m_brushCatalogConnection->mutex);m_brushCatalogConnection->preferences=state;}
+    if(!synchronizeBrushCatalog(state))return;
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,state]{worker->saveBrushPreferences(state);},Qt::QueuedConnection);
+}
+bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
+    const auto root=QJsonDocument::fromJson(state).object();
+    const auto source=QJsonDocument(QJsonObject{{"version",2},{"selected",root.value("selected")},{"presets",root.value("presets")}}).toJson(QJsonDocument::Compact);
+    QMutexLocker lock(&m_brushCatalogConnection->mutex);
+    if(!m_brushCatalogConnection->library)return false;
+    if(source==m_brushCatalogConnection->source && m_brushCatalogConnection->preparation)return true;
+    uint64_t preparation=0;const auto status=paint_brush_library_prepare_state(m_brushCatalogConnection->library,reinterpret_cast<const uint8_t*>(source.constData()),quint64(source.size()),&preparation);
+    if(status!=PAINT_OK){lock.unlock();showError(immediateError(status));return false;}
+    m_brushCatalogConnection->source=source;m_brushCatalogConnection->preparation=preparation;return true;
 }
 bool PaintCoreClient::exportBrush(const QUrl &path) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
