@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+原生笔刷库：[ABI设计](brush-catalog-abi-design.md) / [验收](brush-catalog-abi-validation.md)，ABI 1.27。已接独立库与实际笔触快照；继续推进 Qt 目录镜像/资源存储、VBR图片与ABR。
+
 Rust 笔刷库模型：[设计](brush-catalog-design.md) / [验收](brush-catalog-validation.md)。不可变预设和原子库操作/资源预算已完成；下一阶段接库 ABI、Qt 镜像、持久图片资源及 ABR。
 
 图片笔尖内核：[设计](brush-mask-design.md) / [验收](brush-mask-validation.md)。资源与实际像素路径已完成；接下来完成 Rust 库/持久资源身份，VBR 图片和 ABR 导入。

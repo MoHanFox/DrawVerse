@@ -4,6 +4,7 @@
 #include <string.h>
 #include "async_smoke.h"
 #include "storage_smoke.h"
+#include "brush_catalog_smoke.h"
 
 #define CHECK(condition) do { if (!(condition)) { fprintf(stderr, "C ABI check failed at line %d: %s\n", __LINE__, #condition); return 1; } } while (0)
 _Static_assert(sizeof(void *) == 8, "ABI v1 requires a 64-bit target");
@@ -45,6 +46,7 @@ static void on_event(const PaintEvent *event, void *user) {
 }
 
 int main(void) {
+    CHECK(brush_catalog_smoke() == 0);
     CHECK(storage_smoke() == 0);
     PaintCore *core = NULL;
     PaintDocument *doc = NULL;

@@ -170,7 +170,7 @@ fn capabilities_report_only_real_current_features() {
             ..Default::default()
         };
         assert_eq!(paint_core_version(&mut version), PAINT_OK);
-        assert_eq!((version.major, version.minor, version.patch), (1, 26, 0));
+        assert_eq!((version.major, version.minor, version.patch), (1, 27, 0));
         assert_eq!(caps.features & PAINT_FEATURE_BUCKET, PAINT_FEATURE_BUCKET);
         assert_eq!(
             caps.features & PAINT_FEATURE_CLIPPING,

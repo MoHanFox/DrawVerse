@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新原生笔刷库 ABI：`docs/brush-catalog-abi-design.md` / `docs/brush-catalog-abi-validation.md`；ABI 1.27、独立句柄/准确修订/原子目录操作、捕获预设的真实异步笔触及生命周期；Qt 镜像迁移与图片资源接口仍待接入。
+
 - 最新 Rust 笔刷库模型：`docs/brush-catalog-design.md` / `docs/brush-catalog-validation.md`；验证编译/不可变修订、原子目录操作、旧预设兼容、1024预设/共享资源预算；原生库 ABI 与 Qt 完整迁移仍待接入。
 
 - 最新图片笔尖内核：`docs/brush-mask-design.md` / `docs/brush-mask-validation.md`；不可变覆盖资源/mip、每印章采样计划、孔洞/非方形/旋转完整边界、资源快照与四类写入共用，图片 UI/VBR 资源/ABR 尚待接入，无 ABI 变化。

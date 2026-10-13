@@ -99,6 +99,121 @@ fn advanced_brush_copies_validated_tip_and_preserves_atomic_history() {
 }
 
 #[test]
+fn preset_stroke_captures_definition_before_library_edit_remove_destroy() {
+    let h = Harness::new(40, 40);
+    unsafe {
+        let mut library = ptr::null_mut();
+        assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+        let id = b"12345678-1234-4234-8234-123456789abc";
+        assert_eq!(
+            paint_brush_library_copy(
+                library,
+                id.as_ptr(),
+                id.len() as u64,
+                b"Ellipse".as_ptr(),
+                7
+            ),
+            PAINT_OK
+        );
+        let mut settings = PaintBrushSettings {
+            diameter: 24.,
+            opacity: 1.,
+            spacing: 0.075,
+            tip: PaintBrushTip {
+                hardness: 1.,
+                roundness: 0.2,
+                flow: 1.,
+                pressure_size: 1,
+                pressure_flow: 1,
+                ..dto!(PaintBrushTip)
+            },
+            ..dto!(PaintBrushSettings)
+        };
+        assert_eq!(
+            paint_brush_library_edit(library, id.as_ptr(), id.len() as u64, &settings),
+            PAINT_OK
+        );
+        let mut tool = PaintBrushToolDesc {
+            radius: 10.,
+            strength: 1.,
+            linear_rgba: [1., 0., 0., 1.],
+            ..dto!(PaintBrushToolDesc)
+        };
+        let mut point = PaintPoint {
+            x: 20.5,
+            y: 20.5,
+            pressure: 1.,
+            tool: PAINT_TOOL_MOUSE,
+            ..dto!(PaintPoint)
+        };
+        let mut sequence = 0;
+        tool.radius = 0.;
+        assert_eq!(
+            paint_session_begin_preset(
+                h.core,
+                h.session,
+                library,
+                id.as_ptr(),
+                id.len() as u64,
+                &tool,
+                &point,
+                &mut sequence
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        tool.radius = 10.;
+        assert_eq!(
+            paint_session_begin_preset(
+                h.core,
+                h.session,
+                library,
+                id.as_ptr(),
+                id.len() as u64,
+                &tool,
+                &point,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        settings.tip.roundness = 1.;
+        settings.tip.flow = 0.;
+        assert_eq!(
+            paint_brush_library_edit(library, id.as_ptr(), id.len() as u64, &settings),
+            PAINT_OK
+        );
+        point.x = 0.;
+        tool.linear_rgba = [0.; 4];
+        assert_eq!(point.x, 0.);
+        assert_eq!(tool.linear_rgba, [0.; 4]);
+        assert_eq!(
+            paint_brush_library_remove(library, id.as_ptr(), id.len() as u64),
+            PAINT_OK
+        );
+        assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+        let ended = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_END_STROKE,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(ended.last_error_status, PAINT_OK);
+        assert_eq!(ended.undo_depth, 1);
+        let pixels = h.pixels(0, h.frame(0, ended.revision));
+        assert!(pixels[(20 * 40 + 27) * 4 + 3] > 200);
+        assert_eq!(pixels[(27 * 40 + 20) * 4 + 3], 0);
+        let undone = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(undone.undo_depth, 0);
+        let redone = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_REDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(h.pixels(0, h.frame(0, redone.revision)), pixels);
+    }
+}
+
+#[test]
 fn pick_layer_queues_selection_and_one_move_history() {
     let h = Harness::new(32, 32);
     let painted = h.wait(h.stroke(8., 8.));

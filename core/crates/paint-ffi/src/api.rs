@@ -15,7 +15,57 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 26;
+pub const PAINT_ABI_MINOR: u32 = 27;
+pub const PAINT_FEATURE_BRUSH_CATALOG: u64 = 4194304;
+pub struct PaintBrushLibrary {
+    _private: u8,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintBrushSettings {
+    pub struct_size: u32,
+    pub reserved: u32,
+    pub diameter: f32,
+    pub opacity: f32,
+    pub spacing: f32,
+    pub reserved_tail: u32,
+    pub tip: PaintBrushTip,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintBrushLibraryInfo {
+    pub struct_size: u32,
+    pub preset_count: u32,
+    pub selected_index: u32,
+    pub reserved: u32,
+    pub revision: u64,
+    pub mask_budget_bytes: u64,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintBrushPresetInfo {
+    pub struct_size: u32,
+    pub builtin: u32,
+    pub diameter: f32,
+    pub opacity: f32,
+    pub spacing: f32,
+    pub has_image: u32,
+    pub tip: PaintBrushTip,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintBrushToolDesc {
+    pub struct_size: u32,
+    pub operation: u32,
+    pub layer_id: u64,
+    pub radius: f32,
+    pub strength: f32,
+    pub linear_rgba: [f32; 4],
+    pub all_layers: u32,
+    pub finger_painting: u32,
+    pub pressure_strength: u32,
+    pub reserved: u32,
+}
 pub const PAINT_FEATURE_VBR: u64 = 2097152;
 pub const PAINT_FEATURE_BRUSH_TIP: u64 = 1048576;
 pub const PAINT_BRUSH_PAINT: u32 = 0;

@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 26
+#define PAINT_ABI_MINOR 27
 
 #define PAINT_ABI_PATCH 0
 
@@ -62,6 +62,8 @@
 #define PAINT_EVENT_DOCUMENT_STATE_CHANGED 2
 
 #define PAINT_FEATURE_ASYNC_SESSION 16
+
+#define PAINT_FEATURE_BRUSH_CATALOG 4194304
 
 #define PAINT_FEATURE_BRUSH_TIP 1048576
 
@@ -350,6 +352,8 @@
 
 #define PAINT_WORKING_LINEAR_SRGB 1
 
+typedef struct PaintBrushLibrary PaintBrushLibrary;
+
 typedef struct PaintCore PaintCore;
 
 typedef struct PaintDocument PaintDocument;
@@ -359,6 +363,49 @@ typedef struct PaintSession PaintSession;
 typedef struct PaintSubscription PaintSubscription;
 
 typedef int32_t PaintStatus;
+
+/**
+ * ABI 1.25 procedural tip. All percentages are normalized; angle is degrees.
+ */
+typedef struct PaintBrushTip {
+  uint32_t struct_size;
+  float hardness;
+  float roundness;
+  float angle;
+  float flow;
+  uint32_t pressure_size;
+  uint32_t pressure_flow;
+  uint32_t reserved[3];
+} PaintBrushTip;
+
+typedef struct PaintBrushSettings {
+  uint32_t struct_size;
+  uint32_t reserved;
+  float diameter;
+  float opacity;
+  float spacing;
+  uint32_t reserved_tail;
+  struct PaintBrushTip tip;
+} PaintBrushSettings;
+
+typedef struct PaintBrushLibraryInfo {
+  uint32_t struct_size;
+  uint32_t preset_count;
+  uint32_t selected_index;
+  uint32_t reserved;
+  uint64_t revision;
+  uint64_t mask_budget_bytes;
+} PaintBrushLibraryInfo;
+
+typedef struct PaintBrushPresetInfo {
+  uint32_t struct_size;
+  uint32_t builtin;
+  float diameter;
+  float opacity;
+  float spacing;
+  uint32_t has_image;
+  struct PaintBrushTip tip;
+} PaintBrushPresetInfo;
 
 typedef struct PaintStrokeDesc {
   uint32_t struct_size;
@@ -484,20 +531,6 @@ typedef struct PaintLayerInfo {
   uint64_t allocated_tiles;
 } PaintLayerInfo;
 
-/**
- * ABI 1.25 procedural tip. All percentages are normalized; angle is degrees.
- */
-typedef struct PaintBrushTip {
-  uint32_t struct_size;
-  float hardness;
-  float roundness;
-  float angle;
-  float flow;
-  uint32_t pressure_size;
-  uint32_t pressure_flow;
-  uint32_t reserved[3];
-} PaintBrushTip;
-
 typedef struct PaintBrushStrokeDesc {
   uint32_t struct_size;
   uint32_t operation;
@@ -508,6 +541,19 @@ typedef struct PaintBrushStrokeDesc {
   uint32_t finger_painting;
   uint32_t pressure_strength;
 } PaintBrushStrokeDesc;
+
+typedef struct PaintBrushToolDesc {
+  uint32_t struct_size;
+  uint32_t operation;
+  uint64_t layer_id;
+  float radius;
+  float strength;
+  float linear_rgba[4];
+  uint32_t all_layers;
+  uint32_t finger_painting;
+  uint32_t pressure_strength;
+  uint32_t reserved;
+} PaintBrushToolDesc;
 
 /**
  * ABI 1.18: same brush/point pipeline, independent strength and sampling options.
@@ -846,6 +892,101 @@ extern "C" {
 #endif // __cplusplus
 
 /**
+ * Copy the active preset to a supplied fresh UUID and name, then select it.
+ * # Safety
+ * Live library and readable UTF-8 ID/name bytes are required for this call.
+ */
+PaintStatus paint_brush_library_copy(struct PaintBrushLibrary *library,
+                                     const uint8_t *id,
+                                     uint64_t id_length,
+                                     const uint8_t *name,
+                                     uint64_t name_length);
+
+/**
+ * Create a document-independent library; zero budget selects the default.
+ * # Safety
+ * out must be a writable, aligned pointer slot.
+ */
+PaintStatus paint_brush_library_create(uint64_t mask_budget_bytes, struct PaintBrushLibrary **out);
+
+/**
+ * Destroy a library; already captured stroke definitions remain alive.
+ * # Safety
+ * library must be a readable/writable aligned pointer slot with a live handle.
+ */
+PaintStatus paint_brush_library_destroy(struct PaintBrushLibrary **library);
+
+/**
+ * Atomically edit parameters, retaining an existing immutable image resource.
+ * # Safety
+ * Live library, readable UTF-8 ID and aligned sized settings are required.
+ */
+PaintStatus paint_brush_library_edit(struct PaintBrushLibrary *library,
+                                     const uint8_t *id,
+                                     uint64_t id_length,
+                                     const struct PaintBrushSettings *settings);
+
+/**
+ * Read one consistent small library publication.
+ * # Safety
+ * Live library and writable initialized sized out are required.
+ */
+PaintStatus paint_brush_library_info(struct PaintBrushLibrary *library,
+                                     struct PaintBrushLibraryInfo *out);
+
+/**
+ * Read preset parameters at an exact library revision; stale reads return BUSY.
+ * # Safety
+ * Live library and writable initialized sized out are required.
+ */
+PaintStatus paint_brush_library_preset_info(struct PaintBrushLibrary *library,
+                                            uint64_t revision,
+                                            uint32_t index,
+                                            struct PaintBrushPresetInfo *out);
+
+/**
+ * Remove a user preset; built-ins are protected.
+ * # Safety
+ * Live library and readable UTF-8 ID bytes are required for this call.
+ */
+PaintStatus paint_brush_library_remove(struct PaintBrushLibrary *library,
+                                       const uint8_t *id,
+                                       uint64_t id_length);
+
+/**
+ * Atomically rename a preset.
+ * # Safety
+ * Live library and readable UTF-8 ID/name bytes are required for this call.
+ */
+PaintStatus paint_brush_library_rename(struct PaintBrushLibrary *library,
+                                       const uint8_t *id,
+                                       uint64_t id_length,
+                                       const uint8_t *name,
+                                       uint64_t name_length);
+
+/**
+ * Select an existing preset without changing its parameters.
+ * # Safety
+ * Live library and readable id_length UTF-8 bytes are required for this call.
+ */
+PaintStatus paint_brush_library_select(struct PaintBrushLibrary *library,
+                                       const uint8_t *id,
+                                       uint64_t id_length);
+
+/**
+ * Read UTF-8 identity (field=0) or name (field=1) with caller-buffer semantics.
+ * # Safety
+ * Live library, writable required and buffer of capacity bytes are required.
+ */
+PaintStatus paint_brush_library_text(struct PaintBrushLibrary *library,
+                                     uint64_t revision,
+                                     uint32_t index,
+                                     uint32_t field,
+                                     uint8_t *buffer,
+                                     uint64_t capacity,
+                                     uint64_t *required);
+
+/**
  * Worker-thread synchronous bounded VBR read; returns canonical package JSON.
  * Size-only calls may return BUFFER_TOO_SMALL. File contents are read afresh per call.
  * # Safety
@@ -1087,6 +1228,21 @@ PaintStatus paint_session_begin_brush(struct PaintCore *core,
                                       const struct PaintBrushStrokeDesc *request,
                                       const struct PaintPoint *point,
                                       uint64_t *out_sequence);
+
+/**
+ * Capture a preset for one asynchronous paint, erase or smudge stroke.
+ * # Safety
+ * Live handles, readable ID and sized aligned tool/point, and nonoverlapping
+ * writable sequence are required. No caller memory is retained.
+ */
+PaintStatus paint_session_begin_preset(struct PaintCore *core,
+                                       struct PaintSession *session,
+                                       struct PaintBrushLibrary *library,
+                                       const uint8_t *id,
+                                       uint64_t id_length,
+                                       const struct PaintBrushToolDesc *tool,
+                                       const struct PaintPoint *point,
+                                       uint64_t *out_sequence);
 
 /**
  * Begin an ordinary asynchronous brush stroke with smudge behavior.

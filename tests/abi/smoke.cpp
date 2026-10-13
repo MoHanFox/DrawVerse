@@ -8,6 +8,7 @@
 #include <vector>
 #include "async_smoke.h"
 #include "storage_smoke.h"
+#include "brush_catalog_smoke.h"
 
 #define CHECK(condition) do { if (!(condition)) { std::fprintf(stderr, "C++ ABI check failed at line %d: %s\n", __LINE__, #condition); return 1; } } while (false)
 static_assert(std::is_standard_layout_v<PaintPoint>);
@@ -40,6 +41,7 @@ static void callback(const PaintEvent *event, void *user) noexcept {
 static_assert(noexcept(callback(nullptr, nullptr)));
 
 int main() {
+    CHECK(brush_catalog_smoke() == 0);
     CHECK(storage_smoke() == 0);
     // Callback storage outlives the RAII subscription owner.
     std::atomic<unsigned> events{0};

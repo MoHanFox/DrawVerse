@@ -1,4 +1,12 @@
-# C ABI 1.26.0 契约
+# C ABI 1.27.0 契约
+
+## ABI 1.27：独立原生笔刷库
+
+`PAINT_FEATURE_BRUSH_CATALOG=4194304`。`PaintBrushLibrary` 是独立不透明句柄，不归属任何 core/document。create(0) 使用128MiB库资源预算，非零参数可降低预算；destroy 显式释放，旧地址不能复用。目录同步操作由后台线程调用；未向 GUI 引入图片编译或 IO。
+
+目录信息32字节，预设信息64字节；参数描述64字节，offset24为40字节笔尖；工具描述56字节，offset24为RGBA。读取预设/名称/ID要求非零准确 revision，过期 BUSY 并清空输出；名称/ID为UTF-8 caller-buffer，字段0/1。选择、参数编辑、改名、副本、删除先验证后提交；内置删除拒绝，编辑参数保留现有图片资源。首期目录1024预设，库预算不等同整个进程总内存预算。
+
+`paint_session_begin_preset` 捕获指定预设的不可变定义，覆盖临时工具半径、颜色/操作和涂抹参数；原预设不被工具参数修改。复用原 Begin/Move/End/Cancel 队列与单条历史。库在提交后编辑/删除/销毁不会改动已捕获的笔触。旧入口与旧DTO不变。
 
 ## ABI 1.26：VBR 程序笔刷 IO
 

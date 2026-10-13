@@ -49,6 +49,7 @@ pub(crate) struct Registry {
     documents: HashMap<usize, Arc<DocumentState>>,
     subscriptions: HashMap<usize, Arc<SubscriptionState>>,
     sessions: HashMap<usize, (usize, Arc<Session>)>,
+    brush_libraries: HashMap<usize, Arc<Mutex<paint_core::BrushCatalog>>>,
     // Stable addresses are the ABI tokens. Keeping tombstones prevents stale-pointer ABA.
     #[allow(clippy::vec_box)]
     tokens: Vec<Box<u8>>,
@@ -64,6 +65,30 @@ pub(crate) fn registry() -> ApiResult<MutexGuard<'static, Registry>> {
 }
 
 impl Registry {
+    pub fn create_brush_library(
+        &mut self,
+        catalog: paint_core::BrushCatalog,
+    ) -> ApiResult<*mut PaintBrushLibrary> {
+        let token = self.token::<PaintBrushLibrary>()?;
+        self.brush_libraries
+            .insert(token.addr(), Arc::new(Mutex::new(catalog)));
+        Ok(token)
+    }
+    pub fn brush_library(
+        &self,
+        library: *mut PaintBrushLibrary,
+    ) -> ApiResult<Arc<Mutex<paint_core::BrushCatalog>>> {
+        self.brush_libraries
+            .get(&library.addr())
+            .cloned()
+            .ok_or_else(ApiError::handle)
+    }
+    pub fn destroy_brush_library(&mut self, library: *mut PaintBrushLibrary) -> ApiResult<()> {
+        self.brush_libraries
+            .remove(&library.addr())
+            .map(|_| ())
+            .ok_or_else(ApiError::handle)
+    }
     fn token<T>(&mut self) -> ApiResult<*mut T> {
         if self.tokens.len() >= MAX_TOKENS {
             return Err(ApiError::new(

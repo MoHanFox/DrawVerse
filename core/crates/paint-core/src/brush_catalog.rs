@@ -171,6 +171,9 @@ impl BrushCatalog {
     pub fn revision(&self) -> u64 {
         self.revision
     }
+    pub fn mask_budget(&self) -> usize {
+        self.mask_budget
+    }
     pub fn with_mask_budget(bytes: usize) -> Result<Self> {
         if bytes == 0 || bytes > MAX_CATALOG_MASK_BYTES {
             return Err(Error::InvalidArgument("brush catalog resource budget"));
