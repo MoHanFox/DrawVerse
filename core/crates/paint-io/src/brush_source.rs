@@ -10,6 +10,7 @@ use paint_core::BrushProgram;
 use paint_task::CancellationToken;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::{BTreeMap, BTreeSet},
     fs::File,
     io::{Read, Write},
     path::PathBuf,
@@ -288,6 +289,39 @@ impl SourceStore {
     pub fn encoded_record(&self, id: &str, token: &CancellationToken) -> Result<Vec<u8>> {
         check(token)?;
         self.read(id, "json", MAX_RECORD)
+    }
+    /// Verify one restore batch without rereading a shared original per preset.
+    /// Only verified identities/headers survive between records, not large originals.
+    pub fn validate_references(
+        &self,
+        ids: &BTreeSet<String>,
+        token: &CancellationToken,
+    ) -> Result<()> {
+        check(token)?;
+        if ids.len() > 1024 {
+            return Err(Error::Limit("brush source reference count"));
+        }
+        let mut originals = BTreeMap::new();
+        for id in ids {
+            check(token)?;
+            let record = self.read(id, "json", MAX_RECORD)?;
+            let info: SourceInfo =
+                serde_json::from_slice(&record).map_err(|e| Error::Codec(e.to_string()))?;
+            info.validate()?;
+            let actual = if let Some(version) = originals.get(&info.original_hash) {
+                *version
+            } else {
+                let bytes = self.read(&info.original_hash, "abr", MAX_ORIGINAL)?;
+                let version = header(&bytes)?;
+                originals.insert(info.original_hash.clone(), version);
+                version
+            };
+            if actual != (info.file_version, info.file_subversion) {
+                return Err(Error::Invalid("brush source original version"));
+            }
+        }
+        check(token)?;
+        Ok(())
     }
     /// Import a portable source pair only after complete identity/schema validation.
     pub fn put_verified(

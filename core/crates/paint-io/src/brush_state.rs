@@ -1,5 +1,5 @@
 //! Migration/normalization of parameter state; excludes tool/global preferences.
-use crate::{brush_resource::ResourceStore, Error, Result};
+use crate::{brush_resource::ResourceStore, brush_source::SourceStore, Error, Result};
 use paint_core::{BrushCatalog, BrushSettings, BrushTip};
 use paint_task::CancellationToken;
 use serde::{Deserialize, Serialize};
@@ -61,9 +61,17 @@ struct Row {
     pressure_flow: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mask_resource: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_resource: Option<String>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
-    decode_inner(bytes, mask_budget, None, &CancellationToken::default())
+    decode_inner(
+        bytes,
+        mask_budget,
+        None,
+        None,
+        &CancellationToken::default(),
+    )
 }
 pub fn decode_with_resources(
     bytes: &[u8],
@@ -71,12 +79,22 @@ pub fn decode_with_resources(
     resources: &ResourceStore,
     token: &CancellationToken,
 ) -> Result<BrushCatalog> {
-    decode_inner(bytes, mask_budget, Some(resources), token)
+    decode_inner(bytes, mask_budget, Some(resources), None, token)
+}
+pub fn decode_with_sources(
+    bytes: &[u8],
+    mask_budget: usize,
+    resources: Option<&ResourceStore>,
+    sources: &SourceStore,
+    token: &CancellationToken,
+) -> Result<BrushCatalog> {
+    decode_inner(bytes, mask_budget, resources, Some(sources), token)
 }
 fn decode_inner(
     bytes: &[u8],
     mask_budget: usize,
     resources: Option<&ResourceStore>,
+    sources: Option<&SourceStore>,
     token: &CancellationToken,
 ) -> Result<BrushCatalog> {
     if bytes.len() > 2 * 1024 * 1024 {
@@ -84,14 +102,15 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=3) {
+    if !matches!(state.version, 1..=4) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
+    let mut references = std::collections::BTreeSet::new();
     for row in state.presets {
         crate::check(token)?;
         let mask = if let Some(id) = row.mask_resource {
-            if state.version != 3 {
+            if state.version < 3 {
                 return Err(Error::Unsupported("brush images require state v3".into()));
             }
             Some(
@@ -105,6 +124,12 @@ fn decode_inner(
         } else {
             None
         };
+        if let Some(id) = &row.source_resource {
+            if state.version != 4 {
+                return Err(Error::Unsupported("brush sources require state v4".into()));
+            }
+            references.insert(id.clone());
+        }
         let tip = if state.version == 1 {
             BrushTip::default()
         } else {
@@ -131,9 +156,16 @@ fn decode_inner(
                 tip,
                 mask,
             },
+            row.source_resource,
         ));
     }
-    BrushCatalog::from_entries(entries, state.selected, mask_budget).map_err(Into::into)
+    let catalog = BrushCatalog::from_entries_with_sources(entries, state.selected, mask_budget)?;
+    if !references.is_empty() {
+        sources
+            .ok_or(Error::Unsupported("brush source store is required".into()))?
+            .validate_references(&references, token)?;
+    }
+    Ok(catalog)
 }
 pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
     let mut presets = Vec::new();
@@ -144,7 +176,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
         let mask_resource = if let Some(mask) = &s.mask {
-            version = 3;
+            version = version.max(3);
             Some(
                 mask.resource_id()
                     .ok_or(Error::Unsupported(
@@ -155,6 +187,10 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         } else {
             None
         };
+        let source_resource = p.source_resource().map(str::to_owned);
+        if source_resource.is_some() {
+            version = 4;
+        }
         presets.push(Row {
             id: id.clone(),
             name: p.name().into(),
@@ -168,6 +204,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             pressure_size: Some(s.tip.pressure_size),
             pressure_flow: Some(s.tip.pressure_flow),
             mask_resource,
+            source_resource,
         });
     }
     serde_json::to_vec(&State {

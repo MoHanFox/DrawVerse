@@ -4,6 +4,59 @@ fn id(n: usize) -> String {
     format!("12345678-1234-4234-8234-{n:012x}")
 }
 #[test]
+fn source_identity_is_immutable_metadata_and_survives_edit_rename_and_copy() {
+    let mut library = BrushCatalog::default();
+    let old = library.selected();
+    let source = "a".repeat(64);
+    library
+        .set_source("round-pressure", Some(source.clone()))
+        .unwrap();
+    assert!(old.source_resource().is_none());
+    let captured = library.selected();
+    assert_eq!(captured.source_resource(), Some(source.as_str()));
+    let revision = library.revision();
+    library
+        .set_source("round-pressure", Some(source.clone()))
+        .unwrap();
+    assert_eq!(library.revision(), revision);
+    assert!(library
+        .set_source("round-pressure", Some("../bad".into()))
+        .is_err());
+    assert!(library.set_source("missing", Some(source.clone())).is_err());
+    assert_eq!(library.revision(), revision);
+    assert!(Arc::ptr_eq(&captured, &library.selected()));
+    let mut settings = captured.settings().clone();
+    settings.tip.flow = 0.5;
+    library.edit("round-pressure", settings).unwrap();
+    library.rename("round-pressure", "来源保留".into()).unwrap();
+    assert_eq!(library.selected().source_resource(), Some(source.as_str()));
+    assert_eq!(captured.settings().tip.flow, 1.);
+    library.save_copy(id(9), "副本".into()).unwrap();
+    assert_eq!(library.selected().source_resource(), Some(source.as_str()));
+    library.set_source(&id(9), None).unwrap();
+    assert!(library.selected().source_resource().is_none());
+    assert_eq!(
+        library.preset("round-pressure").unwrap().source_resource(),
+        Some(source.as_str())
+    );
+    let mut a = Document::new(40, 40).unwrap();
+    let mut b = Document::new(40, 40).unwrap();
+    for (document, preset) in [(&mut a, old), (&mut b, captured)] {
+        document
+            .begin_brush_stroke(
+                preset.settings().definition(),
+                InputPoint::new(20., 20., 1.),
+            )
+            .unwrap();
+        document.end_stroke().unwrap();
+    }
+    for y in 0..40 {
+        for x in 0..40 {
+            assert_eq!(a.pixel(x, y), b.pixel(x, y));
+        }
+    }
+}
+#[test]
 fn defaults_preserve_legacy_parameters_and_edit_keeps_captured_revision() {
     let mut library = BrushCatalog::default();
     assert_eq!(library.ids().len(), 4);

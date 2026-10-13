@@ -1,6 +1,8 @@
 # 模块顺序与验收
 
-笔刷来源资源：[设计](brush-source-design.md) / [验收](brush-source-validation.md)。完整来源/导入时快照/报告资源存取已实现；原生预设/状态/Qt/VBR与批量来源IO继续后续。
+原生来源引用/状态：[设计](brush-source-state-design.md) / [验收](brush-source-state-validation.md)。目录保留/v4状态/批次验证已实现；原生准备桥/Qt/VBR与高频来源复用继续后续。
+
+笔刷来源资源：[设计](brush-source-design.md) / [验收](brush-source-validation.md)。完整来源/导入时快照/报告资源存取已实现。
 
 ABR基础转换：[设计](abr-conversion-design.md) / [验收](abr-conversion-validation.md)。严格参数映射/真实编译/逐叶报告已实现；外部无动态baseline alpha核对通过，但实际样本为部分转换；原生Qt入口/动态继续后续。
 

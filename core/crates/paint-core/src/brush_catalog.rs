@@ -47,13 +47,14 @@ impl BrushSettings {
         }
     }
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BrushPreset {
     id: String,
     name: String,
     builtin: bool,
     settings: BrushSettings,
     program: BrushProgram,
+    source_resource: Option<String>,
 }
 fn uuid(id: &str) -> bool {
     id.len() == 36
@@ -84,6 +85,7 @@ impl BrushPreset {
             builtin,
             settings,
             program,
+            source_resource: None,
         })
     }
     pub fn id(&self) -> &str {
@@ -100,6 +102,21 @@ impl BrushPreset {
     }
     pub fn program(&self) -> &BrushProgram {
         &self.program
+    }
+    pub fn source_resource(&self) -> Option<&str> {
+        self.source_resource.as_deref()
+    }
+    pub fn with_source(mut self, source: Option<String>) -> Result<Self> {
+        if source.as_ref().is_some_and(|id| {
+            id.len() != 64
+                || !id
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        }) {
+            return Err(Error::InvalidArgument("brush source identity"));
+        }
+        self.source_resource = source;
+        Ok(self)
     }
 }
 #[derive(Clone, Debug)]
@@ -148,6 +165,20 @@ impl BrushCatalog {
         selected: String,
         mask_budget: usize,
     ) -> Result<Self> {
+        Self::from_entries_with_sources(
+            entries
+                .into_iter()
+                .map(|(id, name, settings)| (id, name, settings, None))
+                .collect(),
+            selected,
+            mask_budget,
+        )
+    }
+    pub fn from_entries_with_sources(
+        entries: Vec<(String, String, BrushSettings, Option<String>)>,
+        selected: String,
+        mask_budget: usize,
+    ) -> Result<Self> {
         let mut restored = Self::with_mask_budget(mask_budget)?;
         if entries.len() < 4 || entries.len() > MAX_BRUSH_PRESETS {
             return Err(Error::ResourceLimit("brush catalog count"));
@@ -155,7 +186,7 @@ impl BrushCatalog {
         let mut seen = BTreeSet::new();
         let mut order = Vec::new();
         let mut presets = BTreeMap::new();
-        for (id, name, settings) in entries {
+        for (id, name, settings, source) in entries {
             if !seen.insert(id.clone()) {
                 return Err(Error::InvalidArgument("duplicate brush preset ID"));
             }
@@ -166,7 +197,7 @@ impl BrushCatalog {
                 BrushPreset::new(id.clone(), name, settings)?
             };
             order.push(id.clone());
-            presets.insert(id, Arc::new(preset));
+            presets.insert(id, Arc::new(preset.with_source(source)?));
         }
         if !BUILTINS.iter().all(|id| seen.contains(*id)) || !seen.contains(&selected) {
             return Err(Error::InvalidArgument("missing built-in or selected brush"));
@@ -245,7 +276,8 @@ impl BrushCatalog {
             .presets
             .get(id)
             .ok_or(Error::InvalidArgument("unknown brush preset"))?;
-        let after = BrushPreset::build(id.into(), before.name.clone(), settings, before.builtin)?;
+        let after = BrushPreset::build(id.into(), before.name.clone(), settings, before.builtin)?
+            .with_source(before.source_resource.clone())?;
         self.resource_budget(std::iter::once(&after.settings), Some(id))?;
         self.presets.insert(id.into(), Arc::new(after));
         self.revision += 1;
@@ -256,14 +288,30 @@ impl BrushCatalog {
             .presets
             .get(id)
             .ok_or(Error::InvalidArgument("unknown brush preset"))?;
-        let after = BrushPreset::build(id.into(), name, before.settings.clone(), before.builtin)?;
+        let after = BrushPreset::build(id.into(), name, before.settings.clone(), before.builtin)?
+            .with_source(before.source_resource.clone())?;
         self.presets.insert(id.into(), Arc::new(after));
         self.revision += 1;
         Ok(())
     }
     pub fn save_copy(&mut self, id: String, name: String) -> Result<()> {
-        let preset = BrushPreset::new(id, name, self.selected().settings.clone())?;
+        let selected = self.selected();
+        let preset = BrushPreset::new(id, name, selected.settings.clone())?
+            .with_source(selected.source_resource.clone())?;
         self.import(vec![preset])
+    }
+    pub fn set_source(&mut self, id: &str, source: Option<String>) -> Result<()> {
+        let before = self
+            .presets
+            .get(id)
+            .ok_or(Error::InvalidArgument("unknown brush preset"))?;
+        if before.source_resource == source {
+            return Ok(());
+        }
+        let after = (**before).clone().with_source(source)?;
+        self.presets.insert(id.into(), Arc::new(after));
+        self.revision += 1;
+        Ok(())
     }
     pub fn remove(&mut self, id: &str) -> Result<()> {
         let before = self

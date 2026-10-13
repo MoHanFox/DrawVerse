@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新原生来源引用/状态：`docs/brush-source-state-design.md` / `docs/brush-source-state-validation.md`；来源与执行分离/不可变修订/编辑副本保留、v4显式上下文与批次原始验证；准备桥/Qt/VBR与高频来源复用继续后续，无ABI变化。
+
 - 最新笔刷来源资源：`docs/brush-source-design.md` / `docs/brush-source-validation.md`；完整原始来源/小型导入快照与报告、SHA身份/不覆盖保存/原字节交换；原生预设与状态/Qt/VBR接入、批量来源IO继续后续，无ABI变化。
 
 - 最新ABR基础转换：`docs/abr-conversion-design.md` / `docs/abr-conversion-validation.md`；严格单位/范围、真实编译/共享覆盖、逐叶支持与未执行报告、外部无动态alpha核对；来源保存/原生Qt入口/动态与PS核验继续后续，无ABI变化。
