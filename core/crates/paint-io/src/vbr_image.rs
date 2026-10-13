@@ -212,7 +212,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
     let manifest: Manifest = vbr::json(&vbr::read_entry(&mut zip, "manifest.json", MAX_JSON)?)?;
     if manifest.format != "DrawVerseBrush"
         || manifest.version.major != 1
-        || manifest.version.minor > 3
+        || manifest.version.minor > 4
     {
         return Err(Error::Unsupported("VBR format/version".into()));
     }
@@ -240,6 +240,18 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             return Err(Error::Invalid("VBR preset identity mismatch"));
         }
         brushes.push(preset);
+    }
+    if manifest.version.minor < 4
+        && brushes.iter().any(|b| {
+            b.parameters
+                .pressure_dynamics
+                .as_ref()
+                .is_some_and(|p| p.has_opacity())
+        })
+    {
+        return Err(Error::Unsupported(
+            "VBR opacity pressure require version 1.4".into(),
+        ));
     }
     if manifest.version.minor < 3
         && brushes
@@ -357,7 +369,14 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle
+            minor: if bundle.package.brushes.iter().any(|b| {
+                b.parameters
+                    .pressure_dynamics
+                    .as_ref()
+                    .is_some_and(|p| p.has_opacity())
+            }) {
+                4
+            } else if bundle
                 .package
                 .brushes
                 .iter()

@@ -154,7 +154,19 @@ impl Package {
                 return Err(Error::Invalid("VBR preset identity/name"));
             }
             let pressure = b.parameters.pressure_dynamics.is_some();
-            if b.behavior_version != if pressure { 2 } else { 1 }
+            let opacity = b
+                .parameters
+                .pressure_dynamics
+                .as_ref()
+                .is_some_and(|p| p.has_opacity());
+            if b.behavior_version
+                != if opacity {
+                    3
+                } else if pressure {
+                    2
+                } else {
+                    1
+                }
                 || !matches!(
                     b.engine_profile.as_str(),
                     "legacy.round" | "drawverse.brush"
@@ -171,6 +183,7 @@ impl Package {
                             | "pressure"
                             | "dab-flow"
                             | "pressure-curves"
+                            | "opacity-pressure"
                     )
                 })
             {
@@ -187,6 +200,10 @@ impl Package {
                     .iter()
                     .any(|c| c == "pressure-curves")
                 || (pressure && b.engine_profile != "drawverse.brush")
+                || opacity
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "opacity-pressure")
             {
                 return Err(Error::Invalid("VBR pressure behavior/capability"));
             }

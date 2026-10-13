@@ -1,6 +1,6 @@
 # 统一笔刷系统设计
 
-状态：2026-10-14，分阶段实施。程序/图片笔尖、原生目录、VBR1.1、描边与ABR6/10基础导入已有阶段实现，见 [路线与结果](roadmap.md)、[ABR入口验收](abr-entry-validation.md)。VBR来源交换已完成阶段接入；压力曲线内核已有真实像素验收，状态/界面继续接入。完整ABR动态与动态湿混仍待完成，本文不代表整体实现验收。
+状态：2026-10-14，分阶段实施。程序/图片笔尖、原生目录、VBR1.1、描边与ABR6/10基础导入已有阶段实现，见 [路线与结果](roadmap.md)、[ABR入口验收](abr-entry-validation.md)。VBR来源交换已完成阶段接入；压力曲线内核已有真实像素验收，状态/界面已接入，并新增独立不透明度压感，见 [验收](brush-opacity-pressure-validation.md)。完整ABR动态与动态湿混仍待完成，本文不代表整体实现验收。
 
 目标：达到 Procreate 类笔刷的参数深度与线条手感，逐步兼容 Photoshop ABR，采用开放的 VBR 原生格式。画笔、橡皮和独立涂抹工具复用同一系统，保留 Rust → C ABI → PaintCoreClient → QML 边界。Python 插件最后实施。
 

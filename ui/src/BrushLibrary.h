@@ -23,6 +23,7 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(qreal angle READ angle WRITE setAngle NOTIFY settingsChanged)
     Q_PROPERTY(qreal flow READ flow WRITE setFlow NOTIFY settingsChanged)
     Q_PROPERTY(bool pressureSize READ pressureSize WRITE setPressureSize NOTIFY settingsChanged)
+    Q_PROPERTY(bool pressureOpacity READ pressureOpacity WRITE setPressureOpacity NOTIFY settingsChanged)
     Q_PROPERTY(bool pressureFlow READ pressureFlow WRITE setPressureFlow NOTIFY settingsChanged)
     Q_PROPERTY(bool cursorOutline READ cursorOutline WRITE setCursorOutline NOTIFY cursorChanged)
     Q_PROPERTY(bool cursorCenter READ cursorCenter WRITE setCursorCenter NOTIFY cursorChanged)
@@ -69,6 +70,8 @@ public:
     qreal flow() const;
     bool pressureSize() const;
     bool pressureFlow() const;
+    bool pressureOpacity() const;
+    void setPressureOpacity(bool enabled);
     QVariantMap tipSettings() const;
     QByteArray exportPackage(bool includeSource=false) const;
     bool importPackage(const QByteArray &json);

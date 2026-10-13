@@ -71,6 +71,8 @@ pub struct BrushProgram {
     mask: Option<Arc<BrushMask>>,
     size_response: Option<CompiledPressureControl>,
     flow_response: Option<CompiledPressureControl>,
+    opacity_response: Option<CompiledPressureControl>,
+    pressure_opacity: bool,
 }
 
 /// Geometry and minification compiled once for one pressure-sized image dab.
@@ -110,6 +112,8 @@ impl BrushProgram {
             mask: definition.mask,
             size_response: definition.dynamics.size.compile(),
             flow_response: definition.dynamics.flow.compile(),
+            opacity_response: definition.dynamics.opacity.compile(),
+            pressure_opacity: definition.dynamics.pressure_opacity,
         })
     }
 
@@ -124,6 +128,13 @@ impl BrushProgram {
         self.flow_response
             .as_ref()
             .map_or(pressure, |curve| curve.response(pressure))
+    }
+    pub(crate) fn opacity_pressure(&self, pressure: f32) -> Option<f32> {
+        self.pressure_opacity.then(|| {
+            self.opacity_response
+                .as_ref()
+                .map_or(pressure, |curve| curve.response(pressure))
+        })
     }
     #[inline]
     pub fn coverage(&self, dx: f64, dy: f64, radius: f64) -> f32 {

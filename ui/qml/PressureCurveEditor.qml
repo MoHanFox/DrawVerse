@@ -7,7 +7,7 @@ ColumnLayout {
     id:root
     required property var library
     required property string target
-    property string prefix:target==="size"?"pressureSize":"pressureFlow"
+    property string prefix:target==="size"?"pressureSize":target==="opacity"?"pressureOpacity":"pressureFlow"
     readonly property var control:library.pressureDynamics[target]
     readonly property var points:control.curve
     property int selected:0

@@ -264,6 +264,7 @@ fn pressure_packages_round_trip_through_native_entry() {
         pressure_dynamics: None,
     };
     let dynamics = paint_core::BrushDynamics {
+        pressure_opacity: true,
         flow: paint_core::PressureControl::new(paint_core::PressureCurve::default(), 0.2).unwrap(),
         ..Default::default()
     };
@@ -276,8 +277,12 @@ fn pressure_packages_round_trip_through_native_entry() {
             id: "12345678-1234-4234-8234-123456789abd".into(),
             name: "pressure".into(),
             engine_profile: "drawverse.brush".into(),
-            behavior_version: 2,
-            required_capabilities: vec!["procedural-tip".into(), "pressure-curves".into()],
+            behavior_version: 3,
+            required_capabilities: vec![
+                "procedural-tip".into(),
+                "pressure-curves".into(),
+                "opacity-pressure".into(),
+            ],
             parameters,
             tip_resource: None,
             source_resource: None,
@@ -307,7 +312,15 @@ fn pressure_packages_round_trip_through_native_entry() {
             PAINT_OK
         );
         let data = paint_io::vbr::Package::from_json(&output[..required as usize]).unwrap();
-        assert!(data.brushes[0].parameters.pressure_dynamics.is_some());
+        assert!(
+            data.brushes[0]
+                .parameters
+                .pressure_dynamics
+                .as_ref()
+                .unwrap()
+                .core()
+                .pressure_opacity
+        );
         let encoded = target.to_str().unwrap();
         assert_eq!(
             paint_brush_library_package_write(

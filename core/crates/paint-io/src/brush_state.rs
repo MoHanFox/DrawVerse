@@ -136,7 +136,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=5) {
+    if !matches!(state.version, 1..=6) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -180,9 +180,13 @@ fn decode_inner(
                     .ok_or(Error::Invalid("brush pressure flow"))?,
             }
         };
-        if row.pressure_dynamics.is_some() && state.version != 5 {
+        if row
+            .pressure_dynamics
+            .as_ref()
+            .is_some_and(|p| state.version < if p.has_opacity() { 6 } else { 5 })
+        {
             return Err(Error::Unsupported(
-                "pressure dynamics require state v5".into(),
+                "pressure dynamics require state v5 or opacity state v6".into(),
             ));
         }
         entries.push((
@@ -224,7 +228,15 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
         let pressure_dynamics = if s.dynamics != paint_core::BrushDynamics::default() {
-            version = 5;
+            version = version.max(
+                if s.dynamics.pressure_opacity
+                    || s.dynamics.opacity != paint_core::PressureControl::default()
+                {
+                    6
+                } else {
+                    5
+                },
+            );
             Some(crate::brush_pressure::PressureParameters::from_core(
                 &s.dynamics,
             ))

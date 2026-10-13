@@ -23,6 +23,7 @@ fn dynamics() -> BrushDynamics {
             0.,
         )
         .unwrap(),
+        ..Default::default()
     }
 }
 fn package() -> Package {
@@ -50,6 +51,82 @@ fn package() -> Package {
             source_resource: None,
         }],
     }
+}
+
+#[test]
+fn opacity_state6_vbr14_versions_flags_and_disabled_data_are_preserved() {
+    let mut d = dynamics();
+    d.pressure_opacity = true;
+    d.opacity = PressureControl::new(PressureCurve::default(), 0.2).unwrap();
+    let mut catalog = BrushCatalog::default();
+    let mut settings = catalog.selected().settings().clone();
+    settings.dynamics = d.clone();
+    catalog.edit("round-pressure", settings).unwrap();
+    let encoded = brush_state::encode(&catalog).unwrap();
+    let mut state: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(state["version"], 6);
+    assert_eq!(
+        brush_state::decode(&encoded, MAX_CATALOG_MASK_BYTES)
+            .unwrap()
+            .selected()
+            .settings()
+            .dynamics,
+        d
+    );
+    state["version"] = 5.into();
+    assert!(
+        brush_state::decode(&serde_json::to_vec(&state).unwrap(), MAX_CATALOG_MASK_BYTES).is_err()
+    );
+    let mut p = package();
+    p.brushes[0].behavior_version = 3;
+    p.brushes[0]
+        .required_capabilities
+        .push("opacity-pressure".into());
+    p.brushes[0].parameters.pressure_dynamics = Some(PressureParameters::from_core(&d));
+    let token = CancellationToken::default();
+    let bundle = vbr_image::ImageBundle::new(p.clone(), BTreeMap::new(), &token).unwrap();
+    let bytes = vbr_image::encode(&bundle, &token).unwrap();
+    assert_eq!(
+        vbr_image::decode(&bytes, &token)
+            .unwrap()
+            .definition(0)
+            .unwrap()
+            .dynamics,
+        d
+    );
+    assert!(vbr_image::decode(&rewrite(&bytes, 3), &token).is_err());
+    p.brushes[0]
+        .required_capabilities
+        .retain(|c| c != "opacity-pressure");
+    assert!(p.validate().is_err());
+    let mut bad: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    let preset = bad["presets"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|p| p["id"] == "round-pressure")
+        .unwrap();
+    preset["pressureDynamics"]["opacity"]["enabled"] = 1.into();
+    assert!(
+        brush_state::decode(&serde_json::to_vec(&bad).unwrap(), MAX_CATALOG_MASK_BYTES).is_err()
+    );
+    let mut bad: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    let preset = bad["presets"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|p| p["id"] == "round-pressure")
+        .unwrap();
+    preset["pressureDynamics"]["opacity"] = serde_json::Value::Null;
+    assert!(
+        brush_state::decode(&serde_json::to_vec(&bad).unwrap(), MAX_CATALOG_MASK_BYTES).is_err()
+    );
+    d.pressure_opacity = false;
+    let parameters = PressureParameters::from_core(&d);
+    assert!(parameters.has_opacity());
+    let roundtrip: PressureParameters =
+        serde_json::from_slice(&serde_json::to_vec(&parameters).unwrap()).unwrap();
+    assert_eq!(roundtrip.core(), &d);
 }
 fn rewrite(bytes: &[u8], minor: u32) -> Vec<u8> {
     let mut input = ZipArchive::new(Cursor::new(bytes)).unwrap();
@@ -106,7 +183,7 @@ fn state5_and_vbr13_compile_to_same_pressure_pixels_and_never_downgrade() {
     }
     assert_eq!(state.pixel(16, 16).alpha(), 0.75);
     assert_eq!(state.pixel(21, 16).alpha(), 0.);
-    for version in [0, 1, 2, 4] {
+    for version in [0, 1, 2, 5] {
         assert!(vbr_image::decode(&rewrite(&packed, version), &token).is_err());
     }
     assert!(paint_io::vbr::encode(&package, &token).is_err());

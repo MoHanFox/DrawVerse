@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 35
+#define PAINT_ABI_MINOR 36
 
 #define PAINT_ABI_PATCH 0
 
@@ -102,6 +102,11 @@
 #define PAINT_FEATURE_LIQUIFY 262144
 
 #define PAINT_FEATURE_MASKS 1024
+
+/**
+ * Independent per-stroke opacity pressure controls in state v6 and VBR 1.4.
+ */
+#define PAINT_FEATURE_OPACITY_PRESSURE 2147483648
 
 #define PAINT_FEATURE_PASS_THROUGH 65536
 

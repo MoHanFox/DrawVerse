@@ -1,0 +1,744 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:vbr:pressure:1.4",
+  "title": "DrawVerse VBR 1.4 independent opacity pressure executable subset",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/manifest"
+    },
+    {
+      "$ref": "#/$defs/preset"
+    },
+    {
+      "$ref": "#/$defs/sourceRecord"
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diameter",
+        "spacing",
+        "dabOpacity",
+        "hardness",
+        "roundness",
+        "angle",
+        "flow",
+        "pressureSize",
+        "pressureFlow"
+      ],
+      "properties": {
+        "diameter": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "spacing": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 0.5
+        },
+        "dabOpacity": {
+          "$ref": "#/$defs/ratio"
+        },
+        "hardness": {
+          "$ref": "#/$defs/ratio"
+        },
+        "roundness": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1
+        },
+        "angle": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "flow": {
+          "$ref": "#/$defs/ratio"
+        },
+        "pressureSize": {
+          "type": "boolean"
+        },
+        "pressureFlow": {
+          "type": "boolean"
+        },
+        "pressureDynamics": {
+          "$ref": "#/$defs/pressureDynamics"
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "engineProfile",
+        "behaviorVersion",
+        "requiredCapabilities",
+        "parameters"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "allOf": [
+            {
+              "pattern": "\\S"
+            },
+            {
+              "pattern": "^[^\\u0000]*$"
+            }
+          ]
+        },
+        "engineProfile": {
+          "enum": [
+            "legacy.round",
+            "drawverse.brush"
+          ]
+        },
+        "behaviorVersion": {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "enum": [
+              "procedural-tip",
+              "pressure",
+              "dab-flow",
+              "image-tip",
+              "pressure-curves",
+              "opacity-pressure"
+            ]
+          }
+        },
+        "parameters": {
+          "$ref": "#/$defs/parameters"
+        },
+        "tipResource": {
+          "$ref": "#/$defs/hash"
+        },
+        "sourceResource": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "engineProfile": {
+                "const": "legacy.round"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "properties": {
+                  "hardness": {
+                    "const": 1
+                  },
+                  "roundness": {
+                    "const": 1
+                  },
+                  "angle": {
+                    "const": 0
+                  },
+                  "flow": {
+                    "const": 1
+                  },
+                  "pressureSize": {
+                    "const": true
+                  },
+                  "pressureFlow": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "tipResource"
+            ]
+          },
+          "then": {
+            "properties": {
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "image-tip"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "image-tip"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "pressureDynamics"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  2,
+                  3
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "pressure-curves"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "const": 1
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "pressure-curves"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "pressureDynamics"
+                ],
+                "properties": {
+                  "pressureDynamics": {
+                    "required": [
+                      "opacity"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "const": 3
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "opacity-pressure"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  1,
+                  2
+                ]
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "opacity-pressure"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "version",
+        "packageId",
+        "brushes",
+        "groups",
+        "assets"
+      ],
+      "properties": {
+        "format": {
+          "const": "DrawVerseBrush"
+        },
+        "version": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "major",
+            "minor"
+          ],
+          "properties": {
+            "major": {
+              "const": 1
+            },
+            "minor": {
+              "const": 4
+            }
+          }
+        },
+        "packageId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "brushes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "path"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^brushes/[0-9a-f-]{36}\\.json$"
+              }
+            }
+          }
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "assets": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "path",
+              "sha256",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/hash"
+              },
+              "sha256": {
+                "$ref": "#/$defs/hash"
+              },
+              "kind": {
+                "enum": [
+                  "tip-mask",
+                  "source-record",
+                  "abr-original"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^(assets/[0-9a-f]{64}\\.png|sources/[0-9a-f]{64}\\.json|originals/[0-9a-f]{64}\\.abr)$"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "tip-mask"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "path": {
+                      "pattern": "^assets/[0-9a-f]{64}\\.png$"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "source-record"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "path": {
+                      "pattern": "^sources/[0-9a-f]{64}\\.json$"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "abr-original"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "path": {
+                      "pattern": "^originals/[0-9a-f]{64}\\.abr$"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sourceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "format",
+        "originalHash",
+        "fileVersion",
+        "presetIndex",
+        "originalName",
+        "converter",
+        "converterVersion",
+        "baseline",
+        "report"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "format": {
+          "const": "abr"
+        },
+        "originalHash": {
+          "$ref": "#/$defs/hash"
+        },
+        "fileVersion": {
+          "enum": [
+            1,
+            2,
+            6,
+            10
+          ]
+        },
+        "fileSubversion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "enum": [
+            1,
+            2,
+            null
+          ]
+        },
+        "presetIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1023
+        },
+        "originalName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "converter": {
+          "const": "drawverse.abr.basic"
+        },
+        "converterVersion": {
+          "const": 1
+        },
+        "baseline": {
+          "$ref": "#/$defs/legacyParameters"
+        },
+        "tipResource": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/hash"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "report": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "status",
+              "reason"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1048576,
+                "pattern": "^[^\\u0000]+$",
+                "description": "All paths together are bounded to 1 MiB UTF-8 by the codec."
+              },
+              "status": {
+                "enum": [
+                  "mapped",
+                  "approximate",
+                  "notExecuted"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[^\\u0000]+$",
+                "description": "The codec also enforces at most 1024 UTF-8 bytes."
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "fileVersion": {
+                "enum": [
+                  6,
+                  10
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fileSubversion"
+            ],
+            "properties": {
+              "fileSubversion": {
+                "enum": [
+                  1,
+                  2
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "fileSubversion": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "legacyParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diameter",
+        "spacing",
+        "dabOpacity",
+        "hardness",
+        "roundness",
+        "angle",
+        "flow",
+        "pressureSize",
+        "pressureFlow"
+      ],
+      "properties": {
+        "diameter": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "spacing": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 0.5
+        },
+        "dabOpacity": {
+          "$ref": "#/$defs/ratio"
+        },
+        "hardness": {
+          "$ref": "#/$defs/ratio"
+        },
+        "roundness": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1
+        },
+        "angle": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "flow": {
+          "$ref": "#/$defs/ratio"
+        },
+        "pressureSize": {
+          "type": "boolean"
+        },
+        "pressureFlow": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pressureControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "curve",
+        "minimum"
+      ],
+      "properties": {
+        "minimum": {
+          "$ref": "#/$defs/ratio"
+        },
+        "curve": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 17,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {
+                "$ref": "#/$defs/ratio"
+              },
+              {
+                "$ref": "#/$defs/ratio"
+              }
+            ],
+            "items": false
+          },
+          "description": "Codec additionally requires strictly increasing X, first X=0 and last X=1."
+        }
+      }
+    },
+    "pressureDynamics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size",
+        "flow"
+      ],
+      "properties": {
+        "size": {
+          "$ref": "#/$defs/pressureControl"
+        },
+        "flow": {
+          "$ref": "#/$defs/pressureControl"
+        },
+        "opacity": {
+          "$ref": "#/$defs/opacityControl"
+        }
+      }
+    },
+    "opacityControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "curve",
+        "minimum",
+        "enabled"
+      ],
+      "properties": {
+        "minimum": {
+          "$ref": "#/$defs/ratio"
+        },
+        "curve": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 17,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {
+                "$ref": "#/$defs/ratio"
+              },
+              {
+                "$ref": "#/$defs/ratio"
+              }
+            ],
+            "items": false
+          },
+          "description": "Codec additionally requires strictly increasing X, first X=0 and last X=1."
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

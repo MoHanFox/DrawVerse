@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 35;
+pub const PAINT_ABI_MINOR: u32 = 36;
 pub const PAINT_FEATURE_PRESSURE_DYNAMICS: u64 = 1073741824;
 pub const PAINT_FEATURE_VBR_SOURCES: u64 = 536870912;
 pub const PAINT_FEATURE_ABR_IMPORT: u64 = 268435456;
@@ -765,3 +765,6 @@ pub struct PaintTransform {
     pub skew_h: f64,
     pub skew_v: f64,
 }
+
+/// Independent per-stroke opacity pressure controls in state v6 and VBR 1.4.
+pub const PAINT_FEATURE_OPACITY_PRESSURE: u64 = 2147483648;

@@ -1,4 +1,8 @@
-# C ABI 1.35.0 契约
+# C ABI 1.36.0 契约
+
+## ABI 1.36：独立不透明度压感
+
+`PAINT_FEATURE_OPACITY_PRESSURE=2147483648`（features为u64）。现有目录状态接受v6，package接口支持VBR1.4/behavior3/opacity-pressure。pressureDynamics增加可选opacity对象，curve/minimum沿既有有界控制、enabled为严格布尔；v5不能携带此对象。普通绘画/擦除/蒙版起笔捕获局部压力上限，流量独立，较低压力不反向清除原颜色；涂抹继续强度语义。无DTO布局改变，旧C编辑保留动态，caller-memory边界不变。设计与验收见 `docs/brush-opacity-pressure-design.md` / `docs/brush-opacity-pressure-validation.md`。
 
 ## ABI 1.35：压力动态入口与整笔不透明度修复
 

@@ -1233,6 +1233,10 @@ impl Document {
             return Err(Error::InvalidArgument("tablet time must be monotonic"));
         }
         let distance = (point.x - current.last.x).hypot(point.y - current.last.y);
+        let stationary_pressure = distance <= 1e-9
+            && point.pressure != current.last.pressure
+            && current.program.opacity_pressure(point.pressure).is_some()
+            && !matches!(current.brush.mode, BrushMode::Smudge { .. });
         let step = current.brush.step();
         let count = if distance + 1e-9 < current.distance_to_next {
             0
@@ -1254,7 +1258,7 @@ impl Document {
             1
         };
         if count > MAX_DABS_PER_SEGMENT
-            || count
+            || (count + usize::from(stationary_pressure))
                 .saturating_mul(diameter * diameter)
                 .saturating_mul(sample_cost)
                 > MAX_PIXEL_VISITS_PER_SEGMENT
@@ -1282,6 +1286,16 @@ impl Document {
             position += step;
         }
         stroke.distance_to_next = (position - distance).max(step * 1e-9);
+        if stationary_pressure {
+            match self.dab(&mut stroke, point) {
+                Ok(dab_changed) => changed |= dab_changed,
+                Err(error) => {
+                    self.restore_stroke(&stroke);
+                    return Err(error);
+                }
+            }
+            stroke.last_dab = point;
+        }
         stroke.last = point;
         if changed {
             self.bump_revision();
@@ -1419,8 +1433,9 @@ impl Document {
                     1.
                 },
         );
-        let capped =
-            stroke.brush.opacity < 1. && !matches!(stroke.brush.mode, BrushMode::Smudge { .. });
+        let pressure_opacity = stroke.program.opacity_pressure(point.pressure);
+        let capped = (stroke.brush.opacity < 1. || pressure_opacity.is_some())
+            && !matches!(stroke.brush.mode, BrushMode::Smudge { .. });
         let flow = if capped { 1. } else { stroke.brush.opacity }
             * stroke.program.tip.flow
             * match stroke.brush.mode {
@@ -1441,7 +1456,7 @@ impl Document {
                     }
                 }
             };
-        if radius == 0.0 || flow == 0.0 {
+        if radius == 0.0 || flow == 0.0 || stroke.brush.opacity == 0. {
             return Ok(false);
         }
         let (extent_x, extent_y) = stroke.program.extent(radius);
@@ -1578,7 +1593,10 @@ impl Document {
                         let base = if capped {
                             let previous =
                                 prior_coverage.as_ref().map_or(0., |p| p[offset].alpha());
-                            let accumulated = previous + coverage * flow * (1. - previous);
+                            let accumulated = previous
+                                + coverage
+                                    * flow
+                                    * (pressure_opacity.unwrap_or(1.) - previous).max(0.);
                             if accumulated != previous {
                                 coverage_updates.push((
                                     offset,

@@ -100,10 +100,12 @@ impl PressureControl {
 pub struct BrushDynamics {
     pub size: PressureControl,
     pub flow: PressureControl,
+    pub opacity: PressureControl,
+    pub pressure_opacity: bool,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
-        self.size.is_identity() && self.flow.is_identity()
+        self.size.is_identity() && self.flow.is_identity() && !self.pressure_opacity
     }
 }
 #[derive(Clone, Debug)]
