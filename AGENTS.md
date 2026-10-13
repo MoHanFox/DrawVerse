@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新ABR分节采样：`docs/abr-sections-design.md` / `docs/abr-sections-validation.md`；6/10×1/2有界分节/记录对齐/共用PackBits、原始来源元数据保留；desc执行/用户入口/16位/真实授权语料继续后续，无ABI变化。
+
 - 最新ABR采样读取：`docs/abr-sampled-design.md` / `docs/abr-sampled-validation.md`；Rust1/2采样原始/PackBits/UTF16与来源字段、整包拒绝与真实孔洞测试；尚未接用户入口，6/10/程序/16位/动态报告和授权真实语料继续后续，无ABI变化。
 
 - 最新VBR图片资源：`docs/vbr-image-design.md` / `docs/vbr-image-validation.md`；ABI1.31/VBR1.1、完整PNG身份/资源清单/整包编译/多资源交接、Qt跨资源目录导入导出/UUID副本；分组/扩展/ABR/动态湿混继续后续。

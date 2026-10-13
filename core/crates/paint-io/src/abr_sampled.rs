@@ -1,4 +1,4 @@
-//! Bounded ABR 1/2 sampled records. No silent skips, file IO or catalogue mutation.
+//! Bounded ABR sampled records and 6/10 section framing; no settings guesses or IO.
 use crate::{check, Error, Result};
 use paint_core::{BrushMask, MAX_BRUSH_MASK_EDGE, MAX_CATALOG_MASK_BYTES};
 use paint_task::CancellationToken;
@@ -82,6 +82,58 @@ fn row(bytes: &[u8], width: usize) -> Result<Vec<u8>> {
     }
     Ok(output)
 }
+fn mask(
+    record: &mut Reader<'_>,
+    bounds: [i32; 4],
+    token: &CancellationToken,
+    resident: &mut usize,
+) -> Result<Arc<BrushMask>> {
+    let width = i64::from(bounds[3]) - i64::from(bounds[1]);
+    let height = i64::from(bounds[2]) - i64::from(bounds[0]);
+    if width <= 0
+        || height <= 0
+        || width > i64::from(MAX_BRUSH_MASK_EDGE)
+        || height > i64::from(MAX_BRUSH_MASK_EDGE)
+    {
+        return Err(Error::Limit("ABR tip dimensions"));
+    }
+    if record.u16()? != 8 {
+        return Err(Error::Unsupported("ABR sampled bit depth".into()));
+    }
+    let (width, height) = (width as usize, height as usize);
+    let (mut w, mut h) = (width, height);
+    let mut cost = 0;
+    loop {
+        cost += w * h;
+        if w == 1 && h == 1 {
+            break;
+        }
+        w = w.div_ceil(2);
+        h = h.div_ceil(2);
+    }
+    if cost > MAX_CATALOG_MASK_BYTES - *resident {
+        return Err(Error::Limit("ABR decoded tip budget"));
+    }
+    let pixels = match record.u8()? {
+        0 => record.take(width * height)?.to_vec(),
+        1 => {
+            let mut lengths = Vec::with_capacity(height);
+            for _ in 0..height {
+                lengths.push(record.u16()? as usize);
+            }
+            let mut pixels = Vec::with_capacity(width * height);
+            for length in lengths {
+                check(token)?;
+                pixels.extend(row(record.take(length)?, width)?);
+            }
+            pixels
+        }
+        _ => return Err(Error::Unsupported("ABR sample compression".into())),
+    };
+    let mask = Arc::new(BrushMask::new(width as u32, height as u32, pixels)?);
+    *resident += mask.resident_bytes();
+    Ok(mask)
+}
 pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Vec<SampledTip>> {
     check(token)?;
     if bytes.len() > 128 * 1024 * 1024 {
@@ -143,54 +195,10 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Vec<SampledTip>
             record.u16()? as i16,
         ];
         let bounds = [record.i32()?, record.i32()?, record.i32()?, record.i32()?];
-        let width = i64::from(bounds[3]) - i64::from(bounds[1]);
-        let height = i64::from(bounds[2]) - i64::from(bounds[0]);
-        if width <= 0
-            || height <= 0
-            || width > i64::from(MAX_BRUSH_MASK_EDGE)
-            || height > i64::from(MAX_BRUSH_MASK_EDGE)
-        {
-            return Err(Error::Limit("ABR tip dimensions"));
-        }
-        if record.u16()? != 8 {
-            return Err(Error::Unsupported("ABR sampled bit depth".into()));
-        }
-        let (width, height) = (width as usize, height as usize);
-        let mut w = width;
-        let mut h = height;
-        let mut cost = 0;
-        loop {
-            cost += w * h;
-            if w == 1 && h == 1 {
-                break;
-            }
-            w = w.div_ceil(2);
-            h = h.div_ceil(2);
-        }
-        if cost > MAX_CATALOG_MASK_BYTES - resident {
-            return Err(Error::Limit("ABR decoded tip budget"));
-        }
-        let pixels = match record.u8()? {
-            0 => record.take(width * height)?.to_vec(),
-            1 => {
-                let mut lengths = Vec::with_capacity(height);
-                for _ in 0..height {
-                    lengths.push(record.u16()? as usize);
-                }
-                let mut pixels = Vec::with_capacity(width * height);
-                for length in lengths {
-                    check(token)?;
-                    pixels.extend(row(record.take(length)?, width)?);
-                }
-                pixels
-            }
-            _ => return Err(Error::Unsupported("ABR sample compression".into())),
-        };
+        let mask = mask(&mut record, bounds, token, &mut resident)?;
         if !record.done() {
             return Err(Error::Unsupported("ABR trailing record metadata".into()));
         }
-        let mask = Arc::new(BrushMask::new(width as u32, height as u32, pixels)?);
-        resident += mask.resident_bytes();
         tips.push(SampledTip {
             source_version: version,
             misc,
@@ -207,4 +215,101 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Vec<SampledTip>
     }
     check(token)?;
     Ok(tips)
+}
+
+/// Uninterpreted source metadata, retained in file order, never executed as settings.
+pub struct OpaqueSection {
+    pub key: [u8; 4],
+    pub bytes: Box<[u8]>,
+}
+pub struct SectionedTip {
+    pub prefix: Box<[u8]>,
+    pub bounds: [i32; 4],
+    pub mask: Arc<BrushMask>,
+    pub trailing_metadata: Box<[u8]>,
+}
+pub struct SectionedAbr {
+    pub version: u16,
+    pub subversion: u16,
+    pub tips: Vec<SectionedTip>,
+    pub metadata: Vec<OpaqueSection>,
+}
+pub fn decode_sectioned(bytes: &[u8], token: &CancellationToken) -> Result<SectionedAbr> {
+    check(token)?;
+    if bytes.len() > 128 * 1024 * 1024 {
+        return Err(Error::Limit("ABR file bytes"));
+    }
+    let mut file = Reader { bytes, offset: 0 };
+    let version = file.u16()?;
+    let subversion = file.u16()?;
+    if !matches!(version, 6 | 10) || !matches!(subversion, 1 | 2) {
+        return Err(Error::Unsupported(
+            "ABR sectioned version/subversion".into(),
+        ));
+    }
+    let mut tips = Vec::new();
+    let mut metadata = Vec::new();
+    let mut sampled = false;
+    let mut resident = 0;
+    let mut sections = 0;
+    while !file.done() {
+        check(token)?;
+        sections += 1;
+        if sections > 4096 {
+            return Err(Error::Limit("ABR section count"));
+        }
+        if file.take(4)? != b"8BIM" {
+            return Err(Error::Invalid("ABR section signature"));
+        }
+        let key: [u8; 4] = file.take(4)?.try_into().expect("four bytes");
+        let length = file.u32()? as usize;
+        let payload = file.take(length)?;
+        if &key != b"samp" {
+            metadata.push(OpaqueSection {
+                key,
+                bytes: payload.into(),
+            });
+            continue;
+        }
+        if sampled {
+            return Err(Error::Unsupported("multiple ABR sample sections".into()));
+        }
+        sampled = true;
+        let mut samples = Reader {
+            bytes: payload,
+            offset: 0,
+        };
+        while !samples.done() {
+            check(token)?;
+            if tips.len() == 1024 {
+                return Err(Error::Limit("ABR sample count"));
+            }
+            let length = samples.u32()? as usize;
+            let mut record = Reader {
+                bytes: samples.take(length)?,
+                offset: 0,
+            };
+            let prefix = record.take(if subversion == 1 { 47 } else { 301 })?.into();
+            let bounds = [record.i32()?, record.i32()?, record.i32()?, record.i32()?];
+            let mask = mask(&mut record, bounds, token, &mut resident)?;
+            let trailing_metadata = record.take(record.bytes.len() - record.offset)?.into();
+            samples.take((4 - length % 4) % 4)?;
+            tips.push(SectionedTip {
+                prefix,
+                bounds,
+                mask,
+                trailing_metadata,
+            });
+        }
+    }
+    if tips.is_empty() {
+        return Err(Error::Invalid("ABR missing sampled tips"));
+    }
+    check(token)?;
+    Ok(SectionedAbr {
+        version,
+        subversion,
+        tips,
+        metadata,
+    })
 }

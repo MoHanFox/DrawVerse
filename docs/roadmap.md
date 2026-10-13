@@ -1,6 +1,8 @@
 # 模块顺序与验收
 
-ABR采样读取：[设计](abr-sampled-design.md) / [验收](abr-sampled-validation.md)。1/2原始与PackBits采样/有界读取已实现；用户入口/真实语料/6与10/描述符/程序及动态映射继续后续。
+ABR分节采样：[设计](abr-sections-design.md) / [验收](abr-sections-validation.md)。6/10子版本1/2有界分节与采样已实现；desc执行/用户入口/16位/真实授权语料继续后续。
+
+ABR采样读取：[设计](abr-sampled-design.md) / [验收](abr-sampled-validation.md)。1/2原始与PackBits采样/有界读取已实现；描述符/程序及动态映射继续后续。
 
 VBR图片资源：[设计](vbr-image-design.md) / [验收](vbr-image-validation.md)。ABI1.31/VBR1.1，完整资源清单/跨资源目录导入导出已接Qt；分组/扩展/动态湿混继续后续。
 
