@@ -161,6 +161,7 @@ pub(crate) struct PreparedCatalog {
     records: Mutex<Records>,
     resources: Mutex<Option<Arc<ResourceStore>>>,
     imported: Mutex<Option<Vec<StoredMask>>>,
+    imported_sources: Mutex<Option<Vec<Arc<ValidatedSource>>>>,
 }
 impl PreparedCatalog {
     pub fn new(catalog: BrushCatalog) -> Self {
@@ -174,6 +175,7 @@ impl PreparedCatalog {
             }),
             resources: Mutex::new(None),
             imported: Mutex::new(None),
+            imported_sources: Mutex::new(None),
         }
     }
     pub fn submit(&self, json: String) -> ApiResult<u64> {
@@ -314,6 +316,78 @@ impl PreparedCatalog {
         *self.imported.lock().map_err(|_| ApiError::internal())? = Some(imported);
         Ok(())
     }
+    pub fn import_abr(&self, batch: paint_io::abr_import::ImportBatch) -> ApiResult<()> {
+        self.retire_unused_images()?;
+        self.imported
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .take();
+        self.imported_sources
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .take();
+        let store = self.resource_store()?;
+        let token = paint_task::CancellationToken::default();
+        let presets = batch.persist(&store, &token).map_err(io_error)?;
+        let ids = presets.iter().map(|p| p.source_id().to_owned()).collect();
+        let receipts = store
+            .source_store()
+            .map_err(io_error)?
+            .resolve_references(&ids, &token)
+            .map_err(io_error)?;
+        let mut masks = std::collections::BTreeMap::new();
+        for preset in presets {
+            if let Some(mask) = &preset.settings().mask {
+                let id = mask
+                    .resource_id()
+                    .ok_or_else(ApiError::internal)?
+                    .to_owned();
+                masks.entry(id.clone()).or_insert(StoredMask {
+                    id,
+                    mask: mask.clone(),
+                    source_depth: 8,
+                });
+            }
+        }
+        *self.imported.lock().map_err(|_| ApiError::internal())? =
+            Some(masks.into_values().collect());
+        *self
+            .imported_sources
+            .lock()
+            .map_err(|_| ApiError::internal())? = Some(receipts);
+        Ok(())
+    }
+    fn adopt_imports(&self, snapshot: &BrushCatalog) -> ApiResult<()> {
+        let mut source_handoff = self
+            .imported_sources
+            .lock()
+            .map_err(|_| ApiError::internal())?;
+        if source_handoff.as_ref().is_some_and(|sources| {
+            sources.iter().all(|source| {
+                snapshot.ids().iter().any(|id| {
+                    snapshot
+                        .preset(id)
+                        .is_some_and(|p| p.source_resource() == Some(source.id()))
+                })
+            })
+        }) {
+            source_handoff.take();
+        }
+        let mut imported = self.imported.lock().map_err(|_| ApiError::internal())?;
+        if imported.as_ref().is_some_and(|resources| {
+            resources.iter().all(|resource| {
+                snapshot.ids().iter().any(|id| {
+                    snapshot.preset(id).is_some_and(|p| {
+                        p.settings().mask.as_ref().and_then(|m| m.resource_id())
+                            == Some(resource.id.as_str())
+                    })
+                })
+            })
+        }) {
+            imported.take();
+        }
+        Ok(())
+    }
     fn publish_ready(&self) -> ApiResult<()> {
         let mut records = self.records.lock().map_err(|_| ApiError::internal())?;
         let Some((sequence, ticket)) = records.entries.back() else {
@@ -335,19 +409,7 @@ impl PreparedCatalog {
                     .map_err(|_| ApiError::internal())?
                     .replace_validated((*snapshot).clone());
                 *held = receipts;
-                let mut imported = self.imported.lock().map_err(|_| ApiError::internal())?;
-                if imported.as_ref().is_some_and(|resources| {
-                    resources.iter().all(|resource| {
-                        snapshot.ids().iter().any(|id| {
-                            snapshot.preset(id).is_some_and(|p| {
-                                p.settings().mask.as_ref().and_then(|m| m.resource_id())
-                                    == Some(resource.id.as_str())
-                            })
-                        })
-                    })
-                }) {
-                    imported.take();
-                }
+                self.adopt_imports(&snapshot)?;
                 records.published = sequence;
             }
             Err(e) if e.status == PAINT_BUSY => {}
@@ -376,6 +438,7 @@ impl PreparedCatalog {
                             .map_err(|_| ApiError::internal())?;
                         current.replace_validated((*snapshot).clone());
                         *held = receipts;
+                        self.adopt_imports(&snapshot)?;
                         records.published = sequence;
                     }
                 }
@@ -387,8 +450,77 @@ impl PreparedCatalog {
     }
 }
 #[cfg(test)]
+#[path = "../../paint-io/tests/support/abr_fixture.rs"]
+mod abr_fixture;
+#[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn abr_handoff_is_adopted_by_mutation_and_sources_remain_owned_by_current() {
+        let temp = tempfile::tempdir().unwrap();
+        let library = PreparedCatalog::new(BrushCatalog::default());
+        library.bind_resources(temp.path().into()).unwrap();
+        let token = paint_task::CancellationToken::default();
+        let batch = paint_io::abr_import::ImportBatch::decode(
+            Arc::new(super::abr_fixture::fixture(6, 2, false)),
+            paint_core::MAX_CATALOG_MASK_BYTES,
+            &token,
+        )
+        .unwrap();
+        let inputs = batch
+            .presets()
+            .iter()
+            .map(|p| {
+                (
+                    p.name().to_owned(),
+                    p.settings().clone(),
+                    p.source_id().to_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        library.import_abr(batch).unwrap();
+        assert_eq!(library.imported.lock().unwrap().as_ref().unwrap().len(), 1);
+        assert_eq!(
+            library
+                .imported_sources
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .len(),
+            3
+        );
+        let weak = Arc::downgrade(&library.imported_sources.lock().unwrap().as_ref().unwrap()[0]);
+        let store = library.resource_store().unwrap();
+        let mut catalog = BrushCatalog::default();
+        for (index, (name, mut settings, source)) in inputs.into_iter().enumerate() {
+            if let Some(mask) = &settings.mask {
+                let id = paint_io::brush_resource::hash(
+                    &paint_io::brush_resource::encode_mask(mask).unwrap(),
+                );
+                settings.mask = Some(store.load(&id, &token).unwrap().mask);
+            }
+            let id = format!("00000000-0000-4000-8000-{index:012x}");
+            catalog.save_copy(id.clone(), name).unwrap();
+            catalog.edit(&id, settings).unwrap();
+            catalog.set_source(&id, Some(source)).unwrap();
+        }
+        let json = String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap();
+        let seq = library.submit(json).unwrap();
+        library.ticket(seq).unwrap().wait().unwrap();
+        library
+            .mutate(|current| {
+                assert_eq!(current.ids().len(), 7);
+                Ok(())
+            })
+            .unwrap();
+        assert!(library.imported.lock().unwrap().is_none());
+        assert!(library.imported_sources.lock().unwrap().is_none());
+        assert!(weak.upgrade().is_some());
+        assert_eq!(library.current_receipts.lock().unwrap().len(), 3);
+        drop(library);
+        assert!(weak.upgrade().is_none());
+    }
     #[test]
     fn source_receipts_follow_current_and_captured_tickets_then_revalidate_cold() {
         use paint_io::{

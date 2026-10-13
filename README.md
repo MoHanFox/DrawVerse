@@ -1,6 +1,6 @@
 # DrawVerse
 
-笔刷系统（分阶段实施）：[引擎与界面设计](docs/brush-system-design.md)、[VBR 格式草案](docs/vbr-format-design.md)、[分阶段验收计划](docs/brush-system-validation.md)。规划包含 ABR 导入、共用画笔/橡皮/涂抹、PS 风格分类设置及笔尖描边预览。程序/图片笔尖、VBR1.1与来源报告已有阶段实现；ABR用户入口、动态及湿混仍待完成。
+笔刷系统（分阶段实施）：[引擎与界面设计](docs/brush-system-design.md)、[VBR 格式草案](docs/vbr-format-design.md)、[分阶段验收计划](docs/brush-system-validation.md)。规划包含 ABR 导入、共用画笔/橡皮/涂抹、PS 风格分类设置及笔尖描边预览。程序/图片笔尖、VBR1.1与来源报告已有阶段实现；ABR6/10基础导入入口已接入（部分转换会明确报告）。VBR来源导出、完整ABR参数/动态及湿混仍待完成。
 
 置入图片与自由变换：[设计](docs/transform-design.md) / [验收](docs/transform-validation.md)；文件→置入图片，Ctrl+T 变换，Enter/Esc 确认/取消，Ctrl+Z/Ctrl+Shift+Z 会话撤销重做；保留原图，支持组/多选/选区像素、网格与栅格化，ABI 1.23。
 
@@ -14,7 +14,7 @@
 
 Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘画软件项目。
 
-已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.32.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
+已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.33.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
 
 - [画布液化](docs/liquify-design.md) / [验证](docs/liquify-validation.md)
 - [共用选区参数、自由和多边形套索](docs/lasso-selection-design.md) / [验证](docs/lasso-selection-validation.md)

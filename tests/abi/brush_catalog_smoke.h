@@ -48,6 +48,7 @@ static int brush_catalog_smoke(void) {
     if (paint_brush_library_copy(library, (const uint8_t *)copy, sizeof(copy)-1, (const uint8_t *)"ABI copy", 8) != PAINT_OK) return 9;
     if (paint_brush_library_info(library, &info) != PAINT_OK || info.preset_count != 5 || info.selected_index != 4) return 10;
     if (paint_brush_library_source_info(library, (const uint8_t *)id, sizeof(id)-1, text, sizeof(text), &required) != PAINT_NOT_FOUND || required != 0) return 19;
+    if (paint_brush_library_abr_read(library, NULL, 0, text, sizeof(text), &required) != PAINT_INVALID_ARGUMENT || required != 0) return 20;
     if (paint_brush_library_current_state(library, state, sizeof(state), &state_size) != PAINT_OK) return 12;
     if (paint_brush_library_prepare_state(library, state, state_size, &preparation) != PAINT_OK || !preparation) return 13;
     started = clock();

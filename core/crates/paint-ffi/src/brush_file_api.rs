@@ -7,6 +7,45 @@ use crate::{
 use paint_task::CancellationToken;
 use std::path::Path;
 
+/// Background ABR baseline read. Bounded ABR-only JSON; no catalog publication.
+/// Size-only calls parse afresh; insufficient output capacity writes no resources.
+/// # Safety
+/// Live library/readable path and nonoverlapping writable buffer/required required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_abr_read(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(required, 0)?;
+        runtime::outside_callback()?;
+        let path = pointers::path_utf8(path, path_length)?;
+        let library = runtime::registry()?.brush_library(library)?;
+        let budget = library.current()?.mask_budget();
+        let batch = paint_io::abr_import::ImportBatch::read(
+            Path::new(&path),
+            budget,
+            &CancellationToken::default(),
+        )
+        .map_err(io_error)?;
+        let bytes = batch.to_json().map_err(io_error)?;
+        if pointers::length(capacity)? < bytes.len() {
+            pointers::write(required, bytes.len() as u64)?;
+            return Err(ApiError::new(
+                PAINT_BUFFER_TOO_SMALL,
+                "ABR JSON buffer too small",
+            ));
+        }
+        pointers::valid_pointer(buffer)?;
+        library.import_abr(batch)?;
+        pointers::copy_buffer(&bytes, buffer, capacity, required)
+    })
+}
+
 /// Worker-thread synchronous bounded VBR read; returns canonical package JSON.
 /// Size-only calls may return BUFFER_TOO_SMALL. File contents are read afresh per call.
 /// # Safety

@@ -68,6 +68,7 @@ public:
     QVariantMap tipSettings() const;
     QByteArray exportPackage() const;
     bool importPackage(const QByteArray &json);
+    bool importAbr(const QByteArray &json);
     void setHardness(qreal value);
     void setRoundness(qreal value);
     void setAngle(qreal value);

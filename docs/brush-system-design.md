@@ -1,6 +1,6 @@
 # 统一笔刷系统设计
 
-状态：2026-10-13，分阶段实施。程序笔尖基础已完成，见 [阶段设计](brush-tip-design.md) / [真实验收](brush-tip-validation.md)；本文其余范围仍是目标设计。
+状态：2026-10-14，分阶段实施。程序/图片笔尖、原生目录、VBR1.1、描边与ABR6/10基础导入已有阶段实现，见 [路线与结果](roadmap.md)、[ABR入口验收](abr-entry-validation.md)。完整ABR动态、VBR来源交换与动态湿混仍待完成，本文不代表整体实现验收。
 
 目标：达到 Procreate 类笔刷的参数深度与线条手感，逐步兼容 Photoshop ABR，采用开放的 VBR 原生格式。画笔、橡皮和独立涂抹工具复用同一系统，保留 Rust → C ABI → PaintCoreClient → QML 边界。Python 插件最后实施。
 

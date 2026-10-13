@@ -40,6 +40,7 @@ ColumnLayout {
             }
         }
     }
+    Label {objectName:"brushImportSummary";textFormat:Text.PlainText;text:PaintClient.brushImportMessage;visible:text.length>0;Layout.fillWidth:true;wrapMode:Text.WordWrap;font.pixelSize:9;color:Theme.muted}
     RowLayout {Icon {name:"folder";width:14;height:14} Label {text:"基础与自定义画笔";font.pixelSize:9;color:Theme.text}}
     ListView {
         objectName:"brushPresetList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:2
@@ -51,7 +52,7 @@ ColumnLayout {
             color:root.library.selectedId===modelData.id?Theme.selected:Theme.surface
             border.color:Theme.line
             Image {anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:4;height:35;source:modelData.preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
-            Text {x:6;y:40;width:parent.width-12;text:modelData.name;color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
+            Text {x:6;y:40;width:parent.width-12;textFormat:Text.PlainText;text:modelData.name;color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
             MouseArea {anchors.fill:parent;onClicked:root.library.select(modelData.id)}
             Component.onCompleted:root.library.requestPreview(modelData.id)
         }
@@ -59,7 +60,7 @@ ColumnLayout {
     }
     RowLayout {
         Item {Layout.fillWidth:true}
-        IconButton {objectName:"importBrushPackage";glyph:"folder";tooltip:"导入 VBR 笔刷包";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:importDialog.open()}
+        IconButton {objectName:"importBrushPackage";glyph:"folder";tooltip:"导入 VBR / ABR 笔刷包";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:importDialog.open()}
         IconButton {objectName:"exportBrushPackage";glyph:"save";tooltip:"导出当前笔刷为 VBR";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:exportDialog.open()}
         IconButton {glyph:"plus";tooltip:"保存当前设置为新画笔";implicitHeight:22;onClicked:saveDialog.open()}
         IconButton {glyph:"trash";tooltip:"删除自定义画笔";implicitHeight:22;enabled:root.library.presets.some(p=>p.id===root.library.selectedId && !p.builtin);onClicked:root.library.remove(root.library.selectedId)}
@@ -70,7 +71,7 @@ ColumnLayout {
         TextField {id:brushName;placeholderText:"画笔名称";maximumLength:80;text:root.library.selectedName+" 副本"}
         onAccepted:root.library.saveCopy(brushName.text)
     }
-    FileDialog {id:importDialog;title:"导入笔刷包";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.importBrushes(selectedFile)}
+    FileDialog {id:importDialog;objectName:"brushImportDialog";title:"导入笔刷包";nameFilters:["笔刷包 (*.vbr *.abr)","DrawVerse 笔刷 (*.vbr)","Photoshop 笔刷 (*.abr)"];onAccepted:PaintClient.importBrushes(selectedFile)}
     FileDialog {id:exportDialog;title:"导出当前笔刷";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.exportBrush(selectedFile)}
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
     Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}}

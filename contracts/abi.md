@@ -1,4 +1,10 @@
-# C ABI 1.32.0 契约
+# C ABI 1.33.0 契约
+
+## ABI 1.33：ABR整包导入
+
+`PAINT_FEATURE_ABR_IMPORT=268435456`。后台 `paint_brush_library_abr_read` 返回ABR交接JSON，独立于VBR和catalog state：version1、format abr、presets数组；每项name/parameters/tipResource（可null）/sourceResource/partial。最多2MiB。6/10×1/2基础执行子集，逐项完整来源报告保留；旧参数/16位/不支持desc明确拒绝，不能把partial成功宣称完整PS效果。
+
+先清零required，解析/编译与输出序列化通过后才检查caller容量；不足返回BUFFER_TOO_SMALL及准确长度，无资源写入。路径/指针/其他失败保持required=0，失败不写buffer。输出容量足够后持久已验证资源及来源，库保留小型资源/来源交接，当前目录不改变；caller追加UUID并经准确prepare发布。当前/在途独立持有，采用后释放交接。多文件IO错误可留下未引用身份文件，不能宣称文件级事务回滚。
 
 ## ABI 1.32：笔刷来源准备桥
 

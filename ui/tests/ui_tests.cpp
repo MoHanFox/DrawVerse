@@ -18,6 +18,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QCryptographicHash>
+#include <QDataStream>
 #include <QPointingDevice>
 #include <QTabletEvent>
 #include <QDir>
@@ -40,6 +41,21 @@
 #endif
 
 namespace {
+// Independent generated ABR wire fixture, not an external Photoshop asset.
+QByteArray abrEntryFixture(bool bad=false) {
+    const auto be16=[](quint16 n){QByteArray b;QDataStream out(&b,QIODevice::WriteOnly);out<<n;return b;};
+    const auto be32=[](quint32 n){QByteArray b;QDataStream out(&b,QIODevice::WriteOnly);out<<n;return b;};
+    const auto text=[&](QString value){auto b=be32(quint32(value.size()));for(const auto unit:value)b+=be16(unit.unicode());return b;};
+    const auto id=[&](QByteArray value){return be32(value.size()==4?0:quint32(value.size()))+value;};
+    const auto typed=[](QByteArray tag,QByteArray value){return tag+value;};
+    const auto object=[&](QByteArray type,QList<QPair<QByteArray,QByteArray>> rows){auto b=text({})+id(type)+be32(quint32(rows.size()));for(const auto &row:rows)b+=id(row.first)+row.second;return b;};
+    const auto unit=[&](QByteArray kind,double value){QByteArray b;QDataStream out(&b,QIODevice::WriteOnly);out<<value;return typed("UntF",kind+b);};
+    const auto preset=[&](bool sample,bool invalid){QList<QPair<QByteArray,QByteArray>> shape{{"Dmtr",unit("#Pxl",invalid?513:8)},{"Angl",unit("#Ang",0)},{"Rndn",unit("#Prc",100)},{"Spcn",unit("#Prc",2)}};if(sample)shape.append({"sampledData",typed("TEXT",text("shared"))});else shape.append({"Hrdn",unit("#Prc",100)});return typed("Objc",object("brushPreset",{{"Nm  ",typed("TEXT",text("Same"))},{"Brsh",typed("Objc",object(sample?"sampledBrush":"computedBrush",shape))},{"unknownTexture",typed("bool",QByteArray(1,char(1)))}}));};
+    const auto section=[&](QByteArray key,QByteArray payload){return QByteArray("8BIM")+key+be32(quint32(payload.size()))+payload;};
+    auto descriptor=be32(16)+object("null",{{"Brsh",typed("VlLs",be32(3)+preset(true,false)+preset(false,false)+preset(true,bad))}});
+    auto sample=QByteArray(1,char(6))+QByteArray("shared")+QByteArray(264,char(0))+be32(0)+be32(0)+be32(8)+be32(8)+be16(8)+QByteArray(1,char(0));QByteArray coverage(64,char(-1));for(int y=3;y<5;++y)for(int x=3;x<5;++x)coverage[y*8+x]=0;sample+=coverage;
+    auto samples=be32(quint32(sample.size()))+sample+QByteArray((4-sample.size()%4)%4,char(0));return be16(6)+be16(2)+section("desc",descriptor)+section("samp",samples);
+}
 class BlurTestBackdrop final : public QQuickPaintedItem {
 public:
     explicit BlurTestBackdrop(QQuickItem *parent):QQuickPaintedItem(parent) { setOpaquePainting(true); }
@@ -551,6 +567,20 @@ private slots:
         const auto screenshot=qEnvironmentVariable("DRAWVERSE_BRUSH_PREVIEW");if(!screenshot.isEmpty()){auto group=workspace.leftGroups().first().toMap().value("id").toString();workspace.detachGroup(group);for(auto *w:applicationWindows())if(auto *q=qobject_cast<QQuickWindow*>(w))if(findVisualItem(q->contentItem(),"selectedBrushName")){q->resize(350,440);QTest::qWait(200);QVERIFY(q->grabWindow().save(screenshot+".tip.png"));}}
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void abrUserImportAddsWholePackageWithProvenanceAndSurvivesSourceRemoval() {
+        QTemporaryDir temp;const auto settingsPath=temp.filePath("brush.ini");const auto source=temp.filePath("brush.ABR");QFile input(source);QVERIFY(input.open(QIODevice::WriteOnly));input.write(abrEntryFixture());input.close();
+        PaintCoreClient client(nullptr,settingsPath);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();library->setCursorCenter(true);QSignalSpy imported(&client,&PaintCoreClient::brushFileFinished);
+        QVERIFY(client.importBrushes(QUrl::fromLocalFile(source)));QVERIFY(client.brushFileBusy());QVERIFY(!client.importBrushes(QUrl::fromLocalFile(source)));library->select("round-fine");library->rename("round-fine","Existing renamed");
+        QTRY_COMPARE(imported.size(),1);QVERIFY(imported.last()[0].toBool());QCOMPARE(library->presets().size(),7);QVERIFY(library->cursorCenter());QVERIFY(client.brushImportMessage().contains("3"));const auto first=library->selectedId();const auto sourceId=library->sourceResource();const auto tipId=library->maskResource();QCOMPARE(sourceId.size(),64);QCOMPARE(tipId.size(),64);QVERIFY(first!="round-fine");QCOMPARE(library->selectedName(),QString("Same"));QCOMPARE(library->radius(),12.);QCOMPARE(library->presets()[4].toMap().value("radius").toDouble(),4.);QVERIFY(!library->pressureSize() && !library->pressureFlow());
+        QVERIFY(client.inspectBrushSource());QTRY_VERIFY(!client.brushSourceBusy());QCOMPARE(client.brushSourceInfo().value("originalName").toString(),QString("Same"));QVERIFY(!client.brushSourceInfo().value("report").toList().isEmpty());
+        library->requestPreview(first);QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);const auto preview=library->selectedPreview();
+        QVERIFY(client.importBrushes(QUrl::fromLocalFile(source)));QTRY_COMPARE(imported.size(),2);QVERIFY(imported.last()[0].toBool());QCOMPARE(library->presets().size(),10);QVERIFY(library->selectedId()!=first);QCOMPARE(library->sourceResource(),sourceId);QCOMPARE(library->maskResource(),tipId);const auto selected=library->selectedId();
+        const auto before=library->snapshot();const auto bad=temp.filePath("bad.abr");QFile invalid(bad);QVERIFY(invalid.open(QIODevice::WriteOnly));invalid.write(abrEntryFixture(true));invalid.close();QVERIFY(client.importBrushes(QUrl::fromLocalFile(bad)));QTRY_COMPARE(imported.size(),3);QVERIFY(!imported.last()[0].toBool());QCOMPARE(library->snapshot(),before);
+        library->setRadius(4);
+        client.newTransparentDocument(24,24);QTRY_COMPARE(client.documentWidth(),24);QTRY_VERIFY(client.ready());InputSample sample;sample.position={12.5,12.5};QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);client.requestViewport(0,{0,0,24,24},{24,24});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(24,24));QCOMPARE(client.frame().pixelColor(12,12).alpha(),0);QVERIFY(client.frame().pixelColor(15,12).alpha()>200);
+        QVERIFY(library->select("round-fine"));QCOMPARE(library->selectedName(),QString("Existing renamed"));QVERIFY(library->select(selected));QVERIFY(QFile::remove(source));QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+        PaintCoreClient recovered(nullptr,settingsPath);QTRY_VERIFY(recovered.ready());QTRY_COMPARE(recovered.brushLibrary()->selectedId(),selected);QCOMPARE(recovered.brushLibrary()->presets().size(),10);QCOMPARE(recovered.brushLibrary()->sourceResource(),sourceId);QCOMPARE(recovered.brushLibrary()->maskResource(),tipId);QVERIFY(recovered.brushLibrary()->cursorCenter());recovered.brushLibrary()->requestPreview(selected);QTRY_VERIFY_WITH_TIMEOUT(!recovered.brushLibrary()->selectedPreview().isEmpty(),10000);QCOMPARE(recovered.brushLibrary()->selectedPreview(),preview);QVERIFY(recovered.inspectBrushSource());QTRY_VERIFY(!recovered.brushSourceBusy());QCOMPARE(recovered.brushSourceInfo().value("originalName").toString(),QString("Same"));QSignalSpy recoveredStopped(&recovered,&PaintCoreClient::stopped);recovered.shutdown();QTRY_COMPARE(recoveredStopped.size(),1);
+    }
     void brushSourceV4PreservesProvenanceAcrossEditsCopiesAndVbrImport() {
         BrushLibrary model;
         const auto source=QString(64,QChar('a'));const auto image=QString(64,QChar('b'));
@@ -589,6 +619,9 @@ private slots:
         QVERIFY(library->select("round-pressure"));QTRY_VERIFY(!client.brushSourceInfo().isEmpty());const auto copy=library->saveCopy("Source copy");QVERIFY(!copy.isEmpty());QCOMPARE(library->sourceResource(),identity);
         library->requestPreview(copy);QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);
         QVERIFY(abr.open(QIODevice::WriteOnly|QIODevice::Truncate));abr.write("corrupt");abr.close();QVERIFY(client.inspectBrushSource());QTRY_VERIFY(!client.brushSourceBusy());QVERIFY(!client.brushSourceMessage().isEmpty());QVERIFY(client.brushSourceInfo().isEmpty());
+        auto *selectedName=window->findChild<QObject*>("selectedBrushName");QVERIFY(selectedName);QCOMPARE(selectedName->property("textFormat").toInt(),int(Qt::PlainText));
+        for(const auto &value:workspace.leftGroups()+workspace.rightGroups()){const auto group=value.toMap();if(group.value("panels").toStringList().contains("brush"))workspace.setActive(group.value("id").toString(),"brush");}
+        QObject *dialog=nullptr;QTRY_VERIFY((dialog=window->findChild<QObject*>("brushImportDialog")));QVERIFY(dialog->property("nameFilters").toStringList().contains("Photoshop 笔刷 (*.abr)"));QVERIFY(findVisualItem(window->contentItem(),"importBrushPackage"));
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
         QByteArray persisted;{QSettings settings(settingsPath,QSettings::IniFormat);persisted=settings.value("brushes/state").toByteArray();}QVERIFY(persisted.contains("sourceResource"));
         PaintCoreClient cold(nullptr,settingsPath);QTRY_VERIFY(cold.ready());QTRY_VERIFY_WITH_TIMEOUT(!cold.lastError().isEmpty(),10000);{QSettings settings(settingsPath,QSettings::IniFormat);QCOMPARE(settings.value("brushes/state").toByteArray(),persisted);}QSignalSpy coldStopped(&cold,&PaintCoreClient::stopped);cold.shutdown();QTRY_COMPARE(coldStopped.size(),1);

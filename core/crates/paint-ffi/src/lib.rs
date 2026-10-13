@@ -138,6 +138,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                     | PAINT_FEATURE_BRUSH_OUTLINE
                     | PAINT_FEATURE_VBR_IMAGES
                     | PAINT_FEATURE_BRUSH_SOURCES
+                    | PAINT_FEATURE_ABR_IMPORT
                     | PAINT_FEATURE_LIQUIFY
                     | PAINT_FEATURE_LAYER_ACTIONS
                     | PAINT_FEATURE_PASS_THROUGH

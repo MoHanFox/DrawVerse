@@ -154,6 +154,26 @@ bool BrushLibrary::importPackage(const QByteArray &json) {
     if(!restore(QJsonDocument(state).toJson(QJsonDocument::Compact)))return false;
     emit persistRequested(snapshot());return true;
 }
+bool BrushLibrary::importAbr(const QByteArray &json) {
+    if(json.size()>2*1024*1024)return false;
+    const auto handoff=QJsonDocument::fromJson(json).object();
+    if(handoff.value("version").toInt()!=1 || handoff.value("format").toString()!="abr" || !handoff.value("presets").isArray())return false;
+    const auto imported=handoff.value("presets").toArray();
+    if(imported.isEmpty() || imported.size()+m_presets.size()>1024)return false;
+    auto state=QJsonDocument::fromJson(snapshot()).object();auto rows=state.value("presets").toArray();QString selected;
+    for(const auto &value:imported) {
+        if(!value.isObject())return false;const auto preset=value.toObject();const auto parameters=preset.value("parameters").toObject();
+        if(!preset.value("partial").isBool() || !preset.value("sourceResource").isString())return false;
+        const auto id=QUuid::createUuid().toString(QUuid::WithoutBraces);if(selected.isEmpty())selected=id;
+        QJsonObject row{{"id",id},{"name",preset.value("name")},{"radius",parameters.value("diameter").toDouble()/2},{"opacity",parameters.value("dabOpacity")},{"spacing",parameters.value("spacing").toDouble()*2},{"sourceResource",preset.value("sourceResource")}};
+        for(const auto &key:{"hardness","roundness","angle","flow","pressureSize","pressureFlow"})row[key]=parameters.value(key);
+        if(!preset.value("tipResource").isNull())row["maskResource"]=preset.value("tipResource");
+        rows.append(row);
+    }
+    state["presets"]=rows;state["selected"]=selected;state["version"]=4;
+    if(!restore(QJsonDocument(state).toJson(QJsonDocument::Compact)))return false;
+    emit persistRequested(snapshot());return true;
+}
 bool BrushLibrary::restore(const QByteArray &json) {
     if(json.size()>2*1024*1024)return false;
     const auto root=QJsonDocument::fromJson(json).object();const auto rows=root.value("presets").toArray();

@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 32
+#define PAINT_ABI_MINOR 33
 
 #define PAINT_ABI_PATCH 0
 
@@ -60,6 +60,8 @@
 #define PAINT_EVENT_DOCUMENT_CHANGED 1
 
 #define PAINT_EVENT_DOCUMENT_STATE_CHANGED 2
+
+#define PAINT_FEATURE_ABR_IMPORT 268435456
 
 #define PAINT_FEATURE_ASYNC_SESSION 16
 
@@ -900,6 +902,19 @@ typedef struct PaintStorageInfo {
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+/**
+ * Background ABR baseline read. Bounded ABR-only JSON; no catalog publication.
+ * Size-only calls parse afresh; insufficient output capacity writes no resources.
+ * # Safety
+ * Live library/readable path and nonoverlapping writable buffer/required required.
+ */
+PaintStatus paint_brush_library_abr_read(struct PaintBrushLibrary *library,
+                                         const uint8_t *path,
+                                         uint64_t path_length,
+                                         uint8_t *buffer,
+                                         uint64_t capacity,
+                                         uint64_t *required);
 
 /**
  * Bind one persistent resource directory on a background thread.

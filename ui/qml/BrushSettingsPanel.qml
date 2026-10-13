@@ -18,7 +18,7 @@ ColumnLayout {
     readonly property real contentHeight:360
     implicitHeight:contentHeight
     spacing:6
-    Label {objectName:"selectedBrushName";text:root.library.selectedName;color:Theme.text;font.pixelSize:10;elide:Text.ElideRight;Layout.fillWidth:true}
+    Label {objectName:"selectedBrushName";textFormat:Text.PlainText;text:root.library.selectedName;color:Theme.text;font.pixelSize:10;elide:Text.ElideRight;Layout.fillWidth:true}
     RowLayout {
         Layout.fillWidth:true;Layout.fillHeight:true;spacing:6
         ColumnLayout {

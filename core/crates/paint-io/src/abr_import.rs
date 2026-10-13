@@ -36,6 +36,58 @@ pub struct ImportBatch {
     sources: SourceBatch,
 }
 impl ImportBatch {
+    /// ABR-only handoff; deliberately not a VBR package or a catalog state.
+    pub fn to_json(&self) -> Result<Vec<u8>> {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Row<'a> {
+            name: &'a str,
+            parameters: crate::vbr::Parameters,
+            tip_resource: Option<&'a str>,
+            source_resource: &'a str,
+            partial: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct Handoff<'a> {
+            version: u32,
+            format: &'a str,
+            presets: Vec<Row<'a>>,
+        }
+        let presets = self
+            .presets
+            .iter()
+            .map(|p| {
+                let s = &p.settings;
+                Row {
+                    name: &p.name,
+                    parameters: crate::vbr::Parameters {
+                        diameter: s.diameter,
+                        spacing: s.spacing,
+                        dab_opacity: s.opacity,
+                        hardness: s.tip.hardness,
+                        roundness: s.tip.roundness,
+                        angle: s.tip.angle,
+                        flow: s.tip.flow,
+                        pressure_size: s.tip.pressure_size,
+                        pressure_flow: s.tip.pressure_flow,
+                    },
+                    tip_resource: p.tip.as_deref(),
+                    source_resource: &p.source,
+                    partial: p.partial,
+                }
+            })
+            .collect();
+        let bytes = serde_json::to_vec(&Handoff {
+            version: 1,
+            format: "abr",
+            presets,
+        })
+        .map_err(|e| Error::Codec(e.to_string()))?;
+        if bytes.len() > 2 * 1024 * 1024 {
+            return Err(Error::Limit("ABR handoff JSON bytes"));
+        }
+        Ok(bytes)
+    }
     pub fn presets(&self) -> &[ImportedPreset] {
         &self.presets
     }

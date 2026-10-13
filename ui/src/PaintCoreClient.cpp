@@ -70,8 +70,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 32) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.32 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 33) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.33 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -182,23 +182,24 @@ public:
         emit brushTipReady(target,status==PAINT_OK?QString::fromLatin1(identity):QString{},depth,status==PAINT_OK?QString{}:immediateError(status));
     }
     void brushFile(QString path,QByteArray package,bool exporting) {
-        if(m_stopped){emit brushFileReady({},QStringLiteral("后端已关闭"),exporting);return;}
+        if(m_stopped){emit brushFileReady({},QStringLiteral("后端已关闭"),exporting,false);return;}
+        const bool abr=!exporting && path.endsWith(".abr",Qt::CaseInsensitive);
         const auto encoded=path.toUtf8();PaintStatus status;
         PaintBrushLibrary *library=nullptr;{QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
         if(exporting)status=paint_brush_library_package_write(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<const uint8_t*>(package.constData()),quint64(package.size()));
         else {
             package.resize(2*1024*1024);uint64_t required=0;
-            status=paint_brush_library_package_read(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required);
+            status=abr?paint_brush_library_abr_read(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required):paint_brush_library_package_read(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required);
             if(status==PAINT_OK)package.resize(qsizetype(required));
         }
-        emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting);
+        emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting,abr);
     }
 signals:
     void brushSourceReady(QString identity,quint64 token,QByteArray record,QString error);
     void brushOutlineReady(QString identity,QString path,QString error);
     void brushTipReady(QString target,QString resource,int depth,QString error);
     void nativeBrushCatalog(quint64 preparation,QByteArray state,QString error);
-    void brushFileReady(QByteArray package,QString error,bool exporting);
+    void brushFileReady(QByteArray package,QString error,bool exporting,bool abr);
     void layerClipboardReady(QByteArray bytes);
     void liquifyPreferences(QVariantMap values);
     void brushPreferences(QByteArray json);
@@ -634,10 +635,14 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
     });
     connect(m_brushLibrary,&BrushLibrary::cursorChanged,this,&PaintCoreClient::brushCursorPreferencesChanged);
-    connect(m_worker,&BackendWorker::brushFileReady,this,[this](const QByteArray &package,const QString &error,bool exporting){
+    connect(m_worker,&BackendWorker::brushFileReady,this,[this](const QByteArray &package,const QString &error,bool exporting,bool abr){
         bool success=error.isEmpty();
-        if(success && !exporting && !m_brushLibrary->importPackage(package)){success=false;showError(QStringLiteral("导入失败：笔刷库容量不足或包参数无效（最多 1024 个预设）"));}
+        if(success && !exporting && !(abr?m_brushLibrary->importAbr(package):m_brushLibrary->importPackage(package))){success=false;showError(QStringLiteral("导入失败：笔刷库容量不足或包参数无效（最多 1024 个预设）"));}
         if(!error.isEmpty())showError(error);
+        if(success && abr) {
+            const auto rows=QJsonDocument::fromJson(package).object().value("presets").toArray();int partial=0;for(const auto &row:rows)if(row.toObject().value("partial").toBool())++partial;
+            m_brushImportMessage=QStringLiteral("已导入 %1 个 ABR 笔刷（%2 个部分转换）；在画笔设置的“来源与兼容”查看报告").arg(rows.size()).arg(partial);
+        }
         m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
     });
     connect(m_brushLibrary,&BrushLibrary::persistRequested,this,&PaintCoreClient::persistBrushPreferences);
@@ -1432,6 +1437,7 @@ bool PaintCoreClient::inspectBrushSource() {
 }
 bool PaintCoreClient::importBrushes(const QUrl &path) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
+    m_brushImportMessage.clear();
     m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile()]{worker->brushFile(path,{},false);},Qt::QueuedConnection);return true;
 }
