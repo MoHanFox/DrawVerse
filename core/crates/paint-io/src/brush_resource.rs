@@ -272,7 +272,7 @@ impl ResourceStore {
         let (w, h) = decoder.dimensions();
         self.reserve(&mut cache, estimate(w, h))?;
         let (w, h, pixels) = coverage(decoder, Interpretation::Coverage, token)?;
-        let mask = Arc::new(BrushMask::new(w, h, pixels)?);
+        let mask = Arc::new(BrushMask::new(w, h, pixels)?.with_resource_id(id.into())?);
         check(token)?;
         let source_depth = bytes[24];
         cache.insert(
@@ -317,7 +317,7 @@ impl ResourceStore {
         let (w, h) = decoder.dimensions();
         self.reserve(&mut cache, estimate(w, h))?;
         let (w, h, pixels) = coverage(decoder, Interpretation::Coverage, token)?;
-        let mask = Arc::new(BrushMask::new(w, h, pixels)?);
+        let mask = Arc::new(BrushMask::new(w, h, pixels)?.with_resource_id(id.into())?);
         self.write(id, bytes, token)?;
         let source_depth = bytes[24];
         cache.insert(
@@ -361,7 +361,7 @@ impl ResourceStore {
             }
         }
         self.reserve(&mut cache, estimate(w, h))?;
-        let mask = Arc::new(BrushMask::new(w, h, pixels)?);
+        let mask = Arc::new(BrushMask::new(w, h, pixels)?.with_resource_id(id.clone())?);
         self.write(&id, &normalized, token)?;
         cache.insert(
             id.clone(),

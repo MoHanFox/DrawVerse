@@ -12,6 +12,7 @@ struct Level {
 #[derive(Debug)]
 pub struct BrushMask {
     levels: Vec<Level>,
+    resource_id: Option<String>,
 }
 impl BrushMask {
     pub fn new(width: u32, height: u32, coverage: Vec<u8>) -> Result<Self> {
@@ -52,7 +53,24 @@ impl BrushMask {
                 coverage: pixels.into_boxed_slice(),
             });
         }
-        Ok(Self { levels })
+        Ok(Self {
+            levels,
+            resource_id: None,
+        })
+    }
+    pub fn with_resource_id(mut self, id: String) -> Result<Self> {
+        if id.len() != 64
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(Error::InvalidArgument("brush mask resource identity"));
+        }
+        self.resource_id = Some(id);
+        Ok(self)
+    }
+    pub fn resource_id(&self) -> Option<&str> {
+        self.resource_id.as_deref()
     }
     pub fn dimensions(&self) -> (u32, u32) {
         (self.levels[0].width, self.levels[0].height)

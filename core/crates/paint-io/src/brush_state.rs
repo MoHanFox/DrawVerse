@@ -1,6 +1,7 @@
 //! Migration/normalization of parameter state; excludes tool/global preferences.
-use crate::{Error, Result};
+use crate::{brush_resource::ResourceStore, Error, Result};
 use paint_core::{BrushCatalog, BrushSettings, BrushTip};
+use paint_task::CancellationToken;
 use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -58,18 +59,52 @@ struct Row {
     pressure_size: Option<bool>,
     #[serde(default)]
     pressure_flow: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mask_resource: Option<String>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
+    decode_inner(bytes, mask_budget, None, &CancellationToken::default())
+}
+pub fn decode_with_resources(
+    bytes: &[u8],
+    mask_budget: usize,
+    resources: &ResourceStore,
+    token: &CancellationToken,
+) -> Result<BrushCatalog> {
+    decode_inner(bytes, mask_budget, Some(resources), token)
+}
+fn decode_inner(
+    bytes: &[u8],
+    mask_budget: usize,
+    resources: Option<&ResourceStore>,
+    token: &CancellationToken,
+) -> Result<BrushCatalog> {
     if bytes.len() > 2 * 1024 * 1024 {
         return Err(Error::Limit("brush state bytes"));
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1 | 2) {
+    if !matches!(state.version, 1 | 2 | 3) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
     for row in state.presets {
+        crate::check(token)?;
+        let mask = if let Some(id) = row.mask_resource {
+            if state.version != 3 {
+                return Err(Error::Unsupported("brush images require state v3".into()));
+            }
+            Some(
+                resources
+                    .ok_or(Error::Unsupported(
+                        "brush resource store is required".into(),
+                    ))?
+                    .load(&id, token)?
+                    .mask,
+            )
+        } else {
+            None
+        };
         let tip = if state.version == 1 {
             BrushTip::default()
         } else {
@@ -94,7 +129,7 @@ pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
                 opacity: row.opacity,
                 spacing: row.spacing / 2.,
                 tip,
-                mask: None,
+                mask,
             },
         ));
     }
@@ -102,16 +137,24 @@ pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
 }
 pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
     let mut presets = Vec::new();
+    let mut version = 2;
     for id in catalog.ids() {
         let p = catalog
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
-        if s.mask.is_some() {
-            return Err(Error::Unsupported(
-                "brush state image resources require resource codec".into(),
-            ));
-        }
+        let mask_resource = if let Some(mask) = &s.mask {
+            version = 3;
+            Some(
+                mask.resource_id()
+                    .ok_or(Error::Unsupported(
+                        "brush image has no persistent identity".into(),
+                    ))?
+                    .to_owned(),
+            )
+        } else {
+            None
+        };
         presets.push(Row {
             id: id.clone(),
             name: p.name().into(),
@@ -124,10 +167,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             flow: Some(s.tip.flow),
             pressure_size: Some(s.tip.pressure_size),
             pressure_flow: Some(s.tip.pressure_flow),
+            mask_resource,
         });
     }
     serde_json::to_vec(&State {
-        version: 2,
+        version,
         selected: catalog.selected().id().into(),
         presets,
     })
