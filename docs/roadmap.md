@@ -1,5 +1,7 @@
 # 模块顺序与验收
 
+图片笔尖内核：[设计](brush-mask-design.md) / [验收](brush-mask-validation.md)。资源与实际像素路径已完成；接下来完成 Rust 库/持久资源身份，VBR 图片和 ABR 导入。
+
 笔尖光标：[设置设计](brush-cursor-settings-design.md) / [验收](brush-cursor-settings-validation.md)。全局显示偏好与多文档同步/保存已完成；图片笔尖轮廓和硬件动态待后续引擎阶段。
 
 VBR 程序子集：[设计](vbr-procedural-design.md) / [验收](vbr-procedural-validation.md)，ABI 1.26。已实现程序预设包导入/导出与严格验证；图片资源、ABR 与其他模块继续后续阶段。

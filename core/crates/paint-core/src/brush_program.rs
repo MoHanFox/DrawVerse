@@ -1,4 +1,5 @@
-use crate::{Brush, Error, Result};
+use crate::{Brush, BrushMask, Error, Result};
+use std::sync::Arc;
 
 /// Procedural tip parameters. Defaults preserve the legacy round brush.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,10 +41,11 @@ impl BrushTip {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct BrushDefinition {
     pub brush: Brush,
     pub tip: BrushTip,
+    pub mask: Option<Arc<BrushMask>>,
 }
 
 impl From<Brush> for BrushDefinition {
@@ -51,16 +53,43 @@ impl From<Brush> for BrushDefinition {
         Self {
             brush,
             tip: BrushTip::default(),
+            mask: None,
         }
     }
 }
 
 /// A validated immutable execution plan shared by all stroke operators.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct BrushProgram {
     pub(crate) tip: BrushTip,
     sine: f64,
     cosine: f64,
+    mask: Option<Arc<BrushMask>>,
+}
+
+/// Geometry and minification compiled once for one pressure-sized image dab.
+pub(crate) struct MaskDab<'a> {
+    mask: &'a BrushMask,
+    sine: f64,
+    cosine: f64,
+    rx: f64,
+    ry: f64,
+    lod: (usize, usize, f32),
+}
+impl MaskDab<'_> {
+    #[inline]
+    pub(crate) fn coverage(&self, dx: f64, dy: f64) -> f32 {
+        let x = dx * self.cosine + dy * self.sine;
+        let y = -dx * self.sine + dy * self.cosine;
+        let edge = (self.rx + 0.5 - x.abs()).clamp(0., 1.).min(self.rx * 2.)
+            * (self.ry + 0.5 - y.abs()).clamp(0., 1.).min(self.ry * 2.);
+        if edge == 0. {
+            return 0.;
+        }
+        self.mask
+            .sample((x / self.rx + 1.) * 0.5, (y / self.ry + 1.) * 0.5, self.lod)
+            * edge as f32
+    }
 }
 
 impl BrushProgram {
@@ -72,11 +101,59 @@ impl BrushProgram {
             tip: definition.tip,
             sine,
             cosine,
+            mask: definition.mask,
         })
     }
 
     #[inline]
-    pub fn coverage(self, dx: f64, dy: f64, radius: f64) -> f32 {
+    pub fn coverage(&self, dx: f64, dy: f64, radius: f64) -> f32 {
+        if self.has_mask() {
+            self.mask_dab(radius).map_or(0., |dab| dab.coverage(dx, dy))
+        } else {
+            self.procedural_coverage(dx, dy, radius)
+        }
+    }
+    pub fn has_mask(&self) -> bool {
+        self.mask.is_some()
+    }
+    pub(crate) fn extent(&self, radius: f64) -> (f64, f64) {
+        if let Some(mask) = &self.mask {
+            let (w, h) = mask.dimensions();
+            let scale = radius / f64::from(w.max(h));
+            let (x, y) = (
+                f64::from(w) * scale,
+                f64::from(h) * scale * f64::from(self.tip.roundness),
+            );
+            (
+                self.cosine.abs() * x + self.sine.abs() * y,
+                self.sine.abs() * x + self.cosine.abs() * y,
+            )
+        } else {
+            (radius, radius)
+        }
+    }
+    pub(crate) fn mask_dab(&self, radius: f64) -> Option<MaskDab<'_>> {
+        if radius <= 0. {
+            return None;
+        }
+        let mask = self.mask.as_ref().expect("image path");
+        let (w, h) = mask.dimensions();
+        let scale = radius / f64::from(w.max(h));
+        let (rx, ry) = (
+            f64::from(w) * scale,
+            f64::from(h) * scale * f64::from(self.tip.roundness),
+        );
+        Some(MaskDab {
+            mask,
+            sine: self.sine,
+            cosine: self.cosine,
+            rx,
+            ry,
+            lod: mask.lod(radius * 2. * f64::from(self.tip.roundness)),
+        })
+    }
+    #[inline]
+    pub(crate) fn procedural_coverage(&self, dx: f64, dy: f64, radius: f64) -> f32 {
         if radius <= 0. {
             return 0.;
         }

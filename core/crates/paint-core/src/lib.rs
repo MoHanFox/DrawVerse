@@ -2,6 +2,7 @@
 //! Pixels are linear premultiplied RGBA32F; display conversion is external.
 mod appearance;
 mod brush;
+mod brush_mask;
 mod brush_program;
 mod clipping;
 mod document;
@@ -18,6 +19,7 @@ pub use appearance::{
     blend_pixel, BlendMode, LayerAppearance, LOCK_ALL, LOCK_POSITION, LOCK_TRANSPARENCY,
 };
 pub use brush::{Brush, BrushMode, InputPoint, Tool};
+pub use brush_mask::{BrushMask, MAX_BRUSH_MASK_BYTES, MAX_BRUSH_MASK_EDGE};
 pub use brush_program::{BrushDefinition, BrushProgram, BrushTip};
 pub use document::{
     BucketFill, DirtyTiles, Document, DocumentOptions, DocumentSnapshot, LiquifyDab, PlacedImage,

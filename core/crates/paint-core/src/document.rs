@@ -1151,8 +1151,8 @@ impl Document {
         first: InputPoint,
     ) -> Result<()> {
         self.idle()?;
-        let program = BrushProgram::compile(definition)?;
         let brush = definition.brush;
+        let program = BrushProgram::compile(definition)?;
         first.validate()?;
         if self
             .layer(self.active_layer)
@@ -1237,7 +1237,15 @@ impl Document {
         } else {
             ((distance - current.distance_to_next + 1e-9) / step).floor() as usize + 1
         };
-        let diameter = (f64::from(current.brush.radius) * 2.0 + 2.0).ceil() as usize;
+        let diameter = (f64::from(current.brush.radius)
+            * 2.0
+            * if current.program.has_mask() {
+                std::f64::consts::SQRT_2
+            } else {
+                1.
+            }
+            + 2.0)
+            .ceil() as usize;
         let sample_cost = if matches!(current.brush.mode, BrushMode::Smudge { .. }) {
             5
         } else {
@@ -1388,14 +1396,15 @@ impl Document {
     fn dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
         // Specialize once per dab: an inactive selection adds no pixel-loop
         // geometry branches or coverage multiplication to the original hot path.
-        if self.selection.enabled() {
-            self.dab_with_selection::<true>(stroke, point)
-        } else {
-            self.dab_with_selection::<false>(stroke, point)
+        match (self.selection.enabled(), stroke.program.has_mask()) {
+            (true, true) => self.dab_with_selection::<true, true>(stroke, point),
+            (true, false) => self.dab_with_selection::<true, false>(stroke, point),
+            (false, true) => self.dab_with_selection::<false, true>(stroke, point),
+            (false, false) => self.dab_with_selection::<false, false>(stroke, point),
         }
     }
 
-    fn dab_with_selection<const SELECTED: bool>(
+    fn dab_with_selection<const SELECTED: bool, const IMAGED: bool>(
         &mut self,
         stroke: &mut Stroke,
         point: InputPoint,
@@ -1431,10 +1440,11 @@ impl Document {
         if radius == 0.0 || flow == 0.0 {
             return Ok(false);
         }
-        let x0 = ((point.x - radius - 1.0).floor() as i64).clamp(0, i64::from(self.width));
-        let y0 = ((point.y - radius - 1.0).floor() as i64).clamp(0, i64::from(self.height));
-        let x1 = ((point.x + radius + 1.0).ceil() as i64).clamp(0, i64::from(self.width));
-        let y1 = ((point.y + radius + 1.0).ceil() as i64).clamp(0, i64::from(self.height));
+        let (extent_x, extent_y) = stroke.program.extent(radius);
+        let x0 = ((point.x - extent_x - 1.0).floor() as i64).clamp(0, i64::from(self.width));
+        let y0 = ((point.y - extent_y - 1.0).floor() as i64).clamp(0, i64::from(self.height));
+        let x1 = ((point.x + extent_x + 1.0).ceil() as i64).clamp(0, i64::from(self.width));
+        let y1 = ((point.y + extent_y + 1.0).ceil() as i64).clamp(0, i64::from(self.height));
         let index = self.layer_index(stroke.layer)?;
         let appearance = self.layers[index].appearance;
         let mask = self.layers[index].mask;
@@ -1474,6 +1484,11 @@ impl Document {
             point.x - f64::from(appearance.offset_x),
             point.y - f64::from(appearance.offset_y),
         );
+        let mask_dab = if IMAGED {
+            stroke.program.mask_dab(radius)
+        } else {
+            None
+        };
         for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
             for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
                 let coord = TileCoord::from_signed(tx as i32, ty as i32);
@@ -1516,11 +1531,18 @@ impl Document {
                         if selected == 0. {
                             continue;
                         }
-                        let coverage = stroke.program.coverage(
-                            x as f64 + 0.5 - px,
-                            y as f64 + 0.5 - py,
-                            radius,
-                        );
+                        let coverage = if IMAGED {
+                            mask_dab
+                                .as_ref()
+                                .expect("compiled image dab")
+                                .coverage(x as f64 + 0.5 - px, y as f64 + 0.5 - py)
+                        } else {
+                            stroke.program.procedural_coverage(
+                                x as f64 + 0.5 - px,
+                                y as f64 + 0.5 - py,
+                                radius,
+                            )
+                        };
                         if coverage == 0. {
                             continue;
                         }

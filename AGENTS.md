@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图片笔尖内核：`docs/brush-mask-design.md` / `docs/brush-mask-validation.md`；不可变覆盖资源/mip、每印章采样计划、孔洞/非方形/旋转完整边界、资源快照与四类写入共用，图片 UI/VBR 资源/ABR 尚待接入，无 ABI 变化。
+
 - 最新笔尖光标偏好：`docs/brush-cursor-settings-design.md` / `docs/brush-cursor-settings-validation.md`；实际/简化轮廓、中心/悬停/线宽/颜色、全局保存不进入 VBR、多文档笔刷状态同步与单一写入者移交，无 ABI 变化。
 
 - 最新 VBR 程序子集：`docs/vbr-procedural-design.md` / `docs/vbr-procedural-validation.md`；ABI 1.26、Rust 有界 ZIP/JSON 与原子 IO、程序预设 UUID/能力/单位、后台导入导出、冲突副本与整包发布；资源/ABR 暂未实现。

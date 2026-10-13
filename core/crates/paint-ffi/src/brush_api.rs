@@ -51,6 +51,7 @@ pub unsafe extern "C" fn paint_session_begin_brush(
         };
         let definition = BrushDefinition {
             brush,
+            mask: None,
             tip: BrushTip {
                 hardness: t.hardness,
                 roundness: t.roundness,
@@ -60,7 +61,7 @@ pub unsafe extern "C" fn paint_session_begin_brush(
                 pressure_flow: t.pressure_flow == 1,
             },
         };
-        BrushProgram::compile(definition)?;
+        BrushProgram::compile(definition.clone())?;
         let point = crate::point(pointers::read_sized(point)?)?;
         point.validate()?;
         let sequence = runtime::registry()?

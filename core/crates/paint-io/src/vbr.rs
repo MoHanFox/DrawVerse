@@ -31,6 +31,7 @@ pub struct Parameters {
 impl Parameters {
     pub fn definition(&self) -> BrushDefinition {
         BrushDefinition {
+            mask: None,
             brush: Brush {
                 radius: self.diameter / 2.,
                 spacing: self.spacing * 2.,
@@ -153,7 +154,7 @@ impl Package {
                 return Err(Error::Unsupported("VBR required capabilities".into()));
             }
             let definition = b.parameters.definition();
-            BrushProgram::compile(definition)?;
+            BrushProgram::compile(definition.clone())?;
             if b.engine_profile == "legacy.round" && definition.tip != BrushTip::default() {
                 return Err(Error::Unsupported(
                     "legacy.round cannot execute advanced tip parameters".into(),
