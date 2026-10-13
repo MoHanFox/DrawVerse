@@ -15,6 +15,7 @@
 #include <QClipboard>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <algorithm>
 #include <atomic>
 #include <vector>
@@ -26,13 +27,6 @@ Q_DECLARE_METATYPE(PaintFileJobInfo)
 namespace {
 enum Operation { New = 1, Begin, Move, End, Cancel, Undo, Redo, Add, Remove, Select, Properties, NewWhite, AddMask };
 template<class T> T dto() { T value{}; value.struct_size = sizeof(T); return value; }
-PaintBrushTip brushTip(const QVariantMap &settings) {
-    auto tip=dto<PaintBrushTip>();
-    tip.hardness=settings.value("hardness",1.).toFloat();tip.roundness=settings.value("roundness",1.).toFloat();
-    tip.angle=settings.value("angle",0.).toFloat();tip.flow=settings.value("flow",1.).toFloat();
-    tip.pressure_size=settings.value("pressureSize",true).toBool();tip.pressure_flow=settings.value("pressureFlow",true).toBool();
-    return tip;
-}
 float linear(float v) { return v <= .04045f ? v / 12.92f : std::pow((v + .055f) / 1.055f, 2.4f); }
 QString immediateError(PaintStatus status) {
     uint64_t size = 0; paint_error_message(nullptr, 0, &size);
@@ -76,11 +70,18 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 28) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.28 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 29) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.29 或兼容后续版本")); return;
         }
-        {QMutexLocker lock(&m_catalog->mutex);if(!m_catalog->library && !check(paint_brush_library_create(0,&m_catalog->library)))return;++m_catalog->workers;m_catalogLease=true;}
         auto settings = preferences();
+        {QMutexLocker lock(&m_catalog->mutex);
+            if(!m_catalog->library){
+                if(!check(paint_brush_library_create(0,&m_catalog->library)))return;
+                const auto directory=QFileInfo(settings->fileName()).dir().filePath("brush-resources").toUtf8();
+                if(!check(paint_brush_library_bind_resources(m_catalog->library,reinterpret_cast<const uint8_t*>(directory.constData()),quint64(directory.size())))){paint_brush_library_destroy(&m_catalog->library);return;}
+            }
+            ++m_catalog->workers;m_catalogLease=true;
+        }
         emit brushPreferences(settings->value("brushes/state").toByteArray());
         emit liquifyPreferences({{"tool",settings->value("liquify/tool",0)},{"size",settings->value("liquify/size",200)},{"strength",settings->value("liquify/strength",50)},{"density",settings->value("liquify/density",100)},{"speed",settings->value("liquify/speed",100)},{"pressure",settings->value("liquify/pressure",false)}});
         m_historyLimit = std::clamp(settings->value("history/limit", 100).toInt(), 10, 1000);
@@ -155,6 +156,13 @@ public:
         emit finished();
     }
     void watchLayerCopy(quint64 sequence) {m_layerCopySequence=sequence;}
+    void importBrushTip(QString path,QString target,int interpretation) {
+        PaintBrushLibrary *library=nullptr;
+        {QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
+        const auto encoded=path.toUtf8();QByteArray identity(64,'\0');uint64_t required=0;uint32_t depth=0;
+        const auto status=paint_brush_library_import_tip_file(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),quint32(interpretation),reinterpret_cast<uint8_t*>(identity.data()),64,&required,&depth);
+        emit brushTipReady(target,status==PAINT_OK?QString::fromLatin1(identity):QString{},depth,status==PAINT_OK?QString{}:immediateError(status));
+    }
     void brushFile(QString path,QByteArray package,bool exporting) {
         if(m_stopped){emit brushFileReady({},QStringLiteral("后端已关闭"),exporting);return;}
         const auto encoded=path.toUtf8();PaintStatus status;
@@ -167,6 +175,7 @@ public:
         emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting);
     }
 signals:
+    void brushTipReady(QString target,QString resource,int depth,QString error);
     void nativeBrushCatalog(quint64 preparation,QByteArray state,QString error);
     void brushFileReady(QByteArray package,QString error,bool exporting);
     void layerClipboardReady(QByteArray bytes);
@@ -465,7 +474,7 @@ public:
         if(!m_pendingBrushPreferences.isEmpty()){
             const auto pending=std::exchange(m_pendingBrushPreferences,{});
             if(pending!=wanted || !error.isEmpty())return;
-            auto root=QJsonDocument::fromJson(pending).object();const auto native=QJsonDocument::fromJson(canonical).object();root["presets"]=native.value("presets");root["selected"]=native.value("selected");root["version"]=2;
+            auto root=QJsonDocument::fromJson(pending).object();const auto native=QJsonDocument::fromJson(canonical).object();root["presets"]=native.value("presets");root["selected"]=native.value("selected");root["version"]=native.value("version");
             auto settings=preferences();settings->setValue("brushes/state",QJsonDocument(root).toJson(QJsonDocument::Compact));settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存画笔设置，请检查配置目录权限"));
         }
     }
@@ -479,13 +488,21 @@ public:
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_BEGIN_STROKE;command.stroke=dto<PaintStrokeDesc>();command.stroke.mode=PAINT_MODE_PAINT;
             command.stroke.radius=static_cast<float>(std::clamp(m_brushJob.value("radius").toDouble()*.35,2.,18.));command.stroke.opacity=m_brushJob.value("opacity").toFloat();command.stroke.spacing=m_brushJob.value("spacing").toFloat();
             for(auto &v:command.stroke.linear_rgba)v=1;
-            if(!m_previewCatalog && paint_brush_library_create(0,&m_previewCatalog)!=PAINT_OK){finishBrushPreview({});return;}
-            auto settings=dto<PaintBrushSettings>();settings.diameter=48;settings.opacity=command.stroke.opacity;settings.spacing=command.stroke.spacing/2;settings.tip=brushTip(m_brushJob.value("tip").toMap());
+            if(!m_previewCatalog){
+                if(paint_brush_library_create(0,&m_previewCatalog)!=PAINT_OK){finishBrushPreview({});return;}
+                PaintBrushLibrary *library=nullptr;{QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
+                if(paint_brush_library_share_resources(m_previewCatalog,library)!=PAINT_OK){paint_brush_library_destroy(&m_previewCatalog);finishBrushPreview({});return;}
+            }
             const QByteArray presetId="round-pressure";
-            if(paint_brush_library_edit(m_previewCatalog,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&settings)!=PAINT_OK){finishBrushPreview({});return;}
+            BrushLibrary draft;auto state=QJsonDocument::fromJson(draft.catalogSnapshot()).object();auto rows=state.value("presets").toArray();auto row=rows[0].toObject();const auto tip=m_brushJob.value("tip").toMap();
+            row["radius"]=24.;row["opacity"]=command.stroke.opacity;row["spacing"]=command.stroke.spacing;
+            for(const auto &key:{"hardness","roundness","angle","flow","pressureSize","pressureFlow"})row[key]=QJsonValue::fromVariant(tip.value(key));
+            if(!tip.value("maskResource").toString().isEmpty()){row["maskResource"]=tip.value("maskResource").toString();state["version"]=3;}
+            rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
+            if(paint_brush_library_prepare_state(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
             for(int i=0;i<=32;++i){const double t=i/32.;InputSample sample;sample.position={20+200*t,30+8*std::sin(t*6.283185307)};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
-                const auto status=i==0?paint_session_begin_preset(m_core,m_brushSession,m_previewCatalog,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
+                const auto status=i==0?paint_session_begin_prepared_preset(m_core,m_brushSession,m_previewCatalog,preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
                 if(status!=PAINT_OK){finishBrushPreview({});return;}}
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_END_STROKE;if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}
             return;
@@ -573,6 +590,13 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(!error.isEmpty())showError(error);
     });
     connect(m_worker,&BackendWorker::brushPreviewReady,m_brushLibrary,&BrushLibrary::acceptPreview);
+    connect(m_worker,&BackendWorker::brushTipReady,this,[this](const QString &target,const QString &resource,int depth,const QString &error){
+        bool success=error.isEmpty();
+        if(success && !m_brushLibrary->setMaskResource(target,resource)){success=false;showError(QStringLiteral("目标笔刷已删除，未应用图片笔尖"));}
+        if(!error.isEmpty())showError(error);
+        m_brushImportMessage=success?(depth==16?QStringLiteral("已导入：16 位覆盖已转换为 8 位"):QStringLiteral("图片笔尖已导入")):QString{};
+        m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
+    });
     connect(m_brushLibrary,&BrushLibrary::cursorChanged,this,&PaintCoreClient::brushCursorPreferencesChanged);
     connect(m_worker,&BackendWorker::brushFileReady,this,[this](const QByteArray &package,const QString &error,bool exporting){
         bool success=error.isEmpty();
@@ -1361,6 +1385,11 @@ bool PaintCoreClient::importBrushes(const QUrl &path) {
     m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile()]{worker->brushFile(path,{},false);},Qt::QueuedConnection);return true;
 }
+bool PaintCoreClient::importBrushTip(const QUrl &path,int interpretation) {
+    if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty() || interpretation<0 || interpretation>2)return false;
+    const auto target=m_brushLibrary->selectedId();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),target,interpretation]{worker->importBrushTip(path,target,interpretation);},Qt::QueuedConnection);return true;
+}
 void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
     if(!m_brushPreferencePersistenceEnabled || m_closing)return;
     {QMutexLocker lock(&m_brushCatalogConnection->mutex);m_brushCatalogConnection->preferences=state;}
@@ -1369,7 +1398,7 @@ void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
 }
 bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
     const auto root=QJsonDocument::fromJson(state).object();
-    const auto source=QJsonDocument(QJsonObject{{"version",2},{"selected",root.value("selected")},{"presets",root.value("presets")}}).toJson(QJsonDocument::Compact);
+    const auto source=QJsonDocument(QJsonObject{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}}).toJson(QJsonDocument::Compact);
     QMutexLocker lock(&m_brushCatalogConnection->mutex);
     if(!m_brushCatalogConnection->library)return false;
     if(source==m_brushCatalogConnection->source && m_brushCatalogConnection->preparation)return true;
@@ -1379,7 +1408,9 @@ bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
 }
 bool PaintCoreClient::exportBrush(const QUrl &path) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
-    const auto package=m_brushLibrary->exportPackage();m_brushFileBusy=true;emit brushFileChanged();
+    const auto package=m_brushLibrary->exportPackage();
+    if(package.isEmpty()){showError(QStringLiteral("图片笔尖的 VBR 资源导出尚未支持"));return false;}
+    m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),package]{worker->brushFile(path,package,true);},Qt::QueuedConnection);return true;
 }
 bool PaintCoreClient::saveDocument(const QUrl &path, int format) { return submitFile(path, PAINT_FILE_SAVE, format); }

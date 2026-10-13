@@ -12,6 +12,7 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(QString selectedName READ selectedName NOTIFY settingsChanged)
     Q_PROPERTY(QString selectedPreview READ selectedPreview NOTIFY presetsChanged)
     Q_PROPERTY(QString previewMessage READ previewMessage NOTIFY presetsChanged)
+    Q_PROPERTY(QString maskResource READ maskResource NOTIFY settingsChanged)
     Q_PROPERTY(qreal radius READ radius WRITE setRadius NOTIFY settingsChanged)
     Q_PROPERTY(qreal opacity READ opacity WRITE setOpacity NOTIFY settingsChanged)
     Q_PROPERTY(qreal spacing READ spacing WRITE setSpacing NOTIFY settingsChanged)
@@ -50,6 +51,9 @@ public:
     QString selectedName() const;
     QString selectedPreview() const;
     QString previewMessage() const;
+    QString maskResource() const;
+    bool setMaskResource(const QString &id,const QString &resource);
+    Q_INVOKABLE void useProceduralTip() {setMaskResource(m_selected,{});}
     qreal radius() const;
     qreal opacity() const;
     qreal spacing() const;
@@ -99,7 +103,7 @@ private:
     bool m_cursorSimple=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource;};
     int index(const QString &id) const;
     void update(int field,qreal value);
     void changed();

@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QSet>
 #include <QUuid>
+#include <QRegularExpression>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -35,6 +36,14 @@ bool BrushLibrary::useColor(const QString &color) {
 int BrushLibrary::index(const QString &id) const {for(int i=0;i<m_presets.size();++i)if(m_presets[i].id==id)return i;return -1;}
 QString BrushLibrary::selectedName() const{return m_presets[index(m_selected)].name;}
 QString BrushLibrary::selectedPreview() const{return m_presets[index(m_selected)].preview;}
+QString BrushLibrary::maskResource() const{return m_presets[index(m_selected)].maskResource;}
+bool BrushLibrary::setMaskResource(const QString &id,const QString &resource) {
+    const int i=index(id);
+    static const QRegularExpression identity("^[0-9a-f]{64}$");
+    if(i<0 || (!resource.isEmpty() && !identity.match(resource).hasMatch()))return false;
+    auto &p=m_presets[i];if(p.maskResource==resource)return true;
+    p.maskResource=resource;p.preview.clear();p.error.clear();p.token=++m_nextToken;p.requested=0;changed();return true;
+}
 QString BrushLibrary::previewMessage() const{const auto &p=m_presets[index(m_selected)];return p.error.isEmpty()?QStringLiteral("生成预览…"):p.error;}
 qreal BrushLibrary::radius() const{return m_toolRadii[m_eraser?1:0];}
 qreal BrushLibrary::opacity() const{return m_presets[index(m_selected)].opacity;}
@@ -45,7 +54,7 @@ qreal BrushLibrary::angle() const{return m_presets[index(m_selected)].angle;}
 qreal BrushLibrary::flow() const{return m_presets[index(m_selected)].flow;}
 bool BrushLibrary::pressureSize() const{return m_presets[index(m_selected)].pressureSize;}
 bool BrushLibrary::pressureFlow() const{return m_presets[index(m_selected)].pressureFlow;}
-QVariantMap BrushLibrary::tipSettings() const{return {{"hardness",hardness()},{"roundness",roundness()},{"angle",angle()},{"flow",flow()},{"pressureSize",pressureSize()},{"pressureFlow",pressureFlow()}};}
+QVariantMap BrushLibrary::tipSettings() const{return {{"hardness",hardness()},{"roundness",roundness()},{"angle",angle()},{"flow",flow()},{"pressureSize",pressureSize()},{"pressureFlow",pressureFlow()},{"maskResource",maskResource()}};}
 QVariantList BrushLibrary::presets() const {
     QVariantList rows;for(const auto &p:m_presets)rows.append(QVariantMap{{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opacity},{"spacing",p.spacing},{"builtin",p.builtin},{"preview",p.preview}});return rows;
 }
@@ -91,16 +100,17 @@ bool BrushLibrary::select(const QString &id){if(index(id)<0)return false;if(id!=
 QString BrushLibrary::saveCopy(const QString &name){if(m_presets.size()>=1024 || name.trimmed().isEmpty() || name.size()>80)return {};auto p=m_presets[index(m_selected)];p.id=QUuid::createUuid().toString(QUuid::WithoutBraces);p.name=name.trimmed();p.builtin=false;p.token=++m_nextToken;p.requested=0;p.error.clear();m_presets.append(p);m_selected=p.id;changed();return p.id;}
 bool BrushLibrary::rename(const QString &id,const QString &name){const int i=index(id);if(i<0 || name.trimmed().isEmpty() || name.size()>80)return false;m_presets[i].name=name.trimmed();changed();return true;}
 bool BrushLibrary::remove(const QString &id){const int i=index(id);if(i<0 || m_presets[i].builtin)return false;m_presets.removeAt(i);if(m_selected==id)m_selected="round-pressure";changed();return true;}
-void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;emit previewRequested(p.id,p.token,24.,p.opacity,p.spacing,{{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}});}
+void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;emit previewRequested(p.id,p.token,24.,p.opacity,p.spacing,{{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow},{"maskResource",p.maskResource}});}
 void BrushLibrary::retryPreview(){auto &p=m_presets[index(m_selected)];p.preview.clear();p.error.clear();p.requested=0;p.token=++m_nextToken;requestPreview(m_selected);emit presetsChanged();}
 void BrushLibrary::acceptPreview(const QString &id,quint64 token,const QString &image){const int i=index(id);if(i<0 || m_presets[i].token!=token)return;m_presets[i].requested=0;m_presets[i].preview=image;m_presets[i].error=image.isEmpty()?QStringLiteral("预览暂不可用"):QString();emit presetsChanged();}
 QByteArray BrushLibrary::snapshot() const {
-    QJsonArray rows;for(const auto &p:m_presets)rows.append(QJsonObject{{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opacity},{"spacing",p.spacing},{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}});
-    return QJsonDocument(QJsonObject{{"version",2},{"selected",m_selected},{"presets",rows},{"cursor",QJsonObject{{"outline",m_cursorOutline},{"center",m_cursorCenter},{"hoverOnly",m_cursorHoverOnly},{"width",m_cursorWidth},{"simple",m_cursorSimple},{"color",m_cursorColor},{"secondaryColor",m_cursorSecondaryColor}}},{"toolRadii",QJsonArray{m_toolRadii[0],m_toolRadii[1]}},
+    QJsonArray rows;bool images=false;for(const auto &p:m_presets){QJsonObject row{{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opacity},{"spacing",p.spacing},{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}};if(!p.maskResource.isEmpty()){row["maskResource"]=p.maskResource;images=true;}rows.append(row);}
+    return QJsonDocument(QJsonObject{{"version",images?3:2},{"selected",m_selected},{"presets",rows},{"cursor",QJsonObject{{"outline",m_cursorOutline},{"center",m_cursorCenter},{"hoverOnly",m_cursorHoverOnly},{"width",m_cursorWidth},{"simple",m_cursorSimple},{"color",m_cursorColor},{"secondaryColor",m_cursorSecondaryColor}}},{"toolRadii",QJsonArray{m_toolRadii[0],m_toolRadii[1]}},
                                      {"recentColors",QJsonArray::fromStringList(m_recentColors)}}).toJson(QJsonDocument::Compact);
 }
 QByteArray BrushLibrary::exportPackage() const {
     const auto &p=m_presets[index(m_selected)];
+    if(!p.maskResource.isEmpty())return {};
     const QStringList builtins={"round-pressure","round-fine","round-translucent","round-wide"};
     const int builtin=builtins.indexOf(p.id);
     const auto id=builtin<0?p.id:QString("dba00000-0000-4000-8000-%1").arg(builtin+1,12,16,QChar('0'));
@@ -110,13 +120,13 @@ QByteArray BrushLibrary::exportPackage() const {
 }
 QByteArray BrushLibrary::catalogSnapshot() const {
     const auto root=QJsonDocument::fromJson(snapshot()).object();
-    return QJsonDocument(QJsonObject{{"version",2},{"selected",root.value("selected")},{"presets",root.value("presets")}}).toJson(QJsonDocument::Compact);
+    return QJsonDocument(QJsonObject{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}}).toJson(QJsonDocument::Compact);
 }
 bool BrushLibrary::applyNativeCatalog(const QByteArray &json) {
     const auto native=QJsonDocument::fromJson(json).object();
-    if(native.value("version").toInt()!=2 || !native.value("presets").isArray() || !native.value("selected").isString())return false;
+    if((native.value("version").toInt()!=2 && native.value("version").toInt()!=3) || !native.value("presets").isArray() || !native.value("selected").isString())return false;
     if(QJsonDocument(native).toJson(QJsonDocument::Compact)==catalogSnapshot())return true;
-    auto state=QJsonDocument::fromJson(snapshot()).object();state["version"]=2;state["selected"]=native.value("selected");state["presets"]=native.value("presets");
+    auto state=QJsonDocument::fromJson(snapshot()).object();state["version"]=native.value("version");state["selected"]=native.value("selected");state["presets"]=native.value("presets");
     return restore(QJsonDocument(state).toJson(QJsonDocument::Compact));
 }
 bool BrushLibrary::importPackage(const QByteArray &json) {
@@ -145,11 +155,16 @@ bool BrushLibrary::restore(const QByteArray &json) {
     if(json.size()>2*1024*1024)return false;
     const auto root=QJsonDocument::fromJson(json).object();const auto rows=root.value("presets").toArray();
     const int version=root.value("version").toInt();
-    if((version!=1 && version!=2) || rows.size()<4 || rows.size()>1024)return false;
+    if((version<1 || version>3) || rows.size()<4 || rows.size()>1024)return false;
     const QSet<QString> builtins{"round-pressure","round-fine","round-translucent","round-wide"};QSet<QString> seen;QList<Preset> restored;
     for(const auto &row:rows){const auto p=row.toObject();Preset b;b.id=p.value("id").toString();b.name=p.value("name").toString();b.radius=p.value("radius").toDouble(std::numeric_limits<double>::quiet_NaN());b.opacity=p.value("opacity").toDouble(std::numeric_limits<double>::quiet_NaN());b.spacing=p.value("spacing").toDouble(std::numeric_limits<double>::quiet_NaN());
         if(b.id.isEmpty() || b.id.size()>64 || seen.contains(b.id) || b.name.trimmed().isEmpty() || b.name.size()>80 || !std::isfinite(b.radius) || b.radius<.5 || b.radius>256 || !std::isfinite(b.opacity) || b.opacity<0 || b.opacity>1 || !std::isfinite(b.spacing) || b.spacing<.02 || b.spacing>1)return false;
-        if(version==2){
+        if(p.contains("maskResource")) {
+            static const QRegularExpression identity("^[0-9a-f]{64}$");
+            if(version!=3 || !p.value("maskResource").isString() || !identity.match(p.value("maskResource").toString()).hasMatch())return false;
+            b.maskResource=p.value("maskResource").toString();
+        }
+        if(version>=2){
             for(const auto &key:{"hardness","roundness","angle","flow"})if(!p.value(key).isDouble())return false;
             if(!p.value("pressureSize").isBool() || !p.value("pressureFlow").isBool())return false;
             b.hardness=p.value("hardness").toDouble();b.roundness=p.value("roundness").toDouble();b.angle=p.value("angle").toDouble();b.flow=p.value("flow").toDouble();

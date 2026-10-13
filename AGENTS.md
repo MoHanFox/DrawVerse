@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图片笔尖Qt接入：`docs/brush-image-ui-design.md` / `docs/brush-image-ui-validation.md`；后台PNG三种解释/捕获目标/持久v3/独立真实预览、图片硬度禁用和程序恢复；图片精确轮廓/VBR图片/ABR/高级动态仍待完成。
+
 - 最新图片笔尖原生资源接口：`docs/brush-resource-abi-design.md` / `docs/brush-resource-abi-validation.md`；ABI 1.29、后台PNG导入/共享资源目录、v3准确准备、闲置修订释放/重建及在途资源保留；Qt图片控件/VBR图片/ABR仍待接入。
 
 - 最新图片笔尖身份/状态：`docs/brush-resource-state-design.md` / `docs/brush-resource-state-validation.md`；覆盖不可变PNG身份/v3哈希引用/后台资源恢复与整包编译，旧状态保留；原生资源目录/Qt/VBR图片/ABR仍待接入。
