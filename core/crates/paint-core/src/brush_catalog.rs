@@ -1,0 +1,265 @@
+use crate::{Brush, BrushDefinition, BrushMask, BrushMode, BrushProgram, BrushTip, Error, Result};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
+pub const MAX_BRUSH_PRESETS: usize = 1024;
+pub const MAX_CATALOG_MASK_BYTES: usize = 128 * 1024 * 1024;
+const BUILTINS: [&str; 4] = [
+    "round-pressure",
+    "round-fine",
+    "round-translucent",
+    "round-wide",
+];
+
+#[derive(Clone, Debug)]
+pub struct BrushSettings {
+    pub diameter: f32,
+    pub opacity: f32,
+    pub spacing: f32,
+    pub tip: BrushTip,
+    pub mask: Option<Arc<BrushMask>>,
+}
+impl Default for BrushSettings {
+    fn default() -> Self {
+        Self {
+            diameter: 24.,
+            opacity: 1.,
+            spacing: 0.075,
+            tip: BrushTip::default(),
+            mask: None,
+        }
+    }
+}
+impl BrushSettings {
+    /// Tool colour/mode and temporary size are applied by the stroke caller.
+    pub fn definition(&self) -> BrushDefinition {
+        BrushDefinition {
+            brush: Brush {
+                radius: self.diameter / 2.,
+                opacity: self.opacity,
+                spacing: self.spacing * 2.,
+                mode: BrushMode::Paint,
+                ..Brush::default()
+            },
+            tip: self.tip,
+            mask: self.mask.clone(),
+        }
+    }
+}
+#[derive(Debug)]
+pub struct BrushPreset {
+    id: String,
+    name: String,
+    builtin: bool,
+    settings: BrushSettings,
+    program: BrushProgram,
+}
+fn uuid(id: &str) -> bool {
+    id.len() == 36
+        && id.bytes().enumerate().all(|(i, c)| {
+            if [8, 13, 18, 23].contains(&i) {
+                c == b'-'
+            } else {
+                c.is_ascii_digit() || (b'a'..=b'f').contains(&c)
+            }
+        })
+        && id != "00000000-0000-0000-0000-000000000000"
+}
+impl BrushPreset {
+    pub fn new(id: String, name: String, settings: BrushSettings) -> Result<Self> {
+        if !uuid(&id) {
+            return Err(Error::InvalidArgument("brush preset UUID"));
+        }
+        Self::build(id, name, settings, false)
+    }
+    fn build(id: String, name: String, settings: BrushSettings, builtin: bool) -> Result<Self> {
+        if name.trim().is_empty() || name.chars().count() > 80 || name.contains('\0') {
+            return Err(Error::InvalidArgument("brush preset name"));
+        }
+        let program = BrushProgram::compile(settings.definition())?;
+        Ok(Self {
+            id,
+            name: name.trim().to_owned(),
+            builtin,
+            settings,
+            program,
+        })
+    }
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn builtin(&self) -> bool {
+        self.builtin
+    }
+    pub fn settings(&self) -> &BrushSettings {
+        &self.settings
+    }
+    pub fn program(&self) -> &BrushProgram {
+        &self.program
+    }
+}
+#[derive(Debug)]
+pub struct BrushCatalog {
+    presets: BTreeMap<String, Arc<BrushPreset>>,
+    order: Vec<String>,
+    selected: String,
+    revision: u64,
+    mask_budget: usize,
+}
+impl Default for BrushCatalog {
+    fn default() -> Self {
+        let mut presets = BTreeMap::new();
+        for (i, name, diameter, opacity, spacing) in [
+            (0, "压感圆笔", 24., 1., 0.075),
+            (1, "细线圆笔", 6., 1., 0.075),
+            (2, "透明圆笔", 36., 0.25, 0.075),
+            (3, "宽幅圆笔", 96., 1., 0.125),
+        ] {
+            let id = BUILTINS[i].to_owned();
+            let settings = BrushSettings {
+                diameter,
+                opacity,
+                spacing,
+                ..BrushSettings::default()
+            };
+            presets.insert(
+                id.clone(),
+                Arc::new(
+                    BrushPreset::build(id, name.into(), settings, true).expect("valid built-in"),
+                ),
+            );
+        }
+        Self {
+            presets,
+            order: BUILTINS.iter().map(|s| s.to_string()).collect(),
+            selected: BUILTINS[0].into(),
+            revision: 1,
+            mask_budget: MAX_CATALOG_MASK_BYTES,
+        }
+    }
+}
+impl BrushCatalog {
+    fn resource_budget<'a>(
+        &'a self,
+        additional: impl Iterator<Item = &'a BrushSettings>,
+        replace: Option<&str>,
+    ) -> Result<()> {
+        let mut ids = BTreeSet::new();
+        let mut total = 0usize;
+        for settings in self
+            .presets
+            .values()
+            .filter(|p| replace != Some(p.id()))
+            .map(|p| &p.settings)
+            .chain(additional)
+        {
+            if let Some(mask) = &settings.mask {
+                if ids.insert(Arc::as_ptr(mask) as usize) {
+                    total = total.saturating_add(mask.resident_bytes());
+                }
+            }
+        }
+        if total > self.mask_budget {
+            return Err(Error::ResourceLimit("brush catalog image resources"));
+        }
+        Ok(())
+    }
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+    pub fn with_mask_budget(bytes: usize) -> Result<Self> {
+        if bytes == 0 || bytes > MAX_CATALOG_MASK_BYTES {
+            return Err(Error::InvalidArgument("brush catalog resource budget"));
+        }
+        Ok(Self {
+            mask_budget: bytes,
+            ..Self::default()
+        })
+    }
+    pub fn ids(&self) -> &[String] {
+        &self.order
+    }
+    pub fn preset(&self, id: &str) -> Option<Arc<BrushPreset>> {
+        self.presets.get(id).cloned()
+    }
+    pub fn selected(&self) -> Arc<BrushPreset> {
+        self.presets[&self.selected].clone()
+    }
+    pub fn select(&mut self, id: &str) -> Result<()> {
+        if !self.presets.contains_key(id) {
+            return Err(Error::InvalidArgument("unknown brush preset"));
+        }
+        if self.selected != id {
+            self.selected = id.into();
+            self.revision += 1;
+        }
+        Ok(())
+    }
+    pub fn edit(&mut self, id: &str, settings: BrushSettings) -> Result<()> {
+        let before = self
+            .presets
+            .get(id)
+            .ok_or(Error::InvalidArgument("unknown brush preset"))?;
+        let after = BrushPreset::build(id.into(), before.name.clone(), settings, before.builtin)?;
+        self.resource_budget(std::iter::once(&after.settings), Some(id))?;
+        self.presets.insert(id.into(), Arc::new(after));
+        self.revision += 1;
+        Ok(())
+    }
+    pub fn rename(&mut self, id: &str, name: String) -> Result<()> {
+        let before = self
+            .presets
+            .get(id)
+            .ok_or(Error::InvalidArgument("unknown brush preset"))?;
+        let after = BrushPreset::build(id.into(), name, before.settings.clone(), before.builtin)?;
+        self.presets.insert(id.into(), Arc::new(after));
+        self.revision += 1;
+        Ok(())
+    }
+    pub fn save_copy(&mut self, id: String, name: String) -> Result<()> {
+        let preset = BrushPreset::new(id, name, self.selected().settings.clone())?;
+        self.import(vec![preset])
+    }
+    pub fn remove(&mut self, id: &str) -> Result<()> {
+        let before = self
+            .presets
+            .get(id)
+            .ok_or(Error::InvalidArgument("unknown brush preset"))?;
+        if before.builtin {
+            return Err(Error::InvalidArgument("built-in brush cannot be removed"));
+        }
+        self.presets.remove(id);
+        self.order.retain(|s| s != id);
+        if self.selected == id {
+            self.selected = BUILTINS[0].into();
+        }
+        self.revision += 1;
+        Ok(())
+    }
+    /// Presets are already compiled; batch identity/capacity validation precedes publication.
+    pub fn import(&mut self, presets: Vec<BrushPreset>) -> Result<()> {
+        if presets.is_empty() || self.order.len().saturating_add(presets.len()) > MAX_BRUSH_PRESETS
+        {
+            return Err(Error::ResourceLimit("brush catalog capacity"));
+        }
+        let mut ids = BTreeSet::new();
+        for p in &presets {
+            if self.presets.contains_key(&p.id) || !ids.insert(&p.id) {
+                return Err(Error::InvalidArgument("duplicate brush preset ID"));
+            }
+        }
+        self.resource_budget(presets.iter().map(|p| &p.settings), None)?;
+        let selected = presets[0].id.clone();
+        for preset in presets {
+            self.order.push(preset.id.clone());
+            self.presets.insert(preset.id.clone(), Arc::new(preset));
+        }
+        self.selected = selected;
+        self.revision += 1;
+        Ok(())
+    }
+}

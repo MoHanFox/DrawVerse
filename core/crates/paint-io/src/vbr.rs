@@ -1,6 +1,6 @@
 //! VBR 1.0 executable procedural subset. No arbitrary archive extraction.
 use crate::{check, Error, Result};
-use paint_core::{Brush, BrushDefinition, BrushProgram, BrushTip};
+use paint_core::{BrushDefinition, BrushProgram, BrushSettings, BrushTip};
 use paint_task::CancellationToken;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -30,14 +30,14 @@ pub struct Parameters {
 }
 impl Parameters {
     pub fn definition(&self) -> BrushDefinition {
-        BrushDefinition {
+        self.settings().definition()
+    }
+    pub fn settings(&self) -> BrushSettings {
+        BrushSettings {
             mask: None,
-            brush: Brush {
-                radius: self.diameter / 2.,
-                spacing: self.spacing * 2.,
-                opacity: self.dab_opacity,
-                ..Brush::default()
-            },
+            diameter: self.diameter,
+            spacing: self.spacing,
+            opacity: self.dab_opacity,
             tip: BrushTip {
                 hardness: self.hardness,
                 roundness: self.roundness,
