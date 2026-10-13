@@ -488,6 +488,48 @@ mod abr_fixture;
 mod tests {
     use super::*;
     #[test]
+    fn pressure_state_preparation_compiles_real_pixels_and_bad_draft_keeps_current() {
+        let library = PreparedCatalog::new(BrushCatalog::default());
+        let mut catalog = BrushCatalog::default();
+        let mut settings = catalog.selected().settings().clone();
+        settings.tip.pressure_size = false;
+        settings.dynamics.flow = paint_core::PressureControl::new(
+            paint_core::PressureCurve::new(vec![(0., 0.3), (1., 0.3)]).unwrap(),
+            0.,
+        )
+        .unwrap();
+        catalog.edit("round-pressure", settings).unwrap();
+        let json = String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap();
+        let seq = library.submit(json.clone()).unwrap();
+        let ticket = library.ticket(seq).unwrap();
+        let captured = ticket.wait().unwrap();
+        let mut document = paint_core::Document::new(32, 32).unwrap();
+        document
+            .begin_brush_stroke(
+                captured.selected().settings().definition(),
+                paint_core::InputPoint::new(16.5, 16.5, 0.8),
+            )
+            .unwrap();
+        document.end_stroke().unwrap();
+        assert_eq!(document.pixel(16, 16).alpha(), 0.3);
+        assert_eq!(
+            paint_io::brush_state::encode(&library.current().unwrap()).unwrap(),
+            json.as_bytes()
+        );
+        let bad = library
+            .submit(json.replace("\"minimum\":0.0", "\"minimum\":-1.0"))
+            .unwrap();
+        assert!(library.ticket(bad).unwrap().wait().is_err());
+        assert_eq!(
+            paint_io::brush_state::encode(&library.current().unwrap()).unwrap(),
+            json.as_bytes()
+        );
+        assert_eq!(
+            paint_io::brush_state::encode(&ticket.wait().unwrap()).unwrap(),
+            json.as_bytes()
+        );
+    }
+    #[test]
     fn source_only_bundle_does_not_keep_baseline_pixels_alive_after_import() {
         use paint_io::{
             abr_conversion::ConvertedPreset,

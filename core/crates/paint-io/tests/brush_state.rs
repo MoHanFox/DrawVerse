@@ -1,7 +1,7 @@
 use paint_core::*;
 use paint_io::brush_state;
 #[test]
-fn unsupported_pressure_controls_including_redundant_nodes_are_not_silently_serialized_away() {
+fn pressure_controls_including_redundant_nodes_are_roundtripped_without_discarding_structure() {
     let mut catalog = BrushCatalog::default();
     for points in [
         vec![(0., 0.), (0.5, 0.2), (1., 1.)],
@@ -11,10 +11,17 @@ fn unsupported_pressure_controls_including_redundant_nodes_are_not_silently_seri
         settings.dynamics.size =
             PressureControl::new(PressureCurve::new(points).unwrap(), 0.).unwrap();
         catalog.edit("round-pressure", settings).unwrap();
-        assert!(matches!(
-            brush_state::encode(&catalog),
-            Err(paint_io::Error::Unsupported(_))
-        ));
+        let bytes = brush_state::encode(&catalog).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["version"],
+            5
+        );
+        let restored = brush_state::decode(&bytes, MAX_CATALOG_MASK_BYTES).unwrap();
+        assert_eq!(
+            restored.selected().settings().dynamics,
+            catalog.selected().settings().dynamics
+        );
+        assert_eq!(brush_state::encode(&restored).unwrap(), bytes);
     }
 }
 #[test]

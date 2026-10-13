@@ -63,6 +63,12 @@ struct Row {
     mask_resource: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     source_resource: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_pressure::present"
+    )]
+    pressure_dynamics: Option<crate::brush_pressure::PressureParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -130,7 +136,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=4) {
+    if !matches!(state.version, 1..=5) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -153,7 +159,7 @@ fn decode_inner(
             None
         };
         if let Some(id) = &row.source_resource {
-            if state.version != 4 {
+            if state.version < 4 {
                 return Err(Error::Unsupported("brush sources require state v4".into()));
             }
             references.insert(id.clone());
@@ -174,11 +180,20 @@ fn decode_inner(
                     .ok_or(Error::Invalid("brush pressure flow"))?,
             }
         };
+        if row.pressure_dynamics.is_some() && state.version != 5 {
+            return Err(Error::Unsupported(
+                "pressure dynamics require state v5".into(),
+            ));
+        }
         entries.push((
             row.id,
             row.name,
             BrushSettings {
-                dynamics: Default::default(),
+                dynamics: row
+                    .pressure_dynamics
+                    .as_ref()
+                    .map(|p| p.core().clone())
+                    .unwrap_or_default(),
                 diameter: row.radius * 2.,
                 opacity: row.opacity,
                 spacing: row.spacing / 2.,
@@ -208,11 +223,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
-        if s.dynamics != paint_core::BrushDynamics::default() {
-            return Err(Error::Unsupported(
-                "brush pressure dynamics are not supported by this state version".into(),
-            ));
-        }
+        let pressure_dynamics = if s.dynamics != paint_core::BrushDynamics::default() {
+            version = 5;
+            Some(crate::brush_pressure::PressureParameters::from_core(
+                &s.dynamics,
+            ))
+        } else {
+            None
+        };
         let mask_resource = if let Some(mask) = &s.mask {
             version = version.max(3);
             Some(
@@ -227,7 +245,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         };
         let source_resource = p.source_resource().map(str::to_owned);
         if source_resource.is_some() {
-            version = 4;
+            version = version.max(4);
         }
         presets.push(Row {
             id: id.clone(),
@@ -243,6 +261,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             pressure_flow: Some(s.tip.pressure_flow),
             mask_resource,
             source_resource,
+            pressure_dynamics,
         });
     }
     serde_json::to_vec(&State {

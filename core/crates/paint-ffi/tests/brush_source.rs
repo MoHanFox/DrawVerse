@@ -245,3 +245,81 @@ fn native_reader_and_writer_exchange_source_bundles_and_never_drop_provenance() 
         assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
     }
 }
+
+#[test]
+fn pressure_packages_are_explicitly_rejected_until_frontend_can_preserve_curves() {
+    use std::collections::BTreeMap;
+    let temp = tempfile::tempdir().unwrap();
+    let token = CancellationToken::default();
+    let mut parameters = paint_io::vbr::Parameters {
+        diameter: 16.,
+        spacing: 0.01,
+        dab_opacity: 1.,
+        hardness: 1.,
+        roundness: 1.,
+        angle: 0.,
+        flow: 1.,
+        pressure_size: true,
+        pressure_flow: true,
+        pressure_dynamics: None,
+    };
+    let dynamics = paint_core::BrushDynamics {
+        flow: paint_core::PressureControl::new(paint_core::PressureCurve::default(), 0.2).unwrap(),
+        ..Default::default()
+    };
+    parameters.pressure_dynamics = Some(paint_io::brush_pressure::PressureParameters::from_core(
+        &dynamics,
+    ));
+    let package = paint_io::vbr::Package {
+        package_id: "12345678-1234-4234-8234-123456789abc".into(),
+        brushes: vec![paint_io::vbr::Preset {
+            id: "12345678-1234-4234-8234-123456789abd".into(),
+            name: "pressure".into(),
+            engine_profile: "drawverse.brush".into(),
+            behavior_version: 2,
+            required_capabilities: vec!["procedural-tip".into(), "pressure-curves".into()],
+            parameters,
+            tip_resource: None,
+            source_resource: None,
+        }],
+    };
+    let json = package.to_json().unwrap();
+    let bundle = paint_io::vbr_image::ImageBundle::new(package, BTreeMap::new(), &token).unwrap();
+    let path = temp.path().join("pressure.vbr");
+    paint_io::vbr_image::save(&path, &bundle, &token).unwrap();
+    let target = temp.path().join("unchanged.vbr");
+    std::fs::write(&target, b"old").unwrap();
+    unsafe {
+        let mut library = ptr::null_mut();
+        assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+        let path = path.to_str().unwrap();
+        let mut output = vec![42; 2 * 1024 * 1024];
+        let mut required = 99;
+        assert_eq!(
+            paint_brush_library_package_read(
+                library,
+                path.as_ptr(),
+                path.len() as u64,
+                output.as_mut_ptr(),
+                output.len() as u64,
+                &mut required
+            ),
+            PAINT_UNSUPPORTED
+        );
+        assert_eq!(required, 0);
+        assert!(output.iter().all(|b| *b == 42));
+        let encoded = target.to_str().unwrap();
+        assert_eq!(
+            paint_brush_library_package_write(
+                library,
+                encoded.as_ptr(),
+                encoded.len() as u64,
+                json.as_ptr(),
+                json.len() as u64
+            ),
+            PAINT_UNSUPPORTED
+        );
+        assert_eq!(std::fs::read(target).unwrap(), b"old");
+        assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+    }
+}

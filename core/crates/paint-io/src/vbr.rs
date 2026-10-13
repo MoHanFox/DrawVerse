@@ -27,6 +27,12 @@ pub struct Parameters {
     pub flow: f32,
     pub pressure_size: bool,
     pub pressure_flow: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_pressure::present"
+    )]
+    pub pressure_dynamics: Option<crate::brush_pressure::PressureParameters>,
 }
 impl Parameters {
     pub fn definition(&self) -> BrushDefinition {
@@ -34,7 +40,11 @@ impl Parameters {
     }
     pub fn settings(&self) -> BrushSettings {
         BrushSettings {
-            dynamics: Default::default(),
+            dynamics: self
+                .pressure_dynamics
+                .as_ref()
+                .map(|p| p.core().clone())
+                .unwrap_or_default(),
             mask: None,
             diameter: self.diameter,
             spacing: self.spacing,
@@ -143,7 +153,8 @@ impl Package {
             {
                 return Err(Error::Invalid("VBR preset identity/name"));
             }
-            if b.behavior_version != 1
+            let pressure = b.parameters.pressure_dynamics.is_some();
+            if b.behavior_version != if pressure { 2 } else { 1 }
                 || !matches!(
                     b.engine_profile.as_str(),
                     "legacy.round" | "drawverse.brush"
@@ -155,7 +166,11 @@ impl Package {
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
-                        "procedural-tip" | "image-tip" | "pressure" | "dab-flow"
+                        "procedural-tip"
+                            | "image-tip"
+                            | "pressure"
+                            | "dab-flow"
+                            | "pressure-curves"
                     )
                 })
             {
@@ -166,6 +181,14 @@ impl Package {
                 .is_some_and(|id| !crate::brush_resource::valid_id(id))
             {
                 return Err(Error::Invalid("VBR source identity"));
+            }
+            if pressure
+                != b.required_capabilities
+                    .iter()
+                    .any(|c| c == "pressure-curves")
+                || (pressure && b.engine_profile != "drawverse.brush")
+            {
+                return Err(Error::Invalid("VBR pressure behavior/capability"));
             }
             let definition = b.parameters.definition();
             if let Some(id) = &b.tip_resource {
@@ -300,11 +323,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
         brushes,
     };
     package.validate()?;
-    if package
-        .brushes
-        .iter()
-        .any(|b| b.tip_resource.is_some() || b.source_resource.is_some())
-    {
+    if package.brushes.iter().any(|b| {
+        b.tip_resource.is_some()
+            || b.source_resource.is_some()
+            || b.parameters.pressure_dynamics.is_some()
+    }) {
         return Err(Error::Unsupported(
             "image VBR requires a resource bundle".into(),
         ));
@@ -313,11 +336,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
 }
 pub fn encode(package: &Package, token: &CancellationToken) -> Result<Vec<u8>> {
     package.validate()?;
-    if package
-        .brushes
-        .iter()
-        .any(|b| b.tip_resource.is_some() || b.source_resource.is_some())
-    {
+    if package.brushes.iter().any(|b| {
+        b.tip_resource.is_some()
+            || b.source_resource.is_some()
+            || b.parameters.pressure_dynamics.is_some()
+    }) {
         return Err(Error::Unsupported(
             "image VBR requires a resource bundle".into(),
         ));

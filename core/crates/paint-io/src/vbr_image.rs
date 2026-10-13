@@ -212,7 +212,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
     let manifest: Manifest = vbr::json(&vbr::read_entry(&mut zip, "manifest.json", MAX_JSON)?)?;
     if manifest.format != "DrawVerseBrush"
         || manifest.version.major != 1
-        || manifest.version.minor > 2
+        || manifest.version.minor > 3
     {
         return Err(Error::Unsupported("VBR format/version".into()));
     }
@@ -241,6 +241,15 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         }
         brushes.push(preset);
     }
+    if manifest.version.minor < 3
+        && brushes
+            .iter()
+            .any(|b| b.parameters.pressure_dynamics.is_some())
+    {
+        return Err(Error::Unsupported(
+            "VBR pressure data require version 1.3".into(),
+        ));
+    }
     let mut assets = BTreeMap::new();
     let mut records = BTreeMap::new();
     let mut originals = BTreeMap::new();
@@ -248,8 +257,8 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         check(token)?;
         let (prefix, suffix, limit) = match reference.kind.as_str() {
             "tip-mask" => ("assets", "png", MAX_PACKAGE),
-            "source-record" if manifest.version.minor == 2 => ("sources", "json", MAX_JSON),
-            "abr-original" if manifest.version.minor == 2 => ("originals", "abr", MAX_PACKAGE),
+            "source-record" if manifest.version.minor >= 2 => ("sources", "json", MAX_JSON),
+            "abr-original" if manifest.version.minor >= 2 => ("originals", "abr", MAX_PACKAGE),
             _ => return Err(Error::Unsupported("VBR resource kind/version".into())),
         };
         if !valid_id(&reference.id)
@@ -316,7 +325,14 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
 pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>> {
     bundle.validate()?;
     check(token)?;
-    if bundle.assets.is_empty() && bundle.sources.is_empty() {
+    if bundle.assets.is_empty()
+        && bundle.sources.is_empty()
+        && !bundle
+            .package
+            .brushes
+            .iter()
+            .any(|b| b.parameters.pressure_dynamics.is_some())
+    {
         return vbr::encode(&bundle.package, token);
     }
     let stored = bundle
@@ -341,7 +357,18 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle.sources.is_empty() { 1 } else { 2 },
+            minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.parameters.pressure_dynamics.is_some())
+            {
+                3
+            } else if bundle.sources.is_empty() {
+                1
+            } else {
+                2
+            },
         },
         package_id: bundle.package.package_id.clone(),
         groups: Vec::new(),

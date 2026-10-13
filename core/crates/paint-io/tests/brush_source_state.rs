@@ -136,3 +136,40 @@ fn images_after_source_rows_cannot_downgrade_the_state_version() {
         brush_state::decode_with_sources(&bytes, 1024, Some(&resources), &sources, &token).unwrap();
     assert_eq!(brush_state::encode(&restored).unwrap(), bytes);
 }
+
+#[test]
+fn source_and_image_rows_after_pressure_cannot_downgrade_state5() {
+    let temp = tempfile::tempdir().unwrap();
+    let resources =
+        paint_io::brush_resource::ResourceStore::open(temp.path().into(), 1024).unwrap();
+    let sources = resources.source_store().unwrap();
+    let id = source(&sources);
+    let token = CancellationToken::default();
+    let mask = resources
+        .import_png(
+            &paint_io::brush_resource::encode_mask(
+                &paint_core::BrushMask::new(4, 4, vec![255; 16]).unwrap(),
+            )
+            .unwrap(),
+            paint_io::brush_resource::Interpretation::Coverage,
+            &token,
+        )
+        .unwrap();
+    let mut catalog = BrushCatalog::default();
+    let mut pressure = catalog.selected().settings().clone();
+    pressure.dynamics.flow =
+        paint_core::PressureControl::new(paint_core::PressureCurve::default(), 0.2).unwrap();
+    catalog.edit("round-pressure", pressure).unwrap();
+    catalog.set_source("round-fine", Some(id)).unwrap();
+    let mut image = catalog.preset("round-wide").unwrap().settings().clone();
+    image.mask = Some(mask.mask);
+    catalog.edit("round-wide", image).unwrap();
+    let bytes = brush_state::encode(&catalog).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["version"],
+        5
+    );
+    let restored =
+        brush_state::decode_with_sources(&bytes, 1024, Some(&resources), &sources, &token).unwrap();
+    assert_eq!(brush_state::encode(&restored).unwrap(), bytes);
+}

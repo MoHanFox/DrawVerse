@@ -84,6 +84,11 @@ impl SourceInfo {
         {
             return Err(Error::Limit("brush source report bounds"));
         }
+        if self.baseline.pressure_dynamics.is_some() {
+            return Err(Error::Unsupported(
+                "converter v1 baseline pressure dynamics".into(),
+            ));
+        }
         BrushProgram::compile(self.baseline.definition())?;
         Ok(())
     }
@@ -136,6 +141,7 @@ impl SourceArchive {
             converter: "drawverse.abr.basic".into(),
             converter_version: 1,
             baseline: Parameters {
+                pressure_dynamics: None,
                 diameter: settings.diameter,
                 spacing: settings.spacing,
                 dab_opacity: settings.opacity,

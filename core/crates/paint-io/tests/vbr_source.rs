@@ -67,6 +67,7 @@ fn bundle() -> ImageBundle {
                     .map(str::to_owned),
                 source_resource: Some(p.source_id().into()),
                 parameters: Parameters {
+                    pressure_dynamics: None,
                     diameter: s.diameter,
                     spacing: s.spacing,
                     dab_opacity: s.opacity,
@@ -129,6 +130,21 @@ fn source_identity_original_bytes_shared_assets_and_changed_tip_survive_fresh_st
         .collect();
     let sources =
         vec![paint_io::brush_source::SourceBatch::from_records(original, records, &token).unwrap()];
+    let dynamic = paint_core::BrushDynamics {
+        size: paint_core::PressureControl::new(
+            paint_core::PressureCurve::new(vec![(0., 0.), (0.5, 0.25), (1., 1.)]).unwrap(),
+            0.1,
+        )
+        .unwrap(),
+        ..Default::default()
+    };
+    input.package.brushes[0].parameters.pressure_dynamics = Some(
+        paint_io::brush_pressure::PressureParameters::from_core(&dynamic),
+    );
+    input.package.brushes[0].behavior_version = 2;
+    input.package.brushes[0]
+        .required_capabilities
+        .push("pressure-curves".into());
     let input = ImageBundle::with_sources(input.package, assets, sources, &token).unwrap();
     let bytes = vbr_image::encode(&input, &token).unwrap();
     let output = vbr_image::decode(&bytes, &token).unwrap();
@@ -193,7 +209,7 @@ fn source_identity_original_bytes_shared_assets_and_changed_tip_survive_fresh_st
         .unwrap()
         .read_to_string(&mut manifest)
         .unwrap();
-    assert!(manifest.contains("\"minor\":2"));
+    assert!(manifest.contains("\"minor\":3"));
 }
 #[test]
 fn bad_original_record_missing_baseline_and_downgrade_never_return_partial_bundle() {
@@ -377,7 +393,7 @@ fn published_source_contract_covers_record_identity_versions_and_asset_roles() {
     );
     let token = CancellationToken::default();
     let bytes = vbr_image::encode(&bundle(), &token).unwrap();
-    for version in [3, 4] {
+    for version in [4, 5] {
         let changed = rewrite(&bytes, |name, data| {
             if name == "manifest.json" {
                 let mut json: serde_json::Value = serde_json::from_slice(data).unwrap();
