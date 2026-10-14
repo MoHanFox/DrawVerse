@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新重置预设：`docs/brush-reset-design.md` / `docs/brush-reset-validation.md`；设置按钮/完整工厂与副本导入基准、独立有界resetState持久化/重开及原生规范化、资源恢复与在途捕获；无ABI变化，双色新字段随后接入。
+
 - 最新时间平滑内核：`docs/brush-smoothing-design.md` / `docs/brush-smoothing-validation.md`；4ms网格/位置速度响应/独立压力/拖绳与有界终点、双路径共用/累计预算/分页历史；无ABI变化，非默认旧IO拒绝，状态/VBR/Qt与收尖待接，普通画笔混合模式按用户优先级先推进。
 
 - 已确认双笔刷扩展（待实施）：`docs/brush-dual-color-extension-design.md`；第二颜色、相对像素尺寸/溢出/正常双色/前后顺序，起笔两色捕获、整笔分开累积合成和两种压感边宽；含自动描边条件，已再次发令继续；补充笔刷设置“重置预设”按钮及完整持久基准。

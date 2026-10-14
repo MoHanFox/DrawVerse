@@ -1,8 +1,9 @@
 #pragma once
 #include <QObject>
+#include <QJsonObject>
+#include <QHash>
 #include <QVariantList>
 #include <QStringList>
-#include <QHash>
 
 // UI preferences only. Engine access and preview work stay in PaintCoreClient.
 class BrushLibrary final : public QObject {
@@ -175,6 +176,7 @@ public:
     Q_INVOKABLE QString saveCopy(const QString &name);
     Q_INVOKABLE bool rename(const QString &id,const QString &name);
     Q_INVOKABLE bool remove(const QString &id);
+    Q_INVOKABLE bool resetPreset();
     Q_INVOKABLE void requestPreview(const QString &id);
     Q_INVOKABLE void retryPreview();
     bool restore(const QByteArray &json);
@@ -198,10 +200,12 @@ private:
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
         qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual;};
+    static QJsonObject presetRow(const Preset &preset,int &version);
     int index(const QString &id) const;
     void update(int field,qreal value);
     void changed();
     QList<Preset> m_presets;
+    QHash<QString,Preset> m_resetPresets;
     QString m_selected="round-pressure";
     // Most recently used colours first; the colour panel shows them as its swatch row.
     QStringList m_recentColors;

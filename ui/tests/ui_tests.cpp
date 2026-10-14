@@ -82,6 +82,35 @@ class UiTests final : public QObject {
     Q_OBJECT
     QTemporaryDir m_preferences;
 private slots:
+    void resetBaselineSurvivesNativePreferencesReopenAndCapturedStroke() {
+        QTemporaryDir temp;const auto path=temp.filePath("preferences.ini");QString copy;
+        {
+            PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+            library->setRadius(8);library->setPressureSize(false);library->setPressureFlow(false);copy=library->saveCopy("持久基准");QVERIFY(!copy.isEmpty());library->setRadius(3);
+            const auto saved=[&]{QSettings prefs(path,QSettings::IniFormat);const auto state=QJsonDocument::fromJson(prefs.value("brushes/state").toByteArray()).object();if(!state.contains("resetState") || state.value("selected").toString()!=copy)return false;for(const auto &row:state.value("presets").toArray())if(row.toObject().value("id").toString()==copy)return row.toObject().value("radius").toDouble()==3.;return false;};QTRY_VERIFY(saved());
+            client.shutdown();QTRY_VERIFY(!client.ready());
+        }
+        PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready());auto *library=reopened.brushLibrary();QCOMPARE(library->selectedId(),copy);QCOMPARE(library->radius(),3.);
+        reopened.newTransparentDocument(64,64);QTRY_COMPARE(reopened.documentWidth(),64);QTRY_VERIFY(reopened.ready());InputSample p;p.position={16.5,32.5};p.pressure=1;p.tool=1;QVERIFY(reopened.beginStroke(p));
+        QVERIFY(library->resetPreset());QCOMPARE(library->radius(),8.);QCOMPARE(reopened.undoDepth(),0);p.position={48.5,32.5};reopened.strokeTo(p);reopened.endStroke();QTRY_COMPARE(reopened.undoDepth(),1);QTRY_VERIFY(!reopened.layerEditBusy());
+        const auto rendered=[&]{reopened.requestViewport(0,{0,0,64,64},{64,64});return reopened.frameRevision()>=reopened.revision() && reopened.frame().size()==QSize(64,64);};QTRY_VERIFY(rendered());QCOMPARE(reopened.frame().pixelColor(32,38).alpha(),0);QVERIFY(reopened.frame().pixelColor(32,32).alpha()>0);
+        p.position={32.5,32.5};QVERIFY(reopened.beginStroke(p));reopened.endStroke();QTRY_COMPARE(reopened.undoDepth(),2);QTRY_VERIFY(rendered());QVERIFY(reopened.frame().pixelColor(32,38).alpha()>0);
+    }
+    void resetPresetRestoresFactoryCopyAndImportedBaselinesAtomically() {
+        BrushLibrary model;model.setRadius(31);model.setHueJitter(.7);model.setPressureOpacity(true);model.setCursorCenter(true);
+        QVERIFY(model.resetPreset());QCOMPARE(model.radius(),12.);QCOMPARE(model.hueJitter(),0.);QVERIFY(!model.pressureOpacity());QVERIFY(model.cursorCenter());
+        model.setRadius(23);model.setHardness(.3);auto dual=model.dualBrush();dual["enabled"]=true;dual["diameter"]=41.;QVERIFY(model.setDualBrush(dual));
+        const auto copy=model.saveCopy("保存基准");QVERIFY(!copy.isEmpty());const auto original=model.exportPackage();
+        model.setRadius(7);model.setHardness(.9);dual["diameter"]=13.;QVERIFY(model.setDualBrush(dual));QVERIFY(model.rename(copy,"新名称"));
+        BrushLibrary reopened;QVERIFY(reopened.restore(model.snapshot()));QVERIFY(reopened.resetPreset());QCOMPARE(reopened.radius(),23.);QCOMPARE(reopened.hardness(),.3);QCOMPARE(reopened.dualBrush().value("diameter").toDouble(),41.);QCOMPARE(reopened.selectedName(),QString("新名称"));
+        auto native=QJsonDocument::fromJson(reopened.catalogSnapshot()).object();auto rows=native.value("presets").toArray();auto row=rows.last().toObject();row["radius"]=17;rows[rows.size()-1]=row;native["presets"]=rows;
+        QVERIFY(reopened.applyNativeCatalog(QJsonDocument(native).toJson()));QCOMPARE(reopened.radius(),17.);QVERIFY(reopened.resetPreset());QCOMPARE(reopened.radius(),23.);
+        BrushLibrary importer;QVERIFY(importer.importPackage(original));importer.setRadius(5);QVERIFY(importer.resetPreset());QCOMPARE(importer.radius(),23.);QCOMPARE(importer.dualBrush().value("diameter").toDouble(),41.);
+        auto old=QJsonDocument::fromJson(model.snapshot()).object();old.remove("resetState");BrushLibrary migrated;QVERIFY(migrated.restore(QJsonDocument(old).toJson()));migrated.setRadius(9);QVERIFY(migrated.resetPreset());QCOMPARE(migrated.radius(),7.);
+        const auto before=reopened.snapshot();auto invalid=QJsonDocument::fromJson(before).object();auto baseline=invalid.value("resetState").toObject();baseline["resetState"]=QJsonObject{};invalid["resetState"]=baseline;QVERIFY(!reopened.restore(QJsonDocument(invalid).toJson()));QCOMPARE(reopened.snapshot(),before);
+        QVERIFY(reopened.remove(copy));const auto remaining=QJsonDocument::fromJson(reopened.snapshot()).object().value("resetState").toObject().value("presets").toArray();for(const auto &p:remaining)QVERIFY(p.toObject().value("id").toString()!=copy);
+        QVERIFY(!QJsonDocument::fromJson(reopened.catalogSnapshot()).object().contains("resetState"));
+    }
     void dualBrushStateRetainsClosedDynamicsAndRejectsInvalidData() {
         BrushLibrary model;
         auto dual=model.dualBrush();
@@ -633,6 +662,8 @@ private slots:
         PaintCoreClient target(nullptr,temp.filePath("target/storage.ini"));QTRY_VERIFY(target.ready());QSignalSpy targetFinished(&target,&PaintCoreClient::brushFileFinished);QVERIFY(target.importBrushes(archive));QTRY_COMPARE(targetFinished.size(),1);QVERIFY(targetFinished.last()[0].toBool());QCOMPARE(target.brushLibrary()->dualBrush(),dual);
         target.setBrushColor(Qt::red);target.newTransparentDocument(64,64);QTRY_COMPARE(target.documentWidth(),64);QTRY_VERIFY(target.ready());sample.position={16.5,32.5};QVERIFY(target.beginStroke(sample));sample.position={48.5,32.5};target.strokeTo(sample);target.endStroke();QTRY_COMPARE(target.undoDepth(),1);QTRY_VERIFY(!target.layerEditBusy());
         const auto targetRendered=[&]{target.requestViewport(0,{0,0,64,64},{64,64});return target.frameRevision()>=target.revision() && target.frame().size()==QSize(64,64);};QTRY_VERIFY(targetRendered());QCOMPARE(target.frame(),expected);
+        const auto resetCopy=library->saveCopy("真实资源重置");QVERIFY(!resetCopy.isEmpty());library->useProceduralDual();library->setRadius(4);
+        auto *reset=findVisualItem(window->contentItem(),"resetBrushPreset");QVERIFY(reset);const auto history=client.undoDepth();QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,reset->mapToScene({reset->width()/2,reset->height()/2}).toPoint());QTRY_COMPARE(library->dualBrush(),dual);QCOMPARE(library->radius(),8.);QCOMPARE(client.undoDepth(),history);QVERIFY(library->select(original));QVERIFY(library->remove(resetCopy));
         const auto deletionTarget=library->saveCopy("导入期间删除目标");QVERIFY(!deletionTarget.isEmpty());
         const auto reimport=temp.filePath("reimport.png");QVERIFY(texture.save(reimport));
         QVERIFY(client.importDualBrushTip(QUrl::fromLocalFile(reimport),1));QVERIFY(library->remove(deletionTarget));QVERIFY(library->select(original));
