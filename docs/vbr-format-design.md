@@ -110,3 +110,7 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 ## 已确认的双笔刷扩展
 
 [双色复合与自动描边设计](brush-dual-color-extension-design.md)纳入后续格式范围：绘制方式、第二颜色来源开关、独立/相对尺寸及保留值、溢出、正常双色合成/叠放顺序和尺寸压力规则。实际前景/背景颜色由工具在起笔时捕获，不能把全局当前颜色写入预设。新执行模型需要新行为/能力及完整Schema和关闭值往返；当前VBR1.10不能表达此扩展，不预先分配版本或宣称已支持。等待用户再次发令后实施。
+
+## 第二笔尖相对尺寸子集 1.13
+
+2026-10-15：dualBrush.sizing采用relative-size-v1、independent/relative、diameterOffset直径像素偏移[-511,511]与follow-pressure/fixed-width。关闭或独立模式非默认值仍完整保存，默认省略保持旧版本；对象存在要求drawverse.brush/behavior12、dual-relative-size能力及minor13。严格完整字段/舍入前范围/null拒绝，和time-grid平滑共存选择最高版本。ABI1.47/Qt已接通，见brush-dual-size-io-validation.md、brush-dual-size-ui-validation.md及contracts/vbr-dual-sizing-v1.13.schema.json。这里只表达第二灰度覆盖尺寸，不宣称支持双色叠放或溢出绘制。

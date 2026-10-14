@@ -65,14 +65,6 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
-                    if catalog.ids().iter().any(|id| {
-                        catalog.preset(id).unwrap().settings().dual.sizing() != Default::default()
-                    }) {
-                        return Err(ApiError::new(
-                            crate::api::PAINT_UNSUPPORTED,
-                            "secondary sizing Qt entry is not available yet",
-                        ));
-                    }
                     *self.anchors.lock().map_err(|_| ApiError::internal())? = receipts;
                     Ok(Arc::new(catalog))
                 });
@@ -306,12 +298,6 @@ impl PreparedCatalog {
         Ok(resource)
     }
     pub fn import_bundle(&self, bundle: &paint_io::vbr_image::ImageBundle) -> ApiResult<()> {
-        if bundle.package.brushes.iter().any(|b| b.has_dual_sizing()) {
-            return Err(ApiError::new(
-                crate::api::PAINT_UNSUPPORTED,
-                "secondary sizing Qt entry is not available yet",
-            ));
-        }
         if bundle.assets().is_empty() && bundle.sources().is_empty() {
             return Ok(());
         }
@@ -522,7 +508,7 @@ mod abr_fixture;
 mod tests {
     use super::*;
     #[test]
-    fn native_relative_sizing_gate_preserves_current_catalog_and_file() {
+    fn native_relative_sizing_preparation_capture_and_package_entry() {
         for enabled in [false, true] {
             let sizing = paint_core::DualSizing::new(
                 paint_core::DualSizeMode::Relative,
@@ -539,16 +525,35 @@ mod tests {
             )
             .with_sizing(sizing);
             catalog.edit("round-pressure", settings).unwrap();
+            let directory = tempfile::tempdir().unwrap();
             let library = PreparedCatalog::new(BrushCatalog::default());
+            library.bind_resources(directory.path().into()).unwrap();
             let sequence = library
                 .submit(
                     String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap(),
                 )
                 .unwrap();
+            let captured = library.ticket(sequence).unwrap().wait().unwrap();
+            assert_eq!(captured.selected().settings().dual.sizing(), sizing);
             assert_eq!(
-                library.ticket(sequence).unwrap().wait().unwrap_err().status,
-                PAINT_UNSUPPORTED
+                library
+                    .current()
+                    .unwrap()
+                    .selected()
+                    .settings()
+                    .dual
+                    .sizing(),
+                sizing
             );
+            library
+                .mutate(|c| {
+                    let mut s = c.selected().settings().clone();
+                    s.dual = Default::default();
+                    c.edit("round-pressure", s)?;
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(captured.selected().settings().dual.sizing(), sizing);
             assert!(library
                 .current()
                 .unwrap()
@@ -577,10 +582,7 @@ mod tests {
                 &paint_task::CancellationToken::default(),
             )
             .unwrap();
-            assert_eq!(
-                library.import_bundle(&bundle).unwrap_err().status,
-                PAINT_UNSUPPORTED
-            );
+            library.import_bundle(&bundle).unwrap();
             let temp = tempfile::tempdir().unwrap();
             let path = temp.path().join("sizing.vbr");
             std::fs::write(&path, b"keep").unwrap();
@@ -589,6 +591,15 @@ mod tests {
             let mut handle = std::ptr::null_mut();
             unsafe {
                 assert_eq!(crate::paint_brush_library_create(0, &mut handle), PAINT_OK);
+                let resource_path = directory.path().to_str().unwrap().as_bytes();
+                assert_eq!(
+                    crate::paint_brush_library_bind_resources(
+                        handle,
+                        resource_path.as_ptr(),
+                        resource_path.len() as u64
+                    ),
+                    PAINT_OK
+                );
                 assert_eq!(
                     crate::paint_brush_library_package_write(
                         handle,
@@ -597,9 +608,12 @@ mod tests {
                         json.as_ptr(),
                         json.len() as u64
                     ),
-                    PAINT_UNSUPPORTED
+                    PAINT_OK
                 );
-                assert_eq!(std::fs::read(&path).unwrap(), b"keep");
+                let reopened =
+                    paint_io::vbr_image::load(&path, &paint_task::CancellationToken::default())
+                        .unwrap();
+                assert_eq!(reopened.definition(0).unwrap().dual.sizing(), sizing);
                 assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
             }
         }

@@ -1,5 +1,7 @@
 # 统一笔刷系统验收计划
 
+2026-10-15追加：第二笔尖相对尺寸的内核、state15/VBR1.13及ABI1.47原生Qt入口已接通，见[尺寸内核](brush-dual-size-validation.md)、[尺寸IO](brush-dual-size-io-validation.md)、[尺寸入口](brush-dual-size-ui-validation.md)。DPR1/2真实控件/预览/在途像素、关闭重开/基准重置、VBR与ABI验证通过；仍只执行灰度覆盖，双色叠放/溢出/自动描边未完成。该阶段不能替代收尖、湿混、完整ABR与整体设备/跨平台验收。
+
 状态：2026-10-13，分阶段实施。程序笔尖验收见 [阶段结果](brush-tip-validation.md)；VBR 程序子集结果见 [阶段结果](vbr-procedural-validation.md)。以下为完整系统的验收计划，不能以局部结果代替全部通过。
 
 设计：[brush-system-design.md](brush-system-design.md)；格式：[vbr-format-design.md](vbr-format-design.md)。各实施阶段在本文件追加真实结果、命令、环境和限制，不把计划改写成“已通过”。

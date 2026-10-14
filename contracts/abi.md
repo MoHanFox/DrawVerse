@@ -1,4 +1,9 @@
-# C ABI 1.46.0 契约
+# C ABI 1.47.0 契约
+
+## ABI 1.47 第二笔尖相对尺寸入口
+
+PAINT_FEATURE_DUAL_RELATIVE_SIZE=4398046511104，既有准确准备与库包接通state15/VBR1.13/behavior12，解除新尺寸对象临时拒绝。无DTO/导出签名改变，Qt最低ABI1.47；双笔刷镜像、关闭值、重置基准、预览与VBR完整携带sizing。真正尺寸与压力几何由Rust执行，Qt只显示标称夹限；旧无库程序包继续拒绝扩展。见docs/brush-dual-size-ui-design.md。
+
 
 ## ABI 1.46 时间平滑设置与完整桥
 

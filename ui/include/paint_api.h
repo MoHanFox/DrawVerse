@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 46
+#define PAINT_ABI_MINOR 47
 
 #define PAINT_ABI_PATCH 0
 
@@ -110,6 +110,11 @@
  * Complete secondary brush models, state12 / VBR1.10 exchange.
  */
 #define PAINT_FEATURE_DUAL_BRUSH 274877906944
+
+/**
+ * Complete relative secondary sizing state15 / VBR1.13 user entry.
+ */
+#define PAINT_FEATURE_DUAL_RELATIVE_SIZE 4398046511104
 
 #define PAINT_FEATURE_EVENTS 8
 

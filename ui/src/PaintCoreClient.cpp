@@ -70,7 +70,7 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 46) {
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 47) {
             emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.46 或兼容后续版本")); return;
         }
         auto settings = preferences();
@@ -100,7 +100,7 @@ public:
         inspectStorage();
         auto caps = dto<PaintCapabilities>();
         if (!check(paint_core_capabilities(m_core, &caps))) return;
-        constexpr uint64_t required = PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
+        constexpr uint64_t required = PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
         if ((caps.features & (required | PAINT_FEATURE_SELECTION)) != (required | PAINT_FEATURE_SELECTION)) { emit failure(QStringLiteral("当前核心缺少异步视口或选区能力")); return; }
         auto desc = dto<PaintDocumentDesc>(); desc.width = 960; desc.height = 640;
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
@@ -544,6 +544,7 @@ public:
             const auto smoothPressure=[](const QVariantMap &data){for(const auto &target:{"size","flow","opacity"})if(data.value(target).toMap().value("interpolation").toString()=="smooth-pchip-v1")return true;return false;};
             if(smoothPressure(tip.value("pressureDynamics").toMap()) || smoothPressure(tip.value("dualBrush").toMap().value("pressureDynamics").toMap()))state["version"]=13;
             if(!tip.value("smoothing").toMap().isEmpty()){row["smoothing"]=QJsonObject::fromVariantMap(tip.value("smoothing").toMap());state["version"]=14;}
+            if(tip.value("dualBrush").toMap().contains("sizing"))state["version"]=15;
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
