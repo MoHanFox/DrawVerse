@@ -9,7 +9,7 @@ use paint_task::CancellationToken;
 use std::{ptr, sync::Arc};
 
 #[test]
-fn dual_frontend_boundary_keeps_caller_resources_and_existing_target() {
+fn dual_public_entry_preserves_secondary_only_resource_and_legacy_boundary() {
     let temp = tempfile::tempdir().unwrap();
     let token = CancellationToken::default();
     let json=br#"{"packageId":"12345678-1234-4234-8234-123456789abc","brushes":[{"id":"12345678-1234-4234-8234-123456789abd","name":"dual","engineProfile":"drawverse.brush","behaviorVersion":9,"requiredCapabilities":["procedural-tip","dual-cover"],"dualBrush":{"model":"path-coverage-v1","enabled":false,"mode":"multiply","diameter":8,"spacing":0.01,"hardness":1,"roundness":1,"angle":0,"flow":1,"pressureSize":false,"pressureFlow":false,"resource":null},"parameters":{"diameter":16,"spacing":0.01,"dabOpacity":1,"hardness":1,"roundness":1,"angle":0,"flow":1,"pressureSize":false,"pressureFlow":false}}]}"#;
@@ -57,15 +57,69 @@ fn dual_frontend_boundary_keeps_caller_resources_and_existing_target() {
                 data.len() as u64,
                 &mut required
             ),
-            PAINT_UNSUPPORTED
+            PAINT_OK
         );
-        assert_eq!(required, 0);
-        assert!(data.iter().all(|v| *v == 42));
-        assert!(!directory.join(format!("{identity}.png")).exists());
+        let read = paint_io::vbr::Package::from_json(&data[..required as usize]).unwrap();
+        assert_eq!(read.to_json().unwrap(), bundle.package.to_json().unwrap());
+        assert!(directory.join(format!("{identity}.png")).exists());
         let path = target.to_str().unwrap();
         assert_eq!(
             paint_brush_library_package_write(
                 library,
+                path.as_ptr(),
+                path.len() as u64,
+                image_json.as_ptr(),
+                image_json.len() as u64
+            ),
+            PAINT_OK
+        );
+        let restored = paint_io::vbr_image::load(&target, &token).unwrap();
+        assert_eq!(
+            restored.package.to_json().unwrap(),
+            bundle.package.to_json().unwrap()
+        );
+        assert_eq!(restored.assets().len(), 1);
+        assert_eq!(
+            restored.assets()[&identity].bytes(),
+            bundle.assets()[&identity].bytes()
+        );
+        // The same PNG may be shared by all three current roles without duplication.
+        let shared = image_json.replace("\"procedural-tip\",\"dual-cover\"", "\"image-tip\",\"dual-cover\",\"texture-cover\"").replace("\"parameters\":", &format!(r#""tipResource":"{identity}","texture":{{"model":"periodic-coverage-v1","enabled":true,"space":"document","scale":1,"angle":0,"depth":1,"invert":false,"offsetX":0,"offsetY":0,"resource":"{identity}"}},"parameters":"#));
+        assert_eq!(
+            paint_brush_library_package_write(
+                library,
+                path.as_ptr(),
+                path.len() as u64,
+                shared.as_ptr(),
+                shared.len() as u64
+            ),
+            PAINT_OK
+        );
+        let shared_bundle = paint_io::vbr_image::load(&target, &token).unwrap();
+        assert_eq!(shared_bundle.assets().len(), 1);
+        assert_eq!(
+            shared_bundle.package.to_json().unwrap(),
+            paint_io::vbr::Package::from_json(shared.as_bytes())
+                .unwrap()
+                .to_json()
+                .unwrap()
+        );
+        let missing = shared.replace(&identity, &"a".repeat(64));
+        let before = std::fs::read(&target).unwrap();
+        assert_ne!(
+            paint_brush_library_package_write(
+                library,
+                path.as_ptr(),
+                path.len() as u64,
+                missing.as_ptr(),
+                missing.len() as u64
+            ),
+            PAINT_OK
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), before);
+        std::fs::write(&target, b"original").unwrap();
+        assert_eq!(
+            paint_brush_package_write(
                 path.as_ptr(),
                 path.len() as u64,
                 json.as_ptr(),

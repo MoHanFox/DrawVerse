@@ -456,3 +456,14 @@ fn dual_composes_with_paper_color_caps_locks_and_real_smudge_transport() {
     moved.redo().unwrap();
     assert_eq!(pixels(&moved), after);
 }
+
+#[test]
+fn default_closed_path_and_explicit_paired_are_distinct() {
+    let default = DualBrush::default();
+    assert!(default.is_default());
+    assert!(!default.enabled());
+    assert_eq!(default.secondary().spacing(), Some(0.25));
+    let paired = DualBrush::new(false, DualMode::Multiply, SecondaryTip::default());
+    assert!(!paired.is_default());
+    assert_eq!(paired.secondary().spacing(), None);
+}

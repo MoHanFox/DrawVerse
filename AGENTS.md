@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新双笔刷原生Qt：`docs/brush-dual-ui-design.md` / `docs/brush-dual-ui-validation.md`；ABI1.43/state12/VBR1.10、四子页/第二图片捕获/独立曲线动态、真实比例预览与像素历史、关闭保存及资源并集交换；库package解除临时拒绝，组合光标/平滑/湿混/ABR高级映射继续后续。
+
 - 最新双笔刷准备桥：`docs/brush-dual-bridge-design.md` / `docs/brush-dual-bridge-validation.md`；第二独占/三角色共享和关闭配置交接、发布/mutate采用、在途保留与闲置源释放、state12准确重建/真实像素历史；无ABI变化，完整Qt和资源导出继续后续。
 
 - 最新双笔刷IO：`docs/brush-dual-io-design.md` / `docs/brush-dual-io-validation.md`；state12/VBR1.10/behavior9、两模型/完整第二动态与资源/真实两笔还原、来源并集/7169条目和状态字节预算；ABI1.42包暂拒绝新对象，原生资源生命周期和Qt继续后续。

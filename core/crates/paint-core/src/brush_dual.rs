@@ -102,7 +102,7 @@ impl SecondaryTip {
             && self.tip == BrushTip::default()
             && self.mask.is_none()
             && self.dynamics == BrushDynamics::default()
-            && self.spacing.is_none()
+            && self.spacing == Some(0.25)
     }
 }
 #[derive(Clone, Debug)]
@@ -118,7 +118,12 @@ impl Default for DualBrush {
             enabled: false,
             mode: DualMode::default(),
             secondary: DEFAULT
-                .get_or_init(|| Arc::new(SecondaryTip::default()))
+                .get_or_init(|| {
+                    Arc::new(SecondaryTip {
+                        spacing: Some(0.25),
+                        ..SecondaryTip::default()
+                    })
+                })
                 .clone(),
         }
     }

@@ -1,3 +1,5 @@
+双笔刷原生Qt：[设计](brush-dual-ui-design.md) / [验收](brush-dual-ui-validation.md)。ABI1.43/state12/VBR1.10、四子页与第二图片捕获、完整关闭配置、实际比例预览/捕获笔触/历史和资源并集交换已接；解除库包临时拒绝。组合轮廓、平滑/湿混与ABR高级动态继续后续。
+
 双笔刷准备桥：[设计](brush-dual-bridge-design.md) / [验收](brush-dual-bridge-validation.md)。第二资源交接/准确采用、当前与在途保持、闲置源/mip释放和state12重建已接；完整Qt及资源导出待接，旧前端包拒绝暂保留。
 
 双笔刷IO：[设计](brush-dual-io-design.md) / [验收](brush-dual-io-validation.md)。state12/VBR1.10/behavior9、两模型和完整第二配置、四角色资源并集/真实两笔还原、7169ZIP与2MiB状态预算已接；原生资源生命周期已补，Qt待接，旧前端包入口暂拒绝新对象。

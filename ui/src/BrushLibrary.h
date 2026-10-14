@@ -13,6 +13,7 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(QString selectedPreview READ selectedPreview NOTIFY presetsChanged)
     Q_PROPERTY(QString previewMessage READ previewMessage NOTIFY presetsChanged)
     Q_PROPERTY(QVariantMap texture READ texture NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantMap dualBrush READ dualBrush NOTIFY settingsChanged)
     Q_PROPERTY(QVariantMap colorDynamics READ colorDynamics NOTIFY settingsChanged)
     Q_PROPERTY(bool colorDynamicsEnabled READ colorDynamicsEnabled WRITE setColorDynamicsEnabled NOTIFY settingsChanged)
     Q_PROPERTY(bool colorPerTip READ colorPerTip WRITE setColorPerTip NOTIFY settingsChanged)
@@ -81,6 +82,12 @@ public:
     QString previewMessage() const;
     QVariantMap pressureDynamics() const;
     QVariantMap texture() const;
+    QVariantMap dualBrush() const;
+    Q_INVOKABLE bool setDualBrush(QVariantMap data);
+    Q_INVOKABLE bool setDualPressureControl(const QString &target,const QVariantList &points,qreal minimum);
+    Q_INVOKABLE void resetDualPressureControl(const QString &target);
+    bool setDualResource(const QString &id,const QString &resource);
+    Q_INVOKABLE void useProceduralDual() {setDualResource(m_selected,{});}
     Q_INVOKABLE bool setTexture(QVariantMap data);
     bool setTextureResource(const QString &id,const QString &resource);
     Q_INVOKABLE void removeTexture() {setTextureResource(m_selected,{});}
@@ -190,7 +197,7 @@ private:
     bool m_cursorSimple=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual;};
     int index(const QString &id) const;
     void update(int field,qreal value);
     void changed();

@@ -70,8 +70,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 42) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.42 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 43) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.43 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -174,12 +174,12 @@ public:
         if(status==PAINT_OK)record.resize(qsizetype(required));
         emit brushSourceReady(identity,token,status==PAINT_OK?record:QByteArray{},status==PAINT_OK?QString{}:immediateError(status));
     }
-    void importBrushTip(QString path,QString target,int interpretation,bool texture=false) {
+    void importBrushTip(QString path,QString target,int interpretation,int role=0) {
         PaintBrushLibrary *library=nullptr;
         {QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
         const auto encoded=path.toUtf8();QByteArray identity(64,'\0');uint64_t required=0;uint32_t depth=0;
         const auto status=paint_brush_library_import_tip_file(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),quint32(interpretation),reinterpret_cast<uint8_t*>(identity.data()),64,&required,&depth);
-        emit brushTipReady(target,status==PAINT_OK?QString::fromLatin1(identity):QString{},depth,status==PAINT_OK?QString{}:immediateError(status),texture);
+        emit brushTipReady(target,status==PAINT_OK?QString::fromLatin1(identity):QString{},depth,status==PAINT_OK?QString{}:immediateError(status),role);
     }
     void brushFile(QString path,QByteArray package,bool exporting) {
         if(m_stopped){emit brushFileReady({},QStringLiteral("后端已关闭"),exporting,false);return;}
@@ -197,7 +197,7 @@ public:
 signals:
     void brushSourceReady(QString identity,quint64 token,QByteArray record,QString error);
     void brushOutlineReady(QString identity,QString path,QString error);
-    void brushTipReady(QString target,QString resource,int depth,QString error,bool texture);
+    void brushTipReady(QString target,QString resource,int depth,QString error,int role);
     void nativeBrushCatalog(quint64 preparation,QByteArray state,QString error);
     void brushFileReady(QByteArray package,QString error,bool exporting,bool abr);
     void layerClipboardReady(QByteArray bytes);
@@ -505,11 +505,24 @@ public:
         if(m_brushJob.isEmpty()) {
             if(m_brushQueue.isEmpty())return;
             m_brushJob=m_brushQueue.takeFirst().toMap();m_brushRequest=0;m_brushClock.restart();
+            const auto tip=m_brushJob.value("tip").toMap();const auto dual=tip.value("dualBrush").toMap();const bool dualActive=dual.value("enabled").toBool();
+            const double primary=std::clamp(tip.value("presetRadius",24.).toDouble(),.5,256.);const double secondary=dual.value("diameter",24.).toDouble()/2.;
+            m_brushPreviewScale=dualActive?std::max(1.,std::max(primary,secondary)/8.4):1.;
+            const double mainDiameter=primary*2.*(tip.value("maskResource").toString().isEmpty()?1.:std::sqrt(2.))+2.;
+            const double childDiameter=secondary*2.*(dual.value("resource").toString().isEmpty()?1.:std::sqrt(2.))+2.;
+            const double mainCount=tip.value("scatterDynamics").toMap().value("enabled").toBool()?tip.value("scatterDynamics").toMap().value("count",1).toDouble():1.;
+            const double childCount=dual.value("scatterDynamics").toMap().value("enabled").toBool()?dual.value("scatterDynamics").toMap().value("count",1).toDouble():1.;
+            const double childCost=childCount*(dual.value("resource").toString().isEmpty()?1.:8.);
+            const bool ownPath=dual.value("model").toString()=="path-coverage-v1";
+            const double density=mainDiameter*mainDiameter*mainCount*(2.+(!tip.value("texture").toMap().isEmpty()?8.:0.)+(ownPath?0.:childCost))/std::max(.01,primary*m_brushJob.value("spacing").toDouble())
+                +(ownPath?childDiameter*childDiameter*childCost/std::max(.01,secondary*2.*dual.value("spacing",.25).toDouble()):0.);
+            const int sampleCount=dualActive?std::clamp(int(std::ceil(200.*m_brushPreviewScale*density/4000000.)),32,256):32;
             if(!m_brushSession){auto desc=dto<PaintDocumentDesc>();desc.width=240;desc.height=60;desc.working_space=PAINT_WORKING_LINEAR_SRGB;desc.pixel_format=PAINT_STORAGE_RGBA32F_PREMULTIPLIED;if(paint_session_create(m_core,&desc,&m_brushSession)!=PAINT_OK){finishBrushPreview({});return;}}
-            auto command=dto<PaintCommand>();command.kind=PAINT_COMMAND_NEW_DOCUMENT;command.width=240;command.height=60;
+            auto command=dto<PaintCommand>();command.kind=PAINT_COMMAND_NEW_DOCUMENT;command.width=uint32_t(std::ceil(240*m_brushPreviewScale));command.height=uint32_t(std::ceil(60*m_brushPreviewScale));
             if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_BEGIN_STROKE;command.stroke=dto<PaintStrokeDesc>();command.stroke.mode=PAINT_MODE_PAINT;
             command.stroke.radius=static_cast<float>(std::clamp(m_brushJob.value("radius").toDouble()*.35,2.,18.));command.stroke.opacity=m_brushJob.value("opacity").toFloat();command.stroke.spacing=m_brushJob.value("spacing").toFloat();
+            if(dualActive)command.stroke.radius=static_cast<float>(primary);
             for(auto &v:command.stroke.linear_rgba)v=1;
             if(!m_previewCatalog){
                 if(paint_brush_library_create(0,&m_previewCatalog)!=PAINT_OK){finishBrushPreview({});return;}
@@ -517,8 +530,8 @@ public:
                 if(paint_brush_library_share_resources(m_previewCatalog,library)!=PAINT_OK){paint_brush_library_destroy(&m_previewCatalog);finishBrushPreview({});return;}
             }
             const QByteArray presetId="round-pressure";
-            BrushLibrary draft;auto state=QJsonDocument::fromJson(draft.catalogSnapshot()).object();auto rows=state.value("presets").toArray();auto row=rows[0].toObject();const auto tip=m_brushJob.value("tip").toMap();
-            row["radius"]=24.;row["opacity"]=command.stroke.opacity;row["spacing"]=command.stroke.spacing;
+            BrushLibrary draft;auto state=QJsonDocument::fromJson(draft.catalogSnapshot()).object();auto rows=state.value("presets").toArray();auto row=rows[0].toObject();
+            row["radius"]=dualActive?primary:24.;row["opacity"]=command.stroke.opacity;row["spacing"]=command.stroke.spacing;
             for(const auto &key:{"hardness","roundness","angle","flow","pressureSize","pressureFlow"})row[key]=QJsonValue::fromVariant(tip.value(key));
             if(!tip.value("maskResource").toString().isEmpty()){row["maskResource"]=tip.value("maskResource").toString();state["version"]=3;}
             if(!tip.value("pressureDynamics").toMap().isEmpty()){row["pressureDynamics"]=QJsonObject::fromVariantMap(tip.value("pressureDynamics").toMap());state["version"]=tip.value("pressureDynamics").toMap().contains("opacity")?6:5;}
@@ -527,12 +540,13 @@ public:
             if(!tip.value("shapeJitter").toMap().isEmpty()){row["shapeJitter"]=QJsonObject::fromVariantMap(tip.value("shapeJitter").toMap());state["version"]=9;}
             if(!tip.value("colorDynamics").toMap().isEmpty()){row["colorDynamics"]=QJsonObject::fromVariantMap(tip.value("colorDynamics").toMap());state["version"]=10;}
             if(!tip.value("texture").toMap().isEmpty()){row["texture"]=QJsonObject::fromVariantMap(tip.value("texture").toMap());state["version"]=11;}
+            if(!tip.value("dualBrush").toMap().isEmpty()){row["dualBrush"]=QJsonObject::fromVariantMap(tip.value("dualBrush").toMap());state["version"]=12;}
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
             auto background=dto<PaintBrushBackgroundDesc>();for(auto &v:background.linear_rgba)v=1;
             if(!tip.value("colorDynamics").toMap().isEmpty()){request.linear_rgba[0]=1;request.linear_rgba[1]=request.linear_rgba[2]=0;background.linear_rgba[0]=background.linear_rgba[1]=0;background.linear_rgba[2]=1;}
-            for(int i=0;i<=32;++i){const double t=i/32.;InputSample sample;sample.position={20+200*t,30+8*std::sin(t*6.283185307)};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;if(!tip.value("tipDynamics").toMap().isEmpty()){sample.capabilities=PAINT_INPUT_PRESSURE|PAINT_INPUT_TILT|PAINT_INPUT_ROTATION;sample.rotation=static_cast<float>(-60+120*t);sample.tiltX=static_cast<float>(30+30*std::sin(t*3.141592654));sample.tiltY=20;}command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
+            for(int i=0;i<=sampleCount;++i){const double t=i/double(sampleCount);InputSample sample;sample.position={(20+200*t)*m_brushPreviewScale,(30+8*std::sin(t*6.283185307))*m_brushPreviewScale};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;if(!tip.value("tipDynamics").toMap().isEmpty() || !dual.value("tipDynamics").toMap().isEmpty()){sample.capabilities=PAINT_INPUT_PRESSURE|PAINT_INPUT_TILT|PAINT_INPUT_ROTATION;sample.rotation=static_cast<float>(-60+120*t);sample.tiltX=static_cast<float>(30+30*std::sin(t*3.141592654));sample.tiltY=20;}command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
                 const auto status=i==0?paint_session_begin_prepared_preset_with_background(m_core,m_brushSession,m_previewCatalog,preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&background,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
                 if(status!=PAINT_OK){finishBrushPreview({});return;}}
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_END_STROKE;if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}
@@ -542,7 +556,7 @@ public:
         auto info=dto<PaintSessionInfo>();if(paint_session_info(m_core,m_brushSession,&info)!=PAINT_OK){finishBrushPreview({});return;}
         if(info.completed_sequence<m_brushSequence)return;
         if(info.last_error_status!=PAINT_OK){finishBrushPreview({});return;}
-        if(!m_brushRequest){auto view=dto<PaintViewport>();view.view_id=0;view.enabled=1;view.width=240;view.height=60;view.pixel_width=240;view.pixel_height=60;view.document_generation=info.document_generation;if(paint_session_set_viewport(m_core,m_brushSession,&view,&m_brushRequest)!=PAINT_OK)finishBrushPreview({});return;}
+        if(!m_brushRequest){auto view=dto<PaintViewport>();view.view_id=0;view.enabled=1;view.width=240*m_brushPreviewScale;view.height=60*m_brushPreviewScale;view.pixel_width=240;view.pixel_height=60;view.document_generation=info.document_generation;if(paint_session_set_viewport(m_core,m_brushSession,&view,&m_brushRequest)!=PAINT_OK)finishBrushPreview({});return;}
         auto frame=dto<PaintFrameInfo>();const auto status=paint_session_frame_info(m_core,m_brushSession,0,&frame);if(status==PAINT_BUSY)return;
         if(status!=PAINT_OK){finishBrushPreview({});return;}
         if(frame.request_id!=m_brushRequest || frame.document_generation!=info.document_generation || frame.revision!=info.revision)return;
@@ -565,6 +579,7 @@ public:
     QString m_pendingOutline;
     QVariantList m_brushQueue;
     QVariantMap m_brushJob;
+    double m_brushPreviewScale=1.;
     uint64_t m_brushSequence=0,m_brushRequest=0;
     QElapsedTimer m_brushClock;
     QHash<quint64,QString> m_thumbnails;
@@ -636,11 +651,11 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         const auto identity=m_brushLibrary->sourceResource();if(identity==m_brushSourceIdentity)return;
         m_brushSourceIdentity=identity;++m_brushSourceToken;m_brushSourceInfo.clear();m_brushSourceMessage.clear();m_brushSourceBusy=false;emit brushSourceChanged();
     });
-    connect(m_worker,&BackendWorker::brushTipReady,this,[this](const QString &target,const QString &resource,int depth,const QString &error,bool texture){
+    connect(m_worker,&BackendWorker::brushTipReady,this,[this](const QString &target,const QString &resource,int depth,const QString &error,int role){
         bool success=error.isEmpty();
-        if(success && !(texture?m_brushLibrary->setTextureResource(target,resource):m_brushLibrary->setMaskResource(target,resource))){success=false;showError(QStringLiteral("目标笔刷已删除，未应用图片资源"));}
+        if(success && !(role==2?m_brushLibrary->setDualResource(target,resource):role==1?m_brushLibrary->setTextureResource(target,resource):m_brushLibrary->setMaskResource(target,resource))){success=false;showError(QStringLiteral("目标笔刷已删除，未应用图片资源"));}
         if(!error.isEmpty())showError(error);
-        m_brushImportMessage=success?(depth==16?QStringLiteral("已导入：16 位覆盖已转换为 8 位"):texture?QStringLiteral("纹理已导入"):QStringLiteral("图片笔尖已导入")):QString{};
+        m_brushImportMessage=success?(depth==16?QStringLiteral("已导入：16 位覆盖已转换为 8 位"):role==2?QStringLiteral("第二笔尖已导入"):role==1?QStringLiteral("纹理已导入"):QStringLiteral("图片笔尖已导入")):QString{};
         m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
     });
     connect(m_brushLibrary,&BrushLibrary::cursorChanged,this,&PaintCoreClient::brushCursorPreferencesChanged);
@@ -1492,7 +1507,12 @@ bool PaintCoreClient::importBrushTip(const QUrl &path,int interpretation) {
 bool PaintCoreClient::importBrushTexture(const QUrl &path,int interpretation) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty() || interpretation<0 || interpretation>2)return false;
     const auto target=m_brushLibrary->selectedId();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();
-    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),target,interpretation]{worker->importBrushTip(path,target,interpretation,true);},Qt::QueuedConnection);return true;
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),target,interpretation]{worker->importBrushTip(path,target,interpretation,1);},Qt::QueuedConnection);return true;
+}
+bool PaintCoreClient::importDualBrushTip(const QUrl &path,int interpretation) {
+    if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty() || interpretation<0 || interpretation>2)return false;
+    const auto target=m_brushLibrary->selectedId();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),target,interpretation]{worker->importBrushTip(path,target,interpretation,2);},Qt::QueuedConnection);return true;
 }
 void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
     if(!m_brushPreferencePersistenceEnabled || m_closing)return;

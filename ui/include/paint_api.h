@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 42
+#define PAINT_ABI_MINOR 43
 
 #define PAINT_ABI_PATCH 0
 
@@ -103,6 +103,11 @@
 #define PAINT_FEATURE_DEVICE_TIP_DYNAMICS 4294967296
 
 #define PAINT_FEATURE_DOCUMENT 1
+
+/**
+ * Complete secondary brush models, state12 / VBR1.10 exchange.
+ */
+#define PAINT_FEATURE_DUAL_BRUSH 274877906944
 
 #define PAINT_FEATURE_EVENTS 8
 

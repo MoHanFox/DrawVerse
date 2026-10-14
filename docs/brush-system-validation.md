@@ -4,7 +4,7 @@
 
 设计：[brush-system-design.md](brush-system-design.md)；格式：[vbr-format-design.md](vbr-format-design.md)。各实施阶段在本文件追加真实结果、命令、环境和限制，不把计划改写成“已通过”。
 
-双笔刷准备桥见 [brush-dual-bridge-validation.md](brush-dual-bridge-validation.md)：第二资源准确采用、在途保持、闲置释放/重建已补。IO见 [brush-dual-io-validation.md](brush-dual-io-validation.md)，路径见 [brush-dual-path-validation.md](brush-dual-path-validation.md)，覆盖核心见 [brush-dual-validation.md](brush-dual-validation.md)。完整Qt和资源导出仍待后续，不将准备阶段作为完整双笔刷或完整系统验收。
+双笔刷准备桥见 [brush-dual-bridge-validation.md](brush-dual-bridge-validation.md)：第二资源准确采用、在途保持、闲置释放/重建已补。IO见 [brush-dual-io-validation.md](brush-dual-io-validation.md)，路径见 [brush-dual-path-validation.md](brush-dual-path-validation.md)，覆盖核心见 [brush-dual-validation.md](brush-dual-validation.md)。原生Qt和资源导出已接，见 [brush-dual-ui-validation.md](brush-dual-ui-validation.md)；组合轮廓/PS核验与完整系统范围仍待后续。
 
 纹理原生Qt结果见 [brush-texture-ui-validation.md](brush-texture-ui-validation.md)：ABI1.42/纹理分类、捕获目标资源导入、真实像素历史、state11/VBR1.9与来源并集已完成。准备生命周期见 [brush-texture-bridge-validation.md](brush-texture-bridge-validation.md)。双笔刷、平滑、湿混、完整ABR映射、VBR扩展和总体性能验收仍待后续，不代表整体完成。
 
@@ -86,3 +86,5 @@
 纹理内核阶段：见 [设计](brush-texture-design.md) / [验收](brush-texture-validation.md)。文档纸纹/局部纹理、真实四类覆盖/周期边界/资源预算/历史已验证；资源IO/VBR/原生Qt尚未接、其余纹理组合/双笔刷/湿混与完整系统继续后续。
 
 纹理IO阶段：state11/VBR1.9，见 [验收](brush-texture-io-validation.md)。资源共享/周期mip预算、真实恢复/完整来源及6145条目边界已验证；原生Qt待接，完整系统继续后续。
+
+双笔刷原生Qt阶段：ABI1.43/state12/VBR1.10，见 [设计](brush-dual-ui-design.md) / [验收](brush-dual-ui-validation.md)。四子页/完整第二配置与捕获导入、实际尺寸比例预览、真实像素/历史和新目录资源交换已验证，库包临时拒绝解除；组合光标、平滑、湿混与ABR完整映射继续后续。

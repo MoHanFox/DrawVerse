@@ -1,6 +1,10 @@
-# C ABI 1.42.0 契约
+# C ABI 1.43.0 契约
 
-双笔刷IO阶段：Rust state12/VBR1.10/behavior9支持预设级dualBrush两模型及完整第二资源/动态，ABI仍1.42，Qt尚未接。库package_read/write暂拒绝新对象；读required=0且不改caller或资源，写不改目标。旧程序包保持原范围，原生第二资源交接/释放与Qt继续后续。见 `docs/brush-dual-io-validation.md`。
+## ABI 1.43 双笔刷设置与资源入口
+
+`PAINT_FEATURE_DUAL_BRUSH=274877906944`（u64），无DTO或导出签名变化。准确准备/state12/VBR1.10/behavior9接Qt完整双对象，PNG导入捕获预设与第二角色；新关闭默认独立路径24px/25%，显式配对保留null间距。库package解除临时拒绝，当前主/纹理/第二与来源基线PNG去重并集导出；缺失资源不改已有目标。旧无库上下文程序导出仍明确拒绝双对象。Qt至少要求ABI1.43，真实预览保持两笔尖尺寸比例，光标仍显示主笔尖。见 `docs/brush-dual-ui-validation.md`。
+
+历史双笔刷IO/准备桥阶段ABI1.42曾保留库包临时拒绝，现已被上述入口取代，原阶段证据保留。
 
 ## ABI 1.42 纹理资源与设置入口
 
