@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新自动描边预设：`docs/brush-auto-outline-design.md` / `docs/brush-auto-outline-validation.md`；双色页创建跟随压感/固定边宽独立用户预设，配对硬圆/+8px/背景后方/完整基准与库上限，真实压力边宽/交叉整笔opacity/捕获及VBR历史；无ABI/格式变化，复合光标、非分隔、收尖与湿混等继续后续。
+
 - 最新双色原生Qt入口：`docs/brush-dual-color-ui-design.md` / `docs/brush-dual-color-ui-validation.md`；ABI1.48/state16/VBR1.14、完整关闭配置/27贡献模式/实际两色预览、起笔捕获/历史及保存交换，重置预设仅来源与兼容页；解除原生准备/库包临时拒绝，自动描边与复合光标等继续后续。
 
 - 最新双色重算性能：`docs/brush-dual-color-performance-design.md` / `docs/brush-dual-color-performance-validation.md`；变化行位图OR/精确像素重算、before与私有写入/快照、实际区域预算及1%密集段、648组真实瓦片历史一致与Release基准；无ABI变化，双色原生Qt/描边及复合光标继续后续。

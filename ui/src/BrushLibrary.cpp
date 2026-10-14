@@ -273,6 +273,17 @@ bool BrushLibrary::resetPreset() {
     m_presets[i]=reset;changed();return true;
 }
 QString BrushLibrary::saveCopy(const QString &name){if(m_presets.size()>=1024 || name.trimmed().isEmpty() || name.size()>80)return {};auto p=m_presets[index(m_selected)];p.id=QUuid::createUuid().toString(QUuid::WithoutBraces);p.name=name.trimmed();p.builtin=false;p.token=++m_nextToken;p.requested=0;p.error.clear();m_presets.append(p);m_resetPresets.insert(p.id,p);m_selected=p.id;changed();return p.id;}
+QString BrushLibrary::createOutlinePreset(bool fixedWidth) {
+    if(m_presets.size()>=1024)return {};
+    Preset p;p.id=QUuid::createUuid().toString(QUuid::WithoutBraces);p.name=fixedWidth?QStringLiteral("描边圆笔 · 固定边宽"):QStringLiteral("描边圆笔 · 跟随压感");
+    p.spacing=.1;p.pressureFlow=false;
+    auto dual=defaultDual();dual["enabled"]=true;dual["model"]="paired-dab-v1";dual["spacing"]=QVariant{};dual["pressureFlow"]=false;
+    dual["sizing"]=QVariantMap{{"model","relative-size-v1"},{"mode","relative"},{"diameterOffset",8.},{"widthRule",fixedWidth?"fixed-width":"follow-pressure"}};
+    auto color=defaultDualColor();color["enabled"]=true;color["useBackground"]=true;color["overflow"]=true;dual["color"]=color;
+    if(!validDual(QJsonObject::fromVariantMap(dual)))return {};
+    p.dual=canonicalDual(dual);p.token=++m_nextToken;
+    m_presets.append(p);m_resetPresets.insert(p.id,p);m_selected=p.id;changed();return p.id;
+}
 bool BrushLibrary::rename(const QString &id,const QString &name){const int i=index(id);if(i<0 || name.trimmed().isEmpty() || name.size()>80)return false;m_presets[i].name=name.trimmed();changed();return true;}
 bool BrushLibrary::remove(const QString &id){const int i=index(id);if(i<0 || m_presets[i].builtin)return false;m_presets.removeAt(i);m_resetPresets.remove(id);if(m_selected==id)m_selected="round-pressure";changed();return true;}
 void BrushLibrary::setPreviewColors(const QColor &foreground,const QColor &background){

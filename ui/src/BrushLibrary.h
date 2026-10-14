@@ -181,6 +181,7 @@ public:
     Q_INVOKABLE bool select(const QString &id);
     Q_INVOKABLE bool useColor(const QString &color);
     Q_INVOKABLE QString saveCopy(const QString &name);
+    Q_INVOKABLE QString createOutlinePreset(bool fixedWidth);
     Q_INVOKABLE bool rename(const QString &id,const QString &name);
     Q_INVOKABLE bool remove(const QString &id);
     Q_INVOKABLE bool resetPreset();
