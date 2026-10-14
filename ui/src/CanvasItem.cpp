@@ -32,12 +32,13 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
     if(QGuiApplication::platformName()=="windows")m_capsLock=(GetKeyState(VK_CAPITAL)&1)!=0;
 #endif
     setClip(true); m_clock.start();
+    m_poseRetry.setInterval(16);connect(&m_poseRetry,&QTimer::timeout,this,&CanvasItem::refreshBrushCursor);
     m_liquifyTimer.setInterval(16);
     connect(&m_liquifyTimer,&QTimer::timeout,this,[this]{if(!m_stroke || !m_client || !m_client->liquifyActive() || !isEnabled() || !isVisible()){m_liquifyTimer.stop();return;}m_client->liquifyTick();});
     m_viewTimer.setSingleShot(true); m_viewTimer.setInterval(16);
     connect(&m_viewTimer, &QTimer::timeout, this, &CanvasItem::requestView);
     connect(this, &CanvasItem::viewChanged, this, [this] { if (!m_viewTimer.isActive()) m_viewTimer.start(); });
-    connect(this,&CanvasItem::viewChanged,this,&CanvasItem::refreshBrushCursor);
+    connect(this,&CanvasItem::viewChanged,this,[this]{if(m_havePoseSample && (!m_client || !m_client->drawing()))m_poseSample.position=documentPoint(m_cursorPosition);refreshBrushCursor();});
     const auto observeWindow=[this](QQuickWindow *window) {
         if (m_observedWindow) { m_observedWindow->removeEventFilter(this); disconnect(m_observedWindow, nullptr, this, nullptr); }
         m_observedWindow = window;
@@ -66,7 +67,7 @@ void CanvasItem::setClient(PaintCoreClient *client) {
     if (m_client == client) return;
     endPicking();
     if (m_client) disconnect(m_client, nullptr, this, nullptr);
-    m_client = client; m_fitPending = true;
+    m_poseRetry.stop();m_havePoseSample=false;m_poseDirectionKnown=false;m_client = client; m_fitPending = true;
     if (client) {
         connect(client, &PaintCoreClient::liquifyOptionsChanged,this,&CanvasItem::refreshBrushCursor);
         connect(client, &PaintCoreClient::stateChanged,this,&CanvasItem::refreshBrushCursor);
@@ -86,7 +87,7 @@ void CanvasItem::setInteractive(bool enabled) {
     m_fitPending = true; refresh();refreshBrushCursor(); emit interactiveChanged(); emit viewChanged();
 }
 QRectF CanvasItem::brushCursorRect() const {
-    const qreal radius=m_client?(m_client->liquifyActive()?m_client->liquifySize()*.5:m_client->brushRadius())*m_zoom:0;
+    const qreal radius=m_client?(m_client->liquifyActive()?m_client->liquifySize()*.5:m_client->brushLibrary()->cursorSimple()?m_client->baseCursorPose().radius:m_pose.radius)*m_zoom:0;
     return {m_cursorPosition-QPointF(radius,radius),QSizeF(radius*2,radius*2)};
 }
 bool CanvasItem::brushCursorVisible() const {
@@ -118,7 +119,18 @@ void CanvasItem::endPicking() {
     if(!m_picking)return;
     m_picking=false;m_tablet=false;m_sampledColor=QColor();emit brushCursorChanged();
 }
+void CanvasItem::setCursorSample(const InputSample &sample,bool resetDirection){
+    if(resetDirection){m_havePoseSample=false;m_poseDirectionKnown=false;}
+    if(m_havePoseSample){const auto delta=sample.position-m_poseSample.position;if(std::hypot(delta.x(),delta.y())>1e-9){m_poseDirection=delta;m_poseDirectionKnown=true;}}
+    m_poseSample=sample;m_havePoseSample=true;
+}
+InputSample CanvasItem::tabletSample(QTabletEvent *e,QPointF local) const {
+    InputSample s;s.position=documentPoint(local);s.pressure=static_cast<float>(e->pressure());s.tiltX=static_cast<float>(e->xTilt());s.tiltY=static_cast<float>(e->yTilt());s.rotation=static_cast<float>(e->rotation());s.tangentialPressure=static_cast<float>(e->tangentialPressure());s.buttons=static_cast<quint32>(e->buttons());s.tool=e->pointerType()==QPointingDevice::PointerType::Eraser?2:1;s.timestamp=static_cast<quint64>(m_clock.nsecsElapsed());s.capabilities=16;
+    const auto cap=e->pointingDevice()->capabilities();if(cap.testFlag(QInputDevice::Capability::Pressure))s.capabilities|=1;else s.pressure=1;if(cap.testFlag(QInputDevice::Capability::XTilt)||cap.testFlag(QInputDevice::Capability::YTilt))s.capabilities|=2;if(cap.testFlag(QInputDevice::Capability::Rotation))s.capabilities|=4;if(cap.testFlag(QInputDevice::Capability::TangentialPressure))s.capabilities|=8;return s;
+}
 void CanvasItem::refreshBrushCursor() {
+    if(m_client){m_pose=m_client->baseCursorPose();if(m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_pose=m_client->brushCursorPose(m_poseSample,m_poseDirection,m_poseDirectionKnown,m_client->drawing());}
+    if(m_client && !m_pose.ready && m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_poseRetry.start();else m_poseRetry.stop();
     setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && (m_client->moveTool() || m_ctrlHeld || m_moving) && !m_client->liquifyActive() && !m_client->transformActive()?Qt::SizeAllCursor:eyedropperCursorVisible()?Qt::BlankCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
     emit brushCursorChanged();
 }
@@ -132,8 +144,8 @@ void CanvasItem::setKeySpace(bool held) {
     const bool changed=(m_space || spaceHeld)!=(held || spaceHeld);m_space=held;
     if(changed)emit spacePanningChanged();
 }
-void CanvasItem::hoverEnterEvent(QHoverEvent *event){if(m_tablet)return;m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();}
-void CanvasItem::hoverMoveEvent(QHoverEvent *event){if(m_tablet)return;m_cursorInside=true;m_cursorPosition=event->position();refreshBrushCursor();if(m_selecting && m_selectionKind==3)updateSelection(event->position(),event->modifiers());}
+void CanvasItem::hoverEnterEvent(QHoverEvent *event){if(m_tablet)return;m_cursorInside=true;m_cursorPosition=event->position();setCursorSample(mouseSample(event->position(),Qt::NoButton));refreshBrushCursor();}
+void CanvasItem::hoverMoveEvent(QHoverEvent *event){if(m_tablet)return;m_cursorInside=true;m_cursorPosition=event->position();setCursorSample(mouseSample(event->position(),Qt::NoButton));refreshBrushCursor();if(m_selecting && m_selectionKind==3)updateSelection(event->position(),event->modifiers());}
 void CanvasItem::hoverLeaveEvent(QHoverEvent *event){Q_UNUSED(event);if(m_tablet)return;m_cursorInside=false;refreshBrushCursor();}
 void CanvasItem::refresh() {
     if (!m_client) return;
@@ -317,7 +329,7 @@ void CanvasItem::cancelSelectionDrag(){if(m_selecting){m_selecting=false;m_selec
 void CanvasItem::mousePressEvent(QMouseEvent *e) {
     if (!m_interactive || !m_client || e->source() != Qt::MouseEventNotSynthesized) { e->ignore(); return; }
     forceActiveFocus(); m_last = e->position();
-    m_cursorInside=contains(e->position());m_cursorPosition=e->position();refreshBrushCursor();
+    m_cursorInside=contains(e->position());m_cursorPosition=e->position();setCursorSample(mouseSample(e->position(),e->buttons()),e->type()==QEvent::MouseButtonPress);refreshBrushCursor();
     if (e->button() == Qt::MiddleButton || m_space || spaceHeld) { m_panning = true; e->accept(); return; }
     if(m_client->liquifyActive()) {
         if(e->button()==Qt::LeftButton && documentRect().contains(e->position())) {m_stroke=m_client->beginStroke(mouseSample(e->position(),e->buttons()));if(m_stroke)m_liquifyTimer.start();}
@@ -347,7 +359,7 @@ void CanvasItem::mouseDoubleClickEvent(QMouseEvent *e) {
 }
 void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
     if(m_tablet){e->accept();return;}
-    m_cursorInside=contains(e->position());m_cursorPosition=e->position();refreshBrushCursor();
+    m_cursorInside=contains(e->position());m_cursorPosition=e->position();setCursorSample(mouseSample(e->position(),e->buttons()),e->type()==QEvent::MouseButtonPress);refreshBrushCursor();
     if (m_panning) { m_pan += e->position() - m_last; m_last = e->position(); emit viewChanged(); update(); }
     else if(m_picking && !m_tablet) updatePicking(e->position());
     else if(m_selecting && !m_tablet) updateSelection(e->position(),e->modifiers());
@@ -355,6 +367,7 @@ void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
     e->accept();
 }
 void CanvasItem::mouseReleaseEvent(QMouseEvent *e) {
+    if(!m_tablet){m_cursorPosition=e->position();setCursorSample(mouseSample(e->position(),e->buttons()));}
     if(m_picking && !m_tablet && e->button()==Qt::LeftButton){updatePicking(e->position());endPicking();e->accept();return;}
     if(!m_panning && m_selecting && !m_tablet) finishSelection(e->position(),e->modifiers());
     if(m_moving && !m_tablet) finishLayerMove(e->position());
@@ -411,7 +424,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
             setKeySpace(event->type()==QEvent::KeyPress);setSpacePanning(event->type()==QEvent::KeyPress);refreshBrushCursor();key->accept();return true;
         }
     }
-    if(event->type()==QEvent::TabletLeaveProximity){endPicking();m_cursorInside=false;refreshBrushCursor();return false;}
+    if(event->type()==QEvent::TabletLeaveProximity){m_havePoseSample=false;m_poseDirectionKnown=false;endPicking();m_cursorInside=false;refreshBrushCursor();return false;}
     const bool tabletEvent=event->type()==QEvent::TabletPress || event->type()==QEvent::TabletMove || event->type()==QEvent::TabletRelease;
     if(tabletEvent) {
         const auto item=qobject_cast<QQuickItem*>(watched);
@@ -432,7 +445,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         m_stroke = m_tablet = m_panning = m_moving = false;
         endPicking();setAltHeld(false);m_ctrlHeld=false;
         setKeySpace(false);setSpacePanning(false);
-        m_cursorInside=false;refreshBrushCursor();
+        m_cursorInside=false;m_havePoseSample=false;m_poseDirectionKnown=false;refreshBrushCursor();
         cancelSelectionDrag();
     }
     if (event->type() != QEvent::TabletPress && event->type() != QEvent::TabletMove && event->type() != QEvent::TabletRelease) return false;
@@ -443,7 +456,8 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     // Qt Quick may deliver tablet input to an item, whose position is item-local.
     // The global position is shared by both native-window and item delivery paths.
     const QPointF local = mapFromGlobal(e->globalPosition());
-    m_cursorInside=contains(local);m_cursorPosition=local;refreshBrushCursor();
+    const InputSample s=tabletSample(e,local);
+    m_cursorInside=contains(local);m_cursorPosition=local;setCursorSample(s,event->type()==QEvent::TabletPress);refreshBrushCursor();
     if(event->type()!=QEvent::TabletRelease)setAltHeld(e->modifiers().testFlag(Qt::AltModifier));
     if(!m_tablet && event->type()==QEvent::TabletMove) {
         if(!m_cursorInside)return false;
@@ -489,18 +503,8 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         else if(event->type()==QEvent::TabletRelease) { finishLayerMove(local); m_tablet=false; }
         e->accept(); return true;
     }
-    InputSample s; s.position = documentPoint(local); s.pressure = static_cast<float>(e->pressure());
-    s.tiltX = static_cast<float>(e->xTilt()); s.tiltY = static_cast<float>(e->yTilt());
-    s.rotation = static_cast<float>(e->rotation()); s.tangentialPressure = static_cast<float>(e->tangentialPressure());
-    s.buttons = static_cast<quint32>(e->buttons()); s.tool = e->pointerType() == QPointingDevice::PointerType::Eraser ? 2 : 1;
-    s.timestamp = static_cast<quint64>(m_clock.nsecsElapsed()); s.capabilities = 16;
-    const auto capabilities = e->pointingDevice()->capabilities();
-    if (capabilities.testFlag(QInputDevice::Capability::Pressure)) s.capabilities |= 1; else s.pressure = 1;
-    if (capabilities.testFlag(QInputDevice::Capability::XTilt) || capabilities.testFlag(QInputDevice::Capability::YTilt)) s.capabilities |= 2;
-    if (capabilities.testFlag(QInputDevice::Capability::Rotation)) s.capabilities |= 4;
-    if (capabilities.testFlag(QInputDevice::Capability::TangentialPressure)) s.capabilities |= 8;
     if (event->type() == QEvent::TabletPress) {m_tablet = m_stroke = m_client->beginStroke(s);if(m_stroke && m_client->liquifyActive())m_liquifyTimer.start();}
     else if (event->type() == QEvent::TabletMove && m_stroke) m_client->strokeTo(s);
     else if (event->type() == QEvent::TabletRelease) { if (m_stroke) m_client->endStroke(); m_tablet = m_stroke = false; }
-    e->accept(); return true;
+    refreshBrushCursor();e->accept(); return true;
 }

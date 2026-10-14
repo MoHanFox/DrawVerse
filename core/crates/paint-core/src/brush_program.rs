@@ -76,6 +76,12 @@ pub struct BrushProgram {
     pressure_opacity: bool,
     tip_dynamics: TipDynamics,
 }
+#[derive(Clone, Copy, Debug)]
+pub struct BrushPose {
+    pub radius: f32,
+    pub angle: f32,
+    pub roundness: f32,
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct TipGeometry {
@@ -110,6 +116,34 @@ impl MaskDab<'_> {
 }
 
 impl BrushProgram {
+    pub fn cursor_pose(
+        &self,
+        radius: f32,
+        point: InputPoint,
+        pressure_known: bool,
+        direction: Option<(f64, f64)>,
+    ) -> Result<BrushPose> {
+        if !radius.is_finite() || !(0.5..=256.).contains(&radius) {
+            return Err(Error::InvalidArgument("pose radius"));
+        }
+        point.validate()?;
+        let direction = match direction {
+            Some((x, y)) if x.is_finite() && y.is_finite() && x.hypot(y) > 1e-9 => Some(y.atan2(x)),
+            Some(_) => return Err(Error::InvalidArgument("pose direction")),
+            None => None,
+        };
+        let geometry = self.geometry(point, direction);
+        Ok(BrushPose {
+            radius: radius
+                * if pressure_known && self.tip.pressure_size {
+                    self.size_pressure(point.pressure)
+                } else {
+                    1.
+                },
+            angle: geometry.sine.atan2(geometry.cosine).to_degrees() as f32,
+            roundness: geometry.roundness,
+        })
+    }
     pub fn compile(definition: BrushDefinition) -> Result<Self> {
         definition.brush.validate()?;
         definition.tip.validate()?;

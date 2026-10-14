@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 37
+#define PAINT_ABI_MINOR 38
 
 #define PAINT_ABI_PATCH 0
 
@@ -68,6 +68,8 @@
 #define PAINT_FEATURE_BRUSH_CATALOG 4194304
 
 #define PAINT_FEATURE_BRUSH_OUTLINE 33554432
+
+#define PAINT_FEATURE_BRUSH_POSE 8589934592
 
 #define PAINT_FEATURE_BRUSH_PREPARATION 8388608
 
@@ -380,6 +382,8 @@
 
 typedef struct PaintBrushLibrary PaintBrushLibrary;
 
+typedef struct PaintBrushPose PaintBrushPose;
+
 typedef struct PaintCore PaintCore;
 
 typedef struct PaintDocument PaintDocument;
@@ -433,17 +437,6 @@ typedef struct PaintBrushPresetInfo {
   struct PaintBrushTip tip;
 } PaintBrushPresetInfo;
 
-typedef struct PaintStrokeDesc {
-  uint32_t struct_size;
-  uint32_t mode;
-  uint64_t layer_id;
-  float radius;
-  float opacity;
-  float spacing;
-  float linear_rgba[4];
-  uint32_t reserved[3];
-} PaintStrokeDesc;
-
 typedef struct PaintPoint {
   uint32_t struct_size;
   uint32_t capabilities;
@@ -458,6 +451,26 @@ typedef struct PaintPoint {
   uint32_t tool;
   uint64_t timestamp_ns;
 } PaintPoint;
+
+typedef struct PaintTipPose {
+  uint32_t struct_size;
+  uint32_t reserved;
+  float radius;
+  float angle;
+  float roundness;
+  uint32_t reserved_tail;
+} PaintTipPose;
+
+typedef struct PaintStrokeDesc {
+  uint32_t struct_size;
+  uint32_t mode;
+  uint64_t layer_id;
+  float radius;
+  float opacity;
+  float spacing;
+  float linear_rgba[4];
+  uint32_t reserved[3];
+} PaintStrokeDesc;
 
 typedef struct PaintCapabilities {
   uint32_t struct_size;
@@ -1160,6 +1173,49 @@ PaintStatus paint_brush_package_write(const uint8_t *path,
                                       uint64_t path_length,
                                       const uint8_t *json,
                                       uint64_t json_length);
+
+/**
+ * # Safety
+ * Live handles/readable bounded ID required. Binding never waits for preparation.
+ */
+PaintStatus paint_brush_pose_bind_prepared(struct PaintBrushPose *pose,
+                                           struct PaintBrushLibrary *library,
+                                           uint64_t preparation,
+                                           const uint8_t *id,
+                                           uint64_t length,
+                                           float radius);
+
+/**
+ * Release captured resources while reusing the handle token.
+ * # Safety
+ * Live pose handle required. No caller memory accessed or retained.
+ */
+PaintStatus paint_brush_pose_clear(struct PaintBrushPose *pose);
+
+/**
+ * # Safety
+ * Nonoverlapping writable output pointer required. No caller memory retained.
+ */
+PaintStatus paint_brush_pose_create(struct PaintBrushPose **out);
+
+/**
+ * # Safety
+ * Writable pointer containing a live pose handle required; clears it on success.
+ */
+PaintStatus paint_brush_pose_destroy(struct PaintBrushPose **pose);
+
+/**
+ * # Safety
+ * Live pose/sized readable point and nonoverlapping aligned writable output required.
+ * Busy/error clears output. Never reads files or waits for compilation on caller thread.
+ */
+PaintStatus paint_brush_pose_read(struct PaintBrushPose *pose,
+                                  const struct PaintPoint *point,
+                                  uint32_t pressure_known,
+                                  uint32_t direction_known,
+                                  double dx,
+                                  double dy,
+                                  struct PaintTipPose *out);
 
 /**
  * Begin one undoable stroke on desc.layer_id; invalid input preserves active-layer selection.

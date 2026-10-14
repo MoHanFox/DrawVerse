@@ -176,6 +176,36 @@ fn in_flight_geometry_keeps_captured_definition() {
     let fixed = dot(definition, point);
     assert!(fixed.pixel(22, 24).alpha() > 0.9);
 }
+
+#[test]
+fn cursor_pose_matches_geometry_and_known_pressure_without_changing_hover_size() {
+    let mut definition = brush(AngleControl::Tilt, true, 0.2);
+    definition.tip.pressure_size = true;
+    let program = BrushProgram::compile(definition).unwrap();
+    let mut point = InputPoint::new(16.5, 16.5, 0.5);
+    point.capabilities = 2;
+    point.tilt_x = 0.;
+    point.tilt_y = 60.;
+    let hover = program.cursor_pose(8., point, false, None).unwrap();
+    assert_eq!(hover.radius, 8.);
+    assert!((hover.angle - 90.).abs() < 1e-5);
+    assert!((hover.roundness - 0.1).abs() < 1e-5);
+    assert_eq!(
+        program.cursor_pose(8., point, true, None).unwrap().radius,
+        4.
+    );
+    let program = BrushProgram::compile(brush(AngleControl::Direction, false, 0.01)).unwrap();
+    assert_eq!(
+        program
+            .cursor_pose(8., point, false, Some((0., 10.)))
+            .unwrap()
+            .angle,
+        90.
+    );
+    assert!(program
+        .cursor_pose(8., point, false, Some((0., 0.)))
+        .is_err());
+}
 #[test]
 fn image_rotated_corners_survive_and_rotation_interpolation_crosses_zero() {
     let mut definition = brush(AngleControl::PenRotation, false, 0.01);

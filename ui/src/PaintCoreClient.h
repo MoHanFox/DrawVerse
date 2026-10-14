@@ -16,6 +16,8 @@
 #include <functional>
 
 struct PaintTransform;
+struct PaintBrushPose;
+struct BrushCursorPose {bool ready=false;qreal radius=0,angle=0,roundness=1;};
 struct InputSample {
     QPointF position;
     float pressure = 1;
@@ -42,6 +44,9 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QString brushSourceMessage READ brushSourceMessage NOTIFY brushSourceChanged)
     Q_PROPERTY(bool brushSourceBusy READ brushSourceBusy NOTIFY brushSourceChanged)
     Q_PROPERTY(QString brushImportMessage READ brushImportMessage NOTIFY brushFileChanged)
+    Q_PROPERTY(QString cursorOutlinePath READ cursorOutlinePath NOTIFY brushOutlineChanged)
+    Q_PROPERTY(bool cursorOutlineReady READ cursorOutlineReady NOTIFY brushOutlineChanged)
+    Q_PROPERTY(bool cursorHasImage READ cursorHasImage NOTIFY brushOutlineChanged)
     Q_PROPERTY(QString brushOutlinePath READ brushOutlinePath NOTIFY brushOutlineChanged)
     Q_PROPERTY(QString brushOutlineMessage READ brushOutlineMessage NOTIFY brushOutlineChanged)
     Q_PROPERTY(bool brushOutlineReady READ brushOutlineReady NOTIFY brushOutlineChanged)
@@ -131,6 +136,11 @@ public:
     void persistBrushPreferences(const QByteArray &state);
     bool brushFileBusy() const {return m_brushFileBusy;}
     QString brushImportMessage() const {return m_brushImportMessage;}
+    QString cursorOutlinePath() const {return m_drawing && !m_liquifyActive?m_strokeOutlinePath:m_brushOutlinePath;}
+    bool cursorOutlineReady() const {return m_drawing && !m_liquifyActive?m_strokeOutlineReady:m_brushOutlineReady;}
+    bool cursorHasImage() const {return !(m_drawing && !m_liquifyActive?m_strokeOutlineResource:m_brushLibrary->maskResource()).isEmpty();}
+    BrushCursorPose baseCursorPose() const;
+    BrushCursorPose brushCursorPose(const InputSample &sample,QPointF direction,bool directionKnown,bool pressureKnown);
     QString brushOutlinePath() const {return m_brushOutlinePath;}
     QString brushOutlineMessage() const {return m_brushOutlineMessage;}
     bool brushOutlineReady() const {return m_brushOutlineReady;}
@@ -404,6 +414,11 @@ private:
     QVariantMap m_brushSourceInfo;
     quint64 m_brushSourceToken=0;
     bool m_brushSourceBusy=false;
+    PaintBrushPose *m_hoverPose=nullptr,*m_strokePose=nullptr;
+    QByteArray m_poseExpectedSource;
+    quint64 m_hoverPosePreparation=0;QString m_hoverPoseId;float m_hoverPoseRadius=0;
+    BrushCursorPose m_liveBasePose{false,12,0,1},m_strokeBasePose;bool m_strokePoseBound=false,m_strokeOutlineReady=false;
+    QString m_strokeOutlineResource,m_strokeOutlinePath;
     QString m_outlineResource,m_brushOutlinePath,m_brushOutlineMessage;
     bool m_brushOutlineReady=false;
     bool submit(int type, const InputSample &sample = {}, quint64 id = 0,

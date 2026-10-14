@@ -50,6 +50,7 @@ pub(crate) struct Registry {
     subscriptions: HashMap<usize, Arc<SubscriptionState>>,
     sessions: HashMap<usize, (usize, Arc<Session>)>,
     brush_libraries: HashMap<usize, Arc<crate::brush_preparation::PreparedCatalog>>,
+    brush_poses: HashMap<usize, Arc<crate::brush_pose_api::Pose>>,
     // Stable addresses are the ABI tokens. Keeping tombstones prevents stale-pointer ABA.
     #[allow(clippy::vec_box)]
     tokens: Vec<Box<u8>>,
@@ -65,6 +66,29 @@ pub(crate) fn registry() -> ApiResult<MutexGuard<'static, Registry>> {
 }
 
 impl Registry {
+    pub fn create_brush_pose(&mut self) -> ApiResult<*mut PaintBrushPose> {
+        let token = self.token::<PaintBrushPose>()?;
+        self.brush_poses.insert(
+            token.addr(),
+            Arc::new(crate::brush_pose_api::Pose::default()),
+        );
+        Ok(token)
+    }
+    pub fn brush_pose(
+        &self,
+        pose: *mut PaintBrushPose,
+    ) -> ApiResult<Arc<crate::brush_pose_api::Pose>> {
+        self.brush_poses
+            .get(&pose.addr())
+            .cloned()
+            .ok_or_else(ApiError::handle)
+    }
+    pub fn destroy_brush_pose(&mut self, pose: *mut PaintBrushPose) -> ApiResult<()> {
+        self.brush_poses
+            .remove(&pose.addr())
+            .map(|_| ())
+            .ok_or_else(ApiError::handle)
+    }
     pub fn create_brush_library(
         &mut self,
         catalog: paint_core::BrushCatalog,

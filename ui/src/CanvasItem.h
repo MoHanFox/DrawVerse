@@ -6,6 +6,7 @@
 #include <QTimer>
 #include <QPointer>
 class QScreen;
+class QTabletEvent;
 
 class CanvasItem : public QQuickItem {
     Q_OBJECT
@@ -13,6 +14,8 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(qreal zoom READ zoom NOTIFY viewChanged)
     Q_PROPERTY(QRectF documentRect READ documentRect NOTIFY viewChanged)
     Q_PROPERTY(QRectF visibleDocumentRect READ visibleDocumentRect NOTIFY viewChanged)
+    Q_PROPERTY(qreal brushCursorAngle READ brushCursorAngle NOTIFY brushCursorChanged)
+    Q_PROPERTY(qreal brushCursorRoundness READ brushCursorRoundness NOTIFY brushCursorChanged)
     Q_PROPERTY(QRectF brushCursorRect READ brushCursorRect NOTIFY brushCursorChanged)
     Q_PROPERTY(bool brushCursorVisible READ brushCursorVisible NOTIFY brushCursorChanged)
     Q_PROPERTY(bool eyedropperCursorVisible READ eyedropperCursorVisible NOTIFY brushCursorChanged)
@@ -35,6 +38,8 @@ public:
     QRectF documentRect() const;
     QRectF visibleDocumentRect() const;
     QRectF brushCursorRect() const;
+    qreal brushCursorAngle() const {return m_pose.angle;}
+    qreal brushCursorRoundness() const {return m_pose.roundness;}
     bool brushCursorVisible() const;
     bool eyedropperCursorVisible() const;
     bool samplingRingVisible() const;
@@ -119,6 +124,9 @@ private:
     QPointer<QQuickWindow> m_layoutWindow;
     quint64 m_layoutGeneration=0;
     bool m_layoutCaptured=false;
+    void setCursorSample(const InputSample &sample,bool resetDirection=false);
+    InputSample tabletSample(QTabletEvent *event,QPointF local) const;
+    InputSample m_poseSample;BrushCursorPose m_pose;QPointF m_poseDirection;bool m_havePoseSample=false,m_poseDirectionKnown=false;QTimer m_poseRetry;
     QPointF m_cursorPosition;
     bool m_cursorInside=false,m_capsLock=false;
     bool m_picking=false;

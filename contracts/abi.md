@@ -1,4 +1,12 @@
-# C ABI 1.37.0 契约
+# C ABI 1.38.0 契约
+
+## ABI1.38：实时笔尖姿态
+
+`PAINT_FEATURE_BRUSH_POSE=8589934592`。新增独立PaintBrushPose句柄create/bind_prepared/read/clear/destroy，绑定准确准备记录、ID（1–64字节UTF8）和名义半径0.5–256。句柄反复绑定/clear不增加token；解析就绪后只保留不可变所选预设，库销毁不使其失效。clear释放捕获，destroy清空caller句柄，陈旧句柄拒绝。
+
+read接受既有sized PaintPoint、严格0/1的pressure_known/direction_known和有限方向向量，未知方向必须零向量，已知方向非零；输出24字节PaintTipPose（struct_size/reserved/radius/angle/roundness/reserved_tail，radius offset8/angle12/roundness16）。输出保留字段为零，Busy/错误清输出，成功半径可因零压力为零。使用原生尺寸/几何算法；未知压力返回名义半径，缺设备通道回退基础几何。读取只try_result，不等待，不做caller线程文件IO，冷准备在独立池排任务；生命周期与查询均禁止在回调内调用。caller内存通过pointers.rs，安全前提见生成头。
+
+Qt绘画姿态绑定与BeginPrepared相同的记录/ID/半径，悬停独立，图像轮廓身份在本笔保留；此接口不修改文档/历史/预设或保存格式。见 `docs/brush-live-pose-validation.md`。
 
 ## ABI1.37：设备笔尖动态入口
 

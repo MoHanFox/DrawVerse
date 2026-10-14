@@ -7,10 +7,12 @@
 static_assert(sizeof(PaintBrushSettings) == 64 && offsetof(PaintBrushSettings, tip) == 24);
 static_assert(sizeof(PaintBrushPresetInfo) == 64 && sizeof(PaintBrushLibraryInfo) == 32);
 static_assert(sizeof(PaintBrushToolDesc) == 56 && offsetof(PaintBrushToolDesc, linear_rgba) == 24);
+static_assert(sizeof(PaintTipPose)==24 && offsetof(PaintTipPose,radius)==8 && offsetof(PaintTipPose,roundness)==16);
 #else
 _Static_assert(sizeof(PaintBrushSettings) == 64 && offsetof(PaintBrushSettings, tip) == 24, "brush settings layout");
 _Static_assert(sizeof(PaintBrushPresetInfo) == 64 && sizeof(PaintBrushLibraryInfo) == 32, "brush catalog layout");
 _Static_assert(sizeof(PaintBrushToolDesc) == 56 && offsetof(PaintBrushToolDesc, linear_rgba) == 24, "brush tool layout");
+_Static_assert(sizeof(PaintTipPose)==24 && offsetof(PaintTipPose,radius)==8 && offsetof(PaintTipPose,roundness)==16,"pose layout");
 #endif
 static int brush_catalog_smoke(void) {
     PaintBrushLibrary *library = NULL;
@@ -25,6 +27,9 @@ static int brush_catalog_smoke(void) {
     uint64_t preparation = 0, state_size = 0;
     PaintStatus status;
     clock_t started;
+    PaintBrushPose *pose=NULL;
+    PaintPoint point;
+    PaintTipPose tip_pose;
     memset(&info, 0, sizeof(info)); info.struct_size = sizeof(info);
     memset(&preset, 0, sizeof(preset)); preset.struct_size = sizeof(preset);
     memset(&settings, 0, sizeof(settings)); settings.struct_size = sizeof(settings);
@@ -57,6 +62,14 @@ static int brush_catalog_smoke(void) {
         if (clock() - started > 5 * CLOCKS_PER_SEC) return 14;
     } while (status == PAINT_BUSY);
     if (status != PAINT_OK) return 15;
+    memset(&point,0,sizeof(point));point.struct_size=sizeof(point);point.pressure=.5f;point.tool=PAINT_TOOL_PEN;point.capabilities=PAINT_INPUT_PRESSURE;
+    memset(&tip_pose,0,sizeof(tip_pose));tip_pose.struct_size=sizeof(tip_pose);
+    if(paint_brush_pose_create(&pose)!=PAINT_OK) return 21;
+    if(paint_brush_pose_bind_prepared(pose,library,preparation,(const uint8_t*)id,sizeof(id)-1,10)!=PAINT_OK) return 22;
+    if(paint_brush_pose_read(pose,&point,1,0,0,0,&tip_pose)!=PAINT_OK || tip_pose.radius!=5 || tip_pose.roundness!=.2f) return 23;
+    if(paint_brush_pose_clear(pose)!=PAINT_OK) return 24;
+    if(paint_brush_pose_read(pose,&point,1,0,0,0,&tip_pose)!=PAINT_INVALID_ARGUMENT || tip_pose.radius!=0) return 25;
+    if(paint_brush_pose_destroy(&pose)!=PAINT_OK || pose!=NULL) return 26;
     if (paint_brush_library_destroy(&library) != PAINT_OK || library != NULL) return 11;
     return 0;
 }

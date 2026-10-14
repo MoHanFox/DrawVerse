@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 37;
+pub const PAINT_ABI_MINOR: u32 = 38;
 pub const PAINT_FEATURE_PRESSURE_DYNAMICS: u64 = 1073741824;
 pub const PAINT_FEATURE_VBR_SOURCES: u64 = 536870912;
 pub const PAINT_FEATURE_ABR_IMPORT: u64 = 268435456;
@@ -28,6 +28,20 @@ pub const PAINT_FEATURE_BRUSH_CATALOG: u64 = 4194304;
 pub struct PaintBrushLibrary {
     _private: u8,
 }
+pub struct PaintBrushPose {
+    _private: u8,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintTipPose {
+    pub struct_size: u32,
+    pub reserved: u32,
+    pub radius: f32,
+    pub angle: f32,
+    pub roundness: f32,
+    pub reserved_tail: u32,
+}
+pub const PAINT_FEATURE_BRUSH_POSE: u64 = 8589934592;
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct PaintBrushSettings {

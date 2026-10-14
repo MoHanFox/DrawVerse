@@ -1,3 +1,5 @@
+实时动态光标：[设计](brush-live-pose-design.md) / [验收](brush-live-pose-validation.md)。ABI1.38、非阻塞原生捕获姿态、悬停/压力大小/方向旋转倾斜、图片身份与DPI已接；随机/纹理等动态及湿混继续后续。
+
 设备动态Qt与原生入口：[设计](brush-device-ui-design.md) / [验收](brush-device-ui-validation.md)。ABI1.37、形状动态参数/真正预览/捕获笔触/保存与VBR交换已接；package临时拒绝解除，实时动态光标继续后续。
 
 设备动态保存与VBR：[设计](brush-device-io-design.md) / [验收](brush-device-io-validation.md)。state7/VBR1.5/behavior4、独立几何控制和真实像素恢复已完成；原生Qt/动态光标继续后续，旧文件入口暂拒绝新数据防止配置丢失。
