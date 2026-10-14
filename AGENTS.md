@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新纹理准备桥：`docs/brush-texture-bridge-design.md` / `docs/brush-texture-bridge-validation.md`；纹理独占/共用与关闭交接、在途保持/闲置源和mip释放、state11准确重建及真实像素历史；无ABI变化，Qt和公开包入口继续后续。
+
 - 最新纹理IO：`docs/brush-texture-io-design.md` / `docs/brush-texture-io-validation.md`；state11/VBR1.9/behavior8、预设资源绑定/共享周期mip/预算预检、同源PNG与真实两笔/来源保持、6145条目边界；ABI1.41包暂拒绝新对象，原生Qt待接。
 
 - 最新纹理内核：`docs/brush-texture-design.md` / `docs/brush-texture-validation.md`；文档纸纹/笔尖局部、周期边界与面积mip/专用覆盖、资源共享预算/真实四类写入及历史；旧IO拒绝新配置，资源IO/VBR/原生Qt待接，无ABI变化。

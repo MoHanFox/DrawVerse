@@ -132,7 +132,9 @@ impl CatalogTicket {
                     Arc::strong_count(catalog) == 1
                         && catalog.ids().iter().any(|id| {
                             catalog.preset(id).is_some_and(|p| {
-                                p.settings().mask.is_some() || p.source_resource().is_some()
+                                p.settings().mask.is_some()
+                                    || p.settings().texture.resource().is_some()
+                                    || p.source_resource().is_some()
                             })
                         })
                 })
@@ -314,7 +316,12 @@ impl PreparedCatalog {
             .package
             .brushes
             .iter()
-            .filter_map(|p| p.tip_resource.as_deref())
+            .flat_map(|p| {
+                p.tip_resource
+                    .as_deref()
+                    .into_iter()
+                    .chain(p.texture.as_ref().and_then(|t| t.resource_id()))
+            })
             .collect::<std::collections::BTreeSet<_>>();
         for (id, asset) in bundle.assets() {
             let resource = store
@@ -412,6 +419,11 @@ impl PreparedCatalog {
                     snapshot.preset(id).is_some_and(|p| {
                         p.settings().mask.as_ref().and_then(|m| m.resource_id())
                             == Some(resource.id.as_str())
+                            || p.settings()
+                                .texture
+                                .resource()
+                                .and_then(|t| t.source().resource_id())
+                                == Some(resource.id.as_str())
                     })
                 })
             })
@@ -487,6 +499,201 @@ mod abr_fixture;
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn texture_bundle(enabled: bool, shared_tip: bool) -> paint_io::vbr_image::ImageBundle {
+        let png = paint_io::brush_resource::encode_mask(
+            &paint_core::BrushMask::new(4, 1, vec![0, 255, 0, 255]).unwrap(),
+        )
+        .unwrap();
+        let id = paint_io::brush_resource::hash(&png);
+        let mask = paint_core::BrushMask::new(4, 1, vec![0, 255, 0, 255])
+            .unwrap()
+            .with_resource_id(id.clone())
+            .unwrap();
+        let texture = paint_core::BrushTexture::new(
+            enabled,
+            Default::default(),
+            Some(Arc::new(paint_core::TextureResource::new(Arc::new(mask)))),
+        )
+        .unwrap();
+        let package = paint_io::vbr::Package {
+            package_id: "12345678-1234-4234-8234-123456789abd".into(),
+            brushes: vec![paint_io::vbr::Preset {
+                id: "12345678-1234-4234-8234-123456789abc".into(),
+                name: "texture".into(),
+                engine_profile: "drawverse.brush".into(),
+                behavior_version: 8,
+                required_capabilities: vec![
+                    if shared_tip {
+                        "image-tip"
+                    } else {
+                        "procedural-tip"
+                    }
+                    .into(),
+                    "texture-cover".into(),
+                ],
+                parameters: paint_io::vbr::Parameters {
+                    diameter: 16.,
+                    spacing: 0.02,
+                    dab_opacity: 0.4,
+                    hardness: 1.,
+                    roundness: 1.,
+                    angle: 0.,
+                    flow: 1.,
+                    pressure_size: false,
+                    pressure_flow: false,
+                    pressure_dynamics: None,
+                    tip_dynamics: None,
+                    scatter_dynamics: None,
+                    shape_jitter: None,
+                    color_dynamics: None,
+                },
+                texture: Some(
+                    paint_io::brush_texture::TextureParameters::from_core(&texture).unwrap(),
+                ),
+                tip_resource: shared_tip.then(|| id.clone()),
+                source_resource: None,
+            }],
+        };
+        paint_io::vbr_image::ImageBundle::new(
+            package,
+            std::collections::BTreeMap::from([(id, png)]),
+            &paint_task::CancellationToken::default(),
+        )
+        .unwrap()
+    }
+    fn texture_pixels(definition: paint_core::BrushDefinition) -> Vec<paint_core::Pixel> {
+        let mut doc = paint_core::Document::new(40, 32).unwrap();
+        doc.begin_brush_stroke(definition, paint_core::InputPoint::new(12.5, 16.5, 1.))
+            .unwrap();
+        doc.stroke_to(paint_core::InputPoint::new(24.5, 16.5, 1.))
+            .unwrap();
+        doc.end_stroke().unwrap();
+        let pixels = (0..32)
+            .flat_map(|y| (0..40).map(move |x| (x, y)))
+            .map(|(x, y)| doc.pixel(x, y))
+            .collect::<Vec<_>>();
+        doc.undo().unwrap();
+        assert_eq!(doc.pixel(16, 16).alpha(), 0.);
+        doc.redo().unwrap();
+        assert_eq!(doc.pixel(16, 16), pixels[16 * 40 + 16]);
+        pixels
+    }
+    #[test]
+    fn texture_import_handoff_adopts_only_referenced_resources_including_disabled() {
+        for enabled in [false, true] {
+            for shared_tip in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let library = PreparedCatalog::new(BrushCatalog::default());
+                library.bind_resources(directory.path().into()).unwrap();
+                let bundle = texture_bundle(enabled, shared_tip);
+                library.import_bundle(&bundle).unwrap();
+                assert_eq!(library.imported.lock().unwrap().as_ref().unwrap().len(), 1);
+                library.adopt_imports(&BrushCatalog::default()).unwrap();
+                assert!(library.imported.lock().unwrap().is_some());
+                let definition = bundle.definition(0).unwrap();
+                let mut catalog = BrushCatalog::default();
+                let mut settings = catalog.selected().settings().clone();
+                settings.texture = definition.texture;
+                settings.mask = definition.mask;
+                catalog.edit("round-pressure", settings).unwrap();
+                let json =
+                    String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap();
+                let sequence = library.submit(json).unwrap();
+                let prepared = library.ticket(sequence).unwrap().wait().unwrap();
+                drop(library.current().unwrap());
+                assert!(library.imported.lock().unwrap().is_none());
+                assert_eq!(prepared.selected().settings().texture.enabled(), enabled);
+                if shared_tip {
+                    assert!(Arc::ptr_eq(
+                        prepared.selected().settings().mask.as_ref().unwrap(),
+                        prepared
+                            .selected()
+                            .settings()
+                            .texture
+                            .resource()
+                            .unwrap()
+                            .source()
+                    ));
+                }
+            }
+        }
+    }
+    #[test]
+    fn texture_only_revisions_keep_captured_pixels_release_idle_mips_and_rebuild_exactly() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = PreparedCatalog::new(BrushCatalog::default());
+        library.bind_resources(directory.path().into()).unwrap();
+        let bundle = texture_bundle(true, false);
+        library.import_bundle(&bundle).unwrap();
+        let mut catalog = BrushCatalog::default();
+        let definition = bundle.definition(0).unwrap();
+        let mut settings = bundle.package.brushes[0].parameters.settings();
+        settings.texture = definition.texture.clone();
+        catalog.edit("round-pressure", settings).unwrap();
+        let expected = texture_pixels(definition.clone());
+        assert!(expected.iter().any(|p| p.alpha() > 0.));
+        let json = String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap();
+        let first = library.submit(json.clone()).unwrap();
+        let captured = library.ticket(first).unwrap().wait().unwrap();
+        drop(library.current().unwrap());
+        let weak_texture =
+            Arc::downgrade(captured.selected().settings().texture.resource().unwrap());
+        let weak_source = Arc::downgrade(
+            captured
+                .selected()
+                .settings()
+                .texture
+                .resource()
+                .unwrap()
+                .source(),
+        );
+        drop(catalog);
+        drop(definition);
+        drop(bundle);
+        let resource_id = captured
+            .selected()
+            .settings()
+            .texture
+            .resource()
+            .unwrap()
+            .source()
+            .resource_id()
+            .unwrap()
+            .to_owned();
+        let bad = library
+            .submit(json.replace(&resource_id, &"0".repeat(64)))
+            .unwrap();
+        assert!(library.ticket(bad).unwrap().wait().is_err());
+        assert_eq!(
+            paint_io::brush_state::encode(&library.current().unwrap()).unwrap(),
+            json.as_bytes()
+        );
+        let round =
+            String::from_utf8(paint_io::brush_state::encode(&BrushCatalog::default()).unwrap())
+                .unwrap();
+        let second = library.submit(round).unwrap();
+        library.ticket(second).unwrap().wait().unwrap();
+        drop(library.current().unwrap());
+        library.retire_unused_images().unwrap();
+        assert!(weak_texture.upgrade().is_some());
+        assert_eq!(
+            texture_pixels(captured.selected().settings().definition()),
+            expected
+        );
+        drop(captured);
+        library.retire_unused_images().unwrap();
+        assert!(weak_texture.upgrade().is_none());
+        assert!(weak_source.upgrade().is_none());
+        let rebuilt = library.ticket(first).unwrap().wait().unwrap();
+        assert_eq!(
+            paint_io::brush_state::encode(&rebuilt).unwrap(),
+            json.as_bytes()
+        );
+        assert_eq!(
+            texture_pixels(rebuilt.selected().settings().definition()),
+            expected
+        );
+    }
     #[test]
     fn pressure_state_preparation_compiles_real_pixels_and_bad_draft_keeps_current() {
         let library = PreparedCatalog::new(BrushCatalog::default());

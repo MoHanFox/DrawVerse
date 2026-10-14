@@ -4,6 +4,8 @@
 
 设计：[brush-system-design.md](brush-system-design.md)；格式：[vbr-format-design.md](vbr-format-design.md)。各实施阶段在本文件追加真实结果、命令、环境和限制，不把计划改写成“已通过”。
 
+纹理原生准备生命周期结果见 [brush-texture-bridge-validation.md](brush-texture-bridge-validation.md)：纹理交接/准确准备与源及mip释放已完成；Qt设置、用户包入口、其他动态与湿混仍待后续，不代表整体完成。
+
 ## 1. 定义、迁移与资源
 
 - Rust：定义范围、非法浮点、资源缺失、曲线非法点、能力/profile/版本拒绝；快照在预设切换/资源删除后仍供已开始的笔触使用；预算与缓存失效。
