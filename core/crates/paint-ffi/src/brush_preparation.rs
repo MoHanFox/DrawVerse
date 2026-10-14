@@ -65,6 +65,14 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
+                    if catalog.ids().iter().any(|id| {
+                        catalog.preset(id).unwrap().settings().dual.sizing() != Default::default()
+                    }) {
+                        return Err(ApiError::new(
+                            crate::api::PAINT_UNSUPPORTED,
+                            "secondary sizing Qt entry is not available yet",
+                        ));
+                    }
                     *self.anchors.lock().map_err(|_| ApiError::internal())? = receipts;
                     Ok(Arc::new(catalog))
                 });
@@ -298,6 +306,12 @@ impl PreparedCatalog {
         Ok(resource)
     }
     pub fn import_bundle(&self, bundle: &paint_io::vbr_image::ImageBundle) -> ApiResult<()> {
+        if bundle.package.brushes.iter().any(|b| b.has_dual_sizing()) {
+            return Err(ApiError::new(
+                crate::api::PAINT_UNSUPPORTED,
+                "secondary sizing Qt entry is not available yet",
+            ));
+        }
         if bundle.assets().is_empty() && bundle.sources().is_empty() {
             return Ok(());
         }
@@ -507,6 +521,89 @@ mod abr_fixture;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_relative_sizing_gate_preserves_current_catalog_and_file() {
+        for enabled in [false, true] {
+            let sizing = paint_core::DualSizing::new(
+                paint_core::DualSizeMode::Relative,
+                8.,
+                paint_core::DualWidthRule::FixedWidth,
+            )
+            .unwrap();
+            let mut catalog = BrushCatalog::default();
+            let mut settings = catalog.selected().settings().clone();
+            settings.dual = paint_core::DualBrush::new(
+                enabled,
+                paint_core::DualMode::Multiply,
+                paint_core::SecondaryTip::default(),
+            )
+            .with_sizing(sizing);
+            catalog.edit("round-pressure", settings).unwrap();
+            let library = PreparedCatalog::new(BrushCatalog::default());
+            let sequence = library
+                .submit(
+                    String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap(),
+                )
+                .unwrap();
+            assert_eq!(
+                library.ticket(sequence).unwrap().wait().unwrap_err().status,
+                PAINT_UNSUPPORTED
+            );
+            assert!(library
+                .current()
+                .unwrap()
+                .selected()
+                .settings()
+                .dual
+                .is_default());
+            let base = texture_bundle(false, false);
+            let mut package = base.package.clone();
+            package.brushes[0].dual_brush = Some(
+                paint_io::brush_dual::DualParameters::from_core(
+                    &catalog.selected().settings().dual,
+                )
+                .unwrap(),
+            );
+            package.brushes[0].behavior_version = 12;
+            package.brushes[0]
+                .required_capabilities
+                .extend(["dual-cover".into(), "dual-relative-size".into()]);
+            let bundle = paint_io::vbr_image::ImageBundle::new(
+                package,
+                base.assets()
+                    .iter()
+                    .map(|(id, a)| (id.clone(), a.bytes().to_vec()))
+                    .collect(),
+                &paint_task::CancellationToken::default(),
+            )
+            .unwrap();
+            assert_eq!(
+                library.import_bundle(&bundle).unwrap_err().status,
+                PAINT_UNSUPPORTED
+            );
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("sizing.vbr");
+            std::fs::write(&path, b"keep").unwrap();
+            let path_bytes = path.to_str().unwrap().as_bytes();
+            let json = bundle.package.to_json().unwrap();
+            let mut handle = std::ptr::null_mut();
+            unsafe {
+                assert_eq!(crate::paint_brush_library_create(0, &mut handle), PAINT_OK);
+                assert_eq!(
+                    crate::paint_brush_library_package_write(
+                        handle,
+                        path_bytes.as_ptr(),
+                        path_bytes.len() as u64,
+                        json.as_ptr(),
+                        json.len() as u64
+                    ),
+                    PAINT_UNSUPPORTED
+                );
+                assert_eq!(std::fs::read(&path).unwrap(), b"keep");
+                assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
+            }
+        }
+    }
     #[test]
     fn native_smoothing_preparation_capture_and_package_entry() {
         for enabled in [false, true] {

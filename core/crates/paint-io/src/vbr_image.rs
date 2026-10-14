@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 12;
+pub const MAX_EXECUTABLE_MINOR: u32 = 13;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -358,6 +358,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         }
         brushes.push(preset);
     }
+    if manifest.version.minor < 13 && brushes.iter().any(|b| b.has_dual_sizing()) {
+        return Err(Error::Unsupported(
+            "secondary sizing requires VBR1.13".into(),
+        ));
+    }
     if manifest.version.minor < 12 && brushes.iter().any(|b| b.smoothing.is_some()) {
         return Err(Error::Unsupported("smoothing requires VBR1.12".into()));
     }
@@ -525,7 +530,9 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle.package.brushes.iter().any(|b| b.smoothing.is_some()) {
+            minor: if bundle.package.brushes.iter().any(|b| b.has_dual_sizing()) {
+                13
+            } else if bundle.package.brushes.iter().any(|b| b.smoothing.is_some()) {
                 12
             } else if bundle.package.brushes.iter().any(|b| b.has_smooth()) {
                 11

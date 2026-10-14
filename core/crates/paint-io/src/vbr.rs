@@ -192,6 +192,9 @@ impl Preset {
             .is_some_and(|p| p.has_smooth())
             || self.dual_brush.as_ref().is_some_and(|d| d.has_smooth())
     }
+    pub fn has_dual_sizing(&self) -> bool {
+        self.dual_brush.as_ref().is_some_and(|d| d.has_sizing())
+    }
 }
 impl Package {
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
@@ -249,7 +252,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if b.smoothing.is_some() {
+                != if b.has_dual_sizing() {
+                    12
+                } else if b.smoothing.is_some() {
                     11
                 } else if b.has_smooth() {
                     10
@@ -297,6 +302,7 @@ impl Package {
                             | "dual-cover"
                             | "pressure-smooth"
                             | "path-smoothing"
+                            | "dual-relative-size"
                     )
                 })
             {
@@ -308,10 +314,16 @@ impl Package {
             {
                 return Err(Error::Invalid("VBR source identity"));
             }
-            if b.smoothing.is_some()
-                != b.required_capabilities
-                    .iter()
-                    .any(|c| c == "path-smoothing")
+            if (b.has_dual_sizing()
+                && (b.engine_profile != "drawverse.brush"
+                    || !b
+                        .required_capabilities
+                        .iter()
+                        .any(|c| c == "dual-relative-size")))
+                || b.smoothing.is_some()
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "path-smoothing")
                 || (b.smoothing.is_some() && b.engine_profile != "drawverse.brush")
                 || b.has_smooth()
                     != b.required_capabilities

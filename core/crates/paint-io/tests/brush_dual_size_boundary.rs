@@ -2,15 +2,17 @@ use paint_core::*;
 use paint_io::brush_dual::DualParameters;
 
 #[test]
-fn old_dual_format_rejects_all_retained_sizing_and_keeps_default_roundtrip() {
+fn dual_format_preserves_retained_sizing_and_default_roundtrip() {
     for enabled in [false, true] {
         for mode in [DualSizeMode::Independent, DualSizeMode::Relative] {
             let dual = DualBrush::new(enabled, DualMode::Multiply, SecondaryTip::default())
                 .with_sizing(DualSizing::new(mode, 8., DualWidthRule::FixedWidth).unwrap());
-            assert!(matches!(
-                DualParameters::from_core(&dual),
-                Err(paint_io::Error::Unsupported(_))
-            ));
+            let decoded = DualParameters::from_core(&dual)
+                .unwrap()
+                .bind(None)
+                .unwrap();
+            assert_eq!(decoded.sizing(), dual.sizing());
+            assert_eq!(decoded.enabled(), enabled);
         }
     }
     let default = DualBrush::default();

@@ -178,7 +178,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=14) {
+    if !matches!(state.version, 1..=15) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -257,6 +257,11 @@ fn decode_inner(
             return Err(Error::Unsupported("smoothing requires state14".into()));
         }
         let dual = if let Some(d) = row.dual_brush {
+            if d.has_sizing() && state.version < 15 {
+                return Err(Error::Unsupported(
+                    "secondary sizing requires state15".into(),
+                ));
+            }
             if state.version < 12 {
                 return Err(Error::Unsupported("dual brush require state12".into()));
             }
@@ -390,6 +395,9 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         };
         let dual_brush = if !s.dual.is_default() {
             version = version.max(12);
+            if s.dual.sizing() != Default::default() {
+                version = version.max(15);
+            }
             Some(crate::brush_dual::DualParameters::from_core(&s.dual)?)
         } else {
             None

@@ -43,14 +43,15 @@ pub struct DualParameters {
         deserialize_with = "crate::brush_shape_jitter::present"
     )]
     shape_jitter: Option<crate::brush_shape_jitter::ShapeParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_dual_sizing::present"
+    )]
+    sizing: Option<crate::brush_dual_sizing::SizingParameters>,
 }
 impl DualParameters {
     pub fn from_core(dual: &DualBrush) -> Result<Self> {
-        if dual.sizing() != Default::default() {
-            return Err(Error::Unsupported(
-                "secondary relative sizing requires a newer format".into(),
-            ));
-        }
         let s = dual.secondary();
         let t = s.tip();
         let d = s.dynamics();
@@ -67,6 +68,8 @@ impl DualParameters {
             })
             .transpose()?;
         Ok(Self {
+            sizing: (dual.sizing() != Default::default())
+                .then(|| crate::brush_dual_sizing::SizingParameters::from_core(dual.sizing())),
             model: if s.spacing().is_some() {
                 "path-coverage-v1"
             } else {
@@ -106,6 +109,9 @@ impl DualParameters {
         self.pressure_dynamics
             .as_ref()
             .is_some_and(|p| p.has_smooth())
+    }
+    pub fn has_sizing(&self) -> bool {
+        self.sizing.is_some()
     }
     pub fn resource_id(&self) -> Option<&str> {
         self.resource.as_deref()
@@ -178,7 +184,8 @@ impl DualParameters {
             "screen" => DualMode::Screen,
             _ => return Err(Error::Invalid("dual mode")),
         };
-        Ok(DualBrush::new(self.enabled, mode, secondary))
+        Ok(DualBrush::new(self.enabled, mode, secondary)
+            .with_sizing(self.sizing.map(|p| p.core()).unwrap_or_default()))
     }
 }
 pub fn present<'de, D: serde::Deserializer<'de>>(
