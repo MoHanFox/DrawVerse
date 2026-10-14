@@ -158,6 +158,7 @@ pub fn convert<'a>(
         };
         let mut settings = BrushSettings {
             texture: Default::default(),
+            dual: Default::default(),
             dynamics: Default::default(),
             diameter,
             spacing,

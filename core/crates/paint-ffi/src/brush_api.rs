@@ -51,6 +51,7 @@ pub unsafe extern "C" fn paint_session_begin_brush(
         };
         let definition = BrushDefinition {
             texture: Default::default(),
+            dual: Default::default(),
             dynamics: Default::default(),
             brush,
             mask: None,

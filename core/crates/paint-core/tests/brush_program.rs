@@ -5,6 +5,7 @@ fn dot(tip: BrushTip, pressure: f32) -> Document {
     d.begin_brush_stroke(
         BrushDefinition {
             texture: Default::default(),
+            dual: Default::default(),
             dynamics: Default::default(),
             mask: None,
             brush: Brush {
@@ -103,6 +104,7 @@ fn validation_is_atomic_and_new_tip_history_is_reversible() {
             .begin_brush_stroke(
                 BrushDefinition {
                     texture: Default::default(),
+                    dual: Default::default(),
                     tip: invalid,
                     ..BrushDefinition::default()
                 },
@@ -123,6 +125,7 @@ fn validation_is_atomic_and_new_tip_history_is_reversible() {
     d.begin_brush_stroke(
         BrushDefinition {
             texture: Default::default(),
+            dual: Default::default(),
             dynamics: Default::default(),
             brush: Brush {
                 radius: 10.,

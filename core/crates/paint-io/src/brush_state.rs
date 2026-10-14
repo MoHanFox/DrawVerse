@@ -287,6 +287,7 @@ fn decode_inner(
             row.name,
             BrushSettings {
                 texture,
+                dual: Default::default(),
                 dynamics,
                 diameter: row.radius * 2.,
                 opacity: row.opacity,
@@ -317,6 +318,9 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        if !s.dual.is_default() {
+            return Err(Error::Invalid("dual brush requires a newer state format"));
+        }
         let texture = if !s.texture.is_default() {
             version = version.max(11);
             Some(crate::brush_texture::TextureParameters::from_core(

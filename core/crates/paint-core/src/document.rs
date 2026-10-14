@@ -387,6 +387,7 @@ struct Stroke {
     last_carrier: InputPoint,
     random_index: u64,
     random_stroke: u64,
+    random_child: u32,
     shape_sample: crate::brush_shape_jitter::ShapeSample,
     color_sample: Pixel,
     distance_to_next: f64,
@@ -1164,15 +1165,17 @@ impl Document {
         let program = BrushProgram::compile(definition)?;
         first.validate()?;
         Self::validate_stroke_work(brush, &program, 1)?;
-        let random_serial =
-            if program.scatter.enabled() || program.shape_jitter.active() || program.color.active()
-            {
-                self.random_serial
-                    .checked_add(1)
-                    .ok_or(Error::ResourceLimit("random stroke serial exhausted"))?
-            } else {
-                self.random_serial
-            };
+        let random_serial = if program.scatter.enabled()
+            || program.shape_jitter.active()
+            || program.color.active()
+            || program.dual.as_ref().is_some_and(|d| d.random_active())
+        {
+            self.random_serial
+                .checked_add(1)
+                .ok_or(Error::ResourceLimit("random stroke serial exhausted"))?
+        } else {
+            self.random_serial
+        };
         if self
             .layer(self.active_layer)
             .expect("active layer")
@@ -1203,6 +1206,7 @@ impl Document {
             last_carrier: first,
             random_index: 0,
             random_stroke: random_serial,
+            random_child: 0,
             shape_sample: Default::default(),
             color_sample: brush.color,
             distance_to_next: brush.step(),
@@ -1239,10 +1243,14 @@ impl Document {
             return Err(Error::InvalidArgument("tablet time must be monotonic"));
         }
         let distance = (point.x - current.last.x).hypot(point.y - current.last.y);
-        let stationary_pressure = distance <= 1e-9
-            && point.pressure != current.last.pressure
-            && current.program.opacity_pressure(point.pressure).is_some()
-            && !matches!(current.brush.mode, BrushMode::Smudge { .. });
+        let stationary_pressure =
+            distance <= 1e-9
+                && point.pressure != current.last.pressure
+                && (current.program.opacity_pressure(point.pressure).is_some()
+                    || current.program.dual.as_ref().is_some_and(|d| {
+                        d.pressure_changed(current.last.pressure, point.pressure)
+                    }))
+                && !matches!(current.brush.mode, BrushMode::Smudge { .. });
         let step = current.brush.step();
         let count = if distance + 1e-9 < current.distance_to_next {
             0
@@ -1308,8 +1316,10 @@ impl Document {
             5
         } else {
             1
-        } + if program.has_texture() { 8 } else { 0 };
-        if count > MAX_DABS_PER_SEGMENT
+        } + if program.has_texture() { 8 } else { 0 }
+            + program.dual.as_ref().map_or(0, |d| d.sample_cost());
+        if count.saturating_mul(program.dual.as_ref().map_or(1, |d| d.maximum_count()))
+            > MAX_DABS_PER_SEGMENT
             || count
                 .saturating_mul(diameter * diameter)
                 .saturating_mul(sample_cost)
@@ -1457,7 +1467,15 @@ impl Document {
             logical,
             stroke.direction,
         );
-        if plan.is_some() || stroke.program.shape_jitter.active() || stroke.program.color.active() {
+        if plan.is_some()
+            || stroke.program.shape_jitter.active()
+            || stroke.program.color.active()
+            || stroke
+                .program
+                .dual
+                .as_ref()
+                .is_some_and(|d| d.random_active())
+        {
             stroke.random_index = logical
                 .checked_add(1)
                 .ok_or(Error::ResourceLimit("random dab serial exhausted"))?;
@@ -1481,6 +1499,7 @@ impl Document {
                 if stroke.first_dab {
                     stroke.last_carrier = sample;
                 }
+                stroke.random_child = index;
                 changed |= self.dab_single(stroke, sample)?;
                 stroke.last_carrier = sample;
             }
@@ -1498,11 +1517,23 @@ impl Document {
                 logical,
                 0,
             );
+            stroke.random_child = 0;
             stroke.last_carrier = stroke.last_dab;
             self.dab_single(stroke, point)
         }
     }
     fn dab_single(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
+        if stroke.program.dual.is_some() {
+            self.dab_dispatch::<true>(stroke, point)
+        } else {
+            self.dab_dispatch::<false>(stroke, point)
+        }
+    }
+    fn dab_dispatch<const DUAL: bool>(
+        &mut self,
+        stroke: &mut Stroke,
+        point: InputPoint,
+    ) -> Result<bool> {
         if stroke.mask_paint.is_some() && stroke.program.color.active() {
             stroke.mask_paint = Some(Self::mask_tone(stroke.color_sample));
         }
@@ -1513,18 +1544,37 @@ impl Document {
             stroke.program.has_mask(),
             stroke.program.has_texture(),
         ) {
-            (true, true, true) => self.dab_with_selection::<true, true, true>(stroke, point),
-            (true, false, true) => self.dab_with_selection::<true, false, true>(stroke, point),
-            (false, true, true) => self.dab_with_selection::<false, true, true>(stroke, point),
-            (false, false, true) => self.dab_with_selection::<false, false, true>(stroke, point),
-            (true, true, false) => self.dab_with_selection::<true, true, false>(stroke, point),
-            (true, false, false) => self.dab_with_selection::<true, false, false>(stroke, point),
-            (false, true, false) => self.dab_with_selection::<false, true, false>(stroke, point),
-            (false, false, false) => self.dab_with_selection::<false, false, false>(stroke, point),
+            (true, true, true) => self.dab_with_selection::<true, true, true, DUAL>(stroke, point),
+            (true, false, true) => {
+                self.dab_with_selection::<true, false, true, DUAL>(stroke, point)
+            }
+            (false, true, true) => {
+                self.dab_with_selection::<false, true, true, DUAL>(stroke, point)
+            }
+            (false, false, true) => {
+                self.dab_with_selection::<false, false, true, DUAL>(stroke, point)
+            }
+            (true, true, false) => {
+                self.dab_with_selection::<true, true, false, DUAL>(stroke, point)
+            }
+            (true, false, false) => {
+                self.dab_with_selection::<true, false, false, DUAL>(stroke, point)
+            }
+            (false, true, false) => {
+                self.dab_with_selection::<false, true, false, DUAL>(stroke, point)
+            }
+            (false, false, false) => {
+                self.dab_with_selection::<false, false, false, DUAL>(stroke, point)
+            }
         }
     }
 
-    fn dab_with_selection<const SELECTED: bool, const IMAGED: bool, const TEXTURED: bool>(
+    fn dab_with_selection<
+        const SELECTED: bool,
+        const IMAGED: bool,
+        const TEXTURED: bool,
+        const DUAL: bool,
+    >(
         &mut self,
         stroke: &mut Stroke,
         point: InputPoint,
@@ -1575,6 +1625,17 @@ impl Document {
             .dab_geometry(point, stroke.direction, stroke.shape_sample);
         let texture_dab = if TEXTURED {
             stroke.program.texture_dab(point, geometry)
+        } else {
+            None
+        };
+        let dual_dab = if DUAL {
+            Some(stroke.program.dual.as_ref().expect("compiled dual").dab(
+                point,
+                stroke.direction,
+                stroke.random_stroke,
+                stroke.random_index.saturating_sub(1),
+                stroke.random_child,
+            ))
         } else {
             None
         };
@@ -1699,6 +1760,13 @@ impl Document {
                                 geometry,
                             )
                         };
+                        if DUAL {
+                            coverage = dual_dab.as_ref().expect("compiled dual dab").combine(
+                                coverage,
+                                x as f64 + 0.5 + f64::from(appearance.offset_x),
+                                y as f64 + 0.5 + f64::from(appearance.offset_y),
+                            );
+                        }
                         let texture_amount = if TEXTURED {
                             texture_dab.as_ref().expect("compiled texture").coverage(
                                 x as f64 + 0.5 + f64::from(appearance.offset_x),

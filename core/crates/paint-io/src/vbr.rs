@@ -82,6 +82,7 @@ impl Parameters {
         }
         BrushSettings {
             texture: Default::default(),
+            dual: Default::default(),
             dynamics,
             mask: None,
             diameter: self.diameter,

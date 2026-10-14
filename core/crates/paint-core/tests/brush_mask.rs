@@ -3,6 +3,7 @@ use std::sync::Arc;
 fn definition(mask: Arc<BrushMask>, angle: f32) -> BrushDefinition {
     BrushDefinition {
         texture: Default::default(),
+        dual: Default::default(),
         dynamics: Default::default(),
         brush: Brush {
             radius: 8.,

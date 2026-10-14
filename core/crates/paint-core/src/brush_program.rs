@@ -51,6 +51,7 @@ pub struct BrushDefinition {
     pub mask: Option<Arc<BrushMask>>,
     pub dynamics: BrushDynamics,
     pub texture: crate::BrushTexture,
+    pub dual: crate::DualBrush,
 }
 
 impl From<Brush> for BrushDefinition {
@@ -61,6 +62,7 @@ impl From<Brush> for BrushDefinition {
             mask: None,
             dynamics: BrushDynamics::default(),
             texture: Default::default(),
+            dual: Default::default(),
         }
     }
 }
@@ -81,6 +83,7 @@ pub struct BrushProgram {
     pub(crate) shape_jitter: crate::ShapeJitter,
     pub(crate) color: crate::ColorDynamics,
     pub(crate) texture: Option<crate::brush_texture::CompiledTexture>,
+    pub(crate) dual: Option<crate::brush_dual::CompiledDual>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -168,6 +171,7 @@ impl BrushProgram {
             shape_jitter: definition.dynamics.shape_jitter,
             color: definition.dynamics.color,
             texture: definition.texture.compile(),
+            dual: definition.dual.compile()?,
         })
     }
 
@@ -191,6 +195,7 @@ impl BrushProgram {
         })
     }
     #[inline]
+    /// Base tip coverage; the document executor binds dual/texture dab operators.
     pub fn coverage(&self, dx: f64, dy: f64, radius: f64) -> f32 {
         if self.has_mask() {
             self.mask_dab(radius).map_or(0., |dab| dab.coverage(dx, dy))

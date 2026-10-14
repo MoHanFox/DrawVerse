@@ -21,6 +21,7 @@ pub struct BrushSettings {
     pub mask: Option<Arc<BrushMask>>,
     pub dynamics: crate::BrushDynamics,
     pub texture: crate::BrushTexture,
+    pub dual: crate::DualBrush,
 }
 impl Default for BrushSettings {
     fn default() -> Self {
@@ -32,6 +33,7 @@ impl Default for BrushSettings {
             mask: None,
             dynamics: crate::BrushDynamics::default(),
             texture: Default::default(),
+            dual: Default::default(),
         }
     }
 }
@@ -50,6 +52,7 @@ impl BrushSettings {
             mask: self.mask.clone(),
             dynamics: self.dynamics.clone(),
             texture: self.texture.clone(),
+            dual: self.dual.clone(),
         }
     }
 }
@@ -237,6 +240,7 @@ impl BrushCatalog {
                 .mask
                 .iter()
                 .chain(settings.texture.resource().map(|r| r.source()))
+                .chain(settings.dual.secondary().mask())
             {
                 if ids.insert(Arc::as_ptr(mask) as usize) {
                     total = total.saturating_add(mask.resident_bytes());

@@ -3,7 +3,9 @@
 mod appearance;
 mod brush;
 mod brush_catalog;
+mod brush_dual;
 mod brush_dynamics;
+pub use brush_dual::{DualBrush, DualMode, SecondaryTip};
 mod brush_texture;
 pub use brush_texture::{BrushTexture, TextureResource, TextureSettings, TextureSpace};
 mod brush_mask;

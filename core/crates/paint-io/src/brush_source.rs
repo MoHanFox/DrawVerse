@@ -130,6 +130,11 @@ impl SourceArchive {
         tip_resource: Option<String>,
     ) -> Result<SourceInfo> {
         let settings = &preset.settings;
+        if !settings.dual.is_default() {
+            return Err(Error::Unsupported(
+                "source dual brush is not represented by converter v1".into(),
+            ));
+        }
         if settings.dynamics != paint_core::BrushDynamics::default() {
             return Err(Error::Unsupported(
                 "source pressure dynamics are not represented by converter v1".into(),
