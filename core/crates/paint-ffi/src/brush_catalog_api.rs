@@ -486,6 +486,7 @@ pub unsafe extern "C" fn paint_session_begin_prepared_preset(
                     id,
                     tool,
                     Pixel::WHITE,
+                    paint_core::BlendMode::Normal,
                     point,
                 ))?;
         pointers::write(out_sequence, sequence)
@@ -527,7 +528,12 @@ pub unsafe extern "C" fn paint_session_begin_prepared_preset_with_background(
             runtime::registry()?
                 .session(core, session)?
                 .submit(Operation::BeginPrepared(
-                    ticket, id, tool, background, point,
+                    ticket,
+                    id,
+                    tool,
+                    background,
+                    paint_core::BlendMode::Normal,
+                    point,
                 ))?;
         pointers::write(out_sequence, sequence)
     })
@@ -659,5 +665,57 @@ pub unsafe extern "C" fn paint_brush_library_source_info(
             .verified_record(&identity, &token)
             .map_err(crate::file_job::io_error)?;
         pointers::copy_buffer(&bytes, buffer, capacity, required)
+    })
+}
+
+/// Begin with captured foreground/background and drawing blend, retaining the exact preset ticket.
+/// # Safety
+/// Live handles, readable ID, sized aligned tool/background/blend/point and a nonoverlapping
+/// writable sequence are required for this call. All caller data are copied before returning.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_begin_prepared_preset_with_blend(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    library: *mut PaintBrushLibrary,
+    preparation: u64,
+    id: *const u8,
+    id_length: u64,
+    tool: *const PaintBrushToolDesc,
+    background: *const PaintBrushBackgroundDesc,
+    blend: *const PaintBrushBlendDesc,
+    point: *const PaintPoint,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        let blend: PaintBrushBlendDesc = pointers::read_sized(blend)?;
+        if blend.reserved != 0 || blend.mode > 26 {
+            return Err(ApiError::invalid("brush blend parameters"));
+        }
+        let blend = paint_core::BlendMode::from_id(blend.mode)?;
+        let background: PaintBrushBackgroundDesc = pointers::read_sized(background)?;
+        if background.reserved != 0 {
+            return Err(ApiError::invalid("background reserved"));
+        }
+        let background = Pixel::from_straight(background.linear_rgba)?;
+        let id = pointers::utf8(id, id_length)?;
+        let tool = pointers::read_sized(tool)?;
+        validate_tool(tool)?;
+        if tool.operation != PAINT_BRUSH_PAINT && blend != paint_core::BlendMode::Normal {
+            return Err(ApiError::invalid("blend is only supported for drawing"));
+        }
+        let point = crate::point(pointers::read_sized(point)?)?;
+        point.validate()?;
+        let ticket = runtime::registry()?
+            .brush_library(library)?
+            .ticket(preparation)?;
+        let sequence =
+            runtime::registry()?
+                .session(core, session)?
+                .submit(Operation::BeginPrepared(
+                    ticket, id, tool, background, blend, point,
+                ))?;
+        pointers::write(out_sequence, sequence)
     })
 }

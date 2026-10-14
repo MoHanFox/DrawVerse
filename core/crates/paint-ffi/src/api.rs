@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 43;
+pub const PAINT_ABI_MINOR: u32 = 44;
 pub const PAINT_FEATURE_PRESSURE_DYNAMICS: u64 = 1073741824;
 pub const PAINT_FEATURE_VBR_SOURCES: u64 = 536870912;
 pub const PAINT_FEATURE_ABR_IMPORT: u64 = 268435456;
@@ -805,3 +805,13 @@ pub const PAINT_FEATURE_COLOR_DYNAMICS: u64 = 68719476736;
 pub const PAINT_FEATURE_BRUSH_TEXTURE: u64 = 137438953472;
 /// Complete secondary brush models, state12 / VBR1.10 exchange.
 pub const PAINT_FEATURE_DUAL_BRUSH: u64 = 274877906944;
+
+/// Per-stroke drawing blend; does not change the target layer blend mode.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintBrushBlendDesc {
+    pub struct_size: u32,
+    pub mode: u32,
+    pub reserved: u64,
+}
+pub const PAINT_FEATURE_BRUSH_WRITE_BLEND: u64 = 549755813888;

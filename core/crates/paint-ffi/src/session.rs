@@ -47,6 +47,7 @@ pub(crate) enum Operation {
         String,
         PaintBrushToolDesc,
         paint_core::Pixel,
+        paint_core::BlendMode,
         InputPoint,
     ),
     Move(InputPoint),
@@ -880,7 +881,7 @@ impl Engine {
                 self.error = None;
                 self.default_view();
             }
-            Operation::BeginPrepared(ticket, id, tool, background, point) => {
+            Operation::BeginPrepared(ticket, id, tool, background, blend, point) => {
                 self.aborted = false;
                 let library = ticket.wait()?;
                 let preset = library
@@ -888,6 +889,7 @@ impl Engine {
                     .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "prepared brush preset"))?;
                 let mut definition = crate::brush_catalog_api::tool_definition(&preset, tool)?;
                 definition.brush.background_color = background;
+                definition.write_blend = blend;
                 self.apply(Operation::Begin(definition, point, tool.layer_id), sequence)?;
             }
             Operation::Begin(brush, point, layer) => {

@@ -76,7 +76,13 @@ int main(void) {
     CHECK((caps.features & PAINT_FEATURE_COLOR_DYNAMICS) != 0);
     CHECK((caps.features & PAINT_FEATURE_BRUSH_TEXTURE) != 0);
     CHECK((caps.features & PAINT_FEATURE_DUAL_BRUSH) != 0);
+    CHECK((caps.features & PAINT_FEATURE_BRUSH_WRITE_BLEND) != 0);
     CHECK(sizeof(PaintBrushBackgroundDesc)==24);
+    CHECK(sizeof(PaintBrushBlendDesc)==16);
+    CHECK(offsetof(PaintBrushBlendDesc,reserved)==8);
+    { uint64_t rejected_sequence = 99;
+      CHECK(paint_session_begin_prepared_preset_with_blend(core,NULL,NULL,0,NULL,0,NULL,NULL,NULL,NULL,&rejected_sequence)==PAINT_INVALID_ARGUMENT);
+      CHECK(rejected_sequence==0); }
     CHECK((caps.features & (PAINT_FEATURE_DOCUMENT | PAINT_FEATURE_HISTORY | PAINT_FEATURE_LINEAR_TILE_READ | PAINT_FEATURE_EVENTS)) == (PAINT_FEATURE_DOCUMENT | PAINT_FEATURE_HISTORY | PAINT_FEATURE_LINEAR_TILE_READ | PAINT_FEATURE_EVENTS));
     desc.struct_size = sizeof(desc); desc.width = 128; desc.height = 64;
     desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;

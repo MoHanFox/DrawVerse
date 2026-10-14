@@ -213,11 +213,241 @@ fn preset_stroke_captures_definition_before_library_edit_remove_destroy() {
     }
 }
 #[test]
+fn prepared_blend_validates_copies_mode_and_keeps_old_normal_pixels() {
+    assert_eq!(size_of::<PaintBrushBlendDesc>(), 16);
+    assert_eq!(offset_of!(PaintBrushBlendDesc, reserved), 8);
+    let mut results = Vec::new();
+    for mode in [u32::MAX, 0, 3, 8] {
+        let h = Harness::new(40, 40);
+        h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_BEGIN_STROKE,
+            stroke: PaintStrokeDesc {
+                mode: PAINT_MODE_PAINT,
+                radius: 30.,
+                opacity: 1.,
+                spacing: 0.15,
+                linear_rgba: [0.6, 0.4, 0.2, 1.],
+                ..dto!(PaintStrokeDesc)
+            },
+            point: PaintPoint {
+                x: 20.5,
+                y: 20.5,
+                pressure: 1.,
+                tool: PAINT_TOOL_MOUSE,
+                ..dto!(PaintPoint)
+            },
+            ..dto!(PaintCommand)
+        }));
+        h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_END_STROKE,
+            ..dto!(PaintCommand)
+        }));
+        // Sized caller data are owned and live; invalid pointers are rejected before dereference.
+        unsafe {
+            let mut library = ptr::null_mut();
+            assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+            let mut catalog = paint_core::BrushCatalog::default();
+            let mut settings = catalog.selected().settings().clone();
+            settings.opacity = 0.4;
+            settings.tip.pressure_size = false;
+            settings.tip.pressure_flow = false;
+            catalog.edit("round-pressure", settings).unwrap();
+            let state = paint_io::brush_state::encode(&catalog).unwrap();
+            let mut prepared = 0;
+            assert_eq!(
+                paint_brush_library_prepare_state(
+                    library,
+                    state.as_ptr(),
+                    state.len() as u64,
+                    &mut prepared
+                ),
+                PAINT_OK
+            );
+            let id = b"round-pressure";
+            let mut tool = PaintBrushToolDesc {
+                radius: 8.,
+                strength: 1.,
+                linear_rgba: [0.4, 0.2, 0.7, 0.75],
+                ..dto!(PaintBrushToolDesc)
+            };
+            let mut background = PaintBrushBackgroundDesc {
+                linear_rgba: [0., 0., 1., 1.],
+                ..dto!(PaintBrushBackgroundDesc)
+            };
+            let point = PaintPoint {
+                x: 20.5,
+                y: 20.5,
+                pressure: 1.,
+                tool: PAINT_TOOL_MOUSE,
+                ..dto!(PaintPoint)
+            };
+            let mut blend = PaintBrushBlendDesc {
+                mode: if mode == u32::MAX { 0 } else { mode },
+                ..dto!(PaintBrushBlendDesc)
+            };
+            let mut sequence = 99;
+            for invalid in [
+                PaintBrushBlendDesc {
+                    struct_size: 15,
+                    ..blend
+                },
+                PaintBrushBlendDesc {
+                    reserved: 1,
+                    ..blend
+                },
+                PaintBrushBlendDesc { mode: 27, ..blend },
+                PaintBrushBlendDesc {
+                    mode: u32::MAX,
+                    ..blend
+                },
+            ] {
+                assert_eq!(
+                    paint_session_begin_prepared_preset_with_blend(
+                        h.core,
+                        h.session,
+                        library,
+                        prepared,
+                        id.as_ptr(),
+                        id.len() as u64,
+                        &tool,
+                        &background,
+                        &invalid,
+                        &point,
+                        &mut sequence
+                    ),
+                    PAINT_INVALID_ARGUMENT
+                );
+                assert_eq!(sequence, 0);
+            }
+            assert_eq!(
+                paint_session_begin_prepared_preset_with_blend(
+                    h.core,
+                    h.session,
+                    library,
+                    prepared,
+                    id.as_ptr(),
+                    id.len() as u64,
+                    &tool,
+                    &background,
+                    ptr::null(),
+                    &point,
+                    &mut sequence
+                ),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(sequence, 0);
+            let misaligned = (&blend as *const PaintBrushBlendDesc)
+                .cast::<u8>()
+                .add(1)
+                .cast::<PaintBrushBlendDesc>();
+            assert_eq!(
+                paint_session_begin_prepared_preset_with_blend(
+                    h.core,
+                    h.session,
+                    library,
+                    prepared,
+                    id.as_ptr(),
+                    id.len() as u64,
+                    &tool,
+                    &background,
+                    misaligned,
+                    &point,
+                    &mut sequence
+                ),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(sequence, 0);
+            let erased = PaintBrushToolDesc {
+                operation: PAINT_BRUSH_ERASE,
+                ..tool
+            };
+            let nonnormal = PaintBrushBlendDesc { mode: 3, ..blend };
+            assert_eq!(
+                paint_session_begin_prepared_preset_with_blend(
+                    h.core,
+                    h.session,
+                    library,
+                    prepared,
+                    id.as_ptr(),
+                    id.len() as u64,
+                    &erased,
+                    &background,
+                    &nonnormal,
+                    &point,
+                    &mut sequence
+                ),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(sequence, 0);
+            let status = if mode == u32::MAX {
+                paint_session_begin_prepared_preset_with_background(
+                    h.core,
+                    h.session,
+                    library,
+                    prepared,
+                    id.as_ptr(),
+                    id.len() as u64,
+                    &tool,
+                    &background,
+                    &point,
+                    &mut sequence,
+                )
+            } else {
+                paint_session_begin_prepared_preset_with_blend(
+                    h.core,
+                    h.session,
+                    library,
+                    prepared,
+                    id.as_ptr(),
+                    id.len() as u64,
+                    &tool,
+                    &background,
+                    &blend,
+                    &point,
+                    &mut sequence,
+                )
+            };
+            assert_eq!(status, PAINT_OK);
+            blend.mode = 8;
+            tool.linear_rgba = [0., 1., 0., 1.];
+            background.linear_rgba = [1., 0., 0., 1.];
+            assert_eq!(blend.mode, 8);
+            assert_eq!(tool.linear_rgba[1], 1.);
+            assert_eq!(background.linear_rgba[0], 1.);
+            assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+            let ended = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_END_STROKE,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(ended.last_error_status, PAINT_OK);
+            assert_eq!(ended.undo_depth, 2);
+            let frame = h.pixels(0, h.frame(0, ended.revision));
+            let undo = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_UNDO,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(undo.undo_depth, 1);
+            let redo = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_REDO,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(h.pixels(0, h.frame(0, redo.revision)), frame);
+            results.push(frame);
+        }
+    }
+    assert_eq!(results[0], results[1]);
+    let center = (20 * 40 + 20) * 4;
+    assert!(results[2][center] < results[1][center]);
+    assert!(results[3][center] > results[1][center]);
+}
+
+#[test]
 fn background_prepared_begin_captures_both_colors_and_keeps_old_entry() {
     assert_eq!(size_of::<PaintBrushBackgroundDesc>(), 24);
     assert_eq!(offset_of!(PaintBrushBackgroundDesc, linear_rgba), 8);
     let mut frames = Vec::new();
-    for legacy in [false, true] {
+    for entry in 0..3 {
+        let legacy = entry == 1;
         let h = Harness::new(40, 40);
         // Owned DTOs, bytes and handles remain alive through synchronous ABI calls.
         unsafe {
@@ -322,6 +552,21 @@ fn background_prepared_begin_captures_both_colors_and_keeps_old_entry() {
                     &point,
                     &mut sequence,
                 )
+            } else if entry == 2 {
+                let blend = dto!(PaintBrushBlendDesc);
+                paint_session_begin_prepared_preset_with_blend(
+                    h.core,
+                    h.session,
+                    library,
+                    prepared,
+                    id.as_ptr(),
+                    id.len() as u64,
+                    &tool,
+                    &background,
+                    &blend,
+                    &point,
+                    &mut sequence,
+                )
             } else {
                 paint_session_begin_prepared_preset_with_background(
                     h.core,
@@ -357,6 +602,7 @@ fn background_prepared_begin_captures_both_colors_and_keeps_old_entry() {
         }
     }
     assert_ne!(frames[0], frames[1]);
+    assert_eq!(frames[0], frames[2]);
 }
 
 #[test]
