@@ -169,6 +169,11 @@ impl BrushProgram {
             return Err(Error::InvalidArgument("brush write blend mode"));
         }
         let (sine, cosine) = f64::from(definition.tip.angle).to_radians().sin_cos();
+        let dual = definition.dual.compile(
+            definition.brush.radius,
+            definition.tip.pressure_size,
+            &definition.dynamics.size,
+        )?;
         Ok(Self {
             smoothing: definition.smoothing,
             write_blend: definition.write_blend,
@@ -185,7 +190,7 @@ impl BrushProgram {
             shape_jitter: definition.dynamics.shape_jitter,
             color: definition.dynamics.color,
             texture: definition.texture.compile(),
-            dual: definition.dual.compile()?,
+            dual,
         })
     }
 

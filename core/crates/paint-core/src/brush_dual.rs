@@ -6,6 +6,59 @@ use crate::{
 use std::sync::{Arc, OnceLock};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DualSizeMode {
+    #[default]
+    Independent,
+    Relative,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DualWidthRule {
+    #[default]
+    FollowPressure,
+    FixedWidth,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct DualSizing {
+    mode: DualSizeMode,
+    diameter_offset: f32,
+    width_rule: DualWidthRule,
+}
+impl DualSizing {
+    pub fn new(
+        mode: DualSizeMode,
+        diameter_offset: f32,
+        width_rule: DualWidthRule,
+    ) -> Result<Self> {
+        if !diameter_offset.is_finite() || !(-511. ..=511.).contains(&diameter_offset) {
+            return Err(Error::InvalidArgument("secondary diameter offset"));
+        }
+        Ok(Self {
+            mode,
+            diameter_offset,
+            width_rule,
+        })
+    }
+    pub fn mode(self) -> DualSizeMode {
+        self.mode
+    }
+    pub fn diameter_offset(self) -> f32 {
+        self.diameter_offset
+    }
+    pub fn width_rule(self) -> DualWidthRule {
+        self.width_rule
+    }
+    fn fixed(self) -> bool {
+        self.mode == DualSizeMode::Relative && self.width_rule == DualWidthRule::FixedWidth
+    }
+    fn nominal_radius(self, primary: f32, secondary: f32) -> f32 {
+        match self.mode {
+            DualSizeMode::Independent => secondary,
+            DualSizeMode::Relative => (primary + self.diameter_offset / 2.).clamp(0.5, 256.),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DualMode {
     #[default]
     Multiply,
@@ -110,6 +163,7 @@ pub struct DualBrush {
     enabled: bool,
     mode: DualMode,
     secondary: Arc<SecondaryTip>,
+    sizing: DualSizing,
 }
 impl Default for DualBrush {
     fn default() -> Self {
@@ -117,6 +171,7 @@ impl Default for DualBrush {
         Self {
             enabled: false,
             mode: DualMode::default(),
+            sizing: DualSizing::default(),
             secondary: DEFAULT
                 .get_or_init(|| {
                     Arc::new(SecondaryTip {
@@ -134,10 +189,18 @@ impl DualBrush {
             enabled,
             mode,
             secondary: Arc::new(secondary),
+            sizing: DualSizing::default(),
         }
     }
     pub fn enabled(&self) -> bool {
         self.enabled
+    }
+    pub fn with_sizing(mut self, sizing: DualSizing) -> Self {
+        self.sizing = sizing;
+        self
+    }
+    pub fn sizing(&self) -> DualSizing {
+        self.sizing
     }
     pub fn mode(&self) -> DualMode {
         self.mode
@@ -146,16 +209,25 @@ impl DualBrush {
         &self.secondary
     }
     pub fn is_default(&self) -> bool {
-        !self.enabled && self.mode == DualMode::default() && self.secondary.is_default()
+        !self.enabled
+            && self.mode == DualMode::default()
+            && self.secondary.is_default()
+            && self.sizing == DualSizing::default()
     }
-    pub(crate) fn compile(&self) -> Result<Option<CompiledDual>> {
+    pub(crate) fn compile(
+        &self,
+        primary_radius: f32,
+        primary_pressure_size: bool,
+        primary_size: &crate::PressureControl,
+    ) -> Result<Option<CompiledDual>> {
         if !self.enabled {
             return Ok(None);
         }
         let secondary = &self.secondary;
+        let radius = self.sizing.nominal_radius(primary_radius, secondary.radius);
         let definition = BrushDefinition {
             brush: crate::Brush {
-                radius: secondary.radius,
+                radius,
                 ..Default::default()
             },
             tip: secondary.tip,
@@ -164,21 +236,34 @@ impl DualBrush {
             ..Default::default()
         };
         Ok(Some(CompiledDual {
-            radius: secondary.radius,
+            radius,
+            maximum_radius: if self.sizing.fixed() {
+                (f64::from(primary_radius) + f64::from(self.sizing.diameter_offset) / 2.)
+                    .clamp(0.5, 256.)
+            } else {
+                f64::from(radius)
+            },
+            sizing: self.sizing,
+            primary_pressure_size,
+            primary_size: primary_size.compile(),
             mode: self.mode,
             program: Box::new(BrushProgram::compile(definition)?),
             step: secondary
                 .spacing
-                .map(|spacing| f64::from(secondary.radius * 2. * spacing)),
+                .map(|spacing| f64::from(radius * 2. * spacing)),
         }))
     }
 }
 #[derive(Clone, Debug)]
 pub(crate) struct CompiledDual {
     radius: f32,
+    maximum_radius: f64,
     mode: DualMode,
     program: Box<BrushProgram>,
     step: Option<f64>,
+    sizing: DualSizing,
+    primary_pressure_size: bool,
+    primary_size: Option<crate::brush_dynamics::CompiledPressureControl>,
 }
 impl CompiledDual {
     pub fn step(&self) -> Option<f64> {
@@ -191,7 +276,7 @@ impl CompiledDual {
         if self.step.is_none() {
             return (0, 0);
         }
-        let diameter = (f64::from(self.radius)
+        let diameter = (self.maximum_radius
             * 2.
             * if self.program.has_mask() {
                 std::f64::consts::SQRT_2
@@ -208,8 +293,21 @@ impl CompiledDual {
         )
     }
     pub fn pressure_changed(&self, before: f32, after: f32) -> bool {
-        (self.program.tip.pressure_size
-            && self.program.size_pressure(before) != self.program.size_pressure(after))
+        let size_changed = if self.sizing.fixed() {
+            self.primary_pressure_size
+                && self
+                    .primary_size
+                    .as_ref()
+                    .map_or(before, |p| p.response(before))
+                    != self
+                        .primary_size
+                        .as_ref()
+                        .map_or(after, |p| p.response(after))
+        } else {
+            self.program.tip.pressure_size
+                && self.program.size_pressure(before) != self.program.size_pressure(after)
+        };
+        size_changed
             || (self.program.tip.pressure_flow
                 && self.program.flow_pressure(before) != self.program.flow_pressure(after))
     }
@@ -229,6 +327,7 @@ impl CompiledDual {
         stroke: u64,
         logical: u64,
         primary: u32,
+        primary_radius: f64,
     ) -> DualDab<'_> {
         let stroke = stroke ^ crate::brush_random::mix(0xa4093822299f31d0 ^ u64::from(primary));
         let plan = self
@@ -246,15 +345,19 @@ impl CompiledDual {
         for child in 0..count {
             let center = plan.as_ref().map_or(point, |p| p.point(child, point));
             let shape = self.program.shape_jitter.sample(stroke, logical, child);
-            let radius = f64::from(
-                self.radius
-                    * shape.size
-                    * if self.program.tip.pressure_size {
-                        self.program.size_pressure(point.pressure)
-                    } else {
-                        1.
-                    },
-            );
+            let radius = if self.sizing.fixed() {
+                (primary_radius + f64::from(self.sizing.diameter_offset) / 2.).clamp(0.5, 256.)
+            } else {
+                f64::from(
+                    self.radius
+                        * shape.size
+                        * if self.program.tip.pressure_size {
+                            self.program.size_pressure(point.pressure)
+                        } else {
+                            1.
+                        },
+                )
+            };
             let geometry = self.program.dab_geometry(center, direction, shape);
             let mask = if radius > 0. && self.program.has_mask() {
                 self.program.mask_dab_with_geometry(radius, geometry)
@@ -284,6 +387,7 @@ struct SecondaryDab<'a> {
     geometry: TipGeometry,
     mask: Option<MaskDab<'a>>,
 }
+
 pub(crate) struct DualDab<'a> {
     program: &'a BrushProgram,
     mode: DualMode,
@@ -340,5 +444,62 @@ impl DualDab<'_> {
             coverage += amount * (1. - coverage);
         }
         self.mode.combine(primary, coverage)
+    }
+}
+
+#[cfg(test)]
+mod sizing_tests {
+    use super::*;
+    #[test]
+    fn fixed_geometry_step_and_pressure_checks_use_primary_rules() {
+        let tip = BrushTip {
+            pressure_size: true,
+            pressure_flow: false,
+            ..Default::default()
+        };
+        let secondary = SecondaryTip::new(
+            32.,
+            tip,
+            None,
+            BrushDynamics {
+                shape_jitter: crate::ShapeJitter::new(true, 0.9, 0., 0., 0., 0.01, 73).unwrap(),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .with_spacing(0.01)
+        .unwrap();
+        let sizing =
+            DualSizing::new(DualSizeMode::Relative, 8., DualWidthRule::FixedWidth).unwrap();
+        let compiled = DualBrush::new(true, DualMode::Multiply, secondary)
+            .with_sizing(sizing)
+            .compile(8., true, &crate::PressureControl::default())
+            .unwrap()
+            .unwrap();
+        assert_eq!(compiled.step(), Some(f64::from(24_f32 * 0.01)));
+        assert!(compiled.pressure_changed(0.25, 1.));
+        for actual in [0., 2., 6.25, 8.] {
+            let dab = compiled.dab(InputPoint::new(32.5, 32.5, 0.01), None, 19, 5, 0, actual);
+            assert_eq!(dab.dabs[0].radius, actual + 4.);
+        }
+        let lower = DualBrush::new(
+            true,
+            DualMode::Multiply,
+            SecondaryTip::new(12., tip, None, Default::default()).unwrap(),
+        )
+        .with_sizing(
+            DualSizing::new(DualSizeMode::Relative, -511., DualWidthRule::FixedWidth).unwrap(),
+        )
+        .compile(8., false, &crate::PressureControl::default())
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            lower
+                .dab(InputPoint::new(1., 1., 0.), None, 1, 0, 0, 0.)
+                .dabs[0]
+                .radius,
+            0.5
+        );
+        assert!(!lower.pressure_changed(0., 1.));
     }
 }

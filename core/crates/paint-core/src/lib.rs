@@ -7,7 +7,7 @@ pub use brush_smoothing::BrushSmoothing;
 mod brush_catalog;
 mod brush_dual;
 mod brush_dynamics;
-pub use brush_dual::{DualBrush, DualMode, SecondaryTip};
+pub use brush_dual::{DualBrush, DualMode, DualSizeMode, DualSizing, DualWidthRule, SecondaryTip};
 mod brush_texture;
 pub use brush_texture::{BrushTexture, TextureResource, TextureSettings, TextureSpace};
 mod brush_mask;

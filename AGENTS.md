@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新双笔刷相对尺寸内核：`docs/brush-dual-size-design.md` / `docs/brush-dual-size-validation.md`；独立/相对直径偏移、跟随/固定宽度、实际主动态与独立流明确定义映射、保守工作预算和旧IO非默认拒绝；无ABI变化，格式/原生Qt/双色合成与描边继续后续。
+
 - 最新低流量混合性能：`docs/brush-mix-performance-design.md` / `docs/brush-mix-performance-validation.md`；f32覆盖精确停滞时跳过重复颜色混合、保留纸纹与工具翻转，27模式/颜色动态/双路径真实瓦片与历史对照，软边反复覆盖Release基准；无ABI或文件格式变化。
 
 - 最新时间平滑原生Qt：`docs/brush-smoothing-ui-design.md` / `docs/brush-smoothing-ui-validation.md`；ABI1.46/state14/VBR1.12、完整位置/压力/速度/稳定距离分类、真实时间预览/在途捕获/保存重开与重置、解除准备/库包临时拒绝；收尖/双色/湿混/高级ABR继续后续。

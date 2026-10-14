@@ -1224,6 +1224,7 @@ impl Document {
             .as_ref()
             .and_then(|d| d.step())
             .unwrap_or(f64::INFINITY);
+        let initial_shape = program.shape_jitter.sample(random_serial, 0, 0);
         let mut stroke = Stroke {
             layer: self.active_layer,
             brush,
@@ -1239,7 +1240,7 @@ impl Document {
             dual_index: 0,
             dual_last: first,
             dual_coverage: BTreeMap::new(),
-            shape_sample: Default::default(),
+            shape_sample: initial_shape,
             color_sample: brush.color,
             distance_to_next: brush.step(),
             direction: None,
@@ -1694,6 +1695,15 @@ impl Document {
             stroke.random_stroke,
             stroke.dual_index,
             0,
+            f64::from(
+                stroke.brush.radius
+                    * stroke.shape_sample.size
+                    * if stroke.program.tip.pressure_size {
+                        stroke.program.size_pressure(point.pressure)
+                    } else {
+                        1.
+                    },
+            ),
         );
         #[cfg(test)]
         let skip_saturated = !self.reference_mix_path;
@@ -1969,6 +1979,7 @@ impl Document {
                 stroke.random_stroke,
                 stroke.random_index.saturating_sub(1),
                 stroke.random_child,
+                radius,
             ))
         } else {
             None
@@ -2898,6 +2909,78 @@ mod mix_performance_tests {
                         assert_eq!(pixels(&fast), pixels(&reference));
                     }
                 }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod dual_sizing_tests {
+    use super::*;
+    #[test]
+    fn fixed_independent_first_stamp_uses_real_primary_shape_sample() {
+        let mut d = Document::new(64, 64).unwrap();
+        let definition = BrushDefinition {
+            brush: Brush {
+                radius: 8.,
+                ..Default::default()
+            },
+            tip: crate::BrushTip {
+                pressure_size: true,
+                ..Default::default()
+            },
+            dynamics: crate::BrushDynamics {
+                shape_jitter: crate::ShapeJitter::new(true, 0.8, 0.1, 0., 0., 0.01, 17).unwrap(),
+                ..Default::default()
+            },
+            dual: crate::DualBrush::new(
+                true,
+                crate::DualMode::Multiply,
+                crate::SecondaryTip::default().with_spacing(0.01).unwrap(),
+            )
+            .with_sizing(
+                crate::DualSizing::new(
+                    crate::DualSizeMode::Relative,
+                    8.,
+                    crate::DualWidthRule::FixedWidth,
+                )
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+        let point = InputPoint::new(32.5, 32.5, 0.25);
+        d.begin_brush_stroke(definition, point).unwrap();
+        let stroke = d.stroke.as_ref().unwrap();
+        assert_eq!(
+            stroke.shape_sample.size,
+            stroke
+                .program
+                .shape_jitter
+                .sample(stroke.random_stroke, 0, 0)
+                .size
+        );
+        let radius = f64::from(8. * stroke.shape_sample.size * 0.25);
+        let expected = stroke.program.dual.as_ref().unwrap().dab(
+            point,
+            None,
+            stroke.random_stroke,
+            0,
+            0,
+            radius,
+        );
+        for y in 0..64 {
+            for x in 0..64 {
+                let coord = TileCoord::from_signed(0, 0);
+                let field = stroke
+                    .dual_coverage
+                    .get(&coord)
+                    .unwrap()
+                    .try_pixels()
+                    .unwrap();
+                assert_eq!(
+                    field[y * 64 + x].alpha(),
+                    expected.coverage(0, x as f64 + 0.5, y as f64 + 0.5)
+                );
             }
         }
     }
