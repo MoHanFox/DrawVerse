@@ -10,7 +10,7 @@ RowLayout {
     readonly property bool lasso: client.selectionTool>=3
     spacing: 8
     Icon {name:root.lasso?(root.client.selectionTool===4?"polygonSelection":"lassoSelection"):(root.client.selectionTool===2?"ellipseSelection":"rectangleSelection");Layout.preferredWidth:17;Layout.preferredHeight:17}
-    CompactComboBox {
+    CompactComboBox {highPriorityMenu:true;
         objectName:"selectionVariant"
         model:root.lasso?["套索","多边形套索"]:["矩形选框","椭圆选框"]
         currentIndex:Math.max(0,root.client.selectionTool-(root.lasso?3:1))

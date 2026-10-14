@@ -38,7 +38,7 @@ Flickable {
         }
         Rectangle{Layout.preferredWidth:1;Layout.preferredHeight:22;color:Theme.line}
         Label{text:"插值:";color:Theme.muted;font.pixelSize:9}
-        CompactComboBox {objectName:"transformInterpolation";Layout.preferredWidth:120;implicitHeight:20;model:["邻近","两次线性","两次立方","两次立方（较平滑）","两次立方（较锐利）","两次立方（自动）"];currentIndex:controller.transformInterpolation;onActivated:index=>{controller.updateTransform(root.p,controller.transformWarp,index);controller.checkpointTransform()}}
+        CompactComboBox {highPriorityMenu:true;objectName:"transformInterpolation";Layout.preferredWidth:120;implicitHeight:20;model:["邻近","两次线性","两次立方","两次立方（较平滑）","两次立方（较锐利）","两次立方（自动）"];currentIndex:controller.transformInterpolation;onActivated:index=>{controller.updateTransform(root.p,controller.transformWarp,index);controller.checkpointTransform()}}
         ToolButton {objectName:"transformWarp";checkable:true;checked:controller.transformWarp;implicitWidth:32;implicitHeight:26;contentItem:Icon{name:"warp"} onClicked:{controller.updateTransform(root.p,!controller.transformWarp,controller.transformInterpolation);controller.checkpointTransform()} ToolTip.visible:hovered;ToolTip.delay:1000;ToolTip.text:"切换自由变换与网格变形"}
         IconButton {objectName:"transformReset";glyph:"undo";tooltip:"重置本次变换";onClicked:{controller.updateTransform(controller.transformInitialPoints,false,controller.transformInterpolation,0,0);controller.checkpointTransform()}}
         IconButton {objectName:"transformCancel";glyph:"close";tooltip:"取消变换（Esc）";onClicked:controller.finishTransform(false)}

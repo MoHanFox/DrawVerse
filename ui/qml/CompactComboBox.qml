@@ -3,6 +3,14 @@ import QtQuick.Controls
 import "."
 ComboBox {
     property string tooltip: ""
+    property bool highPriorityMenu:false
+    property bool windowPopupsAvailable:false
+    property var sideWindow:null
+    Component.onCompleted:windowPopupsAvailable=("popupType" in popup)
+    function updatePopupType(){if(popup && "popupType" in popup)popup.popupType=highPriorityMenu && windowPopupsAvailable?Popup.Window:Popup.Item}
+    onHighPriorityMenuChanged:updatePopupType()
+    onWindowPopupsAvailableChanged:updatePopupType()
+    Component {id:priorityFactory;ComboPopupWindow {}}
     hoverEnabled:true
     ToolTip.delay:1000;ToolTip.visible:hovered && tooltip.length>0;ToolTip.text:tooltip
     id: control
@@ -33,6 +41,9 @@ ComboBox {
         background:Rectangle {color:parent.hovered || parent.highlighted?Theme.hover:Theme.surface}
     }
     popup: Popup {
+        focus:control.highPriorityMenu
+        z:control.highPriorityMenu?10000:0
+        onAboutToShow:if(control.highPriorityMenu && !control.windowPopupsAvailable){if(!control.sideWindow)control.sideWindow=priorityFactory.createObject(control,{menu:control.popup,anchorItem:control,originalParent:control.popup.parent});control.sideWindow.showPopup()}
         y:control.height;width:Math.max(132,control.width);padding:2
         implicitHeight:Math.min(264,contentItem.implicitHeight+4)
         onOpened:Qt.callLater(options.previewAtPointer)

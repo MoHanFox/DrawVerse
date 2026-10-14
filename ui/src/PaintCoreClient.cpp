@@ -514,17 +514,12 @@ public:
             const double childCount=dual.value("scatterDynamics").toMap().value("enabled").toBool()?dual.value("scatterDynamics").toMap().value("count",1).toDouble():1.;
             const double childCost=childCount*(dual.value("resource").toString().isEmpty()?1.:8.);
             const bool ownPath=dual.value("model").toString()=="path-coverage-v1";
-            const double density=mainDiameter*mainDiameter*mainCount*(2.+(tip.value("writeBlend",0).toInt()!=0?8.:0.)+(!tip.value("texture").toMap().isEmpty()?8.:0.)+(ownPath?0.:childCost))/std::max(.01,primary*m_brushJob.value("spacing").toDouble())
+            const double density=mainDiameter*mainDiameter*mainCount*(2.+(!tip.value("texture").toMap().isEmpty()?8.:0.)+(ownPath?0.:childCost))/std::max(.01,primary*m_brushJob.value("spacing").toDouble())
                 +(ownPath?childDiameter*childDiameter*childCost/std::max(.01,secondary*2.*dual.value("spacing",.25).toDouble()):0.);
             const int sampleCount=dualActive?std::clamp(int(std::ceil(200.*m_brushPreviewScale*density/4000000.)),32,256):32;
             if(!m_brushSession){auto desc=dto<PaintDocumentDesc>();desc.width=240;desc.height=60;desc.working_space=PAINT_WORKING_LINEAR_SRGB;desc.pixel_format=PAINT_STORAGE_RGBA32F_PREMULTIPLIED;if(paint_session_create(m_core,&desc,&m_brushSession)!=PAINT_OK){finishBrushPreview({});return;}}
             auto command=dto<PaintCommand>();command.kind=PAINT_COMMAND_NEW_DOCUMENT;command.width=uint32_t(std::ceil(240*m_brushPreviewScale));command.height=uint32_t(std::ceil(60*m_brushPreviewScale));
             if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}
-            const auto writeBlend=tip.value("writeBlend",0).toUInt();
-            if(writeBlend!=0) {
-                auto fill=dto<PaintBucketFill>();fill.linear_rgba[0]=.35f;fill.linear_rgba[1]=.45f;fill.linear_rgba[2]=.55f;fill.linear_rgba[3]=1;fill.opacity=1;fill.contiguous=1;
-                if(paint_session_bucket_fill(m_core,m_brushSession,&fill,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}
-            }
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_BEGIN_STROKE;command.stroke=dto<PaintStrokeDesc>();command.stroke.mode=PAINT_MODE_PAINT;
             command.stroke.radius=static_cast<float>(std::clamp(m_brushJob.value("radius").toDouble()*.35,2.,18.));command.stroke.opacity=m_brushJob.value("opacity").toFloat();command.stroke.spacing=m_brushJob.value("spacing").toFloat();
             if(dualActive)command.stroke.radius=static_cast<float>(primary);
@@ -553,8 +548,7 @@ public:
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
             auto background=dto<PaintBrushBackgroundDesc>();for(auto &v:background.linear_rgba)v=1;
             if(!tip.value("colorDynamics").toMap().isEmpty()){request.linear_rgba[0]=1;request.linear_rgba[1]=request.linear_rgba[2]=0;background.linear_rgba[0]=background.linear_rgba[1]=0;background.linear_rgba[2]=1;}
-            auto blend=dto<PaintBrushBlendDesc>();blend.mode=writeBlend;
-            if(writeBlend!=0 && tip.value("colorDynamics").toMap().isEmpty()){request.linear_rgba[0]=.75f;request.linear_rgba[1]=.3f;request.linear_rgba[2]=.1f;}
+            auto blend=dto<PaintBrushBlendDesc>();blend.mode=0;
             for(int i=0;i<=sampleCount;++i){const double t=i/double(sampleCount);InputSample sample;sample.position={(20+200*t)*m_brushPreviewScale,(30+8*std::sin(t*6.283185307))*m_brushPreviewScale};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;if(!tip.value("tipDynamics").toMap().isEmpty() || !dual.value("tipDynamics").toMap().isEmpty()){sample.capabilities=PAINT_INPUT_PRESSURE|PAINT_INPUT_TILT|PAINT_INPUT_ROTATION;sample.rotation=static_cast<float>(-60+120*t);sample.tiltX=static_cast<float>(30+30*std::sin(t*3.141592654));sample.tiltY=20;}command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
                 const auto status=i==0?paint_session_begin_prepared_preset_with_blend(m_core,m_brushSession,m_previewCatalog,preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&background,&blend,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
                 if(status!=PAINT_OK){finishBrushPreview({});return;}}

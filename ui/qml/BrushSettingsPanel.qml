@@ -266,7 +266,7 @@ ColumnLayout {
         objectName:"brushStrokePreview";Layout.fillWidth:true;Layout.preferredHeight:60;color:Theme.selected
         Image {anchors.fill:parent;anchors.margins:4;source:root.library.selectedPreview;fillMode:Image.PreserveAspectFit;asynchronous:true}
         Text {anchors.centerIn:parent;text:root.library.previewMessage;font.pixelSize:9;color:Theme.muted;visible:!root.library.selectedPreview.length}
-        ToolTip.delay:1000;ToolTip.visible:hover.containsMouse;ToolTip.text:root.library.writeBlend===0?"实际引擎压感笔触 · 双击重新生成":"实际引擎混合笔触 · 示例颜色与有色底 · 双击重新生成"
+        ToolTip.delay:1000;ToolTip.visible:hover.containsMouse;ToolTip.text:"实际引擎压感笔触 · 预览固定正常模式 · 双击重新生成"
         MouseArea {id:hover;anchors.fill:parent;hoverEnabled:true;onDoubleClicked:root.library.retryPreview()}
     }
     component DualField: ColumnLayout {

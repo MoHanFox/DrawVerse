@@ -417,7 +417,7 @@ ApplicationWindow {
             Label { text: PaintClient.selectionTool ? (PaintClient.selectionTool===2?"椭圆选框":"矩形选框") : PaintClient.moveTool ? "移动图层" : PaintClient.eraser ? "橡皮擦" : "画笔"; color: Theme.text; Layout.preferredWidth: 42 }
             Rectangle { width: 1; height: 22; color: Theme.line }
             Label {visible:!PaintClient.moveTool && !PaintClient.eraser;text:"模式";color:Theme.muted}
-            CompactComboBox {objectName:"brushWriteBlend";visible:!PaintClient.moveTool && !PaintClient.eraser;implicitWidth:126;Layout.preferredWidth:126;model:["正常","溶解","变暗","正片叠底","颜色加深","线性加深","深色","变亮","滤色","颜色减淡","线性减淡（添加）","浅色","叠加","柔光","强光","亮光","线性光","点光","实色混合","差值","排除","减去","划分","色相","饱和度","颜色","明度"];currentIndex:PaintClient.brushWriteBlend;onActivated:PaintClient.brushWriteBlend=currentIndex;tooltip:"笔触颜色直接按此模式与目标层像素混合；不改变图层模式。"}
+            CompactComboBox {highPriorityMenu:true;objectName:"brushWriteBlend";visible:!PaintClient.moveTool && !PaintClient.eraser;implicitWidth:126;Layout.preferredWidth:126;model:["正常","溶解","变暗","正片叠底","颜色加深","线性加深","深色","变亮","滤色","颜色减淡","线性减淡（添加）","浅色","叠加","柔光","强光","亮光","线性光","点光","实色混合","差值","排除","减去","划分","色相","饱和度","颜色","明度"];currentIndex:PaintClient.brushWriteBlend;onActivated:PaintClient.brushWriteBlend=currentIndex;tooltip:"笔触颜色直接按此模式与目标层像素混合；不改变图层模式。"}
             Label { text: "大小"; color: Theme.muted }
             CompactSpinBox { objectName: "brushRadius"; from: 1; to: 512; value: Math.round(PaintClient.brushRadius*2); editable: true; implicitWidth: 76; implicitHeight: 20; onValueModified: PaintClient.brushRadius=value/2 }
             Label { text: "px"; color: Theme.muted }

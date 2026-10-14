@@ -9,7 +9,7 @@ RowLayout {
     readonly property var library:client.brushLibrary
     spacing:8
     Icon {name:"smudge";Layout.preferredWidth:20;Layout.preferredHeight:20}
-    CompactComboBox {
+    CompactComboBox {highPriorityMenu:true;
         objectName:"smudgeBrushPreset";model:root.library.presets;textRole:"name"
         currentIndex:root.library.presets.findIndex(p=>p.id===root.library.selectedId)
         Layout.preferredWidth:130;Layout.preferredHeight:24

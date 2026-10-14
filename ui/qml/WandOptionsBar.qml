@@ -25,7 +25,7 @@ RowLayout {
     }
     Rectangle {Layout.preferredWidth:1;Layout.preferredHeight:24;color:Theme.line}
     Label {text:"取样大小：";color:Theme.muted}
-    CompactComboBox {
+    CompactComboBox {highPriorityMenu:true;
         tooltip:"对点击位置周围的像素求平均颜色作为取样颜色。";objectName:"wandSampleSize"
         model:["取样点","3 x 3 平均","5 x 5 平均","11 x 11 平均","31 x 31 平均","51 x 51 平均","101 x 101 平均"]
         currentIndex:root.sizes.indexOf(root.client.wandSampleSize)

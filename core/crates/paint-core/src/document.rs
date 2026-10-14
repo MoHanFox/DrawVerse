@@ -401,6 +401,8 @@ struct Stroke {
     coverage: BTreeMap<TileCoord, Arc<Tile>>,
     mask_paint: Option<(f32, f32)>,
     first_dab: bool,
+    coverage_erase: bool,
+    coverage_tool_stable: bool,
 }
 
 #[derive(Debug)]
@@ -415,6 +417,8 @@ pub struct Document {
     history: History,
     stroke: Option<Stroke>,
     random_serial: u64,
+    #[cfg(test)]
+    reference_mix_path: bool,
     liquify: Option<liquify::LiquifyState>,
     transform: Option<transform::TransformState>,
     revision: u64,
@@ -638,6 +642,8 @@ impl Document {
             history: History::default(),
             stroke: None,
             random_serial: 0,
+            #[cfg(test)]
+            reference_mix_path: false,
             liquify: None,
             transform: None,
             selection: crate::Selection::default(),
@@ -1236,6 +1242,8 @@ impl Document {
             before: BTreeMap::new(),
             coverage: BTreeMap::new(),
             first_dab: true,
+            coverage_erase: brush.mode == BrushMode::Erase || first.tool == Tool::Eraser,
+            coverage_tool_stable: true,
             mask_paint: self
                 .layer(self.active_layer)
                 .expect("active")
@@ -1683,6 +1691,10 @@ impl Document {
             stroke.dual_index,
             0,
         );
+        #[cfg(test)]
+        let skip_saturated = !self.reference_mix_path;
+        #[cfg(not(test))]
+        let skip_saturated = true;
         let appearance = self.layers[self.layer_index(stroke.layer)?].appearance;
         let ox = i64::from(appearance.offset_x);
         let oy = i64::from(appearance.offset_y);
@@ -1706,6 +1718,11 @@ impl Document {
                     let mut updates = Vec::new();
                     for y in y0.max(ty * 64)..y1.min((ty + 1) * 64) {
                         for x in x0.max(tx * 64)..x1.min((tx + 1) * 64) {
+                            let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
+                            let before = source.as_ref().map_or(0., |p| p[offset].alpha());
+                            if skip_saturated && before == 1. {
+                                continue;
+                            }
                             let amount = plan.coverage(
                                 child,
                                 x as f64 + 0.5 + ox as f64,
@@ -1714,8 +1731,6 @@ impl Document {
                             if amount == 0. {
                                 continue;
                             }
-                            let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
-                            let before = source.as_ref().map_or(0., |p| p[offset].alpha());
                             let after = before + amount * (1. - before);
                             if after != before {
                                 updates.push((offset, Pixel::from_straight([0., 0., 0., after])?));
@@ -1966,6 +1981,7 @@ impl Document {
         let erase = stroke.brush.mode == BrushMode::Erase
             || (point.tool == Tool::Eraser
                 && !matches!(stroke.brush.mode, BrushMode::Smudge { .. }));
+        stroke.coverage_tool_stable &= erase == stroke.coverage_erase;
         let mut changed = false;
         if x0 >= x1 || y0 >= y1 {
             return Ok(false);
@@ -1984,6 +2000,10 @@ impl Document {
             stroke.first_dab = false;
             return Ok(false);
         }
+        #[cfg(test)]
+        let skip_saturated = !self.reference_mix_path;
+        #[cfg(not(test))]
+        let skip_saturated = true;
         let color_capped = capped && stroke.program.color.active() && !erase;
         let smudge = self.prepare_smudge(stroke, point, x0, y0, x1, y1)?;
         stroke.first_dab = false;
@@ -2070,6 +2090,18 @@ impl Document {
                         };
                         if selected == 0. {
                             continue;
+                        }
+                        // No new coverage or color moment can be contributed once this
+                        // immutable stroke's current pressure ceiling is reached. Paper
+                        // texture and a changed paint/erase operator must still recompute.
+                        if skip_saturated && capped && !paper_texture && stroke.coverage_tool_stable
+                        {
+                            let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
+                            if prior_coverage.as_ref().map_or(0., |p| p[offset].alpha())
+                                >= pressure_opacity.unwrap_or(1.)
+                            {
+                                continue;
+                            }
                         }
                         let mut coverage = if IMAGED {
                             mask_dab
@@ -2704,5 +2736,122 @@ mod dual_path_tests {
             .unwrap();
         doc.end_stroke().unwrap();
         assert_eq!(doc.history_depth().0, history.0 + 1);
+    }
+}
+
+#[cfg(test)]
+mod mix_performance_tests {
+    use super::*;
+    use crate::{
+        BlendMode, BrushDynamics, BrushTip, DualBrush, DualMode, PressureControl, PressureCurve,
+        SecondaryTip,
+    };
+    #[test]
+    fn saturated_optimization_preserves_all_pixels_operators_and_history() {
+        for mode in 0..27 {
+            for target in 0..3 {
+                for dual in 0..3 {
+                    let mut fast = Document::new(32, 32).unwrap();
+                    let mut reference = Document::new(32, 32).unwrap();
+                    reference.reference_mix_path = true;
+                    let tip = BrushTip {
+                        pressure_size: false,
+                        pressure_flow: false,
+                        ..Default::default()
+                    };
+                    let second =
+                        SecondaryTip::new(8., tip, None, BrushDynamics::default()).unwrap();
+                    let second = if dual == 2 {
+                        second.with_spacing(0.01).unwrap()
+                    } else {
+                        second
+                    };
+                    let dynamics = BrushDynamics {
+                        pressure_opacity: true,
+                        opacity: PressureControl::new(PressureCurve::default(), 0.).unwrap(),
+                        ..Default::default()
+                    };
+                    let definition = BrushDefinition {
+                        brush: Brush {
+                            radius: 8.,
+                            spacing: 0.02,
+                            opacity: 0.4,
+                            color: Pixel::from_straight([0.4, 0.2, 0.7, 0.75]).unwrap(),
+                            ..Default::default()
+                        },
+                        tip,
+                        dynamics,
+                        write_blend: BlendMode::from_id(mode).unwrap(),
+                        dual: if dual > 0 {
+                            DualBrush::new(true, DualMode::Multiply, second)
+                        } else {
+                            DualBrush::default()
+                        },
+                        ..Default::default()
+                    };
+                    for doc in [&mut fast, &mut reference] {
+                        doc.begin_stroke(
+                            Brush {
+                                radius: 30.,
+                                color: Pixel::from_straight([0.6, 0.5, 0.3, 0.37]).unwrap(),
+                                ..Default::default()
+                            },
+                            InputPoint::new(16.5, 16.5, 1.),
+                        )
+                        .unwrap();
+                        doc.end_stroke().unwrap();
+                        if target == 1 {
+                            let mut a = doc.layer(1).unwrap().appearance();
+                            a.locks = crate::LOCK_TRANSPARENCY;
+                            doc.set_layer_appearance(1, a).unwrap();
+                        } else if target == 2 {
+                            doc.add_mask(1).unwrap();
+                        }
+                        doc.begin_brush_stroke(definition.clone(), InputPoint::new(8.5, 16.5, 1.))
+                            .unwrap();
+                        for (x, p, eraser) in [
+                            (24.5, 1., false),
+                            (8.5, 0.25, false),
+                            (24.5, 0.8, false),
+                            (8.5, 1., true),
+                            (24.5, 1., false),
+                        ] {
+                            let mut point = InputPoint::new(x, 16.5, p);
+                            if eraser {
+                                point.tool = Tool::Eraser;
+                            }
+                            doc.stroke_to(point).unwrap();
+                        }
+                        doc.end_stroke().unwrap();
+                    }
+                    let pixels = |d: &Document| {
+                        d.layers
+                            .iter()
+                            .map(|layer| {
+                                layer
+                                    .tiles
+                                    .iter()
+                                    .map(|(coord, tile)| {
+                                        (*coord, tile.try_pixels().unwrap().to_vec())
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    assert_eq!(
+                        pixels(&fast),
+                        pixels(&reference),
+                        "mode={mode} target={target} dual={dual}"
+                    );
+                    assert_eq!(fast.history_depth(), reference.history_depth());
+                    fast.undo().unwrap();
+                    reference.undo().unwrap();
+                    assert_eq!(pixels(&fast), pixels(&reference));
+                    fast.redo().unwrap();
+                    reference.redo().unwrap();
+                    assert_eq!(pixels(&fast), pixels(&reference));
+                }
+            }
+        }
     }
 }
