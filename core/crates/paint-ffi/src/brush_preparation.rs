@@ -134,6 +134,7 @@ impl CatalogTicket {
                             catalog.preset(id).is_some_and(|p| {
                                 p.settings().mask.is_some()
                                     || p.settings().texture.resource().is_some()
+                                    || p.settings().dual.secondary().mask().is_some()
                                     || p.source_resource().is_some()
                             })
                         })
@@ -321,6 +322,7 @@ impl PreparedCatalog {
                     .as_deref()
                     .into_iter()
                     .chain(p.texture.as_ref().and_then(|t| t.resource_id()))
+                    .chain(p.dual_brush.as_ref().and_then(|d| d.resource_id()))
             })
             .collect::<std::collections::BTreeSet<_>>();
         for (id, asset) in bundle.assets() {
@@ -423,6 +425,12 @@ impl PreparedCatalog {
                                 .texture
                                 .resource()
                                 .and_then(|t| t.source().resource_id())
+                                == Some(resource.id.as_str())
+                            || p.settings()
+                                .dual
+                                .secondary()
+                                .mask()
+                                .and_then(|m| m.resource_id())
                                 == Some(resource.id.as_str())
                     })
                 })
@@ -578,6 +586,166 @@ mod tests {
         doc.redo().unwrap();
         assert_eq!(doc.pixel(16, 16), pixels[16 * 40 + 16]);
         pixels
+    }
+    fn dual_bundle(enabled: bool, path: bool, roles: u32) -> paint_io::vbr_image::ImageBundle {
+        let mut bundle = texture_bundle(false, roles & 1 != 0);
+        let definition = bundle.definition(0).unwrap();
+        let mask = definition.texture.resource().unwrap().source().clone();
+        let mut secondary =
+            paint_core::SecondaryTip::new(4., definition.tip, Some(mask), Default::default())
+                .unwrap();
+        if path {
+            secondary = secondary.with_spacing(0.25).unwrap();
+        }
+        let dual = paint_core::DualBrush::new(enabled, paint_core::DualMode::Multiply, secondary);
+        let preset = &mut bundle.package.brushes[0];
+        preset.dual_brush = Some(paint_io::brush_dual::DualParameters::from_core(&dual).unwrap());
+        preset.behavior_version = 9;
+        preset.required_capabilities.push("dual-cover".into());
+        if roles & 2 == 0 {
+            preset.texture = None;
+            preset
+                .required_capabilities
+                .retain(|cap| cap != "texture-cover");
+        }
+        bundle.validate().unwrap();
+        bundle
+    }
+    #[test]
+    fn secondary_handoff_covers_both_models_disabled_and_shared_roles_and_mutation() {
+        for enabled in [false, true] {
+            for path in [false, true] {
+                for roles in 0..4 {
+                    let directory = tempfile::tempdir().unwrap();
+                    let library = PreparedCatalog::new(BrushCatalog::default());
+                    library.bind_resources(directory.path().into()).unwrap();
+                    let bundle = dual_bundle(enabled, path, roles);
+                    library.import_bundle(&bundle).unwrap();
+                    assert_eq!(library.imported.lock().unwrap().as_ref().unwrap().len(), 1);
+                    library.adopt_imports(&BrushCatalog::default()).unwrap();
+                    assert!(library.imported.lock().unwrap().is_some());
+                    let definition = bundle.definition(0).unwrap();
+                    let mut settings = bundle.package.brushes[0].parameters.settings();
+                    settings.mask = definition.mask;
+                    settings.texture = definition.texture;
+                    settings.dual = definition.dual;
+                    let mut catalog = BrushCatalog::default();
+                    catalog.edit("round-pressure", settings).unwrap();
+                    let json = String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap())
+                        .unwrap();
+                    let sequence = library.submit(json.clone()).unwrap();
+                    let prepared = library.ticket(sequence).unwrap().wait().unwrap();
+                    if roles & 1 == 0 {
+                        library.mutate(|_| Ok(())).unwrap();
+                    } else {
+                        drop(library.current().unwrap());
+                    }
+                    assert!(library.imported.lock().unwrap().is_none());
+                    let selected = prepared.selected();
+                    assert_eq!(selected.settings().dual.enabled(), enabled);
+                    assert_eq!(
+                        selected.settings().dual.secondary().spacing().is_some(),
+                        path
+                    );
+                    let secondary = selected.settings().dual.secondary().mask().unwrap();
+                    if roles & 1 != 0 {
+                        assert!(Arc::ptr_eq(
+                            secondary,
+                            selected.settings().mask.as_ref().unwrap()
+                        ));
+                    }
+                    if roles & 2 != 0 {
+                        assert!(Arc::ptr_eq(
+                            secondary,
+                            selected.settings().texture.resource().unwrap().source()
+                        ));
+                    }
+                    assert_eq!(
+                        paint_io::brush_state::encode(&library.current().unwrap()).unwrap(),
+                        json.as_bytes()
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn secondary_only_revisions_release_idle_masks_preserve_capture_and_rebuild_pixels() {
+        for enabled in [false, true] {
+            for path in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let library = PreparedCatalog::new(BrushCatalog::default());
+                library.bind_resources(directory.path().into()).unwrap();
+                let bundle = dual_bundle(enabled, path, 0);
+                library.import_bundle(&bundle).unwrap();
+                let definition = bundle.definition(0).unwrap();
+                let mut settings = bundle.package.brushes[0].parameters.settings();
+                settings.dual = definition.dual.clone();
+                let expected = texture_pixels(definition.clone());
+                assert!(expected.iter().any(|p| p.alpha() > 0.));
+                let mut catalog = BrushCatalog::default();
+                catalog.edit("round-pressure", settings).unwrap();
+                let json =
+                    String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap();
+                let first = library.submit(json.clone()).unwrap();
+                let captured = library.ticket(first).unwrap().wait().unwrap();
+                drop(library.current().unwrap());
+                let weak = Arc::downgrade(
+                    captured
+                        .selected()
+                        .settings()
+                        .dual
+                        .secondary()
+                        .mask()
+                        .unwrap(),
+                );
+                let identity = captured
+                    .selected()
+                    .settings()
+                    .dual
+                    .secondary()
+                    .mask()
+                    .unwrap()
+                    .resource_id()
+                    .unwrap()
+                    .to_owned();
+                drop(catalog);
+                drop(definition);
+                drop(bundle);
+                let bad = library
+                    .submit(json.replace(&identity, &"0".repeat(64)))
+                    .unwrap();
+                assert!(library.ticket(bad).unwrap().wait().is_err());
+                assert_eq!(
+                    paint_io::brush_state::encode(&library.current().unwrap()).unwrap(),
+                    json.as_bytes()
+                );
+                let plain = String::from_utf8(
+                    paint_io::brush_state::encode(&BrushCatalog::default()).unwrap(),
+                )
+                .unwrap();
+                let next = library.submit(plain).unwrap();
+                library.ticket(next).unwrap().wait().unwrap();
+                drop(library.current().unwrap());
+                library.retire_unused_images().unwrap();
+                assert!(weak.upgrade().is_some());
+                assert_eq!(
+                    texture_pixels(captured.selected().settings().definition()),
+                    expected
+                );
+                drop(captured);
+                library.retire_unused_images().unwrap();
+                assert!(weak.upgrade().is_none());
+                let rebuilt = library.ticket(first).unwrap().wait().unwrap();
+                assert_eq!(
+                    paint_io::brush_state::encode(&rebuilt).unwrap(),
+                    json.as_bytes()
+                );
+                assert_eq!(
+                    texture_pixels(rebuilt.selected().settings().definition()),
+                    expected
+                );
+            }
+        }
     }
     #[test]
     fn texture_import_handoff_adopts_only_referenced_resources_including_disabled() {

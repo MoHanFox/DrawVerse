@@ -1,4 +1,6 @@
-双笔刷IO：[设计](brush-dual-io-design.md) / [验收](brush-dual-io-validation.md)。state12/VBR1.10/behavior9、两模型和完整第二配置、四角色资源并集/真实两笔还原、7169ZIP与2MiB状态预算已接；原生资源生命周期和Qt待接，旧前端包入口暂拒绝新对象。
+双笔刷准备桥：[设计](brush-dual-bridge-design.md) / [验收](brush-dual-bridge-validation.md)。第二资源交接/准确采用、当前与在途保持、闲置源/mip释放和state12重建已接；完整Qt及资源导出待接，旧前端包拒绝暂保留。
+
+双笔刷IO：[设计](brush-dual-io-design.md) / [验收](brush-dual-io-validation.md)。state12/VBR1.10/behavior9、两模型和完整第二配置、四角色资源并集/真实两笔还原、7169ZIP与2MiB状态预算已接；原生资源生命周期已补，Qt待接，旧前端包入口暂拒绝新对象。
 
 双笔尖独立路径：[设计](brush-dual-path-design.md) / [验收](brush-dual-path-validation.md)。第二直径间距/距离调度、独立序列与稀疏分页字段、终点与真实历史、双流预算及存储失败回滚已接；保存交换已补，原生Qt仍待后续。
 
