@@ -2,6 +2,8 @@
 //! Pixels are linear premultiplied RGBA32F; display conversion is external.
 mod appearance;
 mod brush;
+mod brush_smoothing;
+pub use brush_smoothing::BrushSmoothing;
 mod brush_catalog;
 mod brush_dual;
 mod brush_dynamics;

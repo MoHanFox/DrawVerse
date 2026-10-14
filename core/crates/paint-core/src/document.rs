@@ -383,6 +383,7 @@ struct Stroke {
     brush: Brush,
     program: BrushProgram,
     last: InputPoint,
+    path_filter: Option<crate::brush_smoothing::PathFilter>,
     last_dab: InputPoint,
     last_carrier: InputPoint,
     random_index: u64,
@@ -1168,6 +1169,7 @@ impl Document {
         let brush = definition.brush;
         let program = BrushProgram::compile(definition)?;
         first.validate()?;
+        let path_filter = crate::brush_smoothing::PathFilter::new(program.smoothing, first)?;
         Self::validate_stroke_work(
             brush,
             &program,
@@ -1216,6 +1218,7 @@ impl Document {
             brush,
             program,
             last: first,
+            path_filter,
             last_dab: first,
             last_carrier: first,
             random_index: 0,
@@ -1258,6 +1261,83 @@ impl Document {
     }
 
     pub fn stroke_to(&mut self, point: InputPoint) -> Result<()> {
+        let current = self.stroke.as_ref().ok_or(Error::NoStroke)?;
+        let Some(mut filter) = current.path_filter.clone() else {
+            return self.stroke_to_direct(point);
+        };
+        let points = filter.push(point)?;
+        Self::validate_filtered_path(current, &points)?;
+        self.stroke.as_mut().expect("active stroke").path_filter = Some(filter);
+        self.apply_filtered_path(points)
+    }
+
+    fn apply_filtered_path(&mut self, points: Vec<InputPoint>) -> Result<()> {
+        for point in points {
+            if let Err(error) = self.stroke_to_direct(point) {
+                if let Some(stroke) = self.stroke.take() {
+                    self.restore_stroke(&stroke);
+                }
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_filtered_path(stroke: &Stroke, points: &[InputPoint]) -> Result<()> {
+        let mut last = stroke.last;
+        let step = stroke.brush.step();
+        let secondary_step = stroke.program.dual.as_ref().and_then(|d| d.step());
+        let mut next = stroke.distance_to_next;
+        let mut secondary_next = stroke.dual_next;
+        let mut primary = 0usize;
+        let mut secondary = 0usize;
+        for &point in points {
+            point.validate()?;
+            if point.timestamp_ns < last.timestamp_ns {
+                return Err(Error::InvalidArgument("filtered time must be monotonic"));
+            }
+            let distance = (point.x - last.x).hypot(point.y - last.y);
+            let count = if distance + 1e-9 < next {
+                0
+            } else {
+                ((distance - next + 1e-9) / step).floor() as usize + 1
+            };
+            let secondary_count = secondary_step.map_or(0, |s| {
+                if distance + 1e-9 < secondary_next {
+                    0
+                } else {
+                    ((distance - secondary_next + 1e-9) / s).floor() as usize + 1
+                }
+            });
+            let pressure_changed = stroke
+                .program
+                .dual
+                .as_ref()
+                .is_some_and(|d| d.pressure_changed(last.pressure, point.pressure));
+            let stationary = distance <= 1e-9;
+            primary = primary.saturating_add(count).saturating_add(usize::from(
+                stationary
+                    && point.pressure != last.pressure
+                    && (stroke.program.opacity_pressure(point.pressure).is_some()
+                        || pressure_changed)
+                    && !matches!(stroke.brush.mode, BrushMode::Smudge { .. }),
+            ));
+            secondary = secondary
+                .saturating_add(secondary_count)
+                .saturating_add(usize::from(
+                    stationary && secondary_step.is_some() && pressure_changed,
+                ));
+            next = (next + count as f64 * step - distance).max(step * 1e-9);
+            if let Some(s) = secondary_step {
+                secondary_next =
+                    (secondary_next + secondary_count as f64 * s - distance).max(s * 1e-9);
+            }
+            last = point;
+        }
+        Self::validate_stroke_work(stroke.brush, &stroke.program, primary, secondary)
+    }
+
+    fn stroke_to_direct(&mut self, point: InputPoint) -> Result<()> {
         point.validate()?;
         let current = self.stroke.as_ref().ok_or(Error::NoStroke)?;
         if point.timestamp_ns < current.last.timestamp_ns {
@@ -1409,6 +1489,28 @@ impl Document {
     }
 
     pub fn end_stroke(&mut self) -> Result<bool> {
+        if let Some(mut filter) = self
+            .stroke
+            .as_ref()
+            .ok_or(Error::NoStroke)?
+            .path_filter
+            .clone()
+        {
+            let points = filter.finish().and_then(|points| {
+                Self::validate_filtered_path(self.stroke.as_ref().expect("active"), &points)?;
+                Ok(points)
+            });
+            let points = match points {
+                Ok(points) => points,
+                Err(error) => {
+                    let stroke = self.stroke.take().expect("active");
+                    self.restore_stroke(&stroke);
+                    return Err(error);
+                }
+            };
+            self.stroke.as_mut().expect("active").path_filter = None;
+            self.apply_filtered_path(points)?;
+        }
         let mut stroke = self.stroke.take().ok_or(Error::NoStroke)?;
         let secondary_final = stroke
             .program

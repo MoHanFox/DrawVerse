@@ -90,3 +90,5 @@
 双笔刷原生Qt阶段：ABI1.43/state12/VBR1.10，见 [设计](brush-dual-ui-design.md) / [验收](brush-dual-ui-validation.md)。四子页/完整第二配置与捕获导入、实际尺寸比例预览、真实像素/历史和新目录资源交换已验证，库包临时拒绝解除；组合光标、平滑、湿混与ABR完整映射继续后续。
 
 双色复合/自动描边扩展已获用户确认，设计见 [brush-dual-color-extension-design.md](brush-dual-color-extension-design.md)。第二颜色、相对尺寸/溢出/正常合成/前后顺序、整笔贡献与两种压感边宽均纳入后续验收；交叉和回笔不能出现后印章描边盖进主线，整笔透明度只应用一次。现未实现、未验证，等待用户再次发令。
+
+时间平滑内核阶段：见 [验收](brush-smoothing-validation.md)，固定网格和实际共用写入/预算/取消/分页历史已验证，状态与原生Qt入口及起收笔待接；非默认旧保存明确拒绝。完整系统范围继续后续。

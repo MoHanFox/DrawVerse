@@ -52,6 +52,7 @@ pub struct BrushDefinition {
     pub dynamics: BrushDynamics,
     pub texture: crate::BrushTexture,
     pub dual: crate::DualBrush,
+    pub smoothing: crate::BrushSmoothing,
 }
 
 impl From<Brush> for BrushDefinition {
@@ -63,6 +64,7 @@ impl From<Brush> for BrushDefinition {
             dynamics: BrushDynamics::default(),
             texture: Default::default(),
             dual: Default::default(),
+            smoothing: Default::default(),
         }
     }
 }
@@ -70,6 +72,7 @@ impl From<Brush> for BrushDefinition {
 /// A validated immutable execution plan shared by all stroke operators.
 #[derive(Clone, Debug)]
 pub struct BrushProgram {
+    pub(crate) smoothing: crate::BrushSmoothing,
     pub(crate) tip: BrushTip,
     sine: f64,
     cosine: f64,
@@ -158,6 +161,7 @@ impl BrushProgram {
         definition.tip.validate()?;
         let (sine, cosine) = f64::from(definition.tip.angle).to_radians().sin_cos();
         Ok(Self {
+            smoothing: definition.smoothing,
             tip: definition.tip,
             sine,
             cosine,

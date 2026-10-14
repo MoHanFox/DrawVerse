@@ -2,6 +2,7 @@ use paint_core::*;
 use std::sync::Arc;
 fn definition(mask: Arc<BrushMask>, angle: f32) -> BrushDefinition {
     BrushDefinition {
+        smoothing: Default::default(),
         texture: Default::default(),
         dual: Default::default(),
         dynamics: Default::default(),

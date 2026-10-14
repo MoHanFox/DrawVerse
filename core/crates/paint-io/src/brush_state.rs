@@ -317,6 +317,7 @@ fn decode_inner(
             row.id,
             row.name,
             BrushSettings {
+                smoothing: Default::default(),
                 texture,
                 dual,
                 dynamics,
@@ -349,6 +350,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        if !s.smoothing.is_default() {
+            return Err(Error::Unsupported(
+                "smoothing requires a newer state format".into(),
+            ));
+        }
         let dual_brush = if !s.dual.is_default() {
             version = version.max(12);
             Some(crate::brush_dual::DualParameters::from_core(&s.dual)?)

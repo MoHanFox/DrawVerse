@@ -22,6 +22,7 @@ pub struct BrushSettings {
     pub dynamics: crate::BrushDynamics,
     pub texture: crate::BrushTexture,
     pub dual: crate::DualBrush,
+    pub smoothing: crate::BrushSmoothing,
 }
 impl Default for BrushSettings {
     fn default() -> Self {
@@ -34,6 +35,7 @@ impl Default for BrushSettings {
             dynamics: crate::BrushDynamics::default(),
             texture: Default::default(),
             dual: Default::default(),
+            smoothing: Default::default(),
         }
     }
 }
@@ -53,6 +55,7 @@ impl BrushSettings {
             dynamics: self.dynamics.clone(),
             texture: self.texture.clone(),
             dual: self.dual.clone(),
+            smoothing: self.smoothing,
         }
     }
 }

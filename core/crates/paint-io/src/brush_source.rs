@@ -130,6 +130,11 @@ impl SourceArchive {
         tip_resource: Option<String>,
     ) -> Result<SourceInfo> {
         let settings = &preset.settings;
+        if !settings.smoothing.is_default() {
+            return Err(Error::Unsupported(
+                "smoothing source baseline is not supported".into(),
+            ));
+        }
         if !settings.dual.is_default() {
             return Err(Error::Unsupported(
                 "source dual brush is not represented by converter v1".into(),
