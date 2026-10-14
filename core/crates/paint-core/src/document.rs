@@ -1176,7 +1176,8 @@ impl Document {
             1,
             usize::from(program.dual.as_ref().is_some_and(|d| d.step().is_some())),
         )?;
-        let random_serial = if program.scatter.enabled()
+        let random_serial = if program.write_blend == crate::BlendMode::Dissolve
+            || program.scatter.enabled()
             || program.shape_jitter.active()
             || program.color.active()
             || program.dual.as_ref().is_some_and(|d| d.random_active())
@@ -1467,6 +1468,11 @@ impl Document {
         } else {
             1
         } + if program.has_texture() { 8 } else { 0 }
+            + if program.write_blend != crate::BlendMode::Normal {
+                8
+            } else {
+                0
+            }
             + paired.map_or(0, |d| d.sample_cost())
             + usize::from(path.is_some());
         let (secondary_dabs, secondary_visits) =
@@ -1894,7 +1900,11 @@ impl Document {
                 .texture
                 .as_ref()
                 .is_some_and(|t| t.document_space());
-        let capped = (stroke.brush.opacity < 1. || pressure_opacity.is_some() || paper_texture)
+        let write_blend = stroke.program.write_blend;
+        let capped = (stroke.brush.opacity < 1.
+            || pressure_opacity.is_some()
+            || paper_texture
+            || write_blend != crate::BlendMode::Normal)
             && !matches!(stroke.brush.mode, BrushMode::Smudge { .. });
         let flow = if capped { 1. } else { stroke.brush.opacity }
             * stroke.program.tip.flow
@@ -2206,18 +2216,52 @@ impl Document {
                             };
                             let hide = if erase { 0. } else { tone };
                             let weight = amount * if erase { 1. } else { a };
-                            Pixel::from_straight([
-                                0.,
-                                0.,
-                                0.,
-                                base.alpha() * (1. - weight) + hide * weight,
-                            ])?
+                            let value = if write_blend == crate::BlendMode::Normal || erase {
+                                base.alpha() * (1. - weight) + hide * weight
+                            } else {
+                                let gray = 1. - hide;
+                                let target = 1. - base.alpha();
+                                1. - crate::blend_pixel(
+                                    Pixel::from_straight([gray, gray, gray, weight])?,
+                                    Pixel::from_straight([target, target, target, 1.])?,
+                                    write_blend,
+                                    (x + i64::from(appearance.offset_x)) as u32,
+                                    (y + i64::from(appearance.offset_y)) as u32,
+                                    stroke.random_stroke,
+                                )
+                                .components()[0]
+                            };
+                            Pixel::from_straight([0., 0., 0., value])?
                         } else if alpha_locked {
-                            base.paint_preserving_alpha(paint_color, amount)
+                            if write_blend == crate::BlendMode::Normal {
+                                base.paint_preserving_alpha(paint_color, amount)
+                            } else {
+                                base.paint_blended_preserving_alpha(
+                                    paint_color,
+                                    amount,
+                                    write_blend,
+                                    (
+                                        (x + i64::from(appearance.offset_x)) as u32,
+                                        (y + i64::from(appearance.offset_y)) as u32,
+                                    ),
+                                    stroke.random_stroke,
+                                )?
+                            }
                         } else if erase {
                             base.scaled(1. - amount)
                         } else {
-                            paint_color.scaled(amount).over(base)
+                            if write_blend == crate::BlendMode::Normal {
+                                paint_color.scaled(amount).over(base)
+                            } else {
+                                crate::blend_pixel(
+                                    paint_color.scaled(amount),
+                                    base,
+                                    write_blend,
+                                    (x + i64::from(appearance.offset_x)) as u32,
+                                    (y + i64::from(appearance.offset_y)) as u32,
+                                    stroke.random_stroke,
+                                )
+                            }
                         };
                         if before == after {
                             continue;

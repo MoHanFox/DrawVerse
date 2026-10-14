@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新画笔颜色混合内核：`docs/brush-blend-design.md` / `docs/brush-blend-validation.md`；27模式/整笔贡献与before、蒙版可见灰度/透明锁精确alpha、文档坐标溶解/预算与历史；无ABI变化，工具状态/原生Qt下拉与真实预览待接，双色及自动描边随后。
+
 - 最新重置预设：`docs/brush-reset-design.md` / `docs/brush-reset-validation.md`；设置按钮/完整工厂与副本导入基准、独立有界resetState持久化/重开及原生规范化、资源恢复与在途捕获；无ABI变化，双色新字段随后接入。
 
 - 最新时间平滑内核：`docs/brush-smoothing-design.md` / `docs/brush-smoothing-validation.md`；4ms网格/位置速度响应/独立压力/拖绳与有界终点、双路径共用/累计预算/分页历史；无ABI变化，非默认旧IO拒绝，状态/VBR/Qt与收尖待接，普通画笔混合模式按用户优先级先推进。

@@ -56,6 +56,7 @@ impl BrushSettings {
             texture: self.texture.clone(),
             dual: self.dual.clone(),
             smoothing: self.smoothing,
+            write_blend: Default::default(),
         }
     }
 }

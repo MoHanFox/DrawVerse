@@ -455,7 +455,7 @@ mod tests {
             } else {
                 BrushMode::Erase
             });
-            b.brush.color = Pixel::from_straight([0.,0.,0.,1.]).unwrap();
+            b.brush.color = Pixel::from_straight([0., 0., 0., 1.]).unwrap();
             a.begin_brush_stroke(b, first).unwrap();
             a.stroke_to(last).unwrap();
             a.end_stroke().unwrap();

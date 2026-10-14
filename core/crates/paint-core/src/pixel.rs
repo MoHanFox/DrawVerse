@@ -69,6 +69,36 @@ impl Pixel {
             self.alpha(),
         ])
     }
+    pub(crate) fn paint_blended_preserving_alpha(
+        self,
+        color: Self,
+        amount: f32,
+        mode: crate::BlendMode,
+        position: (u32, u32),
+        seed: u64,
+    ) -> Result<Self> {
+        if self.alpha() == 0. {
+            return Ok(self);
+        }
+        let rgba = self.components();
+        let target =
+            Self::from_straight([rgba[0] / rgba[3], rgba[1] / rgba[3], rgba[2] / rgba[3], 1.])?;
+        let mixed = crate::blend_pixel(
+            color.scaled(amount),
+            target,
+            mode,
+            position.0,
+            position.1,
+            seed,
+        );
+        let result = mixed.components();
+        Self::from_straight([
+            result[0] / result[3],
+            result[1] / result[3],
+            result[2] / result[3],
+            self.alpha(),
+        ])
+    }
     /// Porter-Duff source-over in linear space. No gamma-encoded compositing.
     pub fn over(self, destination: Self) -> Self {
         let remaining = 1.0 - self.alpha();

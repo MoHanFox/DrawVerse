@@ -53,6 +53,7 @@ pub struct BrushDefinition {
     pub texture: crate::BrushTexture,
     pub dual: crate::DualBrush,
     pub smoothing: crate::BrushSmoothing,
+    pub write_blend: crate::BlendMode,
 }
 
 impl From<Brush> for BrushDefinition {
@@ -65,6 +66,7 @@ impl From<Brush> for BrushDefinition {
             texture: Default::default(),
             dual: Default::default(),
             smoothing: Default::default(),
+            write_blend: Default::default(),
         }
     }
 }
@@ -73,6 +75,7 @@ impl From<Brush> for BrushDefinition {
 #[derive(Clone, Debug)]
 pub struct BrushProgram {
     pub(crate) smoothing: crate::BrushSmoothing,
+    pub(crate) write_blend: crate::BlendMode,
     pub(crate) tip: BrushTip,
     sine: f64,
     cosine: f64,
@@ -159,9 +162,16 @@ impl BrushProgram {
     pub fn compile(definition: BrushDefinition) -> Result<Self> {
         definition.brush.validate()?;
         definition.tip.validate()?;
+        if definition.write_blend == crate::BlendMode::PassThrough
+            || (definition.write_blend != crate::BlendMode::Normal
+                && definition.brush.mode != crate::BrushMode::Paint)
+        {
+            return Err(Error::InvalidArgument("brush write blend mode"));
+        }
         let (sine, cosine) = f64::from(definition.tip.angle).to_radians().sin_cos();
         Ok(Self {
             smoothing: definition.smoothing,
+            write_blend: definition.write_blend,
             tip: definition.tip,
             sine,
             cosine,
