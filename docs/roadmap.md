@@ -1,3 +1,5 @@
+用户确认的双笔刷扩展（待实施）：[双色与自动描边](brush-dual-color-extension-design.md)。第二颜色、独立/相对尺寸/居中像素偏移、溢出/正常双色合成/前后顺序；整笔分开累积合成、捕获两色及两种压感边宽规则已纳入设计，等待再次发令。
+
 双笔刷原生Qt：[设计](brush-dual-ui-design.md) / [验收](brush-dual-ui-validation.md)。ABI1.43/state12/VBR1.10、四子页与第二图片捕获、完整关闭配置、实际比例预览/捕获笔触/历史和资源并集交换已接；解除库包临时拒绝。组合轮廓、平滑/湿混与ABR高级动态继续后续。
 
 双笔刷准备桥：[设计](brush-dual-bridge-design.md) / [验收](brush-dual-bridge-validation.md)。第二资源交接/准确采用、当前与在途保持、闲置源/mip释放和state12重建已接；完整Qt及资源导出待接，旧前端包拒绝暂保留。

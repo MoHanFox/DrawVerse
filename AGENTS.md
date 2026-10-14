@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 已确认双笔刷扩展（待实施）：`docs/brush-dual-color-extension-design.md`；第二颜色、相对像素尺寸/溢出/正常双色/前后顺序，起笔两色捕获、整笔分开累积合成和两种压感边宽；含自动描边条件，用户要求等待再次发令。
+
 - 最新双笔刷原生Qt：`docs/brush-dual-ui-design.md` / `docs/brush-dual-ui-validation.md`；ABI1.43/state12/VBR1.10、四子页/第二图片捕获/独立曲线动态、真实比例预览与像素历史、关闭保存及资源并集交换；库package解除临时拒绝，组合光标/平滑/湿混/ABR高级映射继续后续。
 
 - 最新双笔刷准备桥：`docs/brush-dual-bridge-design.md` / `docs/brush-dual-bridge-validation.md`；第二独占/三角色共享和关闭配置交接、发布/mutate采用、在途保留与闲置源释放、state12准确重建/真实像素历史；无ABI变化，完整Qt和资源导出继续后续。
