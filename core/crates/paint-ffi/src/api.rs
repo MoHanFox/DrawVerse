@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 38;
+pub const PAINT_ABI_MINOR: u32 = 39;
 pub const PAINT_FEATURE_PRESSURE_DYNAMICS: u64 = 1073741824;
 pub const PAINT_FEATURE_VBR_SOURCES: u64 = 536870912;
 pub const PAINT_FEATURE_ABR_IMPORT: u64 = 268435456;
@@ -785,3 +785,6 @@ pub const PAINT_FEATURE_OPACITY_PRESSURE: u64 = 2147483648;
 
 /// Device and path controlled tip geometry, state v7 / VBR1.5.
 pub const PAINT_FEATURE_DEVICE_TIP_DYNAMICS: u64 = 4294967296;
+
+/// Deterministic scatter stamps, state v8 / VBR1.6.
+pub const PAINT_FEATURE_BRUSH_SCATTER: u64 = 17179869184;

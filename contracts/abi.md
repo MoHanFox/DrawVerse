@@ -1,5 +1,9 @@
 # C ABI 1.38.0 契约
 
+## ABI 1.39 散布入口
+
+`PAINT_FEATURE_BRUSH_SCATTER=17179869184`（features为u64）。state8/VBR1.6/behavior5/scatter-stamps使用既有准确准备与捕获笔触，没有DTO布局变化。package_read/write解除ABI1.38对散布对象的临时Unsupported边界；Qt独立保存对象及完整种子字符串。散布运算仅在Rust，预览/实际笔触共用；关闭保留配置，旧目录默认不升级。见 `docs/brush-scatter-ui-validation.md`。
+
 散布IO阶段：Rust state8/VBR1.6/behavior5保存独立scatterDynamics及16位十六进制u64种子；ABI1.38和Qt尚未接入。package_read/write暂对scatterDynamics对象返回Unsupported，读required=0且不改caller字节或资源目录，写不改现有目标；默认和既有包保留原路径。见 `docs/brush-scatter-io-validation.md`。
 
 ## ABI1.38：实时笔尖姿态

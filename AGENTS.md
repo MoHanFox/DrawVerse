@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新散布原生Qt：`docs/brush-scatter-ui-design.md` / `docs/brush-scatter-ui-validation.md`；ABI1.39/state8/VBR1.6、PS分类/真实统一预览与捕获笔触、完整种子/关闭值/目录最大版本、图片来源往返；解除package临时拒绝，其他动态与湿混继续后续。
+
 - 最新散布IO：`docs/brush-scatter-io-design.md` / `docs/brush-scatter-io-validation.md`；state8/VBR1.6/behavior5、独立散布对象/完整u64种子、真实两笔还原与原始来源保持；ABI1.38包入口暂拒绝新对象保护旧Qt，原生Qt继续后续。
 
 - 最新散布内核：`docs/brush-scatter-design.md` / `docs/brush-scatter-validation.md`；确定性计数器/单轴双轴/数量抖动、输入拆分一致、共用四类写入/实际涂抹载色、展开预算预检与原子历史；旧IO明确拒绝非默认散布，保存/原生Qt继续后续，无ABI变化。

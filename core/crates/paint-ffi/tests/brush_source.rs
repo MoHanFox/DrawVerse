@@ -9,7 +9,7 @@ use paint_task::CancellationToken;
 use std::{ptr, sync::Arc};
 
 #[test]
-fn scatter_package_boundary_preserves_output_and_existing_target() {
+fn scatter_packages_round_trip_with_public_native_entry() {
     use std::collections::BTreeMap;
     let temp = tempfile::tempdir().unwrap();
     let token = CancellationToken::default();
@@ -36,10 +36,19 @@ fn scatter_package_boundary_preserves_output_and_existing_target() {
                 output.len() as u64,
                 &mut required
             ),
-            PAINT_UNSUPPORTED
+            PAINT_OK
         );
-        assert_eq!(required, 0);
-        assert!(output.iter().all(|b| *b == 42));
+        let read = paint_io::vbr::Package::from_json(&output[..required as usize]).unwrap();
+        assert_eq!(
+            read.brushes[0]
+                .parameters
+                .scatter_dynamics
+                .unwrap()
+                .core()
+                .seed(),
+            u64::MAX
+        );
+        assert!(output[required as usize..].iter().all(|b| *b == 42));
         let path = target.to_str().unwrap();
         assert_eq!(
             paint_brush_library_package_write(
@@ -49,9 +58,17 @@ fn scatter_package_boundary_preserves_output_and_existing_target() {
                 json.as_ptr(),
                 json.len() as u64
             ),
-            PAINT_UNSUPPORTED
+            PAINT_OK
         );
-        assert_eq!(std::fs::read(&target).unwrap(), b"original");
+        let saved = paint_io::vbr_image::load(&target, &token).unwrap();
+        let scatter = saved.package.brushes[0]
+            .parameters
+            .scatter_dynamics
+            .unwrap()
+            .core();
+        assert_eq!(scatter.seed(), u64::MAX);
+        assert!(!scatter.enabled());
+        assert_eq!(scatter.count(), 2);
         assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
     }
 }

@@ -1,3 +1,5 @@
+散布原生Qt：[设计](brush-scatter-ui-design.md) / [验收](brush-scatter-ui-validation.md)。ABI1.39、分类参数/统一预览/捕获笔触、保存复制与VBR图片来源往返已接，临时包边界解除。其他动态、纹理和湿混继续后续。
+
 散布保存与VBR：[设计](brush-scatter-io-design.md) / [验收](brush-scatter-io-validation.md)。state8/VBR1.6/behavior5与完整种子已接IO，恢复后真实笔触保持；原生Qt接入继续后续，旧ABI包入口暂拒绝新字段。
 
 散布内核：[设计](brush-scatter-design.md) / [验收](brush-scatter-validation.md)。确定性偏移/数量/抖动、真实四类写入与展开预算已实现；保存/原生Qt继续后续，本阶段无界面入口。
