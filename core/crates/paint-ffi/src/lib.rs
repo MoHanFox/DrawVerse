@@ -77,6 +77,7 @@ fn brush(value: PaintStrokeDesc) -> ApiResult<Brush> {
         _ => return Err(ApiError::new(PAINT_UNSUPPORTED, "unsupported brush mode")),
     };
     Ok(Brush {
+        background_color: Pixel::WHITE,
         radius: value.radius,
         opacity: value.opacity,
         spacing: value.spacing,

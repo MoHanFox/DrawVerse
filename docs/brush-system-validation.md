@@ -72,3 +72,5 @@
 形状抖动IO阶段：state9/VBR1.7/behavior6，见 [验收](brush-shape-jitter-io-validation.md)。完整种子、关闭配置、组合两笔真实像素和来源保持已验证；原生Qt待接，旧包入口暂拒绝新对象，完整系统继续后续。
 
 形状抖动原生Qt阶段：ABI1.40/state9/VBR1.7，见 [验收](brush-shape-jitter-ui-validation.md)。子页/实际输入与预览/捕获笔触、完整种子和最高目录版本、图片来源交换、DPR1/2与ABI已验证；其他动态/纹理/双笔刷/湿混及完整ABR仍待后续。
+
+颜色动态内核阶段：见 [设计](brush-color-dynamics-design.md) / [验收](brush-color-dynamics-validation.md)。两色/HSV和真实多色覆盖/压力上限/分页/历史已验证，状态/VBR/用户背景原生传入/Qt尚未接，完整系统继续后续。

@@ -97,6 +97,7 @@ impl Serialize for PressureParameters {
         if self.dynamics.tip != paint_core::TipDynamics::default()
             || self.dynamics.scatter != paint_core::ScatterDynamics::default()
             || self.dynamics.shape_jitter != paint_core::ShapeJitter::default()
+            || self.dynamics.color != paint_core::ColorDynamics::default()
         {
             return Err(serde::ser::Error::custom(
                 "non-pressure dynamics are not supported by pressure payload",
@@ -147,6 +148,7 @@ impl<'de> Deserialize<'de> for PressureParameters {
                 tip: Default::default(),
                 scatter: Default::default(),
                 shape_jitter: Default::default(),
+                color: Default::default(),
             },
             has_opacity,
         })

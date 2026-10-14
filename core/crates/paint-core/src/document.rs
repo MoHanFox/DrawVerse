@@ -388,6 +388,7 @@ struct Stroke {
     random_index: u64,
     random_stroke: u64,
     shape_sample: crate::brush_shape_jitter::ShapeSample,
+    color_sample: Pixel,
     distance_to_next: f64,
     direction: Option<f64>,
     before: BTreeMap<TileCoord, Option<Arc<Tile>>>,
@@ -1163,13 +1164,15 @@ impl Document {
         let program = BrushProgram::compile(definition)?;
         first.validate()?;
         Self::validate_stroke_work(brush, &program, 1)?;
-        let random_serial = if program.scatter.enabled() || program.shape_jitter.active() {
-            self.random_serial
-                .checked_add(1)
-                .ok_or(Error::ResourceLimit("random stroke serial exhausted"))?
-        } else {
-            self.random_serial
-        };
+        let random_serial =
+            if program.scatter.enabled() || program.shape_jitter.active() || program.color.active()
+            {
+                self.random_serial
+                    .checked_add(1)
+                    .ok_or(Error::ResourceLimit("random stroke serial exhausted"))?
+            } else {
+                self.random_serial
+            };
         if self
             .layer(self.active_layer)
             .expect("active layer")
@@ -1201,35 +1204,17 @@ impl Document {
             random_index: 0,
             random_stroke: random_serial,
             shape_sample: Default::default(),
+            color_sample: brush.color,
             distance_to_next: brush.step(),
             direction: None,
             before: BTreeMap::new(),
             coverage: BTreeMap::new(),
             first_dab: true,
-            mask_paint: if self.layer(self.active_layer).expect("active").mask {
-                let c = brush.color.components();
-                let a = c[3];
-                let encode = |v: f32| {
-                    if v >= 1. {
-                        1.
-                    } else if v <= 0.0031308 {
-                        v * 12.92
-                    } else {
-                        1.055 * v.powf(1. / 2.4) - 0.055
-                    }
-                };
-                // Mask values are coverage, not scene colors. UI 50% gray must mean 50% coverage.
-                let gray = if a > 0. {
-                    encode(c[1] / a)
-                        + 0.2126 * (encode(c[0] / a) - encode(c[1] / a))
-                        + 0.0722 * (encode(c[2] / a) - encode(c[1] / a))
-                } else {
-                    1.
-                };
-                Some(((1. - gray).clamp(0., 1.), a))
-            } else {
-                None
-            },
+            mask_paint: self
+                .layer(self.active_layer)
+                .expect("active")
+                .mask
+                .then(|| Self::mask_tone(brush.color)),
         };
         match self.dab(&mut stroke, first) {
             Ok(changed) => {
@@ -1443,6 +1428,27 @@ impl Document {
         }
     }
 
+    fn mask_tone(color: Pixel) -> (f32, f32) {
+        let c = color.components();
+        let a = c[3];
+        let encode = |v: f32| {
+            if v >= 1. {
+                1.
+            } else if v <= 0.0031308 {
+                v * 12.92
+            } else {
+                1.055 * v.powf(1. / 2.4) - 0.055
+            }
+        };
+        let gray = if a > 0. {
+            encode(c[1] / a)
+                + 0.2126 * (encode(c[0] / a) - encode(c[1] / a))
+                + 0.0722 * (encode(c[2] / a) - encode(c[1] / a))
+        } else {
+            1.
+        };
+        ((1. - gray).clamp(0., 1.), a)
+    }
     fn dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
         let logical = stroke.random_index;
         let plan = stroke.program.scatter.plan(
@@ -1451,7 +1457,7 @@ impl Document {
             logical,
             stroke.direction,
         );
-        if plan.is_some() || stroke.program.shape_jitter.active() {
+        if plan.is_some() || stroke.program.shape_jitter.active() || stroke.program.color.active() {
             stroke.random_index = logical
                 .checked_add(1)
                 .ok_or(Error::ResourceLimit("random dab serial exhausted"))?;
@@ -1460,6 +1466,13 @@ impl Document {
             let mut changed = false;
             for index in 0..plan.count {
                 let sample = plan.point(index, point);
+                stroke.color_sample = stroke.program.color.sample(
+                    stroke.brush.color,
+                    stroke.brush.background_color,
+                    stroke.random_stroke,
+                    logical,
+                    index,
+                );
                 stroke.shape_sample =
                     stroke
                         .program
@@ -1478,11 +1491,21 @@ impl Document {
                     .program
                     .shape_jitter
                     .sample(stroke.random_stroke, logical, 0);
+            stroke.color_sample = stroke.program.color.sample(
+                stroke.brush.color,
+                stroke.brush.background_color,
+                stroke.random_stroke,
+                logical,
+                0,
+            );
             stroke.last_carrier = stroke.last_dab;
             self.dab_single(stroke, point)
         }
     }
     fn dab_single(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
+        if stroke.mask_paint.is_some() && stroke.program.color.active() {
+            stroke.mask_paint = Some(Self::mask_tone(stroke.color_sample));
+        }
         // Specialize once per dab: an inactive selection adds no pixel-loop
         // geometry branches or coverage multiplication to the original hot path.
         match (self.selection.enabled(), stroke.program.has_mask()) {
@@ -1566,6 +1589,7 @@ impl Document {
             stroke.first_dab = false;
             return Ok(false);
         }
+        let color_capped = capped && stroke.program.color.active() && !erase;
         let smudge = self.prepare_smudge(stroke, point, x0, y0, x1, y1)?;
         stroke.first_dab = false;
         let (x0, x1) = (
@@ -1668,6 +1692,7 @@ impl Document {
                         } else {
                             coverage * flow
                         };
+                        let mut paint_color = stroke.color_sample;
                         let base = if capped {
                             let previous =
                                 prior_coverage.as_ref().map_or(0., |p| p[offset].alpha());
@@ -1675,11 +1700,39 @@ impl Document {
                                 + coverage
                                     * flow
                                     * (pressure_opacity.unwrap_or(1.) - previous).max(0.);
+                            // RGB carries weighted straight color; alpha remains the
+                            // pressure coverage ledger. Foreground alpha is captured per stroke.
+                            let cache = if color_capped {
+                                let prior = prior_coverage
+                                    .as_ref()
+                                    .map_or(Pixel::TRANSPARENT, |p| p[offset]);
+                                let c = stroke.color_sample.components();
+                                let a = c[3];
+                                let delta = accumulated - previous;
+                                let old = prior.components();
+                                let values = std::array::from_fn::<_, 4, _>(|i| {
+                                    if i == 3 {
+                                        accumulated
+                                    } else {
+                                        (old[i] + if a > 0. { c[i] / a * delta } else { 0. })
+                                            .min(accumulated)
+                                    }
+                                });
+                                let moment = Pixel::from_premultiplied(values)?;
+                                if accumulated > 0. {
+                                    paint_color = Pixel::from_straight([
+                                        values[0] / accumulated,
+                                        values[1] / accumulated,
+                                        values[2] / accumulated,
+                                        stroke.brush.color.alpha(),
+                                    ])?;
+                                }
+                                moment
+                            } else {
+                                Pixel::from_straight([0., 0., 0., accumulated])?
+                            };
                             if accumulated != previous {
-                                coverage_updates.push((
-                                    offset,
-                                    Pixel::from_straight([0., 0., 0., accumulated])?,
-                                ));
+                                coverage_updates.push((offset, cache));
                             }
                             amount = accumulated * stroke.brush.opacity * selected;
                             if stroke.before.contains_key(&coord) {
@@ -1717,7 +1770,11 @@ impl Document {
                                 )
                             }
                         } else if mask {
-                            let (tone, a) = stroke.mask_paint.expect("mask brush target");
+                            let (tone, a) = if color_capped {
+                                Self::mask_tone(paint_color)
+                            } else {
+                                stroke.mask_paint.expect("mask brush target")
+                            };
                             let hide = if erase { 0. } else { tone };
                             let weight = amount * if erase { 1. } else { a };
                             Pixel::from_straight([
@@ -1727,11 +1784,11 @@ impl Document {
                                 base.alpha() * (1. - weight) + hide * weight,
                             ])?
                         } else if alpha_locked {
-                            base.paint_preserving_alpha(stroke.brush.color, amount)
+                            base.paint_preserving_alpha(paint_color, amount)
                         } else if erase {
                             base.scaled(1. - amount)
                         } else {
-                            stroke.brush.color.scaled(amount).over(base)
+                            paint_color.scaled(amount).over(base)
                         };
                         if before == after {
                             continue;

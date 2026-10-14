@@ -31,6 +31,8 @@ pub use brush_dynamics::{
 pub use brush_mask::{BrushMask, MAX_BRUSH_MASK_BYTES, MAX_BRUSH_MASK_EDGE};
 pub use brush_outline::{BrushOutlineSegment, MAX_BRUSH_OUTLINE_SEGMENTS};
 pub use brush_program::{BrushDefinition, BrushPose, BrushProgram, BrushTip};
+mod brush_color_dynamics;
+pub use brush_color_dynamics::ColorDynamics;
 mod brush_random;
 mod brush_shape_jitter;
 pub use brush_shape_jitter::ShapeJitter;

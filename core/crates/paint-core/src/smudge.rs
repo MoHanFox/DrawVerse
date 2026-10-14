@@ -57,7 +57,7 @@ impl Document {
                     pixels.push(if let Some((tone, _)) = stroke.mask_paint {
                         Pixel::from_straight([0., 0., 0., tone])?
                     } else {
-                        stroke.brush.color
+                        stroke.color_sample
                     });
                     continue;
                 }

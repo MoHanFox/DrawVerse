@@ -77,6 +77,7 @@ pub struct BrushProgram {
     tip_dynamics: TipDynamics,
     pub(crate) scatter: crate::ScatterDynamics,
     pub(crate) shape_jitter: crate::ShapeJitter,
+    pub(crate) color: crate::ColorDynamics,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -162,6 +163,7 @@ impl BrushProgram {
             tip_dynamics: definition.dynamics.tip,
             scatter: definition.dynamics.scatter,
             shape_jitter: definition.dynamics.shape_jitter,
+            color: definition.dynamics.color,
         })
     }
 

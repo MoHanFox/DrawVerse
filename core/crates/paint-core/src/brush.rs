@@ -140,6 +140,7 @@ pub struct Brush {
     /// Dab distance as a fraction of unpressured radius, not event frequency.
     pub spacing: f32,
     pub color: Pixel,
+    pub background_color: Pixel,
     pub mode: BrushMode,
 }
 
@@ -150,6 +151,7 @@ impl Default for Brush {
             opacity: 1.0,
             spacing: 0.25,
             color: Pixel::from_straight([0.0, 0.0, 0.0, 1.0]).expect("constant color"),
+            background_color: Pixel::WHITE,
             mode: BrushMode::Paint,
         }
     }

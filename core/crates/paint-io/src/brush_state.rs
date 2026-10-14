@@ -258,6 +258,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        if s.dynamics.color != paint_core::ColorDynamics::default() {
+            return Err(Error::Unsupported(
+                "color dynamics state IO not implemented".into(),
+            ));
+        }
         let shape_jitter = if s.dynamics.shape_jitter != paint_core::ShapeJitter::default() {
             version = version.max(9);
             Some(crate::brush_shape_jitter::ShapeParameters::from_core(

@@ -4,6 +4,7 @@ fn red() -> Pixel {
 }
 fn smudge(strength: f32, all_layers: bool, finger: bool, pressure: bool) -> Brush {
     Brush {
+        background_color: Pixel::WHITE,
         radius: 1.5,
         opacity: strength,
         spacing: 1.,

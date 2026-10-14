@@ -105,6 +105,7 @@ pub struct BrushDynamics {
     pub tip: TipDynamics,
     pub scatter: crate::ScatterDynamics,
     pub shape_jitter: crate::ShapeJitter,
+    pub color: crate::ColorDynamics,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
@@ -114,6 +115,7 @@ impl BrushDynamics {
             && self.tip == TipDynamics::default()
             && self.scatter == crate::ScatterDynamics::default()
             && self.shape_jitter == crate::ShapeJitter::default()
+            && self.color == crate::ColorDynamics::default()
     }
 }
 
