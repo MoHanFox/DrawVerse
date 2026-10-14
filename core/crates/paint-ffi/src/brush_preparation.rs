@@ -65,16 +65,6 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
-                    if catalog.ids().iter().any(|id| {
-                        catalog
-                            .preset(id)
-                            .is_some_and(|p| !p.settings().smoothing.is_default())
-                    }) {
-                        return Err(ApiError::new(
-                            PAINT_UNSUPPORTED,
-                            "smoothing requires a newer native/Qt state bridge",
-                        ));
-                    }
                     *self.anchors.lock().map_err(|_| ApiError::internal())? = receipts;
                     Ok(Arc::new(catalog))
                 });
@@ -308,12 +298,6 @@ impl PreparedCatalog {
         Ok(resource)
     }
     pub fn import_bundle(&self, bundle: &paint_io::vbr_image::ImageBundle) -> ApiResult<()> {
-        if bundle.package.brushes.iter().any(|b| b.smoothing.is_some()) {
-            return Err(ApiError::new(
-                PAINT_UNSUPPORTED,
-                "smoothing requires a newer native/Qt package bridge",
-            ));
-        }
         if bundle.assets().is_empty() && bundle.sources().is_empty() {
             return Ok(());
         }
@@ -524,7 +508,7 @@ mod abr_fixture;
 mod tests {
     use super::*;
     #[test]
-    fn legacy_native_bridge_rejects_smoothing_without_publishing_or_writing() {
+    fn native_smoothing_preparation_capture_and_package_entry() {
         for enabled in [false, true] {
             let smoothing = paint_core::BrushSmoothing::new(enabled, 24., 12., 0.7, 3.).unwrap();
             let mut catalog = BrushCatalog::default();
@@ -532,35 +516,54 @@ mod tests {
             settings.smoothing = smoothing;
             catalog.edit("round-pressure", settings).unwrap();
             let library = PreparedCatalog::new(BrushCatalog::default());
-            let before = paint_io::brush_state::encode(&library.current().unwrap()).unwrap();
             let sequence = library
                 .submit(
                     String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap(),
                 )
                 .unwrap();
+            let captured = library.ticket(sequence).unwrap().wait().unwrap();
+            assert_eq!(captured.selected().settings().smoothing, smoothing);
             assert_eq!(
-                library.ticket(sequence).unwrap().wait().unwrap_err().status,
-                PAINT_UNSUPPORTED
+                library.current().unwrap().selected().settings().smoothing,
+                smoothing
             );
-            assert_eq!(
-                paint_io::brush_state::encode(&library.current().unwrap()).unwrap(),
-                before
-            );
-            let mut bundle = texture_bundle(false, false);
-            bundle.package.brushes[0].smoothing = Some(
+            library
+                .mutate(|c| {
+                    let mut s = c.selected().settings().clone();
+                    s.smoothing = Default::default();
+                    c.edit("round-pressure", s)?;
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(captured.selected().settings().smoothing, smoothing);
+            assert!(library
+                .current()
+                .unwrap()
+                .selected()
+                .settings()
+                .smoothing
+                .is_default());
+            let mut package = texture_bundle(false, false).package;
+            package.brushes[0].texture = None;
+            package.brushes[0]
+                .required_capabilities
+                .retain(|c| c != "texture-cover");
+            package.brushes[0].smoothing = Some(
                 paint_io::brush_smoothing::SmoothingParameters::from_core(smoothing),
             );
-            bundle.package.brushes[0].behavior_version = 11;
-            bundle.package.brushes[0]
+            package.brushes[0].behavior_version = 11;
+            package.brushes[0]
                 .required_capabilities
                 .push("path-smoothing".into());
-            assert_eq!(
-                library.import_bundle(&bundle).unwrap_err().status,
-                PAINT_UNSUPPORTED
-            );
+            let bundle = paint_io::vbr_image::ImageBundle::new(
+                package,
+                std::collections::BTreeMap::new(),
+                &paint_task::CancellationToken::default(),
+            )
+            .unwrap();
+            library.import_bundle(&bundle).unwrap();
             let temp = tempfile::tempdir().unwrap();
-            let path = temp.path().join("unchanged.vbr");
-            std::fs::write(&path, b"untouched").unwrap();
+            let path = temp.path().join("smoothing.vbr");
             let path_bytes = path.to_str().unwrap().as_bytes();
             let json = bundle.package.to_json().unwrap();
             let mut handle = std::ptr::null_mut();
@@ -574,8 +577,9 @@ mod tests {
                         json.as_ptr(),
                         json.len() as u64
                     ),
-                    PAINT_UNSUPPORTED
+                    PAINT_OK
                 );
+                let before = std::fs::read(&path).unwrap();
                 assert_eq!(
                     crate::paint_brush_package_write(
                         path_bytes.as_ptr(),
@@ -585,9 +589,13 @@ mod tests {
                     ),
                     PAINT_UNSUPPORTED
                 );
+                assert_eq!(std::fs::read(&path).unwrap(), before);
                 assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
             }
-            assert_eq!(std::fs::read(&path).unwrap(), b"untouched");
+            let reopened =
+                paint_io::vbr_image::load(&path, &paint_task::CancellationToken::default())
+                    .unwrap();
+            assert_eq!(reopened.definition(0).unwrap().smoothing, smoothing);
         }
     }
     fn texture_bundle(enabled: bool, shared_tip: bool) -> paint_io::vbr_image::ImageBundle {

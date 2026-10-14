@@ -70,8 +70,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 45) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.45 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 46) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.46 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -100,7 +100,7 @@ public:
         inspectStorage();
         auto caps = dto<PaintCapabilities>();
         if (!check(paint_core_capabilities(m_core, &caps))) return;
-        constexpr uint64_t required = PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
+        constexpr uint64_t required = PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
         if ((caps.features & (required | PAINT_FEATURE_SELECTION)) != (required | PAINT_FEATURE_SELECTION)) { emit failure(QStringLiteral("当前核心缺少异步视口或选区能力")); return; }
         auto desc = dto<PaintDocumentDesc>(); desc.width = 960; desc.height = 640;
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
@@ -543,13 +543,14 @@ public:
             if(!tip.value("dualBrush").toMap().isEmpty()){row["dualBrush"]=QJsonObject::fromVariantMap(tip.value("dualBrush").toMap());state["version"]=12;}
             const auto smoothPressure=[](const QVariantMap &data){for(const auto &target:{"size","flow","opacity"})if(data.value(target).toMap().value("interpolation").toString()=="smooth-pchip-v1")return true;return false;};
             if(smoothPressure(tip.value("pressureDynamics").toMap()) || smoothPressure(tip.value("dualBrush").toMap().value("pressureDynamics").toMap()))state["version"]=13;
+            if(!tip.value("smoothing").toMap().isEmpty()){row["smoothing"]=QJsonObject::fromVariantMap(tip.value("smoothing").toMap());state["version"]=14;}
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
             auto background=dto<PaintBrushBackgroundDesc>();for(auto &v:background.linear_rgba)v=1;
             if(!tip.value("colorDynamics").toMap().isEmpty()){request.linear_rgba[0]=1;request.linear_rgba[1]=request.linear_rgba[2]=0;background.linear_rgba[0]=background.linear_rgba[1]=0;background.linear_rgba[2]=1;}
             auto blend=dto<PaintBrushBlendDesc>();blend.mode=0;
-            for(int i=0;i<=sampleCount;++i){const double t=i/double(sampleCount);InputSample sample;sample.position={(20+200*t)*m_brushPreviewScale,(30+8*std::sin(t*6.283185307))*m_brushPreviewScale};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;if(!tip.value("tipDynamics").toMap().isEmpty() || !dual.value("tipDynamics").toMap().isEmpty()){sample.capabilities=PAINT_INPUT_PRESSURE|PAINT_INPUT_TILT|PAINT_INPUT_ROTATION;sample.rotation=static_cast<float>(-60+120*t);sample.tiltX=static_cast<float>(30+30*std::sin(t*3.141592654));sample.tiltY=20;}command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
+            for(int i=0;i<=sampleCount;++i){const double t=i/double(sampleCount);InputSample sample;sample.position={(20+200*t)*m_brushPreviewScale,(30+8*std::sin(t*6.283185307))*m_brushPreviewScale};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;if(tip.value("smoothing").toMap().value("enabled").toBool())sample.timestamp=quint64(i)*8000000; if(!tip.value("tipDynamics").toMap().isEmpty() || !dual.value("tipDynamics").toMap().isEmpty()){sample.capabilities=PAINT_INPUT_PRESSURE|PAINT_INPUT_TILT|PAINT_INPUT_ROTATION;sample.rotation=static_cast<float>(-60+120*t);sample.tiltX=static_cast<float>(30+30*std::sin(t*3.141592654));sample.tiltY=20;}command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
                 const auto status=i==0?paint_session_begin_prepared_preset_with_blend(m_core,m_brushSession,m_previewCatalog,preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&background,&blend,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
                 if(status!=PAINT_OK){finishBrushPreview({});return;}}
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_END_STROKE;if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}

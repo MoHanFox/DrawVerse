@@ -48,7 +48,7 @@ ColumnLayout {
         ColumnLayout {
             Layout.preferredWidth:76;Layout.minimumWidth:76;Layout.maximumWidth:76;Layout.alignment:Qt.AlignTop;spacing:2
             Repeater {
-                model:["笔尖形状","形状动态","散布","纹理","双重笔刷","颜色动态","传递","光标与预览","来源与兼容"]
+                model:["笔尖形状","形状动态","散布","纹理","双重笔刷","颜色动态","传递","光标与预览","来源与兼容","平滑"]
                 Rectangle {
                     required property string modelData
                     required property int index
@@ -258,16 +258,37 @@ ColumnLayout {
                         }
                     }
                 }
+                ColumnLayout {visible:root.category===9;Layout.fillWidth:true;Layout.minimumWidth:0;spacing:5
+                    CompactCheckBox {objectName:"settingsSmoothingEnabled";text:"启用平滑";checked:root.library.smoothing.enabled;onToggled:{let data=Object.assign({},root.library.smoothing);data.enabled=checked;root.library.setSmoothing(data)} tooltip:"平滑位置和压力输入；主笔刷与第二笔刷共用同一路径。关闭时仍保留参数。"}
+                    SmoothingField {title:"位置平滑";field:"positionMs";to:250;unit:"ms";help:"减轻指针抖动；数值越大，跟随延迟越明显。"}
+                    SmoothingField {title:"压力平滑";field:"pressureMs";to:250;unit:"ms";help:"独立平滑压力变化；不改变位置滤波的时间设置。"}
+                    SmoothingField {title:"速度响应";field:"speedResponse";factor:100;to:100;unit:"%";help:"快速移动时减少位置平滑延迟；压力平滑保持独立。"}
+                    SmoothingField {title:"稳定距离";field:"stabilizerPx";to:128;unit:"px";help:"指针移动超过此距离后画笔开始跟随；抬笔时补齐终点。"}
+                }
                 Button {objectName:"resetBrushPreset";text:"重置预设";implicitHeight:22;Layout.minimumWidth:0;Layout.maximumWidth:parameterScroll.availableWidth;Layout.alignment:Qt.AlignLeft;Layout.topMargin:6;onClicked:root.library.resetPreset();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"恢复此预设的初始参数；不改变当前颜色、工具或画布历史。"}
             }
         }
     }
     Rectangle {
         objectName:"brushStrokePreview";Layout.fillWidth:true;Layout.preferredHeight:60;color:Theme.selected
-        Image {anchors.fill:parent;anchors.margins:4;source:root.library.selectedPreview;fillMode:Image.PreserveAspectFit;asynchronous:true}
+        Image {objectName:"brushStrokePreviewImage";anchors.fill:parent;anchors.margins:4;source:root.library.selectedPreview;fillMode:Image.PreserveAspectFit;asynchronous:true}
         Text {anchors.centerIn:parent;text:root.library.previewMessage;font.pixelSize:9;color:Theme.muted;visible:!root.library.selectedPreview.length}
         ToolTip.delay:1000;ToolTip.visible:hover.containsMouse;ToolTip.text:"实际引擎压感笔触 · 预览固定正常模式 · 双击重新生成"
         MouseArea {id:hover;anchors.fill:parent;hoverEnabled:true;onDoubleClicked:root.library.retryPreview()}
+    }
+    component SmoothingField: ColumnLayout {
+        id:smoothingControl
+        property string title
+        property string field
+        property real factor:1
+        property real to:100
+        property string unit:""
+        property string help:""
+        Layout.fillWidth:true;Layout.minimumWidth:0;spacing:2
+        function commit(value){let data=Object.assign({},root.library.smoothing);data[field]=value/factor;root.library.setSmoothing(data)}
+        Label {text:smoothingControl.title+" ("+smoothingControl.unit+")";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
+        CompactSpinBox {objectName:"settingsSmoothing"+smoothingControl.field+"Input";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:20;from:0;to:smoothingControl.to;editable:true;value:Math.round(root.library.smoothing[smoothingControl.field]*smoothingControl.factor);onValueModified:smoothingControl.commit(value);tooltip:smoothingControl.help}
+        CompactSlider {objectName:"settingsSmoothing"+smoothingControl.field;Layout.fillWidth:true;from:0;to:smoothingControl.to;value:root.library.smoothing[smoothingControl.field]*smoothingControl.factor;onMoved:smoothingControl.commit(value);tooltip:smoothingControl.help}
     }
     component DualField: ColumnLayout {
         id:dualControl

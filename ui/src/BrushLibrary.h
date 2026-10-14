@@ -40,6 +40,7 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(QString angleControl READ angleControl WRITE setAngleControl NOTIFY settingsChanged)
     Q_PROPERTY(bool tiltRoundness READ tiltRoundness WRITE setTiltRoundness NOTIFY settingsChanged)
     Q_PROPERTY(qreal minimumRoundness READ minimumRoundness WRITE setMinimumRoundness NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantMap smoothing READ smoothing NOTIFY settingsChanged)
     Q_PROPERTY(QVariantMap pressureDynamics READ pressureDynamics NOTIFY settingsChanged)
     Q_PROPERTY(QString sourceResource READ sourceResource NOTIFY settingsChanged)
     Q_PROPERTY(QString maskResource READ maskResource NOTIFY settingsChanged)
@@ -84,6 +85,8 @@ public:
     QString selectedName() const;
     QString selectedPreview() const;
     QString previewMessage() const;
+    QVariantMap smoothing() const;
+    Q_INVOKABLE bool setSmoothing(QVariantMap data);
     QVariantMap pressureDynamics() const;
     QVariantMap texture() const;
     QVariantMap dualBrush() const;
@@ -202,7 +205,7 @@ private:
     bool m_cursorSimple=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing;};
     static QJsonObject presetRow(const Preset &preset,int &version);
     int index(const QString &id) const;
     void update(int field,qreal value);

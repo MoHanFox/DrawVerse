@@ -150,6 +150,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                     | PAINT_FEATURE_DUAL_BRUSH
                     | PAINT_FEATURE_BRUSH_WRITE_BLEND
                     | PAINT_FEATURE_PRESSURE_SMOOTH
+                    | PAINT_FEATURE_PATH_SMOOTHING
                     | PAINT_FEATURE_SHAPE_JITTER
                     | PAINT_FEATURE_BRUSH_SCATTER
                     | PAINT_FEATURE_BRUSH_POSE

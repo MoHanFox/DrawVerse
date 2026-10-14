@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 45;
+pub const PAINT_ABI_MINOR: u32 = 46;
 pub const PAINT_FEATURE_PRESSURE_DYNAMICS: u64 = 1073741824;
 pub const PAINT_FEATURE_VBR_SOURCES: u64 = 536870912;
 pub const PAINT_FEATURE_ABR_IMPORT: u64 = 268435456;
@@ -818,3 +818,6 @@ pub const PAINT_FEATURE_BRUSH_WRITE_BLEND: u64 = 549755813888;
 
 /// Shape-preserving pressure interpolation and bounded UI curve samples.
 pub const PAINT_FEATURE_PRESSURE_SMOOTH: u64 = 1099511627776;
+
+/// Complete time-grid smoothing state14 / VBR1.12 user entry.
+pub const PAINT_FEATURE_PATH_SMOOTHING: u64 = 2199023255552;

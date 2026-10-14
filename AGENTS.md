@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新时间平滑原生Qt：`docs/brush-smoothing-ui-design.md` / `docs/brush-smoothing-ui-validation.md`；ABI1.46/state14/VBR1.12、完整位置/压力/速度/稳定距离分类、真实时间预览/在途捕获/保存重开与重置、解除准备/库包临时拒绝；收尖/双色/湿混/高级ABR继续后续。
+
 - 最新时间平滑IO：`docs/brush-smoothing-io-design.md` / `docs/brush-smoothing-io-validation.md`；state14/VBR1.12/behavior11、f64完整关闭配置/默认旧字节、压感与双路径/图片来源真实时间笔触往返；ABI1.45准备/库包暂拒新配置防旧Qt丢字段，原生桥/Qt与收尖继续后续。
 
 - 最新混合性能/菜单与预览：`docs/brush-mix-performance-design.md` / `docs/brush-mix-performance-validation.md`；圆尖平方距离/饱和主与第二覆盖跳过、整笔像素/历史保持、工具菜单跨原生窗置顶与Qt6.5回退、预览固定正常及跨文档缓存保持，无ABI变化。
