@@ -1,5 +1,7 @@
 # C ABI 1.42.0 契约
 
+双笔刷IO阶段：Rust state12/VBR1.10/behavior9支持预设级dualBrush两模型及完整第二资源/动态，ABI仍1.42，Qt尚未接。库package_read/write暂拒绝新对象；读required=0且不改caller或资源，写不改目标。旧程序包保持原范围，原生第二资源交接/释放与Qt继续后续。见 `docs/brush-dual-io-validation.md`。
+
 ## ABI 1.42 纹理资源与设置入口
 
 `PAINT_FEATURE_BRUSH_TEXTURE=137438953472`（u64）。现有准确准备与库包读写支持 state11/VBR1.9/behavior8 的预设级 texture 对象，PNG 导入沿既有覆盖资源接口。无 DTO 布局变化。库包解除临时拒绝，导出覆盖当前笔尖、纹理与来源基线 PNG 并集；无库上下文的旧程序包接口继续明确拒绝纹理。Qt 严格保存完整模型/资源/关闭值，真实预览和绘画仅由 Rust 执行，导入捕获预设与目标角色。见 `docs/brush-texture-ui-design.md`。

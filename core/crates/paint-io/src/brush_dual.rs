@@ -1,0 +1,190 @@
+use crate::{brush_resource::valid_id, Error, Result};
+use paint_core::{BrushDynamics, BrushMask, BrushTip, DualBrush, DualMode, SecondaryTip};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DualParameters {
+    model: String,
+    enabled: bool,
+    mode: String,
+    diameter: f64,
+    #[serde(deserialize_with = "read_spacing")]
+    spacing: Option<f64>,
+    hardness: f64,
+    roundness: f64,
+    angle: f64,
+    flow: f64,
+    pressure_size: bool,
+    pressure_flow: bool,
+    #[serde(deserialize_with = "read_resource")]
+    resource: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_pressure::present"
+    )]
+    pressure_dynamics: Option<crate::brush_pressure::PressureParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_tip_dynamics::present"
+    )]
+    tip_dynamics: Option<crate::brush_tip_dynamics::TipParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_scatter::present"
+    )]
+    scatter_dynamics: Option<crate::brush_scatter::ScatterParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_shape_jitter::present"
+    )]
+    shape_jitter: Option<crate::brush_shape_jitter::ShapeParameters>,
+}
+impl DualParameters {
+    pub fn from_core(dual: &DualBrush) -> Result<Self> {
+        let s = dual.secondary();
+        let t = s.tip();
+        let d = s.dynamics();
+        let mut pressure = d.clone();
+        pressure.tip = Default::default();
+        pressure.scatter = Default::default();
+        pressure.shape_jitter = Default::default();
+        let resource = s
+            .mask()
+            .map(|m| {
+                m.resource_id().map(str::to_owned).ok_or(Error::Unsupported(
+                    "secondary image has no persistent identity".into(),
+                ))
+            })
+            .transpose()?;
+        Ok(Self {
+            model: if s.spacing().is_some() {
+                "path-coverage-v1"
+            } else {
+                "paired-dab-v1"
+            }
+            .into(),
+            enabled: dual.enabled(),
+            mode: match dual.mode() {
+                DualMode::Multiply => "multiply",
+                DualMode::Darken => "darken",
+                DualMode::Lighten => "lighten",
+                DualMode::Subtract => "subtract",
+                DualMode::Difference => "difference",
+                DualMode::Screen => "screen",
+            }
+            .into(),
+            diameter: f64::from(s.radius()) * 2.,
+            spacing: s.spacing().map(|v| f64::from(v).max(0.01)),
+            hardness: f64::from(t.hardness),
+            roundness: f64::from(t.roundness).max(0.01),
+            angle: f64::from(t.angle),
+            flow: f64::from(t.flow),
+            pressure_size: t.pressure_size,
+            pressure_flow: t.pressure_flow,
+            resource,
+            pressure_dynamics: (pressure != BrushDynamics::default())
+                .then(|| crate::brush_pressure::PressureParameters::from_core(&pressure)),
+            tip_dynamics: (d.tip != Default::default())
+                .then(|| crate::brush_tip_dynamics::TipParameters::from_core(d.tip)),
+            scatter_dynamics: (d.scatter != Default::default())
+                .then(|| crate::brush_scatter::ScatterParameters::from_core(d.scatter)),
+            shape_jitter: (d.shape_jitter != Default::default())
+                .then(|| crate::brush_shape_jitter::ShapeParameters::from_core(d.shape_jitter)),
+        })
+    }
+    pub fn resource_id(&self) -> Option<&str> {
+        self.resource.as_deref()
+    }
+    pub fn validate(&self) -> Result<()> {
+        if !matches!(
+            self.mode.as_str(),
+            "multiply" | "darken" | "lighten" | "subtract" | "difference" | "screen"
+        ) || !(self.model == "paired-dab-v1" && self.spacing.is_none()
+            || self.model == "path-coverage-v1"
+                && self
+                    .spacing
+                    .is_some_and(|s| s.is_finite() && (0.01..=1.).contains(&s)))
+            || self.resource.as_ref().is_some_and(|id| !valid_id(id))
+            || self
+                .pressure_dynamics
+                .as_ref()
+                .is_some_and(|p| p.has_opacity())
+        {
+            return Err(Error::Invalid("dual brush model/parameters"));
+        }
+        for (v, lo, hi) in [
+            (self.diameter, 1., 512.),
+            (self.hardness, 0., 1.),
+            (self.roundness, 0.01, 1.),
+            (self.angle, -180., 180.),
+            (self.flow, 0., 1.),
+        ] {
+            if !v.is_finite() || !(lo..=hi).contains(&v) {
+                return Err(Error::Invalid("dual brush range"));
+            }
+        }
+        Ok(())
+    }
+    pub fn bind(&self, mask: Option<Arc<BrushMask>>) -> Result<DualBrush> {
+        self.validate()?;
+        if self.resource.is_some() != mask.is_some()
+            || mask
+                .as_ref()
+                .is_some_and(|m| m.resource_id() != self.resource_id())
+        {
+            return Err(Error::Invalid("secondary resource binding"));
+        }
+        let mut dynamics = self
+            .pressure_dynamics
+            .as_ref()
+            .map(|p| p.core().clone())
+            .unwrap_or_default();
+        dynamics.tip = self.tip_dynamics.map(|p| p.core()).unwrap_or_default();
+        dynamics.scatter = self.scatter_dynamics.map(|p| p.core()).unwrap_or_default();
+        dynamics.shape_jitter = self.shape_jitter.map(|p| p.core()).unwrap_or_default();
+        let tip = BrushTip {
+            hardness: self.hardness as f32,
+            roundness: self.roundness as f32,
+            angle: self.angle as f32,
+            flow: self.flow as f32,
+            pressure_size: self.pressure_size,
+            pressure_flow: self.pressure_flow,
+        };
+        let mut secondary = SecondaryTip::new(self.diameter as f32 / 2., tip, mask, dynamics)?;
+        if let Some(spacing) = self.spacing {
+            secondary = secondary.with_spacing(spacing as f32)?;
+        }
+        let mode = match self.mode.as_str() {
+            "multiply" => DualMode::Multiply,
+            "darken" => DualMode::Darken,
+            "lighten" => DualMode::Lighten,
+            "subtract" => DualMode::Subtract,
+            "difference" => DualMode::Difference,
+            "screen" => DualMode::Screen,
+            _ => return Err(Error::Invalid("dual mode")),
+        };
+        Ok(DualBrush::new(self.enabled, mode, secondary))
+    }
+}
+pub fn present<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<DualParameters>, D::Error> {
+    let p = DualParameters::deserialize(d)?;
+    p.validate().map_err(serde::de::Error::custom)?;
+    Ok(Some(p))
+}
+fn read_resource<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(d)
+}
+fn read_spacing<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<f64>, D::Error> {
+    Option::<f64>::deserialize(d)
+}

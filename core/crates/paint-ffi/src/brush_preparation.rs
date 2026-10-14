@@ -547,6 +547,7 @@ mod tests {
                     shape_jitter: None,
                     color_dynamics: None,
                 },
+                dual_brush: None,
                 texture: Some(
                     paint_io::brush_texture::TextureParameters::from_core(&texture).unwrap(),
                 ),
@@ -786,6 +787,7 @@ mod tests {
                 parameters: archive.info.baseline,
                 tip_resource: None,
                 texture: None,
+                dual_brush: None,
                 source_resource: Some(source.clone()),
             }],
         };

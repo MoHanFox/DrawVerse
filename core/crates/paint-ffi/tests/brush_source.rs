@@ -9,6 +9,76 @@ use paint_task::CancellationToken;
 use std::{ptr, sync::Arc};
 
 #[test]
+fn dual_frontend_boundary_keeps_caller_resources_and_existing_target() {
+    let temp = tempfile::tempdir().unwrap();
+    let token = CancellationToken::default();
+    let json=br#"{"packageId":"12345678-1234-4234-8234-123456789abc","brushes":[{"id":"12345678-1234-4234-8234-123456789abd","name":"dual","engineProfile":"drawverse.brush","behaviorVersion":9,"requiredCapabilities":["procedural-tip","dual-cover"],"dualBrush":{"model":"path-coverage-v1","enabled":false,"mode":"multiply","diameter":8,"spacing":0.01,"hardness":1,"roundness":1,"angle":0,"flow":1,"pressureSize":false,"pressureFlow":false,"resource":null},"parameters":{"diameter":16,"spacing":0.01,"dabOpacity":1,"hardness":1,"roundness":1,"angle":0,"flow":1,"pressureSize":false,"pressureFlow":false}}]}"#;
+    let png = paint_io::brush_resource::encode_mask(
+        &paint_core::BrushMask::new(2, 1, vec![0, 255]).unwrap(),
+    )
+    .unwrap();
+    let identity = paint_io::brush_resource::hash(&png);
+    let image_json = String::from_utf8(json.to_vec())
+        .unwrap()
+        .replace("\"resource\":null", &format!("\"resource\":\"{identity}\""));
+    let bundle = paint_io::vbr_image::ImageBundle::new(
+        paint_io::vbr::Package::from_json(image_json.as_bytes()).unwrap(),
+        std::collections::BTreeMap::from([(identity.clone(), png)]),
+        &token,
+    )
+    .unwrap();
+    let input = temp.path().join("dual.vbr");
+    paint_io::vbr_image::save(&input, &bundle, &token).unwrap();
+    let target = temp.path().join("old.vbr");
+    std::fs::write(&target, b"original").unwrap();
+    // Caller strings, handles and nonoverlapping buffers remain alive for each call.
+    unsafe {
+        let mut library = ptr::null_mut();
+        assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+        let directory = temp.path().join("resources");
+        let directory_path = directory.to_str().unwrap();
+        assert_eq!(
+            paint_brush_library_bind_resources(
+                library,
+                directory_path.as_ptr(),
+                directory_path.len() as u64
+            ),
+            PAINT_OK
+        );
+        let path = input.to_str().unwrap();
+        let mut data = vec![42; 2 * 1024 * 1024];
+        let mut required = 99;
+        assert_eq!(
+            paint_brush_library_package_read(
+                library,
+                path.as_ptr(),
+                path.len() as u64,
+                data.as_mut_ptr(),
+                data.len() as u64,
+                &mut required
+            ),
+            PAINT_UNSUPPORTED
+        );
+        assert_eq!(required, 0);
+        assert!(data.iter().all(|v| *v == 42));
+        assert!(!directory.join(format!("{identity}.png")).exists());
+        let path = target.to_str().unwrap();
+        assert_eq!(
+            paint_brush_library_package_write(
+                library,
+                path.as_ptr(),
+                path.len() as u64,
+                json.as_ptr(),
+                json.len() as u64
+            ),
+            PAINT_UNSUPPORTED
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"original");
+        assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+    }
+}
+
+#[test]
 fn texture_package_public_entry_preserves_closed_null_resource() {
     use std::collections::BTreeMap;
     let temp = tempfile::tempdir().unwrap();
@@ -460,6 +530,7 @@ fn native_reader_and_writer_exchange_source_bundles_and_never_drop_provenance() 
             parameters: archive.info.baseline,
             tip_resource: None,
             texture: None,
+            dual_brush: None,
             source_resource: Some(id.clone()),
         }],
     };
@@ -599,6 +670,7 @@ fn pressure_packages_round_trip_through_native_entry() {
             parameters,
             tip_resource: None,
             texture: None,
+            dual_brush: None,
             source_resource: None,
         }],
     };

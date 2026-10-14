@@ -52,6 +52,7 @@ fn bundle() -> ImageBundle {
             let s = p.settings();
             Preset {
                 texture: None,
+                dual_brush: None,
                 id: format!("12345678-1234-4234-8234-{i:012x}"),
                 name: p.name().into(),
                 engine_profile: "drawverse.brush".into(),
@@ -150,7 +151,26 @@ fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() 
     input.package.brushes[0]
         .required_capabilities
         .push("texture-cover".into());
-    input.package.brushes[0].behavior_version = 8;
+    let mask = input.assets()[input.package.brushes[0].tip_resource.as_ref().unwrap()].mask();
+    let dual = paint_core::DualBrush::new(
+        true,
+        paint_core::DualMode::Multiply,
+        paint_core::SecondaryTip::new(
+            4.,
+            paint_core::BrushTip::default(),
+            Some(mask),
+            Default::default(),
+        )
+        .unwrap()
+        .with_spacing(0.25)
+        .unwrap(),
+    );
+    input.package.brushes[0].dual_brush =
+        Some(paint_io::brush_dual::DualParameters::from_core(&dual).unwrap());
+    input.package.brushes[0]
+        .required_capabilities
+        .push("dual-cover".into());
+    input.package.brushes[0].behavior_version = 9;
     input.package.brushes[0]
         .required_capabilities
         .push("tip-dynamics".into());
@@ -421,6 +441,22 @@ fn all_1024_presets_can_have_distinct_current_and_baseline_tips_and_originals() 
         let baseline = Arc::new(make(123));
         let current = encode_mask(&make(124)).unwrap();
         let current_id = hash(&current);
+        let secondary_png = encode_mask(&make(126)).unwrap();
+        let secondary_id = hash(&secondary_png);
+        assets.insert(secondary_id.clone(), secondary_png);
+        let dual = paint_core::DualBrush::new(
+            false,
+            paint_core::DualMode::Multiply,
+            paint_core::SecondaryTip::new(
+                4.,
+                paint_core::BrushTip::default(),
+                Some(Arc::new(make(126).with_resource_id(secondary_id).unwrap())),
+                Default::default(),
+            )
+            .unwrap()
+            .with_spacing(0.25)
+            .unwrap(),
+        );
         let texture_png = encode_mask(&make(125)).unwrap();
         let texture_id = hash(&texture_png);
         assets.insert(texture_id.clone(), texture_png);
@@ -460,12 +496,17 @@ fn all_1024_presets_can_have_distinct_current_and_baseline_tips_and_originals() 
             .unwrap(),
         );
         brushes.push(Preset {
+            dual_brush: Some(paint_io::brush_dual::DualParameters::from_core(&dual).unwrap()),
             texture: Some(paint_io::brush_texture::TextureParameters::from_core(&texture).unwrap()),
             id: format!("12345678-1234-4234-8234-{index:012x}"),
             name: "bounded".into(),
             engine_profile: "drawverse.brush".into(),
-            behavior_version: 8,
-            required_capabilities: vec!["image-tip".into(), "texture-cover".into()],
+            behavior_version: 9,
+            required_capabilities: vec![
+                "image-tip".into(),
+                "texture-cover".into(),
+                "dual-cover".into(),
+            ],
             tip_resource: Some(current_id),
             source_resource: Some(source_id),
             parameters: archive.info.baseline,
@@ -482,10 +523,10 @@ fn all_1024_presets_can_have_distinct_current_and_baseline_tips_and_originals() 
     )
     .unwrap();
     let bytes = vbr_image::encode(&bundle, &token).unwrap();
-    assert_eq!(ZipArchive::new(Cursor::new(&bytes)).unwrap().len(), 6145);
+    assert_eq!(ZipArchive::new(Cursor::new(&bytes)).unwrap().len(), 7169);
     let restored = vbr_image::decode(&bytes, &token).unwrap();
     assert_eq!(restored.package.brushes.len(), 1024);
-    assert_eq!(restored.assets().len(), 3072);
+    assert_eq!(restored.assets().len(), 4096);
     assert_eq!(restored.sources().len(), 1024);
 }
 

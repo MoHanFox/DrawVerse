@@ -116,6 +116,12 @@ pub struct Preset {
         deserialize_with = "crate::brush_texture::present"
     )]
     pub texture: Option<crate::brush_texture::TextureParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_dual::present"
+    )]
+    pub dual_brush: Option<crate::brush_dual::DualParameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_resource: Option<String>,
 }
@@ -214,6 +220,10 @@ impl Package {
             let shape = b.parameters.shape_jitter.is_some();
             let color = b.parameters.color_dynamics.is_some();
             let textured = b.texture.is_some();
+            let dual = b.dual_brush.is_some();
+            if let Some(d) = &b.dual_brush {
+                d.validate()?;
+            }
             if let Some(t) = &b.texture {
                 t.validate()?;
             }
@@ -223,7 +233,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if textured {
+                != if dual {
+                    9
+                } else if textured {
                     8
                 } else if color {
                     7
@@ -262,6 +274,7 @@ impl Package {
                             | "shape-jitter"
                             | "color-dynamics"
                             | "texture-cover"
+                            | "dual-cover"
                     )
                 })
             {
@@ -298,6 +311,8 @@ impl Package {
                 || (color && b.engine_profile != "drawverse.brush")
                 || textured != b.required_capabilities.iter().any(|c| c == "texture-cover")
                 || (textured && b.engine_profile != "drawverse.brush")
+                || dual != b.required_capabilities.iter().any(|c| c == "dual-cover")
+                || (dual && b.engine_profile != "drawverse.brush")
             {
                 return Err(Error::Invalid("VBR pressure behavior/capability"));
             }
@@ -340,8 +355,8 @@ pub(crate) fn checked_archive<'a>(
         return Err(Error::Limit("VBR compressed bytes"));
     }
     let mut zip = ZipArchive::new(Cursor::new(bytes))?;
-    // Manifest + 1024 presets + 3072 tip/texture/baseline images + 1024 records + 1024 originals.
-    if zip.len() > 6145 {
+    // Manifest + 1024 presets + 4096 tip/texture/secondary/baseline images + 1024 records + 1024 originals.
+    if zip.len() > 7169 {
         return Err(Error::Limit("VBR entry count"));
     }
     let mut paths = BTreeSet::new();
@@ -437,6 +452,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
     if package.brushes.iter().any(|b| {
         b.tip_resource.is_some()
             || b.texture.is_some()
+            || b.dual_brush.is_some()
             || b.source_resource.is_some()
             || b.parameters.pressure_dynamics.is_some()
             || b.parameters.tip_dynamics.is_some()
@@ -455,6 +471,7 @@ pub fn encode(package: &Package, token: &CancellationToken) -> Result<Vec<u8>> {
     if package.brushes.iter().any(|b| {
         b.tip_resource.is_some()
             || b.texture.is_some()
+            || b.dual_brush.is_some()
             || b.source_resource.is_some()
             || b.parameters.pressure_dynamics.is_some()
             || b.parameters.tip_dynamics.is_some()

@@ -38,6 +38,7 @@ fn state9_saves_shape_separately_and_old_pressure_payload_rejects_it() {
                 required_capabilities: vec!["procedural-tip".into(), "pressure-curves".into()],
                 tip_resource: None,
                 texture: None,
+                dual_brush: None,
                 source_resource: None,
                 parameters: Parameters {
                     diameter: 24.,

@@ -99,6 +99,12 @@ struct Row {
         deserialize_with = "crate::brush_texture::present"
     )]
     texture: Option<crate::brush_texture::TextureParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_dual::present"
+    )]
+    dual_brush: Option<crate::brush_dual::DualParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -166,7 +172,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=11) {
+    if !matches!(state.version, 1..=12) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -230,6 +236,31 @@ fn decode_inner(
         } else {
             Default::default()
         };
+        let dual = if let Some(d) = row.dual_brush {
+            if state.version < 12 {
+                return Err(Error::Unsupported("dual brush require state12".into()));
+            }
+            let mask = if let Some(id) = d.resource_id() {
+                let mask = resources
+                    .ok_or(Error::Unsupported(
+                        "secondary resource store is required".into(),
+                    ))?
+                    .load(id, token)?
+                    .mask;
+                if resident_masks.insert(std::sync::Arc::as_ptr(&mask) as usize) {
+                    resident = resident.saturating_add(mask.resident_bytes());
+                    if resident > mask_budget {
+                        return Err(Error::Limit("secondary resource budget"));
+                    }
+                }
+                Some(mask)
+            } else {
+                None
+            };
+            d.bind(mask)?
+        } else {
+            Default::default()
+        };
         if let Some(id) = &row.source_resource {
             if state.version < 4 {
                 return Err(Error::Unsupported("brush sources require state v4".into()));
@@ -287,7 +318,7 @@ fn decode_inner(
             row.name,
             BrushSettings {
                 texture,
-                dual: Default::default(),
+                dual,
                 dynamics,
                 diameter: row.radius * 2.,
                 opacity: row.opacity,
@@ -318,9 +349,12 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
-        if !s.dual.is_default() {
-            return Err(Error::Invalid("dual brush requires a newer state format"));
-        }
+        let dual_brush = if !s.dual.is_default() {
+            version = version.max(12);
+            Some(crate::brush_dual::DualParameters::from_core(&s.dual)?)
+        } else {
+            None
+        };
         let texture = if !s.texture.is_default() {
             version = version.max(11);
             Some(crate::brush_texture::TextureParameters::from_core(
@@ -418,12 +452,17 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             shape_jitter,
             color_dynamics,
             texture,
+            dual_brush,
         });
     }
-    serde_json::to_vec(&State {
+    let bytes = serde_json::to_vec(&State {
         version,
         selected: catalog.selected().id().into(),
         presets,
     })
-    .map_err(|e| Error::Codec(e.to_string()))
+    .map_err(|e| Error::Codec(e.to_string()))?;
+    if bytes.len() > 2 * 1024 * 1024 {
+        return Err(Error::Limit("brush state bytes"));
+    }
+    Ok(bytes)
 }

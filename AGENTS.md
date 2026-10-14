@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新双笔刷IO：`docs/brush-dual-io-design.md` / `docs/brush-dual-io-validation.md`；state12/VBR1.10/behavior9、两模型/完整第二动态与资源/真实两笔还原、来源并集/7169条目和状态字节预算；ABI1.42包暂拒绝新对象，原生资源生命周期和Qt继续后续。
+
 - 最新双笔尖独立路径：`docs/brush-dual-path-design.md` / `docs/brush-dual-path-validation.md`；第二直径1%间距/双流调度、独立随机字段/主频率无关、稀疏分页与终点/真实四类写入历史、预算及存储失败原子回滚；无ABI变化，旧配对保持，保存交换和原生Qt继续后续。
 
 - 最新双笔尖覆盖核心：`docs/brush-dual-design.md` / `docs/brush-dual-validation.md`；paired-dab-v1六模式/独立第二压力设备与形状散布、共享图片预算/预检与真实四类写入历史；旧state/来源拒绝非默认对象，无ABI变化，独立路径间距/IO与原生Qt继续后续。

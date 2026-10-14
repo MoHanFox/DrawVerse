@@ -1,4 +1,4 @@
-//! VBR 1.1–1.9 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
+//! VBR 1.1–1.10 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
 use crate::{
     brush_resource::{decode_verified, valid_id},
     check,
@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 9;
+pub const MAX_EXECUTABLE_MINOR: u32 = 10;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -61,6 +61,12 @@ impl ImageBundle {
             b.texture
                 .as_ref()
                 .and_then(|t| t.resource_id())
+                .map(str::to_owned)
+        }));
+        referenced.extend(package.brushes.iter().filter_map(|b| {
+            b.dual_brush
+                .as_ref()
+                .and_then(|d| d.resource_id())
                 .map(str::to_owned)
         }));
         for source in &sources {
@@ -147,6 +153,18 @@ impl ImageBundle {
             };
             definition.texture = t.bind(resource)?;
         }
+        if let Some(d) = &preset.dual_brush {
+            let mask = d
+                .resource_id()
+                .map(|id| {
+                    self.assets
+                        .get(id)
+                        .map(|a| a.mask())
+                        .ok_or(Error::Invalid("missing secondary resource"))
+                })
+                .transpose()?;
+            definition.dual = d.bind(mask)?;
+        }
         Ok(definition)
     }
     fn prepare_textures(&self) -> Result<()> {
@@ -202,6 +220,12 @@ impl ImageBundle {
                 .brushes
                 .iter()
                 .filter_map(|b| b.texture.as_ref().and_then(|t| t.resource_id())),
+        );
+        referenced.extend(
+            self.package
+                .brushes
+                .iter()
+                .filter_map(|b| b.dual_brush.as_ref().and_then(|d| d.resource_id())),
         );
         let mut source_ids = BTreeSet::new();
         let mut originals = BTreeSet::new();
@@ -306,7 +330,9 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
     if manifest.brushes.is_empty()
         || manifest.brushes.len() > 1024
         || manifest.assets.len()
-            > if manifest.version.minor >= 9 {
+            > if manifest.version.minor >= 10 {
+                6144
+            } else if manifest.version.minor >= 9 {
                 5120
             } else {
                 4096
@@ -328,6 +354,9 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             return Err(Error::Invalid("VBR preset identity mismatch"));
         }
         brushes.push(preset);
+    }
+    if manifest.version.minor < 10 && brushes.iter().any(|b| b.dual_brush.is_some()) {
+        return Err(Error::Unsupported("dual brush require VBR1.10".into()));
     }
     if manifest.version.minor < 9 && brushes.iter().any(|b| b.texture.is_some()) {
         return Err(Error::Unsupported("texture require VBR1.9".into()));
@@ -457,6 +486,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 || b.parameters.shape_jitter.is_some()
                 || b.parameters.color_dynamics.is_some()
                 || b.texture.is_some()
+                || b.dual_brush.is_some()
         })
     {
         return vbr::encode(&bundle.package, token);
@@ -483,7 +513,14 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle.package.brushes.iter().any(|b| b.texture.is_some()) {
+            minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.dual_brush.is_some())
+            {
+                10
+            } else if bundle.package.brushes.iter().any(|b| b.texture.is_some()) {
                 9
             } else if bundle
                 .package
