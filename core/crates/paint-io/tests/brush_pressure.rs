@@ -38,6 +38,7 @@ fn package() -> Package {
             parameters: Parameters {
                 scatter_dynamics: None,
                 shape_jitter: None,
+                color_dynamics: None,
                 tip_dynamics: None,
                 diameter: 16.,
                 spacing: 0.01,

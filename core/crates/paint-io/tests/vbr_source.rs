@@ -69,6 +69,7 @@ fn bundle() -> ImageBundle {
                 parameters: Parameters {
                     scatter_dynamics: None,
                     shape_jitter: None,
+                    color_dynamics: None,
                     tip_dynamics: None,
                     pressure_dynamics: None,
                     diameter: s.diameter,
@@ -118,7 +119,14 @@ fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() 
     input.package.brushes[0]
         .required_capabilities
         .push("shape-jitter".into());
-    input.package.brushes[0].behavior_version = 6;
+    input.package.brushes[0].parameters.color_dynamics =
+        Some(paint_io::brush_color_dynamics::ColorParameters::from_core(
+            paint_core::ColorDynamics::new(true, 0.8, 0.2, 0.3, 0.1, true, u64::MAX).unwrap(),
+        ));
+    input.package.brushes[0]
+        .required_capabilities
+        .push("color-dynamics".into());
+    input.package.brushes[0].behavior_version = 7;
     input.package.brushes[0]
         .required_capabilities
         .push("tip-dynamics".into());
@@ -147,8 +155,11 @@ fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() 
         point.capabilities = 6;
         point.rotation = 90.;
         point.tilt_x = 60.;
-        doc.begin_brush_stroke(bundle.definition(0).unwrap(), point)
-            .unwrap();
+        let mut definition = bundle.definition(0).unwrap();
+        definition.brush.color = paint_core::Pixel::from_straight([1., 0., 0., 0.8]).unwrap();
+        definition.brush.background_color =
+            paint_core::Pixel::from_straight([0., 0., 1., 1.]).unwrap();
+        doc.begin_brush_stroke(definition, point).unwrap();
         doc.end_stroke().unwrap();
         docs.push(doc);
     }
@@ -168,6 +179,9 @@ fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() 
     assert!(baseline.validate().is_err());
     baseline.baseline.scatter_dynamics = None;
     baseline.baseline.shape_jitter = input.package.brushes[0].parameters.shape_jitter;
+    assert!(baseline.validate().is_err());
+    baseline.baseline.shape_jitter = None;
+    baseline.baseline.color_dynamics = input.package.brushes[0].parameters.color_dynamics;
     assert!(baseline.validate().is_err());
 }
 

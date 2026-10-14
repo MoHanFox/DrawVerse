@@ -16,6 +16,7 @@ fn package() -> Package {
             parameters: Parameters {
                 scatter_dynamics: None,
                 shape_jitter: None,
+                color_dynamics: None,
                 tip_dynamics: None,
                 pressure_dynamics: None,
                 diameter: 40.,

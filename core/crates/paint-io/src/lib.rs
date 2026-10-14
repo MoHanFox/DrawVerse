@@ -3,6 +3,7 @@ pub mod abr_association;
 pub mod abr_conversion;
 pub mod abr_import;
 pub mod abr_sampled;
+pub mod brush_color_dynamics;
 pub mod brush_pressure;
 pub mod brush_resource;
 pub mod brush_scatter;

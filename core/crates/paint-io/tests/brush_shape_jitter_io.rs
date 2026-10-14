@@ -52,6 +52,7 @@ fn state9_saves_shape_separately_and_old_pressure_payload_rejects_it() {
                     tip_dynamics: None,
                     scatter_dynamics: None,
                     shape_jitter: None,
+                    color_dynamics: None,
                 },
             }],
         };

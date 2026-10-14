@@ -1,4 +1,4 @@
-//! VBR 1.1–1.7 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
+//! VBR 1.1–1.8 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
 use crate::{
     brush_resource::{decode_verified, valid_id},
     check,
@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 7;
+pub const MAX_EXECUTABLE_MINOR: u32 = 8;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -242,6 +242,13 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         }
         brushes.push(preset);
     }
+    if manifest.version.minor < 8
+        && brushes
+            .iter()
+            .any(|b| b.parameters.color_dynamics.is_some())
+    {
+        return Err(Error::Unsupported("color dynamics require VBR1.8".into()));
+    }
     if manifest.version.minor < 7 && brushes.iter().any(|b| b.parameters.shape_jitter.is_some()) {
         return Err(Error::Unsupported("shape jitter require VBR1.7".into()));
     }
@@ -358,6 +365,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 || b.parameters.tip_dynamics.is_some()
                 || b.parameters.scatter_dynamics.is_some()
                 || b.parameters.shape_jitter.is_some()
+                || b.parameters.color_dynamics.is_some()
         })
     {
         return vbr::encode(&bundle.package, token);
@@ -385,6 +393,13 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.parameters.color_dynamics.is_some())
+            {
+                8
+            } else if bundle
                 .package
                 .brushes
                 .iter()

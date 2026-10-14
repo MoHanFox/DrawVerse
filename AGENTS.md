@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新颜色动态IO：`docs/brush-color-io-design.md` / `docs/brush-color-io-validation.md`；state10/VBR1.8/behavior7、严格线性HSV模型/完整种子/关闭频率、真实组合两笔及来源保持；ABI1.40包入口暂拒绝新对象，原生背景与Qt待接。
+
 - 最新颜色动态内核：`docs/brush-color-dynamics-design.md` / `docs/brush-color-dynamics-validation.md`；两色/线性HSV/整笔与逐印章、分页颜色贡献与透明度上限、真实蒙版/手指载色/历史；旧IO拒绝新配置，保存/VBR/原生背景与Qt待接，无ABI变化。
 
 - 最新形状抖动原生Qt：`docs/brush-shape-jitter-ui-design.md` / `docs/brush-shape-jitter-ui-validation.md`；ABI1.40/state9/VBR1.7、形状动态子页/真实预览与捕获/完整种子关闭值、最高目录版本/图片来源往返；解除package临时拒绝，其他动态与湿混继续后续。

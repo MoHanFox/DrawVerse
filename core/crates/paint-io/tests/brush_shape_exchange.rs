@@ -74,6 +74,7 @@ fn package(s: &BrushSettings) -> Package {
                     .then(|| TipParameters::from_core(s.dynamics.tip)),
                 scatter_dynamics: Some(ScatterParameters::from_core(s.dynamics.scatter)),
                 shape_jitter: Some(ShapeParameters::from_core(s.dynamics.shape_jitter)),
+                color_dynamics: None,
             },
         }],
     }

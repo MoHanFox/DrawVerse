@@ -88,6 +88,7 @@ impl SourceInfo {
             || self.baseline.tip_dynamics.is_some()
             || self.baseline.scatter_dynamics.is_some()
             || self.baseline.shape_jitter.is_some()
+            || self.baseline.color_dynamics.is_some()
         {
             return Err(Error::Unsupported(
                 "converter v1 baseline dynamic controls".into(),
@@ -147,6 +148,7 @@ impl SourceArchive {
             baseline: Parameters {
                 scatter_dynamics: None,
                 shape_jitter: None,
+                color_dynamics: None,
                 tip_dynamics: None,
                 pressure_dynamics: None,
                 diameter: settings.diameter,

@@ -87,6 +87,12 @@ struct Row {
         deserialize_with = "crate::brush_shape_jitter::present"
     )]
     shape_jitter: Option<crate::brush_shape_jitter::ShapeParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_color_dynamics::present"
+    )]
+    color_dynamics: Option<crate::brush_color_dynamics::ColorParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -154,7 +160,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=9) {
+    if !matches!(state.version, 1..=10) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -224,6 +230,10 @@ fn decode_inner(
             return Err(Error::Unsupported("shape jitter require state9".into()));
         }
         dynamics.shape_jitter = row.shape_jitter.map(|p| p.core()).unwrap_or_default();
+        if row.color_dynamics.is_some() && state.version < 10 {
+            return Err(Error::Unsupported("color dynamics require state10".into()));
+        }
+        dynamics.color = row.color_dynamics.map(|p| p.core()).unwrap_or_default();
         entries.push((
             row.id,
             row.name,
@@ -258,11 +268,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
-        if s.dynamics.color != paint_core::ColorDynamics::default() {
-            return Err(Error::Unsupported(
-                "color dynamics state IO not implemented".into(),
-            ));
-        }
+        let color_dynamics = if s.dynamics.color != paint_core::ColorDynamics::default() {
+            version = version.max(10);
+            Some(crate::brush_color_dynamics::ColorParameters::from_core(
+                s.dynamics.color,
+            ))
+        } else {
+            None
+        };
         let shape_jitter = if s.dynamics.shape_jitter != paint_core::ShapeJitter::default() {
             version = version.max(9);
             Some(crate::brush_shape_jitter::ShapeParameters::from_core(
@@ -291,6 +304,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         pressure.tip = Default::default();
         pressure.scatter = Default::default();
         pressure.shape_jitter = Default::default();
+        pressure.color = Default::default();
         let pressure_dynamics = if pressure != paint_core::BrushDynamics::default() {
             version = version.max(
                 if s.dynamics.pressure_opacity
@@ -341,6 +355,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             tip_dynamics,
             scatter_dynamics,
             shape_jitter,
+            color_dynamics,
         });
     }
     serde_json::to_vec(&State {

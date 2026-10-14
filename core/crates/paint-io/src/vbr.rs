@@ -51,6 +51,12 @@ pub struct Parameters {
         deserialize_with = "crate::brush_shape_jitter::present"
     )]
     pub shape_jitter: Option<crate::brush_shape_jitter::ShapeParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_color_dynamics::present"
+    )]
+    pub color_dynamics: Option<crate::brush_color_dynamics::ColorParameters>,
 }
 impl Parameters {
     pub fn definition(&self) -> BrushDefinition {
@@ -70,6 +76,9 @@ impl Parameters {
         }
         if let Some(shape) = self.shape_jitter {
             dynamics.shape_jitter = shape.core();
+        }
+        if let Some(color) = self.color_dynamics {
+            dynamics.color = color.core();
         }
         BrushSettings {
             dynamics,
@@ -195,13 +204,16 @@ impl Package {
             let tip_dynamic = b.parameters.tip_dynamics.is_some();
             let scatter = b.parameters.scatter_dynamics.is_some();
             let shape = b.parameters.shape_jitter.is_some();
+            let color = b.parameters.color_dynamics.is_some();
             let opacity = b
                 .parameters
                 .pressure_dynamics
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if shape {
+                != if color {
+                    7
+                } else if shape {
                     6
                 } else if scatter {
                     5
@@ -234,6 +246,7 @@ impl Package {
                             | "tip-dynamics"
                             | "scatter-stamps"
                             | "shape-jitter"
+                            | "color-dynamics"
                     )
                 })
             {
@@ -263,6 +276,11 @@ impl Package {
                 || (scatter && b.engine_profile != "drawverse.brush")
                 || shape != b.required_capabilities.iter().any(|c| c == "shape-jitter")
                 || (shape && b.engine_profile != "drawverse.brush")
+                || color
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "color-dynamics")
+                || (color && b.engine_profile != "drawverse.brush")
             {
                 return Err(Error::Invalid("VBR pressure behavior/capability"));
             }
@@ -406,6 +424,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
             || b.parameters.tip_dynamics.is_some()
             || b.parameters.scatter_dynamics.is_some()
             || b.parameters.shape_jitter.is_some()
+            || b.parameters.color_dynamics.is_some()
     }) {
         return Err(Error::Unsupported(
             "image VBR requires a resource bundle".into(),
@@ -422,6 +441,7 @@ pub fn encode(package: &Package, token: &CancellationToken) -> Result<Vec<u8>> {
             || b.parameters.tip_dynamics.is_some()
             || b.parameters.scatter_dynamics.is_some()
             || b.parameters.shape_jitter.is_some()
+            || b.parameters.color_dynamics.is_some()
     }) {
         return Err(Error::Unsupported(
             "image VBR requires a resource bundle".into(),

@@ -1,5 +1,7 @@
 # C ABI 1.38.0 契约
 
+颜色动态IO阶段：Rust state10/VBR1.8/behavior7保存独立colorDynamics及完整hex种子，模型严格linear-hsv-v1；ABI仍1.40，用户背景工具传入与Qt待接。库package_read/write暂对新对象返回Unsupported，读required=0且不改caller/资源，写不改目标；旧包保持原路径。见 `docs/brush-color-io-validation.md`。
+
 ## ABI 1.40 形状抖动入口
 
 `PAINT_FEATURE_SHAPE_JITTER=34359738368`，features为u64。state9/VBR1.7/behavior6/shape-jitter接入准确准备与Qt镜像，没有DTO变化。库package_read/write解除形状对象临时Unsupported边界；旧程序子集入口仍只支持原子集。UI要求至少ABI1.40。每预设保留独立对象和完整seed字符串，关闭不清配置，真实预览/绘画仅Rust执行；光标显示输入笔尖而非随机样本。见 `docs/brush-shape-jitter-ui-validation.md`。
