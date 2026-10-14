@@ -11,6 +11,9 @@
 #include <limits>
 
 namespace {
+QVariantMap defaultShape(){return {{"enabled",false},{"size",0.},{"minimumSize",0.},{"angle",0.},{"roundness",0.},{"minimumRoundness",.01},{"seed","0000000000000000"}};}
+bool validShape(const QJsonObject &data){static const QRegularExpression seed("^[0-9a-f]{16}$");if(data.size()!=7 || !data.value("enabled").isBool() || !data.value("seed").isString() || !seed.match(data.value("seed").toString()).hasMatch())return false;for(const auto &k:{"size","minimumSize","angle","roundness","minimumRoundness"}){const auto v=data.value(k);const auto x=v.toDouble();if(!v.isDouble() || !std::isfinite(x) || x<(QString(k)=="minimumRoundness"?.01:0.) || x>1)return false;}return true;}
+
 QVariantMap defaultScatter(){return {{"enabled",false},{"amount",0.},{"bothAxes",false},{"count",1},{"countJitter",0.},{"seed","0000000000000000"}};}
 bool validScatter(const QJsonObject &data){
     static const QRegularExpression seed("^[0-9a-f]{16}$");
@@ -42,6 +45,20 @@ bool validPressure(const QJsonObject &data) {
     }return true;
 }
 }
+QVariantMap BrushLibrary::shapeJitter() const{const auto &p=m_presets[index(m_selected)].shape;return p.isEmpty()?defaultShape():p;}
+bool BrushLibrary::setShapeJitter(QVariantMap data){if(!validShape(QJsonObject::fromVariantMap(data)))return false;if(data==defaultShape())data.clear();auto &p=m_presets[index(m_selected)];if(p.shape==data)return true;p.shape=data;p.preview.clear();p.error.clear();p.token=++m_nextToken;p.requested=0;changed();return true;}
+bool BrushLibrary::shapeJitterEnabled() const{return shapeJitter().value("enabled").toBool();}
+void BrushLibrary::setShapeJitterEnabled(bool value){auto data=shapeJitter();data["enabled"]=value;setShapeJitter(data);}
+qreal BrushLibrary::shapeSizeJitter() const{return shapeJitter().value("size").toDouble();}
+void BrushLibrary::setShapeSizeJitter(qreal value){auto data=shapeJitter();data["size"]=value;setShapeJitter(data);}
+qreal BrushLibrary::shapeMinimumSize() const{return shapeJitter().value("minimumSize").toDouble();}
+void BrushLibrary::setShapeMinimumSize(qreal value){auto data=shapeJitter();data["minimumSize"]=value;setShapeJitter(data);}
+qreal BrushLibrary::shapeAngleJitter() const{return shapeJitter().value("angle").toDouble();}
+void BrushLibrary::setShapeAngleJitter(qreal value){auto data=shapeJitter();data["angle"]=value;setShapeJitter(data);}
+qreal BrushLibrary::shapeRoundnessJitter() const{return shapeJitter().value("roundness").toDouble();}
+void BrushLibrary::setShapeRoundnessJitter(qreal value){auto data=shapeJitter();data["roundness"]=value;setShapeJitter(data);}
+qreal BrushLibrary::shapeMinimumRoundness() const{return shapeJitter().value("minimumRoundness").toDouble();}
+void BrushLibrary::setShapeMinimumRoundness(qreal value){auto data=shapeJitter();data["minimumRoundness"]=value;setShapeJitter(data);}
 QVariantMap BrushLibrary::scatterDynamics() const{const auto &p=m_presets[index(m_selected)].scatter;return p.isEmpty()?defaultScatter():p;}
 bool BrushLibrary::scatterEnabled() const{return scatterDynamics().value("enabled").toBool();}
 bool BrushLibrary::scatterBothAxes() const{return scatterDynamics().value("bothAxes").toBool();}
@@ -118,7 +135,7 @@ bool BrushLibrary::pressureSize() const{return m_presets[index(m_selected)].pres
 bool BrushLibrary::pressureOpacity() const{return m_presets[index(m_selected)].pressure.value("opacity").toMap().value("enabled").toBool();}
 void BrushLibrary::setPressureOpacity(bool enabled){auto data=pressureDynamics();auto c=data.value("opacity").toMap();c["enabled"]=enabled;data["opacity"]=c;data=canonicalPressure(data);auto &p=m_presets[index(m_selected)];if(p.pressure==data)return;p.pressure=data;p.preview.clear();p.error.clear();p.token=++m_nextToken;p.requested=0;changed();}
 bool BrushLibrary::pressureFlow() const{return m_presets[index(m_selected)].pressureFlow;}
-QVariantMap BrushLibrary::tipSettings() const{return {{"hardness",hardness()},{"roundness",roundness()},{"angle",angle()},{"flow",flow()},{"pressureSize",pressureSize()},{"pressureFlow",pressureFlow()},{"maskResource",maskResource()},{"pressureDynamics",m_presets[index(m_selected)].pressure},{"tipDynamics",m_presets[index(m_selected)].device},{"scatterDynamics",m_presets[index(m_selected)].scatter}};}
+QVariantMap BrushLibrary::tipSettings() const{return {{"hardness",hardness()},{"roundness",roundness()},{"angle",angle()},{"flow",flow()},{"pressureSize",pressureSize()},{"pressureFlow",pressureFlow()},{"maskResource",maskResource()},{"pressureDynamics",m_presets[index(m_selected)].pressure},{"tipDynamics",m_presets[index(m_selected)].device},{"scatterDynamics",m_presets[index(m_selected)].scatter},{"shapeJitter",m_presets[index(m_selected)].shape}};}
 QVariantList BrushLibrary::presets() const {
     QVariantList rows;for(const auto &p:m_presets)rows.append(QVariantMap{{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opacity},{"spacing",p.spacing},{"builtin",p.builtin},{"preview",p.preview}});return rows;
 }
@@ -162,11 +179,11 @@ bool BrushLibrary::select(const QString &id){if(index(id)<0)return false;if(id!=
 QString BrushLibrary::saveCopy(const QString &name){if(m_presets.size()>=1024 || name.trimmed().isEmpty() || name.size()>80)return {};auto p=m_presets[index(m_selected)];p.id=QUuid::createUuid().toString(QUuid::WithoutBraces);p.name=name.trimmed();p.builtin=false;p.token=++m_nextToken;p.requested=0;p.error.clear();m_presets.append(p);m_selected=p.id;changed();return p.id;}
 bool BrushLibrary::rename(const QString &id,const QString &name){const int i=index(id);if(i<0 || name.trimmed().isEmpty() || name.size()>80)return false;m_presets[i].name=name.trimmed();changed();return true;}
 bool BrushLibrary::remove(const QString &id){const int i=index(id);if(i<0 || m_presets[i].builtin)return false;m_presets.removeAt(i);if(m_selected==id)m_selected="round-pressure";changed();return true;}
-void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;emit previewRequested(p.id,p.token,24.,p.opacity,p.spacing,{{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow},{"maskResource",p.maskResource},{"pressureDynamics",p.pressure},{"tipDynamics",p.device},{"scatterDynamics",p.scatter}});}
+void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;emit previewRequested(p.id,p.token,24.,p.opacity,p.spacing,{{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow},{"maskResource",p.maskResource},{"pressureDynamics",p.pressure},{"tipDynamics",p.device},{"scatterDynamics",p.scatter},{"shapeJitter",p.shape}});}
 void BrushLibrary::retryPreview(){auto &p=m_presets[index(m_selected)];p.preview.clear();p.error.clear();p.requested=0;p.token=++m_nextToken;requestPreview(m_selected);emit presetsChanged();}
 void BrushLibrary::acceptPreview(const QString &id,quint64 token,const QString &image){const int i=index(id);if(i<0 || m_presets[i].token!=token)return;m_presets[i].requested=0;m_presets[i].preview=image;m_presets[i].error=image.isEmpty()?QStringLiteral("预览暂不可用"):QString();emit presetsChanged();}
 QByteArray BrushLibrary::snapshot() const {
-    QJsonArray rows;int version=2;for(const auto &p:m_presets){QJsonObject row{{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opacity},{"spacing",p.spacing},{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}};if(!p.maskResource.isEmpty()){row["maskResource"]=p.maskResource;version=std::max(version,3);}if(!p.sourceResource.isEmpty()){row["sourceResource"]=p.sourceResource;version=std::max(version,4);}if(!p.pressure.isEmpty()){row["pressureDynamics"]=QJsonObject::fromVariantMap(p.pressure);version=std::max(version,p.pressure.contains("opacity")?6:5);}if(!p.device.isEmpty()){row["tipDynamics"]=QJsonObject::fromVariantMap(p.device);version=std::max(version,7);}if(!p.scatter.isEmpty()){row["scatterDynamics"]=QJsonObject::fromVariantMap(p.scatter);version=8;}rows.append(row);}
+    QJsonArray rows;int version=2;for(const auto &p:m_presets){QJsonObject row{{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opacity},{"spacing",p.spacing},{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}};if(!p.maskResource.isEmpty()){row["maskResource"]=p.maskResource;version=std::max(version,3);}if(!p.sourceResource.isEmpty()){row["sourceResource"]=p.sourceResource;version=std::max(version,4);}if(!p.pressure.isEmpty()){row["pressureDynamics"]=QJsonObject::fromVariantMap(p.pressure);version=std::max(version,p.pressure.contains("opacity")?6:5);}if(!p.device.isEmpty()){row["tipDynamics"]=QJsonObject::fromVariantMap(p.device);version=std::max(version,7);}if(!p.scatter.isEmpty()){row["scatterDynamics"]=QJsonObject::fromVariantMap(p.scatter);version=std::max(version,8);}if(!p.shape.isEmpty()){row["shapeJitter"]=QJsonObject::fromVariantMap(p.shape);version=9;}rows.append(row);}
     return QJsonDocument(QJsonObject{{"version",version},{"selected",m_selected},{"presets",rows},{"cursor",QJsonObject{{"outline",m_cursorOutline},{"center",m_cursorCenter},{"hoverOnly",m_cursorHoverOnly},{"width",m_cursorWidth},{"simple",m_cursorSimple},{"color",m_cursorColor},{"secondaryColor",m_cursorSecondaryColor}}},
                                      {"recentColors",QJsonArray::fromStringList(m_recentColors)}}).toJson(QJsonDocument::Compact);
 }
@@ -181,6 +198,7 @@ QByteArray BrushLibrary::exportPackage(bool includeSource) const {
     if(!p.pressure.isEmpty()){parameters["pressureDynamics"]=QJsonObject::fromVariantMap(p.pressure);preset["parameters"]=parameters;preset["behaviorVersion"]=p.pressure.contains("opacity")?3:2;auto caps=preset.value("requiredCapabilities").toArray();caps.append("pressure-curves");if(p.pressure.contains("opacity"))caps.append("opacity-pressure");preset["requiredCapabilities"]=caps;}
     if(!p.device.isEmpty()){parameters["tipDynamics"]=QJsonObject::fromVariantMap(p.device);preset["parameters"]=parameters;preset["behaviorVersion"]=4;auto caps=preset.value("requiredCapabilities").toArray();caps.append("tip-dynamics");preset["requiredCapabilities"]=caps;}
     if(!p.scatter.isEmpty()){parameters["scatterDynamics"]=QJsonObject::fromVariantMap(p.scatter);preset["parameters"]=parameters;preset["behaviorVersion"]=5;auto caps=preset.value("requiredCapabilities").toArray();caps.append("scatter-stamps");preset["requiredCapabilities"]=caps;}
+    if(!p.shape.isEmpty()){parameters["shapeJitter"]=QJsonObject::fromVariantMap(p.shape);preset["parameters"]=parameters;preset["behaviorVersion"]=6;auto caps=preset.value("requiredCapabilities").toArray();caps.append("shape-jitter");preset["requiredCapabilities"]=caps;}
     if(!p.maskResource.isEmpty())preset["tipResource"]=p.maskResource;
     if(!p.sourceResource.isEmpty())preset["sourceResource"]=p.sourceResource;
     return QJsonDocument(QJsonObject{{"packageId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"brushes",QJsonArray{preset}}}).toJson(QJsonDocument::Compact);
@@ -191,7 +209,7 @@ QByteArray BrushLibrary::catalogSnapshot() const {
 }
 bool BrushLibrary::applyNativeCatalog(const QByteArray &json) {
     const auto native=QJsonDocument::fromJson(json).object();
-    if((native.value("version").toInt()!=2 && native.value("version").toInt()!=3 && native.value("version").toInt()!=4 && native.value("version").toInt()!=5 && native.value("version").toInt()!=6 && native.value("version").toInt()!=7 && native.value("version").toInt()!=8) || !native.value("presets").isArray() || !native.value("selected").isString())return false;
+    if((native.value("version").toInt()!=2 && native.value("version").toInt()!=3 && native.value("version").toInt()!=4 && native.value("version").toInt()!=5 && native.value("version").toInt()!=6 && native.value("version").toInt()!=7 && native.value("version").toInt()!=8 && native.value("version").toInt()!=9) || !native.value("presets").isArray() || !native.value("selected").isString())return false;
     if(QJsonDocument(native).toJson(QJsonDocument::Compact)==catalogSnapshot())return true;
     auto state=QJsonDocument::fromJson(snapshot()).object();state["version"]=native.value("version");state["selected"]=native.value("selected");state["presets"]=native.value("presets");
     return restore(QJsonDocument(state).toJson(QJsonDocument::Compact));
@@ -207,7 +225,7 @@ bool BrushLibrary::importPackage(const QByteArray &json) {
     QString selected;
     for(const auto &value:brushes){
         const auto b=value.toObject();const auto params=b.value("parameters").toObject();QString id=b.value("id").toString();
-        if(QUuid(id).isNull() || b.value("behaviorVersion").toInt()!=(params.contains("scatterDynamics")?5:params.contains("tipDynamics")?4:params.value("pressureDynamics").toObject().contains("opacity")?3:params.contains("pressureDynamics")?2:1) || (b.value("engineProfile").toString()!="drawverse.brush" && b.value("engineProfile").toString()!="legacy.round"))return false;
+        if(QUuid(id).isNull() || b.value("behaviorVersion").toInt()!=(params.contains("shapeJitter")?6:params.contains("scatterDynamics")?5:params.contains("tipDynamics")?4:params.value("pressureDynamics").toObject().contains("opacity")?3:params.contains("pressureDynamics")?2:1) || (b.value("engineProfile").toString()!="drawverse.brush" && b.value("engineProfile").toString()!="legacy.round"))return false;
         if(ids.contains(id))id=QUuid::createUuid().toString(QUuid::WithoutBraces);
         ids.insert(id);if(selected.isEmpty())selected=id;
         QJsonObject row{{"id",id},{"name",b.value("name")},{"radius",params.value("diameter").toDouble()/2},{"opacity",params.value("dabOpacity")},{"spacing",params.value("spacing").toDouble()*2}};
@@ -216,7 +234,8 @@ bool BrushLibrary::importPackage(const QByteArray &json) {
         if(b.contains("sourceResource")){row["sourceResource"]=b.value("sourceResource");state["version"]=std::max(state.value("version").toInt(),4);}
         if(params.contains("pressureDynamics")){row["pressureDynamics"]=params.value("pressureDynamics");state["version"]=std::max(state.value("version").toInt(),params.value("pressureDynamics").toObject().contains("opacity")?6:5);}
         if(params.contains("tipDynamics")){row["tipDynamics"]=params.value("tipDynamics");state["version"]=std::max(state.value("version").toInt(),7);}
-        if(params.contains("scatterDynamics")){row["scatterDynamics"]=params.value("scatterDynamics");state["version"]=8;}
+        if(params.contains("scatterDynamics")){row["scatterDynamics"]=params.value("scatterDynamics");state["version"]=std::max(state.value("version").toInt(),8);}
+        if(params.contains("shapeJitter")){row["shapeJitter"]=params.value("shapeJitter");state["version"]=9;}
         rows.append(row);
     }
     state["presets"]=rows;state["selected"]=selected;
@@ -247,7 +266,7 @@ bool BrushLibrary::restore(const QByteArray &json) {
     if(json.size()>2*1024*1024)return false;
     const auto root=QJsonDocument::fromJson(json).object();const auto rows=root.value("presets").toArray();
     const int version=root.value("version").toInt();
-    if((version<1 || version>8) || rows.size()<4 || rows.size()>1024)return false;
+    if((version<1 || version>9) || rows.size()<4 || rows.size()>1024)return false;
     const QSet<QString> builtins{"round-pressure","round-fine","round-translucent","round-wide"};QSet<QString> seen;QList<Preset> restored;
     for(const auto &row:rows){const auto p=row.toObject();Preset b;b.id=p.value("id").toString();b.name=p.value("name").toString();b.radius=p.value("radius").toDouble(std::numeric_limits<double>::quiet_NaN());b.opacity=p.value("opacity").toDouble(std::numeric_limits<double>::quiet_NaN());b.spacing=p.value("spacing").toDouble(std::numeric_limits<double>::quiet_NaN());
         if(b.id.isEmpty() || b.id.size()>64 || seen.contains(b.id) || b.name.trimmed().isEmpty() || b.name.size()>80 || !std::isfinite(b.radius) || b.radius<.5 || b.radius>256 || !std::isfinite(b.opacity) || b.opacity<0 || b.opacity>1 || !std::isfinite(b.spacing) || b.spacing<.02 || b.spacing>1)return false;
@@ -264,6 +283,7 @@ bool BrushLibrary::restore(const QByteArray &json) {
         if(p.contains("pressureDynamics")){if(version<(p.value("pressureDynamics").toObject().contains("opacity")?6:5) || !p.value("pressureDynamics").isObject() || !validPressure(p.value("pressureDynamics").toObject()))return false;b.pressure=p.value("pressureDynamics").toObject().toVariantMap();b.pressure=canonicalPressure(b.pressure);}
         if(p.contains("tipDynamics")){if(version<7 || !p.value("tipDynamics").isObject() || !validDevice(p.value("tipDynamics").toObject()))return false;b.device=p.value("tipDynamics").toObject().toVariantMap();if(b.device==defaultDevice())b.device.clear();}
         if(p.contains("scatterDynamics")){if(version<8 || !p.value("scatterDynamics").isObject() || !validScatter(p.value("scatterDynamics").toObject()))return false;b.scatter=p.value("scatterDynamics").toObject().toVariantMap();if(b.scatter==defaultScatter())b.scatter.clear();}
+        if(p.contains("shapeJitter")){if(version<9 || !p.value("shapeJitter").isObject() || !validShape(p.value("shapeJitter").toObject()))return false;b.shape=p.value("shapeJitter").toObject().toVariantMap();if(b.shape==defaultShape())b.shape.clear();}
         if(version>=2){
             for(const auto &key:{"hardness","roundness","angle","flow"})if(!p.value(key).isDouble())return false;
             if(!p.value("pressureSize").isBool() || !p.value("pressureFlow").isBool())return false;

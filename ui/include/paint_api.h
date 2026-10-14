@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 39
+#define PAINT_ABI_MINOR 40
 
 #define PAINT_ABI_PATCH 0
 
@@ -125,6 +125,11 @@
 #define PAINT_FEATURE_PRESSURE_DYNAMICS 1073741824
 
 #define PAINT_FEATURE_SELECTION 4096
+
+/**
+ * Per-stamp size, angle and roundness jitter, state9 / VBR1.7.
+ */
+#define PAINT_FEATURE_SHAPE_JITTER 34359738368
 
 #define PAINT_FEATURE_SMUDGE 32768
 

@@ -70,8 +70,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 38) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.38 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 40) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.40 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -524,6 +524,7 @@ public:
             if(!tip.value("pressureDynamics").toMap().isEmpty()){row["pressureDynamics"]=QJsonObject::fromVariantMap(tip.value("pressureDynamics").toMap());state["version"]=tip.value("pressureDynamics").toMap().contains("opacity")?6:5;}
             if(!tip.value("tipDynamics").toMap().isEmpty()){row["tipDynamics"]=QJsonObject::fromVariantMap(tip.value("tipDynamics").toMap());state["version"]=7;}
             if(!tip.value("scatterDynamics").toMap().isEmpty()){row["scatterDynamics"]=QJsonObject::fromVariantMap(tip.value("scatterDynamics").toMap());state["version"]=8;}
+            if(!tip.value("shapeJitter").toMap().isEmpty()){row["shapeJitter"]=QJsonObject::fromVariantMap(tip.value("shapeJitter").toMap());state["version"]=9;}
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;

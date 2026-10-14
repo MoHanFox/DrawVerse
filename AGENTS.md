@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新形状抖动原生Qt：`docs/brush-shape-jitter-ui-design.md` / `docs/brush-shape-jitter-ui-validation.md`；ABI1.40/state9/VBR1.7、形状动态子页/真实预览与捕获/完整种子关闭值、最高目录版本/图片来源往返；解除package临时拒绝，其他动态与湿混继续后续。
+
 - 最新形状抖动IO：`docs/brush-shape-jitter-io-design.md` / `docs/brush-shape-jitter-io-validation.md`；state9/VBR1.7/behavior6、独立对象/完整种子/舍入前范围、真实组合两笔还原/图片来源保持；ABI1.39包入口暂拒绝保护旧Qt，原生Qt继续后续。
 
 - 最新形状抖动内核：`docs/brush-shape-jitter-design.md` / `docs/brush-shape-jitter-validation.md`；不可变大小/角度/圆度与下限、独立随机域/实际散布子印章、程序图片和四类写入/名义预算与历史；旧IO明确拒绝非默认新配置，状态/VBR/原生Qt继续后续，无ABI变化。

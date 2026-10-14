@@ -1,5 +1,9 @@
 # C ABI 1.38.0 契约
 
+## ABI 1.40 形状抖动入口
+
+`PAINT_FEATURE_SHAPE_JITTER=34359738368`，features为u64。state9/VBR1.7/behavior6/shape-jitter接入准确准备与Qt镜像，没有DTO变化。库package_read/write解除形状对象临时Unsupported边界；旧程序子集入口仍只支持原子集。UI要求至少ABI1.40。每预设保留独立对象和完整seed字符串，关闭不清配置，真实预览/绘画仅Rust执行；光标显示输入笔尖而非随机样本。见 `docs/brush-shape-jitter-ui-validation.md`。
+
 形状抖动IO阶段：Rust state9/VBR1.7/behavior6保存独立shapeJitter对象及16位十六进制u64种子；ABI仍1.39，Qt尚未接入。package_read/write暂对新对象返回Unsupported，读required=0且不改caller字节或资源目录，写不改目标；默认和既有包保留原路径。见 `docs/brush-shape-jitter-io-validation.md`。
 
 ## ABI 1.39 散布入口

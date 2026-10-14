@@ -8,6 +8,7 @@ ColumnLayout {
     id:root
     readonly property var library:PaintClient.brushLibrary
     property int category:0
+    property int shapePage:0
     property string inspectedSource:""
     readonly property var sourceInfo:PaintClient.brushSourceInfo
     function inspectSource() {
@@ -66,6 +67,8 @@ ColumnLayout {
                 }
                 ColumnLayout {
                     visible:root.category===1;Layout.fillWidth:true;spacing:5
+                    CompactComboBox {objectName:"settingsShapePage";Layout.fillWidth:true;model:["设备与压感","随机抖动"];currentIndex:root.shapePage;onActivated:root.shapePage=currentIndex;tooltip:"选择形状动态设置；两个页面的参数可同时作用。"}
+                    ColumnLayout {visible:root.shapePage===0;Layout.fillWidth:true;spacing:5
                     RowLayout {
                         Layout.fillWidth:true
                         Label {text:"角度控制";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
@@ -87,6 +90,17 @@ ColumnLayout {
                     }
                     CompactCheckBox {objectName:"settingsPressureSize";text:"大小压感";checked:root.library.pressureSize;font.pixelSize:10;onToggled:root.library.pressureSize=checked;tooltip:"按压力曲线和最低比例控制笔尖大小；关闭后保留曲线。"}
                     PressureCurveEditor {library:root.library;target:"size"}
+                    }
+                    ColumnLayout {visible:root.shapePage===1;Layout.fillWidth:true;spacing:5
+                        CompactCheckBox {objectName:"settingsShapeJitterEnabled";text:"启用形状抖动";checked:root.library.shapeJitterEnabled;font.pixelSize:10;onToggled:root.library.shapeJitterEnabled=checked;tooltip:"每个实际印章分别随机改变形状；关闭时保留参数。"}
+                        ColumnLayout {enabled:root.library.shapeJitterEnabled;Layout.fillWidth:true;spacing:5
+                            TipField {title:"大小抖动";field:"shapeSizeJitter";from:0;to:100;factor:100;unit:"%";help:"大小在最低比例与原始大小之间变化；不改变笔尖间距。";sliderName:"settingsShapeSizeJitter"}
+                            TipField {title:"最小直径比例";field:"shapeMinimumSize";from:0;to:100;factor:100;unit:"%";help:"随机大小相对于压感大小的最低比例。";sliderName:"settingsShapeMinimumSize"}
+                            TipField {title:"角度抖动";field:"shapeAngleJitter";from:0;to:100;factor:100;unit:"%";help:"最大随机偏移为此比例乘以180度，叠加到设备或路径角度。";sliderName:"settingsShapeAngleJitter"}
+                            TipField {title:"圆度抖动";field:"shapeRoundnessJitter";from:0;to:100;factor:100;unit:"%";help:"随机缩短笔尖短轴，叠加到基础和设备圆度。";sliderName:"settingsShapeRoundnessJitter"}
+                            TipField {title:"最低圆度比例";field:"shapeMinimumRoundness";from:1;to:100;factor:100;unit:"%";help:"随机圆度相对于当前圆度的最低比例，最终圆度至少1%。";sliderName:"settingsShapeMinimumRoundness"}
+                        }
+                    }
                 }
                 ColumnLayout {
                     visible:root.category===2;Layout.fillWidth:true;spacing:5
