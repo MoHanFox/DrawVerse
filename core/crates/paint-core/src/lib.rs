@@ -6,6 +6,8 @@ mod brush_smoothing;
 pub use brush_smoothing::BrushSmoothing;
 mod brush_catalog;
 mod brush_dual;
+mod brush_dual_color;
+pub use brush_dual_color::{DualColor, DualColorOrder};
 mod brush_dynamics;
 pub use brush_dual::{DualBrush, DualMode, DualSizeMode, DualSizing, DualWidthRule, SecondaryTip};
 mod brush_texture;

@@ -52,6 +52,11 @@ pub struct DualParameters {
 }
 impl DualParameters {
     pub fn from_core(dual: &DualBrush) -> Result<Self> {
+        if dual.color() != Default::default() {
+            return Err(Error::Unsupported(
+                "dual-color composition requires a newer format".into(),
+            ));
+        }
         let s = dual.secondary();
         let t = s.tip();
         let d = s.dynamics();

@@ -174,6 +174,13 @@ impl BrushProgram {
             definition.tip.pressure_size,
             &definition.dynamics.size,
         )?;
+        if dual.as_ref().is_some_and(|d| d.color.enabled())
+            && definition.brush.mode != crate::BrushMode::Paint
+        {
+            return Err(Error::InvalidArgument(
+                "dual-color painting requires paint mode",
+            ));
+        }
         Ok(Self {
             smoothing: definition.smoothing,
             write_blend: definition.write_blend,

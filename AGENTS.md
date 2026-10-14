@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新双色双笔刷内核：`docs/brush-dual-color-core-design.md` / `docs/brush-dual-color-core-validation.md`；真实两场分页/起笔before隔离合成、前后/背景/溢出与min软裁切、27贡献/工具混合/一次整笔opacity、选区/蒙版/锁及存储原子回滚，旧IO非默认明确拒绝；无ABI变化，格式/原生Qt/描边与复合光标继续后续。
+
 - 最新双笔刷相对尺寸原生Qt：`docs/brush-dual-size-ui-design.md` / `docs/brush-dual-size-ui-validation.md`；ABI1.47/state15/VBR1.13、居中偏移/跟随与固定宽度/标称尺寸说明、关闭/重置与最高版本、真实预览和在途像素/VBR重开；解除临时入口拒绝，双色合成/溢出/描边与复合光标继续后续。
 
 - 最新双笔刷尺寸IO：`docs/brush-dual-size-io-design.md` / `docs/brush-dual-size-io-validation.md`；state15/VBR1.13/behavior12、严格嵌套sizing/关闭与独立保留、组合时间平滑真实两笔与最高版本、ABI1.46原生准备/库包入口暂拒防旧Qt丢值；原生Qt/双色合成继续后续。

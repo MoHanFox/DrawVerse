@@ -164,6 +164,7 @@ pub struct DualBrush {
     mode: DualMode,
     secondary: Arc<SecondaryTip>,
     sizing: DualSizing,
+    color: crate::DualColor,
 }
 impl Default for DualBrush {
     fn default() -> Self {
@@ -172,6 +173,7 @@ impl Default for DualBrush {
             enabled: false,
             mode: DualMode::default(),
             sizing: DualSizing::default(),
+            color: crate::DualColor::default(),
             secondary: DEFAULT
                 .get_or_init(|| {
                     Arc::new(SecondaryTip {
@@ -190,6 +192,7 @@ impl DualBrush {
             mode,
             secondary: Arc::new(secondary),
             sizing: DualSizing::default(),
+            color: crate::DualColor::default(),
         }
     }
     pub fn enabled(&self) -> bool {
@@ -202,6 +205,13 @@ impl DualBrush {
     pub fn sizing(&self) -> DualSizing {
         self.sizing
     }
+    pub fn with_color(mut self, color: crate::DualColor) -> Self {
+        self.color = color;
+        self
+    }
+    pub fn color(&self) -> crate::DualColor {
+        self.color
+    }
     pub fn mode(&self) -> DualMode {
         self.mode
     }
@@ -213,6 +223,7 @@ impl DualBrush {
             && self.mode == DualMode::default()
             && self.secondary.is_default()
             && self.sizing == DualSizing::default()
+            && self.color == crate::DualColor::default()
     }
     pub(crate) fn compile(
         &self,
@@ -244,6 +255,7 @@ impl DualBrush {
                 f64::from(radius)
             },
             sizing: self.sizing,
+            color: self.color,
             primary_pressure_size,
             primary_size: primary_size.compile(),
             mode: self.mode,
@@ -262,12 +274,45 @@ pub(crate) struct CompiledDual {
     program: Box<BrushProgram>,
     step: Option<f64>,
     sizing: DualSizing,
+    pub(crate) color: crate::DualColor,
     primary_pressure_size: bool,
     primary_size: Option<crate::brush_dynamics::CompiledPressureControl>,
 }
 impl CompiledDual {
     pub fn step(&self) -> Option<f64> {
         self.step
+    }
+    pub fn colored_work(&self, count: usize, tool_blend: crate::BlendMode) -> usize {
+        let diameter = (self.maximum_radius
+            * 2.
+            * if self.program.has_mask() {
+                std::f64::consts::SQRT_2
+            } else {
+                1.
+            }
+            + 2.)
+            .ceil() as usize;
+        let tiles = (diameter.div_ceil(64) + 1).pow(2);
+        let cost = self.colored_cost(tool_blend);
+        count
+            .saturating_mul(self.maximum_count())
+            .saturating_mul(tiles * 4096)
+            .saturating_mul(cost)
+    }
+    pub fn colored_cost(&self, tool_blend: crate::BlendMode) -> usize {
+        4 + if self.color.primary_blend() != crate::BlendMode::Normal {
+            8
+        } else {
+            0
+        } + if self.color.secondary_blend() != crate::BlendMode::Normal {
+            8
+        } else {
+            0
+        } + if tool_blend != crate::BlendMode::Normal {
+            8
+        } else {
+            0
+        }
     }
     pub fn combine(&self, primary: f32, secondary: f32) -> f32 {
         self.mode.combine(primary, secondary)
@@ -312,7 +357,9 @@ impl CompiledDual {
                 && self.program.flow_pressure(before) != self.program.flow_pressure(after))
     }
     pub fn random_active(&self) -> bool {
-        self.program.scatter.enabled() || self.program.shape_jitter.active()
+        self.program.scatter.enabled()
+            || self.program.shape_jitter.active()
+            || self.color.random_active()
     }
     pub fn sample_cost(&self) -> usize {
         self.program.scatter.maximum_count() * if self.program.has_mask() { 8 } else { 1 }

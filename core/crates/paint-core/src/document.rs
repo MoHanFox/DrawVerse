@@ -12,6 +12,8 @@ pub const MAX_DIMENSION: u32 = 1_000_000;
 const MAX_DABS_PER_SEGMENT: usize = 8192;
 const MAX_PIXEL_VISITS_PER_SEGMENT: usize = 8_000_000;
 mod batch;
+#[path = "brush_dual_paint.rs"]
+mod dual_paint;
 pub(crate) mod groups;
 mod layer_actions;
 mod transform;
@@ -1179,6 +1181,11 @@ impl Document {
         let brush = definition.brush;
         let program = BrushProgram::compile(definition)?;
         first.validate()?;
+        if program.dual.as_ref().is_some_and(|d| d.color.enabled()) && first.tool == Tool::Eraser {
+            return Err(Error::InvalidArgument(
+                "dual-color eraser input is not supported",
+            ));
+        }
         let path_filter = crate::brush_smoothing::PathFilter::new(program.smoothing, first)?;
         Self::validate_stroke_work(
             brush,
@@ -1276,6 +1283,17 @@ impl Document {
 
     pub fn stroke_to(&mut self, point: InputPoint) -> Result<()> {
         let current = self.stroke.as_ref().ok_or(Error::NoStroke)?;
+        if current
+            .program
+            .dual
+            .as_ref()
+            .is_some_and(|d| d.color.enabled())
+            && point.tool == Tool::Eraser
+        {
+            return Err(Error::InvalidArgument(
+                "dual-color eraser input is not supported",
+            ));
+        }
         let Some(mut filter) = current.path_filter.clone() else {
             return self.stroke_to_direct(point);
         };
@@ -1323,11 +1341,12 @@ impl Document {
                     ((distance - secondary_next + 1e-9) / s).floor() as usize + 1
                 }
             });
-            let pressure_changed = stroke
-                .program
-                .dual
-                .as_ref()
-                .is_some_and(|d| d.pressure_changed(last.pressure, point.pressure));
+            let pressure_changed = stroke.program.dual.as_ref().is_some_and(|d| {
+                d.pressure_changed(last.pressure, point.pressure)
+                    || (d.color.enabled()
+                        && stroke.program.opacity_pressure(last.pressure)
+                            != stroke.program.opacity_pressure(point.pressure))
+            });
             let stationary = distance <= 1e-9;
             primary = primary.saturating_add(count).saturating_add(usize::from(
                 stationary
@@ -1358,14 +1377,16 @@ impl Document {
             return Err(Error::InvalidArgument("tablet time must be monotonic"));
         }
         let distance = (point.x - current.last.x).hypot(point.y - current.last.y);
-        let stationary_pressure =
-            distance <= 1e-9
-                && point.pressure != current.last.pressure
-                && (current.program.opacity_pressure(point.pressure).is_some()
-                    || current.program.dual.as_ref().is_some_and(|d| {
-                        d.pressure_changed(current.last.pressure, point.pressure)
-                    }))
-                && !matches!(current.brush.mode, BrushMode::Smudge { .. });
+        let stationary_pressure = distance <= 1e-9
+            && point.pressure != current.last.pressure
+            && (current.program.opacity_pressure(point.pressure).is_some()
+                || current.program.dual.as_ref().is_some_and(|d| {
+                    d.pressure_changed(current.last.pressure, point.pressure)
+                        || (d.color.enabled()
+                            && current.program.opacity_pressure(current.last.pressure)
+                                != current.program.opacity_pressure(point.pressure))
+                }))
+            && !matches!(current.brush.mode, BrushMode::Smudge { .. });
         let step = current.brush.step();
         let count = if distance + 1e-9 < current.distance_to_next {
             0
@@ -1375,7 +1396,11 @@ impl Document {
         let dual_step = current.program.dual.as_ref().and_then(|d| d.step());
         let secondary_stationary = distance <= 1e-9
             && current.program.dual.as_ref().is_some_and(|d| {
-                d.step().is_some() && d.pressure_changed(current.last.pressure, point.pressure)
+                d.step().is_some()
+                    && (d.pressure_changed(current.last.pressure, point.pressure)
+                        || (d.color.enabled()
+                            && current.program.opacity_pressure(current.last.pressure)
+                                != current.program.opacity_pressure(point.pressure)))
             });
         let secondary_count = dual_step.map_or(0, |secondary_step| {
             if distance + 1e-9 < current.dual_next {
@@ -1490,6 +1515,20 @@ impl Document {
             + usize::from(path.is_some());
         let (secondary_dabs, secondary_visits) =
             path.map_or((0, 0), |d| d.path_work(secondary_count));
+        let colored_visits = dual.filter(|d| d.color.enabled()).map_or(0, |d| {
+            let tiles = (diameter.div_ceil(64) + 1).pow(2);
+            count
+                .saturating_mul(tiles * 4096)
+                .saturating_mul(d.colored_cost(program.write_blend))
+                .saturating_add(d.colored_work(
+                    if d.step().is_some() {
+                        secondary_count
+                    } else {
+                        count
+                    },
+                    program.write_blend,
+                ))
+        });
         if count
             .saturating_mul(paired.map_or(1, |d| d.maximum_count()))
             .saturating_add(secondary_dabs)
@@ -1498,6 +1537,7 @@ impl Document {
                 .saturating_mul(diameter * diameter)
                 .saturating_mul(sample_cost)
                 .saturating_add(secondary_visits)
+                .saturating_add(colored_visits)
                 > MAX_PIXEL_VISITS_PER_SEGMENT
         {
             return Err(Error::ResourceLimit(
@@ -1682,6 +1722,14 @@ impl Document {
         ((1. - gray).clamp(0., 1.), a)
     }
     fn secondary_dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<()> {
+        if stroke
+            .program
+            .dual
+            .as_ref()
+            .is_some_and(|d| d.color.enabled() && d.step().is_some())
+        {
+            return self.colored_secondary_dab(stroke, point);
+        }
         let Some(dual) = stroke.program.dual.as_ref().filter(|d| d.step().is_some()) else {
             return Ok(());
         };
@@ -1857,6 +1905,14 @@ impl Document {
         }
     }
     fn dab_single(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
+        if stroke
+            .program
+            .dual
+            .as_ref()
+            .is_some_and(|d| d.color.enabled())
+        {
+            return self.colored_primary_dab(stroke, point);
+        }
         if stroke.program.dual.is_some() {
             self.dab_dispatch::<true>(stroke, point)
         } else {
