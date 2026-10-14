@@ -1,4 +1,4 @@
-//! VBR 1.1–1.8 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
+//! VBR 1.1–1.9 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
 use crate::{
     brush_resource::{decode_verified, valid_id},
     check,
@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 8;
+pub const MAX_EXECUTABLE_MINOR: u32 = 9;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -34,6 +34,7 @@ pub struct ImageBundle {
     pub package: Package,
     assets: BTreeMap<String, ImageAsset>,
     sources: Vec<crate::brush_source::SourceBatch>,
+    textures: std::sync::Mutex<BTreeMap<String, Arc<paint_core::TextureResource>>>,
 }
 impl ImageBundle {
     pub fn new(
@@ -56,6 +57,12 @@ impl ImageBundle {
             .filter_map(|b| b.tip_resource.as_ref())
             .cloned()
             .collect();
+        referenced.extend(package.brushes.iter().filter_map(|b| {
+            b.texture
+                .as_ref()
+                .and_then(|t| t.resource_id())
+                .map(str::to_owned)
+        }));
         for source in &sources {
             for id in source.tip_ids() {
                 referenced.insert(id.to_owned());
@@ -88,6 +95,7 @@ impl ImageBundle {
             package,
             assets,
             sources,
+            textures: Default::default(),
         };
         bundle.validate()?;
         Ok(bundle)
@@ -113,16 +121,88 @@ impl ImageBundle {
                     .mask(),
             );
         }
+        if let Some(t) = &preset.texture {
+            t.validate()?;
+            let resource = if let Some(id) = t.resource_id() {
+                let mut cache = self
+                    .textures
+                    .lock()
+                    .map_err(|_| Error::Invalid("texture cache lock"))?;
+                if !cache.contains_key(id) {
+                    drop(cache);
+                    self.prepare_textures()?;
+                    cache = self
+                        .textures
+                        .lock()
+                        .map_err(|_| Error::Invalid("texture cache lock"))?;
+                }
+                Some(
+                    cache
+                        .get(id)
+                        .ok_or(Error::Invalid("texture missing resource"))?
+                        .clone(),
+                )
+            } else {
+                None
+            };
+            definition.texture = t.bind(resource)?;
+        }
         Ok(definition)
+    }
+    fn prepare_textures(&self) -> Result<()> {
+        let ids = self
+            .package
+            .brushes
+            .iter()
+            .filter_map(|b| b.texture.as_ref().and_then(|t| t.resource_id()))
+            .collect::<BTreeSet<_>>();
+        let mut resident = self
+            .assets
+            .values()
+            .map(|a| a.mask.resident_bytes())
+            .sum::<usize>();
+        for id in &ids {
+            let source = &self
+                .assets
+                .get(*id)
+                .ok_or(Error::Invalid("missing texture resource"))?
+                .mask;
+            resident = resident.saturating_add(source.resident_bytes() - source.coverage().len());
+        }
+        if resident > MAX_CATALOG_MASK_BYTES {
+            return Err(Error::Limit("texture mip budget"));
+        }
+        let mut cache = self
+            .textures
+            .lock()
+            .map_err(|_| Error::Invalid("texture cache lock"))?;
+        cache.retain(|id, _| ids.contains(id.as_str()));
+        for id in ids {
+            if !cache.contains_key(id) {
+                let source = self.assets[id].mask.clone();
+                cache.insert(
+                    id.to_owned(),
+                    Arc::new(paint_core::TextureResource::new(source)),
+                );
+            }
+        }
+        Ok(())
     }
     pub fn validate(&self) -> Result<()> {
         self.package.validate()?;
+        self.prepare_textures()?;
         let mut referenced: BTreeSet<_> = self
             .package
             .brushes
             .iter()
             .filter_map(|b| b.tip_resource.as_deref())
             .collect();
+        referenced.extend(
+            self.package
+                .brushes
+                .iter()
+                .filter_map(|b| b.texture.as_ref().and_then(|t| t.resource_id())),
+        );
         let mut source_ids = BTreeSet::new();
         let mut originals = BTreeSet::new();
         let mut records = 0usize;
@@ -223,7 +303,14 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
     if !manifest.groups.is_empty() {
         return Err(Error::Unsupported("VBR groups".into()));
     }
-    if manifest.brushes.is_empty() || manifest.brushes.len() > 1024 || manifest.assets.len() > 4096
+    if manifest.brushes.is_empty()
+        || manifest.brushes.len() > 1024
+        || manifest.assets.len()
+            > if manifest.version.minor >= 9 {
+                5120
+            } else {
+                4096
+            }
     {
         return Err(Error::Limit("VBR resource/preset count"));
     }
@@ -241,6 +328,9 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             return Err(Error::Invalid("VBR preset identity mismatch"));
         }
         brushes.push(preset);
+    }
+    if manifest.version.minor < 9 && brushes.iter().any(|b| b.texture.is_some()) {
+        return Err(Error::Unsupported("texture require VBR1.9".into()));
     }
     if manifest.version.minor < 8
         && brushes
@@ -366,6 +456,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 || b.parameters.scatter_dynamics.is_some()
                 || b.parameters.shape_jitter.is_some()
                 || b.parameters.color_dynamics.is_some()
+                || b.texture.is_some()
         })
     {
         return vbr::encode(&bundle.package, token);
@@ -392,7 +483,9 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle
+            minor: if bundle.package.brushes.iter().any(|b| b.texture.is_some()) {
+                9
+            } else if bundle
                 .package
                 .brushes
                 .iter()

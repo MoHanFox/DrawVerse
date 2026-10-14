@@ -52,6 +52,7 @@ fn package() -> Package {
                 pressure_dynamics: Some(PressureParameters::from_core(&dynamics())),
             },
             tip_resource: None,
+            texture: None,
             source_resource: None,
         }],
     }

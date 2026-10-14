@@ -7,6 +7,7 @@ fn package() -> Package {
         package_id: "12345678-1234-1234-1234-123456789abc".into(),
         brushes: vec![Preset {
             tip_resource: None,
+            texture: None,
             source_resource: None,
             id: "12345678-1234-1234-1234-123456789abd".into(),
             name: "椭圆软笔".into(),

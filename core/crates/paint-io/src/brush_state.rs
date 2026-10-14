@@ -93,6 +93,12 @@ struct Row {
         deserialize_with = "crate::brush_color_dynamics::present"
     )]
     color_dynamics: Option<crate::brush_color_dynamics::ColorParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_texture::present"
+    )]
+    texture: Option<crate::brush_texture::TextureParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -160,10 +166,13 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=10) {
+    if !matches!(state.version, 1..=11) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
+    let mut textures = std::collections::BTreeMap::new();
+    let mut resident_masks = std::collections::BTreeSet::new();
+    let mut resident = 0usize;
     let mut references = std::collections::BTreeSet::new();
     for row in state.presets {
         crate::check(token)?;
@@ -181,6 +190,45 @@ fn decode_inner(
             )
         } else {
             None
+        };
+        if let Some(m) = &mask {
+            if resident_masks.insert(std::sync::Arc::as_ptr(m) as usize) {
+                resident = resident.saturating_add(m.resident_bytes());
+                if resident > mask_budget {
+                    return Err(Error::Limit("brush state resource budget"));
+                }
+            }
+        }
+        let texture = if let Some(t) = row.texture {
+            if state.version < 11 {
+                return Err(Error::Unsupported("texture require state11".into()));
+            }
+            let resource = if let Some(id) = t.resource_id() {
+                if !textures.contains_key(id) {
+                    let source = resources
+                        .ok_or(Error::Unsupported("texture resource store required".into()))?
+                        .load(id, token)?
+                        .mask;
+                    if resident_masks.insert(std::sync::Arc::as_ptr(&source) as usize) {
+                        resident = resident.saturating_add(source.resident_bytes());
+                    }
+                    resident =
+                        resident.saturating_add(source.resident_bytes() - source.coverage().len());
+                    if resident > mask_budget {
+                        return Err(Error::Limit("texture mip resource budget"));
+                    }
+                    textures.insert(
+                        id.to_owned(),
+                        std::sync::Arc::new(paint_core::TextureResource::new(source)),
+                    );
+                }
+                Some(textures[id].clone())
+            } else {
+                None
+            };
+            t.bind(resource)?
+        } else {
+            Default::default()
         };
         if let Some(id) = &row.source_resource {
             if state.version < 4 {
@@ -238,7 +286,7 @@ fn decode_inner(
             row.id,
             row.name,
             BrushSettings {
-                texture: Default::default(),
+                texture,
                 dynamics,
                 diameter: row.radius * 2.,
                 opacity: row.opacity,
@@ -269,11 +317,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
-        if !s.texture.is_default() {
-            return Err(Error::Unsupported(
-                "texture state IO not implemented".into(),
-            ));
-        }
+        let texture = if !s.texture.is_default() {
+            version = version.max(11);
+            Some(crate::brush_texture::TextureParameters::from_core(
+                &s.texture,
+            )?)
+        } else {
+            None
+        };
         let color_dynamics = if s.dynamics.color != paint_core::ColorDynamics::default() {
             version = version.max(10);
             Some(crate::brush_color_dynamics::ColorParameters::from_core(
@@ -362,6 +413,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             scatter_dynamics,
             shape_jitter,
             color_dynamics,
+            texture,
         });
     }
     serde_json::to_vec(&State {

@@ -10,6 +10,7 @@ pub mod brush_scatter;
 pub mod brush_shape_jitter;
 pub mod brush_source;
 pub mod brush_state;
+pub mod brush_texture;
 pub mod brush_tip_dynamics;
 mod ora;
 pub mod ps_descriptor;

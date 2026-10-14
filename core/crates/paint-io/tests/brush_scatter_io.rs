@@ -54,6 +54,7 @@ fn package(s: &BrushSettings) -> Package {
             behavior_version: 5,
             required_capabilities: caps,
             tip_resource: None,
+            texture: None,
             source_resource: None,
             parameters: Parameters {
                 diameter: s.diameter,

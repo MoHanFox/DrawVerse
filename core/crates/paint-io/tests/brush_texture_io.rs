@@ -1,7 +1,7 @@
 use paint_core::*;
 use std::sync::Arc;
 #[test]
-fn old_state_cannot_discard_closed_or_enabled_texture() {
+fn unidentified_texture_is_never_discarded_by_state() {
     for enabled in [false, true] {
         let mut c = BrushCatalog::default();
         c.edit(

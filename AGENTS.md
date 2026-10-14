@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新纹理IO：`docs/brush-texture-io-design.md` / `docs/brush-texture-io-validation.md`；state11/VBR1.9/behavior8、预设资源绑定/共享周期mip/预算预检、同源PNG与真实两笔/来源保持、6145条目边界；ABI1.41包暂拒绝新对象，原生Qt待接。
+
 - 最新纹理内核：`docs/brush-texture-design.md` / `docs/brush-texture-validation.md`；文档纸纹/笔尖局部、周期边界与面积mip/专用覆盖、资源共享预算/真实四类写入及历史；旧IO拒绝新配置，资源IO/VBR/原生Qt待接，无ABI变化。
 
 - 最新颜色动态原生Qt：`docs/brush-color-ui-design.md` / `docs/brush-color-ui-validation.md`；ABI1.41/背景DTO与旧入口兼容、两色捕获/state10/VBR1.8/模型、颜色分类/关闭可编辑/真实预览与像素/历史；解除package临时拒绝，纹理/双笔刷/湿混与ABR动态继续后续。

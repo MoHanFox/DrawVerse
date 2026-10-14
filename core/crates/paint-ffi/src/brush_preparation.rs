@@ -578,6 +578,7 @@ mod tests {
                 required_capabilities: vec!["procedural-tip".into()],
                 parameters: archive.info.baseline,
                 tip_resource: None,
+                texture: None,
                 source_resource: Some(source.clone()),
             }],
         };

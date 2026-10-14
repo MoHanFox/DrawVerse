@@ -1,5 +1,7 @@
 # C ABI 1.38.0 契约
 
+纹理IO阶段：Rust state11/VBR1.9/behavior8支持预设级texture资源绑定，ABI仍1.41，Qt尚未接。库package_read/write对texture暂返回Unsupported，读required=0且不改caller或持久资源，写不改目标；旧包保持。见 `docs/brush-texture-io-validation.md`。
+
 ## ABI 1.41 颜色动态与背景捕获
 
 `PAINT_FEATURE_COLOR_DYNAMICS=68719476736`（u64）。新增 `PaintBrushBackgroundDesc`（24字节：size/reserved/4线性RGBA，RGBA偏移8）及 `paint_session_begin_prepared_preset_with_background`。旧ToolDesc/导出布局不变，旧入口白色背景。新入口与前景tool同时复制背景为拥有的Pixel，size/reserved/RGBA/point校验、失败sequence=0，actor等准确准备后捕获完整预设，两色不借用caller内存；所有caller读取仍在pointers.rs。state10/VBR1.8/behavior7/model接Qt镜像，库package解除临时拒绝；旧程序子集接口保持原范围。见 `docs/brush-color-ui-validation.md`。

@@ -32,6 +32,7 @@ fn package(settings: &BrushSettings) -> Package {
             behavior_version: 4,
             required_capabilities: caps,
             tip_resource: None,
+            texture: None,
             source_resource: None,
             parameters: Parameters {
                 scatter_dynamics: None,

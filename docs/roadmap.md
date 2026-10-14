@@ -1,3 +1,5 @@
+纹理资源保存与VBR：[设计](brush-texture-io-design.md) / [验收](brush-texture-io-validation.md)。state11/VBR1.9/behavior8、资源共享与真实笔触恢复/完整来源并集已接IO；原生Qt待接，旧包入口暂拒绝新对象。
+
 纹理内核：[设计](brush-texture-design.md) / [验收](brush-texture-validation.md)。固定纸纹与局部纹理、周期mip/共享预算、共用真实写入及历史已实现；资源IO/VBR/原生Qt待接，本阶段没有新界面入口。
 
 颜色动态原生Qt：[设计](brush-color-ui-design.md) / [验收](brush-color-ui-validation.md)。ABI1.41、两色背景描述与捕获、颜色分类和关闭编辑、统一真实预览/绘画/保存交换已接，临时包边界解除；纹理/双笔刷/平滑/湿混与完整ABR待后续。

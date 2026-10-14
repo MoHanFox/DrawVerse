@@ -9,6 +9,54 @@ use paint_task::CancellationToken;
 use std::{ptr, sync::Arc};
 
 #[test]
+fn texture_package_boundary_keeps_output_and_existing_target() {
+    use std::collections::BTreeMap;
+    let temp = tempfile::tempdir().unwrap();
+    let token = CancellationToken::default();
+    let json=br#"{"packageId":"12345678-1234-4234-8234-123456789abc","brushes":[{"id":"12345678-1234-4234-8234-123456789abd","name":"texture","engineProfile":"drawverse.brush","behaviorVersion":8,"requiredCapabilities":["procedural-tip","texture-cover"],"texture":{"model":"periodic-coverage-v1","enabled":false,"space":"document","scale":2,"angle":0,"depth":0.5,"invert":false,"offsetX":0,"offsetY":0,"resource":null},"parameters":{"diameter":16,"spacing":0.01,"dabOpacity":1,"hardness":1,"roundness":1,"angle":0,"flow":1,"pressureSize":false,"pressureFlow":false}}]}"#;
+    let package = paint_io::vbr::Package::from_json(json).unwrap();
+    let bundle = paint_io::vbr_image::ImageBundle::new(package, BTreeMap::new(), &token).unwrap();
+    let input = temp.path().join("texture.vbr");
+    paint_io::vbr_image::save(&input, &bundle, &token).unwrap();
+    let target = temp.path().join("old.vbr");
+    std::fs::write(&target, b"original").unwrap();
+    // Caller data and owned handles remain alive for these synchronous calls.
+    unsafe {
+        let mut library = ptr::null_mut();
+        assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+        let path = input.to_str().unwrap();
+        let mut buffer = vec![42; 2 * 1024 * 1024];
+        let mut required = 99;
+        assert_eq!(
+            paint_brush_library_package_read(
+                library,
+                path.as_ptr(),
+                path.len() as u64,
+                buffer.as_mut_ptr(),
+                buffer.len() as u64,
+                &mut required
+            ),
+            PAINT_UNSUPPORTED
+        );
+        assert_eq!(required, 0);
+        assert!(buffer.iter().all(|b| *b == 42));
+        let path = target.to_str().unwrap();
+        assert_eq!(
+            paint_brush_library_package_write(
+                library,
+                path.as_ptr(),
+                path.len() as u64,
+                json.as_ptr(),
+                json.len() as u64
+            ),
+            PAINT_UNSUPPORTED
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"original");
+        assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+    }
+}
+
+#[test]
 fn color_package_public_entry_preserves_closed_model_and_seed() {
     use std::collections::BTreeMap;
     let temp = tempfile::tempdir().unwrap();
@@ -407,6 +455,7 @@ fn native_reader_and_writer_exchange_source_bundles_and_never_drop_provenance() 
             required_capabilities: vec!["procedural-tip".into()],
             parameters: archive.info.baseline,
             tip_resource: None,
+            texture: None,
             source_resource: Some(id.clone()),
         }],
     };
@@ -545,6 +594,7 @@ fn pressure_packages_round_trip_through_native_entry() {
             ],
             parameters,
             tip_resource: None,
+            texture: None,
             source_resource: None,
         }],
     };
