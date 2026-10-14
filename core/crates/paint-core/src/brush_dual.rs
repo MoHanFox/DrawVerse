@@ -290,13 +290,12 @@ impl CompiledDual {
             } else {
                 1.
             }
-            + 2.)
+            + 3.)
             .ceil() as usize;
-        let tiles = (diameter.div_ceil(64) + 1).pow(2);
         let cost = self.colored_cost(tool_blend);
         count
             .saturating_mul(self.maximum_count())
-            .saturating_mul(tiles * 4096)
+            .saturating_mul(diameter * diameter)
             .saturating_mul(cost)
     }
     pub fn colored_cost(&self, tool_blend: crate::BlendMode) -> usize {

@@ -422,6 +422,8 @@ pub struct Document {
     #[cfg(test)]
     reference_mix_path: bool,
     #[cfg(test)]
+    reference_color_tiles: bool,
+    #[cfg(test)]
     stagnant_mix_skips: usize,
     liquify: Option<liquify::LiquifyState>,
     transform: Option<transform::TransformState>,
@@ -648,6 +650,8 @@ impl Document {
             random_serial: 0,
             #[cfg(test)]
             reference_mix_path: false,
+            #[cfg(test)]
+            reference_color_tiles: false,
             #[cfg(test)]
             stagnant_mix_skips: 0,
             liquify: None,
@@ -1516,9 +1520,8 @@ impl Document {
         let (secondary_dabs, secondary_visits) =
             path.map_or((0, 0), |d| d.path_work(secondary_count));
         let colored_visits = dual.filter(|d| d.color.enabled()).map_or(0, |d| {
-            let tiles = (diameter.div_ceil(64) + 1).pow(2);
             count
-                .saturating_mul(tiles * 4096)
+                .saturating_mul((diameter + 1) * (diameter + 1))
                 .saturating_mul(d.colored_cost(program.write_blend))
                 .saturating_add(d.colored_work(
                     if d.step().is_some() {

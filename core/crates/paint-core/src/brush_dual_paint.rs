@@ -1,5 +1,27 @@
 //! Whole-stroke dual-color fields, sharing Document paging and transaction history.
 use super::*;
+#[derive(Default)]
+struct ChangedPixels(BTreeMap<TileCoord, [u64; 64]>);
+impl ChangedPixels {
+    fn new() -> Self {
+        Self::default()
+    }
+    fn extend(&mut self, other: Self) {
+        for (coord, rows) in other.0 {
+            let entry = self.0.entry(coord).or_insert([0; 64]);
+            for (dst, src) in entry.iter_mut().zip(rows) {
+                *dst |= src;
+            }
+        }
+    }
+    fn insert(&mut self, coord: TileCoord, updates: &[(usize, Pixel)]) {
+        let rows = self.0.entry(coord).or_insert([0; 64]);
+        for (i, _) in updates {
+            rows[i / 64] |= 1_u64 << (i % 64);
+        }
+    }
+}
+
 impl Document {
     fn color_field(
         &self,
@@ -9,7 +31,7 @@ impl Document {
         color: Pixel,
         limit: f32,
         sample: impl Fn(f64, f64) -> f32,
-    ) -> Result<BTreeSet<TileCoord>> {
+    ) -> Result<ChangedPixels> {
         let (ox, oy) = offset;
         let (x0, y0, x1, y1) = (
             (bounds.0.floor() as i64).clamp(0, i64::from(self.width)) - ox,
@@ -17,7 +39,7 @@ impl Document {
             (bounds.2.ceil() as i64).clamp(0, i64::from(self.width)) - ox,
             (bounds.3.ceil() as i64).clamp(0, i64::from(self.height)) - oy,
         );
-        let mut touched = BTreeSet::new();
+        let mut touched = ChangedPixels::new();
         if x0 >= x1 || y0 >= y1 {
             return Ok(touched);
         }
@@ -66,7 +88,9 @@ impl Document {
                             "dual-color field tile limit; entire stroke rolled back",
                         ));
                     }
+                    touched.insert(coord, &updates);
                     if field.get(&coord).is_some_and(Tile::can_edit_private) {
+                        drop(source);
                         Tile::edit_private(
                             field.get_mut(&coord).expect("color field"),
                             &self.pool,
@@ -79,23 +103,20 @@ impl Document {
                         for (i, value) in updates {
                             pixels[i] = value;
                         }
+                        drop(source);
                         let tile = Arc::new(Tile::from_pixels(pixels)?);
                         self.pool.attach(&tile)?;
                         field.insert(coord, tile);
                     }
-                    touched.insert(coord);
+                } else {
+                    drop(source);
                 }
-                drop(source);
                 self.pool.trim()?;
             }
         }
         Ok(touched)
     }
-    fn recompose_color(
-        &mut self,
-        stroke: &mut Stroke,
-        touched: BTreeSet<TileCoord>,
-    ) -> Result<bool> {
+    fn recompose_color(&mut self, stroke: &mut Stroke, touched: ChangedPixels) -> Result<bool> {
         let index = self.layer_index(stroke.layer)?;
         let layer = &self.layers[index];
         let appearance = layer.appearance;
@@ -118,7 +139,13 @@ impl Document {
             i64::from(appearance.offset_y),
         );
         let mut changed = false;
-        for coord in touched {
+        for (coord, rows) in touched.0 {
+            #[cfg(test)]
+            let rows = if self.reference_color_tiles {
+                [u64::MAX; 64]
+            } else {
+                rows
+            };
             let (tx, ty) = (coord.signed_x(), coord.signed_y());
             let current = self.layers[index]
                 .tiles
@@ -141,21 +168,20 @@ impl Document {
                 .get(&coord)
                 .map(|t| t.try_pixels())
                 .transpose()?;
-            let mut pixels = current.as_ref().map_or_else(
-                || {
-                    (0..4096)
-                        .map(|i| {
-                            self.layers[index].default_pixel(
-                                i64::from(tx) * 64 + (i % 64) as i64,
-                                i64::from(ty) * 64 + (i / 64) as i64,
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                },
-                |p| p.to_vec(),
-            );
-            let mut tile_changed = false;
+            let private = stroke.before.contains_key(&coord)
+                && self.layers[index]
+                    .tiles
+                    .get(&coord)
+                    .is_some_and(Tile::can_edit_private);
+            #[cfg(test)]
+            let private = private && !self.reference_color_tiles;
+            let mut updates = Vec::new();
+            let mut pixels: Option<Vec<Pixel>> = None;
             for row in 0..64 {
+                let mut bits = rows[row as usize];
+                if bits == 0 {
+                    continue;
+                }
                 let y = i64::from(ty) * 64 + row;
                 let selected = if self.selection.enabled() {
                     self.selection_cache
@@ -163,7 +189,9 @@ impl Document {
                 } else {
                     [1.; 64]
                 };
-                for column in 0..64 {
+                while bits != 0 {
+                    let column = i64::from(bits.trailing_zeros());
+                    bits &= bits - 1;
                     let x = i64::from(tx) * 64 + column;
                     let wx = x + ox;
                     let wy = y + oy;
@@ -234,13 +262,45 @@ impl Document {
                             stroke.random_stroke,
                         )
                     };
-                    if pixels[i] != after {
-                        pixels[i] = after;
-                        tile_changed = true;
+                    let before = current
+                        .as_ref()
+                        .map_or(self.layers[index].default_pixel(x, y), |p| p[i]);
+                    if before != after {
+                        if private {
+                            updates.push((i, after));
+                        } else {
+                            pixels.get_or_insert_with(|| {
+                                current.as_ref().map_or_else(
+                                    || {
+                                        (0..4096)
+                                            .map(|j| {
+                                                self.layers[index].default_pixel(
+                                                    i64::from(tx) * 64 + (j % 64) as i64,
+                                                    i64::from(ty) * 64 + (j / 64) as i64,
+                                                )
+                                            })
+                                            .collect()
+                                    },
+                                    |p| p.to_vec(),
+                                )
+                            })[i] = after;
+                        }
                     }
                 }
             }
-            if tile_changed {
+            drop(current);
+            let tile_changed = !updates.is_empty() || pixels.is_some();
+            if !updates.is_empty() {
+                Tile::edit_private(
+                    self.layers[index]
+                        .tiles
+                        .get_mut(&coord)
+                        .expect("private color tile"),
+                    &self.pool,
+                    &updates,
+                )?;
+            }
+            if let Some(pixels) = pixels {
                 if !self.layers[index].tiles.contains_key(&coord)
                     && self.tile_count() >= self.options.max_document_tiles
                 {
@@ -252,6 +312,8 @@ impl Document {
                 let tile = Arc::new(Tile::from_pixels(pixels)?);
                 self.pool.attach(&tile)?;
                 self.layers[index].tiles.insert(coord, tile);
+            }
+            if tile_changed {
                 if ox == 0 && oy == 0 {
                     self.dirty_tile(coord);
                 } else {
@@ -260,7 +322,6 @@ impl Document {
                 }
                 changed = true;
             }
-            drop(current);
             drop(original_pixels);
             drop(main);
             drop(second);
@@ -302,7 +363,7 @@ impl Document {
             i64::from(appearance.offset_y),
         );
         let limit = program.opacity_pressure(point.pressure).unwrap_or(1.);
-        let mut touched = BTreeSet::new();
+        let mut touched = ChangedPixels::new();
         for child in 0..plan.count() {
             touched.extend(self.color_field(
                 &mut stroke.dual_coverage,
@@ -418,6 +479,193 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn definition(
+        path: bool,
+        front: bool,
+        overflow: bool,
+        mode: crate::BlendMode,
+    ) -> BrushDefinition {
+        let tip = crate::BrushTip {
+            hardness: 0.4,
+            flow: 0.4,
+            pressure_size: false,
+            pressure_flow: false,
+            ..Default::default()
+        };
+        let second = crate::SecondaryTip::new(6., tip, None, Default::default()).unwrap();
+        let second = if path {
+            second.with_spacing(0.25).unwrap()
+        } else {
+            second
+        };
+        let color = crate::DualColor::new(
+            true,
+            true,
+            overflow,
+            if front {
+                crate::DualColorOrder::SecondInFront
+            } else {
+                crate::DualColorOrder::SecondBehind
+            },
+            mode,
+            crate::BlendMode::Screen,
+        )
+        .unwrap();
+        BrushDefinition {
+            brush: Brush {
+                radius: 4.,
+                spacing: 0.5,
+                opacity: 0.4,
+                color: Pixel::from_straight([0.8, 0.2, 0.1, 0.7]).unwrap(),
+                background_color: Pixel::from_straight([0.1, 0.3, 0.8, 0.8]).unwrap(),
+                ..Default::default()
+            },
+            tip,
+            dynamics: crate::BrushDynamics {
+                pressure_opacity: true,
+                color: crate::ColorDynamics::new(true, 0.5, 0.1, 0.2, 0.2, true, 17).unwrap(),
+                ..Default::default()
+            },
+            dual: crate::DualBrush::new(true, crate::DualMode::Multiply, second).with_color(color),
+            write_blend: mode,
+            ..Default::default()
+        }
+    }
+    fn records(d: &Document) -> Vec<Vec<(TileCoord, Vec<Pixel>)>> {
+        d.layers
+            .iter()
+            .map(|l| {
+                l.tiles
+                    .iter()
+                    .map(|(c, t)| (*c, t.try_pixels().unwrap().to_vec()))
+                    .collect()
+            })
+            .collect()
+    }
+    #[test]
+    fn changed_pixels_match_full_tiles_all_modes_targets_paths_orders_and_overflow() {
+        for id in 0..27 {
+            for target in 0..3 {
+                for path in [false, true] {
+                    for front in [false, true] {
+                        for overflow in [false, true] {
+                            let mode = crate::BlendMode::from_id(id).unwrap();
+                            let mut fast = Document::new(32, 32).unwrap();
+                            let mut reference = Document::new(32, 32).unwrap();
+                            reference.reference_color_tiles = true;
+                            for d in [&mut fast, &mut reference] {
+                                d.initialize_white_background().unwrap();
+                                if target == 1 {
+                                    let mut a = d.layer(1).unwrap().appearance();
+                                    a.locks = crate::LOCK_TRANSPARENCY;
+                                    d.set_layer_appearance(1, a).unwrap();
+                                }
+                                if target == 2 {
+                                    d.add_mask(1).unwrap();
+                                }
+                                d.set_selection(
+                                    crate::Selection::default()
+                                        .apply(
+                                            crate::SelectionShape::geometry(
+                                                crate::SelectionKind::Ellipse,
+                                                3.,
+                                                3.,
+                                                25.,
+                                                25.,
+                                                true,
+                                            ),
+                                            crate::SelectionOperation::Replace,
+                                            32,
+                                            32,
+                                        )
+                                        .unwrap(),
+                                )
+                                .unwrap();
+                                d.begin_brush_stroke(
+                                    definition(path, front, overflow, mode),
+                                    InputPoint::new(8.5, 16.5, 0.3),
+                                )
+                                .unwrap();
+                                for (x, p) in [(24.5, 0.8), (8.5, 0.5), (24.5, 1.)] {
+                                    d.stroke_to(InputPoint::new(x, 16.5, p)).unwrap();
+                                }
+                                d.end_stroke().unwrap();
+                            }
+                            assert_eq!(records(&fast),records(&reference),"mode={id} target={target} path={path} front={front} overflow={overflow}");
+                            assert_eq!(fast.history_depth(), reference.history_depth());
+                            fast.undo().unwrap();
+                            reference.undo().unwrap();
+                            assert_eq!(records(&fast), records(&reference));
+                            fast.redo().unwrap();
+                            reference.redo().unwrap();
+                            assert_eq!(records(&fast), records(&reference));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn color_private_writes_keep_before_and_shared_snapshots_immutable() {
+        let mut d = Document::new(64, 64).unwrap();
+        d.begin_brush_stroke(
+            definition(false, false, true, crate::BlendMode::Normal),
+            InputPoint::new(16.5, 32.5, 1.),
+        )
+        .unwrap();
+        let coord = TileCoord::from_signed(0, 0);
+        let id = d.layers[0].tiles[&coord].id;
+        d.stroke_to(InputPoint::new(24.5, 32.5, 1.)).unwrap();
+        assert_eq!(d.layers[0].tiles[&coord].id, id);
+        let snapshot = d.snapshot();
+        let pixels = snapshot.layers[0].tiles[&coord]
+            .try_pixels()
+            .unwrap()
+            .to_vec();
+        d.stroke_to(InputPoint::new(40.5, 32.5, 1.)).unwrap();
+        assert_ne!(d.layers[0].tiles[&coord].id, id);
+        assert_eq!(
+            snapshot.layers[0].tiles[&coord]
+                .try_pixels()
+                .unwrap()
+                .to_vec(),
+            pixels
+        );
+        d.cancel_stroke().unwrap();
+        assert_eq!(d.tile_count(), 0);
+        assert_eq!(d.history_depth(), (0, 0));
+    }
+    #[test]
+    fn one_percent_dense_segment_is_accepted_and_matches_split_input() {
+        for path in [false, true] {
+            let mut b = definition(path, false, true, crate::BlendMode::Normal);
+            b.brush.spacing = 0.02;
+            let second = crate::SecondaryTip::new(6., b.tip, None, Default::default()).unwrap();
+            let second = if path {
+                second.with_spacing(0.01).unwrap()
+            } else {
+                second
+            };
+            b.dual = crate::DualBrush::new(true, crate::DualMode::Multiply, second)
+                .with_color(b.dual.color());
+            let mut whole = Document::new(64, 64).unwrap();
+            let mut split = Document::new(64, 64).unwrap();
+            for d in [&mut whole, &mut split] {
+                d.begin_brush_stroke(b.clone(), InputPoint::new(8.5, 32.5, 1.))
+                    .unwrap();
+            }
+            whole.stroke_to(InputPoint::new(56.5, 32.5, 1.)).unwrap();
+            for i in 1..=48 {
+                split
+                    .stroke_to(InputPoint::new(8.5 + i as f64, 32.5, 1.))
+                    .unwrap();
+            }
+            whole.end_stroke().unwrap();
+            split.end_stroke().unwrap();
+            assert_eq!(records(&whole), records(&split));
+            assert_eq!(whole.history_depth(), (1, 0));
+        }
+    }
     #[test]
     fn color_storage_failure_rolls_back_the_whole_active_stroke() {
         let mut d = Document::with_options(
