@@ -1,4 +1,6 @@
-纹理准备桥：[设计](brush-texture-bridge-design.md) / [验收](brush-texture-bridge-validation.md)。纹理交接采用、在途保持、闲置源与mip释放及准确重建已接原生准备；Qt设置和公开包入口待接。
+纹理原生Qt：[设计](brush-texture-ui-design.md) / [验收](brush-texture-ui-validation.md)。ABI1.42/state11/VBR1.9、纹理设置与捕获目标PNG导入、真实预览/绘画/历史、独占与同源和ABR来源包交换已接；库package解除临时拒绝。双笔刷、平滑、湿混及完整ABR继续后续。
+
+纹理准备桥：[设计](brush-texture-bridge-design.md) / [验收](brush-texture-bridge-validation.md)。纹理交接采用、在途保持、闲置源与mip释放及准确重建已接原生准备；Qt设置和公开包入口现已接入。
 
 纹理资源保存与VBR：[设计](brush-texture-io-design.md) / [验收](brush-texture-io-validation.md)。state11/VBR1.9/behavior8、资源共享与真实笔触恢复/完整来源并集已接IO；原生Qt待接，旧包入口暂拒绝新对象。
 

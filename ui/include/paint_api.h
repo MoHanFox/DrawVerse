@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 41
+#define PAINT_ABI_MINOR 42
 
 #define PAINT_ABI_PATCH 0
 
@@ -81,6 +81,11 @@
 #define PAINT_FEATURE_BRUSH_SCATTER 17179869184
 
 #define PAINT_FEATURE_BRUSH_SOURCES 134217728
+
+/**
+ * Periodic texture coverage with resource-preserving state11 / VBR1.9 exchange.
+ */
+#define PAINT_FEATURE_BRUSH_TEXTURE 137438953472
 
 #define PAINT_FEATURE_BRUSH_TIP 1048576
 

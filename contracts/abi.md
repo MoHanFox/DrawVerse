@@ -1,6 +1,10 @@
-# C ABI 1.38.0 契约
+# C ABI 1.42.0 契约
 
-纹理IO阶段：Rust state11/VBR1.9/behavior8支持预设级texture资源绑定，ABI仍1.41，Qt尚未接。库package_read/write对texture暂返回Unsupported，读required=0且不改caller或持久资源，写不改目标；旧包保持。见 `docs/brush-texture-io-validation.md`。
+## ABI 1.42 纹理资源与设置入口
+
+`PAINT_FEATURE_BRUSH_TEXTURE=137438953472`（u64）。现有准确准备与库包读写支持 state11/VBR1.9/behavior8 的预设级 texture 对象，PNG 导入沿既有覆盖资源接口。无 DTO 布局变化。库包解除临时拒绝，导出覆盖当前笔尖、纹理与来源基线 PNG 并集；无库上下文的旧程序包接口继续明确拒绝纹理。Qt 严格保存完整模型/资源/关闭值，真实预览和绘画仅由 Rust 执行，导入捕获预设与目标角色。见 `docs/brush-texture-ui-design.md`。
+
+历史纹理IO阶段：Rust state11/VBR1.9/behavior8支持预设级texture资源绑定，当时ABI1.41、Qt未接。临时包拒绝已由ABI1.42入口取代，阶段证据见 `docs/brush-texture-io-validation.md`。
 
 ## ABI 1.41 颜色动态与背景捕获
 

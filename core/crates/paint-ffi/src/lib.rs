@@ -144,6 +144,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                     | PAINT_FEATURE_ABR_IMPORT
                     | PAINT_FEATURE_VBR_SOURCES
                     | PAINT_FEATURE_COLOR_DYNAMICS
+                    | PAINT_FEATURE_BRUSH_TEXTURE
                     | PAINT_FEATURE_SHAPE_JITTER
                     | PAINT_FEATURE_BRUSH_SCATTER
                     | PAINT_FEATURE_BRUSH_POSE

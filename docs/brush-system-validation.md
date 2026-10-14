@@ -4,7 +4,7 @@
 
 设计：[brush-system-design.md](brush-system-design.md)；格式：[vbr-format-design.md](vbr-format-design.md)。各实施阶段在本文件追加真实结果、命令、环境和限制，不把计划改写成“已通过”。
 
-纹理原生准备生命周期结果见 [brush-texture-bridge-validation.md](brush-texture-bridge-validation.md)：纹理交接/准确准备与源及mip释放已完成；Qt设置、用户包入口、其他动态与湿混仍待后续，不代表整体完成。
+纹理原生Qt结果见 [brush-texture-ui-validation.md](brush-texture-ui-validation.md)：ABI1.42/纹理分类、捕获目标资源导入、真实像素历史、state11/VBR1.9与来源并集已完成。准备生命周期见 [brush-texture-bridge-validation.md](brush-texture-bridge-validation.md)。双笔刷、平滑、湿混、完整ABR映射、VBR扩展和总体性能验收仍待后续，不代表整体完成。
 
 ## 1. 定义、迁移与资源
 

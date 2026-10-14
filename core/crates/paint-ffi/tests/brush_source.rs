@@ -9,7 +9,7 @@ use paint_task::CancellationToken;
 use std::{ptr, sync::Arc};
 
 #[test]
-fn texture_package_boundary_keeps_output_and_existing_target() {
+fn texture_package_public_entry_preserves_closed_null_resource() {
     use std::collections::BTreeMap;
     let temp = tempfile::tempdir().unwrap();
     let token = CancellationToken::default();
@@ -36,10 +36,10 @@ fn texture_package_boundary_keeps_output_and_existing_target() {
                 buffer.len() as u64,
                 &mut required
             ),
-            PAINT_UNSUPPORTED
+            PAINT_OK
         );
-        assert_eq!(required, 0);
-        assert!(buffer.iter().all(|b| *b == 42));
+        let read = paint_io::vbr::Package::from_json(&buffer[..required as usize]).unwrap();
+        assert_eq!(read.to_json().unwrap(), bundle.package.to_json().unwrap());
         let path = target.to_str().unwrap();
         assert_eq!(
             paint_brush_library_package_write(
@@ -49,9 +49,13 @@ fn texture_package_boundary_keeps_output_and_existing_target() {
                 json.as_ptr(),
                 json.len() as u64
             ),
-            PAINT_UNSUPPORTED
+            PAINT_OK
         );
-        assert_eq!(std::fs::read(&target).unwrap(), b"original");
+        let restored = paint_io::vbr_image::load(&target, &token).unwrap();
+        assert_eq!(
+            restored.package.to_json().unwrap(),
+            bundle.package.to_json().unwrap()
+        );
         assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
     }
 }

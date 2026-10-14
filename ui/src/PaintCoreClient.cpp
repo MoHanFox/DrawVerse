@@ -70,8 +70,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 41) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.41 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 42) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.42 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -174,12 +174,12 @@ public:
         if(status==PAINT_OK)record.resize(qsizetype(required));
         emit brushSourceReady(identity,token,status==PAINT_OK?record:QByteArray{},status==PAINT_OK?QString{}:immediateError(status));
     }
-    void importBrushTip(QString path,QString target,int interpretation) {
+    void importBrushTip(QString path,QString target,int interpretation,bool texture=false) {
         PaintBrushLibrary *library=nullptr;
         {QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
         const auto encoded=path.toUtf8();QByteArray identity(64,'\0');uint64_t required=0;uint32_t depth=0;
         const auto status=paint_brush_library_import_tip_file(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),quint32(interpretation),reinterpret_cast<uint8_t*>(identity.data()),64,&required,&depth);
-        emit brushTipReady(target,status==PAINT_OK?QString::fromLatin1(identity):QString{},depth,status==PAINT_OK?QString{}:immediateError(status));
+        emit brushTipReady(target,status==PAINT_OK?QString::fromLatin1(identity):QString{},depth,status==PAINT_OK?QString{}:immediateError(status),texture);
     }
     void brushFile(QString path,QByteArray package,bool exporting) {
         if(m_stopped){emit brushFileReady({},QStringLiteral("后端已关闭"),exporting,false);return;}
@@ -197,7 +197,7 @@ public:
 signals:
     void brushSourceReady(QString identity,quint64 token,QByteArray record,QString error);
     void brushOutlineReady(QString identity,QString path,QString error);
-    void brushTipReady(QString target,QString resource,int depth,QString error);
+    void brushTipReady(QString target,QString resource,int depth,QString error,bool texture);
     void nativeBrushCatalog(quint64 preparation,QByteArray state,QString error);
     void brushFileReady(QByteArray package,QString error,bool exporting,bool abr);
     void layerClipboardReady(QByteArray bytes);
@@ -526,6 +526,7 @@ public:
             if(!tip.value("scatterDynamics").toMap().isEmpty()){row["scatterDynamics"]=QJsonObject::fromVariantMap(tip.value("scatterDynamics").toMap());state["version"]=8;}
             if(!tip.value("shapeJitter").toMap().isEmpty()){row["shapeJitter"]=QJsonObject::fromVariantMap(tip.value("shapeJitter").toMap());state["version"]=9;}
             if(!tip.value("colorDynamics").toMap().isEmpty()){row["colorDynamics"]=QJsonObject::fromVariantMap(tip.value("colorDynamics").toMap());state["version"]=10;}
+            if(!tip.value("texture").toMap().isEmpty()){row["texture"]=QJsonObject::fromVariantMap(tip.value("texture").toMap());state["version"]=11;}
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
@@ -635,11 +636,11 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         const auto identity=m_brushLibrary->sourceResource();if(identity==m_brushSourceIdentity)return;
         m_brushSourceIdentity=identity;++m_brushSourceToken;m_brushSourceInfo.clear();m_brushSourceMessage.clear();m_brushSourceBusy=false;emit brushSourceChanged();
     });
-    connect(m_worker,&BackendWorker::brushTipReady,this,[this](const QString &target,const QString &resource,int depth,const QString &error){
+    connect(m_worker,&BackendWorker::brushTipReady,this,[this](const QString &target,const QString &resource,int depth,const QString &error,bool texture){
         bool success=error.isEmpty();
-        if(success && !m_brushLibrary->setMaskResource(target,resource)){success=false;showError(QStringLiteral("目标笔刷已删除，未应用图片笔尖"));}
+        if(success && !(texture?m_brushLibrary->setTextureResource(target,resource):m_brushLibrary->setMaskResource(target,resource))){success=false;showError(QStringLiteral("目标笔刷已删除，未应用图片资源"));}
         if(!error.isEmpty())showError(error);
-        m_brushImportMessage=success?(depth==16?QStringLiteral("已导入：16 位覆盖已转换为 8 位"):QStringLiteral("图片笔尖已导入")):QString{};
+        m_brushImportMessage=success?(depth==16?QStringLiteral("已导入：16 位覆盖已转换为 8 位"):texture?QStringLiteral("纹理已导入"):QStringLiteral("图片笔尖已导入")):QString{};
         m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
     });
     connect(m_brushLibrary,&BrushLibrary::cursorChanged,this,&PaintCoreClient::brushCursorPreferencesChanged);
@@ -1487,6 +1488,11 @@ bool PaintCoreClient::importBrushTip(const QUrl &path,int interpretation) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty() || interpretation<0 || interpretation>2)return false;
     const auto target=m_brushLibrary->selectedId();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),target,interpretation]{worker->importBrushTip(path,target,interpretation);},Qt::QueuedConnection);return true;
+}
+bool PaintCoreClient::importBrushTexture(const QUrl &path,int interpretation) {
+    if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty() || interpretation<0 || interpretation>2)return false;
+    const auto target=m_brushLibrary->selectedId();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),target,interpretation]{worker->importBrushTip(path,target,interpretation,true);},Qt::QueuedConnection);return true;
 }
 void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
     if(!m_brushPreferencePersistenceEnabled || m_closing)return;

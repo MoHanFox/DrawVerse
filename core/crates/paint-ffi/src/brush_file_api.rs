@@ -87,7 +87,7 @@ pub unsafe extern "C" fn paint_brush_package_write(
         if package.brushes.iter().any(|b| b.texture.is_some()) {
             return Err(ApiError::new(
                 PAINT_UNSUPPORTED,
-                "texture requires a newer frontend",
+                "texture requires a library resource context",
             ));
         }
         paint_io::vbr::save(Path::new(&path), &package, &CancellationToken::default())
@@ -115,12 +115,6 @@ pub unsafe extern "C" fn paint_brush_library_package_read(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
-        if bundle.package.brushes.iter().any(|b| b.texture.is_some()) {
-            return Err(ApiError::new(
-                PAINT_UNSUPPORTED,
-                "texture requires a newer frontend",
-            ));
-        }
         let bytes = bundle.package.to_json().map_err(io_error)?;
         if pointers::length(capacity)? < bytes.len() {
             pointers::write(required, bytes.len() as u64)?;
@@ -151,12 +145,6 @@ pub unsafe extern "C" fn paint_brush_library_package_write(
         let json = pointers::brush_json(json, json_length)?;
         let library = runtime::registry()?.brush_library(library)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
-        if package.brushes.iter().any(|b| b.texture.is_some()) {
-            return Err(ApiError::new(
-                PAINT_UNSUPPORTED,
-                "texture requires a newer frontend",
-            ));
-        }
         let mut assets = std::collections::BTreeMap::new();
         let token = CancellationToken::default();
         let mut sources = Vec::new();
@@ -165,7 +153,20 @@ pub unsafe extern "C" fn paint_brush_library_package_write(
             .iter()
             .filter_map(|b| b.source_resource.clone())
             .collect::<std::collections::BTreeSet<_>>();
-        if package.brushes.iter().any(|b| b.tip_resource.is_some()) || !source_ids.is_empty() {
+        let texture_ids = package
+            .brushes
+            .iter()
+            .filter_map(|b| {
+                b.texture
+                    .as_ref()
+                    .and_then(|t| t.resource_id())
+                    .map(str::to_owned)
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        if package.brushes.iter().any(|b| b.tip_resource.is_some())
+            || !source_ids.is_empty()
+            || !texture_ids.is_empty()
+        {
             let store = library.resource_store()?;
             if !source_ids.is_empty() {
                 sources = store
@@ -179,6 +180,7 @@ pub unsafe extern "C" fn paint_brush_library_package_write(
                 .iter()
                 .filter_map(|b| b.tip_resource.clone())
                 .collect::<std::collections::BTreeSet<_>>();
+            tips.extend(texture_ids);
             for source in &sources {
                 tips.extend(source.tip_ids().map(str::to_owned));
             }
