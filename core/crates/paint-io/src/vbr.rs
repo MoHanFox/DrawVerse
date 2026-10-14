@@ -123,6 +123,12 @@ pub struct Preset {
         deserialize_with = "crate::brush_dual::present"
     )]
     pub dual_brush: Option<crate::brush_dual::DualParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_smoothing::present"
+    )]
+    pub smoothing: Option<crate::brush_smoothing::SmoothingParameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_resource: Option<String>,
 }
@@ -243,7 +249,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if b.has_smooth() {
+                != if b.smoothing.is_some() {
+                    11
+                } else if b.has_smooth() {
                     10
                 } else if dual {
                     9
@@ -288,6 +296,7 @@ impl Package {
                             | "texture-cover"
                             | "dual-cover"
                             | "pressure-smooth"
+                            | "path-smoothing"
                     )
                 })
             {
@@ -299,10 +308,15 @@ impl Package {
             {
                 return Err(Error::Invalid("VBR source identity"));
             }
-            if b.has_smooth()
+            if b.smoothing.is_some()
                 != b.required_capabilities
                     .iter()
-                    .any(|c| c == "pressure-smooth")
+                    .any(|c| c == "path-smoothing")
+                || (b.smoothing.is_some() && b.engine_profile != "drawverse.brush")
+                || b.has_smooth()
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "pressure-smooth")
                 || (b.has_smooth() && b.engine_profile != "drawverse.brush")
                 || pressure
                     != b.required_capabilities
@@ -334,7 +348,10 @@ impl Package {
             {
                 return Err(Error::Invalid("VBR pressure behavior/capability"));
             }
-            let definition = b.parameters.definition();
+            let mut definition = b.parameters.definition();
+            if let Some(p) = b.smoothing {
+                definition.smoothing = p.core();
+            }
             if let Some(id) = &b.tip_resource {
                 if !crate::brush_resource::valid_id(id)
                     || b.engine_profile != "drawverse.brush"
@@ -468,7 +485,8 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
     };
     package.validate()?;
     if package.brushes.iter().any(|b| {
-        b.tip_resource.is_some()
+        b.smoothing.is_some()
+            || b.tip_resource.is_some()
             || b.texture.is_some()
             || b.dual_brush.is_some()
             || b.source_resource.is_some()
@@ -487,7 +505,8 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
 pub fn encode(package: &Package, token: &CancellationToken) -> Result<Vec<u8>> {
     package.validate()?;
     if package.brushes.iter().any(|b| {
-        b.tip_resource.is_some()
+        b.smoothing.is_some()
+            || b.tip_resource.is_some()
             || b.texture.is_some()
             || b.dual_brush.is_some()
             || b.source_resource.is_some()

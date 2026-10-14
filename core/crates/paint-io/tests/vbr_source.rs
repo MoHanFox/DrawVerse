@@ -52,6 +52,7 @@ fn bundle() -> ImageBundle {
             let s = p.settings();
             Preset {
                 texture: None,
+                smoothing: None,
                 dual_brush: None,
                 id: format!("12345678-1234-4234-8234-{i:012x}"),
                 name: p.name().into(),
@@ -496,6 +497,7 @@ fn all_1024_presets_can_have_distinct_current_and_baseline_tips_and_originals() 
             .unwrap(),
         );
         brushes.push(Preset {
+            smoothing: None,
             dual_brush: Some(paint_io::brush_dual::DualParameters::from_core(&dual).unwrap()),
             texture: Some(paint_io::brush_texture::TextureParameters::from_core(&texture).unwrap()),
             id: format!("12345678-1234-4234-8234-{index:012x}"),
@@ -576,4 +578,50 @@ fn published_source_contract_covers_record_identity_versions_and_asset_roles() {
         });
         assert!(vbr_image::decode(&changed, &token).is_err());
     }
+}
+
+#[test]
+fn smoothing_current_image_preserves_original_provenance_and_real_time_input() {
+    let token = CancellationToken::default();
+    let mut input = bundle();
+    input.package.brushes[0].smoothing =
+        Some(paint_io::brush_smoothing::SmoothingParameters::from_core(
+            paint_core::BrushSmoothing::new(true, 24., 12., 0.7, 3.).unwrap(),
+        ));
+    input.package.brushes[0].behavior_version = 11;
+    input.package.brushes[0]
+        .required_capabilities
+        .push("path-smoothing".into());
+    let packed = vbr_image::encode(&input, &token).unwrap();
+    let output = vbr_image::decode(&packed, &token).unwrap();
+    assert_eq!(
+        output.sources()[0].original_bytes(),
+        input.sources()[0].original_bytes()
+    );
+    assert_eq!(
+        output.sources()[0].records().collect::<Vec<_>>(),
+        input.sources()[0].records().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        output.package.brushes[0].source_resource,
+        input.package.brushes[0].source_resource
+    );
+    let mut results = Vec::new();
+    for b in [&input, &output] {
+        let mut doc = Document::new(40, 40).unwrap();
+        let mut p = InputPoint::new(8.5, 20.5, 1.);
+        p.timestamp_ns = 1_000_000;
+        doc.begin_brush_stroke(b.definition(0).unwrap(), p).unwrap();
+        p.x = 32.5;
+        p.y = 24.5;
+        p.timestamp_ns = 49_000_000;
+        doc.stroke_to(p).unwrap();
+        doc.end_stroke().unwrap();
+        results.push(
+            (0..1600)
+                .map(|i| doc.pixel(i % 40, i / 40))
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(results[0], results[1]);
 }

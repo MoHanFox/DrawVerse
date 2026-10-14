@@ -388,3 +388,7 @@ PaintSelectionDetails=16字节，struct_size(0)、point_count(4)、feather(8)。
 新增 64 字节 PaintBucketFill，offset 16 的 linear_rgba 为 straight linear sRGB，opacity 0–1、tolerance 0–255；坐标为文档像素索引。antialias/contiguous/all_layers 均只接受 0/1，reserved 和 reserved_tail 为零。新增 PAINT_FEATURE_BUCKET=8192 和历史 PAINT_HISTORY_BUCKET=25。paint_session_bucket_fill 复制并校验 DTO 后返回队列 sequence，像素填充由串行 actor 异步执行；完成/失败通过既有 session publication 和 last_error 读取。
 
 种子越界、组目标、完全锁、蒙版 all_layers 取样、资源/存储错误均不提交像素；无变化不生成历史。all_layers 使用填充前的可见合成，仅写活动层；默认以当前层原始像素（不含显示 opacity/fill）比较。选区及 alpha lock 生效，整次填充只产生一条历史。容差按 straight sRGB/alpha 最大差 0–255，AA 在阈值之外一色阶内软化覆盖，透明色比较忽略 RGB。工作量与错误语义见 docs/bucket-design.md，旧 ABI DTO 和函数保持不变。
+
+## 时间平滑IO准备阶段（ABI仍1.45）
+
+Rust IO新增state14/VBR1.12/behavior11/time-grid-v1，旧默认不升级。当前原生准确准备拒绝非默认平滑，公开库包/程序包写入及库包资源交接拒绝含smoothing对象的包，以防尚只支持state13的Qt丢字段。未公布平滑路径能力，PAINT_FEATURE_PRESSURE_SMOOTH仍仅表示压力插值，不表示时间平滑设置已经接入。见docs/brush-smoothing-io-validation.md。

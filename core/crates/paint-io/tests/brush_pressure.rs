@@ -53,6 +53,7 @@ fn package() -> Package {
             },
             tip_resource: None,
             texture: None,
+            smoothing: None,
             dual_brush: None,
             source_resource: None,
         }],

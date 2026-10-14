@@ -33,6 +33,7 @@ fn package(settings: &BrushSettings) -> Package {
             required_capabilities: caps,
             tip_resource: None,
             texture: None,
+            smoothing: None,
             dual_brush: None,
             source_resource: None,
             parameters: Parameters {

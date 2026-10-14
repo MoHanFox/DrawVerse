@@ -21,6 +21,7 @@ fn package(resource: Option<String>) -> Package {
         package_id: "12345678-1234-4234-8234-123456789abc".into(),
         brushes: vec![Preset {
             texture: None,
+            smoothing: None,
             dual_brush: None,
             id: "12345678-1234-4234-8234-123456789abd".into(),
             name: "图片孔洞".into(),

@@ -105,6 +105,12 @@ struct Row {
         deserialize_with = "crate::brush_dual::present"
     )]
     dual_brush: Option<crate::brush_dual::DualParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_smoothing::present"
+    )]
+    smoothing: Option<crate::brush_smoothing::SmoothingParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -172,7 +178,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=13) {
+    if !matches!(state.version, 1..=14) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -246,6 +252,9 @@ fn decode_inner(
             return Err(Error::Unsupported(
                 "smooth pressure requires state13".into(),
             ));
+        }
+        if row.smoothing.is_some() && state.version < 14 {
+            return Err(Error::Unsupported("smoothing requires state14".into()));
         }
         let dual = if let Some(d) = row.dual_brush {
             if state.version < 12 {
@@ -328,7 +337,7 @@ fn decode_inner(
             row.id,
             row.name,
             BrushSettings {
-                smoothing: Default::default(),
+                smoothing: row.smoothing.map(|p| p.core()).unwrap_or_default(),
                 texture,
                 dual,
                 dynamics,
@@ -371,11 +380,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         {
             version = version.max(13);
         }
-        if !s.smoothing.is_default() {
-            return Err(Error::Unsupported(
-                "smoothing requires a newer state format".into(),
-            ));
-        }
+        let smoothing = if !s.smoothing.is_default() {
+            version = version.max(14);
+            Some(crate::brush_smoothing::SmoothingParameters::from_core(
+                s.smoothing,
+            ))
+        } else {
+            None
+        };
         let dual_brush = if !s.dual.is_default() {
             version = version.max(12);
             Some(crate::brush_dual::DualParameters::from_core(&s.dual)?)
@@ -480,6 +492,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             color_dynamics,
             texture,
             dual_brush,
+            smoothing,
         });
     }
     let bytes = serde_json::to_vec(&State {

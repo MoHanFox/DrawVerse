@@ -185,3 +185,5 @@ pub fn save(
     temporary.persist(path).map_err(|e| Error::Io(e.error))?;
     Ok(())
 }
+
+pub mod brush_smoothing;

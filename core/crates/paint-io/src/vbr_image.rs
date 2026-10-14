@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 11;
+pub const MAX_EXECUTABLE_MINOR: u32 = 12;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -119,6 +119,9 @@ impl ImageBundle {
             .get(index)
             .ok_or(Error::Invalid("VBR brush index"))?;
         let mut definition = preset.parameters.definition();
+        if let Some(p) = preset.smoothing {
+            definition.smoothing = p.core();
+        }
         if let Some(id) = &preset.tip_resource {
             definition.mask = Some(
                 self.assets
@@ -355,6 +358,9 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         }
         brushes.push(preset);
     }
+    if manifest.version.minor < 12 && brushes.iter().any(|b| b.smoothing.is_some()) {
+        return Err(Error::Unsupported("smoothing requires VBR1.12".into()));
+    }
     if manifest.version.minor < 11 && brushes.iter().any(|b| b.has_smooth()) {
         return Err(Error::Unsupported(
             "smooth pressure requires VBR1.11".into(),
@@ -492,6 +498,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 || b.parameters.color_dynamics.is_some()
                 || b.texture.is_some()
                 || b.dual_brush.is_some()
+                || b.smoothing.is_some()
         })
     {
         return vbr::encode(&bundle.package, token);
@@ -518,7 +525,9 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle.package.brushes.iter().any(|b| b.has_smooth()) {
+            minor: if bundle.package.brushes.iter().any(|b| b.smoothing.is_some()) {
+                12
+            } else if bundle.package.brushes.iter().any(|b| b.has_smooth()) {
                 11
             } else if bundle
                 .package

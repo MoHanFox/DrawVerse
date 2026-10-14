@@ -21,6 +21,7 @@ fn package(s: &BrushSettings, id: &str) -> Package {
         behavior_version: 8,
         required_capabilities: vec!["image-tip".into(), "texture-cover".into()],
         tip_resource: Some(id.into()),
+        smoothing: None,
         dual_brush: None,
         texture: Some(TextureParameters::from_core(&s.texture).unwrap()),
         source_resource: None,

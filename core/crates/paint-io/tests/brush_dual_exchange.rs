@@ -52,6 +52,7 @@ fn package(s: &BrushSettings) -> Package {
             texture: Some(
                 paint_io::brush_texture::TextureParameters::from_core(&s.texture).unwrap(),
             ),
+            smoothing: None,
             dual_brush: Some(DualParameters::from_core(&s.dual).unwrap()),
             source_resource: None,
             parameters: Parameters {
