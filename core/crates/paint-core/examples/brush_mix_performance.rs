@@ -8,6 +8,9 @@ fn main() {
             ("dual-path", BlendMode::Normal, true, true),
             ("dual-paired", BlendMode::Normal, true, false),
             ("multiply-dual", BlendMode::Multiply, true, true),
+            ("soft-multiply", BlendMode::Multiply, false, false),
+            ("soft-dual", BlendMode::Normal, true, true),
+            ("soft-multiply-dual", BlendMode::Multiply, true, true),
         ] {
             let mut times = Vec::new();
             let mut hash = 0u64;
@@ -21,17 +24,15 @@ fn main() {
                 doc.begin_stroke(base, InputPoint::new(256.5, 256.5, 1.))
                     .unwrap();
                 doc.end_stroke().unwrap();
-                let secondary = SecondaryTip::new(
-                    radius,
-                    BrushTip {
-                        pressure_size: false,
-                        pressure_flow: false,
-                        ..Default::default()
-                    },
-                    None,
-                    BrushDynamics::default(),
-                )
-                .unwrap();
+                let tip = BrushTip {
+                    hardness: if name.starts_with("soft-") { 0.5 } else { 1. },
+                    flow: if name.starts_with("soft-") { 0.25 } else { 1. },
+                    pressure_size: false,
+                    pressure_flow: false,
+                    ..Default::default()
+                };
+                let secondary =
+                    SecondaryTip::new(radius, tip, None, BrushDynamics::default()).unwrap();
                 let secondary = if path {
                     secondary.with_spacing(0.01).unwrap()
                 } else {
@@ -45,11 +46,7 @@ fn main() {
                         color: Pixel::from_straight([0.75, 0.3, 0.1, 1.]).unwrap(),
                         ..Default::default()
                     },
-                    tip: BrushTip {
-                        pressure_size: false,
-                        pressure_flow: false,
-                        ..Default::default()
-                    },
+                    tip,
                     write_blend: blend,
                     dual: if dual {
                         DualBrush::new(true, DualMode::Multiply, secondary)
@@ -61,13 +58,17 @@ fn main() {
                 let start = Instant::now();
                 doc.begin_brush_stroke(definition, InputPoint::new(96.5, 256.5, 1.))
                     .unwrap();
-                for i in 1..=80 {
-                    doc.stroke_to(InputPoint::new(
-                        96.5 + 4. * i as f64,
-                        256.5 + (i as f64 * 0.08).sin() * 24.,
-                        1.,
-                    ))
-                    .unwrap();
+                for pass in 0..if name.starts_with("soft-") { 4 } else { 1 } {
+                    for i in 1..=80 {
+                        doc.stroke_to(InputPoint::new(
+                            96.5 + 4. * (if pass % 2 == 0 { i } else { 80 - i }) as f64,
+                            256.5
+                                + ((if pass % 2 == 0 { i } else { 80 - i }) as f64 * 0.08).sin()
+                                    * 24.,
+                            1.,
+                        ))
+                        .unwrap();
+                    }
                 }
                 doc.end_stroke().unwrap();
                 times.push(start.elapsed().as_secs_f64() * 1000.);
