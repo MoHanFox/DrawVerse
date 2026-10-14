@@ -8,6 +8,7 @@
 // UI preferences only. Engine access and preview work stay in PaintCoreClient.
 class BrushLibrary final : public QObject {
     Q_OBJECT
+    Q_PROPERTY(int writeBlend READ writeBlend WRITE setWriteBlend NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList presets READ presets NOTIFY presetsChanged)
     Q_PROPERTY(QString selectedId READ selectedId NOTIFY settingsChanged)
     Q_PROPERTY(QString selectedName READ selectedName NOTIFY settingsChanged)
@@ -76,6 +77,8 @@ public:
     void setCursorHoverOnly(bool value);
     void setCursorWidth(int value);
     explicit BrushLibrary(QObject *parent=nullptr);
+    int writeBlend() const {return m_writeBlend;}
+    void setWriteBlend(int mode);
     QVariantList presets() const;
     QString selectedId() const {return m_selected;}
     QString selectedName() const;
@@ -209,6 +212,7 @@ private:
     QString m_selected="round-pressure";
     // Most recently used colours first; the colour panel shows them as its swatch row.
     QStringList m_recentColors;
+    int m_writeBlend=0;
     bool m_eraser=false;
     quint64 m_nextToken=16;
 };

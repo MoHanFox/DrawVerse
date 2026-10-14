@@ -94,6 +94,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
     Q_PROPERTY(QColor secondaryBrushColor READ secondaryBrushColor WRITE setSecondaryBrushColor NOTIFY brushChanged)
     Q_PROPERTY(QColor brushColor READ brushColor WRITE setBrushColor NOTIFY brushChanged)
+    Q_PROPERTY(int brushWriteBlend READ brushWriteBlend WRITE setBrushWriteBlend NOTIFY brushChanged)
     Q_PROPERTY(qreal brushRadius READ brushRadius WRITE setBrushRadius NOTIFY brushChanged)
     Q_PROPERTY(qreal brushOpacity READ brushOpacity WRITE setBrushOpacity NOTIFY brushChanged)
     Q_PROPERTY(qreal brushSpacing READ brushSpacing WRITE setBrushSpacing NOTIFY brushChanged)
@@ -187,6 +188,8 @@ public:
     QColor secondaryBrushColor() const {return m_secondaryColor;}
     void setSecondaryBrushColor(const QColor &color);
     Q_INVOKABLE void swapBrushColors();
+    int brushWriteBlend() const {return m_brushLibrary->writeBlend();}
+    void setBrushWriteBlend(int mode);
     qreal brushRadius() const { return m_radius; }
     qreal brushOpacity() const { return m_opacity; }
     qreal brushSpacing() const {return m_spacing;}
@@ -227,6 +230,7 @@ public:
     void setSamplingRingEnabled(bool enabled);
     bool eyedropperTool() const {return m_eyedropperTool;}
     /// Marquee keeps the last rectangle/ellipse choice; the lasso and the wand are their own tools.
+    Q_INVOKABLE QVariantList pressureCurveSamples(const QVariantList &points,bool smooth) const;
     Q_INVOKABLE void activateMarquee();
     Q_INVOKABLE void activateLasso();
     bool moveTool() const { return m_moveTool; }

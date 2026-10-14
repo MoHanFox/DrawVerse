@@ -172,7 +172,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=12) {
+    if !matches!(state.version, 1..=13) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -236,6 +236,17 @@ fn decode_inner(
         } else {
             Default::default()
         };
+        if state.version < 13
+            && (row
+                .pressure_dynamics
+                .as_ref()
+                .is_some_and(|p| p.has_smooth())
+                || row.dual_brush.as_ref().is_some_and(|d| d.has_smooth()))
+        {
+            return Err(Error::Unsupported(
+                "smooth pressure requires state13".into(),
+            ));
+        }
         let dual = if let Some(d) = row.dual_brush {
             if state.version < 12 {
                 return Err(Error::Unsupported("dual brush require state12".into()));
@@ -350,6 +361,16 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        if [&s.dynamics, s.dual.secondary().dynamics()]
+            .iter()
+            .any(|d| {
+                d.size.curve().is_smooth()
+                    || d.flow.curve().is_smooth()
+                    || d.opacity.curve().is_smooth()
+            })
+        {
+            version = version.max(13);
+        }
         if !s.smoothing.is_default() {
             return Err(Error::Unsupported(
                 "smoothing requires a newer state format".into(),

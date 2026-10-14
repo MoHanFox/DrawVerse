@@ -42,14 +42,11 @@ ColumnLayout {
     readonly property real contentHeight:360
     implicitHeight:contentHeight
     spacing:6
-    RowLayout {Layout.fillWidth:true
-        Label {objectName:"selectedBrushName";textFormat:Text.PlainText;text:root.library.selectedName;color:Theme.text;font.pixelSize:10;elide:Text.ElideRight;Layout.fillWidth:true}
-        Button {objectName:"resetBrushPreset";text:"重置预设";implicitHeight:22;onClicked:root.library.resetPreset();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"恢复此预设的初始参数；不改变当前颜色、工具或画布历史。"}
-    }
+    Label {objectName:"selectedBrushName";textFormat:Text.PlainText;text:root.library.selectedName;color:Theme.text;font.pixelSize:10;elide:Text.ElideRight;Layout.fillWidth:true}
     RowLayout {
         Layout.fillWidth:true;Layout.fillHeight:true;spacing:6
         ColumnLayout {
-            Layout.preferredWidth:76;Layout.alignment:Qt.AlignTop;spacing:2
+            Layout.preferredWidth:76;Layout.minimumWidth:76;Layout.maximumWidth:76;Layout.alignment:Qt.AlignTop;spacing:2
             Repeater {
                 model:["笔尖形状","形状动态","散布","纹理","双重笔刷","颜色动态","传递","光标与预览","来源与兼容"]
                 Rectangle {
@@ -58,17 +55,18 @@ ColumnLayout {
                     objectName:"brushCategory:"+index
                     Layout.fillWidth:true;implicitHeight:26
                     color:root.category===index?Theme.selected:"transparent"
-                    Label {anchors.fill:parent;anchors.leftMargin:4;text:parent.modelData;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter}
+                    Label {anchors.fill:parent;anchors.leftMargin:4;text:parent.modelData;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
                     MouseArea {anchors.fill:parent;onClicked:root.category=parent.index}
                 }
             }
         }
         Rectangle {Layout.fillHeight:true;width:1;color:Theme.line}
         ScrollView {
+            id:parameterScroll;objectName:"brushParameterScroll"
             Layout.fillWidth:true;Layout.fillHeight:true;clip:true
             contentWidth:availableWidth
             ColumnLayout {
-                width:parent.width;spacing:5
+                width:parameterScroll.availableWidth;spacing:5
                 ColumnLayout {
                     visible:root.category===0;Layout.fillWidth:true;spacing:5
                     RowLayout {
@@ -139,7 +137,7 @@ ColumnLayout {
                         TipField {title:"数量抖动";field:"scatterCountJitter";from:0;to:100;factor:100;unit:"%";help:"在最大数量和降低后的数量之间随机变化，每次至少一个印章。";sliderName:"settingsScatterCountJitter"}
                     }
                 }
-                ColumnLayout {visible:root.category===3;Layout.fillWidth:true;spacing:5
+                ColumnLayout {Layout.minimumWidth:0;visible:root.category===3;Layout.fillWidth:true;spacing:5
                     CompactCheckBox {objectName:"settingsTextureEnabled";text:"启用纹理";enabled:!!root.library.texture.resource;checked:root.library.texture.enabled;font.pixelSize:10;onToggled:root.setTextureField("enabled",checked);tooltip:"使用图片覆盖调制笔触；关闭保留纹理和参数。"}
                     RowLayout {Layout.fillWidth:true
                         Button {objectName:"importBrushTexture";text:"导入";Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredWidth:0;implicitHeight:24;enabled:!PaintClient.brushFileBusy;onClicked:textureDialog.open();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"导入 PNG 纹理"}
@@ -156,10 +154,10 @@ ColumnLayout {
                     TextureField {title:"水平偏移";field:"offsetX";from:-1000000;to:1000000;factor:1;unit:"px";help:"纹理相位在文档水平方向的偏移。"}
                     TextureField {title:"垂直偏移";field:"offsetY";from:-1000000;to:1000000;factor:1;unit:"px";help:"纹理相位在文档垂直方向的偏移。"}
                 }
-                ColumnLayout {visible:root.category===4;Layout.fillWidth:true;spacing:5
+                ColumnLayout {Layout.minimumWidth:0;visible:root.category===4;Layout.fillWidth:true;spacing:5
                     CompactCheckBox {objectName:"settingsDualEnabled";text:"启用双重笔刷";checked:root.dual.enabled;font.pixelSize:10;onToggled:root.setDualField("enabled",checked);tooltip:"第二笔尖调制主笔尖覆盖；关闭时保留全部设置。"}
                     CompactComboBox {objectName:"settingsDualPage";Layout.fillWidth:true;model:["笔尖与组合","设备与压力","散布","形状抖动"];currentIndex:root.dualPage;onActivated:root.dualPage=currentIndex;tooltip:"编辑第二笔尖的形状、压力与随机动态。"}
-                    ColumnLayout {visible:root.dualPage===0;Layout.fillWidth:true;spacing:5
+                    ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===0;Layout.fillWidth:true;spacing:5
                         CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;readonly property var modes:["multiply","darken","lighten","subtract","difference","screen"];model:["正片叠底","变暗","变亮","减去","差值","滤色"];currentIndex:modes.indexOf(root.dual.mode);onActivated:root.setDualField("mode",modes[currentIndex]);tooltip:"组合两个笔尖的灰度覆盖。"}
                         CompactComboBox {objectName:"settingsDualModel";Layout.fillWidth:true;model:["独立路径间距","每个主印章配对"];currentIndex:root.dual.model==="paired-dab-v1"?1:0;onActivated:{let data=Object.assign({},root.dual);data.model=currentIndex===1?"paired-dab-v1":"path-coverage-v1";data.spacing=currentIndex===1?null:0.25;root.library.setDualBrush(data)} tooltip:"独立路径使用第二笔尖自己的间距；配对在每个主印章的位置生成第二笔尖。"}
                         RowLayout {Layout.fillWidth:true
@@ -176,7 +174,7 @@ ColumnLayout {
                         DualField {title:"流量";field:"flow"}
                         Label {text:"画布光标显示主笔尖；第二笔尖改变实际覆盖。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     }
-                    ColumnLayout {visible:root.dualPage===1;Layout.fillWidth:true;spacing:5
+                    ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===1;Layout.fillWidth:true;spacing:5
                         CompactComboBox {objectName:"settingsDualAngleControl";Layout.fillWidth:true;readonly property var controls:["fixed","direction","pen-rotation","tilt"];model:["固定角度","路径方向","笔旋转","笔倾斜"];currentIndex:controls.indexOf(root.dualModule("tipDynamics").angleControl);onActivated:root.setDualField("angleControl",controls[currentIndex],"tipDynamics");tooltip:"第二笔尖独立叠加方向、旋转或倾斜角度；缺失设备能力使用基础角度。"}
                         CompactCheckBox {objectName:"settingsDualTiltRoundness";text:"倾斜控制圆度";checked:root.dualModule("tipDynamics").tiltRoundness;onToggled:root.setDualField("tiltRoundness",checked,"tipDynamics");tooltip:"按倾斜缩短第二笔尖短轴；关闭后保留最低比例。"}
                         DualField {title:"最低圆度比例";field:"minimumRoundness";module:"tipDynamics";from:1}
@@ -185,14 +183,14 @@ ColumnLayout {
                         CompactCheckBox {objectName:"settingsDualPressureFlow";text:"流量压感";checked:root.dual.pressureFlow;onToggled:root.setDualField("pressureFlow",checked);tooltip:"压力曲线控制第二笔尖；关闭时保留曲线和最低比例。"}
                         PressureCurveEditor {library:dualPressure;target:"flow";prefix:"dualPressureFlow"}
                     }
-                    ColumnLayout {visible:root.dualPage===2;Layout.fillWidth:true;spacing:5
+                    ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===2;Layout.fillWidth:true;spacing:5
                         CompactCheckBox {objectName:"settingsDualScatterEnabled";text:"启用散布";checked:root.dualModule("scatterDynamics").enabled;onToggled:root.setDualField("enabled",checked,"scatterDynamics");tooltip:"散布第二笔尖；关闭后保留参数。"}
                         DualField {title:"散布";field:"amount";module:"scatterDynamics";to:1000}
                         CompactCheckBox {objectName:"settingsDualScatterBothAxes";text:"双轴";checked:root.dualModule("scatterDynamics").bothAxes;onToggled:root.setDualField("bothAxes",checked,"scatterDynamics");tooltip:"沿画布两个方向分别随机偏移。"}
                         DualField {title:"数量";field:"count";module:"scatterDynamics";from:1;to:16;factor:1;unit:""}
                         DualField {title:"数量抖动";field:"countJitter";module:"scatterDynamics"}
                     }
-                    ColumnLayout {visible:root.dualPage===3;Layout.fillWidth:true;spacing:5
+                    ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===3;Layout.fillWidth:true;spacing:5
                         CompactCheckBox {objectName:"settingsDualShapeEnabled";text:"启用形状抖动";checked:root.dualModule("shapeJitter").enabled;onToggled:root.setDualField("enabled",checked,"shapeJitter");tooltip:"独立随机改变第二笔尖形状；关闭后保留参数。"}
                         DualField {title:"大小抖动";field:"size";module:"shapeJitter"}
                         DualField {title:"最小直径比例";field:"minimumSize";module:"shapeJitter"}
@@ -201,7 +199,7 @@ ColumnLayout {
                         DualField {title:"最低圆度比例";field:"minimumRoundness";module:"shapeJitter";from:1}
                     }
                 }
-                ColumnLayout {visible:root.category===5;Layout.fillWidth:true;spacing:5
+                ColumnLayout {Layout.minimumWidth:0;visible:root.category===5;Layout.fillWidth:true;spacing:5
                     CompactCheckBox {objectName:"settingsColorDynamicsEnabled";text:"启用颜色动态";checked:root.library.colorDynamicsEnabled;font.pixelSize:10;onToggled:root.library.colorDynamicsEnabled=checked;tooltip:"在当前前景色与背景色之间混合并随机调整颜色；关闭保留参数。"}
                     ColumnLayout {Layout.fillWidth:true;spacing:5
                         CompactCheckBox {objectName:"settingsColorPerTip";text:"应用于每个笔尖";checked:root.library.colorPerTip;font.pixelSize:10;onToggled:root.library.colorPerTip=checked;tooltip:"开启时每个实际印章取样新颜色，关闭时整条笔触使用同一随机颜色。"}
@@ -260,6 +258,7 @@ ColumnLayout {
                         }
                     }
                 }
+                Button {objectName:"resetBrushPreset";text:"重置预设";implicitHeight:22;Layout.minimumWidth:0;Layout.maximumWidth:parameterScroll.availableWidth;Layout.alignment:Qt.AlignLeft;Layout.topMargin:6;onClicked:root.library.resetPreset();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"恢复此预设的初始参数；不改变当前颜色、工具或画布历史。"}
             }
         }
     }
@@ -267,7 +266,7 @@ ColumnLayout {
         objectName:"brushStrokePreview";Layout.fillWidth:true;Layout.preferredHeight:60;color:Theme.selected
         Image {anchors.fill:parent;anchors.margins:4;source:root.library.selectedPreview;fillMode:Image.PreserveAspectFit;asynchronous:true}
         Text {anchors.centerIn:parent;text:root.library.previewMessage;font.pixelSize:9;color:Theme.muted;visible:!root.library.selectedPreview.length}
-        ToolTip.delay:1000;ToolTip.visible:hover.containsMouse;ToolTip.text:"实际引擎压感笔触 · 双击重新生成"
+        ToolTip.delay:1000;ToolTip.visible:hover.containsMouse;ToolTip.text:root.library.writeBlend===0?"实际引擎压感笔触 · 双击重新生成":"实际引擎混合笔触 · 示例颜色与有色底 · 双击重新生成"
         MouseArea {id:hover;anchors.fill:parent;hoverEnabled:true;onDoubleClicked:root.library.retryPreview()}
     }
     component DualField: ColumnLayout {
@@ -280,8 +279,8 @@ ColumnLayout {
         property real factor:100
         property string unit:"%"
         readonly property real currentValue:Number((module?root.dualModule(module):root.dual)[field] || 0)*factor
-        Layout.fillWidth:true;spacing:2
-        Label {text:dualControl.title+(dualControl.unit.length?" ("+dualControl.unit+")":"");color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
+        Layout.fillWidth:true;Layout.minimumWidth:0;spacing:2
+        Label {text:dualControl.title+(dualControl.unit.length?" ("+dualControl.unit+")":"");color:Theme.text;font.pixelSize:10;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
         CompactSpinBox {objectName:"settingsDual"+dualControl.module+dualControl.field+"Input";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:20;editable:true;from:dualControl.from;to:dualControl.to;value:Math.round(dualControl.currentValue);onValueModified:root.setDualField(dualControl.field,value/dualControl.factor,dualControl.module);tooltip:"第二笔尖的"+dualControl.title+"；关闭功能后仍保留设置。"}
         CompactSlider {objectName:"settingsDual"+dualControl.module+dualControl.field;Layout.fillWidth:true;from:dualControl.from;to:dualControl.to;value:dualControl.currentValue;onMoved:root.setDualField(dualControl.field,value/dualControl.factor,dualControl.module)}
     }

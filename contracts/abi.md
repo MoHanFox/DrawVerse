@@ -1,8 +1,12 @@
-# C ABI 1.44.0 契约
+# C ABI 1.45.0 契约
+
+## ABI 1.45 自动平滑压力曲线
+
+PAINT_FEATURE_PRESSURE_SMOOTH=1099511627776。paint_pressure_curve_samples(json,length,model,out)为允许UI线程调用的无句柄纯查询，不等待actor/资源；JSON为2–17个[x,y]点，1..4096字节，model=0旧折线/1 smooth-pchip-v1，out为对齐可写257个f32。所有缓冲区不重叠，不保留caller内存；有效输出在失败时清零，NULL/错位/非法数量/模型/点拒绝。实际执行精确求值，UI只画采样。state13/VBR1.11/behavior10/pressure-smooth能力保存插值模型，缺省旧折线保留，编辑显式转平滑；主/第二关闭数据及完整基准均往返。见docs/brush-pressure-smooth-design.md。
 
 ## ABI 1.44 画笔颜色混合捕获
 
-PAINT_FEATURE_BRUSH_WRITE_BLEND=549755813888（u64）。PaintBrushBlendDesc为16字节，size/u32模式位于0/4，reserved/u64位于8；模式0..26，reserved=0。新paint_session_begin_prepared_preset_with_blend读取现有tool/background/point及此描述，经pointers.rs复制并验证，失败sequence=0；非正常擦除/涂抹和组穿透拒绝。actor捕获模式与准确准备票据，不借用caller内存；旧入口保持正常，无旧DTO或签名变化，state12/VBR1.10不保存临时工具模式。Qt工具入口待接，见docs/brush-blend-abi-validation.md。
+PAINT_FEATURE_BRUSH_WRITE_BLEND=549755813888（u64）。PaintBrushBlendDesc为16字节，size/u32模式位于0/4，reserved/u64位于8；模式0..26，reserved=0。新paint_session_begin_prepared_preset_with_blend读取现有tool/background/point及此描述，经pointers.rs复制并验证，失败sequence=0；非正常擦除/涂抹和组穿透拒绝。actor捕获模式与准确准备票据，不借用caller内存；旧入口保持正常，无旧DTO或签名变化，state12/VBR1.10不保存临时工具模式。Qt工具栏/持久化/有色底真实预览已接，见docs/brush-blend-ui-validation.md。
 
 ## ABI 1.43 双笔刷设置与资源入口
 

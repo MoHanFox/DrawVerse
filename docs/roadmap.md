@@ -241,3 +241,5 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 设计见 [brush-system-design.md](brush-system-design.md)，VBR 契约草案见 [vbr-format-design.md](vbr-format-design.md)，验收条件见 [brush-system-validation.md](brush-system-validation.md)。当前只完成设计，未实现高级笔刷、ABR/VBR 或 GPU。
 
 按统一定义与旧圆笔迁移 → 路径手感/图片笔尖/描边预览 → 纹理/动态/分级 ABR → 湿混与涂抹 → 实测后 wgpu 的顺序推进。设置面板采用左侧分类、右侧参数、底部真实预览；光标描边为全局显示偏好。每阶段仅展示真实实现的能力，不以格式解析成功代替绘画兼容。
+
+当前追加阶段：画笔混合Qt工具状态/菜单/真实有色底预览已接入，见[验收](brush-blend-ui-validation.md)。自动平滑压感曲线ABI1.45/state13/VBR1.11/behavior10及统一原生采样已接入，见[验收](brush-pressure-smooth-validation.md)；编辑后自动平滑，旧未编辑模型保留。重置预设移至右侧参数末尾/固定预览上方。历史阶段的“待接”描述保留当时状态，以此最新条目为准。双色扩展、湿混和完整笔刷系统继续后续。

@@ -4,12 +4,13 @@ import QtQuick.Layouts
 import "."
 
 ColumnLayout {
-    id:root
+    id:root;objectName:prefix+"Editor"
     required property var library
     required property string target
     property string prefix:target==="size"?"pressureSize":target==="opacity"?"pressureOpacity":"pressureFlow"
     readonly property var control:library.pressureDynamics[target]
     readonly property var points:control.curve
+    readonly property var samples:PaintClient.pressureCurveSamples(points,control.interpolation==="smooth-pchip-v1")
     property int selected:0
     readonly property var selectedPoint:points[Math.min(selected,points.length-1)]
     Layout.fillWidth:true;spacing:4
@@ -43,14 +44,14 @@ ColumnLayout {
             ctx.strokeStyle=Theme.line;ctx.lineWidth=1
             for(var i=0;i<=4;++i){ctx.beginPath();ctx.moveTo(px(i/4),py(0));ctx.lineTo(px(i/4),py(1));ctx.stroke();ctx.beginPath();ctx.moveTo(px(0),py(i/4));ctx.lineTo(px(1),py(i/4));ctx.stroke()}
             ctx.strokeStyle=Theme.text;ctx.lineWidth=1.5;ctx.beginPath()
-            for(i=0;i<root.points.length;++i){var p=root.points[i];if(i===0)ctx.moveTo(px(p[0]),py(p[1]));else ctx.lineTo(px(p[0]),py(p[1]))}ctx.stroke()
-            for(i=0;i<root.points.length;++i){p=root.points[i];ctx.fillStyle=i===root.selected?"#4e96ff":Theme.text;ctx.beginPath();ctx.arc(px(p[0]),py(p[1]),3,0,Math.PI*2);ctx.fill()}
+            for(i=0;i<root.samples.length;++i){var x=i/(root.samples.length-1),y=root.samples[i];if(i===0)ctx.moveTo(px(x),py(y));else ctx.lineTo(px(x),py(y))}ctx.stroke()
+            for(i=0;i<root.points.length;++i){var p=root.points[i];ctx.fillStyle=i===root.selected?"#4e96ff":Theme.text;ctx.beginPath();ctx.arc(px(p[0]),py(p[1]),3,0,Math.PI*2);ctx.fill()}
         }
         onWidthChanged:requestPaint()
         onHeightChanged:requestPaint()
         MouseArea {
             anchors.fill:parent;hoverEnabled:true;property bool moving:false
-            ToolTip.delay:1000;ToolTip.visible:containsMouse;ToolTip.text:"拖动控制点；双击增加控制点。横轴输入压力，纵轴输出比例。"
+            ToolTip.delay:1000;ToolTip.visible:containsMouse;ToolTip.text:"拖动控制点；双击增加控制点。编辑后自动拟合平滑曲线。横轴输入压力，纵轴输出比例。"
             onPressed:mouse=>{var nearest=-1,distance=100;for(var i=0;i<root.points.length;++i){var dx=mouse.x-graph.px(root.points[i][0]),dy=mouse.y-graph.py(root.points[i][1]);var d=dx*dx+dy*dy;if(d<distance){distance=d;nearest=i}}moving=nearest>=0;if(moving)root.selected=nearest}
             onPositionChanged:mouse=>{if(pressed && moving)root.movePoint(root.selected,graph.inputX(mouse.x),graph.inputY(mouse.y))}
             onReleased:moving=false
@@ -78,6 +79,7 @@ ColumnLayout {
         Label {text:"%";color:Theme.muted;font.pixelSize:9}
     }
     Connections {target:root.library;function onSettingsChanged(){root.selected=Math.min(root.selected,root.points.length-1);graph.requestPaint()}}
+    onSamplesChanged:graph.requestPaint()
     onSelectedChanged:graph.requestPaint()
     Component.onCompleted:graph.requestPaint()
 }

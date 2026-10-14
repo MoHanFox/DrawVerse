@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 44
+#define PAINT_ABI_MINOR 45
 
 #define PAINT_ABI_PATCH 0
 
@@ -137,6 +137,11 @@
 #define PAINT_FEATURE_PASS_THROUGH 65536
 
 #define PAINT_FEATURE_PRESSURE_DYNAMICS 1073741824
+
+/**
+ * Shape-preserving pressure interpolation and bounded UI curve samples.
+ */
+#define PAINT_FEATURE_PRESSURE_SMOOTH 1099511627776
 
 #define PAINT_FEATURE_SELECTION 4096
 
@@ -1466,6 +1471,18 @@ PaintStatus paint_layer_set_properties(struct PaintCore *core,
                                        uint64_t layer_id,
                                        uint32_t visible,
                                        float opacity);
+
+/**
+ * Pure bounded query; may run on the UI thread. JSON is 2–17 [x,y] pairs.
+ * model: 0 legacy linear, 1 smooth-pchip-v1. Returns 257 evenly spaced samples.
+ * # Safety
+ * Input readable for length bytes; output aligned writable for 257 f32 values.
+ * Buffers must not overlap. No caller memory retained. Errors clear valid output.
+ */
+PaintStatus paint_pressure_curve_samples(const uint8_t *json,
+                                         uint64_t length,
+                                         uint32_t model,
+                                         float *out);
 
 /**
  * Begin paint, erase or smudge with a copied, validated procedural tip.

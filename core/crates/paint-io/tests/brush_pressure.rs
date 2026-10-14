@@ -326,3 +326,83 @@ fn pressure_contract_bounds_and_original_converter_baseline_remain_separate() {
     assert!(vbr_image::save(&target, &bundle, &cancelled).is_err());
     assert_eq!(std::fs::read(&target).unwrap(), b"old");
 }
+
+#[test]
+fn smooth_pressure_state13_vbr11_preserve_models_and_reject_old_versions() {
+    let mut d = dynamics();
+    d.size = PressureControl::new(
+        PressureCurve::new_smooth(vec![(0., 0.), (0.5, 0.25), (1., 1.)]).unwrap(),
+        0.1,
+    )
+    .unwrap();
+    let mut catalog = BrushCatalog::default();
+    let mut settings = catalog.selected().settings().clone();
+    settings.dynamics = d.clone();
+    settings.diameter = 16.;
+    settings.spacing = 0.01;
+    catalog.edit("round-pressure", settings).unwrap();
+    let bytes = brush_state::encode(&catalog).unwrap();
+    let mut json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(json["version"], 13);
+    let restored = brush_state::decode(&bytes, MAX_CATALOG_MASK_BYTES).unwrap();
+    assert_eq!(restored.selected().settings().dynamics, d);
+    json["version"] = 12.into();
+    assert!(
+        brush_state::decode(&serde_json::to_vec(&json).unwrap(), MAX_CATALOG_MASK_BYTES).is_err()
+    );
+    let mut package = package();
+    package.brushes[0].parameters.pressure_dynamics = Some(PressureParameters::from_core(&d));
+    assert!(package.validate().is_err());
+    package.brushes[0].behavior_version = 10;
+    assert!(package.validate().is_err());
+    package.brushes[0]
+        .required_capabilities
+        .push("pressure-smooth".into());
+    package.validate().unwrap();
+    let token = CancellationToken::default();
+    let bundle = vbr_image::ImageBundle::new(package.clone(), BTreeMap::new(), &token).unwrap();
+    let packed = vbr_image::encode(&bundle, &token).unwrap();
+    let unpacked = vbr_image::decode(&packed, &token).unwrap();
+    assert_eq!(
+        unpacked.package.to_json().unwrap(),
+        package.to_json().unwrap()
+    );
+    assert!(vbr_image::decode(&rewrite(&packed, 10), &token).is_err());
+    let mut a = Document::new(32, 32).unwrap();
+    let mut b = Document::new(32, 32).unwrap();
+    for (doc, definition) in [
+        (&mut a, restored.selected().settings().definition()),
+        (&mut b, unpacked.definition(0).unwrap()),
+    ] {
+        doc.begin_brush_stroke(definition, InputPoint::new(16.5, 16.5, 0.25))
+            .unwrap();
+        doc.end_stroke().unwrap();
+    }
+    for y in 0..32 {
+        for x in 0..32 {
+            assert_eq!(a.pixel(x, y), b.pixel(x, y));
+        }
+    }
+    let mut pressure = serde_json::to_value(PressureParameters::from_core(&d)).unwrap();
+    for bad in [serde_json::Value::Null, "unknown".into()] {
+        pressure["size"]["interpolation"] = bad;
+        assert!(serde_json::from_value::<PressureParameters>(pressure.clone()).is_err());
+    }
+    let old = serde_json::to_value(PressureParameters::from_core(&dynamics())).unwrap();
+    assert!(old["size"].get("interpolation").is_none());
+    assert!(!serde_json::from_value::<PressureParameters>(old)
+        .unwrap()
+        .has_smooth());
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../contracts/vbr-pressure-smooth-v1.11.schema.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        schema["$defs"]["manifest"]["properties"]["version"]["properties"]["minor"]["const"],
+        11
+    );
+    assert_eq!(
+        schema["$defs"]["pressureControl"]["properties"]["interpolation"]["const"],
+        "smooth-pchip-v1"
+    );
+}

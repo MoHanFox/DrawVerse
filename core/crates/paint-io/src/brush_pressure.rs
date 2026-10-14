@@ -7,6 +7,12 @@ struct Control {
     #[serde(deserialize_with = "points")]
     curve: Vec<(f32, f32)>,
     minimum: f32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "interpolation_present"
+    )]
+    interpolation: Option<String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -26,7 +32,18 @@ struct OpacityControl {
     #[serde(deserialize_with = "points")]
     curve: Vec<(f32, f32)>,
     minimum: f32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "interpolation_present"
+    )]
+    interpolation: Option<String>,
     enabled: bool,
+}
+fn interpolation_present<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
 }
 fn opacity_present<'de, D: serde::Deserializer<'de>>(
     d: D,
@@ -82,6 +99,11 @@ impl PressureParameters {
                 || dynamics.opacity != PressureControl::default(),
         }
     }
+    pub fn has_smooth(&self) -> bool {
+        self.dynamics.size.curve().is_smooth()
+            || self.dynamics.flow.curve().is_smooth()
+            || self.dynamics.opacity.curve().is_smooth()
+    }
     pub fn has_opacity(&self) -> bool {
         self.has_opacity
     }
@@ -106,6 +128,7 @@ impl Serialize for PressureParameters {
         let control = |c: &PressureControl| Control {
             curve: c.curve().points().to_vec(),
             minimum: c.minimum(),
+            interpolation: c.curve().is_smooth().then(|| "smooth-pchip-v1".into()),
         };
         Data {
             size: control(&self.dynamics.size),
@@ -113,6 +136,12 @@ impl Serialize for PressureParameters {
             opacity: self.has_opacity.then(|| OpacityControl {
                 curve: self.dynamics.opacity.curve().points().to_vec(),
                 minimum: self.dynamics.opacity.minimum(),
+                interpolation: self
+                    .dynamics
+                    .opacity
+                    .curve()
+                    .is_smooth()
+                    .then(|| "smooth-pchip-v1".into()),
                 enabled: self.dynamics.pressure_opacity,
             }),
         }
@@ -124,7 +153,14 @@ impl<'de> Deserialize<'de> for PressureParameters {
         deserializer: D,
     ) -> std::result::Result<Self, D::Error> {
         let data = Data::deserialize(deserializer)?;
-        let control = |c: Control| PressureControl::new(PressureCurve::new(c.curve)?, c.minimum);
+        let control = |c: Control| {
+            let curve = match c.interpolation.as_deref() {
+                None => PressureCurve::new(c.curve)?,
+                Some("smooth-pchip-v1") => PressureCurve::new_smooth(c.curve)?,
+                _ => return Err(paint_core::Error::InvalidArgument("pressure interpolation")),
+            };
+            PressureControl::new(curve, c.minimum)
+        };
         let size = control(data.size).map_err(serde::de::Error::custom)?;
         let flow = control(data.flow).map_err(serde::de::Error::custom)?;
         let has_opacity = data.opacity.is_some();
@@ -133,6 +169,7 @@ impl<'de> Deserialize<'de> for PressureParameters {
                 control(Control {
                     curve: c.curve,
                     minimum: c.minimum,
+                    interpolation: c.interpolation,
                 })
                 .map_err(serde::de::Error::custom)?,
                 c.enabled,
@@ -153,4 +190,19 @@ impl<'de> Deserialize<'de> for PressureParameters {
             has_opacity,
         })
     }
+}
+
+/// Bounded pure curve query used by the native editor; execution evaluates the same compiled curve.
+pub fn curve_samples(bytes: &[u8], smooth: bool) -> crate::Result<Vec<f32>> {
+    if bytes.is_empty() || bytes.len() > 4096 {
+        return Err(crate::Error::Limit("pressure points JSON bytes"));
+    }
+    let points: Vec<(f32, f32)> =
+        serde_json::from_slice(bytes).map_err(|e| crate::Error::Codec(e.to_string()))?;
+    let curve = if smooth {
+        PressureCurve::new_smooth(points)?
+    } else {
+        PressureCurve::new(points)?
+    };
+    Ok(PressureControl::new(curve, 0.)?.samples(257)?)
 }

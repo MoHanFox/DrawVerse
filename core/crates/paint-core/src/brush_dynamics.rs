@@ -5,6 +5,7 @@ use std::sync::{Arc, OnceLock};
 #[derive(Clone, Debug, PartialEq)]
 pub struct PressureCurve {
     points: Arc<[(f32, f32)]>,
+    smooth: bool,
 }
 impl Default for PressureCurve {
     fn default() -> Self {
@@ -13,6 +14,7 @@ impl Default for PressureCurve {
             points: LINEAR
                 .get_or_init(|| Arc::from([(0., 0.), (1., 1.)]))
                 .clone(),
+            smooth: false,
         }
     }
 }
@@ -32,7 +34,17 @@ impl PressureCurve {
         }
         Ok(Self {
             points: points.into(),
+            smooth: false,
         })
+    }
+    /// Shape-preserving C1 cubic interpolation; legacy `new` remains piecewise linear.
+    pub fn new_smooth(points: Vec<(f32, f32)>) -> Result<Self> {
+        let mut curve = Self::new(points)?;
+        curve.smooth = true;
+        Ok(curve)
+    }
+    pub fn is_smooth(&self) -> bool {
+        self.smooth
     }
     pub fn points(&self) -> &[(f32, f32)] {
         &self.points
@@ -70,22 +82,83 @@ impl PressureControl {
             .compile()
             .map_or(pressure, |curve| curve.response(pressure)))
     }
+    pub fn samples(&self, count: usize) -> Result<Vec<f32>> {
+        if !(2..=1025).contains(&count) {
+            return Err(Error::InvalidArgument("pressure sample count"));
+        }
+        let compiled = self.compile();
+        Ok((0..count)
+            .map(|i| {
+                let p = i as f32 / (count - 1) as f32;
+                compiled.as_ref().map_or(p, |c| c.response(p))
+            })
+            .collect())
+    }
     pub(crate) fn compile(&self) -> Option<CompiledPressureControl> {
         if self.is_identity() {
             return None;
         }
-        let segments = self
-            .curve
-            .points
+        let points = self.curve.points();
+        let h: Vec<_> = points
             .windows(2)
-            .map(|p| {
-                let (x0, y0) = (f64::from(p[0].0), f64::from(p[0].1));
-                let (x1, y1) = (f64::from(p[1].0), f64::from(p[1].1));
+            .map(|p| f64::from(p[1].0) - f64::from(p[0].0))
+            .collect();
+        let slopes: Vec<_> = points
+            .windows(2)
+            .zip(&h)
+            .map(|(p, h)| (f64::from(p[1].1) - f64::from(p[0].1)) / h)
+            .collect();
+        let mut tangents = vec![0.; points.len()];
+        if self.curve.smooth {
+            if points.len() == 2 {
+                tangents.fill(slopes[0]);
+            } else {
+                fn endpoint(h0: f64, h1: f64, d0: f64, d1: f64) -> f64 {
+                    let m = ((2. * h0 + h1) * d0 - h0 * d1) / (h0 + h1);
+                    if m.signum() != d0.signum() {
+                        0.
+                    } else if d0.signum() != d1.signum() && m.abs() > 3. * d0.abs() {
+                        3. * d0
+                    } else {
+                        m
+                    }
+                }
+                tangents[0] = endpoint(h[0], h[1], slopes[0], slopes[1]);
+                let n = h.len();
+                tangents[n] = endpoint(h[n - 1], h[n - 2], slopes[n - 1], slopes[n - 2]);
+                for i in 1..n {
+                    let (a, b) = (slopes[i - 1], slopes[i]);
+                    if a != 0. && b != 0. && a.signum() == b.signum() {
+                        let w1 = 2. * h[i] + h[i - 1];
+                        let w2 = h[i] + 2. * h[i - 1];
+                        tangents[i] = (w1 + w2) / (w1 / a + w2 / b);
+                    }
+                }
+            }
+        }
+        let segments = points
+            .windows(2)
+            .enumerate()
+            .map(|(i, p)| {
+                let (y0, y1) = (f64::from(p[0].1), f64::from(p[1].1));
+                let delta = y1 - y0;
+                let (b, c, d) = if self.curve.smooth {
+                    let b = tangents[i] * h[i];
+                    let end = tangents[i + 1] * h[i];
+                    (b, 3. * delta - 2. * b - end, b + end - 2. * delta)
+                } else {
+                    (delta, 0., 0.)
+                };
                 Segment {
-                    x0,
-                    x1,
+                    x0: f64::from(p[0].0),
+                    x1: f64::from(p[1].0),
                     y0,
-                    slope: (y1 - y0) / (x1 - x0),
+                    y1,
+                    b,
+                    c,
+                    d,
+                    linear: !self.curve.smooth,
+                    slope: slopes[i],
                 }
             })
             .collect::<Vec<_>>()
@@ -168,7 +241,12 @@ struct Segment {
     x0: f64,
     x1: f64,
     y0: f64,
+    y1: f64,
+    linear: bool,
     slope: f64,
+    b: f64,
+    c: f64,
+    d: f64,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct CompiledPressureControl {
@@ -184,7 +262,17 @@ impl CompiledPressureControl {
             .iter()
             .find(|s| input <= s.x1)
             .unwrap_or_else(|| self.segments.last().expect("bounded nonempty curve"));
-        let output = (segment.y0 + (input - segment.x0) * segment.slope).clamp(0., 1.) as f32;
+        let t = ((input - segment.x0) / (segment.x1 - segment.x0)).clamp(0., 1.);
+        let output = if segment.linear {
+            (segment.y0 + (input - segment.x0) * segment.slope).clamp(0., 1.)
+        } else if t == 0. {
+            segment.y0
+        } else if t == 1. {
+            segment.y1
+        } else {
+            (((segment.d * t + segment.c) * t + segment.b) * t + segment.y0)
+                .clamp(segment.y0.min(segment.y1), segment.y0.max(segment.y1))
+        } as f32;
         (self.minimum + (1. - self.minimum) * output).clamp(0., 1.)
     }
 }

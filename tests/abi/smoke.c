@@ -123,6 +123,12 @@ int main(void) {
     CHECK(paint_document_info(core, doc, &info) == PAINT_OK && info.layer_count == 2 && info.allocated_tiles == 2);
     CHECK(paint_core_unsubscribe(core, &subscription) == PAINT_OK && subscription == NULL);
     CHECK(paint_document_destroy(core, &doc) == PAINT_OK && doc == NULL);
+    {
+        const uint8_t curve_json[]="[[0,0],[0.5,0.25],[1,1]]";
+        float samples[257]={0};
+        CHECK(paint_pressure_curve_samples(curve_json,sizeof(curve_json)-1,1,samples)==PAINT_OK);
+        CHECK(samples[64]==0.078125f && samples[128]==0.25f && samples[256]==1.f);
+    }
     CHECK(async_smoke(core) == 0);
     CHECK(paint_core_destroy(&core) == PAINT_OK && core == NULL);
     CHECK(paint_core_destroy(&core) == PAINT_OK);

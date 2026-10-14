@@ -202,3 +202,126 @@ fn smudge_uses_strength_pressure_switch_and_in_flight_program_is_immutable() {
         }
     }
 }
+
+#[test]
+fn smooth_curve_passes_nodes_is_c1_bounded_and_handles_tiny_intervals() {
+    let points = vec![(0., 0.), (0.5, 0.25), (1., 1.)];
+    let c = PressureControl::new(PressureCurve::new_smooth(points.clone()).unwrap(), 0.).unwrap();
+    assert_eq!(c.response(0.25).unwrap(), 0.078125);
+    for (x, y) in points {
+        assert_eq!(c.response(x).unwrap(), y);
+    }
+    let e = 0.0001;
+    let left = (c.response(0.5).unwrap() - c.response(0.5 - e).unwrap()) / e;
+    let right = (c.response(0.5 + e).unwrap() - c.response(0.5).unwrap()) / e;
+    assert!((left - right).abs() < 0.003);
+    let nonmonotone = PressureControl::new(
+        PressureCurve::new_smooth(vec![(0., 1.), (0.2, 0.1), (0.7, 0.9), (1., 0.)]).unwrap(),
+        0.,
+    )
+    .unwrap();
+    for i in 0..1001 {
+        let x = i as f32 / 1000.;
+        let y = nonmonotone.response(x).unwrap();
+        let (lo, hi) = if x <= 0.2 {
+            (0.1, 1.)
+        } else if x <= 0.7 {
+            (0.1, 0.9)
+        } else {
+            (0., 0.9)
+        };
+        assert!((lo..=hi).contains(&y));
+    }
+    let tiny = f32::from_bits(1);
+    let narrow = f32::from_bits(0.5f32.to_bits() + 1);
+    let c = PressureControl::new(
+        PressureCurve::new_smooth(vec![
+            (0., 0.),
+            (tiny, 1.),
+            (0.5, 0.),
+            (narrow, 1.),
+            (1., 0.),
+        ])
+        .unwrap(),
+        0.,
+    )
+    .unwrap();
+    for (x, y) in c.curve().points() {
+        assert_eq!(c.response(*x).unwrap(), *y);
+    }
+    assert!(c
+        .samples(257)
+        .unwrap()
+        .iter()
+        .all(|y| y.is_finite() && (0. ..=1.).contains(y)));
+    assert!(c.samples(1026).is_err());
+}
+#[test]
+fn smooth_pressure_changes_real_primary_and_secondary_pixels_and_history() {
+    let smooth = PressureControl::new(
+        PressureCurve::new_smooth(vec![(0., 0.), (0.5, 0.25), (1., 1.)]).unwrap(),
+        0.,
+    )
+    .unwrap();
+    let flat = response(0.078125);
+    for role in 0..4 {
+        let mut a = definition();
+        let mut b = definition();
+        a.brush.radius = 16.;
+        b.brush.radius = 16.;
+        match role {
+            0 => {
+                a.dynamics.size = smooth.clone();
+                b.dynamics.size = flat.clone();
+            }
+            1 => {
+                a.dynamics.flow = smooth.clone();
+                b.dynamics.flow = flat.clone();
+            }
+            2 => {
+                a.dynamics.opacity = smooth.clone();
+                b.dynamics.opacity = flat.clone();
+                a.dynamics.pressure_opacity = true;
+                b.dynamics.pressure_opacity = true;
+            }
+            _ => {
+                let make = |c: PressureControl| {
+                    DualBrush::new(
+                        true,
+                        DualMode::Multiply,
+                        SecondaryTip::new(
+                            16.,
+                            BrushTip::default(),
+                            None,
+                            BrushDynamics {
+                                size: c,
+                                ..Default::default()
+                            },
+                        )
+                        .unwrap(),
+                    )
+                };
+                a.dual = make(smooth.clone());
+                b.dual = make(flat.clone());
+            }
+        }
+        let mut da = Document::new(40, 40).unwrap();
+        let mut db = Document::new(40, 40).unwrap();
+        for (doc, d) in [(&mut da, a), (&mut db, b)] {
+            doc.begin_brush_stroke(d, InputPoint::new(12.5, 20.5, 0.25))
+                .unwrap();
+            doc.stroke_to(InputPoint::new(28.5, 20.5, 0.25)).unwrap();
+            doc.end_stroke().unwrap();
+        }
+        for y in 0..40 {
+            for x in 0..40 {
+                assert_eq!(da.pixel(x, y), db.pixel(x, y));
+            }
+        }
+        let before = da.pixel(20, 20);
+        da.undo().unwrap();
+        assert_eq!(da.pixel(20, 20).alpha(), 0.);
+        da.redo().unwrap();
+        assert_eq!(da.pixel(20, 20), before);
+    }
+}

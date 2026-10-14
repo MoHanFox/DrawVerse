@@ -178,6 +178,15 @@ pub(crate) fn encode_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
+impl Preset {
+    pub fn has_smooth(&self) -> bool {
+        self.parameters
+            .pressure_dynamics
+            .as_ref()
+            .is_some_and(|p| p.has_smooth())
+            || self.dual_brush.as_ref().is_some_and(|d| d.has_smooth())
+    }
+}
 impl Package {
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
         let package: Self = json(bytes)?;
@@ -234,7 +243,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if dual {
+                != if b.has_smooth() {
+                    10
+                } else if dual {
                     9
                 } else if textured {
                     8
@@ -276,6 +287,7 @@ impl Package {
                             | "color-dynamics"
                             | "texture-cover"
                             | "dual-cover"
+                            | "pressure-smooth"
                     )
                 })
             {
@@ -287,10 +299,15 @@ impl Package {
             {
                 return Err(Error::Invalid("VBR source identity"));
             }
-            if pressure
+            if b.has_smooth()
                 != b.required_capabilities
                     .iter()
-                    .any(|c| c == "pressure-curves")
+                    .any(|c| c == "pressure-smooth")
+                || (b.has_smooth() && b.engine_profile != "drawverse.brush")
+                || pressure
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "pressure-curves")
                 || (pressure && b.engine_profile != "drawverse.brush")
                 || opacity
                     != b.required_capabilities

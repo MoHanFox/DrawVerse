@@ -88,6 +88,12 @@ int main() {
     CHECK(paint_core_begin_stroke(kernel.core, kernel.doc, &stroke, &point) == PAINT_OK);
     CHECK(paint_core_cancel_stroke(kernel.core, kernel.doc) == PAINT_OK);
     CHECK(events.load() == count);
+    {
+        const uint8_t curve_json[]="[[0,0],[0.5,0.25],[1,1]]";
+        float samples[257]={0};
+        CHECK(paint_pressure_curve_samples(curve_json,sizeof(curve_json)-1,1,samples)==PAINT_OK);
+        CHECK(samples[64]==0.078125f && samples[128]==0.25f && samples[256]==1.f);
+    }
     CHECK(async_smoke(kernel.core) == 0);
     std::puts("C++20 ABI RAII, pressure, history, noexcept callback, and concurrent-reader checks passed.");
     return 0;

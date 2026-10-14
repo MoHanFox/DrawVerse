@@ -1,5 +1,8 @@
 # DrawVerse
 
+- 最新自动平滑压感：`docs/brush-pressure-smooth-design.md` / `docs/brush-pressure-smooth-validation.md`；ABI1.45/state13/VBR1.11/behavior10、统一PCHIP/纯原生图形采样、旧曲线保留/编辑自动平滑、关闭配置与重置基准，重置按钮在参数末尾。
+- 最新画笔混合Qt：`docs/brush-blend-ui-design.md` / `docs/brush-blend-ui-validation.md`；27模式独立工具状态/在途捕获、共享持久化及真实有色底预览，双色扩展继续后续。
+
 - 最新画笔混合原生捕获：`docs/brush-blend-abi-design.md` / `docs/brush-blend-abi-validation.md`；ABI1.44/16字节独立模式DTO/新prepared导出、两色与模式复制/准确票据及历史、旧入口正常兼容；Qt模式下拉/偏好/有色底预览待接，不改state/VBR。
 
 - 最新画笔颜色混合内核：`docs/brush-blend-design.md` / `docs/brush-blend-validation.md`；27模式/整笔贡献与before、蒙版可见灰度/透明锁精确alpha、文档坐标溶解/预算与历史；无ABI变化，工具状态/原生Qt下拉与真实预览待接，双色及自动描边随后。
