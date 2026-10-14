@@ -76,6 +76,7 @@ pub struct BrushProgram {
     pressure_opacity: bool,
     tip_dynamics: TipDynamics,
     pub(crate) scatter: crate::ScatterDynamics,
+    pub(crate) shape_jitter: crate::ShapeJitter,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -160,6 +161,7 @@ impl BrushProgram {
             pressure_opacity: definition.dynamics.pressure_opacity,
             tip_dynamics: definition.dynamics.tip,
             scatter: definition.dynamics.scatter,
+            shape_jitter: definition.dynamics.shape_jitter,
         })
     }
 
@@ -231,6 +233,24 @@ impl BrushProgram {
             cosine,
             roundness,
         }
+    }
+    pub(crate) fn dab_geometry(
+        &self,
+        point: InputPoint,
+        direction: Option<f64>,
+        sample: crate::brush_shape_jitter::ShapeSample,
+    ) -> TipGeometry {
+        let mut geometry = self.geometry(point, direction);
+        if sample.angle != 0. {
+            let (s, c) = sample.angle.sin_cos();
+            let sine = geometry.sine * c + geometry.cosine * s;
+            geometry.cosine = geometry.cosine * c - geometry.sine * s;
+            geometry.sine = sine;
+        }
+        if sample.roundness != 1. {
+            geometry.roundness = (geometry.roundness * sample.roundness).max(0.01);
+        }
+        geometry
     }
     fn mask_dab(&self, radius: f64) -> Option<MaskDab<'_>> {
         self.mask_dab_with_geometry(radius, self.base_geometry())

@@ -104,6 +104,7 @@ pub struct BrushDynamics {
     pub pressure_opacity: bool,
     pub tip: TipDynamics,
     pub scatter: crate::ScatterDynamics,
+    pub shape_jitter: crate::ShapeJitter,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
@@ -112,6 +113,7 @@ impl BrushDynamics {
             && !self.pressure_opacity
             && self.tip == TipDynamics::default()
             && self.scatter == crate::ScatterDynamics::default()
+            && self.shape_jitter == crate::ShapeJitter::default()
     }
 }
 

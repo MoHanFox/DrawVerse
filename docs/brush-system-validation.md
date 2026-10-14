@@ -66,3 +66,5 @@
 本轮仅完成设计文档与上下文路由，功能实施尚未开始。
 
 散布原生Qt阶段：ABI1.39/state8/VBR1.6/behavior5，见 [设计](brush-scatter-ui-design.md) / [验收](brush-scatter-ui-validation.md)。分类参数、准确捕获、图片/来源交换、DPR1/2与ABI已验证。实体数位板、跨平台、其他动态与湿混仍未验收；不是完整系统通过。
+
+形状抖动内核阶段：见 [设计](brush-shape-jitter-design.md) / [验收](brush-shape-jitter-validation.md)。独立随机域/大小角度圆度/图片和四类写入/确定性真实像素已验证；保存/VBR/Qt入口尚未接，旧入口拒绝新配置，完整系统继续后续。

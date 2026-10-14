@@ -175,6 +175,7 @@ impl Package {
             if b.parameters.pressure_dynamics.as_ref().is_some_and(|p| {
                 p.core().tip != paint_core::TipDynamics::default()
                     || p.core().scatter != paint_core::ScatterDynamics::default()
+                    || p.core().shape_jitter != paint_core::ShapeJitter::default()
             }) {
                 return Err(Error::Unsupported(
                     "non-pressure controls cannot be encoded in pressure payload".into(),

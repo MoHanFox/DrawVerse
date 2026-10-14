@@ -385,8 +385,9 @@ struct Stroke {
     last: InputPoint,
     last_dab: InputPoint,
     last_carrier: InputPoint,
-    scatter_index: u64,
-    scatter_stroke: u64,
+    random_index: u64,
+    random_stroke: u64,
+    shape_sample: crate::brush_shape_jitter::ShapeSample,
     distance_to_next: f64,
     direction: Option<f64>,
     before: BTreeMap<TileCoord, Option<Arc<Tile>>>,
@@ -406,7 +407,7 @@ pub struct Document {
     options: DocumentOptions,
     history: History,
     stroke: Option<Stroke>,
-    scatter_serial: u64,
+    random_serial: u64,
     liquify: Option<liquify::LiquifyState>,
     transform: Option<transform::TransformState>,
     revision: u64,
@@ -629,7 +630,7 @@ impl Document {
             options,
             history: History::default(),
             stroke: None,
-            scatter_serial: 0,
+            random_serial: 0,
             liquify: None,
             transform: None,
             selection: crate::Selection::default(),
@@ -1162,12 +1163,12 @@ impl Document {
         let program = BrushProgram::compile(definition)?;
         first.validate()?;
         Self::validate_stroke_work(brush, &program, 1)?;
-        let scatter_serial = if program.scatter.enabled() {
-            self.scatter_serial
+        let random_serial = if program.scatter.enabled() || program.shape_jitter.active() {
+            self.random_serial
                 .checked_add(1)
-                .ok_or(Error::ResourceLimit("scatter stroke serial exhausted"))?
+                .ok_or(Error::ResourceLimit("random stroke serial exhausted"))?
         } else {
-            self.scatter_serial
+            self.random_serial
         };
         if self
             .layer(self.active_layer)
@@ -1197,8 +1198,9 @@ impl Document {
             last: first,
             last_dab: first,
             last_carrier: first,
-            scatter_index: 0,
-            scatter_stroke: scatter_serial,
+            random_index: 0,
+            random_stroke: random_serial,
+            shape_sample: Default::default(),
             distance_to_next: brush.step(),
             direction: None,
             before: BTreeMap::new(),
@@ -1234,7 +1236,7 @@ impl Document {
                 if changed {
                     self.bump_revision();
                 }
-                self.scatter_serial = scatter_serial;
+                self.random_serial = random_serial;
                 self.stroke = Some(stroke);
                 Ok(())
             }
@@ -1442,19 +1444,27 @@ impl Document {
     }
 
     fn dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
-        if let Some(plan) = stroke.program.scatter.plan(
+        let logical = stroke.random_index;
+        let plan = stroke.program.scatter.plan(
             stroke.brush.radius,
-            stroke.scatter_stroke,
-            stroke.scatter_index,
+            stroke.random_stroke,
+            logical,
             stroke.direction,
-        ) {
-            stroke.scatter_index = stroke
-                .scatter_index
+        );
+        if plan.is_some() || stroke.program.shape_jitter.active() {
+            stroke.random_index = logical
                 .checked_add(1)
-                .ok_or(Error::ResourceLimit("scatter dab serial exhausted"))?;
+                .ok_or(Error::ResourceLimit("random dab serial exhausted"))?;
+        }
+        if let Some(plan) = plan {
             let mut changed = false;
             for index in 0..plan.count {
                 let sample = plan.point(index, point);
+                stroke.shape_sample =
+                    stroke
+                        .program
+                        .shape_jitter
+                        .sample(stroke.random_stroke, logical, index);
                 if stroke.first_dab {
                     stroke.last_carrier = sample;
                 }
@@ -1463,6 +1473,11 @@ impl Document {
             }
             Ok(changed)
         } else {
+            stroke.shape_sample =
+                stroke
+                    .program
+                    .shape_jitter
+                    .sample(stroke.random_stroke, logical, 0);
             stroke.last_carrier = stroke.last_dab;
             self.dab_single(stroke, point)
         }
@@ -1485,6 +1500,7 @@ impl Document {
     ) -> Result<bool> {
         let radius = f64::from(
             stroke.brush.radius
+                * stroke.shape_sample.size
                 * if stroke.program.tip.pressure_size {
                     stroke.program.size_pressure(point.pressure)
                 } else {
@@ -1517,7 +1533,9 @@ impl Document {
         if radius == 0.0 || flow == 0.0 || stroke.brush.opacity == 0. {
             return Ok(false);
         }
-        let geometry = stroke.program.geometry(point, stroke.direction);
+        let geometry = stroke
+            .program
+            .dab_geometry(point, stroke.direction, stroke.shape_sample);
         let (extent_x, extent_y) = stroke.program.extent(radius, geometry);
         let x0 = ((point.x - extent_x - 1.0).floor() as i64).clamp(0, i64::from(self.width));
         let y0 = ((point.y - extent_y - 1.0).floor() as i64).clamp(0, i64::from(self.height));
