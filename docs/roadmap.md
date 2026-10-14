@@ -1,3 +1,5 @@
+形状抖动保存与VBR：[设计](brush-shape-jitter-io-design.md) / [验收](brush-shape-jitter-io-validation.md)。state9/VBR1.7/behavior6和真实组合笔触还原已接IO；原生Qt入口待接，旧package暂拒绝新对象防配置丢失。
+
 形状抖动内核：[设计](brush-shape-jitter-design.md) / [验收](brush-shape-jitter-validation.md)。确定性大小/圆度/角度、压力设备组合、程序图片共用和真实子印章已实现；状态/VBR/原生Qt继续后续，本阶段没有新用户入口。
 
 散布原生Qt：[设计](brush-scatter-ui-design.md) / [验收](brush-scatter-ui-validation.md)。ABI1.39、分类参数/统一预览/捕获笔触、保存复制与VBR图片来源往返已接，临时包边界解除。其他动态、纹理和湿混继续后续。

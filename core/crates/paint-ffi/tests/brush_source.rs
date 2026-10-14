@@ -9,6 +9,54 @@ use paint_task::CancellationToken;
 use std::{ptr, sync::Arc};
 
 #[test]
+fn shape_package_boundary_keeps_caller_and_existing_target() {
+    use std::collections::BTreeMap;
+    let temp = tempfile::tempdir().unwrap();
+    let token = CancellationToken::default();
+    let json=br#"{"packageId":"12345678-1234-4234-8234-123456789abc","brushes":[{"id":"12345678-1234-4234-8234-123456789abd","name":"shape","engineProfile":"drawverse.brush","behaviorVersion":6,"requiredCapabilities":["procedural-tip","shape-jitter"],"parameters":{"diameter":16,"spacing":0.01,"dabOpacity":1,"hardness":1,"roundness":1,"angle":0,"flow":1,"pressureSize":false,"pressureFlow":false,"shapeJitter":{"enabled":false,"size":0.5,"minimumSize":0.2,"angle":0.7,"roundness":0.6,"minimumRoundness":0.1,"seed":"ffffffffffffffff"}}}]}"#;
+    let package = paint_io::vbr::Package::from_json(json).unwrap();
+    let bundle = paint_io::vbr_image::ImageBundle::new(package, BTreeMap::new(), &token).unwrap();
+    let input = temp.path().join("shape.vbr");
+    paint_io::vbr_image::save(&input, &bundle, &token).unwrap();
+    let target = temp.path().join("unchanged.vbr");
+    std::fs::write(&target, b"original").unwrap();
+    // Owned handles and all caller bytes remain live throughout each synchronous call.
+    unsafe {
+        let mut library = ptr::null_mut();
+        assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+        let path = input.to_str().unwrap();
+        let mut buffer = vec![42; 2 * 1024 * 1024];
+        let mut required = 99;
+        assert_eq!(
+            paint_brush_library_package_read(
+                library,
+                path.as_ptr(),
+                path.len() as u64,
+                buffer.as_mut_ptr(),
+                buffer.len() as u64,
+                &mut required
+            ),
+            PAINT_UNSUPPORTED
+        );
+        assert_eq!(required, 0);
+        assert!(buffer.iter().all(|b| *b == 42));
+        let path = target.to_str().unwrap();
+        assert_eq!(
+            paint_brush_library_package_write(
+                library,
+                path.as_ptr(),
+                path.len() as u64,
+                json.as_ptr(),
+                json.len() as u64
+            ),
+            PAINT_UNSUPPORTED
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"original");
+        assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+    }
+}
+
+#[test]
 fn scatter_packages_round_trip_with_public_native_entry() {
     use std::collections::BTreeMap;
     let temp = tempfile::tempdir().unwrap();
@@ -379,6 +427,7 @@ fn pressure_packages_round_trip_through_native_entry() {
     let token = CancellationToken::default();
     let mut parameters = paint_io::vbr::Parameters {
         scatter_dynamics: None,
+        shape_jitter: None,
         tip_dynamics: None,
         diameter: 16.,
         spacing: 0.01,

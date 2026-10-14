@@ -68,6 +68,7 @@ fn bundle() -> ImageBundle {
                 source_resource: Some(p.source_id().into()),
                 parameters: Parameters {
                     scatter_dynamics: None,
+                    shape_jitter: None,
                     tip_dynamics: None,
                     pressure_dynamics: None,
                     diameter: s.diameter,
@@ -110,7 +111,14 @@ fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() 
     input.package.brushes[0]
         .required_capabilities
         .push("scatter-stamps".into());
-    input.package.brushes[0].behavior_version = 5;
+    input.package.brushes[0].parameters.shape_jitter =
+        Some(paint_io::brush_shape_jitter::ShapeParameters::from_core(
+            paint_core::ShapeJitter::new(true, 0.5, 0.5, 0.8, 0.3, 0.7, u64::MAX).unwrap(),
+        ));
+    input.package.brushes[0]
+        .required_capabilities
+        .push("shape-jitter".into());
+    input.package.brushes[0].behavior_version = 6;
     input.package.brushes[0]
         .required_capabilities
         .push("tip-dynamics".into());
@@ -128,6 +136,10 @@ fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() 
         output.package.brushes[0].tip_resource,
         input.package.brushes[0].tip_resource
     );
+    assert_eq!(
+        output.definition(0).unwrap().dynamics,
+        input.definition(0).unwrap().dynamics
+    );
     let mut docs = Vec::new();
     for bundle in [&input, &output] {
         let mut doc = Document::new(40, 40).unwrap();
@@ -140,6 +152,7 @@ fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() 
         doc.end_stroke().unwrap();
         docs.push(doc);
     }
+    assert!((0..40).any(|y| (0..40).any(|x| docs[0].pixel(x, y).alpha() > 0.)));
     for y in 0..40 {
         for x in 0..40 {
             assert_eq!(docs[0].pixel(x, y), docs[1].pixel(x, y));
@@ -153,7 +166,11 @@ fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() 
     baseline.baseline.tip_dynamics = None;
     baseline.baseline.scatter_dynamics = input.package.brushes[0].parameters.scatter_dynamics;
     assert!(baseline.validate().is_err());
+    baseline.baseline.scatter_dynamics = None;
+    baseline.baseline.shape_jitter = input.package.brushes[0].parameters.shape_jitter;
+    assert!(baseline.validate().is_err());
 }
+
 fn rewrite(bytes: &[u8], mut edit: impl FnMut(&str, &mut Vec<u8>) -> bool) -> Vec<u8> {
     let mut archive = ZipArchive::new(Cursor::new(bytes)).unwrap();
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));

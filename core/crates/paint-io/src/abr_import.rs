@@ -62,6 +62,7 @@ impl ImportBatch {
                     name: &p.name,
                     parameters: crate::vbr::Parameters {
                         scatter_dynamics: None,
+                        shape_jitter: None,
                         tip_dynamics: None,
                         pressure_dynamics: None,
                         diameter: s.diameter,

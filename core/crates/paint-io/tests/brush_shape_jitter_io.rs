@@ -5,7 +5,7 @@ use paint_io::{
     vbr::{Package, Parameters, Preset},
 };
 #[test]
-fn unimplemented_shape_io_cannot_discard_enabled_or_closed_configuration() {
+fn state9_saves_shape_separately_and_old_pressure_payload_rejects_it() {
     for enabled in [true, false] {
         let dynamics = BrushDynamics {
             shape_jitter: ShapeJitter::new(enabled, 0.5, 0.2, 0.7, 0.6, 0.1, u64::MAX).unwrap(),
@@ -18,7 +18,15 @@ fn unimplemented_shape_io_cannot_discard_enabled_or_closed_configuration() {
             ..Default::default()
         };
         catalog.edit("round-pressure", settings).unwrap();
-        assert!(brush_state::encode(&catalog).is_err());
+        let bytes = brush_state::encode(&catalog).unwrap();
+        assert_eq!(
+            brush_state::decode(&bytes, MAX_CATALOG_MASK_BYTES)
+                .unwrap()
+                .selected()
+                .settings()
+                .dynamics,
+            dynamics
+        );
         assert_eq!(catalog.selected().settings().dynamics, dynamics);
         let package = Package {
             package_id: "12345678-1234-4234-8234-123456789abc".into(),
@@ -43,6 +51,7 @@ fn unimplemented_shape_io_cannot_discard_enabled_or_closed_configuration() {
                     pressure_dynamics: Some(PressureParameters::from_core(&dynamics)),
                     tip_dynamics: None,
                     scatter_dynamics: None,
+                    shape_jitter: None,
                 },
             }],
         };
