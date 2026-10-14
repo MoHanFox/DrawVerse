@@ -475,9 +475,57 @@ pub unsafe extern "C" fn paint_session_begin_prepared_preset(
         let ticket = runtime::registry()?
             .brush_library(library)?
             .ticket(preparation)?;
-        let sequence = runtime::registry()?
-            .session(core, session)?
-            .submit(Operation::BeginPrepared(ticket, id, tool, point))?;
+        let sequence =
+            runtime::registry()?
+                .session(core, session)?
+                .submit(Operation::BeginPrepared(
+                    ticket,
+                    id,
+                    tool,
+                    Pixel::WHITE,
+                    point,
+                ))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+/// Capture both tool colours and begin after exact preparation on Rust workers.
+/// # Safety
+/// Live handles, readable ID, sized aligned tool/background/point and writable sequence required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_begin_prepared_preset_with_background(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    library: *mut PaintBrushLibrary,
+    preparation: u64,
+    id: *const u8,
+    id_length: u64,
+    tool: *const PaintBrushToolDesc,
+    background: *const PaintBrushBackgroundDesc,
+    point: *const PaintPoint,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        let background: PaintBrushBackgroundDesc = pointers::read_sized(background)?;
+        if background.reserved != 0 {
+            return Err(ApiError::invalid("background reserved"));
+        }
+        let background = Pixel::from_straight(background.linear_rgba)?;
+        let id = pointers::utf8(id, id_length)?;
+        let tool = pointers::read_sized(tool)?;
+        validate_tool(tool)?;
+        let point = crate::point(pointers::read_sized(point)?)?;
+        point.validate()?;
+        let ticket = runtime::registry()?
+            .brush_library(library)?
+            .ticket(preparation)?;
+        let sequence =
+            runtime::registry()?
+                .session(core, session)?
+                .submit(Operation::BeginPrepared(
+                    ticket, id, tool, background, point,
+                ))?;
         pointers::write(out_sequence, sequence)
     })
 }

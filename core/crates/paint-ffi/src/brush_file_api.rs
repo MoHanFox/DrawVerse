@@ -84,16 +84,6 @@ pub unsafe extern "C" fn paint_brush_package_write(
         let path = pointers::path_utf8(path, path_length)?;
         let json = pointers::brush_json(json, json_length)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
-        if package
-            .brushes
-            .iter()
-            .any(|b| b.parameters.color_dynamics.is_some())
-        {
-            return Err(ApiError::new(
-                PAINT_UNSUPPORTED,
-                "color dynamics require a newer frontend",
-            ));
-        }
         paint_io::vbr::save(Path::new(&path), &package, &CancellationToken::default())
             .map_err(io_error)
     })
@@ -119,17 +109,6 @@ pub unsafe extern "C" fn paint_brush_library_package_read(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
-        if bundle
-            .package
-            .brushes
-            .iter()
-            .any(|b| b.parameters.color_dynamics.is_some())
-        {
-            return Err(ApiError::new(
-                PAINT_UNSUPPORTED,
-                "color dynamics require a newer frontend",
-            ));
-        }
         let bytes = bundle.package.to_json().map_err(io_error)?;
         if pointers::length(capacity)? < bytes.len() {
             pointers::write(required, bytes.len() as u64)?;
@@ -160,16 +139,6 @@ pub unsafe extern "C" fn paint_brush_library_package_write(
         let json = pointers::brush_json(json, json_length)?;
         let library = runtime::registry()?.brush_library(library)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
-        if package
-            .brushes
-            .iter()
-            .any(|b| b.parameters.color_dynamics.is_some())
-        {
-            return Err(ApiError::new(
-                PAINT_UNSUPPORTED,
-                "color dynamics require a newer frontend",
-            ));
-        }
         let mut assets = std::collections::BTreeMap::new();
         let token = CancellationToken::default();
         let mut sources = Vec::new();

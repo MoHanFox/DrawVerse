@@ -73,6 +73,8 @@ int main(void) {
     CHECK((caps.features & PAINT_FEATURE_DEVICE_TIP_DYNAMICS) != 0);
     CHECK((caps.features & PAINT_FEATURE_BRUSH_SCATTER) != 0);
     CHECK((caps.features & PAINT_FEATURE_SHAPE_JITTER) != 0);
+    CHECK((caps.features & PAINT_FEATURE_COLOR_DYNAMICS) != 0);
+    CHECK(sizeof(PaintBrushBackgroundDesc)==24);
     CHECK((caps.features & (PAINT_FEATURE_DOCUMENT | PAINT_FEATURE_HISTORY | PAINT_FEATURE_LINEAR_TILE_READ | PAINT_FEATURE_EVENTS)) == (PAINT_FEATURE_DOCUMENT | PAINT_FEATURE_HISTORY | PAINT_FEATURE_LINEAR_TILE_READ | PAINT_FEATURE_EVENTS));
     desc.struct_size = sizeof(desc); desc.width = 128; desc.height = 64;
     desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;

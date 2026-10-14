@@ -1,3 +1,5 @@
+颜色动态原生Qt：[设计](brush-color-ui-design.md) / [验收](brush-color-ui-validation.md)。ABI1.41、两色背景描述与捕获、颜色分类和关闭编辑、统一真实预览/绘画/保存交换已接，临时包边界解除；纹理/双笔刷/平滑/湿混与完整ABR待后续。
+
 颜色动态保存与VBR：[设计](brush-color-io-design.md) / [验收](brush-color-io-validation.md)。state10/VBR1.8/behavior7、显式模型和真实两笔还原已接IO；原生背景与Qt待接，旧package暂拒绝新对象防丢配置。
 
 颜色动态内核：[设计](brush-color-dynamics-design.md) / [验收](brush-color-dynamics-validation.md)。前景背景混合/HSV、整笔与逐印章、分页贡献和真实历史已实现；保存/VBR/原生背景与Qt待接，旧IO拒绝新模块。本阶段没有新用户入口。

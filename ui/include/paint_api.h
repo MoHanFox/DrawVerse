@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 40
+#define PAINT_ABI_MINOR 41
 
 #define PAINT_ABI_PATCH 0
 
@@ -87,6 +87,8 @@
 #define PAINT_FEATURE_BUCKET 8192
 
 #define PAINT_FEATURE_CLIPPING 2048
+
+#define PAINT_FEATURE_COLOR_DYNAMICS 68719476736
 
 #define PAINT_FEATURE_CPU_VIEWPORT 32
 
@@ -603,6 +605,15 @@ typedef struct PaintBrushToolDesc {
   uint32_t pressure_strength;
   uint32_t reserved;
 } PaintBrushToolDesc;
+
+/**
+ * Background tool colour captured with the existing foreground tool DTO.
+ */
+typedef struct PaintBrushBackgroundDesc {
+  uint32_t struct_size;
+  uint32_t reserved;
+  float linear_rgba[4];
+} PaintBrushBackgroundDesc;
 
 /**
  * ABI 1.18: same brush/point pipeline, independent strength and sampling options.
@@ -1461,6 +1472,22 @@ PaintStatus paint_session_begin_prepared_preset(struct PaintCore *core,
                                                 const struct PaintBrushToolDesc *tool,
                                                 const struct PaintPoint *point,
                                                 uint64_t *out_sequence);
+
+/**
+ * Capture both tool colours and begin after exact preparation on Rust workers.
+ * # Safety
+ * Live handles, readable ID, sized aligned tool/background/point and writable sequence required.
+ */
+PaintStatus paint_session_begin_prepared_preset_with_background(struct PaintCore *core,
+                                                                struct PaintSession *session,
+                                                                struct PaintBrushLibrary *library,
+                                                                uint64_t preparation,
+                                                                const uint8_t *id,
+                                                                uint64_t id_length,
+                                                                const struct PaintBrushToolDesc *tool,
+                                                                const struct PaintBrushBackgroundDesc *background,
+                                                                const struct PaintPoint *point,
+                                                                uint64_t *out_sequence);
 
 /**
  * Capture a preset for one asynchronous paint, erase or smudge stroke.

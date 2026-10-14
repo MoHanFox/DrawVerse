@@ -70,8 +70,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 40) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.40 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 41) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.41 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -525,11 +525,14 @@ public:
             if(!tip.value("tipDynamics").toMap().isEmpty()){row["tipDynamics"]=QJsonObject::fromVariantMap(tip.value("tipDynamics").toMap());state["version"]=7;}
             if(!tip.value("scatterDynamics").toMap().isEmpty()){row["scatterDynamics"]=QJsonObject::fromVariantMap(tip.value("scatterDynamics").toMap());state["version"]=8;}
             if(!tip.value("shapeJitter").toMap().isEmpty()){row["shapeJitter"]=QJsonObject::fromVariantMap(tip.value("shapeJitter").toMap());state["version"]=9;}
+            if(!tip.value("colorDynamics").toMap().isEmpty()){row["colorDynamics"]=QJsonObject::fromVariantMap(tip.value("colorDynamics").toMap());state["version"]=10;}
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
+            auto background=dto<PaintBrushBackgroundDesc>();for(auto &v:background.linear_rgba)v=1;
+            if(!tip.value("colorDynamics").toMap().isEmpty()){request.linear_rgba[0]=1;request.linear_rgba[1]=request.linear_rgba[2]=0;background.linear_rgba[0]=background.linear_rgba[1]=0;background.linear_rgba[2]=1;}
             for(int i=0;i<=32;++i){const double t=i/32.;InputSample sample;sample.position={20+200*t,30+8*std::sin(t*6.283185307)};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;if(!tip.value("tipDynamics").toMap().isEmpty()){sample.capabilities=PAINT_INPUT_PRESSURE|PAINT_INPUT_TILT|PAINT_INPUT_ROTATION;sample.rotation=static_cast<float>(-60+120*t);sample.tiltX=static_cast<float>(30+30*std::sin(t*3.141592654));sample.tiltY=20;}command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
-                const auto status=i==0?paint_session_begin_prepared_preset(m_core,m_brushSession,m_previewCatalog,preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
+                const auto status=i==0?paint_session_begin_prepared_preset_with_background(m_core,m_brushSession,m_previewCatalog,preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&background,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
                 if(status!=PAINT_OK){finishBrushPreview({});return;}}
             command=dto<PaintCommand>();command.kind=PAINT_COMMAND_END_STROKE;if(paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence)!=PAINT_OK){finishBrushPreview({});return;}
             return;
@@ -814,7 +817,8 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
             if(m_smudgeTool){request.operation=PAINT_BRUSH_SMUDGE;
                 request.strength=static_cast<float>(m_smudgeStrength);request.all_layers=m_smudgeAllLayers;request.finger_painting=m_smudgeFingerPainting;request.pressure_strength=m_smudgePressure;}
             const auto presetId=m_brushLibrary->selectedId().toUtf8();QMutexLocker catalogLock(&m_brushCatalogConnection->mutex);
-            status=paint_session_begin_prepared_preset(m_connection->core,m_connection->session,m_brushCatalogConnection->library,m_brushCatalogConnection->preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&command.point,&sequence);
+            auto background=dto<PaintBrushBackgroundDesc>();background.linear_rgba[0]=linear(m_secondaryColor.redF());background.linear_rgba[1]=linear(m_secondaryColor.greenF());background.linear_rgba[2]=linear(m_secondaryColor.blueF());background.linear_rgba[3]=m_secondaryColor.alphaF();
+            status=paint_session_begin_prepared_preset_with_background(m_connection->core,m_connection->session,m_brushCatalogConnection->library,m_brushCatalogConnection->preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&background,&command.point,&sequence);
             if(status==PAINT_OK){
                 m_strokeBasePose={false,m_radius,m_brushLibrary->angle(),m_brushLibrary->roundness()};
                 m_strokeOutlineResource=m_brushLibrary->maskResource();m_strokeOutlinePath=m_brushOutlinePath;m_strokeOutlineReady=m_brushOutlineReady;

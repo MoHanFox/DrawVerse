@@ -76,3 +76,5 @@
 颜色动态内核阶段：见 [设计](brush-color-dynamics-design.md) / [验收](brush-color-dynamics-validation.md)。两色/HSV和真实多色覆盖/压力上限/分页/历史已验证，状态/VBR/用户背景原生传入/Qt尚未接，完整系统继续后续。
 
 颜色动态IO阶段：state10/VBR1.8/behavior7，见 [验收](brush-color-io-validation.md)。模型/完整seed/关闭频率、真实两笔与图片来源还原已验证；原生背景与Qt待接，旧package暂拒绝新字段；完整系统继续后续。
+
+颜色动态原生Qt阶段：ABI1.41、state10/VBR1.8，见 [验收](brush-color-ui-validation.md)。真实两色捕获/预览/绘画与关闭可编辑、保存交换/图片来源/DPR1/2/ABI已验证；模型语义明确，PS真实颜色兼容、纹理/双笔刷/湿混及其他全系统范围继续后续。

@@ -46,6 +46,7 @@ pub(crate) enum Operation {
         Arc<crate::brush_preparation::CatalogTicket>,
         String,
         PaintBrushToolDesc,
+        paint_core::Pixel,
         InputPoint,
     ),
     Move(InputPoint),
@@ -879,13 +880,14 @@ impl Engine {
                 self.error = None;
                 self.default_view();
             }
-            Operation::BeginPrepared(ticket, id, tool, point) => {
+            Operation::BeginPrepared(ticket, id, tool, background, point) => {
                 self.aborted = false;
                 let library = ticket.wait()?;
                 let preset = library
                     .preset(&id)
                     .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "prepared brush preset"))?;
-                let definition = crate::brush_catalog_api::tool_definition(&preset, tool)?;
+                let mut definition = crate::brush_catalog_api::tool_definition(&preset, tool)?;
+                definition.brush.background_color = background;
                 self.apply(Operation::Begin(definition, point, tool.layer_id), sequence)?;
             }
             Operation::Begin(brush, point, layer) => {

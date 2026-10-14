@@ -1,5 +1,9 @@
 # C ABI 1.38.0 契约
 
+## ABI 1.41 颜色动态与背景捕获
+
+`PAINT_FEATURE_COLOR_DYNAMICS=68719476736`（u64）。新增 `PaintBrushBackgroundDesc`（24字节：size/reserved/4线性RGBA，RGBA偏移8）及 `paint_session_begin_prepared_preset_with_background`。旧ToolDesc/导出布局不变，旧入口白色背景。新入口与前景tool同时复制背景为拥有的Pixel，size/reserved/RGBA/point校验、失败sequence=0，actor等准确准备后捕获完整预设，两色不借用caller内存；所有caller读取仍在pointers.rs。state10/VBR1.8/behavior7/model接Qt镜像，库package解除临时拒绝；旧程序子集接口保持原范围。见 `docs/brush-color-ui-validation.md`。
+
 颜色动态IO阶段：Rust state10/VBR1.8/behavior7保存独立colorDynamics及完整hex种子，模型严格linear-hsv-v1；ABI仍1.40，用户背景工具传入与Qt待接。库package_read/write暂对新对象返回Unsupported，读required=0且不改caller/资源，写不改目标；旧包保持原路径。见 `docs/brush-color-io-validation.md`。
 
 ## ABI 1.40 形状抖动入口

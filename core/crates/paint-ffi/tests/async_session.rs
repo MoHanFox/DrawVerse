@@ -213,6 +213,153 @@ fn preset_stroke_captures_definition_before_library_edit_remove_destroy() {
     }
 }
 #[test]
+fn background_prepared_begin_captures_both_colors_and_keeps_old_entry() {
+    assert_eq!(size_of::<PaintBrushBackgroundDesc>(), 24);
+    assert_eq!(offset_of!(PaintBrushBackgroundDesc, linear_rgba), 8);
+    let mut frames = Vec::new();
+    for legacy in [false, true] {
+        let h = Harness::new(40, 40);
+        // Owned DTOs, bytes and handles remain alive through synchronous ABI calls.
+        unsafe {
+            let mut library = ptr::null_mut();
+            assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+            let mut catalog = paint_core::BrushCatalog::default();
+            let mut settings = catalog.selected().settings().clone();
+            settings.opacity = 0.5;
+            settings.tip.pressure_size = false;
+            settings.tip.pressure_flow = false;
+            settings.dynamics.color =
+                paint_core::ColorDynamics::new(true, 1., 0., 0., 0., false, u64::MAX).unwrap();
+            catalog.edit("round-pressure", settings).unwrap();
+            let json = paint_io::brush_state::encode(&catalog).unwrap();
+            let mut prepared = 0;
+            assert_eq!(
+                paint_brush_library_prepare_state(
+                    library,
+                    json.as_ptr(),
+                    json.len() as u64,
+                    &mut prepared
+                ),
+                PAINT_OK
+            );
+            let id = b"round-pressure";
+            let mut tool = PaintBrushToolDesc {
+                radius: 8.,
+                strength: 1.,
+                linear_rgba: [1., 0., 0., 1.],
+                ..dto!(PaintBrushToolDesc)
+            };
+            let point = PaintPoint {
+                x: 20.5,
+                y: 20.5,
+                pressure: 1.,
+                tool: PAINT_TOOL_MOUSE,
+                ..dto!(PaintPoint)
+            };
+            let mut background = PaintBrushBackgroundDesc {
+                linear_rgba: [0., 0., 1., 1.],
+                ..dto!(PaintBrushBackgroundDesc)
+            };
+            let mut sequence = 99;
+            if !legacy {
+                for bad in [
+                    PaintBrushBackgroundDesc {
+                        struct_size: 23,
+                        ..background
+                    },
+                    PaintBrushBackgroundDesc {
+                        reserved: 1,
+                        ..background
+                    },
+                    PaintBrushBackgroundDesc {
+                        linear_rgba: [f32::NAN, 0., 1., 1.],
+                        ..background
+                    },
+                ] {
+                    assert_eq!(
+                        paint_session_begin_prepared_preset_with_background(
+                            h.core,
+                            h.session,
+                            library,
+                            prepared,
+                            id.as_ptr(),
+                            id.len() as u64,
+                            &tool,
+                            &bad,
+                            &point,
+                            &mut sequence
+                        ),
+                        PAINT_INVALID_ARGUMENT
+                    );
+                    assert_eq!(sequence, 0);
+                }
+                assert_eq!(
+                    paint_session_begin_prepared_preset_with_background(
+                        h.core,
+                        h.session,
+                        library,
+                        prepared,
+                        id.as_ptr(),
+                        id.len() as u64,
+                        &tool,
+                        ptr::null(),
+                        &point,
+                        &mut sequence
+                    ),
+                    PAINT_INVALID_ARGUMENT
+                );
+                assert_eq!(sequence, 0);
+            }
+            let status = if legacy {
+                paint_session_begin_prepared_preset(
+                    h.core,
+                    h.session,
+                    library,
+                    prepared,
+                    id.as_ptr(),
+                    id.len() as u64,
+                    &tool,
+                    &point,
+                    &mut sequence,
+                )
+            } else {
+                paint_session_begin_prepared_preset_with_background(
+                    h.core,
+                    h.session,
+                    library,
+                    prepared,
+                    id.as_ptr(),
+                    id.len() as u64,
+                    &tool,
+                    &background,
+                    &point,
+                    &mut sequence,
+                )
+            };
+            assert_eq!(status, PAINT_OK);
+            background.linear_rgba = [0., 1., 0., 1.];
+            tool.linear_rgba = [0., 1., 0., 1.];
+            assert_eq!(background.linear_rgba, tool.linear_rgba);
+            assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+            let ended = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_END_STROKE,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(ended.last_error_status, PAINT_OK);
+            assert_eq!(ended.undo_depth, 1);
+            let pixels = h.pixels(0, h.frame(0, ended.revision));
+            let center = (20 * 40 + 20) * 4;
+            assert!(pixels[center] > 0 && pixels[center + 2] > 0);
+            if !legacy {
+                assert_eq!(pixels[center + 1], 0);
+            }
+            frames.push(pixels);
+        }
+    }
+    assert_ne!(frames[0], frames[1]);
+}
+
+#[test]
 fn prepared_preset_begin_uses_exact_revision_after_newer_draft_and_library_destroy() {
     let h = Harness::new(40, 40);
     unsafe {

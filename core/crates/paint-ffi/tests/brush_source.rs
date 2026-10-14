@@ -9,7 +9,7 @@ use paint_task::CancellationToken;
 use std::{ptr, sync::Arc};
 
 #[test]
-fn color_package_boundary_preserves_caller_bytes_and_existing_target() {
+fn color_package_public_entry_preserves_closed_model_and_seed() {
     use std::collections::BTreeMap;
     let temp = tempfile::tempdir().unwrap();
     let token = CancellationToken::default();
@@ -36,10 +36,19 @@ fn color_package_boundary_preserves_caller_bytes_and_existing_target() {
                 buffer.len() as u64,
                 &mut required
             ),
-            PAINT_UNSUPPORTED
+            PAINT_OK
         );
-        assert_eq!(required, 0);
-        assert!(buffer.iter().all(|b| *b == 42));
+        let package = paint_io::vbr::Package::from_json(&buffer[..required as usize]).unwrap();
+        assert_eq!(
+            package.brushes[0]
+                .parameters
+                .color_dynamics
+                .unwrap()
+                .core()
+                .seed(),
+            u64::MAX
+        );
+        assert!(buffer[required as usize..].iter().all(|b| *b == 42));
         let path = target.to_str().unwrap();
         assert_eq!(
             paint_brush_library_package_write(
@@ -49,9 +58,17 @@ fn color_package_boundary_preserves_caller_bytes_and_existing_target() {
                 json.as_ptr(),
                 json.len() as u64
             ),
-            PAINT_UNSUPPORTED
+            PAINT_OK
         );
-        assert_eq!(std::fs::read(&target).unwrap(), b"original");
+        let saved = paint_io::vbr_image::load(&target, &token).unwrap();
+        let color = saved.package.brushes[0]
+            .parameters
+            .color_dynamics
+            .unwrap()
+            .core();
+        assert_eq!(color.seed(), u64::MAX);
+        assert!(!color.enabled());
+        assert_eq!(color.hue(), 0.5);
         assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
     }
 }
