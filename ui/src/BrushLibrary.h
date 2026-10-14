@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QColor>
 #include <QJsonObject>
 #include <QHash>
 #include <QVariantList>
@@ -189,6 +190,7 @@ public:
     QByteArray snapshot() const;
     QByteArray catalogSnapshot() const;
     bool applyNativeCatalog(const QByteArray &json);
+    void setPreviewColors(const QColor &foreground,const QColor &background);
     void acceptPreview(const QString &id,quint64 token,const QString &image);
 signals:
     void cursorChanged();
@@ -217,5 +219,6 @@ private:
     QStringList m_recentColors;
     int m_writeBlend=0;
     bool m_eraser=false;
+    QColor m_previewForeground=Qt::white,m_previewBackground=Qt::white;
     quint64 m_nextToken=16;
 };

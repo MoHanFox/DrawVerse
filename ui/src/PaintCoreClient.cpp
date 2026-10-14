@@ -70,7 +70,7 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 47) {
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 48) {
             emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.46 或兼容后续版本")); return;
         }
         auto settings = preferences();
@@ -100,7 +100,7 @@ public:
         inspectStorage();
         auto caps = dto<PaintCapabilities>();
         if (!check(paint_core_capabilities(m_core, &caps))) return;
-        constexpr uint64_t required = PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
+        constexpr uint64_t required = PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
         if ((caps.features & (required | PAINT_FEATURE_SELECTION)) != (required | PAINT_FEATURE_SELECTION)) { emit failure(QStringLiteral("当前核心缺少异步视口或选区能力")); return; }
         auto desc = dto<PaintDocumentDesc>(); desc.width = 960; desc.height = 640;
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
@@ -506,7 +506,7 @@ public:
             if(m_brushQueue.isEmpty())return;
             m_brushJob=m_brushQueue.takeFirst().toMap();m_brushRequest=0;m_brushClock.restart();
             const auto tip=m_brushJob.value("tip").toMap();const auto dual=tip.value("dualBrush").toMap();const bool dualActive=dual.value("enabled").toBool();
-            const double primary=std::clamp(tip.value("presetRadius",24.).toDouble(),.5,256.);const double secondary=dual.value("diameter",24.).toDouble()/2.;
+            const double primary=std::clamp(tip.value("presetRadius",24.).toDouble(),.5,256.);const auto sizing=dual.value("sizing").toMap();const double secondary=sizing.value("mode").toString()=="relative"?std::clamp(primary+sizing.value("diameterOffset").toDouble()/2.,.5,256.):dual.value("diameter",24.).toDouble()/2.;
             m_brushPreviewScale=dualActive?std::max(1.,std::max(primary,secondary)/8.4):1.;
             const double mainDiameter=primary*2.*(tip.value("maskResource").toString().isEmpty()?1.:std::sqrt(2.))+2.;
             const double childDiameter=secondary*2.*(dual.value("resource").toString().isEmpty()?1.:std::sqrt(2.))+2.;
@@ -545,11 +545,17 @@ public:
             if(smoothPressure(tip.value("pressureDynamics").toMap()) || smoothPressure(tip.value("dualBrush").toMap().value("pressureDynamics").toMap()))state["version"]=13;
             if(!tip.value("smoothing").toMap().isEmpty()){row["smoothing"]=QJsonObject::fromVariantMap(tip.value("smoothing").toMap());state["version"]=14;}
             if(tip.value("dualBrush").toMap().contains("sizing"))state["version"]=15;
+            if(tip.value("dualBrush").toMap().contains("color"))state["version"]=16;
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
             auto background=dto<PaintBrushBackgroundDesc>();for(auto &v:background.linear_rgba)v=1;
             if(!tip.value("colorDynamics").toMap().isEmpty()){request.linear_rgba[0]=1;request.linear_rgba[1]=request.linear_rgba[2]=0;background.linear_rgba[0]=background.linear_rgba[1]=0;background.linear_rgba[2]=1;}
+            if(tip.contains("previewForeground")){
+                const auto fg=tip.value("previewForeground").value<QColor>();const auto bg=tip.value("previewBackground").value<QColor>();
+                request.linear_rgba[0]=linear(fg.redF());request.linear_rgba[1]=linear(fg.greenF());request.linear_rgba[2]=linear(fg.blueF());request.linear_rgba[3]=fg.alphaF();
+                background.linear_rgba[0]=linear(bg.redF());background.linear_rgba[1]=linear(bg.greenF());background.linear_rgba[2]=linear(bg.blueF());background.linear_rgba[3]=bg.alphaF();
+            }
             auto blend=dto<PaintBrushBlendDesc>();blend.mode=0;
             for(int i=0;i<=sampleCount;++i){const double t=i/double(sampleCount);InputSample sample;sample.position={(20+200*t)*m_brushPreviewScale,(30+8*std::sin(t*6.283185307))*m_brushPreviewScale};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;if(tip.value("smoothing").toMap().value("enabled").toBool())sample.timestamp=quint64(i)*8000000; if(!tip.value("tipDynamics").toMap().isEmpty() || !dual.value("tipDynamics").toMap().isEmpty()){sample.capabilities=PAINT_INPUT_PRESSURE|PAINT_INPUT_TILT|PAINT_INPUT_ROTATION;sample.rotation=static_cast<float>(-60+120*t);sample.tiltX=static_cast<float>(30+30*std::sin(t*3.141592654));sample.tiltY=20;}command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
                 const auto status=i==0?paint_session_begin_prepared_preset_with_blend(m_core,m_brushSession,m_previewCatalog,preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&background,&blend,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
@@ -619,6 +625,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(qGuiApp,&QGuiApplication::focusObjectChanged,this,[this]{emit layerShortcutsChanged();});
     connect(this,&PaintCoreClient::stateChanged,this,&PaintCoreClient::layerShortcutsChanged);
     m_brushLibrary=new BrushLibrary(this);
+    m_brushLibrary->setPreviewColors(m_color,m_secondaryColor);
     qRegisterMetaType<PaintSessionInfo>();
     qRegisterMetaType<PaintFileJobInfo>();
     m_worker = new BackendWorker(m_connection, settingsFile,m_brushCatalogConnection); m_worker->moveToThread(&m_thread);
@@ -934,12 +941,13 @@ void PaintCoreClient::applyHistoryLimit() {
 }
 void PaintCoreClient::setBrushColor(const QColor &c) {
     // Picking a colour is only a preview: the swatch row advances when the pixel stroke commits.
-    if (c.isValid() && c != m_color) { m_color = c; emit brushChanged(); }
+    if (c.isValid() && c != m_color) { m_color = c; m_brushLibrary->setPreviewColors(m_color,m_secondaryColor); emit brushChanged(); }
 }
-void PaintCoreClient::setSecondaryBrushColor(const QColor &c){if(c.isValid() && c!=m_secondaryColor){m_secondaryColor=c;emit brushChanged();}}
+void PaintCoreClient::setSecondaryBrushColor(const QColor &c){if(c.isValid() && c!=m_secondaryColor){m_secondaryColor=c;m_brushLibrary->setPreviewColors(m_color,m_secondaryColor);emit brushChanged();}}
 void PaintCoreClient::swapBrushColors(){
     // Swapping selects a colour; the recent swatch row only advances on a committed stroke.
     std::swap(m_color,m_secondaryColor);
+    m_brushLibrary->setPreviewColors(m_color,m_secondaryColor);
     emit brushChanged();
 }
 void PaintCoreClient::setBrushWriteBlend(int mode) {m_brushLibrary->setWriteBlend(mode);}

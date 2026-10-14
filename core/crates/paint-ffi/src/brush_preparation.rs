@@ -65,14 +65,6 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
-                    if catalog.ids().iter().any(|id| {
-                        catalog.preset(id).unwrap().settings().dual.color() != Default::default()
-                    }) {
-                        return Err(ApiError::new(
-                            PAINT_UNSUPPORTED,
-                            "dual-color Qt entry is not available yet",
-                        ));
-                    }
                     *self.anchors.lock().map_err(|_| ApiError::internal())? = receipts;
                     Ok(Arc::new(catalog))
                 });
@@ -306,12 +298,6 @@ impl PreparedCatalog {
         Ok(resource)
     }
     pub fn import_bundle(&self, bundle: &paint_io::vbr_image::ImageBundle) -> ApiResult<()> {
-        if bundle.package.brushes.iter().any(|p| p.has_dual_color()) {
-            return Err(ApiError::new(
-                PAINT_UNSUPPORTED,
-                "dual-color Qt entry is not available yet",
-            ));
-        }
         if bundle.assets().is_empty() && bundle.sources().is_empty() {
             return Ok(());
         }
@@ -522,7 +508,7 @@ mod abr_fixture;
 mod tests {
     use super::*;
     #[test]
-    fn native_dual_color_gate_preserves_current_catalog_and_file() {
+    fn native_dual_color_preparation_capture_and_package_entry() {
         for enabled in [false, true] {
             let color = paint_core::DualColor::new(
                 enabled,
@@ -548,10 +534,17 @@ mod tests {
                     String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap(),
                 )
                 .unwrap();
-            assert_eq!(
-                library.ticket(sequence).unwrap().wait().unwrap_err().status,
-                PAINT_UNSUPPORTED
-            );
+            let captured = library.ticket(sequence).unwrap().wait().unwrap();
+            assert_eq!(captured.selected().settings().dual.color(), color);
+            library
+                .mutate(|c| {
+                    let mut s = c.selected().settings().clone();
+                    s.dual = Default::default();
+                    c.edit("round-pressure", s)?;
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(captured.selected().settings().dual.color(), color);
             assert!(library
                 .current()
                 .unwrap()
@@ -580,10 +573,9 @@ mod tests {
                 &paint_task::CancellationToken::default(),
             )
             .unwrap();
-            assert_eq!(
-                library.import_bundle(&bundle).unwrap_err().status,
-                PAINT_UNSUPPORTED
-            );
+            let resources = tempfile::tempdir().unwrap();
+            library.bind_resources(resources.path().into()).unwrap();
+            library.import_bundle(&bundle).unwrap();
             let temp = tempfile::tempdir().unwrap();
             let path = temp.path().join("dual-color.vbr");
             std::fs::write(&path, b"keep").unwrap();
@@ -592,6 +584,15 @@ mod tests {
             let mut handle = std::ptr::null_mut();
             unsafe {
                 assert_eq!(crate::paint_brush_library_create(0, &mut handle), PAINT_OK);
+                let directory = resources.path().to_str().unwrap().as_bytes();
+                assert_eq!(
+                    crate::paint_brush_library_bind_resources(
+                        handle,
+                        directory.as_ptr(),
+                        directory.len() as u64
+                    ),
+                    PAINT_OK
+                );
                 assert_eq!(
                     crate::paint_brush_library_package_write(
                         handle,
@@ -600,9 +601,12 @@ mod tests {
                         json.as_ptr(),
                         json.len() as u64
                     ),
-                    PAINT_UNSUPPORTED
+                    PAINT_OK
                 );
-                assert_eq!(std::fs::read(&path).unwrap(), b"keep");
+                let reopened =
+                    paint_io::vbr_image::load(&path, &paint_task::CancellationToken::default())
+                        .unwrap();
+                assert_eq!(reopened.definition(0).unwrap().dual.color(), color);
                 assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
             }
         }

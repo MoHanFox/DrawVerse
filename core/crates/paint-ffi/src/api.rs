@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 47;
+pub const PAINT_ABI_MINOR: u32 = 48;
 pub const PAINT_FEATURE_PRESSURE_DYNAMICS: u64 = 1073741824;
 pub const PAINT_FEATURE_VBR_SOURCES: u64 = 536870912;
 pub const PAINT_FEATURE_ABR_IMPORT: u64 = 268435456;
@@ -824,3 +824,6 @@ pub const PAINT_FEATURE_PATH_SMOOTHING: u64 = 2199023255552;
 
 /// Complete relative secondary sizing state15 / VBR1.13 user entry.
 pub const PAINT_FEATURE_DUAL_RELATIVE_SIZE: u64 = 4398046511104;
+
+/// Complete separated dual-color state16 / VBR1.14 user entry.
+pub const PAINT_FEATURE_DUAL_COLOR_STROKE: u64 = 8796093022208;

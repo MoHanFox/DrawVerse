@@ -117,4 +117,4 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 
 ## 双色双笔刷子集 1.14
 
-2026-10-15：dualBrush.color采用separated-stroke-v1、enabled/useBackground/overflow布尔、second-behind/second-in-front顺序、primaryBlend/secondaryBlend稳定27英文名称。实际前景/背景RGBA不存入预设。非默认关闭值保留，默认省略保持旧字节与版本；存在对象要求drawverse.brush/behavior13、dual-color-stroke能力与minor14，state16。Schema见contracts/vbr-dual-color-v1.14.schema.json，结果见brush-dual-color-io-validation.md。原ABR来源保持。ABI1.47/Qt暂拒未接入的新非默认色彩配置，完整入口及自动描边继续后续；非分隔逐印章模型未实现，不得冒用separated模型。
+2026-10-15：dualBrush.color采用separated-stroke-v1、enabled/useBackground/overflow布尔、second-behind/second-in-front顺序、primaryBlend/secondaryBlend稳定27英文名称。实际前景/背景RGBA不存入预设。非默认关闭值保留，默认省略保持旧字节与版本；存在对象要求drawverse.brush/behavior13、dual-color-stroke能力与minor14，state16。Schema见contracts/vbr-dual-color-v1.14.schema.json，结果见brush-dual-color-io-validation.md。原ABR来源保持。ABI1.48/Qt已接完整色彩配置、库包入口和实际两色预览，见brush-dual-color-ui-validation.md；自动描边继续后续；非分隔逐印章模型未实现，不得冒用separated模型。

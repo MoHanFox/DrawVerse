@@ -13,6 +13,7 @@ ColumnLayout {
     readonly property var dual:library.dualBrush
     function dualModule(name) {
         if(dual[name])return dual[name]
+        if(name==="color")return {model:"separated-stroke-v1",enabled:false,useBackground:false,overflow:false,order:"second-behind",primaryBlend:"normal",secondaryBlend:"normal"}
         if(name==="sizing")return {model:"relative-size-v1",mode:"independent",diameterOffset:0,widthRule:"follow-pressure"}
         if(name==="tipDynamics")return {angleControl:"fixed",tiltRoundness:false,minimumRoundness:0.01}
         if(name==="scatterDynamics")return {enabled:false,amount:0,bothAxes:false,count:1,countJitter:0,seed:"0000000000000000"}
@@ -157,9 +158,9 @@ ColumnLayout {
                 }
                 ColumnLayout {Layout.minimumWidth:0;visible:root.category===4;Layout.fillWidth:true;spacing:5
                     CompactCheckBox {objectName:"settingsDualEnabled";text:"启用双重笔刷";checked:root.dual.enabled;font.pixelSize:10;onToggled:root.setDualField("enabled",checked);tooltip:"第二笔尖调制主笔尖覆盖；关闭时保留全部设置。"}
-                    CompactComboBox {objectName:"settingsDualPage";Layout.fillWidth:true;model:["笔尖与组合","设备与压力","散布","形状抖动"];currentIndex:root.dualPage;onActivated:root.dualPage=currentIndex;tooltip:"编辑第二笔尖的形状、压力与随机动态。"}
+                    CompactComboBox {objectName:"settingsDualPage";Layout.fillWidth:true;model:["笔尖与组合","设备与压力","散布","形状抖动","双色绘制"];currentIndex:root.dualPage;onActivated:root.dualPage=currentIndex;tooltip:"编辑第二笔尖的形状、压力与随机动态。"}
                     ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===0;Layout.fillWidth:true;spacing:5
-                        CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;readonly property var modes:["multiply","darken","lighten","subtract","difference","screen"];model:["正片叠底","变暗","变亮","减去","差值","滤色"];currentIndex:modes.indexOf(root.dual.mode);onActivated:root.setDualField("mode",modes[currentIndex]);tooltip:"组合两个笔尖的灰度覆盖。"}
+                        CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;enabled:!root.dualModule("color").enabled;readonly property var modes:["multiply","darken","lighten","subtract","difference","screen"];model:["正片叠底","变暗","变亮","减去","差值","滤色"];currentIndex:modes.indexOf(root.dual.mode);onActivated:root.setDualField("mode",modes[currentIndex]);tooltip:"组合两个笔尖的灰度覆盖。"}
                         CompactComboBox {objectName:"settingsDualModel";Layout.fillWidth:true;model:["独立路径间距","每个主印章配对"];currentIndex:root.dual.model==="paired-dab-v1"?1:0;onActivated:{let data=Object.assign({},root.dual);data.model=currentIndex===1?"paired-dab-v1":"path-coverage-v1";data.spacing=currentIndex===1?null:0.25;root.library.setDualBrush(data)} tooltip:"独立路径使用第二笔尖自己的间距；配对在每个主印章的位置生成第二笔尖。"}
                         RowLayout {Layout.fillWidth:true
                             Button {objectName:"importDualBrushTip";text:"导入";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:24;enabled:!PaintClient.brushFileBusy;onClicked:dualDialog.open();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"导入第二笔尖 PNG 图片"}
@@ -203,6 +204,17 @@ ColumnLayout {
                         DualField {title:"角度抖动";field:"angle";module:"shapeJitter"}
                         DualField {title:"圆度抖动";field:"roundness";module:"shapeJitter"}
                         DualField {title:"最低圆度比例";field:"minimumRoundness";module:"shapeJitter";from:1}
+                    }
+                    ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===4;Layout.fillWidth:true;spacing:5
+                        CompactCheckBox {objectName:"settingsDualColorEnabled";text:"启用双色绘制";checked:root.dualModule("color").enabled;onToggled:root.setDualField("enabled",checked,"color");tooltip:"分别累积主和第二贡献，再按整笔合成；关闭后保留设置和旧灰度模式。"}
+                        CompactCheckBox {objectName:"settingsDualUseBackground";text:"使用第二颜色";checked:root.dualModule("color").useBackground;onToggled:root.setDualField("useBackground",checked,"color");tooltip:"第二贡献使用颜色面板的背景色；关闭时使用前景色，两色均在起笔捕获。"}
+                        CompactCheckBox {objectName:"settingsDualOverflow";text:"允许溢出";checked:root.dualModule("color").overflow;onToggled:root.setDualField("overflow",checked,"color");tooltip:"允许第二贡献绘到主覆盖外；关闭时按主覆盖裁切，仍受选区和锁限制。"}
+                        CompactComboBox {objectName:"settingsDualColorOrder";Layout.fillWidth:true;model:["第二在主笔后方","第二在主笔前方"];currentIndex:root.dualModule("color").order==="second-in-front"?1:0;onActivated:root.setDualField("order",currentIndex===1?"second-in-front":"second-behind","color");tooltip:"选择整笔两份贡献的上下叠放顺序；不表示路径位置偏移。"}
+                        Label {text:"主贡献模式";color:Theme.text;font.pixelSize:10}
+                        DualBlend {objectName:"settingsDualPrimaryBlend";field:"primaryBlend"}
+                        Label {text:"第二贡献模式";color:Theme.text;font.pixelSize:10}
+                        DualBlend {objectName:"settingsDualSecondaryBlend";field:"secondaryBlend"}
+                        Label {text:"整笔隔离合成，不透明度只应用一次。底部贡献在透明笔触内混合；回笔不会把后方第二色盖到主线。双色目前用于画笔，橡皮和涂抹需关闭双色。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     }
                 }
                 ColumnLayout {Layout.minimumWidth:0;visible:root.category===5;Layout.fillWidth:true;spacing:5
@@ -271,7 +283,7 @@ ColumnLayout {
                     SmoothingField {title:"速度响应";field:"speedResponse";factor:100;to:100;unit:"%";help:"快速移动时减少位置平滑延迟；压力平滑保持独立。"}
                     SmoothingField {title:"稳定距离";field:"stabilizerPx";to:128;unit:"px";help:"指针移动超过此距离后画笔开始跟随；抬笔时补齐终点。"}
                 }
-                Button {objectName:"resetBrushPreset";text:"重置预设";implicitHeight:22;Layout.minimumWidth:0;Layout.maximumWidth:parameterScroll.availableWidth;Layout.alignment:Qt.AlignLeft;Layout.topMargin:6;onClicked:root.library.resetPreset();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"恢复此预设的初始参数；不改变当前颜色、工具或画布历史。"}
+                Button {objectName:"resetBrushPreset";visible:root.category===8;text:"重置预设";implicitHeight:22;Layout.minimumWidth:0;Layout.maximumWidth:parameterScroll.availableWidth;Layout.alignment:Qt.AlignLeft;Layout.topMargin:6;onClicked:root.library.resetPreset();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"恢复此预设的初始参数；不改变当前颜色、工具或画布历史。"}
             }
         }
     }
@@ -295,6 +307,15 @@ ColumnLayout {
         Label {text:smoothingControl.title+" ("+smoothingControl.unit+")";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
         CompactSpinBox {objectName:"settingsSmoothing"+smoothingControl.field+"Input";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:20;from:0;to:smoothingControl.to;editable:true;value:Math.round(root.library.smoothing[smoothingControl.field]*smoothingControl.factor);onValueModified:smoothingControl.commit(value);tooltip:smoothingControl.help}
         CompactSlider {objectName:"settingsSmoothing"+smoothingControl.field;Layout.fillWidth:true;from:0;to:smoothingControl.to;value:root.library.smoothing[smoothingControl.field]*smoothingControl.factor;onMoved:smoothingControl.commit(value);tooltip:smoothingControl.help}
+    }
+    component DualBlend: CompactComboBox {
+        property string field
+        readonly property var names:["normal", "dissolve", "darken", "multiply", "color-burn", "linear-burn", "darker-color", "lighten", "screen", "color-dodge", "linear-dodge", "lighter-color", "overlay", "soft-light", "hard-light", "vivid-light", "linear-light", "pin-light", "hard-mix", "difference", "exclusion", "subtract", "divide", "hue", "saturation", "color", "luminosity"]
+        model:["正常", "溶解", "变暗", "正片叠底", "颜色加深", "线性加深", "深色", "变亮", "滤色", "颜色减淡", "线性减淡", "浅色", "叠加", "柔光", "强光", "亮光", "线性光", "点光", "实色混合", "差值", "排除", "减去", "划分", "色相", "饱和度", "颜色", "明度"]
+        Layout.fillWidth:true;Layout.minimumWidth:0
+        currentIndex:names.indexOf(root.dualModule("color")[field])
+        onActivated:root.setDualField(field,names[currentIndex],"color")
+        tooltip:"贡献在隔离笔触内的颜色混合模式；工具栏模式在复合后应用。"
     }
     component DualField: ColumnLayout {
         id:dualControl
