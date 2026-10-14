@@ -1,4 +1,6 @@
-双笔尖覆盖核心：[设计](brush-dual-design.md) / [验收](brush-dual-validation.md)。实际第二簇/六模式覆盖、独立压力设备与形状散布、共享资源预算/原子工作预检、四类写入与真实历史已实现；独立路径间距/调度、保存交换与原生Qt仍待后续，完整双笔刷尚未完成。
+双笔尖独立路径：[设计](brush-dual-path-design.md) / [验收](brush-dual-path-validation.md)。第二直径间距/距离调度、独立序列与稀疏分页字段、终点与真实历史、双流预算及存储失败回滚已接；保存交换与原生Qt仍待后续。
+
+双笔尖覆盖核心：[设计](brush-dual-design.md) / [验收](brush-dual-validation.md)。实际第二簇/六模式覆盖、独立压力设备与形状散布、共享资源预算/原子工作预检、四类写入与真实历史已实现；独立路径已补，保存交换与原生Qt仍待后续，完整双笔刷尚未完成。
 
 纹理原生Qt：[设计](brush-texture-ui-design.md) / [验收](brush-texture-ui-validation.md)。ABI1.42/state11/VBR1.9、纹理设置与捕获目标PNG导入、真实预览/绘画/历史、独占与同源和ABR来源包交换已接；库package解除临时拒绝。双笔刷、平滑、湿混及完整ABR继续后续。
 

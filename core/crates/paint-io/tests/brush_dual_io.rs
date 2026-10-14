@@ -16,6 +16,20 @@ fn nondefault_closed_or_active_dual_is_never_silently_discarded() {
         assert_eq!(catalog.selected().settings().dual.enabled(), enabled);
     }
     assert!(paint_io::brush_state::encode(&BrushCatalog::default()).is_ok());
+    let mut path = BrushCatalog::default();
+    path.edit(
+        "round-pressure",
+        BrushSettings {
+            dual: DualBrush::new(
+                false,
+                DualMode::Multiply,
+                SecondaryTip::default().with_spacing(0.25).unwrap(),
+            ),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(paint_io::brush_state::encode(&path).is_err());
 }
 #[test]
 fn original_source_baseline_cannot_silently_drop_dual_settings() {

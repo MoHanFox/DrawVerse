@@ -388,6 +388,10 @@ struct Stroke {
     random_index: u64,
     random_stroke: u64,
     random_child: u32,
+    dual_next: f64,
+    dual_index: u64,
+    dual_last: InputPoint,
+    dual_coverage: BTreeMap<TileCoord, Arc<Tile>>,
     shape_sample: crate::brush_shape_jitter::ShapeSample,
     color_sample: Pixel,
     distance_to_next: f64,
@@ -1164,7 +1168,12 @@ impl Document {
         let brush = definition.brush;
         let program = BrushProgram::compile(definition)?;
         first.validate()?;
-        Self::validate_stroke_work(brush, &program, 1)?;
+        Self::validate_stroke_work(
+            brush,
+            &program,
+            1,
+            usize::from(program.dual.as_ref().is_some_and(|d| d.step().is_some())),
+        )?;
         let random_serial = if program.scatter.enabled()
             || program.shape_jitter.active()
             || program.color.active()
@@ -1197,6 +1206,11 @@ impl Document {
         {
             return Err(Error::InvalidArgument("all-layer smudge sampling on mask"));
         }
+        let dual_next = program
+            .dual
+            .as_ref()
+            .and_then(|d| d.step())
+            .unwrap_or(f64::INFINITY);
         let mut stroke = Stroke {
             layer: self.active_layer,
             brush,
@@ -1207,6 +1221,10 @@ impl Document {
             random_index: 0,
             random_stroke: random_serial,
             random_child: 0,
+            dual_next,
+            dual_index: 0,
+            dual_last: first,
+            dual_coverage: BTreeMap::new(),
             shape_sample: Default::default(),
             color_sample: brush.color,
             distance_to_next: brush.step(),
@@ -1220,7 +1238,10 @@ impl Document {
                 .mask
                 .then(|| Self::mask_tone(brush.color)),
         };
-        match self.dab(&mut stroke, first) {
+        match self
+            .secondary_dab(&mut stroke, first)
+            .and_then(|()| self.dab(&mut stroke, first))
+        {
             Ok(changed) => {
                 if changed {
                     self.bump_revision();
@@ -1257,32 +1278,73 @@ impl Document {
         } else {
             ((distance - current.distance_to_next + 1e-9) / step).floor() as usize + 1
         };
+        let dual_step = current.program.dual.as_ref().and_then(|d| d.step());
+        let secondary_stationary = distance <= 1e-9
+            && current.program.dual.as_ref().is_some_and(|d| {
+                d.step().is_some() && d.pressure_changed(current.last.pressure, point.pressure)
+            });
+        let secondary_count = dual_step.map_or(0, |secondary_step| {
+            if distance + 1e-9 < current.dual_next {
+                0
+            } else {
+                ((distance - current.dual_next + 1e-9) / secondary_step).floor() as usize + 1
+            }
+        });
         Self::validate_stroke_work(
             current.brush,
             &current.program,
             count + usize::from(stationary_pressure),
+            secondary_count + usize::from(secondary_stationary),
         )?;
         let mut stroke = self.stroke.take().expect("checked active stroke");
         if distance > 1e-9 {
             stroke.direction = Some((point.y - stroke.last.y).atan2(point.x - stroke.last.x));
         }
         let mut position = stroke.distance_to_next;
+        let mut secondary_position = stroke.dual_next;
+        let mut primary_remaining = count;
+        let mut secondary_remaining = secondary_count;
         let mut changed = false;
-        for _ in 0..count {
-            let sample = stroke
-                .last
-                .interpolate(point, (position / distance).min(1.0));
-            match self.dab(&mut stroke, sample) {
-                Ok(dab_changed) => changed |= dab_changed,
-                Err(error) => {
+        while primary_remaining > 0 || secondary_remaining > 0 {
+            // Tie goes to the secondary stream; primary reads its current field.
+            if secondary_remaining > 0
+                && (primary_remaining == 0 || secondary_position <= position + 1e-9)
+            {
+                let sample = stroke
+                    .last
+                    .interpolate(point, (secondary_position / distance).min(1.));
+                if let Err(error) = self.secondary_dab(&mut stroke, sample) {
                     self.restore_stroke(&stroke);
                     return Err(error);
                 }
+                secondary_position += dual_step.expect("secondary stream");
+                secondary_remaining -= 1;
+            } else {
+                let sample = stroke
+                    .last
+                    .interpolate(point, (position / distance).min(1.));
+                match self.dab(&mut stroke, sample) {
+                    Ok(dab_changed) => changed |= dab_changed,
+                    Err(error) => {
+                        self.restore_stroke(&stroke);
+                        return Err(error);
+                    }
+                }
+                stroke.last_dab = sample;
+                position += step;
+                primary_remaining -= 1;
             }
-            stroke.last_dab = sample;
-            position += step;
         }
         stroke.distance_to_next = (position - distance).max(step * 1e-9);
+        if let Some(secondary_step) = dual_step {
+            stroke.dual_next = (secondary_position - distance).max(secondary_step * 1e-9);
+        }
+        if secondary_stationary {
+            if let Err(error) = self.secondary_dab(&mut stroke, point) {
+                self.restore_stroke(&stroke);
+                return Err(error);
+            }
+        }
         if stationary_pressure {
             match self.dab(&mut stroke, point) {
                 Ok(dab_changed) => changed |= dab_changed,
@@ -1301,31 +1363,44 @@ impl Document {
         Ok(())
     }
 
-    fn validate_stroke_work(brush: Brush, program: &BrushProgram, count: usize) -> Result<()> {
+    fn validate_stroke_work(
+        brush: Brush,
+        program: &BrushProgram,
+        count: usize,
+        secondary_count: usize,
+    ) -> Result<()> {
         let count = count.saturating_mul(program.scatter.maximum_count());
         let diameter = (f64::from(brush.radius)
-            * 2.0
+            * 2.
             * if program.has_mask() {
                 std::f64::consts::SQRT_2
             } else {
                 1.
             }
-            + 2.0)
+            + 2.)
             .ceil() as usize;
+        let dual = program.dual.as_ref();
+        let paired = dual.filter(|d| d.step().is_none());
+        let path = dual.filter(|d| d.step().is_some());
         let sample_cost = if matches!(brush.mode, BrushMode::Smudge { .. }) {
             5
         } else {
             1
         } + if program.has_texture() { 8 } else { 0 }
-            + program.dual.as_ref().map_or(0, |d| d.sample_cost());
-        if count.saturating_mul(program.dual.as_ref().map_or(1, |d| d.maximum_count()))
+            + paired.map_or(0, |d| d.sample_cost())
+            + usize::from(path.is_some());
+        let (secondary_dabs, secondary_visits) =
+            path.map_or((0, 0), |d| d.path_work(secondary_count));
+        if count
+            .saturating_mul(paired.map_or(1, |d| d.maximum_count()))
+            .saturating_add(secondary_dabs)
             > MAX_DABS_PER_SEGMENT
             || count
                 .saturating_mul(diameter * diameter)
                 .saturating_mul(sample_cost)
+                .saturating_add(secondary_visits)
                 > MAX_PIXEL_VISITS_PER_SEGMENT
         {
-            // No mutation: a caller may resample a long device segment or cancel the stroke.
             return Err(Error::ResourceLimit(
                 "input segment too large; resample into shorter segments",
             ));
@@ -1335,7 +1410,33 @@ impl Document {
 
     pub fn end_stroke(&mut self) -> Result<bool> {
         let mut stroke = self.stroke.take().ok_or(Error::NoStroke)?;
-        if (stroke.last.x - stroke.last_dab.x).hypot(stroke.last.y - stroke.last_dab.y) > 1e-7 {
+        let secondary_final = stroke
+            .program
+            .dual
+            .as_ref()
+            .is_some_and(|d| d.step().is_some())
+            && (stroke.last.x - stroke.dual_last.x).hypot(stroke.last.y - stroke.dual_last.y)
+                > 1e-7;
+        let primary_final =
+            (stroke.last.x - stroke.last_dab.x).hypot(stroke.last.y - stroke.last_dab.y) > 1e-7
+                || secondary_final;
+        if let Err(error) = Self::validate_stroke_work(
+            stroke.brush,
+            &stroke.program,
+            usize::from(primary_final),
+            usize::from(secondary_final),
+        ) {
+            self.restore_stroke(&stroke);
+            return Err(error);
+        }
+        if secondary_final {
+            let last = stroke.last;
+            if let Err(error) = self.secondary_dab(&mut stroke, last) {
+                self.restore_stroke(&stroke);
+                return Err(error);
+            }
+        }
+        if primary_final {
             let last = stroke.last;
             match self.dab(&mut stroke, last) {
                 Ok(changed) => {
@@ -1458,6 +1559,102 @@ impl Document {
             1.
         };
         ((1. - gray).clamp(0., 1.), a)
+    }
+    fn secondary_dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<()> {
+        let Some(dual) = stroke.program.dual.as_ref().filter(|d| d.step().is_some()) else {
+            return Ok(());
+        };
+        let next = stroke
+            .dual_index
+            .checked_add(1)
+            .ok_or(Error::ResourceLimit("secondary dab serial exhausted"))?;
+        let plan = dual.dab(
+            point,
+            stroke.direction,
+            stroke.random_stroke,
+            stroke.dual_index,
+            0,
+        );
+        let appearance = self.layers[self.layer_index(stroke.layer)?].appearance;
+        let ox = i64::from(appearance.offset_x);
+        let oy = i64::from(appearance.offset_y);
+        for child in 0..plan.count() {
+            let (left, top, right, bottom) = plan.bounds(child);
+            let x0 = (left.floor() as i64).clamp(0, i64::from(self.width)) - ox;
+            let x1 = (right.ceil() as i64).clamp(0, i64::from(self.width)) - ox;
+            let y0 = (top.floor() as i64).clamp(0, i64::from(self.height)) - oy;
+            let y1 = (bottom.ceil() as i64).clamp(0, i64::from(self.height)) - oy;
+            if x0 >= x1 || y0 >= y1 {
+                continue;
+            }
+            for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
+                for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
+                    let coord = TileCoord::from_signed(tx as i32, ty as i32);
+                    let source = stroke
+                        .dual_coverage
+                        .get(&coord)
+                        .map(|t| t.try_pixels())
+                        .transpose()?;
+                    let mut updates = Vec::new();
+                    for y in y0.max(ty * 64)..y1.min((ty + 1) * 64) {
+                        for x in x0.max(tx * 64)..x1.min((tx + 1) * 64) {
+                            let amount = plan.coverage(
+                                child,
+                                x as f64 + 0.5 + ox as f64,
+                                y as f64 + 0.5 + oy as f64,
+                            );
+                            if amount == 0. {
+                                continue;
+                            }
+                            let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
+                            let before = source.as_ref().map_or(0., |p| p[offset].alpha());
+                            let after = before + amount * (1. - before);
+                            if after != before {
+                                updates.push((offset, Pixel::from_straight([0., 0., 0., after])?));
+                            }
+                        }
+                    }
+                    if !updates.is_empty() {
+                        if stroke
+                            .dual_coverage
+                            .get(&coord)
+                            .is_some_and(Tile::can_edit_private)
+                        {
+                            Tile::edit_private(
+                                stroke
+                                    .dual_coverage
+                                    .get_mut(&coord)
+                                    .expect("secondary field"),
+                                &self.pool,
+                                &updates,
+                            )?;
+                        } else {
+                            if !stroke.dual_coverage.contains_key(&coord)
+                                && stroke.dual_coverage.len() >= self.options.max_document_tiles
+                            {
+                                return Err(Error::ResourceLimit(
+                                    "secondary coverage tile limit; entire stroke rolled back",
+                                ));
+                            }
+                            let mut values = source
+                                .as_ref()
+                                .map_or_else(|| vec![Pixel::TRANSPARENT; 4096], |p| p.to_vec());
+                            for (offset, value) in updates {
+                                values[offset] = value;
+                            }
+                            let tile = Arc::new(Tile::from_pixels(values)?);
+                            self.pool.attach(&tile)?;
+                            stroke.dual_coverage.insert(coord, tile);
+                        }
+                    }
+                    drop(source);
+                    self.pool.trim()?;
+                }
+            }
+        }
+        stroke.dual_index = next;
+        stroke.dual_last = point;
+        Ok(())
     }
     fn dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
         let logical = stroke.random_index;
@@ -1628,7 +1825,13 @@ impl Document {
         } else {
             None
         };
-        let dual_dab = if DUAL {
+        let dual_path = DUAL
+            && stroke
+                .program
+                .dual
+                .as_ref()
+                .is_some_and(|d| d.step().is_some());
+        let dual_dab = if DUAL && !dual_path {
             Some(stroke.program.dual.as_ref().expect("compiled dual").dab(
                 point,
                 stroke.direction,
@@ -1724,6 +1927,15 @@ impl Document {
                     .get(&coord)
                     .map(|t| t.try_pixels())
                     .transpose()?;
+                let secondary_coverage = if dual_path {
+                    stroke
+                        .dual_coverage
+                        .get(&coord)
+                        .map(|t| t.try_pixels())
+                        .transpose()?
+                } else {
+                    None
+                };
                 let mut coverage_updates = Vec::new();
                 for y in y0.max(ty * 64)..y1.min((ty + 1) * 64) {
                     let start_x = x0.max(tx * 64);
@@ -1761,11 +1973,22 @@ impl Document {
                             )
                         };
                         if DUAL {
-                            coverage = dual_dab.as_ref().expect("compiled dual dab").combine(
-                                coverage,
-                                x as f64 + 0.5 + f64::from(appearance.offset_x),
-                                y as f64 + 0.5 + f64::from(appearance.offset_y),
-                            );
+                            if dual_path {
+                                let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
+                                coverage =
+                                    stroke.program.dual.as_ref().expect("dual path").combine(
+                                        coverage,
+                                        secondary_coverage
+                                            .as_ref()
+                                            .map_or(0., |p| p[offset].alpha()),
+                                    );
+                            } else {
+                                coverage = dual_dab.as_ref().expect("compiled dual dab").combine(
+                                    coverage,
+                                    x as f64 + 0.5 + f64::from(appearance.offset_x),
+                                    y as f64 + 0.5 + f64::from(appearance.offset_y),
+                                );
+                            }
                         }
                         let texture_amount = if TEXTURED {
                             texture_dab.as_ref().expect("compiled texture").coverage(
@@ -2234,6 +2457,104 @@ mod paging_failures {
         assert!(!doc.stroke_active());
         assert_eq!(doc.storage_stats().resident_tiles, 0);
         doc.begin_stroke(Brush::default(), InputPoint::new(20., 20., 1.))
+            .unwrap();
+        doc.end_stroke().unwrap();
+        assert_eq!(doc.history_depth().0, history.0 + 1);
+    }
+}
+
+#[cfg(test)]
+mod dual_path_tests {
+    use super::*;
+    use crate::{BrushDynamics, BrushTip, DualBrush, DualMode, ScatterDynamics, SecondaryTip};
+    fn definition() -> BrushDefinition {
+        let tip = BrushTip {
+            pressure_size: false,
+            pressure_flow: false,
+            ..Default::default()
+        };
+        BrushDefinition {
+            brush: Brush {
+                radius: 8.,
+                opacity: 0.4,
+                ..Default::default()
+            },
+            tip,
+            dual: DualBrush::new(
+                true,
+                DualMode::Multiply,
+                SecondaryTip::new(
+                    3.,
+                    tip,
+                    None,
+                    BrushDynamics {
+                        scatter: ScatterDynamics::new(true, 0.5, true, 3, 0.5, 31).unwrap(),
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+                .with_spacing(0.13)
+                .unwrap(),
+            ),
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn secondary_sequence_and_field_do_not_follow_primary_spacing_or_scatter() {
+        let mut a = Document::new(96, 64).unwrap();
+        let mut b = Document::new(96, 64).unwrap();
+        let mut fine = definition();
+        fine.brush.spacing = 0.02;
+        let mut coarse = fine.clone();
+        coarse.brush.spacing = 1.;
+        coarse.dynamics.scatter = ScatterDynamics::new(true, 0.5, true, 5, 0.5, 3).unwrap();
+        a.begin_brush_stroke(fine, InputPoint::new(16.5, 32.5, 1.))
+            .unwrap();
+        b.begin_brush_stroke(coarse, InputPoint::new(16.5, 32.5, 1.))
+            .unwrap();
+        a.stroke_to(InputPoint::new(70.5, 32.5, 1.)).unwrap();
+        b.stroke_to(InputPoint::new(70.5, 32.5, 1.)).unwrap();
+        let left = a.stroke.as_ref().unwrap();
+        let right = b.stroke.as_ref().unwrap();
+        assert_eq!(left.dual_index, right.dual_index);
+        assert!(left.dual_index > 50);
+        assert_ne!(left.random_index, right.random_index);
+        assert_eq!(left.dual_coverage.len(), right.dual_coverage.len());
+        for (coord, tile) in &left.dual_coverage {
+            assert_eq!(
+                tile.try_pixels().unwrap(),
+                right.dual_coverage[coord].try_pixels().unwrap()
+            );
+        }
+        let weak = Arc::downgrade(left.dual_coverage.values().next().unwrap());
+        a.end_stroke().unwrap();
+        assert!(weak.upgrade().is_none());
+        assert!(a.stroke.is_none());
+        b.cancel_stroke().unwrap();
+        assert_eq!(b.tile_count(), 0);
+    }
+    #[test]
+    fn secondary_paging_failure_rolls_back_pixels_history_and_field() {
+        let mut doc = Document::with_options(
+            128,
+            64,
+            DocumentOptions {
+                max_resident_tiles: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let history = doc.history_depth();
+        doc.begin_brush_stroke(definition(), InputPoint::new(32.5, 32.5, 1.))
+            .unwrap();
+        crate::page_pool::fail_writes_for_test(true);
+        let result = doc.stroke_to(InputPoint::new(96.5, 32.5, 1.));
+        crate::page_pool::fail_writes_for_test(false);
+        assert!(matches!(result, Err(Error::Storage(_))));
+        assert!(doc.stroke.is_none());
+        assert_eq!(doc.tile_count(), 0);
+        assert_eq!(doc.history_depth(), history);
+        doc.begin_brush_stroke(definition(), InputPoint::new(32.5, 32.5, 1.))
             .unwrap();
         doc.end_stroke().unwrap();
         assert_eq!(doc.history_depth().0, history.0 + 1);

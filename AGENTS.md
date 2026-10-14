@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新双笔尖独立路径：`docs/brush-dual-path-design.md` / `docs/brush-dual-path-validation.md`；第二直径1%间距/双流调度、独立随机字段/主频率无关、稀疏分页与终点/真实四类写入历史、预算及存储失败原子回滚；无ABI变化，旧配对保持，保存交换和原生Qt继续后续。
+
 - 最新双笔尖覆盖核心：`docs/brush-dual-design.md` / `docs/brush-dual-validation.md`；paired-dab-v1六模式/独立第二压力设备与形状散布、共享图片预算/预检与真实四类写入历史；旧state/来源拒绝非默认对象，无ABI变化，独立路径间距/IO与原生Qt继续后续。
 
 - 最新纹理原生Qt：`docs/brush-texture-ui-design.md` / `docs/brush-texture-ui-validation.md`；ABI1.42/state11/VBR1.9、捕获目标PNG导入/纹理分类/关闭编辑、统一真实预览与像素历史、同源图片与原始来源交换/窄列可见；解除库package临时拒绝，双笔刷/平滑/湿混和ABR动态继续后续。

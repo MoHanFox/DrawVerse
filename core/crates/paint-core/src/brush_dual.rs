@@ -37,6 +37,7 @@ pub struct SecondaryTip {
     tip: BrushTip,
     mask: Option<Arc<BrushMask>>,
     dynamics: BrushDynamics,
+    spacing: Option<f32>,
 }
 impl Default for SecondaryTip {
     fn default() -> Self {
@@ -45,6 +46,7 @@ impl Default for SecondaryTip {
             tip: BrushTip::default(),
             mask: None,
             dynamics: BrushDynamics::default(),
+            spacing: None,
         }
     }
 }
@@ -69,10 +71,22 @@ impl SecondaryTip {
             tip,
             mask,
             dynamics,
+            spacing: None,
         })
     }
     pub fn radius(&self) -> f32 {
         self.radius
+    }
+    /// Independent path distance as a fraction of the secondary nominal diameter.
+    pub fn with_spacing(mut self, spacing: f32) -> Result<Self> {
+        if !spacing.is_finite() || !(0.01..=1.).contains(&spacing) {
+            return Err(Error::InvalidArgument("secondary spacing"));
+        }
+        self.spacing = Some(spacing);
+        Ok(self)
+    }
+    pub fn spacing(&self) -> Option<f32> {
+        self.spacing
     }
     pub fn tip(&self) -> BrushTip {
         self.tip
@@ -88,6 +102,7 @@ impl SecondaryTip {
             && self.tip == BrushTip::default()
             && self.mask.is_none()
             && self.dynamics == BrushDynamics::default()
+            && self.spacing.is_none()
     }
 }
 #[derive(Clone, Debug)]
@@ -147,6 +162,9 @@ impl DualBrush {
             radius: secondary.radius,
             mode: self.mode,
             program: Box::new(BrushProgram::compile(definition)?),
+            step: secondary
+                .spacing
+                .map(|spacing| f64::from(secondary.radius * 2. * spacing)),
         }))
     }
 }
@@ -155,8 +173,35 @@ pub(crate) struct CompiledDual {
     radius: f32,
     mode: DualMode,
     program: Box<BrushProgram>,
+    step: Option<f64>,
 }
 impl CompiledDual {
+    pub fn step(&self) -> Option<f64> {
+        self.step
+    }
+    pub fn combine(&self, primary: f32, secondary: f32) -> f32 {
+        self.mode.combine(primary, secondary)
+    }
+    pub fn path_work(&self, count: usize) -> (usize, usize) {
+        if self.step.is_none() {
+            return (0, 0);
+        }
+        let diameter = (f64::from(self.radius)
+            * 2.
+            * if self.program.has_mask() {
+                std::f64::consts::SQRT_2
+            } else {
+                1.
+            }
+            + 2.)
+            .ceil() as usize;
+        (
+            count.saturating_mul(self.maximum_count()),
+            count
+                .saturating_mul(diameter * diameter)
+                .saturating_mul(self.sample_cost()),
+        )
+    }
     pub fn pressure_changed(&self, before: f32, after: f32) -> bool {
         (self.program.tip.pressure_size
             && self.program.size_pressure(before) != self.program.size_pressure(after))
@@ -241,6 +286,34 @@ pub(crate) struct DualDab<'a> {
     dabs: Vec<SecondaryDab<'a>>,
 }
 impl DualDab<'_> {
+    pub fn count(&self) -> usize {
+        self.dabs.len()
+    }
+    pub fn bounds(&self, index: usize) -> (f64, f64, f64, f64) {
+        let dab = &self.dabs[index];
+        let (x, y) = self.program.extent(dab.radius, dab.geometry);
+        (
+            dab.x - x - 1.,
+            dab.y - y - 1.,
+            dab.x + x + 1.,
+            dab.y + y + 1.,
+        )
+    }
+    pub fn coverage(&self, index: usize, x: f64, y: f64) -> f32 {
+        let dab = &self.dabs[index];
+        if dab.radius == 0. {
+            0.
+        } else if let Some(mask) = &dab.mask {
+            mask.coverage(x - dab.x, y - dab.y) * self.flow
+        } else {
+            self.program.procedural_coverage_with_geometry(
+                x - dab.x,
+                y - dab.y,
+                dab.radius,
+                dab.geometry,
+            ) * self.flow
+        }
+    }
     pub fn combine(&self, primary: f32, x: f64, y: f64) -> f32 {
         if primary == 0. {
             return 0.;
