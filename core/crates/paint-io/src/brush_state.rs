@@ -238,6 +238,7 @@ fn decode_inner(
             row.id,
             row.name,
             BrushSettings {
+                texture: Default::default(),
                 dynamics,
                 diameter: row.radius * 2.,
                 opacity: row.opacity,
@@ -268,6 +269,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        if !s.texture.is_default() {
+            return Err(Error::Unsupported(
+                "texture state IO not implemented".into(),
+            ));
+        }
         let color_dynamics = if s.dynamics.color != paint_core::ColorDynamics::default() {
             version = version.max(10);
             Some(crate::brush_color_dynamics::ColorParameters::from_core(

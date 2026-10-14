@@ -50,6 +50,7 @@ pub struct BrushDefinition {
     pub tip: BrushTip,
     pub mask: Option<Arc<BrushMask>>,
     pub dynamics: BrushDynamics,
+    pub texture: crate::BrushTexture,
 }
 
 impl From<Brush> for BrushDefinition {
@@ -59,6 +60,7 @@ impl From<Brush> for BrushDefinition {
             tip: BrushTip::default(),
             mask: None,
             dynamics: BrushDynamics::default(),
+            texture: Default::default(),
         }
     }
 }
@@ -78,6 +80,7 @@ pub struct BrushProgram {
     pub(crate) scatter: crate::ScatterDynamics,
     pub(crate) shape_jitter: crate::ShapeJitter,
     pub(crate) color: crate::ColorDynamics,
+    pub(crate) texture: Option<crate::brush_texture::CompiledTexture>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -164,6 +167,7 @@ impl BrushProgram {
             scatter: definition.dynamics.scatter,
             shape_jitter: definition.dynamics.shape_jitter,
             color: definition.dynamics.color,
+            texture: definition.texture.compile(),
         })
     }
 
@@ -193,6 +197,18 @@ impl BrushProgram {
         } else {
             self.procedural_coverage(dx, dy, radius)
         }
+    }
+    pub(crate) fn has_texture(&self) -> bool {
+        self.texture.is_some()
+    }
+    pub(crate) fn texture_dab(
+        &self,
+        point: InputPoint,
+        geometry: TipGeometry,
+    ) -> Option<crate::brush_texture::TextureDab<'_>> {
+        self.texture
+            .as_ref()
+            .map(|t| t.dab(point.x, point.y, geometry.sine, geometry.cosine))
     }
     pub fn has_mask(&self) -> bool {
         self.mask.is_some()

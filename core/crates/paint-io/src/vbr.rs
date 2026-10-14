@@ -81,6 +81,7 @@ impl Parameters {
             dynamics.color = color.core();
         }
         BrushSettings {
+            texture: Default::default(),
             dynamics,
             mask: None,
             diameter: self.diameter,

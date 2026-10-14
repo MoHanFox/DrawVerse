@@ -1308,7 +1308,7 @@ impl Document {
             5
         } else {
             1
-        };
+        } + if program.has_texture() { 8 } else { 0 };
         if count > MAX_DABS_PER_SEGMENT
             || count
                 .saturating_mul(diameter * diameter)
@@ -1508,15 +1508,23 @@ impl Document {
         }
         // Specialize once per dab: an inactive selection adds no pixel-loop
         // geometry branches or coverage multiplication to the original hot path.
-        match (self.selection.enabled(), stroke.program.has_mask()) {
-            (true, true) => self.dab_with_selection::<true, true>(stroke, point),
-            (true, false) => self.dab_with_selection::<true, false>(stroke, point),
-            (false, true) => self.dab_with_selection::<false, true>(stroke, point),
-            (false, false) => self.dab_with_selection::<false, false>(stroke, point),
+        match (
+            self.selection.enabled(),
+            stroke.program.has_mask(),
+            stroke.program.has_texture(),
+        ) {
+            (true, true, true) => self.dab_with_selection::<true, true, true>(stroke, point),
+            (true, false, true) => self.dab_with_selection::<true, false, true>(stroke, point),
+            (false, true, true) => self.dab_with_selection::<false, true, true>(stroke, point),
+            (false, false, true) => self.dab_with_selection::<false, false, true>(stroke, point),
+            (true, true, false) => self.dab_with_selection::<true, true, false>(stroke, point),
+            (true, false, false) => self.dab_with_selection::<true, false, false>(stroke, point),
+            (false, true, false) => self.dab_with_selection::<false, true, false>(stroke, point),
+            (false, false, false) => self.dab_with_selection::<false, false, false>(stroke, point),
         }
     }
 
-    fn dab_with_selection<const SELECTED: bool, const IMAGED: bool>(
+    fn dab_with_selection<const SELECTED: bool, const IMAGED: bool, const TEXTURED: bool>(
         &mut self,
         stroke: &mut Stroke,
         point: InputPoint,
@@ -1531,7 +1539,13 @@ impl Document {
                 },
         );
         let pressure_opacity = stroke.program.opacity_pressure(point.pressure);
-        let capped = (stroke.brush.opacity < 1. || pressure_opacity.is_some())
+        let paper_texture = TEXTURED
+            && stroke
+                .program
+                .texture
+                .as_ref()
+                .is_some_and(|t| t.document_space());
+        let capped = (stroke.brush.opacity < 1. || pressure_opacity.is_some() || paper_texture)
             && !matches!(stroke.brush.mode, BrushMode::Smudge { .. });
         let flow = if capped { 1. } else { stroke.brush.opacity }
             * stroke.program.tip.flow
@@ -1559,6 +1573,11 @@ impl Document {
         let geometry = stroke
             .program
             .dab_geometry(point, stroke.direction, stroke.shape_sample);
+        let texture_dab = if TEXTURED {
+            stroke.program.texture_dab(point, geometry)
+        } else {
+            None
+        };
         let (extent_x, extent_y) = stroke.program.extent(radius, geometry);
         let x0 = ((point.x - extent_x - 1.0).floor() as i64).clamp(0, i64::from(self.width));
         let y0 = ((point.y - extent_y - 1.0).floor() as i64).clamp(0, i64::from(self.height));
@@ -1667,7 +1686,7 @@ impl Document {
                         if selected == 0. {
                             continue;
                         }
-                        let coverage = if IMAGED {
+                        let mut coverage = if IMAGED {
                             mask_dab
                                 .as_ref()
                                 .expect("compiled image dab")
@@ -1680,6 +1699,20 @@ impl Document {
                                 geometry,
                             )
                         };
+                        let texture_amount = if TEXTURED {
+                            texture_dab.as_ref().expect("compiled texture").coverage(
+                                x as f64 + 0.5 + f64::from(appearance.offset_x),
+                                y as f64 + 0.5 + f64::from(appearance.offset_y),
+                            )
+                        } else {
+                            1.
+                        };
+                        if texture_amount == 0. {
+                            continue;
+                        }
+                        if !paper_texture {
+                            coverage *= texture_amount;
+                        }
                         if coverage == 0. {
                             continue;
                         }
@@ -1687,11 +1720,11 @@ impl Document {
                         let before = source
                             .as_ref()
                             .map_or(self.layers[index].default_pixel(x, y), |p| p[offset]);
-                        let mut amount = if SELECTED {
+                        let mut amount = (if SELECTED {
                             coverage * flow * selected
                         } else {
                             coverage * flow
-                        };
+                        }) * if paper_texture { texture_amount } else { 1. };
                         let mut paint_color = stroke.color_sample;
                         let base = if capped {
                             let previous =
@@ -1734,7 +1767,10 @@ impl Document {
                             if accumulated != previous {
                                 coverage_updates.push((offset, cache));
                             }
-                            amount = accumulated * stroke.brush.opacity * selected;
+                            amount = accumulated
+                                * stroke.brush.opacity
+                                * selected
+                                * if paper_texture { texture_amount } else { 1. };
                             if stroke.before.contains_key(&coord) {
                                 original
                                     .as_ref()

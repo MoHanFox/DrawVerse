@@ -4,6 +4,8 @@ mod appearance;
 mod brush;
 mod brush_catalog;
 mod brush_dynamics;
+mod brush_texture;
+pub use brush_texture::{BrushTexture, TextureResource, TextureSettings, TextureSpace};
 mod brush_mask;
 mod brush_outline;
 mod brush_program;

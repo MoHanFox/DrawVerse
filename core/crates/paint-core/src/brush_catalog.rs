@@ -20,6 +20,7 @@ pub struct BrushSettings {
     pub tip: BrushTip,
     pub mask: Option<Arc<BrushMask>>,
     pub dynamics: crate::BrushDynamics,
+    pub texture: crate::BrushTexture,
 }
 impl Default for BrushSettings {
     fn default() -> Self {
@@ -30,6 +31,7 @@ impl Default for BrushSettings {
             tip: BrushTip::default(),
             mask: None,
             dynamics: crate::BrushDynamics::default(),
+            texture: Default::default(),
         }
     }
 }
@@ -47,6 +49,7 @@ impl BrushSettings {
             tip: self.tip,
             mask: self.mask.clone(),
             dynamics: self.dynamics.clone(),
+            texture: self.texture.clone(),
         }
     }
 }
@@ -221,6 +224,7 @@ impl BrushCatalog {
         replace: Option<&str>,
     ) -> Result<()> {
         let mut ids = BTreeSet::new();
+        let mut texture_ids = BTreeSet::new();
         let mut total = 0usize;
         for settings in self
             .presets
@@ -229,9 +233,18 @@ impl BrushCatalog {
             .map(|p| &p.settings)
             .chain(additional)
         {
-            if let Some(mask) = &settings.mask {
+            for mask in settings
+                .mask
+                .iter()
+                .chain(settings.texture.resource().map(|r| r.source()))
+            {
                 if ids.insert(Arc::as_ptr(mask) as usize) {
                     total = total.saturating_add(mask.resident_bytes());
+                }
+            }
+            if let Some(texture) = settings.texture.resource() {
+                if texture_ids.insert(Arc::as_ptr(texture) as usize) {
+                    total = total.saturating_add(texture.mip_bytes());
                 }
             }
         }
