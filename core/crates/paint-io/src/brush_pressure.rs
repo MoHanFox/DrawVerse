@@ -94,9 +94,11 @@ impl Serialize for PressureParameters {
         &self,
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
-        if self.dynamics.tip != paint_core::TipDynamics::default() {
+        if self.dynamics.tip != paint_core::TipDynamics::default()
+            || self.dynamics.scatter != paint_core::ScatterDynamics::default()
+        {
             return Err(serde::ser::Error::custom(
-                "device tip dynamics are not yet supported by portable pressure data",
+                "non-pressure dynamics are not supported by pressure payload",
             ));
         }
         let control = |c: &PressureControl| Control {
@@ -142,6 +144,7 @@ impl<'de> Deserialize<'de> for PressureParameters {
                 opacity,
                 pressure_opacity,
                 tip: Default::default(),
+                scatter: Default::default(),
             },
             has_opacity,
         })

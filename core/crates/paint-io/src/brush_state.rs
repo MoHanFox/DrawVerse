@@ -238,6 +238,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        if s.dynamics.scatter != paint_core::ScatterDynamics::default() {
+            return Err(Error::Unsupported(
+                "scatter state IO not implemented".into(),
+            ));
+        }
         let tip_dynamics = if s.dynamics.tip != paint_core::TipDynamics::default() {
             version = version.max(7);
             Some(crate::brush_tip_dynamics::TipParameters::from_core(

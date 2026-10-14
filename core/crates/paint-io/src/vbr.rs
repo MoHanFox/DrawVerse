@@ -163,13 +163,12 @@ impl Package {
             {
                 return Err(Error::Invalid("VBR preset identity/name"));
             }
-            if b.parameters
-                .pressure_dynamics
-                .as_ref()
-                .is_some_and(|p| p.core().tip != paint_core::TipDynamics::default())
-            {
+            if b.parameters.pressure_dynamics.as_ref().is_some_and(|p| {
+                p.core().tip != paint_core::TipDynamics::default()
+                    || p.core().scatter != paint_core::ScatterDynamics::default()
+            }) {
                 return Err(Error::Unsupported(
-                    "device tip dynamics VBR IO not implemented".into(),
+                    "non-pressure controls cannot be encoded in pressure payload".into(),
                 ));
             }
             let pressure = b.parameters.pressure_dynamics.is_some();

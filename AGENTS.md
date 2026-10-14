@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新散布内核：`docs/brush-scatter-design.md` / `docs/brush-scatter-validation.md`；确定性计数器/单轴双轴/数量抖动、输入拆分一致、共用四类写入/实际涂抹载色、展开预算预检与原子历史；旧IO明确拒绝非默认散布，保存/原生Qt继续后续，无ABI变化。
+
 - 最新实时动态光标：`docs/brush-live-pose-design.md` / `docs/brush-live-pose-validation.md`；ABI1.38/可复用捕获Pose、非阻塞原生几何/未知悬停压力/压力大小、Qt旋转倾斜方向/在途图片身份与DPI；其余动态/湿混继续后续。
 
 - 最新设备动态Qt入口：`docs/brush-device-ui-design.md` / `docs/brush-device-ui-validation.md`；ABI1.37/state7/VBR1.5、形状动态参数/真实预览和旋转笔触/复制持久化、解除package临时拒绝；实时动态光标和其余动态湿混继续后续。

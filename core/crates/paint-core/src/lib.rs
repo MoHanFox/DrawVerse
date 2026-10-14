@@ -31,6 +31,8 @@ pub use brush_dynamics::{
 pub use brush_mask::{BrushMask, MAX_BRUSH_MASK_BYTES, MAX_BRUSH_MASK_EDGE};
 pub use brush_outline::{BrushOutlineSegment, MAX_BRUSH_OUTLINE_SEGMENTS};
 pub use brush_program::{BrushDefinition, BrushPose, BrushProgram, BrushTip};
+mod brush_scatter;
+pub use brush_scatter::ScatterDynamics;
 pub use document::{
     BucketFill, DirtyTiles, Document, DocumentOptions, DocumentSnapshot, LiquifyDab, PlacedImage,
     TransformGeometry, WandSelection, MAX_DIMENSION,

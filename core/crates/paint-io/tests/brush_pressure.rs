@@ -55,6 +55,20 @@ fn package() -> Package {
 }
 
 #[test]
+fn scatter_cannot_be_discarded_by_old_state_or_pressure_payload() {
+    let mut catalog = BrushCatalog::default();
+    let mut settings = catalog.selected().settings().clone();
+    settings.dynamics.scatter = ScatterDynamics::new(false, 2., true, 4, 0.5, 1).unwrap();
+    catalog.edit("round-pressure", settings.clone()).unwrap();
+    assert!(brush_state::encode(&catalog).is_err());
+    let data = PressureParameters::from_core(&settings.dynamics);
+    assert!(serde_json::to_vec(&data).is_err());
+    let mut p = package();
+    p.brushes[0].parameters.pressure_dynamics = Some(data);
+    assert!(p.validate().is_err());
+}
+
+#[test]
 fn pressure_only_payload_rejects_device_controls_while_state_saves_separate_fields() {
     let mut d = dynamics();
     d.tip = TipDynamics::new(AngleControl::Direction, false, 0.01).unwrap();

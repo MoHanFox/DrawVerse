@@ -47,7 +47,10 @@ impl Document {
                 layer.canvas_pixel(x as u32, y as u32)
             }
         };
-        let (dx, dy) = (point.x - stroke.last_dab.x, point.y - stroke.last_dab.y);
+        let (dx, dy) = (
+            point.x - stroke.last_carrier.x,
+            point.y - stroke.last_carrier.y,
+        );
         for y in y0..y1 {
             for x in x0..x1 {
                 if finger {

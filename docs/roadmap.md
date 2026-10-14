@@ -1,3 +1,5 @@
+散布内核：[设计](brush-scatter-design.md) / [验收](brush-scatter-validation.md)。确定性偏移/数量/抖动、真实四类写入与展开预算已实现；保存/原生Qt继续后续，本阶段无界面入口。
+
 实时动态光标：[设计](brush-live-pose-design.md) / [验收](brush-live-pose-validation.md)。ABI1.38、非阻塞原生捕获姿态、悬停/压力大小/方向旋转倾斜、图片身份与DPI已接；随机/纹理等动态及湿混继续后续。
 
 设备动态Qt与原生入口：[设计](brush-device-ui-design.md) / [验收](brush-device-ui-validation.md)。ABI1.37、形状动态参数/真正预览/捕获笔触/保存与VBR交换已接；package临时拒绝解除，实时动态光标继续后续。

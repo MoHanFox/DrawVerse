@@ -75,6 +75,7 @@ pub struct BrushProgram {
     opacity_response: Option<CompiledPressureControl>,
     pressure_opacity: bool,
     tip_dynamics: TipDynamics,
+    pub(crate) scatter: crate::ScatterDynamics,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -158,6 +159,7 @@ impl BrushProgram {
             opacity_response: definition.dynamics.opacity.compile(),
             pressure_opacity: definition.dynamics.pressure_opacity,
             tip_dynamics: definition.dynamics.tip,
+            scatter: definition.dynamics.scatter,
         })
     }
 

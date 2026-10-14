@@ -384,6 +384,9 @@ struct Stroke {
     program: BrushProgram,
     last: InputPoint,
     last_dab: InputPoint,
+    last_carrier: InputPoint,
+    scatter_index: u64,
+    scatter_stroke: u64,
     distance_to_next: f64,
     direction: Option<f64>,
     before: BTreeMap<TileCoord, Option<Arc<Tile>>>,
@@ -403,6 +406,7 @@ pub struct Document {
     options: DocumentOptions,
     history: History,
     stroke: Option<Stroke>,
+    scatter_serial: u64,
     liquify: Option<liquify::LiquifyState>,
     transform: Option<transform::TransformState>,
     revision: u64,
@@ -625,6 +629,7 @@ impl Document {
             options,
             history: History::default(),
             stroke: None,
+            scatter_serial: 0,
             liquify: None,
             transform: None,
             selection: crate::Selection::default(),
@@ -1156,6 +1161,14 @@ impl Document {
         let brush = definition.brush;
         let program = BrushProgram::compile(definition)?;
         first.validate()?;
+        Self::validate_stroke_work(brush, &program, 1)?;
+        let scatter_serial = if program.scatter.enabled() {
+            self.scatter_serial
+                .checked_add(1)
+                .ok_or(Error::ResourceLimit("scatter stroke serial exhausted"))?
+        } else {
+            self.scatter_serial
+        };
         if self
             .layer(self.active_layer)
             .expect("active layer")
@@ -1183,6 +1196,9 @@ impl Document {
             program,
             last: first,
             last_dab: first,
+            last_carrier: first,
+            scatter_index: 0,
+            scatter_stroke: scatter_serial,
             distance_to_next: brush.step(),
             direction: None,
             before: BTreeMap::new(),
@@ -1218,6 +1234,7 @@ impl Document {
                 if changed {
                     self.bump_revision();
                 }
+                self.scatter_serial = scatter_serial;
                 self.stroke = Some(stroke);
                 Ok(())
             }
@@ -1245,31 +1262,11 @@ impl Document {
         } else {
             ((distance - current.distance_to_next + 1e-9) / step).floor() as usize + 1
         };
-        let diameter = (f64::from(current.brush.radius)
-            * 2.0
-            * if current.program.has_mask() {
-                std::f64::consts::SQRT_2
-            } else {
-                1.
-            }
-            + 2.0)
-            .ceil() as usize;
-        let sample_cost = if matches!(current.brush.mode, BrushMode::Smudge { .. }) {
-            5
-        } else {
-            1
-        };
-        if count > MAX_DABS_PER_SEGMENT
-            || (count + usize::from(stationary_pressure))
-                .saturating_mul(diameter * diameter)
-                .saturating_mul(sample_cost)
-                > MAX_PIXEL_VISITS_PER_SEGMENT
-        {
-            // No mutation: a caller may resample a long device segment or cancel the stroke.
-            return Err(Error::ResourceLimit(
-                "input segment too large; resample into shorter segments",
-            ));
-        }
+        Self::validate_stroke_work(
+            current.brush,
+            &current.program,
+            count + usize::from(stationary_pressure),
+        )?;
         let mut stroke = self.stroke.take().expect("checked active stroke");
         if distance > 1e-9 {
             stroke.direction = Some((point.y - stroke.last.y).atan2(point.x - stroke.last.x));
@@ -1306,6 +1303,36 @@ impl Document {
             self.bump_revision();
         }
         self.stroke = Some(stroke);
+        Ok(())
+    }
+
+    fn validate_stroke_work(brush: Brush, program: &BrushProgram, count: usize) -> Result<()> {
+        let count = count.saturating_mul(program.scatter.maximum_count());
+        let diameter = (f64::from(brush.radius)
+            * 2.0
+            * if program.has_mask() {
+                std::f64::consts::SQRT_2
+            } else {
+                1.
+            }
+            + 2.0)
+            .ceil() as usize;
+        let sample_cost = if matches!(brush.mode, BrushMode::Smudge { .. }) {
+            5
+        } else {
+            1
+        };
+        if count > MAX_DABS_PER_SEGMENT
+            || count
+                .saturating_mul(diameter * diameter)
+                .saturating_mul(sample_cost)
+                > MAX_PIXEL_VISITS_PER_SEGMENT
+        {
+            // No mutation: a caller may resample a long device segment or cancel the stroke.
+            return Err(Error::ResourceLimit(
+                "input segment too large; resample into shorter segments",
+            ));
+        }
         Ok(())
     }
 
@@ -1415,6 +1442,32 @@ impl Document {
     }
 
     fn dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
+        if let Some(plan) = stroke.program.scatter.plan(
+            stroke.brush.radius,
+            stroke.scatter_stroke,
+            stroke.scatter_index,
+            stroke.direction,
+        ) {
+            stroke.scatter_index = stroke
+                .scatter_index
+                .checked_add(1)
+                .ok_or(Error::ResourceLimit("scatter dab serial exhausted"))?;
+            let mut changed = false;
+            for index in 0..plan.count {
+                let sample = plan.point(index, point);
+                if stroke.first_dab {
+                    stroke.last_carrier = sample;
+                }
+                changed |= self.dab_single(stroke, sample)?;
+                stroke.last_carrier = sample;
+            }
+            Ok(changed)
+        } else {
+            stroke.last_carrier = stroke.last_dab;
+            self.dab_single(stroke, point)
+        }
+    }
+    fn dab_single(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
         // Specialize once per dab: an inactive selection adds no pixel-loop
         // geometry branches or coverage multiplication to the original hot path.
         match (self.selection.enabled(), stroke.program.has_mask()) {
@@ -1490,7 +1543,7 @@ impl Document {
                         ..
                     }
                 ))
-            && (point.x - stroke.last_dab.x).hypot(point.y - stroke.last_dab.y) < 1e-9
+            && (point.x - stroke.last_carrier.x).hypot(point.y - stroke.last_carrier.y) < 1e-9
         {
             stroke.first_dab = false;
             return Ok(false);
