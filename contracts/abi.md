@@ -1,5 +1,7 @@
 # C ABI 1.38.0 契约
 
+散布IO阶段：Rust state8/VBR1.6/behavior5保存独立scatterDynamics及16位十六进制u64种子；ABI1.38和Qt尚未接入。package_read/write暂对scatterDynamics对象返回Unsupported，读required=0且不改caller字节或资源目录，写不改现有目标；默认和既有包保留原路径。见 `docs/brush-scatter-io-validation.md`。
+
 ## ABI1.38：实时笔尖姿态
 
 `PAINT_FEATURE_BRUSH_POSE=8589934592`。新增独立PaintBrushPose句柄create/bind_prepared/read/clear/destroy，绑定准确准备记录、ID（1–64字节UTF8）和名义半径0.5–256。句柄反复绑定/clear不增加token；解析就绪后只保留不可变所选预设，库销毁不使其失效。clear释放捕获，destroy清空caller句柄，陈旧句柄拒绝。

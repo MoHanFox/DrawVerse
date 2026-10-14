@@ -67,6 +67,7 @@ fn bundle() -> ImageBundle {
                     .map(str::to_owned),
                 source_resource: Some(p.source_id().into()),
                 parameters: Parameters {
+                    scatter_dynamics: None,
                     tip_dynamics: None,
                     pressure_dynamics: None,
                     diameter: s.diameter,
@@ -102,7 +103,14 @@ fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() 
         paint_core::TipDynamics::new(paint_core::AngleControl::PenRotation, true, 0.2).unwrap();
     input.package.brushes[0].parameters.tip_dynamics =
         Some(paint_io::brush_tip_dynamics::TipParameters::from_core(tip));
-    input.package.brushes[0].behavior_version = 4;
+    input.package.brushes[0].parameters.scatter_dynamics =
+        Some(paint_io::brush_scatter::ScatterParameters::from_core(
+            paint_core::ScatterDynamics::new(true, 1., true, 3, 0.5, u64::MAX).unwrap(),
+        ));
+    input.package.brushes[0]
+        .required_capabilities
+        .push("scatter-stamps".into());
+    input.package.brushes[0].behavior_version = 5;
     input.package.brushes[0]
         .required_capabilities
         .push("tip-dynamics".into());
@@ -141,6 +149,9 @@ fn edited_device_geometry_preserves_source_original_baseline_and_image_pixels() 
         serde_json::from_slice(input.sources()[0].records().next().unwrap().1).unwrap();
     baseline.baseline.tip_dynamics =
         Some(paint_io::brush_tip_dynamics::TipParameters::from_core(tip));
+    assert!(baseline.validate().is_err());
+    baseline.baseline.tip_dynamics = None;
+    baseline.baseline.scatter_dynamics = input.package.brushes[0].parameters.scatter_dynamics;
     assert!(baseline.validate().is_err());
 }
 fn rewrite(bytes: &[u8], mut edit: impl FnMut(&str, &mut Vec<u8>) -> bool) -> Vec<u8> {

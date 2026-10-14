@@ -28,6 +28,7 @@ fn package(resource: Option<String>) -> Package {
             tip_resource: resource,
             source_resource: None,
             parameters: Parameters {
+                scatter_dynamics: None,
                 tip_dynamics: None,
                 pressure_dynamics: None,
                 diameter: 16.,

@@ -36,6 +36,7 @@ fn package() -> Package {
             behavior_version: 2,
             required_capabilities: vec!["procedural-tip".into(), "pressure-curves".into()],
             parameters: Parameters {
+                scatter_dynamics: None,
                 tip_dynamics: None,
                 diameter: 16.,
                 spacing: 0.01,
@@ -55,12 +56,21 @@ fn package() -> Package {
 }
 
 #[test]
-fn scatter_cannot_be_discarded_by_old_state_or_pressure_payload() {
+fn pressure_payload_rejects_scatter_while_state8_preserves_it() {
     let mut catalog = BrushCatalog::default();
     let mut settings = catalog.selected().settings().clone();
     settings.dynamics.scatter = ScatterDynamics::new(false, 2., true, 4, 0.5, 1).unwrap();
     catalog.edit("round-pressure", settings.clone()).unwrap();
-    assert!(brush_state::encode(&catalog).is_err());
+    let state = brush_state::encode(&catalog).unwrap();
+    assert_eq!(
+        brush_state::decode(&state, MAX_CATALOG_MASK_BYTES)
+            .unwrap()
+            .selected()
+            .settings()
+            .dynamics
+            .scatter,
+        settings.dynamics.scatter
+    );
     let data = PressureParameters::from_core(&settings.dynamics);
     assert!(serde_json::to_vec(&data).is_err());
     let mut p = package();

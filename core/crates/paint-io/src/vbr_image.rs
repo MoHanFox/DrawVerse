@@ -1,4 +1,4 @@
-//! VBR 1.1–1.5 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
+//! VBR 1.1–1.6 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
 use crate::{
     brush_resource::{decode_verified, valid_id},
     check,
@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 5;
+pub const MAX_EXECUTABLE_MINOR: u32 = 6;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -242,6 +242,13 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         }
         brushes.push(preset);
     }
+    if manifest.version.minor < 6
+        && brushes
+            .iter()
+            .any(|b| b.parameters.scatter_dynamics.is_some())
+    {
+        return Err(Error::Unsupported("scatter require VBR1.6".into()));
+    }
     if manifest.version.minor < 5 && brushes.iter().any(|b| b.parameters.tip_dynamics.is_some()) {
         return Err(Error::Unsupported("tip dynamics require VBR1.5".into()));
     }
@@ -343,16 +350,11 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
     check(token)?;
     if bundle.assets.is_empty()
         && bundle.sources.is_empty()
-        && !bundle
-            .package
-            .brushes
-            .iter()
-            .any(|b| b.parameters.pressure_dynamics.is_some())
-        && !bundle
-            .package
-            .brushes
-            .iter()
-            .any(|b| b.parameters.tip_dynamics.is_some())
+        && !bundle.package.brushes.iter().any(|b| {
+            b.parameters.pressure_dynamics.is_some()
+                || b.parameters.tip_dynamics.is_some()
+                || b.parameters.scatter_dynamics.is_some()
+        })
     {
         return vbr::encode(&bundle.package, token);
     }
@@ -379,6 +381,13 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.parameters.scatter_dynamics.is_some())
+            {
+                6
+            } else if bundle
                 .package
                 .brushes
                 .iter()

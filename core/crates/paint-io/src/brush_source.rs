@@ -84,7 +84,10 @@ impl SourceInfo {
         {
             return Err(Error::Limit("brush source report bounds"));
         }
-        if self.baseline.pressure_dynamics.is_some() || self.baseline.tip_dynamics.is_some() {
+        if self.baseline.pressure_dynamics.is_some()
+            || self.baseline.tip_dynamics.is_some()
+            || self.baseline.scatter_dynamics.is_some()
+        {
             return Err(Error::Unsupported(
                 "converter v1 baseline dynamic controls".into(),
             ));
@@ -141,6 +144,7 @@ impl SourceArchive {
             converter: "drawverse.abr.basic".into(),
             converter_version: 1,
             baseline: Parameters {
+                scatter_dynamics: None,
                 tip_dynamics: None,
                 pressure_dynamics: None,
                 diameter: settings.diameter,

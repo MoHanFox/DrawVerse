@@ -14,6 +14,7 @@ fn package() -> Package {
             behavior_version: 1,
             required_capabilities: vec!["procedural-tip".into()],
             parameters: Parameters {
+                scatter_dynamics: None,
                 tip_dynamics: None,
                 pressure_dynamics: None,
                 diameter: 40.,

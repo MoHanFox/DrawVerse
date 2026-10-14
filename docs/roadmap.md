@@ -1,3 +1,5 @@
+散布保存与VBR：[设计](brush-scatter-io-design.md) / [验收](brush-scatter-io-validation.md)。state8/VBR1.6/behavior5与完整种子已接IO，恢复后真实笔触保持；原生Qt接入继续后续，旧ABI包入口暂拒绝新字段。
+
 散布内核：[设计](brush-scatter-design.md) / [验收](brush-scatter-validation.md)。确定性偏移/数量/抖动、真实四类写入与展开预算已实现；保存/原生Qt继续后续，本阶段无界面入口。
 
 实时动态光标：[设计](brush-live-pose-design.md) / [验收](brush-live-pose-validation.md)。ABI1.38、非阻塞原生捕获姿态、悬停/压力大小/方向旋转倾斜、图片身份与DPI已接；随机/纹理等动态及湿混继续后续。
