@@ -114,3 +114,7 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 ## 第二笔尖相对尺寸子集 1.13
 
 2026-10-15：dualBrush.sizing采用relative-size-v1、independent/relative、diameterOffset直径像素偏移[-511,511]与follow-pressure/fixed-width。关闭或独立模式非默认值仍完整保存，默认省略保持旧版本；对象存在要求drawverse.brush/behavior12、dual-relative-size能力及minor13。严格完整字段/舍入前范围/null拒绝，和time-grid平滑共存选择最高版本。ABI1.47/Qt已接通，见brush-dual-size-io-validation.md、brush-dual-size-ui-validation.md及contracts/vbr-dual-sizing-v1.13.schema.json。这里只表达第二灰度覆盖尺寸，不宣称支持双色叠放或溢出绘制。
+
+## 双色双笔刷子集 1.14
+
+2026-10-15：dualBrush.color采用separated-stroke-v1、enabled/useBackground/overflow布尔、second-behind/second-in-front顺序、primaryBlend/secondaryBlend稳定27英文名称。实际前景/背景RGBA不存入预设。非默认关闭值保留，默认省略保持旧字节与版本；存在对象要求drawverse.brush/behavior13、dual-color-stroke能力与minor14，state16。Schema见contracts/vbr-dual-color-v1.14.schema.json，结果见brush-dual-color-io-validation.md。原ABR来源保持。ABI1.47/Qt暂拒未接入的新非默认色彩配置，完整入口及自动描边继续后续；非分隔逐印章模型未实现，不得冒用separated模型。

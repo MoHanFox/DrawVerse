@@ -84,6 +84,12 @@ pub unsafe extern "C" fn paint_brush_package_write(
         let path = pointers::path_utf8(path, path_length)?;
         let json = pointers::brush_json(json, json_length)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
+        if package.brushes.iter().any(|b| b.has_dual_color()) {
+            return Err(ApiError::new(
+                PAINT_UNSUPPORTED,
+                "dual-color Qt entry is not available yet",
+            ));
+        }
 
         if package.brushes.iter().any(|b| b.dual_brush.is_some()) {
             return Err(ApiError::new(
@@ -152,6 +158,12 @@ pub unsafe extern "C" fn paint_brush_library_package_write(
         let json = pointers::brush_json(json, json_length)?;
         let library = runtime::registry()?.brush_library(library)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
+        if package.brushes.iter().any(|b| b.has_dual_color()) {
+            return Err(ApiError::new(
+                PAINT_UNSUPPORTED,
+                "dual-color Qt entry is not available yet",
+            ));
+        }
 
         let mut assets = std::collections::BTreeMap::new();
         let token = CancellationToken::default();

@@ -625,3 +625,85 @@ fn smoothing_current_image_preserves_original_provenance_and_real_time_input() {
     }
     assert_eq!(results[0], results[1]);
 }
+
+#[test]
+fn dual_color_current_image_preserves_shared_secondary_and_original_provenance() {
+    let token = CancellationToken::default();
+    let mut input = bundle();
+    input.package.brushes[0].smoothing =
+        Some(paint_io::brush_smoothing::SmoothingParameters::from_core(
+            paint_core::BrushSmoothing::new(true, 24., 12., 0.7, 3.).unwrap(),
+        ));
+    input.package.brushes[0].behavior_version = 11;
+    input.package.brushes[0]
+        .required_capabilities
+        .push("path-smoothing".into());
+    input.package.brushes[0].parameters.spacing = 0.25;
+    let secondary = paint_core::SecondaryTip::new(
+        4.,
+        paint_core::BrushTip::default(),
+        input.definition(0).unwrap().mask,
+        Default::default(),
+    )
+    .unwrap()
+    .with_spacing(0.25)
+    .unwrap();
+    let color = paint_core::DualColor::new(
+        true,
+        true,
+        true,
+        paint_core::DualColorOrder::SecondBehind,
+        paint_core::BlendMode::Normal,
+        paint_core::BlendMode::Multiply,
+    )
+    .unwrap();
+    let dual = paint_core::DualBrush::new(true, paint_core::DualMode::Multiply, secondary)
+        .with_color(color);
+    input.package.brushes[0].dual_brush =
+        Some(paint_io::brush_dual::DualParameters::from_core(&dual).unwrap());
+    input.package.brushes[0].behavior_version = 13;
+    input.package.brushes[0]
+        .required_capabilities
+        .extend(["dual-cover".into(), "dual-color-stroke".into()]);
+    let packed = vbr_image::encode(&input, &token).unwrap();
+    let output = vbr_image::decode(&packed, &token).unwrap();
+    assert_eq!(
+        output.sources()[0].original_bytes(),
+        input.sources()[0].original_bytes()
+    );
+    assert_eq!(
+        output.sources()[0].records().collect::<Vec<_>>(),
+        input.sources()[0].records().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        output.package.brushes[0].source_resource,
+        input.package.brushes[0].source_resource
+    );
+    let mut results = Vec::new();
+    for b in [&input, &output] {
+        let mut doc = Document::new(40, 40).unwrap();
+        let mut p = InputPoint::new(8.5, 20.5, 1.);
+        p.timestamp_ns = 1_000_000;
+        let mut definition = b.definition(0).unwrap();
+        assert_eq!(definition.dual.color(), color);
+        assert_eq!(
+            definition.dual.secondary().mask().unwrap().resource_id(),
+            definition.mask.as_ref().unwrap().resource_id()
+        );
+        definition.brush.color = paint_core::Pixel::from_straight([0.8, 0.2, 0.1, 0.7]).unwrap();
+        definition.brush.background_color =
+            paint_core::Pixel::from_straight([0.1, 0.3, 0.8, 0.8]).unwrap();
+        doc.begin_brush_stroke(definition, p).unwrap();
+        p.x = 32.5;
+        p.y = 24.5;
+        p.timestamp_ns = 49_000_000;
+        doc.stroke_to(p).unwrap();
+        doc.end_stroke().unwrap();
+        results.push(
+            (0..1600)
+                .map(|i| doc.pixel(i % 40, i / 40))
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(results[0], results[1]);
+}

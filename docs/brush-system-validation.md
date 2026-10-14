@@ -1,5 +1,7 @@
 # 统一笔刷系统验收计划
 
+2026-10-15追加：双色配置state16/VBR1.14/behavior13、关闭配置/27模式、相对尺寸/平滑/PCHIP两笔真实像素及共享图片/原始来源交换已验证，见[双色IO](brush-dual-color-io-validation.md)。ABI1.47/Qt色彩入口暂拒，下一步重算范围优化及完整入口；不代表双色用户功能或整个系统完成。
+
 2026-10-15追加：双色双笔刷separated-stroke-v1核心已有真实像素、独立/配对路径、溢出/顺序/半透明/一次整笔opacity、分页及失败原子回滚验收，见[双色核心](brush-dual-color-core-validation.md)。31项对应和旧覆盖回归通过；旧IO明确拒绝新非默认配置，格式/原生Qt/自动描边与复合光标尚未接入，不代表整体笔刷系统完成。
 
 2026-10-15追加：第二笔尖相对尺寸的内核、state15/VBR1.13及ABI1.47原生Qt入口已接通，见[尺寸内核](brush-dual-size-validation.md)、[尺寸IO](brush-dual-size-io-validation.md)、[尺寸入口](brush-dual-size-ui-validation.md)。DPR1/2真实控件/预览/在途像素、关闭重开/基准重置、VBR与ABI验证通过；仍只执行灰度覆盖，双色叠放/溢出/自动描边未完成。该阶段不能替代收尖、湿混、完整ABR与整体设备/跨平台验收。

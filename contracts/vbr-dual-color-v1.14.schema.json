@@ -1,0 +1,2052 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:vbr:dual-color:1.14",
+  "title": "DrawVerse VBR 1.14 separated dual-color subset",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/manifest"
+    },
+    {
+      "$ref": "#/$defs/preset"
+    },
+    {
+      "$ref": "#/$defs/sourceRecord"
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diameter",
+        "spacing",
+        "dabOpacity",
+        "hardness",
+        "roundness",
+        "angle",
+        "flow",
+        "pressureSize",
+        "pressureFlow"
+      ],
+      "properties": {
+        "diameter": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "spacing": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 0.5
+        },
+        "dabOpacity": {
+          "$ref": "#/$defs/ratio"
+        },
+        "hardness": {
+          "$ref": "#/$defs/ratio"
+        },
+        "roundness": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1
+        },
+        "angle": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "flow": {
+          "$ref": "#/$defs/ratio"
+        },
+        "pressureSize": {
+          "type": "boolean"
+        },
+        "pressureFlow": {
+          "type": "boolean"
+        },
+        "pressureDynamics": {
+          "$ref": "#/$defs/pressureDynamics"
+        },
+        "tipDynamics": {
+          "$ref": "#/$defs/tipDynamics"
+        },
+        "scatterDynamics": {
+          "$ref": "#/$defs/scatterDynamics"
+        },
+        "shapeJitter": {
+          "$ref": "#/$defs/shapeJitter"
+        },
+        "colorDynamics": {
+          "$ref": "#/$defs/colorDynamics"
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "engineProfile",
+        "behaviorVersion",
+        "requiredCapabilities",
+        "parameters"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "allOf": [
+            {
+              "pattern": "\\S"
+            },
+            {
+              "pattern": "^[^\\u0000]*$"
+            }
+          ]
+        },
+        "engineProfile": {
+          "enum": [
+            "legacy.round",
+            "drawverse.brush"
+          ]
+        },
+        "behaviorVersion": {
+          "enum": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13
+          ]
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "enum": [
+              "procedural-tip",
+              "pressure",
+              "dab-flow",
+              "image-tip",
+              "pressure-curves",
+              "opacity-pressure",
+              "tip-dynamics",
+              "scatter-stamps",
+              "shape-jitter",
+              "color-dynamics",
+              "texture-cover",
+              "dual-cover",
+              "pressure-smooth",
+              "path-smoothing",
+              "dual-relative-size",
+              "dual-color-stroke"
+            ]
+          }
+        },
+        "parameters": {
+          "$ref": "#/$defs/parameters"
+        },
+        "tipResource": {
+          "$ref": "#/$defs/hash"
+        },
+        "sourceResource": {
+          "$ref": "#/$defs/hash"
+        },
+        "texture": {
+          "$ref": "#/$defs/texture"
+        },
+        "dualBrush": {
+          "$ref": "#/$defs/dualBrush"
+        },
+        "smoothing": {
+          "$ref": "#/$defs/smoothing"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "engineProfile": {
+                "const": "legacy.round"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "properties": {
+                  "hardness": {
+                    "const": 1
+                  },
+                  "roundness": {
+                    "const": 1
+                  },
+                  "angle": {
+                    "const": 0
+                  },
+                  "flow": {
+                    "const": 1
+                  },
+                  "pressureSize": {
+                    "const": true
+                  },
+                  "pressureFlow": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "tipResource"
+            ]
+          },
+          "then": {
+            "properties": {
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "image-tip"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "image-tip"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "pressureDynamics"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "pressure-curves"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  1,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "pressure-curves"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "pressureDynamics"
+                ],
+                "properties": {
+                  "pressureDynamics": {
+                    "required": [
+                      "opacity"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "opacity-pressure"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  1,
+                  2,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "opacity-pressure"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "tipDynamics"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "tip-dynamics"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  1,
+                  2,
+                  3,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "tip-dynamics"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "scatterDynamics"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "scatter-stamps"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "scatter-stamps"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "shapeJitter"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  6,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "shape-jitter"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "shape-jitter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "parameters": {
+                "required": [
+                  "colorDynamics"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  7,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "color-dynamics"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "color-dynamics"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "texture"
+            ]
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  8,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "texture-cover"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "texture-cover"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "dualBrush"
+            ]
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  9,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "dual-cover"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "dual-cover"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "parameters"
+                ],
+                "properties": {
+                  "parameters": {
+                    "required": [
+                      "pressureDynamics"
+                    ],
+                    "properties": {
+                      "pressureDynamics": {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "size"
+                            ],
+                            "properties": {
+                              "size": {
+                                "required": [
+                                  "interpolation"
+                                ],
+                                "properties": {
+                                  "interpolation": {
+                                    "const": "smooth-pchip-v1"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "required": [
+                              "flow"
+                            ],
+                            "properties": {
+                              "flow": {
+                                "required": [
+                                  "interpolation"
+                                ],
+                                "properties": {
+                                  "interpolation": {
+                                    "const": "smooth-pchip-v1"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "required": [
+                              "opacity"
+                            ],
+                            "properties": {
+                              "opacity": {
+                                "required": [
+                                  "interpolation"
+                                ],
+                                "properties": {
+                                  "interpolation": {
+                                    "const": "smooth-pchip-v1"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "required": [
+                  "dualBrush"
+                ],
+                "properties": {
+                  "dualBrush": {
+                    "required": [
+                      "pressureDynamics"
+                    ],
+                    "properties": {
+                      "pressureDynamics": {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "size"
+                            ],
+                            "properties": {
+                              "size": {
+                                "required": [
+                                  "interpolation"
+                                ],
+                                "properties": {
+                                  "interpolation": {
+                                    "const": "smooth-pchip-v1"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "required": [
+                              "flow"
+                            ],
+                            "properties": {
+                              "flow": {
+                                "required": [
+                                  "interpolation"
+                                ],
+                                "properties": {
+                                  "interpolation": {
+                                    "const": "smooth-pchip-v1"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "required": [
+                              "opacity"
+                            ],
+                            "properties": {
+                              "opacity": {
+                                "required": [
+                                  "interpolation"
+                                ],
+                                "properties": {
+                                  "interpolation": {
+                                    "const": "smooth-pchip-v1"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  10,
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "pressure-smooth"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "not": {
+                  "const": 10
+                }
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "pressure-smooth"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "smoothing"
+            ]
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  11,
+                  12,
+                  13
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "path-smoothing"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "not": {
+                  "const": 11
+                }
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "path-smoothing"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "dualBrush"
+            ],
+            "properties": {
+              "dualBrush": {
+                "required": [
+                  "sizing"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "enum": [
+                  12,
+                  13
+                ]
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "dual-relative-size"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "not": {
+                  "const": 12
+                }
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "dual-relative-size"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "dualBrush"
+            ],
+            "properties": {
+              "dualBrush": {
+                "required": [
+                  "color"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "behaviorVersion": {
+                "const": 13
+              },
+              "engineProfile": {
+                "const": "drawverse.brush"
+              },
+              "requiredCapabilities": {
+                "contains": {
+                  "const": "dual-color-stroke"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "behaviorVersion": {
+                "not": {
+                  "const": 13
+                }
+              },
+              "requiredCapabilities": {
+                "not": {
+                  "contains": {
+                    "const": "dual-color-stroke"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "version",
+        "packageId",
+        "brushes",
+        "groups",
+        "assets"
+      ],
+      "properties": {
+        "format": {
+          "const": "DrawVerseBrush"
+        },
+        "version": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "major",
+            "minor"
+          ],
+          "properties": {
+            "major": {
+              "const": 1
+            },
+            "minor": {
+              "const": 14
+            }
+          }
+        },
+        "packageId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "brushes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "path"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/uuid"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^brushes/[0-9a-f-]{36}\\.json$"
+              }
+            }
+          }
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "assets": {
+          "type": "array",
+          "maxItems": 6144,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "path",
+              "sha256",
+              "kind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/hash"
+              },
+              "sha256": {
+                "$ref": "#/$defs/hash"
+              },
+              "kind": {
+                "enum": [
+                  "tip-mask",
+                  "source-record",
+                  "abr-original"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^(assets/[0-9a-f]{64}\\.png|sources/[0-9a-f]{64}\\.json|originals/[0-9a-f]{64}\\.abr)$"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "tip-mask"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "path": {
+                      "pattern": "^assets/[0-9a-f]{64}\\.png$"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "source-record"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "path": {
+                      "pattern": "^sources/[0-9a-f]{64}\\.json$"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "abr-original"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "path": {
+                      "pattern": "^originals/[0-9a-f]{64}\\.abr$"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sourceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "format",
+        "originalHash",
+        "fileVersion",
+        "presetIndex",
+        "originalName",
+        "converter",
+        "converterVersion",
+        "baseline",
+        "report"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "format": {
+          "const": "abr"
+        },
+        "originalHash": {
+          "$ref": "#/$defs/hash"
+        },
+        "fileVersion": {
+          "enum": [
+            1,
+            2,
+            6,
+            10
+          ]
+        },
+        "fileSubversion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "enum": [
+            1,
+            2,
+            null
+          ]
+        },
+        "presetIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1023
+        },
+        "originalName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "converter": {
+          "const": "drawverse.abr.basic"
+        },
+        "converterVersion": {
+          "const": 1
+        },
+        "baseline": {
+          "$ref": "#/$defs/legacyParameters"
+        },
+        "tipResource": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/hash"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "report": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "status",
+              "reason"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1048576,
+                "pattern": "^[^\\u0000]+$",
+                "description": "All paths together are bounded to 1 MiB UTF-8 by the codec."
+              },
+              "status": {
+                "enum": [
+                  "mapped",
+                  "approximate",
+                  "notExecuted"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[^\\u0000]+$",
+                "description": "The codec also enforces at most 1024 UTF-8 bytes."
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "fileVersion": {
+                "enum": [
+                  6,
+                  10
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fileSubversion"
+            ],
+            "properties": {
+              "fileSubversion": {
+                "enum": [
+                  1,
+                  2
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "fileSubversion": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "legacyParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diameter",
+        "spacing",
+        "dabOpacity",
+        "hardness",
+        "roundness",
+        "angle",
+        "flow",
+        "pressureSize",
+        "pressureFlow"
+      ],
+      "properties": {
+        "diameter": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "spacing": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 0.5
+        },
+        "dabOpacity": {
+          "$ref": "#/$defs/ratio"
+        },
+        "hardness": {
+          "$ref": "#/$defs/ratio"
+        },
+        "roundness": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1
+        },
+        "angle": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "flow": {
+          "$ref": "#/$defs/ratio"
+        },
+        "pressureSize": {
+          "type": "boolean"
+        },
+        "pressureFlow": {
+          "type": "boolean"
+        }
+      }
+    },
+    "pressureControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "curve",
+        "minimum"
+      ],
+      "properties": {
+        "minimum": {
+          "$ref": "#/$defs/ratio"
+        },
+        "curve": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 17,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {
+                "$ref": "#/$defs/ratio"
+              },
+              {
+                "$ref": "#/$defs/ratio"
+              }
+            ],
+            "items": false
+          },
+          "description": "Codec additionally requires strictly increasing X, first X=0 and last X=1."
+        },
+        "interpolation": {
+          "const": "smooth-pchip-v1"
+        }
+      }
+    },
+    "pressureDynamics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size",
+        "flow"
+      ],
+      "properties": {
+        "size": {
+          "$ref": "#/$defs/pressureControl"
+        },
+        "flow": {
+          "$ref": "#/$defs/pressureControl"
+        },
+        "opacity": {
+          "$ref": "#/$defs/opacityControl"
+        }
+      }
+    },
+    "opacityControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "curve",
+        "minimum",
+        "enabled"
+      ],
+      "properties": {
+        "minimum": {
+          "$ref": "#/$defs/ratio"
+        },
+        "curve": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 17,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {
+                "$ref": "#/$defs/ratio"
+              },
+              {
+                "$ref": "#/$defs/ratio"
+              }
+            ],
+            "items": false
+          },
+          "description": "Codec additionally requires strictly increasing X, first X=0 and last X=1."
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "interpolation": {
+          "const": "smooth-pchip-v1"
+        }
+      }
+    },
+    "tipDynamics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "angleControl",
+        "tiltRoundness",
+        "minimumRoundness"
+      ],
+      "properties": {
+        "angleControl": {
+          "enum": [
+            "fixed",
+            "direction",
+            "pen-rotation",
+            "tilt"
+          ]
+        },
+        "tiltRoundness": {
+          "type": "boolean"
+        },
+        "minimumRoundness": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1
+        }
+      },
+      "description": "Device capabilities gate rotation/tilt. Missing channels use preset orientation. Ratios and angles follow DrawVerse device geometry semantics."
+    },
+    "scatterDynamics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "amount",
+        "bothAxes",
+        "count",
+        "countJitter",
+        "seed"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "bothAxes": {
+          "type": "boolean"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "countJitter": {
+          "$ref": "#/$defs/ratio"
+        },
+        "seed": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        }
+      },
+      "description": "Amount is nominal diameter ratio; seed preserves full unsigned 64-bit identity."
+    },
+    "shapeJitter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "size",
+        "minimumSize",
+        "angle",
+        "roundness",
+        "minimumRoundness",
+        "seed"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "size": {
+          "$ref": "#/$defs/ratio"
+        },
+        "minimumSize": {
+          "$ref": "#/$defs/ratio"
+        },
+        "angle": {
+          "$ref": "#/$defs/ratio"
+        },
+        "roundness": {
+          "$ref": "#/$defs/ratio"
+        },
+        "minimumRoundness": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1
+        },
+        "seed": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        }
+      }
+    },
+    "colorDynamics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "enabled",
+        "foregroundBackground",
+        "hue",
+        "saturation",
+        "value",
+        "perTip",
+        "seed"
+      ],
+      "properties": {
+        "model": {
+          "const": "linear-hsv-v1"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "foregroundBackground": {
+          "$ref": "#/$defs/ratio"
+        },
+        "hue": {
+          "$ref": "#/$defs/ratio"
+        },
+        "saturation": {
+          "$ref": "#/$defs/ratio"
+        },
+        "value": {
+          "$ref": "#/$defs/ratio"
+        },
+        "perTip": {
+          "type": "boolean"
+        },
+        "seed": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        }
+      }
+    },
+    "texture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "enabled",
+        "space",
+        "scale",
+        "angle",
+        "depth",
+        "invert",
+        "offsetX",
+        "offsetY",
+        "resource"
+      ],
+      "properties": {
+        "model": {
+          "const": "periodic-coverage-v1"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "space": {
+          "enum": [
+            "document",
+            "tip"
+          ]
+        },
+        "scale": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 100
+        },
+        "angle": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "depth": {
+          "$ref": "#/$defs/ratio"
+        },
+        "invert": {
+          "type": "boolean"
+        },
+        "offsetX": {
+          "type": "number",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "offsetY": {
+          "type": "number",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "resource": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/hash"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "resource": {
+                "$ref": "#/$defs/hash"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "dualBrush": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "enabled",
+        "mode",
+        "diameter",
+        "spacing",
+        "hardness",
+        "roundness",
+        "angle",
+        "flow",
+        "pressureSize",
+        "pressureFlow",
+        "resource"
+      ],
+      "properties": {
+        "model": {
+          "enum": [
+            "paired-dab-v1",
+            "path-coverage-v1"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "multiply",
+            "darken",
+            "lighten",
+            "subtract",
+            "difference",
+            "screen"
+          ]
+        },
+        "diameter": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "spacing": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "number",
+              "minimum": 0.01,
+              "maximum": 1
+            }
+          ]
+        },
+        "hardness": {
+          "$ref": "#/$defs/ratio"
+        },
+        "roundness": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 1
+        },
+        "angle": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "flow": {
+          "$ref": "#/$defs/ratio"
+        },
+        "pressureSize": {
+          "type": "boolean"
+        },
+        "pressureFlow": {
+          "type": "boolean"
+        },
+        "resource": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/hash"
+            }
+          ]
+        },
+        "pressureDynamics": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/pressureDynamics"
+            },
+            {
+              "not": {
+                "required": [
+                  "opacity"
+                ]
+              }
+            }
+          ]
+        },
+        "tipDynamics": {
+          "$ref": "#/$defs/tipDynamics"
+        },
+        "scatterDynamics": {
+          "$ref": "#/$defs/scatterDynamics"
+        },
+        "shapeJitter": {
+          "$ref": "#/$defs/shapeJitter"
+        },
+        "sizing": {
+          "$ref": "#/$defs/dualSizing"
+        },
+        "color": {
+          "$ref": "#/$defs/dualColor"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "model": {
+                "const": "paired-dab-v1"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "spacing": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "spacing": {
+                "type": "number",
+                "minimum": 0.01,
+                "maximum": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "smoothing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "enabled",
+        "positionMs",
+        "pressureMs",
+        "speedResponse",
+        "stabilizerPx"
+      ],
+      "properties": {
+        "model": {
+          "const": "time-grid-v1"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "positionMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 250
+        },
+        "pressureMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 250
+        },
+        "speedResponse": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "stabilizerPx": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 128
+        }
+      }
+    },
+    "dualSizing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "mode",
+        "diameterOffset",
+        "widthRule"
+      ],
+      "properties": {
+        "model": {
+          "const": "relative-size-v1"
+        },
+        "mode": {
+          "enum": [
+            "independent",
+            "relative"
+          ]
+        },
+        "diameterOffset": {
+          "type": "number",
+          "minimum": -511,
+          "maximum": 511
+        },
+        "widthRule": {
+          "enum": [
+            "follow-pressure",
+            "fixed-width"
+          ]
+        }
+      }
+    },
+    "dualColor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "enabled",
+        "useBackground",
+        "overflow",
+        "order",
+        "primaryBlend",
+        "secondaryBlend"
+      ],
+      "properties": {
+        "model": {
+          "const": "separated-stroke-v1"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "useBackground": {
+          "type": "boolean"
+        },
+        "overflow": {
+          "type": "boolean"
+        },
+        "order": {
+          "enum": [
+            "second-behind",
+            "second-in-front"
+          ]
+        },
+        "primaryBlend": {
+          "enum": [
+            "normal",
+            "dissolve",
+            "darken",
+            "multiply",
+            "color-burn",
+            "linear-burn",
+            "darker-color",
+            "lighten",
+            "screen",
+            "color-dodge",
+            "linear-dodge",
+            "lighter-color",
+            "overlay",
+            "soft-light",
+            "hard-light",
+            "vivid-light",
+            "linear-light",
+            "pin-light",
+            "hard-mix",
+            "difference",
+            "exclusion",
+            "subtract",
+            "divide",
+            "hue",
+            "saturation",
+            "color",
+            "luminosity"
+          ]
+        },
+        "secondaryBlend": {
+          "enum": [
+            "normal",
+            "dissolve",
+            "darken",
+            "multiply",
+            "color-burn",
+            "linear-burn",
+            "darker-color",
+            "lighten",
+            "screen",
+            "color-dodge",
+            "linear-dodge",
+            "lighter-color",
+            "overlay",
+            "soft-light",
+            "hard-light",
+            "vivid-light",
+            "linear-light",
+            "pin-light",
+            "hard-mix",
+            "difference",
+            "exclusion",
+            "subtract",
+            "divide",
+            "hue",
+            "saturation",
+            "color",
+            "luminosity"
+          ]
+        }
+      }
+    }
+  }
+}

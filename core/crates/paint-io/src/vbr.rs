@@ -195,6 +195,9 @@ impl Preset {
     pub fn has_dual_sizing(&self) -> bool {
         self.dual_brush.as_ref().is_some_and(|d| d.has_sizing())
     }
+    pub fn has_dual_color(&self) -> bool {
+        self.dual_brush.as_ref().is_some_and(|d| d.has_color())
+    }
 }
 impl Package {
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
@@ -252,7 +255,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if b.has_dual_sizing() {
+                != if b.has_dual_color() {
+                    13
+                } else if b.has_dual_sizing() {
                     12
                 } else if b.smoothing.is_some() {
                     11
@@ -303,6 +308,7 @@ impl Package {
                             | "pressure-smooth"
                             | "path-smoothing"
                             | "dual-relative-size"
+                            | "dual-color-stroke"
                     )
                 })
             {
@@ -314,12 +320,17 @@ impl Package {
             {
                 return Err(Error::Invalid("VBR source identity"));
             }
-            if (b.has_dual_sizing()
-                && (b.engine_profile != "drawverse.brush"
-                    || !b
-                        .required_capabilities
-                        .iter()
-                        .any(|c| c == "dual-relative-size")))
+            if b.has_dual_color()
+                != b.required_capabilities
+                    .iter()
+                    .any(|c| c == "dual-color-stroke")
+                || (b.has_dual_color() && b.engine_profile != "drawverse.brush")
+                || (b.has_dual_sizing()
+                    && (b.engine_profile != "drawverse.brush"
+                        || !b
+                            .required_capabilities
+                            .iter()
+                            .any(|c| c == "dual-relative-size")))
                 || b.smoothing.is_some()
                     != b.required_capabilities
                         .iter()
