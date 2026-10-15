@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新真实ABR语料/对齐：`docs/abr-real-corpus-design.md` / `docs/abr-real-corpus-validation.md`；8BIM节间/尾部四字节填充、旧无填充兼容，CC0 Myer148与两个MIT Photoshop探针完整导入/来源/像素历史及Qt新库VBR；无版本变化，16位字节序分歧与后续证据见`docs/abr-16bit-investigation.md`，仍未实现16位。
+
 - 最新ABR笔压动态：`docs/abr-pressure-design.md` / `docs/abr-pressure-validation.md`；转换器v3/来源record1/交接JSON2/VBR1.17，尺寸流量opacity独立压感与最低比例、旧v1/v2字节/基准保持、三代混合/降级拒绝及真实Qt导入重置/像素/重开；无C ABI或state新版本，完整ABR动态/16位、湿混双色、收尖等继续后续。
 
 - 最新数位笔悬停修复：`docs/brush-tablet-hover-fix-design.md` / `docs/brush-tablet-hover-fix-validation.md`；双色页移除两个预设按钮/既有预设保留，直接入点与笔触后Stylus Hover跟随、设备几何保持/原生窗口光标有界接管与恢复、环境缩放1/2相关Qt回归；无ABI或格式变化。

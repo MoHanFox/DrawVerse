@@ -285,6 +285,20 @@ pub fn decode_sectioned(bytes: &[u8], token: &CancellationToken) -> Result<Secti
         let key: [u8; 4] = file.take(4)?.try_into().expect("four bytes");
         let length = file.u32()? as usize;
         let payload = file.take(length)?;
+        // Photoshop excludes up to three alignment bytes from the section length.
+        // Retain existing unpadded containers when the next signature is immediate.
+        let padding = (4 - length % 4) % 4;
+        if padding != 0 && !file.done() && !file.bytes[file.offset..].starts_with(b"8BIM") {
+            let next = file.offset + padding;
+            if next == file.bytes.len()
+                || file
+                    .bytes
+                    .get(next..)
+                    .is_some_and(|tail| tail.starts_with(b"8BIM"))
+            {
+                file.take(padding)?;
+            }
+        }
         if &key != b"samp" {
             metadata.push(OpaqueSection {
                 key,

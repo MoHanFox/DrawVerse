@@ -60,7 +60,19 @@ fn external_sample_descriptor_and_pixels_are_inspected_without_claiming_conversi
     assert_eq!(brush.settings.diameter, 112.);
     assert_eq!(brush.settings.spacing, 0.02);
     assert_eq!(brush.settings.tip.roundness, 1.);
-    for path in ["szVr.bVTy", "useTexture", "textureDepth"] {
+    assert_eq!(brush.converter_version, 3);
+    assert!(brush.settings.tip.pressure_size && brush.settings.dynamics.pressure_opacity);
+    assert!(!brush.settings.tip.pressure_flow);
+    for path in ["szVr.bVTy", "opVr.bVTy"] {
+        assert!(
+            brush
+                .issues
+                .iter()
+                .any(|i| i.path == path && i.status == Status::Mapped),
+            "{path}"
+        );
+    }
+    for path in ["useTexture", "textureDepth"] {
         assert!(
             brush
                 .issues
@@ -86,6 +98,28 @@ fn external_sample_descriptor_and_pixels_are_inspected_without_claiming_conversi
             );
         }
     }
+    let mut light = paint_core::Document::new(224, 224).unwrap();
+    light
+        .begin_brush_stroke(
+            brush.settings.definition(),
+            paint_core::InputPoint::new(112., 112.5, 0.5),
+        )
+        .unwrap();
+    light.end_stroke().unwrap();
+    let mut painted = false;
+    for y in 0..224 {
+        for x in 0..224 {
+            let alpha = light.pixel(x, y).alpha();
+            painted |= alpha > 0.;
+            assert!(alpha <= 0.500003);
+            if !(70..154).contains(&x) || !(70..154).contains(&y) {
+                assert_eq!(alpha, 0.);
+            }
+        }
+    }
+    assert!(painted);
+    light.undo().unwrap();
+    light.redo().unwrap();
     println!("basic diameter/spacing/roundness and native unmodified-alpha baseline verified; {} explicit report items",brush.issues.len());
     let archive = paint_io::brush_source::SourceArchive::capture(
         std::sync::Arc::new(bytes.clone()),

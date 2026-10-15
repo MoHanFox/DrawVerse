@@ -84,14 +84,23 @@ fn both_versions_subversions_and_encodings_preserve_metadata_and_draw_holes() {
     }
 }
 #[test]
-fn section_and_record_lengths_never_cross_bounds_or_return_partial_data() {
+fn section_and_record_lengths_never_cross_declared_bounds() {
     let token = CancellationToken::default();
     let bytes = fixture(6, 2, true);
-    // Proper prefixes ending at a section boundary can be complete containers.
+    // There is no outer byte-length/count for sections. A prefix ending after
+    // a complete payload (or its exact optional alignment) can be a full file.
+    let mut valid_ends = std::collections::BTreeSet::new();
+    let mut offset = 4;
+    while offset < bytes.len() {
+        let size = u32::from_be_bytes(bytes[offset + 8..offset + 12].try_into().unwrap()) as usize;
+        offset += 12 + size;
+        valid_ends.insert(offset);
+        valid_ends.insert(offset + (4 - size % 4) % 4);
+    }
     for end in 0..bytes.len() {
         let result = decode_sectioned(&bytes[..end], &token);
         if result.is_ok() {
-            assert!(bytes[end..].starts_with(b"8BIM"), "prefix {end}");
+            assert!(valid_ends.contains(&end), "prefix {end}");
         }
     }
     let mut bad = bytes.clone();
@@ -153,4 +162,48 @@ fn sample_ids_are_variable_pascal_fields_and_duplicates_are_rejected() {
     let mut duplicate = vec![0, 6, 0, 1];
     section(b"samp", &repeated, &mut duplicate);
     assert!(decode_sectioned(&duplicate, &token).is_err());
+}
+
+fn padded_sections(bytes: &[u8]) -> Vec<u8> {
+    let mut output = bytes[..4].to_vec();
+    let mut offset = 4;
+    while offset < bytes.len() {
+        let size = u32::from_be_bytes(bytes[offset + 8..offset + 12].try_into().unwrap()) as usize;
+        output.extend_from_slice(&bytes[offset..offset + 12 + size]);
+        output.resize(output.len() + (4 - size % 4) % 4, 0xa5);
+        offset += 12 + size;
+    }
+    output
+}
+#[test]
+fn section_padding_and_unpadded_compatibility_preserve_every_payload() {
+    let token = CancellationToken::default();
+    for length in 1..=3 {
+        let mut bytes = fixture(6, 2, true);
+        section(b"tail", &vec![0x5a; length], &mut bytes);
+        let old = decode_sectioned(&bytes, &token).unwrap();
+        let aligned = padded_sections(&bytes);
+        let new = decode_sectioned(&aligned, &token).unwrap();
+        assert_eq!(old.tips.len(), new.tips.len());
+        for (a, b) in old.tips.iter().zip(&new.tips) {
+            assert_eq!(a.mask.coverage(), b.mask.coverage());
+            assert_eq!(a.trailing_metadata, b.trailing_metadata);
+        }
+        assert_eq!(old.metadata.len(), new.metadata.len());
+        for (a, b) in old.metadata.iter().zip(&new.metadata) {
+            assert_eq!(a.key, b.key);
+            assert_eq!(a.bytes, b.bytes);
+        }
+        let pad = (4 - length % 4) % 4;
+        for cut in 1..pad {
+            assert!(decode_sectioned(&aligned[..aligned.len() - cut], &token).is_err());
+        }
+        let mut extra = aligned.clone();
+        extra.push(0);
+        assert!(decode_sectioned(&extra, &token).is_err());
+        let mut bad = aligned.clone();
+        let next = 4 + 12 + b"uninterpreted descriptor".len().div_ceil(4) * 4;
+        bad[next] = b'X';
+        assert!(decode_sectioned(&bad, &token).is_err());
+    }
 }

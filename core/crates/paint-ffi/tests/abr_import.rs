@@ -20,18 +20,26 @@ fn opacity_v2_import_preserves_source_and_prepared_catalog_through_public_abi() 
 fn pressure_v3_import_prepares_and_preserves_native_baseline() {
     check_import(Some(25.5), true);
 }
+#[test]
+fn licensed_real_pack_imports_all_148_and_prepares_sources_through_public_abi() {
+    check_bytes(
+        include_bytes!("../../paint-io/tests/fixtures/abr/myer-settlement-brushes.abr").to_vec(),
+        None,
+        false,
+    );
+}
 fn check_import(opacity: Option<f64>, pressure: bool) {
+    let bytes = if pressure {
+        fixture::fixture_with_pressure(6, 2, false)
+    } else {
+        fixture::fixture_with_opacity(6, 2, false, opacity)
+    };
+    check_bytes(bytes, opacity, pressure);
+}
+fn check_bytes(bytes: Vec<u8>, opacity: Option<f64>, pressure: bool) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("brush.abr");
-    std::fs::write(
-        &path,
-        if pressure {
-            fixture::fixture_with_pressure(6, 2, false)
-        } else {
-            fixture::fixture_with_opacity(6, 2, false, opacity)
-        },
-    )
-    .unwrap();
+    std::fs::write(&path, bytes).unwrap();
     let token = CancellationToken::default();
     let batch = ImportBatch::read(&path, MAX_CATALOG_MASK_BYTES, &token).unwrap();
     let expected = batch.to_json().unwrap();
