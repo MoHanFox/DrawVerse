@@ -19,6 +19,39 @@ Rectangle {
     TransparencyGrid {objectName:"canvasTransparency";x:canvas.documentRect.x;y:canvas.documentRect.y;width:canvas.documentRect.width;height:canvas.documentRect.height}
     PaintCanvas {id:canvas;initialFitRatio:.76;objectName:root.initialDocument?"mainCanvas":"documentCanvas:"+root.documentId;anchors.fill:parent;client:root.ownClient;focus:true;enabled:!root.savingBlocked}
     Shape {
+        objectName:"secondaryBrushCursorOutline";z:9
+        id:secondCursor
+        readonly property bool imageOutline:!root.ownClient.liquifyActive && !root.ownClient.brushLibrary.cursorSimple && root.ownClient.cursorSecondaryHasImage && root.ownClient.cursorSecondaryOutlineReady
+        readonly property bool simplified:root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorSimple || root.ownClient.cursorSecondaryHasImage && !root.ownClient.cursorSecondaryOutlineReady
+        readonly property real aspect:simplified?1:canvas.secondaryCursorRoundness
+        x:canvas.secondaryCursorRect.x;y:canvas.secondaryCursorRect.y+(canvas.secondaryCursorRect.height-height)/2
+        width:canvas.secondaryCursorRect.width;height:canvas.secondaryCursorRect.height*aspect
+        rotation:simplified?0:canvas.secondaryCursorAngle
+        visible:canvas.secondaryCursorVisible && canvas.secondaryCursorRect.width>0 && (root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorOutline)
+        ShapePath {
+            strokeWidth:secondCursor.imageOutline?-1:root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth;strokeColor:root.ownClient.liquifyActive?"black":root.ownClient.brushLibrary.cursorColor;fillColor:"transparent"
+            PathAngleArc {centerX:secondCursor.width/2;centerY:secondCursor.height/2;radiusX:secondCursor.width/2;radiusY:secondCursor.height/2;startAngle:0;sweepAngle:360}
+        }
+        ShapePath {
+            strokeWidth:secondCursor.imageOutline?-1:root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth;strokeColor:root.ownClient.liquifyActive?"white":root.ownClient.brushLibrary.cursorSecondaryColor;fillColor:"transparent"
+            PathAngleArc {centerX:secondCursor.width/2;centerY:secondCursor.height/2;radiusX:Math.max(.5,secondCursor.width/2-(root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth));radiusY:Math.max(.5,secondCursor.height/2-(root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth));startAngle:0;sweepAngle:360}
+        }
+        ShapePath {
+            objectName:"secondaryImageBrushOuterPath"
+            scale:Qt.size(secondCursor.width,secondCursor.height)
+            strokeWidth:secondCursor.imageOutline?root.ownClient.brushLibrary.cursorWidth+2:-1;strokeColor:root.ownClient.brushLibrary.cursorColor;fillColor:"transparent"
+            capStyle:ShapePath.RoundCap
+            PathSvg {path:secondCursor.imageOutline?root.ownClient.cursorSecondaryOutlinePath:""}
+        }
+        ShapePath {
+            objectName:"secondaryImageBrushInnerPath"
+            scale:Qt.size(secondCursor.width,secondCursor.height)
+            strokeWidth:secondCursor.imageOutline?root.ownClient.brushLibrary.cursorWidth:-1;strokeColor:root.ownClient.brushLibrary.cursorSecondaryColor;fillColor:"transparent"
+            capStyle:ShapePath.RoundCap
+            PathSvg {path:secondCursor.imageOutline?root.ownClient.cursorSecondaryOutlinePath:""}
+        }
+    }
+    Shape {
         objectName:"brushCursorOutline";z:10
         id:tipCursor
         readonly property bool imageOutline:!root.ownClient.liquifyActive && !root.ownClient.brushLibrary.cursorSimple && root.ownClient.cursorHasImage && root.ownClient.cursorOutlineReady

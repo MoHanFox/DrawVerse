@@ -59,6 +59,7 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(bool cursorCenter READ cursorCenter WRITE setCursorCenter NOTIFY cursorChanged)
     Q_PROPERTY(bool cursorHoverOnly READ cursorHoverOnly WRITE setCursorHoverOnly NOTIFY cursorChanged)
     Q_PROPERTY(int cursorWidth READ cursorWidth WRITE setCursorWidth NOTIFY cursorChanged)
+    Q_PROPERTY(bool cursorComposite READ cursorComposite WRITE setCursorComposite NOTIFY cursorChanged)
     Q_PROPERTY(bool cursorSimple READ cursorSimple WRITE setCursorSimple NOTIFY cursorChanged)
     Q_PROPERTY(QString cursorColor READ cursorColor WRITE setCursorColor NOTIFY cursorChanged)
     Q_PROPERTY(QString cursorSecondaryColor READ cursorSecondaryColor WRITE setCursorSecondaryColor NOTIFY cursorChanged)
@@ -68,6 +69,8 @@ public:
     bool cursorCenter() const {return m_cursorCenter;}
     bool cursorHoverOnly() const {return m_cursorHoverOnly;}
     int cursorWidth() const {return m_cursorWidth;}
+    bool cursorComposite() const {return m_cursorComposite;}
+    void setCursorComposite(bool value);
     bool cursorSimple() const {return m_cursorSimple;}
     QString cursorColor() const {return m_cursorColor;}
     QString cursorSecondaryColor() const {return m_cursorSecondaryColor;}
@@ -205,7 +208,7 @@ private:
     void setTipDynamics(QVariantMap data);
     bool m_cursorOutline=true,m_cursorCenter=false,m_cursorHoverOnly=false;
     int m_cursorWidth=1;
-    bool m_cursorSimple=false;
+    bool m_cursorSimple=false,m_cursorComposite=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
         qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing;};

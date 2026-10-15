@@ -262,6 +262,7 @@ void BrushLibrary::setCursorOutline(bool value){if(m_cursorOutline==value)return
 void BrushLibrary::setCursorCenter(bool value){if(m_cursorCenter==value)return;m_cursorCenter=value;cursorPreferenceChanged();}
 void BrushLibrary::setCursorHoverOnly(bool value){if(m_cursorHoverOnly==value)return;m_cursorHoverOnly=value;cursorPreferenceChanged();}
 void BrushLibrary::setCursorWidth(int value){value=std::clamp(value,1,3);if(m_cursorWidth==value)return;m_cursorWidth=value;cursorPreferenceChanged();}
+void BrushLibrary::setCursorComposite(bool value){if(m_cursorComposite==value)return;m_cursorComposite=value;cursorPreferenceChanged();}
 void BrushLibrary::setCursorSimple(bool value){if(m_cursorSimple==value)return;m_cursorSimple=value;cursorPreferenceChanged();}
 void BrushLibrary::setCursorColor(const QString &value){const QColor color(value);if(!color.isValid() || color.alpha()!=255 || color.name()==m_cursorColor)return;m_cursorColor=color.name();cursorPreferenceChanged();}
 void BrushLibrary::setCursorSecondaryColor(const QString &value){const QColor color(value);if(!color.isValid() || color.alpha()!=255 || color.name()==m_cursorSecondaryColor)return;m_cursorSecondaryColor=color.name();cursorPreferenceChanged();}
@@ -302,7 +303,7 @@ QByteArray BrushLibrary::snapshot() const {
     QJsonArray rows,baselines;int version=2,resetVersion=2;
     for(const auto &p:m_presets){rows.append(presetRow(p,version));baselines.append(presetRow(m_resetPresets.value(p.id,p),resetVersion));}
     const QJsonObject resetState{{"version",resetVersion},{"selected",m_selected},{"presets",baselines}};
-    return QJsonDocument(QJsonObject{{"version",version},{"selected",m_selected},{"presets",rows},{"cursor",QJsonObject{{"outline",m_cursorOutline},{"center",m_cursorCenter},{"hoverOnly",m_cursorHoverOnly},{"width",m_cursorWidth},{"simple",m_cursorSimple},{"color",m_cursorColor},{"secondaryColor",m_cursorSecondaryColor}}},
+    return QJsonDocument(QJsonObject{{"version",version},{"selected",m_selected},{"presets",rows},{"cursor",QJsonObject{{"outline",m_cursorOutline},{"center",m_cursorCenter},{"hoverOnly",m_cursorHoverOnly},{"width",m_cursorWidth},{"simple",m_cursorSimple},{"composite",m_cursorComposite},{"color",m_cursorColor},{"secondaryColor",m_cursorSecondaryColor}}},
                                      {"recentColors",QJsonArray::fromStringList(m_recentColors)},{"resetState",resetState},{"brushTool",QJsonObject{{"writeBlend",m_writeBlend}}}}).toJson(QJsonDocument::Compact);
 }
 QByteArray BrushLibrary::exportPackage(bool includeSource) const {
@@ -451,7 +452,7 @@ bool BrushLibrary::restore(const QByteArray &json) {
             recent.append(parsed.name(QColor::HexArgb));
         }
     }
-    bool outline=true,center=false,hoverOnly=false,simple=false;int width=1;
+    bool outline=true,center=false,hoverOnly=false,simple=false,composite=false;int width=1;
     QString color="#000000",secondaryColor="#ffffff";
     if(root.contains("cursor")){
         if(!root.value("cursor").isObject())return false;
@@ -460,6 +461,7 @@ bool BrushLibrary::restore(const QByteArray &json) {
         const double line=cursor.value("width").toDouble(0);
         if(line<1 || line>3 || std::floor(line)!=line)return false;
         outline=cursor.value("outline").toBool();center=cursor.value("center").toBool();hoverOnly=cursor.value("hoverOnly").toBool();width=int(line);
+        if(cursor.contains("composite")){if(!cursor.value("composite").isBool())return false;composite=cursor.value("composite").toBool();}
         if(cursor.contains("simple")){if(!cursor.value("simple").isBool())return false;simple=cursor.value("simple").toBool();}
         if(cursor.contains("color")){const QColor parsed(cursor.value("color").toString());if(!parsed.isValid() || parsed.alpha()!=255)return false;color=parsed.name();}
         if(cursor.contains("secondaryColor")){const QColor parsed(cursor.value("secondaryColor").toString());if(!parsed.isValid() || parsed.alpha()!=255)return false;secondaryColor=parsed.name();}
@@ -494,6 +496,6 @@ bool BrushLibrary::restore(const QByteArray &json) {
         } else preset.token=++m_nextToken;
     }
     m_presets=restored;m_selected=selected;m_recentColors=recent;m_writeBlend=writeBlend;
-    m_cursorOutline=outline;m_cursorCenter=center;m_cursorHoverOnly=hoverOnly;m_cursorWidth=width;m_cursorSimple=simple;m_cursorColor=color;m_cursorSecondaryColor=secondaryColor;emit cursorChanged();
+    m_cursorOutline=outline;m_cursorCenter=center;m_cursorHoverOnly=hoverOnly;m_cursorWidth=width;m_cursorSimple=simple;m_cursorComposite=composite;m_cursorColor=color;m_cursorSecondaryColor=secondaryColor;emit cursorChanged();
     emit settingsChanged();emit presetsChanged();emit recentColorsChanged();return true;
 }

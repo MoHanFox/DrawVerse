@@ -14,6 +14,10 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(qreal zoom READ zoom NOTIFY viewChanged)
     Q_PROPERTY(QRectF documentRect READ documentRect NOTIFY viewChanged)
     Q_PROPERTY(QRectF visibleDocumentRect READ visibleDocumentRect NOTIFY viewChanged)
+    Q_PROPERTY(QRectF secondaryCursorRect READ secondaryCursorRect NOTIFY brushCursorChanged)
+    Q_PROPERTY(qreal secondaryCursorAngle READ secondaryCursorAngle NOTIFY brushCursorChanged)
+    Q_PROPERTY(qreal secondaryCursorRoundness READ secondaryCursorRoundness NOTIFY brushCursorChanged)
+    Q_PROPERTY(bool secondaryCursorVisible READ secondaryCursorVisible NOTIFY brushCursorChanged)
     Q_PROPERTY(qreal brushCursorAngle READ brushCursorAngle NOTIFY brushCursorChanged)
     Q_PROPERTY(qreal brushCursorRoundness READ brushCursorRoundness NOTIFY brushCursorChanged)
     Q_PROPERTY(QRectF brushCursorRect READ brushCursorRect NOTIFY brushCursorChanged)
@@ -38,6 +42,10 @@ public:
     QRectF documentRect() const;
     QRectF visibleDocumentRect() const;
     QRectF brushCursorRect() const;
+    QRectF secondaryCursorRect() const;
+    qreal secondaryCursorAngle() const {return m_pose.secondaryAngle;}
+    qreal secondaryCursorRoundness() const {return m_pose.secondaryRoundness;}
+    bool secondaryCursorVisible() const;
     qreal brushCursorAngle() const {return m_pose.angle;}
     qreal brushCursorRoundness() const {return m_pose.roundness;}
     bool brushCursorVisible() const;

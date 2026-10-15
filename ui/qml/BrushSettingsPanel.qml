@@ -180,7 +180,7 @@ ColumnLayout {
                         DualField {title:"圆度";field:"roundness";from:1}
                         DualField {title:"角度";field:"angle";from:-180;to:180;factor:1;unit:"°"}
                         DualField {title:"流量";field:"flow"}
-                        Label {text:"画布光标显示主笔尖；第二笔尖改变实际覆盖。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
+                        Label {text:"第二笔尖改变实际覆盖；可在光标与预览中开启复合光标。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     }
                     ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===1;Layout.fillWidth:true;spacing:5
                         CompactComboBox {objectName:"settingsDualAngleControl";Layout.fillWidth:true;readonly property var controls:["fixed","direction","pen-rotation","tilt"];model:["固定角度","路径方向","笔旋转","笔倾斜"];currentIndex:controls.indexOf(root.dualModule("tipDynamics").angleControl);onActivated:root.setDualField("angleControl",controls[currentIndex],"tipDynamics");tooltip:"第二笔尖独立叠加方向、旋转或倾斜角度；缺失设备能力使用基础角度。"}
@@ -245,6 +245,7 @@ ColumnLayout {
                 ColumnLayout {
                     visible:root.category===7;Layout.fillWidth:true;spacing:10
                     CompactCheckBox {objectName:"brushCursorEnabled";text:"笔尖轮廓";checked:root.library.cursorOutline;font.pixelSize:10;onToggled:root.library.cursorOutline=checked;tooltip:"显示实际圆度与角度的双线笔尖边界。"}
+                    CompactCheckBox {objectName:"brushCursorComposite";text:"复合光标";checked:root.library.cursorComposite;font.pixelSize:10;onToggled:root.library.cursorComposite=checked;tooltip:"同时显示允许溢出的第二基础笔尖范围；只影响显示，不改变实际笔触，不预演随机散布。"}
                     CompactCheckBox {objectName:"brushCursorSimple";text:"简化圆形";checked:root.library.cursorSimple;font.pixelSize:10;onToggled:root.library.cursorSimple=checked;tooltip:"使用标称大小的圆形轮廓，不改变实际笔尖。"}
                     CompactCheckBox {objectName:"brushCursorCenter";text:"中心十字";checked:root.library.cursorCenter;font.pixelSize:10;onToggled:root.library.cursorCenter=checked;tooltip:"在笔尖中心显示精确定位十字。"}
                     CompactCheckBox {objectName:"brushCursorHoverOnly";text:"仅悬停时显示";checked:root.library.cursorHoverOnly;font.pixelSize:10;onToggled:root.library.cursorHoverOnly=checked;tooltip:"开始绘画时隐藏笔尖预览，结束后恢复。"}

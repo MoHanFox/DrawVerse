@@ -90,6 +90,13 @@ QRectF CanvasItem::brushCursorRect() const {
     const qreal radius=m_client?(m_client->liquifyActive()?m_client->liquifySize()*.5:m_client->brushLibrary()->cursorSimple()?m_client->baseCursorPose().radius:m_pose.radius)*m_zoom:0;
     return {m_cursorPosition-QPointF(radius,radius),QSizeF(radius*2,radius*2)};
 }
+QRectF CanvasItem::secondaryCursorRect() const {
+    const auto radius=m_client?m_pose.secondaryRadius*m_zoom:0;
+    return {m_cursorPosition-QPointF(radius,radius),QSizeF(radius*2,radius*2)};
+}
+bool CanvasItem::secondaryCursorVisible() const {
+    return brushCursorVisible() && m_client && !m_client->eraser() && !m_client->smudgeTool() && !m_client->liquifyActive() && m_client->brushLibrary()->cursorOutline() && m_client->brushLibrary()->cursorComposite() && m_pose.ready && m_pose.secondary;
+}
 bool CanvasItem::brushCursorVisible() const {
     if(m_client && !m_client->liquifyActive()){
         const auto *library=m_client->brushLibrary();
@@ -129,7 +136,7 @@ InputSample CanvasItem::tabletSample(QTabletEvent *e,QPointF local) const {
     const auto cap=e->pointingDevice()->capabilities();if(cap.testFlag(QInputDevice::Capability::Pressure))s.capabilities|=1;else s.pressure=1;if(cap.testFlag(QInputDevice::Capability::XTilt)||cap.testFlag(QInputDevice::Capability::YTilt))s.capabilities|=2;if(cap.testFlag(QInputDevice::Capability::Rotation))s.capabilities|=4;if(cap.testFlag(QInputDevice::Capability::TangentialPressure))s.capabilities|=8;return s;
 }
 void CanvasItem::refreshBrushCursor() {
-    if(m_client){m_pose=m_client->baseCursorPose();if(m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_pose=m_client->brushCursorPose(m_poseSample,m_poseDirection,m_poseDirectionKnown,m_client->drawing());}
+    if(m_client){m_pose=m_client->baseCursorPose();if(m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_pose=m_client->brushCursorPose(m_poseSample,m_poseDirection,m_poseDirectionKnown,m_client->drawing() && !m_client->brushLibrary()->cursorSimple());}
     if(m_client && !m_pose.ready && m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_poseRetry.start();else m_poseRetry.stop();
     setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && (m_client->moveTool() || m_ctrlHeld || m_moving) && !m_client->liquifyActive() && !m_client->transformActive()?Qt::SizeAllCursor:eyedropperCursorVisible()?Qt::BlankCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
     emit brushCursorChanged();
@@ -144,9 +151,15 @@ void CanvasItem::setKeySpace(bool held) {
     const bool changed=(m_space || spaceHeld)!=(held || spaceHeld);m_space=held;
     if(changed)emit spacePanningChanged();
 }
-void CanvasItem::hoverEnterEvent(QHoverEvent *event){if(m_tablet)return;m_cursorInside=true;m_cursorPosition=event->position();setCursorSample(mouseSample(event->position(),Qt::NoButton));refreshBrushCursor();}
-void CanvasItem::hoverMoveEvent(QHoverEvent *event){if(m_tablet)return;m_cursorInside=true;m_cursorPosition=event->position();setCursorSample(mouseSample(event->position(),Qt::NoButton));refreshBrushCursor();if(m_selecting && m_selectionKind==3)updateSelection(event->position(),event->modifiers());}
-void CanvasItem::hoverLeaveEvent(QHoverEvent *event){Q_UNUSED(event);if(m_tablet)return;m_cursorInside=false;refreshBrushCursor();}
+namespace {
+bool tabletHoverEvent(const QHoverEvent *event) {
+    const auto *device=event->pointingDevice();
+    return device && (device->type()==QInputDevice::DeviceType::Stylus || device->type()==QInputDevice::DeviceType::Airbrush);
+}
+}
+void CanvasItem::hoverEnterEvent(QHoverEvent *event){if(m_tablet || tabletHoverEvent(event))return;m_cursorInside=true;m_cursorPosition=event->position();setCursorSample(mouseSample(event->position(),Qt::NoButton));refreshBrushCursor();}
+void CanvasItem::hoverMoveEvent(QHoverEvent *event){if(m_tablet || tabletHoverEvent(event))return;m_cursorInside=true;m_cursorPosition=event->position();setCursorSample(mouseSample(event->position(),Qt::NoButton));refreshBrushCursor();if(m_selecting && m_selectionKind==3)updateSelection(event->position(),event->modifiers());}
+void CanvasItem::hoverLeaveEvent(QHoverEvent *event){if(m_tablet || tabletHoverEvent(event))return;m_cursorInside=false;refreshBrushCursor();}
 void CanvasItem::refresh() {
     if (!m_client) return;
     if (m_generation != m_client->generation()) { endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }

@@ -17,7 +17,7 @@
 
 struct PaintTransform;
 struct PaintBrushPose;
-struct BrushCursorPose {bool ready=false;qreal radius=0,angle=0,roundness=1;};
+struct BrushCursorPose {bool ready=false;qreal radius=0,angle=0,roundness=1;bool secondary=false;qreal secondaryRadius=0,secondaryAngle=0,secondaryRoundness=1;};
 struct InputSample {
     QPointF position;
     float pressure = 1;
@@ -44,6 +44,9 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QString brushSourceMessage READ brushSourceMessage NOTIFY brushSourceChanged)
     Q_PROPERTY(bool brushSourceBusy READ brushSourceBusy NOTIFY brushSourceChanged)
     Q_PROPERTY(QString brushImportMessage READ brushImportMessage NOTIFY brushFileChanged)
+    Q_PROPERTY(QString cursorSecondaryOutlinePath READ cursorSecondaryOutlinePath NOTIFY brushOutlineChanged)
+    Q_PROPERTY(bool cursorSecondaryOutlineReady READ cursorSecondaryOutlineReady NOTIFY brushOutlineChanged)
+    Q_PROPERTY(bool cursorSecondaryHasImage READ cursorSecondaryHasImage NOTIFY brushOutlineChanged)
     Q_PROPERTY(QString cursorOutlinePath READ cursorOutlinePath NOTIFY brushOutlineChanged)
     Q_PROPERTY(bool cursorOutlineReady READ cursorOutlineReady NOTIFY brushOutlineChanged)
     Q_PROPERTY(bool cursorHasImage READ cursorHasImage NOTIFY brushOutlineChanged)
@@ -140,10 +143,13 @@ public:
     QString cursorOutlinePath() const {return m_drawing && !m_liquifyActive?m_strokeOutlinePath:m_brushOutlinePath;}
     bool cursorOutlineReady() const {return m_drawing && !m_liquifyActive?m_strokeOutlineReady:m_brushOutlineReady;}
     bool cursorHasImage() const {return !(m_drawing && !m_liquifyActive?m_strokeOutlineResource:m_brushLibrary->maskResource()).isEmpty();}
+    QString cursorSecondaryOutlinePath() const {return m_drawing && !m_liquifyActive?m_strokeSecondOutlinePath:m_secondOutlinePath;}
+    bool cursorSecondaryOutlineReady() const {return m_drawing && !m_liquifyActive?m_strokeSecondOutlineReady:m_secondOutlineReady;}
+    bool cursorSecondaryHasImage() const {return !(m_drawing && !m_liquifyActive?m_strokeSecondOutlineResource:m_secondOutlineResource).isEmpty();}
     BrushCursorPose baseCursorPose() const;
     BrushCursorPose brushCursorPose(const InputSample &sample,QPointF direction,bool directionKnown,bool pressureKnown);
     QString brushOutlinePath() const {return m_brushOutlinePath;}
-    QString brushOutlineMessage() const {return m_brushOutlineMessage;}
+    QString brushOutlineMessage() const {return !m_brushLibrary->cursorComposite() || m_secondOutlineMessage.isEmpty()?m_brushOutlineMessage:m_brushOutlineMessage.isEmpty()?m_secondOutlineMessage:m_brushOutlineMessage+QStringLiteral("\n")+m_secondOutlineMessage;}
     bool brushOutlineReady() const {return m_brushOutlineReady;}
     QVariantMap brushSourceInfo() const {return m_brushSourceInfo;}
     QString brushSourceMessage() const {return m_brushSourceMessage;}
@@ -427,6 +433,9 @@ private:
     QString m_strokeOutlineResource,m_strokeOutlinePath;
     QString m_outlineResource,m_brushOutlinePath,m_brushOutlineMessage;
     bool m_brushOutlineReady=false;
+    QString m_secondOutlineResource,m_secondOutlinePath,m_secondOutlineMessage,m_strokeSecondOutlineResource,m_strokeSecondOutlinePath;
+    bool m_secondOutlineReady=false,m_strokeSecondOutlineReady=false;
+    void requestBrushOutlines();
     bool submit(int type, const InputSample &sample = {}, quint64 id = 0,
                 const QString &text = {}, qreal amount = 0, bool flag = false);
     void showError(const QString &error);
