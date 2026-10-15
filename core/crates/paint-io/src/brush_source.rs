@@ -53,7 +53,7 @@ impl SourceInfo {
         if self.version != 1
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1..=5)
+            || !matches!(self.converter_version, 1..=6)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -89,7 +89,8 @@ impl SourceInfo {
             || self.baseline.tip_dynamics.is_some()
             || (self.converter_version == 4 && self.baseline.scatter_dynamics.is_none())
             || (self.converter_version < 4 && self.baseline.scatter_dynamics.is_some())
-            || self.baseline.shape_jitter.is_some()
+            || (self.converter_version == 6 && self.baseline.shape_jitter.is_none())
+            || (self.converter_version < 6 && self.baseline.shape_jitter.is_some())
             || (self.converter_version == 5 && self.baseline.color_dynamics.is_none())
             || (self.converter_version < 5 && self.baseline.color_dynamics.is_some())
         {
@@ -159,6 +160,9 @@ impl SourceArchive {
         if preset.converter_version >= 5 {
             non_pressure.color = Default::default();
         }
+        if preset.converter_version >= 6 {
+            non_pressure.shape_jitter = Default::default();
+        }
         if non_pressure != paint_core::BrushDynamics::default()
             || (preset.converter_version < 3
                 && settings.dynamics != paint_core::BrushDynamics::default())
@@ -182,7 +186,10 @@ impl SourceArchive {
                     settings,
                     preset.converter_version,
                 ),
-                shape_jitter: None,
+                shape_jitter: crate::abr_conversion::shape_parameters(
+                    settings,
+                    preset.converter_version,
+                ),
                 color_dynamics: crate::abr_conversion::color_parameters(
                     settings,
                     preset.converter_version,

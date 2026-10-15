@@ -154,3 +154,7 @@ ABR笔压动态阶段：转换器v3执行尺寸/流量/opacity笔压与独立最
 当前主要针对Windows平台完成实现与阶段验收，相关最小测试通过后提交/推送并更新Windows开发版。macOS/Linux及跨平台一致性验收后置，不作为当前阶段提交门槛；其结果仍明确标为待验收，不凭Windows通过推定其他平台已通过。
 
 ABR散布导入阶段：converter4/record1/交接JSON3/VBR1.18，单/双轴、数量及抖动、完整关闭配置、压力与图片组合真实两笔及历史，旧三代基准/报告和四代交换字节保持，Qt导入/重置/保存与新库逐像素回归通过，见[验收](abr-scatter-conversion-validation.md)。Windows相关IO42项、FFI5项、外部诊断/Schema、Qt3功能与Release/ABI通过；PS随机分布标近似，设备散布控制与完整高级ABR/16位、湿混双色/橡皮、收尖/非分隔等继续后续。跨平台验收按用户要求后置，不作为当前阶段门槛。
+
+ABR颜色动态阶段：converter5/record1/交接JSON4/VBR1.19，前景背景/HSV与逐笔逐印章、完整关闭配置、五代来源字节/最高版本与降级拒绝，Qt真实两色导入/编辑重置/新库像素及重开已验证，见[验收](abr-color-conversion-validation.md)。Windows相关IO46项、FFI6项、Qt3功能与Release/ABI/Schema通过；纯度/设备颜色控制和完整PS视觉核对仍待后续。
+
+ABR形状抖动阶段：converter6/record1/交接JSON5/VBR1.20，尺寸/角度/圆度随机及最低比例、关闭和缺省配置、压力散布颜色组合真实两笔、六代来源字节/最高版本/降级和Qt新库像素已验证，见[验收](abr-shape-conversion-validation.md)。Windows相关IO51项、FFI7项、Qt3功能、Release/ABI/Schema/外部基础诊断通过；随机/下限叠加标近似，设备形状控制和完整ABR/16位、湿混双色/橡皮、收尖/非分隔等继续后续。跨平台验收后置，完整目标未完成。

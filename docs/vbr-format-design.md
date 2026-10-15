@@ -148,3 +148,7 @@ converterVersion3来源基准保存已有pressureDynamics（三通道线性曲�
 ## VBR1.19：ABR颜色动态来源
 
 来源converterVersion5必须保存既有colorDynamics基准，可独立组合pressureDynamics/scatterDynamics；颜色字段不会混入压力DTO，纯颜色来源不强加散布对象。原记录仍为version1。包含v5来源最低minor19，按所有来源最高需求导出，18以下夹带拒绝；旧四代来源、报告和原记录字节不重算。执行沿用behavior7/color-dynamics与state10；没有新来源时原生颜色配置仍按原有VBR版本需求导出。Schema为contracts/vbr-abr-color-v1.19.schema.json。PS随机/颜色空间明确近似，纯度与设备颜色调制尚未执行，见abr-color-conversion-design.md。
+
+## VBR1.20：ABR形状抖动来源
+
+来源converterVersion6必须保存shapeJitter基准，可独立组合既有pressureDynamics/scatterDynamics/colorDynamics，其他动态仍明确拒绝。原记录仍为version1。包含v6来源最低minor20，按全部来源最高需求导出，19以下夹带拒绝；旧五代转换入口/记录字节/报告不重算。执行沿用behavior6/shape-jitter与state9；普通原生形状配置不因本模块提高版本需求。Schema为contracts/vbr-abr-shape-v1.20.schema.json。随机分布、压力及随机下限组合、圆度下限换算均明确近似；设备形状控制等仍未执行，见abr-shape-conversion-design.md。

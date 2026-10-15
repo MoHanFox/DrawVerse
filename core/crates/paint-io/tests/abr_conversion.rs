@@ -566,7 +566,7 @@ fn pressure_switches_overrides_unknown_controls_and_random_fields_are_honest() {
                     .1 = unit(*b"#Prc", 50.);
             }
         }
-        let converted = convert(
+        let converted = paint_io::abr_conversion::convert_v5(
             &[LinkedPreset {
                 name: "partial",
                 preset: &source,
@@ -1199,5 +1199,408 @@ fn default_or_incomplete_closed_color_keeps_v4_reports_and_source_contract_is_st
     ] {
         let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
         assert!(info.validate().is_err());
+    }
+}
+
+fn shape_preset(enabled: bool) -> Descriptor {
+    let mut source = color_preset(true, true);
+    source
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"useTipDynamics")
+        .unwrap()
+        .1 = Value::Boolean(enabled);
+    if let Value::Object { descriptor, .. } = &mut source
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"szVr")
+        .unwrap()
+        .1
+    {
+        descriptor
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"jitter")
+            .unwrap()
+            .1 = unit(*b"#Prc", 60.);
+    }
+    source
+        .entries
+        .push((b"minimumRoundness".to_vec(), unit(*b"#Prc", 25.)));
+    for (key, amount) in [("angleDynamics", 40.), ("roundnessDynamics", 50.)] {
+        source.entries.push((
+            key.as_bytes().to_vec(),
+            Value::Object {
+                global: false,
+                descriptor: Box::new(object(
+                    "brushDynamics",
+                    vec![
+                        ("bVTy", Value::Integer(0)),
+                        ("Mnm ", unit(*b"#Prc", 0.)),
+                        ("fStp", Value::Integer(25)),
+                        ("jitter", unit(*b"#Prc", amount)),
+                    ],
+                )),
+            },
+        ));
+    }
+    if let Value::Object { descriptor, .. } = &mut source
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"toolOptions")
+        .unwrap()
+        .1
+    {
+        descriptor
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"Opct")
+            .unwrap()
+            .1 = Value::Double(25.5);
+    }
+    source
+}
+
+#[test]
+fn shape_conversion_with_pressure_scatter_color_and_images_matches_native_two_stroke_history() {
+    use paint_core::{BrushMask, Document, InputPoint, Pixel, ShapeJitter};
+    let token = CancellationToken::default();
+    let mask = SectionedTip {
+        id: "shape".into(),
+        prefix: Box::new([]),
+        bounds: [0, 0, 4, 4],
+        mask: Arc::new(
+            BrushMask::new(
+                4,
+                4,
+                vec![
+                    255, 255, 255, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255,
+                ],
+            )
+            .unwrap(),
+        ),
+        trailing_metadata: Box::new([]),
+    };
+    for enabled in [false, true] {
+        for sampled in [false, true] {
+            let source = shape_preset(enabled);
+            let mut shape = shape(sampled);
+            shape
+                .entries
+                .iter_mut()
+                .find(|(k, _)| k == b"Rndn")
+                .unwrap()
+                .1 = unit(*b"#Prc", 50.);
+            let linked = [LinkedPreset {
+                name: "shape",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: sampled.then_some(&mask),
+            }];
+            let converted = convert(&linked, &token).unwrap();
+            let p = &converted[0];
+            let expected = ShapeJitter::new(enabled, 0.6, 0.2, 0.4, 0.5, 0.5, 0).unwrap();
+            assert_eq!(p.converter_version, 6);
+            assert_eq!(p.settings.dynamics.shape_jitter, expected);
+            assert_eq!(p.settings.tip.pressure_size, enabled);
+            assert!(p.issues.iter().any(|i| i.path == "szVr.jitter"
+                && i.status
+                    == if enabled {
+                        Status::Approximate
+                    } else {
+                        Status::Mapped
+                    }));
+            assert_eq!(
+                p.issues.iter().filter(|i| i.path == "szVr.jitter").count(),
+                1
+            );
+            for old in [
+                paint_io::abr_conversion::convert_legacy(&linked, &token).unwrap(),
+                paint_io::abr_conversion::convert_v2(&linked, &token).unwrap(),
+                paint_io::abr_conversion::convert_v3(&linked, &token).unwrap(),
+                paint_io::abr_conversion::convert_v4(&linked, &token).unwrap(),
+                paint_io::abr_conversion::convert_v5(&linked, &token).unwrap(),
+            ] {
+                assert_eq!(old[0].settings.dynamics.shape_jitter, Default::default());
+            }
+            let mut reference = p.settings.clone();
+            reference.dynamics.shape_jitter = expected;
+            let mut a = Document::new(64, 64).unwrap();
+            let mut b = Document::new(64, 64).unwrap();
+            let mut alpha_cap = 0.;
+            for pressure in [0.25, 0.75] {
+                for (d, s) in [(&mut a, &p.settings), (&mut b, &reference)] {
+                    let mut def = s.definition();
+                    def.brush.color = Pixel::from_straight([1., 0., 0., 1.]).unwrap();
+                    def.brush.background_color = Pixel::from_straight([0., 0., 1., 1.]).unwrap();
+                    d.begin_brush_stroke(def, InputPoint::new(16.5, 32.5, pressure))
+                        .unwrap();
+                    d.stroke_to(InputPoint::new(48.5, 32.5, pressure)).unwrap();
+                    d.stroke_to(InputPoint::new(16.5, 32.5, pressure)).unwrap();
+                    d.end_stroke().unwrap();
+                }
+                let cap = p.settings.opacity * (0.3 + 0.7 * pressure);
+                alpha_cap = 1. - (1. - alpha_cap) * (1. - cap);
+                assert!((0..4096).all(|i| a.pixel(i % 64, i / 64).alpha() <= alpha_cap + 1e-5));
+            }
+            let pixels = |d: &Document| {
+                (0..4096)
+                    .map(|i| d.pixel(i % 64, i / 64))
+                    .collect::<Vec<_>>()
+            };
+            let after = pixels(&a);
+            assert!(after.iter().any(|p| p.alpha() > 0.));
+            assert_eq!(after, pixels(&b));
+            assert_eq!(a.history_depth(), (2, 0));
+            a.undo().unwrap();
+            a.redo().unwrap();
+            assert_eq!(pixels(&a), after);
+        }
+    }
+}
+
+#[test]
+fn shape_conversion_channel_defaults_unknown_controls_and_tool_overrides_are_explicit() {
+    let shape = shape(false);
+    let token = CancellationToken::default();
+    for target in ["szVr", "angleDynamics", "roundnessDynamics"] {
+        let mut source = shape_preset(true);
+        source.entries.retain(|(k, _)| {
+            ![b"szVr".as_slice(), b"angleDynamics", b"roundnessDynamics"].contains(&k.as_slice())
+                || k == target.as_bytes()
+        });
+        let c = convert(
+            &[LinkedPreset {
+                name: "channel",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: None,
+            }],
+            &token,
+        )
+        .unwrap();
+        let native = c[0].settings.dynamics.shape_jitter;
+        assert_eq!(native.size() > 0., target == "szVr");
+        assert_eq!(native.angle() > 0., target == "angleDynamics");
+        assert_eq!(native.roundness() > 0., target == "roundnessDynamics");
+    }
+    let mut source = shape_preset(true);
+    if let Value::Object { descriptor, .. } = &mut source
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"angleDynamics")
+        .unwrap()
+        .1
+    {
+        descriptor.entries[0].1 = Value::Integer(2);
+    }
+    if let Value::Object { descriptor, .. } = &mut source
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"toolOptions")
+        .unwrap()
+        .1
+    {
+        descriptor
+            .entries
+            .push((b"usePressureOverridesSize".to_vec(), Value::Boolean(true)));
+    }
+    source
+        .entries
+        .push((b"angleDynamics.jitter".to_vec(), Value::Integer(7)));
+    let c = convert(
+        &[LinkedPreset {
+            name: "partial",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+        }],
+        &token,
+    )
+    .unwrap();
+    assert_eq!(c[0].settings.dynamics.shape_jitter.size(), 0.);
+    assert!(c[0].settings.dynamics.shape_jitter.angle() > 0.);
+    for key in [
+        "szVr.jitter",
+        "angleDynamics.bVTy",
+        "angleDynamics.Mnm ",
+        "angleDynamics.fStp",
+        "angleDynamics.jitter",
+    ] {
+        assert!(
+            c[0].issues
+                .iter()
+                .any(|i| i.path == key && i.status == Status::NotExecuted),
+            "{key}"
+        );
+    }
+}
+
+#[test]
+fn shape_conversion_bad_values_closed_defaults_and_source_contract_are_guarded() {
+    let shape = shape(false);
+    let token = CancellationToken::default();
+    for bad in [
+        unit(*b"#Prc", -1e-10),
+        unit(*b"#Prc", 100. + 1e-9),
+        unit(*b"#Prc", f64::NAN),
+        unit(*b"#Pxl", 20.),
+        Value::Integer(20),
+    ] {
+        let mut source = shape_preset(true);
+        source
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"minimumRoundness")
+            .unwrap()
+            .1 = bad;
+        assert!(convert(
+            &[LinkedPreset {
+                name: "bad",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: None
+            }],
+            &token
+        )
+        .is_err());
+    }
+    for complete in [false, true] {
+        let mut source = shape_preset(false);
+        source
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"minimumDiameter")
+            .unwrap()
+            .1 = unit(*b"#Prc", 0.);
+        source
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"minimumRoundness")
+            .unwrap()
+            .1 = unit(*b"#Prc", 1.);
+        for (key, value) in &mut source.entries {
+            if [b"szVr".as_slice(), b"angleDynamics", b"roundnessDynamics"]
+                .contains(&key.as_slice())
+            {
+                if let Value::Object { descriptor, .. } = value {
+                    descriptor
+                        .entries
+                        .iter_mut()
+                        .find(|(k, _)| k == b"jitter")
+                        .unwrap()
+                        .1 = unit(*b"#Prc", 0.);
+                }
+            }
+        }
+        if !complete {
+            source.entries.retain(|(k, _)| k != b"angleDynamics");
+        }
+        let linked = [LinkedPreset {
+            name: "closed",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+        }];
+        let a = convert(&linked, &token).unwrap();
+        let b = paint_io::abr_conversion::convert_v5(&linked, &token).unwrap();
+        assert_eq!(a[0].converter_version, b[0].converter_version);
+        assert_eq!(a[0].settings.dynamics, b[0].settings.dynamics);
+        assert_eq!(
+            a[0].issues
+                .iter()
+                .map(|i| (&i.path, i.status, i.reason))
+                .collect::<Vec<_>>(),
+            b[0].issues
+                .iter()
+                .map(|i| (&i.path, i.status, i.reason))
+                .collect::<Vec<_>>()
+        );
+    }
+    let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(include_bytes!(
+        "../../../../contracts/fixtures/abr-shape-source-v6-valid.json"
+    ))
+    .unwrap();
+    info.validate().unwrap();
+    for bytes in [
+        include_bytes!("../../../../contracts/fixtures/abr-shape-source-invalid-version.json")
+            .as_slice(),
+        include_bytes!("../../../../contracts/fixtures/abr-shape-source-invalid-downgrade.json")
+            .as_slice(),
+    ] {
+        let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
+        assert!(info.validate().is_err());
+    }
+}
+
+#[test]
+fn shape_closed_clamping_and_malformed_dynamic_fields_never_claim_exact_mapping() {
+    let token = CancellationToken::default();
+    let mut shape = shape(false);
+    shape
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"Rndn")
+        .unwrap()
+        .1 = unit(*b"#Prc", 50.);
+    for (minimum, expected) in [(0., 0.01), (100., 1.)] {
+        let mut source = shape_preset(false);
+        source
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"minimumRoundness")
+            .unwrap()
+            .1 = unit(*b"#Prc", minimum);
+        let c = convert(
+            &[LinkedPreset {
+                name: "clamp",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: None,
+            }],
+            &token,
+        )
+        .unwrap();
+        assert_eq!(
+            c[0].settings.dynamics.shape_jitter.minimum_roundness(),
+            expected
+        );
+        assert!(c[0]
+            .issues
+            .iter()
+            .any(|i| i.path == "minimumRoundness" && i.status == Status::Approximate));
+    }
+    for (key, bad) in [
+        ("jitter", unit(*b"#Prc", 100. + 1e-9)),
+        ("jitter", unit(*b"#Ang", 20.)),
+        ("Mnm ", unit(*b"#Prc", -1e-9)),
+        ("bVTy", Value::Boolean(true)),
+        ("fStp", Value::Integer(-1)),
+    ] {
+        let mut source = shape_preset(true);
+        if let Value::Object { descriptor, .. } = &mut source
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"angleDynamics")
+            .unwrap()
+            .1
+        {
+            descriptor
+                .entries
+                .iter_mut()
+                .find(|(k, _)| k == key.as_bytes())
+                .unwrap()
+                .1 = bad;
+        }
+        assert!(convert(
+            &[LinkedPreset {
+                name: "bad",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: None
+            }],
+            &token
+        )
+        .is_err());
     }
 }

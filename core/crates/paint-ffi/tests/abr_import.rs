@@ -70,6 +70,31 @@ fn check_color_bytes(
     scatter: bool,
     color: bool,
 ) {
+    check_shape_bytes(bytes, opacity, pressure, scatter, color, false);
+}
+#[test]
+fn shape_v6_import_prepares_closed_and_active_with_and_without_other_dynamics() {
+    for enabled in [false, true] {
+        for combined in [false, true] {
+            check_shape_bytes(
+                fixture::fixture_with_shape(enabled, combined),
+                Some(25.5),
+                enabled && combined,
+                combined,
+                combined,
+                true,
+            );
+        }
+    }
+}
+fn check_shape_bytes(
+    bytes: Vec<u8>,
+    opacity: Option<f64>,
+    pressure: bool,
+    scatter: bool,
+    color: bool,
+    shape: bool,
+) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("brush.abr");
     std::fs::write(&path, bytes).unwrap();
@@ -203,9 +228,17 @@ fn check_color_bytes(
             .load(source, &token)
             .unwrap();
         assert_eq!(&canonical[..required as usize], archive.record().unwrap());
+        if shape {
+            assert!(archive.info.baseline.shape_jitter.is_some());
+            assert_eq!(archive.info.baseline.pressure_dynamics.is_some(), pressure);
+            assert_eq!(archive.info.baseline.scatter_dynamics.is_some(), scatter);
+            assert_eq!(archive.info.baseline.color_dynamics.is_some(), color);
+        }
         assert_eq!(
             archive.info.converter_version,
-            if color {
+            if shape {
+                6
+            } else if color {
                 5
             } else if scatter {
                 4

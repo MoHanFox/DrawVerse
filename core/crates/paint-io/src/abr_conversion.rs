@@ -7,7 +7,7 @@ use crate::{
 };
 use paint_core::{
     BrushProgram, BrushSettings, BrushTip, ColorDynamics, PressureControl, PressureCurve,
-    ScatterDynamics,
+    ScatterDynamics, ShapeJitter,
 };
 use paint_task::CancellationToken;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,6 +149,13 @@ pub fn convert<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
+    convert_inner(linked, token, 6)
+}
+/// Preserve converter v5 color behavior and reports without shape jitter conversion.
+pub fn convert_v5<'a>(
+    linked: &[LinkedPreset<'a>],
+    token: &CancellationToken,
+) -> Result<Vec<ConvertedPreset<'a>>> {
     convert_inner(linked, token, 5)
 }
 /// Preserve converter v4 scatter behavior and reports without color conversion.
@@ -186,6 +193,7 @@ pub(crate) fn pressure_parameters(
     let mut pressure = settings.dynamics.clone();
     pressure.scatter = Default::default();
     pressure.color = Default::default();
+    pressure.shape_jitter = Default::default();
     (version >= 3
         && (version == 3
             || pressure != Default::default()
@@ -204,8 +212,190 @@ pub(crate) fn color_parameters(
     settings: &BrushSettings,
     version: u32,
 ) -> Option<crate::brush_color_dynamics::ColorParameters> {
-    (version >= 5)
+    (version >= 5 && (version == 5 || settings.dynamics.color != Default::default()))
         .then(|| crate::brush_color_dynamics::ColorParameters::from_core(settings.dynamics.color))
+}
+pub(crate) fn shape_parameters(
+    settings: &BrushSettings,
+    version: u32,
+) -> Option<crate::brush_shape_jitter::ShapeParameters> {
+    (version >= 6).then(|| {
+        crate::brush_shape_jitter::ShapeParameters::from_core(settings.dynamics.shape_jitter)
+    })
+}
+fn shape_controls(
+    preset: &Descriptor,
+    tool: Option<&Descriptor>,
+    settings: &mut BrushSettings,
+    issues: &mut Vec<Issue>,
+) -> Result<Vec<String>> {
+    let enabled = match flag(preset, b"useTipDynamics")? {
+        None => return Ok(Vec::new()),
+        Some(value) => value,
+    };
+    let keys = [
+        b"szVr".as_slice(),
+        b"angleDynamics",
+        b"roundnessDynamics",
+        b"minimumDiameter",
+        b"minimumRoundness",
+    ];
+    if !enabled && keys.iter().any(|key| preset.get(key).is_none()) {
+        return Ok(Vec::new());
+    }
+    let mut amounts = [0.; 3];
+    let mut controls = Vec::new();
+    for (i, key) in [b"szVr".as_slice(), b"angleDynamics", b"roundnessDynamics"]
+        .into_iter()
+        .enumerate()
+    {
+        let dynamic = match preset.get(key) {
+            None => continue,
+            Some(Value::Object { descriptor, .. }) => descriptor,
+            _ => return Err(Error::Invalid("ABR shape dynamics object")),
+        };
+        let control = match dynamic.get(b"bVTy") {
+            Some(Value::Integer(value)) => *value,
+            _ => return Err(Error::Invalid("ABR shape control type")),
+        };
+        unit(dynamic, b"Mnm ", *b"#Prc", 0., 100.)?;
+        if !matches!(
+            dynamic.get(b"fStp"),
+            None | Some(Value::Integer(0..=i32::MAX))
+        ) {
+            return Err(Error::Invalid("ABR shape fade steps"));
+        }
+        let amount = unit(dynamic, b"jitter", *b"#Prc", 0., 100.)? / 100.;
+        // Tool overrides and saved poses need their own conversion semantics.
+        let blocked = i == 0
+            && (tool.is_some_and(|t| t.get(b"szVr").is_some())
+                || tool
+                    .and_then(|t| t.get(b"usePressureOverridesSize"))
+                    .is_some_and(|v| !matches!(v, Value::Boolean(false)))
+                || flag(preset, b"useBrushPose")? == Some(true));
+        if !blocked {
+            amounts[i] = amount;
+        }
+        controls.push((path_key(key), dynamic.as_ref(), control, amount, blocked));
+    }
+    let size_min = if preset.get(b"minimumDiameter").is_some() {
+        unit(preset, b"minimumDiameter", *b"#Prc", 0., 100.)? / 100.
+    } else {
+        0.
+    };
+    let round_min = if preset.get(b"minimumRoundness").is_some() {
+        unit(preset, b"minimumRoundness", *b"#Prc", 0., 100.)? / 100. / settings.tip.roundness
+    } else {
+        0.01
+    };
+    // No newly executable behavior: keep the old report and source version exactly.
+    if enabled && amounts == [0.; 3] {
+        return Ok(Vec::new());
+    }
+    let shape = ShapeJitter::new(
+        enabled,
+        amounts[0],
+        size_min,
+        amounts[1],
+        amounts[2],
+        round_min.clamp(0.01, 1.),
+        0,
+    )?;
+    if shape == ShapeJitter::default() {
+        return Ok(Vec::new());
+    }
+    let mut handled = Vec::new();
+    let mut report = |path: String, status, reason| {
+        if let Some(old) = issues.iter_mut().find(|i| i.path == path) {
+            old.status = status;
+            old.reason = reason;
+        } else {
+            issue(issues, &path, status, reason);
+        }
+        handled.push(path);
+    };
+    report(
+        "useTipDynamics".into(),
+        Status::Mapped,
+        "形状动态开关；各设备通道独立报告",
+    );
+    for (key, native, fallback) in [
+        ("minimumDiameter", size_min, 0.),
+        ("minimumRoundness", round_min.clamp(0.01, 1.), 0.01),
+    ] {
+        if preset.get(key.as_bytes()).is_some() {
+            report(
+                key.into(),
+                if enabled || (key == "minimumRoundness" && round_min != native) {
+                    Status::Approximate
+                } else {
+                    Status::Mapped
+                },
+                if enabled {
+                    "原生压感后相对随机下限；圆度按基础圆度换算且限制在内核范围，PS叠加公式尚未核对"
+                } else if key == "minimumRoundness" && round_min != native {
+                    "关闭配置的最低圆度按内核范围裁剪，未裁剪原值保留在来源"
+                } else {
+                    "完整关闭配置保留最低比例与原始来源"
+                },
+            );
+        } else if native == fallback {
+            report(
+                key.into(),
+                Status::Approximate,
+                "源未保存随机最低比例，采用原生默认下限",
+            );
+        }
+    }
+    for (name, data, control, amount, blocked) in controls {
+        report(
+            format!("{name}.jitter"),
+            if blocked {
+                Status::NotExecuted
+            } else if enabled && amount != 0. {
+                Status::Approximate
+            } else {
+                Status::Mapped
+            },
+            if blocked {
+                "工具覆盖或笔姿下的尺寸随机规则尚未执行"
+            } else if enabled && amount != 0. {
+                "原生确定性尺寸/角度/圆度随机缩小；PS随机分布及压感叠加尚未逐像素核对"
+            } else {
+                "零幅度或完整关闭配置不执行随机变化"
+            },
+        );
+        // The pressure conversion already owns szVr control/minimum/fade when supported.
+        if name == "szVr" && settings.tip.pressure_size {
+            continue;
+        }
+        report(
+            format!("{name}.bVTy"),
+            if control == 0 {
+                Status::Mapped
+            } else {
+                Status::NotExecuted
+            },
+            if control == 0 {
+                "无设备调制，独立随机量仍由jitter决定"
+            } else {
+                "该形状设备或渐隐调制尚未执行，原字段保留"
+            },
+        );
+        if control == 0 {
+            for field in ["Mnm ", "fStp"] {
+                if data.get(field.as_bytes()).is_some() {
+                    report(
+                        format!("{name}.{field}"),
+                        Status::Mapped,
+                        "无设备控制时不参与执行，原始字段保留在来源",
+                    );
+                }
+            }
+        }
+    }
+    settings.dynamics.shape_jitter = shape;
+    Ok(handled)
 }
 fn color_controls(
     preset: &Descriptor,
@@ -807,12 +997,23 @@ fn convert_inner<'a>(
         } else {
             false
         };
+        let shape_changed = if generation >= 6 {
+            let extra = shape_controls(item.preset, tool, &mut settings, &mut issues)?;
+            let changed = !extra.is_empty();
+            handled.extend(extra);
+            changed
+        } else {
+            false
+        };
         for (key, value) in &item.preset.entries {
             if key != b"Nm  " && key != b"Brsh" && key != b"toolOptions" {
                 if [
                     b"useTipDynamics".as_slice(),
                     b"usePaintDynamics",
                     b"minimumDiameter",
+                    b"minimumRoundness",
+                    b"angleDynamics",
+                    b"roundnessDynamics",
                     b"szVr",
                     b"prVr",
                     b"opVr",
@@ -893,7 +1094,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if color_changed {
+        if shape_changed {
+            converter_version = 6;
+        } else if color_changed {
             converter_version = 5;
         } else if scatter_changed {
             converter_version = 4;

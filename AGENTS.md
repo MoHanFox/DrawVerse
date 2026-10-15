@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新ABR形状抖动导入：`docs/abr-shape-conversion-design.md` / `docs/abr-shape-conversion-validation.md`；converter6/record1/交接JSON5/VBR1.20，尺寸角度圆度随机与最低比例、独立压力散布颜色/完整关闭配置、旧五代来源保持；PS随机及下限叠加标近似，设备形状控制/16位等继续后续，无C ABI或state新版本。
+
 - 最新ABR颜色动态导入：`docs/abr-color-conversion-design.md` / `docs/abr-color-conversion-validation.md`；converter5/record1/交接JSON4/VBR1.19，前景背景与HSV/逐笔逐印章和完整关闭配置、独立压力散布与旧四代来源保持；PS颜色空间/随机明确近似，纯度/设备颜色控制及16位等继续后续，无C ABI或state新版本。
 
 - 最新ABR散布导入：`docs/abr-scatter-conversion-design.md` / `docs/abr-scatter-conversion-validation.md`；converter4/record1/交接JSON3/VBR1.18，真实数量Double与单/双轴/数量抖动、完整关闭/旧三代基准保持、四代交换及Windows Qt新库像素；PS随机分布标近似，设备散布/16位等继续后续，无C ABI或state新版本。
