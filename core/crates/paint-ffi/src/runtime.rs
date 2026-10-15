@@ -50,6 +50,8 @@ pub(crate) struct Registry {
     subscriptions: HashMap<usize, Arc<SubscriptionState>>,
     sessions: HashMap<usize, (usize, Arc<Session>)>,
     brush_libraries: HashMap<usize, Arc<crate::brush_preparation::PreparedCatalog>>,
+    wet_tools: HashMap<usize, Arc<paint_core::WetTool>>,
+    wet_tool_lifetimes: Vec<std::sync::Weak<paint_core::WetTool>>,
     brush_poses: HashMap<usize, Arc<crate::brush_pose_api::Pose>>,
     // Stable addresses are the ABI tokens. Keeping tombstones prevents stale-pointer ABA.
     #[allow(clippy::vec_box)]
@@ -66,6 +68,32 @@ pub(crate) fn registry() -> ApiResult<MutexGuard<'static, Registry>> {
 }
 
 impl Registry {
+    pub fn create_wet_tool(&mut self) -> ApiResult<*mut PaintWetTool> {
+        self.wet_tool_lifetimes.retain(|w| w.strong_count() > 0);
+        if self.wet_tool_lifetimes.len() >= 64 {
+            return Err(ApiError::new(
+                PAINT_LIMIT_EXCEEDED,
+                "wet tool lifetime budget",
+            ));
+        }
+        let tool = Arc::new(paint_core::WetTool::default());
+        let token = self.token::<PaintWetTool>()?;
+        self.wet_tool_lifetimes.push(Arc::downgrade(&tool));
+        self.wet_tools.insert(token.addr(), tool);
+        Ok(token)
+    }
+    pub fn wet_tool(&self, handle: *mut PaintWetTool) -> ApiResult<Arc<paint_core::WetTool>> {
+        self.wet_tools
+            .get(&handle.addr())
+            .cloned()
+            .ok_or_else(ApiError::handle)
+    }
+    pub fn destroy_wet_tool(&mut self, handle: *mut PaintWetTool) -> ApiResult<()> {
+        self.wet_tools
+            .remove(&handle.addr())
+            .map(|_| ())
+            .ok_or_else(ApiError::handle)
+    }
     pub fn create_brush_pose(&mut self) -> ApiResult<*mut PaintBrushPose> {
         let token = self.token::<PaintBrushPose>()?;
         self.brush_poses.insert(
@@ -404,4 +432,30 @@ pub(crate) fn unsubscribe(core: *mut PaintCore, handle: *mut PaintSubscription) 
         .remove(&handle.addr())
         .ok_or_else(ApiError::handle)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod wet_budget_tests {
+    use super::*;
+    #[test]
+    fn wet_budget_counts_owners_after_external_tokens_are_destroyed() {
+        let mut registry = Registry::default();
+        let mut retained = Vec::new();
+        for _ in 0..64 {
+            let handle = registry.create_wet_tool().unwrap();
+            retained.push(registry.wet_tool(handle).unwrap());
+            registry.destroy_wet_tool(handle).unwrap();
+            assert!(registry.wet_tool(handle).is_err());
+        }
+        assert_eq!(
+            registry.create_wet_tool().unwrap_err().status,
+            PAINT_LIMIT_EXCEEDED
+        );
+        retained.pop();
+        let handle = registry.create_wet_tool().unwrap();
+        registry.destroy_wet_tool(handle).unwrap();
+        drop(retained);
+        let handle = registry.create_wet_tool().unwrap();
+        registry.destroy_wet_tool(handle).unwrap();
+    }
 }

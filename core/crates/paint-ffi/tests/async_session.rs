@@ -3388,3 +3388,6 @@ fn transform_abi_session_history_and_atomic_invalid_geometry() {
         assert_eq!(info.undo_depth, 1);
     }
 }
+
+#[path = "support/wet_api.rs"]
+mod wet_api;

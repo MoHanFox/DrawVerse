@@ -42,6 +42,7 @@ pub(crate) enum Operation {
     DuplicateLayers(Vec<u64>),
     MergeLayers(Vec<u64>),
     Begin(Box<paint_core::BrushDefinition>, InputPoint, u64),
+    BindWetTool(Arc<paint_core::WetTool>),
     BeginPrepared(
         Arc<crate::brush_preparation::CatalogTicket>,
         String,
@@ -133,7 +134,7 @@ struct RenderJob {
 struct Engine {
     files: crate::file_job::FileService,
     document: Document,
-    wet_tool: paint_core::WetTool,
+    wet_tool: Arc<paint_core::WetTool>,
     wet_lease: Option<paint_core::WetLease>,
     shared: Arc<Shared>,
     pool: Arc<TaskPool>,
@@ -161,7 +162,7 @@ impl Session {
             width,
             height,
             crate::storage_api::CoreStorage::system(),
-            wet_tool,
+            Arc::new(wet_tool),
         )
     }
     pub fn with_storage(
@@ -169,13 +170,18 @@ impl Session {
         height: u32,
         storage: Arc<crate::storage_api::CoreStorage>,
     ) -> ApiResult<Self> {
-        Self::with_storage_and_wet_tool(width, height, storage, paint_core::WetTool::default())
+        Self::with_storage_and_wet_tool(
+            width,
+            height,
+            storage,
+            Arc::new(paint_core::WetTool::default()),
+        )
     }
     pub(crate) fn with_storage_and_wet_tool(
         width: u32,
         height: u32,
         storage: Arc<crate::storage_api::CoreStorage>,
-        wet_tool: paint_core::WetTool,
+        wet_tool: Arc<paint_core::WetTool>,
     ) -> ApiResult<Self> {
         let document =
             Document::with_storage(width, height, storage.options, storage.space.clone())?;
@@ -917,6 +923,12 @@ impl Engine {
                     Operation::Begin(Box::new(definition), point, tool.layer_id),
                     sequence,
                 )?;
+            }
+            Operation::BindWetTool(tool) => {
+                if self.document.stroke_active() {
+                    return Err(paint_core::Error::Busy.into());
+                }
+                self.wet_tool = tool;
             }
             Operation::Begin(brush, point, layer) => {
                 self.aborted = false;

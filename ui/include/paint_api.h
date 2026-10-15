@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 49
+#define PAINT_ABI_MINOR 50
 
 #define PAINT_ABI_PATCH 0
 
@@ -180,6 +180,8 @@
 #define PAINT_FEATURE_VBR_SOURCES 536870912
 
 #define PAINT_FEATURE_WAND 16384
+
+#define PAINT_FEATURE_WET_BRUSH 35184372088832
 
 #define PAINT_FILE_AUTO 0
 
@@ -432,6 +434,8 @@
 
 #define PAINT_TRANSFORM_UPDATE 1
 
+#define PAINT_WET_TOOL_INITIALIZED 1
+
 #define PAINT_WORKING_LINEAR_SRGB 1
 
 typedef struct PaintBrushLibrary PaintBrushLibrary;
@@ -445,6 +449,11 @@ typedef struct PaintDocument PaintDocument;
 typedef struct PaintSession PaintSession;
 
 typedef struct PaintSubscription PaintSubscription;
+
+/**
+ * Shared, tool-owned wet reservoir (ABI1.50). Never dereference this token.
+ */
+typedef struct PaintWetTool PaintWetTool;
 
 typedef int32_t PaintStatus;
 
@@ -982,6 +991,23 @@ typedef struct PaintStorageInfo {
   uint32_t reserved;
 } PaintStorageInfo;
 
+typedef struct PaintWetToolInfo {
+  uint32_t struct_size;
+  uint32_t flags;
+  uint64_t carrier_revision;
+  uint32_t edge;
+  uint32_t reserved;
+  float center_linear_premul_rgba[4];
+} PaintWetToolInfo;
+
+typedef struct PaintWetLoadDesc {
+  uint32_t struct_size;
+  uint32_t reserved;
+  float radius;
+  uint32_t reserved_tail;
+  float linear_rgba[4];
+} PaintWetLoadDesc;
+
 #define PAINT_BUFFER_TOO_SMALL 10
 
 #define PAINT_BUSY 3
@@ -1114,6 +1140,18 @@ PaintStatus paint_brush_library_package_read(struct PaintBrushLibrary *library,
                                              uint64_t *required);
 
 /**
+ * Complete wet-preset library package entry (state17/VBR1.15).
+ * # Safety
+ * Same live handle, readable path/JSON and writable buffer contracts as the legacy entry.
+ */
+PaintStatus paint_brush_library_package_read_wet(struct PaintBrushLibrary *library,
+                                                 const uint8_t *path,
+                                                 uint64_t path_length,
+                                                 uint8_t *buffer,
+                                                 uint64_t capacity,
+                                                 uint64_t *required);
+
+/**
  * Background VBR save using immutable resource identities from the library store.
  * # Safety
  * Live library and readable bounded path/JSON bytes required for this call only.
@@ -1125,6 +1163,17 @@ PaintStatus paint_brush_library_package_write(struct PaintBrushLibrary *library,
                                               uint64_t json_length);
 
 /**
+ * Complete wet-preset library package entry (state17/VBR1.15).
+ * # Safety
+ * Same live handle, readable path/JSON and writable buffer contracts as the legacy entry.
+ */
+PaintStatus paint_brush_library_package_write_wet(struct PaintBrushLibrary *library,
+                                                  const uint8_t *path,
+                                                  uint64_t path_length,
+                                                  const uint8_t *json,
+                                                  uint64_t json_length);
+
+/**
  * Enqueue a bounded parameter-state copy for background migration/compilation.
  * # Safety
  * Live library, readable JSON bytes and nonoverlapping writable sequence required.
@@ -1133,6 +1182,16 @@ PaintStatus paint_brush_library_prepare_state(struct PaintBrushLibrary *library,
                                               const uint8_t *json,
                                               uint64_t json_length,
                                               uint64_t *out_sequence);
+
+/**
+ * Opt in to complete state17 preparation, including closed wet parameters.
+ * # Safety
+ * Live library/readable bounded JSON and nonoverlapping writable sequence required.
+ */
+PaintStatus paint_brush_library_prepare_state_wet(struct PaintBrushLibrary *library,
+                                                  const uint8_t *json,
+                                                  uint64_t length,
+                                                  uint64_t *out_sequence);
 
 /**
  * Read canonical state of one exact prepared record. BUSY means still compiling.
@@ -1627,6 +1686,16 @@ PaintStatus paint_session_begin_transform_layers(struct PaintCore *core,
                                                  const uint64_t *ids,
                                                  uint64_t count,
                                                  uint64_t *out_sequence);
+
+/**
+ * Enqueue reservoir binding. Active session painting rejects binding asynchronously.
+ * # Safety
+ * Live matching core/session and tool tokens plus writable sequence required.
+ */
+PaintStatus paint_session_bind_wet_tool(struct PaintCore *core,
+                                        struct PaintSession *session,
+                                        struct PaintWetTool *tool,
+                                        uint64_t *out_sequence);
 
 /**
  * Copy, validate and enqueue an atomic fill; no pixel work on the submitting thread.
@@ -2149,6 +2218,47 @@ PaintStatus paint_session_transform_info(struct PaintCore *core,
  */
 PaintStatus paint_storage_inspect(const struct PaintStorageOptions *options,
                                   struct PaintStorageInfo *out_info);
+
+/**
+ * Manual idle cleaning. Active painting returns BUSY and preserves ink.
+ * # Safety
+ * A live typed tool token is required.
+ */
+PaintStatus paint_wet_tool_clean(struct PaintWetTool *tool);
+
+/**
+ * Create an independent reservoir. At most 64 external tools may remain alive.
+ * # Safety
+ * out must be aligned and writable; handles must never be dereferenced.
+ */
+PaintStatus paint_wet_tool_create(struct PaintWetTool **out);
+
+/**
+ * Release the token. Bound sessions retain ownership until unbound or destroyed.
+ * # Safety
+ * tool must point to a live writable handle; no caller memory is retained.
+ */
+PaintStatus paint_wet_tool_destroy(struct PaintWetTool **tool);
+
+/**
+ * Read idle reservoir geometry/revision and center premultiplied linear RGBA.
+ * BUSY/error clears output. The center sample is not a grid average.
+ * # Safety
+ * out must be aligned and writable for a complete PaintWetToolInfo.
+ */
+PaintStatus paint_wet_tool_info(struct PaintWetTool *tool, struct PaintWetToolInfo *out);
+
+/**
+ * Load using one exact prepared wet preset. BUSY never waits for compilation.
+ * # Safety
+ * Live handles, readable ID/sized descriptor and valid caller memory required.
+ */
+PaintStatus paint_wet_tool_reload_prepared(struct PaintWetTool *tool,
+                                           struct PaintBrushLibrary *library,
+                                           uint64_t preparation,
+                                           const uint8_t *id,
+                                           uint64_t id_length,
+                                           const struct PaintWetLoadDesc *desc);
 
 #ifdef __cplusplus
 }  // extern "C"

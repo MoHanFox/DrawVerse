@@ -41,6 +41,7 @@ struct TicketState {
 }
 #[derive(Clone)]
 struct Recipe {
+    allow_wet: bool,
     json: String,
     budget: usize,
     resources: Option<Arc<ResourceStore>>,
@@ -65,11 +66,13 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
-                    if catalog.ids().iter().any(|id| {
-                        catalog
-                            .preset(id)
-                            .is_some_and(|p| !p.settings().wet.is_default())
-                    }) {
+                    if !self.allow_wet
+                        && catalog.ids().iter().any(|id| {
+                            catalog
+                                .preset(id)
+                                .is_some_and(|p| !p.settings().wet.is_default())
+                        })
+                    {
                         return Err(ApiError::new(
                             PAINT_UNSUPPORTED,
                             "wet preset requires updated native entry",
@@ -192,11 +195,18 @@ impl PreparedCatalog {
         }
     }
     pub fn submit(&self, json: String) -> ApiResult<u64> {
+        self.submit_mode(json, false)
+    }
+    pub fn submit_wet(&self, json: String) -> ApiResult<u64> {
+        self.submit_mode(json, true)
+    }
+    fn submit_mode(&self, json: String, allow_wet: bool) -> ApiResult<u64> {
         let current = self.current.lock().map_err(|_| ApiError::internal())?;
         let budget = current.mask_budget();
         drop(current);
         self.retire_unused_images()?;
         let recipe = Recipe {
+            allow_wet,
             json,
             budget,
             anchors: Arc::new(Mutex::new(Vec::new())),
@@ -730,6 +740,97 @@ mod tests {
                 assert_eq!(reopened.definition(0).unwrap().dual.sizing(), sizing);
                 assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
             }
+        }
+    }
+    #[test]
+    fn wet_native_resource_opt_in_keeps_shared_image_and_full_state() {
+        let mut bundle = texture_bundle(true, true);
+        let wet =
+            paint_core::WetSettings::new(true, false, false, false, paint_core::WetMix::default());
+        bundle.package.brushes[0].wet_mix =
+            Some(paint_io::brush_wet::WetParameters::from_core(wet));
+        bundle.package.brushes[0].behavior_version = 14;
+        bundle.package.brushes[0]
+            .required_capabilities
+            .push("wet-mix".into());
+        let definition = bundle.definition(0).unwrap();
+        let token = paint_task::CancellationToken::default();
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("wet-image.vbr");
+        paint_io::vbr_image::save(&path, &bundle, &token).unwrap();
+        let root = temp.path().join("resources");
+        let root_bytes = root.to_str().unwrap().as_bytes();
+        let path_bytes = path.to_str().unwrap().as_bytes();
+        let mut handle = std::ptr::null_mut();
+        unsafe {
+            assert_eq!(crate::paint_brush_library_create(0, &mut handle), PAINT_OK);
+            assert_eq!(
+                crate::paint_brush_library_bind_resources(
+                    handle,
+                    root_bytes.as_ptr(),
+                    root_bytes.len() as u64
+                ),
+                PAINT_OK
+            );
+            let mut needed = 0;
+            assert_eq!(
+                crate::paint_brush_library_package_read_wet(
+                    handle,
+                    path_bytes.as_ptr(),
+                    path_bytes.len() as u64,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut needed
+                ),
+                PAINT_BUFFER_TOO_SMALL
+            );
+            let mut json = vec![0; needed as usize];
+            assert_eq!(
+                crate::paint_brush_library_package_read_wet(
+                    handle,
+                    path_bytes.as_ptr(),
+                    path_bytes.len() as u64,
+                    json.as_mut_ptr(),
+                    json.len() as u64,
+                    &mut needed
+                ),
+                PAINT_OK
+            );
+            let library = crate::runtime::registry()
+                .unwrap()
+                .brush_library(handle)
+                .unwrap();
+            let mut settings = library.current().unwrap().selected().settings().clone();
+            settings.wet = wet;
+            settings.mask = definition.mask.clone();
+            settings.texture = definition.texture.clone();
+            let mut catalog = BrushCatalog::default();
+            catalog.edit("round-pressure", settings).unwrap();
+            let state = paint_io::brush_state::encode(&catalog).unwrap();
+            let mut sequence = 0;
+            assert_eq!(
+                crate::paint_brush_library_prepare_state_wet(
+                    handle,
+                    state.as_ptr(),
+                    state.len() as u64,
+                    &mut sequence
+                ),
+                PAINT_OK
+            );
+            let captured = library.ticket(sequence).unwrap().wait().unwrap();
+            let preset = captured.selected();
+            assert_eq!(preset.settings().wet, wet);
+            assert_eq!(
+                preset.settings().mask.as_ref().unwrap().resource_id(),
+                definition.mask.as_ref().unwrap().resource_id()
+            );
+            assert!(Arc::ptr_eq(
+                preset.settings().mask.as_ref().unwrap(),
+                preset.settings().texture.resource().unwrap().source()
+            ));
+            assert_eq!(paint_io::brush_state::encode(&captured).unwrap(), state);
+            assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
+            assert!(paint_core::BrushProgram::compile(preset.settings().definition()).is_ok());
         }
     }
     #[test]

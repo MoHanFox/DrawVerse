@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 49;
+pub const PAINT_ABI_MINOR: u32 = 50;
 pub const PAINT_FEATURE_PRESSURE_DYNAMICS: u64 = 1073741824;
 pub const PAINT_FEATURE_VBR_SOURCES: u64 = 536870912;
 pub const PAINT_FEATURE_ABR_IMPORT: u64 = 268435456;
@@ -841,3 +841,29 @@ pub const PAINT_FEATURE_DUAL_RELATIVE_SIZE: u64 = 4398046511104;
 
 /// Complete separated dual-color state16 / VBR1.14 user entry.
 pub const PAINT_FEATURE_DUAL_COLOR_STROKE: u64 = 8796093022208;
+
+/// Shared, tool-owned wet reservoir (ABI1.50). Never dereference this token.
+pub struct PaintWetTool {
+    _private: u8,
+}
+pub const PAINT_FEATURE_WET_BRUSH: u64 = 35184372088832;
+pub const PAINT_WET_TOOL_INITIALIZED: u32 = 1;
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintWetLoadDesc {
+    pub struct_size: u32,
+    pub reserved: u32,
+    pub radius: f32,
+    pub reserved_tail: u32,
+    pub linear_rgba: [f32; 4],
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintWetToolInfo {
+    pub struct_size: u32,
+    pub flags: u32,
+    pub carrier_revision: u64,
+    pub edge: u32,
+    pub reserved: u32,
+    pub center_linear_premul_rgba: [f32; 4],
+}

@@ -1,4 +1,4 @@
-# C ABI 1.49.0 契约
+# C ABI 1.50.0 契约
 
 ## ABI 1.48 双色双笔刷入口
 
@@ -412,3 +412,17 @@ Rust IO新增state14/VBR1.12/behavior11/time-grid-v1，旧默认不升级。当�
 新增PAINT_FEATURE_COMPOSITE_BRUSH_POSE（17592186044416）和paint_brush_pose_read_composite；复用已存在的pose创建/准确prepared绑定/clear/destroy，单笔尖读取接口及DTO保持。PaintCompositeTipPose为64字节，struct_size/flags/两个24字节PaintTipPose/reserved u64。flags仅SECONDARY(1)、PRIMARY_IMAGE(2)、SECONDARY_IMAGE(4)、SECONDARY_OVERFLOW(8)。无第二时数据清零且嵌套struct_size有效；错误/Busy均清除两份几何与flags。
 
 只读基础姿态，不抽取随机印章或模拟路径平滑；第二独立角度/倾斜/压力、相对标称与固定实际边宽共用Rust规则。有效overflow仅启用双色并允许溢出时为真。读取不等待编译、不访问文件，captured修订/资源寿命由pose保持；库变更或销毁不改变绑定结果。未新增state/VBR字段。本阶段Qt仍使用旧主笔尖入口，完整复合光标待下一阶段接入。
+
+## ABI 1.50 — shared wet brush tools
+
+`PAINT_FEATURE_WET_BRUSH` (bit45) exposes full state17/VBR1.15 preparation and tool ownership; this does not imply a Qt settings page. Existing DTOs retain their layouts.
+
+- `PaintWetLoadDesc`: size32, radius at8 and straight linearRGBA at16, both reserved words zero. radius0.5..256; RGBA finite0..1.
+- `PaintWetToolInfo`: size40/alignment8; flags at4 (INITIALIZED=1), carrier_revision at8, edge at16, reserved zero at20 and center premultiplied linearRGBA at24. Center sample is not a grid mean. BUSY/error clears all fields except returned struct_size40. Initially flags/edge/revision/color are zero.
+- `paint_wet_tool_create/destroy`: typed independent tokens; destroy clears caller handle and does not cancel bound/in-flight sessions. At most64 external tools remain alive, counting destroyed tokens retained by sessions; registry Weak ownership records enforce this without stale-pointer ABA. Default per-session internal tools remain compatible.
+- `paint_session_bind_wet_tool`: queued, copies shared ownership, matching core/session required. Busy session rejects asynchronously without changing its tool. Idle sessions may bind an occupied tool; actual begin reports Busy on conflict. Binding changes no document pixels/history.
+- `paint_wet_tool_info/clean`: idle tool snapshot/manual clean. Painting lease returns Busy. No callbacks/document work execute under the tool lock.
+- `paint_wet_tool_reload_prepared`: copies ID/32-byte descriptor, resolves exact preparation nonblocking (Busy while compiling), requires wet enabled, uses captured WetMix and current provided color/radius. Does not silently substitute latest preset. Invalid/stale/unknown inputs preserve carrier.
+- `paint_brush_library_prepare_state_wet` and `paint_brush_library_package_read_wet/write_wet` opt in to complete wet policy, including closed nondefault values and resources. Legacy preparation/package entries keep returning Unsupported for new policy to protect older Qt consumers.
+
+Existing prepared-state/pose/with_blend stroke exports consume the exact opted-in ticket. Engine lease adopts new ink only after successful document/history finish; cancel/error/replacement/stop drops uncommitted ink. Undo/redo restore pixels, not tool reservoir. Tool/manual actions and preparation/file operations retain the existing worker-thread/callback/pointer rules; no registry guard is held while waiting for preparation or executing tool operations.

@@ -4,12 +4,16 @@
 #include <string.h>
 #include <time.h>
 #ifdef __cplusplus
+static_assert(sizeof(PaintWetLoadDesc)==32 && offsetof(PaintWetLoadDesc,linear_rgba)==16);
+static_assert(sizeof(PaintWetToolInfo)==40 && offsetof(PaintWetToolInfo,center_linear_premul_rgba)==24);
 static_assert(sizeof(PaintBrushSettings) == 64 && offsetof(PaintBrushSettings, tip) == 24);
 static_assert(sizeof(PaintBrushPresetInfo) == 64 && sizeof(PaintBrushLibraryInfo) == 32);
 static_assert(sizeof(PaintBrushToolDesc) == 56 && offsetof(PaintBrushToolDesc, linear_rgba) == 24);
 static_assert(sizeof(PaintTipPose)==24 && offsetof(PaintTipPose,radius)==8 && offsetof(PaintTipPose,roundness)==16);
 static_assert(sizeof(PaintCompositeTipPose)==64 && offsetof(PaintCompositeTipPose,primary)==8 && offsetof(PaintCompositeTipPose,secondary)==32 && offsetof(PaintCompositeTipPose,reserved)==56);
 #else
+_Static_assert(sizeof(PaintWetLoadDesc)==32 && offsetof(PaintWetLoadDesc,linear_rgba)==16,"wet load layout");
+_Static_assert(sizeof(PaintWetToolInfo)==40 && offsetof(PaintWetToolInfo,center_linear_premul_rgba)==24,"wet info layout");
 _Static_assert(sizeof(PaintCompositeTipPose)==64 && offsetof(PaintCompositeTipPose,primary)==8 && offsetof(PaintCompositeTipPose,secondary)==32 && offsetof(PaintCompositeTipPose,reserved)==56,"composite pose layout");
 _Static_assert(sizeof(PaintBrushSettings) == 64 && offsetof(PaintBrushSettings, tip) == 24, "brush settings layout");
 _Static_assert(sizeof(PaintBrushPresetInfo) == 64 && sizeof(PaintBrushLibraryInfo) == 32, "brush catalog layout");
@@ -29,6 +33,9 @@ static int brush_catalog_smoke(void) {
     uint64_t preparation = 0, state_size = 0;
     PaintStatus status;
     clock_t started;
+    PaintWetTool *wet=NULL;
+    PaintWetToolInfo wet_info;
+    PaintWetLoadDesc wet_load;
     PaintBrushPose *pose=NULL;
     PaintPoint point;
     PaintTipPose tip_pose;
@@ -77,6 +84,13 @@ static int brush_catalog_smoke(void) {
 
     if(paint_brush_pose_read(pose,&point,1,0,0,0,&tip_pose)!=PAINT_INVALID_ARGUMENT || tip_pose.radius!=0) return 25;
     if(paint_brush_pose_destroy(&pose)!=PAINT_OK || pose!=NULL) return 26;
+    memset(&wet_info,0,sizeof(wet_info));
+    memset(&wet_load,0,sizeof(wet_load));wet_load.struct_size=sizeof(wet_load);wet_load.radius=4;wet_load.linear_rgba[3]=1;
+    if(paint_wet_tool_create(&wet)!=PAINT_OK || wet==NULL) return 52;
+    if(paint_wet_tool_info(wet,&wet_info)!=PAINT_OK || wet_info.struct_size!=40 || wet_info.flags!=0 || wet_info.edge!=0) return 53;
+    if(paint_wet_tool_clean(wet)!=PAINT_OK) return 54;
+    if(paint_wet_tool_reload_prepared(wet,library,preparation,(const uint8_t*)id,sizeof(id)-1,&wet_load)!=PAINT_INVALID_ARGUMENT) return 55;
+    if(paint_wet_tool_destroy(&wet)!=PAINT_OK || wet!=NULL) return 56;
     if (paint_brush_library_destroy(&library) != PAINT_OK || library != NULL) return 11;
     return 0;
 }

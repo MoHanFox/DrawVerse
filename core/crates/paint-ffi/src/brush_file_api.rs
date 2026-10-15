@@ -116,6 +116,27 @@ pub unsafe extern "C" fn paint_brush_library_package_read(
     capacity: u64,
     required: *mut u64,
 ) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_read_impl(
+            library,
+            path,
+            path_length,
+            buffer,
+            capacity,
+            required,
+            false,
+        )
+    }
+}
+unsafe fn paint_brush_library_package_read_impl(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+    allow_wet: bool,
+) -> PaintStatus {
     boundary(|| unsafe {
         pointers::write(required, 0)?;
         runtime::outside_callback()?;
@@ -123,7 +144,9 @@ pub unsafe extern "C" fn paint_brush_library_package_read(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
-        reject_wet_package(&bundle.package)?;
+        if !allow_wet {
+            reject_wet_package(&bundle.package)?;
+        }
         let bytes = bundle.package.to_json().map_err(io_error)?;
         if pointers::length(capacity)? < bytes.len() {
             pointers::write(required, bytes.len() as u64)?;
@@ -137,6 +160,30 @@ pub unsafe extern "C" fn paint_brush_library_package_read(
         pointers::copy_buffer(&bytes, buffer, capacity, required)
     })
 }
+/// Complete wet-preset library package entry (state17/VBR1.15).
+/// # Safety
+/// Same live handle, readable path/JSON and writable buffer contracts as the legacy entry.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_package_read_wet(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_read_impl(
+            library,
+            path,
+            path_length,
+            buffer,
+            capacity,
+            required,
+            true,
+        )
+    }
+}
 /// Background VBR save using immutable resource identities from the library store.
 /// # Safety
 /// Live library and readable bounded path/JSON bytes required for this call only.
@@ -148,13 +195,27 @@ pub unsafe extern "C" fn paint_brush_library_package_write(
     json: *const u8,
     json_length: u64,
 ) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_write_impl(library, path, path_length, json, json_length, false)
+    }
+}
+unsafe fn paint_brush_library_package_write_impl(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    json: *const u8,
+    json_length: u64,
+    allow_wet: bool,
+) -> PaintStatus {
     boundary(|| unsafe {
         runtime::outside_callback()?;
         let path = pointers::path_utf8(path, path_length)?;
         let json = pointers::brush_json(json, json_length)?;
         let library = runtime::registry()?.brush_library(library)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
-        reject_wet_package(&package)?;
+        if !allow_wet {
+            reject_wet_package(&package)?;
+        }
 
         let mut assets = std::collections::BTreeMap::new();
         let token = CancellationToken::default();
@@ -216,6 +277,21 @@ pub unsafe extern "C" fn paint_brush_library_package_write(
                 .map_err(io_error)?;
         paint_io::vbr_image::save(Path::new(&path), &bundle, &token).map_err(io_error)
     })
+}
+/// Complete wet-preset library package entry (state17/VBR1.15).
+/// # Safety
+/// Same live handle, readable path/JSON and writable buffer contracts as the legacy entry.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_package_write_wet(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    json: *const u8,
+    json_length: u64,
+) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_write_impl(library, path, path_length, json, json_length, true)
+    }
 }
 
 fn reject_wet_package(package: &paint_io::vbr::Package) -> crate::error::ApiResult<()> {
