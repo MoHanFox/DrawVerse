@@ -131,6 +131,26 @@ impl WetCarrier {
             revision: 0,
         })
     }
+    /// Reconfigure a private tool snapshot, preserving normalized ink amounts.
+    /// Loading is explicit: changing load does not rescale retained ink.
+    pub fn reconfigured(&self, settings: WetMix, diameter: f32) -> Result<Self> {
+        let mut next = Self::new(settings, diameter, Pixel::TRANSPARENT)?;
+        next.revision = self.next_revision()?;
+        if next.edge == self.edge {
+            next.cells = self.cells.clone();
+        } else {
+            next.cells = (0..next.edge * next.edge)
+                .map(|i| {
+                    self.sample(
+                        ((i % next.edge) as f64 + 0.5) / next.edge as f64,
+                        ((i / next.edge) as f64 + 0.5) / next.edge as f64,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .into();
+        }
+        Ok(next)
+    }
     pub fn settings(&self) -> WetMix {
         self.settings
     }

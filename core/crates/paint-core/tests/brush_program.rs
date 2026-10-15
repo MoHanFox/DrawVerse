@@ -4,6 +4,7 @@ fn dot(tip: BrushTip, pressure: f32) -> Document {
     let mut d = Document::new(40, 40).unwrap();
     d.begin_brush_stroke(
         BrushDefinition {
+            wet: Default::default(),
             smoothing: Default::default(),
             write_blend: Default::default(),
             texture: Default::default(),
@@ -105,6 +106,7 @@ fn validation_is_atomic_and_new_tip_history_is_reversible() {
         assert!(d
             .begin_brush_stroke(
                 BrushDefinition {
+                    wet: Default::default(),
                     smoothing: Default::default(),
                     write_blend: Default::default(),
                     texture: Default::default(),
@@ -128,6 +130,7 @@ fn validation_is_atomic_and_new_tip_history_is_reversible() {
     }
     d.begin_brush_stroke(
         BrushDefinition {
+            wet: Default::default(),
             smoothing: Default::default(),
             write_blend: Default::default(),
             texture: Default::default(),

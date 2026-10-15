@@ -128,3 +128,5 @@
 湿混真实Document阶段已接通Rust专用起笔/结束和载色返回，12项真实文档用例、3项故障/预算用例及相关旧画笔/ABI/Qt回归通过，见[验收](brush-wet-document-validation.md)。取样源、选区/蒙版/锁、分页账本和历史已执行；尚无湿混参数IO/ABI/Qt入口，颜色动态/双色组合仍暂拒，完整目标继续后续。
 
 湿混颜色动态阶段：真实沉积后复用linear-hsv-v1，保持alpha与工具载体隔离；35项相关Rust用例、Debug/Release旧算法位级参考及Release/ABI/Qt回归通过，见[验收](brush-wet-color-validation.md)。解除上一阶段颜色动态临时拒绝，双色湿混及完整IO/ABI/Qt和自动清洗重载仍待完成。
+
+湿混统一设置与载色策略阶段：Rust预设/定义/编译快照和配置起笔已接autoClean/autoLoad/allLayers及WetMix，真实两笔保色/重采样/捕获与回滚，47项相关Rust及Release/ABI/Qt回归通过，见[验收](brush-wet-settings-validation.md)。旧IO明确拒绝非默认湿混防丢值；完整交换、桥/Qt、工具持有与手动载色操作仍需继续。

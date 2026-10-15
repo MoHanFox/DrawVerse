@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新湿混统一设置：`docs/brush-wet-settings-design.md` / `docs/brush-wet-settings-validation.md`；Rust不可变预设/编译快照、配置起笔自动清洗装载与跨笔保色/路径重置/尺寸重采样、真实像素与历史；无ABI/格式变化，旧IO非默认拒绝，完整湿混交换/桥/Qt与双色组合继续后续。
+
 - 最新湿混颜色动态：`docs/brush-wet-color-design.md` / `docs/brush-wet-color-validation.md`；逐印章准备/沉积后线性HSV、alpha与原始载色保持、真实分页组合及故障回滚、旧算法20736组位级核对；无ABI/格式变化，湿混IO/桥/Qt与双色组合继续后续。
 
 - 最新湿混文档内核：`docs/brush-wet-document-design.md` / `docs/brush-wet-document-validation.md`；独立Rust起笔/结束返回载色、真实逐印章取样/分页RGBA贡献与opacity上限、选区/蒙版/锁及单历史、失败/滤波预算回滚；无ABI/格式变化，参数IO/桥/Qt与颜色动态/双色组合仍待后续。

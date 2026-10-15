@@ -81,6 +81,7 @@ impl Parameters {
             dynamics.color = color.core();
         }
         BrushSettings {
+            wet: Default::default(),
             smoothing: Default::default(),
             texture: Default::default(),
             dual: Default::default(),

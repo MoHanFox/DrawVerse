@@ -157,6 +157,7 @@ pub fn convert<'a>(
             1.
         };
         let mut settings = BrushSettings {
+            wet: Default::default(),
             smoothing: Default::default(),
             texture: Default::default(),
             dual: Default::default(),

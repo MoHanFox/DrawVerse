@@ -122,3 +122,5 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 湿混进度：linear-premul-grid-v1目前只存在于Rust二维载色数值组件，尚未添加到BrushSettings或JSON；本阶段不预占state/VBR版本或能力名，不宣称VBR已支持湿混。后续接入仍需完整严格字段、关闭值、基准与资源/真实像素往返。
 
 湿混Document已接Rust独立起笔/结束并返回载色，但仍未添加BrushSettings/JSON字段；当前VBR版本及能力保持不变，湿混交换待完整IO阶段。
+
+湿混设置后续更新：WetSettings现已进入Rust BrushSettings/Definition/Program，含启用、取样、自动清洗/装载和WetMix；尚无JSON/VBR字段，旧state及来源转换基线拒绝非默认湿混以免丢数据。文件格式版本与能力仍不变，完整交换待下一阶段，见brush-wet-settings-validation.md。

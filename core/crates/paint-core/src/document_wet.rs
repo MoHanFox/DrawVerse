@@ -15,12 +15,52 @@ impl Document {
         carrier: &WetCarrier,
         all_layers: bool,
     ) -> Result<()> {
+        if definition.wet.enabled() {
+            return Err(Error::InvalidArgument("use configured wet stroke entry"));
+        }
         self.begin_brush_stroke_inner(
             definition,
             first,
             Some(WetStroke {
                 carrier: carrier.clone(),
                 all_layers,
+                work_per_dab: 0,
+            }),
+        )
+    }
+    /// Capture preset policy and start with a private, optionally retained reservoir.
+    pub fn begin_configured_wet_brush_stroke(
+        &mut self,
+        definition: BrushDefinition,
+        first: InputPoint,
+        retained: Option<&WetCarrier>,
+    ) -> Result<()> {
+        self.idle()?;
+        let policy = definition.wet;
+        if !policy.enabled() {
+            return Err(Error::InvalidArgument("wet preset is disabled"));
+        }
+        let mut carrier = if let Some(previous) = retained {
+            previous.reconfigured(policy.mix(), definition.brush.radius * 2.)?
+        } else {
+            WetCarrier::new(
+                policy.mix(),
+                definition.brush.radius * 2.,
+                Pixel::TRANSPARENT,
+            )?
+        };
+        if policy.auto_clean() {
+            carrier.clean()?;
+        }
+        if policy.auto_load() {
+            carrier.reload(definition.brush.color)?;
+        }
+        self.begin_brush_stroke_inner(
+            definition,
+            first,
+            Some(WetStroke {
+                carrier,
+                all_layers: policy.all_layers(),
                 work_per_dab: 0,
             }),
         )

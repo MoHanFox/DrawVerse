@@ -345,6 +345,7 @@ fn decode_inner(
             row.id,
             row.name,
             BrushSettings {
+                wet: Default::default(),
                 smoothing: row.smoothing.map(|p| p.core()).unwrap_or_default(),
                 texture,
                 dual,
@@ -378,6 +379,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        if !s.wet.is_default() {
+            return Err(Error::Unsupported(
+                "wet brush state is not represented".into(),
+            ));
+        }
         if [&s.dynamics, s.dual.secondary().dynamics()]
             .iter()
             .any(|d| {

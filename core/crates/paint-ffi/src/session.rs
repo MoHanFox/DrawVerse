@@ -41,7 +41,7 @@ pub(crate) enum Operation {
     PasteLayers(Vec<u8>, u64),
     DuplicateLayers(Vec<u64>),
     MergeLayers(Vec<u64>),
-    Begin(paint_core::BrushDefinition, InputPoint, u64),
+    Begin(Box<paint_core::BrushDefinition>, InputPoint, u64),
     BeginPrepared(
         Arc<crate::brush_preparation::CatalogTicket>,
         String,
@@ -890,7 +890,10 @@ impl Engine {
                 let mut definition = crate::brush_catalog_api::tool_definition(&preset, tool)?;
                 definition.brush.background_color = background;
                 definition.write_blend = blend;
-                self.apply(Operation::Begin(definition, point, tool.layer_id), sequence)?;
+                self.apply(
+                    Operation::Begin(Box::new(definition), point, tool.layer_id),
+                    sequence,
+                )?;
             }
             Operation::Begin(brush, point, layer) => {
                 self.aborted = false;
@@ -901,7 +904,7 @@ impl Engine {
                 if layer != 0 {
                     self.document.set_active_layer(layer)?;
                 }
-                if let Err(error) = self.document.begin_brush_stroke(brush, point) {
+                if let Err(error) = self.document.begin_brush_stroke(*brush, point) {
                     // Selection must follow the actor's immediate state, not a stale UI hint.
                     if self.document.layer(previous).is_some() {
                         self.document.set_active_layer(previous)?;
@@ -1234,7 +1237,7 @@ mod actor_tests {
             session.info()
         };
         run(Operation::Begin(
-            paint_core::Brush::default().into(),
+            Box::new(paint_core::Brush::default().into()),
             paint_core::InputPoint::new(40., 40., 1.),
             0,
         ));

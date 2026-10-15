@@ -264,6 +264,7 @@ pub unsafe extern "C" fn paint_brush_library_edit(
                 .preset(&id)
                 .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "brush preset"))?;
             let settings = BrushSettings {
+                wet: before.settings().wet,
                 smoothing: before.settings().smoothing,
                 texture: before.settings().texture.clone(),
                 dual: before.settings().dual.clone(),
@@ -390,7 +391,7 @@ pub unsafe extern "C" fn paint_session_begin_preset(
         point.validate()?;
         let sequence = runtime::registry()?
             .session(core, session)?
-            .submit(Operation::Begin(definition, point, t.layer_id))?;
+            .submit(Operation::Begin(Box::new(definition), point, t.layer_id))?;
         pointers::write(out_sequence, sequence)
     })
 }

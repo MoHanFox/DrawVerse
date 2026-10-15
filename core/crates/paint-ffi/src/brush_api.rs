@@ -50,6 +50,7 @@ pub unsafe extern "C" fn paint_session_begin_brush(
             _ => return Err(ApiError::invalid("brush operation")),
         };
         let definition = BrushDefinition {
+            wet: Default::default(),
             smoothing: Default::default(),
             write_blend: Default::default(),
             texture: Default::default(),
@@ -71,7 +72,11 @@ pub unsafe extern "C" fn paint_session_begin_brush(
         point.validate()?;
         let sequence = runtime::registry()?
             .session(core, session)?
-            .submit(Operation::Begin(definition, point, r.brush.layer_id))?;
+            .submit(Operation::Begin(
+                Box::new(definition),
+                point,
+                r.brush.layer_id,
+            ))?;
         pointers::write(out_sequence, sequence)
     })
 }

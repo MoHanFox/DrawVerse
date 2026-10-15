@@ -23,6 +23,7 @@ pub struct BrushSettings {
     pub texture: crate::BrushTexture,
     pub dual: crate::DualBrush,
     pub smoothing: crate::BrushSmoothing,
+    pub wet: crate::WetSettings,
 }
 impl Default for BrushSettings {
     fn default() -> Self {
@@ -36,6 +37,7 @@ impl Default for BrushSettings {
             texture: Default::default(),
             dual: Default::default(),
             smoothing: Default::default(),
+            wet: Default::default(),
         }
     }
 }
@@ -56,6 +58,7 @@ impl BrushSettings {
             texture: self.texture.clone(),
             dual: self.dual.clone(),
             smoothing: self.smoothing,
+            wet: self.wet,
             write_blend: Default::default(),
         }
     }

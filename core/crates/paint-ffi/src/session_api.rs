@@ -141,7 +141,7 @@ pub unsafe extern "C" fn paint_session_submit(
                 brush.validate()?;
                 let point = crate::point(pointers::read_sized(&command.point)?)?;
                 point.validate()?;
-                Operation::Begin(brush.into(), point, desc.layer_id)
+                Operation::Begin(Box::new(brush.into()), point, desc.layer_id)
             }
             PAINT_COMMAND_STROKE_TO => {
                 let point = crate::point(pointers::read_sized(&command.point)?)?;

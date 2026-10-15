@@ -726,7 +726,7 @@ impl Document {
         if self.revision != 0 || self.layers.len() != 1 || self.tile_count() != 0 {
             return Err(Error::InvalidArgument("background requires new document"));
         }
-        self.layers[0].name = "背景".into();
+        self.layers[0].name = "鑳屾櫙".into();
         self.layers[0].white = (self.width, self.height);
         Ok(())
     }
@@ -1235,6 +1235,9 @@ impl Document {
         definition: BrushDefinition,
         first: InputPoint,
     ) -> Result<()> {
+        if definition.wet.enabled() {
+            return Err(Error::InvalidArgument("use configured wet stroke entry"));
+        }
         self.begin_brush_stroke_inner(definition, first, None)
     }
     fn begin_brush_stroke_inner(

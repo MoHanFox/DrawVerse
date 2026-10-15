@@ -53,6 +53,7 @@ pub struct BrushDefinition {
     pub texture: crate::BrushTexture,
     pub dual: crate::DualBrush,
     pub smoothing: crate::BrushSmoothing,
+    pub wet: crate::WetSettings,
     pub write_blend: crate::BlendMode,
 }
 
@@ -66,6 +67,7 @@ impl From<Brush> for BrushDefinition {
             texture: Default::default(),
             dual: Default::default(),
             smoothing: Default::default(),
+            wet: Default::default(),
             write_blend: Default::default(),
         }
     }
@@ -75,6 +77,7 @@ impl From<Brush> for BrushDefinition {
 #[derive(Clone, Debug)]
 pub struct BrushProgram {
     pub(crate) smoothing: crate::BrushSmoothing,
+    wet: crate::WetSettings,
     pub(crate) write_blend: crate::BlendMode,
     pub(crate) tip: BrushTip,
     sine: f64,
@@ -211,6 +214,9 @@ impl BrushProgram {
                 .is_some_and(|dual| dual.color.enabled() && dual.color.overflow()),
         })
     }
+    pub fn wet_settings(&self) -> crate::WetSettings {
+        self.wet
+    }
     pub fn compile(definition: BrushDefinition) -> Result<Self> {
         definition.brush.validate()?;
         definition.tip.validate()?;
@@ -233,7 +239,16 @@ impl BrushProgram {
                 "dual-color painting requires paint mode",
             ));
         }
+        if definition.wet.enabled()
+            && (definition.brush.mode != crate::BrushMode::Paint
+                || dual.as_ref().is_some_and(|d| d.color.enabled()))
+        {
+            return Err(Error::InvalidArgument(
+                "wet preset requires paint without dual color",
+            ));
+        }
         Ok(Self {
+            wet: definition.wet,
             smoothing: definition.smoothing,
             write_blend: definition.write_blend,
             tip: definition.tip,
