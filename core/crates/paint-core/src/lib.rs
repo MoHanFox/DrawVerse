@@ -2,6 +2,10 @@
 //! Pixels are linear premultiplied RGBA32F; display conversion is external.
 mod appearance;
 mod brush;
+mod brush_wet_carrier;
+pub use brush_wet_carrier::{
+    WetCarrier, WetDab, WetDabGeometry, WetMix, WetSample, MAX_WET_CARRIER_EDGE, WET_CARRIER_MODEL,
+};
 mod brush_smoothing;
 pub use brush_smoothing::BrushSmoothing;
 mod brush_catalog;

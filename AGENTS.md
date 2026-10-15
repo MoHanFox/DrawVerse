@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新二维湿混载色内核：`docs/brush-wet-carrier-design.md` / `docs/brush-wet-carrier-validation.md`；真实二维预乘RGBA拾色/混合/沉积/距离消耗、清洗重载与准备/提交快照、64阶有界网格及数值像素回归；无ABI/格式变化，尚未接Document/历史/预设/Qt，不宣称湿混工具已完成。
+
 - 最新可选复合光标：`docs/brush-composite-cursor-ui-design.md` / `docs/brush-composite-cursor-ui-validation.md`；ABI1.49消费/默认关闭的全局开关、主第二动态与图片轮廓/在途身份/最多4个后台请求、关闭不生成第二轮廓、DPR1/2和数位笔伴随Hover/鼠标接管；无格式变化，随机印章预演/非分隔/收尖/湿混等继续后续。
 
 - 最新复合笔尖原生几何：`docs/brush-composite-pose-design.md` / `docs/brush-composite-pose-validation.md`；ABI1.49/64字节双姿态DTO、同prepared捕获/独立压力设备/相对及固定边宽/图片与有效溢出标志，实际印章尺寸及C/C++布局回归；无state/VBR变化，Qt双轮廓尚待接入，不宣称完整复合光标。
