@@ -115,6 +115,24 @@ pub(crate) struct TipGeometry {
     roundness: f32,
 }
 
+impl TipGeometry {
+    pub(crate) fn wet_geometry(self, point: InputPoint, radius: f64) -> crate::WetDabGeometry {
+        crate::WetDabGeometry {
+            x: point.x,
+            y: point.y,
+            diameter: (radius * 2.) as f32,
+            angle: self.sine.atan2(self.cosine).to_degrees() as f32,
+            roundness: self.roundness,
+        }
+    }
+    pub(crate) fn normalized(self, dx: f64, dy: f64, radius: f64) -> (f64, f64) {
+        (
+            (dx * self.cosine + dy * self.sine) / (2. * radius) + 0.5,
+            (-dx * self.sine + dy * self.cosine) / (2. * radius * f64::from(self.roundness)) + 0.5,
+        )
+    }
+}
+
 /// Geometry and minification compiled once for one pressure-sized image dab.
 pub(crate) struct MaskDab<'a> {
     mask: &'a BrushMask,

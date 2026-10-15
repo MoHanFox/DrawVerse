@@ -76,6 +76,51 @@ mod history_failure_tests {
         .unwrap();
     }
     #[test]
+    fn wet_history_failure_restores_pixels_and_keeps_external_carrier() {
+        let mut doc = document();
+        doc.set_layer_properties(
+            1,
+            LayerProperties {
+                visible: true,
+                opacity: 0.8,
+            },
+        )
+        .unwrap();
+        let original = pixels(&doc);
+        let depth = doc.history_depth();
+        let definition = BrushDefinition {
+            brush: Brush {
+                radius: 128.,
+                opacity: 0.4,
+                ..Default::default()
+            },
+            tip: crate::BrushTip {
+                pressure_size: false,
+                pressure_flow: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let carrier = crate::WetCarrier::new(
+            crate::WetMix::new(0., 0., 0., 1., 1., 0.).unwrap(),
+            256.,
+            definition.brush.color,
+        )
+        .unwrap();
+        doc.begin_wet_brush_stroke(definition, InputPoint::new(96., 64., 1.), &carrier, false)
+            .unwrap();
+        crate::history_storage::fail_writes_for_test(true);
+        let result = doc.end_wet_brush_stroke();
+        crate::history_storage::fail_writes_for_test(false);
+        assert!(matches!(result, Err(Error::HistoryStorage(_))));
+        assert_eq!(pixels(&doc), original);
+        assert_eq!(doc.history_depth(), depth);
+        assert!(!doc.stroke_active());
+        assert_eq!(carrier.revision(), 0);
+        doc.undo().unwrap();
+        assert_eq!(doc.layer(1).unwrap().properties().opacity, 1.);
+    }
+    #[test]
     fn history_write_failure_rolls_back_stroke_and_preserves_prior_history() {
         let mut doc = document();
         doc.set_layer_properties(
@@ -397,6 +442,7 @@ struct Stroke {
     dual_coverage: BTreeMap<TileCoord, Arc<Tile>>,
     shape_sample: crate::brush_shape_jitter::ShapeSample,
     color_sample: Pixel,
+    wet: Option<wet::WetStroke>,
     distance_to_next: f64,
     direction: Option<f64>,
     before: BTreeMap<TileCoord, Option<Arc<Tile>>>,
@@ -443,6 +489,8 @@ pub use wand::WandSelection;
 mod liquify;
 #[path = "smudge.rs"]
 mod smudge;
+#[path = "document_wet.rs"]
+mod wet;
 pub use liquify::LiquifyDab;
 
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
@@ -1181,9 +1229,20 @@ impl Document {
         definition: BrushDefinition,
         first: InputPoint,
     ) -> Result<()> {
+        self.begin_brush_stroke_inner(definition, first, None)
+    }
+    fn begin_brush_stroke_inner(
+        &mut self,
+        definition: BrushDefinition,
+        first: InputPoint,
+        mut wet: Option<wet::WetStroke>,
+    ) -> Result<()> {
         self.idle()?;
         let brush = definition.brush;
         let program = BrushProgram::compile(definition)?;
+        if let Some(wet) = &mut wet {
+            self.validate_wet_start(&program, brush, first, wet)?;
+        }
         first.validate()?;
         if program.dual.as_ref().is_some_and(|d| d.color.enabled()) && first.tool == Tool::Eraser {
             return Err(Error::InvalidArgument(
@@ -1196,6 +1255,7 @@ impl Document {
             &program,
             1,
             usize::from(program.dual.as_ref().is_some_and(|d| d.step().is_some())),
+            wet.as_ref().map_or(0, |w| w.work_per_dab),
         )?;
         let random_serial = if program.write_blend == crate::BlendMode::Dissolve
             || program.scatter.enabled()
@@ -1253,6 +1313,7 @@ impl Document {
             dual_coverage: BTreeMap::new(),
             shape_sample: initial_shape,
             color_sample: brush.color,
+            wet,
             distance_to_next: brush.step(),
             direction: None,
             before: BTreeMap::new(),
@@ -1286,6 +1347,16 @@ impl Document {
     }
 
     pub fn stroke_to(&mut self, point: InputPoint) -> Result<()> {
+        let wet = self.stroke.as_ref().is_some_and(|s| s.wet.is_some());
+        let result = self.stroke_to_inner(point);
+        if result.is_err() && wet {
+            if let Some(stroke) = self.stroke.take() {
+                self.restore_stroke(&stroke);
+            }
+        }
+        result
+    }
+    fn stroke_to_inner(&mut self, point: InputPoint) -> Result<()> {
         let current = self.stroke.as_ref().ok_or(Error::NoStroke)?;
         if current
             .program
@@ -1297,6 +1368,9 @@ impl Document {
             return Err(Error::InvalidArgument(
                 "dual-color eraser input is not supported",
             ));
+        }
+        if current.wet.is_some() && point.tool == Tool::Eraser {
+            return Err(Error::InvalidArgument("wet eraser input is not supported"));
         }
         let Some(mut filter) = current.path_filter.clone() else {
             return self.stroke_to_direct(point);
@@ -1355,7 +1429,9 @@ impl Document {
             primary = primary.saturating_add(count).saturating_add(usize::from(
                 stationary
                     && point.pressure != last.pressure
-                    && (stroke.program.opacity_pressure(point.pressure).is_some()
+                    && ((stroke.wet.is_some()
+                        && (stroke.program.tip.pressure_size || stroke.program.tip.pressure_flow))
+                        || stroke.program.opacity_pressure(point.pressure).is_some()
                         || pressure_changed)
                     && !matches!(stroke.brush.mode, BrushMode::Smudge { .. }),
             ));
@@ -1371,7 +1447,13 @@ impl Document {
             }
             last = point;
         }
-        Self::validate_stroke_work(stroke.brush, &stroke.program, primary, secondary)
+        Self::validate_stroke_work(
+            stroke.brush,
+            &stroke.program,
+            primary,
+            secondary,
+            stroke.wet.as_ref().map_or(0, |w| w.work_per_dab),
+        )
     }
 
     fn stroke_to_direct(&mut self, point: InputPoint) -> Result<()> {
@@ -1383,7 +1465,9 @@ impl Document {
         let distance = (point.x - current.last.x).hypot(point.y - current.last.y);
         let stationary_pressure = distance <= 1e-9
             && point.pressure != current.last.pressure
-            && (current.program.opacity_pressure(point.pressure).is_some()
+            && ((current.wet.is_some()
+                && (current.program.tip.pressure_size || current.program.tip.pressure_flow))
+                || current.program.opacity_pressure(point.pressure).is_some()
                 || current.program.dual.as_ref().is_some_and(|d| {
                     d.pressure_changed(current.last.pressure, point.pressure)
                         || (d.color.enabled()
@@ -1418,6 +1502,7 @@ impl Document {
             &current.program,
             count + usize::from(stationary_pressure),
             secondary_count + usize::from(secondary_stationary),
+            current.wet.as_ref().map_or(0, |w| w.work_per_dab),
         )?;
         let mut stroke = self.stroke.take().expect("checked active stroke");
         if distance > 1e-9 {
@@ -1491,6 +1576,7 @@ impl Document {
         program: &BrushProgram,
         count: usize,
         secondary_count: usize,
+        wet_work: usize,
     ) -> Result<()> {
         let count = count.saturating_mul(program.scatter.maximum_count());
         let diameter = (f64::from(brush.radius)
@@ -1541,6 +1627,12 @@ impl Document {
                 .saturating_mul(sample_cost)
                 .saturating_add(secondary_visits)
                 .saturating_add(colored_visits)
+                .saturating_add(count.saturating_mul(wet_work))
+                .saturating_add(if wet_work > 0 {
+                    count.saturating_mul(diameter * diameter).saturating_mul(12)
+                } else {
+                    0
+                })
                 > MAX_PIXEL_VISITS_PER_SEGMENT
         {
             return Err(Error::ResourceLimit(
@@ -1551,6 +1643,14 @@ impl Document {
     }
 
     pub fn end_stroke(&mut self) -> Result<bool> {
+        if self.stroke.as_ref().is_some_and(|s| s.wet.is_some()) {
+            return Err(Error::InvalidArgument(
+                "use end_wet_brush_stroke for wet strokes",
+            ));
+        }
+        self.finish_stroke().map(|(changed, _)| changed)
+    }
+    fn finish_stroke(&mut self) -> Result<(bool, Option<crate::WetCarrier>)> {
         if let Some(mut filter) = self
             .stroke
             .as_ref()
@@ -1589,6 +1689,7 @@ impl Document {
             &stroke.program,
             usize::from(primary_final),
             usize::from(secondary_final),
+            stroke.wet.as_ref().map_or(0, |w| w.work_per_dab),
         ) {
             self.restore_stroke(&stroke);
             return Err(error);
@@ -1649,7 +1750,7 @@ impl Document {
             return Err(error);
         }
         if changes.is_empty() {
-            return Ok(false);
+            return Ok((false, stroke.wet.map(|w| w.carrier)));
         }
         let command = Command::Stroke {
             layer: stroke.layer,
@@ -1666,7 +1767,7 @@ impl Document {
             self.apply_history(&command, false);
             return Err(error);
         }
-        Ok(true)
+        Ok((true, stroke.wet.map(|w| w.carrier)))
     }
 
     pub fn cancel_stroke(&mut self) -> Result<()> {
@@ -1989,7 +2090,8 @@ impl Document {
                 .as_ref()
                 .is_some_and(|t| t.document_space());
         let write_blend = stroke.program.write_blend;
-        let capped = (stroke.brush.opacity < 1.
+        let capped = (stroke.wet.is_some()
+            || stroke.brush.opacity < 1.
             || pressure_opacity.is_some()
             || paper_texture
             || write_blend != crate::BlendMode::Normal)
@@ -2014,7 +2116,13 @@ impl Document {
                     }
                 }
             };
-        if radius == 0.0 || flow == 0.0 || stroke.brush.opacity == 0. {
+        if radius == 0. {
+            if let Some(wet) = &mut stroke.wet {
+                wet.carrier.reset_path()?;
+            }
+            return Ok(false);
+        }
+        if stroke.wet.is_none() && (flow == 0. || stroke.brush.opacity == 0.) {
             return Ok(false);
         }
         let geometry = stroke
@@ -2057,7 +2165,42 @@ impl Document {
                 && !matches!(stroke.brush.mode, BrushMode::Smudge { .. }));
         stroke.coverage_tool_stable &= erase == stroke.coverage_erase;
         let mut changed = false;
-        if x0 >= x1 || y0 >= y1 {
+        if stroke.wet.is_none() && (x0 >= x1 || y0 >= y1) {
+            return Ok(false);
+        }
+        let mask_dab = if IMAGED {
+            stroke.program.mask_dab_with_geometry(radius, geometry)
+        } else {
+            None
+        };
+        let wet = self.prepare_wet(stroke, point, radius, geometry, |x, y| {
+            let mut coverage = if let Some(mask) = &mask_dab {
+                mask.coverage(x - point.x, y - point.y)
+            } else {
+                stroke.program.procedural_coverage_with_geometry(
+                    x - point.x,
+                    y - point.y,
+                    radius,
+                    geometry,
+                )
+            };
+            if DUAL {
+                coverage = if dual_path {
+                    stroke.program.dual.as_ref().expect("dual").combine(
+                        coverage,
+                        Self::wet_secondary_coverage(stroke, x, y, appearance)?,
+                    )
+                } else {
+                    dual_dab.as_ref().expect("dual").combine(coverage, x, y)
+                };
+            }
+            if TEXTURED && !paper_texture {
+                coverage *= texture_dab.as_ref().expect("texture").coverage(x, y);
+            }
+            Ok(coverage)
+        })?;
+        if x0 >= x1 || y0 >= y1 || (wet.is_some() && (flow == 0. || stroke.brush.opacity == 0.)) {
+            Self::commit_wet(stroke, wet)?;
             return Ok(false);
         }
         if matches!(stroke.brush.mode, BrushMode::Smudge { .. })
@@ -2093,11 +2236,6 @@ impl Document {
             point.x - f64::from(appearance.offset_x),
             point.y - f64::from(appearance.offset_y),
         );
-        let mask_dab = if IMAGED {
-            stroke.program.mask_dab_with_geometry(radius, geometry)
-        } else {
-            None
-        };
         for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
             for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
                 let coord = TileCoord::from_signed(tx as i32, ty as i32);
@@ -2168,7 +2306,11 @@ impl Document {
                         // No new coverage or color moment can be contributed once this
                         // immutable stroke's current pressure ceiling is reached. Paper
                         // texture and a changed paint/erase operator must still recompute.
-                        if skip_saturated && capped && !paper_texture && stroke.coverage_tool_stable
+                        if skip_saturated
+                            && stroke.wet.is_none()
+                            && capped
+                            && !paper_texture
+                            && stroke.coverage_tool_stable
                         {
                             let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
                             if prior_coverage.as_ref().map_or(0., |p| p[offset].alpha())
@@ -2235,7 +2377,37 @@ impl Document {
                             coverage * flow
                         }) * if paper_texture { texture_amount } else { 1. };
                         let mut paint_color = stroke.color_sample;
-                        let base = if capped {
+                        let base = if let Some(wet) = &wet {
+                            let (u, v) = geometry.normalized(
+                                x as f64 + 0.5 - px,
+                                y as f64 + 0.5 - py,
+                                radius,
+                            );
+                            let ink = wet.sample(u.clamp(0., 1.), v.clamp(0., 1.));
+                            let prior = prior_coverage
+                                .as_ref()
+                                .map_or(Pixel::TRANSPARENT, |p| p[offset]);
+                            let contribution = Self::wet_contribution(
+                                prior,
+                                ink,
+                                coverage * flow,
+                                pressure_opacity.unwrap_or(1.),
+                            )?;
+                            if contribution != prior {
+                                coverage_updates.push((offset, contribution));
+                            }
+                            paint_color = contribution;
+                            amount = stroke.brush.opacity
+                                * selected
+                                * if paper_texture { texture_amount } else { 1. };
+                            if stroke.before.contains_key(&coord) {
+                                original
+                                    .as_ref()
+                                    .map_or(self.layers[index].default_pixel(x, y), |p| p[offset])
+                            } else {
+                                before
+                            }
+                        } else if capped {
                             let previous =
                                 prior_coverage.as_ref().map_or(0., |p| p[offset].alpha());
                             let accumulated = previous
@@ -2329,7 +2501,7 @@ impl Document {
                                 )
                             }
                         } else if mask {
-                            let (tone, a) = if color_capped {
+                            let (tone, a) = if color_capped || wet.is_some() {
                                 Self::mask_tone(paint_color)
                             } else {
                                 stroke.mask_paint.expect("mask brush target")
@@ -2483,6 +2655,7 @@ impl Document {
                 self.pool.trim()?;
             }
         }
+        Self::commit_wet(stroke, wet)?;
         Ok(changed)
     }
 

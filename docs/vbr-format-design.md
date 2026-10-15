@@ -120,3 +120,5 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 2026-10-15：dualBrush.color采用separated-stroke-v1、enabled/useBackground/overflow布尔、second-behind/second-in-front顺序、primaryBlend/secondaryBlend稳定27英文名称。实际前景/背景RGBA不存入预设。非默认关闭值保留，默认省略保持旧字节与版本；存在对象要求drawverse.brush/behavior13、dual-color-stroke能力与minor14，state16。Schema见contracts/vbr-dual-color-v1.14.schema.json，结果见brush-dual-color-io-validation.md。原ABR来源保持。ABI1.48/Qt已接完整色彩配置、库包入口和实际两色预览，见brush-dual-color-ui-validation.md；自动描边继续后续；非分隔逐印章模型未实现，不得冒用separated模型。
 
 湿混进度：linear-premul-grid-v1目前只存在于Rust二维载色数值组件，尚未添加到BrushSettings或JSON；本阶段不预占state/VBR版本或能力名，不宣称VBR已支持湿混。后续接入仍需完整严格字段、关闭值、基准与资源/真实像素往返。
+
+湿混Document已接Rust独立起笔/结束并返回载色，但仍未添加BrushSettings/JSON字段；当前VBR版本及能力保持不变，湿混交换待完整IO阶段。

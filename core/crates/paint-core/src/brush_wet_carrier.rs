@@ -89,7 +89,8 @@ impl WetDabGeometry {
         if !self.x.is_finite()
             || !self.y.is_finite()
             || !self.diameter.is_finite()
-            || !(1. ..=512.).contains(&self.diameter)
+            || self.diameter <= 0.
+            || self.diameter > 512.
             || !self.roundness.is_finite()
             || !(0.01..=1.).contains(&self.roundness)
             || !self.angle.is_finite()

@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新湿混文档内核：`docs/brush-wet-document-design.md` / `docs/brush-wet-document-validation.md`；独立Rust起笔/结束返回载色、真实逐印章取样/分页RGBA贡献与opacity上限、选区/蒙版/锁及单历史、失败/滤波预算回滚；无ABI/格式变化，参数IO/桥/Qt与颜色动态/双色组合仍待后续。
+
 - 最新二维湿混载色内核：`docs/brush-wet-carrier-design.md` / `docs/brush-wet-carrier-validation.md`；真实二维预乘RGBA拾色/混合/沉积/距离消耗、清洗重载与准备/提交快照、64阶有界网格及数值像素回归；无ABI/格式变化，尚未接Document/历史/预设/Qt，不宣称湿混工具已完成。
 
 - 最新可选复合光标：`docs/brush-composite-cursor-ui-design.md` / `docs/brush-composite-cursor-ui-validation.md`；ABI1.49消费/默认关闭的全局开关、主第二动态与图片轮廓/在途身份/最多4个后台请求、关闭不生成第二轮廓、DPR1/2和数位笔伴随Hover/鼠标接管；无格式变化，随机印章预演/非分隔/收尖/湿混等继续后续。
