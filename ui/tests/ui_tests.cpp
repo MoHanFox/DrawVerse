@@ -2552,7 +2552,20 @@ private slots:
         for(const auto name:{"smudgePressure","smudgeAllLayers","smudgeFingerPainting","wandAntialias","wandContiguous","wandAllLayers","bucketAntialias","bucketContiguous","bucketAllLayers","selectionAntialias"}) {
             auto *item=findVisualItem(window->contentItem(),name);QVERIFY(item);QCOMPARE(QQmlProperty::read(item,"ToolTip.delay",qmlContext(item)).toInt(),1000);QVERIFY(!QQmlProperty::read(item,"ToolTip.text",qmlContext(item)).toString().isEmpty());
         }
-        auto *helpItem=findVisualItem(window->contentItem(),"smudgeFingerPainting");auto *tip=QQmlProperty::read(helpItem,"ToolTip.toolTip",qmlContext(helpItem)).value<QObject*>();QVERIFY(tip);QTest::mouseMove(window,{2,100});QTest::mouseMove(window,helpItem->mapToScene({7,helpItem->height()/2}).toPoint());QTRY_VERIFY(helpItem->property("hovered").toBool());QTest::qWait(400);QVERIFY(!tip->property("visible").toBool());QTRY_VERIFY_WITH_TIMEOUT(tip->property("visible").toBool(),1500);QTest::mouseMove(window,{2,100});QTRY_VERIFY(!tip->property("visible").toBool());
+        auto *helpItem=findVisualItem(window->contentItem(),"smudgeFingerPainting");auto *tip=QQmlProperty::read(helpItem,"ToolTip.toolTip",qmlContext(helpItem)).value<QObject*>();QVERIFY(tip);
+        {
+            // A live desktop can deliver native cursor moves between QTest events.
+            // Isolate only this timed hover; real clicks/tablet input stay unfiltered.
+            class HoverInput final : public QObject {
+                QWindow *host;
+                bool eventFilter(QObject *,QEvent *event) override {return event->spontaneous() && (event->type()==QEvent::MouseMove || event->type()==QEvent::Enter || event->type()==QEvent::Leave);}
+            public:
+                explicit HoverInput(QWindow *window):host(window){host->installEventFilter(this);}
+                ~HoverInput() override{host->removeEventFilter(this);}
+                void move(QPointF position){QMouseEvent event(QEvent::MouseMove,position,host->mapToGlobal(position),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(host,&event);}
+            } input(window);
+            input.move({2,100});input.move(helpItem->mapToScene({7,helpItem->height()/2}));QTRY_VERIFY(helpItem->property("hovered").toBool());QTest::qWait(400);QVERIFY(!tip->property("visible").toBool());QTRY_VERIFY_WITH_TIMEOUT(tip->property("visible").toBool(),1500);input.move({2,100});QTRY_VERIFY(!tip->property("visible").toBool());
+        }
         client.setBrushRadius(4);client.setBrushOpacity(1);client.setBrushColor(Qt::blue);const auto at=[&](QPointF p){return canvas->mapToScene(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
         QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,at({20,32}));QTest::mouseMove(window,at({32,32}));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,at({32,32}));QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());
         QCOMPARE(client.historyEntries().last().toMap().value("kind").toInt(),26);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("涂抹"));

@@ -1,6 +1,6 @@
 # DrawVerse
 
-- 最新二维湿混涂抹：`docs/brush-wet-smudge-design.md` / `docs/brush-wet-smudge-validation.md`；独立R共用载体/强度压感与工具取样、手指自动载色/透明搬运/蒙版线性灰度、真实像素/分页组合/原生两笔及Qt历史；无ABI/格式变化，湿混双色/橡皮、收尖/非分隔与高级ABR等继续后续。
+- 最新二维湿混涂抹：`docs/brush-wet-smudge-design.md` / `docs/brush-wet-smudge-validation.md`；独立R共用载体/强度压感与工具取样、手指自动载色/透明搬运/蒙版线性灰度、真实像素/分页组合/原生两笔及Qt历史，追加原生高DPI悬停计时输入隔离与重复回归（环境倍率非硬件DPR）；无ABI/格式变化，湿混双色/橡皮、收尖/非分隔与高级ABR等继续后续。
 
 - 最新湿混Qt入口：`docs/brush-wet-qt-design.md` / `docs/brush-wet-qt-validation.md`；ABI1.50/state17/VBR1.15完整镜像/独立基准、湿混分类与通用控件、手动载色/清洗/主文档共享工具、真实独立有色预览及DPI1/2交互/像素/持久化；新版准备/库包接通，旧接口保护保留；双色湿混/Erase/Smudge、收尖/非分隔及高级ABR继续后续。
 

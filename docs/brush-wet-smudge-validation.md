@@ -23,3 +23,13 @@ Windows/MSVC、Qt6.8.3 Release、软件 QtQuick。`qt_ui_tests.exe wetSmudgeUses
 在画笔设置启用湿混后选择 R 涂抹；湿混页六比例和清洗/载色策略生效，工具栏仍控制强度、压感、所有图层和手指绘画。自动前景色载入同时要求自动载色和手指绘画；手动/保留载色不因关闭手指而被隐式清除。提示统一 1 秒，预设预览仍为固定正常画笔湿混示例，不随工具切换。
 
 未运行全量 `tools/check.py`；未完成湿混双色、湿混橡皮/翻笔输入、收尖、非分隔、完整 ABR 高级动态/16 位、VBR 整体扩展，以及总体性能/实体设备/跨平台矩阵。该阶段不是完整笔刷系统完成。
+
+## 原生高 DPI 悬停复查
+
+2026-10-15 追加：已定位测试注入输入与实时桌面的原生鼠标移动交错。临时事件记录 `artifacts/brush-tooltip-event.txt` 中，QtTest 输入 timestamp 约2500，另有系统原生 timestamp 约73855000的移动/进入/离开事件；坐标实际移出了复选框。此前失败记录中，hover 在进入十几毫秒内取消，早于1000ms提示显示。向工具栏添加 HoverHandler 的对照也有失败，已撤去，未以偶然通过作为产品修复。
+
+最终只调整已有测试的计时输入：局部 RAII 过滤器在提示框断言段拦截该窗口的外部 spontaneous MouseMove/Enter/Leave，用非spontaneous QMouseEvent 显式进入/移出控件；仍通过正常 QQuickWindow 事件分发，不直接修改 hovered/visible，不过滤点击、数位笔、绘画或其余测试。退出断言段（包括失败返回）自动移除过滤器，不移动真实桌面指针。严格保留400ms未显示、随后1000ms延迟触发及移出隐藏断言，未降低等待条件。所有产品文件与该阶段提交前一致，无ABI/格式/运行逻辑变化。
+
+构建命令沿用 `.tools/run_pass_checks.py <cmake> --build build/verify-ui --config Release`，日志 `brush-tooltip-isolated-build.log`；生成头检查通过。以 `QT_QPA_PLATFORM=windows;QT_QUICK_BACKEND=software;QT_SCALE_FACTOR=2` 运行 `qt_ui_tests.exe wetSmudgeUsesOwnToolStrengthAndFingerPolicyWithUndo smudgeSharedBrushParametersInputAndDelayedHelp` 连续3次全部通过，日志 `brush-tooltip-isolated-1.txt` 至 `-3.txt`（每次2项功能用例，加初始化/清理共4 PASS）。此机系统缩放还参与最终DPR计算，临时窗口记录为3.3；这里的“2”指环境缩放倍率，不能声称是独立硬件DPR恰好2的验收。
+
+`QT_SCALE_FACTOR=1` 下再运行上述2项及 `wetSettingsPageManualInkAndPreviewStaySeparateFromCanvas`，日志 `brush-tooltip-isolated-dpr1.txt`，3项功能用例全部通过（含初始化/清理5 PASS）。没有保留QML/原生临时日志或无效绕过。该结果消除了上文未隔离测试的失败作为湿混功能阻断，但不宣称已经排除所有真实桌面/实体设备问题。本次没有修改Rust或重新运行全量检查/ABI，使用上阶段相关证据；未将临时调试版的offscreen试验作为通过证据。
