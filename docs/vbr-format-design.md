@@ -130,3 +130,5 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 2026-10-15：预设顶层wetMix使用linear-premul-grid-v1。严格完整字段model、enabled、allLayers、autoClean、autoLoad及wetness/pickup/mix/load/deposit/consumption（0..1，舍入前验证）。默认省略，关闭非默认保留；对象存在要求drawverse.brush/behavior14、wet-mix能力和manifest minor15，状态state17。实际工具两色/二维载体不入预设；有效湿混+有效双色拒绝，关闭配置可交换。Schema与合法/非法样例见contracts/vbr-wet-v1.15.schema.json及contracts/fixtures。实际两笔载色/像素、图片/纹理/灰度双路径/PCHIP/平滑/散布与原ABR来源已往返，见brush-wet-io-validation.md。ABI1.49/旧Qt准备和库包入口暂拒湿混，完整用户入口、基准及工具寿命待后续接入。
 
 湿混原生后续：ABI1.50新增显式prepare_state_wet、library_package_read_wet/write_wet及共享工具接口，完整保留state17/VBR1.15，旧入口继续拒绝以保护旧Qt。Qt镜像/基准/界面及真实有色预览仍待接入，见brush-wet-abi-validation.md。
+
+湿混Qt后续：state17镜像、完整关闭值和resetState基准已进入Qt，文件读写使用ABI1.50显式wet库包入口，保存重开及新目录VBR恢复通过，见brush-wet-qt-validation.md。载体仍仅运行时持有，不进入VBR；旧原生接口的保护性拒绝继续保留。

@@ -39,6 +39,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool storageBusy READ storageBusy NOTIFY storageChanged)
     Q_PROPERTY(QString storageMessage READ storageMessage NOTIFY storageChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
+    Q_PROPERTY(bool wetActionBusy READ wetActionBusy NOTIFY wetActionChanged)
     Q_PROPERTY(bool brushFileBusy READ brushFileBusy NOTIFY brushFileChanged)
     Q_PROPERTY(QVariantMap brushSourceInfo READ brushSourceInfo NOTIFY brushSourceChanged)
     Q_PROPERTY(QString brushSourceMessage READ brushSourceMessage NOTIFY brushSourceChanged)
@@ -154,6 +155,10 @@ public:
     QVariantMap brushSourceInfo() const {return m_brushSourceInfo;}
     QString brushSourceMessage() const {return m_brushSourceMessage;}
     bool brushSourceBusy() const {return m_brushSourceBusy;}
+    bool wetActionBusy() const {return m_wetActionBusy;}
+    Q_INVOKABLE bool cleanWetBrush();
+    Q_INVOKABLE bool loadWetBrush();
+    bool wetBrushAction(bool reload);
     Q_INVOKABLE bool inspectBrushSource();
     Q_INVOKABLE bool importBrushes(const QUrl &path);
     Q_INVOKABLE bool importBrushTip(const QUrl &path,int interpretation);
@@ -388,6 +393,8 @@ public:
 signals:
     void brushCursorPreferencesChanged();
     void brushOutlineChanged();
+    void wetActionChanged();
+    void wetBrushFinished(bool success);
     void brushFileChanged();
     void brushSourceChanged();
     void brushFileFinished(bool success);
@@ -420,6 +427,7 @@ signals:
     void fileFinished(bool success);
 private:
     bool m_brushPreferencePersistenceEnabled=true;
+    bool m_wetActionBusy=false;
     bool m_brushFileBusy=false;
     QString m_brushImportMessage;
     QString m_brushSourceIdentity,m_brushSourceMessage;

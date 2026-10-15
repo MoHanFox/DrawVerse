@@ -136,3 +136,5 @@
 湿混共享工具与原生会话阶段：WetTool/WetLease隔离预设、文档历史和工具载色，原生Engine配置起笔并仅成功结束后采用；23项相关Rust、Release/ABI/Qt普通绘画回归通过，见[验收](brush-wet-owner-validation.md)。当前无新C ABI，准备/包临时拒绝仍有效，外部共享工具句柄、资源桥与完整Qt湿混入口继续后续。
 
 湿混原生ABI阶段：ABI1.50/WET_BRUSH共享工具create/destroy/状态/清洗/准备装载与会话绑定、新湿混state/库包入口，10项相关Rust、生成头/Release/C/C++及Qt普通笔刷回归通过，见[验收](brush-wet-abi-validation.md)。旧入口保留Unsupported保护；下一阶段完整Qt参数、基准/关闭值保存、跨文档工具寿命及实际有色预览，用户湿混界面尚未完成。
+
+湿混Qt阶段：ABI1.50完整state17镜像/关闭值/基准/VBR，湿混分类/六比例/策略与手动动作、跨文档共享和独立真实有色预览已接；6项相关Qt功能回归、DPI2重复交互及Release/ABI通过，见[验收](brush-wet-qt-validation.md)。新版准备/包入口已使用，旧接口保护保留；湿混双色/Erase/Smudge、收尖、非分隔及高级ABR与整体验收继续后续，完整目标未完成。

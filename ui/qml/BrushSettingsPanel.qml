@@ -7,6 +7,8 @@ import "."
 ColumnLayout {
     id:root
     property string outlineError:""
+    property string wetError:""
+    function setWetField(key,value){let data=Object.assign({},root.library.wetMix);data[key]=value;const ok=root.library.setWetMix(data);root.wetError=ok?"":"湿混暂不支持双色双笔刷，请先关闭双色绘制。";return ok}
     readonly property var library:PaintClient.brushLibrary
     property int category:0
     property int shapePage:0
@@ -24,7 +26,7 @@ ColumnLayout {
         let data=Object.assign({},dual)
         if(module){let nested=Object.assign({},dualModule(module));nested[key]=value;data[module]=nested}
         else data[key]=value
-        return library.setDualBrush(data)
+        const ok=library.setDualBrush(data);root.wetError=ok?"":"湿混暂不支持双色双笔刷，请先关闭湿混或双色绘制。";return ok
     }
     QtObject {
         id:dualPressure
@@ -46,12 +48,13 @@ ColumnLayout {
     implicitHeight:contentHeight
     spacing:6
     Label {objectName:"selectedBrushName";textFormat:Text.PlainText;text:root.library.selectedName;color:Theme.text;font.pixelSize:10;elide:Text.ElideRight;Layout.fillWidth:true}
+    Label {visible:root.wetError.length>0;text:root.wetError;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
     RowLayout {
         Layout.fillWidth:true;Layout.fillHeight:true;spacing:6
         ColumnLayout {
             Layout.preferredWidth:76;Layout.minimumWidth:76;Layout.maximumWidth:76;Layout.alignment:Qt.AlignTop;spacing:2
             Repeater {
-                model:["笔尖形状","形状动态","散布","纹理","双重笔刷","颜色动态","传递","光标与预览","来源与兼容","平滑"]
+                model:["笔尖形状","形状动态","散布","纹理","双重笔刷","颜色动态","传递","光标与预览","来源与兼容","平滑","湿混与载色"]
                 Rectangle {
                     required property string modelData
                     required property int index
@@ -158,7 +161,7 @@ ColumnLayout {
                     TextureField {title:"垂直偏移";field:"offsetY";from:-1000000;to:1000000;factor:1;unit:"px";help:"纹理相位在文档垂直方向的偏移。"}
                 }
                 ColumnLayout {Layout.minimumWidth:0;visible:root.category===4;Layout.fillWidth:true;spacing:5
-                    CompactCheckBox {objectName:"settingsDualEnabled";text:"启用双重笔刷";checked:root.dual.enabled;font.pixelSize:10;onToggled:root.setDualField("enabled",checked);tooltip:"第二笔尖调制主笔尖覆盖；关闭时保留全部设置。"}
+                    CompactCheckBox {objectName:"settingsDualEnabled";text:"启用双重笔刷";checked:root.dual.enabled;font.pixelSize:10;onToggled:if(!root.setDualField("enabled",checked))checked=Qt.binding(function(){return root.dual.enabled});tooltip:"第二笔尖调制主笔尖覆盖；关闭时保留全部设置。"}
                     CompactComboBox {objectName:"settingsDualPage";Layout.fillWidth:true;model:["笔尖与组合","设备与压力","散布","形状抖动","双色绘制"];currentIndex:root.dualPage;onActivated:root.dualPage=currentIndex;tooltip:"编辑第二笔尖的形状、压力与随机动态。"}
                     ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===0;Layout.fillWidth:true;spacing:5
                         CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;enabled:!root.dualModule("color").enabled;readonly property var modes:["multiply","darken","lighten","subtract","difference","screen"];model:["正片叠底","变暗","变亮","减去","差值","滤色"];currentIndex:modes.indexOf(root.dual.mode);onActivated:root.setDualField("mode",modes[currentIndex]);tooltip:"组合两个笔尖的灰度覆盖。"}
@@ -210,7 +213,7 @@ ColumnLayout {
                         Button {objectName:"createOutlineFollow";text:"创建描边：跟随压感";implicitHeight:24;Layout.fillWidth:true;Layout.minimumWidth:0;onClicked:root.outlineError=root.library.createOutlinePreset(false).length?"":"笔刷库已满，无法创建预设。";ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"创建新圆笔预设：第二颜色在后方，直径多8像素；外边随大小压感缩小。"}
                         Button {objectName:"createOutlineFixed";text:"创建描边：固定边宽";implicitHeight:24;Layout.fillWidth:true;Layout.minimumWidth:0;onClicked:root.outlineError=root.library.createOutlinePreset(true).length?"":"笔刷库已满，无法创建预设。";ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"创建新圆笔预设：第二颜色在后方，固定约4像素外边；尺寸夹限时受合法范围限制。"}
                         Label {visible:root.outlineError.length>0;text:root.outlineError;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
-                        CompactCheckBox {objectName:"settingsDualColorEnabled";text:"启用双色绘制";checked:root.dualModule("color").enabled;onToggled:root.setDualField("enabled",checked,"color");tooltip:"分别累积主和第二贡献，再按整笔合成；关闭后保留设置和旧灰度模式。"}
+                        CompactCheckBox {objectName:"settingsDualColorEnabled";text:"启用双色绘制";checked:root.dualModule("color").enabled;onToggled:if(!root.setDualField("enabled",checked,"color"))checked=Qt.binding(function(){return root.dualModule("color").enabled});tooltip:"分别累积主和第二贡献，再按整笔合成；关闭后保留设置和旧灰度模式。"}
                         CompactCheckBox {objectName:"settingsDualUseBackground";text:"使用第二颜色";checked:root.dualModule("color").useBackground;onToggled:root.setDualField("useBackground",checked,"color");tooltip:"第二贡献使用颜色面板的背景色；关闭时使用前景色，两色均在起笔捕获。"}
                         CompactCheckBox {objectName:"settingsDualOverflow";text:"允许溢出";checked:root.dualModule("color").overflow;onToggled:root.setDualField("overflow",checked,"color");tooltip:"允许第二贡献绘到主覆盖外；关闭时按主覆盖裁切，仍受选区和锁限制。"}
                         CompactComboBox {objectName:"settingsDualColorOrder";Layout.fillWidth:true;model:["第二在主笔后方","第二在主笔前方"];currentIndex:root.dualModule("color").order==="second-in-front"?1:0;onActivated:root.setDualField("order",currentIndex===1?"second-in-front":"second-behind","color");tooltip:"选择整笔两份贡献的上下叠放顺序；不表示路径位置偏移。"}
@@ -281,6 +284,22 @@ ColumnLayout {
                         }
                     }
                 }
+                ColumnLayout {visible:root.category===10;Layout.fillWidth:true;Layout.minimumWidth:0;spacing:5
+                    WetCheck {objectName:"settingsWetEnabled";text:"启用湿混";checked:root.library.wetMix.enabled;onToggled:if(!root.setWetField("enabled",checked))checked=Qt.binding(function(){return root.library.wetMix.enabled});tooltip:"拾取画布上的颜色，与笔尖载色混合后绘画。仅用于画笔；橡皮和涂抹请先关闭湿混。关闭时保留参数。"}
+                    WetField {title:"湿度";field:"wetness";help:"控制画布颜色参与拾色和混合的程度。"}
+                    WetField {title:"拾色";field:"pickup";help:"每次印章将画布颜色带入载体的比例。"}
+                    WetField {title:"混合";field:"mix";help:"沉积时将载色与当前位置的画布颜色混合。"}
+                    WetField {title:"载色量";field:"load";help:"重新载色时装入前景色的量；不会缩放已经保留的颜色。"}
+                    WetField {title:"沉积";field:"deposit";help:"将笔尖持有的颜色沉积到画布上的比例。"}
+                    WetField {title:"消耗";field:"consumption";help:"沿绘画距离消耗载色；抬笔移动不消耗。"}
+                    WetCheck {objectName:"settingsWetAllLayers";text:"对所有图层取样";checked:root.library.wetMix.allLayers;onToggled:root.setWetField("allLayers",checked);tooltip:"从可见合成结果拾色，只修改当前图层。编辑蒙版时不能开启。"}
+                    WetCheck {objectName:"settingsWetAutoClean";text:"每笔自动清洗";checked:root.library.wetMix.autoClean;onToggled:root.setWetField("autoClean",checked);tooltip:"每条笔触开始时先清除保留的颜色，再执行自动装载。"}
+                    WetCheck {objectName:"settingsWetAutoLoad";text:"每笔自动载色";checked:root.library.wetMix.autoLoad;onToggled:root.setWetField("autoLoad",checked);tooltip:"每条笔触开始时装入前景色。同时关闭自动清洗后，可以保留上一笔颜色或手动载色。"}
+                    ColumnLayout {Layout.fillWidth:true;Layout.minimumWidth:0
+                        Button {Layout.fillWidth:true;Layout.minimumWidth:0;objectName:"wetCleanBrush";text:"清洗";implicitHeight:24;enabled:root.library.wetMix.enabled && PaintClient.ready && !PaintClient.drawing && !PaintClient.wetActionBusy;onClicked:PaintClient.cleanWetBrush();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"清除当前笔尖载色，不修改画布。"}
+                        Button {Layout.fillWidth:true;Layout.minimumWidth:0;objectName:"wetLoadBrush";text:"载入前景色";implicitHeight:24;enabled:root.library.wetMix.enabled && PaintClient.ready && !PaintClient.drawing && !PaintClient.wetActionBusy;onClicked:PaintClient.loadWetBrush();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"按当前载色量装入前景色；同时关闭每笔自动清洗和自动载色，可保留这次手动装载。"}
+                    }
+                }
                 ColumnLayout {visible:root.category===9;Layout.fillWidth:true;Layout.minimumWidth:0;spacing:5
                     CompactCheckBox {objectName:"settingsSmoothingEnabled";text:"启用平滑";checked:root.library.smoothing.enabled;onToggled:{let data=Object.assign({},root.library.smoothing);data.enabled=checked;root.library.setSmoothing(data)} tooltip:"平滑位置和压力输入；主笔刷与第二笔刷共用同一路径。关闭时仍保留参数。"}
                     SmoothingField {title:"位置平滑";field:"positionMs";to:250;unit:"ms";help:"减轻指针抖动；数值越大，跟随延迟越明显。"}
@@ -296,8 +315,27 @@ ColumnLayout {
         objectName:"brushStrokePreview";Layout.fillWidth:true;Layout.preferredHeight:60;color:Theme.selected
         Image {objectName:"brushStrokePreviewImage";anchors.fill:parent;anchors.margins:4;source:root.library.selectedPreview;fillMode:Image.PreserveAspectFit;asynchronous:true}
         Text {anchors.centerIn:parent;text:root.library.previewMessage;font.pixelSize:9;color:Theme.muted;visible:!root.library.selectedPreview.length}
-        ToolTip.delay:1000;ToolTip.visible:hover.containsMouse;ToolTip.text:"实际引擎压感笔触 · 预览固定正常模式 · 双击重新生成"
+        ToolTip.delay:1000;ToolTip.visible:hover.containsMouse;ToolTip.text:root.library.wetMix.enabled?"独立红蓝底样；每次从空载开始，按自动载色规则试画，不读取当前画笔载色。双击重新生成。":"实际引擎压感笔触 · 预览固定正常模式 · 双击重新生成"
         MouseArea {id:hover;anchors.fill:parent;hoverEnabled:true;onDoubleClicked:root.library.retryPreview()}
+    }
+    component WetCheck: CompactCheckBox {
+        id:wetCheck
+        Layout.fillWidth:true;Layout.minimumWidth:0;font.pixelSize:10
+        contentItem:Text {text:wetCheck.text;font:wetCheck.font;color:wetCheck.enabled?Theme.text:Theme.disabled;leftPadding:19;verticalAlignment:Text.AlignVCenter;wrapMode:Text.WordWrap}
+    }
+    component WetField: ColumnLayout {
+        id:wetControl
+        property string title
+        property string field
+        property string help
+        Layout.fillWidth:true;Layout.minimumWidth:0;spacing:2
+        Label {text:wetControl.title;color:Theme.text;font.pixelSize:10;Layout.fillWidth:true;Layout.minimumWidth:0}
+        RowLayout {Layout.fillWidth:true;Layout.minimumWidth:0;spacing:2
+            Item {Layout.fillWidth:true;Layout.minimumWidth:0;implicitWidth:0}
+            CompactSpinBox {objectName:"settingsWet"+wetControl.field+"Input";implicitWidth:66;Layout.minimumWidth:66;Layout.preferredWidth:66;implicitHeight:20;editable:true;from:0;to:100;value:Math.round(root.library.wetMix[wetControl.field]*100);onValueModified:root.setWetField(wetControl.field,value/100);tooltip:wetControl.help}
+            Label {text:"%";color:Theme.muted;font.pixelSize:9}
+        }
+        CompactSlider {objectName:"settingsWet"+wetControl.field;Layout.fillWidth:true;from:0;to:100;value:root.library.wetMix[wetControl.field]*100;onMoved:root.setWetField(wetControl.field,value/100);tooltip:wetControl.help}
     }
     component SmoothingField: ColumnLayout {
         id:smoothingControl
@@ -376,5 +414,5 @@ ColumnLayout {
     ColorDialog {id:outerColor;title:"外侧轮廓颜色";selectedColor:root.library.cursorColor;onAccepted:root.library.cursorColor=selectedColor}
     ColorDialog {id:innerColor;title:"内侧轮廓颜色";selectedColor:root.library.cursorSecondaryColor;onAccepted:root.library.cursorSecondaryColor=selectedColor}
     Component.onCompleted:previewDelay.restart()
-    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart();if(root.category===8 && root.inspectedSource!==root.library.sourceResource)root.inspectSource()}}
+    Connections {target:root.library;function onSettingsChanged(){root.wetError="";previewDelay.restart();if(root.category===8 && root.inspectedSource!==root.library.sourceResource)root.inspectSource()}}
 }
