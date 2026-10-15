@@ -62,7 +62,13 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                 id: format!("12345678-1234-4234-8234-{i:012x}"),
                 name: p.name().into(),
                 engine_profile: "drawverse.brush".into(),
-                behavior_version: if s.dynamics.pressure_opacity { 3 } else { 1 },
+                behavior_version: if s.dynamics.scatter != Default::default() {
+                    5
+                } else if s.dynamics.pressure_opacity {
+                    3
+                } else {
+                    1
+                },
                 required_capabilities: {
                     let mut caps = vec![if s.mask.is_some() {
                         "image-tip".into()
@@ -76,6 +82,9 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                             "opacity-pressure".into(),
                         ]);
                     }
+                    if s.dynamics.scatter != Default::default() {
+                        caps.push("scatter-stamps".into());
+                    }
                     caps
                 },
                 tip_resource: s
@@ -85,12 +94,16 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                     .map(str::to_owned),
                 source_resource: Some(p.source_id().into()),
                 parameters: Parameters {
-                    scatter_dynamics: None,
+                    scatter_dynamics: (s.dynamics.scatter != Default::default()).then(|| {
+                        paint_io::brush_scatter::ScatterParameters::from_core(s.dynamics.scatter)
+                    }),
                     shape_jitter: None,
                     color_dynamics: None,
                     tip_dynamics: None,
                     pressure_dynamics: s.dynamics.pressure_opacity.then(|| {
-                        paint_io::brush_pressure::PressureParameters::from_core(&s.dynamics)
+                        let mut pressure = s.dynamics.clone();
+                        pressure.scatter = Default::default();
+                        paint_io::brush_pressure::PressureParameters::from_core(&pressure)
                     }),
                     diameter: s.diameter,
                     spacing: s.spacing,
@@ -873,6 +886,93 @@ fn pressure_source_v3_requires_minor_17_and_preserves_three_generations_and_pixe
             if name == "manifest.json" {
                 let mut v: serde_json::Value = serde_json::from_slice(data).unwrap();
                 assert_eq!(v["version"]["minor"], 17);
+                v["version"]["minor"] = minor.into();
+                *data = serde_json::to_vec(&v).unwrap();
+            }
+            true
+        });
+        assert!(vbr_image::decode(&downgraded, &token).is_err());
+    }
+    for i in 0..mixed.package.brushes.len() {
+        let mut a = Document::new(64, 32).unwrap();
+        let mut b = Document::new(64, 32).unwrap();
+        for pressure in [0.25, 0.75] {
+            for (d, definition) in [
+                (&mut a, mixed.definition(i).unwrap()),
+                (&mut b, restored.definition(i).unwrap()),
+            ] {
+                d.begin_brush_stroke(definition, InputPoint::new(8.5, 16.5, pressure))
+                    .unwrap();
+                d.stroke_to(InputPoint::new(54.5, 16.5, pressure)).unwrap();
+                d.end_stroke().unwrap();
+            }
+        }
+        for y in 0..32 {
+            for x in 0..64 {
+                assert_eq!(a.pixel(x, y), b.pixel(x, y));
+            }
+        }
+    }
+}
+
+#[test]
+fn scatter_source_v4_requires_minor_18_and_preserves_four_generations_and_pixels() {
+    use paint_io::{abr_association, abr_conversion, abr_sampled, brush_source::SourceBatch};
+    let token = CancellationToken::default();
+    let mut bundle = bundle_from_bytes(support::abr_fixture::fixture_with_scatter(
+        6, 2, false, true,
+    ));
+    let original = Arc::new(bundle.sources()[0].original_bytes().to_vec());
+    let parsed = abr_sampled::decode_sectioned(&original, &token).unwrap();
+    let desc = parsed.descriptors(&token).unwrap();
+    let linked = abr_association::associate(&parsed, &desc, &token).unwrap();
+    let mut records = bundle.sources()[0]
+        .records()
+        .map(|(id, b)| (id.to_owned(), b.to_vec()))
+        .collect::<BTreeMap<_, _>>();
+    for (i, old) in [
+        abr_conversion::convert_legacy(&linked, &token).unwrap(),
+        abr_conversion::convert_v2(&linked, &token).unwrap(),
+        abr_conversion::convert_v3(&linked, &token).unwrap(),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let batch = SourceBatch::capture(original.clone(), old, &token).unwrap();
+        let (id, bytes) = batch.records().next().unwrap();
+        records.insert(id.into(), bytes.to_vec());
+        let mut p = bundle.package.brushes[1].clone();
+        p.id = format!("12345678-1234-4234-8234-{:012x}", i + 10);
+        p.source_resource = Some(id.into());
+        bundle.package.brushes.push(p);
+    }
+    let assets = bundle
+        .assets()
+        .iter()
+        .map(|(id, a)| (id.clone(), a.bytes().to_vec()))
+        .collect();
+    let mixed = ImageBundle::with_sources(
+        bundle.package,
+        assets,
+        vec![SourceBatch::from_records(original.clone(), records.clone(), &token).unwrap()],
+        &token,
+    )
+    .unwrap();
+    let encoded = vbr_image::encode(&mixed, &token).unwrap();
+    let restored = vbr_image::decode(&encoded, &token).unwrap();
+    assert_eq!(restored.sources()[0].converter_version(), 4);
+    assert_eq!(
+        restored.sources()[0]
+            .records()
+            .map(|(id, b)| (id.to_owned(), b.to_vec()))
+            .collect::<BTreeMap<_, _>>(),
+        records
+    );
+    for minor in [17, 16, 15, 4] {
+        let downgraded = rewrite(&encoded, |name, data| {
+            if name == "manifest.json" {
+                let mut v: serde_json::Value = serde_json::from_slice(data).unwrap();
+                assert_eq!(v["version"]["minor"], 18);
                 v["version"]["minor"] = minor.into();
                 *data = serde_json::to_vec(&v).unwrap();
             }

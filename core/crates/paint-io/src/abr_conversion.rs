@@ -5,7 +5,9 @@ use crate::{
     ps_descriptor::{Descriptor, Value},
     Error, Result,
 };
-use paint_core::{BrushProgram, BrushSettings, BrushTip, PressureControl, PressureCurve};
+use paint_core::{
+    BrushProgram, BrushSettings, BrushTip, PressureControl, PressureCurve, ScatterDynamics,
+};
 use paint_task::CancellationToken;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
@@ -146,7 +148,7 @@ pub fn convert<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
-    convert_inner(linked, token, 3)
+    convert_inner(linked, token, 4)
 }
 /// Preserve the immutable baseline and report semantics of converter v1.
 pub fn convert_legacy<'a>(
@@ -162,12 +164,152 @@ pub fn convert_v2<'a>(
 ) -> Result<Vec<ConvertedPreset<'a>>> {
     convert_inner(linked, token, 2)
 }
-/// Only pressure fields are portable here; other dynamics stay in their own DTOs.
+/// Preserve converter v3 pressure behavior and reports without scatter conversion.
+pub fn convert_v3<'a>(
+    linked: &[LinkedPreset<'a>],
+    token: &CancellationToken,
+) -> Result<Vec<ConvertedPreset<'a>>> {
+    convert_inner(linked, token, 3)
+}
 pub(crate) fn pressure_parameters(
     settings: &BrushSettings,
     version: u32,
 ) -> Option<crate::brush_pressure::PressureParameters> {
-    (version >= 3).then(|| crate::brush_pressure::PressureParameters::from_core(&settings.dynamics))
+    let mut pressure = settings.dynamics.clone();
+    pressure.scatter = Default::default();
+    (version >= 3
+        && (version == 3
+            || pressure != Default::default()
+            || settings.tip.pressure_size
+            || settings.tip.pressure_flow))
+        .then(|| crate::brush_pressure::PressureParameters::from_core(&pressure))
+}
+pub(crate) fn scatter_parameters(
+    settings: &BrushSettings,
+    version: u32,
+) -> Option<crate::brush_scatter::ScatterParameters> {
+    (version >= 4)
+        .then(|| crate::brush_scatter::ScatterParameters::from_core(settings.dynamics.scatter))
+}
+fn scatter_controls(
+    preset: &Descriptor,
+    settings: &mut BrushSettings,
+    issues: &mut Vec<Issue>,
+) -> Result<Vec<String>> {
+    let enabled = match flag(preset, b"useScatter")? {
+        None => return Ok(Vec::new()),
+        Some(value) => value,
+    };
+    let keys = [
+        b"bothAxes".as_slice(),
+        b"Cnt ",
+        b"scatterDynamics",
+        b"countDynamics",
+    ];
+    if !enabled && keys.iter().any(|key| preset.get(key).is_none()) {
+        return Ok(Vec::new());
+    }
+    let both_axes = flag(preset, b"bothAxes")?.ok_or(Error::Invalid("ABR scatter axes missing"))?;
+    let count = match preset.get(b"Cnt ") {
+        Some(Value::Integer(n)) if (1..=16).contains(n) => *n as u32,
+        Some(Value::Double(n)) if n.is_finite() && (1. ..=16.).contains(n) && n.fract() == 0. => {
+            *n as u32
+        }
+        _ => return Err(Error::Invalid("ABR scatter count outside executable range")),
+    };
+    let dynamic = |key: &[u8]| -> Result<&Descriptor> {
+        match preset.get(key) {
+            Some(Value::Object { descriptor, .. }) => Ok(descriptor),
+            _ => Err(Error::Invalid("ABR scatter dynamics object")),
+        }
+    };
+    let amount = dynamic(b"scatterDynamics")?;
+    let count_dynamic = dynamic(b"countDynamics")?;
+    let scatter = ScatterDynamics::new(
+        enabled,
+        unit(amount, b"jitter", *b"#Prc", 0., 1000.)? / 100.,
+        both_axes,
+        count,
+        unit(count_dynamic, b"jitter", *b"#Prc", 0., 100.)? / 100.,
+        0,
+    )?;
+    // A complete disabled default contributes no new configuration or provenance.
+    if scatter == ScatterDynamics::default() {
+        return Ok(Vec::new());
+    }
+    let mut handled = Vec::new();
+    for (path, reason) in [
+        ("useScatter", "保存散布启用状态；关闭配置不参与绘画"),
+        ("bothAxes", "原生单轴法线或文档双轴散布"),
+        ("Cnt ", "每逻辑印章的子印章数量"),
+    ] {
+        issue(issues, path, Status::Mapped, reason);
+        handled.push(path.into());
+    }
+    for (name, data, max) in [
+        ("scatterDynamics", amount, 1000.),
+        ("countDynamics", count_dynamic, 100.),
+    ] {
+        let control = match data.get(b"bVTy") {
+            Some(Value::Integer(n)) => *n,
+            _ => return Err(Error::Invalid("ABR scatter control type")),
+        };
+        unit(data, b"Mnm ", *b"#Prc", 0., 100.)?;
+        if !matches!(data.get(b"fStp"), None | Some(Value::Integer(0..=i32::MAX))) {
+            return Err(Error::Invalid("ABR scatter fade steps"));
+        }
+        let jitter = unit(data, b"jitter", *b"#Prc", 0., max)?;
+        let path = format!("{name}.jitter");
+        issue(
+            issues,
+            &path,
+            if jitter == 0. || !enabled {
+                Status::Mapped
+            } else {
+                Status::Approximate
+            },
+            if !enabled {
+                "完整关闭配置保存，不执行随机分布"
+            } else if jitter == 0. {
+                "随机幅度为零"
+            } else {
+                "使用原生确定性随机分布；PS位移/数量随机序列尚未逐像素核对"
+            },
+        );
+        handled.push(path);
+        let path = format!("{name}.bVTy");
+        issue(
+            issues,
+            &path,
+            if control == 0 {
+                Status::Mapped
+            } else {
+                Status::NotExecuted
+            },
+            if control == 0 {
+                "无设备调制，随机量仍由jitter控制"
+            } else {
+                "设备/渐隐幅度或数量调制尚未执行；源控制保留"
+            },
+        );
+        handled.push(path);
+        if control == 0 {
+            for field in ["Mnm ", "fStp"] {
+                if data.get(field.as_bytes()).is_some() {
+                    let path = format!("{name}.{field}");
+                    issue(
+                        issues,
+                        &path,
+                        Status::Mapped,
+                        "无设备控制时不参与执行，原值保留在来源",
+                    );
+                    handled.push(path);
+                }
+            }
+        }
+    }
+    settings.dynamics.scatter = scatter;
+    Ok(handled)
 }
 fn pressure_controls(
     preset: &Descriptor,
@@ -497,10 +639,18 @@ fn convert_inner<'a>(
             Some(Value::Object { descriptor, .. }) => Some(descriptor.as_ref()),
             _ => return Err(Error::Invalid("ABR toolOptions object")),
         };
-        let handled = if generation >= 3 {
+        let mut handled = if generation >= 3 {
             pressure_controls(item.preset, tool, &mut settings, &mut issues)?
         } else {
             Vec::new()
+        };
+        let scatter_changed = if generation >= 4 {
+            let extra = scatter_controls(item.preset, &mut settings, &mut issues)?;
+            let changed = !extra.is_empty();
+            handled.extend(extra);
+            changed
+        } else {
+            false
         };
         for (key, value) in &item.preset.entries {
             if key != b"Nm  " && key != b"Brsh" && key != b"toolOptions" {
@@ -511,6 +661,11 @@ fn convert_inner<'a>(
                     b"szVr",
                     b"prVr",
                     b"opVr",
+                    b"useScatter",
+                    b"bothAxes",
+                    b"Cnt ",
+                    b"scatterDynamics",
+                    b"countDynamics",
                 ]
                 .contains(&key.as_slice())
                 {
@@ -577,7 +732,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if !handled.is_empty() {
+        if scatter_changed {
+            converter_version = 4;
+        } else if !handled.is_empty() {
             converter_version = 3;
         }
         if let Some(tool) = tool {

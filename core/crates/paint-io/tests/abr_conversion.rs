@@ -681,3 +681,271 @@ fn pressure_channels_are_independent_and_literal_dotted_keys_stay_reported() {
             .any(|i| i.path == "szVr.bVTy" && i.status == Status::NotExecuted));
     }
 }
+
+fn scatter_preset(enabled: bool, both: bool) -> Descriptor {
+    let mut source = pressure_preset();
+    source
+        .entries
+        .push((b"useScatter".to_vec(), Value::Boolean(enabled)));
+    source
+        .entries
+        .push((b"bothAxes".to_vec(), Value::Boolean(both)));
+    source.entries.push((b"Cnt ".to_vec(), Value::Double(3.)));
+    for (key, jitter) in [("scatterDynamics", 75.), ("countDynamics", 50.)] {
+        source.entries.push((
+            key.as_bytes().to_vec(),
+            Value::Object {
+                global: false,
+                descriptor: Box::new(object(
+                    "brushDynamics",
+                    vec![
+                        ("bVTy", Value::Integer(0)),
+                        ("fStp", Value::Integer(25)),
+                        ("Mnm ", unit(*b"#Prc", 0.)),
+                        ("jitter", unit(*b"#Prc", jitter)),
+                    ],
+                )),
+            },
+        ));
+    }
+    source
+}
+#[test]
+fn scatter_conversion_uses_real_program_image_pressure_and_two_stroke_history() {
+    use paint_core::{BrushMask, Document, InputPoint, ScatterDynamics};
+    let token = CancellationToken::default();
+    let mask = SectionedTip {
+        id: "scatter".into(),
+        prefix: Box::new([]),
+        bounds: [0, 0, 4, 4],
+        mask: Arc::new(
+            BrushMask::new(
+                4,
+                4,
+                vec![
+                    255, 255, 255, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255,
+                ],
+            )
+            .unwrap(),
+        ),
+        trailing_metadata: Box::new([]),
+    };
+    for enabled in [false, true] {
+        for both in [false, true] {
+            for sampled in [false, true] {
+                let source = scatter_preset(enabled, both);
+                let shape = shape(sampled);
+                let linked = [LinkedPreset {
+                    name: "scatter",
+                    preset: &source,
+                    shape: &shape,
+                    sampled_tip: sampled.then_some(&mask),
+                }];
+                let converted = convert(&linked, &token).unwrap();
+                let preset = &converted[0];
+                assert_eq!(preset.converter_version, 4);
+                assert_eq!(
+                    preset.settings.dynamics.scatter,
+                    ScatterDynamics::new(enabled, 0.75, both, 3, 0.5, 0).unwrap()
+                );
+                if enabled {
+                    assert!(preset.is_partial());
+                }
+                for old in [
+                    paint_io::abr_conversion::convert_legacy(&linked, &token).unwrap(),
+                    paint_io::abr_conversion::convert_v2(&linked, &token).unwrap(),
+                    paint_io::abr_conversion::convert_v3(&linked, &token).unwrap(),
+                ] {
+                    assert_eq!(old[0].settings.dynamics.scatter, Default::default());
+                    assert!(old[0]
+                        .issues
+                        .iter()
+                        .any(|i| i.path == "scatterDynamics.jitter"
+                            && i.status == Status::NotExecuted));
+                }
+                let mut reference = preset.settings.clone();
+                reference.dynamics.scatter =
+                    ScatterDynamics::new(enabled, 0.75, both, 3, 0.5, 0).unwrap();
+                let mut a = Document::new(64, 64).unwrap();
+                let mut b = Document::new(64, 64).unwrap();
+                for pressure in [0.25, 0.75] {
+                    for (doc, s) in [(&mut a, &preset.settings), (&mut b, &reference)] {
+                        doc.begin_brush_stroke(
+                            s.definition(),
+                            InputPoint::new(20.5, 32.5, pressure),
+                        )
+                        .unwrap();
+                        doc.stroke_to(InputPoint::new(44.5, 32.5, pressure))
+                            .unwrap();
+                        doc.end_stroke().unwrap();
+                    }
+                }
+                let after = (0..4096)
+                    .map(|i| a.pixel(i % 64, i / 64))
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    after,
+                    (0..4096)
+                        .map(|i| b.pixel(i % 64, i / 64))
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(a.history_depth(), (2, 0));
+                if enabled {
+                    assert!((0..4096)
+                        .any(|i| !(24..=40).contains(&(i / 64)) && after[i as usize].alpha() > 0.));
+                }
+                a.undo().unwrap();
+                assert_eq!(a.history_depth(), (1, 1));
+                a.redo().unwrap();
+                assert_eq!(
+                    after,
+                    (0..4096)
+                        .map(|i| a.pixel(i % 64, i / 64))
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+}
+#[test]
+fn scatter_preserves_unknown_controls_and_rejects_fractional_counts_and_bad_ranges() {
+    let shape = shape(false);
+    let token = CancellationToken::default();
+    for bad in [
+        Value::Double(3.000001),
+        Value::Double(f64::NAN),
+        Value::Integer(0),
+        Value::Integer(17),
+        unit(*b"#Prc", 3.),
+    ] {
+        let mut source = scatter_preset(true, true);
+        source
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"Cnt ")
+            .unwrap()
+            .1 = bad;
+        assert!(convert(
+            &[LinkedPreset {
+                name: "bad",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: None
+            }],
+            &token
+        )
+        .is_err());
+    }
+    for value in [-1e-10, 1000. + 1e-9, f64::NAN] {
+        let mut source = scatter_preset(true, true);
+        if let Value::Object { descriptor, .. } = &mut source
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"scatterDynamics")
+            .unwrap()
+            .1
+        {
+            descriptor.entries[3].1 = unit(*b"#Prc", value);
+        }
+        assert!(convert(
+            &[LinkedPreset {
+                name: "bad",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: None
+            }],
+            &token
+        )
+        .is_err());
+    }
+    let mut source = scatter_preset(true, true);
+    if let Value::Object { descriptor, .. } = &mut source
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"countDynamics")
+        .unwrap()
+        .1
+    {
+        descriptor.entries[0].1 = Value::Integer(2);
+    }
+    let converted = convert(
+        &[LinkedPreset {
+            name: "partial",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+        }],
+        &token,
+    )
+    .unwrap();
+    assert!(converted[0]
+        .issues
+        .iter()
+        .any(|i| i.path == "countDynamics.bVTy" && i.status == Status::NotExecuted));
+    assert!(converted[0].settings.dynamics.scatter.enabled());
+}
+
+#[test]
+fn published_scatter_source_contract_guards_old_versions_and_future_versions() {
+    let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(include_bytes!(
+        "../../../../contracts/fixtures/abr-scatter-source-v4-valid.json"
+    ))
+    .unwrap();
+    info.validate().unwrap();
+    for bytes in [
+        include_bytes!("../../../../contracts/fixtures/abr-scatter-source-invalid-version.json")
+            .as_slice(),
+        include_bytes!("../../../../contracts/fixtures/abr-scatter-source-invalid-downgrade.json")
+            .as_slice(),
+    ] {
+        let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
+        assert!(info.validate().is_err());
+    }
+}
+
+#[test]
+fn default_closed_scatter_keeps_v3_reports_and_does_not_upgrade() {
+    let mut source = scatter_preset(false, false);
+    source
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"Cnt ")
+        .unwrap()
+        .1 = Value::Double(1.);
+    for (key, value) in &mut source.entries {
+        if key == b"scatterDynamics" || key == b"countDynamics" {
+            if let Value::Object { descriptor, .. } = value {
+                descriptor
+                    .entries
+                    .iter_mut()
+                    .find(|(k, _)| k == b"jitter")
+                    .unwrap()
+                    .1 = unit(*b"#Prc", 0.);
+            }
+        }
+    }
+    let shape = shape(false);
+    let linked = [LinkedPreset {
+        name: "unchanged",
+        preset: &source,
+        shape: &shape,
+        sampled_tip: None,
+    }];
+    let token = CancellationToken::default();
+    let current = convert(&linked, &token).unwrap();
+    let old = paint_io::abr_conversion::convert_v3(&linked, &token).unwrap();
+    assert_eq!(current[0].converter_version, 3);
+    assert_eq!(current[0].settings.dynamics, old[0].settings.dynamics);
+    assert_eq!(
+        current[0]
+            .issues
+            .iter()
+            .map(|i| (&i.path, i.status, i.reason))
+            .collect::<Vec<_>>(),
+        old[0]
+            .issues
+            .iter()
+            .map(|i| (&i.path, i.status, i.reason))
+            .collect::<Vec<_>>()
+    );
+}

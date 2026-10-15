@@ -62,7 +62,10 @@ impl ImportBatch {
                 Row {
                     name: &p.name,
                     parameters: crate::vbr::Parameters {
-                        scatter_dynamics: None,
+                        scatter_dynamics: abr_conversion::scatter_parameters(
+                            s,
+                            p.converter_version,
+                        ),
                         shape_jitter: None,
                         color_dynamics: None,
                         tip_dynamics: None,
@@ -87,7 +90,9 @@ impl ImportBatch {
             })
             .collect();
         let bytes = serde_json::to_vec(&Handoff {
-            version: if self.presets.iter().any(|p| p.converter_version >= 3) {
+            version: if self.presets.iter().any(|p| p.converter_version >= 4) {
+                3
+            } else if self.presets.iter().any(|p| p.converter_version >= 3) {
                 2
             } else {
                 1

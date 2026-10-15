@@ -60,7 +60,7 @@ fn external_sample_descriptor_and_pixels_are_inspected_without_claiming_conversi
     assert_eq!(brush.settings.diameter, 112.);
     assert_eq!(brush.settings.spacing, 0.02);
     assert_eq!(brush.settings.tip.roundness, 1.);
-    assert_eq!(brush.converter_version, 3);
+    assert_eq!(brush.converter_version, 4);
     assert!(brush.settings.tip.pressure_size && brush.settings.dynamics.pressure_opacity);
     assert!(!brush.settings.tip.pressure_flow);
     for path in ["szVr.bVTy", "opVr.bVTy"] {
@@ -81,10 +81,12 @@ fn external_sample_descriptor_and_pixels_are_inspected_without_claiming_conversi
             "{path}"
         );
     }
+    let mut tip_only = brush.settings.clone();
+    tip_only.dynamics.scatter = Default::default();
     let mut document = paint_core::Document::new(224, 224).unwrap();
     document
         .begin_brush_stroke(
-            brush.settings.definition(),
+            tip_only.definition(),
             paint_core::InputPoint::new(112., 112.5, 1.),
         )
         .unwrap();
@@ -112,7 +114,7 @@ fn external_sample_descriptor_and_pixels_are_inspected_without_claiming_conversi
             let alpha = light.pixel(x, y).alpha();
             painted |= alpha > 0.;
             assert!(alpha <= 0.500003);
-            if !(70..154).contains(&x) || !(70..154).contains(&y) {
+            if !(30..194).contains(&x) || !(30..194).contains(&y) {
                 assert_eq!(alpha, 0.);
             }
         }

@@ -53,7 +53,7 @@ impl SourceInfo {
         if self.version != 1
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1..=3)
+            || !matches!(self.converter_version, 1..=4)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -87,7 +87,8 @@ impl SourceInfo {
         if (self.converter_version == 3 && self.baseline.pressure_dynamics.is_none())
             || (self.converter_version < 3 && self.baseline.pressure_dynamics.is_some())
             || self.baseline.tip_dynamics.is_some()
-            || self.baseline.scatter_dynamics.is_some()
+            || (self.converter_version == 4 && self.baseline.scatter_dynamics.is_none())
+            || (self.converter_version < 4 && self.baseline.scatter_dynamics.is_some())
             || self.baseline.shape_jitter.is_some()
             || self.baseline.color_dynamics.is_some()
         {
@@ -151,6 +152,9 @@ impl SourceArchive {
         non_pressure.flow = Default::default();
         non_pressure.opacity = Default::default();
         non_pressure.pressure_opacity = false;
+        if preset.converter_version >= 4 {
+            non_pressure.scatter = Default::default();
+        }
         if non_pressure != paint_core::BrushDynamics::default()
             || (preset.converter_version < 3
                 && settings.dynamics != paint_core::BrushDynamics::default())
@@ -170,7 +174,10 @@ impl SourceArchive {
             converter: "drawverse.abr.basic".into(),
             converter_version: preset.converter_version,
             baseline: Parameters {
-                scatter_dynamics: None,
+                scatter_dynamics: crate::abr_conversion::scatter_parameters(
+                    settings,
+                    preset.converter_version,
+                ),
                 shape_jitter: None,
                 color_dynamics: None,
                 tip_dynamics: None,

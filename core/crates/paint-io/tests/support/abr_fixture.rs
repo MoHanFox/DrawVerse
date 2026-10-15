@@ -37,7 +37,13 @@ fn unit(kind: &[u8; 4], value: f64) -> Vec<u8> {
     bytes.extend(value.to_be_bytes());
     typed(b"UntF", &bytes)
 }
-fn preset(sampled: bool, bad: bool, opacity: Option<f64>, pressure: bool) -> Vec<u8> {
+fn preset(
+    sampled: bool,
+    bad: bool,
+    opacity: Option<f64>,
+    pressure: bool,
+    scatter: Option<bool>,
+) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
         ("Angl", unit(b"#Ang", 0.)),
@@ -67,6 +73,28 @@ fn preset(sampled: bool, bad: bool, opacity: Option<f64>, pressure: bool) -> Vec
         ),
         ("unknownTexture", typed(b"bool", &[1])),
     ];
+    if let Some(enabled) = scatter {
+        entries.push(("useScatter", typed(b"bool", &[u8::from(enabled)])));
+        entries.push(("bothAxes", typed(b"bool", &[1])));
+        entries.push(("Cnt ", typed(b"doub", &3f64.to_be_bytes())));
+        for (key, jitter) in [("scatterDynamics", 75.), ("countDynamics", 50.)] {
+            entries.push((
+                key,
+                typed(
+                    b"Objc",
+                    &object(
+                        "brushDynamics",
+                        vec![
+                            ("bVTy", typed(b"long", &0i32.to_be_bytes())),
+                            ("fStp", typed(b"long", &25i32.to_be_bytes())),
+                            ("jitter", unit(b"#Prc", jitter)),
+                            ("Mnm ", unit(b"#Prc", 0.)),
+                        ],
+                    ),
+                ),
+            ));
+        }
+    }
     if pressure {
         for key in ["useTipDynamics", "usePaintDynamics"] {
             entries.push((key, typed(b"bool", &[1])));
@@ -115,11 +143,15 @@ pub fn fixture(version: u16, sub: u16, bad: bool) -> Vec<u8> {
     fixture_with_opacity(version, sub, bad, None)
 }
 pub fn fixture_with_opacity(version: u16, sub: u16, bad: bool, opacity: Option<f64>) -> Vec<u8> {
-    fixture_inner(version, sub, bad, opacity, false)
+    fixture_inner(version, sub, bad, opacity, false, None)
 }
 #[allow(dead_code)]
 pub fn fixture_with_pressure(version: u16, sub: u16, bad: bool) -> Vec<u8> {
-    fixture_inner(version, sub, bad, Some(25.5), true)
+    fixture_inner(version, sub, bad, Some(25.5), true, None)
+}
+#[allow(dead_code)]
+pub fn fixture_with_scatter(version: u16, sub: u16, bad: bool, enabled: bool) -> Vec<u8> {
+    fixture_inner(version, sub, bad, Some(25.5), true, Some(enabled))
 }
 fn fixture_inner(
     version: u16,
@@ -127,13 +159,14 @@ fn fixture_inner(
     bad: bool,
     opacity: Option<f64>,
     pressure: bool,
+    scatter: Option<bool>,
 ) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
     let mut list = 3u32.to_be_bytes().to_vec();
-    list.extend(preset(true, false, opacity, pressure));
-    list.extend(preset(false, false, opacity, pressure));
-    list.extend(preset(true, bad, opacity, pressure));
+    list.extend(preset(true, false, opacity, pressure, scatter));
+    list.extend(preset(false, false, opacity, pressure, scatter));
+    list.extend(preset(true, bad, opacity, pressure, scatter));
     let mut descriptor = 16u32.to_be_bytes().to_vec();
     descriptor.extend(object("null", vec![("Brsh", typed(b"VlLs", &list))]));
     section(&mut bytes, b"desc", &descriptor);

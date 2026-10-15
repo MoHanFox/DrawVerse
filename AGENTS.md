@@ -1,5 +1,9 @@
 # DrawVerse
 
+- 最新ABR散布导入：`docs/abr-scatter-conversion-design.md` / `docs/abr-scatter-conversion-validation.md`；converter4/record1/交接JSON3/VBR1.18，真实数量Double与单/双轴/数量抖动、完整关闭/旧三代基准保持、四代交换及Windows Qt新库像素；PS随机分布标近似，设备散布/16位等继续后续，无C ABI或state新版本。
+
+- 当前验收优先级（用户2026-10-15确认）：主要针对Windows平台；跨平台验收以后再做，不作为当前阶段提交/推送门槛。继续维护跨平台架构，实际验证范围如实记录。
+
 - 最新真实ABR语料/对齐：`docs/abr-real-corpus-design.md` / `docs/abr-real-corpus-validation.md`；8BIM节间/尾部四字节填充、旧无填充兼容，CC0 Myer148与两个MIT Photoshop探针完整导入/来源/像素历史及Qt新库VBR；无版本变化，16位字节序分歧与后续证据见`docs/abr-16bit-investigation.md`，仍未实现16位。
 
 - 最新ABR笔压动态：`docs/abr-pressure-design.md` / `docs/abr-pressure-validation.md`；转换器v3/来源record1/交接JSON2/VBR1.17，尺寸流量opacity独立压感与最低比例、旧v1/v2字节/基准保持、三代混合/降级拒绝及真实Qt导入重置/像素/重开；无C ABI或state新版本，完整ABR动态/16位、湿混双色、收尖等继续后续。

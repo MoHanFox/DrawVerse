@@ -140,3 +140,7 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 ## VBR1.17：ABR笔压来源
 
 converterVersion3来源基准保存已有pressureDynamics（三通道线性曲线/最低比例与opacity开关），仍为来源record1；旧v1/v2基准、报告及原记录字节不重算。含v3来源要求manifest minor17，导出按全部来源最高版本需求选择，旧minor夹带新来源拒绝。执行参数继续沿用pressure-curves/opacity-pressure和behavior2/3，state5/6已能表示，无新执行能力。只有不包含来源的新笔压预设导出仍按已有VBR1.3/1.4能力需求选版本。公开Schema contracts/vbr-abr-pressure-v1.17.schema.json，见abr-pressure-design.md；完整ABR/16位等继续后续。
+
+## VBR1.18：ABR散布来源
+
+来源converterVersion4保存既有scatterDynamics基准，完整关闭配置可保留，pressureDynamics仍为独立可选对象；原记录结构version1。包含v4来源最低minor18，按全部来源最高需求导出，17及以下夹带拒绝；旧三代来源字节/基准不重算。执行继续使用既有behavior5/scatter-stamps与state8，无来源时仍按已有VBR散布能力选版本。Schema contracts/vbr-abr-scatter-v1.18.schema.json及合法/非法来源样例已发布。PS随机分布明确近似，设备/渐隐散布控制及16位等仍待后续，见abr-scatter-conversion-validation.md。

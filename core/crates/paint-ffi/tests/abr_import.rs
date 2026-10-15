@@ -26,6 +26,7 @@ fn licensed_real_pack_imports_all_148_and_prepares_sources_through_public_abi() 
         include_bytes!("../../paint-io/tests/fixtures/abr/myer-settlement-brushes.abr").to_vec(),
         None,
         false,
+        false,
     );
 }
 fn check_import(opacity: Option<f64>, pressure: bool) {
@@ -34,9 +35,18 @@ fn check_import(opacity: Option<f64>, pressure: bool) {
     } else {
         fixture::fixture_with_opacity(6, 2, false, opacity)
     };
-    check_bytes(bytes, opacity, pressure);
+    check_bytes(bytes, opacity, pressure, false);
 }
-fn check_bytes(bytes: Vec<u8>, opacity: Option<f64>, pressure: bool) {
+#[test]
+fn scatter_v4_import_preserves_native_source_and_full_state() {
+    check_bytes(
+        fixture::fixture_with_scatter(6, 2, false, true),
+        Some(25.5),
+        true,
+        true,
+    );
+}
+fn check_bytes(bytes: Vec<u8>, opacity: Option<f64>, pressure: bool, scatter: bool) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("brush.abr");
     std::fs::write(&path, bytes).unwrap();
@@ -172,7 +182,9 @@ fn check_bytes(bytes: Vec<u8>, opacity: Option<f64>, pressure: bool) {
         assert_eq!(&canonical[..required as usize], archive.record().unwrap());
         assert_eq!(
             archive.info.converter_version,
-            if pressure {
+            if scatter {
+                4
+            } else if pressure {
                 3
             } else if opacity.is_some() {
                 2
