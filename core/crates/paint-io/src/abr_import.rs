@@ -10,6 +10,7 @@ use paint_task::CancellationToken;
 use std::{collections::BTreeMap, fs::File, io::Read, path::Path, sync::Arc};
 
 pub struct ImportedPreset {
+    converter_version: u32,
     name: String,
     settings: BrushSettings,
     source: String,
@@ -65,7 +66,10 @@ impl ImportBatch {
                         shape_jitter: None,
                         color_dynamics: None,
                         tip_dynamics: None,
-                        pressure_dynamics: None,
+                        pressure_dynamics: abr_conversion::pressure_parameters(
+                            s,
+                            p.converter_version,
+                        ),
                         diameter: s.diameter,
                         spacing: s.spacing,
                         dab_opacity: s.opacity,
@@ -83,7 +87,11 @@ impl ImportBatch {
             })
             .collect();
         let bytes = serde_json::to_vec(&Handoff {
-            version: 1,
+            version: if self.presets.iter().any(|p| p.converter_version >= 3) {
+                2
+            } else {
+                1
+            },
             format: "abr",
             presets,
         })
@@ -168,6 +176,7 @@ impl ImportBatch {
             .zip(sources.ids())
             .zip(tips)
             .map(|((preset, source), tip)| ImportedPreset {
+                converter_version: preset.converter_version,
                 name: preset.name.into(),
                 settings: preset.settings.clone(),
                 source: source.into(),

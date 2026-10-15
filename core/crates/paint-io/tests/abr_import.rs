@@ -126,3 +126,57 @@ fn read_captures_file_bytes_and_batch_save_refuses_existing_corrupt_original() {
     assert!(next.persist(&store, &token).is_err());
     assert_eq!(std::fs::read(original).unwrap(), b"corrupt");
 }
+
+#[test]
+fn pressure_handoff_and_source_reset_preserve_image_and_program_across_two_strokes() {
+    let token = CancellationToken::default();
+    let original = Arc::new(support::abr_fixture::fixture_with_pressure(6, 2, false));
+    let batch = ImportBatch::decode(original.clone(), MAX_CATALOG_MASK_BYTES, &token).unwrap();
+    let wire: serde_json::Value = serde_json::from_slice(&batch.to_json().unwrap()).unwrap();
+    assert_eq!(wire["version"], 2);
+    assert_eq!(
+        wire["presets"][0]["parameters"]["pressureDynamics"]["opacity"]["enabled"],
+        true
+    );
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().into(), MAX_CATALOG_MASK_BYTES).unwrap();
+    let imported = batch.persist(&store, &token).unwrap();
+    for p in imported {
+        let source = store
+            .source_store()
+            .unwrap()
+            .load(p.source_id(), &token)
+            .unwrap();
+        assert_eq!(source.original(), original.as_slice());
+        assert_eq!(source.info.converter_version, 3);
+        let mut baseline = source.info.baseline.settings();
+        baseline.mask = p.settings().mask.clone();
+        let mut a = Document::new(64, 32).unwrap();
+        let mut b = Document::new(64, 32).unwrap();
+        for pressure in [0.25, 0.75] {
+            for (doc, s) in [(&mut a, p.settings()), (&mut b, &baseline)] {
+                doc.begin_brush_stroke(s.definition(), InputPoint::new(10.5, 16.5, pressure))
+                    .unwrap();
+                doc.stroke_to(InputPoint::new(50.5, 16.5, pressure))
+                    .unwrap();
+                doc.end_stroke().unwrap();
+            }
+        }
+        assert_eq!(a.history_depth(), (2, 0));
+        for y in 0..32 {
+            for x in 0..64 {
+                assert_eq!(a.pixel(x, y), b.pixel(x, y));
+            }
+        }
+        a.undo().unwrap();
+        a.redo().unwrap();
+        for y in 0..32 {
+            for x in 0..64 {
+                assert_eq!(a.pixel(x, y), b.pixel(x, y));
+            }
+        }
+        let mut downgraded = source.info.clone();
+        downgraded.converter_version = 2;
+        assert!(downgraded.validate().is_err());
+    }
+}

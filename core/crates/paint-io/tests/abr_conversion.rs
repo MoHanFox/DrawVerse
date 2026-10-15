@@ -406,3 +406,278 @@ fn published_opacity_source_versions_match_codec_contract() {
     .unwrap();
     assert!(info.validate().is_err());
 }
+
+fn pressure_preset() -> Descriptor {
+    let mut source = preset();
+    for key in ["useTipDynamics", "usePaintDynamics"] {
+        source
+            .entries
+            .push((key.as_bytes().to_vec(), Value::Boolean(true)));
+    }
+    source
+        .entries
+        .push((b"minimumDiameter".to_vec(), unit(*b"#Prc", 20.)));
+    for (key, min) in [("szVr", 20.), ("prVr", 40.), ("opVr", 30.)] {
+        source.entries.push((
+            key.as_bytes().to_vec(),
+            Value::Object {
+                global: false,
+                descriptor: Box::new(object(
+                    "brushDynamics",
+                    vec![
+                        ("bVTy", Value::Integer(2)),
+                        ("Mnm ", unit(*b"#Prc", min)),
+                        ("jitter", unit(*b"#Prc", 0.)),
+                        ("fStp", Value::Integer(0)),
+                    ],
+                )),
+            },
+        ));
+    }
+    source
+}
+#[test]
+fn pressure_channels_minima_reports_legacy_and_real_pixels() {
+    use paint_core::{Document, InputPoint};
+    let token = CancellationToken::default();
+    let source = pressure_preset();
+    let shape = shape(false);
+    let linked = [LinkedPreset {
+        name: "pressure",
+        preset: &source,
+        shape: &shape,
+        sampled_tip: None,
+    }];
+    let current = convert(&linked, &token).unwrap();
+    let p = &current[0];
+    assert_eq!(p.converter_version, 3);
+    assert!(!p.is_partial());
+    assert!(
+        p.settings.tip.pressure_size
+            && p.settings.tip.pressure_flow
+            && p.settings.dynamics.pressure_opacity
+    );
+    for (control, min) in [
+        (&p.settings.dynamics.size, 0.2),
+        (&p.settings.dynamics.flow, 0.4),
+        (&p.settings.dynamics.opacity, 0.3),
+    ] {
+        assert_eq!(control.minimum(), min);
+        assert!((control.response(0.5).unwrap() - (min + (1. - min) * 0.5)).abs() < 1e-6);
+    }
+    for old in [
+        paint_io::abr_conversion::convert_legacy(&linked, &token).unwrap(),
+        paint_io::abr_conversion::convert_v2(&linked, &token).unwrap(),
+    ] {
+        assert_eq!(old[0].converter_version, 1);
+        assert!(!old[0].settings.tip.pressure_size);
+        assert_eq!(old[0].settings.dynamics, Default::default());
+        assert!(old[0]
+            .issues
+            .iter()
+            .any(|i| i.path == "szVr.bVTy" && i.status == Status::NotExecuted));
+    }
+    for pressure in [0., 0.25, 0.5, 1.] {
+        let mut doc = Document::new(64, 32).unwrap();
+        doc.begin_brush_stroke(
+            p.settings.definition(),
+            InputPoint::new(16.5, 16.5, pressure),
+        )
+        .unwrap();
+        for x in [48.5, 16.5, 48.5] {
+            doc.stroke_to(InputPoint::new(x, 16.5, pressure)).unwrap();
+        }
+        doc.end_stroke().unwrap();
+        let cap = 0.3 + 0.7 * pressure;
+        assert!(doc.pixel(32, 16).alpha() >= cap - 1e-5);
+        assert!(doc.pixel(32, 16).alpha() <= cap + 1e-5);
+        let after = (0..2048)
+            .map(|i| doc.pixel(i % 64, i / 64))
+            .collect::<Vec<_>>();
+        assert!(after.iter().all(|c| c.alpha() <= cap + 1e-5));
+        let radius = 8. * (0.2 + 0.8 * pressure);
+        assert_eq!(doc.pixel(32, 16 + (radius.ceil() as u32) + 1).alpha(), 0.);
+        doc.undo().unwrap();
+        assert_eq!(doc.pixel(32, 16).alpha(), 0.);
+        doc.redo().unwrap();
+        assert_eq!(
+            (0..2048)
+                .map(|i| doc.pixel(i % 64, i / 64))
+                .collect::<Vec<_>>(),
+            after
+        );
+    }
+}
+#[test]
+fn pressure_switches_overrides_unknown_controls_and_random_fields_are_honest() {
+    let token = CancellationToken::default();
+    let shape = shape(false);
+    for mode in 0..6 {
+        let mut source = pressure_preset();
+        match mode {
+            0 => {
+                source
+                    .entries
+                    .iter_mut()
+                    .find(|(k, _)| k == b"useTipDynamics")
+                    .unwrap()
+                    .1 = Value::Boolean(false);
+            }
+            1 => {
+                if let Value::Object { descriptor, .. } = &mut source
+                    .entries
+                    .iter_mut()
+                    .find(|(k, _)| k == b"szVr")
+                    .unwrap()
+                    .1
+                {
+                    descriptor.entries[0].1 = Value::Integer(1);
+                }
+            }
+            2 => {
+                if let Value::Object { descriptor, .. } = &mut source
+                    .entries
+                    .iter_mut()
+                    .find(|(k, _)| k == b"szVr")
+                    .unwrap()
+                    .1
+                {
+                    descriptor.entries[2].1 = unit(*b"#Prc", 25.);
+                }
+            }
+            3 => {
+                if let Value::Object { descriptor, .. } = &mut source.entries[0].1 {
+                    descriptor
+                        .entries
+                        .push((b"usePressureOverridesSize".to_vec(), Value::Boolean(true)));
+                }
+            }
+            4 => {
+                source
+                    .entries
+                    .push((b"useBrushPose".to_vec(), Value::Boolean(true)));
+            }
+            _ => {
+                source
+                    .entries
+                    .iter_mut()
+                    .find(|(k, _)| k == b"minimumDiameter")
+                    .unwrap()
+                    .1 = unit(*b"#Prc", 50.);
+            }
+        }
+        let converted = convert(
+            &[LinkedPreset {
+                name: "partial",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: None,
+            }],
+            &token,
+        )
+        .unwrap();
+        let p = &converted[0];
+        assert!(p.is_partial());
+        assert_eq!(p.settings.tip.pressure_size, mode == 2 || mode == 5);
+        if mode == 5 {
+            assert_eq!(p.settings.dynamics.size.minimum(), 0.5);
+            assert!(p
+                .issues
+                .iter()
+                .any(|i| i.path == "szVr.Mnm " && i.status == Status::NotExecuted));
+        }
+        if mode == 2 {
+            assert!(p
+                .issues
+                .iter()
+                .any(|i| i.path == "szVr.jitter" && i.status == Status::NotExecuted));
+        }
+        if mode == 4 {
+            assert_eq!(p.converter_version, 1);
+            assert!(!p.settings.tip.pressure_flow && !p.settings.dynamics.pressure_opacity);
+        }
+    }
+}
+#[test]
+fn enabled_pressure_rejects_bad_units_types_and_pre_rounding_bounds() {
+    let shape = shape(false);
+    let token = CancellationToken::default();
+    for bad in [
+        unit(*b"#Prc", -1e-10),
+        unit(*b"#Prc", 100. + 1e-10),
+        unit(*b"#Prc", f64::NAN),
+        unit(*b"#Pxl", 50.),
+        Value::Integer(20),
+    ] {
+        let mut source = pressure_preset();
+        if let Value::Object { descriptor, .. } = &mut source
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"opVr")
+            .unwrap()
+            .1
+        {
+            descriptor.entries[1].1 = bad;
+        }
+        assert!(convert(
+            &[LinkedPreset {
+                name: "bad",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: None
+            }],
+            &token
+        )
+        .is_err());
+    }
+}
+
+#[test]
+fn published_pressure_source_contract_guards_downgrades_and_unknown_versions() {
+    let valid: paint_io::brush_source::SourceInfo = serde_json::from_slice(include_bytes!(
+        "../../../../contracts/fixtures/abr-pressure-source-v3-valid.json"
+    ))
+    .unwrap();
+    valid.validate().unwrap();
+    for bytes in [
+        include_bytes!("../../../../contracts/fixtures/abr-pressure-source-invalid-version.json")
+            .as_slice(),
+        include_bytes!("../../../../contracts/fixtures/abr-pressure-source-invalid-downgrade.json")
+            .as_slice(),
+    ] {
+        let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
+        assert!(info.validate().is_err());
+    }
+}
+
+#[test]
+fn pressure_channels_are_independent_and_literal_dotted_keys_stay_reported() {
+    let token = CancellationToken::default();
+    let shape = shape(false);
+    for channel in [b"szVr".as_slice(), b"prVr", b"opVr"] {
+        let mut source = pressure_preset();
+        source.entries.retain(|(k, _)| {
+            ![b"szVr".as_slice(), b"prVr", b"opVr"].contains(&k.as_slice()) || k == channel
+        });
+        source
+            .entries
+            .push((b"szVr.bVTy".to_vec(), Value::Boolean(true)));
+        let p = convert(
+            &[LinkedPreset {
+                name: "independent",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: None,
+            }],
+            &token,
+        )
+        .unwrap();
+        assert_eq!(p[0].settings.tip.pressure_size, channel == b"szVr");
+        assert_eq!(p[0].settings.tip.pressure_flow, channel == b"prVr");
+        assert_eq!(p[0].settings.dynamics.pressure_opacity, channel == b"opVr");
+        assert!(p[0]
+            .issues
+            .iter()
+            .any(|i| i.path == "szVr.bVTy" && i.status == Status::NotExecuted));
+    }
+}

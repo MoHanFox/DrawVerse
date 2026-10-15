@@ -5,7 +5,7 @@ use crate::{
     ps_descriptor::{Descriptor, Value},
     Error, Result,
 };
-use paint_core::{BrushProgram, BrushSettings, BrushTip};
+use paint_core::{BrushProgram, BrushSettings, BrushTip, PressureControl, PressureCurve};
 use paint_task::CancellationToken;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
@@ -84,25 +84,46 @@ fn unmapped(
     token: &CancellationToken,
     depth: usize,
 ) -> Result<()> {
+    unmapped_except(issues, path, value, token, depth, &[])
+}
+fn unmapped_except(
+    issues: &mut Vec<Issue>,
+    path: String,
+    value: &Value,
+    token: &CancellationToken,
+    depth: usize,
+    handled: &[String],
+) -> Result<()> {
     check(token)?;
+    if handled.contains(&path) {
+        return Ok(());
+    }
     if depth > 32 {
         return Err(Error::Limit("ABR report depth"));
     }
     match value {
         Value::Object { descriptor, .. } if !descriptor.entries.is_empty() => {
             for (key, value) in &descriptor.entries {
-                unmapped(
+                unmapped_except(
                     issues,
                     format!("{path}.{}", path_key(key)),
                     value,
                     token,
                     depth + 1,
+                    handled,
                 )?;
             }
         }
         Value::List(values) if !values.is_empty() => {
             for (index, value) in values.iter().enumerate() {
-                unmapped(issues, format!("{path}[{index}]"), value, token, depth + 1)?;
+                unmapped_except(
+                    issues,
+                    format!("{path}[{index}]"),
+                    value,
+                    token,
+                    depth + 1,
+                    handled,
+                )?;
             }
         }
         _ => {
@@ -125,19 +146,174 @@ pub fn convert<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
-    convert_inner(linked, token, true)
+    convert_inner(linked, token, 3)
 }
 /// Preserve the immutable baseline and report semantics of converter v1.
 pub fn convert_legacy<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
-    convert_inner(linked, token, false)
+    convert_inner(linked, token, 1)
+}
+/// Preserve converter v2 opacity semantics without interpreting newer dynamics.
+pub fn convert_v2<'a>(
+    linked: &[LinkedPreset<'a>],
+    token: &CancellationToken,
+) -> Result<Vec<ConvertedPreset<'a>>> {
+    convert_inner(linked, token, 2)
+}
+/// Only pressure fields are portable here; other dynamics stay in their own DTOs.
+pub(crate) fn pressure_parameters(
+    settings: &BrushSettings,
+    version: u32,
+) -> Option<crate::brush_pressure::PressureParameters> {
+    (version >= 3).then(|| crate::brush_pressure::PressureParameters::from_core(&settings.dynamics))
+}
+fn pressure_controls(
+    preset: &Descriptor,
+    tool: Option<&Descriptor>,
+    settings: &mut BrushSettings,
+    issues: &mut Vec<Issue>,
+) -> Result<Vec<String>> {
+    let mut handled = Vec::new();
+    for (flag_key, key, override_key) in [
+        (
+            b"useTipDynamics".as_slice(),
+            b"szVr".as_slice(),
+            Some(b"usePressureOverridesSize".as_slice()),
+        ),
+        (b"usePaintDynamics".as_slice(), b"prVr".as_slice(), None),
+        (
+            b"usePaintDynamics".as_slice(),
+            b"opVr".as_slice(),
+            Some(b"usePressureOverridesOpacity".as_slice()),
+        ),
+    ] {
+        if flag(preset, flag_key)? != Some(true) {
+            continue;
+        }
+        // Overrides are distinct saved tool state, not proven equivalent to preset controls.
+        if tool.is_some_and(|t| t.get(key).is_some())
+            || override_key.is_some_and(|k| {
+                tool.and_then(|t| t.get(k))
+                    .is_some_and(|v| !matches!(v, Value::Boolean(false)))
+            })
+        {
+            continue;
+        }
+        // A saved brush pose can replace the actual device pressure.
+        if flag(preset, b"useBrushPose")? == Some(true) {
+            continue;
+        }
+        let dynamic = match preset.get(key) {
+            None => continue,
+            Some(Value::Object { descriptor, .. }) => descriptor,
+            _ => return Err(Error::Invalid("ABR pressure dynamics object")),
+        };
+        let control = match dynamic.get(b"bVTy") {
+            Some(Value::Integer(value)) => *value,
+            _ => return Err(Error::Invalid("ABR pressure control type")),
+        };
+        if control != 2 {
+            continue;
+        }
+        // Validate known values before narrowing. Nonzero jitter remains unexecuted.
+        let minimum = unit(dynamic, b"Mnm ", *b"#Prc", 0., 100.)? / 100.;
+        let jitter = unit(dynamic, b"jitter", *b"#Prc", 0., 100.)?;
+        let steps = match dynamic.get(b"fStp") {
+            None => false,
+            Some(Value::Integer(n)) if *n >= 0 => true,
+            _ => return Err(Error::Invalid("ABR fade step type/range")),
+        };
+        let name = path_key(key);
+        let effective = if key == b"szVr" && preset.get(b"minimumDiameter").is_some() {
+            let value = unit(preset, b"minimumDiameter", *b"#Prc", 0., 100.)? / 100.;
+            issue(
+                issues,
+                "minimumDiameter",
+                Status::Mapped,
+                "尺寸压感最低直径比例",
+            );
+            handled.push("minimumDiameter".into());
+            value
+        } else {
+            minimum
+        };
+        let response = PressureControl::new(PressureCurve::default(), effective)?;
+        match key {
+            b"szVr" => {
+                settings.tip.pressure_size = true;
+                settings.dynamics.size = response;
+            }
+            b"prVr" => {
+                settings.tip.pressure_flow = true;
+                settings.dynamics.flow = response;
+            }
+            b"opVr" => {
+                settings.dynamics.pressure_opacity = true;
+                settings.dynamics.opacity = response;
+            }
+            _ => unreachable!(),
+        }
+        let gate = path_key(flag_key);
+        if !handled.contains(&gate) {
+            issue(
+                issues,
+                &gate,
+                Status::Mapped,
+                "开启已支持的笔压通道，其他动态字段单独报告",
+            );
+            handled.push(gate);
+        }
+        for (field, status, reason) in [
+            (
+                "bVTy",
+                Status::Mapped,
+                "笔压控制；使用独立线性响应与最低比例",
+            ),
+            (
+                "Mnm ",
+                if minimum == effective {
+                    Status::Mapped
+                } else {
+                    Status::NotExecuted
+                },
+                if minimum == effective {
+                    "笔压最低比例"
+                } else {
+                    "尺寸使用minimumDiameter；不同的动态Mnm值保留但不执行"
+                },
+            ),
+            (
+                "jitter",
+                if jitter == 0. {
+                    Status::Mapped
+                } else {
+                    Status::NotExecuted
+                },
+                if jitter == 0. {
+                    "未启用随机抖动"
+                } else {
+                    "随机抖动尚未转换；独立笔压分量已执行"
+                },
+            ),
+        ] {
+            let path = format!("{name}.{field}");
+            issue(issues, &path, status, reason);
+            handled.push(path);
+        }
+        if steps {
+            let path = format!("{name}.fStp");
+            issue(issues, &path, Status::Mapped, "笔压控制不使用渐隐步数");
+            handled.push(path);
+        }
+    }
+    Ok(handled)
 }
 fn convert_inner<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
-    stroke_opacity: bool,
+    generation: u32,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
     check(token)?;
     if linked.is_empty() || linked.len() > 1024 {
@@ -321,9 +497,27 @@ fn convert_inner<'a>(
             Some(Value::Object { descriptor, .. }) => Some(descriptor.as_ref()),
             _ => return Err(Error::Invalid("ABR toolOptions object")),
         };
+        let handled = if generation >= 3 {
+            pressure_controls(item.preset, tool, &mut settings, &mut issues)?
+        } else {
+            Vec::new()
+        };
         for (key, value) in &item.preset.entries {
             if key != b"Nm  " && key != b"Brsh" && key != b"toolOptions" {
-                unmapped(&mut issues, path_key(key), value, token, 0)?;
+                if [
+                    b"useTipDynamics".as_slice(),
+                    b"usePaintDynamics",
+                    b"minimumDiameter",
+                    b"szVr",
+                    b"prVr",
+                    b"opVr",
+                ]
+                .contains(&key.as_slice())
+                {
+                    unmapped_except(&mut issues, path_key(key), value, token, 0, &handled)?;
+                } else {
+                    unmapped(&mut issues, path_key(key), value, token, 0)?;
+                }
             }
         }
         let scalar = |key: &[u8]| -> Result<Option<f64>> {
@@ -354,7 +548,7 @@ fn convert_inner<'a>(
         }
         let mut converter_version = 1;
         match scalar(b"Opct")? {
-            Some(opacity) if stroke_opacity && opacity < 1. => {
+            Some(opacity) if generation >= 2 && opacity < 1. => {
                 settings.opacity = opacity as f32;
                 converter_version = 2;
                 issue(
@@ -382,6 +576,9 @@ fn convert_inner<'a>(
                 Status::Approximate,
                 "源未保存工具不透明度，基线100%",
             ),
+        }
+        if !handled.is_empty() {
+            converter_version = 3;
         }
         if let Some(tool) = tool {
             for (key, value) in &tool.entries {

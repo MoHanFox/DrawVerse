@@ -136,3 +136,7 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 ## VBR1.16：ABR整笔不透明度来源
 
 包含drawverse.abr.basic converterVersion2来源记录时最低minor16；该版本映射非100% toolOptions.Opct到已有整笔opacity。来源记录自身仍version1，v1/v2原记录及原ABR逐字节保持；SourceBatch最高转换器版本只用于选择包版本。旧来源不重新转换，未用新行为不升级来源，去除来源的导出仍按实际参数/资源选择版本。解码拒绝新来源降级夹带，新增完整schema和合法/非法来源示例见 [设计](abr-opacity-design.md) / [验收](abr-opacity-validation.md)。不新增笔刷行为版本、必需能力或C ABI/state字段；其他动态、湿混组合和VBR分组等范围继续后续。
+
+## VBR1.17：ABR笔压来源
+
+converterVersion3来源基准保存已有pressureDynamics（三通道线性曲线/最低比例与opacity开关），仍为来源record1；旧v1/v2基准、报告及原记录字节不重算。含v3来源要求manifest minor17，导出按全部来源最高版本需求选择，旧minor夹带新来源拒绝。执行参数继续沿用pressure-curves/opacity-pressure和behavior2/3，state5/6已能表示，无新执行能力。只有不包含来源的新笔压预设导出仍按已有VBR1.3/1.4能力需求选版本。公开Schema contracts/vbr-abr-pressure-v1.17.schema.json，见abr-pressure-design.md；完整ABR/16位等继续后续。

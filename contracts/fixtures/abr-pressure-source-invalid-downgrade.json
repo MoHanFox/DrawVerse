@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "format": "abr",
+  "originalHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "fileVersion": 6,
+  "fileSubversion": 2,
+  "presetIndex": 0,
+  "originalName": "Pressure brush",
+  "converter": "drawverse.abr.basic",
+  "converterVersion": 2,
+  "baseline": {
+    "diameter": 8,
+    "spacing": 0.02,
+    "dabOpacity": 0.255,
+    "hardness": 1,
+    "roundness": 1,
+    "angle": 0,
+    "flow": 1,
+    "pressureSize": true,
+    "pressureFlow": true,
+    "pressureDynamics": {
+      "size": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.2
+      },
+      "flow": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.4
+      },
+      "opacity": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.3,
+        "enabled": true
+      }
+    }
+  },
+  "tipResource": null,
+  "report": [
+    {
+      "path": "toolOptions.Opct",
+      "status": "mapped",
+      "reason": "Source stroke opacity percentage"
+    }
+  ]
+}

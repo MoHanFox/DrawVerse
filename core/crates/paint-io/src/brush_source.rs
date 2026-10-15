@@ -53,7 +53,7 @@ impl SourceInfo {
         if self.version != 1
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1 | 2)
+            || !matches!(self.converter_version, 1..=3)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -84,7 +84,8 @@ impl SourceInfo {
         {
             return Err(Error::Limit("brush source report bounds"));
         }
-        if self.baseline.pressure_dynamics.is_some()
+        if (self.converter_version == 3 && self.baseline.pressure_dynamics.is_none())
+            || (self.converter_version < 3 && self.baseline.pressure_dynamics.is_some())
             || self.baseline.tip_dynamics.is_some()
             || self.baseline.scatter_dynamics.is_some()
             || self.baseline.shape_jitter.is_some()
@@ -145,7 +146,15 @@ impl SourceArchive {
                 "source dual brush is not represented by converter v1".into(),
             ));
         }
-        if settings.dynamics != paint_core::BrushDynamics::default() {
+        let mut non_pressure = settings.dynamics.clone();
+        non_pressure.size = Default::default();
+        non_pressure.flow = Default::default();
+        non_pressure.opacity = Default::default();
+        non_pressure.pressure_opacity = false;
+        if non_pressure != paint_core::BrushDynamics::default()
+            || (preset.converter_version < 3
+                && settings.dynamics != paint_core::BrushDynamics::default())
+        {
             return Err(Error::Unsupported(
                 "source pressure dynamics are not represented by converter v1".into(),
             ));
@@ -165,7 +174,10 @@ impl SourceArchive {
                 shape_jitter: None,
                 color_dynamics: None,
                 tip_dynamics: None,
-                pressure_dynamics: None,
+                pressure_dynamics: crate::abr_conversion::pressure_parameters(
+                    settings,
+                    preset.converter_version,
+                ),
                 diameter: settings.diameter,
                 spacing: settings.spacing,
                 dab_opacity: settings.opacity,

@@ -386,7 +386,7 @@ bool BrushLibrary::importPackage(const QByteArray &json) {
 bool BrushLibrary::importAbr(const QByteArray &json) {
     if(json.size()>2*1024*1024)return false;
     const auto handoff=QJsonDocument::fromJson(json).object();
-    if(handoff.value("version").toInt()!=1 || handoff.value("format").toString()!="abr" || !handoff.value("presets").isArray())return false;
+    if((handoff.value("version").toInt()!=1 && handoff.value("version").toInt()!=2) || handoff.value("format").toString()!="abr" || !handoff.value("presets").isArray())return false;
     const auto imported=handoff.value("presets").toArray();
     if(imported.isEmpty() || imported.size()+m_presets.size()>1024)return false;
     auto state=QJsonDocument::fromJson(snapshot()).object();auto rows=state.value("presets").toArray();QString selected;
@@ -396,6 +396,10 @@ bool BrushLibrary::importAbr(const QByteArray &json) {
         const auto id=QUuid::createUuid().toString(QUuid::WithoutBraces);if(selected.isEmpty())selected=id;
         QJsonObject row{{"id",id},{"name",preset.value("name")},{"radius",parameters.value("diameter").toDouble()/2},{"opacity",parameters.value("dabOpacity")},{"spacing",parameters.value("spacing").toDouble()*2},{"sourceResource",preset.value("sourceResource")}};
         for(const auto &key:{"hardness","roundness","angle","flow","pressureSize","pressureFlow"})row[key]=parameters.value(key);
+        if(parameters.contains("pressureDynamics")) {
+            if(handoff.value("version").toInt()<2 || !parameters.value("pressureDynamics").isObject())return false;
+            row["pressureDynamics"]=parameters.value("pressureDynamics");state["version"]=std::max(state.value("version").toInt(),parameters.value("pressureDynamics").toObject().contains("opacity")?6:5);
+        }
         if(!preset.value("tipResource").isNull())row["maskResource"]=preset.value("tipResource");
         rows.append(row);
     }

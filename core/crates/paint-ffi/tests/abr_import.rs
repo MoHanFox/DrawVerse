@@ -10,16 +10,28 @@ use std::{
 mod fixture;
 #[test]
 fn abr_buffer_guards_and_whole_import_prepare_without_implicit_catalog_changes() {
-    check_import(None);
+    check_import(None, false);
 }
 #[test]
 fn opacity_v2_import_preserves_source_and_prepared_catalog_through_public_abi() {
-    check_import(Some(25.5));
+    check_import(Some(25.5), false);
 }
-fn check_import(opacity: Option<f64>) {
+#[test]
+fn pressure_v3_import_prepares_and_preserves_native_baseline() {
+    check_import(Some(25.5), true);
+}
+fn check_import(opacity: Option<f64>, pressure: bool) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("brush.abr");
-    std::fs::write(&path, fixture::fixture_with_opacity(6, 2, false, opacity)).unwrap();
+    std::fs::write(
+        &path,
+        if pressure {
+            fixture::fixture_with_pressure(6, 2, false)
+        } else {
+            fixture::fixture_with_opacity(6, 2, false, opacity)
+        },
+    )
+    .unwrap();
     let token = CancellationToken::default();
     let batch = ImportBatch::read(&path, MAX_CATALOG_MASK_BYTES, &token).unwrap();
     let expected = batch.to_json().unwrap();
@@ -152,7 +164,13 @@ fn check_import(opacity: Option<f64>) {
         assert_eq!(&canonical[..required as usize], archive.record().unwrap());
         assert_eq!(
             archive.info.converter_version,
-            if opacity.is_some() { 2 } else { 1 }
+            if pressure {
+                3
+            } else if opacity.is_some() {
+                2
+            } else {
+                1
+            }
         );
         assert!(
             (f64::from(archive.info.baseline.dab_opacity) - opacity.unwrap_or(100.) / 100.).abs()

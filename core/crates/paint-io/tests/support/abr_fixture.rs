@@ -37,7 +37,7 @@ fn unit(kind: &[u8; 4], value: f64) -> Vec<u8> {
     bytes.extend(value.to_be_bytes());
     typed(b"UntF", &bytes)
 }
-fn preset(sampled: bool, bad: bool, opacity: Option<f64>) -> Vec<u8> {
+fn preset(sampled: bool, bad: bool, opacity: Option<f64>, pressure: bool) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
         ("Angl", unit(b"#Ang", 0.)),
@@ -67,6 +67,29 @@ fn preset(sampled: bool, bad: bool, opacity: Option<f64>) -> Vec<u8> {
         ),
         ("unknownTexture", typed(b"bool", &[1])),
     ];
+    if pressure {
+        for key in ["useTipDynamics", "usePaintDynamics"] {
+            entries.push((key, typed(b"bool", &[1])));
+        }
+        entries.push(("minimumDiameter", unit(b"#Prc", 20.)));
+        for (key, minimum) in [("szVr", 20.), ("prVr", 40.), ("opVr", 30.)] {
+            entries.push((
+                key,
+                typed(
+                    b"Objc",
+                    &object(
+                        "brushDynamics",
+                        vec![
+                            ("bVTy", typed(b"long", &2i32.to_be_bytes())),
+                            ("fStp", typed(b"long", &0i32.to_be_bytes())),
+                            ("jitter", unit(b"#Prc", 0.)),
+                            ("Mnm ", unit(b"#Prc", minimum)),
+                        ],
+                    ),
+                ),
+            ));
+        }
+    }
     if let Some(opacity) = opacity {
         entries.push((
             "toolOptions",
@@ -92,12 +115,25 @@ pub fn fixture(version: u16, sub: u16, bad: bool) -> Vec<u8> {
     fixture_with_opacity(version, sub, bad, None)
 }
 pub fn fixture_with_opacity(version: u16, sub: u16, bad: bool, opacity: Option<f64>) -> Vec<u8> {
+    fixture_inner(version, sub, bad, opacity, false)
+}
+#[allow(dead_code)]
+pub fn fixture_with_pressure(version: u16, sub: u16, bad: bool) -> Vec<u8> {
+    fixture_inner(version, sub, bad, Some(25.5), true)
+}
+fn fixture_inner(
+    version: u16,
+    sub: u16,
+    bad: bool,
+    opacity: Option<f64>,
+    pressure: bool,
+) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
     let mut list = 3u32.to_be_bytes().to_vec();
-    list.extend(preset(true, false, opacity));
-    list.extend(preset(false, false, opacity));
-    list.extend(preset(true, bad, opacity));
+    list.extend(preset(true, false, opacity, pressure));
+    list.extend(preset(false, false, opacity, pressure));
+    list.extend(preset(true, bad, opacity, pressure));
     let mut descriptor = 16u32.to_be_bytes().to_vec();
     descriptor.extend(object("null", vec![("Brsh", typed(b"VlLs", &list))]));
     section(&mut bytes, b"desc", &descriptor);
