@@ -1,0 +1,34 @@
+{
+  "id": "12345678-1234-4234-8234-123456789abd",
+  "name": "Wet mixing example",
+  "engineProfile": "drawverse.brush",
+  "behaviorVersion": 14,
+  "requiredCapabilities": [
+    "procedural-tip",
+    "wet-mix"
+  ],
+  "parameters": {
+    "diameter": 8.0,
+    "spacing": 0.25,
+    "dabOpacity": 0.4,
+    "hardness": 1.0,
+    "roundness": 1.0,
+    "angle": 0.0,
+    "flow": 0.7,
+    "pressureSize": true,
+    "pressureFlow": true
+  },
+  "wetMix": {
+    "model": "linear-premul-grid-v1",
+    "enabled": true,
+    "allLayers": false,
+    "autoClean": true,
+    "autoLoad": true,
+    "wetness": 0.6,
+    "pickup": 0.2,
+    "mix": 0.3,
+    "load": 0.4,
+    "deposit": 0.8,
+    "consumption": 0.1
+  }
+}

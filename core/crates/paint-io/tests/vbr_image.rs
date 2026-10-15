@@ -20,6 +20,7 @@ fn package(resource: Option<String>) -> Package {
     Package {
         package_id: "12345678-1234-4234-8234-123456789abc".into(),
         brushes: vec![Preset {
+            wet_mix: None,
             texture: None,
             smoothing: None,
             dual_brush: None,

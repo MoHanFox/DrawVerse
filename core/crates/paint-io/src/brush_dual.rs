@@ -121,6 +121,9 @@ impl DualParameters {
     pub fn has_sizing(&self) -> bool {
         self.sizing.is_some()
     }
+    pub(crate) fn active_color(&self) -> bool {
+        self.enabled && self.color.as_ref().is_some_and(|p| p.core().enabled())
+    }
     pub fn has_color(&self) -> bool {
         self.color.is_some()
     }

@@ -124,3 +124,7 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 湿混Document已接Rust独立起笔/结束并返回载色，但仍未添加BrushSettings/JSON字段；当前VBR版本及能力保持不变，湿混交换待完整IO阶段。
 
 湿混设置后续更新：WetSettings现已进入Rust BrushSettings/Definition/Program，含启用、取样、自动清洗/装载和WetMix；尚无JSON/VBR字段，旧state及来源转换基线拒绝非默认湿混以免丢数据。文件格式版本与能力仍不变，完整交换待下一阶段，见brush-wet-settings-validation.md。
+
+## 湿混子集1.15
+
+2026-10-15：预设顶层wetMix使用linear-premul-grid-v1。严格完整字段model、enabled、allLayers、autoClean、autoLoad及wetness/pickup/mix/load/deposit/consumption（0..1，舍入前验证）。默认省略，关闭非默认保留；对象存在要求drawverse.brush/behavior14、wet-mix能力和manifest minor15，状态state17。实际工具两色/二维载体不入预设；有效湿混+有效双色拒绝，关闭配置可交换。Schema与合法/非法样例见contracts/vbr-wet-v1.15.schema.json及contracts/fixtures。实际两笔载色/像素、图片/纹理/灰度双路径/PCHIP/平滑/散布与原ABR来源已往返，见brush-wet-io-validation.md。ABI1.49/旧Qt准备和库包入口暂拒湿混，完整用户入口、基准及工具寿命待后续接入。

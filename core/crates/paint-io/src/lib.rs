@@ -15,6 +15,7 @@ pub mod brush_source;
 pub mod brush_state;
 pub mod brush_texture;
 pub mod brush_tip_dynamics;
+pub mod brush_wet;
 mod ora;
 pub mod ps_descriptor;
 mod raster;

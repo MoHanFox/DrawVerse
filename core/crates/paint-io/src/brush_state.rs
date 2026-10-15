@@ -111,6 +111,12 @@ struct Row {
         deserialize_with = "crate::brush_smoothing::present"
     )]
     smoothing: Option<crate::brush_smoothing::SmoothingParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_wet::present"
+    )]
+    wet_mix: Option<crate::brush_wet::WetParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -178,7 +184,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=16) {
+    if !matches!(state.version, 1..=17) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -252,6 +258,9 @@ fn decode_inner(
             return Err(Error::Unsupported(
                 "smooth pressure requires state13".into(),
             ));
+        }
+        if row.wet_mix.is_some() && state.version < 17 {
+            return Err(Error::Unsupported("wet mix requires state17".into()));
         }
         if row.smoothing.is_some() && state.version < 14 {
             return Err(Error::Unsupported("smoothing requires state14".into()));
@@ -345,7 +354,7 @@ fn decode_inner(
             row.id,
             row.name,
             BrushSettings {
-                wet: Default::default(),
+                wet: row.wet_mix.map(|p| p.core()).unwrap_or_default(),
                 smoothing: row.smoothing.map(|p| p.core()).unwrap_or_default(),
                 texture,
                 dual,
@@ -379,11 +388,12 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
-        if !s.wet.is_default() {
-            return Err(Error::Unsupported(
-                "wet brush state is not represented".into(),
-            ));
-        }
+        let wet_mix = if !s.wet.is_default() {
+            version = version.max(17);
+            Some(crate::brush_wet::WetParameters::from_core(s.wet))
+        } else {
+            None
+        };
         if [&s.dynamics, s.dual.secondary().dynamics()]
             .iter()
             .any(|d| {
@@ -513,6 +523,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             texture,
             dual_brush,
             smoothing,
+            wet_mix,
         });
     }
     let bytes = serde_json::to_vec(&State {

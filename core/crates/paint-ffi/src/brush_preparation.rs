@@ -65,6 +65,16 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
+                    if catalog.ids().iter().any(|id| {
+                        catalog
+                            .preset(id)
+                            .is_some_and(|p| !p.settings().wet.is_default())
+                    }) {
+                        return Err(ApiError::new(
+                            PAINT_UNSUPPORTED,
+                            "wet preset requires updated native entry",
+                        ));
+                    }
                     *self.anchors.lock().map_err(|_| ApiError::internal())? = receipts;
                     Ok(Arc::new(catalog))
                 });
@@ -723,6 +733,98 @@ mod tests {
         }
     }
     #[test]
+    fn old_native_entries_reject_wet_without_publishing_or_writing() {
+        for enabled in [false, true] {
+            let wet = paint_core::WetSettings::new(
+                enabled,
+                true,
+                false,
+                false,
+                paint_core::WetMix::default(),
+            );
+            let mut catalog = BrushCatalog::default();
+            let mut settings = catalog.selected().settings().clone();
+            settings.wet = wet;
+            catalog.edit("round-pressure", settings).unwrap();
+            let library = PreparedCatalog::new(BrushCatalog::default());
+            let before = paint_io::brush_state::encode(&library.current().unwrap()).unwrap();
+            let sequence = library
+                .submit(
+                    String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap(),
+                )
+                .unwrap();
+            assert_eq!(
+                library.ticket(sequence).unwrap().wait().unwrap_err().status,
+                PAINT_UNSUPPORTED
+            );
+            assert_eq!(
+                paint_io::brush_state::encode(&library.current().unwrap()).unwrap(),
+                before
+            );
+            let mut package = texture_bundle(false, false).package;
+            package.brushes[0].texture = None;
+            package.brushes[0]
+                .required_capabilities
+                .retain(|c| c != "texture-cover");
+            package.brushes[0].wet_mix = Some(paint_io::brush_wet::WetParameters::from_core(wet));
+            package.brushes[0]
+                .required_capabilities
+                .push("wet-mix".into());
+            package.brushes[0].behavior_version = 14;
+            let token = paint_task::CancellationToken::default();
+            let bundle = paint_io::vbr_image::ImageBundle::new(
+                package,
+                std::collections::BTreeMap::new(),
+                &token,
+            )
+            .unwrap();
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("wet.vbr");
+            paint_io::vbr_image::save(&path, &bundle, &token).unwrap();
+            let file_before = std::fs::read(&path).unwrap();
+            let path_bytes = path.to_str().unwrap().as_bytes();
+            let json = bundle.package.to_json().unwrap();
+            let mut handle = std::ptr::null_mut();
+            unsafe {
+                assert_eq!(crate::paint_brush_library_create(0, &mut handle), PAINT_OK);
+                let mut required = 99;
+                assert_eq!(
+                    crate::paint_brush_library_package_read(
+                        handle,
+                        path_bytes.as_ptr(),
+                        path_bytes.len() as u64,
+                        std::ptr::null_mut(),
+                        0,
+                        &mut required
+                    ),
+                    PAINT_UNSUPPORTED
+                );
+                assert_eq!(required, 0);
+                assert_eq!(
+                    crate::paint_brush_library_package_write(
+                        handle,
+                        path_bytes.as_ptr(),
+                        path_bytes.len() as u64,
+                        json.as_ptr(),
+                        json.len() as u64
+                    ),
+                    PAINT_UNSUPPORTED
+                );
+                assert_eq!(
+                    crate::paint_brush_package_write(
+                        path_bytes.as_ptr(),
+                        path_bytes.len() as u64,
+                        json.as_ptr(),
+                        json.len() as u64
+                    ),
+                    PAINT_UNSUPPORTED
+                );
+                assert_eq!(std::fs::read(&path).unwrap(), file_before);
+                assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
+            }
+        }
+    }
+    #[test]
     fn native_smoothing_preparation_capture_and_package_entry() {
         for enabled in [false, true] {
             let smoothing = paint_core::BrushSmoothing::new(enabled, 24., 12., 0.7, 3.).unwrap();
@@ -832,6 +934,7 @@ mod tests {
         let package = paint_io::vbr::Package {
             package_id: "12345678-1234-4234-8234-123456789abd".into(),
             brushes: vec![paint_io::vbr::Preset {
+                wet_mix: None,
                 id: "12345678-1234-4234-8234-123456789abc".into(),
                 name: "texture".into(),
                 engine_profile: "drawverse.brush".into(),
@@ -1254,6 +1357,7 @@ mod tests {
         let package = Package {
             package_id: "12345678-1234-4234-8234-123456789abc".into(),
             brushes: vec![Preset {
+                wet_mix: None,
                 id: "12345678-1234-4234-8234-123456789abd".into(),
                 name: "current procedural".into(),
                 engine_profile: "drawverse.brush".into(),

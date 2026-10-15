@@ -130,6 +130,12 @@ pub struct Preset {
         deserialize_with = "crate::brush_smoothing::present"
     )]
     pub smoothing: Option<crate::brush_smoothing::SmoothingParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_wet::present"
+    )]
+    pub wet_mix: Option<crate::brush_wet::WetParameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_resource: Option<String>,
 }
@@ -246,6 +252,9 @@ impl Package {
             let dual = b.dual_brush.is_some();
             if let Some(d) = &b.dual_brush {
                 d.validate()?;
+                if b.wet_mix.is_some_and(|p| p.core().enabled()) && d.active_color() {
+                    return Err(Error::Unsupported("wet dual color is not supported".into()));
+                }
             }
             if let Some(t) = &b.texture {
                 t.validate()?;
@@ -256,7 +265,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if b.has_dual_color() {
+                != if b.wet_mix.is_some() {
+                    14
+                } else if b.has_dual_color() {
                     13
                 } else if b.has_dual_sizing() {
                     12
@@ -290,7 +301,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 16
+            if b.required_capabilities.len() > 17
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -310,6 +321,7 @@ impl Package {
                             | "path-smoothing"
                             | "dual-relative-size"
                             | "dual-color-stroke"
+                            | "wet-mix"
                     )
                 })
             {
@@ -321,10 +333,12 @@ impl Package {
             {
                 return Err(Error::Invalid("VBR source identity"));
             }
-            if b.has_dual_color()
-                != b.required_capabilities
-                    .iter()
-                    .any(|c| c == "dual-color-stroke")
+            if b.wet_mix.is_some() != b.required_capabilities.iter().any(|c| c == "wet-mix")
+                || (b.wet_mix.is_some() && b.engine_profile != "drawverse.brush")
+                || b.has_dual_color()
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "dual-color-stroke")
                 || (b.has_dual_color() && b.engine_profile != "drawverse.brush")
                 || (b.has_dual_sizing()
                     && (b.engine_profile != "drawverse.brush"
@@ -373,6 +387,9 @@ impl Package {
                 return Err(Error::Invalid("VBR pressure behavior/capability"));
             }
             let mut definition = b.parameters.definition();
+            if let Some(p) = b.wet_mix {
+                definition.wet = p.core();
+            }
             if let Some(p) = b.smoothing {
                 definition.smoothing = p.core();
             }
@@ -509,7 +526,8 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
     };
     package.validate()?;
     if package.brushes.iter().any(|b| {
-        b.smoothing.is_some()
+        b.wet_mix.is_some()
+            || b.smoothing.is_some()
             || b.tip_resource.is_some()
             || b.texture.is_some()
             || b.dual_brush.is_some()
@@ -529,7 +547,8 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
 pub fn encode(package: &Package, token: &CancellationToken) -> Result<Vec<u8>> {
     package.validate()?;
     if package.brushes.iter().any(|b| {
-        b.smoothing.is_some()
+        b.wet_mix.is_some()
+            || b.smoothing.is_some()
             || b.tip_resource.is_some()
             || b.texture.is_some()
             || b.dual_brush.is_some()

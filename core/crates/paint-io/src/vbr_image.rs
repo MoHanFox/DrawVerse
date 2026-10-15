@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 14;
+pub const MAX_EXECUTABLE_MINOR: u32 = 15;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -119,6 +119,9 @@ impl ImageBundle {
             .get(index)
             .ok_or(Error::Invalid("VBR brush index"))?;
         let mut definition = preset.parameters.definition();
+        if let Some(p) = preset.wet_mix {
+            definition.wet = p.core();
+        }
         if let Some(p) = preset.smoothing {
             definition.smoothing = p.core();
         }
@@ -358,6 +361,9 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         }
         brushes.push(preset);
     }
+    if manifest.version.minor < 15 && brushes.iter().any(|b| b.wet_mix.is_some()) {
+        return Err(Error::Unsupported("wet mix requires VBR1.15".into()));
+    }
     if manifest.version.minor < 14 && brushes.iter().any(|b| b.has_dual_color()) {
         return Err(Error::Unsupported("dual-color requires VBR1.14".into()));
     }
@@ -507,6 +513,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 || b.texture.is_some()
                 || b.dual_brush.is_some()
                 || b.smoothing.is_some()
+                || b.wet_mix.is_some()
         })
     {
         return vbr::encode(&bundle.package, token);
@@ -533,7 +540,9 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle.package.brushes.iter().any(|b| b.has_dual_color()) {
+            minor: if bundle.package.brushes.iter().any(|b| b.wet_mix.is_some()) {
+                15
+            } else if bundle.package.brushes.iter().any(|b| b.has_dual_color()) {
                 14
             } else if bundle.package.brushes.iter().any(|b| b.has_dual_sizing()) {
                 13

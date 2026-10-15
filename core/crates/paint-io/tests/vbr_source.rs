@@ -51,6 +51,7 @@ fn bundle() -> ImageBundle {
         .map(|(i, p)| {
             let s = p.settings();
             Preset {
+                wet_mix: None,
                 texture: None,
                 smoothing: None,
                 dual_brush: None,
@@ -497,6 +498,7 @@ fn all_1024_presets_can_have_distinct_current_and_baseline_tips_and_originals() 
             .unwrap(),
         );
         brushes.push(Preset {
+            wet_mix: None,
             smoothing: None,
             dual_brush: Some(paint_io::brush_dual::DualParameters::from_core(&dual).unwrap()),
             texture: Some(paint_io::brush_texture::TextureParameters::from_core(&texture).unwrap()),
