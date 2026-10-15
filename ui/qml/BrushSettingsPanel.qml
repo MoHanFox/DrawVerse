@@ -285,16 +285,16 @@ ColumnLayout {
                     }
                 }
                 ColumnLayout {visible:root.category===10;Layout.fillWidth:true;Layout.minimumWidth:0;spacing:5
-                    WetCheck {objectName:"settingsWetEnabled";text:"启用湿混";checked:root.library.wetMix.enabled;onToggled:if(!root.setWetField("enabled",checked))checked=Qt.binding(function(){return root.library.wetMix.enabled});tooltip:"拾取画布上的颜色，与笔尖载色混合后绘画。仅用于画笔；橡皮和涂抹请先关闭湿混。关闭时保留参数。"}
+                    WetCheck {objectName:"settingsWetEnabled";text:"启用湿混";checked:root.library.wetMix.enabled;onToggled:if(!root.setWetField("enabled",checked))checked=Qt.binding(function(){return root.library.wetMix.enabled});tooltip:"画笔和涂抹复用二维载色。涂抹仍使用工具栏强度、压感和取样设置；橡皮请先关闭湿混。关闭时保留参数。"}
                     WetField {title:"湿度";field:"wetness";help:"控制画布颜色参与拾色和混合的程度。"}
                     WetField {title:"拾色";field:"pickup";help:"每次印章将画布颜色带入载体的比例。"}
                     WetField {title:"混合";field:"mix";help:"沉积时将载色与当前位置的画布颜色混合。"}
                     WetField {title:"载色量";field:"load";help:"重新载色时装入前景色的量；不会缩放已经保留的颜色。"}
                     WetField {title:"沉积";field:"deposit";help:"将笔尖持有的颜色沉积到画布上的比例。"}
                     WetField {title:"消耗";field:"consumption";help:"沿绘画距离消耗载色；抬笔移动不消耗。"}
-                    WetCheck {objectName:"settingsWetAllLayers";text:"对所有图层取样";checked:root.library.wetMix.allLayers;onToggled:root.setWetField("allLayers",checked);tooltip:"从可见合成结果拾色，只修改当前图层。编辑蒙版时不能开启。"}
+                    WetCheck {objectName:"settingsWetAllLayers";text:"对所有图层取样";checked:root.library.wetMix.allLayers;onToggled:root.setWetField("allLayers",checked);tooltip:"画笔从可见合成结果拾色，只修改当前图层。涂抹使用工具栏的同名开关；编辑蒙版时不能开启合成取样。"}
                     WetCheck {objectName:"settingsWetAutoClean";text:"每笔自动清洗";checked:root.library.wetMix.autoClean;onToggled:root.setWetField("autoClean",checked);tooltip:"每条笔触开始时先清除保留的颜色，再执行自动装载。"}
-                    WetCheck {objectName:"settingsWetAutoLoad";text:"每笔自动载色";checked:root.library.wetMix.autoLoad;onToggled:root.setWetField("autoLoad",checked);tooltip:"每条笔触开始时装入前景色。同时关闭自动清洗后，可以保留上一笔颜色或手动载色。"}
+                    WetCheck {objectName:"settingsWetAutoLoad";text:"每笔自动载色";checked:root.library.wetMix.autoLoad;onToggled:root.setWetField("autoLoad",checked);tooltip:"每条笔触开始时装入前景色；涂抹还须开启手指绘画。关闭自动清洗和自动载色可保留上一笔颜色或手动载色。"}
                     ColumnLayout {Layout.fillWidth:true;Layout.minimumWidth:0
                         Button {Layout.fillWidth:true;Layout.minimumWidth:0;objectName:"wetCleanBrush";text:"清洗";implicitHeight:24;enabled:root.library.wetMix.enabled && PaintClient.ready && !PaintClient.drawing && !PaintClient.wetActionBusy;onClicked:PaintClient.cleanWetBrush();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"清除当前笔尖载色，不修改画布。"}
                         Button {Layout.fillWidth:true;Layout.minimumWidth:0;objectName:"wetLoadBrush";text:"载入前景色";implicitHeight:24;enabled:root.library.wetMix.enabled && PaintClient.ready && !PaintClient.drawing && !PaintClient.wetActionBusy;onClicked:PaintClient.loadWetBrush();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"按当前载色量装入前景色；同时关闭每笔自动清洗和自动载色，可保留这次手动装载。"}

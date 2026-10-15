@@ -237,6 +237,9 @@ fn catalog_snapshot_closed_values_and_entry_contracts_are_explicit() {
         finger_painting: false,
         pressure_strength: false,
     };
+    assert!(BrushProgram::compile(invalid).is_ok());
+    let mut invalid = active.clone();
+    invalid.brush.mode = BrushMode::Erase;
     assert!(BrushProgram::compile(invalid).is_err());
     let mut invalid = active.clone();
     invalid.dual = DualBrush::new(

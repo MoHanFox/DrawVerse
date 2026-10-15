@@ -52,15 +52,27 @@ impl Document {
         if policy.auto_clean() {
             carrier.clean()?;
         }
-        if policy.auto_load() {
+        if policy.auto_load()
+            && !matches!(
+                definition.brush.mode,
+                BrushMode::Smudge {
+                    finger_painting: false,
+                    ..
+                }
+            )
+        {
             carrier.reload(definition.brush.color)?;
         }
+        let all_layers = match definition.brush.mode {
+            BrushMode::Smudge { all_layers, .. } => all_layers,
+            _ => policy.all_layers(),
+        };
         self.begin_brush_stroke_inner(
             definition,
             first,
             Some(WetStroke {
                 carrier,
-                all_layers: policy.all_layers(),
+                all_layers,
                 work_per_dab: 0,
             }),
         )
@@ -79,7 +91,7 @@ impl Document {
         first: InputPoint,
         wet: &mut WetStroke,
     ) -> Result<()> {
-        if brush.mode != BrushMode::Paint
+        if brush.mode == BrushMode::Erase
             || first.tool == Tool::Eraser
             || program.dual.as_ref().is_some_and(|d| d.color.enabled())
         {
@@ -154,6 +166,17 @@ impl Document {
                         let value = layer.canvas_pixel(x as u32, y as u32)?;
                         if layer.mask {
                             let visible = 1. - value.alpha();
+                            // Mask coverage is display gray. The wet smudge carrier
+                            // stores linear color, matching foreground/manual loads.
+                            let visible = if matches!(stroke.brush.mode, BrushMode::Smudge { .. }) {
+                                if visible <= 0.04045 {
+                                    visible / 12.92
+                                } else {
+                                    ((visible + 0.055) / 1.055).powf(2.4)
+                                }
+                            } else {
+                                visible
+                            };
                             Pixel::from_straight([visible, visible, visible, 1.])
                         } else {
                             Ok(value)

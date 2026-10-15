@@ -897,6 +897,20 @@ private slots:
         QVERIFY(texture.save(input));const auto doomed=library->saveCopy("待删除");QVERIFY(client.importBrushTexture(QUrl::fromLocalFile(input),0));QVERIFY(library->remove(doomed));QTRY_COMPARE(finished.size(),3);QVERIFY(!finished.last()[0].toBool());
         QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));canvas->setClient(&client);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);QSignalSpy targetStopped(&target,&PaintCoreClient::stopped);target.shutdown();QTRY_COMPARE(targetStopped.size(),1);
     }
+    void wetSmudgeUsesOwnToolStrengthAndFingerPolicyWithUndo() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("wet-smudge.ini"));QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(128,64);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
+        auto *library=client.brushLibrary();library->setRadius(4);library->setPressureSize(false);library->setPressureFlow(false);library->setFlow(1);
+        auto wet=library->wetMix();wet["enabled"]=true;for(const auto &key:{"wetness","pickup","mix","consumption"})wet[key]=0.;wet["autoClean"]=true;wet["autoLoad"]=true;wet["load"]=1.;wet["deposit"]=1.;QVERIFY(library->setWetMix(wet));
+        client.activateSmudge();QVERIFY(client.smudgeTool());client.setSmudgeStrength(.4);client.setSmudgePressure(true);client.setSmudgeFingerPainting(false);client.setBrushColor(Qt::red);
+        InputSample sample;sample.position={32.5,32.5};sample.pressure=.5;sample.tool=1;sample.capabilities=1;
+        QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!client.drawing());QCOMPARE(client.undoDepth(),0);
+        client.setSmudgeFingerPainting(true);QVERIFY(client.beginStroke(sample));client.setSmudgeStrength(1);client.setSmudgeFingerPainting(false);client.setBrushColor(Qt::blue);client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        client.requestViewport(0,{0,0,128,64},{128,64});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(128,64));const auto after=client.frame();const auto c=after.pixelColor(32,32);QVERIFY(c.red()>=250);QCOMPARE(c.blue(),0);QVERIFY(c.alpha()>=50 && c.alpha()<=52);QCOMPARE(client.historyEntries().last().toMap().value("kind").toInt(),26);
+        client.undo();QTRY_COMPARE(client.undoDepth(),0);QTRY_VERIFY(!client.layerEditBusy());client.requestViewport(0,{0,0,128,64},{128,64});QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame().pixelColor(32,32).alpha(),0);
+        client.redo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.requestViewport(0,{0,0,128,64},{128,64});QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),after);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void wetModelPreservesClosedPolicyResetBaselineAndExchange() {
         BrushLibrary library;QVERIFY(!library.wetMix().value("enabled").toBool());QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object().value("version").toInt(),2);
         auto data=library.wetMix();data["enabled"]=true;data["allLayers"]=true;data["autoClean"]=false;data["autoLoad"]=false;data["wetness"]=.37;data["pickup"]=.25;data["mix"]=.75;data["load"]=.5;data["deposit"]=.8;data["consumption"]=.125;

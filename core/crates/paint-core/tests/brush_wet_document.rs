@@ -351,67 +351,80 @@ fn dry_loaded_wet_stroke_agrees_with_plain_blending_for_all_27_modes() {
 }
 #[test]
 fn image_texture_scatter_and_dual_paths_share_paged_wet_execution() {
-    for bits in 0..16 {
-        let mut a = fixture(false);
-        let mut b = fixture(true);
-        let mut definition = brush();
-        if bits & 1 != 0 {
-            definition.mask = Some(Arc::new(
-                BrushMask::new(4, 2, vec![255, 0, 255, 255, 255, 255, 0, 255]).unwrap(),
-            ));
-        }
-        if bits & 2 != 0 {
-            definition.texture = BrushTexture::new(
-                true,
-                TextureSettings::new(
-                    if bits & 1 == 0 {
-                        TextureSpace::Document
-                    } else {
-                        TextureSpace::Tip
-                    },
-                    1.,
-                    0.,
-                    0.6,
-                    false,
-                    0.,
-                    0.,
+    for smudge in [false, true] {
+        for bits in 0..16 {
+            let mut a = fixture(false);
+            let mut b = fixture(true);
+            let mut definition = brush();
+            if smudge {
+                definition.brush.mode = BrushMode::Smudge {
+                    all_layers: false,
+                    finger_painting: false,
+                    pressure_strength: true,
+                };
+                definition.dynamics.color =
+                    ColorDynamics::new(true, 0.2, 0.1, 0.1, 0.1, true, 71).unwrap();
+            }
+            if bits & 1 != 0 {
+                definition.mask = Some(Arc::new(
+                    BrushMask::new(4, 2, vec![255, 0, 255, 255, 255, 255, 0, 255]).unwrap(),
+                ));
+            }
+            if bits & 2 != 0 {
+                definition.texture = BrushTexture::new(
+                    true,
+                    TextureSettings::new(
+                        if bits & 1 == 0 {
+                            TextureSpace::Document
+                        } else {
+                            TextureSpace::Tip
+                        },
+                        1.,
+                        0.,
+                        0.6,
+                        false,
+                        0.,
+                        0.,
+                    )
+                    .unwrap(),
+                    Some(Arc::new(TextureResource::new(Arc::new(
+                        BrushMask::new(2, 2, vec![128, 255, 255, 128]).unwrap(),
+                    )))),
                 )
-                .unwrap(),
-                Some(Arc::new(TextureResource::new(Arc::new(
-                    BrushMask::new(2, 2, vec![128, 255, 255, 128]).unwrap(),
-                )))),
-            )
-            .unwrap();
+                .unwrap();
+            }
+            if bits & 4 != 0 {
+                definition.dynamics.scatter =
+                    ScatterDynamics::new(true, 0.2, true, 2, 0., 7).unwrap();
+            }
+            if bits & 8 != 0 {
+                definition.dual = DualBrush::new(
+                    true,
+                    DualMode::Screen,
+                    SecondaryTip::new(
+                        8.,
+                        BrushTip {
+                            pressure_size: false,
+                            pressure_flow: false,
+                            ..Default::default()
+                        },
+                        None,
+                        Default::default(),
+                    )
+                    .unwrap()
+                    .with_spacing(0.25)
+                    .unwrap(),
+                );
+            }
+            let c = carrier(&definition);
+            line(&mut a, definition.clone(), &c, false, (0., 0.));
+            line(&mut b, definition, &c, true, (0., 0.));
+            assert_eq!(pixels(&a), pixels(&b), "combination {bits}");
+            assert_eq!(a.history_depth(), (1, 0));
         }
-        if bits & 4 != 0 {
-            definition.dynamics.scatter = ScatterDynamics::new(true, 0.2, true, 2, 0., 7).unwrap();
-        }
-        if bits & 8 != 0 {
-            definition.dual = DualBrush::new(
-                true,
-                DualMode::Screen,
-                SecondaryTip::new(
-                    8.,
-                    BrushTip {
-                        pressure_size: false,
-                        pressure_flow: false,
-                        ..Default::default()
-                    },
-                    None,
-                    Default::default(),
-                )
-                .unwrap()
-                .with_spacing(0.25)
-                .unwrap(),
-            );
-        }
-        let c = carrier(&definition);
-        line(&mut a, definition.clone(), &c, false, (0., 0.));
-        line(&mut b, definition, &c, true, (0., 0.));
-        assert_eq!(pixels(&a), pixels(&b), "combination {bits}");
-        assert_eq!(a.history_depth(), (1, 0));
     }
 }
+
 #[test]
 fn zero_pressure_footprints_and_rejected_segments_are_atomic() {
     let mut d = Document::new(64, 64).unwrap();

@@ -2218,7 +2218,8 @@ impl Document {
             Self::commit_wet(stroke, wet)?;
             return Ok(false);
         }
-        if matches!(stroke.brush.mode, BrushMode::Smudge { .. })
+        if stroke.wet.is_none()
+            && matches!(stroke.brush.mode, BrushMode::Smudge { .. })
             && !(stroke.first_dab
                 && matches!(
                     stroke.brush.mode,
@@ -2245,7 +2246,12 @@ impl Document {
                 stroke.random_child,
             )
         });
-        let smudge = self.prepare_smudge(stroke, point, x0, y0, x1, y1)?;
+        let wet_smudge = wet.is_some() && matches!(stroke.brush.mode, BrushMode::Smudge { .. });
+        let smudge = if wet_smudge {
+            None
+        } else {
+            self.prepare_smudge(stroke, point, x0, y0, x1, y1)?
+        };
         stroke.first_dab = false;
         let (x0, x1) = (
             x0 - i64::from(appearance.offset_x),
@@ -2408,28 +2414,37 @@ impl Document {
                             );
                             let ink = wet.sample(u.clamp(0., 1.), v.clamp(0., 1.));
                             let ink = wet_color.map_or(ink, |transform| transform.apply(ink));
-                            let prior = prior_coverage
-                                .as_ref()
-                                .map_or(Pixel::TRANSPARENT, |p| p[offset]);
-                            let contribution = Self::wet_contribution(
-                                prior,
-                                ink,
-                                coverage * flow,
-                                pressure_opacity.unwrap_or(1.),
-                            )?;
-                            if contribution != prior {
-                                coverage_updates.push((offset, contribution));
-                            }
-                            paint_color = contribution;
-                            amount = stroke.brush.opacity
-                                * selected
-                                * if paper_texture { texture_amount } else { 1. };
-                            if stroke.before.contains_key(&coord) {
-                                original
-                                    .as_ref()
-                                    .map_or(self.layers[index].default_pixel(x, y), |p| p[offset])
-                            } else {
+                            if wet_smudge {
+                                // Smudge transports premultiplied color at tool strength,
+                                // including transparent ink; it has no paint opacity ledger.
+                                paint_color = ink;
                                 before
+                            } else {
+                                let prior = prior_coverage
+                                    .as_ref()
+                                    .map_or(Pixel::TRANSPARENT, |p| p[offset]);
+                                let contribution = Self::wet_contribution(
+                                    prior,
+                                    ink,
+                                    coverage * flow,
+                                    pressure_opacity.unwrap_or(1.),
+                                )?;
+                                if contribution != prior {
+                                    coverage_updates.push((offset, contribution));
+                                }
+                                paint_color = contribution;
+                                amount = stroke.brush.opacity
+                                    * selected
+                                    * if paper_texture { texture_amount } else { 1. };
+                                if stroke.before.contains_key(&coord) {
+                                    original
+                                        .as_ref()
+                                        .map_or(self.layers[index].default_pixel(x, y), |p| {
+                                            p[offset]
+                                        })
+                                } else {
+                                    before
+                                }
                             }
                         } else if capped {
                             let previous =
@@ -2500,7 +2515,17 @@ impl Document {
                         } else {
                             before
                         };
-                        let after = if let Some(smudge) = &smudge {
+                        let after = if wet_smudge {
+                            if mask {
+                                let (hide, alpha) = Self::mask_tone(paint_color);
+                                before
+                                    .mix(Pixel::from_straight([0., 0., 0., hide])?, amount * alpha)
+                            } else if alpha_locked {
+                                before.paint_preserving_alpha(paint_color, amount)
+                            } else {
+                                before.mix(paint_color, amount)
+                            }
+                        } else if let Some(smudge) = &smudge {
                             let dragged = smudge.at(
                                 x + i64::from(appearance.offset_x),
                                 y + i64::from(appearance.offset_y),

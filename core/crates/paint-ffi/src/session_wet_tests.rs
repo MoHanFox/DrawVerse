@@ -1,7 +1,7 @@
 use super::*;
 use paint_core::{
-    Brush, BrushDefinition, BrushSettings, BrushTip, Pixel, WetCarrier, WetMix, WetSettings,
-    WetTool,
+    Brush, BrushDefinition, BrushMode, BrushSettings, BrushTip, Pixel, WetCarrier, WetMix,
+    WetSettings, WetTool,
 };
 use std::{thread, time::Instant};
 fn run(s: &Session, operation: Operation) -> PaintSessionInfo {
@@ -60,6 +60,17 @@ fn begin(s: &Session, b: BrushDefinition, x: f64) -> PaintSessionInfo {
 }
 #[test]
 fn wet_actor_two_strokes_match_reference_and_keep_tool_out_of_document_history() {
+    actor_matches_reference(BrushMode::Paint);
+}
+#[test]
+fn wet_smudge_actor_adopts_ink_and_matches_real_pixels_and_history() {
+    actor_matches_reference(BrushMode::Smudge {
+        all_layers: false,
+        finger_painting: false,
+        pressure_strength: true,
+    });
+}
+fn actor_matches_reference(mode: BrushMode) {
     let tool = WetTool::default();
     tool.reload(mix(), 8., red()).unwrap();
     let session = Session::with_wet_tool(128, 64, tool.clone()).unwrap();
@@ -86,6 +97,7 @@ fn wet_actor_two_strokes_match_reference_and_keep_tool_out_of_document_history()
     let mut retained = WetCarrier::new(mix(), 8., red()).unwrap();
     for color in [blue(), red()] {
         let mut b = definition();
+        b.brush.mode = mode;
         b.brush.color = color;
         let first = InputPoint::new(16.5, 32.5, 1.);
         assert_eq!(

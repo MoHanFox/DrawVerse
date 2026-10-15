@@ -240,11 +240,11 @@ impl BrushProgram {
             ));
         }
         if definition.wet.enabled()
-            && (definition.brush.mode != crate::BrushMode::Paint
+            && (definition.brush.mode == crate::BrushMode::Erase
                 || dual.as_ref().is_some_and(|d| d.color.enabled()))
         {
             return Err(Error::InvalidArgument(
-                "wet preset requires paint without dual color",
+                "wet preset requires paint or smudge without dual color",
             ));
         }
         Ok(Self {

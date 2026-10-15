@@ -24,7 +24,7 @@ RowLayout {
         model:[{key:"Pressure",note:"使用数位笔压力控制涂抹强度；笔刷大小仍随压力变化。",title:"压感"},{key:"AllLayers",note:"从所有可见图层的合成颜色取样；只涂抹到当前图层。蒙版不支持此选项。",title:"对所有图层取样"},{key:"FingerPainting",note:"每条笔触起点带入前景色，随后继续搬运画布上的颜色；不使用背景色。",title:"手指绘画"}]
         CompactCheckBox {
             required property var modelData
-            tooltip:modelData.note
+            tooltip:modelData.key==="FingerPainting" && root.library.wetMix.enabled?"湿混涂抹开启此项后，按预设的每笔自动载色设置载入前景色；关闭时只拾色或使用保留载色。":modelData.note
             objectName:"smudge"+modelData.key
             text:modelData.title;checked:root.client["smudge"+modelData.key]
             onToggled:root.client["smudge"+modelData.key]=checked
