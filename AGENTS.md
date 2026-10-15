@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新数位笔悬停修复：`docs/brush-tablet-hover-fix-design.md` / `docs/brush-tablet-hover-fix-validation.md`；双色页移除两个预设按钮/既有预设保留，直接入点与笔触后Stylus Hover跟随、设备几何保持/原生窗口光标有界接管与恢复、环境缩放1/2相关Qt回归；无ABI或格式变化。
+
 - 最新ABR整笔不透明度：`docs/abr-opacity-design.md` / `docs/abr-opacity-validation.md`；转换器v2/来源record1/VBR1.16，非100%真实整笔上限/密集程序与图片、v1原基准/报告及记录字节不重算、新旧混合最高minor/降级拒绝、原生prepared与Qt导入/重置/新库交换；无ABI/state变化，完整ABR动态/16位、双色湿混及收尖等继续后续。
 
 - 最新二维湿混涂抹：`docs/brush-wet-smudge-design.md` / `docs/brush-wet-smudge-validation.md`；独立R共用载体/强度压感与工具取样、手指自动载色/透明搬运/蒙版线性灰度、真实像素/分页组合/原生两笔及Qt历史，追加原生高DPI悬停计时输入隔离与重复回归（环境倍率非硬件DPR）；无ABI/格式变化，湿混双色/橡皮、收尖/非分隔与高级ABR等继续后续。

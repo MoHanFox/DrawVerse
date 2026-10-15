@@ -1,4 +1,5 @@
 #pragma once
+#include <QCursor>
 #include "PaintCoreClient.h"
 #include <QQuickItem>
 #include <QVector>
@@ -101,6 +102,9 @@ private:
     void requestView();
     void observeScreen(QScreen *screen);
     void refreshBrushCursor();
+    void setTabletWindowCursor(bool active);
+    void updateTabletHover(QHoverEvent *event);
+    QCursor m_savedWindowCursor;
     void setSpacePanning(bool held);
     void setKeySpace(bool held);
     void zoomAround(qreal factor,QPointF position);

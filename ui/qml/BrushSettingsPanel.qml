@@ -6,7 +6,6 @@ import "."
 
 ColumnLayout {
     id:root
-    property string outlineError:""
     property string wetError:""
     function setWetField(key,value){let data=Object.assign({},root.library.wetMix);data[key]=value;const ok=root.library.setWetMix(data);root.wetError=ok?"":"湿混暂不支持双色双笔刷，请先关闭双色绘制。";return ok}
     readonly property var library:PaintClient.brushLibrary
@@ -210,9 +209,6 @@ ColumnLayout {
                         DualField {title:"最低圆度比例";field:"minimumRoundness";module:"shapeJitter";from:1}
                     }
                     ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===4;Layout.fillWidth:true;spacing:5
-                        Button {objectName:"createOutlineFollow";text:"创建描边：跟随压感";implicitHeight:24;Layout.fillWidth:true;Layout.minimumWidth:0;onClicked:root.outlineError=root.library.createOutlinePreset(false).length?"":"笔刷库已满，无法创建预设。";ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"创建新圆笔预设：第二颜色在后方，直径多8像素；外边随大小压感缩小。"}
-                        Button {objectName:"createOutlineFixed";text:"创建描边：固定边宽";implicitHeight:24;Layout.fillWidth:true;Layout.minimumWidth:0;onClicked:root.outlineError=root.library.createOutlinePreset(true).length?"":"笔刷库已满，无法创建预设。";ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"创建新圆笔预设：第二颜色在后方，固定约4像素外边；尺寸夹限时受合法范围限制。"}
-                        Label {visible:root.outlineError.length>0;text:root.outlineError;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                         CompactCheckBox {objectName:"settingsDualColorEnabled";text:"启用双色绘制";checked:root.dualModule("color").enabled;onToggled:if(!root.setDualField("enabled",checked,"color"))checked=Qt.binding(function(){return root.dualModule("color").enabled});tooltip:"分别累积主和第二贡献，再按整笔合成；关闭后保留设置和旧灰度模式。"}
                         CompactCheckBox {objectName:"settingsDualUseBackground";text:"使用第二颜色";checked:root.dualModule("color").useBackground;onToggled:root.setDualField("useBackground",checked,"color");tooltip:"第二贡献使用颜色面板的背景色；关闭时使用前景色，两色均在起笔捕获。"}
                         CompactCheckBox {objectName:"settingsDualOverflow";text:"允许溢出";checked:root.dualModule("color").overflow;onToggled:root.setDualField("overflow",checked,"color");tooltip:"允许第二贡献绘到主覆盖外；关闭时按主覆盖裁切，仍受选区和锁限制。"}
