@@ -132,3 +132,7 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 湿混原生后续：ABI1.50新增显式prepare_state_wet、library_package_read_wet/write_wet及共享工具接口，完整保留state17/VBR1.15，旧入口继续拒绝以保护旧Qt。Qt镜像/基准/界面及真实有色预览仍待接入，见brush-wet-abi-validation.md。
 
 湿混Qt后续：state17镜像、完整关闭值和resetState基准已进入Qt，文件读写使用ABI1.50显式wet库包入口，保存重开及新目录VBR恢复通过，见brush-wet-qt-validation.md。载体仍仅运行时持有，不进入VBR；旧原生接口的保护性拒绝继续保留。
+
+## VBR1.16：ABR整笔不透明度来源
+
+包含drawverse.abr.basic converterVersion2来源记录时最低minor16；该版本映射非100% toolOptions.Opct到已有整笔opacity。来源记录自身仍version1，v1/v2原记录及原ABR逐字节保持；SourceBatch最高转换器版本只用于选择包版本。旧来源不重新转换，未用新行为不升级来源，去除来源的导出仍按实际参数/资源选择版本。解码拒绝新来源降级夹带，新增完整schema和合法/非法来源示例见 [设计](abr-opacity-design.md) / [验收](abr-opacity-validation.md)。不新增笔刷行为版本、必需能力或C ABI/state字段；其他动态、湿混组合和VBR分组等范围继续后续。

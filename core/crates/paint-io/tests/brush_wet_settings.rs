@@ -67,6 +67,7 @@ fn source_baseline_does_not_silently_drop_disabled_wet_policy() {
     let token = paint_task::CancellationToken::default();
     for enabled in [false, true] {
         let preset = ConvertedPreset {
+            converter_version: 1,
             name: "wet",
             settings: BrushSettings {
                 wet: WetSettings::new(enabled, true, false, false, WetMix::default()),

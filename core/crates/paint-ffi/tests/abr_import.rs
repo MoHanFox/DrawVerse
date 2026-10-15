@@ -10,9 +10,16 @@ use std::{
 mod fixture;
 #[test]
 fn abr_buffer_guards_and_whole_import_prepare_without_implicit_catalog_changes() {
+    check_import(None);
+}
+#[test]
+fn opacity_v2_import_preserves_source_and_prepared_catalog_through_public_abi() {
+    check_import(Some(25.5));
+}
+fn check_import(opacity: Option<f64>) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("brush.abr");
-    std::fs::write(&path, fixture::fixture(6, 2, false)).unwrap();
+    std::fs::write(&path, fixture::fixture_with_opacity(6, 2, false, opacity)).unwrap();
     let token = CancellationToken::default();
     let batch = ImportBatch::read(&path, MAX_CATALOG_MASK_BYTES, &token).unwrap();
     let expected = batch.to_json().unwrap();
@@ -136,6 +143,20 @@ fn abr_buffer_guards_and_whole_import_prepare_without_implicit_catalog_changes()
                 &mut required
             ),
             PAINT_OK
+        );
+        let archive = resources
+            .source_store()
+            .unwrap()
+            .load(source, &token)
+            .unwrap();
+        assert_eq!(&canonical[..required as usize], archive.record().unwrap());
+        assert_eq!(
+            archive.info.converter_version,
+            if opacity.is_some() { 2 } else { 1 }
+        );
+        assert!(
+            (f64::from(archive.info.baseline.dab_opacity) - opacity.unwrap_or(100.) / 100.).abs()
+                < 1e-6
         );
         std::fs::write(&path, fixture::fixture(6, 2, true)).unwrap();
         required = 99;

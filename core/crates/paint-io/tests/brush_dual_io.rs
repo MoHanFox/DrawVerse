@@ -70,6 +70,7 @@ fn original_source_baseline_cannot_silently_drop_dual_settings() {
         entries: Vec::new(),
     };
     let preset = ConvertedPreset {
+        converter_version: 1,
         name: "dual",
         settings: BrushSettings {
             dual: DualBrush::new(false, DualMode::Subtract, SecondaryTip::default()),

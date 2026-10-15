@@ -53,7 +53,7 @@ impl SourceInfo {
         if self.version != 1
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || self.converter_version != 1
+            || !matches!(self.converter_version, 1 | 2)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -159,7 +159,7 @@ impl SourceArchive {
             preset_index,
             original_name: preset.name.into(),
             converter: "drawverse.abr.basic".into(),
-            converter_version: 1,
+            converter_version: preset.converter_version,
             baseline: Parameters {
                 scatter_dynamics: None,
                 shape_jitter: None,
@@ -215,6 +215,7 @@ pub struct SourceBatch {
     original_id: String,
     records: Vec<(String, Vec<u8>)>,
     tip_ids: BTreeSet<String>,
+    converter_version: u32,
 }
 impl SourceBatch {
     pub fn capture(
@@ -232,7 +233,9 @@ impl SourceBatch {
         let mut records = Vec::new();
         let mut tip_ids = BTreeSet::new();
         let mut total = 0usize;
+        let mut converter_version = 1;
         for (index, preset) in presets.iter().enumerate() {
+            converter_version = converter_version.max(preset.converter_version);
             check(token)?;
             let tip_resource = if let Some(mask) = &preset.settings.mask {
                 let key = Arc::as_ptr(mask) as usize;
@@ -270,6 +273,7 @@ impl SourceBatch {
             original_id,
             records,
             tip_ids,
+            converter_version,
         })
     }
     /// Verify portable records against one shared original, preserving record bytes.
@@ -286,6 +290,7 @@ impl SourceBatch {
         let original_id = hash(&original);
         let mut tip_ids = BTreeSet::new();
         let mut total = 0usize;
+        let mut converter_version = 1;
         for (id, bytes) in &records {
             check(token)?;
             total = total.saturating_add(bytes.len());
@@ -298,6 +303,7 @@ impl SourceBatch {
             let info: SourceInfo =
                 serde_json::from_slice(bytes).map_err(|e| Error::Codec(e.to_string()))?;
             info.validate()?;
+            converter_version = converter_version.max(info.converter_version);
             if info.original_hash != original_id
                 || (info.file_version, info.file_subversion) != version
             {
@@ -313,7 +319,11 @@ impl SourceBatch {
             original_id,
             records: records.into_iter().collect(),
             tip_ids,
+            converter_version,
         })
+    }
+    pub fn converter_version(&self) -> u32 {
+        self.converter_version
     }
     pub fn original_id(&self) -> &str {
         &self.original_id

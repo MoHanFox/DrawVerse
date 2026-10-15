@@ -20,6 +20,7 @@ pub struct Issue {
     pub reason: &'static str,
 }
 pub struct ConvertedPreset<'a> {
+    pub converter_version: u32,
     pub name: &'a str,
     pub settings: BrushSettings,
     pub source: &'a Descriptor,
@@ -123,6 +124,20 @@ fn unmapped(
 pub fn convert<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
+) -> Result<Vec<ConvertedPreset<'a>>> {
+    convert_inner(linked, token, true)
+}
+/// Preserve the immutable baseline and report semantics of converter v1.
+pub fn convert_legacy<'a>(
+    linked: &[LinkedPreset<'a>],
+    token: &CancellationToken,
+) -> Result<Vec<ConvertedPreset<'a>>> {
+    convert_inner(linked, token, false)
+}
+fn convert_inner<'a>(
+    linked: &[LinkedPreset<'a>],
+    token: &CancellationToken,
+    stroke_opacity: bool,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
     check(token)?;
     if linked.is_empty() || linked.len() > 1024 {
@@ -337,7 +352,18 @@ pub fn convert<'a>(
                 "源未保存工具流量，基线使用100%",
             );
         }
+        let mut converter_version = 1;
         match scalar(b"Opct")? {
+            Some(opacity) if stroke_opacity && opacity < 1. => {
+                settings.opacity = opacity as f32;
+                converter_version = 2;
+                issue(
+                    &mut issues,
+                    "toolOptions.Opct",
+                    Status::Mapped,
+                    "源整笔不透明度百分比；密集重叠使用整笔上限",
+                );
+            }
             Some(1.) => issue(
                 &mut issues,
                 "toolOptions.Opct",
@@ -385,6 +411,7 @@ pub fn convert<'a>(
         }
         BrushProgram::compile(settings.definition())?;
         output.push(ConvertedPreset {
+            converter_version,
             name: item.name,
             settings,
             source: item.preset,

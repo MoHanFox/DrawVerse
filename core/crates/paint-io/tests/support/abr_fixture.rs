@@ -37,7 +37,7 @@ fn unit(kind: &[u8; 4], value: f64) -> Vec<u8> {
     bytes.extend(value.to_be_bytes());
     typed(b"UntF", &bytes)
 }
-fn preset(sampled: bool, bad: bool) -> Vec<u8> {
+fn preset(sampled: bool, bad: bool, opacity: Option<f64>) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
         ("Angl", unit(b"#Ang", 0.)),
@@ -49,31 +49,39 @@ fn preset(sampled: bool, bad: bool) -> Vec<u8> {
     } else {
         shape.push(("Hrdn", unit(b"#Prc", 100.)));
     }
-    typed(
-        b"Objc",
-        &object(
-            "brushPreset",
-            vec![
-                ("Nm  ", typed(b"TEXT", &text("Same\0"))),
-                (
-                    "Brsh",
-                    typed(
-                        b"Objc",
-                        &object(
-                            if sampled {
-                                "sampledBrush"
-                            } else {
-                                "computedBrush"
-                            },
-                            shape,
-                        ),
-                    ),
+    let mut entries = vec![
+        ("Nm  ", typed(b"TEXT", &text("Same\0"))),
+        (
+            "Brsh",
+            typed(
+                b"Objc",
+                &object(
+                    if sampled {
+                        "sampledBrush"
+                    } else {
+                        "computedBrush"
+                    },
+                    shape,
                 ),
-                ("unknownTexture", typed(b"bool", &[1])),
-            ],
+            ),
         ),
-    )
+        ("unknownTexture", typed(b"bool", &[1])),
+    ];
+    if let Some(opacity) = opacity {
+        entries.push((
+            "toolOptions",
+            typed(
+                b"Objc",
+                &object(
+                    "paintbrushTool",
+                    vec![("Opct", typed(b"doub", &opacity.to_be_bytes()))],
+                ),
+            ),
+        ));
+    }
+    typed(b"Objc", &object("brushPreset", entries))
 }
+
 fn section(out: &mut Vec<u8>, key: &[u8; 4], bytes: &[u8]) {
     out.extend(b"8BIM");
     out.extend(key);
@@ -81,12 +89,15 @@ fn section(out: &mut Vec<u8>, key: &[u8; 4], bytes: &[u8]) {
     out.extend(bytes);
 }
 pub fn fixture(version: u16, sub: u16, bad: bool) -> Vec<u8> {
+    fixture_with_opacity(version, sub, bad, None)
+}
+pub fn fixture_with_opacity(version: u16, sub: u16, bad: bool, opacity: Option<f64>) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
     let mut list = 3u32.to_be_bytes().to_vec();
-    list.extend(preset(true, false));
-    list.extend(preset(false, false));
-    list.extend(preset(true, bad));
+    list.extend(preset(true, false, opacity));
+    list.extend(preset(false, false, opacity));
+    list.extend(preset(true, bad, opacity));
     let mut descriptor = 16u32.to_be_bytes().to_vec();
     descriptor.extend(object("null", vec![("Brsh", typed(b"VlLs", &list))]));
     section(&mut bytes, b"desc", &descriptor);

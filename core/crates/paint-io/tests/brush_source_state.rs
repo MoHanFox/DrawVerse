@@ -16,6 +16,7 @@ fn source(store: &SourceStore) -> String {
         entries: Vec::new(),
     };
     let converted = ConvertedPreset {
+        converter_version: 1,
         name: "导入记录",
         settings: paint_core::BrushSettings::default(),
         source: &descriptor,

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "format": "abr",
+  "originalHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "fileVersion": 6,
+  "fileSubversion": 2,
+  "presetIndex": 0,
+  "originalName": "Opacity brush",
+  "converter": "drawverse.abr.basic",
+  "converterVersion": 1,
+  "baseline": {
+    "diameter": 8,
+    "spacing": 0.02,
+    "dabOpacity": 1.0,
+    "hardness": 1,
+    "roundness": 1,
+    "angle": 0,
+    "flow": 1,
+    "pressureSize": false,
+    "pressureFlow": false
+  },
+  "tipResource": null,
+  "report": [
+    {
+      "path": "toolOptions.Opct",
+      "status": "mapped",
+      "reason": "Source stroke opacity percentage"
+    }
+  ]
+}

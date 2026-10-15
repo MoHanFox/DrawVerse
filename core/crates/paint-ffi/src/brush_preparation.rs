@@ -1439,6 +1439,7 @@ mod tests {
             ..Default::default()
         };
         let converted = ConvertedPreset {
+            converter_version: 1,
             name: "baseline",
             settings,
             source: &descriptor,
@@ -1615,6 +1616,7 @@ mod tests {
             entries: Vec::new(),
         };
         let converted = ConvertedPreset {
+            converter_version: 1,
             name: "source",
             settings: paint_core::BrushSettings::default(),
             source: &descriptor,

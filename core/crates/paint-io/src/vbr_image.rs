@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 15;
+pub const MAX_EXECUTABLE_MINOR: u32 = 16;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -467,6 +467,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             return Err(Error::Limit("VBR source records"));
         }
         let info: crate::brush_source::SourceInfo = vbr::json(&bytes)?;
+        if info.converter_version > 1 && manifest.version.minor < 16 {
+            return Err(Error::Unsupported(
+                "ABR opacity source requires VBR1.16".into(),
+            ));
+        }
         grouped
             .entry(info.original_hash)
             .or_default()
@@ -540,7 +545,13 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle.package.brushes.iter().any(|b| b.wet_mix.is_some()) {
+            minor: if bundle
+                .sources
+                .iter()
+                .any(|source| source.converter_version() > 1)
+            {
+                16
+            } else if bundle.package.brushes.iter().any(|b| b.wet_mix.is_some()) {
                 15
             } else if bundle.package.brushes.iter().any(|b| b.has_dual_color()) {
                 14

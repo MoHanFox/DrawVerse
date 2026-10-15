@@ -426,3 +426,7 @@ Rust IO新增state14/VBR1.12/behavior11/time-grid-v1，旧默认不升级。当�
 - `paint_brush_library_prepare_state_wet` and `paint_brush_library_package_read_wet/write_wet` opt in to complete wet policy, including closed nondefault values and resources. Legacy preparation/package entries keep returning Unsupported for new policy to protect older Qt consumers.
 
 Existing prepared-state/pose/with_blend stroke exports consume the exact opted-in ticket. Engine lease adopts new ink only after successful document/history finish; cancel/error/replacement/stop drops uncommitted ink. Undo/redo restore pixels, not tool reservoir. Tool/manual actions and preparation/file operations retain the existing worker-thread/callback/pointer rules; no registry guard is held while waiting for preparation or executing tool operations.
+
+### ABR opacity conversion / VBR1.16 implementation update
+
+The existing ABR read, prepared state, source-info and package APIs also carry basic converterVersion2 provenance when a newly imported non-100% Opct is executed as stroke opacity. Source record structure version remains1; existing version1 records are never recomputed. Packages containing version2 source records require VBR1.16. No DTO, ABI minor, feature bit or state field changes; unchanged full-source byte handoff and baseline parameters are sufficient. See `docs/abr-opacity-design.md` and its validation record for limits; this does not imply full ABR dynamic compatibility.

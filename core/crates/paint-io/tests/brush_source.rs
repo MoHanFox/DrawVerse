@@ -16,6 +16,7 @@ fn archive() -> SourceArchive {
         entries: Vec::new(),
     };
     let converted = ConvertedPreset {
+        converter_version: 1,
         name: "导入时名称",
         settings: paint_core::BrushSettings::default(),
         source: &source,
@@ -40,6 +41,7 @@ fn converter_v1_refuses_to_discard_pressure_controls_from_captured_baselines() {
     settings.dynamics.flow =
         paint_core::PressureControl::new(paint_core::PressureCurve::default(), 0.3).unwrap();
     let converted = ConvertedPreset {
+        converter_version: 1,
         name: "dynamic",
         settings,
         source: &descriptor,
@@ -67,6 +69,7 @@ fn batch_capture_bounds_all_reports_before_any_storage_and_matches_single_record
         entries: Vec::new(),
     };
     let converted = ConvertedPreset {
+        converter_version: 1,
         name: "single",
         settings: paint_core::BrushSettings::default(),
         source: &descriptor,
@@ -86,6 +89,7 @@ fn batch_capture_bounds_all_reports_before_any_storage_and_matches_single_record
     assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 2);
     let too_many = (0..1025)
         .map(|_| ConvertedPreset {
+            converter_version: 1,
             name: "count",
             settings: paint_core::BrushSettings::default(),
             source: &descriptor,
@@ -98,6 +102,7 @@ fn batch_capture_bounds_all_reports_before_any_storage_and_matches_single_record
     ));
     let large = (0..200)
         .map(|_| ConvertedPreset {
+            converter_version: 1,
             name: "large",
             settings: paint_core::BrushSettings::default(),
             source: &descriptor,

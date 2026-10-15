@@ -17,12 +17,18 @@ mod support {
     pub mod abr_fixture;
 }
 fn bundle() -> ImageBundle {
+    bundle_with_opacity(None)
+}
+fn bundle_with_opacity(opacity: Option<f64>) -> ImageBundle {
     let token = CancellationToken::default();
     let temp = tempfile::tempdir().unwrap();
     let resources =
         ResourceStore::open(temp.path().join("assets"), MAX_CATALOG_MASK_BYTES).unwrap();
     let batch = ImportBatch::decode(
-        Arc::new(support::abr_fixture::fixture(6, 2, false)),
+        Arc::new(match opacity {
+            None => support::abr_fixture::fixture(6, 2, false),
+            Some(value) => support::abr_fixture::fixture_with_opacity(6, 2, false, Some(value)),
+        }),
         MAX_CATALOG_MASK_BYTES,
         &token,
     )
@@ -477,6 +483,7 @@ fn all_1024_presets_can_have_distinct_current_and_baseline_tips_and_originals() 
             ..Default::default()
         };
         let converted = ConvertedPreset {
+            converter_version: 1,
             name: "bounded",
             settings,
             source: &descriptor,
@@ -708,4 +715,95 @@ fn dual_color_current_image_preserves_shared_secondary_and_original_provenance()
         );
     }
     assert_eq!(results[0], results[1]);
+}
+
+#[test]
+fn opacity_v2_and_legacy_sources_share_original_without_rewriting_and_require_minor_16() {
+    use paint_io::{abr_association, abr_conversion, abr_sampled, brush_source::SourceBatch};
+    let token = CancellationToken::default();
+    let mut current = bundle_with_opacity(Some(25.5));
+    let original = Arc::new(current.sources()[0].original_bytes().to_vec());
+    let parsed = abr_sampled::decode_sectioned(&original, &token).unwrap();
+    let descriptors = parsed.descriptors(&token).unwrap();
+    let linked = abr_association::associate(&parsed, &descriptors, &token).unwrap();
+    let legacy = abr_conversion::convert_legacy(&linked, &token).unwrap();
+    let old = SourceBatch::capture(original.clone(), &legacy, &token).unwrap();
+    let (old_id, old_bytes) = old.records().next().unwrap();
+    let mut records = current.sources()[0]
+        .records()
+        .map(|(id, b)| (id.to_owned(), b.to_vec()))
+        .collect::<BTreeMap<_, _>>();
+    records.insert(old_id.to_owned(), old_bytes.to_vec());
+    let mut old_preset = current.package.brushes[0].clone();
+    old_preset.id = "12345678-1234-4234-8234-ffffffffffff".into();
+    old_preset.source_resource = Some(old_id.into());
+    old_preset.parameters.dab_opacity = 1.;
+    current.package.brushes.push(old_preset);
+    let assets = current
+        .assets()
+        .iter()
+        .map(|(id, a)| (id.clone(), a.bytes().to_vec()))
+        .collect();
+    let mixed = ImageBundle::with_sources(
+        current.package,
+        assets,
+        vec![SourceBatch::from_records(original.clone(), records.clone(), &token).unwrap()],
+        &token,
+    )
+    .unwrap();
+    assert_eq!(mixed.sources()[0].converter_version(), 2);
+    let encoded = vbr_image::encode(&mixed, &token).unwrap();
+    let mut zip = ZipArchive::new(Cursor::new(&encoded)).unwrap();
+    let mut text = String::new();
+    zip.by_name("manifest.json")
+        .unwrap()
+        .read_to_string(&mut text)
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&text).unwrap()["version"]["minor"],
+        16
+    );
+    let restored = vbr_image::decode(&encoded, &token).unwrap();
+    assert_eq!(restored.sources()[0].original_bytes(), original.as_slice());
+    assert_eq!(
+        restored.sources()[0]
+            .records()
+            .map(|(id, b)| (id.to_owned(), b.to_vec()))
+            .collect::<BTreeMap<_, _>>(),
+        records
+    );
+    for (i, expected) in [(1, 0.255), (3, 1.)] {
+        assert!((restored.package.brushes[i].parameters.dab_opacity - expected).abs() < 1e-6);
+    }
+    for minor in [2, 15] {
+        let downgraded = rewrite(&encoded, |name, data| {
+            if name == "manifest.json" {
+                let mut v: serde_json::Value = serde_json::from_slice(data).unwrap();
+                v["version"]["minor"] = minor.into();
+                *data = serde_json::to_vec(&v).unwrap();
+            }
+            true
+        });
+        assert!(vbr_image::decode(&downgraded, &token).is_err());
+    }
+    for index in 0..4 {
+        let first = InputPoint::new(12.5, 12.5, 1.);
+        let mut a = Document::new(32, 24).unwrap();
+        let mut b = Document::new(32, 24).unwrap();
+        a.begin_brush_stroke(mixed.definition(index).unwrap(), first)
+            .unwrap();
+        b.begin_brush_stroke(restored.definition(index).unwrap(), first)
+            .unwrap();
+        for x in [24.5, 12.5, 24.5] {
+            a.stroke_to(InputPoint::new(x, 12.5, 1.)).unwrap();
+            b.stroke_to(InputPoint::new(x, 12.5, 1.)).unwrap();
+        }
+        a.end_stroke().unwrap();
+        b.end_stroke().unwrap();
+        for y in 0..24 {
+            for x in 0..32 {
+                assert_eq!(a.pixel(x, y), b.pixel(x, y));
+            }
+        }
+    }
 }

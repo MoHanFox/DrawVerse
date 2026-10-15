@@ -454,6 +454,7 @@ fn source_query_returns_exact_verified_record_and_clears_outputs_on_failure() {
         entries: Vec::new(),
     };
     let converted = ConvertedPreset {
+        converter_version: 1,
         name: "original",
         settings: paint_core::BrushSettings::default(),
         source: &descriptor,
@@ -559,6 +560,7 @@ fn native_reader_and_writer_exchange_source_bundles_and_never_drop_provenance() 
         entries: Vec::new(),
     };
     let converted = ConvertedPreset {
+        converter_version: 1,
         name: "source",
         settings: paint_core::BrushSettings::default(),
         source: &descriptor,
