@@ -804,6 +804,29 @@ bool WorkspaceManager::dockToolStrip(const QString &data,const QString &location
     return dockPayload(payload("__toolstrip",{},true),location,target,placement);
 }
 bool WorkspaceManager::eventFilter(QObject *watched,QEvent *event) {
+    const bool menuMouse=event->type()==QEvent::MouseMove || event->type()==QEvent::MouseButtonPress || event->type()==QEvent::MouseButtonRelease || event->type()==QEvent::MouseButtonDblClick;
+    const bool menuTablet=event->type()==QEvent::TabletMove || event->type()==QEvent::TabletPress || event->type()==QEvent::TabletRelease;
+    if(!m_menuWindows.isEmpty() && qobject_cast<QWindow*>(watched) && (menuMouse || menuTablet)) {
+        const auto *pointer=static_cast<QSinglePointEvent*>(event);
+        QWindow *target=nullptr;
+        for(auto it=m_menuWindows.crbegin();it!=m_menuWindows.crend();++it)
+            if(*it && (*it)->isVisible() && (*it)->geometry().contains(pointer->globalPosition().toPoint())){target=it->data();break;}
+        if(target && (menuTablet || target!=watched)) {
+            // A popup may be visually above a native panel/canvas while input
+            // still names the owner window. Map both mouse and pen to the menu.
+            const auto type=menuMouse?event->type():event->type()==QEvent::TabletPress?QEvent::MouseButtonPress:event->type()==QEvent::TabletRelease?QEvent::MouseButtonRelease:QEvent::MouseMove;
+            const auto position=target->mapFromGlobal(pointer->globalPosition());
+            const auto source=menuTablet?Qt::MouseEventSynthesizedByApplication:static_cast<QMouseEvent*>(event)->source();
+            QMouseEvent routed(type,position,position,pointer->globalPosition(),pointer->button(),pointer->buttons(),pointer->modifiers(),source,pointer->pointingDevice());
+            routed.setTimestamp(pointer->timestamp());QCoreApplication::sendEvent(target,&routed);
+            event->accept();return true;
+        }
+        if(menuTablet && event->type()==QEvent::TabletPress && !target) {
+            const auto windows=m_menuWindows;
+            for(const auto &window:windows)if(window && window->isVisible())window->close();
+            event->accept();return true;
+        }
+    }
     if(event->type()==QEvent::MouseButtonPress)m_pointerButtons|=static_cast<QMouseEvent*>(event)->button();
     else if(event->type()==QEvent::MouseButtonRelease)m_pointerButtons&=~Qt::MouseButtons(static_cast<QMouseEvent*>(event)->button());
     if(watched==m_glassWindow && event->type()==QEvent::Hide)m_menuBlur.hide();

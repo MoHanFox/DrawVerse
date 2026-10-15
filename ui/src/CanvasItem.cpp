@@ -33,6 +33,11 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
     if(QGuiApplication::platformName()=="windows")m_capsLock=(GetKeyState(VK_CAPITAL)&1)!=0;
 #endif
     setClip(true); m_clock.start();
+    m_tabletCursorRefresh.setSingleShot(true);m_tabletCursorRefresh.setInterval(0);
+    connect(&m_tabletCursorRefresh,&QTimer::timeout,this,[this]{
+        if(tabletCursorOwner==this && m_observedWindow && m_cursorInside && isVisible() && isEnabled() && m_interactive)
+            m_observedWindow->setCursor(cursor());
+    });
     m_poseRetry.setInterval(16);connect(&m_poseRetry,&QTimer::timeout,this,&CanvasItem::refreshBrushCursor);
     m_liquifyTimer.setInterval(16);
     connect(&m_liquifyTimer,&QTimer::timeout,this,[this]{if(!m_stroke || !m_client || !m_client->liquifyActive() || !isEnabled() || !isVisible()){m_liquifyTimer.stop();return;}m_client->liquifyTick();});
@@ -156,6 +161,7 @@ void CanvasItem::setTabletWindowCursor(bool active) {
         // entry may never run that path. Scope the native cursor to this canvas.
         m_observedWindow->setCursor(cursor());
     } else if(tabletCursorOwner==this) {
+        m_tabletCursorRefresh.stop();
         if(m_observedWindow)m_observedWindow->setCursor(m_savedWindowCursor);
         tabletCursorOwner.clear();
     }
@@ -179,6 +185,7 @@ bool tabletHoverEvent(const QHoverEvent *event) {
 void CanvasItem::updateTabletHover(QHoverEvent *event) {
     // Some tablet backends deliver only Quick hover events between strokes.
     // Keep device geometry from TabletMove, but always use the current position.
+    m_penOwnsHover=true;
     InputSample sample=m_havePoseSample && (m_poseSample.tool==1 || m_poseSample.tool==2)?m_poseSample:InputSample{};
     sample.position=documentPoint(event->position());sample.pressure=0;
     sample.tool=event->pointingDevice()->pointerType()==QPointingDevice::PointerType::Eraser?2:1;
@@ -186,17 +193,28 @@ void CanvasItem::updateTabletHover(QHoverEvent *event) {
     m_cursorInside=contains(event->position());m_cursorPosition=event->position();
     setCursorSample(sample);refreshBrushCursor();setTabletWindowCursor(m_cursorInside);
 }
+bool CanvasItem::ignoreCachedMouseHover(QHoverEvent *event) {
+    // Qt Quick frame-sync hover has the primary mouse device and cached mouse
+    // position even while Windows Ink is delivering current TabletMove events.
+    // A real mouse event releases this ownership in eventFilter before Quick
+    // constructs its hover; an unaccompanied hover must not take it from the pen.
+    if(!m_penOwnsHover || tabletHoverEvent(event))return false;
+    // Quick resolves the window cursor after hover delivery. Reassert ours once
+    // that dispatch has returned, without generating another dirty frame.
+    if(tabletCursorOwner==this && !m_tabletCursorRefresh.isActive())m_tabletCursorRefresh.start();
+    return true;
+}
 void CanvasItem::hoverEnterEvent(QHoverEvent *event){
-    if(m_tablet)return;
+    if(ignoreCachedMouseHover(event) || m_tablet)return;
     if(tabletHoverEvent(event)){updateTabletHover(event);return;}
     setTabletWindowCursor(false);m_cursorInside=true;m_cursorPosition=event->position();setCursorSample(mouseSample(event->position(),Qt::NoButton));refreshBrushCursor();
 }
 void CanvasItem::hoverMoveEvent(QHoverEvent *event){
-    if(m_tablet)return;
+    if(ignoreCachedMouseHover(event) || m_tablet)return;
     if(tabletHoverEvent(event)){updateTabletHover(event);return;}
     setTabletWindowCursor(false);m_cursorInside=true;m_cursorPosition=event->position();setCursorSample(mouseSample(event->position(),Qt::NoButton));refreshBrushCursor();if(m_selecting && m_selectionKind==3)updateSelection(event->position(),event->modifiers());
 }
-void CanvasItem::hoverLeaveEvent(QHoverEvent *){if(m_tablet)return;setTabletWindowCursor(false);m_cursorInside=false;refreshBrushCursor();}
+void CanvasItem::hoverLeaveEvent(QHoverEvent *event){if(ignoreCachedMouseHover(event) || m_tablet)return;setTabletWindowCursor(false);m_cursorInside=false;refreshBrushCursor();}
 void CanvasItem::refresh() {
     if (!m_client) return;
     if (m_generation != m_client->generation()) { endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
@@ -462,9 +480,9 @@ void CanvasItem::setAltHeld(bool held) {
     refreshBrushCursor();
 }
 bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
-    if(tabletCursorOwner==this && (event->type()==QEvent::MouseMove || event->type()==QEvent::MouseButtonPress)) {
+    if((m_penOwnsHover || tabletCursorOwner==this) && (event->type()==QEvent::MouseMove || event->type()==QEvent::MouseButtonPress)) {
         const auto *mouse=static_cast<QMouseEvent*>(event);
-        if(mouse->source()==Qt::MouseEventNotSynthesized && mouse->pointingDevice()->type()==QInputDevice::DeviceType::Mouse)setTabletWindowCursor(false);
+        if(!m_tablet && mouse->source()==Qt::MouseEventNotSynthesized && mouse->pointingDevice()->type()==QInputDevice::DeviceType::Mouse){m_penOwnsHover=false;setTabletWindowCursor(false);}
     }
     if(watched==m_observedWindow && event->type()==QEvent::Leave && !m_tablet) {setTabletWindowCursor(false);m_cursorInside=false;refreshBrushCursor();}
 
@@ -507,9 +525,17 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     }
     if (event->type() != QEvent::TabletPress && event->type() != QEvent::TabletMove && event->type() != QEvent::TabletRelease) return false;
     if (!isEnabled() || !isVisible()) return false;
+    if(!m_tablet)for(auto *popup:QGuiApplication::allWindows())if(popup->isVisible() && popup->type()==Qt::Popup) {
+        // Windows Ink can retain the owner window as tablet target while a
+        // native popup covers its canvas. Let menu routing/Quick see it first.
+        m_penOwnsHover=true;
+        if(m_cursorInside || tabletCursorOwner==this){setTabletWindowCursor(false);m_cursorInside=false;refreshBrushCursor();}
+        return false;
+    }
     // Let Qt Quick synthesize the same pointer gestures used by transform handles.
     if (m_client->transformActive()) { event->ignore(); return false; }
     auto *e = static_cast<QTabletEvent *>(event);
+    m_penOwnsHover=true;
     // Qt Quick may deliver tablet input to an item, whose position is item-local.
     // The global position is shared by both native-window and item delivery paths.
     const QPointF local = mapFromGlobal(e->globalPosition());

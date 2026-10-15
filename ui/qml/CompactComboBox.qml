@@ -1,15 +1,33 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 import "."
 ComboBox {
     property string tooltip: ""
     property bool highPriorityMenu:false
     property bool windowPopupsAvailable:false
     property var sideWindow:null
-    Component.onCompleted:windowPopupsAvailable=("popupType" in popup)
+    property bool initialized:false
+    property var inputWindow:null
+    function trackInputWindow(){
+        const window=control.popup.contentItem.Window.window
+        if(inputWindow && inputWindow!==window)Workspace.watchMenuWindow(inputWindow,false)
+        inputWindow=window
+        if(window && window!==control.Window.window)Workspace.watchMenuWindow(window,true)
+    }
+    function preparePriorityWindow(){
+        if(!initialized || !control.Window.window)return
+        if(!highPriorityMenu || windowPopupsAvailable){
+            if(sideWindow){if(popup.visible)popup.close();popup.parent=sideWindow.originalParent;popup.x=0;popup.y=control.height}
+            return
+        }
+        if(!sideWindow)sideWindow=priorityFactory.createObject(control,{menu:control.popup,anchorItem:control,originalParent:control.popup.parent})
+        sideWindow.preparePopup()
+    }
+    Component.onCompleted:{initialized=true;windowPopupsAvailable=("popupType" in popup);preparePriorityWindow()}
     function updatePopupType(){if(popup && "popupType" in popup)popup.popupType=highPriorityMenu && windowPopupsAvailable?Popup.Window:Popup.Item}
-    onHighPriorityMenuChanged:updatePopupType()
-    onWindowPopupsAvailableChanged:updatePopupType()
+    onHighPriorityMenuChanged:{updatePopupType();preparePriorityWindow()}
+    onWindowPopupsAvailableChanged:{updatePopupType();preparePriorityWindow()}
     Component {id:priorityFactory;ComboPopupWindow {}}
     hoverEnabled:true
     ToolTip.delay:1000;ToolTip.visible:hovered && tooltip.length>0;ToolTip.text:tooltip
@@ -41,13 +59,16 @@ ComboBox {
         background:Rectangle {color:parent.hovered || parent.highlighted?Theme.hover:Theme.surface}
     }
     popup: Popup {
+        modal:true
+        closePolicy:Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        Overlay.modal:Item {}
         focus:control.highPriorityMenu
         z:control.highPriorityMenu?10000:0
-        onAboutToShow:if(control.highPriorityMenu && !control.windowPopupsAvailable){if(!control.sideWindow)control.sideWindow=priorityFactory.createObject(control,{menu:control.popup,anchorItem:control,originalParent:control.popup.parent});control.sideWindow.showPopup()}
+        onAboutToShow:if(control.highPriorityMenu && !control.windowPopupsAvailable){control.preparePriorityWindow();control.sideWindow.showPopup()}
         y:control.height;width:Math.max(132,control.width);padding:2
-        implicitHeight:Math.min(264,contentItem.implicitHeight+4)
-        onOpened:Qt.callLater(options.previewAtPointer)
-        onClosed:control.menuClosed()
+        implicitHeight:Math.min(264,control.count*20+4)
+        onOpened:{console.log("INPUT opened",control.objectName,control.windowPopupsAvailable,control.popup.contentItem.Window.window);control.trackInputWindow();if(control.highPriorityMenu)Qt.callLater(()=>Workspace.promoteMenuWindow(control.popup.contentItem));Qt.callLater(options.previewAtPointer)}
+        onClosed:{console.log("INPUT closed",control.objectName);if(control.inputWindow)Workspace.watchMenuWindow(control.inputWindow,false);control.inputWindow=null;control.menuClosed()}
         background:Rectangle {color:Theme.surface;border.color:Theme.line;radius:2}
         contentItem:ListView {
             id: options

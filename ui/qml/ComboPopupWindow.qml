@@ -11,6 +11,7 @@ ApplicationWindow {
     transientParent:anchorItem.Window.window
     flags:Qt.Popup | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
     color:Theme.surface;background:null
+    function preparePopup(){menu.parent=contentItem;menu.x=0;menu.y=0}
     function alignPopup(){
         const owner=anchorItem.Window.window;if(!owner)return
         const area=Workspace.availableScreenGeometry(owner);const below=anchorItem.mapToGlobal(Qt.point(0,anchorItem.height))
@@ -35,8 +36,8 @@ ApplicationWindow {
         target:host.menu
         function onOpened(){Qt.callLater(host.alignPopup)}
         function onImplicitHeightChanged(){if(host.visible)Qt.callLater(host.alignPopup)}
-        function onClosed(){host.visible=false;host.menu.parent=host.originalParent;host.menu.x=0;host.menu.y=host.anchorItem.height}
+        function onClosed(){host.visible=false}
     }
-    onVisibleChanged:{Workspace.watchMenuWindow(host,visible);if(!visible && menu.visible)menu.close()}
+    onVisibleChanged:{console.log("INPUT host visible",visible,menu.visible,width,height);Workspace.watchMenuWindow(host,visible);if(!visible && menu.visible)menu.close()}
     onClosing:menu.close()
 }

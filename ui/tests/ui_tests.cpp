@@ -29,6 +29,7 @@
 #include <QDragMoveEvent>
 #include <QWheelEvent>
 #include <QHoverEvent>
+#include <QEnterEvent>
 #include <QStyleHints>
 #include <QPainter>
 #include <QScreen>
@@ -224,6 +225,32 @@ private slots:
             else {QTest::mouseClick(menu,Qt::LeftButton,Qt::NoModifier,option->mapToScene({option->width()/2,option->height()/2}).toPoint());QTRY_COMPARE(client.brushWriteBlend(),3);QTRY_VERIFY(!popup->property("visible").toBool());}
         }
         QCOMPARE(warnings,QStringList());
+    }
+    void toolComboMouseAndTabletOwnerWindowClicksNeverPaintThrough_data() {
+        QTest::addColumn<bool>("fallback");QTest::addColumn<bool>("tablet");
+        QTest::newRow("native-mouse")<<false<<false;QTest::newRow("native-pen")<<false<<true;
+        QTest::newRow("fallback-mouse")<<true<<false;QTest::newRow("fallback-pen")<<true<<true;
+    }
+    void toolComboMouseAndTabletOwnerWindowClicksNeverPaintThrough() {
+        QFETCH(bool,fallback);QFETCH(bool,tablet);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("state.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(960,640);QTRY_COMPARE(client.documentWidth(),960);QTRY_VERIFY(!client.layerEditBusy());client.setBrushWriteBlend(0);client.setBrushColor(Qt::red);
+        auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->zoomBy(2);QTest::qWait(80);
+        auto *combo=findVisualItem(main->contentItem(),"brushWriteBlend");QVERIFY(combo);if(fallback)combo->setProperty("windowPopupsAvailable",false);auto *popup=combo->property("popup").value<QObject*>();QVERIFY(popup);
+        auto *pen=new QPointingDevice("menu pen",905,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,3);pen->setParent(qApp);
+        const auto input=[&](bool press,QPointF global){const auto local=main->mapFromGlobal(global);if(tablet){QTabletEvent event(press?QEvent::TabletPress:QEvent::TabletRelease,pen,local,global,press?.5:0,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,press?Qt::LeftButton:Qt::NoButton);QCoreApplication::sendEvent(main,&event);}else{QMouseEvent event(press?QEvent::MouseButtonPress:QEvent::MouseButtonRelease,local,local,global,Qt::LeftButton,press?Qt::LeftButton:Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(main,&event);}};
+        const auto render=[&]{client.requestViewport(0,{0,0,960,640},{120,80});return client.frameRevision()>=client.revision() && client.frame().size()==QSize(120,80);};QTRY_VERIFY(render());const auto pixels=client.frame();const auto revision=client.revision();const auto dirty=client.modified();
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,combo->mapToScene({combo->width()/2,combo->height()/2}).toPoint());QQuickItem *option=nullptr;QTRY_VERIFY([&]{for(auto *window:applicationWindows())if(auto *quick=qobject_cast<QQuickWindow*>(window))if((option=findVisualItem(quick->contentItem(),"brushWriteBlendOption:3")))return true;return false;}());
+        QVERIFY(option->window()!=main);QTRY_VERIFY(popup->property("visible").toBool());const auto localOption=QPointF(option->width()/2,option->height()/2);const auto canvasPoint=canvas->mapToGlobal(canvas->documentRect().intersected(QRectF(0,0,canvas->width(),canvas->height())).center());option->window()->setPosition((canvasPoint-option->mapToScene(localOption)).toPoint());const auto point=option->mapToGlobal(localOption);QVERIFY(canvas->contains(canvas->mapFromGlobal(point)));QVERIFY(canvas->documentRect().contains(canvas->mapFromGlobal(point)));
+        // Model the problematic native delivery: the visible menu covers the
+        // document, but the incoming event still names its owner window.
+        input(true,point);const bool paintedThrough=client.drawing();input(false,point);QVERIFY(!paintedThrough);QTRY_COMPARE(client.brushWriteBlend(),3);QTRY_VERIFY(!popup->property("visible").toBool());QTest::qWait(30);
+        QCOMPARE(client.revision(),revision);QCOMPARE(client.modified(),dirty);QCOMPARE(client.undoDepth(),0);QTRY_VERIFY(render());QCOMPARE(client.frame(),pixels);
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,combo->mapToScene({combo->width()/2,combo->height()/2}).toPoint());QTRY_VERIFY(popup->property("visible").toBool());
+        const auto visiblePaper=canvas->documentRect().intersected(QRectF(0,0,canvas->width(),canvas->height())).adjusted(30,30,-30,-30);const auto outside=canvas->mapToGlobal(visiblePaper.bottomRight());QVERIFY(canvas->documentRect().contains(canvas->mapFromGlobal(outside)));input(true,outside);input(false,outside);QTRY_VERIFY(!popup->property("visible").toBool());QVERIFY(!client.drawing());QCOMPARE(client.undoDepth(),0);QCOMPARE(client.revision(),revision);
+        // The next independent canvas click must still create exactly one stroke.
+        const auto paint=canvas->mapToGlobal(visiblePaper.center());input(true,paint);const bool drawing=client.drawing();input(false,paint);QVERIFY(drawing);QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void brushWriteBlendIsStrictGlobalToolStateOutsidePresets() {
         BrushLibrary library;QCOMPARE(library.writeBlend(),0);library.setWriteBlend(3);QCOMPARE(library.writeBlend(),3);
@@ -571,7 +598,7 @@ private slots:
         hover(QEvent::HoverMove,next);QCOMPARE(canvas->brushCursorRect().center(),next);QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
         // Leaving restores the window cursor without requiring a real mouse move.
         hover(QEvent::HoverLeave,next);QVERIFY(!canvas->brushCursorVisible());QCOMPARE(window.cursor().shape(),Qt::WaitCursor);
-        hover(QEvent::HoverEnter,entry);QHoverEvent mouse(QEvent::HoverMove,next,canvas->mapToGlobal(next),entry);QCoreApplication::sendEvent(canvas,&mouse);QCOMPARE(canvas->cursorPosition(),next);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);
+        hover(QEvent::HoverEnter,entry);QMouseEvent realMouse(QEvent::MouseMove,next,canvas->mapToGlobal(next),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(canvas,&realMouse);QHoverEvent mouse(QEvent::HoverMove,next,canvas->mapToGlobal(next),entry);QCoreApplication::sendEvent(canvas,&mouse);QCOMPARE(canvas->cursorPosition(),next);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);
         hover(QEvent::HoverEnter,entry);QMouseEvent outside(QEvent::MouseMove,{600,450},window.mapToGlobal(QPointF(600,450)),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&outside);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);
         hover(QEvent::HoverEnter,entry);QEvent windowLeave(QEvent::Leave);QCoreApplication::sendEvent(&window,&windowLeave);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);QVERIFY(!canvas->brushCursorVisible());
         hover(QEvent::HoverEnter,entry);canvas->setVisible(false);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);canvas->setVisible(true);
@@ -597,12 +624,56 @@ private slots:
         QHoverEvent staleHover(QEvent::HoverMove,{50,60},canvas->mapToGlobal({50,60}),{40,50});QCoreApplication::sendEvent(canvas,&staleHover);QCOMPARE(canvas->cursorPosition(),finish);
         QMouseEvent staleMouse(QEvent::MouseMove,{50,60},canvas->mapToGlobal({50,60}),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(canvas,&staleMouse);QCOMPARE(canvas->cursorPosition(),finish);
         QTabletEvent release(QEvent::TabletRelease,pen,finish,canvas->mapToGlobal(finish),0,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,Qt::NoButton);QCoreApplication::sendEvent(canvas,&release);QVERIFY(!client.drawing());QTRY_COMPARE(client.undoDepth(),1);
-        QCoreApplication::sendEvent(canvas,&staleHover);QCOMPARE(canvas->cursorPosition(),QPointF(50,60));
+        QCoreApplication::sendEvent(canvas,&staleHover);QCOMPARE(canvas->cursorPosition(),finish);
+        QMouseEvent actualMouse(QEvent::MouseMove,{50,60},canvas->mapToGlobal({50,60}),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(canvas,&actualMouse);QCoreApplication::sendEvent(canvas,&staleHover);QCOMPARE(canvas->cursorPosition(),QPointF(50,60));
         QTest::keyClick(window,Qt::Key_CapsLock);QVERIFY(!canvas->brushCursorVisible());QCOMPARE(canvas->cursor().shape(),Qt::CrossCursor);
         QTabletEvent precise(QEvent::TabletMove,pen,{200,150},canvas->mapToGlobal({200,150}),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(canvas,&precise);QCOMPARE(canvas->brushCursorRect().center(),QPointF(200,150));QCOMPARE(canvas->cursor().shape(),Qt::CrossCursor);
         QTest::keyClick(window,Qt::Key_CapsLock);QVERIFY(canvas->brushCursorVisible());QTabletEvent leave(QEvent::TabletLeaveProximity,pen,{200,150},canvas->mapToGlobal({200,150}),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(window,&leave);QVERIFY(!canvas->brushCursorVisible());
         if(!initiallyVisible)QTest::keyClick(window,Qt::Key_CapsLock);
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void windowsInkTabletPositionSurvivesCachedQuickHoverAndFrames() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("state.ini"));
+        QQuickWindow window;window.resize(640,480);
+        auto *canvas=new CanvasItem(window.contentItem());canvas->setPosition({40,30});canvas->setSize({500,400});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));QTRY_VERIFY(client.ready());canvas->actualSize();
+        // Keep live desktop mouse input from replacing the controlled tablet
+        // sequence while waiting for actual Quick frames. Synthetic test mouse
+        // events and all tablet/Quick hover events still pass normally.
+        class NativeMouseIsolation final:public QObject {
+        public:explicit NativeMouseIsolation(QObject *target):m_target(target){qApp->installEventFilter(this);}~NativeMouseIsolation(){qApp->removeEventFilter(this);}
+        protected:bool eventFilter(QObject *watched,QEvent *event) override{return watched==m_target && event->spontaneous() && (event->type()==QEvent::MouseMove || event->type()==QEvent::Enter || event->type()==QEvent::Leave);}
+        private:QObject *m_target;
+        } isolation(&window);
+        auto *pen=new QPointingDevice("Windows Ink hover regression",904,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure|QInputDevice::Capability::Hover|QInputDevice::Capability::MouseEmulation,1,3);pen->setParent(qApp);
+        const QPointF entry(100,110),next(180,190),last(220,210);
+        const auto seedMouseEntry=[&]{const auto scene=canvas->mapToScene(entry);QEnterEvent enter(scene,scene,canvas->mapToGlobal(entry));QCoreApplication::sendEvent(&window,&enter);};
+        seedMouseEntry();const bool initial=canvas->brushCursorVisible();if(!initial)QTest::keyClick(&window,Qt::Key_CapsLock);
+        window.setCursor(Qt::WaitCursor);
+        const auto tablet=[&](QEvent::Type type,QPointF point){const bool down=type==QEvent::TabletPress;QTabletEvent event(type,pen,canvas->mapToScene(point),canvas->mapToGlobal(point),down?.5:0,0,0,0,0,0,Qt::NoModifier,down || type==QEvent::TabletRelease?Qt::LeftButton:Qt::NoButton,down?Qt::LeftButton:Qt::NoButton);QCoreApplication::sendEvent(&window,&event);QVERIFY(event.isAccepted());};
+        const auto cachedHover=[&](QEvent::Type type){QHoverEvent event(type,entry,canvas->mapToGlobal(entry),entry);event.setTimestamp(0);QCoreApplication::sendEvent(canvas,&event);};
+        tablet(QEvent::TabletMove,next);QCOMPARE(canvas->cursorPosition(),next);QVERIFY(canvas->brushCursorVisible());QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
+        for(const auto type:{QEvent::HoverEnter,QEvent::HoverMove,QEvent::HoverLeave}){cachedHover(type);QCOMPARE(canvas->cursorPosition(),next);QVERIFY(canvas->brushCursorVisible());}
+        QSignalSpy frames(&window,&QQuickWindow::afterAnimating);canvas->update();QTRY_VERIFY(frames.size()>0);
+        QCOMPARE(canvas->cursorPosition(),next);QVERIFY(canvas->brushCursorVisible());QCOMPARE(window.cursor().shape(),Qt::BlankCursor);QCOMPARE(client.undoDepth(),0);
+        // Neither a frame-sync hover nor accompanying mouse traffic may move
+        // the live pen or restore the native arrow while its stroke is active.
+        const auto start=canvas->documentRect().center();tablet(QEvent::TabletPress,start);QVERIFY(client.drawing());
+        QMouseEvent companion(QEvent::MouseMove,canvas->mapToScene(entry),canvas->mapToGlobal(entry),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&companion);cachedHover(QEvent::HoverMove);QCOMPARE(canvas->cursorPosition(),start);QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
+        tablet(QEvent::TabletRelease,start);QVERIFY(!client.drawing());cachedHover(QEvent::HoverMove);QCOMPARE(canvas->cursorPosition(),start);
+        tablet(QEvent::TabletMove,last);const auto frameCount=frames.size();canvas->update();QTRY_VERIFY(frames.size()>frameCount);QTRY_COMPARE(client.undoDepth(),1);
+        QCOMPARE(canvas->cursorPosition(),last);QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
+        // Releasing proximity also prevents a cached frame from resurrecting
+        // the old entry outline; the pending cursor refresh must be cancelled.
+        cachedHover(QEvent::HoverMove);QTabletEvent leave(QEvent::TabletLeaveProximity,pen,canvas->mapToScene(last),canvas->mapToGlobal(last),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&leave);
+        cachedHover(QEvent::HoverMove);QCoreApplication::processEvents();QVERIFY(!canvas->brushCursorVisible());QVERIFY(window.cursor().shape()!=Qt::BlankCursor);
+        // A real window mouse move is the explicit handoff; it is delivered
+        // through Quick, rather than fabricating a mouse-labelled Hover alone.
+        const QPointF mouse(260,230);QMouseEvent move(QEvent::MouseMove,canvas->mapToScene(mouse),canvas->mapToGlobal(mouse),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&move);
+        QCOMPARE(canvas->cursorPosition(),mouse);QVERIFY(canvas->brushCursorVisible());
+        QEvent windowLeave(QEvent::Leave);QCoreApplication::sendEvent(&window,&windowLeave);QVERIFY(!canvas->brushCursorVisible());
+        if(!initial)QTest::keyClick(&window,Qt::Key_CapsLock);
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void floatingSplitRemovalKeepsRemainingPaneSizeAndPosition() {
         for(const auto &edge:QStringList{"left","right","before","after"}) {

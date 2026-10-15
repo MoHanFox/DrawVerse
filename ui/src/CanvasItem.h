@@ -104,6 +104,9 @@ private:
     void refreshBrushCursor();
     void setTabletWindowCursor(bool active);
     void updateTabletHover(QHoverEvent *event);
+    bool ignoreCachedMouseHover(QHoverEvent *event);
+    QTimer m_tabletCursorRefresh;
+    bool m_penOwnsHover = false;
     QCursor m_savedWindowCursor;
     void setSpacePanning(bool held);
     void setKeySpace(bool held);
