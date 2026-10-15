@@ -41,12 +41,9 @@ impl Document {
     ) -> Result<()> {
         if brush.mode != BrushMode::Paint
             || first.tool == Tool::Eraser
-            || program.color.active()
             || program.dual.as_ref().is_some_and(|d| d.color.enabled())
         {
-            return Err(Error::InvalidArgument(
-                "unsupported wet color dynamics, dual color or tool",
-            ));
+            return Err(Error::InvalidArgument("unsupported wet dual color or tool"));
         }
         if wet.all_layers && self.layer(self.active_layer).is_some_and(|l| l.mask) {
             return Err(Error::InvalidArgument("all-layer wet sampling on mask"));
@@ -71,7 +68,8 @@ impl Document {
             .carrier
             .edge()
             .saturating_pow(2)
-            .saturating_mul(6usize.saturating_add(sample));
+            .saturating_mul(6usize.saturating_add(sample))
+            .saturating_add(if program.color.active() { 64 } else { 0 });
         Ok(())
     }
     pub(super) fn prepare_wet<F>(
@@ -230,47 +228,53 @@ mod tests {
     }
     #[test]
     fn scratch_failure_rolls_back_prior_wet_dabs_and_does_not_adopt_carrier() {
-        let mut doc = Document::with_options(
-            256,
-            64,
-            DocumentOptions {
-                max_resident_tiles: 1,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let definition = BrushDefinition {
-            brush: Brush {
-                radius: 4.,
-                spacing: 0.5,
-                ..Default::default()
-            },
-            tip: crate::BrushTip {
-                pressure_size: false,
-                pressure_flow: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let carrier = WetCarrier::new(
-            crate::WetMix::new(0., 0., 0., 1., 1., 0.).unwrap(),
-            8.,
-            definition.brush.color,
-        )
-        .unwrap();
-        doc.begin_wet_brush_stroke(definition, InputPoint::new(16., 32., 1.), &carrier, false)
+        for colored in [false, true] {
+            let mut doc = Document::with_options(
+                256,
+                64,
+                DocumentOptions {
+                    max_resident_tiles: 1,
+                    ..Default::default()
+                },
+            )
             .unwrap();
-        assert_ne!(doc.pixel(16, 32), Pixel::TRANSPARENT);
-        crate::page_pool::fail_writes_for_test(true);
-        let result = doc.stroke_to(InputPoint::new(192., 32., 1.));
-        crate::page_pool::fail_writes_for_test(false);
-        assert!(result.is_err());
-        assert!(!doc.stroke_active());
-        assert_eq!(doc.history_depth(), (0, 0));
-        assert_eq!(carrier.revision(), 0);
-        for y in 0..64 {
-            for x in 0..256 {
-                assert_eq!(doc.try_pixel(x, y).unwrap(), Pixel::TRANSPARENT);
+            let mut definition = BrushDefinition {
+                brush: Brush {
+                    radius: 4.,
+                    spacing: 0.5,
+                    ..Default::default()
+                },
+                tip: crate::BrushTip {
+                    pressure_size: false,
+                    pressure_flow: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let carrier = WetCarrier::new(
+                crate::WetMix::new(0., 0., 0., 1., 1., 0.).unwrap(),
+                8.,
+                definition.brush.color,
+            )
+            .unwrap();
+            if colored {
+                definition.dynamics.color =
+                    crate::ColorDynamics::new(true, 0.4, 0.6, 0.2, 0.2, true, u64::MAX).unwrap();
+            }
+            doc.begin_wet_brush_stroke(definition, InputPoint::new(16., 32., 1.), &carrier, false)
+                .unwrap();
+            assert_ne!(doc.pixel(16, 32), Pixel::TRANSPARENT);
+            crate::page_pool::fail_writes_for_test(true);
+            let result = doc.stroke_to(InputPoint::new(192., 32., 1.));
+            crate::page_pool::fail_writes_for_test(false);
+            assert!(result.is_err());
+            assert!(!doc.stroke_active());
+            assert_eq!(doc.history_depth(), (0, 0));
+            assert_eq!(carrier.revision(), 0);
+            for y in 0..64 {
+                for x in 0..256 {
+                    assert_eq!(doc.try_pixel(x, y).unwrap(), Pixel::TRANSPARENT);
+                }
             }
         }
     }

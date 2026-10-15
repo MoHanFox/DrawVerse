@@ -443,11 +443,6 @@ fn zero_pressure_footprints_and_rejected_segments_are_atomic() {
     assert!(d.stroke_to(InputPoint::new(1_000_000., 32., 1.)).is_err());
     assert!(!d.stroke_active());
     assert_eq!(pixels(&d), before);
-    let mut b = brush();
-    b.dynamics.color = ColorDynamics::new(true, 0.5, 0., 0., 0., false, 1).unwrap();
-    assert!(d
-        .begin_wet_brush_stroke(b, InputPoint::new(32., 32., 1.), &c, false)
-        .is_err());
 }
 
 #[test]

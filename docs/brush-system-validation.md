@@ -126,3 +126,5 @@
 二维湿混数值载色组件已实现，7项Rust像素/数值回归及clippy通过，见[验收](brush-wet-carrier-validation.md)。支持真实二维拾色/混合/沉积、透明底、距离消耗和清洗/重载，尚未接文档事务/历史、预算/图层取样、预设交换或Qt；不是可用湿混工具或完整系统通过。
 
 湿混真实Document阶段已接通Rust专用起笔/结束和载色返回，12项真实文档用例、3项故障/预算用例及相关旧画笔/ABI/Qt回归通过，见[验收](brush-wet-document-validation.md)。取样源、选区/蒙版/锁、分页账本和历史已执行；尚无湿混参数IO/ABI/Qt入口，颜色动态/双色组合仍暂拒，完整目标继续后续。
+
+湿混颜色动态阶段：真实沉积后复用linear-hsv-v1，保持alpha与工具载体隔离；35项相关Rust用例、Debug/Release旧算法位级参考及Release/ABI/Qt回归通过，见[验收](brush-wet-color-validation.md)。解除上一阶段颜色动态临时拒绝，双色湿混及完整IO/ABI/Qt和自动清洗重载仍待完成。

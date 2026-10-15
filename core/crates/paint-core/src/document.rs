@@ -77,48 +77,54 @@ mod history_failure_tests {
     }
     #[test]
     fn wet_history_failure_restores_pixels_and_keeps_external_carrier() {
-        let mut doc = document();
-        doc.set_layer_properties(
-            1,
-            LayerProperties {
-                visible: true,
-                opacity: 0.8,
-            },
-        )
-        .unwrap();
-        let original = pixels(&doc);
-        let depth = doc.history_depth();
-        let definition = BrushDefinition {
-            brush: Brush {
-                radius: 128.,
-                opacity: 0.4,
-                ..Default::default()
-            },
-            tip: crate::BrushTip {
-                pressure_size: false,
-                pressure_flow: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let carrier = crate::WetCarrier::new(
-            crate::WetMix::new(0., 0., 0., 1., 1., 0.).unwrap(),
-            256.,
-            definition.brush.color,
-        )
-        .unwrap();
-        doc.begin_wet_brush_stroke(definition, InputPoint::new(96., 64., 1.), &carrier, false)
+        for colored in [false, true] {
+            let mut doc = document();
+            doc.set_layer_properties(
+                1,
+                LayerProperties {
+                    visible: true,
+                    opacity: 0.8,
+                },
+            )
             .unwrap();
-        crate::history_storage::fail_writes_for_test(true);
-        let result = doc.end_wet_brush_stroke();
-        crate::history_storage::fail_writes_for_test(false);
-        assert!(matches!(result, Err(Error::HistoryStorage(_))));
-        assert_eq!(pixels(&doc), original);
-        assert_eq!(doc.history_depth(), depth);
-        assert!(!doc.stroke_active());
-        assert_eq!(carrier.revision(), 0);
-        doc.undo().unwrap();
-        assert_eq!(doc.layer(1).unwrap().properties().opacity, 1.);
+            let original = pixels(&doc);
+            let depth = doc.history_depth();
+            let mut definition = BrushDefinition {
+                brush: Brush {
+                    radius: 128.,
+                    opacity: 0.4,
+                    ..Default::default()
+                },
+                tip: crate::BrushTip {
+                    pressure_size: false,
+                    pressure_flow: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let carrier = crate::WetCarrier::new(
+                crate::WetMix::new(0., 0., 0., 1., 1., 0.).unwrap(),
+                256.,
+                definition.brush.color,
+            )
+            .unwrap();
+            if colored {
+                definition.dynamics.color =
+                    crate::ColorDynamics::new(true, 0.4, 0.6, 0.2, 0.2, true, u64::MAX).unwrap();
+            }
+            doc.begin_wet_brush_stroke(definition, InputPoint::new(96., 64., 1.), &carrier, false)
+                .unwrap();
+            crate::history_storage::fail_writes_for_test(true);
+            let result = doc.end_wet_brush_stroke();
+            crate::history_storage::fail_writes_for_test(false);
+            assert!(matches!(result, Err(Error::HistoryStorage(_))));
+            assert_eq!(pixels(&doc), original);
+            assert_eq!(doc.history_depth(), depth);
+            assert!(!doc.stroke_active());
+            assert_eq!(carrier.revision(), 0);
+            doc.undo().unwrap();
+            assert_eq!(doc.layer(1).unwrap().properties().opacity, 1.);
+        }
     }
     #[test]
     fn history_write_failure_rolls_back_stroke_and_preserves_prior_history() {
@@ -1629,7 +1635,9 @@ impl Document {
                 .saturating_add(colored_visits)
                 .saturating_add(count.saturating_mul(wet_work))
                 .saturating_add(if wet_work > 0 {
-                    count.saturating_mul(diameter * diameter).saturating_mul(12)
+                    count
+                        .saturating_mul(diameter * diameter)
+                        .saturating_mul(12 + if program.color.active() { 8 } else { 0 })
                 } else {
                     0
                 })
@@ -1970,13 +1978,15 @@ impl Document {
             let mut changed = false;
             for index in 0..plan.count {
                 let sample = plan.point(index, point);
-                stroke.color_sample = stroke.program.color.sample(
-                    stroke.brush.color,
-                    stroke.brush.background_color,
-                    stroke.random_stroke,
-                    logical,
-                    index,
-                );
+                if stroke.wet.is_none() {
+                    stroke.color_sample = stroke.program.color.sample(
+                        stroke.brush.color,
+                        stroke.brush.background_color,
+                        stroke.random_stroke,
+                        logical,
+                        index,
+                    );
+                }
                 stroke.shape_sample =
                     stroke
                         .program
@@ -1996,13 +2006,15 @@ impl Document {
                     .program
                     .shape_jitter
                     .sample(stroke.random_stroke, logical, 0);
-            stroke.color_sample = stroke.program.color.sample(
-                stroke.brush.color,
-                stroke.brush.background_color,
-                stroke.random_stroke,
-                logical,
-                0,
-            );
+            if stroke.wet.is_none() {
+                stroke.color_sample = stroke.program.color.sample(
+                    stroke.brush.color,
+                    stroke.brush.background_color,
+                    stroke.random_stroke,
+                    logical,
+                    0,
+                );
+            }
             stroke.random_child = 0;
             stroke.last_carrier = stroke.last_dab;
             self.dab_single(stroke, point)
@@ -2028,7 +2040,7 @@ impl Document {
         stroke: &mut Stroke,
         point: InputPoint,
     ) -> Result<bool> {
-        if stroke.mask_paint.is_some() && stroke.program.color.active() {
+        if stroke.wet.is_none() && stroke.mask_paint.is_some() && stroke.program.color.active() {
             stroke.mask_paint = Some(Self::mask_tone(stroke.color_sample));
         }
         // Specialize once per dab: an inactive selection adds no pixel-loop
@@ -2222,6 +2234,14 @@ impl Document {
         #[cfg(not(test))]
         let skip_saturated = true;
         let color_capped = capped && stroke.program.color.active() && !erase;
+        let wet_color = (stroke.wet.is_some() && stroke.program.color.active()).then(|| {
+            stroke.program.color.prepare(
+                stroke.brush.background_color,
+                stroke.random_stroke,
+                stroke.random_index.saturating_sub(1),
+                stroke.random_child,
+            )
+        });
         let smudge = self.prepare_smudge(stroke, point, x0, y0, x1, y1)?;
         stroke.first_dab = false;
         let (x0, x1) = (
@@ -2384,6 +2404,7 @@ impl Document {
                                 radius,
                             );
                             let ink = wet.sample(u.clamp(0., 1.), v.clamp(0., 1.));
+                            let ink = wet_color.map_or(ink, |transform| transform.apply(ink));
                             let prior = prior_coverage
                                 .as_ref()
                                 .map_or(Pixel::TRANSPARENT, |p| p[offset]);
