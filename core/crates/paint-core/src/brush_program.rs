@@ -98,6 +98,16 @@ pub struct BrushPose {
     pub roundness: f32,
 }
 
+/// Base tip geometry only; randomized scatter and shape jitter are not sampled.
+#[derive(Clone, Copy, Debug)]
+pub struct CompositeBrushPose {
+    pub primary: BrushPose,
+    pub secondary: Option<BrushPose>,
+    pub primary_image: bool,
+    pub secondary_image: bool,
+    pub secondary_overflow: bool,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct TipGeometry {
     sine: f64,
@@ -157,6 +167,30 @@ impl BrushProgram {
                 },
             angle: geometry.sine.atan2(geometry.cosine).to_degrees() as f32,
             roundness: geometry.roundness,
+        })
+    }
+    pub fn cursor_poses(
+        &self,
+        radius: f32,
+        point: InputPoint,
+        pressure_known: bool,
+        direction: Option<(f64, f64)>,
+    ) -> Result<CompositeBrushPose> {
+        let primary = self.cursor_pose(radius, point, pressure_known, direction)?;
+        let secondary = self
+            .dual
+            .as_ref()
+            .map(|dual| dual.cursor_pose(radius, primary.radius, point, pressure_known, direction))
+            .transpose()?;
+        Ok(CompositeBrushPose {
+            primary,
+            secondary,
+            primary_image: self.has_mask(),
+            secondary_image: self.dual.as_ref().is_some_and(|dual| dual.has_mask()),
+            secondary_overflow: self
+                .dual
+                .as_ref()
+                .is_some_and(|dual| dual.color.enabled() && dual.color.overflow()),
         })
     }
     pub fn compile(definition: BrushDefinition) -> Result<Self> {

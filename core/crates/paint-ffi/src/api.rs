@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 48;
+pub const PAINT_ABI_MINOR: u32 = 49;
 pub const PAINT_FEATURE_PRESSURE_DYNAMICS: u64 = 1073741824;
 pub const PAINT_FEATURE_VBR_SOURCES: u64 = 536870912;
 pub const PAINT_FEATURE_ABR_IMPORT: u64 = 268435456;
@@ -41,6 +41,20 @@ pub struct PaintTipPose {
     pub roundness: f32,
     pub reserved_tail: u32,
 }
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintCompositeTipPose {
+    pub struct_size: u32,
+    pub flags: u32,
+    pub primary: PaintTipPose,
+    pub secondary: PaintTipPose,
+    pub reserved: u64,
+}
+pub const PAINT_FEATURE_COMPOSITE_BRUSH_POSE: u64 = 17592186044416;
+pub const PAINT_POSE_SECONDARY: u32 = 1;
+pub const PAINT_POSE_PRIMARY_IMAGE: u32 = 2;
+pub const PAINT_POSE_SECONDARY_IMAGE: u32 = 4;
+pub const PAINT_POSE_SECONDARY_OVERFLOW: u32 = 8;
 pub const PAINT_FEATURE_BRUSH_POSE: u64 = 8589934592;
 #[repr(C)]
 #[derive(Clone, Copy, Default)]

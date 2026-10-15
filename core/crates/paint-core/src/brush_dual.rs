@@ -279,6 +279,26 @@ pub(crate) struct CompiledDual {
     primary_size: Option<crate::brush_dynamics::CompiledPressureControl>,
 }
 impl CompiledDual {
+    pub fn has_mask(&self) -> bool {
+        self.program.has_mask()
+    }
+    pub fn cursor_pose(
+        &self,
+        primary_nominal: f32,
+        primary_actual: f32,
+        point: InputPoint,
+        pressure_known: bool,
+        direction: Option<(f64, f64)>,
+    ) -> Result<crate::BrushPose> {
+        let nominal = self.sizing.nominal_radius(primary_nominal, self.radius);
+        let mut pose = self
+            .program
+            .cursor_pose(nominal, point, pressure_known, direction)?;
+        if self.sizing.fixed() {
+            pose.radius = (primary_actual + self.sizing.diameter_offset / 2.).clamp(0.5, 256.);
+        }
+        Ok(pose)
+    }
     pub fn step(&self) -> Option<f64> {
         self.step
     }
@@ -496,6 +516,48 @@ impl DualDab<'_> {
 #[cfg(test)]
 mod sizing_tests {
     use super::*;
+    #[test]
+    fn composite_cursor_radius_matches_actual_base_dabs() {
+        for mode in [DualSizeMode::Independent, DualSizeMode::Relative] {
+            for rule in [DualWidthRule::FollowPressure, DualWidthRule::FixedWidth] {
+                for offset in [-511., -8., 0., 8., 511.] {
+                    for nominal in [0.5, 12., 256.] {
+                        let definition =
+                            DualBrush::new(true, DualMode::Multiply, SecondaryTip::default())
+                                .with_sizing(DualSizing::new(mode, offset, rule).unwrap());
+                        let compiled = definition
+                            .compile(nominal, true, &Default::default())
+                            .unwrap()
+                            .unwrap();
+                        for pressure in [0., 0.1, 0.5, 1.] {
+                            let point = InputPoint::new(32.5, 32.5, pressure);
+                            let actual = nominal * pressure;
+                            let pose = compiled
+                                .cursor_pose(nominal, actual, point, true, None)
+                                .unwrap();
+                            let dab = compiled.dab(point, None, 17, 0, 0, f64::from(actual));
+                            assert_eq!(
+                                pose.radius, dab.dabs[0].radius as f32,
+                                "{mode:?}/{rule:?}/{offset}/{nominal}/{pressure}"
+                            );
+                            let hover = compiled
+                                .cursor_pose(nominal, nominal, point, false, None)
+                                .unwrap();
+                            let dab = compiled.dab(
+                                InputPoint::new(32.5, 32.5, 1.),
+                                None,
+                                17,
+                                0,
+                                0,
+                                f64::from(nominal),
+                            );
+                            assert_eq!(hover.radius, dab.dabs[0].radius as f32);
+                        }
+                    }
+                }
+            }
+        }
+    }
     #[test]
     fn fixed_geometry_step_and_pressure_checks_use_primary_rules() {
         let tip = BrushTip {

@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 48
+#define PAINT_ABI_MINOR 49
 
 #define PAINT_ABI_PATCH 0
 
@@ -96,6 +96,8 @@
 #define PAINT_FEATURE_CLIPPING 2048
 
 #define PAINT_FEATURE_COLOR_DYNAMICS 68719476736
+
+#define PAINT_FEATURE_COMPOSITE_BRUSH_POSE 17592186044416
 
 #define PAINT_FEATURE_CPU_VIEWPORT 32
 
@@ -348,6 +350,14 @@
 
 #define PAINT_MODE_PAINT 1
 
+#define PAINT_POSE_PRIMARY_IMAGE 2
+
+#define PAINT_POSE_SECONDARY 1
+
+#define PAINT_POSE_SECONDARY_IMAGE 4
+
+#define PAINT_POSE_SECONDARY_OVERFLOW 8
+
 #define PAINT_REMOVE_KEEP_GROUP_CHILDREN 1
 
 /**
@@ -504,6 +514,14 @@ typedef struct PaintTipPose {
   float roundness;
   uint32_t reserved_tail;
 } PaintTipPose;
+
+typedef struct PaintCompositeTipPose {
+  uint32_t struct_size;
+  uint32_t flags;
+  struct PaintTipPose primary;
+  struct PaintTipPose secondary;
+  uint64_t reserved;
+} PaintCompositeTipPose;
 
 typedef struct PaintStrokeDesc {
   uint32_t struct_size;
@@ -1278,6 +1296,19 @@ PaintStatus paint_brush_pose_read(struct PaintBrushPose *pose,
                                   double dx,
                                   double dy,
                                   struct PaintTipPose *out);
+
+/**
+ * # Safety
+ * Live pose, sized readable point and aligned nonoverlapping writable output required.
+ * Busy/error clears output. No files read or compilation awaited on the caller thread.
+ */
+PaintStatus paint_brush_pose_read_composite(struct PaintBrushPose *pose,
+                                            const struct PaintPoint *point,
+                                            uint32_t pressure_known,
+                                            uint32_t direction_known,
+                                            double dx,
+                                            double dy,
+                                            struct PaintCompositeTipPose *out);
 
 /**
  * Begin one undoable stroke on desc.layer_id; invalid input preserves active-layer selection.

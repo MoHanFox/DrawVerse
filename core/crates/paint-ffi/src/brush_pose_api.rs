@@ -146,6 +146,73 @@ pub unsafe extern "C" fn paint_brush_pose_read(
     })
 }
 /// # Safety
+/// Live pose, sized readable point and aligned nonoverlapping writable output required.
+/// Busy/error clears output. No files read or compilation awaited on the caller thread.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_pose_read_composite(
+    pose: *mut PaintBrushPose,
+    point: *const PaintPoint,
+    pressure_known: u32,
+    direction_known: u32,
+    dx: f64,
+    dy: f64,
+    out: *mut PaintCompositeTipPose,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        let empty_tip = PaintTipPose {
+            struct_size: size_of::<PaintTipPose>() as u32,
+            ..Default::default()
+        };
+        let mut output = PaintCompositeTipPose {
+            struct_size: size_of::<PaintCompositeTipPose>() as u32,
+            primary: empty_tip,
+            secondary: empty_tip,
+            ..Default::default()
+        };
+        pointers::write(out, output)?;
+        runtime::outside_callback()?;
+        if pressure_known > 1
+            || direction_known > 1
+            || !dx.is_finite()
+            || !dy.is_finite()
+            || (direction_known == 0 && (dx != 0. || dy != 0.))
+        {
+            return Err(ApiError::invalid("pose input flags/vector"));
+        }
+        let point = crate::point(pointers::read_sized(point)?)?;
+        point.validate()?;
+        let pose = runtime::registry()?.brush_pose(pose)?;
+        let (preset, radius) = pose.snapshot()?;
+        let value = preset.program().cursor_poses(
+            radius,
+            point,
+            pressure_known == 1,
+            (direction_known == 1).then_some((dx, dy)),
+        )?;
+        let tip = |p: paint_core::BrushPose| PaintTipPose {
+            radius: p.radius,
+            angle: p.angle,
+            roundness: p.roundness,
+            ..empty_tip
+        };
+        output.primary = tip(value.primary);
+        if let Some(secondary) = value.secondary {
+            output.secondary = tip(secondary);
+            output.flags |= PAINT_POSE_SECONDARY;
+        }
+        if value.primary_image {
+            output.flags |= PAINT_POSE_PRIMARY_IMAGE;
+        }
+        if value.secondary_image {
+            output.flags |= PAINT_POSE_SECONDARY_IMAGE;
+        }
+        if value.secondary_overflow {
+            output.flags |= PAINT_POSE_SECONDARY_OVERFLOW;
+        }
+        pointers::write(out, output)
+    })
+}
+/// # Safety
 /// Writable pointer containing a live pose handle required; clears it on success.
 #[no_mangle]
 pub unsafe extern "C" fn paint_brush_pose_destroy(pose: *mut *mut PaintBrushPose) -> PaintStatus {

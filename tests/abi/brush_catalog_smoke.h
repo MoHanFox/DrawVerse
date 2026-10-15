@@ -8,7 +8,9 @@ static_assert(sizeof(PaintBrushSettings) == 64 && offsetof(PaintBrushSettings, t
 static_assert(sizeof(PaintBrushPresetInfo) == 64 && sizeof(PaintBrushLibraryInfo) == 32);
 static_assert(sizeof(PaintBrushToolDesc) == 56 && offsetof(PaintBrushToolDesc, linear_rgba) == 24);
 static_assert(sizeof(PaintTipPose)==24 && offsetof(PaintTipPose,radius)==8 && offsetof(PaintTipPose,roundness)==16);
+static_assert(sizeof(PaintCompositeTipPose)==64 && offsetof(PaintCompositeTipPose,primary)==8 && offsetof(PaintCompositeTipPose,secondary)==32 && offsetof(PaintCompositeTipPose,reserved)==56);
 #else
+_Static_assert(sizeof(PaintCompositeTipPose)==64 && offsetof(PaintCompositeTipPose,primary)==8 && offsetof(PaintCompositeTipPose,secondary)==32 && offsetof(PaintCompositeTipPose,reserved)==56,"composite pose layout");
 _Static_assert(sizeof(PaintBrushSettings) == 64 && offsetof(PaintBrushSettings, tip) == 24, "brush settings layout");
 _Static_assert(sizeof(PaintBrushPresetInfo) == 64 && sizeof(PaintBrushLibraryInfo) == 32, "brush catalog layout");
 _Static_assert(sizeof(PaintBrushToolDesc) == 56 && offsetof(PaintBrushToolDesc, linear_rgba) == 24, "brush tool layout");
@@ -30,6 +32,7 @@ static int brush_catalog_smoke(void) {
     PaintBrushPose *pose=NULL;
     PaintPoint point;
     PaintTipPose tip_pose;
+    PaintCompositeTipPose composite;
     memset(&info, 0, sizeof(info)); info.struct_size = sizeof(info);
     memset(&preset, 0, sizeof(preset)); preset.struct_size = sizeof(preset);
     memset(&settings, 0, sizeof(settings)); settings.struct_size = sizeof(settings);
@@ -67,7 +70,11 @@ static int brush_catalog_smoke(void) {
     if(paint_brush_pose_create(&pose)!=PAINT_OK) return 21;
     if(paint_brush_pose_bind_prepared(pose,library,preparation,(const uint8_t*)id,sizeof(id)-1,10)!=PAINT_OK) return 22;
     if(paint_brush_pose_read(pose,&point,1,0,0,0,&tip_pose)!=PAINT_OK || tip_pose.radius!=5 || tip_pose.roundness!=.2f) return 23;
+    memset(&composite,0,sizeof(composite));
+    if(paint_brush_pose_read_composite(pose,&point,1,0,0,0,&composite)!=PAINT_OK || composite.struct_size!=64 || composite.flags!=0 || composite.primary.radius!=tip_pose.radius || composite.secondary.radius!=0 || composite.reserved!=0) return 50;
     if(paint_brush_pose_clear(pose)!=PAINT_OK) return 24;
+    if(paint_brush_pose_read_composite(pose,&point,1,0,0,0,&composite)!=PAINT_INVALID_ARGUMENT || composite.flags!=0 || composite.primary.radius!=0 || composite.secondary.radius!=0) return 51;
+
     if(paint_brush_pose_read(pose,&point,1,0,0,0,&tip_pose)!=PAINT_INVALID_ARGUMENT || tip_pose.radius!=0) return 25;
     if(paint_brush_pose_destroy(&pose)!=PAINT_OK || pose!=NULL) return 26;
     if (paint_brush_library_destroy(&library) != PAINT_OK || library != NULL) return 11;

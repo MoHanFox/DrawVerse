@@ -1,4 +1,4 @@
-# C ABI 1.48.0 契约
+# C ABI 1.49.0 契约
 
 ## ABI 1.48 双色双笔刷入口
 
@@ -406,3 +406,9 @@ PaintSelectionDetails=16字节，struct_size(0)、point_count(4)、feather(8)。
 ## 历史时间平滑IO准备阶段（当时ABI1.45，现已接入1.46）
 
 Rust IO新增state14/VBR1.12/behavior11/time-grid-v1，旧默认不升级。当前原生准确准备拒绝非默认平滑，公开库包/程序包写入及库包资源交接拒绝含smoothing对象的包，以防尚只支持state13的Qt丢字段。未公布平滑路径能力，PAINT_FEATURE_PRESSURE_SMOOTH仍仅表示压力插值，不表示时间平滑设置已经接入。见docs/brush-smoothing-io-validation.md。
+
+## ABI1.49 复合基础笔尖几何
+
+新增PAINT_FEATURE_COMPOSITE_BRUSH_POSE（17592186044416）和paint_brush_pose_read_composite；复用已存在的pose创建/准确prepared绑定/clear/destroy，单笔尖读取接口及DTO保持。PaintCompositeTipPose为64字节，struct_size/flags/两个24字节PaintTipPose/reserved u64。flags仅SECONDARY(1)、PRIMARY_IMAGE(2)、SECONDARY_IMAGE(4)、SECONDARY_OVERFLOW(8)。无第二时数据清零且嵌套struct_size有效；错误/Busy均清除两份几何与flags。
+
+只读基础姿态，不抽取随机印章或模拟路径平滑；第二独立角度/倾斜/压力、相对标称与固定实际边宽共用Rust规则。有效overflow仅启用双色并允许溢出时为真。读取不等待编译、不访问文件，captured修订/资源寿命由pose保持；库变更或销毁不改变绑定结果。未新增state/VBR字段。本阶段Qt仍使用旧主笔尖入口，完整复合光标待下一阶段接入。
