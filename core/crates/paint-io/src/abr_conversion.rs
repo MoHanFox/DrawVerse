@@ -6,7 +6,8 @@ use crate::{
     Error, Result,
 };
 use paint_core::{
-    BrushProgram, BrushSettings, BrushTip, PressureControl, PressureCurve, ScatterDynamics,
+    BrushProgram, BrushSettings, BrushTip, ColorDynamics, PressureControl, PressureCurve,
+    ScatterDynamics,
 };
 use paint_task::CancellationToken;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,6 +149,13 @@ pub fn convert<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
+    convert_inner(linked, token, 5)
+}
+/// Preserve converter v4 scatter behavior and reports without color conversion.
+pub fn convert_v4<'a>(
+    linked: &[LinkedPreset<'a>],
+    token: &CancellationToken,
+) -> Result<Vec<ConvertedPreset<'a>>> {
     convert_inner(linked, token, 4)
 }
 /// Preserve the immutable baseline and report semantics of converter v1.
@@ -177,6 +185,7 @@ pub(crate) fn pressure_parameters(
 ) -> Option<crate::brush_pressure::PressureParameters> {
     let mut pressure = settings.dynamics.clone();
     pressure.scatter = Default::default();
+    pressure.color = Default::default();
     (version >= 3
         && (version == 3
             || pressure != Default::default()
@@ -188,8 +197,146 @@ pub(crate) fn scatter_parameters(
     settings: &BrushSettings,
     version: u32,
 ) -> Option<crate::brush_scatter::ScatterParameters> {
-    (version >= 4)
+    (version >= 4 && (version == 4 || settings.dynamics.scatter != Default::default()))
         .then(|| crate::brush_scatter::ScatterParameters::from_core(settings.dynamics.scatter))
+}
+pub(crate) fn color_parameters(
+    settings: &BrushSettings,
+    version: u32,
+) -> Option<crate::brush_color_dynamics::ColorParameters> {
+    (version >= 5)
+        .then(|| crate::brush_color_dynamics::ColorParameters::from_core(settings.dynamics.color))
+}
+fn color_controls(
+    preset: &Descriptor,
+    settings: &mut BrushSettings,
+    issues: &mut Vec<Issue>,
+) -> Result<Vec<String>> {
+    let enabled = match flag(preset, b"useColorDynamics")? {
+        None => return Ok(Vec::new()),
+        Some(value) => value,
+    };
+    let keys = [
+        b"clVr".as_slice(),
+        b"H   ",
+        b"Strt",
+        b"Brgh",
+        b"colorDynamicsPerTip",
+    ];
+    if !enabled && keys.iter().any(|key| preset.get(key).is_none()) {
+        return Ok(Vec::new());
+    }
+    let dynamic = match preset.get(b"clVr") {
+        Some(Value::Object { descriptor, .. }) => descriptor,
+        _ => return Err(Error::Invalid("ABR color dynamics object")),
+    };
+    let control = match dynamic.get(b"bVTy") {
+        Some(Value::Integer(value)) => *value,
+        _ => return Err(Error::Invalid("ABR color control type")),
+    };
+    unit(dynamic, b"Mnm ", *b"#Prc", 0., 100.)?;
+    if !matches!(
+        dynamic.get(b"fStp"),
+        None | Some(Value::Integer(0..=i32::MAX))
+    ) {
+        return Err(Error::Invalid("ABR color fade steps"));
+    }
+    let per_tip = flag(preset, b"colorDynamicsPerTip")?;
+    let values = [
+        unit(dynamic, b"jitter", *b"#Prc", 0., 100.)? / 100.,
+        unit(preset, b"H   ", *b"#Prc", 0., 100.)? / 100.,
+        unit(preset, b"Strt", *b"#Prc", 0., 100.)? / 100.,
+        unit(preset, b"Brgh", *b"#Prc", 0., 100.)? / 100.,
+    ];
+    let color = ColorDynamics::new(
+        enabled,
+        values[0],
+        values[1],
+        values[2],
+        values[3],
+        per_tip.unwrap_or(false),
+        0,
+    )?;
+    if color == ColorDynamics::default() {
+        return Ok(Vec::new());
+    }
+    let mut handled = vec![
+        "useColorDynamics".into(),
+        "colorDynamicsPerTip".into(),
+        "clVr.bVTy".into(),
+    ];
+    issue(
+        issues,
+        "useColorDynamics",
+        Status::Mapped,
+        "保存颜色动态启用状态；关闭配置不参与绘画",
+    );
+    issue(
+        issues,
+        "colorDynamicsPerTip",
+        if per_tip.is_some() {
+            Status::Mapped
+        } else {
+            Status::Approximate
+        },
+        if per_tip.is_some() {
+            "逐笔或逐实际印章采用原生颜色动态频率"
+        } else {
+            "源未保存颜色频率，使用逐笔；PS缺省行为未核对"
+        },
+    );
+    issue(
+        issues,
+        "clVr.bVTy",
+        if control == 0 {
+            Status::Mapped
+        } else {
+            Status::NotExecuted
+        },
+        if control == 0 {
+            "无设备调制，前景背景混色幅度由jitter控制"
+        } else {
+            "设备或渐隐颜色调制尚未执行；源控制保留"
+        },
+    );
+    if control == 0 {
+        for field in ["Mnm ", "fStp"] {
+            if dynamic.get(field.as_bytes()).is_some() {
+                let path = format!("clVr.{field}");
+                issue(
+                    issues,
+                    &path,
+                    Status::Mapped,
+                    "无设备控制时不参与执行，原值保留在来源",
+                );
+                handled.push(path);
+            }
+        }
+    }
+    for (path, value) in ["clVr.jitter", "H   ", "Strt", "Brgh"]
+        .into_iter()
+        .zip(values)
+    {
+        issue(
+            issues,
+            path,
+            if !enabled || value == 0. {
+                Status::Mapped
+            } else {
+                Status::Approximate
+            },
+            if !enabled {
+                "完整关闭颜色配置保存，不执行颜色变化"
+            } else if value == 0. {
+                "颜色变化幅度为零"
+            } else {
+                "原生确定性随机与线性RGB/HSV；尚未与PS颜色空间及随机序列逐像素核对"
+            },
+        );
+        handled.push(path.into());
+    }
+    settings.dynamics.color = color;
+    Ok(handled)
 }
 fn scatter_controls(
     preset: &Descriptor,
@@ -652,6 +799,14 @@ fn convert_inner<'a>(
         } else {
             false
         };
+        let color_changed = if generation >= 5 {
+            let extra = color_controls(item.preset, &mut settings, &mut issues)?;
+            let changed = !extra.is_empty();
+            handled.extend(extra);
+            changed
+        } else {
+            false
+        };
         for (key, value) in &item.preset.entries {
             if key != b"Nm  " && key != b"Brsh" && key != b"toolOptions" {
                 if [
@@ -666,6 +821,12 @@ fn convert_inner<'a>(
                     b"Cnt ",
                     b"scatterDynamics",
                     b"countDynamics",
+                    b"useColorDynamics",
+                    b"clVr",
+                    b"H   ",
+                    b"Strt",
+                    b"Brgh",
+                    b"colorDynamicsPerTip",
                 ]
                 .contains(&key.as_slice())
                 {
@@ -732,7 +893,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if scatter_changed {
+        if color_changed {
+            converter_version = 5;
+        } else if scatter_changed {
             converter_version = 4;
         } else if !handled.is_empty() {
             converter_version = 3;

@@ -47,6 +47,29 @@ fn scatter_v4_import_preserves_native_source_and_full_state() {
     );
 }
 fn check_bytes(bytes: Vec<u8>, opacity: Option<f64>, pressure: bool, scatter: bool) {
+    check_color_bytes(bytes, opacity, pressure, scatter, false);
+}
+#[test]
+fn color_v5_import_prepares_closed_and_active_with_and_without_other_dynamics() {
+    for enabled in [false, true] {
+        for combined in [false, true] {
+            check_color_bytes(
+                fixture::fixture_with_color(enabled, true, combined),
+                Some(25.5),
+                combined,
+                combined,
+                true,
+            );
+        }
+    }
+}
+fn check_color_bytes(
+    bytes: Vec<u8>,
+    opacity: Option<f64>,
+    pressure: bool,
+    scatter: bool,
+    color: bool,
+) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("brush.abr");
     std::fs::write(&path, bytes).unwrap();
@@ -182,7 +205,9 @@ fn check_bytes(bytes: Vec<u8>, opacity: Option<f64>, pressure: bool, scatter: bo
         assert_eq!(&canonical[..required as usize], archive.record().unwrap());
         assert_eq!(
             archive.info.converter_version,
-            if scatter {
+            if color {
+                5
+            } else if scatter {
                 4
             } else if pressure {
                 3

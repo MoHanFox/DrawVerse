@@ -144,3 +144,7 @@ converterVersion3来源基准保存已有pressureDynamics（三通道线性曲�
 ## VBR1.18：ABR散布来源
 
 来源converterVersion4保存既有scatterDynamics基准，完整关闭配置可保留，pressureDynamics仍为独立可选对象；原记录结构version1。包含v4来源最低minor18，按全部来源最高需求导出，17及以下夹带拒绝；旧三代来源字节/基准不重算。执行继续使用既有behavior5/scatter-stamps与state8，无来源时仍按已有VBR散布能力选版本。Schema contracts/vbr-abr-scatter-v1.18.schema.json及合法/非法来源样例已发布。PS随机分布明确近似，设备/渐隐散布控制及16位等仍待后续，见abr-scatter-conversion-validation.md。
+
+## VBR1.19：ABR颜色动态来源
+
+来源converterVersion5必须保存既有colorDynamics基准，可独立组合pressureDynamics/scatterDynamics；颜色字段不会混入压力DTO，纯颜色来源不强加散布对象。原记录仍为version1。包含v5来源最低minor19，按所有来源最高需求导出，18以下夹带拒绝；旧四代来源、报告和原记录字节不重算。执行沿用behavior7/color-dynamics与state10；没有新来源时原生颜色配置仍按原有VBR版本需求导出。Schema为contracts/vbr-abr-color-v1.19.schema.json。PS随机/颜色空间明确近似，纯度与设备颜色调制尚未执行，见abr-color-conversion-design.md。

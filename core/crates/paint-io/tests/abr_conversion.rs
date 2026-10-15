@@ -949,3 +949,255 @@ fn default_closed_scatter_keeps_v3_reports_and_does_not_upgrade() {
             .collect::<Vec<_>>()
     );
 }
+
+fn color_preset(enabled: bool, per_tip: bool) -> Descriptor {
+    let mut source = scatter_preset(true, true);
+    source.entries.extend(
+        object(
+            "unused",
+            vec![
+                ("useColorDynamics", Value::Boolean(enabled)),
+                ("colorDynamicsPerTip", Value::Boolean(per_tip)),
+                (
+                    "clVr",
+                    Value::Object {
+                        global: false,
+                        descriptor: Box::new(object(
+                            "brushDynamics",
+                            vec![
+                                ("bVTy", Value::Integer(0)),
+                                ("Mnm ", unit(*b"#Prc", 0.)),
+                                ("fStp", Value::Integer(25)),
+                                ("jitter", unit(*b"#Prc", 80.)),
+                            ],
+                        )),
+                    },
+                ),
+                ("H   ", unit(*b"#Prc", 20.)),
+                ("Strt", unit(*b"#Prc", 30.)),
+                ("Brgh", unit(*b"#Prc", 10.)),
+                ("purity", unit(*b"#Prc", 50.)),
+            ],
+        )
+        .entries,
+    );
+    source
+}
+
+#[test]
+fn color_conversion_program_image_frequency_and_closed_state_use_real_history() {
+    use paint_core::{BrushMask, ColorDynamics, Document, InputPoint, Pixel};
+    let token = CancellationToken::default();
+    let mask = SectionedTip {
+        id: "color".into(),
+        prefix: Box::new([]),
+        bounds: [0, 0, 4, 4],
+        mask: Arc::new(
+            BrushMask::new(
+                4,
+                4,
+                vec![
+                    255, 255, 255, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255,
+                ],
+            )
+            .unwrap(),
+        ),
+        trailing_metadata: Box::new([]),
+    };
+    for enabled in [false, true] {
+        for per_tip in [false, true] {
+            for sampled in [false, true] {
+                let source = color_preset(enabled, per_tip);
+                let shape = shape(sampled);
+                let linked = [LinkedPreset {
+                    name: "color",
+                    preset: &source,
+                    shape: &shape,
+                    sampled_tip: sampled.then_some(&mask),
+                }];
+                let result = convert(&linked, &token).unwrap();
+                let p = &result[0];
+                assert_eq!(p.converter_version, 5);
+                let expected = ColorDynamics::new(enabled, 0.8, 0.2, 0.3, 0.1, per_tip, 0).unwrap();
+                assert_eq!(p.settings.dynamics.color, expected);
+                assert!(p
+                    .issues
+                    .iter()
+                    .any(|i| i.path == "purity" && i.status == Status::NotExecuted));
+                for old in [
+                    paint_io::abr_conversion::convert_legacy(&linked, &token).unwrap(),
+                    paint_io::abr_conversion::convert_v2(&linked, &token).unwrap(),
+                    paint_io::abr_conversion::convert_v3(&linked, &token).unwrap(),
+                    paint_io::abr_conversion::convert_v4(&linked, &token).unwrap(),
+                ] {
+                    assert_eq!(old[0].settings.dynamics.color, Default::default());
+                    assert!(old[0]
+                        .issues
+                        .iter()
+                        .any(|i| i.path == "clVr.jitter" && i.status == Status::NotExecuted));
+                }
+                let mut reference = p.settings.clone();
+                reference.dynamics.color = expected;
+                let mut a = Document::new(64, 64).unwrap();
+                let mut b = Document::new(64, 64).unwrap();
+                for pressure in [0.25, 0.75] {
+                    for (doc, s) in [(&mut a, &p.settings), (&mut b, &reference)] {
+                        let mut def = s.definition();
+                        def.brush.color = Pixel::from_straight([1., 0., 0., 1.]).unwrap();
+                        def.brush.background_color =
+                            Pixel::from_straight([0., 0., 1., 1.]).unwrap();
+                        doc.begin_brush_stroke(def, InputPoint::new(20.5, 32.5, pressure))
+                            .unwrap();
+                        doc.stroke_to(InputPoint::new(44.5, 32.5, pressure))
+                            .unwrap();
+                        doc.end_stroke().unwrap();
+                    }
+                }
+                let pixels = |d: &Document| {
+                    (0..4096)
+                        .map(|i| d.pixel(i % 64, i / 64))
+                        .collect::<Vec<_>>()
+                };
+                let after = pixels(&a);
+                assert_eq!(after, pixels(&b));
+                assert!(after.iter().any(|p| p.alpha() > 0.));
+                if enabled {
+                    assert!(after
+                        .iter()
+                        .any(|p| p.components()[2] > 0. && p.alpha() > 0.));
+                }
+                assert_eq!(a.history_depth(), (2, 0));
+                a.undo().unwrap();
+                a.redo().unwrap();
+                assert_eq!(pixels(&a), after);
+            }
+        }
+    }
+}
+
+#[test]
+fn color_conversion_rejects_invalid_units_ranges_and_preserves_unsupported_controls() {
+    let shape = shape(false);
+    let token = CancellationToken::default();
+    for bad in [
+        unit(*b"#Prc", -1e-10),
+        unit(*b"#Prc", 100. + 1e-9),
+        unit(*b"#Prc", f64::NAN),
+        unit(*b"#Pxl", 20.),
+        Value::Integer(20),
+    ] {
+        let mut source = color_preset(true, true);
+        source
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"H   ")
+            .unwrap()
+            .1 = bad;
+        assert!(convert(
+            &[LinkedPreset {
+                name: "bad",
+                preset: &source,
+                shape: &shape,
+                sampled_tip: None
+            }],
+            &token
+        )
+        .is_err());
+    }
+    let mut source = color_preset(true, true);
+    if let Value::Object { descriptor, .. } = &mut source
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"clVr")
+        .unwrap()
+        .1
+    {
+        descriptor.entries[0].1 = Value::Integer(2);
+    }
+    source.entries.retain(|(k, _)| k != b"colorDynamicsPerTip");
+    source
+        .entries
+        .push((b"clVr.jitter".to_vec(), unit(*b"#Prc", 90.)));
+    let result = convert(
+        &[LinkedPreset {
+            name: "partial",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+        }],
+        &token,
+    )
+    .unwrap();
+    assert!(!result[0].settings.dynamics.color.per_tip());
+    for path in ["clVr.bVTy", "purity", "clVr.jitter"] {
+        assert!(result[0]
+            .issues
+            .iter()
+            .any(|i| i.path == path && i.status == Status::NotExecuted));
+    }
+    assert!(result[0]
+        .issues
+        .iter()
+        .any(|i| i.path == "colorDynamicsPerTip" && i.status == Status::Approximate));
+}
+
+#[test]
+fn default_or_incomplete_closed_color_keeps_v4_reports_and_source_contract_is_strict() {
+    let shape = shape(false);
+    let token = CancellationToken::default();
+    for complete in [false, true] {
+        let mut source = color_preset(false, true);
+        for (k, v) in &mut source.entries {
+            if [b"H   ".as_slice(), b"Strt", b"Brgh"].contains(&k.as_slice()) {
+                *v = unit(*b"#Prc", 0.);
+            }
+            if let Value::Object { descriptor, .. } = v {
+                if k == b"clVr" {
+                    descriptor
+                        .entries
+                        .iter_mut()
+                        .find(|(k, _)| k == b"jitter")
+                        .unwrap()
+                        .1 = unit(*b"#Prc", 0.);
+                }
+            }
+        }
+        if !complete {
+            source.entries.retain(|(k, _)| k != b"colorDynamicsPerTip");
+        }
+        let linked = [LinkedPreset {
+            name: "closed",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+        }];
+        let a = convert(&linked, &token).unwrap();
+        let b = paint_io::abr_conversion::convert_v4(&linked, &token).unwrap();
+        assert_eq!(a[0].converter_version, b[0].converter_version);
+        assert_eq!(a[0].settings.dynamics, b[0].settings.dynamics);
+        assert_eq!(
+            a[0].issues
+                .iter()
+                .map(|i| (&i.path, i.status, i.reason))
+                .collect::<Vec<_>>(),
+            b[0].issues
+                .iter()
+                .map(|i| (&i.path, i.status, i.reason))
+                .collect::<Vec<_>>()
+        );
+    }
+    let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(include_bytes!(
+        "../../../../contracts/fixtures/abr-color-source-v5-valid.json"
+    ))
+    .unwrap();
+    info.validate().unwrap();
+    for bytes in [
+        include_bytes!("../../../../contracts/fixtures/abr-color-source-invalid-version.json")
+            .as_slice(),
+        include_bytes!("../../../../contracts/fixtures/abr-color-source-invalid-downgrade.json")
+            .as_slice(),
+    ] {
+        let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
+        assert!(info.validate().is_err());
+    }
+}

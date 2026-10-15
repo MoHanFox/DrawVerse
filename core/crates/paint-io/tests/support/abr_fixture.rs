@@ -43,6 +43,7 @@ fn preset(
     opacity: Option<f64>,
     pressure: bool,
     scatter: Option<bool>,
+    color: Option<(bool, bool)>,
 ) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
@@ -95,6 +96,31 @@ fn preset(
             ));
         }
     }
+    if let Some((enabled, per_tip)) = color {
+        entries.extend([
+            ("useColorDynamics", typed(b"bool", &[u8::from(enabled)])),
+            ("colorDynamicsPerTip", typed(b"bool", &[u8::from(per_tip)])),
+            ("H   ", unit(b"#Prc", 20.)),
+            ("Strt", unit(b"#Prc", 30.)),
+            ("Brgh", unit(b"#Prc", 10.)),
+            ("purity", unit(b"#Prc", 50.)),
+            (
+                "clVr",
+                typed(
+                    b"Objc",
+                    &object(
+                        "brushDynamics",
+                        vec![
+                            ("bVTy", typed(b"long", &0i32.to_be_bytes())),
+                            ("fStp", typed(b"long", &25i32.to_be_bytes())),
+                            ("Mnm ", unit(b"#Prc", 0.)),
+                            ("jitter", unit(b"#Prc", 80.)),
+                        ],
+                    ),
+                ),
+            ),
+        ]);
+    }
     if pressure {
         for key in ["useTipDynamics", "usePaintDynamics"] {
             entries.push((key, typed(b"bool", &[1])));
@@ -143,15 +169,27 @@ pub fn fixture(version: u16, sub: u16, bad: bool) -> Vec<u8> {
     fixture_with_opacity(version, sub, bad, None)
 }
 pub fn fixture_with_opacity(version: u16, sub: u16, bad: bool, opacity: Option<f64>) -> Vec<u8> {
-    fixture_inner(version, sub, bad, opacity, false, None)
+    fixture_inner(version, sub, bad, opacity, false, None, None)
 }
 #[allow(dead_code)]
 pub fn fixture_with_pressure(version: u16, sub: u16, bad: bool) -> Vec<u8> {
-    fixture_inner(version, sub, bad, Some(25.5), true, None)
+    fixture_inner(version, sub, bad, Some(25.5), true, None, None)
 }
 #[allow(dead_code)]
 pub fn fixture_with_scatter(version: u16, sub: u16, bad: bool, enabled: bool) -> Vec<u8> {
-    fixture_inner(version, sub, bad, Some(25.5), true, Some(enabled))
+    fixture_inner(version, sub, bad, Some(25.5), true, Some(enabled), None)
+}
+#[allow(dead_code)]
+pub fn fixture_with_color(enabled: bool, per_tip: bool, combined: bool) -> Vec<u8> {
+    fixture_inner(
+        6,
+        2,
+        false,
+        Some(25.5),
+        combined,
+        combined.then_some(true),
+        Some((enabled, per_tip)),
+    )
 }
 fn fixture_inner(
     version: u16,
@@ -160,13 +198,14 @@ fn fixture_inner(
     opacity: Option<f64>,
     pressure: bool,
     scatter: Option<bool>,
+    color: Option<(bool, bool)>,
 ) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
     let mut list = 3u32.to_be_bytes().to_vec();
-    list.extend(preset(true, false, opacity, pressure, scatter));
-    list.extend(preset(false, false, opacity, pressure, scatter));
-    list.extend(preset(true, bad, opacity, pressure, scatter));
+    list.extend(preset(true, false, opacity, pressure, scatter, color));
+    list.extend(preset(false, false, opacity, pressure, scatter, color));
+    list.extend(preset(true, bad, opacity, pressure, scatter, color));
     let mut descriptor = 16u32.to_be_bytes().to_vec();
     descriptor.extend(object("null", vec![("Brsh", typed(b"VlLs", &list))]));
     section(&mut bytes, b"desc", &descriptor);
