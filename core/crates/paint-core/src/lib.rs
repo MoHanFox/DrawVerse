@@ -2,6 +2,8 @@
 //! Pixels are linear premultiplied RGBA32F; display conversion is external.
 mod appearance;
 mod brush;
+mod brush_wet_tool;
+pub use brush_wet_tool::{WetLease, WetTool};
 mod brush_wet_settings;
 pub use brush_wet_settings::WetSettings;
 mod brush_wet_carrier;

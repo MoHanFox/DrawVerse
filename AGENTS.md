@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新湿混工具所有权：`docs/brush-wet-owner-design.md` / `docs/brush-wet-owner-validation.md`；共享WetTool/独占租约、原生Engine配置起笔/历史成功采用、取消/预算失败/New/stop释放与跨文档Busy、真实两笔参考像素/载色；无ABI变化，外部工具句柄/准备桥/Qt及双色湿混继续后续。
+
 - 最新湿混保存交换：`docs/brush-wet-io-design.md` / `docs/brush-wet-io-validation.md`；state17/VBR1.15/behavior14、完整关闭策略与六比例、真实两笔载色/像素/历史及图片来源保持、Schema与合法非法示例；ABI1.49原生准备/包入口暂拒防旧Qt丢值，完整桥/Qt与双色湿混继续后续。
 
 - 最新湿混统一设置：`docs/brush-wet-settings-design.md` / `docs/brush-wet-settings-validation.md`；Rust不可变预设/编译快照、配置起笔自动清洗装载与跨笔保色/路径重置/尺寸重采样、真实像素与历史；无ABI/格式变化，旧IO非默认拒绝，完整湿混交换/桥/Qt与双色组合继续后续。

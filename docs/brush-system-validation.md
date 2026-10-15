@@ -132,3 +132,5 @@
 湿混统一设置与载色策略阶段：Rust预设/定义/编译快照和配置起笔已接autoClean/autoLoad/allLayers及WetMix，真实两笔保色/重采样/捕获与回滚，47项相关Rust及Release/ABI/Qt回归通过，见[验收](brush-wet-settings-validation.md)。旧IO明确拒绝非默认湿混防丢值；完整交换、桥/Qt、工具持有与手动载色操作仍需继续。
 
 湿混保存交换阶段：state17/VBR1.15/behavior14完整wetMix、关闭值与策略、真实跨笔载色/像素/历史和图片/ABR来源保持，29项相关Rust、Schema解释器及Release/ABI/Qt回归通过，见[验收](brush-wet-io-validation.md)。原生准备与包入口暂拒新配置防旧Qt丢值，完整执行桥/设置/预览/基准与工具所有权继续下一阶段。
+
+湿混共享工具与原生会话阶段：WetTool/WetLease隔离预设、文档历史和工具载色，原生Engine配置起笔并仅成功结束后采用；23项相关Rust、Release/ABI/Qt普通绘画回归通过，见[验收](brush-wet-owner-validation.md)。当前无新C ABI，准备/包临时拒绝仍有效，外部共享工具句柄、资源桥与完整Qt湿混入口继续后续。

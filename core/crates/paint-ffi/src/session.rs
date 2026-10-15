@@ -133,6 +133,8 @@ struct RenderJob {
 struct Engine {
     files: crate::file_job::FileService,
     document: Document,
+    wet_tool: paint_core::WetTool,
+    wet_lease: Option<paint_core::WetLease>,
     shared: Arc<Shared>,
     pool: Arc<TaskPool>,
     jobs: [Option<RenderJob>; 4],
@@ -151,12 +153,29 @@ struct Engine {
 impl Session {
     #[cfg(test)]
     pub fn new(width: u32, height: u32) -> ApiResult<Self> {
-        Self::with_storage(width, height, crate::storage_api::CoreStorage::system())
+        Self::with_wet_tool(width, height, paint_core::WetTool::default())
+    }
+    #[cfg(test)]
+    fn with_wet_tool(width: u32, height: u32, wet_tool: paint_core::WetTool) -> ApiResult<Self> {
+        Self::with_storage_and_wet_tool(
+            width,
+            height,
+            crate::storage_api::CoreStorage::system(),
+            wet_tool,
+        )
     }
     pub fn with_storage(
         width: u32,
         height: u32,
         storage: Arc<crate::storage_api::CoreStorage>,
+    ) -> ApiResult<Self> {
+        Self::with_storage_and_wet_tool(width, height, storage, paint_core::WetTool::default())
+    }
+    pub(crate) fn with_storage_and_wet_tool(
+        width: u32,
+        height: u32,
+        storage: Arc<crate::storage_api::CoreStorage>,
+        wet_tool: paint_core::WetTool,
     ) -> ApiResult<Self> {
         let document =
             Document::with_storage(width, height, storage.options, storage.space.clone())?;
@@ -181,6 +200,8 @@ impl Session {
         let mut engine = Engine {
             files: crate::file_job::FileService::new(Arc::clone(&file), Arc::clone(&file_pool)),
             document,
+            wet_tool,
+            wet_lease: None,
             shared: Arc::clone(&shared),
             pool: Arc::clone(&pool),
             jobs: std::array::from_fn(|_| None),
@@ -686,6 +707,7 @@ impl Engine {
                 let _ = self.document.cancel_stroke();
             }
             if stroke_command {
+                self.wet_lease.take();
                 self.aborted = true;
                 self.floor = self.document.revision();
             }
@@ -870,6 +892,7 @@ impl Engine {
                     self.document.document_options(),
                     self.document.storage(),
                 )?;
+                self.wet_lease.take();
                 self.generation += 1;
                 self.shared
                     .generation
@@ -900,17 +923,29 @@ impl Engine {
                 if self.document.stroke_active() {
                     return Err(paint_core::Error::Busy.into());
                 }
+                let lease = if brush.wet.enabled() {
+                    Some(self.wet_tool.lease()?)
+                } else {
+                    None
+                };
                 let previous = self.document.active_layer();
                 if layer != 0 {
                     self.document.set_active_layer(layer)?;
                 }
-                if let Err(error) = self.document.begin_brush_stroke(*brush, point) {
+                let result = if let Some(lease) = &lease {
+                    self.document
+                        .begin_configured_wet_brush_stroke(*brush, point, lease.retained())
+                } else {
+                    self.document.begin_brush_stroke(*brush, point)
+                };
+                if let Err(error) = result {
                     // Selection must follow the actor's immediate state, not a stale UI hint.
                     if self.document.layer(previous).is_some() {
                         self.document.set_active_layer(previous)?;
                     }
                     return Err(error.into());
                 }
+                self.wet_lease = lease;
             }
             Operation::Move(point) => {
                 if self.aborted {
@@ -922,12 +957,25 @@ impl Engine {
                 if self.aborted {
                     return Err(ApiError::new(PAINT_CANCELLED, "stroke rolled back"));
                 }
-                self.modified |= self.document.end_stroke()?;
+                if self.wet_lease.is_some() {
+                    let (changed, carrier) = self.document.end_wet_brush_stroke()?;
+                    self.wet_lease
+                        .take()
+                        .expect("active wet lease")
+                        .commit(carrier);
+                    self.modified |= changed;
+                } else {
+                    self.modified |= self.document.end_stroke()?;
+                }
             }
             Operation::Cancel(overload) => {
-                if self.document.stroke_active() {
-                    self.document.cancel_stroke()?;
-                }
+                let cancelled = if self.document.stroke_active() {
+                    self.document.cancel_stroke()
+                } else {
+                    Ok(())
+                };
+                self.wet_lease.take();
+                cancelled?;
                 self.aborted = true;
                 if overload {
                     return Err(ApiError::new(
@@ -996,6 +1044,7 @@ impl Engine {
         ) {
             if let Some(document) = document {
                 self.document = document;
+                self.wet_lease.take();
                 self.generation += 1;
                 self.floor = 0;
                 self.aborted = false;
@@ -1343,3 +1392,7 @@ mod actor_tests {
         session.stop();
     }
 }
+
+#[cfg(test)]
+#[path = "session_wet_tests.rs"]
+mod wet_tests;
