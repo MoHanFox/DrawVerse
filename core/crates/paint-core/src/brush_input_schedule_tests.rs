@@ -350,3 +350,18 @@ fn input_pages_empty_plan_and_oversized_actual_scatter_work_are_explicit() {
     };
     assert!(BrushInputSchedule::new(start(), s, vec![segment(1., 0., 1.)]).is_err());
 }
+
+#[test]
+fn input_pages_preserve_the_existing_disabled_secondary_infinity_sentinel() {
+    let first = InputScheduleStart {
+        secondary_next: f64::INFINITY,
+        ..start()
+    };
+    let segments = vec![segment(8., 0., 1.)];
+    let schedule = BrushInputSchedule::new(first, steps(false), segments.clone()).unwrap();
+    assert_eq!(
+        collect(schedule, InputScheduleBudget::default()),
+        legacy(first, steps(false), &segments)
+    );
+    assert!(BrushInputSchedule::new(first, steps(true), segments).is_err());
+}

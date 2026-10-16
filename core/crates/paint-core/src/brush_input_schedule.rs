@@ -29,8 +29,8 @@ impl InputScheduleWork {
 }
 #[derive(Clone, Copy, Debug)]
 pub struct InputScheduleBudget {
-    work: InputScheduleWork,
-    events: usize,
+    pub(crate) work: InputScheduleWork,
+    pub(crate) events: usize,
 }
 impl Default for InputScheduleBudget {
     fn default() -> Self {
@@ -56,7 +56,7 @@ impl InputScheduleBudget {
             events,
         })
     }
-    fn fits(self, work: InputScheduleWork) -> bool {
+    pub(crate) fn fits(self, work: InputScheduleWork) -> bool {
         work.dabs <= self.work.dabs && work.visits <= self.work.visits
     }
 }
@@ -173,7 +173,8 @@ impl BrushInputSchedule {
             || !start.primary_next.is_finite()
             || start.primary_next <= 0.
             || start.primary_next > steps.primary * (1. + 1e-8) + 1e-8
-            || !start.secondary_next.is_finite()
+            || (!start.secondary_next.is_finite()
+                && !(steps.secondary.is_none() && start.secondary_next == f64::INFINITY))
             || start.secondary_next < 0.
             || (steps.secondary.is_some() && start.secondary_next == 0.)
             || steps

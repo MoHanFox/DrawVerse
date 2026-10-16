@@ -12,6 +12,9 @@ pub const MAX_DIMENSION: u32 = 1_000_000;
 const MAX_DABS_PER_SEGMENT: usize = crate::MAX_INPUT_PAGE_DABS;
 const MAX_PIXEL_VISITS_PER_SEGMENT: usize = crate::MAX_INPUT_PAGE_VISITS;
 mod batch;
+#[path = "document_input_paging.rs"]
+mod input_paging;
+pub use input_paging::StrokePageResult;
 #[path = "brush_dual_paint.rs"]
 mod dual_paint;
 pub(crate) mod groups;
@@ -478,6 +481,7 @@ pub struct Document {
     options: DocumentOptions,
     history: History,
     stroke: Option<Stroke>,
+    pending_input: Option<input_paging::PendingInput>,
     random_serial: u64,
     #[cfg(test)]
     reference_mix_path: bool,
@@ -718,6 +722,7 @@ impl Document {
             options,
             history: History::default(),
             stroke: None,
+            pending_input: None,
             random_serial: 0,
             #[cfg(test)]
             reference_mix_path: false,
@@ -1411,6 +1416,9 @@ impl Document {
     }
 
     pub fn stroke_to(&mut self, point: InputPoint) -> Result<()> {
+        if self.pending_input.is_some() {
+            return Err(Error::Busy);
+        }
         if let Some(tail) = self.stroke.as_mut().and_then(|s| s.taper.as_mut()) {
             tail.reset_work();
         }
@@ -1428,20 +1436,7 @@ impl Document {
     }
     fn stroke_to_inner(&mut self, point: InputPoint) -> Result<()> {
         let current = self.stroke.as_ref().ok_or(Error::NoStroke)?;
-        if current
-            .program
-            .dual
-            .as_ref()
-            .is_some_and(|d| d.color.enabled())
-            && point.tool == Tool::Eraser
-        {
-            return Err(Error::InvalidArgument(
-                "dual-color eraser input is not supported",
-            ));
-        }
-        if current.wet.is_some() && point.tool == Tool::Eraser {
-            return Err(Error::InvalidArgument("wet eraser input is not supported"));
-        }
+        Self::validate_input_tool(current, point)?;
         let Some(mut filter) = current.path_filter.clone() else {
             return self.stroke_to_direct(point);
         };
@@ -1489,27 +1484,12 @@ impl Document {
                     ((distance - secondary_next + 1e-9) / s).floor() as usize + 1
                 }
             });
-            let pressure_changed = stroke.program.dual.as_ref().is_some_and(|d| {
-                d.pressure_changed(last.pressure, point.pressure)
-                    || (d.color.enabled()
-                        && stroke.program.opacity_pressure(last.pressure)
-                            != stroke.program.opacity_pressure(point.pressure))
-            });
-            let stationary = distance <= 1e-9;
-            primary = primary.saturating_add(count).saturating_add(usize::from(
-                stationary
-                    && point.pressure != last.pressure
-                    && ((stroke.wet.is_some()
-                        && (stroke.program.tip.pressure_size || stroke.program.tip.pressure_flow))
-                        || stroke.program.opacity_pressure(point.pressure).is_some()
-                        || pressure_changed)
-                    && !matches!(stroke.brush.mode, BrushMode::Smudge { .. }),
-            ));
+            primary = primary
+                .saturating_add(count)
+                .saturating_add(usize::from(Self::stationary_primary(stroke, last, point)));
             secondary = secondary
                 .saturating_add(secondary_count)
-                .saturating_add(usize::from(
-                    stationary && secondary_step.is_some() && pressure_changed,
-                ));
+                .saturating_add(usize::from(Self::stationary_secondary(stroke, last, point)));
             next = (next + count as f64 * step - distance).max(step * 1e-9);
             if let Some(s) = secondary_step {
                 secondary_next =
@@ -1533,18 +1513,7 @@ impl Document {
             return Err(Error::InvalidArgument("tablet time must be monotonic"));
         }
         let distance = (point.x - current.last.x).hypot(point.y - current.last.y);
-        let stationary_pressure = distance <= 1e-9
-            && point.pressure != current.last.pressure
-            && ((current.wet.is_some()
-                && (current.program.tip.pressure_size || current.program.tip.pressure_flow))
-                || current.program.opacity_pressure(point.pressure).is_some()
-                || current.program.dual.as_ref().is_some_and(|d| {
-                    d.pressure_changed(current.last.pressure, point.pressure)
-                        || (d.color.enabled()
-                            && current.program.opacity_pressure(current.last.pressure)
-                                != current.program.opacity_pressure(point.pressure))
-                }))
-            && !matches!(current.brush.mode, BrushMode::Smudge { .. });
+        let stationary_pressure = Self::stationary_primary(current, current.last, point);
         let step = current.brush.step();
         let count = if distance + 1e-9 < current.distance_to_next {
             0
@@ -1552,14 +1521,7 @@ impl Document {
             ((distance - current.distance_to_next + 1e-9) / step).floor() as usize + 1
         };
         let dual_step = current.program.dual.as_ref().and_then(|d| d.step());
-        let secondary_stationary = distance <= 1e-9
-            && current.program.dual.as_ref().is_some_and(|d| {
-                d.step().is_some()
-                    && (d.pressure_changed(current.last.pressure, point.pressure)
-                        || (d.color.enabled()
-                            && current.program.opacity_pressure(current.last.pressure)
-                                != current.program.opacity_pressure(point.pressure)))
-            });
+        let secondary_stationary = Self::stationary_secondary(current, current.last, point);
         let secondary_count = dual_step.map_or(0, |secondary_step| {
             if distance + 1e-9 < current.dual_next {
                 0
@@ -1748,56 +1710,67 @@ impl Document {
         self.finish_stroke().map(|(changed, _)| changed)
     }
     fn finish_stroke(&mut self) -> Result<(bool, Option<crate::WetInk>)> {
+        if self.pending_input.is_some() {
+            return Err(Error::Busy);
+        }
+        self.finish_stroke_with_end(true)
+    }
+    fn finish_stroke_with_end(
+        &mut self,
+        render_end: bool,
+    ) -> Result<(bool, Option<crate::WetInk>)> {
         // The visible filtered endpoint is authoritative. Releasing the pen must not
         // synthesize input, release stabilizer distance, or raise pressure to the raw value.
         let mut stroke = self.stroke.take().ok_or(Error::NoStroke)?;
-        if let Some(tail) = &mut stroke.taper {
-            tail.reset_work();
-        }
-        let secondary_final = stroke
-            .program
-            .dual
-            .as_ref()
-            .is_some_and(|d| d.step().is_some())
-            && (stroke.last.x - stroke.dual_last.x).hypot(stroke.last.y - stroke.dual_last.y)
-                > 1e-7;
-        let primary_final =
-            (stroke.last.x - stroke.last_dab.x).hypot(stroke.last.y - stroke.last_dab.y) > 1e-7
-                || secondary_final;
-        if let Err(error) = Self::validate_stroke_work(
-            stroke.brush,
-            &stroke.program,
-            usize::from(primary_final),
-            usize::from(secondary_final),
-            stroke.wet.as_ref().map_or(0, |w| w.work_per_dab),
-        ) {
-            self.restore_stroke(&stroke);
-            return Err(error);
-        }
-        if secondary_final {
-            let last = stroke.last;
-            if let Err(error) = self.secondary_dab(&mut stroke, last) {
+        if render_end {
+            if let Some(tail) = &mut stroke.taper {
+                tail.reset_work();
+            }
+            let secondary_final = stroke
+                .program
+                .dual
+                .as_ref()
+                .is_some_and(|d| d.step().is_some())
+                && (stroke.last.x - stroke.dual_last.x).hypot(stroke.last.y - stroke.dual_last.y)
+                    > 1e-7;
+            let primary_final =
+                (stroke.last.x - stroke.last_dab.x).hypot(stroke.last.y - stroke.last_dab.y) > 1e-7
+                    || secondary_final;
+            if let Err(error) = Self::validate_stroke_work(
+                stroke.brush,
+                &stroke.program,
+                usize::from(primary_final),
+                usize::from(secondary_final),
+                stroke.wet.as_ref().map_or(0, |w| w.work_per_dab),
+            ) {
                 self.restore_stroke(&stroke);
                 return Err(error);
             }
-        }
-        if primary_final {
-            let last = stroke.last;
-            match self.dab(&mut stroke, last) {
-                Ok(changed) => {
-                    if changed {
-                        self.bump_revision();
-                    }
-                }
-                Err(error) => {
+            if secondary_final {
+                let last = stroke.last;
+                if let Err(error) = self.secondary_dab(&mut stroke, last) {
                     self.restore_stroke(&stroke);
                     return Err(error);
                 }
             }
-        }
-        if let Err(error) = self.render_taper(&mut stroke, true) {
-            self.restore_stroke(&stroke);
-            return Err(error);
+            if primary_final {
+                let last = stroke.last;
+                match self.dab(&mut stroke, last) {
+                    Ok(changed) => {
+                        if changed {
+                            self.bump_revision();
+                        }
+                    }
+                    Err(error) => {
+                        self.restore_stroke(&stroke);
+                        return Err(error);
+                    }
+                }
+            }
+            if let Err(error) = self.render_taper(&mut stroke, true) {
+                self.restore_stroke(&stroke);
+                return Err(error);
+            }
         }
         let index = self.layer_index(stroke.layer)?;
         let mut changes = Vec::new();
@@ -1865,6 +1838,7 @@ impl Document {
     }
 
     pub fn cancel_stroke(&mut self) -> Result<()> {
+        self.pending_input = None;
         let stroke = self.stroke.take().ok_or(Error::NoStroke)?;
         self.restore_stroke(&stroke);
         Ok(())

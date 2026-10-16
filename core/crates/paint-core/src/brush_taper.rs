@@ -184,6 +184,13 @@ impl TaperUpdate {
     pub fn replay(&self) -> impl ExactSizeIterator<Item = TaperedRecord> + '_ {
         self.render(&self.replay)
     }
+    /// Constant-time indexed replay for a bounded execution page.
+    pub fn replay_at(&self, index: usize) -> Option<TaperedRecord> {
+        self.replay.get(index).map(|&record| TaperedRecord {
+            factors: self.program.evaluate(record.distance, self.next.endpoint),
+            record,
+        })
+    }
     /// A checkpoint may advance past this prefix after these records have been rendered.
     pub fn retired(&self) -> impl ExactSizeIterator<Item = TaperedRecord> + '_ {
         self.render(&self.replay[..self.retired])

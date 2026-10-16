@@ -1,3 +1,5 @@
+输入分页Document阶段：[设计](brush-input-paging-document-design.md) / [验收](brush-input-paging-document-validation.md)。真实像素/双载色和活动尾分页、一次滤波/无输出不重放、结束与单历史、失败/取消整笔回滚接通；原64px在新Rust入口完成，13项新Document及调度/相关旧回归和Windows Release/Clippy/ABI通过。下一步接Actor公平调度、完成序列、End/Cancel及载色采用；公开API/Qt当前仍走旧同步入口，画布限制尚未解除。
+
 输入分页当前阶段：[设计](brush-input-paging-design.md) / [数值与预算验收](brush-input-paging-kernel-validation.md)。用户已恢复推进；原始输入段的事务页和主副有序调度、弧长/间距余量与设备插值、共用预算权重已完成，9项新测试（含14400组旧预算分类）及相关旧回归/Release/Clippy/ABI通过。下一步接Document真实像素/起收笔活动尾和Actor任务页，当前画布的大跨度密集输入预算回滚尚未修复。Windows整体设备手感由用户自行验收。
 
 湿混双色当前阶段：[Qt设计](brush-wet-dual-ui-design.md) / [验收](brush-wet-dual-ui-validation.md)，前置[原生入口](brush-wet-dual-abi-validation.md)、[保存交换](brush-wet-dual-io-validation.md)、[Engine](brush-wet-dual-engine-validation.md)与[实际绘画](brush-wet-dual-document-validation.md)。完整state19镜像/关闭值/重置基准、ABI1.52准备与VBR1.23包、两色手动装载及独立白色预览和组合入口已接。Windows最小Qt/Release/ABI及图片新目录交换重开通过；大跨度密集图片输入预算回滚与原输入偶发问题仍待处理。剩余功能及用途见[清单](brush-system-remaining.md)，用户要求此阶段后等待指示。

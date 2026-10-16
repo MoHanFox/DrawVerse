@@ -171,3 +171,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-16湿混双色Qt阶段：完整state19镜像/关闭配置/复制和resetState、新ABI1.52准备及VBR1.23包、两色手动装载和隔离白色预览已接通，真实绘画/历史/图片三资源用途与新目录导入重开像素验证见[验收](brush-wet-dual-ui-validation.md)。Windows新3旧6Qt、环境倍率2/Release/ABI通过；旧入口拒绝保护保留。大跨度密集图片输入仍会触发预算回滚，分块调度未实现；原参数输入偶发问题未定位。完整剩余范围见[功能清单](brush-system-remaining.md)，用户要求本阶段完成后等待指示。
 
 2026-10-16输入分页数值/预算阶段：原始段的主副有序印章、弧长/设备插值与间距余量、只读准备/成功采用的有界事件页已实现；Document预算提取共用权重而保持旧限制。9项新测试（含14400组旧预算分类）及相关真实湿混/起收笔旧回归、Windows Release/Clippy/ABI通过，见[设计](brush-input-paging-design.md)及[验收](brush-input-paging-kernel-validation.md)。尚未接Document像素/笔尾和Actor调度，不宣称画布64px密集输入已修复；用户已恢复推进，整体Windows设备手感由用户自行验收。
+
+2026-10-17输入分页Document阶段：明确Rust输入/继续/结束入口、真实主副写入与活动尾有界重放、一次滤波、完整载色及单历史/失败回滚已实现，13项新Document、10调度及相关旧核心/原生、Windows Release/Clippy/ABI通过，见[设计](brush-input-paging-document-design.md)和[验收](brush-input-paging-document-validation.md)。原64px在新Rust入口完成并对照一次性参考；Actor与公开Qt尚未接，不宣称用户画布问题已修复。无ABI/格式变化；整体设备手感由用户验收。

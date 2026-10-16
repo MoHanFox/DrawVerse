@@ -77,6 +77,7 @@ pub(super) struct TailReplay {
     pending: Vec<Event>,
     queued: Vec<Event>,
     next_id: u64,
+    inflight: Option<TailRender>,
     rendering: bool,
     recording: bool,
     work_primary: usize,
@@ -84,7 +85,20 @@ pub(super) struct TailReplay {
     #[cfg(test)]
     reference: Option<(crate::CompiledTaper, f64)>,
 }
+#[derive(Debug)]
+struct TailRender {
+    update: crate::TaperUpdate,
+    events: Vec<Event>,
+    position: usize,
+    retired: usize,
+    finish: bool,
+    direction: Option<f64>,
+    changed: bool,
+}
 impl TailReplay {
+    pub(super) fn pending_render(&self) -> bool {
+        self.inflight.is_some()
+    }
     pub(super) fn reset_work(&mut self) {
         self.work_primary = 0;
         self.work_secondary = 0;
@@ -104,6 +118,7 @@ impl Stroke {
             pending: Vec::new(),
             queued: Vec::new(),
             next_id: 0,
+            inflight: None,
             rendering: false,
             recording: false,
             work_primary: 0,
@@ -265,6 +280,23 @@ impl Document {
         Ok(())
     }
     pub(super) fn render_taper(&mut self, stroke: &mut Stroke, finish: bool) -> Result<bool> {
+        if !self.prepare_taper_render(stroke, finish, true)? {
+            return Ok(false);
+        }
+        loop {
+            let (complete, changed, _) =
+                self.continue_taper_render(stroke, crate::InputScheduleBudget::default())?;
+            if complete {
+                return Ok(changed);
+            }
+        }
+    }
+    pub(super) fn prepare_taper_render(
+        &mut self,
+        stroke: &mut Stroke,
+        finish: bool,
+        legacy: bool,
+    ) -> Result<bool> {
         let Some(mut tail) = stroke.taper.take() else {
             return Ok(false);
         };
@@ -292,15 +324,17 @@ impl Document {
             .iter()
             .filter(|e| e.record.stream == TaperStream::Primary)
             .count();
-        tail.work_primary = tail.work_primary.saturating_add(primary);
-        tail.work_secondary = tail.work_secondary.saturating_add(events.len() - primary);
-        Self::validate_stroke_work(
-            stroke.brush,
-            &stroke.program,
-            tail.work_primary,
-            tail.work_secondary,
-            stroke.wet.as_ref().map_or(0, |w| w.work_per_dab),
-        )?;
+        if legacy {
+            tail.work_primary = tail.work_primary.saturating_add(primary);
+            tail.work_secondary = tail.work_secondary.saturating_add(events.len() - primary);
+            Self::validate_stroke_work(
+                stroke.brush,
+                &stroke.program,
+                tail.work_primary,
+                tail.work_secondary,
+                stroke.wet.as_ref().map_or(0, |w| w.work_per_dab),
+            )?;
+        }
         let scheduled_direction = stroke.direction;
         let index = self.layer_index(stroke.layer)?;
         let journal = std::mem::take(&mut tail.journal);
@@ -326,32 +360,87 @@ impl Document {
             .restore(stroke);
         tail.rendering = true;
         tail.recording = false;
+
+        tail.inflight = Some(TailRender {
+            update,
+            events,
+            position: 0,
+            retired,
+            finish,
+            direction: scheduled_direction,
+            changed: restored,
+        });
         stroke.taper = Some(tail);
-        let mut changed = restored;
-        for (i, (event, render)) in events.iter().zip(update.replay()).enumerate() {
-            if i == retired {
+        Ok(true)
+    }
+    pub(super) fn continue_taper_render(
+        &mut self,
+        stroke: &mut Stroke,
+        budget: crate::InputScheduleBudget,
+    ) -> Result<(bool, bool, crate::InputScheduleWork)> {
+        let mut render = stroke
+            .taper
+            .as_mut()
+            .and_then(|t| t.inflight.take())
+            .ok_or(Error::InvalidArgument("no taper replay page"))?;
+        let (primary, secondary) = Self::stroke_input_work(
+            stroke.brush,
+            &stroke.program,
+            stroke.wet.as_ref().map_or(0, |w| w.work_per_dab),
+        );
+        let mut work = crate::InputScheduleWork::default();
+        let mut count = 0;
+        while render.position < render.events.len() && count < budget.events {
+            let event = render.events[render.position];
+            let next = work.combined(if event.record.stream == TaperStream::Primary {
+                primary
+            } else {
+                secondary
+            });
+            if !budget.fits(next) {
+                if count == 0 {
+                    return Err(Error::ResourceLimit("single taper dab exceeds page budget"));
+                }
+                break;
+            }
+            work = next;
+            count += 1;
+            if render.position == render.retired {
                 let checkpoint = DabCheckpoint::capture(stroke);
                 let tail = stroke.taper.as_mut().expect("taper");
                 tail.checkpoint = Some(checkpoint);
                 tail.recording = true;
             }
-            debug_assert_eq!(event.record, render.record);
+            let factors = render
+                .update
+                .replay_at(render.position)
+                .expect("replay position");
+            debug_assert_eq!(event.record, factors.record);
             stroke.direction = event.direction;
-            stroke.taper_factors = render.factors;
+            stroke.taper_factors = factors.factors;
             #[cfg(test)]
             if let Some((program, endpoint)) = &stroke.taper.as_ref().expect("taper").reference {
                 stroke.taper_factors = program.factors(event.record.distance, *endpoint)?;
             }
             match event.record.stream {
                 TaperStream::Primary => {
-                    changed |= self.dab(stroke, event.record.point)?;
+                    render.changed |= self.dab(stroke, event.record.point)?;
                     stroke.last_dab = event.record.point;
                 }
-                TaperStream::Secondary => self.secondary_dab(stroke, event.record.point)?,
+                TaperStream::Secondary => {
+                    self.secondary_dab(stroke, event.record.point)?;
+                }
             }
+            render.position += 1;
         }
-        let checkpoint = (retired == events.len()).then(|| DabCheckpoint::capture(stroke));
-        stroke.direction = scheduled_direction;
+        if render.position < render.events.len() {
+            let changed = render.changed;
+            stroke.taper.as_mut().expect("taper").inflight = Some(render);
+            return Ok((false, changed, work));
+        }
+        let checkpoint =
+            (render.retired == render.events.len()).then(|| DabCheckpoint::capture(stroke));
+        stroke.direction = render.direction;
         stroke.taper_factors = TaperFactors {
             diameter: 1.,
             opacity: 1.,
@@ -360,9 +449,9 @@ impl Document {
         if let Some(checkpoint) = checkpoint {
             tail.checkpoint = Some(checkpoint);
         }
-        tail.pending = events.into_iter().skip(retired).collect();
-        tail.buffer.commit(update)?;
-        if finish {
+        tail.pending = render.events.into_iter().skip(render.retired).collect();
+        tail.buffer.commit(render.update)?;
+        if render.finish {
             let done = tail.buffer.prepare_finish(stroke.path_distance)?;
             tail.buffer.commit(done)?;
             tail.pending.clear();
@@ -370,9 +459,9 @@ impl Document {
         }
         tail.rendering = false;
         tail.recording = false;
-        if changed && finish {
+        if render.changed && render.finish {
             self.bump_revision();
         }
-        Ok(changed)
+        Ok((true, render.changed, work))
     }
 }

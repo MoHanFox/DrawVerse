@@ -70,7 +70,7 @@ mod brush_scatter;
 pub use brush_scatter::ScatterDynamics;
 pub use document::{
     BucketFill, DirtyTiles, Document, DocumentOptions, DocumentSnapshot, LiquifyDab, PlacedImage,
-    TransformGeometry, WandSelection, MAX_DIMENSION,
+    StrokePageResult, TransformGeometry, WandSelection, MAX_DIMENSION,
 };
 pub use error::{Error, Result};
 pub use history::HistoryAction;
