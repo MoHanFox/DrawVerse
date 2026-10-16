@@ -945,8 +945,19 @@ impl Engine {
                     self.document.set_active_layer(layer)?;
                 }
                 let result = if let Some(lease) = &lease {
-                    self.document
-                        .begin_configured_wet_brush_stroke(*brush, point, lease.retained())
+                    if brush.dual.enabled() && brush.dual.color().enabled() {
+                        self.document.begin_configured_dual_wet_brush_stroke(
+                            *brush,
+                            point,
+                            lease.retained_ink(),
+                        )
+                    } else {
+                        self.document.begin_configured_wet_brush_stroke(
+                            *brush,
+                            point,
+                            lease.retained(),
+                        )
+                    }
                 } else {
                     self.document.begin_brush_stroke(*brush, point)
                 };
@@ -970,11 +981,13 @@ impl Engine {
                     return Err(ApiError::new(PAINT_CANCELLED, "stroke rolled back"));
                 }
                 if self.wet_lease.is_some() {
-                    let (changed, carrier) = self.document.end_wet_brush_stroke()?;
-                    self.wet_lease
-                        .take()
-                        .expect("active wet lease")
-                        .commit(carrier);
+                    let (changed, ink) = self.document.end_wet_ink_stroke()?;
+                    let lease = self.wet_lease.take().expect("active wet lease");
+                    if ink.secondary().is_some() {
+                        lease.commit_ink(ink);
+                    } else {
+                        lease.commit(ink.primary().clone());
+                    }
                     self.modified |= changed;
                 } else {
                     self.modified |= self.document.end_stroke()?;

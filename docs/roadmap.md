@@ -1,4 +1,4 @@
-湿混双色实际绘画：[设计](brush-wet-dual-document-design.md) / [验收](brush-wet-dual-document-validation.md)，前置[双载色状态](brush-wet-pair-validation.md)。明确Rust Document起笔/完整结束、独立双载色/四场隔离与起收笔回放、单历史及失败回滚已实现并验证；下一步接Engine完整返回与IO/ABI/Qt组合，当前界面湿混双色仍拒绝。
+湿混双色当前阶段：[Engine设计](brush-wet-dual-engine-design.md) / [验收](brush-wet-dual-engine-validation.md)，前置[实际绘画](brush-wet-dual-document-validation.md)与[双载色状态](brush-wet-pair-validation.md)。明确Document执行及Session完整归还/成功整对采用已接通，6项新Actor/11项旧原生回归及Release/ABI通过；Qt输入偶发失败单项复核通过、未定位。下一步接保存/原生准备与Qt组合，当前用户入口仍拒绝。
 
 空图层栈追加：[设计](empty-layer-stack-design.md) / [验收](empty-layer-stack-validation.md)。允许删除所有图层、仅显示透明棋盘格；撤销/重做、新建/粘贴和 ORA 空栈保存恢复接通，最小 Windows 验证通过。
 

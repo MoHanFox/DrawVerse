@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新湿混双色 Engine：`docs/brush-wet-dual-engine-design.md` / `docs/brush-wet-dual-engine-validation.md`；真实Session完整双载色捕获/成功整对采用与单载体保留副色，6项新Actor/11项旧原生回归及Release/ABI通过；Qt涂抹通过、参数输入首次偶发失败单项复核通过（未定位），详见验收。保存/原生准备/Qt组合仍待接，无版本变化。
+
 - 最新湿混双色实际绘画：`docs/brush-wet-dual-document-design.md` / `docs/brush-wet-dual-document-validation.md`；Rust明确入口/完整双载色结束、两几何两RGBA场/共用27模式及饱和继续混色、四场与双载色起收笔回放/实际网格预算与单历史失败回滚，10项新函数/39项旧回归及Windows Release/ABI/Qt通过；Engine完整归还/IO/ABI/Qt组合仍待接，界面仍拒绝，无版本变化。
 
 - 最新湿混双载色状态：`docs/brush-wet-pair-design.md` / `docs/brush-wet-pair-validation.md`；WetInk主/第二独立二维载体与整对WetTool租约/清洗装载，5项新数值及21项旧回归、Windows Release/ABI/Qt通过；尚未接Document双色贡献/Engine完整返回/起收笔检查点及IO/Qt，当前组合仍拒绝，无ABI/格式变化。

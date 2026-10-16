@@ -1,4 +1,6 @@
 use super::*;
+#[path = "session_wet_dual_tests.rs"]
+mod dual;
 use paint_core::{
     Brush, BrushDefinition, BrushMode, BrushSettings, BrushTip, Pixel, WetCarrier, WetMix,
     WetSettings, WetTool,

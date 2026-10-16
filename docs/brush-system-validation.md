@@ -1,5 +1,7 @@
 # 统一笔刷系统验收计划
 
+2026-10-16湿混双色 Engine：[验收](brush-wet-dual-engine-validation.md)。完整载色捕获和历史成功后整对采用、共享租约/取消/失败/stop及无像素拾色通过，6项新Actor与11项旧原生回归、Release/ABI通过。Qt参数输入首轮偶发失败、单项复核通过，保留日志且根因未定位；Qt涂抹通过。保存/原生准备和Qt组合入口仍待接，不能据此宣布公开组合或整体完成。
+
 2026-10-16湿混双色实际绘画：[验收](brush-wet-dual-document-validation.md)。明确Rust Document入口与完整WetInk结束、四场隔离/共用27模式/饱和混色、分页起收笔双载色和实际网格预算/失败回滚通过；10项新函数（含216组常量对照及8组回放参考）/39项旧回归，Windows Release/ABI/Qt通过。Engine完整归还、IO/ABI准备及Qt组合仍待接，当前用户入口仍拒绝，不宣称整个系统完成。
 
 2026-10-16湿混双载色状态：[验收](brush-wet-pair-validation.md)。主/第二二维载体按角色配置/清洗载色、工具独占整对租约与原子采用已实现；5项新数值和21项既有回归、Windows Release/ABI/Qt通过。Document双色贡献、Engine完整返回、起收笔检查点及IO/Qt组合尚待接，仍不开放湿混双色，不将本阶段当作用户功能完成。
