@@ -1,4 +1,4 @@
-起收笔当前阶段：[设计](brush-taper-kernel-design.md) / [验收](brush-taper-kernel-validation.md)。独立尺寸/透明度曲线及有界笔尾事务调度已验证，10项Rust与Clippy通过；Document像素回算/历史、IO/ABI/Qt待接，尚无用户入口。结束继续保持不追原始鼠标终点，无版本变化。
+起收笔当前阶段：[实际绘画设计](brush-taper-document-design.md) / [验收](brush-taper-document-validation.md)，前置[数值调度](brush-taper-kernel-validation.md)。Rust真实图层/贡献场与载色检查点、有限笔尾重绘及单历史已接，10项新像素用例、相关旧回归和Windows Release/ABI/Qt通过；预设/基准/IO/原生/Qt参数待接，尚无界面入口。结束继续不追原始鼠标终点，无版本变化。
 
 画笔混合原生捕获：[设计](brush-blend-abi-design.md) / [验收](brush-blend-abi-validation.md)。ABI1.44、独立模式DTO/新prepared入口与真实捕获/历史/旧正常兼容已验证；Qt工具栏状态、保存及有色底预览下一阶段接入。
 

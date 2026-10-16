@@ -23,6 +23,7 @@ impl ChangedPixels {
 }
 
 impl Document {
+    #[allow(clippy::too_many_arguments)] // Optional checkpoint journals the same field write.
     fn color_field(
         &self,
         field: &mut BTreeMap<TileCoord, Arc<Tile>>,
@@ -31,6 +32,7 @@ impl Document {
         color: Pixel,
         limit: f32,
         sample: impl Fn(f64, f64) -> f32,
+        mut checkpoint: (Option<&mut taper::TailReplay>, bool),
     ) -> Result<ChangedPixels> {
         let (ox, oy) = offset;
         let (x0, y0, x1, y1) = (
@@ -82,6 +84,13 @@ impl Document {
                     }
                 }
                 if !updates.is_empty() {
+                    taper::capture_field(
+                        checkpoint.0.as_deref_mut(),
+                        checkpoint.1,
+                        coord,
+                        field,
+                        self.options.max_document_tiles,
+                    )?;
                     if !field.contains_key(&coord) && field.len() >= self.options.max_document_tiles
                     {
                         return Err(Error::ResourceLimit(
@@ -140,6 +149,13 @@ impl Document {
         );
         let mut changed = false;
         for (coord, rows) in touched.0 {
+            self.capture_taper_tile(
+                stroke.layer,
+                &mut stroke.taper,
+                &stroke.coverage,
+                &stroke.dual_coverage,
+                coord,
+            )?;
             #[cfg(test)]
             let rows = if self.reference_color_tiles {
                 [u64::MAX; 64]
@@ -349,20 +365,23 @@ impl Document {
                     1.
                 },
         );
-        let plan = dual.dab(
-            point,
-            stroke.direction,
-            stroke.random_stroke,
-            stroke.dual_index,
-            0,
-            radius,
-        );
+        let plan = dual
+            .dab(
+                point,
+                stroke.direction,
+                stroke.random_stroke,
+                stroke.dual_index,
+                0,
+                radius,
+            )
+            .scaled(stroke.taper_factors.diameter);
         let appearance = self.layers[self.layer_index(stroke.layer)?].appearance;
         let offset = (
             i64::from(appearance.offset_x),
             i64::from(appearance.offset_y),
         );
-        let limit = program.opacity_pressure(point.pressure).unwrap_or(1.);
+        let limit =
+            program.opacity_pressure(point.pressure).unwrap_or(1.) * stroke.taper_factors.opacity;
         let mut touched = ChangedPixels::new();
         for child in 0..plan.count() {
             touched.extend(self.color_field(
@@ -372,6 +391,7 @@ impl Document {
                 Pixel::WHITE,
                 limit,
                 |x, y| plan.coverage(child, x, y),
+                (stroke.taper.as_mut(), true),
             )?);
         }
         if self.recompose_color(stroke, touched)? {
@@ -388,7 +408,7 @@ impl Document {
     ) -> Result<bool> {
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
-        let radius = f64::from(
+        let base_radius = f64::from(
             stroke.brush.radius
                 * stroke.shape_sample.size
                 * if program.tip.pressure_size {
@@ -397,6 +417,7 @@ impl Document {
                     1.
                 },
         );
+        let radius = base_radius * f64::from(stroke.taper_factors.diameter);
         let geometry = program.dab_geometry(point, stroke.direction, stroke.shape_sample);
         let (ex, ey) = program.extent(radius, geometry);
         let mask = if radius > 0. && program.has_mask() {
@@ -412,7 +433,8 @@ impl Document {
             } else {
                 1.
             };
-        let limit = program.opacity_pressure(point.pressure).unwrap_or(1.);
+        let limit =
+            program.opacity_pressure(point.pressure).unwrap_or(1.) * stroke.taper_factors.opacity;
         let appearance = self.layers[self.layer_index(stroke.layer)?].appearance;
         let offset = (
             i64::from(appearance.offset_x),
@@ -450,16 +472,19 @@ impl Document {
                         texture.as_ref().map_or(1., |t| t.coverage(x, y))
                     }
             },
+            (stroke.taper.as_mut(), false),
         )?;
         if dual.step().is_none() {
-            let plan = dual.dab(
-                point,
-                stroke.direction,
-                stroke.random_stroke,
-                stroke.random_index.saturating_sub(1),
-                stroke.random_child,
-                radius,
-            );
+            let plan = dual
+                .dab(
+                    point,
+                    stroke.direction,
+                    stroke.random_stroke,
+                    stroke.random_index.saturating_sub(1),
+                    stroke.random_child,
+                    base_radius,
+                )
+                .scaled(stroke.taper_factors.diameter);
             for child in 0..plan.count() {
                 touched.extend(self.color_field(
                     &mut stroke.dual_coverage,
@@ -468,6 +493,7 @@ impl Document {
                     Pixel::WHITE,
                     limit,
                     |x, y| plan.coverage(child, x, y),
+                    (stroke.taper.as_mut(), true),
                 )?);
             }
         }

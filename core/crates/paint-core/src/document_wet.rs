@@ -1,7 +1,7 @@
 use super::*;
 use crate::brush_program::TipGeometry;
 use crate::{WetCarrier, WetDab, WetSample};
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct WetStroke {
     pub(super) carrier: WetCarrier,
     all_layers: bool,
@@ -26,6 +26,7 @@ impl Document {
                 all_layers,
                 work_per_dab: 0,
             }),
+            None,
         )
     }
     /// Capture preset policy and start with a private, optionally retained reservoir.
@@ -34,6 +35,24 @@ impl Document {
         definition: BrushDefinition,
         first: InputPoint,
         retained: Option<&WetCarrier>,
+    ) -> Result<()> {
+        self.begin_configured_wet_with_taper(definition, first, retained, None)
+    }
+    pub fn begin_configured_tapered_wet_brush_stroke(
+        &mut self,
+        definition: BrushDefinition,
+        first: InputPoint,
+        retained: Option<&WetCarrier>,
+        taper: &crate::StrokeTaper,
+    ) -> Result<()> {
+        self.begin_configured_wet_with_taper(definition, first, retained, Some(taper))
+    }
+    fn begin_configured_wet_with_taper(
+        &mut self,
+        definition: BrushDefinition,
+        first: InputPoint,
+        retained: Option<&WetCarrier>,
+        taper: Option<&crate::StrokeTaper>,
     ) -> Result<()> {
         self.idle()?;
         let policy = definition.wet;
@@ -75,6 +94,7 @@ impl Document {
                 all_layers,
                 work_per_dab: 0,
             }),
+            taper,
         )
     }
     pub fn end_wet_brush_stroke(&mut self) -> Result<(bool, WetCarrier)> {

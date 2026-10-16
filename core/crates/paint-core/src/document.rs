@@ -16,6 +16,8 @@ mod batch;
 mod dual_paint;
 pub(crate) mod groups;
 mod layer_actions;
+#[path = "document_taper.rs"]
+mod taper;
 mod transform;
 pub use transform::{PlacedImage, TransformGeometry};
 
@@ -457,6 +459,10 @@ struct Stroke {
     first_dab: bool,
     coverage_erase: bool,
     coverage_tool_stable: bool,
+    taper: Option<taper::TailReplay>,
+    taper_factors: crate::TaperFactors,
+    path_distance: f64,
+    dab_distance: f64,
 }
 
 #[derive(Debug)]
@@ -475,6 +481,8 @@ pub struct Document {
     reference_mix_path: bool,
     #[cfg(test)]
     reference_color_tiles: bool,
+    #[cfg(test)]
+    taper_reference_endpoint: Option<f64>,
     #[cfg(test)]
     stagnant_mix_skips: usize,
     liquify: Option<liquify::LiquifyState>,
@@ -706,6 +714,8 @@ impl Document {
             reference_mix_path: false,
             #[cfg(test)]
             reference_color_tiles: false,
+            #[cfg(test)]
+            taper_reference_endpoint: None,
             #[cfg(test)]
             stagnant_mix_skips: 0,
             liquify: None,
@@ -1238,13 +1248,26 @@ impl Document {
         if definition.wet.enabled() {
             return Err(Error::InvalidArgument("use configured wet stroke entry"));
         }
-        self.begin_brush_stroke_inner(definition, first, None)
+        self.begin_brush_stroke_inner(definition, first, None, None)
+    }
+    /// Explicit Rust execution entry until preset IO and the native bridge support taper.
+    pub fn begin_tapered_brush_stroke(
+        &mut self,
+        definition: BrushDefinition,
+        first: InputPoint,
+        taper: &crate::StrokeTaper,
+    ) -> Result<()> {
+        if definition.wet.enabled() {
+            return Err(Error::InvalidArgument("use configured wet stroke entry"));
+        }
+        self.begin_brush_stroke_inner(definition, first, None, Some(taper))
     }
     fn begin_brush_stroke_inner(
         &mut self,
         definition: BrushDefinition,
         first: InputPoint,
         mut wet: Option<wet::WetStroke>,
+        taper_settings: Option<&crate::StrokeTaper>,
     ) -> Result<()> {
         self.idle()?;
         let brush = definition.brush;
@@ -1330,16 +1353,29 @@ impl Document {
             first_dab: true,
             coverage_erase: brush.mode == BrushMode::Erase || first.tool == Tool::Eraser,
             coverage_tool_stable: true,
+            taper: None,
+            taper_factors: crate::TaperFactors {
+                diameter: 1.,
+                opacity: 1.,
+            },
+            path_distance: 0.,
+            dab_distance: 0.,
             mask_paint: self
                 .layer(self.active_layer)
                 .expect("active")
                 .mask
                 .then(|| Self::mask_tone(brush.color)),
         };
+        stroke.initialize_taper(taper_settings)?;
+        #[cfg(test)]
+        stroke.taper_reference(taper_settings, self.taper_reference_endpoint)?;
         match self
             .secondary_dab(&mut stroke, first)
             .and_then(|()| self.dab(&mut stroke, first))
-        {
+            .and_then(|changed| {
+                self.render_taper(&mut stroke, false)
+                    .map(|tail| changed || tail)
+            }) {
             Ok(changed) => {
                 if changed {
                     self.bump_revision();
@@ -1356,9 +1392,15 @@ impl Document {
     }
 
     pub fn stroke_to(&mut self, point: InputPoint) -> Result<()> {
-        let wet = self.stroke.as_ref().is_some_and(|s| s.wet.is_some());
+        if let Some(tail) = self.stroke.as_mut().and_then(|s| s.taper.as_mut()) {
+            tail.reset_work();
+        }
+        let transactional = self
+            .stroke
+            .as_ref()
+            .is_some_and(|s| s.wet.is_some() || s.taper.is_some());
         let result = self.stroke_to_inner(point);
-        if result.is_err() && wet {
+        if result.is_err() && transactional {
             if let Some(stroke) = self.stroke.take() {
                 self.restore_stroke(&stroke);
             }
@@ -1530,6 +1572,7 @@ impl Document {
                 let sample = stroke
                     .last
                     .interpolate(point, (secondary_position / distance).min(1.));
+                stroke.dab_distance = stroke.path_distance + secondary_position.min(distance);
                 if let Err(error) = self.secondary_dab(&mut stroke, sample) {
                     self.restore_stroke(&stroke);
                     return Err(error);
@@ -1540,6 +1583,7 @@ impl Document {
                 let sample = stroke
                     .last
                     .interpolate(point, (position / distance).min(1.));
+                stroke.dab_distance = stroke.path_distance + position.min(distance);
                 match self.dab(&mut stroke, sample) {
                     Ok(dab_changed) => changed |= dab_changed,
                     Err(error) => {
@@ -1556,6 +1600,8 @@ impl Document {
         if let Some(secondary_step) = dual_step {
             stroke.dual_next = (secondary_position - distance).max(secondary_step * 1e-9);
         }
+        stroke.path_distance += distance;
+        stroke.dab_distance = stroke.path_distance;
         if secondary_stationary {
             if let Err(error) = self.secondary_dab(&mut stroke, point) {
                 self.restore_stroke(&stroke);
@@ -1573,6 +1619,13 @@ impl Document {
             stroke.last_dab = point;
         }
         stroke.last = point;
+        match self.render_taper(&mut stroke, false) {
+            Ok(tail) => changed |= tail,
+            Err(error) => {
+                self.restore_stroke(&stroke);
+                return Err(error);
+            }
+        }
         if changed {
             self.bump_revision();
         }
@@ -1665,6 +1718,9 @@ impl Document {
         // The visible filtered endpoint is authoritative. Releasing the pen must not
         // synthesize input, release stabilizer distance, or raise pressure to the raw value.
         let mut stroke = self.stroke.take().ok_or(Error::NoStroke)?;
+        if let Some(tail) = &mut stroke.taper {
+            tail.reset_work();
+        }
         let secondary_final = stroke
             .program
             .dual
@@ -1705,6 +1761,10 @@ impl Document {
                     return Err(error);
                 }
             }
+        }
+        if let Err(error) = self.render_taper(&mut stroke, true) {
+            self.restore_stroke(&stroke);
+            return Err(error);
         }
         let index = self.layer_index(stroke.layer)?;
         let mut changes = Vec::new();
@@ -1821,6 +1881,16 @@ impl Document {
             .program
             .dual
             .as_ref()
+            .is_some_and(|d| d.step().is_some())
+            && stroke.queue_taper(point, crate::TaperStream::Secondary)?
+        {
+            stroke.dual_last = point;
+            return Ok(());
+        }
+        if stroke
+            .program
+            .dual
+            .as_ref()
             .is_some_and(|d| d.color.enabled() && d.step().is_some())
         {
             return self.colored_secondary_dab(stroke, point);
@@ -1832,22 +1902,24 @@ impl Document {
             .dual_index
             .checked_add(1)
             .ok_or(Error::ResourceLimit("secondary dab serial exhausted"))?;
-        let plan = dual.dab(
-            point,
-            stroke.direction,
-            stroke.random_stroke,
-            stroke.dual_index,
-            0,
-            f64::from(
-                stroke.brush.radius
-                    * stroke.shape_sample.size
-                    * if stroke.program.tip.pressure_size {
-                        stroke.program.size_pressure(point.pressure)
-                    } else {
-                        1.
-                    },
-            ),
-        );
+        let plan = dual
+            .dab(
+                point,
+                stroke.direction,
+                stroke.random_stroke,
+                stroke.dual_index,
+                0,
+                f64::from(
+                    stroke.brush.radius
+                        * stroke.shape_sample.size
+                        * if stroke.program.tip.pressure_size {
+                            stroke.program.size_pressure(point.pressure)
+                        } else {
+                            1.
+                        },
+                ),
+            )
+            .scaled(stroke.taper_factors.diameter);
         #[cfg(test)]
         let skip_saturated = !self.reference_mix_path;
         #[cfg(not(test))]
@@ -1867,6 +1939,13 @@ impl Document {
             for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
                 for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
                     let coord = TileCoord::from_signed(tx as i32, ty as i32);
+                    self.capture_taper_tile(
+                        stroke.layer,
+                        &mut stroke.taper,
+                        &stroke.coverage,
+                        &stroke.dual_coverage,
+                        coord,
+                    )?;
                     let source = stroke
                         .dual_coverage
                         .get(&coord)
@@ -1937,6 +2016,9 @@ impl Document {
         Ok(())
     }
     fn dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
+        if stroke.queue_taper(point, crate::TaperStream::Primary)? {
+            return Ok(false);
+        }
         let logical = stroke.random_index;
         let plan = stroke.program.scatter.plan(
             stroke.brush.radius,
@@ -2068,7 +2150,7 @@ impl Document {
         stroke: &mut Stroke,
         point: InputPoint,
     ) -> Result<bool> {
-        let radius = f64::from(
+        let base_radius = f64::from(
             stroke.brush.radius
                 * stroke.shape_sample.size
                 * if stroke.program.tip.pressure_size {
@@ -2077,7 +2159,12 @@ impl Document {
                     1.
                 },
         );
-        let pressure_opacity = stroke.program.opacity_pressure(point.pressure);
+        let radius = base_radius * f64::from(stroke.taper_factors.diameter);
+        let pressure_opacity = stroke
+            .program
+            .opacity_pressure(point.pressure)
+            .map(|p| p * stroke.taper_factors.opacity)
+            .or_else(|| stroke.taper.as_ref().map(|_| stroke.taper_factors.opacity));
         let paper_texture = TEXTURED
             && stroke
                 .program
@@ -2110,6 +2197,11 @@ impl Document {
                         1.
                     }
                 }
+            }
+            * if matches!(stroke.brush.mode, BrushMode::Smudge { .. }) {
+                stroke.taper_factors.opacity
+            } else {
+                1.
             };
         if radius == 0. {
             if let Some(wet) = &mut stroke.wet {
@@ -2135,14 +2227,22 @@ impl Document {
                 .as_ref()
                 .is_some_and(|d| d.step().is_some());
         let dual_dab = if DUAL && !dual_path {
-            Some(stroke.program.dual.as_ref().expect("compiled dual").dab(
-                point,
-                stroke.direction,
-                stroke.random_stroke,
-                stroke.random_index.saturating_sub(1),
-                stroke.random_child,
-                radius,
-            ))
+            Some(
+                stroke
+                    .program
+                    .dual
+                    .as_ref()
+                    .expect("compiled dual")
+                    .dab(
+                        point,
+                        stroke.direction,
+                        stroke.random_stroke,
+                        stroke.random_index.saturating_sub(1),
+                        stroke.random_child,
+                        base_radius,
+                    )
+                    .scaled(stroke.taper_factors.diameter),
+            )
         } else {
             None
         };
@@ -2248,6 +2348,13 @@ impl Document {
         for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
             for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
                 let coord = TileCoord::from_signed(tx as i32, ty as i32);
+                self.capture_taper_tile(
+                    stroke.layer,
+                    &mut stroke.taper,
+                    &stroke.coverage,
+                    &stroke.dual_coverage,
+                    coord,
+                )?;
                 let source = self.layers[index]
                     .tiles
                     .get(&coord)

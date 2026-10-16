@@ -461,6 +461,20 @@ pub(crate) struct DualDab<'a> {
     dabs: Vec<SecondaryDab<'a>>,
 }
 impl DualDab<'_> {
+    pub fn scaled(mut self, factor: f32) -> Self {
+        if factor != 1. {
+            for dab in &mut self.dabs {
+                dab.radius *= f64::from(factor);
+                dab.mask = if dab.radius > 0. && self.program.has_mask() {
+                    self.program
+                        .mask_dab_with_geometry(dab.radius, dab.geometry)
+                } else {
+                    None
+                };
+            }
+        }
+        self
+    }
     pub fn count(&self) -> usize {
         self.dabs.len()
     }

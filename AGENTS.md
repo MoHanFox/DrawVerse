@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新起收笔实际绘画：`docs/brush-taper-document-design.md` / `docs/brush-taper-document-validation.md`；Rust明确入口/真实活动笔尾瓦片与贡献场恢复、单双流/双色/湿混/涂抹、单历史和预算/暂存失败整笔回滚，10项新像素用例/相关旧回归及Windows Release/ABI/Qt通过；预设IO/原生/Qt参数仍待接，无ABI或格式变化。
+
 - 最新起收笔数值与调度：`docs/brush-taper-kernel-design.md` / `docs/brush-taper-kernel-validation.md`；独立尺寸/opacity曲线、全局弧长与双流身份、事务计划及有界活动笔尾，10项Rust与Clippy通过；尚未接Document像素/历史/IO/ABI/Qt，不宣称画布起收笔完成，无版本变化。
 
 - 最新白色预览与范围修订：`docs/brush-white-preview-design.md` / `docs/brush-white-preview-validation.md`；用户取消试画/代码和入口已清理，所有自动预览固定白色及正常模式/保持真实alpha，换当前颜色不重算；真实画布颜色不变，无ABI或格式变化。
