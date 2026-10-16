@@ -488,6 +488,8 @@ pub struct Document {
     #[cfg(test)]
     reference_color_tiles: bool,
     #[cfg(test)]
+    reference_wet_fields: bool,
+    #[cfg(test)]
     taper_reference_endpoint: Option<f64>,
     #[cfg(test)]
     stagnant_mix_skips: usize,
@@ -728,6 +730,8 @@ impl Document {
             reference_mix_path: false,
             #[cfg(test)]
             reference_color_tiles: false,
+            #[cfg(test)]
+            reference_wet_fields: false,
             #[cfg(test)]
             taper_reference_endpoint: None,
             #[cfg(test)]

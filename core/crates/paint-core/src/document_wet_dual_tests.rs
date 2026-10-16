@@ -1,5 +1,7 @@
 use super::*;
 use crate::*;
+#[path = "document_wet_field_tests.rs"]
+mod field_performance;
 fn def(path: bool, front: bool, overflow: bool, mode: BlendMode) -> BrushDefinition {
     let tip = BrushTip {
         pressure_size: false,

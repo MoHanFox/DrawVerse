@@ -35,30 +35,20 @@ impl Document {
             i64::from(appearance.offset_x),
             i64::from(appearance.offset_y),
         );
-        let mut touched = self.color_field(
-            &mut stroke.dual_coverage,
-            plan.bounds(child),
-            offset,
-            Pixel::WHITE,
-            limit,
-            |x, y| plan.coverage(child, x, y),
-            (stroke.taper.as_mut(), true),
-            None,
-        )?;
         let sample = |x, y| {
             let (u, v) = plan.wet_uv(child, x, y);
             wet.sample(u.clamp(0., 1.), v.clamp(0., 1.))
         };
-        touched.extend(self.color_field(
+        let touched = self.wet_color_fields(
+            &mut stroke.dual_coverage,
             &mut stroke.wet_secondary_field,
             plan.bounds(child),
             offset,
-            Pixel::WHITE,
             limit,
             |x, y| plan.coverage(child, x, y),
+            sample,
             (stroke.taper.as_mut(), true),
-            Some(&sample),
-        )?);
+        )?;
         let changed = self.recompose_color(stroke, touched)?;
         stroke
             .wet
@@ -191,16 +181,6 @@ impl Document {
                 i64::from(appearance.offset_x),
                 i64::from(appearance.offset_y),
             );
-            let mut touched = self.color_field(
-                &mut stroke.coverage,
-                bounds,
-                offset,
-                Pixel::WHITE,
-                limit,
-                |x, y| shape(x, y) * flow,
-                (stroke.taper.as_mut(), false),
-                None,
-            )?;
             let color = program.color.active().then(|| {
                 program.color.prepare(
                     stroke.brush.background_color,
@@ -214,16 +194,16 @@ impl Document {
                 let ink = wet.sample(u.clamp(0., 1.), v.clamp(0., 1.));
                 color.map_or(ink, |c| c.apply(ink))
             };
-            touched.extend(self.color_field(
+            let touched = self.wet_color_fields(
+                &mut stroke.coverage,
                 &mut stroke.wet_primary_field,
                 bounds,
                 offset,
-                Pixel::WHITE,
                 limit,
                 |x, y| shape(x, y) * flow,
+                sample,
                 (stroke.taper.as_mut(), false),
-                Some(&sample),
-            )?);
+            )?;
             changed |= self.recompose_color(stroke, touched)?;
             stroke.wet.as_mut().expect("wet pair").carrier.commit(wet)?;
         }

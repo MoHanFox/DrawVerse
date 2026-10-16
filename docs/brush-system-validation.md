@@ -198,3 +198,5 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 2026-10-17输入分页Document阶段：明确Rust输入/继续/结束入口、真实主副写入与活动尾有界重放、一次滤波、完整载色及单历史/失败回滚已实现，13项新Document、10调度及相关旧核心/原生、Windows Release/Clippy/ABI通过，见[设计](brush-input-paging-document-design.md)和[验收](brush-input-paging-document-validation.md)。原64px在新Rust入口完成并对照一次性参考；Actor与公开Qt尚未接，不宣称用户画布问题已修复。无ABI/格式变化；整体设备手感由用户验收。
 
 2026-10-17输入分页Actor阶段：实际Move/End接通Document有界页，完成水位/笔尾发布/单历史与双载色采用保持，邮箱及暂存共同限额、页间取消/重建/stop和屏障顺序已接。原64px单输入经公开API和Qt新目录交换重开对照通过；任务8项、新Actor6项及相关原生/公开回归、Windows Release/Clippy/4 ABI/Qt通过，见[设计](brush-input-paging-actor-design.md)及[验收](brush-input-paging-actor-validation.md)。无ABI/格式变化；大笔刷性能并非全部完成，单印章及总输入预算保持，整体设备手感由用户验收。
+
+2026-10-17湿混双色贡献场性能：主/第二几何与RGBA场合并覆盖遍历、零覆盖跳过无效颜色采样，保留独立日记/COW及饱和后继续混色。162组原两遍路径逐场/像素/载色对照、起收笔分页及相关回归通过；8组固定Release基准摘要相同，耗时减少4.1%至29.5%，不能外推所有场景。见[设计](brush-wet-field-performance-design.md)及[验收](brush-wet-field-performance-validation.md)。无ABI/格式变化，单印章和总工作预算保持。

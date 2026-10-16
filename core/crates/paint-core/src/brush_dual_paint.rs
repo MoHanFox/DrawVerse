@@ -2,6 +2,8 @@
 use super::*;
 #[path = "brush_wet_dual_paint.rs"]
 mod wet_dual;
+#[path = "brush_wet_fields.rs"]
+mod wet_fields;
 #[derive(Default)]
 struct ChangedPixels(BTreeMap<TileCoord, [u64; 64]>);
 impl ChangedPixels {
