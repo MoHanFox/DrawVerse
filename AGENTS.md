@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新起收笔 Qt：`docs/brush-taper-ui-design.md` / `docs/brush-taper-ui-validation.md`；state18完整镜像/关闭值/复制重置基准、ABI1.51准备与VBR1.22入口、距离和独立平滑尺寸/opacity曲线、真实白色预览/在途捕获/像素历史及重开，Windows最小Qt通过；完整ABR/16位、湿混双色等仍待后续。
+
 - 最新工具栏传递参数：`docs/brush-toolbar-transfer-design.md` / `docs/brush-toolbar-transfer-validation.md`；画笔/橡皮当前预设的流量、不透明度及各自压感直接同步，涂抹下拉改细分隔线，Windows 最小三项 Qt 通过，无 ABI/格式变化。
 
 - 最新起收笔原生入口：`docs/brush-taper-abi-design.md` / `docs/brush-taper-abi-validation.md`；ABI1.51/STROKE_TAPER、显式state18准备与VBR1.22包读写、准确捕获/旧图片修订重建和真实两笔/载色/历史已验证；旧入口保护保留，Qt镜像/基准/白色预览和设置页仍待接。

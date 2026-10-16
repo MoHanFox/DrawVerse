@@ -12,6 +12,21 @@ ColumnLayout {
     property int category:0
     property int shapePage:0
     property int dualPage:0
+    property string taperEnd:"start"
+    function setTaperEndField(key,value){let data=Object.assign({},library.strokeTaper);let end=Object.assign({},data[taperEnd]);end[key]=value;data[taperEnd]=end;return library.setStrokeTaper(data)}
+    QtObject {
+        id:taperControls
+        readonly property var pressureDynamics: {
+            let end=root.library.strokeTaper[root.taperEnd]
+            let result={}
+            for(let key of ["size","opacity"]){result[key]=Object.assign({},end[key]);result[key].interpolation=end[key].interpolation==="pchip"?"smooth-pchip-v1":"linear"}
+            return result
+        }
+        signal settingsChanged()
+        onPressureDynamicsChanged:settingsChanged()
+        function setPressureControl(target,points,minimum){return root.setTaperEndField(target,{curve:points,minimum:minimum,interpolation:"pchip"})}
+        function resetPressureControl(target){return root.setTaperEndField(target,{curve:[[0,0],[1,1]],minimum:0,interpolation:"linear"})}
+    }
     readonly property var dual:library.dualBrush
     function dualModule(name) {
         if(dual[name])return dual[name]
@@ -53,7 +68,7 @@ ColumnLayout {
         ColumnLayout {
             Layout.preferredWidth:76;Layout.minimumWidth:76;Layout.maximumWidth:76;Layout.alignment:Qt.AlignTop;spacing:2
             Repeater {
-                model:["笔尖形状","形状动态","散布","纹理","双重笔刷","颜色动态","传递","光标与预览","来源与兼容","平滑","湿混与载色"]
+                model:["笔尖形状","形状动态","散布","纹理","双重笔刷","颜色动态","传递","光标与预览","来源与兼容","平滑","湿混与载色","起收笔"]
                 Rectangle {
                     required property string modelData
                     required property int index
@@ -69,9 +84,9 @@ ColumnLayout {
         ScrollView {
             id:parameterScroll;objectName:"brushParameterScroll"
             Layout.fillWidth:true;Layout.fillHeight:true;clip:true
-            contentWidth:availableWidth
+            contentWidth:root.category===11?Math.max(200,availableWidth):availableWidth
             ColumnLayout {
-                width:parameterScroll.availableWidth;spacing:5
+                width:parameterScroll.contentWidth;spacing:5
                 ColumnLayout {
                     visible:root.category===0;Layout.fillWidth:true;spacing:5
                     RowLayout {
@@ -279,6 +294,19 @@ ColumnLayout {
                             text:(modelData.status==="mapped"?"已映射":modelData.status==="approximate"?"近似":"未执行")+" · "+modelData.path+"\n"+modelData.reason
                         }
                     }
+                }
+                ColumnLayout {visible:root.category===11;Layout.fillWidth:true;Layout.minimumWidth:0;spacing:5
+                    CompactCheckBox {objectName:"settingsTaperEnabled";text:"启用起收笔";checked:root.library.strokeTaper.enabled;onToggled:{let data=Object.assign({},root.library.strokeTaper);data.enabled=checked;root.library.setStrokeTaper(data)} tooltip:"按实际绘画距离调整笔触两端；关闭时保留所有参数。"}
+                    CompactComboBox {objectName:"settingsTaperEnd";Layout.fillWidth:true;model:["起笔","收笔"];currentIndex:root.taperEnd==="start"?0:1;onActivated:root.taperEnd=currentIndex===0?"start":"end"}
+                    RowLayout {Layout.fillWidth:true
+                        Label {text:"长度";color:Theme.text;Layout.fillWidth:true}
+                        CompactTextField {objectName:"settingsTaperLength";Layout.preferredWidth:90;implicitHeight:20;text:root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(2);validator:DoubleValidator {bottom:0;top:4096;decimals:2;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPx",Number(text));text=Qt.binding(function(){return root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(2)})} hoverEnabled:true;ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"文档像素距离，0 表示该端不处理；不随笔刷尺寸缩放。"}
+                        Label {text:"px";color:Theme.muted}
+                    }
+                    CompactSlider {objectName:"settingsTaperLengthSlider";Layout.fillWidth:true;from:0;to:4096;value:root.library.strokeTaper[root.taperEnd].lengthPx;onMoved:root.setTaperEndField("lengthPx",value)}
+                    PressureCurveEditor {library:taperControls;target:"size";prefix:"taperSize";fixedEndpoints:true;caption:"尺寸随距离变化";curveHelp:"横轴为从笔端向内的归一化距离，纵轴为尺寸比例；编辑自动平滑。端点固定。";minimumHelp:"最低尺寸比例；100% 表示不缩小笔尖。"}
+                    PressureCurveEditor {library:taperControls;target:"opacity";prefix:"taperOpacity";fixedEndpoints:true;caption:"不透明度随距离变化";curveHelp:"横轴为从笔端向内的归一化距离，纵轴为不透明度比例；独立于尺寸曲线。端点固定。";minimumHelp:"最低不透明度比例；100% 表示不额外减淡。"}
+                    Label {text:"收笔随实际笔画末端更新；抬笔不补线。两端重叠时取较低比例。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                 }
                 ColumnLayout {visible:root.category===10;Layout.fillWidth:true;Layout.minimumWidth:0;spacing:5
                     WetCheck {objectName:"settingsWetEnabled";text:"启用湿混";checked:root.library.wetMix.enabled;onToggled:if(!root.setWetField("enabled",checked))checked=Qt.binding(function(){return root.library.wetMix.enabled});tooltip:"画笔和涂抹复用二维载色。涂抹仍使用工具栏强度、压感和取样设置；橡皮请先关闭湿混。关闭时保留参数。"}

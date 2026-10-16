@@ -91,6 +91,9 @@ public:
     QString selectedPreview() const;
     QString previewMessage() const;
     QVariantMap wetMix() const;
+    Q_PROPERTY(QVariantMap strokeTaper READ strokeTaper NOTIFY settingsChanged)
+    QVariantMap strokeTaper() const;
+    Q_INVOKABLE bool setStrokeTaper(QVariantMap data);
     Q_INVOKABLE bool setWetMix(QVariantMap data);
     QVariantMap smoothing() const;
     Q_INVOKABLE bool setSmoothing(QVariantMap data);
@@ -217,7 +220,7 @@ private:
     bool m_cursorSimple=false,m_cursorComposite=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper;};
     static QJsonObject presetRow(const Preset &preset,int &version);
     int index(const QString &id) const;
     void update(int field,qreal value);

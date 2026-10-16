@@ -7,6 +7,10 @@ ColumnLayout {
     id:root;objectName:prefix+"Editor"
     required property var library
     required property string target
+    property bool fixedEndpoints:false
+    property string caption:"压力响应曲线"
+    property string curveHelp:"拖动控制点；双击增加控制点。编辑后自动拟合平滑曲线。横轴输入压力，纵轴输出比例。"
+    property string minimumHelp:"最低比例与曲线输出组合；只在对应压感开关开启时执行。"
     property string prefix:target==="size"?"pressureSize":target==="opacity"?"pressureOpacity":"pressureFlow"
     readonly property var control:library.pressureDynamics[target]
     readonly property var points:control.curve
@@ -16,6 +20,7 @@ ColumnLayout {
     Layout.fillWidth:true;spacing:4
     function copyPoints(){var result=[];for(var i=0;i<points.length;++i)result.push([Number(points[i][0]),Number(points[i][1])]);return result}
     function movePoint(index,x,y) {
+        if(fixedEndpoints && (index===0 || index===points.length-1))return false
         var data=copyPoints()
         if(index===0 || index===data.length-1)x=data[index][0]
         if(index>0 && index<data.length-1 && (x<=data[index-1][0] || x>=data[index+1][0]))return false
@@ -31,7 +36,7 @@ ColumnLayout {
     }
     function addMiddle(){var i=Math.min(selected,points.length-2);addPoint((points[i][0]+points[i+1][0])/2,(points[i][1]+points[i+1][1])/2)}
     function removePoint(){if(selected<=0 || selected>=points.length-1)return;var data=copyPoints();data.splice(selected,1);if(library.setPressureControl(target,data,control.minimum))selected=Math.max(0,selected-1)}
-    Label {text:"压力响应曲线";color:Theme.text;font.pixelSize:10}
+    Label {text:root.caption;color:Theme.text;font.pixelSize:10}
     Canvas {
         id:graph;objectName:root.prefix+"Curve";Layout.fillWidth:true;Layout.preferredHeight:84
         readonly property real margin:7
@@ -51,7 +56,7 @@ ColumnLayout {
         onHeightChanged:requestPaint()
         MouseArea {
             anchors.fill:parent;hoverEnabled:true;property bool moving:false
-            ToolTip.delay:1000;ToolTip.visible:containsMouse;ToolTip.text:"拖动控制点；双击增加控制点。编辑后自动拟合平滑曲线。横轴输入压力，纵轴输出比例。"
+            ToolTip.delay:1000;ToolTip.visible:containsMouse;ToolTip.text:root.curveHelp
             onPressed:mouse=>{var nearest=-1,distance=100;for(var i=0;i<root.points.length;++i){var dx=mouse.x-graph.px(root.points[i][0]),dy=mouse.y-graph.py(root.points[i][1]);var d=dx*dx+dy*dy;if(d<distance){distance=d;nearest=i}}moving=nearest>=0;if(moving)root.selected=nearest}
             onPositionChanged:mouse=>{if(pressed && moving)root.movePoint(root.selected,graph.inputX(mouse.x),graph.inputY(mouse.y))}
             onReleased:moving=false
@@ -70,12 +75,12 @@ ColumnLayout {
         Label {text:"X";color:Theme.muted;font.pixelSize:9}
         CompactTextField {objectName:root.prefix+"X";Layout.fillWidth:true;implicitHeight:20;text:(root.selectedPoint[0]*100).toFixed(3);enabled:root.selected>0 && root.selected<root.points.length-1;validator:DoubleValidator {bottom:0;top:100;decimals:3;locale:"C"} onEditingFinished:root.movePoint(root.selected,Number(text)/100,root.selectedPoint[1])}
         Label {text:"Y";color:Theme.muted;font.pixelSize:9}
-        CompactTextField {objectName:root.prefix+"Y";Layout.fillWidth:true;implicitHeight:20;text:(root.selectedPoint[1]*100).toFixed(3);validator:DoubleValidator {bottom:0;top:100;decimals:3;locale:"C"} onEditingFinished:root.movePoint(root.selected,root.selectedPoint[0],Number(text)/100)}
+        CompactTextField {objectName:root.prefix+"Y";Layout.fillWidth:true;implicitHeight:20;text:(root.selectedPoint[1]*100).toFixed(3);enabled:!root.fixedEndpoints || (root.selected>0 && root.selected<root.points.length-1);validator:DoubleValidator {bottom:0;top:100;decimals:3;locale:"C"} onEditingFinished:root.movePoint(root.selected,root.selectedPoint[0],Number(text)/100)}
     }
     RowLayout {
         Layout.fillWidth:true
         Label {text:"最低比例";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
-        CompactSpinBox {objectName:root.prefix+"Minimum";from:0;to:100;editable:true;implicitWidth:66;implicitHeight:20;value:Math.round(root.control.minimum*100);onValueModified:root.library.setPressureControl(root.target,root.points,value/100);tooltip:"最低比例与曲线输出组合；只在对应压感开关开启时执行。"}
+        CompactSpinBox {objectName:root.prefix+"Minimum";from:0;to:100;editable:true;implicitWidth:66;implicitHeight:20;value:Math.round(root.control.minimum*100);onValueModified:root.library.setPressureControl(root.target,root.points,value/100);tooltip:root.minimumHelp}
         Label {text:"%";color:Theme.muted;font.pixelSize:9}
     }
     Connections {target:root.library;function onSettingsChanged(){root.selected=Math.min(root.selected,root.points.length-1);graph.requestPaint()}}
