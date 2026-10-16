@@ -160,3 +160,5 @@ ABR颜色动态阶段：converter5/record1/交接JSON4/VBR1.19，前景背景/HS
 ABR形状抖动阶段：converter6/record1/交接JSON5/VBR1.20，尺寸/角度/圆度随机及最低比例、关闭和缺省配置、压力散布颜色组合真实两笔、六代来源字节/最高版本/降级和Qt新库像素已验证，见[验收](abr-shape-conversion-validation.md)。Windows相关IO51项、FFI7项、Qt3功能、Release/ABI/Schema/外部基础诊断通过；随机/下限叠加标近似，设备形状控制和完整ABR/16位、湿混双色/橡皮、收尖/非分隔等继续后续。跨平台验收后置，完整目标未完成。
 
 2026-10-16 Windows输入修复：针对用户Windows Ink入点后悬停轮廓回跳/双光标，以及鼠标和笔点击模式菜单却落笔，补充笔输入所有权、Quick帧同步Hover隔离、原生光标先捕获后切换、菜单窗口坐标路由/透明模态屏障及不激活的兼容宿主。Release/生成头与环境倍率1/2相关Qt验收通过（13/9 passed），见[验收](windows-input-menu-validation.md)。实体驱动与实际Qt6.5未认证，跨平台后置，无ABI或格式变化；完整笔刷系统其余范围继续后续。
+
+ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋转/倾斜角度与圆度映射既有TipDynamics，独立压力/随机/散布/颜色组合、旧六代来源字节和七代最高版本/降级、Qt编辑重置/新库真实设备像素及重开已验证，见[验收](abr-device-conversion-validation.md)。Windows相关IO56项、FFI8项、Qt3功能与Release/ABI/Schema通过；PS设备公式与下限换算标近似，关闭设备只保留原来源，完整ABR/16位和其他高级动态、湿混双色/橡皮、收尖/非分隔、VBR分组及整体验收继续后续。完整目标未完成，跨平台后置。

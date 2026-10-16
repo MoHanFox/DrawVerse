@@ -53,7 +53,7 @@ impl SourceInfo {
         if self.version != 1
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1..=6)
+            || !matches!(self.converter_version, 1..=7)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -86,7 +86,8 @@ impl SourceInfo {
         }
         if (self.converter_version == 3 && self.baseline.pressure_dynamics.is_none())
             || (self.converter_version < 3 && self.baseline.pressure_dynamics.is_some())
-            || self.baseline.tip_dynamics.is_some()
+            || (self.converter_version == 7 && self.baseline.tip_dynamics.is_none())
+            || (self.converter_version < 7 && self.baseline.tip_dynamics.is_some())
             || (self.converter_version == 4 && self.baseline.scatter_dynamics.is_none())
             || (self.converter_version < 4 && self.baseline.scatter_dynamics.is_some())
             || (self.converter_version == 6 && self.baseline.shape_jitter.is_none())
@@ -163,6 +164,9 @@ impl SourceArchive {
         if preset.converter_version >= 6 {
             non_pressure.shape_jitter = Default::default();
         }
+        if preset.converter_version >= 7 {
+            non_pressure.tip = Default::default();
+        }
         if non_pressure != paint_core::BrushDynamics::default()
             || (preset.converter_version < 3
                 && settings.dynamics != paint_core::BrushDynamics::default())
@@ -194,7 +198,10 @@ impl SourceArchive {
                     settings,
                     preset.converter_version,
                 ),
-                tip_dynamics: None,
+                tip_dynamics: crate::abr_conversion::device_parameters(
+                    settings,
+                    preset.converter_version,
+                ),
                 pressure_dynamics: crate::abr_conversion::pressure_parameters(
                     settings,
                     preset.converter_version,

@@ -44,12 +44,15 @@ fn preset(
     pressure: bool,
     scatter: Option<bool>,
     color: Option<(bool, bool)>,
-    shape_jitter: Option<bool>,
+    (shape_jitter, device): (Option<bool>, Option<(bool, i32, bool)>),
 ) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
         ("Angl", unit(b"#Ang", 0.)),
-        ("Rndn", unit(b"#Prc", 100.)),
+        (
+            "Rndn",
+            unit(b"#Prc", if device.is_some() { 50. } else { 100. }),
+        ),
         ("Spcn", unit(b"#Prc", 2.)),
     ];
     if sampled {
@@ -193,6 +196,39 @@ fn preset(
             ));
         }
     }
+    if let Some((enabled, angle, tilt)) = device {
+        if !pressure && shape_jitter.is_none() {
+            entries.push(("useTipDynamics", typed(b"bool", &[u8::from(enabled)])));
+        }
+        // Replace just the two geometry controls, preserving combined jitter/pressure fields.
+        entries.retain(|(key, _)| {
+            !["angleDynamics", "roundnessDynamics", "minimumRoundness"].contains(key)
+        });
+        entries.push(("minimumRoundness", unit(b"#Prc", 25.)));
+        for (key, control, jitter) in [
+            ("angleDynamics", angle, 40.),
+            ("roundnessDynamics", if tilt { 3 } else { 0 }, 50.),
+        ] {
+            entries.push((
+                key,
+                typed(
+                    b"Objc",
+                    &object(
+                        "brushDynamics",
+                        vec![
+                            ("bVTy", typed(b"long", &control.to_be_bytes())),
+                            ("Mnm ", unit(b"#Prc", 0.)),
+                            ("fStp", typed(b"long", &25i32.to_be_bytes())),
+                            (
+                                "jitter",
+                                unit(b"#Prc", if shape_jitter.is_some() { jitter } else { 0. }),
+                            ),
+                        ],
+                    ),
+                ),
+            ));
+        }
+    }
     if let Some(opacity) = opacity {
         entries.push((
             "toolOptions",
@@ -214,15 +250,43 @@ fn section(out: &mut Vec<u8>, key: &[u8; 4], bytes: &[u8]) {
     out.extend((bytes.len() as u32).to_be_bytes());
     out.extend(bytes);
 }
+#[allow(dead_code)]
+pub fn fixture_with_device(enabled: bool, angle: i32, combined: bool) -> Vec<u8> {
+    fixture_inner(
+        (6, 2),
+        false,
+        Some(25.5),
+        enabled && combined,
+        combined.then_some(true),
+        combined.then_some((true, true)),
+        (combined.then_some(enabled), Some((enabled, angle, true))),
+    )
+}
 pub fn fixture(version: u16, sub: u16, bad: bool) -> Vec<u8> {
     fixture_with_opacity(version, sub, bad, None)
 }
 pub fn fixture_with_opacity(version: u16, sub: u16, bad: bool, opacity: Option<f64>) -> Vec<u8> {
-    fixture_inner((version, sub), bad, opacity, false, None, None, None)
+    fixture_inner(
+        (version, sub),
+        bad,
+        opacity,
+        false,
+        None,
+        None,
+        (None, None),
+    )
 }
 #[allow(dead_code)]
 pub fn fixture_with_pressure(version: u16, sub: u16, bad: bool) -> Vec<u8> {
-    fixture_inner((version, sub), bad, Some(25.5), true, None, None, None)
+    fixture_inner(
+        (version, sub),
+        bad,
+        Some(25.5),
+        true,
+        None,
+        None,
+        (None, None),
+    )
 }
 #[allow(dead_code)]
 pub fn fixture_with_scatter(version: u16, sub: u16, bad: bool, enabled: bool) -> Vec<u8> {
@@ -233,7 +297,7 @@ pub fn fixture_with_scatter(version: u16, sub: u16, bad: bool, enabled: bool) ->
         true,
         Some(enabled),
         None,
-        None,
+        (None, None),
     )
 }
 #[allow(dead_code)]
@@ -245,7 +309,7 @@ pub fn fixture_with_color(enabled: bool, per_tip: bool, combined: bool) -> Vec<u
         combined,
         combined.then_some(true),
         Some((enabled, per_tip)),
-        None,
+        (None, None),
     )
 }
 #[allow(dead_code)]
@@ -257,7 +321,7 @@ pub fn fixture_with_shape(enabled: bool, combined: bool) -> Vec<u8> {
         enabled && combined,
         combined.then_some(true),
         combined.then_some((true, true)),
-        Some(enabled),
+        (Some(enabled), None),
     )
 }
 fn fixture_inner(
@@ -267,37 +331,19 @@ fn fixture_inner(
     pressure: bool,
     scatter: Option<bool>,
     color: Option<(bool, bool)>,
-    shape_jitter: Option<bool>,
+    dynamics: (Option<bool>, Option<(bool, i32, bool)>),
 ) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
     let mut list = 3u32.to_be_bytes().to_vec();
     list.extend(preset(
-        true,
-        false,
-        opacity,
-        pressure,
-        scatter,
-        color,
-        shape_jitter,
+        true, false, opacity, pressure, scatter, color, dynamics,
     ));
     list.extend(preset(
-        false,
-        false,
-        opacity,
-        pressure,
-        scatter,
-        color,
-        shape_jitter,
+        false, false, opacity, pressure, scatter, color, dynamics,
     ));
     list.extend(preset(
-        true,
-        bad,
-        opacity,
-        pressure,
-        scatter,
-        color,
-        shape_jitter,
+        true, bad, opacity, pressure, scatter, color, dynamics,
     ));
     let mut descriptor = 16u32.to_be_bytes().to_vec();
     descriptor.extend(object("null", vec![("Brsh", typed(b"VlLs", &list))]));

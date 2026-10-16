@@ -68,6 +68,8 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                     6
                 } else if s.dynamics.scatter != Default::default() {
                     5
+                } else if s.dynamics.tip != Default::default() {
+                    4
                 } else if s.dynamics.pressure_opacity {
                     3
                 } else {
@@ -85,6 +87,9 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                             "pressure-curves".into(),
                             "opacity-pressure".into(),
                         ]);
+                    }
+                    if s.dynamics.tip != Default::default() {
+                        caps.push("tip-dynamics".into());
                     }
                     if s.dynamics.shape_jitter != Default::default() {
                         caps.push("shape-jitter".into());
@@ -115,12 +120,15 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                     color_dynamics: (s.dynamics.color != Default::default()).then(|| {
                         paint_io::brush_color_dynamics::ColorParameters::from_core(s.dynamics.color)
                     }),
-                    tip_dynamics: None,
+                    tip_dynamics: (s.dynamics.tip != Default::default()).then(|| {
+                        paint_io::brush_tip_dynamics::TipParameters::from_core(s.dynamics.tip)
+                    }),
                     pressure_dynamics: s.dynamics.pressure_opacity.then(|| {
                         let mut pressure = s.dynamics.clone();
                         pressure.scatter = Default::default();
                         pressure.color = Default::default();
                         pressure.shape_jitter = Default::default();
+                        pressure.tip = Default::default();
                         paint_io::brush_pressure::PressureParameters::from_core(&pressure)
                     }),
                     diameter: s.diameter,
@@ -1193,6 +1201,107 @@ fn shape_source_v6_requires_minor_20_and_preserves_six_generations_and_pixels() 
                 d.end_stroke().unwrap();
             }
         }
+        for y in 0..32 {
+            for x in 0..64 {
+                assert_eq!(a.pixel(x, y), b.pixel(x, y));
+            }
+        }
+    }
+}
+
+#[test]
+fn device_source_v7_requires_minor_21_and_preserves_seven_generations_and_pixels() {
+    use paint_io::{abr_association, abr_conversion, abr_sampled, brush_source::SourceBatch};
+    let token = CancellationToken::default();
+    let mut bundle = bundle_from_bytes(support::abr_fixture::fixture_with_device(true, 8, true));
+    let original = Arc::new(bundle.sources()[0].original_bytes().to_vec());
+    let parsed = abr_sampled::decode_sectioned(&original, &token).unwrap();
+    let desc = parsed.descriptors(&token).unwrap();
+    let linked = abr_association::associate(&parsed, &desc, &token).unwrap();
+    let mut records = bundle.sources()[0]
+        .records()
+        .map(|(id, b)| (id.to_owned(), b.to_vec()))
+        .collect::<BTreeMap<_, _>>();
+    for (i, old) in [
+        abr_conversion::convert_legacy(&linked, &token).unwrap(),
+        abr_conversion::convert_v2(&linked, &token).unwrap(),
+        abr_conversion::convert_v3(&linked, &token).unwrap(),
+        abr_conversion::convert_v4(&linked, &token).unwrap(),
+        abr_conversion::convert_v5(&linked, &token).unwrap(),
+        abr_conversion::convert_v6(&linked, &token).unwrap(),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let batch = SourceBatch::capture(original.clone(), old, &token).unwrap();
+        let (id, bytes) = batch.records().next().unwrap();
+        records.insert(id.into(), bytes.to_vec());
+        let mut p = bundle.package.brushes[1].clone();
+        p.id = format!("12345678-1234-4234-8234-{:012x}", i + 10);
+        p.source_resource = Some(id.into());
+        bundle.package.brushes.push(p);
+    }
+    let assets = bundle
+        .assets()
+        .iter()
+        .map(|(id, a)| (id.clone(), a.bytes().to_vec()))
+        .collect();
+    let mixed = ImageBundle::with_sources(
+        bundle.package,
+        assets,
+        vec![SourceBatch::from_records(original.clone(), records.clone(), &token).unwrap()],
+        &token,
+    )
+    .unwrap();
+    let encoded = vbr_image::encode(&mixed, &token).unwrap();
+    let restored = vbr_image::decode(&encoded, &token).unwrap();
+    assert_eq!(restored.sources()[0].converter_version(), 7);
+    assert_eq!(
+        restored.sources()[0]
+            .records()
+            .map(|(id, b)| (id.to_owned(), b.to_vec()))
+            .collect::<BTreeMap<_, _>>(),
+        records
+    );
+    for minor in [20, 19, 18, 17, 16, 15, 4] {
+        let downgraded = rewrite(&encoded, |name, data| {
+            if name == "manifest.json" {
+                let mut v: serde_json::Value = serde_json::from_slice(data).unwrap();
+                assert_eq!(v["version"]["minor"], 21);
+                v["version"]["minor"] = minor.into();
+                *data = serde_json::to_vec(&v).unwrap();
+            }
+            true
+        });
+        assert!(vbr_image::decode(&downgraded, &token).is_err());
+    }
+    for i in 0..mixed.package.brushes.len() {
+        let mut a = Document::new(64, 32).unwrap();
+        let mut b = Document::new(64, 32).unwrap();
+        for pressure in [0.25, 0.75] {
+            for (d, mut definition) in [
+                (&mut a, mixed.definition(i).unwrap()),
+                (&mut b, restored.definition(i).unwrap()),
+            ] {
+                definition.brush.color =
+                    paint_core::Pixel::from_straight([1., 0., 0., 1.]).unwrap();
+                definition.brush.background_color =
+                    paint_core::Pixel::from_straight([0., 0., 1., 1.]).unwrap();
+                let mut point = InputPoint::new(8.5, 16.5, pressure);
+                point.rotation = if pressure < 0.5 { 90. } else { 35. };
+                point.tilt_x = 60.;
+                point.capabilities = 7;
+                d.begin_brush_stroke(definition, point).unwrap();
+                point.x = 54.5;
+                point.rotation += 40.;
+                d.stroke_to(point).unwrap();
+                d.end_stroke().unwrap();
+            }
+        }
+        assert_eq!(a.history_depth(), (2, 0));
+        a.undo().unwrap();
+        a.redo().unwrap();
+        assert!((0..2048).any(|i| a.pixel(i % 64, i / 64).alpha() > 0.));
         for y in 0..32 {
             for x in 0..64 {
                 assert_eq!(a.pixel(x, y), b.pixel(x, y));

@@ -95,6 +95,33 @@ fn check_shape_bytes(
     color: bool,
     shape: bool,
 ) {
+    check_device_bytes(bytes, opacity, pressure, scatter, color, shape, false);
+}
+#[test]
+fn device_v7_import_prepares_direction_rotation_tilt_and_preserves_combined_baseline() {
+    for angle in [3, 6, 8] {
+        for combined in [false, true] {
+            check_device_bytes(
+                fixture::fixture_with_device(true, angle, combined),
+                Some(25.5),
+                combined,
+                combined,
+                combined,
+                combined,
+                true,
+            );
+        }
+    }
+}
+fn check_device_bytes(
+    bytes: Vec<u8>,
+    opacity: Option<f64>,
+    pressure: bool,
+    scatter: bool,
+    color: bool,
+    shape: bool,
+    device: bool,
+) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("brush.abr");
     std::fs::write(&path, bytes).unwrap();
@@ -228,15 +255,18 @@ fn check_shape_bytes(
             .load(source, &token)
             .unwrap();
         assert_eq!(&canonical[..required as usize], archive.record().unwrap());
-        if shape {
-            assert!(archive.info.baseline.shape_jitter.is_some());
+        assert_eq!(archive.info.baseline.tip_dynamics.is_some(), device);
+        if shape || device {
+            assert_eq!(archive.info.baseline.shape_jitter.is_some(), shape);
             assert_eq!(archive.info.baseline.pressure_dynamics.is_some(), pressure);
             assert_eq!(archive.info.baseline.scatter_dynamics.is_some(), scatter);
             assert_eq!(archive.info.baseline.color_dynamics.is_some(), color);
         }
         assert_eq!(
             archive.info.converter_version,
-            if shape {
+            if device {
+                7
+            } else if shape {
                 6
             } else if color {
                 5

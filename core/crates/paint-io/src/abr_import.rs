@@ -68,7 +68,7 @@ impl ImportBatch {
                         ),
                         shape_jitter: abr_conversion::shape_parameters(s, p.converter_version),
                         color_dynamics: abr_conversion::color_parameters(s, p.converter_version),
-                        tip_dynamics: None,
+                        tip_dynamics: abr_conversion::device_parameters(s, p.converter_version),
                         pressure_dynamics: abr_conversion::pressure_parameters(
                             s,
                             p.converter_version,
@@ -90,7 +90,9 @@ impl ImportBatch {
             })
             .collect();
         let bytes = serde_json::to_vec(&Handoff {
-            version: if self.presets.iter().any(|p| p.converter_version >= 6) {
+            version: if self.presets.iter().any(|p| p.converter_version >= 7) {
+                6
+            } else if self.presets.iter().any(|p| p.converter_version >= 6) {
                 5
             } else if self.presets.iter().any(|p| p.converter_version >= 5) {
                 4

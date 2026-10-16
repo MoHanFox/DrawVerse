@@ -152,3 +152,7 @@ converterVersion3来源基准保存已有pressureDynamics（三通道线性曲�
 ## VBR1.20：ABR形状抖动来源
 
 来源converterVersion6必须保存shapeJitter基准，可独立组合既有pressureDynamics/scatterDynamics/colorDynamics，其他动态仍明确拒绝。原记录仍为version1。包含v6来源最低minor20，按全部来源最高需求导出，19以下夹带拒绝；旧五代转换入口/记录字节/报告不重算。执行沿用behavior6/shape-jitter与state9；普通原生形状配置不因本模块提高版本需求。Schema为contracts/vbr-abr-shape-v1.20.schema.json。随机分布、压力及随机下限组合、圆度下限换算均明确近似；设备形状控制等仍未执行，见abr-shape-conversion-design.md。
+
+## VBR1.21：ABR设备形状来源
+
+来源converterVersion7必须保存tipDynamics基准，pressureDynamics/scatterDynamics/shapeJitter/colorDynamics独立可选。来源record仍version1，旧六代记录字节/报告不重算；有v7来源时最低minor21，20以下夹带拒绝。执行沿用behavior4/tip-dynamics及state7，无新C ABI或执行行为。原生设备配置无新来源时仍使用原来的VBR版本需求。Schema为contracts/vbr-abr-device-v1.21.schema.json。方向、笔旋转、倾斜角度/圆度及原生能力回退标近似；关闭设备保留在来源而不执行，其他设备与渐隐继续未执行，见abr-device-conversion-design.md。

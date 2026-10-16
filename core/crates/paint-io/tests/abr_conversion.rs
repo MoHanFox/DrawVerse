@@ -1604,3 +1604,357 @@ fn shape_closed_clamping_and_malformed_dynamic_fields_never_claim_exact_mapping(
         .is_err());
     }
 }
+
+fn device_preset(control: i32, tilt: bool, combined: bool) -> Descriptor {
+    let mut p = if combined {
+        shape_preset(true)
+    } else {
+        preset()
+    };
+    p.entries.retain(|(k, _)| {
+        ![
+            b"angleDynamics".as_slice(),
+            b"roundnessDynamics",
+            b"minimumRoundness",
+        ]
+        .contains(&k.as_slice())
+    });
+    if !combined {
+        p.entries
+            .push((b"useTipDynamics".to_vec(), Value::Boolean(true)));
+    }
+    p.entries
+        .push((b"minimumRoundness".to_vec(), unit(*b"#Prc", 25.)));
+    for (key, control, jitter) in [
+        ("angleDynamics", control, 40.),
+        ("roundnessDynamics", if tilt { 3 } else { 0 }, 50.),
+    ] {
+        p.entries.push((
+            key.as_bytes().to_vec(),
+            Value::Object {
+                global: false,
+                descriptor: Box::new(object(
+                    "brushDynamics",
+                    vec![
+                        ("bVTy", Value::Integer(control)),
+                        ("Mnm ", unit(*b"#Prc", 0.)),
+                        ("jitter", unit(*b"#Prc", if combined { jitter } else { 0. })),
+                        ("fStp", Value::Integer(25)),
+                    ],
+                )),
+            },
+        ));
+    }
+    p
+}
+#[test]
+fn device_conversion_reuses_native_geometry_with_images_pressure_and_actual_history() {
+    use paint_core::{AngleControl, BrushMask, Document, InputPoint, TipDynamics};
+    let token = CancellationToken::default();
+    let mask = SectionedTip {
+        id: "device".into(),
+        prefix: Box::new([]),
+        bounds: [0, 0, 4, 8],
+        mask: Arc::new(
+            BrushMask::new(
+                8,
+                4,
+                (0..32)
+                    .map(|i| {
+                        if [10, 11, 18, 19].contains(&i) {
+                            0
+                        } else {
+                            255
+                        }
+                    })
+                    .collect(),
+            )
+            .unwrap(),
+        ),
+        trailing_metadata: Box::new([]),
+    };
+    for (control, angle) in [
+        (6, AngleControl::Direction),
+        (8, AngleControl::PenRotation),
+        (3, AngleControl::Tilt),
+    ] {
+        for combined in [false, true] {
+            for sampled in [false, true] {
+                for caps in [0, 7] {
+                    let p = device_preset(control, true, combined);
+                    let mut sh = shape(sampled);
+                    sh.entries.iter_mut().find(|(k, _)| k == b"Rndn").unwrap().1 =
+                        unit(*b"#Prc", 50.);
+                    let linked = [LinkedPreset {
+                        name: "device",
+                        preset: &p,
+                        shape: &sh,
+                        sampled_tip: sampled.then_some(&mask),
+                    }];
+                    let c = convert(&linked, &token).unwrap();
+                    let old = paint_io::abr_conversion::convert_v6(&linked, &token).unwrap();
+                    assert_eq!(c[0].converter_version, 7);
+                    assert_ne!(old[0].converter_version, 7);
+                    let expected = TipDynamics::new(angle, true, 0.5).unwrap();
+                    assert_eq!(c[0].settings.dynamics.tip, expected);
+                    assert_eq!(old[0].settings.dynamics.tip, Default::default());
+                    assert_eq!(
+                        c[0].issues
+                            .iter()
+                            .filter(|i| i.path == "angleDynamics.bVTy")
+                            .count(),
+                        1
+                    );
+                    assert!(
+                        c[0].issues
+                            .iter()
+                            .any(|i| i.path == "angleDynamics.bVTy"
+                                && i.status == Status::Approximate)
+                    );
+                    let mut reference = old[0].settings.clone();
+                    reference.dynamics.tip = expected;
+                    let mut a = Document::new(64, 64).unwrap();
+                    let mut b = Document::new(64, 64).unwrap();
+                    let mut fixed = Document::new(64, 64).unwrap();
+                    for pressure in [0.25, 0.75] {
+                        for (doc, settings) in [
+                            (&mut a, &c[0].settings),
+                            (&mut b, &reference),
+                            (&mut fixed, &old[0].settings),
+                        ] {
+                            let mut point = InputPoint::new(16.5, 32.5, pressure);
+                            point.capabilities = caps;
+                            point.tilt_x = 65.;
+                            point.rotation = 90.;
+                            doc.begin_brush_stroke(settings.definition(), point)
+                                .unwrap();
+                            point.x = 48.5;
+                            point.y = 48.5;
+                            point.rotation = 35.;
+                            doc.stroke_to(point).unwrap();
+                            doc.end_stroke().unwrap();
+                        }
+                    }
+                    let pixels = |d: &Document| {
+                        (0..4096)
+                            .map(|i| d.pixel(i % 64, i / 64))
+                            .collect::<Vec<_>>()
+                    };
+                    let after = pixels(&a);
+                    assert!(after.iter().any(|p| p.alpha() > 0.));
+                    assert_eq!(after, pixels(&b));
+                    if control == 6 || caps == 7 {
+                        assert_ne!(after, pixels(&fixed));
+                    } else {
+                        assert_eq!(after, pixels(&fixed));
+                    }
+                    assert_eq!(a.history_depth(), (2, 0));
+                    a.undo().unwrap();
+                    a.redo().unwrap();
+                    assert_eq!(pixels(&a), after);
+                }
+            }
+        }
+    }
+}
+#[test]
+fn device_disabled_unknown_pose_and_overrides_preserve_v6_behavior_and_reports() {
+    let token = CancellationToken::default();
+    let sh = shape(false);
+    for case in 0..5 {
+        let mut p = device_preset(8, true, true);
+        match case {
+            0 => {
+                p.entries
+                    .iter_mut()
+                    .find(|(k, _)| k == b"useTipDynamics")
+                    .unwrap()
+                    .1 = Value::Boolean(false)
+            }
+            1 => p
+                .entries
+                .push((b"useBrushPose".to_vec(), Value::Boolean(true))),
+            2 => {
+                for key in [b"angleDynamics".as_slice(), b"roundnessDynamics"] {
+                    if let Value::Object { descriptor, .. } =
+                        &mut p.entries.iter_mut().find(|(k, _)| k == key).unwrap().1
+                    {
+                        descriptor.entries[0].1 = Value::Integer(5);
+                    }
+                }
+            }
+            3 => {
+                if let Value::Object { descriptor, .. } = &mut p
+                    .entries
+                    .iter_mut()
+                    .find(|(k, _)| k == b"toolOptions")
+                    .unwrap()
+                    .1
+                {
+                    for key in [b"angleDynamics".as_slice(), b"roundnessDynamics"] {
+                        descriptor.entries.push((key.to_vec(), Value::Integer(8)));
+                    }
+                }
+            }
+            _ => {
+                p.entries.retain(|(k, _)| k != b"useTipDynamics");
+            }
+        }
+        let linked = [LinkedPreset {
+            name: "closed",
+            preset: &p,
+            shape: &sh,
+            sampled_tip: None,
+        }];
+        let a = convert(&linked, &token).unwrap();
+        let b = paint_io::abr_conversion::convert_v6(&linked, &token).unwrap();
+        assert_eq!(a[0].converter_version, b[0].converter_version);
+        assert_eq!(a[0].settings.dynamics, b[0].settings.dynamics);
+        assert_eq!(
+            a[0].issues
+                .iter()
+                .map(|i| (&i.path, i.status, i.reason))
+                .collect::<Vec<_>>(),
+            b[0].issues
+                .iter()
+                .map(|i| (&i.path, i.status, i.reason))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+#[test]
+fn device_invalid_units_ranges_types_and_source_contract_are_rejected() {
+    let token = CancellationToken::default();
+    let sh = shape(false);
+    for (key, bad) in [
+        ("jitter", unit(*b"#Prc", 100. + 1e-9)),
+        ("Mnm ", unit(*b"#Prc", -1e-9)),
+        ("Mnm ", unit(*b"#Ang", 5.)),
+        ("bVTy", Value::Boolean(true)),
+        ("fStp", Value::Integer(-1)),
+    ] {
+        let mut p = device_preset(8, true, false);
+        if let Value::Object { descriptor, .. } = &mut p
+            .entries
+            .iter_mut()
+            .find(|(k, _)| k == b"angleDynamics")
+            .unwrap()
+            .1
+        {
+            descriptor
+                .entries
+                .iter_mut()
+                .find(|(k, _)| k == key.as_bytes())
+                .unwrap()
+                .1 = bad;
+        }
+        assert!(convert(
+            &[LinkedPreset {
+                name: "bad",
+                preset: &p,
+                shape: &sh,
+                sampled_tip: None
+            }],
+            &token
+        )
+        .is_err());
+    }
+    for (bytes, valid) in [
+        (
+            include_bytes!("../../../../contracts/fixtures/abr-device-source-v7-valid.json")
+                .as_slice(),
+            true,
+        ),
+        (
+            include_bytes!("../../../../contracts/fixtures/abr-device-source-invalid-version.json")
+                .as_slice(),
+            false,
+        ),
+        (
+            include_bytes!(
+                "../../../../contracts/fixtures/abr-device-source-invalid-downgrade.json"
+            )
+            .as_slice(),
+            false,
+        ),
+    ] {
+        let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(info.validate().is_ok(), valid);
+    }
+}
+
+#[test]
+fn device_channels_are_independent_and_tilt_minimum_is_bounded_before_execution() {
+    use paint_core::{AngleControl, BrushProgram, InputPoint};
+    let token = CancellationToken::default();
+    let mut sh = shape(false);
+    sh.entries.iter_mut().find(|(k, _)| k == b"Rndn").unwrap().1 = unit(*b"#Prc", 50.);
+    for (angle_control, round_control) in [(6, 2), (5, 3)] {
+        for minimum in [None, Some(0.), Some(25.), Some(100.)] {
+            let mut p = device_preset(angle_control, true, false);
+            if let Value::Object { descriptor, .. } = &mut p
+                .entries
+                .iter_mut()
+                .find(|(k, _)| k == b"roundnessDynamics")
+                .unwrap()
+                .1
+            {
+                descriptor
+                    .entries
+                    .iter_mut()
+                    .find(|(k, _)| k == b"bVTy")
+                    .unwrap()
+                    .1 = Value::Integer(round_control);
+            }
+            p.entries.retain(|(k, _)| k != b"minimumRoundness");
+            if let Some(value) = minimum {
+                p.entries
+                    .push((b"minimumRoundness".to_vec(), unit(*b"#Prc", value)));
+            }
+            let converted = convert(
+                &[LinkedPreset {
+                    name: "independent",
+                    preset: &p,
+                    shape: &sh,
+                    sampled_tip: None,
+                }],
+                &token,
+            )
+            .unwrap();
+            let c = &converted[0];
+            assert_eq!(c.converter_version, 7);
+            assert_eq!(
+                c.settings.dynamics.tip.angle(),
+                if angle_control == 6 {
+                    AngleControl::Direction
+                } else {
+                    AngleControl::Fixed
+                }
+            );
+            assert_eq!(c.settings.dynamics.tip.tilt_roundness(), round_control == 3);
+            let unsupported = if round_control == 2 {
+                "roundnessDynamics.bVTy"
+            } else {
+                "angleDynamics.bVTy"
+            };
+            assert!(c
+                .issues
+                .iter()
+                .any(|i| i.path == unsupported && i.status == Status::NotExecuted));
+            let mut point = InputPoint::new(16., 16., 1.);
+            point.capabilities = 2;
+            point.tilt_x = 90.;
+            let pose = BrushProgram::compile(c.settings.definition())
+                .unwrap()
+                .cursor_pose(8., point, true, Some((0., 1.)))
+                .unwrap();
+            let floor = if round_control == 3 {
+                (minimum.unwrap_or(0.5) as f32 / 50.).clamp(0.01, 1.)
+            } else {
+                1.
+            };
+            assert!((pose.roundness - (0.5 * floor).max(0.01)).abs() < 1e-6);
+            assert!((pose.angle - if angle_control == 6 { 90. } else { 0. }).abs() < 1e-5);
+        }
+    }
+}

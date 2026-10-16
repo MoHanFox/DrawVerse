@@ -6,8 +6,8 @@ use crate::{
     Error, Result,
 };
 use paint_core::{
-    BrushProgram, BrushSettings, BrushTip, ColorDynamics, PressureControl, PressureCurve,
-    ScatterDynamics, ShapeJitter,
+    AngleControl, BrushProgram, BrushSettings, BrushTip, ColorDynamics, PressureControl,
+    PressureCurve, ScatterDynamics, ShapeJitter, TipDynamics,
 };
 use paint_task::CancellationToken;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,6 +149,13 @@ pub fn convert<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
+    convert_inner(linked, token, 7)
+}
+/// Preserve converter v6 shape jitter behavior and reports without device conversion.
+pub fn convert_v6<'a>(
+    linked: &[LinkedPreset<'a>],
+    token: &CancellationToken,
+) -> Result<Vec<ConvertedPreset<'a>>> {
     convert_inner(linked, token, 6)
 }
 /// Preserve converter v5 color behavior and reports without shape jitter conversion.
@@ -194,6 +201,7 @@ pub(crate) fn pressure_parameters(
     pressure.scatter = Default::default();
     pressure.color = Default::default();
     pressure.shape_jitter = Default::default();
+    pressure.tip = Default::default();
     (version >= 3
         && (version == 3
             || pressure != Default::default()
@@ -219,9 +227,114 @@ pub(crate) fn shape_parameters(
     settings: &BrushSettings,
     version: u32,
 ) -> Option<crate::brush_shape_jitter::ShapeParameters> {
-    (version >= 6).then(|| {
-        crate::brush_shape_jitter::ShapeParameters::from_core(settings.dynamics.shape_jitter)
-    })
+    (version >= 6 && (version == 6 || settings.dynamics.shape_jitter != Default::default())).then(
+        || crate::brush_shape_jitter::ShapeParameters::from_core(settings.dynamics.shape_jitter),
+    )
+}
+pub(crate) fn device_parameters(
+    settings: &BrushSettings,
+    version: u32,
+) -> Option<crate::brush_tip_dynamics::TipParameters> {
+    (version >= 7)
+        .then(|| crate::brush_tip_dynamics::TipParameters::from_core(settings.dynamics.tip))
+}
+fn device_controls(
+    preset: &Descriptor,
+    tool: Option<&Descriptor>,
+    settings: &mut BrushSettings,
+    issues: &mut Vec<Issue>,
+) -> Result<Vec<String>> {
+    if flag(preset, b"useTipDynamics")? != Some(true) {
+        return Ok(Vec::new());
+    }
+    let pose = flag(preset, b"useBrushPose")? == Some(true);
+    let mut angle = AngleControl::Fixed;
+    let mut tilt_roundness = false;
+    let mut mapped = Vec::new();
+    for (key, is_angle) in [
+        (b"angleDynamics".as_slice(), true),
+        (b"roundnessDynamics".as_slice(), false),
+    ] {
+        let data = match preset.get(key) {
+            None => continue,
+            Some(Value::Object { descriptor, .. }) => descriptor,
+            _ => return Err(Error::Invalid("ABR device dynamics object")),
+        };
+        let control = match data.get(b"bVTy") {
+            Some(Value::Integer(value)) => *value,
+            _ => return Err(Error::Invalid("ABR device control type")),
+        };
+        unit(data, b"Mnm ", *b"#Prc", 0., 100.)?;
+        unit(data, b"jitter", *b"#Prc", 0., 100.)?;
+        if !matches!(data.get(b"fStp"), None | Some(Value::Integer(0..=i32::MAX))) {
+            return Err(Error::Invalid("ABR device fade steps"));
+        }
+        if pose || tool.is_some_and(|t| t.get(key).is_some()) {
+            continue;
+        }
+        if is_angle {
+            angle = match control {
+                6 => AngleControl::Direction,
+                8 => AngleControl::PenRotation,
+                3 => AngleControl::Tilt,
+                _ => continue,
+            };
+        } else if control == 3 {
+            tilt_roundness = true;
+        } else {
+            continue;
+        }
+        mapped.push((path_key(key), data.as_ref()));
+    }
+    if mapped.is_empty() {
+        return Ok(Vec::new());
+    }
+    let minimum = if tilt_roundness && preset.get(b"minimumRoundness").is_some() {
+        (unit(preset, b"minimumRoundness", *b"#Prc", 0., 100.)? / 100. / settings.tip.roundness)
+            .clamp(0.01, 1.)
+    } else {
+        0.01
+    };
+    settings.dynamics.tip = TipDynamics::new(angle, tilt_roundness, minimum)?;
+    let mut handled = Vec::new();
+    let mut report = |path: String, status, reason| {
+        if let Some(old) = issues.iter_mut().find(|i| i.path == path) {
+            old.status = status;
+            old.reason = reason;
+        } else {
+            issue(issues, &path, status, reason);
+        }
+        handled.push(path);
+    };
+    report(
+        "useTipDynamics".into(),
+        Status::Mapped,
+        "形状动态开启；设备、压力与随机通道独立转换",
+    );
+    for (name, data) in mapped {
+        report(
+            format!("{name}.bVTy"),
+            Status::Approximate,
+            "原生方向/笔旋转/倾斜几何及设备缺省回退；PS设备公式未逐像素核对",
+        );
+        for field in ["Mnm ", "fStp"] {
+            if data.get(field.as_bytes()).is_some() {
+                report(
+                    format!("{name}.{field}"),
+                    Status::NotExecuted,
+                    "该设备通道的最小/渐隐字段尚未解释，原值保留在来源",
+                );
+            }
+        }
+    }
+    if tilt_roundness {
+        report(
+            "minimumRoundness".into(),
+            Status::Approximate,
+            "原生余弦倾斜下限，按基础圆度换算并裁剪；缺省使用1%，PS公式未核对",
+        );
+    }
+    Ok(handled)
 }
 fn shape_controls(
     preset: &Descriptor,
@@ -1005,6 +1118,14 @@ fn convert_inner<'a>(
         } else {
             false
         };
+        let device_changed = if generation >= 7 {
+            let extra = device_controls(item.preset, tool, &mut settings, &mut issues)?;
+            let changed = !extra.is_empty();
+            handled.extend(extra);
+            changed
+        } else {
+            false
+        };
         for (key, value) in &item.preset.entries {
             if key != b"Nm  " && key != b"Brsh" && key != b"toolOptions" {
                 if [
@@ -1094,7 +1215,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if shape_changed {
+        if device_changed {
+            converter_version = 7;
+        } else if shape_changed {
             converter_version = 6;
         } else if color_changed {
             converter_version = 5;
