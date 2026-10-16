@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新起收笔数值与调度：`docs/brush-taper-kernel-design.md` / `docs/brush-taper-kernel-validation.md`；独立尺寸/opacity曲线、全局弧长与双流身份、事务计划及有界活动笔尾，10项Rust与Clippy通过；尚未接Document像素/历史/IO/ABI/Qt，不宣称画布起收笔完成，无版本变化。
+
 - 最新白色预览与范围修订：`docs/brush-white-preview-design.md` / `docs/brush-white-preview-validation.md`；用户取消试画/代码和入口已清理，所有自动预览固定白色及正常模式/保持真实alpha，换当前颜色不重算；真实画布颜色不变，无ABI或格式变化。
 
 - 最新平滑/缩放/颜色保存：`docs/brush-follow-color-zoom-design.md` / `docs/brush-follow-color-zoom-validation.md`；用户确认保留拖绳、抬笔停在已绘末端不补线，Ctrl++/Ctrl+-主窗浮窗与文本保护，前景/背景及历史色偏好重启保持/多文档同步；无ABI或格式版本变化。

@@ -12,6 +12,11 @@ pub use brush_wet_carrier::{
 };
 mod brush_smoothing;
 pub use brush_smoothing::BrushSmoothing;
+mod brush_taper;
+pub use brush_taper::{
+    CompiledTaper, StrokeTaper, TaperBuffer, TaperEnd, TaperFactors, TaperRecord, TaperStream,
+    TaperUpdate, TaperedRecord, MAX_TAPER_DISTANCE, MAX_TAPER_RECORDS, TAPER_MODEL,
+};
 mod brush_catalog;
 mod brush_dual;
 mod brush_dual_color;

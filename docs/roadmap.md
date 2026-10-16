@@ -1,3 +1,5 @@
+起收笔当前阶段：[设计](brush-taper-kernel-design.md) / [验收](brush-taper-kernel-validation.md)。独立尺寸/透明度曲线及有界笔尾事务调度已验证，10项Rust与Clippy通过；Document像素回算/历史、IO/ABI/Qt待接，尚无用户入口。结束继续保持不追原始鼠标终点，无版本变化。
+
 画笔混合原生捕获：[设计](brush-blend-abi-design.md) / [验收](brush-blend-abi-validation.md)。ABI1.44、独立模式DTO/新prepared入口与真实捕获/历史/旧正常兼容已验证；Qt工具栏状态、保存及有色底预览下一阶段接入。
 
 画笔颜色混合内核：[设计](brush-blend-design.md) / [验收](brush-blend-validation.md)。27模式真实写入、整笔透明度/蒙版/透明锁/溶解与复杂组合/分页历史已验证；原生Qt工具栏入口、状态保存与有色底预览下一阶段接入，双色扩展仍待实现。
