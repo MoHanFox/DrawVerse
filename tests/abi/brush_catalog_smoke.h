@@ -11,7 +11,9 @@ static_assert(sizeof(PaintBrushPresetInfo) == 64 && sizeof(PaintBrushLibraryInfo
 static_assert(sizeof(PaintBrushToolDesc) == 56 && offsetof(PaintBrushToolDesc, linear_rgba) == 24);
 static_assert(sizeof(PaintTipPose)==24 && offsetof(PaintTipPose,radius)==8 && offsetof(PaintTipPose,roundness)==16);
 static_assert(sizeof(PaintCompositeTipPose)==64 && offsetof(PaintCompositeTipPose,primary)==8 && offsetof(PaintCompositeTipPose,secondary)==32 && offsetof(PaintCompositeTipPose,reserved)==56);
+static_assert(sizeof(PaintWetToolInfoDual)==80 && offsetof(PaintWetToolInfoDual,secondary_revision)==16 && offsetof(PaintWetToolInfoDual,primary_center_linear_premul_rgba)==32 && offsetof(PaintWetToolInfoDual,secondary_center_linear_premul_rgba)==48 && offsetof(PaintWetToolInfoDual,reserved)==64);
 #else
+_Static_assert(sizeof(PaintWetToolInfoDual)==80 && offsetof(PaintWetToolInfoDual,secondary_revision)==16 && offsetof(PaintWetToolInfoDual,primary_center_linear_premul_rgba)==32 && offsetof(PaintWetToolInfoDual,secondary_center_linear_premul_rgba)==48 && offsetof(PaintWetToolInfoDual,reserved)==64,"wet dual layout");
 _Static_assert(sizeof(PaintWetLoadDesc)==32 && offsetof(PaintWetLoadDesc,linear_rgba)==16,"wet load layout");
 _Static_assert(sizeof(PaintWetToolInfo)==40 && offsetof(PaintWetToolInfo,center_linear_premul_rgba)==24,"wet info layout");
 _Static_assert(sizeof(PaintCompositeTipPose)==64 && offsetof(PaintCompositeTipPose,primary)==8 && offsetof(PaintCompositeTipPose,secondary)==32 && offsetof(PaintCompositeTipPose,reserved)==56,"composite pose layout");
@@ -37,12 +39,14 @@ static int brush_catalog_smoke(void) {
     PaintWetTool *wet=NULL;
     PaintWetToolInfo wet_info;
     PaintWetLoadDesc wet_load;
+    PaintWetToolInfoDual wet_dual;
+    PaintBrushBackgroundDesc background;
     PaintBrushPose *pose=NULL;
     PaintPoint point;
     PaintTipPose tip_pose;
     PaintCompositeTipPose composite;
     memset(&version,0,sizeof(version));version.struct_size=sizeof(version);
-    if(paint_core_version(&version)!=PAINT_OK || version.minor<51) return 57;
+    if(paint_core_version(&version)!=PAINT_OK || version.minor<52) return 57;
     memset(&info, 0, sizeof(info)); info.struct_size = sizeof(info);
     memset(&preset, 0, sizeof(preset)); preset.struct_size = sizeof(preset);
     memset(&settings, 0, sizeof(settings)); settings.struct_size = sizeof(settings);
@@ -72,6 +76,7 @@ static int brush_catalog_smoke(void) {
     if (paint_brush_library_current_state(library, state, sizeof(state), &state_size) != PAINT_OK) return 12;
     if (paint_brush_library_prepare_state(library, state, state_size, &preparation) != PAINT_OK || !preparation) return 13;
     if (paint_brush_library_prepare_state_taper(library,state,state_size,&preparation)!=PAINT_OK || !preparation) return 60;
+    if(paint_brush_library_prepare_state_wet_dual(library,state,state_size,&preparation)!=PAINT_OK || !preparation) return 61;
     started = clock();
     do {
         status = paint_brush_library_prepared_state(library, preparation, state, sizeof(state), &state_size);
@@ -94,6 +99,11 @@ static int brush_catalog_smoke(void) {
     memset(&wet_load,0,sizeof(wet_load));wet_load.struct_size=sizeof(wet_load);wet_load.radius=4;wet_load.linear_rgba[3]=1;
     if(paint_wet_tool_create(&wet)!=PAINT_OK || wet==NULL) return 52;
     if(paint_wet_tool_info(wet,&wet_info)!=PAINT_OK || wet_info.struct_size!=40 || wet_info.flags!=0 || wet_info.edge!=0) return 53;
+    memset(&wet_dual,0,sizeof(wet_dual));memset(&background,0,sizeof(background));background.struct_size=sizeof(background);background.linear_rgba[3]=1;
+    if(paint_wet_tool_info_dual(wet,&wet_dual)!=PAINT_OK || wet_dual.struct_size!=80 || wet_dual.flags!=0 || wet_dual.secondary_revision!=0) return 62;
+    if(paint_wet_tool_reload_prepared_dual(wet,library,preparation,(const uint8_t*)id,sizeof(id)-1,&wet_load,&background)!=PAINT_INVALID_ARGUMENT) return 63;
+    if(paint_brush_library_package_read_wet_dual(library,NULL,0,text,sizeof(text),&required)!=PAINT_INVALID_ARGUMENT || required!=0) return 64;
+    if(paint_brush_library_package_write_wet_dual(library,NULL,0,NULL,0)!=PAINT_INVALID_ARGUMENT) return 65;
     if(paint_wet_tool_clean(wet)!=PAINT_OK) return 54;
     if(paint_wet_tool_reload_prepared(wet,library,preparation,(const uint8_t*)id,sizeof(id)-1,&wet_load)!=PAINT_INVALID_ARGUMENT) return 55;
     if(paint_wet_tool_destroy(&wet)!=PAINT_OK || wet!=NULL) return 56;

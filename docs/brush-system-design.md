@@ -165,3 +165,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 - [Procreate Brush Studio Settings](https://help.procreate.com/procreate/handbook/brushes/brush-studio-settings)：路径、稳定、收尖、形状、纹理、渲染和湿混等公开行为参考。
 - [Adobe Mixer Brush](https://helpx.adobe.com/photoshop/desktop/apply-painting-techniques/create-fill-with-patterns/paint-with-mixer-brush.html)：载色、拾色、混合与流量的产品行为参考。
 - [Adobe ABR 导入](https://helpx.adobe.com/photoshop/desktop/apply-painting-techniques/brushes-presets/import-brushes-brush-packs.html)：格式使用参考；此产品帮助页面不作为完整二进制解析规范。
+
+2026-10-16湿混双色原生阶段：ABI1.52/WET_DUAL_COLOR，完整state19准备/VBR1.23包、双角色原子状态及手动装载、准确图片修订重建与真实两笔像素/载色/历史已接，见[设计](brush-wet-dual-abi-design.md)与[验收](brush-wet-dual-abi-validation.md)。新3旧6公开API、10核心/7原生及Windows Release/Clippy/4ABI/Qt通过；旧入口保护保留，Qt镜像/关闭值/基准/白色预览及组合入口仍待接，不宣称用户界面已支持。其余完整范围保持，跨平台后置。

@@ -188,3 +188,5 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 2026-10-16起收笔保存阶段：不可变预设/state18/VBR1.22/behavior15、启用/关闭完整曲线与舍入前严格验证、默认旧版本和混包最高需求、真实两笔/载色/来源与新资源目录交换已接，见[验收](brush-taper-io-validation.md)。新增6项IO、相关旧回归12项、新增原生保护1项、Schema及Windows Release/Clippy/ABI/Qt通过。ABI1.50和旧Qt入口暂拒新配置；明确支持的新原生准备/包接口、Qt镜像/重置基准/设置与白色预览继续后续，尚无起收笔界面入口。完整目标其余范围保持。
 
 2026-10-16起收笔原生阶段：ABI1.51/STROKE_TAPER、显式state18准备和VBR1.22包读写、准确票据/旧图片修订重建与真实异步两笔/湿混载色/历史已接，见[验收](brush-taper-abi-validation.md)。6项公开API（新3/旧湿混3）、2项旧入口保护及Windows Release/Clippy/C/C++/Qt相关回归通过。旧入口保护继续保留；Qt镜像/关闭值/重置基准、设置与白色预览参数尚待接，仍无起收笔界面入口；完整系统其余范围不变。
+
+2026-10-16湿混双色原生阶段：ABI1.52/WET_DUAL_COLOR，完整state19准备/VBR1.23包、双角色原子状态及手动装载、准确图片修订重建与真实两笔像素/载色/历史已接，见[设计](brush-wet-dual-abi-design.md)与[验收](brush-wet-dual-abi-validation.md)。新3旧6公开API、10核心/7原生及Windows Release/Clippy/4ABI/Qt通过；旧入口保护保留，Qt镜像/关闭值/基准/白色预览及组合入口仍待接，不宣称用户界面已支持。其余完整范围保持，跨平台后置。

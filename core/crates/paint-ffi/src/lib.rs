@@ -6,6 +6,8 @@ compile_error!("DrawVerse ABI v1 supports 64-bit targets only");
 mod api;
 mod brush_wet_api;
 pub use brush_wet_api::*;
+mod brush_wet_dual_api;
+pub use brush_wet_dual_api::*;
 mod brush_taper_api;
 pub use brush_taper_api::*;
 mod brush_api;
@@ -159,6 +161,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                     | PAINT_FEATURE_COMPOSITE_BRUSH_POSE
                     | PAINT_FEATURE_WET_BRUSH
                     | PAINT_FEATURE_STROKE_TAPER
+                    | PAINT_FEATURE_WET_DUAL_COLOR
                     | PAINT_FEATURE_DUAL_COLOR_STROKE
                     | PAINT_FEATURE_SHAPE_JITTER
                     | PAINT_FEATURE_BRUSH_SCATTER

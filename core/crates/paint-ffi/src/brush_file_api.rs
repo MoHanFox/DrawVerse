@@ -146,7 +146,9 @@ unsafe fn paint_brush_library_package_read_impl(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
-        reject_wet_dual_package(&bundle.package)?;
+        if !support.wet_dual() {
+            reject_wet_dual_package(&bundle.package)?;
+        }
         if !support.taper() {
             reject_taper_package(&bundle.package)?;
         }
@@ -226,7 +228,9 @@ unsafe fn paint_brush_library_package_write_impl(
         let json = pointers::brush_json(json, json_length)?;
         let library = runtime::registry()?.brush_library(library)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
-        reject_wet_dual_package(&package)?;
+        if !support.wet_dual() {
+            reject_wet_dual_package(&package)?;
+        }
         if !support.taper() {
             reject_taper_package(&package)?;
         }
@@ -388,6 +392,52 @@ pub unsafe extern "C" fn paint_brush_library_package_write_taper(
             json,
             json_length,
             BrushSupport::Taper,
+        )
+    }
+}
+/// Complete state19/VBR1.23 resource package read, including closed taper, wet and dual-color settings.
+/// # Safety
+/// Live library, readable path and nonoverlapping writable buffer/required are required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_package_read_wet_dual(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_read_impl(
+            library,
+            path,
+            path_length,
+            buffer,
+            capacity,
+            required,
+            BrushSupport::WetDual,
+        )
+    }
+}
+/// Complete state19/VBR1.23 resource package save, including closed taper, wet and dual-color settings.
+/// # Safety
+/// Live library and readable bounded path/JSON are required for this call only.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_package_write_wet_dual(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    json: *const u8,
+    json_length: u64,
+) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_write_impl(
+            library,
+            path,
+            path_length,
+            json,
+            json_length,
+            BrushSupport::WetDual,
         )
     }
 }

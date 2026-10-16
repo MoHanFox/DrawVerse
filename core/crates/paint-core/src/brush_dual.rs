@@ -186,6 +186,16 @@ impl Default for DualBrush {
     }
 }
 impl DualBrush {
+    /// Nominal carrier size, shared by automatic and manual wet loading.
+    pub fn nominal_diameter(&self, primary_radius: f32) -> Result<f32> {
+        if !primary_radius.is_finite() || !(0.5..=256.).contains(&primary_radius) {
+            return Err(Error::InvalidArgument("primary nominal radius"));
+        }
+        Ok(self
+            .sizing
+            .nominal_radius(primary_radius, self.secondary.radius)
+            * 2.)
+    }
     pub fn new(enabled: bool, mode: DualMode, secondary: SecondaryTip) -> Self {
         Self {
             enabled,

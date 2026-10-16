@@ -52,13 +52,17 @@ pub(crate) enum BrushSupport {
     Legacy,
     Wet,
     Taper,
+    WetDual,
 }
 impl BrushSupport {
     pub(crate) fn wet(self) -> bool {
         self != Self::Legacy
     }
     pub(crate) fn taper(self) -> bool {
-        self == Self::Taper
+        matches!(self, Self::Taper | Self::WetDual)
+    }
+    pub(crate) fn wet_dual(self) -> bool {
+        self == Self::WetDual
     }
 }
 impl Recipe {
@@ -80,11 +84,13 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
-                    if catalog.ids().iter().any(|id| {
-                        catalog
-                            .preset(id)
-                            .is_some_and(|p| p.settings().wet.dual_color())
-                    }) {
+                    if !self.support.wet_dual()
+                        && catalog.ids().iter().any(|id| {
+                            catalog
+                                .preset(id)
+                                .is_some_and(|p| p.settings().wet.dual_color())
+                        })
+                    {
                         return Err(ApiError::new(
                             PAINT_UNSUPPORTED,
                             "wet dual color requires updated native entry",
@@ -238,6 +244,9 @@ impl PreparedCatalog {
     }
     pub fn submit_taper(&self, json: String) -> ApiResult<u64> {
         self.submit_mode(json, BrushSupport::Taper)
+    }
+    pub fn submit_wet_dual(&self, json: String) -> ApiResult<u64> {
+        self.submit_mode(json, BrushSupport::WetDual)
     }
     fn submit_mode(&self, json: String, support: BrushSupport) -> ApiResult<u64> {
         let current = self.current.lock().map_err(|_| ApiError::internal())?;

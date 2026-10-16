@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 51
+#define PAINT_ABI_MINOR 52
 
 #define PAINT_ABI_PATCH 0
 
@@ -187,6 +187,11 @@
 #define PAINT_FEATURE_WAND 16384
 
 #define PAINT_FEATURE_WET_BRUSH 35184372088832
+
+/**
+ * Complete independent wet dual carriers, state19/VBR1.23 (ABI1.52).
+ */
+#define PAINT_FEATURE_WET_DUAL_COLOR 140737488355328
 
 #define PAINT_FILE_AUTO 0
 
@@ -440,6 +445,8 @@
 #define PAINT_TRANSFORM_UPDATE 1
 
 #define PAINT_WET_TOOL_INITIALIZED 1
+
+#define PAINT_WET_TOOL_SECONDARY_INITIALIZED 2
 
 #define PAINT_WORKING_LINEAR_SRGB 1
 
@@ -1005,6 +1012,21 @@ typedef struct PaintWetToolInfo {
   float center_linear_premul_rgba[4];
 } PaintWetToolInfo;
 
+/**
+ * Atomic idle snapshot of both wet roles. Center samples are not grid averages.
+ */
+typedef struct PaintWetToolInfoDual {
+  uint32_t struct_size;
+  uint32_t flags;
+  uint64_t primary_revision;
+  uint64_t secondary_revision;
+  uint32_t primary_edge;
+  uint32_t secondary_edge;
+  float primary_center_linear_premul_rgba[4];
+  float secondary_center_linear_premul_rgba[4];
+  uint32_t reserved[4];
+} PaintWetToolInfoDual;
+
 typedef struct PaintWetLoadDesc {
   uint32_t struct_size;
   uint32_t reserved;
@@ -1169,6 +1191,18 @@ PaintStatus paint_brush_library_package_read_wet(struct PaintBrushLibrary *libra
                                                  uint64_t *required);
 
 /**
+ * Complete state19/VBR1.23 resource package read, including closed taper, wet and dual-color settings.
+ * # Safety
+ * Live library, readable path and nonoverlapping writable buffer/required are required.
+ */
+PaintStatus paint_brush_library_package_read_wet_dual(struct PaintBrushLibrary *library,
+                                                      const uint8_t *path,
+                                                      uint64_t path_length,
+                                                      uint8_t *buffer,
+                                                      uint64_t capacity,
+                                                      uint64_t *required);
+
+/**
  * Background VBR save using immutable resource identities from the library store.
  * # Safety
  * Live library and readable bounded path/JSON bytes required for this call only.
@@ -1202,6 +1236,17 @@ PaintStatus paint_brush_library_package_write_wet(struct PaintBrushLibrary *libr
                                                   uint64_t json_length);
 
 /**
+ * Complete state19/VBR1.23 resource package save, including closed taper, wet and dual-color settings.
+ * # Safety
+ * Live library and readable bounded path/JSON are required for this call only.
+ */
+PaintStatus paint_brush_library_package_write_wet_dual(struct PaintBrushLibrary *library,
+                                                       const uint8_t *path,
+                                                       uint64_t path_length,
+                                                       const uint8_t *json,
+                                                       uint64_t json_length);
+
+/**
  * Enqueue a bounded parameter-state copy for background migration/compilation.
  * # Safety
  * Live library, readable JSON bytes and nonoverlapping writable sequence required.
@@ -1230,6 +1275,16 @@ PaintStatus paint_brush_library_prepare_state_wet(struct PaintBrushLibrary *libr
                                                   const uint8_t *json,
                                                   uint64_t length,
                                                   uint64_t *out_sequence);
+
+/**
+ * Opt in to complete state19 preparation, including closed wet dual, taper and wet parameters.
+ * # Safety
+ * Live library/readable bounded JSON and nonoverlapping writable sequence are required.
+ */
+PaintStatus paint_brush_library_prepare_state_wet_dual(struct PaintBrushLibrary *library,
+                                                       const uint8_t *json,
+                                                       uint64_t length,
+                                                       uint64_t *out_sequence);
 
 /**
  * Read canonical state of one exact prepared record. BUSY means still compiling.
@@ -2287,6 +2342,13 @@ PaintStatus paint_wet_tool_destroy(struct PaintWetTool **tool);
 PaintStatus paint_wet_tool_info(struct PaintWetTool *tool, struct PaintWetToolInfo *out);
 
 /**
+ * Read both idle reservoirs in one snapshot. BUSY/error clears the complete output.
+ * # Safety
+ * out must be aligned and writable for a complete PaintWetToolInfoDual.
+ */
+PaintStatus paint_wet_tool_info_dual(struct PaintWetTool *tool, struct PaintWetToolInfoDual *out);
+
+/**
  * Load using one exact prepared wet preset. BUSY never waits for compilation.
  * # Safety
  * Live handles, readable ID/sized descriptor and valid caller memory required.
@@ -2297,6 +2359,20 @@ PaintStatus paint_wet_tool_reload_prepared(struct PaintWetTool *tool,
                                            const uint8_t *id,
                                            uint64_t id_length,
                                            const struct PaintWetLoadDesc *desc);
+
+/**
+ * Atomically load an exact prepared wet preset, including independent dual roles.
+ * BUSY never waits for compilation. Ordinary wet presets preserve inactive secondary ink.
+ * # Safety
+ * Live handles, readable bounded ID and both complete sized descriptors are required.
+ */
+PaintStatus paint_wet_tool_reload_prepared_dual(struct PaintWetTool *tool,
+                                                struct PaintBrushLibrary *library,
+                                                uint64_t preparation,
+                                                const uint8_t *id,
+                                                uint64_t id_length,
+                                                const struct PaintWetLoadDesc *desc,
+                                                const struct PaintBrushBackgroundDesc *background);
 
 #ifdef __cplusplus
 }  // extern "C"

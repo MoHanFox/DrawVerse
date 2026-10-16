@@ -28,10 +28,7 @@ impl Document {
         } else {
             definition.brush.color
         };
-        let diameter = definition.dual.sizing().nominal_radius(
-            definition.brush.radius,
-            definition.dual.secondary().radius(),
-        ) * 2.;
+        let diameter = definition.dual.nominal_diameter(definition.brush.radius)?;
         let ink = crate::WetInk::for_stroke(
             definition.wet,
             definition.brush.radius * 2.,

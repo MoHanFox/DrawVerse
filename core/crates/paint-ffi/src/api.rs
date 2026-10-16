@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 51;
+pub const PAINT_ABI_MINOR: u32 = 52;
 pub const PAINT_FEATURE_PRESSURE_DYNAMICS: u64 = 1073741824;
 pub const PAINT_FEATURE_VBR_SOURCES: u64 = 536870912;
 pub const PAINT_FEATURE_ABR_IMPORT: u64 = 268435456;
@@ -868,4 +868,22 @@ pub struct PaintWetToolInfo {
     pub edge: u32,
     pub reserved: u32,
     pub center_linear_premul_rgba: [f32; 4],
+}
+
+/// Complete independent wet dual carriers, state19/VBR1.23 (ABI1.52).
+pub const PAINT_FEATURE_WET_DUAL_COLOR: u64 = 140737488355328;
+pub const PAINT_WET_TOOL_SECONDARY_INITIALIZED: u32 = 2;
+/// Atomic idle snapshot of both wet roles. Center samples are not grid averages.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintWetToolInfoDual {
+    pub struct_size: u32,
+    pub flags: u32,
+    pub primary_revision: u64,
+    pub secondary_revision: u64,
+    pub primary_edge: u32,
+    pub secondary_edge: u32,
+    pub primary_center_linear_premul_rgba: [f32; 4],
+    pub secondary_center_linear_premul_rgba: [f32; 4],
+    pub reserved: [u32; 4],
 }

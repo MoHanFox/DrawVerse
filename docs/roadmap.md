@@ -1,4 +1,4 @@
-湿混双色当前阶段：[保存设计](brush-wet-dual-io-design.md) / [验收](brush-wet-dual-io-validation.md)，前置[Engine](brush-wet-dual-engine-validation.md)、[实际绘画](brush-wet-dual-document-validation.md)与[双载色状态](brush-wet-pair-validation.md)。明确策略/state19/VBR1.23/behavior16、完整关闭值和真实两笔/双载色/资源来源往返已接通；旧三类原生入口保护保持。下一步接完整原生准备、双角色状态/装载与Qt组合，当前用户入口仍拒绝。前述Qt输入偶发问题仍未定位。
+湿混双色当前阶段：[原生设计](brush-wet-dual-abi-design.md) / [验收](brush-wet-dual-abi-validation.md)，前置[保存交换](brush-wet-dual-io-validation.md)、[Engine](brush-wet-dual-engine-validation.md)与[实际绘画](brush-wet-dual-document-validation.md)。ABI1.52完整state19准备/VBR1.23包、原子双角色info/reload及准确旧图片修订重建已接通；真实两笔像素/载色/历史及Windows最小检查通过，旧入口保护保持。下一步接Qt完整镜像/关闭值/重置基准、白色预览和组合入口；当前Qt仍拒绝组合，前述输入偶发问题仍未定位。
 
 空图层栈追加：[设计](empty-layer-stack-design.md) / [验收](empty-layer-stack-validation.md)。允许删除所有图层、仅显示透明棋盘格；撤销/重做、新建/粘贴和 ORA 空栈保存恢复接通，最小 Windows 验证通过。
 

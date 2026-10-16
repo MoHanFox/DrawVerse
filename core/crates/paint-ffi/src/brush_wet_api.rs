@@ -102,6 +102,12 @@ pub unsafe extern "C" fn paint_wet_tool_reload_prepared(
         let preset = catalog
             .preset(&id)
             .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "wet load preset"))?;
+        if preset.settings().wet.dual_color() {
+            return Err(ApiError::new(
+                PAINT_UNSUPPORTED,
+                "wet dual load requires updated native entry",
+            ));
+        }
         if !preset.settings().wet.enabled() {
             return Err(ApiError::invalid("wet load preset disabled"));
         }
