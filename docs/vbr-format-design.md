@@ -164,3 +164,9 @@ Preset顶层strokeTaper采用distance-envelope-v1：model/enabled/start/end完�
 原生后续：ABI1.51新增显式prepare_state_taper、library_package_read_taper/write_taper，完整保留state18/VBR1.22与先前湿混数据；原入口和wet入口继续拒绝新起收笔以保护旧客户端。准确票据/资源重建及真实异步绘画验收见brush-taper-abi-validation.md，Qt镜像/重置基准/界面仍待接。
 
 Qt后续已完成：完整state18镜像/关闭配置/复制和resetState、ABI1.51显式准备及包入口、真实白色预览和距离/独立尺寸opacity曲线设置；实际在途捕获、像素历史、新资源目录VBR交换与偏好重开见brush-taper-ui-validation.md。没有新增格式版本。
+
+## VBR1.23：独立湿混双色载色策略
+
+wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明主/第二笔刷各自持有二维载色。缺省保持旧湿混；显式null、未知模型和非字符串拒绝。存在标记就要求drawverse.brush、behavior16、wet-dual-color及wet-mix能力、minor23和state19，即使湿混或第二色关闭也完整保留。实际两角色必须在湿混、第二笔刷和双色都启用时执行；没有声明策略的旧湿混双色仍拒绝，不自动改变旧语义。载色像素属于瞬时工具状态，不写入笔刷。
+
+旧状态不写标记、不升级版本或改字节，混包取全部执行/来源需求最高版本，低minor夹带拒绝。原ABR来源及转换基线保持旧版本/原字节；新策略不能写成旧基线，当前用户修改可与不变来源和图片独立交换。完整Schema为contracts/vbr-wet-dual-v1.23.schema.json，实例及真实两笔/双载色/资源/来源验收见brush-wet-dual-io-validation.md。当前ABI1.51的Legacy/Wet/Taper准备和包入口均暂拒新策略防止旧Qt丢字段，新原生/Qt组合入口继续下一阶段。
