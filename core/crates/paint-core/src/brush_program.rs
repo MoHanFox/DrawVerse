@@ -221,6 +221,12 @@ impl BrushProgram {
         self.wet
     }
     pub fn compile(definition: BrushDefinition) -> Result<Self> {
+        Self::compile_inner(definition, false)
+    }
+    pub(crate) fn compile_wet_pair(definition: BrushDefinition) -> Result<Self> {
+        Self::compile_inner(definition, true)
+    }
+    fn compile_inner(definition: BrushDefinition, wet_pair: bool) -> Result<Self> {
         definition.brush.validate()?;
         definition.tip.validate()?;
         if definition.write_blend == crate::BlendMode::PassThrough
@@ -244,7 +250,7 @@ impl BrushProgram {
         }
         if definition.wet.enabled()
             && (definition.brush.mode == crate::BrushMode::Erase
-                || dual.as_ref().is_some_and(|d| d.color.enabled()))
+                || (!wet_pair && dual.as_ref().is_some_and(|d| d.color.enabled())))
         {
             return Err(Error::InvalidArgument(
                 "wet preset requires paint or smudge without dual color",

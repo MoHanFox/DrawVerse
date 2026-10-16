@@ -1,5 +1,7 @@
 //! Whole-stroke dual-color fields, sharing Document paging and transaction history.
 use super::*;
+#[path = "brush_wet_dual_paint.rs"]
+mod wet_dual;
 #[derive(Default)]
 struct ChangedPixels(BTreeMap<TileCoord, [u64; 64]>);
 impl ChangedPixels {
@@ -33,6 +35,7 @@ impl Document {
         limit: f32,
         sample: impl Fn(f64, f64) -> f32,
         mut checkpoint: (Option<&mut taper::TailReplay>, bool),
+        ink: Option<&dyn Fn(f64, f64) -> Pixel>,
     ) -> Result<ChangedPixels> {
         let (ox, oy) = offset;
         let (x0, y0, x1, y1) = (
@@ -56,6 +59,16 @@ impl Document {
                         let i = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
                         let before = source.as_ref().map_or(Pixel::TRANSPARENT, |p| p[i]);
                         let previous = before.alpha();
+                        if let Some(ink) = ink {
+                            let wx = x as f64 + ox as f64 + 0.5;
+                            let wy = y as f64 + oy as f64 + 0.5;
+                            let after =
+                                Self::wet_contribution(before, ink(wx, wy), sample(wx, wy), limit)?;
+                            if after != before {
+                                updates.push((i, after));
+                            }
+                            continue;
+                        }
                         if previous >= limit {
                             continue;
                         }
@@ -84,7 +97,11 @@ impl Document {
                     }
                 }
                 if !updates.is_empty() {
-                    taper::capture_field(
+                    (if ink.is_some() {
+                        taper::capture_wet_field
+                    } else {
+                        taper::capture_field
+                    })(
                         checkpoint.0.as_deref_mut(),
                         checkpoint.1,
                         coord,
@@ -126,6 +143,7 @@ impl Document {
         Ok(touched)
     }
     fn recompose_color(&mut self, stroke: &mut Stroke, touched: ChangedPixels) -> Result<bool> {
+        let wet_pair = stroke.wet.as_ref().is_some_and(|w| w.secondary.is_some());
         let index = self.layer_index(stroke.layer)?;
         let layer = &self.layers[index];
         let appearance = layer.appearance;
@@ -184,6 +202,24 @@ impl Document {
                 .get(&coord)
                 .map(|t| t.try_pixels())
                 .transpose()?;
+            let wet_main = if wet_pair {
+                stroke
+                    .wet_primary_field
+                    .get(&coord)
+                    .map(|t| t.try_pixels())
+                    .transpose()?
+            } else {
+                None
+            };
+            let wet_second = if wet_pair {
+                stroke
+                    .wet_secondary_field
+                    .get(&coord)
+                    .map(|t| t.try_pixels())
+                    .transpose()?
+            } else {
+                None
+            };
             let private = stroke.before.contains_key(&coord)
                 && self.layers[index]
                     .tiles
@@ -222,14 +258,25 @@ impl Document {
                     let moment = main.as_ref().map_or(Pixel::TRANSPARENT, |p| p[i]);
                     let amount = second.as_ref().map_or(0., |p| p[i].alpha());
                     let position = (wx as u32, wy as u32);
-                    let contribution = settings.compose(
-                        moment.scaled(stroke.brush.color.alpha()),
-                        moment.alpha(),
-                        secondary,
-                        amount,
-                        position,
-                        stroke.random_stroke,
-                    );
+                    let contribution = if wet_pair {
+                        settings.compose_wet(
+                            wet_main.as_ref().map_or(Pixel::TRANSPARENT, |p| p[i]),
+                            moment.alpha(),
+                            wet_second.as_ref().map_or(Pixel::TRANSPARENT, |p| p[i]),
+                            amount,
+                            position,
+                            stroke.random_stroke,
+                        )
+                    } else {
+                        settings.compose(
+                            moment.scaled(stroke.brush.color.alpha()),
+                            moment.alpha(),
+                            secondary,
+                            amount,
+                            position,
+                            stroke.random_stroke,
+                        )
+                    };
                     let weight = stroke.brush.opacity
                         * selected[column as usize]
                         * paper
@@ -341,6 +388,8 @@ impl Document {
             drop(original_pixels);
             drop(main);
             drop(second);
+            drop(wet_main);
+            drop(wet_second);
             self.pool.trim()?;
         }
         Ok(changed)
@@ -350,6 +399,9 @@ impl Document {
         stroke: &mut Stroke,
         point: InputPoint,
     ) -> Result<()> {
+        if stroke.wet.as_ref().is_some_and(|w| w.secondary.is_some()) {
+            return self.wet_colored_secondary_dab(stroke, point);
+        }
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
         let next = stroke
@@ -392,6 +444,7 @@ impl Document {
                 limit,
                 |x, y| plan.coverage(child, x, y),
                 (stroke.taper.as_mut(), true),
+                None,
             )?);
         }
         if self.recompose_color(stroke, touched)? {
@@ -406,6 +459,9 @@ impl Document {
         stroke: &mut Stroke,
         point: InputPoint,
     ) -> Result<bool> {
+        if stroke.wet.as_ref().is_some_and(|w| w.secondary.is_some()) {
+            return self.wet_colored_primary_dab(stroke, point);
+        }
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
         let base_radius = f64::from(
@@ -473,6 +529,7 @@ impl Document {
                     }
             },
             (stroke.taper.as_mut(), false),
+            None,
         )?;
         if dual.step().is_none() {
             let plan = dual
@@ -494,6 +551,7 @@ impl Document {
                     limit,
                     |x, y| plan.coverage(child, x, y),
                     (stroke.taper.as_mut(), true),
+                    None,
                 )?);
             }
         }

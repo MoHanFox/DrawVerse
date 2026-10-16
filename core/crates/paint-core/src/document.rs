@@ -448,6 +448,8 @@ struct Stroke {
     dual_index: u64,
     dual_last: InputPoint,
     dual_coverage: BTreeMap<TileCoord, Arc<Tile>>,
+    wet_primary_field: BTreeMap<TileCoord, Arc<Tile>>,
+    wet_secondary_field: BTreeMap<TileCoord, Arc<Tile>>,
     shape_sample: crate::brush_shape_jitter::ShapeSample,
     color_sample: Pixel,
     wet: Option<wet::WetStroke>,
@@ -1279,7 +1281,11 @@ impl Document {
         self.idle()?;
         self.layer_index(self.active_layer)?;
         let brush = definition.brush;
-        let program = BrushProgram::compile(definition)?;
+        let program = if wet.as_ref().is_some_and(|w| w.secondary.is_some()) {
+            BrushProgram::compile_wet_pair(definition)?
+        } else {
+            BrushProgram::compile(definition)?
+        };
         if let Some(wet) = &mut wet {
             self.validate_wet_start(&program, brush, first, wet)?;
         }
@@ -1351,6 +1357,8 @@ impl Document {
             dual_index: 0,
             dual_last: first,
             dual_coverage: BTreeMap::new(),
+            wet_primary_field: BTreeMap::new(),
+            wet_secondary_field: BTreeMap::new(),
             shape_sample: initial_shape,
             color_sample: brush.color,
             wet,
@@ -1725,7 +1733,7 @@ impl Document {
         }
         self.finish_stroke().map(|(changed, _)| changed)
     }
-    fn finish_stroke(&mut self) -> Result<(bool, Option<crate::WetCarrier>)> {
+    fn finish_stroke(&mut self) -> Result<(bool, Option<crate::WetInk>)> {
         // The visible filtered endpoint is authoritative. Releasing the pen must not
         // synthesize input, release stabilizer distance, or raise pressure to the raw value.
         let mut stroke = self.stroke.take().ok_or(Error::NoStroke)?;
@@ -1812,7 +1820,12 @@ impl Document {
             return Err(error);
         }
         if changes.is_empty() {
-            return Ok((false, stroke.wet.map(|w| w.carrier)));
+            return Ok((
+                false,
+                stroke
+                    .wet
+                    .map(|w| crate::WetInk::new(w.carrier, w.secondary)),
+            ));
         }
         let command = Command::Stroke {
             layer: stroke.layer,
@@ -1829,7 +1842,12 @@ impl Document {
             self.apply_history(&command, false);
             return Err(error);
         }
-        Ok((true, stroke.wet.map(|w| w.carrier)))
+        Ok((
+            true,
+            stroke
+                .wet
+                .map(|w| crate::WetInk::new(w.carrier, w.secondary)),
+        ))
     }
 
     pub fn cancel_stroke(&mut self) -> Result<()> {

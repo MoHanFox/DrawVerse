@@ -88,6 +88,36 @@ impl DualColor {
             secondary_coverage.min(primary_coverage)
         };
         let secondary = secondary_color.scaled(coverage);
+        self.compose_fields(primary, secondary, position, seed)
+    }
+    pub(crate) fn compose_wet(
+        self,
+        primary: Pixel,
+        primary_coverage: f32,
+        secondary: Pixel,
+        secondary_coverage: f32,
+        position: (u32, u32),
+        seed: u64,
+    ) -> Pixel {
+        let coverage = if self.overflow {
+            secondary_coverage
+        } else {
+            secondary_coverage.min(primary_coverage)
+        };
+        let secondary = secondary.scaled(if secondary_coverage > 0. {
+            coverage / secondary_coverage
+        } else {
+            0.
+        });
+        self.compose_fields(primary, secondary, position, seed)
+    }
+    fn compose_fields(
+        self,
+        primary: Pixel,
+        secondary: Pixel,
+        position: (u32, u32),
+        seed: u64,
+    ) -> Pixel {
         let (x, y) = position;
         let main = |dst| {
             crate::blend_pixel(

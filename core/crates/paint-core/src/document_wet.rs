@@ -4,10 +4,61 @@ use crate::{WetCarrier, WetDab, WetSample};
 #[derive(Clone, Debug)]
 pub(super) struct WetStroke {
     pub(super) carrier: WetCarrier,
-    all_layers: bool,
+    pub(super) secondary: Option<WetCarrier>,
+    pub(super) all_layers: bool,
     pub(super) work_per_dab: usize,
 }
 impl Document {
+    pub fn begin_configured_dual_wet_brush_stroke(
+        &mut self,
+        definition: BrushDefinition,
+        first: InputPoint,
+        retained: Option<&crate::WetInk>,
+    ) -> Result<()> {
+        self.idle()?;
+        if !definition.wet.enabled()
+            || !definition.dual.enabled()
+            || !definition.dual.color().enabled()
+            || definition.brush.mode != BrushMode::Paint
+        {
+            return Err(Error::InvalidArgument("dual wet paint definition required"));
+        }
+        let second = if definition.dual.color().use_background() {
+            definition.brush.background_color
+        } else {
+            definition.brush.color
+        };
+        let diameter = definition.dual.sizing().nominal_radius(
+            definition.brush.radius,
+            definition.dual.secondary().radius(),
+        ) * 2.;
+        let ink = crate::WetInk::for_stroke(
+            definition.wet,
+            definition.brush.radius * 2.,
+            definition.brush.color,
+            Some((diameter, second)),
+            retained,
+        )?;
+        let all_layers = definition.wet.all_layers();
+        self.begin_brush_stroke_inner(
+            definition,
+            first,
+            Some(WetStroke {
+                carrier: ink.primary,
+                secondary: ink.secondary,
+                all_layers,
+                work_per_dab: 0,
+            }),
+            None,
+        )
+    }
+    pub fn end_wet_ink_stroke(&mut self) -> Result<(bool, crate::WetInk)> {
+        if self.stroke.as_ref().ok_or(Error::NoStroke)?.wet.is_none() {
+            return Err(Error::InvalidArgument("not a wet stroke"));
+        }
+        let (changed, ink) = self.finish_stroke()?;
+        Ok((changed, ink.expect("wet stroke")))
+    }
     pub fn begin_wet_brush_stroke(
         &mut self,
         definition: BrushDefinition,
@@ -23,6 +74,7 @@ impl Document {
             first,
             Some(WetStroke {
                 carrier: carrier.clone(),
+                secondary: None,
                 all_layers,
                 work_per_dab: 0,
             }),
@@ -91,6 +143,7 @@ impl Document {
             first,
             Some(WetStroke {
                 carrier,
+                secondary: None,
                 all_layers,
                 work_per_dab: 0,
             }),
@@ -98,11 +151,21 @@ impl Document {
         )
     }
     pub fn end_wet_brush_stroke(&mut self) -> Result<(bool, WetCarrier)> {
+        if self
+            .stroke
+            .as_ref()
+            .ok_or(Error::NoStroke)?
+            .wet
+            .as_ref()
+            .is_some_and(|w| w.secondary.is_some())
+        {
+            return Err(Error::InvalidArgument("use full wet ink end"));
+        }
         if self.stroke.as_ref().ok_or(Error::NoStroke)?.wet.is_none() {
             return Err(Error::InvalidArgument("not a wet stroke"));
         }
         let (changed, wet) = self.finish_stroke()?;
-        Ok((changed, wet.expect("validated wet stroke")))
+        Ok((changed, wet.expect("validated wet stroke").primary))
     }
     pub(super) fn validate_wet_start(
         &self,
@@ -113,7 +176,7 @@ impl Document {
     ) -> Result<()> {
         if brush.mode == BrushMode::Erase
             || first.tool == Tool::Eraser
-            || program.dual.as_ref().is_some_and(|d| d.color.enabled())
+            || (program.dual.as_ref().is_some_and(|d| d.color.enabled()) && wet.secondary.is_none())
         {
             return Err(Error::InvalidArgument("unsupported wet dual color or tool"));
         }
@@ -142,6 +205,26 @@ impl Document {
             .saturating_pow(2)
             .saturating_mul(6usize.saturating_add(sample))
             .saturating_add(if program.color.active() { 64 } else { 0 });
+        if let Some(secondary) = &wet.secondary {
+            let dual = program.dual.as_ref().expect("wet pair");
+            wet.work_per_dab = wet
+                .work_per_dab
+                .saturating_add(
+                    secondary
+                        .edge()
+                        .saturating_pow(2)
+                        .saturating_mul(6usize.saturating_add(sample)),
+                )
+                .saturating_add(
+                    dual.colored_work(1, crate::BlendMode::Normal)
+                        .saturating_mul(8),
+                )
+                .saturating_add(
+                    ((brush.radius * 2. + 3.).ceil() as usize)
+                        .saturating_pow(2)
+                        .saturating_mul(32),
+                );
+        }
         Ok(())
     }
     pub(super) fn prepare_wet<F>(
@@ -150,7 +233,7 @@ impl Document {
         point: InputPoint,
         radius: f64,
         geometry: TipGeometry,
-        mut coverage: F,
+        coverage: F,
     ) -> Result<Option<WetDab>>
     where
         F: FnMut(f64, f64) -> Result<f32>,
@@ -158,72 +241,89 @@ impl Document {
         let Some(wet) = &stroke.wet else {
             return Ok(None);
         };
-        wet.carrier
-            .prepare_dab(geometry.wet_geometry(point, radius), |x, y| {
-                let weight = coverage(x, y)?;
-                if weight == 0. {
-                    return Ok(WetSample {
-                        color: Pixel::TRANSPARENT,
-                        pickup_weight: 0.,
-                    });
+        self.prepare_wet_carrier(
+            stroke,
+            &wet.carrier,
+            geometry.wet_geometry(point, radius),
+            coverage,
+        )
+        .map(Some)
+    }
+    pub(super) fn prepare_wet_carrier<F>(
+        &self,
+        stroke: &Stroke,
+        carrier: &WetCarrier,
+        geometry: crate::WetDabGeometry,
+        mut coverage: F,
+    ) -> Result<WetDab>
+    where
+        F: FnMut(f64, f64) -> Result<f32>,
+    {
+        let wet = stroke.wet.as_ref().expect("wet stroke");
+        carrier.prepare_dab(geometry, |x, y| {
+            let weight = coverage(x, y)?;
+            if weight == 0. {
+                return Ok(WetSample {
+                    color: Pixel::TRANSPARENT,
+                    pickup_weight: 0.,
+                });
+            }
+            let sx = x - 0.5;
+            let sy = y - 0.5;
+            let ix = sx.floor() as i64;
+            let iy = sy.floor() as i64;
+            let fx = (sx - ix as f64) as f32;
+            let fy = (sy - iy as f64) as f32;
+            let sample = |x: i64, y: i64| -> Result<Pixel> {
+                if x < 0 || y < 0 || x >= i64::from(self.width) || y >= i64::from(self.height) {
+                    return Ok(Pixel::TRANSPARENT);
                 }
-                let sx = x - 0.5;
-                let sy = y - 0.5;
-                let ix = sx.floor() as i64;
-                let iy = sy.floor() as i64;
-                let fx = (sx - ix as f64) as f32;
-                let fy = (sy - iy as f64) as f32;
-                let sample = |x: i64, y: i64| -> Result<Pixel> {
-                    if x < 0 || y < 0 || x >= i64::from(self.width) || y >= i64::from(self.height) {
-                        return Ok(Pixel::TRANSPARENT);
-                    }
-                    if wet.all_layers {
-                        self.try_pixel(x as u32, y as u32)
-                    } else {
-                        let layer = self
-                            .layer(stroke.layer)
-                            .ok_or(Error::LayerNotFound(stroke.layer))?;
-                        let value = layer.canvas_pixel(x as u32, y as u32)?;
-                        if layer.mask {
-                            let visible = 1. - value.alpha();
-                            // Mask coverage is display gray. The wet smudge carrier
-                            // stores linear color, matching foreground/manual loads.
-                            let visible = if matches!(stroke.brush.mode, BrushMode::Smudge { .. }) {
-                                if visible <= 0.04045 {
-                                    visible / 12.92
-                                } else {
-                                    ((visible + 0.055) / 1.055).powf(2.4)
-                                }
+                if wet.all_layers {
+                    self.try_pixel(x as u32, y as u32)
+                } else {
+                    let layer = self
+                        .layer(stroke.layer)
+                        .ok_or(Error::LayerNotFound(stroke.layer))?;
+                    let value = layer.canvas_pixel(x as u32, y as u32)?;
+                    if layer.mask {
+                        let visible = 1. - value.alpha();
+                        // Mask coverage is display gray. The wet smudge carrier
+                        // stores linear color, matching foreground/manual loads.
+                        let visible = if matches!(stroke.brush.mode, BrushMode::Smudge { .. }) {
+                            if visible <= 0.04045 {
+                                visible / 12.92
                             } else {
-                                visible
-                            };
-                            Pixel::from_straight([visible, visible, visible, 1.])
+                                ((visible + 0.055) / 1.055).powf(2.4)
+                            }
                         } else {
-                            Ok(value)
-                        }
-                    }
-                };
-                let top = if fx == 0. {
-                    sample(ix, iy)?
-                } else {
-                    sample(ix, iy)?.mix(sample(ix + 1, iy)?, fx)
-                };
-                let color = if fy == 0. {
-                    top
-                } else {
-                    let bottom = if fx == 0. {
-                        sample(ix, iy + 1)?
+                            visible
+                        };
+                        Pixel::from_straight([visible, visible, visible, 1.])
                     } else {
-                        sample(ix, iy + 1)?.mix(sample(ix + 1, iy + 1)?, fx)
-                    };
-                    top.mix(bottom, fy)
+                        Ok(value)
+                    }
+                }
+            };
+            let top = if fx == 0. {
+                sample(ix, iy)?
+            } else {
+                sample(ix, iy)?.mix(sample(ix + 1, iy)?, fx)
+            };
+            let color = if fy == 0. {
+                top
+            } else {
+                let bottom = if fx == 0. {
+                    sample(ix, iy + 1)?
+                } else {
+                    sample(ix, iy + 1)?.mix(sample(ix + 1, iy + 1)?, fx)
                 };
-                Ok(WetSample {
-                    color,
-                    pickup_weight: weight,
-                })
+                top.mix(bottom, fy)
+            };
+            Ok(WetSample {
+                color,
+                pickup_weight: weight,
             })
-            .map(Some)
+        })
     }
     pub(super) fn commit_wet(stroke: &mut Stroke, dab: Option<WetDab>) -> Result<()> {
         if let Some(dab) = dab {
@@ -269,6 +369,9 @@ impl Document {
     }
 }
 
+#[cfg(test)]
+#[path = "document_wet_dual_tests.rs"]
+mod dual_tests;
 #[cfg(test)]
 mod tests {
     use super::*;

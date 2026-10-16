@@ -50,7 +50,7 @@ impl DualSizing {
     fn fixed(self) -> bool {
         self.mode == DualSizeMode::Relative && self.width_rule == DualWidthRule::FixedWidth
     }
-    fn nominal_radius(self, primary: f32, secondary: f32) -> f32 {
+    pub(crate) fn nominal_radius(self, primary: f32, secondary: f32) -> f32 {
         match self.mode {
             DualSizeMode::Independent => secondary,
             DualSizeMode::Relative => (primary + self.diameter_offset / 2.).clamp(0.5, 256.),
@@ -487,6 +487,32 @@ impl DualDab<'_> {
             dab.x + x + 1.,
             dab.y + y + 1.,
         )
+    }
+    pub(crate) fn wet_geometry(&self, index: usize) -> Option<crate::WetDabGeometry> {
+        let dab = &self.dabs[index];
+        (dab.radius > 0.).then(|| {
+            dab.geometry
+                .wet_geometry(InputPoint::new(dab.x, dab.y, 1.), dab.radius)
+        })
+    }
+    pub(crate) fn wet_uv(&self, index: usize, x: f64, y: f64) -> (f64, f64) {
+        let dab = &self.dabs[index];
+        dab.geometry.normalized(x - dab.x, y - dab.y, dab.radius)
+    }
+    pub(crate) fn shape_coverage(&self, index: usize, x: f64, y: f64) -> f32 {
+        let dab = &self.dabs[index];
+        if dab.radius <= 0. {
+            0.
+        } else if let Some(mask) = &dab.mask {
+            mask.coverage(x - dab.x, y - dab.y)
+        } else {
+            self.program.procedural_coverage_with_geometry(
+                x - dab.x,
+                y - dab.y,
+                dab.radius,
+                dab.geometry,
+            )
+        }
     }
     pub fn coverage(&self, index: usize, x: f64, y: f64) -> f32 {
         let dab = &self.dabs[index];

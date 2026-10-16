@@ -8,6 +8,8 @@ struct TileJournal {
     layer: SavedTiles,
     primary: SavedTiles,
     secondary: SavedTiles,
+    wet_primary: SavedTiles,
+    wet_secondary: SavedTiles,
 }
 #[derive(Debug)]
 struct DabCheckpoint {
@@ -198,6 +200,27 @@ pub(super) fn capture_field(
     }
     Ok(())
 }
+pub(super) fn capture_wet_field(
+    tail: Option<&mut TailReplay>,
+    secondary: bool,
+    coord: TileCoord,
+    field: &BTreeMap<TileCoord, Arc<Tile>>,
+    limit: usize,
+) -> Result<()> {
+    if let Some(tail) = tail.filter(|t| t.recording) {
+        save(
+            if secondary {
+                &mut tail.journal.wet_secondary
+            } else {
+                &mut tail.journal.wet_primary
+            },
+            coord,
+            field.get(&coord).cloned(),
+            limit,
+        )?;
+    }
+    Ok(())
+}
 fn restore_field(field: &mut BTreeMap<TileCoord, Arc<Tile>>, saved: SavedTiles) {
     for (coord, tile) in saved {
         if let Some(tile) = tile {
@@ -295,6 +318,8 @@ impl Document {
         }
         restore_field(&mut stroke.coverage, journal.primary);
         restore_field(&mut stroke.dual_coverage, journal.secondary);
+        restore_field(&mut stroke.wet_primary_field, journal.wet_primary);
+        restore_field(&mut stroke.wet_secondary_field, journal.wet_secondary);
         tail.checkpoint
             .take()
             .expect("taper checkpoint")
