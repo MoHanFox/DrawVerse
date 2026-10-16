@@ -156,3 +156,7 @@ converterVersion3来源基准保存已有pressureDynamics（三通道线性曲�
 ## VBR1.21：ABR设备形状来源
 
 来源converterVersion7必须保存tipDynamics基准，pressureDynamics/scatterDynamics/shapeJitter/colorDynamics独立可选。来源record仍version1，旧六代记录字节/报告不重算；有v7来源时最低minor21，20以下夹带拒绝。执行沿用behavior4/tip-dynamics及state7，无新C ABI或执行行为。原生设备配置无新来源时仍使用原来的VBR版本需求。Schema为contracts/vbr-abr-device-v1.21.schema.json。方向、笔旋转、倾斜角度/圆度及原生能力回退标近似；关闭设备保留在来源而不执行，其他设备与渐隐继续未执行，见abr-device-conversion-design.md。
+
+## VBR1.22：起收笔
+
+Preset顶层strokeTaper采用distance-envelope-v1：model/enabled/start/end完整必填，各端lengthPx（0..4096文档像素）和size/opacity曲线（curve/minimum/interpolation，linear或pchip）。每条2..17节点，X严格递增、XY在0..1且端点为[0,0]/[1,1]；先f64验证再转换核心f32，重合拒绝。默认省略，关闭非默认完整保留；存在对象要求drawverse.brush、behavior15、stroke-taper能力及minor22，state18。混包取全部执行/来源最高需求，旧包不升级，降级拒绝。旧ABR基线不包含起收笔，当前用户修改可与不变的原来源独立交换。Schema contracts/vbr-taper-v1.22.schema.json，实际两笔和图片/双色/平滑/湿混/来源验证见brush-taper-io-validation.md。ABI1.50旧准备和包入口暂拒新配置，完整原生及Qt入口待接。
