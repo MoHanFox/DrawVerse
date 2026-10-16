@@ -7,7 +7,7 @@ import "."
 ColumnLayout {
     id:root
     property string wetError:""
-    function setWetField(key,value){let data=Object.assign({},root.library.wetMix);data[key]=value;const ok=root.library.setWetMix(data);root.wetError=ok?"":"湿混暂不支持双色双笔刷，请先关闭双色绘制。";return ok}
+    function setWetField(key,value){let data=Object.assign({},root.library.wetMix);data[key]=value;const ok=root.library.setWetMix(data);root.wetError=ok?"":"湿混参数无效，未应用更改。";return ok}
     readonly property var library:PaintClient.brushLibrary
     property int category:0
     property int shapePage:0
@@ -27,6 +27,7 @@ ColumnLayout {
         function setPressureControl(target,points,minimum){return root.setTaperEndField(target,{curve:points,minimum:minimum,interpolation:"pchip"})}
         function resetPressureControl(target){return root.setTaperEndField(target,{curve:[[0,0],[1,1]],minimum:0,interpolation:"linear"})}
     }
+    readonly property bool wetDualActive: library.wetMix.enabled && dual.enabled && dualModule("color").enabled
     readonly property var dual:library.dualBrush
     function dualModule(name) {
         if(dual[name])return dual[name]
@@ -40,7 +41,7 @@ ColumnLayout {
         let data=Object.assign({},dual)
         if(module){let nested=Object.assign({},dualModule(module));nested[key]=value;data[module]=nested}
         else data[key]=value
-        const ok=library.setDualBrush(data);root.wetError=ok?"":"湿混暂不支持双色双笔刷，请先关闭湿混或双色绘制。";return ok
+        const ok=library.setDualBrush(data);root.wetError=ok?"":"第二笔刷参数无效，未应用更改。";return ok
     }
     QtObject {
         id:dualPressure
@@ -310,6 +311,7 @@ ColumnLayout {
                 }
                 ColumnLayout {visible:root.category===10;Layout.fillWidth:true;Layout.minimumWidth:0;spacing:5
                     WetCheck {objectName:"settingsWetEnabled";text:"启用湿混";checked:root.library.wetMix.enabled;onToggled:if(!root.setWetField("enabled",checked))checked=Qt.binding(function(){return root.library.wetMix.enabled});tooltip:"画笔和涂抹复用二维载色。涂抹仍使用工具栏强度、压感和取样设置；橡皮请先关闭湿混。关闭时保留参数。"}
+                    Label {objectName:"settingsWetDualNotice";visible:root.wetDualActive;text:"主、第二笔尖独立载色，共用以下湿混参数。双色湿混仅用于画笔。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     WetField {title:"湿度";field:"wetness";help:"控制画布颜色参与拾色和混合的程度。"}
                     WetField {title:"拾色";field:"pickup";help:"每次印章将画布颜色带入载体的比例。"}
                     WetField {title:"混合";field:"mix";help:"沉积时将载色与当前位置的画布颜色混合。"}
@@ -318,10 +320,10 @@ ColumnLayout {
                     WetField {title:"消耗";field:"consumption";help:"沿绘画距离消耗载色；抬笔移动不消耗。"}
                     WetCheck {objectName:"settingsWetAllLayers";text:"对所有图层取样";checked:root.library.wetMix.allLayers;onToggled:root.setWetField("allLayers",checked);tooltip:"画笔从可见合成结果拾色，只修改当前图层。涂抹使用工具栏的同名开关；编辑蒙版时不能开启合成取样。"}
                     WetCheck {objectName:"settingsWetAutoClean";text:"每笔自动清洗";checked:root.library.wetMix.autoClean;onToggled:root.setWetField("autoClean",checked);tooltip:"每条笔触开始时先清除保留的颜色，再执行自动装载。"}
-                    WetCheck {objectName:"settingsWetAutoLoad";text:"每笔自动载色";checked:root.library.wetMix.autoLoad;onToggled:root.setWetField("autoLoad",checked);tooltip:"每条笔触开始时装入前景色；涂抹还须开启手指绘画。关闭自动清洗和自动载色可保留上一笔颜色或手动载色。"}
+                    WetCheck {objectName:"settingsWetAutoLoad";text:"每笔自动载色";checked:root.library.wetMix.autoLoad;onToggled:root.setWetField("autoLoad",checked);tooltip:"每条笔触开始时装入前景色；双色画笔同时按双色页的前景/背景选择装入第二载色。涂抹还须开启手指绘画。关闭自动清洗和自动载色可保留上一笔或手动载色。"}
                     ColumnLayout {Layout.fillWidth:true;Layout.minimumWidth:0
-                        Button {Layout.fillWidth:true;Layout.minimumWidth:0;objectName:"wetCleanBrush";text:"清洗";implicitHeight:24;enabled:root.library.wetMix.enabled && PaintClient.ready && !PaintClient.drawing && !PaintClient.wetActionBusy;onClicked:PaintClient.cleanWetBrush();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"清除当前笔尖载色，不修改画布。"}
-                        Button {Layout.fillWidth:true;Layout.minimumWidth:0;objectName:"wetLoadBrush";text:"载入前景色";implicitHeight:24;enabled:root.library.wetMix.enabled && PaintClient.ready && !PaintClient.drawing && !PaintClient.wetActionBusy;onClicked:PaintClient.loadWetBrush();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"按当前载色量装入前景色；同时关闭每笔自动清洗和自动载色，可保留这次手动装载。"}
+                        Button {Layout.fillWidth:true;Layout.minimumWidth:0;objectName:"wetCleanBrush";text:"清洗";implicitHeight:24;enabled:root.library.wetMix.enabled && PaintClient.ready && !PaintClient.drawing && !PaintClient.wetActionBusy;onClicked:PaintClient.cleanWetBrush();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"清除当前主、第二笔尖保留的载色，不修改画布。"}
+                        Button {Layout.fillWidth:true;Layout.minimumWidth:0;objectName:"wetLoadBrush";text:root.wetDualActive?"载入双颜色":"载入前景色";implicitHeight:24;enabled:root.library.wetMix.enabled && PaintClient.ready && !PaintClient.drawing && !PaintClient.wetActionBusy;onClicked:PaintClient.loadWetBrush();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"按当前载色量装入前景色；双色画笔同时独立装入第二颜色，其来源遵循双色页的前景/背景选择。关闭每笔自动清洗和自动载色可保留此次载色。"}
                     }
                 }
                 ColumnLayout {visible:root.category===9;Layout.fillWidth:true;Layout.minimumWidth:0;spacing:5

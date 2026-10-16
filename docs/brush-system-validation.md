@@ -190,3 +190,5 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 2026-10-16起收笔原生阶段：ABI1.51/STROKE_TAPER、显式state18准备和VBR1.22包读写、准确票据/旧图片修订重建与真实异步两笔/湿混载色/历史已接，见[验收](brush-taper-abi-validation.md)。6项公开API（新3/旧湿混3）、2项旧入口保护及Windows Release/Clippy/C/C++/Qt相关回归通过。旧入口保护继续保留；Qt镜像/关闭值/重置基准、设置与白色预览参数尚待接，仍无起收笔界面入口；完整系统其余范围不变。
 
 2026-10-16湿混双色原生阶段：ABI1.52/WET_DUAL_COLOR，完整state19准备/VBR1.23包、双角色原子状态及手动装载、准确图片修订重建与真实两笔像素/载色/历史已接，见[设计](brush-wet-dual-abi-design.md)与[验收](brush-wet-dual-abi-validation.md)。新3旧6公开API、10核心/7原生及Windows Release/Clippy/4ABI/Qt通过；旧入口保护保留，Qt镜像/关闭值/基准/白色预览及组合入口仍待接，不宣称用户界面已支持。其余完整范围保持，跨平台后置。
+
+2026-10-16湿混双色Qt阶段：完整state19镜像/关闭配置/复制和resetState、新ABI1.52准备及VBR1.23包、两色手动装载和隔离白色预览已接通，真实绘画/历史/图片三资源用途与新目录导入重开像素验证见[验收](brush-wet-dual-ui-validation.md)。Windows新3旧6Qt、环境倍率2/Release/ABI通过；旧入口拒绝保护保留。大跨度密集图片输入仍会触发预算回滚，分块调度未实现；原参数输入偶发问题未定位。完整剩余范围见[功能清单](brush-system-remaining.md)，用户要求本阶段完成后等待指示。

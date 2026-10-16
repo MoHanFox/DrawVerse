@@ -170,3 +170,5 @@ Qt后续已完成：完整state18镜像/关闭配置/复制和resetState、ABI1.
 wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明主/第二笔刷各自持有二维载色。缺省保持旧湿混；显式null、未知模型和非字符串拒绝。存在标记就要求drawverse.brush、behavior16、wet-dual-color及wet-mix能力、minor23和state19，即使湿混或第二色关闭也完整保留。实际两角色必须在湿混、第二笔刷和双色都启用时执行；没有声明策略的旧湿混双色仍拒绝，不自动改变旧语义。载色像素属于瞬时工具状态，不写入笔刷。
 
 旧状态不写标记、不升级版本或改字节，混包取全部执行/来源需求最高版本，低minor夹带拒绝。原ABR来源及转换基线保持旧版本/原字节；新策略不能写成旧基线，当前用户修改可与不变来源和图片独立交换。完整Schema为contracts/vbr-wet-dual-v1.23.schema.json，实例及真实两笔/双载色/资源/来源验收见brush-wet-dual-io-validation.md。当前ABI1.51的Legacy/Wet/Taper准备和包入口均暂拒新策略防止旧Qt丢字段，新原生/Qt组合入口继续下一阶段。
+
+2026-10-16湿混双色Qt阶段：完整state19镜像/关闭配置/复制和resetState、新ABI1.52准备及VBR1.23包、两色手动装载和隔离白色预览已接通，真实绘画/历史/图片三资源用途与新目录导入重开像素验证见[验收](brush-wet-dual-ui-validation.md)。Windows新3旧6Qt、环境倍率2/Release/ABI通过；旧入口拒绝保护保留。大跨度密集图片输入仍会触发预算回滚，分块调度未实现；原参数输入偶发问题未定位。完整剩余范围见[功能清单](brush-system-remaining.md)，用户要求本阶段完成后等待指示。

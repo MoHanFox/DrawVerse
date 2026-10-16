@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新湿混双色Qt入口：`docs/brush-wet-dual-ui-design.md` / `docs/brush-wet-dual-ui-validation.md`；state19完整镜像/关闭值/复制重置基准，ABI1.52新准备与VBR1.23入口、两色手动装载捕获及独立白色预览、真实两笔/历史/图片新目录交换重开；3新6旧Qt/环境倍率2/Release/ABI通过。密集图片单次64px输入实测预算回滚，有序分块尚待实现；原输入偶发问题未定位。剩余功能见`docs/brush-system-remaining.md`，用户要求本阶段完成后等待指示。
+
 - 最新湿混双色原生入口：`docs/brush-wet-dual-abi-design.md` / `docs/brush-wet-dual-abi-validation.md`；ABI1.52/WET_DUAL_COLOR、state19准确准备/VBR1.23包与旧图片重建、原子双角色info/reload及共用标称尺寸、真实两笔像素/载色/历史；新3旧6公开API/10核心/7原生及Windows Release/Clippy/ABI/Qt通过，旧入口保护保持；Qt镜像与组合尚待接，前述输入偶发问题未定位。
 
 - 最新湿混双色保存交换：`docs/brush-wet-dual-io-design.md` / `docs/brush-wet-dual-io-validation.md`；wetMix.dualColor独立载色策略/state19/VBR1.23/behavior16，完整关闭值/严格标记、真实两笔双载色/三图片用途/来源及新目录往返，6项新IO/旧三类入口拒绝和16项旧Rust回归、Schema/Windows Release/ABI/Qt通过；完整原生/Qt组合仍待接，旧入口保护保留。
