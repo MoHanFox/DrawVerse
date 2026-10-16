@@ -2,6 +2,13 @@
 //! Pixels are linear premultiplied RGBA32F; display conversion is external.
 mod appearance;
 mod brush;
+mod brush_input_schedule;
+pub use brush_input_schedule::{
+    BrushInputSchedule, InputScheduleBudget, InputScheduleEvent, InputSchedulePage,
+    InputScheduleSegment, InputScheduleStart, InputScheduleSteps, InputScheduleStream,
+    InputScheduleWork, MAX_INPUT_PAGE_DABS, MAX_INPUT_PAGE_VISITS, MAX_INPUT_SCHEDULE_DABS,
+    MAX_INPUT_SCHEDULE_VISITS, MAX_INPUT_SEGMENTS,
+};
 mod brush_wet_tool;
 pub use brush_wet_tool::{WetLease, WetTool};
 mod brush_wet_ink;

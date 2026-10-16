@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新输入分页数值/预算：`docs/brush-input-paging-design.md` / `docs/brush-input-paging-kernel-validation.md`；原始段主副有序游标/事务页/设备与弧长余量、保持8M/8192页预算及有界总输入，8项调度+14400组旧预算对照、相关湿混/起收笔回归及Windows Release/Clippy/ABI通过；尚未接Document像素/活动笔尾及Actor，不宣称修复画布64px密集输入。用户已恢复推进；Windows整体设备手感验收由用户自行进行，agent仅必要代码回归。
+
 - 最新湿混双色Qt入口：`docs/brush-wet-dual-ui-design.md` / `docs/brush-wet-dual-ui-validation.md`；state19完整镜像/关闭值/复制重置基准，ABI1.52新准备与VBR1.23入口、两色手动装载捕获及独立白色预览、真实两笔/历史/图片新目录交换重开；3新6旧Qt/环境倍率2/Release/ABI通过。密集图片单次64px输入实测预算回滚，有序分块尚待实现；原输入偶发问题未定位。剩余功能见`docs/brush-system-remaining.md`，用户要求本阶段完成后等待指示。
 
 - 最新湿混双色原生入口：`docs/brush-wet-dual-abi-design.md` / `docs/brush-wet-dual-abi-validation.md`；ABI1.52/WET_DUAL_COLOR、state19准确准备/VBR1.23包与旧图片重建、原子双角色info/reload及共用标称尺寸、真实两笔像素/载色/历史；新3旧6公开API/10核心/7原生及Windows Release/Clippy/ABI/Qt通过，旧入口保护保持；Qt镜像与组合尚待接，前述输入偶发问题未定位。

@@ -169,3 +169,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-16湿混双色原生阶段：ABI1.52/WET_DUAL_COLOR，完整state19准备/VBR1.23包、双角色原子状态及手动装载、准确图片修订重建与真实两笔像素/载色/历史已接，见[设计](brush-wet-dual-abi-design.md)与[验收](brush-wet-dual-abi-validation.md)。新3旧6公开API、10核心/7原生及Windows Release/Clippy/4ABI/Qt通过；旧入口保护保留，Qt镜像/关闭值/基准/白色预览及组合入口仍待接，不宣称用户界面已支持。其余完整范围保持，跨平台后置。
 
 2026-10-16湿混双色Qt阶段：完整state19镜像/关闭配置/复制和resetState、新ABI1.52准备及VBR1.23包、两色手动装载和隔离白色预览已接通，真实绘画/历史/图片三资源用途与新目录导入重开像素验证见[验收](brush-wet-dual-ui-validation.md)。Windows新3旧6Qt、环境倍率2/Release/ABI通过；旧入口拒绝保护保留。大跨度密集图片输入仍会触发预算回滚，分块调度未实现；原参数输入偶发问题未定位。完整剩余范围见[功能清单](brush-system-remaining.md)，用户要求本阶段完成后等待指示。
+
+2026-10-16输入分页数值/预算阶段：原始段的主副有序印章、弧长/设备插值与间距余量、只读准备/成功采用的有界事件页已实现；Document预算提取共用权重而保持旧限制。9项新测试（含14400组旧预算分类）及相关真实湿混/起收笔旧回归、Windows Release/Clippy/ABI通过，见[设计](brush-input-paging-design.md)及[验收](brush-input-paging-kernel-validation.md)。尚未接Document像素/笔尾和Actor调度，不宣称画布64px密集输入已修复；用户已恢复推进，整体Windows设备手感由用户自行验收。

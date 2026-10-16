@@ -9,8 +9,8 @@ use std::{
 };
 
 pub const MAX_DIMENSION: u32 = 1_000_000;
-const MAX_DABS_PER_SEGMENT: usize = 8192;
-const MAX_PIXEL_VISITS_PER_SEGMENT: usize = 8_000_000;
+const MAX_DABS_PER_SEGMENT: usize = crate::MAX_INPUT_PAGE_DABS;
+const MAX_PIXEL_VISITS_PER_SEGMENT: usize = crate::MAX_INPUT_PAGE_VISITS;
 mod batch;
 #[path = "brush_dual_paint.rs"]
 mod dual_paint;
@@ -1659,7 +1659,24 @@ impl Document {
         secondary_count: usize,
         wet_work: usize,
     ) -> Result<()> {
-        let count = count.saturating_mul(program.scatter.maximum_count());
+        let (primary, secondary) = Self::stroke_input_work(brush, program, wet_work);
+        let work = primary
+            .repeated(count)
+            .combined(secondary.repeated(secondary_count));
+        if work.dabs > MAX_DABS_PER_SEGMENT || work.visits > MAX_PIXEL_VISITS_PER_SEGMENT {
+            return Err(Error::ResourceLimit(
+                "input segment too large; resample into shorter segments",
+            ));
+        }
+        Ok(())
+    }
+
+    fn stroke_input_work(
+        brush: Brush,
+        program: &BrushProgram,
+        wet_work: usize,
+    ) -> (crate::InputScheduleWork, crate::InputScheduleWork) {
+        let scatter = program.scatter.maximum_count();
         let diameter = (f64::from(brush.radius)
             * 2.
             * if program.has_mask() {
@@ -1684,45 +1701,42 @@ impl Document {
             }
             + paired.map_or(0, |d| d.sample_cost())
             + usize::from(path.is_some());
-        let (secondary_dabs, secondary_visits) =
-            path.map_or((0, 0), |d| d.path_work(secondary_count));
-        let colored_visits = dual.filter(|d| d.color.enabled()).map_or(0, |d| {
-            count
-                .saturating_mul((diameter + 1) * (diameter + 1))
+        let primary_colored = dual.filter(|d| d.color.enabled()).map_or(0, |d| {
+            (diameter + 1)
+                .saturating_pow(2)
                 .saturating_mul(d.colored_cost(program.write_blend))
-                .saturating_add(d.colored_work(
-                    if d.step().is_some() {
-                        secondary_count
-                    } else {
-                        count
-                    },
-                    program.write_blend,
-                ))
-        });
-        if count
-            .saturating_mul(paired.map_or(1, |d| d.maximum_count()))
-            .saturating_add(secondary_dabs)
-            > MAX_DABS_PER_SEGMENT
-            || count
-                .saturating_mul(diameter * diameter)
-                .saturating_mul(sample_cost)
-                .saturating_add(secondary_visits)
-                .saturating_add(colored_visits)
-                .saturating_add(count.saturating_mul(wet_work))
-                .saturating_add(if wet_work > 0 {
-                    count
-                        .saturating_mul(diameter * diameter)
-                        .saturating_mul(12 + if program.color.active() { 8 } else { 0 })
+                .saturating_add(if d.step().is_none() {
+                    d.colored_work(1, program.write_blend)
                 } else {
                     0
                 })
-                > MAX_PIXEL_VISITS_PER_SEGMENT
-        {
-            return Err(Error::ResourceLimit(
-                "input segment too large; resample into shorter segments",
-            ));
-        }
-        Ok(())
+        });
+        let (secondary_dabs, secondary_visits) = path.map_or((0, 0), |d| d.path_work(1));
+        let secondary_colored = path
+            .filter(|d| d.color.enabled())
+            .map_or(0, |d| d.colored_work(1, program.write_blend));
+        let visits = diameter
+            .saturating_pow(2)
+            .saturating_mul(sample_cost)
+            .saturating_add(primary_colored)
+            .saturating_add(wet_work)
+            .saturating_add(if wet_work > 0 {
+                diameter
+                    .saturating_pow(2)
+                    .saturating_mul(12 + if program.color.active() { 8 } else { 0 })
+            } else {
+                0
+            });
+        (
+            crate::InputScheduleWork {
+                dabs: scatter.saturating_mul(paired.map_or(1, |d| d.maximum_count())),
+                visits: visits.saturating_mul(scatter),
+            },
+            crate::InputScheduleWork {
+                dabs: secondary_dabs,
+                visits: secondary_visits.saturating_add(secondary_colored),
+            },
+        )
     }
 
     pub fn end_stroke(&mut self) -> Result<bool> {
@@ -3382,3 +3396,7 @@ mod dual_sizing_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "document_input_work_tests.rs"]
+mod input_work_tests;
