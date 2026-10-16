@@ -36,6 +36,45 @@ fn options(format: Format) -> ExportOptions {
 }
 
 #[test]
+fn empty_and_group_only_ora_stacks_roundtrip_without_inventing_layers() {
+    let temp = tempfile::tempdir().unwrap();
+    let token = CancellationToken::default();
+    let mut doc = Document::new(17, 19).unwrap();
+    let group = doc.group_layer(1, "empty group").unwrap();
+    doc.remove_layer(1).unwrap();
+    for empty in [false, true] {
+        if empty {
+            doc.remove_layer(group).unwrap();
+        }
+        let path = temp
+            .path()
+            .join(if empty { "empty.ora" } else { "group.ora" });
+        save(
+            &path,
+            &doc.snapshot(),
+            doc.active_layer(),
+            options(Format::OpenRaster),
+            &token,
+        )
+        .unwrap();
+        let restored = load(&path, &token).unwrap();
+        assert_eq!(restored.layers().len(), usize::from(!empty));
+        assert_eq!(restored.active_layer(), if empty { 0 } else { 1 });
+        assert_eq!(restored.dimensions(), (17, 19));
+        assert_eq!(restored.pixel(0, 0), Pixel::TRANSPARENT);
+        let png = temp.path().join("transparent.png");
+        save(
+            &png,
+            &restored.snapshot(),
+            restored.active_layer(),
+            options(Format::Png),
+            &token,
+        )
+        .unwrap();
+        assert_eq!(load(&png, &token).unwrap().pixel(0, 0), Pixel::TRANSPARENT);
+    }
+}
+#[test]
 fn nested_ora_preserves_groups_properties_selection_and_raster_exports() {
     let temp = tempfile::tempdir().unwrap();
     let token = CancellationToken::default();

@@ -35,7 +35,7 @@ fn huge_blank_document_allocates_no_tiles() {
 }
 
 #[test]
-fn validates_dimensions_budgets_and_last_layer() {
+fn validates_dimensions_budgets_and_empty_layer_stack() {
     for (w, h) in [(0, 1), (1, 0), (MAX_DIMENSION + 1, 1)] {
         assert!(Document::new(w, h).is_err());
     }
@@ -49,7 +49,22 @@ fn validates_dimensions_budgets_and_last_layer() {
     )
     .is_err());
     let mut doc = Document::new(16, 16).unwrap();
-    assert_eq!(doc.remove_layer(1), Err(Error::LastLayer));
+    doc.remove_layer(1).unwrap();
+    assert!(doc.layers().is_empty());
+    assert_eq!(doc.active_layer(), 0);
+    assert_eq!(doc.pixel(0, 0), Pixel::TRANSPARENT);
+    assert_eq!(
+        doc.begin_stroke(brush(), point(4., 4.)),
+        Err(Error::LayerNotFound(0))
+    );
+    doc.undo().unwrap();
+    assert_eq!(doc.layers().len(), 1);
+    doc.redo().unwrap();
+    assert!(doc.layers().is_empty());
+    let added = doc.add_layer("new").unwrap();
+    assert_eq!(doc.active_layer(), added);
+    dot(&mut doc, 4., 4., brush());
+    assert!(doc.pixel(4, 4).alpha() > 0.);
     assert_eq!(doc.set_active_layer(42), Err(Error::LayerNotFound(42)));
 }
 

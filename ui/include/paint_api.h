@@ -1587,7 +1587,7 @@ PaintStatus paint_layer_name(struct PaintCore *core,
                              uint64_t *required);
 
 /**
- * Remove a layer with undo history; removing the last layer is invalid.
+ * Remove a layer with undo history; an empty stack has active layer ID zero.
  * # Safety
  * Follow handle and ordered-command contracts in contracts/abi.md.
  */

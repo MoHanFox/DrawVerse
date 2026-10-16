@@ -3,7 +3,7 @@ mod pass_through;
 use super::*;
 
 pub(crate) fn validate(layers: &[Layer]) -> Result<()> {
-    if layers.is_empty() || layers.len() > 4096 || !layers.iter().any(|l| !l.group && !l.mask) {
+    if layers.len() > 4096 {
         return Err(Error::InvalidArgument("invalid hierarchy node count"));
     }
     let index: BTreeMap<_, _> = layers.iter().enumerate().map(|(i, l)| (l.id, i)).collect();
@@ -556,14 +556,6 @@ impl Document {
         let range = self.subtree(id)?;
         for layer in &self.layers[range.clone()] {
             self.check_ancestors(layer.id, crate::LOCK_ALL)?;
-        }
-        if !self
-            .layers
-            .iter()
-            .enumerate()
-            .any(|(i, l)| !range.contains(&i) && !l.group && !l.mask)
-        {
-            return Err(Error::LastLayer);
         }
         self.commit(Command::RemoveTree {
             index: range.start,

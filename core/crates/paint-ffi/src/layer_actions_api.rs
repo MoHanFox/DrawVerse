@@ -26,7 +26,7 @@ pub unsafe extern "C" fn paint_session_layer_action(
         pointers::write(out_sequence, 0)?;
         runtime::outside_callback()?;
         let operation = if kind == PAINT_LAYER_ACTION_PASTE {
-            if count != 0 || !ids.is_null() || target == 0 {
+            if count != 0 || !ids.is_null() {
                 return Err(ApiError::invalid("paste fields"));
             }
             Operation::PasteLayers(pointers::layer_clipboard_bytes(bytes, length)?, target)

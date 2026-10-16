@@ -397,7 +397,7 @@ pub unsafe extern "C" fn paint_layer_add(
     })
 }
 
-/// Remove a layer with undo history; removing the last layer is invalid.
+/// Remove a layer with undo history; an empty stack has active layer ID zero.
 /// # Safety
 /// Follow handle and ordered-command contracts in contracts/abi.md.
 #[no_mangle]

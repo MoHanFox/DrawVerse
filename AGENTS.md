@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新空图层栈：`docs/empty-layer-stack-design.md` / `docs/empty-layer-stack-validation.md`；最后图层/整组/批量可删空，active=0与透明棋盘格、历史/新建/空栈粘贴、ORA零层往返和透明PNG；Windows最小Rust/Qt及ABI通过，无布局/格式版本变化。
+
 - 最新起收笔 Qt：`docs/brush-taper-ui-design.md` / `docs/brush-taper-ui-validation.md`；state18完整镜像/关闭值/复制重置基准、ABI1.51准备与VBR1.22入口、距离和独立平滑尺寸/opacity曲线、真实白色预览/在途捕获/像素历史及重开，Windows最小Qt通过；完整ABR/16位、湿混双色等仍待后续。
 
 - 最新工具栏传递参数：`docs/brush-toolbar-transfer-design.md` / `docs/brush-toolbar-transfer-validation.md`；画笔/橡皮当前预设的流量、不透明度及各自压感直接同步，涂抹下拉改细分隔线，Windows 最小三项 Qt 通过，无 ABI/格式变化。

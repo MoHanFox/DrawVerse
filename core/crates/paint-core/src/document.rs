@@ -600,7 +600,10 @@ impl Document {
             return Err(Error::InvalidArgument("appearance count"));
         }
         let mut document = Self::with_storage(width, height, options, storage)?;
-        if layers.is_empty() || layers.len() > 4096 || active >= layers.len() {
+        if layers.len() > 4096
+            || (layers.is_empty() && active != 0)
+            || (!layers.is_empty() && active >= layers.len())
+        {
             return Err(Error::InvalidArgument(
                 "invalid imported layer count or active layer",
             ));
@@ -658,7 +661,11 @@ impl Document {
             }
             document.layers.push(layer);
         }
-        document.active_layer = active as u64 + 1;
+        document.active_layer = if document.layers.is_empty() {
+            0
+        } else {
+            active as u64 + 1
+        };
         document.next_layer_id = document.layers.len() as u64 + 1;
         Ok(document)
     }
@@ -1018,27 +1025,32 @@ impl Document {
         let id = self.next_layer_id;
         let next = id.checked_add(1).ok_or(Error::ResourceLimit("layer IDs"))?;
         let mut layer = Layer::new(id, name);
-        let mut selected = self.layer_index(self.active_layer)?;
-        if self.layers[selected].mask {
-            selected = self.layer_index(self.layers[selected].parent)?;
-        }
-        let index = if self.layers[selected].group {
-            selected
+        let index = if self.layers.is_empty() {
+            0
         } else {
-            selected + 1
+            let mut selected = self.layer_index(self.active_layer)?;
+            if self.layers[selected].mask {
+                selected = self.layer_index(self.layers[selected].parent)?;
+            }
+            let index = if self.layers[selected].group {
+                selected
+            } else {
+                selected + 1
+            };
+            layer.parent = if self.layers[selected].group {
+                self.layers[selected].id
+            } else {
+                self.layers[selected].parent
+            };
+            if !self.layers[selected].group {
+                layer.clipped = self.layers[selected].clipped
+                    || self.layers[index..]
+                        .iter()
+                        .find(|node| !node.mask && node.parent == layer.parent)
+                        .is_some_and(|node| node.clipped);
+            }
+            index
         };
-        layer.parent = if self.layers[selected].group {
-            self.layers[selected].id
-        } else {
-            self.layers[selected].parent
-        };
-        if !self.layers[selected].group {
-            layer.clipped = self.layers[selected].clipped
-                || self.layers[index..]
-                    .iter()
-                    .find(|node| !node.mask && node.parent == layer.parent)
-                    .is_some_and(|node| node.clipped);
-        }
         self.check_ancestors(layer.parent, crate::LOCK_ALL)?;
         if layer.parent != 0 && self.layer_hierarchy(layer.parent)?.1 >= 16 {
             return Err(Error::ResourceLimit("group nesting exceeds 16"));
@@ -1059,11 +1071,6 @@ impl Document {
         let index = self.layer_index(id)?;
         if self.layers[index].group || self.mask_for(id).is_some() {
             return self.remove_group(id);
-        }
-        if !self.layers[index].mask
-            && self.layers.iter().filter(|l| !l.group && !l.mask).count() == 1
-        {
-            return Err(Error::LastLayer);
         }
         self.check_ancestors(id, crate::LOCK_ALL)?;
         let command = Command::RemoveLayer {
@@ -1226,7 +1233,7 @@ impl Document {
     }
     fn ensure_active_layer(&mut self) {
         if self.layer(self.active_layer).is_none() {
-            self.active_layer = self.layers.last().expect("at least one layer").id;
+            self.active_layer = self.layers.last().map_or(0, |layer| layer.id);
         }
     }
 
@@ -1270,6 +1277,7 @@ impl Document {
         taper_settings: Option<&crate::StrokeTaper>,
     ) -> Result<()> {
         self.idle()?;
+        self.layer_index(self.active_layer)?;
         let brush = definition.brush;
         let program = BrushProgram::compile(definition)?;
         if let Some(wet) = &mut wet {

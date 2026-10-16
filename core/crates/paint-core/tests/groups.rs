@@ -1,4 +1,30 @@
 use paint_core::*;
+#[test]
+fn deleting_all_group_children_and_batch_roots_keeps_empty_state_undoable() {
+    let mut doc = Document::new(32, 32).unwrap();
+    let group = doc.group_layer(1, "group").unwrap();
+    let copied = doc.copy_layers(&[group]).unwrap();
+    doc.remove_layers(&[1], false).unwrap();
+    assert_eq!(doc.layers().len(), 1);
+    assert!(doc.layers()[0].is_group());
+    assert_eq!(doc.active_layer(), group);
+    doc.remove_layers(&[group], false).unwrap();
+    assert!(doc.layers().is_empty());
+    assert_eq!(doc.active_layer(), 0);
+    doc.undo().unwrap();
+    assert_eq!(doc.layers().len(), 1);
+    doc.undo().unwrap();
+    assert_eq!(doc.layers().len(), 2);
+    doc.redo().unwrap();
+    doc.redo().unwrap();
+    assert!(doc.layers().is_empty());
+    doc.paste_layers(&copied, 0).unwrap();
+    assert_eq!(doc.layers().len(), 2);
+    let ids = doc.layers().iter().map(|l| l.id()).collect::<Vec<_>>();
+    doc.remove_layers(&ids, false).unwrap();
+    assert!(doc.layers().is_empty());
+    assert_eq!(doc.snapshot().try_pixel(0, 0).unwrap(), Pixel::TRANSPARENT);
+}
 fn paint(doc: &mut Document, color: [f32; 4], x: f64) {
     doc.begin_stroke(
         Brush {
@@ -138,7 +164,11 @@ fn deleting_subtree_uses_compressed_history_and_restores_exact_content_and_membe
     let before = doc.snapshot();
     let count = doc.tile_count();
     doc.set_active_layer(group).unwrap();
-    assert!(matches!(doc.remove_layer(group), Err(Error::LastLayer)));
+    doc.remove_layer(group).unwrap();
+    assert!(doc.layers().is_empty());
+    assert_eq!(doc.active_layer(), 0);
+    doc.undo().unwrap();
+    assert_eq!(doc.tile_count(), count);
     doc.set_active_layer(group).unwrap();
     let outside = doc.add_layer("inside").unwrap();
     doc.reparent_layer(outside, 0).unwrap();

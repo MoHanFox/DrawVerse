@@ -129,13 +129,6 @@ impl Document {
                 removed_ids.extend(self.layers[range].iter().map(|l| l.id));
             }
         }
-        if !self
-            .layers
-            .iter()
-            .any(|l| !l.group && !l.mask && !removed_ids.contains(&l.id))
-        {
-            return Err(Error::LastLayer);
-        }
         let before = self.structure();
         let mut after: Vec<_> = before
             .iter()

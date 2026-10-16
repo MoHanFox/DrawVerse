@@ -2874,6 +2874,19 @@ private slots:
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);
         client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void deletingFinalLayerShowsTransparencyAndAllowsUndoPasteAndNewLayer() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("empty.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());client.newTransparentDocument(32,32);QTRY_COMPARE(client.documentWidth(),32);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.layers().size(),1);
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->forceActiveFocus();window->requestActivate();QTest::qWait(80);
+        const auto original=client.activeLayer();QVERIFY(client.copySelectedLayers());QTRY_VERIFY(client.canPasteLayers());QTRY_VERIFY(!client.layerEditBusy());
+        QTest::keyClick(window,Qt::Key_Delete);QTRY_COMPARE(client.layers().size(),0);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.activeLayer(),quint64(0));QVERIFY(client.selectedLayers().isEmpty());
+        auto *trash=findVisualItem(window->contentItem(),"deleteLayer");QVERIFY(trash);QVERIFY(!trash->isEnabled());
+        canvas->setClient(nullptr);const auto rendered=[&]{client.requestViewport(0,{0,0,32,32},{32,32});return client.frameRevision()>=client.revision() && client.frame().size()==QSize(32,32);};QTRY_VERIFY(rendered());for(int y=0;y<32;++y)for(int x=0;x<32;++x)QCOMPARE(client.frame().pixelColor(x,y).alpha(),0);
+        client.undo();QTRY_COMPARE(client.layers().size(),1);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.activeLayer(),original);client.redo();QTRY_COMPARE(client.layers().size(),0);QTRY_VERIFY(!client.layerEditBusy());
+        canvas->setClient(&client);canvas->forceActiveFocus();QTest::keyClick(window,Qt::Key_V,Qt::ControlModifier);QTRY_COMPARE(client.layers().size(),1);QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.activeLayer()!=0);QVERIFY(trash->isEnabled());
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,trash->mapToScene({trash->width()/2,trash->height()/2}).toPoint());QTRY_COMPARE(client.layers().size(),0);QTRY_VERIFY(!client.layerEditBusy());client.addLayer("new after empty");QTRY_COMPARE(client.layers().size(),1);QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.activeLayer()!=0);
+        QVERIFY(client.lastError().isEmpty());QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void brushToolbarTransferTracksActivePresetForPaintAndErase() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("transfer.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});

@@ -1089,7 +1089,7 @@ impl Document {
         d.active_layer = if layers.iter().any(|l| l.id == active) {
             active
         } else {
-            layers.last().expect("layers").id
+            layers.last().map_or(0, |layer| layer.id)
         };
         d.layers = layers;
         Ok(d)

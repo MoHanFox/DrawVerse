@@ -366,13 +366,7 @@ fn parse_stack(xml: &[u8]) -> Result<ParsedStack> {
             }
         }
     }
-    if image_open
-        || !image_seen
-        || !stack_seen
-        || !stacks.is_empty()
-        || paired_layer
-        || layers.is_empty()
-    {
+    if image_open || !image_seen || !stack_seen || !stacks.is_empty() || paired_layer {
         return Err(Error::Invalid("incomplete layer stack"));
     }
     if layers.iter().filter(|l| l.selected).count() > 1 {
@@ -574,7 +568,7 @@ pub(crate) fn decode(
             spec.white,
         )?);
     }
-    let active = layers.len() - 1 - active;
+    let active = layers.len().saturating_sub(1 + active);
     layers.reverse();
     appearances.reverse();
     if (model_version == 5) != names.contains("drawverse/layers.bin") {

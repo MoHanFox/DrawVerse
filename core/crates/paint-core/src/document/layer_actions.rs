@@ -65,15 +65,18 @@ impl Document {
             forest.push(Layer::new(dummy, "validation".into()));
         }
         groups::validate(&forest)?;
-        let target = self.layer(target).ok_or(Error::LayerNotFound(target))?;
-        let target = if target.mask {
-            self.layer(target.parent).expect("owner")
+        let (parent, at) = if target == 0 && self.layers.is_empty() {
+            (0, 0)
         } else {
-            target
+            let target = self.layer(target).ok_or(Error::LayerNotFound(target))?;
+            let target = if target.mask {
+                self.layer(target.parent).expect("owner")
+            } else {
+                target
+            };
+            (target.parent, self.subtree(target.id)?.end)
         };
-        let parent = target.parent;
         self.check_ancestors(parent, crate::LOCK_ALL)?;
-        let at = self.subtree(target.id)?.end;
         let next = self
             .next_layer_id
             .checked_add(nodes.len() as u64)

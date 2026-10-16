@@ -181,7 +181,7 @@ read输出先清零，容量不足给required并且不写资源；空输出足�
 
 - `PAINT_FEATURE_LAYER_ACTIONS=131072`。`paint_session_layer_action` FIFO 接收 COPY/PASTE/DUPLICATE/MERGE；COPY 不改 revision/history，其他操作一次原子提交，失败不改变结构、像素或 ID 分配。
 - COPY/DUPLICATE/MERGE：1–4096 个非零唯一 ID，target=0，bytes=null，length=0。父子重叠选择按独立子树去重；复制包含蒙版和属性。
-- PASTE：ids=null、count=0、显式 target≠0、1–256MiB 字节；复制输入后返回，后台校验版本、校验和、层数、像素、层次与资源限制，放在目标（蒙版取其所有者）上方的同一父组。
+- PASTE：ids=null、count=0、1–256MiB 字节；复制输入后返回，后台校验版本、校验和、层数、像素、层次与资源限制，放在显式目标（蒙版取其所有者）上方的同一父组。target=0 仅允许空栈的根插入；非空栈的缺失目标仍由 actor 拒绝。
 - COPY 完成后用 `paint_session_read_layer_clipboard(sequence)` 查询最新成功复制的结果；null/0 查询返回 BUFFER_TOO_SMALL 与长度，成功读取无终止字符。结果留存到下一次成功复制或 session 销毁。Qt 工作线程读取并发布 `application/x-drawverse-layers-v1` MIME，支持跨文档。
 - 历史种类 27=复制、28=粘贴、29=合并。单选普通图层向下合并同级下一层；单选组合并自身；多选合并所有所选子树。内核栅格化内部效果，产出普通图层，穿透组不再对外穿透。
 
@@ -212,7 +212,7 @@ paint_session_selection_mask(core,session,publication,index,bytes,capacity,out_l
 
 新增 `paint_session_drop_layers(core, session, ids, count, target, placement, out_sequence)` 与 `paint_session_remove_layers(core, session, ids, count, mode, out_sequence)`。ids 是按 u64 对齐且可读的 count 个层 ID；count 为 u32，限定 1–4096，禁止零 ID / 重复 ID。在调用返回前复制全部 ID，不保留调用者指针；out_sequence 是非重叠可写 u64，入队前失败清零。
 
-Drop placement 沿用 0=组内顶端（target=0 时为根顶端）、1=目标同级上方、2=目标同级下方。Remove mode 为 `PAINT_REMOVE_SUBTREES=0`（完整子树）或 `PAINT_REMOVE_KEEP_GROUP_CHILDREN=1`（仅移除选中组容器与组蒙版，保留内部图层；选中的普通图层仍删除）。未知 placement/mode、非法数组同步拒绝；不存在 ID、目标循环、锁定、最后像素层及深度限制在 actor 中报告，任何失败都不改变文档/历史。
+Drop placement 沿用 0=组内顶端（target=0 时为根顶端）、1=目标同级上方、2=目标同级下方。Remove mode 为 `PAINT_REMOVE_SUBTREES=0`（完整子树）或 `PAINT_REMOVE_KEEP_GROUP_CHILDREN=1`（仅移除选中组容器与组蒙版，保留内部图层；选中的普通图层仍删除）。未知 placement/mode、非法数组同步拒绝；不存在 ID、目标循环、锁定及深度限制在 actor 中报告，任何失败都不改变文档/历史。允许删除最后图层，空栈的 active_layer=0；合成为透明，撤销恢复。空栈可新增图层，Paste 的 target=0 仅在空栈表示根插入，非空栈仍需实际目标。
 
 核心按原堆叠顺序归一化独立根，选择祖先与后代时后代不重复操作，蒙版跟随所有者。整批一次校验、一次提交、一次撤销/重做。移动到同级剪贴节点下方时，在存在下方基底的情况下自动加入上方剪贴链；旧位置丢失原基底的链仍释放剪贴。此规则亦用于既有单层 drop 接口。删除使用私有有界无损暂存，保留移除像素和前后结构；既有 DTO 与 ABI 符号保持兼容。
 
@@ -248,7 +248,7 @@ Drop placement 沿用 0=组内顶端（target=0 时为根顶端）、1=目标同
 
 组枚举仍为底到顶后序：子树连续，组在子节点之后。最大16级父组、4096节点，至少一个像素图层。组不拥有瓦片，自身位置固定0，不接受透明像素锁；完全锁和位置锁传递给后代，effective_locks 包含祖先的这两个锁。组按隔离语义合成，组 opacity/fill/blend 在子树合成后应用一次；不支持穿透模式。
 
-Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent 将子树放到目标组顶层，位置保持文档坐标；Ungroup 移除组属性、保留未烘焙子节点。既有 Remove 删除整组子树；最后像素层删除拒绝。既有 Move 移动所有后代像素层，一个历史事务；任一后代受锁或越界则整个操作拒绝。既有 Add 在所选组内或所选像素层同级上方新增。组不能 Begin 绘画，需选子像素层；预览接口对组返回子树合成，忽略目标组自身隐藏/opacity/fill/blend，保留子节点属性。
+Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent 将子树放到目标组顶层，位置保持文档坐标；Ungroup 移除组属性、保留未烘焙子节点。既有 Remove 删除整组子树，允许空栈及只含组的结构。既有 Move 移动所有后代像素层，一个历史事务；任一后代受锁或越界则整个操作拒绝。既有 Add 在所选组内或所选像素层同级上方新增，空栈新增根层。组不能 Begin 绘画，需选子像素层；预览接口对组返回子树合成，忽略目标组自身隐藏/opacity/fill/blend，保留子节点属性。
 
 结构命令只保留元数据，删除子树可使用有界无损磁盘历史。组操作遵守 idle、撤销屏障与 modified 规则，撤销/重做仍忽略当前锁状态。层 ID 单调且不复用；ORA 重开重新分配 IDs，不能跨代际复用旧 ID。
 

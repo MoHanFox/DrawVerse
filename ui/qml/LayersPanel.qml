@@ -337,7 +337,7 @@ ColumnLayout {
         IconButton { objectName: "groupLayer"; glyph: "folder"; tooltip: "新建图层组"; implicitHeight: 20; implicitWidth: 28; enabled: root.unlocked && !root.selected.mask; onClicked: PaintClient.groupSelectedLayers("组 "+(PaintClient.layers.filter(function(layer) { return layer.group }).length+1)); ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "将所选图层或组放入新组" }
         IconButton { objectName: "layerGroupMenu"; glyph: "menu"; tooltip: "图层菜单"; implicitWidth: 28; implicitHeight: 20; enabled: root.unlocked; onClicked: groupMenu.popup() }
         IconButton { glyph: "plus"; tooltip: "新建图层"; implicitWidth: 28; implicitHeight: 20; enabled: root.editable; objectName:"addDefaultLayer";onClicked: PaintClient.addDefaultLayer(); ToolTip.delay:1000;ToolTip.visible: hovered; ToolTip.text: "新建图层" }
-        IconButton { objectName: "deleteLayer"; glyph: "trash"; tooltip: "删除图层"; implicitHeight: 20; enabled: root.unlocked && PaintClient.layers.length>1; onClicked: PaintClient.requestSelectedLayerRemoval() }
+        IconButton { objectName: "deleteLayer"; glyph: "trash"; tooltip: "删除图层"; implicitHeight: 20; enabled: root.unlocked && PaintClient.layers.length>0; onClicked: PaintClient.requestSelectedLayerRemoval() }
     }
     GlassMenu {
         id: layerContextMenu; objectName: "layerContextMenu"

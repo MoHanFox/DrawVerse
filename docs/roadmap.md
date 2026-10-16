@@ -1,3 +1,5 @@
+空图层栈追加：[设计](empty-layer-stack-design.md) / [验收](empty-layer-stack-validation.md)。允许删除所有图层、仅显示透明棋盘格；撤销/重做、新建/粘贴和 ORA 空栈保存恢复接通，最小 Windows 验证通过。
+
 工具栏参数追加：[设计](brush-toolbar-transfer-design.md) / [验收](brush-toolbar-transfer-validation.md)。画笔与橡皮直接调整当前预设的流量、不透明度及各自压感；涂抹预设下拉改为细分隔线，Windows 最小 Qt 通过。
 
 起收笔当前阶段：[Qt设计](brush-taper-ui-design.md) / [验收](brush-taper-ui-validation.md)，前置[原生入口](brush-taper-abi-validation.md)、[保存交换](brush-taper-io-validation.md)和[实际绘画](brush-taper-document-validation.md)。ABI1.51完整state18准备/VBR1.22包入口及Qt镜像/关闭值/重置基准、白色自动预览、距离与独立尺寸/opacity平滑曲线设置页已接通，真实在途捕获/像素历史/交换重开通过。结束继续不追原始鼠标终点；湿混双色/橡皮、非分隔、高级ABR/16位及其余整体验收继续后续。
