@@ -44,6 +44,7 @@ pub struct ResourceStore {
     budget: usize,
     cache: Mutex<BTreeMap<String, Cached>>,
     outlines: Mutex<VecDeque<(String, Arc<String>)>>,
+    cursor_images: Mutex<VecDeque<(String, Arc<Vec<u8>>)>>,
     sources: Mutex<Option<Arc<crate::brush_source::SourceStore>>>,
 }
 pub fn hash(bytes: &[u8]) -> String {
@@ -178,6 +179,7 @@ impl ResourceStore {
             budget,
             cache: Mutex::new(BTreeMap::new()),
             outlines: Mutex::new(VecDeque::new()),
+            cursor_images: Mutex::new(VecDeque::new()),
             sources: Mutex::new(None),
         })
     }
@@ -447,6 +449,40 @@ impl ResourceStore {
         while cache.len() >= 8
             || cache.iter().map(|(_, value)| value.len()).sum::<usize>() + result.len()
                 > 16 * 1024 * 1024
+        {
+            cache.pop_front();
+        }
+        cache.push_back((id.to_owned(), result.clone()));
+        Ok(result)
+    }
+    /// Background-only white/alpha display PNG, keyed by immutable coverage identity.
+    /// The bounded cache retains encoded bytes, never the original mask or its mips.
+    pub fn cursor_png(&self, id: &str, token: &CancellationToken) -> Result<Arc<Vec<u8>>> {
+        check(token)?;
+        let mut cache = self
+            .cursor_images
+            .lock()
+            .map_err(|_| Error::Invalid("cursor image cache lock"))?;
+        if let Some(index) = cache.iter().position(|(key, _)| key == id) {
+            let entry = cache.remove(index).expect("cached cursor image");
+            let result = entry.1.clone();
+            cache.push_back(entry);
+            return Ok(result);
+        }
+        let resource = self.load(id, token)?;
+        let pixels = resource.mask.cursor_rgba();
+        check(token)?;
+        let edge = paint_core::BRUSH_CURSOR_IMAGE_EDGE;
+        let mut bytes = Vec::new();
+        PngEncoder::new_with_quality(&mut bytes, CompressionType::Fast, FilterType::Adaptive)
+            .write_image(&pixels, edge, edge, ExtendedColorType::Rgba8)?;
+        check(token)?;
+        if bytes.len() > 512 * 1024 {
+            return Err(Error::Limit("cursor image PNG bytes"));
+        }
+        let result = Arc::new(bytes);
+        while cache.len() >= 8
+            || cache.iter().map(|(_, v)| v.len()).sum::<usize>() + result.len() > 4 * 1024 * 1024
         {
             cache.pop_front();
         }

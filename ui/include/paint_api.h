@@ -16,11 +16,13 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 52
+#define PAINT_ABI_MINOR 53
 
 #define PAINT_ABI_PATCH 0
 
 #define PAINT_BLEND_PASS_THROUGH 27
+
+#define PAINT_BRUSH_CURSOR_IMAGE_EDGE 256
 
 #define PAINT_BRUSH_ERASE 1
 
@@ -66,6 +68,8 @@
 #define PAINT_FEATURE_ASYNC_SESSION 16
 
 #define PAINT_FEATURE_BRUSH_CATALOG 4194304
+
+#define PAINT_FEATURE_BRUSH_CURSOR_IMAGE 281474976710656
 
 #define PAINT_FEATURE_BRUSH_OUTLINE 33554432
 
@@ -1369,6 +1373,21 @@ PaintStatus paint_brush_library_text(struct PaintBrushLibrary *library,
                                      uint8_t *buffer,
                                      uint64_t capacity,
                                      uint64_t *required);
+
+/**
+ * Background-only cached white/alpha PNG of the actual base tip coverage.
+ * Fixed PAINT_BRUSH_CURSOR_IMAGE_EDGE square, aspect preserved with transparent padding.
+ * Display-only: no color, flow, texture, scattering or document changes are applied.
+ * # Safety
+ * Live library, readable UTF-8 identity and nonoverlapping writable buffer/required required.
+ * A null buffer with zero capacity queries the full size; no partial bytes are copied.
+ */
+PaintStatus paint_brush_library_tip_cursor_png(struct PaintBrushLibrary *library,
+                                               const uint8_t *identity,
+                                               uint64_t identity_length,
+                                               uint8_t *buffer,
+                                               uint64_t capacity,
+                                               uint64_t *required);
 
 /**
  * Background-only cached SVG path for the resource's 50% coverage outline.

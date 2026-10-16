@@ -640,6 +640,43 @@ pub unsafe extern "C" fn paint_brush_library_tip_outline(
     })
 }
 
+/// Background-only cached white/alpha PNG of the actual base tip coverage.
+/// Fixed PAINT_BRUSH_CURSOR_IMAGE_EDGE square, aspect preserved with transparent padding.
+/// Display-only: no color, flow, texture, scattering or document changes are applied.
+/// # Safety
+/// Live library, readable UTF-8 identity and nonoverlapping writable buffer/required required.
+/// A null buffer with zero capacity queries the full size; no partial bytes are copied.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_tip_cursor_png(
+    library: *mut PaintBrushLibrary,
+    identity: *const u8,
+    identity_length: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(required, 0)?;
+        runtime::outside_callback()?;
+        let capacity_bytes = pointers::length(capacity)?;
+        let identity = pointers::utf8(identity, identity_length)?;
+        let library = runtime::registry()?.brush_library(library)?;
+        let store = library.resource_store()?;
+        let png = store
+            .cursor_png(&identity, &paint_task::CancellationToken::default())
+            .map_err(crate::file_job::io_error)?;
+        if capacity_bytes < png.len() {
+            pointers::write(required, png.len() as u64)?;
+            return Err(ApiError::new(
+                PAINT_BUFFER_TOO_SMALL,
+                "cursor image buffer too small",
+            ));
+        }
+        pointers::valid_pointer(buffer)?;
+        pointers::copy_buffer(&png, buffer, capacity, required)
+    })
+}
+
 /// Read verified import-time source/report JSON on a background thread.
 /// Original ABR bytes are not exposed; each query verifies files afresh.
 /// # Safety

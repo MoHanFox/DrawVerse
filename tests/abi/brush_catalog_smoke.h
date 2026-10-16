@@ -58,6 +58,8 @@ static int brush_catalog_smoke(void) {
     if (paint_brush_library_share_resources(library, library) != PAINT_NOT_FOUND) return 16;
     if (paint_brush_library_bind_resources(library, NULL, 0) != PAINT_INVALID_ARGUMENT) return 17;
     if (paint_brush_library_tip_outline(library, (const uint8_t *)id, sizeof(id)-1, text, sizeof(text), &required) != PAINT_NOT_FOUND || required != 0) return 18;
+    required=999;
+    if (PAINT_BRUSH_CURSOR_IMAGE_EDGE != 256 || paint_brush_library_tip_cursor_png(library, (const uint8_t *)id, sizeof(id)-1, text, sizeof(text), &required) != PAINT_NOT_FOUND || required != 0) return 118;
     if (paint_brush_library_package_read(library, NULL, 0, text, sizeof(text), &required) != PAINT_INVALID_ARGUMENT || required != 0) return 19;
     if (paint_brush_library_package_read_taper(library,NULL,0,text,sizeof(text),&required)!=PAINT_INVALID_ARGUMENT || required!=0) return 58;
     if (paint_brush_library_package_write_taper(library,NULL,0,NULL,0)!=PAINT_INVALID_ARGUMENT) return 59;

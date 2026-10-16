@@ -10,6 +10,87 @@ fn png(w: u32, h: u32, pixels: &[u8], color: ExtendedColorType) -> Vec<u8> {
     bytes
 }
 #[test]
+fn cursor_image_png_matches_actual_coverage_interpretations_and_has_no_color() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(directory.path().into(), DEFAULT_RESOURCE_BUDGET).unwrap();
+    let token = CancellationToken::default();
+    let input = png(
+        4,
+        2,
+        &[255, 0, 128, 255, 0, 255, 255, 128],
+        ExtendedColorType::L8,
+    );
+    for interpretation in [
+        Interpretation::Coverage,
+        Interpretation::Alpha,
+        Interpretation::InverseLuminance,
+    ] {
+        let stored = store.import_png(&input, interpretation, &token).unwrap();
+        let original = store.encoded(&stored.id).unwrap();
+        let expected = stored.mask.cursor_rgba();
+        let data = store.cursor_png(&stored.id, &token).unwrap();
+        assert!(data.len() < 512 * 1024);
+        let image = image::load_from_memory(&data).unwrap().to_rgba8();
+        assert_eq!(image.dimensions(), (256, 256));
+        assert_eq!(image.as_raw(), &expected);
+        assert!(image.pixels().all(|p| p.0[..3] == [255; 3]));
+        assert_eq!(store.encoded(&stored.id).unwrap(), original);
+        assert!(Arc::ptr_eq(
+            &data,
+            &store.cursor_png(&stored.id, &token).unwrap()
+        ));
+    }
+}
+#[test]
+fn cursor_image_cache_lru_rebuild_and_errors_do_not_pin_masks_or_install_bad_results() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(directory.path().into(), DEFAULT_RESOURCE_BUDGET).unwrap();
+    let token = CancellationToken::default();
+    let mut first = None;
+    for size in 1..=10 {
+        let stored = store
+            .import_png(
+                &png(size, 1, &vec![255; size as usize], ExtendedColorType::L8),
+                Interpretation::Coverage,
+                &token,
+            )
+            .unwrap();
+        let data = store.cursor_png(&stored.id, &token).unwrap();
+        if size == 1 {
+            first = Some((
+                stored.id.clone(),
+                Arc::downgrade(&data),
+                Arc::downgrade(&stored.mask),
+            ));
+        }
+    }
+    let (id, weak, mask) = first.unwrap();
+    assert!(weak.upgrade().is_none());
+    assert!(mask.upgrade().is_none());
+    assert_eq!(store.resident_bytes(), 0);
+    let first = store.cursor_png(&id, &token).unwrap();
+    assert!(Arc::ptr_eq(&first, &store.cursor_png(&id, &token).unwrap()));
+    assert!(store.cursor_png("../bad", &token).is_err());
+    let cancelled = CancellationToken::default();
+    cancelled.cancel();
+    assert!(matches!(
+        store.cursor_png(&id, &cancelled),
+        Err(paint_io::Error::Cancelled)
+    ));
+    let missing = "0".repeat(64);
+    assert!(store.cursor_png(&missing, &token).is_err());
+    std::fs::write(directory.path().join(format!("{missing}.png")), b"invalid").unwrap();
+    assert!(store.cursor_png(&missing, &token).is_err());
+    // A failed read must not cache an error or partial PNG; repaired content is usable.
+    let bytes = png(3, 1, &[0, 128, 255], ExtendedColorType::L8);
+    let id = hash(&bytes);
+    std::fs::write(directory.path().join(format!("{id}.png")), b"invalid").unwrap();
+    assert!(store.cursor_png(&id, &token).is_err());
+    std::fs::write(directory.path().join(format!("{id}.png")), &bytes).unwrap();
+    assert!(store.cursor_png(&id, &token).is_ok());
+    assert_eq!(store.resident_bytes(), 0);
+}
+#[test]
 fn outlines_share_immutable_geometry_and_evict_old_entries_without_pinning_masks() {
     let directory = tempfile::tempdir().unwrap();
     let store = ResourceStore::open(directory.path().into(), DEFAULT_RESOURCE_BUDGET).unwrap();

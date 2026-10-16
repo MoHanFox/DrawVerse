@@ -66,12 +66,13 @@ int main(void) {
     uint8_t copied_name[sizeof(name)] = {0};
 
     version.struct_size = sizeof(version);
-    CHECK(paint_core_version(&version) == PAINT_OK && version.major == 1 && version.minor >= 52);
+    CHECK(paint_core_version(&version) == PAINT_OK && version.major == 1 && version.minor >= 53);
     CHECK(paint_core_create(&core) == PAINT_OK && core != NULL);
     caps.struct_size = sizeof(caps);
     CHECK(paint_core_capabilities(core, &caps) == PAINT_OK);
     CHECK((caps.features & PAINT_FEATURE_WET_BRUSH) != 0);
     CHECK((caps.features & PAINT_FEATURE_WET_DUAL_COLOR) != 0);
+    CHECK((caps.features & PAINT_FEATURE_BRUSH_CURSOR_IMAGE) != 0);
     CHECK((caps.features & PAINT_FEATURE_STROKE_TAPER) != 0);
     CHECK((caps.features & PAINT_FEATURE_DEVICE_TIP_DYNAMICS) != 0);
     CHECK((caps.features & PAINT_FEATURE_BRUSH_SCATTER) != 0);

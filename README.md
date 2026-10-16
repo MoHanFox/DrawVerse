@@ -1,4 +1,24 @@
 # DrawVerse
+### 说明
+
+DrawVerse致力成为一款专业的绘画软件，由DrawVerse Rust内核驱动。目前阶段`master`分支即`dev`分支不稳定，agent代码欠缺整理，无文档，可维护性较差，不建议您投入使用。
+
+核心代码: `core/crates`
+```text
+.../core/crates:
+├─paint-core # 核心库，包括笔刷系统，历史系统，一些工具的算法
+├─paint-ffi # 语言交互接口
+├─paint-io # IO层
+├─paint-render # 渲染 / 合成模块
+├─paint-storage # 易失性临时磁盘暂存空间管理器
+└─paint-task # DrawVerse Rust 线程池 / CPU 任务调度器
+```
+UI层代码: `ui/src`
+
+项目结构调整将会在笔刷系统完成正式版时进行
+
+---
+### 流水线即其设计
 
 笔刷系统（分阶段实施）：[引擎与界面设计](docs/brush-system-design.md)、[VBR 格式草案](docs/vbr-format-design.md)、[分阶段验收计划](docs/brush-system-validation.md)。规划包含 ABR 导入、共用画笔/橡皮/涂抹、PS 风格分类设置及笔尖描边预览。程序/图片笔尖、VBR1.1与来源报告已有阶段实现；ABR6/10基础导入入口已接入（部分转换会明确报告）。VBR1.2来源交换已接入，导出可显式选择完整原始ABR范围。完整ABR参数/动态、分组扩展及湿混仍待完成。
 
@@ -53,6 +73,8 @@ Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘
 - [暂存盘设置设计](docs/storage-settings-design.md) / [设置与清扫验证](docs/storage-settings-validation.md)
 - [大笔触历史存储设计](docs/history-storage-design.md) / [历史存储验证](docs/history-storage-validation.md)
 
+---
+
 ## 当前能力
 
 64×64 稀疏瓦片、线性预乘 RGBA32F、多图层、16 级隔离图层组、可编辑图层/组蒙版、连续剪贴蒙版、拖放排序和归组、稀疏白色背景、27 种混合模式、可见性/不透明度/填充、透明像素锁/位置锁/完全锁、非破坏性整数移动、矩形/椭圆选区与组合/反选、压感圆笔刷、橡皮擦、距离插值、取消、图层与笔触撤销/重做、历史/瓦片预算、脏区域、只读快照。
@@ -77,6 +99,8 @@ QML 新建每边支持 1–1,000,000 像素，只为可见区域和导航分配�
 
 新建默认一个不透明白色“背景”；新增像素层默认中文编号。蒙版选中后支持黑/白/灰绘制、显隐禁用和撤销，预览并排显示在所属节点右侧。图层/组可拖入组或拖到行间排序，组行只显示名称。主画布与导航均以白灰正方形棋盘格表示透明区域；全部隐藏时可见完整格子，不改导出 alpha。图层面板可分组、折叠、移入/移出和解组，组属性只应用一次，完全/位置锁继承；组与蒙版是不同功能。当前组为隔离模式，穿透尚未支持。
 
+---
+
 ## 环境
 
 Git（检出规则测试）、Rust >=1.85（rustfmt、clippy），CMake >=3.24，Python >=3.9（标准库验证脚本），C11/C++20 编译器及平台链接工具。首次生成器编译需下载锁定 crates，不需要全局安装 cbindgen。
@@ -84,6 +108,8 @@ Git（检出规则测试）、Rust >=1.85（rustfmt、clippy），CMake >=3.24�
 UI 需要 Qt >=6.5 的 Core/Gui/Qml/Quick/QuickControls2/Test。本机实测 Qt 6.8.3 MSVC x64。Windows 可运行 `powershell -ExecutionPolicy Bypass -File tools/setup-qt.ps1` 安装项目内 SDK（Python >=3.10），不会改全局环境；也可指定已有 SDK。其他平台使用原生 Qt SDK。
 
 Windows 使用 x64 MSVC + Windows SDK，建议 Developer PowerShell，将 Rust/CMake/Ninja 加入 PATH；本轮不混用 MSVC Rust 与 MinGW C++。macOS 用 Xcode 命令行工具，Linux 用 GCC/Clang。支持 64 位 ABI；已实测 Windows，macOS/Linux/MSRV 由后续 CI 验证。本机环境初始化见最新验证记录。
+
+---
 
 ## 构建 / 运行 / 验证
 
