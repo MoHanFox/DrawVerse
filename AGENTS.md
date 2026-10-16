@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新湿混双载色状态：`docs/brush-wet-pair-design.md` / `docs/brush-wet-pair-validation.md`；WetInk主/第二独立二维载体与整对WetTool租约/清洗装载，5项新数值及21项旧回归、Windows Release/ABI/Qt通过；尚未接Document双色贡献/Engine完整返回/起收笔检查点及IO/Qt，当前组合仍拒绝，无ABI/格式变化。
+
 - 最新空图层栈：`docs/empty-layer-stack-design.md` / `docs/empty-layer-stack-validation.md`；最后图层/整组/批量可删空，active=0与透明棋盘格、历史/新建/空栈粘贴、ORA零层往返和透明PNG；Windows最小Rust/Qt及ABI通过，无布局/格式版本变化。
 
 - 最新起收笔 Qt：`docs/brush-taper-ui-design.md` / `docs/brush-taper-ui-validation.md`；state18完整镜像/关闭值/复制重置基准、ABI1.51准备与VBR1.22入口、距离和独立平滑尺寸/opacity曲线、真实白色预览/在途捕获/像素历史及重开，Windows最小Qt通过；完整ABR/16位、湿混双色等仍待后续。

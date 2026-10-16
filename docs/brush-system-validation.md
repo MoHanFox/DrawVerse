@@ -1,5 +1,7 @@
 # 统一笔刷系统验收计划
 
+2026-10-16湿混双载色状态：[验收](brush-wet-pair-validation.md)。主/第二二维载体按角色配置/清洗载色、工具独占整对租约与原子采用已实现；5项新数值和21项既有回归、Windows Release/ABI/Qt通过。Document双色贡献、Engine完整返回、起收笔检查点及IO/Qt组合尚待接，仍不开放湿混双色，不将本阶段当作用户功能完成。
+
 2026-10-16起收笔 Qt：[验收](brush-taper-ui-validation.md)。完整 state18/关闭值/重置基准、ABI1.51入口和真实白色预览、在途捕获、像素历史/VBR1.22及重开均已接通，设置页提供距离和独立尺寸/opacity平滑曲线；Windows最小五项Qt通过。起收笔不再属于缺少用户入口的范围；其余湿混双色/橡皮、非分隔双笔刷、完整ABR/16位及VBR分组等不据此宣称完成。
 
 2026-10-16工具栏参数追加：画笔/橡皮的流量、不透明度与各自压感复用当前预设，涂抹下拉改细分隔线；Windows Release 和最小三项 Qt 通过，见[验收](brush-toolbar-transfer-validation.md)。

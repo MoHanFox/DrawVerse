@@ -1,3 +1,5 @@
+湿混双载色状态：[设计](brush-wet-pair-design.md) / [验收](brush-wet-pair-validation.md)。独立主/第二二维载体、按角色配置与整对WetTool独占采用已实现并验证；下一步接Document双贡献场、Engine返回与起收笔检查点，再接IO/ABI/Qt组合，当前画布湿混双色仍拒绝。
+
 空图层栈追加：[设计](empty-layer-stack-design.md) / [验收](empty-layer-stack-validation.md)。允许删除所有图层、仅显示透明棋盘格；撤销/重做、新建/粘贴和 ORA 空栈保存恢复接通，最小 Windows 验证通过。
 
 工具栏参数追加：[设计](brush-toolbar-transfer-design.md) / [验收](brush-toolbar-transfer-validation.md)。画笔与橡皮直接调整当前预设的流量、不透明度及各自压感；涂抹预设下拉改为细分隔线，Windows 最小 Qt 通过。
