@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 50;
+pub const PAINT_ABI_MINOR: u32 = 51;
 pub const PAINT_FEATURE_PRESSURE_DYNAMICS: u64 = 1073741824;
 pub const PAINT_FEATURE_VBR_SOURCES: u64 = 536870912;
 pub const PAINT_FEATURE_ABR_IMPORT: u64 = 268435456;
@@ -847,6 +847,8 @@ pub struct PaintWetTool {
     _private: u8,
 }
 pub const PAINT_FEATURE_WET_BRUSH: u64 = 35184372088832;
+/// Complete state18/VBR1.22 stroke taper parameter entry (ABI1.51).
+pub const PAINT_FEATURE_STROKE_TAPER: u64 = 70368744177664;
 pub const PAINT_WET_TOOL_INITIALIZED: u32 = 1;
 #[repr(C)]
 #[derive(Clone, Copy, Default)]

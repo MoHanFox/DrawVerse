@@ -3389,5 +3389,7 @@ fn transform_abi_session_history_and_atomic_invalid_geometry() {
     }
 }
 
+#[path = "support/taper_api.rs"]
+mod taper_api;
 #[path = "support/wet_api.rs"]
 mod wet_api;

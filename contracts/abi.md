@@ -1,4 +1,4 @@
-# C ABI 1.50.0 契约
+# C ABI 1.51.0 契约
 
 ## ABI 1.48 双色双笔刷入口
 
@@ -442,3 +442,11 @@ The existing ABR read API returns handoff version3 when a batch includes convert
 ABR color conversion extends that JSON handoff to version4 for converterVersion5 sources. parameters.colorDynamics reuses validated state10 data, independently of optional pressureDynamics and scatterDynamics. Current Qt accepts handoff1..4; color fields in older handoffs are rejected before catalog publication. Older Qt rejects version4 instead of dropping new parameters. V5 baselines require color data; older converters reject it. Source-bearing packages require VBR1.19; existing ABI1.50, state and execution behavior versions stay unchanged. Native linear HSV/random behavior is reported approximate; purity/device modulation remains unexecuted. See docs/abr-color-conversion-design.md.
 
 ABR shape jitter conversion returns handoff5 for converterVersion6 sources. parameters.shapeJitter reuses state9, independently of optional pressure/scatter/color DTOs. Qt accepts1..5 and atomically rejects shape data in older handoffs; old Qt rejects5. V6 source baselines require shape data, older source versions reject it. Such sources require VBR1.20; no C ABI minor, DTO, state or execution behavior change. PS random distributions and combined pressure/minimum rules remain approximate, while unsupported device controls retain field-level reports. See docs/abr-shape-conversion-design.md.
+
+## ABI 1.51 — stroke taper parameter entry
+
+`PAINT_FEATURE_STROKE_TAPER` (bit46) exposes full state18/VBR1.22/behavior15 parameter support through `paint_brush_library_prepare_state_taper` and `paint_brush_library_package_read_taper` / `paint_brush_library_package_write_taper`. These accept prior supported data, including complete wet settings. The original and `_wet` entry points retain their support boundaries and reject nondefault taper rather than silently losing closed parameters. Existing DTO layouts and prepared stroke calls remain unchanged.
+
+Preparation returns an exact asynchronous ticket; `paint_brush_library_prepared_state` retains all taper fields and resource identities. Failed drafts do not replace the last valid catalog. Recipes preserve the selected support level when unused image revisions are retired and rebuilt. Prepared strokes capture the full preset through existing `paint_session_begin_prepared_preset_with_blend`; modifying the catalog or destroying its external token does not change an active stroke. Taper distances remain document pixels under temporary tool size overrides.
+
+Package reads use the existing size probe and atomic resource adoption contract: insufficient capacity or invalid output pointers must not install assets. Writes resolve all resources and validate the complete bundle before atomic save. Outputs, callbacks and worker-thread requirements are unchanged. This capability does not claim a Qt settings page; the UI must mirror state18, preserve reset baselines, select the new explicit entry points and continue rendering automatic previews in white before exposing the controls. See `docs/brush-taper-abi-design.md` and its validation record.

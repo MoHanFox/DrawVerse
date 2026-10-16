@@ -70,14 +70,14 @@ fn prepare(library: *mut PaintBrushLibrary, s: BrushSettings) -> u64 {
     );
     seq
 }
-fn ink(tool: *mut PaintWetTool) -> PaintWetToolInfo {
+pub(super) fn ink(tool: *mut PaintWetTool) -> PaintWetToolInfo {
     let mut info = dto!(PaintWetToolInfo);
     unsafe {
         assert_eq!(paint_wet_tool_info(tool, &mut info), PAINT_OK);
     }
     info
 }
-fn copied(h: &Harness) -> Vec<u8> {
+pub(super) fn copied(h: &Harness) -> Vec<u8> {
     unsafe {
         let mut seq = 0;
         let id = 1;
@@ -123,7 +123,7 @@ fn copied(h: &Harness) -> Vec<u8> {
         bytes
     }
 }
-fn begin(h: &Harness, library: *mut PaintBrushLibrary, preparation: u64, x: f64) -> u64 {
+pub(super) fn begin(h: &Harness, library: *mut PaintBrushLibrary, preparation: u64, x: f64) -> u64 {
     let mut tool = PaintBrushToolDesc {
         operation: PAINT_BRUSH_PAINT,
         radius: 4.,
@@ -306,7 +306,7 @@ fn wet_public_binding_real_pixels_busy_cancel_and_destroyed_tokens_keep_captures
     unsafe {
         let mut version = dto!(PaintVersion);
         assert_eq!(paint_core_version(&mut version), PAINT_OK);
-        assert_eq!(version.minor, 50);
+        assert!(version.minor >= 50);
         let mut capabilities = dto!(PaintCapabilities);
         assert_eq!(paint_core_capabilities(a.core, &mut capabilities), PAINT_OK);
         assert_ne!(capabilities.features & PAINT_FEATURE_WET_BRUSH, 0);

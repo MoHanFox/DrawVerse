@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 50
+#define PAINT_ABI_MINOR 51
 
 #define PAINT_ABI_PATCH 0
 
@@ -170,6 +170,11 @@
 #define PAINT_FEATURE_SMUDGE 32768
 
 #define PAINT_FEATURE_STORAGE_SETTINGS 128
+
+/**
+ * Complete state18/VBR1.22 stroke taper parameter entry (ABI1.51).
+ */
+#define PAINT_FEATURE_STROKE_TAPER 70368744177664
 
 #define PAINT_FEATURE_TRANSFORM 524288
 
@@ -1140,6 +1145,18 @@ PaintStatus paint_brush_library_package_read(struct PaintBrushLibrary *library,
                                              uint64_t *required);
 
 /**
+ * Complete state18/VBR1.22 resource package read, including closed taper and wet settings.
+ * # Safety
+ * Live library, readable path and nonoverlapping writable buffer/required are required.
+ */
+PaintStatus paint_brush_library_package_read_taper(struct PaintBrushLibrary *library,
+                                                   const uint8_t *path,
+                                                   uint64_t path_length,
+                                                   uint8_t *buffer,
+                                                   uint64_t capacity,
+                                                   uint64_t *required);
+
+/**
  * Complete wet-preset library package entry (state17/VBR1.15).
  * # Safety
  * Same live handle, readable path/JSON and writable buffer contracts as the legacy entry.
@@ -1163,6 +1180,17 @@ PaintStatus paint_brush_library_package_write(struct PaintBrushLibrary *library,
                                               uint64_t json_length);
 
 /**
+ * Complete state18/VBR1.22 resource package save, including closed taper and wet settings.
+ * # Safety
+ * Live library and readable bounded path/JSON are required for this call only.
+ */
+PaintStatus paint_brush_library_package_write_taper(struct PaintBrushLibrary *library,
+                                                    const uint8_t *path,
+                                                    uint64_t path_length,
+                                                    const uint8_t *json,
+                                                    uint64_t json_length);
+
+/**
  * Complete wet-preset library package entry (state17/VBR1.15).
  * # Safety
  * Same live handle, readable path/JSON and writable buffer contracts as the legacy entry.
@@ -1182,6 +1210,16 @@ PaintStatus paint_brush_library_prepare_state(struct PaintBrushLibrary *library,
                                               const uint8_t *json,
                                               uint64_t json_length,
                                               uint64_t *out_sequence);
+
+/**
+ * Opt in to complete state18 preparation, including closed taper and wet parameters.
+ * # Safety
+ * Live library/readable bounded JSON and nonoverlapping writable sequence are required.
+ */
+PaintStatus paint_brush_library_prepare_state_taper(struct PaintBrushLibrary *library,
+                                                    const uint8_t *json,
+                                                    uint64_t length,
+                                                    uint64_t *out_sequence);
 
 /**
  * Opt in to complete state17 preparation, including closed wet parameters.

@@ -41,11 +41,25 @@ struct TicketState {
 }
 #[derive(Clone)]
 struct Recipe {
-    allow_wet: bool,
+    support: BrushSupport,
     json: String,
     budget: usize,
     resources: Option<Arc<ResourceStore>>,
     anchors: Arc<Mutex<Vec<Arc<ValidatedSource>>>>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BrushSupport {
+    Legacy,
+    Wet,
+    Taper,
+}
+impl BrushSupport {
+    pub(crate) fn wet(self) -> bool {
+        self != Self::Legacy
+    }
+    pub(crate) fn taper(self) -> bool {
+        self == Self::Taper
+    }
 }
 impl Recipe {
     fn start(self) -> ApiResult<TaskTicket<ApiResult<Arc<BrushCatalog>>>> {
@@ -66,17 +80,19 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
-                    if catalog.ids().iter().any(|id| {
-                        catalog
-                            .preset(id)
-                            .is_some_and(|p| p.settings().taper != Default::default())
-                    }) {
+                    if !self.support.taper()
+                        && catalog.ids().iter().any(|id| {
+                            catalog
+                                .preset(id)
+                                .is_some_and(|p| p.settings().taper != Default::default())
+                        })
+                    {
                         return Err(ApiError::new(
                             PAINT_UNSUPPORTED,
                             "stroke taper requires updated native entry",
                         ));
                     }
-                    if !self.allow_wet
+                    if !self.support.wet()
                         && catalog.ids().iter().any(|id| {
                             catalog
                                 .preset(id)
@@ -205,18 +221,21 @@ impl PreparedCatalog {
         }
     }
     pub fn submit(&self, json: String) -> ApiResult<u64> {
-        self.submit_mode(json, false)
+        self.submit_mode(json, BrushSupport::Legacy)
     }
     pub fn submit_wet(&self, json: String) -> ApiResult<u64> {
-        self.submit_mode(json, true)
+        self.submit_mode(json, BrushSupport::Wet)
     }
-    fn submit_mode(&self, json: String, allow_wet: bool) -> ApiResult<u64> {
+    pub fn submit_taper(&self, json: String) -> ApiResult<u64> {
+        self.submit_mode(json, BrushSupport::Taper)
+    }
+    fn submit_mode(&self, json: String, support: BrushSupport) -> ApiResult<u64> {
         let current = self.current.lock().map_err(|_| ApiError::internal())?;
         let budget = current.mask_budget();
         drop(current);
         self.retire_unused_images()?;
         let recipe = Recipe {
-            allow_wet,
+            support,
             json,
             budget,
             anchors: Arc::new(Mutex::new(Vec::new())),

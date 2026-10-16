@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新起收笔原生入口：`docs/brush-taper-abi-design.md` / `docs/brush-taper-abi-validation.md`；ABI1.51/STROKE_TAPER、显式state18准备与VBR1.22包读写、准确捕获/旧图片修订重建和真实两笔/载色/历史已验证；旧入口保护保留，Qt镜像/基准/白色预览和设置页仍待接。
+
 - 最新起收笔保存交换：`docs/brush-taper-io-design.md` / `docs/brush-taper-io-validation.md`；不可变预设/state18/VBR1.22/behavior15、完整关闭曲线和严格舍入前验证、真实两笔/载色/来源与全新目录交换通过；ABI1.50旧入口暂拒新对象防Qt丢值，完整原生/Qt镜像和重置基准仍待接。
 
 - 最新起收笔实际绘画：`docs/brush-taper-document-design.md` / `docs/brush-taper-document-validation.md`；Rust明确入口/真实活动笔尾瓦片与贡献场恢复、单双流/双色/湿混/涂抹、单历史和预算/暂存失败整笔回滚，10项新像素用例/相关旧回归及Windows Release/ABI/Qt通过；预设IO/原生/Qt参数仍待接，无ABI或格式变化。

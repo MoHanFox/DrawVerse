@@ -1,4 +1,4 @@
-起收笔当前阶段：[保存设计](brush-taper-io-design.md) / [验收](brush-taper-io-validation.md)，前置[实际绘画](brush-taper-document-validation.md)和[数值调度](brush-taper-kernel-validation.md)。Rust预设/state18/VBR1.22/behavior15、启用/关闭曲线与真实两笔/载色/来源交换已验证；ABI1.50旧入口暂拒新配置，明确支持的原生准备/包接口、Qt镜像/基准/界面继续下一阶段。结束继续不追原始鼠标终点。
+起收笔当前阶段：[原生设计](brush-taper-abi-design.md) / [验收](brush-taper-abi-validation.md)，前置[保存交换](brush-taper-io-validation.md)和[实际绘画](brush-taper-document-validation.md)。ABI1.51完整state18准备/VBR1.22包入口、准确修订与图片重建/真实两笔/湿混载色及旧兼容已验证；Qt镜像/关闭值/基准、白色自动预览和设置页继续下一阶段，尚无界面入口。结束继续不追原始鼠标终点。
 
 画笔混合原生捕获：[设计](brush-blend-abi-design.md) / [验收](brush-blend-abi-validation.md)。ABI1.44、独立模式DTO/新prepared入口与真实捕获/历史/旧正常兼容已验证；Qt工具栏状态、保存及有色底预览下一阶段接入。
 

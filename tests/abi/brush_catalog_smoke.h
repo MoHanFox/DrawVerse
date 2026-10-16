@@ -21,6 +21,7 @@ _Static_assert(sizeof(PaintBrushToolDesc) == 56 && offsetof(PaintBrushToolDesc, 
 _Static_assert(sizeof(PaintTipPose)==24 && offsetof(PaintTipPose,radius)==8 && offsetof(PaintTipPose,roundness)==16,"pose layout");
 #endif
 static int brush_catalog_smoke(void) {
+    PaintVersion version;
     PaintBrushLibrary *library = NULL;
     PaintBrushLibraryInfo info;
     PaintBrushPresetInfo preset;
@@ -40,6 +41,8 @@ static int brush_catalog_smoke(void) {
     PaintPoint point;
     PaintTipPose tip_pose;
     PaintCompositeTipPose composite;
+    memset(&version,0,sizeof(version));version.struct_size=sizeof(version);
+    if(paint_core_version(&version)!=PAINT_OK || version.minor<51) return 57;
     memset(&info, 0, sizeof(info)); info.struct_size = sizeof(info);
     memset(&preset, 0, sizeof(preset)); preset.struct_size = sizeof(preset);
     memset(&settings, 0, sizeof(settings)); settings.struct_size = sizeof(settings);
@@ -52,6 +55,8 @@ static int brush_catalog_smoke(void) {
     if (paint_brush_library_bind_resources(library, NULL, 0) != PAINT_INVALID_ARGUMENT) return 17;
     if (paint_brush_library_tip_outline(library, (const uint8_t *)id, sizeof(id)-1, text, sizeof(text), &required) != PAINT_NOT_FOUND || required != 0) return 18;
     if (paint_brush_library_package_read(library, NULL, 0, text, sizeof(text), &required) != PAINT_INVALID_ARGUMENT || required != 0) return 19;
+    if (paint_brush_library_package_read_taper(library,NULL,0,text,sizeof(text),&required)!=PAINT_INVALID_ARGUMENT || required!=0) return 58;
+    if (paint_brush_library_package_write_taper(library,NULL,0,NULL,0)!=PAINT_INVALID_ARGUMENT) return 59;
     if (paint_brush_library_info(library, &info) != PAINT_OK || info.preset_count != 4) return 2;
     old_revision = info.revision;
     if (paint_brush_library_text(library, info.revision, 0, 0, text, sizeof(text), &required) != PAINT_OK || required != sizeof(id)-1 || memcmp(text, id, required)) return 3;
@@ -66,6 +71,7 @@ static int brush_catalog_smoke(void) {
     if (paint_brush_library_abr_read(library, NULL, 0, text, sizeof(text), &required) != PAINT_INVALID_ARGUMENT || required != 0) return 20;
     if (paint_brush_library_current_state(library, state, sizeof(state), &state_size) != PAINT_OK) return 12;
     if (paint_brush_library_prepare_state(library, state, state_size, &preparation) != PAINT_OK || !preparation) return 13;
+    if (paint_brush_library_prepare_state_taper(library,state,state_size,&preparation)!=PAINT_OK || !preparation) return 60;
     started = clock();
     do {
         status = paint_brush_library_prepared_state(library, preparation, state, sizeof(state), &state_size);

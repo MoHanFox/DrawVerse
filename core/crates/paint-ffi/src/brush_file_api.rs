@@ -1,5 +1,6 @@
 use crate::{
     api::*,
+    brush_preparation::BrushSupport,
     error::{boundary, ApiError},
     file_job::io_error,
     pointers, runtime,
@@ -125,7 +126,7 @@ pub unsafe extern "C" fn paint_brush_library_package_read(
             buffer,
             capacity,
             required,
-            false,
+            BrushSupport::Legacy,
         )
     }
 }
@@ -136,7 +137,7 @@ unsafe fn paint_brush_library_package_read_impl(
     buffer: *mut u8,
     capacity: u64,
     required: *mut u64,
-    allow_wet: bool,
+    support: BrushSupport,
 ) -> PaintStatus {
     boundary(|| unsafe {
         pointers::write(required, 0)?;
@@ -145,8 +146,10 @@ unsafe fn paint_brush_library_package_read_impl(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
-        reject_taper_package(&bundle.package)?;
-        if !allow_wet {
+        if !support.taper() {
+            reject_taper_package(&bundle.package)?;
+        }
+        if !support.wet() {
             reject_wet_package(&bundle.package)?;
         }
         let bytes = bundle.package.to_json().map_err(io_error)?;
@@ -182,7 +185,7 @@ pub unsafe extern "C" fn paint_brush_library_package_read_wet(
             buffer,
             capacity,
             required,
-            true,
+            BrushSupport::Wet,
         )
     }
 }
@@ -198,7 +201,14 @@ pub unsafe extern "C" fn paint_brush_library_package_write(
     json_length: u64,
 ) -> PaintStatus {
     unsafe {
-        paint_brush_library_package_write_impl(library, path, path_length, json, json_length, false)
+        paint_brush_library_package_write_impl(
+            library,
+            path,
+            path_length,
+            json,
+            json_length,
+            BrushSupport::Legacy,
+        )
     }
 }
 unsafe fn paint_brush_library_package_write_impl(
@@ -207,7 +217,7 @@ unsafe fn paint_brush_library_package_write_impl(
     path_length: u64,
     json: *const u8,
     json_length: u64,
-    allow_wet: bool,
+    support: BrushSupport,
 ) -> PaintStatus {
     boundary(|| unsafe {
         runtime::outside_callback()?;
@@ -215,8 +225,10 @@ unsafe fn paint_brush_library_package_write_impl(
         let json = pointers::brush_json(json, json_length)?;
         let library = runtime::registry()?.brush_library(library)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
-        reject_taper_package(&package)?;
-        if !allow_wet {
+        if !support.taper() {
+            reject_taper_package(&package)?;
+        }
+        if !support.wet() {
             reject_wet_package(&package)?;
         }
 
@@ -293,7 +305,14 @@ pub unsafe extern "C" fn paint_brush_library_package_write_wet(
     json_length: u64,
 ) -> PaintStatus {
     unsafe {
-        paint_brush_library_package_write_impl(library, path, path_length, json, json_length, true)
+        paint_brush_library_package_write_impl(
+            library,
+            path,
+            path_length,
+            json,
+            json_length,
+            BrushSupport::Wet,
+        )
     }
 }
 
@@ -314,4 +333,50 @@ fn reject_taper_package(package: &paint_io::vbr::Package) -> crate::error::ApiRe
         ));
     }
     Ok(())
+}
+/// Complete state18/VBR1.22 resource package read, including closed taper and wet settings.
+/// # Safety
+/// Live library, readable path and nonoverlapping writable buffer/required are required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_package_read_taper(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_read_impl(
+            library,
+            path,
+            path_length,
+            buffer,
+            capacity,
+            required,
+            BrushSupport::Taper,
+        )
+    }
+}
+/// Complete state18/VBR1.22 resource package save, including closed taper and wet settings.
+/// # Safety
+/// Live library and readable bounded path/JSON are required for this call only.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_package_write_taper(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    json: *const u8,
+    json_length: u64,
+) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_write_impl(
+            library,
+            path,
+            path_length,
+            json,
+            json_length,
+            BrushSupport::Taper,
+        )
+    }
 }
