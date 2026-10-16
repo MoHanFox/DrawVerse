@@ -940,6 +940,7 @@ fn convert_inner<'a>(
             1.
         };
         let mut settings = BrushSettings {
+            taper: Default::default(),
             wet: Default::default(),
             smoothing: Default::default(),
             texture: Default::default(),

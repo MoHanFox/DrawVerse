@@ -24,6 +24,7 @@ pub struct BrushSettings {
     pub dual: crate::DualBrush,
     pub smoothing: crate::BrushSmoothing,
     pub wet: crate::WetSettings,
+    pub taper: crate::StrokeTaper,
 }
 impl Default for BrushSettings {
     fn default() -> Self {
@@ -38,6 +39,7 @@ impl Default for BrushSettings {
             dual: Default::default(),
             smoothing: Default::default(),
             wet: Default::default(),
+            taper: Default::default(),
         }
     }
 }
@@ -59,6 +61,7 @@ impl BrushSettings {
             dual: self.dual.clone(),
             smoothing: self.smoothing,
             wet: self.wet,
+            taper: self.taper.clone(),
             write_blend: Default::default(),
         }
     }

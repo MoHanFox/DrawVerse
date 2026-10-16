@@ -85,6 +85,7 @@ pub unsafe extern "C" fn paint_brush_package_write(
         let json = pointers::brush_json(json, json_length)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
         reject_wet_package(&package)?;
+        reject_taper_package(&package)?;
 
         if package.brushes.iter().any(|b| b.dual_brush.is_some()) {
             return Err(ApiError::new(
@@ -144,6 +145,7 @@ unsafe fn paint_brush_library_package_read_impl(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
+        reject_taper_package(&bundle.package)?;
         if !allow_wet {
             reject_wet_package(&bundle.package)?;
         }
@@ -213,6 +215,7 @@ unsafe fn paint_brush_library_package_write_impl(
         let json = pointers::brush_json(json, json_length)?;
         let library = runtime::registry()?.brush_library(library)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
+        reject_taper_package(&package)?;
         if !allow_wet {
             reject_wet_package(&package)?;
         }
@@ -299,6 +302,15 @@ fn reject_wet_package(package: &paint_io::vbr::Package) -> crate::error::ApiResu
         return Err(ApiError::new(
             PAINT_UNSUPPORTED,
             "wet mix requires updated native entry",
+        ));
+    }
+    Ok(())
+}
+fn reject_taper_package(package: &paint_io::vbr::Package) -> crate::error::ApiResult<()> {
+    if package.brushes.iter().any(|b| b.stroke_taper.is_some()) {
+        return Err(ApiError::new(
+            PAINT_UNSUPPORTED,
+            "stroke taper requires updated native entry",
         ));
     }
     Ok(())

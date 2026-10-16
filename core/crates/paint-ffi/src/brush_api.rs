@@ -50,6 +50,7 @@ pub unsafe extern "C" fn paint_session_begin_brush(
             _ => return Err(ApiError::invalid("brush operation")),
         };
         let definition = BrushDefinition {
+            taper: Default::default(),
             wet: Default::default(),
             smoothing: Default::default(),
             write_blend: Default::default(),

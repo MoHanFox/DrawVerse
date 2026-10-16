@@ -54,6 +54,7 @@ pub struct BrushDefinition {
     pub dual: crate::DualBrush,
     pub smoothing: crate::BrushSmoothing,
     pub wet: crate::WetSettings,
+    pub taper: crate::StrokeTaper,
     pub write_blend: crate::BlendMode,
 }
 
@@ -68,6 +69,7 @@ impl From<Brush> for BrushDefinition {
             dual: Default::default(),
             smoothing: Default::default(),
             wet: Default::default(),
+            taper: Default::default(),
             write_blend: Default::default(),
         }
     }
@@ -76,6 +78,7 @@ impl From<Brush> for BrushDefinition {
 /// A validated immutable execution plan shared by all stroke operators.
 #[derive(Clone, Debug)]
 pub struct BrushProgram {
+    pub(crate) taper: crate::StrokeTaper,
     pub(crate) smoothing: crate::BrushSmoothing,
     wet: crate::WetSettings,
     pub(crate) write_blend: crate::BlendMode,
@@ -249,6 +252,7 @@ impl BrushProgram {
         }
         Ok(Self {
             wet: definition.wet,
+            taper: definition.taper,
             smoothing: definition.smoothing,
             write_blend: definition.write_blend,
             tip: definition.tip,

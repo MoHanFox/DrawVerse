@@ -117,6 +117,12 @@ struct Row {
         deserialize_with = "crate::brush_wet::present"
     )]
     wet_mix: Option<crate::brush_wet::WetParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_taper::present"
+    )]
+    stroke_taper: Option<crate::brush_taper::TaperParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -184,7 +190,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=17) {
+    if !matches!(state.version, 1..=18) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -261,6 +267,9 @@ fn decode_inner(
         }
         if row.wet_mix.is_some() && state.version < 17 {
             return Err(Error::Unsupported("wet mix requires state17".into()));
+        }
+        if row.stroke_taper.is_some() && state.version < 18 {
+            return Err(Error::Unsupported("stroke taper requires state18".into()));
         }
         if row.smoothing.is_some() && state.version < 14 {
             return Err(Error::Unsupported("smoothing requires state14".into()));
@@ -354,6 +363,10 @@ fn decode_inner(
             row.id,
             row.name,
             BrushSettings {
+                taper: row
+                    .stroke_taper
+                    .map(|p| p.core().clone())
+                    .unwrap_or_default(),
                 wet: row.wet_mix.map(|p| p.core()).unwrap_or_default(),
                 smoothing: row.smoothing.map(|p| p.core()).unwrap_or_default(),
                 texture,
@@ -388,6 +401,12 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        let stroke_taper = if s.taper != Default::default() {
+            version = version.max(18);
+            Some(crate::brush_taper::TaperParameters::from_core(&s.taper))
+        } else {
+            None
+        };
         let wet_mix = if !s.wet.is_default() {
             version = version.max(17);
             Some(crate::brush_wet::WetParameters::from_core(s.wet))
@@ -524,6 +543,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             dual_brush,
             smoothing,
             wet_mix,
+            stroke_taper,
         });
     }
     let bytes = serde_json::to_vec(&State {

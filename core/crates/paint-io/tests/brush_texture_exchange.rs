@@ -15,6 +15,7 @@ use std::{
 use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
 fn package(s: &BrushSettings, id: &str) -> Package {
     let p = Preset {
+        stroke_taper: None,
         wet_mix: None,
         id: "12345678-1234-4234-8234-123456789abc".into(),
         name: "texture".into(),

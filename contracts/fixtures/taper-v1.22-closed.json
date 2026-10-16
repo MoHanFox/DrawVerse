@@ -1,0 +1,103 @@
+{
+  "id": "12345678-1234-4234-8234-123456789abd",
+  "name": "Taper",
+  "engineProfile": "drawverse.brush",
+  "behaviorVersion": 15,
+  "requiredCapabilities": [
+    "procedural-tip",
+    "stroke-taper"
+  ],
+  "parameters": {
+    "diameter": 6,
+    "spacing": 0.3,
+    "dabOpacity": 0.35,
+    "hardness": 1,
+    "roundness": 1,
+    "angle": 0,
+    "flow": 1,
+    "pressureSize": true,
+    "pressureFlow": false
+  },
+  "strokeTaper": {
+    "model": "distance-envelope-v1",
+    "enabled": false,
+    "start": {
+      "lengthPx": 8.125,
+      "size": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            0.4,
+            0.2
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.25,
+        "interpolation": "pchip"
+      },
+      "opacity": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            0.4,
+            0.2
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.25,
+        "interpolation": "pchip"
+      }
+    },
+    "end": {
+      "lengthPx": 12.75,
+      "size": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            0.4,
+            0.2
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.25,
+        "interpolation": "pchip"
+      },
+      "opacity": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            0.4,
+            0.2
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.25,
+        "interpolation": "pchip"
+      }
+    }
+  }
+}

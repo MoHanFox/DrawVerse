@@ -66,6 +66,16 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
+                    if catalog.ids().iter().any(|id| {
+                        catalog
+                            .preset(id)
+                            .is_some_and(|p| p.settings().taper != Default::default())
+                    }) {
+                        return Err(ApiError::new(
+                            PAINT_UNSUPPORTED,
+                            "stroke taper requires updated native entry",
+                        ));
+                    }
                     if !self.allow_wet
                         && catalog.ids().iter().any(|id| {
                             catalog
@@ -926,6 +936,127 @@ mod tests {
         }
     }
     #[test]
+    fn old_native_entries_reject_taper_without_publishing_or_writing() {
+        use paint_core::{PressureControl, StrokeTaper, TaperEnd};
+        for enabled in [false, true] {
+            let taper = StrokeTaper::new(
+                enabled,
+                TaperEnd::new(9., PressureControl::default(), PressureControl::default()).unwrap(),
+                TaperEnd::default(),
+            );
+            let mut catalog = BrushCatalog::default();
+            let mut settings = catalog.selected().settings().clone();
+            settings.taper = taper.clone();
+            catalog.edit("round-pressure", settings).unwrap();
+            let library = PreparedCatalog::new(BrushCatalog::default());
+            let before = paint_io::brush_state::encode(&library.current().unwrap()).unwrap();
+            let json = String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap();
+            for wet in [false, true] {
+                let sequence = if wet {
+                    library.submit_wet(json.clone())
+                } else {
+                    library.submit(json.clone())
+                }
+                .unwrap();
+                assert_eq!(
+                    library.ticket(sequence).unwrap().wait().unwrap_err().status,
+                    PAINT_UNSUPPORTED
+                );
+                assert_eq!(
+                    paint_io::brush_state::encode(&library.current().unwrap()).unwrap(),
+                    before
+                );
+            }
+            let mut package = texture_bundle(false, false).package;
+            package.brushes[0].texture = None;
+            package.brushes[0]
+                .required_capabilities
+                .retain(|c| c != "texture-cover");
+            package.brushes[0].stroke_taper =
+                Some(paint_io::brush_taper::TaperParameters::from_core(&taper));
+            package.brushes[0]
+                .required_capabilities
+                .push("stroke-taper".into());
+            package.brushes[0].behavior_version = 15;
+            let token = paint_task::CancellationToken::default();
+            let bundle = paint_io::vbr_image::ImageBundle::new(
+                package,
+                std::collections::BTreeMap::new(),
+                &token,
+            )
+            .unwrap();
+            let tmp = tempfile::tempdir().unwrap();
+            let path = tmp.path().join("taper.vbr");
+            paint_io::vbr_image::save(&path, &bundle, &token).unwrap();
+            let file_before = std::fs::read(&path).unwrap();
+            let path = path.to_str().unwrap().as_bytes();
+            let json = bundle.package.to_json().unwrap();
+            let mut handle = std::ptr::null_mut();
+            unsafe {
+                assert_eq!(crate::paint_brush_library_create(0, &mut handle), PAINT_OK);
+                let mut required = 99;
+                assert_eq!(
+                    crate::paint_brush_library_package_read(
+                        handle,
+                        path.as_ptr(),
+                        path.len() as u64,
+                        std::ptr::null_mut(),
+                        0,
+                        &mut required
+                    ),
+                    PAINT_UNSUPPORTED
+                );
+                assert_eq!(required, 0);
+                assert_eq!(
+                    crate::paint_brush_library_package_read_wet(
+                        handle,
+                        path.as_ptr(),
+                        path.len() as u64,
+                        std::ptr::null_mut(),
+                        0,
+                        &mut required
+                    ),
+                    PAINT_UNSUPPORTED
+                );
+                assert_eq!(required, 0);
+                assert_eq!(
+                    crate::paint_brush_library_package_write(
+                        handle,
+                        path.as_ptr(),
+                        path.len() as u64,
+                        json.as_ptr(),
+                        json.len() as u64
+                    ),
+                    PAINT_UNSUPPORTED
+                );
+                assert_eq!(
+                    crate::paint_brush_library_package_write_wet(
+                        handle,
+                        path.as_ptr(),
+                        path.len() as u64,
+                        json.as_ptr(),
+                        json.len() as u64
+                    ),
+                    PAINT_UNSUPPORTED
+                );
+                assert_eq!(
+                    crate::paint_brush_package_write(
+                        path.as_ptr(),
+                        path.len() as u64,
+                        json.as_ptr(),
+                        json.len() as u64
+                    ),
+                    PAINT_UNSUPPORTED
+                );
+                assert_eq!(
+                    std::fs::read(std::str::from_utf8(path).unwrap()).unwrap(),
+                    file_before
+                );
+                assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
+            }
+        }
+    }
+    #[test]
     fn native_smoothing_preparation_capture_and_package_entry() {
         for enabled in [false, true] {
             let smoothing = paint_core::BrushSmoothing::new(enabled, 24., 12., 0.7, 3.).unwrap();
@@ -1035,6 +1166,7 @@ mod tests {
         let package = paint_io::vbr::Package {
             package_id: "12345678-1234-4234-8234-123456789abd".into(),
             brushes: vec![paint_io::vbr::Preset {
+                stroke_taper: None,
                 wet_mix: None,
                 id: "12345678-1234-4234-8234-123456789abc".into(),
                 name: "texture".into(),
@@ -1459,6 +1591,7 @@ mod tests {
         let package = Package {
             package_id: "12345678-1234-4234-8234-123456789abc".into(),
             brushes: vec![Preset {
+                stroke_taper: None,
                 wet_mix: None,
                 id: "12345678-1234-4234-8234-123456789abd".into(),
                 name: "current procedural".into(),

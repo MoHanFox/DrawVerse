@@ -52,6 +52,7 @@ fn package(s: &BrushSettings) -> Package {
     Package {
         package_id: "12345678-1234-4234-8234-123456789abc".into(),
         brushes: vec![Preset {
+            stroke_taper: None,
             wet_mix: None,
             id: "12345678-1234-4234-8234-123456789abd".into(),
             name: "scatter".into(),

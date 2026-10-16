@@ -135,6 +135,11 @@ impl SourceArchive {
         tip_resource: Option<String>,
     ) -> Result<SourceInfo> {
         let settings = &preset.settings;
+        if settings.taper != Default::default() {
+            return Err(Error::Unsupported(
+                "taper source baseline is not represented".into(),
+            ));
+        }
         if !settings.wet.is_default() {
             return Err(Error::Unsupported(
                 "wet source baseline is not represented".into(),

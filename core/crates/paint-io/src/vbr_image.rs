@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 21;
+pub const MAX_EXECUTABLE_MINOR: u32 = 22;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -119,6 +119,9 @@ impl ImageBundle {
             .get(index)
             .ok_or(Error::Invalid("VBR brush index"))?;
         let mut definition = preset.parameters.definition();
+        if let Some(p) = &preset.stroke_taper {
+            definition.taper = p.core().clone();
+        }
         if let Some(p) = preset.wet_mix {
             definition.wet = p.core();
         }
@@ -361,6 +364,9 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         }
         brushes.push(preset);
     }
+    if manifest.version.minor < 22 && brushes.iter().any(|b| b.stroke_taper.is_some()) {
+        return Err(Error::Unsupported("stroke taper requires VBR1.22".into()));
+    }
     if manifest.version.minor < 15 && brushes.iter().any(|b| b.wet_mix.is_some()) {
         return Err(Error::Unsupported("wet mix requires VBR1.15".into()));
     }
@@ -544,6 +550,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 || b.dual_brush.is_some()
                 || b.smoothing.is_some()
                 || b.wet_mix.is_some()
+                || b.stroke_taper.is_some()
         })
     {
         return vbr::encode(&bundle.package, token);
@@ -571,6 +578,13 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.stroke_taper.is_some())
+            {
+                22
+            } else if bundle
                 .sources
                 .iter()
                 .any(|source| source.converter_version() > 6)

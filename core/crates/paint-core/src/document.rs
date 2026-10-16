@@ -1366,9 +1366,12 @@ impl Document {
                 .mask
                 .then(|| Self::mask_tone(brush.color)),
         };
-        stroke.initialize_taper(taper_settings)?;
+        let captured_taper = taper_settings
+            .cloned()
+            .unwrap_or_else(|| stroke.program.taper.clone());
+        stroke.initialize_taper(Some(&captured_taper))?;
         #[cfg(test)]
-        stroke.taper_reference(taper_settings, self.taper_reference_endpoint)?;
+        stroke.taper_reference(Some(&captured_taper), self.taper_reference_endpoint)?;
         match self
             .secondary_dab(&mut stroke, first)
             .and_then(|()| self.dab(&mut stroke, first))

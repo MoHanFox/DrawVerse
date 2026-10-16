@@ -106,6 +106,7 @@ fn package(s: &BrushSettings) -> Package {
                 .and_then(|m| m.resource_id())
                 .map(str::to_owned),
             source_resource: None,
+            stroke_taper: None,
             wet_mix: Some(WetParameters::from_core(s.wet)),
             smoothing: (!s.smoothing.is_default())
                 .then(|| paint_io::brush_smoothing::SmoothingParameters::from_core(s.smoothing)),
