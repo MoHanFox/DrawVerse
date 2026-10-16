@@ -199,6 +199,9 @@ pub(crate) fn encode_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 impl Preset {
+    pub fn has_wet_dual(&self) -> bool {
+        self.wet_mix.is_some_and(|p| p.core().dual_color())
+    }
     pub fn has_smooth(&self) -> bool {
         self.parameters
             .pressure_dynamics
@@ -259,7 +262,10 @@ impl Package {
             let dual = b.dual_brush.is_some();
             if let Some(d) = &b.dual_brush {
                 d.validate()?;
-                if b.wet_mix.is_some_and(|p| p.core().enabled()) && d.active_color() {
+                if b.wet_mix
+                    .is_some_and(|p| p.core().enabled() && !p.core().dual_color())
+                    && d.active_color()
+                {
                     return Err(Error::Unsupported("wet dual color is not supported".into()));
                 }
             }
@@ -272,7 +278,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if b.stroke_taper.is_some() {
+                != if b.has_wet_dual() {
+                    16
+                } else if b.stroke_taper.is_some() {
                     15
                 } else if b.wet_mix.is_some() {
                     14
@@ -310,7 +318,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 18
+            if b.required_capabilities.len() > 19
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -332,6 +340,7 @@ impl Package {
                             | "dual-color-stroke"
                             | "wet-mix"
                             | "stroke-taper"
+                            | "wet-dual-color"
                     )
                 })
             {
@@ -343,8 +352,13 @@ impl Package {
             {
                 return Err(Error::Invalid("VBR source identity"));
             }
-            if b.stroke_taper.is_some()
-                != b.required_capabilities.iter().any(|c| c == "stroke-taper")
+            if b.has_wet_dual()
+                != b.required_capabilities
+                    .iter()
+                    .any(|c| c == "wet-dual-color")
+                || (b.has_wet_dual() && b.engine_profile != "drawverse.brush")
+                || b.stroke_taper.is_some()
+                    != b.required_capabilities.iter().any(|c| c == "stroke-taper")
                 || (b.stroke_taper.is_some() && b.engine_profile != "drawverse.brush")
                 || b.wet_mix.is_some() != b.required_capabilities.iter().any(|c| c == "wet-mix")
                 || (b.wet_mix.is_some() && b.engine_profile != "drawverse.brush")

@@ -1,6 +1,16 @@
 //! Complete, strictly bounded wet preset policy. Reservoir pixels are tool state.
 use paint_core::{WetMix, WetSettings, WET_CARRIER_MODEL};
 use serde::{Deserialize, Serialize};
+#[derive(Serialize, Deserialize, Clone, Copy)]
+enum DualColorModel {
+    #[serde(rename = "independent-carriers-v1")]
+    IndependentCarriersV1,
+}
+fn present_dual<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<DualColorModel>, D::Error> {
+    DualColorModel::deserialize(d).map(Some)
+}
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Data {
@@ -15,6 +25,12 @@ struct Data {
     load: f64,
     deposit: f64,
     consumption: f64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_dual"
+    )]
+    dual_color: Option<DualColorModel>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct WetParameters {
@@ -49,6 +65,9 @@ impl Serialize for WetParameters {
             load: f64::from(m.load()),
             deposit: f64::from(m.deposit()),
             consumption: f64::from(m.consumption()),
+            dual_color: p
+                .dual_color()
+                .then_some(DualColorModel::IndependentCarriersV1),
         }
         .serialize(s)
     }
@@ -72,12 +91,9 @@ impl<'de> Deserialize<'de> for WetParameters {
             p.consumption as f32,
         )
         .map_err(serde::de::Error::custom)?;
-        Ok(Self::from_core(WetSettings::new(
-            p.enabled,
-            p.all_layers,
-            p.auto_clean,
-            p.auto_load,
-            mix,
-        )))
+        Ok(Self::from_core(
+            WetSettings::new(p.enabled, p.all_layers, p.auto_clean, p.auto_load, mix)
+                .with_dual_color(p.dual_color.is_some()),
+        ))
     }
 }

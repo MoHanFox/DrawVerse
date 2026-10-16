@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 22;
+pub const MAX_EXECUTABLE_MINOR: u32 = 23;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -364,6 +364,9 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         }
         brushes.push(preset);
     }
+    if manifest.version.minor < 23 && brushes.iter().any(|b| b.has_wet_dual()) {
+        return Err(Error::Unsupported("wet dual color requires VBR1.23".into()));
+    }
     if manifest.version.minor < 22 && brushes.iter().any(|b| b.stroke_taper.is_some()) {
         return Err(Error::Unsupported("stroke taper requires VBR1.22".into()));
     }
@@ -577,7 +580,9 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle
+            minor: if bundle.package.brushes.iter().any(|b| b.has_wet_dual()) {
+                23
+            } else if bundle
                 .package
                 .brushes
                 .iter()

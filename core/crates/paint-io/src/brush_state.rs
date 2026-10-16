@@ -190,7 +190,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=18) {
+    if !matches!(state.version, 1..=19) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     let mut entries = Vec::new();
@@ -264,6 +264,9 @@ fn decode_inner(
             return Err(Error::Unsupported(
                 "smooth pressure requires state13".into(),
             ));
+        }
+        if row.wet_mix.is_some_and(|p| p.core().dual_color()) && state.version < 19 {
+            return Err(Error::Unsupported("wet dual color requires state19".into()));
         }
         if row.wet_mix.is_some() && state.version < 17 {
             return Err(Error::Unsupported("wet mix requires state17".into()));
@@ -409,6 +412,9 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         };
         let wet_mix = if !s.wet.is_default() {
             version = version.max(17);
+            if s.wet.dual_color() {
+                version = version.max(19);
+            }
             Some(crate::brush_wet::WetParameters::from_core(s.wet))
         } else {
             None

@@ -250,10 +250,12 @@ impl BrushProgram {
         }
         if definition.wet.enabled()
             && (definition.brush.mode == crate::BrushMode::Erase
-                || (!wet_pair && dual.as_ref().is_some_and(|d| d.color.enabled())))
+                || (!wet_pair
+                    && !definition.wet.dual_color()
+                    && dual.as_ref().is_some_and(|d| d.color.enabled())))
         {
             return Err(Error::InvalidArgument(
-                "wet preset requires paint or smudge without dual color",
+                "wet preset requires paint/smudge and declared dual-color policy",
             ));
         }
         Ok(Self {

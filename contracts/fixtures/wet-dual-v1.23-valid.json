@@ -1,0 +1,151 @@
+{
+  "id": "12345678-1234-4234-8234-123456789abd",
+  "name": "Independent wet dual",
+  "engineProfile": "drawverse.brush",
+  "behaviorVersion": 16,
+  "requiredCapabilities": [
+    "procedural-tip",
+    "wet-mix",
+    "dual-cover",
+    "dual-relative-size",
+    "dual-color-stroke",
+    "wet-dual-color",
+    "stroke-taper"
+  ],
+  "parameters": {
+    "diameter": 8.0,
+    "spacing": 0.25,
+    "dabOpacity": 0.4,
+    "hardness": 1.0,
+    "roundness": 1.0,
+    "angle": 0.0,
+    "flow": 0.7,
+    "pressureSize": true,
+    "pressureFlow": true
+  },
+  "wetMix": {
+    "model": "linear-premul-grid-v1",
+    "enabled": true,
+    "allLayers": false,
+    "autoClean": true,
+    "autoLoad": true,
+    "wetness": 0.6,
+    "pickup": 0.2,
+    "mix": 0.3,
+    "load": 0.4,
+    "deposit": 0.8,
+    "consumption": 0.1,
+    "dualColor": "independent-carriers-v1"
+  },
+  "dualBrush": {
+    "model": "path-coverage-v1",
+    "enabled": true,
+    "mode": "multiply",
+    "diameter": 6.0,
+    "spacing": 0.1,
+    "hardness": 1.0,
+    "roundness": 1.0,
+    "angle": 0.0,
+    "flow": 1.0,
+    "pressureSize": true,
+    "pressureFlow": true,
+    "resource": null,
+    "sizing": {
+      "model": "relative-size-v1",
+      "mode": "relative",
+      "diameterOffset": 2.0,
+      "widthRule": "fixed-width"
+    },
+    "color": {
+      "model": "separated-stroke-v1",
+      "enabled": true,
+      "useBackground": true,
+      "overflow": true,
+      "order": "second-behind",
+      "primaryBlend": "multiply",
+      "secondaryBlend": "screen"
+    }
+  },
+  "strokeTaper": {
+    "model": "distance-envelope-v1",
+    "enabled": true,
+    "start": {
+      "lengthPx": 8.125,
+      "size": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            0.4,
+            0.2
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.25,
+        "interpolation": "pchip"
+      },
+      "opacity": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            0.4,
+            0.2
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.25,
+        "interpolation": "pchip"
+      }
+    },
+    "end": {
+      "lengthPx": 12.75,
+      "size": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            0.4,
+            0.2
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.25,
+        "interpolation": "pchip"
+      },
+      "opacity": {
+        "curve": [
+          [
+            0,
+            0
+          ],
+          [
+            0.4,
+            0.2
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "minimum": 0.25,
+        "interpolation": "pchip"
+      }
+    }
+  }
+}

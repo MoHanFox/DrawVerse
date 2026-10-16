@@ -146,6 +146,7 @@ unsafe fn paint_brush_library_package_read_impl(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
+        reject_wet_dual_package(&bundle.package)?;
         if !support.taper() {
             reject_taper_package(&bundle.package)?;
         }
@@ -225,6 +226,7 @@ unsafe fn paint_brush_library_package_write_impl(
         let json = pointers::brush_json(json, json_length)?;
         let library = runtime::registry()?.brush_library(library)?;
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
+        reject_wet_dual_package(&package)?;
         if !support.taper() {
             reject_taper_package(&package)?;
         }
@@ -316,6 +318,15 @@ pub unsafe extern "C" fn paint_brush_library_package_write_wet(
     }
 }
 
+fn reject_wet_dual_package(package: &paint_io::vbr::Package) -> crate::error::ApiResult<()> {
+    if package.brushes.iter().any(|b| b.has_wet_dual()) {
+        return Err(ApiError::new(
+            PAINT_UNSUPPORTED,
+            "wet dual color requires updated native entry",
+        ));
+    }
+    Ok(())
+}
 fn reject_wet_package(package: &paint_io::vbr::Package) -> crate::error::ApiResult<()> {
     if package.brushes.iter().any(|b| b.wet_mix.is_some()) {
         return Err(ApiError::new(

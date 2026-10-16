@@ -6,6 +6,7 @@ pub struct WetSettings {
     all_layers: bool,
     auto_clean: bool,
     auto_load: bool,
+    dual_color: bool,
     mix: WetMix,
 }
 impl Default for WetSettings {
@@ -26,11 +27,19 @@ impl WetSettings {
             all_layers,
             auto_clean,
             auto_load,
+            dual_color: false,
             mix,
         }
     }
     pub fn enabled(self) -> bool {
         self.enabled
+    }
+    pub fn with_dual_color(mut self, enabled: bool) -> Self {
+        self.dual_color = enabled;
+        self
+    }
+    pub fn dual_color(self) -> bool {
+        self.dual_color
     }
     pub fn all_layers(self) -> bool {
         self.all_layers

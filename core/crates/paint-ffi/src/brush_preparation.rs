@@ -80,6 +80,16 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
+                    if catalog.ids().iter().any(|id| {
+                        catalog
+                            .preset(id)
+                            .is_some_and(|p| p.settings().wet.dual_color())
+                    }) {
+                        return Err(ApiError::new(
+                            PAINT_UNSUPPORTED,
+                            "wet dual color requires updated native entry",
+                        ));
+                    }
                     if !self.support.taper()
                         && catalog.ids().iter().any(|id| {
                             catalog
@@ -553,6 +563,9 @@ impl PreparedCatalog {
 #[cfg(test)]
 #[path = "../../paint-io/tests/support/abr_fixture.rs"]
 mod abr_fixture;
+#[cfg(test)]
+#[path = "brush_wet_dual_io_tests.rs"]
+mod wet_dual_io_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1166,7 +1179,10 @@ mod tests {
             assert_eq!(reopened.definition(0).unwrap().smoothing, smoothing);
         }
     }
-    fn texture_bundle(enabled: bool, shared_tip: bool) -> paint_io::vbr_image::ImageBundle {
+    pub(super) fn texture_bundle(
+        enabled: bool,
+        shared_tip: bool,
+    ) -> paint_io::vbr_image::ImageBundle {
         let png = paint_io::brush_resource::encode_mask(
             &paint_core::BrushMask::new(4, 1, vec![0, 255, 0, 255]).unwrap(),
         )
