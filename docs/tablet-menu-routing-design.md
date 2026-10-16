@@ -4,4 +4,8 @@
 
 有可见原生Popup时，未开始笔触的Canvas不得截取Tablet事件；已有笔触仍按捕获路径结束。CompactComboBox的原生Popup.Window与Qt6.5兼容宿主都接入既有Workspace菜单窗口登记。Workspace仅在菜单上下文将仍送原窗口的鼠标事件按全局坐标重新映射到菜单；数位笔按下/移动/松开映射为正确菜单窗口局部/场景/全局坐标的控件鼠标事件，保留按键、设备与时间戳，标为应用合成，避免被误判为真正鼠标接管。菜单外按下只关闭菜单并消费，不能穿透开始画画。菜单选择仍调用控件自己的activated，不在C++写画笔模式专用分支。
 
+下拉Popup明确采用透明模态输入屏障，只阻止穿透，不给工作区加暗色。高优先菜单接通既有原生置顶管理。兼容宿主在打开前准备并保留Popup父项，首开高度由固定20px行高与选项数量确定，不先显示4px空窗口。兼容宿主使用不激活的Tool窗口，键盘焦点保留原ComboBox；宿主抢焦点会触发原ComboBox.focusOutEvent关闭列表。Escape在宿主可见时可关闭，Canvas按登记属性识别Tool菜单并让出Tablet事件，不能只检查Qt.Popup窗口类型。
+
+字段及关闭/输入传播依据：[Qt ComboBox实现](https://github.com/qt/qtdeclarative/blob/6.8/src/quicktemplates/qquickcombobox.cpp)与[Qt Popup实现](https://github.com/qt/qtdeclarative/blob/6.8/src/quicktemplates/qquickpopup.cpp)。
+
 Windows最小测试：原生与兼容下拉，在实际画布文档上方的选项位置，将鼠标与Tablet事件故意送原画布窗口，模式切换/弹窗关闭且revision、dirty、历史及真实像素不变；菜单外按下只关闭，随后新的一笔正常；既有鼠标下拉置顶/选择回归。与Windows Ink悬停一起验收，无Rust/ABI/格式变化，不声称实体设备驱动已认证。

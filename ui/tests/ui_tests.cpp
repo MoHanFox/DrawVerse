@@ -587,7 +587,8 @@ private slots:
         window.setCursor(Qt::WaitCursor);
         auto *pen=new QPointingDevice("Direct hover pen",901,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,2);pen->setParent(qApp);
         const QPointF entry(120,150),next(170,190);
-        const auto hover=[&](QEvent::Type type,QPointF point){QHoverEvent event(type,point,canvas->mapToGlobal(point),entry,Qt::NoModifier,pen);QCoreApplication::sendEvent(canvas,&event);};
+        // Reset the restoration baseline for each acquisition; Quick may resolve a different normal cursor after the previous handoff at high DPI.
+        const auto hover=[&](QEvent::Type type,QPointF point){if(type==QEvent::HoverEnter)window.setCursor(Qt::WaitCursor);QHoverEvent event(type,point,canvas->mapToGlobal(point),entry,Qt::NoModifier,pen);QCoreApplication::sendEvent(canvas,&event);};
         hover(QEvent::HoverEnter,entry);const bool initiallyVisible=canvas->brushCursorVisible();if(!initiallyVisible)QTest::keyClick(&window,Qt::Key_CapsLock);
         hover(QEvent::HoverEnter,entry);QVERIFY(canvas->brushCursorVisible());QCOMPARE(canvas->cursorPosition(),entry);QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
         hover(QEvent::HoverMove,next);QCOMPARE(canvas->brushCursorRect().center(),next);QCOMPARE(window.cursor().shape(),Qt::BlankCursor);QCOMPARE(client.undoDepth(),0);
@@ -597,12 +598,13 @@ private slots:
         QTabletEvent release(QEvent::TabletRelease,pen,end,canvas->mapToGlobal(end),0,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&release);QVERIFY(!client.drawing());
         hover(QEvent::HoverMove,next);QCOMPARE(canvas->brushCursorRect().center(),next);QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
         // Leaving restores the window cursor without requiring a real mouse move.
-        hover(QEvent::HoverLeave,next);QVERIFY(!canvas->brushCursorVisible());QCOMPARE(window.cursor().shape(),Qt::WaitCursor);
-        hover(QEvent::HoverEnter,entry);QMouseEvent realMouse(QEvent::MouseMove,next,canvas->mapToGlobal(next),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(canvas,&realMouse);QHoverEvent mouse(QEvent::HoverMove,next,canvas->mapToGlobal(next),entry);QCoreApplication::sendEvent(canvas,&mouse);QCOMPARE(canvas->cursorPosition(),next);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);
-        hover(QEvent::HoverEnter,entry);QMouseEvent outside(QEvent::MouseMove,{600,450},window.mapToGlobal(QPointF(600,450)),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&outside);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);
-        hover(QEvent::HoverEnter,entry);QEvent windowLeave(QEvent::Leave);QCoreApplication::sendEvent(&window,&windowLeave);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);QVERIFY(!canvas->brushCursorVisible());
-        hover(QEvent::HoverEnter,entry);canvas->setVisible(false);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);canvas->setVisible(true);
-        hover(QEvent::HoverEnter,entry);QTabletEvent leave(QEvent::TabletLeaveProximity,pen,entry,canvas->mapToGlobal(entry),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&leave);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);QVERIFY(!canvas->brushCursorVisible());
+        hover(QEvent::HoverLeave,next);QVERIFY(!canvas->brushCursorVisible());QVERIFY(window.cursor().shape()!=Qt::BlankCursor);
+        // Observe restoration before Quick resolves the new mouse target and legitimately changes the window cursor again.
+        QObject mouseReceiver;hover(QEvent::HoverEnter,entry);QMouseEvent realMouse(QEvent::MouseMove,next,canvas->mapToGlobal(next),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&mouseReceiver,&realMouse);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);QHoverEvent mouse(QEvent::HoverMove,next,canvas->mapToGlobal(next),entry);QCoreApplication::sendEvent(canvas,&mouse);QCOMPARE(canvas->cursorPosition(),next);
+        hover(QEvent::HoverEnter,entry);QMouseEvent outside(QEvent::MouseMove,{600,450},window.mapToGlobal(QPointF(600,450)),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&mouseReceiver,&outside);QCOMPARE(window.cursor().shape(),Qt::WaitCursor);
+        hover(QEvent::HoverEnter,entry);QEvent windowLeave(QEvent::Leave);QCoreApplication::sendEvent(&window,&windowLeave);QVERIFY(window.cursor().shape()!=Qt::BlankCursor);QVERIFY(!canvas->brushCursorVisible());
+        hover(QEvent::HoverEnter,entry);canvas->setVisible(false);QVERIFY(window.cursor().shape()!=Qt::BlankCursor);canvas->setVisible(true);
+        hover(QEvent::HoverEnter,entry);QTabletEvent leave(QEvent::TabletLeaveProximity,pen,entry,canvas->mapToGlobal(entry),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&leave);QVERIFY(window.cursor().shape()!=Qt::BlankCursor);QVERIFY(!canvas->brushCursorVisible());
         // Finish cursor assertions before pumping native desktop input for async history.
         QTRY_COMPARE(client.undoDepth(),1);
         if(!initiallyVisible)QTest::keyClick(&window,Qt::Key_CapsLock);

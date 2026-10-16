@@ -9,7 +9,9 @@ ApplicationWindow {
     required property Item anchorItem
     required property Item originalParent
     transientParent:anchorItem.Window.window
-    flags:Qt.Popup | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+    // The ComboBox keeps keyboard focus. Activating a separate fallback host
+    // makes the owning ComboBox close its item popup in focusOutEvent.
+    flags:Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
     color:Theme.surface;background:null
     function preparePopup(){menu.parent=contentItem;menu.x=0;menu.y=0}
     function alignPopup(){
@@ -29,15 +31,15 @@ ApplicationWindow {
         x=Math.max(area.x+6,Math.min(below.x,area.x+area.width-width-6))
         y=Math.max(area.y+6,Math.min(below.y,area.y+area.height-height-6))
         menu.parent=contentItem;menu.x=0;menu.y=0
-        visible=true;requestActivate()
+        visible=true
     }
-    Shortcut {sequence:"Escape";context:Qt.WindowShortcut;enabled:host.visible;onActivated:host.menu.close()}
+    Shortcut {sequence:"Escape";context:Qt.ApplicationShortcut;enabled:host.visible;onActivated:host.menu.close()}
     Connections {
         target:host.menu
         function onOpened(){Qt.callLater(host.alignPopup)}
         function onImplicitHeightChanged(){if(host.visible)Qt.callLater(host.alignPopup)}
         function onClosed(){host.visible=false}
     }
-    onVisibleChanged:{console.log("INPUT host visible",visible,menu.visible,width,height);Workspace.watchMenuWindow(host,visible);if(!visible && menu.visible)menu.close()}
+    onVisibleChanged:{Workspace.watchMenuWindow(host,visible);if(!visible && menu.visible)menu.close()}
     onClosing:menu.close()
 }

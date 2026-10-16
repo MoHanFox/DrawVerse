@@ -191,7 +191,9 @@ void CanvasItem::updateTabletHover(QHoverEvent *event) {
     sample.tool=event->pointingDevice()->pointerType()==QPointingDevice::PointerType::Eraser?2:1;
     sample.capabilities|=16;sample.buttons=0;sample.timestamp=static_cast<quint64>(m_clock.nsecsElapsed());
     m_cursorInside=contains(event->position());m_cursorPosition=event->position();
-    setCursorSample(sample);refreshBrushCursor();setTabletWindowCursor(m_cursorInside);
+    // Save the window cursor before setCursor() can make Quick resolve its
+    // cached mouse target and replace the value we need to restore on handoff.
+    setTabletWindowCursor(m_cursorInside);setCursorSample(sample);refreshBrushCursor();
 }
 bool CanvasItem::ignoreCachedMouseHover(QHoverEvent *event) {
     // Qt Quick frame-sync hover has the primary mouse device and cached mouse
@@ -525,7 +527,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     }
     if (event->type() != QEvent::TabletPress && event->type() != QEvent::TabletMove && event->type() != QEvent::TabletRelease) return false;
     if (!isEnabled() || !isVisible()) return false;
-    if(!m_tablet)for(auto *popup:QGuiApplication::allWindows())if(popup->isVisible() && popup->type()==Qt::Popup) {
+    if(!m_tablet)for(auto *popup:QGuiApplication::allWindows())if(popup->isVisible() && (popup->type()==Qt::Popup || popup->property("drawverseMenuOpen").toBool())) {
         // Windows Ink can retain the owner window as tablet target while a
         // native popup covers its canvas. Let menu routing/Quick see it first.
         m_penOwnsHover=true;
@@ -540,7 +542,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     // The global position is shared by both native-window and item delivery paths.
     const QPointF local = mapFromGlobal(e->globalPosition());
     const InputSample s=tabletSample(e,local);
-    m_cursorInside=contains(local);m_cursorPosition=local;setCursorSample(s,event->type()==QEvent::TabletPress);refreshBrushCursor();setTabletWindowCursor(m_cursorInside);
+    m_cursorInside=contains(local);m_cursorPosition=local;setTabletWindowCursor(m_cursorInside);setCursorSample(s,event->type()==QEvent::TabletPress);refreshBrushCursor();
     if(event->type()!=QEvent::TabletRelease)setAltHeld(e->modifiers().testFlag(Qt::AltModifier));
     if(!m_tablet && event->type()==QEvent::TabletMove) {
         if(!m_cursorInside)return false;

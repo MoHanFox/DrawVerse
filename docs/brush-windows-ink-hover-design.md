@@ -8,6 +8,8 @@
 
 Quick在Hover派发后还会按缓存位置更新原生光标；忽略旧Hover时用单个可合并的零延迟任务在派发返回后重申笔窗口光标，任务再次校验所有者/窗口/可见性，释放时取消。任务不发绘画或UI重绘通知，避免帧反馈循环。无设备坐标轮询，无定时伪造输入，不改变绘画算法、ABI或格式。
 
+接管时先保存原窗口光标，再切换Item笔尖光标；否则Quick同步解析鼠标目标可能提前改写要恢复的值。回归精确核对应用过滤阶段恢复原光标，随后真实鼠标目标自身引起的Quick光标解析单独处理；窗口离开/隐藏/离开感应范围必须不再保持Blank，不把正常CrossCursor解析误判为恢复失败。
+
 验收：先复现真实Quick窗口Enter缓存/后续TabletMove与帧同步旧鼠标Hover、直接进入/松笔/不同位置及默认鼠标HoverLeave；笔触期间伴随鼠标隔离；真实窗口鼠标接管、系统光标恢复、笔离开/窗口和浮窗隔离；已有动态笔尖/复合光标回归。Windows Release，环境缩放1/2最小相关Qt测试，不宣称实体数位板已认证。
 
 上游依据：[Qt Windows pointer handler](https://github.com/qt/qtbase/blob/6.8/src/plugins/platforms/windows/qwindowspointerhandler.cpp)与[Quick delivery agent](https://github.com/qt/qtdeclarative/blob/6.8/src/quick/util/qquickdeliveryagent.cpp)。

@@ -67,8 +67,8 @@ ComboBox {
         onAboutToShow:if(control.highPriorityMenu && !control.windowPopupsAvailable){control.preparePriorityWindow();control.sideWindow.showPopup()}
         y:control.height;width:Math.max(132,control.width);padding:2
         implicitHeight:Math.min(264,control.count*20+4)
-        onOpened:{console.log("INPUT opened",control.objectName,control.windowPopupsAvailable,control.popup.contentItem.Window.window);control.trackInputWindow();if(control.highPriorityMenu)Qt.callLater(()=>Workspace.promoteMenuWindow(control.popup.contentItem));Qt.callLater(options.previewAtPointer)}
-        onClosed:{console.log("INPUT closed",control.objectName);if(control.inputWindow)Workspace.watchMenuWindow(control.inputWindow,false);control.inputWindow=null;control.menuClosed()}
+        onOpened:{control.trackInputWindow();if(control.highPriorityMenu)Qt.callLater(()=>Workspace.promoteMenuWindow(control.popup.contentItem));Qt.callLater(options.previewAtPointer)}
+        onClosed:{if(control.inputWindow)Workspace.watchMenuWindow(control.inputWindow,false);control.inputWindow=null;control.menuClosed()}
         background:Rectangle {color:Theme.surface;border.color:Theme.line;radius:2}
         contentItem:ListView {
             id: options

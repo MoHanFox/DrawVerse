@@ -34,6 +34,7 @@ QRect WorkspaceManager::availableScreenGeometry(QWindow *window) const {
     return screen?screen->availableGeometry():QRect{};
 }
 void WorkspaceManager::watchMenuWindow(QWindow *window,bool visible) {
+    if(window && window!=m_glassWindow && window->objectName()!="mainWindow")window->setProperty("drawverseMenuOpen",visible);
     m_menuWindows.removeAll(nullptr);
     if(visible && window && window!=m_glassWindow && window->objectName()!="mainWindow" && !m_menuWindows.contains(window))m_menuWindows.append(window);
     else if(!visible)m_menuWindows.removeAll(window);

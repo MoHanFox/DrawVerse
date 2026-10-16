@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新Windows输入/菜单修复：`docs/brush-windows-ink-hover-design.md` / `docs/tablet-menu-routing-design.md` / `docs/windows-input-menu-validation.md`；笔位置所有权隔离Quick缓存Hover、原窗口光标先保存后切换、鼠标/笔菜单坐标路由与透明模态屏障；兼容窗口不激活防失焦关闭，实际Windows最小结果见验收，无ABI/格式变化。
+
 - 最新ABR形状抖动导入：`docs/abr-shape-conversion-design.md` / `docs/abr-shape-conversion-validation.md`；converter6/record1/交接JSON5/VBR1.20，尺寸角度圆度随机与最低比例、独立压力散布颜色/完整关闭配置、旧五代来源保持；PS随机及下限叠加标近似，设备形状控制/16位等继续后续，无C ABI或state新版本。
 
 - 最新ABR颜色动态导入：`docs/abr-color-conversion-design.md` / `docs/abr-color-conversion-validation.md`；converter5/record1/交接JSON4/VBR1.19，前景背景与HSV/逐笔逐印章和完整关闭配置、独立压力散布与旧四代来源保持；PS颜色空间/随机明确近似，纯度/设备颜色控制及16位等继续后续，无C ABI或state新版本。
