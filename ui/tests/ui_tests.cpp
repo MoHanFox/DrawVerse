@@ -2838,13 +2838,40 @@ private slots:
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);
         client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void brushToolbarTransferTracksActivePresetForPaintAndErase() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("transfer.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());window->requestActivate();QTest::qWait(80);
+        auto *library=client.brushLibrary();const auto original=library->selectedId();
+        auto *opacity=findVisualItem(window->contentItem(),"brushToolbarOpacity"),*flow=findVisualItem(window->contentItem(),"brushToolbarFlow"),*opacityPressure=findVisualItem(window->contentItem(),"brushToolbarPressureOpacity"),*flowPressure=findVisualItem(window->contentItem(),"brushToolbarPressureFlow");
+        QVERIFY(opacity && flow && opacityPressure && flowPressure);
+        for(const bool eraser:{false,true}) {
+            client.activateBrush();client.setEraser(eraser);library->setOpacity(.4);library->setFlow(.3);library->setPressureOpacity(false);library->setPressureFlow(false);
+            QTRY_COMPARE(opacity->property("value").toDouble(),.4);QTRY_COMPARE(flow->property("value").toDouble(),.3);
+            for(auto *slider:{opacity,flow}) {QVERIFY(slider->isVisible());slider->forceActiveFocus();QTest::keyClick(window,Qt::Key_Right);}
+            QVERIFY(qAbs(library->opacity()-.41)<.00001);QVERIFY(qAbs(library->flow()-.31)<.00001);QCOMPARE(client.brushOpacity(),library->opacity());
+            const auto curves=library->pressureDynamics();
+            for(auto *toggle:{opacityPressure,flowPressure}) {QVERIFY(toggle->isVisible());QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,toggle->mapToScene({7,toggle->height()/2}).toPoint());QVERIFY(toggle->property("checked").toBool());QCOMPARE(QQmlProperty::read(toggle,"ToolTip.delay",qmlContext(toggle)).toInt(),1000);}
+            QVERIFY(library->pressureOpacity() && library->pressureFlow());QCOMPARE(client.eraser(),eraser);
+            library->setPressureOpacity(false);library->setPressureFlow(false);
+            QTRY_VERIFY(!opacityPressure->property("checked").toBool());QTRY_VERIFY(!flowPressure->property("checked").toBool());
+            QCOMPARE(library->pressureDynamics(),curves);
+        }
+        QVERIFY(library->select("round-fine"));library->setOpacity(.7);library->setFlow(.2);library->setPressureOpacity(true);library->setPressureFlow(true);
+        QTRY_COMPARE(opacity->property("value").toDouble(),.7);QTRY_COMPARE(flow->property("value").toDouble(),.2);QTRY_VERIFY(opacityPressure->property("checked").toBool());QTRY_VERIFY(flowPressure->property("checked").toBool());
+        BrushLibrary restored;QVERIFY(restored.restore(library->snapshot()));QCOMPARE(restored.opacity(),.7);QCOMPARE(restored.flow(),.2);QVERIFY(restored.pressureOpacity() && restored.pressureFlow());
+        QVERIFY(library->select(original));QVERIFY(qAbs(opacity->property("value").toDouble()-.41)<.00001);QVERIFY(qAbs(flow->property("value").toDouble()-.31)<.00001);QVERIFY(!opacityPressure->property("checked").toBool());QVERIFY(!flowPressure->property("checked").toBool());
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void smudgeSharedBrushParametersInputAndDelayedHelp() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("smudge.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
         auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->forceActiveFocus();window->requestActivate();QTest::qWait(80);QTest::keyClick(window,Qt::Key_R);QTRY_VERIFY(client.smudgeTool());
         QCOMPARE(client.smudgeStrength(),.5);QVERIFY(client.smudgePressure() && !client.smudgeAllLayers() && !client.smudgeFingerPainting());auto *bar=findVisualItem(window->contentItem(),"smudgeOptionsBar");QVERIFY(bar && bar->isVisible());
-        auto *preset=findVisualItem(window->contentItem(),"smudgeBrushPreset");QVERIFY(preset);QVERIFY(QMetaObject::invokeMethod(preset,"activated",Q_ARG(int,1)));QVERIFY(client.smudgeTool());QCOMPARE(preset->property("count").toInt(),client.brushLibrary()->presets().size());
+        QVERIFY(!findVisualItem(window->contentItem(),"smudgeBrushPreset"));auto *separator=findVisualItem(window->contentItem(),"smudgeOptionsSeparator");QVERIFY(separator && separator->isVisible());QCOMPARE(separator->width(),1.);
+        QVERIFY(client.brushLibrary()->select("round-fine"));QVERIFY(client.smudgeTool());
         client.brushLibrary()->setSpacing(.02);QCOMPARE(client.brushSpacing(),.02);BrushLibrary restored;QVERIFY(restored.restore(client.brushLibrary()->snapshot()));QCOMPARE(restored.spacing(),.02);
         auto *strength=findVisualItem(window->contentItem(),"smudgeStrengthInput");QVERIFY(strength);strength->forceActiveFocus();QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier);QTest::keyClick(window,Qt::Key_8);QTest::keyClick(window,Qt::Key_0);QTest::keyClick(window,Qt::Key_Return);QCOMPARE(client.smudgeStrength(),.8);
         auto click=[&](const QString &name){auto *item=findVisualItem(window->contentItem(),name);if(!item)return false;QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,item->mapToScene({7,item->height()/2}).toPoint());return true;};

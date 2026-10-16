@@ -421,10 +421,14 @@ ApplicationWindow {
             Label { text: "大小"; color: Theme.muted }
             CompactSpinBox { objectName: "brushRadius"; from: 1; to: 512; value: Math.round(PaintClient.brushRadius*2); editable: true; implicitWidth: 76; implicitHeight: 20; onValueModified: PaintClient.brushRadius=value/2 }
             Label { text: "px"; color: Theme.muted }
-            Label { text: "不透明度"; color: Theme.muted }
-            CompactSlider { from: .01; to: 1; value: PaintClient.brushOpacity; Layout.preferredWidth: 95; onMoved: PaintClient.brushOpacity=value }
-            Label { text: Math.round(PaintClient.brushOpacity*100)+"%"; color: Theme.text; Layout.preferredWidth: 36 }
-            Label { text: "压感"; color: Theme.muted }
+            Label { visible:!PaintClient.moveTool;text: "不透明度"; color: Theme.muted }
+            CompactSlider {objectName:"brushToolbarOpacity";visible:!PaintClient.moveTool;from:0;to:1;stepSize:.01;value:PaintClient.brushLibrary.opacity;Layout.preferredWidth:85;onMoved:PaintClient.brushLibrary.opacity=value;tooltip:"当前笔刷的整笔不透明度上限；重复覆盖不会超过此上限。"}
+            Label {visible:!PaintClient.moveTool;text:Math.round(PaintClient.brushLibrary.opacity*100)+"%";color:Theme.text;Layout.preferredWidth:32}
+            CompactCheckBox {objectName:"brushToolbarPressureOpacity";visible:!PaintClient.moveTool;text:"压感";checked:PaintClient.brushLibrary.pressureOpacity;onToggled:PaintClient.brushLibrary.pressureOpacity=checked;tooltip:"使用数位笔压力控制局部整笔不透明度上限；关闭时保留压力曲线。"}
+            Label {visible:!PaintClient.moveTool;text:"流量";color:Theme.muted}
+            CompactSlider {objectName:"brushToolbarFlow";visible:!PaintClient.moveTool;from:0;to:1;stepSize:.01;value:PaintClient.brushLibrary.flow;Layout.preferredWidth:85;onMoved:PaintClient.brushLibrary.flow=value;tooltip:"当前笔刷每个印章的流量，控制颜色或擦除累积到整笔上限的速度。"}
+            Label {visible:!PaintClient.moveTool;text:Math.round(PaintClient.brushLibrary.flow*100)+"%";color:Theme.text;Layout.preferredWidth:32}
+            CompactCheckBox {objectName:"brushToolbarPressureFlow";visible:!PaintClient.moveTool;text:"压感";checked:PaintClient.brushLibrary.pressureFlow;onToggled:PaintClient.brushLibrary.pressureFlow=checked;tooltip:"使用数位笔压力控制绘画或擦除流量；关闭时保留压力曲线。"}
             Item { Layout.fillWidth: true }
         }
         TransformOptionsBar {visible:PaintClient.transformActive;anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;controller:PaintClient}

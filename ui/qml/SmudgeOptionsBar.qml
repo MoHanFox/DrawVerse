@@ -9,12 +9,7 @@ RowLayout {
     readonly property var library:client.brushLibrary
     spacing:8
     Icon {name:"smudge";Layout.preferredWidth:20;Layout.preferredHeight:20}
-    CompactComboBox {highPriorityMenu:true;
-        objectName:"smudgeBrushPreset";model:root.library.presets;textRole:"name"
-        currentIndex:root.library.presets.findIndex(p=>p.id===root.library.selectedId)
-        Layout.preferredWidth:130;Layout.preferredHeight:24
-        onActivated:index=>root.library.select(root.library.presets[index].id)
-    }
+    Rectangle {objectName:"smudgeOptionsSeparator";Layout.preferredWidth:1;Layout.preferredHeight:22;color:Theme.line}
     Label {text:"大小";color:Theme.muted}
     CompactSpinBox {objectName:"smudgeBrushSize";from:1;to:512;editable:true;value:Math.round(root.client.brushRadius*2);Layout.preferredWidth:76;Layout.preferredHeight:24;onValueModified:root.client.brushRadius=value/2}
     Label {text:"px";color:Theme.muted}

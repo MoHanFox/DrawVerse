@@ -1,3 +1,5 @@
+工具栏参数追加：[设计](brush-toolbar-transfer-design.md) / [验收](brush-toolbar-transfer-validation.md)。画笔与橡皮直接调整当前预设的流量、不透明度及各自压感；涂抹预设下拉改为细分隔线，Windows 最小 Qt 通过。
+
 起收笔当前阶段：[原生设计](brush-taper-abi-design.md) / [验收](brush-taper-abi-validation.md)，前置[保存交换](brush-taper-io-validation.md)和[实际绘画](brush-taper-document-validation.md)。ABI1.51完整state18准备/VBR1.22包入口、准确修订与图片重建/真实两笔/湿混载色及旧兼容已验证；Qt镜像/关闭值/基准、白色自动预览和设置页继续下一阶段，尚无界面入口。结束继续不追原始鼠标终点。
 
 画笔混合原生捕获：[设计](brush-blend-abi-design.md) / [验收](brush-blend-abi-validation.md)。ABI1.44、独立模式DTO/新prepared入口与真实捕获/历史/旧正常兼容已验证；Qt工具栏状态、保存及有色底预览下一阶段接入。
