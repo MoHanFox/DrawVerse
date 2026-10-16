@@ -187,6 +187,7 @@ BrushLibrary::BrushLibrary(QObject *parent):QObject(parent) {
     m_recentColors={QStringLiteral("#000000"),QStringLiteral("#3a3a3a"),QStringLiteral("#6e6e6e"),QStringLiteral("#a8a8a8"),
                     QStringLiteral("#d8d8d8"),QStringLiteral("#ffffff"),QStringLiteral("#8c2b2b"),QStringLiteral("#d6453f"),
                     QStringLiteral("#f08a3c"),QStringLiteral("#f5d14e"),QStringLiteral("#7fb84b"),QStringLiteral("#3e9e7a")};
+    for(auto &color:m_recentColors)color=QColor(color).name(QColor::HexArgb);
 }
 QVariantList BrushLibrary::recentColors() const {QVariantList rows;for(const auto &c:m_recentColors)rows.append(c);return rows;}
 bool BrushLibrary::useColor(const QString &color) {
@@ -293,6 +294,11 @@ QString BrushLibrary::createOutlinePreset(bool fixedWidth) {
 }
 bool BrushLibrary::rename(const QString &id,const QString &name){const int i=index(id);if(i<0 || name.trimmed().isEmpty() || name.size()>80)return false;m_presets[i].name=name.trimmed();changed();return true;}
 bool BrushLibrary::remove(const QString &id){const int i=index(id);if(i<0 || m_presets[i].builtin)return false;m_presets.removeAt(i);m_resetPresets.remove(id);if(m_selected==id)m_selected="round-pressure";changed();return true;}
+void BrushLibrary::setActiveColors(const QColor &foreground,const QColor &background){
+    if(!foreground.isValid() || !background.isValid() || (foreground==m_foregroundColor && background==m_backgroundColor))return;
+    m_foregroundColor=foreground;m_backgroundColor=background;
+    setPreviewColors(foreground,background);emit activeColorsChanged();emit persistRequested(snapshot());
+}
 void BrushLibrary::setPreviewColors(const QColor &foreground,const QColor &background){
     if(!foreground.isValid() || !background.isValid() || (foreground==m_previewForeground && background==m_previewBackground))return;
     m_previewForeground=foreground;m_previewBackground=background;bool invalidated=false;
@@ -310,7 +316,7 @@ QByteArray BrushLibrary::snapshot() const {
     for(const auto &p:m_presets){rows.append(presetRow(p,version));baselines.append(presetRow(m_resetPresets.value(p.id,p),resetVersion));}
     const QJsonObject resetState{{"version",resetVersion},{"selected",m_selected},{"presets",baselines}};
     return QJsonDocument(QJsonObject{{"version",version},{"selected",m_selected},{"presets",rows},{"cursor",QJsonObject{{"outline",m_cursorOutline},{"center",m_cursorCenter},{"hoverOnly",m_cursorHoverOnly},{"width",m_cursorWidth},{"simple",m_cursorSimple},{"composite",m_cursorComposite},{"color",m_cursorColor},{"secondaryColor",m_cursorSecondaryColor}}},
-                                     {"recentColors",QJsonArray::fromStringList(m_recentColors)},{"resetState",resetState},{"brushTool",QJsonObject{{"writeBlend",m_writeBlend}}}}).toJson(QJsonDocument::Compact);
+                                     {"recentColors",QJsonArray::fromStringList(m_recentColors)},{"colorState",QJsonObject{{"foreground",m_foregroundColor.name(QColor::HexArgb)},{"background",m_backgroundColor.name(QColor::HexArgb)}}},{"resetState",resetState},{"brushTool",QJsonObject{{"writeBlend",m_writeBlend}}}}).toJson(QJsonDocument::Compact);
 }
 QByteArray BrushLibrary::exportPackage(bool includeSource) const {
     const auto &p=m_presets[index(m_selected)];
@@ -482,6 +488,14 @@ bool BrushLibrary::restore(const QByteArray &json) {
             recent.append(parsed.name(QColor::HexArgb));
         }
     }
+    QColor foreground=m_foregroundColor,background=m_backgroundColor;
+    if(root.contains("colorState")) {
+        if(!root.value("colorState").isObject())return false;
+        const auto colors=root.value("colorState").toObject();
+        if(colors.size()!=2 || !colors.value("foreground").isString() || !colors.value("background").isString())return false;
+        foreground=QColor(colors.value("foreground").toString());background=QColor(colors.value("background").toString());
+        if(!foreground.isValid() || !background.isValid())return false;
+    }
     bool outline=true,center=false,hoverOnly=false,simple=false,composite=false;int width=1;
     QString color="#000000",secondaryColor="#ffffff";
     if(root.contains("cursor")){
@@ -526,6 +540,9 @@ bool BrushLibrary::restore(const QByteArray &json) {
         } else preset.token=++m_nextToken;
     }
     m_presets=restored;m_selected=selected;m_recentColors=recent;m_writeBlend=writeBlend;
+    const bool colorsChanged=foreground!=m_foregroundColor || background!=m_backgroundColor;
+    m_foregroundColor=foreground;m_backgroundColor=background;setPreviewColors(foreground,background);
+    if(colorsChanged)emit activeColorsChanged();
     m_cursorOutline=outline;m_cursorCenter=center;m_cursorHoverOnly=hoverOnly;m_cursorWidth=width;m_cursorSimple=simple;m_cursorComposite=composite;m_cursorColor=color;m_cursorSecondaryColor=secondaryColor;emit cursorChanged();
     emit settingsChanged();emit presetsChanged();emit recentColorsChanged();return true;
 }

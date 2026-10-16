@@ -489,6 +489,15 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if(watched==m_observedWindow && event->type()==QEvent::Leave && !m_tablet) {setTabletWindowCursor(false);m_cursorInside=false;refreshBrushCursor();}
 
     if(event->type()==QEvent::ApplicationDeactivate){setTabletWindowCursor(false);endPicking();setKeySpace(false);setSpacePanning(false);setAltHeld(false);m_ctrlHeld=false;refreshBrushCursor();}
+    if(watched==m_observedWindow && m_observedWindow && m_observedWindow->isActive() && m_interactive && isVisible() && isEnabled() && m_client && m_client->ready() && !m_client->drawing() && !m_client->textInputFocused()
+        && (event->type()==QEvent::KeyPress || event->type()==QEvent::ShortcutOverride)) {
+        auto *key=static_cast<QKeyEvent*>(event);const auto modifiers=key->modifiers();
+        const bool zoomKey=key->key()==Qt::Key_Plus || key->key()==Qt::Key_Equal || key->key()==Qt::Key_Minus;
+        if(zoomKey && modifiers.testFlag(Qt::ControlModifier) && !(modifiers & (Qt::AltModifier|Qt::MetaModifier))) {
+            if(event->type()==QEvent::KeyPress)zoomBy(key->key()==Qt::Key_Minus?1./1.25:1.25);
+            key->accept();return true;
+        }
+    }
     if(m_interactive && isVisible() && (event->type()==QEvent::KeyPress || event->type()==QEvent::KeyRelease)) {
         auto *key=static_cast<QKeyEvent*>(event);
         if(key->key()==Qt::Key_Control && !key->isAutoRepeat()){m_ctrlHeld=event->type()==QEvent::KeyPress;refreshBrushCursor();}

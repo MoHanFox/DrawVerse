@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新平滑/缩放/颜色保存：`docs/brush-follow-color-zoom-design.md` / `docs/brush-follow-color-zoom-validation.md`；用户确认保留拖绳、抬笔停在已绘末端不补线，Ctrl++/Ctrl+-主窗浮窗与文本保护，前景/背景及历史色偏好重启保持/多文档同步；无ABI或格式版本变化。
+
 - 最新ABR设备形状导入：`docs/abr-device-conversion-design.md` / `docs/abr-device-conversion-validation.md`；converter7/record1/交接JSON6/VBR1.21，方向/旋转/倾斜角度与圆度/独立动态和旧六代保持；PS设备公式与下限换算标近似，关闭设备仅来源保留，16位/其他设备继续后续，无C ABI或state新版本。
 
 - 最新Windows输入/菜单修复：`docs/brush-windows-ink-hover-design.md` / `docs/tablet-menu-routing-design.md` / `docs/windows-input-menu-validation.md`；笔位置所有权隔离Quick缓存Hover、原窗口光标先保存后切换、鼠标/笔菜单坐标路由与透明模态屏障；兼容窗口不激活防失焦关闭，实际Windows最小结果见验收，无ABI/格式变化。

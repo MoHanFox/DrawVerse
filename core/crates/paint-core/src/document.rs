@@ -1662,28 +1662,8 @@ impl Document {
         self.finish_stroke().map(|(changed, _)| changed)
     }
     fn finish_stroke(&mut self) -> Result<(bool, Option<crate::WetCarrier>)> {
-        if let Some(mut filter) = self
-            .stroke
-            .as_ref()
-            .ok_or(Error::NoStroke)?
-            .path_filter
-            .clone()
-        {
-            let points = filter.finish().and_then(|points| {
-                Self::validate_filtered_path(self.stroke.as_ref().expect("active"), &points)?;
-                Ok(points)
-            });
-            let points = match points {
-                Ok(points) => points,
-                Err(error) => {
-                    let stroke = self.stroke.take().expect("active");
-                    self.restore_stroke(&stroke);
-                    return Err(error);
-                }
-            };
-            self.stroke.as_mut().expect("active").path_filter = None;
-            self.apply_filtered_path(points)?;
-        }
+        // The visible filtered endpoint is authoritative. Releasing the pen must not
+        // synthesize input, release stabilizer distance, or raise pressure to the raw value.
         let mut stroke = self.stroke.take().ok_or(Error::NoStroke)?;
         let secondary_final = stroke
             .program

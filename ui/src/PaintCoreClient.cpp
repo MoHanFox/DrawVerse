@@ -668,6 +668,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(this,&PaintCoreClient::stateChanged,this,&PaintCoreClient::layerShortcutsChanged);
     m_brushLibrary=new BrushLibrary(this);
     m_brushLibrary->setPreviewColors(m_color,m_secondaryColor);
+    connect(m_brushLibrary,&BrushLibrary::activeColorsChanged,this,[this]{m_color=m_brushLibrary->foregroundColor();m_secondaryColor=m_brushLibrary->backgroundColor();emit brushChanged();});
     qRegisterMetaType<PaintSessionInfo>();
     qRegisterMetaType<PaintFileJobInfo>();
     m_worker = new BackendWorker(m_connection, settingsFile,m_brushCatalogConnection); m_worker->moveToThread(&m_thread);
@@ -1006,14 +1007,12 @@ void PaintCoreClient::applyHistoryLimit() {
 }
 void PaintCoreClient::setBrushColor(const QColor &c) {
     // Picking a colour is only a preview: the swatch row advances when the pixel stroke commits.
-    if (c.isValid() && c != m_color) { m_color = c; m_brushLibrary->setPreviewColors(m_color,m_secondaryColor); emit brushChanged(); }
+    if (c.isValid() && c != m_color) m_brushLibrary->setActiveColors(c,m_secondaryColor);
 }
-void PaintCoreClient::setSecondaryBrushColor(const QColor &c){if(c.isValid() && c!=m_secondaryColor){m_secondaryColor=c;m_brushLibrary->setPreviewColors(m_color,m_secondaryColor);emit brushChanged();}}
+void PaintCoreClient::setSecondaryBrushColor(const QColor &c){if(c.isValid() && c!=m_secondaryColor)m_brushLibrary->setActiveColors(m_color,c);}
 void PaintCoreClient::swapBrushColors(){
     // Swapping selects a colour; the recent swatch row only advances on a committed stroke.
-    std::swap(m_color,m_secondaryColor);
-    m_brushLibrary->setPreviewColors(m_color,m_secondaryColor);
-    emit brushChanged();
+    m_brushLibrary->setActiveColors(m_secondaryColor,m_color);
 }
 void PaintCoreClient::setBrushWriteBlend(int mode) {m_brushLibrary->setWriteBlend(mode);}
 void PaintCoreClient::setBrushRadius(qreal r) {m_brushLibrary->setRadius(r);}

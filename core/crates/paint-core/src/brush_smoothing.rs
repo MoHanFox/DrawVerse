@@ -103,7 +103,7 @@ impl PathFilter {
             next: next_tick(first.timestamp_ns)?,
         }))
     }
-    fn tick(&mut self, raw: InputPoint, finishing: bool) -> InputPoint {
+    fn tick(&mut self, raw: InputPoint) -> InputPoint {
         let speed = (raw.x - self.tick_raw.x).hypot(raw.y - self.tick_raw.y) / 0.004;
         let position =
             alpha(self.settings.position_ms / (1. + self.settings.speed_response * speed / 100.));
@@ -116,7 +116,7 @@ impl PathFilter {
             .clamp(0., 1.) as f32;
         self.filtered = point;
         let distance = (point.x - self.emitted.x).hypot(point.y - self.emitted.y);
-        if !finishing && self.settings.stabilizer_px > 0. {
+        if self.settings.stabilizer_px > 0. {
             let movement = if distance <= self.settings.stabilizer_px {
                 0.
             } else {
@@ -162,31 +162,12 @@ impl PathFilter {
                 / (point.timestamp_ns - start.timestamp_ns) as f64;
             let mut raw = start.interpolate(point, t);
             raw.timestamp_ns = self.next;
-            result.push(self.tick(raw, false));
+            result.push(self.tick(raw));
             self.next += TICK;
         }
         self.next = next;
         self.raw = point;
         Ok(result)
-    }
-    pub fn finish(&mut self) -> Result<Vec<InputPoint>> {
-        let mut points = Vec::new();
-        for _ in 0..512 {
-            if (self.emitted.x - self.raw.x).hypot(self.emitted.y - self.raw.y) < 0.001
-                && (self.emitted.pressure - self.raw.pressure).abs() < 0.00001
-            {
-                break;
-            }
-            let mut raw = self.raw;
-            raw.timestamp_ns = self.next;
-            self.next = next_tick(self.next)?;
-            points.push(self.tick(raw, true));
-        }
-        // Preserve the real endpoint and channels; synthetic time remains monotonic.
-        let mut endpoint = self.raw;
-        endpoint.timestamp_ns = self.next;
-        points.push(endpoint);
-        Ok(points)
     }
 }
 
@@ -208,15 +189,13 @@ mod tests {
         let last = point(48., 24., 0.75, 49_000_000);
         let mut full = PathFilter::new(settings(), first).unwrap().unwrap();
         let mut split = full.clone();
-        let mut expected = full.push(last).unwrap();
-        expected.extend(full.finish().unwrap());
+        let expected = full.push(last).unwrap();
         let mut actual = Vec::new();
         for i in 1..=16 {
             let mut p = first.interpolate(last, i as f64 / 16.);
             p.timestamp_ns = first.timestamp_ns + 3_000_000 * i;
             actual.extend(split.push(p).unwrap());
         }
-        actual.extend(split.finish().unwrap());
         assert_eq!(expected.len(), actual.len());
         for (a, b) in expected.iter().zip(actual) {
             assert!((a.x - b.x).abs() < 1e-9);
@@ -225,10 +204,8 @@ mod tests {
             assert_eq!(a.timestamp_ns, b.timestamp_ns);
         }
         let final_point = expected.last().unwrap();
-        assert_eq!(
-            (final_point.x, final_point.y, final_point.pressure),
-            (last.x, last.y, last.pressure)
-        );
+        assert!(final_point.x < last.x && final_point.y < last.y);
+        assert!(final_point.pressure < last.pressure);
     }
     #[test]
     fn independent_filters_speed_response_stabilization_and_device_channels() {
@@ -262,7 +239,7 @@ mod tests {
             stable.push(point(20., 0., 1., 8_000_000)).unwrap()[0].x,
             10.
         );
-        assert_eq!(stable.finish().unwrap().last().unwrap().x, 20.);
+        assert_eq!(stable.emitted.x, 10.); // Lifting never releases the rope into the raw endpoint.
     }
     #[test]
     fn missing_time_falls_back_and_bad_time_or_ranges_are_bounded() {
@@ -303,6 +280,39 @@ mod tests {
         .unwrap();
         d.end_stroke().unwrap();
         d
+    }
+    #[test]
+    fn releasing_high_smoothing_preserves_visible_tail_without_position_or_pressure_catchup() {
+        for mode in [
+            BrushMode::Paint,
+            BrushMode::Erase,
+            BrushMode::Smudge {
+                all_layers: false,
+                finger_painting: true,
+                pressure_strength: true,
+            },
+        ] {
+            let mut definition = definition(mode);
+            definition.smoothing = BrushSmoothing::new(true, 250., 250., 0., 128.).unwrap();
+            let mut doc = seed();
+            let before = pixels(&doc);
+            let depth = doc.history_depth().0;
+            doc.begin_brush_stroke(definition, point(16.5, 32.5, 0.1, 1_000_000))
+                .unwrap();
+            // A sharp turn and high final pressure remain inside the drag rope.
+            doc.stroke_to(point(48.5, 32.5, 0.5, 17_000_000)).unwrap();
+            doc.stroke_to(point(48.5, 48.5, 1., 33_000_000)).unwrap();
+            let drawn = pixels(&doc);
+            assert_ne!(drawn, before);
+            doc.end_stroke().unwrap();
+            assert_eq!(pixels(&doc), drawn);
+            assert_eq!(doc.pixel(48, 48), Pixel::TRANSPARENT);
+            assert_eq!(doc.history_depth().0, depth + 1);
+            doc.undo().unwrap();
+            assert_eq!(pixels(&doc), before);
+            doc.redo().unwrap();
+            assert_eq!(pixels(&doc), drawn);
+        }
     }
     fn definition(mode: BrushMode) -> BrushDefinition {
         BrushDefinition {
@@ -363,8 +373,7 @@ mod tests {
             a.stroke_to(last).unwrap();
             a.end_stroke().unwrap();
             let mut filter = PathFilter::new(settings(), first).unwrap().unwrap();
-            let mut points = filter.push(last).unwrap();
-            points.extend(filter.finish().unwrap());
+            let points = filter.push(last).unwrap();
             reference.begin_brush_stroke(direct, first).unwrap();
             for p in points {
                 reference.stroke_to(p).unwrap();

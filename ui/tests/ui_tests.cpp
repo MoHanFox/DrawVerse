@@ -84,6 +84,66 @@ class UiTests final : public QObject {
     QTemporaryDir m_preferences;
 private slots:
 
+    void highSmoothingMouseAndTabletReleaseNeverConnectsToRawPointer() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);auto *library=client.brushLibrary();library->setRadius(2);library->setPressureSize(false);library->setPressureFlow(false);auto smoothing=library->smoothing();smoothing["enabled"]=true;smoothing["positionMs"]=250.;smoothing["pressureMs"]=250.;smoothing["stabilizerPx"]=128.;smoothing["speedResponse"]=0.;QVERIFY(library->setSmoothing(smoothing));client.setBrushColor(Qt::red);
+        QPointingDevice pen("Smoothing pen",930,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        for(const bool tablet:{false,true}) {
+            client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready() && !client.layerEditBusy());QTRY_VERIFY(canvas->documentRect().width()>0);window->requestActivate();QTRY_VERIFY(window->isActive());canvas->forceActiveFocus();
+            const auto local=[&](QPointF point){return canvas->mapToScene(canvas->documentRect().topLeft()+point*canvas->zoom());};
+            const auto first=local({16.5,16.5}),last=local({48.5,48.5});
+            if(!tablet){QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,first.toPoint());QTest::mouseMove(window,last.toPoint(),16);QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,last.toPoint(),16);}
+            else {const auto send=[&](QEvent::Type type,QPointF at,qreal pressure){QTabletEvent event(type,&pen,at,window->mapToGlobal(at.toPoint()),pressure,0,0,0,0,0,Qt::NoModifier,type==QEvent::TabletMove?Qt::NoButton:Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(window,&event);};send(QEvent::TabletPress,first,.2);QTest::qWait(16);send(QEvent::TabletMove,last,1.);send(QEvent::TabletRelease,last,0.);}
+            QTRY_VERIFY(!client.drawing());QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());canvas->setClient(nullptr);client.requestViewport(0,{0,0,64,64},{64,64});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(64,64));const auto image=client.frame();QVERIFY(image.pixelColor(16,16).alpha()>0);for(int y=24;y<64;++y)for(int x=24;x<64;++x)QCOMPARE(image.pixelColor(x,y).alpha(),0);canvas->setClient(&client);
+            client.undo();QTRY_COMPARE(client.undoDepth(),0);QTRY_VERIFY(!client.layerEditBusy());client.redo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        }
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
+    void activeAndRecentColorsPersistAcrossRestartAndStayOutOfPresets() {
+        QTemporaryDir temp;const auto path=temp.filePath("colors.ini");
+        const QColor foreground("#804080c0"),background("#c020b060");QVariantList recent;
+        {
+            PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());
+            client.setBrushColor(foreground);client.setSecondaryBrushColor(background);client.swapBrushColors();
+            QCOMPARE(client.brushColor(),background);QCOMPARE(client.secondaryBrushColor(),foreground);
+            QVERIFY(client.brushLibrary()->useColor("#aa123456"));QVERIFY(client.brushLibrary()->useColor("#bb654321"));recent=client.recentColors();
+            const auto catalog=client.brushLibrary()->catalogSnapshot();QVERIFY(!catalog.contains("colorState"));QVERIFY(!catalog.contains("recentColors"));
+            const auto package=client.brushLibrary()->exportPackage();QVERIFY(!package.contains("colorState"));QVERIFY(!package.contains("recentColors"));
+            QVERIFY(client.brushLibrary()->resetPreset());QCOMPARE(client.brushColor(),background);QCOMPARE(client.recentColors(),recent);
+            // Close without waiting for a save debounce; normal shutdown must flush the preference queue.
+            QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+        }
+        PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready());
+        QCOMPARE(reopened.brushColor(),background);QCOMPARE(reopened.secondaryBrushColor(),foreground);QCOMPARE(reopened.recentColors(),recent);
+        auto *library=reopened.brushLibrary();const auto valid=library->snapshot();
+        for(const auto &invalid:QList<QJsonValue>{QJsonValue::Null,QJsonObject{{"foreground",12},{"background","red"}},QJsonObject{{"foreground","bad color"},{"background","red"}},QJsonObject{{"foreground","red"}}}){
+            auto state=QJsonDocument::fromJson(valid).object();state["colorState"]=invalid;QVERIFY(!library->restore(QJsonDocument(state).toJson()));QCOMPARE(library->snapshot(),valid);
+        }
+        auto legacy=QJsonDocument::fromJson(valid).object();legacy.remove("colorState");BrushLibrary old;QVERIFY(old.restore(QJsonDocument(legacy).toJson()));QCOMPARE(old.foregroundColor(),QColor("#2ea99d"));QCOMPARE(old.backgroundColor(),QColor(Qt::white));QCOMPARE(old.recentColors(),recent);
+        QSignalSpy stopped(&reopened,&PaintCoreClient::stopped);reopened.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void canvasZoomKeysAndGlobalColorsWorkAcrossDocumentsAndFloatingWindows() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &error:errors)warnings.append(error.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());window->requestActivate();QTRY_VERIFY(window->isActive());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->forceActiveFocus();
+        const auto generation=client.generation(),revision=client.revision();const auto history=client.undoDepth();const auto changed=client.modified();const auto center=canvas->visibleDocumentRect().center();const auto zoom=canvas->zoom();
+        QTest::keyClick(window,Qt::Key_Equal,Qt::ControlModifier);QTRY_VERIFY(canvas->zoom()>zoom);QVERIFY(QLineF(center,canvas->visibleDocumentRect().center()).length()<1e-5);
+        QTest::keyClick(window,Qt::Key_Minus,Qt::ControlModifier);QTRY_VERIFY(qAbs(canvas->zoom()-zoom)<1e-8);
+        QTest::keyClick(window,Qt::Key_Plus,Qt::ControlModifier|Qt::ShiftModifier);QTRY_VERIFY(canvas->zoom()>zoom);QTest::keyClick(window,Qt::Key_Minus,Qt::ControlModifier);QTRY_VERIFY(qAbs(canvas->zoom()-zoom)<1e-8);
+        // A text editor consumes its own keys, even with the document still visible.
+        QQmlComponent component(&engine);component.setData("import QtQuick; TextInput {width:150;height:30;text: 'edit'}",QUrl());QScopedPointer<QObject> editorObject(component.create());auto *editor=qobject_cast<QQuickItem*>(editorObject.data());QVERIFY(editor);editor->setParentItem(window->contentItem());editor->forceActiveFocus();QTRY_VERIFY(client.textInputFocused());QTest::keyClick(window,Qt::Key_Equal,Qt::ControlModifier);QCOMPARE(canvas->zoom(),zoom);canvas->forceActiveFocus();
+        auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);const auto id=documents->newDocument(64,64,true);QVERIFY(!id.isEmpty());auto *other=documents->client(id);QTRY_VERIFY(other && other->ready());
+        other->setBrushColor(QColor("#80336699"));other->setSecondaryBrushColor(QColor("#c0996633"));QCOMPARE(client.brushColor(),other->brushColor());QCOMPARE(client.secondaryBrushColor(),other->secondaryBrushColor());QVERIFY(other->brushLibrary()->useColor("#cc123456"));QCOMPARE(client.recentColors(),other->recentColors());
+        documents->floatDocument(id);const auto findFloating=[&]()->CanvasItem*{for(auto *candidate:QGuiApplication::allWindows())if(auto *quick=qobject_cast<QQuickWindow*>(candidate))if(auto *item=findVisualItem(quick->contentItem(),"documentCanvas:"+id))return qobject_cast<CanvasItem*>(item);return nullptr;};CanvasItem *floating=nullptr;QTRY_VERIFY((floating=findFloating()));auto *floatingWindow=floating->window();QVERIFY(floatingWindow && floatingWindow!=window);floatingWindow->requestActivate();QTRY_VERIFY(floatingWindow->isActive());floating->forceActiveFocus();const auto floatingZoom=floating->zoom();
+        QTest::keyClick(floatingWindow,Qt::Key_Plus,Qt::ControlModifier|Qt::KeypadModifier);QTRY_VERIFY(floating->zoom()>floatingZoom);QCOMPARE(canvas->zoom(),zoom);QTest::keyClick(floatingWindow,Qt::Key_Minus,Qt::ControlModifier|Qt::KeypadModifier);QTRY_VERIFY(qAbs(floating->zoom()-floatingZoom)<1e-8);
+        QCOMPARE(client.generation(),generation);QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),history);QCOMPARE(client.modified(),changed);QCOMPARE(warnings,QStringList());
+        QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
 
     void compositeCursorPreferenceIsOptionalStrictAndOutsidePresets() {
         BrushLibrary library;QVERIFY(!library.cursorComposite());const auto definition=library.catalogSnapshot();const auto package=library.exportPackage();QSignalSpy settings(&library,&BrushLibrary::settingsChanged);QSignalSpy preview(&library,&BrushLibrary::previewRequested);QSignalSpy cursor(&library,&BrushLibrary::cursorChanged);library.setCursorComposite(true);QCOMPARE(cursor.size(),1);QCOMPARE(settings.size(),0);QCOMPARE(preview.size(),0);QCOMPARE(library.catalogSnapshot(),definition);QCOMPARE(QJsonDocument::fromJson(library.exportPackage()).object().value("brushes"),QJsonDocument::fromJson(package).object().value("brushes"));QVERIFY(library.resetPreset());QVERIFY(library.cursorComposite());
