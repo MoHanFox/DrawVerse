@@ -41,6 +41,14 @@ impl PendingInput {
     }
 }
 impl Document {
+    /// A partial tail restore/replay must not be published as a completed preview.
+    pub fn stroke_page_ready_for_publication(&self) -> bool {
+        !self
+            .stroke
+            .as_ref()
+            .and_then(|s| s.taper.as_ref())
+            .is_some_and(|t| t.pending_render())
+    }
     pub fn stroke_input_pending(&self) -> bool {
         self.pending_input.is_some()
     }

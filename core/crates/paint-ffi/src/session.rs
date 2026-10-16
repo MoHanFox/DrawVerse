@@ -1,4 +1,6 @@
 //! Serial document ownership and immutable publication. No caller pointers are retained.
+#[path = "session_input_paging.rs"]
+mod input_paging;
 use crate::{
     api::*,
     error::{ApiError, ApiResult},
@@ -9,14 +11,16 @@ use paint_render::{
     Renderer,
 };
 use paint_task::{
-    Priority, SendError, SerialSender, SerialWorker, TaskError, TaskPool, TaskTicket, WorkerState,
+    Priority, SendError, SerialProgress, SerialSender, SerialWorker, TaskError, TaskPool,
+    TaskTicket, WorkerState,
 };
 use std::{
+    collections::VecDeque,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[derive(Clone)]
@@ -134,6 +138,9 @@ struct RenderJob {
 struct Engine {
     files: crate::file_job::FileService,
     document: Document,
+    active_input: Option<input_paging::Active>,
+    deferred: VecDeque<Command>,
+    next_service: Instant,
     wet_tool: Arc<paint_core::WetTool>,
     wet_lease: Option<paint_core::WetLease>,
     shared: Arc<Shared>,
@@ -206,6 +213,9 @@ impl Session {
         let mut engine = Engine {
             files: crate::file_job::FileService::new(Arc::clone(&file), Arc::clone(&file_pool)),
             document,
+            active_input: None,
+            deferred: VecDeque::new(),
+            next_service: Instant::now(),
             wet_tool,
             wet_lease: None,
             shared: Arc::clone(&shared),
@@ -224,17 +234,28 @@ impl Session {
             failed_views: std::array::from_fn(|_| None),
         };
         engine.default_view();
-        let worker = SerialWorker::spawn(4096, Duration::from_millis(8), move |command, token| {
-            if token.is_cancelled() {
-                return;
-            }
-            if let Some(command) = command {
-                engine.execute(command);
-            } else {
-                engine.tick();
-            }
-        })
-        .map_err(|error| ApiError::new(PAINT_INTERNAL_ERROR, error.to_string()))?;
+        let worker =
+            SerialWorker::spawn_resumable(4096, Duration::from_millis(8), move |command, token| {
+                if token.is_cancelled() {
+                    return SerialProgress::default();
+                }
+                if let Some(command) = command {
+                    engine.receive(command);
+                } else {
+                    engine.resume_input();
+                    if (engine.active_input.is_none() && engine.deferred.is_empty())
+                        || Instant::now() >= engine.next_service
+                    {
+                        engine.tick();
+                        engine.next_service = Instant::now() + Duration::from_millis(8);
+                    }
+                }
+                SerialProgress {
+                    ready: engine.active_input.is_some() || !engine.deferred.is_empty(),
+                    retained: engine.deferred.len() + usize::from(engine.active_input.is_some()),
+                }
+            })
+            .map_err(|error| ApiError::new(PAINT_INTERNAL_ERROR, error.to_string()))?;
         Ok(Self {
             file,
             file_pool,
@@ -666,6 +687,7 @@ impl Engine {
     }
     fn execute(&mut self, command: Command) {
         let old_revision = self.document.revision();
+        let finish = matches!(command.operation, Operation::End);
         let stroke_command = matches!(command.operation, Operation::Move(_) | Operation::End)
             || (matches!(
                 command.operation,
@@ -705,23 +727,22 @@ impl Engine {
             )
             || liquify_control;
         let result = self.apply(command.operation, command.sequence);
+        let pending = result.is_ok() && self.document.stroke_input_pending();
         if let Err(error) = result {
-            if error.status != PAINT_CANCELLED || self.error.is_none() {
-                self.error = Some((command.sequence, error));
-            }
-            if stroke_command && self.document.stroke_active() {
-                let _ = self.document.cancel_stroke();
-            }
-            if stroke_command {
-                self.wet_lease.take();
-                self.aborted = true;
-                self.floor = self.document.revision();
-            }
+            self.command_failed(command.sequence, error, stroke_command);
         }
         if barrier && (old_revision != self.document.revision() || liquify_control) {
             self.floor = self.document.revision();
         }
         self.shared.floor.store(self.floor, Ordering::Release);
+        if pending {
+            self.active_input = Some(input_paging::Active {
+                sequence: command.sequence,
+                finish,
+            });
+            self.dirty = true;
+            return;
+        }
         self.completed = command.sequence;
         self.dirty = true;
     }
@@ -974,24 +995,13 @@ impl Engine {
                 if self.aborted {
                     return Err(ApiError::new(PAINT_CANCELLED, "stroke rolled back"));
                 }
-                self.document.stroke_to(point)?;
+                self.document.begin_stroke_input(point)?;
             }
             Operation::End => {
                 if self.aborted {
                     return Err(ApiError::new(PAINT_CANCELLED, "stroke rolled back"));
                 }
-                if self.wet_lease.is_some() {
-                    let (changed, ink) = self.document.end_wet_ink_stroke()?;
-                    let lease = self.wet_lease.take().expect("active wet lease");
-                    if ink.secondary().is_some() {
-                        lease.commit_ink(ink);
-                    } else {
-                        lease.commit(ink.primary().clone());
-                    }
-                    self.modified |= changed;
-                } else {
-                    self.modified |= self.document.end_stroke()?;
-                }
+                self.document.begin_stroke_finish()?;
             }
             Operation::Cancel(overload) => {
                 let cancelled = if self.document.stroke_active() {
@@ -1061,6 +1071,9 @@ impl Engine {
         Ok(())
     }
     fn tick(&mut self) {
+        if !self.document.stroke_page_ready_for_publication() {
+            return;
+        }
         if let Some((document, clear_modified)) = self.files.poll(
             self.generation,
             self.document.revision(),

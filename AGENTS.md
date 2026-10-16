@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新输入分页Actor：`docs/brush-input-paging-actor-design.md` / `docs/brush-input-paging-actor-validation.md`；实际Move/End有界续页、完成水位/安全笔尾发布/单历史双载色采用与共同邮箱限额，页间取消/New/stop和End屏障保持；原64px公开API/Qt新目录交换重开、任务8/新Actor6及相关旧回归、Windows Release/Clippy/4 ABI通过。无ABI/格式变化，单印章/总输入预算与大笔刷优化后续范围保持；整体设备手感由用户验收。
+
 - 最新输入分页Document：`docs/brush-input-paging-document-design.md` / `docs/brush-input-paging-document-validation.md`；真实主副像素/双载色及活动尾有界重放、一次滤波/无输出不重放、结束/单历史与失败取消整笔回滚，原64px新Rust入口及一次性参考通过；13新Document/10调度与相关旧核心原生回归、Windows Release/Clippy/ABI通过。Actor/公开Qt分页尚未接，不宣称画布问题已修复；无ABI/格式变化，整体设备手感由用户验收。
 
 - 最新输入分页数值/预算：`docs/brush-input-paging-design.md` / `docs/brush-input-paging-kernel-validation.md`；原始段主副有序游标/事务页/设备与弧长余量、保持8M/8192页预算及有界总输入，8项调度+14400组旧预算对照、相关湿混/起收笔回归及Windows Release/Clippy/ABI通过；尚未接Document像素/活动笔尾及Actor，不宣称修复画布64px密集输入。用户已恢复推进；Windows整体设备手感验收由用户自行进行，agent仅必要代码回归。

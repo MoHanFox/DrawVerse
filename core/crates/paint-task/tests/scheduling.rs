@@ -195,3 +195,144 @@ fn serial_panic_poisoning_and_shutdown_cancellation() {
     token.cancel();
     assert_eq!(token.checkpoint(), Err(TaskError::Cancelled));
 }
+
+#[test]
+fn resumable_ready_pages_run_without_timer_and_receive_new_commands_between_pages() {
+    use paint_task::SerialProgress;
+    let (trace, events) = mpsc::channel();
+    let (release, gate) = mpsc::channel();
+    let mut left = 0;
+    let mut worker = SerialWorker::spawn_resumable(
+        4,
+        Duration::from_millis(1),
+        move |command: Option<u8>, _| {
+            match command {
+                Some(1) => {
+                    left = 3;
+                    trace.send(1).unwrap();
+                }
+                Some(2) => {
+                    trace.send(2).unwrap();
+                }
+                None if left > 0 => {
+                    trace.send(10 + left).unwrap();
+                    if left == 3 {
+                        gate.recv().unwrap();
+                    }
+                    left -= 1;
+                }
+                _ => {}
+            }
+            SerialProgress {
+                ready: left > 0,
+                retained: usize::from(left > 0),
+            }
+        },
+    )
+    .unwrap();
+    let sender = worker.sender();
+    sender.try_send(1).unwrap();
+    assert_eq!(events.recv_timeout(Duration::from_secs(2)).unwrap(), 1);
+    assert_eq!(events.recv_timeout(Duration::from_secs(2)).unwrap(), 13);
+    sender.try_send(2).unwrap();
+    thread::sleep(Duration::from_millis(5));
+    release.send(()).unwrap();
+    assert_eq!(events.recv_timeout(Duration::from_secs(2)).unwrap(), 2);
+    assert_eq!(events.recv_timeout(Duration::from_secs(2)).unwrap(), 12);
+    assert_eq!(events.recv_timeout(Duration::from_secs(2)).unwrap(), 11);
+    worker.shutdown();
+    assert_eq!(sender.pending(), 0);
+}
+#[test]
+fn resumable_mailbox_charges_running_and_retained_commands_and_keeps_one_cancel_slot() {
+    use paint_task::SerialProgress;
+    let (trace, events) = mpsc::channel();
+    let (release, gate) = mpsc::channel();
+    let mut retained = 0;
+    let mut worker =
+        SerialWorker::spawn_resumable(2, Duration::from_secs(60), move |command: Option<u8>, _| {
+            if let Some(value) = command {
+                trace.send(value).unwrap();
+                if value == 1 {
+                    gate.recv().unwrap();
+                    retained = 1;
+                } else if value == 2 {
+                    gate.recv().unwrap();
+                    retained = 2;
+                } else {
+                    retained = 0;
+                }
+            }
+            SerialProgress {
+                ready: retained > 0,
+                retained,
+            }
+        })
+        .unwrap();
+    let sender = worker.sender();
+    sender.try_send(1).unwrap();
+    assert_eq!(events.recv_timeout(Duration::from_secs(2)).unwrap(), 1);
+    assert_eq!(sender.pending(), 1);
+    sender.try_send(2).unwrap();
+    assert_eq!(sender.try_send(3), Err(SendError::Full));
+    sender.send_cancel(4, |_| false).unwrap();
+    assert_eq!(sender.pending(), 3);
+    release.send(()).unwrap();
+    assert_eq!(events.recv_timeout(Duration::from_secs(2)).unwrap(), 2);
+    assert_eq!(sender.try_send(5), Err(SendError::Full));
+    release.send(()).unwrap();
+    assert_eq!(events.recv_timeout(Duration::from_secs(2)).unwrap(), 4);
+    worker.shutdown();
+    assert_eq!(sender.pending(), 0);
+}
+#[test]
+fn resumable_stop_cancels_the_current_page_and_bad_retained_credit_is_quarantined() {
+    use paint_task::SerialProgress;
+    let (trace, events) = mpsc::channel();
+    let mut retained = 0;
+    let mut worker = SerialWorker::spawn_resumable(
+        1,
+        Duration::from_secs(60),
+        move |command: Option<u8>, token| {
+            if command.is_some() {
+                retained = 1;
+            } else if retained > 0 {
+                trace.send(()).unwrap();
+                while !token.is_cancelled() {
+                    thread::yield_now();
+                }
+                retained = 0;
+            }
+            SerialProgress {
+                ready: retained > 0,
+                retained,
+            }
+        },
+    )
+    .unwrap();
+    let sender = worker.sender();
+    sender.try_send(1).unwrap();
+    events.recv_timeout(Duration::from_secs(2)).unwrap();
+    worker.shutdown();
+    assert_eq!(sender.pending(), 0);
+    assert_eq!(sender.state(), WorkerState::Stopped);
+    let mut bad = SerialWorker::spawn_resumable(
+        1,
+        Duration::from_millis(1),
+        move |command: Option<u8>, _| SerialProgress {
+            ready: false,
+            retained: if command.is_some() { 3 } else { 0 },
+        },
+    )
+    .unwrap();
+    let sender = bad.sender();
+    sender.try_send(1).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while sender.state() == WorkerState::Running {
+        assert!(Instant::now() < deadline);
+        thread::yield_now();
+    }
+    assert_eq!(sender.state(), WorkerState::Panicked);
+    assert_eq!(sender.try_send(2), Err(SendError::Panicked));
+    bad.shutdown();
+}

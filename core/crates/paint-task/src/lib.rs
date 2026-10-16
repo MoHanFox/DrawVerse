@@ -2,7 +2,7 @@
 mod pool;
 mod serial;
 pub use pool::{Priority, TaskError, TaskPool, TaskTicket};
-pub use serial::{SendError, SerialSender, SerialWorker, WorkerState};
+pub use serial::{SendError, SerialProgress, SerialSender, SerialWorker, WorkerState};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

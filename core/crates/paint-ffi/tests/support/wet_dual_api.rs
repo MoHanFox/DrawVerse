@@ -377,6 +377,7 @@ fn wet_dual_public_image_package_roundtrip_and_capacity_checks_do_not_install_re
             let installed =
                 ResourceStore::open(target.clone(), paint_core::MAX_CATALOG_MASK_BYTES).unwrap();
             let mut s = image_settings.clone();
+            s.spacing = 0.075;
             s.mask = Some(installed.load(&id, &token).unwrap().mask);
             let captured = prepared(b, &s);
             prepared(b, &settings(false, false));
@@ -447,6 +448,84 @@ fn wet_dual_public_image_package_roundtrip_and_capacity_checks_do_not_install_re
                     .resource_id(),
                 Some(id.as_str())
             );
+
+            // Use the retired/rebuilt exact image receipt for the original single 64px move.
+            let h = Harness::new(128, 64);
+            let mut wet_tool = ptr::null_mut();
+            assert_eq!(paint_wet_tool_create(&mut wet_tool), PAINT_OK);
+            let mut binding = 0;
+            assert_eq!(
+                paint_session_bind_wet_tool(h.core, h.session, wet_tool, &mut binding),
+                PAINT_OK
+            );
+            h.wait(binding);
+            let mut reference = Document::new(128, 64).unwrap();
+            let mut definition = s.definition();
+            definition.brush.color = Pixel::from_straight([0., 0., 1., 1.]).unwrap();
+            definition.brush.background_color = Pixel::WHITE;
+            reference
+                .begin_configured_dual_wet_brush_stroke(
+                    definition,
+                    InputPoint::new(16.5, 32.5, 1.),
+                    None,
+                )
+                .unwrap();
+            reference
+                .begin_stroke_input(InputPoint::new(80.5, 32.5, 1.))
+                .unwrap();
+            while !matches!(
+                reference
+                    .continue_stroke_page(paint_core::InputScheduleBudget::default())
+                    .unwrap(),
+                paint_core::StrokePageResult::InputComplete
+            ) {}
+            reference.begin_stroke_finish().unwrap();
+            let expected = loop {
+                if let paint_core::StrokePageResult::StrokeComplete { wet_ink, .. } = reference
+                    .continue_stroke_page(paint_core::InputScheduleBudget::default())
+                    .unwrap()
+                {
+                    break wet_ink.unwrap();
+                }
+            };
+            h.wait(super::wet_api::begin(&h, b, captured, 16.5));
+            h.submit(PaintCommand {
+                kind: PAINT_COMMAND_STROKE_TO,
+                point: PaintPoint {
+                    x: 80.5,
+                    y: 32.5,
+                    pressure: 1.,
+                    tool: PAINT_TOOL_MOUSE,
+                    ..dto!(PaintPoint)
+                },
+                ..dto!(PaintCommand)
+            });
+            let done = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_END_STROKE,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(done.last_error_status, PAINT_OK);
+            assert_eq!(done.undo_depth, 1);
+            assert_eq!(
+                super::wet_api::copied(&h),
+                reference.copy_layers(&[1]).unwrap()
+            );
+            let actual = dual_info(wet_tool);
+            assert_eq!(actual.flags, 3);
+            assert_eq!(actual.primary_revision, expected.primary().revision());
+            assert_eq!(
+                actual.secondary_revision,
+                expected.secondary().unwrap().revision()
+            );
+            assert_eq!(
+                actual.primary_center_linear_premul_rgba,
+                expected.primary().sample(0.5, 0.5).components()
+            );
+            assert_eq!(
+                actual.secondary_center_linear_premul_rgba,
+                expected.secondary().unwrap().sample(0.5, 0.5).components()
+            );
+            assert_eq!(paint_wet_tool_destroy(&mut wet_tool), PAINT_OK);
             assert_eq!(paint_brush_library_destroy(&mut a), PAINT_OK);
             assert_eq!(paint_brush_library_destroy(&mut b), PAINT_OK);
         }
