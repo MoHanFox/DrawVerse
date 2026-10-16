@@ -311,7 +311,7 @@ ColumnLayout {
         objectName:"brushStrokePreview";Layout.fillWidth:true;Layout.preferredHeight:60;color:Theme.selected
         Image {objectName:"brushStrokePreviewImage";anchors.fill:parent;anchors.margins:4;source:root.library.selectedPreview;fillMode:Image.PreserveAspectFit;asynchronous:true}
         Text {anchors.centerIn:parent;text:root.library.previewMessage;font.pixelSize:9;color:Theme.muted;visible:!root.library.selectedPreview.length}
-        ToolTip.delay:1000;ToolTip.visible:hover.containsMouse;ToolTip.text:root.library.wetMix.enabled?"独立红蓝底样；每次从空载开始，按自动载色规则试画，不读取当前画笔载色。双击重新生成。":"实际引擎压感笔触 · 预览固定正常模式 · 双击重新生成"
+        ToolTip.delay:1000;ToolTip.visible:hover.containsMouse;ToolTip.text:"实际引擎压感笔触 · 预览固定白色及正常模式 · 双击重新生成"
         MouseArea {id:hover;anchors.fill:parent;hoverEnabled:true;onDoubleClicked:root.library.retryPreview()}
     }
     component WetCheck: CompactCheckBox {

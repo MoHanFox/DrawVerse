@@ -297,15 +297,9 @@ bool BrushLibrary::remove(const QString &id){const int i=index(id);if(i<0 || m_p
 void BrushLibrary::setActiveColors(const QColor &foreground,const QColor &background){
     if(!foreground.isValid() || !background.isValid() || (foreground==m_foregroundColor && background==m_backgroundColor))return;
     m_foregroundColor=foreground;m_backgroundColor=background;
-    setPreviewColors(foreground,background);emit activeColorsChanged();emit persistRequested(snapshot());
+    emit activeColorsChanged();emit persistRequested(snapshot());
 }
-void BrushLibrary::setPreviewColors(const QColor &foreground,const QColor &background){
-    if(!foreground.isValid() || !background.isValid() || (foreground==m_previewForeground && background==m_previewBackground))return;
-    m_previewForeground=foreground;m_previewBackground=background;bool invalidated=false;
-    for(auto &p:m_presets)if(p.wet.value("enabled").toBool() || (p.dual.value("enabled").toBool() && p.dual.value("color").toMap().value("enabled").toBool())){p.preview.clear();p.error.clear();p.requested=0;p.token=++m_nextToken;invalidated=true;}
-    if(invalidated){emit presetsChanged();requestPreview(m_selected);}
-}
-void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;QVariantMap tip={{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow},{"maskResource",p.maskResource},{"pressureDynamics",p.pressure},{"tipDynamics",p.device},{"scatterDynamics",p.scatter},{"shapeJitter",p.shape},{"colorDynamics",p.color},{"texture",p.texture},{"dualBrush",p.dual},{"smoothing",p.smoothing},{"wetMix",p.wet},{"presetRadius",p.radius},{"writeBlend",0}};if(p.wet.value("enabled").toBool() || (p.dual.value("enabled").toBool() && p.dual.value("color").toMap().value("enabled").toBool())){tip["previewForeground"]=m_previewForeground;tip["previewBackground"]=m_previewBackground;}emit previewRequested(p.id,p.token,24.,p.opacity,p.spacing,tip);}
+void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;QVariantMap tip={{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow},{"maskResource",p.maskResource},{"pressureDynamics",p.pressure},{"tipDynamics",p.device},{"scatterDynamics",p.scatter},{"shapeJitter",p.shape},{"colorDynamics",p.color},{"texture",p.texture},{"dualBrush",p.dual},{"smoothing",p.smoothing},{"wetMix",p.wet},{"presetRadius",p.radius},{"writeBlend",0}};emit previewRequested(p.id,p.token,24.,p.opacity,p.spacing,tip);}
 void BrushLibrary::retryPreview(){auto &p=m_presets[index(m_selected)];p.preview.clear();p.error.clear();p.requested=0;p.token=++m_nextToken;requestPreview(m_selected);emit presetsChanged();}
 void BrushLibrary::acceptPreview(const QString &id,quint64 token,const QString &image){const int i=index(id);if(i<0 || m_presets[i].token!=token)return;m_presets[i].requested=0;m_presets[i].preview=image;m_presets[i].error=image.isEmpty()?QStringLiteral("预览暂不可用"):QString();emit presetsChanged();}
 QJsonObject BrushLibrary::presetRow(const Preset &p,int &version) {
@@ -541,7 +535,7 @@ bool BrushLibrary::restore(const QByteArray &json) {
     }
     m_presets=restored;m_selected=selected;m_recentColors=recent;m_writeBlend=writeBlend;
     const bool colorsChanged=foreground!=m_foregroundColor || background!=m_backgroundColor;
-    m_foregroundColor=foreground;m_backgroundColor=background;setPreviewColors(foreground,background);
+    m_foregroundColor=foreground;m_backgroundColor=background;
     if(colorsChanged)emit activeColorsChanged();
     m_cursorOutline=outline;m_cursorCenter=center;m_cursorHoverOnly=hoverOnly;m_cursorWidth=width;m_cursorSimple=simple;m_cursorComposite=composite;m_cursorColor=color;m_cursorSecondaryColor=secondaryColor;emit cursorChanged();
     emit settingsChanged();emit presetsChanged();emit recentColorsChanged();return true;

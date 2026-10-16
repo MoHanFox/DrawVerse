@@ -197,7 +197,6 @@ public:
     QByteArray snapshot() const;
     QByteArray catalogSnapshot() const;
     bool applyNativeCatalog(const QByteArray &json);
-    void setPreviewColors(const QColor &foreground,const QColor &background);
     QColor foregroundColor() const {return m_foregroundColor;}
     QColor backgroundColor() const {return m_backgroundColor;}
     void setActiveColors(const QColor &foreground,const QColor &background);
@@ -230,7 +229,6 @@ private:
     QStringList m_recentColors;
     int m_writeBlend=0;
     bool m_eraser=false;
-    QColor m_previewForeground=Qt::white,m_previewBackground=Qt::white;
     QColor m_foregroundColor{"#2ea99d"},m_backgroundColor=Qt::white;
     quint64 m_nextToken=16;
 };

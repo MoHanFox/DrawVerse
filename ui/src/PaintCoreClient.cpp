@@ -590,11 +590,6 @@ public:
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
             auto background=dto<PaintBrushBackgroundDesc>();for(auto &v:background.linear_rgba)v=1;
             if(!tip.value("colorDynamics").toMap().isEmpty()){request.linear_rgba[0]=1;request.linear_rgba[1]=request.linear_rgba[2]=0;background.linear_rgba[0]=background.linear_rgba[1]=0;background.linear_rgba[2]=1;}
-            if(tip.contains("previewForeground")){
-                const auto fg=tip.value("previewForeground").value<QColor>();const auto bg=tip.value("previewBackground").value<QColor>();
-                request.linear_rgba[0]=linear(fg.redF());request.linear_rgba[1]=linear(fg.greenF());request.linear_rgba[2]=linear(fg.blueF());request.linear_rgba[3]=fg.alphaF();
-                background.linear_rgba[0]=linear(bg.redF());background.linear_rgba[1]=linear(bg.greenF());background.linear_rgba[2]=linear(bg.blueF());background.linear_rgba[3]=bg.alphaF();
-            }
             auto blend=dto<PaintBrushBlendDesc>();blend.mode=0;
             for(int i=0;i<=sampleCount;++i){const double t=i/double(sampleCount);InputSample sample;sample.position={(20+200*t)*m_brushPreviewScale,(30+8*std::sin(t*6.283185307))*m_brushPreviewScale};sample.pressure=static_cast<float>(.25+.75*std::sin(t*3.141592654));sample.tool=PAINT_TOOL_PEN;if(tip.value("smoothing").toMap().value("enabled").toBool())sample.timestamp=quint64(i)*8000000; if(!tip.value("tipDynamics").toMap().isEmpty() || !dual.value("tipDynamics").toMap().isEmpty()){sample.capabilities=PAINT_INPUT_PRESSURE|PAINT_INPUT_TILT|PAINT_INPUT_ROTATION;sample.rotation=static_cast<float>(-60+120*t);sample.tiltX=static_cast<float>(30+30*std::sin(t*3.141592654));sample.tiltY=20;}command.point=point(sample);command.kind=PAINT_COMMAND_STROKE_TO;
                 const auto status=i==0?paint_session_begin_prepared_preset_with_blend(m_core,m_brushSession,m_previewCatalog,preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),&request,&background,&blend,&command.point,&m_brushSequence):paint_session_submit(m_core,m_brushSession,&command,&m_brushSequence);
@@ -612,6 +607,9 @@ public:
         if(frame.request_id!=m_brushRequest || frame.document_generation!=info.document_generation || frame.revision!=info.revision)return;
         QImage image(240,60,QImage::Format_RGBA8888_Premultiplied);auto tile=dto<PaintTile>();tile.format=PAINT_TILE_RGBA8_SRGB_PREMULTIPLIED;tile.data=image.bits();tile.capacity=image.sizeInBytes();tile.stride=image.bytesPerLine();
         if(paint_session_read_frame(m_core,m_brushSession,0,frame.request_id,frame.frame_id,&tile)!=PAINT_OK){finishBrushPreview({});return;}
+        // Display every brush in white while preserving the engine's exact alpha.
+        // RGBA8888 is byte ordered and premultiplied: white RGB equals alpha here.
+        for(int y=0;y<image.height();++y){auto *row=image.scanLine(y);for(int x=0;x<image.width();++x){auto *pixel=row+x*4;pixel[0]=pixel[1]=pixel[2]=pixel[3];}}
         QByteArray png;QBuffer output(&png);output.open(QIODevice::WriteOnly);if(!image.save(&output,"PNG")){finishBrushPreview({});return;}finishBrushPreview(QStringLiteral("data:image/png;base64,")+QString::fromLatin1(png.toBase64()));
     }
     void finishBrushPreview(const QString &image) {
@@ -667,7 +665,6 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(qGuiApp,&QGuiApplication::focusObjectChanged,this,[this]{emit layerShortcutsChanged();});
     connect(this,&PaintCoreClient::stateChanged,this,&PaintCoreClient::layerShortcutsChanged);
     m_brushLibrary=new BrushLibrary(this);
-    m_brushLibrary->setPreviewColors(m_color,m_secondaryColor);
     connect(m_brushLibrary,&BrushLibrary::activeColorsChanged,this,[this]{m_color=m_brushLibrary->foregroundColor();m_secondaryColor=m_brushLibrary->backgroundColor();emit brushChanged();});
     qRegisterMetaType<PaintSessionInfo>();
     qRegisterMetaType<PaintFileJobInfo>();

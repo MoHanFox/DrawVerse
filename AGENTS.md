@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新白色预览与范围修订：`docs/brush-white-preview-design.md` / `docs/brush-white-preview-validation.md`；用户取消试画/代码和入口已清理，所有自动预览固定白色及正常模式/保持真实alpha，换当前颜色不重算；真实画布颜色不变，无ABI或格式变化。
+
 - 最新平滑/缩放/颜色保存：`docs/brush-follow-color-zoom-design.md` / `docs/brush-follow-color-zoom-validation.md`；用户确认保留拖绳、抬笔停在已绘末端不补线，Ctrl++/Ctrl+-主窗浮窗与文本保护，前景/背景及历史色偏好重启保持/多文档同步；无ABI或格式版本变化。
 
 - 最新ABR设备形状导入：`docs/abr-device-conversion-design.md` / `docs/abr-device-conversion-validation.md`；converter7/record1/交接JSON6/VBR1.21，方向/旋转/倾斜角度与圆度/独立动态和旧六代保持；PS设备公式与下限换算标近似，关闭设备仅来源保留，16位/其他设备继续后续，无C ABI或state新版本。
