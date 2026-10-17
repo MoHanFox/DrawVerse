@@ -219,3 +219,4 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 
 2026-10-17分组包原生阶段：ABI1.55/GROUP_PACKAGE及ordered-package-v1完整交接、2MiB与投影验证、容量探测无资源安装、实际图片/ABR来源读写与原子保存、state20专用准备串联已接。IO33/新原生1/旧保护5/旧公开3/Schema及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-package-design.md)及[验收](brush-groups-package-validation.md)。state20/VBR1.24不变；旧四包保护保持，Qt副本树合并/完整镜像/重置基准及分组管理仍待接，不宣称用户分组已完成。
 2026-10-17分组Qt状态阶段：ABI1.54 state20 在 BrushLibrary、PaintCoreClient 和持久化回写之间完整镜像，严格错误保持、空组/顺序、复制删除、平包与 ABR 根追加、重置基准和重启恢复通过；Release 构建及三项新增 Qt 最小测试通过，见[设计](brush-groups-qt-state-design.md)及[验收](brush-groups-qt-state-validation.md)。分组管理控件、Qt 分组包整树合并/范围导出仍待接。ABR 纹理资源导入和来源保留不代表内部纹理执行映射已完成。
+2026-10-17纹理混合模式阶段：核心和 Qt 新增 `normal`、`multiply`、`darken`、`lighten`、`subtract`、`difference`、`screen`，旧 state/VBR 缺省规范化为 normal；核心纹理、真实 state/VBR 资源交换、Qt 导入/预览/绘画/导出回归及 Release 通过，见[设计](brush-texture-mode-design.md)及[验收](brush-texture-mode-validation.md)。模式作用于笔尖覆盖率组合，不直接替代最终画布混合；ABR 内部纹理字段映射仍待接。

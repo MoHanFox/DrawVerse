@@ -1,13 +1,18 @@
 use crate::{brush_resource::valid_id, Error, Result};
-use paint_core::{BrushTexture, TextureResource, TextureSettings, TextureSpace};
+use paint_core::{BrushTexture, TextureMode, TextureResource, TextureSettings, TextureSpace};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+fn default_mode() -> String {
+    "normal".into()
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextureParameters {
     model: String,
     enabled: bool,
     space: String,
+    #[serde(default = "default_mode")]
+    mode: String,
     scale: f64,
     angle: f64,
     depth: f64,
@@ -39,6 +44,16 @@ impl TextureParameters {
                 TextureSpace::Tip => "tip",
             }
             .into(),
+            mode: match s.mode() {
+                TextureMode::Normal => "normal",
+                TextureMode::Multiply => "multiply",
+                TextureMode::Darken => "darken",
+                TextureMode::Lighten => "lighten",
+                TextureMode::Subtract => "subtract",
+                TextureMode::Difference => "difference",
+                TextureMode::Screen => "screen",
+            }
+            .into(),
             scale: f64::from(s.scale()).max(0.01),
             angle: f64::from(s.angle()),
             depth: f64::from(s.depth()),
@@ -54,6 +69,10 @@ impl TextureParameters {
     pub fn validate(&self) -> Result<()> {
         if self.model != "periodic-coverage-v1"
             || !matches!(self.space.as_str(), "document" | "tip")
+            || !matches!(
+                self.mode.as_str(),
+                "normal" | "multiply" | "darken" | "lighten" | "subtract" | "difference" | "screen"
+            )
             || !self.scale.is_finite()
             || !(0.01..=100.).contains(&self.scale)
             || !self.angle.is_finite()
@@ -80,6 +99,15 @@ impl TextureParameters {
                 return Err(Error::Invalid("texture resource identity"));
             }
         }
+        let mode = match self.mode.as_str() {
+            "multiply" => TextureMode::Multiply,
+            "darken" => TextureMode::Darken,
+            "lighten" => TextureMode::Lighten,
+            "subtract" => TextureMode::Subtract,
+            "difference" => TextureMode::Difference,
+            "screen" => TextureMode::Screen,
+            _ => TextureMode::Normal,
+        };
         let settings = TextureSettings::new(
             if self.space == "document" {
                 TextureSpace::Document
@@ -92,7 +120,8 @@ impl TextureParameters {
             self.invert,
             self.offset_x,
             self.offset_y,
-        )?;
+        )?
+        .with_mode(mode);
         Ok(BrushTexture::new(self.enabled, settings, resource)?)
     }
 }

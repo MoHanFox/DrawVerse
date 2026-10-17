@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新纹理模式：`docs/brush-texture-mode-design.md` / `docs/brush-texture-mode-validation.md`；核心和 Qt 支持七种纹理覆盖组合模式，旧 state/VBR 缺省为 normal，真实纹理交换与 Windows Qt 回归通过。ABR 内部纹理字段映射仍待接；无 ABI 主版本变化。
+
 - 最新分组包原生交接：`docs/brush-groups-package-design.md` / `docs/brush-groups-package-validation.md`；ABI1.55/GROUP_PACKAGE完整ordered-package-v1/2MiB与投影校验、容量无安装/完整资源来源读写/原子保存及准确state20准备串联；IO33/原生新1/旧保护5/旧公开3/Schema及Windows Release/Clippy/4 ABI/旧Qt2通过。旧四包保护保留，state/VBR不变；Qt副本合并/镜像/重置基准/分组管理仍待接。
 
 - 最新分组状态原生入口：`docs/brush-groups-abi-design.md` / `docs/brush-groups-abi-validation.md`；ABI1.54/GROUP_STATE明确state20准备，准确票据/完整关闭参数/图片来源/冷重建与mutate保持，公开新2/原生1/旧保护5/旧公开3及Windows Release/Clippy/4 ABI/旧Qt2通过。旧四准备/包保护保留；分组包专用交接/组织操作/Qt与重置基准仍待接，state/VBR不变。

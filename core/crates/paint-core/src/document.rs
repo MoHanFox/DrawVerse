@@ -2311,7 +2311,7 @@ impl Document {
                 };
             }
             if TEXTURED && !paper_texture {
-                coverage *= texture_dab.as_ref().expect("texture").coverage(x, y);
+                coverage = texture_dab.as_ref().expect("texture").apply(coverage, x, y);
             }
             Ok(coverage)
         })?;
@@ -2495,11 +2495,15 @@ impl Document {
                         } else {
                             1.
                         };
-                        if texture_amount == 0. {
+                        if texture_amount == 0. && (!TEXTURED || paper_texture) {
                             continue;
                         }
-                        if !paper_texture {
-                            coverage *= texture_amount;
+                        if TEXTURED && !paper_texture {
+                            coverage = texture_dab.as_ref().expect("compiled texture").apply(
+                                coverage,
+                                x as f64 + 0.5 + f64::from(appearance.offset_x),
+                                y as f64 + 0.5 + f64::from(appearance.offset_y),
+                            );
                         }
                         if coverage == 0. {
                             continue;

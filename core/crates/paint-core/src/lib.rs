@@ -33,7 +33,9 @@ pub use brush_dual_color::{DualColor, DualColorOrder};
 mod brush_dynamics;
 pub use brush_dual::{DualBrush, DualMode, DualSizeMode, DualSizing, DualWidthRule, SecondaryTip};
 mod brush_texture;
-pub use brush_texture::{BrushTexture, TextureResource, TextureSettings, TextureSpace};
+pub use brush_texture::{
+    BrushTexture, TextureMode, TextureResource, TextureSettings, TextureSpace,
+};
 mod brush_cursor_image;
 mod brush_mask;
 pub use brush_cursor_image::BRUSH_CURSOR_IMAGE_EDGE;

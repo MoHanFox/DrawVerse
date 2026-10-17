@@ -1217,6 +1217,18 @@
             "tip"
           ]
         },
+        "mode": {
+          "enum": [
+            "normal",
+            "multiply",
+            "darken",
+            "lighten",
+            "subtract",
+            "difference",
+            "screen"
+          ],
+          "default": "normal"
+        },
         "scale": {
           "type": "number",
           "minimum": 0.01,

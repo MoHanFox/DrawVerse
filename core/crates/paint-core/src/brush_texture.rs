@@ -6,9 +6,34 @@ pub enum TextureSpace {
     Document,
     Tip,
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextureMode {
+    #[default]
+    Normal,
+    Multiply,
+    Darken,
+    Lighten,
+    Subtract,
+    Difference,
+    Screen,
+}
+impl TextureMode {
+    pub fn combine(self, base: f32, texture: f32) -> f32 {
+        match self {
+            Self::Normal | Self::Multiply => base * texture,
+            Self::Darken => base.min(texture),
+            Self::Lighten => base.max(texture),
+            Self::Subtract => (base - texture).max(0.),
+            Self::Difference => (base - texture).abs(),
+            Self::Screen => base + texture - base * texture,
+        }
+        .clamp(0., 1.)
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextureSettings {
     space: TextureSpace,
+    mode: TextureMode,
     scale: f32,
     angle: f32,
     depth: f32,
@@ -20,6 +45,7 @@ impl Default for TextureSettings {
     fn default() -> Self {
         Self {
             space: TextureSpace::Document,
+            mode: TextureMode::Normal,
             scale: 1.,
             angle: 0.,
             depth: 1.,
@@ -53,6 +79,7 @@ impl TextureSettings {
         }
         Ok(Self {
             space,
+            mode: TextureMode::Normal,
             scale,
             angle,
             depth,
@@ -61,8 +88,15 @@ impl TextureSettings {
             offset_y,
         })
     }
+    pub fn with_mode(mut self, mode: TextureMode) -> Self {
+        self.mode = mode;
+        self
+    }
     pub fn space(self) -> TextureSpace {
         self.space
+    }
+    pub fn mode(self) -> TextureMode {
+        self.mode
     }
     pub fn scale(self) -> f32 {
         self.scale
@@ -261,6 +295,7 @@ pub(crate) struct TextureDab<'a> {
     period_y: f64,
     depth: f32,
     invert: bool,
+    mode: TextureMode,
 }
 impl CompiledTexture {
     pub(crate) fn document_space(&self) -> bool {
@@ -297,11 +332,12 @@ impl CompiledTexture {
             period_y: f64::from(h) * f64::from(s.scale),
             depth: s.depth,
             invert: s.invert,
+            mode: s.mode,
         }
     }
 }
 impl TextureDab<'_> {
-    pub(crate) fn coverage(&self, x: f64, y: f64) -> f32 {
+    fn sample(&self, x: f64, y: f64) -> f32 {
         let x = x - self.origin_x;
         let y = y - self.origin_y;
         let u = (x * self.cosine + y * self.sine) / self.period_x;
@@ -317,11 +353,29 @@ impl TextureDab<'_> {
         }
         1. - self.depth * (1. - value)
     }
+    pub(crate) fn apply(&self, base: f32, x: f64, y: f64) -> f32 {
+        self.mode.combine(base, self.sample(x, y))
+    }
+    pub(crate) fn coverage(&self, x: f64, y: f64) -> f32 {
+        self.sample(x, y)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn texture_modes_match_ps_style_coverage_combinations() {
+        let base = 0.25;
+        let texture = 0.75;
+        assert_eq!(TextureMode::Normal.combine(base, texture), base * texture);
+        assert_eq!(TextureMode::Multiply.combine(base, texture), base * texture);
+        assert_eq!(TextureMode::Darken.combine(base, texture), base);
+        assert_eq!(TextureMode::Lighten.combine(base, texture), texture);
+        assert_eq!(TextureMode::Subtract.combine(base, texture), 0.);
+        assert_eq!(TextureMode::Difference.combine(base, texture), 0.5);
+        assert_eq!(TextureMode::Screen.combine(base, texture), 0.8125);
+    }
     #[test]
     fn periodic_seams_negative_coordinates_and_odd_mips() {
         let resource = Arc::new(TextureResource::new(Arc::new(
