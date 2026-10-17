@@ -199,6 +199,12 @@ public:
     Q_INVOKABLE bool useColor(const QString &color);
     Q_INVOKABLE QString saveCopy(const QString &name);
     Q_INVOKABLE QString createOutlinePreset(bool fixedWidth);
+    Q_INVOKABLE QString createGroup(const QString &name,const QString &parentId = {});
+    Q_INVOKABLE bool renameGroup(const QString &id,const QString &name);
+    Q_INVOKABLE bool movePresetToGroup(const QString &presetId,const QString &parentId = {});
+    Q_INVOKABLE bool moveGroupToGroup(const QString &groupId,const QString &parentId = {});
+    Q_INVOKABLE bool ungroup(const QString &id);
+    Q_INVOKABLE bool removeGroup(const QString &id,bool cascade = false);
     Q_INVOKABLE bool rename(const QString &id,const QString &name);
     Q_INVOKABLE bool remove(const QString &id);
     Q_INVOKABLE bool resetPreset();
@@ -234,6 +240,7 @@ private:
     int index(const QString &id) const;
     void update(int field,qreal value);
     void changed();
+    bool applyOrganization(const QJsonObject &candidate);
     QList<Preset> m_presets;
     QJsonObject m_organization;
     QHash<QString,Preset> m_resetPresets;

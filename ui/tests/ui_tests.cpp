@@ -135,6 +135,25 @@ private slots:
         explicitFlat["organization"]=QJsonObject{{"model","ordered-tree-v1"},{"roots",items},{"groups",QJsonArray{}}};
         BrushLibrary normalized;QVERIFY(normalized.restore(QJsonDocument(explicitFlat).toJson()));QCOMPARE(normalized.catalogSnapshot(),flat.catalogSnapshot());
     }
+    void brushGroupsQtOperationsAreAtomicAndPreserveOrder() {
+        BrushLibrary library;QVERIFY(library.restore(QJsonDocument(groupedBrushState(library)).toJson()));
+        const auto selected=library.selectedId();
+        const auto group=library.createGroup("New group");QVERIFY(!group.isEmpty());
+        const auto nested=library.createGroup("Nested",group);QVERIFY(!nested.isEmpty());
+        QVERIFY(library.movePresetToGroup(selected,nested));
+        auto groupRows=QJsonDocument::fromJson(library.snapshot()).object().value("organization").toObject().value("groups").toArray();bool nestedContainsPreset=false;
+        for(const auto &row:groupRows)if(row.toObject().value("id").toString()==nested)nestedContainsPreset=row.toObject().value("items").toArray().last().toObject().value("id").toString()==selected;
+        QVERIFY(nestedContainsPreset);
+        const auto invalidMove=library.snapshot();QVERIFY(!library.moveGroupToGroup(group,nested));QCOMPARE(library.snapshot(),invalidMove);
+        QVERIFY(library.renameGroup(group,"Renamed"));QVERIFY(!library.renameGroup(group,"  "));
+        const auto renamed=library.snapshot();QVERIFY(!library.removeGroup(group,true));QCOMPARE(library.snapshot(),renamed);
+        QVERIFY(library.ungroup(nested));QVERIFY(library.ungroup(group));QCOMPARE(library.selectedId(),selected);
+        const auto copy=library.saveCopy("Cascade child");QVERIFY(!copy.isEmpty());
+        const auto cascadeGroup=library.createGroup("Cascade");QVERIFY(!cascadeGroup.isEmpty());
+        QVERIFY(library.movePresetToGroup(copy,cascadeGroup));QVERIFY(library.removeGroup(cascadeGroup,true));
+        const auto remaining=library.presets();QVERIFY(std::none_of(remaining.cbegin(),remaining.cend(),[&](const QVariant &row){return row.toMap().value("id").toString()==copy;}));
+        QVERIFY(library.createGroup(QString(81,'x')).isEmpty());
+    }
     void brushGroupsClientPreparationPixelsHistoryAndRestart() {
         QTemporaryDir temp;const auto path=temp.filePath("state.ini");BrushLibrary seed;seed.setRadius(4);seed.setPressureSize(false);seed.setPressureFlow(false);
         {QSettings prefs(path,QSettings::IniFormat);prefs.setValue("brushes/state",QJsonDocument(groupedBrushState(seed)).toJson(QJsonDocument::Compact));}
@@ -153,8 +172,9 @@ private slots:
         QTemporaryDir temp;const auto settings=temp.filePath("groups-ui.ini");BrushLibrary seed;const auto state=groupedBrushState(seed);{QSettings prefs(settings,QSettings::IniFormat);prefs.setValue("brushes/state",QJsonDocument(state).toJson(QJsonDocument::Compact));prefs.sync();}PaintCoreClient client(nullptr,settings);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
         workspace.setActive(workspace.groupForPanel("brush"),"brush");auto *library=client.brushLibrary();QVERIFY(library);const auto organization=state.value("organization").toObject();const auto outer=organization.value("roots").toArray().first().toObject().value("id").toString();const auto selected=state.value("selected").toString();QTRY_COMPARE(library->organization().value("groups").toList().size(),2);
-        QQuickItem *list=nullptr;QTRY_VERIFY((list=findVisualItem(window->contentItem(),"brushPresetList")));QTRY_COMPARE(list->property("count").toInt(),library->presets().size()+1);auto *group=findVisualItem(window->contentItem(),"brushGroup:"+outer);auto *preset=findVisualItem(window->contentItem(),"brushPreset:"+selected);QVERIFY(group && preset);QCOMPARE(group->property("height").toReal(),qreal(30));QVERIFY(group->y()<preset->y());
-        auto *search=findVisualItem(window->contentItem(),"brushSearch");QVERIFY(search);search->setProperty("text",library->selectedName());QTRY_COMPARE(list->property("count").toInt(),2);QVERIFY(findVisualItem(window->contentItem(),"brushGroup:"+outer));QVERIFY(findVisualItem(window->contentItem(),"brushPreset:"+selected));search->setProperty("text","");QTRY_COMPARE(list->property("count").toInt(),library->presets().size()+1);
+        QQuickItem *list=nullptr;QTRY_VERIFY((list=findVisualItem(window->contentItem(),"brushPresetList")));QTRY_COMPARE(list->property("count").toInt(),library->presets().size()+organization.value("groups").toArray().size());auto *group=findVisualItem(window->contentItem(),"brushGroup:"+outer);auto *preset=findVisualItem(window->contentItem(),"brushPreset:"+selected);QVERIFY(group && preset);QCOMPARE(group->property("height").toReal(),qreal(30));QVERIFY(group->y()<preset->y());
+        QVERIFY(findVisualItem(window->contentItem(),"createBrushGroup"));auto *groupDialog=engine.rootObjects().first()->findChild<QObject*>("brushGroupDialog");QVERIFY(groupDialog);QVERIFY(QMetaObject::invokeMethod(groupDialog,"open"));QTRY_VERIFY(groupDialog->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(groupDialog,"close"));
+        auto *search=findVisualItem(window->contentItem(),"brushSearch");QVERIFY(search);search->setProperty("text",library->selectedName());QTRY_COMPARE(list->property("count").toInt(),2);QVERIFY(findVisualItem(window->contentItem(),"brushGroup:"+outer));QVERIFY(findVisualItem(window->contentItem(),"brushPreset:"+selected));search->setProperty("text","");QTRY_COMPARE(list->property("count").toInt(),library->presets().size()+organization.value("groups").toArray().size());
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 

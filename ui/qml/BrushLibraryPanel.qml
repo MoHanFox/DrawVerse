@@ -24,9 +24,20 @@ ColumnLayout {
     readonly property var library:PaintClient.brushLibrary
     property var groupedModel:[]
     property string groupedSignature:""
+    property string contextGroupId:""
+    property string contextGroupName:""
+    property string contextPresetId:""
+    property string groupParentId:""
+    property var groupMenuGroups:[]
     function presetById(id) {
         for(const preset of library.presets) if(preset.id===id) return preset
         return ({})
+    }
+    function groupContains(groupId,targetId) {
+        const groups={};for(const group of groupMenuGroups)groups[group.id]=group
+        const group=groups[groupId];if(!group)return false
+        for(const item of (group.items||[]))if(item.kind==="group" && (item.id===targetId || groupContains(item.id,targetId)))return true
+        return false
     }
     function groupedItems() {
         const presets={}; for(const p of library.presets) presets[p.id]=p
@@ -39,7 +50,7 @@ ColumnLayout {
                 if(item.kind==="preset") { if(matches[item.id]) out.push({kind:"preset",id:item.id,depth:depth}) }
                 else if(item.kind==="group" && groups[item.id]) {
                     const children=[]; visit(groups[item.id].items,children,depth+1)
-                    if(children.length) { out.push({kind:"group",id:item.id,name:groups[item.id].name,depth:depth}); out.push(...children) }
+                    if(children.length || !query.length) { out.push({kind:"group",id:item.id,name:groups[item.id].name,depth:depth}); out.push(...children) }
                 }
             }
         }
@@ -92,7 +103,15 @@ ColumnLayout {
             Image {visible:modelData.kind!=="group";anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.leftMargin:4+modelData.depth*14;anchors.rightMargin:4;anchors.topMargin:4;height:35;source:modelData.kind==="group"?"":root.presetById(modelData.id).preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
             Text {visible:modelData.kind==="group";x:8+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:"▾  "+modelData.name;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
             Text {visible:modelData.kind!=="group";x:6+modelData.depth*14;y:40;width:parent.width-x-6;textFormat:Text.PlainText;text:root.presetById(modelData.id).name||"";color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
-            MouseArea {anchors.fill:parent;enabled:modelData.kind!=="group";onClicked:root.library.select(modelData.id)}
+            MouseArea {
+                anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton
+                onClicked:function(mouse) {
+                    if(mouse.button===Qt.RightButton) {
+                        if(modelData.kind==="group") {root.contextGroupId=modelData.id;root.contextGroupName=modelData.name;groupMenu.popup()}
+                        else {root.contextPresetId=modelData.id;root.library.select(modelData.id);presetMenu.popup()}
+                    } else if(modelData.kind!=="group") root.library.select(modelData.id)
+                }
+            }
             Component.onCompleted:if(modelData.kind!=="group")root.library.requestPreview(modelData.id)
         }
         ScrollBar.vertical:ScrollBar {width:6}
@@ -102,13 +121,57 @@ ColumnLayout {
         IconButton {objectName:"importBrushPackage";glyph:"folder";tooltip:"导入 VBR / ABR 笔刷包";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:importDialog.open()}
         IconButton {objectName:"exportBrushPackage";glyph:"save";tooltip:"导出当前笔刷为 VBR";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:root.beginExport()}
         IconButton {glyph:"plus";tooltip:"保存当前设置为新画笔";implicitHeight:22;onClicked:saveDialog.open()}
+        IconButton {objectName:"createBrushGroup";glyph:"folder";tooltip:"新建画笔组";implicitHeight:22;onClicked:{root.groupParentId="";groupName.text="";groupDialog.title="新建画笔组";groupDialog.open()}}
         IconButton {glyph:"trash";tooltip:"删除自定义画笔";implicitHeight:22;enabled:root.library.presets.some(p=>p.id===root.library.selectedId && !p.builtin);onClicked:root.library.remove(root.library.selectedId)}
+    }
+    Menu {
+        id:groupMenu
+        MenuItem {text:"新建子组";onTriggered:{root.groupParentId=root.contextGroupId;groupName.text="";groupDialog.title="新建子组";groupDialog.open()}}
+        MenuItem {text:"重命名";onTriggered:{root.groupParentId="";groupName.text=root.contextGroupName;groupDialog.title="重命名组";groupDialog.open()}}
+        MenuSeparator {}
+        MenuItem {text:"移动到根目录";onTriggered:root.library.moveGroupToGroup(root.contextGroupId,"")}
+        Menu {
+            title:"移动到组"
+            Repeater {
+                model:root.groupMenuGroups
+                MenuItem {
+                    required property var modelData
+                    text:modelData.name
+                    visible:modelData.id!==root.contextGroupId && !root.groupContains(root.contextGroupId,modelData.id)
+                    onTriggered:root.library.moveGroupToGroup(root.contextGroupId,modelData.id)
+                }
+            }
+        }
+        MenuSeparator {}
+        MenuItem {text:"解散组";onTriggered:root.library.ungroup(root.contextGroupId)}
+        MenuItem {text:"删除组及内容";onTriggered:root.library.removeGroup(root.contextGroupId,true)}
+    }
+    Menu {
+        id:presetMenu;title:"移动到组"
+        MenuItem {text:"画笔库根目录";onTriggered:root.library.movePresetToGroup(root.contextPresetId,"")}
+        Repeater {
+            model:root.groupMenuGroups
+            MenuItem {
+                required property var modelData
+                text:modelData.name
+                onTriggered:root.library.movePresetToGroup(root.contextPresetId,modelData.id)
+            }
+        }
     }
     Dialog {
         id:saveDialog;title:"保存画笔";modal:true;standardButtons:Dialog.Ok|Dialog.Cancel
         anchors.centerIn:Overlay.overlay
         TextField {id:brushName;placeholderText:"画笔名称";maximumLength:80;text:root.library.selectedName+" 副本"}
         onAccepted:root.library.saveCopy(brushName.text)
+    }
+    Dialog {
+        id:groupDialog;objectName:"brushGroupDialog";title:"新建画笔组";modal:true;standardButtons:Dialog.Ok|Dialog.Cancel
+        anchors.centerIn:Overlay.overlay
+        contentItem:TextField {id:groupName;objectName:"brushGroupName";placeholderText:"组名称";maximumLength:80;selectByMouse:true}
+        onAccepted: {
+            if(title==="重命名组") root.library.renameGroup(root.contextGroupId,groupName.text)
+            else root.library.createGroup(groupName.text,root.groupParentId)
+        }
     }
     Dialog {
         id:sourceOptions;objectName:"brushSourceExportOptions";title:"导出来源范围";modal:true;anchors.centerIn:Overlay.overlay;width:320
@@ -126,6 +189,6 @@ ColumnLayout {
     FileDialog {id:importDialog;objectName:"brushImportDialog";title:"导入笔刷包";nameFilters:["笔刷包 (*.vbr *.abr)","DrawVerse 笔刷 (*.vbr)","Photoshop 笔刷 (*.abr)"];onAccepted:PaintClient.importBrushes(selectedFile)}
     FileDialog {id:exportDialog;title:"导出当前笔刷";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.exportBrush(selectedFile,root.includeExportSource,root.exportPreset)}
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
-    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}function onPresetsChanged(){root.refreshGroupedItems()}}
-    Component.onCompleted:root.refreshGroupedItems()
+    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}function onPresetsChanged(){root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}}
+    Component.onCompleted:{root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}
 }
