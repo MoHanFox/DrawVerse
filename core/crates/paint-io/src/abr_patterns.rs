@@ -188,6 +188,12 @@ pub fn decode(
     token: &CancellationToken,
 ) -> Result<DecodedTextures> {
     check(token)?;
+    if !sections.iter().any(|section| &section.key == b"patt") {
+        return Ok(DecodedTextures {
+            patterns: BTreeMap::new(),
+            presets: BTreeMap::new(),
+        });
+    }
     let mut channel_budget = 0usize;
     for section in sections.iter().filter(|section| &section.key == b"patt") {
         preflight_pattern_records(&section.bytes, token, &mut channel_budget)?;
