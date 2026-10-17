@@ -203,6 +203,34 @@ fn texture_pattern_handoff_binds_mapped_mode_and_paints_real_pixels() {
 }
 
 #[test]
+fn abr_texture_brightness_and_contrast_survive_handoff_and_source_report() {
+    let token = CancellationToken::default();
+    let original = Arc::new(support::abr_fixture::fixture_with_texture_adjustments(
+        "Mltp", -25., 50.,
+    ));
+    let batch = ImportBatch::decode(original, MAX_CATALOG_MASK_BYTES, &token).unwrap();
+    let wire: serde_json::Value = serde_json::from_slice(&batch.to_json().unwrap()).unwrap();
+    assert_eq!(wire["presets"][0]["texture"]["brightness"], -0.25);
+    assert_eq!(wire["presets"][0]["texture"]["contrast"], 0.5);
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().into(), MAX_CATALOG_MASK_BYTES).unwrap();
+    let imported = batch.persist(&store, &token).unwrap();
+    let settings = imported[0].settings().texture.settings();
+    assert_eq!(settings.brightness(), -0.25);
+    assert_eq!(settings.contrast(), 0.5);
+    let source = store
+        .source_store()
+        .unwrap()
+        .load(imported[0].source_id(), &token)
+        .unwrap();
+    for path in ["textureBrightness", "textureContrast"] {
+        assert!(source.info.report.iter().any(
+            |item| item.path == path && item.status == paint_io::brush_source::Support::Mapped
+        ));
+    }
+}
+
+#[test]
 fn pressure_handoff_and_source_reset_preserve_image_and_program_across_two_strokes() {
     let token = CancellationToken::default();
     let original = Arc::new(support::abr_fixture::fixture_with_pressure(6, 2, false));

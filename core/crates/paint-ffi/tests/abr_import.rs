@@ -316,7 +316,11 @@ fn check_device_bytes(
 fn texture_abr_import_prepares_native_state_and_source_through_public_abi() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("texture.abr");
-    std::fs::write(&path, fixture::fixture_with_texture("Mltp")).unwrap();
+    std::fs::write(
+        &path,
+        fixture::fixture_with_texture_adjustments("CBrn", -25., 50.),
+    )
+    .unwrap();
     let token = CancellationToken::default();
     let batch = ImportBatch::read(&path, MAX_CATALOG_MASK_BYTES, &token).unwrap();
     let expected = batch.to_json().unwrap();
@@ -354,8 +358,10 @@ fn texture_abr_import_prepares_native_state_and_source_through_public_abi() {
         assert!(settings.texture.enabled());
         assert_eq!(
             settings.texture.settings().mode(),
-            paint_core::TextureMode::Multiply
+            paint_core::TextureMode::ColorBurn
         );
+        assert_eq!(settings.texture.settings().brightness(), -0.25);
+        assert_eq!(settings.texture.settings().contrast(), 0.5);
         let texture_id = settings
             .texture
             .resource()

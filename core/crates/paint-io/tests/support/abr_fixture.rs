@@ -46,7 +46,7 @@ fn preset(
     scatter: Option<bool>,
     color: Option<(bool, bool)>,
     (shape_jitter, device): (Option<bool>, Option<(bool, i32, bool)>),
-    texture: Option<(&str, &str)>,
+    texture: Option<(&str, &str, f64, f64)>,
 ) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
@@ -231,7 +231,7 @@ fn preset(
             ));
         }
     }
-    if let Some((pattern, mode)) = texture {
+    if let Some((pattern, mode, brightness, contrast)) = texture {
         entries.push(("useTexture", typed(b"bool", &[1])));
         entries.push((
             "Txtr",
@@ -254,6 +254,18 @@ fn preset(
             "textureBlendMode",
             typed(b"enum", &[id("BlnM"), id(mode)].concat()),
         ));
+        if brightness != 0. {
+            entries.push((
+                "textureBrightness",
+                typed(b"long", &(brightness as i32).to_be_bytes()),
+            ));
+        }
+        if contrast != 0. {
+            entries.push((
+                "textureContrast",
+                typed(b"long", &(contrast as i32).to_be_bytes()),
+            ));
+        }
     }
     if let Some(opacity) = opacity {
         entries.push((
@@ -366,7 +378,29 @@ pub fn fixture_with_texture(mode: &str) -> Vec<u8> {
         None,
         None,
         (None, None),
-        Some(("pattern-identity", mode)),
+        Some(("pattern-identity", mode, 0., 0.)),
+    );
+    let mut output = bytes[..4].to_vec();
+    let mut offset = 4;
+    while offset < bytes.len() {
+        let size = u32::from_be_bytes(bytes[offset + 8..offset + 12].try_into().unwrap()) as usize;
+        output.extend_from_slice(&bytes[offset..offset + 12 + size]);
+        output.resize(output.len() + (4 - size % 4) % 4, 0);
+        offset += 12 + size;
+    }
+    output
+}
+#[allow(dead_code)]
+pub fn fixture_with_texture_adjustments(mode: &str, brightness: f64, contrast: f64) -> Vec<u8> {
+    let bytes = fixture_inner(
+        (6, 2),
+        false,
+        Some(100.),
+        false,
+        None,
+        None,
+        (None, None),
+        Some(("pattern-identity", mode, brightness, contrast)),
     );
     let mut output = bytes[..4].to_vec();
     let mut offset = 4;
@@ -387,7 +421,7 @@ fn fixture_inner(
     scatter: Option<bool>,
     color: Option<(bool, bool)>,
     dynamics: (Option<bool>, Option<(bool, i32, bool)>),
-    texture: Option<(&str, &str)>,
+    texture: Option<(&str, &str, f64, f64)>,
 ) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
@@ -423,7 +457,7 @@ fn fixture_inner(
     samples.extend(&record);
     samples.resize(samples.len() + (4 - record.len() % 4) % 4, 0);
     section(&mut bytes, b"samp", &samples);
-    if let Some((pattern, _)) = texture {
+    if let Some((pattern, _, _, _)) = texture {
         let mut body = 1u32.to_be_bytes().to_vec();
         body.extend(1u32.to_be_bytes());
         body.extend(4u16.to_be_bytes());

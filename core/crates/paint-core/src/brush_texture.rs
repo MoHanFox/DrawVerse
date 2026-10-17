@@ -47,6 +47,8 @@ pub struct TextureSettings {
     scale: f32,
     angle: f32,
     depth: f32,
+    brightness: f32,
+    contrast: f32,
     invert: bool,
     offset_x: f64,
     offset_y: f64,
@@ -59,6 +61,8 @@ impl Default for TextureSettings {
             scale: 1.,
             angle: 0.,
             depth: 1.,
+            brightness: 0.,
+            contrast: 0.,
             invert: false,
             offset_x: 0.,
             offset_y: 0.,
@@ -93,6 +97,8 @@ impl TextureSettings {
             scale,
             angle,
             depth,
+            brightness: 0.,
+            contrast: 0.,
             invert,
             offset_x,
             offset_y,
@@ -101,6 +107,18 @@ impl TextureSettings {
     pub fn with_mode(mut self, mode: TextureMode) -> Self {
         self.mode = mode;
         self
+    }
+    pub fn with_adjustments(mut self, brightness: f32, contrast: f32) -> Result<Self> {
+        if !brightness.is_finite()
+            || !(-1. ..=1.).contains(&brightness)
+            || !contrast.is_finite()
+            || !(-1. ..=1.).contains(&contrast)
+        {
+            return Err(Error::InvalidArgument("texture adjustments"));
+        }
+        self.brightness = brightness;
+        self.contrast = contrast;
+        Ok(self)
     }
     pub fn space(self) -> TextureSpace {
         self.space
@@ -116,6 +134,12 @@ impl TextureSettings {
     }
     pub fn depth(self) -> f32 {
         self.depth
+    }
+    pub fn brightness(self) -> f32 {
+        self.brightness
+    }
+    pub fn contrast(self) -> f32 {
+        self.contrast
     }
     pub fn invert(self) -> bool {
         self.invert
@@ -304,6 +328,8 @@ pub(crate) struct TextureDab<'a> {
     period_x: f64,
     period_y: f64,
     depth: f32,
+    brightness: f32,
+    contrast: f32,
     invert: bool,
     mode: TextureMode,
 }
@@ -341,6 +367,8 @@ impl CompiledTexture {
             period_x: f64::from(w) * f64::from(s.scale),
             period_y: f64::from(h) * f64::from(s.scale),
             depth: s.depth,
+            brightness: s.brightness,
+            contrast: s.contrast,
             invert: s.invert,
             mode: s.mode,
         }
@@ -358,6 +386,12 @@ impl TextureDab<'_> {
         } else {
             a + (self.upper.sample(u, v) - a) * self.mix
         };
+        if self.brightness != 0. {
+            value = (value + self.brightness).clamp(0., 1.);
+        }
+        if self.contrast != 0. {
+            value = ((value - 0.5) * (1. + self.contrast) + 0.5).clamp(0., 1.);
+        }
         if self.invert {
             value = 1. - value;
         }
@@ -388,6 +422,12 @@ mod tests {
         assert_eq!(TextureMode::ColorBurn.combine(base, texture), 0.);
         assert_eq!(TextureMode::ColorBurn.combine(0.75, 0.25), 0.);
         assert_eq!(TextureMode::ColorBurn.combine(0.25, 1.), 0.25);
+        let adjusted = TextureSettings::new(TextureSpace::Document, 1., 0., 1., false, 0., 0.)
+            .unwrap()
+            .with_adjustments(-0.25, 0.5)
+            .unwrap();
+        assert_eq!(adjusted.brightness(), -0.25);
+        assert_eq!(adjusted.contrast(), 0.5);
     }
     #[test]
     fn periodic_seams_negative_coordinates_and_odd_mips() {
@@ -414,6 +454,28 @@ mod tests {
             .compile()
             .unwrap();
         assert!((texture.dab(0., 0., 0., 1.).coverage(0.5, 0.5) - 1. / 3.).abs() < 1. / 255.);
+    }
+    #[test]
+    fn brightness_and_contrast_adjust_sampled_coverage_before_invert_and_depth() {
+        let resource = Arc::new(TextureResource::new(Arc::new(
+            BrushMask::new(1, 1, vec![128]).unwrap(),
+        )));
+        for (brightness, contrast, expected) in [
+            (0., 0., 128. / 255.),
+            (0.25, 0., 0.75),
+            (-0.25, 0., 0.25),
+            (0., 0.5, 0.125),
+        ] {
+            let settings = TextureSettings::new(TextureSpace::Document, 1., 0., 1., false, 0., 0.)
+                .unwrap()
+                .with_adjustments(brightness, contrast)
+                .unwrap();
+            let texture = BrushTexture::new(true, settings, Some(resource.clone()))
+                .unwrap()
+                .compile()
+                .unwrap();
+            assert!((texture.dab(0., 0., 0., 1.).coverage(0.5, 0.5) - expected).abs() < 1e-6);
+        }
     }
     #[test]
     fn roundoff_and_invalid_settings_do_not_escape_resource() {

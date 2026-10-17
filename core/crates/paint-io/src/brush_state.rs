@@ -196,7 +196,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=20) {
+    if !matches!(state.version, 1..=21) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -250,6 +250,11 @@ fn decode_inner(
         let texture = if let Some(t) = row.texture {
             if state.version < 11 {
                 return Err(Error::Unsupported("texture require state11".into()));
+            }
+            if t.requires_vbr_26() && state.version < 21 {
+                return Err(Error::Unsupported(
+                    "texture brightness/contrast requires state21".into(),
+                ));
             }
             let resource = if let Some(id) = t.resource_id() {
                 if !textures.contains_key(id) {
@@ -484,9 +489,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         };
         let texture = if !s.texture.is_default() {
             version = version.max(11);
-            Some(crate::brush_texture::TextureParameters::from_core(
-                &s.texture,
-            )?)
+            let texture = crate::brush_texture::TextureParameters::from_core(&s.texture)?;
+            if texture.requires_vbr_26() {
+                version = version.max(21);
+            }
+            Some(texture)
         } else {
             None
         };
@@ -586,7 +593,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         });
     }
     if organization.is_some() {
-        version = 20;
+        version = version.max(20);
     }
     let bytes = serde_json::to_vec(&State {
         version,

@@ -4,4 +4,6 @@
 
 支持模式：`normal`、`multiply`、`darken`、`lighten`、`subtract`、`difference`、`screen`、`colorBurn`。旧 state/VBR 纹理缺少 mode 时规范化为 `normal`。`colorBurn` 使用 `1-(1-base)/texture` 的覆盖率标量近似，要求 VBR1.25；旧模式继续使用原版本。
 
+`brightness`/`contrast` 在同一采样值上先做亮度平移、再做围绕 0.5 的线性对比度调整，然后应用反相和深度。默认 0 保持旧字节；非默认值要求 state21/VBR1.26。
+
 模式组合在核心执行期完成，纹理采样仍保留周期坐标、LOD、深度、反相和文档/笔尖空间。模式不会把纹理当作最终画布混合模式，也不会改变纹理关闭时的参数保存规则。

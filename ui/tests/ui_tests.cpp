@@ -1557,12 +1557,12 @@ private slots:
     void abrTextureHandoffImportsMappedModeIntoState11() {
         BrushLibrary library;
         const QString textureResource(64,'a');
-        const QJsonObject texture{{"model","periodic-coverage-v1"},{"enabled",true},{"space","tip"},{"mode","colorBurn"},{"scale",1.0},{"angle",0.0},{"depth",1.0},{"invert",false},{"offsetX",0.0},{"offsetY",0.0},{"resource",textureResource}};
+        const QJsonObject texture{{"model","periodic-coverage-v1"},{"enabled",true},{"space","tip"},{"mode","colorBurn"},{"scale",1.0},{"angle",0.0},{"depth",1.0},{"brightness",-0.25},{"contrast",0.5},{"invert",false},{"offsetX",0.0},{"offsetY",0.0},{"resource",textureResource}};
         const QJsonObject parameters{{"diameter",8.0},{"spacing",0.02},{"dabOpacity",1.0},{"hardness",1.0},{"roundness",1.0},{"angle",0.0},{"flow",1.0},{"pressureSize",false},{"pressureFlow",false}};
         const QJsonObject preset{{"name","Texture"},{"parameters",parameters},{"tipResource",QJsonValue::Null},{"texture",texture},{"sourceResource",QString(64,'b')},{"partial",false}};
         const QJsonObject handoff{{"version",7},{"format","abr"},{"presets",QJsonArray{preset}}};
         QVERIFY(library.importAbr(QJsonDocument(handoff).toJson(QJsonDocument::Compact)));
-        QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object().value("version").toInt(),11);
+        QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object().value("version").toInt(),21);
         QCOMPARE(library.texture(),texture.toVariantMap());
         QVERIFY(library.resetPreset());
         QCOMPARE(library.texture(),texture.toVariantMap());

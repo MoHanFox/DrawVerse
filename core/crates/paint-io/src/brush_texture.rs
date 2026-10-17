@@ -5,6 +5,9 @@ use std::sync::Arc;
 fn default_mode() -> String {
     "normal".into()
 }
+fn is_default_adjustment(value: &f64) -> bool {
+    *value == 0.
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextureParameters {
@@ -16,6 +19,10 @@ pub struct TextureParameters {
     scale: f64,
     angle: f64,
     depth: f64,
+    #[serde(default, skip_serializing_if = "is_default_adjustment")]
+    brightness: f64,
+    #[serde(default, skip_serializing_if = "is_default_adjustment")]
+    contrast: f64,
     invert: bool,
     offset_x: f64,
     offset_y: f64,
@@ -58,6 +65,8 @@ impl TextureParameters {
             scale: f64::from(s.scale()).max(0.01),
             angle: f64::from(s.angle()),
             depth: f64::from(s.depth()),
+            brightness: f64::from(s.brightness()),
+            contrast: f64::from(s.contrast()),
             invert: s.invert(),
             offset_x: s.offset().0,
             offset_y: s.offset().1,
@@ -69,6 +78,9 @@ impl TextureParameters {
     }
     pub fn mode(&self) -> &str {
         &self.mode
+    }
+    pub fn requires_vbr_26(&self) -> bool {
+        self.brightness != 0. || self.contrast != 0.
     }
     pub fn validate(&self) -> Result<()> {
         if self.model != "periodic-coverage-v1"
@@ -90,6 +102,10 @@ impl TextureParameters {
             || !(-180. ..=180.).contains(&self.angle)
             || !self.depth.is_finite()
             || !(0. ..=1.).contains(&self.depth)
+            || !self.brightness.is_finite()
+            || !(-1. ..=1.).contains(&self.brightness)
+            || !self.contrast.is_finite()
+            || !(-1. ..=1.).contains(&self.contrast)
             || [self.offset_x, self.offset_y]
                 .iter()
                 .any(|v| !v.is_finite() || v.abs() > 1_000_000.)
@@ -133,7 +149,8 @@ impl TextureParameters {
             self.offset_x,
             self.offset_y,
         )?
-        .with_mode(mode);
+        .with_mode(mode)
+        .with_adjustments(self.brightness as f32, self.contrast as f32)?;
         Ok(BrushTexture::new(self.enabled, settings, resource)?)
     }
 }

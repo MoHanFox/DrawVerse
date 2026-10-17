@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 25;
+pub const MAX_EXECUTABLE_MINOR: u32 = 26;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -461,6 +461,15 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             "color-burn texture mode requires VBR1.25".into(),
         ));
     }
+    if manifest.version.minor < 26
+        && brushes
+            .iter()
+            .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_26()))
+    {
+        return Err(Error::Unsupported(
+            "texture brightness/contrast requires VBR1.26".into(),
+        ));
+    }
     if manifest.version.minor < 8
         && brushes
             .iter()
@@ -653,6 +662,13 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_26()))
+            {
+                26
+            } else if bundle
                 .package
                 .brushes
                 .iter()

@@ -17,6 +17,8 @@ pub struct PatternResource {
 pub struct TextureSource {
     pub pattern_id: String,
     pub depth: f32,
+    pub brightness: f32,
+    pub contrast: f32,
     pub scale: f32,
     pub invert: bool,
     pub each_tip: bool,
@@ -237,9 +239,15 @@ pub fn decode(
         if let Some(index) = brush.preset_index {
             if let Some(pattern_id) = brush.descriptor.texture_pattern_id {
                 let depth = brush.descriptor.texture_depth_pct.unwrap_or(0.);
+                let brightness = brush.descriptor.texture_brightness.unwrap_or(0) as f32 / 100.;
+                let contrast = brush.descriptor.texture_contrast.unwrap_or(0) as f32 / 100.;
                 let scale = brush.descriptor.texture_scale_pct.unwrap_or(100.);
                 if !depth.is_finite()
                     || !(0. ..=100.).contains(&depth)
+                    || !brightness.is_finite()
+                    || !(-1. ..=1.).contains(&brightness)
+                    || !contrast.is_finite()
+                    || !(-1. ..=1.).contains(&contrast)
                     || !scale.is_finite()
                     || !(1. ..=10000.).contains(&scale)
                 {
@@ -253,6 +261,8 @@ pub fn decode(
                     TextureSource {
                         pattern_id,
                         depth: (depth / 100.) as f32,
+                        brightness,
+                        contrast,
                         scale: (scale / 100.) as f32,
                         invert: brush.descriptor.texture_invert.unwrap_or(false),
                         each_tip: brush.descriptor.texture_each_tip.unwrap_or(true),
@@ -268,9 +278,15 @@ pub fn decode(
             (preset.preset_index, preset.descriptor.texture_pattern_id)
         {
             let depth = preset.descriptor.texture_depth_pct.unwrap_or(0.);
+            let brightness = preset.descriptor.texture_brightness.unwrap_or(0) as f32 / 100.;
+            let contrast = preset.descriptor.texture_contrast.unwrap_or(0) as f32 / 100.;
             let scale = preset.descriptor.texture_scale_pct.unwrap_or(100.);
             if !depth.is_finite()
                 || !(0. ..=100.).contains(&depth)
+                || !brightness.is_finite()
+                || !(-1. ..=1.).contains(&brightness)
+                || !contrast.is_finite()
+                || !(-1. ..=1.).contains(&contrast)
                 || !scale.is_finite()
                 || !(1. ..=10000.).contains(&scale)
             {
@@ -284,6 +300,8 @@ pub fn decode(
                 TextureSource {
                     pattern_id,
                     depth: (depth / 100.) as f32,
+                    brightness,
+                    contrast,
                     scale: (scale / 100.) as f32,
                     invert: preset.descriptor.texture_invert.unwrap_or(false),
                     each_tip: preset.descriptor.texture_each_tip.unwrap_or(true),

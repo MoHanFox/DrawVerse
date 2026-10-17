@@ -968,7 +968,8 @@ fn texture_controls(
         0.,
         0.,
     )?
-    .with_mode(mode.unwrap_or(TextureMode::Normal));
+    .with_mode(mode.unwrap_or(TextureMode::Normal))
+    .with_adjustments(source.brightness, source.contrast)?;
     settings.texture = BrushTexture::new(
         enabled,
         texture_settings,
@@ -986,6 +987,8 @@ fn texture_controls(
         "TxtC".into(),
         "InvT".into(),
         "textureBlendMode".into(),
+        "textureBrightness".into(),
+        "textureContrast".into(),
     ];
     for (path, status, reason) in [
         (
@@ -1003,6 +1006,8 @@ fn texture_controls(
         ),
         ("textureDepth", Status::Mapped, "纹理深度百分比"),
         ("textureScale", Status::Mapped, "纹理缩放百分比"),
+        ("textureBrightness", Status::Mapped, "纹理亮度调整"),
+        ("textureContrast", Status::Mapped, "纹理对比度调整"),
         ("Txtr.Ptrn.Idnt", Status::Mapped, "按图案 ID 绑定嵌入资源"),
         (
             "Txtr.Ptrn.Nm  ",
