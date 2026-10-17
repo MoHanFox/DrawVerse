@@ -8,8 +8,8 @@
 
 ABR `bVTy` 的 `1/2/3/6/8` 映射到渐隐、笔压、倾斜、方向、笔旋转；`Mnm` 转为最低比例，`fStp` 只用于渐隐。`0` 保持无设备控制，未知控制仍明确报告未执行，不能被当成成功映射。ABR 转换器提升到 12；事件交接提升到 11，Qt 接受该版本。旧交接中 `dualBrush`/`texture` 为 `null` 时按缺省处理，不再误拒绝整包。
 
-状态格式进入 state35，VBR 进入 1.42，行为版本为 27，能力名称为 `scatter-controls`。`ScatterParameters` 的 `amountControl`/`countControl` 是可选字段，缺省保持旧字节；state35/VBR1.42 之前出现控制字段明确拒绝。第二笔尖的散布设备控制暂不开放，`DualParameters::validate` 明确拒绝，避免半支持配置被保存。
+状态格式进入 state35，VBR 进入 1.42，行为版本为 27，能力名称为 `scatter-controls`。`ScatterParameters` 的 `amountControl`/`countControl` 是可选字段，缺省保持旧字节；state35/VBR1.42 之前出现控制字段明确拒绝。第二笔尖也使用同一控制对象；独立路径的渐隐按主逻辑印章序号推进，配对路径使用同一次印章序号。ABR `dualBrush` 的 `scatterDynamics`/`countDynamics` 同步映射，第二笔尖设备控制不再拒绝。
 
 Qt 画笔设置的散布页提供幅度控制、数量控制、最低比例和渐隐步数；控制关闭时隐藏细分参数。ABR 导入、状态保存、VBR 导出及重新打开都保留同一组控制值。
 
-验收：核心默认/控制计划、渐变边界、设备通道和非法范围；真实笔触控制数量变化与默认像素；state35/VBR1.42 两笔像素往返和旧版本拒绝；ABR 控制映射、固定随机/固定翻转回归；Windows Qt 状态、VBR 行为版本和 ABR 控制交接。
+验收：核心默认/控制计划、渐变边界、设备通道和非法范围；主/第二笔尖真实笔触控制数量变化与默认像素；state35/VBR1.42 两笔像素往返和旧版本拒绝；ABR 主/第二控制映射、固定随机/固定翻转回归；Windows Qt 状态、VBR 行为版本和 ABR 控制交接。

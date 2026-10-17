@@ -129,12 +129,20 @@ impl SourceInfo {
                 && !self
                     .baseline
                     .scatter_dynamics
-                    .is_some_and(|p| p.has_controls()))
+                    .is_some_and(|p| p.has_controls())
+                && !self
+                    .dual_brush
+                    .as_ref()
+                    .is_some_and(|d| d.has_scatter_controls()))
             || (self.converter_version < 12
-                && self
+                && (self
                     .baseline
                     .scatter_dynamics
-                    .is_some_and(|p| p.has_controls()))
+                    .is_some_and(|p| p.has_controls())
+                    || self
+                        .dual_brush
+                        .as_ref()
+                        .is_some_and(|d| d.has_scatter_controls())))
         {
             return Err(Error::Unsupported(
                 "converter v1 baseline dynamic controls".into(),

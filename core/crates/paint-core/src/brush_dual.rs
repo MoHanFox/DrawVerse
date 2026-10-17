@@ -460,10 +460,14 @@ impl CompiledDual {
         size_scale: f64,
     ) -> DualDab<'_> {
         let stroke = stroke ^ crate::brush_random::mix(0xa4093822299f31d0 ^ u64::from(primary));
-        let plan = self
-            .program
-            .scatter
-            .plan(self.radius, stroke, logical, direction, point, 0);
+        let plan = self.program.scatter.plan(
+            self.radius,
+            stroke,
+            logical,
+            direction,
+            point,
+            logical.min(u64::from(u32::MAX)) as u32,
+        );
         let count = plan.as_ref().map_or(1, |p| p.count);
         let flow = self.program.tip.flow
             * if self.program.tip.pressure_flow {

@@ -46,6 +46,9 @@ ColumnLayout {
         else data[key]=value
         const ok=library.setDualBrush(data);root.wetError=ok?"":"第二笔刷参数无效，未应用更改。";return ok
     }
+    function dualScatterControl(field){return root.dualModule("scatterDynamics")[field]||{source:"off",minimum:0}}
+    function setDualScatterControl(field,source){let data=Object.assign({},root.dual);let scatter=Object.assign({},root.dualModule("scatterDynamics"));if(source==="off")delete scatter[field];else{let old=scatter[field]||{};scatter[field]={source:source,minimum:old.minimum||0};if(source==="fade")scatter[field].fadeSteps=old.fadeSteps||25}data["scatterDynamics"]=scatter;return root.library.setDualBrush(data)}
+    function setDualScatterControlField(field,key,value){let data=Object.assign({},root.dual);let scatter=Object.assign({},root.dualModule("scatterDynamics"));let control=Object.assign({},scatter[field]||{source:"off",minimum:0});control[key]=value;scatter[field]=control;data["scatterDynamics"]=scatter;return root.library.setDualBrush(data)}
     QtObject {
         id:dualPressure
         readonly property var pressureDynamics:root.dual.pressureDynamics || {size:{curve:[[0,0],[1,1]],minimum:0},flow:{curve:[[0,0],[1,1]],minimum:0}}
@@ -263,6 +266,14 @@ ColumnLayout {
                         CompactCheckBox {objectName:"settingsDualScatterBothAxes";text:"双轴";checked:root.dualModule("scatterDynamics").bothAxes;onToggled:root.setDualField("bothAxes",checked,"scatterDynamics");tooltip:"沿画布两个方向分别随机偏移。"}
                         DualField {title:"数量";field:"count";module:"scatterDynamics";from:1;to:16;factor:1;unit:""}
                         DualField {title:"数量抖动";field:"countJitter";module:"scatterDynamics"}
+                        Label {text:"幅度控制";color:Theme.muted;font.pixelSize:9}
+                        CompactComboBox {objectName:"settingsDualScatterAmountControl";Layout.fillWidth:true;readonly property var modes:["off","fade","pressure","tilt","direction","rotation"];model:["无","渐隐","笔压","倾斜","方向","笔旋转"];currentIndex:Math.max(0,modes.indexOf(root.dualScatterControl("amountControl").source));onActivated:root.setDualScatterControl("amountControl",modes[currentIndex]);tooltip:"控制第二笔尖的散布幅度；渐隐按主逻辑印章步数下降。"}
+                        CompactSpinBox {objectName:"settingsDualScatterAmountMinimum";visible:root.dualScatterControl("amountControl").source!=="off";Layout.fillWidth:true;from:0;to:100;value:Math.round(root.dualScatterControl("amountControl").minimum*100);onValueModified:root.setDualScatterControlField("amountControl","minimum",value/100);tooltip:"第二笔尖幅度控制的最低比例"}
+                        CompactSpinBox {objectName:"settingsDualScatterAmountFade";visible:root.dualScatterControl("amountControl").source==="fade";Layout.fillWidth:true;from:1;to:1000;value:root.dualScatterControl("amountControl").fadeSteps||25;onValueModified:root.setDualScatterControlField("amountControl","fadeSteps",value);tooltip:"第二笔尖幅度渐隐步数"}
+                        Label {text:"数量控制";color:Theme.muted;font.pixelSize:9}
+                        CompactComboBox {objectName:"settingsDualScatterCountControl";Layout.fillWidth:true;readonly property var modes:["off","fade","pressure","tilt","direction","rotation"];model:["无","渐隐","笔压","倾斜","方向","笔旋转"];currentIndex:Math.max(0,modes.indexOf(root.dualScatterControl("countControl").source));onActivated:root.setDualScatterControl("countControl",modes[currentIndex]);tooltip:"控制第二笔尖每个路径印章的子印章数量。"}
+                        CompactSpinBox {objectName:"settingsDualScatterCountMinimum";visible:root.dualScatterControl("countControl").source!=="off";Layout.fillWidth:true;from:0;to:100;value:Math.round(root.dualScatterControl("countControl").minimum*100);onValueModified:root.setDualScatterControlField("countControl","minimum",value/100);tooltip:"第二笔尖数量控制的最低比例"}
+                        CompactSpinBox {objectName:"settingsDualScatterCountFade";visible:root.dualScatterControl("countControl").source==="fade";Layout.fillWidth:true;from:1;to:1000;value:root.dualScatterControl("countControl").fadeSteps||25;onValueModified:root.setDualScatterControlField("countControl","fadeSteps",value);tooltip:"第二笔尖数量渐隐步数"}
                     }
                     ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===3;Layout.fillWidth:true;spacing:5
                         CompactCheckBox {objectName:"settingsDualShapeEnabled";text:"启用形状抖动";checked:root.dualModule("shapeJitter").enabled;onToggled:root.setDualField("enabled",checked,"shapeJitter");tooltip:"独立随机改变第二笔尖形状；关闭后保留参数。"}

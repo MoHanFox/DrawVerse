@@ -339,3 +339,68 @@ fn state35_vbr42_preserve_scatter_device_controls_and_real_pixels() {
     assert_eq!(paint(definition), expected);
     assert!(vbr_image::decode(&minor(&bytes, 41), &token).is_err());
 }
+
+#[test]
+fn state35_vbr42_preserve_secondary_scatter_device_controls() {
+    let mut s = settings();
+    let secondary = SecondaryTip::new(
+        6.,
+        BrushTip::default(),
+        None,
+        BrushDynamics {
+            scatter: ScatterDynamics::new(true, 0.5, true, 3, 0.25, 17)
+                .unwrap()
+                .with_controls(
+                    ScatterControl::new(ScatterControlSource::Pressure, 0.2, 0).unwrap(),
+                    ScatterControl::new(ScatterControlSource::Fade, 0.4, 5).unwrap(),
+                )
+                .unwrap(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    s.dual = DualBrush::new(true, DualMode::Multiply, secondary);
+    let expected = paint(s.definition());
+    let mut catalog = BrushCatalog::default();
+    catalog.edit("round-pressure", s.clone()).unwrap();
+    let encoded = brush_state::encode(&catalog).unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(json["version"], 35);
+    let restored = brush_state::decode(&encoded, MAX_CATALOG_MASK_BYTES).unwrap();
+    let restored_settings = restored.selected().settings().clone();
+    assert_eq!(
+        restored_settings.dual.secondary().dynamics().scatter,
+        s.dual.secondary().dynamics().scatter
+    );
+    assert_eq!(paint(restored_settings.definition()), expected);
+
+    let mut p = package(&s);
+    p.brushes[0].dual_brush =
+        Some(paint_io::brush_dual::DualParameters::from_core(&s.dual).unwrap());
+    p.brushes[0].behavior_version = 27;
+    p.brushes[0].required_capabilities.push("dual-cover".into());
+    p.brushes[0]
+        .required_capabilities
+        .push("scatter-controls".into());
+    let token = CancellationToken::default();
+    let bundle = vbr_image::ImageBundle::new(p, BTreeMap::new(), &token).unwrap();
+    let bytes = vbr_image::encode(&bundle, &token).unwrap();
+    let manifest: serde_json::Value = {
+        let mut zip = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
+        let mut data = Vec::new();
+        zip.by_name("manifest.json")
+            .unwrap()
+            .read_to_end(&mut data)
+            .unwrap();
+        serde_json::from_slice(&data).unwrap()
+    };
+    assert_eq!(manifest["version"]["minor"], 42);
+    let restored = vbr_image::decode(&bytes, &token).unwrap();
+    let definition = restored.definition(0).unwrap();
+    assert_eq!(
+        definition.dual.secondary().dynamics().scatter,
+        s.dual.secondary().dynamics().scatter
+    );
+    assert_eq!(paint(definition), expected);
+    assert!(vbr_image::decode(&minor(&bytes, 41), &token).is_err());
+}

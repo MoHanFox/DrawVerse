@@ -130,6 +130,9 @@ impl DualParameters {
     pub fn has_sizing(&self) -> bool {
         self.sizing.is_some()
     }
+    pub fn has_scatter_controls(&self) -> bool {
+        self.scatter_dynamics.is_some_and(|p| p.has_controls())
+    }
     pub(crate) fn active_color(&self) -> bool {
         self.enabled && self.color.as_ref().is_some_and(|p| p.core().enabled())
     }
@@ -161,7 +164,6 @@ impl DualParameters {
                 .pressure_dynamics
                 .as_ref()
                 .is_some_and(|p| p.has_opacity())
-            || self.scatter_dynamics.is_some_and(|p| p.has_controls())
         {
             return Err(Error::Invalid("dual brush model/parameters"));
         }

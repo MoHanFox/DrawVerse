@@ -431,6 +431,11 @@ fn decode_inner(
                     "secondary sizing requires state15".into(),
                 ));
             }
+            if d.has_scatter_controls() && state.version < 35 {
+                return Err(Error::Unsupported(
+                    "secondary scatter controls require state35".into(),
+                ));
+            }
             if state.version < 12 {
                 return Err(Error::Unsupported("dual brush require state12".into()));
             }
@@ -694,6 +699,9 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             }
             if s.dual.sizing() != Default::default() {
                 version = version.max(15);
+            }
+            if (s.dual.secondary().dynamics().scatter).has_controls() {
+                version = version.max(35);
             }
             Some(crate::brush_dual::DualParameters::from_core(&s.dual)?)
         } else {

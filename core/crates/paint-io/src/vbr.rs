@@ -359,7 +359,10 @@ impl Package {
             let scatter_controls = b
                 .parameters
                 .scatter_dynamics
-                .is_some_and(|p| p.has_controls());
+                .is_some_and(|p| p.has_controls())
+                || b.dual_brush
+                    .as_ref()
+                    .is_some_and(|d| d.has_scatter_controls());
             let shape = b.parameters.shape_jitter.is_some();
             let color = b.parameters.color_dynamics.is_some();
             let airbrush = b.parameters.airbrush.is_some();

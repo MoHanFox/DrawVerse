@@ -590,6 +590,9 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             b.parameters
                 .scatter_dynamics
                 .is_some_and(|p| p.has_controls())
+                || b.dual_brush
+                    .as_ref()
+                    .is_some_and(|d| d.has_scatter_controls())
         })
     {
         return Err(Error::Unsupported(
@@ -812,6 +815,9 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                     b.parameters
                         .scatter_dynamics
                         .is_some_and(|p| p.has_controls())
+                        || b.dual_brush
+                            .as_ref()
+                            .is_some_and(|d| d.has_scatter_controls())
                 }) {
                 42
             } else if bundle

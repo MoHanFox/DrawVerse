@@ -1587,6 +1587,22 @@ private slots:
         handoff["version"]=10;
         BrushLibrary oldAbr;
         QVERIFY(!oldAbr.importAbr(QJsonDocument(handoff).toJson()));
+        auto dual=library.dualBrush();
+        dual["enabled"]=true;
+        dual["scatterDynamics"]=QVariantMap{{"enabled",true},{"amount",0.5},{"bothAxes",true},{"count",3},{"countJitter",0.25},{"seed","0000000000000000"},{"amountControl",QVariantMap{{"source","pressure"},{"minimum",0.2}}},{"countControl",QVariantMap{{"source","fade"},{"minimum",0.4},{"fadeSteps",5}}}};
+        QVERIFY(library.setDualBrush(dual));
+        const auto dualSaved=library.snapshot();
+        QCOMPARE(QJsonDocument::fromJson(dualSaved).object().value("version").toInt(),35);
+        BrushLibrary dualRestored;
+        QVERIFY(dualRestored.restore(dualSaved));
+        QCOMPARE(dualRestored.dualBrush(),library.dualBrush());
+        const auto dualPackage=dualRestored.exportPackage();
+        const auto dualPreset=QJsonDocument::fromJson(dualPackage).object().value("brushes").toArray().first().toObject();
+        QCOMPARE(dualPreset.value("behaviorVersion").toInt(),27);
+        QVERIFY(dualPreset.value("requiredCapabilities").toArray().contains("scatter-controls"));
+        BrushLibrary dualImported;
+        QVERIFY(dualImported.importPackage(dualPackage));
+        QCOMPARE(dualImported.dualBrush(),library.dualBrush());
     }
     void scatterSettingsPersistExchangePreviewAndCapturedPixels() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;

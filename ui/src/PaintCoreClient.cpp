@@ -592,7 +592,7 @@ public:
             if(!tip.value("shapeJitter").toMap().isEmpty()){row["shapeJitter"]=QJsonObject::fromVariantMap(tip.value("shapeJitter").toMap());state["version"]=9;}
             if(!tip.value("colorDynamics").toMap().isEmpty()){row["colorDynamics"]=QJsonObject::fromVariantMap(tip.value("colorDynamics").toMap());state["version"]=10;}
             if(!tip.value("texture").toMap().isEmpty()){row["texture"]=QJsonObject::fromVariantMap(tip.value("texture").toMap());state["version"]=11;if(QSet<QString>{"linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=30;if(QSet<QString>{"vividLight","linearLight","pinLight","divide"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=31;if(tip.value("texture").toMap().value("mode").toString()=="dissolve")state["version"]=33;}
-            if(!tip.value("dualBrush").toMap().isEmpty()){row["dualBrush"]=QJsonObject::fromVariantMap(tip.value("dualBrush").toMap());state["version"]=12;}
+            if(!tip.value("dualBrush").toMap().isEmpty()){row["dualBrush"]=QJsonObject::fromVariantMap(tip.value("dualBrush").toMap());state["version"]=12;if(tip.value("dualBrush").toMap().value("scatterDynamics").toMap().contains("amountControl") || tip.value("dualBrush").toMap().value("scatterDynamics").toMap().contains("countControl"))state["version"]=35;}
             const auto smoothPressure=[](const QVariantMap &data){for(const auto &target:{"size","flow","opacity"})if(data.value(target).toMap().value("interpolation").toString()=="smooth-pchip-v1")return true;return false;};
             if(smoothPressure(tip.value("pressureDynamics").toMap()) || smoothPressure(tip.value("dualBrush").toMap().value("pressureDynamics").toMap()))state["version"]=13;
             if(!tip.value("smoothing").toMap().isEmpty()){row["smoothing"]=QJsonObject::fromVariantMap(tip.value("smoothing").toMap());state["version"]=14;}
@@ -614,7 +614,7 @@ public:
             if(QSet<QString>{"linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=std::max(state.value("version").toInt(),30);
             if(QSet<QString>{"vividLight","linearLight","pinLight","divide"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=std::max(state.value("version").toInt(),31);
             if(tip.value("texture").toMap().value("mode").toString()=="dissolve")state["version"]=std::max(state.value("version").toInt(),33);
-            if(scatter.contains("amountControl") || scatter.contains("countControl"))state["version"]=35;
+            if(scatter.contains("amountControl") || scatter.contains("countControl") || tip.value("dualBrush").toMap().value("scatterDynamics").toMap().contains("amountControl") || tip.value("dualBrush").toMap().value("scatterDynamics").toMap().contains("countControl"))state["version"]=35;
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state_wet_dual(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;

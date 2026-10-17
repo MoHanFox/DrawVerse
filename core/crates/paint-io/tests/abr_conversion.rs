@@ -680,7 +680,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
                             descriptor: Box::new(object(
                                 "brushDynamics",
                                 vec![
-                                    ("bVTy", Value::Integer(0)),
+                                    ("bVTy", Value::Integer(2)),
                                     ("jitter", unit(*b"#Prc", 50.)),
                                     ("Mnm ", unit(*b"#Prc", 0.)),
                                 ],
@@ -694,7 +694,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
                             descriptor: Box::new(object(
                                 "brushDynamics",
                                 vec![
-                                    ("bVTy", Value::Integer(0)),
+                                    ("bVTy", Value::Integer(2)),
                                     ("jitter", unit(*b"#Prc", 25.)),
                                     ("Mnm ", unit(*b"#Prc", 0.)),
                                 ],
@@ -719,7 +719,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
         &CancellationToken::default(),
     )
     .unwrap();
-    assert_eq!(p[0].converter_version, 11);
+    assert_eq!(p[0].converter_version, 12);
     assert!(p[0].settings.dual.enabled());
     assert_eq!(p[0].settings.dual.mode(), paint_core::DualMode::Multiply);
     assert_eq!(p[0].settings.dual.secondary().radius(), 4.);
@@ -732,6 +732,26 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
     assert_eq!(
         p[0].settings.dual.secondary().dynamics().scatter.amount(),
         0.5
+    );
+    assert_eq!(
+        p[0].settings
+            .dual
+            .secondary()
+            .dynamics()
+            .scatter
+            .amount_control()
+            .source(),
+        paint_core::ScatterControlSource::Pressure
+    );
+    assert_eq!(
+        p[0].settings
+            .dual
+            .secondary()
+            .dynamics()
+            .scatter
+            .count_control()
+            .source(),
+        paint_core::ScatterControlSource::Pressure
     );
 }
 #[test]

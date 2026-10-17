@@ -263,4 +263,4 @@ ABR source converter11的source info使用version3并携带`dualBrush`；要求m
 
 ## VBR1.42：散布设备控制
 
-`scatterDynamics`增加可选`amountControl`/`countControl`，每项包含`source`（`off`/`fade`/`pressure`/`tilt`/`direction`/`rotation`）、`minimum`及渐隐时的`fadeSteps`；缺省保持旧字节。含控制的主笔尖预设要求behavior27、`scatter-controls`能力、manifest minor42与state35；低版本夹带明确拒绝。ABR converter12/handoff11映射`bVTy=1/2/3/6/8`、`Mnm`、`fStp`；第二笔尖设备控制暂拒绝。Schema为`contracts/vbr-scatter-controls-v1.42.schema.json`。设计/验收见`docs/brush-scatter-device-design.md`和`docs/brush-scatter-device-validation.md`；不宣称16位、Hue/Saturation/Color/Luminosity或完整PS等价。
+`scatterDynamics`增加可选`amountControl`/`countControl`，每项包含`source`（`off`/`fade`/`pressure`/`tilt`/`direction`/`rotation`）、`minimum`及渐隐时的`fadeSteps`；缺省保持旧字节。含控制的主/第二笔尖预设要求behavior27、`scatter-controls`能力、manifest minor42与state35；低版本夹带明确拒绝。ABR converter12/handoff11映射`bVTy=1/2/3/6/8`、`Mnm`、`fStp`，双笔刷`dualBrush.scatterDynamics`/`countDynamics`同样映射。Schema为`contracts/vbr-scatter-controls-v1.42.schema.json`。设计/验收见`docs/brush-scatter-device-design.md`和`docs/brush-scatter-device-validation.md`；不宣称16位、Hue/Saturation/Color/Luminosity或完整PS等价。

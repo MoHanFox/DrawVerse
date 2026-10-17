@@ -165,6 +165,40 @@ fn independent_pressure_device_geometry_and_second_flow_are_executed() {
     )
     .is_err());
 }
+
+#[test]
+fn secondary_scatter_pressure_control_changes_real_stamp_count() {
+    let mut base = brush();
+    base.brush.radius = 4.;
+    base.brush.opacity = 1.;
+    base.tip.flow = 1.;
+    let scatter = ScatterDynamics::new(true, 0., false, 4, 0., 7)
+        .unwrap()
+        .with_controls(
+            ScatterControl::off(),
+            ScatterControl::new(ScatterControlSource::Pressure, 0., 0).unwrap(),
+        )
+        .unwrap();
+    base.dual = DualBrush::new(
+        true,
+        DualMode::Multiply,
+        SecondaryTip::new(
+            4.,
+            BrushTip { flow: 0.2, ..tip() },
+            None,
+            BrushDynamics {
+                scatter,
+                ..Default::default()
+            },
+        )
+        .unwrap(),
+    );
+    let mut low = Document::new(64, 64).unwrap();
+    dab(&mut low, base.clone(), InputPoint::new(32.5, 32.5, 0.));
+    let mut high = Document::new(64, 64).unwrap();
+    dab(&mut high, base, InputPoint::new(32.5, 32.5, 1.));
+    assert!(high.pixel(32, 32).alpha() > low.pixel(32, 32).alpha());
+}
 #[test]
 fn secondary_images_keep_holes_rotation_and_primary_boundary() {
     let mut bytes = vec![255; 256];

@@ -1457,14 +1457,19 @@ fn dual_scatter(dual: &Descriptor) -> Result<Option<ScatterDynamics>> {
     };
     let amount = dynamic(b"scatterDynamics")?;
     let count_dynamic = dynamic(b"countDynamics")?;
-    Ok(Some(ScatterDynamics::new(
-        true,
-        unit(amount, b"jitter", *b"#Prc", 0., 1000.)? / 100.,
-        both_axes,
-        count,
-        unit(count_dynamic, b"jitter", *b"#Prc", 0., 100.)? / 100.,
-        0,
-    )?))
+    let (amount_control, _, _, _) = native_scatter_control(amount)?;
+    let (count_control, _, _, _) = native_scatter_control(count_dynamic)?;
+    Ok(Some(
+        ScatterDynamics::new(
+            true,
+            unit(amount, b"jitter", *b"#Prc", 0., 1000.)? / 100.,
+            both_axes,
+            count,
+            unit(count_dynamic, b"jitter", *b"#Prc", 0., 100.)? / 100.,
+            0,
+        )?
+        .with_controls(amount_control, count_control)?,
+    ))
 }
 fn dual_controls(
     preset: &Descriptor,
@@ -1950,7 +1955,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if settings.dynamics.scatter.has_controls() {
+        if settings.dynamics.scatter.has_controls()
+            || settings.dual.secondary().dynamics().scatter.has_controls()
+        {
             converter_version = 12;
         } else if dual_changed {
             converter_version = 11;

@@ -10,4 +10,4 @@
 - Windows Release Qt `abrComputedDualHandoffImportsIntoState12` 通过：handoff10导入、state版本至少12、双笔刷启用及直径恢复，handoff9拒绝双笔刷字段。
 - 既有的渐隐、设备来源、纹理溶解和矩阵Qt用例继续通过；严格Clippy、格式检查及Release构建通过。
 
-未验证第二笔尖散布设备控制、真实Photoshop像素等价或跨平台；主笔尖散布设备控制已在后续阶段接入，见[散布设备控制验收](brush-scatter-device-validation.md)。
+第二笔尖散布设备控制已在后续阶段接入，见[散布设备控制验收](brush-scatter-device-validation.md)；仍未验证真实Photoshop像素等价或跨平台。
