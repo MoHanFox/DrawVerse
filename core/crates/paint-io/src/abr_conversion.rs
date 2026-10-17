@@ -1370,6 +1370,32 @@ fn enum_name(value: &Value) -> Option<String> {
         _ => None,
     }
 }
+fn dual_scatter(dual: &Descriptor) -> Result<Option<ScatterDynamics>> {
+    if flag(dual, b"useScatter")? != Some(true) {
+        return Ok(None);
+    }
+    let both_axes = flag(dual, b"bothAxes")?.ok_or(Error::Invalid("ABR dual scatter axes"))?;
+    let count = match dual.get(b"Cnt ") {
+        Some(Value::Integer(n)) if (1..=16).contains(n) => *n as u32,
+        _ => return Err(Error::Invalid("ABR dual scatter count")),
+    };
+    let dynamic = |key: &[u8]| -> Result<&Descriptor> {
+        match dual.get(key) {
+            Some(Value::Object { descriptor, .. }) => Ok(descriptor),
+            _ => Err(Error::Invalid("ABR dual scatter dynamics")),
+        }
+    };
+    let amount = dynamic(b"scatterDynamics")?;
+    let count_dynamic = dynamic(b"countDynamics")?;
+    Ok(Some(ScatterDynamics::new(
+        true,
+        unit(amount, b"jitter", *b"#Prc", 0., 1000.)? / 100.,
+        both_axes,
+        count,
+        unit(count_dynamic, b"jitter", *b"#Prc", 0., 100.)? / 100.,
+        0,
+    )?))
+}
 fn dual_controls(
     preset: &Descriptor,
     settings: &mut BrushSettings,
@@ -1426,8 +1452,17 @@ fn dual_controls(
         pressure_size: false,
         pressure_flow: false,
     };
-    let secondary = SecondaryTip::new(radius, tip, None, paint_core::BrushDynamics::default())?
-        .with_spacing(spacing)?;
+    let scatter = dual_scatter(dual)?;
+    let secondary = SecondaryTip::new(
+        radius,
+        tip,
+        None,
+        paint_core::BrushDynamics {
+            scatter: scatter.unwrap_or_default(),
+            ..Default::default()
+        },
+    )?
+    .with_spacing(spacing)?;
     settings.dual = DualBrush::new(true, mode, secondary);
     for (path, reason) in [
         ("dualBrush.useDualBrush", "计算双笔刷已启用"),
@@ -1438,22 +1473,22 @@ fn dual_controls(
         issue(issues, path, Status::Mapped, reason);
     }
     if flag(dual, b"useScatter")? == Some(true) {
+        for path in [
+            "dualBrush.useScatter",
+            "dualBrush.Cnt ",
+            "dualBrush.bothAxes",
+        ] {
+            issue(issues, path, Status::Mapped, "双笔刷散布/数量已映射");
+        }
+    }
+    let flip = b"Flip".as_slice();
+    if dual.get(flip).is_some() {
         issue(
             issues,
-            "dualBrush.useScatter",
+            format!("dualBrush.{}", path_key(flip)),
             Status::NotExecuted,
-            "双笔刷散布/数量动态尚未接入",
+            "该双笔刷字段尚未执行",
         );
-    }
-    for key in [b"Flip".as_slice(), b"countDynamics", b"scatterDynamics"] {
-        if dual.get(key).is_some() {
-            issue(
-                issues,
-                format!("dualBrush.{}", path_key(key)),
-                Status::NotExecuted,
-                "该双笔刷字段尚未执行",
-            );
-        }
     }
     Ok(true)
 }

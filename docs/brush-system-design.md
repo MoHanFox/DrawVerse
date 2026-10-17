@@ -235,4 +235,4 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 
 2026-10-18渐隐动态阶段：`fade-v1`按印章步数从完整响应线性渐隐到最低比例，作为尺寸/流量/不透明度独立乘数；state34/VBR1.40/behavior26、ABR `bVTy=1`、converter10/handoff9及Qt步数/曲线页接通。核心真实像素、状态/VBR往返、ABR映射、源converter10和Windows Qt三项通过，见[设计](brush-fade-design.md)及[验收](brush-fade-validation.md)。散射/双笔尖步数、随机抖动和完整PS等价仍待后续。
 
-2026-10-18 ABR计算双笔刷阶段：ABR `dualBrush.Brsh` 的 computed 形状、硬度/角度/圆度、独立间距和贡献模式映射到统一双笔刷；converter11/handoff10、源记录version3/VBR1.41门控及Qt state12导入接通。sampled双笔刷、Flip、散布/数量动态继续报告未执行。见[设计](abr-dual-brush-design.md)及[验收](abr-dual-brush-validation.md)。
+2026-10-18 ABR计算双笔刷阶段：ABR `dualBrush.Brsh` 的 computed 形状、硬度/角度/圆度、独立间距、贡献模式和散布/数量映射到统一双笔刷；converter11/handoff10、源记录version3/VBR1.41门控及Qt state12导入接通。sampled双笔刷、Flip和设备散布控制继续报告未执行。见[设计](abr-dual-brush-design.md)及[验收](abr-dual-brush-validation.md)。

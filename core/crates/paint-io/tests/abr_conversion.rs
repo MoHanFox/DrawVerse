@@ -652,7 +652,37 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
                         },
                     ),
                     ("Spcn", unit(*b"#Prc", 25.)),
-                    ("useScatter", Value::Boolean(false)),
+                    ("useScatter", Value::Boolean(true)),
+                    ("bothAxes", Value::Boolean(true)),
+                    ("Cnt ", Value::Integer(3)),
+                    (
+                        "scatterDynamics",
+                        Value::Object {
+                            global: false,
+                            descriptor: Box::new(object(
+                                "brushDynamics",
+                                vec![
+                                    ("bVTy", Value::Integer(0)),
+                                    ("jitter", unit(*b"#Prc", 50.)),
+                                    ("Mnm ", unit(*b"#Prc", 0.)),
+                                ],
+                            )),
+                        },
+                    ),
+                    (
+                        "countDynamics",
+                        Value::Object {
+                            global: false,
+                            descriptor: Box::new(object(
+                                "brushDynamics",
+                                vec![
+                                    ("bVTy", Value::Integer(0)),
+                                    ("jitter", unit(*b"#Prc", 25.)),
+                                    ("Mnm ", unit(*b"#Prc", 0.)),
+                                ],
+                            )),
+                        },
+                    ),
                 ],
             )),
         },
@@ -676,6 +706,12 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
     assert_eq!(p[0].settings.dual.secondary().radius(), 4.);
     assert_eq!(p[0].settings.dual.secondary().spacing(), Some(0.25));
     assert_eq!(p[0].settings.dual.secondary().tip().hardness, 0.5);
+    assert!(p[0].settings.dual.secondary().dynamics().scatter.enabled());
+    assert_eq!(p[0].settings.dual.secondary().dynamics().scatter.count(), 3);
+    assert_eq!(
+        p[0].settings.dual.secondary().dynamics().scatter.amount(),
+        0.5
+    );
 }
 #[test]
 fn abr_tilt_size_source_changes_real_brush_radius() {
