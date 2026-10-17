@@ -1152,15 +1152,6 @@
         "enabled": {
           "type": "boolean"
         },
-        "flip": {
-          "type": "boolean"
-        },
-        "flipX": {
-          "type": "boolean"
-        },
-        "flipY": {
-          "type": "boolean"
-        },
         "amount": {
           "type": "number",
           "minimum": 0,
@@ -1373,6 +1364,15 @@
           ]
         },
         "enabled": {
+          "type": "boolean"
+        },
+        "flip": {
+          "type": "boolean"
+        },
+        "flipX": {
+          "type": "boolean"
+        },
+        "flipY": {
           "type": "boolean"
         },
         "mode": {

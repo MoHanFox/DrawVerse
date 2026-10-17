@@ -334,3 +334,19 @@ fn published_dual_contract_preserves_models_and_resource_limits() {
         .unwrap()
         .contains(&serde_json::json!("resource")));
 }
+
+#[test]
+fn published_dual_schema_allows_optional_flip_fields() {
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../contracts/vbr-dual-v1.10.schema.json"
+    ))
+    .unwrap();
+    let dual = &schema["$defs"]["dualBrush"];
+    for key in ["flip", "flipX", "flipY"] {
+        assert_eq!(dual["properties"][key]["type"], "boolean");
+        assert!(!dual["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(key)));
+    }
+}
