@@ -463,7 +463,7 @@ impl CompiledDual {
         let plan = self
             .program
             .scatter
-            .plan(self.radius, stroke, logical, direction);
+            .plan(self.radius, stroke, logical, direction, point, 0);
         let count = plan.as_ref().map_or(1, |p| p.count);
         let flow = self.program.tip.flow
             * if self.program.tip.pressure_flow {

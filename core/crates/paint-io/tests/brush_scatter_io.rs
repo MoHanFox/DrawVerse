@@ -275,3 +275,67 @@ fn published_scatter_contract_matches_seed_and_count_units() {
         "#/$defs/legacyParameters"
     );
 }
+
+#[test]
+fn published_scatter_controls_contract_matches_optional_fields() {
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../contracts/vbr-scatter-controls-v1.42.schema.json"
+    ))
+    .unwrap();
+    assert_eq!(schema["$id"], "urn:drawverse:brush:scatter-controls:1.42");
+    assert_eq!(
+        schema["$defs"]["control"]["properties"]["source"]["enum"][1],
+        "fade"
+    );
+    assert_eq!(
+        schema["$defs"]["scatter"]["properties"]["amountControl"]["$ref"],
+        "#/$defs/control"
+    );
+}
+
+#[test]
+fn state35_vbr42_preserve_scatter_device_controls_and_real_pixels() {
+    let mut s = settings();
+    s.dynamics.scatter = s
+        .dynamics
+        .scatter
+        .with_controls(
+            ScatterControl::new(ScatterControlSource::Pressure, 0.25, 0).unwrap(),
+            ScatterControl::new(ScatterControlSource::Fade, 0.5, 6).unwrap(),
+        )
+        .unwrap();
+    let expected = paint(s.definition());
+    let mut catalog = BrushCatalog::default();
+    catalog.edit("round-pressure", s.clone()).unwrap();
+    let encoded = brush_state::encode(&catalog).unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(json["version"], 35);
+    let restored = brush_state::decode(&encoded, MAX_CATALOG_MASK_BYTES).unwrap();
+    let restored_settings = restored.selected().settings().clone();
+    assert_eq!(restored_settings.dynamics.scatter, s.dynamics.scatter);
+    assert_eq!(paint(restored_settings.definition()), expected);
+
+    let mut p = package(&s);
+    p.brushes[0].behavior_version = 27;
+    p.brushes[0]
+        .required_capabilities
+        .push("scatter-controls".into());
+    let token = CancellationToken::default();
+    let bundle = vbr_image::ImageBundle::new(p, BTreeMap::new(), &token).unwrap();
+    let bytes = vbr_image::encode(&bundle, &token).unwrap();
+    let manifest: serde_json::Value = {
+        let mut zip = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
+        let mut data = Vec::new();
+        zip.by_name("manifest.json")
+            .unwrap()
+            .read_to_end(&mut data)
+            .unwrap();
+        serde_json::from_slice(&data).unwrap()
+    };
+    assert_eq!(manifest["version"]["minor"], 42);
+    let restored = vbr_image::decode(&bytes, &token).unwrap();
+    let definition = restored.definition(0).unwrap();
+    assert_eq!(definition.dynamics.scatter, s.dynamics.scatter);
+    assert_eq!(paint(definition), expected);
+    assert!(vbr_image::decode(&minor(&bytes, 41), &token).is_err());
+}

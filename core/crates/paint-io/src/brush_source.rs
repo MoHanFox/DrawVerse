@@ -57,7 +57,7 @@ impl SourceInfo {
         if !matches!(self.version, 1..=3)
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1..=11)
+            || !matches!(self.converter_version, 1..=12)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -125,6 +125,16 @@ impl SourceInfo {
                 && self.converter_version < 11
                 && self.baseline.fade_dynamics.is_none())
             || (self.converter_version < 10 && self.baseline.fade_dynamics.is_some())
+            || (self.converter_version >= 12
+                && !self
+                    .baseline
+                    .scatter_dynamics
+                    .is_some_and(|p| p.has_controls()))
+            || (self.converter_version < 12
+                && self
+                    .baseline
+                    .scatter_dynamics
+                    .is_some_and(|p| p.has_controls()))
         {
             return Err(Error::Unsupported(
                 "converter v1 baseline dynamic controls".into(),

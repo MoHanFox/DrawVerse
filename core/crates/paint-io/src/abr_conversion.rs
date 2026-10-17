@@ -9,8 +9,9 @@ use crate::{
 use paint_core::{
     AngleControl, BrushProgram, BrushSettings, BrushTexture, BrushTip, ColorDynamics,
     DirectionDynamics, DualBrush, DualMode, DynamicsSource, DynamicsSourceMatrix, PressureControl,
-    PressureCurve, RotationDynamics, ScatterDynamics, SecondaryTip, ShapeJitter, TextureMode,
-    TextureResource, TextureSettings, TextureSpace, TiltDynamics, TipDynamics,
+    PressureCurve, RotationDynamics, ScatterControl, ScatterControlSource, ScatterDynamics,
+    SecondaryTip, ShapeJitter, TextureMode, TextureResource, TextureSettings, TextureSpace,
+    TiltDynamics, TipDynamics,
 };
 use paint_task::CancellationToken;
 type TextureLookup<'a> = Option<(
@@ -673,6 +674,41 @@ fn color_controls(
     settings.dynamics.color = color;
     Ok(handled)
 }
+fn native_scatter_control(data: &Descriptor) -> Result<(ScatterControl, i32, f32, u32)> {
+    let control = match data.get(b"bVTy") {
+        Some(Value::Integer(n)) => *n,
+        _ => return Err(Error::Invalid("ABR scatter control type")),
+    };
+    let minimum = unit(data, b"Mnm ", *b"#Prc", 0., 100.)? / 100.;
+    let fade_steps = match data.get(b"fStp") {
+        None => 0,
+        Some(Value::Integer(n)) if *n >= 0 => *n as u32,
+        _ => return Err(Error::Invalid("ABR scatter fade steps")),
+    };
+    let source = match control {
+        0 => ScatterControlSource::Off,
+        1 => ScatterControlSource::Fade,
+        2 => ScatterControlSource::Pressure,
+        3 => ScatterControlSource::Tilt,
+        6 => ScatterControlSource::Direction,
+        8 => ScatterControlSource::Rotation,
+        _ => ScatterControlSource::Off,
+    };
+    let native = if source == ScatterControlSource::Off {
+        ScatterControl::off()
+    } else {
+        ScatterControl::new(
+            source,
+            minimum,
+            if source == ScatterControlSource::Fade {
+                fade_steps.max(1)
+            } else {
+                0
+            },
+        )?
+    };
+    Ok((native, control, minimum, fade_steps))
+}
 fn scatter_controls(
     preset: &Descriptor,
     settings: &mut BrushSettings,
@@ -707,14 +743,25 @@ fn scatter_controls(
     };
     let amount = dynamic(b"scatterDynamics")?;
     let count_dynamic = dynamic(b"countDynamics")?;
-    let scatter = ScatterDynamics::new(
-        enabled,
-        unit(amount, b"jitter", *b"#Prc", 0., 1000.)? / 100.,
-        both_axes,
-        count,
-        unit(count_dynamic, b"jitter", *b"#Prc", 0., 100.)? / 100.,
-        0,
-    )?;
+    let amount_jitter = unit(amount, b"jitter", *b"#Prc", 0., 1000.)? / 100.;
+    let count_jitter = unit(count_dynamic, b"jitter", *b"#Prc", 0., 100.)? / 100.;
+    let mut amount_control = ScatterControl::off();
+    let mut count_control = ScatterControl::off();
+    for (name, data) in [
+        ("scatterDynamics", amount),
+        ("countDynamics", count_dynamic),
+    ] {
+        let (native, control, _, _) = native_scatter_control(data)?;
+        if control != 0 {
+            if name == "scatterDynamics" {
+                amount_control = native;
+            } else {
+                count_control = native;
+            }
+        }
+    }
+    let scatter = ScatterDynamics::new(enabled, amount_jitter, both_axes, count, count_jitter, 0)?
+        .with_controls(amount_control, count_control)?;
     // A complete disabled default contributes no new configuration or provenance.
     if scatter == ScatterDynamics::default() {
         return Ok(Vec::new());
@@ -732,14 +779,7 @@ fn scatter_controls(
         ("scatterDynamics", amount, 1000.),
         ("countDynamics", count_dynamic, 100.),
     ] {
-        let control = match data.get(b"bVTy") {
-            Some(Value::Integer(n)) => *n,
-            _ => return Err(Error::Invalid("ABR scatter control type")),
-        };
-        unit(data, b"Mnm ", *b"#Prc", 0., 100.)?;
-        if !matches!(data.get(b"fStp"), None | Some(Value::Integer(0..=i32::MAX))) {
-            return Err(Error::Invalid("ABR scatter fade steps"));
-        }
+        let (native, control, _minimum, _fade_steps) = native_scatter_control(data)?;
         let jitter = unit(data, b"jitter", *b"#Prc", 0., max)?;
         let path = format!("{name}.jitter");
         issue(
@@ -763,31 +803,61 @@ fn scatter_controls(
         issue(
             issues,
             &path,
-            if control == 0 {
+            if control == 0 || native.source() != ScatterControlSource::Off {
                 Status::Mapped
             } else {
                 Status::NotExecuted
             },
             if control == 0 {
                 "无设备调制，随机量仍由jitter控制"
+            } else if native.source() != ScatterControlSource::Off {
+                "设备/渐隐幅度或数量调制已执行"
             } else {
                 "设备/渐隐幅度或数量调制尚未执行；源控制保留"
             },
         );
         handled.push(path);
-        if control == 0 {
-            for field in ["Mnm ", "fStp"] {
-                if data.get(field.as_bytes()).is_some() {
-                    let path = format!("{name}.{field}");
-                    issue(
-                        issues,
-                        &path,
-                        Status::Mapped,
-                        "无设备控制时不参与执行，原值保留在来源",
-                    );
-                    handled.push(path);
-                }
-            }
+        if data.get(b"Mnm ".as_slice()).is_some() {
+            let path = format!("{name}.Mnm ");
+            issue(
+                issues,
+                &path,
+                if control == 0 || native.source() != ScatterControlSource::Off {
+                    Status::Mapped
+                } else {
+                    Status::NotExecuted
+                },
+                if control == 0 || native.source() != ScatterControlSource::Off {
+                    "设备控制最低比例"
+                } else {
+                    "设备控制尚未执行，原值保留在来源"
+                },
+            );
+            handled.push(path);
+        }
+        if data.get(b"fStp".as_slice()).is_some() {
+            let path = format!("{name}.fStp");
+            issue(
+                issues,
+                &path,
+                if control == 0 || native.source() == ScatterControlSource::Fade {
+                    Status::Mapped
+                } else if native.source() != ScatterControlSource::Off {
+                    Status::Approximate
+                } else {
+                    Status::NotExecuted
+                },
+                if control == 0 {
+                    "无设备控制时不参与执行，原值保留在来源"
+                } else if native.source() == ScatterControlSource::Fade {
+                    "按印章步数从完整响应渐隐到最低比例"
+                } else if native.source() != ScatterControlSource::Off {
+                    "非渐隐控制不使用fStp，原值保留在来源"
+                } else {
+                    "设备控制尚未执行，原值保留在来源"
+                },
+            );
+            handled.push(path);
         }
     }
     settings.dynamics.scatter = scatter;
@@ -1880,7 +1950,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if dual_changed {
+        if settings.dynamics.scatter.has_controls() {
+            converter_version = 12;
+        } else if dual_changed {
             converter_version = 11;
         } else if !settings.dynamics.fade.is_default() {
             converter_version = 10;

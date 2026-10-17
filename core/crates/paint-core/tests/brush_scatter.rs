@@ -245,3 +245,50 @@ fn jitter_changes_actual_counts_within_bounds_and_invalid_settings_reject() {
     }
     assert!(gains.len() > 1);
 }
+
+#[test]
+fn pressure_controls_change_real_stamp_count_and_off_controls_preserve_pixels() {
+    let mut base = definition();
+    base.brush.radius = 4.;
+    base.brush.opacity = 1.;
+    base.tip.flow = 0.1;
+    base.dynamics.scatter = ScatterDynamics::new(true, 0., false, 4, 0., 7).unwrap();
+
+    let mut untouched = Document::new(96, 96).unwrap();
+    untouched
+        .begin_brush_stroke(base.clone(), InputPoint::new(48.5, 48.5, 1.))
+        .unwrap();
+    untouched.end_stroke().unwrap();
+
+    let mut off_controls = Document::new(96, 96).unwrap();
+    let mut off = base.clone();
+    off.dynamics.scatter = base
+        .dynamics
+        .scatter
+        .with_controls(ScatterControl::off(), ScatterControl::off())
+        .unwrap();
+    off_controls
+        .begin_brush_stroke(off, InputPoint::new(48.5, 48.5, 1.))
+        .unwrap();
+    off_controls.end_stroke().unwrap();
+    assert_eq!(pixels(&untouched), pixels(&off_controls));
+
+    let mut controlled = base;
+    controlled.dynamics.scatter = controlled
+        .dynamics
+        .scatter
+        .with_controls(
+            ScatterControl::off(),
+            ScatterControl::new(ScatterControlSource::Pressure, 0., 0).unwrap(),
+        )
+        .unwrap();
+    let mut low = Document::new(96, 96).unwrap();
+    low.begin_brush_stroke(controlled.clone(), InputPoint::new(48.5, 48.5, 0.))
+        .unwrap();
+    low.end_stroke().unwrap();
+    let mut high = Document::new(96, 96).unwrap();
+    high.begin_brush_stroke(controlled, InputPoint::new(48.5, 48.5, 1.))
+        .unwrap();
+    high.end_stroke().unwrap();
+    assert!(high.pixel(48, 48).alpha() > low.pixel(48, 48).alpha() + 0.1);
+}

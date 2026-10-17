@@ -260,3 +260,7 @@ ABR source converter9（`bVTy=3/6/8`设备来源）同样要求 manifest minor38
 ## VBR1.41：ABR计算双笔刷源记录
 
 ABR source converter11的source info使用version3并携带`dualBrush`；要求manifest minor41。双笔刷本身仍使用既有VBR `dualBrush`与state12格式，schema为`contracts/vbr-dual-v1.10.schema.json`；sampled双笔刷资源关联尚未接入。
+
+## VBR1.42：散布设备控制
+
+`scatterDynamics`增加可选`amountControl`/`countControl`，每项包含`source`（`off`/`fade`/`pressure`/`tilt`/`direction`/`rotation`）、`minimum`及渐隐时的`fadeSteps`；缺省保持旧字节。含控制的主笔尖预设要求behavior27、`scatter-controls`能力、manifest minor42与state35；低版本夹带明确拒绝。ABR converter12/handoff11映射`bVTy=1/2/3/6/8`、`Mnm`、`fStp`；第二笔尖设备控制暂拒绝。Schema为`contracts/vbr-scatter-controls-v1.42.schema.json`。设计/验收见`docs/brush-scatter-device-design.md`和`docs/brush-scatter-device-validation.md`；不宣称16位、Hue/Saturation/Color/Luminosity或完整PS等价。

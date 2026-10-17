@@ -8,6 +8,9 @@ ColumnLayout {
     id:root
     property string wetError:""
     function setWetField(key,value){let data=Object.assign({},root.library.wetMix);data[key]=value;const ok=root.library.setWetMix(data);root.wetError=ok?"":"湿混参数无效，未应用更改。";return ok}
+    function scatterControl(field){return root.library.scatterDynamics[field]||{source:"off",minimum:0}}
+    function setScatterControl(field,source){let data=Object.assign({},root.library.scatterDynamics);if(source==="off")delete data[field];else{let old=data[field]||{};data[field]={source:source,minimum:old.minimum||0};if(source==="fade")data[field].fadeSteps=old.fadeSteps||25}return root.library.setScatterDynamics(data)}
+    function setScatterControlField(field,key,value){let data=Object.assign({},root.library.scatterDynamics);let control=Object.assign({},data[field]||{source:"off",minimum:0});control[key]=value;data[field]=control;return root.library.setScatterDynamics(data)}
     readonly property var library:PaintClient.brushLibrary
     property int category:0
     property int shapePage:0
@@ -184,6 +187,14 @@ ColumnLayout {
                         CompactCheckBox {objectName:"settingsScatterBothAxes";text:"双轴";checked:root.library.scatterBothAxes;font.pixelSize:10;onToggled:root.library.scatterBothAxes=checked;tooltip:"在画布水平和垂直方向分别随机偏移。"}
                         TipField {title:"数量";field:"scatterCount";from:1;to:16;factor:1;help:"每个路径印章产生的最大印章数量；增加数量会增加绘画工作量。";sliderName:"settingsScatterCount"}
                         TipField {title:"数量抖动";field:"scatterCountJitter";from:0;to:100;factor:100;unit:"%";help:"在最大数量和降低后的数量之间随机变化，每次至少一个印章。";sliderName:"settingsScatterCountJitter"}
+                        Label {text:"幅度控制";color:Theme.muted;font.pixelSize:9}
+                        CompactComboBox {objectName:"settingsScatterAmountControl";Layout.fillWidth:true;readonly property var modes:["off","fade","pressure","tilt","direction","rotation"];model:["无","渐隐","笔压","倾斜","方向","笔旋转"];currentIndex:Math.max(0,modes.indexOf(root.scatterControl("amountControl").source));onActivated:root.setScatterControl("amountControl",modes[currentIndex]);tooltip:"控制散布幅度；渐隐按印章步数下降，其他来源使用设备输入。"}
+                        CompactSpinBox {objectName:"settingsScatterAmountMinimum";visible:root.scatterControl("amountControl").source!=="off";Layout.fillWidth:true;from:0;to:100;value:Math.round(root.scatterControl("amountControl").minimum*100);onValueModified:root.setScatterControlField("amountControl","minimum",value/100);tooltip:"控制输入为零时的幅度最低比例"}
+                        CompactSpinBox {objectName:"settingsScatterAmountFade";visible:root.scatterControl("amountControl").source==="fade";Layout.fillWidth:true;from:1;to:1000;value:root.scatterControl("amountControl").fadeSteps||25;onValueModified:root.setScatterControlField("amountControl","fadeSteps",value);tooltip:"渐隐达到最低比例所用的印章步数"}
+                        Label {text:"数量控制";color:Theme.muted;font.pixelSize:9}
+                        CompactComboBox {objectName:"settingsScatterCountControl";Layout.fillWidth:true;readonly property var modes:["off","fade","pressure","tilt","direction","rotation"];model:["无","渐隐","笔压","倾斜","方向","笔旋转"];currentIndex:Math.max(0,modes.indexOf(root.scatterControl("countControl").source));onActivated:root.setScatterControl("countControl",modes[currentIndex]);tooltip:"控制每个路径印章的子印章数量；最低比例不会低于一个印章。"}
+                        CompactSpinBox {objectName:"settingsScatterCountMinimum";visible:root.scatterControl("countControl").source!=="off";Layout.fillWidth:true;from:0;to:100;value:Math.round(root.scatterControl("countControl").minimum*100);onValueModified:root.setScatterControlField("countControl","minimum",value/100);tooltip:"控制输入为零时的数量最低比例"}
+                        CompactSpinBox {objectName:"settingsScatterCountFade";visible:root.scatterControl("countControl").source==="fade";Layout.fillWidth:true;from:1;to:1000;value:root.scatterControl("countControl").fadeSteps||25;onValueModified:root.setScatterControlField("countControl","fadeSteps",value);tooltip:"渐隐达到最低数量比例所用的印章步数"}
                     }
                 }
                 ColumnLayout {Layout.minimumWidth:0;visible:root.category===3;Layout.fillWidth:true;spacing:5

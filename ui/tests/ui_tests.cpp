@@ -1546,6 +1546,48 @@ private slots:
         client.newTransparentDocument(128,128);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(client.ready());auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->setClient(nullptr);InputSample sample;sample.position={32,64};sample.pressure=1;sample.tool=1;QVERIFY(client.beginStroke(sample));library->setShapeJitterEnabled(false);sample.position={96,64};client.strokeTo(sample);client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.requestViewport(0,{0,0,128,128},{128,128});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(128,128));const auto painted=client.frame();int outside=0;for(int y=0;y<128;++y)for(int x=0;x<128;++x){const auto alpha=painted.pixelColor(x,y).alpha();QVERIFY(alpha<=103);if(alpha>0 && std::abs(y-64)>4)++outside;}QVERIFY(outside>0);client.undo();QTRY_COMPARE(client.undoDepth(),0);QTRY_VERIFY(!client.layerEditBusy());client.redo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.requestViewport(0,{0,0,128,128},{128,128});QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),painted);canvas->setClient(&client);
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);PaintCoreClient reopened(nullptr,temp.filePath("storage.ini"));QTRY_VERIFY(reopened.ready());QTRY_COMPARE(reopened.brushLibrary()->shapeJitter(),closed);QCOMPARE(reopened.brushLibrary()->radius(),10.);QSignalSpy restopped(&reopened,&PaintCoreClient::stopped);reopened.shutdown();QTRY_COMPARE(restopped.size(),1);
     }
+    void scatterDeviceControlsPersistAndExportNativeContract() {
+        BrushLibrary library;
+        library.setScatterEnabled(true);
+        library.setScatterAmount(2);
+        library.setScatterCount(4);
+        auto data=library.scatterDynamics();
+        data["amountControl"]=QVariantMap{{"source","pressure"},{"minimum",0.25}};
+        data["countControl"]=QVariantMap{{"source","fade"},{"minimum",0.5},{"fadeSteps",6}};
+        QVERIFY(library.setScatterDynamics(data));
+        const auto saved=library.snapshot();
+        QCOMPARE(QJsonDocument::fromJson(saved).object().value("version").toInt(),35);
+        BrushLibrary restored;
+        QVERIFY(restored.restore(saved));
+        QCOMPARE(restored.scatterDynamics(),data);
+        const auto package=restored.exportPackage();
+        const auto preset=QJsonDocument::fromJson(package).object().value("brushes").toArray().first().toObject();
+        QCOMPARE(preset.value("behaviorVersion").toInt(),27);
+        QVERIFY(preset.value("requiredCapabilities").toArray().contains("scatter-controls"));
+        BrushLibrary imported;
+        QVERIFY(imported.importPackage(package));
+        QCOMPARE(imported.scatterDynamics(),data);
+        auto bad=data;
+        bad["amountControl"]=QVariantMap{{"source","pressure"},{"minimum",1.1}};
+        QVERIFY(!restored.setScatterDynamics(bad));
+        bad=data;
+        bad["countControl"]=QVariantMap{{"source","fade"},{"minimum",0.5},{"fadeSteps",0}};
+        QVERIFY(!restored.setScatterDynamics(bad));
+        auto old=QJsonDocument::fromJson(saved).object();
+        old["version"]=34;
+        QVERIFY(!restored.restore(QJsonDocument(old).toJson()));
+        const QJsonObject scatter{{"enabled",true},{"amount",2.},{"bothAxes",true},{"count",4},{"countJitter",0.},{"seed","0000000000000000"},{"amountControl",QJsonObject{{"source","pressure"},{"minimum",0.25}}},{"countControl",QJsonObject{{"source","fade"},{"minimum",0.5},{"fadeSteps",6}}}};
+        const QJsonObject parameters{{"diameter",8.},{"spacing",0.04},{"dabOpacity",1.},{"hardness",1.},{"roundness",1.},{"angle",0.},{"flow",1.},{"pressureSize",false},{"pressureFlow",false},{"scatterDynamics",scatter}};
+        const QJsonObject abrPreset{{"name","handoff-controls"},{"parameters",parameters},{"tipResource",QJsonValue::Null},{"texture",QJsonValue::Null},{"dualBrush",QJsonValue::Null},{"sourceResource",QString(64,'a')},{"partial",true}};
+        QJsonObject handoff{{"version",11},{"format","abr"},{"presets",QJsonArray{abrPreset}}};
+        BrushLibrary fromAbr;
+        QVERIFY(fromAbr.importAbr(QJsonDocument(handoff).toJson()));
+        QCOMPARE(fromAbr.scatterDynamics().value("amountControl").toMap().value("source").toString(),QString("pressure"));
+        QCOMPARE(fromAbr.scatterDynamics().value("countControl").toMap().value("fadeSteps").toInt(),6);
+        handoff["version"]=10;
+        BrushLibrary oldAbr;
+        QVERIFY(!oldAbr.importAbr(QJsonDocument(handoff).toJson()));
+    }
     void scatterSettingsPersistExchangePreviewAndCapturedPixels() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &error:errors)warnings.append(error.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
@@ -1645,7 +1687,7 @@ private slots:
     }
     void abrOpacityImportsDrawsResetsAndExchangesWithVersionedSource() {
         QTemporaryDir temp;const auto path=temp.filePath("opacity.abr");QFile file(path);QVERIFY(file.open(QIODevice::WriteOnly));file.write(abrEntryFixture(false,25.5));file.close();
-        PaintCoreClient client(nullptr,temp.filePath("opacity.ini"));QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();QSignalSpy files(&client,&PaintCoreClient::brushFileFinished);QVERIFY(client.importBrushes(QUrl::fromLocalFile(path)));QTRY_COMPARE(files.size(),1);QVERIFY(files.last()[0].toBool());QCOMPARE(library->presets().size(),7);QVERIFY(library->select(library->presets()[5].toMap().value("id").toString()));QVERIFY(qAbs(library->opacity()-.255)<1e-6);
+        PaintCoreClient client(nullptr,temp.filePath("opacity.ini"));QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();QSignalSpy files(&client,&PaintCoreClient::brushFileFinished);QVERIFY(client.importBrushes(QUrl::fromLocalFile(path)));QTRY_COMPARE(files.size(),1);QVERIFY2(files.last()[0].toBool(),qPrintable(client.lastError()));QCOMPARE(library->presets().size(),7);QVERIFY(library->select(library->presets()[5].toMap().value("id").toString()));QVERIFY(qAbs(library->opacity()-.255)<1e-6);
         QVERIFY(client.inspectBrushSource());QTRY_VERIFY(!client.brushSourceBusy());QCOMPARE(client.brushSourceInfo().value("converterVersion").toInt(),2);QVERIFY(qAbs(client.brushSourceInfo().value("baseline").toMap().value("dabOpacity").toDouble()-.255)<1e-6);const auto source=library->sourceResource();
         library->setOpacity(.8);QVERIFY(library->resetPreset());QVERIFY(qAbs(library->opacity()-.255)<1e-6);QCOMPARE(library->sourceResource(),source);
         client.newTransparentDocument(128,64);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());InputSample sample;sample.position={32.5,32.5};sample.pressure=1;QVERIFY(client.beginStroke(sample));for(const double x:{96.5,32.5,96.5,32.5}){sample.position={x,32.5};client.strokeTo(sample);}client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.requestViewport(0,{0,0,128,64},{128,64});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(128,64));const auto painted=client.frame();QVERIFY(painted.pixelColor(48,32).alpha()>=64);for(int y=0;y<64;++y)for(int x=0;x<128;++x)QVERIFY(painted.pixelColor(x,y).alpha()<=66);

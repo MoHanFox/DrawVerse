@@ -2145,6 +2145,8 @@ impl Document {
             stroke.random_stroke,
             logical,
             stroke.direction,
+            point,
+            stroke.fade_index,
         );
         if plan.is_some()
             || stroke.program.shape_jitter.active()

@@ -125,7 +125,9 @@ impl ImportBatch {
             })
             .collect::<Result<Vec<_>>>()?;
         let bytes = serde_json::to_vec(&Handoff {
-            version: if self.presets.iter().any(|p| p.converter_version >= 11) {
+            version: if self.presets.iter().any(|p| p.converter_version >= 12) {
+                11
+            } else if self.presets.iter().any(|p| p.converter_version >= 11) {
                 10
             } else if self.presets.iter().any(|p| p.converter_version >= 10) {
                 9

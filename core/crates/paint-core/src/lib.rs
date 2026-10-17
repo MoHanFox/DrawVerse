@@ -76,7 +76,7 @@ mod brush_random;
 mod brush_shape_jitter;
 pub use brush_shape_jitter::ShapeJitter;
 mod brush_scatter;
-pub use brush_scatter::ScatterDynamics;
+pub use brush_scatter::{ScatterControl, ScatterControlSource, ScatterDynamics};
 pub use document::{
     BucketFill, DirtyTiles, Document, DocumentOptions, DocumentSnapshot, LiquifyDab, PlacedImage,
     StrokePageResult, TransformGeometry, WandSelection, MAX_DIMENSION,

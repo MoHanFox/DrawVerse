@@ -1,6 +1,8 @@
 # DrawVerse
 
-- 最新ABR计算双笔刷：`docs/abr-dual-brush-design.md` / `docs/abr-dual-brush-validation.md`；computed/sampled双笔刷形状、图片资源、独立间距、贡献模式、散布/数量、逐印章随机Flip及固定flipX/flipY接入converter11/handoff10、源version3/VBR1.41及Qt state12；散布设备控制仍待后续。
+- 最新散布设备控制：`docs/brush-scatter-device-design.md` / `docs/brush-scatter-device-validation.md`；主笔尖散布幅度/数量接入渐隐、笔压、倾斜、方向、笔旋转，ABR `bVTy=1/2/3/6/8`/`Mnm`/`fStp`、state35/VBR1.42/behavior27/`scatter-controls`、Qt散布页及handoff11接通；核心单元5/真实笔触8/IO6/ABR34和Windows Qt 5项（含初始化清理）通过，Release构建/workspace check/格式通过。旧默认与旧state/VBR字节保持，第二笔尖设备控制明确拒绝；Hue/Saturation/Color/Luminosity、ABR随机抖动、16位、跨平台/硬件/GPU仍待。
+
+- 最新ABR计算双笔刷：`docs/abr-dual-brush-design.md` / `docs/abr-dual-brush-validation.md`；computed/sampled双笔刷形状、图片资源、独立间距、贡献模式、散布/数量、逐印章随机Flip及固定flipX/flipY接入converter11/handoff10、源version3/VBR1.41及Qt state12；第二笔尖设备控制仍待后续。
 
 - 最新笔刷渐隐：`docs/brush-fade-design.md` / `docs/brush-fade-validation.md`；`fade-v1`按印章步数渐隐并作为尺寸/流量/不透明度独立乘数，state34/VBR1.40/behavior26、ABR `bVTy=1`/converter10/handoff9、Qt步数与三曲线页接通；核心像素、交换、ABR映射、源基线及Windows Qt三项通过。散射/双笔尖步数和随机抖动仍待后续。
 

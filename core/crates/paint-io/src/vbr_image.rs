@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 41;
+pub const MAX_EXECUTABLE_MINOR: u32 = 42;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -585,6 +585,17 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
     {
         return Err(Error::Unsupported("scatter require VBR1.6".into()));
     }
+    if manifest.version.minor < 42
+        && brushes.iter().any(|b| {
+            b.parameters
+                .scatter_dynamics
+                .is_some_and(|p| p.has_controls())
+        })
+    {
+        return Err(Error::Unsupported(
+            "scatter device controls require VBR1.42".into(),
+        ));
+    }
     if manifest.version.minor < 5 && brushes.iter().any(|b| b.parameters.tip_dynamics.is_some()) {
         return Err(Error::Unsupported("tip dynamics require VBR1.5".into()));
     }
@@ -672,6 +683,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         if info.converter_version > 10 && manifest.version.minor < 41 {
             return Err(Error::Unsupported(
                 "ABR converter v11 requires VBR 1.41".into(),
+            ));
+        }
+        if info.converter_version > 11 && manifest.version.minor < 42 {
+            return Err(Error::Unsupported(
+                "ABR converter v12 requires VBR 1.42".into(),
             ));
         }
         if info.converter_version > 5 && manifest.version.minor < 20 {
@@ -789,6 +805,16 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .sources
+                .iter()
+                .any(|source| source.converter_version() > 11)
+                || bundle.package.brushes.iter().any(|b| {
+                    b.parameters
+                        .scatter_dynamics
+                        .is_some_and(|p| p.has_controls())
+                }) {
+                42
+            } else if bundle
                 .sources
                 .iter()
                 .any(|source| source.converter_version() > 10)

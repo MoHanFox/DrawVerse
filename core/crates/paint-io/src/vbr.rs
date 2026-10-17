@@ -356,6 +356,10 @@ impl Package {
             let pressure = b.parameters.pressure_dynamics.is_some();
             let tip_dynamic = b.parameters.tip_dynamics.is_some();
             let scatter = b.parameters.scatter_dynamics.is_some();
+            let scatter_controls = b
+                .parameters
+                .scatter_dynamics
+                .is_some_and(|p| p.has_controls());
             let shape = b.parameters.shape_jitter.is_some();
             let color = b.parameters.color_dynamics.is_some();
             let airbrush = b.parameters.airbrush.is_some();
@@ -395,7 +399,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if fade {
+                != if scatter_controls {
+                    27
+                } else if fade {
                     26
                 } else if matrix {
                     25
@@ -455,7 +461,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 29
+            if b.required_capabilities.len() > 30
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -485,6 +491,7 @@ impl Package {
                             | "direction-dynamics"
                             | "dynamics-source-matrix"
                             | "fade-dynamics"
+                            | "scatter-controls"
                             | "wet-mix"
                             | "stroke-taper"
                             | "wet-dual-color"
@@ -555,6 +562,11 @@ impl Package {
                 || (matrix && b.engine_profile != "drawverse.brush")
                 || fade != b.required_capabilities.iter().any(|c| c == "fade-dynamics")
                 || (fade && b.engine_profile != "drawverse.brush")
+                || scatter_controls
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "scatter-controls")
+                || (scatter_controls && b.engine_profile != "drawverse.brush")
                 || (b.has_dual_sizing()
                     && (b.engine_profile != "drawverse.brush"
                         || !b

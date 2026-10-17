@@ -1218,8 +1218,84 @@ fn scatter_preserves_unknown_controls_and_rejects_fractional_counts_and_bad_rang
     assert!(converted[0]
         .issues
         .iter()
-        .any(|i| i.path == "countDynamics.bVTy" && i.status == Status::NotExecuted));
+        .any(|i| i.path == "countDynamics.bVTy" && i.status == Status::Mapped));
     assert!(converted[0].settings.dynamics.scatter.enabled());
+    assert_eq!(
+        converted[0]
+            .settings
+            .dynamics
+            .scatter
+            .count_control()
+            .source(),
+        paint_core::ScatterControlSource::Pressure
+    );
+    assert_eq!(converted[0].converter_version, 12);
+}
+
+#[test]
+fn scatter_fade_controls_map_to_native_and_unsupported_controls_stay_reported() {
+    let token = CancellationToken::default();
+    let shape = shape(false);
+    let mut source = scatter_preset(true, true);
+    if let Value::Object { descriptor, .. } = &mut source
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"scatterDynamics")
+        .unwrap()
+        .1
+    {
+        descriptor.entries[0].1 = Value::Integer(1);
+        descriptor.entries[1].1 = Value::Integer(4);
+        descriptor.entries[2].1 = unit(*b"#Prc", 20.);
+    }
+    let converted = convert(
+        &[LinkedPreset {
+            name: "fade",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+            dual_sampled_tip: None,
+        }],
+        &token,
+    )
+    .unwrap();
+    let control = converted[0].settings.dynamics.scatter.amount_control();
+    assert_eq!(control.source(), paint_core::ScatterControlSource::Fade);
+    assert_eq!(control.minimum(), 0.2);
+    assert_eq!(control.fade_steps(), 4);
+    assert!(converted[0]
+        .issues
+        .iter()
+        .any(|i| i.path == "scatterDynamics.fStp" && i.status == Status::Mapped));
+    assert_eq!(converted[0].converter_version, 12);
+
+    let mut unsupported = scatter_preset(true, true);
+    if let Value::Object { descriptor, .. } = &mut unsupported
+        .entries
+        .iter_mut()
+        .find(|(k, _)| k == b"scatterDynamics")
+        .unwrap()
+        .1
+    {
+        descriptor.entries[0].1 = Value::Integer(99);
+    }
+    let converted = convert(
+        &[LinkedPreset {
+            name: "unsupported",
+            preset: &unsupported,
+            shape: &shape,
+            sampled_tip: None,
+            dual_sampled_tip: None,
+        }],
+        &token,
+    )
+    .unwrap();
+    assert!(!converted[0].settings.dynamics.scatter.has_controls());
+    assert!(converted[0]
+        .issues
+        .iter()
+        .any(|i| i.path == "scatterDynamics.bVTy" && i.status == Status::NotExecuted));
+    assert_eq!(converted[0].converter_version, 4);
 }
 
 #[test]

@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:brush:scatter-controls:1.42",
+  "title": "DrawVerse VBR 1.42 scatter device controls",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/scatter"
+    },
+    {
+      "$ref": "#/$defs/preset"
+    }
+  ],
+  "$defs": {
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "minimum"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "off",
+            "fade",
+            "pressure",
+            "tilt",
+            "direction",
+            "rotation"
+          ]
+        },
+        "minimum": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "fadeSteps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "fade"
+              }
+            },
+            "required": [
+              "source"
+            ]
+          },
+          "then": {
+            "required": [
+              "fadeSteps"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "fadeSteps"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "off"
+              }
+            },
+            "required": [
+              "source"
+            ]
+          },
+          "then": {
+            "properties": {
+              "minimum": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "scatter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "amount",
+        "bothAxes",
+        "count",
+        "countJitter",
+        "seed"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "bothAxes": {
+          "type": "boolean"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "countJitter": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "seed": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "amountControl": {
+          "$ref": "#/$defs/control"
+        },
+        "countControl": {
+          "$ref": "#/$defs/control"
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "required": [
+        "parameters"
+      ],
+      "properties": {
+        "parameters": {
+          "type": "object",
+          "required": [
+            "scatterDynamics"
+          ],
+          "properties": {
+            "scatterDynamics": {
+              "$ref": "#/$defs/scatter"
+            }
+          }
+        }
+      }
+    }
+  }
+}

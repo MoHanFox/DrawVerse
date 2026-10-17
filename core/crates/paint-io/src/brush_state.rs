@@ -250,7 +250,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=34) {
+    if !matches!(state.version, 1..=35) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -507,6 +507,11 @@ fn decode_inner(
         if row.scatter_dynamics.is_some() && state.version < 8 {
             return Err(Error::Unsupported("scatter require state8".into()));
         }
+        if row.scatter_dynamics.is_some_and(|p| p.has_controls()) && state.version < 35 {
+            return Err(Error::Unsupported(
+                "scatter device controls require state35".into(),
+            ));
+        }
         dynamics.scatter = row.scatter_dynamics.map(|p| p.core()).unwrap_or_default();
         if row.shape_jitter.is_some() && state.version < 9 {
             return Err(Error::Unsupported("shape jitter require state9".into()));
@@ -727,7 +732,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             None
         };
         let scatter_dynamics = if s.dynamics.scatter != paint_core::ScatterDynamics::default() {
-            version = version.max(8);
+            version = version.max(if s.dynamics.scatter.has_controls() {
+                35
+            } else {
+                8
+            });
             Some(crate::brush_scatter::ScatterParameters::from_core(
                 s.dynamics.scatter,
             ))
