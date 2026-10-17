@@ -61,6 +61,7 @@ fn package() -> Package {
                 distance_dynamics: Some(paint_io::brush_distance::DistanceParameters::from_core(
                     settings.dynamics.distance.clone(),
                 )),
+                tilt_dynamics: None,
             },
             smoothing: None,
             texture: None,

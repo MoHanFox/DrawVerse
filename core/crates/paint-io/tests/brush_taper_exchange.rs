@@ -80,6 +80,7 @@ fn package(s: &BrushSettings) -> Package {
                 speed_dynamics: None,
                 tangent_dynamics: None,
                 distance_dynamics: None,
+                tilt_dynamics: None,
                 diameter: s.diameter,
                 spacing: s.spacing,
                 dab_opacity: s.opacity,

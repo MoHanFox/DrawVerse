@@ -81,6 +81,12 @@ pub struct Parameters {
         deserialize_with = "crate::brush_distance::present"
     )]
     pub distance_dynamics: Option<crate::brush_distance::DistanceParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_tilt::present"
+    )]
+    pub tilt_dynamics: Option<crate::brush_tilt::TiltParameters>,
 }
 impl Parameters {
     pub fn definition(&self) -> BrushDefinition {
@@ -116,6 +122,11 @@ impl Parameters {
             .unwrap_or_default();
         dynamics.distance = self
             .distance_dynamics
+            .as_ref()
+            .map(|p| p.core())
+            .unwrap_or_default();
+        dynamics.tilt = self
+            .tilt_dynamics
             .as_ref()
             .map(|p| p.core())
             .unwrap_or_default();
@@ -307,6 +318,7 @@ impl Package {
             let speed = b.parameters.speed_dynamics.is_some();
             let tangent = b.parameters.tangent_dynamics.is_some();
             let distance = b.parameters.distance_dynamics.is_some();
+            let tilt = b.parameters.tilt_dynamics.is_some();
             let textured = b.texture.is_some();
             let dual = b.dual_brush.is_some();
             if let Some(d) = &b.dual_brush {
@@ -335,7 +347,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if distance {
+                != if tilt {
+                    22
+                } else if distance {
                     21
                 } else if tangent {
                     20
@@ -385,7 +399,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 24
+            if b.required_capabilities.len() > 25
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -410,6 +424,7 @@ impl Package {
                             | "speed-dynamics"
                             | "tangent-dynamics"
                             | "distance-dynamics"
+                            | "tilt-dynamics"
                             | "wet-mix"
                             | "stroke-taper"
                             | "wet-dual-color"
@@ -461,6 +476,8 @@ impl Package {
                         .iter()
                         .any(|c| c == "distance-dynamics")
                 || (distance && b.engine_profile != "drawverse.brush")
+                || tilt != b.required_capabilities.iter().any(|c| c == "tilt-dynamics")
+                || (tilt && b.engine_profile != "drawverse.brush")
                 || (b.has_dual_sizing()
                     && (b.engine_profile != "drawverse.brush"
                         || !b

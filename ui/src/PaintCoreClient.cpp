@@ -606,6 +606,7 @@ public:
             if(tip.value("speedDynamics").toMap().contains("enabled"))state["version"]=std::max(state.value("version").toInt(),24);
             if(tip.value("tangentDynamics").toMap().contains("enabled"))state["version"]=std::max(state.value("version").toInt(),25);
             if(tip.value("distanceDynamics").toMap().contains("enabled"))state["version"]=std::max(state.value("version").toInt(),26);
+            if(tip.value("tiltDynamics").toMap().contains("enabled"))state["version"]=std::max(state.value("version").toInt(),27);
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state_wet_dual(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;

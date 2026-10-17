@@ -182,6 +182,7 @@ pub struct BrushDynamics {
     pub speed: SpeedDynamics,
     pub tangent: TangentDynamics,
     pub distance: DistanceDynamics,
+    pub tilt: TiltDynamics,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
@@ -195,6 +196,7 @@ impl BrushDynamics {
             && self.speed.is_default()
             && self.tangent.is_default()
             && self.distance.is_default()
+            && self.tilt.is_default()
     }
 }
 
@@ -390,6 +392,56 @@ impl DistanceDynamics {
     }
 }
 
+/// Optional tilt-magnitude-driven size, flow and opacity response. Tilt is
+/// normalized 0..1 against 90 degrees; no-tilt devices leave channels at 1.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TiltDynamics {
+    enabled: bool,
+    size: PressureControl,
+    flow: PressureControl,
+    opacity: PressureControl,
+}
+impl TiltDynamics {
+    pub fn new(
+        enabled: bool,
+        size: PressureControl,
+        flow: PressureControl,
+        opacity: PressureControl,
+    ) -> Self {
+        Self {
+            enabled,
+            size,
+            flow,
+            opacity,
+        }
+    }
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub fn size(&self) -> &PressureControl {
+        &self.size
+    }
+    pub fn flow(&self) -> &PressureControl {
+        &self.flow
+    }
+    pub fn opacity(&self) -> &PressureControl {
+        &self.opacity
+    }
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+    pub(crate) fn compile(&self) -> Option<CompiledTiltDynamics> {
+        if !self.enabled {
+            return None;
+        }
+        Some(CompiledTiltDynamics {
+            size: self.size.compile(),
+            flow: self.flow.compile(),
+            opacity: self.opacity.compile(),
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AngleControl {
     #[default]
@@ -509,6 +561,28 @@ impl CompiledDistanceDynamics {
             return (1., 1., 1.);
         }
         let input = (distance / self.max_distance).clamp(0., 1.);
+        let response = |control: &Option<CompiledPressureControl>| {
+            control.as_ref().map_or(1., |c| c.response(input))
+        };
+        (
+            response(&self.size),
+            response(&self.flow),
+            response(&self.opacity),
+        )
+    }
+}
+#[derive(Clone, Debug)]
+pub(crate) struct CompiledTiltDynamics {
+    size: Option<CompiledPressureControl>,
+    flow: Option<CompiledPressureControl>,
+    opacity: Option<CompiledPressureControl>,
+}
+impl CompiledTiltDynamics {
+    pub(crate) fn factors(&self, tilt: f32) -> (f32, f32, f32) {
+        if !tilt.is_finite() {
+            return (1., 1., 1.);
+        }
+        let input = tilt.clamp(0., 1.);
         let response = |control: &Option<CompiledPressureControl>| {
             control.as_ref().map_or(1., |c| c.response(input))
         };

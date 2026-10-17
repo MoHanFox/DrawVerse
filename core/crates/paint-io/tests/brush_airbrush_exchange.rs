@@ -54,6 +54,7 @@ fn package() -> Package {
                 speed_dynamics: None,
                 tangent_dynamics: None,
                 distance_dynamics: None,
+                tilt_dynamics: None,
             },
             smoothing: None,
             texture: None,

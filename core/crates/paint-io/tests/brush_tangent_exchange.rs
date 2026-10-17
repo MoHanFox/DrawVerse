@@ -59,6 +59,7 @@ fn package() -> Package {
                     settings.dynamics.tangent.clone(),
                 )),
                 distance_dynamics: None,
+                tilt_dynamics: None,
             },
             smoothing: None,
             texture: None,

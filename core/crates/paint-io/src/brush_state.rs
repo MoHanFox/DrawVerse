@@ -153,6 +153,12 @@ struct Row {
         deserialize_with = "crate::brush_distance::present"
     )]
     distance_dynamics: Option<crate::brush_distance::DistanceParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_tilt::present"
+    )]
+    tilt_dynamics: Option<crate::brush_tilt::TiltParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -220,7 +226,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=26) {
+    if !matches!(state.version, 1..=27) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -351,6 +357,9 @@ fn decode_inner(
                 "distance dynamics requires state26".into(),
             ));
         }
+        if row.tilt_dynamics.is_some() && state.version < 27 {
+            return Err(Error::Unsupported("tilt dynamics requires state27".into()));
+        }
         let dual = if let Some(d) = row.dual_brush {
             if d.has_color() && state.version < 16 {
                 return Err(Error::Unsupported("dual-color requires state16".into()));
@@ -453,6 +462,7 @@ fn decode_inner(
         dynamics.speed = row.speed_dynamics.map(|p| p.core()).unwrap_or_default();
         dynamics.tangent = row.tangent_dynamics.map(|p| p.core()).unwrap_or_default();
         dynamics.distance = row.distance_dynamics.map(|p| p.core()).unwrap_or_default();
+        dynamics.tilt = row.tilt_dynamics.map(|p| p.core()).unwrap_or_default();
         entries.push((
             row.id,
             row.name,
@@ -548,6 +558,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             version = version.max(26);
             Some(crate::brush_distance::DistanceParameters::from_core(
                 s.dynamics.distance.clone(),
+            ))
+        } else {
+            None
+        };
+        let tilt_dynamics = if !s.dynamics.tilt.is_default() {
+            version = version.max(27);
+            Some(crate::brush_tilt::TiltParameters::from_core(
+                s.dynamics.tilt.clone(),
             ))
         } else {
             None
@@ -692,6 +710,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             speed_dynamics,
             tangent_dynamics,
             distance_dynamics,
+            tilt_dynamics,
         });
     }
     if organization.is_some() {

@@ -64,7 +64,7 @@ pub use brush_catalog::{
 };
 pub use brush_dynamics::{
     AngleControl, BrushDynamics, DistanceDynamics, PressureControl, PressureCurve, SpeedDynamics,
-    TangentDynamics, TipDynamics,
+    TangentDynamics, TiltDynamics, TipDynamics,
 };
 pub use brush_mask::{BrushMask, MAX_BRUSH_MASK_BYTES, MAX_BRUSH_MASK_EDGE};
 pub use brush_outline::{BrushOutlineSegment, MAX_BRUSH_OUTLINE_SEGMENTS};

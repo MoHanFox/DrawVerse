@@ -2012,6 +2012,7 @@ impl Document {
                 stroke.speed,
                 point.tangential_pressure,
                 stroke.dab_distance as f32,
+                point.tilt_magnitude(),
             )
             .0;
         let plan = dual
@@ -2269,6 +2270,7 @@ impl Document {
             stroke.speed,
             point.tangential_pressure,
             stroke.dab_distance as f32,
+            point.tilt_magnitude(),
         );
         let base_radius = f64::from(
             stroke.brush.radius

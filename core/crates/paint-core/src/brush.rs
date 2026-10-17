@@ -75,6 +75,14 @@ impl InputPoint {
         Ok(())
     }
 
+    /// Normalized tilt magnitude (0..1); devices without tilt report 0.
+    pub fn tilt_magnitude(self) -> f32 {
+        if self.capabilities & 2 == 0 {
+            return 0.;
+        }
+        (self.tilt_x.hypot(self.tilt_y) / 90.).clamp(0., 1.)
+    }
+
     pub(crate) fn interpolate(self, other: Self, t: f64) -> Self {
         let mix = |a: f32, b: f32| a + (b - a) * t as f32;
         Self {
