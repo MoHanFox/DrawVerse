@@ -196,7 +196,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=21) {
+    if !matches!(state.version, 1..=22) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -315,6 +315,11 @@ fn decode_inner(
             if d.has_color() && state.version < 16 {
                 return Err(Error::Unsupported("dual-color requires state16".into()));
             }
+            if d.has_interleaved_color() && state.version < 22 {
+                return Err(Error::Unsupported(
+                    "interleaved dual-color requires state22".into(),
+                ));
+            }
             if d.has_sizing() && state.version < 15 {
                 return Err(Error::Unsupported(
                     "secondary sizing requires state15".into(),
@@ -344,6 +349,15 @@ fn decode_inner(
         } else {
             Default::default()
         };
+        if dual.color().model() == paint_core::DualColorModel::InterleavedStamp
+            && dual.color().enabled()
+            && (dual.secondary().spacing().is_some()
+                || row.wet_mix.is_some_and(|p| p.core().enabled()))
+        {
+            return Err(Error::Invalid(
+                "interleaved dual color requires paired dry painting",
+            ));
+        }
         if let Some(id) = &row.source_resource {
             if state.version < 4 {
                 return Err(Error::Unsupported("brush sources require state v4".into()));
@@ -484,6 +498,9 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             version = version.max(12);
             if s.dual.color() != Default::default() {
                 version = version.max(16);
+                if s.dual.color().model() == paint_core::DualColorModel::InterleavedStamp {
+                    version = version.max(22);
+                }
             }
             if s.dual.sizing() != Default::default() {
                 version = version.max(15);

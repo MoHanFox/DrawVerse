@@ -6,6 +6,7 @@ pub(super) struct SmudgeDab {
     y: i64,
     width: usize,
     pub(super) finger: bool,
+    pub(super) colored: bool,
 }
 impl SmudgeDab {
     pub(super) fn at(&self, x: i64, y: i64) -> Pixel {
@@ -34,6 +35,97 @@ impl Document {
             .layer(stroke.layer)
             .ok_or(Error::LayerNotFound(stroke.layer))?;
         let finger = stroke.first_dab && finger_painting;
+        let dual = stroke
+            .program
+            .dual
+            .as_ref()
+            .filter(|d| finger && d.step().is_none() && d.color.enabled());
+        let appearance = layer.appearance;
+        let mut colored = false;
+        let finger_color = if let Some(dual) = dual {
+            let program = &stroke.program;
+            let base_radius = f64::from(
+                stroke.brush.radius
+                    * stroke.shape_sample.size
+                    * if program.tip.pressure_size {
+                        program.size_pressure(point.pressure)
+                    } else {
+                        1.
+                    },
+            );
+            let radius = base_radius * f64::from(stroke.taper_factors.diameter);
+            let geometry = program.dab_geometry(point, stroke.direction, stroke.shape_sample);
+            let mask = if radius > 0. && program.has_mask() {
+                program.mask_dab_with_geometry(radius, geometry)
+            } else {
+                None
+            };
+            let texture = program.texture_dab(point, geometry);
+            let paper = program.texture.as_ref().is_some_and(|t| t.document_space());
+            let flow = program.tip.flow
+                * if program.tip.pressure_flow {
+                    program.flow_pressure(point.pressure)
+                } else {
+                    1.
+                };
+            let limit = program.opacity_pressure(point.pressure).unwrap_or(1.)
+                * stroke.taper_factors.opacity;
+            let plan = dual
+                .dab(
+                    point,
+                    stroke.direction,
+                    stroke.random_stroke,
+                    stroke.random_index.saturating_sub(1),
+                    stroke.random_child,
+                    base_radius,
+                )
+                .scaled(stroke.taper_factors.diameter);
+            let secondary = if dual.color.use_background() {
+                stroke.brush.background_color
+            } else {
+                stroke.brush.color
+            };
+            Some(move |x: i64, y: i64| -> Result<Pixel> {
+                let wx = x as f64 + f64::from(appearance.offset_x) + 0.5;
+                let wy = y as f64 + f64::from(appearance.offset_y) + 0.5;
+                let primary = if radius <= 0. {
+                    0.
+                } else {
+                    let shape = if let Some(mask) = &mask {
+                        mask.coverage(wx - point.x, wy - point.y)
+                    } else {
+                        program.procedural_coverage_with_geometry(
+                            wx - point.x,
+                            wy - point.y,
+                            radius,
+                            geometry,
+                        )
+                    };
+                    shape
+                        * flow
+                        * if paper {
+                            1.
+                        } else {
+                            texture.as_ref().map_or(1., |t| t.coverage(wx, wy))
+                        }
+                } * limit;
+                let mut second = 0.;
+                for child in 0..plan.count() {
+                    let amount = plan.coverage(child, wx, wy) * limit;
+                    second += amount * (1. - second);
+                }
+                Ok(dual.color.compose(
+                    stroke.color_sample.scaled(primary),
+                    primary,
+                    secondary,
+                    second,
+                    (wx as u32, wy as u32),
+                    stroke.random_stroke,
+                ))
+            })
+        } else {
+            None
+        };
         let width = (x1 - x0) as usize;
         let height = (y1 - y0) as usize;
         let mut pixels = Vec::with_capacity(width * height);
@@ -56,6 +148,9 @@ impl Document {
                 if finger {
                     pixels.push(if let Some((tone, _)) = stroke.mask_paint {
                         Pixel::from_straight([0., 0., 0., tone])?
+                    } else if let Some(color) = &finger_color {
+                        colored = true;
+                        color(x, y)?
                     } else {
                         stroke.color_sample
                     });
@@ -91,6 +186,7 @@ impl Document {
             y: y0,
             width,
             finger,
+            colored,
         }))
     }
 }

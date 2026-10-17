@@ -49,6 +49,100 @@ fn dab(d: &mut Document, b: BrushDefinition) {
         .unwrap();
     d.end_stroke().unwrap();
 }
+
+#[test]
+fn interleaved_model_is_paged_split_deterministic_and_undoable() {
+    let settings =
+        colors(DualColorOrder::SecondBehind, true).with_model(DualColorModel::InterleavedStamp);
+    let mut paged = Document::with_options(
+        192,
+        64,
+        DocumentOptions {
+            max_resident_tiles: 1,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut resident = Document::new(192, 64).unwrap();
+    for (d, split) in [(&mut paged, true), (&mut resident, false)] {
+        d.begin_brush_stroke(brush(false, settings), InputPoint::new(16.5, 32.5, 1.))
+            .unwrap();
+        if split {
+            d.stroke_to(InputPoint::new(80.5, 32.5, 1.)).unwrap();
+        }
+        d.stroke_to(InputPoint::new(170.5, 32.5, 1.)).unwrap();
+        d.end_stroke().unwrap();
+    }
+    let paged_pixels = pixels(&paged);
+    let resident_pixels = pixels(&resident);
+    if paged_pixels != resident_pixels {
+        let index = paged_pixels
+            .iter()
+            .zip(&resident_pixels)
+            .position(|(a, b)| a != b)
+            .unwrap();
+        panic!(
+            "first difference at {index}: paged={:?} resident={:?}",
+            paged_pixels[index], resident_pixels[index]
+        );
+    }
+    let expected = pixels(&paged);
+    paged.undo().unwrap();
+    assert!(pixels(&paged).iter().all(|p| *p == Pixel::TRANSPARENT));
+    paged.redo().unwrap();
+    assert_eq!(pixels(&paged), expected);
+}
+
+#[test]
+fn interleaved_model_requires_paired_dry_painting() {
+    let settings =
+        colors(DualColorOrder::SecondBehind, true).with_model(DualColorModel::InterleavedStamp);
+    let tip = BrushTip {
+        pressure_size: false,
+        pressure_flow: false,
+        ..Default::default()
+    };
+    let path = SecondaryTip::new(8., tip, None, Default::default())
+        .unwrap()
+        .with_spacing(0.25)
+        .unwrap();
+    let path_brush = BrushDefinition {
+        brush: Brush {
+            radius: 4.,
+            spacing: 0.5,
+            ..Default::default()
+        },
+        tip,
+        dual: DualBrush::new(true, DualMode::Multiply, path).with_color(settings),
+        ..Default::default()
+    };
+    assert!(BrushProgram::compile(path_brush).is_err());
+
+    let mut wet = brush(false, settings);
+    wet.wet = WetSettings::new(
+        true,
+        false,
+        false,
+        true,
+        WetMix::new(0., 0., 0., 1., 1., 0.).unwrap(),
+    );
+    assert!(BrushProgram::compile(wet).is_err());
+
+    let closed = brush(
+        false,
+        DualColor::new_with_model(
+            DualColorModel::InterleavedStamp,
+            false,
+            true,
+            true,
+            DualColorOrder::SecondBehind,
+            BlendMode::Normal,
+            BlendMode::Normal,
+        )
+        .unwrap(),
+    );
+    assert!(BrushProgram::compile(closed).is_ok());
+}
 #[test]
 fn paired_outline_order_overflow_return_stroke_and_single_opacity_are_real() {
     for path in [false, true] {
@@ -326,7 +420,7 @@ fn contribution_modes_and_background_switch_use_real_color_not_gray_coverage() {
     assert_eq!(d.pixel(38, 32), rgba([1., 0., 0., 0.4]));
 }
 #[test]
-fn unsupported_tools_and_logical_tile_failure_do_not_commit_partial_work() {
+fn dual_color_is_ignored_for_eraser_and_regular_smudge_but_tile_failure_rolls_back() {
     assert!(DualColor::new(
         true,
         true,
@@ -338,14 +432,29 @@ fn unsupported_tools_and_logical_tile_failure_do_not_commit_partial_work() {
     .is_err());
     let mut input = InputPoint::new(32.5, 32.5, 1.);
     input.tool = Tool::Eraser;
-    let mut rejected = Document::new(64, 64).unwrap();
-    assert!(rejected
+    let mut tool_eraser = Document::new(64, 64).unwrap();
+    tool_eraser.initialize_white_background().unwrap();
+    assert!(tool_eraser
         .begin_brush_stroke(
             brush(false, colors(DualColorOrder::SecondBehind, true)),
             input
         )
-        .is_err());
-    assert!(!rejected.stroke_active());
+        .is_ok());
+    assert!(tool_eraser.stroke_active());
+    tool_eraser.cancel_stroke().unwrap();
+    let mut painted = Document::new(64, 64).unwrap();
+    dab(
+        &mut painted,
+        brush(false, colors(DualColorOrder::SecondBehind, true)),
+    );
+    let before = pixels(&painted);
+    let mut eraser = brush(false, colors(DualColorOrder::SecondBehind, true));
+    eraser.brush.mode = BrushMode::Erase;
+    painted
+        .begin_brush_stroke(eraser, InputPoint::new(32.5, 32.5, 1.))
+        .unwrap();
+    painted.end_stroke().unwrap();
+    assert_ne!(pixels(&painted), before);
     for mode in [
         BrushMode::Erase,
         BrushMode::Smudge {
@@ -353,10 +462,15 @@ fn unsupported_tools_and_logical_tile_failure_do_not_commit_partial_work() {
             finger_painting: false,
             pressure_strength: false,
         },
+        BrushMode::Smudge {
+            all_layers: false,
+            finger_painting: true,
+            pressure_strength: false,
+        },
     ] {
         let mut b = brush(false, colors(DualColorOrder::SecondBehind, true));
         b.brush.mode = mode;
-        assert!(BrushProgram::compile(b).is_err());
+        assert!(BrushProgram::compile(b).is_ok());
     }
     let mut d = Document::with_options(
         192,
@@ -375,6 +489,52 @@ fn unsupported_tools_and_logical_tile_failure_do_not_commit_partial_work() {
     assert!(d.stroke_to(InputPoint::new(150.5, 32.5, 1.)).is_err());
     assert_eq!(d.history_depth(), (0, 0));
     assert!(pixels(&d).iter().all(|p| *p == Pixel::TRANSPARENT));
+}
+
+#[test]
+fn finger_painting_smudge_deposits_both_dual_color_contributions() {
+    let mut b = brush(false, colors(DualColorOrder::SecondBehind, true));
+    b.brush.mode = BrushMode::Smudge {
+        all_layers: false,
+        finger_painting: true,
+        pressure_strength: false,
+    };
+    b.brush.opacity = 1.;
+    let mut d = Document::new(64, 64).unwrap();
+    d.begin_brush_stroke(b, InputPoint::new(32.5, 32.5, 1.))
+        .unwrap();
+    d.end_stroke().unwrap();
+    assert_eq!(d.pixel(32, 32), rgba([1., 0., 0., 1.]));
+    assert_eq!(d.pixel(32, 38), rgba([0., 0., 1., 1.]));
+    assert_eq!(d.history_depth(), (1, 0));
+}
+
+#[test]
+fn regular_smudge_does_not_inject_the_second_color() {
+    let mut d = Document::new(64, 64).unwrap();
+    d.begin_stroke(
+        Brush {
+            radius: 24.,
+            color: rgba([1., 0., 0., 1.]),
+            ..Default::default()
+        },
+        InputPoint::new(32.5, 32.5, 1.),
+    )
+    .unwrap();
+    d.end_stroke().unwrap();
+    let mut b = brush(false, colors(DualColorOrder::SecondBehind, true));
+    b.brush.radius = 8.;
+    b.brush.mode = BrushMode::Smudge {
+        all_layers: false,
+        finger_painting: false,
+        pressure_strength: false,
+    };
+    d.begin_brush_stroke(b, InputPoint::new(24.5, 32.5, 1.))
+        .unwrap();
+    d.stroke_to(InputPoint::new(40.5, 32.5, 1.)).unwrap();
+    d.end_stroke().unwrap();
+    assert!(pixels(&d).iter().all(|p| p.components()[2] < 1e-6));
+    assert!(d.history_depth().0 >= 1);
 }
 
 #[test]

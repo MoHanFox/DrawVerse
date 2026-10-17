@@ -215,6 +215,11 @@ impl Preset {
     pub fn has_dual_color(&self) -> bool {
         self.dual_brush.as_ref().is_some_and(|d| d.has_color())
     }
+    pub fn has_interleaved_color(&self) -> bool {
+        self.dual_brush
+            .as_ref()
+            .is_some_and(|d| d.has_interleaved_color())
+    }
 }
 impl Package {
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
@@ -262,6 +267,14 @@ impl Package {
             let dual = b.dual_brush.is_some();
             if let Some(d) = &b.dual_brush {
                 d.validate()?;
+                if d.has_interleaved_color()
+                    && d.active_color()
+                    && (!d.is_paired() || b.wet_mix.is_some_and(|p| p.core().enabled()))
+                {
+                    return Err(Error::Unsupported(
+                        "interleaved dual color requires paired dry painting".into(),
+                    ));
+                }
                 if b.wet_mix
                     .is_some_and(|p| p.core().enabled() && !p.core().dual_color())
                     && d.active_color()
@@ -278,7 +291,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if b.has_wet_dual() {
+                != if b.has_interleaved_color() {
+                    17
+                } else if b.has_wet_dual() {
                     16
                 } else if b.stroke_taper.is_some() {
                     15
@@ -318,7 +333,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 19
+            if b.required_capabilities.len() > 20
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -338,6 +353,7 @@ impl Package {
                             | "path-smoothing"
                             | "dual-relative-size"
                             | "dual-color-stroke"
+                            | "dual-color-stamp"
                             | "wet-mix"
                             | "stroke-taper"
                             | "wet-dual-color"
@@ -367,6 +383,11 @@ impl Package {
                         .iter()
                         .any(|c| c == "dual-color-stroke")
                 || (b.has_dual_color() && b.engine_profile != "drawverse.brush")
+                || b.has_interleaved_color()
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "dual-color-stamp")
+                || (b.has_interleaved_color() && b.engine_profile != "drawverse.brush")
                 || (b.has_dual_sizing()
                     && (b.engine_profile != "drawverse.brush"
                         || !b

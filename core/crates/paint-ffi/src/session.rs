@@ -966,7 +966,11 @@ impl Engine {
                     self.document.set_active_layer(layer)?;
                 }
                 let result = if let Some(lease) = &lease {
-                    if brush.dual.enabled() && brush.dual.color().enabled() {
+                    if brush.brush.mode == paint_core::BrushMode::Paint
+                        && point.tool != paint_core::Tool::Eraser
+                        && brush.dual.enabled()
+                        && brush.dual.color().enabled()
+                    {
                         self.document.begin_configured_dual_wet_brush_stroke(
                             *brush,
                             point,

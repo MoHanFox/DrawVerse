@@ -326,17 +326,6 @@ impl Document {
         }
     }
     pub(super) fn validate_input_tool(stroke: &Stroke, point: InputPoint) -> Result<()> {
-        if stroke
-            .program
-            .dual
-            .as_ref()
-            .is_some_and(|d| d.color.enabled())
-            && point.tool == Tool::Eraser
-        {
-            return Err(Error::InvalidArgument(
-                "dual-color eraser input is not supported",
-            ));
-        }
         if stroke.wet.is_some() && point.tool == Tool::Eraser {
             return Err(Error::InvalidArgument("wet eraser input is not supported"));
         }

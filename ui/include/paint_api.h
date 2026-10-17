@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 55
+#define PAINT_ABI_MINOR 56
 
 #define PAINT_ABI_PATCH 0
 
@@ -120,6 +120,11 @@
  * Complete secondary brush models, state12 / VBR1.10 exchange.
  */
 #define PAINT_FEATURE_DUAL_BRUSH 274877906944
+
+/**
+ * Complete per-stamp interleaved dual color, state22 / VBR1.28.
+ */
+#define PAINT_FEATURE_DUAL_COLOR_INTERLEAVED 2251799813685248
 
 /**
  * Complete separated dual-color state16 / VBR1.14 user entry.

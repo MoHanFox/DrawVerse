@@ -74,6 +74,7 @@ fn groups_public_state20_exact_capture_two_strokes_and_history() {
             let mut caps = dto!(PaintCapabilities);
             assert_eq!(paint_core_capabilities(h.core, &mut caps), PAINT_OK);
             assert_ne!(caps.features & PAINT_FEATURE_BRUSH_GROUP_STATE, 0);
+            assert_ne!(caps.features & PAINT_FEATURE_DUAL_COLOR_INTERLEAVED, 0);
             let mut capture = 99;
             assert_eq!(
                 paint_brush_library_prepare_state_groups(

@@ -29,7 +29,7 @@ pub use brush_taper::{
 mod brush_catalog;
 mod brush_dual;
 mod brush_dual_color;
-pub use brush_dual_color::{DualColor, DualColorOrder};
+pub use brush_dual_color::{DualColor, DualColorModel, DualColorOrder};
 mod brush_dynamics;
 pub use brush_dual::{DualBrush, DualMode, DualSizeMode, DualSizing, DualWidthRule, SecondaryTip};
 mod brush_texture;

@@ -236,16 +236,33 @@ impl BrushProgram {
             return Err(Error::InvalidArgument("brush write blend mode"));
         }
         let (sine, cosine) = f64::from(definition.tip.angle).to_radians().sin_cos();
-        let dual = definition.dual.compile(
+        let mut dual = definition.dual.compile(
             definition.brush.radius,
             definition.tip.pressure_size,
             &definition.dynamics.size,
         )?;
-        if dual.as_ref().is_some_and(|d| d.color.enabled())
-            && definition.brush.mode != crate::BrushMode::Paint
-        {
+        // Dual color is meaningful for painting and finger-painting smudge.
+        // Other tools retain grayscale secondary coverage but ignore colors.
+        let preserve_dual_color = match definition.brush.mode {
+            crate::BrushMode::Paint => true,
+            crate::BrushMode::Smudge {
+                finger_painting: true,
+                ..
+            } => !definition.wet.enabled() && dual.as_ref().is_some_and(|d| d.step().is_none()),
+            _ => false,
+        };
+        if !preserve_dual_color {
+            if let Some(d) = dual.as_mut() {
+                d.color = Default::default();
+            }
+        }
+        if dual.as_ref().is_some_and(|d| {
+            d.color.enabled()
+                && d.color.model() == crate::DualColorModel::InterleavedStamp
+                && (d.step().is_some() || definition.wet.enabled())
+        }) {
             return Err(Error::InvalidArgument(
-                "dual-color painting requires paint mode",
+                "interleaved dual color requires paired paint dabs without wet mixing",
             ));
         }
         if definition.wet.enabled()

@@ -1,5 +1,5 @@
 //! Strict separated-stroke dual-color configuration. Tool colors are never serialized.
-use paint_core::{BlendMode, DualColor, DualColorOrder};
+use paint_core::{BlendMode, DualColor, DualColorModel, DualColorOrder};
 use serde::{Deserialize, Serialize};
 pub const BLEND_NAMES: [&str; 27] = [
     "normal",
@@ -61,7 +61,11 @@ pub fn present<'de, D: serde::Deserializer<'de>>(
 impl Serialize for ColorParameters {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         Data {
-            model: "separated-stroke-v1".into(),
+            model: match self.settings.model() {
+                DualColorModel::SeparatedStroke => "separated-stroke-v1",
+                DualColorModel::InterleavedStamp => "interleaved-stamp-v1",
+            }
+            .into(),
             enabled: self.settings.enabled(),
             use_background: self.settings.use_background(),
             overflow: self.settings.overflow(),
@@ -79,9 +83,11 @@ impl Serialize for ColorParameters {
 impl<'de> Deserialize<'de> for ColorParameters {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let data = Data::deserialize(d)?;
-        if data.model != "separated-stroke-v1" {
-            return Err(serde::de::Error::custom("dual-color rendering model"));
-        }
+        let model = match data.model.as_str() {
+            "separated-stroke-v1" => DualColorModel::SeparatedStroke,
+            "interleaved-stamp-v1" => DualColorModel::InterleavedStamp,
+            _ => return Err(serde::de::Error::custom("dual-color rendering model")),
+        };
         let order = match data.order.as_str() {
             "second-behind" => DualColorOrder::SecondBehind,
             "second-in-front" => DualColorOrder::SecondInFront,
@@ -94,7 +100,8 @@ impl<'de> Deserialize<'de> for ColorParameters {
                 .and_then(|i| BlendMode::from_id(i as u32).ok())
                 .ok_or_else(|| serde::de::Error::custom("dual-color blend mode"))
         };
-        let settings = DualColor::new(
+        let settings = DualColor::new_with_model(
+            model,
             data.enabled,
             data.use_background,
             data.overflow,

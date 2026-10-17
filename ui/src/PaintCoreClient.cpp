@@ -71,8 +71,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 54) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.54 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 56) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.56 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -102,7 +102,7 @@ public:
         inspectStorage();
         auto caps = dto<PaintCapabilities>();
         if (!check(paint_core_capabilities(m_core, &caps))) return;
-        constexpr uint64_t required = PAINT_FEATURE_BRUSH_GROUP_STATE | PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
+        constexpr uint64_t required = PAINT_FEATURE_BRUSH_GROUP_STATE | PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_COLOR_INTERLEAVED | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
         if ((caps.features & (required | PAINT_FEATURE_SELECTION)) != (required | PAINT_FEATURE_SELECTION)) { emit failure(QStringLiteral("当前核心缺少异步视口或选区能力")); return; }
         auto desc = dto<PaintDocumentDesc>(); desc.width = 960; desc.height = 640;
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
@@ -600,6 +600,7 @@ public:
             if(!tip.value("wetMix").toMap().isEmpty()){row["wetMix"]=QJsonObject::fromVariantMap(tip.value("wetMix").toMap());state["version"]=17;}
             if(!tip.value("strokeTaper").toMap().isEmpty()){row["strokeTaper"]=QJsonObject::fromVariantMap(tip.value("strokeTaper").toMap());state["version"]=18;}
             if(tip.value("wetMix").toMap().contains("dualColor"))state["version"]=19;
+            if(tip.value("dualBrush").toMap().value("color").toMap().value("model").toString()=="interleaved-stamp-v1")state["version"]=std::max(state.value("version").toInt(),22);
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state_wet_dual(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
@@ -957,7 +958,7 @@ void PaintCoreClient::requestBrushCursorImages() {
     if(m_brushLibrary->cursorImage() && !m_brushLibrary->cursorSimple()){
         add(m_outlineResource);
         const auto dual=m_brushLibrary->dualBrush();const auto color=dual.value("color").toMap();
-        if(m_brushLibrary->cursorComposite() && !m_eraser && !m_smudgeTool && dual.value("enabled").toBool() && color.value("enabled").toBool() && color.value("overflow").toBool())add(m_secondOutlineResource);
+        if(m_brushLibrary->cursorComposite() && !m_eraser && (!m_smudgeTool || m_smudgeFingerPainting) && dual.value("enabled").toBool() && color.value("enabled").toBool() && color.value("overflow").toBool())add(m_secondOutlineResource);
         if(m_drawing){add(m_strokeOutlineResource);if(m_brushLibrary->cursorComposite() && m_strokeSecondImageEligible)add(m_strokeSecondOutlineResource);}
     }
     m_cursorImageDemand=demand;
@@ -1250,7 +1251,7 @@ bool PaintCoreClient::beginStroke(const InputSample &s) {
     }
     m_dropStroke = false; if (!submit(Begin, s)) return false;
     const auto capturedDual=m_brushLibrary->dualBrush();const auto capturedColor=capturedDual.value("color").toMap();
-    m_strokeSecondImageEligible=!m_eraser && !m_smudgeTool && s.tool!=PAINT_TOOL_ERASER && capturedDual.value("enabled").toBool() && capturedColor.value("enabled").toBool() && capturedColor.value("overflow").toBool();
+    m_strokeSecondImageEligible=!m_eraser && (!m_smudgeTool || m_smudgeFingerPainting) && s.tool!=PAINT_TOOL_ERASER && capturedDual.value("enabled").toBool() && capturedColor.value("enabled").toBool() && capturedColor.value("overflow").toBool();
     m_strokeColor = m_smudgeTool && !m_smudgeFingerPainting ? QColor() : m_color;
     m_drawing = true;requestBrushCursorImages();emit stateChanged(); return true;
 }

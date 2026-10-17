@@ -451,6 +451,7 @@ struct Stroke {
     dual_index: u64,
     dual_last: InputPoint,
     dual_coverage: BTreeMap<TileCoord, Arc<Tile>>,
+    stamp_field: BTreeMap<TileCoord, Arc<Tile>>,
     wet_primary_field: BTreeMap<TileCoord, Arc<Tile>>,
     wet_secondary_field: BTreeMap<TileCoord, Arc<Tile>>,
     shape_sample: crate::brush_shape_jitter::ShapeSample,
@@ -1299,11 +1300,6 @@ impl Document {
             self.validate_wet_start(&program, brush, first, wet)?;
         }
         first.validate()?;
-        if program.dual.as_ref().is_some_and(|d| d.color.enabled()) && first.tool == Tool::Eraser {
-            return Err(Error::InvalidArgument(
-                "dual-color eraser input is not supported",
-            ));
-        }
         let path_filter = crate::brush_smoothing::PathFilter::new(program.smoothing, first)?;
         Self::validate_stroke_work(
             brush,
@@ -1366,6 +1362,7 @@ impl Document {
             dual_index: 0,
             dual_last: first,
             dual_coverage: BTreeMap::new(),
+            stamp_field: BTreeMap::new(),
             wet_primary_field: BTreeMap::new(),
             wet_secondary_field: BTreeMap::new(),
             shape_sample: initial_shape,
@@ -1908,11 +1905,9 @@ impl Document {
             stroke.dual_last = point;
             return Ok(());
         }
-        if stroke
-            .program
-            .dual
-            .as_ref()
-            .is_some_and(|d| d.color.enabled() && d.step().is_some())
+        if stroke.program.dual.as_ref().is_some_and(|d| {
+            stroke.brush.mode == BrushMode::Paint && d.color.enabled() && d.step().is_some()
+        }) && point.tool != Tool::Eraser
         {
             return self.colored_secondary_dab(stroke, point);
         }
@@ -1965,6 +1960,7 @@ impl Document {
                         &mut stroke.taper,
                         &stroke.coverage,
                         &stroke.dual_coverage,
+                        &stroke.stamp_field,
                         coord,
                     )?;
                     let source = stroke
@@ -2111,7 +2107,8 @@ impl Document {
             .program
             .dual
             .as_ref()
-            .is_some_and(|d| d.color.enabled())
+            .is_some_and(|d| stroke.brush.mode == BrushMode::Paint && d.color.enabled())
+            && point.tool != Tool::Eraser
         {
             return self.colored_primary_dab(stroke, point);
         }
@@ -2268,10 +2265,33 @@ impl Document {
             None
         };
         let (extent_x, extent_y) = stroke.program.extent(radius, geometry);
-        let x0 = ((point.x - extent_x - 1.0).floor() as i64).clamp(0, i64::from(self.width));
-        let y0 = ((point.y - extent_y - 1.0).floor() as i64).clamp(0, i64::from(self.height));
-        let x1 = ((point.x + extent_x + 1.0).ceil() as i64).clamp(0, i64::from(self.width));
-        let y1 = ((point.y + extent_y + 1.0).ceil() as i64).clamp(0, i64::from(self.height));
+        let mut left = point.x - extent_x - 1.0;
+        let mut top = point.y - extent_y - 1.0;
+        let mut right = point.x + extent_x + 1.0;
+        let mut bottom = point.y + extent_y + 1.0;
+        if stroke.first_dab
+            && matches!(
+                stroke.brush.mode,
+                BrushMode::Smudge {
+                    finger_painting: true,
+                    ..
+                }
+            )
+        {
+            if let Some(plan) = &dual_dab {
+                for child in 0..plan.count() {
+                    let (l, t, r, b) = plan.bounds(child);
+                    left = left.min(l);
+                    top = top.min(t);
+                    right = right.max(r);
+                    bottom = bottom.max(b);
+                }
+            }
+        }
+        let x0 = (left.floor() as i64).clamp(0, i64::from(self.width));
+        let y0 = (top.floor() as i64).clamp(0, i64::from(self.height));
+        let x1 = (right.ceil() as i64).clamp(0, i64::from(self.width));
+        let y1 = (bottom.ceil() as i64).clamp(0, i64::from(self.height));
         let index = self.layer_index(stroke.layer)?;
         let appearance = self.layers[index].appearance;
         let mask = self.layers[index].mask;
@@ -2374,6 +2394,7 @@ impl Document {
                     &mut stroke.taper,
                     &stroke.coverage,
                     &stroke.dual_coverage,
+                    &stroke.stamp_field,
                     coord,
                 )?;
                 let source = self.layers[index]
@@ -2504,6 +2525,9 @@ impl Document {
                                 x as f64 + 0.5 + f64::from(appearance.offset_x),
                                 y as f64 + 0.5 + f64::from(appearance.offset_y),
                             );
+                        }
+                        if smudge.as_ref().is_some_and(|s| s.colored) {
+                            coverage = 1.;
                         }
                         if coverage == 0. {
                             continue;
@@ -2642,11 +2666,17 @@ impl Document {
                                 x + i64::from(appearance.offset_x),
                                 y + i64::from(appearance.offset_y),
                             );
+                            let smudge_amount = if smudge.colored {
+                                (if SELECTED { flow * selected } else { flow })
+                                    * if paper_texture { texture_amount } else { 1. }
+                            } else {
+                                amount
+                            };
                             if smudge.finger && !mask {
                                 if alpha_locked {
-                                    before.paint_preserving_alpha(dragged, amount)
+                                    before.paint_preserving_alpha(dragged, smudge_amount)
                                 } else {
-                                    dragged.scaled(amount).over(before)
+                                    dragged.scaled(smudge_amount).over(before)
                                 }
                             } else if alpha_locked {
                                 before.paint_preserving_alpha(dragged, amount)

@@ -1,5 +1,13 @@
-//! Isolated, whole-stroke dual-color composition. Pixel fields remain paged by Document.
+//! Dual-color composition models. Pixel fields remain paged by Document.
 use crate::{BlendMode, Error, Pixel, Result};
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DualColorModel {
+    /// Accumulate both colors for the entire stroke, then compose once.
+    #[default]
+    SeparatedStroke,
+    /// Compose each primary/secondary stamp pair before the next pair.
+    InterleavedStamp,
+}
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DualColorOrder {
     #[default]
@@ -8,6 +16,7 @@ pub enum DualColorOrder {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DualColor {
+    model: DualColorModel,
     enabled: bool,
     use_background: bool,
     overflow: bool,
@@ -18,6 +27,7 @@ pub struct DualColor {
 impl Default for DualColor {
     fn default() -> Self {
         Self {
+            model: DualColorModel::default(),
             enabled: false,
             use_background: false,
             overflow: false,
@@ -36,12 +46,33 @@ impl DualColor {
         primary_blend: BlendMode,
         secondary_blend: BlendMode,
     ) -> Result<Self> {
+        Self::new_with_model(
+            DualColorModel::SeparatedStroke,
+            enabled,
+            use_background,
+            overflow,
+            order,
+            primary_blend,
+            secondary_blend,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_model(
+        model: DualColorModel,
+        enabled: bool,
+        use_background: bool,
+        overflow: bool,
+        order: DualColorOrder,
+        primary_blend: BlendMode,
+        secondary_blend: BlendMode,
+    ) -> Result<Self> {
         if primary_blend == BlendMode::PassThrough || secondary_blend == BlendMode::PassThrough {
             return Err(Error::InvalidArgument(
                 "pass-through is not a dual-color contribution mode",
             ));
         }
         Ok(Self {
+            model,
             enabled,
             use_background,
             overflow,
@@ -49,6 +80,13 @@ impl DualColor {
             primary_blend,
             secondary_blend,
         })
+    }
+    pub fn model(self) -> DualColorModel {
+        self.model
+    }
+    pub fn with_model(mut self, model: DualColorModel) -> Self {
+        self.model = model;
+        self
     }
     pub fn enabled(self) -> bool {
         self.enabled

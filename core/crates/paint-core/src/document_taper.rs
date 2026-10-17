@@ -8,6 +8,7 @@ struct TileJournal {
     layer: SavedTiles,
     primary: SavedTiles,
     secondary: SavedTiles,
+    stamp: SavedTiles,
     wet_primary: SavedTiles,
     wet_secondary: SavedTiles,
 }
@@ -252,6 +253,7 @@ impl Document {
         tail: &mut Option<TailReplay>,
         primary: &BTreeMap<TileCoord, Arc<Tile>>,
         secondary: &BTreeMap<TileCoord, Arc<Tile>>,
+        stamp: &BTreeMap<TileCoord, Arc<Tile>>,
         coord: TileCoord,
     ) -> Result<()> {
         if let Some(tail) = tail.as_mut().filter(|t| t.recording) {
@@ -276,6 +278,7 @@ impl Document {
                 secondary.get(&coord).cloned(),
                 limit,
             )?;
+            save(&mut journal.stamp, coord, stamp.get(&coord).cloned(), limit)?;
         }
         Ok(())
     }
@@ -352,6 +355,7 @@ impl Document {
         }
         restore_field(&mut stroke.coverage, journal.primary);
         restore_field(&mut stroke.dual_coverage, journal.secondary);
+        restore_field(&mut stroke.stamp_field, journal.stamp);
         restore_field(&mut stroke.wet_primary_field, journal.wet_primary);
         restore_field(&mut stroke.wet_secondary_field, journal.wet_secondary);
         tail.checkpoint

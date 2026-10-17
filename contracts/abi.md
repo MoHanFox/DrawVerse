@@ -1,4 +1,12 @@
-# C ABI 1.51.0 契约
+# C ABI 1.56.0 契约
+
+## ABI 1.56 — 逐印章双色模型
+
+`PAINT_FEATURE_DUAL_COLOR_INTERLEAVED`（bit51）公布 `interleaved-stamp-v1` 双色模型。它复用既有 `PaintBrushDualDesc` 与 `dualBrush.color` JSON 对象，不改变 DTO 或导出签名；新增能力仅表示 state22/VBR1.28/behavior17 的逐印章渲染可由当前核心执行。
+
+逐印章模型把每个主印章与对应第二印章先按配置的前后顺序合成，再按印章顺序叠加到隔离笔触场，最后统一应用整笔不透明度。因此后一个印章的第二贡献可以覆盖先前印章的主贡献，区别于 `separated-stroke-v1` 的整笔两份场最终合成。模型要求配对第二笔尖（`paired-dab-v1`）；独立第二路径明确拒绝。橡皮和未开启手指绘画的涂抹忽略颜色模块并按原工具执行，手指绘画涂抹在第一笔沉积阶段使用双色；湿混下的双色涂抹/橡皮不处理。选区、图层蒙版、透明锁、偏移、文档纸纹、颜色动态、相对尺寸、图像笔尖及撤销重做仍走既有 Document 事务。
+
+state22 和 VBR1.28 只在颜色模型为 `interleaved-stamp-v1` 时要求；旧 state21/VBR1.27 不得携带该模型。VBR 能力名称为 `dual-color-stamp`，behavior17。旧 `PAINT_FEATURE_DUAL_COLOR_STROKE` 继续覆盖 `separated-stroke-v1` 和既有双色入口；Qt 必须在同一预设中同时保留旧能力与新模式能力。自动预览继续固定白色/正常工具模式，模型切换只改变真实笔触的贡献顺序。
 
 ## ABI 1.48 双色双笔刷入口
 

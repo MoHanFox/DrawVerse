@@ -31,7 +31,7 @@ ColumnLayout {
     readonly property var dual:library.dualBrush
     function dualModule(name) {
         if(dual[name])return dual[name]
-        if(name==="color")return {model:"separated-stroke-v1",enabled:false,useBackground:false,overflow:false,order:"second-behind",primaryBlend:"normal",secondaryBlend:"normal"}
+        if(name==="color")return {model:"separated-stroke-v1",enabled:false,useBackground:true,overflow:false,order:"second-behind",primaryBlend:"normal",secondaryBlend:"normal"}
         if(name==="sizing")return {model:"relative-size-v1",mode:"independent",diameterOffset:0,widthRule:"follow-pressure"}
         if(name==="tipDynamics")return {angleControl:"fixed",tiltRoundness:false,minimumRoundness:0.01}
         if(name==="scatterDynamics")return {enabled:false,amount:0,bothAxes:false,count:1,countJitter:0,seed:"0000000000000000"}
@@ -231,15 +231,15 @@ ColumnLayout {
                         DualField {title:"最低圆度比例";field:"minimumRoundness";module:"shapeJitter";from:1}
                     }
                     ColumnLayout {Layout.minimumWidth:0;visible:root.dualPage===4;Layout.fillWidth:true;spacing:5
-                        CompactCheckBox {objectName:"settingsDualColorEnabled";text:"启用双色绘制";checked:root.dualModule("color").enabled;onToggled:if(!root.setDualField("enabled",checked,"color"))checked=Qt.binding(function(){return root.dualModule("color").enabled});tooltip:"分别累积主和第二贡献，再按整笔合成；关闭后保留设置和旧灰度模式。"}
-                        CompactCheckBox {objectName:"settingsDualUseBackground";text:"使用第二颜色";checked:root.dualModule("color").useBackground;onToggled:root.setDualField("useBackground",checked,"color");tooltip:"第二贡献使用颜色面板的背景色；关闭时使用前景色，两色均在起笔捕获。"}
+                        CompactCheckBox {objectName:"settingsDualColorEnabled";text:"启用双色绘制";checked:root.dualModule("color").enabled;onToggled:if(!root.setDualField("enabled",checked,"color"))checked=Qt.binding(function(){return root.dualModule("color").enabled});tooltip:"主色使用前景色，第二色固定使用背景色；关闭后保留设置和旧灰度模式。"}
+                        CompactComboBox {objectName:"settingsDualColorModel";Layout.fillWidth:true;model:["整笔分隔合成","逐印章交织"];currentIndex:root.dualModule("color").model==="interleaved-stamp-v1"?1:0;onActivated:{const ok=root.setDualField("model",currentIndex===1?"interleaved-stamp-v1":"separated-stroke-v1","color");if(!ok)currentIndex=root.dualModule("color").model==="interleaved-stamp-v1"?1:0} tooltip:"整笔分隔先累积两种贡献再合成；逐印章按每个主印章实时叠加，后一个第二印章可以覆盖前一个主印章。逐印章需要配对笔尖，且不能与湿混同时启用。"}
                         CompactCheckBox {objectName:"settingsDualOverflow";text:"允许溢出";checked:root.dualModule("color").overflow;onToggled:root.setDualField("overflow",checked,"color");tooltip:"允许第二贡献绘到主覆盖外；关闭时按主覆盖裁切，仍受选区和锁限制。"}
                         CompactComboBox {objectName:"settingsDualColorOrder";Layout.fillWidth:true;model:["第二在主笔后方","第二在主笔前方"];currentIndex:root.dualModule("color").order==="second-in-front"?1:0;onActivated:root.setDualField("order",currentIndex===1?"second-in-front":"second-behind","color");tooltip:"选择整笔两份贡献的上下叠放顺序；不表示路径位置偏移。"}
                         Label {text:"主贡献模式";color:Theme.text;font.pixelSize:10}
                         DualBlend {objectName:"settingsDualPrimaryBlend";field:"primaryBlend"}
                         Label {text:"第二贡献模式";color:Theme.text;font.pixelSize:10}
                         DualBlend {objectName:"settingsDualSecondaryBlend";field:"secondaryBlend"}
-                        Label {text:"整笔隔离合成，不透明度只应用一次。底部贡献在透明笔触内混合；回笔不会把后方第二色盖到主线。双色目前用于画笔，橡皮和涂抹需关闭双色。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
+                        Label {text:"第二色固定使用背景色。整笔分隔时，不透明度只应用一次，回笔不会把后方第二色盖到主线；逐印章时，每个主印章按前后顺序即时叠加，后一个第二印章可以覆盖前一个主印章，整笔不透明度仍只应用一次。逐印章需要配对笔尖，且不能与湿混同时启用。橡皮和普通涂抹会忽略双色；手指绘画涂抹在第一笔沉积时使用双色；湿混下的涂抹/橡皮没有实际意义，不处理。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     }
                 }
                 ColumnLayout {Layout.minimumWidth:0;visible:root.category===5;Layout.fillWidth:true;spacing:5

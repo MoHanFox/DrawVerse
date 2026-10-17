@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:brush:dual-color-stamp:1.28",
+  "title": "DrawVerse interleaved-stamp-v1 dual-color object",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "model",
+    "enabled",
+    "useBackground",
+    "overflow",
+    "order",
+    "primaryBlend",
+    "secondaryBlend"
+  ],
+  "properties": {
+    "model": {
+      "const": "interleaved-stamp-v1"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "useBackground": {
+      "type": "boolean"
+    },
+    "overflow": {
+      "type": "boolean"
+    },
+    "order": {
+      "enum": [
+        "second-behind",
+        "second-in-front"
+      ]
+    },
+    "primaryBlend": {
+      "$ref": "#/$defs/blend"
+    },
+    "secondaryBlend": {
+      "$ref": "#/$defs/blend"
+    }
+  },
+  "$defs": {
+    "blend": {
+      "enum": [
+        "normal",
+        "dissolve",
+        "darken",
+        "multiply",
+        "color-burn",
+        "linear-burn",
+        "darker-color",
+        "lighten",
+        "screen",
+        "color-dodge",
+        "linear-dodge",
+        "lighter-color",
+        "overlay",
+        "soft-light",
+        "hard-light",
+        "vivid-light",
+        "linear-light",
+        "pin-light",
+        "hard-mix",
+        "difference",
+        "exclusion",
+        "subtract",
+        "divide",
+        "hue",
+        "saturation",
+        "color",
+        "luminosity"
+      ]
+    }
+  }
+}

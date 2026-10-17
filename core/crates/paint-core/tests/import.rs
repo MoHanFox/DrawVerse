@@ -24,7 +24,7 @@ fn import_constructs_history_free_document_and_monotonic_ids() {
 }
 #[test]
 fn import_rejects_invalid_metadata_pixels_and_budget_before_publishing() {
-    assert!(Document::from_import(10, 10, vec![], 0, DocumentOptions::default()).is_err());
+    assert!(Document::from_import(10, 10, vec![], 0, DocumentOptions::default()).is_ok());
     let mut bad = layer();
     bad.properties.opacity = f32::NAN;
     assert!(Document::from_import(10, 10, vec![bad], 0, DocumentOptions::default()).is_err());

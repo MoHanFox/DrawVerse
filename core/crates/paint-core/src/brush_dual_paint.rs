@@ -152,6 +152,7 @@ impl Document {
         let mask = layer.mask;
         let alpha_locked = !mask && appearance.locks & crate::LOCK_TRANSPARENCY != 0;
         let settings = stroke.program.dual.as_ref().expect("dual color").color;
+        let interleaved = settings.model() == crate::DualColorModel::InterleavedStamp;
         let secondary = if settings.use_background() {
             stroke.brush.background_color
         } else {
@@ -174,6 +175,7 @@ impl Document {
                 &mut stroke.taper,
                 &stroke.coverage,
                 &stroke.dual_coverage,
+                &stroke.stamp_field,
                 coord,
             )?;
             #[cfg(test)]
@@ -204,6 +206,15 @@ impl Document {
                 .get(&coord)
                 .map(|t| t.try_pixels())
                 .transpose()?;
+            let stamp = if interleaved {
+                stroke
+                    .stamp_field
+                    .get(&coord)
+                    .map(|t| t.try_pixels())
+                    .transpose()?
+            } else {
+                None
+            };
             let wet_main = if wet_pair {
                 stroke
                     .wet_primary_field
@@ -260,7 +271,9 @@ impl Document {
                     let moment = main.as_ref().map_or(Pixel::TRANSPARENT, |p| p[i]);
                     let amount = second.as_ref().map_or(0., |p| p[i].alpha());
                     let position = (wx as u32, wy as u32);
-                    let contribution = if wet_pair {
+                    let contribution = if interleaved {
+                        stamp.as_ref().map_or(Pixel::TRANSPARENT, |p| p[i])
+                    } else if wet_pair {
                         settings.compose_wet(
                             wet_main.as_ref().map_or(Pixel::TRANSPARENT, |p| p[i]),
                             moment.alpha(),
@@ -390,6 +403,7 @@ impl Document {
             drop(original_pixels);
             drop(main);
             drop(second);
+            drop(stamp);
             drop(wet_main);
             drop(wet_second);
             self.pool.trim()?;
@@ -466,6 +480,7 @@ impl Document {
         }
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
+        let settings = dual.color;
         let base_radius = f64::from(
             stroke.brush.radius
                 * stroke.shape_sample.size
@@ -493,6 +508,9 @@ impl Document {
             };
         let limit =
             program.opacity_pressure(point.pressure).unwrap_or(1.) * stroke.taper_factors.opacity;
+        if settings.model() == crate::DualColorModel::InterleavedStamp {
+            return self.interleaved_colored_dab(stroke, point, base_radius, radius, limit);
+        }
         let appearance = self.layers[self.layer_index(stroke.layer)?].appearance;
         let offset = (
             i64::from(appearance.offset_x),
@@ -555,6 +573,180 @@ impl Document {
                     (stroke.taper.as_mut(), true),
                     None,
                 )?);
+            }
+        }
+        stroke.first_dab = false;
+        self.recompose_color(stroke, touched)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn interleaved_colored_dab(
+        &mut self,
+        stroke: &mut Stroke,
+        point: InputPoint,
+        base_radius: f64,
+        radius: f64,
+        limit: f32,
+    ) -> Result<bool> {
+        let program = stroke.program.clone();
+        let dual = program.dual.as_ref().expect("dual color");
+        debug_assert_eq!(dual.color.model(), crate::DualColorModel::InterleavedStamp);
+        let geometry = program.dab_geometry(point, stroke.direction, stroke.shape_sample);
+        let (extent_x, extent_y) = program.extent(radius, geometry);
+        let mask = if radius > 0. && program.has_mask() {
+            program.mask_dab_with_geometry(radius, geometry)
+        } else {
+            None
+        };
+        let texture = program.texture_dab(point, geometry);
+        let paper = program.texture.as_ref().is_some_and(|t| t.document_space());
+        let flow = program.tip.flow
+            * if program.tip.pressure_flow {
+                program.flow_pressure(point.pressure)
+            } else {
+                1.
+            };
+        let plan = dual
+            .dab(
+                point,
+                stroke.direction,
+                stroke.random_stroke,
+                stroke.random_index.saturating_sub(1),
+                stroke.random_child,
+                base_radius,
+            )
+            .scaled(stroke.taper_factors.diameter);
+        let appearance = self.layers[self.layer_index(stroke.layer)?].appearance;
+        let (ox, oy) = (
+            f64::from(appearance.offset_x),
+            f64::from(appearance.offset_y),
+        );
+        let mut left = point.x - extent_x - 1.;
+        let mut top = point.y - extent_y - 1.;
+        let mut right = point.x + extent_x + 1.;
+        let mut bottom = point.y + extent_y + 1.;
+        for child in 0..plan.count() {
+            let (l, t, r, b) = plan.bounds(child);
+            left = left.min(l);
+            top = top.min(t);
+            right = right.max(r);
+            bottom = bottom.max(b);
+        }
+        let x0 = (left.floor() as i64).clamp(0, i64::from(self.width)) - appearance.offset_x as i64;
+        let x1 = (right.ceil() as i64).clamp(0, i64::from(self.width)) - appearance.offset_x as i64;
+        let y0 = (top.floor() as i64).clamp(0, i64::from(self.height)) - appearance.offset_y as i64;
+        let y1 =
+            (bottom.ceil() as i64).clamp(0, i64::from(self.height)) - appearance.offset_y as i64;
+        let mut touched = ChangedPixels::new();
+        if x0 < x1 && y0 < y1 && limit > 0. {
+            let secondary_color = if dual.color.use_background() {
+                stroke.brush.background_color
+            } else {
+                stroke.brush.color
+            };
+            for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
+                for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
+                    let coord = TileCoord::from_signed(tx as i32, ty as i32);
+                    self.capture_taper_tile(
+                        stroke.layer,
+                        &mut stroke.taper,
+                        &stroke.coverage,
+                        &stroke.dual_coverage,
+                        &stroke.stamp_field,
+                        coord,
+                    )?;
+                    let source = stroke
+                        .stamp_field
+                        .get(&coord)
+                        .map(|t| t.try_pixels())
+                        .transpose()?;
+                    let mut updates = Vec::new();
+                    for y in y0.max(ty * 64)..y1.min((ty + 1) * 64) {
+                        for x in x0.max(tx * 64)..x1.min((tx + 1) * 64) {
+                            let wx = x as f64 + ox + 0.5;
+                            let wy = y as f64 + oy + 0.5;
+                            let primary = if radius <= 0. {
+                                0.
+                            } else {
+                                let shape = if let Some(mask) = &mask {
+                                    mask.coverage(wx - point.x, wy - point.y)
+                                } else {
+                                    program.procedural_coverage_with_geometry(
+                                        wx - point.x,
+                                        wy - point.y,
+                                        radius,
+                                        geometry,
+                                    )
+                                };
+                                shape
+                                    * flow
+                                    * if paper {
+                                        1.
+                                    } else {
+                                        texture.as_ref().map_or(1., |t| t.coverage(wx, wy))
+                                    }
+                            } * limit;
+                            let mut second = 0.;
+                            for child in 0..plan.count() {
+                                let amount = plan.coverage(child, wx, wy) * limit;
+                                second += amount * (1. - second);
+                            }
+                            if primary == 0. && second == 0. {
+                                continue;
+                            }
+                            let pair = dual.color.compose(
+                                stroke.color_sample.scaled(primary),
+                                primary,
+                                secondary_color,
+                                second,
+                                (wx as u32, wy as u32),
+                                stroke.random_stroke,
+                            );
+                            let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
+                            let previous = source
+                                .as_ref()
+                                .map_or(Pixel::TRANSPARENT, |pixels| pixels[offset]);
+                            let after = pair.over(previous);
+                            if after != previous {
+                                updates.push((offset, after));
+                            }
+                        }
+                    }
+                    if !updates.is_empty() {
+                        if stroke
+                            .stamp_field
+                            .get(&coord)
+                            .is_some_and(Tile::can_edit_private)
+                        {
+                            Tile::edit_private(
+                                stroke.stamp_field.get_mut(&coord).expect("stamp field"),
+                                &self.pool,
+                                &updates,
+                            )?;
+                        } else {
+                            if !stroke.stamp_field.contains_key(&coord)
+                                && stroke.stamp_field.len() >= self.options.max_document_tiles
+                            {
+                                return Err(Error::ResourceLimit(
+                                    "interleaved dual-color field tile limit; entire stroke rolled back",
+                                ));
+                            }
+                            let mut pixels = source.as_ref().map_or_else(
+                                || vec![Pixel::TRANSPARENT; 4096],
+                                |pixels| pixels.to_vec(),
+                            );
+                            for (offset, value) in &updates {
+                                pixels[*offset] = *value;
+                            }
+                            let tile = Arc::new(Tile::from_pixels(pixels)?);
+                            self.pool.attach(&tile)?;
+                            stroke.stamp_field.insert(coord, tile);
+                        }
+                        touched.insert(coord, &updates);
+                    }
+                    drop(source);
+                    self.pool.trim()?;
+                }
             }
         }
         stroke.first_dab = false;
@@ -805,5 +997,68 @@ mod tests {
             .unwrap();
         d.end_stroke().unwrap();
         assert_eq!(d.history_depth(), (1, 0));
+    }
+
+    #[test]
+    fn interleaved_stamp_order_overlays_later_secondary_on_earlier_primary() {
+        let tip = crate::BrushTip {
+            hardness: 1.,
+            flow: 1.,
+            pressure_size: false,
+            pressure_flow: false,
+            ..Default::default()
+        };
+        let red = Pixel::from_straight([1., 0., 0., 1.]).unwrap();
+        let blue = Pixel::from_straight([0., 0., 1., 1.]).unwrap();
+        for model in [
+            crate::DualColorModel::SeparatedStroke,
+            crate::DualColorModel::InterleavedStamp,
+        ] {
+            let color = crate::DualColor::new_with_model(
+                model,
+                true,
+                true,
+                true,
+                crate::DualColorOrder::SecondBehind,
+                crate::BlendMode::Normal,
+                crate::BlendMode::Normal,
+            )
+            .unwrap();
+            let definition = BrushDefinition {
+                brush: Brush {
+                    radius: 6.,
+                    spacing: 1.,
+                    opacity: 1.,
+                    color: red,
+                    background_color: blue,
+                    ..Default::default()
+                },
+                tip,
+                dual: crate::DualBrush::new(
+                    true,
+                    crate::DualMode::Multiply,
+                    crate::SecondaryTip::new(14., tip, None, Default::default()).unwrap(),
+                )
+                .with_color(color),
+                ..Default::default()
+            };
+            let mut d = Document::new(64, 64).unwrap();
+            d.begin_brush_stroke(definition, InputPoint::new(-100., -100., 1.))
+                .unwrap();
+            let mut stroke = d.stroke.take().unwrap();
+            d.dab(&mut stroke, InputPoint::new(16.5, 32.5, 1.)).unwrap();
+            d.dab(&mut stroke, InputPoint::new(32.5, 32.5, 1.)).unwrap();
+            d.stroke = Some(stroke);
+            d.end_stroke().unwrap();
+            assert_eq!(
+                d.pixel(20, 32),
+                if model == crate::DualColorModel::InterleavedStamp {
+                    blue
+                } else {
+                    red
+                },
+                "{model:?}"
+            );
+        }
     }
 }

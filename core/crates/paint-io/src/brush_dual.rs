@@ -127,6 +127,14 @@ impl DualParameters {
     pub fn has_color(&self) -> bool {
         self.color.is_some()
     }
+    pub fn has_interleaved_color(&self) -> bool {
+        self.color
+            .as_ref()
+            .is_some_and(|p| p.core().model() == paint_core::DualColorModel::InterleavedStamp)
+    }
+    pub fn is_paired(&self) -> bool {
+        self.model == "paired-dab-v1" && self.spacing.is_none()
+    }
     pub fn resource_id(&self) -> Option<&str> {
         self.resource.as_deref()
     }
