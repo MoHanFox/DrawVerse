@@ -193,6 +193,10 @@ fn map_mode(id: Option<&str>) -> Option<String> {
         Some("HrdL") | Some("hardLight") => "hardLight",
         Some("Xclu") | Some("exclusion") => "exclusion",
         Some("hardMix") => "hardMix",
+        Some("vividLight") => "vividLight",
+        Some("linearLight") => "linearLight",
+        Some("pinLight") => "pinLight",
+        Some("blendDivide") | Some("divide") => "divide",
         _ => return None,
     };
     Some(mode.into())

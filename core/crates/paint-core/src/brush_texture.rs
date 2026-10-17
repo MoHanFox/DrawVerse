@@ -25,6 +25,10 @@ pub enum TextureMode {
     HardLight,
     Exclusion,
     HardMix,
+    VividLight,
+    LinearLight,
+    PinLight,
+    Divide,
 }
 impl TextureMode {
     pub fn combine(self, base: f32, texture: f32) -> f32 {
@@ -87,6 +91,42 @@ impl TextureMode {
                     1.
                 } else {
                     0.
+                }
+            }
+            Self::VividLight => {
+                if texture <= 0.5 {
+                    let texture = texture * 2.;
+                    if base >= 1. {
+                        1.
+                    } else if texture <= 0. {
+                        0.
+                    } else {
+                        1. - ((1. - base) / texture).min(1.)
+                    }
+                } else {
+                    let texture = (texture - 0.5) * 2.;
+                    if base <= 0. {
+                        0.
+                    } else if texture >= 1. {
+                        1.
+                    } else {
+                        (base / (1. - texture)).min(1.)
+                    }
+                }
+            }
+            Self::LinearLight => (base + 2. * texture - 1.).clamp(0., 1.),
+            Self::PinLight => {
+                if texture < 0.5 {
+                    base.min(2. * texture)
+                } else {
+                    base.max(2. * texture - 1.)
+                }
+            }
+            Self::Divide => {
+                if texture <= 0. {
+                    1.
+                } else {
+                    (base / texture).min(1.)
                 }
             }
         }
@@ -551,6 +591,11 @@ mod tests {
         assert_eq!(TextureMode::HardLight.combine(0.25, 0.75), 0.625);
         assert_eq!(TextureMode::Exclusion.combine(0.5, 0.5), 0.5);
         assert_eq!(TextureMode::HardMix.combine(0.5, 0.5), 1.);
+        assert_eq!(TextureMode::VividLight.combine(0.25, 0.25), 0.);
+        assert_eq!(TextureMode::VividLight.combine(0.75, 0.75), 1.);
+        assert_eq!(TextureMode::LinearLight.combine(0.5, 0.75), 1.);
+        assert_eq!(TextureMode::PinLight.combine(0.3, 0.75), 0.5);
+        assert_eq!(TextureMode::Divide.combine(0.5, 0.25), 1.);
         let adjusted = TextureSettings::new(TextureSpace::Document, 1., 0., 1., false, 0., 0.)
             .unwrap()
             .with_adjustments(-0.25, 0.5)

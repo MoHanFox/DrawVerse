@@ -942,6 +942,10 @@ fn texture_mode(id: &str) -> Option<TextureMode> {
         "hardLight" => Some(TextureMode::HardLight),
         "exclusion" => Some(TextureMode::Exclusion),
         "hardMix" => Some(TextureMode::HardMix),
+        "vividLight" => Some(TextureMode::VividLight),
+        "linearLight" => Some(TextureMode::LinearLight),
+        "pinLight" => Some(TextureMode::PinLight),
+        "divide" => Some(TextureMode::Divide),
         _ => None,
     }
 }

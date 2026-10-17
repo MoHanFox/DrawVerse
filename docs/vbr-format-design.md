@@ -215,6 +215,8 @@ wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明
 
 2026-10-18 VBR1.36高级纹理模式阶段：纹理mode新增`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`，覆盖率组合为标量近似；非默认新模式要求state30/VBR1.36，35及以下拒绝。Schema为`contracts/vbr-texture-modes-v1.36.schema.json`，ABR `BlnM` 代码`linearBurn`/`CDdg`/`linearDodge`/`Ovrl`/`SftL`/`HrdL`/`Xclu`/`hardMix`已映射。其余未定义模式继续后续。
 
+2026-10-18 VBR1.37纹理模式补全阶段：纹理mode新增`vividLight`、`linearLight`、`pinLight`、`divide`，覆盖率组合为标量近似；非默认新模式要求state31/VBR1.37，36及以下拒绝。Schema为`contracts/vbr-texture-modes-v1.37.schema.json`，ABR `BlnM` 代码`vividLight`/`linearLight`/`pinLight`/`blendDivide`已映射。Dissolve/Hue/Saturation/Color/Luminosity等颜色或随机模式仍不执行。
+
 ## VBR1.30：速度动态
 
 `parameters.speedDynamics` 使用 `speed-v1`，必填 `enabled`、`maxSpeed`（1–100000 px/s）以及 `size`/`flow`/`opacity` 三条控制曲线。每条控制包含 2–17 个 `(0..1,0..1)` 节点、0–1 最低比例和可选 `smooth-pchip-v1`；缺省插值保持线性。关闭状态也完整保留。对象要求 `drawverse.brush`、behavior19、`speed-dynamics` 能力和 manifest minor30，state24；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。

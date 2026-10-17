@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新纹理模式补全：`docs/brush-texture-mode-design.md` / `docs/brush-texture-mode-validation.md`；在已有16种基础上新增`vividLight`、`linearLight`、`pinLight`、`divide`，总计20种覆盖率组合，state31/VBR1.37门控；ABR `BlnM` 对应代码及Qt下拉/状态重开/纹理与ABR回归通过，严格Clippy通过。Dissolve/Hue/Saturation/Color/Luminosity、16位笔尖和完整PS像素核对仍待后续。
+
 - 最新高级纹理模式：`docs/brush-texture-mode-design.md` / `docs/brush-texture-mode-validation.md`；新增`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`八种覆盖率组合，总计16种，state30/VBR1.36门控；ABR `BlnM` 的`linearBurn`/`CDdg`/`linearDodge`/`Ovrl`/`SftL`/`HrdL`/`Xclu`/`hardMix`已映射，真实ABR导入、Qt下拉/状态重开、严格Clippy通过。其他未定义模式、16位笔尖和完整PS像素核对仍待后续。
 
 - 最新笔触方向动态：`docs/brush-direction-design.md` / `docs/brush-direction-validation.md`；`direction-v1`把输入段方向角按整圈归一化后驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，无位移时保持恒等，默认关闭；state29/VBR1.35/behavior24及Qt“传递”页开关/曲线接通，真实像素、保存重开和QML绑定通过。ABR方向/渐隐来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。

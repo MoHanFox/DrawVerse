@@ -77,6 +77,10 @@ impl TextureParameters {
                 TextureMode::HardLight => "hardLight",
                 TextureMode::Exclusion => "exclusion",
                 TextureMode::HardMix => "hardMix",
+                TextureMode::VividLight => "vividLight",
+                TextureMode::LinearLight => "linearLight",
+                TextureMode::PinLight => "pinLight",
+                TextureMode::Divide => "divide",
             }
             .into(),
             scale: f64::from(s.scale()).max(0.01),
@@ -118,6 +122,12 @@ impl TextureParameters {
                 | "hardMix"
         )
     }
+    pub fn requires_vbr_31(&self) -> bool {
+        matches!(
+            self.mode.as_str(),
+            "vividLight" | "linearLight" | "pinLight" | "divide"
+        )
+    }
     pub fn validate(&self) -> Result<()> {
         if self.model != "periodic-coverage-v1"
             || !matches!(self.space.as_str(), "document" | "tip")
@@ -139,6 +149,10 @@ impl TextureParameters {
                     | "hardLight"
                     | "exclusion"
                     | "hardMix"
+                    | "vividLight"
+                    | "linearLight"
+                    | "pinLight"
+                    | "divide"
             )
             || !self.scale.is_finite()
             || !(0.01..=100.).contains(&self.scale)
@@ -190,6 +204,10 @@ impl TextureParameters {
             "hardLight" => TextureMode::HardLight,
             "exclusion" => TextureMode::Exclusion,
             "hardMix" => TextureMode::HardMix,
+            "vividLight" => TextureMode::VividLight,
+            "linearLight" => TextureMode::LinearLight,
+            "pinLight" => TextureMode::PinLight,
+            "divide" => TextureMode::Divide,
             _ => TextureMode::Normal,
         };
         let settings = TextureSettings::new(

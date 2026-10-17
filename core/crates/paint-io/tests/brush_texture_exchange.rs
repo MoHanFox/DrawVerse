@@ -331,6 +331,55 @@ fn advanced_texture_mode_requires_vbr136_and_state30() {
 }
 
 #[test]
+fn latest_texture_mode_requires_vbr137_and_state31() {
+    let token = CancellationToken::default();
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().join("assets"), MAX_CATALOG_MASK_BYTES).unwrap();
+    let png = encode_mask(&BrushMask::new(2, 1, vec![64, 192]).unwrap()).unwrap();
+    let id = hash(&png);
+    store.put_verified(&id, &png, &token).unwrap();
+    let mask = store.load(&id, &token).unwrap().mask;
+    let s = BrushSettings {
+        diameter: 16.,
+        opacity: 0.5,
+        spacing: 0.1,
+        mask: Some(mask.clone()),
+        texture: BrushTexture::new(
+            true,
+            TextureSettings::new(TextureSpace::Tip, 1., 0., 0.75, false, 0., 0.)
+                .unwrap()
+                .with_mode(TextureMode::VividLight),
+            Some(Arc::new(TextureResource::new(mask))),
+        )
+        .unwrap(),
+        ..Default::default()
+    };
+    let bundle = ImageBundle::new(package(&s, &id), BTreeMap::from([(id, png)]), &token).unwrap();
+    let bytes = vbr_image::encode(&bundle, &token).unwrap();
+    let manifest: serde_json::Value = {
+        let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
+    };
+    assert_eq!(manifest["version"]["minor"], 37);
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 36), &token).is_err());
+
+    let mut catalog = BrushCatalog::default();
+    catalog.edit("round-pressure", s).unwrap();
+    let state = brush_state::encode(&catalog).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&state).unwrap();
+    assert_eq!(value["version"], 31);
+    let mut old = value;
+    old["version"] = 30.into();
+    assert!(brush_state::decode_with_resources(
+        &serde_json::to_vec(&old).unwrap(),
+        MAX_CATALOG_MASK_BYTES,
+        &store,
+        &token
+    )
+    .is_err());
+}
+
+#[test]
 fn texture_adjustments_require_vbr126_and_roundtrip_real_pixels() {
     let token = CancellationToken::default();
     let temp = tempfile::tempdir().unwrap();
@@ -527,6 +576,24 @@ fn published_advanced_texture_contract_lists_vbr136_modes() {
         "exclusion",
         "hardMix",
     ] {
+        assert!(modes.contains(&serde_json::json!(mode)), "missing {mode}");
+    }
+}
+
+#[test]
+fn published_latest_texture_contract_lists_vbr137_modes() {
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../contracts/vbr-texture-modes-v1.37.schema.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        schema["$defs"]["manifest"]["properties"]["version"]["properties"]["minor"]["const"],
+        37
+    );
+    let modes = schema["$defs"]["texture"]["properties"]["mode"]["enum"]
+        .as_array()
+        .unwrap();
+    for mode in ["vividLight", "linearLight", "pinLight", "divide"] {
         assert!(modes.contains(&serde_json::json!(mode)), "missing {mode}");
     }
 }
