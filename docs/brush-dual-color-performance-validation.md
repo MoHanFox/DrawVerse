@@ -28,4 +28,4 @@
 
 下一阶段接通双色原生/Qt入口、自动描边预设和复合光标。非分隔逐印章模型、收尖、湿混、高级ABR和完整设备/跨平台验收仍未完成。
 
-2026-10-18普通混合快路径：新增`normal_composition_matches_two_step_reference`，两种前后顺序及透明/部分/完整覆盖均与逐次`blend_pixel`参考一致。`brush_dual_color_performance` 同命令六组RGBA摘要全部保持；本次中位数约8.24–11.32ms，之前约8.72–12.94ms，属于同机固定CPU场景，不能外推为所有笔刷或Qt延迟。
+2026-10-18首层混合快路径：新增`normal_composition_matches_two_step_reference`及`non_dissolve_first_blend_fast_path_matches_reference_for_all_modes`；27种模式、两种前后顺序及透明/部分/完整覆盖均与逐次`blend_pixel`参考一致，第一层`Dissolve`保持原随机路径。`brush_dual_color_performance` 同命令六组RGBA摘要全部保持；两次快路径中位数约8.2–11.6ms，之前约8.7–12.9ms，属于同机固定CPU场景，不能外推为所有笔刷或Qt延迟。

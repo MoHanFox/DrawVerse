@@ -156,13 +156,32 @@ impl DualColor {
         position: (u32, u32),
         seed: u64,
     ) -> Pixel {
-        if self.primary_blend == BlendMode::Normal && self.secondary_blend == BlendMode::Normal {
-            return match self.order {
-                DualColorOrder::SecondBehind => primary.over(secondary),
-                DualColorOrder::SecondInFront => secondary.over(primary),
-            };
-        }
         let (x, y) = position;
+        // A non-dissolve blend over a transparent destination is exactly its
+        // source. Skip that first blend; dissolve still needs the original
+        // two-stage path because its hash can discard the source.
+        if self.order == DualColorOrder::SecondBehind && self.secondary_blend != BlendMode::Dissolve
+        {
+            return crate::blend_pixel(
+                primary,
+                secondary,
+                self.primary_blend,
+                x,
+                y,
+                seed ^ 0x6475616c2d6d6169,
+            );
+        }
+        if self.order == DualColorOrder::SecondInFront && self.primary_blend != BlendMode::Dissolve
+        {
+            return crate::blend_pixel(
+                secondary,
+                primary,
+                self.secondary_blend,
+                x,
+                y,
+                seed ^ 0x6475616c2d736563,
+            );
+        }
         let main = |dst| {
             crate::blend_pixel(
                 primary,
@@ -271,6 +290,74 @@ mod tests {
                         99,
                     )
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn non_dissolve_first_blend_fast_path_matches_reference_for_all_modes() {
+        const MODES: [BlendMode; 27] = [
+            BlendMode::Normal,
+            BlendMode::Dissolve,
+            BlendMode::Darken,
+            BlendMode::Multiply,
+            BlendMode::ColorBurn,
+            BlendMode::LinearBurn,
+            BlendMode::DarkerColor,
+            BlendMode::Lighten,
+            BlendMode::Screen,
+            BlendMode::ColorDodge,
+            BlendMode::LinearDodge,
+            BlendMode::LighterColor,
+            BlendMode::Overlay,
+            BlendMode::SoftLight,
+            BlendMode::HardLight,
+            BlendMode::VividLight,
+            BlendMode::LinearLight,
+            BlendMode::PinLight,
+            BlendMode::HardMix,
+            BlendMode::Difference,
+            BlendMode::Exclusion,
+            BlendMode::Subtract,
+            BlendMode::Divide,
+            BlendMode::Hue,
+            BlendMode::Saturation,
+            BlendMode::Color,
+            BlendMode::Luminosity,
+        ];
+        let primary = Pixel::from_straight([0.8, 0.2, 0.1, 0.7]).unwrap();
+        let secondary = Pixel::from_straight([0.1, 0.3, 0.8, 0.6]).unwrap();
+        for order in [DualColorOrder::SecondBehind, DualColorOrder::SecondInFront] {
+            for primary_blend in MODES {
+                for secondary_blend in MODES {
+                    let settings =
+                        DualColor::new(true, false, true, order, primary_blend, secondary_blend)
+                            .unwrap();
+                    for (primary_coverage, secondary_coverage) in
+                        [(1., 1.), (0.75, 0.5), (0.2, 0.9), (0., 0.4), (0.4, 0.)]
+                    {
+                        assert_eq!(
+                            settings.compose(
+                                primary,
+                                primary_coverage,
+                                secondary,
+                                secondary_coverage,
+                                (12, 34),
+                                99,
+                            ),
+                            reference(
+                                settings,
+                                primary,
+                                primary_coverage,
+                                secondary,
+                                secondary_coverage,
+                                (12, 34),
+                                99,
+                            ),
+                            "{order:?} {primary_blend:?} {secondary_blend:?} {primary_coverage} {secondary_coverage}"
+                        );
+                    }
+                }
             }
         }
     }
