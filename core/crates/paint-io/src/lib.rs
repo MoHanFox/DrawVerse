@@ -2,6 +2,7 @@
 pub mod abr_association;
 pub mod abr_conversion;
 pub mod abr_import;
+pub mod abr_patterns;
 pub mod abr_sampled;
 pub mod brush_color_dynamics;
 pub mod brush_dual;

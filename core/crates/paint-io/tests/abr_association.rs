@@ -55,6 +55,8 @@ fn source() -> SectionedAbr {
             trailing_metadata: vec![].into(),
         }],
         metadata: Vec::new(),
+        patterns: Default::default(),
+        texture_presets: Default::default(),
     }
 }
 #[test]

@@ -235,6 +235,8 @@ pub struct SectionedAbr {
     pub subversion: u16,
     pub tips: Vec<SectionedTip>,
     pub metadata: Vec<OpaqueSection>,
+    pub patterns: std::collections::BTreeMap<String, crate::abr_patterns::PatternResource>,
+    pub texture_presets: std::collections::BTreeMap<usize, crate::abr_patterns::TextureSource>,
 }
 impl SectionedAbr {
     /// Parse all descriptor sections explicitly; sampling alone proves no setting support.
@@ -352,11 +354,14 @@ pub fn decode_sectioned(bytes: &[u8], token: &CancellationToken) -> Result<Secti
     if tips.is_empty() && !metadata.iter().any(|section| &section.key == b"desc") {
         return Err(Error::Invalid("ABR missing sampled tips"));
     }
+    let textures = crate::abr_patterns::decode(bytes, &metadata, resident, token)?;
     check(token)?;
     Ok(SectionedAbr {
         version,
         subversion,
         tips,
         metadata,
+        patterns: textures.patterns,
+        texture_presets: textures.presets,
     })
 }

@@ -1,0 +1,273 @@
+//! Bounded ABR `patt` resource decoding and descriptor-to-pattern association.
+use crate::{check, Error, Result};
+use paint_core::{BrushMask, MAX_BRUSH_MASK_EDGE, MAX_CATALOG_MASK_BYTES};
+use paint_task::CancellationToken;
+use std::{collections::BTreeMap, sync::Arc};
+
+#[derive(Clone)]
+pub struct PatternResource {
+    pub id: String,
+    pub mask: Arc<BrushMask>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextureSource {
+    pub pattern_id: String,
+    pub depth: f32,
+    pub scale: f32,
+    pub invert: bool,
+    pub each_tip: bool,
+    pub mode: String,
+}
+
+pub struct DecodedTextures {
+    pub patterns: BTreeMap<String, PatternResource>,
+    pub presets: BTreeMap<usize, TextureSource>,
+}
+
+fn be_u32(bytes: &[u8], offset: usize) -> Result<u32> {
+    Ok(u32::from_be_bytes(
+        bytes
+            .get(offset..offset + 4)
+            .ok_or(Error::Invalid("truncated ABR pattern"))?
+            .try_into()
+            .expect("checked four bytes"),
+    ))
+}
+
+fn skip(offset: &mut usize, amount: usize, end: usize) -> Result<()> {
+    *offset = offset
+        .checked_add(amount)
+        .filter(|next| *next <= end)
+        .ok_or(Error::Invalid("truncated ABR pattern header"))?;
+    Ok(())
+}
+
+fn preflight_pattern_records(
+    data: &[u8],
+    token: &CancellationToken,
+    channel_budget: &mut usize,
+) -> Result<()> {
+    let mut at = 0usize;
+    while at + 4 <= data.len() {
+        check(token)?;
+        let length = be_u32(data, at)? as usize;
+        let start = at
+            .checked_add(4)
+            .ok_or(Error::Limit("ABR pattern offset"))?;
+        let end = start
+            .checked_add(length)
+            .filter(|end| *end <= data.len())
+            .ok_or(Error::Invalid("truncated ABR pattern record"))?;
+        let record = &data[start..end];
+        let mut pos = 0usize;
+        let mode = be_u32(record, pos + 4)?;
+        skip(&mut pos, 12, end_record(record))?;
+        let name_units = be_u32(record, pos)? as usize;
+        if name_units > 1024 * 1024 {
+            return Err(Error::Limit("ABR pattern name"));
+        }
+        pos += 4;
+        skip(
+            &mut pos,
+            name_units
+                .checked_mul(2)
+                .ok_or(Error::Limit("ABR pattern name"))?,
+            record.len(),
+        )?;
+        let id_len = *record
+            .get(pos)
+            .ok_or(Error::Invalid("ABR pattern identity"))? as usize;
+        pos += 1;
+        if id_len == 0
+            || id_len > 128
+            || !record
+                .get(pos..pos + id_len)
+                .is_some_and(|id| id.is_ascii() && !id.contains(&0))
+        {
+            return Err(Error::Invalid("ABR pattern identity"));
+        }
+        pos += id_len;
+        if mode == 2 {
+            skip(&mut pos, 772, record.len())?;
+        }
+        skip(&mut pos, 28, record.len())?;
+        while pos + 4 <= record.len() {
+            check(token)?;
+            let written = be_u32(record, pos)?;
+            pos += 4;
+            if written == 0 {
+                continue;
+            }
+            let array_len = be_u32(record, pos)? as usize;
+            pos += 4;
+            if array_len < 23 {
+                return Err(Error::Invalid("ABR pattern channel length"));
+            }
+            let body_end = pos
+                .checked_add(array_len)
+                .filter(|end| *end <= record.len())
+                .ok_or(Error::Invalid("truncated ABR pattern channel"))?;
+            let top = be_u32(record, pos + 4)?;
+            let left = be_u32(record, pos + 8)?;
+            let bottom = be_u32(record, pos + 12)?;
+            let right = be_u32(record, pos + 16)?;
+            let width = right
+                .checked_sub(left)
+                .ok_or(Error::Invalid("ABR pattern channel bounds"))?;
+            let height = bottom
+                .checked_sub(top)
+                .ok_or(Error::Invalid("ABR pattern channel bounds"))?;
+            if width == 0
+                || height == 0
+                || width > MAX_BRUSH_MASK_EDGE
+                || height > MAX_BRUSH_MASK_EDGE
+            {
+                return Err(Error::Limit("ABR pattern channel dimensions"));
+            }
+            let count = (width as usize)
+                .checked_mul(height as usize)
+                .ok_or(Error::Limit("ABR pattern pixels"))?;
+            *channel_budget = channel_budget
+                .checked_add(count)
+                .ok_or(Error::Limit("ABR pattern decode budget"))?;
+            if *channel_budget > MAX_CATALOG_MASK_BYTES {
+                return Err(Error::Limit("ABR pattern decode budget"));
+            }
+            pos = body_end;
+        }
+        at = end
+            .checked_add((4 - length % 4) % 4)
+            .ok_or(Error::Limit("ABR pattern offset"))?;
+        if at > data.len() {
+            return Err(Error::Invalid("ABR pattern padding"));
+        }
+    }
+    if at != data.len() {
+        return Err(Error::Invalid("ABR pattern trailing bytes"));
+    }
+    Ok(())
+}
+
+fn end_record(record: &[u8]) -> usize {
+    record.len()
+}
+
+fn map_mode(id: Option<&str>) -> Result<String> {
+    let mode = match id {
+        None | Some("Nrml") | Some("normal") => "normal",
+        Some("Mltp") | Some("multiply") => "multiply",
+        Some("Drkn") | Some("darken") => "darken",
+        Some("Lghn") | Some("lighten") => "lighten",
+        Some("Sbtr") | Some("subtract") => "subtract",
+        Some("Dfrn") | Some("difference") => "difference",
+        Some("Scrn") | Some("screen") => "screen",
+        _ => return Err(Error::Unsupported("ABR texture blend mode".into())),
+    };
+    Ok(mode.into())
+}
+
+pub fn decode(
+    bytes: &[u8],
+    sections: &[crate::abr_sampled::OpaqueSection],
+    tip_resident: usize,
+    token: &CancellationToken,
+) -> Result<DecodedTextures> {
+    check(token)?;
+    let mut channel_budget = 0usize;
+    for section in sections.iter().filter(|section| &section.key == b"patt") {
+        preflight_pattern_records(&section.bytes, token, &mut channel_budget)?;
+    }
+    if tip_resident.saturating_add(channel_budget) > MAX_CATALOG_MASK_BYTES {
+        return Err(Error::Limit("ABR tips and texture decode budget"));
+    }
+    let pack = brushkit_abr::parse_abr_deferred(bytes)
+        .map_err(|_| Error::Invalid("ABR texture parsing"))?
+        .pack;
+    let mut patterns = BTreeMap::new();
+    let mut resident = tip_resident;
+    for pattern in pack.patterns {
+        check(token)?;
+        if pattern.gray.len() != (pattern.width as usize).saturating_mul(pattern.height as usize)
+            || pattern.mode == 0
+        {
+            return Err(Error::Invalid("ABR texture pixels"));
+        }
+        let mask = Arc::new(BrushMask::new(pattern.width, pattern.height, pattern.gray)?);
+        resident = resident
+            .checked_add(mask.resident_bytes())
+            .ok_or(Error::Limit("ABR texture resource budget"))?;
+        if resident > MAX_CATALOG_MASK_BYTES {
+            return Err(Error::Limit("ABR texture resource budget"));
+        }
+        let id = pattern.id;
+        if patterns
+            .insert(id.clone(), PatternResource { id, mask })
+            .is_some()
+        {
+            return Err(Error::Invalid("duplicate ABR texture identity"));
+        }
+    }
+    let mut presets = BTreeMap::new();
+    for brush in pack.brushes {
+        check(token)?;
+        if let Some(index) = brush.preset_index {
+            if let Some(pattern_id) = brush.descriptor.texture_pattern_id {
+                let depth = brush.descriptor.texture_depth_pct.unwrap_or(0.);
+                let scale = brush.descriptor.texture_scale_pct.unwrap_or(100.);
+                if !depth.is_finite()
+                    || !(0. ..=100.).contains(&depth)
+                    || !scale.is_finite()
+                    || !(1. ..=10000.).contains(&scale)
+                {
+                    return Err(Error::Invalid("ABR texture parameters"));
+                }
+                if !patterns.contains_key(&pattern_id) {
+                    return Err(Error::Invalid("ABR texture pattern reference"));
+                }
+                presets.insert(
+                    index,
+                    TextureSource {
+                        pattern_id,
+                        depth: (depth / 100.) as f32,
+                        scale: (scale / 100.) as f32,
+                        invert: brush.descriptor.texture_invert.unwrap_or(false),
+                        each_tip: brush.descriptor.texture_each_tip.unwrap_or(true),
+                        mode: map_mode(brush.descriptor.texture_blend_mode.as_deref())?,
+                    },
+                );
+            }
+        }
+    }
+    for preset in pack.computed_presets {
+        check(token)?;
+        if let (Some(index), Some(pattern_id)) =
+            (preset.preset_index, preset.descriptor.texture_pattern_id)
+        {
+            let depth = preset.descriptor.texture_depth_pct.unwrap_or(0.);
+            let scale = preset.descriptor.texture_scale_pct.unwrap_or(100.);
+            if !depth.is_finite()
+                || !(0. ..=100.).contains(&depth)
+                || !scale.is_finite()
+                || !(1. ..=10000.).contains(&scale)
+            {
+                return Err(Error::Invalid("ABR texture parameters"));
+            }
+            if !patterns.contains_key(&pattern_id) {
+                return Err(Error::Invalid("ABR texture pattern reference"));
+            }
+            presets.insert(
+                index,
+                TextureSource {
+                    pattern_id,
+                    depth: (depth / 100.) as f32,
+                    scale: (scale / 100.) as f32,
+                    invert: preset.descriptor.texture_invert.unwrap_or(false),
+                    each_tip: preset.descriptor.texture_each_tip.unwrap_or(true),
+                    mode: map_mode(preset.descriptor.texture_blend_mode.as_deref())?,
+                },
+            );
+        }
+    }
+    Ok(DecodedTextures { patterns, presets })
+}
