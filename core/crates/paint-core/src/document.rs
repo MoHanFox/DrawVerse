@@ -452,6 +452,7 @@ struct Stroke {
     dual_last: InputPoint,
     airbrush_last_ns: u64,
     airbrush_tick: bool,
+    speed: f32,
     dual_coverage: BTreeMap<TileCoord, Arc<Tile>>,
     stamp_field: BTreeMap<TileCoord, Arc<Tile>>,
     wet_primary_field: BTreeMap<TileCoord, Arc<Tile>>,
@@ -1365,6 +1366,7 @@ impl Document {
             dual_last: first,
             airbrush_last_ns: first.timestamp_ns,
             airbrush_tick: false,
+            speed: 0.,
             dual_coverage: BTreeMap::new(),
             stamp_field: BTreeMap::new(),
             wet_primary_field: BTreeMap::new(),
@@ -1484,6 +1486,7 @@ impl Document {
         stroke.last = point;
         stroke.airbrush_last_ns = point.timestamp_ns;
         stroke.airbrush_tick = true;
+        stroke.speed = 0.;
         let mut changed = false;
         if secondary {
             if let Err(error) = self.secondary_dab(&mut stroke, point) {
@@ -1592,6 +1595,12 @@ impl Document {
             return Err(Error::InvalidArgument("tablet time must be monotonic"));
         }
         let distance = (point.x - current.last.x).hypot(point.y - current.last.y);
+        let elapsed_ns = point.timestamp_ns.saturating_sub(current.last.timestamp_ns);
+        let speed = if distance > 1e-9 && elapsed_ns > 0 {
+            (distance / (elapsed_ns as f64 / 1_000_000_000.)).min(1_000_000.) as f32
+        } else {
+            0.
+        };
         let stationary_pressure = Self::stationary_primary(current, current.last, point);
         let step = current.brush.step();
         let count = if distance + 1e-9 < current.distance_to_next {
@@ -1616,6 +1625,7 @@ impl Document {
             current.wet.as_ref().map_or(0, |w| w.work_per_dab),
         )?;
         let mut stroke = self.stroke.take().expect("checked active stroke");
+        stroke.speed = speed;
         if distance > 1e-9 {
             stroke.direction = Some((point.y - stroke.last.y).atan2(point.x - stroke.last.x));
         }
@@ -1996,6 +2006,7 @@ impl Document {
             .dual_index
             .checked_add(1)
             .ok_or(Error::ResourceLimit("secondary dab serial exhausted"))?;
+        let speed_size = stroke.program.speed_factors(stroke.speed).0;
         let plan = dual
             .dab(
                 point,
@@ -2011,7 +2022,8 @@ impl Document {
                         } else {
                             1.
                         },
-                ),
+                ) * f64::from(speed_size),
+                f64::from(speed_size),
             )
             .scaled(stroke.taper_factors.diameter);
         #[cfg(test)]
@@ -2246,6 +2258,7 @@ impl Document {
         stroke: &mut Stroke,
         point: InputPoint,
     ) -> Result<bool> {
+        let (speed_size, speed_flow, speed_opacity) = stroke.program.speed_factors(stroke.speed);
         let base_radius = f64::from(
             stroke.brush.radius
                 * stroke.shape_sample.size
@@ -2254,13 +2267,16 @@ impl Document {
                 } else {
                     1.
                 },
-        );
+        ) * f64::from(speed_size);
         let radius = base_radius * f64::from(stroke.taper_factors.diameter);
         let pressure_opacity = stroke
             .program
             .opacity_pressure(point.pressure)
-            .map(|p| p * stroke.taper_factors.opacity)
-            .or_else(|| stroke.taper.as_ref().map(|_| stroke.taper_factors.opacity));
+            .map(|p| p * stroke.taper_factors.opacity * speed_opacity)
+            .or_else(|| {
+                (stroke.taper.is_some() || speed_opacity != 1.)
+                    .then_some(stroke.taper_factors.opacity * speed_opacity)
+            });
         let paper_texture = TEXTURED
             && stroke
                 .program
@@ -2298,7 +2314,8 @@ impl Document {
                 stroke.taper_factors.opacity
             } else {
                 1.
-            };
+            }
+            * speed_flow;
         if radius == 0. {
             if let Some(wet) = &mut stroke.wet {
                 wet.carrier.reset_path()?;
@@ -2336,6 +2353,7 @@ impl Document {
                         stroke.random_index.saturating_sub(1),
                         stroke.random_child,
                         base_radius,
+                        f64::from(speed_size),
                     )
                     .scaled(stroke.taper_factors.diameter),
             )
@@ -3480,6 +3498,7 @@ mod dual_sizing_tests {
             0,
             0,
             radius,
+            1.,
         );
         for y in 0..64 {
             for x in 0..64 {

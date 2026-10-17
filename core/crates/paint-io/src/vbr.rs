@@ -63,6 +63,12 @@ pub struct Parameters {
         deserialize_with = "crate::brush_airbrush::present"
     )]
     pub airbrush: Option<crate::brush_airbrush::AirbrushParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_speed::present"
+    )]
+    pub speed_dynamics: Option<crate::brush_speed::SpeedParameters>,
 }
 impl Parameters {
     pub fn definition(&self) -> BrushDefinition {
@@ -86,6 +92,11 @@ impl Parameters {
         if let Some(color) = self.color_dynamics {
             dynamics.color = color.core();
         }
+        dynamics.speed = self
+            .speed_dynamics
+            .as_ref()
+            .map(|p| p.core())
+            .unwrap_or_default();
         BrushSettings {
             taper: Default::default(),
             wet: Default::default(),
@@ -271,6 +282,7 @@ impl Package {
             let shape = b.parameters.shape_jitter.is_some();
             let color = b.parameters.color_dynamics.is_some();
             let airbrush = b.parameters.airbrush.is_some();
+            let speed = b.parameters.speed_dynamics.is_some();
             let textured = b.texture.is_some();
             let dual = b.dual_brush.is_some();
             if let Some(d) = &b.dual_brush {
@@ -299,7 +311,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if airbrush {
+                != if speed {
+                    19
+                } else if airbrush {
                     18
                 } else if b.has_interleaved_color() {
                     17
@@ -343,7 +357,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 21
+            if b.required_capabilities.len() > 22
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -365,6 +379,7 @@ impl Package {
                             | "dual-color-stroke"
                             | "dual-color-stamp"
                             | "airbrush"
+                            | "speed-dynamics"
                             | "wet-mix"
                             | "stroke-taper"
                             | "wet-dual-color"
@@ -401,6 +416,11 @@ impl Package {
                 || (b.has_interleaved_color() && b.engine_profile != "drawverse.brush")
                 || airbrush != b.required_capabilities.iter().any(|c| c == "airbrush")
                 || (airbrush && b.engine_profile != "drawverse.brush")
+                || speed
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "speed-dynamics")
+                || (speed && b.engine_profile != "drawverse.brush")
                 || (b.has_dual_sizing()
                     && (b.engine_profile != "drawverse.brush"
                         || !b

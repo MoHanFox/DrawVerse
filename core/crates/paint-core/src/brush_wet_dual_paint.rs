@@ -67,6 +67,7 @@ impl Document {
     ) -> Result<()> {
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
+        let (speed_size, _, speed_opacity) = program.speed_factors(stroke.speed);
         let next = stroke
             .dual_index
             .checked_add(1)
@@ -79,7 +80,7 @@ impl Document {
                 } else {
                     1.
                 },
-        );
+        ) * f64::from(speed_size);
         let plan = dual
             .dab(
                 point,
@@ -88,10 +89,12 @@ impl Document {
                 stroke.dual_index,
                 0,
                 radius,
+                f64::from(speed_size),
             )
             .scaled(stroke.taper_factors.diameter);
-        let limit =
-            program.opacity_pressure(point.pressure).unwrap_or(1.) * stroke.taper_factors.opacity;
+        let limit = program.opacity_pressure(point.pressure).unwrap_or(1.)
+            * stroke.taper_factors.opacity
+            * speed_opacity;
         let mut changed = false;
         for child in 0..plan.count() {
             changed |= self.wet_secondary_child(stroke, &plan, child, limit)?;
@@ -110,6 +113,7 @@ impl Document {
     ) -> Result<bool> {
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
+        let (speed_size, speed_flow, speed_opacity) = program.speed_factors(stroke.speed);
         let base_radius = f64::from(
             stroke.brush.radius
                 * stroke.shape_sample.size
@@ -118,10 +122,11 @@ impl Document {
                 } else {
                     1.
                 },
-        );
+        ) * f64::from(speed_size);
         let radius = base_radius * f64::from(stroke.taper_factors.diameter);
-        let limit =
-            program.opacity_pressure(point.pressure).unwrap_or(1.) * stroke.taper_factors.opacity;
+        let limit = program.opacity_pressure(point.pressure).unwrap_or(1.)
+            * stroke.taper_factors.opacity
+            * speed_opacity;
         let mut changed = false;
         if radius <= 0. {
             stroke
@@ -175,7 +180,8 @@ impl Document {
                     program.flow_pressure(point.pressure)
                 } else {
                     1.
-                };
+                }
+                * speed_flow;
             let appearance = self.layers[self.layer_index(stroke.layer)?].appearance;
             let offset = (
                 i64::from(appearance.offset_x),
@@ -216,6 +222,7 @@ impl Document {
                     stroke.random_index.saturating_sub(1),
                     stroke.random_child,
                     base_radius,
+                    f64::from(speed_size),
                 )
                 .scaled(stroke.taper_factors.diameter);
             for child in 0..plan.count() {

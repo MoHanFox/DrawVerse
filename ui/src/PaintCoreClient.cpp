@@ -603,6 +603,7 @@ public:
             if(tip.value("wetMix").toMap().contains("dualColor"))state["version"]=19;
             if(tip.value("dualBrush").toMap().value("color").toMap().value("model").toString()=="interleaved-stamp-v1")state["version"]=std::max(state.value("version").toInt(),22);
             const auto air=tip.value("airbrush").toMap();if(air.value("enabled").toBool() || (air.contains("intervalMs") && std::abs(air.value("intervalMs").toDouble()-50.)>1e-9))state["version"]=std::max(state.value("version").toInt(),23);
+            if(tip.value("speedDynamics").toMap().contains("enabled"))state["version"]=std::max(state.value("version").toInt(),24);
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state_wet_dual(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;

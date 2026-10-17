@@ -135,6 +135,12 @@ struct Row {
         deserialize_with = "crate::brush_airbrush::present"
     )]
     airbrush: Option<crate::brush_airbrush::AirbrushParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_speed::present"
+    )]
+    speed_dynamics: Option<crate::brush_speed::SpeedParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -202,7 +208,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=23) {
+    if !matches!(state.version, 1..=24) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -320,6 +326,9 @@ fn decode_inner(
         if row.airbrush.is_some() && state.version < 23 {
             return Err(Error::Unsupported("airbrush requires state23".into()));
         }
+        if row.speed_dynamics.is_some() && state.version < 24 {
+            return Err(Error::Unsupported("speed dynamics requires state24".into()));
+        }
         let dual = if let Some(d) = row.dual_brush {
             if d.has_color() && state.version < 16 {
                 return Err(Error::Unsupported("dual-color requires state16".into()));
@@ -419,6 +428,7 @@ fn decode_inner(
             return Err(Error::Unsupported("color dynamics require state10".into()));
         }
         dynamics.color = row.color_dynamics.map(|p| p.core()).unwrap_or_default();
+        dynamics.speed = row.speed_dynamics.map(|p| p.core()).unwrap_or_default();
         entries.push((
             row.id,
             row.name,
@@ -490,6 +500,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             version = version.max(23);
             Some(crate::brush_airbrush::AirbrushParameters::from_core(
                 s.airbrush,
+            ))
+        } else {
+            None
+        };
+        let speed_dynamics = if !s.dynamics.speed.is_default() {
+            version = version.max(24);
+            Some(crate::brush_speed::SpeedParameters::from_core(
+                s.dynamics.speed.clone(),
             ))
         } else {
             None
@@ -631,6 +649,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             wet_mix,
             stroke_taper,
             airbrush,
+            speed_dynamics,
         });
     }
     if organization.is_some() {

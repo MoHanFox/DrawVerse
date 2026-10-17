@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新速度动态：`docs/brush-speed-design.md` / `docs/brush-speed-validation.md`；`speed-v1`以文档像素/秒驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，默认关闭/2000 px/s，主笔尖和配对第二笔尖共享尺寸因子；state24/VBR1.30/behavior19及Qt“传递”页开关/上限/专用曲线接通，真实像素、双笔刷回归、保存重开和设置页交互通过。ABR速度来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。
+
 - 最新逐印章双色：`docs/brush-dual-stamp-design.md` / `docs/brush-dual-stamp-validation.md`；`interleaved-stamp-v1` 按主/第二印章顺序叠加且整笔不透明度一次，state22/VBR1.28/behavior17/ABI1.56及Qt设置/真实预览/像素/持久化接通。第二色固定使用背景色且无UI开关；橡皮和普通涂抹忽略颜色、手指绘画涂抹用双色，湿混下的涂抹/橡皮不处理。独立路径拒绝；无全量tools/check.py或跨平台验收。
 
 - 最新时间喷枪：`docs/brush-airbrush-design.md` / `docs/brush-airbrush-validation.md`；预设级`time-interval-v1`（1–1000ms，默认50）接通核心定时沉积、state23/VBR1.29/behavior18/ABI1.57及Qt计时器，按住不动逐tick加深且单历史；仅支持干画笔/橡皮，普通涂抹/湿混不启用。无全量tools/check.py或跨平台验收。

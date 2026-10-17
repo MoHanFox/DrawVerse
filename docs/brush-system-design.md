@@ -208,3 +208,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-17分组Qt状态阶段：BrushLibrary/Qt状态20完整镜像 ordered-tree-v1，严格错误保持、空组、复制/删除组织保持、平包/ABR根追加、重置基准和重启恢复已接；PaintCoreClient 的 native preparation 与持久化回写不丢 organization，画笔库面板已接只读树投影、层级缩进和搜索父组保留，Windows Release 与四项 Qt 最小测试通过，见[设计](brush-groups-qt-state-design.md)及[验收](brush-groups-qt-state-validation.md)。建组/改名/拖动/解组、分组包整树合并和范围导出仍待接；ABR 纹理资源和来源可保留，但内部纹理执行映射仍未完成。
 
 2026-10-18 ABR纹理阶段：本地有界`patt` 8/16位图案解码和预设索引关联、`TxtC`坐标空间、深度/缩放/反相、八种纹理覆盖模式（含VBR1.25 `CBrn`颜色加深）、VBR1.26亮度/对比度、VBR1.27纹理来源version2/逐印章深度动态与Qt来源恢复、资源哈希持久化、converterVersion8/handoff v7及Qt state11/21导入已接。真实图案笔触和历史、公开ABI、旧ABR及严格Clippy通过，见[验收](abr-texture-validation.md)。其余未定义模式和16位笔尖仍待后续，完整PS对照保持边界。
+
+2026-10-18速度动态阶段：`speed-v1`以文档像素/秒驱动尺寸、流量和整笔不透明度三条独立PCHIP/线性曲线，默认关闭/2000 px/s，主笔尖和配对第二笔尖尺寸共用速度因子，state24/VBR1.30/behavior19及`speed-dynamics`能力完整保存，Qt“传递”页提供开关、上限和专用曲线组件；真实像素、双笔刷回归、保存重开和设置页交互通过，见[设计](brush-speed-design.md)及[验收](brush-speed-validation.md)。ABR速度来源、任意动态来源矩阵、整体硬件手感及跨平台仍待后续。

@@ -396,6 +396,7 @@ impl CompiledDual {
     pub fn maximum_count(&self) -> usize {
         self.program.scatter.maximum_count()
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn dab(
         &self,
         point: InputPoint,
@@ -404,6 +405,7 @@ impl CompiledDual {
         logical: u64,
         primary: u32,
         primary_radius: f64,
+        size_scale: f64,
     ) -> DualDab<'_> {
         let stroke = stroke ^ crate::brush_random::mix(0xa4093822299f31d0 ^ u64::from(primary));
         let plan = self
@@ -432,7 +434,7 @@ impl CompiledDual {
                         } else {
                             1.
                         },
-                )
+                ) * size_scale
             };
             let geometry = self.program.dab_geometry(center, direction, shape);
             let mask = if radius > 0. && self.program.has_mask() {
@@ -585,7 +587,7 @@ mod sizing_tests {
                             let pose = compiled
                                 .cursor_pose(nominal, actual, point, true, None)
                                 .unwrap();
-                            let dab = compiled.dab(point, None, 17, 0, 0, f64::from(actual));
+                            let dab = compiled.dab(point, None, 17, 0, 0, f64::from(actual), 1.);
                             assert_eq!(
                                 pose.radius, dab.dabs[0].radius as f32,
                                 "{mode:?}/{rule:?}/{offset}/{nominal}/{pressure}"
@@ -600,6 +602,7 @@ mod sizing_tests {
                                 0,
                                 0,
                                 f64::from(nominal),
+                                1.,
                             );
                             assert_eq!(hover.radius, dab.dabs[0].radius as f32);
                         }
@@ -637,7 +640,15 @@ mod sizing_tests {
         assert_eq!(compiled.step(), Some(f64::from(24_f32 * 0.01)));
         assert!(compiled.pressure_changed(0.25, 1.));
         for actual in [0., 2., 6.25, 8.] {
-            let dab = compiled.dab(InputPoint::new(32.5, 32.5, 0.01), None, 19, 5, 0, actual);
+            let dab = compiled.dab(
+                InputPoint::new(32.5, 32.5, 0.01),
+                None,
+                19,
+                5,
+                0,
+                actual,
+                1.,
+            );
             assert_eq!(dab.dabs[0].radius, actual + 4.);
         }
         let lower = DualBrush::new(
@@ -653,7 +664,7 @@ mod sizing_tests {
         .unwrap();
         assert_eq!(
             lower
-                .dab(InputPoint::new(1., 1., 0.), None, 1, 0, 0, 0.)
+                .dab(InputPoint::new(1., 1., 0.), None, 1, 0, 0, 0., 1.)
                 .dabs[0]
                 .radius,
             0.5

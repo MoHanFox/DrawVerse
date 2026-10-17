@@ -1,6 +1,6 @@
 use crate::{
-    brush_dynamics::CompiledPressureControl, AngleControl, Brush, BrushDynamics, BrushMask, Error,
-    InputPoint, Result, TipDynamics,
+    brush_dynamics::{CompiledPressureControl, CompiledSpeedDynamics},
+    AngleControl, Brush, BrushDynamics, BrushMask, Error, InputPoint, Result, TipDynamics,
 };
 use std::sync::Arc;
 
@@ -99,6 +99,7 @@ pub struct BrushProgram {
     pub(crate) color: crate::ColorDynamics,
     pub(crate) texture: Option<crate::brush_texture::CompiledTexture>,
     pub(crate) dual: Option<crate::brush_dual::CompiledDual>,
+    speed: Option<CompiledSpeedDynamics>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -298,6 +299,7 @@ impl BrushProgram {
             color: definition.dynamics.color,
             texture: definition.texture.compile(),
             dual,
+            speed: definition.dynamics.speed.compile(),
         })
     }
 
@@ -319,6 +321,11 @@ impl BrushProgram {
                 .as_ref()
                 .map_or(pressure, |curve| curve.response(pressure))
         })
+    }
+    pub(crate) fn speed_factors(&self, speed: f32) -> (f32, f32, f32) {
+        self.speed
+            .as_ref()
+            .map_or((1., 1., 1.), |compiled| compiled.factors(speed))
     }
     #[inline]
     /// Base tip coverage; the document executor binds dual/texture dab operators.

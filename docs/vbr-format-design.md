@@ -4,6 +4,8 @@
 
 2026-10-18时间喷枪：VBR1.29新增parameters.airbrush=`time-interval-v1`（enabled、intervalMs 1–1000），behavior18及`airbrush`能力；旧VBR1.28不携带该对象。见[设计](brush-airbrush-design.md)、[验收](brush-airbrush-validation.md)及[Schema](../contracts/vbr-airbrush-v1.29.schema.json)。
 
+2026-10-18速度动态：VBR1.30新增parameters.speedDynamics=`speed-v1`，完整保存启用、最大速度和尺寸/流量/不透明度三条曲线，behavior19及`speed-dynamics`能力；旧VBR1.29不携带该对象。见[设计](brush-speed-design.md)、[验收](brush-speed-validation.md)及[Schema](../contracts/vbr-speed-v1.30.schema.json)。
+
 状态：2026-10-14，完整格式尚未冻结。已有1.0程序笔刷与1.1图片笔尖可执行子集，见 [程序阶段设计](vbr-procedural-design.md)、[图片阶段设计](vbr-image-design.md)、[程序Schema](../contracts/vbr-procedural-v1.schema.json) 与 [图片Schema](../contracts/vbr-image-v1.1.schema.json)。1.2来源IO及 [来源Schema](../contracts/vbr-source-v1.2.schema.json) 已有阶段实现，原生Qt交换及显式原ABR范围选项已接入，见 [来源IO验收](vbr-source-validation.md) / [来源入口验收](vbr-source-entry-validation.md)。压力曲线1.3与 [压力Schema](../contracts/vbr-pressure-v1.3.schema.json) 已有IO阶段实现，见 [压力IO验收](brush-pressure-io-validation.md)；Qt入口已接入。独立不透明度压感1.4与 [Schema](../contracts/vbr-opacity-v1.4.schema.json) 已接原生Qt，见 [设计](brush-opacity-pressure-design.md) / [验收](brush-opacity-pressure-validation.md)。设备几何1.5与 [Schema](../contracts/vbr-tip-dynamics-v1.5.schema.json) 已有IO阶段实现，见 [验收](brush-device-io-validation.md)；原生Qt入口已接入，见 [验收](brush-device-ui-validation.md)。散布1.6与 [Schema](../contracts/vbr-scatter-v1.6.schema.json) 已接IO，见 [验收](brush-scatter-io-validation.md)；原生Qt入口已接并解除临时拒绝，见 [验收](brush-scatter-ui-validation.md)。形状抖动1.7与 [Schema](../contracts/vbr-shape-jitter-v1.7.schema.json) 已有IO阶段实现，见 [验收](brush-shape-jitter-io-validation.md)；原生Qt已接并解除临时拒绝，见 [验收](brush-shape-jitter-ui-validation.md)。颜色动态1.8与 [Schema](../contracts/vbr-color-dynamics-v1.8.schema.json) 已接IO，显式linear-hsv-v1与工具颜色分离，见 [验收](brush-color-io-validation.md)；原生背景与Qt已接并解除临时拒绝，见 [验收](brush-color-ui-validation.md)。纹理1.9与 [Schema](../contracts/vbr-texture-v1.9.schema.json) 已接IO，预设级texture绑定覆盖PNG并共享周期mip，清单5120/ZIP6145边界，见 [验收](brush-texture-io-validation.md)；原生Qt设置和资源交换已接并解除库包临时拒绝，见 [验收](brush-texture-ui-validation.md)。双笔刷1.10与 [Schema](../contracts/vbr-dual-v1.10.schema.json) 已接IO，两模型/完整第二动态与四角色PNG并集、6144资源/7169ZIP边界，见 [验收](brush-dual-io-validation.md)；原生资源生命周期、Qt四子页和第二图片导入/资源交换已接，见 [验收](brush-dual-ui-validation.md)；库包临时拒绝解除，组合轮廓与PS核验继续后续。分组/其他高级动态和扩展仍是拟议范围；读写器拒绝未实施模块。完整格式发布前按 [笔刷验收计划](brush-system-validation.md) 冻结版本。
 
 VBR 作为 DrawVerse 的公开、跨平台笔刷交换格式，与工程文件分离。一个文件可以包含一个笔刷或一个带分组的笔刷包，均使用 `.vbr` 扩展名。不依赖源 ABR 路径、系统字体、Qt 对象或开发机目录。
@@ -200,3 +202,9 @@ wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明
 2026-10-18 VBR1.26纹理调整阶段：纹理对象新增可选`brightness`/`contrast`（-1..1，默认0），在采样后按亮度和中间灰对比度调整覆盖率；非默认值要求state21/VBR1.26，旧state/VBR缺省字节保持。Schema为`contracts/vbr-texture-adjustments-v1.26.schema.json`。ABR `textureBrightness`/`textureContrast`已映射；`minimumDepth`、深度动态、16位图案及其他未定义模式继续后续。
 
 2026-10-18 VBR1.27纹理来源阶段：带非默认纹理的ABR来源记录升为version2，保存完整`TextureParameters`和资源身份；旧记录version1及原字节保持。包含v2来源或非默认深度动态时最低minor27，26及以下拒绝。纹理对象增加可选`minimumDepth`/`depthJitter`/`depthPressure`，按印章计算深度并以最低深度封底。Schema为`contracts/vbr-texture-source-v1.27.schema.json`，Qt来源恢复入口已接。
+
+## VBR1.30：速度动态
+
+`parameters.speedDynamics` 使用 `speed-v1`，必填 `enabled`、`maxSpeed`（1–100000 px/s）以及 `size`/`flow`/`opacity` 三条控制曲线。每条控制包含 2–17 个 `(0..1,0..1)` 节点、0–1 最低比例和可选 `smooth-pchip-v1`；缺省插值保持线性。关闭状态也完整保留。对象要求 `drawverse.brush`、behavior19、`speed-dynamics` 能力和 manifest minor30，state24；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。
+
+速度输入来自文档像素距离与输入段时间，曲线横轴按 `speed/maxSpeed` 归一化。尺寸作用于主笔尖和配对第二笔尖，流量与整笔不透明度上限来自同一冻结曲线；不影响随机序列、选区、蒙版或历史边界。Schema为 `contracts/vbr-speed-v1.30.schema.json`。ABR 导入不将速度字段映射为新对象，完整动态矩阵和跨平台验收继续后续。

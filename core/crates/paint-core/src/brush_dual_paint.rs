@@ -420,6 +420,7 @@ impl Document {
         }
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
+        let (speed_size, _, speed_opacity) = program.speed_factors(stroke.speed);
         let next = stroke
             .dual_index
             .checked_add(1)
@@ -432,7 +433,7 @@ impl Document {
                 } else {
                     1.
                 },
-        );
+        ) * f64::from(speed_size);
         let plan = dual
             .dab(
                 point,
@@ -441,6 +442,7 @@ impl Document {
                 stroke.dual_index,
                 0,
                 radius,
+                f64::from(speed_size),
             )
             .scaled(stroke.taper_factors.diameter);
         let appearance = self.layers[self.layer_index(stroke.layer)?].appearance;
@@ -448,8 +450,9 @@ impl Document {
             i64::from(appearance.offset_x),
             i64::from(appearance.offset_y),
         );
-        let limit =
-            program.opacity_pressure(point.pressure).unwrap_or(1.) * stroke.taper_factors.opacity;
+        let limit = program.opacity_pressure(point.pressure).unwrap_or(1.)
+            * stroke.taper_factors.opacity
+            * speed_opacity;
         let mut touched = ChangedPixels::new();
         for child in 0..plan.count() {
             touched.extend(self.color_field(
@@ -481,6 +484,7 @@ impl Document {
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
         let settings = dual.color;
+        let (speed_size, speed_flow, speed_opacity) = program.speed_factors(stroke.speed);
         let base_radius = f64::from(
             stroke.brush.radius
                 * stroke.shape_sample.size
@@ -489,7 +493,7 @@ impl Document {
                 } else {
                     1.
                 },
-        );
+        ) * f64::from(speed_size);
         let radius = base_radius * f64::from(stroke.taper_factors.diameter);
         let geometry = program.dab_geometry(point, stroke.direction, stroke.shape_sample);
         let (ex, ey) = program.extent(radius, geometry);
@@ -505,11 +509,20 @@ impl Document {
                 program.flow_pressure(point.pressure)
             } else {
                 1.
-            };
-        let limit =
-            program.opacity_pressure(point.pressure).unwrap_or(1.) * stroke.taper_factors.opacity;
+            }
+            * speed_flow;
+        let limit = program.opacity_pressure(point.pressure).unwrap_or(1.)
+            * stroke.taper_factors.opacity
+            * speed_opacity;
         if settings.model() == crate::DualColorModel::InterleavedStamp {
-            return self.interleaved_colored_dab(stroke, point, base_radius, radius, limit);
+            return self.interleaved_colored_dab(
+                stroke,
+                point,
+                base_radius,
+                radius,
+                limit,
+                speed_size,
+            );
         }
         let appearance = self.layers[self.layer_index(stroke.layer)?].appearance;
         let offset = (
@@ -560,6 +573,7 @@ impl Document {
                     stroke.random_index.saturating_sub(1),
                     stroke.random_child,
                     base_radius,
+                    f64::from(speed_size),
                 )
                 .scaled(stroke.taper_factors.diameter);
             for child in 0..plan.count() {
@@ -587,6 +601,7 @@ impl Document {
         base_radius: f64,
         radius: f64,
         limit: f32,
+        speed_size: f32,
     ) -> Result<bool> {
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
@@ -614,6 +629,7 @@ impl Document {
                 stroke.random_index.saturating_sub(1),
                 stroke.random_child,
                 base_radius,
+                f64::from(speed_size),
             )
             .scaled(stroke.taper_factors.diameter);
         let appearance = self.layers[self.layer_index(stroke.layer)?].appearance;

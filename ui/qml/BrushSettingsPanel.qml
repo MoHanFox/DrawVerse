@@ -59,6 +59,10 @@ ColumnLayout {
     }
     function setTextureField(key,value) {let data=Object.assign({},root.library.texture);data[key]=value;root.library.setTexture(data)}
     function setAirbrushField(key,value) {let data=Object.assign({},root.library.airbrush);data[key]=value;root.library.setAirbrush(data)}
+    function setSpeedDynamicsEnabled(enabled) {return root.library.setSpeedDynamicsEnabled(enabled)}
+    function setSpeedDynamicsMax(value) {return root.library.setSpeedDynamicsMaxSpeed(value)}
+    function setSpeedControl(target,points,minimum){return root.library.setSpeedControl(target,points,minimum)}
+    function resetSpeedControl(target){return root.library.resetSpeedControl(target)}
     onCategoryChanged:if(category===8)inspectSource()
     readonly property real contentHeight:360
     implicitHeight:contentHeight
@@ -263,6 +267,15 @@ ColumnLayout {
                     CompactCheckBox {objectName:"settingsPressureFlow";text:"流量压感";checked:root.library.pressureFlow;font.pixelSize:10;onToggled:root.library.pressureFlow=checked;tooltip:"使用笔压力控制绘画与擦除流量；涂抹强度压感由涂抹工具单独控制。"}
                     PressureCurveEditor {library:root.library;target:"flow"}
                     Label {text:"涂抹使用此流量曲线，由涂抹工具的强度压感开关控制。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
+                    CompactCheckBox {objectName:"settingsSpeedEnabled";text:"启用速度动态";checked:root.library.speedDynamicsEnabled;font.pixelSize:10;onToggled:root.setSpeedDynamicsEnabled(checked);tooltip:"根据文档像素/秒控制尺寸、流量和整笔不透明度；下方曲线的横轴为速度比例。"}
+                    RowLayout {Layout.fillWidth:true;visible:root.library.speedDynamicsEnabled
+                        Label {text:"速度上限";color:Theme.text;Layout.fillWidth:true}
+                        CompactSpinBox {objectName:"settingsSpeedMax";from:1;to:100000;editable:true;implicitWidth:86;implicitHeight:20;value:Math.round(root.library.speedDynamicsMaxSpeed);onValueModified:root.setSpeedDynamicsMax(value);tooltip:"速度达到此值后使用曲线右端；单位像素/秒。"}
+                        Label {text:"px/s";color:Theme.muted;font.pixelSize:9}
+                    }
+                    SpeedCurveEditor {library:root.library;target:"size";prefix:"speedSize";caption:"尺寸随速度变化";curveHelp:"横轴为归一化速度，纵轴为尺寸比例；编辑自动平滑。";minimumHelp:"最低尺寸比例；不启用时保持原尺寸。";curve:root.library.speedSizeCurve;minimum:root.library.speedSizeMinimum}
+                    SpeedCurveEditor {library:root.library;target:"flow";prefix:"speedFlow";caption:"流量随速度变化";curveHelp:"横轴为归一化速度，纵轴为流量比例；编辑自动平滑。";minimumHelp:"最低流量比例。";curve:root.library.speedFlowCurve;minimum:root.library.speedFlowMinimum}
+                    SpeedCurveEditor {library:root.library;target:"opacity";prefix:"speedOpacity";caption:"不透明度随速度变化";curveHelp:"横轴为归一化速度，纵轴为整笔不透明度比例；独立于流量曲线。";minimumHelp:"最低不透明度比例。";curve:root.library.speedOpacityCurve;minimum:root.library.speedOpacityMinimum}
                     CompactCheckBox {objectName:"settingsAirbrushEnabled";text:"喷枪";checked:root.library.airbrush.enabled;font.pixelSize:10;onToggled:root.setAirbrushField("enabled",checked);tooltip:"按住不动时按固定时间间隔持续沉积颜色；用于画笔和橡皮，涂抹与湿混不启用。"}
                     RowLayout {Layout.fillWidth:true;visible:root.library.airbrush.enabled
                         Label {text:"间隔";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}

@@ -20,6 +20,7 @@ fn package(smoothing: BrushSmoothing) -> Package {
             required_capabilities: vec!["procedural-tip".into(), "path-smoothing".into()],
             parameters: Parameters {
                 airbrush: None,
+                speed_dynamics: None,
                 diameter: 12.,
                 spacing: 0.04,
                 dab_opacity: 0.4,

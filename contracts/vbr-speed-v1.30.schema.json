@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:brush:speed:1.30",
+  "title": "DrawVerse VBR 1.30 speed dynamics",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/speed"
+    },
+    {
+      "$ref": "#/$defs/preset"
+    }
+  ],
+  "$defs": {
+    "speed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "enabled",
+        "maxSpeed",
+        "size",
+        "flow",
+        "opacity"
+      ],
+      "properties": {
+        "model": {
+          "const": "speed-v1"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxSpeed": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "size": {
+          "$ref": "#/$defs/control"
+        },
+        "flow": {
+          "$ref": "#/$defs/control"
+        },
+        "opacity": {
+          "$ref": "#/$defs/control"
+        }
+      }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "curve",
+        "minimum"
+      ],
+      "properties": {
+        "curve": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 17,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "minimum": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "interpolation": {
+          "enum": [
+            "smooth-pchip-v1"
+          ]
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "required": [
+        "parameters"
+      ],
+      "properties": {
+        "parameters": {
+          "type": "object",
+          "required": [
+            "speedDynamics"
+          ],
+          "properties": {
+            "speedDynamics": {
+              "$ref": "#/$defs/speed"
+            }
+          }
+        }
+      }
+    }
+  }
+}

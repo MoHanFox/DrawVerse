@@ -179,6 +179,7 @@ pub struct BrushDynamics {
     pub scatter: crate::ScatterDynamics,
     pub shape_jitter: crate::ShapeJitter,
     pub color: crate::ColorDynamics,
+    pub speed: SpeedDynamics,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
@@ -189,6 +190,78 @@ impl BrushDynamics {
             && self.scatter == crate::ScatterDynamics::default()
             && self.shape_jitter == crate::ShapeJitter::default()
             && self.color == crate::ColorDynamics::default()
+            && self.speed.is_default()
+    }
+}
+
+/// Optional speed-driven size, flow and opacity response. Input is normalized
+/// against `max_speed`; identity curves leave that channel unchanged.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpeedDynamics {
+    enabled: bool,
+    max_speed: f32,
+    size: PressureControl,
+    flow: PressureControl,
+    opacity: PressureControl,
+}
+impl Default for SpeedDynamics {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_speed: 2000.,
+            size: PressureControl::default(),
+            flow: PressureControl::default(),
+            opacity: PressureControl::default(),
+        }
+    }
+}
+impl SpeedDynamics {
+    pub fn new(
+        enabled: bool,
+        max_speed: f32,
+        size: PressureControl,
+        flow: PressureControl,
+        opacity: PressureControl,
+    ) -> Result<Self> {
+        if !max_speed.is_finite() || !(1. ..=100_000.).contains(&max_speed) {
+            return Err(Error::InvalidArgument("speed maximum"));
+        }
+        Ok(Self {
+            enabled,
+            max_speed,
+            size,
+            flow,
+            opacity,
+        })
+    }
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub fn max_speed(&self) -> f32 {
+        self.max_speed
+    }
+    pub fn size(&self) -> &PressureControl {
+        &self.size
+    }
+    pub fn flow(&self) -> &PressureControl {
+        &self.flow
+    }
+    pub fn opacity(&self) -> &PressureControl {
+        &self.opacity
+    }
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+    pub(crate) fn compile(&self) -> Option<CompiledSpeedDynamics> {
+        if !self.enabled {
+            return None;
+        }
+        Some(CompiledSpeedDynamics {
+            max_speed: self.max_speed,
+            size: self.size.compile(),
+            flow: self.flow.compile(),
+            opacity: self.opacity.compile(),
+        })
     }
 }
 
@@ -252,6 +325,29 @@ struct Segment {
 pub(crate) struct CompiledPressureControl {
     segments: Arc<[Segment]>,
     minimum: f32,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct CompiledSpeedDynamics {
+    max_speed: f32,
+    size: Option<CompiledPressureControl>,
+    flow: Option<CompiledPressureControl>,
+    opacity: Option<CompiledPressureControl>,
+}
+impl CompiledSpeedDynamics {
+    pub(crate) fn factors(&self, speed: f32) -> (f32, f32, f32) {
+        if !speed.is_finite() || speed <= 0. {
+            return (1., 1., 1.);
+        }
+        let input = (speed / self.max_speed).clamp(0., 1.);
+        let response = |control: &Option<CompiledPressureControl>| {
+            control.as_ref().map_or(1., |c| c.response(input))
+        };
+        (
+            response(&self.size),
+            response(&self.flow),
+            response(&self.opacity),
+        )
+    }
 }
 impl CompiledPressureControl {
     /// Input has already been validated by the document/stroke boundary.

@@ -377,6 +377,21 @@ private slots:
         QVERIFY(client.frame().pixelColor(32,32).alpha()>60);
         const auto state=QJsonDocument::fromJson(library->snapshot()).object();QCOMPARE(state.value("version").toInt(),23);
     }
+    void speedDynamicsPresetsPreviewAndReopen() {
+        QTemporaryDir temp;const auto path=temp.filePath("storage.ini");PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+        auto data=library->speedDynamics();QVERIFY(!data.value("enabled").toBool());QCOMPARE(data.value("maxSpeed").toDouble(),2000.);data["enabled"]=true;data["maxSpeed"]=1200.;auto size=data.value("size").toMap();size["curve"]=QVariantList{QVariantList{0.,1.},QVariantList{1.,.25}};size["minimum"]=.1;data["size"]=size;QVERIFY(library->setSpeedDynamics(data));QCOMPARE(QJsonDocument::fromJson(library->snapshot()).object().value("version").toInt(),24);
+        library->setRadius(6);library->setOpacity(.5);library->setPressureSize(false);library->setPressureFlow(false);library->requestPreview(library->selectedId());QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);
+        const auto saved=[&]{QSettings settings(path,QSettings::IniFormat);const auto state=QJsonDocument::fromJson(settings.value("brushes/state").toByteArray()).object();for(const auto &r:state.value("presets").toArray())if(r.toObject().value("id").toString()==library->selectedId())return r.toObject().value("speedDynamics").toObject()==QJsonObject::fromVariantMap(data);return false;};QTRY_VERIFY(saved());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready());QCOMPARE(reopened.brushLibrary()->speedDynamics(),data);
+    }
+    void speedDynamicsQmlToggleAndMax() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+        for(const auto &value:workspace.leftGroups()+workspace.rightGroups()){const auto group=value.toMap();if(group.value("panels").toStringList().contains("brush-settings"))workspace.setActive(group.value("id").toString(),"brush-settings");}
+        QQuickItem *category=nullptr;QTRY_VERIFY((category=findVisualItem(window->contentItem(),"brushCategory:6")));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,category->mapToScene({category->width()/2,category->height()/2}).toPoint());QTest::qWait(100);
+        auto *toggle=findVisualItem(window->contentItem(),"settingsSpeedEnabled");QVERIFY(toggle);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,toggle->mapToScene({8,toggle->height()/2}).toPoint());QTRY_VERIFY(library->speedDynamics().value("enabled").toBool());
+        auto *maximum=findVisualItem(window->contentItem(),"settingsSpeedMax");QVERIFY(maximum);QVERIFY(maximum->setProperty("value",1200));QVERIFY(QMetaObject::invokeMethod(maximum,"valueModified"));QTRY_COMPARE(library->speedDynamics().value("maxSpeed").toDouble(),1200.);
+    }
     void dualSizingRetainedModesHighestVersionAndResetBaselines() {
         BrushLibrary library;auto data=library.dualBrush();QVariantMap sizing{{"model","relative-size-v1"},{"mode","relative"},{"diameterOffset",-8.},{"widthRule","fixed-width"}};data["sizing"]=sizing;QVERIFY(library.setDualBrush(data));data=library.dualBrush();
         const auto copy=library.saveCopy("相对尺寸基准");QVERIFY(!copy.isEmpty());auto edit=data;sizing["mode"]="independent";sizing["diameterOffset"]=17.;edit["sizing"]=sizing;QVERIFY(library.setDualBrush(edit));QVERIFY(library.resetPreset());QCOMPARE(library.dualBrush(),data);

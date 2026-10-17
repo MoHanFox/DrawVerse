@@ -36,6 +36,7 @@ fn package(resource: Option<String>) -> Package {
             source_resource: None,
             parameters: Parameters {
                 airbrush: None,
+                speed_dynamics: None,
                 scatter_dynamics: None,
                 shape_jitter: None,
                 color_dynamics: None,

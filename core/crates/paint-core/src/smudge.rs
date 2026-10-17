@@ -44,6 +44,7 @@ impl Document {
         let mut colored = false;
         let finger_color = if let Some(dual) = dual {
             let program = &stroke.program;
+            let speed_size = program.speed_factors(stroke.speed).0;
             let base_radius = f64::from(
                 stroke.brush.radius
                     * stroke.shape_sample.size
@@ -52,7 +53,7 @@ impl Document {
                     } else {
                         1.
                     },
-            );
+            ) * f64::from(speed_size);
             let radius = base_radius * f64::from(stroke.taper_factors.diameter);
             let geometry = program.dab_geometry(point, stroke.direction, stroke.shape_sample);
             let mask = if radius > 0. && program.has_mask() {
@@ -78,6 +79,7 @@ impl Document {
                     stroke.random_index.saturating_sub(1),
                     stroke.random_child,
                     base_radius,
+                    f64::from(speed_size),
                 )
                 .scaled(stroke.taper_factors.diameter);
             let secondary = if dual.color.use_background() {

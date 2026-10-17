@@ -51,6 +51,7 @@ fn package() -> Package {
                 airbrush: Some(paint_io::brush_airbrush::AirbrushParameters::from_core(
                     s.airbrush,
                 )),
+                speed_dynamics: None,
             },
             smoothing: None,
             texture: None,

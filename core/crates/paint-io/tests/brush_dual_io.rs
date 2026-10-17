@@ -110,6 +110,7 @@ fn large_dual_catalog_cannot_emit_a_state_the_reader_rejects_for_size() {
         scatter: ScatterDynamics::new(false, 10., true, 16, 1., u64::MAX).unwrap(),
         shape_jitter: ShapeJitter::new(false, 1., 1., 1., 1., 1., u64::MAX).unwrap(),
         color: ColorDynamics::new(false, 1., 1., 1., 1., true, u64::MAX).unwrap(),
+        speed: Default::default(),
     };
     let mut second = dynamics.clone();
     second.opacity = Default::default();

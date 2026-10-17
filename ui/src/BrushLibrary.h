@@ -103,8 +103,33 @@ public:
     QVariantMap strokeTaper() const;
     Q_PROPERTY(QVariantMap airbrush READ airbrush NOTIFY settingsChanged)
     QVariantMap airbrush() const;
+    QVariantMap speedDynamics() const;
+    Q_PROPERTY(bool speedDynamicsEnabled READ speedDynamicsEnabled NOTIFY settingsChanged)
+    bool speedDynamicsEnabled() const;
+    Q_PROPERTY(qreal speedDynamicsMaxSpeed READ speedDynamicsMaxSpeed NOTIFY settingsChanged)
+    qreal speedDynamicsMaxSpeed() const;
+    QVariantMap speedSize() const;
+    Q_PROPERTY(QVariantList speedSizeCurve READ speedSizeCurve NOTIFY settingsChanged)
+    QVariantList speedSizeCurve() const;
+    Q_PROPERTY(qreal speedSizeMinimum READ speedSizeMinimum NOTIFY settingsChanged)
+    qreal speedSizeMinimum() const;
+    QVariantMap speedFlow() const;
+    Q_PROPERTY(QVariantList speedFlowCurve READ speedFlowCurve NOTIFY settingsChanged)
+    QVariantList speedFlowCurve() const;
+    Q_PROPERTY(qreal speedFlowMinimum READ speedFlowMinimum NOTIFY settingsChanged)
+    qreal speedFlowMinimum() const;
+    QVariantMap speedOpacity() const;
+    Q_PROPERTY(QVariantList speedOpacityCurve READ speedOpacityCurve NOTIFY settingsChanged)
+    QVariantList speedOpacityCurve() const;
+    Q_PROPERTY(qreal speedOpacityMinimum READ speedOpacityMinimum NOTIFY settingsChanged)
+    qreal speedOpacityMinimum() const;
     Q_INVOKABLE bool setStrokeTaper(QVariantMap data);
     Q_INVOKABLE bool setAirbrush(QVariantMap data);
+    Q_INVOKABLE bool setSpeedDynamics(QVariantMap data);
+    Q_INVOKABLE bool setSpeedDynamicsEnabled(bool enabled);
+    Q_INVOKABLE bool setSpeedDynamicsMaxSpeed(qreal maximum);
+    Q_INVOKABLE bool setSpeedControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool resetSpeedControl(const QString &target);
     Q_INVOKABLE bool setWetMix(QVariantMap data);
     QVariantMap smoothing() const;
     Q_INVOKABLE bool setSmoothing(QVariantMap data);
@@ -242,7 +267,7 @@ private:
     bool m_cursorSimple=false,m_cursorComposite=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush,speed;};
     static QJsonObject presetRow(const Preset &preset,int &version);
     static QJsonObject exportPreset(const Preset &preset,bool includeSource,const QString &id);
     int index(const QString &id) const;

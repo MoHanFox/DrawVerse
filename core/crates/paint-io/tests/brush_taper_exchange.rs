@@ -77,6 +77,7 @@ fn package(s: &BrushSettings) -> Package {
             required_capabilities: caps.into_iter().map(String::from).collect(),
             parameters: Parameters {
                 airbrush: None,
+                speed_dynamics: None,
                 diameter: s.diameter,
                 spacing: s.spacing,
                 dab_opacity: s.opacity,

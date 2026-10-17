@@ -186,6 +186,7 @@ impl<'de> Deserialize<'de> for PressureParameters {
                 scatter: Default::default(),
                 shape_jitter: Default::default(),
                 color: Default::default(),
+                speed: Default::default(),
             },
             has_opacity,
         })
