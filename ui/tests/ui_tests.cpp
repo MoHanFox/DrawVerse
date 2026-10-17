@@ -490,13 +490,14 @@ private slots:
     }
     void advancedTextureModesPresetsAndReopen() {
         BrushLibrary library;auto texture=library.texture();texture["mode"]="vividLight";QVERIFY(library.setTexture(texture));auto state=library.snapshot();QCOMPARE(QJsonDocument::fromJson(state).object().value("version").toInt(),31);BrushLibrary restored;QVERIFY(restored.restore(state));QCOMPARE(restored.texture().value("mode").toString(),QString("vividLight"));
+        texture["mode"]="dissolve";QVERIFY(library.setTexture(texture));state=library.snapshot();QCOMPARE(QJsonDocument::fromJson(state).object().value("version").toInt(),33);QVERIFY(restored.restore(state));QCOMPARE(restored.texture().value("mode").toString(),QString("dissolve"));
     }
     void advancedTextureModesQmlDropdown() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();auto texture=library->texture();texture["mode"]="softLight";QVERIFY(library->setTexture(texture));
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         for(const auto &value:workspace.leftGroups()+workspace.rightGroups()){const auto group=value.toMap();if(group.value("panels").toStringList().contains("brush-settings"))workspace.setActive(group.value("id").toString(),"brush-settings");}
         QQuickItem *category=nullptr;QTRY_VERIFY((category=findVisualItem(window->contentItem(),"brushCategory:3")));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,category->mapToScene({category->width()/2,category->height()/2}).toPoint());QTest::qWait(100);
-        auto *mode=findVisualItem(window->contentItem(),"settingsTextureMode");QVERIFY(mode);QCOMPARE(mode->property("count").toInt(),20);QCOMPARE(mode->property("currentIndex").toInt(),12);
+        auto *mode=findVisualItem(window->contentItem(),"settingsTextureMode");QVERIFY(mode);QCOMPARE(mode->property("count").toInt(),21);QCOMPARE(mode->property("currentIndex").toInt(),12);
     }
     void dualSizingRetainedModesHighestVersionAndResetBaselines() {
         BrushLibrary library;auto data=library.dualBrush();QVariantMap sizing{{"model","relative-size-v1"},{"mode","relative"},{"diameterOffset",-8.},{"widthRule","fixed-width"}};data["sizing"]=sizing;QVERIFY(library.setDualBrush(data));data=library.dualBrush();

@@ -248,3 +248,7 @@ wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明
 `parameters.sourceMatrix` 使用 `source-matrix-v1`，必填 `size`、`flow`、`opacity` 三个来源；每个来源为 `all`、`speed`、`tangent`、`distance`、`tilt`、`rotation` 或 `direction`。`all` 表示六来源因子相乘，单选来源只取该通道对应曲线。对象要求 `drawverse.brush`、behavior25、`dynamics-source-matrix` 能力和 manifest minor38，state32；默认矩阵不写入，旧版本字节保持，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-dynamics-matrix-v1.38.schema.json`。第二笔尖不携带独立矩阵，ABR动态来源映射继续后续。
 
 ABR source converter9（`bVTy=3/6/8`设备来源）同样要求 manifest minor38；source info 的 converter 范围为1..9，converter9基线必须包含 `sourceMatrix` 及至少一个倾斜/方向/旋转对象。此约束不改变平包字节或第二笔尖格式。
+
+## VBR1.39：纹理溶解
+
+纹理 `mode="dissolve"` 使用确定性覆盖率二值抖动，要求 manifest minor39 和 state33；低版本明确拒绝。ABR `BlnM` 的 `Dslv`/`dissolve` 映射到该名称。Schema为 `contracts/vbr-texture-modes-v1.39.schema.json`。该模式是覆盖率近似，不是最终颜色空间的Dissolve图层混合。

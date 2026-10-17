@@ -244,7 +244,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=32) {
+    if !matches!(state.version, 1..=33) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -317,6 +317,11 @@ fn decode_inner(
             if t.requires_vbr_31() && state.version < 31 {
                 return Err(Error::Unsupported(
                     "latest texture mode requires state31".into(),
+                ));
+            }
+            if t.requires_vbr_39() && state.version < 33 {
+                return Err(Error::Unsupported(
+                    "dissolve texture mode requires state33".into(),
                 ));
             }
             let resource = if let Some(id) = t.resource_id() {
@@ -674,7 +679,9 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         let texture = if !s.texture.is_default() {
             version = version.max(11);
             let texture = crate::brush_texture::TextureParameters::from_core(&s.texture)?;
-            if texture.requires_vbr_31() {
+            if texture.requires_vbr_39() {
+                version = version.max(33);
+            } else if texture.requires_vbr_31() {
                 version = version.max(31);
             } else if texture.requires_vbr_30() {
                 version = version.max(30);

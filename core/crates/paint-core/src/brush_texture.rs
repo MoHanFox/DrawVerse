@@ -10,6 +10,7 @@ pub enum TextureSpace {
 pub enum TextureMode {
     #[default]
     Normal,
+    Dissolve,
     Multiply,
     Darken,
     Lighten,
@@ -34,6 +35,7 @@ impl TextureMode {
     pub fn combine(self, base: f32, texture: f32) -> f32 {
         match self {
             Self::Normal | Self::Multiply => base * texture,
+            Self::Dissolve => base * texture,
             Self::Darken => base.min(texture),
             Self::Lighten => base.max(texture),
             Self::Subtract => (base - texture).max(0.),
@@ -559,6 +561,19 @@ impl TextureDab<'_> {
         1. - depth * (1. - value)
     }
     pub(crate) fn apply(&self, base: f32, x: f64, y: f64) -> f32 {
+        if self.mode == TextureMode::Dissolve {
+            let threshold = base * self.sample(x, y);
+            let mut hash = (x.to_bits()
+                ^ y.to_bits().rotate_left(21)
+                ^ self.stamp_x.to_bits().rotate_left(7)
+                ^ self.stamp_y.to_bits().rotate_left(13))
+            .wrapping_mul(0x9e37_79b9_7f4a_7c15);
+            hash ^= hash >> 29;
+            hash = hash.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            hash ^= hash >> 31;
+            let random = (hash as u32 as f64 / (u32::MAX as f64 + 1.)) as f32;
+            return if random < threshold { 1. } else { 0. };
+        }
         self.mode.combine(base, self.sample(x, y))
     }
     pub(crate) fn coverage(&self, x: f64, y: f64) -> f32 {
@@ -650,6 +665,28 @@ mod tests {
                 .unwrap();
             assert!((texture.dab(0., 0., 1., 0., 1.).coverage(0.5, 0.5) - expected).abs() < 1e-6);
         }
+    }
+    #[test]
+    fn dissolve_mode_dithers_coverage_deterministically() {
+        let resource = Arc::new(TextureResource::new(Arc::new(
+            BrushMask::new(2, 1, vec![255, 254]).unwrap(),
+        )));
+        let settings = TextureSettings::default().with_mode(TextureMode::Dissolve);
+        let texture = BrushTexture::new(true, settings, Some(resource))
+            .unwrap()
+            .compile()
+            .unwrap();
+        let dab = texture.dab(0., 0., 1., 0., 1.);
+        let mut ones = 0;
+        for i in 0..10_000 {
+            let value = dab.apply(0.5, f64::from(i) + 0.5, 0.5);
+            assert!(value == 0. || value == 1.);
+            ones += usize::from(value == 1.);
+        }
+        assert!((0.45..=0.55).contains(&(ones as f32 / 10_000.)));
+        assert_eq!(dab.apply(0., 0.5, 0.5), 0.);
+        assert_eq!(dab.apply(1., 0.5, 0.5), 1.);
+        assert_eq!(dab.apply(0.5, 123.5, 45.5), dab.apply(0.5, 123.5, 45.5));
     }
     #[test]
     fn texture_depth_pressure_respects_minimum_depth() {

@@ -254,3 +254,5 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 2026-10-18动态来源矩阵阶段：核心新增三通道来源选择，默认`All`保持六来源相乘；state32/VBR1.38/behavior25与`dynamics-source-matrix`、Qt三个下拉和预览版本同步。`paint-core`单来源因子用例、`paint-io brush_source_matrix_exchange`、全目标`cargo check`、Windows Release Qt构建及保存重开/下拉两项Qt用例通过。见[设计](brush-dynamics-matrix-design.md)及[验收](brush-dynamics-matrix-validation.md)。未运行全量测试，ABR动态来源、实体设备手感、跨平台和GPU仍未完成。
 
 2026-10-18 ABR设备来源阶段：`bVTy=3/6/8`映射倾斜/方向/旋转并写入来源矩阵，converter9/handoff8及Qt恢复完成；`abr_conversion`30项、六类动态21项、源converter9基线和Windows Qt合成handoff测试通过。见[设计](abr-device-source-design.md)及[验收](abr-device-source-validation.md)。未运行全量测试，ABR渐隐/抖动、16位笔尖、完整PS等价和跨平台仍未完成。
+
+2026-10-18纹理溶解阶段：新增`dissolve`确定性覆盖率二值抖动，state33/VBR1.39及ABR `Dslv`/Qt 21项下拉接通；核心抖动、纹理交换15项和Windows Qt保存重开两项通过。见[设计](brush-texture-dissolve-design.md)及[验收](brush-texture-dissolve-validation.md)。未运行全量测试，颜色空间Dissolve、Hue/Saturation/Color/Luminosity和完整PS像素等价仍未完成。

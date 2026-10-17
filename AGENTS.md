@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新纹理溶解：`docs/brush-texture-dissolve-design.md` / `docs/brush-texture-dissolve-validation.md`；`dissolve`以确定性覆盖率二值抖动近似，state33/VBR1.39、ABR `Dslv`、Qt 21项下拉和保存重开接通；核心抖动、纹理交换15项及Windows Qt两项通过。颜色空间Dissolve/Hue/Saturation/Color/Luminosity仍待后续。
+
 - 最新ABR设备来源：`docs/abr-device-source-design.md` / `docs/abr-device-source-validation.md`；`bVTy=3/6/8`映射倾斜/方向/旋转并写入来源矩阵，converter9/handoff8、源记录与VBR1.38门控、Qt handoff恢复接通；ABR转换30项、六类动态21项、源基线及Windows Qt合成handoff通过。渐隐/抖动、未知控制、16位笔尖和完整PS等价仍待后续。
 
 - 最新动态来源矩阵：`docs/brush-dynamics-matrix-design.md` / `docs/brush-dynamics-matrix-validation.md`；尺寸、流量和整笔不透明度各自选择All或速度/切向压力/距离/倾斜/旋转/方向之一，默认All保持六来源相乘；state32/VBR1.38/behavior25及`dynamics-source-matrix`、Qt三下拉/预览/保存重开、核心与IO最小测试和Windows Release Qt两项通过。ABR动态来源、实体设备手感、跨平台与GPU仍待后续。

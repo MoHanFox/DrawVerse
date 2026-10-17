@@ -230,3 +230,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-18动态来源矩阵阶段：尺寸、流量和整笔不透明度各自选择`All`或速度/切向压力/距离/倾斜/旋转/方向之一；默认`All`继续把六来源因子相乘，单来源只读取该通道曲线。主笔尖与配对第二笔尖共用矩阵，第二笔尖自身继续拒绝非默认矩阵。非默认对象写入state32/VBR1.38/behavior25及`dynamics-source-matrix`，Qt“传递”页提供三个来源下拉和真实预览；核心选择、状态/VBR往返及两项Qt最小测试通过，见[设计](brush-dynamics-matrix-design.md)及[验收](brush-dynamics-matrix-validation.md)。ABR动态来源映射、实体设备手感、跨平台和GPU仍待后续。
 
 2026-10-18 ABR设备来源阶段：`bVTy=3/6/8`分别映射倾斜幅度、笔触方向和笔旋转，`szVr`/`prVr`/`opVr`各自写入对应动态及来源矩阵，笔压`bVTy=2`路径保持。converter9/handoff8、源记录1..9和VBR source minor38门控已接，Qt恢复三种动态与矩阵；ABR转换30项、六类动态21项、源基线及Windows Qt handoff测试通过，见[设计](abr-device-source-design.md)及[验收](abr-device-source-validation.md)。渐隐/随机抖动、未知控制、16位笔尖和完整PS像素等价仍待后续。
+
+2026-10-18纹理溶解阶段：`dissolve`在连续纹理采样后用像素/印章坐标哈希做确定性覆盖率二值抖动，平均值接近`base*texture`；state33/VBR1.39、ABR `Dslv`、Qt 21项下拉和保存重开已接。核心抖动、纹理交换15项及Windows Qt两项通过，见[设计](brush-texture-dissolve-design.md)及[验收](brush-texture-dissolve-validation.md)。这是覆盖率近似，不是颜色空间Dissolve；Hue/Saturation/Color/Luminosity仍待后续。

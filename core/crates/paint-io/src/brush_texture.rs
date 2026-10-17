@@ -62,6 +62,7 @@ impl TextureParameters {
             .into(),
             mode: match s.mode() {
                 TextureMode::Normal => "normal",
+                TextureMode::Dissolve => "dissolve",
                 TextureMode::Multiply => "multiply",
                 TextureMode::Darken => "darken",
                 TextureMode::Lighten => "lighten",
@@ -128,12 +129,16 @@ impl TextureParameters {
             "vividLight" | "linearLight" | "pinLight" | "divide"
         )
     }
+    pub fn requires_vbr_39(&self) -> bool {
+        self.mode == "dissolve"
+    }
     pub fn validate(&self) -> Result<()> {
         if self.model != "periodic-coverage-v1"
             || !matches!(self.space.as_str(), "document" | "tip")
             || !matches!(
                 self.mode.as_str(),
                 "normal"
+                    | "dissolve"
                     | "multiply"
                     | "darken"
                     | "lighten"
@@ -189,6 +194,7 @@ impl TextureParameters {
             }
         }
         let mode = match self.mode.as_str() {
+            "dissolve" => TextureMode::Dissolve,
             "multiply" => TextureMode::Multiply,
             "darken" => TextureMode::Darken,
             "lighten" => TextureMode::Lighten,

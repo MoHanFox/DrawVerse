@@ -178,6 +178,7 @@ fn end_record(record: &[u8]) -> usize {
 fn map_mode(id: Option<&str>) -> Option<String> {
     let mode = match id {
         None | Some("Nrml") | Some("normal") => "normal",
+        Some("Dslv") | Some("dissolve") => "dissolve",
         Some("Mltp") | Some("multiply") => "multiply",
         Some("Drkn") | Some("darken") => "darken",
         Some("Lghn") | Some("lighten") => "lighten",

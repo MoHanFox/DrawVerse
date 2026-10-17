@@ -1101,6 +1101,7 @@ fn pressure_controls(
 fn texture_mode(id: &str) -> Option<TextureMode> {
     match id {
         "normal" => Some(TextureMode::Normal),
+        "dissolve" => Some(TextureMode::Dissolve),
         "multiply" => Some(TextureMode::Multiply),
         "darken" => Some(TextureMode::Darken),
         "lighten" => Some(TextureMode::Lighten),
