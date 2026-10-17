@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 35;
+pub const MAX_EXECUTABLE_MINOR: u32 = 36;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -475,6 +475,15 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             "direction dynamics requires VBR1.35".into(),
         ));
     }
+    if manifest.version.minor < 36
+        && brushes
+            .iter()
+            .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_30()))
+    {
+        return Err(Error::Unsupported(
+            "advanced texture mode requires VBR1.36".into(),
+        ));
+    }
     if manifest.version.minor < 23 && brushes.iter().any(|b| b.has_wet_dual()) {
         return Err(Error::Unsupported("wet dual color requires VBR1.23".into()));
     }
@@ -730,6 +739,13 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_30()))
+            {
+                36
+            } else if bundle
                 .package
                 .brushes
                 .iter()

@@ -222,3 +222,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-18笔旋转动态阶段：`rotation-v1`把设备旋转角按整圈归一化后驱动尺寸、流量和整笔不透明度三条曲线，无旋转能力时为0；默认关闭，state28/VBR1.34/behavior23及`rotation-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离/倾斜回归通过，见[设计](brush-rotation-design.md)及[验收](brush-rotation-validation.md)。ABR旋转/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
 
 2026-10-18笔触方向动态阶段：`direction-v1`把输入段方向角按整圈归一化后驱动尺寸、流量和整笔不透明度三条曲线，无位移时保持恒等；默认关闭，state29/VBR1.35/behavior24及`direction-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离/倾斜/旋转回归通过，见[设计](brush-direction-design.md)及[验收](brush-direction-validation.md)。ABR方向/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
+
+2026-10-18高级纹理模式阶段：纹理新增`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`八种覆盖率组合，总计十六种；要求state30/VBR1.36，旧模式字节保持。ABR `BlnM` 的对应代码已映射，Qt模式下拉和状态/VBR往返通过，见[设计](brush-texture-mode-design.md)及[验收](brush-texture-mode-validation.md)。其他未定义模式、16位笔尖和完整PS像素核对仍未完成。

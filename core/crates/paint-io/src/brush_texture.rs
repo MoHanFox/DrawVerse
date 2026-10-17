@@ -69,6 +69,14 @@ impl TextureParameters {
                 TextureMode::Difference => "difference",
                 TextureMode::Screen => "screen",
                 TextureMode::ColorBurn => "colorBurn",
+                TextureMode::LinearBurn => "linearBurn",
+                TextureMode::ColorDodge => "colorDodge",
+                TextureMode::LinearDodge => "linearDodge",
+                TextureMode::Overlay => "overlay",
+                TextureMode::SoftLight => "softLight",
+                TextureMode::HardLight => "hardLight",
+                TextureMode::Exclusion => "exclusion",
+                TextureMode::HardMix => "hardMix",
             }
             .into(),
             scale: f64::from(s.scale()).max(0.01),
@@ -97,6 +105,19 @@ impl TextureParameters {
     pub fn requires_vbr_27(&self) -> bool {
         self.minimum_depth != 0. || self.depth_jitter != 0. || self.depth_pressure
     }
+    pub fn requires_vbr_30(&self) -> bool {
+        matches!(
+            self.mode.as_str(),
+            "linearBurn"
+                | "colorDodge"
+                | "linearDodge"
+                | "overlay"
+                | "softLight"
+                | "hardLight"
+                | "exclusion"
+                | "hardMix"
+        )
+    }
     pub fn validate(&self) -> Result<()> {
         if self.model != "periodic-coverage-v1"
             || !matches!(self.space.as_str(), "document" | "tip")
@@ -110,6 +131,14 @@ impl TextureParameters {
                     | "difference"
                     | "screen"
                     | "colorBurn"
+                    | "linearBurn"
+                    | "colorDodge"
+                    | "linearDodge"
+                    | "overlay"
+                    | "softLight"
+                    | "hardLight"
+                    | "exclusion"
+                    | "hardMix"
             )
             || !self.scale.is_finite()
             || !(0.01..=100.).contains(&self.scale)
@@ -153,6 +182,14 @@ impl TextureParameters {
             "difference" => TextureMode::Difference,
             "screen" => TextureMode::Screen,
             "colorBurn" => TextureMode::ColorBurn,
+            "linearBurn" => TextureMode::LinearBurn,
+            "colorDodge" => TextureMode::ColorDodge,
+            "linearDodge" => TextureMode::LinearDodge,
+            "overlay" => TextureMode::Overlay,
+            "softLight" => TextureMode::SoftLight,
+            "hardLight" => TextureMode::HardLight,
+            "exclusion" => TextureMode::Exclusion,
+            "hardMix" => TextureMode::HardMix,
             _ => TextureMode::Normal,
         };
         let settings = TextureSettings::new(

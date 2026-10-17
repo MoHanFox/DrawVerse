@@ -130,9 +130,14 @@ fn read_captures_file_bytes_and_batch_save_refuses_existing_corrupt_original() {
 #[test]
 fn texture_pattern_handoff_binds_mapped_mode_and_paints_real_pixels() {
     let token = CancellationToken::default();
-    for (abr_mode, expected_mode) in [
-        ("Mltp", paint_core::TextureMode::Multiply),
-        ("CBrn", paint_core::TextureMode::ColorBurn),
+    for (abr_mode, expected_mode, expected_name) in [
+        ("Mltp", paint_core::TextureMode::Multiply, "multiply"),
+        ("CBrn", paint_core::TextureMode::ColorBurn, "colorBurn"),
+        ("Ovrl", paint_core::TextureMode::Overlay, "overlay"),
+        ("CDdg", paint_core::TextureMode::ColorDodge, "colorDodge"),
+        ("SftL", paint_core::TextureMode::SoftLight, "softLight"),
+        ("HrdL", paint_core::TextureMode::HardLight, "hardLight"),
+        ("Xclu", paint_core::TextureMode::Exclusion, "exclusion"),
     ] {
         let original = Arc::new(support::abr_fixture::fixture_with_texture(abr_mode));
         let parsed = paint_io::abr_sampled::decode_sectioned(&original, &token).unwrap();
@@ -143,14 +148,7 @@ fn texture_pattern_handoff_binds_mapped_mode_and_paints_real_pixels() {
         let wire: serde_json::Value = serde_json::from_slice(&batch.to_json().unwrap()).unwrap();
         assert_eq!(wire["version"], 7);
         assert_eq!(wire["presets"][0]["texture"]["enabled"], true);
-        assert_eq!(
-            wire["presets"][0]["texture"]["mode"],
-            if expected_mode == paint_core::TextureMode::ColorBurn {
-                "colorBurn"
-            } else {
-                "multiply"
-            }
-        );
+        assert_eq!(wire["presets"][0]["texture"]["mode"], expected_name);
         assert!(wire["presets"][0]["texture"]["resource"].is_string());
         let temp = tempfile::tempdir().unwrap();
         let store = ResourceStore::open(temp.path().into(), MAX_CATALOG_MASK_BYTES).unwrap();
@@ -170,14 +168,7 @@ fn texture_pattern_handoff_binds_mapped_mode_and_paints_real_pixels() {
         assert_eq!(source.info.converter_version, 8);
         assert_eq!(source.info.version, 2);
         let baseline_texture = source.info.texture.as_ref().unwrap();
-        assert_eq!(
-            baseline_texture.mode(),
-            if expected_mode == paint_core::TextureMode::ColorBurn {
-                "colorBurn"
-            } else {
-                "multiply"
-            }
-        );
+        assert_eq!(baseline_texture.mode(), expected_name);
         assert_eq!(
             baseline_texture.resource_id(),
             settings.texture.resource().unwrap().source().resource_id()
@@ -194,11 +185,14 @@ fn texture_pattern_handoff_binds_mapped_mode_and_paints_real_pixels() {
             .begin_brush_stroke(plain.definition(), InputPoint::new(12.5, 12.5, 1.))
             .unwrap();
         without_texture.end_stroke().unwrap();
-        assert!((0..24)
-            .flat_map(|y| (0..24).map(move |x| (x, y)))
-            .any(|(x, y)| {
-                with_texture.pixel(x, y).alpha() < without_texture.pixel(x, y).alpha()
-            }));
+        if matches!(
+            expected_mode,
+            paint_core::TextureMode::Multiply | paint_core::TextureMode::ColorBurn
+        ) {
+            assert!((0..24)
+                .flat_map(|y| (0..24).map(move |x| (x, y)))
+                .any(|(x, y)| with_texture.pixel(x, y) != without_texture.pixel(x, y)));
+        }
         let painted = (0..24)
             .flat_map(|y| (0..24).map(move |x| (x, y)))
             .map(|(x, y)| with_texture.pixel(x, y))

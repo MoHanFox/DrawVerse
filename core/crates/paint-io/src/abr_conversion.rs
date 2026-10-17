@@ -934,6 +934,14 @@ fn texture_mode(id: &str) -> Option<TextureMode> {
         "difference" => Some(TextureMode::Difference),
         "screen" => Some(TextureMode::Screen),
         "colorBurn" => Some(TextureMode::ColorBurn),
+        "linearBurn" => Some(TextureMode::LinearBurn),
+        "colorDodge" => Some(TextureMode::ColorDodge),
+        "linearDodge" => Some(TextureMode::LinearDodge),
+        "overlay" => Some(TextureMode::Overlay),
+        "softLight" => Some(TextureMode::SoftLight),
+        "hardLight" => Some(TextureMode::HardLight),
+        "exclusion" => Some(TextureMode::Exclusion),
+        "hardMix" => Some(TextureMode::HardMix),
         _ => None,
     }
 }

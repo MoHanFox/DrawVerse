@@ -269,6 +269,68 @@ fn color_burn_texture_requires_vbr125_and_roundtrips_real_pixels() {
 }
 
 #[test]
+fn advanced_texture_mode_requires_vbr136_and_state30() {
+    let token = CancellationToken::default();
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().join("assets"), MAX_CATALOG_MASK_BYTES).unwrap();
+    let png = encode_mask(&BrushMask::new(4, 1, vec![0, 255, 64, 192]).unwrap()).unwrap();
+    let id = hash(&png);
+    store.put_verified(&id, &png, &token).unwrap();
+    let mask = store.load(&id, &token).unwrap().mask;
+    let s = BrushSettings {
+        diameter: 16.,
+        opacity: 0.5,
+        spacing: 0.1,
+        mask: Some(mask.clone()),
+        texture: BrushTexture::new(
+            true,
+            TextureSettings::new(TextureSpace::Tip, 1., 0., 0.75, false, 0., 0.)
+                .unwrap()
+                .with_mode(TextureMode::Overlay),
+            Some(Arc::new(TextureResource::new(mask))),
+        )
+        .unwrap(),
+        ..Default::default()
+    };
+    let expected = pixels(s.definition());
+    let bundle = ImageBundle::new(package(&s, &id), BTreeMap::from([(id, png)]), &token).unwrap();
+    let bytes = vbr_image::encode(&bundle, &token).unwrap();
+    let manifest: serde_json::Value = {
+        let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
+    };
+    assert_eq!(manifest["version"]["minor"], 36);
+    let restored = vbr_image::decode(&bytes, &token).unwrap();
+    assert_eq!(
+        restored.definition(0).unwrap().texture.settings().mode(),
+        TextureMode::Overlay
+    );
+    assert_eq!(pixels(restored.definition(0).unwrap()), expected);
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 35), &token).is_err());
+
+    let mut catalog = BrushCatalog::default();
+    catalog.edit("round-pressure", s.clone()).unwrap();
+    let state = brush_state::encode(&catalog).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&state).unwrap();
+    assert_eq!(value["version"], 30);
+    let restored =
+        brush_state::decode_with_resources(&state, MAX_CATALOG_MASK_BYTES, &store, &token).unwrap();
+    assert_eq!(
+        pixels(restored.selected().settings().definition()),
+        expected
+    );
+    let mut old = value;
+    old["version"] = 29.into();
+    assert!(brush_state::decode_with_resources(
+        &serde_json::to_vec(&old).unwrap(),
+        MAX_CATALOG_MASK_BYTES,
+        &store,
+        &token
+    )
+    .is_err());
+}
+
+#[test]
 fn texture_adjustments_require_vbr126_and_roundtrip_real_pixels() {
     let token = CancellationToken::default();
     let temp = tempfile::tempdir().unwrap();
@@ -439,6 +501,33 @@ fn published_texture_adjustment_contract_requires_vbr126() {
     for key in ["brightness", "contrast"] {
         assert_eq!(schema["$defs"]["texture"]["properties"][key]["minimum"], -1);
         assert_eq!(schema["$defs"]["texture"]["properties"][key]["maximum"], 1);
+    }
+}
+
+#[test]
+fn published_advanced_texture_contract_lists_vbr136_modes() {
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../contracts/vbr-texture-modes-v1.36.schema.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        schema["$defs"]["manifest"]["properties"]["version"]["properties"]["minor"]["const"],
+        36
+    );
+    let modes = schema["$defs"]["texture"]["properties"]["mode"]["enum"]
+        .as_array()
+        .unwrap();
+    for mode in [
+        "linearBurn",
+        "colorDodge",
+        "linearDodge",
+        "overlay",
+        "softLight",
+        "hardLight",
+        "exclusion",
+        "hardMix",
+    ] {
+        assert!(modes.contains(&serde_json::json!(mode)), "missing {mode}");
     }
 }
 

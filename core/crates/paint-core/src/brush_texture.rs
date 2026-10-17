@@ -17,6 +17,14 @@ pub enum TextureMode {
     Difference,
     Screen,
     ColorBurn,
+    LinearBurn,
+    ColorDodge,
+    LinearDodge,
+    Overlay,
+    SoftLight,
+    HardLight,
+    Exclusion,
+    HardMix,
 }
 impl TextureMode {
     pub fn combine(self, base: f32, texture: f32) -> f32 {
@@ -34,6 +42,51 @@ impl TextureMode {
                     0.
                 } else {
                     1. - ((1. - base) / texture).min(1.)
+                }
+            }
+            Self::LinearBurn => (base + texture - 1.).max(0.),
+            Self::ColorDodge => {
+                if base <= 0. {
+                    0.
+                } else if texture >= 1. {
+                    1.
+                } else {
+                    (base / (1. - texture)).min(1.)
+                }
+            }
+            Self::LinearDodge => (base + texture).min(1.),
+            Self::Overlay => {
+                if base < 0.5 {
+                    2. * base * texture
+                } else {
+                    1. - 2. * (1. - base) * (1. - texture)
+                }
+            }
+            Self::SoftLight => {
+                if texture <= 0.5 {
+                    base - (1. - 2. * texture) * base * (1. - base)
+                } else {
+                    let d = if base <= 0.25 {
+                        ((16. * base - 12.) * base + 4.) * base
+                    } else {
+                        base.sqrt()
+                    };
+                    base + (2. * texture - 1.) * (d - base)
+                }
+            }
+            Self::HardLight => {
+                if texture < 0.5 {
+                    2. * base * texture
+                } else {
+                    1. - 2. * (1. - base) * (1. - texture)
+                }
+            }
+            Self::Exclusion => base + texture - 2. * base * texture,
+            Self::HardMix => {
+                if base + texture >= 1. {
+                    1.
+                } else {
+                    0.
                 }
             }
         }
@@ -490,6 +543,14 @@ mod tests {
         assert_eq!(TextureMode::ColorBurn.combine(base, texture), 0.);
         assert_eq!(TextureMode::ColorBurn.combine(0.75, 0.25), 0.);
         assert_eq!(TextureMode::ColorBurn.combine(0.25, 1.), 0.25);
+        assert_eq!(TextureMode::LinearBurn.combine(0.75, 0.75), 0.5);
+        assert_eq!(TextureMode::ColorDodge.combine(0.25, 0.5), 0.5);
+        assert_eq!(TextureMode::LinearDodge.combine(0.25, 0.5), 0.75);
+        assert_eq!(TextureMode::Overlay.combine(0.25, 0.5), 0.25);
+        assert_eq!(TextureMode::SoftLight.combine(0.5, 0.5), 0.5);
+        assert_eq!(TextureMode::HardLight.combine(0.25, 0.75), 0.625);
+        assert_eq!(TextureMode::Exclusion.combine(0.5, 0.5), 0.5);
+        assert_eq!(TextureMode::HardMix.combine(0.5, 0.5), 1.);
         let adjusted = TextureSettings::new(TextureSpace::Document, 1., 0., 1., false, 0., 0.)
             .unwrap()
             .with_adjustments(-0.25, 0.5)

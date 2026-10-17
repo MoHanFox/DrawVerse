@@ -185,6 +185,14 @@ fn map_mode(id: Option<&str>) -> Option<String> {
         Some("Dfrn") | Some("difference") => "difference",
         Some("Scrn") | Some("screen") => "screen",
         Some("CBrn") | Some("colorBurn") => "colorBurn",
+        Some("linearBurn") => "linearBurn",
+        Some("CDdg") | Some("colorDodge") => "colorDodge",
+        Some("linearDodge") => "linearDodge",
+        Some("Ovrl") | Some("overlay") => "overlay",
+        Some("SftL") | Some("softLight") => "softLight",
+        Some("HrdL") | Some("hardLight") => "hardLight",
+        Some("Xclu") | Some("exclusion") => "exclusion",
+        Some("hardMix") => "hardMix",
         _ => return None,
     };
     Some(mode.into())

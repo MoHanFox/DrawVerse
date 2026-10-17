@@ -246,3 +246,5 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 2026-10-18笔旋转动态阶段：state28/VBR1.34/behavior23新增`rotation-v1`，以设备旋转角整圈归一化驱动尺寸、流量和整笔不透明度；`paint-core brush_rotation` 3项、倾斜/距离/双笔尖回归、`paint-io brush_rotation_exchange` 1项、state/VBR回归通过，格式检查、严格Clippy和Windows Release Qt构建通过。Qt模型保存重开、QML开关/曲线及速度/切向/距离/倾斜/旋转共十二项动态组合测试通过，见[设计](brush-rotation-design.md)及[验收](brush-rotation-validation.md)。未运行全量`tools/check.py`，实体设备旋转手感、ABR旋转来源和跨平台仍未完成。
 
 2026-10-18笔触方向动态阶段：state29/VBR1.35/behavior24新增`direction-v1`，以输入段方向角整圈归一化驱动尺寸、流量和整笔不透明度；`paint-core brush_direction` 3项、旋转/倾斜/距离回归、`paint-io brush_direction_exchange` 1项、state/VBR回归通过，格式检查、严格Clippy和Windows Release Qt构建通过。Qt模型保存重开、QML开关/曲线及六类动态共十四项组合测试通过，见[设计](brush-direction-design.md)及[验收](brush-direction-validation.md)。未运行全量`tools/check.py`，实体设备方向手感、ABR方向来源和跨平台仍未完成。
+
+2026-10-18高级纹理模式阶段：核心新增八种覆盖率组合，总计16种；state30/VBR1.36门控，ABR `BlnM` 八类代码映射，真实ABR纹理导入测试扩展为八种模式，Qt下拉16项、状态重开及严格Clippy/格式检查通过。见[设计](brush-texture-mode-design.md)及[验收](brush-texture-mode-validation.md)。未运行全量`tools/check.py`，未定义模式、16位笔尖和完整PS像素核对仍未完成。
