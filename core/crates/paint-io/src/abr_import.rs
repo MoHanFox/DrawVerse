@@ -47,6 +47,7 @@ impl ImportBatch {
             parameters: crate::vbr::Parameters,
             tip_resource: Option<&'a str>,
             texture: Option<crate::brush_texture::TextureParameters>,
+            dual_brush: Option<crate::brush_dual::DualParameters>,
             source_resource: &'a str,
             partial: bool,
         }
@@ -114,13 +115,18 @@ impl ImportBatch {
                     texture: (!s.texture.is_default())
                         .then(|| crate::brush_texture::TextureParameters::from_core(&s.texture))
                         .transpose()?,
+                    dual_brush: (!s.dual.is_default())
+                        .then(|| crate::brush_dual::DualParameters::from_core(&s.dual))
+                        .transpose()?,
                     source_resource: &p.source,
                     partial: p.partial,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
         let bytes = serde_json::to_vec(&Handoff {
-            version: if self.presets.iter().any(|p| p.converter_version >= 10) {
+            version: if self.presets.iter().any(|p| p.converter_version >= 11) {
+                10
+            } else if self.presets.iter().any(|p| p.converter_version >= 10) {
                 9
             } else if self.presets.iter().any(|p| p.converter_version >= 9) {
                 8
@@ -182,12 +188,8 @@ impl ImportBatch {
         let parsed = abr_sampled::decode_sectioned(&bytes, token)?;
         let descriptors = parsed.descriptors(token)?;
         let linked = abr_association::associate(&parsed, &descriptors, token)?;
-        let converted = abr_conversion::convert_textured(
-            &linked,
-            &parsed.texture_presets,
-            &parsed.patterns,
-            token,
-        )?;
+        let converted =
+            abr_conversion::convert_v9(&linked, &parsed.texture_presets, &parsed.patterns, token)?;
         let mut assets = BTreeMap::new();
         let mut identities: BTreeMap<usize, String> = BTreeMap::new();
         let mut resident = 0usize;

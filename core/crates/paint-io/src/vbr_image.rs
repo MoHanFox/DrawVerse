@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 40;
+pub const MAX_EXECUTABLE_MINOR: u32 = 41;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -669,6 +669,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
                 "ABR converter v10 requires VBR 1.40".into(),
             ));
         }
+        if info.converter_version > 10 && manifest.version.minor < 41 {
+            return Err(Error::Unsupported(
+                "ABR converter v11 requires VBR 1.41".into(),
+            ));
+        }
         if info.converter_version > 5 && manifest.version.minor < 20 {
             return Err(Error::Unsupported(
                 "VBR ABR shape sources require version 1.20".into(),
@@ -784,6 +789,12 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .sources
+                .iter()
+                .any(|source| source.converter_version() > 10)
+            {
+                41
+            } else if bundle
                 .sources
                 .iter()
                 .any(|source| source.converter_version() > 9)

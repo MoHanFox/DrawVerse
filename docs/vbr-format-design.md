@@ -256,3 +256,7 @@ ABR source converter9（`bVTy=3/6/8`设备来源）同样要求 manifest minor38
 ## VBR1.40：笔刷渐隐
 
 `parameters.fadeDynamics` 使用 `fade-v1`，必填 `enabled`、`steps`（1–10000）以及 `size`/`flow`/`opacity` 三条控制曲线。输入按印章序号从完整响应线性渐隐到最低比例；要求 `drawverse.brush`、behavior26、`fade-dynamics` 能力和 manifest minor40，state34。Schema为 `contracts/vbr-fade-v1.40.schema.json`。该计数对散射/双笔尖共享同一印章序号，不宣称完整PS步数等价。
+
+## VBR1.41：ABR计算双笔刷源记录
+
+ABR source converter11的source info使用version3并携带`dualBrush`；要求manifest minor41。双笔刷本身仍使用既有VBR `dualBrush`与state12格式，schema为`contracts/vbr-dual-v1.10.schema.json`；sampled双笔刷资源关联尚未接入。

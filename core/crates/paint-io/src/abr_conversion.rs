@@ -8,9 +8,9 @@ use crate::{
 };
 use paint_core::{
     AngleControl, BrushProgram, BrushSettings, BrushTexture, BrushTip, ColorDynamics,
-    DirectionDynamics, DynamicsSource, DynamicsSourceMatrix, PressureControl, PressureCurve,
-    RotationDynamics, ScatterDynamics, ShapeJitter, TextureMode, TextureResource, TextureSettings,
-    TextureSpace, TiltDynamics, TipDynamics,
+    DirectionDynamics, DualBrush, DualMode, DynamicsSource, DynamicsSourceMatrix, PressureControl,
+    PressureCurve, RotationDynamics, ScatterDynamics, SecondaryTip, ShapeJitter, TextureMode,
+    TextureResource, TextureSettings, TextureSpace, TiltDynamics, TipDynamics,
 };
 use paint_task::CancellationToken;
 type TextureLookup<'a> = Option<(
@@ -166,6 +166,15 @@ pub fn convert_textured<'a>(
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
     convert_inner(linked, token, 8, Some((textures, patterns)))
+}
+/// Import textured presets plus computed dual brushes.
+pub fn convert_v9<'a>(
+    linked: &[LinkedPreset<'a>],
+    textures: &std::collections::BTreeMap<usize, TextureSource>,
+    patterns: &std::collections::BTreeMap<String, PatternResource>,
+    token: &CancellationToken,
+) -> Result<Vec<ConvertedPreset<'a>>> {
+    convert_inner(linked, token, 9, Some((textures, patterns)))
 }
 /// Preserve converter v7 behavior without ABR texture conversion.
 pub fn convert_v7<'a>(
@@ -1343,6 +1352,112 @@ fn texture_controls(
     Ok((enabled, handled))
 }
 
+fn dual_mode(id: &str) -> Option<DualMode> {
+    match id {
+        "Mltp" | "multiply" => Some(DualMode::Multiply),
+        "Drkn" | "darken" => Some(DualMode::Darken),
+        "Lghn" | "lighten" => Some(DualMode::Lighten),
+        "Sbtr" | "subtract" => Some(DualMode::Subtract),
+        "Dfrn" | "difference" => Some(DualMode::Difference),
+        "Scrn" | "screen" => Some(DualMode::Screen),
+        _ => None,
+    }
+}
+fn enum_name(value: &Value) -> Option<String> {
+    match value {
+        Value::Enumerated { value, .. } => String::from_utf8(value.clone()).ok(),
+        Value::Text(value) => Some(value.clone()),
+        _ => None,
+    }
+}
+fn dual_controls(
+    preset: &Descriptor,
+    settings: &mut BrushSettings,
+    issues: &mut Vec<Issue>,
+) -> Result<bool> {
+    let dual = match preset.get(b"dualBrush") {
+        Some(Value::Object { descriptor, .. }) => descriptor,
+        None => return Ok(false),
+        _ => return Err(Error::Invalid("ABR dual brush object")),
+    };
+    if flag(dual, b"useDualBrush")? != Some(true) {
+        return Ok(false);
+    }
+    let shape = match dual.get(b"Brsh") {
+        Some(Value::Object { descriptor, .. }) => descriptor,
+        _ => return Err(Error::Invalid("ABR dual brush shape")),
+    };
+    if shape.class.id != b"computedBrush" {
+        issue(
+            issues,
+            "dualBrush.Brsh",
+            Status::NotExecuted,
+            "仅支持计算双笔刷形状；sampled双笔刷资源关联尚未实现",
+        );
+        return Ok(false);
+    }
+    let mode = match dual
+        .get(b"BlnM")
+        .and_then(enum_name)
+        .as_deref()
+        .and_then(dual_mode)
+    {
+        Some(mode) => mode,
+        None => {
+            issue(
+                issues,
+                "dualBrush.BlnM",
+                Status::NotExecuted,
+                "未知或缺失的双笔刷混合模式",
+            );
+            return Ok(false);
+        }
+    };
+    let radius = unit(shape, b"Dmtr", *b"#Pxl", 1., 512.)? / 2.;
+    let angle = unit(shape, b"Angl", *b"#Ang", -180., 180.)?;
+    let roundness = unit(shape, b"Rndn", *b"#Prc", 1., 100.)? / 100.;
+    let hardness = unit(shape, b"Hrdn", *b"#Prc", 0., 100.)? / 100.;
+    let spacing = unit(dual, b"Spcn", *b"#Prc", 1., 50.)? / 100.;
+    let tip = BrushTip {
+        hardness,
+        roundness,
+        angle,
+        flow: 1.,
+        pressure_size: false,
+        pressure_flow: false,
+    };
+    let secondary = SecondaryTip::new(radius, tip, None, paint_core::BrushDynamics::default())?
+        .with_spacing(spacing)?;
+    settings.dual = DualBrush::new(true, mode, secondary);
+    for (path, reason) in [
+        ("dualBrush.useDualBrush", "计算双笔刷已启用"),
+        ("dualBrush.Brsh", "计算双笔刷形状"),
+        ("dualBrush.BlnM", "双笔刷贡献模式"),
+        ("dualBrush.Spcn", "双笔刷独立路径间距"),
+    ] {
+        issue(issues, path, Status::Mapped, reason);
+    }
+    if flag(dual, b"useScatter")? == Some(true) {
+        issue(
+            issues,
+            "dualBrush.useScatter",
+            Status::NotExecuted,
+            "双笔刷散布/数量动态尚未接入",
+        );
+    }
+    for key in [b"Flip".as_slice(), b"countDynamics", b"scatterDynamics"] {
+        if dual.get(key).is_some() {
+            issue(
+                issues,
+                format!("dualBrush.{}", path_key(key)),
+                Status::NotExecuted,
+                "该双笔刷字段尚未执行",
+            );
+        }
+    }
+    Ok(true)
+}
+
 fn convert_inner<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
@@ -1578,6 +1693,14 @@ fn convert_inner<'a>(
         } else {
             false
         };
+        let dual_changed = if generation >= 9 {
+            dual_controls(item.preset, &mut settings, &mut issues)?
+        } else {
+            false
+        };
+        if dual_changed {
+            handled.push("dualBrush".into());
+        }
         for (key, value) in &item.preset.entries {
             if key != b"Nm  " && key != b"Brsh" && key != b"toolOptions" {
                 if [
@@ -1678,7 +1801,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if !settings.dynamics.fade.is_default() {
+        if dual_changed {
+            converter_version = 11;
+        } else if !settings.dynamics.fade.is_default() {
             converter_version = 10;
         } else if source_changed {
             converter_version = 9;

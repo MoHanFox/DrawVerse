@@ -48,14 +48,16 @@ pub struct SourceInfo {
     pub tip_resource: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub texture: Option<crate::brush_texture::TextureParameters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dual_brush: Option<crate::brush_dual::DualParameters>,
     pub report: Vec<ReportItem>,
 }
 impl SourceInfo {
     pub fn validate(&self) -> Result<()> {
-        if !matches!(self.version, 1 | 2)
+        if !matches!(self.version, 1..=3)
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1..=10)
+            || !matches!(self.converter_version, 1..=11)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -64,8 +66,14 @@ impl SourceInfo {
         if !valid_id(&self.original_hash)
             || self.tip_resource.as_ref().is_some_and(|id| !valid_id(id))
             || self.texture.as_ref().is_some_and(|t| t.validate().is_err())
+            || self
+                .dual_brush
+                .as_ref()
+                .is_some_and(|d| d.validate().is_err())
             || (self.version == 1 && self.texture.is_some())
             || (self.version == 2 && self.texture.is_none())
+            || (self.version == 3 && self.dual_brush.is_none())
+            || (self.version < 3 && self.dual_brush.is_some())
             || self.preset_index >= 1024
             || self.original_name.trim().is_empty()
             || self.original_name.chars().count() > 80
@@ -113,7 +121,9 @@ impl SourceInfo {
                     || self.baseline.direction_dynamics.is_some()
                     || self.baseline.source_matrix.is_some()
                     || self.baseline.fade_dynamics.is_some()))
-            || (self.converter_version >= 10 && self.baseline.fade_dynamics.is_none())
+            || (self.converter_version >= 10
+                && self.converter_version < 11
+                && self.baseline.fade_dynamics.is_none())
             || (self.converter_version < 10 && self.baseline.fade_dynamics.is_some())
         {
             return Err(Error::Unsupported(
@@ -137,8 +147,8 @@ mod tests {
         ps_descriptor::{Class, Descriptor},
     };
     use paint_core::{
-        BrushDynamics, BrushSettings, DynamicsSource, DynamicsSourceMatrix, FadeDynamics,
-        PressureControl, PressureCurve, TiltDynamics,
+        BrushDynamics, BrushSettings, DualBrush, DualMode, DynamicsSource, DynamicsSourceMatrix,
+        FadeDynamics, PressureControl, PressureCurve, SecondaryTip, TiltDynamics,
     };
 
     fn preset(version: u32) -> ConvertedPreset<'static> {
@@ -171,6 +181,21 @@ mod tests {
                 PressureControl::default(),
             )
             .unwrap();
+        }
+        if version >= 11 {
+            settings.dual = DualBrush::new(
+                true,
+                DualMode::Multiply,
+                SecondaryTip::new(
+                    4.,
+                    paint_core::BrushTip::default(),
+                    None,
+                    BrushDynamics::default(),
+                )
+                .unwrap()
+                .with_spacing(0.25)
+                .unwrap(),
+            );
         }
         ConvertedPreset {
             converter_version: version,
@@ -218,6 +243,14 @@ mod tests {
                 .is_err()
         );
     }
+    #[test]
+    fn converter_eleven_source_baseline_keeps_dual_brush() {
+        let info = SourceArchive::capture_info("d".repeat(64), (6, Some(1)), 0, &preset(11), None)
+            .unwrap();
+        assert!(info.dual_brush.is_some());
+        assert_eq!(info.version, 3);
+        info.validate().unwrap();
+    }
 }
 impl SourceArchive {
     pub fn original(&self) -> &[u8] {
@@ -262,7 +295,7 @@ impl SourceArchive {
                 "smoothing source baseline is not supported".into(),
             ));
         }
-        if !settings.dual.is_default() {
+        if preset.converter_version < 11 && !settings.dual.is_default() {
             return Err(Error::Unsupported(
                 "source dual brush is not represented by converter v1".into(),
             ));
@@ -302,7 +335,13 @@ impl SourceArchive {
             ));
         }
         let info = SourceInfo {
-            version: if settings.texture.is_default() { 1 } else { 2 },
+            version: if !settings.dual.is_default() {
+                3
+            } else if settings.texture.is_default() {
+                1
+            } else {
+                2
+            },
             format: "abr".into(),
             original_hash,
             file_version: version.0,
@@ -380,6 +419,9 @@ impl SourceArchive {
             tip_resource,
             texture: (!settings.texture.is_default())
                 .then(|| crate::brush_texture::TextureParameters::from_core(&settings.texture))
+                .transpose()?,
+            dual_brush: (preset.converter_version >= 11 && !settings.dual.is_default())
+                .then(|| crate::brush_dual::DualParameters::from_core(&settings.dual))
                 .transpose()?,
             report: preset
                 .issues

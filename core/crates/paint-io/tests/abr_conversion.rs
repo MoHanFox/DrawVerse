@@ -618,6 +618,66 @@ fn abr_fade_control_uses_stamp_steps_and_keeps_other_channels_flat() {
         .any(|issue| issue.path == "szVr.fStp" && issue.status == Status::Mapped));
 }
 #[test]
+fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
+    let mut source = preset();
+    source.entries.push((
+        "dualBrush".into(),
+        Value::Object {
+            global: false,
+            descriptor: Box::new(object(
+                "dualBrush",
+                vec![
+                    ("useDualBrush", Value::Boolean(true)),
+                    (
+                        "Brsh",
+                        Value::Object {
+                            global: false,
+                            descriptor: Box::new(object(
+                                "computedBrush",
+                                vec![
+                                    ("Dmtr", unit(*b"#Pxl", 8.)),
+                                    ("Angl", unit(*b"#Ang", 0.)),
+                                    ("Rndn", unit(*b"#Prc", 100.)),
+                                    ("Hrdn", unit(*b"#Prc", 50.)),
+                                    ("Spcn", unit(*b"#Prc", 2.)),
+                                ],
+                            )),
+                        },
+                    ),
+                    (
+                        "BlnM",
+                        Value::Enumerated {
+                            type_id: b"BlnM".to_vec(),
+                            value: b"Mltp".to_vec(),
+                        },
+                    ),
+                    ("Spcn", unit(*b"#Prc", 25.)),
+                    ("useScatter", Value::Boolean(false)),
+                ],
+            )),
+        },
+    ));
+    let shape = shape(false);
+    let p = paint_io::abr_conversion::convert_v9(
+        &[LinkedPreset {
+            name: "dual",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+        }],
+        &std::collections::BTreeMap::new(),
+        &std::collections::BTreeMap::new(),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(p[0].converter_version, 11);
+    assert!(p[0].settings.dual.enabled());
+    assert_eq!(p[0].settings.dual.mode(), paint_core::DualMode::Multiply);
+    assert_eq!(p[0].settings.dual.secondary().radius(), 4.);
+    assert_eq!(p[0].settings.dual.secondary().spacing(), Some(0.25));
+    assert_eq!(p[0].settings.dual.secondary().tip().hardness, 0.5);
+}
+#[test]
 fn abr_tilt_size_source_changes_real_brush_radius() {
     use paint_core::{Document, InputPoint};
     let mut source = pressure_preset();
