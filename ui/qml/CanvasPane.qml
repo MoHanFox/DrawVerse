@@ -18,6 +18,26 @@ Rectangle {
     function attach(host){parent=host;width=Qt.binding(()=>host.width);height=Qt.binding(()=>host.height);visible=true;canvas.forceActiveFocus()}
     TransparencyGrid {objectName:"canvasTransparency";x:canvas.documentRect.x;y:canvas.documentRect.y;width:canvas.documentRect.width;height:canvas.documentRect.height}
     PaintCanvas {id:canvas;initialFitRatio:.76;objectName:root.initialDocument?"mainCanvas":"documentCanvas:"+root.documentId;anchors.fill:parent;client:root.ownClient;focus:true;enabled:!root.savingBlocked}
+    Image {
+        objectName:"secondaryBrushCursorImage";z:8
+        x:canvas.secondaryCursorRect.x;y:canvas.secondaryCursorRect.y+(canvas.secondaryCursorRect.height-height)/2
+        width:canvas.secondaryCursorRect.width;height:canvas.secondaryCursorRect.height*canvas.secondaryCursorRoundness
+        rotation:canvas.secondaryCursorAngle
+        opacity:root.ownClient.brushLibrary.cursorImageOpacity/100
+        visible:canvas.secondaryCursorVisible && root.ownClient.brushLibrary.cursorImage && !root.ownClient.brushLibrary.cursorSimple && !root.ownClient.liquifyActive && root.ownClient.cursorSecondaryTipImage.length>0
+        source:visible?root.ownClient.cursorSecondaryTipImage:""
+        cache:false;smooth:true
+    }
+    Image {
+        objectName:"brushCursorImage";z:8.5
+        x:canvas.brushCursorRect.x;y:canvas.brushCursorRect.y+(canvas.brushCursorRect.height-height)/2
+        width:canvas.brushCursorRect.width;height:canvas.brushCursorRect.height*canvas.brushCursorRoundness
+        rotation:canvas.brushCursorAngle
+        opacity:root.ownClient.brushLibrary.cursorImageOpacity/100
+        visible:canvas.brushCursorVisible && root.ownClient.brushLibrary.cursorImage && !root.ownClient.brushLibrary.cursorSimple && !root.ownClient.liquifyActive && root.ownClient.cursorTipImage.length>0
+        source:visible?root.ownClient.cursorTipImage:""
+        cache:false;smooth:true
+    }
     Shape {
         objectName:"secondaryBrushCursorOutline";z:9
         id:secondCursor

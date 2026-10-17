@@ -71,8 +71,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 52) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.52 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 53) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.53 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -102,7 +102,7 @@ public:
         inspectStorage();
         auto caps = dto<PaintCapabilities>();
         if (!check(paint_core_capabilities(m_core, &caps))) return;
-        constexpr uint64_t required = PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
+        constexpr uint64_t required = PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
         if ((caps.features & (required | PAINT_FEATURE_SELECTION)) != (required | PAINT_FEATURE_SELECTION)) { emit failure(QStringLiteral("当前核心缺少异步视口或选区能力")); return; }
         auto desc = dto<PaintDocumentDesc>(); desc.width = 960; desc.height = 640;
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
@@ -193,6 +193,17 @@ public:
         if(status==PAINT_OK)path.resize(qsizetype(required));
         emit brushOutlineReady(identity,status==PAINT_OK?QString::fromLatin1(path):QString{},status==PAINT_OK?QString{}:immediateError(status));
     }
+    void queueBrushCursorImages(const QStringList &identities) {m_pendingCursorImages=identities;}
+    void pollBrushCursorImage() {
+        if(m_pendingCursorImages.isEmpty())return;
+        const auto identity=m_pendingCursorImages.takeFirst();const auto bytes=identity.toLatin1();
+        PaintBrushLibrary *library=nullptr;{QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
+        QByteArray png(512*1024,'\0');uint64_t required=0;
+        const auto status=paint_brush_library_tip_cursor_png(library,reinterpret_cast<const uint8_t*>(bytes.constData()),quint64(bytes.size()),reinterpret_cast<uint8_t*>(png.data()),quint64(png.size()),&required);
+        if(status==PAINT_BUSY){m_pendingCursorImages.append(identity);return;}
+        if(status==PAINT_OK)png.resize(qsizetype(required));
+        emit brushCursorImageReady(identity,status==PAINT_OK?QStringLiteral("data:image/png;base64,")+QString::fromLatin1(png.toBase64()):QString{},status==PAINT_OK?QString{}:immediateError(status));
+    }
     void inspectBrushSource(QString identity,quint64 token) {
         const auto bytes=identity.toLatin1();
         PaintBrushLibrary *library=nullptr;{QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
@@ -225,6 +236,7 @@ signals:
     void wetActionReady(bool success,QString error);
     void brushSourceReady(QString identity,quint64 token,QByteArray record,QString error);
     void brushOutlineReady(QString identity,QString path,QString error);
+    void brushCursorImageReady(QString identity,QString image,QString error);
     void brushTipReady(QString target,QString resource,int depth,QString error,int role);
     void nativeBrushCatalog(quint64 preparation,QByteArray state,QString error);
     void brushFileReady(QByteArray package,QString error,bool exporting,bool abr);
@@ -375,6 +387,7 @@ public:
         pollBrushState();
         pollWetAction();
         pollBrushOutline();
+        pollBrushCursorImage();
         auto info = dto<PaintSessionInfo>();
         if (!check(paint_session_info(m_core, m_session, &info))) return;
         if(info.completed_sequence<m_bootSequence) return;
@@ -629,7 +642,7 @@ public:
     bool m_catalogLease=false;
     QByteArray m_pendingBrushPreferences;
     quint64 m_reportedBrushPreparation=0;
-    QStringList m_pendingOutlines;
+    QStringList m_pendingOutlines,m_pendingCursorImages;
     QVariantList m_brushQueue;
     QVariantMap m_brushJob;
     double m_brushPreviewScale=1.;
@@ -691,6 +704,12 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(!error.isEmpty())showError(error);
     });
     connect(m_worker,&BackendWorker::brushPreviewReady,m_brushLibrary,&BrushLibrary::acceptPreview);
+    connect(m_worker,&BackendWorker::brushCursorImageReady,this,[this](const QString &identity,const QString &image,const QString &error){
+        if(m_closing || !m_cursorImageDemand.contains(identity))return;
+        if(error.isEmpty())m_cursorImages.insert(identity,image);else m_cursorImageErrors.insert(identity,QStringLiteral("笔尖图片暂不可用：")+error);
+        emit brushCursorImageChanged();
+    });
+    connect(this,&PaintCoreClient::brushChanged,this,&PaintCoreClient::requestBrushCursorImages);
     connect(m_worker,&BackendWorker::brushOutlineReady,this,[this](const QString &identity,const QString &path,const QString &error){
         if(m_drawing && identity==m_strokeOutlineResource){m_strokeOutlinePath=path;m_strokeOutlineReady=error.isEmpty();emit brushOutlineChanged();}
         bool updated=false;
@@ -900,7 +919,7 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
             if(status==PAINT_OK){
                 m_strokeBasePose={false,m_radius,m_brushLibrary->angle(),m_brushLibrary->roundness()};
                 m_strokeOutlineResource=m_brushLibrary->maskResource();m_strokeOutlinePath=m_brushOutlinePath;m_strokeOutlineReady=m_brushOutlineReady;
-                m_strokeSecondOutlineResource=m_secondOutlineResource;m_strokeSecondOutlinePath=m_secondOutlinePath;m_strokeSecondOutlineReady=m_secondOutlineReady;requestBrushOutlines();
+                m_strokeSecondOutlineResource=m_secondOutlineResource;m_strokeSecondOutlinePath=m_secondOutlinePath;m_strokeSecondOutlineReady=m_secondOutlineReady;requestBrushOutlines(false);
                 if(!m_strokePose)paint_brush_pose_create(&m_strokePose);
                 m_strokePoseBound=m_strokePose && paint_brush_pose_bind_prepared(m_strokePose,m_brushCatalogConnection->library,m_brushCatalogConnection->preparation,reinterpret_cast<const uint8_t*>(presetId.constData()),quint64(presetId.size()),request.radius)==PAINT_OK;
             }
@@ -922,13 +941,31 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
     }
     return true;
 }
-void PaintCoreClient::requestBrushOutlines() {
+void PaintCoreClient::requestBrushOutlines(bool updateImages) {
     if(m_closing)return;
+    if(updateImages)requestBrushCursorImages();
     QStringList identities;
     const auto add=[&](const QString &id,bool ready){if(!id.isEmpty() && !ready && !identities.contains(id))identities.append(id);};
     add(m_outlineResource,m_brushOutlineReady || !m_brushOutlineMessage.isEmpty());if(m_brushLibrary->cursorComposite())add(m_secondOutlineResource,m_secondOutlineReady || !m_secondOutlineMessage.isEmpty());
     if(m_drawing){add(m_strokeOutlineResource,m_strokeOutlineReady);if(m_brushLibrary->cursorComposite())add(m_strokeSecondOutlineResource,m_strokeSecondOutlineReady);}
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,identities]{worker->queueBrushOutlines(identities);},Qt::QueuedConnection);
+}
+void PaintCoreClient::requestBrushCursorImages() {
+    if(m_closing)return;
+    QStringList demand;
+    const auto add=[&](const QString &id){if(!id.isEmpty() && !demand.contains(id))demand.append(id);};
+    if(m_brushLibrary->cursorImage() && !m_brushLibrary->cursorSimple()){
+        add(m_outlineResource);
+        const auto dual=m_brushLibrary->dualBrush();const auto color=dual.value("color").toMap();
+        if(m_brushLibrary->cursorComposite() && !m_eraser && !m_smudgeTool && dual.value("enabled").toBool() && color.value("enabled").toBool() && color.value("overflow").toBool())add(m_secondOutlineResource);
+        if(m_drawing){add(m_strokeOutlineResource);if(m_brushLibrary->cursorComposite() && m_strokeSecondImageEligible)add(m_strokeSecondOutlineResource);}
+    }
+    m_cursorImageDemand=demand;
+    for(auto i=m_cursorImages.begin();i!=m_cursorImages.end();)if(!demand.contains(i.key()))i=m_cursorImages.erase(i);else ++i;
+    for(auto i=m_cursorImageErrors.begin();i!=m_cursorImageErrors.end();)if(!demand.contains(i.key()))i=m_cursorImageErrors.erase(i);else ++i;
+    QStringList pending;for(const auto &id:demand)if(!m_cursorImages.contains(id) && !m_cursorImageErrors.contains(id))pending.append(id);
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,pending]{worker->queueBrushCursorImages(pending);},Qt::QueuedConnection);
+    emit brushCursorImageChanged();
 }
 BrushCursorPose PaintCoreClient::baseCursorPose() const {
     if(m_drawing && !m_liquifyActive)return m_strokeBasePose;
@@ -1212,8 +1249,10 @@ bool PaintCoreClient::beginStroke(const InputSample &s) {
         if(layer.value("effectiveLocks").toUInt() & PAINT_LOCK_ALL) {showError(QStringLiteral("当前图层或所属组已完全锁定，请先解锁"));return false;}
     }
     m_dropStroke = false; if (!submit(Begin, s)) return false;
+    const auto capturedDual=m_brushLibrary->dualBrush();const auto capturedColor=capturedDual.value("color").toMap();
+    m_strokeSecondImageEligible=!m_eraser && !m_smudgeTool && s.tool!=PAINT_TOOL_ERASER && capturedDual.value("enabled").toBool() && capturedColor.value("enabled").toBool() && capturedColor.value("overflow").toBool();
     m_strokeColor = m_smudgeTool && !m_smudgeFingerPainting ? QColor() : m_color;
-    m_drawing = true; emit stateChanged(); return true;
+    m_drawing = true;requestBrushCursorImages();emit stateChanged(); return true;
 }
 void PaintCoreClient::strokeTo(const InputSample &s) {
     if(!m_drawing || m_dropStroke)return;

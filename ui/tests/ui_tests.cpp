@@ -1629,6 +1629,101 @@ private slots:
         PaintCoreClient recovered(nullptr,badPath);QTRY_VERIFY(recovered.ready());QTRY_VERIFY_WITH_TIMEOUT(recovered.lastError().contains("UUID"),10000);QTRY_COMPARE(recovered.brushLibrary()->presets().size(),4);{QSettings settings(badPath,QSettings::IniFormat);QCOMPARE(settings.value("brushes/state").toByteArray(),bad);}
         QVERIFY(recovered.beginStroke(sample));recovered.endStroke();QTRY_COMPARE(recovered.undoDepth(),1);QSignalSpy recoveredStopped(&recovered,&PaintCoreClient::stopped);recovered.shutdown();QTRY_COMPARE(recoveredStopped.size(),1);
     }
+    void cursorImagePreferencesAreStrictGlobalAndOutsideBrushDefinitions() {
+        BrushLibrary library;QVERIFY(!library.cursorImage());QCOMPARE(library.cursorImageOpacity(),25);
+        const auto catalog=library.catalogSnapshot();const auto package=library.exportPackage();
+        QSignalSpy settings(&library,&BrushLibrary::settingsChanged),preview(&library,&BrushLibrary::previewRequested);
+        library.setCursorImage(true);library.setCursorImageOpacity(73);
+        QCOMPARE(settings.size(),0);QCOMPARE(preview.size(),0);QCOMPARE(library.catalogSnapshot(),catalog);
+        QCOMPARE(QJsonDocument::fromJson(library.exportPackage()).object().value("brushes"),QJsonDocument::fromJson(package).object().value("brushes"));
+        BrushLibrary restored;QVERIFY(restored.restore(library.snapshot()));QVERIFY(restored.cursorImage());QCOMPARE(restored.cursorImageOpacity(),73);
+        const auto good=restored.snapshot();
+        for(const auto &bad:QJsonArray{0,101,1.5,"25",QJsonValue::Null}) {
+            auto state=QJsonDocument::fromJson(good).object();auto cursor=state.value("cursor").toObject();cursor["imageOpacity"]=bad;state["cursor"]=cursor;
+            QVERIFY(!restored.restore(QJsonDocument(state).toJson()));QCOMPARE(restored.snapshot(),good);
+        }
+        for(const auto &bad:QJsonArray{1,"true",QJsonValue::Null}) {
+            auto state=QJsonDocument::fromJson(good).object();auto cursor=state.value("cursor").toObject();cursor["image"]=bad;state["cursor"]=cursor;
+            QVERIFY(!restored.restore(QJsonDocument(state).toJson()));QCOMPARE(restored.snapshot(),good);
+        }
+        auto old=QJsonDocument::fromJson(good).object();auto cursor=old.value("cursor").toObject();cursor.remove("image");cursor.remove("imageOpacity");old["cursor"]=cursor;
+        QVERIFY(restored.restore(QJsonDocument(old).toJson()));QVERIFY(!restored.cursorImage());QCOMPARE(restored.cursorImageOpacity(),25);
+        QVERIFY(!library.saveCopy("Image cursor independent").isEmpty());QVERIFY(library.resetPreset());QVERIFY(library.cursorImage());QCOMPARE(library.cursorImageOpacity(),73);
+    }
+    void cursorImageQmlWhiteAlphaIndependentOutlineCapturedStrokeAndRestart() {
+        QTemporaryDir temp;const auto preferences=temp.filePath("state.ini");
+        {
+            PaintCoreClient client(nullptr,preferences);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+            QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+            engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));
+            QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready());
+            auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);
+            client.newDocument(256,256);QTRY_VERIFY(client.ready() && client.documentWidth()==256);
+            const auto background=client.activeLayer();client.addLayer("transparent cursor background");QTRY_VERIFY(client.activeLayer()!=background);client.removeLayer(background);QTRY_COMPARE(client.layers().size(),1);canvas->actualSize();
+            QImage tip(32,16,QImage::Format_RGBA8888);tip.fill(Qt::white);
+            for(int y=4;y<12;++y)for(int x=12;x<20;++x)tip.setPixelColor(x,y,Qt::transparent);
+            const auto input=temp.filePath("cursor.png");QVERIFY(tip.save(input));QVERIFY(client.importBrushTip(QUrl::fromLocalFile(input),1));QTRY_VERIFY(!client.brushFileBusy());
+            auto *library=client.brushLibrary();library->setRadius(48);library->setRoundness(.5);library->setAngle(0);
+            const auto hoverAt=canvas->documentRect().center();QHoverEvent hover(QEvent::HoverMove,hoverAt,canvas->mapToGlobal(hoverAt),hoverAt);QCoreApplication::sendEvent(canvas,&hover);
+            const bool initial=canvas->brushCursorVisible();if(!initial)QTest::keyClick(window,Qt::Key_CapsLock);QVERIFY(canvas->brushCursorVisible());
+            for(const auto &v:workspace.leftGroups()+workspace.rightGroups()){const auto g=v.toMap();if(g.value("panels").toStringList().contains("brush-settings"))workspace.setActive(g.value("id").toString(),"brush-settings");}
+            QQuickItem *category=nullptr;QTRY_VERIFY((category=findVisualItem(window->contentItem(),"brushCategory:7")));
+            QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,category->mapToScene({category->width()/2,category->height()/2}).toPoint());
+            auto *toggle=findVisualItem(window->contentItem(),"brushCursorImageEnabled");QVERIFY(toggle);QTRY_VERIFY(toggle->isVisible());
+            QVERIFY(client.cursorTipImage().isEmpty());QVERIFY(!library->cursorImage());
+            QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,toggle->mapToScene({toggle->width()/2,toggle->height()/2}).toPoint());QVERIFY(library->cursorImage());
+            QTRY_VERIFY(!client.cursorTipImage().isEmpty());const auto source=client.cursorTipImage();
+            const auto raster=QImage::fromData(QByteArray::fromBase64(source.mid(source.indexOf(',')+1).toLatin1()));QCOMPARE(raster.size(),QSize(256,256));
+            QCOMPARE(raster.pixelColor(128,128).alpha(),0);QVERIFY(raster.pixelColor(30,128).alpha()>250);
+            for(int y=0;y<256;++y)for(int x=0;x<256;++x){const auto c=raster.pixelColor(x,y);if(c.alpha()>0)QCOMPARE(c.red(),255);}
+            auto *image=findVisualItem(window->contentItem(),"brushCursorImage");QVERIFY(image);
+            library->setCursorOutline(false);QCoreApplication::sendEvent(canvas,&hover);QTRY_VERIFY(image->isVisible());QVERIFY(canvas->brushCursorVisible());QCOMPARE(image->property("cache").toBool(),false);
+            auto *outline=findVisualItem(window->contentItem(),"brushCursorOutline");QVERIFY(outline);QVERIFY(!outline->isVisible());
+            const auto revision=client.revision();const auto depth=client.undoDepth();
+            library->setCursorImageOpacity(73);QTRY_COMPARE(image->opacity(),.73);QCOMPARE(image->height()/image->width(),.5);
+            library->setAngle(30);QCoreApplication::sendEvent(canvas,&hover);QTRY_COMPARE(image->rotation(),30.);
+            library->setAngle(0);QCoreApplication::sendEvent(canvas,&hover);
+            client.setBrushColor(QColor("#ef3456"));client.setSecondaryBrushColor(QColor("#123456"));QCOMPARE(client.cursorTipImage(),source);
+            library->setCursorImage(false);QTRY_VERIFY(!image->isVisible());QVERIFY(client.cursorTipImage().isEmpty());QCOMPARE(canvas->cursor().shape(),Qt::CrossCursor);
+            const auto before=window->grabWindow();library->setCursorImage(true);QTRY_VERIFY(image->isVisible());QTRY_VERIFY(!client.cursorTipImage().isEmpty());QTest::qWait(100);
+            const auto after=window->grabWindow();const auto point=image->mapToScene({image->width()*.15,image->height()*.5})*window->devicePixelRatio();
+            const auto oldPixel=before.pixelColor(point.toPoint()),newPixel=after.pixelColor(point.toPoint());QVERIFY2(newPixel.red()>oldPixel.red()+10,qPrintable(QString("overlay %1 -> %2").arg(oldPixel.name(),newPixel.name())));
+            if(!qEnvironmentVariable("DRAWVERSE_CURSOR_IMAGE_CAPTURE").isEmpty())QVERIFY(after.save(qEnvironmentVariable("DRAWVERSE_CURSOR_IMAGE_CAPTURE")));
+            QTest::keyClick(window,Qt::Key_CapsLock);QVERIFY(!image->isVisible());QTest::keyClick(window,Qt::Key_CapsLock);QTRY_VERIFY(image->isVisible());
+            client.activateEyedropper();QVERIFY(!image->isVisible());client.activateBrush();QCoreApplication::sendEvent(canvas,&hover);QTRY_VERIFY(image->isVisible());
+            library->setCursorSimple(true);QVERIFY(!image->isVisible());library->setCursorSimple(false);QTRY_VERIFY(image->isVisible());
+            QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),depth);
+            InputSample sample;sample.position={128,128};QVERIFY(client.beginStroke(sample));const auto captured=client.cursorTipImage();QVERIFY(!captured.isEmpty());
+            library->useProceduralTip();QCOMPARE(client.cursorTipImage(),captured);
+            library->setCursorImage(false);library->setCursorImage(true);QTRY_COMPARE(client.cursorTipImage(),captured);
+            library->setCursorHoverOnly(true);QVERIFY(!image->isVisible());library->setCursorHoverOnly(false);QTRY_VERIFY(image->isVisible());
+            client.endStroke();QTRY_VERIFY(client.cursorTipImage().isEmpty());QTRY_VERIFY(client.undoDepth()>depth);
+            QVERIFY(!library->createOutlinePreset(true).isEmpty());library->setRadius(36);
+            QVERIFY(client.importBrushTip(QUrl::fromLocalFile(input),1));QTRY_VERIFY(!client.brushFileBusy());
+            QImage secondTip(16,32,QImage::Format_RGBA8888);secondTip.fill(Qt::transparent);
+            for(int y=3;y<29;++y)for(int x=2;x<14;++x)secondTip.setPixelColor(x,y,Qt::white);
+            const auto secondInput=temp.filePath("second-cursor.png");QVERIFY(secondTip.save(secondInput));
+            QVERIFY(client.importDualBrushTip(QUrl::fromLocalFile(secondInput),1));QTRY_VERIFY(!client.brushFileBusy());
+            QVERIFY(client.cursorSecondaryTipImage().isEmpty());library->setCursorComposite(true);
+            QTRY_VERIFY(!client.cursorTipImage().isEmpty() && !client.cursorSecondaryTipImage().isEmpty());
+            const auto mainSource=client.cursorTipImage(),secondSource=client.cursorSecondaryTipImage();QVERIFY(mainSource!=secondSource);
+            QCoreApplication::sendEvent(canvas,&hover);auto *secondImage=findVisualItem(window->contentItem(),"secondaryBrushCursorImage");QVERIFY(secondImage);QTRY_VERIFY(secondImage->isVisible());
+            QVERIFY(client.beginStroke(sample));library->useProceduralTip();auto dual=library->dualBrush();dual["resource"]=QVariant{};QVERIFY(library->setDualBrush(dual));
+            QCOMPARE(client.cursorTipImage(),mainSource);QCOMPARE(client.cursorSecondaryTipImage(),secondSource);
+            library->setCursorComposite(false);QVERIFY(!secondImage->isVisible());library->setCursorComposite(true);QTRY_COMPARE(client.cursorSecondaryTipImage(),secondSource);
+            library->setCursorImage(false);library->setCursorImage(true);QTRY_COMPARE(client.cursorTipImage(),mainSource);QTRY_COMPARE(client.cursorSecondaryTipImage(),secondSource);
+            client.cancelStroke();QTRY_VERIFY(client.cursorTipImage().isEmpty() && client.cursorSecondaryTipImage().isEmpty());
+            client.clearError();QVERIFY(library->setMaskResource(library->selectedId(),QString(64,'0')));QTRY_VERIFY(!client.lastError().isEmpty());QTRY_VERIFY(library->maskResource()!=QString(64,'0'));
+            library->useProceduralTip();QTRY_VERIFY(client.cursorImageMessage().isEmpty());QVERIFY(client.cursorTipImage().isEmpty());
+            if(!initial)QTest::keyClick(window,Qt::Key_CapsLock);
+            auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);
+            const auto peerId=documents->newDocument(16,16,true);QVERIFY(!peerId.isEmpty());auto *peer=documents->client(peerId);QVERIFY(peer);QTRY_VERIFY(peer->ready());QVERIFY(peer->brushLibrary()->cursorImage());QCOMPARE(peer->brushLibrary()->cursorImageOpacity(),73);
+            peer->brushLibrary()->setCursorImageOpacity(42);QCOMPARE(library->cursorImageOpacity(),42);library->setCursorImageOpacity(73);QCOMPARE(peer->brushLibrary()->cursorImageOpacity(),73);
+            QVERIFY(warnings.isEmpty());QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+        }
+        PaintCoreClient reopened(nullptr,preferences);QTRY_VERIFY(reopened.ready());QVERIFY(reopened.brushLibrary()->cursorImage());QCOMPARE(reopened.brushLibrary()->cursorImageOpacity(),73);
+        QSignalSpy stopped(&reopened,&PaintCoreClient::stopped);reopened.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void brushCursorPreferencesAreGlobalPersistentAndNeverExported() {
         BrushLibrary model;QSignalSpy preview(&model,&BrushLibrary::previewRequested);QSignalSpy settings(&model,&BrushLibrary::settingsChanged);
         model.setCursorCenter(true);model.setCursorHoverOnly(true);model.setCursorWidth(3);model.setCursorOutline(false);model.setCursorSimple(true);model.setCursorColor("#123456");model.setCursorSecondaryColor("#abcdef");QCOMPARE(settings.size(),0);QCOMPARE(preview.size(),0);

@@ -261,6 +261,17 @@ ColumnLayout {
                     visible:root.category===7;Layout.fillWidth:true;spacing:10
                     CompactCheckBox {objectName:"brushCursorEnabled";text:"笔尖轮廓";checked:root.library.cursorOutline;font.pixelSize:10;onToggled:root.library.cursorOutline=checked;tooltip:"显示实际圆度与角度的双线笔尖边界。"}
                     CompactCheckBox {objectName:"brushCursorComposite";text:"复合光标";checked:root.library.cursorComposite;font.pixelSize:10;onToggled:root.library.cursorComposite=checked;tooltip:"同时显示允许溢出的第二基础笔尖范围；只影响显示，不改变实际笔触，不预演随机散布。"}
+                    CompactCheckBox {objectName:"brushCursorImageEnabled";text:"半透明图片";checked:root.library.cursorImage;font.pixelSize:10;onToggled:root.library.cursorImage=checked;tooltip:"用白色显示实际图片笔尖覆盖，不影响绘画；简化圆形模式下隐藏。"}
+                    ColumnLayout {
+                        Layout.fillWidth:true;spacing:2
+                        Label {text:"图片不透明度";color:Theme.text;font.pixelSize:10}
+                        Slider {objectName:"brushCursorImageOpacitySlider";Layout.fillWidth:true;Layout.minimumWidth:0;from:1;to:100;stepSize:1;value:root.library.cursorImageOpacity;enabled:root.library.cursorImage;onMoved:root.library.cursorImageOpacity=Math.round(value);ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"仅调整光标图片的显示透明度，不影响实际笔触。"}
+                        RowLayout {
+                            CompactSpinBox {objectName:"brushCursorImageOpacity";from:1;to:100;editable:true;implicitWidth:66;implicitHeight:20;value:root.library.cursorImageOpacity;enabled:root.library.cursorImage;onValueModified:root.library.cursorImageOpacity=value;tooltip:"光标图片显示不透明度（%）。"}
+                            Label {text:"%";color:Theme.text;font.pixelSize:10}
+                        }
+                    }
+                    Label {visible:root.library.cursorImage && PaintClient.cursorImageMessage.length>0;text:PaintClient.cursorImageMessage;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     CompactCheckBox {objectName:"brushCursorSimple";text:"简化圆形";checked:root.library.cursorSimple;font.pixelSize:10;onToggled:root.library.cursorSimple=checked;tooltip:"使用标称大小的圆形轮廓，不改变实际笔尖。"}
                     CompactCheckBox {objectName:"brushCursorCenter";text:"中心十字";checked:root.library.cursorCenter;font.pixelSize:10;onToggled:root.library.cursorCenter=checked;tooltip:"在笔尖中心显示精确定位十字。"}
                     CompactCheckBox {objectName:"brushCursorHoverOnly";text:"仅悬停时显示";checked:root.library.cursorHoverOnly;font.pixelSize:10;onToggled:root.library.cursorHoverOnly=checked;tooltip:"开始绘画时隐藏笔尖预览，结束后恢复。"}

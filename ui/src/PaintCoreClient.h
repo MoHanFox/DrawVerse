@@ -2,6 +2,7 @@
 #include "BrushLibrary.h"
 #include <QColor>
 #include <QImage>
+#include <QHash>
 #include <QObject>
 #include <QElapsedTimer>
 #include <QPointF>
@@ -45,6 +46,9 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QString brushSourceMessage READ brushSourceMessage NOTIFY brushSourceChanged)
     Q_PROPERTY(bool brushSourceBusy READ brushSourceBusy NOTIFY brushSourceChanged)
     Q_PROPERTY(QString brushImportMessage READ brushImportMessage NOTIFY brushFileChanged)
+    Q_PROPERTY(QString cursorTipImage READ cursorTipImage NOTIFY brushCursorImageChanged)
+    Q_PROPERTY(QString cursorSecondaryTipImage READ cursorSecondaryTipImage NOTIFY brushCursorImageChanged)
+    Q_PROPERTY(QString cursorImageMessage READ cursorImageMessage NOTIFY brushCursorImageChanged)
     Q_PROPERTY(QString cursorSecondaryOutlinePath READ cursorSecondaryOutlinePath NOTIFY brushOutlineChanged)
     Q_PROPERTY(bool cursorSecondaryOutlineReady READ cursorSecondaryOutlineReady NOTIFY brushOutlineChanged)
     Q_PROPERTY(bool cursorSecondaryHasImage READ cursorSecondaryHasImage NOTIFY brushOutlineChanged)
@@ -141,6 +145,9 @@ public:
     void persistBrushPreferences(const QByteArray &state);
     bool brushFileBusy() const {return m_brushFileBusy;}
     QString brushImportMessage() const {return m_brushImportMessage;}
+    QString cursorTipImage() const {return m_cursorImages.value(m_drawing && !m_liquifyActive?m_strokeOutlineResource:m_outlineResource);}
+    QString cursorSecondaryTipImage() const {if(m_drawing && !m_strokeSecondImageEligible)return {};return m_cursorImages.value(m_drawing && !m_liquifyActive?m_strokeSecondOutlineResource:m_secondOutlineResource);}
+    QString cursorImageMessage() const {return m_cursorImageErrors.value(m_drawing && !m_liquifyActive?m_strokeOutlineResource:m_outlineResource);}
     QString cursorOutlinePath() const {return m_drawing && !m_liquifyActive?m_strokeOutlinePath:m_brushOutlinePath;}
     bool cursorOutlineReady() const {return m_drawing && !m_liquifyActive?m_strokeOutlineReady:m_brushOutlineReady;}
     bool cursorHasImage() const {return !(m_drawing && !m_liquifyActive?m_strokeOutlineResource:m_brushLibrary->maskResource()).isEmpty();}
@@ -392,6 +399,7 @@ public:
     Q_INVOKABLE void shutdown();
 signals:
     void brushCursorPreferencesChanged();
+    void brushCursorImageChanged();
     void brushOutlineChanged();
     void wetActionChanged();
     void wetBrushFinished(bool success);
@@ -443,7 +451,11 @@ private:
     bool m_brushOutlineReady=false;
     QString m_secondOutlineResource,m_secondOutlinePath,m_secondOutlineMessage,m_strokeSecondOutlineResource,m_strokeSecondOutlinePath;
     bool m_secondOutlineReady=false,m_strokeSecondOutlineReady=false;
-    void requestBrushOutlines();
+    void requestBrushOutlines(bool updateImages=true);
+    void requestBrushCursorImages();
+    QHash<QString,QString> m_cursorImages,m_cursorImageErrors;
+    QStringList m_cursorImageDemand;
+    bool m_strokeSecondImageEligible=false;
     bool submit(int type, const InputSample &sample = {}, quint64 id = 0,
                 const QString &text = {}, qreal amount = 0, bool flag = false);
     void showError(const QString &error);
