@@ -6,6 +6,7 @@ fn text(value: &str) -> Vec<u8> {
     }
     output
 }
+type TextureFixture<'a> = Option<(&'a str, &'a str, f64, f64, f64, f64, bool, u16)>;
 fn id(value: &str) -> Vec<u8> {
     let mut output = (if value.len() == 4 {
         0
@@ -46,7 +47,7 @@ fn preset(
     scatter: Option<bool>,
     color: Option<(bool, bool)>,
     (shape_jitter, device): (Option<bool>, Option<(bool, i32, bool)>),
-    texture: Option<(&str, &str, f64, f64, f64, f64, bool)>,
+    texture: TextureFixture<'_>,
 ) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
@@ -239,6 +240,7 @@ fn preset(
         minimum_depth,
         depth_jitter,
         depth_pressure,
+        _texture_depth,
     )) = texture
     {
         entries.push(("useTexture", typed(b"bool", &[1])));
@@ -406,7 +408,7 @@ pub fn fixture_with_texture(mode: &str) -> Vec<u8> {
         None,
         None,
         (None, None),
-        Some(("pattern-identity", mode, 0., 0., 0., 0., false)),
+        Some(("pattern-identity", mode, 0., 0., 0., 0., false, 8)),
     );
     let mut output = bytes[..4].to_vec();
     let mut offset = 4;
@@ -436,6 +438,7 @@ pub fn fixture_with_texture_adjustments(mode: &str, brightness: f64, contrast: f
             0.,
             0.,
             false,
+            8,
         )),
     );
     let mut output = bytes[..4].to_vec();
@@ -471,7 +474,30 @@ pub fn fixture_with_texture_depth(
             minimum_depth,
             depth_jitter,
             depth_pressure,
+            8,
         )),
+    );
+    let mut output = bytes[..4].to_vec();
+    let mut offset = 4;
+    while offset < bytes.len() {
+        let size = u32::from_be_bytes(bytes[offset + 8..offset + 12].try_into().unwrap()) as usize;
+        output.extend_from_slice(&bytes[offset..offset + 12 + size]);
+        output.resize(output.len() + (4 - size % 4) % 4, 0);
+        offset += 12 + size;
+    }
+    output
+}
+#[allow(dead_code)]
+pub fn fixture_with_16bit_texture(mode: &str) -> Vec<u8> {
+    let bytes = fixture_inner(
+        (6, 2),
+        false,
+        Some(100.),
+        false,
+        None,
+        None,
+        (None, None),
+        Some(("pattern-identity", mode, 0., 0., 0., 0., false, 16)),
     );
     let mut output = bytes[..4].to_vec();
     let mut offset = 4;
@@ -492,7 +518,7 @@ fn fixture_inner(
     scatter: Option<bool>,
     color: Option<(bool, bool)>,
     dynamics: (Option<bool>, Option<(bool, i32, bool)>),
-    texture: Option<(&str, &str, f64, f64, f64, f64, bool)>,
+    texture: TextureFixture<'_>,
 ) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
@@ -528,7 +554,7 @@ fn fixture_inner(
     samples.extend(&record);
     samples.resize(samples.len() + (4 - record.len() % 4) % 4, 0);
     section(&mut bytes, b"samp", &samples);
-    if let Some((pattern, _, _, _, _, _, _)) = texture {
+    if let Some((pattern, _, _, _, _, _, _, texture_depth)) = texture {
         let mut body = 1u32.to_be_bytes().to_vec();
         body.extend(1u32.to_be_bytes());
         body.extend(4u16.to_be_bytes());
@@ -546,14 +572,23 @@ fn fixture_inner(
             body.extend(value.to_be_bytes());
         }
         body.extend(24u32.to_be_bytes());
-        let pixels = vec![
-            0u8, 255, 0, 255, 255, 0, 255, 0, 0, 255, 0, 255, 255, 0, 255, 0,
-        ];
-        let mut channel = 8u32.to_be_bytes().to_vec();
+        let pixels = if texture_depth == 16 {
+            [
+                0u16, 65535, 0, 65535, 65535, 0, 65535, 0, 0, 65535, 0, 65535, 65535, 0, 65535, 0,
+            ]
+            .into_iter()
+            .flat_map(|value| value.to_be_bytes())
+            .collect::<Vec<_>>()
+        } else {
+            vec![
+                0u8, 255, 0, 255, 255, 0, 255, 0, 0, 255, 0, 255, 255, 0, 255, 0,
+            ]
+        };
+        let mut channel = u32::from(texture_depth).to_be_bytes().to_vec();
         for value in [0u32, 0, 4, 4] {
             channel.extend(value.to_be_bytes());
         }
-        channel.extend(8u16.to_be_bytes());
+        channel.extend(texture_depth.to_be_bytes());
         channel.push(0);
         channel.extend(&pixels);
         body.extend(1u32.to_be_bytes());

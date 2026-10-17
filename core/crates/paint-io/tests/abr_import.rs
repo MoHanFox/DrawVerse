@@ -281,6 +281,35 @@ fn abr_texture_depth_dynamics_map_to_pressure_floor_and_jitter() {
 }
 
 #[test]
+fn sixteen_bit_texture_patterns_decode_and_bind_as_eight_bit_coverage() {
+    let token = CancellationToken::default();
+    let original = Arc::new(support::abr_fixture::fixture_with_16bit_texture("Mltp"));
+    let parsed = paint_io::abr_sampled::decode_sectioned(&original, &token).unwrap();
+    let pattern = parsed.patterns.get("pattern-identity").unwrap();
+    assert_eq!(
+        pattern.mask.coverage(),
+        [0, 255, 0, 255, 255, 0, 255, 0, 0, 255, 0, 255, 255, 0, 255, 0]
+    );
+    let batch = ImportBatch::decode(original, MAX_CATALOG_MASK_BYTES, &token).unwrap();
+    let wire: serde_json::Value = serde_json::from_slice(&batch.to_json().unwrap()).unwrap();
+    assert_eq!(wire["presets"][0]["texture"]["enabled"], true);
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().into(), MAX_CATALOG_MASK_BYTES).unwrap();
+    let imported = batch.persist(&store, &token).unwrap();
+    assert!(imported[0].settings().texture.enabled());
+    assert_eq!(
+        imported[0]
+            .settings()
+            .texture
+            .resource()
+            .unwrap()
+            .source()
+            .coverage(),
+        pattern.mask.coverage()
+    );
+}
+
+#[test]
 fn pressure_handoff_and_source_reset_preserve_image_and_program_across_two_strokes() {
     let token = CancellationToken::default();
     let original = Arc::new(support::abr_fixture::fixture_with_pressure(6, 2, false));

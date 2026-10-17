@@ -142,7 +142,7 @@ fn external_sample_descriptor_and_pixels_are_inspected_without_claiming_conversi
         &token,
     )
     .unwrap();
-    assert_eq!(batch.asset_count(), 1);
+    assert_eq!(batch.asset_count(), 2);
     let resources = paint_io::brush_resource::ResourceStore::open(
         directory.path().join("imported"),
         paint_core::MAX_CATALOG_MASK_BYTES,
@@ -158,7 +158,9 @@ fn external_sample_descriptor_and_pixels_are_inspected_without_claiming_conversi
         .load(imported[0].source_id(), &token)
         .unwrap();
     assert_eq!(captured.original(), bytes);
-    assert_eq!(captured.info.report.len(), brush.issues.len());
+    assert!(captured.info.report.iter().any(|item| {
+        item.path == "useTexture" && item.status == paint_io::brush_source::Support::Mapped
+    }));
     for root in &descriptors {
         println!(
             "root {:?}, {} properties",

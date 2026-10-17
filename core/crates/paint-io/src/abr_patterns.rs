@@ -50,6 +50,7 @@ fn skip(offset: &mut usize, amount: usize, end: usize) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn preflight_pattern_records(
     data: &[u8],
     token: &CancellationToken,
@@ -199,23 +200,15 @@ pub fn decode(
             presets: BTreeMap::new(),
         });
     }
-    let mut channel_budget = 0usize;
-    for section in sections.iter().filter(|section| &section.key == b"patt") {
-        preflight_pattern_records(&section.bytes, token, &mut channel_budget)?;
-    }
-    if tip_resident.saturating_add(channel_budget) > MAX_CATALOG_MASK_BYTES {
-        return Err(Error::Limit("ABR tips and texture decode budget"));
-    }
-    let pack = brushkit_abr::parse_abr_deferred(bytes)
+    let mut resident = tip_resident;
+    let decoded = crate::abr_pattern_decode::decode(sections, token, &mut resident)?;
+    let pack = brushkit_abr::parse_abr_deferred_without_patterns(bytes)
         .map_err(|_| Error::Invalid("ABR texture parsing"))?
         .pack;
     let mut patterns = BTreeMap::new();
-    let mut resident = tip_resident;
-    for pattern in pack.patterns {
+    for pattern in decoded {
         check(token)?;
-        if pattern.gray.len() != (pattern.width as usize).saturating_mul(pattern.height as usize)
-            || pattern.mode == 0
-        {
+        if pattern.gray.len() != (pattern.width as usize).saturating_mul(pattern.height as usize) {
             return Err(Error::Invalid("ABR texture pixels"));
         }
         let mask = BrushMask::new(pattern.width, pattern.height, pattern.gray)?;
