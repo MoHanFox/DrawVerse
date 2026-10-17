@@ -184,6 +184,7 @@ pub struct BrushDynamics {
     pub distance: DistanceDynamics,
     pub tilt: TiltDynamics,
     pub rotation: RotationDynamics,
+    pub direction: DirectionDynamics,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
@@ -199,6 +200,7 @@ impl BrushDynamics {
             && self.distance.is_default()
             && self.tilt.is_default()
             && self.rotation.is_default()
+            && self.direction.is_default()
     }
 }
 
@@ -494,6 +496,56 @@ impl RotationDynamics {
     }
 }
 
+/// Optional stroke-direction-driven size, flow and opacity response. Direction
+/// is normalized over one full turn; no direction preserves identity factors.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DirectionDynamics {
+    enabled: bool,
+    size: PressureControl,
+    flow: PressureControl,
+    opacity: PressureControl,
+}
+impl DirectionDynamics {
+    pub fn new(
+        enabled: bool,
+        size: PressureControl,
+        flow: PressureControl,
+        opacity: PressureControl,
+    ) -> Self {
+        Self {
+            enabled,
+            size,
+            flow,
+            opacity,
+        }
+    }
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub fn size(&self) -> &PressureControl {
+        &self.size
+    }
+    pub fn flow(&self) -> &PressureControl {
+        &self.flow
+    }
+    pub fn opacity(&self) -> &PressureControl {
+        &self.opacity
+    }
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+    pub(crate) fn compile(&self) -> Option<CompiledDirectionDynamics> {
+        if !self.enabled {
+            return None;
+        }
+        Some(CompiledDirectionDynamics {
+            size: self.size.compile(),
+            flow: self.flow.compile(),
+            opacity: self.opacity.compile(),
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AngleControl {
     #[default]
@@ -657,6 +709,28 @@ impl CompiledRotationDynamics {
             return (1., 1., 1.);
         }
         let input = rotation.clamp(0., 1.);
+        let response = |control: &Option<CompiledPressureControl>| {
+            control.as_ref().map_or(1., |c| c.response(input))
+        };
+        (
+            response(&self.size),
+            response(&self.flow),
+            response(&self.opacity),
+        )
+    }
+}
+#[derive(Clone, Debug)]
+pub(crate) struct CompiledDirectionDynamics {
+    size: Option<CompiledPressureControl>,
+    flow: Option<CompiledPressureControl>,
+    opacity: Option<CompiledPressureControl>,
+}
+impl CompiledDirectionDynamics {
+    pub(crate) fn factors(&self, direction: f32) -> (f32, f32, f32) {
+        if !direction.is_finite() {
+            return (1., 1., 1.);
+        }
+        let input = direction.clamp(0., 1.);
         let response = |control: &Option<CompiledPressureControl>| {
             control.as_ref().map_or(1., |c| c.response(input))
         };

@@ -76,6 +76,9 @@ ColumnLayout {
     function setRotationDynamicsEnabled(enabled){return root.library.setRotationDynamicsEnabled(enabled)}
     function setRotationControl(target,points,minimum){return root.library.setRotationControl(target,points,minimum)}
     function resetRotationControl(target){return root.library.resetRotationControl(target)}
+    function setDirectionDynamicsEnabled(enabled){return root.library.setDirectionDynamicsEnabled(enabled)}
+    function setDirectionControl(target,points,minimum){return root.library.setDirectionControl(target,points,minimum)}
+    function resetDirectionControl(target){return root.library.resetDirectionControl(target)}
     onCategoryChanged:if(category===8)inspectSource()
     readonly property real contentHeight:360
     implicitHeight:contentHeight
@@ -310,6 +313,10 @@ ColumnLayout {
                     SpeedCurveEditor {library:root.library;target:"size";prefix:"rotationSize";caption:"尺寸随笔旋转变化";curveHelp:"横轴为笔旋转整圈归一化值，纵轴为尺寸比例；编辑自动平滑。";minimumHelp:"最低尺寸比例。";curve:root.library.rotationSizeCurve;minimum:root.library.rotationSizeMinimum;setControl:function(points,minimum){return root.setRotationControl("size",points,minimum)};resetControl:function(){return root.resetRotationControl("size")}}
                     SpeedCurveEditor {library:root.library;target:"flow";prefix:"rotationFlow";caption:"流量随笔旋转变化";curveHelp:"横轴为笔旋转整圈归一化值，纵轴为流量比例；编辑自动平滑。";minimumHelp:"最低流量比例。";curve:root.library.rotationFlowCurve;minimum:root.library.rotationFlowMinimum;setControl:function(points,minimum){return root.setRotationControl("flow",points,minimum)};resetControl:function(){return root.resetRotationControl("flow")}}
                     SpeedCurveEditor {library:root.library;target:"opacity";prefix:"rotationOpacity";caption:"不透明度随笔旋转变化";curveHelp:"横轴为笔旋转整圈归一化值，纵轴为整笔不透明度比例；独立于流量曲线。";minimumHelp:"最低不透明度比例。";curve:root.library.rotationOpacityCurve;minimum:root.library.rotationOpacityMinimum;setControl:function(points,minimum){return root.setRotationControl("opacity",points,minimum)};resetControl:function(){return root.resetRotationControl("opacity")}}
+                    CompactCheckBox {objectName:"settingsDirectionEnabled";text:"启用笔触方向动态";checked:root.library.directionDynamicsEnabled;font.pixelSize:10;onToggled:root.setDirectionDynamicsEnabled(checked);tooltip:"使用画布运动方向角控制尺寸、流量和整笔不透明度。"}
+                    SpeedCurveEditor {library:root.library;target:"size";prefix:"directionSize";caption:"尺寸随笔触方向变化";curveHelp:"横轴为笔触方向整圈归一化值，纵轴为尺寸比例；编辑自动平滑。";minimumHelp:"最低尺寸比例。";curve:root.library.directionSizeCurve;minimum:root.library.directionSizeMinimum;setControl:function(points,minimum){return root.setDirectionControl("size",points,minimum)};resetControl:function(){return root.resetDirectionControl("size")}}
+                    SpeedCurveEditor {library:root.library;target:"flow";prefix:"directionFlow";caption:"流量随笔触方向变化";curveHelp:"横轴为笔触方向整圈归一化值，纵轴为流量比例；编辑自动平滑。";minimumHelp:"最低流量比例。";curve:root.library.directionFlowCurve;minimum:root.library.directionFlowMinimum;setControl:function(points,minimum){return root.setDirectionControl("flow",points,minimum)};resetControl:function(){return root.resetDirectionControl("flow")}}
+                    SpeedCurveEditor {library:root.library;target:"opacity";prefix:"directionOpacity";caption:"不透明度随笔触方向变化";curveHelp:"横轴为笔触方向整圈归一化值，纵轴为整笔不透明度比例；独立于流量曲线。";minimumHelp:"最低不透明度比例。";curve:root.library.directionOpacityCurve;minimum:root.library.directionOpacityMinimum;setControl:function(points,minimum){return root.setDirectionControl("opacity",points,minimum)};resetControl:function(){return root.resetDirectionControl("opacity")}}
                     CompactCheckBox {objectName:"settingsAirbrushEnabled";text:"喷枪";checked:root.library.airbrush.enabled;font.pixelSize:10;onToggled:root.setAirbrushField("enabled",checked);tooltip:"按住不动时按固定时间间隔持续沉积颜色；用于画笔和橡皮，涂抹与湿混不启用。"}
                     RowLayout {Layout.fillWidth:true;visible:root.library.airbrush.enabled
                         Label {text:"间隔";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}

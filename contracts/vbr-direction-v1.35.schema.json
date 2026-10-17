@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:brush:direction:1.35",
+  "title": "DrawVerse VBR 1.35 stroke direction dynamics",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/direction"
+    },
+    {
+      "$ref": "#/$defs/preset"
+    }
+  ],
+  "$defs": {
+    "direction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "enabled",
+        "size",
+        "flow",
+        "opacity"
+      ],
+      "properties": {
+        "model": {
+          "const": "direction-v1"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "size": {
+          "$ref": "#/$defs/control"
+        },
+        "flow": {
+          "$ref": "#/$defs/control"
+        },
+        "opacity": {
+          "$ref": "#/$defs/control"
+        }
+      }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "curve",
+        "minimum"
+      ],
+      "properties": {
+        "curve": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 17,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "minimum": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "interpolation": {
+          "enum": [
+            "smooth-pchip-v1"
+          ]
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "required": [
+        "parameters"
+      ],
+      "properties": {
+        "parameters": {
+          "type": "object",
+          "required": [
+            "directionDynamics"
+          ],
+          "properties": {
+            "directionDynamics": {
+              "$ref": "#/$defs/direction"
+            }
+          }
+        }
+      }
+    }
+  }
+}

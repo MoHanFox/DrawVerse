@@ -43,6 +43,7 @@ fn package(color: DualColor, enabled: bool, path: bool) -> Package {
                 distance_dynamics: None,
                 tilt_dynamics: None,
                 rotation_dynamics: None,
+                direction_dynamics: None,
                 diameter: 12.,
                 spacing: 0.25,
                 dab_opacity: 0.4,

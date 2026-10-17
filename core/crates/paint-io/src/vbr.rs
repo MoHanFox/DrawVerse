@@ -93,6 +93,12 @@ pub struct Parameters {
         deserialize_with = "crate::brush_rotation::present"
     )]
     pub rotation_dynamics: Option<crate::brush_rotation::RotationParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_direction::present"
+    )]
+    pub direction_dynamics: Option<crate::brush_direction::DirectionParameters>,
 }
 impl Parameters {
     pub fn definition(&self) -> BrushDefinition {
@@ -138,6 +144,11 @@ impl Parameters {
             .unwrap_or_default();
         dynamics.rotation = self
             .rotation_dynamics
+            .as_ref()
+            .map(|p| p.core())
+            .unwrap_or_default();
+        dynamics.direction = self
+            .direction_dynamics
             .as_ref()
             .map(|p| p.core())
             .unwrap_or_default();
@@ -331,6 +342,7 @@ impl Package {
             let distance = b.parameters.distance_dynamics.is_some();
             let tilt = b.parameters.tilt_dynamics.is_some();
             let rotation = b.parameters.rotation_dynamics.is_some();
+            let direction = b.parameters.direction_dynamics.is_some();
             let textured = b.texture.is_some();
             let dual = b.dual_brush.is_some();
             if let Some(d) = &b.dual_brush {
@@ -359,7 +371,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if rotation {
+                != if direction {
+                    24
+                } else if rotation {
                     23
                 } else if tilt {
                     22
@@ -413,7 +427,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 26
+            if b.required_capabilities.len() > 27
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -440,6 +454,7 @@ impl Package {
                             | "distance-dynamics"
                             | "tilt-dynamics"
                             | "rotation-dynamics"
+                            | "direction-dynamics"
                             | "wet-mix"
                             | "stroke-taper"
                             | "wet-dual-color"
@@ -498,6 +513,11 @@ impl Package {
                         .iter()
                         .any(|c| c == "rotation-dynamics")
                 || (rotation && b.engine_profile != "drawverse.brush")
+                || direction
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "direction-dynamics")
+                || (direction && b.engine_profile != "drawverse.brush")
                 || (b.has_dual_sizing()
                     && (b.engine_profile != "drawverse.brush"
                         || !b

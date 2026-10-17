@@ -1,7 +1,8 @@
 use crate::{
     brush_dynamics::{
-        CompiledDistanceDynamics, CompiledPressureControl, CompiledRotationDynamics,
-        CompiledSpeedDynamics, CompiledTangentDynamics, CompiledTiltDynamics,
+        CompiledDirectionDynamics, CompiledDistanceDynamics, CompiledPressureControl,
+        CompiledRotationDynamics, CompiledSpeedDynamics, CompiledTangentDynamics,
+        CompiledTiltDynamics,
     },
     AngleControl, Brush, BrushDynamics, BrushMask, Error, InputPoint, Result, TipDynamics,
 };
@@ -107,6 +108,7 @@ pub struct BrushProgram {
     distance: Option<CompiledDistanceDynamics>,
     tilt: Option<CompiledTiltDynamics>,
     rotation: Option<CompiledRotationDynamics>,
+    direction: Option<CompiledDirectionDynamics>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -311,6 +313,7 @@ impl BrushProgram {
             distance: definition.dynamics.distance.compile(),
             tilt: definition.dynamics.tilt.compile(),
             rotation: definition.dynamics.rotation.compile(),
+            direction: definition.dynamics.direction.compile(),
         })
     }
 
@@ -359,6 +362,7 @@ impl BrushProgram {
         distance: f32,
         tilt: f32,
         rotation: f32,
+        direction: f32,
     ) -> (f32, f32, f32) {
         let base = self.dynamics_factors(speed, tangent);
         let distance = self
@@ -373,11 +377,20 @@ impl BrushProgram {
             .rotation
             .as_ref()
             .map_or((1., 1., 1.), |compiled| compiled.factors(rotation));
+        let direction = self
+            .direction
+            .as_ref()
+            .map_or((1., 1., 1.), |compiled| compiled.factors(direction));
         (
-            base.0 * distance.0 * tilt.0 * rotation.0,
-            base.1 * distance.1 * tilt.1 * rotation.1,
-            base.2 * distance.2 * tilt.2 * rotation.2,
+            base.0 * distance.0 * tilt.0 * rotation.0 * direction.0,
+            base.1 * distance.1 * tilt.1 * rotation.1 * direction.1,
+            base.2 * distance.2 * tilt.2 * rotation.2 * direction.2,
         )
+    }
+    pub(crate) fn direction_unit(direction: Option<f64>) -> f32 {
+        direction.map_or(0., |angle| {
+            (angle.rem_euclid(std::f64::consts::TAU) / std::f64::consts::TAU) as f32
+        })
     }
     #[inline]
     /// Base tip coverage; the document executor binds dual/texture dab operators.

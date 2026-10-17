@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新笔触方向动态：`docs/brush-direction-design.md` / `docs/brush-direction-validation.md`；`direction-v1`把输入段方向角按整圈归一化后驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，无位移时保持恒等，默认关闭；state29/VBR1.35/behavior24及Qt“传递”页开关/曲线接通，真实像素、保存重开和QML绑定通过。ABR方向/渐隐来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。
+
 - 最新笔旋转动态：`docs/brush-rotation-design.md` / `docs/brush-rotation-validation.md`；`rotation-v1`把设备旋转角按整圈归一化后驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，无旋转能力为0，默认关闭；state28/VBR1.34/behavior23及Qt“传递”页开关/曲线接通，真实像素、保存重开和QML绑定通过。ABR旋转/渐隐来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。
 
 - 最新倾斜幅度动态：`docs/brush-tilt-design.md` / `docs/brush-tilt-validation.md`；`tilt-v1`把设备二维倾斜长度按90度归一化后驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，无倾斜能力为0，默认关闭；state27/VBR1.33/behavior22及Qt“传递”页开关/曲线接通，真实像素、保存重开和QML绑定通过。ABR倾斜/渐隐来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。

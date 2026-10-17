@@ -120,6 +120,7 @@ impl SecondaryTip {
             || dynamics.distance != Default::default()
             || dynamics.tilt != Default::default()
             || dynamics.rotation != Default::default()
+            || dynamics.direction != Default::default()
         {
             return Err(Error::InvalidArgument("secondary tip parameters"));
         }

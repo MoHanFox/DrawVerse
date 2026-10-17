@@ -244,3 +244,5 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 2026-10-18倾斜幅度动态阶段：state27/VBR1.33/behavior22新增`tilt-v1`，以设备倾斜二维长度归一化驱动尺寸、流量和整笔不透明度；`paint-core brush_tilt` 3项、切向/距离/双笔尖回归、`paint-io brush_tilt_exchange` 1项、state/VBR回归通过，格式检查、严格Clippy和Windows Release Qt构建通过。Qt模型保存重开、QML开关/曲线及速度/切向/距离/倾斜共十项动态组合测试通过，见[设计](brush-tilt-design.md)及[验收](brush-tilt-validation.md)。未运行全量`tools/check.py`，实体设备倾斜手感、ABR倾斜来源和跨平台仍未完成。
 
 2026-10-18笔旋转动态阶段：state28/VBR1.34/behavior23新增`rotation-v1`，以设备旋转角整圈归一化驱动尺寸、流量和整笔不透明度；`paint-core brush_rotation` 3项、倾斜/距离/双笔尖回归、`paint-io brush_rotation_exchange` 1项、state/VBR回归通过，格式检查、严格Clippy和Windows Release Qt构建通过。Qt模型保存重开、QML开关/曲线及速度/切向/距离/倾斜/旋转共十二项动态组合测试通过，见[设计](brush-rotation-design.md)及[验收](brush-rotation-validation.md)。未运行全量`tools/check.py`，实体设备旋转手感、ABR旋转来源和跨平台仍未完成。
+
+2026-10-18笔触方向动态阶段：state29/VBR1.35/behavior24新增`direction-v1`，以输入段方向角整圈归一化驱动尺寸、流量和整笔不透明度；`paint-core brush_direction` 3项、旋转/倾斜/距离回归、`paint-io brush_direction_exchange` 1项、state/VBR回归通过，格式检查、严格Clippy和Windows Release Qt构建通过。Qt模型保存重开、QML开关/曲线及六类动态共十四项组合测试通过，见[设计](brush-direction-design.md)及[验收](brush-direction-validation.md)。未运行全量`tools/check.py`，实体设备方向手感、ABR方向来源和跨平台仍未完成。

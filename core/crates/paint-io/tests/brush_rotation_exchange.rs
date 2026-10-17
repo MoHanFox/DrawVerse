@@ -61,6 +61,7 @@ fn package() -> Package {
                 rotation_dynamics: Some(paint_io::brush_rotation::RotationParameters::from_core(
                     settings.dynamics.rotation.clone(),
                 )),
+                direction_dynamics: None,
             },
             smoothing: None,
             texture: None,

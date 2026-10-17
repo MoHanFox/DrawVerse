@@ -14,6 +14,8 @@
 
 2026-10-18笔旋转动态：VBR1.34新增parameters.rotationDynamics=`rotation-v1`，完整保存启用和尺寸/流量/不透明度三条曲线，behavior23及`rotation-dynamics`能力；旧VBR1.33不携带该对象。见[设计](brush-rotation-design.md)、[验收](brush-rotation-validation.md)及[Schema](../contracts/vbr-rotation-v1.34.schema.json)。
 
+2026-10-18笔触方向动态：VBR1.35新增parameters.directionDynamics=`direction-v1`，完整保存启用和尺寸/流量/不透明度三条曲线，behavior24及`direction-dynamics`能力；旧VBR1.34不携带该对象。见[设计](brush-direction-design.md)、[验收](brush-direction-validation.md)及[Schema](../contracts/vbr-direction-v1.35.schema.json)。
+
 状态：2026-10-14，完整格式尚未冻结。已有1.0程序笔刷与1.1图片笔尖可执行子集，见 [程序阶段设计](vbr-procedural-design.md)、[图片阶段设计](vbr-image-design.md)、[程序Schema](../contracts/vbr-procedural-v1.schema.json) 与 [图片Schema](../contracts/vbr-image-v1.1.schema.json)。1.2来源IO及 [来源Schema](../contracts/vbr-source-v1.2.schema.json) 已有阶段实现，原生Qt交换及显式原ABR范围选项已接入，见 [来源IO验收](vbr-source-validation.md) / [来源入口验收](vbr-source-entry-validation.md)。压力曲线1.3与 [压力Schema](../contracts/vbr-pressure-v1.3.schema.json) 已有IO阶段实现，见 [压力IO验收](brush-pressure-io-validation.md)；Qt入口已接入。独立不透明度压感1.4与 [Schema](../contracts/vbr-opacity-v1.4.schema.json) 已接原生Qt，见 [设计](brush-opacity-pressure-design.md) / [验收](brush-opacity-pressure-validation.md)。设备几何1.5与 [Schema](../contracts/vbr-tip-dynamics-v1.5.schema.json) 已有IO阶段实现，见 [验收](brush-device-io-validation.md)；原生Qt入口已接入，见 [验收](brush-device-ui-validation.md)。散布1.6与 [Schema](../contracts/vbr-scatter-v1.6.schema.json) 已接IO，见 [验收](brush-scatter-io-validation.md)；原生Qt入口已接并解除临时拒绝，见 [验收](brush-scatter-ui-validation.md)。形状抖动1.7与 [Schema](../contracts/vbr-shape-jitter-v1.7.schema.json) 已有IO阶段实现，见 [验收](brush-shape-jitter-io-validation.md)；原生Qt已接并解除临时拒绝，见 [验收](brush-shape-jitter-ui-validation.md)。颜色动态1.8与 [Schema](../contracts/vbr-color-dynamics-v1.8.schema.json) 已接IO，显式linear-hsv-v1与工具颜色分离，见 [验收](brush-color-io-validation.md)；原生背景与Qt已接并解除临时拒绝，见 [验收](brush-color-ui-validation.md)。纹理1.9与 [Schema](../contracts/vbr-texture-v1.9.schema.json) 已接IO，预设级texture绑定覆盖PNG并共享周期mip，清单5120/ZIP6145边界，见 [验收](brush-texture-io-validation.md)；原生Qt设置和资源交换已接并解除库包临时拒绝，见 [验收](brush-texture-ui-validation.md)。双笔刷1.10与 [Schema](../contracts/vbr-dual-v1.10.schema.json) 已接IO，两模型/完整第二动态与四角色PNG并集、6144资源/7169ZIP边界，见 [验收](brush-dual-io-validation.md)；原生资源生命周期、Qt四子页和第二图片导入/资源交换已接，见 [验收](brush-dual-ui-validation.md)；库包临时拒绝解除，组合轮廓与PS核验继续后续。分组/其他高级动态和扩展仍是拟议范围；读写器拒绝未实施模块。完整格式发布前按 [笔刷验收计划](brush-system-validation.md) 冻结版本。
 
 VBR 作为 DrawVerse 的公开、跨平台笔刷交换格式，与工程文件分离。一个文件可以包含一个笔刷或一个带分组的笔刷包，均使用 `.vbr` 扩展名。不依赖源 ABR 路径、系统字体、Qt 对象或开发机目录。
@@ -232,3 +234,7 @@ wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明
 ## VBR1.34：笔旋转动态
 
 `parameters.rotationDynamics` 使用 `rotation-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线。输入为设备旋转角按整圈归一化到0..1，设备无旋转能力时为0；关闭状态完整保留。对象要求 `drawverse.brush`、behavior23、`rotation-dynamics` 能力和 manifest minor34，state28；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-rotation-v1.34.schema.json`。第二笔尖自身仍不接受旋转配置，ABR旋转/渐隐来源和通用动态矩阵继续后续。
+
+## VBR1.35：笔触方向动态
+
+`parameters.directionDynamics` 使用 `direction-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线。输入为输入段运动方向角按整圈归一化到0..1，无位移时保持恒等；关闭状态完整保留。对象要求 `drawverse.brush`、behavior24、`direction-dynamics` 能力和 manifest minor35，state29；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-direction-v1.35.schema.json`。第二笔尖自身仍不接受方向配置，ABR方向/渐隐来源和通用动态矩阵继续后续。

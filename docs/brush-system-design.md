@@ -220,3 +220,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-18倾斜幅度动态阶段：`tilt-v1`把设备二维倾斜长度按90度归一化后驱动尺寸、流量和整笔不透明度三条曲线，设备无倾斜能力时为0；默认关闭，state27/VBR1.33/behavior22及`tilt-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离回归通过，见[设计](brush-tilt-design.md)及[验收](brush-tilt-validation.md)。ABR倾斜/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
 
 2026-10-18笔旋转动态阶段：`rotation-v1`把设备旋转角按整圈归一化后驱动尺寸、流量和整笔不透明度三条曲线，无旋转能力时为0；默认关闭，state28/VBR1.34/behavior23及`rotation-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离/倾斜回归通过，见[设计](brush-rotation-design.md)及[验收](brush-rotation-validation.md)。ABR旋转/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
+
+2026-10-18笔触方向动态阶段：`direction-v1`把输入段方向角按整圈归一化后驱动尺寸、流量和整笔不透明度三条曲线，无位移时保持恒等；默认关闭，state29/VBR1.35/behavior24及`direction-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离/倾斜/旋转回归通过，见[设计](brush-direction-design.md)及[验收](brush-direction-validation.md)。ABR方向/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。

@@ -61,6 +61,7 @@ fn package() -> Package {
                     settings.dynamics.tilt.clone(),
                 )),
                 rotation_dynamics: None,
+                direction_dynamics: None,
             },
             smoothing: None,
             texture: None,

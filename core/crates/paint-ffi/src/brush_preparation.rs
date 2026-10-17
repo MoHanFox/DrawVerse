@@ -1277,6 +1277,7 @@ mod tests {
                     distance_dynamics: None,
                     tilt_dynamics: None,
                     rotation_dynamics: None,
+                    direction_dynamics: None,
                 },
                 smoothing: None,
                 dual_brush: None,

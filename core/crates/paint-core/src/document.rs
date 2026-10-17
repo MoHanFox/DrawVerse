@@ -2014,6 +2014,7 @@ impl Document {
                 stroke.dab_distance as f32,
                 point.tilt_magnitude(),
                 point.rotation_unit(),
+                BrushProgram::direction_unit(stroke.direction),
             )
             .0;
         let plan = dual
@@ -2273,6 +2274,7 @@ impl Document {
             stroke.dab_distance as f32,
             point.tilt_magnitude(),
             point.rotation_unit(),
+            BrushProgram::direction_unit(stroke.direction),
         );
         let base_radius = f64::from(
             stroke.brush.radius

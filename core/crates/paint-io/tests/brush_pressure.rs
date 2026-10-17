@@ -44,6 +44,7 @@ fn package() -> Package {
                 distance_dynamics: None,
                 tilt_dynamics: None,
                 rotation_dynamics: None,
+                direction_dynamics: None,
                 scatter_dynamics: None,
                 shape_jitter: None,
                 color_dynamics: None,
