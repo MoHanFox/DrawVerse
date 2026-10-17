@@ -41,6 +41,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool storageBusy READ storageBusy NOTIFY storageChanged)
     Q_PROPERTY(QString storageMessage READ storageMessage NOTIFY storageChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
+    Q_PROPERTY(bool brushLibraryReady READ brushLibraryReady NOTIFY brushLibraryReadyChanged)
     Q_PROPERTY(bool wetActionBusy READ wetActionBusy NOTIFY wetActionChanged)
     Q_PROPERTY(bool brushFileBusy READ brushFileBusy NOTIFY brushFileChanged)
     Q_PROPERTY(QVariantMap brushSourceInfo READ brushSourceInfo NOTIFY brushSourceChanged)
@@ -160,6 +161,7 @@ public:
     QString brushOutlinePath() const {return m_brushOutlinePath;}
     QString brushOutlineMessage() const {return !m_brushLibrary->cursorComposite() || m_secondOutlineMessage.isEmpty()?m_brushOutlineMessage:m_brushOutlineMessage.isEmpty()?m_secondOutlineMessage:m_brushOutlineMessage+QStringLiteral("\n")+m_secondOutlineMessage;}
     bool brushOutlineReady() const {return m_brushOutlineReady;}
+    bool brushLibraryReady() const {return m_brushLibraryReady;}
     QVariantMap brushSourceInfo() const {return m_brushSourceInfo;}
     QString brushSourceMessage() const {return m_brushSourceMessage;}
     bool brushSourceBusy() const {return m_brushSourceBusy;}
@@ -405,6 +407,7 @@ signals:
     void brushCursorPreferencesChanged();
     void brushCursorImageChanged();
     void brushOutlineChanged();
+    void brushLibraryReadyChanged();
     void wetActionChanged();
     void wetBrushFinished(bool success);
     void brushFileChanged();
@@ -453,6 +456,8 @@ private:
     QString m_strokeOutlineResource,m_strokeOutlinePath;
     QString m_outlineResource,m_brushOutlinePath,m_brushOutlineMessage;
     bool m_brushOutlineReady=false;
+    bool m_brushLibraryReady=false;
+    QString m_pendingBrushImport;
     QString m_secondOutlineResource,m_secondOutlinePath,m_secondOutlineMessage,m_strokeSecondOutlineResource,m_strokeSecondOutlinePath;
     bool m_secondOutlineReady=false,m_strokeSecondOutlineReady=false;
     void requestBrushOutlines(bool updateImages=true);

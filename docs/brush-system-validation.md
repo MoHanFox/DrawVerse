@@ -8,6 +8,8 @@
 
 2026-10-18完整范围导出：[验收](brush-groups-export-validation.md)。全部预设/组 ordered-package-v1、内置 UUID 映射、组织投影和真实 ABI1.55 写入通过；Qt 分组包副本树导入仍待接，无全量tools/check.py或跨平台验收。
 
+2026-10-18分组包导入：[验收](brush-groups-import-validation.md)。VBR 分组读入口、Qt 整树副本合并、同名/空组、重复导入和平包资源执行通过；六次重复稳定，无全量tools/check.py或跨平台验收。
+
 2026-10-16湿混双色保存交换：[验收](brush-wet-dual-io-validation.md)。显式独立载色策略、完整关闭值、state19/VBR1.23/behavior16和能力标记已实现；真实两笔/完整双载色、主/第二/纹理图片与原来源新目录往返，6项新IO及三旧入口保护/16项旧回归、Schema和Windows Release/ABI/Qt通过。原生新入口及Qt组合仍待接；前述Qt偶发参数输入问题没有据此宣称修复。
 
 2026-10-16湿混双色 Engine：[验收](brush-wet-dual-engine-validation.md)。完整载色捕获和历史成功后整对采用、共享租约/取消/失败/stop及无像素拾色通过，6项新Actor与11项旧原生回归、Release/ABI通过。Qt参数输入首轮偶发失败、单项复核通过，保留日志且根因未定位；Qt涂抹通过。保存/原生准备和Qt组合入口仍待接，不能据此宣布公开组合或整体完成。

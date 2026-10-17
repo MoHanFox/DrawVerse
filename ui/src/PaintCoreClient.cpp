@@ -228,7 +228,7 @@ public:
         if(exporting)status=grouped?paint_brush_library_package_write_groups(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<const uint8_t*>(package.constData()),quint64(package.size())):paint_brush_library_package_write_wet_dual(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<const uint8_t*>(package.constData()),quint64(package.size()));
         else {
             package.resize(2*1024*1024);uint64_t required=0;
-            status=abr?paint_brush_library_abr_read(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required):paint_brush_library_package_read_wet_dual(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required);
+            status=abr?paint_brush_library_abr_read(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required):paint_brush_library_package_read_groups(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required);
             if(status==PAINT_OK)package.resize(qsizetype(required));
         }
         emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting,abr);
@@ -701,6 +701,8 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         QByteArray source=json;{QMutexLocker lock(&m_brushCatalogConnection->mutex);if(!m_brushCatalogConnection->preferences.isEmpty())source=m_brushCatalogConnection->preferences;}
         if(!source.isEmpty() && !m_brushLibrary->restore(source))showError(QStringLiteral("无法恢复笔刷设置，原配置已保留"));
         synchronizeBrushCatalog(m_brushLibrary->snapshot());
+        if(!m_brushLibraryReady){m_brushLibraryReady=true;emit brushLibraryReadyChanged();}
+        if(!m_pendingBrushImport.isEmpty()){const auto path=m_pendingBrushImport;m_pendingBrushImport.clear();m_brushFileBusy=false;emit brushFileChanged();QMetaObject::invokeMethod(this,[this,path]{importBrushes(QUrl::fromLocalFile(path));},Qt::QueuedConnection);}
     });
     connect(m_worker,&BackendWorker::nativeBrushCatalog,this,[this](quint64 preparation,const QByteArray &state,const QString &error){
         {QMutexLocker lock(&m_brushCatalogConnection->mutex);if(preparation!=m_brushCatalogConnection->preparation)return;}
@@ -1639,6 +1641,7 @@ bool PaintCoreClient::inspectBrushSource() {
 }
 bool PaintCoreClient::importBrushes(const QUrl &path) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
+    if(!m_brushLibraryReady){if(!m_pendingBrushImport.isEmpty())return false;m_pendingBrushImport=path.toLocalFile();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();return true;}
     m_brushImportMessage.clear();
     m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile()]{worker->brushFile(path,{},false);},Qt::QueuedConnection);return true;

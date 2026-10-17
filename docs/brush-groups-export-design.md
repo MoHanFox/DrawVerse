@@ -6,4 +6,4 @@
 
 `PaintCoreClient::exportAllBrushes` 在后台调用 `paint_brush_library_package_write_groups`，由 Rust 原子校验完整包、资源/来源、2MiB handoff 和 VBR 保存。面板底部新增“导出全部画笔与分组”按钮；来源选项弹窗在全部导出时检查所有预设。ABI/state/VBR 版本不增加。
 
-边界：本阶段完成完整范围导出和文件写入；Qt 读取分组包后合并到当前库的副本树入口仍待接，现有导入入口继续按旧平包/单树规则处理。
+边界：本阶段完成完整范围导出和文件写入；Qt 分组包副本树导入已在[后续阶段](brush-groups-import-design.md)接通。

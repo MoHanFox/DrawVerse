@@ -8,6 +8,8 @@
 
 - 最新完整范围导出：`docs/brush-groups-export-design.md` / `docs/brush-groups-export-validation.md`；Qt 全部预设/组导出 ordered-package-v1，内置 UUID 映射/组织投影/来源包含检查及 ABI1.55 真实写入通过；Qt 分组包副本树导入仍待接，格式版本不变。
 
+- 最新分组包导入：`docs/brush-groups-import-design.md` / `docs/brush-groups-import-validation.md`；VBR 经 ABI1.55 分组读入口返回 ordered-package-v1，Qt 重映射预设/组 ID 并合并整树，同名/空组保留、平包与湿混图片回归通过，启动期导入排队；state/VBR/ABI 不变。无全量tools/check.py或跨平台验收。
+
 - 最新ABR纹理/VBR1.27：`docs/abr-texture-design.md` / `docs/abr-texture-validation.md`；本地有界8/16位raw/RLE `patt`解码/内容哈希、`Txtr`参数与预设索引关联、`TxtC`空间、八种覆盖模式（含`CBrn`颜色加深）、亮度/对比度、最低深度/逐印章深度动态、纹理来源version2及Qt来源恢复、converterVersion8/handoff v7、Qt state11/21、VBR1.25/1.26/1.27已接；真实图案笔触/历史、旧ABR、公开ABI与严格Clippy通过。其余未定义模式仍未执行，16位笔尖仍拒绝。
 
 - 最新纹理模式：`docs/brush-texture-mode-design.md` / `docs/brush-texture-mode-validation.md`；核心和 Qt 支持七种纹理覆盖组合模式，旧 state/VBR 缺省为 normal，真实纹理交换与 Windows Qt 回归通过。ABR 的 `patt`/`Txtr` 已接入这七种模式，未定义模式仍保留来源并报告；无 ABI 主版本变化。
