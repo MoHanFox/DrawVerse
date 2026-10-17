@@ -189,6 +189,12 @@ fn vivid(b: f32, s: f32) -> f32 {
         dodge(b, 2. * s - 1.)
     }
 }
+pub(crate) fn dissolve_keeps(x: u32, y: u32, seed: u64, alpha: f32) -> bool {
+    let mut h = ((u64::from(x) * 0x9e3779b1) ^ (u64::from(y) * 0x85ebca77) ^ seed)
+        .wrapping_mul(0xbf58476d1ce4e5b9);
+    h ^= h >> 31;
+    (h as u32 as f64 / (u32::MAX as f64 + 1.)) < f64::from(alpha)
+}
 /// W3C-style blend functions in the document's linear working space, not gamma encoded RGB.
 pub fn blend_pixel(
     source: Pixel,
@@ -212,10 +218,7 @@ pub fn blend_pixel(
     let sc = std::array::from_fn::<_, 3, _>(|i| s[i] / a);
     let dc = std::array::from_fn::<_, 3, _>(|i| if da > 0. { d[i] / da } else { 0. });
     if mode == Dissolve {
-        let mut h = ((u64::from(x) * 0x9e3779b1) ^ (u64::from(y) * 0x85ebca77) ^ seed)
-            .wrapping_mul(0xbf58476d1ce4e5b9);
-        h ^= h >> 31;
-        if (h as u32 as f64 / (u32::MAX as f64 + 1.)) >= f64::from(a) {
+        if !dissolve_keeps(x, y, seed, a) {
             return destination;
         }
         a = 1.;

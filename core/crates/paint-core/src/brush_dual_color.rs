@@ -157,54 +157,49 @@ impl DualColor {
         seed: u64,
     ) -> Pixel {
         let (x, y) = position;
-        // A non-dissolve blend over a transparent destination is exactly its
-        // source. Skip that first blend; dissolve still needs the original
-        // two-stage path because its hash can discard the source.
-        if self.order == DualColorOrder::SecondBehind && self.secondary_blend != BlendMode::Dissolve
-        {
-            return crate::blend_pixel(
-                primary,
-                secondary,
-                self.primary_blend,
-                x,
-                y,
-                seed ^ 0x6475616c2d6d6169,
-            );
-        }
-        if self.order == DualColorOrder::SecondInFront && self.primary_blend != BlendMode::Dissolve
-        {
-            return crate::blend_pixel(
-                secondary,
-                primary,
-                self.secondary_blend,
-                x,
-                y,
-                seed ^ 0x6475616c2d736563,
-            );
-        }
-        let main = |dst| {
-            crate::blend_pixel(
-                primary,
-                dst,
-                self.primary_blend,
-                x,
-                y,
-                seed ^ 0x6475616c2d6d6169,
-            )
-        };
-        let second = |dst| {
-            crate::blend_pixel(
-                secondary,
-                dst,
-                self.secondary_blend,
-                x,
-                y,
-                seed ^ 0x6475616c2d736563,
-            )
-        };
         match self.order {
-            DualColorOrder::SecondBehind => main(second(Pixel::TRANSPARENT)),
-            DualColorOrder::SecondInFront => second(main(Pixel::TRANSPARENT)),
+            DualColorOrder::SecondBehind => {
+                let destination = if self.secondary_blend == BlendMode::Dissolve
+                    && !crate::appearance::dissolve_keeps(
+                        x,
+                        y,
+                        seed ^ 0x6475616c2d736563,
+                        secondary.alpha(),
+                    ) {
+                    Pixel::TRANSPARENT
+                } else {
+                    secondary
+                };
+                crate::blend_pixel(
+                    primary,
+                    destination,
+                    self.primary_blend,
+                    x,
+                    y,
+                    seed ^ 0x6475616c2d6d6169,
+                )
+            }
+            DualColorOrder::SecondInFront => {
+                let destination = if self.primary_blend == BlendMode::Dissolve
+                    && !crate::appearance::dissolve_keeps(
+                        x,
+                        y,
+                        seed ^ 0x6475616c2d6d6169,
+                        primary.alpha(),
+                    ) {
+                    Pixel::TRANSPARENT
+                } else {
+                    primary
+                };
+                crate::blend_pixel(
+                    secondary,
+                    destination,
+                    self.secondary_blend,
+                    x,
+                    y,
+                    seed ^ 0x6475616c2d736563,
+                )
+            }
         }
     }
 }
@@ -295,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn non_dissolve_first_blend_fast_path_matches_reference_for_all_modes() {
+    fn first_blend_fast_path_matches_reference_for_all_modes() {
         const MODES: [BlendMode; 27] = [
             BlendMode::Normal,
             BlendMode::Dissolve,
