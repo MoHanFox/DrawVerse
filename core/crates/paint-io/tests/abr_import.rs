@@ -128,6 +128,68 @@ fn read_captures_file_bytes_and_batch_save_refuses_existing_corrupt_original() {
 }
 
 #[test]
+fn texture_pattern_handoff_binds_mapped_mode_and_paints_real_pixels() {
+    let token = CancellationToken::default();
+    let original = Arc::new(support::abr_fixture::fixture_with_texture("Mltp"));
+    let parsed = paint_io::abr_sampled::decode_sectioned(&original, &token).unwrap();
+    assert_eq!(parsed.patterns.len(), 1);
+    assert_eq!(parsed.texture_presets.len(), 1);
+    let batch = ImportBatch::decode(original.clone(), MAX_CATALOG_MASK_BYTES, &token).unwrap();
+    assert_eq!(batch.asset_count(), 2);
+    let wire: serde_json::Value = serde_json::from_slice(&batch.to_json().unwrap()).unwrap();
+    assert_eq!(wire["version"], 7);
+    assert_eq!(wire["presets"][0]["texture"]["enabled"], true);
+    assert_eq!(wire["presets"][0]["texture"]["mode"], "multiply");
+    assert!(wire["presets"][0]["texture"]["resource"].is_string());
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().into(), MAX_CATALOG_MASK_BYTES).unwrap();
+    let imported = batch.persist(&store, &token).unwrap();
+    let settings = imported[0].settings();
+    assert!(settings.texture.enabled());
+    assert_eq!(
+        settings.texture.settings().mode(),
+        paint_core::TextureMode::Multiply
+    );
+    assert_eq!(
+        settings.texture.resource().unwrap().source().coverage(),
+        [0, 255, 0, 255, 255, 0, 255, 0, 0, 255, 0, 255, 255, 0, 255, 0]
+    );
+    let source = store
+        .source_store()
+        .unwrap()
+        .load(imported[0].source_id(), &token)
+        .unwrap();
+    assert_eq!(source.info.converter_version, 8);
+    let mut with_texture = Document::new(24, 24).unwrap();
+    with_texture
+        .begin_brush_stroke(settings.definition(), InputPoint::new(12.5, 12.5, 1.))
+        .unwrap();
+    with_texture.end_stroke().unwrap();
+    let mut without_texture = Document::new(24, 24).unwrap();
+    let mut plain = settings.clone();
+    plain.texture = Default::default();
+    without_texture
+        .begin_brush_stroke(plain.definition(), InputPoint::new(12.5, 12.5, 1.))
+        .unwrap();
+    without_texture.end_stroke().unwrap();
+    assert!(with_texture.pixel(15, 12).alpha() < without_texture.pixel(15, 12).alpha());
+    let painted = (0..24)
+        .flat_map(|y| (0..24).map(move |x| (x, y)))
+        .map(|(x, y)| with_texture.pixel(x, y))
+        .collect::<Vec<_>>();
+    with_texture.undo().unwrap();
+    assert_eq!(with_texture.pixel(15, 12).alpha(), 0.);
+    with_texture.redo().unwrap();
+    assert_eq!(
+        (0..24)
+            .flat_map(|y| (0..24).map(move |x| (x, y)))
+            .map(|(x, y)| with_texture.pixel(x, y))
+            .collect::<Vec<_>>(),
+        painted
+    );
+}
+
+#[test]
 fn pressure_handoff_and_source_reset_preserve_image_and_program_across_two_strokes() {
     let token = CancellationToken::default();
     let original = Arc::new(support::abr_fixture::fixture_with_pressure(6, 2, false));

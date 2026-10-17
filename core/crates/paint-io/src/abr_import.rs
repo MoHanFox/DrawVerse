@@ -5,7 +5,7 @@ use crate::{
     brush_source::SourceBatch,
     check, Error, Result,
 };
-use paint_core::{BrushProgram, BrushSettings, MAX_CATALOG_MASK_BYTES};
+use paint_core::{BrushProgram, BrushSettings, TextureResource, MAX_CATALOG_MASK_BYTES};
 use paint_task::CancellationToken;
 use std::{collections::BTreeMap, fs::File, io::Read, path::Path, sync::Arc};
 
@@ -16,6 +16,7 @@ pub struct ImportedPreset {
     source: String,
     partial: bool,
     tip: Option<String>,
+    texture: Option<String>,
 }
 impl ImportedPreset {
     pub fn name(&self) -> &str {
@@ -45,6 +46,7 @@ impl ImportBatch {
             name: &'a str,
             parameters: crate::vbr::Parameters,
             tip_resource: Option<&'a str>,
+            texture: Option<crate::brush_texture::TextureParameters>,
             source_resource: &'a str,
             partial: bool,
         }
@@ -57,9 +59,9 @@ impl ImportBatch {
         let presets = self
             .presets
             .iter()
-            .map(|p| {
+            .map(|p| -> Result<Row<'_>> {
                 let s = &p.settings;
-                Row {
+                Ok(Row {
                     name: &p.name,
                     parameters: crate::vbr::Parameters {
                         scatter_dynamics: abr_conversion::scatter_parameters(
@@ -84,13 +86,18 @@ impl ImportBatch {
                         pressure_flow: s.tip.pressure_flow,
                     },
                     tip_resource: p.tip.as_deref(),
+                    texture: (!s.texture.is_default())
+                        .then(|| crate::brush_texture::TextureParameters::from_core(&s.texture))
+                        .transpose()?,
                     source_resource: &p.source,
                     partial: p.partial,
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         let bytes = serde_json::to_vec(&Handoff {
-            version: if self.presets.iter().any(|p| p.converter_version >= 7) {
+            version: if self.presets.iter().any(|p| p.converter_version >= 8) {
+                7
+            } else if self.presets.iter().any(|p| p.converter_version >= 7) {
                 6
             } else if self.presets.iter().any(|p| p.converter_version >= 6) {
                 5
@@ -146,12 +153,18 @@ impl ImportBatch {
         let parsed = abr_sampled::decode_sectioned(&bytes, token)?;
         let descriptors = parsed.descriptors(token)?;
         let linked = abr_association::associate(&parsed, &descriptors, token)?;
-        let converted = abr_conversion::convert(&linked, token)?;
+        let converted = abr_conversion::convert_textured(
+            &linked,
+            &parsed.texture_presets,
+            &parsed.patterns,
+            token,
+        )?;
         let mut assets = BTreeMap::new();
         let mut identities: BTreeMap<usize, String> = BTreeMap::new();
         let mut resident = 0usize;
         let mut encoded = 0usize;
         let mut tips = Vec::new();
+        let mut textures = Vec::new();
         for preset in &converted {
             check(token)?;
             BrushProgram::compile(preset.settings.definition())?;
@@ -180,19 +193,43 @@ impl ImportBatch {
                 None
             };
             tips.push(tip);
+            let texture = if let Some(resource) = preset.settings.texture.resource() {
+                let source = resource.source();
+                let identity = source
+                    .resource_id()
+                    .ok_or(Error::Invalid("ABR imported texture identity"))?
+                    .to_owned();
+                if !assets.contains_key(&identity) {
+                    let png = encode_mask(source)?;
+                    if hash(&png) != identity {
+                        return Err(Error::Invalid("ABR imported texture hash"));
+                    }
+                    encoded = encoded.saturating_add(png.len());
+                    if encoded > 128 * 1024 * 1024 {
+                        return Err(Error::Limit("ABR import asset bytes"));
+                    }
+                    assets.insert(identity.clone(), png);
+                }
+                Some(identity)
+            } else {
+                None
+            };
+            textures.push(texture);
         }
         let sources = SourceBatch::capture(bytes, &converted, token)?;
         let presets = converted
             .iter()
             .zip(sources.ids())
             .zip(tips)
-            .map(|((preset, source), tip)| ImportedPreset {
+            .zip(textures)
+            .map(|(((preset, source), tip), texture)| ImportedPreset {
                 converter_version: preset.converter_version,
                 name: preset.name.into(),
                 settings: preset.settings.clone(),
                 source: source.into(),
                 partial: preset.is_partial(),
                 tip,
+                texture,
             })
             .collect();
         check(token)?;
@@ -226,6 +263,16 @@ impl ImportBatch {
                         .ok_or(Error::Invalid("ABR imported resource identity"))?
                         .clone(),
                 );
+            }
+            if let Some(id) = &preset.texture {
+                let source = masks
+                    .get(id)
+                    .ok_or(Error::Invalid("ABR imported texture resource identity"))?;
+                let parameters =
+                    crate::brush_texture::TextureParameters::from_core(&preset.settings.texture)?;
+                preset.settings.texture = parameters.bind(Some(std::sync::Arc::new(
+                    TextureResource::new(source.clone()),
+                )))?;
             }
             BrushProgram::compile(preset.settings.definition())?;
         }

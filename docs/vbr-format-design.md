@@ -188,3 +188,5 @@ wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明
 2026-10-17分组状态原生阶段：ABI1.54/GROUP_STATE及显式state20准备入口、完整关闭配置/准确票据/图片来源和冷重建、mutate采用及真实两笔/载色/历史通过。公开新2/原生1/旧保护5/旧公开3及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-abi-design.md)及[验收](brush-groups-abi-validation.md)。state/VBR不变；旧四准备/包保护保留，分组包专用原生交接/组织命令/Qt及重置基准仍待接。ABR纹理执行映射仍未支持，兼容报告与来源保留不等于已执行。
 
 2026-10-17分组包原生阶段：ABI1.55/GROUP_PACKAGE及ordered-package-v1完整交接、2MiB与投影验证、容量探测无资源安装、实际图片/ABR来源读写与原子保存、state20专用准备串联已接。IO33/新原生1/旧保护5/旧公开3/Schema及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-package-design.md)及[验收](brush-groups-package-validation.md)。state20/VBR1.24不变；旧四包保护保持，Qt副本树合并/完整镜像/重置基准及分组管理仍待接，不宣称用户分组已完成。
+
+2026-10-18 ABR纹理来源阶段：来源记录接受`drawverse.abr.basic` converterVersion8，`brushkit-abr 0.7.3`只用于有界`patt`解码，纹理参数映射到既有state11/VBR1.9资源模型；最新VBR1.24 Schema的来源枚举加入8。未新增state/VBR minor或ABI字段。`CBrn`等模式、亮度/对比度/最低深度/深度动态和16位图案仍明确未执行。

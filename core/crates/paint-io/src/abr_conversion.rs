@@ -1,15 +1,21 @@
 //! Field-level basic conversion. A compilable baseline is not full Photoshop equivalence.
 use crate::{
     abr_association::LinkedPreset,
+    abr_patterns::{PatternResource, TextureSource},
     check,
     ps_descriptor::{Descriptor, Value},
     Error, Result,
 };
 use paint_core::{
-    AngleControl, BrushProgram, BrushSettings, BrushTip, ColorDynamics, PressureControl,
-    PressureCurve, ScatterDynamics, ShapeJitter, TipDynamics,
+    AngleControl, BrushProgram, BrushSettings, BrushTexture, BrushTip, ColorDynamics,
+    PressureControl, PressureCurve, ScatterDynamics, ShapeJitter, TextureMode, TextureResource,
+    TextureSettings, TextureSpace, TipDynamics,
 };
 use paint_task::CancellationToken;
+type TextureLookup<'a> = Option<(
+    &'a std::collections::BTreeMap<usize, TextureSource>,
+    &'a std::collections::BTreeMap<String, PatternResource>,
+)>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     Mapped,
@@ -149,49 +155,65 @@ pub fn convert<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
-    convert_inner(linked, token, 7)
+    convert_inner(linked, token, 7, None)
+}
+/// Import ABR texture parameters and their embedded pattern resources.
+pub fn convert_textured<'a>(
+    linked: &[LinkedPreset<'a>],
+    textures: &std::collections::BTreeMap<usize, TextureSource>,
+    patterns: &std::collections::BTreeMap<String, PatternResource>,
+    token: &CancellationToken,
+) -> Result<Vec<ConvertedPreset<'a>>> {
+    convert_inner(linked, token, 8, Some((textures, patterns)))
+}
+/// Preserve converter v7 behavior without ABR texture conversion.
+pub fn convert_v7<'a>(
+    linked: &[LinkedPreset<'a>],
+    token: &CancellationToken,
+) -> Result<Vec<ConvertedPreset<'a>>> {
+    convert_inner(linked, token, 7, None)
 }
 /// Preserve converter v6 shape jitter behavior and reports without device conversion.
 pub fn convert_v6<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
-    convert_inner(linked, token, 6)
+    convert_inner(linked, token, 6, None)
 }
 /// Preserve converter v5 color behavior and reports without shape jitter conversion.
 pub fn convert_v5<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
-    convert_inner(linked, token, 5)
+    convert_inner(linked, token, 5, None)
 }
 /// Preserve converter v4 scatter behavior and reports without color conversion.
 pub fn convert_v4<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
-    convert_inner(linked, token, 4)
+    convert_inner(linked, token, 4, None)
 }
 /// Preserve the immutable baseline and report semantics of converter v1.
 pub fn convert_legacy<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
-    convert_inner(linked, token, 1)
+    convert_inner(linked, token, 1, None)
 }
 /// Preserve converter v2 opacity semantics without interpreting newer dynamics.
 pub fn convert_v2<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
-    convert_inner(linked, token, 2)
+    convert_inner(linked, token, 2, None)
 }
 /// Preserve converter v3 pressure behavior and reports without scatter conversion.
 pub fn convert_v3<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
-    convert_inner(linked, token, 3)
+    convert_inner(linked, token, 3, None)
 }
 pub(crate) fn pressure_parameters(
     settings: &BrushSettings,
@@ -902,10 +924,120 @@ fn pressure_controls(
     }
     Ok(handled)
 }
+fn texture_mode(id: &str) -> Option<TextureMode> {
+    match id {
+        "normal" => Some(TextureMode::Normal),
+        "multiply" => Some(TextureMode::Multiply),
+        "darken" => Some(TextureMode::Darken),
+        "lighten" => Some(TextureMode::Lighten),
+        "subtract" => Some(TextureMode::Subtract),
+        "difference" => Some(TextureMode::Difference),
+        "screen" => Some(TextureMode::Screen),
+        _ => None,
+    }
+}
+
+fn texture_controls(
+    index: usize,
+    textures: TextureLookup<'_>,
+    settings: &mut BrushSettings,
+    issues: &mut Vec<Issue>,
+) -> Result<(bool, Vec<String>)> {
+    let Some((sources, patterns)) = textures else {
+        return Ok((false, Vec::new()));
+    };
+    let Some(source) = sources.get(&index) else {
+        return Ok((false, Vec::new()));
+    };
+    let pattern = patterns
+        .get(&source.pattern_id)
+        .ok_or(Error::Invalid("ABR texture pattern reference not found"))?;
+    let mode = source.mode.as_deref().and_then(texture_mode);
+    let enabled = mode.is_some();
+    let texture_settings = TextureSettings::new(
+        if source.each_tip {
+            TextureSpace::Tip
+        } else {
+            TextureSpace::Document
+        },
+        source.scale,
+        0.,
+        source.depth,
+        source.invert,
+        0.,
+        0.,
+    )?
+    .with_mode(mode.unwrap_or(TextureMode::Normal));
+    settings.texture = BrushTexture::new(
+        enabled,
+        texture_settings,
+        Some(std::sync::Arc::new(TextureResource::new(
+            pattern.mask.clone(),
+        ))),
+    )?;
+    let handled = vec![
+        "useTexture".into(),
+        "textureDepth".into(),
+        "textureScale".into(),
+        "Txtr".into(),
+        "Txtr.Ptrn.Idnt".into(),
+        "Txtr.Ptrn.Nm  ".into(),
+        "TxtC".into(),
+        "InvT".into(),
+        "textureBlendMode".into(),
+    ];
+    for (path, status, reason) in [
+        (
+            "useTexture",
+            if enabled {
+                Status::Mapped
+            } else {
+                Status::NotExecuted
+            },
+            if enabled {
+                "纹理图案与参数已绑定"
+            } else {
+                "纹理模式尚未映射，保留图案与参数但不启用"
+            },
+        ),
+        ("textureDepth", Status::Mapped, "纹理深度百分比"),
+        ("textureScale", Status::Mapped, "纹理缩放百分比"),
+        ("Txtr.Ptrn.Idnt", Status::Mapped, "按图案 ID 绑定嵌入资源"),
+        (
+            "Txtr.Ptrn.Nm  ",
+            Status::Approximate,
+            "图案名称仅用于来源诊断",
+        ),
+        (
+            "TxtC",
+            Status::Mapped,
+            "按 Texture Each Tip 选择笔尖或文档空间",
+        ),
+        ("InvT", Status::Mapped, "反相纹理"),
+        (
+            "textureBlendMode",
+            if enabled {
+                Status::Mapped
+            } else {
+                Status::NotExecuted
+            },
+            if enabled {
+                "映射到既有纹理覆盖模式"
+            } else {
+                "该 Photoshop 纹理模式尚无等价执行公式"
+            },
+        ),
+    ] {
+        issue(issues, path, status, reason);
+    }
+    Ok((enabled, handled))
+}
+
 fn convert_inner<'a>(
     linked: &[LinkedPreset<'a>],
     token: &CancellationToken,
     generation: u32,
+    textures: TextureLookup<'_>,
 ) -> Result<Vec<ConvertedPreset<'a>>> {
     check(token)?;
     if linked.is_empty() || linked.len() > 1024 {
@@ -913,7 +1045,7 @@ fn convert_inner<'a>(
     }
     let mut output = Vec::new();
     let mut report_bytes = 0usize;
-    for item in linked {
+    for (index, item) in linked.iter().enumerate() {
         check(token)?;
         if item.name.trim().is_empty() || item.name.chars().count() > 80 || item.name.contains('\0')
         {
@@ -1127,6 +1259,13 @@ fn convert_inner<'a>(
         } else {
             false
         };
+        let texture_changed = if generation >= 8 {
+            let (changed, extra) = texture_controls(index, textures, &mut settings, &mut issues)?;
+            handled.extend(extra);
+            changed
+        } else {
+            false
+        };
         for (key, value) in &item.preset.entries {
             if key != b"Nm  " && key != b"Brsh" && key != b"toolOptions" {
                 if [
@@ -1150,6 +1289,17 @@ fn convert_inner<'a>(
                     b"Strt",
                     b"Brgh",
                     b"colorDynamicsPerTip",
+                    b"useTexture",
+                    b"textureDepth",
+                    b"textureScale",
+                    b"Txtr",
+                    b"TxtC",
+                    b"InvT",
+                    b"textureBlendMode",
+                    b"minimumDepth",
+                    b"textureDepthDynamics",
+                    b"textureBrightness",
+                    b"textureContrast",
                 ]
                 .contains(&key.as_slice())
                 {
@@ -1216,7 +1366,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if device_changed {
+        if texture_changed {
+            converter_version = 8;
+        } else if device_changed {
             converter_version = 7;
         } else if shape_changed {
             converter_version = 6;

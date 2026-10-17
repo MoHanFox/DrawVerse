@@ -7,7 +7,7 @@
   "presetIndex": 0,
   "originalName": "Device brush",
   "converter": "drawverse.abr.basic",
-  "converterVersion": 8,
+  "converterVersion": 9,
   "baseline": {
     "diameter": 8,
     "spacing": 0.02,

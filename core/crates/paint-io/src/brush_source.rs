@@ -53,7 +53,7 @@ impl SourceInfo {
         if self.version != 1
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1..=7)
+            || !matches!(self.converter_version, 1..=8)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -86,7 +86,7 @@ impl SourceInfo {
         }
         if (self.converter_version == 3 && self.baseline.pressure_dynamics.is_none())
             || (self.converter_version < 3 && self.baseline.pressure_dynamics.is_some())
-            || (self.converter_version == 7 && self.baseline.tip_dynamics.is_none())
+            || (self.converter_version >= 7 && self.baseline.tip_dynamics.is_none())
             || (self.converter_version < 7 && self.baseline.tip_dynamics.is_some())
             || (self.converter_version == 4 && self.baseline.scatter_dynamics.is_none())
             || (self.converter_version < 4 && self.baseline.scatter_dynamics.is_some())

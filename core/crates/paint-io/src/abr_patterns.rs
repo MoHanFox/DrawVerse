@@ -1,5 +1,8 @@
 //! Bounded ABR `patt` resource decoding and descriptor-to-pattern association.
-use crate::{check, Error, Result};
+use crate::{
+    brush_resource::{encode_mask, hash},
+    check, Error, Result,
+};
 use paint_core::{BrushMask, MAX_BRUSH_MASK_EDGE, MAX_CATALOG_MASK_BYTES};
 use paint_task::CancellationToken;
 use std::{collections::BTreeMap, sync::Arc};
@@ -17,7 +20,7 @@ pub struct TextureSource {
     pub scale: f32,
     pub invert: bool,
     pub each_tip: bool,
-    pub mode: String,
+    pub mode: Option<String>,
 }
 
 pub struct DecodedTextures {
@@ -104,6 +107,9 @@ fn preflight_pattern_records(
             if array_len < 23 {
                 return Err(Error::Invalid("ABR pattern channel length"));
             }
+            if be_u32(record, pos)? != 8 {
+                return Err(Error::Unsupported("ABR pattern channel depth".into()));
+            }
             let body_end = pos
                 .checked_add(array_len)
                 .filter(|end| *end <= record.len())
@@ -112,6 +118,14 @@ fn preflight_pattern_records(
             let left = be_u32(record, pos + 8)?;
             let bottom = be_u32(record, pos + 12)?;
             let right = be_u32(record, pos + 16)?;
+            if u16::from_be_bytes(
+                record[pos + 20..pos + 22]
+                    .try_into()
+                    .map_err(|_| Error::Invalid("truncated ABR pattern channel"))?,
+            ) != 8
+            {
+                return Err(Error::Unsupported("ABR pattern channel depth".into()));
+            }
             let width = right
                 .checked_sub(left)
                 .ok_or(Error::Invalid("ABR pattern channel bounds"))?;
@@ -153,7 +167,7 @@ fn end_record(record: &[u8]) -> usize {
     record.len()
 }
 
-fn map_mode(id: Option<&str>) -> Result<String> {
+fn map_mode(id: Option<&str>) -> Option<String> {
     let mode = match id {
         None | Some("Nrml") | Some("normal") => "normal",
         Some("Mltp") | Some("multiply") => "multiply",
@@ -162,9 +176,9 @@ fn map_mode(id: Option<&str>) -> Result<String> {
         Some("Sbtr") | Some("subtract") => "subtract",
         Some("Dfrn") | Some("difference") => "difference",
         Some("Scrn") | Some("screen") => "screen",
-        _ => return Err(Error::Unsupported("ABR texture blend mode".into())),
+        _ => return None,
     };
-    Ok(mode.into())
+    Some(mode.into())
 }
 
 pub fn decode(
@@ -193,7 +207,9 @@ pub fn decode(
         {
             return Err(Error::Invalid("ABR texture pixels"));
         }
-        let mask = Arc::new(BrushMask::new(pattern.width, pattern.height, pattern.gray)?);
+        let mask = BrushMask::new(pattern.width, pattern.height, pattern.gray)?;
+        let id = hash(&encode_mask(&mask)?);
+        let mask = Arc::new(mask.with_resource_id(id.clone())?);
         resident = resident
             .checked_add(mask.resident_bytes())
             .ok_or(Error::Limit("ABR texture resource budget"))?;
@@ -233,7 +249,7 @@ pub fn decode(
                         scale: (scale / 100.) as f32,
                         invert: brush.descriptor.texture_invert.unwrap_or(false),
                         each_tip: brush.descriptor.texture_each_tip.unwrap_or(true),
-                        mode: map_mode(brush.descriptor.texture_blend_mode.as_deref())?,
+                        mode: map_mode(brush.descriptor.texture_blend_mode.as_deref()),
                     },
                 );
             }
@@ -264,7 +280,7 @@ pub fn decode(
                     scale: (scale / 100.) as f32,
                     invert: preset.descriptor.texture_invert.unwrap_or(false),
                     each_tip: preset.descriptor.texture_each_tip.unwrap_or(true),
-                    mode: map_mode(preset.descriptor.texture_blend_mode.as_deref())?,
+                    mode: map_mode(preset.descriptor.texture_blend_mode.as_deref()),
                 },
             );
         }

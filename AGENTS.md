@@ -1,6 +1,8 @@
 # DrawVerse
 
-- 最新纹理模式：`docs/brush-texture-mode-design.md` / `docs/brush-texture-mode-validation.md`；核心和 Qt 支持七种纹理覆盖组合模式，旧 state/VBR 缺省为 normal，真实纹理交换与 Windows Qt 回归通过。ABR 内部纹理字段映射仍待接；无 ABI 主版本变化。
+- 最新ABR纹理：`docs/abr-texture-design.md` / `docs/abr-texture-validation.md`；有界`patt`预检/灰度解码/内容哈希、`Txtr`参数与预设索引关联、`TxtC`空间及七种覆盖模式、converterVersion8/handoff v7和Qt state11已接；真实图案笔触/历史、旧ABR与严格Clippy通过。`CBrn`等未定义模式、亮度/对比度/最低深度/深度动态和16位图案仍未执行，来源基线纹理字段继续后续。
+
+- 最新纹理模式：`docs/brush-texture-mode-design.md` / `docs/brush-texture-mode-validation.md`；核心和 Qt 支持七种纹理覆盖组合模式，旧 state/VBR 缺省为 normal，真实纹理交换与 Windows Qt 回归通过。ABR 的 `patt`/`Txtr` 已接入这七种模式，未定义模式仍保留来源并报告；无 ABI 主版本变化。
 
 - 最新分组Qt只读树：`docs/brush-groups-qt-state-design.md` / `docs/brush-groups-qt-state-validation.md`；ABI1.54 state20 在 Qt 与持久化之间完整镜像，画笔库面板显示有序组树、层级缩进并在搜索时保留父组；Windows Release 与四项 Qt 最小测试通过。建组/改名/拖动/解组、Qt 分组包合并/范围导出仍待接，ABR 纹理内部执行映射仍待接。
 

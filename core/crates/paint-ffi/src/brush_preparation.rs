@@ -470,6 +470,18 @@ impl PreparedCatalog {
                     source_depth: 8,
                 });
             }
+            if let Some(texture) = preset.settings().texture.resource() {
+                let source = texture.source();
+                let id = source
+                    .resource_id()
+                    .ok_or_else(ApiError::internal)?
+                    .to_owned();
+                masks.entry(id.clone()).or_insert(StoredMask {
+                    id,
+                    mask: source.clone(),
+                    source_depth: 8,
+                });
+            }
         }
         *self.imported.lock().map_err(|_| ApiError::internal())? =
             Some(masks.into_values().collect());

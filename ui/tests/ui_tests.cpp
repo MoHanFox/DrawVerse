@@ -1554,6 +1554,23 @@ private slots:
         QSignalSpy restopped(&restored,&PaintCoreClient::stopped);restored.shutdown();QTRY_COMPARE(restopped.size(),1);PaintCoreClient reopened(nullptr,temp.filePath("fresh/import.ini"));QTRY_VERIFY(reopened.ready());QCOMPARE(reopened.brushLibrary()->tipDynamics(),device);QCOMPARE(reopened.brushLibrary()->pressureDynamics(),pressure);QCOMPARE(reopened.brushLibrary()->scatterDynamics(),scatter);QCOMPARE(reopened.brushLibrary()->colorDynamics(),color);QCOMPARE(reopened.brushLibrary()->shapeJitter(),shape);QVERIFY(reopened.brushLibrary()->pressureOpacity());QSignalSpy again(&reopened,&PaintCoreClient::stopped);reopened.shutdown();QTRY_COMPARE(again.size(),1);
         }
     }
+    void abrTextureHandoffImportsMappedModeIntoState11() {
+        BrushLibrary library;
+        const QString textureResource(64,'a');
+        const QJsonObject texture{{"model","periodic-coverage-v1"},{"enabled",true},{"space","tip"},{"mode","multiply"},{"scale",1.0},{"angle",0.0},{"depth",1.0},{"invert",false},{"offsetX",0.0},{"offsetY",0.0},{"resource",textureResource}};
+        const QJsonObject parameters{{"diameter",8.0},{"spacing",0.02},{"dabOpacity",1.0},{"hardness",1.0},{"roundness",1.0},{"angle",0.0},{"flow",1.0},{"pressureSize",false},{"pressureFlow",false}};
+        const QJsonObject preset{{"name","Texture"},{"parameters",parameters},{"tipResource",QJsonValue::Null},{"texture",texture},{"sourceResource",QString(64,'b')},{"partial",false}};
+        const QJsonObject handoff{{"version",7},{"format","abr"},{"presets",QJsonArray{preset}}};
+        QVERIFY(library.importAbr(QJsonDocument(handoff).toJson(QJsonDocument::Compact)));
+        QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object().value("version").toInt(),11);
+        QCOMPARE(library.texture(),texture.toVariantMap());
+        QVERIFY(library.resetPreset());
+        QCOMPARE(library.texture(),texture.toVariantMap());
+        auto downgraded=handoff;downgraded["version"]=6;
+        const auto before=library.snapshot();
+        QVERIFY(!library.importAbr(QJsonDocument(downgraded).toJson(QJsonDocument::Compact)));
+        QCOMPARE(library.snapshot(),before);
+    }
     void licensedRealAbrImportsWholePackAndExchangesPixelsWithOriginalSource() {
         const auto fixture=QFINDTESTDATA("../../core/crates/paint-io/tests/fixtures/abr/myer-settlement-brushes.abr");QVERIFY(!fixture.isEmpty());
         QTemporaryDir temp;const auto path=temp.filePath("real.abr");QVERIFY(QFile::copy(fixture,path));PaintCoreClient client(nullptr,temp.filePath("settings.ini"));QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();QSignalSpy finished(&client,&PaintCoreClient::brushFileFinished);QVERIFY(client.importBrushes(QUrl::fromLocalFile(path)));QTRY_COMPARE_WITH_TIMEOUT(finished.size(),1,15000);QVERIFY(finished.last()[0].toBool());QCOMPARE(library->presets().size(),152);QCOMPARE(library->selectedName(),QString("Individual Tree 001"));const auto first=library->selectedId(),source=library->sourceResource(),mask=library->maskResource();QVERIFY(!mask.isEmpty());QVERIFY(library->select(library->presets().last().toMap().value("id").toString()));QVERIFY(library->selectedId()!=first);QVERIFY(library->select(first));

@@ -531,7 +531,7 @@ bool BrushLibrary::importPackage(const QByteArray &json) {
 bool BrushLibrary::importAbr(const QByteArray &json) {
     if(json.size()>2*1024*1024)return false;
     const auto handoff=QJsonDocument::fromJson(json).object();
-    if((handoff.value("version").toInt()!=1 && handoff.value("version").toInt()!=2 && handoff.value("version").toInt()!=3 && handoff.value("version").toInt()!=4 && handoff.value("version").toInt()!=5 && handoff.value("version").toInt()!=6) || handoff.value("format").toString()!="abr" || !handoff.value("presets").isArray())return false;
+    if((handoff.value("version").toInt()!=1 && handoff.value("version").toInt()!=2 && handoff.value("version").toInt()!=3 && handoff.value("version").toInt()!=4 && handoff.value("version").toInt()!=5 && handoff.value("version").toInt()!=6 && handoff.value("version").toInt()!=7) || handoff.value("format").toString()!="abr" || !handoff.value("presets").isArray())return false;
     const auto imported=handoff.value("presets").toArray();
     if(imported.isEmpty() || imported.size()+m_presets.size()>1024)return false;
     auto state=QJsonDocument::fromJson(snapshot()).object();auto rows=state.value("presets").toArray();QString selected;
@@ -562,6 +562,10 @@ bool BrushLibrary::importAbr(const QByteArray &json) {
             row["pressureDynamics"]=parameters.value("pressureDynamics");state["version"]=std::max(state.value("version").toInt(),parameters.value("pressureDynamics").toObject().contains("opacity")?6:5);
         }
         if(!preset.value("tipResource").isNull())row["maskResource"]=preset.value("tipResource");
+        if(preset.contains("texture") && !preset.value("texture").isNull()) {
+            if(handoff.value("version").toInt()<7 || !preset.value("texture").isObject() || !validTexture(preset.value("texture").toObject()))return false;
+            row["texture"]=preset.value("texture");state["version"]=std::max(state.value("version").toInt(),11);
+        }
         rows.append(row);
     }
     if(!m_organization.isEmpty()){auto organization=m_organization;for(qsizetype i=m_presets.size();i<rows.size();++i)organization=BrushOrganization::addPreset(organization,rows[i].toObject().value("id").toString());state["organization"]=organization;}

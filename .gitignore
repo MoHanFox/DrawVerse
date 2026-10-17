@@ -8,4 +8,5 @@ __pycache__/
 *.user
 /.idea/
 /cmake-build-*/
+/ui/cmake-build-*/
 /aqtinstall.log

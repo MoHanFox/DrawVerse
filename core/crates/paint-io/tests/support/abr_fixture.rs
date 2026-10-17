@@ -37,6 +37,7 @@ fn unit(kind: &[u8; 4], value: f64) -> Vec<u8> {
     bytes.extend(value.to_be_bytes());
     typed(b"UntF", &bytes)
 }
+#[allow(clippy::too_many_arguments)]
 fn preset(
     sampled: bool,
     bad: bool,
@@ -45,6 +46,7 @@ fn preset(
     scatter: Option<bool>,
     color: Option<(bool, bool)>,
     (shape_jitter, device): (Option<bool>, Option<(bool, i32, bool)>),
+    texture: Option<(&str, &str)>,
 ) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
@@ -229,6 +231,30 @@ fn preset(
             ));
         }
     }
+    if let Some((pattern, mode)) = texture {
+        entries.push(("useTexture", typed(b"bool", &[1])));
+        entries.push((
+            "Txtr",
+            typed(
+                b"Objc",
+                &object(
+                    "Ptrn",
+                    vec![
+                        ("Nm  ", typed(b"TEXT", &text("Tex\0"))),
+                        ("Idnt", typed(b"TEXT", &text(&format!("{pattern}\0")))),
+                    ],
+                ),
+            ),
+        ));
+        entries.push(("textureDepth", unit(b"#Prc", 100.)));
+        entries.push(("textureScale", unit(b"#Prc", 100.)));
+        entries.push(("TxtC", typed(b"bool", &[1])));
+        entries.push(("InvT", typed(b"bool", &[0])));
+        entries.push((
+            "textureBlendMode",
+            typed(b"enum", &[id("BlnM"), id(mode)].concat()),
+        ));
+    }
     if let Some(opacity) = opacity {
         entries.push((
             "toolOptions",
@@ -260,6 +286,7 @@ pub fn fixture_with_device(enabled: bool, angle: i32, combined: bool) -> Vec<u8>
         combined.then_some(true),
         combined.then_some((true, true)),
         (combined.then_some(enabled), Some((enabled, angle, true))),
+        None,
     )
 }
 pub fn fixture(version: u16, sub: u16, bad: bool) -> Vec<u8> {
@@ -274,6 +301,7 @@ pub fn fixture_with_opacity(version: u16, sub: u16, bad: bool, opacity: Option<f
         None,
         None,
         (None, None),
+        None,
     )
 }
 #[allow(dead_code)]
@@ -286,6 +314,7 @@ pub fn fixture_with_pressure(version: u16, sub: u16, bad: bool) -> Vec<u8> {
         None,
         None,
         (None, None),
+        None,
     )
 }
 #[allow(dead_code)]
@@ -298,6 +327,7 @@ pub fn fixture_with_scatter(version: u16, sub: u16, bad: bool, enabled: bool) ->
         Some(enabled),
         None,
         (None, None),
+        None,
     )
 }
 #[allow(dead_code)]
@@ -310,6 +340,7 @@ pub fn fixture_with_color(enabled: bool, per_tip: bool, combined: bool) -> Vec<u
         combined.then_some(true),
         Some((enabled, per_tip)),
         (None, None),
+        None,
     )
 }
 #[allow(dead_code)]
@@ -322,8 +353,32 @@ pub fn fixture_with_shape(enabled: bool, combined: bool) -> Vec<u8> {
         combined.then_some(true),
         combined.then_some((true, true)),
         (Some(enabled), None),
+        None,
     )
 }
+#[allow(dead_code)]
+pub fn fixture_with_texture(mode: &str) -> Vec<u8> {
+    let bytes = fixture_inner(
+        (6, 2),
+        false,
+        Some(100.),
+        false,
+        None,
+        None,
+        (None, None),
+        Some(("pattern-identity", mode)),
+    );
+    let mut output = bytes[..4].to_vec();
+    let mut offset = 4;
+    while offset < bytes.len() {
+        let size = u32::from_be_bytes(bytes[offset + 8..offset + 12].try_into().unwrap()) as usize;
+        output.extend_from_slice(&bytes[offset..offset + 12 + size]);
+        output.resize(output.len() + (4 - size % 4) % 4, 0);
+        offset += 12 + size;
+    }
+    output
+}
+#[allow(clippy::too_many_arguments)]
 fn fixture_inner(
     (version, sub): (u16, u16),
     bad: bool,
@@ -332,18 +387,19 @@ fn fixture_inner(
     scatter: Option<bool>,
     color: Option<(bool, bool)>,
     dynamics: (Option<bool>, Option<(bool, i32, bool)>),
+    texture: Option<(&str, &str)>,
 ) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
     let mut list = 3u32.to_be_bytes().to_vec();
     list.extend(preset(
-        true, false, opacity, pressure, scatter, color, dynamics,
+        true, false, opacity, pressure, scatter, color, dynamics, texture,
     ));
     list.extend(preset(
-        false, false, opacity, pressure, scatter, color, dynamics,
+        false, false, opacity, pressure, scatter, color, dynamics, None,
     ));
     list.extend(preset(
-        true, bad, opacity, pressure, scatter, color, dynamics,
+        true, bad, opacity, pressure, scatter, color, dynamics, None,
     ));
     let mut descriptor = 16u32.to_be_bytes().to_vec();
     descriptor.extend(object("null", vec![("Brsh", typed(b"VlLs", &list))]));
@@ -367,5 +423,42 @@ fn fixture_inner(
     samples.extend(&record);
     samples.resize(samples.len() + (4 - record.len() % 4) % 4, 0);
     section(&mut bytes, b"samp", &samples);
+    if let Some((pattern, _)) = texture {
+        let mut body = 1u32.to_be_bytes().to_vec();
+        body.extend(1u32.to_be_bytes());
+        body.extend(4u16.to_be_bytes());
+        body.extend(4u16.to_be_bytes());
+        let name: Vec<u16> = "Tex\0".encode_utf16().collect();
+        body.extend((name.len() as u32).to_be_bytes());
+        for unit in name {
+            body.extend(unit.to_be_bytes());
+        }
+        body.push(pattern.len() as u8);
+        body.extend(pattern.as_bytes());
+        body.extend(3u32.to_be_bytes());
+        body.extend(0u32.to_be_bytes());
+        for value in [0u32, 0, 4, 4] {
+            body.extend(value.to_be_bytes());
+        }
+        body.extend(24u32.to_be_bytes());
+        let pixels = vec![
+            0u8, 255, 0, 255, 255, 0, 255, 0, 0, 255, 0, 255, 255, 0, 255, 0,
+        ];
+        let mut channel = 8u32.to_be_bytes().to_vec();
+        for value in [0u32, 0, 4, 4] {
+            channel.extend(value.to_be_bytes());
+        }
+        channel.extend(8u16.to_be_bytes());
+        channel.push(0);
+        channel.extend(&pixels);
+        body.extend(1u32.to_be_bytes());
+        body.extend((channel.len() as u32).to_be_bytes());
+        body.extend(channel);
+        body.extend(vec![0u8; 23 * 4]);
+        let mut block = (body.len() as u32).to_be_bytes().to_vec();
+        block.extend(body);
+        block.resize(block.len() + (4 - block.len() % 4) % 4, 0);
+        section(&mut bytes, b"patt", &block);
+    }
     bytes
 }
