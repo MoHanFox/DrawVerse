@@ -5,7 +5,10 @@ use crate::{
 };
 use paint_core::{BrushMask, MAX_BRUSH_MASK_EDGE, MAX_CATALOG_MASK_BYTES};
 use paint_task::CancellationToken;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 #[derive(Clone)]
 pub struct PatternResource {
@@ -200,35 +203,11 @@ pub fn decode(
             presets: BTreeMap::new(),
         });
     }
-    let mut resident = tip_resident;
-    let decoded = crate::abr_pattern_decode::decode(sections, token, &mut resident)?;
     let pack = brushkit_abr::parse_abr_deferred_without_patterns(bytes)
         .map_err(|_| Error::Invalid("ABR texture parsing"))?
         .pack;
-    let mut patterns = BTreeMap::new();
-    for pattern in decoded {
-        check(token)?;
-        if pattern.gray.len() != (pattern.width as usize).saturating_mul(pattern.height as usize) {
-            return Err(Error::Invalid("ABR texture pixels"));
-        }
-        let mask = BrushMask::new(pattern.width, pattern.height, pattern.gray)?;
-        let id = hash(&encode_mask(&mask)?);
-        let mask = Arc::new(mask.with_resource_id(id.clone())?);
-        resident = resident
-            .checked_add(mask.resident_bytes())
-            .ok_or(Error::Limit("ABR texture resource budget"))?;
-        if resident > MAX_CATALOG_MASK_BYTES {
-            return Err(Error::Limit("ABR texture resource budget"));
-        }
-        let id = pattern.id;
-        if patterns
-            .insert(id.clone(), PatternResource { id, mask })
-            .is_some()
-        {
-            return Err(Error::Invalid("duplicate ABR texture identity"));
-        }
-    }
     let mut presets = BTreeMap::new();
+    let mut wanted = BTreeSet::new();
     for brush in pack.brushes {
         check(token)?;
         if let Some(index) = brush.preset_index {
@@ -256,9 +235,7 @@ pub fn decode(
                 {
                     return Err(Error::Invalid("ABR texture parameters"));
                 }
-                if !patterns.contains_key(&pattern_id) {
-                    return Err(Error::Invalid("ABR texture pattern reference"));
-                }
+                wanted.insert(pattern_id.clone());
                 presets.insert(
                     index,
                     TextureSource {
@@ -305,9 +282,7 @@ pub fn decode(
             {
                 return Err(Error::Invalid("ABR texture parameters"));
             }
-            if !patterns.contains_key(&pattern_id) {
-                return Err(Error::Invalid("ABR texture pattern reference"));
-            }
+            wanted.insert(pattern_id.clone());
             presets.insert(
                 index,
                 TextureSource {
@@ -324,6 +299,34 @@ pub fn decode(
                 },
             );
         }
+    }
+    let mut resident = tip_resident;
+    let decoded = crate::abr_pattern_decode::decode(sections, token, &mut resident, &wanted)?;
+    let mut patterns = BTreeMap::new();
+    for pattern in decoded {
+        check(token)?;
+        if pattern.gray.len() != (pattern.width as usize).saturating_mul(pattern.height as usize) {
+            return Err(Error::Invalid("ABR texture pixels"));
+        }
+        let mask = BrushMask::new(pattern.width, pattern.height, pattern.gray)?;
+        let id = hash(&encode_mask(&mask)?);
+        let mask = Arc::new(mask.with_resource_id(id.clone())?);
+        resident = resident
+            .checked_add(mask.resident_bytes())
+            .ok_or(Error::Limit("ABR texture resource budget"))?;
+        if resident > MAX_CATALOG_MASK_BYTES {
+            return Err(Error::Limit("ABR texture resource budget"));
+        }
+        let id = pattern.id;
+        if patterns
+            .insert(id.clone(), PatternResource { id, mask })
+            .is_some()
+        {
+            return Err(Error::Invalid("duplicate ABR texture identity"));
+        }
+    }
+    if wanted.iter().any(|id| !patterns.contains_key(id)) {
+        return Err(Error::Invalid("ABR texture pattern reference"));
     }
     Ok(DecodedTextures { patterns, presets })
 }

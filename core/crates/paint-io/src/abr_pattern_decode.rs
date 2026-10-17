@@ -2,6 +2,7 @@
 use crate::{check, Error, Result};
 use paint_core::{MAX_BRUSH_MASK_EDGE, MAX_CATALOG_MASK_BYTES};
 use paint_task::CancellationToken;
+use std::collections::BTreeSet;
 
 pub(crate) struct DecodedPattern {
     pub id: String,
@@ -208,7 +209,11 @@ fn gray(
     }
 }
 
-fn record(data: &[u8], token: &CancellationToken) -> Result<Option<DecodedPattern>> {
+fn record(
+    data: &[u8],
+    token: &CancellationToken,
+    wanted: &BTreeSet<String>,
+) -> Result<Option<DecodedPattern>> {
     let mut reader = Reader {
         bytes: data,
         offset: 0,
@@ -235,6 +240,9 @@ fn record(data: &[u8], token: &CancellationToken) -> Result<Option<DecodedPatter
         return Err(Error::Invalid("ABR pattern identity"));
     }
     let id = String::from_utf8(id_bytes.to_vec()).expect("validated ASCII");
+    if !wanted.contains(&id) {
+        return Ok(None);
+    }
     let palette = if mode == 2 {
         let mut palette = [0u8; 768];
         palette.copy_from_slice(reader.take(768)?);
@@ -303,6 +311,7 @@ pub(crate) fn decode(
     sections: &[crate::abr_sampled::OpaqueSection],
     token: &CancellationToken,
     resident: &mut usize,
+    wanted: &BTreeSet<String>,
 ) -> Result<Vec<DecodedPattern>> {
     let mut patterns = Vec::new();
     for section in sections.iter().filter(|section| &section.key == b"patt") {
@@ -319,7 +328,7 @@ pub(crate) fn decode(
                 .checked_add(length)
                 .filter(|end| *end <= data.len())
                 .ok_or(Error::Invalid("truncated ABR pattern record"))?;
-            if let Some(pattern) = record(&data[start..end], token)? {
+            if let Some(pattern) = record(&data[start..end], token, wanted)? {
                 let pixels = (pattern.width as usize)
                     .checked_mul(pattern.height as usize)
                     .ok_or(Error::Limit("ABR pattern pixels"))?;

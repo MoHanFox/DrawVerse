@@ -13,6 +13,7 @@
 - `Nrml`、`Mltp`、`Drkn`、`Lghn`、`Sbtr`、`Dfrn`、`Scrn`、`CBrn` 映射到 `normal`、`multiply`、`darken`、`lighten`、`subtract`、`difference`、`screen`、`colorBurn`。
 - 未识别的模式保留图案和参数，但纹理不启用，并报告 `notExecuted`；不会静默换成普通模式。
 - 灰度、索引色和 RGB 图案由本地有界解码器处理 8/16 位 raw/RLE；16 位按四舍五入缩放，RGB 使用 Rec.601 亮度。
+- 仅解码被预设引用的图案 ID；未引用图案保留在原始 ABR 中但不分配覆盖资源，缺失引用仍整包拒绝。
 - 带非默认纹理的 ABR 来源记录使用 record version2，保存完整 `TextureParameters` 与资源 ID；旧纹理来源保持 version1。包含 version2 来源的 VBR 最低 minor27。
 
 已验证：
