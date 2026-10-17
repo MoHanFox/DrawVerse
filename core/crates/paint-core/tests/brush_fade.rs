@@ -66,3 +66,18 @@ fn disabled_fade_preserves_plain_pixels() {
         }
     }
 }
+
+#[test]
+fn secondary_tip_rejects_its_own_fade_configuration() {
+    let fade = FadeDynamics::new(true, 4, control(), flat(), flat()).unwrap();
+    assert!(SecondaryTip::new(
+        8.,
+        BrushTip::default(),
+        None,
+        BrushDynamics {
+            fade,
+            ..Default::default()
+        }
+    )
+    .is_err());
+}

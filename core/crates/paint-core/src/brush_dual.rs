@@ -122,6 +122,7 @@ impl SecondaryTip {
             || dynamics.rotation != Default::default()
             || dynamics.direction != Default::default()
             || dynamics.matrix != Default::default()
+            || dynamics.fade != Default::default()
         {
             return Err(Error::InvalidArgument("secondary tip parameters"));
         }
