@@ -2,6 +2,32 @@
 use super::*;
 use paint_core::{BrushCatalogItem, BrushGroup, BrushOrganization};
 impl ImageBundle {
+    /// Publishes immutable assets and sources before adopting the candidate catalog.
+    /// Failure preserves the catalog. Already-published, unreferenced cache files may remain;
+    /// deleting shared content on rollback could invalidate another library's successful import.
+    pub fn import_into_catalog_persisted(
+        &self,
+        catalog: &mut paint_core::BrushCatalog,
+        store: &crate::brush_resource::ResourceStore,
+        parent: Option<&str>,
+        index: usize,
+        token: &CancellationToken,
+    ) -> Result<()> {
+        let mut candidate = catalog.clone();
+        self.import_into_catalog(&mut candidate, parent, index, token)?;
+        for (id, asset) in self.assets() {
+            store.put_verified(id, asset.bytes(), token)?;
+        }
+        if !self.sources().is_empty() {
+            let sources = store.source_store()?;
+            for batch in self.sources() {
+                sources.save_batch(batch, token)?;
+            }
+        }
+        check(token)?;
+        *catalog = candidate;
+        Ok(())
+    }
     /// Merges prepared in-memory resources. Persist source/assets separately before publishing
     /// a durable library; this method performs no filesystem writes.
     pub fn import_into_catalog(

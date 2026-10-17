@@ -657,15 +657,112 @@ fn wet_dual_source_three_image_roles_and_taper_survive_fresh_store_exchange() {
         );
         assert_eq!(catalog.organization().groups().len(), usize::from(grouped));
         let new = ResourceStore::open(tmp.path().join("new"), MAX_CATALOG_MASK_BYTES).unwrap();
-        for (id, asset) in reopened.assets() {
-            new.put_verified(id, asset.bytes(), &token).unwrap();
-        }
-        for source in reopened.sources() {
-            new.source_store()
+        let mut imported = BrushCatalog::default();
+        if grouped {
+            let directory = tmp.path().join("fault");
+            let fault = ResourceStore::open(directory.clone(), MAX_CATALOG_MASK_BYTES).unwrap();
+            let obstruction = directory.join("sources");
+            std::fs::write(&obstruction, b"keep source obstruction").unwrap();
+            let before = imported.clone();
+            assert!(reopened
+                .import_into_catalog_persisted(&mut imported, &fault, None, 1, &token)
+                .is_err());
+            assert_eq!(imported.revision(), before.revision());
+            assert!(Arc::ptr_eq(
+                &imported.organization(),
+                &before.organization()
+            ));
+            assert!(Arc::ptr_eq(&imported.selected(), &before.selected()));
+            assert_eq!(
+                std::fs::read(&obstruction).unwrap(),
+                b"keep source obstruction"
+            );
+            for (id, asset) in reopened.assets() {
+                assert_eq!(
+                    std::fs::read(directory.join(format!("{id}.png"))).unwrap(),
+                    asset.bytes()
+                );
+            }
+            assert!(std::fs::read_dir(&directory).unwrap().all(|e| !e
                 .unwrap()
-                .save_batch(source, &token)
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".brush-")));
+            std::fs::remove_file(obstruction).unwrap();
+            std::fs::create_dir(directory.join("sources")).unwrap();
+            let batch = &reopened.sources()[0];
+            let record_id = batch.ids().next().unwrap();
+            let record_path = directory.join("sources").join(format!("{record_id}.json"));
+            std::fs::write(&record_path, b"corrupt existing source record").unwrap();
+            assert!(reopened
+                .import_into_catalog_persisted(&mut imported, &fault, None, 1, &token)
+                .is_err());
+            assert_eq!(imported.revision(), before.revision());
+            assert!(Arc::ptr_eq(
+                &imported.organization(),
+                &before.organization()
+            ));
+            assert!(Arc::ptr_eq(&imported.selected(), &before.selected()));
+            assert_eq!(
+                std::fs::read(&record_path).unwrap(),
+                b"corrupt existing source record"
+            );
+            assert_eq!(
+                std::fs::read(directory.join("sources").join(format!(
+                    "{}.abr",
+                    paint_io::brush_resource::hash(batch.original_bytes())
+                )))
+                .unwrap(),
+                raw.as_slice()
+            );
+            assert!(std::fs::read_dir(directory.join("sources"))
+                .unwrap()
+                .all(|e| !e
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".brush-source-")));
+            std::fs::remove_file(record_path).unwrap();
+            reopened
+                .import_into_catalog_persisted(&mut imported, &fault, None, 1, &token)
                 .unwrap();
+            assert_eq!(
+                draw(imported.selected().settings().definition()),
+                draw(reopened.definition(0).unwrap())
+            );
+            imported = before;
         }
+        reopened
+            .import_into_catalog_persisted(&mut imported, &new, None, 1, &token)
+            .unwrap();
+        let imported_state = brush_state::encode(&imported).unwrap();
+        let fresh = ResourceStore::open(tmp.path().join("new"), MAX_CATALOG_MASK_BYTES).unwrap();
+        let imported_restored = brush_state::decode_with_sources(
+            &imported_state,
+            MAX_CATALOG_MASK_BYTES,
+            Some(&fresh),
+            &fresh.source_store().unwrap(),
+            &token,
+        )
+        .unwrap();
+        assert_eq!(
+            brush_state::encode(&imported_restored).unwrap(),
+            imported_state
+        );
+        assert_eq!(imported_restored.organization(), imported.organization());
+        assert_eq!(
+            draw(imported_restored.selected().settings().definition()),
+            draw(reopened.definition(0).unwrap())
+        );
+        let batches = fresh
+            .source_store()
+            .unwrap()
+            .export_batches(
+                &std::collections::BTreeSet::from([source_id.clone()]),
+                &token,
+            )
+            .unwrap();
+        assert_eq!(batches[0].original_bytes(), raw.as_slice());
         let mut catalog = BrushCatalog::default();
         catalog.edit("round-pressure", s).unwrap();
         catalog

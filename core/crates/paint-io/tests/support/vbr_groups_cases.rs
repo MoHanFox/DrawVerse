@@ -1,6 +1,115 @@
 use super::*;
 
 #[test]
+fn groups_persist_preflight_cancellation_and_existing_corruption_preserve_catalog() {
+    use paint_core::BrushCatalog;
+    use paint_io::brush_resource::ResourceStore;
+    let token = CancellationToken::default();
+    let b = grouped(bundle());
+    let tmp = tempfile::tempdir().unwrap();
+    let directory = tmp.path().join("resources");
+    let store = ResourceStore::open(directory.clone(), paint_core::MAX_CATALOG_MASK_BYTES).unwrap();
+    let mut c = BrushCatalog::default();
+    let before = c.clone();
+    let unchanged = |c: &BrushCatalog| {
+        assert_eq!(c.revision(), before.revision());
+        assert!(Arc::ptr_eq(&c.organization(), &before.organization()));
+        assert!(Arc::ptr_eq(&c.selected(), &before.selected()));
+        for id in before.ids() {
+            assert!(Arc::ptr_eq(
+                &c.preset(id).unwrap(),
+                &before.preset(id).unwrap()
+            ));
+        }
+    };
+    assert!(b
+        .import_into_catalog_persisted(&mut c, &store, None, 999, &token)
+        .is_err());
+    unchanged(&c);
+    let cancelled = CancellationToken::default();
+    cancelled.cancel();
+    assert!(b
+        .import_into_catalog_persisted(&mut c, &store, None, 0, &cancelled)
+        .is_err());
+    unchanged(&c);
+    let mut tiny = BrushCatalog::with_mask_budget(1).unwrap();
+    let tiny_revision = tiny.revision();
+    assert!(b
+        .import_into_catalog_persisted(&mut tiny, &store, None, 0, &token)
+        .is_err());
+    assert_eq!(tiny.revision(), tiny_revision);
+    assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+    let (asset_id, asset) = b.assets().iter().next().unwrap();
+    let path = directory.join(format!("{asset_id}.png"));
+    std::fs::write(&path, b"corrupt existing").unwrap();
+    assert!(b
+        .import_into_catalog_persisted(&mut c, &store, None, 0, &token)
+        .is_err());
+    unchanged(&c);
+    assert_eq!(std::fs::read(&path).unwrap(), b"corrupt existing");
+    assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+    std::fs::write(&path, asset.bytes()).unwrap();
+    b.import_into_catalog_persisted(&mut c, &store, None, 0, &token)
+        .unwrap();
+    let adopted = c.clone();
+    assert!(b
+        .import_into_catalog_persisted(&mut c, &store, None, 0, &token)
+        .is_err());
+    assert_eq!(c.revision(), adopted.revision());
+    assert!(Arc::ptr_eq(&c.organization(), &adopted.organization()));
+    assert_eq!(std::fs::read(&path).unwrap(), asset.bytes());
+    assert!(std::fs::read_dir(&directory).unwrap().all(|e| !e
+        .unwrap()
+        .file_name()
+        .to_string_lossy()
+        .starts_with(".brush-")));
+}
+
+#[test]
+fn groups_persist_procedural_and_image_state_reopen_from_fresh_store() {
+    use paint_core::{BrushCatalog, MAX_CATALOG_MASK_BYTES};
+    use paint_io::{brush_resource::ResourceStore, brush_state};
+    let token = CancellationToken::default();
+    for b in [
+        bundle(),
+        ImageBundle::new(package(None), BTreeMap::new(), &token).unwrap(),
+    ] {
+        let b = grouped(b);
+        let tmp = tempfile::tempdir().unwrap();
+        let directory = tmp.path().join("resources");
+        let store = ResourceStore::open(directory.clone(), MAX_CATALOG_MASK_BYTES).unwrap();
+        let mut c = BrushCatalog::default();
+        b.import_into_catalog_persisted(&mut c, &store, None, 1, &token)
+            .unwrap();
+        let state = brush_state::encode(&c).unwrap();
+        drop(store);
+        let fresh = ResourceStore::open(directory, MAX_CATALOG_MASK_BYTES).unwrap();
+        let restored = brush_state::decode_with_sources(
+            &state,
+            MAX_CATALOG_MASK_BYTES,
+            Some(&fresh),
+            &fresh.source_store().unwrap(),
+            &token,
+        )
+        .unwrap();
+        assert_eq!(brush_state::encode(&restored).unwrap(), state);
+        assert_eq!(restored.organization(), c.organization());
+        if let Some(mask) = c.selected().settings().mask.as_ref() {
+            assert_eq!(
+                restored
+                    .selected()
+                    .settings()
+                    .mask
+                    .as_ref()
+                    .unwrap()
+                    .coverage(),
+                mask.coverage()
+            );
+        }
+    }
+}
+
+#[test]
 fn groups_vbr24_actual_bundle_merges_and_failure_keeps_target_identity() {
     let token = CancellationToken::default();
     for b in [

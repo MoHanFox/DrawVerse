@@ -182,3 +182,5 @@ wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明
 2026-10-17分组VBR阶段：VBR1.24组织清单/空组与顺序、原子整树副本ID映射已接，三图片用途/ABR来源及真实两笔像素载色历史保持；IO33项、新四类旧读写保护1项、Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-vbr-design.md)及[验收](brush-groups-vbr-validation.md)。平包旧字节保持，无ABI/state变化；目标库原子合并/完整原生交接/Qt仍待接，不宣称分组用户入口完成。
 
 2026-10-17分组目标目录合并阶段：Core支持完整有序子树在根/指定组位置原子合并、跨角色身份/合并深度容量与资源预算预检、单修订及失败保持；VBR真实资源和来源内存桥已接，两笔像素/双载色/历史保持。新核心4/旧11/修订1、IO21及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-merge-design.md)及[验收](brush-groups-merge-validation.md)。无ABI/state/VBR变化；资源文件耐久事务、完整原生交接/Qt仍待接，不宣称分组用户入口完成。
+
+2026-10-17分组资源发布阶段：候选目录先完整合并预检、包内PNG与来源先落盘后采用；故障保留原目录/共享文件，真实新目录state/组织与两笔像素载色历史恢复通过。IO40、Clippy/Windows Release/4 ABI/旧Qt2通过，见[设计](brush-groups-persist-design.md)及[验收](brush-groups-persist-validation.md)。无ABI/state/VBR变化；失败可能保留合法未引用公共缓存，不声称多文件整体回滚/GC。完整原生交接/Qt及重置基准全链仍待接。

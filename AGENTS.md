@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新分组资源发布：`docs/brush-groups-persist-design.md` / `docs/brush-groups-persist-validation.md`；候选合并预检/PNG与来源先落盘后采用、故障保持目录与共享文件、实际新目录state和两笔像素载色历史恢复，IO40/Clippy/Windows Release/4 ABI/旧Qt2通过。失败可留合法未引用公共缓存，未做多文件回滚/GC；完整原生交接/Qt及重置基准全链仍待接，无ABI/state/VBR变化。
+
 - 最新分组目标库合并：`docs/brush-groups-merge-design.md` / `docs/brush-groups-merge-validation.md`；完整子树/指定位置/跨角色ID与合并深度容量资源预检、单修订及失败保留身份，VBR实际资源/来源与两笔载色历史内存桥已接；核心新4旧11/修订1、IO21及Windows Release/Clippy/4 ABI/旧Qt2通过。资源耐久事务/完整原生交接/Qt仍待接，无ABI/state/VBR变化。
 
 - 最新分组VBR1.24：`docs/brush-groups-vbr-design.md` / `docs/brush-groups-vbr-validation.md`；组织清单/空组顺序及原子整树副本ID映射、三图片/ABR来源与两笔像素载色历史保持，IO33/旧四读写入口保护及Schema/Windows Release/Clippy/4 ABI/旧Qt2通过。平包旧字节保持，无ABI/state变化；目标库合并/完整原生交接/Qt仍待接，不宣称分组用户入口完成。
