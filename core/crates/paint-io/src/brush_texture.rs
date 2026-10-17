@@ -8,6 +8,9 @@ fn default_mode() -> String {
 fn is_default_adjustment(value: &f64) -> bool {
     *value == 0.
 }
+fn is_false(value: &bool) -> bool {
+    !*value
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextureParameters {
@@ -23,6 +26,12 @@ pub struct TextureParameters {
     brightness: f64,
     #[serde(default, skip_serializing_if = "is_default_adjustment")]
     contrast: f64,
+    #[serde(default, skip_serializing_if = "is_default_adjustment")]
+    minimum_depth: f64,
+    #[serde(default, skip_serializing_if = "is_default_adjustment")]
+    depth_jitter: f64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    depth_pressure: bool,
     invert: bool,
     offset_x: f64,
     offset_y: f64,
@@ -67,6 +76,9 @@ impl TextureParameters {
             depth: f64::from(s.depth()),
             brightness: f64::from(s.brightness()),
             contrast: f64::from(s.contrast()),
+            minimum_depth: f64::from(s.minimum_depth()),
+            depth_jitter: f64::from(s.depth_jitter()),
+            depth_pressure: s.depth_pressure(),
             invert: s.invert(),
             offset_x: s.offset().0,
             offset_y: s.offset().1,
@@ -81,6 +93,9 @@ impl TextureParameters {
     }
     pub fn requires_vbr_26(&self) -> bool {
         self.brightness != 0. || self.contrast != 0.
+    }
+    pub fn requires_vbr_27(&self) -> bool {
+        self.minimum_depth != 0. || self.depth_jitter != 0. || self.depth_pressure
     }
     pub fn validate(&self) -> Result<()> {
         if self.model != "periodic-coverage-v1"
@@ -106,6 +121,10 @@ impl TextureParameters {
             || !(-1. ..=1.).contains(&self.brightness)
             || !self.contrast.is_finite()
             || !(-1. ..=1.).contains(&self.contrast)
+            || !self.minimum_depth.is_finite()
+            || !(0. ..=1.).contains(&self.minimum_depth)
+            || !self.depth_jitter.is_finite()
+            || !(0. ..=1.).contains(&self.depth_jitter)
             || [self.offset_x, self.offset_y]
                 .iter()
                 .any(|v| !v.is_finite() || v.abs() > 1_000_000.)
@@ -150,7 +169,12 @@ impl TextureParameters {
             self.offset_y,
         )?
         .with_mode(mode)
-        .with_adjustments(self.brightness as f32, self.contrast as f32)?;
+        .with_adjustments(self.brightness as f32, self.contrast as f32)?
+        .with_depth_dynamics(
+            self.minimum_depth as f32,
+            self.depth_jitter as f32,
+            self.depth_pressure,
+        )?;
         Ok(BrushTexture::new(self.enabled, settings, resource)?)
     }
 }

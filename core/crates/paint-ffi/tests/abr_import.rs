@@ -318,7 +318,7 @@ fn texture_abr_import_prepares_native_state_and_source_through_public_abi() {
     let path = temp.path().join("texture.abr");
     std::fs::write(
         &path,
-        fixture::fixture_with_texture_adjustments("CBrn", -25., 50.),
+        fixture::fixture_with_texture_depth("CBrn", 20., 50., true),
     )
     .unwrap();
     let token = CancellationToken::default();
@@ -360,8 +360,9 @@ fn texture_abr_import_prepares_native_state_and_source_through_public_abi() {
             settings.texture.settings().mode(),
             paint_core::TextureMode::ColorBurn
         );
-        assert_eq!(settings.texture.settings().brightness(), -0.25);
-        assert_eq!(settings.texture.settings().contrast(), 0.5);
+        assert_eq!(settings.texture.settings().minimum_depth(), 0.2);
+        assert_eq!(settings.texture.settings().depth_jitter(), 0.5);
+        assert!(settings.texture.settings().depth_pressure());
         let texture_id = settings
             .texture
             .resource()

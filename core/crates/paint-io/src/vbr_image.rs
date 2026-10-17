@@ -470,6 +470,15 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             "texture brightness/contrast requires VBR1.26".into(),
         ));
     }
+    if manifest.version.minor < 27
+        && brushes
+            .iter()
+            .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_27()))
+    {
+        return Err(Error::Unsupported(
+            "texture depth dynamics requires VBR1.27".into(),
+        ));
+    }
     if manifest.version.minor < 8
         && brushes
             .iter()
@@ -670,6 +679,11 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 .sources
                 .iter()
                 .any(|source| source.record_version() > 1)
+                || bundle
+                    .package
+                    .brushes
+                    .iter()
+                    .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_27()))
             {
                 27
             } else if bundle

@@ -46,7 +46,7 @@ fn preset(
     scatter: Option<bool>,
     color: Option<(bool, bool)>,
     (shape_jitter, device): (Option<bool>, Option<(bool, i32, bool)>),
-    texture: Option<(&str, &str, f64, f64)>,
+    texture: Option<(&str, &str, f64, f64, f64, f64, bool)>,
 ) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
@@ -231,7 +231,16 @@ fn preset(
             ));
         }
     }
-    if let Some((pattern, mode, brightness, contrast)) = texture {
+    if let Some((
+        pattern,
+        mode,
+        brightness,
+        contrast,
+        minimum_depth,
+        depth_jitter,
+        depth_pressure,
+    )) = texture
+    {
         entries.push(("useTexture", typed(b"bool", &[1])));
         entries.push((
             "Txtr",
@@ -264,6 +273,25 @@ fn preset(
             entries.push((
                 "textureContrast",
                 typed(b"long", &(contrast as i32).to_be_bytes()),
+            ));
+        }
+        entries.push(("minimumDepth", unit(b"#Prc", minimum_depth)));
+        if depth_jitter != 0. {
+            let control = if depth_pressure { 2i32 } else { 0i32 };
+            entries.push((
+                "textureDepthDynamics",
+                typed(
+                    b"Objc",
+                    &object(
+                        "brushDynamics",
+                        vec![
+                            ("bVTy", typed(b"long", &control.to_be_bytes())),
+                            ("fStp", typed(b"long", &0i32.to_be_bytes())),
+                            ("jitter", unit(b"#Prc", depth_jitter)),
+                            ("Mnm ", unit(b"#Prc", minimum_depth)),
+                        ],
+                    ),
+                ),
             ));
         }
     }
@@ -378,7 +406,7 @@ pub fn fixture_with_texture(mode: &str) -> Vec<u8> {
         None,
         None,
         (None, None),
-        Some(("pattern-identity", mode, 0., 0.)),
+        Some(("pattern-identity", mode, 0., 0., 0., 0., false)),
     );
     let mut output = bytes[..4].to_vec();
     let mut offset = 4;
@@ -400,7 +428,50 @@ pub fn fixture_with_texture_adjustments(mode: &str, brightness: f64, contrast: f
         None,
         None,
         (None, None),
-        Some(("pattern-identity", mode, brightness, contrast)),
+        Some((
+            "pattern-identity",
+            mode,
+            brightness,
+            contrast,
+            0.,
+            0.,
+            false,
+        )),
+    );
+    let mut output = bytes[..4].to_vec();
+    let mut offset = 4;
+    while offset < bytes.len() {
+        let size = u32::from_be_bytes(bytes[offset + 8..offset + 12].try_into().unwrap()) as usize;
+        output.extend_from_slice(&bytes[offset..offset + 12 + size]);
+        output.resize(output.len() + (4 - size % 4) % 4, 0);
+        offset += 12 + size;
+    }
+    output
+}
+#[allow(dead_code)]
+pub fn fixture_with_texture_depth(
+    mode: &str,
+    minimum_depth: f64,
+    depth_jitter: f64,
+    depth_pressure: bool,
+) -> Vec<u8> {
+    let bytes = fixture_inner(
+        (6, 2),
+        false,
+        Some(100.),
+        false,
+        None,
+        None,
+        (None, None),
+        Some((
+            "pattern-identity",
+            mode,
+            0.,
+            0.,
+            minimum_depth,
+            depth_jitter,
+            depth_pressure,
+        )),
     );
     let mut output = bytes[..4].to_vec();
     let mut offset = 4;
@@ -421,7 +492,7 @@ fn fixture_inner(
     scatter: Option<bool>,
     color: Option<(bool, bool)>,
     dynamics: (Option<bool>, Option<(bool, i32, bool)>),
-    texture: Option<(&str, &str, f64, f64)>,
+    texture: Option<(&str, &str, f64, f64, f64, f64, bool)>,
 ) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
@@ -457,7 +528,7 @@ fn fixture_inner(
     samples.extend(&record);
     samples.resize(samples.len() + (4 - record.len() % 4) % 4, 0);
     section(&mut bytes, b"samp", &samples);
-    if let Some((pattern, _, _, _)) = texture {
+    if let Some((pattern, _, _, _, _, _, _)) = texture {
         let mut body = 1u32.to_be_bytes().to_vec();
         body.extend(1u32.to_be_bytes());
         body.extend(4u16.to_be_bytes());

@@ -195,4 +195,4 @@ wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明
 
 2026-10-18 VBR1.26纹理调整阶段：纹理对象新增可选`brightness`/`contrast`（-1..1，默认0），在采样后按亮度和中间灰对比度调整覆盖率；非默认值要求state21/VBR1.26，旧state/VBR缺省字节保持。Schema为`contracts/vbr-texture-adjustments-v1.26.schema.json`。ABR `textureBrightness`/`textureContrast`已映射；`minimumDepth`、深度动态、16位图案及其他未定义模式继续后续。
 
-2026-10-18 VBR1.27纹理来源阶段：带非默认纹理的ABR来源记录升为version2，保存完整`TextureParameters`和资源身份；旧记录version1及原字节保持。包含v2来源时最低minor27，26及以下拒绝。Schema为`contracts/vbr-texture-source-v1.27.schema.json`。导入快照与VBR来源资源并集已接；纹理编辑器中的来源重置入口仍可继续后续完善。
+2026-10-18 VBR1.27纹理来源阶段：带非默认纹理的ABR来源记录升为version2，保存完整`TextureParameters`和资源身份；旧记录version1及原字节保持。包含v2来源或非默认深度动态时最低minor27，26及以下拒绝。纹理对象增加可选`minimumDepth`/`depthJitter`/`depthPressure`，按印章计算深度并以最低深度封底。Schema为`contracts/vbr-texture-source-v1.27.schema.json`，Qt来源恢复入口已接。

@@ -174,6 +174,9 @@ ColumnLayout {
                     TextureField {title:"深度";field:"depth";from:0;to:100;factor:100;unit:"%";help:"纹理覆盖影响强度；纸纹在同一笔触反复擦拭时保持覆盖。"}
                     TextureField {title:"亮度";field:"brightness";from:-100;to:100;factor:100;unit:"%";help:"调整纹理采样的亮度；需要 state21/VBR1.26。"}
                     TextureField {title:"对比度";field:"contrast";from:-100;to:100;factor:100;unit:"%";help:"围绕中间灰调整纹理对比度；需要 state21/VBR1.26。"}
+                    TextureField {title:"最低深度";field:"minimumDepth";from:0;to:100;factor:100;unit:"%";help:"纹理深度动态允许下降到的最低值；需要 state21/VBR1.27。"}
+                    TextureField {title:"深度抖动";field:"depthJitter";from:0;to:100;factor:100;unit:"%";help:"按印章随机降低纹理深度；需要 state21/VBR1.27。"}
+                    CompactCheckBox {objectName:"settingsTextureDepthPressure";text:"深度压感";checked:root.library.texture.depthPressure===true;font.pixelSize:10;onToggled:root.setTextureField("depthPressure",checked);tooltip:"用笔压驱动纹理深度，并以最低深度为下限。"}
                     CompactCheckBox {objectName:"settingsTextureInvert";text:"反相";checked:root.library.texture.invert;font.pixelSize:10;onToggled:root.setTextureField("invert",checked);tooltip:"交换纹理黑白覆盖。"}
                     TextureField {title:"水平偏移";field:"offsetX";from:-1000000;to:1000000;factor:1;unit:"px";help:"纹理相位在文档水平方向的偏移。"}
                     TextureField {title:"垂直偏移";field:"offsetY";from:-1000000;to:1000000;factor:1;unit:"px";help:"纹理相位在文档垂直方向的偏移。"}

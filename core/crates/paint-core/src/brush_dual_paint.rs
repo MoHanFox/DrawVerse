@@ -162,7 +162,7 @@ impl Document {
             .texture
             .as_ref()
             .filter(|t| t.document_space())
-            .map(|t| t.dab(0., 0., 0., 1.));
+            .map(|t| t.dab(0., 0., 1., 0., 1.));
         let (ox, oy) = (
             i64::from(appearance.offset_x),
             i64::from(appearance.offset_y),

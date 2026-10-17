@@ -941,6 +941,7 @@ fn texture_mode(id: &str) -> Option<TextureMode> {
 fn texture_controls(
     index: usize,
     textures: TextureLookup<'_>,
+    preset: &Descriptor,
     settings: &mut BrushSettings,
     issues: &mut Vec<Issue>,
 ) -> Result<(bool, Vec<String>)> {
@@ -955,6 +956,15 @@ fn texture_controls(
         .ok_or(Error::Invalid("ABR texture pattern reference not found"))?;
     let mode = source.mode.as_deref().and_then(texture_mode);
     let enabled = mode.is_some();
+    let depth_pressure = match preset.get(b"textureDepthDynamics") {
+        Some(Value::Object { descriptor, .. }) => match descriptor.get(b"bVTy") {
+            Some(Value::Integer(2)) => true,
+            Some(Value::Integer(0)) | None => false,
+            _ => false,
+        },
+        _ => false,
+    };
+    let minimum_depth = source.minimum_depth.min(source.depth);
     let texture_settings = TextureSettings::new(
         if source.each_tip {
             TextureSpace::Tip
@@ -969,7 +979,8 @@ fn texture_controls(
         0.,
     )?
     .with_mode(mode.unwrap_or(TextureMode::Normal))
-    .with_adjustments(source.brightness, source.contrast)?;
+    .with_adjustments(source.brightness, source.contrast)?
+    .with_depth_dynamics(minimum_depth, source.depth_jitter, depth_pressure)?;
     settings.texture = BrushTexture::new(
         enabled,
         texture_settings,
@@ -989,6 +1000,8 @@ fn texture_controls(
         "textureBlendMode".into(),
         "textureBrightness".into(),
         "textureContrast".into(),
+        "minimumDepth".into(),
+        "textureDepthDynamics".into(),
     ];
     for (path, status, reason) in [
         (
@@ -1008,6 +1021,7 @@ fn texture_controls(
         ("textureScale", Status::Mapped, "纹理缩放百分比"),
         ("textureBrightness", Status::Mapped, "纹理亮度调整"),
         ("textureContrast", Status::Mapped, "纹理对比度调整"),
+        ("minimumDepth", Status::Mapped, "纹理深度动态的最低深度"),
         ("Txtr.Ptrn.Idnt", Status::Mapped, "按图案 ID 绑定嵌入资源"),
         (
             "Txtr.Ptrn.Nm  ",
@@ -1032,6 +1046,29 @@ fn texture_controls(
             } else {
                 "该 Photoshop 纹理模式尚无等价执行公式"
             },
+        ),
+        (
+            "textureDepthDynamics.bVTy",
+            if depth_pressure {
+                Status::Mapped
+            } else {
+                Status::NotExecuted
+            },
+            if depth_pressure {
+                "纹理深度使用笔压控制"
+            } else {
+                "纹理深度控制未映射；仅保留随机深度抖动"
+            },
+        ),
+        (
+            "textureDepthDynamics.jitter",
+            Status::Mapped,
+            "纹理深度逐印章随机抖动",
+        ),
+        (
+            "textureDepthDynamics.fStp",
+            Status::Approximate,
+            "纹理深度不使用渐隐步数",
         ),
     ] {
         issue(issues, path, status, reason);
@@ -1266,7 +1303,8 @@ fn convert_inner<'a>(
             false
         };
         let texture_changed = if generation >= 8 {
-            let (changed, extra) = texture_controls(index, textures, &mut settings, &mut issues)?;
+            let (changed, extra) =
+                texture_controls(index, textures, item.preset, &mut settings, &mut issues)?;
             handled.extend(extra);
             changed
         } else {

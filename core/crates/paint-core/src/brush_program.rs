@@ -316,9 +316,15 @@ impl BrushProgram {
         point: InputPoint,
         geometry: TipGeometry,
     ) -> Option<crate::brush_texture::TextureDab<'_>> {
-        self.texture
-            .as_ref()
-            .map(|t| t.dab(point.x, point.y, geometry.sine, geometry.cosine))
+        self.texture.as_ref().map(|t| {
+            t.dab(
+                point.x,
+                point.y,
+                point.pressure,
+                geometry.sine,
+                geometry.cosine,
+            )
+        })
     }
     pub fn has_mask(&self) -> bool {
         self.mask.is_some()

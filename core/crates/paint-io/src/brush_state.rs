@@ -256,6 +256,11 @@ fn decode_inner(
                     "texture brightness/contrast requires state21".into(),
                 ));
             }
+            if t.requires_vbr_27() && state.version < 21 {
+                return Err(Error::Unsupported(
+                    "texture depth dynamics requires state21".into(),
+                ));
+            }
             let resource = if let Some(id) = t.resource_id() {
                 if !textures.contains_key(id) {
                     let source = resources
@@ -490,7 +495,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         let texture = if !s.texture.is_default() {
             version = version.max(11);
             let texture = crate::brush_texture::TextureParameters::from_core(&s.texture)?;
-            if texture.requires_vbr_26() {
+            if texture.requires_vbr_26() || texture.requires_vbr_27() {
                 version = version.max(21);
             }
             Some(texture)

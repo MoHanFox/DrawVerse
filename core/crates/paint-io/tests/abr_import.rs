@@ -247,6 +247,40 @@ fn abr_texture_brightness_and_contrast_survive_handoff_and_source_report() {
 }
 
 #[test]
+fn abr_texture_depth_dynamics_map_to_pressure_floor_and_jitter() {
+    let token = CancellationToken::default();
+    let original = Arc::new(support::abr_fixture::fixture_with_texture_depth(
+        "Mltp", 25., 50., true,
+    ));
+    let batch = ImportBatch::decode(original, MAX_CATALOG_MASK_BYTES, &token).unwrap();
+    let wire: serde_json::Value = serde_json::from_slice(&batch.to_json().unwrap()).unwrap();
+    assert_eq!(wire["presets"][0]["texture"]["minimumDepth"], 0.25);
+    assert_eq!(wire["presets"][0]["texture"]["depthJitter"], 0.5);
+    assert_eq!(wire["presets"][0]["texture"]["depthPressure"], true);
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().into(), MAX_CATALOG_MASK_BYTES).unwrap();
+    let imported = batch.persist(&store, &token).unwrap();
+    let texture = imported[0].settings().texture.settings();
+    assert_eq!(texture.minimum_depth(), 0.25);
+    assert_eq!(texture.depth_jitter(), 0.5);
+    assert!(texture.depth_pressure());
+    let source = store
+        .source_store()
+        .unwrap()
+        .load(imported[0].source_id(), &token)
+        .unwrap();
+    for path in [
+        "minimumDepth",
+        "textureDepthDynamics.bVTy",
+        "textureDepthDynamics.jitter",
+    ] {
+        assert!(source.info.report.iter().any(
+            |item| item.path == path && item.status == paint_io::brush_source::Support::Mapped
+        ));
+    }
+}
+
+#[test]
 fn pressure_handoff_and_source_reset_preserve_image_and_program_across_two_strokes() {
     let token = CancellationToken::default();
     let original = Arc::new(support::abr_fixture::fixture_with_pressure(6, 2, false));

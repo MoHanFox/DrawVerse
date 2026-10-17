@@ -19,6 +19,8 @@ pub struct TextureSource {
     pub depth: f32,
     pub brightness: f32,
     pub contrast: f32,
+    pub minimum_depth: f32,
+    pub depth_jitter: f32,
     pub scale: f32,
     pub invert: bool,
     pub each_tip: bool,
@@ -241,6 +243,10 @@ pub fn decode(
                 let depth = brush.descriptor.texture_depth_pct.unwrap_or(0.);
                 let brightness = brush.descriptor.texture_brightness.unwrap_or(0) as f32 / 100.;
                 let contrast = brush.descriptor.texture_contrast.unwrap_or(0) as f32 / 100.;
+                let minimum_depth =
+                    (brush.descriptor.texture_minimum_depth_pct.unwrap_or(0.) / 100.) as f32;
+                let depth_jitter =
+                    (brush.descriptor.texture_depth_jitter_pct.unwrap_or(0.) / 100.) as f32;
                 let scale = brush.descriptor.texture_scale_pct.unwrap_or(100.);
                 if !depth.is_finite()
                     || !(0. ..=100.).contains(&depth)
@@ -248,6 +254,10 @@ pub fn decode(
                     || !(-1. ..=1.).contains(&brightness)
                     || !contrast.is_finite()
                     || !(-1. ..=1.).contains(&contrast)
+                    || !minimum_depth.is_finite()
+                    || !(0. ..=1.).contains(&minimum_depth)
+                    || !depth_jitter.is_finite()
+                    || !(0. ..=1.).contains(&depth_jitter)
                     || !scale.is_finite()
                     || !(1. ..=10000.).contains(&scale)
                 {
@@ -263,6 +273,8 @@ pub fn decode(
                         depth: (depth / 100.) as f32,
                         brightness,
                         contrast,
+                        minimum_depth,
+                        depth_jitter,
                         scale: (scale / 100.) as f32,
                         invert: brush.descriptor.texture_invert.unwrap_or(false),
                         each_tip: brush.descriptor.texture_each_tip.unwrap_or(true),
@@ -280,6 +292,10 @@ pub fn decode(
             let depth = preset.descriptor.texture_depth_pct.unwrap_or(0.);
             let brightness = preset.descriptor.texture_brightness.unwrap_or(0) as f32 / 100.;
             let contrast = preset.descriptor.texture_contrast.unwrap_or(0) as f32 / 100.;
+            let minimum_depth =
+                (preset.descriptor.texture_minimum_depth_pct.unwrap_or(0.) / 100.) as f32;
+            let depth_jitter =
+                (preset.descriptor.texture_depth_jitter_pct.unwrap_or(0.) / 100.) as f32;
             let scale = preset.descriptor.texture_scale_pct.unwrap_or(100.);
             if !depth.is_finite()
                 || !(0. ..=100.).contains(&depth)
@@ -287,6 +303,10 @@ pub fn decode(
                 || !(-1. ..=1.).contains(&brightness)
                 || !contrast.is_finite()
                 || !(-1. ..=1.).contains(&contrast)
+                || !minimum_depth.is_finite()
+                || !(0. ..=1.).contains(&minimum_depth)
+                || !depth_jitter.is_finite()
+                || !(0. ..=1.).contains(&depth_jitter)
                 || !scale.is_finite()
                 || !(1. ..=10000.).contains(&scale)
             {
@@ -302,6 +322,8 @@ pub fn decode(
                     depth: (depth / 100.) as f32,
                     brightness,
                     contrast,
+                    minimum_depth,
+                    depth_jitter,
                     scale: (scale / 100.) as f32,
                     invert: preset.descriptor.texture_invert.unwrap_or(false),
                     each_tip: preset.descriptor.texture_each_tip.unwrap_or(true),

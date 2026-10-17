@@ -49,6 +49,9 @@ pub struct TextureSettings {
     depth: f32,
     brightness: f32,
     contrast: f32,
+    minimum_depth: f32,
+    depth_jitter: f32,
+    depth_pressure: bool,
     invert: bool,
     offset_x: f64,
     offset_y: f64,
@@ -63,6 +66,9 @@ impl Default for TextureSettings {
             depth: 1.,
             brightness: 0.,
             contrast: 0.,
+            minimum_depth: 0.,
+            depth_jitter: 0.,
+            depth_pressure: false,
             invert: false,
             offset_x: 0.,
             offset_y: 0.,
@@ -99,6 +105,9 @@ impl TextureSettings {
             depth,
             brightness: 0.,
             contrast: 0.,
+            minimum_depth: 0.,
+            depth_jitter: 0.,
+            depth_pressure: false,
             invert,
             offset_x,
             offset_y,
@@ -118,6 +127,25 @@ impl TextureSettings {
         }
         self.brightness = brightness;
         self.contrast = contrast;
+        Ok(self)
+    }
+    pub fn with_depth_dynamics(
+        mut self,
+        minimum_depth: f32,
+        depth_jitter: f32,
+        depth_pressure: bool,
+    ) -> Result<Self> {
+        if !minimum_depth.is_finite()
+            || !(0. ..=1.).contains(&minimum_depth)
+            || !depth_jitter.is_finite()
+            || !(0. ..=1.).contains(&depth_jitter)
+            || minimum_depth > self.depth
+        {
+            return Err(Error::InvalidArgument("texture depth dynamics"));
+        }
+        self.minimum_depth = minimum_depth;
+        self.depth_jitter = depth_jitter;
+        self.depth_pressure = depth_pressure;
         Ok(self)
     }
     pub fn space(self) -> TextureSpace {
@@ -140,6 +168,15 @@ impl TextureSettings {
     }
     pub fn contrast(self) -> f32 {
         self.contrast
+    }
+    pub fn minimum_depth(self) -> f32 {
+        self.minimum_depth
+    }
+    pub fn depth_jitter(self) -> f32 {
+        self.depth_jitter
+    }
+    pub fn depth_pressure(self) -> bool {
+        self.depth_pressure
     }
     pub fn invert(self) -> bool {
         self.invert
@@ -330,6 +367,12 @@ pub(crate) struct TextureDab<'a> {
     depth: f32,
     brightness: f32,
     contrast: f32,
+    minimum_depth: f32,
+    depth_jitter: f32,
+    depth_pressure: bool,
+    pressure: f32,
+    stamp_x: f64,
+    stamp_y: f64,
     invert: bool,
     mode: TextureMode,
 }
@@ -337,7 +380,14 @@ impl CompiledTexture {
     pub(crate) fn document_space(&self) -> bool {
         self.settings.space == TextureSpace::Document
     }
-    pub(crate) fn dab(&self, x: f64, y: f64, tip_sine: f64, tip_cosine: f64) -> TextureDab<'_> {
+    pub(crate) fn dab(
+        &self,
+        x: f64,
+        y: f64,
+        pressure: f32,
+        tip_sine: f64,
+        tip_cosine: f64,
+    ) -> TextureDab<'_> {
         let s = self.settings;
         let (sine, cosine, ox, oy) = if s.space == TextureSpace::Document {
             (self.sine, self.cosine, 0., 0.)
@@ -369,6 +419,12 @@ impl CompiledTexture {
             depth: s.depth,
             brightness: s.brightness,
             contrast: s.contrast,
+            minimum_depth: s.minimum_depth,
+            depth_jitter: s.depth_jitter,
+            depth_pressure: s.depth_pressure,
+            pressure,
+            stamp_x: x,
+            stamp_y: y,
             invert: s.invert,
             mode: s.mode,
         }
@@ -395,7 +451,19 @@ impl TextureDab<'_> {
         if self.invert {
             value = 1. - value;
         }
-        1. - self.depth * (1. - value)
+        let mut depth = self.depth;
+        if self.depth_pressure {
+            depth = self.minimum_depth + (depth - self.minimum_depth) * self.pressure;
+        }
+        if self.depth_jitter > 0. {
+            let mut hash = (self.stamp_x.to_bits() ^ self.stamp_y.to_bits().rotate_left(17))
+                .wrapping_mul(0x9e3779b97f4a7c15);
+            hash ^= hash >> 29;
+            let random = (hash as f64 / (u64::MAX as f64 + 1.)) as f32;
+            depth *= 1. - self.depth_jitter * random;
+            depth = depth.max(self.minimum_depth);
+        }
+        1. - depth * (1. - value)
     }
     pub(crate) fn apply(&self, base: f32, x: f64, y: f64) -> f32 {
         self.mode.combine(base, self.sample(x, y))
@@ -438,7 +506,7 @@ mod tests {
             .unwrap()
             .compile()
             .unwrap();
-        let dab = texture.dab(0., 0., 0., 1.);
+        let dab = texture.dab(0., 0., 1., 0., 1.);
         assert_eq!(dab.coverage(0.5, 0.5), 0.);
         assert_eq!(dab.coverage(1.5, 0.5), 1.);
         assert_eq!(dab.coverage(2.5, 0.5), 0.);
@@ -453,7 +521,7 @@ mod tests {
             .unwrap()
             .compile()
             .unwrap();
-        assert!((texture.dab(0., 0., 0., 1.).coverage(0.5, 0.5) - 1. / 3.).abs() < 1. / 255.);
+        assert!((texture.dab(0., 0., 1., 0., 1.).coverage(0.5, 0.5) - 1. / 3.).abs() < 1. / 255.);
     }
     #[test]
     fn brightness_and_contrast_adjust_sampled_coverage_before_invert_and_depth() {
@@ -462,9 +530,9 @@ mod tests {
         )));
         for (brightness, contrast, expected) in [
             (0., 0., 128. / 255.),
-            (0.25, 0., 0.75),
-            (-0.25, 0., 0.25),
-            (0., 0.5, 0.125),
+            (0.25, 0., 128. / 255. + 0.25),
+            (-0.25, 0., 128. / 255. - 0.25),
+            (0., 0.5, (128. / 255. - 0.5) * 1.5 + 0.5),
         ] {
             let settings = TextureSettings::new(TextureSpace::Document, 1., 0., 1., false, 0., 0.)
                 .unwrap()
@@ -474,8 +542,25 @@ mod tests {
                 .unwrap()
                 .compile()
                 .unwrap();
-            assert!((texture.dab(0., 0., 0., 1.).coverage(0.5, 0.5) - expected).abs() < 1e-6);
+            assert!((texture.dab(0., 0., 1., 0., 1.).coverage(0.5, 0.5) - expected).abs() < 1e-6);
         }
+    }
+    #[test]
+    fn texture_depth_pressure_respects_minimum_depth() {
+        let resource = Arc::new(TextureResource::new(Arc::new(
+            BrushMask::new(1, 1, vec![0]).unwrap(),
+        )));
+        let settings = TextureSettings::new(TextureSpace::Document, 1., 0., 1., false, 0., 0.)
+            .unwrap()
+            .with_depth_dynamics(0.2, 0., true)
+            .unwrap();
+        let texture = BrushTexture::new(true, settings, Some(resource))
+            .unwrap()
+            .compile()
+            .unwrap();
+        assert!((texture.dab(0., 0., 0., 0., 1.).coverage(0.5, 0.5) - 0.8).abs() < 1e-6);
+        assert!((texture.dab(0., 0., 0.5, 0., 1.).coverage(0.5, 0.5) - 0.4).abs() < 1e-6);
+        assert!((texture.dab(0., 0., 1., 0., 1.).coverage(0.5, 0.5) - 0.).abs() < 1e-6);
     }
     #[test]
     fn roundoff_and_invalid_settings_do_not_escape_resource() {
@@ -495,7 +580,7 @@ mod tests {
             .unwrap()
             .compile()
             .unwrap();
-        assert!(texture.dab(0., 0., 0., 1.).coverage(0.5, 0.5) < 1e-6);
+        assert!(texture.dab(0., 0., 1., 0., 1.).coverage(0.5, 0.5) < 1e-6);
         assert!(BrushTexture::new(true, TextureSettings::default(), None).is_err());
         for bad in [f32::NAN, f32::INFINITY, -1.] {
             assert!(

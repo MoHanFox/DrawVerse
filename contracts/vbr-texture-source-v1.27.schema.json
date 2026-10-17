@@ -2065,6 +2065,22 @@
           "maximum": 1,
           "default": 0
         },
+        "minimumDepth": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0
+        },
+        "depthJitter": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0
+        },
+        "depthPressure": {
+          "type": "boolean",
+          "default": false
+        },
         "scale": {
           "type": "number",
           "minimum": 0.01,

@@ -323,6 +323,59 @@ fn texture_adjustments_require_vbr126_and_roundtrip_real_pixels() {
 }
 
 #[test]
+fn texture_depth_dynamics_require_vbr127_and_roundtrip_real_pixels() {
+    let token = CancellationToken::default();
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().join("assets"), MAX_CATALOG_MASK_BYTES).unwrap();
+    let png = encode_mask(&BrushMask::new(4, 1, vec![0, 255, 64, 192]).unwrap()).unwrap();
+    let id = hash(&png);
+    store.put_verified(&id, &png, &token).unwrap();
+    let mask = store.load(&id, &token).unwrap().mask;
+    let s = BrushSettings {
+        diameter: 16.,
+        opacity: 0.5,
+        spacing: 0.1,
+        mask: Some(mask.clone()),
+        texture: BrushTexture::new(
+            true,
+            TextureSettings::new(TextureSpace::Tip, 1., 0., 0.8, false, 0., 0.)
+                .unwrap()
+                .with_depth_dynamics(0.2, 0.5, true)
+                .unwrap(),
+            Some(Arc::new(TextureResource::new(mask))),
+        )
+        .unwrap(),
+        ..Default::default()
+    };
+    let expected = pixels(s.definition());
+    let bundle = ImageBundle::new(package(&s, &id), BTreeMap::from([(id, png)]), &token).unwrap();
+    let bytes = vbr_image::encode(&bundle, &token).unwrap();
+    let manifest: serde_json::Value = {
+        let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
+    };
+    assert_eq!(manifest["version"]["minor"], 27);
+    let restored = vbr_image::decode(&bytes, &token).unwrap();
+    let settings = restored.definition(0).unwrap().texture.settings();
+    assert_eq!(settings.minimum_depth(), 0.2);
+    assert_eq!(settings.depth_jitter(), 0.5);
+    assert!(settings.depth_pressure());
+    assert_eq!(pixels(restored.definition(0).unwrap()), expected);
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 26), &token).is_err());
+    let mut catalog = BrushCatalog::default();
+    catalog.edit("round-pressure", s).unwrap();
+    let state = brush_state::encode(&catalog).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&state).unwrap();
+    assert_eq!(value["version"], 21);
+    let restored =
+        brush_state::decode_with_resources(&state, MAX_CATALOG_MASK_BYTES, &store, &token).unwrap();
+    assert_eq!(
+        pixels(restored.selected().settings().definition()),
+        expected
+    );
+}
+
+#[test]
 fn published_texture_contract_matches_resource_roles_and_new_limits() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../contracts/vbr-texture-v1.9.schema.json"
@@ -401,5 +454,12 @@ fn published_texture_source_contract_requires_vbr127() {
     assert_eq!(
         schema["$defs"]["sourceRecord"]["properties"]["texture"]["$ref"],
         "#/$defs/texture"
+    );
+    for key in ["minimumDepth", "depthJitter"] {
+        assert_eq!(schema["$defs"]["texture"]["properties"][key]["maximum"], 1);
+    }
+    assert_eq!(
+        schema["$defs"]["texture"]["properties"]["depthPressure"]["type"],
+        "boolean"
     );
 }
