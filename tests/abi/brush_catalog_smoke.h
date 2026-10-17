@@ -24,6 +24,9 @@ _Static_assert(sizeof(PaintTipPose)==24 && offsetof(PaintTipPose,radius)==8 && o
 #endif
 static int brush_catalog_smoke(void) {
     uint64_t rejected_group_sequence = 99;
+    uint64_t rejected_group_required = 99;
+    if (paint_brush_library_package_read_groups(NULL,NULL,1,NULL,0,&rejected_group_required)!=PAINT_INVALID_ARGUMENT || rejected_group_required!=0) return 1;
+    if (paint_brush_library_package_write_groups(NULL,NULL,1,NULL,1)!=PAINT_INVALID_ARGUMENT) return 1;
     if (paint_brush_library_prepare_state_groups(NULL, NULL, 1, &rejected_group_sequence) != PAINT_INVALID_ARGUMENT || rejected_group_sequence != 0) return 1;
     PaintVersion version;
     PaintBrushLibrary *library = NULL;

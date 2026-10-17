@@ -586,6 +586,9 @@ impl PreparedCatalog {
 #[path = "../../paint-io/tests/support/abr_fixture.rs"]
 mod abr_fixture;
 #[cfg(test)]
+#[path = "brush_groups_package_tests.rs"]
+mod groups_package_tests;
+#[cfg(test)]
 #[path = "brush_groups_preparation_tests.rs"]
 mod groups_preparation_tests;
 #[cfg(test)]

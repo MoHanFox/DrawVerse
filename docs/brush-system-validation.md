@@ -216,3 +216,5 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 2026-10-17分组资源发布阶段：候选目录先完整合并预检、包内PNG与来源先落盘后采用；故障保留原目录/共享文件，真实新目录state/组织与两笔像素载色历史恢复通过。IO40、Clippy/Windows Release/4 ABI/旧Qt2通过，见[设计](brush-groups-persist-design.md)及[验收](brush-groups-persist-validation.md)。无ABI/state/VBR变化；失败可能保留合法未引用公共缓存，不声称多文件整体回滚/GC。完整原生交接/Qt及重置基准全链仍待接。
 
 2026-10-17分组状态原生阶段：ABI1.54/GROUP_STATE及显式state20准备入口、完整关闭配置/准确票据/图片来源和冷重建、mutate采用及真实两笔/载色/历史通过。公开新2/原生1/旧保护5/旧公开3及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-abi-design.md)及[验收](brush-groups-abi-validation.md)。state/VBR不变；旧四准备/包保护保留，分组包专用原生交接/组织命令/Qt及重置基准仍待接。ABR纹理执行映射仍未支持，兼容报告与来源保留不等于已执行。
+
+2026-10-17分组包原生阶段：ABI1.55/GROUP_PACKAGE及ordered-package-v1完整交接、2MiB与投影验证、容量探测无资源安装、实际图片/ABR来源读写与原子保存、state20专用准备串联已接。IO33/新原生1/旧保护5/旧公开3/Schema及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-package-design.md)及[验收](brush-groups-package-validation.md)。state20/VBR1.24不变；旧四包保护保持，Qt副本树合并/完整镜像/重置基准及分组管理仍待接，不宣称用户分组已完成。

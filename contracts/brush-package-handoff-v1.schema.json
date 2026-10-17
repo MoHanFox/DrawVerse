@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:brush:package-handoff:1",
+  "title": "DrawVerse ordered-package-v1 native handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "model",
+    "package",
+    "organization"
+  ],
+  "properties": {
+    "model": {
+      "const": "ordered-package-v1"
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "brushes"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "urn:drawverse:vbr:groups:1.24#/$defs/uuid"
+        },
+        "brushes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "urn:drawverse:vbr:groups:1.24#/$defs/preset"
+          }
+        }
+      }
+    },
+    "organization": {
+      "$ref": "urn:drawverse:vbr:groups:1.24#/$defs/organization"
+    }
+  }
+}

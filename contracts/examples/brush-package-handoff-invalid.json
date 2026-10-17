@@ -1,0 +1,49 @@
+{
+  "model": "ordered-package-v1",
+  "package": {
+    "packageId": "12345678-1234-4234-8234-123456789abc",
+    "brushes": [
+      {
+        "id": "12345678-1234-4234-8234-123456789abd",
+        "name": "图片孔洞",
+        "engineProfile": "drawverse.brush",
+        "behaviorVersion": 1,
+        "requiredCapabilities": [
+          "procedural-tip"
+        ],
+        "parameters": {
+          "diameter": 16.0,
+          "spacing": 0.01,
+          "dabOpacity": 1.0,
+          "hardness": 1.0,
+          "roundness": 1.0,
+          "angle": 0.0,
+          "flow": 1.0,
+          "pressureSize": false,
+          "pressureFlow": false
+        }
+      },
+      {
+        "id": "12345678-1234-4234-8234-000000000002",
+        "name": "图片孔洞",
+        "engineProfile": "drawverse.brush",
+        "behaviorVersion": 1,
+        "requiredCapabilities": [
+          "procedural-tip"
+        ],
+        "parameters": {
+          "diameter": 16.0,
+          "spacing": 0.01,
+          "dabOpacity": 1.0,
+          "hardness": 1.0,
+          "roundness": 1.0,
+          "angle": 0.0,
+          "flow": 1.0,
+          "pressureSize": false,
+          "pressureFlow": false
+        }
+      }
+    ]
+  },
+  "organization": null
+}

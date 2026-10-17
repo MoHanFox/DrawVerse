@@ -1,6 +1,70 @@
 use super::*;
 
 #[test]
+fn groups_handoff_strict_complete_projection_and_legacy_isolation() {
+    use paint_io::vbr_handoff::PackageHandoff;
+    let token = CancellationToken::default();
+    for b in [
+        bundle(),
+        grouped(bundle()),
+        ImageBundle::new(package(None), BTreeMap::new(), &token).unwrap(),
+    ] {
+        let handoff = PackageHandoff::from_bundle(&b).unwrap();
+        let json = handoff.to_json().unwrap();
+        let restored = PackageHandoff::from_json(&json).unwrap();
+        assert_eq!(restored.to_json().unwrap(), json);
+        assert_eq!(
+            restored.package().to_json().unwrap(),
+            b.package.to_json().unwrap()
+        );
+        assert_eq!(
+            restored.organization().preset_order(),
+            b.package
+                .brushes
+                .iter()
+                .map(|p| p.id.clone())
+                .collect::<Vec<_>>()
+        );
+        assert!(Package::from_json(&json).is_err());
+        assert!(PackageHandoff::from_json(&b.package.to_json().unwrap()).is_err());
+        let good: Value = serde_json::from_slice(&json).unwrap();
+        for (key, value) in [
+            ("model", json!({"ordered-package-v1":null})),
+            ("model", json!("unknown")),
+            ("organization", Value::Null),
+            ("extra", json!(true)),
+            ("package", Value::Null),
+        ] {
+            let mut bad = good.clone();
+            bad[key] = value;
+            assert!(PackageHandoff::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+        }
+        let mut bad = good.clone();
+        bad.as_object_mut().unwrap().remove("organization");
+        assert!(PackageHandoff::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+        if b.organization().is_some() {
+            let mut bad = good.clone();
+            bad["package"]["brushes"].as_array_mut().unwrap().reverse();
+            assert!(PackageHandoff::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+        }
+    }
+    assert!(PackageHandoff::from_json(&vec![b' '; paint_io::vbr::MAX_JSON as usize + 1]).is_err());
+    let b = grouped(ImageBundle::new(package(None), BTreeMap::new(), &token).unwrap());
+    let actual: Value =
+        serde_json::from_slice(&PackageHandoff::from_bundle(&b).unwrap().to_json().unwrap())
+            .unwrap();
+    let expected: Value = serde_json::from_str(include_str!(
+        "../../../../../contracts/examples/brush-package-handoff-valid.json"
+    ))
+    .unwrap();
+    assert_eq!(actual, expected);
+    assert!(PackageHandoff::from_json(include_bytes!(
+        "../../../../../contracts/examples/brush-package-handoff-invalid.json"
+    ))
+    .is_err());
+}
+
+#[test]
 fn groups_persist_preflight_cancellation_and_existing_corruption_preserve_catalog() {
     use paint_core::BrushCatalog;
     use paint_io::brush_resource::ResourceStore;

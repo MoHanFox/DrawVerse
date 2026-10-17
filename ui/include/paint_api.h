@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 54
+#define PAINT_ABI_MINOR 55
 
 #define PAINT_ABI_PATCH 0
 
@@ -70,6 +70,8 @@
 #define PAINT_FEATURE_BRUSH_CATALOG 4194304
 
 #define PAINT_FEATURE_BRUSH_CURSOR_IMAGE 281474976710656
+
+#define PAINT_FEATURE_BRUSH_GROUP_PACKAGE 1125899906842624
 
 #define PAINT_FEATURE_BRUSH_GROUP_STATE 562949953421312
 
@@ -1173,6 +1175,19 @@ PaintStatus paint_brush_library_package_read(struct PaintBrushLibrary *library,
                                              uint64_t *required);
 
 /**
+ * Read a complete ordered-package-v1 handoff, including validated organization.
+ * Insufficient capacity does not install resources or publish a catalog.
+ * # Safety
+ * Live library/readable path and nonoverlapping writable buffer/required required.
+ */
+PaintStatus paint_brush_library_package_read_groups(struct PaintBrushLibrary *library,
+                                                    const uint8_t *path,
+                                                    uint64_t path_length,
+                                                    uint8_t *buffer,
+                                                    uint64_t capacity,
+                                                    uint64_t *required);
+
+/**
  * Complete state18/VBR1.22 resource package read, including closed taper and wet settings.
  * # Safety
  * Live library, readable path and nonoverlapping writable buffer/required are required.
@@ -1218,6 +1233,17 @@ PaintStatus paint_brush_library_package_write(struct PaintBrushLibrary *library,
                                               uint64_t path_length,
                                               const uint8_t *json,
                                               uint64_t json_length);
+
+/**
+ * Write a complete ordered-package-v1 handoff with captured resources and sources.
+ * # Safety
+ * Live library and readable bounded path/JSON required for this call only.
+ */
+PaintStatus paint_brush_library_package_write_groups(struct PaintBrushLibrary *library,
+                                                     const uint8_t *path,
+                                                     uint64_t path_length,
+                                                     const uint8_t *json,
+                                                     uint64_t json_length);
 
 /**
  * Complete state18/VBR1.22 resource package save, including closed taper and wet settings.

@@ -22,6 +22,7 @@ mod ora;
 pub mod ps_descriptor;
 mod raster;
 pub mod vbr;
+pub mod vbr_handoff;
 pub mod vbr_image;
 use paint_core::{Document, DocumentSnapshot};
 use paint_task::CancellationToken;

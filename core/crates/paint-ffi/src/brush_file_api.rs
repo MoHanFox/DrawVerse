@@ -8,6 +8,55 @@ use crate::{
 use paint_task::CancellationToken;
 use std::path::Path;
 
+/// Read a complete ordered-package-v1 handoff, including validated organization.
+/// Insufficient capacity does not install resources or publish a catalog.
+/// # Safety
+/// Live library/readable path and nonoverlapping writable buffer/required required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_package_read_groups(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_read_impl(
+            library,
+            path,
+            path_length,
+            buffer,
+            capacity,
+            required,
+            BrushSupport::Groups,
+        )
+    }
+}
+
+/// Write a complete ordered-package-v1 handoff with captured resources and sources.
+/// # Safety
+/// Live library and readable bounded path/JSON required for this call only.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_package_write_groups(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    json: *const u8,
+    json_length: u64,
+) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_write_impl(
+            library,
+            path,
+            path_length,
+            json,
+            json_length,
+            BrushSupport::Groups,
+        )
+    }
+}
+
 /// Background ABR baseline read. Bounded ABR-only JSON; no catalog publication.
 /// Size-only calls parse afresh; insufficient output capacity writes no resources.
 /// # Safety
@@ -146,7 +195,7 @@ unsafe fn paint_brush_library_package_read_impl(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
-        if bundle.organization().is_some() {
+        if !support.groups() && bundle.organization().is_some() {
             return Err(ApiError::new(
                 PAINT_UNSUPPORTED,
                 "grouped VBR requires updated native entry",
@@ -161,7 +210,13 @@ unsafe fn paint_brush_library_package_read_impl(
         if !support.wet() {
             reject_wet_package(&bundle.package)?;
         }
-        let bytes = bundle.package.to_json().map_err(io_error)?;
+        let bytes = if support.groups() {
+            paint_io::vbr_handoff::PackageHandoff::from_bundle(&bundle)
+                .and_then(|value| value.to_json())
+                .map_err(io_error)?
+        } else {
+            bundle.package.to_json().map_err(io_error)?
+        };
         if pointers::length(capacity)? < bytes.len() {
             pointers::write(required, bytes.len() as u64)?;
             return Err(ApiError::new(
@@ -233,7 +288,18 @@ unsafe fn paint_brush_library_package_write_impl(
         let path = pointers::path_utf8(path, path_length)?;
         let json = pointers::brush_json(json, json_length)?;
         let library = runtime::registry()?.brush_library(library)?;
-        let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
+        let (package, organization) = if support.groups() {
+            let (package, organization) =
+                paint_io::vbr_handoff::PackageHandoff::from_json(json.as_bytes())
+                    .map_err(io_error)?
+                    .into_parts();
+            (package, Some(organization))
+        } else {
+            (
+                paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?,
+                None,
+            )
+        };
         if !support.wet_dual() {
             reject_wet_dual_package(&package)?;
         }
@@ -302,6 +368,10 @@ unsafe fn paint_brush_library_package_write_impl(
         let bundle =
             paint_io::vbr_image::ImageBundle::with_sources(package, assets, sources, &token)
                 .map_err(io_error)?;
+        let bundle = match organization {
+            Some(organization) => bundle.with_organization(organization).map_err(io_error)?,
+            None => bundle,
+        };
         paint_io::vbr_image::save(Path::new(&path), &bundle, &token).map_err(io_error)
     })
 }

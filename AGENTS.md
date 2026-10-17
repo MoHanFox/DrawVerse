@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新分组包原生交接：`docs/brush-groups-package-design.md` / `docs/brush-groups-package-validation.md`；ABI1.55/GROUP_PACKAGE完整ordered-package-v1/2MiB与投影校验、容量无安装/完整资源来源读写/原子保存及准确state20准备串联；IO33/原生新1/旧保护5/旧公开3/Schema及Windows Release/Clippy/4 ABI/旧Qt2通过。旧四包保护保留，state/VBR不变；Qt副本合并/镜像/重置基准/分组管理仍待接。
+
 - 最新分组状态原生入口：`docs/brush-groups-abi-design.md` / `docs/brush-groups-abi-validation.md`；ABI1.54/GROUP_STATE明确state20准备，准确票据/完整关闭参数/图片来源/冷重建与mutate保持，公开新2/原生1/旧保护5/旧公开3及Windows Release/Clippy/4 ABI/旧Qt2通过。旧四准备/包保护保留；分组包专用交接/组织操作/Qt与重置基准仍待接，state/VBR不变。
 
 - 最新分组资源发布：`docs/brush-groups-persist-design.md` / `docs/brush-groups-persist-validation.md`；候选合并预检/PNG与来源先落盘后采用、故障保持目录与共享文件、实际新目录state和两笔像素载色历史恢复，IO40/Clippy/Windows Release/4 ABI/旧Qt2通过。失败可留合法未引用公共缓存，未做多文件回滚/GC；完整原生交接/Qt及重置基准全链仍待接，无ABI/state/VBR变化。
