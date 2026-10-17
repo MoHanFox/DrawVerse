@@ -55,7 +55,8 @@ pub use appearance::{
 };
 pub use brush::{Brush, BrushMode, InputPoint, Tool};
 pub use brush_catalog::{
-    BrushCatalog, BrushPreset, BrushSettings, MAX_BRUSH_PRESETS, MAX_CATALOG_MASK_BYTES,
+    BrushCatalog, BrushCatalogItem, BrushGroup, BrushOrganization, BrushPreset, BrushSettings,
+    MAX_BRUSH_GROUPS, MAX_BRUSH_GROUP_DEPTH, MAX_BRUSH_PRESETS, MAX_CATALOG_MASK_BYTES,
 };
 pub use brush_dynamics::{
     AngleControl, BrushDynamics, PressureControl, PressureCurve, TipDynamics,

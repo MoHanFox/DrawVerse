@@ -397,6 +397,11 @@ fn decode_inner(
     Ok((catalog, receipts))
 }
 pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
+    if !catalog.organization().groups().is_empty() {
+        return Err(Error::Unsupported(
+            "brush organization requires a grouped state entry".into(),
+        ));
+    }
     let mut presets = Vec::new();
     let mut version = 2;
     for id in catalog.ids() {

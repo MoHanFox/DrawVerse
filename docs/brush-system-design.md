@@ -181,3 +181,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-17图片光标原生阶段：实际覆盖的白色/alpha图、双线性面积积分及8项有界PNG资源缓存、ABI1.53查询与容量/生命周期已实现。新内核5项、资源9项/公开3项及旧轮廓4项、相关Clippy通过，见[设计](brush-cursor-image-design.md)及[验收](brush-cursor-image-validation.md)。无state/VBR变化；Qt显示开关、透明度全局保存及在途身份消费尚未接，不宣称用户入口已完成。
 
 2026-10-17图片光标Qt阶段：ABI1.53白色PNG后台消费、默认关闭/25%可调全局偏好、当前与在途主副最多4身份、工具/简化/仅悬停及独立轮廓显示已接；主副捕获/重开恢复、失败合法状态回退、多文档同步和重启保存、实际窗口像素叠加通过。见[设计](brush-cursor-image-ui-design.md)及[验收](brush-cursor-image-ui-validation.md)。Windows新2旧4 Qt、环境倍率2新2、Release/4 ABI通过，无ABI/格式变化；随机/纸纹/最终混色预演不属于基础图片模式，其他完整目标继续。
+
+2026-10-17笔刷分组Rust目录阶段：不可变稳定ID组织/有序根及子项/DFS投影、原子建组改名移动/解组及受保护级联删除、同组复制导入与捕获保持已接；新6集成+1修订边界/旧5目录、IO5/原生2及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-design.md)及[验收](brush-groups-kernel-validation.md)。旧状态编码有组时明确拒绝，未接分组保存交换/原生及Qt，不宣称用户入口完成；无ABI/state/VBR版本变化。

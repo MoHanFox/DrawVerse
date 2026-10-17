@@ -1,6 +1,38 @@
 use paint_core::*;
 use paint_io::brush_state;
 #[test]
+fn groups_old_state_explicitly_rejects_hierarchy_and_flat_ungroup_bytes_are_unchanged() {
+    let mut c = BrushCatalog::default();
+    let before = brush_state::encode(&c).unwrap();
+    let id = "12345678-1234-4234-8234-000000000001";
+    c.create_group(id.into(), "folder".into(), None, 0).unwrap();
+    assert!(matches!(
+        brush_state::encode(&c),
+        Err(paint_io::Error::Unsupported(_))
+    ));
+    c.move_catalog_item(
+        BrushCatalogItem::Preset("round-pressure".into()),
+        Some(id),
+        0,
+    )
+    .unwrap();
+    assert!(brush_state::encode(&c).is_err());
+    c.remove_group(id, false).unwrap();
+    assert_eq!(brush_state::encode(&c).unwrap(), before);
+    let mut value: serde_json::Value = serde_json::from_slice(&before).unwrap();
+    value["groups"] = serde_json::json!([]);
+    assert!(
+        brush_state::decode(&serde_json::to_vec(&value).unwrap(), MAX_CATALOG_MASK_BYTES).is_err()
+    );
+    c.move_catalog_item(BrushCatalogItem::Preset("round-wide".into()), None, 0)
+        .unwrap();
+    let bytes = brush_state::encode(&c).unwrap();
+    let restored = brush_state::decode(&bytes, MAX_CATALOG_MASK_BYTES).unwrap();
+    assert_eq!(restored.ids(), c.ids());
+    assert!(restored.organization().groups().is_empty());
+    assert_eq!(brush_state::encode(&restored).unwrap(), bytes);
+}
+#[test]
 fn pressure_controls_including_redundant_nodes_are_roundtripped_without_discarding_structure() {
     let mut catalog = BrushCatalog::default();
     for points in [

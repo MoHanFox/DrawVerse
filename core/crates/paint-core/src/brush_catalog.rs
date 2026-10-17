@@ -3,6 +3,11 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
+#[path = "brush_groups.rs"]
+mod groups;
+pub use groups::{
+    BrushCatalogItem, BrushGroup, BrushOrganization, MAX_BRUSH_GROUPS, MAX_BRUSH_GROUP_DEPTH,
+};
 pub const MAX_BRUSH_PRESETS: usize = 1024;
 pub const MAX_CATALOG_MASK_BYTES: usize = 128 * 1024 * 1024;
 const BUILTINS: [&str; 4] = [
@@ -145,6 +150,7 @@ pub struct BrushCatalog {
     selected: String,
     revision: u64,
     mask_budget: usize,
+    organization: Arc<BrushOrganization>,
 }
 impl Default for BrushCatalog {
     fn default() -> Self {
@@ -175,6 +181,9 @@ impl Default for BrushCatalog {
             selected: BUILTINS[0].into(),
             revision: 1,
             mask_budget: MAX_CATALOG_MASK_BYTES,
+            organization: Arc::new(BrushOrganization::flat(
+                &BUILTINS.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+            )),
         }
     }
 }
@@ -221,6 +230,7 @@ impl BrushCatalog {
         if !BUILTINS.iter().all(|id| seen.contains(*id)) || !seen.contains(&selected) {
             return Err(Error::InvalidArgument("missing built-in or selected brush"));
         }
+        restored.organization = Arc::new(BrushOrganization::flat(&order));
         restored.order = order;
         restored.presets = presets;
         restored.selected = selected;
@@ -328,7 +338,8 @@ impl BrushCatalog {
         let selected = self.selected();
         let preset = BrushPreset::new(id, name, selected.settings.clone())?
             .with_source(selected.source_resource.clone())?;
-        self.import(vec![preset])
+        let parent = self.selected_group();
+        self.import_into_group(vec![preset], parent.as_deref())
     }
     pub fn set_source(&mut self, id: &str, source: Option<String>) -> Result<()> {
         let before = self
@@ -351,34 +362,19 @@ impl BrushCatalog {
         if before.builtin {
             return Err(Error::InvalidArgument("built-in brush cannot be removed"));
         }
-        self.presets.remove(id);
-        self.order.retain(|s| s != id);
-        if self.selected == id {
-            self.selected = BUILTINS[0].into();
+        let layout = self.organization.without_preset(id)?;
+        let mut candidate = self.clone();
+        candidate.presets.remove(id);
+        if candidate.selected == id {
+            candidate.selected = BUILTINS[0].into();
         }
-        self.revision += 1;
+        candidate.set_organization(layout)?;
+        *self = candidate;
         Ok(())
     }
+
     /// Presets are already compiled; batch identity/capacity validation precedes publication.
     pub fn import(&mut self, presets: Vec<BrushPreset>) -> Result<()> {
-        if presets.is_empty() || self.order.len().saturating_add(presets.len()) > MAX_BRUSH_PRESETS
-        {
-            return Err(Error::ResourceLimit("brush catalog capacity"));
-        }
-        let mut ids = BTreeSet::new();
-        for p in &presets {
-            if self.presets.contains_key(&p.id) || !ids.insert(&p.id) {
-                return Err(Error::InvalidArgument("duplicate brush preset ID"));
-            }
-        }
-        self.resource_budget(presets.iter().map(|p| &p.settings), None)?;
-        let selected = presets[0].id.clone();
-        for preset in presets {
-            self.order.push(preset.id.clone());
-            self.presets.insert(preset.id.clone(), Arc::new(preset));
-        }
-        self.selected = selected;
-        self.revision += 1;
-        Ok(())
+        self.import_into_group(presets, None)
     }
 }
