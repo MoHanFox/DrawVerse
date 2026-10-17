@@ -2481,6 +2481,21 @@ impl Document {
         } else {
             self.prepare_smudge(stroke, point, x0, y0, x1, y1)?
         };
+        let opaque_repeat = skip_saturated
+            && !capped
+            && stroke.wet.is_none()
+            && !DUAL
+            && !TEXTURED
+            && smudge.is_none()
+            && !mask
+            && !alpha_locked
+            && !erase
+            && write_blend == crate::BlendMode::Normal
+            && stroke.brush.opacity >= 1.
+            && flow >= 1.
+            && stroke.color_sample.alpha() >= 1.
+            && !stroke.program.color.active()
+            && stroke.taper.is_none();
         stroke.first_dab = false;
         let (x0, x1) = (
             x0 - i64::from(appearance.offset_x),
@@ -2582,6 +2597,15 @@ impl Document {
                             let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
                             if prior_coverage.as_ref().map_or(0., |p| p[offset].alpha())
                                 >= pressure_opacity.unwrap_or(1.)
+                            {
+                                continue;
+                            }
+                        }
+                        if opaque_repeat {
+                            let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
+                            if prior_coverage
+                                .as_ref()
+                                .is_some_and(|p| p[offset].alpha() >= 1.)
                             {
                                 continue;
                             }
@@ -2865,6 +2889,10 @@ impl Document {
                                 )
                             }
                         };
+                        if opaque_repeat && coverage >= 1. && selected >= 1. {
+                            coverage_updates
+                                .push((offset, Pixel::from_straight([0., 0., 0., 1.])?));
+                        }
                         if before == after {
                             continue;
                         }

@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新大笔刷密集笔触性能：`docs/brush-large-dense-performance-design.md` / `docs/brush-large-dense-performance-validation.md`；普通不透明硬圆画笔在活动coverage账本达到完全覆盖后跳过重复像素计算，限制于普通混合且无动态颜色/纹理/双笔刷/湿混/涂抹/蒙版/起收笔的稳定路径；固定2048×2048/半径128/240输入基准中位数约1.33s降至0.37s、RGBA摘要一致，`brush_opaque_repeat`/不透明度/文档/分页/双笔刷/动态回归及格式/Clippy通过。无ABI/格式变化；复杂图片、湿混、实体输入和GPU仍待后续。
+
 - 最新笔触距离动态：`docs/brush-distance-design.md` / `docs/brush-distance-validation.md`；`distance-v1`按活动笔触累计文档距离驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，默认关闭/1000 px，主笔尖和配对第二笔尖共享尺寸因子；state26/VBR1.32/behavior21及Qt“传递”页开关/上限/曲线接通，真实像素、保存重开和QML绑定通过。ABR距离来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。
 
 - 最新切向压力动态：`docs/brush-tangent-design.md` / `docs/brush-tangent-validation.md`；`tangent-v1`将设备-1..1切向压力归一化后驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，默认关闭，主笔尖和配对第二笔尖共享尺寸因子；state25/VBR1.31/behavior20及Qt“传递”页开关/曲线接通，真实像素、保存重开和QML绑定通过。实体非零切向压力、ABR来源、任意动态矩阵、跨平台和GPU仍待后续。
