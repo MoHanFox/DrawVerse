@@ -2490,8 +2490,11 @@ impl Document {
         let opaque_repeat = skip_saturated
             && !capped
             && stroke.wet.is_none()
-            && !DUAL
-            && !TEXTURED
+            && !stroke
+                .program
+                .dual
+                .as_ref()
+                .is_some_and(|d| d.color.enabled())
             && smudge.is_none()
             && !mask
             && !alpha_locked
