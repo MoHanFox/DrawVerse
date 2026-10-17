@@ -571,12 +571,9 @@ QByteArray BrushLibrary::snapshot() const {
     if(!m_organization.isEmpty())root["organization"]=m_organization;
     return QJsonDocument(root).toJson(QJsonDocument::Compact);
 }
-QByteArray BrushLibrary::exportPackage(bool includeSource) const {
-    const auto &p=m_presets[index(m_selected)];
+QJsonObject BrushLibrary::exportPreset(const Preset &p,bool includeSource,const QString &id) {
     if(!p.sourceResource.isEmpty() && !includeSource)return {};
     const QStringList builtins={"round-pressure","round-fine","round-translucent","round-wide"};
-    const int builtin=builtins.indexOf(p.id);
-    const auto id=builtin<0?p.id:QString("dba00000-0000-4000-8000-%1").arg(builtin+1,12,16,QChar('0'));
     QJsonObject parameters{{"diameter",p.radius*2},{"spacing",p.spacing/2},{"dabOpacity",p.opacity},{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}};
     QJsonObject preset{{"id",id},{"name",p.name},{"engineProfile","drawverse.brush"},{"behaviorVersion",1},{"requiredCapabilities",QJsonArray{p.maskResource.isEmpty()?"procedural-tip":"image-tip","pressure","dab-flow"}},{"parameters",parameters}};
     if(!p.pressure.isEmpty()){parameters["pressureDynamics"]=QJsonObject::fromVariantMap(p.pressure);preset["parameters"]=parameters;preset["behaviorVersion"]=p.pressure.contains("opacity")?3:2;auto caps=preset.value("requiredCapabilities").toArray();caps.append("pressure-curves");if(p.pressure.contains("opacity"))caps.append("opacity-pressure");preset["requiredCapabilities"]=caps;}
@@ -597,7 +594,56 @@ QByteArray BrushLibrary::exportPackage(bool includeSource) const {
     if(!p.airbrush.isEmpty()){parameters["airbrush"]=QJsonObject::fromVariantMap(p.airbrush);preset["parameters"]=parameters;preset["behaviorVersion"]=18;auto caps=preset.value("requiredCapabilities").toArray();caps.append("airbrush");preset["requiredCapabilities"]=caps;}
     if(!p.maskResource.isEmpty())preset["tipResource"]=p.maskResource;
     if(!p.sourceResource.isEmpty())preset["sourceResource"]=p.sourceResource;
+    return preset;
+}
+QByteArray BrushLibrary::exportPackage(bool includeSource) const {
+    const auto &p=m_presets[index(m_selected)];
+    const QStringList builtins={"round-pressure","round-fine","round-translucent","round-wide"};
+    const int builtin=builtins.indexOf(p.id);
+    const auto id=builtin<0?p.id:QString("dba00000-0000-4000-8000-%1").arg(builtin+1,12,16,QChar('0'));
+    const auto preset=exportPreset(p,includeSource,id);
+    if(preset.isEmpty())return {};
     return QJsonDocument(QJsonObject{{"packageId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"brushes",QJsonArray{preset}}}).toJson(QJsonDocument::Compact);
+}
+QByteArray BrushLibrary::exportAllPackage(bool includeSource) const {
+    if(m_presets.isEmpty() || m_presets.size()>1024)return {};
+    const QStringList builtins={"round-pressure","round-fine","round-translucent","round-wide"};
+    QHash<QString,QString> mapping;QJsonArray brushes;QStringList order;QSet<QString> emitted;
+    for(const auto &preset:m_presets) {
+        const int builtin=builtins.indexOf(preset.id);
+        QString id=builtin<0?preset.id:QString("dba00000-0000-4000-8000-%1").arg(builtin+1,12,16,QChar('0'));
+        if(id.isEmpty() || QUuid(id).isNull() || emitted.contains(id))return {};
+        const auto row=exportPreset(preset,includeSource,id);
+        if(row.isEmpty())return {};
+        mapping.insert(preset.id,id);emitted.insert(id);order.append(id);brushes.append(row);
+    }
+    auto remapItems=[&](const QJsonArray &items) {
+        QJsonArray result;
+        for(const auto &value:items) {
+            auto item=value.toObject();
+            if(item.value("kind").toString()=="preset") {
+                const auto id=mapping.value(item.value("id").toString());
+                if(id.isEmpty())return QJsonArray{};
+                item["id"]=id;
+            }
+            result.append(item);
+        }
+        return result;
+    };
+    QJsonObject organization;
+    if(m_organization.isEmpty()) {
+        QJsonArray roots;for(const auto &id:order)roots.append(QJsonObject{{"kind","preset"},{"id",id}});
+        organization=QJsonObject{{"model","ordered-tree-v1"},{"roots",roots},{"groups",QJsonArray{}}};
+    } else {
+        organization=m_organization;
+        const auto roots=remapItems(organization.value("roots").toArray());
+        if(roots.isEmpty() && !organization.value("roots").toArray().isEmpty())return {};
+        auto groups=organization.value("groups").toArray();
+        for(qsizetype i=0;i<groups.size();++i){auto group=groups[i].toObject();const auto items=remapItems(group.value("items").toArray());if(items.isEmpty() && !group.value("items").toArray().isEmpty())return {};group["items"]=items;groups[i]=group;}
+        organization["roots"]=roots;organization["groups"]=groups;
+    }
+    const QJsonObject package{{"packageId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"brushes",brushes}};
+    return QJsonDocument(QJsonObject{{"model","ordered-package-v1"},{"package",package},{"organization",organization}}).toJson(QJsonDocument::Compact);
 }
 QByteArray BrushLibrary::catalogSnapshot() const {
     const auto root=QJsonDocument::fromJson(snapshot()).object();

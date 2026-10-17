@@ -224,7 +224,8 @@ public:
         const bool abr=!exporting && path.endsWith(".abr",Qt::CaseInsensitive);
         const auto encoded=path.toUtf8();PaintStatus status;
         PaintBrushLibrary *library=nullptr;{QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
-        if(exporting)status=paint_brush_library_package_write_wet_dual(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<const uint8_t*>(package.constData()),quint64(package.size()));
+        const bool grouped=exporting && QJsonDocument::fromJson(package).object().value("model").toString()=="ordered-package-v1";
+        if(exporting)status=grouped?paint_brush_library_package_write_groups(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<const uint8_t*>(package.constData()),quint64(package.size())):paint_brush_library_package_write_wet_dual(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<const uint8_t*>(package.constData()),quint64(package.size()));
         else {
             package.resize(2*1024*1024);uint64_t required=0;
             status=abr?paint_brush_library_abr_read(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required):paint_brush_library_package_read_wet_dual(library,reinterpret_cast<const uint8_t*>(encoded.constData()),quint64(encoded.size()),reinterpret_cast<uint8_t*>(package.data()),quint64(package.size()),&required);
@@ -1679,6 +1680,13 @@ bool PaintCoreClient::exportBrush(const QUrl &path,bool includeSource,const QStr
     if(!expectedPreset.isEmpty() && expectedPreset!=m_brushLibrary->selectedId()){showError(QStringLiteral("待导出的笔刷已更改，请重新选择导出"));return false;}
     const auto package=m_brushLibrary->exportPackage(includeSource);
     if(package.isEmpty()){showError(QStringLiteral("请在导出选项中选择包含原始 ABR 包；原始包可能包含其他预设和资源"));return false;}
+    m_brushFileBusy=true;emit brushFileChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),package]{worker->brushFile(path,package,true);},Qt::QueuedConnection);return true;
+}
+bool PaintCoreClient::exportAllBrushes(const QUrl &path,bool includeSource) {
+    if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
+    const auto package=m_brushLibrary->exportAllPackage(includeSource);
+    if(package.isEmpty()){showError(QStringLiteral("无法导出全部画笔：请检查来源包含选项、组层数或画笔数量"));return false;}
     m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),package]{worker->brushFile(path,package,true);},Qt::QueuedConnection);return true;
 }

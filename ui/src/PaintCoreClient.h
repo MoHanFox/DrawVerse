@@ -173,6 +173,7 @@ public:
     Q_INVOKABLE bool importBrushTexture(const QUrl &path,int interpretation);
     Q_INVOKABLE bool importDualBrushTip(const QUrl &path,int interpretation);
     Q_INVOKABLE bool exportBrush(const QUrl &path,bool includeSource=false,const QString &expectedPreset={});
+    Q_INVOKABLE bool exportAllBrushes(const QUrl &path,bool includeSource=false);
     QVariantList historyEntries() const {return m_history;}
     Q_INVOKABLE qreal documentHistoryScrollPosition() const {return m_documentHistoryScroll;}
     Q_INVOKABLE void rememberDocumentHistoryScroll(qreal y) {if(!m_historyLiquify)m_documentHistoryScroll=std::max(qreal(0),y);}

@@ -176,6 +176,20 @@ private slots:
         PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready());QTRY_COMPARE(reopened.brushLibrary()->selectedId(),copy);QCOMPARE(reopened.brushLibrary()->organization(),organization);QVERIFY(reopened.brushLibrary()->resetPreset());QCOMPARE(reopened.brushLibrary()->radius(),4.);QCOMPARE(errors.size(),0);
         QSignalSpy stoppedAgain(&reopened,&PaintCoreClient::stopped);reopened.shutdown();QTRY_COMPARE(stoppedAgain.size(),1);
     }
+    void brushAllPackageExportPreservesTreeAndStableIds() {
+        BrushLibrary library;QVERIFY(library.restore(QJsonDocument(groupedBrushState(library)).toJson()));
+        const auto bytes=library.exportAllPackage(false);QVERIFY(!bytes.isEmpty());
+        const auto handoff=QJsonDocument::fromJson(bytes).object();
+        QCOMPARE(handoff.value("model").toString(),QString("ordered-package-v1"));
+        const auto package=handoff.value("package").toObject();const auto brushes=package.value("brushes").toArray();
+        QCOMPARE(int(brushes.size()),int(library.presets().size()));
+        QSet<QString> ids;for(const auto &value:brushes){const auto id=value.toObject().value("id").toString();QVERIFY(!id.startsWith("round-"));QVERIFY(QUuid(id).isNull()==false);QVERIFY(!ids.contains(id));ids.insert(id);}
+        const auto organization=handoff.value("organization").toObject();QCOMPARE(organization.value("model").toString(),QString("ordered-tree-v1"));
+        QCOMPARE(int(organization.value("groups").toArray().size()),int(library.organization().value("groups").toList().size()));
+        QVERIFY(!organization.value("roots").toArray().isEmpty());
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("state.ini"));QTRY_VERIFY(client.ready());auto *live=client.brushLibrary();QVERIFY(!live->createGroup("Export group").isEmpty());QVERIFY(!live->saveCopy("Export copy").isEmpty());
+        const auto archive=QUrl::fromLocalFile(temp.filePath("all.vbr"));QSignalSpy exported(&client,&PaintCoreClient::brushFileFinished);QVERIFY(client.exportAllBrushes(archive,false));QTRY_COMPARE(exported.size(),1);QVERIFY(exported.last()[0].toBool());QVERIFY(QFileInfo(archive.toLocalFile()).size()>0);
+    }
     void brushGroupsAppearInLibraryTreeAndSearchKeepsParent() {
         QTemporaryDir temp;const auto settings=temp.filePath("groups-ui.ini");BrushLibrary seed;const auto state=groupedBrushState(seed);{QSettings prefs(settings,QSettings::IniFormat);prefs.setValue("brushes/state",QJsonDocument(state).toJson(QJsonDocument::Compact));prefs.sync();}PaintCoreClient client(nullptr,settings);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());

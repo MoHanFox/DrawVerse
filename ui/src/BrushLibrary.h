@@ -185,6 +185,7 @@ public:
     void setPressureOpacity(bool enabled);
     QVariantMap tipSettings() const;
     QByteArray exportPackage(bool includeSource=false) const;
+    QByteArray exportAllPackage(bool includeSource=false) const;
     bool importPackage(const QByteArray &json);
     bool importAbr(const QByteArray &json);
     void setHardness(qreal value);
@@ -243,6 +244,7 @@ private:
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
         qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush;};
     static QJsonObject presetRow(const Preset &preset,int &version);
+    static QJsonObject exportPreset(const Preset &preset,bool includeSource,const QString &id);
     int index(const QString &id) const;
     void update(int field,qreal value);
     void changed();
