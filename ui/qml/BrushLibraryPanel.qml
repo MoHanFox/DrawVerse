@@ -22,6 +22,35 @@ ColumnLayout {
         else exportDialog.open()
     }
     readonly property var library:PaintClient.brushLibrary
+    property var groupedModel:[]
+    property string groupedSignature:""
+    function presetById(id) {
+        for(const preset of library.presets) if(preset.id===id) return preset
+        return ({})
+    }
+    function groupedItems() {
+        const presets={}; for(const p of library.presets) presets[p.id]=p
+        const organization=library.organization||{}
+        const groups={}; for(const g of (organization.groups||[])) groups[g.id]=g
+        const query=search.text.trim().toLowerCase()
+        const matches={}; for(const p of library.presets) matches[p.id]=!query.length||p.name.toLowerCase().indexOf(query)>=0
+        function visit(items,out,depth) {
+            for(const item of (items||[])) {
+                if(item.kind==="preset") { if(matches[item.id]) out.push({kind:"preset",id:item.id,depth:depth}) }
+                else if(item.kind==="group" && groups[item.id]) {
+                    const children=[]; visit(groups[item.id].items,children,depth+1)
+                    if(children.length) { out.push({kind:"group",id:item.id,name:groups[item.id].name,depth:depth}); out.push(...children) }
+                }
+            }
+        }
+        if(!organization.roots) return library.presets.filter(p=>matches[p.id]).map(p=>({kind:"preset",id:p.id,depth:0}))
+        const result=[]; visit(organization.roots,result,0); return result
+    }
+    function refreshGroupedItems() {
+        const signature=JSON.stringify({organization:library.organization||{},presets:library.presets.map(p=>[p.id,p.name]),query:search.text})
+        if(signature===groupedSignature) return
+        groupedSignature=signature;groupedModel=groupedItems()
+    }
     spacing:4
     RowLayout {
         Layout.fillWidth:true
@@ -30,7 +59,7 @@ ColumnLayout {
         Label {text:"px";color:Theme.muted;font.pixelSize:8}
     }
     CompactSlider {Layout.fillWidth:true;from:1;to:512;value:root.library.radius*2;onMoved:root.library.radius=value/2}
-    TextField {id:search;objectName:"brushSearch";Layout.fillWidth:true;implicitHeight:22;font.pixelSize:9;placeholderText:"搜索画笔";color:Theme.text;background:Rectangle {color:Theme.input;border.color:Theme.line} onAccepted:root.finishSearch(false);Keys.onEscapePressed:event=>{root.finishSearch(true);event.accepted=true}}
+    TextField {id:search;objectName:"brushSearch";Layout.fillWidth:true;implicitHeight:22;font.pixelSize:9;placeholderText:"搜索画笔";color:Theme.text;background:Rectangle {color:Theme.input;border.color:Theme.line} onTextChanged:root.refreshGroupedItems();onAccepted:root.finishSearch(false);Keys.onEscapePressed:event=>{root.finishSearch(true);event.accepted=true}}
     RowLayout {
         Layout.fillWidth:true;spacing:2
         Repeater {
@@ -52,17 +81,19 @@ ColumnLayout {
     RowLayout {Icon {name:"folder";width:14;height:14} Label {text:"基础与自定义画笔";font.pixelSize:9;color:Theme.text}}
     ListView {
         objectName:"brushPresetList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:2
-        model:root.library.presets.filter(p=>p.name.toLowerCase().indexOf(search.text.trim().toLowerCase())>=0)
+        id:presetList;model:root.groupedModel
         delegate:Rectangle {
             required property var modelData
-            objectName:"brushPreset:"+modelData.id
-            width:ListView.view.width;height:58
-            color:root.library.selectedId===modelData.id?Theme.selected:Theme.surface
+            objectName:modelData.kind==="group"?"brushGroup:"+modelData.id:"brushPreset:"+modelData.id
+            width:ListView.view.width;height:modelData.kind==="group"?30:58
+            color:modelData.kind==="group"?Theme.strip:root.library.selectedId===modelData.id?Theme.selected:Theme.surface
             border.color:Theme.line
-            Image {anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:4;height:35;source:modelData.preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
-            Text {x:6;y:40;width:parent.width-12;textFormat:Text.PlainText;text:modelData.name;color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
-            MouseArea {anchors.fill:parent;onClicked:root.library.select(modelData.id)}
-            Component.onCompleted:root.library.requestPreview(modelData.id)
+            visible:modelData.kind==="group" || root.presetById(modelData.id).id!==undefined
+            Image {visible:modelData.kind!=="group";anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.leftMargin:4+modelData.depth*14;anchors.rightMargin:4;anchors.topMargin:4;height:35;source:modelData.kind==="group"?"":root.presetById(modelData.id).preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
+            Text {visible:modelData.kind==="group";x:8+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:"▾  "+modelData.name;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
+            Text {visible:modelData.kind!=="group";x:6+modelData.depth*14;y:40;width:parent.width-x-6;textFormat:Text.PlainText;text:root.presetById(modelData.id).name||"";color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
+            MouseArea {anchors.fill:parent;enabled:modelData.kind!=="group";onClicked:root.library.select(modelData.id)}
+            Component.onCompleted:if(modelData.kind!=="group")root.library.requestPreview(modelData.id)
         }
         ScrollBar.vertical:ScrollBar {width:6}
     }
@@ -95,5 +126,6 @@ ColumnLayout {
     FileDialog {id:importDialog;objectName:"brushImportDialog";title:"导入笔刷包";nameFilters:["笔刷包 (*.vbr *.abr)","DrawVerse 笔刷 (*.vbr)","Photoshop 笔刷 (*.abr)"];onAccepted:PaintClient.importBrushes(selectedFile)}
     FileDialog {id:exportDialog;title:"导出当前笔刷";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.exportBrush(selectedFile,root.includeExportSource,root.exportPreset)}
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
-    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}}
+    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}function onPresetsChanged(){root.refreshGroupedItems()}}
+    Component.onCompleted:root.refreshGroupedItems()
 }
