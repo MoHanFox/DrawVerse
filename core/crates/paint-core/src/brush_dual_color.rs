@@ -156,6 +156,12 @@ impl DualColor {
         position: (u32, u32),
         seed: u64,
     ) -> Pixel {
+        if self.primary_blend == BlendMode::Normal && self.secondary_blend == BlendMode::Normal {
+            return match self.order {
+                DualColorOrder::SecondBehind => primary.over(secondary),
+                DualColorOrder::SecondInFront => secondary.over(primary),
+            };
+        }
         let (x, y) = position;
         let main = |dst| {
             crate::blend_pixel(
@@ -180,6 +186,92 @@ impl DualColor {
         match self.order {
             DualColorOrder::SecondBehind => main(second(Pixel::TRANSPARENT)),
             DualColorOrder::SecondInFront => second(main(Pixel::TRANSPARENT)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reference(
+        settings: DualColor,
+        primary: Pixel,
+        primary_coverage: f32,
+        secondary_color: Pixel,
+        secondary_coverage: f32,
+        position: (u32, u32),
+        seed: u64,
+    ) -> Pixel {
+        let coverage = if settings.overflow() {
+            secondary_coverage
+        } else {
+            secondary_coverage.min(primary_coverage)
+        };
+        let secondary = secondary_color.scaled(coverage);
+        let main = |dst| {
+            crate::blend_pixel(
+                primary,
+                dst,
+                settings.primary_blend(),
+                position.0,
+                position.1,
+                seed ^ 0x6475616c2d6d6169,
+            )
+        };
+        let second = |dst| {
+            crate::blend_pixel(
+                secondary,
+                dst,
+                settings.secondary_blend(),
+                position.0,
+                position.1,
+                seed ^ 0x6475616c2d736563,
+            )
+        };
+        match settings.order() {
+            DualColorOrder::SecondBehind => main(second(Pixel::TRANSPARENT)),
+            DualColorOrder::SecondInFront => second(main(Pixel::TRANSPARENT)),
+        }
+    }
+
+    #[test]
+    fn normal_composition_matches_two_step_reference() {
+        let primary = Pixel::from_straight([0.8, 0.2, 0.1, 0.7]).unwrap();
+        let secondary = Pixel::from_straight([0.1, 0.3, 0.8, 0.6]).unwrap();
+        for order in [DualColorOrder::SecondBehind, DualColorOrder::SecondInFront] {
+            let settings = DualColor::new(
+                true,
+                false,
+                true,
+                order,
+                BlendMode::Normal,
+                BlendMode::Normal,
+            )
+            .unwrap();
+            for (primary_coverage, secondary_coverage) in
+                [(1., 1.), (0.75, 0.5), (0.2, 0.9), (0., 0.4), (0.4, 0.)]
+            {
+                assert_eq!(
+                    settings.compose(
+                        primary,
+                        primary_coverage,
+                        secondary,
+                        secondary_coverage,
+                        (12, 34),
+                        99,
+                    ),
+                    reference(
+                        settings,
+                        primary,
+                        primary_coverage,
+                        secondary,
+                        secondary_coverage,
+                        (12, 34),
+                        99,
+                    )
+                );
+            }
         }
     }
 }

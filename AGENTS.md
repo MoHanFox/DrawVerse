@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新双色普通混合快路径：`docs/brush-dual-color-performance-design.md` / `docs/brush-dual-color-performance-validation.md`；主/第二贡献均为normal时直接一次`source-over`，保留非normal两次混合与随机种子语义；新增顺序/覆盖率参考单元通过，`brush_dual_color_performance` 六组RGBA摘要保持，同机中位数约8.24–11.32ms（之前约8.72–12.94ms），不外推所有笔刷/Qt/设备。
+
 - 最新散布设备控制：`docs/brush-scatter-device-design.md` / `docs/brush-scatter-device-validation.md`；主/第二笔尖散布幅度/数量接入渐隐、笔压、倾斜、方向、笔旋转，ABR `bVTy=1/2/3/6/8`/`Mnm`/`fStp`、state35/VBR1.42/behavior27/`scatter-controls`、Qt双散布页及handoff11接通；核心单元5/主真实笔触8/第二真实笔触1/IO7/ABR34和Windows Qt 5项（含初始化清理）通过，Release构建/workspace check/格式通过。旧默认与旧state/VBR字节保持；Hue/Saturation/Color/Luminosity、ABR随机抖动、16位、跨平台/硬件/GPU仍待。
 
 - 最新ABR计算双笔刷：`docs/abr-dual-brush-design.md` / `docs/abr-dual-brush-validation.md`；computed/sampled双笔刷形状、图片资源、独立间距、贡献模式、散布/数量、逐印章随机Flip及固定flipX/flipY接入converter11/handoff10、源version3/VBR1.41及Qt state12；第二笔尖设备控制已在后续散布阶段接通。

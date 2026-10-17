@@ -27,3 +27,5 @@
 - 应用未运行时更新开发目录exe/DLL，核对DLL SHA256与验证构建相同。
 
 下一阶段接通双色原生/Qt入口、自动描边预设和复合光标。非分隔逐印章模型、收尖、湿混、高级ABR和完整设备/跨平台验收仍未完成。
+
+2026-10-18普通混合快路径：新增`normal_composition_matches_two_step_reference`，两种前后顺序及透明/部分/完整覆盖均与逐次`blend_pixel`参考一致。`brush_dual_color_performance` 同命令六组RGBA摘要全部保持；本次中位数约8.24–11.32ms，之前约8.72–12.94ms，属于同机固定CPU场景，不能外推为所有笔刷或Qt延迟。
