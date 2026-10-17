@@ -168,6 +168,20 @@ fn texture_pattern_handoff_binds_mapped_mode_and_paints_real_pixels() {
             .load(imported[0].source_id(), &token)
             .unwrap();
         assert_eq!(source.info.converter_version, 8);
+        assert_eq!(source.info.version, 2);
+        let baseline_texture = source.info.texture.as_ref().unwrap();
+        assert_eq!(
+            baseline_texture.mode(),
+            if expected_mode == paint_core::TextureMode::ColorBurn {
+                "colorBurn"
+            } else {
+                "multiply"
+            }
+        );
+        assert_eq!(
+            baseline_texture.resource_id(),
+            settings.texture.resource().unwrap().source().resource_id()
+        );
         let mut with_texture = Document::new(24, 24).unwrap();
         with_texture
             .begin_brush_stroke(settings.definition(), InputPoint::new(12.5, 12.5, 1.))
@@ -223,6 +237,8 @@ fn abr_texture_brightness_and_contrast_survive_handoff_and_source_report() {
         .unwrap()
         .load(imported[0].source_id(), &token)
         .unwrap();
+    assert_eq!(source.info.version, 2);
+    assert_eq!(source.info.texture.as_ref().unwrap().mode(), "multiply");
     for path in ["textureBrightness", "textureContrast"] {
         assert!(source.info.report.iter().any(
             |item| item.path == path && item.status == paint_io::brush_source::Support::Mapped

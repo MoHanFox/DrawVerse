@@ -48,6 +48,10 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
             let id = mask.resource_id().unwrap();
             pngs.insert(id.into(), resources.encoded(id).unwrap());
         }
+        if let Some(texture) = preset.settings().texture.resource() {
+            let id = texture.source().resource_id().unwrap();
+            pngs.insert(id.into(), resources.encoded(id).unwrap());
+        }
     }
     let brushes = imported
         .iter()
@@ -57,13 +61,18 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
             Preset {
                 stroke_taper: None,
                 wet_mix: None,
-                texture: None,
+                texture: (!s.texture.is_default())
+                    .then(|| paint_io::brush_texture::TextureParameters::from_core(&s.texture))
+                    .transpose()
+                    .unwrap(),
                 smoothing: None,
                 dual_brush: None,
                 id: format!("12345678-1234-4234-8234-{i:012x}"),
                 name: p.name().into(),
                 engine_profile: "drawverse.brush".into(),
-                behavior_version: if s.dynamics.color != Default::default() {
+                behavior_version: if !s.texture.is_default() {
+                    8
+                } else if s.dynamics.color != Default::default() {
                     7
                 } else if s.dynamics.shape_jitter != Default::default() {
                     6
@@ -100,6 +109,9 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                     }
                     if s.dynamics.scatter != Default::default() {
                         caps.push("scatter-stamps".into());
+                    }
+                    if !s.texture.is_default() {
+                        caps.push("texture-cover".into());
                     }
                     caps
                 },
@@ -1310,4 +1322,45 @@ fn device_source_v7_requires_minor_21_and_preserves_seven_generations_and_pixels
             }
         }
     }
+}
+
+#[test]
+fn texture_source_record_v2_requires_vbr127_and_preserves_baseline() {
+    let token = CancellationToken::default();
+    let input = bundle_from_bytes(support::abr_fixture::fixture_with_texture_adjustments(
+        "CBrn", -25., 50.,
+    ));
+    let bytes = vbr_image::encode(&input, &token).unwrap();
+    let manifest: serde_json::Value = {
+        let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
+    };
+    assert_eq!(manifest["version"]["minor"], 27);
+    let restored = vbr_image::decode(&bytes, &token).unwrap();
+    let source = &restored.sources()[0];
+    assert_eq!(source.record_version(), 2);
+    let info = source
+        .records()
+        .map(|(_, record)| {
+            serde_json::from_slice::<paint_io::brush_source::SourceInfo>(record).unwrap()
+        })
+        .find(|info| info.version == 2)
+        .unwrap();
+    assert_eq!(info.version, 2);
+    let texture = info.texture.as_ref().unwrap();
+    assert_eq!(texture.mode(), "colorBurn");
+    assert!(texture.resource_id().is_some());
+    assert_eq!(
+        restored.definition(0).unwrap().texture.settings().mode(),
+        paint_core::TextureMode::ColorBurn
+    );
+    let downgraded = rewrite(&bytes, |name, data| {
+        if name == "manifest.json" {
+            let mut value: serde_json::Value = serde_json::from_slice(data).unwrap();
+            value["version"]["minor"] = 26.into();
+            *data = serde_json::to_vec(&value).unwrap();
+        }
+        true
+    });
+    assert!(vbr_image::decode(&downgraded, &token).is_err());
 }

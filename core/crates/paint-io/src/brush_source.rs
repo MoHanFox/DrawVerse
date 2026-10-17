@@ -46,11 +46,13 @@ pub struct SourceInfo {
     pub converter_version: u32,
     pub baseline: Parameters,
     pub tip_resource: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub texture: Option<crate::brush_texture::TextureParameters>,
     pub report: Vec<ReportItem>,
 }
 impl SourceInfo {
     pub fn validate(&self) -> Result<()> {
-        if self.version != 1
+        if !matches!(self.version, 1 | 2)
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
             || !matches!(self.converter_version, 1..=8)
@@ -61,6 +63,9 @@ impl SourceInfo {
         }
         if !valid_id(&self.original_hash)
             || self.tip_resource.as_ref().is_some_and(|id| !valid_id(id))
+            || self.texture.as_ref().is_some_and(|t| t.validate().is_err())
+            || (self.version == 1 && self.texture.is_some())
+            || (self.version == 2 && self.texture.is_none())
             || self.preset_index >= 1024
             || self.original_name.trim().is_empty()
             || self.original_name.chars().count() > 80
@@ -181,7 +186,7 @@ impl SourceArchive {
             ));
         }
         let info = SourceInfo {
-            version: 1,
+            version: if settings.texture.is_default() { 1 } else { 2 },
             format: "abr".into(),
             original_hash,
             file_version: version.0,
@@ -222,6 +227,9 @@ impl SourceArchive {
                 pressure_flow: settings.tip.pressure_flow,
             },
             tip_resource,
+            texture: (!settings.texture.is_default())
+                .then(|| crate::brush_texture::TextureParameters::from_core(&settings.texture))
+                .transpose()?,
             report: preset
                 .issues
                 .iter()
@@ -261,6 +269,7 @@ pub struct SourceBatch {
     records: Vec<(String, Vec<u8>)>,
     tip_ids: BTreeSet<String>,
     converter_version: u32,
+    record_version: u32,
 }
 impl SourceBatch {
     pub fn capture(
@@ -279,6 +288,7 @@ impl SourceBatch {
         let mut tip_ids = BTreeSet::new();
         let mut total = 0usize;
         let mut converter_version = 1;
+        let mut record_version = 1;
         for (index, preset) in presets.iter().enumerate() {
             converter_version = converter_version.max(preset.converter_version);
             check(token)?;
@@ -305,6 +315,12 @@ impl SourceBatch {
             if let Some(id) = &info.tip_resource {
                 tip_ids.insert(id.clone());
             }
+            if let Some(texture) = &info.texture {
+                if let Some(id) = texture.resource_id() {
+                    tip_ids.insert(id.to_owned());
+                }
+            }
+            record_version = record_version.max(info.version);
             let record = serde_json::to_vec(&info).map_err(|e| Error::Codec(e.to_string()))?;
             total = total.saturating_add(record.len());
             if record.len() > MAX_RECORD || total > 32 * 1024 * 1024 {
@@ -319,6 +335,7 @@ impl SourceBatch {
             records,
             tip_ids,
             converter_version,
+            record_version,
         })
     }
     /// Verify portable records against one shared original, preserving record bytes.
@@ -336,6 +353,7 @@ impl SourceBatch {
         let mut tip_ids = BTreeSet::new();
         let mut total = 0usize;
         let mut converter_version = 1;
+        let mut record_version = 1;
         for (id, bytes) in &records {
             check(token)?;
             total = total.saturating_add(bytes.len());
@@ -349,6 +367,7 @@ impl SourceBatch {
                 serde_json::from_slice(bytes).map_err(|e| Error::Codec(e.to_string()))?;
             info.validate()?;
             converter_version = converter_version.max(info.converter_version);
+            record_version = record_version.max(info.version);
             if info.original_hash != original_id
                 || (info.file_version, info.file_subversion) != version
             {
@@ -356,6 +375,11 @@ impl SourceBatch {
             }
             if let Some(id) = info.tip_resource {
                 tip_ids.insert(id);
+            }
+            if let Some(texture) = info.texture {
+                if let Some(id) = texture.resource_id() {
+                    tip_ids.insert(id.to_owned());
+                }
             }
         }
         check(token)?;
@@ -365,10 +389,14 @@ impl SourceBatch {
             records: records.into_iter().collect(),
             tip_ids,
             converter_version,
+            record_version,
         })
     }
     pub fn converter_version(&self) -> u32 {
         self.converter_version
+    }
+    pub fn record_version(&self) -> u32 {
+        self.record_version
     }
     pub fn original_id(&self) -> &str {
         &self.original_id

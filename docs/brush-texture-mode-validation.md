@@ -2,7 +2,7 @@
 
 日期：2026-10-17，Windows 优先。
 
-核心 `TextureMode` 已实现 `normal`、`multiply`、`darken`、`lighten`、`subtract`、`difference`、`screen`、`colorBurn` 八种覆盖组合，并支持亮度/对比度调整。`normal` 与旧版纹理覆盖保持一致；旧 state/VBR 缺少字段时由 IO 和 Qt 规范化，`colorBurn` 需要 VBR1.25，非零亮度/对比度需要 state21/VBR1.26。
+核心 `TextureMode` 已实现 `normal`、`multiply`、`darken`、`lighten`、`subtract`、`difference`、`screen`、`colorBurn` 八种覆盖组合，并支持亮度/对比度调整。`normal` 与旧版纹理覆盖保持一致；旧 state/VBR 缺少字段时由 IO 和 Qt 规范化，`colorBurn` 需要 VBR1.25，非零亮度/对比度需要 state21/VBR1.26，带纹理来源快照需要 VBR1.27。
 
 已验证：
 

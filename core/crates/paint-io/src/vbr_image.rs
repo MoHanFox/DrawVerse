@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 26;
+pub const MAX_EXECUTABLE_MINOR: u32 = 27;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -551,6 +551,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             return Err(Error::Limit("VBR source records"));
         }
         let info: crate::brush_source::SourceInfo = vbr::json(&bytes)?;
+        if info.version > 1 && manifest.version.minor < 27 {
+            return Err(Error::Unsupported(
+                "ABR texture source baseline requires VBR 1.27".into(),
+            ));
+        }
         if info.converter_version > 6 && manifest.version.minor < 21 {
             return Err(Error::Unsupported(
                 "ABR converter v7 requires VBR 1.21".into(),
@@ -662,6 +667,12 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .sources
+                .iter()
+                .any(|source| source.record_version() > 1)
+            {
+                27
+            } else if bundle
                 .package
                 .brushes
                 .iter()

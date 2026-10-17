@@ -1,6 +1,6 @@
 # DrawVerse
 
-- 最新ABR纹理/VBR1.26：`docs/abr-texture-design.md` / `docs/abr-texture-validation.md`；有界`patt`预检/灰度解码/内容哈希、`Txtr`参数与预设索引关联、`TxtC`空间、八种覆盖模式（含`CBrn`颜色加深）及亮度/对比度、converterVersion8/handoff v7、Qt state11/21、VBR1.25/1.26已接；真实图案笔触/历史、旧ABR、公开ABI与严格Clippy通过。其余未定义模式、最低深度/深度动态和16位图案仍未执行，来源基线纹理字段继续后续。
+- 最新ABR纹理/VBR1.27：`docs/abr-texture-design.md` / `docs/abr-texture-validation.md`；有界`patt`预检/灰度解码/内容哈希、`Txtr`参数与预设索引关联、`TxtC`空间、八种覆盖模式（含`CBrn`颜色加深）、亮度/对比度、纹理来源version2、converterVersion8/handoff v7、Qt state11/21、VBR1.25/1.26/1.27已接；真实图案笔触/历史、旧ABR、公开ABI与严格Clippy通过。其余未定义模式、最低深度/深度动态和16位图案仍未执行。
 
 - 最新纹理模式：`docs/brush-texture-mode-design.md` / `docs/brush-texture-mode-validation.md`；核心和 Qt 支持七种纹理覆盖组合模式，旧 state/VBR 缺省为 normal，真实纹理交换与 Windows Qt 回归通过。ABR 的 `patt`/`Txtr` 已接入这七种模式，未定义模式仍保留来源并报告；无 ABI 主版本变化。
 

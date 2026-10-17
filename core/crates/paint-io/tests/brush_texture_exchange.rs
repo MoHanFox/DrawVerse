@@ -381,3 +381,25 @@ fn published_texture_adjustment_contract_requires_vbr126() {
         assert_eq!(schema["$defs"]["texture"]["properties"][key]["maximum"], 1);
     }
 }
+
+#[test]
+fn published_texture_source_contract_requires_vbr127() {
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../contracts/vbr-texture-source-v1.27.schema.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        schema["$defs"]["manifest"]["properties"]["version"]["properties"]["minor"]["const"],
+        27
+    );
+    assert!(
+        schema["$defs"]["sourceRecord"]["properties"]["version"]["enum"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(2))
+    );
+    assert_eq!(
+        schema["$defs"]["sourceRecord"]["properties"]["texture"]["$ref"],
+        "#/$defs/texture"
+    );
+}
