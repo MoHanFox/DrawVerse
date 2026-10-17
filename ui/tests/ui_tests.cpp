@@ -1564,6 +1564,11 @@ private slots:
         QVERIFY(library.importAbr(QJsonDocument(handoff).toJson(QJsonDocument::Compact)));
         QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object().value("version").toInt(),21);
         QCOMPARE(library.texture(),texture.toVariantMap());
+        QVariantMap baseline{{"diameter",8.0},{"spacing",0.02},{"dabOpacity",1.0},{"hardness",1.0},{"roundness",1.0},{"angle",0.0},{"flow",1.0},{"pressureSize",false},{"pressureFlow",false}};
+        QVariantMap sourceInfo{{"baseline",baseline},{"tipResource",textureResource},{"texture",texture.toVariantMap()}};
+        library.setRadius(24);library.setOpacity(.2);
+        QVERIFY(library.restoreSourceBaseline(sourceInfo));
+        QCOMPARE(library.radius(),4.);QCOMPARE(library.opacity(),1.);QCOMPARE(library.texture(),texture.toVariantMap());
         QVERIFY(library.resetPreset());
         QCOMPARE(library.texture(),texture.toVariantMap());
         auto downgraded=handoff;downgraded["version"]=6;

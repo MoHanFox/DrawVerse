@@ -208,6 +208,7 @@ public:
     Q_INVOKABLE bool rename(const QString &id,const QString &name);
     Q_INVOKABLE bool remove(const QString &id);
     Q_INVOKABLE bool resetPreset();
+    Q_INVOKABLE bool restoreSourceBaseline(const QVariantMap &info);
     Q_INVOKABLE void requestPreview(const QString &id);
     Q_INVOKABLE void retryPreview();
     bool restore(const QByteArray &json);

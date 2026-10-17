@@ -293,7 +293,10 @@ ColumnLayout {
                 ColumnLayout {
                     visible:root.category===8;Layout.fillWidth:true;spacing:6
                     Label {objectName:"brushSourceDescription";textFormat:Text.PlainText;text:root.library.sourceResource.length?"导入时快照 · 当前编辑不会改变来源报告":"此预设没有 ABR 来源记录";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:10}
-                    Button {objectName:"refreshBrushSource";text:PaintClient.brushSourceBusy?"读取中…":"刷新来源";implicitHeight:24;enabled:root.library.sourceResource.length>0 && !PaintClient.brushSourceBusy;onClicked:root.inspectSource()}
+                    RowLayout {Layout.fillWidth:true
+                        Button {objectName:"refreshBrushSource";text:PaintClient.brushSourceBusy?"读取中…":"刷新来源";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:24;enabled:root.library.sourceResource.length>0 && !PaintClient.brushSourceBusy;onClicked:root.inspectSource()}
+                        Button {objectName:"restoreBrushSource";text:"恢复来源基线";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:24;enabled:root.sourceInfo.baseline!==undefined && root.library.sourceResource.length>0;onClicked:root.library.restoreSourceBaseline(root.sourceInfo);ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"恢复导入时的纹理、笔尖和动态参数；不改变预设身份或分组。"}
+                    }
                     Label {objectName:"brushSourceError";textFormat:Text.PlainText;text:PaintClient.brushSourceMessage;visible:text.length>0;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:10}
                     Label {objectName:"brushSourceName";textFormat:Text.PlainText;visible:root.sourceInfo.originalName!==undefined;text:root.sourceInfo.originalName || "";Layout.fillWidth:true;wrapMode:Text.WrapAnywhere;color:Theme.text;font.pixelSize:10}
                     Label {textFormat:Text.PlainText;visible:root.sourceInfo.format!==undefined;text:"ABR "+root.sourceInfo.fileVersion+(root.sourceInfo.fileSubversion?"."+root.sourceInfo.fileSubversion:"")+" · "+root.sourceInfo.converter+" v"+root.sourceInfo.converterVersion;Layout.fillWidth:true;wrapMode:Text.WrapAnywhere;color:Theme.muted;font.pixelSize:9}

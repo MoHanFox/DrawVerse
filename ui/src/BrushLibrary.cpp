@@ -303,6 +303,37 @@ bool BrushLibrary::resetPreset() {
     reset.preview.clear();reset.error.clear();reset.token=++m_nextToken;reset.requested=0;
     m_presets[i]=reset;changed();return true;
 }
+bool BrushLibrary::restoreSourceBaseline(const QVariantMap &info) {
+    const int i=index(m_selected);
+    if(i<0 || info.value("baseline").userType()!=QMetaType::QVariantMap)return false;
+    const auto base=info.value("baseline").toMap();
+    const auto radius=base.value("diameter").toDouble()/2;
+    const auto opacity=base.value("dabOpacity").toDouble();
+    const auto spacing=base.value("spacing").toDouble()*2;
+    const auto hardness=base.value("hardness").toDouble();
+    const auto roundness=base.value("roundness").toDouble();
+    const auto angle=base.value("angle").toDouble();
+    const auto flow=base.value("flow").toDouble();
+    if(!std::isfinite(radius) || radius<.5 || radius>256 || !std::isfinite(opacity) || opacity<0 || opacity>1 || !std::isfinite(spacing) || spacing<.02 || spacing>1 || !std::isfinite(hardness) || hardness<0 || hardness>1 || !std::isfinite(roundness) || roundness<.01 || roundness>1 || !std::isfinite(angle) || angle<-180 || angle>180 || !std::isfinite(flow) || flow<0 || flow>1)return false;
+    QVariantMap texture;
+    if(!info.value("texture").isNull()) {
+        if(info.value("texture").userType()!=QMetaType::QVariantMap)return false;
+        texture=canonicalTexture(info.value("texture").toMap());
+        if(!validTexture(QJsonObject::fromVariantMap(texture)))return false;
+    }
+    QString mask;
+    if(!info.value("tipResource").isNull()) {
+        static const QRegularExpression identity("^[0-9a-f]{64}$");
+        mask=info.value("tipResource").toString();
+        if(!identity.match(mask).hasMatch())return false;
+    }
+    auto &p=m_presets[i];
+    p.radius=radius;p.opacity=opacity;p.spacing=spacing;p.hardness=hardness;p.roundness=roundness;p.angle=angle;p.flow=flow;
+    p.pressureSize=base.value("pressureSize").toBool();p.pressureFlow=base.value("pressureFlow").toBool();
+    p.pressure=base.value("pressureDynamics").toMap();p.device=base.value("tipDynamics").toMap();p.scatter=base.value("scatterDynamics").toMap();p.shape=base.value("shapeJitter").toMap();p.color=base.value("colorDynamics").toMap();
+    p.maskResource=mask;p.texture=texture;
+    p.preview.clear();p.error.clear();p.token=++m_nextToken;p.requested=0;changed();return true;
+}
 bool BrushLibrary::applyOrganization(const QJsonObject &candidate) {
     QStringList ids,order;ids.reserve(m_presets.size());
     for(const auto &preset:m_presets)ids.append(preset.id);

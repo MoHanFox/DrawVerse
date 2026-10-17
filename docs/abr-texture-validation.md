@@ -23,6 +23,7 @@
 - `cargo test -p paint-io --test vbr_source`：15 项通过，新增纹理来源 version2/资源引用/VBR1.27 往返和 minor26 降级拒绝。
 - `cargo test -p paint-ffi --test abr_import`：9 项通过，包含带颜色加深和亮度/对比度的纹理 ABR 经公开 `abr_read`、资源写入、state21 准备和来源记录，以及 148 个真实 ABR 预设和旧 v1/v2/v3/v4/v5/v6/v7 来源入口。
 - Windows Qt Release 构建通过；含颜色加深 handoff 的 `abrTextureHandoffImportsMappedModeIntoState11` 和现有 ABR 用户导入回归通过。
+- “来源与兼容”页新增“恢复到来源基线”，可恢复导入时的笔尖、纹理、纹理模式和亮度/对比度；预设身份、分组和当前来源引用保持不变。
 - `paint-io` 与 `paint-ffi` 的 all-target 严格 Clippy 通过。
 
 边界：
