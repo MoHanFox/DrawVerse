@@ -31,6 +31,7 @@ fn package() -> Package {
                 color_dynamics: None,
                 tip_dynamics: None,
                 pressure_dynamics: None,
+                source_matrix: None,
                 diameter: 40.,
                 spacing: 0.01,
                 dab_opacity: 0.8,

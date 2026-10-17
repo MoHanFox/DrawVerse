@@ -185,6 +185,7 @@ pub struct BrushDynamics {
     pub tilt: TiltDynamics,
     pub rotation: RotationDynamics,
     pub direction: DirectionDynamics,
+    pub matrix: DynamicsSourceMatrix,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
@@ -201,6 +202,46 @@ impl BrushDynamics {
             && self.tilt.is_default()
             && self.rotation.is_default()
             && self.direction.is_default()
+            && self.matrix.is_default()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DynamicsSource {
+    #[default]
+    All,
+    Speed,
+    Tangent,
+    Distance,
+    Tilt,
+    Rotation,
+    Direction,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DynamicsSourceMatrix {
+    size: DynamicsSource,
+    flow: DynamicsSource,
+    opacity: DynamicsSource,
+}
+impl DynamicsSourceMatrix {
+    pub fn new(size: DynamicsSource, flow: DynamicsSource, opacity: DynamicsSource) -> Self {
+        Self {
+            size,
+            flow,
+            opacity,
+        }
+    }
+    pub fn size(self) -> DynamicsSource {
+        self.size
+    }
+    pub fn flow(self) -> DynamicsSource {
+        self.flow
+    }
+    pub fn opacity(self) -> DynamicsSource {
+        self.opacity
+    }
+    pub fn is_default(self) -> bool {
+        self == Self::default()
     }
 }
 

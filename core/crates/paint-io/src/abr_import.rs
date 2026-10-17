@@ -82,6 +82,7 @@ impl ImportBatch {
                         tilt_dynamics: None,
                         rotation_dynamics: None,
                         direction_dynamics: None,
+                        source_matrix: None,
                         diameter: s.diameter,
                         spacing: s.spacing,
                         dab_opacity: s.opacity,

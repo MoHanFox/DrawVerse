@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 37;
+pub const MAX_EXECUTABLE_MINOR: u32 = 38;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -493,6 +493,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             "latest texture mode requires VBR1.37".into(),
         ));
     }
+    if manifest.version.minor < 38 && brushes.iter().any(|b| b.parameters.source_matrix.is_some()) {
+        return Err(Error::Unsupported(
+            "dynamics source matrix requires VBR1.38".into(),
+        ));
+    }
     if manifest.version.minor < 23 && brushes.iter().any(|b| b.has_wet_dual()) {
         return Err(Error::Unsupported("wet dual color requires VBR1.23".into()));
     }
@@ -716,6 +721,14 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 || b.parameters.scatter_dynamics.is_some()
                 || b.parameters.shape_jitter.is_some()
                 || b.parameters.color_dynamics.is_some()
+                || b.parameters.airbrush.is_some()
+                || b.parameters.speed_dynamics.is_some()
+                || b.parameters.tangent_dynamics.is_some()
+                || b.parameters.distance_dynamics.is_some()
+                || b.parameters.tilt_dynamics.is_some()
+                || b.parameters.rotation_dynamics.is_some()
+                || b.parameters.direction_dynamics.is_some()
+                || b.parameters.source_matrix.is_some()
                 || b.texture.is_some()
                 || b.dual_brush.is_some()
                 || b.smoothing.is_some()
@@ -748,6 +761,13 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.parameters.source_matrix.is_some())
+            {
+                38
+            } else if bundle
                 .package
                 .brushes
                 .iter()

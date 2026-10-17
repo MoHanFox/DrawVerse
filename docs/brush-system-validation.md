@@ -250,3 +250,5 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 2026-10-18高级纹理模式阶段：核心新增八种覆盖率组合，总计16种；state30/VBR1.36门控，ABR `BlnM` 八类代码映射，真实ABR纹理导入测试扩展为八种模式，Qt下拉16项、状态重开及严格Clippy/格式检查通过。见[设计](brush-texture-mode-design.md)及[验收](brush-texture-mode-validation.md)。未运行全量`tools/check.py`，未定义模式、16位笔尖和完整PS像素核对仍未完成。
 
 2026-10-18纹理模式补全阶段：核心再增四种覆盖率组合，总计20种；state31/VBR1.37门控，`vividLight`/`linearLight`/`pinLight`/`divide`及ABR `BlnM` 映射，纹理/ABR/状态/VBR与Qt下拉20项测试通过。见[设计](brush-texture-mode-design.md)及[验收](brush-texture-mode-validation.md)。未运行全量`tools/check.py`，Dissolve/Hue/Saturation/Color/Luminosity、16位笔尖和完整PS像素核对仍未完成。
+
+2026-10-18动态来源矩阵阶段：核心新增三通道来源选择，默认`All`保持六来源相乘；state32/VBR1.38/behavior25与`dynamics-source-matrix`、Qt三个下拉和预览版本同步。`paint-core`单来源因子用例、`paint-io brush_source_matrix_exchange`、全目标`cargo check`、Windows Release Qt构建及保存重开/下拉两项Qt用例通过。见[设计](brush-dynamics-matrix-design.md)及[验收](brush-dynamics-matrix-validation.md)。未运行全量测试，ABR动态来源、实体设备手感、跨平台和GPU仍未完成。

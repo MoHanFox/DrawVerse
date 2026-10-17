@@ -171,6 +171,12 @@ struct Row {
         deserialize_with = "crate::brush_direction::present"
     )]
     direction_dynamics: Option<crate::brush_direction::DirectionParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_source_matrix::present"
+    )]
+    source_matrix: Option<crate::brush_source_matrix::SourceMatrixParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -238,7 +244,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=31) {
+    if !matches!(state.version, 1..=32) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -392,6 +398,11 @@ fn decode_inner(
                 "direction dynamics requires state29".into(),
             ));
         }
+        if row.source_matrix.is_some() && state.version < 32 {
+            return Err(Error::Unsupported(
+                "dynamics source matrix requires state32".into(),
+            ));
+        }
         let dual = if let Some(d) = row.dual_brush {
             if d.has_color() && state.version < 16 {
                 return Err(Error::Unsupported("dual-color requires state16".into()));
@@ -497,6 +508,7 @@ fn decode_inner(
         dynamics.tilt = row.tilt_dynamics.map(|p| p.core()).unwrap_or_default();
         dynamics.rotation = row.rotation_dynamics.map(|p| p.core()).unwrap_or_default();
         dynamics.direction = row.direction_dynamics.map(|p| p.core()).unwrap_or_default();
+        dynamics.matrix = row.source_matrix.map(|p| p.core()).unwrap_or_default();
         entries.push((
             row.id,
             row.name,
@@ -617,6 +629,12 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             Some(crate::brush_direction::DirectionParameters::from_core(
                 s.dynamics.direction.clone(),
             ))
+        } else {
+            None
+        };
+        let source_matrix = if !s.dynamics.matrix.is_default() {
+            version = version.max(32);
+            Some(crate::brush_source_matrix::SourceMatrixParameters::from_core(s.dynamics.matrix))
         } else {
             None
         };
@@ -767,6 +785,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             tilt_dynamics,
             rotation_dynamics,
             direction_dynamics,
+            source_matrix,
         });
     }
     if organization.is_some() {

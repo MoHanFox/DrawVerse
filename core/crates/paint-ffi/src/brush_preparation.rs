@@ -1257,6 +1257,7 @@ mod tests {
                     "texture-cover".into(),
                 ],
                 parameters: paint_io::vbr::Parameters {
+                    source_matrix: None,
                     diameter: 16.,
                     spacing: 0.02,
                     dab_opacity: 0.4,

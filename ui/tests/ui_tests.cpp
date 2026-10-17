@@ -468,6 +468,26 @@ private slots:
         auto *toggle=findVisualItem(window->contentItem(),"settingsDirectionEnabled");QVERIFY(toggle);QVERIFY(QMetaObject::invokeMethod(library,"setDirectionDynamicsEnabled",Q_ARG(bool,true)));QTRY_VERIFY(toggle->property("checked").toBool());QVERIFY(library->directionDynamics().value("enabled").toBool());
         QVERIFY(library->setDirectionControl("size",QVariantList{QVariantList{0.,1.},QVariantList{1.,.2}},0.));QCOMPARE(library->directionSizeCurve().size(),2);QVERIFY(findVisualItem(window->contentItem(),"directionSizeEditor"));
     }
+    void dynamicsSourceMatrixPersistsPreviewAndReopen() {
+        QTemporaryDir temp;const auto path=temp.filePath("storage.ini");PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+        auto speed=library->speedDynamics();speed["enabled"]=true;auto size=speed.value("size").toMap();size["curve"]=QVariantList{QVariantList{0.,1.},QVariantList{1.,.3}};size["minimum"]=0.;speed["size"]=size;QVERIFY(library->setSpeedDynamics(speed));
+        QVERIFY(library->setDynamicsSource("size","speed"));QVERIFY(library->setDynamicsSource("flow","distance"));QVERIFY(library->setDynamicsSource("opacity","tilt"));
+        const auto matrix=library->dynamicsSourceMatrix();QCOMPARE(QJsonDocument::fromJson(library->snapshot()).object().value("version").toInt(),32);
+        library->setRadius(6);library->setOpacity(.5);library->setPressureSize(false);library->setPressureFlow(false);library->requestPreview(library->selectedId());QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);
+        const auto saved=[&]{QSettings settings(path,QSettings::IniFormat);const auto state=QJsonDocument::fromJson(settings.value("brushes/state").toByteArray()).object();for(const auto &r:state.value("presets").toArray())if(r.toObject().value("id").toString()==library->selectedId())return r.toObject().value("sourceMatrix").toObject()==QJsonObject::fromVariantMap(matrix);return false;};QTRY_VERIFY(saved());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready());QCOMPARE(reopened.brushLibrary()->dynamicsSourceMatrix(),matrix);
+    }
+    void dynamicsSourceMatrixQmlDropdowns() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+        for(const auto &value:workspace.leftGroups()+workspace.rightGroups()){const auto group=value.toMap();if(group.value("panels").toStringList().contains("brush-settings"))workspace.setActive(group.value("id").toString(),"brush-settings");}
+        QQuickItem *category=nullptr;QTRY_VERIFY((category=findVisualItem(window->contentItem(),"brushCategory:6")));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,category->mapToScene({category->width()/2,category->height()/2}).toPoint());QTest::qWait(100);
+        auto *size=findVisualItem(window->contentItem(),"settingsDynamicsSizeSource");auto *flow=findVisualItem(window->contentItem(),"settingsDynamicsFlowSource");auto *opacity=findVisualItem(window->contentItem(),"settingsDynamicsOpacitySource");QVERIFY(size);QVERIFY(flow);QVERIFY(opacity);
+        QCOMPARE(size->property("count").toInt(),7);QCOMPARE(flow->property("count").toInt(),7);QCOMPARE(opacity->property("count").toInt(),7);
+        QVERIFY(QMetaObject::invokeMethod(library,"setDynamicsSource",Q_ARG(QString,"size"),Q_ARG(QString,"rotation")));QTRY_COMPARE(size->property("currentIndex").toInt(),5);
+        QVERIFY(QMetaObject::invokeMethod(library,"setDynamicsSource",Q_ARG(QString,"flow"),Q_ARG(QString,"distance")));QTRY_COMPARE(flow->property("currentIndex").toInt(),3);
+        QVERIFY(QMetaObject::invokeMethod(library,"setDynamicsSource",Q_ARG(QString,"opacity"),Q_ARG(QString,"direction")));QTRY_COMPARE(opacity->property("currentIndex").toInt(),6);
+    }
     void advancedTextureModesPresetsAndReopen() {
         BrushLibrary library;auto texture=library.texture();texture["mode"]="vividLight";QVERIFY(library.setTexture(texture));auto state=library.snapshot();QCOMPARE(QJsonDocument::fromJson(state).object().value("version").toInt(),31);BrushLibrary restored;QVERIFY(restored.restore(state));QCOMPARE(restored.texture().value("mode").toString(),QString("vividLight"));
     }

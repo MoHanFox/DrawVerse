@@ -242,3 +242,7 @@ wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明
 ## VBR1.35：笔触方向动态
 
 `parameters.directionDynamics` 使用 `direction-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线。输入为输入段运动方向角按整圈归一化到0..1，无位移时保持恒等；关闭状态完整保留。对象要求 `drawverse.brush`、behavior24、`direction-dynamics` 能力和 manifest minor35，state29；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-direction-v1.35.schema.json`。第二笔尖自身仍不接受方向配置，ABR方向/渐隐来源和通用动态矩阵继续后续。
+
+## VBR1.38：动态来源矩阵
+
+`parameters.sourceMatrix` 使用 `source-matrix-v1`，必填 `size`、`flow`、`opacity` 三个来源；每个来源为 `all`、`speed`、`tangent`、`distance`、`tilt`、`rotation` 或 `direction`。`all` 表示六来源因子相乘，单选来源只取该通道对应曲线。对象要求 `drawverse.brush`、behavior25、`dynamics-source-matrix` 能力和 manifest minor38，state32；默认矩阵不写入，旧版本字节保持，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-dynamics-matrix-v1.38.schema.json`。第二笔尖不携带独立矩阵，ABR动态来源映射继续后续。

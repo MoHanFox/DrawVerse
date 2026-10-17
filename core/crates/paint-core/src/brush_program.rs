@@ -4,7 +4,8 @@ use crate::{
         CompiledRotationDynamics, CompiledSpeedDynamics, CompiledTangentDynamics,
         CompiledTiltDynamics,
     },
-    AngleControl, Brush, BrushDynamics, BrushMask, Error, InputPoint, Result, TipDynamics,
+    AngleControl, Brush, BrushDynamics, BrushMask, DynamicsSource, Error, InputPoint, Result,
+    TipDynamics,
 };
 use std::sync::Arc;
 
@@ -109,6 +110,7 @@ pub struct BrushProgram {
     tilt: Option<CompiledTiltDynamics>,
     rotation: Option<CompiledRotationDynamics>,
     direction: Option<CompiledDirectionDynamics>,
+    matrix: crate::DynamicsSourceMatrix,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -314,6 +316,7 @@ impl BrushProgram {
             tilt: definition.dynamics.tilt.compile(),
             rotation: definition.dynamics.rotation.compile(),
             direction: definition.dynamics.direction.compile(),
+            matrix: definition.dynamics.matrix,
         })
     }
 
@@ -346,14 +349,25 @@ impl BrushProgram {
             .as_ref()
             .map_or((1., 1., 1.), |compiled| compiled.factors(tangent))
     }
-    pub(crate) fn dynamics_factors(&self, speed: f32, tangent: f32) -> (f32, f32, f32) {
-        let speed = self.speed_factors(speed);
-        let tangent = self.tangent_factors(tangent);
-        (
-            speed.0 * tangent.0,
-            speed.1 * tangent.1,
-            speed.2 * tangent.2,
-        )
+    pub(crate) fn distance_factors(&self, distance: f32) -> (f32, f32, f32) {
+        self.distance
+            .as_ref()
+            .map_or((1., 1., 1.), |compiled| compiled.factors(distance))
+    }
+    pub(crate) fn tilt_factors(&self, tilt: f32) -> (f32, f32, f32) {
+        self.tilt
+            .as_ref()
+            .map_or((1., 1., 1.), |compiled| compiled.factors(tilt))
+    }
+    pub(crate) fn rotation_factors(&self, rotation: f32) -> (f32, f32, f32) {
+        self.rotation
+            .as_ref()
+            .map_or((1., 1., 1.), |compiled| compiled.factors(rotation))
+    }
+    pub(crate) fn direction_factors(&self, direction: f32) -> (f32, f32, f32) {
+        self.direction
+            .as_ref()
+            .map_or((1., 1., 1.), |compiled| compiled.factors(direction))
     }
     pub(crate) fn factor_all(
         &self,
@@ -364,27 +378,28 @@ impl BrushProgram {
         rotation: f32,
         direction: f32,
     ) -> (f32, f32, f32) {
-        let base = self.dynamics_factors(speed, tangent);
-        let distance = self
-            .distance
-            .as_ref()
-            .map_or((1., 1., 1.), |compiled| compiled.factors(distance));
-        let tilt = self
-            .tilt
-            .as_ref()
-            .map_or((1., 1., 1.), |compiled| compiled.factors(tilt));
-        let rotation = self
-            .rotation
-            .as_ref()
-            .map_or((1., 1., 1.), |compiled| compiled.factors(rotation));
-        let direction = self
-            .direction
-            .as_ref()
-            .map_or((1., 1., 1.), |compiled| compiled.factors(direction));
+        let to_array = |(size, flow, opacity): (f32, f32, f32)| [size, flow, opacity];
+        let factors = [
+            to_array(self.speed_factors(speed)),
+            to_array(self.tangent_factors(tangent)),
+            to_array(self.distance_factors(distance)),
+            to_array(self.tilt_factors(tilt)),
+            to_array(self.rotation_factors(rotation)),
+            to_array(self.direction_factors(direction)),
+        ];
+        let pick = |source: DynamicsSource, channel: usize| match source {
+            DynamicsSource::All => factors.iter().map(|f| f[channel]).product(),
+            DynamicsSource::Speed => factors[0][channel],
+            DynamicsSource::Tangent => factors[1][channel],
+            DynamicsSource::Distance => factors[2][channel],
+            DynamicsSource::Tilt => factors[3][channel],
+            DynamicsSource::Rotation => factors[4][channel],
+            DynamicsSource::Direction => factors[5][channel],
+        };
         (
-            base.0 * distance.0 * tilt.0 * rotation.0 * direction.0,
-            base.1 * distance.1 * tilt.1 * rotation.1 * direction.1,
-            base.2 * distance.2 * tilt.2 * rotation.2 * direction.2,
+            pick(self.matrix.size(), 0),
+            pick(self.matrix.flow(), 1),
+            pick(self.matrix.opacity(), 2),
         )
     }
     pub(crate) fn direction_unit(direction: Option<f64>) -> f32 {
@@ -615,4 +630,62 @@ fn conservative_circle_bounds_preserve_the_original_hypot_formula() {
             }
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn source_matrix_selects_dynamics_per_target_channel() {
+    use crate::{
+        DistanceDynamics, DynamicsSource, DynamicsSourceMatrix, PressureControl, PressureCurve,
+        RotationDynamics, SpeedDynamics, TangentDynamics, TiltDynamics,
+    };
+    let control = |value| {
+        PressureControl::new(PressureCurve::new(vec![(0., 1.), (1., value)]).unwrap(), 0.).unwrap()
+    };
+    let definition = BrushDefinition {
+        dynamics: BrushDynamics {
+            speed: SpeedDynamics::new(true, 1000., control(0.2), control(0.3), control(0.4))
+                .unwrap(),
+            tangent: TangentDynamics::new(true, control(0.5), control(0.6), control(0.7)),
+            distance: DistanceDynamics::new(true, 1000., control(0.8), control(0.9), control(0.1))
+                .unwrap(),
+            tilt: TiltDynamics::new(true, control(0.11), control(0.12), control(0.13)),
+            rotation: RotationDynamics::new(true, control(0.14), control(0.15), control(0.16)),
+            direction: crate::DirectionDynamics::new(
+                true,
+                control(0.17),
+                control(0.18),
+                control(0.19),
+            ),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let program = BrushProgram::compile(definition.clone()).unwrap();
+    let all = program.factor_all(1000., 1., 1000., 1., 1., 1.);
+    let expected = (
+        0.2 * 0.5 * 0.8 * 0.11 * 0.14 * 0.17,
+        0.3 * 0.6 * 0.9 * 0.12 * 0.15 * 0.18,
+        0.4 * 0.7 * 0.1 * 0.13 * 0.16 * 0.19,
+    );
+    for (actual, expected) in [
+        (all.0, expected.0),
+        (all.1, expected.1),
+        (all.2, expected.2),
+    ] {
+        assert!((actual - expected).abs() < 1e-6);
+    }
+
+    let mut selected = definition;
+    selected.dynamics.matrix = DynamicsSourceMatrix::new(
+        DynamicsSource::Distance,
+        DynamicsSource::Tilt,
+        DynamicsSource::Rotation,
+    );
+    let factors = BrushProgram::compile(selected)
+        .unwrap()
+        .factor_all(1000., 1., 1000., 1., 1., 1.);
+    assert!((factors.0 - 0.8).abs() < 1e-6);
+    assert!((factors.1 - 0.12).abs() < 1e-6);
+    assert!((factors.2 - 0.16).abs() < 1e-6);
 }

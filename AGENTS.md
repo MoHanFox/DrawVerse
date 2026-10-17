@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新动态来源矩阵：`docs/brush-dynamics-matrix-design.md` / `docs/brush-dynamics-matrix-validation.md`；尺寸、流量和整笔不透明度各自选择All或速度/切向压力/距离/倾斜/旋转/方向之一，默认All保持六来源相乘；state32/VBR1.38/behavior25及`dynamics-source-matrix`、Qt三下拉/预览/保存重开、核心与IO最小测试和Windows Release Qt两项通过。ABR动态来源、实体设备手感、跨平台与GPU仍待后续。
+
 - 最新纹理模式补全：`docs/brush-texture-mode-design.md` / `docs/brush-texture-mode-validation.md`；在已有16种基础上新增`vividLight`、`linearLight`、`pinLight`、`divide`，总计20种覆盖率组合，state31/VBR1.37门控；ABR `BlnM` 对应代码及Qt下拉/状态重开/纹理与ABR回归通过，严格Clippy通过。Dissolve/Hue/Saturation/Color/Luminosity、16位笔尖和完整PS像素核对仍待后续。
 
 - 最新高级纹理模式：`docs/brush-texture-mode-design.md` / `docs/brush-texture-mode-validation.md`；新增`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`八种覆盖率组合，总计16种，state30/VBR1.36门控；ABR `BlnM` 的`linearBurn`/`CDdg`/`linearDodge`/`Ovrl`/`SftL`/`HrdL`/`Xclu`/`hardMix`已映射，真实ABR导入、Qt下拉/状态重开、严格Clippy通过。其他未定义模式、16位笔尖和完整PS像素核对仍待后续。

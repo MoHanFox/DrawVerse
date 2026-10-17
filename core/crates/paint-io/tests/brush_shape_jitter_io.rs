@@ -51,6 +51,7 @@ fn state9_saves_shape_separately_and_old_pressure_payload_rejects_it() {
                     tilt_dynamics: None,
                     rotation_dynamics: None,
                     direction_dynamics: None,
+                    source_matrix: None,
                     diameter: 24.,
                     spacing: 0.15,
                     dab_opacity: 1.,

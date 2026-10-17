@@ -228,6 +228,15 @@ public:
     Q_INVOKABLE bool setDirectionDynamicsEnabled(bool enabled);
     Q_INVOKABLE bool setDirectionControl(const QString &target, QVariantList points, qreal minimum);
     Q_INVOKABLE bool resetDirectionControl(const QString &target);
+    Q_PROPERTY(QVariantMap dynamicsSourceMatrix READ dynamicsSourceMatrix NOTIFY settingsChanged)
+    QVariantMap dynamicsSourceMatrix() const;
+    Q_PROPERTY(QString dynamicsSizeSource READ dynamicsSizeSource NOTIFY settingsChanged)
+    QString dynamicsSizeSource() const;
+    Q_PROPERTY(QString dynamicsFlowSource READ dynamicsFlowSource NOTIFY settingsChanged)
+    QString dynamicsFlowSource() const;
+    Q_PROPERTY(QString dynamicsOpacitySource READ dynamicsOpacitySource NOTIFY settingsChanged)
+    QString dynamicsOpacitySource() const;
+    Q_INVOKABLE bool setDynamicsSource(const QString &target, const QString &source);
     Q_INVOKABLE bool setWetMix(QVariantMap data);
     QVariantMap smoothing() const;
     Q_INVOKABLE bool setSmoothing(QVariantMap data);
@@ -365,7 +374,7 @@ private:
     bool m_cursorSimple=false,m_cursorComposite=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation,direction;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation,direction,matrix;};
     static QJsonObject presetRow(const Preset &preset,int &version);
     static QJsonObject exportPreset(const Preset &preset,bool includeSource,const QString &id);
     QVariantMap tangentControl(const QString &target) const;

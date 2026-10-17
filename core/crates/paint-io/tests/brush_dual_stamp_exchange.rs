@@ -57,6 +57,7 @@ fn package() -> Package {
                 tilt_dynamics: None,
                 rotation_dynamics: None,
                 direction_dynamics: None,
+                source_matrix: None,
                 diameter: 12.,
                 spacing: 0.25,
                 dab_opacity: 0.7,

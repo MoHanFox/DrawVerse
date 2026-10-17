@@ -79,6 +79,9 @@ ColumnLayout {
     function setDirectionDynamicsEnabled(enabled){return root.library.setDirectionDynamicsEnabled(enabled)}
     function setDirectionControl(target,points,minimum){return root.library.setDirectionControl(target,points,minimum)}
     function resetDirectionControl(target){return root.library.resetDirectionControl(target)}
+    readonly property var dynamicsSources:["all","speed","tangent","distance","tilt","rotation","direction"]
+    function dynamicsSourceIndex(value){const index=root.dynamicsSources.indexOf(value);return index<0?0:index}
+    function setDynamicsSource(target,index){return root.library.setDynamicsSource(target,root.dynamicsSources[index])}
     onCategoryChanged:if(category===8)inspectSource()
     readonly property real contentHeight:360
     implicitHeight:contentHeight
@@ -278,6 +281,19 @@ ColumnLayout {
                     visible:root.category===6;Layout.fillWidth:true;spacing:5
                     TipField {title:"不透明度";field:"opacity";from:0;to:100;factor:100;unit:"%";help:"绘画与擦除的整笔不透明度上限；涂抹仍使用强度语义。";sliderName:"settingsBrushOpacity"}
                     TipField {title:"流量";field:"flow";from:0;to:100;factor:100;unit:"%";help:"每次印章的沉积强度；重叠会逐步累积。"}
+                    Label {text:"动态来源";color:Theme.text;font.pixelSize:10}
+                    RowLayout {Layout.fillWidth:true
+                        Label {text:"尺寸";color:Theme.muted;font.pixelSize:9;Layout.preferredWidth:30}
+                        CompactComboBox {objectName:"settingsDynamicsSizeSource";Layout.fillWidth:true;model:["全部来源相乘","速度","切向压力","笔触距离","倾斜幅度","笔旋转","笔触方向"];currentIndex:root.dynamicsSourceIndex(root.library.dynamicsSizeSource);onActivated:{if(!root.setDynamicsSource("size",currentIndex))currentIndex=root.dynamicsSourceIndex(root.library.dynamicsSizeSource)}tooltip:"选择尺寸响应的动态来源；全部来源表示六个来源的曲线相乘，保持旧笔刷行为。"}
+                    }
+                    RowLayout {Layout.fillWidth:true
+                        Label {text:"流量";color:Theme.muted;font.pixelSize:9;Layout.preferredWidth:30}
+                        CompactComboBox {objectName:"settingsDynamicsFlowSource";Layout.fillWidth:true;model:["全部来源相乘","速度","切向压力","笔触距离","倾斜幅度","笔旋转","笔触方向"];currentIndex:root.dynamicsSourceIndex(root.library.dynamicsFlowSource);onActivated:{if(!root.setDynamicsSource("flow",currentIndex))currentIndex=root.dynamicsSourceIndex(root.library.dynamicsFlowSource)}tooltip:"选择流量响应的动态来源；只使用所选来源的流量曲线。"}
+                    }
+                    RowLayout {Layout.fillWidth:true
+                        Label {text:"透明";color:Theme.muted;font.pixelSize:9;Layout.preferredWidth:30}
+                        CompactComboBox {objectName:"settingsDynamicsOpacitySource";Layout.fillWidth:true;model:["全部来源相乘","速度","切向压力","笔触距离","倾斜幅度","笔旋转","笔触方向"];currentIndex:root.dynamicsSourceIndex(root.library.dynamicsOpacitySource);onActivated:{if(!root.setDynamicsSource("opacity",currentIndex))currentIndex=root.dynamicsSourceIndex(root.library.dynamicsOpacitySource)}tooltip:"选择整笔不透明度上限响应的动态来源；只使用所选来源的不透明度曲线。"}
+                    }
                     CompactCheckBox {objectName:"settingsPressureOpacity";text:"不透明度压感";checked:root.library.pressureOpacity;font.pixelSize:10;onToggled:root.library.pressureOpacity=checked;tooltip:"压力决定局部整笔不透明度上限；较低压力不会使已画出的颜色变浅。流量控制接近上限的速度。"}
                     PressureCurveEditor {library:root.library;target:"opacity"}
                     CompactCheckBox {objectName:"settingsPressureFlow";text:"流量压感";checked:root.library.pressureFlow;font.pixelSize:10;onToggled:root.library.pressureFlow=checked;tooltip:"使用笔压力控制绘画与擦除流量；涂抹强度压感由涂抹工具单独控制。"}

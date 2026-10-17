@@ -29,6 +29,7 @@ fn package(sizing: DualSizing, enabled: bool) -> Package {
                 tilt_dynamics: None,
                 rotation_dynamics: None,
                 direction_dynamics: None,
+                source_matrix: None,
                 diameter: 12.,
                 spacing: 0.04,
                 dab_opacity: 0.4,

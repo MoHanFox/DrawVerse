@@ -49,6 +49,7 @@ fn package() -> Package {
                 shape_jitter: None,
                 color_dynamics: None,
                 tip_dynamics: None,
+                source_matrix: None,
                 diameter: 16.,
                 spacing: 0.01,
                 dab_opacity: 1.,

@@ -226,3 +226,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-18高级纹理模式阶段：纹理新增`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`八种覆盖率组合，总计十六种；要求state30/VBR1.36，旧模式字节保持。ABR `BlnM` 的对应代码已映射，Qt模式下拉和状态/VBR往返通过，见[设计](brush-texture-mode-design.md)及[验收](brush-texture-mode-validation.md)。其他未定义模式、16位笔尖和完整PS像素核对仍未完成。
 
 2026-10-18纹理模式补全阶段：再新增`vividLight`、`linearLight`、`pinLight`、`divide`四种覆盖率组合，总计二十种；要求state31/VBR1.37，旧模式字节保持。ABR `BlnM` 的`vividLight`/`linearLight`/`pinLight`/`blendDivide`已映射，Qt下拉与状态/VBR往返通过，见[设计](brush-texture-mode-design.md)及[验收](brush-texture-mode-validation.md)。Dissolve/Hue/Saturation/Color/Luminosity等随机或颜色模式、16位笔尖和完整PS像素核对仍未完成。
+
+2026-10-18动态来源矩阵阶段：尺寸、流量和整笔不透明度各自选择`All`或速度/切向压力/距离/倾斜/旋转/方向之一；默认`All`继续把六来源因子相乘，单来源只读取该通道曲线。主笔尖与配对第二笔尖共用矩阵，第二笔尖自身继续拒绝非默认矩阵。非默认对象写入state32/VBR1.38/behavior25及`dynamics-source-matrix`，Qt“传递”页提供三个来源下拉和真实预览；核心选择、状态/VBR往返及两项Qt最小测试通过，见[设计](brush-dynamics-matrix-design.md)及[验收](brush-dynamics-matrix-validation.md)。ABR动态来源映射、实体设备手感、跨平台和GPU仍待后续。

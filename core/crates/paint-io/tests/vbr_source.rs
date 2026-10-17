@@ -151,6 +151,7 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                         pressure.tip = Default::default();
                         paint_io::brush_pressure::PressureParameters::from_core(&pressure)
                     }),
+                    source_matrix: None,
                     diameter: s.diameter,
                     spacing: s.spacing,
                     dab_opacity: s.opacity,

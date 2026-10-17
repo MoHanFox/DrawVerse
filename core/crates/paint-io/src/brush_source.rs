@@ -223,6 +223,7 @@ impl SourceArchive {
                 tilt_dynamics: None,
                 rotation_dynamics: None,
                 direction_dynamics: None,
+                source_matrix: None,
                 diameter: settings.diameter,
                 spacing: settings.spacing,
                 dab_opacity: settings.opacity,

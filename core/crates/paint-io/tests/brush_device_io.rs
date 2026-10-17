@@ -49,6 +49,7 @@ fn package(settings: &BrushSettings) -> Package {
                 scatter_dynamics: None,
                 shape_jitter: None,
                 color_dynamics: None,
+                source_matrix: None,
                 diameter: settings.diameter,
                 spacing: settings.spacing,
                 dab_opacity: settings.opacity,
