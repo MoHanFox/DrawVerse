@@ -38,3 +38,30 @@ fn repeated_opaque_stationary_dabs_do_not_change_pixels_or_history() {
     }
     assert_eq!(repeated.history_depth(), (1, 0));
 }
+
+#[test]
+fn repeated_opaque_eraser_dabs_do_not_change_pixels_or_history() {
+    let point = InputPoint::new(16.5, 16.5, 1.);
+    let brush = || {
+        let mut definition = brush();
+        definition.brush.mode = BrushMode::Erase;
+        definition
+    };
+    let mut single = Document::new(32, 32).unwrap();
+    single.initialize_white_background().unwrap();
+    single.begin_brush_stroke(brush(), point).unwrap();
+    single.end_stroke().unwrap();
+    let mut repeated = Document::new(32, 32).unwrap();
+    repeated.initialize_white_background().unwrap();
+    repeated.begin_brush_stroke(brush(), point).unwrap();
+    for _ in 0..12 {
+        repeated.stroke_to(point).unwrap();
+    }
+    repeated.end_stroke().unwrap();
+    for y in 0..32 {
+        for x in 0..32 {
+            assert_eq!(repeated.pixel(x, y), single.pixel(x, y));
+        }
+    }
+    assert_eq!(repeated.history_depth(), (1, 0));
+}

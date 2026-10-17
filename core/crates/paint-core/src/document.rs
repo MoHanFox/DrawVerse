@@ -2489,11 +2489,10 @@ impl Document {
             && smudge.is_none()
             && !mask
             && !alpha_locked
-            && !erase
             && write_blend == crate::BlendMode::Normal
             && stroke.brush.opacity >= 1.
             && flow >= 1.
-            && stroke.color_sample.alpha() >= 1.
+            && (erase || stroke.color_sample.alpha() >= 1.)
             && !stroke.program.color.active()
             && stroke.taper.is_none();
         stroke.first_dab = false;

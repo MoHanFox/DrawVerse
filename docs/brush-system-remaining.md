@@ -4,7 +4,7 @@
 
 | 剩余项 | 功能与实际用途 | 当前边界/证据 |
 |---|---|---|
-| 密集/大笔刷进一步性能优化 | 在有界分页基础上测量并优化重印章、采样及像素开销，降低大笔刷延迟 | Document/Actor已接通原始输入续页、End/Cancel顺序和安全发布，普通不透明硬圆大笔刷已加入已覆盖像素跳过，固定基准中位数约1.33s降至0.37s且像素摘要一致；单印章8M及总输入512M/131072等预算仍保留，非不透明/复杂图片/湿混/实体输入的大范围优化仍待做。见brush-large-dense-performance-validation.md、brush-input-paging-actor-validation.md及brush-wet-field-performance-validation.md |
+| 密集/大笔刷进一步性能优化 | 在有界分页基础上测量并优化重印章、采样及像素开销，降低大笔刷延迟 | Document/Actor已接通原始输入续页、End/Cancel顺序和安全发布，普通不透明硬圆画笔和100%硬橡皮已加入已覆盖像素跳过，固定基准中位数约1.33s降至0.37s且像素摘要一致；单印章8M及总输入512M/131072等预算仍保留，非不透明/复杂图片/湿混/实体输入的大范围优化仍待做。见brush-large-dense-performance-validation.md、brush-input-paging-actor-validation.md及brush-wet-field-performance-validation.md |
 | ABR高级兼容与16位样本 | 更完整还原PS笔刷中的纹理、双笔刷、其他设备/渐隐控制；读取更多高位深笔尖来源 | 基础、压力/散布/颜色/形状/部分设备及有界8/16位纹理图案/八种覆盖模式（含`CBrn`）/亮度对比度/最低深度与深度动态/纹理来源快照与恢复已接，见abr-texture-validation.md；其他未定义纹理模式及其他启用能力仍未执行。16位笔尖raw/RLE和字节序/量化证据未齐，当前明确拒绝，见abr-16bit-investigation.md |
 | 扩展动态控制 | 用切向压力等驱动更多尺寸/流量/透明度通道 | 速度、切向压力和笔触距离动态已分别接入state24/25/26、VBR1.30/1.31/1.32及Qt曲线，基础压力、方向/旋转/倾斜、随机、距离起收笔及时间喷枪也已接；任意来源到任意参数的通用矩阵仍未接 |
 | VBR分组与笔刷包组织 | 导入导出保留文件夹、分组和顺序，方便管理大笔刷包 | Rust组织树/目录、state20/VBR1.24及整树副本映射、资源发布/目标目录原子合并、ABI1.54准备及1.55完整包读写交接已接；Qt state20 镜像、树显示、复制/删除组织保持、重启恢复、上下文菜单、拖放排序、完整范围导出及分组包副本树导入已接，见brush-groups-import-validation.md。旧入口有组明确拒绝。 |
