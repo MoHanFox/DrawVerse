@@ -129,6 +129,12 @@ struct Row {
         deserialize_with = "crate::brush_taper::present"
     )]
     stroke_taper: Option<crate::brush_taper::TaperParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_airbrush::present"
+    )]
+    airbrush: Option<crate::brush_airbrush::AirbrushParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -196,7 +202,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=22) {
+    if !matches!(state.version, 1..=23) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -311,6 +317,9 @@ fn decode_inner(
         if row.smoothing.is_some() && state.version < 14 {
             return Err(Error::Unsupported("smoothing requires state14".into()));
         }
+        if row.airbrush.is_some() && state.version < 23 {
+            return Err(Error::Unsupported("airbrush requires state23".into()));
+        }
         let dual = if let Some(d) = row.dual_brush {
             if d.has_color() && state.version < 16 {
                 return Err(Error::Unsupported("dual-color requires state16".into()));
@@ -420,6 +429,7 @@ fn decode_inner(
                     .unwrap_or_default(),
                 wet: row.wet_mix.map(|p| p.core()).unwrap_or_default(),
                 smoothing: row.smoothing.map(|p| p.core()).unwrap_or_default(),
+                airbrush: row.airbrush.map(|p| p.core()).unwrap_or_default(),
                 texture,
                 dual,
                 dynamics,
@@ -473,6 +483,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
                 version = version.max(19);
             }
             Some(crate::brush_wet::WetParameters::from_core(s.wet))
+        } else {
+            None
+        };
+        let airbrush = if !s.airbrush.is_default() {
+            version = version.max(23);
+            Some(crate::brush_airbrush::AirbrushParameters::from_core(
+                s.airbrush,
+            ))
         } else {
             None
         };
@@ -612,6 +630,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             smoothing,
             wet_mix,
             stroke_taper,
+            airbrush,
         });
     }
     if organization.is_some() {

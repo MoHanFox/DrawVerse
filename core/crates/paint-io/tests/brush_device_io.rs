@@ -39,6 +39,7 @@ fn package(settings: &BrushSettings) -> Package {
             dual_brush: None,
             source_resource: None,
             parameters: Parameters {
+                airbrush: None,
                 scatter_dynamics: None,
                 shape_jitter: None,
                 color_dynamics: None,

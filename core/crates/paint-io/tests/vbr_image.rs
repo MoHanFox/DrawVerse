@@ -35,6 +35,7 @@ fn package(resource: Option<String>) -> Package {
             tip_resource: resource,
             source_resource: None,
             parameters: Parameters {
+                airbrush: None,
                 scatter_dynamics: None,
                 shape_jitter: None,
                 color_dynamics: None,

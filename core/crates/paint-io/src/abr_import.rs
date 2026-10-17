@@ -75,6 +75,7 @@ impl ImportBatch {
                             s,
                             p.converter_version,
                         ),
+                        airbrush: None,
                         diameter: s.diameter,
                         spacing: s.spacing,
                         dab_opacity: s.opacity,

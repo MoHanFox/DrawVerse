@@ -69,6 +69,7 @@ fn package(s: &BrushSettings) -> Package {
             dual_brush: None,
             source_resource: None,
             parameters: Parameters {
+                airbrush: None,
                 diameter: s.diameter,
                 spacing: s.spacing,
                 dab_opacity: s.opacity,

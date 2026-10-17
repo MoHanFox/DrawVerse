@@ -1120,6 +1120,7 @@ fn convert_inner<'a>(
             smoothing: Default::default(),
             texture: Default::default(),
             dual: Default::default(),
+            airbrush: Default::default(),
             dynamics: Default::default(),
             diameter,
             spacing,

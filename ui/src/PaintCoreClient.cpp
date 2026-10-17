@@ -25,7 +25,7 @@
 Q_DECLARE_METATYPE(PaintSessionInfo)
 Q_DECLARE_METATYPE(PaintFileJobInfo)
 namespace {
-enum Operation { New = 1, Begin, Move, End, Cancel, Undo, Redo, Add, Remove, Select, Properties, NewWhite, AddMask };
+enum Operation { New = 1, Begin, Move, End, Cancel, Undo, Redo, Add, Remove, Select, Properties, NewWhite, AddMask, AirbrushTick };
 template<class T> T dto() { T value{}; value.struct_size = sizeof(T); return value; }
 float linear(float v) { return v <= .04045f ? v / 12.92f : std::pow((v + .055f) / 1.055f, 2.4f); }
 QString immediateError(PaintStatus status) {
@@ -71,8 +71,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 56) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.56 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 57) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.57 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -102,7 +102,7 @@ public:
         inspectStorage();
         auto caps = dto<PaintCapabilities>();
         if (!check(paint_core_capabilities(m_core, &caps))) return;
-        constexpr uint64_t required = PAINT_FEATURE_BRUSH_GROUP_STATE | PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_COLOR_INTERLEAVED | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
+        constexpr uint64_t required = PAINT_FEATURE_BRUSH_GROUP_STATE | PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_COLOR_INTERLEAVED | PAINT_FEATURE_AIRBRUSH | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
         if ((caps.features & (required | PAINT_FEATURE_SELECTION)) != (required | PAINT_FEATURE_SELECTION)) { emit failure(QStringLiteral("当前核心缺少异步视口或选区能力")); return; }
         auto desc = dto<PaintDocumentDesc>(); desc.width = 960; desc.height = 640;
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
@@ -601,6 +601,7 @@ public:
             if(!tip.value("strokeTaper").toMap().isEmpty()){row["strokeTaper"]=QJsonObject::fromVariantMap(tip.value("strokeTaper").toMap());state["version"]=18;}
             if(tip.value("wetMix").toMap().contains("dualColor"))state["version"]=19;
             if(tip.value("dualBrush").toMap().value("color").toMap().value("model").toString()=="interleaved-stamp-v1")state["version"]=std::max(state.value("version").toInt(),22);
+            const auto air=tip.value("airbrush").toMap();if(air.value("enabled").toBool() || (air.contains("intervalMs") && std::abs(air.value("intervalMs").toDouble()-50.)>1e-9))state["version"]=std::max(state.value("version").toInt(),23);
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state_wet_dual(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
@@ -681,6 +682,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(qGuiApp,&QGuiApplication::focusObjectChanged,this,[this]{emit layerShortcutsChanged();});
     connect(this,&PaintCoreClient::stateChanged,this,&PaintCoreClient::layerShortcutsChanged);
     m_brushLibrary=new BrushLibrary(this);
+    m_airbrushTimer=new QTimer(this);connect(m_airbrushTimer,&QTimer::timeout,this,&PaintCoreClient::airbrushTick);
     connect(m_brushLibrary,&BrushLibrary::activeColorsChanged,this,[this]{m_color=m_brushLibrary->foregroundColor();m_secondaryColor=m_brushLibrary->backgroundColor();emit brushChanged();});
     qRegisterMetaType<PaintSessionInfo>();
     qRegisterMetaType<PaintFileJobInfo>();
@@ -882,7 +884,7 @@ PaintCoreClient::~PaintCoreClient() {
 }
 void PaintCoreClient::shutdown() {
     if (m_closing) return;
-    m_closing = true; m_ready = false; m_drawing = false;
+    m_closing = true; m_ready = false; m_drawing = false;if(m_airbrushTimer)m_airbrushTimer->stop();
     if(m_hoverPose)paint_brush_pose_destroy(&m_hoverPose);if(m_strokePose)paint_brush_pose_destroy(&m_strokePose);
     emit stateChanged(); QMetaObject::invokeMethod(m_worker, &BackendWorker::stop, Qt::QueuedConnection);
 }
@@ -894,7 +896,7 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
     command.text_length = static_cast<uint64_t>(utf8.size());
     if (type == New || type == NewWhite) { command.width = static_cast<uint32_t>(id); command.height = static_cast<uint32_t>(amount); }
     if (type == Properties) { command.visible = flag ? 1 : 0; command.opacity = static_cast<float>(amount); }
-    if (type == Move || type == Begin) command.point = point(sample);
+    if (type == Move || type == AirbrushTick || type == Begin) command.point = point(sample);
     if (type == Begin) {
         if(!synchronizeBrushCatalog(m_brushLibrary->snapshot()))return false;
         command.stroke = dto<PaintStrokeDesc>(); // Layer 0 resolves active layer in execution order.
@@ -928,7 +930,7 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
         if (status != PAINT_OK) error = immediateError(status);
     }
     if (status != PAINT_OK) {
-        if ((type == Move || type == End) && (status == PAINT_LIMIT_EXCEEDED || status == PAINT_CANCELLED)) m_dropStroke = true;
+        if ((type == Move || type == AirbrushTick || type == End) && (status == PAINT_LIMIT_EXCEEDED || status == PAINT_CANCELLED)) m_dropStroke = true;
         showError(error); return false;
     }
     if (type == New || type == NewWhite) { m_pendingNew = sequence; m_ready = false; emit stateChanged(); }
@@ -1253,12 +1255,27 @@ bool PaintCoreClient::beginStroke(const InputSample &s) {
     const auto capturedDual=m_brushLibrary->dualBrush();const auto capturedColor=capturedDual.value("color").toMap();
     m_strokeSecondImageEligible=!m_eraser && (!m_smudgeTool || m_smudgeFingerPainting) && s.tool!=PAINT_TOOL_ERASER && capturedDual.value("enabled").toBool() && capturedColor.value("enabled").toBool() && capturedColor.value("overflow").toBool();
     m_strokeColor = m_smudgeTool && !m_smudgeFingerPainting ? QColor() : m_color;
+    const auto air= m_brushLibrary->airbrush();
+    m_airbrushEnabled=air.value("enabled").toBool() && !m_smudgeTool;
+    m_airbrushIntervalNs=quint64(qMax(1,qRound(air.value("intervalMs",50).toDouble()*1000000.)));
+    m_airbrushSample=s;m_airbrushTimestamp=s.timestamp;
+    if(m_airbrushEnabled){m_airbrushTimer->setInterval(qMax(1,qRound(air.value("intervalMs",50).toDouble())));m_airbrushTimer->start();}else m_airbrushTimer->stop();
     m_drawing = true;requestBrushCursorImages();emit stateChanged(); return true;
 }
 void PaintCoreClient::strokeTo(const InputSample &s) {
     if(!m_drawing || m_dropStroke)return;
-    if(m_liquifyActive){if(submitLiquifyDab(m_liquifyLast,s,std::clamp(int(m_liquifyClock.restart()),0,50)))m_liquifyLast=s;else m_dropStroke=true;}
-    else submit(Move,s);
+    InputSample adjusted=s;
+    if(m_airbrushEnabled && adjusted.timestamp<m_airbrushTimestamp)adjusted.timestamp=m_airbrushTimestamp;
+    m_airbrushSample=adjusted;
+    if(m_liquifyActive){if(submitLiquifyDab(m_liquifyLast,adjusted,std::clamp(int(m_liquifyClock.restart()),0,50)))m_liquifyLast=adjusted;else m_dropStroke=true;}
+    else submit(Move,adjusted);
+}
+void PaintCoreClient::airbrushTick() {
+    if(!m_drawing || m_dropStroke || m_liquifyActive || !m_airbrushEnabled)return;
+    InputSample sample=m_airbrushSample;
+    const quint64 next=m_airbrushTimestamp+m_airbrushIntervalNs;
+    sample.timestamp=next;
+    if(submit(AirbrushTick,sample))m_airbrushTimestamp=next;else m_dropStroke=true;
 }
 void PaintCoreClient::liquifyTick() {if(m_drawing && m_liquifyActive && !m_dropStroke && (m_liquifyTool==1 || m_liquifyTool==2)) {if(!submitLiquifyDab(m_liquifyLast,m_liquifyLast,std::clamp(int(m_liquifyClock.restart()),0,50)))m_dropStroke=true;m_liquifyClock.restart();}}
 void PaintCoreClient::endStroke() {
@@ -1267,13 +1284,13 @@ void PaintCoreClient::endStroke() {
     if (!m_dropStroke) submit(End);
     // A committed stroke is what makes the colour "recently used"; a cancelled one never shows up.
     if (!m_dropStroke && m_strokeColor.isValid()) m_brushLibrary->useColor(m_strokeColor.name(QColor::HexArgb));
-    m_drawing = false;if(m_strokePose)paint_brush_pose_clear(m_strokePose);m_strokePoseBound=false;m_strokeOutlineResource.clear();m_strokeOutlinePath.clear();m_strokeSecondOutlineResource.clear();m_strokeSecondOutlinePath.clear();m_strokeSecondOutlineReady=false;requestBrushOutlines();emit brushOutlineChanged();emit stateChanged();
+    m_airbrushTimer->stop();m_airbrushEnabled=false;m_drawing = false;if(m_strokePose)paint_brush_pose_clear(m_strokePose);m_strokePoseBound=false;m_strokeOutlineResource.clear();m_strokeOutlinePath.clear();m_strokeSecondOutlineResource.clear();m_strokeSecondOutlinePath.clear();m_strokeSecondOutlineReady=false;requestBrushOutlines();emit brushOutlineChanged();emit stateChanged();
 }
 void PaintCoreClient::cancelStroke() {
     if (!m_drawing) return;
     if(m_liquifyActive){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(Cancel);
-    m_dropStroke = true;m_drawing = false;if(m_strokePose)paint_brush_pose_clear(m_strokePose);m_strokePoseBound=false;m_strokeOutlineResource.clear();m_strokeOutlinePath.clear();m_strokeSecondOutlineResource.clear();m_strokeSecondOutlinePath.clear();m_strokeSecondOutlineReady=false;requestBrushOutlines();emit brushOutlineChanged();emit stateChanged();
+    m_airbrushTimer->stop();m_airbrushEnabled=false;m_dropStroke = true;m_drawing = false;if(m_strokePose)paint_brush_pose_clear(m_strokePose);m_strokePoseBound=false;m_strokeOutlineResource.clear();m_strokeOutlinePath.clear();m_strokeSecondOutlineResource.clear();m_strokeSecondOutlinePath.clear();m_strokeSecondOutlineReady=false;requestBrushOutlines();emit brushOutlineChanged();emit stateChanged();
 }
 void PaintCoreClient::undo() { if (m_ready && !m_drawing) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_UNDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_UNDO);else submit(Undo);} }
 void PaintCoreClient::redo() { if (m_ready && !m_drawing) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_REDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_REDO);else submit(Redo);} }

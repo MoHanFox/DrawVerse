@@ -20,6 +20,8 @@ struct DabCheckpoint {
     random_child: u32,
     dual_index: u64,
     dual_last: InputPoint,
+    airbrush_last_ns: u64,
+    airbrush_tick: bool,
     shape_sample: crate::brush_shape_jitter::ShapeSample,
     color_sample: Pixel,
     wet: Option<wet::WetStroke>,
@@ -38,6 +40,8 @@ impl DabCheckpoint {
             random_child: s.random_child,
             dual_index: s.dual_index,
             dual_last: s.dual_last,
+            airbrush_last_ns: s.airbrush_last_ns,
+            airbrush_tick: s.airbrush_tick,
             shape_sample: s.shape_sample,
             color_sample: s.color_sample,
             wet: s.wet.clone(),
@@ -55,6 +59,8 @@ impl DabCheckpoint {
         s.random_child = self.random_child;
         s.dual_index = self.dual_index;
         s.dual_last = self.dual_last;
+        s.airbrush_last_ns = self.airbrush_last_ns;
+        s.airbrush_tick = self.airbrush_tick;
         s.shape_sample = self.shape_sample;
         s.color_sample = self.color_sample;
         s.wet = self.wet;

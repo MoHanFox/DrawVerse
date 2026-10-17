@@ -28,6 +28,7 @@ fn package(s: &BrushSettings, id: &str) -> Package {
         texture: Some(TextureParameters::from_core(&s.texture).unwrap()),
         source_resource: None,
         parameters: Parameters {
+            airbrush: None,
             diameter: s.diameter,
             spacing: s.spacing,
             dab_opacity: s.opacity,

@@ -148,6 +148,11 @@ pub unsafe extern "C" fn paint_session_submit(
                 point.validate()?;
                 Operation::Move(point)
             }
+            PAINT_COMMAND_AIRBRUSH_TICK => {
+                let point = crate::point(pointers::read_sized(&command.point)?)?;
+                point.validate()?;
+                Operation::AirbrushTick(point)
+            }
             PAINT_COMMAND_END_STROKE => Operation::End,
             PAINT_COMMAND_CANCEL_STROKE => Operation::Cancel(false),
             PAINT_COMMAND_UNDO => Operation::Undo,

@@ -343,6 +343,15 @@ private slots:
         bool painted=false;for(int y=0;y<64;++y)for(int x=0;x<64;++x)if(client.frame().pixelColor(x,y).alpha()>0)painted=true;QVERIFY(painted);
         const auto saved=[&]{QSettings settings(path,QSettings::IniFormat);const auto state=QJsonDocument::fromJson(settings.value("brushes/state").toByteArray()).object();if(state.value("version").toInt()!=22)return false;for(const auto &r:state.value("presets").toArray())if(r.toObject().value("id").toString()==library->selectedId())return r.toObject().value("dualBrush").toObject().value("color").toObject().value("model").toString()=="interleaved-stamp-v1";return false;};QTRY_VERIFY(saved());
     }
+    void airbrushTicksWhileStationaryAndStopsAtStrokeEnd() {
+        QTemporaryDir temp;const auto path=temp.filePath("storage.ini");PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();client.setBrushColor(Qt::red);library->setRadius(6);library->setOpacity(.2);library->setSpacing(.5);library->setPressureSize(false);library->setPressureFlow(false);
+        QVERIFY(library->setAirbrush(QVariantMap{{"model","time-interval-v1"},{"enabled",true},{"intervalMs",20.}}));
+        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
+        InputSample start;start.position={32.5,32.5};start.pressure=1;start.tool=1;QVERIFY(client.beginStroke(start));QTest::qWait(140);client.endStroke();
+        QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.requestViewport(0,{0,0,64,64},{64,64});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(64,64));
+        QVERIFY(client.frame().pixelColor(32,32).alpha()>60);
+        const auto state=QJsonDocument::fromJson(library->snapshot()).object();QCOMPARE(state.value("version").toInt(),23);
+    }
     void dualSizingRetainedModesHighestVersionAndResetBaselines() {
         BrushLibrary library;auto data=library.dualBrush();QVariantMap sizing{{"model","relative-size-v1"},{"mode","relative"},{"diameterOffset",-8.},{"widthRule","fixed-width"}};data["sizing"]=sizing;QVERIFY(library.setDualBrush(data));data=library.dualBrush();
         const auto copy=library.saveCopy("相对尺寸基准");QVERIFY(!copy.isEmpty());auto edit=data;sizing["mode"]="independent";sizing["diameterOffset"]=17.;edit["sizing"]=sizing;QVERIFY(library.setDualBrush(edit));QVERIFY(library.resetPreset());QCOMPARE(library.dualBrush(),data);

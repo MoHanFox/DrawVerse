@@ -1,4 +1,10 @@
-# C ABI 1.56.0 契约
+# C ABI 1.57.0 契约
+
+## ABI 1.57 — 时间喷枪
+
+`PAINT_FEATURE_AIRBRUSH`（bit52）公布预设级 `time-interval-v1` 时间喷枪，state23/VBR1.29/behavior18。新增 `PAINT_COMMAND_AIRBRUSH_TICK`（kind14），复用既有 `PaintCommand.point` 与 `paint_session_submit`，不改变 DTO 或导出签名。调用方必须已在同一活动笔触上启用 airbrush，并提供与上次点相同的位置、单调递增时间戳和当前压力；Rust 只在该时间已跨过 `intervalMs` 时沉积一次，未到间隔为无操作。
+
+喷枪 tick 与普通输入共用 Document 事务、随机序号、动态、选区、图层锁、蒙版和单笔历史；低不透明度设置按当前文档像素逐 tick 累积，结束仍只有一条历史。只支持干画笔和橡皮；普通涂抹、湿混及其他不支持的组合返回明确错误。Qt 在真实绘画期间按预设间隔提交 tick，结束/取消/丢笔/关闭立即停止。自动预览仍固定白色及正常工具模式。
 
 ## ABI 1.56 — 逐印章双色模型
 

@@ -56,6 +56,7 @@ pub(crate) enum Operation {
         InputPoint,
     ),
     Move(InputPoint),
+    AirbrushTick(InputPoint),
     End,
     Cancel(bool),
     Undo,
@@ -302,7 +303,12 @@ impl Session {
     }
     pub fn submit(&self, operation: Operation) -> ApiResult<u64> {
         let mut ingress = self.ingress.lock().map_err(|_| ApiError::internal())?;
-        if ingress.aborted && matches!(operation, Operation::Move(_) | Operation::End) {
+        if ingress.aborted
+            && matches!(
+                operation,
+                Operation::Move(_) | Operation::AirbrushTick(_) | Operation::End
+            )
+        {
             return Err(ApiError::new(PAINT_CANCELLED, "stroke already rolled back"));
         }
         let sequence = ingress
@@ -314,8 +320,9 @@ impl Session {
             operation: operation.clone(),
         };
         let result = if matches!(operation, Operation::Cancel(_)) {
-            self.sender
-                .send_cancel(command, |c| matches!(c.operation, Operation::Move(_)))
+            self.sender.send_cancel(command, |c| {
+                matches!(c.operation, Operation::Move(_) | Operation::AirbrushTick(_))
+            })
         } else if matches!(operation, Operation::Liquify(PAINT_LIQUIFY_STROKE_END, _)) {
             // Reserve closure without discarding any deformation samples.
             self.sender.send_cancel(command, |_| false)
@@ -349,14 +356,19 @@ impl Session {
                 }
                 Ok(sequence)
             }
-            Err(SendError::Full) if matches!(operation, Operation::Move(_) | Operation::End) => {
+            Err(SendError::Full)
+                if matches!(
+                    operation,
+                    Operation::Move(_) | Operation::AirbrushTick(_) | Operation::End
+                ) =>
+            {
                 self.sender
                     .send_cancel(
                         Command {
                             sequence,
                             operation: Operation::Cancel(true),
                         },
-                        |c| matches!(c.operation, Operation::Move(_)),
+                        |c| matches!(c.operation, Operation::Move(_) | Operation::AirbrushTick(_)),
                     )
                     .map_err(send_error)?;
                 ingress.sequence = sequence;
@@ -688,11 +700,13 @@ impl Engine {
     fn execute(&mut self, command: Command) {
         let old_revision = self.document.revision();
         let finish = matches!(command.operation, Operation::End);
-        let stroke_command = matches!(command.operation, Operation::Move(_) | Operation::End)
-            || (matches!(
-                command.operation,
-                Operation::Begin(..) | Operation::BeginPrepared(..)
-            ) && !self.document.stroke_active());
+        let stroke_command = matches!(
+            command.operation,
+            Operation::Move(_) | Operation::AirbrushTick(_) | Operation::End
+        ) || (matches!(
+            command.operation,
+            Operation::Begin(..) | Operation::BeginPrepared(..)
+        ) && !self.document.stroke_active());
         let liquify_control = matches!(command.operation, Operation::Liquify(kind, _) if !matches!(kind,PAINT_LIQUIFY_DAB|PAINT_LIQUIFY_STROKE_BEGIN|PAINT_LIQUIFY_STROKE_END));
         let barrier = matches!(command.operation, Operation::TransformLayers(..))
             || matches!(command.operation,Operation::Transform(kind,_) if kind!=PAINT_TRANSFORM_UPDATE && kind!=PAINT_TRANSFORM_CHECKPOINT)
@@ -1000,6 +1014,12 @@ impl Engine {
                     return Err(ApiError::new(PAINT_CANCELLED, "stroke rolled back"));
                 }
                 self.document.begin_stroke_input(point)?;
+            }
+            Operation::AirbrushTick(point) => {
+                if self.aborted {
+                    return Err(ApiError::new(PAINT_CANCELLED, "stroke rolled back"));
+                }
+                self.document.airbrush_tick(point)?;
             }
             Operation::End => {
                 if self.aborted {

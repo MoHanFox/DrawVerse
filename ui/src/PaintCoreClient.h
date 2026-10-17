@@ -18,6 +18,7 @@
 
 struct PaintTransform;
 struct PaintBrushPose;
+class QTimer;
 struct BrushCursorPose {bool ready=false;qreal radius=0,angle=0,roundness=1;bool secondary=false;qreal secondaryRadius=0,secondaryAngle=0,secondaryRoundness=1;};
 struct InputSample {
     QPointF position;
@@ -341,6 +342,7 @@ public:
     void liquifyTick();
     bool beginStroke(const InputSample &sample);
     void strokeTo(const InputSample &sample);
+    void airbrushTick();
     void endStroke();
     Q_INVOKABLE void cancelStroke();
     Q_INVOKABLE void undo();
@@ -520,6 +522,11 @@ private:
     quint64 m_pendingLiquify=0,m_lastLiquifyDab=0;
     InputSample m_liquifyLast;
     QElapsedTimer m_liquifyClock;
+    QTimer *m_airbrushTimer=nullptr;
+    InputSample m_airbrushSample;
+    quint64 m_airbrushTimestamp=0;
+    quint64 m_airbrushIntervalNs=0;
+    bool m_airbrushEnabled=false;
     int m_historyLimit = 100;
     qreal m_spacing = .15;
     BrushLibrary *m_brushLibrary = nullptr;

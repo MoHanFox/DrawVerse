@@ -3,6 +3,7 @@ use std::sync::Arc;
 fn definition(mask: Arc<BrushMask>, angle: f32) -> BrushDefinition {
     BrushDefinition {
         taper: Default::default(),
+        airbrush: Default::default(),
         wet: Default::default(),
         smoothing: Default::default(),
         write_blend: Default::default(),

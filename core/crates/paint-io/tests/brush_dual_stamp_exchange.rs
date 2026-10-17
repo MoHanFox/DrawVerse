@@ -50,6 +50,7 @@ fn package() -> Package {
                 "dual-color-stamp".into(),
             ],
             parameters: Parameters {
+                airbrush: None,
                 diameter: 12.,
                 spacing: 0.25,
                 dab_opacity: 0.7,

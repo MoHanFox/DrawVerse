@@ -450,6 +450,8 @@ struct Stroke {
     dual_next: f64,
     dual_index: u64,
     dual_last: InputPoint,
+    airbrush_last_ns: u64,
+    airbrush_tick: bool,
     dual_coverage: BTreeMap<TileCoord, Arc<Tile>>,
     stamp_field: BTreeMap<TileCoord, Arc<Tile>>,
     wet_primary_field: BTreeMap<TileCoord, Arc<Tile>>,
@@ -1361,6 +1363,8 @@ impl Document {
             dual_next,
             dual_index: 0,
             dual_last: first,
+            airbrush_last_ns: first.timestamp_ns,
+            airbrush_tick: false,
             dual_coverage: BTreeMap::new(),
             stamp_field: BTreeMap::new(),
             wet_primary_field: BTreeMap::new(),
@@ -1434,6 +1438,80 @@ impl Document {
             }
         }
         result
+    }
+
+    /// Deposit one stationary airbrush tick. The caller supplies a monotonically
+    /// increasing timestamp while the pointer position remains unchanged.
+    pub fn airbrush_tick(&mut self, point: InputPoint) -> Result<()> {
+        if self.pending_input.is_some() {
+            return Err(Error::Busy);
+        }
+        point.validate()?;
+        let current = self.stroke.as_ref().ok_or(Error::NoStroke)?;
+        if !current.program.airbrush.enabled() {
+            return Err(Error::InvalidArgument("airbrush is not enabled"));
+        }
+        if current.wet.is_some() || matches!(current.brush.mode, BrushMode::Smudge { .. }) {
+            return Err(Error::InvalidArgument(
+                "airbrush requires dry paint or erase mode",
+            ));
+        }
+        if (point.x - current.last.x).hypot(point.y - current.last.y) > 1e-9 {
+            return Err(Error::InvalidArgument(
+                "airbrush tick must remain at the last point",
+            ));
+        }
+        if point.timestamp_ns < current.last.timestamp_ns {
+            return Err(Error::InvalidArgument("airbrush time must be monotonic"));
+        }
+        let interval = current.program.airbrush.interval_ns();
+        if point.timestamp_ns.saturating_sub(current.airbrush_last_ns) < interval {
+            return Ok(());
+        }
+        let secondary = current
+            .program
+            .dual
+            .as_ref()
+            .is_some_and(|d| d.step().is_some());
+        Self::validate_stroke_work(
+            current.brush,
+            &current.program,
+            1,
+            usize::from(secondary),
+            0,
+        )?;
+        let mut stroke = self.stroke.take().expect("checked active stroke");
+        stroke.last = point;
+        stroke.airbrush_last_ns = point.timestamp_ns;
+        stroke.airbrush_tick = true;
+        let mut changed = false;
+        if secondary {
+            if let Err(error) = self.secondary_dab(&mut stroke, point) {
+                self.restore_stroke(&stroke);
+                return Err(error);
+            }
+        }
+        match self.dab(&mut stroke, point) {
+            Ok(value) => changed |= value,
+            Err(error) => {
+                self.restore_stroke(&stroke);
+                return Err(error);
+            }
+        }
+        stroke.last_dab = point;
+        match self.render_taper(&mut stroke, false) {
+            Ok(value) => changed |= value,
+            Err(error) => {
+                self.restore_stroke(&stroke);
+                return Err(error);
+            }
+        }
+        if changed {
+            self.bump_revision();
+        }
+        stroke.airbrush_tick = false;
+        self.stroke = Some(stroke);
+        Ok(())
     }
     fn stroke_to_inner(&mut self, point: InputPoint) -> Result<()> {
         let current = self.stroke.as_ref().ok_or(Error::NoStroke)?;
@@ -2358,7 +2436,8 @@ impl Document {
         let skip_saturated = !self.reference_mix_path;
         #[cfg(not(test))]
         let skip_saturated = true;
-        let color_capped = capped && stroke.program.color.active() && !erase;
+        let airbrush_tick = stroke.airbrush_tick;
+        let color_capped = capped && stroke.program.color.active() && !erase && !airbrush_tick;
         let wet_color = (stroke.wet.is_some() && stroke.program.color.active()).then(|| {
             stroke.program.color.prepare(
                 stroke.brush.background_color,
@@ -2469,6 +2548,7 @@ impl Document {
                             && capped
                             && !paper_texture
                             && stroke.coverage_tool_stable
+                            && !stroke.program.airbrush.enabled()
                         {
                             let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
                             if prior_coverage.as_ref().map_or(0., |p| p[offset].alpha())
@@ -2541,8 +2621,18 @@ impl Document {
                         } else {
                             coverage * flow
                         }) * if paper_texture { texture_amount } else { 1. };
+                        if airbrush_tick {
+                            amount = coverage
+                                * flow
+                                * if SELECTED { selected } else { 1. }
+                                * stroke.brush.opacity
+                                * pressure_opacity.unwrap_or(1.)
+                                * if paper_texture { texture_amount } else { 1. };
+                        }
                         let mut paint_color = stroke.color_sample;
-                        let base = if let Some(wet) = &wet {
+                        let base = if airbrush_tick {
+                            before
+                        } else if let Some(wet) = &wet {
                             let (u, v) = geometry.normalized(
                                 x as f64 + 0.5 - px,
                                 y as f64 + 0.5 - py,

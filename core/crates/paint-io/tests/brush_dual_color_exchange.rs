@@ -37,6 +37,7 @@ fn package(color: DualColor, enabled: bool, path: bool) -> Package {
                 "dual-color-stroke".into(),
             ],
             parameters: Parameters {
+                airbrush: None,
                 diameter: 12.,
                 spacing: 0.25,
                 dab_opacity: 0.4,

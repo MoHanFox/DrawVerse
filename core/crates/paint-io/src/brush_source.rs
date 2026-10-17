@@ -216,6 +216,7 @@ impl SourceArchive {
                     settings,
                     preset.converter_version,
                 ),
+                airbrush: None,
                 diameter: settings.diameter,
                 spacing: settings.spacing,
                 dab_opacity: settings.opacity,

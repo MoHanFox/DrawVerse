@@ -38,6 +38,7 @@ fn package() -> Package {
             behavior_version: 2,
             required_capabilities: vec!["procedural-tip".into(), "pressure-curves".into()],
             parameters: Parameters {
+                airbrush: None,
                 scatter_dynamics: None,
                 shape_jitter: None,
                 color_dynamics: None,

@@ -58,6 +58,7 @@ ColumnLayout {
         if(inspectedSource.length>0)PaintClient.inspectBrushSource()
     }
     function setTextureField(key,value) {let data=Object.assign({},root.library.texture);data[key]=value;root.library.setTexture(data)}
+    function setAirbrushField(key,value) {let data=Object.assign({},root.library.airbrush);data[key]=value;root.library.setAirbrush(data)}
     onCategoryChanged:if(category===8)inspectSource()
     readonly property real contentHeight:360
     implicitHeight:contentHeight
@@ -262,6 +263,12 @@ ColumnLayout {
                     CompactCheckBox {objectName:"settingsPressureFlow";text:"流量压感";checked:root.library.pressureFlow;font.pixelSize:10;onToggled:root.library.pressureFlow=checked;tooltip:"使用笔压力控制绘画与擦除流量；涂抹强度压感由涂抹工具单独控制。"}
                     PressureCurveEditor {library:root.library;target:"flow"}
                     Label {text:"涂抹使用此流量曲线，由涂抹工具的强度压感开关控制。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
+                    CompactCheckBox {objectName:"settingsAirbrushEnabled";text:"喷枪";checked:root.library.airbrush.enabled;font.pixelSize:10;onToggled:root.setAirbrushField("enabled",checked);tooltip:"按住不动时按固定时间间隔持续沉积颜色；用于画笔和橡皮，涂抹与湿混不启用。"}
+                    RowLayout {Layout.fillWidth:true;visible:root.library.airbrush.enabled
+                        Label {text:"间隔";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
+                        CompactSpinBox {objectName:"settingsAirbrushInterval";from:1;to:1000;editable:true;implicitWidth:70;implicitHeight:20;value:Math.round(root.library.airbrush.intervalMs);onValueModified:root.setAirbrushField("intervalMs",value);tooltip:"同一位置两次自动沉积之间的时间，单位毫秒。"}
+                        Label {text:"ms";color:Theme.muted;font.pixelSize:9}
+                    }
                 }
                 ColumnLayout {
                     visible:root.category===7;Layout.fillWidth:true;spacing:10

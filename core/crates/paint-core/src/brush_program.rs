@@ -55,6 +55,7 @@ pub struct BrushDefinition {
     pub smoothing: crate::BrushSmoothing,
     pub wet: crate::WetSettings,
     pub taper: crate::StrokeTaper,
+    pub airbrush: crate::Airbrush,
     pub write_blend: crate::BlendMode,
 }
 
@@ -70,6 +71,7 @@ impl From<Brush> for BrushDefinition {
             smoothing: Default::default(),
             wet: Default::default(),
             taper: Default::default(),
+            airbrush: Default::default(),
             write_blend: Default::default(),
         }
     }
@@ -79,6 +81,7 @@ impl From<Brush> for BrushDefinition {
 #[derive(Clone, Debug)]
 pub struct BrushProgram {
     pub(crate) taper: crate::StrokeTaper,
+    pub(crate) airbrush: crate::Airbrush,
     pub(crate) smoothing: crate::BrushSmoothing,
     wet: crate::WetSettings,
     pub(crate) write_blend: crate::BlendMode,
@@ -278,6 +281,7 @@ impl BrushProgram {
         Ok(Self {
             wet: definition.wet,
             taper: definition.taper,
+            airbrush: definition.airbrush,
             smoothing: definition.smoothing,
             write_blend: definition.write_blend,
             tip: definition.tip,

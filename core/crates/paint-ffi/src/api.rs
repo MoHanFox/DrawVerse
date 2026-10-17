@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 56;
+pub const PAINT_ABI_MINOR: u32 = 57;
 pub const PAINT_FEATURE_BRUSH_GROUP_PACKAGE: u64 = 1125899906842624;
 pub const PAINT_FEATURE_BRUSH_GROUP_STATE: u64 = 562949953421312;
 pub const PAINT_FEATURE_BRUSH_CURSOR_IMAGE: u64 = 281474976710656;
@@ -655,6 +655,7 @@ pub struct PaintLayerAppearance {
 /// ABI 1.6 additive command kinds; old NEW_DOCUMENT remains transparent.
 pub const PAINT_COMMAND_NEW_WHITE_DOCUMENT: u32 = 12;
 pub const PAINT_COMMAND_ADD_MASK: u32 = 13;
+pub const PAINT_COMMAND_AIRBRUSH_TICK: u32 = 14;
 pub const PAINT_LAYER_MASK: u32 = 2;
 pub const PAINT_FEATURE_MASKS: u64 = 1024;
 pub const PAINT_FEATURE_CLIPPING: u64 = 2048;
@@ -847,6 +848,8 @@ pub const PAINT_FEATURE_DUAL_RELATIVE_SIZE: u64 = 4398046511104;
 pub const PAINT_FEATURE_DUAL_COLOR_STROKE: u64 = 8796093022208;
 /// Complete per-stamp interleaved dual color, state22 / VBR1.28.
 pub const PAINT_FEATURE_DUAL_COLOR_INTERLEAVED: u64 = 2251799813685248;
+/// Time-interval airbrush ticks, state23 / VBR1.29.
+pub const PAINT_FEATURE_AIRBRUSH: u64 = 4503599627370496;
 
 /// Shared, tool-owned wet reservoir (ABI1.50). Never dereference this token.
 pub struct PaintWetTool {

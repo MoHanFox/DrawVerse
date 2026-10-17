@@ -167,6 +167,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                     | PAINT_FEATURE_BRUSH_GROUP_PACKAGE
                     | PAINT_FEATURE_DUAL_COLOR_STROKE
                     | PAINT_FEATURE_DUAL_COLOR_INTERLEAVED
+                    | PAINT_FEATURE_AIRBRUSH
                     | PAINT_FEATURE_SHAPE_JITTER
                     | PAINT_FEATURE_BRUSH_SCATTER
                     | PAINT_FEATURE_BRUSH_POSE

@@ -22,6 +22,7 @@ fn package(sizing: DualSizing, enabled: bool) -> Package {
                 "dual-relative-size".into(),
             ],
             parameters: Parameters {
+                airbrush: None,
                 diameter: 12.,
                 spacing: 0.04,
                 dab_opacity: 0.4,

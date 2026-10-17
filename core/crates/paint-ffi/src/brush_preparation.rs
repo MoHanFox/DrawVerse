@@ -1271,6 +1271,7 @@ mod tests {
                     scatter_dynamics: None,
                     shape_jitter: None,
                     color_dynamics: None,
+                    airbrush: None,
                 },
                 smoothing: None,
                 dual_brush: None,
