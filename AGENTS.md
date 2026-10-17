@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图片光标原生入口：`docs/brush-cursor-image-design.md` / `docs/brush-cursor-image-validation.md`；白色/alpha双线性面积积分、奇数比例/薄笔尖/最大资源及8项有界PNG缓存，ABI1.53/bit48查询与容量/共享生命周期通过；内核5/资源9/公开3/旧轮廓4和Clippy通过。无state/VBR变化，Qt偏好/显示/当前与在途身份尚待接，不宣称用户功能完成。
+
 - 最新湿混双色贡献场性能：`docs/brush-wet-field-performance-design.md` / `docs/brush-wet-field-performance-validation.md`；几何/RGBA同瓦片共用覆盖计算、零覆盖跳过颜色采样，四场/日记/COW与饱和继续混色保持；162组旧两遍对照及相关回归通过，8组Release摘要相同/耗时减少4.1%至29.5%，不外推所有笔刷。无ABI/格式变化，单印章/总输入预算和后续大笔刷优化保持。
 
 - 最新输入分页Actor：`docs/brush-input-paging-actor-design.md` / `docs/brush-input-paging-actor-validation.md`；实际Move/End有界续页、完成水位/安全笔尾发布/单历史双载色采用与共同邮箱限额，页间取消/New/stop和End屏障保持；原64px公开API/Qt新目录交换重开、任务8/新Actor6及相关旧回归、Windows Release/Clippy/4 ABI通过。无ABI/格式变化，单印章/总输入预算与大笔刷优化后续范围保持；整体设备手感由用户验收。
