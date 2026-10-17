@@ -45,17 +45,18 @@ ColumnLayout {
         const groups={}; for(const g of (organization.groups||[])) groups[g.id]=g
         const query=search.text.trim().toLowerCase()
         const matches={}; for(const p of library.presets) matches[p.id]=!query.length||p.name.toLowerCase().indexOf(query)>=0
-        function visit(items,out,depth) {
-            for(const item of (items||[])) {
-                if(item.kind==="preset") { if(matches[item.id]) out.push({kind:"preset",id:item.id,depth:depth}) }
+        function visit(items,out,depth,parent) {
+            for(let index=0;index<(items||[]).length;++index) {
+                const item=items[index]
+                if(item.kind==="preset") { if(matches[item.id]) out.push({kind:"preset",id:item.id,depth:depth,parent:parent,index:index}) }
                 else if(item.kind==="group" && groups[item.id]) {
-                    const children=[]; visit(groups[item.id].items,children,depth+1)
-                    if(children.length || !query.length) { out.push({kind:"group",id:item.id,name:groups[item.id].name,depth:depth}); out.push(...children) }
+                    const children=[]; visit(groups[item.id].items,children,depth+1,item.id)
+                    if(children.length || !query.length) { out.push({kind:"group",id:item.id,name:groups[item.id].name,depth:depth,parent:parent,index:index}); out.push(...children) }
                 }
             }
         }
-        if(!organization.roots) return library.presets.filter(p=>matches[p.id]).map(p=>({kind:"preset",id:p.id,depth:0}))
-        const result=[]; visit(organization.roots,result,0); return result
+        if(!organization.roots) return library.presets.filter(p=>matches[p.id]).map((p,index)=>({kind:"preset",id:p.id,depth:0,parent:"",index:index}))
+        const result=[]; visit(organization.roots,result,0,""); return result
     }
     function refreshGroupedItems() {
         const signature=JSON.stringify({organization:library.organization||{},presets:library.presets.map(p=>[p.id,p.name]),query:search.text})
@@ -99,22 +100,64 @@ ColumnLayout {
             width:ListView.view.width;height:modelData.kind==="group"?30:58
             color:modelData.kind==="group"?Theme.strip:root.library.selectedId===modelData.id?Theme.selected:Theme.surface
             border.color:Theme.line
+            property int dropPlacement:0
+            function updateDrop(d){dropPlacement=modelData.kind==="group" && d.y>8 && d.y<height-8?0:d.y<height/2?1:2}
             visible:modelData.kind==="group" || root.presetById(modelData.id).id!==undefined
             Image {visible:modelData.kind!=="group";anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.leftMargin:4+modelData.depth*14;anchors.rightMargin:4;anchors.topMargin:4;height:35;source:modelData.kind==="group"?"":root.presetById(modelData.id).preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
             Text {visible:modelData.kind==="group";x:8+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:"▾  "+modelData.name;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
             Text {visible:modelData.kind!=="group";x:6+modelData.depth*14;y:40;width:parent.width-x-6;textFormat:Text.PlainText;text:root.presetById(modelData.id).name||"";color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
             MouseArea {
                 anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton
+                property point origin
+                property bool dragging:false
+                property bool suppressClick:false
+                onPressed:function(mouse){origin=Qt.point(mouse.x,mouse.y);dragging=false;suppressClick=false}
+                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;PaintClient.beginBrushDrag(modelData.kind+":"+modelData.id)}}
+                onReleased:function(){dragging=false}
                 onClicked:function(mouse) {
+                    if(suppressClick){suppressClick=false;return}
                     if(mouse.button===Qt.RightButton) {
                         if(modelData.kind==="group") {root.contextGroupId=modelData.id;root.contextGroupName=modelData.name;groupMenu.popup()}
                         else {root.contextPresetId=modelData.id;root.library.select(modelData.id);presetMenu.popup()}
                     } else if(modelData.kind!=="group") root.library.select(modelData.id)
                 }
             }
+            DropArea {
+                id:brushDrop;objectName:"brushDrop:"+modelData.id
+                anchors.fill:parent;keys:["application/x-drawverse-brush"]
+                onEntered:function(drop){parent.updateDrop(drop)}
+                onPositionChanged:function(drop){parent.updateDrop(drop)}
+                onDropped:function(drop){
+                    parent.updateDrop(drop)
+                    const payload=drop.getDataAsString("application/x-drawverse-brush"),separator=payload.indexOf(":")
+                    if(separator<=0)return
+                    const kind=payload.slice(0,separator),id=payload.slice(separator+1)
+                    let parentId=modelData.parent,index=modelData.index
+                    if(modelData.kind==="group" && parent.dropPlacement===0){parentId=modelData.id;index=-1}
+                    else if(parent.dropPlacement===2)index=modelData.index+1
+                    if(kind==="preset")root.library.movePresetToGroupAt(id,parentId,index)
+                    else if(kind==="group")root.library.moveGroupToGroupAt(id,parentId,index)
+                    drop.acceptProposedAction()
+                }
+            }
+            Rectangle {anchors.fill:parent;border.width:2;border.color:Theme.accent;visible:brushDrop.containsDrag && dropPlacement===0}
+            Rectangle {anchors.left:parent.left;anchors.right:parent.right;height:2;y:dropPlacement===1?0:parent.height-2;color:Theme.accent;visible:brushDrop.containsDrag && dropPlacement!==0}
             Component.onCompleted:if(modelData.kind!=="group")root.library.requestPreview(modelData.id)
         }
         ScrollBar.vertical:ScrollBar {width:6}
+        footer:DropArea {
+            objectName:"brushRootDrop";width:ListView.view.width;height:24;keys:["application/x-drawverse-brush"]
+            Rectangle {anchors.fill:parent;color:parent.containsDrag?Theme.selected:Theme.strip;border.color:Theme.line}
+            Label {anchors.centerIn:parent;text:"拖到这里移到画笔库根目录";color:Theme.muted;font.pixelSize:9}
+            onDropped:function(drop){
+                const payload=drop.getDataAsString("application/x-drawverse-brush"),separator=payload.indexOf(":")
+                if(separator<=0)return
+                const kind=payload.slice(0,separator),id=payload.slice(separator+1)
+                if(kind==="preset")root.library.movePresetToGroupAt(id,"",-1)
+                else if(kind==="group")root.library.moveGroupToGroupAt(id,"",-1)
+                drop.acceptProposedAction()
+            }
+        }
     }
     RowLayout {
         Item {Layout.fillWidth:true}

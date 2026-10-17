@@ -144,7 +144,15 @@ private slots:
         auto groupRows=QJsonDocument::fromJson(library.snapshot()).object().value("organization").toObject().value("groups").toArray();bool nestedContainsPreset=false;
         for(const auto &row:groupRows)if(row.toObject().value("id").toString()==nested)nestedContainsPreset=row.toObject().value("items").toArray().last().toObject().value("id").toString()==selected;
         QVERIFY(nestedContainsPreset);
+        QVERIFY(library.movePresetToGroupAt(selected,nested,0));
+        const auto orderedCopy=library.saveCopy("Ordered child");QVERIFY(!orderedCopy.isEmpty());QVERIFY(library.movePresetToGroupAt(orderedCopy,nested,0));
+        groupRows=QJsonDocument::fromJson(library.snapshot()).object().value("organization").toObject().value("groups").toArray();
+        for(const auto &row:groupRows)if(row.toObject().value("id").toString()==nested){const auto items=row.toObject().value("items").toArray();QCOMPARE(items[0].toObject().value("id").toString(),orderedCopy);QCOMPARE(items[1].toObject().value("id").toString(),selected);}
         const auto invalidMove=library.snapshot();QVERIFY(!library.moveGroupToGroup(group,nested));QCOMPARE(library.snapshot(),invalidMove);
+        QVERIFY(library.moveGroupToGroupAt(nested,"",0));
+        QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object().value("organization").toObject().value("roots").toArray()[0].toObject().value("id").toString(),nested);
+        QVERIFY(library.moveGroupToGroup(nested,group));
+        QVERIFY(library.select(selected));
         QVERIFY(library.renameGroup(group,"Renamed"));QVERIFY(!library.renameGroup(group,"  "));
         const auto renamed=library.snapshot();QVERIFY(!library.removeGroup(group,true));QCOMPARE(library.snapshot(),renamed);
         QVERIFY(library.ungroup(nested));QVERIFY(library.ungroup(group));QCOMPARE(library.selectedId(),selected);

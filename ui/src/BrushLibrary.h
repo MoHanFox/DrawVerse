@@ -206,6 +206,8 @@ public:
     Q_INVOKABLE bool renameGroup(const QString &id,const QString &name);
     Q_INVOKABLE bool movePresetToGroup(const QString &presetId,const QString &parentId = {});
     Q_INVOKABLE bool moveGroupToGroup(const QString &groupId,const QString &parentId = {});
+    Q_INVOKABLE bool movePresetToGroupAt(const QString &presetId,const QString &parentId,int index);
+    Q_INVOKABLE bool moveGroupToGroupAt(const QString &groupId,const QString &parentId,int index);
     Q_INVOKABLE bool ungroup(const QString &id);
     Q_INVOKABLE bool removeGroup(const QString &id,bool cascade = false);
     Q_INVOKABLE bool rename(const QString &id,const QString &name);

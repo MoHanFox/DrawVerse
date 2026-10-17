@@ -4,6 +4,8 @@
 
 2026-10-18时间喷枪阶段：预设级`time-interval-v1`已接核心定时沉积、state23、VBR1.29/behavior18、ABI1.57和Qt计时器；按住不动按1–1000ms间隔沉积，普通移动路径和单一历史保持。只支持干画笔/橡皮，普通涂抹与湿混不启用。见[设计](brush-airbrush-design.md)及[验收](brush-airbrush-validation.md)。
 
+2026-10-18画笔组拖放阶段：Qt 画笔库支持预设/组按位置插入、组内追加和根目录拖放，C++ 组织移动原子拒绝环和非法目标；state20/VBR1.24/ABI1.55不变。见[设计](brush-groups-drag-design.md)及[验收](brush-groups-drag-validation.md)。
+
 2026-10-16用户更新：取消可交互试画功能，不增加试画窗口或入口；自动笔刷预览在所有参数下固定白色及正常工具混合模式，保留真实alpha，换当前颜色不重算预览。本文早期“试画/有色预览”要求由此次指令替代，见[白色预览设计](brush-white-preview-design.md)。
 
 状态：2026-10-14，分阶段实施。程序/图片笔尖、原生目录、VBR1.1、描边与ABR6/10基础导入已有阶段实现，见 [路线与结果](roadmap.md)、[ABR入口验收](abr-entry-validation.md)。VBR来源交换已完成阶段接入；压力曲线内核已有真实像素验收，状态/界面已接入，并新增独立不透明度压感，见 [验收](brush-opacity-pressure-validation.md)。完整ABR动态与动态湿混仍待完成，本文不代表整体实现验收。

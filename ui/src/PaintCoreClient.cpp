@@ -1586,6 +1586,14 @@ void PaintCoreClient::beginLayerDrag(quint64 id) {
         QDrag drag(this);auto *mime=new QMimeData;mime->setData("application/x-drawverse-layer",layerDragPayload(id).toUtf8());drag.setMimeData(mime);drag.exec(Qt::MoveAction);return;
     }
 }
+void PaintCoreClient::beginBrushDrag(const QString &payload) {
+    if(m_closing || m_drawing || m_liquifyActive || m_transformActive)return;
+    const int separator=payload.indexOf(':');
+    if(separator<=0)return;
+    const auto kind=payload.left(separator);const auto id=payload.mid(separator+1);
+    if((kind!="preset" && kind!="group") || id.isEmpty())return;
+    QDrag drag(this);auto *mime=new QMimeData;mime->setData("application/x-drawverse-brush",payload.toUtf8());drag.setMimeData(mime);drag.exec(Qt::MoveAction);
+}
 void PaintCoreClient::addDefaultLayer() {
     const auto number=[](int n){const QString digits=QStringLiteral("零一二三四五六七八九");const QString units=QStringLiteral("千百十");QString result;bool zero=false;for(int d=1000,u=0;d>1;d/=10,++u){const int v=n/d;n%=d;if(v){if(zero)result+=digits[0];if(!(d==10 && v==1 && result.isEmpty()))result+=digits[v];result+=units[u];zero=false;}else if(!result.isEmpty() && n)zero=true;}if(n){if(zero)result+=digits[0];result+=digits[n];}return result;};
     // Names do not count groups/masks and do not reuse an existing default name.

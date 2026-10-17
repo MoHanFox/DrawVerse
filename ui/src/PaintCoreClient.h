@@ -373,6 +373,7 @@ public:
     Q_INVOKABLE bool toggleActiveClipping();
     Q_INVOKABLE bool dropLayer(quint64 id,quint64 target,int placement);
     Q_INVOKABLE void beginLayerDrag(quint64 id);
+    Q_INVOKABLE void beginBrushDrag(const QString &payload);
     Q_INVOKABLE QString layerDragPayload(quint64 id) const;
     Q_INVOKABLE bool acceptLayerDrop(const QString &payload,quint64 target,int placement);
     Q_INVOKABLE void addDefaultLayer();
