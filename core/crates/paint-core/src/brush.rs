@@ -83,6 +83,14 @@ impl InputPoint {
         (self.tilt_x.hypot(self.tilt_y) / 90.).clamp(0., 1.)
     }
 
+    /// Normalized pen rotation (0..1); devices without rotation report 0.
+    pub fn rotation_unit(self) -> f32 {
+        if self.capabilities & 4 == 0 {
+            return 0.;
+        }
+        (self.rotation.rem_euclid(360.) / 360.).clamp(0., 1.)
+    }
+
     pub(crate) fn interpolate(self, other: Self, t: f64) -> Self {
         let mix = |a: f32, b: f32| a + (b - a) * t as f32;
         Self {

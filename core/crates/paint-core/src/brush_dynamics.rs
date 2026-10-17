@@ -183,6 +183,7 @@ pub struct BrushDynamics {
     pub tangent: TangentDynamics,
     pub distance: DistanceDynamics,
     pub tilt: TiltDynamics,
+    pub rotation: RotationDynamics,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
@@ -197,6 +198,7 @@ impl BrushDynamics {
             && self.tangent.is_default()
             && self.distance.is_default()
             && self.tilt.is_default()
+            && self.rotation.is_default()
     }
 }
 
@@ -442,6 +444,56 @@ impl TiltDynamics {
     }
 }
 
+/// Optional pen-rotation-driven size, flow and opacity response. Rotation is
+/// normalized 0..1 over one full turn; no-rotation devices leave channels at 1.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RotationDynamics {
+    enabled: bool,
+    size: PressureControl,
+    flow: PressureControl,
+    opacity: PressureControl,
+}
+impl RotationDynamics {
+    pub fn new(
+        enabled: bool,
+        size: PressureControl,
+        flow: PressureControl,
+        opacity: PressureControl,
+    ) -> Self {
+        Self {
+            enabled,
+            size,
+            flow,
+            opacity,
+        }
+    }
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub fn size(&self) -> &PressureControl {
+        &self.size
+    }
+    pub fn flow(&self) -> &PressureControl {
+        &self.flow
+    }
+    pub fn opacity(&self) -> &PressureControl {
+        &self.opacity
+    }
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+    pub(crate) fn compile(&self) -> Option<CompiledRotationDynamics> {
+        if !self.enabled {
+            return None;
+        }
+        Some(CompiledRotationDynamics {
+            size: self.size.compile(),
+            flow: self.flow.compile(),
+            opacity: self.opacity.compile(),
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AngleControl {
     #[default]
@@ -583,6 +635,28 @@ impl CompiledTiltDynamics {
             return (1., 1., 1.);
         }
         let input = tilt.clamp(0., 1.);
+        let response = |control: &Option<CompiledPressureControl>| {
+            control.as_ref().map_or(1., |c| c.response(input))
+        };
+        (
+            response(&self.size),
+            response(&self.flow),
+            response(&self.opacity),
+        )
+    }
+}
+#[derive(Clone, Debug)]
+pub(crate) struct CompiledRotationDynamics {
+    size: Option<CompiledPressureControl>,
+    flow: Option<CompiledPressureControl>,
+    opacity: Option<CompiledPressureControl>,
+}
+impl CompiledRotationDynamics {
+    pub(crate) fn factors(&self, rotation: f32) -> (f32, f32, f32) {
+        if !rotation.is_finite() {
+            return (1., 1., 1.);
+        }
+        let input = rotation.clamp(0., 1.);
         let response = |control: &Option<CompiledPressureControl>| {
             control.as_ref().map_or(1., |c| c.response(input))
         };

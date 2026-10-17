@@ -60,6 +60,7 @@ fn package() -> Package {
                 tilt_dynamics: Some(paint_io::brush_tilt::TiltParameters::from_core(
                     settings.dynamics.tilt.clone(),
                 )),
+                rotation_dynamics: None,
             },
             smoothing: None,
             texture: None,

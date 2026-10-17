@@ -14,6 +14,7 @@ pub mod brush_dual_sizing;
 pub mod brush_organization;
 pub mod brush_pressure;
 pub mod brush_resource;
+pub mod brush_rotation;
 pub mod brush_scatter;
 pub mod brush_shape_jitter;
 pub mod brush_source;

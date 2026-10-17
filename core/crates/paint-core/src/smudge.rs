@@ -50,6 +50,7 @@ impl Document {
                     point.tangential_pressure,
                     stroke.dab_distance as f32,
                     point.tilt_magnitude(),
+                    point.rotation_unit(),
                 )
                 .0;
             let base_radius = f64::from(

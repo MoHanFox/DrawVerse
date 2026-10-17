@@ -72,6 +72,7 @@ impl Document {
             point.tangential_pressure,
             stroke.dab_distance as f32,
             point.tilt_magnitude(),
+            point.rotation_unit(),
         );
         let next = stroke
             .dual_index
@@ -123,6 +124,7 @@ impl Document {
             point.tangential_pressure,
             stroke.dab_distance as f32,
             point.tilt_magnitude(),
+            point.rotation_unit(),
         );
         let base_radius = f64::from(
             stroke.brush.radius

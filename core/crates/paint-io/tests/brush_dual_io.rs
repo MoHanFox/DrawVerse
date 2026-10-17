@@ -114,6 +114,7 @@ fn large_dual_catalog_cannot_emit_a_state_the_reader_rejects_for_size() {
         tangent: Default::default(),
         distance: Default::default(),
         tilt: Default::default(),
+        rotation: Default::default(),
     };
     let mut second = dynamics.clone();
     second.opacity = Default::default();

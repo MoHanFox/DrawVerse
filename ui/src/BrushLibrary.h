@@ -170,6 +170,21 @@ public:
     QVariantList tiltOpacityCurve() const;
     Q_PROPERTY(qreal tiltOpacityMinimum READ tiltOpacityMinimum NOTIFY settingsChanged)
     qreal tiltOpacityMinimum() const;
+    QVariantMap rotationDynamics() const;
+    Q_PROPERTY(bool rotationDynamicsEnabled READ rotationDynamicsEnabled NOTIFY settingsChanged)
+    bool rotationDynamicsEnabled() const;
+    Q_PROPERTY(QVariantList rotationSizeCurve READ rotationSizeCurve NOTIFY settingsChanged)
+    QVariantList rotationSizeCurve() const;
+    Q_PROPERTY(qreal rotationSizeMinimum READ rotationSizeMinimum NOTIFY settingsChanged)
+    qreal rotationSizeMinimum() const;
+    Q_PROPERTY(QVariantList rotationFlowCurve READ rotationFlowCurve NOTIFY settingsChanged)
+    QVariantList rotationFlowCurve() const;
+    Q_PROPERTY(qreal rotationFlowMinimum READ rotationFlowMinimum NOTIFY settingsChanged)
+    qreal rotationFlowMinimum() const;
+    Q_PROPERTY(QVariantList rotationOpacityCurve READ rotationOpacityCurve NOTIFY settingsChanged)
+    QVariantList rotationOpacityCurve() const;
+    Q_PROPERTY(qreal rotationOpacityMinimum READ rotationOpacityMinimum NOTIFY settingsChanged)
+    qreal rotationOpacityMinimum() const;
     Q_INVOKABLE bool setStrokeTaper(QVariantMap data);
     Q_INVOKABLE bool setAirbrush(QVariantMap data);
     Q_INVOKABLE bool setSpeedDynamics(QVariantMap data);
@@ -190,6 +205,10 @@ public:
     Q_INVOKABLE bool setTiltDynamicsEnabled(bool enabled);
     Q_INVOKABLE bool setTiltControl(const QString &target, QVariantList points, qreal minimum);
     Q_INVOKABLE bool resetTiltControl(const QString &target);
+    Q_INVOKABLE bool setRotationDynamics(QVariantMap data);
+    Q_INVOKABLE bool setRotationDynamicsEnabled(bool enabled);
+    Q_INVOKABLE bool setRotationControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool resetRotationControl(const QString &target);
     Q_INVOKABLE bool setWetMix(QVariantMap data);
     QVariantMap smoothing() const;
     Q_INVOKABLE bool setSmoothing(QVariantMap data);
@@ -327,12 +346,13 @@ private:
     bool m_cursorSimple=false,m_cursorComposite=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation;};
     static QJsonObject presetRow(const Preset &preset,int &version);
     static QJsonObject exportPreset(const Preset &preset,bool includeSource,const QString &id);
     QVariantMap tangentControl(const QString &target) const;
     QVariantMap distanceControl(const QString &target) const;
     QVariantMap tiltControl(const QString &target) const;
+    QVariantMap rotationControl(const QString &target) const;
     int index(const QString &id) const;
     void update(int field,qreal value);
     void changed();

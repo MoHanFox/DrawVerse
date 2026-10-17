@@ -190,6 +190,7 @@ impl<'de> Deserialize<'de> for PressureParameters {
                 tangent: Default::default(),
                 distance: Default::default(),
                 tilt: Default::default(),
+                rotation: Default::default(),
             },
             has_opacity,
         })

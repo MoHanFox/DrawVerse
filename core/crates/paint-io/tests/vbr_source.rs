@@ -127,6 +127,7 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                     tangent_dynamics: None,
                     distance_dynamics: None,
                     tilt_dynamics: None,
+                    rotation_dynamics: None,
                     scatter_dynamics: (s.dynamics.scatter != Default::default()).then(|| {
                         paint_io::brush_scatter::ScatterParameters::from_core(s.dynamics.scatter)
                     }),

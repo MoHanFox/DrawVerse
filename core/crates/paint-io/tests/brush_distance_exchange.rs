@@ -62,6 +62,7 @@ fn package() -> Package {
                     settings.dynamics.distance.clone(),
                 )),
                 tilt_dynamics: None,
+                rotation_dynamics: None,
             },
             smoothing: None,
             texture: None,

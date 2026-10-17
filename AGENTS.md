@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新笔旋转动态：`docs/brush-rotation-design.md` / `docs/brush-rotation-validation.md`；`rotation-v1`把设备旋转角按整圈归一化后驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，无旋转能力为0，默认关闭；state28/VBR1.34/behavior23及Qt“传递”页开关/曲线接通，真实像素、保存重开和QML绑定通过。ABR旋转/渐隐来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。
+
 - 最新倾斜幅度动态：`docs/brush-tilt-design.md` / `docs/brush-tilt-validation.md`；`tilt-v1`把设备二维倾斜长度按90度归一化后驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，无倾斜能力为0，默认关闭；state27/VBR1.33/behavior22及Qt“传递”页开关/曲线接通，真实像素、保存重开和QML绑定通过。ABR倾斜/渐隐来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。
 
 - 最新大笔刷密集笔触性能：`docs/brush-large-dense-performance-design.md` / `docs/brush-large-dense-performance-validation.md`；普通不透明硬圆画笔和整笔100%硬橡皮在活动coverage账本达到完全覆盖后跳过重复像素计算，限制于普通混合且无动态颜色/纹理/双笔刷/湿混/涂抹/蒙版/起收笔的稳定路径；固定2048×2048/半径128/240输入基准中位数约1.33s降至0.37s、RGBA摘要一致，画笔/橡皮等价性、不透明度/文档/分页/双笔刷/动态回归及格式/Clippy通过。无ABI/格式变化；复杂图片、湿混、实体输入和GPU仍待后续。

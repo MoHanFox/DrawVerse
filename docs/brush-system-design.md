@@ -218,3 +218,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-18大笔刷密集笔触性能阶段：普通不透明硬圆画笔和整笔100%硬橡皮在活动笔触coverage账本达到完全覆盖后跳过重复像素计算，限制于普通混合、无动态颜色/纹理/双笔刷/湿混/涂抹/蒙版/起收笔的稳定路径；2048画布半径128密集笔触固定基准中位数由1.33s降至0.37s左右且RGBA摘要一致，见[设计](brush-large-dense-performance-design.md)及[验收](brush-large-dense-performance-validation.md)。非不透明、复杂图片/湿混、实体输入和GPU仍待后续；无ABI/格式变化。
 
 2026-10-18倾斜幅度动态阶段：`tilt-v1`把设备二维倾斜长度按90度归一化后驱动尺寸、流量和整笔不透明度三条曲线，设备无倾斜能力时为0；默认关闭，state27/VBR1.33/behavior22及`tilt-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离回归通过，见[设计](brush-tilt-design.md)及[验收](brush-tilt-validation.md)。ABR倾斜/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
+
+2026-10-18笔旋转动态阶段：`rotation-v1`把设备旋转角按整圈归一化后驱动尺寸、流量和整笔不透明度三条曲线，无旋转能力时为0；默认关闭，state28/VBR1.34/behavior23及`rotation-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离/倾斜回归通过，见[设计](brush-rotation-design.md)及[验收](brush-rotation-validation.md)。ABR旋转/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。

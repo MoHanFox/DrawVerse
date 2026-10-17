@@ -1,7 +1,7 @@
 use crate::{
     brush_dynamics::{
-        CompiledDistanceDynamics, CompiledPressureControl, CompiledSpeedDynamics,
-        CompiledTangentDynamics, CompiledTiltDynamics,
+        CompiledDistanceDynamics, CompiledPressureControl, CompiledRotationDynamics,
+        CompiledSpeedDynamics, CompiledTangentDynamics, CompiledTiltDynamics,
     },
     AngleControl, Brush, BrushDynamics, BrushMask, Error, InputPoint, Result, TipDynamics,
 };
@@ -106,6 +106,7 @@ pub struct BrushProgram {
     tangent: Option<CompiledTangentDynamics>,
     distance: Option<CompiledDistanceDynamics>,
     tilt: Option<CompiledTiltDynamics>,
+    rotation: Option<CompiledRotationDynamics>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -309,6 +310,7 @@ impl BrushProgram {
             tangent: definition.dynamics.tangent.compile(),
             distance: definition.dynamics.distance.compile(),
             tilt: definition.dynamics.tilt.compile(),
+            rotation: definition.dynamics.rotation.compile(),
         })
     }
 
@@ -356,6 +358,7 @@ impl BrushProgram {
         tangent: f32,
         distance: f32,
         tilt: f32,
+        rotation: f32,
     ) -> (f32, f32, f32) {
         let base = self.dynamics_factors(speed, tangent);
         let distance = self
@@ -366,10 +369,14 @@ impl BrushProgram {
             .tilt
             .as_ref()
             .map_or((1., 1., 1.), |compiled| compiled.factors(tilt));
+        let rotation = self
+            .rotation
+            .as_ref()
+            .map_or((1., 1., 1.), |compiled| compiled.factors(rotation));
         (
-            base.0 * distance.0 * tilt.0,
-            base.1 * distance.1 * tilt.1,
-            base.2 * distance.2 * tilt.2,
+            base.0 * distance.0 * tilt.0 * rotation.0,
+            base.1 * distance.1 * tilt.1 * rotation.1,
+            base.2 * distance.2 * tilt.2 * rotation.2,
         )
     }
     #[inline]
