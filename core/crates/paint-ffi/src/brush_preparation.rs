@@ -1258,6 +1258,7 @@ mod tests {
                 ],
                 parameters: paint_io::vbr::Parameters {
                     source_matrix: None,
+                    fade_dynamics: None,
                     diameter: 16.,
                     spacing: 0.02,
                     dab_opacity: 0.4,

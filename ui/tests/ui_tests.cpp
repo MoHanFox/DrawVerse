@@ -468,6 +468,22 @@ private slots:
         auto *toggle=findVisualItem(window->contentItem(),"settingsDirectionEnabled");QVERIFY(toggle);QVERIFY(QMetaObject::invokeMethod(library,"setDirectionDynamicsEnabled",Q_ARG(bool,true)));QTRY_VERIFY(toggle->property("checked").toBool());QVERIFY(library->directionDynamics().value("enabled").toBool());
         QVERIFY(library->setDirectionControl("size",QVariantList{QVariantList{0.,1.},QVariantList{1.,.2}},0.));QCOMPARE(library->directionSizeCurve().size(),2);QVERIFY(findVisualItem(window->contentItem(),"directionSizeEditor"));
     }
+    void fadeDynamicsPresetsPreviewAndReopen() {
+        QTemporaryDir temp;const auto path=temp.filePath("storage.ini");PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+        auto data=library->fadeDynamics();QVERIFY(!data.value("enabled").toBool());data["enabled"]=true;data["steps"]=4;auto size=data.value("size").toMap();size["curve"]=QVariantList{QVariantList{0.,1.},QVariantList{1.,.2}};size["minimum"]=0.;data["size"]=size;QVERIFY(library->setFadeDynamics(data));QCOMPARE(QJsonDocument::fromJson(library->snapshot()).object().value("version").toInt(),34);
+        library->setRadius(6);library->setOpacity(.5);library->setPressureSize(false);library->setPressureFlow(false);library->requestPreview(library->selectedId());QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);
+        const auto saved=[&]{QSettings settings(path,QSettings::IniFormat);const auto state=QJsonDocument::fromJson(settings.value("brushes/state").toByteArray()).object();for(const auto &r:state.value("presets").toArray())if(r.toObject().value("id").toString()==library->selectedId())return r.toObject().value("fadeDynamics").toObject()==QJsonObject::fromVariantMap(data);return false;};QTRY_VERIFY(saved());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready());QCOMPARE(reopened.brushLibrary()->fadeDynamics(),data);
+    }
+    void fadeDynamicsQmlToggleStepsAndCurve() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+        for(const auto &value:workspace.leftGroups()+workspace.rightGroups()){const auto group=value.toMap();if(group.value("panels").toStringList().contains("brush-settings"))workspace.setActive(group.value("id").toString(),"brush-settings");}
+        QQuickItem *category=nullptr;QTRY_VERIFY((category=findVisualItem(window->contentItem(),"brushCategory:6")));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,category->mapToScene({category->width()/2,category->height()/2}).toPoint());QTest::qWait(100);
+        auto *toggle=findVisualItem(window->contentItem(),"settingsFadeEnabled");QVERIFY(toggle);QVERIFY(QMetaObject::invokeMethod(library,"setFadeDynamicsEnabled",Q_ARG(bool,true)));QTRY_VERIFY(toggle->property("checked").toBool());QVERIFY(library->fadeDynamicsEnabled());
+        QVERIFY(QMetaObject::invokeMethod(library,"setFadeSteps",Q_ARG(int,6)));QCOMPARE(library->fadeSteps(),6);auto *steps=findVisualItem(window->contentItem(),"settingsFadeSteps");QVERIFY(steps);QTRY_COMPARE(steps->property("value").toInt(),6);
+        QVERIFY(library->setFadeControl("size",QVariantList{QVariantList{0.,1.},QVariantList{1.,.2}},0.));QCOMPARE(library->fadeSizeCurve().size(),2);QVERIFY(findVisualItem(window->contentItem(),"fadeSizeEditor"));
+    }
     void dynamicsSourceMatrixPersistsPreviewAndReopen() {
         QTemporaryDir temp;const auto path=temp.filePath("storage.ini");PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
         auto speed=library->speedDynamics();speed["enabled"]=true;auto size=speed.value("size").toMap();size["curve"]=QVariantList{QVariantList{0.,1.},QVariantList{1.,.3}};size["minimum"]=0.;speed["size"]=size;QVERIFY(library->setSpeedDynamics(speed));
@@ -1764,6 +1780,21 @@ private slots:
         QCOMPARE(library.directionDynamics(),direction.toVariantMap());
         QCOMPARE(library.dynamicsSourceMatrix(),matrix.toVariantMap());
         auto downgraded=handoff;downgraded["version"]=7;
+        const auto before=library.snapshot();
+        QVERIFY(!library.importAbr(QJsonDocument(downgraded).toJson(QJsonDocument::Compact)));
+        QCOMPARE(library.snapshot(),before);
+    }
+    void abrFadeHandoffImportsStampStepsIntoState34() {
+        BrushLibrary library;
+        const QJsonObject control{{"curve",QJsonArray{QJsonArray{0.0,0.0},QJsonArray{1.0,1.0}}},{"minimum",0.0}};
+        const QJsonObject fade{{"model","fade-v1"},{"enabled",true},{"steps",4},{"size",control},{"flow",control},{"opacity",control}};
+        const QJsonObject parameters{{"diameter",8.0},{"spacing",0.02},{"dabOpacity",1.0},{"hardness",1.0},{"roundness",1.0},{"angle",0.0},{"flow",1.0},{"pressureSize",false},{"pressureFlow",false},{"fadeDynamics",fade}};
+        const QJsonObject preset{{"name","Fade"},{"parameters",parameters},{"tipResource",QJsonValue::Null},{"sourceResource",QString(64,'d')},{"partial",true}};
+        const QJsonObject handoff{{"version",9},{"format","abr"},{"presets",QJsonArray{preset}}};
+        QVERIFY(library.importAbr(QJsonDocument(handoff).toJson(QJsonDocument::Compact)));
+        QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object().value("version").toInt(),34);
+        QCOMPARE(library.fadeDynamics(),fade.toVariantMap());
+        auto downgraded=handoff;downgraded["version"]=8;
         const auto before=library.snapshot();
         QVERIFY(!library.importAbr(QJsonDocument(downgraded).toJson(QJsonDocument::Compact)));
         QCOMPARE(library.snapshot(),before);

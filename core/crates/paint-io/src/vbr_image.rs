@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 39;
+pub const MAX_EXECUTABLE_MINOR: u32 = 40;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -507,6 +507,9 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             "dissolve texture mode requires VBR1.39".into(),
         ));
     }
+    if manifest.version.minor < 40 && brushes.iter().any(|b| b.parameters.fade_dynamics.is_some()) {
+        return Err(Error::Unsupported("fade dynamics requires VBR1.40".into()));
+    }
     if manifest.version.minor < 23 && brushes.iter().any(|b| b.has_wet_dual()) {
         return Err(Error::Unsupported("wet dual color requires VBR1.23".into()));
     }
@@ -661,6 +664,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
                 "ABR converter v9 requires VBR 1.38".into(),
             ));
         }
+        if info.converter_version > 9 && manifest.version.minor < 40 {
+            return Err(Error::Unsupported(
+                "ABR converter v10 requires VBR 1.40".into(),
+            ));
+        }
         if info.converter_version > 5 && manifest.version.minor < 20 {
             return Err(Error::Unsupported(
                 "VBR ABR shape sources require version 1.20".into(),
@@ -743,6 +751,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 || b.parameters.rotation_dynamics.is_some()
                 || b.parameters.direction_dynamics.is_some()
                 || b.parameters.source_matrix.is_some()
+                || b.parameters.fade_dynamics.is_some()
                 || b.texture.is_some()
                 || b.dual_brush.is_some()
                 || b.smoothing.is_some()
@@ -775,6 +784,17 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .sources
+                .iter()
+                .any(|source| source.converter_version() > 9)
+                || bundle
+                    .package
+                    .brushes
+                    .iter()
+                    .any(|b| b.parameters.fade_dynamics.is_some())
+            {
+                40
+            } else if bundle
                 .package
                 .brushes
                 .iter()

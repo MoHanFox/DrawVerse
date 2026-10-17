@@ -48,6 +48,7 @@ fn package(resource: Option<String>) -> Package {
                 tip_dynamics: None,
                 pressure_dynamics: None,
                 source_matrix: None,
+                fade_dynamics: None,
                 diameter: 16.,
                 spacing: 0.01,
                 dab_opacity: 1.,

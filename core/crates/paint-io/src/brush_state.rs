@@ -177,6 +177,12 @@ struct Row {
         deserialize_with = "crate::brush_source_matrix::present"
     )]
     source_matrix: Option<crate::brush_source_matrix::SourceMatrixParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_fade::present"
+    )]
+    fade_dynamics: Option<crate::brush_fade::FadeParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -244,7 +250,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=33) {
+    if !matches!(state.version, 1..=34) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -408,6 +414,9 @@ fn decode_inner(
                 "dynamics source matrix requires state32".into(),
             ));
         }
+        if row.fade_dynamics.is_some() && state.version < 34 {
+            return Err(Error::Unsupported("fade dynamics requires state34".into()));
+        }
         let dual = if let Some(d) = row.dual_brush {
             if d.has_color() && state.version < 16 {
                 return Err(Error::Unsupported("dual-color requires state16".into()));
@@ -514,6 +523,7 @@ fn decode_inner(
         dynamics.rotation = row.rotation_dynamics.map(|p| p.core()).unwrap_or_default();
         dynamics.direction = row.direction_dynamics.map(|p| p.core()).unwrap_or_default();
         dynamics.matrix = row.source_matrix.map(|p| p.core()).unwrap_or_default();
+        dynamics.fade = row.fade_dynamics.map(|p| p.core()).unwrap_or_default();
         entries.push((
             row.id,
             row.name,
@@ -640,6 +650,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         let source_matrix = if !s.dynamics.matrix.is_default() {
             version = version.max(32);
             Some(crate::brush_source_matrix::SourceMatrixParameters::from_core(s.dynamics.matrix))
+        } else {
+            None
+        };
+        let fade_dynamics = if !s.dynamics.fade.is_default() {
+            version = version.max(34);
+            Some(crate::brush_fade::FadeParameters::from_core(
+                s.dynamics.fade.clone(),
+            ))
         } else {
             None
         };
@@ -793,6 +811,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             rotation_dynamics,
             direction_dynamics,
             source_matrix,
+            fade_dynamics,
         });
     }
     if organization.is_some() {

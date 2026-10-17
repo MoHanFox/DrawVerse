@@ -228,6 +228,29 @@ public:
     Q_INVOKABLE bool setDirectionDynamicsEnabled(bool enabled);
     Q_INVOKABLE bool setDirectionControl(const QString &target, QVariantList points, qreal minimum);
     Q_INVOKABLE bool resetDirectionControl(const QString &target);
+    Q_PROPERTY(QVariantMap fadeDynamics READ fadeDynamics NOTIFY settingsChanged)
+    QVariantMap fadeDynamics() const;
+    Q_PROPERTY(bool fadeDynamicsEnabled READ fadeDynamicsEnabled NOTIFY settingsChanged)
+    bool fadeDynamicsEnabled() const;
+    Q_PROPERTY(int fadeSteps READ fadeSteps NOTIFY settingsChanged)
+    int fadeSteps() const;
+    Q_PROPERTY(QVariantList fadeSizeCurve READ fadeSizeCurve NOTIFY settingsChanged)
+    QVariantList fadeSizeCurve() const;
+    Q_PROPERTY(qreal fadeSizeMinimum READ fadeSizeMinimum NOTIFY settingsChanged)
+    qreal fadeSizeMinimum() const;
+    Q_PROPERTY(QVariantList fadeFlowCurve READ fadeFlowCurve NOTIFY settingsChanged)
+    QVariantList fadeFlowCurve() const;
+    Q_PROPERTY(qreal fadeFlowMinimum READ fadeFlowMinimum NOTIFY settingsChanged)
+    qreal fadeFlowMinimum() const;
+    Q_PROPERTY(QVariantList fadeOpacityCurve READ fadeOpacityCurve NOTIFY settingsChanged)
+    QVariantList fadeOpacityCurve() const;
+    Q_PROPERTY(qreal fadeOpacityMinimum READ fadeOpacityMinimum NOTIFY settingsChanged)
+    qreal fadeOpacityMinimum() const;
+    Q_INVOKABLE bool setFadeDynamics(QVariantMap data);
+    Q_INVOKABLE bool setFadeDynamicsEnabled(bool enabled);
+    Q_INVOKABLE bool setFadeSteps(int steps);
+    Q_INVOKABLE bool setFadeControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool resetFadeControl(const QString &target);
     Q_PROPERTY(QVariantMap dynamicsSourceMatrix READ dynamicsSourceMatrix NOTIFY settingsChanged)
     QVariantMap dynamicsSourceMatrix() const;
     Q_PROPERTY(QString dynamicsSizeSource READ dynamicsSizeSource NOTIFY settingsChanged)
@@ -374,7 +397,7 @@ private:
     bool m_cursorSimple=false,m_cursorComposite=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation,direction,matrix;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation,direction,matrix,fade;};
     static QJsonObject presetRow(const Preset &preset,int &version);
     static QJsonObject exportPreset(const Preset &preset,bool includeSource,const QString &id);
     QVariantMap tangentControl(const QString &target) const;

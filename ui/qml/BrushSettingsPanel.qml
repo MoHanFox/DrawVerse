@@ -79,6 +79,10 @@ ColumnLayout {
     function setDirectionDynamicsEnabled(enabled){return root.library.setDirectionDynamicsEnabled(enabled)}
     function setDirectionControl(target,points,minimum){return root.library.setDirectionControl(target,points,minimum)}
     function resetDirectionControl(target){return root.library.resetDirectionControl(target)}
+    function setFadeDynamicsEnabled(enabled){return root.library.setFadeDynamicsEnabled(enabled)}
+    function setFadeSteps(value){return root.library.setFadeSteps(value)}
+    function setFadeControl(target,points,minimum){return root.library.setFadeControl(target,points,minimum)}
+    function resetFadeControl(target){return root.library.resetFadeControl(target)}
     readonly property var dynamicsSources:["all","speed","tangent","distance","tilt","rotation","direction"]
     function dynamicsSourceIndex(value){const index=root.dynamicsSources.indexOf(value);return index<0?0:index}
     function setDynamicsSource(target,index){return root.library.setDynamicsSource(target,root.dynamicsSources[index])}
@@ -333,6 +337,14 @@ ColumnLayout {
                     SpeedCurveEditor {library:root.library;target:"size";prefix:"directionSize";caption:"尺寸随笔触方向变化";curveHelp:"横轴为笔触方向整圈归一化值，纵轴为尺寸比例；编辑自动平滑。";minimumHelp:"最低尺寸比例。";curve:root.library.directionSizeCurve;minimum:root.library.directionSizeMinimum;setControl:function(points,minimum){return root.setDirectionControl("size",points,minimum)};resetControl:function(){return root.resetDirectionControl("size")}}
                     SpeedCurveEditor {library:root.library;target:"flow";prefix:"directionFlow";caption:"流量随笔触方向变化";curveHelp:"横轴为笔触方向整圈归一化值，纵轴为流量比例；编辑自动平滑。";minimumHelp:"最低流量比例。";curve:root.library.directionFlowCurve;minimum:root.library.directionFlowMinimum;setControl:function(points,minimum){return root.setDirectionControl("flow",points,minimum)};resetControl:function(){return root.resetDirectionControl("flow")}}
                     SpeedCurveEditor {library:root.library;target:"opacity";prefix:"directionOpacity";caption:"不透明度随笔触方向变化";curveHelp:"横轴为笔触方向整圈归一化值，纵轴为整笔不透明度比例；独立于流量曲线。";minimumHelp:"最低不透明度比例。";curve:root.library.directionOpacityCurve;minimum:root.library.directionOpacityMinimum;setControl:function(points,minimum){return root.setDirectionControl("opacity",points,minimum)};resetControl:function(){return root.resetDirectionControl("opacity")}}
+                    CompactCheckBox {objectName:"settingsFadeEnabled";text:"启用渐隐动态";checked:root.library.fadeDynamicsEnabled;font.pixelSize:10;onToggled:root.setFadeDynamicsEnabled(checked);tooltip:"按印章步数从完整响应渐隐到最低比例；适用于 ABR 渐隐控制。"}
+                    RowLayout {Layout.fillWidth:true;visible:root.library.fadeDynamicsEnabled
+                        Label {text:"步数";color:Theme.text;Layout.fillWidth:true}
+                        CompactSpinBox {objectName:"settingsFadeSteps";from:1;to:10000;editable:true;implicitWidth:86;implicitHeight:20;value:root.library.fadeSteps;onValueModified:root.setFadeSteps(value);tooltip:"渐隐达到最低比例所需的印章数量。"}
+                    }
+                    SpeedCurveEditor {library:root.library;target:"size";prefix:"fadeSize";caption:"尺寸渐隐曲线";curveHelp:"横轴为渐隐进度，纵轴为尺寸比例；编辑自动平滑。";minimumHelp:"最低尺寸比例。";curve:root.library.fadeSizeCurve;minimum:root.library.fadeSizeMinimum;setControl:function(points,minimum){return root.setFadeControl("size",points,minimum)};resetControl:function(){return root.resetFadeControl("size")}}
+                    SpeedCurveEditor {library:root.library;target:"flow";prefix:"fadeFlow";caption:"流量渐隐曲线";curveHelp:"横轴为渐隐进度，纵轴为流量比例；编辑自动平滑。";minimumHelp:"最低流量比例。";curve:root.library.fadeFlowCurve;minimum:root.library.fadeFlowMinimum;setControl:function(points,minimum){return root.setFadeControl("flow",points,minimum)};resetControl:function(){return root.resetFadeControl("flow")}}
+                    SpeedCurveEditor {library:root.library;target:"opacity";prefix:"fadeOpacity";caption:"不透明度渐隐曲线";curveHelp:"横轴为渐隐进度，纵轴为整笔不透明度比例；编辑自动平滑。";minimumHelp:"最低不透明度比例。";curve:root.library.fadeOpacityCurve;minimum:root.library.fadeOpacityMinimum;setControl:function(points,minimum){return root.setFadeControl("opacity",points,minimum)};resetControl:function(){return root.resetFadeControl("opacity")}}
                     CompactCheckBox {objectName:"settingsAirbrushEnabled";text:"喷枪";checked:root.library.airbrush.enabled;font.pixelSize:10;onToggled:root.setAirbrushField("enabled",checked);tooltip:"按住不动时按固定时间间隔持续沉积颜色；用于画笔和橡皮，涂抹与湿混不启用。"}
                     RowLayout {Layout.fillWidth:true;visible:root.library.airbrush.enabled
                         Label {text:"间隔";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}

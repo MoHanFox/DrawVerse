@@ -35,6 +35,7 @@ fn package() -> Package {
             required_capabilities: vec!["procedural-tip".into(), "airbrush".into()],
             parameters: Parameters {
                 source_matrix: None,
+                fade_dynamics: None,
                 diameter: s.diameter,
                 spacing: s.spacing,
                 dab_opacity: s.opacity,

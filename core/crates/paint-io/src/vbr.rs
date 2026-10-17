@@ -105,6 +105,12 @@ pub struct Parameters {
         deserialize_with = "crate::brush_source_matrix::present"
     )]
     pub source_matrix: Option<crate::brush_source_matrix::SourceMatrixParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_fade::present"
+    )]
+    pub fade_dynamics: Option<crate::brush_fade::FadeParameters>,
 }
 impl Parameters {
     pub fn definition(&self) -> BrushDefinition {
@@ -160,6 +166,11 @@ impl Parameters {
             .unwrap_or_default();
         dynamics.matrix = self
             .source_matrix
+            .as_ref()
+            .map(|p| p.core())
+            .unwrap_or_default();
+        dynamics.fade = self
+            .fade_dynamics
             .as_ref()
             .map(|p| p.core())
             .unwrap_or_default();
@@ -355,6 +366,7 @@ impl Package {
             let rotation = b.parameters.rotation_dynamics.is_some();
             let direction = b.parameters.direction_dynamics.is_some();
             let matrix = b.parameters.source_matrix.is_some();
+            let fade = b.parameters.fade_dynamics.is_some();
             let textured = b.texture.is_some();
             let dual = b.dual_brush.is_some();
             if let Some(d) = &b.dual_brush {
@@ -383,7 +395,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if matrix {
+                != if fade {
+                    26
+                } else if matrix {
                     25
                 } else if direction {
                     24
@@ -441,7 +455,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 28
+            if b.required_capabilities.len() > 29
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -470,6 +484,7 @@ impl Package {
                             | "rotation-dynamics"
                             | "direction-dynamics"
                             | "dynamics-source-matrix"
+                            | "fade-dynamics"
                             | "wet-mix"
                             | "stroke-taper"
                             | "wet-dual-color"
@@ -538,6 +553,8 @@ impl Package {
                         .iter()
                         .any(|c| c == "dynamics-source-matrix")
                 || (matrix && b.engine_profile != "drawverse.brush")
+                || fade != b.required_capabilities.iter().any(|c| c == "fade-dynamics")
+                || (fade && b.engine_profile != "drawverse.brush")
                 || (b.has_dual_sizing()
                     && (b.engine_profile != "drawverse.brush"
                         || !b
@@ -747,6 +764,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
             || b.parameters.rotation_dynamics.is_some()
             || b.parameters.direction_dynamics.is_some()
             || b.parameters.source_matrix.is_some()
+            || b.parameters.fade_dynamics.is_some()
     }) {
         return Err(Error::Unsupported(
             "image VBR requires a resource bundle".into(),

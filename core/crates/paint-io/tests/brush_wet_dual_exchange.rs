@@ -207,6 +207,7 @@ fn package(s: &BrushSettings) -> Package {
                 rotation_dynamics: None,
                 direction_dynamics: None,
                 source_matrix: None,
+                fade_dynamics: None,
                 diameter: s.diameter,
                 spacing: s.spacing,
                 dab_opacity: s.opacity,

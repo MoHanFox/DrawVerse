@@ -610,6 +610,7 @@ public:
             if(tip.value("rotationDynamics").toMap().contains("enabled"))state["version"]=std::max(state.value("version").toInt(),28);
             if(tip.value("directionDynamics").toMap().contains("enabled"))state["version"]=std::max(state.value("version").toInt(),29);
             if(!tip.value("sourceMatrix").toMap().isEmpty()){row["sourceMatrix"]=QJsonObject::fromVariantMap(tip.value("sourceMatrix").toMap());state["version"]=std::max(state.value("version").toInt(),32);}
+            if(!tip.value("fadeDynamics").toMap().isEmpty()){row["fadeDynamics"]=QJsonObject::fromVariantMap(tip.value("fadeDynamics").toMap());state["version"]=std::max(state.value("version").toInt(),34);}
             if(QSet<QString>{"linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=std::max(state.value("version").toInt(),30);
             if(QSet<QString>{"vividLight","linearLight","pinLight","divide"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=std::max(state.value("version").toInt(),31);
             if(tip.value("texture").toMap().value("mode").toString()=="dissolve")state["version"]=std::max(state.value("version").toInt(),33);

@@ -74,6 +74,7 @@ impl Document {
             point.tilt_magnitude(),
             point.rotation_unit(),
             BrushProgram::direction_unit(stroke.direction),
+            stroke.fade_index,
         );
         let next = stroke
             .dual_index
@@ -127,6 +128,7 @@ impl Document {
             point.tilt_magnitude(),
             point.rotation_unit(),
             BrushProgram::direction_unit(stroke.direction),
+            stroke.fade_index,
         );
         let base_radius = f64::from(
             stroke.brush.radius

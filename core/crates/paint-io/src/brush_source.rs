@@ -55,7 +55,7 @@ impl SourceInfo {
         if !matches!(self.version, 1 | 2)
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1..=9)
+            || !matches!(self.converter_version, 1..=10)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -99,8 +99,11 @@ impl SourceInfo {
             || (self.converter_version < 6 && self.baseline.shape_jitter.is_some())
             || (self.converter_version == 5 && self.baseline.color_dynamics.is_none())
             || (self.converter_version < 5 && self.baseline.color_dynamics.is_some())
-            || (self.converter_version >= 9 && self.baseline.source_matrix.is_none())
             || (self.converter_version >= 9
+                && self.converter_version < 10
+                && self.baseline.source_matrix.is_none())
+            || (self.converter_version >= 9
+                && self.converter_version < 10
                 && self.baseline.tilt_dynamics.is_none()
                 && self.baseline.rotation_dynamics.is_none()
                 && self.baseline.direction_dynamics.is_none())
@@ -108,7 +111,10 @@ impl SourceInfo {
                 && (self.baseline.tilt_dynamics.is_some()
                     || self.baseline.rotation_dynamics.is_some()
                     || self.baseline.direction_dynamics.is_some()
-                    || self.baseline.source_matrix.is_some()))
+                    || self.baseline.source_matrix.is_some()
+                    || self.baseline.fade_dynamics.is_some()))
+            || (self.converter_version >= 10 && self.baseline.fade_dynamics.is_none())
+            || (self.converter_version < 10 && self.baseline.fade_dynamics.is_some())
         {
             return Err(Error::Unsupported(
                 "converter v1 baseline dynamic controls".into(),
@@ -131,34 +137,45 @@ mod tests {
         ps_descriptor::{Class, Descriptor},
     };
     use paint_core::{
-        BrushDynamics, BrushSettings, DynamicsSource, DynamicsSourceMatrix, PressureControl,
-        PressureCurve, TiltDynamics,
+        BrushDynamics, BrushSettings, DynamicsSource, DynamicsSourceMatrix, FadeDynamics,
+        PressureControl, PressureCurve, TiltDynamics,
     };
 
     fn preset(version: u32) -> ConvertedPreset<'static> {
         let control =
             PressureControl::new(PressureCurve::new(vec![(0., 0.), (1., 1.)]).unwrap(), 0.)
                 .unwrap();
+        let mut settings = BrushSettings {
+            dynamics: BrushDynamics {
+                tilt: TiltDynamics::new(
+                    true,
+                    control.clone(),
+                    PressureControl::default(),
+                    PressureControl::default(),
+                ),
+                matrix: DynamicsSourceMatrix::new(
+                    DynamicsSource::Tilt,
+                    DynamicsSource::All,
+                    DynamicsSource::All,
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        if version >= 10 {
+            settings.dynamics.fade = FadeDynamics::new(
+                true,
+                4,
+                control,
+                PressureControl::default(),
+                PressureControl::default(),
+            )
+            .unwrap();
+        }
         ConvertedPreset {
             converter_version: version,
             name: "device",
-            settings: BrushSettings {
-                dynamics: BrushDynamics {
-                    tilt: TiltDynamics::new(
-                        true,
-                        control,
-                        PressureControl::default(),
-                        PressureControl::default(),
-                    ),
-                    matrix: DynamicsSourceMatrix::new(
-                        DynamicsSource::Tilt,
-                        DynamicsSource::All,
-                        DynamicsSource::All,
-                    ),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            settings,
             source: Box::leak(Box::new(Descriptor {
                 class: Class {
                     name: String::new(),
@@ -179,6 +196,25 @@ mod tests {
         info.validate().unwrap();
         assert!(
             SourceArchive::capture_info("a".repeat(64), (6, Some(1)), 0, &preset(8), None,)
+                .is_err()
+        );
+    }
+    #[test]
+    fn converter_ten_source_baseline_keeps_fade_dynamics() {
+        let info = SourceArchive::capture_info("b".repeat(64), (6, Some(1)), 0, &preset(10), None)
+            .unwrap();
+        assert!(info.baseline.fade_dynamics.is_some());
+        info.validate().unwrap();
+        let mut fade_only = preset(10);
+        fade_only.settings.dynamics.tilt = Default::default();
+        fade_only.settings.dynamics.matrix = Default::default();
+        let fade_only_info =
+            SourceArchive::capture_info("c".repeat(64), (6, Some(1)), 0, &fade_only, None).unwrap();
+        fade_only_info.validate().unwrap();
+        let mut downgraded = preset(10);
+        downgraded.converter_version = 9;
+        assert!(
+            SourceArchive::capture_info("b".repeat(64), (6, Some(1)), 0, &downgraded, None,)
                 .is_err()
         );
     }
@@ -254,6 +290,9 @@ impl SourceArchive {
             non_pressure.direction = Default::default();
             non_pressure.matrix = Default::default();
         }
+        if preset.converter_version >= 10 {
+            non_pressure.fade = Default::default();
+        }
         if non_pressure != paint_core::BrushDynamics::default()
             || (preset.converter_version < 3
                 && settings.dynamics != paint_core::BrushDynamics::default())
@@ -322,6 +361,11 @@ impl SourceArchive {
                     crate::brush_source_matrix::SourceMatrixParameters::from_core(
                         settings.dynamics.matrix,
                     )
+                }),
+                fade_dynamics: (preset.converter_version >= 10
+                    && !settings.dynamics.fade.is_default())
+                .then(|| {
+                    crate::brush_fade::FadeParameters::from_core(settings.dynamics.fade.clone())
                 }),
                 diameter: settings.diameter,
                 spacing: settings.spacing,

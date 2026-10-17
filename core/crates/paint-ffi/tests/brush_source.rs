@@ -703,6 +703,7 @@ fn pressure_packages_round_trip_through_native_entry() {
         direction_dynamics: None,
         tip_dynamics: None,
         source_matrix: None,
+        fade_dynamics: None,
         diameter: 16.,
         spacing: 0.01,
         dab_opacity: 1.,

@@ -454,6 +454,22 @@ fn set_control(source: &mut Descriptor, key: &str, control: i32, minimum: f64) {
         }
     }
 }
+fn set_steps(source: &mut Descriptor, key: &str, steps: i32) {
+    let value = source
+        .entries
+        .iter_mut()
+        .find(|(name, _)| name == key.as_bytes())
+        .map(|(_, value)| value)
+        .unwrap();
+    let Value::Object { descriptor, .. } = value else {
+        panic!("dynamic object")
+    };
+    for (name, value) in &mut descriptor.entries {
+        if name == b"fStp" {
+            *value = Value::Integer(steps);
+        }
+    }
+}
 #[test]
 fn pressure_channels_minima_reports_legacy_and_real_pixels() {
     use paint_core::{Document, InputPoint};
@@ -568,6 +584,38 @@ fn device_controls_route_size_flow_and_opacity_without_pressure_flags() {
             .iter()
             .any(|issue| issue.path == path && issue.status == Status::Mapped));
     }
+}
+#[test]
+fn abr_fade_control_uses_stamp_steps_and_keeps_other_channels_flat() {
+    let mut source = pressure_preset();
+    source.entries.retain(|(key, _)| key != b"minimumDiameter");
+    for key in [b"prVr".as_slice(), b"opVr"] {
+        source.entries.retain(|(name, _)| name.as_slice() != key);
+    }
+    set_control(&mut source, "szVr", 1, 0.);
+    set_steps(&mut source, "szVr", 4);
+    let shape = shape(false);
+    let p = convert(
+        &[LinkedPreset {
+            name: "fade",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+        }],
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert_eq!(p[0].converter_version, 10);
+    assert!(p[0].settings.dynamics.fade.enabled());
+    assert_eq!(p[0].settings.dynamics.fade.steps(), 4);
+    assert_eq!(p[0].settings.dynamics.fade.size().minimum(), 0.);
+    assert!(!p[0].settings.tip.pressure_size);
+    assert!(!p[0].settings.tip.pressure_flow);
+    assert!(!p[0].settings.dynamics.pressure_opacity);
+    assert!(p[0]
+        .issues
+        .iter()
+        .any(|issue| issue.path == "szVr.fStp" && issue.status == Status::Mapped));
 }
 #[test]
 fn abr_tilt_size_source_changes_real_brush_radius() {

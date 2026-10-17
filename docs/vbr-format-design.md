@@ -252,3 +252,7 @@ ABR source converter9（`bVTy=3/6/8`设备来源）同样要求 manifest minor38
 ## VBR1.39：纹理溶解
 
 纹理 `mode="dissolve"` 使用确定性覆盖率二值抖动，要求 manifest minor39 和 state33；低版本明确拒绝。ABR `BlnM` 的 `Dslv`/`dissolve` 映射到该名称。Schema为 `contracts/vbr-texture-modes-v1.39.schema.json`。该模式是覆盖率近似，不是最终颜色空间的Dissolve图层混合。
+
+## VBR1.40：笔刷渐隐
+
+`parameters.fadeDynamics` 使用 `fade-v1`，必填 `enabled`、`steps`（1–10000）以及 `size`/`flow`/`opacity` 三条控制曲线。输入按印章序号从完整响应线性渐隐到最低比例；要求 `drawverse.brush`、behavior26、`fade-dynamics` 能力和 manifest minor40，state34。Schema为 `contracts/vbr-fade-v1.40.schema.json`。该计数对散射/双笔尖共享同一印章序号，不宣称完整PS步数等价。

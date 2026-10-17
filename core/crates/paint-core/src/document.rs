@@ -453,6 +453,7 @@ struct Stroke {
     airbrush_last_ns: u64,
     airbrush_tick: bool,
     speed: f32,
+    fade_index: u32,
     dual_coverage: BTreeMap<TileCoord, Arc<Tile>>,
     stamp_field: BTreeMap<TileCoord, Arc<Tile>>,
     wet_primary_field: BTreeMap<TileCoord, Arc<Tile>>,
@@ -1367,6 +1368,7 @@ impl Document {
             airbrush_last_ns: first.timestamp_ns,
             airbrush_tick: false,
             speed: 0.,
+            fade_index: 0,
             dual_coverage: BTreeMap::new(),
             stamp_field: BTreeMap::new(),
             wet_primary_field: BTreeMap::new(),
@@ -2015,6 +2017,7 @@ impl Document {
                 point.tilt_magnitude(),
                 point.rotation_unit(),
                 BrushProgram::direction_unit(stroke.direction),
+                stroke.fade_index,
             )
             .0;
         let plan = dual
@@ -2156,7 +2159,7 @@ impl Document {
                 .checked_add(1)
                 .ok_or(Error::ResourceLimit("random dab serial exhausted"))?;
         }
-        if let Some(plan) = plan {
+        let result = if let Some(plan) = plan {
             let mut changed = false;
             for index in 0..plan.count {
                 let sample = plan.point(index, point);
@@ -2200,7 +2203,11 @@ impl Document {
             stroke.random_child = 0;
             stroke.last_carrier = stroke.last_dab;
             self.dab_single(stroke, point)
+        };
+        if result.is_ok() {
+            stroke.fade_index = stroke.fade_index.saturating_add(1);
         }
+        result
     }
     fn dab_single(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
         if stroke
@@ -2275,6 +2282,7 @@ impl Document {
             point.tilt_magnitude(),
             point.rotation_unit(),
             BrushProgram::direction_unit(stroke.direction),
+            stroke.fade_index,
         );
         let base_radius = f64::from(
             stroke.brush.radius

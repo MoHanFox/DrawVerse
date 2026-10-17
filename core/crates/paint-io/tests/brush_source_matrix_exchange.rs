@@ -39,6 +39,7 @@ fn package() -> Package {
                         settings.dynamics.matrix,
                     ),
                 ),
+                fade_dynamics: None,
                 diameter: 12.,
                 spacing: 0.02,
                 dab_opacity: 0.5,

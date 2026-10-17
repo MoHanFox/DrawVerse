@@ -786,6 +786,7 @@ fn scatter_controls(
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DynamicsControl {
+    Fade,
     Pressure,
     Tilt,
     Direction,
@@ -794,6 +795,7 @@ enum DynamicsControl {
 impl DynamicsControl {
     fn from_wire(value: i32) -> Option<Self> {
         match value {
+            1 => Some(Self::Fade),
             2 => Some(Self::Pressure),
             3 => Some(Self::Tilt),
             6 => Some(Self::Direction),
@@ -882,6 +884,46 @@ fn direction_channel(
         },
     )
 }
+fn flat_fade_control() -> PressureControl {
+    PressureControl::new(
+        PressureCurve::new(vec![(0., 1.), (1., 1.)]).expect("flat fade curve"),
+        0.,
+    )
+    .expect("flat fade control")
+}
+fn fade_channel(
+    d: &paint_core::FadeDynamics,
+    target: &[u8],
+    response: PressureControl,
+    steps: u32,
+) -> paint_core::FadeDynamics {
+    paint_core::FadeDynamics::new(
+        true,
+        steps,
+        if target == b"szVr" {
+            response.clone()
+        } else if d.size().is_identity() {
+            flat_fade_control()
+        } else {
+            d.size().clone()
+        },
+        if target == b"prVr" {
+            response.clone()
+        } else if d.flow().is_identity() {
+            flat_fade_control()
+        } else {
+            d.flow().clone()
+        },
+        if target == b"opVr" {
+            response
+        } else if d.opacity().is_identity() {
+            flat_fade_control()
+        } else {
+            d.opacity().clone()
+        },
+    )
+    .expect("validated fade steps")
+}
 fn pressure_controls(
     preset: &Descriptor,
     tool: Option<&Descriptor>,
@@ -935,10 +977,11 @@ fn pressure_controls(
         let minimum = unit(dynamic, b"Mnm ", *b"#Prc", 0., 100.)? / 100.;
         let jitter = unit(dynamic, b"jitter", *b"#Prc", 0., 100.)?;
         let steps = match dynamic.get(b"fStp") {
-            None => false,
-            Some(Value::Integer(n)) if *n >= 0 => true,
+            None => None,
+            Some(Value::Integer(n)) if (0..=10_000).contains(n) => Some(*n as u32),
             _ => return Err(Error::Invalid("ABR fade step type/range")),
         };
+        let has_steps = steps.is_some();
         let name = path_key(key);
         let effective = if key == b"szVr" && preset.get(b"minimumDiameter").is_some() {
             let value = unit(preset, b"minimumDiameter", *b"#Prc", 0., 100.)? / 100.;
@@ -966,6 +1009,33 @@ fn pressure_controls(
             (b"opVr", DynamicsControl::Pressure) => {
                 settings.dynamics.pressure_opacity = true;
                 settings.dynamics.opacity = response;
+            }
+            (b"szVr", DynamicsControl::Fade) => {
+                settings.tip.pressure_size = false;
+                let Some(steps) = steps.filter(|steps| *steps > 0) else {
+                    continue;
+                };
+                settings.dynamics.fade =
+                    fade_channel(&settings.dynamics.fade, key, response, steps);
+                source_changed = true;
+            }
+            (b"prVr", DynamicsControl::Fade) => {
+                settings.tip.pressure_flow = false;
+                let Some(steps) = steps.filter(|steps| *steps > 0) else {
+                    continue;
+                };
+                settings.dynamics.fade =
+                    fade_channel(&settings.dynamics.fade, key, response, steps);
+                source_changed = true;
+            }
+            (b"opVr", DynamicsControl::Fade) => {
+                settings.dynamics.pressure_opacity = false;
+                let Some(steps) = steps.filter(|steps| *steps > 0) else {
+                    continue;
+                };
+                settings.dynamics.fade =
+                    fade_channel(&settings.dynamics.fade, key, response, steps);
+                source_changed = true;
             }
             (b"szVr", DynamicsControl::Tilt) => {
                 settings.tip.pressure_size = false;
@@ -1053,6 +1123,7 @@ fn pressure_controls(
                 "bVTy",
                 Status::Mapped,
                 match control {
+                    DynamicsControl::Fade => "渐隐控制；按印章步数插值到最低比例",
                     DynamicsControl::Pressure => "笔压控制；使用独立线性响应与最低比例",
                     DynamicsControl::Tilt => "设备倾斜控制；使用独立线性响应与最低比例",
                     DynamicsControl::Direction => "笔触方向控制；使用独立线性响应与最低比例",
@@ -1090,9 +1161,18 @@ fn pressure_controls(
             issue(issues, &path, status, reason);
             handled.push(path);
         }
-        if steps {
+        if has_steps {
             let path = format!("{name}.fStp");
-            issue(issues, &path, Status::Mapped, "动态控制不使用渐隐步数");
+            issue(
+                issues,
+                &path,
+                Status::Mapped,
+                if control == DynamicsControl::Fade {
+                    "渐隐步数"
+                } else {
+                    "动态控制不使用渐隐步数"
+                },
+            );
             handled.push(path);
         }
     }
@@ -1598,7 +1678,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if source_changed {
+        if !settings.dynamics.fade.is_default() {
+            converter_version = 10;
+        } else if source_changed {
             converter_version = 9;
         } else if texture_changed {
             converter_version = 8;

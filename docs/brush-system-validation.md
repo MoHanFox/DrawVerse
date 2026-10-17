@@ -256,3 +256,5 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 2026-10-18 ABR设备来源阶段：`bVTy=3/6/8`映射倾斜/方向/旋转并写入来源矩阵，converter9/handoff8及Qt恢复完成；`abr_conversion`30项、六类动态21项、源converter9基线和Windows Qt合成handoff测试通过。见[设计](abr-device-source-design.md)及[验收](abr-device-source-validation.md)。未运行全量测试，ABR渐隐/抖动、16位笔尖、完整PS等价和跨平台仍未完成。
 
 2026-10-18纹理溶解阶段：新增`dissolve`确定性覆盖率二值抖动，state33/VBR1.39及ABR `Dslv`/Qt 21项下拉接通；核心抖动、纹理交换15项和Windows Qt保存重开两项通过。见[设计](brush-texture-dissolve-design.md)及[验收](brush-texture-dissolve-validation.md)。未运行全量测试，颜色空间Dissolve、Hue/Saturation/Color/Luminosity和完整PS像素等价仍未完成。
+
+2026-10-18渐隐动态阶段：新增`fade-v1`印章步数渐隐，state34/VBR1.40/behavior26、ABR `bVTy=1`及Qt步数/曲线页接通；核心2项、交换2项、ABR映射、源converter10和Windows Qt三项通过。见[设计](brush-fade-design.md)及[验收](brush-fade-validation.md)。散射/双笔尖步数和随机抖动仍未完成。

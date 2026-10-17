@@ -98,6 +98,9 @@ impl PressureControl {
         if self.is_identity() {
             return None;
         }
+        Some(self.compile_dynamic())
+    }
+    pub(crate) fn compile_dynamic(&self) -> CompiledPressureControl {
         let points = self.curve.points();
         let h: Vec<_> = points
             .windows(2)
@@ -163,10 +166,10 @@ impl PressureControl {
             })
             .collect::<Vec<_>>()
             .into();
-        Some(CompiledPressureControl {
+        CompiledPressureControl {
             segments,
             minimum: self.minimum,
-        })
+        }
     }
 }
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -186,6 +189,7 @@ pub struct BrushDynamics {
     pub rotation: RotationDynamics,
     pub direction: DirectionDynamics,
     pub matrix: DynamicsSourceMatrix,
+    pub fade: FadeDynamics,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
@@ -203,6 +207,7 @@ impl BrushDynamics {
             && self.rotation.is_default()
             && self.direction.is_default()
             && self.matrix.is_default()
+            && self.fade.is_default()
     }
 }
 
@@ -584,6 +589,97 @@ impl DirectionDynamics {
             flow: self.flow.compile(),
             opacity: self.opacity.compile(),
         })
+    }
+}
+
+/// Optional stamp-count fade response. The input is the fraction of the
+/// configured step count already produced in the active stroke.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FadeDynamics {
+    enabled: bool,
+    steps: u32,
+    size: PressureControl,
+    flow: PressureControl,
+    opacity: PressureControl,
+}
+impl Default for FadeDynamics {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            steps: 25,
+            size: PressureControl::default(),
+            flow: PressureControl::default(),
+            opacity: PressureControl::default(),
+        }
+    }
+}
+impl FadeDynamics {
+    pub fn new(
+        enabled: bool,
+        steps: u32,
+        size: PressureControl,
+        flow: PressureControl,
+        opacity: PressureControl,
+    ) -> Result<Self> {
+        if !(1..=10_000).contains(&steps) {
+            return Err(Error::InvalidArgument("fade steps"));
+        }
+        Ok(Self {
+            enabled,
+            steps,
+            size,
+            flow,
+            opacity,
+        })
+    }
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub fn steps(&self) -> u32 {
+        self.steps
+    }
+    pub fn size(&self) -> &PressureControl {
+        &self.size
+    }
+    pub fn flow(&self) -> &PressureControl {
+        &self.flow
+    }
+    pub fn opacity(&self) -> &PressureControl {
+        &self.opacity
+    }
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+    pub(crate) fn compile(&self) -> Option<CompiledFadeDynamics> {
+        if !self.enabled {
+            return None;
+        }
+        Some(CompiledFadeDynamics {
+            steps: self.steps,
+            size: self.size.compile_dynamic(),
+            flow: self.flow.compile_dynamic(),
+            opacity: self.opacity.compile_dynamic(),
+        })
+    }
+}
+#[derive(Clone, Debug)]
+pub(crate) struct CompiledFadeDynamics {
+    steps: u32,
+    size: CompiledPressureControl,
+    flow: CompiledPressureControl,
+    opacity: CompiledPressureControl,
+}
+impl CompiledFadeDynamics {
+    pub(crate) fn normalized(&self, index: u32) -> f32 {
+        (index as f32 / self.steps as f32).clamp(0., 1.)
+    }
+    pub(crate) fn factors(&self, index: u32) -> (f32, f32, f32) {
+        let input = 1. - self.normalized(index);
+        (
+            self.size.response(input),
+            self.flow.response(input),
+            self.opacity.response(input),
+        )
     }
 }
 

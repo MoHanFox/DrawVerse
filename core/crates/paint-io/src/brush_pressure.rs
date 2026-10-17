@@ -193,6 +193,7 @@ impl<'de> Deserialize<'de> for PressureParameters {
                 rotation: Default::default(),
                 direction: Default::default(),
                 matrix: Default::default(),
+                fade: Default::default(),
             },
             has_opacity,
         })

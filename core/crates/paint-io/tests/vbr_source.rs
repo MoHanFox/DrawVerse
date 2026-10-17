@@ -152,6 +152,7 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                         paint_io::brush_pressure::PressureParameters::from_core(&pressure)
                     }),
                     source_matrix: None,
+                    fade_dynamics: None,
                     diameter: s.diameter,
                     spacing: s.spacing,
                     dab_opacity: s.opacity,

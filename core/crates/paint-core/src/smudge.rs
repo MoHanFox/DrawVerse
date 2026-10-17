@@ -52,6 +52,7 @@ impl Document {
                     point.tilt_magnitude(),
                     point.rotation_unit(),
                     BrushProgram::direction_unit(stroke.direction),
+                    stroke.fade_index,
                 )
                 .0;
             let base_radius = f64::from(

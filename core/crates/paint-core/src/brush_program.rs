@@ -1,8 +1,8 @@
 use crate::{
     brush_dynamics::{
-        CompiledDirectionDynamics, CompiledDistanceDynamics, CompiledPressureControl,
-        CompiledRotationDynamics, CompiledSpeedDynamics, CompiledTangentDynamics,
-        CompiledTiltDynamics,
+        CompiledDirectionDynamics, CompiledDistanceDynamics, CompiledFadeDynamics,
+        CompiledPressureControl, CompiledRotationDynamics, CompiledSpeedDynamics,
+        CompiledTangentDynamics, CompiledTiltDynamics,
     },
     AngleControl, Brush, BrushDynamics, BrushMask, DynamicsSource, Error, InputPoint, Result,
     TipDynamics,
@@ -110,6 +110,7 @@ pub struct BrushProgram {
     tilt: Option<CompiledTiltDynamics>,
     rotation: Option<CompiledRotationDynamics>,
     direction: Option<CompiledDirectionDynamics>,
+    fade: Option<CompiledFadeDynamics>,
     matrix: crate::DynamicsSourceMatrix,
 }
 #[derive(Clone, Copy, Debug)]
@@ -316,6 +317,7 @@ impl BrushProgram {
             tilt: definition.dynamics.tilt.compile(),
             rotation: definition.dynamics.rotation.compile(),
             direction: definition.dynamics.direction.compile(),
+            fade: definition.dynamics.fade.compile(),
             matrix: definition.dynamics.matrix,
         })
     }
@@ -339,6 +341,7 @@ impl BrushProgram {
                 .map_or(pressure, |curve| curve.response(pressure))
         })
     }
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn factor_all(
         &self,
         speed: f32,
@@ -347,6 +350,7 @@ impl BrushProgram {
         tilt: f32,
         rotation: f32,
         direction: f32,
+        fade_index: u32,
     ) -> (f32, f32, f32) {
         let factors = [
             self.speed.as_ref().map_or([None; 3], |compiled| {
@@ -415,10 +419,14 @@ impl BrushProgram {
             DynamicsSource::Direction if active[5] => factors[5][channel].unwrap_or(inputs[5]),
             _ => 1.,
         };
+        let fade = self
+            .fade
+            .as_ref()
+            .map_or((1., 1., 1.), |compiled| compiled.factors(fade_index));
         (
-            pick(self.matrix.size(), 0),
-            pick(self.matrix.flow(), 1),
-            pick(self.matrix.opacity(), 2),
+            pick(self.matrix.size(), 0) * fade.0,
+            pick(self.matrix.flow(), 1) * fade.1,
+            pick(self.matrix.opacity(), 2) * fade.2,
         )
     }
     pub(crate) fn direction_unit(direction: Option<f64>) -> f32 {
@@ -681,7 +689,7 @@ fn source_matrix_selects_dynamics_per_target_channel() {
         ..Default::default()
     };
     let program = BrushProgram::compile(definition.clone()).unwrap();
-    let all = program.factor_all(1000., 1., 1000., 1., 1., 1.);
+    let all = program.factor_all(1000., 1., 1000., 1., 1., 1., 0);
     let expected = (
         0.2 * 0.5 * 0.8 * 0.11 * 0.14 * 0.17,
         0.3 * 0.6 * 0.9 * 0.12 * 0.15 * 0.18,
@@ -703,7 +711,7 @@ fn source_matrix_selects_dynamics_per_target_channel() {
     );
     let factors = BrushProgram::compile(selected)
         .unwrap()
-        .factor_all(1000., 1., 1000., 1., 1., 1.);
+        .factor_all(1000., 1., 1000., 1., 1., 1., 0);
     assert!((factors.0 - 0.8).abs() < 1e-6);
     assert!((factors.1 - 0.12).abs() < 1e-6);
     assert!((factors.2 - 0.16).abs() < 1e-6);
