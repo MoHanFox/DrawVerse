@@ -1398,6 +1398,7 @@ fn dual_scatter(dual: &Descriptor) -> Result<Option<ScatterDynamics>> {
 }
 fn dual_controls(
     preset: &Descriptor,
+    dual_tip: Option<&crate::abr_sampled::SectionedTip>,
     settings: &mut BrushSettings,
     issues: &mut Vec<Issue>,
 ) -> Result<bool> {
@@ -1413,15 +1414,19 @@ fn dual_controls(
         Some(Value::Object { descriptor, .. }) => descriptor,
         _ => return Err(Error::Invalid("ABR dual brush shape")),
     };
-    if shape.class.id != b"computedBrush" {
-        issue(
-            issues,
-            "dualBrush.Brsh",
-            Status::NotExecuted,
-            "仅支持计算双笔刷形状；sampled双笔刷资源关联尚未实现",
-        );
-        return Ok(false);
-    }
+    let sampled = match shape.class.id.as_slice() {
+        b"computedBrush" => false,
+        b"sampledBrush" => true,
+        _ => {
+            issue(
+                issues,
+                "dualBrush.Brsh",
+                Status::NotExecuted,
+                "未知双笔刷形状类型",
+            );
+            return Ok(false);
+        }
+    };
     let mode = match dual
         .get(b"BlnM")
         .and_then(enum_name)
@@ -1442,7 +1447,11 @@ fn dual_controls(
     let radius = unit(shape, b"Dmtr", *b"#Pxl", 1., 512.)? / 2.;
     let angle = unit(shape, b"Angl", *b"#Ang", -180., 180.)?;
     let roundness = unit(shape, b"Rndn", *b"#Prc", 1., 100.)? / 100.;
-    let hardness = unit(shape, b"Hrdn", *b"#Prc", 0., 100.)? / 100.;
+    let hardness = if sampled {
+        1.
+    } else {
+        unit(shape, b"Hrdn", *b"#Prc", 0., 100.)? / 100.
+    };
     let spacing = unit(dual, b"Spcn", *b"#Prc", 1., 50.)? / 100.;
     let tip = BrushTip {
         hardness,
@@ -1453,10 +1462,20 @@ fn dual_controls(
         pressure_flow: false,
     };
     let scatter = dual_scatter(dual)?;
+    let mask = if sampled {
+        Some(
+            dual_tip
+                .ok_or(Error::Invalid("ABR dual sample reference"))?
+                .mask
+                .clone(),
+        )
+    } else {
+        None
+    };
     let secondary = SecondaryTip::new(
         radius,
         tip,
-        None,
+        mask,
         paint_core::BrushDynamics {
             scatter: scatter.unwrap_or_default(),
             ..Default::default()
@@ -1466,7 +1485,14 @@ fn dual_controls(
     settings.dual = DualBrush::new(true, mode, secondary);
     for (path, reason) in [
         ("dualBrush.useDualBrush", "计算双笔刷已启用"),
-        ("dualBrush.Brsh", "计算双笔刷形状"),
+        (
+            "dualBrush.Brsh",
+            if sampled {
+                "采样双笔刷形状及资源"
+            } else {
+                "计算双笔刷形状"
+            },
+        ),
         ("dualBrush.BlnM", "双笔刷贡献模式"),
         ("dualBrush.Spcn", "双笔刷独立路径间距"),
     ] {
@@ -1729,7 +1755,12 @@ fn convert_inner<'a>(
             false
         };
         let dual_changed = if generation >= 9 {
-            dual_controls(item.preset, &mut settings, &mut issues)?
+            dual_controls(
+                item.preset,
+                item.dual_sampled_tip,
+                &mut settings,
+                &mut issues,
+            )?
         } else {
             false
         };

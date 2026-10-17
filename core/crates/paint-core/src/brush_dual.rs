@@ -146,6 +146,13 @@ impl SecondaryTip {
         self.spacing = Some(spacing);
         Ok(self)
     }
+    pub fn with_mask(mut self, mask: Arc<BrushMask>) -> Result<Self> {
+        if mask.resource_id().is_none() {
+            return Err(Error::InvalidArgument("secondary mask identity"));
+        }
+        self.mask = Some(mask);
+        Ok(self)
+    }
     pub fn spacing(&self) -> Option<f32> {
         self.spacing
     }
@@ -235,6 +242,10 @@ impl DualBrush {
     }
     pub fn secondary(&self) -> &SecondaryTip {
         &self.secondary
+    }
+    pub fn with_secondary(mut self, secondary: SecondaryTip) -> Self {
+        self.secondary = Arc::new(secondary);
+        self
     }
     pub fn is_default(&self) -> bool {
         !self.enabled

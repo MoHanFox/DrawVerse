@@ -250,6 +250,27 @@ mod tests {
         assert!(info.dual_brush.is_some());
         assert_eq!(info.version, 3);
         info.validate().unwrap();
+        let mut masked = preset(11);
+        let mask = paint_core::BrushMask::new(2, 2, vec![255; 4])
+            .unwrap()
+            .with_resource_id("e".repeat(64))
+            .unwrap();
+        let secondary = masked
+            .settings
+            .dual
+            .secondary()
+            .clone()
+            .with_mask(Arc::new(mask))
+            .unwrap();
+        masked.settings.dual = masked.settings.dual.clone().with_secondary(secondary);
+        let masked_info =
+            SourceArchive::capture_info("f".repeat(64), (6, Some(1)), 0, &masked, None).unwrap();
+        assert!(masked_info
+            .dual_brush
+            .as_ref()
+            .and_then(|dual| dual.resource_id())
+            .is_some());
+        masked_info.validate().unwrap();
     }
 }
 impl SourceArchive {

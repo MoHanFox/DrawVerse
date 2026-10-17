@@ -5,7 +5,7 @@ use crate::{
     brush_source::SourceBatch,
     check, Error, Result,
 };
-use paint_core::{BrushProgram, BrushSettings, TextureResource, MAX_CATALOG_MASK_BYTES};
+use paint_core::{BrushMask, BrushProgram, BrushSettings, TextureResource, MAX_CATALOG_MASK_BYTES};
 use paint_task::CancellationToken;
 use std::{collections::BTreeMap, fs::File, io::Read, path::Path, sync::Arc};
 
@@ -16,6 +16,7 @@ pub struct ImportedPreset {
     source: String,
     partial: bool,
     tip: Option<String>,
+    dual_tip: Option<String>,
     texture: Option<String>,
 }
 impl ImportedPreset {
@@ -188,15 +189,16 @@ impl ImportBatch {
         let parsed = abr_sampled::decode_sectioned(&bytes, token)?;
         let descriptors = parsed.descriptors(token)?;
         let linked = abr_association::associate(&parsed, &descriptors, token)?;
-        let converted =
+        let mut converted =
             abr_conversion::convert_v9(&linked, &parsed.texture_presets, &parsed.patterns, token)?;
         let mut assets = BTreeMap::new();
         let mut identities: BTreeMap<usize, String> = BTreeMap::new();
         let mut resident = 0usize;
         let mut encoded = 0usize;
         let mut tips = Vec::new();
+        let mut dual_tips = Vec::new();
         let mut textures = Vec::new();
-        for preset in &converted {
+        for preset in &mut converted {
             check(token)?;
             BrushProgram::compile(preset.settings.definition())?;
             let tip = if let Some(mask) = &preset.settings.mask {
@@ -224,6 +226,44 @@ impl ImportBatch {
                 None
             };
             tips.push(tip);
+            let dual_tip = if let Some(mask) = preset.settings.dual.secondary().mask().cloned() {
+                let key = Arc::as_ptr(&mask) as usize;
+                let identity = if let Some(identity) = identities.get(&key) {
+                    identity.clone()
+                } else {
+                    resident = resident.saturating_add(mask.resident_bytes());
+                    if resident > mask_budget {
+                        return Err(Error::Limit("ABR import image resources"));
+                    }
+                    let png = encode_mask(&mask)?;
+                    let identity = hash(&png);
+                    if !assets.contains_key(&identity) {
+                        encoded = encoded.saturating_add(png.len());
+                        if encoded > 128 * 1024 * 1024 {
+                            return Err(Error::Limit("ABR import asset bytes"));
+                        }
+                        assets.insert(identity.clone(), png);
+                    }
+                    identities.insert(key, identity.clone());
+                    identity
+                };
+                let (width, height) = mask.dimensions();
+                let identified = Arc::new(
+                    BrushMask::new(width, height, mask.coverage().to_vec())?
+                        .with_resource_id(identity.clone())?,
+                );
+                let secondary = preset
+                    .settings
+                    .dual
+                    .secondary()
+                    .clone()
+                    .with_mask(identified)?;
+                preset.settings.dual = preset.settings.dual.clone().with_secondary(secondary);
+                Some(identity)
+            } else {
+                None
+            };
+            dual_tips.push(dual_tip);
             let texture = if let Some(resource) = preset.settings.texture.resource() {
                 let source = resource.source();
                 let identity = source
@@ -252,16 +292,20 @@ impl ImportBatch {
             .iter()
             .zip(sources.ids())
             .zip(tips)
+            .zip(dual_tips)
             .zip(textures)
-            .map(|(((preset, source), tip), texture)| ImportedPreset {
-                converter_version: preset.converter_version,
-                name: preset.name.into(),
-                settings: preset.settings.clone(),
-                source: source.into(),
-                partial: preset.is_partial(),
-                tip,
-                texture,
-            })
+            .map(
+                |((((preset, source), tip), dual_tip), texture)| ImportedPreset {
+                    converter_version: preset.converter_version,
+                    name: preset.name.into(),
+                    settings: preset.settings.clone(),
+                    source: source.into(),
+                    partial: preset.is_partial(),
+                    tip,
+                    dual_tip,
+                    texture,
+                },
+            )
             .collect();
         check(token)?;
         Ok(Self {
@@ -294,6 +338,14 @@ impl ImportBatch {
                         .ok_or(Error::Invalid("ABR imported resource identity"))?
                         .clone(),
                 );
+            }
+            if let Some(id) = &preset.dual_tip {
+                let mask = masks
+                    .get(id)
+                    .ok_or(Error::Invalid("ABR imported dual resource identity"))?
+                    .clone();
+                let secondary = preset.settings.dual.secondary().clone().with_mask(mask)?;
+                preset.settings.dual = preset.settings.dual.clone().with_secondary(secondary);
             }
             if let Some(id) = &preset.texture {
                 let source = masks

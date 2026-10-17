@@ -80,12 +80,14 @@ fn procedural_and_image_baselines_compile_and_use_actual_coverage_without_added_
             preset: &preset,
             shape: &procedural,
             sampled_tip: None,
+            dual_sampled_tip: None,
         },
         LinkedPreset {
             name: "同名",
             preset: &preset,
             shape: &image_shape,
             sampled_tip: Some(&tip),
+            dual_sampled_tip: None,
         },
     ];
     let converted = convert(&linked, &CancellationToken::default()).unwrap();
@@ -139,6 +141,7 @@ fn unknown_dynamic_paths_and_partial_tool_opacity_are_reported_without_imitation
         preset: &source,
         shape: &shape,
         sampled_tip: None,
+        dual_sampled_tip: None,
     }];
     let converted =
         paint_io::abr_conversion::convert_legacy(&linked, &CancellationToken::default()).unwrap();
@@ -185,12 +188,14 @@ fn units_missing_fields_range_and_late_failure_never_return_a_partial_batch() {
                 preset: &source,
                 shape: &original,
                 sampled_tip: None,
+                dual_sampled_tip: None,
             },
             LinkedPreset {
                 name: "非法",
                 preset: &source,
                 shape: &bad,
                 sampled_tip: None,
+                dual_sampled_tip: None,
             },
         ];
         assert!(convert(&linked, &token).is_err());
@@ -202,7 +207,8 @@ fn units_missing_fields_range_and_late_failure_never_return_a_partial_batch() {
             name: "缺间距",
             preset: &source,
             shape: &missing,
-            sampled_tip: None
+            sampled_tip: None,
+            dual_sampled_tip: None,
         }],
         &token
     )
@@ -214,7 +220,8 @@ fn units_missing_fields_range_and_late_failure_never_return_a_partial_batch() {
             name: "取消",
             preset: &source,
             shape: &original,
-            sampled_tip: None
+            sampled_tip: None,
+            dual_sampled_tip: None,
         }],
         &cancelled
     )
@@ -233,7 +240,8 @@ fn huge_unknown_reports_reject_with_a_bound_and_never_hide_the_extra_fields() {
             name: "报告超限",
             preset: &source,
             shape: &shape,
-            sampled_tip: None
+            sampled_tip: None,
+            dual_sampled_tip: None,
         }],
         &CancellationToken::default()
     )
@@ -254,6 +262,7 @@ fn stroke_opacity_mapping_is_versioned_and_range_checked_before_rounding() {
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }];
         let current = convert(&linked, &token).unwrap();
         let legacy = paint_io::abr_conversion::convert_legacy(&linked, &token).unwrap();
@@ -292,7 +301,8 @@ fn stroke_opacity_mapping_is_versioned_and_range_checked_before_rounding() {
                 name: "invalid",
                 preset: &source,
                 shape: &shape,
-                sampled_tip: None
+                sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token
         )
@@ -337,6 +347,7 @@ fn converted_program_and_image_opacity_cap_dense_strokes_with_exact_history() {
                 preset: &source,
                 shape: &shape,
                 sampled_tip: sampled.then_some(&tip),
+                dual_sampled_tip: None,
             }],
             &token,
         )
@@ -381,6 +392,7 @@ fn many_individually_valid_reports_are_bounded_before_entire_batch_accumulates()
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         })
         .collect::<Vec<_>>();
     assert!(matches!(
@@ -481,6 +493,7 @@ fn pressure_channels_minima_reports_legacy_and_real_pixels() {
         preset: &source,
         shape: &shape,
         sampled_tip: None,
+        dual_sampled_tip: None,
     }];
     let current = convert(&linked, &token).unwrap();
     let p = &current[0];
@@ -555,6 +568,7 @@ fn device_controls_route_size_flow_and_opacity_without_pressure_flags() {
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }],
         &CancellationToken::default(),
     )
@@ -601,6 +615,7 @@ fn abr_fade_control_uses_stamp_steps_and_keeps_other_channels_flat() {
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }],
         &CancellationToken::default(),
     )
@@ -694,6 +709,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }],
         &std::collections::BTreeMap::new(),
         &std::collections::BTreeMap::new(),
@@ -714,6 +730,72 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
     );
 }
 #[test]
+fn abr_sampled_dual_brush_binds_secondary_mask() {
+    let mut source = preset();
+    source.entries.push((
+        "dualBrush".into(),
+        Value::Object {
+            global: false,
+            descriptor: Box::new(object(
+                "dualBrush",
+                vec![
+                    ("useDualBrush", Value::Boolean(true)),
+                    (
+                        "Brsh",
+                        Value::Object {
+                            global: false,
+                            descriptor: Box::new(object(
+                                "sampledBrush",
+                                vec![
+                                    ("Dmtr", unit(*b"#Pxl", 8.)),
+                                    ("Angl", unit(*b"#Ang", 0.)),
+                                    ("Rndn", unit(*b"#Prc", 100.)),
+                                    ("Spcn", unit(*b"#Prc", 2.)),
+                                    ("sampledData", Value::Text("dual-sample\0".into())),
+                                ],
+                            )),
+                        },
+                    ),
+                    (
+                        "BlnM",
+                        Value::Enumerated {
+                            type_id: b"BlnM".to_vec(),
+                            value: b"Mltp".to_vec(),
+                        },
+                    ),
+                    ("Spcn", unit(*b"#Prc", 25.)),
+                ],
+            )),
+        },
+    ));
+    let tip = SectionedTip {
+        id: "dual-sample".into(),
+        prefix: vec![].into(),
+        bounds: [0, 0, 4, 4],
+        mask: Arc::new(paint_core::BrushMask::new(4, 4, vec![255; 16]).unwrap()),
+        trailing_metadata: vec![].into(),
+    };
+    let shape = shape(false);
+    let p = paint_io::abr_conversion::convert_v9(
+        &[LinkedPreset {
+            name: "sampled-dual",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+            dual_sampled_tip: Some(&tip),
+        }],
+        &std::collections::BTreeMap::new(),
+        &std::collections::BTreeMap::new(),
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    assert!(p[0].settings.dual.secondary().mask().is_some());
+    assert_eq!(
+        p[0].settings.dual.secondary().mask().unwrap().dimensions(),
+        (4, 4)
+    );
+}
+#[test]
 fn abr_tilt_size_source_changes_real_brush_radius() {
     use paint_core::{Document, InputPoint};
     let mut source = pressure_preset();
@@ -729,6 +811,7 @@ fn abr_tilt_size_source_changes_real_brush_radius() {
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }],
         &CancellationToken::default(),
     )
@@ -814,6 +897,7 @@ fn pressure_switches_overrides_unknown_controls_and_random_fields_are_honest() {
                 preset: &source,
                 shape: &shape,
                 sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token,
         )
@@ -866,7 +950,8 @@ fn enabled_pressure_rejects_bad_units_types_and_pre_rounding_bounds() {
                 name: "bad",
                 preset: &source,
                 shape: &shape,
-                sampled_tip: None
+                sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token
         )
@@ -910,6 +995,7 @@ fn pressure_channels_are_independent_and_literal_dotted_keys_stay_reported() {
                 preset: &source,
                 shape: &shape,
                 sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token,
         )
@@ -982,6 +1068,7 @@ fn scatter_conversion_uses_real_program_image_pressure_and_two_stroke_history() 
                     preset: &source,
                     shape: &shape,
                     sampled_tip: sampled.then_some(&mask),
+                    dual_sampled_tip: None,
                 }];
                 let converted = convert(&linked, &token).unwrap();
                 let preset = &converted[0];
@@ -1072,7 +1159,8 @@ fn scatter_preserves_unknown_controls_and_rejects_fractional_counts_and_bad_rang
                 name: "bad",
                 preset: &source,
                 shape: &shape,
-                sampled_tip: None
+                sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token
         )
@@ -1094,7 +1182,8 @@ fn scatter_preserves_unknown_controls_and_rejects_fractional_counts_and_bad_rang
                 name: "bad",
                 preset: &source,
                 shape: &shape,
-                sampled_tip: None
+                sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token
         )
@@ -1116,6 +1205,7 @@ fn scatter_preserves_unknown_controls_and_rejects_fractional_counts_and_bad_rang
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }],
         &token,
     )
@@ -1172,6 +1262,7 @@ fn default_closed_scatter_keeps_v3_reports_and_does_not_upgrade() {
         preset: &source,
         shape: &shape,
         sampled_tip: None,
+        dual_sampled_tip: None,
     }];
     let token = CancellationToken::default();
     let current = convert(&linked, &token).unwrap();
@@ -1256,6 +1347,7 @@ fn color_conversion_program_image_frequency_and_closed_state_use_real_history() 
                     preset: &source,
                     shape: &shape,
                     sampled_tip: sampled.then_some(&mask),
+                    dual_sampled_tip: None,
                 }];
                 let result = convert(&linked, &token).unwrap();
                 let p = &result[0];
@@ -1340,7 +1432,8 @@ fn color_conversion_rejects_invalid_units_ranges_and_preserves_unsupported_contr
                 name: "bad",
                 preset: &source,
                 shape: &shape,
-                sampled_tip: None
+                sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token
         )
@@ -1366,6 +1459,7 @@ fn color_conversion_rejects_invalid_units_ranges_and_preserves_unsupported_contr
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }],
         &token,
     )
@@ -1412,6 +1506,7 @@ fn default_or_incomplete_closed_color_keeps_v4_reports_and_source_contract_is_st
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }];
         let a = convert(&linked, &token).unwrap();
         let b = paint_io::abr_conversion::convert_v4(&linked, &token).unwrap();
@@ -1538,6 +1633,7 @@ fn shape_conversion_with_pressure_scatter_color_and_images_matches_native_two_st
                 preset: &source,
                 shape: &shape,
                 sampled_tip: sampled.then_some(&mask),
+                dual_sampled_tip: None,
             }];
             let converted = convert(&linked, &token).unwrap();
             let p = &converted[0];
@@ -1617,6 +1713,7 @@ fn shape_conversion_channel_defaults_unknown_controls_and_tool_overrides_are_exp
                 preset: &source,
                 shape: &shape,
                 sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token,
         )
@@ -1656,6 +1753,7 @@ fn shape_conversion_channel_defaults_unknown_controls_and_tool_overrides_are_exp
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }],
         &token,
     )
@@ -1701,7 +1799,8 @@ fn shape_conversion_bad_values_closed_defaults_and_source_contract_are_guarded()
                 name: "bad",
                 preset: &source,
                 shape: &shape,
-                sampled_tip: None
+                sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token
         )
@@ -1743,6 +1842,7 @@ fn shape_conversion_bad_values_closed_defaults_and_source_contract_are_guarded()
             preset: &source,
             shape: &shape,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }];
         let a = convert(&linked, &token).unwrap();
         let b = paint_io::abr_conversion::convert_v5(&linked, &token).unwrap();
@@ -1799,6 +1899,7 @@ fn shape_closed_clamping_and_malformed_dynamic_fields_never_claim_exact_mapping(
                 preset: &source,
                 shape: &shape,
                 sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token,
         )
@@ -1839,7 +1940,8 @@ fn shape_closed_clamping_and_malformed_dynamic_fields_never_claim_exact_mapping(
                 name: "bad",
                 preset: &source,
                 shape: &shape,
-                sampled_tip: None
+                sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token
         )
@@ -1932,6 +2034,7 @@ fn device_conversion_reuses_native_geometry_with_images_pressure_and_actual_hist
                         preset: &p,
                         shape: &sh,
                         sampled_tip: sampled.then_some(&mask),
+                        dual_sampled_tip: None,
                     }];
                     let c = convert(&linked, &token).unwrap();
                     let old = paint_io::abr_conversion::convert_v6(&linked, &token).unwrap();
@@ -2047,6 +2150,7 @@ fn device_disabled_unknown_pose_and_overrides_preserve_v6_behavior_and_reports()
             preset: &p,
             shape: &sh,
             sampled_tip: None,
+            dual_sampled_tip: None,
         }];
         let a = convert(&linked, &token).unwrap();
         let b = paint_io::abr_conversion::convert_v6(&linked, &token).unwrap();
@@ -2095,7 +2199,8 @@ fn device_invalid_units_ranges_types_and_source_contract_are_rejected() {
                 name: "bad",
                 preset: &p,
                 shape: &sh,
-                sampled_tip: None
+                sampled_tip: None,
+                dual_sampled_tip: None,
             }],
             &token
         )
@@ -2159,6 +2264,7 @@ fn device_channels_are_independent_and_tilt_minimum_is_bounded_before_execution(
                     preset: &p,
                     shape: &sh,
                     sampled_tip: None,
+                    dual_sampled_tip: None,
                 }],
                 &token,
             )

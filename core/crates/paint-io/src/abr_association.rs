@@ -12,6 +12,7 @@ pub struct LinkedPreset<'a> {
     pub preset: &'a Descriptor,
     pub shape: &'a Descriptor,
     pub sampled_tip: Option<&'a SectionedTip>,
+    pub dual_sampled_tip: Option<&'a SectionedTip>,
 }
 pub fn source_text(value: &Value) -> Result<&str> {
     let Value::Text(text) = value else {
@@ -83,11 +84,37 @@ pub fn associate<'a>(
                     )))
                 }
             };
+            let dual_sampled_tip = match preset.get(b"dualBrush") {
+                Some(Value::Object { descriptor, .. })
+                    if matches!(descriptor.get(b"useDualBrush"), Some(Value::Boolean(true))) =>
+                {
+                    let dual_shape = match descriptor.get(b"Brsh") {
+                        Some(Value::Object { descriptor, .. }) => descriptor,
+                        _ => return Err(Error::Invalid("ABR dual shape missing")),
+                    };
+                    if dual_shape.class.id == b"sampledBrush" {
+                        let id = source_text(
+                            dual_shape
+                                .get(b"sampledData")
+                                .ok_or(Error::Invalid("ABR dual sample reference missing"))?,
+                        )?;
+                        Some(
+                            *samples
+                                .get(id)
+                                .ok_or(Error::Invalid("ABR dual sample reference not found"))?,
+                        )
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
             presets.push(LinkedPreset {
                 name,
                 preset,
                 shape,
                 sampled_tip,
+                dual_sampled_tip,
             });
         }
     }
