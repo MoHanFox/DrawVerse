@@ -1462,6 +1462,8 @@ fn dual_controls(
         pressure_flow: false,
     };
     let scatter = dual_scatter(dual)?;
+    let shape_flip_x = flag(shape, b"flipX")?.unwrap_or(false);
+    let shape_flip_y = flag(shape, b"flipY")?.unwrap_or(false);
     let mask = if sampled {
         Some(
             dual_tip
@@ -1482,7 +1484,8 @@ fn dual_controls(
         },
     )?
     .with_spacing(spacing)?
-    .with_flip(flag(dual, b"Flip")?.unwrap_or(false));
+    .with_flip(flag(dual, b"Flip")?.unwrap_or(false))
+    .with_shape_flip(shape_flip_x, shape_flip_y);
     settings.dual = DualBrush::new(true, mode, secondary);
     for (path, reason) in [
         ("dualBrush.useDualBrush", "计算双笔刷已启用"),
@@ -1515,6 +1518,16 @@ fn dual_controls(
             Status::Mapped,
             "逐印章随机翻转第二笔刷形状",
         );
+    }
+    for (key, enabled) in [("flipX", shape_flip_x), ("flipY", shape_flip_y)] {
+        if enabled {
+            issue(
+                issues,
+                format!("dualBrush.Brsh.{key}"),
+                Status::Mapped,
+                "双笔刷形状固定镜像",
+            );
+        }
     }
     Ok(true)
 }

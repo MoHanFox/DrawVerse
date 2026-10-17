@@ -180,10 +180,11 @@ bool validDualSizing(const QJsonObject &data){
 }
 QVariantMap defaultDual(){return {{"model","path-coverage-v1"},{"enabled",false},{"mode","multiply"},{"diameter",24.},{"spacing",.25},{"hardness",1.},{"roundness",1.},{"angle",0.},{"flow",1.},{"pressureSize",true},{"pressureFlow",true},{"resource",QVariant{}}};}
 bool validDual(const QJsonObject &data){
-    static const QSet<QString> allowed={"model","enabled","flip","mode","diameter","spacing","hardness","roundness","angle","flow","pressureSize","pressureFlow","resource","pressureDynamics","tipDynamics","scatterDynamics","shapeJitter","sizing","color"};
+    static const QSet<QString> allowed={"model","enabled","flip","flipX","flipY","mode","diameter","spacing","hardness","roundness","angle","flow","pressureSize","pressureFlow","resource","pressureDynamics","tipDynamics","scatterDynamics","shapeJitter","sizing","color"};
     for(auto it=data.begin();it!=data.end();++it)if(!allowed.contains(it.key()))return false;
     for(const auto &key:{"enabled","pressureSize","pressureFlow"})if(!data.value(key).isBool())return false;
     if(data.contains("flip") && !data.value("flip").isBool())return false;
+    for(const auto &key:{"flipX","flipY"})if(data.contains(key) && !data.value(key).isBool())return false;
     const auto model=data.value("model").toString();const auto spacing=data.value("spacing");
     if(!data.contains("spacing") || (model=="paired-dab-v1"?!spacing.isNull():model=="path-coverage-v1"?(!spacing.isDouble() || !std::isfinite(spacing.toDouble()) || spacing.toDouble()<.01 || spacing.toDouble()>1):true))return false;
     if(!QStringList{"multiply","darken","lighten","subtract","difference","screen"}.contains(data.value("mode").toString()))return false;
@@ -235,6 +236,7 @@ QVariantMap canonicalDual(QVariantMap data){
     if(data.value("color").toMap()==defaultDualColor())data.remove("color");
     if(data.value("sizing").toMap()==defaultDualSizing())data.remove("sizing");
     if(data.contains("flip") && !data.value("flip").toBool())data.remove("flip");
+    for(const auto &key:{"flipX","flipY"})if(data.contains(key) && !data.value(key).toBool())data.remove(key);
     if(QJsonObject::fromVariantMap(data)==QJsonObject::fromVariantMap(defaultDual()))data.clear();return data;
 }
 }

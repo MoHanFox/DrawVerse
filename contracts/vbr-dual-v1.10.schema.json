@@ -1155,6 +1155,12 @@
         "flip": {
           "type": "boolean"
         },
+        "flipX": {
+          "type": "boolean"
+        },
+        "flipY": {
+          "type": "boolean"
+        },
         "amount": {
           "type": "number",
           "minimum": 0,

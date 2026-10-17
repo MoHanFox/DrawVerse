@@ -530,6 +530,7 @@ private slots:
         QQuickItem *category=nullptr;QTRY_VERIFY((category=findVisualItem(window->contentItem(),"brushCategory:4")));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,category->mapToScene({category->width()/2,category->height()/2}).toPoint());QTest::qWait(100);
         auto *flip=findVisualItem(window->contentItem(),"settingsDualFlip");QVERIFY(flip);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,flip->mapToScene({8,flip->height()/2}).toPoint());QTRY_VERIFY(library->dualBrush().value("flip").toBool());QVERIFY(flip->property("checked").toBool());
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,flip->mapToScene({8,flip->height()/2}).toPoint());QTRY_VERIFY(!library->dualBrush().value("flip").toBool());
+        auto *flipX=findVisualItem(window->contentItem(),"settingsDualFlipX");auto *flipY=findVisualItem(window->contentItem(),"settingsDualFlipY");QVERIFY(flipX);QVERIFY(flipY);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,flipX->mapToScene({8,flipX->height()/2}).toPoint());QTRY_VERIFY(library->dualBrush().value("flipX").toBool());QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,flipY->mapToScene({8,flipY->height()/2}).toPoint());QTRY_VERIFY(library->dualBrush().value("flipY").toBool());
     }
     void dualSizingControlsPreviewCaptureExchangeAndReopen() {
         QTemporaryDir temp;const auto path=temp.filePath("storage.ini");PaintCoreClient client(nullptr,path);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;

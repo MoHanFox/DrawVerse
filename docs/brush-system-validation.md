@@ -259,4 +259,4 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 
 2026-10-18渐隐动态阶段：新增`fade-v1`印章步数渐隐，state34/VBR1.40/behavior26、ABR `bVTy=1`及Qt步数/曲线页接通；核心2项、交换2项、ABR映射、源converter10和Windows Qt三项通过。见[设计](brush-fade-design.md)及[验收](brush-fade-validation.md)。散射/双笔尖步数和随机抖动仍未完成。
 
-2026-10-18 ABR计算双笔刷阶段：computed/sampled双笔刷形状、间距、贡献模式、散布/数量和随机Flip接入converter11/handoff10及源version3/VBR1.41，Qt handoff10恢复state12；ABR转换新增用例、源基线和既有ABR/渐隐/矩阵回归通过。见[设计](abr-dual-brush-design.md)及[验收](abr-dual-brush-validation.md)。设备散布控制仍未完成。
+2026-10-18 ABR计算双笔刷阶段：computed/sampled双笔刷形状、间距、贡献模式、散布/数量、随机Flip和固定flipX/flipY接入converter11/handoff10及源version3/VBR1.41，Qt handoff10恢复state12；ABR转换新增用例、源基线和既有ABR/渐隐/矩阵回归通过。见[设计](abr-dual-brush-design.md)及[验收](abr-dual-brush-validation.md)。设备散布控制仍未完成。

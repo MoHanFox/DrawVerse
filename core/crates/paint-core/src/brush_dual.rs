@@ -92,6 +92,8 @@ pub struct SecondaryTip {
     dynamics: BrushDynamics,
     spacing: Option<f32>,
     flip: bool,
+    flip_x: bool,
+    flip_y: bool,
 }
 impl Default for SecondaryTip {
     fn default() -> Self {
@@ -102,6 +104,8 @@ impl Default for SecondaryTip {
             dynamics: BrushDynamics::default(),
             spacing: None,
             flip: false,
+            flip_x: false,
+            flip_y: false,
         }
     }
 }
@@ -136,6 +140,8 @@ impl SecondaryTip {
             dynamics,
             spacing: None,
             flip: false,
+            flip_x: false,
+            flip_y: false,
         })
     }
     pub fn radius(&self) -> f32 {
@@ -160,11 +166,19 @@ impl SecondaryTip {
         self.flip = flip;
         self
     }
+    pub fn with_shape_flip(mut self, flip_x: bool, flip_y: bool) -> Self {
+        self.flip_x = flip_x;
+        self.flip_y = flip_y;
+        self
+    }
     pub fn spacing(&self) -> Option<f32> {
         self.spacing
     }
     pub fn flip(&self) -> bool {
         self.flip
+    }
+    pub fn shape_flip(&self) -> (bool, bool) {
+        (self.flip_x, self.flip_y)
     }
     pub fn tip(&self) -> BrushTip {
         self.tip
@@ -182,6 +196,8 @@ impl SecondaryTip {
             && self.dynamics == BrushDynamics::default()
             && self.spacing == Some(0.25)
             && !self.flip
+            && !self.flip_x
+            && !self.flip_y
     }
 }
 #[derive(Clone, Debug)]
@@ -304,6 +320,8 @@ impl DualBrush {
                 .spacing
                 .map(|spacing| f64::from(radius * 2. * spacing)),
             flip: secondary.flip,
+            flip_x: secondary.flip_x,
+            flip_y: secondary.flip_y,
         }))
     }
 }
@@ -315,6 +333,8 @@ pub(crate) struct CompiledDual {
     program: Box<BrushProgram>,
     step: Option<f64>,
     flip: bool,
+    flip_x: bool,
+    flip_y: bool,
     sizing: DualSizing,
     pub(crate) color: crate::DualColor,
     primary_pressure_size: bool,
@@ -469,7 +489,7 @@ impl CompiledDual {
                 ) * size_scale
             };
             let geometry = self.program.dab_geometry(center, direction, shape);
-            let (flip_x, flip_y) = if self.flip {
+            let (random_x, random_y) = if self.flip {
                 let key = crate::brush_random::mix(
                     stroke ^ crate::brush_random::mix(logical ^ u64::from(child)),
                 );
@@ -477,6 +497,8 @@ impl CompiledDual {
             } else {
                 (false, false)
             };
+            let flip_x = self.flip_x ^ random_x;
+            let flip_y = self.flip_y ^ random_y;
             let mask = if radius > 0. && self.program.has_mask() {
                 self.program.mask_dab_with_geometry(radius, geometry)
             } else {
@@ -631,6 +653,15 @@ fn dual_flip_is_seeded_per_stamp() {
         saw_plain |= !flipped;
     }
     assert!(saw_flip && saw_plain);
+    let fixed = SecondaryTip::default().with_shape_flip(true, false);
+    let dual = DualBrush::new(true, DualMode::Multiply, fixed);
+    let compiled = dual
+        .compile(8., false, &crate::PressureControl::default())
+        .unwrap()
+        .unwrap();
+    let dab = compiled.dab(point, None, 1, 0, 0, 8., 1.);
+    assert!(dab.dabs[0].flip_x);
+    assert!(!dab.dabs[0].flip_y);
 }
 
 #[cfg(test)]

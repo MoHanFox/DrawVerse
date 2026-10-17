@@ -9,6 +9,10 @@ pub struct DualParameters {
     enabled: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     flip: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    flip_x: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    flip_y: bool,
     mode: String,
     diameter: f64,
     #[serde(deserialize_with = "read_spacing")]
@@ -88,6 +92,8 @@ impl DualParameters {
             .into(),
             enabled: dual.enabled(),
             flip: s.flip(),
+            flip_x: s.shape_flip().0,
+            flip_y: s.shape_flip().1,
             mode: match dual.mode() {
                 DualMode::Multiply => "multiply",
                 DualMode::Darken => "darken",
@@ -201,6 +207,7 @@ impl DualParameters {
             secondary = secondary.with_spacing(spacing as f32)?;
         }
         secondary = secondary.with_flip(self.flip);
+        secondary = secondary.with_shape_flip(self.flip_x, self.flip_y);
         let mode = match self.mode.as_str() {
             "multiply" => DualMode::Multiply,
             "darken" => DualMode::Darken,
@@ -245,10 +252,13 @@ mod tests {
         let dual = DualBrush::new(
             true,
             DualMode::Multiply,
-            SecondaryTip::default().with_flip(true),
+            SecondaryTip::default()
+                .with_flip(true)
+                .with_shape_flip(true, false),
         );
         let parameters = DualParameters::from_core(&dual).unwrap();
         let restored = parameters.bind(None).unwrap();
         assert!(restored.secondary().flip());
+        assert_eq!(restored.secondary().shape_flip(), (true, false));
     }
 }
