@@ -17,7 +17,7 @@
 - 新增生成夹具覆盖描述符纹理参数、`patt` 图案、资源哈希、纹理 handoff 版本 7、state11 绑定和真实两笔像素历史。
 - `cargo test -p paint-io --test abr_import`：6 项通过，其中纹理用例验证图案覆盖、multiply 模式和撤销重做。
 - `cargo test -p paint-io --test abr_conversion`：28 项通过，既有压力、散布、颜色、形状、设备转换及报告边界保持。
-- `cargo test -p paint-ffi --test abr_import`：8 项通过，包含 148 个真实 ABR 预设及旧 v1/v2/v3/v4/v5/v6/v7 来源入口。
+- `cargo test -p paint-ffi --test abr_import`：9 项通过，包含纹理 ABR 经公开 `abr_read`、资源写入、state 准备和来源记录，以及 148 个真实 ABR 预设和旧 v1/v2/v3/v4/v5/v6/v7 来源入口。
 - Windows Qt Release 构建通过；`abrTextureHandoffImportsMappedModeIntoState11`、现有 ABR 用户导入和真实 148 项语料测试共 5 项通过。
 - `paint-io` 与 `paint-ffi` 的 all-target 严格 Clippy 通过。
 

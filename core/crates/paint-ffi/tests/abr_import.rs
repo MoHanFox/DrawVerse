@@ -311,3 +311,121 @@ fn check_device_bytes(
         assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
     }
 }
+
+#[test]
+fn texture_abr_import_prepares_native_state_and_source_through_public_abi() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("texture.abr");
+    std::fs::write(&path, fixture::fixture_with_texture("Mltp")).unwrap();
+    let token = CancellationToken::default();
+    let batch = ImportBatch::read(&path, MAX_CATALOG_MASK_BYTES, &token).unwrap();
+    let expected = batch.to_json().unwrap();
+    let directory = temp.path().join("resources");
+    unsafe {
+        let mut library = ptr::null_mut();
+        assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+        let directory_text = directory.to_str().unwrap();
+        assert_eq!(
+            paint_brush_library_bind_resources(
+                library,
+                directory_text.as_ptr(),
+                directory_text.len() as u64
+            ),
+            PAINT_OK
+        );
+        let path_text = path.to_str().unwrap();
+        let mut required = 0;
+        let mut handoff = vec![0; expected.len()];
+        assert_eq!(
+            paint_brush_library_abr_read(
+                library,
+                path_text.as_ptr(),
+                path_text.len() as u64,
+                handoff.as_mut_ptr(),
+                handoff.len() as u64,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        assert_eq!(&handoff[..required as usize], expected);
+        let resources = ResourceStore::open(directory.clone(), MAX_CATALOG_MASK_BYTES).unwrap();
+        let imported = batch.persist(&resources, &token).unwrap();
+        let settings = imported[0].settings();
+        assert!(settings.texture.enabled());
+        assert_eq!(
+            settings.texture.settings().mode(),
+            paint_core::TextureMode::Multiply
+        );
+        let texture_id = settings
+            .texture
+            .resource()
+            .unwrap()
+            .source()
+            .resource_id()
+            .unwrap()
+            .to_owned();
+        assert!(resources
+            .directory()
+            .join(format!("{texture_id}.png"))
+            .is_file());
+        let mut catalog = BrushCatalog::default();
+        for (index, preset) in imported.iter().enumerate() {
+            let id = format!("00000000-0000-4000-8000-{index:012x}");
+            catalog.save_copy(id.clone(), preset.name().into()).unwrap();
+            catalog.edit(&id, preset.settings().clone()).unwrap();
+            catalog
+                .set_source(&id, Some(preset.source_id().into()))
+                .unwrap();
+        }
+        let state = brush_state::encode(&catalog).unwrap();
+        let mut sequence = 0;
+        assert_eq!(
+            paint_brush_library_prepare_state(
+                library,
+                state.as_ptr(),
+                state.len() as u64,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut canonical = vec![0; 2 * 1024 * 1024];
+        loop {
+            let status = paint_brush_library_prepared_state(
+                library,
+                sequence,
+                canonical.as_mut_ptr(),
+                canonical.len() as u64,
+                &mut required,
+            );
+            if status == PAINT_BUSY {
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+                continue;
+            }
+            assert_eq!(status, PAINT_OK);
+            break;
+        }
+        assert_eq!(&canonical[..required as usize], state);
+        let source = imported[0].source_id();
+        assert_eq!(
+            paint_brush_library_source_info(
+                library,
+                source.as_ptr(),
+                source.len() as u64,
+                canonical.as_mut_ptr(),
+                canonical.len() as u64,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        let archive = resources
+            .source_store()
+            .unwrap()
+            .load(source, &token)
+            .unwrap();
+        assert_eq!(archive.info.converter_version, 8);
+        assert_eq!(&canonical[..required as usize], archive.record().unwrap());
+        assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+    }
+}
