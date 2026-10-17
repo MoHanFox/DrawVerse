@@ -436,6 +436,24 @@ fn pressure_preset() -> Descriptor {
     }
     source
 }
+fn set_control(source: &mut Descriptor, key: &str, control: i32, minimum: f64) {
+    let value = source
+        .entries
+        .iter_mut()
+        .find(|(name, _)| name == key.as_bytes())
+        .map(|(_, value)| value)
+        .unwrap();
+    let Value::Object { descriptor, .. } = value else {
+        panic!("dynamic object")
+    };
+    for (name, value) in &mut descriptor.entries {
+        if name == b"bVTy" {
+            *value = Value::Integer(control);
+        } else if name == b"Mnm " {
+            *value = unit(*b"#Prc", minimum);
+        }
+    }
+}
 #[test]
 fn pressure_channels_minima_reports_legacy_and_real_pixels() {
     use paint_core::{Document, InputPoint};
@@ -507,6 +525,86 @@ fn pressure_channels_minima_reports_legacy_and_real_pixels() {
             after
         );
     }
+}
+#[test]
+fn device_controls_route_size_flow_and_opacity_without_pressure_flags() {
+    let mut source = pressure_preset();
+    set_control(&mut source, "szVr", 3, 20.);
+    set_control(&mut source, "prVr", 8, 40.);
+    set_control(&mut source, "opVr", 6, 30.);
+    let shape = shape(false);
+    let p = convert(
+        &[LinkedPreset {
+            name: "device",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+        }],
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    let settings = &p[0].settings;
+    assert_eq!(p[0].converter_version, 9);
+    assert!(!settings.tip.pressure_size);
+    assert!(!settings.tip.pressure_flow);
+    assert!(!settings.dynamics.pressure_opacity);
+    assert_eq!(
+        settings.dynamics.matrix,
+        paint_core::DynamicsSourceMatrix::new(
+            paint_core::DynamicsSource::Tilt,
+            paint_core::DynamicsSource::Rotation,
+            paint_core::DynamicsSource::Direction,
+        )
+    );
+    assert!(settings.dynamics.tilt.enabled());
+    assert!(settings.dynamics.rotation.enabled());
+    assert!(settings.dynamics.direction.enabled());
+    assert_eq!(settings.dynamics.tilt.size().minimum(), 0.2);
+    assert_eq!(settings.dynamics.rotation.flow().minimum(), 0.4);
+    assert_eq!(settings.dynamics.direction.opacity().minimum(), 0.3);
+    for path in ["szVr.bVTy", "prVr.bVTy", "opVr.bVTy"] {
+        assert!(p[0]
+            .issues
+            .iter()
+            .any(|issue| issue.path == path && issue.status == Status::Mapped));
+    }
+}
+#[test]
+fn abr_tilt_size_source_changes_real_brush_radius() {
+    use paint_core::{Document, InputPoint};
+    let mut source = pressure_preset();
+    source.entries.retain(|(key, _)| key != b"minimumDiameter");
+    for key in [b"prVr".as_slice(), b"opVr"] {
+        source.entries.retain(|(name, _)| name.as_slice() != key);
+    }
+    set_control(&mut source, "szVr", 3, 0.);
+    let shape = shape(false);
+    let p = convert(
+        &[LinkedPreset {
+            name: "tilt-size",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+        }],
+        &CancellationToken::default(),
+    )
+    .unwrap();
+    let draw = |tilt: f32| {
+        let mut d = Document::new(64, 64).unwrap();
+        let mut start = InputPoint::new(16.5, 32.5, 1.);
+        start.capabilities = 2;
+        start.tilt_x = tilt;
+        d.begin_brush_stroke(p[0].settings.definition(), start)
+            .unwrap();
+        let mut end = InputPoint::new(48.5, 32.5, 1.);
+        end.capabilities = 2;
+        end.tilt_x = tilt;
+        d.stroke_to(end).unwrap();
+        d.end_stroke().unwrap();
+        d
+    };
+    assert_eq!(draw(0.).pixel(32, 38).alpha(), 0.);
+    assert!(draw(90.).pixel(32, 38).alpha() > 0.5);
 }
 #[test]
 fn pressure_switches_overrides_unknown_controls_and_random_fields_are_honest() {

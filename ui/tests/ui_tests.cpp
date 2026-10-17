@@ -1746,6 +1746,27 @@ private slots:
         QVERIFY(!library.importAbr(QJsonDocument(downgraded).toJson(QJsonDocument::Compact)));
         QCOMPARE(library.snapshot(),before);
     }
+    void abrDeviceSourceHandoffImportsTiltRotationDirectionAndMatrix() {
+        BrushLibrary library;
+        const QJsonObject control{{"curve",QJsonArray{QJsonArray{0.0,0.0},QJsonArray{1.0,1.0}}},{"minimum",0.0}};
+        const QJsonObject tilt{{"model","tilt-v1"},{"enabled",true},{"size",control},{"flow",control},{"opacity",control}};
+        const QJsonObject rotation{{"model","rotation-v1"},{"enabled",true},{"size",control},{"flow",control},{"opacity",control}};
+        const QJsonObject direction{{"model","direction-v1"},{"enabled",true},{"size",control},{"flow",control},{"opacity",control}};
+        const QJsonObject matrix{{"model","source-matrix-v1"},{"size","tilt"},{"flow","rotation"},{"opacity","direction"}};
+        const QJsonObject parameters{{"diameter",8.0},{"spacing",0.02},{"dabOpacity",1.0},{"hardness",1.0},{"roundness",1.0},{"angle",0.0},{"flow",1.0},{"pressureSize",false},{"pressureFlow",false},{"tiltDynamics",tilt},{"rotationDynamics",rotation},{"directionDynamics",direction},{"sourceMatrix",matrix}};
+        const QJsonObject preset{{"name","Device sources"},{"parameters",parameters},{"tipResource",QJsonValue::Null},{"sourceResource",QString(64,'c')},{"partial",true}};
+        const QJsonObject handoff{{"version",8},{"format","abr"},{"presets",QJsonArray{preset}}};
+        QVERIFY(library.importAbr(QJsonDocument(handoff).toJson(QJsonDocument::Compact)));
+        QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object().value("version").toInt(),32);
+        QCOMPARE(library.tiltDynamics(),tilt.toVariantMap());
+        QCOMPARE(library.rotationDynamics(),rotation.toVariantMap());
+        QCOMPARE(library.directionDynamics(),direction.toVariantMap());
+        QCOMPARE(library.dynamicsSourceMatrix(),matrix.toVariantMap());
+        auto downgraded=handoff;downgraded["version"]=7;
+        const auto before=library.snapshot();
+        QVERIFY(!library.importAbr(QJsonDocument(downgraded).toJson(QJsonDocument::Compact)));
+        QCOMPARE(library.snapshot(),before);
+    }
     void licensedRealAbrImportsWholePackAndExchangesPixelsWithOriginalSource() {
         const auto fixture=QFINDTESTDATA("../../core/crates/paint-io/tests/fixtures/abr/myer-settlement-brushes.abr");QVERIFY(!fixture.isEmpty());
         QTemporaryDir temp;const auto path=temp.filePath("real.abr");QVERIFY(QFile::copy(fixture,path));PaintCoreClient client(nullptr,temp.filePath("settings.ini"));QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();QSignalSpy finished(&client,&PaintCoreClient::brushFileFinished);QVERIFY(client.importBrushes(QUrl::fromLocalFile(path)));QTRY_COMPARE_WITH_TIMEOUT(finished.size(),1,15000);QVERIFY(finished.last()[0].toBool());QCOMPARE(library->presets().size(),152);QCOMPARE(library->selectedName(),QString("Individual Tree 001"));const auto first=library->selectedId(),source=library->sourceResource(),mask=library->maskResource();QVERIFY(!mask.isEmpty());QVERIFY(library->select(library->presets().last().toMap().value("id").toString()));QVERIFY(library->selectedId()!=first);QVERIFY(library->select(first));

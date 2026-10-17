@@ -79,10 +79,24 @@ impl ImportBatch {
                         speed_dynamics: None,
                         tangent_dynamics: None,
                         distance_dynamics: None,
-                        tilt_dynamics: None,
-                        rotation_dynamics: None,
-                        direction_dynamics: None,
-                        source_matrix: None,
+                        tilt_dynamics: (!s.dynamics.tilt.is_default()).then(|| {
+                            crate::brush_tilt::TiltParameters::from_core(s.dynamics.tilt.clone())
+                        }),
+                        rotation_dynamics: (!s.dynamics.rotation.is_default()).then(|| {
+                            crate::brush_rotation::RotationParameters::from_core(
+                                s.dynamics.rotation.clone(),
+                            )
+                        }),
+                        direction_dynamics: (!s.dynamics.direction.is_default()).then(|| {
+                            crate::brush_direction::DirectionParameters::from_core(
+                                s.dynamics.direction.clone(),
+                            )
+                        }),
+                        source_matrix: (!s.dynamics.matrix.is_default()).then(|| {
+                            crate::brush_source_matrix::SourceMatrixParameters::from_core(
+                                s.dynamics.matrix,
+                            )
+                        }),
                         diameter: s.diameter,
                         spacing: s.spacing,
                         dab_opacity: s.opacity,
@@ -103,7 +117,9 @@ impl ImportBatch {
             })
             .collect::<Result<Vec<_>>>()?;
         let bytes = serde_json::to_vec(&Handoff {
-            version: if self.presets.iter().any(|p| p.converter_version >= 8) {
+            version: if self.presets.iter().any(|p| p.converter_version >= 9) {
+                8
+            } else if self.presets.iter().any(|p| p.converter_version >= 8) {
                 7
             } else if self.presets.iter().any(|p| p.converter_version >= 7) {
                 6

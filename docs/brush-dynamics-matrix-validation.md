@@ -2,7 +2,7 @@
 
 2026-10-18，Windows，对应 [设计](brush-dynamics-matrix-design.md)。本阶段只运行相关最小测试，未执行全量 `tools/check.py` 或跨平台验收。
 
-- `paint-core source_matrix_selects_dynamics_per_target_channel` 1项通过：默认 `All` 对六来源逐通道相乘；显式选择距离/倾斜/旋转后分别取得对应通道因子。
+- `paint-core source_matrix_selects_dynamics_per_target_channel` 1项通过：默认 `All` 对六来源逐通道相乘；显式选择距离/倾斜/旋转后分别取得对应通道因子；`brush_source_matrix` 真实像素用例验证单来源恒等曲线使用归一化输入。
 - `paint-io --test brush_source_matrix_exchange` 1项通过：`source-matrix-v1` 写入 state32/VBR1.38/behavior25/`dynamics-source-matrix`，JSON 字段和真实状态重开保持；state31 夹带对象明确拒绝。
 - 动态专用包不再误走旧平包：`vbr_image::encode` 和 `vbr::encode` 将 airbrush、六类动态及 sourceMatrix 视为带版本对象；矩阵包实测 manifest minor38，方向/速度交换回归继续通过。
 - `cargo check -p paint-core -p paint-io -p paint-ffi --all-targets` 通过；第二笔尖拒绝自身矩阵，主预设因子可分发给配对笔尖。

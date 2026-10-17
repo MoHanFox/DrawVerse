@@ -8,8 +8,9 @@ use crate::{
 };
 use paint_core::{
     AngleControl, BrushProgram, BrushSettings, BrushTexture, BrushTip, ColorDynamics,
-    PressureControl, PressureCurve, ScatterDynamics, ShapeJitter, TextureMode, TextureResource,
-    TextureSettings, TextureSpace, TipDynamics,
+    DirectionDynamics, DynamicsSource, DynamicsSourceMatrix, PressureControl, PressureCurve,
+    RotationDynamics, ScatterDynamics, ShapeJitter, TextureMode, TextureResource, TextureSettings,
+    TextureSpace, TiltDynamics, TipDynamics,
 };
 use paint_task::CancellationToken;
 type TextureLookup<'a> = Option<(
@@ -783,13 +784,112 @@ fn scatter_controls(
     settings.dynamics.scatter = scatter;
     Ok(handled)
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DynamicsControl {
+    Pressure,
+    Tilt,
+    Direction,
+    Rotation,
+}
+impl DynamicsControl {
+    fn from_wire(value: i32) -> Option<Self> {
+        match value {
+            2 => Some(Self::Pressure),
+            3 => Some(Self::Tilt),
+            6 => Some(Self::Direction),
+            8 => Some(Self::Rotation),
+            _ => None,
+        }
+    }
+}
+fn route_source(
+    matrix: DynamicsSourceMatrix,
+    target: &[u8],
+    source: DynamicsSource,
+) -> DynamicsSourceMatrix {
+    match target {
+        b"szVr" => DynamicsSourceMatrix::new(source, matrix.flow(), matrix.opacity()),
+        b"prVr" => DynamicsSourceMatrix::new(matrix.size(), source, matrix.opacity()),
+        b"opVr" => DynamicsSourceMatrix::new(matrix.size(), matrix.flow(), source),
+        _ => matrix,
+    }
+}
+fn tilt_channel(d: &TiltDynamics, target: &[u8], response: PressureControl) -> TiltDynamics {
+    TiltDynamics::new(
+        true,
+        if target == b"szVr" {
+            response.clone()
+        } else {
+            d.size().clone()
+        },
+        if target == b"prVr" {
+            response.clone()
+        } else {
+            d.flow().clone()
+        },
+        if target == b"opVr" {
+            response
+        } else {
+            d.opacity().clone()
+        },
+    )
+}
+fn rotation_channel(
+    d: &RotationDynamics,
+    target: &[u8],
+    response: PressureControl,
+) -> RotationDynamics {
+    RotationDynamics::new(
+        true,
+        if target == b"szVr" {
+            response.clone()
+        } else {
+            d.size().clone()
+        },
+        if target == b"prVr" {
+            response.clone()
+        } else {
+            d.flow().clone()
+        },
+        if target == b"opVr" {
+            response
+        } else {
+            d.opacity().clone()
+        },
+    )
+}
+fn direction_channel(
+    d: &DirectionDynamics,
+    target: &[u8],
+    response: PressureControl,
+) -> DirectionDynamics {
+    DirectionDynamics::new(
+        true,
+        if target == b"szVr" {
+            response.clone()
+        } else {
+            d.size().clone()
+        },
+        if target == b"prVr" {
+            response.clone()
+        } else {
+            d.flow().clone()
+        },
+        if target == b"opVr" {
+            response
+        } else {
+            d.opacity().clone()
+        },
+    )
+}
 fn pressure_controls(
     preset: &Descriptor,
     tool: Option<&Descriptor>,
     settings: &mut BrushSettings,
     issues: &mut Vec<Issue>,
-) -> Result<Vec<String>> {
+) -> Result<(Vec<String>, bool)> {
     let mut handled = Vec::new();
+    let mut source_changed = false;
     for (flag_key, key, override_key) in [
         (
             b"useTipDynamics".as_slice(),
@@ -825,12 +925,12 @@ fn pressure_controls(
             _ => return Err(Error::Invalid("ABR pressure dynamics object")),
         };
         let control = match dynamic.get(b"bVTy") {
-            Some(Value::Integer(value)) => *value,
+            Some(Value::Integer(value)) => DynamicsControl::from_wire(*value),
             _ => return Err(Error::Invalid("ABR pressure control type")),
         };
-        if control != 2 {
+        let Some(control) = control else {
             continue;
-        }
+        };
         // Validate known values before narrowing. Nonzero jitter remains unexecuted.
         let minimum = unit(dynamic, b"Mnm ", *b"#Prc", 0., 100.)? / 100.;
         let jitter = unit(dynamic, b"jitter", *b"#Prc", 0., 100.)?;
@@ -854,18 +954,87 @@ fn pressure_controls(
             minimum
         };
         let response = PressureControl::new(PressureCurve::default(), effective)?;
-        match key {
-            b"szVr" => {
+        match (key, control) {
+            (b"szVr", DynamicsControl::Pressure) => {
                 settings.tip.pressure_size = true;
                 settings.dynamics.size = response;
             }
-            b"prVr" => {
+            (b"prVr", DynamicsControl::Pressure) => {
                 settings.tip.pressure_flow = true;
                 settings.dynamics.flow = response;
             }
-            b"opVr" => {
+            (b"opVr", DynamicsControl::Pressure) => {
                 settings.dynamics.pressure_opacity = true;
                 settings.dynamics.opacity = response;
+            }
+            (b"szVr", DynamicsControl::Tilt) => {
+                settings.tip.pressure_size = false;
+                settings.dynamics.tilt = tilt_channel(&settings.dynamics.tilt, key, response);
+                settings.dynamics.matrix =
+                    route_source(settings.dynamics.matrix, key, DynamicsSource::Tilt);
+                source_changed = true;
+            }
+            (b"prVr", DynamicsControl::Tilt) => {
+                settings.tip.pressure_flow = false;
+                settings.dynamics.tilt = tilt_channel(&settings.dynamics.tilt, key, response);
+                settings.dynamics.matrix =
+                    route_source(settings.dynamics.matrix, key, DynamicsSource::Tilt);
+                source_changed = true;
+            }
+            (b"opVr", DynamicsControl::Tilt) => {
+                settings.dynamics.pressure_opacity = false;
+                settings.dynamics.tilt = tilt_channel(&settings.dynamics.tilt, key, response);
+                settings.dynamics.matrix =
+                    route_source(settings.dynamics.matrix, key, DynamicsSource::Tilt);
+                source_changed = true;
+            }
+            (b"szVr", DynamicsControl::Rotation) => {
+                settings.tip.pressure_size = false;
+                settings.dynamics.rotation =
+                    rotation_channel(&settings.dynamics.rotation, key, response);
+                settings.dynamics.matrix =
+                    route_source(settings.dynamics.matrix, key, DynamicsSource::Rotation);
+                source_changed = true;
+            }
+            (b"prVr", DynamicsControl::Rotation) => {
+                settings.tip.pressure_flow = false;
+                settings.dynamics.rotation =
+                    rotation_channel(&settings.dynamics.rotation, key, response);
+                settings.dynamics.matrix =
+                    route_source(settings.dynamics.matrix, key, DynamicsSource::Rotation);
+                source_changed = true;
+            }
+            (b"opVr", DynamicsControl::Rotation) => {
+                settings.dynamics.pressure_opacity = false;
+                settings.dynamics.rotation =
+                    rotation_channel(&settings.dynamics.rotation, key, response);
+                settings.dynamics.matrix =
+                    route_source(settings.dynamics.matrix, key, DynamicsSource::Rotation);
+                source_changed = true;
+            }
+            (b"szVr", DynamicsControl::Direction) => {
+                settings.tip.pressure_size = false;
+                settings.dynamics.direction =
+                    direction_channel(&settings.dynamics.direction, key, response);
+                settings.dynamics.matrix =
+                    route_source(settings.dynamics.matrix, key, DynamicsSource::Direction);
+                source_changed = true;
+            }
+            (b"prVr", DynamicsControl::Direction) => {
+                settings.tip.pressure_flow = false;
+                settings.dynamics.direction =
+                    direction_channel(&settings.dynamics.direction, key, response);
+                settings.dynamics.matrix =
+                    route_source(settings.dynamics.matrix, key, DynamicsSource::Direction);
+                source_changed = true;
+            }
+            (b"opVr", DynamicsControl::Direction) => {
+                settings.dynamics.pressure_opacity = false;
+                settings.dynamics.direction =
+                    direction_channel(&settings.dynamics.direction, key, response);
+                settings.dynamics.matrix =
+                    route_source(settings.dynamics.matrix, key, DynamicsSource::Direction);
+                source_changed = true;
             }
             _ => unreachable!(),
         }
@@ -883,7 +1052,12 @@ fn pressure_controls(
             (
                 "bVTy",
                 Status::Mapped,
-                "笔压控制；使用独立线性响应与最低比例",
+                match control {
+                    DynamicsControl::Pressure => "笔压控制；使用独立线性响应与最低比例",
+                    DynamicsControl::Tilt => "设备倾斜控制；使用独立线性响应与最低比例",
+                    DynamicsControl::Direction => "笔触方向控制；使用独立线性响应与最低比例",
+                    DynamicsControl::Rotation => "笔旋转控制；使用独立线性响应与最低比例",
+                },
             ),
             (
                 "Mnm ",
@@ -893,7 +1067,7 @@ fn pressure_controls(
                     Status::NotExecuted
                 },
                 if minimum == effective {
-                    "笔压最低比例"
+                    "动态最低比例"
                 } else {
                     "尺寸使用minimumDiameter；不同的动态Mnm值保留但不执行"
                 },
@@ -908,7 +1082,7 @@ fn pressure_controls(
                 if jitter == 0. {
                     "未启用随机抖动"
                 } else {
-                    "随机抖动尚未转换；独立笔压分量已执行"
+                    "随机抖动尚未转换；独立动态分量已执行"
                 },
             ),
         ] {
@@ -918,11 +1092,11 @@ fn pressure_controls(
         }
         if steps {
             let path = format!("{name}.fStp");
-            issue(issues, &path, Status::Mapped, "笔压控制不使用渐隐步数");
+            issue(issues, &path, Status::Mapped, "动态控制不使用渐隐步数");
             handled.push(path);
         }
     }
-    Ok(handled)
+    Ok((handled, source_changed))
 }
 fn texture_mode(id: &str) -> Option<TextureMode> {
     match id {
@@ -1278,10 +1452,10 @@ fn convert_inner<'a>(
             Some(Value::Object { descriptor, .. }) => Some(descriptor.as_ref()),
             _ => return Err(Error::Invalid("ABR toolOptions object")),
         };
-        let mut handled = if generation >= 3 {
+        let (mut handled, source_changed) = if generation >= 3 {
             pressure_controls(item.preset, tool, &mut settings, &mut issues)?
         } else {
-            Vec::new()
+            (Vec::new(), false)
         };
         let scatter_changed = if generation >= 4 {
             let extra = scatter_controls(item.preset, &mut settings, &mut issues)?;
@@ -1423,7 +1597,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if texture_changed {
+        if source_changed {
+            converter_version = 9;
+        } else if texture_changed {
             converter_version = 8;
         } else if device_changed {
             converter_version = 7;

@@ -339,36 +339,6 @@ impl BrushProgram {
                 .map_or(pressure, |curve| curve.response(pressure))
         })
     }
-    pub(crate) fn speed_factors(&self, speed: f32) -> (f32, f32, f32) {
-        self.speed
-            .as_ref()
-            .map_or((1., 1., 1.), |compiled| compiled.factors(speed))
-    }
-    pub(crate) fn tangent_factors(&self, tangent: f32) -> (f32, f32, f32) {
-        self.tangent
-            .as_ref()
-            .map_or((1., 1., 1.), |compiled| compiled.factors(tangent))
-    }
-    pub(crate) fn distance_factors(&self, distance: f32) -> (f32, f32, f32) {
-        self.distance
-            .as_ref()
-            .map_or((1., 1., 1.), |compiled| compiled.factors(distance))
-    }
-    pub(crate) fn tilt_factors(&self, tilt: f32) -> (f32, f32, f32) {
-        self.tilt
-            .as_ref()
-            .map_or((1., 1., 1.), |compiled| compiled.factors(tilt))
-    }
-    pub(crate) fn rotation_factors(&self, rotation: f32) -> (f32, f32, f32) {
-        self.rotation
-            .as_ref()
-            .map_or((1., 1., 1.), |compiled| compiled.factors(rotation))
-    }
-    pub(crate) fn direction_factors(&self, direction: f32) -> (f32, f32, f32) {
-        self.direction
-            .as_ref()
-            .map_or((1., 1., 1.), |compiled| compiled.factors(direction))
-    }
     pub(crate) fn factor_all(
         &self,
         speed: f32,
@@ -378,23 +348,72 @@ impl BrushProgram {
         rotation: f32,
         direction: f32,
     ) -> (f32, f32, f32) {
-        let to_array = |(size, flow, opacity): (f32, f32, f32)| [size, flow, opacity];
         let factors = [
-            to_array(self.speed_factors(speed)),
-            to_array(self.tangent_factors(tangent)),
-            to_array(self.distance_factors(distance)),
-            to_array(self.tilt_factors(tilt)),
-            to_array(self.rotation_factors(rotation)),
-            to_array(self.direction_factors(direction)),
+            self.speed.as_ref().map_or([None; 3], |compiled| {
+                let (size, flow, opacity) = compiled.factors_optional(speed);
+                [size, flow, opacity]
+            }),
+            self.tangent.as_ref().map_or([None; 3], |compiled| {
+                let (size, flow, opacity) = compiled.factors_optional(tangent);
+                [size, flow, opacity]
+            }),
+            self.distance.as_ref().map_or([None; 3], |compiled| {
+                let (size, flow, opacity) = compiled.factors_optional(distance);
+                [size, flow, opacity]
+            }),
+            self.tilt.as_ref().map_or([None; 3], |compiled| {
+                let (size, flow, opacity) = compiled.factors_optional(tilt);
+                [size, flow, opacity]
+            }),
+            self.rotation.as_ref().map_or([None; 3], |compiled| {
+                let (size, flow, opacity) = compiled.factors_optional(rotation);
+                [size, flow, opacity]
+            }),
+            self.direction.as_ref().map_or([None; 3], |compiled| {
+                let (size, flow, opacity) = compiled.factors_optional(direction);
+                [size, flow, opacity]
+            }),
+        ];
+        let active = [
+            self.speed.is_some(),
+            self.tangent.is_some(),
+            self.distance.is_some(),
+            self.tilt.is_some(),
+            self.rotation.is_some(),
+            self.direction.is_some(),
+        ];
+        let inputs = [
+            self.speed
+                .as_ref()
+                .map_or(0., |compiled| compiled.normalized(speed)),
+            self.tangent
+                .as_ref()
+                .map_or(0., |compiled| compiled.normalized(tangent)),
+            self.distance
+                .as_ref()
+                .map_or(0., |compiled| compiled.normalized(distance)),
+            self.tilt
+                .as_ref()
+                .map_or(0., |compiled| compiled.normalized(tilt)),
+            self.rotation
+                .as_ref()
+                .map_or(0., |compiled| compiled.normalized(rotation)),
+            self.direction
+                .as_ref()
+                .map_or(0., |compiled| compiled.normalized(direction)),
         ];
         let pick = |source: DynamicsSource, channel: usize| match source {
-            DynamicsSource::All => factors.iter().map(|f| f[channel]).product(),
-            DynamicsSource::Speed => factors[0][channel],
-            DynamicsSource::Tangent => factors[1][channel],
-            DynamicsSource::Distance => factors[2][channel],
-            DynamicsSource::Tilt => factors[3][channel],
-            DynamicsSource::Rotation => factors[4][channel],
-            DynamicsSource::Direction => factors[5][channel],
+            DynamicsSource::All => factors
+                .iter()
+                .map(|factor| factor[channel].unwrap_or(1.))
+                .product(),
+            DynamicsSource::Speed if active[0] => factors[0][channel].unwrap_or(inputs[0]),
+            DynamicsSource::Tangent if active[1] => factors[1][channel].unwrap_or(inputs[1]),
+            DynamicsSource::Distance if active[2] => factors[2][channel].unwrap_or(inputs[2]),
+            DynamicsSource::Tilt if active[3] => factors[3][channel].unwrap_or(inputs[3]),
+            DynamicsSource::Rotation if active[4] => factors[4][channel].unwrap_or(inputs[4]),
+            DynamicsSource::Direction if active[5] => factors[5][channel].unwrap_or(inputs[5]),
+            _ => 1.,
         };
         (
             pick(self.matrix.size(), 0),

@@ -647,6 +647,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
                 "ABR converter v7 requires VBR 1.21".into(),
             ));
         }
+        if info.converter_version > 8 && manifest.version.minor < 38 {
+            return Err(Error::Unsupported(
+                "ABR converter v9 requires VBR 1.38".into(),
+            ));
+        }
         if info.converter_version > 5 && manifest.version.minor < 20 {
             return Err(Error::Unsupported(
                 "VBR ABR shape sources require version 1.20".into(),
@@ -765,6 +770,10 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 .brushes
                 .iter()
                 .any(|b| b.parameters.source_matrix.is_some())
+                || bundle
+                    .sources
+                    .iter()
+                    .any(|source| source.converter_version() > 8)
             {
                 38
             } else if bundle

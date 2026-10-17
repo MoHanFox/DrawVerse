@@ -55,7 +55,7 @@ impl SourceInfo {
         if !matches!(self.version, 1 | 2)
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1..=8)
+            || !matches!(self.converter_version, 1..=9)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -99,6 +99,16 @@ impl SourceInfo {
             || (self.converter_version < 6 && self.baseline.shape_jitter.is_some())
             || (self.converter_version == 5 && self.baseline.color_dynamics.is_none())
             || (self.converter_version < 5 && self.baseline.color_dynamics.is_some())
+            || (self.converter_version >= 9 && self.baseline.source_matrix.is_none())
+            || (self.converter_version >= 9
+                && self.baseline.tilt_dynamics.is_none()
+                && self.baseline.rotation_dynamics.is_none()
+                && self.baseline.direction_dynamics.is_none())
+            || (self.converter_version < 9
+                && (self.baseline.tilt_dynamics.is_some()
+                    || self.baseline.rotation_dynamics.is_some()
+                    || self.baseline.direction_dynamics.is_some()
+                    || self.baseline.source_matrix.is_some()))
         {
             return Err(Error::Unsupported(
                 "converter v1 baseline dynamic controls".into(),
@@ -111,6 +121,67 @@ impl SourceInfo {
 pub struct SourceArchive {
     pub info: SourceInfo,
     original: Arc<Vec<u8>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        abr_conversion::ConvertedPreset,
+        ps_descriptor::{Class, Descriptor},
+    };
+    use paint_core::{
+        BrushDynamics, BrushSettings, DynamicsSource, DynamicsSourceMatrix, PressureControl,
+        PressureCurve, TiltDynamics,
+    };
+
+    fn preset(version: u32) -> ConvertedPreset<'static> {
+        let control =
+            PressureControl::new(PressureCurve::new(vec![(0., 0.), (1., 1.)]).unwrap(), 0.)
+                .unwrap();
+        ConvertedPreset {
+            converter_version: version,
+            name: "device",
+            settings: BrushSettings {
+                dynamics: BrushDynamics {
+                    tilt: TiltDynamics::new(
+                        true,
+                        control,
+                        PressureControl::default(),
+                        PressureControl::default(),
+                    ),
+                    matrix: DynamicsSourceMatrix::new(
+                        DynamicsSource::Tilt,
+                        DynamicsSource::All,
+                        DynamicsSource::All,
+                    ),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            source: Box::leak(Box::new(Descriptor {
+                class: Class {
+                    name: String::new(),
+                    id: b"brushPreset".to_vec(),
+                },
+                entries: Vec::new(),
+            })),
+            issues: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn converter_nine_source_baseline_keeps_device_matrix() {
+        let info =
+            SourceArchive::capture_info("a".repeat(64), (6, Some(1)), 0, &preset(9), None).unwrap();
+        assert!(info.baseline.tilt_dynamics.is_some());
+        assert!(info.baseline.source_matrix.is_some());
+        info.validate().unwrap();
+        assert!(
+            SourceArchive::capture_info("a".repeat(64), (6, Some(1)), 0, &preset(8), None,)
+                .is_err()
+        );
+    }
 }
 impl SourceArchive {
     pub fn original(&self) -> &[u8] {
@@ -177,6 +248,12 @@ impl SourceArchive {
         if preset.converter_version >= 7 {
             non_pressure.tip = Default::default();
         }
+        if preset.converter_version >= 9 {
+            non_pressure.tilt = Default::default();
+            non_pressure.rotation = Default::default();
+            non_pressure.direction = Default::default();
+            non_pressure.matrix = Default::default();
+        }
         if non_pressure != paint_core::BrushDynamics::default()
             || (preset.converter_version < 3
                 && settings.dynamics != paint_core::BrushDynamics::default())
@@ -220,10 +297,32 @@ impl SourceArchive {
                 speed_dynamics: None,
                 tangent_dynamics: None,
                 distance_dynamics: None,
-                tilt_dynamics: None,
-                rotation_dynamics: None,
-                direction_dynamics: None,
-                source_matrix: None,
+                tilt_dynamics: (preset.converter_version >= 9
+                    && !settings.dynamics.tilt.is_default())
+                .then(|| {
+                    crate::brush_tilt::TiltParameters::from_core(settings.dynamics.tilt.clone())
+                }),
+                rotation_dynamics: (preset.converter_version >= 9
+                    && !settings.dynamics.rotation.is_default())
+                .then(|| {
+                    crate::brush_rotation::RotationParameters::from_core(
+                        settings.dynamics.rotation.clone(),
+                    )
+                }),
+                direction_dynamics: (preset.converter_version >= 9
+                    && !settings.dynamics.direction.is_default())
+                .then(|| {
+                    crate::brush_direction::DirectionParameters::from_core(
+                        settings.dynamics.direction.clone(),
+                    )
+                }),
+                source_matrix: (preset.converter_version >= 9
+                    && !settings.dynamics.matrix.is_default())
+                .then(|| {
+                    crate::brush_source_matrix::SourceMatrixParameters::from_core(
+                        settings.dynamics.matrix,
+                    )
+                }),
                 diameter: settings.diameter,
                 spacing: settings.spacing,
                 dab_opacity: settings.opacity,

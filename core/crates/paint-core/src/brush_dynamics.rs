@@ -656,14 +656,20 @@ pub(crate) struct CompiledSpeedDynamics {
     opacity: Option<CompiledPressureControl>,
 }
 impl CompiledSpeedDynamics {
-    pub(crate) fn factors(&self, speed: f32) -> (f32, f32, f32) {
+    pub(crate) fn normalized(&self, speed: f32) -> f32 {
         if !speed.is_finite() || speed <= 0. {
-            return (1., 1., 1.);
+            0.
+        } else {
+            (speed / self.max_speed).clamp(0., 1.)
+        }
+    }
+    pub(crate) fn factors_optional(&self, speed: f32) -> (Option<f32>, Option<f32>, Option<f32>) {
+        if !speed.is_finite() || speed <= 0. {
+            return (None, None, None);
         }
         let input = (speed / self.max_speed).clamp(0., 1.);
-        let response = |control: &Option<CompiledPressureControl>| {
-            control.as_ref().map_or(1., |c| c.response(input))
-        };
+        let response =
+            |control: &Option<CompiledPressureControl>| control.as_ref().map(|c| c.response(input));
         (
             response(&self.size),
             response(&self.flow),
@@ -678,14 +684,20 @@ pub(crate) struct CompiledTangentDynamics {
     opacity: Option<CompiledPressureControl>,
 }
 impl CompiledTangentDynamics {
-    pub(crate) fn factors(&self, tangent: f32) -> (f32, f32, f32) {
+    pub(crate) fn normalized(&self, tangent: f32) -> f32 {
         if !tangent.is_finite() {
-            return (1., 1., 1.);
+            0.
+        } else {
+            (tangent.clamp(-1., 1.) + 1.) * 0.5
+        }
+    }
+    pub(crate) fn factors_optional(&self, tangent: f32) -> (Option<f32>, Option<f32>, Option<f32>) {
+        if !tangent.is_finite() {
+            return (None, None, None);
         }
         let input = (tangent.clamp(-1., 1.) + 1.) * 0.5;
-        let response = |control: &Option<CompiledPressureControl>| {
-            control.as_ref().map_or(1., |c| c.response(input))
-        };
+        let response =
+            |control: &Option<CompiledPressureControl>| control.as_ref().map(|c| c.response(input));
         (
             response(&self.size),
             response(&self.flow),
@@ -701,14 +713,23 @@ pub(crate) struct CompiledDistanceDynamics {
     opacity: Option<CompiledPressureControl>,
 }
 impl CompiledDistanceDynamics {
-    pub(crate) fn factors(&self, distance: f32) -> (f32, f32, f32) {
+    pub(crate) fn normalized(&self, distance: f32) -> f32 {
         if !distance.is_finite() || distance < 0. {
-            return (1., 1., 1.);
+            0.
+        } else {
+            (distance / self.max_distance).clamp(0., 1.)
+        }
+    }
+    pub(crate) fn factors_optional(
+        &self,
+        distance: f32,
+    ) -> (Option<f32>, Option<f32>, Option<f32>) {
+        if !distance.is_finite() || distance < 0. {
+            return (None, None, None);
         }
         let input = (distance / self.max_distance).clamp(0., 1.);
-        let response = |control: &Option<CompiledPressureControl>| {
-            control.as_ref().map_or(1., |c| c.response(input))
-        };
+        let response =
+            |control: &Option<CompiledPressureControl>| control.as_ref().map(|c| c.response(input));
         (
             response(&self.size),
             response(&self.flow),
@@ -723,14 +744,20 @@ pub(crate) struct CompiledTiltDynamics {
     opacity: Option<CompiledPressureControl>,
 }
 impl CompiledTiltDynamics {
-    pub(crate) fn factors(&self, tilt: f32) -> (f32, f32, f32) {
+    pub(crate) fn normalized(&self, tilt: f32) -> f32 {
+        if tilt.is_finite() {
+            tilt.clamp(0., 1.)
+        } else {
+            0.
+        }
+    }
+    pub(crate) fn factors_optional(&self, tilt: f32) -> (Option<f32>, Option<f32>, Option<f32>) {
         if !tilt.is_finite() {
-            return (1., 1., 1.);
+            return (None, None, None);
         }
         let input = tilt.clamp(0., 1.);
-        let response = |control: &Option<CompiledPressureControl>| {
-            control.as_ref().map_or(1., |c| c.response(input))
-        };
+        let response =
+            |control: &Option<CompiledPressureControl>| control.as_ref().map(|c| c.response(input));
         (
             response(&self.size),
             response(&self.flow),
@@ -745,14 +772,23 @@ pub(crate) struct CompiledRotationDynamics {
     opacity: Option<CompiledPressureControl>,
 }
 impl CompiledRotationDynamics {
-    pub(crate) fn factors(&self, rotation: f32) -> (f32, f32, f32) {
+    pub(crate) fn normalized(&self, rotation: f32) -> f32 {
+        if rotation.is_finite() {
+            rotation.clamp(0., 1.)
+        } else {
+            0.
+        }
+    }
+    pub(crate) fn factors_optional(
+        &self,
+        rotation: f32,
+    ) -> (Option<f32>, Option<f32>, Option<f32>) {
         if !rotation.is_finite() {
-            return (1., 1., 1.);
+            return (None, None, None);
         }
         let input = rotation.clamp(0., 1.);
-        let response = |control: &Option<CompiledPressureControl>| {
-            control.as_ref().map_or(1., |c| c.response(input))
-        };
+        let response =
+            |control: &Option<CompiledPressureControl>| control.as_ref().map(|c| c.response(input));
         (
             response(&self.size),
             response(&self.flow),
@@ -767,14 +803,23 @@ pub(crate) struct CompiledDirectionDynamics {
     opacity: Option<CompiledPressureControl>,
 }
 impl CompiledDirectionDynamics {
-    pub(crate) fn factors(&self, direction: f32) -> (f32, f32, f32) {
+    pub(crate) fn normalized(&self, direction: f32) -> f32 {
+        if direction.is_finite() {
+            direction.clamp(0., 1.)
+        } else {
+            0.
+        }
+    }
+    pub(crate) fn factors_optional(
+        &self,
+        direction: f32,
+    ) -> (Option<f32>, Option<f32>, Option<f32>) {
         if !direction.is_finite() {
-            return (1., 1., 1.);
+            return (None, None, None);
         }
         let input = direction.clamp(0., 1.);
-        let response = |control: &Option<CompiledPressureControl>| {
-            control.as_ref().map_or(1., |c| c.response(input))
-        };
+        let response =
+            |control: &Option<CompiledPressureControl>| control.as_ref().map(|c| c.response(input));
         (
             response(&self.size),
             response(&self.flow),
