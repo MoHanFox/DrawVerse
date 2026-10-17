@@ -212,3 +212,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-18速度动态阶段：`speed-v1`以文档像素/秒驱动尺寸、流量和整笔不透明度三条独立PCHIP/线性曲线，默认关闭/2000 px/s，主笔尖和配对第二笔尖尺寸共用速度因子，state24/VBR1.30/behavior19及`speed-dynamics`能力完整保存，Qt“传递”页提供开关、上限和专用曲线组件；真实像素、双笔刷回归、保存重开和设置页交互通过，见[设计](brush-speed-design.md)及[验收](brush-speed-validation.md)。ABR速度来源、任意动态来源矩阵、整体硬件手感及跨平台仍待后续。
 
 2026-10-18切向压力动态阶段：`tangent-v1`把设备-1..1切向压力归一化后驱动尺寸、流量和整笔不透明度三条曲线，与速度因子在一次印章计算中相乘，主笔尖及配对第二笔尖尺寸共享；默认关闭，state25/VBR1.31/behavior20及`tangent-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定和既有速度四项一起通过，见[设计](brush-tangent-design.md)及[验收](brush-tangent-validation.md)。ABR切向来源、任意动态矩阵、实体设备与跨平台仍待后续。
+
+2026-10-18笔触距离动态阶段：`distance-v1`按活动笔触累计文档距离驱动尺寸、流量和整笔不透明度三条曲线，默认关闭/1000 px，state26/VBR1.32/behavior21及`distance-dynamics`能力完整保存，Qt“传递”页提供开关、距离上限和三条曲线。真实像素、保存重开、QML绑定及速度/切向回归通过，见[设计](brush-distance-design.md)及[验收](brush-distance-validation.md)。ABR距离来源、任意动态矩阵、实体设备与跨平台仍待后续。

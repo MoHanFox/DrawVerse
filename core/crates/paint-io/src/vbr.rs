@@ -75,6 +75,12 @@ pub struct Parameters {
         deserialize_with = "crate::brush_tangent::present"
     )]
     pub tangent_dynamics: Option<crate::brush_tangent::TangentParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_distance::present"
+    )]
+    pub distance_dynamics: Option<crate::brush_distance::DistanceParameters>,
 }
 impl Parameters {
     pub fn definition(&self) -> BrushDefinition {
@@ -105,6 +111,11 @@ impl Parameters {
             .unwrap_or_default();
         dynamics.tangent = self
             .tangent_dynamics
+            .as_ref()
+            .map(|p| p.core())
+            .unwrap_or_default();
+        dynamics.distance = self
+            .distance_dynamics
             .as_ref()
             .map(|p| p.core())
             .unwrap_or_default();
@@ -295,6 +306,7 @@ impl Package {
             let airbrush = b.parameters.airbrush.is_some();
             let speed = b.parameters.speed_dynamics.is_some();
             let tangent = b.parameters.tangent_dynamics.is_some();
+            let distance = b.parameters.distance_dynamics.is_some();
             let textured = b.texture.is_some();
             let dual = b.dual_brush.is_some();
             if let Some(d) = &b.dual_brush {
@@ -323,7 +335,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if tangent {
+                != if distance {
+                    21
+                } else if tangent {
                     20
                 } else if speed {
                     19
@@ -371,7 +385,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 23
+            if b.required_capabilities.len() > 24
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -395,6 +409,7 @@ impl Package {
                             | "airbrush"
                             | "speed-dynamics"
                             | "tangent-dynamics"
+                            | "distance-dynamics"
                             | "wet-mix"
                             | "stroke-taper"
                             | "wet-dual-color"
@@ -441,6 +456,11 @@ impl Package {
                         .iter()
                         .any(|c| c == "tangent-dynamics")
                 || (tangent && b.engine_profile != "drawverse.brush")
+                || distance
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "distance-dynamics")
+                || (distance && b.engine_profile != "drawverse.brush")
                 || (b.has_dual_sizing()
                     && (b.engine_profile != "drawverse.brush"
                         || !b

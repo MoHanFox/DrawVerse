@@ -188,6 +188,7 @@ impl<'de> Deserialize<'de> for PressureParameters {
                 color: Default::default(),
                 speed: Default::default(),
                 tangent: Default::default(),
+                distance: Default::default(),
             },
             has_opacity,
         })

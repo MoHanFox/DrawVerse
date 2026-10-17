@@ -1274,6 +1274,7 @@ mod tests {
                     airbrush: None,
                     speed_dynamics: None,
                     tangent_dynamics: None,
+                    distance_dynamics: None,
                 },
                 smoothing: None,
                 dual_brush: None,

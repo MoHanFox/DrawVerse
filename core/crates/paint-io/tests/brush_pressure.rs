@@ -41,6 +41,7 @@ fn package() -> Package {
                 airbrush: None,
                 speed_dynamics: None,
                 tangent_dynamics: None,
+                distance_dynamics: None,
                 scatter_dynamics: None,
                 shape_jitter: None,
                 color_dynamics: None,

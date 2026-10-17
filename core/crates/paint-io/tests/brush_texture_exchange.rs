@@ -31,6 +31,7 @@ fn package(s: &BrushSettings, id: &str) -> Package {
             airbrush: None,
             speed_dynamics: None,
             tangent_dynamics: None,
+            distance_dynamics: None,
             diameter: s.diameter,
             spacing: s.spacing,
             dab_opacity: s.opacity,

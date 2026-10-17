@@ -60,6 +60,7 @@ fn package() -> Package {
                     settings.dynamics.speed.clone(),
                 )),
                 tangent_dynamics: None,
+                distance_dynamics: None,
             },
             smoothing: None,
             texture: None,

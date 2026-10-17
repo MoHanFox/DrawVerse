@@ -58,6 +58,7 @@ fn package() -> Package {
                 tangent_dynamics: Some(paint_io::brush_tangent::TangentParameters::from_core(
                     settings.dynamics.tangent.clone(),
                 )),
+                distance_dynamics: None,
             },
             smoothing: None,
             texture: None,

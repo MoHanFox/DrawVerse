@@ -181,6 +181,7 @@ pub struct BrushDynamics {
     pub color: crate::ColorDynamics,
     pub speed: SpeedDynamics,
     pub tangent: TangentDynamics,
+    pub distance: DistanceDynamics,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
@@ -193,6 +194,7 @@ impl BrushDynamics {
             && self.color == crate::ColorDynamics::default()
             && self.speed.is_default()
             && self.tangent.is_default()
+            && self.distance.is_default()
     }
 }
 
@@ -317,6 +319,77 @@ impl TangentDynamics {
     }
 }
 
+/// Optional stroke-distance-driven size, flow and opacity response. Distance is
+/// normalized against `max_distance`; identity curves leave channels unchanged.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DistanceDynamics {
+    enabled: bool,
+    max_distance: f32,
+    size: PressureControl,
+    flow: PressureControl,
+    opacity: PressureControl,
+}
+impl Default for DistanceDynamics {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_distance: 1000.,
+            size: PressureControl::default(),
+            flow: PressureControl::default(),
+            opacity: PressureControl::default(),
+        }
+    }
+}
+impl DistanceDynamics {
+    pub fn new(
+        enabled: bool,
+        max_distance: f32,
+        size: PressureControl,
+        flow: PressureControl,
+        opacity: PressureControl,
+    ) -> Result<Self> {
+        if !max_distance.is_finite() || !(1. ..=100_000.).contains(&max_distance) {
+            return Err(Error::InvalidArgument("distance maximum"));
+        }
+        Ok(Self {
+            enabled,
+            max_distance,
+            size,
+            flow,
+            opacity,
+        })
+    }
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub fn max_distance(&self) -> f32 {
+        self.max_distance
+    }
+    pub fn size(&self) -> &PressureControl {
+        &self.size
+    }
+    pub fn flow(&self) -> &PressureControl {
+        &self.flow
+    }
+    pub fn opacity(&self) -> &PressureControl {
+        &self.opacity
+    }
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+    pub(crate) fn compile(&self) -> Option<CompiledDistanceDynamics> {
+        if !self.enabled {
+            return None;
+        }
+        Some(CompiledDistanceDynamics {
+            max_distance: self.max_distance,
+            size: self.size.compile(),
+            flow: self.flow.compile(),
+            opacity: self.opacity.compile(),
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AngleControl {
     #[default]
@@ -413,6 +486,29 @@ impl CompiledTangentDynamics {
             return (1., 1., 1.);
         }
         let input = (tangent.clamp(-1., 1.) + 1.) * 0.5;
+        let response = |control: &Option<CompiledPressureControl>| {
+            control.as_ref().map_or(1., |c| c.response(input))
+        };
+        (
+            response(&self.size),
+            response(&self.flow),
+            response(&self.opacity),
+        )
+    }
+}
+#[derive(Clone, Debug)]
+pub(crate) struct CompiledDistanceDynamics {
+    max_distance: f32,
+    size: Option<CompiledPressureControl>,
+    flow: Option<CompiledPressureControl>,
+    opacity: Option<CompiledPressureControl>,
+}
+impl CompiledDistanceDynamics {
+    pub(crate) fn factors(&self, distance: f32) -> (f32, f32, f32) {
+        if !distance.is_finite() || distance < 0. {
+            return (1., 1., 1.);
+        }
+        let input = (distance / self.max_distance).clamp(0., 1.);
         let response = |control: &Option<CompiledPressureControl>| {
             control.as_ref().map_or(1., |c| c.response(input))
         };

@@ -67,8 +67,11 @@ impl Document {
     ) -> Result<()> {
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
-        let (speed_size, _, speed_opacity) =
-            program.dynamics_factors(stroke.speed, point.tangential_pressure);
+        let (speed_size, _, speed_opacity) = program.factor_all(
+            stroke.speed,
+            point.tangential_pressure,
+            stroke.dab_distance as f32,
+        );
         let next = stroke
             .dual_index
             .checked_add(1)
@@ -114,8 +117,11 @@ impl Document {
     ) -> Result<bool> {
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
-        let (speed_size, speed_flow, speed_opacity) =
-            program.dynamics_factors(stroke.speed, point.tangential_pressure);
+        let (speed_size, speed_flow, speed_opacity) = program.factor_all(
+            stroke.speed,
+            point.tangential_pressure,
+            stroke.dab_distance as f32,
+        );
         let base_radius = f64::from(
             stroke.brush.radius
                 * stroke.shape_sample.size

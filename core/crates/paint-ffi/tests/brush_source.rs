@@ -697,6 +697,7 @@ fn pressure_packages_round_trip_through_native_entry() {
         airbrush: None,
         speed_dynamics: None,
         tangent_dynamics: None,
+        distance_dynamics: None,
         tip_dynamics: None,
         diameter: 16.,
         spacing: 0.01,

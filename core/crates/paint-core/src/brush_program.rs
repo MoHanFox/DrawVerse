@@ -1,5 +1,8 @@
 use crate::{
-    brush_dynamics::{CompiledPressureControl, CompiledSpeedDynamics, CompiledTangentDynamics},
+    brush_dynamics::{
+        CompiledDistanceDynamics, CompiledPressureControl, CompiledSpeedDynamics,
+        CompiledTangentDynamics,
+    },
     AngleControl, Brush, BrushDynamics, BrushMask, Error, InputPoint, Result, TipDynamics,
 };
 use std::sync::Arc;
@@ -101,6 +104,7 @@ pub struct BrushProgram {
     pub(crate) dual: Option<crate::brush_dual::CompiledDual>,
     speed: Option<CompiledSpeedDynamics>,
     tangent: Option<CompiledTangentDynamics>,
+    distance: Option<CompiledDistanceDynamics>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -302,6 +306,7 @@ impl BrushProgram {
             dual,
             speed: definition.dynamics.speed.compile(),
             tangent: definition.dynamics.tangent.compile(),
+            distance: definition.dynamics.distance.compile(),
         })
     }
 
@@ -341,6 +346,18 @@ impl BrushProgram {
             speed.0 * tangent.0,
             speed.1 * tangent.1,
             speed.2 * tangent.2,
+        )
+    }
+    pub(crate) fn factor_all(&self, speed: f32, tangent: f32, distance: f32) -> (f32, f32, f32) {
+        let base = self.dynamics_factors(speed, tangent);
+        let distance = self
+            .distance
+            .as_ref()
+            .map_or((1., 1., 1.), |compiled| compiled.factors(distance));
+        (
+            base.0 * distance.0,
+            base.1 * distance.1,
+            base.2 * distance.2,
         )
     }
     #[inline]

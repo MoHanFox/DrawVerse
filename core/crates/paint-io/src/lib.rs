@@ -7,6 +7,7 @@ pub mod abr_patterns;
 pub mod abr_sampled;
 pub mod brush_airbrush;
 pub mod brush_color_dynamics;
+pub mod brush_distance;
 pub mod brush_dual;
 pub mod brush_dual_color;
 pub mod brush_dual_sizing;

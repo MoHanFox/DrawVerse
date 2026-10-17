@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新笔触距离动态：`docs/brush-distance-design.md` / `docs/brush-distance-validation.md`；`distance-v1`按活动笔触累计文档距离驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，默认关闭/1000 px，主笔尖和配对第二笔尖共享尺寸因子；state26/VBR1.32/behavior21及Qt“传递”页开关/上限/曲线接通，真实像素、保存重开和QML绑定通过。ABR距离来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。
+
 - 最新切向压力动态：`docs/brush-tangent-design.md` / `docs/brush-tangent-validation.md`；`tangent-v1`将设备-1..1切向压力归一化后驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，默认关闭，主笔尖和配对第二笔尖共享尺寸因子；state25/VBR1.31/behavior20及Qt“传递”页开关/曲线接通，真实像素、保存重开和QML绑定通过。实体非零切向压力、ABR来源、任意动态矩阵、跨平台和GPU仍待后续。
 
 - 最新速度动态：`docs/brush-speed-design.md` / `docs/brush-speed-validation.md`；`speed-v1`以文档像素/秒驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，默认关闭/2000 px/s，主笔尖和配对第二笔尖共享尺寸因子；state24/VBR1.30/behavior19及Qt“传递”页开关/上限/专用曲线接通，真实像素、双笔刷回归、保存重开和设置页交互通过。ABR速度来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。

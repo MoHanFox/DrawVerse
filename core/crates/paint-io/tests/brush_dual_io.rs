@@ -112,6 +112,7 @@ fn large_dual_catalog_cannot_emit_a_state_the_reader_rejects_for_size() {
         color: ColorDynamics::new(false, 1., 1., 1., 1., true, u64::MAX).unwrap(),
         speed: Default::default(),
         tangent: Default::default(),
+        distance: Default::default(),
     };
     let mut second = dynamics.clone();
     second.opacity = Default::default();

@@ -45,7 +45,11 @@ impl Document {
         let finger_color = if let Some(dual) = dual {
             let program = &stroke.program;
             let speed_size = program
-                .dynamics_factors(stroke.speed, point.tangential_pressure)
+                .factor_all(
+                    stroke.speed,
+                    point.tangential_pressure,
+                    stroke.dab_distance as f32,
+                )
                 .0;
             let base_radius = f64::from(
                 stroke.brush.radius

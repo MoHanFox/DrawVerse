@@ -219,6 +219,7 @@ impl SourceArchive {
                 airbrush: None,
                 speed_dynamics: None,
                 tangent_dynamics: None,
+                distance_dynamics: None,
                 diameter: settings.diameter,
                 spacing: settings.spacing,
                 dab_opacity: settings.opacity,
