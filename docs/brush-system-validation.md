@@ -234,3 +234,5 @@ ABR设备形状阶段：converter7/record1/交接JSON6/VBR1.21，方向/笔旋�
 2026-10-17纹理混合模式阶段：核心和 Qt 新增 `normal`、`multiply`、`darken`、`lighten`、`subtract`、`difference`、`screen`，旧 state/VBR 缺省规范化为 normal；核心纹理、真实 state/VBR 资源交换、Qt 导入/预览/绘画/导出回归及 Release 通过，见[设计](brush-texture-mode-design.md)及[验收](brush-texture-mode-validation.md)。模式作用于笔尖覆盖率组合，不直接替代最终画布混合；ABR 内部纹理字段映射仍待接。
 
 2026-10-18速度动态阶段：state24/VBR1.30/behavior19新增`enabled/maxSpeed/size/flow/opacity`，速度由输入段文档距离和时间计算，尺寸同时作用于主笔尖与配对第二笔尖，流量和不透明度按同一冻结曲线执行。`paint-core brush_speed` 4项、`brush_dual` 9项、`brush_dual_color` 13项及`paint-io`速度/state/VBR最小回归通过；严格Clippy、格式检查和Windows Release Qt构建通过。Qt模型保存重开与“传递”页开关/上限交互通过，见[设计](brush-speed-design.md)及[验收](brush-speed-validation.md)。未运行全量`tools/check.py`，ABR速度来源、任意动态矩阵、实体设备/跨平台和GPU仍未完成。
+
+2026-10-18切向压力动态阶段：state25/VBR1.31/behavior20新增`tangent-v1`，对-1..1设备范围归一化后驱动尺寸、流量和整笔不透明度；`paint-core brush_tangent` 4项、速度/双笔尖回归、`paint-io brush_tangent_exchange` 1项、state/VBR回归通过，格式检查与严格Clippy、Windows Release Qt构建通过。Qt模型保存重开、QML开关/曲线和速度四项组合测试通过，见[设计](brush-tangent-design.md)及[验收](brush-tangent-validation.md)。未运行全量`tools/check.py`，实体设备非零切向压力、ABR来源和跨平台仍未完成。

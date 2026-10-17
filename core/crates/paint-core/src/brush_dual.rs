@@ -115,6 +115,7 @@ impl SecondaryTip {
             || dynamics.pressure_opacity
             || dynamics.opacity != Default::default()
             || dynamics.color != Default::default()
+            || dynamics.tangent != Default::default()
         {
             return Err(Error::InvalidArgument("secondary tip parameters"));
         }

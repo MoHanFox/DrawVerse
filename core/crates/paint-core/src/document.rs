@@ -2006,7 +2006,10 @@ impl Document {
             .dual_index
             .checked_add(1)
             .ok_or(Error::ResourceLimit("secondary dab serial exhausted"))?;
-        let speed_size = stroke.program.speed_factors(stroke.speed).0;
+        let speed_size = stroke
+            .program
+            .dynamics_factors(stroke.speed, point.tangential_pressure)
+            .0;
         let plan = dual
             .dab(
                 point,
@@ -2258,7 +2261,9 @@ impl Document {
         stroke: &mut Stroke,
         point: InputPoint,
     ) -> Result<bool> {
-        let (speed_size, speed_flow, speed_opacity) = stroke.program.speed_factors(stroke.speed);
+        let (speed_size, speed_flow, speed_opacity) = stroke
+            .program
+            .dynamics_factors(stroke.speed, point.tangential_pressure);
         let base_radius = f64::from(
             stroke.brush.radius
                 * stroke.shape_sample.size

@@ -63,6 +63,9 @@ ColumnLayout {
     function setSpeedDynamicsMax(value) {return root.library.setSpeedDynamicsMaxSpeed(value)}
     function setSpeedControl(target,points,minimum){return root.library.setSpeedControl(target,points,minimum)}
     function resetSpeedControl(target){return root.library.resetSpeedControl(target)}
+    function setTangentDynamicsEnabled(enabled){return root.library.setTangentDynamicsEnabled(enabled)}
+    function setTangentControl(target,points,minimum){return root.library.setTangentControl(target,points,minimum)}
+    function resetTangentControl(target){return root.library.resetTangentControl(target)}
     onCategoryChanged:if(category===8)inspectSource()
     readonly property real contentHeight:360
     implicitHeight:contentHeight
@@ -276,6 +279,10 @@ ColumnLayout {
                     SpeedCurveEditor {library:root.library;target:"size";prefix:"speedSize";caption:"尺寸随速度变化";curveHelp:"横轴为归一化速度，纵轴为尺寸比例；编辑自动平滑。";minimumHelp:"最低尺寸比例；不启用时保持原尺寸。";curve:root.library.speedSizeCurve;minimum:root.library.speedSizeMinimum}
                     SpeedCurveEditor {library:root.library;target:"flow";prefix:"speedFlow";caption:"流量随速度变化";curveHelp:"横轴为归一化速度，纵轴为流量比例；编辑自动平滑。";minimumHelp:"最低流量比例。";curve:root.library.speedFlowCurve;minimum:root.library.speedFlowMinimum}
                     SpeedCurveEditor {library:root.library;target:"opacity";prefix:"speedOpacity";caption:"不透明度随速度变化";curveHelp:"横轴为归一化速度，纵轴为整笔不透明度比例；独立于流量曲线。";minimumHelp:"最低不透明度比例。";curve:root.library.speedOpacityCurve;minimum:root.library.speedOpacityMinimum}
+                    CompactCheckBox {objectName:"settingsTangentEnabled";text:"启用切向压力动态";checked:root.library.tangentDynamicsEnabled;font.pixelSize:10;onToggled:root.setTangentDynamicsEnabled(checked);tooltip:"使用数位笔的切向压力（-1到1归一化）控制尺寸、流量和整笔不透明度。"}
+                    SpeedCurveEditor {library:root.library;target:"size";prefix:"tangentSize";caption:"尺寸随切向压力变化";curveHelp:"横轴为切向压力归一化值，纵轴为尺寸比例；编辑自动平滑。";minimumHelp:"最低尺寸比例。";curve:root.library.tangentSizeCurve;minimum:root.library.tangentSizeMinimum;setControl:function(points,minimum){return root.setTangentControl("size",points,minimum)};resetControl:function(){return root.resetTangentControl("size")}}
+                    SpeedCurveEditor {library:root.library;target:"flow";prefix:"tangentFlow";caption:"流量随切向压力变化";curveHelp:"横轴为切向压力归一化值，纵轴为流量比例；编辑自动平滑。";minimumHelp:"最低流量比例。";curve:root.library.tangentFlowCurve;minimum:root.library.tangentFlowMinimum;setControl:function(points,minimum){return root.setTangentControl("flow",points,minimum)};resetControl:function(){return root.resetTangentControl("flow")}}
+                    SpeedCurveEditor {library:root.library;target:"opacity";prefix:"tangentOpacity";caption:"不透明度随切向压力变化";curveHelp:"横轴为切向压力归一化值，纵轴为整笔不透明度比例；独立于流量曲线。";minimumHelp:"最低不透明度比例。";curve:root.library.tangentOpacityCurve;minimum:root.library.tangentOpacityMinimum;setControl:function(points,minimum){return root.setTangentControl("opacity",points,minimum)};resetControl:function(){return root.resetTangentControl("opacity")}}
                     CompactCheckBox {objectName:"settingsAirbrushEnabled";text:"喷枪";checked:root.library.airbrush.enabled;font.pixelSize:10;onToggled:root.setAirbrushField("enabled",checked);tooltip:"按住不动时按固定时间间隔持续沉积颜色；用于画笔和橡皮，涂抹与湿混不启用。"}
                     RowLayout {Layout.fillWidth:true;visible:root.library.airbrush.enabled
                         Label {text:"间隔";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}

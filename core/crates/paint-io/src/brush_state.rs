@@ -141,6 +141,12 @@ struct Row {
         deserialize_with = "crate::brush_speed::present"
     )]
     speed_dynamics: Option<crate::brush_speed::SpeedParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_tangent::present"
+    )]
+    tangent_dynamics: Option<crate::brush_tangent::TangentParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -208,7 +214,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=24) {
+    if !matches!(state.version, 1..=25) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -329,6 +335,11 @@ fn decode_inner(
         if row.speed_dynamics.is_some() && state.version < 24 {
             return Err(Error::Unsupported("speed dynamics requires state24".into()));
         }
+        if row.tangent_dynamics.is_some() && state.version < 25 {
+            return Err(Error::Unsupported(
+                "tangent dynamics requires state25".into(),
+            ));
+        }
         let dual = if let Some(d) = row.dual_brush {
             if d.has_color() && state.version < 16 {
                 return Err(Error::Unsupported("dual-color requires state16".into()));
@@ -429,6 +440,7 @@ fn decode_inner(
         }
         dynamics.color = row.color_dynamics.map(|p| p.core()).unwrap_or_default();
         dynamics.speed = row.speed_dynamics.map(|p| p.core()).unwrap_or_default();
+        dynamics.tangent = row.tangent_dynamics.map(|p| p.core()).unwrap_or_default();
         entries.push((
             row.id,
             row.name,
@@ -508,6 +520,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             version = version.max(24);
             Some(crate::brush_speed::SpeedParameters::from_core(
                 s.dynamics.speed.clone(),
+            ))
+        } else {
+            None
+        };
+        let tangent_dynamics = if !s.dynamics.tangent.is_default() {
+            version = version.max(25);
+            Some(crate::brush_tangent::TangentParameters::from_core(
+                s.dynamics.tangent.clone(),
             ))
         } else {
             None
@@ -650,6 +670,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             stroke_taper,
             airbrush,
             speed_dynamics,
+            tangent_dynamics,
         });
     }
     if organization.is_some() {

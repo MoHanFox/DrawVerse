@@ -52,6 +52,7 @@ fn package() -> Package {
                     s.airbrush,
                 )),
                 speed_dynamics: None,
+                tangent_dynamics: None,
             },
             smoothing: None,
             texture: None,

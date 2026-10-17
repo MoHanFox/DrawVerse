@@ -1273,6 +1273,7 @@ mod tests {
                     color_dynamics: None,
                     airbrush: None,
                     speed_dynamics: None,
+                    tangent_dynamics: None,
                 },
                 smoothing: None,
                 dual_brush: None,

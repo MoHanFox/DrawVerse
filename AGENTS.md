@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新切向压力动态：`docs/brush-tangent-design.md` / `docs/brush-tangent-validation.md`；`tangent-v1`将设备-1..1切向压力归一化后驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，默认关闭，主笔尖和配对第二笔尖共享尺寸因子；state25/VBR1.31/behavior20及Qt“传递”页开关/曲线接通，真实像素、保存重开和QML绑定通过。实体非零切向压力、ABR来源、任意动态矩阵、跨平台和GPU仍待后续。
+
 - 最新速度动态：`docs/brush-speed-design.md` / `docs/brush-speed-validation.md`；`speed-v1`以文档像素/秒驱动尺寸、流量和整笔不透明度三条PCHIP/线性曲线，默认关闭/2000 px/s，主笔尖和配对第二笔尖共享尺寸因子；state24/VBR1.30/behavior19及Qt“传递”页开关/上限/专用曲线接通，真实像素、双笔刷回归、保存重开和设置页交互通过。ABR速度来源、任意动态矩阵、实体设备/跨平台和GPU仍待后续。
 
 - 最新逐印章双色：`docs/brush-dual-stamp-design.md` / `docs/brush-dual-stamp-validation.md`；`interleaved-stamp-v1` 按主/第二印章顺序叠加且整笔不透明度一次，state22/VBR1.28/behavior17/ABI1.56及Qt设置/真实预览/像素/持久化接通。第二色固定使用背景色且无UI开关；橡皮和普通涂抹忽略颜色、手指绘画涂抹用双色，湿混下的涂抹/橡皮不处理。独立路径拒绝；无全量tools/check.py或跨平台验收。

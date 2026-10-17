@@ -18,6 +18,7 @@ pub mod brush_shape_jitter;
 pub mod brush_source;
 pub mod brush_speed;
 pub mod brush_state;
+pub mod brush_tangent;
 pub mod brush_taper;
 pub mod brush_texture;
 pub mod brush_tip_dynamics;

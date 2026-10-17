@@ -1,5 +1,5 @@
 use crate::{
-    brush_dynamics::{CompiledPressureControl, CompiledSpeedDynamics},
+    brush_dynamics::{CompiledPressureControl, CompiledSpeedDynamics, CompiledTangentDynamics},
     AngleControl, Brush, BrushDynamics, BrushMask, Error, InputPoint, Result, TipDynamics,
 };
 use std::sync::Arc;
@@ -100,6 +100,7 @@ pub struct BrushProgram {
     pub(crate) texture: Option<crate::brush_texture::CompiledTexture>,
     pub(crate) dual: Option<crate::brush_dual::CompiledDual>,
     speed: Option<CompiledSpeedDynamics>,
+    tangent: Option<CompiledTangentDynamics>,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct BrushPose {
@@ -300,6 +301,7 @@ impl BrushProgram {
             texture: definition.texture.compile(),
             dual,
             speed: definition.dynamics.speed.compile(),
+            tangent: definition.dynamics.tangent.compile(),
         })
     }
 
@@ -326,6 +328,20 @@ impl BrushProgram {
         self.speed
             .as_ref()
             .map_or((1., 1., 1.), |compiled| compiled.factors(speed))
+    }
+    pub(crate) fn tangent_factors(&self, tangent: f32) -> (f32, f32, f32) {
+        self.tangent
+            .as_ref()
+            .map_or((1., 1., 1.), |compiled| compiled.factors(tangent))
+    }
+    pub(crate) fn dynamics_factors(&self, speed: f32, tangent: f32) -> (f32, f32, f32) {
+        let speed = self.speed_factors(speed);
+        let tangent = self.tangent_factors(tangent);
+        (
+            speed.0 * tangent.0,
+            speed.1 * tangent.1,
+            speed.2 * tangent.2,
+        )
     }
     #[inline]
     /// Base tip coverage; the document executor binds dual/texture dab operators.

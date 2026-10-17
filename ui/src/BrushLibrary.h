@@ -123,6 +123,21 @@ public:
     QVariantList speedOpacityCurve() const;
     Q_PROPERTY(qreal speedOpacityMinimum READ speedOpacityMinimum NOTIFY settingsChanged)
     qreal speedOpacityMinimum() const;
+    QVariantMap tangentDynamics() const;
+    Q_PROPERTY(bool tangentDynamicsEnabled READ tangentDynamicsEnabled NOTIFY settingsChanged)
+    bool tangentDynamicsEnabled() const;
+    Q_PROPERTY(QVariantList tangentSizeCurve READ tangentSizeCurve NOTIFY settingsChanged)
+    QVariantList tangentSizeCurve() const;
+    Q_PROPERTY(qreal tangentSizeMinimum READ tangentSizeMinimum NOTIFY settingsChanged)
+    qreal tangentSizeMinimum() const;
+    Q_PROPERTY(QVariantList tangentFlowCurve READ tangentFlowCurve NOTIFY settingsChanged)
+    QVariantList tangentFlowCurve() const;
+    Q_PROPERTY(qreal tangentFlowMinimum READ tangentFlowMinimum NOTIFY settingsChanged)
+    qreal tangentFlowMinimum() const;
+    Q_PROPERTY(QVariantList tangentOpacityCurve READ tangentOpacityCurve NOTIFY settingsChanged)
+    QVariantList tangentOpacityCurve() const;
+    Q_PROPERTY(qreal tangentOpacityMinimum READ tangentOpacityMinimum NOTIFY settingsChanged)
+    qreal tangentOpacityMinimum() const;
     Q_INVOKABLE bool setStrokeTaper(QVariantMap data);
     Q_INVOKABLE bool setAirbrush(QVariantMap data);
     Q_INVOKABLE bool setSpeedDynamics(QVariantMap data);
@@ -130,6 +145,10 @@ public:
     Q_INVOKABLE bool setSpeedDynamicsMaxSpeed(qreal maximum);
     Q_INVOKABLE bool setSpeedControl(const QString &target, QVariantList points, qreal minimum);
     Q_INVOKABLE bool resetSpeedControl(const QString &target);
+    Q_INVOKABLE bool setTangentDynamics(QVariantMap data);
+    Q_INVOKABLE bool setTangentDynamicsEnabled(bool enabled);
+    Q_INVOKABLE bool setTangentControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool resetTangentControl(const QString &target);
     Q_INVOKABLE bool setWetMix(QVariantMap data);
     QVariantMap smoothing() const;
     Q_INVOKABLE bool setSmoothing(QVariantMap data);
@@ -267,9 +286,10 @@ private:
     bool m_cursorSimple=false,m_cursorComposite=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush,speed;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent;};
     static QJsonObject presetRow(const Preset &preset,int &version);
     static QJsonObject exportPreset(const Preset &preset,bool includeSource,const QString &id);
+    QVariantMap tangentControl(const QString &target) const;
     int index(const QString &id) const;
     void update(int field,qreal value);
     void changed();

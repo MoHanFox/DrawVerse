@@ -59,6 +59,7 @@ fn package() -> Package {
                 speed_dynamics: Some(paint_io::brush_speed::SpeedParameters::from_core(
                     settings.dynamics.speed.clone(),
                 )),
+                tangent_dynamics: None,
             },
             smoothing: None,
             texture: None,

@@ -180,6 +180,7 @@ pub struct BrushDynamics {
     pub shape_jitter: crate::ShapeJitter,
     pub color: crate::ColorDynamics,
     pub speed: SpeedDynamics,
+    pub tangent: TangentDynamics,
 }
 impl BrushDynamics {
     pub fn is_identity(&self) -> bool {
@@ -191,6 +192,7 @@ impl BrushDynamics {
             && self.shape_jitter == crate::ShapeJitter::default()
             && self.color == crate::ColorDynamics::default()
             && self.speed.is_default()
+            && self.tangent.is_default()
     }
 }
 
@@ -258,6 +260,56 @@ impl SpeedDynamics {
         }
         Some(CompiledSpeedDynamics {
             max_speed: self.max_speed,
+            size: self.size.compile(),
+            flow: self.flow.compile(),
+            opacity: self.opacity.compile(),
+        })
+    }
+}
+
+/// Optional tangential-pressure-driven size, flow and opacity response. The
+/// signed device range -1..1 is normalized to 0..1 before evaluating curves.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TangentDynamics {
+    enabled: bool,
+    size: PressureControl,
+    flow: PressureControl,
+    opacity: PressureControl,
+}
+impl TangentDynamics {
+    pub fn new(
+        enabled: bool,
+        size: PressureControl,
+        flow: PressureControl,
+        opacity: PressureControl,
+    ) -> Self {
+        Self {
+            enabled,
+            size,
+            flow,
+            opacity,
+        }
+    }
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub fn size(&self) -> &PressureControl {
+        &self.size
+    }
+    pub fn flow(&self) -> &PressureControl {
+        &self.flow
+    }
+    pub fn opacity(&self) -> &PressureControl {
+        &self.opacity
+    }
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+    pub(crate) fn compile(&self) -> Option<CompiledTangentDynamics> {
+        if !self.enabled {
+            return None;
+        }
+        Some(CompiledTangentDynamics {
             size: self.size.compile(),
             flow: self.flow.compile(),
             opacity: self.opacity.compile(),
@@ -339,6 +391,28 @@ impl CompiledSpeedDynamics {
             return (1., 1., 1.);
         }
         let input = (speed / self.max_speed).clamp(0., 1.);
+        let response = |control: &Option<CompiledPressureControl>| {
+            control.as_ref().map_or(1., |c| c.response(input))
+        };
+        (
+            response(&self.size),
+            response(&self.flow),
+            response(&self.opacity),
+        )
+    }
+}
+#[derive(Clone, Debug)]
+pub(crate) struct CompiledTangentDynamics {
+    size: Option<CompiledPressureControl>,
+    flow: Option<CompiledPressureControl>,
+    opacity: Option<CompiledPressureControl>,
+}
+impl CompiledTangentDynamics {
+    pub(crate) fn factors(&self, tangent: f32) -> (f32, f32, f32) {
+        if !tangent.is_finite() {
+            return (1., 1., 1.);
+        }
+        let input = (tangent.clamp(-1., 1.) + 1.) * 0.5;
         let response = |control: &Option<CompiledPressureControl>| {
             control.as_ref().map_or(1., |c| c.response(input))
         };

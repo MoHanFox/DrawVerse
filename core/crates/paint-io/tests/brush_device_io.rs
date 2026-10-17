@@ -41,6 +41,7 @@ fn package(settings: &BrushSettings) -> Package {
             parameters: Parameters {
                 airbrush: None,
                 speed_dynamics: None,
+                tangent_dynamics: None,
                 scatter_dynamics: None,
                 shape_jitter: None,
                 color_dynamics: None,

@@ -24,6 +24,7 @@ fn package(sizing: DualSizing, enabled: bool) -> Package {
             parameters: Parameters {
                 airbrush: None,
                 speed_dynamics: None,
+                tangent_dynamics: None,
                 diameter: 12.,
                 spacing: 0.04,
                 dab_opacity: 0.4,

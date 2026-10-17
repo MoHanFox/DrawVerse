@@ -10,6 +10,8 @@ ColumnLayout {
     property var curve:[]
     property real minimum:0
     property bool smooth:true
+    property var setControl:null
+    property var resetControl:null
     property string caption:"速度响应曲线"
     property string curveHelp:"拖动控制点；双击增加控制点。编辑后自动拟合平滑曲线。横轴为归一化速度，纵轴为输出比例。"
     property string minimumHelp:"最低比例与曲线输出组合。"
@@ -19,8 +21,8 @@ ColumnLayout {
     property int selected:0
     readonly property var selectedPoint:points[Math.min(selected,points.length-1)]
     Layout.fillWidth:true;spacing:4
-    function setPressureControl(points,minimum){return library.setSpeedControl(target,points,minimum)}
-    function resetPressureControl(){return library.resetSpeedControl(target)}
+    function setPressureControl(points,minimum){return setControl?setControl(points,minimum):library.setSpeedControl(target,points,minimum)}
+    function resetPressureControl(){return resetControl?resetControl():library.resetSpeedControl(target)}
     function copyPoints(){var result=[];for(var i=0;i<points.length;++i)result.push([Number(points[i][0]),Number(points[i][1])]);return result}
     function movePoint(index,x,y) {
         var data=copyPoints()
