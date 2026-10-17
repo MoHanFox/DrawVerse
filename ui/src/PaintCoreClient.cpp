@@ -71,8 +71,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 53) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.53 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 54) {
+            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.54 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -102,7 +102,7 @@ public:
         inspectStorage();
         auto caps = dto<PaintCapabilities>();
         if (!check(paint_core_capabilities(m_core, &caps))) return;
-        constexpr uint64_t required = PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
+        constexpr uint64_t required = PAINT_FEATURE_BRUSH_GROUP_STATE | PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
         if ((caps.features & (required | PAINT_FEATURE_SELECTION)) != (required | PAINT_FEATURE_SELECTION)) { emit failure(QStringLiteral("当前核心缺少异步视口或选区能力")); return; }
         auto desc = dto<PaintDocumentDesc>(); desc.width = 960; desc.height = 640;
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
@@ -539,7 +539,7 @@ public:
         if(!m_pendingBrushPreferences.isEmpty()){
             const auto pending=std::exchange(m_pendingBrushPreferences,{});
             if(pending!=wanted || !error.isEmpty())return;
-            auto root=QJsonDocument::fromJson(pending).object();const auto native=QJsonDocument::fromJson(canonical).object();root["presets"]=native.value("presets");root["selected"]=native.value("selected");root["version"]=native.value("version");
+            auto root=QJsonDocument::fromJson(pending).object();const auto native=QJsonDocument::fromJson(canonical).object();root["presets"]=native.value("presets");root["selected"]=native.value("selected");root["version"]=native.value("version");if(native.contains("organization"))root["organization"]=native.value("organization");else root.remove("organization");
             auto settings=preferences();settings->setValue("brushes/state",QJsonDocument(root).toJson(QJsonDocument::Compact));settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存画笔设置，请检查配置目录权限"));
         }
     }
@@ -1639,11 +1639,12 @@ void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
 }
 bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
     const auto root=QJsonDocument::fromJson(state).object();
-    const auto source=QJsonDocument(QJsonObject{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}}).toJson(QJsonDocument::Compact);
+    QJsonObject catalog{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}};if(root.contains("organization"))catalog["organization"]=root.value("organization");
+    const auto source=QJsonDocument(catalog).toJson(QJsonDocument::Compact);
     QMutexLocker lock(&m_brushCatalogConnection->mutex);
     if(!m_brushCatalogConnection->library)return false;
     if(source==m_brushCatalogConnection->source && m_brushCatalogConnection->preparation)return true;
-    uint64_t preparation=0;const auto status=paint_brush_library_prepare_state_wet_dual(m_brushCatalogConnection->library,reinterpret_cast<const uint8_t*>(source.constData()),quint64(source.size()),&preparation);
+    uint64_t preparation=0;const auto status=paint_brush_library_prepare_state_groups(m_brushCatalogConnection->library,reinterpret_cast<const uint8_t*>(source.constData()),quint64(source.size()),&preparation);
     if(status!=PAINT_OK){lock.unlock();showError(immediateError(status));return false;}
     m_brushCatalogConnection->source=source;m_brushCatalogConnection->preparation=preparation;return true;
 }

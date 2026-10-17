@@ -11,6 +11,7 @@ class BrushLibrary final : public QObject {
     Q_OBJECT
     Q_PROPERTY(int writeBlend READ writeBlend WRITE setWriteBlend NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList presets READ presets NOTIFY presetsChanged)
+    Q_PROPERTY(QVariantMap organization READ organization NOTIFY presetsChanged)
     Q_PROPERTY(QString selectedId READ selectedId NOTIFY settingsChanged)
     Q_PROPERTY(QString selectedName READ selectedName NOTIFY settingsChanged)
     Q_PROPERTY(QString selectedPreview READ selectedPreview NOTIFY presetsChanged)
@@ -68,6 +69,7 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(QString cursorSecondaryColor READ cursorSecondaryColor WRITE setCursorSecondaryColor NOTIFY cursorChanged)
     Q_PROPERTY(QVariantList recentColors READ recentColors NOTIFY recentColorsChanged)
 public:
+    QVariantMap organization() const {return m_organization.toVariantMap();}
     bool cursorOutline() const {return m_cursorOutline;}
     bool cursorCenter() const {return m_cursorCenter;}
     bool cursorHoverOnly() const {return m_cursorHoverOnly;}
@@ -233,6 +235,7 @@ private:
     void update(int field,qreal value);
     void changed();
     QList<Preset> m_presets;
+    QJsonObject m_organization;
     QHash<QString,Preset> m_resetPresets;
     QString m_selected="round-pressure";
     // Most recently used colours first; the colour panel shows them as its swatch row.

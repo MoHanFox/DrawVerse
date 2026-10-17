@@ -72,6 +72,24 @@ private:
 };
 QWindowList applicationWindows(){auto windows=QGuiApplication::allWindows();windows.removeIf([](QWindow *window){return window->objectName()=="applicationOutlineWindow";});return windows;}
 int visibleWindowsCount(){int count=0;for(auto *window:applicationWindows())if(window->isVisible())++count;return count;}
+QJsonObject groupedBrushState(const BrushLibrary &library) {
+    auto root=QJsonDocument::fromJson(library.snapshot()).object();
+    const auto selected=root.value("selected").toString();
+    const QString outer="12345678-1234-4234-8234-000000000100",empty="12345678-1234-4234-8234-000000000101";
+    const auto item=[](const QString &kind,const QString &id){return QJsonObject{{"kind",kind},{"id",id}};};
+    QJsonArray roots{item("group",outer)};
+    const auto old=root.value("presets").toArray();QJsonArray ordered;
+    for(const auto &row:old)if(row.toObject().value("id").toString()==selected)ordered.append(row);
+    for(const auto &row:old)if(row.toObject().value("id").toString()!=selected){ordered.append(row);roots.append(item("preset",row.toObject().value("id").toString()));}
+    const QJsonObject organization{{"model","ordered-tree-v1"},{"roots",roots},{"groups",QJsonArray{
+        QJsonObject{{"id",outer},{"name","same"},{"items",QJsonArray{item("preset",selected),item("group",empty)}}},
+        QJsonObject{{"id",empty},{"name","same"},{"items",QJsonArray{}}}}}};
+    root["version"]=20;root["presets"]=ordered;root["organization"]=organization;
+    auto reset=root.value("resetState").toObject();QJsonArray baselines;
+    const auto oldReset=reset.value("presets").toArray();
+    for(const auto &row:ordered)for(const auto &baseline:oldReset)if(row.toObject().value("id")==baseline.toObject().value("id"))baselines.append(baseline);
+    reset["version"]=20;reset["presets"]=baselines;reset["organization"]=organization;root["resetState"]=reset;return root;
+}
 QQuickItem *findVisualItem(QQuickItem *root,const QString &name) {
     if(root->objectName()==name) return root;
     for(auto *item:root->childItems()) if(auto *found=findVisualItem(item,name)) return found;
@@ -83,6 +101,54 @@ class UiTests final : public QObject {
     Q_OBJECT
     QTemporaryDir m_preferences;
 private slots:
+
+    void brushGroupsState20MirrorBaselinesCopyDeleteAndFlatImports() {
+        BrushLibrary source;source.setRadius(7);const auto id=source.saveCopy("grouped baseline");QVERIFY(!id.isEmpty());source.setRadius(11);
+        BrushLibrary library;QVERIFY(library.restore(QJsonDocument(groupedBrushState(source)).toJson()));
+        const auto organization=library.organization();QCOMPARE(organization.value("groups").toList().size(),2);
+        QVERIFY(library.resetPreset());QCOMPARE(library.radius(),7.);QCOMPARE(library.organization(),organization);
+        library.setRadius(9);library.setOpacity(.23);const auto second=library.saveCopy("second");QVERIFY(!second.isEmpty());
+        auto state=QJsonDocument::fromJson(library.snapshot()).object();QCOMPARE(state.value("version").toInt(),20);
+        QCOMPARE(state.value("organization"),state.value("resetState").toObject().value("organization"));
+        const auto groups=state.value("organization").toObject().value("groups").toArray();
+        QCOMPARE(groups[0].toObject().value("items").toArray().last().toObject().value("id").toString(),second);
+        BrushLibrary reopened;QVERIFY(reopened.restore(library.snapshot()));QCOMPARE(reopened.catalogSnapshot(),library.catalogSnapshot());
+        reopened.setRadius(13);QVERIFY(reopened.resetPreset());QCOMPARE(reopened.radius(),9.);QCOMPARE(reopened.opacity(),.23);
+        QVERIFY(reopened.remove(second));QVERIFY(reopened.remove(id));QCOMPARE(reopened.organization().value("groups").toList().size(),2);
+        BrushLibrary flat;QVERIFY(reopened.importPackage(flat.exportPackage()));QCOMPARE(reopened.organization().value("groups").toList().size(),2);
+        BrushLibrary verify;QVERIFY(verify.restore(reopened.snapshot()));QCOMPARE(verify.catalogSnapshot(),reopened.catalogSnapshot());
+        QVERIFY(verify.applyNativeCatalog(flat.catalogSnapshot()));QVERIFY(verify.organization().isEmpty());QCOMPARE(verify.catalogSnapshot(),flat.catalogSnapshot());
+    }
+    void brushGroupsInvalidTreesAreAtomicAndExplicitFlatNormalizes() {
+        BrushLibrary library;auto state=groupedBrushState(library);QVERIFY(library.restore(QJsonDocument(state).toJson()));const auto good=library.snapshot();
+        QList<QJsonObject> invalid;
+        auto bad=state;bad["organization"]=QJsonValue::Null;invalid.append(bad);
+        bad=state;bad["version"]=19;invalid.append(bad);bad=state;bad["version"]=20.5;invalid.append(bad);
+        auto organization=state.value("organization").toObject();auto changed=organization;changed["model"]=QJsonObject{{"ordered-tree-v1",QJsonValue::Null}};bad=state;bad["organization"]=changed;invalid.append(bad);
+        changed=organization;changed["extra"]=true;bad=state;bad["organization"]=changed;invalid.append(bad);
+        auto roots=organization.value("roots").toArray();roots.append(roots.first());changed=organization;changed["roots"]=roots;bad=state;bad["organization"]=changed;invalid.append(bad);
+        auto groups=organization.value("groups").toArray();auto group=groups[0].toObject();group["items"]=QJsonArray{QJsonObject{{"kind","group"},{"id",group.value("id")}}};groups[0]=group;changed=organization;changed["groups"]=groups;bad=state;bad["organization"]=changed;invalid.append(bad);
+        bad=state;auto rows=state.value("presets").toArray();const QJsonValue first=rows[0];rows[0]=rows[1];rows[1]=first;bad["presets"]=rows;invalid.append(bad);
+        for(const auto &input:invalid){QVERIFY(!library.restore(QJsonDocument(input).toJson()));QCOMPARE(library.snapshot(),good);}
+        BrushLibrary flat;auto explicitFlat=QJsonDocument::fromJson(flat.catalogSnapshot()).object();explicitFlat["version"]=20;
+        QJsonArray items;for(const auto &row:explicitFlat.value("presets").toArray())items.append(QJsonObject{{"kind","preset"},{"id",row.toObject().value("id")}});
+        explicitFlat["organization"]=QJsonObject{{"model","ordered-tree-v1"},{"roots",items},{"groups",QJsonArray{}}};
+        BrushLibrary normalized;QVERIFY(normalized.restore(QJsonDocument(explicitFlat).toJson()));QCOMPARE(normalized.catalogSnapshot(),flat.catalogSnapshot());
+    }
+    void brushGroupsClientPreparationPixelsHistoryAndRestart() {
+        QTemporaryDir temp;const auto path=temp.filePath("state.ini");BrushLibrary seed;seed.setRadius(4);seed.setPressureSize(false);seed.setPressureFlow(false);
+        {QSettings prefs(path,QSettings::IniFormat);prefs.setValue("brushes/state",QJsonDocument(groupedBrushState(seed)).toJson(QJsonDocument::Compact));}
+        PaintCoreClient client(nullptr,path);QSignalSpy errors(&client,&PaintCoreClient::errorChanged);QTRY_VERIFY(client.ready());QTRY_COMPARE(client.brushLibrary()->organization().value("groups").toList().size(),2);
+        client.newTransparentDocument(40,40);QTRY_COMPARE(client.documentWidth(),40);QTRY_VERIFY(client.ready());
+        InputSample sample;sample.position={20.5,20.5};sample.pressure=1;sample.tool=1;QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        client.requestViewport(0,{0,0,40,40},{40,40});QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(40,40));QVERIFY(client.frame().pixelColor(20,20).alpha()>200);
+        client.undo();QTRY_COMPARE(client.undoDepth(),0);client.redo();QTRY_COMPARE(client.undoDepth(),1);
+        const auto copy=client.brushLibrary()->saveCopy("restart group");QVERIFY(!copy.isEmpty());client.brushLibrary()->setRadius(6);
+        QTRY_VERIFY(([&]{QSettings prefs(path,QSettings::IniFormat);return QJsonDocument::fromJson(prefs.value("brushes/state").toByteArray()).object().value("selected").toString()==copy;})());
+        const auto organization=client.brushLibrary()->organization();QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+        PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready());QTRY_COMPARE(reopened.brushLibrary()->selectedId(),copy);QCOMPARE(reopened.brushLibrary()->organization(),organization);QVERIFY(reopened.brushLibrary()->resetPreset());QCOMPARE(reopened.brushLibrary()->radius(),4.);QCOMPARE(errors.size(),0);
+        QSignalSpy stoppedAgain(&reopened,&PaintCoreClient::stopped);reopened.shutdown();QTRY_COMPARE(stoppedAgain.size(),1);
+    }
 
     void allAutomaticBrushPreviewsStayWhiteWithExactAlphaAndColorIndependentCache() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("preview.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
