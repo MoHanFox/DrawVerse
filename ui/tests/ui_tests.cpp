@@ -523,6 +523,14 @@ private slots:
         auto old=QJsonDocument::fromJson(good).object();old["version"]=14;QVERIFY(!restored.restore(QJsonDocument(old).toJson()));QCOMPARE(restored.snapshot(),good);
         const auto package=restored.exportPackage();BrushLibrary imported;QVERIFY(imported.importPackage(package));QCOMPARE(imported.dualBrush(),data);QCOMPARE(QJsonDocument::fromJson(package).object().value("brushes").toArray()[0].toObject().value("behaviorVersion").toInt(),12);
     }
+    void dualFlipQmlToggle() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+        for(const auto &value:workspace.leftGroups()+workspace.rightGroups()){const auto group=value.toMap();if(group.value("panels").toStringList().contains("brush-settings"))workspace.setActive(group.value("id").toString(),"brush-settings");}
+        QQuickItem *category=nullptr;QTRY_VERIFY((category=findVisualItem(window->contentItem(),"brushCategory:4")));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,category->mapToScene({category->width()/2,category->height()/2}).toPoint());QTest::qWait(100);
+        auto *flip=findVisualItem(window->contentItem(),"settingsDualFlip");QVERIFY(flip);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,flip->mapToScene({8,flip->height()/2}).toPoint());QTRY_VERIFY(library->dualBrush().value("flip").toBool());QVERIFY(flip->property("checked").toBool());
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,flip->mapToScene({8,flip->height()/2}).toPoint());QTRY_VERIFY(!library->dualBrush().value("flip").toBool());
+    }
     void dualSizingControlsPreviewCaptureExchangeAndReopen() {
         QTemporaryDir temp;const auto path=temp.filePath("storage.ini");PaintCoreClient client(nullptr,path);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
