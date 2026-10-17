@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 24;
+pub const MAX_EXECUTABLE_MINOR: u32 = 25;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -452,6 +452,15 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
     if manifest.version.minor < 9 && brushes.iter().any(|b| b.texture.is_some()) {
         return Err(Error::Unsupported("texture require VBR1.9".into()));
     }
+    if manifest.version.minor < 25
+        && brushes
+            .iter()
+            .any(|b| b.texture.as_ref().is_some_and(|t| t.mode() == "colorBurn"))
+    {
+        return Err(Error::Unsupported(
+            "color-burn texture mode requires VBR1.25".into(),
+        ));
+    }
     if manifest.version.minor < 8
         && brushes
             .iter()
@@ -643,7 +652,14 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle.organization.is_some() {
+            minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.texture.as_ref().is_some_and(|t| t.mode() == "colorBurn"))
+            {
+                25
+            } else if bundle.organization.is_some() {
                 24
             } else if bundle.package.brushes.iter().any(|b| b.has_wet_dual()) {
                 23

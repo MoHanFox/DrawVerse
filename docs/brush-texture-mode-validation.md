@@ -2,7 +2,7 @@
 
 日期：2026-10-17，Windows 优先。
 
-核心 `TextureMode` 已实现 `normal`、`multiply`、`darken`、`lighten`、`subtract`、`difference`、`screen` 七种覆盖组合。`normal` 与旧版纹理覆盖保持一致；旧 state/VBR 缺少 `mode` 时由 IO 和 Qt 规范化为 `normal`。
+核心 `TextureMode` 已实现 `normal`、`multiply`、`darken`、`lighten`、`subtract`、`difference`、`screen`、`colorBurn` 八种覆盖组合。`normal` 与旧版纹理覆盖保持一致；旧 state/VBR 缺少 `mode` 时由 IO 和 Qt 规范化为 `normal`，`colorBurn` 需要 VBR1.25。
 
 已验证：
 
@@ -12,4 +12,4 @@
 - Qt 纹理导入、设置、预览、绘画、导出/导入回归通过；纹理设置页新增模式下拉。
 - Release Qt 构建通过。
 
-范围说明：这些模式作用于笔尖覆盖率与纹理采样值，不直接替代最终画布颜色混合模式。ABR `Txtr` 参数与 `patt` 图案现已接入这七种子集，见 [ABR 纹理验收](abr-texture-validation.md)；`CBrn` 等未定义模式仍保留来源并报告未执行。
+范围说明：这些模式作用于笔尖覆盖率与纹理采样值，不直接替代最终画布颜色混合模式。ABR `Txtr` 参数与 `patt` 图案现已接入这八种子集，见 [ABR 纹理验收](abr-texture-validation.md)；其余未定义模式仍保留来源并报告未执行。

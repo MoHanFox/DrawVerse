@@ -2,6 +2,6 @@
 
 纹理模式作用于笔尖覆盖率与纹理采样值的组合，不直接改写最终画布颜色。`normal` 保持旧版周期覆盖行为；其余模式使用同一线性覆盖值，便于与笔尖、流量、选区、擦除和湿混共用已有执行路径。
 
-支持模式：`normal`、`multiply`、`darken`、`lighten`、`subtract`、`difference`、`screen`。旧 state/VBR 纹理缺少 mode 时规范化为 `normal`。新字段只扩展纹理对象，不改变已有 state/VBR 主版本。
+支持模式：`normal`、`multiply`、`darken`、`lighten`、`subtract`、`difference`、`screen`、`colorBurn`。旧 state/VBR 纹理缺少 mode 时规范化为 `normal`。`colorBurn` 使用 `1-(1-base)/texture` 的覆盖率标量近似，要求 VBR1.25；旧模式继续使用原版本。
 
 模式组合在核心执行期完成，纹理采样仍保留周期坐标、LOD、深度、反相和文档/笔尖空间。模式不会把纹理当作最终画布混合模式，也不会改变纹理关闭时的参数保存规则。

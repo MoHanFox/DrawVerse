@@ -933,6 +933,7 @@ fn texture_mode(id: &str) -> Option<TextureMode> {
         "subtract" => Some(TextureMode::Subtract),
         "difference" => Some(TextureMode::Difference),
         "screen" => Some(TextureMode::Screen),
+        "colorBurn" => Some(TextureMode::ColorBurn),
         _ => None,
     }
 }

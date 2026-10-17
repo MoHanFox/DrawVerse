@@ -16,6 +16,7 @@ pub enum TextureMode {
     Subtract,
     Difference,
     Screen,
+    ColorBurn,
 }
 impl TextureMode {
     pub fn combine(self, base: f32, texture: f32) -> f32 {
@@ -26,6 +27,15 @@ impl TextureMode {
             Self::Subtract => (base - texture).max(0.),
             Self::Difference => (base - texture).abs(),
             Self::Screen => base + texture - base * texture,
+            Self::ColorBurn => {
+                if base >= 1. {
+                    1.
+                } else if texture <= 0. {
+                    0.
+                } else {
+                    1. - ((1. - base) / texture).min(1.)
+                }
+            }
         }
         .clamp(0., 1.)
     }
@@ -375,6 +385,9 @@ mod tests {
         assert_eq!(TextureMode::Subtract.combine(base, texture), 0.);
         assert_eq!(TextureMode::Difference.combine(base, texture), 0.5);
         assert_eq!(TextureMode::Screen.combine(base, texture), 0.8125);
+        assert_eq!(TextureMode::ColorBurn.combine(base, texture), 0.);
+        assert_eq!(TextureMode::ColorBurn.combine(0.75, 0.25), 0.);
+        assert_eq!(TextureMode::ColorBurn.combine(0.25, 1.), 0.25);
     }
     #[test]
     fn periodic_seams_negative_coordinates_and_odd_mips() {

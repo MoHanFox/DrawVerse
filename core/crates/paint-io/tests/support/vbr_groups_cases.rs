@@ -328,7 +328,7 @@ fn groups_vbr24_downgrade_conflicting_legacy_fields_and_bad_projection_reject() 
     let token = CancellationToken::default();
     let b = grouped(bundle());
     let bytes = encode(&b, &token).unwrap();
-    for minor in [0, 1, 23, 25] {
+    for minor in [0, 1, 23, 26] {
         assert!(decode(
             &edit(&bytes, |m| m["version"]["minor"] = json!(minor)),
             &token

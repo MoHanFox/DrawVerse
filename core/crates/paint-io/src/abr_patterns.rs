@@ -176,6 +176,7 @@ fn map_mode(id: Option<&str>) -> Option<String> {
         Some("Sbtr") | Some("subtract") => "subtract",
         Some("Dfrn") | Some("difference") => "difference",
         Some("Scrn") | Some("screen") => "screen",
+        Some("CBrn") | Some("colorBurn") => "colorBurn",
         _ => return None,
     };
     Some(mode.into())

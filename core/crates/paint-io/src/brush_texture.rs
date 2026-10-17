@@ -52,6 +52,7 @@ impl TextureParameters {
                 TextureMode::Subtract => "subtract",
                 TextureMode::Difference => "difference",
                 TextureMode::Screen => "screen",
+                TextureMode::ColorBurn => "colorBurn",
             }
             .into(),
             scale: f64::from(s.scale()).max(0.01),
@@ -66,12 +67,22 @@ impl TextureParameters {
     pub fn resource_id(&self) -> Option<&str> {
         self.resource.as_deref()
     }
+    pub fn mode(&self) -> &str {
+        &self.mode
+    }
     pub fn validate(&self) -> Result<()> {
         if self.model != "periodic-coverage-v1"
             || !matches!(self.space.as_str(), "document" | "tip")
             || !matches!(
                 self.mode.as_str(),
-                "normal" | "multiply" | "darken" | "lighten" | "subtract" | "difference" | "screen"
+                "normal"
+                    | "multiply"
+                    | "darken"
+                    | "lighten"
+                    | "subtract"
+                    | "difference"
+                    | "screen"
+                    | "colorBurn"
             )
             || !self.scale.is_finite()
             || !(0.01..=100.).contains(&self.scale)
@@ -106,6 +117,7 @@ impl TextureParameters {
             "subtract" => TextureMode::Subtract,
             "difference" => TextureMode::Difference,
             "screen" => TextureMode::Screen,
+            "colorBurn" => TextureMode::ColorBurn,
             _ => TextureMode::Normal,
         };
         let settings = TextureSettings::new(

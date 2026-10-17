@@ -65,7 +65,7 @@ fn pixels(mut definition: BrushDefinition) -> Vec<Pixel> {
         .flat_map(|y| (0..96).map(move |x| d.pixel(x, y)))
         .collect()
 }
-fn downgrade(bytes: &[u8]) -> Vec<u8> {
+fn rewrite_minor(bytes: &[u8], minor: u32) -> Vec<u8> {
     let mut input = ZipArchive::new(Cursor::new(bytes)).unwrap();
     let mut out = ZipWriter::new(Cursor::new(Vec::new()));
     for i in 0..input.len() {
@@ -74,7 +74,7 @@ fn downgrade(bytes: &[u8]) -> Vec<u8> {
         entry.read_to_end(&mut data).unwrap();
         if entry.name() == "manifest.json" {
             let mut json: serde_json::Value = serde_json::from_slice(&data).unwrap();
-            json["version"]["minor"] = 8.into();
+            json["version"]["minor"] = minor.into();
             data = serde_json::to_vec(&json).unwrap();
         }
         out.start_file(entry.name(), SimpleFileOptions::default())
@@ -82,6 +82,9 @@ fn downgrade(bytes: &[u8]) -> Vec<u8> {
         out.write_all(&data).unwrap();
     }
     out.finish().unwrap().into_inner()
+}
+fn downgrade(bytes: &[u8]) -> Vec<u8> {
+    rewrite_minor(bytes, 8)
 }
 #[test]
 fn state11_vbr19_share_tip_texture_and_restore_actual_pixels() {
@@ -217,6 +220,48 @@ fn invalid_texture_fields_and_missing_references_reject() {
 }
 
 #[test]
+fn color_burn_texture_requires_vbr125_and_roundtrips_real_pixels() {
+    let token = CancellationToken::default();
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().join("assets"), MAX_CATALOG_MASK_BYTES).unwrap();
+    let png = encode_mask(&BrushMask::new(4, 1, vec![0, 255, 64, 192]).unwrap()).unwrap();
+    let id = hash(&png);
+    store.put_verified(&id, &png, &token).unwrap();
+    let mask = store.load(&id, &token).unwrap().mask;
+    let resource = Arc::new(TextureResource::new(mask.clone()));
+    let s = BrushSettings {
+        diameter: 16.,
+        opacity: 0.5,
+        spacing: 0.1,
+        mask: Some(mask),
+        texture: BrushTexture::new(
+            true,
+            TextureSettings::new(TextureSpace::Tip, 1., 0., 0.75, false, 0., 0.)
+                .unwrap()
+                .with_mode(TextureMode::ColorBurn),
+            Some(resource),
+        )
+        .unwrap(),
+        ..Default::default()
+    };
+    let expected = pixels(s.definition());
+    let bundle = ImageBundle::new(package(&s, &id), BTreeMap::from([(id, png)]), &token).unwrap();
+    let bytes = vbr_image::encode(&bundle, &token).unwrap();
+    let manifest: serde_json::Value = {
+        let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
+    };
+    assert_eq!(manifest["version"]["minor"], 25);
+    let restored = vbr_image::decode(&bytes, &token).unwrap();
+    assert_eq!(
+        restored.definition(0).unwrap().texture.settings().mode(),
+        TextureMode::ColorBurn
+    );
+    assert_eq!(pixels(restored.definition(0).unwrap()), expected);
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 24), &token).is_err());
+}
+
+#[test]
 fn published_texture_contract_matches_resource_roles_and_new_limits() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../contracts/vbr-texture-v1.9.schema.json"
@@ -238,4 +283,24 @@ fn published_texture_contract_matches_resource_roles_and_new_limits() {
         schema["$defs"]["sourceRecord"]["properties"]["baseline"]["$ref"],
         "#/$defs/legacyParameters"
     );
+}
+
+#[test]
+fn published_color_burn_contract_requires_vbr125_and_explicit_mode() {
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../contracts/vbr-texture-modes-v1.25.schema.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        schema["$defs"]["manifest"]["properties"]["version"]["properties"]["minor"]["const"],
+        25
+    );
+    assert!(schema["$defs"]["texture"]["required"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("mode")));
+    assert!(schema["$defs"]["texture"]["properties"]["mode"]["enum"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("colorBurn")));
 }

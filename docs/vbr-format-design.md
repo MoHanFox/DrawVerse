@@ -190,3 +190,5 @@ wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明
 2026-10-17分组包原生阶段：ABI1.55/GROUP_PACKAGE及ordered-package-v1完整交接、2MiB与投影验证、容量探测无资源安装、实际图片/ABR来源读写与原子保存、state20专用准备串联已接。IO33/新原生1/旧保护5/旧公开3/Schema及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-package-design.md)及[验收](brush-groups-package-validation.md)。state20/VBR1.24不变；旧四包保护保持，Qt副本树合并/完整镜像/重置基准及分组管理仍待接，不宣称用户分组已完成。
 
 2026-10-18 ABR纹理来源阶段：来源记录接受`drawverse.abr.basic` converterVersion8，`brushkit-abr 0.7.3`只用于有界`patt`解码，纹理参数映射到既有state11/VBR1.9资源模型；最新VBR1.24 Schema的来源枚举加入8。未新增state/VBR minor或ABI字段。`CBrn`等模式、亮度/对比度/最低深度/深度动态和16位图案仍明确未执行。
+
+2026-10-18 VBR1.25颜色加深纹理阶段：`TextureMode::ColorBurn`使用`1-(1-base)/texture`的覆盖率标量近似，纹理对象mode增加`colorBurn`；包含该模式时manifest最低minor25，24及以下明确拒绝。VBR1.25 Schema `contracts/vbr-texture-modes-v1.25.schema.json`恢复纹理mode为必需字段并公开枚举；无state/ABI变化，其余未定义Photoshop纹理模式继续后续。
