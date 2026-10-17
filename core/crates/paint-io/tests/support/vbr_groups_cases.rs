@@ -1,6 +1,56 @@
 use super::*;
 
 #[test]
+fn groups_vbr24_actual_bundle_merges_and_failure_keeps_target_identity() {
+    let token = CancellationToken::default();
+    for b in [
+        bundle(),
+        ImageBundle::new(package(None), BTreeMap::new(), &token).unwrap(),
+    ] {
+        let b = grouped(b);
+        let b = decode(&encode(&b, &token).unwrap(), &token).unwrap();
+        let mut c = paint_core::BrushCatalog::default();
+        let before = c.clone();
+        b.import_into_catalog(&mut c, None, 1, &token).unwrap();
+        assert_eq!(c.revision(), before.revision() + 1);
+        assert_eq!(c.selected().id(), b.package.brushes[0].id);
+        assert_eq!(
+            c.organization().groups(),
+            b.organization().unwrap().groups()
+        );
+        for (i, p) in b.package.brushes.iter().enumerate() {
+            let actual = c.preset(&p.id).unwrap();
+            let definition = b.definition(i).unwrap();
+            assert_eq!(actual.settings().diameter, definition.brush.radius * 2.);
+            if let Some(mask) = definition.mask {
+                assert!(Arc::ptr_eq(&mask, actual.settings().mask.as_ref().unwrap()));
+            }
+        }
+        for id in before.ids() {
+            assert!(Arc::ptr_eq(
+                &before.preset(id).unwrap(),
+                &c.preset(id).unwrap()
+            ));
+        }
+        let adopted = c.clone();
+        assert!(b.import_into_catalog(&mut c, None, 0, &token).is_err());
+        assert!(Arc::ptr_eq(&c.organization(), &adopted.organization()));
+        assert_eq!(c.revision(), adopted.revision());
+        let mut fresh = before.clone();
+        assert!(b
+            .import_into_catalog(&mut fresh, None, 999, &token)
+            .is_err());
+        let cancelled = CancellationToken::default();
+        cancelled.cancel();
+        assert!(b
+            .import_into_catalog(&mut fresh, None, 0, &cancelled)
+            .is_err());
+        assert!(Arc::ptr_eq(&fresh.organization(), &before.organization()));
+        assert_eq!(fresh.revision(), before.revision());
+    }
+}
+
+#[test]
 fn groups_vbr24_contract_manifest_is_actual_writer_output_and_downgrade_rejects() {
     let token = CancellationToken::default();
     let b = grouped(ImageBundle::new(package(None), BTreeMap::new(), &token).unwrap());

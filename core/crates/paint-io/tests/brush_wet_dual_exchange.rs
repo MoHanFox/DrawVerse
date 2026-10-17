@@ -643,6 +643,19 @@ fn wet_dual_source_three_image_roles_and_taper_survive_fresh_store_exchange() {
                 .collect::<Vec<_>>()
         );
         assert_eq!(draw(s.definition()), draw(reopened.definition(0).unwrap()));
+        let mut catalog = paint_core::BrushCatalog::default();
+        reopened
+            .import_into_catalog(&mut catalog, None, 2, &token)
+            .unwrap();
+        assert_eq!(
+            catalog.selected().source_resource(),
+            Some(source_id.as_str())
+        );
+        assert_eq!(
+            draw(s.definition()),
+            draw(catalog.selected().settings().definition())
+        );
+        assert_eq!(catalog.organization().groups().len(), usize::from(grouped));
         let new = ResourceStore::open(tmp.path().join("new"), MAX_CATALOG_MASK_BYTES).unwrap();
         for (id, asset) in reopened.assets() {
             new.put_verified(id, asset.bytes(), &token).unwrap();

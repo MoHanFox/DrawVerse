@@ -2,6 +2,50 @@
 use super::*;
 use paint_core::{BrushCatalogItem, BrushGroup, BrushOrganization};
 impl ImageBundle {
+    /// Merges prepared in-memory resources. Persist source/assets separately before publishing
+    /// a durable library; this method performs no filesystem writes.
+    pub fn import_into_catalog(
+        &self,
+        catalog: &mut paint_core::BrushCatalog,
+        parent: Option<&str>,
+        index: usize,
+        token: &CancellationToken,
+    ) -> Result<()> {
+        check(token)?;
+        self.validate()?;
+        let mut presets = Vec::with_capacity(self.package.brushes.len());
+        for (i, preset) in self.package.brushes.iter().enumerate() {
+            check(token)?;
+            let definition = self.definition(i)?;
+            let mut settings = preset.parameters.settings();
+            settings.mask = definition.mask;
+            settings.texture = definition.texture;
+            settings.dual = definition.dual;
+            settings.smoothing = definition.smoothing;
+            settings.wet = definition.wet;
+            settings.taper = definition.taper;
+            presets.push(
+                paint_core::BrushPreset::new(preset.id.clone(), preset.name.clone(), settings)?
+                    .with_source(preset.source_resource.clone())?,
+            );
+        }
+        let organization = match self.organization() {
+            Some(value) => value.clone(),
+            None => BrushOrganization::new(
+                self.package
+                    .brushes
+                    .iter()
+                    .map(|p| BrushCatalogItem::Preset(p.id.clone()))
+                    .collect(),
+                vec![],
+            )?,
+        };
+        let mut candidate = catalog.clone();
+        candidate.import_organized(presets, organization, parent, index)?;
+        check(token)?;
+        *catalog = candidate;
+        Ok(())
+    }
     pub fn remap_copy_ids(
         &mut self,
         package_id: String,

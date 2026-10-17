@@ -161,16 +161,6 @@ impl BrushOrganization {
         next.detach(&BrushCatalogItem::Preset(id.into()))?;
         next.rebuild()
     }
-    pub(super) fn append_presets(
-        &self,
-        ids: impl Iterator<Item = String>,
-        parent: Option<&str>,
-    ) -> Result<Self> {
-        let mut next = self.clone();
-        next.siblings_mut(parent)?
-            .extend(ids.map(BrushCatalogItem::Preset));
-        next.rebuild()
-    }
 }
 impl BrushCatalog {
     pub fn organization(&self) -> Arc<BrushOrganization> {
@@ -292,18 +282,80 @@ impl BrushCatalog {
         {
             return Err(Error::ResourceLimit("brush catalog capacity"));
         }
+        let layout =
+            BrushOrganization::flat(&presets.iter().map(|p| p.id.clone()).collect::<Vec<_>>());
+        let index = match parent {
+            Some(id) => self
+                .organization
+                .groups
+                .get(id)
+                .ok_or(Error::InvalidArgument("unknown brush group"))?
+                .items
+                .len(),
+            None => self.organization.roots.len(),
+        };
+        self.import_organized(presets, layout, parent, index)
+    }
+    /// Inserts a complete, disjoint tree as one transaction. Input order must match DFS.
+    pub fn import_organized(
+        &mut self,
+        presets: Vec<BrushPreset>,
+        organization: BrushOrganization,
+        parent: Option<&str>,
+        index: usize,
+    ) -> Result<()> {
+        if self.presets.len().saturating_add(presets.len()) > MAX_BRUSH_PRESETS {
+            return Err(Error::ResourceLimit("brush catalog capacity"));
+        }
+        if organization
+            .order
+            .iter()
+            .map(String::as_str)
+            .ne(presets.iter().map(|p| p.id.as_str()))
+        {
+            return Err(Error::InvalidArgument("brush import projection"));
+        }
         let mut ids = BTreeSet::new();
         for p in &presets {
-            if self.presets.contains_key(&p.id) || !ids.insert(&p.id) {
+            if self.presets.contains_key(&p.id)
+                || self.organization.groups.contains_key(&p.id)
+                || !ids.insert(&p.id)
+            {
                 return Err(Error::InvalidArgument("duplicate brush preset ID"));
             }
         }
-        self.resource_budget(presets.iter().map(|p| &p.settings), None)?;
-        let layout = self
+        for id in organization.groups.keys() {
+            if self.presets.contains_key(id) || self.organization.groups.contains_key(id) {
+                return Err(Error::InvalidArgument(
+                    "brush import group identity collision",
+                ));
+            }
+        }
+        if self
             .organization
-            .append_presets(presets.iter().map(|p| p.id.clone()), parent)?;
+            .groups
+            .len()
+            .saturating_add(organization.groups.len())
+            > MAX_BRUSH_GROUPS
+        {
+            return Err(Error::ResourceLimit("brush organization groups"));
+        }
+        let mut layout = (*self.organization).clone();
+        let siblings = layout.siblings_mut(parent)?;
+        if index > siblings.len() {
+            return Err(Error::InvalidArgument("brush import insertion position"));
+        }
+        if presets.is_empty() && organization.groups.is_empty() {
+            return Ok(());
+        }
+        siblings.splice(index..index, organization.roots);
+        layout.groups.extend(organization.groups);
+        let layout = layout.rebuild()?;
+        self.resource_budget(presets.iter().map(|p| &p.settings), None)?;
         let mut candidate = self.clone();
-        candidate.selected = presets[0].id.clone();
+        if let Some(first) = presets.first() {
+            candidate.selected = first.id.clone();
+        }
         for preset in presets {
             candidate
                 .presets
@@ -341,6 +393,15 @@ mod tests {
         let before = catalog.clone();
         let organization = catalog.organization();
         let captured = catalog.selected();
+        let empty = BrushOrganization::new(vec![], vec![]).unwrap();
+        catalog.import_organized(vec![], empty, None, 0).unwrap();
+        let folder = "12345678-1234-4234-8234-000000000004";
+        let incoming = BrushOrganization::new(
+            vec![BrushCatalogItem::Group(folder.into())],
+            vec![BrushGroup::new(folder.into(), "empty".into(), vec![]).unwrap()],
+        )
+        .unwrap();
+        assert!(catalog.import_organized(vec![], incoming, None, 0).is_err());
         catalog.set_organization((*organization).clone()).unwrap();
         catalog.rename_group(group, " group ".into()).unwrap();
         assert!(catalog.remove_group(group, true).is_err());
