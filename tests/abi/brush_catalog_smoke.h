@@ -23,6 +23,8 @@ _Static_assert(sizeof(PaintBrushToolDesc) == 56 && offsetof(PaintBrushToolDesc, 
 _Static_assert(sizeof(PaintTipPose)==24 && offsetof(PaintTipPose,radius)==8 && offsetof(PaintTipPose,roundness)==16,"pose layout");
 #endif
 static int brush_catalog_smoke(void) {
+    uint64_t rejected_group_sequence = 99;
+    if (paint_brush_library_prepare_state_groups(NULL, NULL, 1, &rejected_group_sequence) != PAINT_INVALID_ARGUMENT || rejected_group_sequence != 0) return 1;
     PaintVersion version;
     PaintBrushLibrary *library = NULL;
     PaintBrushLibraryInfo info;

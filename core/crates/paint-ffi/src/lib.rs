@@ -163,6 +163,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                     | PAINT_FEATURE_STROKE_TAPER
                     | PAINT_FEATURE_WET_DUAL_COLOR
                     | PAINT_FEATURE_BRUSH_CURSOR_IMAGE
+                    | PAINT_FEATURE_BRUSH_GROUP_STATE
                     | PAINT_FEATURE_DUAL_COLOR_STROKE
                     | PAINT_FEATURE_SHAPE_JITTER
                     | PAINT_FEATURE_BRUSH_SCATTER

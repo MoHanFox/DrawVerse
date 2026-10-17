@@ -5,6 +5,214 @@ use paint_core::{
 };
 use paint_task::CancellationToken;
 
+fn grouped_state(s: &BrushSettings) -> Vec<u8> {
+    use paint_core::BrushCatalogItem;
+    let mut c = BrushCatalog::default();
+    c.edit("round-pressure", s.clone()).unwrap();
+    let outer = "12345678-1234-4234-8234-000000000100";
+    let inner = "12345678-1234-4234-8234-000000000101";
+    let empty = "12345678-1234-4234-8234-000000000102";
+    c.create_group(outer.into(), "same".into(), None, 0)
+        .unwrap();
+    c.create_group(inner.into(), "same".into(), Some(outer), 0)
+        .unwrap();
+    c.create_group(empty.into(), "empty".into(), Some(outer), 1)
+        .unwrap();
+    c.move_catalog_item(
+        BrushCatalogItem::Preset("round-pressure".into()),
+        Some(inner),
+        0,
+    )
+    .unwrap();
+    paint_io::brush_state::encode(&c).unwrap()
+}
+fn read_group_preparation(library: *mut PaintBrushLibrary, sequence: u64) -> Vec<u8> {
+    wait(|| unsafe {
+        let mut required = 99;
+        let status = paint_brush_library_prepared_state(
+            library,
+            sequence,
+            ptr::null_mut(),
+            0,
+            &mut required,
+        );
+        if status == PAINT_BUSY {
+            return None;
+        }
+        assert_eq!(status, PAINT_BUFFER_TOO_SMALL);
+        let mut bytes = vec![0; required as usize];
+        assert_eq!(
+            paint_brush_library_prepared_state(
+                library,
+                sequence,
+                bytes.as_mut_ptr(),
+                bytes.len() as u64,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        Some(bytes)
+    })
+}
+#[test]
+fn groups_public_state20_exact_capture_two_strokes_and_history() {
+    for wet in [false, true] {
+        let h = Harness::new(64, 64);
+        let s = settings(true, wet);
+        let json = grouped_state(&s);
+        let mut reference = Document::new(64, 64).unwrap();
+        let mut def = s.definition();
+        def.brush.color = Pixel::from_straight([0., 0., 1., 1.]).unwrap();
+        def.brush.background_color = Pixel::WHITE;
+        unsafe {
+            let mut library = ptr::null_mut();
+            assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+            let mut version = dto!(PaintVersion);
+            assert_eq!(paint_core_version(&mut version), PAINT_OK);
+            assert_eq!(version.minor, PAINT_ABI_MINOR);
+            assert!(version.minor >= 54);
+            let mut caps = dto!(PaintCapabilities);
+            assert_eq!(paint_core_capabilities(h.core, &mut caps), PAINT_OK);
+            assert_ne!(caps.features & PAINT_FEATURE_BRUSH_GROUP_STATE, 0);
+            let mut capture = 99;
+            assert_eq!(
+                paint_brush_library_prepare_state_groups(
+                    library,
+                    json.as_ptr(),
+                    json.len() as u64,
+                    &mut capture
+                ),
+                PAINT_OK
+            );
+            assert_eq!(read_group_preparation(library, capture), json);
+            // Adopt a different flat state while retaining the exact grouped ticket for drawing.
+            prepared(library, &settings(false, false));
+            assert_eq!(read_group_preparation(library, capture), json);
+            let mut tool = ptr::null_mut();
+            if wet {
+                assert_eq!(paint_wet_tool_create(&mut tool), PAINT_OK);
+                let mut seq = 0;
+                assert_eq!(
+                    paint_session_bind_wet_tool(h.core, h.session, tool, &mut seq),
+                    PAINT_OK
+                );
+                h.wait(seq);
+            }
+            let mut retained = None;
+            for i in 0..2 {
+                h.wait(super::wet_api::begin(&h, library, capture, 16.5));
+                if wet {
+                    reference
+                        .begin_configured_dual_wet_brush_stroke(
+                            def.clone(),
+                            InputPoint::new(16.5, 32.5, 1.),
+                            retained.as_ref(),
+                        )
+                        .unwrap();
+                } else {
+                    reference
+                        .begin_brush_stroke(def.clone(), InputPoint::new(16.5, 32.5, 1.))
+                        .unwrap();
+                }
+                h.wait(h.submit(PaintCommand {
+                    kind: PAINT_COMMAND_STROKE_TO,
+                    point: PaintPoint {
+                        x: 40.5,
+                        y: 32.5,
+                        pressure: 0.5,
+                        tool: PAINT_TOOL_MOUSE,
+                        ..dto!(PaintPoint)
+                    },
+                    ..dto!(PaintCommand)
+                }));
+                reference
+                    .stroke_to(InputPoint::new(40.5, 32.5, 0.5))
+                    .unwrap();
+                let info = h.wait(h.submit(PaintCommand {
+                    kind: PAINT_COMMAND_END_STROKE,
+                    ..dto!(PaintCommand)
+                }));
+                assert_eq!(info.last_error_status, PAINT_OK);
+                assert_eq!(info.undo_depth, i + 1);
+                if wet {
+                    retained = Some(reference.end_wet_ink_stroke().unwrap().1);
+                    let info = dual_info(tool);
+                    let ink = retained.as_ref().unwrap();
+                    assert_eq!(info.primary_revision, ink.primary().revision());
+                    assert_eq!(
+                        info.primary_center_linear_premul_rgba,
+                        ink.primary().sample(0.5, 0.5).components()
+                    );
+                    assert_eq!(info.secondary_revision, ink.secondary().unwrap().revision());
+                    assert_eq!(
+                        info.secondary_center_linear_premul_rgba,
+                        ink.secondary().unwrap().sample(0.5, 0.5).components()
+                    );
+                } else {
+                    reference.end_stroke().unwrap();
+                }
+                assert_eq!(
+                    super::wet_api::copied(&h),
+                    reference.copy_layers(&[1]).unwrap()
+                );
+            }
+            let after = super::wet_api::copied(&h);
+            h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_UNDO,
+                ..dto!(PaintCommand)
+            }));
+            h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_REDO,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(super::wet_api::copied(&h), after);
+            if wet {
+                assert_eq!(paint_wet_tool_destroy(&mut tool), PAINT_OK);
+            }
+            assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+        }
+    }
+}
+
+#[test]
+fn groups_public_closed_state_and_invalid_arguments_preserve_output_contracts() {
+    unsafe {
+        let mut library = ptr::null_mut();
+        assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+        let json = grouped_state(&settings(false, false));
+        let mut seq = 99;
+        assert_eq!(
+            paint_brush_library_prepare_state_groups(
+                library,
+                json.as_ptr(),
+                json.len() as u64,
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        assert_eq!(read_group_preparation(library, seq), json);
+        let mut failed = 99;
+        assert_eq!(
+            paint_brush_library_prepare_state_groups(library, ptr::null(), 1, &mut failed),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(failed, 0);
+        failed = 99;
+        assert_eq!(
+            paint_brush_library_prepare_state_groups(
+                ptr::null_mut(),
+                json.as_ptr(),
+                json.len() as u64,
+                &mut failed
+            ),
+            PAINT_INVALID_HANDLE
+        );
+        assert_eq!(failed, 0);
+        assert_eq!(read_group_preparation(library, seq), json);
+        assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+    }
+}
+
 fn settings(enabled: bool, wet: bool) -> BrushSettings {
     let c = PressureControl::new(
         PressureCurve::new_smooth(vec![(0., 0.), (0.4, 0.2), (1., 1.)]).unwrap(),

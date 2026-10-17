@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 53
+#define PAINT_ABI_MINOR 54
 
 #define PAINT_ABI_PATCH 0
 
@@ -70,6 +70,8 @@
 #define PAINT_FEATURE_BRUSH_CATALOG 4194304
 
 #define PAINT_FEATURE_BRUSH_CURSOR_IMAGE 281474976710656
+
+#define PAINT_FEATURE_BRUSH_GROUP_STATE 562949953421312
 
 #define PAINT_FEATURE_BRUSH_OUTLINE 33554432
 
@@ -1259,6 +1261,17 @@ PaintStatus paint_brush_library_prepare_state(struct PaintBrushLibrary *library,
                                               const uint8_t *json,
                                               uint64_t json_length,
                                               uint64_t *out_sequence);
+
+/**
+ * Opt in to full state20 preparation, including ordered groups and all prior preset fields.
+ * This capability does not enable grouped package read/write through legacy entries.
+ * # Safety
+ * Live library/readable bounded JSON and nonoverlapping writable sequence are required.
+ */
+PaintStatus paint_brush_library_prepare_state_groups(struct PaintBrushLibrary *library,
+                                                     const uint8_t *json,
+                                                     uint64_t length,
+                                                     uint64_t *out_sequence);
 
 /**
  * Opt in to complete state18 preparation, including closed taper and wet parameters.

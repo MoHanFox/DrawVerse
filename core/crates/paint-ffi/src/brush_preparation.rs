@@ -53,16 +53,20 @@ pub(crate) enum BrushSupport {
     Wet,
     Taper,
     WetDual,
+    Groups,
 }
 impl BrushSupport {
     pub(crate) fn wet(self) -> bool {
         self != Self::Legacy
     }
     pub(crate) fn taper(self) -> bool {
-        matches!(self, Self::Taper | Self::WetDual)
+        matches!(self, Self::Taper | Self::WetDual | Self::Groups)
     }
     pub(crate) fn wet_dual(self) -> bool {
-        self == Self::WetDual
+        matches!(self, Self::WetDual | Self::Groups)
+    }
+    pub(crate) fn groups(self) -> bool {
+        self == Self::Groups
     }
 }
 impl Recipe {
@@ -84,7 +88,7 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
-                    if !catalog.organization().groups().is_empty() {
+                    if !self.support.groups() && !catalog.organization().groups().is_empty() {
                         return Err(ApiError::new(
                             PAINT_UNSUPPORTED,
                             "brush groups require updated native entry",
@@ -253,6 +257,9 @@ impl PreparedCatalog {
     }
     pub fn submit_wet_dual(&self, json: String) -> ApiResult<u64> {
         self.submit_mode(json, BrushSupport::WetDual)
+    }
+    pub fn submit_groups(&self, json: String) -> ApiResult<u64> {
+        self.submit_mode(json, BrushSupport::Groups)
     }
     fn submit_mode(&self, json: String, support: BrushSupport) -> ApiResult<u64> {
         let current = self.current.lock().map_err(|_| ApiError::internal())?;
@@ -578,6 +585,9 @@ impl PreparedCatalog {
 #[cfg(test)]
 #[path = "../../paint-io/tests/support/abr_fixture.rs"]
 mod abr_fixture;
+#[cfg(test)]
+#[path = "brush_groups_preparation_tests.rs"]
+mod groups_preparation_tests;
 #[cfg(test)]
 #[path = "brush_wet_dual_io_tests.rs"]
 mod wet_dual_io_tests;
