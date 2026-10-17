@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新分组state20：`docs/brush-groups-state-design.md` / `docs/brush-groups-state-validation.md`；有界组织DTO/空组及顺序、关闭参数/三图片与ABR来源新目录两笔往返，IO20/四旧入口保护及Schema/Windows Release/Clippy/4 ABI/旧Qt2通过。平目录字节保持，旧原生有组明确拒绝；VBR分组清单/整树映射/原生/Qt仍待接，无ABI或VBR版本变化。
+
 - 最新笔刷分组Rust目录：`docs/brush-groups-design.md` / `docs/brush-groups-kernel-validation.md`；稳定ID/有序树及DFS、原子移动解组/级联保护、同组复制导入与在途捕获，6新集成+1修订边界/5旧目录、IO5/原生2及Windows Release/Clippy/4 ABI/旧Qt2通过。旧编码有组明确拒绝，分组IO/原生/Qt仍待接，不宣称用户入口完成；无ABI/格式版本变化。
 
 - 最新图片光标Qt入口：`docs/brush-cursor-image-ui-design.md` / `docs/brush-cursor-image-ui-validation.md`；默认关闭/25%透明度全局保存，ABI1.53白色PNG与当前/在途主副4身份、独立轮廓/工具优先和失败回退，实际叠加/双载图捕获与开关恢复/多文档重启通过；Windows新2旧4 Qt/环境倍率2新2、Release/4 ABI通过。无ABI/格式变化，基础图片模式不预演随机/纸纹/最终混色，整体硬件手感用户验收。

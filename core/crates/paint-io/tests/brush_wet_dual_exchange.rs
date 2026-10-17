@@ -69,6 +69,99 @@ fn settings(enabled: bool) -> BrushSettings {
         ..Default::default()
     }
 }
+#[test]
+fn groups_state20_three_image_source_and_two_wet_strokes_survive_fresh_directory() {
+    use paint_io::{abr_import::ImportBatch, brush_resource::ResourceStore};
+    for enabled in [false, true] {
+        let token = CancellationToken::default();
+        let tmp = tempfile::tempdir().unwrap();
+        let old = ResourceStore::open(tmp.path().join("old"), MAX_CATALOG_MASK_BYTES).unwrap();
+        let raw = Arc::new(support::abr_fixture::fixture(6, 2, false));
+        let imported = ImportBatch::decode(raw.clone(), MAX_CATALOG_MASK_BYTES, &token)
+            .unwrap()
+            .persist(&old, &token)
+            .unwrap();
+        let source = imported[0].source_id().to_owned();
+        let mask = imported[0].settings().mask.clone().unwrap();
+        let resource = mask.resource_id().unwrap().to_owned();
+        let mut s = settings(enabled);
+        s.mask = Some(mask.clone());
+        s.dual = DualBrush::new(
+            true,
+            DualMode::Multiply,
+            SecondaryTip::new(8., s.tip, Some(mask.clone()), Default::default())
+                .unwrap()
+                .with_spacing(0.25)
+                .unwrap(),
+        )
+        .with_color(s.dual.color());
+        s.texture = BrushTexture::new(
+            true,
+            Default::default(),
+            Some(Arc::new(TextureResource::new(mask))),
+        )
+        .unwrap();
+        let mut c = BrushCatalog::default();
+        c.edit("round-pressure", s).unwrap();
+        c.set_source("round-pressure", Some(source.clone()))
+            .unwrap();
+        let group = "12345678-1234-4234-8234-000000000001";
+        let empty = "12345678-1234-4234-8234-000000000002";
+        c.create_group(group.into(), "same".into(), None, 0)
+            .unwrap();
+        c.create_group(empty.into(), "same".into(), Some(group), 0)
+            .unwrap();
+        c.move_catalog_item(
+            BrushCatalogItem::Preset("round-pressure".into()),
+            Some(group),
+            1,
+        )
+        .unwrap();
+        c.save_copy("12345678-1234-4234-8234-000000000003".into(), "copy".into())
+            .unwrap();
+        let bytes = brush_state::encode(&c).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["version"],
+            20
+        );
+        let new = ResourceStore::open(tmp.path().join("new"), MAX_CATALOG_MASK_BYTES).unwrap();
+        new.put_verified(&resource, &old.encoded(&resource).unwrap(), &token)
+            .unwrap();
+        let batches = old
+            .source_store()
+            .unwrap()
+            .export_batches(&std::collections::BTreeSet::from([source.clone()]), &token)
+            .unwrap();
+        for batch in &batches {
+            new.source_store()
+                .unwrap()
+                .save_batch(batch, &token)
+                .unwrap();
+        }
+        std::fs::remove_file(old.directory().join(format!("{resource}.png"))).unwrap();
+        let (restored, receipts) = brush_state::decode_captured(
+            &bytes,
+            MAX_CATALOG_MASK_BYTES,
+            &new,
+            &new.source_store().unwrap(),
+            &token,
+        )
+        .unwrap();
+        assert!(!receipts.is_empty());
+        assert_eq!(*restored.organization(), *c.organization());
+        assert_eq!(brush_state::encode(&restored).unwrap(), bytes);
+        let again = new
+            .source_store()
+            .unwrap()
+            .export_batches(&std::collections::BTreeSet::from([source]), &token)
+            .unwrap();
+        assert_eq!(again[0].original_bytes(), raw.as_slice());
+        assert_eq!(
+            draw(c.selected().settings().definition()),
+            draw(restored.selected().settings().definition())
+        );
+    }
+}
 fn package(s: &BrushSettings) -> Package {
     let mut caps = vec![
         if s.mask.is_some() {

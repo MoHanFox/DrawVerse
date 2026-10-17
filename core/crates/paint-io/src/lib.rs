@@ -7,6 +7,7 @@ pub mod brush_color_dynamics;
 pub mod brush_dual;
 pub mod brush_dual_color;
 pub mod brush_dual_sizing;
+pub mod brush_organization;
 pub mod brush_pressure;
 pub mod brush_resource;
 pub mod brush_scatter;

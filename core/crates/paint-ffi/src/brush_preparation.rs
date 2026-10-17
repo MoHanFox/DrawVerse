@@ -84,6 +84,12 @@ impl Recipe {
                 }
                 .map_err(io_error)
                 .and_then(|(catalog, receipts)| {
+                    if !catalog.organization().groups().is_empty() {
+                        return Err(ApiError::new(
+                            PAINT_UNSUPPORTED,
+                            "brush groups require updated native entry",
+                        ));
+                    }
                     if !self.support.wet_dual()
                         && catalog.ids().iter().any(|id| {
                             catalog

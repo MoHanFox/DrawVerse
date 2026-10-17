@@ -1,6 +1,43 @@
 use super::tests::texture_bundle;
 use super::*;
 #[test]
+fn old_native_entries_reject_grouped_state20_without_adoption() {
+    for populated in [false, true] {
+        let mut c = BrushCatalog::default();
+        let id = "12345678-1234-4234-8234-000000000001";
+        c.create_group(id.into(), "empty or populated".into(), None, 0)
+            .unwrap();
+        if populated {
+            c.move_catalog_item(
+                paint_core::BrushCatalogItem::Preset("round-pressure".into()),
+                Some(id),
+                0,
+            )
+            .unwrap();
+        }
+        let json = String::from_utf8(paint_io::brush_state::encode(&c).unwrap()).unwrap();
+        let library = PreparedCatalog::new(BrushCatalog::default());
+        let before = paint_io::brush_state::encode(&library.current().unwrap()).unwrap();
+        for level in 0..4 {
+            let seq = match level {
+                0 => library.submit(json.clone()),
+                1 => library.submit_wet(json.clone()),
+                2 => library.submit_taper(json.clone()),
+                _ => library.submit_wet_dual(json.clone()),
+            }
+            .unwrap();
+            assert_eq!(
+                library.ticket(seq).unwrap().wait().unwrap_err().status,
+                PAINT_UNSUPPORTED
+            );
+            assert_eq!(
+                paint_io::brush_state::encode(&library.current().unwrap()).unwrap(),
+                before
+            );
+        }
+    }
+}
+#[test]
 fn old_native_entries_reject_wet_dual_policy_including_closed_without_publication_or_resource_install(
 ) {
     use paint_core::{DualBrush, DualColor, DualMode, SecondaryTip, WetMix, WetSettings};

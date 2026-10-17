@@ -10,6 +10,12 @@ struct State {
     selected: String,
     #[serde(deserialize_with = "rows")]
     presets: Vec<Row>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_organization::present"
+    )]
+    organization: Option<crate::brush_organization::OrganizationParameters>,
 }
 fn rows<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -190,8 +196,26 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=19) {
+    if !matches!(state.version, 1..=20) {
         return Err(Error::Unsupported("brush state version".into()));
+    }
+    if let Some(organization) = &state.organization {
+        if state.version < 20 {
+            return Err(Error::Unsupported(
+                "brush organization requires state20".into(),
+            ));
+        }
+        if organization
+            .core()
+            .preset_order()
+            .iter()
+            .map(String::as_str)
+            .ne(state.presets.iter().map(|row| row.id.as_str()))
+        {
+            return Err(Error::Invalid(
+                "organization projection differs from brush rows",
+            ));
+        }
     }
     let mut entries = Vec::new();
     let mut textures = std::collections::BTreeMap::new();
@@ -384,7 +408,11 @@ fn decode_inner(
             row.source_resource,
         ));
     }
-    let catalog = BrushCatalog::from_entries_with_sources(entries, state.selected, mask_budget)?;
+    let mut catalog =
+        BrushCatalog::from_entries_with_sources(entries, state.selected, mask_budget)?;
+    if let Some(organization) = state.organization {
+        catalog.set_organization(organization.core().clone())?;
+    }
     let mut receipts = Vec::new();
     if !references.is_empty() {
         let sources = sources.ok_or(Error::Unsupported("brush source store is required".into()))?;
@@ -397,11 +425,11 @@ fn decode_inner(
     Ok((catalog, receipts))
 }
 pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
-    if !catalog.organization().groups().is_empty() {
-        return Err(Error::Unsupported(
-            "brush organization requires a grouped state entry".into(),
-        ));
-    }
+    let organization = (!catalog.organization().groups().is_empty()).then(|| {
+        crate::brush_organization::OrganizationParameters::from_core(
+            (*catalog.organization()).clone(),
+        )
+    });
     let mut presets = Vec::new();
     let mut version = 2;
     for id in catalog.ids() {
@@ -557,10 +585,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             stroke_taper,
         });
     }
+    if organization.is_some() {
+        version = 20;
+    }
     let bytes = serde_json::to_vec(&State {
         version,
         selected: catalog.selected().id().into(),
         presets,
+        organization,
     })
     .map_err(|e| Error::Codec(e.to_string()))?;
     if bytes.len() > 2 * 1024 * 1024 {
