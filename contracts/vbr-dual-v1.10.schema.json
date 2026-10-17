@@ -1152,6 +1152,9 @@
         "enabled": {
           "type": "boolean"
         },
+        "flip": {
+          "type": "boolean"
+        },
         "amount": {
           "type": "number",
           "minimum": 0,

@@ -1481,7 +1481,8 @@ fn dual_controls(
             ..Default::default()
         },
     )?
-    .with_spacing(spacing)?;
+    .with_spacing(spacing)?
+    .with_flip(flag(dual, b"Flip")?.unwrap_or(false));
     settings.dual = DualBrush::new(true, mode, secondary);
     for (path, reason) in [
         ("dualBrush.useDualBrush", "计算双笔刷已启用"),
@@ -1507,13 +1508,12 @@ fn dual_controls(
             issue(issues, path, Status::Mapped, "双笔刷散布/数量已映射");
         }
     }
-    let flip = b"Flip".as_slice();
-    if dual.get(flip).is_some() {
+    if flag(dual, b"Flip")? == Some(true) {
         issue(
             issues,
-            format!("dualBrush.{}", path_key(flip)),
-            Status::NotExecuted,
-            "该双笔刷字段尚未执行",
+            "dualBrush.Flip",
+            Status::Mapped,
+            "逐印章随机翻转第二笔刷形状",
         );
     }
     Ok(true)

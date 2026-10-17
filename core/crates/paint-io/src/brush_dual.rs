@@ -7,6 +7,8 @@ use std::sync::Arc;
 pub struct DualParameters {
     model: String,
     enabled: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    flip: bool,
     mode: String,
     diameter: f64,
     #[serde(deserialize_with = "read_spacing")]
@@ -85,6 +87,7 @@ impl DualParameters {
             }
             .into(),
             enabled: dual.enabled(),
+            flip: s.flip(),
             mode: match dual.mode() {
                 DualMode::Multiply => "multiply",
                 DualMode::Darken => "darken",
@@ -197,6 +200,7 @@ impl DualParameters {
         if let Some(spacing) = self.spacing {
             secondary = secondary.with_spacing(spacing as f32)?;
         }
+        secondary = secondary.with_flip(self.flip);
         let mode = match self.mode.as_str() {
             "multiply" => DualMode::Multiply,
             "darken" => DualMode::Darken,
@@ -210,6 +214,9 @@ impl DualParameters {
             .with_sizing(self.sizing.map(|p| p.core()).unwrap_or_default())
             .with_color(self.color.map(|p| p.core()).unwrap_or_default()))
     }
+}
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 pub fn present<'de, D: serde::Deserializer<'de>>(
     d: D,
@@ -227,4 +234,21 @@ fn read_spacing<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> std::result::Result<Option<f64>, D::Error> {
     Option::<f64>::deserialize(d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dual_parameters_preserve_random_flip() {
+        let dual = DualBrush::new(
+            true,
+            DualMode::Multiply,
+            SecondaryTip::default().with_flip(true),
+        );
+        let parameters = DualParameters::from_core(&dual).unwrap();
+        let restored = parameters.bind(None).unwrap();
+        assert!(restored.secondary().flip());
+    }
 }

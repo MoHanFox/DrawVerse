@@ -667,6 +667,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
                         },
                     ),
                     ("Spcn", unit(*b"#Prc", 25.)),
+                    ("Flip", Value::Boolean(true)),
                     ("useScatter", Value::Boolean(true)),
                     ("bothAxes", Value::Boolean(true)),
                     ("Cnt ", Value::Integer(3)),
@@ -722,6 +723,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
     assert_eq!(p[0].settings.dual.secondary().radius(), 4.);
     assert_eq!(p[0].settings.dual.secondary().spacing(), Some(0.25));
     assert_eq!(p[0].settings.dual.secondary().tip().hardness, 0.5);
+    assert!(p[0].settings.dual.secondary().flip());
     assert!(p[0].settings.dual.secondary().dynamics().scatter.enabled());
     assert_eq!(p[0].settings.dual.secondary().dynamics().scatter.count(), 3);
     assert_eq!(

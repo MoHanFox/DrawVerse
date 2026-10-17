@@ -1,6 +1,6 @@
 # DrawVerse
 
-- 最新ABR计算双笔刷：`docs/abr-dual-brush-design.md` / `docs/abr-dual-brush-validation.md`；computed/sampled双笔刷形状、图片资源、独立间距、贡献模式及散布/数量接入converter11/handoff10、源version3/VBR1.41及Qt state12；Flip和散布设备控制仍待后续。
+- 最新ABR计算双笔刷：`docs/abr-dual-brush-design.md` / `docs/abr-dual-brush-validation.md`；computed/sampled双笔刷形状、图片资源、独立间距、贡献模式、散布/数量及逐印章随机Flip接入converter11/handoff10、源version3/VBR1.41及Qt state12；散布设备控制仍待后续。
 
 - 最新笔刷渐隐：`docs/brush-fade-design.md` / `docs/brush-fade-validation.md`；`fade-v1`按印章步数渐隐并作为尺寸/流量/不透明度独立乘数，state34/VBR1.40/behavior26、ABR `bVTy=1`/converter10/handoff9、Qt步数与三曲线页接通；核心像素、交换、ABR映射、源基线及Windows Qt三项通过。散射/双笔尖步数和随机抖动仍待后续。
 

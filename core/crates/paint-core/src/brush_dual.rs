@@ -91,6 +91,7 @@ pub struct SecondaryTip {
     mask: Option<Arc<BrushMask>>,
     dynamics: BrushDynamics,
     spacing: Option<f32>,
+    flip: bool,
 }
 impl Default for SecondaryTip {
     fn default() -> Self {
@@ -100,6 +101,7 @@ impl Default for SecondaryTip {
             mask: None,
             dynamics: BrushDynamics::default(),
             spacing: None,
+            flip: false,
         }
     }
 }
@@ -133,6 +135,7 @@ impl SecondaryTip {
             mask,
             dynamics,
             spacing: None,
+            flip: false,
         })
     }
     pub fn radius(&self) -> f32 {
@@ -153,8 +156,15 @@ impl SecondaryTip {
         self.mask = Some(mask);
         Ok(self)
     }
+    pub fn with_flip(mut self, flip: bool) -> Self {
+        self.flip = flip;
+        self
+    }
     pub fn spacing(&self) -> Option<f32> {
         self.spacing
+    }
+    pub fn flip(&self) -> bool {
+        self.flip
     }
     pub fn tip(&self) -> BrushTip {
         self.tip
@@ -171,6 +181,7 @@ impl SecondaryTip {
             && self.mask.is_none()
             && self.dynamics == BrushDynamics::default()
             && self.spacing == Some(0.25)
+            && !self.flip
     }
 }
 #[derive(Clone, Debug)]
@@ -292,6 +303,7 @@ impl DualBrush {
             step: secondary
                 .spacing
                 .map(|spacing| f64::from(radius * 2. * spacing)),
+            flip: secondary.flip,
         }))
     }
 }
@@ -302,6 +314,7 @@ pub(crate) struct CompiledDual {
     mode: DualMode,
     program: Box<BrushProgram>,
     step: Option<f64>,
+    flip: bool,
     sizing: DualSizing,
     pub(crate) color: crate::DualColor,
     primary_pressure_size: bool,
@@ -456,6 +469,14 @@ impl CompiledDual {
                 ) * size_scale
             };
             let geometry = self.program.dab_geometry(center, direction, shape);
+            let (flip_x, flip_y) = if self.flip {
+                let key = crate::brush_random::mix(
+                    stroke ^ crate::brush_random::mix(logical ^ u64::from(child)),
+                );
+                ((key & 1) != 0, (key & 2) != 0)
+            } else {
+                (false, false)
+            };
             let mask = if radius > 0. && self.program.has_mask() {
                 self.program.mask_dab_with_geometry(radius, geometry)
             } else {
@@ -467,6 +488,8 @@ impl CompiledDual {
                 radius,
                 geometry,
                 mask,
+                flip_x,
+                flip_y,
             });
         }
         DualDab {
@@ -483,6 +506,18 @@ struct SecondaryDab<'a> {
     radius: f64,
     geometry: TipGeometry,
     mask: Option<MaskDab<'a>>,
+    flip_x: bool,
+    flip_y: bool,
+}
+impl SecondaryDab<'_> {
+    fn local(&self, x: f64, y: f64) -> (f64, f64) {
+        let dx = x - self.x;
+        let dy = y - self.y;
+        (
+            if self.flip_x { -dx } else { dx },
+            if self.flip_y { -dy } else { dy },
+        )
+    }
 }
 
 pub(crate) struct DualDab<'a> {
@@ -528,36 +563,32 @@ impl DualDab<'_> {
     }
     pub(crate) fn wet_uv(&self, index: usize, x: f64, y: f64) -> (f64, f64) {
         let dab = &self.dabs[index];
-        dab.geometry.normalized(x - dab.x, y - dab.y, dab.radius)
+        let (dx, dy) = dab.local(x, y);
+        dab.geometry.normalized(dx, dy, dab.radius)
     }
     pub(crate) fn shape_coverage(&self, index: usize, x: f64, y: f64) -> f32 {
         let dab = &self.dabs[index];
+        let (dx, dy) = dab.local(x, y);
         if dab.radius <= 0. {
             0.
         } else if let Some(mask) = &dab.mask {
-            mask.coverage(x - dab.x, y - dab.y)
+            mask.coverage(dx, dy)
         } else {
-            self.program.procedural_coverage_with_geometry(
-                x - dab.x,
-                y - dab.y,
-                dab.radius,
-                dab.geometry,
-            )
+            self.program
+                .procedural_coverage_with_geometry(dx, dy, dab.radius, dab.geometry)
         }
     }
     pub fn coverage(&self, index: usize, x: f64, y: f64) -> f32 {
         let dab = &self.dabs[index];
+        let (dx, dy) = dab.local(x, y);
         if dab.radius == 0. {
             0.
         } else if let Some(mask) = &dab.mask {
-            mask.coverage(x - dab.x, y - dab.y) * self.flow
+            mask.coverage(dx, dy) * self.flow
         } else {
-            self.program.procedural_coverage_with_geometry(
-                x - dab.x,
-                y - dab.y,
-                dab.radius,
-                dab.geometry,
-            ) * self.flow
+            self.program
+                .procedural_coverage_with_geometry(dx, dy, dab.radius, dab.geometry)
+                * self.flow
         }
     }
     pub fn combine(&self, primary: f32, x: f64, y: f64) -> f32 {
@@ -566,22 +597,40 @@ impl DualDab<'_> {
         }
         let mut coverage = 0.;
         for dab in &self.dabs {
+            let (dx, dy) = dab.local(x, y);
             let amount = if dab.radius == 0. {
                 0.
             } else if let Some(mask) = &dab.mask {
-                mask.coverage(x - dab.x, y - dab.y)
+                mask.coverage(dx, dy)
             } else {
-                self.program.procedural_coverage_with_geometry(
-                    x - dab.x,
-                    y - dab.y,
-                    dab.radius,
-                    dab.geometry,
-                )
+                self.program
+                    .procedural_coverage_with_geometry(dx, dy, dab.radius, dab.geometry)
             } * self.flow;
             coverage += amount * (1. - coverage);
         }
         self.mode.combine(primary, coverage)
     }
+}
+
+#[cfg(test)]
+#[test]
+fn dual_flip_is_seeded_per_stamp() {
+    let tip = SecondaryTip::default().with_flip(true);
+    let dual = DualBrush::new(true, DualMode::Multiply, tip);
+    let compiled = dual
+        .compile(8., false, &crate::PressureControl::default())
+        .unwrap()
+        .unwrap();
+    let point = InputPoint::new(8., 8., 1.);
+    let mut saw_flip = false;
+    let mut saw_plain = false;
+    for logical in 0..32 {
+        let dab = compiled.dab(point, None, 7, logical, 0, 8., 1.);
+        let flipped = dab.dabs[0].flip_x || dab.dabs[0].flip_y;
+        saw_flip |= flipped;
+        saw_plain |= !flipped;
+    }
+    assert!(saw_flip && saw_plain);
 }
 
 #[cfg(test)]
