@@ -4,7 +4,7 @@
 
 - `paint-io --test abr_conversion` 通过：计算双笔刷直径、硬度、混合模式、独立间距和散布/数量映射；sampled 双笔刷样例绑定第二图片 mask。
 - `brush_source` converter11双笔刷基线测试通过：source version3保留 `dualBrush`，converter10携带该字段明确拒绝。
-- `paint-io --test abr_import` 9项继续通过；ABR handoff版本选择对converter11返回10。
+- `paint-io --test abr_import` 10项通过；新增真实ABR `samp`双记录、sampled dual handoff JSON和持久化mask身份用例。
 - Windows Release Qt `abrComputedDualHandoffImportsIntoState12` 通过：handoff10导入、state版本至少12、双笔刷启用及直径恢复，handoff9拒绝双笔刷字段。
 - 既有的渐隐、设备来源、纹理溶解和矩阵Qt用例继续通过；严格Clippy、格式检查及Release构建通过。
 

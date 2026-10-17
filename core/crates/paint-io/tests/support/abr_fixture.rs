@@ -48,6 +48,7 @@ fn preset(
     color: Option<(bool, bool)>,
     (shape_jitter, device): (Option<bool>, Option<(bool, i32, bool)>),
     texture: TextureFixture<'_>,
+    dual_sample: bool,
 ) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
@@ -309,6 +310,38 @@ fn preset(
             ),
         ));
     }
+    if dual_sample {
+        entries.push((
+            "dualBrush",
+            typed(
+                b"Objc",
+                &object(
+                    "dualBrush",
+                    vec![
+                        ("useDualBrush", typed(b"bool", &[1])),
+                        (
+                            "Brsh",
+                            typed(
+                                b"Objc",
+                                &object(
+                                    "sampledBrush",
+                                    vec![
+                                        ("Dmtr", unit(b"#Pxl", 8.)),
+                                        ("Angl", unit(b"#Ang", 0.)),
+                                        ("Rndn", unit(b"#Prc", 100.)),
+                                        ("Spcn", unit(b"#Prc", 2.)),
+                                        ("sampledData", typed(b"TEXT", &text("dual-shared\0"))),
+                                    ],
+                                ),
+                            ),
+                        ),
+                        ("BlnM", typed(b"enum", &[id("BlnM"), id("Mltp")].concat())),
+                        ("Spcn", unit(b"#Prc", 25.)),
+                    ],
+                ),
+            ),
+        ));
+    }
     typed(b"Objc", &object("brushPreset", entries))
 }
 
@@ -357,6 +390,20 @@ pub fn fixture_with_pressure(version: u16, sub: u16, bad: bool) -> Vec<u8> {
         None,
         (None, None),
         None,
+    )
+}
+#[allow(dead_code)]
+pub fn fixture_with_dual_sampled() -> Vec<u8> {
+    fixture_inner_with_dual(
+        (6, 2),
+        false,
+        Some(100.),
+        false,
+        None,
+        None,
+        (None, None),
+        None,
+        true,
     )
 }
 #[allow(dead_code)]
@@ -511,7 +558,7 @@ pub fn fixture_with_16bit_texture(mode: &str) -> Vec<u8> {
 }
 #[allow(clippy::too_many_arguments)]
 fn fixture_inner(
-    (version, sub): (u16, u16),
+    version: (u16, u16),
     bad: bool,
     opacity: Option<f64>,
     pressure: bool,
@@ -520,39 +567,70 @@ fn fixture_inner(
     dynamics: (Option<bool>, Option<(bool, i32, bool)>),
     texture: TextureFixture<'_>,
 ) -> Vec<u8> {
+    fixture_inner_with_dual(
+        version, bad, opacity, pressure, scatter, color, dynamics, texture, false,
+    )
+}
+#[allow(clippy::too_many_arguments)]
+fn fixture_inner_with_dual(
+    (version, sub): (u16, u16),
+    bad: bool,
+    opacity: Option<f64>,
+    pressure: bool,
+    scatter: Option<bool>,
+    color: Option<(bool, bool)>,
+    dynamics: (Option<bool>, Option<(bool, i32, bool)>),
+    texture: TextureFixture<'_>,
+    dual_sample: bool,
+) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
     let mut list = 3u32.to_be_bytes().to_vec();
     list.extend(preset(
-        true, false, opacity, pressure, scatter, color, dynamics, texture,
+        true,
+        false,
+        opacity,
+        pressure,
+        scatter,
+        color,
+        dynamics,
+        texture,
+        dual_sample,
     ));
     list.extend(preset(
-        false, false, opacity, pressure, scatter, color, dynamics, None,
+        false, false, opacity, pressure, scatter, color, dynamics, None, false,
     ));
     list.extend(preset(
-        true, bad, opacity, pressure, scatter, color, dynamics, None,
+        true, bad, opacity, pressure, scatter, color, dynamics, None, false,
     ));
     let mut descriptor = 16u32.to_be_bytes().to_vec();
     descriptor.extend(object("null", vec![("Brsh", typed(b"VlLs", &list))]));
     section(&mut bytes, b"desc", &descriptor);
-    let mut record = vec![6];
-    record.extend(b"shared");
-    record.extend(vec![0; if sub == 1 { 10 } else { 264 }]);
-    for bound in [0i32, 0, 8, 8] {
-        record.extend(bound.to_be_bytes());
-    }
-    record.extend(8u16.to_be_bytes());
-    record.push(0);
-    let mut coverage = vec![255; 64];
-    for y in 3..5 {
-        for x in 3..5 {
-            coverage[y * 8 + x] = 0;
+    let make_sample = |id: &str| {
+        let mut record = vec![id.len() as u8];
+        record.extend(id.as_bytes());
+        record.extend(vec![0; if sub == 1 { 10 } else { 264 }]);
+        for bound in [0i32, 0, 8, 8] {
+            record.extend(bound.to_be_bytes());
         }
+        record.extend(8u16.to_be_bytes());
+        record.push(0);
+        let mut coverage = vec![255; 64];
+        for y in 3..5 {
+            for x in 3..5 {
+                coverage[y * 8 + x] = 0;
+            }
+        }
+        record.extend(coverage);
+        let mut samples = (record.len() as u32).to_be_bytes().to_vec();
+        samples.extend(&record);
+        samples.resize(samples.len() + (4 - record.len() % 4) % 4, 0);
+        samples
+    };
+    let mut samples = make_sample("shared");
+    if dual_sample {
+        samples.extend(make_sample("dual-shared"));
     }
-    record.extend(coverage);
-    let mut samples = (record.len() as u32).to_be_bytes().to_vec();
-    samples.extend(&record);
-    samples.resize(samples.len() + (4 - record.len() % 4) % 4, 0);
     section(&mut bytes, b"samp", &samples);
     if let Some((pattern, _, _, _, _, _, _, texture_depth)) = texture {
         let mut body = 1u32.to_be_bytes().to_vec();

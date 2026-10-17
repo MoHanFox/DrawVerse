@@ -6,7 +6,7 @@ use std::sync::Arc;
 mod support {
     pub mod abr_fixture;
 }
-use support::abr_fixture::fixture;
+use support::abr_fixture::{fixture, fixture_with_dual_sampled};
 #[test]
 fn whole_batches_compile_share_real_holes_and_store_exact_sources_in_order() {
     let token = CancellationToken::default();
@@ -65,6 +65,21 @@ fn whole_batches_compile_share_real_holes_and_store_exact_sources_in_order() {
             assert!(document.pixel(15, 12).alpha() > 0.9);
         }
     }
+}
+
+#[test]
+fn sampled_dual_brush_resource_survives_handoff_and_persist() {
+    let token = CancellationToken::default();
+    let original = Arc::new(fixture_with_dual_sampled());
+    let batch = ImportBatch::decode(original.clone(), MAX_CATALOG_MASK_BYTES, &token).unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&batch.to_json().unwrap()).unwrap();
+    assert!(json["presets"][0]["dualBrush"].is_object());
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().join("assets"), MAX_CATALOG_MASK_BYTES).unwrap();
+    let presets = batch.persist(&store, &token).unwrap();
+    let secondary = presets[0].settings().dual.secondary();
+    assert!(secondary.mask().is_some());
+    assert!(secondary.mask().unwrap().resource_id().is_some());
 }
 #[test]
 fn invalid_late_parameter_budget_cancel_and_unsupported_versions_return_no_batch() {
