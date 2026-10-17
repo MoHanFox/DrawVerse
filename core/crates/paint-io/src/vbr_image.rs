@@ -16,7 +16,9 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 23;
+pub const MAX_EXECUTABLE_MINOR: u32 = 24;
+#[path = "vbr_groups.rs"]
+mod groups;
 
 pub struct ImageAsset {
     bytes: Vec<u8>,
@@ -32,6 +34,7 @@ impl ImageAsset {
 }
 pub struct ImageBundle {
     pub package: Package,
+    organization: Option<crate::brush_organization::OrganizationParameters>,
     assets: BTreeMap<String, ImageAsset>,
     sources: Vec<crate::brush_source::SourceBatch>,
     textures: std::sync::Mutex<BTreeMap<String, Arc<paint_core::TextureResource>>>,
@@ -99,12 +102,39 @@ impl ImageBundle {
         }
         let bundle = Self {
             package,
+            organization: None,
             assets,
             sources,
             textures: Default::default(),
         };
         bundle.validate()?;
         Ok(bundle)
+    }
+    pub fn organization(&self) -> Option<&paint_core::BrushOrganization> {
+        self.organization.as_ref().map(|p| p.core())
+    }
+    fn validate_organization(&self, organization: &paint_core::BrushOrganization) -> Result<()> {
+        if organization
+            .preset_order()
+            .iter()
+            .map(String::as_str)
+            .ne(self.package.brushes.iter().map(|p| p.id.as_str()))
+        {
+            return Err(Error::Invalid(
+                "VBR organization projection differs from presets",
+            ));
+        }
+        Ok(())
+    }
+    pub fn with_organization(
+        mut self,
+        organization: paint_core::BrushOrganization,
+    ) -> Result<Self> {
+        self.validate_organization(&organization)?;
+        self.organization = (!organization.groups().is_empty())
+            .then(|| crate::brush_organization::OrganizationParameters::from_core(organization));
+        self.validate()?;
+        Ok(self)
     }
     pub fn sources(&self) -> &[crate::brush_source::SourceBatch] {
         &self.sources
@@ -217,6 +247,9 @@ impl ImageBundle {
     }
     pub fn validate(&self) -> Result<()> {
         self.package.validate()?;
+        if let Some(organization) = &self.organization {
+            self.validate_organization(organization.core())?;
+        }
         self.prepare_textures()?;
         let mut referenced: BTreeSet<_> = self
             .package
@@ -319,6 +352,12 @@ struct Manifest {
     brushes: Vec<Reference>,
     groups: Vec<serde_json::Value>,
     assets: Vec<AssetReference>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_organization::present"
+    )]
+    organization: Option<crate::brush_organization::OrganizationParameters>,
 }
 
 pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
@@ -329,6 +368,24 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         || manifest.version.minor > MAX_EXECUTABLE_MINOR
     {
         return Err(Error::Unsupported("VBR format/version".into()));
+    }
+    if let Some(organization) = &manifest.organization {
+        if manifest.version.minor < 24 {
+            return Err(Error::Unsupported(
+                "brush organization requires VBR1.24".into(),
+            ));
+        }
+        if organization
+            .core()
+            .preset_order()
+            .iter()
+            .map(String::as_str)
+            .ne(manifest.brushes.iter().map(|p| p.id.as_str()))
+        {
+            return Err(Error::Invalid(
+                "VBR organization projection differs from references",
+            ));
+        }
     }
     if manifest.version.minor == 0 {
         return ImageBundle::new(vbr::decode(bytes, token)?, BTreeMap::new(), token);
@@ -528,7 +585,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
     if paths != expected {
         return Err(Error::Invalid("VBR unreferenced archive entries"));
     }
-    ImageBundle::with_sources(
+    let bundle = ImageBundle::with_sources(
         Package {
             package_id: manifest.package_id,
             brushes,
@@ -536,12 +593,18 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         assets,
         sources,
         token,
-    )
+    )?;
+    if let Some(organization) = manifest.organization {
+        bundle.with_organization(organization.core().clone())
+    } else {
+        Ok(bundle)
+    }
 }
 pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>> {
     bundle.validate()?;
     check(token)?;
-    if bundle.assets.is_empty()
+    if bundle.organization.is_none()
+        && bundle.assets.is_empty()
         && bundle.sources.is_empty()
         && !bundle.package.brushes.iter().any(|b| {
             b.parameters.pressure_dynamics.is_some()
@@ -580,7 +643,9 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle.package.brushes.iter().any(|b| b.has_wet_dual()) {
+            minor: if bundle.organization.is_some() {
+                24
+            } else if bundle.package.brushes.iter().any(|b| b.has_wet_dual()) {
                 23
             } else if bundle
                 .package
@@ -694,6 +759,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         },
         package_id: bundle.package.package_id.clone(),
         groups: Vec::new(),
+        organization: bundle.organization.clone(),
         brushes: bundle
             .package
             .brushes

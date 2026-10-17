@@ -1,6 +1,123 @@
 use super::tests::texture_bundle;
 use super::*;
 #[test]
+fn old_native_package_entries_reject_grouped_vbr24_before_resource_install() {
+    use paint_core::{BrushCatalogItem, BrushGroup, BrushOrganization};
+    type Reader = unsafe extern "C" fn(
+        *mut PaintBrushLibrary,
+        *const u8,
+        u64,
+        *mut u8,
+        u64,
+        *mut u64,
+    ) -> PaintStatus;
+    type Writer =
+        unsafe extern "C" fn(*mut PaintBrushLibrary, *const u8, u64, *const u8, u64) -> PaintStatus;
+    let readers: [Reader; 4] = [
+        crate::paint_brush_library_package_read,
+        crate::paint_brush_library_package_read_wet,
+        crate::paint_brush_library_package_read_taper,
+        crate::paint_brush_library_package_read_wet_dual,
+    ];
+    let writers: [Writer; 4] = [
+        crate::paint_brush_library_package_write,
+        crate::paint_brush_library_package_write_wet,
+        crate::paint_brush_library_package_write_taper,
+        crate::paint_brush_library_package_write_wet_dual,
+    ];
+    for empty in [false, true] {
+        let token = paint_task::CancellationToken::default();
+        let bundle = texture_bundle(false, false);
+        let preset = bundle.package.brushes[0].id.clone();
+        let group = "12345678-1234-4234-8234-000000000100";
+        let roots = if empty {
+            vec![
+                BrushCatalogItem::Group(group.into()),
+                BrushCatalogItem::Preset(preset.clone()),
+            ]
+        } else {
+            vec![BrushCatalogItem::Group(group.into())]
+        };
+        let children = if empty {
+            vec![]
+        } else {
+            vec![BrushCatalogItem::Preset(preset)]
+        };
+        let bundle = bundle
+            .with_organization(
+                BrushOrganization::new(
+                    roots,
+                    vec![BrushGroup::new(group.into(), "group".into(), children).unwrap()],
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("grouped.vbr");
+        paint_io::vbr_image::save(&path, &bundle, &token).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        let path = path.to_str().unwrap().as_bytes();
+        let assets = temp.path().join("fresh");
+        let directory = assets.to_str().unwrap().as_bytes();
+        unsafe {
+            let mut handle = std::ptr::null_mut();
+            assert_eq!(crate::paint_brush_library_create(0, &mut handle), PAINT_OK);
+            assert_eq!(
+                crate::paint_brush_library_bind_resources(
+                    handle,
+                    directory.as_ptr(),
+                    directory.len() as u64
+                ),
+                PAINT_OK
+            );
+            for reader in readers {
+                for size in [0, 65536] {
+                    let mut out = vec![0xa5; size];
+                    let mut required = 999;
+                    assert_eq!(
+                        reader(
+                            handle,
+                            path.as_ptr(),
+                            path.len() as u64,
+                            if size == 0 {
+                                std::ptr::null_mut()
+                            } else {
+                                out.as_mut_ptr()
+                            },
+                            size as u64,
+                            &mut required
+                        ),
+                        PAINT_UNSUPPORTED
+                    );
+                    assert_eq!(required, 0);
+                    assert!(out.iter().all(|v| *v == 0xa5));
+                    assert_eq!(std::fs::read_dir(&assets).unwrap().count(), 0);
+                }
+            }
+            let mut json = bundle.package.to_json().unwrap();
+            assert_eq!(json.pop(), Some(b'}'));
+            json.extend_from_slice(br#","organization":null}"#);
+            for writer in writers {
+                assert_ne!(
+                    writer(
+                        handle,
+                        path.as_ptr(),
+                        path.len() as u64,
+                        json.as_ptr(),
+                        json.len() as u64
+                    ),
+                    PAINT_OK
+                );
+                assert_eq!(
+                    std::fs::read(std::str::from_utf8(path).unwrap()).unwrap(),
+                    original
+                );
+            }
+            assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
+        }
+    }
+}
+#[test]
 fn old_native_entries_reject_grouped_state20_without_adoption() {
     for populated in [false, true] {
         let mut c = BrushCatalog::default();

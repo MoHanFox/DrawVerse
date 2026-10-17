@@ -536,104 +536,146 @@ fn old_abr_baselines_reject_even_only_the_closed_new_strategy_marker() {
 }
 #[test]
 fn wet_dual_source_three_image_roles_and_taper_survive_fresh_store_exchange() {
-    use paint_io::{abr_import::ImportBatch, brush_resource::ResourceStore};
-    let token = CancellationToken::default();
-    let tmp = tempfile::tempdir().unwrap();
-    let store = ResourceStore::open(tmp.path().join("old"), MAX_CATALOG_MASK_BYTES).unwrap();
-    let raw = Arc::new(support::abr_fixture::fixture(6, 2, false));
-    let imported = ImportBatch::decode(raw.clone(), MAX_CATALOG_MASK_BYTES, &token)
-        .unwrap()
-        .persist(&store, &token)
-        .unwrap();
-    let source_id = imported[0].source_id().to_owned();
-    let mask = imported[0].settings().mask.clone().unwrap();
-    let id = mask.resource_id().unwrap().to_owned();
-    let mut s = settings(true);
-    s.mask = Some(mask.clone());
-    s.dual = DualBrush::new(
-        true,
-        DualMode::Multiply,
-        SecondaryTip::new(8., s.tip, Some(mask.clone()), Default::default())
+    for grouped in [false, true] {
+        use paint_io::{abr_import::ImportBatch, brush_resource::ResourceStore};
+        let token = CancellationToken::default();
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ResourceStore::open(tmp.path().join("old"), MAX_CATALOG_MASK_BYTES).unwrap();
+        let raw = Arc::new(support::abr_fixture::fixture(6, 2, false));
+        let imported = ImportBatch::decode(raw.clone(), MAX_CATALOG_MASK_BYTES, &token)
             .unwrap()
-            .with_spacing(0.25)
-            .unwrap(),
-    )
-    .with_color(s.dual.color());
-    s.texture = BrushTexture::new(
-        true,
-        Default::default(),
-        Some(Arc::new(TextureResource::new(mask))),
-    )
-    .unwrap();
-    let mut p = package(&s);
-    p.brushes[0].source_resource = Some(source_id.clone());
-    let sources = store
-        .source_store()
-        .unwrap()
-        .export_batches(
-            &std::collections::BTreeSet::from([source_id.clone()]),
+            .persist(&store, &token)
+            .unwrap();
+        let source_id = imported[0].source_id().to_owned();
+        let mask = imported[0].settings().mask.clone().unwrap();
+        let id = mask.resource_id().unwrap().to_owned();
+        let mut s = settings(true);
+        s.mask = Some(mask.clone());
+        s.dual = DualBrush::new(
+            true,
+            DualMode::Multiply,
+            SecondaryTip::new(8., s.tip, Some(mask.clone()), Default::default())
+                .unwrap()
+                .with_spacing(0.25)
+                .unwrap(),
+        )
+        .with_color(s.dual.color());
+        s.texture = BrushTexture::new(
+            true,
+            Default::default(),
+            Some(Arc::new(TextureResource::new(mask))),
+        )
+        .unwrap();
+        let mut p = package(&s);
+        p.brushes[0].source_resource = Some(source_id.clone());
+        let sources = store
+            .source_store()
+            .unwrap()
+            .export_batches(
+                &std::collections::BTreeSet::from([source_id.clone()]),
+                &token,
+            )
+            .unwrap();
+        let records: Vec<_> = sources[0]
+            .records()
+            .map(|(_, bytes)| bytes.to_vec())
+            .collect();
+        let bundle = ImageBundle::with_sources(
+            p,
+            BTreeMap::from([(
+                id,
+                store
+                    .encoded(s.mask.as_ref().unwrap().resource_id().unwrap())
+                    .unwrap(),
+            )]),
+            sources,
             &token,
         )
         .unwrap();
-    let records: Vec<_> = sources[0]
-        .records()
-        .map(|(_, bytes)| bytes.to_vec())
-        .collect();
-    let bundle = ImageBundle::with_sources(
-        p,
-        BTreeMap::from([(
-            id,
-            store
-                .encoded(s.mask.as_ref().unwrap().resource_id().unwrap())
-                .unwrap(),
-        )]),
-        sources,
-        &token,
-    )
-    .unwrap();
-    let bytes = vbr_image::encode(&bundle, &token).unwrap();
-    let reopened = vbr_image::decode(&bytes, &token).unwrap();
-    assert_eq!(reopened.sources()[0].original_bytes(), raw.as_slice());
-    assert_eq!(
-        records,
-        reopened.sources()[0]
-            .records()
-            .map(|(_, b)| b.to_vec())
-            .collect::<Vec<_>>()
-    );
-    assert_eq!(draw(s.definition()), draw(reopened.definition(0).unwrap()));
-    let new = ResourceStore::open(tmp.path().join("new"), MAX_CATALOG_MASK_BYTES).unwrap();
-    for (id, asset) in reopened.assets() {
-        new.put_verified(id, asset.bytes(), &token).unwrap();
-    }
-    for source in reopened.sources() {
-        new.source_store()
-            .unwrap()
-            .save_batch(source, &token)
+        let group = "12345678-1234-4234-8234-000000000100";
+        let bundle = if grouped {
+            let preset = bundle.package.brushes[0].id.clone();
+            bundle
+                .with_organization(
+                    BrushOrganization::new(
+                        vec![BrushCatalogItem::Group(group.into())],
+                        vec![BrushGroup::new(
+                            group.into(),
+                            "source group".into(),
+                            vec![BrushCatalogItem::Preset(preset)],
+                        )
+                        .unwrap()],
+                    )
+                    .unwrap(),
+                )
+                .unwrap()
+        } else {
+            bundle
+        };
+        let bytes = vbr_image::encode(&bundle, &token).unwrap();
+        let mut reopened = vbr_image::decode(&bytes, &token).unwrap();
+        assert_eq!(reopened.organization(), bundle.organization());
+        if grouped {
+            let old = reopened.package.brushes[0].id.clone();
+            reopened
+                .remap_copy_ids(
+                    "12345678-1234-4234-8234-000000000200".into(),
+                    &BTreeMap::from([(old, "12345678-1234-4234-8234-000000000201".into())]),
+                    &BTreeMap::from([(
+                        group.into(),
+                        "12345678-1234-4234-8234-000000000202".into(),
+                    )]),
+                    &token,
+                )
+                .unwrap();
+            let copy =
+                vbr_image::decode(&vbr_image::encode(&reopened, &token).unwrap(), &token).unwrap();
+            assert_eq!(copy.organization(), reopened.organization());
+            reopened = copy;
+        }
+
+        assert_eq!(reopened.sources()[0].original_bytes(), raw.as_slice());
+        assert_eq!(
+            records,
+            reopened.sources()[0]
+                .records()
+                .map(|(_, b)| b.to_vec())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(draw(s.definition()), draw(reopened.definition(0).unwrap()));
+        let new = ResourceStore::open(tmp.path().join("new"), MAX_CATALOG_MASK_BYTES).unwrap();
+        for (id, asset) in reopened.assets() {
+            new.put_verified(id, asset.bytes(), &token).unwrap();
+        }
+        for source in reopened.sources() {
+            new.source_store()
+                .unwrap()
+                .save_batch(source, &token)
+                .unwrap();
+        }
+        let mut catalog = BrushCatalog::default();
+        catalog.edit("round-pressure", s).unwrap();
+        catalog
+            .set_source("round-pressure", Some(source_id))
             .unwrap();
-    }
-    let mut catalog = BrushCatalog::default();
-    catalog.edit("round-pressure", s).unwrap();
-    catalog
-        .set_source("round-pressure", Some(source_id))
+        let state = brush_state::encode(&catalog).unwrap();
+        let restored = brush_state::decode_with_sources(
+            &state,
+            MAX_CATALOG_MASK_BYTES,
+            Some(&new),
+            &new.source_store().unwrap(),
+            &token,
+        )
         .unwrap();
-    let state = brush_state::encode(&catalog).unwrap();
-    let restored = brush_state::decode_with_sources(
-        &state,
-        MAX_CATALOG_MASK_BYTES,
-        Some(&new),
-        &new.source_store().unwrap(),
-        &token,
-    )
-    .unwrap();
-    assert_eq!(
-        draw(restored.selected().settings().definition()),
-        draw(reopened.definition(0).unwrap())
-    );
-    let cancelled = CancellationToken::default();
-    cancelled.cancel();
-    let path = tmp.path().join("untouched.vbr");
-    std::fs::write(&path, b"keep").unwrap();
-    assert!(vbr_image::save(&path, &bundle, &cancelled).is_err());
-    assert_eq!(std::fs::read(&path).unwrap(), b"keep");
+        assert_eq!(
+            draw(restored.selected().settings().definition()),
+            draw(reopened.definition(0).unwrap())
+        );
+        let cancelled = CancellationToken::default();
+        cancelled.cancel();
+        let path = tmp.path().join("untouched.vbr");
+        std::fs::write(&path, b"keep").unwrap();
+        assert!(vbr_image::save(&path, &bundle, &cancelled).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"keep");
+    }
 }

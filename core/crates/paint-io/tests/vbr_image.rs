@@ -11,6 +11,8 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, ZipArchive, ZipWriter};
+#[path = "support/vbr_groups_cases.rs"]
+mod group_cases;
 fn package(resource: Option<String>) -> Package {
     let caps = if resource.is_some() {
         vec!["image-tip".into()]

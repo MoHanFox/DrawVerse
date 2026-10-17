@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新分组VBR1.24：`docs/brush-groups-vbr-design.md` / `docs/brush-groups-vbr-validation.md`；组织清单/空组顺序及原子整树副本ID映射、三图片/ABR来源与两笔像素载色历史保持，IO33/旧四读写入口保护及Schema/Windows Release/Clippy/4 ABI/旧Qt2通过。平包旧字节保持，无ABI/state变化；目标库合并/完整原生交接/Qt仍待接，不宣称分组用户入口完成。
+
 - 最新分组state20：`docs/brush-groups-state-design.md` / `docs/brush-groups-state-validation.md`；有界组织DTO/空组及顺序、关闭参数/三图片与ABR来源新目录两笔往返，IO20/四旧入口保护及Schema/Windows Release/Clippy/4 ABI/旧Qt2通过。平目录字节保持，旧原生有组明确拒绝；VBR分组清单/整树映射/原生/Qt仍待接，无ABI或VBR版本变化。
 
 - 最新笔刷分组Rust目录：`docs/brush-groups-design.md` / `docs/brush-groups-kernel-validation.md`；稳定ID/有序树及DFS、原子移动解组/级联保护、同组复制导入与在途捕获，6新集成+1修订边界/5旧目录、IO5/原生2及Windows Release/Clippy/4 ABI/旧Qt2通过。旧编码有组明确拒绝，分组IO/原生/Qt仍待接，不宣称用户入口完成；无ABI/格式版本变化。

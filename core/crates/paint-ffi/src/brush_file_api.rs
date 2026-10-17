@@ -146,6 +146,12 @@ unsafe fn paint_brush_library_package_read_impl(
         let library = runtime::registry()?.brush_library(library)?;
         let bundle = paint_io::vbr_image::load(Path::new(&path), &CancellationToken::default())
             .map_err(io_error)?;
+        if bundle.organization().is_some() {
+            return Err(ApiError::new(
+                PAINT_UNSUPPORTED,
+                "grouped VBR requires updated native entry",
+            ));
+        }
         if !support.wet_dual() {
             reject_wet_dual_package(&bundle.package)?;
         }

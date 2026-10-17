@@ -178,3 +178,5 @@ wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明
 2026-10-17笔刷分组Rust目录阶段：不可变稳定ID组织/有序根及子项/DFS投影、原子建组改名移动/解组及受保护级联删除、同组复制导入与捕获保持已接；新6集成+1修订边界/旧5目录、IO5/原生2及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-design.md)及[验收](brush-groups-kernel-validation.md)。旧状态编码有组时明确拒绝，未接分组保存交换/原生及Qt，不宣称用户入口完成；无ABI/state/VBR版本变化。
 
 2026-10-17分组状态阶段：有界ordered-tree-v1 DTO/state20已实现，空组/显式顺序/关闭参数及真实三图片用途/ABR来源跨新目录两笔像素载色历史往返；最终IO20项、新旧原生四入口保护1项及Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-state-design.md)及[验收](brush-groups-state-validation.md)。平目录旧字节保持；旧原生有组明确拒绝。无ABI或VBR版本变化，VBR分组清单/整树映射/原生和Qt仍待接，不宣称用户分组完成。
+
+2026-10-17分组VBR阶段：VBR1.24组织清单/空组与顺序、原子整树副本ID映射已接，三图片用途/ABR来源及真实两笔像素载色历史保持；IO33项、新四类旧读写保护1项、Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](brush-groups-vbr-design.md)及[验收](brush-groups-vbr-validation.md)。平包旧字节保持，无ABI/state变化；目标库原子合并/完整原生交接/Qt仍待接，不宣称分组用户入口完成。
