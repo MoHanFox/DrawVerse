@@ -11,6 +11,7 @@ struct TileJournal {
     stamp: SavedTiles,
     wet_primary: SavedTiles,
     wet_secondary: SavedTiles,
+    outline: BTreeMap<TileCoord, Option<super::outline::ShapeTile>>,
 }
 #[derive(Debug)]
 struct DabCheckpoint {
@@ -261,6 +262,23 @@ fn restore_field(field: &mut BTreeMap<TileCoord, Arc<Tile>>, saved: SavedTiles) 
         }
     }
 }
+pub(super) fn capture_outline(
+    tail: Option<&mut TailReplay>,
+    coord: TileCoord,
+    field: &super::outline::ShapeTiles,
+    limit: usize,
+) -> Result<()> {
+    if let Some(tail) = tail.filter(|t| t.recording) {
+        if !tail.journal.outline.contains_key(&coord) && tail.journal.outline.len() >= limit {
+            return Err(Error::ResourceLimit("outline taper checkpoint tile limit"));
+        }
+        tail.journal
+            .outline
+            .entry(coord)
+            .or_insert_with(|| field.get(&coord).cloned());
+    }
+    Ok(())
+}
 impl Document {
     pub(super) fn capture_taper_tile(
         &self,
@@ -373,6 +391,15 @@ impl Document {
         restore_field(&mut stroke.stamp_field, journal.stamp);
         restore_field(&mut stroke.wet_primary_field, journal.wet_primary);
         restore_field(&mut stroke.wet_secondary_field, journal.wet_secondary);
+        if let Some(outline) = &mut stroke.outline {
+            for (coord, tile) in journal.outline {
+                if let Some(tile) = tile {
+                    outline.shape.insert(coord, tile);
+                } else {
+                    outline.shape.remove(&coord);
+                }
+            }
+        }
         tail.checkpoint
             .take()
             .expect("taper checkpoint")

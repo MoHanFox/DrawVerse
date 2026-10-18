@@ -47,6 +47,7 @@ impl Document {
                 work_per_dab: 0,
             }),
             None,
+            None,
         )
     }
     pub fn end_wet_ink_stroke(&mut self) -> Result<(bool, crate::WetInk)> {
@@ -75,6 +76,7 @@ impl Document {
                 all_layers,
                 work_per_dab: 0,
             }),
+            None,
             None,
         )
     }
@@ -145,6 +147,7 @@ impl Document {
                 work_per_dab: 0,
             }),
             taper,
+            None,
         )
     }
     pub fn end_wet_brush_stroke(&mut self) -> Result<(bool, WetCarrier)> {

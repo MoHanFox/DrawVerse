@@ -85,6 +85,7 @@ impl From<Brush> for BrushDefinition {
 /// A validated immutable execution plan shared by all stroke operators.
 #[derive(Clone, Debug)]
 pub struct BrushProgram {
+    pub(crate) outline_work: bool,
     pub(crate) taper: crate::StrokeTaper,
     pub(crate) airbrush: crate::Airbrush,
     pub(crate) smoothing: crate::BrushSmoothing,
@@ -312,6 +313,7 @@ impl BrushProgram {
             ));
         }
         Ok(Self {
+            outline_work: false,
             wet: definition.wet,
             taper: definition.taper,
             airbrush: definition.airbrush,

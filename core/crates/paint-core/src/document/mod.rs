@@ -19,6 +19,8 @@ pub use input_paging::StrokePageResult;
 mod dual_paint;
 pub(crate) mod groups;
 mod layer_actions;
+#[path = "stroke/document_outline.rs"]
+mod outline;
 #[path = "stroke/document_taper.rs"]
 mod taper;
 mod transform;
@@ -471,6 +473,7 @@ struct Stroke {
     coverage_erase: bool,
     coverage_tool_stable: bool,
     taper: Option<taper::TailReplay>,
+    outline: Option<outline::OutlineStroke>,
     taper_factors: crate::TaperFactors,
     path_distance: f64,
     dab_distance: f64,
@@ -1272,7 +1275,7 @@ impl Document {
         if definition.wet.enabled() {
             return Err(Error::InvalidArgument("use configured wet stroke entry"));
         }
-        self.begin_brush_stroke_inner(definition, first, None, None)
+        self.begin_brush_stroke_inner(definition, first, None, None, None)
     }
     /// Explicit Rust execution entry until preset IO and the native bridge support taper.
     pub fn begin_tapered_brush_stroke(
@@ -1284,7 +1287,7 @@ impl Document {
         if definition.wet.enabled() {
             return Err(Error::InvalidArgument("use configured wet stroke entry"));
         }
-        self.begin_brush_stroke_inner(definition, first, None, Some(taper))
+        self.begin_brush_stroke_inner(definition, first, None, Some(taper), None)
     }
     fn begin_brush_stroke_inner(
         &mut self,
@@ -1292,15 +1295,19 @@ impl Document {
         first: InputPoint,
         mut wet: Option<wet::WetStroke>,
         taper_settings: Option<&crate::StrokeTaper>,
+        outline_settings: Option<&crate::StrokeOutline>,
     ) -> Result<()> {
         self.idle()?;
         self.layer_index(self.active_layer)?;
         let brush = definition.brush;
-        let program = if wet.as_ref().is_some_and(|w| w.secondary.is_some()) {
+        let mut program = if wet.as_ref().is_some_and(|w| w.secondary.is_some()) {
             BrushProgram::compile_wet_pair(definition)?
         } else {
             BrushProgram::compile(definition)?
         };
+        program.outline_work = outline_settings.is_some_and(|s| {
+            s.enabled() && s.width().effective(brush.radius * 2.).is_ok_and(|w| w > 0.)
+        });
         if let Some(wet) = &mut wet {
             self.validate_wet_start(&program, brush, first, wet)?;
         }
@@ -1388,6 +1395,10 @@ impl Document {
             coverage_erase: brush.mode == BrushMode::Erase || first.tool == Tool::Eraser,
             coverage_tool_stable: true,
             taper: None,
+            outline: outline_settings
+                .map(|s| outline::OutlineStroke::new(s, brush.radius * 2., first))
+                .transpose()?
+                .flatten(),
             taper_factors: crate::TaperFactors {
                 diameter: 1.,
                 opacity: 1.,
@@ -1438,7 +1449,7 @@ impl Document {
         let transactional = self
             .stroke
             .as_ref()
-            .is_some_and(|s| s.wet.is_some() || s.taper.is_some());
+            .is_some_and(|s| s.wet.is_some() || s.taper.is_some() || s.outline.is_some());
         let result = self.stroke_to_inner(point);
         if result.is_err() && transactional {
             if let Some(stroke) = self.stroke.take() {
@@ -1787,7 +1798,9 @@ impl Document {
         (
             crate::InputScheduleWork {
                 dabs: scatter.saturating_mul(paired.map_or(1, |d| d.maximum_count())),
-                visits: visits.saturating_mul(scatter),
+                visits: visits
+                    .saturating_mul(scatter)
+                    .saturating_mul(if program.outline_work { 2 } else { 1 }),
             },
             crate::InputScheduleWork {
                 dabs: secondary_dabs,
@@ -1863,6 +1876,14 @@ impl Document {
                 }
             }
             if let Err(error) = self.render_taper(&mut stroke, true) {
+                self.restore_stroke(&stroke);
+                return Err(error);
+            }
+        }
+        match self.render_stroke_outline(&mut stroke) {
+            Ok(true) => self.bump_revision(),
+            Ok(false) => {}
+            Err(error) => {
                 self.restore_stroke(&stroke);
                 return Err(error);
             }
@@ -2450,14 +2471,53 @@ impl Document {
                 && !matches!(stroke.brush.mode, BrushMode::Smudge { .. }));
         stroke.coverage_tool_stable &= erase == stroke.coverage_erase;
         let mut changed = false;
-        if stroke.wet.is_none() && (x0 >= x1 || y0 >= y1) {
-            return Ok(false);
-        }
         let mask_dab = if IMAGED {
             stroke.program.mask_dab_with_geometry(radius, geometry)
         } else {
             None
         };
+        if stroke.outline.is_some() && !erase && pressure_opacity != Some(0.) {
+            let updates = self.outline_shape(stroke, (left, top, right, bottom), |x, y| {
+                let mut coverage = if let Some(mask) = &mask_dab {
+                    mask.coverage(x - point.x, y - point.y)
+                } else {
+                    stroke.program.procedural_coverage_with_geometry(
+                        x - point.x,
+                        y - point.y,
+                        radius,
+                        geometry,
+                    )
+                };
+                if DUAL {
+                    coverage = if dual_path {
+                        stroke.program.dual.as_ref().expect("dual").combine(
+                            coverage,
+                            Self::wet_secondary_coverage(stroke, x, y, appearance)?,
+                        )
+                    } else {
+                        dual_dab.as_ref().expect("dual").combine(coverage, x, y)
+                    };
+                }
+                if TEXTURED {
+                    let texture = texture_dab.as_ref().expect("texture");
+                    coverage = if paper_texture {
+                        coverage * texture.coverage(x, y)
+                    } else {
+                        texture.apply(coverage, x, y)
+                    };
+                }
+                Ok(coverage)
+            })?;
+            outline::install_shape(
+                &mut stroke.outline,
+                &mut stroke.taper,
+                updates,
+                self.options.max_document_tiles,
+            )?;
+        }
+        if stroke.wet.is_none() && (x0 >= x1 || y0 >= y1) {
+            return Ok(false);
+        }
         let wet = self.prepare_wet(stroke, point, radius, geometry, |x, y| {
             let mut coverage = if let Some(mask) = &mask_dab {
                 mask.coverage(x - point.x, y - point.y)
