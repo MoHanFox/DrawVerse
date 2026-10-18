@@ -1,5 +1,8 @@
 # DrawVerse
 
+> **使用警告：当前为开发中的实验版本，请勿作为重要作品的唯一存储工具，使用前请备份并及时手动保存。**
+> 部分交互测试仍未通过；暂存文件和撤销历史不等同于自动保存或崩溃恢复，异常退出可能造成未保存内容丢失。
+
 DrawVerse 是一款正在开发中的桌面绘画软件。Rust 内核负责笔触、文档、历史、文件交换和 CPU 合成，C++ / Qt Quick / QML 负责界面与输入，两者通过 C ABI 连接。
 
 目前主要在 Windows x64 上开发和验证。`master` 仍处于持续开发阶段，功能边界和实际验证范围以对应验收记录为准。macOS / Linux、GPU 绘画、完整色彩管理、PSD 和 Python 插件仍待推进。
@@ -17,7 +20,7 @@ DrawVerse 是一款正在开发中的桌面绘画软件。Rust 内核负责笔�
 | 工作区 | 多文档、画布与工具面板停靠、浮动窗口、布局恢复、导航与偏好设置 |
 | 文件交换 | PNG / JPEG / WebP 图片读写，OpenRaster 文档读写，图片置入与导出 |
 
-ABR 导入按实际支持范围转换，部分 Photoshop 行为采用近似并保留来源报告，不代表完全等价。笔刷设置中的双色绘制入口已移除；当前支持范围见 [笔刷剩余功能与边界](docs/planning/brush-system-remaining.md)。
+ABR 导入按实际支持范围转换，部分 Photoshop 行为采用近似并保留来源报告，不代表完全等价。当前支持范围见 [笔刷剩余功能与边界](docs/planning/brush-system-remaining.md)。
 
 ## 项目结构
 
@@ -73,7 +76,7 @@ cmake --build build/qt --config Release
 cargo build --manifest-path core/Cargo.toml -p paint-core -p paint-ffi --release --locked
 ```
 
-CLion 从仓库根目录的 `CMakeLists.txt` 加载项目。Windows 不混用 MSVC Rust 与 MinGW C++；切换工具链时使用独立构建目录。更多说明见 [构建复现](docs/platform/build-reproducibility.md)。
+CLion 从仓库根目录的 `CMakeLists.txt` 加载项目。Windows 不混用 MSVC Rust 与 MinGW C++；切换工具链时使用独立构建目录。更多说明及 Release 复制后的权限排查见 [构建复现](docs/platform/build-reproducibility.md)。
 
 ## 验证
 
@@ -109,3 +112,9 @@ ctest --test-dir build/qt -C Release -R "^abi_" --output-on-failure
 VBR 格式版本与 ABI、state、behavior、模型和来源转换器版本各自独立。当前规范位于 [contracts](contracts/README.md)；开发迭代 schema 仅存放在 `paint-io` 的测试数据目录，供历史回归使用。
 
 设计与说明放在 `docs` 对应领域，独立验收记录统一放在 `docs/validations` 对应领域。修改功能时同步维护设计、验收与相对链接，完整分类入口见 [文档索引](docs/README.md)。
+
+## 许可
+
+本项目的原创代码与文档采用 **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International（CC BY-NC-SA 4.0，署名—非商业性使用—相同方式共享）**，完整条款见 [LICENSE](LICENSE)。使用与再分发须遵守署名、非商业性使用及适用的相同方式共享要求；商业使用需要另行取得授权。
+
+该许可包含非商业限制，不属于 OSI 意义上的开源软件许可。第三方依赖、Qt 运行库及另有许可声明的测试素材仍遵循各自许可，不因本项目许可而改变。

@@ -19,13 +19,13 @@
 | 图层 | [10 份](layers/) | [9 份](validations/layers/) | 图层栈、组、蒙版、剪贴与批量操作 |
 | 文档 | [8 份](document/) | [6 份](validations/document/) | 多文档、历史、暂存与文件 IO |
 | 界面 | [15 份](interface/) | [13 份](validations/interface/) | 工作区、停靠、面板、菜单与窗口 |
-| 平台与工程 | [6 份](platform/) | [4 份](validations/platform/) | 源码结构、FFI、任务渲染与性能 |
+| 平台与工程 | [6 份](platform/) | [5 份](validations/platform/) | 源码结构、FFI、任务渲染与性能 |
 | 整体与阶段 | [5 份](planning/) | [3 份](validations/planning/) | 首轮内核、笔刷系统与阶段修复 |
 
 ## 常用入口
 
 - 项目结构：[源码目录与依赖](platform/source-layout-design.md) / [构建运行验收](validations/platform/source-layout-validation.md)。
-- 构建环境：[检出与构建复现](platform/build-reproducibility.md)。
+- 构建环境：[检出与构建复现](platform/build-reproducibility.md) / [Release 目录权限验收](validations/platform/release-directory-permissions-validation.md)。
 - 笔刷：[系统设计](planning/brush-system-design.md) / [剩余功能与边界](planning/brush-system-remaining.md)。
 - 文件格式：[当前 VBR 1.0 契约](../contracts/brush/vbr/format.md) / [兼容设计](brush/vbr/vbr-format-1.0-compatibility-design.md) / [验收](validations/brush/vbr/vbr-format-1.0-compatibility-validation.md)。
 - 接口边界：[契约索引](../contracts/README.md) / [C ABI](../contracts/ffi/abi.md)。

@@ -21,10 +21,10 @@
 | [图层](layers/) | 9 | 图层栈、组、蒙版、剪贴与批量操作 |
 | [文档](document/) | 6 | 多文档、历史、暂存与文件 IO |
 | [界面](interface/) | 13 | 工作区、停靠、面板、菜单与窗口 |
-| [平台与工程](platform/) | 4 | 源码结构、FFI、任务渲染与性能 |
+| [平台与工程](platform/) | 5 | 源码结构、FFI、任务渲染与性能 |
 | [整体与阶段](planning/) | 3 | 首轮内核、笔刷系统与阶段修复 |
 
-共 198 份验收记录。
+共 199 份验收记录。
 
 ## 笔刷核心
 
@@ -263,6 +263,8 @@
 - [工具列、稳定视口与交互验收（2026-10-10）](interface/workspace-tools-validation.md)
 
 ## 平台与工程
+
+- [Release 目录权限验收](platform/release-directory-permissions-validation.md)
 
 - [第 3 阶段验证记录：paint-ffi + cbindgen](platform/ffi-validation.md)
 - [绘画 CPU 与延迟回退验收](platform/painting-performance-validation.md)

@@ -6,6 +6,8 @@
 
 - 文档组织：总入口为 `docs/README.md`。设计与说明按领域放入 `docs/brush/{core,dynamics,dual,wet,abr,vbr,library,input,ui,texture,performance}`、`docs/tools`、`docs/layers`、`docs/document`、`docs/interface`、`docs/platform` 或 `docs/planning`。所有独立验收文档统一放入 `docs/validations/` 下对应的领域目录，入口为 `docs/validations/README.md`；文件名保持 `*-design.md` / `*-validation.md`，并更新相关相对链接。
 
+- 最新许可与 Release 目录权限：原创代码与文档采用根目录 `LICENSE` 的 CC BY-NC-SA 4.0，含非商业限制，第三方依赖仍遵循各自许可；README 标题下声明开发版本、备份和手动保存警告。构建将许可附带到 Release；桌面复制后 os error 5 已定位为可继承的低完整性标签，只恢复指定 Release 副本的中完整性，配置/笔刷资源与系统临时目录策略不变。设计说明见 `docs/platform/build-reproducibility.md`，实测见 `docs/validations/platform/release-directory-permissions-validation.md`。
+
 - 最新笔刷预览轮转/ABR双笔刷间距：`docs/brush/ui/brush-preview-roundtrip-design.md` / `docs/validations/brush/ui/brush-preview-roundtrip-validation.md`；预览临时状态版本改为只升不降，`BrushLibrary::restore`按`f32`实际精度递归比较数字并保留等价状态的预览令牌，修复湿混/平滑/起收笔/双笔刷调整后“已渲染但回调被丢弃”；ABR第二笔尖间距改读`dualBrush.Brsh.Spcn`，30%不再被外层`dualBrush.Spcn=100`覆盖。组合真实预览Qt用例、ABR转换用例及Windows Release构建通过；未跑全量/跨平台/设备/GPU。
 
 - 最新VBR 1.0兼容：`docs/brush/vbr/vbr-format-1.0-compatibility-design.md` / `docs/validations/brush/vbr/vbr-format-1.0-compatibility-validation.md`；VBR manifest写出固定`major:1, minor:0`，读取接受所有1.x并按实际字段执行；预设递归补全缺项，可选对象缺失/null保持关闭，重算行为版本与能力但不改已有正确顺序和值；旧双笔刷可正常关闭，禁用菜单项不再悬停展开。核心VBR/来源/压力/颜色/设备/散布/形状/平滑/双色/尺寸/湿混目标及Windows Release/Qt双笔刷最小用例通过；历史Schema仅作旧字段说明，未跑全量/跨平台/设备/GPU。

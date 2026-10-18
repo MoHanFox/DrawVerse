@@ -62,6 +62,13 @@ qt_add_executable(drawverse src/app/main.cpp src/app/PaintingBenchmark.h src/app
 target_link_libraries(drawverse PRIVATE drawverse_ui)
 set_target_properties(drawverse PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
 
+add_custom_target(drawverse_license ALL
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/LICENSE" "$<TARGET_FILE_DIR:drawverse>/LICENSE"
+    DEPENDS drawverse
+    COMMENT "Staging the project license alongside the application"
+    VERBATIM)
+
 qt_add_executable(qt_ui_tests tests/ui_tests.cpp)
 target_link_libraries(qt_ui_tests PRIVATE drawverse_ui Qt6::Test)
 set_target_properties(qt_ui_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")

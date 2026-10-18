@@ -21,3 +21,14 @@
 验收结果：6 项 tooling 测试全部通过，无跳过；真实 MSVC C/C++ 无终端配置及重新配置成功，中文/空格路径、已有 launcher、Ninja 头依赖、修改头后重编译与无修改不编译均通过。用户 `cmake-build-debug` 从无终端进程重新配置并完成 Debug UI 构建，四组 ABI 通过；`rules.ninja` 前缀稳定为 ASCII。
 
 完整验证在独立工作树以 `f7dbbc4` 为基线，仅加入本次修复，使用独立 Cargo target：`python tools/check.py --qt-prefix <Qt MSVC x64 SDK>` 通过，171 项 Rust、严格生成头、四组 ABI、Qt 35 项与两倍 DPI 16 项，6 个 CTest 无失败（`artifacts/clion-isolated-full-check.log`）。本轮主目录有同时进行的菜单 UI 修改：初次完整检查因菜单半径断言与 QML 不一致失败（`artifacts/clion-msvc-full-check.log`）；Debug Qt 首次无终端运行中断，普通终端复测仍有 UI 断言失败（`artifacts/clion-debug-check.log`、`artifacts/clion-debug-terminal-tests.txt`）。这些结果不算完整通过，也不将同时进行的 UI 修改纳入本次提交。独立工作树的 Qt 逐项报告另存 `artifacts/clion-isolated-qt-ui-tests.txt` / `artifacts/clion-isolated-qt-ui-highdpi.txt`。
+
+
+## Windows Release 复制与目录权限（2026-10-18）
+
+分发时复制完整的 Release 目录，保留 Qt DLL、插件及 QML 运行库；构建会同时将根目录 LICENSE 复制到应用旁。项目原创代码与文档采用 CC BY-NC-SA 4.0，第三方运行库和素材保留各自许可。
+
+程序配置与笔刷资源使用当前用户配置目录，默认暂存使用系统临时目录，不要求在 EXE 所在目录写入。复制后出现 `核心错误：拒绝访问 (os error 5)` 时，应核对运行身份、已保存的暂存路径，以及配置与临时目录权限。
+
+本次用户桌面副本的原因是桌面目录带有可继承的 Windows 低完整性标签，EXE 继承后以低完整性运行，不能写入普通中完整性的用户配置和临时目录。它与 Qt DLL 缺失、CWD 或 VBR 版本无关。可用 `icacls <Release路径>` 与 `icacls <Release路径>/drawverse.exe` 核对 Mandatory Label。处理应限制在已确认的应用副本范围，恢复其普通中完整性标签，或重新部署到具有正常权限的目录；不要放宽用户数据目录的写权限，也无需把应用设为管理员运行。
+
+本机仅修正了用户指定的 `C:/Users/MOHAN/Desktop/Release` 及子文件，保留桌面本身的权限。新建的其他桌面文件夹仍可能继承桌面的低完整性标签，遇到同类问题需要重新核对。详见 [Release 目录权限验收](../validations/platform/release-directory-permissions-validation.md)。
