@@ -1,6 +1,6 @@
 # DrawVerse
 
-- 最新ABR 16位/传递抖动/图片笔尖/画笔库拖动：`docs/abr-16bit-investigation.md`、`docs/abr-transfer-jitter-design.md`、`docs/brush-image-tip-performance-design.md`；ABR sampled 16位raw/RLE按大端全范围量化到8位覆盖；ABR `prVr`/`opVr.jitter`接入DrawVerse确定性flow/opacity随机源（`szVr.jitter`保持形状动态）、converter13/handoff12/state37/VBR1.44/behavior29，传递页提供三通道滑条；非完全覆盖图片笔尖增加轴对齐/边缘快路径及固定基准（中位数约3.34s，程序笔尖约2.37s）；画笔库条目拖动用`preventStealing`并暂停列表滚动。核心传递抖动1、ABR导入12、state5/vbr4/vbr_image12及Windows Qt 6项通过，Release/ABI/Clippy/格式通过；真实鼠标跨行拖放、PS随机序列、实体设备/跨平台/GPU仍待。
+- 最新ABR 16位/传递抖动/图片笔尖/画笔库拖动：`docs/abr-16bit-investigation.md`、`docs/abr-transfer-jitter-design.md`、`docs/brush-image-tip-performance-design.md`；ABR sampled 16位raw/RLE按大端全范围量化到8位覆盖；ABR `prVr`/`opVr.jitter`接入DrawVerse确定性flow/opacity随机源（`szVr.jitter`保持形状动态）、converter13/handoff12/state37/VBR1.44/behavior29，传递页提供三通道滑条；非完全覆盖图片笔尖增加轴对齐/边缘快路径及固定基准（中位数约3.34s，程序笔尖约2.37s）；画笔库位置调整按图层列表模式加入组中心边框/上下插入线/边缘自动滚动/空区根目录，并用`preventStealing`暂停拖动期间列表滚动。核心传递抖动1、ABR导入12、state5/vbr4/vbr_image12及Windows Qt 6项通过，Release/ABI/Clippy/格式通过；真实鼠标跨行拖放、PS随机序列、实体设备/跨平台/GPU仍待。
 
 - 最新双色删除与模式收窄：`docs/brush-mode-cleanup-design.md` / `docs/brush-mode-cleanup-validation.md`；设置页删除“双色绘制”，旧state/VBR/ABR的`dualBrush.color`与`wetMix.dualColor`在Qt载入时剥离并按单色处理；纹理仅保留`multiply/subtract/darken/overlay/colorDodge/colorBurn/linearBurn/hardMix/linearHeight/height`（高度采用Krita公式），双重笔刷仅保留`multiply/darken/overlay/colorDodge/colorBurn/linearBurn/hardMix/linearHeight`，退役模式回落`multiply`。核心纹理7/双笔刷11、IO纹理15/散布9及Windows Qt 8项通过，Release/ABI/格式通过；未跑全量check、跨平台/设备/GPU。
 

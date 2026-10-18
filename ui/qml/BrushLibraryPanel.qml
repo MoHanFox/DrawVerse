@@ -8,6 +8,7 @@ import "."
 ColumnLayout {
     id:root
     property bool draggingBrush:false
+    property var dragHovered:null
     property var canvasView
     function finishSearch(clear) {
         if(clear) search.clear()
@@ -66,6 +67,16 @@ ColumnLayout {
         if(signature===groupedSignature) return
         groupedSignature=signature;groupedModel=groupedItems()
     }
+    function dropToRoot(drop) {
+        const payload=drop.getDataAsString("application/x-drawverse-brush"),separator=payload.indexOf(":")
+        if(separator<=0)return false
+        const kind=payload.slice(0,separator),id=payload.slice(separator+1)
+        if(kind!=="preset" && kind!=="group")return false
+        if(kind==="preset")root.library.movePresetToGroupAt(id,"",-1)
+        else root.library.moveGroupToGroupAt(id,"",-1)
+        drop.acceptProposedAction()
+        return true
+    }
     spacing:4
     RowLayout {
         Layout.fillWidth:true
@@ -104,7 +115,8 @@ ColumnLayout {
             color:modelData.kind==="group"?Theme.strip:root.library.selectedId===modelData.id?Theme.selected:Theme.surface
             border.color:Theme.line
             property int dropPlacement:0
-            function updateDrop(d){dropPlacement=modelData.kind==="group" && d.y>8 && d.y<height-8?0:d.y<height/2?1:2}
+            property point dropPoint
+            function updateDrop(d){dropPoint=Qt.point(d.x,d.y);root.dragHovered=parent;dropPlacement=modelData.kind==="group" && d.y>11 && d.y<height-11?0:d.y<height/2?1:2}
             visible:modelData.kind==="group" || root.presetById(modelData.id).id!==undefined
             Image {visible:modelData.kind!=="group";anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.leftMargin:4+modelData.depth*14;anchors.rightMargin:4;anchors.topMargin:4;height:35;source:modelData.kind==="group"?"":root.presetById(modelData.id).preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
             Text {visible:modelData.kind==="group";x:8+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:"▾  "+modelData.name;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
@@ -132,8 +144,10 @@ ColumnLayout {
                 anchors.fill:parent;keys:["application/x-drawverse-brush"]
                 onEntered:function(drop){parent.updateDrop(drop)}
                 onPositionChanged:function(drop){parent.updateDrop(drop)}
+                onExited:{if(root.dragHovered===parent)root.dragHovered=null}
                 onDropped:function(drop){
                     parent.updateDrop(drop)
+                    root.dragHovered=null
                     const payload=drop.getDataAsString("application/x-drawverse-brush"),separator=payload.indexOf(":")
                     if(separator<=0)return
                     const kind=payload.slice(0,separator),id=payload.slice(separator+1)
@@ -150,19 +164,23 @@ ColumnLayout {
             Component.onCompleted:if(modelData.kind!=="group")root.library.requestPreview(modelData.id)
         }
         ScrollBar.vertical:ScrollBar {width:6}
+        DropArea {
+            objectName:"brushEmptyDrop";x:0;y:Math.max(0,presetList.contentHeight-presetList.contentY)
+            width:presetList.width;height:Math.max(0,presetList.height-y)
+            keys:["application/x-drawverse-brush"]
+            Rectangle {anchors.fill:parent;color:parent.containsDrag?Theme.selected:"transparent"}
+            onDropped:root.dropToRoot(drop)
+        }
         footer:DropArea {
             objectName:"brushRootDrop";width:ListView.view.width;height:24;keys:["application/x-drawverse-brush"]
             Rectangle {anchors.fill:parent;color:parent.containsDrag?Theme.selected:Theme.strip;border.color:Theme.line}
             Label {anchors.centerIn:parent;text:"拖到这里移到画笔库根目录";color:Theme.muted;font.pixelSize:9}
-            onDropped:function(drop){
-                const payload=drop.getDataAsString("application/x-drawverse-brush"),separator=payload.indexOf(":")
-                if(separator<=0)return
-                const kind=payload.slice(0,separator),id=payload.slice(separator+1)
-                if(kind==="preset")root.library.movePresetToGroupAt(id,"",-1)
-                else if(kind==="group")root.library.moveGroupToGroupAt(id,"",-1)
-                drop.acceptProposedAction()
-            }
+            onDropped:root.dropToRoot(drop)
         }
+    }
+    Timer {
+        interval:60;repeat:true;running:root.dragHovered!==null
+        onTriggered:{const row=root.dragHovered;if(!row)return;const p=row.mapToItem(presetList,row.dropPoint.x,row.dropPoint.y);const delta=p.y<20?-16:p.y>presetList.height-20?16:0;if(delta)presetList.contentY=Math.max(0,Math.min(Math.max(0,presetList.contentHeight-presetList.height),presetList.contentY+delta))}
     }
     RowLayout {
         Item {Layout.fillWidth:true}
