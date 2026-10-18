@@ -434,16 +434,20 @@ fn many_individually_valid_reports_are_bounded_before_entire_batch_accumulates()
 #[test]
 fn published_opacity_source_versions_match_codec_contract() {
     for bytes in [
-        include_bytes!("../../../../contracts/fixtures/abr-opacity-source-v1-valid.json")
-            .as_slice(),
-        include_bytes!("../../../../contracts/fixtures/abr-opacity-source-v2-valid.json")
-            .as_slice(),
+        include_bytes!(
+            "../../../../contracts/brush/abr/fixtures/abr-opacity-source-converter-1-valid.json"
+        )
+        .as_slice(),
+        include_bytes!(
+            "../../../../contracts/brush/abr/fixtures/abr-opacity-source-converter-2-valid.json"
+        )
+        .as_slice(),
     ] {
         let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
         info.validate().unwrap();
     }
     let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(include_bytes!(
-        "../../../../contracts/fixtures/abr-opacity-source-invalid-version.json"
+        "../../../../contracts/brush/abr/fixtures/abr-opacity-source-invalid-version.json"
     ))
     .unwrap();
     assert!(info.validate().is_err());
@@ -1017,15 +1021,19 @@ fn enabled_pressure_rejects_bad_units_types_and_pre_rounding_bounds() {
 #[test]
 fn published_pressure_source_contract_guards_downgrades_and_unknown_versions() {
     let valid: paint_io::brush_source::SourceInfo = serde_json::from_slice(include_bytes!(
-        "../../../../contracts/fixtures/abr-pressure-source-v3-valid.json"
+        "../../../../contracts/brush/abr/fixtures/abr-pressure-source-converter-3-valid.json"
     ))
     .unwrap();
     valid.validate().unwrap();
     for bytes in [
-        include_bytes!("../../../../contracts/fixtures/abr-pressure-source-invalid-version.json")
-            .as_slice(),
-        include_bytes!("../../../../contracts/fixtures/abr-pressure-source-invalid-downgrade.json")
-            .as_slice(),
+        include_bytes!(
+            "../../../../contracts/brush/abr/fixtures/abr-pressure-source-invalid-version.json"
+        )
+        .as_slice(),
+        include_bytes!(
+            "../../../../contracts/brush/abr/fixtures/abr-pressure-source-invalid-downgrade.json"
+        )
+        .as_slice(),
     ] {
         let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
         assert!(info.validate().is_err());
@@ -1351,15 +1359,19 @@ fn scatter_fade_controls_map_to_native_and_unsupported_controls_stay_reported() 
 #[test]
 fn published_scatter_source_contract_guards_old_versions_and_future_versions() {
     let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(include_bytes!(
-        "../../../../contracts/fixtures/abr-scatter-source-v4-valid.json"
+        "../../../../contracts/brush/abr/fixtures/abr-scatter-source-converter-4-valid.json"
     ))
     .unwrap();
     info.validate().unwrap();
     for bytes in [
-        include_bytes!("../../../../contracts/fixtures/abr-scatter-source-invalid-version.json")
-            .as_slice(),
-        include_bytes!("../../../../contracts/fixtures/abr-scatter-source-invalid-downgrade.json")
-            .as_slice(),
+        include_bytes!(
+            "../../../../contracts/brush/abr/fixtures/abr-scatter-source-invalid-version.json"
+        )
+        .as_slice(),
+        include_bytes!(
+            "../../../../contracts/brush/abr/fixtures/abr-scatter-source-invalid-downgrade.json"
+        )
+        .as_slice(),
     ] {
         let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
         assert!(info.validate().is_err());
@@ -1655,15 +1667,19 @@ fn default_or_incomplete_closed_color_keeps_v4_reports_and_source_contract_is_st
         );
     }
     let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(include_bytes!(
-        "../../../../contracts/fixtures/abr-color-source-v5-valid.json"
+        "../../../../contracts/brush/abr/fixtures/abr-color-source-converter-5-valid.json"
     ))
     .unwrap();
     info.validate().unwrap();
     for bytes in [
-        include_bytes!("../../../../contracts/fixtures/abr-color-source-invalid-version.json")
-            .as_slice(),
-        include_bytes!("../../../../contracts/fixtures/abr-color-source-invalid-downgrade.json")
-            .as_slice(),
+        include_bytes!(
+            "../../../../contracts/brush/abr/fixtures/abr-color-source-invalid-version.json"
+        )
+        .as_slice(),
+        include_bytes!(
+            "../../../../contracts/brush/abr/fixtures/abr-color-source-invalid-downgrade.json"
+        )
+        .as_slice(),
     ] {
         let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
         assert!(info.validate().is_err());
@@ -1991,15 +2007,19 @@ fn shape_conversion_bad_values_closed_defaults_and_source_contract_are_guarded()
         );
     }
     let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(include_bytes!(
-        "../../../../contracts/fixtures/abr-shape-source-v6-valid.json"
+        "../../../../contracts/brush/abr/fixtures/abr-shape-source-converter-6-valid.json"
     ))
     .unwrap();
     info.validate().unwrap();
     for bytes in [
-        include_bytes!("../../../../contracts/fixtures/abr-shape-source-invalid-version.json")
-            .as_slice(),
-        include_bytes!("../../../../contracts/fixtures/abr-shape-source-invalid-downgrade.json")
-            .as_slice(),
+        include_bytes!(
+            "../../../../contracts/brush/abr/fixtures/abr-shape-source-invalid-version.json"
+        )
+        .as_slice(),
+        include_bytes!(
+            "../../../../contracts/brush/abr/fixtures/abr-shape-source-invalid-downgrade.json"
+        )
+        .as_slice(),
     ] {
         let info: paint_io::brush_source::SourceInfo = serde_json::from_slice(bytes).unwrap();
         assert!(info.validate().is_err());
@@ -2339,18 +2359,22 @@ fn device_invalid_units_ranges_types_and_source_contract_are_rejected() {
     }
     for (bytes, valid) in [
         (
-            include_bytes!("../../../../contracts/fixtures/abr-device-source-v7-valid.json")
-                .as_slice(),
+            include_bytes!(
+                "../../../../contracts/brush/abr/fixtures/abr-device-source-converter-7-valid.json"
+            )
+            .as_slice(),
             true,
         ),
         (
-            include_bytes!("../../../../contracts/fixtures/abr-device-source-invalid-version.json")
-                .as_slice(),
+            include_bytes!(
+                "../../../../contracts/brush/abr/fixtures/abr-device-source-invalid-version.json"
+            )
+            .as_slice(),
             false,
         ),
         (
             include_bytes!(
-                "../../../../contracts/fixtures/abr-device-source-invalid-downgrade.json"
+                "../../../../contracts/brush/abr/fixtures/abr-device-source-invalid-downgrade.json"
             )
             .as_slice(),
             false,

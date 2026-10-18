@@ -457,7 +457,7 @@ fn wet_dual_public_image_package_roundtrip_and_capacity_checks_do_not_install_re
         let resource = stored.mask;
         let fixture = format!(
             "{{\"packageId\":\"12345678-1234-4234-8234-123456789abc\",\"brushes\":[{}]}}",
-            include_str!("../../../../../contracts/fixtures/wet-dual-v1.23-valid.json")
+            include_str!("../../../../../contracts/brush/wet/fixtures/wet-dual-valid.json")
         );
         let mut p = Package::from_json(fixture.as_bytes()).unwrap();
         let preset = &mut p.brushes[0];

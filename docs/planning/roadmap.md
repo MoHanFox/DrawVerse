@@ -1,164 +1,164 @@
-输入分页Document阶段：[设计](../brush/input/brush-input-paging-document-design.md) / [验收](../brush/input/brush-input-paging-document-validation.md)。真实像素/双载色和活动尾分页、一次滤波/无输出不重放、结束与单历史、失败/取消整笔回滚接通；原64px在新Rust入口完成，13项新Document及调度/相关旧回归和Windows Release/Clippy/ABI通过。下一步接Actor公平调度、完成序列、End/Cancel及载色采用；公开API/Qt当前仍走旧同步入口，画布限制尚未解除。
+输入分页Document阶段：[设计](../brush/input/brush-input-paging-document-design.md) / [验收](../validations/brush/input/brush-input-paging-document-validation.md)。真实像素/双载色和活动尾分页、一次滤波/无输出不重放、结束与单历史、失败/取消整笔回滚接通；原64px在新Rust入口完成，13项新Document及调度/相关旧回归和Windows Release/Clippy/ABI通过。下一步接Actor公平调度、完成序列、End/Cancel及载色采用；公开API/Qt当前仍走旧同步入口，画布限制尚未解除。
 
-输入分页当前阶段：[设计](../brush/input/brush-input-paging-design.md) / [数值与预算验收](../brush/input/brush-input-paging-kernel-validation.md)。用户已恢复推进；原始输入段的事务页和主副有序调度、弧长/间距余量与设备插值、共用预算权重已完成，9项新测试（含14400组旧预算分类）及相关旧回归/Release/Clippy/ABI通过。下一步接Document真实像素/起收笔活动尾和Actor任务页，当前画布的大跨度密集输入预算回滚尚未修复。Windows整体设备手感由用户自行验收。
+输入分页当前阶段：[设计](../brush/input/brush-input-paging-design.md) / [数值与预算验收](../validations/brush/input/brush-input-paging-kernel-validation.md)。用户已恢复推进；原始输入段的事务页和主副有序调度、弧长/间距余量与设备插值、共用预算权重已完成，9项新测试（含14400组旧预算分类）及相关旧回归/Release/Clippy/ABI通过。下一步接Document真实像素/起收笔活动尾和Actor任务页，当前画布的大跨度密集输入预算回滚尚未修复。Windows整体设备手感由用户自行验收。
 
-湿混双色当前阶段：[Qt设计](../brush/wet/brush-wet-dual-ui-design.md) / [验收](../brush/wet/brush-wet-dual-ui-validation.md)，前置[原生入口](../brush/wet/brush-wet-dual-abi-validation.md)、[保存交换](../brush/wet/brush-wet-dual-io-validation.md)、[Engine](../brush/wet/brush-wet-dual-engine-validation.md)与[实际绘画](../brush/wet/brush-wet-dual-document-validation.md)。完整state19镜像/关闭值/重置基准、ABI1.52准备与VBR1.23包、两色手动装载及独立白色预览和组合入口已接。Windows最小Qt/Release/ABI及图片新目录交换重开通过；大跨度密集图片输入预算回滚与原输入偶发问题仍待处理。剩余功能及用途见[清单](brush-system-remaining.md)，用户要求此阶段后等待指示。
+湿混双色当前阶段：[Qt设计](../brush/wet/brush-wet-dual-ui-design.md) / [验收](../validations/brush/wet/brush-wet-dual-ui-validation.md)，前置[原生入口](../validations/brush/wet/brush-wet-dual-abi-validation.md)、[保存交换](../validations/brush/wet/brush-wet-dual-io-validation.md)、[Engine](../validations/brush/wet/brush-wet-dual-engine-validation.md)与[实际绘画](../validations/brush/wet/brush-wet-dual-document-validation.md)。完整state19镜像/关闭值/重置基准、ABI1.52准备与VBR1.23包、两色手动装载及独立白色预览和组合入口已接。Windows最小Qt/Release/ABI及图片新目录交换重开通过；大跨度密集图片输入预算回滚与原输入偶发问题仍待处理。剩余功能及用途见[清单](brush-system-remaining.md)，用户要求此阶段后等待指示。
 
-空图层栈追加：[设计](../layers/empty-layer-stack-design.md) / [验收](../layers/empty-layer-stack-validation.md)。允许删除所有图层、仅显示透明棋盘格；撤销/重做、新建/粘贴和 ORA 空栈保存恢复接通，最小 Windows 验证通过。
+空图层栈追加：[设计](../layers/empty-layer-stack-design.md) / [验收](../validations/layers/empty-layer-stack-validation.md)。允许删除所有图层、仅显示透明棋盘格；撤销/重做、新建/粘贴和 ORA 空栈保存恢复接通，最小 Windows 验证通过。
 
-工具栏参数追加：[设计](../brush/ui/brush-toolbar-transfer-design.md) / [验收](../brush/ui/brush-toolbar-transfer-validation.md)。画笔与橡皮直接调整当前预设的流量、不透明度及各自压感；涂抹预设下拉改为细分隔线，Windows 最小 Qt 通过。
+工具栏参数追加：[设计](../brush/ui/brush-toolbar-transfer-design.md) / [验收](../validations/brush/ui/brush-toolbar-transfer-validation.md)。画笔与橡皮直接调整当前预设的流量、不透明度及各自压感；涂抹预设下拉改为细分隔线，Windows 最小 Qt 通过。
 
-起收笔当前阶段：[Qt设计](../brush/wet/brush-taper-ui-design.md) / [验收](../brush/wet/brush-taper-ui-validation.md)，前置[原生入口](../brush/wet/brush-taper-abi-validation.md)、[保存交换](../brush/wet/brush-taper-io-validation.md)和[实际绘画](../brush/wet/brush-taper-document-validation.md)。ABI1.51完整state18准备/VBR1.22包入口及Qt镜像/关闭值/重置基准、白色自动预览、距离与独立尺寸/opacity平滑曲线设置页已接通，真实在途捕获/像素历史/交换重开通过。结束继续不追原始鼠标终点；湿混双色/橡皮、非分隔、高级ABR/16位及其余整体验收继续后续。
+起收笔当前阶段：[Qt设计](../brush/wet/brush-taper-ui-design.md) / [验收](../validations/brush/wet/brush-taper-ui-validation.md)，前置[原生入口](../validations/brush/wet/brush-taper-abi-validation.md)、[保存交换](../validations/brush/wet/brush-taper-io-validation.md)和[实际绘画](../validations/brush/wet/brush-taper-document-validation.md)。ABI1.51完整state18准备/VBR1.22包入口及Qt镜像/关闭值/重置基准、白色自动预览、距离与独立尺寸/opacity平滑曲线设置页已接通，真实在途捕获/像素历史/交换重开通过。结束继续不追原始鼠标终点；湿混双色/橡皮、非分隔、高级ABR/16位及其余整体验收继续后续。
 
-画笔混合原生捕获：[设计](../brush/core/brush-blend-abi-design.md) / [验收](../brush/core/brush-blend-abi-validation.md)。ABI1.44、独立模式DTO/新prepared入口与真实捕获/历史/旧正常兼容已验证；Qt工具栏状态、保存及有色底预览下一阶段接入。
+画笔混合原生捕获：[设计](../brush/core/brush-blend-abi-design.md) / [验收](../validations/brush/core/brush-blend-abi-validation.md)。ABI1.44、独立模式DTO/新prepared入口与真实捕获/历史/旧正常兼容已验证；Qt工具栏状态、保存及有色底预览下一阶段接入。
 
-画笔颜色混合内核：[设计](../brush/core/brush-blend-design.md) / [验收](../brush/core/brush-blend-validation.md)。27模式真实写入、整笔透明度/蒙版/透明锁/溶解与复杂组合/分页历史已验证；原生Qt工具栏入口、状态保存与有色底预览下一阶段接入，双色扩展仍待实现。
+画笔颜色混合内核：[设计](../brush/core/brush-blend-design.md) / [验收](../validations/brush/core/brush-blend-validation.md)。27模式真实写入、整笔透明度/蒙版/透明锁/溶解与复杂组合/分页历史已验证；原生Qt工具栏入口、状态保存与有色底预览下一阶段接入，双色扩展仍待实现。
 
-重置预设：[设计](../brush/ui/brush-reset-design.md) / [验收](../brush/ui/brush-reset-validation.md)。设置按钮、完整初始配置、独立持久基准/原生规范化/重开、第二资源恢复与在途笔触保持已验证；无ABI变化。
+重置预设：[设计](../brush/ui/brush-reset-design.md) / [验收](../validations/brush/ui/brush-reset-validation.md)。设置按钮、完整初始配置、独立持久基准/原生规范化/重开、第二资源恢复与在途笔触保持已验证；无ABI变化。
 
-时间平滑内核：[设计](../brush/dynamics/brush-smoothing-design.md) / [验收](../brush/dynamics/brush-smoothing-validation.md)。固定时间采样/位置速度响应/独立压力/稳定器、有界终点与两流统一/实际算子和分页历史已验证；保存/VBR/Qt与收尖继续后续。用户新增普通画笔混合模式为双色扩展前置，优先完成该功能。
+时间平滑内核：[设计](../brush/dynamics/brush-smoothing-design.md) / [验收](../validations/brush/dynamics/brush-smoothing-validation.md)。固定时间采样/位置速度响应/独立压力/稳定器、有界终点与两流统一/实际算子和分页历史已验证；保存/VBR/Qt与收尖继续后续。用户新增普通画笔混合模式为双色扩展前置，优先完成该功能。
 
 用户确认的双笔刷扩展（待实施）：[双色与自动描边](../brush/dual/brush-dual-color-extension-design.md)。第二颜色、独立/相对尺寸/居中像素偏移、溢出/正常双色合成/前后顺序；整笔分开累积合成、捕获两色及两种压感边宽规则已纳入设计，已再次发令继续；增加重置预设及普通画笔混合前置。
 
-双笔刷原生Qt：[设计](../brush/ui/brush-dual-ui-design.md) / [验收](../brush/ui/brush-dual-ui-validation.md)。ABI1.43/state12/VBR1.10、四子页与第二图片捕获、完整关闭配置、实际比例预览/捕获笔触/历史和资源并集交换已接；解除库包临时拒绝。组合轮廓、平滑/湿混与ABR高级动态继续后续。
+双笔刷原生Qt：[设计](../brush/ui/brush-dual-ui-design.md) / [验收](../validations/brush/ui/brush-dual-ui-validation.md)。ABI1.43/state12/VBR1.10、四子页与第二图片捕获、完整关闭配置、实际比例预览/捕获笔触/历史和资源并集交换已接；解除库包临时拒绝。组合轮廓、平滑/湿混与ABR高级动态继续后续。
 
-双笔刷准备桥：[设计](../brush/dual/brush-dual-bridge-design.md) / [验收](../brush/dual/brush-dual-bridge-validation.md)。第二资源交接/准确采用、当前与在途保持、闲置源/mip释放和state12重建已接；完整Qt及资源导出待接，旧前端包拒绝暂保留。
+双笔刷准备桥：[设计](../brush/dual/brush-dual-bridge-design.md) / [验收](../validations/brush/dual/brush-dual-bridge-validation.md)。第二资源交接/准确采用、当前与在途保持、闲置源/mip释放和state12重建已接；完整Qt及资源导出待接，旧前端包拒绝暂保留。
 
-双笔刷IO：[设计](../brush/dual/brush-dual-io-design.md) / [验收](../brush/dual/brush-dual-io-validation.md)。state12/VBR1.10/behavior9、两模型和完整第二配置、四角色资源并集/真实两笔还原、7169ZIP与2MiB状态预算已接；原生资源生命周期已补，Qt待接，旧前端包入口暂拒绝新对象。
+双笔刷IO：[设计](../brush/dual/brush-dual-io-design.md) / [验收](../validations/brush/dual/brush-dual-io-validation.md)。state12/VBR1.10/behavior9、两模型和完整第二配置、四角色资源并集/真实两笔还原、7169ZIP与2MiB状态预算已接；原生资源生命周期已补，Qt待接，旧前端包入口暂拒绝新对象。
 
-双笔尖独立路径：[设计](../brush/dual/brush-dual-path-design.md) / [验收](../brush/dual/brush-dual-path-validation.md)。第二直径间距/距离调度、独立序列与稀疏分页字段、终点与真实历史、双流预算及存储失败回滚已接；保存交换已补，原生Qt仍待后续。
+双笔尖独立路径：[设计](../brush/dual/brush-dual-path-design.md) / [验收](../validations/brush/dual/brush-dual-path-validation.md)。第二直径间距/距离调度、独立序列与稀疏分页字段、终点与真实历史、双流预算及存储失败回滚已接；保存交换已补，原生Qt仍待后续。
 
-双笔尖覆盖核心：[设计](../brush/dual/brush-dual-design.md) / [验收](../brush/dual/brush-dual-validation.md)。实际第二簇/六模式覆盖、独立压力设备与形状散布、共享资源预算/原子工作预检、四类写入与真实历史已实现；独立路径已补，保存交换与原生Qt仍待后续，完整双笔刷尚未完成。
+双笔尖覆盖核心：[设计](../brush/dual/brush-dual-design.md) / [验收](../validations/brush/dual/brush-dual-validation.md)。实际第二簇/六模式覆盖、独立压力设备与形状散布、共享资源预算/原子工作预检、四类写入与真实历史已实现；独立路径已补，保存交换与原生Qt仍待后续，完整双笔刷尚未完成。
 
-纹理原生Qt：[设计](../brush/ui/brush-texture-ui-design.md) / [验收](../brush/ui/brush-texture-ui-validation.md)。ABI1.42/state11/VBR1.9、纹理设置与捕获目标PNG导入、真实预览/绘画/历史、独占与同源和ABR来源包交换已接；库package解除临时拒绝。双笔刷、平滑、湿混及完整ABR继续后续。
+纹理原生Qt：[设计](../brush/ui/brush-texture-ui-design.md) / [验收](../validations/brush/ui/brush-texture-ui-validation.md)。ABI1.42/state11/VBR1.9、纹理设置与捕获目标PNG导入、真实预览/绘画/历史、独占与同源和ABR来源包交换已接；库package解除临时拒绝。双笔刷、平滑、湿混及完整ABR继续后续。
 
-纹理准备桥：[设计](../brush/texture/brush-texture-bridge-design.md) / [验收](../brush/texture/brush-texture-bridge-validation.md)。纹理交接采用、在途保持、闲置源与mip释放及准确重建已接原生准备；Qt设置和公开包入口现已接入。
+纹理准备桥：[设计](../brush/texture/brush-texture-bridge-design.md) / [验收](../validations/brush/texture/brush-texture-bridge-validation.md)。纹理交接采用、在途保持、闲置源与mip释放及准确重建已接原生准备；Qt设置和公开包入口现已接入。
 
-纹理资源保存与VBR：[设计](../brush/texture/brush-texture-io-design.md) / [验收](../brush/texture/brush-texture-io-validation.md)。state11/VBR1.9/behavior8、资源共享与真实笔触恢复/完整来源并集已接IO；原生Qt待接，旧包入口暂拒绝新对象。
+纹理资源保存与VBR：[设计](../brush/texture/brush-texture-io-design.md) / [验收](../validations/brush/texture/brush-texture-io-validation.md)。state11/VBR1.9/behavior8、资源共享与真实笔触恢复/完整来源并集已接IO；原生Qt待接，旧包入口暂拒绝新对象。
 
-纹理内核：[设计](../brush/texture/brush-texture-design.md) / [验收](../brush/texture/brush-texture-validation.md)。固定纸纹与局部纹理、周期mip/共享预算、共用真实写入及历史已实现；资源IO/VBR/原生Qt待接，本阶段没有新界面入口。
+纹理内核：[设计](../brush/texture/brush-texture-design.md) / [验收](../validations/brush/texture/brush-texture-validation.md)。固定纸纹与局部纹理、周期mip/共享预算、共用真实写入及历史已实现；资源IO/VBR/原生Qt待接，本阶段没有新界面入口。
 
-颜色动态原生Qt：[设计](../brush/ui/brush-color-ui-design.md) / [验收](../brush/ui/brush-color-ui-validation.md)。ABI1.41、两色背景描述与捕获、颜色分类和关闭编辑、统一真实预览/绘画/保存交换已接，临时包边界解除；纹理/双笔刷/平滑/湿混与完整ABR待后续。
+颜色动态原生Qt：[设计](../brush/ui/brush-color-ui-design.md) / [验收](../validations/brush/ui/brush-color-ui-validation.md)。ABI1.41、两色背景描述与捕获、颜色分类和关闭编辑、统一真实预览/绘画/保存交换已接，临时包边界解除；纹理/双笔刷/平滑/湿混与完整ABR待后续。
 
-颜色动态保存与VBR：[设计](../brush/core/brush-color-io-design.md) / [验收](../brush/core/brush-color-io-validation.md)。state10/VBR1.8/behavior7、显式模型和真实两笔还原已接IO；原生背景与Qt待接，旧package暂拒绝新对象防丢配置。
+颜色动态保存与VBR：[设计](../brush/core/brush-color-io-design.md) / [验收](../validations/brush/core/brush-color-io-validation.md)。state10/VBR1.8/behavior7、显式模型和真实两笔还原已接IO；原生背景与Qt待接，旧package暂拒绝新对象防丢配置。
 
-颜色动态内核：[设计](../brush/dynamics/brush-color-dynamics-design.md) / [验收](../brush/dynamics/brush-color-dynamics-validation.md)。前景背景混合/HSV、整笔与逐印章、分页贡献和真实历史已实现；保存/VBR/原生背景与Qt待接，旧IO拒绝新模块。本阶段没有新用户入口。
+颜色动态内核：[设计](../brush/dynamics/brush-color-dynamics-design.md) / [验收](../validations/brush/dynamics/brush-color-dynamics-validation.md)。前景背景混合/HSV、整笔与逐印章、分页贡献和真实历史已实现；保存/VBR/原生背景与Qt待接，旧IO拒绝新模块。本阶段没有新用户入口。
 
-形状抖动原生Qt：[设计](../brush/ui/brush-shape-jitter-ui-design.md) / [验收](../brush/ui/brush-shape-jitter-ui-validation.md)。ABI1.40、形状动态子页与大小/角度/圆度随机参数、真实统一预览/捕获、关闭配置与图片来源交换已接，临时包边界解除。其他动态、纹理、双笔刷、湿混继续后续。
+形状抖动原生Qt：[设计](../brush/ui/brush-shape-jitter-ui-design.md) / [验收](../validations/brush/ui/brush-shape-jitter-ui-validation.md)。ABI1.40、形状动态子页与大小/角度/圆度随机参数、真实统一预览/捕获、关闭配置与图片来源交换已接，临时包边界解除。其他动态、纹理、双笔刷、湿混继续后续。
 
-形状抖动保存与VBR：[设计](../brush/dynamics/brush-shape-jitter-io-design.md) / [验收](../brush/dynamics/brush-shape-jitter-io-validation.md)。state9/VBR1.7/behavior6和真实组合笔触还原已接IO；原生Qt入口待接，旧package暂拒绝新对象防配置丢失。
+形状抖动保存与VBR：[设计](../brush/dynamics/brush-shape-jitter-io-design.md) / [验收](../validations/brush/dynamics/brush-shape-jitter-io-validation.md)。state9/VBR1.7/behavior6和真实组合笔触还原已接IO；原生Qt入口待接，旧package暂拒绝新对象防配置丢失。
 
-形状抖动内核：[设计](../brush/dynamics/brush-shape-jitter-design.md) / [验收](../brush/dynamics/brush-shape-jitter-validation.md)。确定性大小/圆度/角度、压力设备组合、程序图片共用和真实子印章已实现；状态/VBR/原生Qt继续后续，本阶段没有新用户入口。
+形状抖动内核：[设计](../brush/dynamics/brush-shape-jitter-design.md) / [验收](../validations/brush/dynamics/brush-shape-jitter-validation.md)。确定性大小/圆度/角度、压力设备组合、程序图片共用和真实子印章已实现；状态/VBR/原生Qt继续后续，本阶段没有新用户入口。
 
-散布原生Qt：[设计](../brush/ui/brush-scatter-ui-design.md) / [验收](../brush/ui/brush-scatter-ui-validation.md)。ABI1.39、分类参数/统一预览/捕获笔触、保存复制与VBR图片来源往返已接，临时包边界解除。其他动态、纹理和湿混继续后续。
+散布原生Qt：[设计](../brush/ui/brush-scatter-ui-design.md) / [验收](../validations/brush/ui/brush-scatter-ui-validation.md)。ABI1.39、分类参数/统一预览/捕获笔触、保存复制与VBR图片来源往返已接，临时包边界解除。其他动态、纹理和湿混继续后续。
 
-散布保存与VBR：[设计](../brush/dynamics/brush-scatter-io-design.md) / [验收](../brush/dynamics/brush-scatter-io-validation.md)。state8/VBR1.6/behavior5与完整种子已接IO，恢复后真实笔触保持；原生Qt接入继续后续，旧ABI包入口暂拒绝新字段。
+散布保存与VBR：[设计](../brush/dynamics/brush-scatter-io-design.md) / [验收](../validations/brush/dynamics/brush-scatter-io-validation.md)。state8/VBR1.6/behavior5与完整种子已接IO，恢复后真实笔触保持；原生Qt接入继续后续，旧ABI包入口暂拒绝新字段。
 
-散布内核：[设计](../brush/dynamics/brush-scatter-design.md) / [验收](../brush/dynamics/brush-scatter-validation.md)。确定性偏移/数量/抖动、真实四类写入与展开预算已实现；保存/原生Qt继续后续，本阶段无界面入口。
+散布内核：[设计](../brush/dynamics/brush-scatter-design.md) / [验收](../validations/brush/dynamics/brush-scatter-validation.md)。确定性偏移/数量/抖动、真实四类写入与展开预算已实现；保存/原生Qt继续后续，本阶段无界面入口。
 
-实时动态光标：[设计](../brush/input/brush-live-pose-design.md) / [验收](../brush/input/brush-live-pose-validation.md)。ABI1.38、非阻塞原生捕获姿态、悬停/压力大小/方向旋转倾斜、图片身份与DPI已接；随机/纹理等动态及湿混继续后续。
+实时动态光标：[设计](../brush/input/brush-live-pose-design.md) / [验收](../validations/brush/input/brush-live-pose-validation.md)。ABI1.38、非阻塞原生捕获姿态、悬停/压力大小/方向旋转倾斜、图片身份与DPI已接；随机/纹理等动态及湿混继续后续。
 
-设备动态Qt与原生入口：[设计](../brush/ui/brush-device-ui-design.md) / [验收](../brush/ui/brush-device-ui-validation.md)。ABI1.37、形状动态参数/真正预览/捕获笔触/保存与VBR交换已接；package临时拒绝解除，实时动态光标继续后续。
+设备动态Qt与原生入口：[设计](../brush/ui/brush-device-ui-design.md) / [验收](../validations/brush/ui/brush-device-ui-validation.md)。ABI1.37、形状动态参数/真正预览/捕获笔触/保存与VBR交换已接；package临时拒绝解除，实时动态光标继续后续。
 
-设备动态保存与VBR：[设计](../brush/core/brush-device-io-design.md) / [验收](../brush/core/brush-device-io-validation.md)。state7/VBR1.5/behavior4、独立几何控制和真实像素恢复已完成；原生Qt/动态光标继续后续，旧文件入口暂拒绝新数据防止配置丢失。
+设备动态保存与VBR：[设计](../brush/core/brush-device-io-design.md) / [验收](../validations/brush/core/brush-device-io-validation.md)。state7/VBR1.5/behavior4、独立几何控制和真实像素恢复已完成；原生Qt/动态光标继续后续，旧文件入口暂拒绝新数据防止配置丢失。
 
-设备笔尖动态内核：[设计](../brush/dynamics/brush-device-dynamics-design.md) / [验收](../brush/dynamics/brush-device-dynamics-validation.md)。方向/笔旋转/倾斜角度与圆度、真实共用几何与能力回退已实现；IO/原生Qt入口/光标继续后续，本阶段不宣称用户功能完成。
+设备笔尖动态内核：[设计](../brush/dynamics/brush-device-dynamics-design.md) / [验收](../validations/brush/dynamics/brush-device-dynamics-validation.md)。方向/笔旋转/倾斜角度与圆度、真实共用几何与能力回退已实现；IO/原生Qt入口/光标继续后续，本阶段不宣称用户功能完成。
 
-独立不透明度压感：[设计](../brush/dynamics/brush-opacity-pressure-design.md) / [验收](../brush/dynamics/brush-opacity-pressure-validation.md)。ABI1.36/v6/VBR1.4、压力局部上限、独立流量、Qt开关与曲线及真实起笔已完成；其余设备/随机动态和湿混继续后续。
+独立不透明度压感：[设计](../brush/dynamics/brush-opacity-pressure-design.md) / [验收](../validations/brush/dynamics/brush-opacity-pressure-validation.md)。ABI1.36/v6/VBR1.4、压力局部上限、独立流量、Qt开关与曲线及真实起笔已完成；其余设备/随机动态和湿混继续后续。
 
-独立笔刷尺寸与整笔不透明度：[设计](../brush/dynamics/brush-stroke-opacity-design.md) / [验收](../brush/dynamics/brush-stroke-opacity-validation.md)。每预设大小、低不透明度整笔上限、数位笔位置保护已完成；独立不透明度压力已在后续阶段完成，见本页最新入口。
+独立笔刷尺寸与整笔不透明度：[设计](../brush/dynamics/brush-stroke-opacity-design.md) / [验收](../validations/brush/dynamics/brush-stroke-opacity-validation.md)。每预设大小、低不透明度整笔上限、数位笔位置保护已完成；独立不透明度压力已在后续阶段完成，见本页最新入口。
 
-压力曲线入口：[设计](../brush/ui/brush-pressure-ui-design.md) / [验收](../brush/ui/brush-pressure-ui-validation.md)。ABI1.35、Qt v5与VBR1.3接入；其余动态/湿混继续后续。
+压力曲线入口：[设计](../brush/ui/brush-pressure-ui-design.md) / [验收](../validations/brush/ui/brush-pressure-ui-validation.md)。ABI1.35、Qt v5与VBR1.3接入；其余动态/湿混继续后续。
 
 # 模块顺序与验收
 
-压力动态IO：[设计](../brush/dynamics/brush-pressure-io-design.md) / [验收](../brush/dynamics/brush-pressure-io-validation.md)。v5状态/VBR1.3及准确准备已接有界曲线；ABI与曲线入口已在后续阶段接入；其余动态湿混继续。
+压力动态IO：[设计](../brush/dynamics/brush-pressure-io-design.md) / [验收](../validations/brush/dynamics/brush-pressure-io-validation.md)。v5状态/VBR1.3及准确准备已接有界曲线；ABI与曲线入口已在后续阶段接入；其余动态湿混继续。
 
-压力动态：[设计](../brush/dynamics/brush-pressure-design.md) / [验收](../brush/dynamics/brush-pressure-validation.md)。尺寸/流量压力曲线与最低比例已接统一Rust执行；继续状态/原生与VBR保存、PS分类编辑，再推进其余动态及湿混。
+压力动态：[设计](../brush/dynamics/brush-pressure-design.md) / [验收](../validations/brush/dynamics/brush-pressure-validation.md)。尺寸/流量压力曲线与最低比例已接统一Rust执行；继续状态/原生与VBR保存、PS分类编辑，再推进其余动态及湿混。
 
-VBR来源入口：[设计](../brush/vbr/vbr-source-entry-design.md) / [验收](../brush/vbr/vbr-source-entry-validation.md)。ABI1.34，来源资源交换/原始包范围选项/跨仓库保存与报告已接原生Qt；继续分组扩展及高级动态湿混。
+VBR来源入口：[设计](../brush/vbr/vbr-source-entry-design.md) / [验收](../validations/brush/vbr/vbr-source-entry-validation.md)。ABI1.34，来源资源交换/原始包范围选项/跨仓库保存与报告已接原生Qt；继续分组扩展及高级动态湿混。
 
-VBR来源IO：[设计](../brush/vbr/vbr-source-design.md) / [验收](../brush/vbr/vbr-source-validation.md)。1.2有界来源资源与当前/基线资源已实现；继续原生Qt明确原包范围导出及完整交换。
+VBR来源IO：[设计](../brush/vbr/vbr-source-design.md) / [验收](../validations/brush/vbr/vbr-source-validation.md)。1.2有界来源资源与当前/基线资源已实现；继续原生Qt明确原包范围导出及完整交换。
 
-ABR用户入口：[设计](../brush/abr/abr-entry-design.md) / [验收](../brush/abr/abr-entry-validation.md)。ABI1.33，6/10基础整包已接原生Qt并保留来源报告；完整兼容/VBR来源/动态湿混继续后续。
+ABR用户入口：[设计](../brush/abr/abr-entry-design.md) / [验收](../validations/brush/abr/abr-entry-validation.md)。ABI1.33，6/10基础整包已接原生Qt并保留来源报告；完整兼容/VBR来源/动态湿混继续后续。
 
-ABR整包IO导入：[设计](../brush/abr/abr-import-design.md) / [验收](../brush/abr/abr-import-validation.md)。整包转换/编译/图片及来源批次已完成；继续原生Qt用户入口与VBR来源。
+ABR整包IO导入：[设计](../brush/abr/abr-import-design.md) / [验收](../validations/brush/abr/abr-import-validation.md)。整包转换/编译/图片及来源批次已完成；继续原生Qt用户入口与VBR来源。
 
-笔刷来源界面：[设计](../brush/ui/brush-source-ui-design.md) / [验收](../brush/ui/brush-source-ui-validation.md)。v4与后台原生报告已接入Qt；实际ABR入口/批量来源与VBR选择性来源继续后续。
+笔刷来源界面：[设计](../brush/ui/brush-source-ui-design.md) / [验收](../validations/brush/ui/brush-source-ui-validation.md)。v4与后台原生报告已接入Qt；实际ABR入口/批量来源与VBR选择性来源继续后续。
 
-原生来源准备桥：[设计](../brush/library/brush-source-bridge-design.md) / [验收](../brush/library/brush-source-bridge-validation.md)。ABI1.32，共享目录/v4准备/来源报告与有生命周期校验凭据已实现；继续Qt来源与实际ABR入口。
+原生来源准备桥：[设计](../brush/library/brush-source-bridge-design.md) / [验收](../validations/brush/library/brush-source-bridge-validation.md)。ABI1.32，共享目录/v4准备/来源报告与有生命周期校验凭据已实现；继续Qt来源与实际ABR入口。
 
-原生来源引用/状态：[设计](../brush/library/brush-source-state-design.md) / [验收](../brush/library/brush-source-state-validation.md)。目录保留/v4状态/批次验证已实现；原生准备桥/Qt/VBR与高频来源复用继续后续。
+原生来源引用/状态：[设计](../brush/library/brush-source-state-design.md) / [验收](../validations/brush/library/brush-source-state-validation.md)。目录保留/v4状态/批次验证已实现；原生准备桥/Qt/VBR与高频来源复用继续后续。
 
-笔刷来源资源：[设计](../brush/library/brush-source-design.md) / [验收](../brush/library/brush-source-validation.md)。完整来源/导入时快照/报告资源存取已实现。
+笔刷来源资源：[设计](../brush/library/brush-source-design.md) / [验收](../validations/brush/library/brush-source-validation.md)。完整来源/导入时快照/报告资源存取已实现。
 
-ABR基础转换：[设计](../brush/abr/abr-conversion-design.md) / [验收](../brush/abr/abr-conversion-validation.md)。严格参数映射/真实编译/逐叶报告已实现；外部无动态baseline alpha核对通过，但实际样本为部分转换；原生Qt入口/动态继续后续。
+ABR基础转换：[设计](../brush/abr/abr-conversion-design.md) / [验收](../validations/brush/abr/abr-conversion-validation.md)。严格参数映射/真实编译/逐叶报告已实现；外部无动态baseline alpha核对通过，但实际样本为部分转换；原生Qt入口/动态继续后续。
 
-ABR样本关联：[设计](../brush/abr/abr-association-design.md) / [验收](../brush/abr/abr-association-validation.md)。Pascal身份/共享覆盖/严格关联已实现；公开外部样本alpha逐像素核对通过但不分发。
+ABR样本关联：[设计](../brush/abr/abr-association-design.md) / [验收](../validations/brush/abr/abr-association-validation.md)。Pascal身份/共享覆盖/严格关联已实现；公开外部样本alpha逐像素核对通过但不分发。
 
-ABR描述符：[设计](../brush/abr/abr-descriptor-design.md) / [验收](../brush/abr/abr-descriptor-validation.md)。typed tree及显式desc读取已接入；PS具体参数/真实授权语料继续后续。
+ABR描述符：[设计](../brush/abr/abr-descriptor-design.md) / [验收](../validations/brush/abr/abr-descriptor-validation.md)。typed tree及显式desc读取已接入；PS具体参数/真实授权语料继续后续。
 
-ABR分节采样：[设计](../brush/abr/abr-sections-design.md) / [验收](../brush/abr/abr-sections-validation.md)。6/10子版本1/2有界分节与采样已实现；16位/真实授权语料继续后续。
+ABR分节采样：[设计](../brush/abr/abr-sections-design.md) / [验收](../validations/brush/abr/abr-sections-validation.md)。6/10子版本1/2有界分节与采样已实现；16位/真实授权语料继续后续。
 
-ABR采样读取：[设计](../brush/abr/abr-sampled-design.md) / [验收](../brush/abr/abr-sampled-validation.md)。1/2原始与PackBits采样/有界读取已实现；描述符/程序及动态映射继续后续。
+ABR采样读取：[设计](../brush/abr/abr-sampled-design.md) / [验收](../validations/brush/abr/abr-sampled-validation.md)。1/2原始与PackBits采样/有界读取已实现；描述符/程序及动态映射继续后续。
 
-VBR图片资源：[设计](../brush/vbr/vbr-image-design.md) / [验收](../brush/vbr/vbr-image-validation.md)。ABI1.31/VBR1.1，完整资源清单/跨资源目录导入导出已接Qt；分组/扩展/动态湿混继续后续。
+VBR图片资源：[设计](../brush/vbr/vbr-image-design.md) / [验收](../validations/brush/vbr/vbr-image-validation.md)。ABI1.31/VBR1.1，完整资源清单/跨资源目录导入导出已接Qt；分组/扩展/动态湿混继续后续。
 
-图片笔尖轮廓：[设计](../brush/ui/brush-outline-design.md) / [验收](../brush/ui/brush-outline-validation.md)。ABI 1.30，基础0.5覆盖/孔洞与多区域/有界缓存与Qt描边已完成；半透明悬停、复杂细节简化及动态设备继续后续。
+图片笔尖轮廓：[设计](../brush/ui/brush-outline-design.md) / [验收](../validations/brush/ui/brush-outline-validation.md)。ABI 1.30，基础0.5覆盖/孔洞与多区域/有界缓存与Qt描边已完成；半透明悬停、复杂细节简化及动态设备继续后续。
 
-图片笔尖Qt接入：[设计](../brush/ui/brush-image-ui-design.md) / [验收](../brush/ui/brush-image-ui-validation.md)。PNG导入/捕获目标/v3持久/真实预览已完成；VBR图片资源继续后续。
+图片笔尖Qt接入：[设计](../brush/ui/brush-image-ui-design.md) / [验收](../validations/brush/ui/brush-image-ui-validation.md)。PNG导入/捕获目标/v3持久/真实预览已完成；VBR图片资源继续后续。
 
-图片笔尖原生资源接口：[设计](../brush/library/brush-resource-abi-design.md) / [验收](../brush/library/brush-resource-abi-validation.md)。ABI 1.29，共享资源目录/v3准备/闲置修订回收已接入。
+图片笔尖原生资源接口：[设计](../brush/library/brush-resource-abi-design.md) / [验收](../validations/brush/library/brush-resource-abi-validation.md)。ABI 1.29，共享资源目录/v3准备/闲置修订回收已接入。
 
-图片笔尖身份与状态：[设计](../brush/library/brush-resource-state-design.md) / [验收](../brush/library/brush-resource-state-validation.md)。v3持久引用与实际绘画已接Rust。
+图片笔尖身份与状态：[设计](../brush/library/brush-resource-state-design.md) / [验收](../validations/brush/library/brush-resource-state-validation.md)。v3持久引用与实际绘画已接Rust。
 
-图片笔尖资源IO：[设计](../brush/library/brush-resource-design.md) / [验收](../brush/library/brush-resource-validation.md)。有界PNG/哈希/持久文件及预算已完成，继续将身份接入笔刷状态和用户图片工具。
+图片笔尖资源IO：[设计](../brush/library/brush-resource-design.md) / [验收](../validations/brush/library/brush-resource-validation.md)。有界PNG/哈希/持久文件及预算已完成，继续将身份接入笔刷状态和用户图片工具。
 
-Qt / 原生修订桥：[设计](../brush/library/brush-catalog-bridge-design.md) / [验收](../brush/library/brush-catalog-bridge-validation.md)，ABI 1.28。画布与预览已接原生定义，旧参数后台迁移与有效状态保存已完成；继续图片持久资源与 VBR/ABR 接入。
+Qt / 原生修订桥：[设计](../brush/library/brush-catalog-bridge-design.md) / [验收](../validations/brush/library/brush-catalog-bridge-validation.md)，ABI 1.28。画布与预览已接原生定义，旧参数后台迁移与有效状态保存已完成；继续图片持久资源与 VBR/ABR 接入。
 
-原生笔刷库：[ABI设计](../brush/library/brush-catalog-abi-design.md) / [验收](../brush/library/brush-catalog-abi-validation.md)，ABI 1.27。已接独立库与实际笔触快照；继续推进 Qt 目录镜像/资源存储、VBR图片与ABR。
+原生笔刷库：[ABI设计](../brush/library/brush-catalog-abi-design.md) / [验收](../validations/brush/library/brush-catalog-abi-validation.md)，ABI 1.27。已接独立库与实际笔触快照；继续推进 Qt 目录镜像/资源存储、VBR图片与ABR。
 
-Rust 笔刷库模型：[设计](../brush/library/brush-catalog-design.md) / [验收](../brush/library/brush-catalog-validation.md)。不可变预设和原子库操作/资源预算已完成；下一阶段接库 ABI、Qt 镜像、持久图片资源及 ABR。
+Rust 笔刷库模型：[设计](../brush/library/brush-catalog-design.md) / [验收](../validations/brush/library/brush-catalog-validation.md)。不可变预设和原子库操作/资源预算已完成；下一阶段接库 ABI、Qt 镜像、持久图片资源及 ABR。
 
-图片笔尖内核：[设计](../brush/core/brush-mask-design.md) / [验收](../brush/core/brush-mask-validation.md)。资源与实际像素路径已完成；接下来完成 Rust 库/持久资源身份，VBR 图片和 ABR 导入。
+图片笔尖内核：[设计](../brush/core/brush-mask-design.md) / [验收](../validations/brush/core/brush-mask-validation.md)。资源与实际像素路径已完成；接下来完成 Rust 库/持久资源身份，VBR 图片和 ABR 导入。
 
-笔尖光标：[设置设计](../brush/ui/brush-cursor-settings-design.md) / [验收](../brush/ui/brush-cursor-settings-validation.md)。全局显示偏好与多文档同步/保存已完成；图片笔尖轮廓和硬件动态待后续引擎阶段。
+笔尖光标：[设置设计](../brush/ui/brush-cursor-settings-design.md) / [验收](../validations/brush/ui/brush-cursor-settings-validation.md)。全局显示偏好与多文档同步/保存已完成；图片笔尖轮廓和硬件动态待后续引擎阶段。
 
-VBR 程序子集：[设计](../brush/vbr/vbr-procedural-design.md) / [验收](../brush/vbr/vbr-procedural-validation.md)，ABI 1.26。已实现程序预设包导入/导出与严格验证；图片资源、ABR 与其他模块继续后续阶段。
+VBR 程序子集：[设计](../brush/vbr/vbr-procedural-design.md) / [验收](../validations/brush/vbr/vbr-procedural-validation.md)，ABI 1.26。已实现程序预设包导入/导出与严格验证；图片资源、ABR 与其他模块继续后续阶段。
 
-笔刷系统第一阶段：[程序笔尖设计](../brush/core/brush-tip-design.md) / [验收](../brush/core/brush-tip-validation.md)，ABI 1.25。已接共用程序笔尖、PS 分类设置、真实预览与椭圆光标；VBR、ABR、图片笔尖、动态与湿混继续逐模块实施。
+笔刷系统第一阶段：[程序笔尖设计](../brush/core/brush-tip-design.md) / [验收](../validations/brush/core/brush-tip-validation.md)，ABI 1.25。已接共用程序笔尖、PS 分类设置、真实预览与椭圆光标；VBR、ABR、图片笔尖、动态与湿混继续逐模块实施。
 
-已实现置入图片 → 独立原始图片模型 → 基础自由变换与栅格化，见 [设计](../tools/transform-design.md) / [验收](../tools/transform-validation.md)。CPU 处理与变换描述分离；GPU 和文字仍为后续模块。
+已实现置入图片 → 独立原始图片模型 → 基础自由变换与栅格化，见 [设计](../tools/transform-design.md) / [验收](../validations/tools/transform-validation.md)。CPU 处理与变换描述分离；GPU 和文字仍为后续模块。
 
-液化：[设计](../tools/liquify-design.md) / [验收](../tools/liquify-validation.md)，ABI 1.21；滤镜入口、画布事务、工具详情栏与图标、推拉/膨大/扭曲/重建、参数保存与压感、文档锁定和浮窗隐藏恢复。
+液化：[设计](../tools/liquify-design.md) / [验收](../validations/tools/liquify-validation.md)，ABI 1.21；滤镜入口、画布事务、工具详情栏与图标、推拉/膨大/扭曲/重建、参数保存与压感、文档锁定和浮窗隐藏恢复。
 
-组穿透：[设计](../layers/group-pass-through-design.md) / [验收](../layers/group-pass-through-validation.md)，ABI 1.19，组专属穿透模式与嵌套/蒙版/剪贴/ORA 支持。
+组穿透：[设计](../layers/group-pass-through-design.md) / [验收](../validations/layers/group-pass-through-validation.md)，ABI 1.19，组专属穿透模式与嵌套/蒙版/剪贴/ORA 支持。
 
-吸色取色环：[设计](../tools/eyedropper-ring-design.md) / [验收](../tools/eyedropper-ring-validation.md)，复用显示帧取样，鼠标/Alt/数位笔拖动预览新旧颜色。
+吸色取色环：[设计](../tools/eyedropper-ring-design.md) / [验收](../validations/tools/eyedropper-ring-validation.md)，复用显示帧取样，鼠标/Alt/数位笔拖动预览新旧颜色。
 
-涂抹：[设计](../brush/wet/smudge-design.md) / [验收](../brush/wet/smudge-validation.md)，ABI 1.18；独立工具复用画笔管线、强度压感、合成取样、手指绘画与 1% 间隔。
+涂抹：[设计](../brush/wet/smudge-design.md) / [验收](../validations/brush/wet/smudge-validation.md)，ABI 1.18；独立工具复用画笔管线、强度压感、合成取样、手指绘画与 1% 间隔。
 
-魔棒：[设计](../tools/wand-design.md) / [验收](../tools/wand-validation.md)，ABI 1.17；真实灰度选区、平均取样、四种组合、轮廓和历史/持久化。
+魔棒：[设计](../tools/wand-design.md) / [验收](../validations/tools/wand-validation.md)，ABI 1.17；真实灰度选区、平均取样、四种组合、轮廓和历史/持久化。
 
 每轮先补设计，再实现、运行测试并记录结果；已交付第 1–5 阶段，QML 已接 Rust 任务与 CPU 视口渲染；插件层最后完成。
 
-最新共用选区与套索：[设计](../tools/lasso-selection-design.md) / [验收](../tools/lasso-selection-validation.md)，ABI 1.15；矩形/椭圆与自由/多边形套索共用新建、添加、减去、交叉、羽化与消除锯齿。
+最新共用选区与套索：[设计](../tools/lasso-selection-design.md) / [验收](../validations/tools/lasso-selection-validation.md)，ABI 1.15；矩形/椭圆与自由/多边形套索共用新建、添加、减去、交叉、羽化与消除锯齿。
 
-框选与套索内画笔/橡皮性能优化：[设计](../tools/selection-performance-design.md) / [验收](../tools/selection-performance-validation.md)；选区按行覆盖与有界缓存，保留原路径、AA、羽化与组合规则，无 ABI/文件格式变更。
+框选与套索内画笔/橡皮性能优化：[设计](../tools/selection-performance-design.md) / [验收](../validations/tools/selection-performance-validation.md)；选区按行覆盖与有界缓存，保留原路径、AA、羽化与组合规则，无 ABI/文件格式变更。
 
-油漆桶：[设计](../tools/bucket-design.md) / [验收](../tools/bucket-validation.md)，ABI 1.16；独立不透明度、默认容差 0、AA、四邻接连续/全局填充、可见合成取样仅写活动层、选区与锁、原子撤销历史。
+油漆桶：[设计](../tools/bucket-design.md) / [验收](../validations/tools/bucket-validation.md)，ABI 1.16；独立不透明度、默认容差 0、AA、四邻接连续/全局填充、可见合成取样仅写活动层、选区与锁、原子撤销历史。
 
-最新菜单悬停与多选建组：[设计](../interface/menu-hover-grouping-design.md) / [验收](../interface/menu-hover-grouping-validation.md)，ABI 1.14；混合预览按列表指针位置统一更新，原生菜单完整鼠标坐标转发，首行跨边移动保持菜单链，多选一次建组与撤销。
+最新菜单悬停与多选建组：[设计](../interface/menu-hover-grouping-design.md) / [验收](../validations/interface/menu-hover-grouping-validation.md)，ABI 1.14；混合预览按列表指针位置统一更新，原生菜单完整鼠标坐标转发，首行跨边移动保持菜单链，多选一次建组与撤销。
 
-最新面板收起尺寸修复：[设计](../interface/panel-fold-sizing-design.md) / [验收](../interface/panel-fold-sizing-validation.md)；工具条与相邻面板不自动补位，浮窗收窄，展开宽度可随布局 v6 保存恢复。
+最新面板收起尺寸修复：[设计](../interface/panel-fold-sizing-design.md) / [验收](../validations/interface/panel-fold-sizing-validation.md)；工具条与相邻面板不自动补位，浮窗收窄，展开宽度可随布局 v6 保存恢复。
 
-最新菜单与批量图层修复：[设计](../layers/menu-layer-batch-design.md) / [验收](../layers/menu-layer-batch-validation.md)，ABI 1.13；悬停侧向分类菜单、组删除保留内容/删除子树选择、原子多选删除/拖放与剪贴链继承，图层面板首开异步创建。
+最新菜单与批量图层修复：[设计](../layers/menu-layer-batch-design.md) / [验收](../validations/layers/menu-layer-batch-validation.md)，ABI 1.13；悬停侧向分类菜单、组删除保留内容/删除子树选择、原子多选删除/拖放与剪贴链继承，图层面板首开异步创建。
 
-最新遗留修复：[设计](deepseek-recovery-design.md) / [验收](deepseek-recovery-validation.md)，保留 ABI 1.12；独立工具栏吸色、缩放/DPI 坐标、剪贴链重排、面板剩余高度和缩略图通知。GPU、液化、.vbr 与图层复制/合并按用户确认另立模块。
+最新遗留修复：[设计](deepseek-recovery-design.md) / [验收](../validations/planning/deepseek-recovery-validation.md)，保留 ABI 1.12；独立工具栏吸色、缩放/DPI 坐标、剪贴链重排、面板剩余高度和缩略图通知。GPU、液化、.vbr 与图层复制/合并按用户确认另立模块。
 
-真实历史名称：[设计](../document/history-labels-design.md) / [验收](../document/history-labels-validation.md)，ABI 1.10 提供保留历史的真实工具类型与裁剪边界，名称/图标不再从撤销深度猜测，逐条回放保留。
+真实历史名称：[设计](../document/history-labels-design.md) / [验收](../validations/document/history-labels-validation.md)，ABI 1.10 提供保留历史的真实工具类型与裁剪边界，名称/图标不再从撤销深度猜测，逐条回放保留。
 
-最新界面细化：[设计](../interface/panel-refinement-design.md) / [验收](../interface/panel-refinement-validation.md)，ABI 1.9 混合悬停快照、拆分浮窗尺寸保持、即时交换颜色、共享紧凑控件、外描边与数位板悬停轮廓。
+最新界面细化：[设计](../interface/panel-refinement-design.md) / [验收](../validations/interface/panel-refinement-validation.md)，ABI 1.9 混合悬停快照、拆分浮窗尺寸保持、即时交换颜色、共享紧凑控件、外描边与数位板悬停轮廓。
 
 | 顺序 | 模块 | 状态 | 验收门槛 |
 |---|---|---|---|
@@ -190,7 +190,7 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 
 ### 7e. 并排蒙版、剪贴蒙版与缩略图边缘
 
-用户要求将像素蒙版放在内容预览右侧，添加 Alt/Option 层间点击剪贴及释放，连续上层共用下方同级基底。核心合成、结构/磁盘历史、缓存、异步 ABI 1.7 和 ORA v3 已实现；旧 ORA v1/v2 继续读取。缩略图边框/留白不再显示棋盘格，部分边缘 LOD 按有效文档像素归一化。设计与验收见 docs/layers/clipping-design.md / docs/layers/clipping-validation.md。
+用户要求将像素蒙版放在内容预览右侧，添加 Alt/Option 层间点击剪贴及释放，连续上层共用下方同级基底。核心合成、结构/磁盘历史、缓存、异步 ABI 1.7 和 ORA v3 已实现；旧 ORA v1/v2 继续读取。缩略图边框/留白不再显示棋盘格，部分边缘 LOD 按有效文档像素归一化。设计与验收见 docs/layers/clipping-design.md / docs/validations/layers/clipping-validation.md。
 
 ### 7f. 参考图 QML 界面与停靠
 
@@ -219,45 +219,45 @@ PS 风格图层控制按用户澄清完成（透明像素锁；“样式”仅�
 
 ## 窗口恢复与统一边缘吸附（2026-10-09）
 
-主窗最小化恢复保留无边框、内容及最大化状态；原生圆角裁剪不处理 iconic HWND。图标临时面板全应用唯一，外部鼠标/触控/数位笔与失焦关闭；旧窗延迟关闭不影响新窗。工具面板四边与主区两边使用统一 24px 最近边判定，拖动窗口边界参与，遮挡和自身排除，窄边发光；正文合并改为标题区操作。单画布标题与按钮同色、图标栏背景统一 surface、删除工具条拖动提示。标签在栏内优先交换位置，越出栏再拆为浮窗，图标临时面板同样支持。参考图布局 API 与自动初始化删除，双列停靠作为默认布局，保存的用户布局仍可恢复。设计与验收见 [window-recovery-design.md](../interface/window-recovery-design.md) / [window-recovery-validation.md](../interface/window-recovery-validation.md)。
+主窗最小化恢复保留无边框、内容及最大化状态；原生圆角裁剪不处理 iconic HWND。图标临时面板全应用唯一，外部鼠标/触控/数位笔与失焦关闭；旧窗延迟关闭不影响新窗。工具面板四边与主区两边使用统一 24px 最近边判定，拖动窗口边界参与，遮挡和自身排除，窄边发光；正文合并改为标题区操作。单画布标题与按钮同色、图标栏背景统一 surface、删除工具条拖动提示。标签在栏内优先交换位置，越出栏再拆为浮窗，图标临时面板同样支持。参考图布局 API 与自动初始化删除，双列停靠作为默认布局，保存的用户布局仍可恢复。设计与验收见 [window-recovery-design.md](../interface/window-recovery-design.md) / [window-recovery-validation.md](../validations/interface/window-recovery-validation.md)。
 
-主窗补齐系统最小化/最大化能力，并仅对其 HWND 过滤非客户区绘制，防止恢复后系统标题框写入半透明菜单。真实合成像素回归覆盖普通/最大化恢复后的模糊和圆角；工具面板及面板列统一灰黑细分隔。设计与验收见 [taskbar-window-design.md](../interface/taskbar-window-design.md) / [taskbar-window-validation.md](../interface/taskbar-window-validation.md)。
+主窗补齐系统最小化/最大化能力，并仅对其 HWND 过滤非客户区绘制，防止恢复后系统标题框写入半透明菜单。真实合成像素回归覆盖普通/最大化恢复后的模糊和圆角；工具面板及面板列统一灰黑细分隔。设计与验收见 [taskbar-window-design.md](../interface/taskbar-window-design.md) / [taskbar-window-validation.md](../validations/interface/taskbar-window-validation.md)。
 
-菜单底层矩形模糊进一步改为独立非交互 HWND 承载 HostBackdropBrush，通过合成视觉的上方圆角裁剪真实模糊；最小化前隐藏，恢复不参与主窗状态过渡。新增高频黑白格真实屏幕像素回归。按用户澄清，最大化标题栏拖动越过阈值后恢复普通尺寸并继续跟随鼠标，全屏保持状态。笔刷预设选择不再切换工具，画笔与橡皮擦继续共用预设和参数，并验证实际绘画/擦除。见 [menu-blur-layer-design.md](../interface/menu-blur-layer-design.md) / [menu-blur-layer-validation.md](../interface/menu-blur-layer-validation.md) 及画笔库验收。
+菜单底层矩形模糊进一步改为独立非交互 HWND 承载 HostBackdropBrush，通过合成视觉的上方圆角裁剪真实模糊；最小化前隐藏，恢复不参与主窗状态过渡。新增高频黑白格真实屏幕像素回归。按用户澄清，最大化标题栏拖动越过阈值后恢复普通尺寸并继续跟随鼠标，全屏保持状态。笔刷预设选择不再切换工具，画笔与橡皮擦继续共用预设和参数，并验证实际绘画/擦除。见 [menu-blur-layer-design.md](../interface/menu-blur-layer-design.md) / [menu-blur-layer-validation.md](../validations/interface/menu-blur-layer-validation.md) 及画笔库验收。
 
 ## 常驻图标面板列（2026-10-10）
 
-取代唯一临时面板和空白/失焦关闭：同列每个图标可打开独立常驻面板，允许多开，最近点击置顶；显式收回或 Escape 关闭。展开面板独立调整宽高，导航沿列侧边滑动，短浮动图标列不压缩面板高度。图标列背景和空白统一 #1C1E21，保留可调列高；整个浮动列归位为独立主窗列，展开/图标状态与树结构保留。普通标签排序、单图标拖出及布局 v6 保持。见 [persistent-panel-rails-design.md](../interface/persistent-panel-rails-design.md) / [persistent-panel-rails-validation.md](../interface/persistent-panel-rails-validation.md)。
+取代唯一临时面板和空白/失焦关闭：同列每个图标可打开独立常驻面板，允许多开，最近点击置顶；显式收回或 Escape 关闭。展开面板独立调整宽高，导航沿列侧边滑动，短浮动图标列不压缩面板高度。图标列背景和空白统一 #1C1E21，保留可调列高；整个浮动列归位为独立主窗列，展开/图标状态与树结构保留。普通标签排序、单图标拖出及布局 v6 保持。见 [persistent-panel-rails-design.md](../interface/persistent-panel-rails-design.md) / [persistent-panel-rails-validation.md](../validations/interface/persistent-panel-rails-validation.md)。
 
 ## 面板状态与紧凑信息栏（2026-10-10）
 
-同图标再次点击收回对应面板，其他打开面板不受影响；独立宽高与来源列侧边偏移通过布局 v6 可选 panelViews 保存，收回再打开和重启恢复继承。描边/分隔统一 #1B1C1F，标签圆角 3px，拖动栏与标签栏背景 #05080A，浮动时背景 75% 不透明，正文不透明。底栏显示工具、共享画笔预设、文档尺寸、图层数，以及中心缩小/放大、单小数百分比和适配；工具条适合窗口按钮删除，菜单/F 保留。见 [panel-presentation-design.md](../interface/panel-presentation-design.md) / [panel-presentation-validation.md](../interface/panel-presentation-validation.md)。
+同图标再次点击收回对应面板，其他打开面板不受影响；独立宽高与来源列侧边偏移通过布局 v6 可选 panelViews 保存，收回再打开和重启恢复继承。描边/分隔统一 #1B1C1F，标签圆角 3px，拖动栏与标签栏背景 #05080A，浮动时背景 75% 不透明，正文不透明。底栏显示工具、共享画笔预设、文档尺寸、图层数，以及中心缩小/放大、单小数百分比和适配；工具条适合窗口按钮删除，菜单/F 保留。见 [panel-presentation-design.md](../interface/panel-presentation-design.md) / [panel-presentation-validation.md](../validations/interface/panel-presentation-validation.md)。
 
 ## 面板分组与统一内容（2026-10-10）
 
-外侧边停靠生成独立整列，内侧边并列属于同组；标签与并列组合一起打开，不同组图标间居中灰黑线。多组常驻、再次点击当前图标或双击顶栏收回，来源列保持折叠；整列拖动/归位/保存保留左右树和状态。浮动展开列仅顶层栏 75% 不透明，下方栏和空白不透明。共用 PanelContent/PanelGroup 与 PanelWindow 调色板，导航仅预览和实时红色视口框，历史移除撤销/重做按钮；按用户后续要求保留历史逐条跳转。见 [panel-categories-design.md](../interface/panel-categories-design.md) / [panel-categories-validation.md](../interface/panel-categories-validation.md)。
+外侧边停靠生成独立整列，内侧边并列属于同组；标签与并列组合一起打开，不同组图标间居中灰黑线。多组常驻、再次点击当前图标或双击顶栏收回，来源列保持折叠；整列拖动/归位/保存保留左右树和状态。浮动展开列仅顶层栏 75% 不透明，下方栏和空白不透明。共用 PanelContent/PanelGroup 与 PanelWindow 调色板，导航仅预览和实时红色视口框，历史移除撤销/重做按钮；按用户后续要求保留历史逐条跳转。见 [panel-categories-design.md](../interface/panel-categories-design.md) / [panel-categories-validation.md](../validations/interface/panel-categories-validation.md)。
 
-最新工作区调整见 [workspace-tools-design.md](../interface/workspace-tools-design.md) 与 [workspace-tools-validation.md](../interface/workspace-tools-validation.md)：工具列整列停靠与限定宽度、鼠标磁吸/外侧提示、展开收起的像素位置保持、置顶菜单、独立工具大小、固定真实预览、颜色/轮廓/空格交互。布局 v6 和 ABI 1.8 保持，历史逐条跳转保留。
+最新工作区调整见 [workspace-tools-design.md](../interface/workspace-tools-design.md) 与 [workspace-tools-validation.md](../validations/interface/workspace-tools-validation.md)：工具列整列停靠与限定宽度、鼠标磁吸/外侧提示、展开收起的像素位置保持、置顶菜单、独立工具大小、固定真实预览、颜色/轮廓/空格交互。布局 v6 和 ABI 1.8 保持，历史逐条跳转保留。
 
-标签双击只收回当前呈现、不再展开来源图标列（页头与标签一致），并补齐浮动栏 75% 不透明度、文本输入保留空格、历史 20ms 逐条回放的真实断言。见 [panel-tab-collapse-design.md](../interface/panel-tab-collapse-design.md) / [panel-tab-collapse-validation.md](../interface/panel-tab-collapse-validation.md)；仅 UI/测试修改，ABI 1.10 与布局 v6 不变。
+标签双击只收回当前呈现、不再展开来源图标列（页头与标签一致），并补齐浮动栏 75% 不透明度、文本输入保留空格、历史 20ms 逐条回放的真实断言。见 [panel-tab-collapse-design.md](../interface/panel-tab-collapse-design.md) / [panel-tab-collapse-validation.md](../validations/interface/panel-tab-collapse-validation.md)；仅 UI/测试修改，ABI 1.10 与布局 v6 不变。
 
 顶部菜单改为 `文件 · 编辑 · 图像 · 图层 · 选择 · 滤镜 · 窗口`（工作区并入窗口、删除视图），编辑→首选项打开左侧分类侧栏对话框（性能 / 历史 / 界面），未实现项按"待支持"标注。历史条数上限做成真实设置：`paint-core` 运行时裁剪最旧记录并标记边界不可达，ABI 1.11 新增 `paint_session_set_history_limit`，`PaintCoreClient.historyLimit` 持久化并即时应用。展开窗不再自动补长，最近颜色只在下笔提交后更新。见 [menus-preferences-design.md](../interface/menus-preferences-design.md)、[panel-length-and-snap-design.md](../interface/panel-length-and-snap-design.md)。
 
 同一工具的多形态合并到一个槽位：图标右下角小三角提示可切换，右键弹出悬浮面板列出全部形态，点击面板项才切换，点工具栏图标只激活当前形态（选区槽位含矩形/椭圆，套索待支持）。见 [tool-variants-design.md](../tools/tool-variants-design.md)；编辑→键盘快捷键只读展示真实绑定。
 
-图层操作（ABI 1.20）：[设计](../layers/layer-actions-design.md) / [验收](../layers/layer-actions-validation.md)，右键菜单、复制粘贴/合并、缩略图焦点与下边缘拖放修复。
+图层操作（ABI 1.20）：[设计](../layers/layer-actions-design.md) / [验收](../validations/layers/layer-actions-validation.md)，右键菜单、复制粘贴/合并、缩略图焦点与下边缘拖放修复。
 
 
 ## 统一笔刷系统规划（2026-10-13，待实施）
 
-设计见 [brush-system-design.md](brush-system-design.md)，VBR 契约草案见 [vbr-format-design.md](../brush/vbr/vbr-format-design.md)，验收条件见 [brush-system-validation.md](brush-system-validation.md)。当前只完成设计，未实现高级笔刷、ABR/VBR 或 GPU。
+设计见 [brush-system-design.md](brush-system-design.md)，VBR 契约草案见 [vbr-format-design.md](../brush/vbr/vbr-format-design.md)，验收条件见 [brush-system-validation.md](../validations/planning/brush-system-validation.md)。当前只完成设计，未实现高级笔刷、ABR/VBR 或 GPU。
 
 按统一定义与旧圆笔迁移 → 路径手感/图片笔尖/描边预览 → 纹理/动态/分级 ABR → 湿混与涂抹 → 实测后 wgpu 的顺序推进。设置面板采用左侧分类、右侧参数、底部真实预览；光标描边为全局显示偏好。每阶段仅展示真实实现的能力，不以格式解析成功代替绘画兼容。
 
-当前追加阶段：画笔混合Qt工具状态/菜单/真实有色底预览已接入，见[验收](../brush/ui/brush-blend-ui-validation.md)。自动平滑压感曲线ABI1.45/state13/VBR1.11/behavior10及统一原生采样已接入，见[验收](../brush/dynamics/brush-pressure-smooth-validation.md)；编辑后自动平滑，旧未编辑模型保留。重置预设移至右侧参数末尾/固定预览上方。历史阶段的“待接”描述保留当时状态，以此最新条目为准。双色扩展、湿混和完整笔刷系统继续后续。
+当前追加阶段：画笔混合Qt工具状态/菜单/真实有色底预览已接入，见[验收](../validations/brush/ui/brush-blend-ui-validation.md)。自动平滑压感曲线ABI1.45/state13/VBR1.11/behavior10及统一原生采样已接入，见[验收](../validations/brush/dynamics/brush-pressure-smooth-validation.md)；编辑后自动平滑，旧未编辑模型保留。重置预设移至右侧参数末尾/固定预览上方。历史阶段的“待接”描述保留当时状态，以此最新条目为准。双色扩展、湿混和完整笔刷系统继续后续。
 
-最新用户修正及混合性能阶段：工具下拉跨原生面板置顶；笔刷预览固定正常，不随工具混合切换。主/第二饱和覆盖跳过与圆尖平方距离快路径已验证，见[验收](../brush/wet/brush-mix-performance-validation.md)。之前“有色底跟随模式”的预览设计被本轮用户要求取代。时间平滑IO/Qt、双色扩展、湿混和全系统范围继续后续。
+最新用户修正及混合性能阶段：工具下拉跨原生面板置顶；笔刷预览固定正常，不随工具混合切换。主/第二饱和覆盖跳过与圆尖平方距离快路径已验证，见[验收](../validations/brush/wet/brush-mix-performance-validation.md)。之前“有色底跟随模式”的预览设计被本轮用户要求取代。时间平滑IO/Qt、双色扩展、湿混和全系统范围继续后续。
 
-时间平滑IO最新阶段：state14/VBR1.12/behavior11保存完整开关/参数，双流压感及来源图片真实笔触往返已验证，见[验收](../brush/dynamics/brush-smoothing-io-validation.md)。旧ABI1.45/Qt暂拒新配置，下一阶段接完整原生桥和设置；收尖、双色与湿混等完整目标保持。
+时间平滑IO最新阶段：state14/VBR1.12/behavior11保存完整开关/参数，双流压感及来源图片真实笔触往返已验证，见[验收](../validations/brush/dynamics/brush-smoothing-io-validation.md)。旧ABI1.45/Qt暂拒新配置，下一阶段接完整原生桥和设置；收尖、双色与湿混等完整目标保持。
 
-时间平滑原生Qt最新阶段：ABI1.46完整设置、关闭配置/基准、真实时间预览/在途捕获及VBR/保存重开已接，见[验收](../brush/ui/brush-smoothing-ui-validation.md)。前阶段准备/库包临时拒绝已解除；收尖、双色复合、湿混与高级ABR等全系统范围继续后续。
+时间平滑原生Qt最新阶段：ABI1.46完整设置、关闭配置/基准、真实时间预览/在途捕获及VBR/保存重开已接，见[验收](../validations/brush/ui/brush-smoothing-ui-validation.md)。前阶段准备/库包临时拒绝已解除；收尖、双色复合、湿混与高级ABR等全系统范围继续后续。

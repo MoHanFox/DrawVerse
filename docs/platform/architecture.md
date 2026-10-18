@@ -1,5 +1,7 @@
 # DrawVerse 架构设计
 
+当前 Rust / C++ / QML 源码职责、实际依赖及文件落点见 [源码目录设计](source-layout-design.md)（2026-10-18）。本文保留早期总体设计与阶段记录，其中尚未实施的 crate 和历史限制不能作为当前代码目录依据。
+
 状态：2026-10-08 已实施 paint-core、paint-task、CPU paint-render、paint-io、paint-ffi ABI 1.5 与 QML UI；隔离组见 groups-design.md，显示透明棋盘格见 transparency-design.md。异步任务/视口细节见 task-render-design.md；IO 实施细节见 io-design.md；下文 GPU、色彩、PSD/自有格式、插件仍为后续设计。
 
 ## 分层与数据流
@@ -103,6 +105,6 @@ paint-io 解码先核验尺寸、像素/压缩预算；PNG/JPEG/WebP 为平面�
 
 ## 窗口恢复与统一边缘吸附（2026-10-09）
 
-主窗最小化恢复保留无边框、内容及最大化状态；原生圆角裁剪不处理 iconic HWND。图标临时面板全应用唯一，外部鼠标/触控/数位笔与失焦关闭；旧窗延迟关闭不影响新窗。工具面板四边与主区两边使用统一 24px 最近边判定，拖动窗口边界参与，遮挡和自身排除，窄边发光；正文合并改为标题区操作。单画布标题与按钮同色、图标栏背景统一 surface、删除工具条拖动提示。标签在栏内优先交换位置，越出栏再拆为浮窗，图标临时面板同样支持。参考图布局 API 与自动初始化删除，双列停靠作为默认布局，保存的用户布局仍可恢复。设计与验收见 [window-recovery-design.md](../interface/window-recovery-design.md) / [window-recovery-validation.md](../interface/window-recovery-validation.md)。
+主窗最小化恢复保留无边框、内容及最大化状态；原生圆角裁剪不处理 iconic HWND。图标临时面板全应用唯一，外部鼠标/触控/数位笔与失焦关闭；旧窗延迟关闭不影响新窗。工具面板四边与主区两边使用统一 24px 最近边判定，拖动窗口边界参与，遮挡和自身排除，窄边发光；正文合并改为标题区操作。单画布标题与按钮同色、图标栏背景统一 surface、删除工具条拖动提示。标签在栏内优先交换位置，越出栏再拆为浮窗，图标临时面板同样支持。参考图布局 API 与自动初始化删除，双列停靠作为默认布局，保存的用户布局仍可恢复。设计与验收见 [window-recovery-design.md](../interface/window-recovery-design.md) / [window-recovery-validation.md](../validations/interface/window-recovery-validation.md)。
 
-主窗补齐系统最小化/最大化能力，并仅对其 HWND 过滤非客户区绘制，防止恢复后系统标题框写入半透明菜单。真实合成像素回归覆盖普通/最大化恢复后的模糊和圆角；工具面板及面板列统一灰黑细分隔。设计与验收见 [taskbar-window-design.md](../interface/taskbar-window-design.md) / [taskbar-window-validation.md](../interface/taskbar-window-validation.md)。
+主窗补齐系统最小化/最大化能力，并仅对其 HWND 过滤非客户区绘制，防止恢复后系统标题框写入半透明菜单。真实合成像素回归覆盖普通/最大化恢复后的模糊和圆角；工具面板及面板列统一灰黑细分隔。设计与验收见 [taskbar-window-design.md](../interface/taskbar-window-design.md) / [taskbar-window-validation.md](../validations/interface/taskbar-window-validation.md)。

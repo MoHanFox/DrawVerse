@@ -329,8 +329,8 @@ fn published_wet_dual_fixtures_execute_real_active_and_closed_models() {
     let token = CancellationToken::default();
     let mut results = Vec::new();
     for bytes in [
-        include_bytes!("../../../../contracts/fixtures/wet-dual-v1.23-valid.json").as_slice(),
-        include_bytes!("../../../../contracts/fixtures/wet-dual-v1.23-closed.json").as_slice(),
+        include_bytes!("../../../../contracts/brush/wet/fixtures/wet-dual-valid.json").as_slice(),
+        include_bytes!("../../../../contracts/brush/wet/fixtures/wet-dual-closed.json").as_slice(),
     ] {
         let preset: Preset = serde_json::from_slice(bytes).unwrap();
         let bundle = ImageBundle::new(
@@ -347,7 +347,7 @@ fn published_wet_dual_fixtures_execute_real_active_and_closed_models() {
     }
     assert_ne!(results[0], results[1]);
     assert!(serde_json::from_slice::<Preset>(include_bytes!(
-        "../../../../contracts/fixtures/wet-dual-v1.23-invalid.json"
+        "../../../../contracts/brush/wet/fixtures/wet-dual-invalid.json"
     ))
     .is_err());
 }

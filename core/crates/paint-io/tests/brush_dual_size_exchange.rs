@@ -236,7 +236,7 @@ fn sizing_contract_and_manifest_downgrade_are_strict() {
     }
     assert!(vbr_image::decode(&writer.finish().unwrap().into_inner(), &token).is_ok());
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-dual-sizing-v1.13.schema.json"
+        "fixtures/schema-history/dual/vbr-dual-sizing-v1.13.schema.json"
     ))
     .unwrap();
     assert_eq!(

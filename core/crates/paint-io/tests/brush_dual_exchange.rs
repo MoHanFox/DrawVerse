@@ -313,9 +313,9 @@ fn dual_models_ranges_required_nulls_resources_and_capabilities_reject() {
     );
 }
 #[test]
-fn published_dual_contract_preserves_models_and_resource_limits() {
+fn historical_dual_contract_preserves_models_and_resource_limits() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-dual-v1.10.schema.json"
+        "fixtures/schema-history/dual/vbr-dual-v1.10.schema.json"
     ))
     .unwrap();
     assert_eq!(
@@ -337,9 +337,9 @@ fn published_dual_contract_preserves_models_and_resource_limits() {
 }
 
 #[test]
-fn published_dual_schema_allows_optional_flip_fields() {
+fn historical_dual_schema_allows_optional_flip_fields() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-dual-v1.10.schema.json"
+        "fixtures/schema-history/dual/vbr-dual-v1.10.schema.json"
     ))
     .unwrap();
     let dual = &schema["$defs"]["dualBrush"];

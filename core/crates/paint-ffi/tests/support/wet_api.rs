@@ -454,7 +454,7 @@ fn wet_public_package_opt_in_preserves_closed_parameters_and_legacy_rejects() {
     use std::collections::BTreeMap;
     let fixture = format!(
         "{{\"packageId\":\"12345678-1234-4234-8234-123456789abc\",\"brushes\":[{}]}}",
-        include_str!("../../../../../contracts/fixtures/vbr-wet-valid.json")
+        include_str!("../../../../../contracts/brush/wet/fixtures/vbr-wet-valid.json")
     );
     let mut p = Package::from_json(fixture.as_bytes()).unwrap();
     p.brushes[0].wet_mix = Some(paint_io::brush_wet::WetParameters::from_core(

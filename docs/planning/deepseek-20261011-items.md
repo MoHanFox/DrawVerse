@@ -1,6 +1,6 @@
 # DeepSeek 未完成清单（2026-10-11）
 
-2026-10-11 修复交付见 [设计](deepseek-recovery-design.md) / [验收](deepseek-recovery-validation.md)：独立工具栏吸色（I）与 Alt 十字、DPI 采样、选框记忆/工具互斥、剪贴链修复、剩余面板高度、缩略图通知、FFI 长度边界及旧 ORA v2 兼容已处理。以下保留原清单及用户批注作为历史记录；GPU/液化/.vbr/图层复制合并本轮暂缓。
+2026-10-11 修复交付见 [设计](deepseek-recovery-design.md) / [验收](../validations/planning/deepseek-recovery-validation.md)：独立工具栏吸色（I）与 Alt 十字、DPI 采样、选框记忆/工具互斥、剪贴链修复、剩余面板高度、缩略图通知、FFI 长度边界及旧 ORA v2 兼容已处理。以下保留原清单及用户批注作为历史记录；GPU/液化/.vbr/图层复制合并本轮暂缓。
 
 本轮由 DeepSeek 实施的工作与遗留问题汇总。状态按代码实际状态核对（`git log` 截至 `5b0252b`）。
 

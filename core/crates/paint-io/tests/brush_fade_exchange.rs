@@ -101,9 +101,9 @@ fn state34_and_vbr140_preserve_fade_dynamics() {
 }
 
 #[test]
-fn published_fade_contract_matches_steps_and_model() {
+fn historical_fade_contract_matches_steps_and_model() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-fade-v1.40.schema.json"
+        "fixtures/schema-history/dynamics/vbr-fade-v1.40.schema.json"
     ))
     .unwrap();
     assert_eq!(

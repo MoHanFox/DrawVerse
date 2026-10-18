@@ -123,9 +123,9 @@ fn archive_alias_traversal_missing_unknown_entries_and_versions_reject() {
 }
 
 #[test]
-fn published_schema_numeric_limits_match_executable_parameters() {
+fn historical_schema_numeric_limits_match_executable_parameters() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-procedural-v1.schema.json"
+        "fixtures/schema-history/vbr/vbr-procedural-v1.schema.json"
     ))
     .unwrap();
     let properties = &schema["$defs"]["parameters"]["properties"];

@@ -311,7 +311,7 @@ fn invalid_pressure_shapes_ranges_sizes_and_old_state_versions_are_rejected() {
 #[test]
 fn pressure_contract_bounds_and_original_converter_baseline_remain_separate() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-pressure-v1.3.schema.json"
+        "fixtures/schema-history/dynamics/vbr-pressure-v1.3.schema.json"
     ))
     .unwrap();
     assert_eq!(
@@ -407,7 +407,7 @@ fn smooth_pressure_state13_vbr11_preserve_models_and_reject_old_versions() {
         .unwrap()
         .has_smooth());
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-pressure-smooth-v1.11.schema.json"
+        "fixtures/schema-history/dynamics/vbr-pressure-smooth-v1.11.schema.json"
     ))
     .unwrap();
     assert_eq!(

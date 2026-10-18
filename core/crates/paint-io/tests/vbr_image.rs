@@ -183,7 +183,7 @@ fn cancelled_or_invalid_image_save_preserves_existing_package() {
     assert_eq!(std::fs::read(path).unwrap(), saved);
 }
 #[test]
-fn sixteen_bit_resource_keeps_original_identity_and_published_image_contract() {
+fn sixteen_bit_resource_keeps_original_identity_and_historical_image_contract() {
     use image::{codecs::png::PngEncoder, ExtendedColorType, ImageEncoder};
     let pixels = [65535u16, 32768, 0, 65535]
         .into_iter()
@@ -205,7 +205,7 @@ fn sixteen_bit_resource_keeps_original_identity_and_published_image_contract() {
     assert_eq!(restored.assets()[&id].bytes(), png);
     assert_eq!(restored.assets()[&id].mask().coverage(), [255, 128, 0, 255]);
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-image-v1.1.schema.json"
+        "fixtures/schema-history/vbr/vbr-image-v1.1.schema.json"
     ))
     .unwrap();
     assert_eq!(

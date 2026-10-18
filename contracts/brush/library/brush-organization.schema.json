@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://drawverse.org/schemas/brush-organization-v1.schema.json",
+  "title": "DrawVerse VBR 1.0 ordered-tree-v1 brush organization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "model",
+    "roots",
+    "groups"
+  ],
+  "$comment": "Core validation additionally enforces total entries <=1280, unique membership and group identities, reachability, no cycles, depth <=8, and exact preset projection against its state/package.",
+  "properties": {
+    "model": {
+      "const": "ordered-tree-v1"
+    },
+    "roots": {
+      "type": "array",
+      "maxItems": 1280,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "groups": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "items"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "\\S",
+            "allOf": [
+              {
+                "not": {
+                  "pattern": "\\u0000"
+                }
+              }
+            ]
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 1280,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/item"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "not": {
+        "const": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "item": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "const": "preset"
+            },
+            "id": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/uuid"
+                },
+                {
+                  "enum": [
+                    "round-pressure",
+                    "round-fine",
+                    "round-translucent",
+                    "round-wide"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "const": "group"
+            },
+            "id": {
+              "$ref": "#/$defs/uuid"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

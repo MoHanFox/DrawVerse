@@ -3,55 +3,48 @@
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!("DrawVerse ABI v1 supports 64-bit targets only");
 
-mod api;
-mod brush_wet_api;
-pub use brush_wet_api::*;
-mod brush_wet_dual_api;
-pub use brush_wet_dual_api::*;
-mod brush_taper_api;
-pub use brush_taper_api::*;
-mod brush_api;
-mod brush_catalog_api;
-mod pressure_curve_api;
-pub use pressure_curve_api::*;
-mod brush_pose_api;
-pub use brush_pose_api::*;
-mod brush_preparation;
+mod abi;
+mod brushes;
+mod document;
+mod engine;
+mod files;
+
+// Keep existing crate paths stable while implementation folders own their modules.
+use abi::{api, error, pointers};
+use brushes::{
+    brush_api, brush_catalog_api, brush_file_api, brush_pose_api, brush_preparation,
+    brush_taper_api, brush_wet_api, brush_wet_dual_api, pressure_curve_api,
+};
+use document::{
+    bucket_api, layer_actions_api, layer_api, liquify_api, selection_api, smudge_api,
+    transform_api, wand_api,
+};
+use engine::{runtime, session, session_api, storage_api};
+use files::{file_api, file_job};
+
+pub use api::*;
 pub use brush_api::*;
 pub use brush_catalog_api::*;
-mod brush_file_api;
 pub use brush_file_api::*;
-mod liquify_api;
-mod transform_api;
-pub use liquify_api::*;
-pub use transform_api::*;
-mod layer_actions_api;
-pub use layer_actions_api::*;
-mod layer_api;
-pub use layer_api::*;
-mod bucket_api;
-mod smudge_api;
-mod wand_api;
-pub use smudge_api::*;
-pub use wand_api::*;
-mod error;
-mod file_api;
-mod file_job;
-mod pointers;
-mod runtime;
-mod selection_api;
+pub use brush_pose_api::*;
+pub use brush_taper_api::*;
+pub use brush_wet_api::*;
+pub use brush_wet_dual_api::*;
 pub use bucket_api::*;
-mod session;
-mod session_api;
-pub use selection_api::*;
-mod storage_api;
-pub use api::*;
 use error::{boundary, query_boundary, ApiError, ApiResult};
 pub use file_api::*;
+pub use layer_actions_api::*;
+pub use layer_api::*;
+pub use liquify_api::*;
 use paint_core::{Brush, BrushMode, Document, InputPoint, LayerProperties, Pixel, Tool};
+pub use pressure_curve_api::*;
+pub use selection_api::*;
 pub use session_api::*;
+pub use smudge_api::*;
 use std::{ffi::c_void, mem::size_of, ptr};
 pub use storage_api::*;
+pub use transform_api::*;
+pub use wand_api::*;
 
 fn point(value: PaintPoint) -> ApiResult<InputPoint> {
     let tool = match value.tool {
@@ -96,7 +89,7 @@ fn brush(value: PaintStrokeDesc) -> ApiResult<Brush> {
 
 /// Query ABI version; out_version.struct_size must be initialized.
 /// # Safety
-/// Follow the valid, aligned, nonoverlapping caller-memory contract in contracts/abi.md.
+/// Follow the valid, aligned, nonoverlapping caller-memory contract in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_version(out_version: *mut PaintVersion) -> PaintStatus {
     boundary(|| unsafe {
@@ -114,7 +107,7 @@ pub unsafe extern "C" fn paint_core_version(out_version: *mut PaintVersion) -> P
 
 /// Only reports implemented features. No GPU capability is advertised.
 /// # Safety
-/// Follow the caller-memory and handle contract in contracts/abi.md.
+/// Follow the caller-memory and handle contract in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_capabilities(
     core: *mut PaintCore,
@@ -198,7 +191,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
 
 /// Create an owning core handle; failure writes NULL.
 /// # Safety
-/// out_core must be writable nonoverlapping pointer storage; see contracts/abi.md.
+/// out_core must be writable nonoverlapping pointer storage; see contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_create(out_core: *mut *mut PaintCore) -> PaintStatus {
     boundary(|| unsafe {
@@ -211,7 +204,7 @@ pub unsafe extern "C" fn paint_core_create(out_core: *mut *mut PaintCore) -> Pai
 
 /// BUSY while any document/subscription is alive; success writes NULL; NULL is idempotent.
 /// # Safety
-/// Valid writable pointer-to-handle; caller must serialize destruction; see contracts/abi.md.
+/// Valid writable pointer-to-handle; caller must serialize destruction; see contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_destroy(core: *mut *mut PaintCore) -> PaintStatus {
     boundary(|| unsafe {
@@ -227,7 +220,7 @@ pub unsafe extern "C" fn paint_core_destroy(core: *mut *mut PaintCore) -> PaintS
 
 /// Create a transparent document with one layer. Failure writes NULL.
 /// # Safety
-/// Follow caller-memory/struct_size/handle contracts in contracts/abi.md.
+/// Follow caller-memory/struct_size/handle contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_new_document(
     core: *mut PaintCore,
@@ -263,7 +256,7 @@ pub unsafe extern "C" fn paint_core_new_document(
 
 /// Release a document (including any uncommitted stroke); success writes NULL.
 /// # Safety
-/// Follow writable pointer-to-handle and serialized destruction contracts in contracts/abi.md.
+/// Follow writable pointer-to-handle and serialized destruction contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_document_destroy(
     core: *mut PaintCore,
@@ -288,7 +281,7 @@ pub unsafe extern "C" fn paint_document_destroy(
 
 /// Read metadata without exposing the internal document layout.
 /// # Safety
-/// Follow output struct_size and pointer/handle contracts in contracts/abi.md.
+/// Follow output struct_size and pointer/handle contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_document_info(
     core: *mut PaintCore,
@@ -327,7 +320,7 @@ pub unsafe extern "C" fn paint_document_info(
 
 /// Enumerate layers bottom-to-top by zero-based index. Invalid index returns NOT_FOUND.
 /// # Safety
-/// Follow output struct_size and pointer/handle contracts in contracts/abi.md.
+/// Follow output struct_size and pointer/handle contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_layer_info(
     core: *mut PaintCore,
@@ -364,7 +357,7 @@ pub unsafe extern "C" fn paint_layer_info(
 
 /// UTF-8 bytes without NUL. Query with NULL/0; BUFFER_TOO_SMALL returns required bytes.
 /// # Safety
-/// buffer/required must be valid nonoverlapping writable memory; see contracts/abi.md.
+/// buffer/required must be valid nonoverlapping writable memory; see contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_layer_name(
     core: *mut PaintCore,
@@ -388,7 +381,7 @@ pub unsafe extern "C" fn paint_layer_name(
 
 /// Add a UTF-8-named layer above all existing layers; makes it active. Failure writes ID 0.
 /// # Safety
-/// Follow UTF-8 length, pointer and handle contracts in contracts/abi.md.
+/// Follow UTF-8 length, pointer and handle contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_layer_add(
     core: *mut PaintCore,
@@ -407,7 +400,7 @@ pub unsafe extern "C" fn paint_layer_add(
 
 /// Remove a layer with undo history; an empty stack has active layer ID zero.
 /// # Safety
-/// Follow handle and ordered-command contracts in contracts/abi.md.
+/// Follow handle and ordered-command contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_layer_remove(
     core: *mut PaintCore,
@@ -424,7 +417,7 @@ pub unsafe extern "C" fn paint_layer_remove(
 
 /// Selection state only; emits a state event, but no undo command or pixel revision.
 /// # Safety
-/// Follow handle and ordered-command contracts in contracts/abi.md.
+/// Follow handle and ordered-command contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_layer_set_active(
     core: *mut PaintCore,
@@ -441,7 +434,7 @@ pub unsafe extern "C" fn paint_layer_set_active(
 
 /// visible is exactly 0 or 1; opacity is finite in [0,1]. Undoable.
 /// # Safety
-/// Follow handle and ordered-command contracts in contracts/abi.md.
+/// Follow handle and ordered-command contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_layer_set_properties(
     core: *mut PaintCore,
@@ -469,7 +462,7 @@ pub unsafe extern "C" fn paint_layer_set_properties(
 
 /// Begin one undoable stroke on desc.layer_id; invalid input preserves active-layer selection.
 /// # Safety
-/// Follow input struct_size, handle and ordered-command contracts in contracts/abi.md.
+/// Follow input struct_size, handle and ordered-command contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_begin_stroke(
     core: *mut PaintCore,
@@ -495,7 +488,7 @@ pub unsafe extern "C" fn paint_core_begin_stroke(
 
 /// Add an ordered tablet sample. Resource-budget failure may roll back the entire stroke.
 /// # Safety
-/// Follow input struct_size, handle and ordered-command contracts in contracts/abi.md.
+/// Follow input struct_size, handle and ordered-command contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_stroke_to(
     core: *mut PaintCore,
@@ -513,7 +506,7 @@ pub unsafe extern "C" fn paint_core_stroke_to(
 
 /// Commit an active stroke. A no-op stroke succeeds without creating history.
 /// # Safety
-/// Follow handle and ordered-command contracts in contracts/abi.md.
+/// Follow handle and ordered-command contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_end_stroke(
     core: *mut PaintCore,
@@ -529,7 +522,7 @@ pub unsafe extern "C" fn paint_core_end_stroke(
 
 /// Roll back the active stroke; no active stroke returns INVALID_ARGUMENT.
 /// # Safety
-/// Follow handle and ordered-command contracts in contracts/abi.md.
+/// Follow handle and ordered-command contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_cancel_stroke(
     core: *mut PaintCore,
@@ -545,7 +538,7 @@ pub unsafe extern "C" fn paint_core_cancel_stroke(
 
 /// Undo one command; empty history succeeds. BUSY during an active stroke.
 /// # Safety
-/// Follow handle and ordered-command contracts in contracts/abi.md.
+/// Follow handle and ordered-command contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_undo(
     core: *mut PaintCore,
@@ -561,7 +554,7 @@ pub unsafe extern "C" fn paint_core_undo(
 
 /// Redo one command; empty history succeeds. BUSY during an active stroke.
 /// # Safety
-/// Follow handle and ordered-command contracts in contracts/abi.md.
+/// Follow handle and ordered-command contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_redo(
     core: *mut PaintCore,
@@ -578,7 +571,7 @@ pub unsafe extern "C" fn paint_core_redo(
 /// Read normal-composited linear premultiplied RGBA32F, native endian, at most 256x256.
 /// Query capacity with data=NULL/capacity=0; initialize format and stride (bytes).
 /// # Safety
-/// Follow buffer capacities, nonoverlap, struct_size and handle contracts in contracts/abi.md.
+/// Follow buffer capacities, nonoverlap, struct_size and handle contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_read_tile(
     core: *mut PaintCore,
@@ -676,7 +669,7 @@ pub unsafe extern "C" fn paint_core_subscribe(
 
 /// Disable and drain callbacks; success writes NULL. Forbidden inside a callback (BUSY).
 /// # Safety
-/// Follow writable pointer-to-handle and serialized destruction contracts in contracts/abi.md.
+/// Follow writable pointer-to-handle and serialized destruction contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_core_unsubscribe(
     core: *mut PaintCore,
@@ -695,7 +688,7 @@ pub unsafe extern "C" fn paint_core_unsubscribe(
 
 /// Copy the calling thread's last error, without clearing/replacing it. No NUL terminator.
 /// # Safety
-/// Follow nonoverlapping writable buffer/required and capacity contracts in contracts/abi.md.
+/// Follow nonoverlapping writable buffer/required and capacity contracts in contracts/ffi/abi.md.
 #[no_mangle]
 pub unsafe extern "C" fn paint_error_message(
     buffer: *mut u8,
@@ -708,4 +701,5 @@ pub unsafe extern "C" fn paint_error_message(
 }
 
 #[cfg(test)]
+#[path = "abi/tests.rs"]
 mod tests;

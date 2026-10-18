@@ -54,12 +54,12 @@ fn groups_handoff_strict_complete_projection_and_legacy_isolation() {
         serde_json::from_slice(&PackageHandoff::from_bundle(&b).unwrap().to_json().unwrap())
             .unwrap();
     let expected: Value = serde_json::from_str(include_str!(
-        "../../../../../contracts/examples/brush-package-handoff-valid.json"
+        "../../../../../contracts/brush/library/examples/brush-package-handoff-valid.json"
     ))
     .unwrap();
     assert_eq!(actual, expected);
     assert!(PackageHandoff::from_json(include_bytes!(
-        "../../../../../contracts/examples/brush-package-handoff-invalid.json"
+        "../../../../../contracts/brush/library/examples/brush-package-handoff-invalid.json"
     ))
     .is_err());
 }
@@ -229,12 +229,12 @@ fn groups_vbr10_contract_manifest_is_actual_writer_output_and_legacy_minors_load
     let b = grouped(ImageBundle::new(package(None), BTreeMap::new(), &token).unwrap());
     let bytes = encode(&b, &token).unwrap();
     let valid: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../../contracts/examples/vbr-groups-valid.json"
+        "../../../../../contracts/brush/library/examples/vbr-groups-valid.json"
     ))
     .unwrap();
     assert_eq!(manifest(&bytes), valid);
     let invalid: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../../contracts/examples/vbr-groups-invalid.json"
+        "../../../../../contracts/brush/library/examples/vbr-groups-invalid.json"
     ))
     .unwrap();
     assert!(decode(&edit(&bytes, |m| *m = invalid.clone()), &token).is_err());

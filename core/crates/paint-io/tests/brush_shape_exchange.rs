@@ -296,9 +296,9 @@ fn shape_without_scatter_or_pressure_uses_new_profile_and_pixels() {
     assert!(vbr_image::decode(&minor(&bytes, 6), &token).is_ok());
 }
 #[test]
-fn published_shape_contract_keeps_units_and_frozen_baseline() {
+fn historical_shape_contract_keeps_units_and_frozen_baseline() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-shape-jitter-v1.7.schema.json"
+        "fixtures/schema-history/dynamics/vbr-shape-jitter-v1.7.schema.json"
     ))
     .unwrap();
     let fields = &schema["$defs"]["shapeJitter"]["properties"];

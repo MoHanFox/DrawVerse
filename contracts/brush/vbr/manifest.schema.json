@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:vbr:manifest:1.0",
+  "title": "VBR 1.0 canonical writer manifest envelope",
+  "$comment": "Canonical writer envelope only; not the tolerant import schema. Runtime validates path/identity equality, uniqueness, archive budgets, resources and organization projection. See format.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "version",
+    "packageId",
+    "brushes",
+    "groups",
+    "assets"
+  ],
+  "properties": {
+    "format": {
+      "const": "DrawVerseBrush"
+    },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor"
+      ],
+      "properties": {
+        "major": {
+          "const": 1
+        },
+        "minor": {
+          "const": 0
+        }
+      }
+    },
+    "packageId": {
+      "$ref": "https://drawverse.org/schemas/brush-organization-v1.schema.json#/$defs/uuid"
+    },
+    "brushes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "path"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "https://drawverse.org/schemas/brush-organization-v1.schema.json#/$defs/uuid"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^brushes/[0-9a-f-]{36}\\.json$"
+          }
+        }
+      }
+    },
+    "groups": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "assets": {
+      "type": "array",
+      "maxItems": 6144,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "path",
+          "sha256",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/hash"
+          },
+          "sha256": {
+            "$ref": "#/$defs/hash"
+          },
+          "path": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "tip-mask",
+              "source-record",
+              "abr-original"
+            ]
+          }
+        }
+      }
+    },
+    "organization": {
+      "$ref": "https://drawverse.org/schemas/brush-organization-v1.schema.json"
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

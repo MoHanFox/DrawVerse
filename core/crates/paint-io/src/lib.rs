@@ -1,41 +1,45 @@
 //! Bounded codecs and atomic files. File operations run on background workers only.
-pub mod abr_association;
-pub mod abr_conversion;
-pub mod abr_import;
-pub(crate) mod abr_pattern_decode;
-pub mod abr_patterns;
-pub mod abr_sampled;
-pub mod brush_airbrush;
-pub mod brush_color_dynamics;
-pub mod brush_direction;
-pub mod brush_distance;
-pub mod brush_dual;
-pub mod brush_dual_color;
-pub mod brush_dual_sizing;
-pub mod brush_fade;
-pub mod brush_organization;
-pub mod brush_pressure;
-pub mod brush_resource;
-pub mod brush_rotation;
-pub mod brush_scatter;
-pub mod brush_shape_jitter;
-pub mod brush_source;
-pub mod brush_source_matrix;
-pub mod brush_speed;
-pub mod brush_state;
-pub mod brush_tangent;
-pub mod brush_taper;
-pub mod brush_texture;
-pub mod brush_tilt;
-pub mod brush_tip_dynamics;
-pub mod brush_transfer_jitter;
-pub mod brush_wet;
-mod ora;
-pub mod ps_descriptor;
-mod raster;
-pub mod vbr;
-pub mod vbr_handoff;
-pub mod vbr_image;
+
+mod abr;
+mod brushes;
+mod document;
+mod vbr_format;
+
+// Keep existing crate paths stable while implementation folders own their modules.
+use document::{ora, raster};
+
+pub use abr::abr_association;
+pub use abr::abr_conversion;
+pub use abr::abr_import;
+use abr::abr_pattern_decode;
+pub use abr::abr_patterns;
+pub use abr::abr_sampled;
+pub use abr::ps_descriptor;
+pub use brushes::dynamics::brush_color_dynamics;
+pub use brushes::dynamics::brush_direction;
+pub use brushes::dynamics::brush_distance;
+pub use brushes::dynamics::brush_fade;
+pub use brushes::dynamics::brush_pressure;
+pub use brushes::dynamics::brush_rotation;
+pub use brushes::dynamics::brush_scatter;
+pub use brushes::dynamics::brush_shape_jitter;
+pub use brushes::dynamics::brush_source_matrix;
+pub use brushes::dynamics::brush_speed;
+pub use brushes::dynamics::brush_tangent;
+pub use brushes::dynamics::brush_tilt;
+pub use brushes::dynamics::brush_tip_dynamics;
+pub use brushes::dynamics::brush_transfer_jitter;
+pub use brushes::library::brush_organization;
+pub use brushes::library::brush_resource;
+pub use brushes::library::brush_source;
+pub use brushes::library::brush_state;
+pub use brushes::settings::brush_airbrush;
+pub use brushes::settings::brush_dual;
+pub use brushes::settings::brush_dual_color;
+pub use brushes::settings::brush_dual_sizing;
+pub use brushes::settings::brush_taper;
+pub use brushes::settings::brush_texture;
+pub use brushes::settings::brush_wet;
 use paint_core::{Document, DocumentSnapshot};
 use paint_task::CancellationToken;
 use std::{
@@ -43,6 +47,9 @@ use std::{
     io::{Read, Write},
     path::Path,
 };
+pub use vbr_format::vbr;
+pub use vbr_format::vbr_handoff;
+pub use vbr_format::vbr_image;
 pub const MAX_PIXELS: u64 = 134_217_728;
 pub const MAX_EDGE: u32 = 16_384;
 pub const MAX_INPUT: u64 = 256 * 1024 * 1024;
@@ -204,4 +211,4 @@ pub fn save(
     Ok(())
 }
 
-pub mod brush_smoothing;
+pub use brushes::settings::brush_smoothing;

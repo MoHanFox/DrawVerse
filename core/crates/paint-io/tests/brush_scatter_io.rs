@@ -263,9 +263,9 @@ fn scatter_only_has_no_pressure_payload_and_old_state_remains_old() {
 }
 
 #[test]
-fn published_scatter_contract_matches_seed_and_count_units() {
+fn historical_scatter_contract_matches_seed_and_count_units() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-scatter-v1.6.schema.json"
+        "fixtures/schema-history/dynamics/vbr-scatter-v1.6.schema.json"
     ))
     .unwrap();
     let fields = &schema["$defs"]["scatterDynamics"]["properties"];
@@ -283,9 +283,9 @@ fn published_scatter_contract_matches_seed_and_count_units() {
 }
 
 #[test]
-fn published_scatter_controls_contract_matches_optional_fields() {
+fn historical_scatter_controls_contract_matches_optional_fields() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-scatter-controls-v1.42.schema.json"
+        "fixtures/schema-history/dynamics/vbr-scatter-controls-v1.42.schema.json"
     ))
     .unwrap();
     assert_eq!(schema["$id"], "urn:drawverse:brush:scatter-controls:1.42");
@@ -300,9 +300,9 @@ fn published_scatter_controls_contract_matches_optional_fields() {
 }
 
 #[test]
-fn published_dual_coverage_modes_contract_matches_core_names() {
+fn historical_dual_coverage_modes_contract_matches_core_names() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-dual-modes-v1.43.schema.json"
+        "fixtures/schema-history/dual/vbr-dual-modes-v1.43.schema.json"
     ))
     .unwrap();
     assert_eq!(schema["$id"], "urn:drawverse:brush:dual-modes:1.43");

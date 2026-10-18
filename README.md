@@ -1,171 +1,111 @@
 # DrawVerse
-### 说明
 
-DrawVerse致力成为一款专业的绘画软件，由DrawVerse Rust内核驱动。目前阶段`master`分支即`dev`分支不稳定，内部代码仍在整理，可维护性仍在提升，不建议您投入使用。
+DrawVerse 是一款正在开发中的桌面绘画软件。Rust 内核负责笔触、文档、历史、文件交换和 CPU 合成，C++ / Qt Quick / QML 负责界面与输入，两者通过 C ABI 连接。
 
-文档已按功能域整理，见 [文档索引](docs/README.md)。
+目前主要在 Windows x64 上开发和验证。`master` 仍处于持续开发阶段，功能边界和实际验证范围以对应验收记录为准。macOS / Linux、GPU 绘画、完整色彩管理、PSD 和 Python 插件仍待推进。
 
-核心代码: `core/crates`
+[文档索引](docs/README.md) · [验收记录](docs/validations/README.md) · [当前契约](contracts/README.md) · [代码结构](docs/platform/source-layout-design.md)
+
+## 当前功能
+
+| 领域 | 已有能力 |
+| --- | --- |
+| 绘画与笔刷 | 程序与图片笔尖、压感、独立流量与不透明度、形状与散布动态、纹理、双重笔刷、平滑、起收笔、湿混、涂抹与时间喷枪 |
+| 画笔库 | 预设与分组管理、搜索、多选、拖放排序、ABR 导入、VBR 1.0 导入导出、资源与来源记录保存 |
+| 工具 | 画笔、橡皮、吸色、矩形与椭圆选区、自由与多边形套索、魔棒、油漆桶、自由变换和液化 |
+| 图层与历史 | 图层组、蒙版、剪贴、27 种混合模式、锁定、批量操作、撤销与重做，以及瓦片分页和磁盘历史 |
+| 工作区 | 多文档、画布与工具面板停靠、浮动窗口、布局恢复、导航与偏好设置 |
+| 文件交换 | PNG / JPEG / WebP 图片读写，OpenRaster 文档读写，图片置入与导出 |
+
+ABR 导入按实际支持范围转换，部分 Photoshop 行为采用近似并保留来源报告，不代表完全等价。笔刷设置中的双色绘制入口已移除；当前支持范围见 [笔刷剩余功能与边界](docs/planning/brush-system-remaining.md)。
+
+## 项目结构
+
 ```text
-.../core/crates:
-├─paint-core # 核心库，包括笔刷系统，历史系统，一些工具的算法
-├─paint-ffi # 语言交互接口
-├─paint-io # IO层
-├─paint-render # 渲染 / 合成模块
-├─paint-storage # 易失性临时磁盘暂存空间管理器
-└─paint-task # DrawVerse Rust 线程池 / CPU 任务调度器
+DrawVerse/
+├─ core/
+│  ├─ crates/          Rust 内核、任务、渲染、存储、IO 与 FFI
+│  └─ tools/           C ABI 头文件生成工具
+├─ ui/
+│  ├─ src/             按功能组织的 C++ 界面与核心桥接
+│  ├─ qml/             应用装配、功能面板和公共组件
+│  ├─ include/         生成的 C ABI 头文件
+│  └─ tests/           Qt 界面与交互测试
+├─ contracts/          当前格式与接口契约
+├─ docs/               按领域组织的设计与说明
+│  └─ validations/     按领域分类的验收记录
+├─ tests/              原生 ABI 与工程工具测试
+└─ tools/              构建检查、环境安装与性能测量脚本
 ```
-UI层代码: `ui/src`
 
-项目结构调整将会在笔刷系统完成正式版时进行
+| Rust crate | 职责 |
+| --- | --- |
+| `paint-core` | 文档、笔刷执行、图层、选区、像素与历史 |
+| `paint-task` | 有界任务调度、优先级与协作取消 |
+| `paint-render` | 快照合成、CPU 视口与显示帧 |
+| `paint-storage` | 暂存目录、容量检查与生命周期管理 |
+| `paint-io` | 图片、OpenRaster、ABR、VBR 与笔刷状态编解码 |
+| `paint-ffi` | C ABI、句柄、异步会话与调用方内存边界 |
 
----
-### 流水线即其设计
+文档计算和大块像素处理在 Rust 后台执行；UI 通过会话提交命令、接收元数据和显示帧。目录职责与依赖方向见 [源码结构设计](docs/platform/source-layout-design.md)。
 
-笔刷系统（分阶段实施）：[引擎与界面设计](docs/planning/brush-system-design.md)、[VBR 格式草案](docs/brush/vbr/vbr-format-design.md)、[分阶段验收计划](docs/planning/brush-system-validation.md)。规划包含 ABR 导入、共用画笔/橡皮/涂抹、PS 风格分类设置及笔尖描边预览。程序/图片笔尖、VBR1.1与来源报告已有阶段实现；ABR6/10基础导入入口已接入（部分转换会明确报告）。VBR1.2来源交换已接入，导出可显式选择完整原始ABR范围。完整ABR参数/动态、分组扩展及湿混仍待完成。
+## 构建与运行
 
-置入图片与自由变换：[设计](docs/tools/transform-design.md) / [验收](docs/tools/transform-validation.md)；文件→置入图片，Ctrl+T 变换，Enter/Esc 确认/取消，Ctrl+Z/Ctrl+Shift+Z 会话撤销重做；保留原图，支持组/多选/选区像素、网格与栅格化，ABI 1.23。
+需要 Git、Rust（含 rustfmt 和 clippy）、CMake 3.24+、Python 3.9+、C11 / C++20 编译器及 64 位链接工具。界面需要 Qt 6.5+ 的 Core、Gui、Qml、Quick、QuickControls2 和 Test 模块。
 
-组穿透：[设计](docs/layers/group-pass-through-design.md) / [验收](docs/layers/group-pass-through-validation.md)；选择组后混合模式可设“穿透”，允许组内混合影响组外下层，支持历史/ORA，ABI 1.19。
+Windows 使用 x64 MSVC 与 Windows SDK，在 Developer PowerShell 中运行以下命令，并确保 Rust 和 CMake 已加入 PATH。项目内 Qt 安装脚本需要 Python 3.10+；本机验证使用 Qt 6.8.3 MSVC x64。
 
-吸色取色环：[设计](docs/tools/eyedropper-ring-design.md) / [验收](docs/tools/eyedropper-ring-validation.md)；I 或 Alt 按下拖动显示当前取样色与取色前前景色，支持数位笔和显示开关。
+```powershell
+# 可选：安装到项目的 .tools/qt；已有 Qt SDK 可直接使用自己的路径。
+powershell -ExecutionPolicy Bypass -File tools/setup-qt.ps1
 
-涂抹：[设计](docs/brush/wet/smudge-design.md) / [验收](docs/brush/wet/smudge-validation.md)，独立 R 工具、共用笔刷预设/间隔（最低 1%）、强度/压感/所有图层取样/手指绘画；参数说明悬停 1 秒显示，ABI 1.18。
-
-魔棒：[设计](docs/tools/wand-design.md) / [验收](docs/tools/wand-validation.md)，W 激活；四种选区组合、七种取样大小、容差/AA/连续/所有图层取样，ABI 1.17。
-
-Rust 内核 / C++20 Qt 6.5+ UI / 独立 Python 插件进程的跨平台专业绘画软件项目。
-
-已完成架构、paint-core、**paint-task + CPU paint-render**、**paint-ffi + cbindgen（ABI 1.38.0）**，**paint-storage**，以及 **Qt Quick / QML 绘画 UI**。QML 已接 Rust 异步文档与视口渲染；**paint-io（PNG/JPEG/WebP/OpenRaster）** 已接入后台任务；色彩/GPU 等继续逐模块实施，插件最后完成。
-
-- [画布液化](docs/tools/liquify-design.md) / [验证](docs/tools/liquify-validation.md)
-- [共用选区参数、自由和多边形套索](docs/tools/lasso-selection-design.md) / [验证](docs/tools/lasso-selection-validation.md)
-- [框选与套索绘画/擦除性能](docs/tools/selection-performance-design.md) / [验证](docs/tools/selection-performance-validation.md)
-- [油漆桶与填充参数](docs/tools/bucket-design.md) / [验证](docs/tools/bucket-validation.md)
-- [首行菜单悬停、即时混合预览与多选建组](docs/interface/menu-hover-grouping-design.md) / [验证](docs/interface/menu-hover-grouping-validation.md)
-- [面板收起后尺寸保持](docs/interface/panel-fold-sizing-design.md) / [验证](docs/interface/panel-fold-sizing-validation.md)
-- [悬停分类菜单、组删除选择与图层批量操作](docs/layers/menu-layer-batch-design.md) / [验证](docs/layers/menu-layer-batch-validation.md)
-- [遗留功能修复与工具栏吸色](docs/planning/deepseek-recovery-design.md) / [验证](docs/planning/deepseek-recovery-validation.md)
-- [架构与工作区设计](docs/platform/architecture.md) / [模块状态](docs/planning/roadmap.md)
-- [真实历史名称和初始状态边界](docs/document/history-labels-design.md) / [验证](docs/document/history-labels-validation.md)
-- [面板细化、混合悬停预览与数位板轮廓](docs/interface/panel-refinement-design.md) / [验证](docs/interface/panel-refinement-validation.md)
-- [跨平台检出和构建一致性](docs/platform/build-reproducibility.md)
-- [FFI 方案](docs/platform/ffi-design.md) / [正式契约](contracts/abi.md) / [生成头](ui/include/paint_api.h)
-- [最新 FFI 验证](docs/platform/ffi-validation.md) / [首轮内核历史验证](docs/planning/validation.md)
-- [QML UI 设计](docs/brush/ui/qml-ui-design.md) / [UI 验证与启动说明](docs/brush/ui/qml-ui-validation.md)
-- [参考图 UI / 停靠设计](docs/brush/ui/reference-ui-design.md) / [菜单与材质验收](docs/brush/ui/reference-ui-validation.md)
-- [画布与工具条自由停靠](docs/interface/flexible-docking-design.md) / [最新工作区验收](docs/interface/flexible-docking-validation.md)
-- [多文档与面板列设计](docs/document/document-workspace-design.md) / [工作区验收](docs/document/document-workspace-validation.md)
-- [常驻图标面板列](docs/interface/persistent-panel-rails-design.md) / [当前交互验收](docs/interface/persistent-panel-rails-validation.md)
-- [工具列与画布交互](docs/interface/workspace-tools-design.md) / [当前界面与交互验收](docs/interface/workspace-tools-validation.md)
-- [面板分组与统一渲染](docs/interface/panel-categories-design.md) / [分组与导航验收](docs/interface/panel-categories-validation.md)
-- [面板状态与紧凑信息栏](docs/interface/panel-presentation-design.md) / [当前样式与交互验收](docs/interface/panel-presentation-validation.md)
-- [图标列前版交互](docs/interface/icon-rail-design.md) / [前版交互验收](docs/interface/icon-rail-validation.md)
-- [窗口恢复 / 边缘吸附设计](docs/interface/window-recovery-design.md) / [当前验收](docs/interface/window-recovery-validation.md)
-- [任务栏 / 原生标题残留修复](docs/interface/taskbar-window-design.md) / [当前验收](docs/interface/taskbar-window-validation.md)
-- [菜单底层圆角模糊 / 最大化拖动](docs/interface/menu-blur-layer-design.md) / [当前验收](docs/interface/menu-blur-layer-validation.md)
-- [矩形/椭圆选区设计](docs/tools/selection-design.md) / [选区验收](docs/tools/selection-validation.md)
-- [画笔库与当前画笔设置](docs/brush/ui/brush-library-design.md) / [画笔模块验收](docs/brush/ui/brush-library-validation.md)
-- [任务与 CPU 视口设计](docs/platform/task-render-design.md) / [最新模块验证](docs/platform/task-render-validation.md)
-- [绘画性能修复设计](docs/platform/painting-performance-design.md) / [修复前后实测](docs/platform/painting-performance-validation.md)
-- [图层控制设计](docs/layers/layers-design.md) / [图层控制验收](docs/layers/layers-validation.md)
-- [并排蒙版、剪贴与预览修复设计](docs/layers/clipping-design.md) / [最新验收](docs/layers/clipping-validation.md)
-- [蒙版/拖放/默认背景设计](docs/layers/masks-design.md) / [本轮验收](docs/layers/masks-validation.md)
-- [图层组设计](docs/layers/groups-design.md) / [组与透明背景验收](docs/layers/groups-validation.md) / [棋盘格背景设计](docs/document/transparency-design.md)
-- [暂存盘设置设计](docs/document/storage-settings-design.md) / [设置与清扫验证](docs/document/storage-settings-validation.md)
-- [大笔触历史存储设计](docs/document/history-storage-design.md) / [历史存储验证](docs/document/history-storage-validation.md)
-
----
-
-## 当前能力
-
-64×64 稀疏瓦片、线性预乘 RGBA32F、多图层、16 级隔离图层组、可编辑图层/组蒙版、连续剪贴蒙版、拖放排序和归组、稀疏白色背景、27 种混合模式、可见性/不透明度/填充、透明像素锁/位置锁/完全锁、非破坏性整数移动、矩形/椭圆选区与组合/反选、压感圆笔刷、橡皮擦、距离插值、取消、图层与笔触撤销/重做、历史/瓦片预算、脏区域、只读快照。
-
-C ABI 保留原同步文档/事件/线性读取，新增异步 session、FIFO 命令、原子元数据、四槽视口及完整 sRGB 显示帧。任务池支持有界优先级、协作取消与 panic 隔离，文档单线程独占写入；Renderer 在快照上合成和稀疏 LOD。core/task/render 禁 unsafe，core 使用已锁定的 tempfile 管理磁盘历史，caller-memory/回调 unsafe 限于 paint-ffi。cbindgen 为独立构建工具依赖，固定版本与 Cargo.lock。
-
-大笔触不再因超过 64MiB 内存撤销预算而回滚：小命令用 Arc 快照，大命令做浮点位模式无损压缩，必要时转存配置的暂存目录，仍可整笔撤销/重做。保留磁盘历史预算 4GiB / 历史命令最多 100 条，准备新命令会暂时另占空间；淘汰/正常退出自动删除临时文件。磁盘失败会明确报错并保护旧状态。文档瓦片分页已实现：默认 4096 个驻留瓦片（像素约 256MiB）、最多 1,000,000 个逻辑瓦片、8GiB 暂存区段，冷页按需读取；快照/历史不固定整张像素于 RAM。预算不等于整个进程 RAM，格式解码/导出工作区另占空间。paint-storage 已实现路径设置、保留空闲空间检查与标记/租约锁保护的残留清扫。编辑 → 性能与暂存盘可保存配置，重启生效；默认系统临时目录，保留 512MiB 空闲。只清理专用目录内验证过的失活 run，跳过陌生内容/链接/活动实例，不是自动恢复绘画。设计和实测见 [文档分页](docs/document/document-paging-design.md) / [分页验收](docs/document/document-paging-validation.md)。
-
-绘画性能回退已修复：源瓦片合成与显示编码按身份复用，稀疏矩形输出；QML 图层只在定义/属性变化时更新模型。固定 600 点压感场景进程累计 CPU 时间下降约 90%，画面更新间隔 p95 从 96ms 降至 17ms；这是本机固定负载实测。每视口缓存计账上限 96 MiB，四槽最多 384 MiB，另有容器开销与现有文档/帧预算。
-
-QML 窗口提供压感圆笔/橡皮擦/移动图层、多图层、选区、撤销/重做和颜色/画笔/图层/历史/导航面板。新建/打开添加独立文档，各自保留真实 session、文件任务、历史与视口；工具面板随活动文档切换。画布只与画布组合为浮窗标签，通过主文档区上边缘归位；工具面板不能挂到画布上。全部画布浮动或关闭时工作区保留 #17191C 留空区。工具条可在工作区两侧及任意工具面板两侧停靠；垂直面板共用最上方导航栏，整体折叠为图标，内部为 1px 可拖分隔线；面板列仅保留图标折叠，接收新组继承图标状态；图标可直接拖出，每个图标可打开独立常驻面板，同列支持多个面板同时展开；点击已打开图标置顶，点击空白与失焦保持打开，通过收回按钮或 Escape 关闭。面板可沿列侧边上下滑动并独立调整宽高；浮动列只要求导航靠列，面板底部不与列底部对齐。整个浮动列归位保留展开/图标状态，以独立列插入主窗。主工作区左右边缘在画布独占或无画布时仍接收工具归位。工具窗口与停靠面板边缘按 24px 内外容差就近选择，窄边发光，正文不默认合并标签；图标列背景统一为面板表面色。最小化后保持无边框和原有最大化状态，独立图标列空白区域与主窗附着列统一为 #1C1E21，并保留可调高度。默认采用双列停靠，菜单“默认布局”恢复此配置，参考图预设删除。普通面板标签在栏内拖动优先交换位置，拖出栏才拆为浮窗；常驻图标面板仅显示对应内容，其标题也可拖出。单画布浮窗只有一行标题，多个画布组合时恢复窗口标题与文档标签，标题显示该浮窗活动文档名；新建入口保留在文件菜单，文档条加号移除。关闭在面板菜单中操作。实际浮窗跟随鼠标，位置与停靠预览即时更新，Esc 还原，Ctrl/Command 暂停停靠，自己不作为目标。布局 v6 保存工具树、图标列和浮窗，旧布局迁移保留工具面板。关闭文档/退出逐个处理未保存文档，工作区布局不自动重建文档像素。数位板经 QTabletEvent 接入并抑制合成鼠标。详见 [设计](docs/document/document-workspace-design.md) / [验收](docs/document/document-workspace-validation.md)。
-
-QML 新建每边支持 1–1,000,000 像素，只为可见区域和导航分配显示帧，每槽输出最多 4,194,304 像素（RGBA8 16 MiB），不按文档尺寸分配整张 QImage。Qt 接收队列每槽至多一张待处理帧。瓦片/历史仍有资源预算，尺寸上限不代表能无限量填满画布。当前 CPU 降采样为全局对齐的 2^LOD 方块平均；任意比例精细重采样后续优化。
-
-像素蒙版缩略图并排位于内容预览右侧，点击缩略图切换绘画目标；Shift 点击蒙版启用/禁用。Alt/Option 点击两层之间创建/释放剪贴蒙版，也可使用 Ctrl+Alt+G（macOS Command+Option+G）和图层菜单；连续剪贴层共用同级基底，基底名称下划线、上层缩进箭头。缩略图的棋盘格只覆盖真实图像区域，边缘 LOD 不再混入画布外透明像素。
-
-图层顶部提供混合模式、不透明度、填充和三个锁；百分比键入或拖滑条松手一次提交。图层列表按可见行创建，空闲 200ms 后后台更新原始内容缩略图；绘画时取消。V 选择移动工具，拖动松开提交一次移动，方向键 1px、Shift 10px、Esc 取消。移出画布的内容保留，移动后仍可绘画。外观、锁和移动均可撤销，OpenRaster 保存这些参数。混合采用线性 sRGB 公共公式，未实现 Photoshop 特殊八种混合的 Fill 曲线，不承诺 Photoshop 逐像素一致。
-
-未实现魔棒/一般变换、独立 Wintab 适配与真实硬件验收、ICC/16F/HDR/Rust GPU、PSD/自有格式、Python SDK。文件菜单已接入打开、保存/另存 OpenRaster、图片导出和取消任务；新建/打开/退出可先保存当前绘画。工具主窗与浮窗的二维分割、多文档画布标签和布局 v6 已接入；<8ms / 60–120fps 为后续性能验收目标。
-
-文件模块支持 PNG 8/16 位导入、JPEG/WebP 导入和三格式 8 位合成导出；JPEG 使用线性白色背景，WebP 无损编码。OpenRaster 保留平面及嵌套隔离图层组、名称、顺序、可见性、不透明度及活动节点，并以 DrawVerse 层扩展 v1 保留填充、混合模式、三种锁、位置与溶解种子，保留画布外内容；标准定义的 15 种 Normal/颜色混合使用 SVG 名称互通，其他模式由扩展保存；合成预览为最终效果，但外部读者可能忽略扩展。以 8 位 sRGB 保存，不是 32F 无损原生格式。带 ICC、自定义 PNG 色彩元数据、动画、穿透组或未知混合/合成运算的文件会明确拒绝。栅格边长 ≤16,384、像素 ≤134,217,728（128M），输入 ≤256 MiB、解码器分配预算 1GiB；ORA 总节点 ≤256、嵌套 ≤16 级，图层总栅格亦受预算限制。保存先写同目录临时文件再原子替换，失败保留旧文件。详细范围与验证见 [IO 设计](docs/document/io-design.md) / [组验收](docs/layers/groups-validation.md)。
-
-新建默认一个不透明白色“背景”；新增像素层默认中文编号。蒙版选中后支持黑/白/灰绘制、显隐禁用和撤销，预览并排显示在所属节点右侧。图层/组可拖入组或拖到行间排序，组行只显示名称。主画布与导航均以白灰正方形棋盘格表示透明区域；全部隐藏时可见完整格子，不改导出 alpha。图层面板可分组、折叠、移入/移出和解组，组属性只应用一次，完全/位置锁继承；组与蒙版是不同功能。当前组为隔离模式，穿透尚未支持。
-
----
-
-## 环境
-
-Git（检出规则测试）、Rust >=1.85（rustfmt、clippy），CMake >=3.24，Python >=3.9（标准库验证脚本），C11/C++20 编译器及平台链接工具。首次生成器编译需下载锁定 crates，不需要全局安装 cbindgen。
-
-UI 需要 Qt >=6.5 的 Core/Gui/Qml/Quick/QuickControls2/Test。本机实测 Qt 6.8.3 MSVC x64。Windows 可运行 `powershell -ExecutionPolicy Bypass -File tools/setup-qt.ps1` 安装项目内 SDK（Python >=3.10），不会改全局环境；也可指定已有 SDK。其他平台使用原生 Qt SDK。
-
-Windows 使用 x64 MSVC + Windows SDK，建议 Developer PowerShell，将 Rust/CMake/Ninja 加入 PATH；本轮不混用 MSVC Rust 与 MinGW C++。macOS 用 Xcode 命令行工具，Linux 用 GCC/Clang。支持 64 位 ABI；已实测 Windows，macOS/Linux/MSRV 由后续 CI 验证。本机环境初始化见最新验证记录。
-
----
-
-## 构建 / 运行 / 验证
-
-```sh
-# 根目录完整验证：Rust/生成头/C11+C++20 static+shared/Qt Test/两倍 DPI
-# 自动识别项目内 MSVC Qt SDK；已有 Qt 可传 --qt-prefix <SDK>
-python tools/check.py
-
-# 明确只验证核心与 ABI，不代表 UI 验证
-python tools/check.py --core-only
-
-# Rust 内核及 FFI
-cargo build --manifest-path core/Cargo.toml -p paint-core -p paint-ffi --release --locked
-
-# 更新或检查正式头，检查不覆盖文件
-cargo run --manifest-path core/Cargo.toml -p paint-api-gen --locked
-cargo run --manifest-path core/Cargo.toml -p paint-api-gen --locked -- --check
-
-# Qt UI 构建；在已激活 MSVC/Rust/CMake 的终端执行
+# 从仓库根目录配置并构建完整应用。
 cmake -S . -B build/qt -DCMAKE_BUILD_TYPE=Release -DDRAWVERSE_BUILD_UI=ON -DCMAKE_PREFIX_PATH=.tools/qt/6.8.3/msvc2022_64
 cmake --build build/qt --config Release
-ctest --test-dir build/qt -C Release -R "^(abi_|qt_ui_)" --output-on-failure
 
-# Windows 启动（Qt DLL、QML 与平台插件已随构建部署）
+# 启动；Windows 构建会部署所需 Qt DLL 与 QML 插件。
 ./build/qt/bin/Release/drawverse.exe
-# macOS/Linux 使用原生 SDK 与 CMake 对应输出；本轮未实测这两个平台
-
-# 仅 ABI 调用测试
-ctest --test-dir build/qt -C Release -R "^abi_" --output-on-failure
-
-# 界面视觉验收：通过真实 ABI 画压感笔触，保存主窗截图后自动退出
-./build/qt/bin/Release/drawverse.exe --preview artifacts/qml-workspace.png
-
-# 原生绘画性能测量：真实 QML 窗口、压感输入与进程 CPU 时间
-python tools/measure_painting.py build/qt/bin/Release/drawverse.exe artifacts/painting-ui.json
-cargo run --manifest-path core/Cargo.toml -p paint-render --example painting_bench --release --locked
-# 框选/4096 点套索画笔及橡皮：首轮冷缓存，后两轮重用，撤销恢复相同像素
-cargo run --manifest-path core/Cargo.toml -p paint-core --example selection_performance --release --locked
-# 8K 全幅单笔 / 驻留预算 / 冷热概览 / 完整撤销重做
-cargo run --manifest-path core/Cargo.toml -p paint-render --example paging_bench --release --locked
-
-# 内核像素预览
-cargo run --manifest-path core/Cargo.toml -p paint-core --example stroke_preview --release -- artifacts/stroke-preview.ppm
 ```
 
-Windows 产物为 core/target/release/paint_ffi.lib（staticlib）、paint_ffi.dll 和 paint_ffi.dll.lib（动态导入库）；Linux 为 .a/.so，macOS 为 .a/.dylib。CMake 提供 drawverse_ffi_static/shared 导入 target 与平台链接依赖。ABI 程序位于 build/bin/Release/abi_c_static.exe 等路径；统一 check 构建于 build/abi/bin/Release/，可直接运行，不需要 Qt。
+只构建 Rust 内核与 FFI：
 
-可传 `python tools/check.py --cargo <路径> --cmake <路径>`；rustc/链接器仍须有效 PATH。CMake 可配置 DRAWVERSE_CARGO_EXECUTABLE 与 DRAWVERSE_CARGO_TARGET_DIR。保持旧 build tree 的 generator 不变。
+```sh
+cargo build --manifest-path core/Cargo.toml -p paint-core -p paint-ffi --release --locked
+```
 
-CLion 从仓库根目录的 `CMakeLists.txt` 加载，不能单独加载 `ui`。Windows 工具链选 Visual Studio、架构 `amd64`，C/C++ 编译器应为 `Hostx64/x64/cl.exe`；CMake profile 也须选择该工具链。UI 配置添加 `-DDRAWVERSE_BUILD_UI=ON` 与 `-DCMAKE_PREFIX_PATH=<Qt MSVC x64 SDK>`。从 MinGW/x86/ARM64 切换后执行 Reset Cache and Reload Project。中文 MSVC 在无终端 IDE 中的依赖输出由项目统一处理，见 [CLion 构建修复](docs/platform/build-reproducibility.md)。
+CLion 从仓库根目录的 `CMakeLists.txt` 加载项目。Windows 不混用 MSVC Rust 与 MinGW C++；切换工具链时使用独立构建目录。更多说明见 [构建复现](docs/platform/build-reproducibility.md)。
 
-后续模块先设计再实现，并补对应 Rust / Qt Test / pytest；禁止空实现或假成功。暂存盘设置、图层控制、隔离图层组与透明棋盘格已完成；下一模块继续深化文档模型（选区与变换），之后色彩/GPU/PSD；插件最后完成。
+## 验证
 
+统一验证入口会检查 Rust、生成头、C / C++ 静态与动态 ABI，以及 Qt 测试：
 
-选区：M 矩形，Shift+M 切换椭圆；拖动时 Shift 添加，Alt/Option 减去，Shift+Alt/Option 相交。Esc 取消拖动，Ctrl/Command+A 全选、Ctrl/Command+D 取消、Ctrl/Command+Shift+I 反选。边界使用静态黑白虚线，选区限制笔刷/擦除/蒙版，不裁剪导出。最多64个几何步骤，替换重置步骤，超限拒绝并保护当前选区；套索、羽化和魔棒继续后续实现。选区随 OpenRaster 扩展 v4 保存。
+```sh
+python tools/check.py
 
-图层操作（ABI 1.20）：[设计](docs/layers/layer-actions-design.md) / [验收](docs/layers/layer-actions-validation.md)。右键菜单、图层与组复制粘贴/合并、缩略图焦点、快捷键与下边缘拖放修复。
+# 仅验证 Rust 与 ABI。
+python tools/check.py --core-only
+
+# 使用已有 Qt SDK。
+python tools/check.py --qt-prefix <Qt-SDK-path>
+```
+
+常用局部检查：
+
+```sh
+cargo check --manifest-path core/Cargo.toml --workspace --all-targets --locked
+cargo fmt --manifest-path core/Cargo.toml --all --check
+cargo run --manifest-path core/Cargo.toml -p paint-api-gen --locked -- --check
+ctest --test-dir build/qt -C Release -R "^abi_" --output-on-failure
+```
+
+`ui/include/paint_api.h` 由 `paint-api-gen` 生成。调整 Rust ABI 后，使用不带 `--check` 的同一命令更新生成头。
+
+最近的结构整理已完成 Release 构建、原生启动绘制和专项回归；全套 IO 与额外 Qt 交互检查仍有已知失败项，详见 [结构整理验收](docs/validations/platform/source-layout-validation.md)。各阶段记录不代表当前全量测试或跨平台验证均已通过。
+
+## VBR 1.0 与文档维护
+
+当前 VBR 写出固定为 `major: 1, minor: 0`。读取接受 1.x，按实际字段递归补全缺项；可选功能对象整体缺失或为 `null` 时保持关闭。非法参数、未知字段和损坏资源仍会拒绝。
+
+VBR 格式版本与 ABI、state、behavior、模型和来源转换器版本各自独立。当前规范位于 [contracts](contracts/README.md)；开发迭代 schema 仅存放在 `paint-io` 的测试数据目录，供历史回归使用。
+
+设计与说明放在 `docs` 对应领域，独立验收记录统一放在 `docs/validations` 对应领域。修改功能时同步维护设计、验收与相对链接，完整分类入口见 [文档索引](docs/README.md)。

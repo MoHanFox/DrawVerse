@@ -228,9 +228,9 @@ fn bad_fields_versions_and_capabilities_are_rejected() {
 }
 
 #[test]
-fn published_device_contract_matches_control_units_and_source_roles() {
+fn historical_device_contract_matches_control_units_and_source_roles() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-tip-dynamics-v1.5.schema.json"
+        "fixtures/schema-history/dynamics/vbr-tip-dynamics-v1.5.schema.json"
     ))
     .unwrap();
     assert_eq!(

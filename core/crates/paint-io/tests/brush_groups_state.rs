@@ -26,8 +26,11 @@ fn decode(v: &Value) -> paint_io::Result<BrushCatalog> {
 #[test]
 fn groups_state20_contract_examples_match_the_core_organization() {
     use paint_io::brush_organization::OrganizationParameters;
-    let valid = include_str!("../../../../contracts/examples/brush-organization-valid.json");
-    let invalid = include_str!("../../../../contracts/examples/brush-organization-invalid.json");
+    let valid =
+        include_str!("../../../../contracts/brush/library/examples/brush-organization-valid.json");
+    let invalid = include_str!(
+        "../../../../contracts/brush/library/examples/brush-organization-invalid.json"
+    );
     let parameters: OrganizationParameters = serde_json::from_str(valid).unwrap();
     let mut catalog = BrushCatalog::default();
     catalog.set_organization(parameters.core().clone()).unwrap();

@@ -551,9 +551,9 @@ fn texture_depth_dynamics_require_vbr127_and_roundtrip_real_pixels() {
 }
 
 #[test]
-fn published_texture_contract_matches_resource_roles_and_new_limits() {
+fn historical_texture_contract_matches_resource_roles_and_new_limits() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-texture-v1.9.schema.json"
+        "fixtures/schema-history/texture/vbr-texture-v1.9.schema.json"
     ))
     .unwrap();
     assert_eq!(
@@ -575,9 +575,9 @@ fn published_texture_contract_matches_resource_roles_and_new_limits() {
 }
 
 #[test]
-fn published_color_burn_contract_requires_vbr125_and_explicit_mode() {
+fn historical_color_burn_contract_requires_vbr125_and_explicit_mode() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-texture-modes-v1.25.schema.json"
+        "fixtures/schema-history/texture/vbr-texture-modes-v1.25.schema.json"
     ))
     .unwrap();
     assert_eq!(
@@ -595,9 +595,9 @@ fn published_color_burn_contract_requires_vbr125_and_explicit_mode() {
 }
 
 #[test]
-fn published_texture_adjustment_contract_requires_vbr126() {
+fn historical_texture_adjustment_contract_requires_vbr126() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-texture-adjustments-v1.26.schema.json"
+        "fixtures/schema-history/texture/vbr-texture-adjustments-v1.26.schema.json"
     ))
     .unwrap();
     assert_eq!(
@@ -611,9 +611,9 @@ fn published_texture_adjustment_contract_requires_vbr126() {
 }
 
 #[test]
-fn published_advanced_texture_contract_lists_vbr136_modes() {
+fn historical_advanced_texture_contract_lists_vbr136_modes() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-texture-modes-v1.36.schema.json"
+        "fixtures/schema-history/texture/vbr-texture-modes-v1.36.schema.json"
     ))
     .unwrap();
     assert_eq!(
@@ -638,9 +638,9 @@ fn published_advanced_texture_contract_lists_vbr136_modes() {
 }
 
 #[test]
-fn published_latest_texture_contract_lists_vbr137_modes() {
+fn historical_latest_texture_contract_lists_vbr137_modes() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-texture-modes-v1.37.schema.json"
+        "fixtures/schema-history/texture/vbr-texture-modes-v1.37.schema.json"
     ))
     .unwrap();
     assert_eq!(
@@ -656,9 +656,9 @@ fn published_latest_texture_contract_lists_vbr137_modes() {
 }
 
 #[test]
-fn published_dissolve_texture_contract_lists_vbr139_mode() {
+fn historical_dissolve_texture_contract_lists_vbr139_mode() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-texture-modes-v1.39.schema.json"
+        "fixtures/schema-history/texture/vbr-texture-modes-v1.39.schema.json"
     ))
     .unwrap();
     assert_eq!(
@@ -672,9 +672,9 @@ fn published_dissolve_texture_contract_lists_vbr139_mode() {
 }
 
 #[test]
-fn published_texture_source_contract_requires_vbr127() {
+fn historical_texture_source_contract_requires_vbr127() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-texture-source-v1.27.schema.json"
+        "fixtures/schema-history/texture/vbr-texture-source-v1.27.schema.json"
     ))
     .unwrap();
     assert_eq!(

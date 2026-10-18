@@ -615,9 +615,9 @@ fn all_1024_presets_can_have_distinct_current_and_baseline_tips_and_originals() 
 }
 
 #[test]
-fn published_source_contract_covers_record_identity_versions_and_asset_roles() {
+fn historical_source_contract_covers_record_identity_versions_and_asset_roles() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-source-v1.2.schema.json"
+        "fixtures/schema-history/vbr/vbr-source-v1.2.schema.json"
     ))
     .unwrap();
     assert_eq!(

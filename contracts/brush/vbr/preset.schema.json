@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:vbr:preset:1.0",
+  "title": "VBR 1.0 canonical preset envelope",
+  "$comment": "Envelope only. Parameter ranges, feature combinations, metadata consistency and resource integrity are validated by paint-io. Tolerant import completes missing fields before this canonical representation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "engineProfile",
+    "behaviorVersion",
+    "requiredCapabilities",
+    "parameters"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://drawverse.org/schemas/brush-organization-v1.schema.json#/$defs/uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "\\S",
+      "not": {
+        "pattern": "\\u0000"
+      }
+    },
+    "engineProfile": {
+      "enum": [
+        "legacy.round",
+        "drawverse.brush"
+      ]
+    },
+    "behaviorVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "requiredCapabilities": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "string"
+      }
+    },
+    "parameters": {
+      "type": "object"
+    },
+    "tipResource": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sourceResource": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "texture": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "dualBrush": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "smoothing": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "wetMix": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "strokeTaper": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  }
+}

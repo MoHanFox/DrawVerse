@@ -401,8 +401,8 @@ fn published_taper_fixtures_execute_and_explicit_state_null_is_rejected() {
     let token = CancellationToken::default();
     let mut results = Vec::new();
     for bytes in [
-        include_bytes!("../../../../contracts/fixtures/taper-v1.22-valid.json").as_slice(),
-        include_bytes!("../../../../contracts/fixtures/taper-v1.22-closed.json").as_slice(),
+        include_bytes!("../../../../contracts/brush/wet/fixtures/taper-valid.json").as_slice(),
+        include_bytes!("../../../../contracts/brush/wet/fixtures/taper-closed.json").as_slice(),
     ] {
         let preset: Preset = serde_json::from_slice(bytes).unwrap();
         let p = Package {
@@ -414,7 +414,7 @@ fn published_taper_fixtures_execute_and_explicit_state_null_is_rejected() {
     }
     assert_ne!(results[0], results[1]);
     assert!(serde_json::from_slice::<Preset>(include_bytes!(
-        "../../../../contracts/fixtures/taper-v1.22-invalid.json"
+        "../../../../contracts/brush/wet/fixtures/taper-invalid.json"
     ))
     .is_err());
     let mut c = BrushCatalog::default();

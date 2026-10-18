@@ -5,18 +5,18 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Test)
 set(CMAKE_AUTOMOC ON)
 
 add_library(drawverse_ui STATIC
-    src/WindowDrag.h src/WindowDrag.cpp
-    src/DocumentManager.h src/DocumentManager.cpp
-    src/DockTree.h src/DockTree.cpp
-    src/UiScale.h
-    src/MenuSurface.h src/MenuSurface.cpp
-    src/MenuBlurLayer.h src/MenuBlurLayer.cpp
-    src/PaintCoreClient.h src/PaintCoreClient.cpp
-    src/CanvasItem.h src/CanvasItem.cpp
-    src/SelectionOverlay.h src/SelectionOverlay.cpp
-    src/ColorWheelItem.h src/ColorWheelItem.cpp
-    src/BrushLibrary.h src/BrushLibrary.cpp
-    src/WorkspaceManager.h src/WorkspaceManager.cpp)
+    src/platform/WindowDrag.h src/platform/WindowDrag.cpp
+    src/documents/DocumentManager.h src/documents/DocumentManager.cpp
+    src/workspace/DockTree.h src/workspace/DockTree.cpp
+    src/platform/UiScale.h
+    src/platform/MenuSurface.h src/platform/MenuSurface.cpp
+    src/platform/MenuBlurLayer.h src/platform/MenuBlurLayer.cpp
+    src/engine/PaintCoreClient.h src/engine/PaintCoreClient.cpp
+    src/canvas/CanvasItem.h src/canvas/CanvasItem.cpp
+    src/canvas/SelectionOverlay.h src/canvas/SelectionOverlay.cpp
+    src/color/ColorWheelItem.h src/color/ColorWheelItem.cpp
+    src/brushes/BrushLibrary.h src/brushes/BrushLibrary.cpp
+    src/workspace/WorkspaceManager.h src/workspace/WorkspaceManager.cpp)
 target_compile_features(drawverse_ui PUBLIC cxx_std_20)
 target_include_directories(drawverse_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(drawverse_ui PUBLIC Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2
@@ -25,24 +25,29 @@ if(WIN32)
     target_link_libraries(drawverse_ui PRIVATE dwmapi windowsapp CoreMessaging)
 endif()
 
+# Keep the resource manifest and its rebuild dependencies in one place.
+set(_drawverse_ui_resources
+    qml/app/Main.qml qml/app/WorkspaceStatusBar.qml
+    qml/workspace/DockWorkspace.qml qml/workspace/DockTile.qml qml/workspace/DockDivider.qml qml/workspace/DockEdgePreview.qml qml/workspace/DockHintWindow.qml qml/workspace/FloatingPanel.qml qml/workspace/PanelGroup.qml qml/workspace/PanelFlyout.qml qml/workspace/PanelContent.qml
+    qml/documents/DocumentArea.qml qml/documents/DocumentWindow.qml
+    qml/canvas/CanvasPane.qml qml/canvas/TransformOverlay.qml qml/canvas/TransparencyGrid.qml qml/canvas/EyedropperRing.qml
+    qml/brushes/BrushLibraryPanel.qml qml/brushes/BrushSettingsPanel.qml qml/brushes/PressureCurveEditor.qml qml/brushes/SpeedCurveEditor.qml
+    qml/layers/LayersPanel.qml qml/layers/LayerLock.qml qml/layers/LayerThumbnail.qml
+    qml/color/HsvSlider.qml
+    qml/tools/ToolStrip.qml qml/tools/ToolVariantsPanel.qml qml/tools/SelectionOptionsBar.qml qml/tools/BucketOptionsBar.qml qml/tools/WandOptionsBar.qml qml/tools/SmudgeOptionsBar.qml qml/tools/LiquifyOptionsBar.qml qml/tools/TransformOptionsBar.qml
+    qml/preferences/PreferencesPanel.qml qml/preferences/StoragePreferences.qml qml/preferences/KeyboardShortcutsDialog.qml
+    qml/controls/CompactCheckBox.qml qml/controls/CompactComboBox.qml qml/controls/CompactSlider.qml qml/controls/CompactSpinBox.qml qml/controls/CompactTextField.qml qml/controls/Icon.qml qml/controls/IconButton.qml qml/controls/ComboPopupWindow.qml qml/controls/LayerPercent.qml
+    qml/menus/GlassMenu.qml qml/menus/GlassMenuItem.qml qml/menus/SideMenuWindow.qml
+    qml/windows/PanelWindow.qml qml/windows/ResizeFrame.qml qml/windows/WindowOutline.qml
+    qml/theme/Theme.qml
+    qml/theme/qmldir qml/assets/logo.png qml/assets/transparency.png)
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
-    FILES qml/qmldir qml/Theme.qml qml/PanelWindow.qml qml/WorkspaceStatusBar.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml qml/PressureCurveEditor.qml qml/SpeedCurveEditor.qml
-          qml/CanvasPane.qml qml/LiquifyOptionsBar.qml qml/TransformOptionsBar.qml qml/TransformOverlay.qml qml/EyedropperRing.qml qml/DocumentArea.qml qml/DocumentWindow.qml qml/PanelFlyout.qml qml/DockWorkspace.qml qml/DockTile.qml qml/DockDivider.qml qml/DockEdgePreview.qml qml/DockHintWindow.qml qml/WindowOutline.qml
-          qml/SideMenuWindow.qml qml/ComboPopupWindow.qml qml/FloatingPanel.qml qml/ToolStrip.qml qml/SelectionOptionsBar.qml qml/BucketOptionsBar.qml qml/WandOptionsBar.qml qml/SmudgeOptionsBar.qml qml/PanelContent.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactCheckBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/assets/logo.png qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/CompactTextField.qml qml/LayerLock.qml
-          qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/assets/transparency.png qml/PreferencesPanel.qml qml/KeyboardShortcutsDialog.qml qml/ToolVariantsPanel.qml)
+    FILES ${_drawverse_ui_resources})
 
-# qt_add_resources generates a .qrc that rcc compiles, and that generated file did not depend on the
-# .qml files it lists: editing only QML left the build thinking nothing had changed, so the application
-# kept running the previous interface and "I changed it and nothing happened" was the result. Make every
-# listed file a recompilation dependency of the resource object.
-set(_drawverse_qml_files
-    qml/qmldir qml/Theme.qml qml/PanelWindow.qml qml/WorkspaceStatusBar.qml qml/GlassMenu.qml qml/GlassMenuItem.qml qml/Main.qml qml/PanelGroup.qml qml/BrushLibraryPanel.qml qml/BrushSettingsPanel.qml qml/PressureCurveEditor.qml qml/SpeedCurveEditor.qml
-    qml/CanvasPane.qml qml/LiquifyOptionsBar.qml qml/TransformOptionsBar.qml qml/TransformOverlay.qml qml/EyedropperRing.qml qml/DocumentArea.qml qml/DocumentWindow.qml qml/PanelFlyout.qml qml/DockWorkspace.qml qml/DockTile.qml qml/DockDivider.qml qml/DockEdgePreview.qml qml/DockHintWindow.qml qml/WindowOutline.qml
-          qml/SideMenuWindow.qml qml/ComboPopupWindow.qml qml/FloatingPanel.qml qml/ToolStrip.qml qml/SelectionOptionsBar.qml qml/BucketOptionsBar.qml qml/WandOptionsBar.qml qml/SmudgeOptionsBar.qml qml/PanelContent.qml qml/Icon.qml qml/IconButton.qml qml/CompactSpinBox.qml qml/CompactCheckBox.qml qml/CompactSlider.qml qml/CompactComboBox.qml qml/ResizeFrame.qml qml/HsvSlider.qml qml/StoragePreferences.qml qml/LayersPanel.qml qml/LayerPercent.qml qml/CompactTextField.qml qml/LayerLock.qml
-    qml/TransparencyGrid.qml qml/LayerThumbnail.qml qml/PreferencesPanel.qml qml/KeyboardShortcutsDialog.qml qml/ToolVariantsPanel.qml)
+# Editing QML or an asset must recompile the generated resource object.
 get_target_property(_drawverse_qrc_sources drawverse_ui SOURCES)
 set(_drawverse_qml_paths "")
-foreach(_drawverse_qml ${_drawverse_qml_files})
+foreach(_drawverse_qml ${_drawverse_ui_resources})
     list(APPEND _drawverse_qml_paths "${CMAKE_CURRENT_SOURCE_DIR}/${_drawverse_qml}")
 endforeach()
 foreach(_drawverse_qrc ${_drawverse_qrc_sources})
@@ -53,7 +58,7 @@ endforeach()
 
 
 
-qt_add_executable(drawverse src/main.cpp src/PaintingBenchmark.h src/PaintingBenchmark.cpp)
+qt_add_executable(drawverse src/app/main.cpp src/app/PaintingBenchmark.h src/app/PaintingBenchmark.cpp)
 target_link_libraries(drawverse PRIVATE drawverse_ui)
 set_target_properties(drawverse PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
 

@@ -26,7 +26,7 @@
 }
 ```
 
-默认 `All` 不写入对象，旧 state/VBR 的版本和字节保持不变。旧解码器遇到 state31/VBR1.37 中的 `sourceMatrix` 明确拒绝，避免静默丢失选择。Schema 为 `contracts/vbr-dynamics-matrix-v1.38.schema.json`。
+默认 `All` 不写入对象，旧 state/VBR 的版本和字节保持不变。旧解码器遇到 state31/VBR1.37 中的 `sourceMatrix` 明确拒绝，避免静默丢失选择。Schema 为 `core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-dynamics-matrix-v1.38.schema.json`。
 
 动态专用预设必须走带版本资源的 image VBR 路径。编码器把 airbrush、六类动态和 sourceMatrix 都视为需要 image bundle 的对象；否则只有动态的包会误走旧平包并写出 minor0 manifest，无法表达对应版本门控。
 

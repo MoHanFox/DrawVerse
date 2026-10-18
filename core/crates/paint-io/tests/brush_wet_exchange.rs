@@ -449,7 +449,7 @@ fn wet_fields_versions_capabilities_and_archive_downgrade_are_strict() {
     assert!(vbr_image::encode(&bundle, &cancelled).is_err());
     assert!(vbr_image::decode(&bytes, &cancelled).is_err());
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-wet-v1.15.schema.json"
+        "fixtures/schema-history/wet/vbr-wet-v1.15.schema.json"
     ))
     .unwrap();
     assert_eq!(
@@ -463,9 +463,9 @@ fn wet_fields_versions_capabilities_and_archive_downgrade_are_strict() {
 }
 
 #[test]
-fn published_wet_fixtures_execute_and_failed_save_keeps_existing_file() {
+fn historical_wet_fixtures_execute_and_failed_save_keeps_existing_file() {
     let closed: Preset = serde_json::from_str(include_str!(
-        "../../../../contracts/fixtures/vbr-wet-dual-closed-valid.json"
+        "../../../../contracts/brush/wet/fixtures/vbr-wet-dual-closed-valid.json"
     ))
     .unwrap();
     let token = CancellationToken::default();
@@ -483,11 +483,11 @@ fn published_wet_fixtures_execute_and_failed_save_keeps_existing_file() {
     assert_eq!(closed_doc.history_depth(), (2, 0));
 
     let preset: Preset = serde_json::from_str(include_str!(
-        "../../../../contracts/fixtures/vbr-wet-valid.json"
+        "../../../../contracts/brush/wet/fixtures/vbr-wet-valid.json"
     ))
     .unwrap();
     assert!(serde_json::from_str::<Preset>(include_str!(
-        "../../../../contracts/fixtures/vbr-wet-invalid-ratio.json"
+        "../../../../contracts/brush/wet/fixtures/vbr-wet-invalid-ratio.json"
     ))
     .is_err());
     let p = Package {

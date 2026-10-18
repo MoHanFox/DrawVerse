@@ -1,24 +1,26 @@
 # VBR 原生笔刷格式草案
 
-2026-10-18固定1.0兼容：manifest写出只使用`major: 1, minor: 0`，本会话不再提升minor。读取端接受所有`major: 1`文件，不再以历史minor拒绝字段、来源或预览；预设按完整默认形状递归补齐缺失字段，已有值和正确能力顺序保持，可选功能对象缺少或为`null`时保持关闭，随后按实际字段归一化behaviorVersion与requiredCapabilities。资源身份、数值范围、引用、数量和可执行编译仍严格校验。见[设计](vbr-format-1.0-compatibility-design.md)及[验收](vbr-format-1.0-compatibility-validation.md)。下文历史“VBR1.xx”条目说明各字段引入时的旧格式，不代表当前写出会提升minor。
+> 当前文件格式固定为 VBR 1.0，见 [当前契约](../../../contracts/brush/vbr/format.md) 和 [兼容设计](vbr-format-1.0-compatibility-design.md)。以下版本递增和 minor 门槛描述保留为历史设计记录，已不作为当前运行时准入规则。
 
-2026-10-18逐印章双色：VBR1.28新增`interleaved-stamp-v1`双色渲染模型，behavior17及`dual-color-stamp`能力；它只改变主/第二贡献的执行顺序，不改变颜色对象结构。VBR1.24分组/state20、1.25-1.27纹理格式及旧state21字节保持；VBR1.27读取到逐印章模型必须拒绝。见[设计](../dual/brush-dual-stamp-design.md)、[验收](../dual/brush-dual-stamp-validation.md)及颜色对象[Schema](../../../contracts/dual-color-stamp-v1.28.schema.json)。
+2026-10-18固定1.0兼容：manifest写出只使用`major: 1, minor: 0`，本会话不再提升minor。读取端接受所有`major: 1`文件，不再以历史minor拒绝字段、来源或预览；预设按完整默认形状递归补齐缺失字段，已有值和正确能力顺序保持，可选功能对象缺少或为`null`时保持关闭，随后按实际字段归一化behaviorVersion与requiredCapabilities。资源身份、数值范围、引用、数量和可执行编译仍严格校验。见[设计](vbr-format-1.0-compatibility-design.md)及[验收](../../validations/brush/vbr/vbr-format-1.0-compatibility-validation.md)。下文历史“VBR1.xx”条目说明各字段引入时的旧格式，不代表当前写出会提升minor。
 
-2026-10-18时间喷枪：VBR1.29新增parameters.airbrush=`time-interval-v1`（enabled、intervalMs 1–1000），behavior18及`airbrush`能力；旧VBR1.28不携带该对象。见[设计](../wet/brush-airbrush-design.md)、[验收](../wet/brush-airbrush-validation.md)及[Schema](../../../contracts/vbr-airbrush-v1.29.schema.json)。
+2026-10-18逐印章双色：VBR1.28新增`interleaved-stamp-v1`双色渲染模型，behavior17及`dual-color-stamp`能力；它只改变主/第二贡献的执行顺序，不改变颜色对象结构。VBR1.24分组/state20、1.25-1.27纹理格式及旧state21字节保持；VBR1.27读取到逐印章模型必须拒绝。见[设计](../dual/brush-dual-stamp-design.md)、[验收](../../validations/brush/dual/brush-dual-stamp-validation.md)及颜色对象[Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dual/dual-color-stamp-v1.28.schema.json)。
 
-2026-10-18速度动态：VBR1.30新增parameters.speedDynamics=`speed-v1`，完整保存启用、最大速度和尺寸/流量/不透明度三条曲线，behavior19及`speed-dynamics`能力；旧VBR1.29不携带该对象。见[设计](../dynamics/brush-speed-design.md)、[验收](../dynamics/brush-speed-validation.md)及[Schema](../../../contracts/vbr-speed-v1.30.schema.json)。
+2026-10-18时间喷枪：VBR1.29新增parameters.airbrush=`time-interval-v1`（enabled、intervalMs 1–1000），behavior18及`airbrush`能力；旧VBR1.28不携带该对象。见[设计](../wet/brush-airbrush-design.md)、[验收](../../validations/brush/wet/brush-airbrush-validation.md)及[Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/wet/vbr-airbrush-v1.29.schema.json)。
 
-2026-10-18切向压力动态：VBR1.31新增parameters.tangentDynamics=`tangent-v1`，完整保存启用和尺寸/流量/不透明度三条曲线，behavior20及`tangent-dynamics`能力；旧VBR1.30不携带该对象。见[设计](../dynamics/brush-tangent-design.md)、[验收](../dynamics/brush-tangent-validation.md)及[Schema](../../../contracts/vbr-tangent-v1.31.schema.json)。
+2026-10-18速度动态：VBR1.30新增parameters.speedDynamics=`speed-v1`，完整保存启用、最大速度和尺寸/流量/不透明度三条曲线，behavior19及`speed-dynamics`能力；旧VBR1.29不携带该对象。见[设计](../dynamics/brush-speed-design.md)、[验收](../../validations/brush/dynamics/brush-speed-validation.md)及[Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-speed-v1.30.schema.json)。
 
-2026-10-18笔触距离动态：VBR1.32新增parameters.distanceDynamics=`distance-v1`，完整保存启用、最大距离和尺寸/流量/不透明度三条曲线，behavior21及`distance-dynamics`能力；旧VBR1.31不携带该对象。见[设计](../dynamics/brush-distance-design.md)、[验收](../dynamics/brush-distance-validation.md)及[Schema](../../../contracts/vbr-distance-v1.32.schema.json)。
+2026-10-18切向压力动态：VBR1.31新增parameters.tangentDynamics=`tangent-v1`，完整保存启用和尺寸/流量/不透明度三条曲线，behavior20及`tangent-dynamics`能力；旧VBR1.30不携带该对象。见[设计](../dynamics/brush-tangent-design.md)、[验收](../../validations/brush/dynamics/brush-tangent-validation.md)及[Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-tangent-v1.31.schema.json)。
 
-2026-10-18倾斜幅度动态：VBR1.33新增parameters.tiltDynamics=`tilt-v1`，完整保存启用和尺寸/流量/不透明度三条曲线，behavior22及`tilt-dynamics`能力；旧VBR1.32不携带该对象。见[设计](../dynamics/brush-tilt-design.md)、[验收](../dynamics/brush-tilt-validation.md)及[Schema](../../../contracts/vbr-tilt-v1.33.schema.json)。
+2026-10-18笔触距离动态：VBR1.32新增parameters.distanceDynamics=`distance-v1`，完整保存启用、最大距离和尺寸/流量/不透明度三条曲线，behavior21及`distance-dynamics`能力；旧VBR1.31不携带该对象。见[设计](../dynamics/brush-distance-design.md)、[验收](../../validations/brush/dynamics/brush-distance-validation.md)及[Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-distance-v1.32.schema.json)。
 
-2026-10-18笔旋转动态：VBR1.34新增parameters.rotationDynamics=`rotation-v1`，完整保存启用和尺寸/流量/不透明度三条曲线，behavior23及`rotation-dynamics`能力；旧VBR1.33不携带该对象。见[设计](../dynamics/brush-rotation-design.md)、[验收](../dynamics/brush-rotation-validation.md)及[Schema](../../../contracts/vbr-rotation-v1.34.schema.json)。
+2026-10-18倾斜幅度动态：VBR1.33新增parameters.tiltDynamics=`tilt-v1`，完整保存启用和尺寸/流量/不透明度三条曲线，behavior22及`tilt-dynamics`能力；旧VBR1.32不携带该对象。见[设计](../dynamics/brush-tilt-design.md)、[验收](../../validations/brush/dynamics/brush-tilt-validation.md)及[Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-tilt-v1.33.schema.json)。
 
-2026-10-18笔触方向动态：VBR1.35新增parameters.directionDynamics=`direction-v1`，完整保存启用和尺寸/流量/不透明度三条曲线，behavior24及`direction-dynamics`能力；旧VBR1.34不携带该对象。见[设计](../dynamics/brush-direction-design.md)、[验收](../dynamics/brush-direction-validation.md)及[Schema](../../../contracts/vbr-direction-v1.35.schema.json)。
+2026-10-18笔旋转动态：VBR1.34新增parameters.rotationDynamics=`rotation-v1`，完整保存启用和尺寸/流量/不透明度三条曲线，behavior23及`rotation-dynamics`能力；旧VBR1.33不携带该对象。见[设计](../dynamics/brush-rotation-design.md)、[验收](../../validations/brush/dynamics/brush-rotation-validation.md)及[Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-rotation-v1.34.schema.json)。
 
-状态：2026-10-14，完整格式尚未冻结。已有1.0程序笔刷与1.1图片笔尖可执行子集，见 [程序阶段设计](vbr-procedural-design.md)、[图片阶段设计](vbr-image-design.md)、[程序Schema](../../../contracts/vbr-procedural-v1.schema.json) 与 [图片Schema](../../../contracts/vbr-image-v1.1.schema.json)。1.2来源IO及 [来源Schema](../../../contracts/vbr-source-v1.2.schema.json) 已有阶段实现，原生Qt交换及显式原ABR范围选项已接入，见 [来源IO验收](vbr-source-validation.md) / [来源入口验收](vbr-source-entry-validation.md)。压力曲线1.3与 [压力Schema](../../../contracts/vbr-pressure-v1.3.schema.json) 已有IO阶段实现，见 [压力IO验收](../dynamics/brush-pressure-io-validation.md)；Qt入口已接入。独立不透明度压感1.4与 [Schema](../../../contracts/vbr-opacity-v1.4.schema.json) 已接原生Qt，见 [设计](../dynamics/brush-opacity-pressure-design.md) / [验收](../dynamics/brush-opacity-pressure-validation.md)。设备几何1.5与 [Schema](../../../contracts/vbr-tip-dynamics-v1.5.schema.json) 已有IO阶段实现，见 [验收](../core/brush-device-io-validation.md)；原生Qt入口已接入，见 [验收](../ui/brush-device-ui-validation.md)。散布1.6与 [Schema](../../../contracts/vbr-scatter-v1.6.schema.json) 已接IO，见 [验收](../dynamics/brush-scatter-io-validation.md)；原生Qt入口已接并解除临时拒绝，见 [验收](../ui/brush-scatter-ui-validation.md)。形状抖动1.7与 [Schema](../../../contracts/vbr-shape-jitter-v1.7.schema.json) 已有IO阶段实现，见 [验收](../dynamics/brush-shape-jitter-io-validation.md)；原生Qt已接并解除临时拒绝，见 [验收](../ui/brush-shape-jitter-ui-validation.md)。颜色动态1.8与 [Schema](../../../contracts/vbr-color-dynamics-v1.8.schema.json) 已接IO，显式linear-hsv-v1与工具颜色分离，见 [验收](../core/brush-color-io-validation.md)；原生背景与Qt已接并解除临时拒绝，见 [验收](../ui/brush-color-ui-validation.md)。纹理1.9与 [Schema](../../../contracts/vbr-texture-v1.9.schema.json) 已接IO，预设级texture绑定覆盖PNG并共享周期mip，清单5120/ZIP6145边界，见 [验收](../texture/brush-texture-io-validation.md)；原生Qt设置和资源交换已接并解除库包临时拒绝，见 [验收](../ui/brush-texture-ui-validation.md)。双笔刷1.10与 [Schema](../../../contracts/vbr-dual-v1.10.schema.json) 已接IO，两模型/完整第二动态与四角色PNG并集、6144资源/7169ZIP边界，见 [验收](../dual/brush-dual-io-validation.md)；原生资源生命周期、Qt四子页和第二图片导入/资源交换已接，见 [验收](../ui/brush-dual-ui-validation.md)；库包临时拒绝解除，组合轮廓与PS核验继续后续。分组/其他高级动态和扩展仍是拟议范围；读写器拒绝未实施模块。完整格式发布前按 [笔刷验收计划](../../planning/brush-system-validation.md) 冻结版本。
+2026-10-18笔触方向动态：VBR1.35新增parameters.directionDynamics=`direction-v1`，完整保存启用和尺寸/流量/不透明度三条曲线，behavior24及`direction-dynamics`能力；旧VBR1.34不携带该对象。见[设计](../dynamics/brush-direction-design.md)、[验收](../../validations/brush/dynamics/brush-direction-validation.md)及[Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-direction-v1.35.schema.json)。
+
+状态：2026-10-14，完整格式尚未冻结。已有1.0程序笔刷与1.1图片笔尖可执行子集，见 [程序阶段设计](vbr-procedural-design.md)、[图片阶段设计](vbr-image-design.md)、[程序Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/vbr/vbr-procedural-v1.schema.json) 与 [图片Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/vbr/vbr-image-v1.1.schema.json)。1.2来源IO及 [来源Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/vbr/vbr-source-v1.2.schema.json) 已有阶段实现，原生Qt交换及显式原ABR范围选项已接入，见 [来源IO验收](../../validations/brush/vbr/vbr-source-validation.md) / [来源入口验收](../../validations/brush/vbr/vbr-source-entry-validation.md)。压力曲线1.3与 [压力Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-pressure-v1.3.schema.json) 已有IO阶段实现，见 [压力IO验收](../../validations/brush/dynamics/brush-pressure-io-validation.md)；Qt入口已接入。独立不透明度压感1.4与 [Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-opacity-v1.4.schema.json) 已接原生Qt，见 [设计](../dynamics/brush-opacity-pressure-design.md) / [验收](../../validations/brush/dynamics/brush-opacity-pressure-validation.md)。设备几何1.5与 [Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-tip-dynamics-v1.5.schema.json) 已有IO阶段实现，见 [验收](../../validations/brush/core/brush-device-io-validation.md)；原生Qt入口已接入，见 [验收](../../validations/brush/ui/brush-device-ui-validation.md)。散布1.6与 [Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-scatter-v1.6.schema.json) 已接IO，见 [验收](../../validations/brush/dynamics/brush-scatter-io-validation.md)；原生Qt入口已接并解除临时拒绝，见 [验收](../../validations/brush/ui/brush-scatter-ui-validation.md)。形状抖动1.7与 [Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-shape-jitter-v1.7.schema.json) 已有IO阶段实现，见 [验收](../../validations/brush/dynamics/brush-shape-jitter-io-validation.md)；原生Qt已接并解除临时拒绝，见 [验收](../../validations/brush/ui/brush-shape-jitter-ui-validation.md)。颜色动态1.8与 [Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-color-dynamics-v1.8.schema.json) 已接IO，显式linear-hsv-v1与工具颜色分离，见 [验收](../../validations/brush/core/brush-color-io-validation.md)；原生背景与Qt已接并解除临时拒绝，见 [验收](../../validations/brush/ui/brush-color-ui-validation.md)。纹理1.9与 [Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/texture/vbr-texture-v1.9.schema.json) 已接IO，预设级texture绑定覆盖PNG并共享周期mip，清单5120/ZIP6145边界，见 [验收](../../validations/brush/texture/brush-texture-io-validation.md)；原生Qt设置和资源交换已接并解除库包临时拒绝，见 [验收](../../validations/brush/ui/brush-texture-ui-validation.md)。双笔刷1.10与 [Schema](../../../core/crates/paint-io/tests/fixtures/schema-history/dual/vbr-dual-v1.10.schema.json) 已接IO，两模型/完整第二动态与四角色PNG并集、6144资源/7169ZIP边界，见 [验收](../../validations/brush/dual/brush-dual-io-validation.md)；原生资源生命周期、Qt四子页和第二图片导入/资源交换已接，见 [验收](../../validations/brush/ui/brush-dual-ui-validation.md)；库包临时拒绝解除，组合轮廓与PS核验继续后续。分组/其他高级动态和扩展仍是拟议范围；读写器拒绝未实施模块。完整格式发布前按 [笔刷验收计划](../../validations/planning/brush-system-validation.md) 冻结版本。
 
 VBR 作为 DrawVerse 的公开、跨平台笔刷交换格式，与工程文件分离。一个文件可以包含一个笔刷或一个带分组的笔刷包，均使用 `.vbr` 扩展名。不依赖源 ABR 路径、系统字体、Qt 对象或开发机目录。
 
@@ -131,11 +133,11 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 
 ## 第二笔尖相对尺寸子集 1.13
 
-2026-10-15：dualBrush.sizing采用relative-size-v1、independent/relative、diameterOffset直径像素偏移[-511,511]与follow-pressure/fixed-width。关闭或独立模式非默认值仍完整保存，默认省略保持旧版本；对象存在要求drawverse.brush/behavior12、dual-relative-size能力及minor13。严格完整字段/舍入前范围/null拒绝，和time-grid平滑共存选择最高版本。ABI1.47/Qt已接通，见brush-dual-size-io-validation.md、brush-dual-size-ui-validation.md及contracts/vbr-dual-sizing-v1.13.schema.json。这里只表达第二灰度覆盖尺寸，不宣称支持双色叠放或溢出绘制。
+2026-10-15：dualBrush.sizing采用relative-size-v1、independent/relative、diameterOffset直径像素偏移[-511,511]与follow-pressure/fixed-width。关闭或独立模式非默认值仍完整保存，默认省略保持旧版本；对象存在要求drawverse.brush/behavior12、dual-relative-size能力及minor13。严格完整字段/舍入前范围/null拒绝，和time-grid平滑共存选择最高版本。ABI1.47/Qt已接通，见brush-dual-size-io-validation.md、brush-dual-size-ui-validation.md及core/crates/paint-io/tests/fixtures/schema-history/dual/vbr-dual-sizing-v1.13.schema.json。这里只表达第二灰度覆盖尺寸，不宣称支持双色叠放或溢出绘制。
 
 ## 双色双笔刷子集 1.14
 
-2026-10-15：dualBrush.color采用separated-stroke-v1、enabled/useBackground/overflow布尔、second-behind/second-in-front顺序、primaryBlend/secondaryBlend稳定27英文名称。实际前景/背景RGBA不存入预设。非默认关闭值保留，默认省略保持旧字节与版本；存在对象要求drawverse.brush/behavior13、dual-color-stroke能力与minor14，state16。Schema见contracts/vbr-dual-color-v1.14.schema.json，结果见brush-dual-color-io-validation.md。原ABR来源保持。ABI1.48/Qt已接完整色彩配置、库包入口和实际两色预览，见brush-dual-color-ui-validation.md；自动描边继续后续；非分隔逐印章模型未实现，不得冒用separated模型。
+2026-10-15：dualBrush.color采用separated-stroke-v1、enabled/useBackground/overflow布尔、second-behind/second-in-front顺序、primaryBlend/secondaryBlend稳定27英文名称。实际前景/背景RGBA不存入预设。非默认关闭值保留，默认省略保持旧字节与版本；存在对象要求drawverse.brush/behavior13、dual-color-stroke能力与minor14，state16。Schema见core/crates/paint-io/tests/fixtures/schema-history/dual/vbr-dual-color-v1.14.schema.json，结果见brush-dual-color-io-validation.md。原ABR来源保持。ABI1.48/Qt已接完整色彩配置、库包入口和实际两色预览，见brush-dual-color-ui-validation.md；自动描边继续后续；非分隔逐印章模型未实现，不得冒用separated模型。
 
 湿混进度：linear-premul-grid-v1目前只存在于Rust二维载色数值组件，尚未添加到BrushSettings或JSON；本阶段不预占state/VBR版本或能力名，不宣称VBR已支持湿混。后续接入仍需完整严格字段、关闭值、基准与资源/真实像素往返。
 
@@ -145,7 +147,7 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 
 ## 湿混子集1.15
 
-2026-10-15：预设顶层wetMix使用linear-premul-grid-v1。严格完整字段model、enabled、allLayers、autoClean、autoLoad及wetness/pickup/mix/load/deposit/consumption（0..1，舍入前验证）。默认省略，关闭非默认保留；对象存在要求drawverse.brush/behavior14、wet-mix能力和manifest minor15，状态state17。实际工具两色/二维载体不入预设；有效湿混+有效双色拒绝，关闭配置可交换。Schema与合法/非法样例见contracts/vbr-wet-v1.15.schema.json及contracts/fixtures。实际两笔载色/像素、图片/纹理/灰度双路径/PCHIP/平滑/散布与原ABR来源已往返，见brush-wet-io-validation.md。ABI1.49/旧Qt准备和库包入口暂拒湿混，完整用户入口、基准及工具寿命待后续接入。
+2026-10-15：预设顶层wetMix使用linear-premul-grid-v1。严格完整字段model、enabled、allLayers、autoClean、autoLoad及wetness/pickup/mix/load/deposit/consumption（0..1，舍入前验证）。默认省略，关闭非默认保留；对象存在要求drawverse.brush/behavior14、wet-mix能力和manifest minor15，状态state17。实际工具两色/二维载体不入预设；有效湿混+有效双色拒绝，关闭配置可交换。Schema与合法/非法样例见core/crates/paint-io/tests/fixtures/schema-history/wet/vbr-wet-v1.15.schema.json及contracts/brush/wet/fixtures。实际两笔载色/像素、图片/纹理/灰度双路径/PCHIP/平滑/散布与原ABR来源已往返，见brush-wet-io-validation.md。ABI1.49/旧Qt准备和库包入口暂拒湿混，完整用户入口、基准及工具寿命待后续接入。
 
 湿混原生后续：ABI1.50新增显式prepare_state_wet、library_package_read_wet/write_wet及共享工具接口，完整保留state17/VBR1.15，旧入口继续拒绝以保护旧Qt。Qt镜像/基准/界面及真实有色预览仍待接入，见brush-wet-abi-validation.md。
 
@@ -153,31 +155,31 @@ ABR 导入报告逐项区分准确转换、近似转换、暂不支持；如保�
 
 ## VBR1.16：ABR整笔不透明度来源
 
-包含drawverse.abr.basic converterVersion2来源记录时最低minor16；该版本映射非100% toolOptions.Opct到已有整笔opacity。来源记录自身仍version1，v1/v2原记录及原ABR逐字节保持；SourceBatch最高转换器版本只用于选择包版本。旧来源不重新转换，未用新行为不升级来源，去除来源的导出仍按实际参数/资源选择版本。解码拒绝新来源降级夹带，新增完整schema和合法/非法来源示例见 [设计](../abr/abr-opacity-design.md) / [验收](../abr/abr-opacity-validation.md)。不新增笔刷行为版本、必需能力或C ABI/state字段；其他动态、湿混组合和VBR分组等范围继续后续。
+包含drawverse.abr.basic converterVersion2来源记录时最低minor16；该版本映射非100% toolOptions.Opct到已有整笔opacity。来源记录自身仍version1，v1/v2原记录及原ABR逐字节保持；SourceBatch最高转换器版本只用于选择包版本。旧来源不重新转换，未用新行为不升级来源，去除来源的导出仍按实际参数/资源选择版本。解码拒绝新来源降级夹带，新增完整schema和合法/非法来源示例见 [设计](../abr/abr-opacity-design.md) / [验收](../../validations/brush/abr/abr-opacity-validation.md)。不新增笔刷行为版本、必需能力或C ABI/state字段；其他动态、湿混组合和VBR分组等范围继续后续。
 
 ## VBR1.17：ABR笔压来源
 
-converterVersion3来源基准保存已有pressureDynamics（三通道线性曲线/最低比例与opacity开关），仍为来源record1；旧v1/v2基准、报告及原记录字节不重算。含v3来源要求manifest minor17，导出按全部来源最高版本需求选择，旧minor夹带新来源拒绝。执行参数继续沿用pressure-curves/opacity-pressure和behavior2/3，state5/6已能表示，无新执行能力。只有不包含来源的新笔压预设导出仍按已有VBR1.3/1.4能力需求选版本。公开Schema contracts/vbr-abr-pressure-v1.17.schema.json，见abr-pressure-design.md；完整ABR/16位等继续后续。
+converterVersion3来源基准保存已有pressureDynamics（三通道线性曲线/最低比例与opacity开关），仍为来源record1；旧v1/v2基准、报告及原记录字节不重算。含v3来源要求manifest minor17，导出按全部来源最高版本需求选择，旧minor夹带新来源拒绝。执行参数继续沿用pressure-curves/opacity-pressure和behavior2/3，state5/6已能表示，无新执行能力。只有不包含来源的新笔压预设导出仍按已有VBR1.3/1.4能力需求选版本。公开Schema core/crates/paint-io/tests/fixtures/schema-history/abr/vbr-abr-pressure-v1.17.schema.json，见abr-pressure-design.md；完整ABR/16位等继续后续。
 
 ## VBR1.18：ABR散布来源
 
-来源converterVersion4保存既有scatterDynamics基准，完整关闭配置可保留，pressureDynamics仍为独立可选对象；原记录结构version1。包含v4来源最低minor18，按全部来源最高需求导出，17及以下夹带拒绝；旧三代来源字节/基准不重算。执行继续使用既有behavior5/scatter-stamps与state8，无来源时仍按已有VBR散布能力选版本。Schema contracts/vbr-abr-scatter-v1.18.schema.json及合法/非法来源样例已发布。PS随机分布明确近似，设备/渐隐散布控制及16位等仍待后续，见abr-scatter-conversion-validation.md。
+来源converterVersion4保存既有scatterDynamics基准，完整关闭配置可保留，pressureDynamics仍为独立可选对象；原记录结构version1。包含v4来源最低minor18，按全部来源最高需求导出，17及以下夹带拒绝；旧三代来源字节/基准不重算。执行继续使用既有behavior5/scatter-stamps与state8，无来源时仍按已有VBR散布能力选版本。Schema core/crates/paint-io/tests/fixtures/schema-history/abr/vbr-abr-scatter-v1.18.schema.json及合法/非法来源样例已发布。PS随机分布明确近似，设备/渐隐散布控制及16位等仍待后续，见abr-scatter-conversion-validation.md。
 
 ## VBR1.19：ABR颜色动态来源
 
-来源converterVersion5必须保存既有colorDynamics基准，可独立组合pressureDynamics/scatterDynamics；颜色字段不会混入压力DTO，纯颜色来源不强加散布对象。原记录仍为version1。包含v5来源最低minor19，按所有来源最高需求导出，18以下夹带拒绝；旧四代来源、报告和原记录字节不重算。执行沿用behavior7/color-dynamics与state10；没有新来源时原生颜色配置仍按原有VBR版本需求导出。Schema为contracts/vbr-abr-color-v1.19.schema.json。PS随机/颜色空间明确近似，纯度与设备颜色调制尚未执行，见abr-color-conversion-design.md。
+来源converterVersion5必须保存既有colorDynamics基准，可独立组合pressureDynamics/scatterDynamics；颜色字段不会混入压力DTO，纯颜色来源不强加散布对象。原记录仍为version1。包含v5来源最低minor19，按所有来源最高需求导出，18以下夹带拒绝；旧四代来源、报告和原记录字节不重算。执行沿用behavior7/color-dynamics与state10；没有新来源时原生颜色配置仍按原有VBR版本需求导出。Schema为core/crates/paint-io/tests/fixtures/schema-history/abr/vbr-abr-color-v1.19.schema.json。PS随机/颜色空间明确近似，纯度与设备颜色调制尚未执行，见abr-color-conversion-design.md。
 
 ## VBR1.20：ABR形状抖动来源
 
-来源converterVersion6必须保存shapeJitter基准，可独立组合既有pressureDynamics/scatterDynamics/colorDynamics，其他动态仍明确拒绝。原记录仍为version1。包含v6来源最低minor20，按全部来源最高需求导出，19以下夹带拒绝；旧五代转换入口/记录字节/报告不重算。执行沿用behavior6/shape-jitter与state9；普通原生形状配置不因本模块提高版本需求。Schema为contracts/vbr-abr-shape-v1.20.schema.json。随机分布、压力及随机下限组合、圆度下限换算均明确近似；设备形状控制等仍未执行，见abr-shape-conversion-design.md。
+来源converterVersion6必须保存shapeJitter基准，可独立组合既有pressureDynamics/scatterDynamics/colorDynamics，其他动态仍明确拒绝。原记录仍为version1。包含v6来源最低minor20，按全部来源最高需求导出，19以下夹带拒绝；旧五代转换入口/记录字节/报告不重算。执行沿用behavior6/shape-jitter与state9；普通原生形状配置不因本模块提高版本需求。Schema为core/crates/paint-io/tests/fixtures/schema-history/abr/vbr-abr-shape-v1.20.schema.json。随机分布、压力及随机下限组合、圆度下限换算均明确近似；设备形状控制等仍未执行，见abr-shape-conversion-design.md。
 
 ## VBR1.21：ABR设备形状来源
 
-来源converterVersion7必须保存tipDynamics基准，pressureDynamics/scatterDynamics/shapeJitter/colorDynamics独立可选。来源record仍version1，旧六代记录字节/报告不重算；有v7来源时最低minor21，20以下夹带拒绝。执行沿用behavior4/tip-dynamics及state7，无新C ABI或执行行为。原生设备配置无新来源时仍使用原来的VBR版本需求。Schema为contracts/vbr-abr-device-v1.21.schema.json。方向、笔旋转、倾斜角度/圆度及原生能力回退标近似；关闭设备保留在来源而不执行，其他设备与渐隐继续未执行，见abr-device-conversion-design.md。
+来源converterVersion7必须保存tipDynamics基准，pressureDynamics/scatterDynamics/shapeJitter/colorDynamics独立可选。来源record仍version1，旧六代记录字节/报告不重算；有v7来源时最低minor21，20以下夹带拒绝。执行沿用behavior4/tip-dynamics及state7，无新C ABI或执行行为。原生设备配置无新来源时仍使用原来的VBR版本需求。Schema为core/crates/paint-io/tests/fixtures/schema-history/abr/vbr-abr-device-v1.21.schema.json。方向、笔旋转、倾斜角度/圆度及原生能力回退标近似；关闭设备保留在来源而不执行，其他设备与渐隐继续未执行，见abr-device-conversion-design.md。
 
 ## VBR1.22：起收笔
 
-Preset顶层strokeTaper采用distance-envelope-v1：model/enabled/start/end完整必填，各端lengthPx（0..4096文档像素）和size/opacity曲线（curve/minimum/interpolation，linear或pchip）。每条2..17节点，X严格递增、XY在0..1且端点为[0,0]/[1,1]；先f64验证再转换核心f32，重合拒绝。默认省略，关闭非默认完整保留；存在对象要求drawverse.brush、behavior15、stroke-taper能力及minor22，state18。混包取全部执行/来源最高需求，旧包不升级，降级拒绝。旧ABR基线不包含起收笔，当前用户修改可与不变的原来源独立交换。Schema contracts/vbr-taper-v1.22.schema.json，实际两笔和图片/双色/平滑/湿混/来源验证见brush-taper-io-validation.md。ABI1.50旧准备和包入口暂拒新配置，完整原生及Qt入口待接。
+Preset顶层strokeTaper采用distance-envelope-v1：model/enabled/start/end完整必填，各端lengthPx（0..4096文档像素）和size/opacity曲线（curve/minimum/interpolation，linear或pchip）。每条2..17节点，X严格递增、XY在0..1且端点为[0,0]/[1,1]；先f64验证再转换核心f32，重合拒绝。默认省略，关闭非默认完整保留；存在对象要求drawverse.brush、behavior15、stroke-taper能力及minor22，state18。混包取全部执行/来源最高需求，旧包不升级，降级拒绝。旧ABR基线不包含起收笔，当前用户修改可与不变的原来源独立交换。Schema core/crates/paint-io/tests/fixtures/schema-history/wet/vbr-taper-v1.22.schema.json，实际两笔和图片/双色/平滑/湿混/来源验证见brush-taper-io-validation.md。ABI1.50旧准备和包入口暂拒新配置，完整原生及Qt入口待接。
 
 原生后续：ABI1.51新增显式prepare_state_taper、library_package_read_taper/write_taper，完整保留state18/VBR1.22与先前湿混数据；原入口和wet入口继续拒绝新起收笔以保护旧客户端。准确票据/资源重建及真实异步绘画验收见brush-taper-abi-validation.md，Qt镜像/重置基准/界面仍待接。
 
@@ -187,86 +189,86 @@ Qt后续已完成：完整state18镜像/关闭配置/复制和resetState、ABI1.
 
 wetMix可选dualColor字符串，唯一当前值independent-carriers-v1，声明主/第二笔刷各自持有二维载色。缺省保持旧湿混；显式null、未知模型和非字符串拒绝。存在标记就要求drawverse.brush、behavior16、wet-dual-color及wet-mix能力、minor23和state19，即使湿混或第二色关闭也完整保留。实际两角色必须在湿混、第二笔刷和双色都启用时执行；没有声明策略的旧湿混双色仍拒绝，不自动改变旧语义。载色像素属于瞬时工具状态，不写入笔刷。
 
-旧状态不写标记、不升级版本或改字节，混包取全部执行/来源需求最高版本，低minor夹带拒绝。原ABR来源及转换基线保持旧版本/原字节；新策略不能写成旧基线，当前用户修改可与不变来源和图片独立交换。完整Schema为contracts/vbr-wet-dual-v1.23.schema.json，实例及真实两笔/双载色/资源/来源验收见brush-wet-dual-io-validation.md。当前ABI1.51的Legacy/Wet/Taper准备和包入口均暂拒新策略防止旧Qt丢字段，新原生/Qt组合入口继续下一阶段。
+旧状态不写标记、不升级版本或改字节，混包取全部执行/来源需求最高版本，低minor夹带拒绝。原ABR来源及转换基线保持旧版本/原字节；新策略不能写成旧基线，当前用户修改可与不变来源和图片独立交换。完整Schema为core/crates/paint-io/tests/fixtures/schema-history/dual/vbr-wet-dual-v1.23.schema.json，实例及真实两笔/双载色/资源/来源验收见brush-wet-dual-io-validation.md。当前ABI1.51的Legacy/Wet/Taper准备和包入口均暂拒新策略防止旧Qt丢字段，新原生/Qt组合入口继续下一阶段。
 
-2026-10-16湿混双色Qt阶段：完整state19镜像/关闭配置/复制和resetState、新ABI1.52准备及VBR1.23包、两色手动装载和隔离白色预览已接通，真实绘画/历史/图片三资源用途与新目录导入重开像素验证见[验收](../wet/brush-wet-dual-ui-validation.md)。Windows新3旧6Qt、环境倍率2/Release/ABI通过；旧入口拒绝保护保留。大跨度密集图片输入仍会触发预算回滚，分块调度未实现；原参数输入偶发问题未定位。完整剩余范围见[功能清单](../../planning/brush-system-remaining.md)，用户要求本阶段完成后等待指示。
+2026-10-16湿混双色Qt阶段：完整state19镜像/关闭配置/复制和resetState、新ABI1.52准备及VBR1.23包、两色手动装载和隔离白色预览已接通，真实绘画/历史/图片三资源用途与新目录导入重开像素验证见[验收](../../validations/brush/wet/brush-wet-dual-ui-validation.md)。Windows新3旧6Qt、环境倍率2/Release/ABI通过；旧入口拒绝保护保留。大跨度密集图片输入仍会触发预算回滚，分块调度未实现；原参数输入偶发问题未定位。完整剩余范围见[功能清单](../../planning/brush-system-remaining.md)，用户要求本阶段完成后等待指示。
 
-2026-10-17输入分页Actor阶段：实际Move/End接通Document有界页，完成水位/笔尾发布/单历史与双载色采用保持，邮箱及暂存共同限额、页间取消/重建/stop和屏障顺序已接。原64px单输入经公开API和Qt新目录交换重开对照通过；任务8项、新Actor6项及相关原生/公开回归、Windows Release/Clippy/4 ABI/Qt通过，见[设计](../input/brush-input-paging-actor-design.md)及[验收](../input/brush-input-paging-actor-validation.md)。无ABI/格式变化；大笔刷性能并非全部完成，单印章及总输入预算保持，整体设备手感由用户验收。
+2026-10-17输入分页Actor阶段：实际Move/End接通Document有界页，完成水位/笔尾发布/单历史与双载色采用保持，邮箱及暂存共同限额、页间取消/重建/stop和屏障顺序已接。原64px单输入经公开API和Qt新目录交换重开对照通过；任务8项、新Actor6项及相关原生/公开回归、Windows Release/Clippy/4 ABI/Qt通过，见[设计](../input/brush-input-paging-actor-design.md)及[验收](../../validations/brush/input/brush-input-paging-actor-validation.md)。无ABI/格式变化；大笔刷性能并非全部完成，单印章及总输入预算保持，整体设备手感由用户验收。
 
-2026-10-17笔刷分组Rust目录阶段：不可变稳定ID组织/有序根及子项/DFS投影、原子建组改名移动/解组及受保护级联删除、同组复制导入与捕获保持已接；新6集成+1修订边界/旧5目录、IO5/原生2及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-design.md)及[验收](../library/brush-groups-kernel-validation.md)。旧状态编码有组时明确拒绝，未接分组保存交换/原生及Qt，不宣称用户入口完成；无ABI/state/VBR版本变化。
+2026-10-17笔刷分组Rust目录阶段：不可变稳定ID组织/有序根及子项/DFS投影、原子建组改名移动/解组及受保护级联删除、同组复制导入与捕获保持已接；新6集成+1修订边界/旧5目录、IO5/原生2及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-design.md)及[验收](../../validations/brush/library/brush-groups-kernel-validation.md)。旧状态编码有组时明确拒绝，未接分组保存交换/原生及Qt，不宣称用户入口完成；无ABI/state/VBR版本变化。
 
-2026-10-17分组状态阶段：有界ordered-tree-v1 DTO/state20已实现，空组/显式顺序/关闭参数及真实三图片用途/ABR来源跨新目录两笔像素载色历史往返；最终IO20项、新旧原生四入口保护1项及Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-state-design.md)及[验收](../library/brush-groups-state-validation.md)。平目录旧字节保持；旧原生有组明确拒绝。无ABI或VBR版本变化，VBR分组清单/整树映射/原生和Qt仍待接，不宣称用户分组完成。
+2026-10-17分组状态阶段：有界ordered-tree-v1 DTO/state20已实现，空组/显式顺序/关闭参数及真实三图片用途/ABR来源跨新目录两笔像素载色历史往返；最终IO20项、新旧原生四入口保护1项及Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-state-design.md)及[验收](../../validations/brush/library/brush-groups-state-validation.md)。平目录旧字节保持；旧原生有组明确拒绝。无ABI或VBR版本变化，VBR分组清单/整树映射/原生和Qt仍待接，不宣称用户分组完成。
 
-2026-10-17分组VBR阶段：VBR1.24组织清单/空组与顺序、原子整树副本ID映射已接，三图片用途/ABR来源及真实两笔像素载色历史保持；IO33项、新四类旧读写保护1项、Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-vbr-design.md)及[验收](../library/brush-groups-vbr-validation.md)。平包旧字节保持，无ABI/state变化；目标库原子合并/完整原生交接/Qt仍待接，不宣称分组用户入口完成。
+2026-10-17分组VBR阶段：VBR1.24组织清单/空组与顺序、原子整树副本ID映射已接，三图片用途/ABR来源及真实两笔像素载色历史保持；IO33项、新四类旧读写保护1项、Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-vbr-design.md)及[验收](../../validations/brush/library/brush-groups-vbr-validation.md)。平包旧字节保持，无ABI/state变化；目标库原子合并/完整原生交接/Qt仍待接，不宣称分组用户入口完成。
 
-2026-10-17分组目标目录合并阶段：Core支持完整有序子树在根/指定组位置原子合并、跨角色身份/合并深度容量与资源预算预检、单修订及失败保持；VBR真实资源和来源内存桥已接，两笔像素/双载色/历史保持。新核心4/旧11/修订1、IO21及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-merge-design.md)及[验收](../library/brush-groups-merge-validation.md)。无ABI/state/VBR变化；资源文件耐久事务、完整原生交接/Qt仍待接，不宣称分组用户入口完成。
+2026-10-17分组目标目录合并阶段：Core支持完整有序子树在根/指定组位置原子合并、跨角色身份/合并深度容量与资源预算预检、单修订及失败保持；VBR真实资源和来源内存桥已接，两笔像素/双载色/历史保持。新核心4/旧11/修订1、IO21及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-merge-design.md)及[验收](../../validations/brush/library/brush-groups-merge-validation.md)。无ABI/state/VBR变化；资源文件耐久事务、完整原生交接/Qt仍待接，不宣称分组用户入口完成。
 
-2026-10-17分组资源发布阶段：候选目录先完整合并预检、包内PNG与来源先落盘后采用；故障保留原目录/共享文件，真实新目录state/组织与两笔像素载色历史恢复通过。IO40、Clippy/Windows Release/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-persist-design.md)及[验收](../library/brush-groups-persist-validation.md)。无ABI/state/VBR变化；失败可能保留合法未引用公共缓存，不声称多文件整体回滚/GC。完整原生交接/Qt及重置基准全链仍待接。
+2026-10-17分组资源发布阶段：候选目录先完整合并预检、包内PNG与来源先落盘后采用；故障保留原目录/共享文件，真实新目录state/组织与两笔像素载色历史恢复通过。IO40、Clippy/Windows Release/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-persist-design.md)及[验收](../../validations/brush/library/brush-groups-persist-validation.md)。无ABI/state/VBR变化；失败可能保留合法未引用公共缓存，不声称多文件整体回滚/GC。完整原生交接/Qt及重置基准全链仍待接。
 
-2026-10-17分组状态原生阶段：ABI1.54/GROUP_STATE及显式state20准备入口、完整关闭配置/准确票据/图片来源和冷重建、mutate采用及真实两笔/载色/历史通过。公开新2/原生1/旧保护5/旧公开3及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-abi-design.md)及[验收](../library/brush-groups-abi-validation.md)。state/VBR不变；旧四准备/包保护保留，分组包专用原生交接/组织命令/Qt及重置基准仍待接。ABR纹理执行映射仍未支持，兼容报告与来源保留不等于已执行。
+2026-10-17分组状态原生阶段：ABI1.54/GROUP_STATE及显式state20准备入口、完整关闭配置/准确票据/图片来源和冷重建、mutate采用及真实两笔/载色/历史通过。公开新2/原生1/旧保护5/旧公开3及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-abi-design.md)及[验收](../../validations/brush/library/brush-groups-abi-validation.md)。state/VBR不变；旧四准备/包保护保留，分组包专用原生交接/组织命令/Qt及重置基准仍待接。ABR纹理执行映射仍未支持，兼容报告与来源保留不等于已执行。
 
-2026-10-17分组包原生阶段：ABI1.55/GROUP_PACKAGE及ordered-package-v1完整交接、2MiB与投影验证、容量探测无资源安装、实际图片/ABR来源读写与原子保存、state20专用准备串联已接。IO33/新原生1/旧保护5/旧公开3/Schema及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-package-design.md)及[验收](../library/brush-groups-package-validation.md)。state20/VBR1.24不变；旧四包保护保持，Qt副本树合并/完整镜像/重置基准及分组管理仍待接，不宣称用户分组已完成。
+2026-10-17分组包原生阶段：ABI1.55/GROUP_PACKAGE及ordered-package-v1完整交接、2MiB与投影验证、容量探测无资源安装、实际图片/ABR来源读写与原子保存、state20专用准备串联已接。IO33/新原生1/旧保护5/旧公开3/Schema及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../library/brush-groups-package-design.md)及[验收](../../validations/brush/library/brush-groups-package-validation.md)。state20/VBR1.24不变；旧四包保护保持，Qt副本树合并/完整镜像/重置基准及分组管理仍待接，不宣称用户分组已完成。
 
 2026-10-18 ABR纹理来源阶段：来源记录接受`drawverse.abr.basic` converterVersion8；`brushkit-abr 0.7.3`用于描述符参数，本地有界解码器负责8/16位raw/RLE `patt`。纹理参数映射到既有state/VBR资源模型，最新Schema的来源枚举加入8。其余未定义模式与16位笔尖仍明确未执行。
 
-2026-10-18 VBR1.25颜色加深纹理阶段：`TextureMode::ColorBurn`使用`1-(1-base)/texture`的覆盖率标量近似，纹理对象mode增加`colorBurn`；包含该模式时manifest最低minor25，24及以下明确拒绝。VBR1.25 Schema `contracts/vbr-texture-modes-v1.25.schema.json`恢复纹理mode为必需字段并公开枚举；无state/ABI变化，其余未定义Photoshop纹理模式继续后续。
+2026-10-18 VBR1.25颜色加深纹理阶段：`TextureMode::ColorBurn`使用`1-(1-base)/texture`的覆盖率标量近似，纹理对象mode增加`colorBurn`；包含该模式时manifest最低minor25，24及以下明确拒绝。VBR1.25 Schema `core/crates/paint-io/tests/fixtures/schema-history/texture/vbr-texture-modes-v1.25.schema.json`恢复纹理mode为必需字段并公开枚举；无state/ABI变化，其余未定义Photoshop纹理模式继续后续。
 
-2026-10-18 VBR1.26纹理调整阶段：纹理对象新增可选`brightness`/`contrast`（-1..1，默认0），在采样后按亮度和中间灰对比度调整覆盖率；非默认值要求state21/VBR1.26，旧state/VBR缺省字节保持。Schema为`contracts/vbr-texture-adjustments-v1.26.schema.json`。ABR `textureBrightness`/`textureContrast`已映射；`minimumDepth`、深度动态、16位图案及其他未定义模式继续后续。
+2026-10-18 VBR1.26纹理调整阶段：纹理对象新增可选`brightness`/`contrast`（-1..1，默认0），在采样后按亮度和中间灰对比度调整覆盖率；非默认值要求state21/VBR1.26，旧state/VBR缺省字节保持。Schema为`core/crates/paint-io/tests/fixtures/schema-history/texture/vbr-texture-adjustments-v1.26.schema.json`。ABR `textureBrightness`/`textureContrast`已映射；`minimumDepth`、深度动态、16位图案及其他未定义模式继续后续。
 
-2026-10-18 VBR1.27纹理来源阶段：带非默认纹理的ABR来源记录升为version2，保存完整`TextureParameters`和资源身份；旧记录version1及原字节保持。包含v2来源或非默认深度动态时最低minor27，26及以下拒绝。纹理对象增加可选`minimumDepth`/`depthJitter`/`depthPressure`，按印章计算深度并以最低深度封底。Schema为`contracts/vbr-texture-source-v1.27.schema.json`，Qt来源恢复入口已接。
+2026-10-18 VBR1.27纹理来源阶段：带非默认纹理的ABR来源记录升为version2，保存完整`TextureParameters`和资源身份；旧记录version1及原字节保持。包含v2来源或非默认深度动态时最低minor27，26及以下拒绝。纹理对象增加可选`minimumDepth`/`depthJitter`/`depthPressure`，按印章计算深度并以最低深度封底。Schema为`core/crates/paint-io/tests/fixtures/schema-history/texture/vbr-texture-source-v1.27.schema.json`，Qt来源恢复入口已接。
 
-2026-10-18 VBR1.36高级纹理模式阶段：纹理mode新增`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`，覆盖率组合为标量近似；非默认新模式要求state30/VBR1.36，35及以下拒绝。Schema为`contracts/vbr-texture-modes-v1.36.schema.json`，ABR `BlnM` 代码`linearBurn`/`CDdg`/`linearDodge`/`Ovrl`/`SftL`/`HrdL`/`Xclu`/`hardMix`已映射。其余未定义模式继续后续。
+2026-10-18 VBR1.36高级纹理模式阶段：纹理mode新增`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`，覆盖率组合为标量近似；非默认新模式要求state30/VBR1.36，35及以下拒绝。Schema为`core/crates/paint-io/tests/fixtures/schema-history/texture/vbr-texture-modes-v1.36.schema.json`，ABR `BlnM` 代码`linearBurn`/`CDdg`/`linearDodge`/`Ovrl`/`SftL`/`HrdL`/`Xclu`/`hardMix`已映射。其余未定义模式继续后续。
 
-2026-10-18 VBR1.37纹理模式补全阶段：纹理mode新增`vividLight`、`linearLight`、`pinLight`、`divide`，覆盖率组合为标量近似；非默认新模式要求state31/VBR1.37，36及以下拒绝。Schema为`contracts/vbr-texture-modes-v1.37.schema.json`，ABR `BlnM` 代码`vividLight`/`linearLight`/`pinLight`/`blendDivide`已映射。Dissolve/Hue/Saturation/Color/Luminosity等颜色或随机模式仍不执行。
+2026-10-18 VBR1.37纹理模式补全阶段：纹理mode新增`vividLight`、`linearLight`、`pinLight`、`divide`，覆盖率组合为标量近似；非默认新模式要求state31/VBR1.37，36及以下拒绝。Schema为`core/crates/paint-io/tests/fixtures/schema-history/texture/vbr-texture-modes-v1.37.schema.json`，ABR `BlnM` 代码`vividLight`/`linearLight`/`pinLight`/`blendDivide`已映射。Dissolve/Hue/Saturation/Color/Luminosity等颜色或随机模式仍不执行。
 
 ## VBR1.30：速度动态
 
 `parameters.speedDynamics` 使用 `speed-v1`，必填 `enabled`、`maxSpeed`（1–100000 px/s）以及 `size`/`flow`/`opacity` 三条控制曲线。每条控制包含 2–17 个 `(0..1,0..1)` 节点、0–1 最低比例和可选 `smooth-pchip-v1`；缺省插值保持线性。关闭状态也完整保留。对象要求 `drawverse.brush`、behavior19、`speed-dynamics` 能力和 manifest minor30，state24；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。
 
-速度输入来自文档像素距离与输入段时间，曲线横轴按 `speed/maxSpeed` 归一化。尺寸作用于主笔尖和配对第二笔尖，流量与整笔不透明度上限来自同一冻结曲线；不影响随机序列、选区、蒙版或历史边界。Schema为 `contracts/vbr-speed-v1.30.schema.json`。ABR 导入不将速度字段映射为新对象，完整动态矩阵和跨平台验收继续后续。
+速度输入来自文档像素距离与输入段时间，曲线横轴按 `speed/maxSpeed` 归一化。尺寸作用于主笔尖和配对第二笔尖，流量与整笔不透明度上限来自同一冻结曲线；不影响随机序列、选区、蒙版或历史边界。Schema为 `core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-speed-v1.30.schema.json`。ABR 导入不将速度字段映射为新对象，完整动态矩阵和跨平台验收继续后续。
 
 ## VBR1.31：切向压力动态
 
-`parameters.tangentDynamics` 使用 `tangent-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线；曲线结构与速度动态相同，但不含最大速度。输入为设备切向压力 -1..1 归一化到 0..1，关闭状态完整保留。对象要求 `drawverse.brush`、behavior20、`tangent-dynamics` 能力和 manifest minor31，state25；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-tangent-v1.31.schema.json`。第二笔尖自身仍不接受切向压力配置，ABR来源映射、完整动态矩阵和跨平台继续后续。
+`parameters.tangentDynamics` 使用 `tangent-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线；曲线结构与速度动态相同，但不含最大速度。输入为设备切向压力 -1..1 归一化到 0..1，关闭状态完整保留。对象要求 `drawverse.brush`、behavior20、`tangent-dynamics` 能力和 manifest minor31，state25；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-tangent-v1.31.schema.json`。第二笔尖自身仍不接受切向压力配置，ABR来源映射、完整动态矩阵和跨平台继续后续。
 
 ## VBR1.32：笔触距离动态
 
-`parameters.distanceDynamics` 使用 `distance-v1`，必填 `enabled`、`maxDistance`（1–100000 px）和 `size`/`flow`/`opacity` 三条控制曲线。输入为当前活动笔触累计文档距离归一化到 0..1；关闭状态完整保留。对象要求 `drawverse.brush`、behavior21、`distance-dynamics` 能力和 manifest minor32，state26；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-distance-v1.32.schema.json`。第二笔尖自身仍不接受距离配置，距离/渐隐 ABR来源和通用动态矩阵继续后续。
+`parameters.distanceDynamics` 使用 `distance-v1`，必填 `enabled`、`maxDistance`（1–100000 px）和 `size`/`flow`/`opacity` 三条控制曲线。输入为当前活动笔触累计文档距离归一化到 0..1；关闭状态完整保留。对象要求 `drawverse.brush`、behavior21、`distance-dynamics` 能力和 manifest minor32，state26；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-distance-v1.32.schema.json`。第二笔尖自身仍不接受距离配置，距离/渐隐 ABR来源和通用动态矩阵继续后续。
 
 ## VBR1.33：倾斜幅度动态
 
-`parameters.tiltDynamics` 使用 `tilt-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线。输入为设备倾斜二维长度除以90度归一化到0..1，设备无倾斜能力时为0；关闭状态完整保留。对象要求 `drawverse.brush`、behavior22、`tilt-dynamics` 能力和 manifest minor33，state27；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-tilt-v1.33.schema.json`。第二笔尖自身仍不接受倾斜配置，ABR倾斜/渐隐来源和通用动态矩阵继续后续。
+`parameters.tiltDynamics` 使用 `tilt-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线。输入为设备倾斜二维长度除以90度归一化到0..1，设备无倾斜能力时为0；关闭状态完整保留。对象要求 `drawverse.brush`、behavior22、`tilt-dynamics` 能力和 manifest minor33，state27；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-tilt-v1.33.schema.json`。第二笔尖自身仍不接受倾斜配置，ABR倾斜/渐隐来源和通用动态矩阵继续后续。
 
 ## VBR1.34：笔旋转动态
 
-`parameters.rotationDynamics` 使用 `rotation-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线。输入为设备旋转角按整圈归一化到0..1，设备无旋转能力时为0；关闭状态完整保留。对象要求 `drawverse.brush`、behavior23、`rotation-dynamics` 能力和 manifest minor34，state28；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-rotation-v1.34.schema.json`。第二笔尖自身仍不接受旋转配置，ABR旋转/渐隐来源和通用动态矩阵继续后续。
+`parameters.rotationDynamics` 使用 `rotation-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线。输入为设备旋转角按整圈归一化到0..1，设备无旋转能力时为0；关闭状态完整保留。对象要求 `drawverse.brush`、behavior23、`rotation-dynamics` 能力和 manifest minor34，state28；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-rotation-v1.34.schema.json`。第二笔尖自身仍不接受旋转配置，ABR旋转/渐隐来源和通用动态矩阵继续后续。
 
 ## VBR1.35：笔触方向动态
 
-`parameters.directionDynamics` 使用 `direction-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线。输入为输入段运动方向角按整圈归一化到0..1，无位移时保持恒等；关闭状态完整保留。对象要求 `drawverse.brush`、behavior24、`direction-dynamics` 能力和 manifest minor35，state29；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-direction-v1.35.schema.json`。第二笔尖自身仍不接受方向配置，ABR方向/渐隐来源和通用动态矩阵继续后续。
+`parameters.directionDynamics` 使用 `direction-v1`，必填 `enabled` 和 `size`/`flow`/`opacity` 三条控制曲线。输入为输入段运动方向角按整圈归一化到0..1，无位移时保持恒等；关闭状态完整保留。对象要求 `drawverse.brush`、behavior24、`direction-dynamics` 能力和 manifest minor35，state29；旧状态不写入、不升级版本或改字节，低 minor 夹带明确拒绝。Schema为 `core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-direction-v1.35.schema.json`。第二笔尖自身仍不接受方向配置，ABR方向/渐隐来源和通用动态矩阵继续后续。
 
 ## VBR1.38：动态来源矩阵
 
-`parameters.sourceMatrix` 使用 `source-matrix-v1`，必填 `size`、`flow`、`opacity` 三个来源；每个来源为 `all`、`speed`、`tangent`、`distance`、`tilt`、`rotation` 或 `direction`。`all` 表示六来源因子相乘，单选来源只取该通道对应曲线。对象要求 `drawverse.brush`、behavior25、`dynamics-source-matrix` 能力和 manifest minor38，state32；默认矩阵不写入，旧版本字节保持，低 minor 夹带明确拒绝。Schema为 `contracts/vbr-dynamics-matrix-v1.38.schema.json`。第二笔尖不携带独立矩阵，ABR动态来源映射继续后续。
+`parameters.sourceMatrix` 使用 `source-matrix-v1`，必填 `size`、`flow`、`opacity` 三个来源；每个来源为 `all`、`speed`、`tangent`、`distance`、`tilt`、`rotation` 或 `direction`。`all` 表示六来源因子相乘，单选来源只取该通道对应曲线。对象要求 `drawverse.brush`、behavior25、`dynamics-source-matrix` 能力和 manifest minor38，state32；默认矩阵不写入，旧版本字节保持，低 minor 夹带明确拒绝。Schema为 `core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-dynamics-matrix-v1.38.schema.json`。第二笔尖不携带独立矩阵，ABR动态来源映射继续后续。
 
 ABR source converter9（`bVTy=3/6/8`设备来源）同样要求 manifest minor38；source info 的 converter 范围为1..9，converter9基线必须包含 `sourceMatrix` 及至少一个倾斜/方向/旋转对象。此约束不改变平包字节或第二笔尖格式。
 
 ## VBR1.39：纹理溶解
 
-纹理 `mode="dissolve"` 使用确定性覆盖率二值抖动，要求 manifest minor39 和 state33；低版本明确拒绝。ABR `BlnM` 的 `Dslv`/`dissolve` 映射到该名称。Schema为 `contracts/vbr-texture-modes-v1.39.schema.json`。该模式是覆盖率近似，不是最终颜色空间的Dissolve图层混合。
+纹理 `mode="dissolve"` 使用确定性覆盖率二值抖动，要求 manifest minor39 和 state33；低版本明确拒绝。ABR `BlnM` 的 `Dslv`/`dissolve` 映射到该名称。Schema为 `core/crates/paint-io/tests/fixtures/schema-history/texture/vbr-texture-modes-v1.39.schema.json`。该模式是覆盖率近似，不是最终颜色空间的Dissolve图层混合。
 
 ## VBR1.40：笔刷渐隐
 
-`parameters.fadeDynamics` 使用 `fade-v1`，必填 `enabled`、`steps`（1–10000）以及 `size`/`flow`/`opacity` 三条控制曲线。输入按印章序号从完整响应线性渐隐到最低比例；要求 `drawverse.brush`、behavior26、`fade-dynamics` 能力和 manifest minor40，state34。Schema为 `contracts/vbr-fade-v1.40.schema.json`。该计数对散射/双笔尖共享同一印章序号，不宣称完整PS步数等价。
+`parameters.fadeDynamics` 使用 `fade-v1`，必填 `enabled`、`steps`（1–10000）以及 `size`/`flow`/`opacity` 三条控制曲线。输入按印章序号从完整响应线性渐隐到最低比例；要求 `drawverse.brush`、behavior26、`fade-dynamics` 能力和 manifest minor40，state34。Schema为 `core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-fade-v1.40.schema.json`。该计数对散射/双笔尖共享同一印章序号，不宣称完整PS步数等价。
 
 ## VBR1.41：ABR计算双笔刷源记录
 
-ABR source converter11的source info使用version3并携带`dualBrush`；要求manifest minor41。双笔刷本身仍使用既有VBR `dualBrush`与state12格式，schema为`contracts/vbr-dual-v1.10.schema.json`；sampled双笔刷资源关联尚未接入。
+ABR source converter11的source info使用version3并携带`dualBrush`；要求manifest minor41。双笔刷本身仍使用既有VBR `dualBrush`与state12格式，schema为`core/crates/paint-io/tests/fixtures/schema-history/dual/vbr-dual-v1.10.schema.json`；sampled双笔刷资源关联尚未接入。
 
 ## VBR1.42：散布设备控制
 
-`scatterDynamics`增加可选`amountControl`/`countControl`，每项包含`source`（`off`/`fade`/`pressure`/`tilt`/`direction`/`rotation`）、`minimum`及渐隐时的`fadeSteps`；缺省保持旧字节。含控制的主/第二笔尖预设要求behavior27、`scatter-controls`能力、manifest minor42与state35；低版本夹带明确拒绝。ABR converter12/handoff11映射`bVTy=1/2/3/6/8`、`Mnm`、`fStp`，双笔刷`dualBrush.scatterDynamics`/`countDynamics`同样映射。Schema为`contracts/vbr-scatter-controls-v1.42.schema.json`。设计/验收见`docs/brush/dynamics/brush-scatter-device-design.md`和`docs/brush/dynamics/brush-scatter-device-validation.md`；不宣称16位、Hue/Saturation/Color/Luminosity或完整PS等价。
+`scatterDynamics`增加可选`amountControl`/`countControl`，每项包含`source`（`off`/`fade`/`pressure`/`tilt`/`direction`/`rotation`）、`minimum`及渐隐时的`fadeSteps`；缺省保持旧字节。含控制的主/第二笔尖预设要求behavior27、`scatter-controls`能力、manifest minor42与state35；低版本夹带明确拒绝。ABR converter12/handoff11映射`bVTy=1/2/3/6/8`、`Mnm`、`fStp`，双笔刷`dualBrush.scatterDynamics`/`countDynamics`同样映射。Schema为`core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-scatter-controls-v1.42.schema.json`。设计/验收见`docs/brush/dynamics/brush-scatter-device-design.md`和`docs/validations/brush/dynamics/brush-scatter-device-validation.md`；不宣称16位、Hue/Saturation/Color/Luminosity或完整PS等价。
 
 ## VBR1.43：双笔刷扩展覆盖模式
 
-`dualBrush.mode`在原六种之外支持`colorBurn`、`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`、`vividLight`、`linearLight`、`pinLight`、`divide`，共19种灰度覆盖组合。含新模式要求behavior28、`dual-cover-extended`能力、manifest minor43与state36；旧版本夹带明确拒绝，原六种模式和旧字节保持。ABR `BlnM` 短码/名称映射见设计文档。Schema为`contracts/vbr-dual-modes-v1.43.schema.json`。颜色语义模式Hue/Saturation/Color/Luminosity仍不执行，16位/随机抖动仍在后续范围。
+`dualBrush.mode`在原六种之外支持`colorBurn`、`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`、`vividLight`、`linearLight`、`pinLight`、`divide`，共19种灰度覆盖组合。含新模式要求behavior28、`dual-cover-extended`能力、manifest minor43与state36；旧版本夹带明确拒绝，原六种模式和旧字节保持。ABR `BlnM` 短码/名称映射见设计文档。Schema为`core/crates/paint-io/tests/fixtures/schema-history/dual/vbr-dual-modes-v1.43.schema.json`。颜色语义模式Hue/Saturation/Color/Luminosity仍不执行，16位/随机抖动仍在后续范围。

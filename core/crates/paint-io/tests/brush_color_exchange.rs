@@ -313,9 +313,9 @@ fn color_alone_and_whole_stroke_frequency_restore_real_pixels() {
     }
 }
 #[test]
-fn published_color_contract_names_the_actual_model_and_frozen_baseline() {
+fn historical_color_contract_names_the_actual_model_and_frozen_baseline() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-color-dynamics-v1.8.schema.json"
+        "fixtures/schema-history/dynamics/vbr-color-dynamics-v1.8.schema.json"
     ))
     .unwrap();
     assert_eq!(

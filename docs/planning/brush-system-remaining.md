@@ -2,7 +2,7 @@
 
 2026-10-18，双笔刷覆盖模式阶段更新。已完成统一定义/资源目录、程序与图片笔尖、压力曲线/独立流量和整笔不透明度、形状/散布/颜色/纹理、主/第二笔尖散布幅度与数量的设备及渐隐控制、双笔刷8种灰度覆盖模式与ABR计算双笔刷、可选复合轮廓/半透明基础图片光标、平滑/起收笔、二维湿混/单色涂抹、ABR基础/设备来源（bVTy=3/6/8）/渐隐（bVTy=1）、VBR1.41动态来源矩阵/纹理模式/速度/切向压力/距离/倾斜/旋转/方向交换、PS分类设置及普通不透明大笔刷/硬橡皮跳过；完成范围以各阶段验收为准，不能据此宣称整体已达Procreate或完全兼容PS。用户已在Windows实机确认普通大笔刷/小间隔性能通过：约130px、1%间距时DrawVerse与Photoshop均卡顿，纯CPU的DrawVerse更流畅；湿混性能也已暂且通过用户验收，剩余性能项只指实体输入专项。
 
-2026-10-18 模式收窄：双色绘制用户入口已删除，旧 state/VBR/ABR 中的 `dualBrush.color` 和 `wetMix.dualColor` 在 Qt 载入时剥离并按单色处理。纹理仅保留正片叠底、减去、变暗、叠加、颜色减淡、颜色加深、线性加深、实色混合、线性高度和高度；双重笔刷仅保留正片叠底、变暗、叠加、颜色减淡、颜色加深、线性加深、实色混合和线性高度。其他旧模式载入时回落为 `multiply`。见[设计](../brush/ui/brush-mode-cleanup-design.md)及[验收](../brush/ui/brush-mode-cleanup-validation.md)。
+2026-10-18 模式收窄：双色绘制用户入口已删除，旧 state/VBR/ABR 中的 `dualBrush.color` 和 `wetMix.dualColor` 在 Qt 载入时剥离并按单色处理。纹理仅保留正片叠底、减去、变暗、叠加、颜色减淡、颜色加深、线性加深、实色混合、线性高度和高度；双重笔刷仅保留正片叠底、变暗、叠加、颜色减淡、颜色加深、线性加深、实色混合和线性高度。其他旧模式载入时回落为 `multiply`。见[设计](../brush/ui/brush-mode-cleanup-design.md)及[验收](../validations/brush/ui/brush-mode-cleanup-validation.md)。
 
 2026-10-18 补充：ABR 16位 raw/RLE 笔尖按大端全范围量化接入；ABR `szVr`/`prVr`/`opVr` 的 `jitter` 已接入 DrawVerse 确定性随机源和 state37/VBR1.44；非完全覆盖图片笔尖增加边缘/比例快速路径与固定基准；画笔库拖动增加防列表手势抢占。见[16位调查](../brush/abr/abr-16bit-investigation.md)、[传递抖动](../brush/abr/abr-transfer-jitter-design.md)、[图片笔尖性能](../brush/performance/brush-image-tip-performance-design.md)。
 
@@ -19,9 +19,9 @@
 
 原双色湿混的涂抹与橡皮已由用户确认没有实际意义；双色绘制入口删除后，旧配置在载入时剥离，不列入剩余功能。
 
-非分隔双笔刷的灰度覆盖仍以 `interleaved-stamp-v1` 保留在核心、state22、VBR1.28 和 Qt，见[设计](../brush/dual/brush-dual-stamp-design.md)及[验收](../brush/dual/brush-dual-stamp-validation.md)；双色贡献入口已删除，旧颜色配置会在载入时剥离。
+非分隔双笔刷的灰度覆盖仍以 `interleaved-stamp-v1` 保留在核心、state22、VBR1.28 和 Qt，见[设计](../brush/dual/brush-dual-stamp-design.md)及[验收](../validations/brush/dual/brush-dual-stamp-validation.md)；双色贡献入口已删除，旧颜色配置会在载入时剥离。
 
-时间喷枪已以 `time-interval-v1` 接入核心、state23、VBR1.29、ABI1.57 和 Qt，见[设计](../brush/wet/brush-airbrush-design.md)及[验收](../brush/wet/brush-airbrush-validation.md)；只支持干画笔和橡皮。
+时间喷枪已以 `time-interval-v1` 接入核心、state23、VBR1.29、ABI1.57 和 Qt，见[设计](../brush/wet/brush-airbrush-design.md)及[验收](../validations/brush/wet/brush-airbrush-validation.md)；只支持干画笔和橡皮。
 
 用户已发令继续推进；此清单记录当前剩余范围，具体实施及验收见各阶段文档。整体Windows设备手感由用户自行验收。
 
@@ -29,14 +29,14 @@
 
 半透明基础图片光标已完成Qt入口，默认关闭/25%不透明度，实际身份捕获及全局保存见brush-cursor-image-ui-validation.md；不等于随机/纹理/最终混色印章预演，也不恢复被取消的试画。
 
-速度动态已以`speed-v1`接入核心、state24、VBR1.30、behavior19和Qt“传递”页，见[设计](../brush/dynamics/brush-speed-design.md)及[验收](../brush/dynamics/brush-speed-validation.md)。它以文档像素/秒统一驱动主/配对第二笔尖尺寸、流量和整笔不透明度上限；任意来源矩阵和ABR设备来源已接，ABR速度/渐隐字段、实体设备手感、跨平台和GPU仍属于后续范围。
+速度动态已以`speed-v1`接入核心、state24、VBR1.30、behavior19和Qt“传递”页，见[设计](../brush/dynamics/brush-speed-design.md)及[验收](../validations/brush/dynamics/brush-speed-validation.md)。它以文档像素/秒统一驱动主/配对第二笔尖尺寸、流量和整笔不透明度上限；任意来源矩阵和ABR设备来源已接，ABR速度/渐隐字段、实体设备手感、跨平台和GPU仍属于后续范围。
 
-切向压力动态已以`tangent-v1`接入核心、state25、VBR1.31、behavior20和Qt“传递”页，见[设计](../brush/dynamics/brush-tangent-design.md)及[验收](../brush/dynamics/brush-tangent-validation.md)。它使用设备-1..1切向压力归一化曲线；实体数位板是否输出非零切向压力由设备/驱动决定，尚未做硬件认证。
+切向压力动态已以`tangent-v1`接入核心、state25、VBR1.31、behavior20和Qt“传递”页，见[设计](../brush/dynamics/brush-tangent-design.md)及[验收](../validations/brush/dynamics/brush-tangent-validation.md)。它使用设备-1..1切向压力归一化曲线；实体数位板是否输出非零切向压力由设备/驱动决定，尚未做硬件认证。
 
-笔触距离动态已以`distance-v1`接入核心、state26、VBR1.32、behavior21和Qt“传递”页，见[设计](../brush/dynamics/brush-distance-design.md)及[验收](../brush/dynamics/brush-distance-validation.md)。它按活动笔触累计文档距离驱动三条曲线；ABR距离/渐隐来源和任意动态矩阵仍待后续。
+笔触距离动态已以`distance-v1`接入核心、state26、VBR1.32、behavior21和Qt“传递”页，见[设计](../brush/dynamics/brush-distance-design.md)及[验收](../validations/brush/dynamics/brush-distance-validation.md)。它按活动笔触累计文档距离驱动三条曲线；ABR距离/渐隐来源和任意动态矩阵仍待后续。
 
-倾斜幅度动态已以`tilt-v1`接入核心、state27、VBR1.33、behavior22和Qt“传递”页，见[设计](../brush/dynamics/brush-tilt-design.md)及[验收](../brush/dynamics/brush-tilt-validation.md)。它使用设备二维倾斜长度归一化曲线；设备无倾斜能力时保持原值。
+倾斜幅度动态已以`tilt-v1`接入核心、state27、VBR1.33、behavior22和Qt“传递”页，见[设计](../brush/dynamics/brush-tilt-design.md)及[验收](../validations/brush/dynamics/brush-tilt-validation.md)。它使用设备二维倾斜长度归一化曲线；设备无倾斜能力时保持原值。
 
-笔旋转动态已以`rotation-v1`接入核心、state28、VBR1.34、behavior23和Qt“传递”页，见[设计](../brush/dynamics/brush-rotation-design.md)及[验收](../brush/dynamics/brush-rotation-validation.md)。它使用设备旋转角整圈归一化曲线；无旋转能力时保持原值。
+笔旋转动态已以`rotation-v1`接入核心、state28、VBR1.34、behavior23和Qt“传递”页，见[设计](../brush/dynamics/brush-rotation-design.md)及[验收](../validations/brush/dynamics/brush-rotation-validation.md)。它使用设备旋转角整圈归一化曲线；无旋转能力时保持原值。
 
-笔触方向动态已以`direction-v1`接入核心、state29、VBR1.35、behavior24和Qt“传递”页，见[设计](../brush/dynamics/brush-direction-design.md)及[验收](../brush/dynamics/brush-direction-validation.md)。它使用输入段方向角整圈归一化曲线；无位移时保持原值。
+笔触方向动态已以`direction-v1`接入核心、state29、VBR1.35、behavior24和Qt“传递”页，见[设计](../brush/dynamics/brush-direction-design.md)及[验收](../validations/brush/dynamics/brush-direction-validation.md)。它使用输入段方向角整圈归一化曲线；无位移时保持原值。

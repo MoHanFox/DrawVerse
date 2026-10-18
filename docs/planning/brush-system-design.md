@@ -1,22 +1,22 @@
 # 统一笔刷系统设计
 
-2026-10-18逐印章双色阶段：`interleaved-stamp-v1`已接核心真实像素、state22、VBR1.28/behavior17、ABI1.56和Qt设置/真实预览；主第二贡献按印章顺序叠加，整笔不透明度仍只应用一次。第二色固定使用背景色且无UI开关；独立路径拒绝，橡皮和普通涂抹忽略颜色，手指绘画涂抹使用双色，湿混下的涂抹/橡皮不处理。见[设计](../brush/dual/brush-dual-stamp-design.md)及[验收](../brush/dual/brush-dual-stamp-validation.md)。
+2026-10-18逐印章双色阶段：`interleaved-stamp-v1`已接核心真实像素、state22、VBR1.28/behavior17、ABI1.56和Qt设置/真实预览；主第二贡献按印章顺序叠加，整笔不透明度仍只应用一次。第二色固定使用背景色且无UI开关；独立路径拒绝，橡皮和普通涂抹忽略颜色，手指绘画涂抹使用双色，湿混下的涂抹/橡皮不处理。见[设计](../brush/dual/brush-dual-stamp-design.md)及[验收](../validations/brush/dual/brush-dual-stamp-validation.md)。
 
-2026-10-18时间喷枪阶段：预设级`time-interval-v1`已接核心定时沉积、state23、VBR1.29/behavior18、ABI1.57和Qt计时器；按住不动按1–1000ms间隔沉积，普通移动路径和单一历史保持。只支持干画笔/橡皮，普通涂抹与湿混不启用。见[设计](../brush/wet/brush-airbrush-design.md)及[验收](../brush/wet/brush-airbrush-validation.md)。
+2026-10-18时间喷枪阶段：预设级`time-interval-v1`已接核心定时沉积、state23、VBR1.29/behavior18、ABI1.57和Qt计时器；按住不动按1–1000ms间隔沉积，普通移动路径和单一历史保持。只支持干画笔/橡皮，普通涂抹与湿混不启用。见[设计](../brush/wet/brush-airbrush-design.md)及[验收](../validations/brush/wet/brush-airbrush-validation.md)。
 
-2026-10-18画笔组拖放阶段：Qt 画笔库支持预设/组按位置插入、组内追加和根目录拖放，C++ 组织移动原子拒绝环和非法目标；state20/VBR1.24/ABI1.55不变。见[设计](../brush/library/brush-groups-drag-design.md)及[验收](../brush/library/brush-groups-drag-validation.md)。
+2026-10-18画笔组拖放阶段：Qt 画笔库支持预设/组按位置插入、组内追加和根目录拖放，C++ 组织移动原子拒绝环和非法目标；state20/VBR1.24/ABI1.55不变。见[设计](../brush/library/brush-groups-drag-design.md)及[验收](../validations/brush/library/brush-groups-drag-validation.md)。
 
-2026-10-18完整范围导出：Qt 画笔库可将全部预设/组导出为 ordered-package-v1，内置 ID 稳定映射、组织投影和来源包含检查；后台经 ABI1.55 原子写入。见[设计](../brush/library/brush-groups-export-design.md)及[验收](../brush/library/brush-groups-export-validation.md)。Qt分组包导入仍待接。
+2026-10-18完整范围导出：Qt 画笔库可将全部预设/组导出为 ordered-package-v1，内置 ID 稳定映射、组织投影和来源包含检查；后台经 ABI1.55 原子写入。见[设计](../brush/library/brush-groups-export-design.md)及[验收](../validations/brush/library/brush-groups-export-validation.md)。Qt分组包导入仍待接。
 
-2026-10-18分组包导入：VBR导入经ABI1.55分组读入口返回ordered-package-v1，Qt重新映射预设/组ID并将整棵副本树合并到当前目录；同名/空组保留、平包生成平根、启动期导入排队。见[设计](../brush/library/brush-groups-import-design.md)及[验收](../brush/library/brush-groups-import-validation.md)。
+2026-10-18分组包导入：VBR导入经ABI1.55分组读入口返回ordered-package-v1，Qt重新映射预设/组ID并将整棵副本树合并到当前目录；同名/空组保留、平包生成平根、启动期导入排队。见[设计](../brush/library/brush-groups-import-design.md)及[验收](../validations/brush/library/brush-groups-import-validation.md)。
 
 2026-10-16用户更新：取消可交互试画功能，不增加试画窗口或入口；自动笔刷预览在所有参数下固定白色及正常工具混合模式，保留真实alpha，换当前颜色不重算预览。本文早期“试画/有色预览”要求由此次指令替代，见[白色预览设计](../brush/ui/brush-white-preview-design.md)。
 
-状态：2026-10-14，分阶段实施。程序/图片笔尖、原生目录、VBR1.1、描边与ABR6/10基础导入已有阶段实现，见 [路线与结果](roadmap.md)、[ABR入口验收](../brush/abr/abr-entry-validation.md)。VBR来源交换已完成阶段接入；压力曲线内核已有真实像素验收，状态/界面已接入，并新增独立不透明度压感，见 [验收](../brush/dynamics/brush-opacity-pressure-validation.md)。完整ABR动态与动态湿混仍待完成，本文不代表整体实现验收。
+状态：2026-10-14，分阶段实施。程序/图片笔尖、原生目录、VBR1.1、描边与ABR6/10基础导入已有阶段实现，见 [路线与结果](roadmap.md)、[ABR入口验收](../validations/brush/abr/abr-entry-validation.md)。VBR来源交换已完成阶段接入；压力曲线内核已有真实像素验收，状态/界面已接入，并新增独立不透明度压感，见 [验收](../validations/brush/dynamics/brush-opacity-pressure-validation.md)。完整ABR动态与动态湿混仍待完成，本文不代表整体实现验收。
 
 目标：达到 Procreate 类笔刷的参数深度与线条手感，逐步兼容 Photoshop ABR，采用开放的 VBR 原生格式。画笔、橡皮和独立涂抹工具复用同一系统，保留 Rust → C ABI → PaintCoreClient → QML 边界。Python 插件最后实施。
 
-验收计划：[brush-system-validation.md](brush-system-validation.md)。原生格式：[vbr-format-design.md](../brush/vbr/vbr-format-design.md)。当前真实实现仍以 [brush-library-design.md](../brush/ui/brush-library-design.md)、[smudge-design.md](../brush/wet/smudge-design.md) 和代码为准。
+验收计划：[brush-system-validation.md](../validations/planning/brush-system-validation.md)。原生格式：[vbr-format-design.md](../brush/vbr/vbr-format-design.md)。当前真实实现仍以 [brush-library-design.md](../brush/ui/brush-library-design.md)、[smudge-design.md](../brush/wet/smudge-design.md) 和代码为准。
 
 ## 1. 当前基础与改造边界
 
@@ -24,7 +24,7 @@
 
 `BrushLibrary` 当前在 Qt 侧保存有限参数和预设，不能直接扩成另一个执行引擎。迁移后它仍作为共享 UI 模型，Rust 负责笔刷定义验证、资源与运行语义；PaintCoreClient 通过 ABI 获取元数据和提交修改。现有预设、选中状态、各笔刷独立像素大小与涂抹参数需要迁移，不能静默重置。
 
-普通旧圆笔使用兼容行为版本。用户最新要求覆盖原有共享尺寸和逐印章不透明度：各预设独立大小、普通画笔/擦除采用整笔透明度上限，见 [验收](../brush/dynamics/brush-stroke-opacity-validation.md)；已提交历史像素不重算。新参数引入新的行为版本，不把引擎升级自动应用到旧预设。当前大小等上限不通过只改 QML 绕过，扩展时同时检查内核、ABI、资源预算、持久化与 UI。
+普通旧圆笔使用兼容行为版本。用户最新要求覆盖原有共享尺寸和逐印章不透明度：各预设独立大小、普通画笔/擦除采用整笔透明度上限，见 [验收](../validations/brush/dynamics/brush-stroke-opacity-validation.md)；已提交历史像素不重算。新参数引入新的行为版本，不把引擎升级自动应用到旧预设。当前大小等上限不通过只改 QML 绕过，扩展时同时检查内核、ABI、资源预算、持久化与 UI。
 
 ## 2. 统一执行模型
 
@@ -176,67 +176,67 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 - [Adobe Mixer Brush](https://helpx.adobe.com/photoshop/desktop/apply-painting-techniques/create-fill-with-patterns/paint-with-mixer-brush.html)：载色、拾色、混合与流量的产品行为参考。
 - [Adobe ABR 导入](https://helpx.adobe.com/photoshop/desktop/apply-painting-techniques/brushes-presets/import-brushes-brush-packs.html)：格式使用参考；此产品帮助页面不作为完整二进制解析规范。
 
-2026-10-16湿混双色原生阶段：ABI1.52/WET_DUAL_COLOR，完整state19准备/VBR1.23包、双角色原子状态及手动装载、准确图片修订重建与真实两笔像素/载色/历史已接，见[设计](../brush/wet/brush-wet-dual-abi-design.md)与[验收](../brush/wet/brush-wet-dual-abi-validation.md)。新3旧6公开API、10核心/7原生及Windows Release/Clippy/4ABI/Qt通过；旧入口保护保留，Qt镜像/关闭值/基准/白色预览及组合入口仍待接，不宣称用户界面已支持。其余完整范围保持，跨平台后置。
+2026-10-16湿混双色原生阶段：ABI1.52/WET_DUAL_COLOR，完整state19准备/VBR1.23包、双角色原子状态及手动装载、准确图片修订重建与真实两笔像素/载色/历史已接，见[设计](../brush/wet/brush-wet-dual-abi-design.md)与[验收](../validations/brush/wet/brush-wet-dual-abi-validation.md)。新3旧6公开API、10核心/7原生及Windows Release/Clippy/4ABI/Qt通过；旧入口保护保留，Qt镜像/关闭值/基准/白色预览及组合入口仍待接，不宣称用户界面已支持。其余完整范围保持，跨平台后置。
 
-2026-10-16湿混双色Qt阶段：完整state19镜像/关闭配置/复制和resetState、新ABI1.52准备及VBR1.23包、两色手动装载和隔离白色预览已接通，真实绘画/历史/图片三资源用途与新目录导入重开像素验证见[验收](../brush/wet/brush-wet-dual-ui-validation.md)。Windows新3旧6Qt、环境倍率2/Release/ABI通过；旧入口拒绝保护保留。大跨度密集图片输入仍会触发预算回滚，分块调度未实现；原参数输入偶发问题未定位。完整剩余范围见[功能清单](brush-system-remaining.md)，用户要求本阶段完成后等待指示。
+2026-10-16湿混双色Qt阶段：完整state19镜像/关闭配置/复制和resetState、新ABI1.52准备及VBR1.23包、两色手动装载和隔离白色预览已接通，真实绘画/历史/图片三资源用途与新目录导入重开像素验证见[验收](../validations/brush/wet/brush-wet-dual-ui-validation.md)。Windows新3旧6Qt、环境倍率2/Release/ABI通过；旧入口拒绝保护保留。大跨度密集图片输入仍会触发预算回滚，分块调度未实现；原参数输入偶发问题未定位。完整剩余范围见[功能清单](brush-system-remaining.md)，用户要求本阶段完成后等待指示。
 
-2026-10-16输入分页数值/预算阶段：原始段的主副有序印章、弧长/设备插值与间距余量、只读准备/成功采用的有界事件页已实现；Document预算提取共用权重而保持旧限制。9项新测试（含14400组旧预算分类）及相关真实湿混/起收笔旧回归、Windows Release/Clippy/ABI通过，见[设计](../brush/input/brush-input-paging-design.md)及[验收](../brush/input/brush-input-paging-kernel-validation.md)。尚未接Document像素/笔尾和Actor调度，不宣称画布64px密集输入已修复；用户已恢复推进，整体Windows设备手感由用户自行验收。
+2026-10-16输入分页数值/预算阶段：原始段的主副有序印章、弧长/设备插值与间距余量、只读准备/成功采用的有界事件页已实现；Document预算提取共用权重而保持旧限制。9项新测试（含14400组旧预算分类）及相关真实湿混/起收笔旧回归、Windows Release/Clippy/ABI通过，见[设计](../brush/input/brush-input-paging-design.md)及[验收](../validations/brush/input/brush-input-paging-kernel-validation.md)。尚未接Document像素/笔尾和Actor调度，不宣称画布64px密集输入已修复；用户已恢复推进，整体Windows设备手感由用户自行验收。
 
-2026-10-17输入分页Document阶段：明确Rust输入/继续/结束入口、真实主副写入与活动尾有界重放、一次滤波、完整载色及单历史/失败回滚已实现，13项新Document、10调度及相关旧核心/原生、Windows Release/Clippy/ABI通过，见[设计](../brush/input/brush-input-paging-document-design.md)和[验收](../brush/input/brush-input-paging-document-validation.md)。原64px在新Rust入口完成并对照一次性参考；Actor与公开Qt尚未接，不宣称用户画布问题已修复。无ABI/格式变化；整体设备手感由用户验收。
+2026-10-17输入分页Document阶段：明确Rust输入/继续/结束入口、真实主副写入与活动尾有界重放、一次滤波、完整载色及单历史/失败回滚已实现，13项新Document、10调度及相关旧核心/原生、Windows Release/Clippy/ABI通过，见[设计](../brush/input/brush-input-paging-document-design.md)和[验收](../validations/brush/input/brush-input-paging-document-validation.md)。原64px在新Rust入口完成并对照一次性参考；Actor与公开Qt尚未接，不宣称用户画布问题已修复。无ABI/格式变化；整体设备手感由用户验收。
 
-2026-10-17输入分页Actor阶段：实际Move/End接通Document有界页，完成水位/笔尾发布/单历史与双载色采用保持，邮箱及暂存共同限额、页间取消/重建/stop和屏障顺序已接。原64px单输入经公开API和Qt新目录交换重开对照通过；任务8项、新Actor6项及相关原生/公开回归、Windows Release/Clippy/4 ABI/Qt通过，见[设计](../brush/input/brush-input-paging-actor-design.md)及[验收](../brush/input/brush-input-paging-actor-validation.md)。无ABI/格式变化；大笔刷性能并非全部完成，单印章及总输入预算保持，整体设备手感由用户验收。
+2026-10-17输入分页Actor阶段：实际Move/End接通Document有界页，完成水位/笔尾发布/单历史与双载色采用保持，邮箱及暂存共同限额、页间取消/重建/stop和屏障顺序已接。原64px单输入经公开API和Qt新目录交换重开对照通过；任务8项、新Actor6项及相关原生/公开回归、Windows Release/Clippy/4 ABI/Qt通过，见[设计](../brush/input/brush-input-paging-actor-design.md)及[验收](../validations/brush/input/brush-input-paging-actor-validation.md)。无ABI/格式变化；大笔刷性能并非全部完成，单印章及总输入预算保持，整体设备手感由用户验收。
 
-2026-10-17湿混双色贡献场性能：主/第二几何与RGBA场合并覆盖遍历、零覆盖跳过无效颜色采样，保留独立日记/COW及饱和后继续混色。162组原两遍路径逐场/像素/载色对照、起收笔分页及相关回归通过；8组固定Release基准摘要相同，耗时减少4.1%至29.5%，不能外推所有场景。见[设计](../brush/wet/brush-wet-field-performance-design.md)及[验收](../brush/wet/brush-wet-field-performance-validation.md)。无ABI/格式变化，单印章和总工作预算保持。
+2026-10-17湿混双色贡献场性能：主/第二几何与RGBA场合并覆盖遍历、零覆盖跳过无效颜色采样，保留独立日记/COW及饱和后继续混色。162组原两遍路径逐场/像素/载色对照、起收笔分页及相关回归通过；8组固定Release基准摘要相同，耗时减少4.1%至29.5%，不能外推所有场景。见[设计](../brush/wet/brush-wet-field-performance-design.md)及[验收](../validations/brush/wet/brush-wet-field-performance-validation.md)。无ABI/格式变化，单印章和总工作预算保持。
 
-2026-10-17图片光标原生阶段：实际覆盖的白色/alpha图、双线性面积积分及8项有界PNG资源缓存、ABI1.53查询与容量/生命周期已实现。新内核5项、资源9项/公开3项及旧轮廓4项、相关Clippy通过，见[设计](../brush/ui/brush-cursor-image-design.md)及[验收](../brush/ui/brush-cursor-image-validation.md)。无state/VBR变化；Qt显示开关、透明度全局保存及在途身份消费尚未接，不宣称用户入口已完成。
+2026-10-17图片光标原生阶段：实际覆盖的白色/alpha图、双线性面积积分及8项有界PNG资源缓存、ABI1.53查询与容量/生命周期已实现。新内核5项、资源9项/公开3项及旧轮廓4项、相关Clippy通过，见[设计](../brush/ui/brush-cursor-image-design.md)及[验收](../validations/brush/ui/brush-cursor-image-validation.md)。无state/VBR变化；Qt显示开关、透明度全局保存及在途身份消费尚未接，不宣称用户入口已完成。
 
-2026-10-17图片光标Qt阶段：ABI1.53白色PNG后台消费、默认关闭/25%可调全局偏好、当前与在途主副最多4身份、工具/简化/仅悬停及独立轮廓显示已接；主副捕获/重开恢复、失败合法状态回退、多文档同步和重启保存、实际窗口像素叠加通过。见[设计](../brush/ui/brush-cursor-image-ui-design.md)及[验收](../brush/ui/brush-cursor-image-ui-validation.md)。Windows新2旧4 Qt、环境倍率2新2、Release/4 ABI通过，无ABI/格式变化；随机/纸纹/最终混色预演不属于基础图片模式，其他完整目标继续。
+2026-10-17图片光标Qt阶段：ABI1.53白色PNG后台消费、默认关闭/25%可调全局偏好、当前与在途主副最多4身份、工具/简化/仅悬停及独立轮廓显示已接；主副捕获/重开恢复、失败合法状态回退、多文档同步和重启保存、实际窗口像素叠加通过。见[设计](../brush/ui/brush-cursor-image-ui-design.md)及[验收](../validations/brush/ui/brush-cursor-image-ui-validation.md)。Windows新2旧4 Qt、环境倍率2新2、Release/4 ABI通过，无ABI/格式变化；随机/纸纹/最终混色预演不属于基础图片模式，其他完整目标继续。
 
-2026-10-17笔刷分组Rust目录阶段：不可变稳定ID组织/有序根及子项/DFS投影、原子建组改名移动/解组及受保护级联删除、同组复制导入与捕获保持已接；新6集成+1修订边界/旧5目录、IO5/原生2及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-design.md)及[验收](../brush/library/brush-groups-kernel-validation.md)。旧状态编码有组时明确拒绝，未接分组保存交换/原生及Qt，不宣称用户入口完成；无ABI/state/VBR版本变化。
+2026-10-17笔刷分组Rust目录阶段：不可变稳定ID组织/有序根及子项/DFS投影、原子建组改名移动/解组及受保护级联删除、同组复制导入与捕获保持已接；新6集成+1修订边界/旧5目录、IO5/原生2及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-design.md)及[验收](../validations/brush/library/brush-groups-kernel-validation.md)。旧状态编码有组时明确拒绝，未接分组保存交换/原生及Qt，不宣称用户入口完成；无ABI/state/VBR版本变化。
 
-2026-10-17分组状态阶段：有界ordered-tree-v1 DTO/state20已实现，空组/显式顺序/关闭参数及真实三图片用途/ABR来源跨新目录两笔像素载色历史往返；最终IO20项、新旧原生四入口保护1项及Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-state-design.md)及[验收](../brush/library/brush-groups-state-validation.md)。平目录旧字节保持；旧原生有组明确拒绝。无ABI或VBR版本变化，VBR分组清单/整树映射/原生和Qt仍待接，不宣称用户分组完成。
+2026-10-17分组状态阶段：有界ordered-tree-v1 DTO/state20已实现，空组/显式顺序/关闭参数及真实三图片用途/ABR来源跨新目录两笔像素载色历史往返；最终IO20项、新旧原生四入口保护1项及Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-state-design.md)及[验收](../validations/brush/library/brush-groups-state-validation.md)。平目录旧字节保持；旧原生有组明确拒绝。无ABI或VBR版本变化，VBR分组清单/整树映射/原生和Qt仍待接，不宣称用户分组完成。
 
-2026-10-17分组VBR阶段：VBR1.24组织清单/空组与顺序、原子整树副本ID映射已接，三图片用途/ABR来源及真实两笔像素载色历史保持；IO33项、新四类旧读写保护1项、Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-vbr-design.md)及[验收](../brush/library/brush-groups-vbr-validation.md)。平包旧字节保持，无ABI/state变化；目标库原子合并/完整原生交接/Qt仍待接，不宣称分组用户入口完成。
+2026-10-17分组VBR阶段：VBR1.24组织清单/空组与顺序、原子整树副本ID映射已接，三图片用途/ABR来源及真实两笔像素载色历史保持；IO33项、新四类旧读写保护1项、Schema/Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-vbr-design.md)及[验收](../validations/brush/library/brush-groups-vbr-validation.md)。平包旧字节保持，无ABI/state变化；目标库原子合并/完整原生交接/Qt仍待接，不宣称分组用户入口完成。
 
-2026-10-17分组目标目录合并阶段：Core支持完整有序子树在根/指定组位置原子合并、跨角色身份/合并深度容量与资源预算预检、单修订及失败保持；VBR真实资源和来源内存桥已接，两笔像素/双载色/历史保持。新核心4/旧11/修订1、IO21及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-merge-design.md)及[验收](../brush/library/brush-groups-merge-validation.md)。无ABI/state/VBR变化；资源文件耐久事务、完整原生交接/Qt仍待接，不宣称分组用户入口完成。
+2026-10-17分组目标目录合并阶段：Core支持完整有序子树在根/指定组位置原子合并、跨角色身份/合并深度容量与资源预算预检、单修订及失败保持；VBR真实资源和来源内存桥已接，两笔像素/双载色/历史保持。新核心4/旧11/修订1、IO21及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-merge-design.md)及[验收](../validations/brush/library/brush-groups-merge-validation.md)。无ABI/state/VBR变化；资源文件耐久事务、完整原生交接/Qt仍待接，不宣称分组用户入口完成。
 
-2026-10-17分组资源发布阶段：候选目录先完整合并预检、包内PNG与来源先落盘后采用；故障保留原目录/共享文件，真实新目录state/组织与两笔像素载色历史恢复通过。IO40、Clippy/Windows Release/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-persist-design.md)及[验收](../brush/library/brush-groups-persist-validation.md)。无ABI/state/VBR变化；失败可能保留合法未引用公共缓存，不声称多文件整体回滚/GC。完整原生交接/Qt及重置基准全链仍待接。
+2026-10-17分组资源发布阶段：候选目录先完整合并预检、包内PNG与来源先落盘后采用；故障保留原目录/共享文件，真实新目录state/组织与两笔像素载色历史恢复通过。IO40、Clippy/Windows Release/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-persist-design.md)及[验收](../validations/brush/library/brush-groups-persist-validation.md)。无ABI/state/VBR变化；失败可能保留合法未引用公共缓存，不声称多文件整体回滚/GC。完整原生交接/Qt及重置基准全链仍待接。
 
-2026-10-17分组状态原生阶段：ABI1.54/GROUP_STATE及显式state20准备入口、完整关闭配置/准确票据/图片来源和冷重建、mutate采用及真实两笔/载色/历史通过。公开新2/原生1/旧保护5/旧公开3及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-abi-design.md)及[验收](../brush/library/brush-groups-abi-validation.md)。state/VBR不变；旧四准备/包保护保留，分组包专用原生交接/组织命令/Qt及重置基准仍待接。ABR纹理执行映射仍未支持，兼容报告与来源保留不等于已执行。
+2026-10-17分组状态原生阶段：ABI1.54/GROUP_STATE及显式state20准备入口、完整关闭配置/准确票据/图片来源和冷重建、mutate采用及真实两笔/载色/历史通过。公开新2/原生1/旧保护5/旧公开3及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-abi-design.md)及[验收](../validations/brush/library/brush-groups-abi-validation.md)。state/VBR不变；旧四准备/包保护保留，分组包专用原生交接/组织命令/Qt及重置基准仍待接。ABR纹理执行映射仍未支持，兼容报告与来源保留不等于已执行。
 
-2026-10-17分组包原生阶段：ABI1.55/GROUP_PACKAGE及ordered-package-v1完整交接、2MiB与投影验证、容量探测无资源安装、实际图片/ABR来源读写与原子保存、state20专用准备串联已接。IO33/新原生1/旧保护5/旧公开3/Schema及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-package-design.md)及[验收](../brush/library/brush-groups-package-validation.md)。state20/VBR1.24不变；旧四包保护保持，Qt副本树合并/完整镜像/重置基准及分组管理仍待接，不宣称用户分组已完成。
-2026-10-17分组Qt状态阶段：BrushLibrary/Qt状态20完整镜像 ordered-tree-v1，严格错误保持、空组、复制/删除组织保持、平包/ABR根追加、重置基准和重启恢复已接；PaintCoreClient 的 native preparation 与持久化回写不丢 organization，画笔库面板已接只读树投影、层级缩进和搜索父组保留，Windows Release 与四项 Qt 最小测试通过，见[设计](../brush/library/brush-groups-qt-state-design.md)及[验收](../brush/library/brush-groups-qt-state-validation.md)。建组/改名/拖动/解组、分组包整树合并和范围导出仍待接；ABR 纹理资源和来源可保留，但内部纹理执行映射仍未完成。
+2026-10-17分组包原生阶段：ABI1.55/GROUP_PACKAGE及ordered-package-v1完整交接、2MiB与投影验证、容量探测无资源安装、实际图片/ABR来源读写与原子保存、state20专用准备串联已接。IO33/新原生1/旧保护5/旧公开3/Schema及Windows Release/Clippy/4 ABI/旧Qt2通过，见[设计](../brush/library/brush-groups-package-design.md)及[验收](../validations/brush/library/brush-groups-package-validation.md)。state20/VBR1.24不变；旧四包保护保持，Qt副本树合并/完整镜像/重置基准及分组管理仍待接，不宣称用户分组已完成。
+2026-10-17分组Qt状态阶段：BrushLibrary/Qt状态20完整镜像 ordered-tree-v1，严格错误保持、空组、复制/删除组织保持、平包/ABR根追加、重置基准和重启恢复已接；PaintCoreClient 的 native preparation 与持久化回写不丢 organization，画笔库面板已接只读树投影、层级缩进和搜索父组保留，Windows Release 与四项 Qt 最小测试通过，见[设计](../brush/library/brush-groups-qt-state-design.md)及[验收](../validations/brush/library/brush-groups-qt-state-validation.md)。建组/改名/拖动/解组、分组包整树合并和范围导出仍待接；ABR 纹理资源和来源可保留，但内部纹理执行映射仍未完成。
 
-2026-10-18 ABR纹理阶段：本地有界`patt` 8/16位图案解码和预设索引关联、`TxtC`坐标空间、深度/缩放/反相、八种纹理覆盖模式（含VBR1.25 `CBrn`颜色加深）、VBR1.26亮度/对比度、VBR1.27纹理来源version2/逐印章深度动态与Qt来源恢复、资源哈希持久化、converterVersion8/handoff v7及Qt state11/21导入已接。真实图案笔触和历史、公开ABI、旧ABR及严格Clippy通过，见[验收](../brush/abr/abr-texture-validation.md)。其余未定义模式和16位笔尖仍待后续，完整PS对照保持边界。
+2026-10-18 ABR纹理阶段：本地有界`patt` 8/16位图案解码和预设索引关联、`TxtC`坐标空间、深度/缩放/反相、八种纹理覆盖模式（含VBR1.25 `CBrn`颜色加深）、VBR1.26亮度/对比度、VBR1.27纹理来源version2/逐印章深度动态与Qt来源恢复、资源哈希持久化、converterVersion8/handoff v7及Qt state11/21导入已接。真实图案笔触和历史、公开ABI、旧ABR及严格Clippy通过，见[验收](../validations/brush/abr/abr-texture-validation.md)。其余未定义模式和16位笔尖仍待后续，完整PS对照保持边界。
 
-2026-10-18速度动态阶段：`speed-v1`以文档像素/秒驱动尺寸、流量和整笔不透明度三条独立PCHIP/线性曲线，默认关闭/2000 px/s，主笔尖和配对第二笔尖尺寸共用速度因子，state24/VBR1.30/behavior19及`speed-dynamics`能力完整保存，Qt“传递”页提供开关、上限和专用曲线组件；真实像素、双笔刷回归、保存重开和设置页交互通过，见[设计](../brush/dynamics/brush-speed-design.md)及[验收](../brush/dynamics/brush-speed-validation.md)。ABR速度来源、任意动态来源矩阵、整体硬件手感及跨平台仍待后续。
+2026-10-18速度动态阶段：`speed-v1`以文档像素/秒驱动尺寸、流量和整笔不透明度三条独立PCHIP/线性曲线，默认关闭/2000 px/s，主笔尖和配对第二笔尖尺寸共用速度因子，state24/VBR1.30/behavior19及`speed-dynamics`能力完整保存，Qt“传递”页提供开关、上限和专用曲线组件；真实像素、双笔刷回归、保存重开和设置页交互通过，见[设计](../brush/dynamics/brush-speed-design.md)及[验收](../validations/brush/dynamics/brush-speed-validation.md)。ABR速度来源、任意动态来源矩阵、整体硬件手感及跨平台仍待后续。
 
-2026-10-18切向压力动态阶段：`tangent-v1`把设备-1..1切向压力归一化后驱动尺寸、流量和整笔不透明度三条曲线，与速度因子在一次印章计算中相乘，主笔尖及配对第二笔尖尺寸共享；默认关闭，state25/VBR1.31/behavior20及`tangent-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定和既有速度四项一起通过，见[设计](../brush/dynamics/brush-tangent-design.md)及[验收](../brush/dynamics/brush-tangent-validation.md)。ABR切向来源、任意动态矩阵、实体设备与跨平台仍待后续。
+2026-10-18切向压力动态阶段：`tangent-v1`把设备-1..1切向压力归一化后驱动尺寸、流量和整笔不透明度三条曲线，与速度因子在一次印章计算中相乘，主笔尖及配对第二笔尖尺寸共享；默认关闭，state25/VBR1.31/behavior20及`tangent-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定和既有速度四项一起通过，见[设计](../brush/dynamics/brush-tangent-design.md)及[验收](../validations/brush/dynamics/brush-tangent-validation.md)。ABR切向来源、任意动态矩阵、实体设备与跨平台仍待后续。
 
-2026-10-18笔触距离动态阶段：`distance-v1`按活动笔触累计文档距离驱动尺寸、流量和整笔不透明度三条曲线，默认关闭/1000 px，state26/VBR1.32/behavior21及`distance-dynamics`能力完整保存，Qt“传递”页提供开关、距离上限和三条曲线。真实像素、保存重开、QML绑定及速度/切向回归通过，见[设计](../brush/dynamics/brush-distance-design.md)及[验收](../brush/dynamics/brush-distance-validation.md)。ABR距离来源、任意动态矩阵、实体设备与跨平台仍待后续。
+2026-10-18笔触距离动态阶段：`distance-v1`按活动笔触累计文档距离驱动尺寸、流量和整笔不透明度三条曲线，默认关闭/1000 px，state26/VBR1.32/behavior21及`distance-dynamics`能力完整保存，Qt“传递”页提供开关、距离上限和三条曲线。真实像素、保存重开、QML绑定及速度/切向回归通过，见[设计](../brush/dynamics/brush-distance-design.md)及[验收](../validations/brush/dynamics/brush-distance-validation.md)。ABR距离来源、任意动态矩阵、实体设备与跨平台仍待后续。
 
-2026-10-18大笔刷密集笔触性能阶段：普通不透明硬圆画笔、整笔100%硬橡皮、纹理、图片笔尖和灰度双笔刷在活动笔触coverage账本达到完全覆盖后跳过重复像素计算，限制于普通混合、无动态颜色/彩色双笔刷/湿混/涂抹/蒙版/起收笔的稳定路径；2048画布半径128密集笔触固定基准中位数由1.33s降至0.37s左右且RGBA摘要一致，见[设计](../brush/performance/brush-large-dense-performance-design.md)及[验收](../brush/performance/brush-large-dense-performance-validation.md)。彩色双笔刷、湿混、实体输入和GPU仍待后续；无ABI/格式变化。
+2026-10-18大笔刷密集笔触性能阶段：普通不透明硬圆画笔、整笔100%硬橡皮、纹理、图片笔尖和灰度双笔刷在活动笔触coverage账本达到完全覆盖后跳过重复像素计算，限制于普通混合、无动态颜色/彩色双笔刷/湿混/涂抹/蒙版/起收笔的稳定路径；2048画布半径128密集笔触固定基准中位数由1.33s降至0.37s左右且RGBA摘要一致，见[设计](../brush/performance/brush-large-dense-performance-design.md)及[验收](../validations/brush/performance/brush-large-dense-performance-validation.md)。彩色双笔刷、湿混、实体输入和GPU仍待后续；无ABI/格式变化。
 
-2026-10-18倾斜幅度动态阶段：`tilt-v1`把设备二维倾斜长度按90度归一化后驱动尺寸、流量和整笔不透明度三条曲线，设备无倾斜能力时为0；默认关闭，state27/VBR1.33/behavior22及`tilt-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离回归通过，见[设计](../brush/dynamics/brush-tilt-design.md)及[验收](../brush/dynamics/brush-tilt-validation.md)。ABR倾斜/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
+2026-10-18倾斜幅度动态阶段：`tilt-v1`把设备二维倾斜长度按90度归一化后驱动尺寸、流量和整笔不透明度三条曲线，设备无倾斜能力时为0；默认关闭，state27/VBR1.33/behavior22及`tilt-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离回归通过，见[设计](../brush/dynamics/brush-tilt-design.md)及[验收](../validations/brush/dynamics/brush-tilt-validation.md)。ABR倾斜/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
 
-2026-10-18笔旋转动态阶段：`rotation-v1`把设备旋转角按整圈归一化后驱动尺寸、流量和整笔不透明度三条曲线，无旋转能力时为0；默认关闭，state28/VBR1.34/behavior23及`rotation-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离/倾斜回归通过，见[设计](../brush/dynamics/brush-rotation-design.md)及[验收](../brush/dynamics/brush-rotation-validation.md)。ABR旋转/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
+2026-10-18笔旋转动态阶段：`rotation-v1`把设备旋转角按整圈归一化后驱动尺寸、流量和整笔不透明度三条曲线，无旋转能力时为0；默认关闭，state28/VBR1.34/behavior23及`rotation-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离/倾斜回归通过，见[设计](../brush/dynamics/brush-rotation-design.md)及[验收](../validations/brush/dynamics/brush-rotation-validation.md)。ABR旋转/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
 
-2026-10-18笔触方向动态阶段：`direction-v1`把输入段方向角按整圈归一化后驱动尺寸、流量和整笔不透明度三条曲线，无位移时保持恒等；默认关闭，state29/VBR1.35/behavior24及`direction-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离/倾斜/旋转回归通过，见[设计](../brush/dynamics/brush-direction-design.md)及[验收](../brush/dynamics/brush-direction-validation.md)。ABR方向/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
+2026-10-18笔触方向动态阶段：`direction-v1`把输入段方向角按整圈归一化后驱动尺寸、流量和整笔不透明度三条曲线，无位移时保持恒等；默认关闭，state29/VBR1.35/behavior24及`direction-dynamics`能力完整保存，Qt“传递”页提供开关和三条曲线。真实像素、保存重开、QML绑定及速度/切向/距离/倾斜/旋转回归通过，见[设计](../brush/dynamics/brush-direction-design.md)及[验收](../validations/brush/dynamics/brush-direction-validation.md)。ABR方向/渐隐来源、任意动态矩阵、实体设备与跨平台仍待后续。
 
-2026-10-18高级纹理模式阶段：纹理新增`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`八种覆盖率组合，总计十六种；要求state30/VBR1.36，旧模式字节保持。ABR `BlnM` 的对应代码已映射，Qt模式下拉和状态/VBR往返通过，见[设计](../brush/texture/brush-texture-mode-design.md)及[验收](../brush/texture/brush-texture-mode-validation.md)。其他未定义模式、16位笔尖和完整PS像素核对仍未完成。
+2026-10-18高级纹理模式阶段：纹理新增`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`八种覆盖率组合，总计十六种；要求state30/VBR1.36，旧模式字节保持。ABR `BlnM` 的对应代码已映射，Qt模式下拉和状态/VBR往返通过，见[设计](../brush/texture/brush-texture-mode-design.md)及[验收](../validations/brush/texture/brush-texture-mode-validation.md)。其他未定义模式、16位笔尖和完整PS像素核对仍未完成。
 
-2026-10-18纹理模式补全阶段：再新增`vividLight`、`linearLight`、`pinLight`、`divide`四种覆盖率组合，总计二十种；要求state31/VBR1.37，旧模式字节保持。ABR `BlnM` 的`vividLight`/`linearLight`/`pinLight`/`blendDivide`已映射，Qt下拉与状态/VBR往返通过，见[设计](../brush/texture/brush-texture-mode-design.md)及[验收](../brush/texture/brush-texture-mode-validation.md)。Dissolve/Hue/Saturation/Color/Luminosity等随机或颜色模式、16位笔尖和完整PS像素核对仍未完成。
+2026-10-18纹理模式补全阶段：再新增`vividLight`、`linearLight`、`pinLight`、`divide`四种覆盖率组合，总计二十种；要求state31/VBR1.37，旧模式字节保持。ABR `BlnM` 的`vividLight`/`linearLight`/`pinLight`/`blendDivide`已映射，Qt下拉与状态/VBR往返通过，见[设计](../brush/texture/brush-texture-mode-design.md)及[验收](../validations/brush/texture/brush-texture-mode-validation.md)。Dissolve/Hue/Saturation/Color/Luminosity等随机或颜色模式、16位笔尖和完整PS像素核对仍未完成。
 
-2026-10-18动态来源矩阵阶段：尺寸、流量和整笔不透明度各自选择`All`或速度/切向压力/距离/倾斜/旋转/方向之一；默认`All`继续把六来源因子相乘，单来源只读取该通道曲线。主笔尖与配对第二笔尖共用矩阵，第二笔尖自身继续拒绝非默认矩阵。非默认对象写入state32/VBR1.38/behavior25及`dynamics-source-matrix`，Qt“传递”页提供三个来源下拉和真实预览；核心选择、状态/VBR往返及两项Qt最小测试通过，见[设计](../brush/dynamics/brush-dynamics-matrix-design.md)及[验收](../brush/dynamics/brush-dynamics-matrix-validation.md)。ABR动态来源映射、实体设备手感、跨平台和GPU仍待后续。
+2026-10-18动态来源矩阵阶段：尺寸、流量和整笔不透明度各自选择`All`或速度/切向压力/距离/倾斜/旋转/方向之一；默认`All`继续把六来源因子相乘，单来源只读取该通道曲线。主笔尖与配对第二笔尖共用矩阵，第二笔尖自身继续拒绝非默认矩阵。非默认对象写入state32/VBR1.38/behavior25及`dynamics-source-matrix`，Qt“传递”页提供三个来源下拉和真实预览；核心选择、状态/VBR往返及两项Qt最小测试通过，见[设计](../brush/dynamics/brush-dynamics-matrix-design.md)及[验收](../validations/brush/dynamics/brush-dynamics-matrix-validation.md)。ABR动态来源映射、实体设备手感、跨平台和GPU仍待后续。
 
-2026-10-18 ABR设备来源阶段：`bVTy=3/6/8`分别映射倾斜幅度、笔触方向和笔旋转，`szVr`/`prVr`/`opVr`各自写入对应动态及来源矩阵，笔压`bVTy=2`路径保持。converter9/handoff8、源记录1..9和VBR source minor38门控已接，Qt恢复三种动态与矩阵；ABR转换30项、六类动态21项、源基线及Windows Qt handoff测试通过，见[设计](../brush/abr/abr-device-source-design.md)及[验收](../brush/abr/abr-device-source-validation.md)。渐隐/随机抖动、未知控制、16位笔尖和完整PS像素等价仍待后续。
+2026-10-18 ABR设备来源阶段：`bVTy=3/6/8`分别映射倾斜幅度、笔触方向和笔旋转，`szVr`/`prVr`/`opVr`各自写入对应动态及来源矩阵，笔压`bVTy=2`路径保持。converter9/handoff8、源记录1..9和VBR source minor38门控已接，Qt恢复三种动态与矩阵；ABR转换30项、六类动态21项、源基线及Windows Qt handoff测试通过，见[设计](../brush/abr/abr-device-source-design.md)及[验收](../validations/brush/abr/abr-device-source-validation.md)。渐隐/随机抖动、未知控制、16位笔尖和完整PS像素等价仍待后续。
 
-2026-10-18纹理溶解阶段：`dissolve`在连续纹理采样后用像素/印章坐标哈希做确定性覆盖率二值抖动，平均值接近`base*texture`；state33/VBR1.39、ABR `Dslv`、Qt 21项下拉和保存重开已接。核心抖动、纹理交换15项及Windows Qt两项通过，见[设计](../brush/texture/brush-texture-dissolve-design.md)及[验收](../brush/texture/brush-texture-dissolve-validation.md)。这是覆盖率近似，不是颜色空间Dissolve；Hue/Saturation/Color/Luminosity仍待后续。
+2026-10-18纹理溶解阶段：`dissolve`在连续纹理采样后用像素/印章坐标哈希做确定性覆盖率二值抖动，平均值接近`base*texture`；state33/VBR1.39、ABR `Dslv`、Qt 21项下拉和保存重开已接。核心抖动、纹理交换15项及Windows Qt两项通过，见[设计](../brush/texture/brush-texture-dissolve-design.md)及[验收](../validations/brush/texture/brush-texture-dissolve-validation.md)。这是覆盖率近似，不是颜色空间Dissolve；Hue/Saturation/Color/Luminosity仍待后续。
 
-2026-10-18渐隐动态阶段：`fade-v1`按印章步数从完整响应线性渐隐到最低比例，作为尺寸/流量/不透明度独立乘数；state34/VBR1.40/behavior26、ABR `bVTy=1`、converter10/handoff9及Qt步数/曲线页接通。核心真实像素、状态/VBR往返、ABR映射、源converter10和Windows Qt三项通过，见[设计](../brush/dynamics/brush-fade-design.md)及[验收](../brush/dynamics/brush-fade-validation.md)。散射/双笔尖步数、随机抖动和完整PS等价仍待后续。
+2026-10-18渐隐动态阶段：`fade-v1`按印章步数从完整响应线性渐隐到最低比例，作为尺寸/流量/不透明度独立乘数；state34/VBR1.40/behavior26、ABR `bVTy=1`、converter10/handoff9及Qt步数/曲线页接通。核心真实像素、状态/VBR往返、ABR映射、源converter10和Windows Qt三项通过，见[设计](../brush/dynamics/brush-fade-design.md)及[验收](../validations/brush/dynamics/brush-fade-validation.md)。散射/双笔尖步数、随机抖动和完整PS等价仍待后续。
 
-2026-10-18 ABR计算双笔刷阶段：ABR `dualBrush.Brsh` 的 computed/sampled 形状、硬度/角度/圆度、独立间距、贡献模式、散布/数量、逐印章随机 Flip 和固定 flipX/flipY 映射到统一双笔刷；sampled第二图片按资源哈希关联，converter11/handoff10、源记录version3/VBR1.41门控及Qt state12导入接通。设备散布控制继续报告未执行。见[设计](../brush/abr/abr-dual-brush-design.md)及[验收](../brush/abr/abr-dual-brush-validation.md)。
+2026-10-18 ABR计算双笔刷阶段：ABR `dualBrush.Brsh` 的 computed/sampled 形状、硬度/角度/圆度、独立间距、贡献模式、散布/数量、逐印章随机 Flip 和固定 flipX/flipY 映射到统一双笔刷；sampled第二图片按资源哈希关联，converter11/handoff10、源记录version3/VBR1.41门控及Qt state12导入接通。设备散布控制继续报告未执行。见[设计](../brush/abr/abr-dual-brush-design.md)及[验收](../validations/brush/abr/abr-dual-brush-validation.md)。
 
-2026-10-18 散布设备控制阶段：主/第二笔尖的散布幅度和数量接入 `fade/pressure/tilt/direction/rotation` 控制，ABR `bVTy=1/2/3/6/8`、`Mnm`、`fStp` 映射到原生执行；state35/VBR1.42/behavior27及`scatter-controls`能力、Qt散布页、ABR handoff11接通。旧默认和旧state/VBR字节保持。Windows最小核心/IO/Qt回归通过，见[设计](../brush/dynamics/brush-scatter-device-design.md)及[验收](../brush/dynamics/brush-scatter-device-validation.md)。实体设备、Hue/Saturation/Color/Luminosity、ABR随机抖动、16位与完整PS等价仍在后续范围。
+2026-10-18 散布设备控制阶段：主/第二笔尖的散布幅度和数量接入 `fade/pressure/tilt/direction/rotation` 控制，ABR `bVTy=1/2/3/6/8`、`Mnm`、`fStp` 映射到原生执行；state35/VBR1.42/behavior27及`scatter-controls`能力、Qt散布页、ABR handoff11接通。旧默认和旧state/VBR字节保持。Windows最小核心/IO/Qt回归通过，见[设计](../brush/dynamics/brush-scatter-device-design.md)及[验收](../validations/brush/dynamics/brush-scatter-device-validation.md)。实体设备、Hue/Saturation/Color/Luminosity、ABR随机抖动、16位与完整PS等价仍在后续范围。
 
-2026-10-18 双笔刷覆盖模式阶段：在原六种之外加入颜色加深、线性加深、颜色减淡、线性减淡、叠加、柔光、强光、排除、实色混合、鲜明光、线性光、点光和划分，共19种灰度覆盖组合；`DualMode`复用纹理精确公式，ABR `BlnM` 短码/名称、Qt下拉、state36/VBR1.43/behavior28及`dual-cover-extended`接通。核心/IO/ABR及Windows Qt最小回归通过，见[设计](../brush/dual/brush-dual-coverage-modes-design.md)及[验收](../brush/dual/brush-dual-coverage-modes-validation.md)。颜色模式、随机抖动、16位、实体设备与GPU仍在后续范围。
+2026-10-18 双笔刷覆盖模式阶段：在原六种之外加入颜色加深、线性加深、颜色减淡、线性减淡、叠加、柔光、强光、排除、实色混合、鲜明光、线性光、点光和划分，共19种灰度覆盖组合；`DualMode`复用纹理精确公式，ABR `BlnM` 短码/名称、Qt下拉、state36/VBR1.43/behavior28及`dual-cover-extended`接通。核心/IO/ABR及Windows Qt最小回归通过，见[设计](../brush/dual/brush-dual-coverage-modes-design.md)及[验收](../validations/brush/dual/brush-dual-coverage-modes-validation.md)。颜色模式、随机抖动、16位、实体设备与GPU仍在后续范围。

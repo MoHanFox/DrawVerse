@@ -22,4 +22,4 @@
 
 ABI1.56 公布 `PAINT_FEATURE_DUAL_COLOR_INTERLEAVED`（bit51），复用既有双色 DTO、准确准备和库包入口，不改变结构布局。Qt 新增“整笔分隔合成/逐印章交织”下拉，关闭状态保留，路径组合在设置层拒绝。双色开启后第二色固定使用背景色，不再提供“使用第二颜色”开关；加载旧配置时 UI 规范化为使用背景色。
 
-颜色对象字段的机器可读校验见 [dual-color-stamp-v1.28.schema.json](../../../contracts/dual-color-stamp-v1.28.schema.json)。
+颜色对象字段的机器可读校验见 [dual-color-stamp-v1.28.schema.json](../../../core/crates/paint-io/tests/fixtures/schema-history/dual/dual-color-stamp-v1.28.schema.json)。

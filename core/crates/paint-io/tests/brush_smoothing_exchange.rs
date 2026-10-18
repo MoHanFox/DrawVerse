@@ -231,7 +231,7 @@ fn smoothing_contract_and_manifest_downgrade_are_strict() {
     }
     assert!(vbr_image::decode(&writer.finish().unwrap().into_inner(), &token).is_ok());
     let schema: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../contracts/vbr-smoothing-v1.12.schema.json"
+        "fixtures/schema-history/dynamics/vbr-smoothing-v1.12.schema.json"
     ))
     .unwrap();
     assert_eq!(

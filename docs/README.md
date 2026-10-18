@@ -1,37 +1,32 @@
 # DrawVerse 文档索引
 
-`docs/` 按功能域分组，设计文档使用 `*-design.md`，对应验收使用 `*-validation.md`。旧文件名保持不变，历史引用可通过目录定位。
+设计与说明按功能领域组织；所有独立验收记录统一位于 [validations](validations/README.md)，按相同领域分类。新增设计使用 `*-design.md`，新增验收使用 `*-validation.md`，并维护设计与验收之间的相对链接。
 
-## 笔刷系统
+| 领域 | 设计与说明 | 验收记录 | 内容 |
+| --- | --- | --- | --- |
+| 笔刷核心 | [6 份](brush/core/) | [6 份](validations/brush/core/) | 笔尖、遮罩、混合与参数模型 |
+| 笔刷动力学 | [22 份](brush/dynamics/) | [22 份](validations/brush/dynamics/) | 压力、散布、形状、颜色、平滑与设备动态 |
+| 双重笔刷 | [12 份](brush/dual/) | [11 份](validations/brush/dual/) | 双笔尖模型、尺寸、覆盖组合与桥接 |
+| 湿混与涂抹 | [24 份](brush/wet/) | [24 份](validations/brush/wet/) | 载色、涂抹、湿混、喷枪与起收笔 |
+| ABR 导入 | [19 份](brush/abr/) | [18 份](validations/brush/abr/) | 描述符、采样、来源关联与参数转换 |
+| VBR 格式 | [7 份](brush/vbr/) | [5 份](validations/brush/vbr/) | VBR 1.0、资源包、来源与兼容 |
+| 画笔库与分组 | [21 份](brush/library/) | [21 份](validations/brush/library/) | 目录、资源、组织树、持久化与导入导出 |
+| 笔刷输入 | [8 份](brush/input/) | [7 份](validations/brush/input/) | 输入分页、设备姿态与 Windows 路由 |
+| 笔刷界面 | [31 份](brush/ui/) | [31 份](validations/brush/ui/) | 画笔设置、库面板、光标、预览和菜单 |
+| 纹理 | [5 份](brush/texture/) | [5 份](validations/brush/texture/) | 覆盖模式、资源、深度与来源 |
+| 笔刷性能 | [2 份](brush/performance/) | [2 份](validations/brush/performance/) | 大笔刷、密集笔触和图片笔尖 |
+| 工具 | [16 份](tools/) | [11 份](validations/tools/) | 选区、魔棒、油漆桶、变换、液化与吸色 |
+| 图层 | [10 份](layers/) | [9 份](validations/layers/) | 图层栈、组、蒙版、剪贴与批量操作 |
+| 文档 | [8 份](document/) | [6 份](validations/document/) | 多文档、历史、暂存与文件 IO |
+| 界面 | [15 份](interface/) | [13 份](validations/interface/) | 工作区、停靠、面板、菜单与窗口 |
+| 平台与工程 | [6 份](platform/) | [4 份](validations/platform/) | 源码结构、FFI、任务渲染与性能 |
+| 整体与阶段 | [5 份](planning/) | [3 份](validations/planning/) | 首轮内核、笔刷系统与阶段修复 |
 
-| 分组 | 文档数 | 内容 |
-|---|---:|---|
-| [核心](brush/core/) | 12 | 笔尖、遮罩、混合、颜色/设备 IO |
-| [动力学](brush/dynamics/) | 44 | 压力、散布、形状、颜色、平滑、方向等动态 |
-| [双重笔刷](brush/dual/) | 23 | 双重笔刷模型、尺寸、颜色、覆盖与桥接 |
-| [湿混与涂抹](brush/wet/) | 48 | 湿混、湿混双色、载色、涂抹、喷枪、起收笔 |
-| [ABR 导入](brush/abr/) | 37 | ABR 描述符、采样、关联、转换与真实语料 |
-| [VBR 格式](brush/vbr/) | 12 | VBR 容器、程序/图片来源、分组与 1.0 兼容 |
-| [画笔库与分组](brush/library/) | 42 | 画笔目录、资源、分组、导入导出与持久化 |
-| [笔刷输入](brush/input/) | 15 | 输入分页、数位板悬停、复合姿态与 Windows 输入 |
-| [笔刷界面](brush/ui/) | 62 | 画笔设置、库面板、光标、预览和菜单 |
-| [纹理](brush/texture/) | 10 | 纹理模式、溶解、来源与图片绑定 |
-| [性能](brush/performance/) | 4 | 大笔刷、密集笔触、图片笔尖与湿混性能 |
+## 常用入口
 
-快速入口：[笔刷预览轮转修复](brush/ui/brush-preview-roundtrip-design.md)、[ABR 导入](brush/abr/abr-import-design.md)、[VBR 1.0 兼容](brush/vbr/vbr-format-1.0-compatibility-design.md)。
-
-## 画布与内容
-
-| 分组 | 文档数 | 内容 |
-|---|---:|---|
-| [工具](tools/) | 27 | 选区、套索、魔棒、油漆桶、变换、液化、模糊、吸色环 |
-| [图层](layers/) | 19 | 图层栈、组、穿透、蒙版、剪贴、空栈和批量操作 |
-| [文档](document/) | 14 | 多文档、历史、存储、IO、图片菜单、棋盘格 |
-
-## 应用与工程
-
-| 分组 | 文档数 | 内容 |
-|---|---:|---|
-| [界面](interface/) | 28 | 面板、停靠、菜单、工作区、图标列和窗口恢复 |
-| [平台](platform/) | 8 | 架构、FFI、构建复现、任务渲染和绘画性能 |
-| [规划与验收](planning/) | 8 | 路线图、全局验收、笔刷系统总览和历史修复清单 |
+- 项目结构：[源码目录与依赖](platform/source-layout-design.md) / [构建运行验收](validations/platform/source-layout-validation.md)。
+- 构建环境：[检出与构建复现](platform/build-reproducibility.md)。
+- 笔刷：[系统设计](planning/brush-system-design.md) / [剩余功能与边界](planning/brush-system-remaining.md)。
+- 文件格式：[当前 VBR 1.0 契约](../contracts/brush/vbr/format.md) / [兼容设计](brush/vbr/vbr-format-1.0-compatibility-design.md) / [验收](validations/brush/vbr/vbr-format-1.0-compatibility-validation.md)。
+- 接口边界：[契约索引](../contracts/README.md) / [C ABI](../contracts/ffi/abi.md)。
+- 全部验收：[分类索引](validations/README.md)。
