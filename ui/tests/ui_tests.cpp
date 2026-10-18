@@ -102,6 +102,27 @@ class UiTests final : public QObject {
     QTemporaryDir m_preferences;
 private slots:
 
+    void developerConsoleDefaultsOffPersistsAndQmlToggles() {
+        QTemporaryDir temp;const auto path=temp.filePath("layout.ini");
+        WorkspaceManager workspace(path);QVERIFY(!workspace.developerConsole());
+        QSignalSpy changed(&workspace,&WorkspaceManager::developerConsoleChanged);
+        workspace.setDeveloperConsole(true);QCOMPARE(changed.size(),1);
+        workspace.setDeveloperConsole(true);QCOMPARE(changed.size(),1);
+        workspace.resetLayout();QVERIFY(workspace.developerConsole());
+        WorkspaceManager reopened(path);QVERIFY(reopened.developerConsole());
+        PaintCoreClient client(nullptr,temp.filePath("preferences.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        auto *dialog=window->findChild<QObject*>("preferencesDialog");QVERIFY(dialog);
+        dialog->setProperty("section",2);QVERIFY(QMetaObject::invokeMethod(dialog,"open"));
+        auto *toggle=dialog->findChild<QQuickItem*>("developerConsoleToggle");QVERIFY(toggle);QTRY_VERIFY(toggle->isVisible());QVERIFY(toggle->property("checked").toBool());
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,toggle->mapToScene({toggle->width()/2,toggle->height()/2}).toPoint());
+        QTRY_VERIFY(!workspace.developerConsole());QCOMPARE(changed.size(),2);
+        WorkspaceManager closed(path);QVERIFY(!closed.developerConsole());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
     void existingSecondarySnapshotsKeepSupportedValuesAndEditorResetBaselines() {
         BrushLibrary library;QVERIFY(library.select("round-fine"));library.setRadius(7.25);library.setSpacing(.37);library.setHardness(.7);library.setRoundness(.4);library.setAngle(18);library.setFlow(.6);library.setPressureSize(false);library.setPressureFlow(false);library.setScatterEnabled(true);library.setScatterAmount(.25);library.setScatterBothAxes(true);library.setScatterCount(3);library.setAngleControl("direction");
         QVERIFY(library.setPressureControl("size",QVariantList{QVariantList{0.,0.},QVariantList{.4,.2},QVariantList{1.,1.}},.2));QVERIFY(library.setPressureControl("opacity",QVariantList{QVariantList{0.,0.},QVariantList{1.,1.}},.3));const auto source=library.saveCopy("Existing source");QVERIFY(!source.isEmpty());

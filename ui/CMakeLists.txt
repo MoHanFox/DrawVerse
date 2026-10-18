@@ -5,6 +5,7 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Test)
 set(CMAKE_AUTOMOC ON)
 
 add_library(drawverse_ui STATIC
+    src/platform/DeveloperConsole.h src/platform/DeveloperConsole.cpp
     src/platform/WindowDrag.h src/platform/WindowDrag.cpp
     src/documents/DocumentManager.h src/documents/DocumentManager.cpp
     src/workspace/DockTree.h src/workspace/DockTree.cpp
@@ -62,7 +63,7 @@ endforeach()
 
 qt_add_executable(drawverse src/app/main.cpp src/app/PaintingBenchmark.h src/app/PaintingBenchmark.cpp)
 target_link_libraries(drawverse PRIVATE drawverse_ui)
-set_target_properties(drawverse PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+set_target_properties(drawverse PROPERTIES WIN32_EXECUTABLE TRUE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
 
 add_custom_target(drawverse_license ALL
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different

@@ -1,0 +1,29 @@
+#include "platform/DeveloperConsole.h"
+#include <QtGlobal>
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#include <cstdio>
+#endif
+
+bool setDeveloperConsoleVisible(bool visible) {
+#ifdef Q_OS_WIN
+    static bool owned=false;
+    if(!visible) {
+        if(owned) { if(!FreeConsole())return false;owned=false; }
+        return true;
+    }
+    if(owned || GetConsoleWindow())return true;
+    if(!AllocConsole())return false;
+    owned=true;
+    SetConsoleTitleW(L"DrawVerse Developer Console");
+    // Closing a console with its title-bar button would terminate the application.
+    if(const auto menu=GetSystemMenu(GetConsoleWindow(),FALSE))DeleteMenu(menu,SC_CLOSE,MF_BYCOMMAND);
+    FILE *stream=nullptr;
+    freopen_s(&stream,"CONOUT$","w",stdout);
+    freopen_s(&stream,"CONOUT$","w",stderr);
+    return true;
+#else
+    Q_UNUSED(visible);
+    return true;
+#endif
+}

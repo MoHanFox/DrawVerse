@@ -47,6 +47,7 @@ int main(int argc,char **argv) {
     if(!testPath.isEmpty() && !testPreferences.isValid())return 1;
     PaintCoreClient client(nullptr,testPath.isEmpty()?QString():testPreferences.filePath("preferences.ini"));
     WorkspaceManager workspace(testPath.isEmpty()?QString():testPath+".workspace.ini");
+    if(!workspace.applyDeveloperConsole())qWarning("Developer console could not be opened");
     if(!previewPath.isEmpty()) workspace.resetLayout();
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("PaintClient",&client);

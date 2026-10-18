@@ -20,6 +20,8 @@
 
 ## 执行规则
 
+追加需求：[开发者控制台](../platform/developer-console-design.md)默认关闭，在首选项→界面切换，优先独立验证提交后继续性能任务。
+
 - 复用现有源码职责、contracts 和 `python tools/check.py`；不新增通用 Agent 框架。
 - UI行为补 Qt 测试，数值/像素语义补 Rust 测试，跨格式修改覆盖旧值与新目录往返。每步只执行相关最小测试，不将它们写成全量通过。
 - 新持久化语义先设计与验收条件，再实现核心→IO→原生→Qt；VBR继续为1.0，ABI/state/behavior独立演进。

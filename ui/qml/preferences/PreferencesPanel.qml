@@ -116,10 +116,16 @@ Dialog {
                             }
                             Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
                         }
-                        // 3) Interface: nothing implemented yet, listed honestly.
+                        // 3) Interface.
                         ColumnLayout {
                             spacing: 8
                             Label { text: "界面"; font.pixelSize: 10; color: Theme.accent }
+                            CheckBox {
+                                objectName: "developerConsoleToggle"
+                                text: "开发者控制台"
+                                checked: Workspace.developerConsole
+                                onToggled: Workspace.developerConsole = checked
+                            }
                             Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
                         }
                     }

@@ -24,6 +24,8 @@
 
 ## 常用入口
 
+- 启动与诊断：[开发者控制台](platform/developer-console-design.md)。
+
 - 本轮反馈：[依赖与执行顺序](planning/brush-feedback-execution-design.md) / [逐步验收](validations/planning/brush-feedback-execution-validation.md)。
 - 项目结构：[源码目录与依赖](platform/source-layout-design.md) / [构建运行验收](validations/platform/source-layout-validation.md)。
 - 构建环境：[检出与构建复现](platform/build-reproducibility.md) / [Release 目录权限验收](validations/platform/release-directory-permissions-validation.md)。

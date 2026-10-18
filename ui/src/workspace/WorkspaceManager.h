@@ -14,6 +14,7 @@ class QWindow;
 
 class WorkspaceManager final : public QObject, public QAbstractNativeEventFilter {
     Q_OBJECT
+    Q_PROPERTY(bool developerConsole READ developerConsole WRITE setDeveloperConsole NOTIFY developerConsoleChanged)
     Q_PROPERTY(bool windowsWindowFrames READ windowsWindowFrames CONSTANT)
     Q_PROPERTY(QVariantList leftGroups READ leftGroups NOTIFY groupsChanged)
     Q_PROPERTY(QVariantList rightGroups READ rightGroups NOTIFY groupsChanged)
@@ -36,6 +37,9 @@ class WorkspaceManager final : public QObject, public QAbstractNativeEventFilter
     Q_PROPERTY(int toolStripX READ toolStripX NOTIFY toolStripChanged)
     Q_PROPERTY(int toolStripY READ toolStripY NOTIFY toolStripChanged)
 public:
+    bool developerConsole() const;
+    void setDeveloperConsole(bool enabled);
+    bool applyDeveloperConsole() const;
     bool windowsWindowFrames() const;
     Q_INVOKABLE QRect availableScreenGeometry(QWindow *window) const;
     Q_INVOKABLE void watchMenuWindow(QWindow *window, bool visible);
@@ -109,6 +113,7 @@ public:
     Q_INVOKABLE void saveLayout() const;
     bool restoreLayout();
 signals:
+    void developerConsoleChanged();
     void groupsChanged();
     void dockMetricsChanged();
     void groupStateChanged(const QString &group);

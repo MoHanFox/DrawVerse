@@ -1,4 +1,5 @@
 #include "workspace/WorkspaceManager.h"
+#include "platform/DeveloperConsole.h"
 #include <QGuiApplication>
 #include <QScreen>
 #include <QWindow>
@@ -26,6 +27,24 @@
 #endif
 
 namespace { QString newId() { return QUuid::createUuid().toString(QUuid::WithoutBraces); } }
+bool WorkspaceManager::developerConsole() const {
+    QSettings settings(QSettings::NativeFormat,QSettings::UserScope,"DrawVerse","DrawVerse");
+    if(m_settingsFile.isEmpty())return settings.value("developer/console",false).toBool();
+    QSettings file(m_settingsFile,QSettings::IniFormat);
+    return file.value("developer/console",false).toBool();
+}
+bool WorkspaceManager::applyDeveloperConsole() const {
+    return setDeveloperConsoleVisible(developerConsole());
+}
+void WorkspaceManager::setDeveloperConsole(bool enabled) {
+    if(enabled==developerConsole())return;
+    // Offscreen tests persist the setting without changing the test runner's terminal.
+    if(windowsWindowFrames() && !setDeveloperConsoleVisible(enabled))return;
+    QSettings settings(QSettings::NativeFormat,QSettings::UserScope,"DrawVerse","DrawVerse");
+    if(m_settingsFile.isEmpty()) {settings.setValue("developer/console",enabled);settings.sync();}
+    else {QSettings file(m_settingsFile,QSettings::IniFormat);file.setValue("developer/console",enabled);file.sync();}
+    emit developerConsoleChanged();
+}
 bool WorkspaceManager::windowsWindowFrames() const {
     return QGuiApplication::platformName()==QStringLiteral("windows");
 }
