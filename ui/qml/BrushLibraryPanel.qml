@@ -156,6 +156,7 @@ ColumnLayout {
     ListView {
         objectName:"brushPresetList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:2
         id:presetList;interactive:!root.draggingBrush;model:root.groupedModel
+        property var panel:root
         delegate:Rectangle {
             id:brushRow
             required property var modelData
@@ -166,7 +167,13 @@ ColumnLayout {
             border.color:Theme.line
             property int dropPlacement:0
             property point dropPoint
-            function updateDrop(d){dropPoint=Qt.point(d.x,d.y);panel.dragHovered=brushRow;panel.dragViewportY=brushRow.mapToItem(presetList,d.x,d.y).y;dropPlacement=modelData.kind==="group" && d.y>11 && d.y<height-11?0:d.y<height/2?1:2}
+            function updateDrop(d){
+                dropPoint=Qt.point(d.x,d.y);panel.dragHovered=brushRow;panel.dragViewportY=brushRow.mapToItem(presetList,d.x,d.y).y
+                if(modelData.kind==="group") {
+                    const expanded=!panel.isGroupCollapsed(modelData.id)
+                    dropPlacement=expanded?(d.y<height/3?1:0):(d.y>height/3 && d.y<height*2/3?0:d.y<height/2?1:2)
+                } else dropPlacement=d.y<height/2?1:2
+            }
             visible:modelData.kind==="group" || root.presetById(modelData.id).id!==undefined
             Image {visible:modelData.kind!=="group";anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.leftMargin:4+modelData.depth*14;anchors.rightMargin:4;anchors.topMargin:4;height:35;source:modelData.kind==="group"?"":root.presetById(modelData.id).preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
             Text {visible:modelData.kind==="group";x:8+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:(root.isGroupCollapsed(modelData.id)?"▸  ":"▾  ")+modelData.name;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
@@ -177,19 +184,19 @@ ColumnLayout {
                 property point origin
                 property bool dragging:false
                 property bool suppressClick:false
-                onPressed:function(mouse){origin=Qt.point(mouse.x,mouse.y);dragging=false;suppressClick=false;root.draggingBrush=false}
-                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;root.draggingBrush=true;PaintClient.beginBrushDrag(modelData.kind+":"+modelData.id);root.draggingBrush=false;root.dragViewportY=-1}}
-                onReleased:function(){dragging=false;root.draggingBrush=false;root.dragViewportY=-1}
-                onCanceled:function(){dragging=false;root.draggingBrush=false;root.dragViewportY=-1}
+                onPressed:function(mouse){origin=Qt.point(mouse.x,mouse.y);dragging=false;suppressClick=false;brushRow.panel.draggingBrush=false}
+                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;brushRow.panel.draggingBrush=true;PaintClient.beginBrushDrag(modelData.kind+":"+modelData.id);brushRow.panel.draggingBrush=false;brushRow.panel.dragViewportY=-1}}
+                onReleased:function(){dragging=false;brushRow.panel.draggingBrush=false;brushRow.panel.dragViewportY=-1}
+                onCanceled:function(){dragging=false;brushRow.panel.draggingBrush=false;brushRow.panel.dragViewportY=-1}
                 onClicked:function(mouse) {
                     if(suppressClick){suppressClick=false;return}
                     if(mouse.button===Qt.RightButton) {
-                        if(!root.isBrushItemSelected(modelData.kind,modelData.id))root.handleBrushClick(modelData,Qt.NoModifier)
-                        if(modelData.kind==="group") {root.contextGroupId=modelData.id;root.contextGroupName=modelData.name;groupMenu.popup()}
-                        else {root.contextPresetId=modelData.id;presetMenu.popup()}
+                        if(!brushRow.panel.isBrushItemSelected(modelData.kind,modelData.id))brushRow.panel.handleBrushClick(modelData,Qt.NoModifier)
+                        if(modelData.kind==="group") {brushRow.panel.contextGroupId=modelData.id;brushRow.panel.contextGroupName=modelData.name;groupMenu.popup()}
+                        else {brushRow.panel.contextPresetId=modelData.id;presetMenu.popup()}
                     } else {
-                        root.handleBrushClick(modelData,mouse.modifiers)
-                        if(modelData.kind==="group" && !(mouse.modifiers & (Qt.ControlModifier|Qt.MetaModifier|Qt.ShiftModifier)))root.toggleGroup(modelData.id)
+                        brushRow.panel.handleBrushClick(modelData,mouse.modifiers)
+                        if(modelData.kind==="group" && !(mouse.modifiers & (Qt.ControlModifier|Qt.MetaModifier|Qt.ShiftModifier)))brushRow.panel.toggleGroup(modelData.id)
                     }
                 }
             }
@@ -207,7 +214,7 @@ ColumnLayout {
                     if(separator<=0)return
                     const kind=payload.slice(0,separator),id=payload.slice(separator+1)
                     let parentId=modelData.parent,index=modelData.index
-                    if(modelData.kind==="group" && brushRow.dropPlacement===0){parentId=modelData.id;index=-1}
+                    if(modelData.kind==="group" && brushRow.dropPlacement===0){parentId=modelData.id;index=0}
                     else if(brushRow.dropPlacement===2)index=modelData.index+1
                     if(kind==="preset")brushRow.panel.library.movePresetToGroupAt(id,parentId,index)
                     else if(kind==="group")brushRow.panel.library.moveGroupToGroupAt(id,parentId,index)
@@ -216,7 +223,7 @@ ColumnLayout {
             }
             Rectangle {anchors.fill:parent;border.width:2;border.color:Theme.accent;visible:brushDrop.containsDrag && dropPlacement===0}
             Rectangle {anchors.left:parent.left;anchors.right:parent.right;height:2;y:dropPlacement===1?0:parent.height-2;color:Theme.accent;visible:brushDrop.containsDrag && dropPlacement!==0}
-            Component.onCompleted:if(modelData.kind!=="group")root.library.requestPreview(modelData.id)
+            Component.onCompleted:if(modelData.kind!=="group")brushRow.panel.library.requestPreview(modelData.id)
         }
         WheelHandler {
             objectName:"brushListWheel"
@@ -229,13 +236,13 @@ ColumnLayout {
             width:presetList.width;height:Math.max(0,presetList.height-y)
             keys:["application/x-drawverse-brush"]
             Rectangle {anchors.fill:parent;color:parent.containsDrag?Theme.selected:"transparent"}
-            onDropped:root.dropToRoot(drop)
+            onDropped:function(drop){presetList.panel.dropToRoot(drop)}
         }
         footer:DropArea {
             objectName:"brushRootDrop";width:ListView.view.width;height:24;keys:["application/x-drawverse-brush"]
             Rectangle {anchors.fill:parent;color:parent.containsDrag?Theme.selected:Theme.strip;border.color:Theme.line}
             Label {anchors.centerIn:parent;text:"拖到这里移到画笔库根目录";color:Theme.muted;font.pixelSize:9}
-            onDropped:root.dropToRoot(drop)
+            onDropped:function(drop){presetList.panel.dropToRoot(drop)}
         }
     }
     Timer {
@@ -252,15 +259,23 @@ ColumnLayout {
     GlassMenu {
         id:groupMenu
         objectName:"brushGroupContextMenu"
-        GlassMenuItem {text:"创建分组";visible:root.library.selectedBrushItems.length>1;onTriggered:root.openSelectedGroupDialog()}
+        topLevel:true
+        Instantiator {
+            model:root.library.selectedBrushItems.length>1?[0]:[]
+            delegate:GlassMenuItem {text:"创建分组";onTriggered:root.openSelectedGroupDialog()}
+            onObjectAdded:(index,object)=>groupMenu.insertItem(index,object)
+            onObjectRemoved:(index,object)=>groupMenu.removeItem(object)
+        }
         GlassMenuItem {text:"新建子组";onTriggered:{root.groupSelectedMode=false;root.groupParentId=root.contextGroupId;groupName.text="";groupDialog.title="新建子组";groupDialog.open()}}
         GlassMenuItem {text:"重命名";onTriggered:{root.groupSelectedMode=false;root.groupParentId="";groupName.text=root.contextGroupName;groupDialog.title="重命名组";groupDialog.open()}}
-        GlassMenuItem {text:root.library.selectedBrushItems.length>1?"导出选中项":"导出该组";onTriggered:root.beginSelectionExport()}
+        GlassMenuItem {text:root.library.selectedBrushItems.length>1?"导出选中笔刷":"导出该组笔刷";onTriggered:root.beginSelectionExport()}
         MenuSeparator {}
         GlassMenuItem {text:"移动到根目录";onTriggered:root.library.moveGroupToGroup(root.contextGroupId,"")}
         GlassMenu {
             title:"移动到组"
             cascadeParent:groupMenu
+            objectName:"brushGroupMoveToGroup"
+            enabled:root.groupMenuGroups.length>0
             Repeater {
                 model:root.groupMenuGroups
                 GlassMenuItem {
@@ -277,13 +292,21 @@ ColumnLayout {
     }
     GlassMenu {
         id:presetMenu;objectName:"brushPresetContextMenu"
-        GlassMenuItem {text:"创建分组";visible:root.library.selectedBrushItems.length>1;onTriggered:root.openSelectedGroupDialog()}
-        GlassMenuItem {text:root.library.selectedBrushItems.length>1?"导出选中项":"导出该笔刷";onTriggered:root.beginSelectionExport()}
+        topLevel:true
+        Instantiator {
+            model:root.library.selectedBrushItems.length>1?[0]:[]
+            delegate:GlassMenuItem {text:"创建分组";onTriggered:root.openSelectedGroupDialog()}
+            onObjectAdded:(index,object)=>presetMenu.insertItem(index,object)
+            onObjectRemoved:(index,object)=>presetMenu.removeItem(object)
+        }
+        GlassMenuItem {text:root.library.selectedBrushItems.length>1?"导出选中笔刷":"导出该笔刷";onTriggered:root.beginSelectionExport()}
         MenuSeparator {}
         GlassMenuItem {text:"画笔库根目录";onTriggered:root.library.movePresetToGroup(root.contextPresetId,"")}
         GlassMenu {
             title:"移动到组"
             cascadeParent:presetMenu
+            objectName:"brushPresetMoveToGroup"
+            enabled:root.groupMenuGroups.length>0
         Repeater {
             model:root.groupMenuGroups
             GlassMenuItem {

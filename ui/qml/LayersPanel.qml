@@ -252,7 +252,13 @@ ColumnLayout {
                     }
                     property int dropPlacement: 0
                     property point dropPoint
-                    function updateDrop(d) {dropPoint=Qt.point(d.x,d.y);root.dragHovered=row;root.dragViewportY=row.mapToItem(layerList,d.x,d.y).y;dropPlacement=modelData.group && d.y>11 && d.y<height-11 ? 0 : d.y<height/2 ? 1:2}
+                    function updateDrop(d) {
+                        dropPoint=Qt.point(d.x,d.y);root.dragHovered=row;root.dragViewportY=row.mapToItem(layerList,d.x,d.y).y
+                        if(modelData.group) {
+                            const expanded=PaintClient.collapsedGroups.indexOf(modelData.id)<0
+                            dropPlacement=expanded?(d.y<height/3?1:0):(d.y>height/3 && d.y<height*2/3?0:d.y<height/2?1:2)
+                        } else dropPlacement=d.y<height/2?1:2
+                    }
                     DropArea {
                         id:layerDrop;objectName:"layerDrop:"+row.modelData.id
                         anchors.fill:parent;keys:["application/x-drawverse-layer"];enabled:root.editable && !row.modelData.mask
