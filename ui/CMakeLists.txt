@@ -32,6 +32,7 @@ set(_drawverse_ui_resources
     qml/documents/DocumentArea.qml qml/documents/DocumentWindow.qml
     qml/canvas/CanvasPane.qml qml/canvas/TransformOverlay.qml qml/canvas/TransparencyGrid.qml qml/canvas/EyedropperRing.qml
     qml/brushes/BrushLibraryPanel.qml qml/brushes/BrushSettingsPanel.qml qml/brushes/PressureCurveEditor.qml qml/brushes/SpeedCurveEditor.qml
+    qml/brushes/BrushResourceThumbnail.qml qml/brushes/BrushResourcePicker.qml
     qml/layers/LayersPanel.qml qml/layers/LayerLock.qml qml/layers/LayerThumbnail.qml
     qml/color/HsvSlider.qml
     qml/tools/ToolStrip.qml qml/tools/ToolVariantsPanel.qml qml/tools/SelectionOptionsBar.qml qml/tools/BucketOptionsBar.qml qml/tools/WandOptionsBar.qml qml/tools/SmudgeOptionsBar.qml qml/tools/LiquifyOptionsBar.qml qml/tools/TransformOptionsBar.qml

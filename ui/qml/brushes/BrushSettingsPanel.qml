@@ -147,8 +147,10 @@ ColumnLayout {
                     RowLayout {
                         Layout.fillWidth:true
                         Button {objectName:"importImageBrushTip";text:"导入图片";implicitHeight:24;enabled:!PaintClient.brushFileBusy;onClicked:tipDialog.open()}
+                        BrushResourceThumbnail {objectName:"settingsTipResourceThumbnail";resource:root.library.maskResource}
                         Button {objectName:"proceduralBrushTip";text:"程序笔尖";implicitHeight:24;enabled:root.library.maskResource.length>0;onClicked:root.library.useProceduralTip()}
                     }
+                    BrushResourcePicker {objectName:"settingsTipResourcePicker";Layout.fillWidth:true;resource:root.library.maskResource;resourceRole:0}
                     Label {objectName:"imageTipInterpretationLabel";text:"图片覆盖方式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                     CompactComboBox {id:tipInterpretation;objectName:"imageTipInterpretation";Layout.fillWidth:true;model:["灰度覆盖（白色绘制）","透明度覆盖","反向亮度（黑色绘制）"];currentIndex:root.tipInterpretationMode;onActivated:root.tipInterpretationMode=currentIndex;tooltip:"灰度覆盖以白色绘制；透明度使用图片 alpha；反向亮度以黑色绘制。"}
                     Label {visible:root.library.maskResource.length>0;text:"图片覆盖 · 硬度来自图片";color:Theme.muted;font.pixelSize:9;Layout.fillWidth:true;wrapMode:Text.WordWrap}
@@ -232,8 +234,10 @@ ColumnLayout {
                     CompactCheckBox {objectName:"settingsTextureEnabled";text:"启用纹理";enabled:!!root.library.texture.resource;checked:root.library.texture.enabled;font.pixelSize:10;onToggled:root.setTextureField("enabled",checked);tooltip:"使用图片覆盖调制笔触；关闭保留纹理和参数。"}
                     RowLayout {Layout.fillWidth:true
                         Button {objectName:"importBrushTexture";text:"导入";Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredWidth:0;implicitHeight:24;enabled:!PaintClient.brushFileBusy;onClicked:textureDialog.open();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"导入 PNG 纹理"}
+                        BrushResourceThumbnail {objectName:"settingsTextureResourceThumbnail";resource:root.library.texture.resource||""}
                         Button {objectName:"removeBrushTexture";text:"移除";Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredWidth:0;implicitHeight:24;enabled:!!root.library.texture.resource;onClicked:root.library.removeTexture();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"移除纹理图片并关闭纹理，保留其他参数"}
                     }
+                    BrushResourcePicker {objectName:"settingsTextureResourcePicker";Layout.fillWidth:true;resource:root.library.texture.resource||"";resourceRole:1}
                     Label {objectName:"textureInterpretationLabel";text:"图片覆盖方式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                     CompactComboBox {id:textureInterpretation;objectName:"textureInterpretation";Layout.fillWidth:true;model:["灰度覆盖（白色绘制）","透明度覆盖","反向亮度（黑色绘制）"];currentIndex:root.textureInterpretationMode;onActivated:root.textureInterpretationMode=currentIndex;tooltip:"将图片转换为可重复的灰度覆盖，纹理与笔尖独立。"}
                     Label {objectName:"settingsTextureModeLabel";text:"纹理混合模式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
@@ -269,9 +273,11 @@ ColumnLayout {
                         Label {objectName:"settingsDualModelLabel";text:"第二笔尖间距方式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                         CompactComboBox {objectName:"settingsDualModel";Layout.fillWidth:true;model:["独立路径间距","每个主印章配对"];currentIndex:root.dual.model==="paired-dab-v1"?1:0;onActivated:{let data=Object.assign({},root.dual);data.model=currentIndex===1?"paired-dab-v1":"path-coverage-v1";data.spacing=currentIndex===1?null:0.25;root.library.setDualBrush(data)} tooltip:"独立路径使用第二笔尖自己的间距；配对在每个主印章的位置生成第二笔尖。"}
                         RowLayout {Layout.fillWidth:true
+                            BrushResourceThumbnail {objectName:"settingsDualResourceThumbnail";resource:root.dual.resource||""}
                             Button {objectName:"importDualBrushTip";text:"导入";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:24;enabled:!PaintClient.brushFileBusy;onClicked:dualDialog.open();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"导入第二笔尖 PNG 图片"}
                             Button {objectName:"proceduralDualBrushTip";text:"程序";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:24;enabled:!!root.dual.resource;onClicked:root.library.useProceduralDual();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"恢复程序第二笔尖，保留其他参数"}
                         }
+                        BrushResourcePicker {objectName:"settingsDualResourcePicker";Layout.fillWidth:true;resource:root.dual.resource||"";resourceRole:2}
                         Label {objectName:"dualTipInterpretationLabel";text:"图片覆盖方式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                         CompactComboBox {id:dualInterpretation;objectName:"dualTipInterpretation";Layout.fillWidth:true;model:["灰度覆盖（白色绘制）","透明度覆盖","反向亮度（黑色绘制）"];currentIndex:root.dualInterpretationMode;onActivated:root.dualInterpretationMode=currentIndex;tooltip:"选择导入图片的覆盖解释。"}
                         Label {visible:PaintClient.brushImportMessage.length>0;text:PaintClient.brushImportMessage;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}

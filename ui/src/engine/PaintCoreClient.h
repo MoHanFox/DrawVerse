@@ -48,6 +48,9 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QString brushSourceMessage READ brushSourceMessage NOTIFY brushSourceChanged)
     Q_PROPERTY(bool brushSourceBusy READ brushSourceBusy NOTIFY brushSourceChanged)
     Q_PROPERTY(QString brushImportMessage READ brushImportMessage NOTIFY brushFileChanged)
+    Q_PROPERTY(QStringList brushResources READ brushResources NOTIFY brushResourcesChanged)
+    Q_PROPERTY(bool brushResourcesBusy READ brushResourcesBusy NOTIFY brushResourcesChanged)
+    Q_PROPERTY(int brushResourcePreviewRevision READ brushResourcePreviewRevision NOTIFY brushResourcePreviewsChanged)
     Q_PROPERTY(QString cursorTipImage READ cursorTipImage NOTIFY brushCursorImageChanged)
     Q_PROPERTY(QString cursorSecondaryTipImage READ cursorSecondaryTipImage NOTIFY brushCursorImageChanged)
     Q_PROPERTY(QString cursorImageMessage READ cursorImageMessage NOTIFY brushCursorImageChanged)
@@ -175,6 +178,13 @@ public:
     Q_INVOKABLE bool importBrushTip(const QUrl &path,int interpretation);
     Q_INVOKABLE bool importBrushTexture(const QUrl &path,int interpretation);
     Q_INVOKABLE bool importDualBrushTip(const QUrl &path,int interpretation);
+    QStringList brushResources() const {return m_brushResources;}
+    bool brushResourcesBusy() const {return m_brushResourcesBusy;}
+    int brushResourcePreviewRevision() const {return m_brushResourcePreviewRevision;}
+    Q_INVOKABLE bool refreshBrushResources();
+    Q_INVOKABLE bool selectBrushResource(const QString &identity,int role);
+    Q_INVOKABLE bool requestBrushResourcePreview(const QString &identity);
+    Q_INVOKABLE QString brushResourcePreview(const QString &identity) const {return m_brushResourcePreviews.value(identity);}
     Q_INVOKABLE bool exportBrush(const QUrl &path,bool includeSource=false,const QString &expectedPreset={});
     Q_INVOKABLE bool exportAllBrushes(const QUrl &path,bool includeSource=false);
     Q_INVOKABLE bool exportSelectedBrushes(const QUrl &path,bool includeSource=false);
@@ -416,6 +426,8 @@ signals:
     void brushFileChanged();
     void brushSelectionChanged();
     void brushSourceChanged();
+    void brushResourcesChanged();
+    void brushResourcePreviewsChanged();
     void brushFileFinished(bool success);
     void liquifyOptionsChanged();
     void historyChanged();
@@ -468,6 +480,11 @@ private:
     void requestBrushOutlines(bool updateImages=true);
     void requestBrushCursorImages();
     QHash<QString,QString> m_cursorImages,m_cursorImageErrors;
+    QStringList m_brushResources,m_brushResourcePreviewOrder;
+    QHash<QString,QString> m_brushResourcePreviews;
+    QSet<QString> m_pendingBrushResourcePreviews;
+    bool m_brushResourcesBusy=false;
+    int m_brushResourcePreviewRevision=0;
     QStringList m_cursorImageDemand;
     bool m_strokeSecondImageEligible=false;
     bool submit(int type, const InputSample &sample = {}, quint64 id = 0,

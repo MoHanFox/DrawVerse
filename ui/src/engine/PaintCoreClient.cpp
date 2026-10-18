@@ -197,6 +197,26 @@ public:
         emit brushOutlineReady(identity,status==PAINT_OK?QString::fromLatin1(path):QString{},status==PAINT_OK?QString{}:immediateError(status));
     }
     void queueBrushCursorImages(const QStringList &identities) {m_pendingCursorImages=identities;}
+    void listBrushResources() {
+        PaintBrushLibrary *library=nullptr;{QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
+        QByteArray json(512*1024,'\0');uint64_t required=0;
+        const auto status=paint_brush_library_resources_json(library,reinterpret_cast<uint8_t*>(json.data()),quint64(json.size()),&required);
+        if(status==PAINT_OK)json.resize(qsizetype(required));
+        emit brushResourcesReady(status==PAINT_OK?json:QByteArray{},status==PAINT_OK?QString{}:immediateError(status));
+    }
+    QString resourcePreview(const QString &identity,QString &error) {
+        PaintBrushLibrary *library=nullptr;{QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;}
+        const auto bytes=identity.toLatin1();QByteArray png(512*1024,'\0');uint64_t required=0;
+        const auto status=paint_brush_library_tip_cursor_png(library,reinterpret_cast<const uint8_t*>(bytes.constData()),quint64(bytes.size()),reinterpret_cast<uint8_t*>(png.data()),quint64(png.size()),&required);
+        if(status!=PAINT_OK){error=immediateError(status);return {};}
+        png.resize(qsizetype(required));return QStringLiteral("data:image/png;base64,")+QString::fromLatin1(png.toBase64());
+    }
+    void previewBrushResource(const QString &identity) {QString error;const auto image=resourcePreview(identity,error);emit brushResourcePreviewReady(identity,image);}
+    void selectBrushResource(const QString &identity,const QString &target,int role) {
+        QString error;const auto image=resourcePreview(identity,error);
+        emit brushResourcePreviewReady(identity,image);
+        emit brushTipReady(target,error.isEmpty()?identity:QString{},8,error,role);
+    }
     void pollBrushCursorImage() {
         if(m_pendingCursorImages.isEmpty())return;
         const auto identity=m_pendingCursorImages.takeFirst();const auto bytes=identity.toLatin1();
@@ -241,6 +261,8 @@ signals:
     void brushSourceReady(QString identity,quint64 token,QByteArray record,QString error);
     void brushOutlineReady(QString identity,QString path,QString error);
     void brushCursorImageReady(QString identity,QString image,QString error);
+    void brushResourcesReady(QByteArray json,QString error);
+    void brushResourcePreviewReady(QString identity,QString image);
     void brushTipReady(QString target,QString resource,int depth,QString error,int role);
     void nativeBrushCatalog(quint64 preparation,QByteArray state,QString error);
     void brushFileReady(QByteArray package,QString error,bool exporting,bool abr);
@@ -727,6 +749,22 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(!error.isEmpty())showError(error);
     });
     connect(m_worker,&BackendWorker::brushPreviewReady,m_brushLibrary,&BrushLibrary::acceptPreview);
+    connect(m_worker,&BackendWorker::brushResourcesReady,this,[this](const QByteArray &json,const QString &error){
+        m_brushResourcesBusy=false;
+        if(error.isEmpty()){
+            const auto data=QJsonDocument::fromJson(json).object();QStringList ids;
+            if(data.value("model").toString()=="coverage-resources-v1")for(const auto &id:data.value("resources").toArray())ids.append(id.toString());
+            m_brushResources=ids;
+        }else if(!m_closing)showError(error);
+        emit brushResourcesChanged();
+    });
+    connect(m_worker,&BackendWorker::brushResourcePreviewReady,this,[this](const QString &identity,const QString &image){
+        m_pendingBrushResourcePreviews.remove(identity);
+        m_brushResourcePreviewOrder.removeAll(identity);m_brushResourcePreviewOrder.append(identity);
+        m_brushResourcePreviews.insert(identity,image);
+        while(m_brushResourcePreviewOrder.size()>64)m_brushResourcePreviews.remove(m_brushResourcePreviewOrder.takeFirst());
+        ++m_brushResourcePreviewRevision;emit brushResourcePreviewsChanged();
+    });
     connect(m_worker,&BackendWorker::brushCursorImageReady,this,[this](const QString &identity,const QString &image,const QString &error){
         if(m_closing || !m_cursorImageDemand.contains(identity))return;
         if(error.isEmpty())m_cursorImages.insert(identity,image);else m_cursorImageErrors.insert(identity,QStringLiteral("笔尖图片暂不可用：")+error);
@@ -757,6 +795,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(!error.isEmpty())showError(error);
         m_brushImportMessage=success?(depth==16?QStringLiteral("已导入：16 位覆盖已转换为 8 位"):role==2?QStringLiteral("第二笔尖已导入"):role==1?QStringLiteral("纹理已导入"):QStringLiteral("图片笔尖已导入")):QString{};
         m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
+        if(success)refreshBrushResources();
     });
     connect(m_brushLibrary,&BrushLibrary::cursorChanged,this,&PaintCoreClient::brushCursorPreferencesChanged);
     connect(m_brushLibrary,&BrushLibrary::selectionChanged,this,&PaintCoreClient::brushSelectionChanged);
@@ -773,6 +812,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             m_brushImportMessage=QStringLiteral("已导入 %1 个 ABR 笔刷（%2 个部分转换）；在画笔设置的“来源与兼容”查看报告").arg(rows.size()).arg(partial);
         }
         m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
+        if(success && !exporting)refreshBrushResources();
     });
     connect(m_brushLibrary,&BrushLibrary::persistRequested,this,&PaintCoreClient::persistBrushPreferences);
     connect(m_brushLibrary,&BrushLibrary::previewRequested,m_worker,&BackendWorker::queueBrushPreview);
@@ -1679,6 +1719,23 @@ bool PaintCoreClient::importBrushTip(const QUrl &path,int interpretation) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty() || interpretation<0 || interpretation>2)return false;
     const auto target=m_brushLibrary->selectedId();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),target,interpretation]{worker->importBrushTip(path,target,interpretation);},Qt::QueuedConnection);return true;
+}
+bool PaintCoreClient::refreshBrushResources() {
+    if(m_closing || !m_brushLibraryReady || m_brushResourcesBusy)return false;
+    m_brushResourcesBusy=true;emit brushResourcesChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->listBrushResources();},Qt::QueuedConnection);return true;
+}
+bool PaintCoreClient::requestBrushResourcePreview(const QString &identity) {
+    if(m_closing || !m_brushLibraryReady || identity.size()!=64 || m_brushResourcePreviews.contains(identity) || m_pendingBrushResourcePreviews.contains(identity) || m_pendingBrushResourcePreviews.size()>=32)return false;
+    for(const auto c:identity)if(!((c>='0' && c<='9') || (c>='a' && c<='f')))return false;
+    m_pendingBrushResourcePreviews.insert(identity);
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,identity]{worker->previewBrushResource(identity);},Qt::QueuedConnection);return true;
+}
+bool PaintCoreClient::selectBrushResource(const QString &identity,int role) {
+    if(m_closing || !m_ready || !m_brushLibraryReady || m_brushFileBusy || role<0 || role>2 || identity.size()!=64)return false;
+    for(const auto c:identity)if(!((c>='0' && c<='9') || (c>='a' && c<='f')))return false;
+    const auto target=m_brushLibrary->selectedId();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,identity,target,role]{worker->selectBrushResource(identity,target,role);},Qt::QueuedConnection);return true;
 }
 bool PaintCoreClient::importBrushTexture(const QUrl &path,int interpretation) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty() || interpretation<0 || interpretation>2)return false;
