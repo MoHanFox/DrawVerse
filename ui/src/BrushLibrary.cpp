@@ -10,6 +10,7 @@
 #include <QJsonValue>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 
 namespace {
@@ -216,6 +217,35 @@ bool validDual(const QJsonObject &data){
     if(data.contains("shapeJitter") && (!data.value("shapeJitter").isObject() || !validShape(data.value("shapeJitter").toObject())))return false;
     if(data.contains("sizing") && (!data.value("sizing").isObject() || !validDualSizing(data.value("sizing").toObject())))return false;
     return true;
+}
+QJsonObject organizationForPreset(const QJsonObject &organization,const QString &presetId,const QString &exportId) {
+    if(organization.isEmpty())return {};
+    const auto groups=organization.value("groups").toArray();
+    QHash<QString,QJsonObject> byId;
+    for(const auto &value:groups)byId.insert(value.toObject().value("id").toString(),value.toObject());
+    QStringList path;
+    std::function<bool(const QJsonArray &)> visit=[&](const QJsonArray &items){
+        for(const auto &value:items){
+            const auto item=value.toObject();
+            if(item.value("kind").toString()=="preset" && item.value("id").toString()==presetId)return true;
+            if(item.value("kind").toString()=="group"){
+                const auto id=item.value("id").toString();
+                path.append(id);
+                if(visit(byId.value(id).value("items").toArray()))return true;
+                path.removeLast();
+            }
+        }
+        return false;
+    };
+    if(!visit(organization.value("roots").toArray()))return {};
+    QJsonArray items{QJsonObject{{"kind","preset"},{"id",exportId}}};
+    QJsonArray outGroups;
+    for(qsizetype i=path.size();i>0;--i){
+        const auto id=path[i-1];
+        outGroups.append(QJsonObject{{"id",id},{"name",byId.value(id).value("name")},{"items",items}});
+        items=QJsonArray{QJsonObject{{"kind","group"},{"id",id}}};
+    }
+    return QJsonObject{{"model","ordered-tree-v1"},{"roots",items},{"groups",outGroups}};
 }
 int expectedBehaviorVersion(const QJsonObject &preset){
     const auto parameters=preset.value("parameters").toObject();const auto dual=preset.value("dualBrush").toObject();
@@ -819,7 +849,10 @@ QByteArray BrushLibrary::exportPackage(bool includeSource) const {
     const auto id=builtin<0?p.id:QString("dba00000-0000-4000-8000-%1").arg(builtin+1,12,16,QChar('0'));
     const auto preset=exportPreset(p,includeSource,id);
     if(preset.isEmpty())return {};
-    return QJsonDocument(QJsonObject{{"packageId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"brushes",QJsonArray{preset}}}).toJson(QJsonDocument::Compact);
+    const QJsonObject package{{"packageId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"brushes",QJsonArray{preset}}};
+    const auto organization=organizationForPreset(m_organization,p.id,id);
+    if(organization.isEmpty())return QJsonDocument(package).toJson(QJsonDocument::Compact);
+    return QJsonDocument(QJsonObject{{"model","ordered-package-v1"},{"package",package},{"organization",organization}}).toJson(QJsonDocument::Compact);
 }
 QByteArray BrushLibrary::exportAllPackage(bool includeSource) const {
     if(m_presets.isEmpty() || m_presets.size()>1024)return {};
@@ -874,7 +907,7 @@ bool BrushLibrary::applyNativeCatalog(const QByteArray &json) {
     auto state=QJsonDocument::fromJson(snapshot()).object();state["version"]=native.value("version");state["selected"]=native.value("selected");state["presets"]=native.value("presets");if(native.contains("organization"))state["organization"]=native.value("organization");else state.remove("organization");
     return restore(QJsonDocument(state).toJson(QJsonDocument::Compact));
 }
-bool BrushLibrary::importPackage(const QByteArray &json) {
+bool BrushLibrary::importPackage(const QByteArray &json,const QString &groupName) {
     if(json.size()>2*1024*1024)return false;
     const auto root=QJsonDocument::fromJson(json).object();
     const bool ordered=root.value("model").toString()=="ordered-package-v1";
@@ -890,6 +923,8 @@ bool BrushLibrary::importPackage(const QByteArray &json) {
     QHash<QString,QString> importedIds;
     QString selected;
     QJsonObject inputTree;
+    const auto cleanGroupName=groupName.trimmed();
+    if(!cleanGroupName.isEmpty() && (cleanGroupName.size()>80 || cleanGroupName.contains(QChar(0))))return false;
     if(ordered) {
         QStringList inputIds;
         for(const auto &value:brushes)inputIds.append(value.toObject().value("id").toString());
@@ -943,18 +978,35 @@ bool BrushLibrary::importPackage(const QByteArray &json) {
         QJsonArray roots,groups;
         if(m_organization.isEmpty()){for(qsizetype i=0;i<existingCount;++i)roots.append(QJsonObject{{"kind","preset"},{"id",rows[i].toObject().value("id").toString()}});}
         else {roots=m_organization.value("roots").toArray();groups=m_organization.value("groups").toArray();}
-        for(const auto &value:importedRoots)roots.append(value);
+        if(cleanGroupName.isEmpty()){for(const auto &value:importedRoots)roots.append(value);}
+        else {
+            const auto outerId=QUuid::createUuid().toString(QUuid::WithoutBraces);
+            roots.append(QJsonObject{{"kind","group"},{"id",outerId}});
+            groups.append(QJsonObject{{"id",outerId},{"name",cleanGroupName},{"items",importedRoots}});
+        }
         for(const auto &value:importedGroups)groups.append(value);
         const QJsonObject merged{{"model","ordered-tree-v1"},{"roots",roots},{"groups",groups}};
         QStringList allIds;for(const auto &value:rows)allIds.append(value.toObject().value("id").toString());QJsonObject normalized;QStringList order;
         if(!BrushOrganization::normalize(merged,allIds,normalized,order))return false;
         if(normalized.isEmpty())state.remove("organization");else {state["organization"]=normalized;state["version"]=std::max(state.value("version").toInt(),20);}
+    } else if(!cleanGroupName.isEmpty()) {
+        QJsonArray roots,groups;
+        if(m_organization.isEmpty()){for(qsizetype i=0;i<existingCount;++i)roots.append(QJsonObject{{"kind","preset"},{"id",rows[i].toObject().value("id").toString()}});}
+        else {roots=m_organization.value("roots").toArray();groups=m_organization.value("groups").toArray();}
+        QJsonArray items;for(qsizetype i=existingCount;i<rows.size();++i)items.append(QJsonObject{{"kind","preset"},{"id",rows[i].toObject().value("id").toString()}});
+        const auto outerId=QUuid::createUuid().toString(QUuid::WithoutBraces);
+        roots.append(QJsonObject{{"kind","group"},{"id",outerId}});
+        groups.append(QJsonObject{{"id",outerId},{"name",cleanGroupName},{"items",items}});
+        const QJsonObject merged{{"model","ordered-tree-v1"},{"roots",roots},{"groups",groups}};
+        QStringList allIds;for(const auto &value:rows)allIds.append(value.toObject().value("id").toString());QJsonObject normalized;QStringList order;
+        if(!BrushOrganization::normalize(merged,allIds,normalized,order))return false;
+        state["organization"]=normalized;state["version"]=std::max(state.value("version").toInt(),20);
     } else if(!m_organization.isEmpty()){auto organization=m_organization;for(qsizetype i=m_presets.size();i<rows.size();++i)organization=BrushOrganization::addPreset(organization,rows[i].toObject().value("id").toString());state["organization"]=organization;}
     state["presets"]=rows;state["selected"]=selected;
     if(!restore(QJsonDocument(state).toJson(QJsonDocument::Compact)))return false;
     emit persistRequested(snapshot());return true;
 }
-bool BrushLibrary::importAbr(const QByteArray &json) {
+bool BrushLibrary::importAbr(const QByteArray &json,const QString &groupName) {
     if(json.size()>2*1024*1024)return false;
     const auto handoff=QJsonDocument::fromJson(json).object();
     if((handoff.value("version").toInt()!=1 && handoff.value("version").toInt()!=2 && handoff.value("version").toInt()!=3 && handoff.value("version").toInt()!=4 && handoff.value("version").toInt()!=5 && handoff.value("version").toInt()!=6 && handoff.value("version").toInt()!=7 && handoff.value("version").toInt()!=8 && handoff.value("version").toInt()!=9 && handoff.value("version").toInt()!=10 && handoff.value("version").toInt()!=11 && handoff.value("version").toInt()!=12) || handoff.value("format").toString()!="abr" || !handoff.value("presets").isArray())return false;
@@ -1028,7 +1080,22 @@ bool BrushLibrary::importAbr(const QByteArray &json) {
         }
         rows.append(row);
     }
-    if(!m_organization.isEmpty()){auto organization=m_organization;for(qsizetype i=m_presets.size();i<rows.size();++i)organization=BrushOrganization::addPreset(organization,rows[i].toObject().value("id").toString());state["organization"]=organization;}
+    const auto cleanGroupName=groupName.trimmed();
+    if(!cleanGroupName.isEmpty() && (cleanGroupName.size()>80 || cleanGroupName.contains(QChar(0))))return false;
+    if(!cleanGroupName.isEmpty()) {
+        const qsizetype existingCount=m_presets.size();
+        QJsonArray roots,groups;
+        if(m_organization.isEmpty()){for(qsizetype i=0;i<existingCount;++i)roots.append(QJsonObject{{"kind","preset"},{"id",rows[i].toObject().value("id").toString()}});}
+        else {roots=m_organization.value("roots").toArray();groups=m_organization.value("groups").toArray();}
+        QJsonArray items;for(qsizetype i=existingCount;i<rows.size();++i)items.append(QJsonObject{{"kind","preset"},{"id",rows[i].toObject().value("id").toString()}});
+        const auto outerId=QUuid::createUuid().toString(QUuid::WithoutBraces);
+        roots.append(QJsonObject{{"kind","group"},{"id",outerId}});
+        groups.append(QJsonObject{{"id",outerId},{"name",cleanGroupName},{"items",items}});
+        const QJsonObject merged{{"model","ordered-tree-v1"},{"roots",roots},{"groups",groups}};
+        QStringList allIds;for(const auto &value:rows)allIds.append(value.toObject().value("id").toString());QJsonObject normalized;QStringList order;
+        if(!BrushOrganization::normalize(merged,allIds,normalized,order))return false;
+        state["organization"]=normalized;state["version"]=std::max(state.value("version").toInt(),20);
+    } else if(!m_organization.isEmpty()){auto organization=m_organization;for(qsizetype i=m_presets.size();i<rows.size();++i)organization=BrushOrganization::addPreset(organization,rows[i].toObject().value("id").toString());state["organization"]=organization;}
     state["presets"]=rows;state["selected"]=selected;state["version"]=std::max(state.value("version").toInt(),4);
     if(!restore(QJsonDocument(state).toJson(QJsonDocument::Compact)))return false;
     emit persistRequested(snapshot());return true;

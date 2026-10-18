@@ -759,7 +759,10 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(m_brushLibrary,&BrushLibrary::cursorChanged,this,[this]{requestBrushOutlines();emit brushOutlineChanged();});
     connect(m_worker,&BackendWorker::brushFileReady,this,[this](const QByteArray &package,const QString &error,bool exporting,bool abr){
         bool success=error.isEmpty();
-        if(success && !exporting && !(abr?m_brushLibrary->importAbr(package):m_brushLibrary->importPackage(package))){success=false;showError(QStringLiteral("导入失败：笔刷库容量不足或包参数无效（最多 1024 个预设）"));}
+        if(!exporting){
+            const auto groupName=m_brushImportGroupName;m_brushImportGroupName.clear();
+            if(success && !(abr?m_brushLibrary->importAbr(package,groupName):m_brushLibrary->importPackage(package,groupName))){success=false;showError(QStringLiteral("导入失败：笔刷库容量不足或包参数无效（最多 1024 个预设）"));}
+        }
         if(!error.isEmpty())showError(error);
         if(success && abr) {
             const auto rows=QJsonDocument::fromJson(package).object().value("presets").toArray();int partial=0;for(const auto &row:rows)if(row.toObject().value("partial").toBool())++partial;
@@ -1655,6 +1658,8 @@ bool PaintCoreClient::inspectBrushSource() {
 }
 bool PaintCoreClient::importBrushes(const QUrl &path) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
+    m_brushImportGroupName=QFileInfo(path.toLocalFile()).completeBaseName().trimmed().left(80);
+    if(m_brushImportGroupName.isEmpty())m_brushImportGroupName=QStringLiteral("导入画笔");
     if(!m_brushLibraryReady){if(!m_pendingBrushImport.isEmpty())return false;m_pendingBrushImport=path.toLocalFile();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();return true;}
     m_brushImportMessage.clear();
     m_brushFileBusy=true;emit brushFileChanged();

@@ -458,6 +458,7 @@ private:
     bool m_brushOutlineReady=false;
     bool m_brushLibraryReady=false;
     QString m_pendingBrushImport;
+    QString m_brushImportGroupName;
     QString m_secondOutlineResource,m_secondOutlinePath,m_secondOutlineMessage,m_strokeSecondOutlineResource,m_strokeSecondOutlinePath;
     bool m_secondOutlineReady=false,m_strokeSecondOutlineReady=false;
     void requestBrushOutlines(bool updateImages=true);
