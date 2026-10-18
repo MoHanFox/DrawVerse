@@ -265,7 +265,13 @@ ColumnLayout {
                     Label {text:"第二笔刷来源";color:Theme.text;font.pixelSize:10}
                     CompactComboBox {objectName:"settingsDualSourceMode";Layout.fillWidth:true;model:["自定义","现有"];currentIndex:root.library.dualExisting?1:0;onActivated:root.library.dualExisting=currentIndex===1}
                     ColumnLayout {visible:root.library.dualExisting;Layout.fillWidth:true;spacing:5
-                        CompactComboBox {objectName:"settingsExistingDualPreset";Layout.fillWidth:true;model:root.library.presets;textRole:"name";currentIndex:-1;displayText:root.library.dualSourceName||"选择现有笔刷";onActivated:{if(currentIndex>=0)root.library.usePresetAsSecondary(model[currentIndex].id);currentIndex=-1} tooltip:"复制主笔尖形状、压力和散布；来源后续修改不影响当前快照。"}
+                        CompactComboBox {
+                            id:existingDualPreset;objectName:"settingsExistingDualPreset";Layout.fillWidth:true
+                            model:root.library.presetRows();textRole:"name";currentIndex:-1;displayText:root.library.dualSourceName||"选择现有笔刷"
+                            onActivated:{if(currentIndex>=0)root.library.usePresetAsSecondary(model[currentIndex].id);currentIndex=-1}
+                            tooltip:"复制主笔尖形状、压力和散布；来源后续修改不影响当前快照。"
+                            Connections {target:root.library;function onPresetsChanged(){existingDualPreset.model=root.library.presetRows()}}
+                        }
                         Label {text:root.library.dualSourceName?"已复制笔尖参数，可调整下列设置。":"选择一个笔刷作为第二笔尖。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
                         ColumnLayout {visible:root.library.dualSourceName.length>0;Layout.fillWidth:true;spacing:5
                             DualField {prefix:"settingsExistingDual";decimals:2;title:"大小";field:"diameter";from:1;to:2000;factor:1;unit:"px"}

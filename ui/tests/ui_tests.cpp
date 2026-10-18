@@ -124,7 +124,7 @@ private slots:
         QSignalSpy imported(&client,&PaintCoreClient::brushFileFinished);QElapsedTimer timer;timer.start();qint64 previous=0,longest=0;int ticks=0;
         QTimer heartbeat;heartbeat.setInterval(5);connect(&heartbeat,&QTimer::timeout,this,[&]{const auto now=timer.elapsed();longest=std::max(longest,now-previous);previous=now;++ticks;});heartbeat.start();
         for(int pack=0;pack<3;++pack){QVERIFY(client.importBrushes(QUrl::fromLocalFile(fixture)));QTRY_COMPARE_WITH_TIMEOUT(imported.size(),pack+1,30000);QVERIFY(imported.last()[0].toBool());QTest::qWait(100);}
-        QCOMPARE(library->presets().size(),448);qInfo()<<"ABR 3x148 import ms"<<timer.elapsed()<<"longest GUI gap ms"<<longest<<"ticks"<<ticks;
+        QCOMPARE(library->presets().size(),448);qInfo()<<"ABR 3x148 import ms"<<timer.elapsed()<<"longest GUI gap ms"<<longest<<"ticks"<<ticks;QVERIFY2(longest<500,qPrintable(QString("import GUI blocked for %1 ms").arg(longest)));
         QSignalSpy catalogs(library,&BrushLibrary::presetsChanged),previews(library,&BrushLibrary::previewRequested);
         for(int pass=0;pass<2;++pass){longest=0;previous=timer.elapsed();qint64 dispatch=0;const auto start=timer.elapsed();
             for(int step=0;step<80;++step){const auto top=std::max(0.,list->property("contentHeight").toDouble()-list->height());const auto before=timer.nsecsElapsed();list->setProperty("contentY",top*step/79.);QCoreApplication::processEvents();dispatch=std::max(dispatch,(timer.nsecsElapsed()-before)/1000);QTest::qWait(16);}

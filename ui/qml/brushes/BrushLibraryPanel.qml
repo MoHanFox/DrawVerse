@@ -101,7 +101,7 @@ ColumnLayout {
     }
     function refreshPresets() {
         const lookup={}
-        for(const preset of library.presets)lookup[preset.id]=Object.assign({},preset)
+        for(const preset of library.presetRows())lookup[preset.id]=Object.assign({},preset)
         presetLookup=lookup
     }
     function presetById(id) { return presetLookup[id]||({}) }
@@ -112,11 +112,11 @@ ColumnLayout {
         return false
     }
     function groupedItems() {
-        const presets={}; for(const p of library.presets) presets[p.id]=p
+        const rows=Object.values(presetLookup)
         const organization=library.organization||{}
         const groups={}; for(const g of (organization.groups||[])) groups[g.id]=g
         const query=search.text.trim().toLowerCase()
-        const matches={}; for(const p of library.presets) matches[p.id]=!query.length||p.name.toLowerCase().indexOf(query)>=0
+        const matches={}; for(const p of rows) matches[p.id]=!query.length||p.name.toLowerCase().indexOf(query)>=0
         function visit(items,out,depth,parent) {
             for(let index=0;index<(items||[]).length;++index) {
                 const item=items[index]
@@ -129,11 +129,11 @@ ColumnLayout {
                 }
             }
         }
-        if(!organization.roots) return library.presets.filter(p=>matches[p.id]).map((p,index)=>({kind:"preset",id:p.id,depth:0,parent:"",index:index}))
+        if(!organization.roots) return rows.filter(p=>matches[p.id]).map((p,index)=>({kind:"preset",id:p.id,depth:0,parent:"",index:index}))
         const result=[]; visit(organization.roots,result,0,""); return result
     }
     function refreshGroupedItems() {
-        const signature=JSON.stringify({organization:library.organization||{},presets:library.presets.map(p=>[p.id,p.name]),query:search.text,collapsed:collapsedGroups})
+        const signature=JSON.stringify({organization:library.organization||{},presets:Object.values(presetLookup).map(p=>[p.id,p.name]),query:search.text,collapsed:collapsedGroups})
         if(signature===groupedSignature) return
         const keepY=search.text.trim().length>0?0:presetList.contentY
         groupedSignature=signature;groupedModel=groupedItems()
@@ -288,7 +288,7 @@ ColumnLayout {
         IconButton {objectName:"importBrushPackage";glyph:"folder";tooltip:"导入 VBR / ABR 笔刷包";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:importDialog.open()}
         IconButton {glyph:"plus";tooltip:"保存当前设置为新画笔";implicitHeight:22;onClicked:saveDialog.open()}
         IconButton {objectName:"createBrushGroup";glyph:"folder";tooltip:root.library.selectedBrushItems.length>0?"将选中项创建为组":"新建画笔组";implicitHeight:22;onClicked:{if(root.library.selectedBrushItems.length>0)root.openSelectedGroupDialog();else{root.groupSelectedMode=false;root.groupParentId="";groupName.text="";groupDialog.title="新建画笔组";groupDialog.open()}}}
-        IconButton {glyph:"trash";tooltip:"删除自定义画笔";implicitHeight:22;enabled:root.library.presets.some(p=>p.id===root.library.selectedId && !p.builtin);onClicked:root.library.remove(root.library.selectedId)}
+        IconButton {glyph:"trash";tooltip:"删除自定义画笔";implicitHeight:22;enabled:!!root.presetById(root.library.selectedId).id && !root.presetById(root.library.selectedId).builtin;onClicked:root.library.remove(root.library.selectedId)}
     }
     GlassMenu {
         id:groupMenu

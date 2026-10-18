@@ -106,6 +106,8 @@ public:
     int writeBlend() const {return m_writeBlend;}
     void setWriteBlend(int mode);
     QVariantList presets() const;
+    // A method result is a QML value sequence; property-backed iteration re-reads the getter.
+    Q_INVOKABLE QVariantList presetRows() const {return presets();}
     Q_INVOKABLE QVariantMap presetInfo(const QString &id) const;
     bool persistencePending() const {return m_persistTimer.isActive();}
     void flushPersistence();
