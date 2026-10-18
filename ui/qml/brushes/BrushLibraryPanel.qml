@@ -11,6 +11,9 @@ ColumnLayout {
     id:root
     objectName:"brushLibraryPanel"
     property bool draggingBrush:false
+    property string draggedBrushKey:""
+    property string renamePresetId:""
+    function beginRenamePreset(id){const preset=presetById(id);if(!preset.id)return;renamePresetId=id;renameName.text=preset.name;renameDialog.open()}
     property var dragHovered:null
     property real dragViewportY:-1
     property var canvasView
@@ -190,9 +193,10 @@ ColumnLayout {
                 property bool dragging:false
                 property bool suppressClick:false
                 onPressed:function(mouse){origin=Qt.point(mouse.x,mouse.y);dragging=false;suppressClick=false;brushRow.panel.draggingBrush=false}
-                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;brushRow.panel.draggingBrush=true;PaintClient.beginBrushDrag(modelData.kind+":"+modelData.id);brushRow.panel.draggingBrush=false;brushRow.panel.dragViewportY=-1}}
-                onReleased:function(){dragging=false;brushRow.panel.draggingBrush=false;brushRow.panel.dragViewportY=-1}
-                onCanceled:function(){dragging=false;brushRow.panel.draggingBrush=false;brushRow.panel.dragViewportY=-1}
+                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;brushRow.panel.draggingBrush=true;brushRow.panel.draggedBrushKey=modelData.kind+":"+modelData.id;PaintClient.beginBrushDrag(brushRow.panel.draggedBrushKey);brushRow.panel.draggedBrushKey="";brushRow.panel.draggingBrush=false;brushRow.panel.draggedBrushKey="";brushRow.panel.dragViewportY=-1}}
+                onReleased:function(){dragging=false;brushRow.panel.draggingBrush=false;brushRow.panel.draggedBrushKey="";brushRow.panel.dragViewportY=-1}
+                onCanceled:function(){dragging=false;brushRow.panel.draggingBrush=false;brushRow.panel.draggedBrushKey="";brushRow.panel.dragViewportY=-1}
+                onDoubleClicked:function(mouse){if(mouse.button===Qt.LeftButton && modelData.kind==="preset" && !suppressClick)brushRow.panel.beginRenamePreset(modelData.id)}
                 onClicked:function(mouse) {
                     if(suppressClick){suppressClick=false;return}
                     if(mouse.button===Qt.RightButton) {
@@ -207,7 +211,7 @@ ColumnLayout {
             }
             DropArea {
                 id:brushDrop;objectName:"brushDrop:"+modelData.id
-                anchors.fill:parent;keys:["application/x-drawverse-brush"]
+                anchors.fill:parent;keys:["application/x-drawverse-brush"];enabled:brushRow.panel.draggedBrushKey!==modelData.kind+":"+modelData.id
                 onEntered:function(drop){brushRow.updateDrop(drop)}
                 onPositionChanged:function(drop){brushRow.updateDrop(drop)}
                 onExited:{if(brushRow.panel.dragHovered===brushRow)brushRow.panel.dragHovered=null}
@@ -218,6 +222,7 @@ ColumnLayout {
                     const payload=drop.getDataAsString("application/x-drawverse-brush"),separator=payload.indexOf(":")
                     if(separator<=0)return
                     const kind=payload.slice(0,separator),id=payload.slice(separator+1)
+                    if(kind===modelData.kind && id===modelData.id)return
                     let parentId=modelData.parent,index=modelData.index
                     if(modelData.kind==="group" && brushRow.dropPlacement===0){parentId=modelData.id;index=0}
                     else if(brushRow.dropPlacement===2)index=modelData.index+1
@@ -326,6 +331,13 @@ ColumnLayout {
             }
         }
         }
+    }
+    Dialog {
+        id:renameDialog;objectName:"renameBrushDialog";title:"重命名画笔";modal:true;standardButtons:Dialog.Ok|Dialog.Cancel
+        anchors.centerIn:Overlay.overlay
+        contentItem:TextField {id:renameName;objectName:"renameBrushName";placeholderText:"画笔名称";maximumLength:80;selectByMouse:true;onAccepted:renameDialog.accept()}
+        onOpened:{renameName.forceActiveFocus();renameName.selectAll()}
+        onAccepted:root.library.rename(root.renamePresetId,renameName.text)
     }
     Dialog {
         id:saveDialog;title:"保存画笔";modal:true;standardButtons:Dialog.Ok|Dialog.Cancel

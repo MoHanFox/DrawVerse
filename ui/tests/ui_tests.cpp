@@ -102,6 +102,30 @@ class UiTests final : public QObject {
     QTemporaryDir m_preferences;
 private slots:
 
+    void brushCanStartOutsideDocumentAndPaintEdge_data(){QTest::addColumn<bool>("tablet");QTest::newRow("mouse")<<false;QTest::newRow("tablet")<<true;}
+    void brushCanStartOutsideDocumentAndPaintEdge() {
+        QFETCH(bool,tablet);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("edge.ini"));QTRY_VERIFY(client.ready());client.newDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);
+        auto *library=client.brushLibrary();library->setRadius(8);library->setPressureSize(false);library->setPressureFlow(false);client.setBrushColor(Qt::red);
+        WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);auto *canvasItem=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvasItem);auto &canvas=*canvasItem;QTRY_VERIFY(canvas.width()>300);canvas.fitToView();
+        const auto at=[&](qreal x,qreal y){return canvas.documentRect().topLeft()+QPointF(x,y)*canvas.zoom();};const auto outside=at(-2,24),inside=at(12,24);QVERIFY(canvas.contains(outside));QVERIFY(!canvas.documentRect().contains(outside));
+        const auto depth=client.undoDepth();auto *pen=new QPointingDevice("Edge pen",9811,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);pen->setParent(qApp);
+        const auto send=[&](QEvent::Type type,const QPointF &point){QTabletEvent e(type,pen,point,canvas.mapToGlobal(point),type==QEvent::TabletRelease?0.:1.,0,0,0,0,0,Qt::NoModifier,type==QEvent::TabletMove?Qt::NoButton:Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(&canvas,&e);};
+        if(tablet)send(QEvent::TabletPress,outside);else QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,canvas.mapToScene(outside).toPoint());QVERIFY(client.drawing());
+        if(tablet){send(QEvent::TabletMove,inside);send(QEvent::TabletRelease,inside);}else{QTest::mouseMove(window,canvas.mapToScene(inside).toPoint());QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,canvas.mapToScene(inside).toPoint());}
+        QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.sampleDocumentPixel(.5,24.5).alpha()>0);client.undo();QTRY_COMPARE(client.undoDepth(),depth);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void libraryDoubleClickRenameAndSelfDropFiltering() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("rename.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());QTRY_VERIFY(client.ready());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);workspace.setActive(workspace.groupForPanel("brush"),"brush");
+        auto *library=client.brushLibrary();const auto id=library->selectedId();QQuickItem *panel=nullptr,*row=nullptr;QTRY_VERIFY((panel=findVisualItem(window->contentItem(),"brushLibraryPanel")));QTRY_VERIFY((row=findVisualItem(panel,"brushPreset:"+id)));
+        auto *drop=findVisualItem(row,"brushDrop:"+id);QVERIFY(drop && drop->isEnabled());panel->setProperty("draggedBrushKey","preset:"+id);QVERIFY(!drop->isEnabled());panel->setProperty("draggedBrushKey",QString());QVERIFY(drop->isEnabled());
+        QTest::mouseDClick(window,Qt::LeftButton,Qt::NoModifier,row->mapToScene({row->width()/2,row->height()/2}).toPoint());auto *name=window->findChild<QObject*>("renameBrushName");QVERIFY(name);QTRY_VERIFY(name->property("visible").toBool());name->setProperty("text","Renamed by double click");auto *dialog=window->findChild<QObject*>("renameBrushDialog");QVERIFY(dialog);QVERIFY(QMetaObject::invokeMethod(dialog,"accept"));QTRY_COMPARE(library->selectedName(),QString("Renamed by double click"));
+        workspace.setActive(workspace.groupForPanel("layers"),"layers");QQuickItem *layers=nullptr,*layerDrop=nullptr;QTRY_VERIFY((layers=findVisualItem(window->contentItem(),"layersPanel")));QTRY_VERIFY((layerDrop=findVisualItem(layers,"layerDrop:"+QString::number(client.activeLayer()))));
+        layers->setProperty("draggedLayerIds",QVariantList{QVariant::fromValue(client.activeLayer())});QVERIFY(!layerDrop->isEnabled());layers->setProperty("draggedLayerIds",QVariantList{});QVERIFY(layerDrop->isEnabled());QVERIFY(!client.acceptLayerDrop(client.layerDragPayload(client.activeLayer()),client.activeLayer(),1));
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
     void curvePointKeepsGrabOutsideGraph_data() {
         QTest::addColumn<bool>("speed");QTest::newRow("pressure")<<false;QTest::newRow("speed")<<true;
     }

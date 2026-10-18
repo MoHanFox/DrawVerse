@@ -30,3 +30,11 @@
 - 压力与设备曲线编辑器阻止父滚动视图抢走鼠标；内部节点快速越过邻点时钳制在合法区间，移出图表再移回仍连续更新，松开后停止更新。
 - Windows Release构建通过；`curvePointKeepsGrabOutsideGraph`的pressure/speed两组真实鼠标按下、越界、返回、释放用例通过。记录：`artifacts/feedback-step3-tests.txt`。
 - Ctrl点击单节点切换插值仍待3b：当前核心仅支持整条曲线线性/PCHIP，不能只改界面标记，也不能把整曲线开关冒充节点开关。
+
+## 步骤 4：画布边缘与目录交互
+
+- 鼠标/笔在画布控件内部、文档外侧可开始普通绘画，核心继续按真实坐标裁剪；选区、移动、填充、吸色和液化保留原工具起点约束。
+- 画笔拖动期间禁用源行DropArea；图层拖动屏蔽全部拖动项，同时客户端拒绝包含目标自身的层拖放。
+- 双击画笔弹出改名框，按捕获的预设ID应用，复用已有名称验证，不改变预设资源身份。
+- Windows Release构建通过；`brushCanStartOutsideDocumentAndPaintEdge`鼠标/合成笔两组从文档外开始、进入文档、单历史与撤销，以及`libraryDoubleClickRenameAndSelfDropFiltering`、既有展开组落点用例通过。记录：`artifacts/feedback-step4-tests.txt`。
+- 画布用例使用实际Main.qml实例及其生命周期；不代表实体数位板或所有鼠标跨窗口拖放已验收。未跑全量/跨平台/GPU。

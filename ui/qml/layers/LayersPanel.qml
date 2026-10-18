@@ -62,6 +62,7 @@ ColumnLayout {
     }
     property var dragHovered: null
     property bool draggingLayer: false
+    property var draggedLayerIds:[]
     property real dragViewportY: -1
     function dropToRoot(payload) {
         const source=PaintClient.layerDragIds(payload)
@@ -232,7 +233,7 @@ ColumnLayout {
                                 if(upper && !(upper.effectiveLocks & 4)){clippingGesture=true;PaintClient.setLayerClipping(upper.id,!upper.clipped)}
                             }
                         }
-                        onPositionChanged:mouse=>{if(pressed && (pressedButtons & Qt.LeftButton) && !dragging && !clippingGesture && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10){dragging=true;root.draggingLayer=true;PaintClient.beginLayerDrag(row.modelData.id);root.draggingLayer=false;root.dragViewportY=-1}}
+                        onPositionChanged:mouse=>{if(pressed && (pressedButtons & Qt.LeftButton) && !dragging && !clippingGesture && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10){dragging=true;root.draggingLayer=true;root.draggedLayerIds=PaintClient.layerDragIds(PaintClient.layerDragPayload(row.modelData.id));PaintClient.beginLayerDrag(row.modelData.id);root.draggedLayerIds=[];root.draggingLayer=false;root.dragViewportY=-1}}
                         onClicked:mouse=>{
                             if(mouse.button===Qt.RightButton)root.openLayerContext(row.modelData.id,row,mouse.x,mouse.y,false)
                             else if(!clippingGesture && !dragging){root.forceActiveFocus();PaintClient.selectLayers(row.modelData.id,Number(mouse.modifiers))}
@@ -263,7 +264,7 @@ ColumnLayout {
                     }
                     DropArea {
                         id:layerDrop;objectName:"layerDrop:"+row.modelData.id
-                        anchors.fill:parent;keys:["application/x-drawverse-layer"];enabled:root.editable && !row.modelData.mask
+                        anchors.fill:parent;keys:["application/x-drawverse-layer"];enabled:root.editable && !row.modelData.mask && root.draggedLayerIds.indexOf(row.modelData.id)<0
                         onEntered:d=>row.updateDrop(d)
                         onPositionChanged:d=>row.updateDrop(d)
                         onExited:{if(root.dragHovered===row)root.dragHovered=null}

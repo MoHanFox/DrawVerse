@@ -1606,7 +1606,7 @@ QVariantList PaintCoreClient::layerDragIds(const QString &payload) const {
 bool PaintCoreClient::acceptLayerDrop(const QString &payload,quint64 target,int placement) {
     const auto values=layerDragIds(payload);QList<quint64> ids;
     for(const auto &value:values)ids.append(value.toULongLong());
-    return !ids.isEmpty() && dropLayers(ids,target,placement);
+    return !ids.isEmpty() && !ids.contains(target) && dropLayers(ids,target,placement);
 }
 void PaintCoreClient::beginLayerDrag(quint64 id) {
     if(!m_ready || m_liquifyActive || m_transformActive || m_drawing || layerEditBusy())return;
