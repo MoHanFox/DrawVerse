@@ -19,6 +19,7 @@ fn package() -> Package {
             behavior_version: 1,
             required_capabilities: vec!["procedural-tip".into()],
             parameters: Parameters {
+                transfer_jitter: None,
                 airbrush: None,
                 speed_dynamics: None,
                 tangent_dynamics: None,

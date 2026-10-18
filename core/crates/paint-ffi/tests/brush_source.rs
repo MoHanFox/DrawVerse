@@ -691,6 +691,7 @@ fn pressure_packages_round_trip_through_native_entry() {
     let temp = tempfile::tempdir().unwrap();
     let token = CancellationToken::default();
     let mut parameters = paint_io::vbr::Parameters {
+        transfer_jitter: None,
         scatter_dynamics: None,
         shape_jitter: None,
         color_dynamics: None,

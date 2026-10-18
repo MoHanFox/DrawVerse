@@ -26,6 +26,7 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(qreal saturationJitter READ saturationJitter WRITE setSaturationJitter NOTIFY settingsChanged)
     Q_PROPERTY(qreal valueJitter READ valueJitter WRITE setValueJitter NOTIFY settingsChanged)
     Q_PROPERTY(QVariantMap shapeJitter READ shapeJitter NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantMap transferJitter READ transferJitter NOTIFY settingsChanged)
     Q_PROPERTY(bool shapeJitterEnabled READ shapeJitterEnabled WRITE setShapeJitterEnabled NOTIFY settingsChanged)
     Q_PROPERTY(qreal shapeSizeJitter READ shapeSizeJitter WRITE setShapeSizeJitter NOTIFY settingsChanged)
     Q_PROPERTY(qreal shapeMinimumSize READ shapeMinimumSize WRITE setShapeMinimumSize NOTIFY settingsChanged)
@@ -289,6 +290,8 @@ public:
     qreal valueJitter() const;
     void setValueJitter(qreal value);
     QVariantMap shapeJitter() const;
+    QVariantMap transferJitter() const;
+    Q_INVOKABLE bool setTransferJitter(QVariantMap data);
     Q_INVOKABLE bool setShapeJitter(QVariantMap data);
     bool shapeJitterEnabled() const;
     void setShapeJitterEnabled(bool value);
@@ -397,7 +400,7 @@ private:
     bool m_cursorSimple=false,m_cursorComposite=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation,direction,matrix,fade;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,transfer,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation,direction,matrix,fade;};
     static QJsonObject presetRow(const Preset &preset,int &version);
     static QJsonObject exportPreset(const Preset &preset,bool includeSource,const QString &id);
     QVariantMap tangentControl(const QString &target) const;

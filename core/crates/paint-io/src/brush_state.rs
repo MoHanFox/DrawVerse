@@ -183,6 +183,12 @@ struct Row {
         deserialize_with = "crate::brush_fade::present"
     )]
     fade_dynamics: Option<crate::brush_fade::FadeParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_transfer_jitter::present"
+    )]
+    transfer_jitter: Option<crate::brush_transfer_jitter::TransferParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -250,7 +256,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=36) {
+    if !matches!(state.version, 1..=37) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -417,6 +423,11 @@ fn decode_inner(
         if row.fade_dynamics.is_some() && state.version < 34 {
             return Err(Error::Unsupported("fade dynamics requires state34".into()));
         }
+        if row.transfer_jitter.is_some() && state.version < 37 {
+            return Err(Error::Unsupported(
+                "transfer jitter requires state37".into(),
+            ));
+        }
         let dual = if let Some(d) = row.dual_brush {
             if d.has_color() && state.version < 16 {
                 return Err(Error::Unsupported("dual-color requires state16".into()));
@@ -539,6 +550,7 @@ fn decode_inner(
         dynamics.direction = row.direction_dynamics.map(|p| p.core()).unwrap_or_default();
         dynamics.matrix = row.source_matrix.map(|p| p.core()).unwrap_or_default();
         dynamics.fade = row.fade_dynamics.map(|p| p.core()).unwrap_or_default();
+        dynamics.transfer_jitter = row.transfer_jitter.map(|p| p.core()).unwrap_or_default();
         entries.push((
             row.id,
             row.name,
@@ -676,6 +688,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         } else {
             None
         };
+        let transfer_jitter = if !s.dynamics.transfer_jitter.is_default() {
+            version = version.max(37);
+            Some(crate::brush_transfer_jitter::TransferParameters::from_core(
+                s.dynamics.transfer_jitter,
+            ))
+        } else {
+            None
+        };
         if [&s.dynamics, s.dual.secondary().dynamics()]
             .iter()
             .any(|d| {
@@ -772,6 +792,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
         pressure.tip = Default::default();
         pressure.scatter = Default::default();
         pressure.shape_jitter = Default::default();
+        pressure.transfer_jitter = Default::default();
         pressure.color = Default::default();
         let pressure_dynamics = if pressure != paint_core::BrushDynamics::default() {
             version = version.max(
@@ -838,6 +859,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             direction_dynamics,
             source_matrix,
             fade_dynamics,
+            transfer_jitter,
         });
     }
     if organization.is_some() {

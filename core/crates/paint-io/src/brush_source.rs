@@ -57,7 +57,7 @@ impl SourceInfo {
         if !matches!(self.version, 1..=3)
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1..=12)
+            || !matches!(self.converter_version, 1..=13)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -125,7 +125,9 @@ impl SourceInfo {
                 && self.converter_version < 11
                 && self.baseline.fade_dynamics.is_none())
             || (self.converter_version < 10 && self.baseline.fade_dynamics.is_some())
-            || (self.converter_version >= 12
+            || (self.converter_version >= 13 && self.baseline.transfer_jitter.is_none())
+            || (self.converter_version < 13 && self.baseline.transfer_jitter.is_some())
+            || (self.converter_version == 12
                 && !self
                     .baseline
                     .scatter_dynamics
@@ -365,6 +367,9 @@ impl SourceArchive {
         if preset.converter_version >= 10 {
             non_pressure.fade = Default::default();
         }
+        if preset.converter_version >= 13 {
+            non_pressure.transfer_jitter = Default::default();
+        }
         if non_pressure != paint_core::BrushDynamics::default()
             || (preset.converter_version < 3
                 && settings.dynamics != paint_core::BrushDynamics::default())
@@ -444,6 +449,13 @@ impl SourceArchive {
                     && !settings.dynamics.fade.is_default())
                 .then(|| {
                     crate::brush_fade::FadeParameters::from_core(settings.dynamics.fade.clone())
+                }),
+                transfer_jitter: (preset.converter_version >= 13
+                    && !settings.dynamics.transfer_jitter.is_default())
+                .then(|| {
+                    crate::brush_transfer_jitter::TransferParameters::from_core(
+                        settings.dynamics.transfer_jitter,
+                    )
                 }),
                 diameter: settings.diameter,
                 spacing: settings.spacing,

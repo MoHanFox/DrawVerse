@@ -75,6 +75,8 @@ pub use brush_color_dynamics::ColorDynamics;
 mod brush_random;
 mod brush_shape_jitter;
 pub use brush_shape_jitter::ShapeJitter;
+mod brush_transfer_jitter;
+pub use brush_transfer_jitter::{TransferJitter, TransferSample};
 mod brush_scatter;
 pub use brush_scatter::{ScatterControl, ScatterControlSource, ScatterDynamics};
 pub use document::{

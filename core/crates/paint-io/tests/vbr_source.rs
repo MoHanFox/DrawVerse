@@ -122,6 +122,7 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
                     .map(str::to_owned),
                 source_resource: Some(p.source_id().into()),
                 parameters: Parameters {
+                    transfer_jitter: None,
                     airbrush: None,
                     speed_dynamics: None,
                     tangent_dynamics: None,

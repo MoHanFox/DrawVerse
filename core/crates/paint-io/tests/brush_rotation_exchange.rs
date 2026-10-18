@@ -39,6 +39,7 @@ fn package() -> Package {
             behavior_version: 23,
             required_capabilities: vec!["procedural-tip".into(), "rotation-dynamics".into()],
             parameters: Parameters {
+                transfer_jitter: None,
                 source_matrix: None,
                 fade_dynamics: None,
                 diameter: 12.,

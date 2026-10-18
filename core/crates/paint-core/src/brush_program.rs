@@ -101,6 +101,7 @@ pub struct BrushProgram {
     tip_dynamics: TipDynamics,
     pub(crate) scatter: crate::ScatterDynamics,
     pub(crate) shape_jitter: crate::ShapeJitter,
+    pub(crate) transfer_jitter: crate::TransferJitter,
     pub(crate) color: crate::ColorDynamics,
     pub(crate) texture: Option<crate::brush_texture::CompiledTexture>,
     pub(crate) dual: Option<crate::brush_dual::CompiledDual>,
@@ -162,20 +163,39 @@ pub(crate) struct MaskDab<'a> {
     cosine: f64,
     rx: f64,
     ry: f64,
+    inv_rx2: f64,
+    inv_ry2: f64,
+    inner_x: f64,
+    inner_y: f64,
     lod: (usize, usize, f32),
 }
 impl MaskDab<'_> {
     #[inline]
     pub(crate) fn coverage(&self, dx: f64, dy: f64) -> f32 {
-        let x = dx * self.cosine + dy * self.sine;
-        let y = -dx * self.sine + dy * self.cosine;
-        let edge = (self.rx + 0.5 - x.abs()).clamp(0., 1.).min(self.rx * 2.)
-            * (self.ry + 0.5 - y.abs()).clamp(0., 1.).min(self.ry * 2.);
+        let (x, y) = if self.sine == 0. && self.cosine == 1. {
+            (dx, dy)
+        } else {
+            (
+                dx * self.cosine + dy * self.sine,
+                -dx * self.sine + dy * self.cosine,
+            )
+        };
+        let edge_x = if x.abs() < self.inner_x {
+            1.
+        } else {
+            (self.rx + 0.5 - x.abs()).clamp(0., 1.).min(self.rx * 2.)
+        };
+        let edge_y = if y.abs() < self.inner_y {
+            1.
+        } else {
+            (self.ry + 0.5 - y.abs()).clamp(0., 1.).min(self.ry * 2.)
+        };
+        let edge = edge_x * edge_y;
         if edge == 0. {
             return 0.;
         }
         self.mask
-            .sample((x / self.rx + 1.) * 0.5, (y / self.ry + 1.) * 0.5, self.lod)
+            .sample(x * self.inv_rx2 + 0.5, y * self.inv_ry2 + 0.5, self.lod)
             * edge as f32
     }
 }
@@ -308,6 +328,7 @@ impl BrushProgram {
             tip_dynamics: definition.dynamics.tip,
             scatter: definition.dynamics.scatter,
             shape_jitter: definition.dynamics.shape_jitter,
+            transfer_jitter: definition.dynamics.transfer_jitter,
             color: definition.dynamics.color,
             texture: definition.texture.compile(),
             dual,
@@ -564,6 +585,10 @@ impl BrushProgram {
             cosine: geometry.cosine,
             rx,
             ry,
+            inv_rx2: 0.5 / rx,
+            inv_ry2: 0.5 / ry,
+            inner_x: (rx - 0.5).max(0.),
+            inner_y: (ry - 0.5).max(0.),
             lod: mask.lod(radius * 2. * f64::from(geometry.roundness)),
         })
     }

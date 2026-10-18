@@ -49,6 +49,7 @@ fn preset(
     (shape_jitter, device): (Option<bool>, Option<(bool, i32, bool)>),
     texture: TextureFixture<'_>,
     dual_sample: bool,
+    transfer: (f64, f64, f64),
 ) -> Vec<u8> {
     let mut shape = vec![
         ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
@@ -150,8 +151,12 @@ fn preset(
                                     b"#Prc",
                                     if key == "szVr" && shape_jitter.is_some() {
                                         60.
+                                    } else if key == "szVr" {
+                                        transfer.0
+                                    } else if key == "prVr" {
+                                        transfer.1
                                     } else {
-                                        0.
+                                        transfer.2
                                     },
                                 ),
                             ),
@@ -404,6 +409,43 @@ pub fn fixture_with_dual_sampled() -> Vec<u8> {
         (None, None),
         None,
         true,
+        8,
+        0,
+        (0., 0., 0.),
+    )
+}
+#[allow(dead_code)]
+pub fn fixture_with_16bit_sampled_tip(compression: u8) -> Vec<u8> {
+    fixture_inner_with_dual(
+        (6, 2),
+        false,
+        Some(100.),
+        false,
+        None,
+        None,
+        (None, None),
+        None,
+        false,
+        16,
+        compression,
+        (0., 0., 0.),
+    )
+}
+#[allow(dead_code)]
+pub fn fixture_with_transfer_jitter() -> Vec<u8> {
+    fixture_inner_with_dual(
+        (6, 2),
+        false,
+        Some(100.),
+        true,
+        None,
+        None,
+        (None, None),
+        None,
+        false,
+        8,
+        0,
+        (60., 50., 25.),
     )
 }
 #[allow(dead_code)]
@@ -568,7 +610,18 @@ fn fixture_inner(
     texture: TextureFixture<'_>,
 ) -> Vec<u8> {
     fixture_inner_with_dual(
-        version, bad, opacity, pressure, scatter, color, dynamics, texture, false,
+        version,
+        bad,
+        opacity,
+        pressure,
+        scatter,
+        color,
+        dynamics,
+        texture,
+        false,
+        8,
+        0,
+        (0., 0., 0.),
     )
 }
 #[allow(clippy::too_many_arguments)]
@@ -582,6 +635,9 @@ fn fixture_inner_with_dual(
     dynamics: (Option<bool>, Option<(bool, i32, bool)>),
     texture: TextureFixture<'_>,
     dual_sample: bool,
+    sample_depth: u16,
+    sample_compression: u8,
+    transfer: (f64, f64, f64),
 ) -> Vec<u8> {
     let mut bytes = version.to_be_bytes().to_vec();
     bytes.extend(sub.to_be_bytes());
@@ -596,12 +652,31 @@ fn fixture_inner_with_dual(
         dynamics,
         texture,
         dual_sample,
+        transfer,
     ));
     list.extend(preset(
-        false, false, opacity, pressure, scatter, color, dynamics, None, false,
+        false,
+        false,
+        opacity,
+        pressure,
+        scatter,
+        color,
+        dynamics,
+        None,
+        false,
+        (0., 0., 0.),
     ));
     list.extend(preset(
-        true, bad, opacity, pressure, scatter, color, dynamics, None, false,
+        true,
+        bad,
+        opacity,
+        pressure,
+        scatter,
+        color,
+        dynamics,
+        None,
+        false,
+        (0., 0., 0.),
     ));
     let mut descriptor = 16u32.to_be_bytes().to_vec();
     descriptor.extend(object("null", vec![("Brsh", typed(b"VlLs", &list))]));
@@ -613,15 +688,34 @@ fn fixture_inner_with_dual(
         for bound in [0i32, 0, 8, 8] {
             record.extend(bound.to_be_bytes());
         }
-        record.extend(8u16.to_be_bytes());
-        record.push(0);
+        record.extend(sample_depth.to_be_bytes());
+        record.push(sample_compression);
         let mut coverage = vec![255; 64];
         for y in 3..5 {
             for x in 3..5 {
                 coverage[y * 8 + x] = 0;
             }
         }
-        record.extend(coverage);
+        let raw = if sample_depth == 16 {
+            coverage
+                .iter()
+                .flat_map(|value| (if *value == 0 { 0u16 } else { 65535u16 }).to_be_bytes())
+                .collect::<Vec<_>>()
+        } else {
+            coverage
+        };
+        if sample_compression == 0 {
+            record.extend(raw);
+        } else {
+            let row_bytes = 8 * if sample_depth == 16 { 2 } else { 1 };
+            for _ in 0..8 {
+                record.extend(((row_bytes + 1) as u16).to_be_bytes());
+            }
+            for y in 0..8 {
+                record.push((row_bytes - 1) as u8);
+                record.extend(&raw[y * row_bytes..(y + 1) * row_bytes]);
+            }
+        }
         let mut samples = (record.len() as u32).to_be_bytes().to_vec();
         samples.extend(&record);
         samples.resize(samples.len() + (4 - record.len() % 4) % 4, 0);

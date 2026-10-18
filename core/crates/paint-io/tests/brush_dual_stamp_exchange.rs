@@ -50,6 +50,7 @@ fn package() -> Package {
                 "dual-color-stamp".into(),
             ],
             parameters: Parameters {
+                transfer_jitter: None,
                 airbrush: None,
                 speed_dynamics: None,
                 tangent_dynamics: None,

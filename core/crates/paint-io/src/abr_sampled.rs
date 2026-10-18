@@ -83,6 +83,19 @@ fn row(bytes: &[u8], width: usize) -> Result<Vec<u8>> {
     }
     Ok(output)
 }
+fn quantize(raw: &[u8], depth: u16) -> Result<Vec<u8>> {
+    match depth {
+        8 => Ok(raw.to_vec()),
+        16 => Ok(raw
+            .chunks_exact(2)
+            .map(|pair| {
+                let value = u16::from_be_bytes([pair[0], pair[1]]);
+                ((u32::from(value) * 255 + 32767) / 65535) as u8
+            })
+            .collect()),
+        _ => Err(Error::Unsupported("ABR sampled bit depth".into())),
+    }
+}
 fn mask(
     record: &mut Reader<'_>,
     bounds: [i32; 4],
@@ -98,9 +111,12 @@ fn mask(
     {
         return Err(Error::Limit("ABR tip dimensions"));
     }
-    if record.u16()? != 8 {
-        return Err(Error::Unsupported("ABR sampled bit depth".into()));
-    }
+    let depth = record.u16()?;
+    let bytes_per_sample = match depth {
+        8 => 1,
+        16 => 2,
+        _ => return Err(Error::Unsupported("ABR sampled bit depth".into())),
+    };
     let (width, height) = (width as usize, height as usize);
     let (mut w, mut h) = (width, height);
     let mut cost = 0;
@@ -115,22 +131,33 @@ fn mask(
     if cost > MAX_CATALOG_MASK_BYTES - *resident {
         return Err(Error::Limit("ABR decoded tip budget"));
     }
-    let pixels = match record.u8()? {
-        0 => record.take(width * height)?.to_vec(),
+    let sample_count = width
+        .checked_mul(height)
+        .ok_or(Error::Limit("ABR sample count"))?;
+    let byte_count = sample_count
+        .checked_mul(bytes_per_sample)
+        .ok_or(Error::Limit("ABR sample bytes"))?;
+    let compression = record.u8()?;
+    let raw = match compression {
+        0 => record.take(byte_count)?.to_vec(),
         1 => {
             let mut lengths = Vec::with_capacity(height);
             for _ in 0..height {
                 lengths.push(record.u16()? as usize);
             }
-            let mut pixels = Vec::with_capacity(width * height);
+            let mut pixels = Vec::with_capacity(byte_count);
             for length in lengths {
                 check(token)?;
-                pixels.extend(row(record.take(length)?, width)?);
+                pixels.extend(row(record.take(length)?, width * bytes_per_sample)?);
             }
             pixels
         }
         _ => return Err(Error::Unsupported("ABR sample compression".into())),
     };
+    if raw.len() != byte_count {
+        return Err(Error::Invalid("ABR sampled byte count"));
+    }
+    let pixels = quantize(&raw, depth)?;
     let mask = Arc::new(BrushMask::new(width as u32, height as u32, pixels)?);
     *resident += mask.resident_bytes();
     Ok(mask)

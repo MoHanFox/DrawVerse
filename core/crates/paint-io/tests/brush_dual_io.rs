@@ -109,6 +109,7 @@ fn large_dual_catalog_cannot_emit_a_state_the_reader_rejects_for_size() {
         tip: TipDynamics::new(AngleControl::PenRotation, true, 0.12345678).unwrap(),
         scatter: ScatterDynamics::new(false, 10., true, 16, 1., u64::MAX).unwrap(),
         shape_jitter: ShapeJitter::new(false, 1., 1., 1., 1., 1., u64::MAX).unwrap(),
+        transfer_jitter: Default::default(),
         color: ColorDynamics::new(false, 1., 1., 1., 1., true, u64::MAX).unwrap(),
         speed: Default::default(),
         tangent: Default::default(),

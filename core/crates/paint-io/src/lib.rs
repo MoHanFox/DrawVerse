@@ -28,6 +28,7 @@ pub mod brush_taper;
 pub mod brush_texture;
 pub mod brush_tilt;
 pub mod brush_tip_dynamics;
+pub mod brush_transfer_jitter;
 pub mod brush_wet;
 mod ora;
 pub mod ps_descriptor;

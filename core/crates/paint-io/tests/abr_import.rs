@@ -319,6 +319,38 @@ fn sixteen_bit_texture_patterns_decode_and_bind_as_eight_bit_coverage() {
 }
 
 #[test]
+fn sixteen_bit_sampled_tips_decode_raw_and_rle_as_eight_bit_coverage() {
+    let token = CancellationToken::default();
+    let expected = {
+        let mut coverage = [255u8; 64];
+        for y in 3..5 {
+            for x in 3..5 {
+                coverage[y * 8 + x] = 0;
+            }
+        }
+        coverage
+    };
+    for compression in [0, 1] {
+        let original = Arc::new(support::abr_fixture::fixture_with_16bit_sampled_tip(
+            compression,
+        ));
+        let parsed = paint_io::abr_sampled::decode_sectioned(&original, &token).unwrap();
+        assert_eq!(parsed.tips[0].mask.coverage(), expected);
+    }
+}
+
+#[test]
+fn transfer_jitter_maps_flow_and_opacity_without_abr_seed() {
+    let token = CancellationToken::default();
+    let original = Arc::new(support::abr_fixture::fixture_with_transfer_jitter());
+    let batch = ImportBatch::decode(original, MAX_CATALOG_MASK_BYTES, &token).unwrap();
+    let jitter = batch.presets()[0].settings().dynamics.transfer_jitter;
+    assert_eq!(jitter.size(), 0.);
+    assert!((jitter.flow() - 0.5).abs() < 1e-6);
+    assert!((jitter.opacity() - 0.25).abs() < 1e-6);
+}
+
+#[test]
 fn pressure_handoff_and_source_reset_preserve_image_and_program_across_two_strokes() {
     let token = CancellationToken::default();
     let original = Arc::new(support::abr_fixture::fixture_with_pressure(6, 2, false));

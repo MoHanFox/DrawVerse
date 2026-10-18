@@ -112,7 +112,7 @@ fn section_and_record_lengths_never_cross_declared_bounds() {
     let sample_offset = 4 + 12 + b"uninterpreted descriptor".len();
     let mut unsupported = bytes.clone();
     let depth = sample_offset + 12 + 4 + 301 + 16;
-    unsupported[depth..depth + 2].copy_from_slice(&16u16.to_be_bytes());
+    unsupported[depth..depth + 2].copy_from_slice(&32u16.to_be_bytes());
     assert!(decode_sectioned(&unsupported, &token).is_err());
     let mut unsupported = bytes.clone();
     unsupported[2..4].copy_from_slice(&3u16.to_be_bytes());

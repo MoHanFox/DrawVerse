@@ -54,6 +54,12 @@ pub struct Parameters {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_transfer_jitter::present"
+    )]
+    pub transfer_jitter: Option<crate::brush_transfer_jitter::TransferParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "crate::brush_color_dynamics::present"
     )]
     pub color_dynamics: Option<crate::brush_color_dynamics::ColorParameters>,
@@ -130,6 +136,9 @@ impl Parameters {
         }
         if let Some(shape) = self.shape_jitter {
             dynamics.shape_jitter = shape.core();
+        }
+        if let Some(jitter) = &self.transfer_jitter {
+            dynamics.transfer_jitter = jitter.core();
         }
         if let Some(color) = self.color_dynamics {
             dynamics.color = color.core();
@@ -347,6 +356,7 @@ impl Package {
                 p.core().tip != paint_core::TipDynamics::default()
                     || p.core().scatter != paint_core::ScatterDynamics::default()
                     || p.core().shape_jitter != paint_core::ShapeJitter::default()
+                    || p.core().transfer_jitter != paint_core::TransferJitter::default()
                     || p.core().color != paint_core::ColorDynamics::default()
             }) {
                 return Err(Error::Unsupported(
@@ -375,6 +385,7 @@ impl Package {
             let direction = b.parameters.direction_dynamics.is_some();
             let matrix = b.parameters.source_matrix.is_some();
             let fade = b.parameters.fade_dynamics.is_some();
+            let transfer = b.parameters.transfer_jitter.is_some();
             let textured = b.texture.is_some();
             let dual = b.dual_brush.is_some();
             if let Some(d) = &b.dual_brush {
@@ -403,7 +414,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if dual_extended {
+                != if transfer {
+                    29
+                } else if dual_extended {
                     28
                 } else if scatter_controls {
                     27
@@ -467,7 +480,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 31
+            if b.required_capabilities.len() > 32
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -499,6 +512,7 @@ impl Package {
                             | "fade-dynamics"
                             | "scatter-controls"
                             | "dual-cover-extended"
+                            | "transfer-jitter"
                             | "wet-mix"
                             | "stroke-taper"
                             | "wet-dual-color"
@@ -579,6 +593,11 @@ impl Package {
                         .iter()
                         .any(|c| c == "dual-cover-extended")
                 || (dual_extended && b.engine_profile != "drawverse.brush")
+                || transfer
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "transfer-jitter")
+                || (transfer && b.engine_profile != "drawverse.brush")
                 || (b.has_dual_sizing()
                     && (b.engine_profile != "drawverse.brush"
                         || !b

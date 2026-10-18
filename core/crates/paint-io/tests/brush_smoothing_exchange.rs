@@ -19,6 +19,7 @@ fn package(smoothing: BrushSmoothing) -> Package {
             behavior_version: 11,
             required_capabilities: vec!["procedural-tip".into(), "path-smoothing".into()],
             parameters: Parameters {
+                transfer_jitter: None,
                 airbrush: None,
                 speed_dynamics: None,
                 tangent_dynamics: None,

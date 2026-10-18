@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 43;
+pub const MAX_EXECUTABLE_MINOR: u32 = 44;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -608,6 +608,15 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             "extended dual blend modes require VBR1.43".into(),
         ));
     }
+    if manifest.version.minor < 44
+        && brushes
+            .iter()
+            .any(|b| b.parameters.transfer_jitter.is_some())
+    {
+        return Err(Error::Unsupported(
+            "transfer jitter requires VBR1.44".into(),
+        ));
+    }
     if manifest.version.minor < 5 && brushes.iter().any(|b| b.parameters.tip_dynamics.is_some()) {
         return Err(Error::Unsupported("tip dynamics require VBR1.5".into()));
     }
@@ -785,6 +794,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 || b.parameters.direction_dynamics.is_some()
                 || b.parameters.source_matrix.is_some()
                 || b.parameters.fade_dynamics.is_some()
+                || b.parameters.transfer_jitter.is_some()
                 || b.texture.is_some()
                 || b.dual_brush.is_some()
                 || b.smoothing.is_some()
@@ -817,6 +827,17 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.parameters.transfer_jitter.is_some())
+                || bundle
+                    .sources
+                    .iter()
+                    .any(|source| source.converter_version() > 12)
+            {
+                44
+            } else if bundle
                 .package
                 .brushes
                 .iter()

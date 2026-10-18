@@ -44,6 +44,7 @@ ColumnLayout {
         else data[key]=value
         const ok=library.setDualBrush(data);root.wetError=ok?"":"第二笔刷参数无效，未应用更改。";return ok
     }
+    function setTransferJitterField(key,value){let data=Object.assign({},library.transferJitter);data[key]=value/100;return library.setTransferJitter(data)}
     function dualScatterControl(field){return root.dualModule("scatterDynamics")[field]||{source:"off",minimum:0}}
     function setDualScatterControl(field,source){let data=Object.assign({},root.dual);let scatter=Object.assign({},root.dualModule("scatterDynamics"));if(source==="off")delete scatter[field];else{let old=scatter[field]||{};scatter[field]={source:source,minimum:old.minimum||0};if(source==="fade")scatter[field].fadeSteps=old.fadeSteps||25}data["scatterDynamics"]=scatter;return root.library.setDualBrush(data)}
     function setDualScatterControlField(field,key,value){let data=Object.assign({},root.dual);let scatter=Object.assign({},root.dualModule("scatterDynamics"));let control=Object.assign({},scatter[field]||{source:"off",minimum:0});control[key]=value;scatter[field]=control;data["scatterDynamics"]=scatter;return root.library.setDualBrush(data)}
@@ -297,6 +298,10 @@ ColumnLayout {
                     visible:root.category===6;Layout.fillWidth:true;spacing:5
                     TipField {title:"不透明度";field:"opacity";from:0;to:100;factor:100;unit:"%";help:"绘画与擦除的整笔不透明度上限；涂抹仍使用强度语义。";sliderName:"settingsBrushOpacity"}
                     TipField {title:"流量";field:"flow";from:0;to:100;factor:100;unit:"%";help:"每次印章的沉积强度；重叠会逐步累积。"}
+                    Label {text:"随机传递（DrawVerse 每笔稳定序列）";color:Theme.text;font.pixelSize:10}
+                    TransferField {title:"大小抖动";field:"size";help:"每个实际印章随机缩小的最大比例；0% 关闭。"}
+                    TransferField {title:"流量抖动";field:"flow";help:"每个实际印章随机降低流量的最大比例；0% 关闭。"}
+                    TransferField {title:"不透明度抖动";field:"opacity";help:"每个实际印章随机降低整笔不透明度上限的最大比例；0% 关闭。"}
                     Label {text:"动态来源";color:Theme.text;font.pixelSize:10}
                     RowLayout {Layout.fillWidth:true
                         Label {text:"尺寸";color:Theme.muted;font.pixelSize:9;Layout.preferredWidth:30}
@@ -543,6 +548,19 @@ ColumnLayout {
             Label {text:control.unit;color:Theme.muted;font.pixelSize:9}
         }
         CompactSlider {objectName:control.sliderName;Layout.fillWidth:true;from:control.from;to:control.to;value:root.library[control.field]*control.factor;onMoved:root.library[control.field]=value/control.factor;tooltip:control.help}
+    }
+    component TransferField: ColumnLayout {
+        property string title
+        property string field
+        property string help:""
+        id:transferControl
+        Layout.fillWidth:true;spacing:2
+        RowLayout {
+            Label {text:transferControl.title;color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
+            CompactSpinBox {objectName:"settingsTransfer"+transferControl.field+"Input";implicitWidth:66;implicitHeight:20;editable:true;from:0;to:100;value:Math.round(root.library.transferJitter[transferControl.field]*100);onValueModified:root.setTransferJitterField(transferControl.field,value)}
+            Label {text:"%";color:Theme.muted;font.pixelSize:9}
+        }
+        CompactSlider {objectName:"settingsTransfer"+transferControl.field;Layout.fillWidth:true;from:0;to:100;value:root.library.transferJitter[transferControl.field]*100;onMoved:root.setTransferJitterField(transferControl.field,value);tooltip:transferControl.help}
     }
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
     FileDialog {id:tipDialog;title:"导入图片笔尖";nameFilters:["PNG 图片 (*.png)"];onAccepted:PaintClient.importBrushTip(selectedFile,tipInterpretation.currentIndex)}

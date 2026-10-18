@@ -1516,6 +1516,10 @@ private slots:
         auto wet=library.wetMix();wet["enabled"]=true;wet["dualColor"]="independent-carriers-v1";QVERIFY(library.setWetMix(wet));
         BrushLibrary restored;QVERIFY(restored.restore(library.snapshot()));QVERIFY(!restored.dualBrush().contains("color"));QVERIFY(!restored.wetMix().contains("dualColor"));
     }
+    void transferJitterStateRoundtripKeepsThreeChannels() {
+        BrushLibrary library;auto state=QJsonDocument::fromJson(library.snapshot()).object();state["version"]=37;auto rows=state.value("presets").toArray();auto row=rows[0].toObject();row["transferJitter"]=QJsonObject{{"model","transfer-jitter-v1"},{"size",.6},{"flow",.5},{"opacity",.25}};rows[0]=row;state["presets"]=rows;
+        BrushLibrary restored;QVERIFY(restored.restore(QJsonDocument(state).toJson()));const auto jitter=restored.tipSettings().value("transferJitter").toMap();QCOMPARE(jitter.value("size").toDouble(),.6);QCOMPARE(jitter.value("flow").toDouble(),.5);QCOMPARE(jitter.value("opacity").toDouble(),.25);QCOMPARE(QJsonDocument::fromJson(restored.snapshot()).object().value("version").toInt(),37);
+    }
     void wetSettingsPageManualInkAndPreviewStaySeparateFromCanvas() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
         for(const auto &value:workspace.leftGroups()+workspace.rightGroups()){const auto group=value.toMap();if(group.value("panels").toStringList().contains("brush-settings"))workspace.setActive(group.value("id").toString(),"brush-settings");}

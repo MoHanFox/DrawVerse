@@ -58,6 +58,7 @@ fn package(s: &BrushSettings) -> Package {
             dual_brush: Some(DualParameters::from_core(&s.dual).unwrap()),
             source_resource: None,
             parameters: Parameters {
+                transfer_jitter: None,
                 airbrush: None,
                 speed_dynamics: None,
                 tangent_dynamics: None,

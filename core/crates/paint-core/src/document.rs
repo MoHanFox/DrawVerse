@@ -459,6 +459,7 @@ struct Stroke {
     wet_primary_field: BTreeMap<TileCoord, Arc<Tile>>,
     wet_secondary_field: BTreeMap<TileCoord, Arc<Tile>>,
     shape_sample: crate::brush_shape_jitter::ShapeSample,
+    transfer_sample: crate::TransferSample,
     color_sample: Pixel,
     wet: Option<wet::WetStroke>,
     distance_to_next: f64,
@@ -1315,6 +1316,7 @@ impl Document {
         let random_serial = if program.write_blend == crate::BlendMode::Dissolve
             || program.scatter.enabled()
             || program.shape_jitter.active()
+            || program.transfer_jitter.active()
             || program.color.active()
             || program.dual.as_ref().is_some_and(|d| d.random_active())
         {
@@ -1374,6 +1376,7 @@ impl Document {
             wet_primary_field: BTreeMap::new(),
             wet_secondary_field: BTreeMap::new(),
             shape_sample: initial_shape,
+            transfer_sample: crate::TransferSample::IDENTITY,
             color_sample: brush.color,
             wet,
             distance_to_next: brush.step(),
@@ -2008,6 +2011,11 @@ impl Document {
             .dual_index
             .checked_add(1)
             .ok_or(Error::ResourceLimit("secondary dab serial exhausted"))?;
+        stroke.transfer_sample =
+            stroke
+                .program
+                .transfer_jitter
+                .sample(stroke.random_stroke, stroke.dual_index, 0);
         let speed_size = stroke
             .program
             .factor_all(
@@ -2020,6 +2028,7 @@ impl Document {
                 stroke.fade_index,
             )
             .0;
+        let transfer = stroke.transfer_sample;
         let plan = dual
             .dab(
                 point,
@@ -2035,8 +2044,9 @@ impl Document {
                         } else {
                             1.
                         },
-                ) * f64::from(speed_size),
-                f64::from(speed_size),
+                ) * f64::from(speed_size)
+                    * f64::from(transfer.size),
+                f64::from(speed_size) * f64::from(transfer.size),
             )
             .scaled(stroke.taper_factors.diameter);
         #[cfg(test)]
@@ -2083,7 +2093,7 @@ impl Document {
                                 child,
                                 x as f64 + 0.5 + ox as f64,
                                 y as f64 + 0.5 + oy as f64,
-                            );
+                            ) * transfer.flow;
                             if amount == 0. {
                                 continue;
                             }
@@ -2150,6 +2160,7 @@ impl Document {
         );
         if plan.is_some()
             || stroke.program.shape_jitter.active()
+            || stroke.program.transfer_jitter.active()
             || stroke.program.color.active()
             || stroke
                 .program
@@ -2179,6 +2190,11 @@ impl Document {
                         .program
                         .shape_jitter
                         .sample(stroke.random_stroke, logical, index);
+                stroke.transfer_sample =
+                    stroke
+                        .program
+                        .transfer_jitter
+                        .sample(stroke.random_stroke, logical, index);
                 if stroke.first_dab {
                     stroke.last_carrier = sample;
                 }
@@ -2192,6 +2208,11 @@ impl Document {
                 stroke
                     .program
                     .shape_jitter
+                    .sample(stroke.random_stroke, logical, 0);
+            stroke.transfer_sample =
+                stroke
+                    .program
+                    .transfer_jitter
                     .sample(stroke.random_stroke, logical, 0);
             if stroke.wet.is_none() {
                 stroke.color_sample = stroke.program.color.sample(
@@ -2286,9 +2307,12 @@ impl Document {
             BrushProgram::direction_unit(stroke.direction),
             stroke.fade_index,
         );
+        let transfer = stroke.transfer_sample;
+        let opacity_factor = speed_opacity * transfer.opacity;
         let base_radius = f64::from(
             stroke.brush.radius
                 * stroke.shape_sample.size
+                * transfer.size
                 * if stroke.program.tip.pressure_size {
                     stroke.program.size_pressure(point.pressure)
                 } else {
@@ -2299,10 +2323,10 @@ impl Document {
         let pressure_opacity = stroke
             .program
             .opacity_pressure(point.pressure)
-            .map(|p| p * stroke.taper_factors.opacity * speed_opacity)
+            .map(|p| p * stroke.taper_factors.opacity * opacity_factor)
             .or_else(|| {
-                (stroke.taper.is_some() || speed_opacity != 1.)
-                    .then_some(stroke.taper_factors.opacity * speed_opacity)
+                (stroke.taper.is_some() || opacity_factor != 1.)
+                    .then_some(stroke.taper_factors.opacity * opacity_factor)
             });
         let paper_texture = TEXTURED
             && stroke
@@ -2342,7 +2366,8 @@ impl Document {
             } else {
                 1.
             }
-            * speed_flow;
+            * speed_flow
+            * transfer.flow;
         if radius == 0. {
             if let Some(wet) = &mut stroke.wet {
                 wet.carrier.reset_path()?;

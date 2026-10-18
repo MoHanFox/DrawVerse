@@ -7,6 +7,7 @@ import "."
 
 ColumnLayout {
     id:root
+    property bool draggingBrush:false
     property var canvasView
     function finishSearch(clear) {
         if(clear) search.clear()
@@ -95,7 +96,7 @@ ColumnLayout {
     RowLayout {Icon {name:"folder";width:14;height:14} Label {text:"基础与自定义画笔";font.pixelSize:9;color:Theme.text}}
     ListView {
         objectName:"brushPresetList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:2
-        id:presetList;model:root.groupedModel
+        id:presetList;interactive:!root.draggingBrush;model:root.groupedModel
         delegate:Rectangle {
             required property var modelData
             objectName:modelData.kind==="group"?"brushGroup:"+modelData.id:"brushPreset:"+modelData.id
@@ -110,12 +111,14 @@ ColumnLayout {
             Text {visible:modelData.kind!=="group";x:6+modelData.depth*14;y:40;width:parent.width-x-6;textFormat:Text.PlainText;text:root.presetById(modelData.id).name||"";color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
             MouseArea {
                 anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton
+                preventStealing:true
                 property point origin
                 property bool dragging:false
                 property bool suppressClick:false
-                onPressed:function(mouse){origin=Qt.point(mouse.x,mouse.y);dragging=false;suppressClick=false}
-                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;PaintClient.beginBrushDrag(modelData.kind+":"+modelData.id)}}
-                onReleased:function(){dragging=false}
+                onPressed:function(mouse){origin=Qt.point(mouse.x,mouse.y);dragging=false;suppressClick=false;root.draggingBrush=false}
+                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;root.draggingBrush=true;PaintClient.beginBrushDrag(modelData.kind+":"+modelData.id)}}
+                onReleased:function(){dragging=false;root.draggingBrush=false}
+                onCanceled:function(){dragging=false;root.draggingBrush=false}
                 onClicked:function(mouse) {
                     if(suppressClick){suppressClick=false;return}
                     if(mouse.button===Qt.RightButton) {

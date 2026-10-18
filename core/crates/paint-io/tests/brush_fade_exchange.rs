@@ -35,6 +35,7 @@ fn package() -> Package {
             behavior_version: 26,
             required_capabilities: vec!["procedural-tip".into(), "fade-dynamics".into()],
             parameters: Parameters {
+                transfer_jitter: None,
                 fade_dynamics: Some(paint_io::brush_fade::FadeParameters::from_core(
                     settings.dynamics.fade.clone(),
                 )),

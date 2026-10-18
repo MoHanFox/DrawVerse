@@ -44,6 +44,7 @@ fn state9_saves_shape_separately_and_old_pressure_payload_rejects_it() {
                 dual_brush: None,
                 source_resource: None,
                 parameters: Parameters {
+                    transfer_jitter: None,
                     airbrush: None,
                     speed_dynamics: None,
                     tangent_dynamics: None,

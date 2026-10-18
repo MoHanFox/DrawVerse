@@ -181,6 +181,7 @@ pub struct BrushDynamics {
     pub tip: TipDynamics,
     pub scatter: crate::ScatterDynamics,
     pub shape_jitter: crate::ShapeJitter,
+    pub transfer_jitter: crate::TransferJitter,
     pub color: crate::ColorDynamics,
     pub speed: SpeedDynamics,
     pub tangent: TangentDynamics,
@@ -199,6 +200,7 @@ impl BrushDynamics {
             && self.tip == TipDynamics::default()
             && self.scatter == crate::ScatterDynamics::default()
             && self.shape_jitter == crate::ShapeJitter::default()
+            && self.transfer_jitter == crate::TransferJitter::default()
             && self.color == crate::ColorDynamics::default()
             && self.speed.is_default()
             && self.tangent.is_default()

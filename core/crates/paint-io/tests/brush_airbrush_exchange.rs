@@ -34,6 +34,7 @@ fn package() -> Package {
             behavior_version: 18,
             required_capabilities: vec!["procedural-tip".into(), "airbrush".into()],
             parameters: Parameters {
+                transfer_jitter: None,
                 source_matrix: None,
                 fade_dynamics: None,
                 diameter: s.diameter,

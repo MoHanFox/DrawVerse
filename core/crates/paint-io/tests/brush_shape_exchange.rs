@@ -65,6 +65,7 @@ fn package(s: &BrushSettings) -> Package {
             dual_brush: None,
             source_resource: None,
             parameters: Parameters {
+                transfer_jitter: None,
                 airbrush: None,
                 speed_dynamics: None,
                 tangent_dynamics: None,

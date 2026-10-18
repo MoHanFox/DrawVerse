@@ -102,6 +102,11 @@ impl ImportBatch {
                         fade_dynamics: (!s.dynamics.fade.is_default()).then(|| {
                             crate::brush_fade::FadeParameters::from_core(s.dynamics.fade.clone())
                         }),
+                        transfer_jitter: (!s.dynamics.transfer_jitter.is_default()).then(|| {
+                            crate::brush_transfer_jitter::TransferParameters::from_core(
+                                s.dynamics.transfer_jitter,
+                            )
+                        }),
                         diameter: s.diameter,
                         spacing: s.spacing,
                         dab_opacity: s.opacity,
@@ -125,7 +130,9 @@ impl ImportBatch {
             })
             .collect::<Result<Vec<_>>>()?;
         let bytes = serde_json::to_vec(&Handoff {
-            version: if self.presets.iter().any(|p| p.converter_version >= 12) {
+            version: if self.presets.iter().any(|p| p.converter_version >= 13) {
+                12
+            } else if self.presets.iter().any(|p| p.converter_version >= 12) {
                 11
             } else if self.presets.iter().any(|p| p.converter_version >= 11) {
                 10

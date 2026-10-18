@@ -34,6 +34,7 @@ fn package() -> Package {
             behavior_version: 25,
             required_capabilities: vec!["procedural-tip".into(), "dynamics-source-matrix".into()],
             parameters: Parameters {
+                transfer_jitter: None,
                 source_matrix: Some(
                     paint_io::brush_source_matrix::SourceMatrixParameters::from_core(
                         settings.dynamics.matrix,

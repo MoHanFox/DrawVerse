@@ -76,6 +76,7 @@ fn package(s: &BrushSettings) -> Package {
             behavior_version: 15,
             required_capabilities: caps.into_iter().map(String::from).collect(),
             parameters: Parameters {
+                transfer_jitter: None,
                 airbrush: None,
                 speed_dynamics: None,
                 tangent_dynamics: None,

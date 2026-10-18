@@ -234,6 +234,7 @@ pub(crate) fn pressure_parameters(
     pressure.scatter = Default::default();
     pressure.color = Default::default();
     pressure.shape_jitter = Default::default();
+    pressure.transfer_jitter = Default::default();
     pressure.tip = Default::default();
     (version >= 3
         && (version == 3
@@ -1011,6 +1012,7 @@ fn pressure_controls(
 ) -> Result<(Vec<String>, bool)> {
     let mut handled = Vec::new();
     let mut source_changed = false;
+    let mut jitters = [0f32; 3];
     for (flag_key, key, override_key) in [
         (
             b"useTipDynamics".as_slice(),
@@ -1052,9 +1054,20 @@ fn pressure_controls(
         let Some(control) = control else {
             continue;
         };
-        // Validate known values before narrowing. Nonzero jitter remains unexecuted.
+        // Validate known values before narrowing; jitter is accumulated below.
         let minimum = unit(dynamic, b"Mnm ", *b"#Prc", 0., 100.)? / 100.;
-        let jitter = unit(dynamic, b"jitter", *b"#Prc", 0., 100.)?;
+        let jitter = unit(dynamic, b"jitter", *b"#Prc", 0., 100.)? / 100.;
+        let channel = match key {
+            b"szVr" => 0,
+            b"prVr" => 1,
+            b"opVr" => 2,
+            _ => unreachable!(),
+        };
+        // `szVr.jitter` belongs to Shape Dynamics; Transfer exposes flow and
+        // opacity jitter, so it must not be duplicated as a size transfer.
+        if key != b"szVr" {
+            jitters[channel] = jitter as f32;
+        }
         let steps = match dynamic.get(b"fStp") {
             None => None,
             Some(Value::Integer(n)) if (0..=10_000).contains(n) => Some(*n as u32),
@@ -1227,12 +1240,12 @@ fn pressure_controls(
                 if jitter == 0. {
                     Status::Mapped
                 } else {
-                    Status::NotExecuted
+                    Status::Approximate
                 },
                 if jitter == 0. {
                     "未启用随机抖动"
                 } else {
-                    "随机抖动尚未转换；独立动态分量已执行"
+                    "使用 DrawVerse 确定性逐印章随机源；PS 随机序列未逐像素核对"
                 },
             ),
         ] {
@@ -1254,6 +1267,11 @@ fn pressure_controls(
             );
             handled.push(path);
         }
+    }
+    if jitters.iter().any(|jitter| *jitter != 0.) {
+        settings.dynamics.transfer_jitter =
+            paint_core::TransferJitter::new(jitters[0], jitters[1], jitters[2])?;
+        source_changed = true;
     }
     Ok((handled, source_changed))
 }
@@ -1971,7 +1989,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if settings.dynamics.scatter.has_controls()
+        if !settings.dynamics.transfer_jitter.is_default() {
+            converter_version = 13;
+        } else if settings.dynamics.scatter.has_controls()
             || settings.dual.secondary().dynamics().scatter.has_controls()
             || settings.dual.mode().is_extended()
         {

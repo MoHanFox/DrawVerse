@@ -1257,6 +1257,7 @@ mod tests {
                     "texture-cover".into(),
                 ],
                 parameters: paint_io::vbr::Parameters {
+                    transfer_jitter: None,
                     source_matrix: None,
                     fade_dynamics: None,
                     diameter: 16.,

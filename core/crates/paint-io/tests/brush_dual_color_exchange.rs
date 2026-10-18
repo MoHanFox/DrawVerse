@@ -37,6 +37,7 @@ fn package(color: DualColor, enabled: bool, path: bool) -> Package {
                 "dual-color-stroke".into(),
             ],
             parameters: Parameters {
+                transfer_jitter: None,
                 airbrush: None,
                 speed_dynamics: None,
                 tangent_dynamics: None,
