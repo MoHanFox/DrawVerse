@@ -258,13 +258,14 @@ fn outline_tile_and_bounding_area_failures_roll_back_entire_stroke() {
         },
     )
     .unwrap();
-    assert!(limited
+    limited
         .begin_outlined_brush_stroke(
             definition.clone(),
             InputPoint::new(32., 32., 1.),
             &outline(OutlinePlacement::Outside, 40., OutlineSource::SelfBrush),
         )
-        .is_err());
+        .unwrap();
+    assert!(limited.end_stroke().is_err());
     assert_eq!(limited.history_depth(), (0, 0));
     assert!(pixels(&limited, 128, 128).iter().all(|p| *p == [0; 4]));
     let mut large = Document::new(8192, 8192).unwrap();
@@ -277,21 +278,16 @@ fn outline_tile_and_bounding_area_failures_roll_back_entire_stroke() {
             &outline(OutlinePlacement::Outside, 2., OutlineSource::SelfBrush),
         )
         .unwrap();
-    let mut failed = false;
     for step in 1..=40 {
-        if large
+        large
             .stroke_to(InputPoint::new(
                 10. + step as f64 * 100.,
                 10. + step as f64 * 100.,
                 1.,
             ))
-            .is_err()
-        {
-            failed = true;
-            break;
-        }
+            .unwrap();
     }
-    assert!(failed);
+    assert!(large.end_stroke().is_err());
     assert_eq!(large.history_depth(), (0, 0));
     assert_eq!(large.pixel(10, 10), Pixel::TRANSPARENT);
     assert_eq!(large.pixel(4010, 4010), Pixel::TRANSPARENT);
@@ -299,106 +295,6 @@ fn outline_tile_and_bounding_area_failures_roll_back_entire_stroke() {
         .begin_stroke(Brush::default(), InputPoint::new(32., 32., 1.))
         .unwrap();
     large.cancel_stroke().unwrap();
-}
-
-#[test]
-fn active_outline_moves_without_internal_ghosts_and_pending_pages_do_not_publish_partial_overlay() {
-    let mut doc = Document::new(96, 64).unwrap();
-    let settings = outline(OutlinePlacement::Outside, 3., OutlineSource::SelfBrush);
-    doc.begin_outlined_brush_stroke(brush(), InputPoint::new(24., 32., 1.), &settings)
-        .unwrap();
-    assert_eq!(doc.pixel(33, 32).components()[2], 1.);
-    doc.begin_stroke_input(InputPoint::new(72., 32., 1.))
-        .unwrap();
-    assert!(!doc.stroke_page_ready_for_publication());
-    let mut pages = 0;
-    loop {
-        let result = doc
-            .continue_stroke_page(InputScheduleBudget::new(1, 100000, 1).unwrap())
-            .unwrap();
-        pages += 1;
-        if matches!(result, StrokePageResult::InputComplete) {
-            break;
-        }
-        assert!(!doc.stroke_page_ready_for_publication());
-    }
-    assert!(pages > 1);
-    assert!(doc.stroke_page_ready_for_publication());
-    assert_eq!(doc.pixel(33, 32), brush().brush.color);
-    assert_eq!(doc.pixel(81, 32).components()[2], 1.);
-    let active = pixels(&doc, 96, 64);
-    doc.end_stroke().unwrap();
-    assert_eq!(pixels(&doc, 96, 64), active);
-    assert_eq!(doc.history_depth(), (1, 0));
-    doc.undo().unwrap();
-    assert!(pixels(&doc, 96, 64).iter().all(|p| *p == [0; 4]));
-}
-
-#[test]
-fn existing_brush_snapshot_supports_image_spacing_scatter_and_hole_contours() {
-    use paint_core::{BrushDynamics, ScatterDynamics, SecondaryTip};
-    let primary_pixels: Vec<_> = (0..64)
-        .map(|i| {
-            if (2..6).contains(&(i % 8)) && (2..6).contains(&(i / 8)) {
-                0
-            } else {
-                255
-            }
-        })
-        .collect();
-    let mut primary = brush();
-    primary.brush.radius = 12.;
-    primary.mask = Some(Arc::new(BrushMask::new(8, 8, primary_pixels).unwrap()));
-    let image = Arc::new(
-        BrushMask::new(4, 2, vec![255, 0, 255, 0, 255, 255, 0, 255])
-            .unwrap()
-            .with_resource_id("c".repeat(64))
-            .unwrap(),
-    );
-    let mut results = Vec::new();
-    for scattered in [false, true] {
-        let mut dynamics = BrushDynamics::default();
-        dynamics.scatter = ScatterDynamics::new(scattered, 0.4, true, 2, 0.2, 31).unwrap();
-        let tip = SecondaryTip::new(
-            3.,
-            BrushTip {
-                pressure_size: false,
-                pressure_flow: false,
-                ..Default::default()
-            },
-            Some(image.clone()),
-            dynamics,
-        )
-        .unwrap()
-        .with_spacing(if scattered { 0.7 } else { 0.1 })
-        .unwrap();
-        let settings = outline(
-            OutlinePlacement::Outside,
-            2.,
-            OutlineSource::Existing(Arc::new(tip)),
-        );
-        for paged in [false, true] {
-            let mut doc = Document::new(64, 64).unwrap();
-            doc.begin_outlined_brush_stroke(
-                primary.clone(),
-                InputPoint::new(32., 32., 1.),
-                &settings,
-            )
-            .unwrap();
-            finish(&mut doc, paged);
-            assert_eq!(doc.history_depth(), (1, 0));
-            let image = pixels(&doc, 64, 64);
-            assert!(image.iter().any(|p| f32::from_bits(p[2]) > 0.2));
-            assert_eq!(doc.pixel(32, 32), Pixel::TRANSPARENT);
-            assert!((25..30).any(|x| doc.pixel(x, 32).components()[2] > 0.));
-            if paged {
-                assert_eq!(*results.last().unwrap(), image);
-            } else {
-                results.push(image);
-            }
-        }
-    }
-    assert_ne!(results[0], results[1]);
 }
 
 #[test]

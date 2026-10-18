@@ -1,8 +1,6 @@
 //! Outline geometry belongs to the current stroke, never to destination pixel differences.
 use super::*;
 use crate::{OutlineSource, StrokeOutline, MAX_STROKE_OUTLINE_PIXELS};
-#[path = "outline_brush.rs"]
-mod outline_brush;
 
 pub(super) type ShapeTile = Arc<[u64; 64]>;
 pub(super) type ShapeTiles = BTreeMap<TileCoord, ShapeTile>;
@@ -14,7 +12,6 @@ pub(super) struct OutlineStroke {
     width: f32,
     first: InputPoint,
     pub(super) shape: ShapeTiles,
-    preview: BTreeMap<TileCoord, Option<Arc<Tile>>>,
 }
 impl OutlineStroke {
     pub(super) fn new(
@@ -28,7 +25,6 @@ impl OutlineStroke {
             width,
             first,
             shape: BTreeMap::new(),
-            preview: BTreeMap::new(),
         }))
     }
     fn padding(&self) -> i64 {
@@ -37,51 +33,6 @@ impl OutlineStroke {
     }
 }
 impl Document {
-    pub(super) fn remove_outline_preview(&mut self, stroke: &mut Stroke) {
-        let Some(outline) = &mut stroke.outline else {
-            return;
-        };
-        let preview = std::mem::take(&mut outline.preview);
-        if preview.is_empty() {
-            return;
-        }
-        let index = self.layer_index(stroke.layer).expect("stroke layer");
-        let shifted = self.layers[index].appearance.offset_x != 0
-            || self.layers[index].appearance.offset_y != 0;
-        for (coord, tile) in preview {
-            Self::restore_tile(&mut self.layers[index], coord, tile);
-            if shifted {
-                self.dirty.all = true;
-                self.dirty.tiles.clear();
-            } else {
-                self.dirty_tile(coord);
-            }
-        }
-    }
-    pub(super) fn prepare_outline_input(&mut self) {
-        if let Some(mut stroke) = self.stroke.take() {
-            self.remove_outline_preview(&mut stroke);
-            self.stroke = Some(stroke);
-        }
-    }
-    pub(super) fn publish_outline(&mut self) -> Result<()> {
-        let Some(mut stroke) = self.stroke.take() else {
-            return Ok(());
-        };
-        match self.render_stroke_outline(&mut stroke) {
-            Ok(changed) => {
-                if changed {
-                    self.bump_revision();
-                }
-                self.stroke = Some(stroke);
-                Ok(())
-            }
-            Err(error) => {
-                self.restore_stroke(&stroke);
-                Err(error)
-            }
-        }
-    }
     /// Explicit core entry while IO and the native bridge are being connected.
     pub fn begin_outlined_brush_stroke(
         &mut self,
@@ -103,6 +54,11 @@ impl Document {
         {
             return Err(Error::InvalidArgument(
                 "outline entry requires a dry paint brush on a pixel layer",
+            ));
+        }
+        if matches!(outline.source(), OutlineSource::Existing(_)) {
+            return Err(Error::InvalidArgument(
+                "existing outline brush execution is not connected yet",
             ));
         }
         self.begin_brush_stroke_inner(definition, first, None, None, Some(outline))
@@ -205,21 +161,12 @@ impl Document {
                 }
             }
         }
-        let mut band = crate::stroke_outline_band(
+        let band = crate::stroke_outline_band(
             width as u32,
             height as u32,
             &shape,
             outline.width,
             outline.settings.placement(),
-        )?;
-        outline_brush::apply_brush(
-            width,
-            height,
-            &shape,
-            &mut band,
-            &outline.settings,
-            outline.width,
-            self.options,
         )?;
         let texture = match outline.settings.source() {
             OutlineSource::Texture(texture) => texture.compile(),
@@ -250,7 +197,6 @@ impl Document {
             return Ok(false);
         }
         let mut changed = false;
-        let mut preview = BTreeMap::new();
         for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
             for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
                 let coord = TileCoord::from_signed(tx as i32, ty as i32);
@@ -334,7 +280,6 @@ impl Document {
                         .before
                         .entry(coord)
                         .or_insert_with(|| self.layers[index].tiles.get(&coord).cloned());
-                    preview.insert(coord, self.layers[index].tiles.get(&coord).cloned());
                     let tile = Arc::new(Tile::from_pixels(values)?);
                     self.pool.attach(&tile)?;
                     self.layers[index].tiles.insert(coord, tile);
@@ -349,7 +294,6 @@ impl Document {
                 }
             }
         }
-        stroke.outline.as_mut().expect("outline stroke").preview = preview;
         Ok(changed)
     }
 }
