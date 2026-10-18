@@ -78,7 +78,7 @@ fn invalid_definitions_and_cancelled_save_preserve_existing_file() {
     bad.brushes[0].required_capabilities.push("wet-mix".into());
     assert!(bad.validate().is_err());
     bad = p.clone();
-    bad.brushes[0].engine_profile = "legacy.round".into();
+    bad.brushes[0].engine_profile = "future.brush".into();
     assert!(bad.validate().is_err());
     let cancelled = CancellationToken::default();
     cancelled.cancel();

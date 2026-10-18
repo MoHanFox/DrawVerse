@@ -1,5 +1,7 @@
 use paint_core::{BrushMask, Document, InputPoint};
+use paint_core::{DualBrush, DualMode, SecondaryTip};
 use paint_io::{
+    brush_dual::DualParameters,
     brush_resource::{encode_mask, hash},
     vbr::{Package, Parameters, Preset},
     vbr_image::*,
@@ -139,10 +141,7 @@ fn invalid_manifest_resources_references_and_versions_never_publish_partial_bund
             if name == "manifest.json" {
                 let mut json: serde_json::Value = serde_json::from_slice(data).unwrap();
                 match mode {
-                    0 => {
-                        json["version"]["minor"] =
-                            (paint_io::vbr_image::MAX_EXECUTABLE_MINOR + 1).into()
-                    }
+                    0 => json["version"]["major"] = 2.into(),
                     1 => json["assets"][0]["kind"] = "grain".into(),
                     2 => json["assets"][0]["sha256"] = "0".repeat(64).into(),
                     3 => json["assets"][0]["path"] = "assets/../bad.png".into(),
@@ -157,7 +156,7 @@ fn invalid_manifest_resources_references_and_versions_never_publish_partial_bund
                 if mode == 6 {
                     json["tipResource"] = "0".repeat(64).into();
                 } else {
-                    json["requiredCapabilities"] = serde_json::json!(["procedural-tip"]);
+                    json["engineProfile"] = "future.brush".into();
                 }
                 *data = serde_json::to_vec(&json).unwrap();
             }
@@ -165,7 +164,7 @@ fn invalid_manifest_resources_references_and_versions_never_publish_partial_bund
         assert!(decode(&changed, &token).is_err(), "mutation {mode}");
     }
     let mut original = bundle();
-    original.package.brushes[0].tip_resource = None;
+    original.package.brushes[0].tip_resource = Some("0".repeat(64));
     assert!(original.validate().is_err());
 }
 #[test]
@@ -224,4 +223,70 @@ fn sixteen_bit_resource_keeps_original_identity_and_published_image_contract() {
             .iter()
             .any(|v| v == "image-tip")
     );
+}
+
+#[test]
+fn vbr_10_accepts_legacy_minors_and_completes_missing_dual_configuration() {
+    let token = CancellationToken::default();
+    let mut package = package(None);
+    package.brushes[0].dual_brush = Some(
+        DualParameters::from_core(&DualBrush::new(
+            true,
+            DualMode::Multiply,
+            SecondaryTip::default(),
+        ))
+        .unwrap(),
+    );
+    package.brushes[0].behavior_version = 9;
+    package.brushes[0].required_capabilities = vec!["procedural-tip".into(), "dual-cover".into()];
+    let bundle = ImageBundle::new(package, BTreeMap::new(), &token).unwrap();
+    let bytes = encode(&bundle, &token).unwrap();
+    let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
+    let mut manifest = Vec::new();
+    archive
+        .by_name("manifest.json")
+        .unwrap()
+        .read_to_end(&mut manifest)
+        .unwrap();
+    let manifest: serde_json::Value = serde_json::from_slice(&manifest).unwrap();
+    assert_eq!(manifest["version"]["minor"], 0);
+    for minor in [0, 1, 8, 24, 44, 999] {
+        let legacy = rewrite(&bytes, |name, data| {
+            if name == "manifest.json" {
+                let mut value: serde_json::Value = serde_json::from_slice(data).unwrap();
+                value["version"]["minor"] = minor.into();
+                *data = serde_json::to_vec(&value).unwrap();
+            }
+        });
+        assert!(decode(&legacy, &token).is_ok(), "minor {minor}");
+    }
+
+    let partial = rewrite(&bytes, |name, data| {
+        if name.starts_with("brushes/") {
+            let mut value: serde_json::Value = serde_json::from_slice(data).unwrap();
+            value["dualBrush"] = serde_json::json!({});
+            value.as_object_mut().unwrap().remove("behaviorVersion");
+            value
+                .as_object_mut()
+                .unwrap()
+                .remove("requiredCapabilities");
+            *data = serde_json::to_vec(&value).unwrap();
+        }
+    });
+    let restored = decode(&partial, &token).unwrap();
+    let dual = restored.package.brushes[0].dual_brush.as_ref().unwrap();
+    let bound = dual.bind(None).unwrap();
+    assert!(!bound.enabled());
+    assert_eq!(bound.mode(), DualMode::Multiply);
+
+    let absent = rewrite(&bytes, |name, data| {
+        if name.starts_with("brushes/") {
+            let mut value: serde_json::Value = serde_json::from_slice(data).unwrap();
+            value["dualBrush"] = serde_json::Value::Null;
+            *data = serde_json::to_vec(&value).unwrap();
+        }
+    });
+    assert!(decode(&absent, &token).unwrap().package.brushes[0]
+        .dual_brush
+        .is_none());
 }

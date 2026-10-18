@@ -174,7 +174,7 @@ fn rewrite_minor(bytes: &[u8], minor: u32) -> Vec<u8> {
         f.read_to_end(&mut b).unwrap();
         if f.name() == "manifest.json" {
             let mut m: serde_json::Value = serde_json::from_slice(&b).unwrap();
-            assert_eq!(m["version"]["minor"], 22);
+            assert_eq!(m["version"]["minor"], 0);
             m["version"]["minor"] = minor.into();
             b = serde_json::to_vec(&m).unwrap();
         }
@@ -239,7 +239,7 @@ fn state18_vbr22_preserve_closed_and_active_two_strokes_with_dual_or_wet() {
             assert_eq!(original, draw(restored.selected().settings().definition()));
             assert_eq!(original, draw(reopened.definition(0).unwrap()));
             for minor in [0, 15, 21] {
-                assert!(vbr_image::decode(&rewrite_minor(&bytes, minor), &token).is_err());
+                assert!(vbr_image::decode(&rewrite_minor(&bytes, minor), &token).is_ok());
             }
             let captured = catalog.selected();
             let mut changed = s.clone();
@@ -365,7 +365,7 @@ fn default_old_versions_unchanged_and_taper_requires_own_state_behavior_and_capa
     mixed.brushes.push(legacy.clone());
     let bundle = ImageBundle::new(mixed, BTreeMap::new(), &token).unwrap();
     let bytes = vbr_image::encode(&bundle, &token).unwrap();
-    assert!(vbr_image::decode(&rewrite_minor(&bytes, 21), &token).is_err());
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 21), &token).is_ok());
     assert_eq!(
         vbr_image::decode(&bytes, &token)
             .unwrap()

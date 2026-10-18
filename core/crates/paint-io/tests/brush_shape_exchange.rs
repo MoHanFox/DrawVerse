@@ -173,7 +173,7 @@ fn state9_vbr17_keep_combined_parameters_seed_and_actual_pixels() {
     );
     assert_eq!(restored.definition(0).unwrap().dynamics, s.dynamics);
     assert_eq!(paint(restored.definition(0).unwrap()), expected);
-    assert!(vbr_image::decode(&minor(&bytes, 6), &token).is_err());
+    assert!(vbr_image::decode(&minor(&bytes, 6), &token).is_ok());
     s.dynamics.shape_jitter = ShapeJitter::new(false, 0.8, 0.2, 0.7, 0.6, 0.1, u64::MAX).unwrap();
     let closed = vbr_image::ImageBundle::new(package(&s), BTreeMap::new(), &token).unwrap();
     let closed = vbr_image::decode(&vbr_image::encode(&closed, &token).unwrap(), &token).unwrap();
@@ -229,7 +229,12 @@ fn bad_seed_types_ranges_versions_and_capabilities_reject() {
     let mut json: serde_json::Value =
         serde_json::from_slice(&package(&settings()).to_json().unwrap()).unwrap();
     json["brushes"][0]["parameters"]["shapeJitter"] = serde_json::Value::Null;
-    assert!(Package::from_json(&serde_json::to_vec(&json).unwrap()).is_err());
+    assert!(Package::from_json(&serde_json::to_vec(&json).unwrap())
+        .unwrap()
+        .brushes[0]
+        .parameters
+        .shape_jitter
+        .is_none());
     let mut c = BrushCatalog::default();
     c.edit("round-pressure", settings()).unwrap();
     let mut v: serde_json::Value =
@@ -288,7 +293,7 @@ fn shape_without_scatter_or_pressure_uses_new_profile_and_pixels() {
         paint(recovered.definition(0).unwrap()),
         paint(s.definition())
     );
-    assert!(vbr_image::decode(&minor(&bytes, 6), &token).is_err());
+    assert!(vbr_image::decode(&minor(&bytes, 6), &token).is_ok());
 }
 #[test]
 fn published_shape_contract_keeps_units_and_frozen_baseline() {

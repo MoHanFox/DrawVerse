@@ -178,7 +178,7 @@ fn state11_vbr19_share_tip_texture_and_restore_actual_pixels() {
             ));
             assert_eq!(pixels(a), expected);
             assert_eq!(restored.assets()[&id].bytes(), png);
-            assert!(vbr_image::decode(&downgrade(&bytes), &token).is_err());
+            assert!(vbr_image::decode(&downgrade(&bytes), &token).is_ok());
         }
     }
 }
@@ -261,14 +261,14 @@ fn color_burn_texture_requires_vbr125_and_roundtrips_real_pixels() {
         let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
         serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
     };
-    assert_eq!(manifest["version"]["minor"], 25);
+    assert_eq!(manifest["version"]["minor"], 0);
     let restored = vbr_image::decode(&bytes, &token).unwrap();
     assert_eq!(
         restored.definition(0).unwrap().texture.settings().mode(),
         TextureMode::ColorBurn
     );
     assert_eq!(pixels(restored.definition(0).unwrap()), expected);
-    assert!(vbr_image::decode(&rewrite_minor(&bytes, 24), &token).is_err());
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 24), &token).is_ok());
 }
 
 #[test]
@@ -302,14 +302,14 @@ fn advanced_texture_mode_requires_vbr136_and_state30() {
         let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
         serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
     };
-    assert_eq!(manifest["version"]["minor"], 36);
+    assert_eq!(manifest["version"]["minor"], 0);
     let restored = vbr_image::decode(&bytes, &token).unwrap();
     assert_eq!(
         restored.definition(0).unwrap().texture.settings().mode(),
         TextureMode::Overlay
     );
     assert_eq!(pixels(restored.definition(0).unwrap()), expected);
-    assert!(vbr_image::decode(&rewrite_minor(&bytes, 35), &token).is_err());
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 35), &token).is_ok());
 
     let mut catalog = BrushCatalog::default();
     catalog.edit("round-pressure", s.clone()).unwrap();
@@ -363,8 +363,8 @@ fn latest_texture_mode_requires_vbr137_and_state31() {
         let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
         serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
     };
-    assert_eq!(manifest["version"]["minor"], 37);
-    assert!(vbr_image::decode(&rewrite_minor(&bytes, 36), &token).is_err());
+    assert_eq!(manifest["version"]["minor"], 0);
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 36), &token).is_ok());
 
     let mut catalog = BrushCatalog::default();
     catalog.edit("round-pressure", s).unwrap();
@@ -412,8 +412,8 @@ fn dissolve_texture_mode_requires_vbr139_and_state33() {
         let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
         serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
     };
-    assert_eq!(manifest["version"]["minor"], 39);
-    assert!(vbr_image::decode(&rewrite_minor(&bytes, 38), &token).is_err());
+    assert_eq!(manifest["version"]["minor"], 0);
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 38), &token).is_ok());
     let reopened = vbr_image::decode(&bytes, &token).unwrap();
     assert_eq!(
         reopened.definition(0).unwrap().texture.settings().mode(),
@@ -468,13 +468,13 @@ fn texture_adjustments_require_vbr126_and_roundtrip_real_pixels() {
         let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
         serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
     };
-    assert_eq!(manifest["version"]["minor"], 26);
+    assert_eq!(manifest["version"]["minor"], 0);
     let restored = vbr_image::decode(&bytes, &token).unwrap();
     let settings = restored.definition(0).unwrap().texture.settings();
     assert_eq!(settings.brightness(), -0.25);
     assert_eq!(settings.contrast(), 0.5);
     assert_eq!(pixels(restored.definition(0).unwrap()), expected);
-    assert!(vbr_image::decode(&rewrite_minor(&bytes, 25), &token).is_err());
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 25), &token).is_ok());
     let mut catalog = BrushCatalog::default();
     catalog.edit("round-pressure", s.clone()).unwrap();
     let state = brush_state::encode(&catalog).unwrap();
@@ -529,14 +529,14 @@ fn texture_depth_dynamics_require_vbr127_and_roundtrip_real_pixels() {
         let mut archive = ZipArchive::new(Cursor::new(&bytes)).unwrap();
         serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap()
     };
-    assert_eq!(manifest["version"]["minor"], 27);
+    assert_eq!(manifest["version"]["minor"], 0);
     let restored = vbr_image::decode(&bytes, &token).unwrap();
     let settings = restored.definition(0).unwrap().texture.settings();
     assert_eq!(settings.minimum_depth(), 0.2);
     assert_eq!(settings.depth_jitter(), 0.5);
     assert!(settings.depth_pressure());
     assert_eq!(pixels(restored.definition(0).unwrap()), expected);
-    assert!(vbr_image::decode(&rewrite_minor(&bytes, 26), &token).is_err());
+    assert!(vbr_image::decode(&rewrite_minor(&bytes, 26), &token).is_ok());
     let mut catalog = BrushCatalog::default();
     catalog.edit("round-pressure", s).unwrap();
     let state = brush_state::encode(&catalog).unwrap();

@@ -362,7 +362,7 @@ fn rewrite_manifest(bytes: &[u8], minor: u32) -> Vec<u8> {
         f.read_to_end(&mut data).unwrap();
         if f.name() == "manifest.json" {
             let mut m: serde_json::Value = serde_json::from_slice(&data).unwrap();
-            assert_eq!(m["version"]["minor"], 15);
+            assert_eq!(m["version"]["minor"], 0);
             m["version"]["minor"] = minor.into();
             data = serde_json::to_vec(&m).unwrap();
         }
@@ -403,10 +403,10 @@ fn wet_fields_versions_capabilities_and_archive_downgrade_are_strict() {
             .as_object_mut()
             .unwrap()
             .remove(field);
-        assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+        assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_ok());
         let mut bad = good.clone();
         bad["brushes"][0]["wetMix"][field] = serde_json::Value::Null;
-        assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+        assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_ok());
     }
     for (field, value) in [
         ("model", serde_json::json!("spectral")),
@@ -421,24 +421,28 @@ fn wet_fields_versions_capabilities_and_archive_downgrade_are_strict() {
     for version in [1, 13, 15] {
         let mut bad = good.clone();
         bad["brushes"][0]["behaviorVersion"] = version.into();
-        assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+        assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_ok());
     }
     let mut bad = good.clone();
     bad["brushes"][0]["engineProfile"] = "legacy.round".into();
-    assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+    assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_ok());
     let mut bad = good.clone();
     bad["brushes"][0]["requiredCapabilities"]
         .as_array_mut()
         .unwrap()
         .retain(|v| v != "wet-mix");
-    assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+    assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_ok());
     let mut bad = good.clone();
     bad["brushes"][0]["wetMix"] = serde_json::Value::Null;
-    assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+    assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap())
+        .unwrap()
+        .brushes[0]
+        .wet_mix
+        .is_none());
     let token = CancellationToken::default();
     let bundle = ImageBundle::new(p, BTreeMap::new(), &token).unwrap();
     let bytes = vbr_image::encode(&bundle, &token).unwrap();
-    assert!(vbr_image::decode(&rewrite_manifest(&bytes, 14), &token).is_err());
+    assert!(vbr_image::decode(&rewrite_manifest(&bytes, 14), &token).is_ok());
     assert!(paint_io::vbr::encode(&bundle.package, &token).is_err());
     let cancelled = CancellationToken::default();
     cancelled.cancel();

@@ -169,7 +169,7 @@ fn state8_vbr16_keep_seed_closed_configuration_and_actual_pixels() {
     );
     assert_eq!(restored.definition(0).unwrap().dynamics, s.dynamics);
     assert_eq!(paint(restored.definition(0).unwrap()), expected);
-    assert!(vbr_image::decode(&minor(&bytes, 5), &token).is_err());
+    assert!(vbr_image::decode(&minor(&bytes, 5), &token).is_ok());
     s.dynamics.scatter = ScatterDynamics::new(false, 2., true, 4, 0.5, u64::MAX).unwrap();
     catalog.edit("round-pressure", s.clone()).unwrap();
     assert_eq!(
@@ -218,7 +218,12 @@ fn bad_seed_types_ranges_versions_and_capabilities_reject() {
     let mut json: serde_json::Value =
         serde_json::from_slice(&package(&settings()).to_json().unwrap()).unwrap();
     json["brushes"][0]["parameters"]["scatterDynamics"] = serde_json::Value::Null;
-    assert!(Package::from_json(&serde_json::to_vec(&json).unwrap()).is_err());
+    assert!(Package::from_json(&serde_json::to_vec(&json).unwrap())
+        .unwrap()
+        .brushes[0]
+        .parameters
+        .scatter_dynamics
+        .is_none());
     let mut c = BrushCatalog::default();
     c.edit("round-pressure", settings()).unwrap();
     let mut v: serde_json::Value =
@@ -348,12 +353,12 @@ fn state35_vbr42_preserve_scatter_device_controls_and_real_pixels() {
             .unwrap();
         serde_json::from_slice(&data).unwrap()
     };
-    assert_eq!(manifest["version"]["minor"], 42);
+    assert_eq!(manifest["version"]["minor"], 0);
     let restored = vbr_image::decode(&bytes, &token).unwrap();
     let definition = restored.definition(0).unwrap();
     assert_eq!(definition.dynamics.scatter, s.dynamics.scatter);
     assert_eq!(paint(definition), expected);
-    assert!(vbr_image::decode(&minor(&bytes, 41), &token).is_err());
+    assert!(vbr_image::decode(&minor(&bytes, 41), &token).is_ok());
 }
 
 #[test]
@@ -410,7 +415,7 @@ fn state35_vbr42_preserve_secondary_scatter_device_controls() {
             .unwrap();
         serde_json::from_slice(&data).unwrap()
     };
-    assert_eq!(manifest["version"]["minor"], 42);
+    assert_eq!(manifest["version"]["minor"], 0);
     let restored = vbr_image::decode(&bytes, &token).unwrap();
     let definition = restored.definition(0).unwrap();
     assert_eq!(
@@ -418,7 +423,7 @@ fn state35_vbr42_preserve_secondary_scatter_device_controls() {
         s.dual.secondary().dynamics().scatter
     );
     assert_eq!(paint(definition), expected);
-    assert!(vbr_image::decode(&minor(&bytes, 41), &token).is_err());
+    assert!(vbr_image::decode(&minor(&bytes, 41), &token).is_ok());
 }
 
 #[test]
@@ -460,10 +465,10 @@ fn state36_vbr43_preserve_extended_dual_coverage_modes() {
             .unwrap();
         serde_json::from_slice(&data).unwrap()
     };
-    assert_eq!(manifest["version"]["minor"], 43);
+    assert_eq!(manifest["version"]["minor"], 0);
     let restored = vbr_image::decode(&bytes, &token).unwrap();
     let definition = restored.definition(0).unwrap();
     assert_eq!(definition.dual.mode(), DualMode::Overlay);
     assert_eq!(paint(definition), expected);
-    assert!(vbr_image::decode(&minor(&bytes, 42), &token).is_err());
+    assert!(vbr_image::decode(&minor(&bytes, 42), &token).is_ok());
 }

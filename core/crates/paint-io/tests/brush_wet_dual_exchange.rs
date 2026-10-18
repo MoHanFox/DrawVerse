@@ -314,7 +314,7 @@ fn rewrite_minor(bytes: &[u8], minor: u32) -> Vec<u8> {
         f.read_to_end(&mut b).unwrap();
         if f.name() == "manifest.json" {
             let mut m: serde_json::Value = serde_json::from_slice(&b).unwrap();
-            assert_eq!(m["version"]["minor"], 23);
+            assert_eq!(m["version"]["minor"], 0);
             m["version"]["minor"] = minor.into();
             b = serde_json::to_vec(&m).unwrap();
         }
@@ -386,7 +386,7 @@ fn state19_vbr23_keep_closed_policy_and_real_two_stroke_pixels_and_both_carriers
             assert!(reopened.package.brushes[0].has_wet_dual());
             assert_eq!(draw(reopened.definition(0).unwrap()), expected);
             for minor in [0, 15, 22] {
-                assert!(vbr_image::decode(&rewrite_minor(&archive, minor), &token).is_err());
+                assert!(vbr_image::decode(&rewrite_minor(&archive, minor), &token).is_ok());
             }
             let mut changed = s;
             changed.wet = WetSettings::default();
@@ -492,7 +492,7 @@ fn default_legacy_bytes_and_mixed_highest_minor_are_preserved() {
         &token,
     )
     .unwrap();
-    assert_eq!(minor(&data), 23);
+    assert_eq!(minor(&data), 0);
     assert_eq!(
         vbr_image::decode(&data, &token)
             .unwrap()

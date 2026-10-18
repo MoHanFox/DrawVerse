@@ -179,7 +179,7 @@ fn state10_vbr18_keep_combined_parameters_tool_colors_and_actual_pixels() {
     );
     assert_eq!(restored.definition(0).unwrap().dynamics, s.dynamics);
     assert_eq!(paint(restored.definition(0).unwrap()), expected);
-    assert!(vbr_image::decode(&minor(&bytes, 7), &token).is_err());
+    assert!(vbr_image::decode(&minor(&bytes, 7), &token).is_ok());
     s.dynamics.color = ColorDynamics::new(false, 1., 0.5, 0.3, 0.2, true, u64::MAX).unwrap();
     let closed = vbr_image::ImageBundle::new(package(&s), BTreeMap::new(), &token).unwrap();
     let closed = vbr_image::decode(&vbr_image::encode(&closed, &token).unwrap(), &token).unwrap();
@@ -236,7 +236,12 @@ fn bad_seed_types_ranges_versions_and_capabilities_reject() {
     let mut json: serde_json::Value =
         serde_json::from_slice(&package(&settings()).to_json().unwrap()).unwrap();
     json["brushes"][0]["parameters"]["colorDynamics"] = serde_json::Value::Null;
-    assert!(Package::from_json(&serde_json::to_vec(&json).unwrap()).is_err());
+    assert!(Package::from_json(&serde_json::to_vec(&json).unwrap())
+        .unwrap()
+        .brushes[0]
+        .parameters
+        .color_dynamics
+        .is_none());
     let mut c = BrushCatalog::default();
     c.edit("round-pressure", settings()).unwrap();
     let mut v: serde_json::Value =
@@ -304,7 +309,7 @@ fn color_alone_and_whole_stroke_frequency_restore_real_pixels() {
             paint(restored.definition(0).unwrap()),
             paint(s.definition())
         );
-        assert!(vbr_image::decode(&minor(&bytes, 7), &token).is_err());
+        assert!(vbr_image::decode(&minor(&bytes, 7), &token).is_ok());
     }
 }
 #[test]

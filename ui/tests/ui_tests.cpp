@@ -799,6 +799,7 @@ private slots:
         invalid=model.dualBrush();invalid["colorDynamics"]=QVariantMap{};QVERIFY(!model.setDualBrush(invalid));
         QVERIFY(!model.setDualPressureControl("opacity",{},0.));
         dual=model.dualBrush();dual["model"]="paired-dab-v1";dual["spacing"]=QVariant{};QVERIFY(model.setDualBrush(dual));
+        BrushLibrary defaults;auto defaultDual=defaults.dualBrush();auto enabledDefault=defaultDual;enabledDefault["enabled"]=true;QVERIFY(defaults.setDualBrush(enabledDefault));QVERIFY(defaults.setDualBrush(defaultDual));QVERIFY(!defaults.dualBrush().value("enabled").toBool());
         BrushLibrary imported;QVERIFY(imported.importPackage(model.exportPackage()));QCOMPARE(imported.dualBrush(),model.dualBrush());
         QVERIFY(model.setDualResource(model.selectedId(),QString(64,'a')));model.useProceduralDual();
         QCOMPARE(QJsonObject::fromVariantMap(model.dualBrush()),QJsonObject::fromVariantMap(dual));

@@ -3,11 +3,13 @@ use crate::{check, Error, Result};
 use paint_core::{BrushDefinition, BrushProgram, BrushSettings, BrushTip};
 use paint_task::CancellationToken;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     collections::BTreeSet,
     fs::File,
     io::{Cursor, Read, Write},
     path::Path,
+    sync::OnceLock,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
@@ -256,11 +258,247 @@ pub struct Package {
     pub package_id: String,
     pub brushes: Vec<Preset>,
 }
+fn merge_missing(value: &mut Value, defaults: &Value) {
+    let (Value::Object(value), Value::Object(defaults)) = (value, defaults) else {
+        return;
+    };
+    let mut remove = Vec::new();
+    for (key, default) in defaults {
+        match value.get_mut(key) {
+            Some(current) if current.is_null() => {
+                if key == "parameters" || !default.is_object() {
+                    *current = default.clone();
+                } else {
+                    // Optional feature objects written as null are absent, not
+                    // an instruction to enable a canonical feature section.
+                    remove.push(key.clone());
+                }
+            }
+            Some(current) => merge_missing(current, default),
+            None => {
+                // Optional feature sections stay absent when the source omitted
+                // them. Scalar/array configuration and the required parameters
+                // object are filled so old records remain executable.
+                if key == "parameters" || !default.is_object() {
+                    value.insert(key.clone(), default.clone());
+                }
+            }
+        }
+    }
+    for key in remove {
+        value.remove(&key);
+    }
+}
+fn canonical_preset_value() -> &'static Value {
+    static CANONICAL: OnceLock<Value> = OnceLock::new();
+    CANONICAL.get_or_init(|| {
+        let settings = BrushSettings::default();
+        let dynamics = &settings.dynamics;
+        let parameters = Parameters {
+            diameter: settings.diameter,
+            spacing: settings.spacing,
+            dab_opacity: settings.opacity,
+            hardness: settings.tip.hardness,
+            roundness: settings.tip.roundness,
+            angle: settings.tip.angle,
+            flow: settings.tip.flow,
+            pressure_size: settings.tip.pressure_size,
+            pressure_flow: settings.tip.pressure_flow,
+            pressure_dynamics: Some(crate::brush_pressure::PressureParameters::from_core(
+                dynamics,
+            )),
+            tip_dynamics: Some(crate::brush_tip_dynamics::TipParameters::from_core(
+                dynamics.tip,
+            )),
+            scatter_dynamics: Some(crate::brush_scatter::ScatterParameters::from_core(
+                dynamics.scatter,
+            )),
+            shape_jitter: Some(crate::brush_shape_jitter::ShapeParameters::from_core(
+                dynamics.shape_jitter,
+            )),
+            transfer_jitter: Some(crate::brush_transfer_jitter::TransferParameters::from_core(
+                dynamics.transfer_jitter,
+            )),
+            color_dynamics: Some(crate::brush_color_dynamics::ColorParameters::from_core(
+                dynamics.color,
+            )),
+            airbrush: Some(crate::brush_airbrush::AirbrushParameters::from_core(
+                paint_core::Airbrush::default(),
+            )),
+            speed_dynamics: Some(crate::brush_speed::SpeedParameters::from_core(
+                dynamics.speed.clone(),
+            )),
+            tangent_dynamics: Some(crate::brush_tangent::TangentParameters::from_core(
+                dynamics.tangent.clone(),
+            )),
+            distance_dynamics: Some(crate::brush_distance::DistanceParameters::from_core(
+                dynamics.distance.clone(),
+            )),
+            tilt_dynamics: Some(crate::brush_tilt::TiltParameters::from_core(
+                dynamics.tilt.clone(),
+            )),
+            rotation_dynamics: Some(crate::brush_rotation::RotationParameters::from_core(
+                dynamics.rotation.clone(),
+            )),
+            direction_dynamics: Some(crate::brush_direction::DirectionParameters::from_core(
+                dynamics.direction.clone(),
+            )),
+            source_matrix: Some(
+                crate::brush_source_matrix::SourceMatrixParameters::from_core(dynamics.matrix),
+            ),
+            fade_dynamics: Some(crate::brush_fade::FadeParameters::from_core(
+                dynamics.fade.clone(),
+            )),
+        };
+        let preset = Preset {
+            id: "00000000-0000-4000-8000-000000000000".into(),
+            name: String::new(),
+            engine_profile: "drawverse.brush".into(),
+            behavior_version: 1,
+            required_capabilities: Vec::new(),
+            parameters,
+            tip_resource: None,
+            texture: Some(
+                crate::brush_texture::TextureParameters::from_core(
+                    &paint_core::BrushTexture::default(),
+                )
+                .expect("default texture"),
+            ),
+            dual_brush: Some(
+                crate::brush_dual::DualParameters::from_core(&paint_core::DualBrush::default())
+                    .expect("default dual brush"),
+            ),
+            smoothing: Some(crate::brush_smoothing::SmoothingParameters::from_core(
+                paint_core::BrushSmoothing::default(),
+            )),
+            wet_mix: Some(crate::brush_wet::WetParameters::from_core(
+                paint_core::WetSettings::default(),
+            )),
+            stroke_taper: Some(crate::brush_taper::TaperParameters::from_core(
+                &paint_core::StrokeTaper::default(),
+            )),
+            source_resource: None,
+        };
+        let mut value = serde_json::to_value(preset).expect("canonical VBR preset");
+        if let Some(dual) = value.get_mut("dualBrush").and_then(Value::as_object_mut) {
+            for (key, entry) in [
+                (
+                    "pressureDynamics",
+                    serde_json::to_value(Some(
+                        crate::brush_pressure::PressureParameters::from_core(
+                            &paint_core::BrushDynamics::default(),
+                        ),
+                    ))
+                    .expect("default dual pressure"),
+                ),
+                (
+                    "tipDynamics",
+                    serde_json::to_value(Some(
+                        crate::brush_tip_dynamics::TipParameters::from_core(
+                            paint_core::TipDynamics::default(),
+                        ),
+                    ))
+                    .expect("default dual tip dynamics"),
+                ),
+                (
+                    "scatterDynamics",
+                    serde_json::to_value(Some(crate::brush_scatter::ScatterParameters::from_core(
+                        paint_core::ScatterDynamics::default(),
+                    )))
+                    .expect("default dual scatter"),
+                ),
+                (
+                    "shapeJitter",
+                    serde_json::to_value(Some(
+                        crate::brush_shape_jitter::ShapeParameters::from_core(
+                            paint_core::ShapeJitter::default(),
+                        ),
+                    ))
+                    .expect("default dual shape"),
+                ),
+                (
+                    "sizing",
+                    serde_json::to_value(Some(
+                        crate::brush_dual_sizing::SizingParameters::from_core(
+                            paint_core::DualSizing::default(),
+                        ),
+                    ))
+                    .expect("default dual sizing"),
+                ),
+                (
+                    "color",
+                    serde_json::to_value(Some(
+                        crate::brush_dual_color::ColorParameters::from_core(
+                            paint_core::DualColor::default(),
+                        ),
+                    ))
+                    .expect("default dual color"),
+                ),
+            ] {
+                dual.entry(key).or_insert(entry);
+            }
+        }
+        normalize_canonical(&mut value);
+        if let Value::Object(object) = &mut value {
+            object.remove("id");
+            object.remove("name");
+        }
+        value
+    })
+}
+fn complete_preset(value: &mut Value) {
+    merge_missing(value, canonical_preset_value());
+    if let Some(dual) = value.get_mut("dualBrush").and_then(Value::as_object_mut) {
+        match dual.get("model").and_then(Value::as_str) {
+            Some("paired-dab-v1") => {
+                dual.insert("spacing".into(), Value::Null);
+            }
+            Some("path-coverage-v1")
+                if !dual
+                    .get("spacing")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|spacing| (0.01..=1.).contains(&spacing)) =>
+            {
+                dual.insert("spacing".into(), 0.25.into());
+            }
+            _ => {}
+        }
+    }
+}
+fn normalize_canonical(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            for (key, value) in object {
+                if key == "minimumRoundness" && value.as_f64().is_some_and(|number| number < 0.01) {
+                    *value = 0.01.into();
+                } else {
+                    normalize_canonical(value);
+                }
+            }
+        }
+        Value::Array(values) => values.iter_mut().for_each(normalize_canonical),
+        _ => {}
+    }
+}
+pub(crate) fn decode_preset(bytes: &[u8]) -> Result<Preset> {
+    let mut value: Value =
+        serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("VBR JSON: {e}")))?;
+    complete_preset(&mut value);
+    let mut preset: Preset =
+        serde_json::from_value(value).map_err(|e| Error::Codec(format!("VBR JSON: {e}")))?;
+    preset.normalize_compatibility();
+    Ok(preset)
+}
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Version {
+    #[serde(default = "one")]
     major: u32,
+    #[serde(default)]
     minor: u32,
+}
+fn one() -> u32 {
+    1
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -275,7 +513,9 @@ struct Manifest {
     version: Version,
     package_id: String,
     brushes: Vec<Reference>,
+    #[serde(default)]
     groups: Vec<serde_json::Value>,
+    #[serde(default)]
     assets: Vec<serde_json::Value>,
 }
 fn uuid(id: &str) -> bool {
@@ -303,6 +543,160 @@ pub(crate) fn encode_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 impl Preset {
+    fn normalize_compatibility(&mut self) {
+        let pressure = self.parameters.pressure_dynamics.as_ref();
+        let pressure_enabled = pressure.is_some();
+        let opacity = pressure.is_some_and(|p| p.has_opacity());
+        let scatter = self.parameters.scatter_dynamics.is_some();
+        let smooth = self.has_smooth();
+        let dual_extended = self
+            .dual_brush
+            .as_ref()
+            .is_some_and(|d| d.has_extended_mode());
+        let scatter_controls = self
+            .parameters
+            .scatter_dynamics
+            .is_some_and(|p| p.has_controls())
+            || self
+                .dual_brush
+                .as_ref()
+                .is_some_and(|d| d.has_scatter_controls());
+        let mut required = Vec::new();
+        if self.tip_resource.is_some() {
+            required.push("image-tip");
+        }
+        for (active, capability) in [
+            (self.has_wet_dual(), "wet-dual-color"),
+            (self.stroke_taper.is_some(), "stroke-taper"),
+            (self.wet_mix.is_some(), "wet-mix"),
+            (self.has_dual_color(), "dual-color-stroke"),
+            (self.has_interleaved_color(), "dual-color-stamp"),
+            (self.parameters.airbrush.is_some(), "airbrush"),
+            (self.parameters.speed_dynamics.is_some(), "speed-dynamics"),
+            (
+                self.parameters.tangent_dynamics.is_some(),
+                "tangent-dynamics",
+            ),
+            (
+                self.parameters.distance_dynamics.is_some(),
+                "distance-dynamics",
+            ),
+            (self.parameters.tilt_dynamics.is_some(), "tilt-dynamics"),
+            (
+                self.parameters.rotation_dynamics.is_some(),
+                "rotation-dynamics",
+            ),
+            (
+                self.parameters.direction_dynamics.is_some(),
+                "direction-dynamics",
+            ),
+            (
+                self.parameters.source_matrix.is_some(),
+                "dynamics-source-matrix",
+            ),
+            (self.parameters.fade_dynamics.is_some(), "fade-dynamics"),
+            (scatter_controls, "scatter-controls"),
+            (dual_extended, "dual-cover-extended"),
+            (self.parameters.transfer_jitter.is_some(), "transfer-jitter"),
+            (self.has_dual_sizing(), "dual-relative-size"),
+            (self.smoothing.is_some(), "path-smoothing"),
+            (smooth, "pressure-smooth"),
+            (pressure_enabled, "pressure-curves"),
+            (opacity, "opacity-pressure"),
+            (self.parameters.tip_dynamics.is_some(), "tip-dynamics"),
+            (scatter, "scatter-stamps"),
+            (self.parameters.shape_jitter.is_some(), "shape-jitter"),
+            (self.parameters.color_dynamics.is_some(), "color-dynamics"),
+            (self.texture.is_some(), "texture-cover"),
+            (self.dual_brush.is_some(), "dual-cover"),
+        ] {
+            if active {
+                required.push(capability);
+            }
+        }
+        let mut capabilities =
+            Vec::with_capacity(self.required_capabilities.len() + required.len());
+        for capability in &self.required_capabilities {
+            if (capability == "image-tip" && self.tip_resource.is_none())
+                || (is_feature_capability(capability)
+                    && !required.iter().any(|required| required == capability))
+                || capabilities.iter().any(|existing| existing == capability)
+            {
+                continue;
+            }
+            capabilities.push(capability.clone());
+        }
+        for capability in required {
+            if !capabilities.iter().any(|existing| existing == capability) {
+                capabilities.push(capability.to_owned());
+            }
+        }
+        self.required_capabilities = capabilities;
+        self.behavior_version = if self.parameters.transfer_jitter.is_some() {
+            29
+        } else if dual_extended {
+            28
+        } else if scatter_controls {
+            27
+        } else if self.parameters.fade_dynamics.is_some() {
+            26
+        } else if self.parameters.source_matrix.is_some() {
+            25
+        } else if self.parameters.direction_dynamics.is_some() {
+            24
+        } else if self.parameters.rotation_dynamics.is_some() {
+            23
+        } else if self.parameters.tilt_dynamics.is_some() {
+            22
+        } else if self.parameters.distance_dynamics.is_some() {
+            21
+        } else if self.parameters.tangent_dynamics.is_some() {
+            20
+        } else if self.parameters.speed_dynamics.is_some() {
+            19
+        } else if self.parameters.airbrush.is_some() {
+            18
+        } else if self.has_interleaved_color() {
+            17
+        } else if self.has_wet_dual() {
+            16
+        } else if self.stroke_taper.is_some() {
+            15
+        } else if self.wet_mix.is_some() {
+            14
+        } else if self.has_dual_color() {
+            13
+        } else if self.has_dual_sizing() {
+            12
+        } else if self.smoothing.is_some() {
+            11
+        } else if smooth {
+            10
+        } else if self.dual_brush.is_some() {
+            9
+        } else if self.texture.is_some() {
+            8
+        } else if self.parameters.color_dynamics.is_some() {
+            7
+        } else if self.parameters.shape_jitter.is_some() {
+            6
+        } else if scatter {
+            5
+        } else if self.parameters.tip_dynamics.is_some() {
+            4
+        } else if opacity {
+            3
+        } else if pressure_enabled {
+            2
+        } else {
+            1
+        };
+        if self.engine_profile == "legacy.round"
+            && (self.tip_resource.is_some() || self.behavior_version > 1)
+        {
+            self.engine_profile = "drawverse.brush".into();
+        }
+    }
     pub fn has_wet_dual(&self) -> bool {
         self.wet_mix.is_some_and(|p| p.core().dual_color())
     }
@@ -325,9 +719,53 @@ impl Preset {
             .is_some_and(|d| d.has_interleaved_color())
     }
 }
+fn is_feature_capability(capability: &str) -> bool {
+    matches!(
+        capability,
+        "pressure-curves"
+            | "opacity-pressure"
+            | "tip-dynamics"
+            | "scatter-stamps"
+            | "shape-jitter"
+            | "color-dynamics"
+            | "texture-cover"
+            | "dual-cover"
+            | "pressure-smooth"
+            | "path-smoothing"
+            | "dual-relative-size"
+            | "dual-color-stroke"
+            | "dual-color-stamp"
+            | "airbrush"
+            | "speed-dynamics"
+            | "tangent-dynamics"
+            | "distance-dynamics"
+            | "tilt-dynamics"
+            | "rotation-dynamics"
+            | "direction-dynamics"
+            | "dynamics-source-matrix"
+            | "fade-dynamics"
+            | "scatter-controls"
+            | "dual-cover-extended"
+            | "transfer-jitter"
+            | "wet-mix"
+            | "stroke-taper"
+            | "wet-dual-color"
+    )
+}
 impl Package {
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
-        let package: Self = json(bytes)?;
+        let mut value: Value =
+            serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("VBR JSON: {e}")))?;
+        if let Some(brushes) = value.get_mut("brushes").and_then(Value::as_array_mut) {
+            for brush in brushes {
+                complete_preset(brush);
+            }
+        }
+        let mut package: Self =
+            serde_json::from_value(value).map_err(|e| Error::Codec(format!("VBR JSON: {e}")))?;
+        for brush in &mut package.brushes {
+            brush.normalize_compatibility();
+        }
         package.validate()?;
         Ok(package)
     }
@@ -363,31 +801,6 @@ impl Package {
                     "non-pressure controls cannot be encoded in pressure payload".into(),
                 ));
             }
-            let pressure = b.parameters.pressure_dynamics.is_some();
-            let tip_dynamic = b.parameters.tip_dynamics.is_some();
-            let scatter = b.parameters.scatter_dynamics.is_some();
-            let scatter_controls = b
-                .parameters
-                .scatter_dynamics
-                .is_some_and(|p| p.has_controls())
-                || b.dual_brush
-                    .as_ref()
-                    .is_some_and(|d| d.has_scatter_controls());
-            let dual_extended = b.dual_brush.as_ref().is_some_and(|d| d.has_extended_mode());
-            let shape = b.parameters.shape_jitter.is_some();
-            let color = b.parameters.color_dynamics.is_some();
-            let airbrush = b.parameters.airbrush.is_some();
-            let speed = b.parameters.speed_dynamics.is_some();
-            let tangent = b.parameters.tangent_dynamics.is_some();
-            let distance = b.parameters.distance_dynamics.is_some();
-            let tilt = b.parameters.tilt_dynamics.is_some();
-            let rotation = b.parameters.rotation_dynamics.is_some();
-            let direction = b.parameters.direction_dynamics.is_some();
-            let matrix = b.parameters.source_matrix.is_some();
-            let fade = b.parameters.fade_dynamics.is_some();
-            let transfer = b.parameters.transfer_jitter.is_some();
-            let textured = b.texture.is_some();
-            let dual = b.dual_brush.is_some();
             if let Some(d) = &b.dual_brush {
                 d.validate()?;
                 if d.has_interleaved_color()
@@ -408,76 +821,10 @@ impl Package {
             if let Some(t) = &b.texture {
                 t.validate()?;
             }
-            let opacity = b
-                .parameters
-                .pressure_dynamics
-                .as_ref()
-                .is_some_and(|p| p.has_opacity());
-            if b.behavior_version
-                != if transfer {
-                    29
-                } else if dual_extended {
-                    28
-                } else if scatter_controls {
-                    27
-                } else if fade {
-                    26
-                } else if matrix {
-                    25
-                } else if direction {
-                    24
-                } else if rotation {
-                    23
-                } else if tilt {
-                    22
-                } else if distance {
-                    21
-                } else if tangent {
-                    20
-                } else if speed {
-                    19
-                } else if airbrush {
-                    18
-                } else if b.has_interleaved_color() {
-                    17
-                } else if b.has_wet_dual() {
-                    16
-                } else if b.stroke_taper.is_some() {
-                    15
-                } else if b.wet_mix.is_some() {
-                    14
-                } else if b.has_dual_color() {
-                    13
-                } else if b.has_dual_sizing() {
-                    12
-                } else if b.smoothing.is_some() {
-                    11
-                } else if b.has_smooth() {
-                    10
-                } else if dual {
-                    9
-                } else if textured {
-                    8
-                } else if color {
-                    7
-                } else if shape {
-                    6
-                } else if scatter {
-                    5
-                } else if tip_dynamic {
-                    4
-                } else if opacity {
-                    3
-                } else if pressure {
-                    2
-                } else {
-                    1
-                }
-                || !matches!(
-                    b.engine_profile.as_str(),
-                    "legacy.round" | "drawverse.brush"
-                )
-            {
+            if !matches!(
+                b.engine_profile.as_str(),
+                "legacy.round" | "drawverse.brush"
+            ) {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
             if b.required_capabilities.len() > 32
@@ -527,120 +874,14 @@ impl Package {
             {
                 return Err(Error::Invalid("VBR source identity"));
             }
-            if b.has_wet_dual()
-                != b.required_capabilities
-                    .iter()
-                    .any(|c| c == "wet-dual-color")
-                || (b.has_wet_dual() && b.engine_profile != "drawverse.brush")
-                || b.stroke_taper.is_some()
-                    != b.required_capabilities.iter().any(|c| c == "stroke-taper")
-                || (b.stroke_taper.is_some() && b.engine_profile != "drawverse.brush")
-                || b.wet_mix.is_some() != b.required_capabilities.iter().any(|c| c == "wet-mix")
-                || (b.wet_mix.is_some() && b.engine_profile != "drawverse.brush")
-                || b.has_dual_color()
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "dual-color-stroke")
-                || (b.has_dual_color() && b.engine_profile != "drawverse.brush")
-                || b.has_interleaved_color()
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "dual-color-stamp")
-                || (b.has_interleaved_color() && b.engine_profile != "drawverse.brush")
-                || airbrush != b.required_capabilities.iter().any(|c| c == "airbrush")
-                || (airbrush && b.engine_profile != "drawverse.brush")
-                || speed
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "speed-dynamics")
-                || (speed && b.engine_profile != "drawverse.brush")
-                || tangent
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "tangent-dynamics")
-                || (tangent && b.engine_profile != "drawverse.brush")
-                || distance
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "distance-dynamics")
-                || (distance && b.engine_profile != "drawverse.brush")
-                || tilt != b.required_capabilities.iter().any(|c| c == "tilt-dynamics")
-                || (tilt && b.engine_profile != "drawverse.brush")
-                || rotation
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "rotation-dynamics")
-                || (rotation && b.engine_profile != "drawverse.brush")
-                || direction
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "direction-dynamics")
-                || (direction && b.engine_profile != "drawverse.brush")
-                || matrix
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "dynamics-source-matrix")
-                || (matrix && b.engine_profile != "drawverse.brush")
-                || fade != b.required_capabilities.iter().any(|c| c == "fade-dynamics")
-                || (fade && b.engine_profile != "drawverse.brush")
-                || scatter_controls
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "scatter-controls")
-                || (scatter_controls && b.engine_profile != "drawverse.brush")
-                || dual_extended
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "dual-cover-extended")
-                || (dual_extended && b.engine_profile != "drawverse.brush")
-                || transfer
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "transfer-jitter")
-                || (transfer && b.engine_profile != "drawverse.brush")
-                || (b.has_dual_sizing()
-                    && (b.engine_profile != "drawverse.brush"
-                        || !b
-                            .required_capabilities
-                            .iter()
-                            .any(|c| c == "dual-relative-size")))
-                || b.smoothing.is_some()
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "path-smoothing")
-                || (b.smoothing.is_some() && b.engine_profile != "drawverse.brush")
-                || b.has_smooth()
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "pressure-smooth")
-                || (b.has_smooth() && b.engine_profile != "drawverse.brush")
-                || pressure
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "pressure-curves")
-                || (pressure && b.engine_profile != "drawverse.brush")
-                || opacity
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "opacity-pressure")
-                || tip_dynamic != b.required_capabilities.iter().any(|c| c == "tip-dynamics")
-                || (tip_dynamic && b.engine_profile != "drawverse.brush")
-                || scatter
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "scatter-stamps")
-                || (scatter && b.engine_profile != "drawverse.brush")
-                || shape != b.required_capabilities.iter().any(|c| c == "shape-jitter")
-                || (shape && b.engine_profile != "drawverse.brush")
-                || color
-                    != b.required_capabilities
-                        .iter()
-                        .any(|c| c == "color-dynamics")
-                || (color && b.engine_profile != "drawverse.brush")
-                || textured != b.required_capabilities.iter().any(|c| c == "texture-cover")
-                || (textured && b.engine_profile != "drawverse.brush")
-                || dual != b.required_capabilities.iter().any(|c| c == "dual-cover")
-                || (dual && b.engine_profile != "drawverse.brush")
+            let mut normalized = b.clone();
+            normalized.normalize_compatibility();
+            let actual_capabilities: BTreeSet<_> = b.required_capabilities.iter().collect();
+            let expected_capabilities: BTreeSet<_> =
+                normalized.required_capabilities.iter().collect();
+            if b.behavior_version != normalized.behavior_version
+                || b.engine_profile != normalized.engine_profile
+                || actual_capabilities != expected_capabilities
             {
                 return Err(Error::Invalid("VBR pressure behavior/capability"));
             }
@@ -655,14 +896,9 @@ impl Package {
                 definition.smoothing = p.core();
             }
             if let Some(id) = &b.tip_resource {
-                if !crate::brush_resource::valid_id(id)
-                    || b.engine_profile != "drawverse.brush"
-                    || !b.required_capabilities.iter().any(|c| c == "image-tip")
-                {
+                if !crate::brush_resource::valid_id(id) || b.engine_profile != "drawverse.brush" {
                     return Err(Error::Invalid("VBR image tip identity/profile/capability"));
                 }
-            } else if b.required_capabilities.iter().any(|c| c == "image-tip") {
-                return Err(Error::Invalid("VBR missing image tip reference"));
             }
             BrushProgram::compile(definition.clone())?;
             if b.engine_profile == "legacy.round" && definition.tip != BrushTip::default() {
@@ -692,8 +928,8 @@ pub(crate) fn checked_archive<'a>(
         return Err(Error::Limit("VBR compressed bytes"));
     }
     let mut zip = ZipArchive::new(Cursor::new(bytes))?;
-    // Manifest + 1024 presets + 4096 tip/texture/secondary/baseline images + 1024 records + 1024 originals.
-    if zip.len() > 7169 {
+    // Manifest + 1024 presets + 6144 images + 1024 source records + 1024 originals.
+    if zip.len() > 10217 {
         return Err(Error::Limit("VBR entry count"));
     }
     let mut paths = BTreeSet::new();
@@ -748,10 +984,7 @@ pub(crate) fn read_entry(
 pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
     let (mut zip, paths) = checked_archive(bytes, token)?;
     let manifest: Manifest = json(&read_entry(&mut zip, "manifest.json", MAX_JSON)?)?;
-    if manifest.format != "DrawVerseBrush"
-        || manifest.version.major != 1
-        || manifest.version.minor != 0
-    {
+    if manifest.format != "DrawVerseBrush" || manifest.version.major != 1 {
         return Err(Error::Unsupported("VBR format/version".into()));
     }
     if !manifest.assets.is_empty() || !manifest.groups.is_empty() {
@@ -772,7 +1005,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
         {
             return Err(Error::Invalid("VBR reference"));
         }
-        let preset: Preset = json(&read_entry(&mut zip, &reference.path, MAX_JSON)?)?;
+        let preset = decode_preset(&read_entry(&mut zip, &reference.path, MAX_JSON)?)?;
         if preset.id != reference.id {
             return Err(Error::Invalid("VBR reference ID mismatch"));
         }

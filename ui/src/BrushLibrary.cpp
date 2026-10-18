@@ -201,6 +201,8 @@ QVariantMap defaultDual(){return {{"model","path-coverage-v1"},{"enabled",false}
 bool extendedDualMode(const QString &mode){static const QSet<QString> modes={"colorBurn","linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix","vividLight","linearLight","pinLight","divide","linearHeight"};return modes.contains(mode);}
 bool dualHasExtendedMode(const QVariantMap &data){return extendedDualMode(data.value("mode").toString());}
 bool validDual(const QJsonObject &data){
+    // An empty payload is the canonical disabled/default second brush.
+    if(data.isEmpty())return true;
     static const QSet<QString> allowed={"model","enabled","flip","flipX","flipY","mode","diameter","spacing","hardness","roundness","angle","flow","pressureSize","pressureFlow","resource","pressureDynamics","tipDynamics","scatterDynamics","shapeJitter","sizing"};
     for(auto it=data.begin();it!=data.end();++it)if(!allowed.contains(it.key()))return false;
     for(const auto &key:{"enabled","pressureSize","pressureFlow"})if(!data.value(key).isBool())return false;
@@ -246,35 +248,6 @@ QJsonObject organizationForPreset(const QJsonObject &organization,const QString 
         items=QJsonArray{QJsonObject{{"kind","group"},{"id",id}}};
     }
     return QJsonObject{{"model","ordered-tree-v1"},{"roots",items},{"groups",outGroups}};
-}
-int expectedBehaviorVersion(const QJsonObject &preset){
-    const auto parameters=preset.value("parameters").toObject();const auto dual=preset.value("dualBrush").toObject();
-    if(parameters.contains("transferJitter"))return 29;
-    if(extendedDualMode(dual.value("mode").toString()))return 28;
-    if(parameters.value("scatterDynamics").toObject().contains("amountControl") || parameters.value("scatterDynamics").toObject().contains("countControl"))return 27;
-    if(dual.value("scatterDynamics").toObject().contains("amountControl") || dual.value("scatterDynamics").toObject().contains("countControl"))return 27;
-    if(parameters.value("fadeDynamics").isObject())return 26;
-    if(parameters.value("sourceMatrix").isObject())return 25;
-    if(parameters.value("directionDynamics").isObject())return 24;
-    if(parameters.value("rotationDynamics").isObject())return 23;
-    if(parameters.value("tiltDynamics").isObject())return 22;
-    if(parameters.value("distanceDynamics").isObject())return 21;
-    if(parameters.value("tangentDynamics").isObject())return 20;
-    if(parameters.value("speedDynamics").isObject())return 19;
-    if(parameters.value("airbrush").isObject())return 18;
-    if(preset.contains("strokeTaper"))return 15;
-    if(preset.contains("wetMix"))return 14;
-    if(dual.contains("sizing"))return 12;
-    if(preset.contains("smoothing"))return 11;
-    if(smoothPressure(parameters.value("pressureDynamics").toObject().toVariantMap(),dual.toVariantMap()))return 10;
-    if(preset.contains("dualBrush"))return 9;
-    if(preset.contains("texture"))return 8;
-    if(parameters.contains("colorDynamics"))return 7;
-    if(parameters.contains("shapeJitter"))return 6;
-    if(parameters.contains("scatterDynamics"))return 5;
-    if(parameters.contains("tipDynamics"))return 4;
-    if(parameters.value("pressureDynamics").toObject().contains("opacity"))return 3;
-    return parameters.contains("pressureDynamics")?2:1;
 }
 QVariantMap canonicalDual(QVariantMap data){
     data=QJsonObject::fromVariantMap(data).toVariantMap();
@@ -1138,7 +1111,9 @@ bool BrushLibrary::importPackage(const QByteArray &json,const QString &groupName
     }
     for(const auto &value:brushes){
         const auto b=value.toObject();const auto params=b.value("parameters").toObject();const auto sourceId=b.value("id").toString();QString id=sourceId;
-        if(QUuid(id).isNull() || b.value("behaviorVersion").toInt()!=expectedBehaviorVersion(b) || (b.value("engineProfile").toString()!="drawverse.brush" && b.value("engineProfile").toString()!="legacy.round"))return false;
+        // VBR stays at 1.0 and older packages may carry stale behavior metadata.
+        // Execute the fields that are present instead of rejecting the package.
+        if(QUuid(id).isNull() || (b.value("engineProfile").toString()!="drawverse.brush" && b.value("engineProfile").toString()!="legacy.round"))return false;
         if(importedIds.contains(sourceId))return false;
         if(ids.contains(id))id=QUuid::createUuid().toString(QUuid::WithoutBraces);
         ids.insert(id);importedIds.insert(sourceId,id);if(selected.isEmpty())selected=id;

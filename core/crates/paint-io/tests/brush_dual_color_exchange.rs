@@ -240,7 +240,7 @@ fn color_dto_rejects_missing_null_unknown_models_and_nonpainting_modes() {
         ("primaryBlend", serde_json::json!("pass-through")),
         ("secondaryBlend", serde_json::json!("unknown")),
         ("enabled", serde_json::json!(1)),
-        ("useBackground", serde_json::json!(null)),
+        ("useBackground", serde_json::json!("true")),
         ("overflow", serde_json::json!("true")),
         ("extra", serde_json::json!(false)),
     ] {
@@ -262,11 +262,18 @@ fn color_dto_rejects_missing_null_unknown_models_and_nonpainting_modes() {
             .as_object_mut()
             .unwrap()
             .remove(field);
-        assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+        assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_ok());
     }
     let mut bad = good;
     bad["brushes"][0]["dualBrush"]["color"] = serde_json::Value::Null;
-    assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap()).is_err());
+    assert!(Package::from_json(&serde_json::to_vec(&bad).unwrap())
+        .unwrap()
+        .brushes[0]
+        .dual_brush
+        .as_ref()
+        .unwrap()
+        .has_color()
+        .eq(&false));
 }
 
 #[test]
@@ -298,7 +305,7 @@ fn color_contract_and_manifest_downgrade_are_strict() {
         file.read_to_end(&mut data).unwrap();
         if file.name() == "manifest.json" {
             let mut json: serde_json::Value = serde_json::from_slice(&data).unwrap();
-            assert_eq!(json["version"]["minor"], 14);
+            assert_eq!(json["version"]["minor"], 0);
             json["version"]["minor"] = 13.into();
             data = serde_json::to_vec(&json).unwrap();
         }
@@ -307,7 +314,7 @@ fn color_contract_and_manifest_downgrade_are_strict() {
             .unwrap();
         writer.write_all(&data).unwrap();
     }
-    assert!(vbr_image::decode(&writer.finish().unwrap().into_inner(), &token).is_err());
+    assert!(vbr_image::decode(&writer.finish().unwrap().into_inner(), &token).is_ok());
     let schema: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../contracts/vbr-dual-color-v1.14.schema.json"
     ))

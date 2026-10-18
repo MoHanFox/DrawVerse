@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新VBR 1.0兼容：`docs/vbr-format-1.0-compatibility-design.md` / `docs/vbr-format-1.0-compatibility-validation.md`；VBR manifest写出固定`major:1, minor:0`，读取接受所有1.x并按实际字段执行；预设递归补全缺项，可选对象缺失/null保持关闭，重算行为版本与能力但不改已有正确顺序和值；旧双笔刷可正常关闭，禁用菜单项不再悬停展开。核心VBR/来源/压力/颜色/设备/散布/形状/平滑/双色/尺寸/湿混目标及Windows Release/Qt双笔刷最小用例通过；历史Schema仅作旧字段说明，未跑全量/跨平台/设备/GPU。
+
 - 最新画笔菜单与展开组落点：`docs/brush-menu-drag-refinements-design.md` / `docs/brush-menu-drag-refinements-validation.md`；画笔DropArea改为显式drop参数和固定panel作用域，消除拖动时`root is not defined`；右键菜单使用独立Window弹层，动态首项消除顶部空隙，文案统一为导出该组笔刷/该笔刷/选中笔刷，无组时移动到组禁用；画笔和图层在展开组标题下半部拖入均成为组内第一项。Windows Qt三项及Release完整构建通过，未跑全量/跨平台/设备/GPU。
 
 - 最新ABR大包与画笔多选导出：`docs/brush-library-abr-multiselect-export-design.md` / `docs/brush-library-abr-multiselect-export-validation.md`；ABR大直径/间距/圆度按Photoshop范围读取后近似钳制到原生上限，第二笔刷Double数量、纹理normal/高级模式修复；画笔库支持Ctrl/Shift画笔与组混选、多选禁画、选中项成组，工具栏导出移除并改为右键导出画笔/组/选中项，选中组导出保留完整子树。用户34MB/485画笔/304资源ABR实际Qt导入、Rust47项、Windows Qt 10项及Release完整构建通过；未跑全量/跨平台/设备/GPU。

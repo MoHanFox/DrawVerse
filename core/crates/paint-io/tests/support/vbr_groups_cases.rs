@@ -224,7 +224,7 @@ fn groups_vbr24_actual_bundle_merges_and_failure_keeps_target_identity() {
 }
 
 #[test]
-fn groups_vbr24_contract_manifest_is_actual_writer_output_and_downgrade_rejects() {
+fn groups_vbr10_contract_manifest_is_actual_writer_output_and_legacy_minors_load() {
     let token = CancellationToken::default();
     let b = grouped(ImageBundle::new(package(None), BTreeMap::new(), &token).unwrap());
     let bytes = encode(&b, &token).unwrap();
@@ -286,7 +286,7 @@ fn edit(bytes: &[u8], mut f: impl FnMut(&mut Value)) -> Vec<u8> {
     })
 }
 #[test]
-fn groups_vbr24_procedural_image_empty_folders_order_and_flat_bytes_roundtrip() {
+fn groups_vbr10_procedural_image_empty_folders_order_and_flat_bytes_roundtrip() {
     let token = CancellationToken::default();
     for b in [
         bundle(),
@@ -308,7 +308,7 @@ fn groups_vbr24_procedural_image_empty_folders_order_and_flat_bytes_roundtrip() 
         let b = grouped(b);
         let bytes = encode(&b, &token).unwrap();
         let m = manifest(&bytes);
-        assert_eq!(m["version"]["minor"], 24);
+        assert_eq!(m["version"]["minor"], 0);
         assert_eq!(m["groups"], json!([]));
         let restored = decode(&bytes, &token).unwrap();
         assert_eq!(
@@ -324,16 +324,16 @@ fn groups_vbr24_procedural_image_empty_folders_order_and_flat_bytes_roundtrip() 
     }
 }
 #[test]
-fn groups_vbr24_downgrade_conflicting_legacy_fields_and_bad_projection_reject() {
+fn groups_vbr10_legacy_minors_load_conflicting_legacy_fields_and_bad_projection_reject() {
     let token = CancellationToken::default();
     let b = grouped(bundle());
     let bytes = encode(&b, &token).unwrap();
-    for minor in [0, 1, 23, super::MAX_EXECUTABLE_MINOR + 1] {
+    for minor in [0, 1, 23, 44] {
         assert!(decode(
             &edit(&bytes, |m| m["version"]["minor"] = json!(minor)),
             &token
         )
-        .is_err());
+        .is_ok());
     }
     assert!(decode(&edit(&bytes, |m| m["organization"] = Value::Null), &token).is_err());
     assert!(decode(

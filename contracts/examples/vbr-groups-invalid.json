@@ -2,7 +2,7 @@
   "format": "DrawVerseBrush",
   "version": {
     "major": 1,
-    "minor": 23
+    "minor": 0
   },
   "packageId": "12345678-1234-4234-8234-123456789abc",
   "brushes": [
@@ -18,7 +18,7 @@
   "groups": [],
   "assets": [],
   "organization": {
-    "model": "ordered-tree-v1",
+    "model": "legacy-unordered",
     "roots": [
       {
         "kind": "group",

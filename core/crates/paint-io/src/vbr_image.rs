@@ -1,8 +1,8 @@
-//! VBR 1.1–1.10 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
+//! VBR 1.0 portable tips, provenance and dynamics. No file extraction or catalogue mutation.
 use crate::{
     brush_resource::{decode_verified, valid_id},
     check,
-    vbr::{self, Package, Preset, MAX_JSON, MAX_PACKAGE},
+    vbr::{self, Package, MAX_JSON, MAX_PACKAGE},
     Error, Result,
 };
 use paint_core::{BrushDefinition, BrushMask, BrushProgram, MAX_CATALOG_MASK_BYTES};
@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 44;
+pub const VBR_MINOR: u32 = 0;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -326,8 +326,13 @@ impl ImageBundle {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Version {
+    #[serde(default = "one")]
     major: u32,
+    #[serde(default)]
     minor: u32,
+}
+fn one() -> u32 {
+    1
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -350,7 +355,9 @@ struct Manifest {
     version: Version,
     package_id: String,
     brushes: Vec<Reference>,
+    #[serde(default)]
     groups: Vec<serde_json::Value>,
+    #[serde(default)]
     assets: Vec<AssetReference>,
     #[serde(
         default,
@@ -363,18 +370,10 @@ struct Manifest {
 pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
     let (mut zip, paths) = vbr::checked_archive(bytes, token)?;
     let manifest: Manifest = vbr::json(&vbr::read_entry(&mut zip, "manifest.json", MAX_JSON)?)?;
-    if manifest.format != "DrawVerseBrush"
-        || manifest.version.major != 1
-        || manifest.version.minor > MAX_EXECUTABLE_MINOR
-    {
+    if manifest.format != "DrawVerseBrush" || manifest.version.major != 1 {
         return Err(Error::Unsupported("VBR format/version".into()));
     }
     if let Some(organization) = &manifest.organization {
-        if manifest.version.minor < 24 {
-            return Err(Error::Unsupported(
-                "brush organization requires VBR1.24".into(),
-            ));
-        }
         if organization
             .core()
             .preset_order()
@@ -387,22 +386,10 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             ));
         }
     }
-    if manifest.version.minor == 0 {
-        return ImageBundle::new(vbr::decode(bytes, token)?, BTreeMap::new(), token);
-    }
     if !manifest.groups.is_empty() {
         return Err(Error::Unsupported("VBR groups".into()));
     }
-    if manifest.brushes.is_empty()
-        || manifest.brushes.len() > 1024
-        || manifest.assets.len()
-            > if manifest.version.minor >= 10 {
-                6144
-            } else if manifest.version.minor >= 9 {
-                5120
-            } else {
-                4096
-            }
+    if manifest.brushes.is_empty() || manifest.brushes.len() > 1024 || manifest.assets.len() > 6144
     {
         return Err(Error::Limit("VBR resource/preset count"));
     }
@@ -415,231 +402,11 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         {
             return Err(Error::Invalid("VBR preset reference"));
         }
-        let preset: Preset = vbr::json(&vbr::read_entry(&mut zip, &reference.path, MAX_JSON)?)?;
+        let preset = vbr::decode_preset(&vbr::read_entry(&mut zip, &reference.path, MAX_JSON)?)?;
         if preset.id != reference.id {
             return Err(Error::Invalid("VBR preset identity mismatch"));
         }
         brushes.push(preset);
-    }
-    if manifest.version.minor < 28 && brushes.iter().any(|b| b.has_interleaved_color()) {
-        return Err(Error::Unsupported(
-            "interleaved dual color requires VBR1.28".into(),
-        ));
-    }
-    if manifest.version.minor < 29 && brushes.iter().any(|b| b.parameters.airbrush.is_some()) {
-        return Err(Error::Unsupported("airbrush requires VBR1.29".into()));
-    }
-    if manifest.version.minor < 30
-        && brushes
-            .iter()
-            .any(|b| b.parameters.speed_dynamics.is_some())
-    {
-        return Err(Error::Unsupported("speed dynamics requires VBR1.30".into()));
-    }
-    if manifest.version.minor < 31
-        && brushes
-            .iter()
-            .any(|b| b.parameters.tangent_dynamics.is_some())
-    {
-        return Err(Error::Unsupported(
-            "tangent dynamics requires VBR1.31".into(),
-        ));
-    }
-    if manifest.version.minor < 32
-        && brushes
-            .iter()
-            .any(|b| b.parameters.distance_dynamics.is_some())
-    {
-        return Err(Error::Unsupported(
-            "distance dynamics requires VBR1.32".into(),
-        ));
-    }
-    if manifest.version.minor < 33 && brushes.iter().any(|b| b.parameters.tilt_dynamics.is_some()) {
-        return Err(Error::Unsupported("tilt dynamics requires VBR1.33".into()));
-    }
-    if manifest.version.minor < 34
-        && brushes
-            .iter()
-            .any(|b| b.parameters.rotation_dynamics.is_some())
-    {
-        return Err(Error::Unsupported(
-            "rotation dynamics requires VBR1.34".into(),
-        ));
-    }
-    if manifest.version.minor < 35
-        && brushes
-            .iter()
-            .any(|b| b.parameters.direction_dynamics.is_some())
-    {
-        return Err(Error::Unsupported(
-            "direction dynamics requires VBR1.35".into(),
-        ));
-    }
-    if manifest.version.minor < 36
-        && brushes
-            .iter()
-            .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_30()))
-    {
-        return Err(Error::Unsupported(
-            "advanced texture mode requires VBR1.36".into(),
-        ));
-    }
-    if manifest.version.minor < 37
-        && brushes
-            .iter()
-            .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_31()))
-    {
-        return Err(Error::Unsupported(
-            "latest texture mode requires VBR1.37".into(),
-        ));
-    }
-    if manifest.version.minor < 38 && brushes.iter().any(|b| b.parameters.source_matrix.is_some()) {
-        return Err(Error::Unsupported(
-            "dynamics source matrix requires VBR1.38".into(),
-        ));
-    }
-    if manifest.version.minor < 39
-        && brushes
-            .iter()
-            .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_39()))
-    {
-        return Err(Error::Unsupported(
-            "dissolve texture mode requires VBR1.39".into(),
-        ));
-    }
-    if manifest.version.minor < 40 && brushes.iter().any(|b| b.parameters.fade_dynamics.is_some()) {
-        return Err(Error::Unsupported("fade dynamics requires VBR1.40".into()));
-    }
-    if manifest.version.minor < 23 && brushes.iter().any(|b| b.has_wet_dual()) {
-        return Err(Error::Unsupported("wet dual color requires VBR1.23".into()));
-    }
-    if manifest.version.minor < 22 && brushes.iter().any(|b| b.stroke_taper.is_some()) {
-        return Err(Error::Unsupported("stroke taper requires VBR1.22".into()));
-    }
-    if manifest.version.minor < 15 && brushes.iter().any(|b| b.wet_mix.is_some()) {
-        return Err(Error::Unsupported("wet mix requires VBR1.15".into()));
-    }
-    if manifest.version.minor < 14 && brushes.iter().any(|b| b.has_dual_color()) {
-        return Err(Error::Unsupported("dual-color requires VBR1.14".into()));
-    }
-    if manifest.version.minor < 13 && brushes.iter().any(|b| b.has_dual_sizing()) {
-        return Err(Error::Unsupported(
-            "secondary sizing requires VBR1.13".into(),
-        ));
-    }
-    if manifest.version.minor < 12 && brushes.iter().any(|b| b.smoothing.is_some()) {
-        return Err(Error::Unsupported("smoothing requires VBR1.12".into()));
-    }
-    if manifest.version.minor < 11 && brushes.iter().any(|b| b.has_smooth()) {
-        return Err(Error::Unsupported(
-            "smooth pressure requires VBR1.11".into(),
-        ));
-    }
-    if manifest.version.minor < 10 && brushes.iter().any(|b| b.dual_brush.is_some()) {
-        return Err(Error::Unsupported("dual brush require VBR1.10".into()));
-    }
-    if manifest.version.minor < 9 && brushes.iter().any(|b| b.texture.is_some()) {
-        return Err(Error::Unsupported("texture require VBR1.9".into()));
-    }
-    if manifest.version.minor < 25
-        && brushes
-            .iter()
-            .any(|b| b.texture.as_ref().is_some_and(|t| t.mode() == "colorBurn"))
-    {
-        return Err(Error::Unsupported(
-            "color-burn texture mode requires VBR1.25".into(),
-        ));
-    }
-    if manifest.version.minor < 26
-        && brushes
-            .iter()
-            .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_26()))
-    {
-        return Err(Error::Unsupported(
-            "texture brightness/contrast requires VBR1.26".into(),
-        ));
-    }
-    if manifest.version.minor < 27
-        && brushes
-            .iter()
-            .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_27()))
-    {
-        return Err(Error::Unsupported(
-            "texture depth dynamics requires VBR1.27".into(),
-        ));
-    }
-    if manifest.version.minor < 8
-        && brushes
-            .iter()
-            .any(|b| b.parameters.color_dynamics.is_some())
-    {
-        return Err(Error::Unsupported("color dynamics require VBR1.8".into()));
-    }
-    if manifest.version.minor < 7 && brushes.iter().any(|b| b.parameters.shape_jitter.is_some()) {
-        return Err(Error::Unsupported("shape jitter require VBR1.7".into()));
-    }
-    if manifest.version.minor < 6
-        && brushes
-            .iter()
-            .any(|b| b.parameters.scatter_dynamics.is_some())
-    {
-        return Err(Error::Unsupported("scatter require VBR1.6".into()));
-    }
-    if manifest.version.minor < 42
-        && brushes.iter().any(|b| {
-            b.parameters
-                .scatter_dynamics
-                .is_some_and(|p| p.has_controls())
-                || b.dual_brush
-                    .as_ref()
-                    .is_some_and(|d| d.has_scatter_controls())
-        })
-    {
-        return Err(Error::Unsupported(
-            "scatter device controls require VBR1.42".into(),
-        ));
-    }
-    if manifest.version.minor < 43
-        && brushes
-            .iter()
-            .any(|b| b.dual_brush.as_ref().is_some_and(|d| d.has_extended_mode()))
-    {
-        return Err(Error::Unsupported(
-            "extended dual blend modes require VBR1.43".into(),
-        ));
-    }
-    if manifest.version.minor < 44
-        && brushes
-            .iter()
-            .any(|b| b.parameters.transfer_jitter.is_some())
-    {
-        return Err(Error::Unsupported(
-            "transfer jitter requires VBR1.44".into(),
-        ));
-    }
-    if manifest.version.minor < 5 && brushes.iter().any(|b| b.parameters.tip_dynamics.is_some()) {
-        return Err(Error::Unsupported("tip dynamics require VBR1.5".into()));
-    }
-    if manifest.version.minor < 4
-        && brushes.iter().any(|b| {
-            b.parameters
-                .pressure_dynamics
-                .as_ref()
-                .is_some_and(|p| p.has_opacity())
-        })
-    {
-        return Err(Error::Unsupported(
-            "VBR opacity pressure require version 1.4".into(),
-        ));
-    }
-    if manifest.version.minor < 3
-        && brushes
-            .iter()
-            .any(|b| b.parameters.pressure_dynamics.is_some())
-    {
-        return Err(Error::Unsupported(
-            "VBR pressure data require version 1.3".into(),
-        ));
     }
     let mut assets = BTreeMap::new();
     let mut records = BTreeMap::new();
@@ -648,8 +415,8 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
         check(token)?;
         let (prefix, suffix, limit) = match reference.kind.as_str() {
             "tip-mask" => ("assets", "png", MAX_PACKAGE),
-            "source-record" if manifest.version.minor >= 2 => ("sources", "json", MAX_JSON),
-            "abr-original" if manifest.version.minor >= 2 => ("originals", "abr", MAX_PACKAGE),
+            "source-record" => ("sources", "json", MAX_JSON),
+            "abr-original" => ("originals", "abr", MAX_PACKAGE),
             _ => return Err(Error::Unsupported("VBR resource kind/version".into())),
         };
         if !valid_id(&reference.id)
@@ -681,61 +448,6 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             return Err(Error::Limit("VBR source records"));
         }
         let info: crate::brush_source::SourceInfo = vbr::json(&bytes)?;
-        if info.version > 1 && manifest.version.minor < 27 {
-            return Err(Error::Unsupported(
-                "ABR texture source baseline requires VBR 1.27".into(),
-            ));
-        }
-        if info.converter_version > 6 && manifest.version.minor < 21 {
-            return Err(Error::Unsupported(
-                "ABR converter v7 requires VBR 1.21".into(),
-            ));
-        }
-        if info.converter_version > 8 && manifest.version.minor < 38 {
-            return Err(Error::Unsupported(
-                "ABR converter v9 requires VBR 1.38".into(),
-            ));
-        }
-        if info.converter_version > 9 && manifest.version.minor < 40 {
-            return Err(Error::Unsupported(
-                "ABR converter v10 requires VBR 1.40".into(),
-            ));
-        }
-        if info.converter_version > 10 && manifest.version.minor < 41 {
-            return Err(Error::Unsupported(
-                "ABR converter v11 requires VBR 1.41".into(),
-            ));
-        }
-        if info.converter_version > 11 && manifest.version.minor < 42 {
-            return Err(Error::Unsupported(
-                "ABR converter v12 requires VBR 1.42".into(),
-            ));
-        }
-        if info.converter_version > 5 && manifest.version.minor < 20 {
-            return Err(Error::Unsupported(
-                "VBR ABR shape sources require version 1.20".into(),
-            ));
-        }
-        if info.converter_version > 4 && manifest.version.minor < 19 {
-            return Err(Error::Unsupported(
-                "VBR ABR color sources require version 1.19".into(),
-            ));
-        }
-        if info.converter_version > 3 && manifest.version.minor < 18 {
-            return Err(Error::Unsupported(
-                "VBR ABR scatter sources require version 1.18".into(),
-            ));
-        }
-        if info.converter_version > 2 && manifest.version.minor < 17 {
-            return Err(Error::Unsupported(
-                "VBR ABR pressure sources require version 1.17".into(),
-            ));
-        }
-        if info.converter_version > 1 && manifest.version.minor < 16 {
-            return Err(Error::Unsupported(
-                "ABR opacity source requires VBR1.16".into(),
-            ));
-        }
         grouped
             .entry(info.original_hash)
             .or_default()
@@ -826,281 +538,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         format: "DrawVerseBrush".into(),
         version: Version {
             major: 1,
-            minor: if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.transfer_jitter.is_some())
-                || bundle
-                    .sources
-                    .iter()
-                    .any(|source| source.converter_version() > 12)
-            {
-                44
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.dual_brush.as_ref().is_some_and(|d| d.has_extended_mode()))
-            {
-                43
-            } else if bundle
-                .sources
-                .iter()
-                .any(|source| source.converter_version() > 11)
-                || bundle.package.brushes.iter().any(|b| {
-                    b.parameters
-                        .scatter_dynamics
-                        .is_some_and(|p| p.has_controls())
-                        || b.dual_brush
-                            .as_ref()
-                            .is_some_and(|d| d.has_scatter_controls())
-                })
-            {
-                42
-            } else if bundle
-                .sources
-                .iter()
-                .any(|source| source.converter_version() > 10)
-            {
-                41
-            } else if bundle
-                .sources
-                .iter()
-                .any(|source| source.converter_version() > 9)
-                || bundle
-                    .package
-                    .brushes
-                    .iter()
-                    .any(|b| b.parameters.fade_dynamics.is_some())
-            {
-                40
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_39()))
-            {
-                39
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.source_matrix.is_some())
-                || bundle
-                    .sources
-                    .iter()
-                    .any(|source| source.converter_version() > 8)
-            {
-                38
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_31()))
-            {
-                37
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_30()))
-            {
-                36
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.direction_dynamics.is_some())
-            {
-                35
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.rotation_dynamics.is_some())
-            {
-                34
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.tilt_dynamics.is_some())
-            {
-                33
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.distance_dynamics.is_some())
-            {
-                32
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.tangent_dynamics.is_some())
-            {
-                31
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.speed_dynamics.is_some())
-            {
-                30
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.airbrush.is_some())
-            {
-                29
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.has_interleaved_color())
-            {
-                28
-            } else if bundle
-                .sources
-                .iter()
-                .any(|source| source.record_version() > 1)
-                || bundle
-                    .package
-                    .brushes
-                    .iter()
-                    .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_27()))
-            {
-                27
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.texture.as_ref().is_some_and(|t| t.requires_vbr_26()))
-            {
-                26
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.texture.as_ref().is_some_and(|t| t.mode() == "colorBurn"))
-            {
-                25
-            } else if bundle.organization.is_some() {
-                24
-            } else if bundle.package.brushes.iter().any(|b| b.has_wet_dual()) {
-                23
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.stroke_taper.is_some())
-            {
-                22
-            } else if bundle
-                .sources
-                .iter()
-                .any(|source| source.converter_version() > 6)
-            {
-                21
-            } else if bundle
-                .sources
-                .iter()
-                .any(|source| source.converter_version() > 5)
-            {
-                20
-            } else if bundle
-                .sources
-                .iter()
-                .any(|source| source.converter_version() > 4)
-            {
-                19
-            } else if bundle
-                .sources
-                .iter()
-                .any(|source| source.converter_version() > 3)
-            {
-                18
-            } else if bundle
-                .sources
-                .iter()
-                .any(|source| source.converter_version() > 2)
-            {
-                17
-            } else if bundle
-                .sources
-                .iter()
-                .any(|source| source.converter_version() > 1)
-            {
-                16
-            } else if bundle.package.brushes.iter().any(|b| b.wet_mix.is_some()) {
-                15
-            } else if bundle.package.brushes.iter().any(|b| b.has_dual_color()) {
-                14
-            } else if bundle.package.brushes.iter().any(|b| b.has_dual_sizing()) {
-                13
-            } else if bundle.package.brushes.iter().any(|b| b.smoothing.is_some()) {
-                12
-            } else if bundle.package.brushes.iter().any(|b| b.has_smooth()) {
-                11
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.dual_brush.is_some())
-            {
-                10
-            } else if bundle.package.brushes.iter().any(|b| b.texture.is_some()) {
-                9
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.color_dynamics.is_some())
-            {
-                8
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.shape_jitter.is_some())
-            {
-                7
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.scatter_dynamics.is_some())
-            {
-                6
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.tip_dynamics.is_some())
-            {
-                5
-            } else if bundle.package.brushes.iter().any(|b| {
-                b.parameters
-                    .pressure_dynamics
-                    .as_ref()
-                    .is_some_and(|p| p.has_opacity())
-            }) {
-                4
-            } else if bundle
-                .package
-                .brushes
-                .iter()
-                .any(|b| b.parameters.pressure_dynamics.is_some())
-            {
-                3
-            } else if bundle.sources.is_empty() {
-                1
-            } else {
-                2
-            },
+            minor: VBR_MINOR,
         },
         package_id: bundle.package.package_id.clone(),
         groups: Vec::new(),

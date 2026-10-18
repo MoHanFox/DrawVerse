@@ -13,7 +13,7 @@ MenuItem {
         // Continue honoring hover over sibling categories when a separate child window
         // owns focus, including Qt's window popups at scaled display coordinates.
         interval:180
-        running:control.hovered && control.subMenu!==null && !!control.subMenu.cascadeParent
+        running:control.enabled && control.hovered && control.subMenu!==null && !!control.subMenu.cascadeParent
                 && !control.subMenu.visible
         onTriggered:control.subMenu.cascadeParent.openChild(control.subMenu)
     }

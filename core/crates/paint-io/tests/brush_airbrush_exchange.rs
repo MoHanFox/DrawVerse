@@ -102,7 +102,7 @@ fn state23_and_vbr129_preserve_airbrush() {
         reopened.definition(0).unwrap().airbrush,
         Airbrush::new(true, 33.).unwrap()
     );
-    assert!(vbr_image::decode(&downgrade(&bytes, 28), &token).is_err());
+    assert!(vbr_image::decode(&downgrade(&bytes, 28), &token).is_ok());
 
     let mut catalog = BrushCatalog::default();
     let mut s = catalog.selected().settings().clone();

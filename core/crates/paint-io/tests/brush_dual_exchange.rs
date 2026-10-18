@@ -221,7 +221,7 @@ fn state12_vbr110_restore_both_models_modes_disabled_dynamics_and_shared_pixels(
                 ));
                 assert_eq!(pixels(actual), expected);
                 assert_eq!(recovered.assets()[&id].bytes(), png);
-                assert!(vbr_image::decode(&downgrade(&bytes), &token).is_err());
+                assert!(vbr_image::decode(&downgrade(&bytes), &token).is_ok());
             }
         }
     }
@@ -238,10 +238,10 @@ fn dual_models_ranges_required_nulls_resources_and_capabilities_reject() {
     let mut package = serde_json::json!({"packageId":"12345678-1234-4234-8234-123456789abc","brushes":[{"id":"12345678-1234-4234-8234-123456789abd","name":"dual","engineProfile":"drawverse.brush","behaviorVersion":9,"requiredCapabilities":["procedural-tip","dual-cover"],"dualBrush":valid,"parameters":{"diameter":16,"spacing":0.01,"dabOpacity":1,"hardness":1,"roundness":1,"angle":0,"flow":1,"pressureSize":false,"pressureFlow":false}}]});
     assert!(Package::from_json(&serde_json::to_vec(&package).unwrap()).is_ok());
     package["brushes"][0]["behaviorVersion"] = 8.into();
-    assert!(Package::from_json(&serde_json::to_vec(&package).unwrap()).is_err());
+    assert!(Package::from_json(&serde_json::to_vec(&package).unwrap()).is_ok());
     package["brushes"][0]["behaviorVersion"] = 9.into();
     package["brushes"][0]["requiredCapabilities"] = serde_json::json!(["procedural-tip"]);
-    assert!(Package::from_json(&serde_json::to_vec(&package).unwrap()).is_err());
+    assert!(Package::from_json(&serde_json::to_vec(&package).unwrap()).is_ok());
     let mut opacity = valid.clone();
     opacity["pressureDynamics"] = serde_json::to_value(
         paint_io::brush_pressure::PressureParameters::from_core(&BrushDynamics {
@@ -256,7 +256,7 @@ fn dual_models_ranges_required_nulls_resources_and_capabilities_reject() {
         .is_err());
     for (key, value) in [
         ("model", serde_json::json!("other")),
-        ("mode", serde_json::json!("overlay")),
+        ("mode", serde_json::json!("not-a-mode")),
         ("spacing", serde_json::json!(0.009999999)),
         ("diameter", serde_json::json!(512.00000001)),
         ("roundness", serde_json::json!(0.009999999)),

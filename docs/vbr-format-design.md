@@ -1,5 +1,7 @@
 # VBR 原生笔刷格式草案
 
+2026-10-18固定1.0兼容：manifest写出只使用`major: 1, minor: 0`，本会话不再提升minor。读取端接受所有`major: 1`文件，不再以历史minor拒绝字段、来源或预览；预设按完整默认形状递归补齐缺失字段，已有值和正确能力顺序保持，可选功能对象缺少或为`null`时保持关闭，随后按实际字段归一化behaviorVersion与requiredCapabilities。资源身份、数值范围、引用、数量和可执行编译仍严格校验。见[设计](vbr-format-1.0-compatibility-design.md)及[验收](vbr-format-1.0-compatibility-validation.md)。下文历史“VBR1.xx”条目说明各字段引入时的旧格式，不代表当前写出会提升minor。
+
 2026-10-18逐印章双色：VBR1.28新增`interleaved-stamp-v1`双色渲染模型，behavior17及`dual-color-stamp`能力；它只改变主/第二贡献的执行顺序，不改变颜色对象结构。VBR1.24分组/state20、1.25-1.27纹理格式及旧state21字节保持；VBR1.27读取到逐印章模型必须拒绝。见[设计](brush-dual-stamp-design.md)、[验收](brush-dual-stamp-validation.md)及颜色对象[Schema](../contracts/dual-color-stamp-v1.28.schema.json)。
 
 2026-10-18时间喷枪：VBR1.29新增parameters.airbrush=`time-interval-v1`（enabled、intervalMs 1–1000），behavior18及`airbrush`能力；旧VBR1.28不携带该对象。见[设计](brush-airbrush-design.md)、[验收](brush-airbrush-validation.md)及[Schema](../contracts/vbr-airbrush-v1.29.schema.json)。

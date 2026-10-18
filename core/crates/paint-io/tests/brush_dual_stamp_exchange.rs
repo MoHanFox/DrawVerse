@@ -166,7 +166,7 @@ fn interleaved_state_and_vbr_versions_are_strict() {
     assert!(
         brush_state::decode(&serde_json::to_vec(&value).unwrap(), MAX_CATALOG_MASK_BYTES).is_err()
     );
-    assert!(vbr_image::decode(&downgrade(&bytes, 27), &token).is_err());
+    assert!(vbr_image::decode(&downgrade(&bytes, 27), &token).is_ok());
 }
 
 #[test]

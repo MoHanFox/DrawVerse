@@ -90,7 +90,7 @@ fn state32_and_vbr138_preserve_dynamics_source_matrix() {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
     let manifest: serde_json::Value =
         serde_json::from_reader(archive.by_name("manifest.json").unwrap()).unwrap();
-    assert_eq!(manifest["version"]["minor"], 38);
+    assert_eq!(manifest["version"]["minor"], 0);
     let reopened = vbr_image::decode(&bytes, &token).unwrap();
     assert_eq!(p.to_json().unwrap(), reopened.package.to_json().unwrap());
     assert_eq!(reopened.definition(0).unwrap().dynamics.matrix, matrix());
