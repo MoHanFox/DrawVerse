@@ -16,55 +16,55 @@ state22 和 VBR1.28 只在颜色模型为 `interleaved-stamp-v1` 时要求；旧
 
 ## ABI 1.48 双色双笔刷入口
 
-PAINT_FEATURE_DUAL_COLOR_STROKE=8796093022208，既有准确准备与库包接通state16/VBR1.14/behavior13，解除色彩对象临时拒绝。无DTO/导出签名改变；Qt最低ABI1.48，完整color镜像/基准/关闭值和背景来源、27模式保持，预览捕获实际工具两色但不保存到预设。工具预览仍正常，真实起笔两色/模式与定义不可变捕获。旧程序包不支持扩展，双色橡皮和涂抹仍明确拒绝。见docs/brush-dual-color-ui-design.md。
+PAINT_FEATURE_DUAL_COLOR_STROKE=8796093022208，既有准确准备与库包接通state16/VBR1.14/behavior13，解除色彩对象临时拒绝。无DTO/导出签名改变；Qt最低ABI1.48，完整color镜像/基准/关闭值和背景来源、27模式保持，预览捕获实际工具两色但不保存到预设。工具预览仍正常，真实起笔两色/模式与定义不可变捕获。旧程序包不支持扩展，双色橡皮和涂抹仍明确拒绝。见docs/brush/ui/brush-dual-color-ui-design.md。
 
 
 ## ABI 1.47 第二笔尖相对尺寸入口
 
-PAINT_FEATURE_DUAL_RELATIVE_SIZE=4398046511104，既有准确准备与库包接通state15/VBR1.13/behavior12，解除新尺寸对象临时拒绝。无DTO/导出签名改变，Qt最低ABI1.47；双笔刷镜像、关闭值、重置基准、预览与VBR完整携带sizing。真正尺寸与压力几何由Rust执行，Qt只显示标称夹限；旧无库程序包继续拒绝扩展。见docs/brush-dual-size-ui-design.md。
+PAINT_FEATURE_DUAL_RELATIVE_SIZE=4398046511104，既有准确准备与库包接通state15/VBR1.13/behavior12，解除新尺寸对象临时拒绝。无DTO/导出签名改变，Qt最低ABI1.47；双笔刷镜像、关闭值、重置基准、预览与VBR完整携带sizing。真正尺寸与压力几何由Rust执行，Qt只显示标称夹限；旧无库程序包继续拒绝扩展。见docs/brush/ui/brush-dual-size-ui-design.md。
 
 
 ## ABI 1.46 时间平滑设置与完整桥
 
-PAINT_FEATURE_PATH_SMOOTHING=2199023255552，既有准确准备和库包支持state14/VBR1.12/behavior11完整time-grid-v1。无DTO/导出签名变化。Qt至少要求ABI1.46，完整镜像/基准/关闭配置及后台规范化持久化；主/第二复用同一路径，预览使用真实时间输入，真实笔触仍按捕获修订执行。上阶段新配置暂拒已解除；无库程序子集入口仍明确Unsupported。PAINT_FEATURE_PRESSURE_SMOOTH继续仅为PCHIP插值能力，两项不混淆。见docs/brush-smoothing-ui-validation.md。
+PAINT_FEATURE_PATH_SMOOTHING=2199023255552，既有准确准备和库包支持state14/VBR1.12/behavior11完整time-grid-v1。无DTO/导出签名变化。Qt至少要求ABI1.46，完整镜像/基准/关闭配置及后台规范化持久化；主/第二复用同一路径，预览使用真实时间输入，真实笔触仍按捕获修订执行。上阶段新配置暂拒已解除；无库程序子集入口仍明确Unsupported。PAINT_FEATURE_PRESSURE_SMOOTH继续仅为PCHIP插值能力，两项不混淆。见docs/brush/ui/brush-smoothing-ui-validation.md。
 
 ## ABI 1.45 自动平滑压力曲线
 
-PAINT_FEATURE_PRESSURE_SMOOTH=1099511627776。paint_pressure_curve_samples(json,length,model,out)为允许UI线程调用的无句柄纯查询，不等待actor/资源；JSON为2–17个[x,y]点，1..4096字节，model=0旧折线/1 smooth-pchip-v1，out为对齐可写257个f32。所有缓冲区不重叠，不保留caller内存；有效输出在失败时清零，NULL/错位/非法数量/模型/点拒绝。实际执行精确求值，UI只画采样。state13/VBR1.11/behavior10/pressure-smooth能力保存插值模型，缺省旧折线保留，编辑显式转平滑；主/第二关闭数据及完整基准均往返。见docs/brush-pressure-smooth-design.md。
+PAINT_FEATURE_PRESSURE_SMOOTH=1099511627776。paint_pressure_curve_samples(json,length,model,out)为允许UI线程调用的无句柄纯查询，不等待actor/资源；JSON为2–17个[x,y]点，1..4096字节，model=0旧折线/1 smooth-pchip-v1，out为对齐可写257个f32。所有缓冲区不重叠，不保留caller内存；有效输出在失败时清零，NULL/错位/非法数量/模型/点拒绝。实际执行精确求值，UI只画采样。state13/VBR1.11/behavior10/pressure-smooth能力保存插值模型，缺省旧折线保留，编辑显式转平滑；主/第二关闭数据及完整基准均往返。见docs/brush/dynamics/brush-pressure-smooth-design.md。
 
 ## ABI 1.44 画笔颜色混合捕获
 
-PAINT_FEATURE_BRUSH_WRITE_BLEND=549755813888（u64）。PaintBrushBlendDesc为16字节，size/u32模式位于0/4，reserved/u64位于8；模式0..26，reserved=0。新paint_session_begin_prepared_preset_with_blend读取现有tool/background/point及此描述，经pointers.rs复制并验证，失败sequence=0；非正常擦除/涂抹和组穿透拒绝。actor捕获模式与准确准备票据，不借用caller内存；旧入口保持正常，无旧DTO或签名变化，state12/VBR1.10不保存临时工具模式。Qt工具栏/持久化已接。最新用户要求预览固定正常，菜单跨原生面板置顶，见docs/brush-mix-performance-validation.md；早期预览证据保留在docs/brush-blend-ui-validation.md。
+PAINT_FEATURE_BRUSH_WRITE_BLEND=549755813888（u64）。PaintBrushBlendDesc为16字节，size/u32模式位于0/4，reserved/u64位于8；模式0..26，reserved=0。新paint_session_begin_prepared_preset_with_blend读取现有tool/background/point及此描述，经pointers.rs复制并验证，失败sequence=0；非正常擦除/涂抹和组穿透拒绝。actor捕获模式与准确准备票据，不借用caller内存；旧入口保持正常，无旧DTO或签名变化，state12/VBR1.10不保存临时工具模式。Qt工具栏/持久化已接。最新用户要求预览固定正常，菜单跨原生面板置顶，见docs/brush/wet/brush-mix-performance-validation.md；早期预览证据保留在docs/brush/ui/brush-blend-ui-validation.md。
 
 ## ABI 1.43 双笔刷设置与资源入口
 
-`PAINT_FEATURE_DUAL_BRUSH=274877906944`（u64），无DTO或导出签名变化。准确准备/state12/VBR1.10/behavior9接Qt完整双对象，PNG导入捕获预设与第二角色；新关闭默认独立路径24px/25%，显式配对保留null间距。库package解除临时拒绝，当前主/纹理/第二与来源基线PNG去重并集导出；缺失资源不改已有目标。旧无库上下文程序导出仍明确拒绝双对象。Qt至少要求ABI1.43，真实预览保持两笔尖尺寸比例，光标仍显示主笔尖。见 `docs/brush-dual-ui-validation.md`。
+`PAINT_FEATURE_DUAL_BRUSH=274877906944`（u64），无DTO或导出签名变化。准确准备/state12/VBR1.10/behavior9接Qt完整双对象，PNG导入捕获预设与第二角色；新关闭默认独立路径24px/25%，显式配对保留null间距。库package解除临时拒绝，当前主/纹理/第二与来源基线PNG去重并集导出；缺失资源不改已有目标。旧无库上下文程序导出仍明确拒绝双对象。Qt至少要求ABI1.43，真实预览保持两笔尖尺寸比例，光标仍显示主笔尖。见 `docs/brush/ui/brush-dual-ui-validation.md`。
 
 历史双笔刷IO/准备桥阶段ABI1.42曾保留库包临时拒绝，现已被上述入口取代，原阶段证据保留。
 
 ## ABI 1.42 纹理资源与设置入口
 
-`PAINT_FEATURE_BRUSH_TEXTURE=137438953472`（u64）。现有准确准备与库包读写支持 state11/VBR1.9/behavior8 的预设级 texture 对象，PNG 导入沿既有覆盖资源接口。无 DTO 布局变化。库包解除临时拒绝，导出覆盖当前笔尖、纹理与来源基线 PNG 并集；无库上下文的旧程序包接口继续明确拒绝纹理。Qt 严格保存完整模型/资源/关闭值，真实预览和绘画仅由 Rust 执行，导入捕获预设与目标角色。见 `docs/brush-texture-ui-design.md`。
+`PAINT_FEATURE_BRUSH_TEXTURE=137438953472`（u64）。现有准确准备与库包读写支持 state11/VBR1.9/behavior8 的预设级 texture 对象，PNG 导入沿既有覆盖资源接口。无 DTO 布局变化。库包解除临时拒绝，导出覆盖当前笔尖、纹理与来源基线 PNG 并集；无库上下文的旧程序包接口继续明确拒绝纹理。Qt 严格保存完整模型/资源/关闭值，真实预览和绘画仅由 Rust 执行，导入捕获预设与目标角色。见 `docs/brush/ui/brush-texture-ui-design.md`。
 
-历史纹理IO阶段：Rust state11/VBR1.9/behavior8支持预设级texture资源绑定，当时ABI1.41、Qt未接。临时包拒绝已由ABI1.42入口取代，阶段证据见 `docs/brush-texture-io-validation.md`。
+历史纹理IO阶段：Rust state11/VBR1.9/behavior8支持预设级texture资源绑定，当时ABI1.41、Qt未接。临时包拒绝已由ABI1.42入口取代，阶段证据见 `docs/brush/texture/brush-texture-io-validation.md`。
 
 ## ABI 1.41 颜色动态与背景捕获
 
-`PAINT_FEATURE_COLOR_DYNAMICS=68719476736`（u64）。新增 `PaintBrushBackgroundDesc`（24字节：size/reserved/4线性RGBA，RGBA偏移8）及 `paint_session_begin_prepared_preset_with_background`。旧ToolDesc/导出布局不变，旧入口白色背景。新入口与前景tool同时复制背景为拥有的Pixel，size/reserved/RGBA/point校验、失败sequence=0，actor等准确准备后捕获完整预设，两色不借用caller内存；所有caller读取仍在pointers.rs。state10/VBR1.8/behavior7/model接Qt镜像，库package解除临时拒绝；旧程序子集接口保持原范围。见 `docs/brush-color-ui-validation.md`。
+`PAINT_FEATURE_COLOR_DYNAMICS=68719476736`（u64）。新增 `PaintBrushBackgroundDesc`（24字节：size/reserved/4线性RGBA，RGBA偏移8）及 `paint_session_begin_prepared_preset_with_background`。旧ToolDesc/导出布局不变，旧入口白色背景。新入口与前景tool同时复制背景为拥有的Pixel，size/reserved/RGBA/point校验、失败sequence=0，actor等准确准备后捕获完整预设，两色不借用caller内存；所有caller读取仍在pointers.rs。state10/VBR1.8/behavior7/model接Qt镜像，库package解除临时拒绝；旧程序子集接口保持原范围。见 `docs/brush/ui/brush-color-ui-validation.md`。
 
-颜色动态IO阶段：Rust state10/VBR1.8/behavior7保存独立colorDynamics及完整hex种子，模型严格linear-hsv-v1；ABI仍1.40，用户背景工具传入与Qt待接。库package_read/write暂对新对象返回Unsupported，读required=0且不改caller/资源，写不改目标；旧包保持原路径。见 `docs/brush-color-io-validation.md`。
+颜色动态IO阶段：Rust state10/VBR1.8/behavior7保存独立colorDynamics及完整hex种子，模型严格linear-hsv-v1；ABI仍1.40，用户背景工具传入与Qt待接。库package_read/write暂对新对象返回Unsupported，读required=0且不改caller/资源，写不改目标；旧包保持原路径。见 `docs/brush/core/brush-color-io-validation.md`。
 
 ## ABI 1.40 形状抖动入口
 
-`PAINT_FEATURE_SHAPE_JITTER=34359738368`，features为u64。state9/VBR1.7/behavior6/shape-jitter接入准确准备与Qt镜像，没有DTO变化。库package_read/write解除形状对象临时Unsupported边界；旧程序子集入口仍只支持原子集。UI要求至少ABI1.40。每预设保留独立对象和完整seed字符串，关闭不清配置，真实预览/绘画仅Rust执行；光标显示输入笔尖而非随机样本。见 `docs/brush-shape-jitter-ui-validation.md`。
+`PAINT_FEATURE_SHAPE_JITTER=34359738368`，features为u64。state9/VBR1.7/behavior6/shape-jitter接入准确准备与Qt镜像，没有DTO变化。库package_read/write解除形状对象临时Unsupported边界；旧程序子集入口仍只支持原子集。UI要求至少ABI1.40。每预设保留独立对象和完整seed字符串，关闭不清配置，真实预览/绘画仅Rust执行；光标显示输入笔尖而非随机样本。见 `docs/brush/ui/brush-shape-jitter-ui-validation.md`。
 
-形状抖动IO阶段：Rust state9/VBR1.7/behavior6保存独立shapeJitter对象及16位十六进制u64种子；ABI仍1.39，Qt尚未接入。package_read/write暂对新对象返回Unsupported，读required=0且不改caller字节或资源目录，写不改目标；默认和既有包保留原路径。见 `docs/brush-shape-jitter-io-validation.md`。
+形状抖动IO阶段：Rust state9/VBR1.7/behavior6保存独立shapeJitter对象及16位十六进制u64种子；ABI仍1.39，Qt尚未接入。package_read/write暂对新对象返回Unsupported，读required=0且不改caller字节或资源目录，写不改目标；默认和既有包保留原路径。见 `docs/brush/dynamics/brush-shape-jitter-io-validation.md`。
 
 ## ABI 1.39 散布入口
 
-`PAINT_FEATURE_BRUSH_SCATTER=17179869184`（features为u64）。state8/VBR1.6/behavior5/scatter-stamps使用既有准确准备与捕获笔触，没有DTO布局变化。package_read/write解除ABI1.38对散布对象的临时Unsupported边界；Qt独立保存对象及完整种子字符串。散布运算仅在Rust，预览/实际笔触共用；关闭保留配置，旧目录默认不升级。见 `docs/brush-scatter-ui-validation.md`。
+`PAINT_FEATURE_BRUSH_SCATTER=17179869184`（features为u64）。state8/VBR1.6/behavior5/scatter-stamps使用既有准确准备与捕获笔触，没有DTO布局变化。package_read/write解除ABI1.38对散布对象的临时Unsupported边界；Qt独立保存对象及完整种子字符串。散布运算仅在Rust，预览/实际笔触共用；关闭保留配置，旧目录默认不升级。见 `docs/brush/ui/brush-scatter-ui-validation.md`。
 
-散布IO阶段：Rust state8/VBR1.6/behavior5保存独立scatterDynamics及16位十六进制u64种子；ABI1.38和Qt尚未接入。package_read/write暂对scatterDynamics对象返回Unsupported，读required=0且不改caller字节或资源目录，写不改现有目标；默认和既有包保留原路径。见 `docs/brush-scatter-io-validation.md`。
+散布IO阶段：Rust state8/VBR1.6/behavior5保存独立scatterDynamics及16位十六进制u64种子；ABI1.38和Qt尚未接入。package_read/write暂对scatterDynamics对象返回Unsupported，读required=0且不改caller字节或资源目录，写不改现有目标；默认和既有包保留原路径。见 `docs/brush/dynamics/brush-scatter-io-validation.md`。
 
 ## ABI1.38：实时笔尖姿态
 
@@ -72,23 +72,23 @@ PAINT_FEATURE_BRUSH_WRITE_BLEND=549755813888（u64）。PaintBrushBlendDesc为16
 
 read接受既有sized PaintPoint、严格0/1的pressure_known/direction_known和有限方向向量，未知方向必须零向量，已知方向非零；输出24字节PaintTipPose（struct_size/reserved/radius/angle/roundness/reserved_tail，radius offset8/angle12/roundness16）。输出保留字段为零，Busy/错误清输出，成功半径可因零压力为零。使用原生尺寸/几何算法；未知压力返回名义半径，缺设备通道回退基础几何。读取只try_result，不等待，不做caller线程文件IO，冷准备在独立池排任务；生命周期与查询均禁止在回调内调用。caller内存通过pointers.rs，安全前提见生成头。
 
-Qt绘画姿态绑定与BeginPrepared相同的记录/ID/半径，悬停独立，图像轮廓身份在本笔保留；此接口不修改文档/历史/预设或保存格式。见 `docs/brush-live-pose-validation.md`。
+Qt绘画姿态绑定与BeginPrepared相同的记录/ID/半径，悬停独立，图像轮廓身份在本笔保留；此接口不修改文档/历史/预设或保存格式。见 `docs/brush/input/brush-live-pose-validation.md`。
 
 ## ABI1.37：设备笔尖动态入口
 
-`PAINT_FEATURE_DEVICE_TIP_DYNAMICS=4294967296`，features为u64。state7/VBR1.5/behavior4/tip-dynamics接入准确原生准备和Qt镜像；library_package_read/write解除设备对象临时Unsupported边界。曲线和设备控制分别保存，旧C参数编辑保留完整动态；无DTO布局变化。Qt仅校验/展示，不执行几何。实际输入与预览沿同一内核，实时光标pose接口仍在后续范围，见 `docs/brush-device-ui-validation.md`。
+`PAINT_FEATURE_DEVICE_TIP_DYNAMICS=4294967296`，features为u64。state7/VBR1.5/behavior4/tip-dynamics接入准确原生准备和Qt镜像；library_package_read/write解除设备对象临时Unsupported边界。曲线和设备控制分别保存，旧C参数编辑保留完整动态；无DTO布局变化。Qt仅校验/展示，不执行几何。实际输入与预览沿同一内核，实时光标pose接口仍在后续范围，见 `docs/brush/ui/brush-device-ui-validation.md`。
 
-设备动态IO阶段：Rust state7/VBR1.5已有独立tipDynamics保存，现有Qt仍只接受state6/behavior3。ABI36 package_read/write对tipDynamics对象暂返回Unsupported（读required=0且不改caller字节，写不改已有目标），不宣称旧Qt已支持新数据；新原生能力和Qt接入后解除边界。无DTO变化，来源/压力包保持原路径。见 `docs/brush-device-io-validation.md`。
+设备动态IO阶段：Rust state7/VBR1.5已有独立tipDynamics保存，现有Qt仍只接受state6/behavior3。ABI36 package_read/write对tipDynamics对象暂返回Unsupported（读required=0且不改caller字节，写不改已有目标），不宣称旧Qt已支持新数据；新原生能力和Qt接入后解除边界。无DTO变化，来源/压力包保持原路径。见 `docs/brush/core/brush-device-io-validation.md`。
 
 ## ABI 1.36：独立不透明度压感
 
-`PAINT_FEATURE_OPACITY_PRESSURE=2147483648`（features为u64）。现有目录状态接受v6，package接口支持VBR1.4/behavior3/opacity-pressure。pressureDynamics增加可选opacity对象，curve/minimum沿既有有界控制、enabled为严格布尔；v5不能携带此对象。普通绘画/擦除/蒙版起笔捕获局部压力上限，流量独立，较低压力不反向清除原颜色；涂抹继续强度语义。无DTO布局改变，旧C编辑保留动态，caller-memory边界不变。设计与验收见 `docs/brush-opacity-pressure-design.md` / `docs/brush-opacity-pressure-validation.md`。
+`PAINT_FEATURE_OPACITY_PRESSURE=2147483648`（features为u64）。现有目录状态接受v6，package接口支持VBR1.4/behavior3/opacity-pressure。pressureDynamics增加可选opacity对象，curve/minimum沿既有有界控制、enabled为严格布尔；v5不能携带此对象。普通绘画/擦除/蒙版起笔捕获局部压力上限，流量独立，较低压力不反向清除原颜色；涂抹继续强度语义。无DTO布局改变，旧C编辑保留动态，caller-memory边界不变。设计与验收见 `docs/brush/dynamics/brush-opacity-pressure-design.md` / `docs/brush/dynamics/brush-opacity-pressure-validation.md`。
 
 ## ABI 1.35：压力动态入口与整笔不透明度修复
 
 `PAINT_FEATURE_PRESSURE_DYNAMICS=1073741824`。现有 library package 读写支持 VBR1.3 / behavior2 / pressure-curves，Qt 保存并编辑 v5 尺寸/流量曲线。没有 DTO 布局变化，生成头由 cbindgen 管理。
 
-用户要求修正普通绘画/擦除/蒙版的 opacity 为整笔上限，tip.flow 与流量压力仍控制印章累积；旧字段位置不变，旧低不透明度笔触行为有意修正，历史像素保持原样。涂抹继续运输强度语义。每个预设拥有实际 radius。实现与边界见 `docs/brush-stroke-opacity-design.md`。
+用户要求修正普通绘画/擦除/蒙版的 opacity 为整笔上限，tip.flow 与流量压力仍控制印章累积；旧字段位置不变，旧低不透明度笔触行为有意修正，历史像素保持原样。涂抹继续运输强度语义。每个预设拥有实际 radius。实现与边界见 `docs/brush/dynamics/brush-stroke-opacity-design.md`。
 
 ## ABI 1.34：VBR来源交换
 
@@ -150,7 +150,7 @@ read输出先清零，容量不足给required并且不写资源；空输出足�
 
 `PAINT_FEATURE_VBR=2097152`。`paint_brush_package_read/write` 是 worker-thread 同步 IO，Qt 后台线程调用；不操作文档或历史，不保留 caller memory。UTF-8 路径最长32768字节，JSON最长2MiB。读取整个 ZIP 验证成功后输出 canonical package JSON；小缓冲返回 BUFFER_TOO_SMALL 并填写 required，大小查询和重读之间文件可以改变。UI 使用固定2MiB缓冲一次读，避免查询/读取竞态。写入验证 JSON 的版本/能力与所有参数，然后同目录临时文件原子替换。
 
-格式对应 [程序子集 Schema](vbr-procedural-v1.schema.json) 与 [设计](../docs/vbr-procedural-design.md)。package JSON 传输体包含 packageId 和完整 brushes 数组；归档 manifest 与每个 preset 分开。暂不支持图片资源/分组/未知扩展，明确拒绝，完整 VBR 总体草案尚未全部实施。
+格式对应 [程序子集 Schema](vbr-procedural-v1.schema.json) 与 [设计](../docs/brush/vbr/vbr-procedural-design.md)。package JSON 传输体包含 packageId 和完整 brushes 数组；归档 manifest 与每个 preset 分开。暂不支持图片资源/分组/未知扩展，明确拒绝，完整 VBR 总体草案尚未全部实施。
 
 ## ABI 1.25：共用程序笔尖
 
@@ -187,7 +187,7 @@ read输出先清零，容量不足给required并且不写资源；空输出足�
 - `paint_session_liquify` FIFO 接收 BEGIN=0/DAB=1/RESET=2/CANCEL=3/COMMIT=4/FOCUS_ON=5/FOCUS_OFF=6；只有 DAB 接收 `PaintLiquifyDab`，其余 descriptor 必须 null。所有指针在返回前复制，OK 只表示入队。
 - `PaintLiquifyDab` 为 176 字节，from/to 位于 48/112；保留既有 DTO 不变。
 - DAB：工具 0推拉/1膨大/2顺时针扭曲/3重建；半径0.5–1000px，强度/密度/速度0.01–1，时间0–250ms，压感0/1，保留字段为0；两个内嵌 PaintPoint 必须完整且合法。
-- BEGIN 拒绝组、继承锁、普通笔触或活动文件任务；预览不改变 modified 或正式文档 undo/redo。RESET/CANCEL 精确恢复原层；COMMIT 一次真实像素历史，空确认无历史，历史失败仍可取消。活动期间普通修改返回 BUSY，文件任务以 BUSY 结束；读/渲染继续可用。资源与事务说明见 `docs/liquify-design.md`。
+- BEGIN 拒绝组、继承锁、普通笔触或活动文件任务；预览不改变 modified 或正式文档 undo/redo。RESET/CANCEL 精确恢复原层；COMMIT 一次真实像素历史，空确认无历史，历史失败仍可取消。活动期间普通修改返回 BUSY，文件任务以 BUSY 结束；读/渲染继续可用。资源与事务说明见 `docs/tools/liquify-design.md`。
 
 - FOCUS_ON/OFF 仅修改显示快照，真实层可见性和历史不变；确认/取消后恢复全部原可见层。
 
@@ -201,7 +201,7 @@ read输出先清零，容量不足给required并且不写资源；空输出足�
 
 ## ABI 1.19：组穿透
 
-新增 PAINT_BLEND_PASS_THROUGH=27 与 feature bit 65536。既有 PaintLayerAppearance.blend_mode 及 set/preview 路径支持此值，但只允许组节点；像素层与蒙版拒绝。请求同步校验数值范围，目标类型/锁和层 ID 仍由 actor 异步验证；UI 同步限制组专用选项。组影响范围、opacity/fill/蒙版与剪贴语义见 docs/group-pass-through-design.md。旧混合 0–26、所有 DTO 和函数签名不变。
+新增 PAINT_BLEND_PASS_THROUGH=27 与 feature bit 65536。既有 PaintLayerAppearance.blend_mode 及 set/preview 路径支持此值，但只允许组节点；像素层与蒙版拒绝。请求同步校验数值范围，目标类型/锁和层 ID 仍由 actor 异步验证；UI 同步限制组专用选项。组影响范围、opacity/fill/蒙版与剪贴语义见 docs/layers/group-pass-through-design.md。旧混合 0–26、所有 DTO 和函数签名不变。
 
 
 ## ABI 1.18：涂抹
@@ -266,7 +266,7 @@ Wrap 包含指定图层/组及其子树；新组成为活动节点。Reparent �
 
 结构命令只保留元数据，删除子树可使用有界无损磁盘历史。组操作遵守 idle、撤销屏障与 modified 规则，撤销/重做仍忽略当前锁状态。层 ID 单调且不复用；ORA 重开重新分配 IDs，不能跨代际复用旧 ID。
 
-正式源：`core/crates/paint-ffi/src/api.rs` 与导出函数 `lib.rs` / `session_api.rs` / `file_api.rs` / `storage_api.rs` / `layer_api.rs`；正式头：`ui/include/paint_api.h`，固定 cbindgen 0.29.2 自动生成。旧 draft.h 仅为设计历史。1.0 验证见 `docs/ffi-validation.md`，1.1 设计/验证见 `docs/task-render-design.md` / `docs/task-render-validation.md`。
+正式源：`core/crates/paint-ffi/src/api.rs` 与导出函数 `lib.rs` / `session_api.rs` / `file_api.rs` / `storage_api.rs` / `layer_api.rs`；正式头：`ui/include/paint_api.h`，固定 cbindgen 0.29.2 自动生成。旧 draft.h 仅为设计历史。1.0 验证见 `docs/platform/ffi-validation.md`，1.1 设计/验证见 `docs/platform/task-render-design.md` / `docs/platform/task-render-validation.md`。
 
 ## 版本与类型
 
@@ -290,7 +290,7 @@ core_create/new_document/subscribe 写出拥有句柄，失败写 NULL。调用�
 
 core 有存活 document/subscription/session 时销毁为 BUSY，保留句柄。销毁接受 handle**，成功置 NULL；已有 NULL 幂等释放，document/subscription/session 仍要求有效 core。handle** 自身必须有效、可写、非 NULL。销毁文档丢弃未提交笔触，像素/历史正常释放。
 
-大笔触历史可用内部无损编码/系统临时文件，history_bytes 仅报告保留的内存历史计账，不包含磁盘字节或解码工作区。内存预算不是单笔大小限制；存储失败可能返回 IO_ERROR，失败的 undo/redo 不修改像素与历史栈。实现/限额见 docs/history-storage-design.md；C ABI 布局与版本未变。
+大笔触历史可用内部无损编码/系统临时文件，history_bytes 仅报告保留的内存历史计账，不包含磁盘字节或解码工作区。内存预算不是单笔大小限制；存储失败可能返回 IO_ERROR，失败的 undo/redo 不修改像素与历史栈。实现/限额见 docs/document/history-storage-design.md；C ABI 布局与版本未变。
 
 注册表从不解引用调用者句柄。每次创建分配唯一地址 token，释放后保留小型 token 至进程结束阻止 ABA；进程累计最多 65,536 个句柄（core/document/subscription/session），达到上限 LIMIT_EXCEEDED。关闭再创建不能绕过；文档内存与 token 分开释放。帧采用固定槽与 ID，不分配句柄。
 
@@ -339,7 +339,7 @@ kind Open=1 / Save=2；format Auto=0 / PNG=1 / JPEG=2 / WebP=3 / OpenRaster=4。
 
 状态 Queued=1 / Running=2 / Succeeded=3 / Failed=4 / Cancelled=5，终态由info.status和message读取，消息UTF-8无NUL。info包含captured source_generation/revision、result_generation/revision；Open仅在捕获代际/修订未改变、无活动笔触时应用新文档，否则BUSY且旧文档保留。Save读取不可变快照，后台编码，不阻塞actor/GUI；仅同代际同修订、无活动笔触的成功ORA保存清除modified。扁平导出与保存期间的新修改保持modified。
 
-文件任务使用独立CPU工作线程；codec单次调用不能强杀，行/瓦片/读写及提交点检查取消。cancel只对Queued/Running有效，已终结返回BUSY。同目录临时文件flush/sync后persist原子替换为提交点；提交后成功不可伪称已撤回。销毁取消作业、清空队列并后台join。格式/资源/ORA限制见docs/io-design.md；PSD/ICC/GPU等能力未报告。
+文件任务使用独立CPU工作线程；codec单次调用不能强杀，行/瓦片/读写及提交点检查取消。cancel只对Queued/Running有效，已终结返回BUSY。同目录临时文件flush/sync后persist原子替换为提交点；提交后成功不可伪称已撤回。销毁取消作业、清空队列并后台join。格式/资源/ORA限制见docs/document/io-design.md；PSD/ICC/GPU等能力未报告。
 
 
 ## ABI 1.3 暂存盘配置
@@ -352,7 +352,7 @@ path_length=0 选择系统临时目录，此时不读取 path；否则绝对 OS 
 
 paint_storage_inspect(options, out_info) 不修改现有 core；在候选目录检查空间、尝试创建可写 run、检查并清理已失活的标记目录，返回可用字节、本次清理目录/字节与跳过数量。探测失败把有效 out_info 前缀清空。探测并非纯查询：可创建专用命名空间及清理符合条件的残留，不会恢复绘画；完成后删除自身探测 run。清理扫描有界，陌生内容/链接/无有效租约/锁定实例跳过，旧版本 Temp 散落文件不凭前缀删除。
 
-两个函数只在后台线程调用；禁止回调内调用。预算/UTF-8/相对路径错误 INVALID_ARGUMENT，维护锁争用 BUSY，可重试；不可访问、不可写、标记冲突、空闲不足 IO_ERROR。可用空间为即时采样，不能预留给本进程独享；增长检查每 1MiB 或 1 秒刷新，其他进程可继续消耗磁盘，真实失败仍按原有笔触/历史事务处理。具体清扫边界见 docs/storage-settings-design.md。
+两个函数只在后台线程调用；禁止回调内调用。预算/UTF-8/相对路径错误 INVALID_ARGUMENT，维护锁争用 BUSY，可重试；不可访问、不可写、标记冲突、空闲不足 IO_ERROR。可用空间为即时采样，不能预留给本进程独享；增长检查每 1MiB 或 1 秒刷新，其他进程可继续消耗磁盘，真实失败仍按原有笔触/历史事务处理。具体清扫边界见 docs/document/storage-settings-design.md。
 
 
 ## ABI 1.4 图层配置与原始内容预览
@@ -415,11 +415,11 @@ PaintSelectionDetails=16字节，struct_size(0)、point_count(4)、feather(8)。
 
 新增 64 字节 PaintBucketFill，offset 16 的 linear_rgba 为 straight linear sRGB，opacity 0–1、tolerance 0–255；坐标为文档像素索引。antialias/contiguous/all_layers 均只接受 0/1，reserved 和 reserved_tail 为零。新增 PAINT_FEATURE_BUCKET=8192 和历史 PAINT_HISTORY_BUCKET=25。paint_session_bucket_fill 复制并校验 DTO 后返回队列 sequence，像素填充由串行 actor 异步执行；完成/失败通过既有 session publication 和 last_error 读取。
 
-种子越界、组目标、完全锁、蒙版 all_layers 取样、资源/存储错误均不提交像素；无变化不生成历史。all_layers 使用填充前的可见合成，仅写活动层；默认以当前层原始像素（不含显示 opacity/fill）比较。选区及 alpha lock 生效，整次填充只产生一条历史。容差按 straight sRGB/alpha 最大差 0–255，AA 在阈值之外一色阶内软化覆盖，透明色比较忽略 RGB。工作量与错误语义见 docs/bucket-design.md，旧 ABI DTO 和函数保持不变。
+种子越界、组目标、完全锁、蒙版 all_layers 取样、资源/存储错误均不提交像素；无变化不生成历史。all_layers 使用填充前的可见合成，仅写活动层；默认以当前层原始像素（不含显示 opacity/fill）比较。选区及 alpha lock 生效，整次填充只产生一条历史。容差按 straight sRGB/alpha 最大差 0–255，AA 在阈值之外一色阶内软化覆盖，透明色比较忽略 RGB。工作量与错误语义见 docs/tools/bucket-design.md，旧 ABI DTO 和函数保持不变。
 
 ## 历史时间平滑IO准备阶段（当时ABI1.45，现已接入1.46）
 
-Rust IO新增state14/VBR1.12/behavior11/time-grid-v1，旧默认不升级。当前原生准确准备拒绝非默认平滑，公开库包/程序包写入及库包资源交接拒绝含smoothing对象的包，以防尚只支持state13的Qt丢字段。未公布平滑路径能力，PAINT_FEATURE_PRESSURE_SMOOTH仍仅表示压力插值，不表示时间平滑设置已经接入。见docs/brush-smoothing-io-validation.md。
+Rust IO新增state14/VBR1.12/behavior11/time-grid-v1，旧默认不升级。当前原生准确准备拒绝非默认平滑，公开库包/程序包写入及库包资源交接拒绝含smoothing对象的包，以防尚只支持state13的Qt丢字段。未公布平滑路径能力，PAINT_FEATURE_PRESSURE_SMOOTH仍仅表示压力插值，不表示时间平滑设置已经接入。见docs/brush/dynamics/brush-smoothing-io-validation.md。
 
 ## ABI1.49 复合基础笔尖几何
 
@@ -443,19 +443,19 @@ Existing prepared-state/pose/with_blend stroke exports consume the exact opted-i
 
 ### ABR opacity conversion / VBR1.16 implementation update
 
-The existing ABR read, prepared state, source-info and package APIs also carry basic converterVersion2 provenance when a newly imported non-100% Opct is executed as stroke opacity. Source record structure version remains1; existing version1 records are never recomputed. Packages containing version2 source records require VBR1.16. No DTO, ABI minor, feature bit or state field changes; unchanged full-source byte handoff and baseline parameters are sufficient. See `docs/abr-opacity-design.md` and its validation record for limits; this does not imply full ABR dynamic compatibility.
+The existing ABR read, prepared state, source-info and package APIs also carry basic converterVersion2 provenance when a newly imported non-100% Opct is executed as stroke opacity. Source record structure version remains1; existing version1 records are never recomputed. Packages containing version2 source records require VBR1.16. No DTO, ABI minor, feature bit or state field changes; unchanged full-source byte handoff and baseline parameters are sufficient. See `docs/brush/abr/abr-opacity-design.md` and its validation record for limits; this does not imply full ABR dynamic compatibility.
 
 ### ABR pressure conversion / versioned JSON handoff update
 
-The existing ABR read API returns JSON handoff version2 only for a batch executing converterVersion3 pressure channels. The row layout is unchanged; parameters now includes the existing pressureDynamics payload and independent pressureSize/pressureFlow switches. Clients must reject unknown handoff versions; version1 remains unchanged for older conversions. Updated Qt accepts1/2 and validates/copies the full pressure object through existing state5/6. Source record structure remains version1; converter3 requires a pressure baseline and still rejects other dynamics. VBR containing such sources requires1.17. No C ABI layout/minor/feature bit or new executable brush behavior is introduced. Old UI explicitly rejects the new handoff rather than silently losing minima/opacity pressure. See docs/abr-pressure-design.md.
+The existing ABR read API returns JSON handoff version2 only for a batch executing converterVersion3 pressure channels. The row layout is unchanged; parameters now includes the existing pressureDynamics payload and independent pressureSize/pressureFlow switches. Clients must reject unknown handoff versions; version1 remains unchanged for older conversions. Updated Qt accepts1/2 and validates/copies the full pressure object through existing state5/6. Source record structure remains version1; converter3 requires a pressure baseline and still rejects other dynamics. VBR containing such sources requires1.17. No C ABI layout/minor/feature bit or new executable brush behavior is introduced. Old UI explicitly rejects the new handoff rather than silently losing minima/opacity pressure. See docs/brush/abr/abr-pressure-design.md.
 
 ### ABR scatter conversion / JSON handoff3
 
-The existing ABR read API returns handoff version3 when a batch includes converterVersion4 scatter provenance. parameters.scatterDynamics uses the existing validated state8 scatter payload, alongside an independent optional pressureDynamics object. Old handoff1/2 data remains unchanged. Updated Qt accepts1/2/3 and rejects scatter fields in older handoffs atomically; old Qt rejects3 before publication. Converter4 source baselines require scatter data, older source converters reject it. Packages containing such sources require VBR1.18. No C ABI minor, DTO, feature bit, new state or executable behavior version is introduced. Nonzero random conversion is explicitly approximate; device/fade scatter controls remain unexecuted. See docs/abr-scatter-conversion-design.md.
+The existing ABR read API returns handoff version3 when a batch includes converterVersion4 scatter provenance. parameters.scatterDynamics uses the existing validated state8 scatter payload, alongside an independent optional pressureDynamics object. Old handoff1/2 data remains unchanged. Updated Qt accepts1/2/3 and rejects scatter fields in older handoffs atomically; old Qt rejects3 before publication. Converter4 source baselines require scatter data, older source converters reject it. Packages containing such sources require VBR1.18. No C ABI minor, DTO, feature bit, new state or executable behavior version is introduced. Nonzero random conversion is explicitly approximate; device/fade scatter controls remain unexecuted. See docs/brush/abr/abr-scatter-conversion-design.md.
 
-ABR color conversion extends that JSON handoff to version4 for converterVersion5 sources. parameters.colorDynamics reuses validated state10 data, independently of optional pressureDynamics and scatterDynamics. Current Qt accepts handoff1..4; color fields in older handoffs are rejected before catalog publication. Older Qt rejects version4 instead of dropping new parameters. V5 baselines require color data; older converters reject it. Source-bearing packages require VBR1.19; existing ABI1.50, state and execution behavior versions stay unchanged. Native linear HSV/random behavior is reported approximate; purity/device modulation remains unexecuted. See docs/abr-color-conversion-design.md.
+ABR color conversion extends that JSON handoff to version4 for converterVersion5 sources. parameters.colorDynamics reuses validated state10 data, independently of optional pressureDynamics and scatterDynamics. Current Qt accepts handoff1..4; color fields in older handoffs are rejected before catalog publication. Older Qt rejects version4 instead of dropping new parameters. V5 baselines require color data; older converters reject it. Source-bearing packages require VBR1.19; existing ABI1.50, state and execution behavior versions stay unchanged. Native linear HSV/random behavior is reported approximate; purity/device modulation remains unexecuted. See docs/brush/abr/abr-color-conversion-design.md.
 
-ABR shape jitter conversion returns handoff5 for converterVersion6 sources. parameters.shapeJitter reuses state9, independently of optional pressure/scatter/color DTOs. Qt accepts1..5 and atomically rejects shape data in older handoffs; old Qt rejects5. V6 source baselines require shape data, older source versions reject it. Such sources require VBR1.20; no C ABI minor, DTO, state or execution behavior change. PS random distributions and combined pressure/minimum rules remain approximate, while unsupported device controls retain field-level reports. See docs/abr-shape-conversion-design.md.
+ABR shape jitter conversion returns handoff5 for converterVersion6 sources. parameters.shapeJitter reuses state9, independently of optional pressure/scatter/color DTOs. Qt accepts1..5 and atomically rejects shape data in older handoffs; old Qt rejects5. V6 source baselines require shape data, older source versions reject it. Such sources require VBR1.20; no C ABI minor, DTO, state or execution behavior change. PS random distributions and combined pressure/minimum rules remain approximate, while unsupported device controls retain field-level reports. See docs/brush/abr/abr-shape-conversion-design.md.
 
 ## ABI 1.51 — stroke taper parameter entry
 
@@ -463,7 +463,7 @@ ABR shape jitter conversion returns handoff5 for converterVersion6 sources. para
 
 Preparation returns an exact asynchronous ticket; `paint_brush_library_prepared_state` retains all taper fields and resource identities. Failed drafts do not replace the last valid catalog. Recipes preserve the selected support level when unused image revisions are retired and rebuilt. Prepared strokes capture the full preset through existing `paint_session_begin_prepared_preset_with_blend`; modifying the catalog or destroying its external token does not change an active stroke. Taper distances remain document pixels under temporary tool size overrides.
 
-Package reads use the existing size probe and atomic resource adoption contract: insufficient capacity or invalid output pointers must not install assets. Writes resolve all resources and validate the complete bundle before atomic save. Outputs, callbacks and worker-thread requirements are unchanged. This capability does not claim a Qt settings page; the UI must mirror state18, preserve reset baselines, select the new explicit entry points and continue rendering automatic previews in white before exposing the controls. See `docs/brush-taper-abi-design.md` and its validation record.
+Package reads use the existing size probe and atomic resource adoption contract: insufficient capacity or invalid output pointers must not install assets. Writes resolve all resources and validate the complete bundle before atomic save. Outputs, callbacks and worker-thread requirements are unchanged. This capability does not claim a Qt settings page; the UI must mirror state18, preserve reset baselines, select the new explicit entry points and continue rendering automatic previews in white before exposing the controls. See `docs/brush/wet/brush-taper-abi-design.md` and its validation record.
 
 ## ABI 1.52 — independent wet dual carriers
 
@@ -473,7 +473,7 @@ Package reads use the existing size probe and atomic resource adoption contract:
 
 `paint_wet_tool_reload_prepared_dual` takes an exact library preparation/id, the existing 32-byte load descriptor (temporary primary radius and foreground) and 24-byte background descriptor. Both descriptors require zero reserved fields, finite valid colors and radius0.5..256. Active painting returns BUSY without waiting for compilation. Active marked dual-color wet presets atomically load both carriers: secondary color follows the preset foreground/background selection, and nominal secondary diameter uses the same core independent/relative mapping as automatic start. Ordinary wet presets reload the primary while preserving inactive secondary ink. Disabled wet presets reject loading. Old reload rejects every marked policy, including closed values, with UNSUPPORTED; old clean already cleans both roles. Neither preset state nor document history serializes live tool ink.
 
-Package probes/invalid output pointers install no resources; writes validate before atomic save. No existing layout is changed. Qt must mirror state19, preserve reset baselines, opt into these new entry points and retain white/Normal automatic previews before exposing the combination. See docs/brush-wet-dual-abi-design.md.
+Package probes/invalid output pointers install no resources; writes validate before atomic save. No existing layout is changed. Qt must mirror state19, preserve reset baselines, opt into these new entry points and retain white/Normal automatic previews before exposing the combination. See docs/brush/wet/brush-wet-dual-abi-design.md.
 
 ## ABI 1.53 — display-only image tip cursor PNG
 
@@ -485,13 +485,13 @@ Encoded display cache is limited to 8 entries/4 MiB and 512 KiB per PNG. A cache
 
 Grouped state forward guard (no ABI version change): Rust state20 can carry ordered-tree-v1 organization. Existing Legacy/Wet/Taper/WetDual preparation recipes reject any nonempty group record set before adoption, including empty folders; current Qt cannot mirror it. Flat older states retain their bytes and accepted semantics. This is not a grouped C ABI entry or grouped VBR support; those require explicit integration.
 
-VBR1.24 organization is currently a Rust IO capability only. The four library package readers (Legacy/Wet/Taper/WetDual) reject bundles with group records, including empty folders, before installing resources or emitting flat Package JSON; required is zero on rejection. Their strict flat writers reject an added organization field. Plain flat VBR behavior remains compatible. Grouped state20 preparation protection remains in place; no new ABI entry or capability is claimed in this stage. Destination-library atomic merge and the complete grouped native/Qt handoff remain future work. See docs/brush-groups-vbr-validation.md.
+VBR1.24 organization is currently a Rust IO capability only. The four library package readers (Legacy/Wet/Taper/WetDual) reject bundles with group records, including empty folders, before installing resources or emitting flat Package JSON; required is zero on rejection. Their strict flat writers reject an added organization field. Plain flat VBR behavior remains compatible. Grouped state20 preparation protection remains in place; no new ABI entry or capability is claimed in this stage. Destination-library atomic merge and the complete grouped native/Qt handoff remain future work. See docs/brush/library/brush-groups-vbr-validation.md.
 
 ## ABI 1.54 — explicit grouped state preparation
 
 PAINT_FEATURE_BRUSH_GROUP_STATE (bit49) adds paint_brush_library_prepare_state_groups with the same live-library, bounded readable JSON and writable nonoverlapping sequence contract as older preparation functions. It accepts validated state20 organization and all prior complete parameters, including closed wet dual/taper settings. Invalid call arguments clear sequence; accepted requests return a ticket whose eventual result may still be a validation/resource error. prepared_state exposes the exact canonical snapshot and normal current/mutate publication uses the same ticket pipeline, immutable source receipts and cold-rebuild support identity.
 
-The four older preparation levels still reject group records, including empty folders. Existing legacy library package readers/writers remain protected: GROUP_STATE does not claim grouped VBR package handoff or directory commands, and current Qt has not yet mirrored group state. state20 and VBR1.24 do not change. See docs/brush-groups-abi-validation.md.
+The four older preparation levels still reject group records, including empty folders. Existing legacy library package readers/writers remain protected: GROUP_STATE does not claim grouped VBR package handoff or directory commands, and current Qt has not yet mirrored group state. state20 and VBR1.24 do not change. See docs/brush/library/brush-groups-abi-validation.md.
 
 ## ABI 1.55 — complete grouped package handoff
 
