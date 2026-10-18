@@ -1423,6 +1423,10 @@ impl Document {
             .and_then(|changed| {
                 self.render_taper(&mut stroke, false)
                     .map(|tail| changed || tail)
+            })
+            .and_then(|changed| {
+                self.render_stroke_outline(&mut stroke)
+                    .map(|outline| changed || outline)
             }) {
             Ok(changed) => {
                 if changed {
@@ -1443,6 +1447,7 @@ impl Document {
         if self.pending_input.is_some() {
             return Err(Error::Busy);
         }
+        self.prepare_outline_input();
         if let Some(tail) = self.stroke.as_mut().and_then(|s| s.taper.as_mut()) {
             tail.reset_work();
         }
@@ -1450,7 +1455,9 @@ impl Document {
             .stroke
             .as_ref()
             .is_some_and(|s| s.wet.is_some() || s.taper.is_some() || s.outline.is_some());
-        let result = self.stroke_to_inner(point);
+        let result = self
+            .stroke_to_inner(point)
+            .and_then(|()| self.publish_outline());
         if result.is_err() && transactional {
             if let Some(stroke) = self.stroke.take() {
                 self.restore_stroke(&stroke);
@@ -1500,6 +1507,7 @@ impl Document {
             0,
         )?;
         let mut stroke = self.stroke.take().expect("checked active stroke");
+        self.remove_outline_preview(&mut stroke);
         stroke.last = point;
         stroke.airbrush_last_ns = point.timestamp_ns;
         stroke.airbrush_tick = true;
@@ -1530,6 +1538,17 @@ impl Document {
             self.bump_revision();
         }
         stroke.airbrush_tick = false;
+        match self.render_stroke_outline(&mut stroke) {
+            Ok(value) => {
+                if value {
+                    self.bump_revision();
+                }
+            }
+            Err(error) => {
+                self.restore_stroke(&stroke);
+                return Err(error);
+            }
+        }
         self.stroke = Some(stroke);
         Ok(())
     }
@@ -1830,6 +1849,7 @@ impl Document {
         // The visible filtered endpoint is authoritative. Releasing the pen must not
         // synthesize input, release stabilizer distance, or raise pressure to the raw value.
         let mut stroke = self.stroke.take().ok_or(Error::NoStroke)?;
+        self.remove_outline_preview(&mut stroke);
         if render_end {
             if let Some(tail) = &mut stroke.taper {
                 tail.reset_work();

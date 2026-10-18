@@ -258,36 +258,35 @@ fn outline_tile_and_bounding_area_failures_roll_back_entire_stroke() {
         },
     )
     .unwrap();
-    limited
+    assert!(limited
         .begin_outlined_brush_stroke(
             definition.clone(),
             InputPoint::new(32., 32., 1.),
             &outline(OutlinePlacement::Outside, 40., OutlineSource::SelfBrush),
         )
-        .unwrap();
-    assert!(limited.end_stroke().is_err());
+        .is_err());
     assert_eq!(limited.history_depth(), (0, 0));
     assert!(pixels(&limited, 128, 128).iter().all(|p| *p == [0; 4]));
     let mut large = Document::new(8192, 8192).unwrap();
     definition.brush.radius = 0.5;
     definition.brush.spacing = 1.;
-    large
+    let failed = large
         .begin_outlined_brush_stroke(
             definition,
             InputPoint::new(10., 10., 1.),
             &outline(OutlinePlacement::Outside, 2., OutlineSource::SelfBrush),
         )
-        .unwrap();
-    for step in 1..=40 {
-        large
-            .stroke_to(InputPoint::new(
-                10. + step as f64 * 100.,
-                10. + step as f64 * 100.,
-                1.,
-            ))
-            .unwrap();
-    }
-    assert!(large.end_stroke().is_err());
+        .and_then(|()| {
+            for step in 1..=40 {
+                large.stroke_to(InputPoint::new(
+                    10. + step as f64 * 100.,
+                    10. + step as f64 * 100.,
+                    1.,
+                ))?;
+            }
+            large.end_stroke().map(|_| ())
+        });
+    assert!(failed.is_err());
     assert_eq!(large.history_depth(), (0, 0));
     assert_eq!(large.pixel(10, 10), Pixel::TRANSPARENT);
     assert_eq!(large.pixel(4010, 4010), Pixel::TRANSPARENT);

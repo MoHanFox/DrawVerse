@@ -43,6 +43,10 @@ impl PendingInput {
 impl Document {
     /// A partial tail restore/replay must not be published as a completed preview.
     pub fn stroke_page_ready_for_publication(&self) -> bool {
+        if self.pending_input.is_some() && self.stroke.as_ref().is_some_and(|s| s.outline.is_some())
+        {
+            return false;
+        }
         !self
             .stroke
             .as_ref()
@@ -57,6 +61,7 @@ impl Document {
         if self.pending_input.is_some() {
             return Err(Error::Busy);
         }
+        self.prepare_outline_input();
         let result = self.prepare_stroke_input(point);
         if result.is_err() {
             if let Some(stroke) = self.stroke.take() {
@@ -120,6 +125,7 @@ impl Document {
         if self.pending_input.is_some() {
             return Err(Error::Busy);
         }
+        self.prepare_outline_input();
         let stroke = self.stroke.as_ref().ok_or(Error::NoStroke)?;
         let secondary = stroke
             .program
@@ -180,6 +186,7 @@ impl Document {
                     let (changed, wet_ink) = self.finish_stroke_with_end(false)?;
                     Ok(StrokePageResult::StrokeComplete { changed, wet_ink })
                 } else {
+                    self.publish_outline()?;
                     Ok(StrokePageResult::InputComplete)
                 }
             }
