@@ -2128,6 +2128,14 @@ private slots:
         QVERIFY(!library.importAbr(QJsonDocument(downgraded).toJson(QJsonDocument::Compact)));
         QCOMPARE(library.snapshot(),before);
     }
+    void abrRatioHandoffRequiresVersion13AndPreservesResetBaseline() {
+        BrushLibrary library;auto dual=library.dualBrush();dual["enabled"]=true;dual["diameter"]=8.;dual["sizing"]=QVariantMap{{"model","relative-ratio-v1"},{"mode","relative"},{"diameterRatio",.5},{"widthRule","follow-pressure"}};
+        const QJsonObject parameters{{"diameter",16.},{"spacing",.02},{"dabOpacity",1.},{"hardness",1.},{"roundness",1.},{"angle",0.},{"flow",1.},{"pressureSize",false},{"pressureFlow",false}};
+        const QJsonObject preset{{"name","Ratio"},{"parameters",parameters},{"dualBrush",QJsonObject::fromVariantMap(dual)},{"tipResource",QJsonValue::Null},{"sourceResource",QString(64,'e')},{"partial",true}};
+        QJsonObject wire{{"version",13},{"format","abr"},{"presets",QJsonArray{preset}}};QVERIFY(library.importAbr(QJsonDocument(wire).toJson()));QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object().value("version").toInt(),38);QCOMPARE(library.dualBrush().value("sizing").toMap().value("diameterRatio").toDouble(),.5);
+        library.setRadius(16);auto edited=library.dualBrush();auto sizing=edited.value("sizing").toMap();sizing["diameterRatio"]=.25;edited["sizing"]=sizing;QVERIFY(library.setDualBrush(edited));QVERIFY(library.resetPreset());QCOMPARE(library.radius(),8.);QCOMPARE(library.dualBrush().value("sizing").toMap().value("diameterRatio").toDouble(),.5);
+        const auto before=library.snapshot();wire["version"]=12;QVERIFY(!library.importAbr(QJsonDocument(wire).toJson()));QCOMPARE(library.snapshot(),before);
+    }
     void licensedRealAbrImportsWholePackAndExchangesPixelsWithOriginalSource() {
         const auto fixture=QFINDTESTDATA("../../core/crates/paint-io/tests/fixtures/abr/myer-settlement-brushes.abr");QVERIFY(!fixture.isEmpty());
         QTemporaryDir temp;const auto path=temp.filePath("real.abr");QVERIFY(QFile::copy(fixture,path));PaintCoreClient client(nullptr,temp.filePath("settings.ini"));QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();QSignalSpy finished(&client,&PaintCoreClient::brushFileFinished);QVERIFY(client.importBrushes(QUrl::fromLocalFile(path)));QTRY_COMPARE_WITH_TIMEOUT(finished.size(),1,15000);QVERIFY(finished.last()[0].toBool());QCOMPARE(library->presets().size(),152);QCOMPARE(library->selectedName(),QString("Individual Tree 001"));const auto first=library->selectedId(),source=library->sourceResource(),mask=library->maskResource();QVERIFY(!mask.isEmpty());QVERIFY(library->select(library->presets().last().toMap().value("id").toString()));QVERIFY(library->selectedId()!=first);QVERIFY(library->select(first));

@@ -753,10 +753,18 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
         &CancellationToken::default(),
     )
     .unwrap();
-    assert_eq!(p[0].converter_version, 12);
+    assert_eq!(p[0].converter_version, 14);
     assert!(p[0].settings.dual.enabled());
     assert_eq!(p[0].settings.dual.mode(), paint_core::DualMode::Overlay);
     assert_eq!(p[0].settings.dual.secondary().radius(), 4.);
+    assert_eq!(
+        p[0].settings.dual.sizing().mode(),
+        paint_core::DualSizeMode::Relative
+    );
+    assert!(
+        (p[0].settings.dual.sizing().diameter_ratio().unwrap() - 8. / p[0].settings.diameter).abs()
+            < 1e-6
+    );
     assert_eq!(p[0].settings.dual.secondary().spacing(), Some(0.3));
     assert_eq!(p[0].settings.dual.secondary().tip().hardness, 0.5);
     assert!(p[0].settings.dual.secondary().flip());

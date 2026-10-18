@@ -57,7 +57,7 @@ impl SourceInfo {
         if !matches!(self.version, 1..=3)
             || self.format != "abr"
             || self.converter != "drawverse.abr.basic"
-            || !matches!(self.converter_version, 1..=13)
+            || !matches!(self.converter_version, 1..=14)
         {
             return Err(Error::Unsupported(
                 "brush source format/converter version".into(),
@@ -97,6 +97,15 @@ impl SourceInfo {
         {
             return Err(Error::Limit("brush source report bounds"));
         }
+        let ratio = self
+            .dual_brush
+            .as_ref()
+            .is_some_and(|d| d.has_ratio_sizing());
+        if ratio != (self.converter_version == 14) {
+            return Err(Error::Unsupported(
+                "source ratio sizing converter version".into(),
+            ));
+        }
         if (self.converter_version == 3 && self.baseline.pressure_dynamics.is_none())
             || (self.converter_version < 3 && self.baseline.pressure_dynamics.is_some())
             || (self.converter_version >= 7 && self.baseline.tip_dynamics.is_none())
@@ -125,7 +134,7 @@ impl SourceInfo {
                 && self.converter_version < 11
                 && self.baseline.fade_dynamics.is_none())
             || (self.converter_version < 10 && self.baseline.fade_dynamics.is_some())
-            || (self.converter_version >= 13 && self.baseline.transfer_jitter.is_none())
+            || (self.converter_version == 13 && self.baseline.transfer_jitter.is_none())
             || (self.converter_version < 13 && self.baseline.transfer_jitter.is_some())
             || (self.converter_version == 12
                 && !self

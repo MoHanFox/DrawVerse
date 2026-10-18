@@ -1605,7 +1605,12 @@ fn dual_controls(
     .with_spacing(spacing)?
     .with_flip(flag(dual, b"Flip")?.unwrap_or(false))
     .with_shape_flip(shape_flip_x, shape_flip_y);
-    settings.dual = DualBrush::new(true, mode, secondary);
+    settings.dual =
+        DualBrush::new(true, mode, secondary).with_sizing(paint_core::DualSizing::new_ratio(
+            paint_core::DualSizeMode::Relative,
+            radius * 2. / settings.diameter,
+            paint_core::DualWidthRule::FollowPressure,
+        )?);
     for (path, reason) in [
         ("dualBrush.useDualBrush", "计算双笔刷已启用"),
         (
@@ -1617,7 +1622,8 @@ fn dual_controls(
             },
         ),
         ("dualBrush.BlnM", "双笔刷贡献模式"),
-        ("dualBrush.Spcn", "双笔刷独立路径间距"),
+        ("dualBrush.Brsh.Spcn", "双笔刷独立路径间距"),
+        ("dualBrush.Brsh.Dmtr", "按主副实际直径换算相对大小百分比"),
     ] {
         issue(issues, path, Status::Mapped, reason);
     }
@@ -2052,7 +2058,9 @@ fn convert_inner<'a>(
                 "源未保存工具不透明度，基线100%",
             ),
         }
-        if !settings.dynamics.transfer_jitter.is_default() {
+        if settings.dual.sizing().diameter_ratio().is_some() {
+            converter_version = 14;
+        } else if !settings.dynamics.transfer_jitter.is_default() {
             converter_version = 13;
         } else if settings.dynamics.scatter.has_controls()
             || settings.dual.secondary().dynamics().scatter.has_controls()

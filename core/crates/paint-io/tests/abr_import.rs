@@ -74,11 +74,45 @@ fn sampled_dual_brush_resource_survives_handoff_and_persist() {
     let batch = ImportBatch::decode(original.clone(), MAX_CATALOG_MASK_BYTES, &token).unwrap();
     let json: serde_json::Value = serde_json::from_slice(&batch.to_json().unwrap()).unwrap();
     assert!(json["presets"][0]["dualBrush"].is_object());
+    assert_eq!(json["version"], 13);
+    assert_eq!(
+        json["presets"][0]["dualBrush"]["sizing"]["model"],
+        "relative-ratio-v1"
+    );
     let temp = tempfile::tempdir().unwrap();
     let store = ResourceStore::open(temp.path().join("assets"), MAX_CATALOG_MASK_BYTES).unwrap();
     let presets = batch.persist(&store, &token).unwrap();
     let secondary = presets[0].settings().dual.secondary();
     assert!(secondary.mask().is_some());
+    let source = store
+        .source_store()
+        .unwrap()
+        .load(presets[0].source_id(), &token)
+        .unwrap();
+    assert_eq!(source.info.converter_version, 14);
+    let settings = presets[0].settings();
+    let ratio = settings.dual.sizing().diameter_ratio().unwrap();
+    assert!((ratio - settings.dual.secondary().radius() * 2. / settings.diameter).abs() < 1e-6);
+    let mut resized = settings.clone();
+    resized.diameter *= 2.;
+    let pose = paint_core::BrushProgram::compile(resized.definition())
+        .unwrap()
+        .cursor_poses(
+            resized.diameter / 2.,
+            paint_core::InputPoint::new(0., 0., 1.),
+            false,
+            None,
+        )
+        .unwrap();
+    assert!(
+        (pose.secondary.unwrap().radius
+            - (settings.dual.secondary().radius() * 2.).clamp(0.5, paint_core::MAX_BRUSH_RADIUS))
+        .abs()
+            < 1e-5
+    );
+    let mut downgraded = source.info.clone();
+    downgraded.converter_version = 13;
+    assert!(downgraded.validate().is_err());
     assert!(secondary.mask().unwrap().resource_id().is_some());
 }
 #[test]

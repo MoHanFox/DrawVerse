@@ -1213,7 +1213,7 @@ bool BrushLibrary::importPackage(const QByteArray &json,const QString &groupName
 bool BrushLibrary::importAbr(const QByteArray &json,const QString &groupName) {
     if(json.size()>2*1024*1024)return false;
     const auto handoff=QJsonDocument::fromJson(json).object();
-    if((handoff.value("version").toInt()!=1 && handoff.value("version").toInt()!=2 && handoff.value("version").toInt()!=3 && handoff.value("version").toInt()!=4 && handoff.value("version").toInt()!=5 && handoff.value("version").toInt()!=6 && handoff.value("version").toInt()!=7 && handoff.value("version").toInt()!=8 && handoff.value("version").toInt()!=9 && handoff.value("version").toInt()!=10 && handoff.value("version").toInt()!=11 && handoff.value("version").toInt()!=12) || handoff.value("format").toString()!="abr" || !handoff.value("presets").isArray())return false;
+    if((handoff.value("version").toInt()!=1 && handoff.value("version").toInt()!=2 && handoff.value("version").toInt()!=3 && handoff.value("version").toInt()!=4 && handoff.value("version").toInt()!=5 && handoff.value("version").toInt()!=6 && handoff.value("version").toInt()!=7 && handoff.value("version").toInt()!=8 && handoff.value("version").toInt()!=9 && handoff.value("version").toInt()!=10 && handoff.value("version").toInt()!=11 && handoff.value("version").toInt()!=12 && handoff.value("version").toInt()!=13) || handoff.value("format").toString()!="abr" || !handoff.value("presets").isArray())return false;
     const auto imported=handoff.value("presets").toArray();
     if(imported.isEmpty() || imported.size()+m_presets.size()>1024)return false;
     auto state=QJsonDocument::fromJson(snapshot()).object();auto rows=state.value("presets").toArray();QString selected;
@@ -1275,6 +1275,7 @@ bool BrushLibrary::importAbr(const QByteArray &json,const QString &groupName) {
             if(scatterHasControls(dualControls) && handoff.value("version").toInt()<11)return false;
             const auto dual=preset.value("dualBrush").toObject().toVariantMap();
             if(dualHasExtendedMode(dual) && handoff.value("version").toInt()<11)return false;
+            if(dualHasRatio(dual) && handoff.value("version").toInt()<13)return false;
             row["dualBrush"]=preset.value("dualBrush");state["version"]=std::max(state.value("version").toInt(),dualHasRatio(dual)?38:(dualHasExtendedMode(dual)?36:(scatterHasControls(dualControls)?35:12)));
         }
         if(!preset.value("tipResource").isNull())row["maskResource"]=preset.value("tipResource");
