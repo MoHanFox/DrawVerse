@@ -568,7 +568,66 @@ void BrushLibrary::setCursorComposite(bool value){if(m_cursorComposite==value)re
 void BrushLibrary::setCursorSimple(bool value){if(m_cursorSimple==value)return;m_cursorSimple=value;cursorPreferenceChanged();}
 void BrushLibrary::setCursorColor(const QString &value){const QColor color(value);if(!color.isValid() || color.alpha()!=255 || color.name()==m_cursorColor)return;m_cursorColor=color.name();cursorPreferenceChanged();}
 void BrushLibrary::setCursorSecondaryColor(const QString &value){const QColor color(value);if(!color.isValid() || color.alpha()!=255 || color.name()==m_cursorSecondaryColor)return;m_cursorSecondaryColor=color.name();cursorPreferenceChanged();}
-bool BrushLibrary::select(const QString &id){if(index(id)<0)return false;if(id!=m_selected){m_selected=id;changed();}return true;}
+bool BrushLibrary::select(const QString &id){
+    if(index(id)<0)return false;
+    const QJsonArray selection{QJsonObject{{"kind","preset"},{"id",id}}};
+    const bool selectionWasChanged=selection!=m_selectedItems;m_selectedItems=selection;
+    if(selectionWasChanged)emit selectionChanged();
+    if(id!=m_selected){m_selected=id;changed();}
+    return true;
+}
+QVariantList BrushLibrary::selectedBrushItems() const {return m_selectedItems.toVariantList();}
+bool BrushLibrary::multiBrushSelection() const {return m_selectedItems.size()>1;}
+bool BrushLibrary::brushSelectionBlocksPainting() const {
+    return m_selectedItems.size()>1 || (m_selectedItems.size()==1 && m_selectedItems.first().toObject().value("kind").toString()!="preset");
+}
+bool BrushLibrary::selectBrushItems(const QVariantList &items,const QString &activePreset) {
+    QJsonArray next;QSet<QString> seen;
+    for(const auto &value:items) {
+        const auto item=value.toMap();const auto kind=item.value("kind").toString(),id=item.value("id").toString();
+        if((kind!="preset" && kind!="group") || id.isEmpty() || seen.contains(kind+":"+id))continue;
+        if(kind=="preset") {if(index(id)<0)continue;}
+        else {
+            bool found=false;for(const auto &group:m_organization.value("groups").toArray())if(group.toObject().value("id").toString()==id){found=true;break;}
+            if(!found)continue;
+        }
+        seen.insert(kind+":"+id);next.append(QJsonObject{{"kind",kind},{"id",id}});
+    }
+    QString preset=activePreset;
+    if(index(preset)<0) {
+        preset.clear();
+        if(next.size()==1 && next.first().toObject().value("kind").toString()=="preset")preset=next.first().toObject().value("id").toString();
+    }
+    const bool selectionWasChanged=next!=m_selectedItems;m_selectedItems=next;
+    const bool activeWasChanged=!preset.isEmpty() && preset!=m_selected;
+    if(activeWasChanged)m_selected=preset;
+    if(selectionWasChanged)emit selectionChanged();
+    if(activeWasChanged)changed();
+    return true;
+}
+void BrushLibrary::clearBrushSelection() {
+    if(m_selectedItems.isEmpty())return;
+    m_selectedItems=QJsonArray{};emit selectionChanged();
+}
+bool BrushLibrary::brushSelectionHasSources() const {
+    QSet<QString> groups,presets;
+    QHash<QString,QJsonObject> byId;
+    for(const auto &value:m_organization.value("groups").toArray()) {const auto group=value.toObject();byId.insert(group.value("id").toString(),group);}
+    std::function<void(const QString &)> includeGroup=[&](const QString &id) {
+        if(groups.contains(id))return;
+        groups.insert(id);
+        for(const auto &value:byId.value(id).value("items").toArray()) {
+            const auto item=value.toObject();const auto child=item.value("id").toString();
+            if(item.value("kind").toString()=="group")includeGroup(child);else presets.insert(child);
+        }
+    };
+    for(const auto &value:m_selectedItems) {
+        const auto item=value.toObject();const auto id=item.value("id").toString();
+        if(item.value("kind").toString()=="group")includeGroup(id);else presets.insert(id);
+    }
+    for(const auto &id:presets) {const int i=index(id);if(i>=0 && !m_presets[i].sourceResource.isEmpty())return true;}
+    return false;
+}
 bool BrushLibrary::resetPreset() {
     const int i=index(m_selected);if(i<0 || !m_resetPresets.contains(m_selected))return false;
     auto reset=m_resetPresets.value(m_selected);reset.id=m_selected;reset.name=m_presets[i].name;reset.builtin=m_presets[i].builtin;
@@ -611,7 +670,8 @@ bool BrushLibrary::applyOrganization(const QJsonObject &candidate) {
     for(const auto &preset:m_presets)ids.append(preset.id);
     QJsonObject normalized;
     if(!BrushOrganization::normalize(candidate,ids,normalized,order,false))return false;
-    if(normalized==m_organization)return true;
+    bool orderChanged=order!=ids;
+    if(normalized==m_organization && !orderChanged)return true;
     QList<Preset> sorted;sorted.reserve(m_presets.size());
     for(const auto &id:order){const int i=index(id);if(i<0)return false;sorted.append(m_presets[i]);}
     m_presets=std::move(sorted);m_organization=normalized;changed();return true;
@@ -656,6 +716,19 @@ bool groupContainsGroup(const QJsonObject &organization,const QString &ancestor,
     }
     return false;
 }
+bool groupContainsItem(const QJsonObject &organization,const QString &group,const QString &kind,const QString &id) {
+    for(const auto &value:organization.value("groups").toArray()) {
+        const auto entry=value.toObject();
+        if(entry.value("id").toString()!=group)continue;
+        for(const auto &childValue:entry.value("items").toArray()) {
+            const auto child=childValue.toObject();
+            if(child.value("kind").toString()==kind && child.value("id").toString()==id)return true;
+            if(child.value("kind").toString()=="group" && groupContainsItem(organization,child.value("id").toString(),kind,id))return true;
+        }
+        return false;
+    }
+    return false;
+}
 QString findItemParent(const QJsonObject &organization,const QJsonObject &item,int &index) {
     const auto roots=organization.value("roots").toArray();
     for(qsizetype i=0;i<roots.size();++i)if(roots[i]==item){index=int(i);return {};}
@@ -676,8 +749,13 @@ bool BrushLibrary::movePresetToGroup(const QString &presetId,const QString &pare
     return movePresetToGroupAt(presetId,parentId,-1);
 }
 bool BrushLibrary::movePresetToGroupAt(const QString &presetId,const QString &parentId,int index) {
-    if(this->index(presetId)<0 || m_organization.isEmpty())return false;
-    auto candidate=m_organization;const QJsonObject item=BrushOrganization::presetItem(presetId);
+    if(this->index(presetId)<0)return false;
+    auto candidate=m_organization;
+    if(candidate.isEmpty()) {
+        QJsonArray roots;for(const auto &preset:m_presets)roots.append(BrushOrganization::presetItem(preset.id));
+        candidate=QJsonObject{{"model","ordered-tree-v1"},{"roots",roots},{"groups",QJsonArray{}}};
+    }
+    const QJsonObject item=BrushOrganization::presetItem(presetId);
     int sourceIndex=-1;const QString sourceParent=findItemParent(candidate,item,sourceIndex);
     removeOrganizationItem(candidate,item);
     bool found=false;QJsonArray destination;
@@ -716,6 +794,45 @@ bool BrushLibrary::moveGroupToGroupAt(const QString &groupId,const QString &pare
     if(parentId.isEmpty())candidate["roots"]=destination;
     else {auto all=candidate.value("groups").toArray();for(qsizetype i=0;i<all.size();++i){auto group=all[i].toObject();if(group.value("id").toString()==parentId){group["items"]=destination;all[i]=group;break;}}candidate["groups"]=all;}
     return applyOrganization(candidate);
+}
+bool BrushLibrary::groupSelectedItems(const QString &name) {
+    const auto clean=name.trimmed();
+    if(clean.isEmpty() || clean.size()>80 || clean.contains(QChar(0)) || m_selectedItems.isEmpty())return false;
+    QJsonObject organization=m_organization;
+    if(organization.isEmpty()) {
+        QJsonArray roots;for(const auto &preset:m_presets)roots.append(BrushOrganization::presetItem(preset.id));
+        organization=QJsonObject{{"model","ordered-tree-v1"},{"roots",roots},{"groups",QJsonArray{}}};
+    }
+    QSet<QString> selectedGroups;
+    for(const auto &value:m_selectedItems) {
+        const auto item=value.toObject();
+        if(item.value("kind").toString()=="group")selectedGroups.insert(item.value("id").toString());
+    }
+    QJsonArray moved;QSet<QString> movedKeys;
+    for(const auto &value:m_selectedItems) {
+        const auto item=value.toObject();const auto kind=item.value("kind").toString(),id=item.value("id").toString(),key=kind+":"+id;
+        if((kind!="preset" && kind!="group") || id.isEmpty() || movedKeys.contains(key))continue;
+        bool nested=false;
+        if(kind=="group") {
+            for(const auto &ancestor:m_selectedItems) {
+                const auto candidate=ancestor.toObject();
+                if(candidate.value("kind").toString()=="group" && candidate.value("id").toString()!=id && groupContainsGroup(m_organization,candidate.value("id").toString(),id)){nested=true;break;}
+            }
+        } else {
+            for(const auto &ancestor:selectedGroups)if(groupContainsItem(m_organization,ancestor,"preset",id)){nested=true;break;}
+        }
+        if(nested)continue;
+        movedKeys.insert(key);moved.append(item);
+    }
+    if(moved.isEmpty())return false;
+    auto candidate=organization;
+    for(const auto &value:moved)removeOrganizationItem(candidate,value.toObject());
+    const auto id=QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto roots=candidate.value("roots").toArray();roots.append(QJsonObject{{"kind","group"},{"id",id}});candidate["roots"]=roots;
+    auto groups=candidate.value("groups").toArray();groups.append(QJsonObject{{"id",id},{"name",clean},{"items",moved}});candidate["groups"]=groups;
+    if(!applyOrganization(candidate))return false;
+    m_selectedItems=QJsonArray{QJsonObject{{"kind","group"},{"id",id}}};emit selectionChanged();
+    return true;
 }
 bool BrushLibrary::ungroup(const QString &id) {return removeGroup(id,false);}
 bool BrushLibrary::removeGroup(const QString &id,bool cascade) {
@@ -764,6 +881,7 @@ bool BrushLibrary::removeGroup(const QString &id,bool cascade) {
     for(const auto &presetId:order){auto it=std::find_if(nextPresets.cbegin(),nextPresets.cend(),[&](const Preset &preset){return preset.id==presetId;});if(it==nextPresets.cend())return false;sorted.append(*it);}
     m_presets=std::move(sorted);m_resetPresets=std::move(nextReset);m_organization=normalized;
     if(deletingPresets.contains(m_selected))m_selected="round-pressure";
+    m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",m_selected}}};emit selectionChanged();
     changed();return true;
 }
 QString BrushLibrary::saveCopy(const QString &name){
@@ -773,7 +891,7 @@ QString BrushLibrary::saveCopy(const QString &name){
     if(!m_organization.isEmpty() && !BrushOrganization::normalize(BrushOrganization::addPreset(m_organization,p.id,m_selected),ids,organization,order,false))return {};
     p.token=++m_nextToken;p.requested=0;p.error.clear();m_presets.append(p);m_resetPresets.insert(p.id,p);
     if(!organization.isEmpty()){QList<Preset> sorted;for(const auto &id:order)sorted.append(m_presets[index(id)]);m_presets=sorted;}
-    m_organization=organization;m_selected=p.id;changed();return p.id;
+    m_organization=organization;m_selected=p.id;m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",p.id}}};emit selectionChanged();changed();return p.id;
 }
 QString BrushLibrary::createOutlinePreset(bool fixedWidth) {
     if(m_presets.size()>=1024)return {};
@@ -783,10 +901,16 @@ QString BrushLibrary::createOutlinePreset(bool fixedWidth) {
     dual["sizing"]=QVariantMap{{"model","relative-size-v1"},{"mode","relative"},{"diameterOffset",8.},{"widthRule",fixedWidth?"fixed-width":"follow-pressure"}};
     if(!validDual(QJsonObject::fromVariantMap(dual)))return {};
     p.dual=canonicalDual(dual);p.token=++m_nextToken;m_organization=BrushOrganization::addPreset(m_organization,p.id);
-    m_presets.append(p);m_resetPresets.insert(p.id,p);m_selected=p.id;changed();return p.id;
+    m_presets.append(p);m_resetPresets.insert(p.id,p);m_selected=p.id;m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",p.id}}};emit selectionChanged();changed();return p.id;
 }
 bool BrushLibrary::rename(const QString &id,const QString &name){const int i=index(id);if(i<0 || name.trimmed().isEmpty() || name.size()>80)return false;m_presets[i].name=name.trimmed();changed();return true;}
-bool BrushLibrary::remove(const QString &id){const int i=index(id);if(i<0 || m_presets[i].builtin)return false;m_organization=BrushOrganization::removePreset(m_organization,id);m_presets.removeAt(i);m_resetPresets.remove(id);if(m_selected==id)m_selected="round-pressure";changed();return true;}
+bool BrushLibrary::remove(const QString &id){
+    const int i=index(id);if(i<0 || m_presets[i].builtin)return false;
+    m_organization=BrushOrganization::removePreset(m_organization,id);m_presets.removeAt(i);m_resetPresets.remove(id);if(m_selected==id)m_selected="round-pressure";
+    QJsonArray selection;for(const auto &value:m_selectedItems){const auto item=value.toObject();if(!(item.value("kind").toString()=="preset" && item.value("id").toString()==id))selection.append(item);}
+    const bool selectionWasChanged=selection!=m_selectedItems;m_selectedItems=selection;
+    if(selectionWasChanged)emit selectionChanged();changed();return true;
+}
 void BrushLibrary::setActiveColors(const QColor &foreground,const QColor &background){
     if(!foreground.isValid() || !background.isValid() || (foreground==m_foregroundColor && background==m_backgroundColor))return;
     m_foregroundColor=foreground;m_backgroundColor=background;
@@ -902,6 +1026,78 @@ QByteArray BrushLibrary::exportAllPackage(bool includeSource) const {
     }
     const QJsonObject package{{"packageId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"brushes",brushes}};
     return QJsonDocument(QJsonObject{{"model","ordered-package-v1"},{"package",package},{"organization",organization}}).toJson(QJsonDocument::Compact);
+}
+QByteArray BrushLibrary::exportSelectionPackage(bool includeSource) const {
+    if(m_selectedItems.isEmpty() || m_presets.size()>1024)return {};
+    QHash<QString,QJsonObject> groupsById;
+    for(const auto &value:m_organization.value("groups").toArray()) {const auto group=value.toObject();groupsById.insert(group.value("id").toString(),group);}
+    QSet<QString> selectedGroups,includedGroups,includedPresets;
+    QJsonArray roots;
+    std::function<void(const QString &)> includeGroup=[&](const QString &id) {
+        if(includedGroups.contains(id) || !groupsById.contains(id))return;
+        includedGroups.insert(id);
+        for(const auto &value:groupsById.value(id).value("items").toArray()) {
+            const auto item=value.toObject();const auto child=item.value("id").toString();
+            if(item.value("kind").toString()=="group")includeGroup(child);else includedPresets.insert(child);
+        }
+    };
+    for(const auto &value:m_selectedItems)if(value.toObject().value("kind").toString()=="group")selectedGroups.insert(value.toObject().value("id").toString());
+    for(const auto &value:m_selectedItems) {
+        const auto item=value.toObject();const auto kind=item.value("kind").toString(),id=item.value("id").toString();
+        if(kind=="group") {
+            bool nested=false;for(const auto &ancestor:selectedGroups)if(ancestor!=id && groupContainsGroup(m_organization,ancestor,id)){nested=true;break;}
+            if(nested)continue;
+            includeGroup(id);roots.append(QJsonObject{{"kind","group"},{"id",id}});
+        } else if(kind=="preset" && index(id)>=0) {
+            bool nested=false;for(const auto &group:selectedGroups)if(groupContainsItem(m_organization,group,"preset",id)){nested=true;break;}
+            if(nested)continue;
+            includedPresets.insert(id);roots.append(QJsonObject{{"kind","preset"},{"id",id}});
+        }
+    }
+    if(includedPresets.isEmpty())return {};
+    QJsonArray groups;
+    for(const auto &value:m_organization.value("groups").toArray()) {
+        const auto group=value.toObject();
+        if(includedGroups.contains(group.value("id").toString()))groups.append(group);
+    }
+    const QJsonObject candidate{{"model","ordered-tree-v1"},{"roots",roots},{"groups",groups}};
+    QStringList ids;for(const auto &id:includedPresets)ids.append(id);
+    QJsonObject normalized;QStringList order;
+    if(!BrushOrganization::normalize(candidate,ids,normalized,order,false) || order.isEmpty())return {};
+    const QStringList builtins={"round-pressure","round-fine","round-translucent","round-wide"};
+    QHash<QString,QString> mapping;QJsonArray brushes;QSet<QString> emitted;
+    for(const auto &presetId:order) {
+        const int i=index(presetId);if(i<0)return {};
+        const int builtin=builtins.indexOf(presetId);
+        QString id=builtin<0?presetId:QString("dba00000-0000-4000-8000-%1").arg(builtin+1,12,16,QChar('0'));
+        if(id.isEmpty() || QUuid(id).isNull() || emitted.contains(id))return {};
+        const auto row=exportPreset(m_presets[i],includeSource,id);if(row.isEmpty())return {};
+        mapping.insert(presetId,id);emitted.insert(id);brushes.append(row);
+    }
+    auto remapItems=[&](const QJsonArray &items) {
+        QJsonArray result;
+        for(const auto &value:items) {
+            auto item=value.toObject();
+            if(item.value("kind").toString()=="preset") {
+                const auto id=mapping.value(item.value("id").toString());
+                if(id.isEmpty())return QJsonArray{};
+                item["id"]=id;
+            }
+            result.append(item);
+        }
+        return result;
+    };
+    if(normalized.isEmpty()) {
+        QJsonArray mappedRoots;for(const auto &presetId:order)mappedRoots.append(QJsonObject{{"kind","preset"},{"id",mapping.value(presetId)}});
+        normalized=QJsonObject{{"model","ordered-tree-v1"},{"roots",mappedRoots},{"groups",QJsonArray{}}};
+    } else {
+        normalized["roots"]=remapItems(normalized.value("roots").toArray());
+        auto normalizedGroups=normalized.value("groups").toArray();
+        for(qsizetype i=0;i<normalizedGroups.size();++i) {auto group=normalizedGroups[i].toObject();group["items"]=remapItems(group.value("items").toArray());normalizedGroups[i]=group;}
+        normalized["groups"]=normalizedGroups;
+    }
+    const QJsonObject package{{"packageId",QUuid::createUuid().toString(QUuid::WithoutBraces)},{"brushes",brushes}};
+    return QJsonDocument(QJsonObject{{"model","ordered-package-v1"},{"package",package},{"organization",normalized}}).toJson(QJsonDocument::Compact);
 }
 QByteArray BrushLibrary::catalogSnapshot() const {
     const auto root=QJsonDocument::fromJson(snapshot()).object();
@@ -1084,8 +1280,10 @@ bool BrushLibrary::importAbr(const QByteArray &json,const QString &groupName) {
         }
         if(!preset.value("tipResource").isNull())row["maskResource"]=preset.value("tipResource");
         if(preset.contains("texture") && !preset.value("texture").isNull()) {
-            if(handoff.value("version").toInt()<7 || !preset.value("texture").isObject() || !validTexture(preset.value("texture").toObject()))return false;
-            row["texture"]=preset.value("texture");const auto texture=preset.value("texture").toObject();state["version"]=std::max(state.value("version").toInt(),texture.contains("brightness") || texture.contains("contrast") || texture.contains("minimumDepth") || texture.contains("depthJitter") || texture.contains("depthPressure")?21:11);
+            if(handoff.value("version").toInt()<7 || !preset.value("texture").isObject())return false;
+            auto texture=preset.value("texture").toObject();texture["mode"]=normalizeTextureMode(texture.value("mode").toString());
+            if(!validTexture(texture))return false;
+            row["texture"]=texture;state["version"]=std::max(state.value("version").toInt(),textureStateVersion(texture.toVariantMap()));
         }
         rows.append(row);
     }
@@ -1236,9 +1434,10 @@ bool BrushLibrary::restore(const QByteArray &json) {
         } else preset.token=++m_nextToken;
     }
     m_presets=restored;m_organization=organization;m_selected=selected;m_recentColors=recent;m_writeBlend=writeBlend;
+    m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",selected}}};
     const bool colorsChanged=foreground!=m_foregroundColor || background!=m_backgroundColor;
     m_foregroundColor=foreground;m_backgroundColor=background;
     if(colorsChanged)emit activeColorsChanged();
     m_cursorOutline=outline;m_cursorCenter=center;m_cursorHoverOnly=hoverOnly;m_cursorWidth=width;m_cursorSimple=simple;m_cursorComposite=composite;m_cursorImage=image;m_cursorImageOpacity=imageOpacity;m_cursorColor=color;m_cursorSecondaryColor=secondaryColor;emit cursorChanged();
-    emit settingsChanged();emit presetsChanged();emit recentColorsChanged();return true;
+    emit settingsChanged();emit presetsChanged();emit selectionChanged();emit recentColorsChanged();return true;
 }

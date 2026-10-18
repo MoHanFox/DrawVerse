@@ -109,6 +109,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(qreal brushOpacity READ brushOpacity WRITE setBrushOpacity NOTIFY brushChanged)
     Q_PROPERTY(qreal brushSpacing READ brushSpacing WRITE setBrushSpacing NOTIFY brushChanged)
     Q_PROPERTY(BrushLibrary* brushLibrary READ brushLibrary CONSTANT)
+    Q_PROPERTY(bool brushSelectionBlocksPainting READ brushSelectionBlocksPainting NOTIFY brushSelectionChanged)
     Q_PROPERTY(QVariantList recentColors READ recentColors NOTIFY recentColorsChanged)
     Q_PROPERTY(int historyLimit READ historyLimit WRITE setHistoryLimit NOTIFY historyLimitChanged)
     Q_PROPERTY(bool eraser READ eraser WRITE setEraser NOTIFY brushChanged)
@@ -176,6 +177,8 @@ public:
     Q_INVOKABLE bool importDualBrushTip(const QUrl &path,int interpretation);
     Q_INVOKABLE bool exportBrush(const QUrl &path,bool includeSource=false,const QString &expectedPreset={});
     Q_INVOKABLE bool exportAllBrushes(const QUrl &path,bool includeSource=false);
+    Q_INVOKABLE bool exportSelectedBrushes(const QUrl &path,bool includeSource=false);
+    bool brushSelectionBlocksPainting() const {return m_brushLibrary->brushSelectionBlocksPainting();}
     QVariantList historyEntries() const {return m_history;}
     Q_INVOKABLE qreal documentHistoryScrollPosition() const {return m_documentHistoryScroll;}
     Q_INVOKABLE void rememberDocumentHistoryScroll(qreal y) {if(!m_historyLiquify)m_documentHistoryScroll=std::max(qreal(0),y);}
@@ -411,6 +414,7 @@ signals:
     void wetActionChanged();
     void wetBrushFinished(bool success);
     void brushFileChanged();
+    void brushSelectionChanged();
     void brushSourceChanged();
     void brushFileFinished(bool success);
     void liquifyOptionsChanged();

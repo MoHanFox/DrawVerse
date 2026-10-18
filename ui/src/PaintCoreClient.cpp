@@ -756,6 +756,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
     });
     connect(m_brushLibrary,&BrushLibrary::cursorChanged,this,&PaintCoreClient::brushCursorPreferencesChanged);
+    connect(m_brushLibrary,&BrushLibrary::selectionChanged,this,&PaintCoreClient::brushSelectionChanged);
     connect(m_brushLibrary,&BrushLibrary::cursorChanged,this,[this]{requestBrushOutlines();emit brushOutlineChanged();});
     connect(m_worker,&BackendWorker::brushFileReady,this,[this](const QByteArray &package,const QString &error,bool exporting,bool abr){
         bool success=error.isEmpty();
@@ -1266,6 +1267,7 @@ bool PaintCoreClient::submitLiquifyDab(const InputSample &from,const InputSample
 }
 bool PaintCoreClient::beginStroke(const InputSample &s) {
     if (!m_ready || m_drawing || m_wetActionBusy || layerEditBusy() || m_pendingLiquify) return false;
+    if(m_brushLibrary->brushSelectionBlocksPainting())return false;
     if(m_liquifyActive) {m_dropStroke=false;m_liquifyLast=s;m_liquifyClock.restart();if(!submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_BEGIN))return false;if(!submitLiquifyDab(s,s,16)){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);return false;}m_drawing=true;emit stateChanged();return true;}
     for(const auto &value:m_layers) { const auto layer=value.toMap(); if(layer.value("id").toULongLong()!=m_active) continue;
         if(layer.value("group").toBool()) {showError(QStringLiteral("请选中组内像素图层绘画，或先新建图层"));return false;}
@@ -1709,6 +1711,13 @@ bool PaintCoreClient::exportAllBrushes(const QUrl &path,bool includeSource) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
     const auto package=m_brushLibrary->exportAllPackage(includeSource);
     if(package.isEmpty()){showError(QStringLiteral("无法导出全部画笔：请检查来源包含选项、组层数或画笔数量"));return false;}
+    m_brushFileBusy=true;emit brushFileChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),package]{worker->brushFile(path,package,true);},Qt::QueuedConnection);return true;
+}
+bool PaintCoreClient::exportSelectedBrushes(const QUrl &path,bool includeSource) {
+    if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;
+    const auto package=m_brushLibrary->exportSelectionPackage(includeSource);
+    if(package.isEmpty()){showError(QStringLiteral("无法导出选中项，请检查选择、来源选项或画笔容量"));return false;}
     m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),package]{worker->brushFile(path,package,true);},Qt::QueuedConnection);return true;
 }

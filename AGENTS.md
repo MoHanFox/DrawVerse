@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新ABR大包与画笔多选导出：`docs/brush-library-abr-multiselect-export-design.md` / `docs/brush-library-abr-multiselect-export-validation.md`；ABR大直径/间距/圆度按Photoshop范围读取后近似钳制到原生上限，第二笔刷Double数量、纹理normal/高级模式修复；画笔库支持Ctrl/Shift画笔与组混选、多选禁画、选中项成组，工具栏导出移除并改为右键导出画笔/组/选中项，选中组导出保留完整子树。用户34MB/485画笔/304资源ABR实际Qt导入、Rust47项、Windows Qt 10项及Release完整构建通过；未跑全量/跨平台/设备/GPU。
+
 - 最新画笔库交互修复：`docs/brush-library-interaction-fixes-design.md` / `docs/brush-library-interaction-fixes-validation.md`；纹理预览临时状态统一按`textureStateVersion`提升至state21/30/31/33，修复带深度纹理的ABR预览不可用；画笔组支持点击折叠/展开，搜索忽略折叠，模型重建保持滚动位置；画笔库和图层列表拖拽时支持滚轮滚动及上下缘持续自动滚动。用户ABR临时验证、纹理版本单测、组树/滚动和双列表滚轮四项通过，Windows Release完整构建通过；未跑全量/跨平台/设备/GPU。
 
 - 最新画笔导入导出分组：`docs/brush-import-export-groups-design.md` / `docs/brush-import-export-groups-validation.md`；文件导入按文件名创建外层组，VBR `ordered-package-v1` 的内部组树重映射后嵌入其中，ABR 因无组织信息仅获得文件名组；单笔刷导出保留所在完整组路径，全量导出保留完整组树。Windows Release Qt 多层组单笔刷往返及全量导出导入两项通过，未跑全量/跨平台/设备/GPU。

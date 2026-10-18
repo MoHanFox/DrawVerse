@@ -2,7 +2,9 @@
 #include <QObject>
 #include <QColor>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QHash>
+#include <QSet>
 #include <QVariantList>
 #include <QStringList>
 
@@ -12,6 +14,10 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(int writeBlend READ writeBlend WRITE setWriteBlend NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList presets READ presets NOTIFY presetsChanged)
     Q_PROPERTY(QVariantMap organization READ organization NOTIFY presetsChanged)
+    Q_PROPERTY(QVariantList selectedBrushItems READ selectedBrushItems NOTIFY selectionChanged)
+    Q_PROPERTY(bool multiBrushSelection READ multiBrushSelection NOTIFY selectionChanged)
+    Q_PROPERTY(bool brushSelectionBlocksPainting READ brushSelectionBlocksPainting NOTIFY selectionChanged)
+    Q_PROPERTY(bool brushSelectionHasSources READ brushSelectionHasSources NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedId READ selectedId NOTIFY settingsChanged)
     Q_PROPERTY(QString selectedName READ selectedName NOTIFY settingsChanged)
     Q_PROPERTY(QString selectedPreview READ selectedPreview NOTIFY presetsChanged)
@@ -96,6 +102,10 @@ public:
     void setWriteBlend(int mode);
     QVariantList presets() const;
     QString selectedId() const {return m_selected;}
+    QVariantList selectedBrushItems() const;
+    bool multiBrushSelection() const;
+    bool brushSelectionBlocksPainting() const;
+    bool brushSelectionHasSources() const;
     QString selectedName() const;
     QString selectedPreview() const;
     QString previewMessage() const;
@@ -344,6 +354,7 @@ public:
     QVariantMap tipSettings() const;
     QByteArray exportPackage(bool includeSource=false) const;
     QByteArray exportAllPackage(bool includeSource=false) const;
+    QByteArray exportSelectionPackage(bool includeSource=false) const;
     bool importPackage(const QByteArray &json,const QString &groupName={});
     bool importAbr(const QByteArray &json,const QString &groupName={});
     static int textureStateVersion(const QVariantMap &texture);
@@ -359,6 +370,9 @@ public:
     void setOpacity(qreal value);
     void setSpacing(qreal value);
     Q_INVOKABLE bool select(const QString &id);
+    Q_INVOKABLE bool selectBrushItems(const QVariantList &items,const QString &activePreset={});
+    Q_INVOKABLE void clearBrushSelection();
+    Q_INVOKABLE bool groupSelectedItems(const QString &name);
     Q_INVOKABLE bool useColor(const QString &color);
     Q_INVOKABLE QString saveCopy(const QString &name);
     Q_INVOKABLE QString createOutlinePreset(bool fixedWidth);
@@ -389,6 +403,7 @@ signals:
     void cursorChanged();
     void settingsChanged();
     void presetsChanged();
+    void selectionChanged();
     void recentColorsChanged();
     void persistRequested(QByteArray json);
     void previewRequested(QString id,quint64 token,qreal radius,qreal opacity,qreal spacing,QVariantMap tip);
@@ -417,6 +432,7 @@ private:
     QJsonObject m_organization;
     QHash<QString,Preset> m_resetPresets;
     QString m_selected="round-pressure";
+    QJsonArray m_selectedItems;
     // Most recently used colours first; the colour panel shows them as its swatch row.
     QStringList m_recentColors;
     int m_writeBlend=0;

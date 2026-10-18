@@ -27,14 +27,47 @@ ColumnLayout {
         else root.forceActiveFocus()
     }
     property bool includeExportSource:false
-    property bool exportAll:false
-    property string exportPreset:""
-    function beginExport(all) {
-        exportAll=!!all
+    property bool groupSelectedMode:false
+    property string selectionAnchor:""
+    function beginSelectionExport() {
+        if(library.selectedBrushItems.length===0)return
         includeExportSource=false
-        exportPreset=library.selectedId
-        if(library.presets.some(p=>p.sourceResource.length>0)){includeOriginal.checked=false;sourceOptions.open()}
+        if(library.brushSelectionHasSources){includeOriginal.checked=false;sourceOptions.open()}
         else exportDialog.open()
+    }
+    function itemKey(kind,id){return kind+":"+id}
+    function isBrushItemSelected(kind,id) {
+        const items=library.selectedBrushItems
+        if(items.length===0)return kind==="preset" && id===library.selectedId
+        return items.some(item=>item.kind===kind && item.id===id)
+    }
+    function handleBrushClick(modelData,modifiers) {
+        const key=itemKey(modelData.kind,modelData.id),items=groupedModel
+        const shift=(modifiers & Qt.ShiftModifier)!==0,control=(modifiers & (Qt.ControlModifier|Qt.MetaModifier))!==0
+        if(shift && selectionAnchor.length>0) {
+            const from=items.findIndex(item=>itemKey(item.kind,item.id)===selectionAnchor)
+            const to=items.findIndex(item=>itemKey(item.kind,item.id)===key)
+            if(from>=0 && to>=0) {
+                const range=items.slice(Math.min(from,to),Math.max(from,to)+1).map(item=>({kind:item.kind,id:item.id}))
+                library.selectBrushItems(range,modelData.kind==="preset"?modelData.id:"")
+                return
+            }
+        }
+        if(control) {
+            const selected=library.selectedBrushItems.map(item=>({kind:item.kind,id:item.id}))
+            const index=selected.findIndex(item=>itemKey(item.kind,item.id)===key)
+            if(index>=0)selected.splice(index,1)
+            else selected.push({kind:modelData.kind,id:modelData.id})
+            library.selectBrushItems(selected,modelData.kind==="preset"?modelData.id:"")
+            selectionAnchor=key
+            return
+        }
+        selectionAnchor=key
+        library.selectBrushItems([{kind:modelData.kind,id:modelData.id}],modelData.kind==="preset"?modelData.id:"")
+    }
+    function openSelectedGroupDialog() {
+        if(library.selectedBrushItems.length===0)return
+        groupSelectedMode=true;groupParentId="";groupName.text="";groupDialog.title="将选中项创建为组";groupDialog.open()
     }
     readonly property var library:PaintClient.brushLibrary
     property var groupedModel:[]
@@ -124,14 +157,16 @@ ColumnLayout {
         objectName:"brushPresetList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:2
         id:presetList;interactive:!root.draggingBrush;model:root.groupedModel
         delegate:Rectangle {
+            id:brushRow
             required property var modelData
+            property var panel:root
             objectName:modelData.kind==="group"?"brushGroup:"+modelData.id:"brushPreset:"+modelData.id
             width:ListView.view.width;height:modelData.kind==="group"?30:58
-            color:modelData.kind==="group"?Theme.strip:root.library.selectedId===modelData.id?Theme.selected:Theme.surface
+            color:root.isBrushItemSelected(modelData.kind,modelData.id)?Theme.selected:modelData.kind==="group"?Theme.strip:Theme.surface
             border.color:Theme.line
             property int dropPlacement:0
             property point dropPoint
-            function updateDrop(d){dropPoint=Qt.point(d.x,d.y);root.dragHovered=parent;root.dragViewportY=parent.mapToItem(presetList,d.x,d.y).y;dropPlacement=modelData.kind==="group" && d.y>11 && d.y<height-11?0:d.y<height/2?1:2}
+            function updateDrop(d){dropPoint=Qt.point(d.x,d.y);panel.dragHovered=brushRow;panel.dragViewportY=brushRow.mapToItem(presetList,d.x,d.y).y;dropPlacement=modelData.kind==="group" && d.y>11 && d.y<height-11?0:d.y<height/2?1:2}
             visible:modelData.kind==="group" || root.presetById(modelData.id).id!==undefined
             Image {visible:modelData.kind!=="group";anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.leftMargin:4+modelData.depth*14;anchors.rightMargin:4;anchors.topMargin:4;height:35;source:modelData.kind==="group"?"":root.presetById(modelData.id).preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
             Text {visible:modelData.kind==="group";x:8+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:(root.isGroupCollapsed(modelData.id)?"▸  ":"▾  ")+modelData.name;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
@@ -149,30 +184,33 @@ ColumnLayout {
                 onClicked:function(mouse) {
                     if(suppressClick){suppressClick=false;return}
                     if(mouse.button===Qt.RightButton) {
+                        if(!root.isBrushItemSelected(modelData.kind,modelData.id))root.handleBrushClick(modelData,Qt.NoModifier)
                         if(modelData.kind==="group") {root.contextGroupId=modelData.id;root.contextGroupName=modelData.name;groupMenu.popup()}
-                        else {root.contextPresetId=modelData.id;root.library.select(modelData.id);presetMenu.popup()}
-                    } else if(modelData.kind==="group") root.toggleGroup(modelData.id)
-                    else root.library.select(modelData.id)
+                        else {root.contextPresetId=modelData.id;presetMenu.popup()}
+                    } else {
+                        root.handleBrushClick(modelData,mouse.modifiers)
+                        if(modelData.kind==="group" && !(mouse.modifiers & (Qt.ControlModifier|Qt.MetaModifier|Qt.ShiftModifier)))root.toggleGroup(modelData.id)
+                    }
                 }
             }
             DropArea {
                 id:brushDrop;objectName:"brushDrop:"+modelData.id
                 anchors.fill:parent;keys:["application/x-drawverse-brush"]
-                onEntered:function(drop){parent.updateDrop(drop)}
-                onPositionChanged:function(drop){parent.updateDrop(drop)}
-                onExited:{if(root.dragHovered===parent)root.dragHovered=null}
+                onEntered:function(drop){brushRow.updateDrop(drop)}
+                onPositionChanged:function(drop){brushRow.updateDrop(drop)}
+                onExited:{if(brushRow.panel.dragHovered===brushRow)brushRow.panel.dragHovered=null}
                 onDropped:function(drop){
-                    parent.updateDrop(drop)
-                    root.dragHovered=null
-                    root.dragViewportY=-1
+                    brushRow.updateDrop(drop)
+                    brushRow.panel.dragHovered=null
+                    brushRow.panel.dragViewportY=-1
                     const payload=drop.getDataAsString("application/x-drawverse-brush"),separator=payload.indexOf(":")
                     if(separator<=0)return
                     const kind=payload.slice(0,separator),id=payload.slice(separator+1)
                     let parentId=modelData.parent,index=modelData.index
-                    if(modelData.kind==="group" && parent.dropPlacement===0){parentId=modelData.id;index=-1}
-                    else if(parent.dropPlacement===2)index=modelData.index+1
-                    if(kind==="preset")root.library.movePresetToGroupAt(id,parentId,index)
-                    else if(kind==="group")root.library.moveGroupToGroupAt(id,parentId,index)
+                    if(modelData.kind==="group" && brushRow.dropPlacement===0){parentId=modelData.id;index=-1}
+                    else if(brushRow.dropPlacement===2)index=modelData.index+1
+                    if(kind==="preset")brushRow.panel.library.movePresetToGroupAt(id,parentId,index)
+                    else if(kind==="group")brushRow.panel.library.moveGroupToGroupAt(id,parentId,index)
                     drop.acceptProposedAction()
                 }
             }
@@ -207,23 +245,25 @@ ColumnLayout {
     RowLayout {
         Item {Layout.fillWidth:true}
         IconButton {objectName:"importBrushPackage";glyph:"folder";tooltip:"导入 VBR / ABR 笔刷包";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:importDialog.open()}
-        IconButton {objectName:"exportBrushPackage";glyph:"save";tooltip:"导出当前笔刷为 VBR";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:root.beginExport()}
-        IconButton {objectName:"exportAllBrushPackages";glyph:"save";tooltip:"导出全部画笔与分组为 VBR";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:root.beginExport(true)}
         IconButton {glyph:"plus";tooltip:"保存当前设置为新画笔";implicitHeight:22;onClicked:saveDialog.open()}
-        IconButton {objectName:"createBrushGroup";glyph:"folder";tooltip:"新建画笔组";implicitHeight:22;onClicked:{root.groupParentId="";groupName.text="";groupDialog.title="新建画笔组";groupDialog.open()}}
+        IconButton {objectName:"createBrushGroup";glyph:"folder";tooltip:root.library.selectedBrushItems.length>0?"将选中项创建为组":"新建画笔组";implicitHeight:22;onClicked:{if(root.library.selectedBrushItems.length>0)root.openSelectedGroupDialog();else{root.groupSelectedMode=false;root.groupParentId="";groupName.text="";groupDialog.title="新建画笔组";groupDialog.open()}}}
         IconButton {glyph:"trash";tooltip:"删除自定义画笔";implicitHeight:22;enabled:root.library.presets.some(p=>p.id===root.library.selectedId && !p.builtin);onClicked:root.library.remove(root.library.selectedId)}
     }
-    Menu {
+    GlassMenu {
         id:groupMenu
-        MenuItem {text:"新建子组";onTriggered:{root.groupParentId=root.contextGroupId;groupName.text="";groupDialog.title="新建子组";groupDialog.open()}}
-        MenuItem {text:"重命名";onTriggered:{root.groupParentId="";groupName.text=root.contextGroupName;groupDialog.title="重命名组";groupDialog.open()}}
+        objectName:"brushGroupContextMenu"
+        GlassMenuItem {text:"创建分组";visible:root.library.selectedBrushItems.length>1;onTriggered:root.openSelectedGroupDialog()}
+        GlassMenuItem {text:"新建子组";onTriggered:{root.groupSelectedMode=false;root.groupParentId=root.contextGroupId;groupName.text="";groupDialog.title="新建子组";groupDialog.open()}}
+        GlassMenuItem {text:"重命名";onTriggered:{root.groupSelectedMode=false;root.groupParentId="";groupName.text=root.contextGroupName;groupDialog.title="重命名组";groupDialog.open()}}
+        GlassMenuItem {text:root.library.selectedBrushItems.length>1?"导出选中项":"导出该组";onTriggered:root.beginSelectionExport()}
         MenuSeparator {}
-        MenuItem {text:"移动到根目录";onTriggered:root.library.moveGroupToGroup(root.contextGroupId,"")}
-        Menu {
+        GlassMenuItem {text:"移动到根目录";onTriggered:root.library.moveGroupToGroup(root.contextGroupId,"")}
+        GlassMenu {
             title:"移动到组"
+            cascadeParent:groupMenu
             Repeater {
                 model:root.groupMenuGroups
-                MenuItem {
+                GlassMenuItem {
                     required property var modelData
                     text:modelData.name
                     visible:modelData.id!==root.contextGroupId && !root.groupContains(root.contextGroupId,modelData.id)
@@ -232,19 +272,26 @@ ColumnLayout {
             }
         }
         MenuSeparator {}
-        MenuItem {text:"解散组";onTriggered:root.library.ungroup(root.contextGroupId)}
-        MenuItem {text:"删除组及内容";onTriggered:root.library.removeGroup(root.contextGroupId,true)}
+        GlassMenuItem {text:"解散组";onTriggered:root.library.ungroup(root.contextGroupId)}
+        GlassMenuItem {text:"删除组及内容";onTriggered:root.library.removeGroup(root.contextGroupId,true)}
     }
-    Menu {
-        id:presetMenu;title:"移动到组"
-        MenuItem {text:"画笔库根目录";onTriggered:root.library.movePresetToGroup(root.contextPresetId,"")}
+    GlassMenu {
+        id:presetMenu;objectName:"brushPresetContextMenu"
+        GlassMenuItem {text:"创建分组";visible:root.library.selectedBrushItems.length>1;onTriggered:root.openSelectedGroupDialog()}
+        GlassMenuItem {text:root.library.selectedBrushItems.length>1?"导出选中项":"导出该笔刷";onTriggered:root.beginSelectionExport()}
+        MenuSeparator {}
+        GlassMenuItem {text:"画笔库根目录";onTriggered:root.library.movePresetToGroup(root.contextPresetId,"")}
+        GlassMenu {
+            title:"移动到组"
+            cascadeParent:presetMenu
         Repeater {
             model:root.groupMenuGroups
-            MenuItem {
+            GlassMenuItem {
                 required property var modelData
                 text:modelData.name
                 onTriggered:root.library.movePresetToGroup(root.contextPresetId,modelData.id)
             }
+        }
         }
     }
     Dialog {
@@ -259,14 +306,16 @@ ColumnLayout {
         contentItem:TextField {id:groupName;objectName:"brushGroupName";placeholderText:"组名称";maximumLength:80;selectByMouse:true}
         onAccepted: {
             if(title==="重命名组") root.library.renameGroup(root.contextGroupId,groupName.text)
+            else if(root.groupSelectedMode) root.library.groupSelectedItems(groupName.text)
             else root.library.createGroup(groupName.text,root.groupParentId)
+            root.groupSelectedMode=false
         }
     }
     Dialog {
         id:sourceOptions;objectName:"brushSourceExportOptions";title:"导出来源范围";modal:true;anchors.centerIn:Overlay.overlay;width:320
         contentItem:ColumnLayout {
             spacing:8
-            Label {text:root.exportAll?"导出范围包含 ABR 来源。原始包可能包含其他预设和资源；选择后将完整包含在 VBR 中。":"该笔刷包含 ABR 来源。原始包可能包含其他预设和资源；选择后将完整包含在 VBR 中。";textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.WordWrap;font.pixelSize:10;color:Theme.text}
+            Label {text:"选中项包含 ABR 来源。原始包可能包含其他预设和资源；选择后将完整包含在 VBR 中。";textFormat:Text.PlainText;Layout.fillWidth:true;wrapMode:Text.WordWrap;font.pixelSize:10;color:Theme.text}
             CompactCheckBox {id:includeOriginal;objectName:"includeOriginalAbr";text:"包含原始 ABR 包";font.pixelSize:10;tooltip:"包含全部原始字节以及导入时参数和兼容报告；原始包可能包含其他预设和资源。"}
         }
         footer:RowLayout {
@@ -276,7 +325,7 @@ ColumnLayout {
         }
     }
     FileDialog {id:importDialog;objectName:"brushImportDialog";title:"导入笔刷包";nameFilters:["笔刷包 (*.vbr *.abr)","DrawVerse 笔刷 (*.vbr)","Photoshop 笔刷 (*.abr)"];onAccepted:PaintClient.importBrushes(selectedFile)}
-    FileDialog {id:exportDialog;title:root.exportAll?"导出全部画笔":"导出当前笔刷";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:root.exportAll?PaintClient.exportAllBrushes(selectedFile,root.includeExportSource):PaintClient.exportBrush(selectedFile,root.includeExportSource,root.exportPreset)}
+    FileDialog {id:exportDialog;title:"导出画笔 VBR";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.exportSelectedBrushes(selectedFile,root.includeExportSource)}
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
     Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}function onPresetsChanged(){root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}}
     Component.onCompleted:{root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}

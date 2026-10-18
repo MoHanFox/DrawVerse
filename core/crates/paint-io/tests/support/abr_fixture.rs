@@ -52,7 +52,7 @@ fn preset(
     transfer: (f64, f64, f64),
 ) -> Vec<u8> {
     let mut shape = vec![
-        ("Dmtr", unit(b"#Pxl", if bad { 513. } else { 8. })),
+        ("Dmtr", unit(b"#Pxl", if bad { 5001. } else { 8. })),
         ("Angl", unit(b"#Ang", 0.)),
         (
             "Rndn",

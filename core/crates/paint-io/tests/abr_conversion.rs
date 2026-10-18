@@ -176,7 +176,7 @@ fn units_missing_fields_range_and_late_failure_never_return_a_partial_batch() {
     let original = shape(false);
     for bad_value in [
         unit(*b"#Prc", 16.),
-        unit(*b"#Pxl", 513.),
+        unit(*b"#Pxl", 5001.),
         unit(*b"#Pxl", f64::NAN),
         Value::Integer(16),
     ] {
@@ -226,6 +226,36 @@ fn units_missing_fields_range_and_late_failure_never_return_a_partial_batch() {
         &cancelled
     )
     .is_err());
+}
+#[test]
+fn photoshop_extreme_size_spacing_and_roundness_are_clamped_and_reported() {
+    let token = CancellationToken::default();
+    let source = preset();
+    let mut shape = shape(false);
+    shape.entries[0].1 = unit(*b"#Pxl", 1003.);
+    shape.entries[2].1 = unit(*b"#Prc", 0.);
+    shape.entries[3].1 = unit(*b"#Prc", 400.);
+    let converted = convert(
+        &[LinkedPreset {
+            name: "extreme",
+            preset: &source,
+            shape: &shape,
+            sampled_tip: None,
+            dual_sampled_tip: None,
+        }],
+        &token,
+    )
+    .unwrap();
+    let preset = &converted[0];
+    assert_eq!(preset.settings.diameter, 512.);
+    assert_eq!(preset.settings.spacing, 0.5);
+    assert_eq!(preset.settings.tip.roundness, 0.01);
+    for path in ["Brsh.Dmtr", "Brsh.Spcn", "Brsh.Rndn"] {
+        assert!(preset
+            .issues
+            .iter()
+            .any(|i| i.path == path && i.status == Status::Approximate));
+    }
 }
 #[test]
 fn huge_unknown_reports_reject_with_a_bound_and_never_hide_the_extra_fields() {
@@ -941,7 +971,7 @@ fn pressure_switches_overrides_unknown_controls_and_random_fields_are_honest() {
             assert!(p
                 .issues
                 .iter()
-                .any(|i| i.path == "szVr.jitter" && i.status == Status::NotExecuted));
+                .any(|i| i.path == "szVr.jitter" && i.status == Status::Approximate));
         }
         if mode == 4 {
             assert_eq!(p.converter_version, 1);

@@ -67,7 +67,10 @@ fn unit(source: &Descriptor, key: &[u8], expected: [u8; 4], low: f64, high: f64)
         )));
     }
     if !value.is_finite() || !(low..=high).contains(&value) {
-        return Err(Error::Limit("ABR parameter outside executable range"));
+        return Err(Error::Unsupported(format!(
+            "ABR parameter {:?} value {value} outside {low}..={high}",
+            String::from_utf8_lossy(key)
+        )));
     }
     Ok(value as f32)
 }
@@ -1481,6 +1484,9 @@ fn dual_scatter(dual: &Descriptor) -> Result<Option<ScatterDynamics>> {
     let both_axes = flag(dual, b"bothAxes")?.ok_or(Error::Invalid("ABR dual scatter axes"))?;
     let count = match dual.get(b"Cnt ") {
         Some(Value::Integer(n)) if (1..=16).contains(n) => *n as u32,
+        Some(Value::Double(n)) if n.is_finite() && (1. ..=16.).contains(n) && n.fract() == 0. => {
+            *n as u32
+        }
         _ => return Err(Error::Invalid("ABR dual scatter count")),
     };
     let dynamic = |key: &[u8]| -> Result<&Descriptor> {
@@ -1553,15 +1559,17 @@ fn dual_controls(
             return Ok(false);
         }
     };
-    let radius = unit(shape, b"Dmtr", *b"#Pxl", 1., 512.)? / 2.;
+    let diameter_source = unit(shape, b"Dmtr", *b"#Pxl", 1., 5000.)?;
+    let radius = diameter_source.min(512.) / 2.;
     let angle = unit(shape, b"Angl", *b"#Ang", -180., 180.)?;
-    let roundness = unit(shape, b"Rndn", *b"#Prc", 1., 100.)? / 100.;
+    let roundness_source = unit(shape, b"Rndn", *b"#Prc", 0., 100.)? / 100.;
+    let roundness = roundness_source.max(0.01);
     let hardness = if sampled {
         1.
     } else {
         unit(shape, b"Hrdn", *b"#Prc", 0., 100.)? / 100.
     };
-    let spacing = unit(dual, b"Spcn", *b"#Prc", 1., 50.)? / 100.;
+    let spacing = (unit(dual, b"Spcn", *b"#Prc", 1., 1000.)? / 100.).min(1.);
     let tip = BrushTip {
         hardness,
         roundness,
@@ -1610,6 +1618,22 @@ fn dual_controls(
         ("dualBrush.Spcn", "双笔刷独立路径间距"),
     ] {
         issue(issues, path, Status::Mapped, reason);
+    }
+    if diameter_source > 512. {
+        issue(
+            issues,
+            "dualBrush.Dmtr",
+            Status::Approximate,
+            "ABR 双笔刷直径超过原生 512 px 上限，执行时钳制",
+        );
+    }
+    if roundness_source < 0.01 {
+        issue(
+            issues,
+            "dualBrush.Rndn",
+            Status::Approximate,
+            "ABR 双笔刷圆度低于原生 1% 下限，执行时钳制",
+        );
     }
     if flag(dual, b"useScatter")? == Some(true) {
         for path in [
@@ -1670,10 +1694,13 @@ fn convert_inner<'a>(
         if (shape.class.id == b"sampledBrush") != item.sampled_tip.is_some() {
             return Err(Error::Invalid("ABR shape/resource association"));
         }
-        let diameter = unit(shape, b"Dmtr", *b"#Pxl", 1., 512.)?;
+        let diameter_source = unit(shape, b"Dmtr", *b"#Pxl", 1., 5000.)?;
+        let diameter = diameter_source.min(512.);
         let angle = unit(shape, b"Angl", *b"#Ang", -180., 180.)?;
-        let roundness = unit(shape, b"Rndn", *b"#Prc", 1., 100.)? / 100.;
-        let spacing = unit(shape, b"Spcn", *b"#Prc", 1., 50.)? / 100.;
+        let roundness_source = unit(shape, b"Rndn", *b"#Prc", 0., 100.)? / 100.;
+        let roundness = roundness_source.max(0.01);
+        let spacing_source = unit(shape, b"Spcn", *b"#Prc", 1., 1000.)? / 100.;
+        let spacing = spacing_source.min(0.5);
         let hardness = if item.sampled_tip.is_none() {
             unit(shape, b"Hrdn", *b"#Prc", 0., 100.)? / 100.
         } else {
@@ -1700,14 +1727,48 @@ fn convert_inner<'a>(
             },
             mask: item.sampled_tip.map(|tip| tip.mask.clone()),
         };
-        for key in ["Dmtr", "Rndn", "Spcn"] {
-            issue(
-                &mut issues,
-                format!("Brsh.{key}"),
-                Status::Mapped,
-                "按源单位转换到真实原生参数",
-            );
-        }
+        issue(
+            &mut issues,
+            "Brsh.Rndn",
+            if roundness_source < 0.01 {
+                Status::Approximate
+            } else {
+                Status::Mapped
+            },
+            if roundness_source < 0.01 {
+                "ABR roundness below native 1% is clamped at execution"
+            } else {
+                "按源单位转换到真实原生参数"
+            },
+        );
+        issue(
+            &mut issues,
+            "Brsh.Dmtr",
+            if diameter_source > 512. {
+                Status::Approximate
+            } else {
+                Status::Mapped
+            },
+            if diameter_source > 512. {
+                "ABR diameter above native 512 px is clamped at execution"
+            } else {
+                "按源单位转换到真实原生参数"
+            },
+        );
+        issue(
+            &mut issues,
+            "Brsh.Spcn",
+            if spacing_source > 0.5 {
+                Status::Approximate
+            } else {
+                Status::Mapped
+            },
+            if spacing_source > 0.5 {
+                "ABR spacing above native 50% is clamped at execution"
+            } else {
+                "按源单位转换到真实原生参数"
+            },
+        );
         issue(
             &mut issues,
             "Brsh.Angl",
