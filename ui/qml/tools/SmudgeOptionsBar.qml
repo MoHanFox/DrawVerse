@@ -12,7 +12,7 @@ RowLayout {
     Icon {name:"smudge";Layout.preferredWidth:20;Layout.preferredHeight:20}
     Rectangle {objectName:"smudgeOptionsSeparator";Layout.preferredWidth:1;Layout.preferredHeight:22;color:Theme.line}
     Label {text:"大小";color:Theme.muted}
-    CompactSpinBox {objectName:"smudgeBrushSize";from:1;to:512;editable:true;value:Math.round(root.client.brushRadius*2);Layout.preferredWidth:76;Layout.preferredHeight:24;onValueModified:root.client.brushRadius=value/2}
+    CompactSpinBox {objectName:"smudgeBrushSize";from:1;to:2000;editable:true;value:Math.round(root.client.brushRadius*2);Layout.preferredWidth:76;Layout.preferredHeight:24;onValueModified:root.client.brushRadius=value/2}
     Label {text:"px";color:Theme.muted}
     Label {text:"强度：";color:Theme.muted}
     LayerPercent {tooltip:"控制每次涂抹搬运颜色的程度，并与笔刷不透明度共同生效。";objectName:"smudgeStrength";fraction:root.client.smudgeStrength;Layout.preferredWidth:70;Layout.preferredHeight:24;onCommitted:fraction=>root.client.smudgeStrength=fraction}

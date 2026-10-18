@@ -123,7 +123,7 @@ fn archive_alias_traversal_missing_unknown_entries_and_versions_reject() {
 }
 
 #[test]
-fn historical_schema_numeric_limits_match_executable_parameters() {
+fn historical_schema_ranges_remain_accepted_and_current_limits_are_executable() {
     let schema: serde_json::Value = serde_json::from_str(include_str!(
         "fixtures/schema-history/vbr/vbr-procedural-v1.schema.json"
     ))
@@ -144,7 +144,15 @@ fn historical_schema_numeric_limits_match_executable_parameters() {
             &properties[field]
         };
         let minimum = spec["minimum"].as_f64().unwrap();
-        let maximum = spec["maximum"].as_f64().unwrap();
+        let historical_maximum = spec["maximum"].as_f64().unwrap();
+        let maximum = if field == "diameter" {
+            f64::from(paint_core::MAX_BRUSH_RADIUS) * 2.
+        } else {
+            historical_maximum
+        };
+        let mut historical = serde_json::to_value(package()).unwrap();
+        historical["brushes"][0]["parameters"][field] = serde_json::json!(historical_maximum);
+        assert!(Package::from_json(&serde_json::to_vec(&historical).unwrap()).is_ok());
         for (value, valid) in [
             (minimum, true),
             (maximum, true),
@@ -160,4 +168,16 @@ fn historical_schema_numeric_limits_match_executable_parameters() {
             );
         }
     }
+}
+
+#[test]
+fn maximum_diameter_vbr_remains_1_0_and_executes() {
+    let mut p = package();
+    p.brushes[0].parameters.diameter = 2000.;
+    let token = CancellationToken::default();
+    let read = decode(&encode(&p, &token).unwrap(), &token).unwrap();
+    assert_eq!(read.brushes[0].parameters.diameter, 2000.);
+    assert_eq!(read.brushes[0].parameters.definition().brush.radius, 1000.);
+    p.brushes[0].parameters.diameter = 2000.25;
+    assert!(p.validate().is_err());
 }

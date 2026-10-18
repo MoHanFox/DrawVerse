@@ -282,7 +282,7 @@ fn maximum_grid_and_empty_pickup_remain_bounded() {
     assert_eq!(dab.edge(), 64);
     assert_eq!(dab.sample(0., 1.), Pixel::TRANSPARENT);
     assert_eq!(std::mem::size_of::<WetSample>(), 20);
-    assert!(WetCarrier::new(WetMix::default(), 513., red()).is_err());
+    assert!(WetCarrier::new(WetMix::default(), 2000.25, red()).is_err());
     assert!(WetCarrier::new(WetMix::default(), f32::NAN, red()).is_err());
     assert_eq!(
         WetCarrier::new(WetMix::default(), 1., red())

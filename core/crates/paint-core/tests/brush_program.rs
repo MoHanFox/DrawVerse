@@ -159,3 +159,33 @@ fn validation_is_atomic_and_new_tip_history_is_reversible() {
     d.undo().unwrap();
     assert_eq!(d.pixel(20, 20), before.pixel(20, 20));
 }
+
+#[test]
+fn maximum_radius_executes_at_document_edge_and_preserves_history() {
+    let mut definition = BrushDefinition::default();
+    definition.brush.radius = MAX_BRUSH_RADIUS;
+    definition.tip.pressure_size = false;
+    definition.tip.pressure_flow = false;
+    let program = BrushProgram::compile(definition.clone()).unwrap();
+    let pose = program
+        .cursor_pose(MAX_BRUSH_RADIUS, InputPoint::new(0., 0., 1.), true, None)
+        .unwrap();
+    assert_eq!(pose.radius, 1000.);
+    assert!(program
+        .cursor_pose(1000.25, InputPoint::new(0., 0., 1.), true, None)
+        .is_err());
+    let mut d = Document::new(32, 32).unwrap();
+    d.begin_brush_stroke(definition.clone(), InputPoint::new(-500., 16., 1.))
+        .unwrap();
+    d.end_stroke().unwrap();
+    assert!(d.pixel(0, 16).alpha() > 0.9);
+    assert_eq!(d.history_depth(), (1, 0));
+    d.undo().unwrap();
+    assert_eq!(d.pixel(0, 16).alpha(), 0.);
+    d.redo().unwrap();
+    assert!(d.pixel(0, 16).alpha() > 0.9);
+    definition.brush.radius = 1000.25;
+    assert!(BrushProgram::compile(definition).is_err());
+    assert!(WetCarrier::new(WetMix::default(), 2000., Pixel::TRANSPARENT).is_ok());
+    assert!(WetCarrier::new(WetMix::default(), 2000.25, Pixel::TRANSPARENT).is_err());
+}

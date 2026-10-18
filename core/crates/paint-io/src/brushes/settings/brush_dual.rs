@@ -220,7 +220,11 @@ impl DualParameters {
             return Err(Error::Invalid("dual brush model/parameters"));
         }
         for (v, lo, hi) in [
-            (self.diameter, 1., 512.),
+            (
+                self.diameter,
+                1.,
+                f64::from(paint_core::MAX_BRUSH_RADIUS) * 2.,
+            ),
             (self.hardness, 0., 1.),
             (self.roundness, 0.01, 1.),
             (self.angle, -180., 180.),

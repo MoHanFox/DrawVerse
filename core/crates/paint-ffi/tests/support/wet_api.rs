@@ -202,7 +202,7 @@ fn wet_public_handles_layout_validation_and_manual_capture() {
         assert_eq!(ink(tool).edge, 8);
         assert_eq!(ink(tool).center_linear_premul_rgba, [0.4, 0., 0., 0.4]);
         let original = ink(tool);
-        for radius in [f32::NAN, 0., 257.] {
+        for radius in [f32::NAN, 0., 1000.25] {
             load.radius = radius;
             assert_eq!(
                 paint_wet_tool_reload_prepared(

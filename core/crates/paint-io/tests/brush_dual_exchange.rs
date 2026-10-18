@@ -258,7 +258,7 @@ fn dual_models_ranges_required_nulls_resources_and_capabilities_reject() {
         ("model", serde_json::json!("other")),
         ("mode", serde_json::json!("not-a-mode")),
         ("spacing", serde_json::json!(0.009999999)),
-        ("diameter", serde_json::json!(512.00000001)),
+        ("diameter", serde_json::json!(2000.00000001)),
         ("roundness", serde_json::json!(0.009999999)),
         ("angle", serde_json::json!(180.00000001)),
         ("resource", serde_json::json!("../bad")),

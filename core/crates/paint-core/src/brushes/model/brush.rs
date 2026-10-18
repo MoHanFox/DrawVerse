@@ -1,3 +1,4 @@
+pub const MAX_BRUSH_RADIUS: f32 = 1000.;
 use crate::{Error, Pixel, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,7 +177,7 @@ impl Default for Brush {
 impl Brush {
     pub fn validate(self) -> Result<()> {
         for (value, min, max) in [
-            (self.radius, 0.5, 256.0),
+            (self.radius, 0.5, MAX_BRUSH_RADIUS),
             (self.opacity, 0.0, 1.0),
             (self.spacing, 0.02, 1.0),
         ] {

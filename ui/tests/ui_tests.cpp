@@ -102,6 +102,21 @@ class UiTests final : public QObject {
     QTemporaryDir m_preferences;
 private slots:
 
+    void maximumBrushDiameterPaintsAndPersistsWithNativePose() {
+        QTemporaryDir temp;const auto path=temp.filePath("maximum.ini");PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());
+        WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        auto *size=findVisualItem(window->contentItem(),"brushRadius");QVERIFY(size);QCOMPARE(size->property("to").toInt(),2000);
+        auto *library=client.brushLibrary();library->setRadius(1000);library->setPressureSize(false);library->setPressureFlow(false);QCOMPARE(library->radius(),1000.);
+        auto dual=library->dualBrush();dual["diameter"]=2000.;QVERIFY(library->setDualBrush(dual));auto tooLarge=dual;tooLarge["diameter"]=2000.25;QVERIFY(!library->setDualBrush(tooLarge));
+        const auto snapshot=library->snapshot();BrushLibrary restored;QVERIFY(restored.restore(snapshot));QCOMPARE(restored.radius(),1000.);QCOMPARE(restored.dualBrush().value("diameter").toDouble(),2000.);
+        client.newTransparentDocument(32,32);QTRY_COMPARE(client.documentWidth(),32);QTRY_VERIFY(client.ready());client.setBrushColor(Qt::red);
+        InputSample sample;sample.position={-500.,16.};sample.pressure=1;sample.tool=1;
+        const auto pose=client.brushCursorPose(sample,{},false,true);QVERIFY(pose.ready);QCOMPARE(pose.radius,1000.);
+        QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(client.sampleDocumentPixel(.5,16.5).alpha()>0);client.undo();QTRY_COMPARE(client.undoDepth(),0);
+        const auto saved=[&]{QSettings settings(path,QSettings::IniFormat);return settings.value("brushes/state").toByteArray()==library->snapshot();};QTRY_VERIFY(saved());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready());QCOMPARE(reopened.brushLibrary()->radius(),1000.);QCOMPARE(reopened.brushLibrary()->dualBrush().value("diameter").toDouble(),2000.);
+    }
+
     void cursorZeroWidthAndSimpleBrightnessStayDisplayOnly() {
         BrushLibrary model;QCOMPARE(model.cursorWidth(),0);const auto catalog=model.catalogSnapshot();QSignalSpy settings(&model,&BrushLibrary::settingsChanged),preview(&model,&BrushLibrary::previewRequested);
         model.setCursorSimple(true);model.setCursorBrightness(40);QCOMPARE(model.cursorBrightness(),40);QCOMPARE(settings.size(),0);QCOMPARE(preview.size(),0);QCOMPARE(model.catalogSnapshot(),catalog);

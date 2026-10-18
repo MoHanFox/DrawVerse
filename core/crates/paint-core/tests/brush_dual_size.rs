@@ -48,7 +48,7 @@ fn relative_nominal_size_matches_explicit_geometry_split_and_history() {
                 DualWidthRule::FollowPressure,
             )
             .unwrap();
-            let radius = (8. + offset / 2.).clamp(0.5, 256.);
+            let radius = (8. + offset / 2.).clamp(0.5, MAX_BRUSH_RADIUS);
             let mut relative = Document::new(64, 64).unwrap();
             let mut explicit = Document::new(64, 64).unwrap();
             paint(&mut relative, definition(19., path, size), true, 1.);
@@ -93,7 +93,7 @@ fn fixed_width_uses_actual_primary_pressure_and_ignores_second_size_response() {
         .unwrap();
         b.dual = DualBrush::new(true, DualMode::Multiply, secondary).with_sizing(b.dual.sizing());
         let mut expected = definition(
-            (8. * pressure - 1.).clamp(0.5, 256.),
+            (8. * pressure - 1.).clamp(0.5, MAX_BRUSH_RADIUS),
             false,
             Default::default(),
         );

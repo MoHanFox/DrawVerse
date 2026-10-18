@@ -205,7 +205,7 @@ fn reservoir_reconfiguration_resamples_cell_centers_and_preserves_existing_amoun
     }
     assert_eq!(resized.settings(), settings);
     assert_eq!(previous.settings(), mix);
-    for d in [f32::NAN, 0., 513.] {
+    for d in [f32::NAN, 0., 2000.25] {
         assert!(previous.reconfigured(settings, d).is_err());
     }
 }

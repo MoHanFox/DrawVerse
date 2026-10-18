@@ -90,7 +90,7 @@ impl WetDabGeometry {
             || !self.y.is_finite()
             || !self.diameter.is_finite()
             || self.diameter <= 0.
-            || self.diameter > 512.
+            || self.diameter > crate::MAX_BRUSH_RADIUS * 2.
             || !self.roundness.is_finite()
             || !(0.01..=1.).contains(&self.roundness)
             || !self.angle.is_finite()
@@ -119,7 +119,7 @@ pub struct WetDab {
 }
 impl WetCarrier {
     pub fn new(settings: WetMix, diameter: f32, color: Pixel) -> Result<Self> {
-        if !diameter.is_finite() || !(1. ..=512.).contains(&diameter) {
+        if !diameter.is_finite() || !(1. ..=crate::MAX_BRUSH_RADIUS * 2.).contains(&diameter) {
             return Err(Error::InvalidArgument("wet carrier diameter"));
         }
         let edge = (diameter.ceil() as usize).clamp(2, MAX_WET_CARRIER_EDGE);

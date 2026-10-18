@@ -192,3 +192,22 @@ fn v3_resource_identity_roundtrips_and_renders_without_original_source() {
         Some(id.as_str())
     );
 }
+
+#[test]
+fn maximum_primary_secondary_diameter_state_roundtrip() {
+    let mut c = BrushCatalog::default();
+    let mut s = c.selected().settings().clone();
+    s.diameter = 2000.;
+    let secondary =
+        SecondaryTip::new(1000., BrushTip::default(), None, BrushDynamics::default()).unwrap();
+    s.dual = DualBrush::new(true, DualMode::Multiply, secondary);
+    c.edit("round-pressure", s).unwrap();
+    let bytes = brush_state::encode(&c).unwrap();
+    let restored = brush_state::decode(&bytes, MAX_CATALOG_MASK_BYTES).unwrap();
+    assert_eq!(restored.selected().settings().diameter, 2000.);
+    assert_eq!(
+        restored.selected().settings().dual.secondary().radius(),
+        1000.
+    );
+    assert_eq!(brush_state::encode(&restored).unwrap(), bytes);
+}

@@ -208,7 +208,7 @@ impl BrushProgram {
         pressure_known: bool,
         direction: Option<(f64, f64)>,
     ) -> Result<BrushPose> {
-        if !radius.is_finite() || !(0.5..=256.).contains(&radius) {
+        if !radius.is_finite() || !(0.5..=crate::MAX_BRUSH_RADIUS).contains(&radius) {
             return Err(Error::InvalidArgument("pose radius"));
         }
         point.validate()?;

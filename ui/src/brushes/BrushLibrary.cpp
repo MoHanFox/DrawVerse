@@ -230,7 +230,7 @@ bool validDual(const QJsonObject &data){
     if(!data.contains("spacing") || (model=="paired-dab-v1"?!spacing.isNull():model=="path-coverage-v1"?(!spacing.isDouble() || !std::isfinite(spacing.toDouble()) || spacing.toDouble()<.01 || spacing.toDouble()>1):true))return false;
     if(!supportedDualModes().contains(data.value("mode").toString()))return false;
     static const QRegularExpression identity("^[0-9a-f]{64}$");const auto resource=data.value("resource");if(!data.contains("resource") || (!resource.isNull() && (!resource.isString() || !identity.match(resource.toString()).hasMatch())))return false;
-    for(const auto &key:{"diameter","hardness","roundness","angle","flow"}){const auto v=data.value(key);const auto x=v.toDouble();const QString k(key);const double lo=k=="diameter"?1:k=="roundness"?.01:k=="angle"?-180:0;const double hi=k=="diameter"?512:k=="angle"?180:1;if(!v.isDouble() || !std::isfinite(x) || x<lo || x>hi)return false;}
+    for(const auto &key:{"diameter","hardness","roundness","angle","flow"}){const auto v=data.value(key);const auto x=v.toDouble();const QString k(key);const double lo=k=="diameter"?1:k=="roundness"?.01:k=="angle"?-180:0;const double hi=k=="diameter"?2000:k=="angle"?180:1;if(!v.isDouble() || !std::isfinite(x) || x<lo || x>hi)return false;}
     if(data.contains("pressureDynamics") && (!data.value("pressureDynamics").isObject() || data.value("pressureDynamics").toObject().contains("opacity") || !validPressure(data.value("pressureDynamics").toObject())))return false;
     if(data.contains("tipDynamics") && (!data.value("tipDynamics").isObject() || !validDevice(data.value("tipDynamics").toObject())))return false;
     if(data.contains("scatterDynamics") && (!data.value("scatterDynamics").isObject() || !validScatter(data.value("scatterDynamics").toObject())))return false;
@@ -525,7 +525,7 @@ void BrushLibrary::update(int field,qreal value) {
     if(!std::isfinite(value))return;
     auto &p=m_presets[index(m_selected)];
     qreal *target=nullptr;
-    switch(field){case 0:target=&p.radius;value=std::clamp(value,.5,256.);break;
+    switch(field){case 0:target=&p.radius;value=std::clamp(value,.5,1000.);break;
         case 1:target=&p.opacity;value=std::clamp(value,0.,1.);break;
         case 2:target=&p.spacing;value=std::clamp(value,.02,1.);break;
         case 3:target=&p.hardness;value=std::clamp(value,0.,1.);break;
@@ -640,7 +640,7 @@ bool BrushLibrary::restoreSourceBaseline(const QVariantMap &info) {
     const auto roundness=base.value("roundness").toDouble();
     const auto angle=base.value("angle").toDouble();
     const auto flow=base.value("flow").toDouble();
-    if(!std::isfinite(radius) || radius<.5 || radius>256 || !std::isfinite(opacity) || opacity<0 || opacity>1 || !std::isfinite(spacing) || spacing<.02 || spacing>1 || !std::isfinite(hardness) || hardness<0 || hardness>1 || !std::isfinite(roundness) || roundness<.01 || roundness>1 || !std::isfinite(angle) || angle<-180 || angle>180 || !std::isfinite(flow) || flow<0 || flow>1)return false;
+    if(!std::isfinite(radius) || radius<.5 || radius>1000 || !std::isfinite(opacity) || opacity<0 || opacity>1 || !std::isfinite(spacing) || spacing<.02 || spacing>1 || !std::isfinite(hardness) || hardness<0 || hardness>1 || !std::isfinite(roundness) || roundness<.01 || roundness>1 || !std::isfinite(angle) || angle<-180 || angle>180 || !std::isfinite(flow) || flow<0 || flow>1)return false;
     QVariantMap texture;
     if(!info.value("texture").isNull()) {
         if(info.value("texture").userType()!=QMetaType::QVariantMap)return false;
@@ -1317,7 +1317,7 @@ bool BrushLibrary::restore(const QByteArray &json) {
     if(root.contains("organization") && (version<20 || !root.value("organization").isObject() || !BrushOrganization::normalize(root.value("organization").toObject(),organizationIds,organization,organizationOrder)))return false;
     const QSet<QString> builtins{"round-pressure","round-fine","round-translucent","round-wide"};QSet<QString> seen;QList<Preset> restored;
     for(const auto &row:rows){const auto p=row.toObject();Preset b;b.id=p.value("id").toString();b.name=p.value("name").toString();b.radius=p.value("radius").toDouble(std::numeric_limits<double>::quiet_NaN());b.opacity=p.value("opacity").toDouble(std::numeric_limits<double>::quiet_NaN());b.spacing=p.value("spacing").toDouble(std::numeric_limits<double>::quiet_NaN());
-        if(b.id.isEmpty() || b.id.size()>64 || seen.contains(b.id) || b.name.trimmed().isEmpty() || b.name.size()>80 || !std::isfinite(b.radius) || b.radius<.5 || b.radius>256 || !std::isfinite(b.opacity) || b.opacity<0 || b.opacity>1 || !std::isfinite(b.spacing) || b.spacing<.02 || b.spacing>1)return false;
+        if(b.id.isEmpty() || b.id.size()>64 || seen.contains(b.id) || b.name.trimmed().isEmpty() || b.name.size()>80 || !std::isfinite(b.radius) || b.radius<.5 || b.radius>1000 || !std::isfinite(b.opacity) || b.opacity<0 || b.opacity>1 || !std::isfinite(b.spacing) || b.spacing<.02 || b.spacing>1)return false;
         if(p.contains("maskResource")) {
             static const QRegularExpression identity("^[0-9a-f]{64}$");
             if(version<3 || !p.value("maskResource").isString() || !identity.match(p.value("maskResource").toString()).hasMatch())return false;
@@ -1364,7 +1364,7 @@ bool BrushLibrary::restore(const QByteArray &json) {
     if(root.contains("toolRadii")) {
         if(!root.value("toolRadii").isArray() || sizes.size()!=2)return false;
         brush=sizes[0].toDouble(std::numeric_limits<double>::quiet_NaN());eraser=sizes[1].toDouble(std::numeric_limits<double>::quiet_NaN());
-        if(!std::isfinite(brush) || !std::isfinite(eraser) || brush<.5 || brush>256 || eraser<.5 || eraser>256)return false;
+        if(!std::isfinite(brush) || !std::isfinite(eraser) || brush<.5 || brush>1000 || eraser<.5 || eraser>1000)return false;
     }
     QStringList recent=m_recentColors;
     // Optional: older brush state has no recent colours and keeps the built-in defaults.

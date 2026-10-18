@@ -53,7 +53,7 @@ pub use brush_wet_tool::{WetLease, WetTool};
 pub use appearance::{
     blend_pixel, BlendMode, LayerAppearance, LOCK_ALL, LOCK_POSITION, LOCK_TRANSPARENCY,
 };
-pub use brush::{Brush, BrushMode, InputPoint, Tool};
+pub use brush::{Brush, BrushMode, InputPoint, Tool, MAX_BRUSH_RADIUS};
 pub use brush_catalog::{
     BrushCatalog, BrushCatalogItem, BrushGroup, BrushOrganization, BrushPreset, BrushSettings,
     MAX_BRUSH_GROUPS, MAX_BRUSH_GROUP_DEPTH, MAX_BRUSH_PRESETS, MAX_CATALOG_MASK_BYTES,

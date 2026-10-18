@@ -137,10 +137,10 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth:true
         Label {text:"大小";color:Theme.text;font.pixelSize:9;Layout.fillWidth:true}
-        CompactSpinBox {objectName:"libraryBrushSize";from:1;to:512;editable:true;implicitWidth:76;implicitHeight:20;value:Math.round(root.library.radius*2);onValueModified:root.library.radius=value/2}
+        CompactSpinBox {objectName:"libraryBrushSize";from:1;to:2000;editable:true;implicitWidth:76;implicitHeight:20;value:Math.round(root.library.radius*2);onValueModified:root.library.radius=value/2}
         Label {text:"px";color:Theme.muted;font.pixelSize:8}
     }
-    CompactSlider {Layout.fillWidth:true;from:1;to:512;value:root.library.radius*2;onMoved:root.library.radius=value/2}
+    CompactSlider {Layout.fillWidth:true;from:1;to:2000;value:root.library.radius*2;onMoved:root.library.radius=value/2}
     TextField {id:search;objectName:"brushSearch";Layout.fillWidth:true;implicitHeight:22;font.pixelSize:9;placeholderText:"搜索画笔";color:Theme.text;background:Rectangle {color:Theme.input;border.color:Theme.line} onTextChanged:root.refreshGroupedItems();onAccepted:root.finishSearch(false);Keys.onEscapePressed:event=>{root.finishSearch(true);event.accepted=true}}
     RowLayout {
         Layout.fillWidth:true;spacing:2

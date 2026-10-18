@@ -45,7 +45,7 @@ fn shared_tool_reserves_snapshot_and_only_commit_adopts_ink() {
     assert_eq!(adopted.sample(0.5, 0.5), blue().scaled(0.5));
     assert_eq!(adopted.edge(), 12);
     assert_eq!(previous.sample(0.5, 0.5), red().scaled(0.5));
-    for invalid in [f32::NAN, 0., 513.] {
+    for invalid in [f32::NAN, 0., 2000.25] {
         assert!(tool.reload(settings, invalid, red()).is_err());
         assert_eq!(
             tool.snapshot().unwrap().unwrap().sample(0.5, 0.5),

@@ -552,7 +552,7 @@ public:
             if(m_brushQueue.isEmpty())return;
             m_brushJob=m_brushQueue.takeFirst().toMap();m_brushRequest=0;m_brushClock.restart();
             const auto tip=m_brushJob.value("tip").toMap();const auto dual=tip.value("dualBrush").toMap();const bool dualActive=dual.value("enabled").toBool();const bool wetActive=tip.value("wetMix").toMap().value("enabled").toBool();
-            const double primary=std::clamp(tip.value("presetRadius",24.).toDouble(),.5,256.);const auto sizing=dual.value("sizing").toMap();const double secondary=sizing.value("mode").toString()=="relative"?std::clamp(primary+sizing.value("diameterOffset").toDouble()/2.,.5,256.):dual.value("diameter",24.).toDouble()/2.;
+            const double primary=std::clamp(tip.value("presetRadius",24.).toDouble(),.5,1000.);const auto sizing=dual.value("sizing").toMap();const double secondary=sizing.value("mode").toString()=="relative"?std::clamp(primary+sizing.value("diameterOffset").toDouble()/2.,.5,1000.):dual.value("diameter",24.).toDouble()/2.;
             m_brushPreviewScale=dualActive?std::max(1.,std::max(primary,secondary)/8.4):1.;
             const double mainDiameter=primary*2.*(tip.value("maskResource").toString().isEmpty()?1.:std::sqrt(2.))+2.;
             const double childDiameter=secondary*2.*(dual.value("resource").toString().isEmpty()?1.:std::sqrt(2.))+2.;

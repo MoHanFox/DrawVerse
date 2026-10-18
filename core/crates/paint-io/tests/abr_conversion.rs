@@ -232,7 +232,7 @@ fn photoshop_extreme_size_spacing_and_roundness_are_clamped_and_reported() {
     let token = CancellationToken::default();
     let source = preset();
     let mut shape = shape(false);
-    shape.entries[0].1 = unit(*b"#Pxl", 1003.);
+    shape.entries[0].1 = unit(*b"#Pxl", 2500.);
     shape.entries[2].1 = unit(*b"#Prc", 0.);
     shape.entries[3].1 = unit(*b"#Prc", 400.);
     let converted = convert(
@@ -247,7 +247,7 @@ fn photoshop_extreme_size_spacing_and_roundness_are_clamped_and_reported() {
     )
     .unwrap();
     let preset = &converted[0];
-    assert_eq!(preset.settings.diameter, 512.);
+    assert_eq!(preset.settings.diameter, 2000.);
     assert_eq!(preset.settings.spacing, 0.5);
     assert_eq!(preset.settings.tip.roundness, 0.01);
     for path in ["Brsh.Dmtr", "Brsh.Spcn", "Brsh.Rndn"] {

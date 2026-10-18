@@ -80,7 +80,11 @@ pub unsafe extern "C" fn paint_brush_pose_bind_prepared(
 ) -> PaintStatus {
     boundary(|| unsafe {
         runtime::outside_callback()?;
-        if !radius.is_finite() || !(0.5..=256.).contains(&radius) || length == 0 || length > 64 {
+        if !radius.is_finite()
+            || !(0.5..=paint_core::MAX_BRUSH_RADIUS).contains(&radius)
+            || length == 0
+            || length > 64
+        {
             return Err(ApiError::invalid("pose parameters"));
         }
         let id = pointers::utf8(id, length)?;

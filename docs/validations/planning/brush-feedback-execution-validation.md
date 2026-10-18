@@ -46,3 +46,10 @@
 - Rust `paint-core --test brush_outline`5项、`paint-io --test brush_resource`9项通过；新测试包含高频512方图、4096×1极薄图、闭合与源数据保持。两crate的lib严格Clippy、格式及Windows Release构建通过。
 - Qt新增零宽/简化亮度/保存与非法值测试，既有全局偏好、图片偏好、真实图片光标轮廓与屏幕宽度三项通过。记录：`artifacts/feedback-step5-tests.txt`。
 - 不保证保留低于简化采样分辨率的孔洞和纹理细节；这些细节仍保存在实际笔尖。未跑全量/实体设备/跨平台/GPU。
+
+## 步骤 6a：2000px 主副笔尖范围
+
+- [设计](../../brush/core/brush-size-limit-design.md)：主/第二笔尖、工具栏/设置/快捷键、ABR执行值、光标姿态与湿混载色入口统一直径1–2000px；共享Rust半径常量1000。载色网格仍最多64边，输入/印章预算不扩大。
+- 核心真实边缘像素/单历史/撤销重做及光标边界4项、双尺寸4项、湿混载色/双载色/配置/工具22项通过。IO state6/VBR5/ABR35/双笔刷交换4项通过；历史schema保留原文件，测试明确旧范围仍接受并单独验证当前范围。
+- 公开湿混API3项、三crate lib严格Clippy/格式、Windows Release/生成头检查通过。Qt最大尺寸编辑/工具栏范围/实际原生绘画/姿态/保存重开、既有双尺寸往返和快捷键三项通过。记录：`artifacts/feedback-step6a-tests.txt`。
+- VBR仍为1.0，无ABI布局变化；新导入ABR允许1003px等原尺寸，超2000px才钳制报告，既有来源基线不重写。扁平图片间距仍待6b；本步不声明2000px所有组合的性能或硬件/跨平台/GPU验收。

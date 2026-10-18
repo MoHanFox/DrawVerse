@@ -70,7 +70,7 @@ PAINT_FEATURE_BRUSH_WRITE_BLEND=549755813888（u64）。PaintBrushBlendDesc为16
 
 ## ABI1.38：实时笔尖姿态
 
-`PAINT_FEATURE_BRUSH_POSE=8589934592`。新增独立PaintBrushPose句柄create/bind_prepared/read/clear/destroy，绑定准确准备记录、ID（1–64字节UTF8）和名义半径0.5–256。句柄反复绑定/clear不增加token；解析就绪后只保留不可变所选预设，库销毁不使其失效。clear释放捕获，destroy清空caller句柄，陈旧句柄拒绝。
+`PAINT_FEATURE_BRUSH_POSE=8589934592`。新增独立PaintBrushPose句柄create/bind_prepared/read/clear/destroy，绑定准确准备记录、ID（1–64字节UTF8）和名义半径0.5–1000。句柄反复绑定/clear不增加token；解析就绪后只保留不可变所选预设，库销毁不使其失效。clear释放捕获，destroy清空caller句柄，陈旧句柄拒绝。
 
 read接受既有sized PaintPoint、严格0/1的pressure_known/direction_known和有限方向向量，未知方向必须零向量，已知方向非零；输出24字节PaintTipPose（struct_size/reserved/radius/angle/roundness/reserved_tail，radius offset8/angle12/roundness16）。输出保留字段为零，Busy/错误清输出，成功半径可因零压力为零。使用原生尺寸/几何算法；未知压力返回名义半径，缺设备通道回退基础几何。读取只try_result，不等待，不做caller线程文件IO，冷准备在独立池排任务；生命周期与查询均禁止在回调内调用。caller内存通过pointers.rs，安全前提见生成头。
 
@@ -433,7 +433,7 @@ Rust IO新增state14/VBR 1.0/behavior11/time-grid-v1，旧默认不升级。当�
 
 `PAINT_FEATURE_WET_BRUSH` (bit45) exposes full state17/VBR 1.0 preparation and tool ownership; this does not imply a Qt settings page. Existing DTOs retain their layouts.
 
-- `PaintWetLoadDesc`: size32, radius at8 and straight linearRGBA at16, both reserved words zero. radius0.5..256; RGBA finite0..1.
+- `PaintWetLoadDesc`: size32, radius at8 and straight linearRGBA at16, both reserved words zero. radius0.5..1000; RGBA finite0..1.
 - `PaintWetToolInfo`: size40/alignment8; flags at4 (INITIALIZED=1), carrier_revision at8, edge at16, reserved zero at20 and center premultiplied linearRGBA at24. Center sample is not a grid mean. BUSY/error clears all fields except returned struct_size40. Initially flags/edge/revision/color are zero.
 - `paint_wet_tool_create/destroy`: typed independent tokens; destroy clears caller handle and does not cancel bound/in-flight sessions. At most64 external tools remain alive, counting destroyed tokens retained by sessions; registry Weak ownership records enforce this without stale-pointer ABA. Default per-session internal tools remain compatible.
 - `paint_session_bind_wet_tool`: queued, copies shared ownership, matching core/session required. Busy session rejects asynchronously without changing its tool. Idle sessions may bind an occupied tool; actual begin reports Busy on conflict. Binding changes no document pixels/history.
@@ -473,7 +473,7 @@ Package reads use the existing size probe and atomic resource adoption contract:
 
 `PaintWetToolInfoDual` is 80 bytes, alignment8: struct_size/flags at0/4, primary/secondary_revision at8/16, primary/secondary_edge at24/28, two premultiplied linear center RGBA arrays at32/48, reserved[4] at64. INITIALIZED=1 marks the primary, SECONDARY_INITIALIZED=2 marks the secondary. One idle snapshot returns both roles; BUSY or handle errors clear the complete output and set struct_size=80. The original 40-byte info remains a primary-only view. Center colors are samples, not reservoir averages.
 
-`paint_wet_tool_reload_prepared_dual` takes an exact library preparation/id, the existing 32-byte load descriptor (temporary primary radius and foreground) and 24-byte background descriptor. Both descriptors require zero reserved fields, finite valid colors and radius0.5..256. Active painting returns BUSY without waiting for compilation. Active marked dual-color wet presets atomically load both carriers: secondary color follows the preset foreground/background selection, and nominal secondary diameter uses the same core independent/relative mapping as automatic start. Ordinary wet presets reload the primary while preserving inactive secondary ink. Disabled wet presets reject loading. Old reload rejects every marked policy, including closed values, with UNSUPPORTED; old clean already cleans both roles. Neither preset state nor document history serializes live tool ink.
+`paint_wet_tool_reload_prepared_dual` takes an exact library preparation/id, the existing 32-byte load descriptor (temporary primary radius and foreground) and 24-byte background descriptor. Both descriptors require zero reserved fields, finite valid colors and radius0.5..1000. Active painting returns BUSY without waiting for compilation. Active marked dual-color wet presets atomically load both carriers: secondary color follows the preset foreground/background selection, and nominal secondary diameter uses the same core independent/relative mapping as automatic start. Ordinary wet presets reload the primary while preserving inactive secondary ink. Disabled wet presets reject loading. Old reload rejects every marked policy, including closed values, with UNSUPPORTED; old clean already cleans both roles. Neither preset state nor document history serializes live tool ink.
 
 Package probes/invalid output pointers install no resources; writes validate before atomic save. No existing layout is changed. Qt must mirror state19, preserve reset baselines, opt into these new entry points and retain white/Normal automatic previews before exposing the combination. See docs/brush/wet/brush-wet-dual-abi-design.md.
 

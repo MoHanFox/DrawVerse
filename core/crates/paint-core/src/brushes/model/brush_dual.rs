@@ -54,7 +54,9 @@ impl DualSizing {
     pub(crate) fn nominal_radius(self, primary: f32, secondary: f32) -> f32 {
         match self.mode {
             DualSizeMode::Independent => secondary,
-            DualSizeMode::Relative => (primary + self.diameter_offset / 2.).clamp(0.5, 256.),
+            DualSizeMode::Relative => {
+                (primary + self.diameter_offset / 2.).clamp(0.5, crate::MAX_BRUSH_RADIUS)
+            }
         }
     }
 }
@@ -165,7 +167,7 @@ impl SecondaryTip {
         dynamics: BrushDynamics,
     ) -> Result<Self> {
         if !radius.is_finite()
-            || !(0.5..=256.).contains(&radius)
+            || !(0.5..=crate::MAX_BRUSH_RADIUS).contains(&radius)
             || dynamics.pressure_opacity
             || dynamics.opacity != Default::default()
             || dynamics.color != Default::default()
@@ -278,7 +280,8 @@ impl Default for DualBrush {
 impl DualBrush {
     /// Nominal carrier size, shared by automatic and manual wet loading.
     pub fn nominal_diameter(&self, primary_radius: f32) -> Result<f32> {
-        if !primary_radius.is_finite() || !(0.5..=256.).contains(&primary_radius) {
+        if !primary_radius.is_finite() || !(0.5..=crate::MAX_BRUSH_RADIUS).contains(&primary_radius)
+        {
             return Err(Error::InvalidArgument("primary nominal radius"));
         }
         Ok(self
@@ -354,7 +357,7 @@ impl DualBrush {
             radius,
             maximum_radius: if self.sizing.fixed() {
                 (f64::from(primary_radius) + f64::from(self.sizing.diameter_offset) / 2.)
-                    .clamp(0.5, 256.)
+                    .clamp(0.5, f64::from(crate::MAX_BRUSH_RADIUS))
             } else {
                 f64::from(radius)
             },
@@ -405,7 +408,8 @@ impl CompiledDual {
             .program
             .cursor_pose(nominal, point, pressure_known, direction)?;
         if self.sizing.fixed() {
-            pose.radius = (primary_actual + self.sizing.diameter_offset / 2.).clamp(0.5, 256.);
+            pose.radius = (primary_actual + self.sizing.diameter_offset / 2.)
+                .clamp(0.5, crate::MAX_BRUSH_RADIUS);
         }
         Ok(pose)
     }
@@ -528,7 +532,8 @@ impl CompiledDual {
             let center = plan.as_ref().map_or(point, |p| p.point(child, point));
             let shape = self.program.shape_jitter.sample(stroke, logical, child);
             let radius = if self.sizing.fixed() {
-                (primary_radius + f64::from(self.sizing.diameter_offset) / 2.).clamp(0.5, 256.)
+                (primary_radius + f64::from(self.sizing.diameter_offset) / 2.)
+                    .clamp(0.5, f64::from(crate::MAX_BRUSH_RADIUS))
             } else {
                 f64::from(
                     self.radius
@@ -724,7 +729,7 @@ mod sizing_tests {
         for mode in [DualSizeMode::Independent, DualSizeMode::Relative] {
             for rule in [DualWidthRule::FollowPressure, DualWidthRule::FixedWidth] {
                 for offset in [-511., -8., 0., 8., 511.] {
-                    for nominal in [0.5, 12., 256.] {
+                    for nominal in [0.5, 12., 256., crate::MAX_BRUSH_RADIUS] {
                         let definition =
                             DualBrush::new(true, DualMode::Multiply, SecondaryTip::default())
                                 .with_sizing(DualSizing::new(mode, offset, rule).unwrap());

@@ -1560,7 +1560,7 @@ fn dual_controls(
         }
     };
     let diameter_source = unit(shape, b"Dmtr", *b"#Pxl", 1., 5000.)?;
-    let radius = diameter_source.min(512.) / 2.;
+    let radius = diameter_source.min(paint_core::MAX_BRUSH_RADIUS * 2.) / 2.;
     let angle = unit(shape, b"Angl", *b"#Ang", -180., 180.)?;
     let roundness_source = unit(shape, b"Rndn", *b"#Prc", 0., 100.)? / 100.;
     let roundness = roundness_source.max(0.01);
@@ -1621,12 +1621,12 @@ fn dual_controls(
     ] {
         issue(issues, path, Status::Mapped, reason);
     }
-    if diameter_source > 512. {
+    if diameter_source > paint_core::MAX_BRUSH_RADIUS * 2. {
         issue(
             issues,
             "dualBrush.Dmtr",
             Status::Approximate,
-            "ABR 双笔刷直径超过原生 512 px 上限，执行时钳制",
+            "ABR 双笔刷直径超过原生 2000 px 上限，执行时钳制",
         );
     }
     if roundness_source < 0.01 {
@@ -1697,7 +1697,7 @@ fn convert_inner<'a>(
             return Err(Error::Invalid("ABR shape/resource association"));
         }
         let diameter_source = unit(shape, b"Dmtr", *b"#Pxl", 1., 5000.)?;
-        let diameter = diameter_source.min(512.);
+        let diameter = diameter_source.min(paint_core::MAX_BRUSH_RADIUS * 2.);
         let angle = unit(shape, b"Angl", *b"#Ang", -180., 180.)?;
         let roundness_source = unit(shape, b"Rndn", *b"#Prc", 0., 100.)? / 100.;
         let roundness = roundness_source.max(0.01);
@@ -1746,13 +1746,13 @@ fn convert_inner<'a>(
         issue(
             &mut issues,
             "Brsh.Dmtr",
-            if diameter_source > 512. {
+            if diameter_source > paint_core::MAX_BRUSH_RADIUS * 2. {
                 Status::Approximate
             } else {
                 Status::Mapped
             },
-            if diameter_source > 512. {
-                "ABR diameter above native 512 px is clamped at execution"
+            if diameter_source > paint_core::MAX_BRUSH_RADIUS * 2. {
+                "ABR diameter above native 2000 px is clamped at execution"
             } else {
                 "按源单位转换到真实原生参数"
             },

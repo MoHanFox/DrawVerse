@@ -85,7 +85,7 @@ pub unsafe extern "C" fn paint_wet_tool_reload_prepared(
         if d.reserved != 0
             || d.reserved_tail != 0
             || !d.radius.is_finite()
-            || !(0.5..=256.).contains(&d.radius)
+            || !(0.5..=paint_core::MAX_BRUSH_RADIUS).contains(&d.radius)
         {
             return Err(ApiError::invalid("wet load descriptor"));
         }

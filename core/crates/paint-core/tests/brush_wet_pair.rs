@@ -219,7 +219,7 @@ fn bad_second_manual_load_is_atomic_and_legacy_primary_load_preserves_secondary(
         .unwrap();
     let before = tool.snapshot_ink().unwrap().unwrap();
     assert!(tool
-        .reload_dual(WetMix::default(), [32., 513.], [blue(), red()])
+        .reload_dual(WetMix::default(), [32., 2000.25], [blue(), red()])
         .is_err());
     assert_ink(&tool.snapshot_ink().unwrap().unwrap(), &before);
     tool.reload(WetMix::default(), 4., blue()).unwrap();
