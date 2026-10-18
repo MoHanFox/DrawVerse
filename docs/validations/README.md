@@ -4,6 +4,8 @@
 
 记录描述当时实际执行的范围，不代表当前全量测试或所有平台均通过。当前结构整理及已知失败项见 [源码与契约目录调整验收](platform/source-layout-validation.md)。
 
+本轮用户反馈的逐步测试与提交范围见[分步执行记录](planning/brush-feedback-execution-validation.md)，依赖顺序见[执行设计](../planning/brush-feedback-execution-design.md)。
+
 | 分类 | 文档数 | 内容 |
 | --- | ---: | --- |
 | [笔刷核心](brush/core/) | 6 | 笔尖、遮罩、混合与参数模型 |
