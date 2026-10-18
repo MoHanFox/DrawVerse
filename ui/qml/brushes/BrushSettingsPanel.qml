@@ -21,6 +21,9 @@ ColumnLayout {
     property int shapePage:0
     property int dualPage:0
     property string taperEnd:"start"
+    readonly property bool taperRelative:library.strokeTaper[taperEnd].lengthMode==="relative"
+    function setTaperLengthMode(relative){let data=Object.assign({},library.strokeTaper);let end=Object.assign({},data[taperEnd]);if(end.lengthPercent===undefined)end.lengthPercent=Math.min(10000,end.lengthPx/(library.radius*2)*100);end.lengthMode=relative?"relative":"independent";data[taperEnd]=end;return library.setStrokeTaper(data)}
+    function setTaperTransparent(transparent){let opacity=Object.assign({},library.strokeTaper[taperEnd].opacity);opacity.minimum=transparent?0:1;return setTaperEndField("opacity",opacity)}
     function setTaperEndField(key,value){let data=Object.assign({},library.strokeTaper);let end=Object.assign({},data[taperEnd]);end[key]=value;data[taperEnd]=end;return library.setStrokeTaper(data)}
     QtObject {
         id:taperControls
@@ -483,12 +486,22 @@ ColumnLayout {
                     CompactCheckBox {objectName:"settingsTaperEnabled";text:"启用起收笔";checked:root.library.strokeTaper.enabled;onToggled:{let data=Object.assign({},root.library.strokeTaper);data.enabled=checked;root.library.setStrokeTaper(data)} tooltip:"按实际绘画距离调整笔触两端；关闭时保留所有参数。"}
                     Label {objectName:"settingsTaperEndLabel";text:"编辑笔端";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                     CompactComboBox {objectName:"settingsTaperEnd";Layout.fillWidth:true;model:["起笔","收笔"];currentIndex:root.taperEnd==="start"?0:1;onActivated:root.taperEnd=currentIndex===0?"start":"end"}
-                    RowLayout {Layout.fillWidth:true
+                    Label {text:"长度模式";color:Theme.text;font.pixelSize:10}
+                    CompactComboBox {objectName:"settingsTaperLengthMode";Layout.fillWidth:true;model:["独立像素","相对笔刷尺寸"];currentIndex:root.taperRelative?1:0;onActivated:root.setTaperLengthMode(currentIndex===1)}
+                    CompactCheckBox {objectName:"settingsTaperTransparent";text:"端部透明";checked:root.library.strokeTaper[root.taperEnd].opacity.minimum<1;onToggled:root.setTaperTransparent(checked);tooltip:"关闭后不额外减淡该端，尺寸曲线仍然生效。"}
+                    RowLayout {Layout.fillWidth:true;visible:!root.taperRelative
                         Label {text:"长度";color:Theme.text;Layout.fillWidth:true}
                         CompactTextField {objectName:"settingsTaperLength";Layout.preferredWidth:90;implicitHeight:20;text:root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(2);validator:DoubleValidator {bottom:0;top:4096;decimals:2;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPx",Number(text));text=Qt.binding(function(){return root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(2)})} hoverEnabled:true;ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"文档像素距离，0 表示该端不处理；不随笔刷尺寸缩放。"}
                         Label {text:"px";color:Theme.muted}
                     }
-                    CompactSlider {objectName:"settingsTaperLengthSlider";Layout.fillWidth:true;from:0;to:4096;value:root.library.strokeTaper[root.taperEnd].lengthPx;onMoved:root.setTaperEndField("lengthPx",value)}
+                    CompactSlider {objectName:"settingsTaperLengthSlider";visible:!root.taperRelative;Layout.fillWidth:true;from:0;to:4096;value:root.library.strokeTaper[root.taperEnd].lengthPx;onMoved:root.setTaperEndField("lengthPx",value)}
+                    RowLayout {Layout.fillWidth:true;visible:root.taperRelative
+                        Label {text:"相对长度";color:Theme.text;Layout.fillWidth:true}
+                        CompactTextField {objectName:"settingsTaperPercent";Layout.preferredWidth:90;implicitHeight:20;text:Number(root.library.strokeTaper[root.taperEnd].lengthPercent||0).toFixed(2);validator:DoubleValidator {bottom:0;top:10000;decimals:2;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPercent",Number(text));text=Qt.binding(function(){return Number(root.library.strokeTaper[root.taperEnd].lengthPercent||0).toFixed(2)})}}
+                        Label {text:"%";color:Theme.muted}
+                    }
+                    CompactSlider {objectName:"settingsTaperPercentSlider";visible:root.taperRelative;Layout.fillWidth:true;from:0;to:10000;value:root.library.strokeTaper[root.taperEnd].lengthPercent||0;onMoved:root.setTaperEndField("lengthPercent",value)}
+                    Label {visible:root.taperRelative;text:"实际长度 "+Math.min(4096,root.library.radius*2*(root.library.strokeTaper[root.taperEnd].lengthPercent||0)/100).toFixed(2)+" px（上限4096）";color:Theme.muted;font.pixelSize:9}
                     PressureCurveEditor {library:taperControls;target:"size";prefix:"taperSize";fixedEndpoints:true;caption:"尺寸随距离变化";curveHelp:"横轴为从笔端向内的归一化距离，纵轴为尺寸比例；编辑自动平滑。端点固定。";minimumHelp:"最低尺寸比例；100% 表示不缩小笔尖。"}
                     PressureCurveEditor {library:taperControls;target:"opacity";prefix:"taperOpacity";fixedEndpoints:true;caption:"不透明度随距离变化";curveHelp:"横轴为从笔端向内的归一化距离，纵轴为不透明度比例；独立于尺寸曲线。端点固定。";minimumHelp:"最低不透明度比例；100% 表示不额外减淡。"}
                     Label {text:"收笔随实际笔画末端更新；抬笔不补线。两端重叠时取较低比例。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}

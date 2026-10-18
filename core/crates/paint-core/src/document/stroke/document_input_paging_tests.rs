@@ -282,7 +282,7 @@ fn one_pass_reference(
     if d.taper.enabled() {
         doc.taper_reference_endpoint = Some(endpoint);
     }
-    let taper = d.taper.compile();
+    let taper = d.taper.compile(1.).unwrap();
     begin(&mut doc, d, first);
     let mut stroke = doc.stroke.take().unwrap();
     stroke.taper = None;

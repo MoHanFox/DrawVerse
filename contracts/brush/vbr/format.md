@@ -31,3 +31,7 @@ manifest 的 `groups` 保持空数组；实际分组在可选 `organization` 的
 ## 双笔刷比例尺寸
 
 `dualBrush.sizing.model=relative-ratio-v1`采用`diameterRatio`（有限0.0005–2000倍），与旧`relative-size-v1/diameterOffset`互斥；保留mode和widthRule。比例对象即使关闭也完整保留。执行为主半径乘比例后钳制到0.5–1000；旧像素偏移不迁移或重解释。当前写出state38、behavior30及`dual-size-ratio`能力，VBR包版本继续1.0。
+
+## 起收笔相对长度
+
+`strokeTaper.start/end`可带成对的`lengthMode`（independent/relative）和`lengthPercent`（有限0–10000），并保留`lengthPx`。缺少新增字段时沿用独立像素语义；独立模式也保存关闭的百分比。相对执行长度为起笔实际主直径×百分比/100，最多4096px，不扩大输入和尾部预算。该对象写state39、behavior31和`taper-relative-length`；VBR仍为1.0。不透明度minimum=1表示该端不额外减淡，尺寸曲线独立。

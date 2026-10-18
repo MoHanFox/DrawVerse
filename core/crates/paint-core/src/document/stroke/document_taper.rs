@@ -116,13 +116,16 @@ impl TailReplay {
 }
 impl Stroke {
     pub(super) fn initialize_taper(&mut self, settings: Option<&StrokeTaper>) -> Result<()> {
-        let Some(settings) =
-            settings.filter(|s| s.enabled() && (s.start().length() > 0. || s.end().length() > 0.))
-        else {
+        let diameter = f64::from(self.brush.radius) * 2.;
+        let Some(settings) = settings.filter(|s| {
+            s.enabled()
+                && (s.start().effective_length(diameter) > 0.
+                    || s.end().effective_length(diameter) > 0.)
+        }) else {
             return Ok(());
         };
         self.taper = Some(TailReplay {
-            buffer: TaperBuffer::new(settings, MAX_TAPER_RECORDS)?,
+            buffer: TaperBuffer::new(settings, MAX_TAPER_RECORDS, diameter)?,
             checkpoint: Some(DabCheckpoint::capture(self)),
             journal: TileJournal::default(),
             pending: Vec::new(),
@@ -148,8 +151,11 @@ impl Stroke {
         {
             // The reference freezes every command immediately and uses a known
             // final endpoint, so it has neither a replaceable tail nor tile restore.
-            tail.reference = Some((settings.compile(), endpoint));
-            tail.buffer = TaperBuffer::new(&StrokeTaper::default(), MAX_TAPER_RECORDS)?;
+            tail.reference = Some((
+                settings.compile(f64::from(self.brush.radius) * 2.)?,
+                endpoint,
+            ));
+            tail.buffer = TaperBuffer::new(&StrokeTaper::default(), MAX_TAPER_RECORDS, 1.)?;
         }
         Ok(())
     }

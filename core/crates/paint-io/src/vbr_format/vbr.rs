@@ -612,6 +612,7 @@ impl Preset {
             (self.parameters.transfer_jitter.is_some(), "transfer-jitter"),
             (self.has_dual_sizing(), "dual-relative-size"),
             (self.has_dual_ratio(), "dual-size-ratio"),
+            (self.has_relative_taper(), "taper-relative-length"),
             (self.smoothing.is_some(), "path-smoothing"),
             (smooth, "pressure-smooth"),
             (pressure_enabled, "pressure-curves"),
@@ -645,7 +646,9 @@ impl Preset {
             }
         }
         self.required_capabilities = capabilities;
-        self.behavior_version = if self.has_dual_ratio() {
+        self.behavior_version = if self.has_relative_taper() {
+            31
+        } else if self.has_dual_ratio() {
             30
         } else if self.parameters.transfer_jitter.is_some() {
             29
@@ -722,6 +725,11 @@ impl Preset {
             .is_some_and(|p| p.has_smooth())
             || self.dual_brush.as_ref().is_some_and(|d| d.has_smooth())
     }
+    pub fn has_relative_taper(&self) -> bool {
+        self.stroke_taper
+            .as_ref()
+            .is_some_and(|p| p.core().has_relative_length())
+    }
     pub fn has_dual_ratio(&self) -> bool {
         self.dual_brush
             .as_ref()
@@ -754,6 +762,7 @@ fn is_feature_capability(capability: &str) -> bool {
             | "path-smoothing"
             | "dual-relative-size"
             | "dual-size-ratio"
+            | "taper-relative-length"
             | "dual-color-stroke"
             | "dual-color-stamp"
             | "airbrush"
@@ -868,6 +877,7 @@ impl Package {
                             | "path-smoothing"
                             | "dual-relative-size"
                             | "dual-size-ratio"
+                            | "taper-relative-length"
                             | "dual-color-stroke"
                             | "dual-color-stamp"
                             | "airbrush"

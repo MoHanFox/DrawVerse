@@ -10,6 +10,7 @@ pub const MAX_TAPER_DISTANCE: f64 = 1_000_000_000.;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TaperEnd {
     length: f64,
+    relative_length: Option<(bool, f64)>,
     size: PressureControl,
     opacity: PressureControl,
 }
@@ -26,6 +27,7 @@ impl TaperEnd {
         }
         Ok(Self {
             length,
+            relative_length: None,
             size,
             opacity,
         })
@@ -33,15 +35,36 @@ impl TaperEnd {
     pub fn length(&self) -> f64 {
         self.length
     }
+    /// Preserve both modes' values, including while the relative mode is closed.
+    pub fn with_relative_length(mut self, relative: bool, percent: f64) -> Result<Self> {
+        if !percent.is_finite() || !(0. ..=10000.).contains(&percent) {
+            return Err(Error::InvalidArgument("taper length percent"));
+        }
+        self.relative_length = Some((relative, percent));
+        Ok(self)
+    }
+    pub fn relative_length(&self) -> Option<(bool, f64)> {
+        self.relative_length
+    }
+    pub fn effective_length(&self, diameter: f64) -> f64 {
+        match self.relative_length {
+            Some((true, percent)) => (diameter * percent / 100.).min(4096.),
+            _ => self.length,
+        }
+    }
     pub fn size(&self) -> &PressureControl {
         &self.size
     }
     pub fn opacity(&self) -> &PressureControl {
         &self.opacity
     }
-    fn compile(&self, enabled: bool) -> CompiledEnd {
+    fn compile(&self, enabled: bool, diameter: f64) -> CompiledEnd {
         CompiledEnd {
-            length: if enabled { self.length } else { 0. },
+            length: if enabled {
+                self.effective_length(diameter)
+            } else {
+                0.
+            },
             size: self.size.compile(),
             opacity: self.opacity.compile(),
         }
@@ -70,11 +93,19 @@ impl StrokeTaper {
     pub fn end(&self) -> &TaperEnd {
         &self.end
     }
-    pub fn compile(&self) -> CompiledTaper {
-        CompiledTaper {
-            start: self.start.compile(self.enabled),
-            end: self.end.compile(self.enabled),
+    pub fn has_relative_length(&self) -> bool {
+        self.start.relative_length.is_some() || self.end.relative_length.is_some()
+    }
+    pub fn compile(&self, diameter: f64) -> Result<CompiledTaper> {
+        if !diameter.is_finite()
+            || !(1. ..=f64::from(crate::MAX_BRUSH_RADIUS) * 2.).contains(&diameter)
+        {
+            return Err(Error::InvalidArgument("taper brush diameter"));
         }
+        Ok(CompiledTaper {
+            start: self.start.compile(self.enabled, diameter),
+            end: self.end.compile(self.enabled, diameter),
+        })
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -209,12 +240,12 @@ impl TaperUpdate {
     }
 }
 impl TaperBuffer {
-    pub fn new(settings: &StrokeTaper, capacity: usize) -> Result<Self> {
+    pub fn new(settings: &StrokeTaper, capacity: usize, diameter: f64) -> Result<Self> {
         if !(1..=MAX_TAPER_RECORDS).contains(&capacity) {
             return Err(Error::ResourceLimit("taper buffer capacity"));
         }
         Ok(Self {
-            program: Arc::new(settings.compile()),
+            program: Arc::new(settings.compile(diameter)?),
             capacity,
             state: Arc::new(TailState {
                 pending: Arc::from([]),

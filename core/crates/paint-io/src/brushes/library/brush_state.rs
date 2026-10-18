@@ -256,7 +256,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=38) {
+    if !matches!(state.version, 1..=39) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -379,6 +379,14 @@ fn decode_inner(
         }
         if row.wet_mix.is_some() && state.version < 17 {
             return Err(Error::Unsupported("wet mix requires state17".into()));
+        }
+        if row
+            .stroke_taper
+            .as_ref()
+            .is_some_and(|p| p.core().has_relative_length())
+            && state.version < 39
+        {
+            return Err(Error::Unsupported("relative taper requires state39".into()));
         }
         if row.stroke_taper.is_some() && state.version < 18 {
             return Err(Error::Unsupported("stroke taper requires state18".into()));
@@ -607,7 +615,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
         let stroke_taper = if s.taper != Default::default() {
-            version = version.max(18);
+            version = version.max(if s.taper.has_relative_length() {
+                39
+            } else {
+                18
+            });
             Some(crate::brush_taper::TaperParameters::from_core(&s.taper))
         } else {
             None

@@ -14,8 +14,26 @@ struct Control {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct End {
     length_px: f64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "mode"
+    )]
+    length_mode: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "percent"
+    )]
+    length_percent: Option<f64>,
     size: Control,
     opacity: Control,
+}
+fn mode<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
+}
+fn percent<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Option<f64>, D::Error> {
+    f64::deserialize(d).map(Some)
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -105,13 +123,24 @@ impl End {
     fn from_core(e: &TaperEnd) -> Self {
         Self {
             length_px: e.length(),
+            length_mode: e
+                .relative_length()
+                .map(|(relative, _)| if relative { "relative" } else { "independent" }.into()),
+            length_percent: e.relative_length().map(|(_, percent)| percent),
             size: Control::from_core(e.size()),
             opacity: Control::from_core(e.opacity()),
         }
     }
     fn core(self) -> std::result::Result<TaperEnd, &'static str> {
-        TaperEnd::new(self.length_px, self.size.core()?, self.opacity.core()?)
-            .map_err(|_| "taper length/endpoints")
+        let end = TaperEnd::new(self.length_px, self.size.core()?, self.opacity.core()?)
+            .map_err(|_| "taper length/endpoints")?;
+        match (self.length_mode.as_deref(), self.length_percent) {
+            (None, None) => Ok(end),
+            (Some(mode @ ("relative" | "independent")), Some(percent)) => end
+                .with_relative_length(mode == "relative", percent)
+                .map_err(|_| "taper length percent"),
+            _ => Err("taper length mode/percent"),
+        }
     }
 }
 #[derive(Clone, Debug)]

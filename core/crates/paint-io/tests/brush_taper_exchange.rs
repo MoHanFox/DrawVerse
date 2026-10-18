@@ -52,6 +52,9 @@ fn package(s: &BrushSettings) -> Package {
     if !s.smoothing.is_default() {
         caps.push("path-smoothing");
     }
+    if s.taper.has_relative_length() {
+        caps.push("taper-relative-length");
+    }
     if !s.wet.is_default() {
         caps.push("wet-mix");
     }
@@ -73,7 +76,11 @@ fn package(s: &BrushSettings) -> Package {
             id: "12345678-1234-4234-8234-123456789abd".into(),
             name: "Taper".into(),
             engine_profile: "drawverse.brush".into(),
-            behavior_version: 15,
+            behavior_version: if s.taper.has_relative_length() {
+                31
+            } else {
+                15
+            },
             required_capabilities: caps.into_iter().map(String::from).collect(),
             parameters: Parameters {
                 transfer_jitter: None,
@@ -554,4 +561,97 @@ fn source_baselines_reject_nondefault_taper_including_closed_configuration() {
             Err(paint_io::Error::Unsupported(_))
         ));
     }
+}
+
+#[test]
+fn relative_taper_state39_and_vbr_preserve_closed_values_and_actual_pixels() {
+    let token = CancellationToken::default();
+    for enabled in [false, true] {
+        for relative in [false, true] {
+            let mut s = settings(enabled);
+            s.taper = StrokeTaper::new(
+                enabled,
+                s.taper
+                    .start()
+                    .clone()
+                    .with_relative_length(relative, 150.)
+                    .unwrap(),
+                s.taper
+                    .end()
+                    .clone()
+                    .with_relative_length(relative, 225.)
+                    .unwrap(),
+            );
+            let mut catalog = BrushCatalog::default();
+            catalog.edit("round-pressure", s.clone()).unwrap();
+            let bytes = brush_state::encode(&catalog).unwrap();
+            let mut json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["version"], 39);
+            let restored = brush_state::decode(&bytes, MAX_CATALOG_MASK_BYTES).unwrap();
+            assert_eq!(restored.selected().settings().taper, s.taper);
+            json["version"] = 38.into();
+            assert!(brush_state::decode(
+                &serde_json::to_vec(&json).unwrap(),
+                MAX_CATALOG_MASK_BYTES
+            )
+            .is_err());
+            let bundle = ImageBundle::new(package(&s), BTreeMap::new(), &token).unwrap();
+            let archive = vbr_image::encode(&bundle, &token).unwrap();
+            let reopened = vbr_image::decode(&archive, &token).unwrap();
+            assert_eq!(reopened.definition(0).unwrap().taper, s.taper);
+            for diameter in [6., 12., 24.] {
+                let mut definition = reopened.definition(0).unwrap();
+                definition.brush.radius = diameter / 2.;
+                let actual = draw(definition.clone());
+                let absolute_end = |end: &TaperEnd| {
+                    TaperEnd::new(
+                        end.effective_length(f64::from(diameter)),
+                        end.size().clone(),
+                        end.opacity().clone(),
+                    )
+                    .unwrap()
+                };
+                definition.taper = StrokeTaper::new(
+                    enabled,
+                    absolute_end(s.taper.start()),
+                    absolute_end(s.taper.end()),
+                );
+                assert_eq!(actual, draw(definition));
+            }
+        }
+    }
+}
+#[test]
+fn relative_taper_requires_complete_valid_fields_before_rounding() {
+    let end = taper(true)
+        .start()
+        .clone()
+        .with_relative_length(true, 25.)
+        .unwrap();
+    let valid = serde_json::to_value(TaperParameters::from_core(&StrokeTaper::new(
+        true,
+        end,
+        TaperEnd::default(),
+    )))
+    .unwrap();
+    for key in ["lengthMode", "lengthPercent"] {
+        let mut bad = valid.clone();
+        bad["start"].as_object_mut().unwrap().remove(key);
+        assert!(serde_json::from_value::<TaperParameters>(bad).is_err());
+        let mut bad = valid.clone();
+        bad["start"][key] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<TaperParameters>(bad).is_err());
+    }
+    for value in [
+        serde_json::json!(-0.0000000001),
+        serde_json::json!(10000.00000001),
+        serde_json::json!("25"),
+    ] {
+        let mut bad = valid.clone();
+        bad["start"]["lengthPercent"] = value;
+        assert!(serde_json::from_value::<TaperParameters>(bad).is_err());
+    }
+    let mut bad = valid;
+    bad["start"]["lengthMode"] = serde_json::json!("unknown");
+    assert!(serde_json::from_value::<TaperParameters>(bad).is_err());
 }

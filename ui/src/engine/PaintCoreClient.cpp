@@ -603,7 +603,7 @@ public:
             if(tip.value("dualBrush").toMap().contains("sizing"))raiseBrushStateVersion(state,tip.value("dualBrush").toMap().value("sizing").toMap().value("model").toString()=="relative-ratio-v1"?38:15);
             if(tip.value("dualBrush").toMap().contains("color"))raiseBrushStateVersion(state,16);
             if(!tip.value("wetMix").toMap().isEmpty()){row["wetMix"]=QJsonObject::fromVariantMap(tip.value("wetMix").toMap());raiseBrushStateVersion(state,17);}
-            if(!tip.value("strokeTaper").toMap().isEmpty()){row["strokeTaper"]=QJsonObject::fromVariantMap(tip.value("strokeTaper").toMap());raiseBrushStateVersion(state,18);}
+            if(!tip.value("strokeTaper").toMap().isEmpty()){row["strokeTaper"]=QJsonObject::fromVariantMap(tip.value("strokeTaper").toMap());const auto taper=tip.value("strokeTaper").toMap();raiseBrushStateVersion(state,taper.value("start").toMap().contains("lengthMode") || taper.value("end").toMap().contains("lengthMode")?39:18);}
             if(tip.value("wetMix").toMap().contains("dualColor"))raiseBrushStateVersion(state,19);
             if(tip.value("dualBrush").toMap().value("color").toMap().value("model").toString()=="interleaved-stamp-v1")state["version"]=std::max(state.value("version").toInt(),22);
             const auto air=tip.value("airbrush").toMap();if(air.value("enabled").toBool() || (air.contains("intervalMs") && std::abs(air.value("intervalMs").toDouble()-50.)>1e-9))state["version"]=std::max(state.value("version").toInt(),23);

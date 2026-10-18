@@ -6,6 +6,55 @@ use paint_core::{
 fn control(minimum: f32) -> PressureControl {
     PressureControl::new(PressureCurve::default(), minimum).unwrap()
 }
+#[test]
+fn relative_lengths_capture_diameter_and_keep_independent_values_and_opacity() {
+    for diameter in [1., 6., 32., 2000.] {
+        for percent in [0., 12.5, 100., 10000.] {
+            let end = TaperEnd::new(17., control(0.2), control(1.))
+                .unwrap()
+                .with_relative_length(true, percent)
+                .unwrap();
+            let relative = StrokeTaper::new(true, end.clone(), end);
+            let length = (diameter * percent / 100.).min(4096.);
+            let absolute = StrokeTaper::new(
+                true,
+                TaperEnd::new(length, control(0.2), control(1.)).unwrap(),
+                TaperEnd::new(length, control(0.2), control(1.)).unwrap(),
+            );
+            for distance in [0., 0.5, 12., 48., 100.] {
+                let actual = relative
+                    .compile(diameter)
+                    .unwrap()
+                    .factors(distance, 100.)
+                    .unwrap();
+                assert_eq!(
+                    actual,
+                    absolute
+                        .compile(diameter)
+                        .unwrap()
+                        .factors(distance, 100.)
+                        .unwrap()
+                );
+                assert_eq!(actual.opacity, 1.);
+            }
+            let closed = relative
+                .start()
+                .clone()
+                .with_relative_length(false, percent)
+                .unwrap();
+            assert_eq!(closed.effective_length(diameter), 17.);
+            assert_eq!(closed.relative_length(), Some((false, percent)));
+        }
+    }
+    for percent in [-0.01, 10000.01, f64::NAN, f64::INFINITY] {
+        assert!(TaperEnd::default()
+            .with_relative_length(true, percent)
+            .is_err());
+    }
+    for diameter in [0., 2000.01, f64::NAN] {
+        assert!(StrokeTaper::default().compile(diameter).is_err());
+    }
+}
 fn settings(start: f64, end: f64) -> StrokeTaper {
     StrokeTaper::new(
         true,
@@ -44,7 +93,7 @@ fn close(a: f32, b: f32) {
 #[test]
 fn independent_envelopes_minima_overlap_and_smooth_curve() {
     let s = settings(10., 20.);
-    let p = s.compile();
+    let p = s.compile(1.).unwrap();
     assert_eq!(
         p.factors(0., 100.).unwrap(),
         TaperFactors {
@@ -71,7 +120,9 @@ fn independent_envelopes_minima_overlap_and_smooth_curve() {
     let curve = PressureCurve::new_smooth(vec![(0., 0.), (0.5, 0.2), (1., 1.)]).unwrap();
     let c = PressureControl::new(curve, 0.25).unwrap();
     let end = TaperEnd::new(10., c.clone(), control(0.)).unwrap();
-    let smooth = StrokeTaper::new(true, end, TaperEnd::default()).compile();
+    let smooth = StrokeTaper::new(true, end, TaperEnd::default())
+        .compile(1.)
+        .unwrap();
     close(
         smooth.factors(2.5, 100.).unwrap().diameter,
         c.response(0.25).unwrap(),
@@ -93,7 +144,10 @@ fn disabled_zero_length_and_single_tap_have_explicit_semantics() {
     assert_eq!(disabled.end().length(), 20.);
     assert_eq!(disabled.start().size().minimum(), 0.2);
     assert_eq!(disabled.start().opacity().minimum(), 0.4);
-    for p in [disabled.compile(), settings(0., 0.).compile()] {
+    for p in [
+        disabled.compile(1.).unwrap(),
+        settings(0., 0.).compile(1.).unwrap(),
+    ] {
         assert_eq!(
             p.factors(0., 0.).unwrap(),
             TaperFactors {
@@ -105,7 +159,8 @@ fn disabled_zero_length_and_single_tap_have_explicit_semantics() {
     let zero = TaperEnd::new(10., control(0.), control(0.)).unwrap();
     assert_eq!(
         StrokeTaper::new(true, zero.clone(), zero)
-            .compile()
+            .compile(1.)
+            .unwrap()
             .factors(0., 0.)
             .unwrap(),
         TaperFactors {
@@ -125,7 +180,7 @@ fn invalid_configuration_and_distances_are_rejected_before_use() {
         assert!(TaperEnd::new(10., c.clone(), control(0.)).is_err());
         assert!(TaperEnd::new(10., control(0.), c).is_err());
     }
-    let p = settings(4096., 4096.).compile();
+    let p = settings(4096., 4096.).compile(1.).unwrap();
     for (distance, endpoint) in [
         (f64::NAN, 1.),
         (-0.01, 1.),
@@ -137,8 +192,8 @@ fn invalid_configuration_and_distances_are_rejected_before_use() {
         assert!(p.factors(distance, endpoint).is_err());
     }
     assert!(p.factors(MAX_TAPER_DISTANCE, MAX_TAPER_DISTANCE).is_ok());
-    assert!(TaperBuffer::new(&settings(0., 0.), 0).is_err());
-    assert!(TaperBuffer::new(&settings(0., 0.), MAX_TAPER_RECORDS + 1).is_err());
+    assert!(TaperBuffer::new(&settings(0., 0.), 0, 1.).is_err());
+    assert!(TaperBuffer::new(&settings(0., 0.), MAX_TAPER_RECORDS + 1, 1.).is_err());
 }
 
 #[test]
@@ -147,7 +202,7 @@ fn smooth_nonmonotonic_curves_stay_bounded_and_retired_samples_remain_final() {
         PressureCurve::new_smooth(vec![(0., 0.), (0.2, 0.8), (0.6, 0.1), (1., 1.)]).unwrap();
     let end = TaperEnd::new(4., PressureControl::new(curve, 0.15).unwrap(), control(0.6)).unwrap();
     let s = StrokeTaper::new(true, TaperEnd::default(), end);
-    let p = s.compile();
+    let p = s.compile(1.).unwrap();
     for i in 0..=1000 {
         let f = p.factors(10. - i as f64 / 250., 10.).unwrap();
         assert!((0.15..=1.).contains(&f.diameter));
@@ -160,8 +215,8 @@ fn smooth_nonmonotonic_curves_stay_bounded_and_retired_samples_remain_final() {
 // Simulate the caller's immutable rendered prefix and replaceable tail. This checks
 // commands, not document pixels; the document checkpoint integration is a later stage.
 fn run(records: &[TaperRecord], batch: usize, s: &StrokeTaper) -> Vec<TaperedRecord> {
-    let mut buffer = TaperBuffer::new(s, MAX_TAPER_RECORDS).unwrap();
-    let program = s.compile();
+    let mut buffer = TaperBuffer::new(s, MAX_TAPER_RECORDS, 1.).unwrap();
+    let program = s.compile(1.).unwrap();
     let mut frozen = Vec::new();
     let mut seen = Vec::new();
     for chunk in records.chunks(batch) {
@@ -206,7 +261,7 @@ fn both_streams_channels_and_global_distance_survive_replay_and_batch_splits() {
 
 #[test]
 fn long_strokes_keep_only_the_active_tail_and_allow_advancing_a_full_buffer() {
-    let mut buffer = TaperBuffer::new(&settings(0., 4.), 4).unwrap();
+    let mut buffer = TaperBuffer::new(&settings(0., 4.), 4, 1.).unwrap();
     let mut retired = 0;
     for id in 0..2000 {
         let r = record(id, id as f64);
@@ -234,7 +289,7 @@ fn long_strokes_keep_only_the_active_tail_and_allow_advancing_a_full_buffer() {
 #[test]
 fn capacity_and_batch_limits_reject_dense_tails_atomically() {
     let s = settings(0., 1.);
-    let mut buffer = TaperBuffer::new(&s, 2).unwrap();
+    let mut buffer = TaperBuffer::new(&s, 2, 1.).unwrap();
     buffer
         .commit(
             buffer
@@ -254,7 +309,7 @@ fn capacity_and_batch_limits_reject_dense_tails_atomically() {
     let many: Vec<_> = (0..=MAX_TAPER_RECORDS)
         .map(|i| record(i as u64, 0.))
         .collect();
-    let mut large = TaperBuffer::new(&s, MAX_TAPER_RECORDS).unwrap();
+    let mut large = TaperBuffer::new(&s, MAX_TAPER_RECORDS, 1.).unwrap();
     assert!(large.prepare_append(&many, 0.).is_err());
     assert_eq!(large.pending_len(), 0);
     large
@@ -272,7 +327,7 @@ fn capacity_and_batch_limits_reject_dense_tails_atomically() {
 
 #[test]
 fn invalid_later_records_leave_prior_state_and_existing_plan_valid() {
-    let mut buffer = TaperBuffer::new(&settings(0., 10.), 10).unwrap();
+    let mut buffer = TaperBuffer::new(&settings(0., 10.), 10, 1.).unwrap();
     buffer
         .commit(buffer.prepare_append(&[record(10, 1.)], 1.).unwrap())
         .unwrap();
@@ -314,8 +369,8 @@ fn invalid_later_records_leave_prior_state_and_existing_plan_valid() {
 #[test]
 fn cancelled_stale_and_foreign_updates_never_adopt_state() {
     let s = settings(0., 10.);
-    let mut a = TaperBuffer::new(&s, 10).unwrap();
-    let mut b = TaperBuffer::new(&s, 10).unwrap();
+    let mut a = TaperBuffer::new(&s, 10, 1.).unwrap();
+    let mut b = TaperBuffer::new(&s, 10, 1.).unwrap();
     let cancelled = a.prepare_append(&[record(0, 0.)], 0.).unwrap();
     drop(cancelled);
     assert_eq!(a.pending_len(), 0);
@@ -336,7 +391,7 @@ fn cancelled_stale_and_foreign_updates_never_adopt_state() {
 
 #[test]
 fn disabled_tail_retires_immediately_but_keeps_id_and_time_order() {
-    let mut b = TaperBuffer::new(&settings(10., 0.), 1).unwrap();
+    let mut b = TaperBuffer::new(&settings(10., 0.), 1, 1.).unwrap();
     let records: Vec<_> = (0..100).map(|i| record(i, i as f64)).collect();
     let u = b.prepare_append(&records, 99.).unwrap();
     assert_eq!(u.retired().len(), 100);

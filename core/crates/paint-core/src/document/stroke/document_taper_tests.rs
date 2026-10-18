@@ -478,7 +478,7 @@ fn taper_document_record_and_filtered_replay_budgets_rollback_prior_pixels() {
     let tail = d.stroke.as_mut().unwrap().taper.as_mut().unwrap();
     // Exercise the same preflight failure as a full dense pending window without
     // rendering 65536 stamps merely to reach the configured bound.
-    tail.buffer = TaperBuffer::new(&settings(), 1).unwrap();
+    tail.buffer = TaperBuffer::new(&settings(), 1, 1.).unwrap();
     assert!(matches!(
         d.stroke_to(points()[1]),
         Err(Error::ResourceLimit(_))
