@@ -20,8 +20,8 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(bool brushSelectionHasSources READ brushSelectionHasSources NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedId READ selectedId NOTIFY settingsChanged)
     Q_PROPERTY(QString selectedName READ selectedName NOTIFY settingsChanged)
-    Q_PROPERTY(QString selectedPreview READ selectedPreview NOTIFY presetsChanged)
-    Q_PROPERTY(QString previewMessage READ previewMessage NOTIFY presetsChanged)
+    Q_PROPERTY(QString selectedPreview READ selectedPreview NOTIFY selectedPreviewChanged)
+    Q_PROPERTY(QString previewMessage READ previewMessage NOTIFY selectedPreviewChanged)
     Q_PROPERTY(QVariantMap texture READ texture NOTIFY settingsChanged)
     Q_PROPERTY(QVariantMap dualBrush READ dualBrush NOTIFY settingsChanged)
     Q_PROPERTY(QVariantMap colorDynamics READ colorDynamics NOTIFY settingsChanged)
@@ -403,6 +403,8 @@ signals:
     void cursorChanged();
     void settingsChanged();
     void presetsChanged();
+    void selectedPreviewChanged();
+    void previewChanged(QString id,QString image);
     void selectionChanged();
     void recentColorsChanged();
     void persistRequested(QByteArray json);

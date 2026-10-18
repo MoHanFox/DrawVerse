@@ -520,7 +520,7 @@ void BrushLibrary::setWriteBlend(int mode) {
     m_writeBlend=mode;
     emit settingsChanged();emit persistRequested(snapshot());
 }
-void BrushLibrary::changed(){emit settingsChanged();emit presetsChanged();emit persistRequested(snapshot());}
+void BrushLibrary::changed(){emit settingsChanged();emit presetsChanged();emit selectedPreviewChanged();emit persistRequested(snapshot());}
 void BrushLibrary::update(int field,qreal value) {
     if(!std::isfinite(value))return;
     auto &p=m_presets[index(m_selected)];
@@ -534,7 +534,10 @@ void BrushLibrary::update(int field,qreal value) {
         case 6:target=&p.flow;value=std::clamp(value,0.,1.);break;
         default:return;}
     if(*target==value)return;
-    *target=value;p.preview.clear();p.error.clear();p.token=++m_nextToken;p.requested=0;changed();
+    *target=value;
+    // Standard previews use a fixed size, flow and opacity. Keep in-flight jobs valid.
+    if(field!=0 && field!=1 && field!=6){p.preview.clear();p.error.clear();p.token=++m_nextToken;p.requested=0;}
+    changed();
 }
 void BrushLibrary::setRadius(qreal value){
     update(0,value);
@@ -907,9 +910,9 @@ void BrushLibrary::setActiveColors(const QColor &foreground,const QColor &backgr
     m_foregroundColor=foreground;m_backgroundColor=background;
     emit activeColorsChanged();emit persistRequested(snapshot());
 }
-void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;QVariantMap tip={{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow},{"maskResource",p.maskResource},{"pressureDynamics",p.pressure},{"tipDynamics",p.device},{"scatterDynamics",p.scatter},{"shapeJitter",p.shape},{"transferJitter",p.transfer},{"colorDynamics",p.color},{"texture",p.texture},{"dualBrush",p.dual},{"smoothing",p.smoothing},{"wetMix",p.wet},{"strokeTaper",p.taper},{"airbrush",p.airbrush},{"presetRadius",p.radius},{"writeBlend",0}};if(!p.speed.isEmpty())tip["speedDynamics"]=p.speed;if(!p.tangent.isEmpty())tip["tangentDynamics"]=p.tangent;if(!p.distance.isEmpty())tip["distanceDynamics"]=p.distance;if(!p.tilt.isEmpty())tip["tiltDynamics"]=p.tilt;if(!p.rotation.isEmpty())tip["rotationDynamics"]=p.rotation;if(!p.direction.isEmpty())tip["directionDynamics"]=p.direction;if(!p.matrix.isEmpty())tip["sourceMatrix"]=p.matrix;if(!p.fade.isEmpty())tip["fadeDynamics"]=p.fade;emit previewRequested(p.id,p.token,24.,p.opacity,p.spacing,tip);}
-void BrushLibrary::retryPreview(){auto &p=m_presets[index(m_selected)];p.preview.clear();p.error.clear();p.requested=0;p.token=++m_nextToken;requestPreview(m_selected);emit presetsChanged();}
-void BrushLibrary::acceptPreview(const QString &id,quint64 token,const QString &image){const int i=index(id);if(i<0 || m_presets[i].token!=token)return;m_presets[i].requested=0;m_presets[i].preview=image;m_presets[i].error=image.isEmpty()?QStringLiteral("预览暂不可用"):QString();emit presetsChanged();}
+void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;QVariantMap tip={{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",1.},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow},{"maskResource",p.maskResource},{"pressureDynamics",p.pressure},{"tipDynamics",p.device},{"scatterDynamics",p.scatter},{"shapeJitter",p.shape},{"transferJitter",p.transfer},{"colorDynamics",p.color},{"texture",p.texture},{"dualBrush",p.dual},{"smoothing",p.smoothing},{"wetMix",p.wet},{"strokeTaper",p.taper},{"airbrush",p.airbrush},{"presetRadius",24.},{"writeBlend",0}};if(!p.speed.isEmpty())tip["speedDynamics"]=p.speed;if(!p.tangent.isEmpty())tip["tangentDynamics"]=p.tangent;if(!p.distance.isEmpty())tip["distanceDynamics"]=p.distance;if(!p.tilt.isEmpty())tip["tiltDynamics"]=p.tilt;if(!p.rotation.isEmpty())tip["rotationDynamics"]=p.rotation;if(!p.direction.isEmpty())tip["directionDynamics"]=p.direction;if(!p.matrix.isEmpty())tip["sourceMatrix"]=p.matrix;if(!p.fade.isEmpty())tip["fadeDynamics"]=p.fade;emit previewRequested(p.id,p.token,24.,1.,p.spacing,tip);}
+void BrushLibrary::retryPreview(){auto &p=m_presets[index(m_selected)];p.preview.clear();p.error.clear();p.requested=0;p.token=++m_nextToken;requestPreview(m_selected);emit previewChanged(p.id,{});emit selectedPreviewChanged();}
+void BrushLibrary::acceptPreview(const QString &id,quint64 token,const QString &image){const int i=index(id);if(i<0 || m_presets[i].token!=token)return;m_presets[i].requested=0;m_presets[i].preview=image;m_presets[i].error=image.isEmpty()?QStringLiteral("预览暂不可用"):QString();emit previewChanged(id,image);if(id==m_selected)emit selectedPreviewChanged();}
 int BrushLibrary::textureStateVersion(const QVariantMap &texture) {
     if(texture.isEmpty())return 0;
     int version=11;
@@ -1422,7 +1425,8 @@ bool BrushLibrary::restore(const QByteArray &json) {
     m_resetPresets=baselines;
     for(auto &preset:restored) {
         const int current=index(preset.id);int oldVersion=2,newVersion=2;
-        if(current>=0 && equivalentSettings(presetRow(m_presets[current],oldVersion),presetRow(preset,newVersion))) {
+        auto previewSettings=[](QJsonObject row){for(const auto &key:{"name","radius","opacity","flow"})row.remove(key);return row;};
+        if(current>=0 && equivalentSettings(previewSettings(presetRow(m_presets[current],oldVersion)),previewSettings(presetRow(preset,newVersion)))) {
             const auto &old=m_presets[current];preset.preview=old.preview;preset.error=old.error;preset.token=old.token;preset.requested=old.requested;
         } else preset.token=++m_nextToken;
     }
@@ -1432,5 +1436,5 @@ bool BrushLibrary::restore(const QByteArray &json) {
     m_foregroundColor=foreground;m_backgroundColor=background;
     if(colorsChanged)emit activeColorsChanged();
     m_cursorOutline=outline;m_cursorCenter=center;m_cursorHoverOnly=hoverOnly;m_cursorWidth=width;m_cursorSimple=simple;m_cursorComposite=composite;m_cursorImage=image;m_cursorImageOpacity=imageOpacity;m_cursorColor=color;m_cursorSecondaryColor=secondaryColor;emit cursorChanged();
-    emit settingsChanged();emit presetsChanged();emit selectionChanged();emit recentColorsChanged();return true;
+    emit settingsChanged();emit presetsChanged();emit selectedPreviewChanged();emit selectionChanged();emit recentColorsChanged();return true;
 }

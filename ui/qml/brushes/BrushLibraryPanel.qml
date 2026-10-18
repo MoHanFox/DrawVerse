@@ -79,10 +79,13 @@ ColumnLayout {
     property string contextPresetId:""
     property string groupParentId:""
     property var groupMenuGroups:[]
-    function presetById(id) {
-        for(const preset of library.presets) if(preset.id===id) return preset
-        return ({})
+    property var presetLookup: ({})
+    function refreshPresets() {
+        const lookup={}
+        for(const preset of library.presets)lookup[preset.id]=preset
+        presetLookup=lookup
     }
+    function presetById(id) { return presetLookup[id]||({}) }
     function groupContains(groupId,targetId) {
         const groups={};for(const group of groupMenuGroups)groups[group.id]=group
         const group=groups[groupId];if(!group)return false
@@ -177,7 +180,7 @@ ColumnLayout {
                 } else dropPlacement=d.y<height/2?1:2
             }
             visible:modelData.kind==="group" || root.presetById(modelData.id).id!==undefined
-            Image {visible:modelData.kind!=="group";anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.leftMargin:4+modelData.depth*14;anchors.rightMargin:4;anchors.topMargin:4;height:35;source:modelData.kind==="group"?"":root.presetById(modelData.id).preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
+            Image {id:rowPreview;visible:modelData.kind!=="group";anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.leftMargin:4+modelData.depth*14;anchors.rightMargin:4;anchors.topMargin:4;height:35;source:modelData.kind==="group"?"":root.presetById(modelData.id).preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
             Text {visible:modelData.kind==="group";x:8+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:(root.isGroupCollapsed(modelData.id)?"▸  ":"▾  ")+modelData.name;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
             Text {visible:modelData.kind!=="group";x:6+modelData.depth*14;y:40;width:parent.width-x-6;textFormat:Text.PlainText;text:root.presetById(modelData.id).name||"";color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
             MouseArea {
@@ -225,6 +228,11 @@ ColumnLayout {
             }
             Rectangle {anchors.fill:parent;border.width:2;border.color:Theme.accent;visible:brushDrop.containsDrag && dropPlacement===0}
             Rectangle {anchors.left:parent.left;anchors.right:parent.right;height:2;y:dropPlacement===1?0:parent.height-2;color:Theme.accent;visible:brushDrop.containsDrag && dropPlacement!==0}
+            Connections {
+                target:brushRow.panel.library
+                function onPreviewChanged(id,image){if(id===brushRow.modelData.id)rowPreview.source=image}
+                function onPresetsChanged(){Qt.callLater(()=>{rowPreview.source=brushRow.modelData.kind==="group"?"":brushRow.panel.presetById(brushRow.modelData.id).preview||""})}
+            }
             Component.onCompleted:if(modelData.kind!=="group")brushRow.panel.library.requestPreview(modelData.id)
         }
         WheelHandler {
@@ -352,6 +360,6 @@ ColumnLayout {
     FileDialog {id:importDialog;objectName:"brushImportDialog";title:"导入笔刷包";nameFilters:["笔刷包 (*.vbr *.abr)","DrawVerse 笔刷 (*.vbr)","Photoshop 笔刷 (*.abr)"];onAccepted:PaintClient.importBrushes(selectedFile)}
     FileDialog {id:exportDialog;title:"导出画笔 VBR";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.exportSelectedBrushes(selectedFile,root.includeExportSource)}
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
-    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}function onPresetsChanged(){root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}}
-    Component.onCompleted:{root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}
+    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}function onPresetsChanged(){root.refreshPresets();root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}}
+    Component.onCompleted:{root.refreshPresets();root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}
 }

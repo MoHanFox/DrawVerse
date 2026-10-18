@@ -9,3 +9,11 @@
 - 文档最小验证：相对链接存在、`git diff --check`；不代表功能修复已完成。
 
 后续步骤在实际测试完成后追加结果，未执行项保留为待办。
+
+## 步骤 1：标准预览缓存与逐行通知
+
+- 标准预览固定半径24、流量1、不透明度1，真实绘画仍使用用户参数；调整这三个基础参数不清空缓存或丢弃在途预览，原生浮点往返保持同一预览身份。
+- 预览完成使用单行通知，预设名称/预览查询改为目录缓存，避免每张图片完成时通知全库、每行重复从Qt构造全库数组。
+- 构建与真实QML回归暴露既有空剪贴板解引用：`canPasteLayers()`未判断`mimeData()`为空。通过Release链接映射定位并补空值保护，真实窗口回归不再崩溃；不是笔刷引擎或GPU崩溃。
+- Windows Release `qt_ui_tests` 构建及生成头检查通过；`standardBrushPreviewKeepsBaseEditsAndUpdatesOnlyItsRow`、`combinedBrushFeaturesPreviewSurvivesStateRoundtrip`、`allAutomaticBrushPreviewsStayWhiteWithExactAlphaAndColorIndependentCache`、`brushGroupsAppearInLibraryTreeAndSearchKeepsParent`四项通过（另含初始化/清理）。记录：`artifacts/feedback-step1-tests.txt`。
+- 未完成：大ABR实际导入耗时和滑动帧耗时量化；本步消除已定位的目录刷新放大，不宣称所有导入卡顿已解决。未跑全量/硬件/跨平台/GPU。

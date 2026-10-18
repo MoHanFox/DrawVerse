@@ -102,6 +102,32 @@ class UiTests final : public QObject {
     QTemporaryDir m_preferences;
 private slots:
 
+    void standardBrushPreviewKeepsBaseEditsAndUpdatesOnlyItsRow() {
+        BrushLibrary library;
+        const auto id=library.selectedId();
+        QSignalSpy requests(&library,&BrushLibrary::previewRequested);
+        library.requestPreview(id);QCOMPARE(requests.size(),1);
+        const auto token=requests.first()[1].toULongLong();
+        library.setRadius(80);library.setFlow(.12);library.setOpacity(.24);
+        library.requestPreview(id);QCOMPARE(requests.size(),1);
+        QSignalSpy catalog(&library,&BrushLibrary::presetsChanged);
+        QSignalSpy previews(&library,&BrushLibrary::previewChanged);
+        library.acceptPreview(id,token,"first");
+        QCOMPARE(catalog.size(),0);QCOMPARE(previews.size(),1);
+        QCOMPARE(library.selectedPreview(),QString("first"));
+        BrushLibrary native;QVERIFY(native.restore(library.snapshot()));
+        QVERIFY(library.applyNativeCatalog(native.catalogSnapshot()));
+        QCOMPARE(library.selectedPreview(),QString("first"));
+        library.retryPreview();QCOMPARE(requests.size(),2);
+        QCOMPARE(requests.last()[2].toDouble(),24.);QCOMPARE(requests.last()[3].toDouble(),1.);
+        QCOMPARE(requests.last()[5].toMap().value("flow").toDouble(),1.);
+        QCOMPARE(requests.last()[5].toMap().value("presetRadius").toDouble(),24.);
+        library.acceptPreview(id,requests.last()[1].toULongLong(),"second");
+        library.setHardness(.25);library.requestPreview(id);QCOMPARE(requests.size(),3);
+        library.acceptPreview(id,token,"stale");QVERIFY(library.selectedPreview().isEmpty());
+        QCOMPARE(library.radius(),80.);QVERIFY(std::abs(library.flow()-.12)<1e-6);QVERIFY(std::abs(library.opacity()-.24)<1e-6);
+    }
+
     void brushGroupsState20MirrorBaselinesCopyDeleteAndFlatImports() {
         BrushLibrary source;source.setRadius(7);const auto id=source.saveCopy("grouped baseline");QVERIFY(!id.isEmpty());source.setRadius(11);
         BrushLibrary library;QVERIFY(library.restore(QJsonDocument(groupedBrushState(source)).toJson()));

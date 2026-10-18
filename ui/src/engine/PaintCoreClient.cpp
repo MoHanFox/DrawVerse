@@ -1483,7 +1483,12 @@ bool PaintCoreClient::layerShortcutsAllowed() const {
     return m_ready && !m_liquifyActive && !m_transformActive && !m_drawing && !layerEditBusy() && !m_fileBusy && !m_closing
         && !textInputFocused();
 }
-bool PaintCoreClient::canPasteLayers() const {return m_ready && !m_liquifyActive && !m_transformActive && !m_drawing && !layerEditBusy() && !m_fileBusy && QGuiApplication::clipboard()->mimeData()->hasFormat("application/x-drawverse-layers-v1");}
+bool PaintCoreClient::canPasteLayers() const {
+    if(!m_ready || m_liquifyActive || m_transformActive || m_drawing || layerEditBusy() || m_fileBusy)return false;
+    const auto *clipboard=QGuiApplication::clipboard();
+    const auto *mime=clipboard?clipboard->mimeData():nullptr;
+    return mime && mime->hasFormat("application/x-drawverse-layers-v1");
+}
 QString PaintCoreClient::mergeLayersText() const {
     if(m_selectedLayers.size()>1)return QStringLiteral("合并图层");
     for(const auto &v:m_layers){const auto l=v.toMap();if(l.value("id").toULongLong()==m_active)return l.value("group").toBool()?QStringLiteral("合并组"):QStringLiteral("向下合并");}
