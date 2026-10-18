@@ -19,6 +19,7 @@ use brushes::model::{
     brush, brush_cursor_image, brush_dual, brush_dual_color, brush_mask, brush_outline,
     brush_program, brush_texture,
 };
+use brushes::stroke::brush_stroke_outline;
 use brushes::stroke::{brush_airbrush, brush_input_schedule, brush_smoothing, brush_taper};
 use brushes::wet::{brush_wet_carrier, brush_wet_ink, brush_wet_settings, brush_wet_tool};
 use history::history_storage;
@@ -36,6 +37,10 @@ pub use brush_input_schedule::{
     MAX_INPUT_SCHEDULE_VISITS, MAX_INPUT_SEGMENTS,
 };
 pub use brush_smoothing::BrushSmoothing;
+pub use brush_stroke_outline::{
+    stroke_outline_band, OutlinePlacement, OutlineSource, OutlineWidth, StrokeOutline,
+    MAX_STROKE_OUTLINE_PIXELS, MAX_STROKE_OUTLINE_WIDTH, STROKE_OUTLINE_MODEL,
+};
 pub use brush_taper::{
     CompiledTaper, StrokeTaper, TaperBuffer, TaperEnd, TaperFactors, TaperRecord, TaperStream,
     TaperUpdate, TaperedRecord, MAX_TAPER_DISTANCE, MAX_TAPER_RECORDS, TAPER_MODEL,

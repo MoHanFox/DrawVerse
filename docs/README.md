@@ -24,6 +24,8 @@
 
 ## 常用入口
 
+- 整笔描边：[设计](brush/core/brush-stroke-outline-design.md) / [分阶段验收](validations/brush/core/brush-stroke-outline-validation.md)。
+
 - 启动与诊断：[开发者控制台](platform/developer-console-design.md)。
 
 - 本轮反馈：[依赖与执行顺序](planning/brush-feedback-execution-design.md) / [逐步验收](validations/planning/brush-feedback-execution-validation.md)。

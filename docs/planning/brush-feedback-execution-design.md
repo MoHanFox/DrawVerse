@@ -15,7 +15,7 @@
 | 8 | [起收笔相对/独立长度、头尾透明选择](../brush/wet/brush-taper-relative-length-design.md) | 核心像素/历史，IO关闭值与往返，Qt按模式显示；保留小数精度，仅规范显示 |
 | 9 | [笔尖/纹理缩略图与已有资源选择](../brush/library/brush-resource-picker-design.md) | Qt资源切换与真实笔触、保存重开；引用已有资源，不重复导入 |
 | 10 | [双笔刷选择已有笔刷并快照继承大小/间距/散布/数量](../brush/dual/brush-dual-existing-preset-design.md) | 核心/IO/Qt；选取时复制参数，不引入库循环引用 |
-| 11 | 自身/已有笔刷/纹理描边 | 用户已明确：整条笔触轮廓，外/中/内可选，勾选后取色轮第二颜色；核心像素/IO/Qt，不能用第二覆盖模式冒充完整描边 |
+| 11（进行中） | [整笔描边](../brush/core/brush-stroke-outline-design.md)：自身/已有笔刷/纹理 | 用户已明确：整条笔触轮廓，外/中/内可选，勾选后取色轮第二颜色；核心像素/IO/Qt，不能用第二覆盖模式冒充完整描边 |
 | 12 | [大尺寸液化性能](../tools/liquify-large-brush-performance-design.md) | 固定文档/半径/输入基准及像素等价测试，区分核心计算、帧发布和界面开销；单独记录实测 |
 
 ## 执行规则
