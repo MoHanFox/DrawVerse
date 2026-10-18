@@ -804,6 +804,16 @@ private slots:
         QVERIFY(model.setDualResource(model.selectedId(),QString(64,'a')));model.useProceduralDual();
         QCOMPARE(QJsonObject::fromVariantMap(model.dualBrush()),QJsonObject::fromVariantMap(dual));
     }
+    void combinedBrushFeaturesPreviewSurvivesStateRoundtrip() {
+        QTemporaryDir temp;{QSettings settings(temp.filePath("preview-state.ini"),QSettings::IniFormat);settings.setValue("storage/reserveMiB",0);settings.sync();}PaintCoreClient client(nullptr,temp.filePath("preview-state.ini"));QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());auto *library=client.brushLibrary();QVERIFY(library);
+        QVERIFY(library->setTransferJitter(QVariantMap{{"model","transfer-jitter-v1"},{"size",.2},{"flow",.2},{"opacity",.2}}));
+        auto dual=library->dualBrush();dual["enabled"]=false;dual["diameter"]=30.;QVERIFY(library->setDualBrush(dual));
+        auto smoothing=library->smoothing();smoothing["positionMs"]=24.;QVERIFY(library->setSmoothing(smoothing));
+        auto wet=library->wetMix();wet["wetness"]=.7;QVERIFY(library->setWetMix(wet));
+        auto taper=library->strokeTaper();auto end=taper.value("end").toMap();end["lengthPx"]=24.;taper["end"]=end;QVERIFY(library->setStrokeTaper(taper));
+        QSignalSpy requests(library,&BrushLibrary::previewRequested);library->retryPreview();QTRY_COMPARE(requests.size(),1);QTRY_VERIFY2_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),qPrintable(library->previewMessage()),10000);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void initTestCase() {
         QVERIFY(m_preferences.isValid());
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,m_preferences.path());

@@ -684,7 +684,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
                                     ("Angl", unit(*b"#Ang", 0.)),
                                     ("Rndn", unit(*b"#Prc", 100.)),
                                     ("Hrdn", unit(*b"#Prc", 50.)),
-                                    ("Spcn", unit(*b"#Prc", 2.)),
+                                    ("Spcn", unit(*b"#Prc", 30.)),
                                     ("flipX", Value::Boolean(true)),
                                     ("flipY", Value::Boolean(true)),
                                 ],
@@ -698,7 +698,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
                             value: b"Ovrl".to_vec(),
                         },
                     ),
-                    ("Spcn", unit(*b"#Prc", 25.)),
+                    ("Spcn", unit(*b"#Prc", 100.)),
                     ("Flip", Value::Boolean(true)),
                     ("useScatter", Value::Boolean(true)),
                     ("bothAxes", Value::Boolean(true)),
@@ -753,7 +753,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
     assert!(p[0].settings.dual.enabled());
     assert_eq!(p[0].settings.dual.mode(), paint_core::DualMode::Overlay);
     assert_eq!(p[0].settings.dual.secondary().radius(), 4.);
-    assert_eq!(p[0].settings.dual.secondary().spacing(), Some(0.25));
+    assert_eq!(p[0].settings.dual.secondary().spacing(), Some(0.3));
     assert_eq!(p[0].settings.dual.secondary().tip().hardness, 0.5);
     assert!(p[0].settings.dual.secondary().flip());
     assert_eq!(p[0].settings.dual.secondary().shape_flip(), (true, true));
@@ -805,7 +805,7 @@ fn abr_sampled_dual_brush_binds_secondary_mask() {
                                     ("Dmtr", unit(*b"#Pxl", 8.)),
                                     ("Angl", unit(*b"#Ang", 0.)),
                                     ("Rndn", unit(*b"#Prc", 100.)),
-                                    ("Spcn", unit(*b"#Prc", 2.)),
+                                    ("Spcn", unit(*b"#Prc", 30.)),
                                     ("sampledData", Value::Text("dual-sample\0".into())),
                                 ],
                             )),
@@ -818,7 +818,7 @@ fn abr_sampled_dual_brush_binds_secondary_mask() {
                             value: b"Mltp".to_vec(),
                         },
                     ),
-                    ("Spcn", unit(*b"#Prc", 25.)),
+                    ("Spcn", unit(*b"#Prc", 100.)),
                 ],
             )),
         },

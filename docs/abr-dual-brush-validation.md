@@ -2,7 +2,7 @@
 
 2026-10-18，Windows，对应 [设计](abr-dual-brush-design.md)。只运行相关最小回归，未执行全量 `tools/check.py`。
 
-- `paint-io --test abr_conversion` 通过：计算双笔刷直径、硬度、混合模式、独立间距、散布/数量、随机 Flip 和形状 flipX/flipY 映射；sampled 双笔刷样例绑定第二图片 mask。
+- `paint-io --test abr_conversion` 通过：计算双笔刷直径、硬度、混合模式、`Brsh.Spcn` 独立间距、散布/数量、随机 Flip 和形状 flipX/flipY 映射；sampled 双笔刷样例绑定第二图片 mask。
 - 核心 `dual_flip_is_seeded_per_stamp` 和 `dual_parameters_preserve_random_flip` 通过：翻转位逐印章变化并随 DualParameters 持久化。
 - Qt `dualFlipQmlToggle` 通过：随机 Flip 和固定 X/Y 镜像复选框都能写入双笔刷配置。
 - `brush_source` converter11双笔刷基线测试通过：source version3保留 `dualBrush`，converter10携带该字段明确拒绝。

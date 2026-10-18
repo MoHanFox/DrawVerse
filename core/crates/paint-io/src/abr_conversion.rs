@@ -1569,7 +1569,9 @@ fn dual_controls(
     } else {
         unit(shape, b"Hrdn", *b"#Prc", 0., 100.)? / 100.
     };
-    let spacing = (unit(dual, b"Spcn", *b"#Prc", 1., 1000.)? / 100.).min(1.);
+    // The dual tip's own Brsh descriptor owns the Photoshop spacing slider.
+    // The dualBrush-level Spcn can remain at 100 even when the nested tip is 30%.
+    let spacing = (unit(shape, b"Spcn", *b"#Prc", 1., 1000.)? / 100.).min(1.);
     let tip = BrushTip {
         hardness,
         roundness,

@@ -138,6 +138,24 @@ bool validDirectionDynamics(const QJsonObject &data){
     return true;
 }
 QVariantMap canonicalDirectionDynamics(QVariantMap data){if(data==defaultDirectionDynamics())data.clear();return data;}
+bool equivalentSettings(const QJsonValue &left, const QJsonValue &right) {
+    if(left.isDouble() && right.isDouble())return float(left.toDouble())==float(right.toDouble());
+    if(left.isObject() && right.isObject()) {
+        const auto a=left.toObject(),b=right.toObject();
+        if(a.size()!=b.size())return false;
+        for(auto it=a.begin();it!=a.end();++it)
+            if(!b.contains(it.key()) || !equivalentSettings(it.value(),b.value(it.key())))return false;
+        return true;
+    }
+    if(left.isArray() && right.isArray()) {
+        const auto a=left.toArray(),b=right.toArray();
+        if(a.size()!=b.size())return false;
+        for(qsizetype i=0;i<a.size();++i)
+            if(!equivalentSettings(a[i],b[i]))return false;
+        return true;
+    }
+    return left==right;
+}
 QVariantMap defaultFadeDynamics(){return {{"model","fade-v1"},{"enabled",false},{"steps",25},{"size",defaultSpeedControl()},{"flow",defaultSpeedControl()},{"opacity",defaultSpeedControl()}};}
 bool validFadeDynamics(const QJsonObject &data){
     if(data.size()!=6 || data.value("model").toString()!="fade-v1" || !data.value("enabled").isBool())return false;
@@ -1404,7 +1422,7 @@ bool BrushLibrary::restore(const QByteArray &json) {
     m_resetPresets=baselines;
     for(auto &preset:restored) {
         const int current=index(preset.id);int oldVersion=2,newVersion=2;
-        if(current>=0 && presetRow(m_presets[current],oldVersion)==presetRow(preset,newVersion)) {
+        if(current>=0 && equivalentSettings(presetRow(m_presets[current],oldVersion),presetRow(preset,newVersion))) {
             const auto &old=m_presets[current];preset.preview=old.preview;preset.error=old.error;preset.token=old.token;preset.requested=old.requested;
         } else preset.token=++m_nextToken;
     }
