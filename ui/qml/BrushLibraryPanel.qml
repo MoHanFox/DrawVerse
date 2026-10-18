@@ -7,9 +7,20 @@ import "."
 
 ColumnLayout {
     id:root
+    objectName:"brushLibraryPanel"
     property bool draggingBrush:false
     property var dragHovered:null
+    property real dragViewportY:-1
     property var canvasView
+    property var collapsedGroups:[]
+    function isGroupCollapsed(id) { return collapsedGroups.indexOf(id)>=0 }
+    function toggleGroup(id) {
+        const next=collapsedGroups.slice(),at=next.indexOf(id)
+        if(at>=0) next.splice(at,1)
+        else next.push(id)
+        collapsedGroups=next
+        refreshGroupedItems()
+    }
     function finishSearch(clear) {
         if(clear) search.clear()
         if(canvasView) {canvasView.forceActiveFocus();canvasView.Window.window.requestActivate()}
@@ -54,8 +65,10 @@ ColumnLayout {
                 const item=items[index]
                 if(item.kind==="preset") { if(matches[item.id]) out.push({kind:"preset",id:item.id,depth:depth,parent:parent,index:index}) }
                 else if(item.kind==="group" && groups[item.id]) {
+                    const groupRow={kind:"group",id:item.id,name:groups[item.id].name,depth:depth,parent:parent,index:index}
+                    if(!query.length && root.isGroupCollapsed(item.id)) { out.push(groupRow); continue }
                     const children=[]; visit(groups[item.id].items,children,depth+1,item.id)
-                    if(children.length || !query.length) { out.push({kind:"group",id:item.id,name:groups[item.id].name,depth:depth,parent:parent,index:index}); out.push(...children) }
+                    if(children.length || !query.length) { out.push(groupRow); out.push(...children) }
                 }
             }
         }
@@ -63,9 +76,11 @@ ColumnLayout {
         const result=[]; visit(organization.roots,result,0,""); return result
     }
     function refreshGroupedItems() {
-        const signature=JSON.stringify({organization:library.organization||{},presets:library.presets.map(p=>[p.id,p.name]),query:search.text})
+        const signature=JSON.stringify({organization:library.organization||{},presets:library.presets.map(p=>[p.id,p.name]),query:search.text,collapsed:collapsedGroups})
         if(signature===groupedSignature) return
+        const keepY=search.text.trim().length>0?0:presetList.contentY
         groupedSignature=signature;groupedModel=groupedItems()
+        Qt.callLater(()=>{presetList.contentY=Math.min(keepY,Math.max(0,presetList.contentHeight-presetList.height))})
     }
     function dropToRoot(drop) {
         const payload=drop.getDataAsString("application/x-drawverse-brush"),separator=payload.indexOf(":")
@@ -116,10 +131,10 @@ ColumnLayout {
             border.color:Theme.line
             property int dropPlacement:0
             property point dropPoint
-            function updateDrop(d){dropPoint=Qt.point(d.x,d.y);root.dragHovered=parent;dropPlacement=modelData.kind==="group" && d.y>11 && d.y<height-11?0:d.y<height/2?1:2}
+            function updateDrop(d){dropPoint=Qt.point(d.x,d.y);root.dragHovered=parent;root.dragViewportY=parent.mapToItem(presetList,d.x,d.y).y;dropPlacement=modelData.kind==="group" && d.y>11 && d.y<height-11?0:d.y<height/2?1:2}
             visible:modelData.kind==="group" || root.presetById(modelData.id).id!==undefined
             Image {visible:modelData.kind!=="group";anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.leftMargin:4+modelData.depth*14;anchors.rightMargin:4;anchors.topMargin:4;height:35;source:modelData.kind==="group"?"":root.presetById(modelData.id).preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
-            Text {visible:modelData.kind==="group";x:8+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:"▾  "+modelData.name;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
+            Text {visible:modelData.kind==="group";x:8+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:(root.isGroupCollapsed(modelData.id)?"▸  ":"▾  ")+modelData.name;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
             Text {visible:modelData.kind!=="group";x:6+modelData.depth*14;y:40;width:parent.width-x-6;textFormat:Text.PlainText;text:root.presetById(modelData.id).name||"";color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
             MouseArea {
                 anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton
@@ -128,15 +143,16 @@ ColumnLayout {
                 property bool dragging:false
                 property bool suppressClick:false
                 onPressed:function(mouse){origin=Qt.point(mouse.x,mouse.y);dragging=false;suppressClick=false;root.draggingBrush=false}
-                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;root.draggingBrush=true;PaintClient.beginBrushDrag(modelData.kind+":"+modelData.id)}}
-                onReleased:function(){dragging=false;root.draggingBrush=false}
-                onCanceled:function(){dragging=false;root.draggingBrush=false}
+                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;root.draggingBrush=true;PaintClient.beginBrushDrag(modelData.kind+":"+modelData.id);root.draggingBrush=false;root.dragViewportY=-1}}
+                onReleased:function(){dragging=false;root.draggingBrush=false;root.dragViewportY=-1}
+                onCanceled:function(){dragging=false;root.draggingBrush=false;root.dragViewportY=-1}
                 onClicked:function(mouse) {
                     if(suppressClick){suppressClick=false;return}
                     if(mouse.button===Qt.RightButton) {
                         if(modelData.kind==="group") {root.contextGroupId=modelData.id;root.contextGroupName=modelData.name;groupMenu.popup()}
                         else {root.contextPresetId=modelData.id;root.library.select(modelData.id);presetMenu.popup()}
-                    } else if(modelData.kind!=="group") root.library.select(modelData.id)
+                    } else if(modelData.kind==="group") root.toggleGroup(modelData.id)
+                    else root.library.select(modelData.id)
                 }
             }
             DropArea {
@@ -148,6 +164,7 @@ ColumnLayout {
                 onDropped:function(drop){
                     parent.updateDrop(drop)
                     root.dragHovered=null
+                    root.dragViewportY=-1
                     const payload=drop.getDataAsString("application/x-drawverse-brush"),separator=payload.indexOf(":")
                     if(separator<=0)return
                     const kind=payload.slice(0,separator),id=payload.slice(separator+1)
@@ -162,6 +179,11 @@ ColumnLayout {
             Rectangle {anchors.fill:parent;border.width:2;border.color:Theme.accent;visible:brushDrop.containsDrag && dropPlacement===0}
             Rectangle {anchors.left:parent.left;anchors.right:parent.right;height:2;y:dropPlacement===1?0:parent.height-2;color:Theme.accent;visible:brushDrop.containsDrag && dropPlacement!==0}
             Component.onCompleted:if(modelData.kind!=="group")root.library.requestPreview(modelData.id)
+        }
+        WheelHandler {
+            objectName:"brushListWheel"
+            enabled:root.draggingBrush
+            onWheel:function(event){const step=event.pixelDelta.y!==0?event.pixelDelta.y:event.angleDelta.y*.5;presetList.contentY=Math.max(0,Math.min(Math.max(0,presetList.contentHeight-presetList.height),presetList.contentY-step));event.accepted=true}
         }
         ScrollBar.vertical:ScrollBar {width:6}
         DropArea {
@@ -179,8 +201,8 @@ ColumnLayout {
         }
     }
     Timer {
-        interval:60;repeat:true;running:root.dragHovered!==null
-        onTriggered:{const row=root.dragHovered;if(!row)return;const p=row.mapToItem(presetList,row.dropPoint.x,row.dropPoint.y);const delta=p.y<20?-16:p.y>presetList.height-20?16:0;if(delta)presetList.contentY=Math.max(0,Math.min(Math.max(0,presetList.contentHeight-presetList.height),presetList.contentY+delta))}
+        interval:60;repeat:true;running:root.draggingBrush && root.dragViewportY>=0
+        onTriggered:{const delta=root.dragViewportY<20?-16:root.dragViewportY>presetList.height-20?16:0;if(delta)presetList.contentY=Math.max(0,Math.min(Math.max(0,presetList.contentHeight-presetList.height),presetList.contentY+delta))}
     }
     RowLayout {
         Item {Layout.fillWidth:true}

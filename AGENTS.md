@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新画笔库交互修复：`docs/brush-library-interaction-fixes-design.md` / `docs/brush-library-interaction-fixes-validation.md`；纹理预览临时状态统一按`textureStateVersion`提升至state21/30/31/33，修复带深度纹理的ABR预览不可用；画笔组支持点击折叠/展开，搜索忽略折叠，模型重建保持滚动位置；画笔库和图层列表拖拽时支持滚轮滚动及上下缘持续自动滚动。用户ABR临时验证、纹理版本单测、组树/滚动和双列表滚轮四项通过，Windows Release完整构建通过；未跑全量/跨平台/设备/GPU。
+
 - 最新画笔导入导出分组：`docs/brush-import-export-groups-design.md` / `docs/brush-import-export-groups-validation.md`；文件导入按文件名创建外层组，VBR `ordered-package-v1` 的内部组树重映射后嵌入其中，ABR 因无组织信息仅获得文件名组；单笔刷导出保留所在完整组路径，全量导出保留完整组树。Windows Release Qt 多层组单笔刷往返及全量导出导入两项通过，未跑全量/跨平台/设备/GPU。
 
 - 最新ABR 16位/传递抖动/图片笔尖/画笔库拖动：`docs/abr-16bit-investigation.md`、`docs/abr-transfer-jitter-design.md`、`docs/brush-image-tip-performance-design.md`；ABR sampled 16位raw/RLE按大端全范围量化到8位覆盖；ABR `prVr`/`opVr.jitter`接入DrawVerse确定性flow/opacity随机源（`szVr.jitter`保持形状动态）、converter13/handoff12/state37/VBR1.44/behavior29，传递页提供三通道滑条；非完全覆盖图片笔尖增加轴对齐/边缘快路径及固定基准（中位数约3.34s，程序笔尖约2.37s）；画笔库位置调整按图层列表模式加入组中心边框/上下插入线/边缘自动滚动/空区根目录，并用`preventStealing`暂停拖动期间列表滚动。核心传递抖动1、ABR导入12、state5/vbr4/vbr_image12及Windows Qt 6项通过，Release/ABI/Clippy/格式通过；真实鼠标跨行拖放、PS随机序列、实体设备/跨平台/GPU仍待。

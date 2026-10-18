@@ -59,6 +59,8 @@ ColumnLayout {
         layerContextMenu.popup(point.x,point.y)
     }
     property var dragHovered: null
+    property bool draggingLayer: false
+    property real dragViewportY: -1
     function dropToRoot(payload) {
         const source=PaintClient.layerDragIds(payload)
         if(source.length===0)return false
@@ -181,6 +183,11 @@ ColumnLayout {
             })
         }
         ScrollBar.vertical: ScrollBar {}
+        WheelHandler {
+            objectName:"layerListWheel"
+            enabled:root.draggingLayer
+            onWheel:function(event){const step=event.pixelDelta.y!==0?event.pixelDelta.y:event.angleDelta.y*.5;layerList.contentY=Math.max(0,Math.min(Math.max(0,layerList.contentHeight-layerList.height),layerList.contentY-step));event.accepted=true}
+        }
         Label {objectName:"layerSearchEmpty";anchors.centerIn:parent;visible:search.text.trim().length>0 && layerList.count===0;text:"没有匹配的图层";color:Theme.muted;font.pixelSize:10}
         currentIndex: {
             const rows=layerList.model
@@ -223,7 +230,7 @@ ColumnLayout {
                                 if(upper && !(upper.effectiveLocks & 4)){clippingGesture=true;PaintClient.setLayerClipping(upper.id,!upper.clipped)}
                             }
                         }
-                        onPositionChanged:mouse=>{if(pressed && (pressedButtons & Qt.LeftButton) && !dragging && !clippingGesture && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10){dragging=true;PaintClient.beginLayerDrag(row.modelData.id)}}
+                        onPositionChanged:mouse=>{if(pressed && (pressedButtons & Qt.LeftButton) && !dragging && !clippingGesture && root.editable && !row.modelData.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10){dragging=true;root.draggingLayer=true;PaintClient.beginLayerDrag(row.modelData.id);root.draggingLayer=false;root.dragViewportY=-1}}
                         onClicked:mouse=>{
                             if(mouse.button===Qt.RightButton)root.openLayerContext(row.modelData.id,row,mouse.x,mouse.y,false)
                             else if(!clippingGesture && !dragging){root.forceActiveFocus();PaintClient.selectLayers(row.modelData.id,Number(mouse.modifiers))}
@@ -245,14 +252,14 @@ ColumnLayout {
                     }
                     property int dropPlacement: 0
                     property point dropPoint
-                    function updateDrop(d) {dropPoint=Qt.point(d.x,d.y);root.dragHovered=row;dropPlacement=modelData.group && d.y>11 && d.y<height-11 ? 0 : d.y<height/2 ? 1:2}
+                    function updateDrop(d) {dropPoint=Qt.point(d.x,d.y);root.dragHovered=row;root.dragViewportY=row.mapToItem(layerList,d.x,d.y).y;dropPlacement=modelData.group && d.y>11 && d.y<height-11 ? 0 : d.y<height/2 ? 1:2}
                     DropArea {
                         id:layerDrop;objectName:"layerDrop:"+row.modelData.id
                         anchors.fill:parent;keys:["application/x-drawverse-layer"];enabled:root.editable && !row.modelData.mask
                         onEntered:d=>row.updateDrop(d)
                         onPositionChanged:d=>row.updateDrop(d)
                         onExited:{if(root.dragHovered===row)root.dragHovered=null}
-                        onDropped:d=>{row.updateDrop(d);root.dragHovered=null;if(PaintClient.acceptLayerDrop(d.getDataAsString("application/x-drawverse-layer"),row.modelData.id,row.dropPlacement))d.acceptProposedAction()}
+                        onDropped:d=>{row.updateDrop(d);root.dragHovered=null;root.dragViewportY=-1;if(PaintClient.acceptLayerDrop(d.getDataAsString("application/x-drawverse-layer"),row.modelData.id,row.dropPlacement))d.acceptProposedAction()}
                     }
                     Rectangle {anchors.fill:parent;color:"transparent";border.width:2;border.color:Theme.accent;visible:layerDrop.containsDrag && row.dropPlacement===0}
                     Rectangle {width:parent.width;height:2;y:row.dropPlacement===1?0:parent.height-2;color:Theme.accent;visible:layerDrop.containsDrag && row.dropPlacement!==0}
@@ -321,8 +328,8 @@ ColumnLayout {
                 }
     }
     Timer {
-        interval:60;repeat:true;running:root.dragHovered!==null
-        onTriggered:{const row=root.dragHovered;if(!row)return;const p=row.mapToItem(layerList,row.dropPoint.x,row.dropPoint.y);const delta=p.y<20?-16:p.y>layerList.height-20?16:0;if(delta)layerList.contentY=Math.max(0,Math.min(Math.max(0,layerList.contentHeight-layerList.height),layerList.contentY+delta))}
+        interval:60;repeat:true;running:root.draggingLayer && root.dragViewportY>=0
+        onTriggered:{const delta=root.dragViewportY<20?-16:root.dragViewportY>layerList.height-20?16:0;if(delta)layerList.contentY=Math.max(0,Math.min(Math.max(0,layerList.contentHeight-layerList.height),layerList.contentY+delta))}
     }
     DropArea {
         objectName:"layerRootDrop";Layout.fillWidth:true;Layout.preferredHeight:10
