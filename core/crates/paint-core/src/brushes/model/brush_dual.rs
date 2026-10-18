@@ -353,6 +353,10 @@ impl DualBrush {
             dynamics: secondary.dynamics.clone(),
             ..Default::default()
         };
+        let program = Box::new(BrushProgram::compile(definition)?);
+        let step = secondary
+            .spacing
+            .map(|spacing| f64::from(radius * 2. * spacing) * program.spacing_scale());
         Ok(Some(CompiledDual {
             radius,
             maximum_radius: if self.sizing.fixed() {
@@ -366,10 +370,8 @@ impl DualBrush {
             primary_pressure_size,
             primary_size: primary_size.compile(),
             mode: self.mode,
-            program: Box::new(BrushProgram::compile(definition)?),
-            step: secondary
-                .spacing
-                .map(|spacing| f64::from(radius * 2. * spacing)),
+            program,
+            step,
             flip: secondary.flip,
             flip_x: secondary.flip_x,
             flip_y: secondary.flip_y,

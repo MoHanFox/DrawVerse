@@ -171,3 +171,104 @@ fn rotated_image_pixel_budget_rejects_before_segment_mutation() {
     assert_eq!(d.tile_count(), 0);
     assert_eq!(d.history_depth(), (0, 0));
 }
+
+#[test]
+fn flat_image_spacing_covers_short_axis_with_rotation_padding_and_paging() {
+    for padded in [false, true] {
+        for secondary in [false, true] {
+            for angle in [0., 90.] {
+                let (width, height) = if padded { (32, 32) } else { (32, 2) };
+                let mut coverage = vec![0; width * height];
+                for y in 0..height {
+                    for x in 0..width {
+                        if !padded || (15..17).contains(&y) {
+                            coverage[y * width + x] = 255;
+                        }
+                    }
+                }
+                let mask = Arc::new(BrushMask::new(width as u32, height as u32, coverage).unwrap());
+                let mut b = definition(mask.clone(), angle);
+                b.brush.radius = 16.;
+                b.brush.spacing = 0.5;
+                if secondary {
+                    b.mask = None;
+                    b.brush.spacing = 0.0625;
+                    b.dual = DualBrush::new(
+                        true,
+                        DualMode::Multiply,
+                        SecondaryTip::new(16., b.tip, Some(mask), Default::default())
+                            .unwrap()
+                            .with_spacing(0.25)
+                            .unwrap(),
+                    );
+                }
+                let point = |distance: f64| {
+                    if angle == 0. {
+                        InputPoint::new(32.5, distance, 1.)
+                    } else {
+                        InputPoint::new(distance, 32.5, 1.)
+                    }
+                };
+                let paint = |split: bool, paged: bool| {
+                    let mut d = Document::new(64, 64).unwrap();
+                    d.begin_brush_stroke(b.clone(), point(8.5)).unwrap();
+                    let drain = |doc: &mut Document| loop {
+                        match doc
+                            .continue_stroke_page(
+                                InputScheduleBudget::new(2, 8_000_000, 2).unwrap(),
+                            )
+                            .unwrap()
+                        {
+                            StrokePageResult::Pending => {}
+                            _ => break,
+                        }
+                    };
+                    for end in if split {
+                        vec![24.5, 40.5, 56.5]
+                    } else {
+                        vec![56.5]
+                    } {
+                        if paged {
+                            d.begin_stroke_input(point(end)).unwrap();
+                            drain(&mut d);
+                        } else {
+                            d.stroke_to(point(end)).unwrap();
+                        }
+                    }
+                    if paged {
+                        d.begin_stroke_finish().unwrap();
+                        drain(&mut d);
+                    } else {
+                        d.end_stroke().unwrap();
+                    }
+                    d
+                };
+                let expected = paint(false, false);
+                for distance in 9..56 {
+                    let (x, y) = if angle == 0. {
+                        (32, distance)
+                    } else {
+                        (distance, 32)
+                    };
+                    assert!(
+                        expected.pixel(x, y).alpha() > 0.9,
+                        "padding={padded} angle={angle} distance={distance}"
+                    );
+                }
+                for (split, paged) in [(true, false), (false, true), (true, true)] {
+                    let mut actual = paint(split, paged);
+                    for y in 0..64 {
+                        for x in 0..64 {
+                            assert_eq!(actual.pixel(x, y), expected.pixel(x, y));
+                        }
+                    }
+                    assert_eq!(actual.history_depth(), (1, 0));
+                    actual.undo().unwrap();
+                    assert_eq!(actual.pixel(32, 32).alpha(), 0.);
+                    actual.redo().unwrap();
+                    assert_eq!(actual.pixel(32, 32), expected.pixel(32, 32));
+                }
+            }
+        }
+    }
+}

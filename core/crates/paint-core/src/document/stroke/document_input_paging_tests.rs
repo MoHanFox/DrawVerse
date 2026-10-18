@@ -300,7 +300,7 @@ fn one_pass_reference(
             direction: stroke.direction,
         },
         InputScheduleSteps {
-            primary: stroke.brush.step(),
+            primary: stroke.program.step(stroke.brush),
             secondary: stroke.program.dual.as_ref().and_then(|d| d.step()),
             primary_work,
             secondary_work,

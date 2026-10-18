@@ -485,6 +485,14 @@ impl BrushProgram {
     pub fn has_mask(&self) -> bool {
         self.mask.is_some()
     }
+    pub(crate) fn spacing_scale(&self) -> f64 {
+        self.mask
+            .as_ref()
+            .map_or(1., |mask| mask.spacing_scale(self.tip.roundness))
+    }
+    pub(crate) fn step(&self, brush: Brush) -> f64 {
+        brush.step() * self.spacing_scale()
+    }
     fn base_geometry(&self) -> TipGeometry {
         TipGeometry {
             sine: self.sine,

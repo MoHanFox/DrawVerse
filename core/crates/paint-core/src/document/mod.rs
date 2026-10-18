@@ -1353,6 +1353,7 @@ impl Document {
             .and_then(|d| d.step())
             .unwrap_or(f64::INFINITY);
         let initial_shape = program.shape_jitter.sample(random_serial, 0, 0);
+        let primary_step = program.step(brush);
         let mut stroke = Stroke {
             layer: self.active_layer,
             brush,
@@ -1379,7 +1380,7 @@ impl Document {
             transfer_sample: crate::TransferSample::IDENTITY,
             color_sample: brush.color,
             wet,
-            distance_to_next: brush.step(),
+            distance_to_next: primary_step,
             direction: None,
             before: BTreeMap::new(),
             coverage: BTreeMap::new(),
@@ -1547,7 +1548,7 @@ impl Document {
 
     fn validate_filtered_path(stroke: &Stroke, points: &[InputPoint]) -> Result<()> {
         let mut last = stroke.last;
-        let step = stroke.brush.step();
+        let step = stroke.program.step(stroke.brush);
         let secondary_step = stroke.program.dual.as_ref().and_then(|d| d.step());
         let mut next = stroke.distance_to_next;
         let mut secondary_next = stroke.dual_next;
@@ -1607,7 +1608,7 @@ impl Document {
             0.
         };
         let stationary_pressure = Self::stationary_primary(current, current.last, point);
-        let step = current.brush.step();
+        let step = current.program.step(current.brush);
         let count = if distance + 1e-9 < current.distance_to_next {
             0
         } else {

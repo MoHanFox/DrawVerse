@@ -13,6 +13,7 @@ struct Level {
 pub struct BrushMask {
     levels: Vec<Level>,
     resource_id: Option<String>,
+    spacing_bounds: (u32, u32),
 }
 impl BrushMask {
     pub fn new(width: u32, height: u32, coverage: Vec<u8>) -> Result<Self> {
@@ -24,6 +25,23 @@ impl BrushMask {
         if count > MAX_BRUSH_MASK_BYTES || coverage.len() != count {
             return Err(Error::InvalidArgument("brush mask byte count"));
         }
+        let mut bounds = (width, height, 0, 0);
+        for (index, &alpha) in coverage.iter().enumerate() {
+            if alpha != 0 {
+                let (x, y) = (index as u32 % width, index as u32 / width);
+                bounds = (
+                    bounds.0.min(x),
+                    bounds.1.min(y),
+                    bounds.2.max(x + 1),
+                    bounds.3.max(y + 1),
+                );
+            }
+        }
+        let spacing_bounds = if bounds.2 == 0 {
+            (0, 0)
+        } else {
+            (bounds.2 - bounds.0, bounds.3 - bounds.1)
+        };
         let mut levels = vec![Level {
             width,
             height,
@@ -56,6 +74,7 @@ impl BrushMask {
         Ok(Self {
             levels,
             resource_id: None,
+            spacing_bounds,
         })
     }
     pub fn with_resource_id(mut self, id: String) -> Result<Self> {
@@ -77,6 +96,16 @@ impl BrushMask {
     }
     pub fn coverage(&self) -> &[u8] {
         &self.levels[0].coverage
+    }
+    /// Stable conservative thickness, independent of stroke direction and rotation.
+    pub(crate) fn spacing_scale(&self, roundness: f32) -> f64 {
+        if self.spacing_bounds.0 == 0 {
+            return 1.;
+        }
+        let (width, height) = self.dimensions();
+        f64::from(self.spacing_bounds.0)
+            .min(f64::from(self.spacing_bounds.1) * f64::from(roundness))
+            / f64::from(width.max(height))
     }
     pub fn resident_bytes(&self) -> usize {
         self.levels.iter().map(|l| l.coverage.len()).sum()
