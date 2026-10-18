@@ -591,8 +591,8 @@ public:
             const auto scatter=tip.value("scatterDynamics").toMap();if(!scatter.isEmpty()){row["scatterDynamics"]=QJsonObject::fromVariantMap(scatter);state["version"]=(scatter.contains("amountControl")||scatter.contains("countControl"))?35:8;}
             if(!tip.value("shapeJitter").toMap().isEmpty()){row["shapeJitter"]=QJsonObject::fromVariantMap(tip.value("shapeJitter").toMap());state["version"]=9;}
             if(!tip.value("colorDynamics").toMap().isEmpty()){row["colorDynamics"]=QJsonObject::fromVariantMap(tip.value("colorDynamics").toMap());state["version"]=10;}
-            if(!tip.value("texture").toMap().isEmpty()){row["texture"]=QJsonObject::fromVariantMap(tip.value("texture").toMap());state["version"]=11;if(QSet<QString>{"linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=30;if(QSet<QString>{"vividLight","linearLight","pinLight","divide"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=31;if(tip.value("texture").toMap().value("mode").toString()=="dissolve")state["version"]=33;}
-            if(!tip.value("dualBrush").toMap().isEmpty()){row["dualBrush"]=QJsonObject::fromVariantMap(tip.value("dualBrush").toMap());state["version"]=12;if(tip.value("dualBrush").toMap().value("scatterDynamics").toMap().contains("amountControl") || tip.value("dualBrush").toMap().value("scatterDynamics").toMap().contains("countControl"))state["version"]=35;const QStringList extended={"colorBurn","linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix","vividLight","linearLight","pinLight","divide"};if(extended.contains(tip.value("dualBrush").toMap().value("mode").toString()))state["version"]=36;}
+            if(!tip.value("texture").toMap().isEmpty()){row["texture"]=QJsonObject::fromVariantMap(tip.value("texture").toMap());state["version"]=11;if(QSet<QString>{"linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=30;if(QSet<QString>{"vividLight","linearLight","pinLight","divide","linearHeight","height"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=31;if(tip.value("texture").toMap().value("mode").toString()=="dissolve")state["version"]=33;}
+            if(!tip.value("dualBrush").toMap().isEmpty()){row["dualBrush"]=QJsonObject::fromVariantMap(tip.value("dualBrush").toMap());state["version"]=12;if(tip.value("dualBrush").toMap().value("scatterDynamics").toMap().contains("amountControl") || tip.value("dualBrush").toMap().value("scatterDynamics").toMap().contains("countControl"))state["version"]=35;const QStringList extended={"colorBurn","linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix","vividLight","linearLight","pinLight","divide","linearHeight"};if(extended.contains(tip.value("dualBrush").toMap().value("mode").toString()))state["version"]=36;}
             const auto smoothPressure=[](const QVariantMap &data){for(const auto &target:{"size","flow","opacity"})if(data.value(target).toMap().value("interpolation").toString()=="smooth-pchip-v1")return true;return false;};
             if(smoothPressure(tip.value("pressureDynamics").toMap()) || smoothPressure(tip.value("dualBrush").toMap().value("pressureDynamics").toMap()))state["version"]=13;
             if(!tip.value("smoothing").toMap().isEmpty()){row["smoothing"]=QJsonObject::fromVariantMap(tip.value("smoothing").toMap());state["version"]=14;}
@@ -612,10 +612,10 @@ public:
             if(!tip.value("sourceMatrix").toMap().isEmpty()){row["sourceMatrix"]=QJsonObject::fromVariantMap(tip.value("sourceMatrix").toMap());state["version"]=std::max(state.value("version").toInt(),32);}
             if(!tip.value("fadeDynamics").toMap().isEmpty()){row["fadeDynamics"]=QJsonObject::fromVariantMap(tip.value("fadeDynamics").toMap());state["version"]=std::max(state.value("version").toInt(),34);}
             if(QSet<QString>{"linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=std::max(state.value("version").toInt(),30);
-            if(QSet<QString>{"vividLight","linearLight","pinLight","divide"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=std::max(state.value("version").toInt(),31);
+            if(QSet<QString>{"vividLight","linearLight","pinLight","divide","linearHeight","height"}.contains(tip.value("texture").toMap().value("mode").toString()))state["version"]=std::max(state.value("version").toInt(),31);
             if(tip.value("texture").toMap().value("mode").toString()=="dissolve")state["version"]=std::max(state.value("version").toInt(),33);
             if(scatter.contains("amountControl") || scatter.contains("countControl") || tip.value("dualBrush").toMap().value("scatterDynamics").toMap().contains("amountControl") || tip.value("dualBrush").toMap().value("scatterDynamics").toMap().contains("countControl"))state["version"]=35;
-            if(QStringList{"colorBurn","linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix","vividLight","linearLight","pinLight","divide"}.contains(tip.value("dualBrush").toMap().value("mode").toString()))state["version"]=36;
+            if(QStringList{"colorBurn","linearBurn","colorDodge","linearDodge","overlay","softLight","hardLight","exclusion","hardMix","vividLight","linearLight","pinLight","divide","linearHeight"}.contains(tip.value("dualBrush").toMap().value("mode").toString()))state["version"]=36;
             rows[0]=row;state["presets"]=rows;const auto json=QJsonDocument(state).toJson(QJsonDocument::Compact);uint64_t preparation=0;
             if(paint_brush_library_prepare_state_wet_dual(m_previewCatalog,reinterpret_cast<const uint8_t*>(json.constData()),quint64(json.size()),&preparation)!=PAINT_OK){finishBrushPreview({});return;}
             auto request=dto<PaintBrushToolDesc>();request.radius=command.stroke.radius;request.strength=1;for(auto &v:request.linear_rgba)v=1;
@@ -975,8 +975,8 @@ void PaintCoreClient::requestBrushCursorImages() {
     const auto add=[&](const QString &id){if(!id.isEmpty() && !demand.contains(id))demand.append(id);};
     if(m_brushLibrary->cursorImage() && !m_brushLibrary->cursorSimple()){
         add(m_outlineResource);
-        const auto dual=m_brushLibrary->dualBrush();const auto color=dual.value("color").toMap();
-        if(m_brushLibrary->cursorComposite() && !m_eraser && (!m_smudgeTool || m_smudgeFingerPainting) && dual.value("enabled").toBool() && color.value("enabled").toBool() && color.value("overflow").toBool())add(m_secondOutlineResource);
+        const auto dual=m_brushLibrary->dualBrush();
+        if(m_brushLibrary->cursorComposite() && !m_eraser && (!m_smudgeTool || m_smudgeFingerPainting) && dual.value("enabled").toBool())add(m_secondOutlineResource);
         if(m_drawing){add(m_strokeOutlineResource);if(m_brushLibrary->cursorComposite() && m_strokeSecondImageEligible)add(m_strokeSecondOutlineResource);}
     }
     m_cursorImageDemand=demand;
@@ -1268,8 +1268,8 @@ bool PaintCoreClient::beginStroke(const InputSample &s) {
         if(layer.value("effectiveLocks").toUInt() & PAINT_LOCK_ALL) {showError(QStringLiteral("当前图层或所属组已完全锁定，请先解锁"));return false;}
     }
     m_dropStroke = false; if (!submit(Begin, s)) return false;
-    const auto capturedDual=m_brushLibrary->dualBrush();const auto capturedColor=capturedDual.value("color").toMap();
-    m_strokeSecondImageEligible=!m_eraser && (!m_smudgeTool || m_smudgeFingerPainting) && s.tool!=PAINT_TOOL_ERASER && capturedDual.value("enabled").toBool() && capturedColor.value("enabled").toBool() && capturedColor.value("overflow").toBool();
+    const auto capturedDual=m_brushLibrary->dualBrush();
+    m_strokeSecondImageEligible=!m_eraser && (!m_smudgeTool || m_smudgeFingerPainting) && s.tool!=PAINT_TOOL_ERASER && capturedDual.value("enabled").toBool();
     m_strokeColor = m_smudgeTool && !m_smudgeFingerPainting ? QColor() : m_color;
     const auto air= m_brushLibrary->airbrush();
     m_airbrushEnabled=air.value("enabled").toBool() && !m_smudgeTool;

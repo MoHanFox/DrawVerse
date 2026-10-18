@@ -2055,7 +2055,9 @@
             "vividLight",
             "linearLight",
             "pinLight",
-            "divide"
+            "divide",
+            "height",
+            "linearHeight"
           ],
           "default": "normal"
         },

@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新双色删除与模式收窄：`docs/brush-mode-cleanup-design.md` / `docs/brush-mode-cleanup-validation.md`；设置页删除“双色绘制”，旧state/VBR/ABR的`dualBrush.color`与`wetMix.dualColor`在Qt载入时剥离并按单色处理；纹理仅保留`multiply/subtract/darken/overlay/colorDodge/colorBurn/linearBurn/hardMix/linearHeight/height`（高度采用Krita公式），双重笔刷仅保留`multiply/darken/overlay/colorDodge/colorBurn/linearBurn/hardMix/linearHeight`，退役模式回落`multiply`。核心纹理7/双笔刷11、IO纹理15/散布9及Windows Qt 8项通过，Release/ABI/格式通过；未跑全量check、跨平台/设备/GPU。
+
 - 最新湿混性能实机验收：2026-10-18 Windows用户实机复核确认湿混性能暂且通过，见`docs/brush-wet-field-performance-validation.md`；剩余专项性能缩小为非完全覆盖图片笔尖和实体输入，普通大笔刷小间隔已另行通过。该结论不代表所有笔刷组合、硬件/跨平台或GPU完成。
 
 - 最新大笔刷小间隔实机验收：2026-10-18 Windows用户以约130px直径、1%间距对比，DrawVerse纯CPU路径比同场景Photoshop更流畅；双方均存在卡顿，用户确认普通大笔刷小间隔性能通过，见`docs/brush-large-dense-performance-validation.md`。该结论不覆盖非完全覆盖图片笔尖或实体输入专项优化；湿混已由后续实机复核暂定通过，也不代表跨平台/GPU完成。

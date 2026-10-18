@@ -37,7 +37,8 @@
             "vividLight",
             "linearLight",
             "pinLight",
-            "divide"
+            "divide",
+            "linearHeight"
           ]
         }
       }

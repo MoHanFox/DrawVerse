@@ -2056,7 +2056,9 @@
             "linearLight",
             "pinLight",
             "divide",
-            "dissolve"
+            "dissolve",
+            "height",
+            "linearHeight"
           ],
           "default": "normal"
         },

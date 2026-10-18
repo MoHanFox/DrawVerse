@@ -30,6 +30,8 @@ pub enum TextureMode {
     LinearLight,
     PinLight,
     Divide,
+    Height,
+    LinearHeight,
 }
 impl TextureMode {
     pub fn combine(self, base: f32, texture: f32) -> f32 {
@@ -131,8 +133,28 @@ impl TextureMode {
                     (base / texture).min(1.)
                 }
             }
+            Self::Height | Self::LinearHeight => {
+                return self.combine_height(base, texture, 1.);
+            }
         }
         .clamp(0., 1.)
+    }
+    /// Krita-compatible height coverage. `depth` is the texture strength.
+    pub fn combine_height(self, base: f32, texture: f32, depth: f32) -> f32 {
+        let inverse = 1. - 0.99 * depth.clamp(0., 1.);
+        match self {
+            Self::Height => (base / inverse - (texture + inverse)).clamp(0., 1.),
+            Self::LinearHeight => {
+                let modified = base / inverse - inverse;
+                let multiply = if texture <= 0. {
+                    1.
+                } else {
+                    modified / texture
+                };
+                multiply.max(modified - texture).clamp(0., 1.)
+            }
+            _ => self.combine(base, texture),
+        }
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -526,7 +548,7 @@ impl CompiledTexture {
     }
 }
 impl TextureDab<'_> {
-    fn sample(&self, x: f64, y: f64) -> f32 {
+    fn raw_sample(&self, x: f64, y: f64) -> f32 {
         let x = x - self.origin_x;
         let y = y - self.origin_y;
         let u = (x * self.cosine + y * self.sine) / self.period_x;
@@ -546,6 +568,9 @@ impl TextureDab<'_> {
         if self.invert {
             value = 1. - value;
         }
+        value
+    }
+    fn depth(&self) -> f32 {
         let mut depth = self.depth;
         if self.depth_pressure {
             depth = self.minimum_depth + (depth - self.minimum_depth) * self.pressure;
@@ -558,6 +583,11 @@ impl TextureDab<'_> {
             depth *= 1. - self.depth_jitter * random;
             depth = depth.max(self.minimum_depth);
         }
+        depth
+    }
+    fn sample(&self, x: f64, y: f64) -> f32 {
+        let value = self.raw_sample(x, y);
+        let depth = self.depth();
         1. - depth * (1. - value)
     }
     pub(crate) fn apply(&self, base: f32, x: f64, y: f64) -> f32 {
@@ -574,7 +604,12 @@ impl TextureDab<'_> {
             let random = (hash as u32 as f64 / (u32::MAX as f64 + 1.)) as f32;
             return if random < threshold { 1. } else { 0. };
         }
-        self.mode.combine(base, self.sample(x, y))
+        if matches!(self.mode, TextureMode::Height | TextureMode::LinearHeight) {
+            self.mode
+                .combine_height(base, self.raw_sample(x, y), self.depth())
+        } else {
+            self.mode.combine(base, self.sample(x, y))
+        }
     }
     pub(crate) fn coverage(&self, x: f64, y: f64) -> f32 {
         self.sample(x, y)
@@ -611,6 +646,12 @@ mod tests {
         assert_eq!(TextureMode::LinearLight.combine(0.5, 0.75), 1.);
         assert_eq!(TextureMode::PinLight.combine(0.3, 0.75), 0.5);
         assert_eq!(TextureMode::Divide.combine(0.5, 0.25), 1.);
+        assert_eq!(TextureMode::Height.combine_height(0.5, 0.5, 0.5), 0.);
+        assert!(
+            (TextureMode::LinearHeight.combine_height(0.5, 0.5, 0.5) - 0.970_198_04).abs() < 1e-6
+        );
+        assert_eq!(TextureMode::Height.combine_height(0.5, 0.5, 1.), 1.);
+        assert_eq!(TextureMode::LinearHeight.combine_height(0.5, 0.5, 1.), 1.);
         let adjusted = TextureSettings::new(TextureSpace::Document, 1., 0., 1., false, 0., 0.)
             .unwrap()
             .with_adjustments(-0.25, 0.5)

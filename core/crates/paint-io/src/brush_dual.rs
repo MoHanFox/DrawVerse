@@ -114,6 +114,7 @@ impl DualParameters {
                 DualMode::LinearLight => "linearLight",
                 DualMode::PinLight => "pinLight",
                 DualMode::Divide => "divide",
+                DualMode::LinearHeight => "linearHeight",
             }
             .into(),
             diameter: f64::from(s.radius()) * 2.,
@@ -162,6 +163,7 @@ impl DualParameters {
                 | "linearLight"
                 | "pinLight"
                 | "divide"
+                | "linearHeight"
         )
     }
     pub(crate) fn active_color(&self) -> bool {
@@ -203,6 +205,7 @@ impl DualParameters {
                 | "linearLight"
                 | "pinLight"
                 | "divide"
+                | "linearHeight"
         ) || !(self.model == "paired-dab-v1" && self.spacing.is_none()
             || self.model == "path-coverage-v1"
                 && self
@@ -280,6 +283,7 @@ impl DualParameters {
             "linearLight" => DualMode::LinearLight,
             "pinLight" => DualMode::PinLight,
             "divide" => DualMode::Divide,
+            "linearHeight" => DualMode::LinearHeight,
             _ => return Err(Error::Invalid("dual mode")),
         };
         Ok(DualBrush::new(self.enabled, mode, secondary)

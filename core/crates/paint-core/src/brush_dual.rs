@@ -81,6 +81,7 @@ pub enum DualMode {
     LinearLight,
     PinLight,
     Divide,
+    LinearHeight,
 }
 impl DualMode {
     pub fn is_extended(self) -> bool {
@@ -99,6 +100,7 @@ impl DualMode {
                 | Self::LinearLight
                 | Self::PinLight
                 | Self::Divide
+                | Self::LinearHeight
         )
     }
     pub fn combine(self, a: f32, b: f32) -> f32 {
@@ -125,6 +127,7 @@ impl DualMode {
             Self::LinearLight => TextureMode::LinearLight,
             Self::PinLight => TextureMode::PinLight,
             Self::Divide => TextureMode::Divide,
+            Self::LinearHeight => TextureMode::LinearHeight,
         };
         mode.combine(a, b).clamp(0., 1.)
     }

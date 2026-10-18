@@ -1280,6 +1280,8 @@ fn texture_mode(id: &str) -> Option<TextureMode> {
         "linearLight" => Some(TextureMode::LinearLight),
         "pinLight" => Some(TextureMode::PinLight),
         "divide" => Some(TextureMode::Divide),
+        "height" => Some(TextureMode::Height),
+        "linearHeight" => Some(TextureMode::LinearHeight),
         _ => None,
     }
 }
@@ -1443,6 +1445,7 @@ fn dual_mode(id: &str) -> Option<DualMode> {
         "LinL" | "linearLight" => Some(DualMode::LinearLight),
         "PntL" | "pinLight" => Some(DualMode::PinLight),
         "Dvde" | "divide" => Some(DualMode::Divide),
+        "LHgt" | "linearHeight" => Some(DualMode::LinearHeight),
         _ => None,
     }
 }

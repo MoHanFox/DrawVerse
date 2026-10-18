@@ -2,6 +2,8 @@
 
 2026-10-18，双笔刷覆盖模式阶段更新。已完成统一定义/资源目录、程序与图片笔尖、压力曲线/独立流量和整笔不透明度、形状/散布/颜色/纹理（含dissolve覆盖率抖动）、主/第二笔尖散布幅度与数量的设备及渐隐控制、双笔刷19种灰度覆盖模式与双色双笔刷/ABR计算双笔刷、可选复合轮廓/半透明基础图片光标、平滑/起收笔、二维湿混/单色涂抹、ABR基础/设备来源（bVTy=3/6/8）/渐隐（bVTy=1）、VBR1.41动态来源矩阵/纹理模式/速度/切向压力/距离/倾斜/旋转/方向交换、PS分类设置及普通不透明大笔刷/硬橡皮跳过；完成范围以各阶段验收为准，不能据此宣称整体已达Procreate或完全兼容PS。用户已在Windows实机确认普通大笔刷/小间隔性能通过：约130px、1%间距时DrawVerse与Photoshop均卡顿，纯CPU的DrawVerse更流畅；湿混性能也已暂且通过用户验收，剩余性能项只指非完全覆盖图片笔尖和实体输入专项。
 
+2026-10-18 模式收窄：双色绘制用户入口已删除，旧 state/VBR/ABR 中的 `dualBrush.color` 和 `wetMix.dualColor` 在 Qt 载入时剥离并按单色处理。纹理仅保留正片叠底、减去、变暗、叠加、颜色减淡、颜色加深、线性加深、实色混合、线性高度和高度；双重笔刷仅保留正片叠底、变暗、叠加、颜色减淡、颜色加深、线性加深、实色混合和线性高度。其他旧模式载入时回落为 `multiply`。见[设计](brush-mode-cleanup-design.md)及[验收](brush-mode-cleanup-validation.md)。
+
 | 剩余项 | 功能与实际用途 | 当前边界/证据 |
 |---|---|---|
 | 非完全覆盖图片笔尖/实体输入专项性能 | 在普通大笔刷小间隔和湿混已通过实机验收的基础上，继续优化软边采样和真实设备高频输入 | Document/Actor已接通原始输入续页、End/Cancel顺序和安全发布，普通不透明画笔、100%硬橡皮、纹理、图片笔尖和灰度双笔刷已加入完全覆盖像素跳过，固定基准中位数约1.33s降至0.37s且像素摘要一致；双色首层混合直接解析为源或透明后只执行一次目标混合。2026-10-18用户以约130px、1%间距在Windows对比，双方均卡顿且DrawVerse纯CPU更流畅，普通大笔刷小间隔验收通过；用户随后实机复核湿混性能暂且通过。单印章8M及总输入512M/131072等预算仍保留，非完全覆盖图片/实体输入的专项优化仍待做。见brush-large-dense-performance-validation.md、brush-dual-color-performance-validation.md、brush-input-paging-actor-validation.md及brush-wet-field-performance-validation.md |
@@ -13,9 +15,9 @@
 
 用户已取消可交互试画，不能把它算作待补功能。自动预览固定白色/正常模式的要求继续保持。ABR导出、物理高度/光照颜料模型不属于当前首期承诺；Python插件排最后。
 
-双色湿混的涂抹与橡皮已由用户确认没有实际意义，明确保持拒绝，不列入剩余功能。
+原双色湿混的涂抹与橡皮已由用户确认没有实际意义；双色绘制入口删除后，旧配置在载入时剥离，不列入剩余功能。
 
-非分隔双笔刷已以 `interleaved-stamp-v1` 接入核心、state22、VBR1.28 和 Qt，见[设计](brush-dual-stamp-design.md)及[验收](brush-dual-stamp-validation.md)；它要求配对笔尖，独立路径拒绝，橡皮/普通涂抹忽略颜色，手指绘画涂抹使用双色，湿混下的涂抹/橡皮不处理。
+非分隔双笔刷的灰度覆盖仍以 `interleaved-stamp-v1` 保留在核心、state22、VBR1.28 和 Qt，见[设计](brush-dual-stamp-design.md)及[验收](brush-dual-stamp-validation.md)；双色贡献入口已删除，旧颜色配置会在载入时剥离。
 
 时间喷枪已以 `time-interval-v1` 接入核心、state23、VBR1.29、ABI1.57 和 Qt，见[设计](brush-airbrush-design.md)及[验收](brush-airbrush-validation.md)；只支持干画笔和橡皮。
 

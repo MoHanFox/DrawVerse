@@ -198,6 +198,8 @@ fn map_mode(id: Option<&str>) -> Option<String> {
         Some("linearLight") => "linearLight",
         Some("pinLight") => "pinLight",
         Some("blendDivide") | Some("divide") => "divide",
+        Some("height") => "height",
+        Some("linearHeight") => "linearHeight",
         _ => return None,
     };
     Some(mode.into())

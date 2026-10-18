@@ -82,6 +82,8 @@ impl TextureParameters {
                 TextureMode::LinearLight => "linearLight",
                 TextureMode::PinLight => "pinLight",
                 TextureMode::Divide => "divide",
+                TextureMode::Height => "height",
+                TextureMode::LinearHeight => "linearHeight",
             }
             .into(),
             scale: f64::from(s.scale()).max(0.01),
@@ -126,7 +128,7 @@ impl TextureParameters {
     pub fn requires_vbr_31(&self) -> bool {
         matches!(
             self.mode.as_str(),
-            "vividLight" | "linearLight" | "pinLight" | "divide"
+            "vividLight" | "linearLight" | "pinLight" | "divide" | "height" | "linearHeight"
         )
     }
     pub fn requires_vbr_39(&self) -> bool {
@@ -158,6 +160,8 @@ impl TextureParameters {
                     | "linearLight"
                     | "pinLight"
                     | "divide"
+                    | "height"
+                    | "linearHeight"
             )
             || !self.scale.is_finite()
             || !(0.01..=100.).contains(&self.scale)
@@ -214,6 +218,8 @@ impl TextureParameters {
             "linearLight" => TextureMode::LinearLight,
             "pinLight" => TextureMode::PinLight,
             "divide" => TextureMode::Divide,
+            "height" => TextureMode::Height,
+            "linearHeight" => TextureMode::LinearHeight,
             _ => TextureMode::Normal,
         };
         let settings = TextureSettings::new(
