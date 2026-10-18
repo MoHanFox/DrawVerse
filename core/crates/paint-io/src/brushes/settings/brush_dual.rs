@@ -141,6 +141,10 @@ impl DualParameters {
             .as_ref()
             .is_some_and(|p| p.has_smooth())
     }
+    pub fn has_ratio_sizing(&self) -> bool {
+        self.sizing
+            .is_some_and(|s| s.core().diameter_ratio().is_some())
+    }
     pub fn has_sizing(&self) -> bool {
         self.sizing.is_some()
     }

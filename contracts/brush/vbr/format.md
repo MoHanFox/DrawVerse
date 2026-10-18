@@ -27,3 +27,7 @@ manifest 的 `groups` 保持空数组；实际分组在可选 `organization` 的
 [manifest schema](manifest.schema.json) 与 [preset schema](preset.schema.json) 描述规范写出的外壳，明确要求 writer 的 `1.0`；它们不直接用于判断容错读取是否成功，也没有穷举嵌套参数模型。名称、动态数值、资源、编译预算和语义检查以 [VBR 预设实现](../../../core/crates/paint-io/src/vbr_format/vbr.rs) 与 [完整资源包实现](../../../core/crates/paint-io/src/vbr_format/vbr_image.rs) 为准。
 
 兼容决策与验证见 [1.0 设计](../../../docs/brush/vbr/vbr-format-1.0-compatibility-design.md) / [验收](../../../docs/validations/brush/vbr/vbr-format-1.0-compatibility-validation.md)。开发迭代 schema 仅作为 [测试快照](../../../core/crates/paint-io/tests/fixtures/schema-history/README.md) 保留；当前契约中不再列出测试迭代版本。
+
+## 双笔刷比例尺寸
+
+`dualBrush.sizing.model=relative-ratio-v1`采用`diameterRatio`（有限0.0005–2000倍），与旧`relative-size-v1/diameterOffset`互斥；保留mode和widthRule。比例对象即使关闭也完整保留。执行为主半径乘比例后钳制到0.5–1000；旧像素偏移不迁移或重解释。当前写出state38、behavior30及`dual-size-ratio`能力，VBR包版本继续1.0。

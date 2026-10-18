@@ -716,111 +716,130 @@ mod tests {
     #[test]
     fn native_relative_sizing_preparation_capture_and_package_entry() {
         for enabled in [false, true] {
-            let sizing = paint_core::DualSizing::new(
-                paint_core::DualSizeMode::Relative,
-                8.,
-                paint_core::DualWidthRule::FixedWidth,
-            )
-            .unwrap();
-            let mut catalog = BrushCatalog::default();
-            let mut settings = catalog.selected().settings().clone();
-            settings.dual = paint_core::DualBrush::new(
-                enabled,
-                paint_core::DualMode::Multiply,
-                paint_core::SecondaryTip::default(),
-            )
-            .with_sizing(sizing);
-            catalog.edit("round-pressure", settings).unwrap();
-            let directory = tempfile::tempdir().unwrap();
-            let library = PreparedCatalog::new(BrushCatalog::default());
-            library.bind_resources(directory.path().into()).unwrap();
-            let sequence = library
-                .submit(
-                    String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap()).unwrap(),
+            for sizing in [
+                paint_core::DualSizing::new(
+                    paint_core::DualSizeMode::Relative,
+                    8.,
+                    paint_core::DualWidthRule::FixedWidth,
                 )
-                .unwrap();
-            let captured = library.ticket(sequence).unwrap().wait().unwrap();
-            assert_eq!(captured.selected().settings().dual.sizing(), sizing);
-            assert_eq!(
+                .unwrap(),
+                paint_core::DualSizing::new_ratio(
+                    paint_core::DualSizeMode::Relative,
+                    0.375,
+                    paint_core::DualWidthRule::FixedWidth,
+                )
+                .unwrap(),
+            ] {
+                let mut catalog = BrushCatalog::default();
+                let mut settings = catalog.selected().settings().clone();
+                settings.dual = paint_core::DualBrush::new(
+                    enabled,
+                    paint_core::DualMode::Multiply,
+                    paint_core::SecondaryTip::default(),
+                )
+                .with_sizing(sizing);
+                catalog.edit("round-pressure", settings).unwrap();
+                let directory = tempfile::tempdir().unwrap();
+                let library = PreparedCatalog::new(BrushCatalog::default());
+                library.bind_resources(directory.path().into()).unwrap();
+                let sequence = library
+                    .submit(
+                        String::from_utf8(paint_io::brush_state::encode(&catalog).unwrap())
+                            .unwrap(),
+                    )
+                    .unwrap();
+                let captured = library.ticket(sequence).unwrap().wait().unwrap();
+                assert_eq!(captured.selected().settings().dual.sizing(), sizing);
+                assert_eq!(
+                    library
+                        .current()
+                        .unwrap()
+                        .selected()
+                        .settings()
+                        .dual
+                        .sizing(),
+                    sizing
+                );
                 library
+                    .mutate(|c| {
+                        let mut s = c.selected().settings().clone();
+                        s.dual = Default::default();
+                        c.edit("round-pressure", s)?;
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(captured.selected().settings().dual.sizing(), sizing);
+                assert!(library
                     .current()
                     .unwrap()
                     .selected()
                     .settings()
                     .dual
-                    .sizing(),
-                sizing
-            );
-            library
-                .mutate(|c| {
-                    let mut s = c.selected().settings().clone();
-                    s.dual = Default::default();
-                    c.edit("round-pressure", s)?;
-                    Ok(())
-                })
-                .unwrap();
-            assert_eq!(captured.selected().settings().dual.sizing(), sizing);
-            assert!(library
-                .current()
-                .unwrap()
-                .selected()
-                .settings()
-                .dual
-                .is_default());
-            let base = texture_bundle(false, false);
-            let mut package = base.package.clone();
-            package.brushes[0].dual_brush = Some(
-                paint_io::brush_dual::DualParameters::from_core(
-                    &catalog.selected().settings().dual,
+                    .is_default());
+                let base = texture_bundle(false, false);
+                let mut package = base.package.clone();
+                package.brushes[0].dual_brush = Some(
+                    paint_io::brush_dual::DualParameters::from_core(
+                        &catalog.selected().settings().dual,
+                    )
+                    .unwrap(),
+                );
+                package.brushes[0].behavior_version = if sizing.diameter_ratio().is_some() {
+                    30
+                } else {
+                    12
+                };
+                if sizing.diameter_ratio().is_some() {
+                    package.brushes[0]
+                        .required_capabilities
+                        .push("dual-size-ratio".into());
+                }
+                package.brushes[0]
+                    .required_capabilities
+                    .extend(["dual-cover".into(), "dual-relative-size".into()]);
+                let bundle = paint_io::vbr_image::ImageBundle::new(
+                    package,
+                    base.assets()
+                        .iter()
+                        .map(|(id, a)| (id.clone(), a.bytes().to_vec()))
+                        .collect(),
+                    &paint_task::CancellationToken::default(),
                 )
-                .unwrap(),
-            );
-            package.brushes[0].behavior_version = 12;
-            package.brushes[0]
-                .required_capabilities
-                .extend(["dual-cover".into(), "dual-relative-size".into()]);
-            let bundle = paint_io::vbr_image::ImageBundle::new(
-                package,
-                base.assets()
-                    .iter()
-                    .map(|(id, a)| (id.clone(), a.bytes().to_vec()))
-                    .collect(),
-                &paint_task::CancellationToken::default(),
-            )
-            .unwrap();
-            library.import_bundle(&bundle).unwrap();
-            let temp = tempfile::tempdir().unwrap();
-            let path = temp.path().join("sizing.vbr");
-            std::fs::write(&path, b"keep").unwrap();
-            let path_bytes = path.to_str().unwrap().as_bytes();
-            let json = bundle.package.to_json().unwrap();
-            let mut handle = std::ptr::null_mut();
-            unsafe {
-                assert_eq!(crate::paint_brush_library_create(0, &mut handle), PAINT_OK);
-                let resource_path = directory.path().to_str().unwrap().as_bytes();
-                assert_eq!(
-                    crate::paint_brush_library_bind_resources(
-                        handle,
-                        resource_path.as_ptr(),
-                        resource_path.len() as u64
-                    ),
-                    PAINT_OK
-                );
-                assert_eq!(
-                    crate::paint_brush_library_package_write(
-                        handle,
-                        path_bytes.as_ptr(),
-                        path_bytes.len() as u64,
-                        json.as_ptr(),
-                        json.len() as u64
-                    ),
-                    PAINT_OK
-                );
-                let reopened =
-                    paint_io::vbr_image::load(&path, &paint_task::CancellationToken::default())
-                        .unwrap();
-                assert_eq!(reopened.definition(0).unwrap().dual.sizing(), sizing);
-                assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
+                .unwrap();
+                library.import_bundle(&bundle).unwrap();
+                let temp = tempfile::tempdir().unwrap();
+                let path = temp.path().join("sizing.vbr");
+                std::fs::write(&path, b"keep").unwrap();
+                let path_bytes = path.to_str().unwrap().as_bytes();
+                let json = bundle.package.to_json().unwrap();
+                let mut handle = std::ptr::null_mut();
+                unsafe {
+                    assert_eq!(crate::paint_brush_library_create(0, &mut handle), PAINT_OK);
+                    let resource_path = directory.path().to_str().unwrap().as_bytes();
+                    assert_eq!(
+                        crate::paint_brush_library_bind_resources(
+                            handle,
+                            resource_path.as_ptr(),
+                            resource_path.len() as u64
+                        ),
+                        PAINT_OK
+                    );
+                    assert_eq!(
+                        crate::paint_brush_library_package_write(
+                            handle,
+                            path_bytes.as_ptr(),
+                            path_bytes.len() as u64,
+                            json.as_ptr(),
+                            json.len() as u64
+                        ),
+                        PAINT_OK
+                    );
+                    let reopened =
+                        paint_io::vbr_image::load(&path, &paint_task::CancellationToken::default())
+                            .unwrap();
+                    assert_eq!(reopened.definition(0).unwrap().dual.sizing(), sizing);
+                    assert_eq!(crate::paint_brush_library_destroy(&mut handle), PAINT_OK);
+                }
             }
         }
     }

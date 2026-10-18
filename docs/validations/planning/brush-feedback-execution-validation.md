@@ -60,3 +60,11 @@
 - 核心图片6项（新增矩形/透明边方图×主副笔尖×0/90度×分段/分页像素与历史）、旧双笔刷11项、实际Document分页13项通过。IO图片VBR13/双笔刷IO3项及lib严格Clippy/格式通过。
 - Windows Release/生成头检查通过；Qt图片导入预览捕获与新目录VBR原图移除后实际执行两项通过，记录：`artifacts/feedback-step6b-tests.txt`。
 - 参数/资源哈希/state/VBR/ABI不变。薄图更密且可能耗时增加，仍受原分页和总预算限制；未宣称任意有孔图片完全连续、实体设备/跨平台/GPU通过。
+
+## 步骤 7a：双笔刷比例模型与Qt入口
+
+- [设计](../../brush/dual/brush-dual-ratio-design.md)：新增relative-ratio-v1/diameterRatio，state38/VBR1.0/behavior30/dual-size-ratio；旧relative-size-v1像素偏移保留，界面明确列为旧版模式。新启用无尺寸模型的双笔刷按当前主副名义尺寸初始化比例，比例/独立切换保留参数。
+- 主副姿态、名义尺寸、压感耦合、预览临时状态和新目录交换接通。修复通用缺项补全向比例模型混入旧diameterOffset的问题，按模型补全；state仍严格拒绝降级、混合字段和非法值。
+- 核心双尺寸5项（含边界比例/压感/配对与路径对照实际像素）、IO尺寸交换4/边界1项、原生准确准备/捕获/包写入口（旧偏移和新比例×开关）通过。三crate lib严格Clippy/格式及Windows Release/生成头检查通过。
+- Qt新增比例控件/显隐/异步真实预览/实际绘画/新目录VBR像素一致/重开，以及旧偏移和分类按需创建两项通过，记录：`artifacts/feedback-step7-tests.txt`。
+- ABR自动比例换算另列7b，尚未完成；不把新模型入口通过解释为所有ABR或实体设备验收。

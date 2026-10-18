@@ -252,3 +252,59 @@ fn sizing_contract_and_manifest_downgrade_are_strict() {
         13
     );
 }
+
+#[test]
+fn ratio_state38_and_vbr10_preserve_closed_values_and_reject_downgrade() {
+    for enabled in [false, true] {
+        for mode in [DualSizeMode::Independent, DualSizeMode::Relative] {
+            let sizing = DualSizing::new_ratio(mode, 0.375, DualWidthRule::FixedWidth).unwrap();
+            let mut p = package(sizing, enabled);
+            p.brushes[0].behavior_version = 30;
+            p.brushes[0]
+                .required_capabilities
+                .push("dual-size-ratio".into());
+            let token = CancellationToken::default();
+            let bundle = vbr_image::ImageBundle::new(p.clone(), BTreeMap::new(), &token).unwrap();
+            let restored =
+                vbr_image::decode(&vbr_image::encode(&bundle, &token).unwrap(), &token).unwrap();
+            assert_eq!(restored.package.brushes[0].behavior_version, 30);
+            assert_eq!(restored.definition(0).unwrap().dual.sizing(), sizing);
+            let mut c = BrushCatalog::default();
+            let mut settings = c.selected().settings().clone();
+            settings.dual = restored.definition(0).unwrap().dual;
+            c.edit("round-pressure", settings).unwrap();
+            let bytes = brush_state::encode(&c).unwrap();
+            let mut json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(json["version"], 38);
+            assert_eq!(
+                brush_state::decode(&bytes, MAX_CATALOG_MASK_BYTES)
+                    .unwrap()
+                    .selected()
+                    .settings()
+                    .dual
+                    .sizing(),
+                sizing
+            );
+            json["version"] = serde_json::json!(37);
+            assert!(brush_state::decode(
+                &serde_json::to_vec(&json).unwrap(),
+                MAX_CATALOG_MASK_BYTES
+            )
+            .is_err());
+            let mut a = Document::new(64, 64).unwrap();
+            let mut b = Document::new(64, 64).unwrap();
+            draw(&mut a, bundle.definition(0).unwrap());
+            draw(&mut b, restored.definition(0).unwrap());
+            assert_eq!(pixels(&a), pixels(&b));
+            for bad in [
+                serde_json::json!(-1.),
+                serde_json::json!(0.00049999),
+                serde_json::json!(2000.00000001),
+            ] {
+                let mut json = serde_json::to_value(&p).unwrap();
+                json["brushes"][0]["dualBrush"]["sizing"]["diameterRatio"] = bad;
+                assert!(Package::from_json(&serde_json::to_vec(&json).unwrap()).is_err());
+            }
+        }
+    }
+}

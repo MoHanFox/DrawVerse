@@ -552,7 +552,7 @@ public:
             if(m_brushQueue.isEmpty())return;
             m_brushJob=m_brushQueue.takeFirst().toMap();m_brushRequest=0;m_brushClock.restart();
             const auto tip=m_brushJob.value("tip").toMap();const auto dual=tip.value("dualBrush").toMap();const bool dualActive=dual.value("enabled").toBool();const bool wetActive=tip.value("wetMix").toMap().value("enabled").toBool();
-            const double primary=std::clamp(tip.value("presetRadius",24.).toDouble(),.5,1000.);const auto sizing=dual.value("sizing").toMap();const double secondary=sizing.value("mode").toString()=="relative"?std::clamp(primary+sizing.value("diameterOffset").toDouble()/2.,.5,1000.):dual.value("diameter",24.).toDouble()/2.;
+            const double primary=std::clamp(tip.value("presetRadius",24.).toDouble(),.5,1000.);const auto sizing=dual.value("sizing").toMap();const double secondary=sizing.value("mode").toString()=="relative"?std::clamp((sizing.value("model").toString()=="relative-ratio-v1"?primary*sizing.value("diameterRatio").toDouble():primary+sizing.value("diameterOffset").toDouble()/2.),.5,1000.):dual.value("diameter",24.).toDouble()/2.;
             m_brushPreviewScale=dualActive?std::max(1.,std::max(primary,secondary)/8.4):1.;
             const double mainDiameter=primary*2.*(tip.value("maskResource").toString().isEmpty()?1.:std::sqrt(2.))+2.;
             const double childDiameter=secondary*2.*(dual.value("resource").toString().isEmpty()?1.:std::sqrt(2.))+2.;
@@ -600,7 +600,7 @@ public:
             const auto smoothPressure=[](const QVariantMap &data){for(const auto &target:{"size","flow","opacity"})if(data.value(target).toMap().value("interpolation").toString()=="smooth-pchip-v1")return true;return false;};
             if(smoothPressure(tip.value("pressureDynamics").toMap()) || smoothPressure(tip.value("dualBrush").toMap().value("pressureDynamics").toMap()))raiseBrushStateVersion(state,13);
             if(!tip.value("smoothing").toMap().isEmpty()){row["smoothing"]=QJsonObject::fromVariantMap(tip.value("smoothing").toMap());raiseBrushStateVersion(state,14);}
-            if(tip.value("dualBrush").toMap().contains("sizing"))raiseBrushStateVersion(state,15);
+            if(tip.value("dualBrush").toMap().contains("sizing"))raiseBrushStateVersion(state,tip.value("dualBrush").toMap().value("sizing").toMap().value("model").toString()=="relative-ratio-v1"?38:15);
             if(tip.value("dualBrush").toMap().contains("color"))raiseBrushStateVersion(state,16);
             if(!tip.value("wetMix").toMap().isEmpty()){row["wetMix"]=QJsonObject::fromVariantMap(tip.value("wetMix").toMap());raiseBrushStateVersion(state,17);}
             if(!tip.value("strokeTaper").toMap().isEmpty()){row["strokeTaper"]=QJsonObject::fromVariantMap(tip.value("strokeTaper").toMap());raiseBrushStateVersion(state,18);}

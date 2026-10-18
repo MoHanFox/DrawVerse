@@ -449,7 +449,17 @@ fn canonical_preset_value() -> &'static Value {
     })
 }
 fn complete_preset(value: &mut Value) {
-    merge_missing(value, canonical_preset_value());
+    let ratio = value
+        .pointer("/dualBrush/sizing/model")
+        .and_then(Value::as_str)
+        == Some("relative-ratio-v1");
+    if ratio {
+        let mut defaults = canonical_preset_value().clone();
+        defaults["dualBrush"]["sizing"] = serde_json::json!({"model":"relative-ratio-v1","mode":"relative","diameterRatio":1.,"widthRule":"follow-pressure"});
+        merge_missing(value, &defaults);
+    } else {
+        merge_missing(value, canonical_preset_value());
+    }
     if let Some(dual) = value.get_mut("dualBrush").and_then(Value::as_object_mut) {
         match dual.get("model").and_then(Value::as_str) {
             Some("paired-dab-v1") => {
@@ -601,6 +611,7 @@ impl Preset {
             (dual_extended, "dual-cover-extended"),
             (self.parameters.transfer_jitter.is_some(), "transfer-jitter"),
             (self.has_dual_sizing(), "dual-relative-size"),
+            (self.has_dual_ratio(), "dual-size-ratio"),
             (self.smoothing.is_some(), "path-smoothing"),
             (smooth, "pressure-smooth"),
             (pressure_enabled, "pressure-curves"),
@@ -634,7 +645,9 @@ impl Preset {
             }
         }
         self.required_capabilities = capabilities;
-        self.behavior_version = if self.parameters.transfer_jitter.is_some() {
+        self.behavior_version = if self.has_dual_ratio() {
+            30
+        } else if self.parameters.transfer_jitter.is_some() {
             29
         } else if dual_extended {
             28
@@ -709,6 +722,11 @@ impl Preset {
             .is_some_and(|p| p.has_smooth())
             || self.dual_brush.as_ref().is_some_and(|d| d.has_smooth())
     }
+    pub fn has_dual_ratio(&self) -> bool {
+        self.dual_brush
+            .as_ref()
+            .is_some_and(|d| d.has_ratio_sizing())
+    }
     pub fn has_dual_sizing(&self) -> bool {
         self.dual_brush.as_ref().is_some_and(|d| d.has_sizing())
     }
@@ -735,6 +753,7 @@ fn is_feature_capability(capability: &str) -> bool {
             | "pressure-smooth"
             | "path-smoothing"
             | "dual-relative-size"
+            | "dual-size-ratio"
             | "dual-color-stroke"
             | "dual-color-stamp"
             | "airbrush"
@@ -848,6 +867,7 @@ impl Package {
                             | "pressure-smooth"
                             | "path-smoothing"
                             | "dual-relative-size"
+                            | "dual-size-ratio"
                             | "dual-color-stroke"
                             | "dual-color-stamp"
                             | "airbrush"

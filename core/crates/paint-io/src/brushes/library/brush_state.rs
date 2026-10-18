@@ -256,7 +256,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=37) {
+    if !matches!(state.version, 1..=38) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -436,6 +436,9 @@ fn decode_inner(
                 return Err(Error::Unsupported(
                     "interleaved dual-color requires state22".into(),
                 ));
+            }
+            if d.has_ratio_sizing() && state.version < 38 {
+                return Err(Error::Unsupported("ratio sizing requires state38".into()));
             }
             if d.has_sizing() && state.version < 15 {
                 return Err(Error::Unsupported(
@@ -721,6 +724,9 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
                 if s.dual.color().model() == paint_core::DualColorModel::InterleavedStamp {
                     version = version.max(22);
                 }
+            }
+            if s.dual.sizing().diameter_ratio().is_some() {
+                version = version.max(38);
             }
             if s.dual.sizing() != Default::default() {
                 version = version.max(15);

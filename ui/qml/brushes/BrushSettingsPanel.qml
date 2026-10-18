@@ -43,8 +43,20 @@ ColumnLayout {
         if(name==="scatterDynamics")return {enabled:false,amount:0,bothAxes:false,count:1,countJitter:0,seed:"0000000000000000"}
         return {enabled:false,size:0,minimumSize:0,angle:0,roundness:0,minimumRoundness:0.01,seed:"0000000000000000"}
     }
+    function dualNominalDiameter() {
+        const size=dualModule("sizing")
+        return size.mode!=="relative"?dual.diameter:Math.max(1,Math.min(2000,size.model==="relative-ratio-v1"?library.radius*2*size.diameterRatio:library.radius*2+size.diameterOffset))
+    }
+    function setDualSizeMode(index) {
+        let data=Object.assign({},dual),old=dualModule("sizing"),size=Object.assign({},old)
+        if(index===1)size={model:"relative-ratio-v1",mode:"relative",diameterRatio:old.model==="relative-ratio-v1"?old.diameterRatio:dualNominalDiameter()/(library.radius*2),widthRule:old.widthRule}
+        else if(index===2)size={model:"relative-size-v1",mode:"relative",diameterOffset:old.model==="relative-size-v1"?old.diameterOffset:Math.max(-511,Math.min(511,dualNominalDiameter()-library.radius*2)),widthRule:old.widthRule}
+        else size.mode="independent"
+        data.sizing=size;return library.setDualBrush(data)
+    }
     function setDualField(key,value,module) {
         let data=Object.assign({},dual)
+        if(key==="enabled" && value && !data.sizing)data.sizing={model:"relative-ratio-v1",mode:"relative",diameterRatio:data.diameter/(library.radius*2),widthRule:"follow-pressure"}
         if(module){let nested=Object.assign({},dualModule(module));nested[key]=value;data[module]=nested}
         else data[key]=value
         const ok=library.setDualBrush(data);root.wetError=ok?"":"第二笔刷参数无效，未应用更改。";return ok
@@ -261,12 +273,17 @@ ColumnLayout {
                         CompactComboBox {id:dualInterpretation;objectName:"dualTipInterpretation";Layout.fillWidth:true;model:["灰度覆盖（白色绘制）","透明度覆盖","反向亮度（黑色绘制）"];currentIndex:root.dualInterpretationMode;onActivated:root.dualInterpretationMode=currentIndex;tooltip:"选择导入图片的覆盖解释。"}
                         Label {visible:PaintClient.brushImportMessage.length>0;text:PaintClient.brushImportMessage;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                         Label {objectName:"settingsDualSizeModeLabel";text:"尺寸方式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
-                        CompactComboBox {objectName:"settingsDualSizeMode";Layout.fillWidth:true;model:["独立尺寸","相对主笔尺寸"];currentIndex:root.dualModule("sizing").mode==="relative"?1:0;onActivated:root.setDualField("mode",currentIndex===1?"relative":"independent","sizing");tooltip:"相对直径为主笔直径加像素偏移；切换后保留独立直径和偏移。"}
+                        CompactComboBox {objectName:"settingsDualSizeMode";Layout.fillWidth:true;model:["独立尺寸","相对主笔百分比","旧版像素偏移"];currentIndex:root.dualModule("sizing").mode!=="relative"?0:root.dualModule("sizing").model==="relative-ratio-v1"?1:2;onActivated:root.setDualSizeMode(currentIndex);tooltip:"百分比随主笔大小缩放；旧版像素偏移保持原文件语义。"}
                         DualField {title:"大小";field:"diameter";from:1;to:2000;factor:1;unit:"px";visible:root.dualModule("sizing").mode!=="relative"}
-                        DualField {title:"直径偏移";field:"diameterOffset";module:"sizing";from:-511;to:511;factor:1;unit:"px";visible:root.dualModule("sizing").mode==="relative"}
+                        DualField {title:"直径偏移";field:"diameterOffset";module:"sizing";from:-511;to:511;factor:1;unit:"px";visible:root.dualModule("sizing").mode==="relative" && root.dualModule("sizing").model==="relative-size-v1"}
+                        ColumnLayout {Layout.fillWidth:true;visible:root.dualModule("sizing").model==="relative-ratio-v1" && root.dualModule("sizing").mode==="relative"
+                            Label {text:"相对大小 (%)";color:Theme.text;font.pixelSize:10}
+                            TextField {objectName:"settingsDualRatioInput";Layout.fillWidth:true;implicitHeight:22;text:Number(root.dualModule("sizing").diameterRatio*100).toFixed(2);color:Theme.text;validator:DoubleValidator {bottom:0.05;top:200000;decimals:4;locale:"C"} onEditingFinished:if(acceptableInput)root.setDualField("diameterRatio",Number(text)/100,"sizing")}
+                            CompactSlider {objectName:"settingsDualRatio";Layout.fillWidth:true;from:0.05;to:400;value:Math.min(to,root.dualModule("sizing").diameterRatio*100);onMoved:root.setDualField("diameterRatio",value/100,"sizing");tooltip:"主笔大小的百分比；输入框可输入超出滑条范围的比例。"}
+                        }
                         Label {objectName:"settingsDualWidthRuleLabel";text:"相对尺寸响应";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true;visible:root.dualModule("sizing").mode==="relative"}
                         CompactComboBox {objectName:"settingsDualWidthRule";Layout.fillWidth:true;visible:root.dualModule("sizing").mode==="relative";model:["跟随尺寸压感","固定描边宽度"];currentIndex:root.dualModule("sizing").widthRule==="fixed-width"?1:0;onActivated:root.setDualField("widthRule",currentIndex===1?"fixed-width":"follow-pressure","sizing");tooltip:"固定宽度先计算主笔实际尺寸再加偏移，不重复执行第二大小压感和大小抖动；旧配置仍保留。"}
-                        Label {objectName:"settingsDualEffectiveSize";text:root.dualModule("sizing").mode==="relative"?"标称直径："+Math.max(1,Math.min(2000,root.library.radius*2+root.dualModule("sizing").diameterOffset)).toFixed(1)+" px；固定宽度随主笔实际尺寸计算。":"独立直径使用第二笔尖大小。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
+                        Label {objectName:"settingsDualEffectiveSize";text:"标称直径："+root.dualNominalDiameter().toFixed(1)+" px";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
 
                         DualField {title:"间距";field:"spacing";from:1;to:100;factor:100;unit:"%";visible:root.dual.model==="path-coverage-v1"}
                         DualField {title:"硬度";field:"hardness";enabled:!root.dual.resource}
