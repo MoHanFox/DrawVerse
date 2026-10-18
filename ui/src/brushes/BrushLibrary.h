@@ -409,6 +409,7 @@ public:
     Q_INVOKABLE bool resetPreset();
     Q_INVOKABLE bool restoreSourceBaseline(const QVariantMap &info);
     Q_INVOKABLE void requestPreview(const QString &id);
+    Q_INVOKABLE void cancelPreview(const QString &id);
     Q_INVOKABLE void retryPreview();
     bool restore(const QByteArray &json);
     QByteArray snapshot() const;
@@ -430,6 +431,7 @@ signals:
     void recentColorsChanged();
     void persistRequested(QByteArray json);
     void previewRequested(QString id,quint64 token,qreal radius,qreal opacity,qreal spacing,QVariantMap tip);
+    void previewCancelled(QString id,quint64 token);
 private:
     void cursorPreferenceChanged();
     void setTipDynamics(QVariantMap data);

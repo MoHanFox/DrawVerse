@@ -102,6 +102,39 @@ class UiTests final : public QObject {
     QTemporaryDir m_preferences;
 private slots:
 
+    void offscreenBrushPreviewsCancelQueuedTokensAndKeepCachedImages() {
+        BrushLibrary library;QSignalSpy requested(&library,&BrushLibrary::previewRequested),cancelled(&library,&BrushLibrary::previewCancelled);
+        const QString id="round-fine";QVERIFY(library.selectedId()!=id);
+        library.requestPreview(id);QCOMPARE(requested.size(),1);const auto old=requested.last()[1].toULongLong();
+        library.cancelPreview(id);QCOMPARE(cancelled.size(),1);QCOMPARE(cancelled.last()[1].toULongLong(),old);
+        library.acceptPreview(id,old,"stale");QVERIFY(library.presetInfo(id).value("preview").toString().isEmpty());
+        library.requestPreview(id);QCOMPARE(requested.size(),2);const auto fresh=requested.last()[1].toULongLong();QVERIFY(fresh>old);
+        library.acceptPreview(id,fresh,"cached");library.cancelPreview(id);QCOMPARE(cancelled.size(),1);library.requestPreview(id);QCOMPARE(requested.size(),2);QCOMPARE(library.presetInfo(id).value("preview").toString(),QString("cached"));
+        library.requestPreview(library.selectedId());library.cancelPreview(library.selectedId());QCOMPARE(cancelled.size(),1);
+    }
+
+    void largeAbrImportAndScrollResponsiveness() {
+        const auto fixture=QFINDTESTDATA("../../core/crates/paint-io/tests/fixtures/abr/myer-settlement-brushes.abr");QVERIFY(!fixture.isEmpty());
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("state.ini"));QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());
+        WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &error:errors)warnings.append(error.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);workspace.setActive(workspace.groupForPanel("brush"),"brush");QTRY_VERIFY(findVisualItem(window->contentItem(),"brushPresetList"));
+        auto *list=findVisualItem(window->contentItem(),"brushPresetList");QVERIFY(list);auto *library=client.brushLibrary();
+        QSignalSpy imported(&client,&PaintCoreClient::brushFileFinished);QElapsedTimer timer;timer.start();qint64 previous=0,longest=0;int ticks=0;
+        QTimer heartbeat;heartbeat.setInterval(5);connect(&heartbeat,&QTimer::timeout,this,[&]{const auto now=timer.elapsed();longest=std::max(longest,now-previous);previous=now;++ticks;});heartbeat.start();
+        for(int pack=0;pack<3;++pack){QVERIFY(client.importBrushes(QUrl::fromLocalFile(fixture)));QTRY_COMPARE_WITH_TIMEOUT(imported.size(),pack+1,30000);QVERIFY(imported.last()[0].toBool());QTest::qWait(100);}
+        QCOMPARE(library->presets().size(),448);qInfo()<<"ABR 3x148 import ms"<<timer.elapsed()<<"longest GUI gap ms"<<longest<<"ticks"<<ticks;
+        QSignalSpy catalogs(library,&BrushLibrary::presetsChanged),previews(library,&BrushLibrary::previewRequested);
+        for(int pass=0;pass<2;++pass){longest=0;previous=timer.elapsed();qint64 dispatch=0;const auto start=timer.elapsed();
+            for(int step=0;step<80;++step){const auto top=std::max(0.,list->property("contentHeight").toDouble()-list->height());const auto before=timer.nsecsElapsed();list->setProperty("contentY",top*step/79.);QCoreApplication::processEvents();dispatch=std::max(dispatch,(timer.nsecsElapsed()-before)/1000);QTest::qWait(16);}
+            qInfo()<<"scroll pass"<<pass<<"total ms"<<timer.elapsed()-start<<"max dispatch us"<<dispatch<<"longest GUI gap ms"<<longest<<"preview requests"<<previews.size();
+        }
+        QTest::qWait(150);QVERIFY(previews.size()>0 && previews.size()<50);
+        heartbeat.stop();QCOMPARE(catalogs.size(),0);int rows=0;std::function<void(QQuickItem*)> count=[&](QQuickItem *item){if(item->objectName().startsWith("brushPreset:"))++rows;for(auto *child:item->childItems())count(child);};count(window->contentItem());QVERIFY(rows>0 && rows<50);qInfo()<<"live brush delegates"<<rows<<"settled preview requests"<<previews.size();
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
     void developerConsoleDefaultsOffPersistsAndQmlToggles() {
         QTemporaryDir temp;const auto path=temp.filePath("layout.ini");
         WorkspaceManager workspace(path);QVERIFY(!workspace.developerConsole());

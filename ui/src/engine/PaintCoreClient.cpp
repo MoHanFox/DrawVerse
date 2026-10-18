@@ -161,6 +161,9 @@ public:
     void queueBrushPreview(const QString &id,quint64 token,qreal radius,qreal opacity,qreal spacing,QVariantMap tip) {        m_brushQueue.removeIf([&](const QVariant &v){return v.toMap().value("id")==id;});
         m_brushQueue.append(QVariantMap{{"id",id},{"token",token},{"radius",radius},{"opacity",opacity},{"spacing",spacing},{"tip",tip}});
     }
+    void cancelBrushPreview(const QString &id,quint64 token) {
+        m_brushQueue.removeIf([&](const QVariant &value){const auto job=value.toMap();return job.value("id").toString()==id && job.value("token").toULongLong()==token;});
+    }
     void referencePreview(quint64 id, bool add) {
         if(add) {
             if(m_previewReferences.contains(id)) ++m_previewReferences[id];
@@ -819,6 +822,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     });
     connect(m_brushLibrary,&BrushLibrary::persistRequested,this,&PaintCoreClient::persistBrushPreferences);
     connect(m_brushLibrary,&BrushLibrary::previewRequested,m_worker,&BackendWorker::queueBrushPreview);
+    connect(m_brushLibrary,&BrushLibrary::previewCancelled,m_worker,[worker=m_worker](const QString &id,quint64 token){worker->cancelBrushPreview(id,token);});
     connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{if(m_hoverPose)paint_brush_pose_clear(m_hoverPose);m_hoverPosePreparation=0;m_poseExpectedSource.clear();m_radius=m_brushLibrary->radius();m_opacity=m_brushLibrary->opacity();m_spacing=m_brushLibrary->spacing();m_liveBasePose={false,m_radius,m_brushLibrary->angle(),m_brushLibrary->roundness()};emit brushChanged();});
     connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{
         const auto identity=m_brushLibrary->maskResource();const auto second=m_brushLibrary->dualBrush().value("resource").toString();

@@ -950,6 +950,13 @@ void BrushLibrary::setActiveColors(const QColor &foreground,const QColor &backgr
     emit activeColorsChanged();queuePersistence();
 }
 void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;QVariantMap tip={{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",1.},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow},{"maskResource",p.maskResource},{"pressureDynamics",p.pressure},{"tipDynamics",p.device},{"scatterDynamics",p.scatter},{"shapeJitter",p.shape},{"transferJitter",p.transfer},{"colorDynamics",p.color},{"texture",p.texture},{"dualBrush",p.dual},{"smoothing",p.smoothing},{"wetMix",p.wet},{"strokeTaper",p.taper},{"airbrush",p.airbrush},{"presetRadius",24.},{"writeBlend",0}};if(!p.speed.isEmpty())tip["speedDynamics"]=p.speed;if(!p.tangent.isEmpty())tip["tangentDynamics"]=p.tangent;if(!p.distance.isEmpty())tip["distanceDynamics"]=p.distance;if(!p.tilt.isEmpty())tip["tiltDynamics"]=p.tilt;if(!p.rotation.isEmpty())tip["rotationDynamics"]=p.rotation;if(!p.direction.isEmpty())tip["directionDynamics"]=p.direction;if(!p.matrix.isEmpty())tip["sourceMatrix"]=p.matrix;if(!p.fade.isEmpty())tip["fadeDynamics"]=p.fade;emit previewRequested(p.id,p.token,24.,1.,p.spacing,tip);}
+void BrushLibrary::cancelPreview(const QString &id) {
+    if(id==m_selected)return;
+    const int i=index(id);if(i<0)return;auto &p=m_presets[i];
+    if(!p.requested || !p.preview.isEmpty())return;
+    const auto token=p.requested;p.requested=0;p.token=++m_nextToken;
+    emit previewCancelled(id,token);
+}
 void BrushLibrary::retryPreview(){auto &p=m_presets[index(m_selected)];p.preview.clear();p.error.clear();p.requested=0;p.token=++m_nextToken;requestPreview(m_selected);emit previewChanged(p.id,{});emit selectedPreviewChanged();}
 void BrushLibrary::acceptPreview(const QString &id,quint64 token,const QString &image){const int i=index(id);if(i<0 || m_presets[i].token!=token)return;m_presets[i].requested=0;m_presets[i].preview=image;m_presets[i].error=image.isEmpty()?QStringLiteral("预览暂不可用"):QString();emit previewChanged(id,image);if(id==m_selected)emit selectedPreviewChanged();}
 int BrushLibrary::textureStateVersion(const QVariantMap &texture) {

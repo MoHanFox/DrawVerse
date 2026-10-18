@@ -83,6 +83,22 @@ ColumnLayout {
     property string groupParentId:""
     property var groupMenuGroups:[]
     property var presetLookup: ({})
+    property var visiblePreviewIds: []
+    function cancelVisiblePreviews() {
+        if(library)for(const id of visiblePreviewIds)library.cancelPreview(id)
+        visiblePreviewIds=[]
+    }
+    function requestVisiblePreviews() {
+        if(!visible || presetList.height<=0)return
+        const ids=[]
+        for(const row of presetList.contentItem.children) {
+            if(!row.modelData || row.modelData.kind!=="preset")continue
+            if(row.y+row.height<=presetList.contentY || row.y>=presetList.contentY+presetList.height)continue
+            ids.push(row.modelData.id)
+        }
+        visiblePreviewIds=ids
+        for(const id of ids)library.requestPreview(id)
+    }
     function refreshPresets() {
         const lookup={}
         for(const preset of library.presets)lookup[preset.id]=Object.assign({},preset)
@@ -164,6 +180,8 @@ ColumnLayout {
     ListView {
         objectName:"brushPresetList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:2
         id:presetList;interactive:!root.draggingBrush;model:root.groupedModel
+        onContentYChanged:{root.cancelVisiblePreviews();visiblePreviewDelay.restart()}
+        onHeightChanged:visiblePreviewDelay.restart()
         property var panel:root
         delegate:Rectangle {
             id:brushRow
@@ -239,7 +257,7 @@ ColumnLayout {
                 function onPresetChanged(id){if(id===brushRow.modelData.id)rowPreview.source=brushRow.panel.library.presetInfo(id).preview||""}
                 function onPresetsChanged(){Qt.callLater(()=>{rowPreview.source=brushRow.modelData.kind==="group"?"":brushRow.panel.presetById(brushRow.modelData.id).preview||""})}
             }
-            Component.onCompleted:if(modelData.kind!=="group")brushRow.panel.library.requestPreview(modelData.id)
+            Component.onCompleted:visiblePreviewDelay.restart()
         }
         WheelHandler {
             objectName:"brushListWheel"
@@ -373,6 +391,9 @@ ColumnLayout {
     FileDialog {id:importDialog;objectName:"brushImportDialog";title:"导入笔刷包";nameFilters:["笔刷包 (*.vbr *.abr)","DrawVerse 笔刷 (*.vbr)","Photoshop 笔刷 (*.abr)"];onAccepted:PaintClient.importBrushes(selectedFile)}
     FileDialog {id:exportDialog;title:"导出画笔 VBR";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.exportSelectedBrushes(selectedFile,root.includeExportSource)}
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
-    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}function onPresetChanged(id){root.presetLookup[id]=Object.assign({},root.library.presetInfo(id))}function onPreviewChanged(id,image){if(root.presetLookup[id])root.presetLookup[id].preview=image}function onPresetsChanged(){root.refreshPresets();root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}}
-    Component.onCompleted:{root.refreshPresets();root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}
+    Timer {id:visiblePreviewDelay;interval:75;onTriggered:root.requestVisiblePreviews()}
+    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}function onPresetChanged(id){root.presetLookup[id]=Object.assign({},root.library.presetInfo(id));visiblePreviewDelay.restart()}function onPreviewChanged(id,image){if(root.presetLookup[id])root.presetLookup[id].preview=image}function onPresetsChanged(){root.refreshPresets();root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems();visiblePreviewDelay.restart()}}
+    onVisibleChanged:{if(visible)visiblePreviewDelay.restart();else root.cancelVisiblePreviews()}
+    Component.onCompleted:{root.refreshPresets();root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems();visiblePreviewDelay.restart()}
+    Component.onDestruction:root.cancelVisiblePreviews()
 }
