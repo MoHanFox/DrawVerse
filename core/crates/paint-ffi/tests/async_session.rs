@@ -3394,5 +3394,8 @@ mod taper_api;
 #[path = "support/wet_api.rs"]
 mod wet_api;
 
+#[path = "support/outline_api.rs"]
+mod outline_api;
+
 #[path = "support/wet_dual_api.rs"]
 mod wet_dual_api;

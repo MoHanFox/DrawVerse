@@ -53,6 +53,7 @@ pub(crate) enum BrushSupport {
     Wet,
     Taper,
     WetDual,
+    StrokeOutline,
     Groups,
 }
 impl BrushSupport {
@@ -60,10 +61,16 @@ impl BrushSupport {
         self != Self::Legacy
     }
     pub(crate) fn taper(self) -> bool {
-        matches!(self, Self::Taper | Self::WetDual | Self::Groups)
+        matches!(
+            self,
+            Self::Taper | Self::WetDual | Self::StrokeOutline | Self::Groups
+        )
     }
     pub(crate) fn wet_dual(self) -> bool {
-        matches!(self, Self::WetDual | Self::Groups)
+        matches!(self, Self::WetDual | Self::StrokeOutline | Self::Groups)
+    }
+    pub(crate) fn stroke_outline(self) -> bool {
+        matches!(self, Self::StrokeOutline | Self::Groups)
     }
     pub(crate) fn groups(self) -> bool {
         self == Self::Groups
@@ -128,6 +135,18 @@ impl Recipe {
                         return Err(ApiError::new(
                             PAINT_UNSUPPORTED,
                             "wet preset requires updated native entry",
+                        ));
+                    }
+                    if !self.support.stroke_outline()
+                        && catalog.ids().iter().any(|id| {
+                            catalog
+                                .preset(id)
+                                .is_some_and(|p| !p.settings().outline.is_default())
+                        })
+                    {
+                        return Err(ApiError::new(
+                            PAINT_UNSUPPORTED,
+                            "stroke outline requires updated native entry",
                         ));
                     }
                     *self.anchors.lock().map_err(|_| ApiError::internal())? = receipts;
@@ -200,6 +219,7 @@ impl CatalogTicket {
                                 p.settings().mask.is_some()
                                     || p.settings().texture.resource().is_some()
                                     || p.settings().dual.secondary().mask().is_some()
+                                    || !p.settings().outline.is_default()
                                     || p.source_resource().is_some()
                             })
                         })
@@ -257,6 +277,9 @@ impl PreparedCatalog {
     }
     pub fn submit_wet_dual(&self, json: String) -> ApiResult<u64> {
         self.submit_mode(json, BrushSupport::WetDual)
+    }
+    pub fn submit_stroke_outline(&self, json: String) -> ApiResult<u64> {
+        self.submit_mode(json, BrushSupport::StrokeOutline)
     }
     pub fn submit_groups(&self, json: String) -> ApiResult<u64> {
         self.submit_mode(json, BrushSupport::Groups)
@@ -1261,6 +1284,7 @@ mod tests {
             package_id: "12345678-1234-4234-8234-123456789abd".into(),
             brushes: vec![paint_io::vbr::Preset {
                 stroke_taper: None,
+                stroke_outline: None,
                 wet_mix: None,
                 id: "12345678-1234-4234-8234-123456789abc".into(),
                 name: "texture".into(),
@@ -1696,6 +1720,7 @@ mod tests {
             package_id: "12345678-1234-4234-8234-123456789abc".into(),
             brushes: vec![Preset {
                 stroke_taper: None,
+                stroke_outline: None,
                 wet_mix: None,
                 id: "12345678-1234-4234-8234-123456789abd".into(),
                 name: "current procedural".into(),

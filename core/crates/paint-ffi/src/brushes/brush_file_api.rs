@@ -136,6 +136,7 @@ pub unsafe extern "C" fn paint_brush_package_write(
         let package = paint_io::vbr::Package::from_json(json.as_bytes()).map_err(io_error)?;
         reject_wet_package(&package)?;
         reject_taper_package(&package)?;
+        reject_outline_package(&package)?;
 
         if package.brushes.iter().any(|b| b.dual_brush.is_some()) {
             return Err(ApiError::new(
@@ -206,6 +207,9 @@ unsafe fn paint_brush_library_package_read_impl(
         }
         if !support.taper() {
             reject_taper_package(&bundle.package)?;
+        }
+        if !support.stroke_outline() {
+            reject_outline_package(&bundle.package)?;
         }
         if !support.wet() {
             reject_wet_package(&bundle.package)?;
@@ -306,6 +310,9 @@ unsafe fn paint_brush_library_package_write_impl(
         if !support.taper() {
             reject_taper_package(&package)?;
         }
+        if !support.stroke_outline() {
+            reject_outline_package(&package)?;
+        }
         if !support.wet() {
             reject_wet_package(&package)?;
         }
@@ -338,10 +345,23 @@ unsafe fn paint_brush_library_package_write_impl(
                     .map(str::to_owned)
             })
             .collect::<std::collections::BTreeSet<_>>();
+        let outline_ids = package
+            .brushes
+            .iter()
+            .flat_map(|b| {
+                b.stroke_outline.as_ref().into_iter().flat_map(|o| {
+                    o.existing_resource_id()
+                        .into_iter()
+                        .chain(o.texture_resource_id())
+                })
+            })
+            .map(str::to_owned)
+            .collect::<std::collections::BTreeSet<_>>();
         if package.brushes.iter().any(|b| b.tip_resource.is_some())
             || !source_ids.is_empty()
             || !texture_ids.is_empty()
             || !secondary_ids.is_empty()
+            || !outline_ids.is_empty()
         {
             let store = library.resource_store()?;
             if !source_ids.is_empty() {
@@ -358,6 +378,7 @@ unsafe fn paint_brush_library_package_write_impl(
                 .collect::<std::collections::BTreeSet<_>>();
             tips.extend(texture_ids);
             tips.extend(secondary_ids);
+            tips.extend(outline_ids);
             for source in &sources {
                 tips.extend(source.tip_ids().map(str::to_owned));
             }
@@ -424,6 +445,61 @@ fn reject_taper_package(package: &paint_io::vbr::Package) -> crate::error::ApiRe
         ));
     }
     Ok(())
+}
+fn reject_outline_package(package: &paint_io::vbr::Package) -> crate::error::ApiResult<()> {
+    if package.brushes.iter().any(|b| b.stroke_outline.is_some()) {
+        return Err(ApiError::new(
+            PAINT_UNSUPPORTED,
+            "stroke outline requires updated native entry",
+        ));
+    }
+    Ok(())
+}
+/// Complete state41/VBR1.0 resource package read, including closed outline settings.
+/// # Safety
+/// Live library, readable path and nonoverlapping writable buffer/required are required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_package_read_outline(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_read_impl(
+            library,
+            path,
+            path_length,
+            buffer,
+            capacity,
+            required,
+            BrushSupport::StrokeOutline,
+        )
+    }
+}
+/// Complete state41/VBR1.0 resource package save, including closed outline settings.
+/// # Safety
+/// Live library and readable bounded path/JSON are required for this call only.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_package_write_outline(
+    library: *mut PaintBrushLibrary,
+    path: *const u8,
+    path_length: u64,
+    json: *const u8,
+    json_length: u64,
+) -> PaintStatus {
+    unsafe {
+        paint_brush_library_package_write_impl(
+            library,
+            path,
+            path_length,
+            json,
+            json_length,
+            BrushSupport::StrokeOutline,
+        )
+    }
 }
 /// Complete state18/VBR1.22 resource package read, including closed taper and wet settings.
 /// # Safety

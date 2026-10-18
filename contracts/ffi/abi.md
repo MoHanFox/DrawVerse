@@ -1,4 +1,10 @@
-# C ABI 1.59.0 契约
+# C ABI 1.60.0 契约
+
+## ABI 1.60 — 整条笔触描边入口
+
+`PAINT_FEATURE_STROKE_OUTLINE`（bit55）新增`paint_brush_library_prepare_state_outline`与`paint_brush_library_package_read_outline` / `paint_brush_library_package_write_outline`。准备入口接受完整state41及所有既有完整参数；包入口读写VBR 1.0/behavior33及`stroke-outline`能力，包含自身、已有笔刷和纹理来源，并按内容身份捕获描边已有笔刷/纹理资源。关闭但非默认的对象仍完整往返。
+
+普通、wet、taper和wet-dual准备/包入口继续对描边返回Unsupported；Groups完整入口同样支持描边。容量探测不安装资源，读取先安装完整束再返回JSON。无DTO布局变化；Qt镜像/控件和真实预览仍待后续。见`docs/brush/core/brush-stroke-outline-abi-design.md`。
 
 ## ABI 1.59 — 曲线节点采样
 

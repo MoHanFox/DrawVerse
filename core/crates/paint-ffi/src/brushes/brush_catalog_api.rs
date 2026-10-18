@@ -265,6 +265,7 @@ pub unsafe extern "C" fn paint_brush_library_edit(
                 .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "brush preset"))?;
             let settings = BrushSettings {
                 taper: before.settings().taper.clone(),
+                outline: before.settings().outline.clone(),
                 airbrush: before.settings().airbrush,
                 wet: before.settings().wet,
                 smoothing: before.settings().smoothing,

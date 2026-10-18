@@ -51,6 +51,7 @@ pub unsafe extern "C" fn paint_session_begin_brush(
         };
         let definition = BrushDefinition {
             taper: Default::default(),
+            outline: Default::default(),
             airbrush: Default::default(),
             wet: Default::default(),
             smoothing: Default::default(),

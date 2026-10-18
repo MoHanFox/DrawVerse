@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 59
+#define PAINT_ABI_MINOR 60
 
 #define PAINT_ABI_PATCH 0
 
@@ -194,6 +194,8 @@
 #define PAINT_FEATURE_SMUDGE 32768
 
 #define PAINT_FEATURE_STORAGE_SETTINGS 128
+
+#define PAINT_FEATURE_STROKE_OUTLINE 36028797018963968
 
 /**
  * Complete state18/VBR1.22 stroke taper parameter entry (ABI1.51).
@@ -1204,6 +1206,18 @@ PaintStatus paint_brush_library_package_read_groups(struct PaintBrushLibrary *li
                                                     uint64_t *required);
 
 /**
+ * Complete state41/VBR1.0 resource package read, including closed outline settings.
+ * # Safety
+ * Live library, readable path and nonoverlapping writable buffer/required are required.
+ */
+PaintStatus paint_brush_library_package_read_outline(struct PaintBrushLibrary *library,
+                                                     const uint8_t *path,
+                                                     uint64_t path_length,
+                                                     uint8_t *buffer,
+                                                     uint64_t capacity,
+                                                     uint64_t *required);
+
+/**
  * Complete state18/VBR1.22 resource package read, including closed taper and wet settings.
  * # Safety
  * Live library, readable path and nonoverlapping writable buffer/required are required.
@@ -1262,6 +1276,17 @@ PaintStatus paint_brush_library_package_write_groups(struct PaintBrushLibrary *l
                                                      uint64_t json_length);
 
 /**
+ * Complete state41/VBR1.0 resource package save, including closed outline settings.
+ * # Safety
+ * Live library and readable bounded path/JSON are required for this call only.
+ */
+PaintStatus paint_brush_library_package_write_outline(struct PaintBrushLibrary *library,
+                                                      const uint8_t *path,
+                                                      uint64_t path_length,
+                                                      const uint8_t *json,
+                                                      uint64_t json_length);
+
+/**
  * Complete state18/VBR1.22 resource package save, including closed taper and wet settings.
  * # Safety
  * Live library and readable bounded path/JSON are required for this call only.
@@ -1314,6 +1339,16 @@ PaintStatus paint_brush_library_prepare_state_groups(struct PaintBrushLibrary *l
                                                      const uint8_t *json,
                                                      uint64_t length,
                                                      uint64_t *out_sequence);
+
+/**
+ * Opt in to complete state41 preparation, including closed stroke outline settings.
+ * # Safety
+ * Live library/readable bounded JSON and nonoverlapping writable sequence are required.
+ */
+PaintStatus paint_brush_library_prepare_state_outline(struct PaintBrushLibrary *library,
+                                                      const uint8_t *json,
+                                                      uint64_t length,
+                                                      uint64_t *out_sequence);
 
 /**
  * Opt in to complete state18 preparation, including closed taper and wet parameters.

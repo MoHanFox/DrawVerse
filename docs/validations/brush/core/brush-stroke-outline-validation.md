@@ -4,7 +4,7 @@
 
 ## 当前范围
 
-首阶段新增独立描边配置和有界覆盖距离带；第二阶段通过显式Rust入口接入干画笔的自身／纹理描边和真实Document历史；第三阶段接入已有笔刷快照和活动预览；保存交换见[独立验收](brush-stroke-outline-io-validation.md)。原生准备与Qt设置仍待接，整项反馈保持未完成。
+首阶段新增独立描边配置和有界覆盖距离带；第二阶段通过显式Rust入口接入干画笔的自身／纹理描边和真实Document历史；第三阶段接入已有笔刷快照和活动预览；保存交换与原生入口见[保存验收](brush-stroke-outline-io-validation.md)及[ABI验收](brush-stroke-outline-abi-validation.md)。Qt设置仍待接，整项反馈保持未完成。
 
 `cargo test -p paint-core --test brush_stroke_outline --locked`四项通过：540组距离带与独立穷举参考逐像素一致（五类尺寸、六类输入、三种位置、六种宽度），重叠无内接缝／完整带宽／亚像素覆盖，关闭值与宽度切换，空覆盖／50%阈值／超限和非法值。输入覆盖保持不变。
 

@@ -579,6 +579,7 @@ fn native_reader_and_writer_exchange_source_bundles_and_never_drop_provenance() 
         package_id: "12345678-1234-4234-8234-123456789abc".into(),
         brushes: vec![paint_io::vbr::Preset {
             stroke_taper: None,
+            stroke_outline: None,
             wet_mix: None,
             id: "12345678-1234-4234-8234-123456789abd".into(),
             name: "source".into(),
@@ -728,6 +729,7 @@ fn pressure_packages_round_trip_through_native_entry() {
         package_id: "12345678-1234-4234-8234-123456789abc".into(),
         brushes: vec![paint_io::vbr::Preset {
             stroke_taper: None,
+            stroke_outline: None,
             wet_mix: None,
             id: "12345678-1234-4234-8234-123456789abd".into(),
             name: "pressure".into(),

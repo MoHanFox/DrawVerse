@@ -13,7 +13,8 @@ mod files;
 use abi::{api, error, pointers};
 use brushes::{
     brush_api, brush_catalog_api, brush_file_api, brush_pose_api, brush_preparation,
-    brush_taper_api, brush_wet_api, brush_wet_dual_api, pressure_curve_api,
+    brush_stroke_outline_api, brush_taper_api, brush_wet_api, brush_wet_dual_api,
+    pressure_curve_api,
 };
 use document::{
     bucket_api, layer_actions_api, layer_api, liquify_api, selection_api, smudge_api,
@@ -27,6 +28,7 @@ pub use brush_api::*;
 pub use brush_catalog_api::*;
 pub use brush_file_api::*;
 pub use brush_pose_api::*;
+pub use brush_stroke_outline_api::*;
 pub use brush_taper_api::*;
 pub use brush_wet_api::*;
 pub use brush_wet_dual_api::*;
@@ -155,6 +157,7 @@ pub unsafe extern "C" fn paint_core_capabilities(
                     | PAINT_FEATURE_COMPOSITE_BRUSH_POSE
                     | PAINT_FEATURE_WET_BRUSH
                     | PAINT_FEATURE_STROKE_TAPER
+                    | PAINT_FEATURE_STROKE_OUTLINE
                     | PAINT_FEATURE_WET_DUAL_COLOR
                     | PAINT_FEATURE_BRUSH_CURSOR_IMAGE
                     | PAINT_FEATURE_BRUSH_GROUP_STATE
