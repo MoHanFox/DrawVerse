@@ -102,6 +102,26 @@ class UiTests final : public QObject {
     QTemporaryDir m_preferences;
 private slots:
 
+    void curvePointKeepsGrabOutsideGraph_data() {
+        QTest::addColumn<bool>("speed");QTest::newRow("pressure")<<false;QTest::newRow("speed")<<true;
+    }
+    void curvePointKeepsGrabOutsideGraph() {
+        QFETCH(bool,speed);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("curve.ini"));QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+        const QVariantList points{QVariantList{0.,0.},QVariantList{.4,.5},QVariantList{1.,1.}};
+        QVERIFY(speed?library->setSpeedControl("flow",points,0):library->setPressureControl("flow",points,0));
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);QQmlComponent component(&engine);
+        component.setData(speed?QByteArray("import QtQuick\nimport \"qrc:/qml/brushes\"\nSpeedCurveEditor {library:PaintClient.brushLibrary;target:\"flow\";prefix:\"dragCurve\";curve:library.speedFlowCurve;setControl:(points,minimum)=>library.setSpeedControl(\"flow\",points,minimum)}"):QByteArray("import QtQuick\nimport \"qrc:/qml/brushes\"\nPressureCurveEditor {library:PaintClient.brushLibrary;target:\"flow\";prefix:\"dragCurve\"}"),QUrl());
+        QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));auto *item=qobject_cast<QQuickItem*>(object.data());QVERIFY(item);
+        QQuickWindow window;window.resize(400,350);item->setParentItem(window.contentItem());item->setX(30);item->setY(40);item->setWidth(280);item->setHeight(240);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *graph=findVisualItem(item,"dragCurveCurve");auto *area=findVisualItem(item,"dragCurveDragArea");QVERIFY(graph && area);QVERIFY(area->property("preventStealing").toBool());
+        const auto at=[&](qreal x,qreal y){return graph->mapToScene({7+x*(graph->width()-14),graph->height()-7-y*(graph->height()-14)}).toPoint();};
+        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,at(.4,.5));QTest::mouseMove(&window,at(1.3,1.4));QTest::mouseMove(&window,at(.6,.65));
+        const auto edited=[&](){return speed?library->speedFlowCurve():library->pressureDynamics().value("flow").toMap().value("curve").toList();};
+        QTRY_VERIFY(std::abs(edited()[1].toList()[0].toDouble()-.6)<.02);QVERIFY(std::abs(edited()[1].toList()[1].toDouble()-.65)<.03);
+        QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,at(.6,.65));const auto released=edited();QTest::mouseMove(&window,at(.3,.3));QCOMPARE(edited(),released);
+        item->setParentItem(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
     void brushSettingsCreatesOnlyActiveCategoryAndLabelsChoices() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());QTRY_VERIFY(client.ready());

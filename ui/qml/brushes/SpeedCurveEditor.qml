@@ -28,7 +28,7 @@ ColumnLayout {
     function movePoint(index,x,y) {
         var data=copyPoints()
         if(index===0 || index===data.length-1)x=data[index][0]
-        if(index>0 && index<data.length-1 && (x<=data[index-1][0] || x>=data[index+1][0]))return false
+        if(index>0 && index<data.length-1){const gap=Math.min(0.0001,(data[index+1][0]-data[index-1][0])/4);x=Math.max(data[index-1][0]+gap,Math.min(data[index+1][0]-gap,x))}
         data[index]=[x,y]
         return setPressureControl(data,minimum)
     }
@@ -60,7 +60,7 @@ ColumnLayout {
         onWidthChanged:requestPaint()
         onHeightChanged:requestPaint()
         MouseArea {
-            anchors.fill:parent;hoverEnabled:true;property bool moving:false
+            objectName:root.prefix+"DragArea";anchors.fill:parent;hoverEnabled:true;preventStealing:true;property bool moving:false
             ToolTip.delay:1000;ToolTip.visible:containsMouse;ToolTip.text:root.curveHelp
             onPressed:mouse=>{var nearest=-1,distance=100;for(var i=0;i<root.points.length;++i){var dx=mouse.x-graph.px(root.points[i][0]),dy=mouse.y-graph.py(root.points[i][1]);var d=dx*dx+dy*dy;if(d<distance){distance=d;nearest=i}}moving=nearest>=0;if(moving)root.selected=nearest}
             onPositionChanged:mouse=>{if(pressed && moving)root.movePoint(root.selected,graph.inputX(mouse.x),graph.inputY(mouse.y))}
