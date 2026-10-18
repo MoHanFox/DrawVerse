@@ -17,3 +17,10 @@
 - 构建与真实QML回归暴露既有空剪贴板解引用：`canPasteLayers()`未判断`mimeData()`为空。通过Release链接映射定位并补空值保护，真实窗口回归不再崩溃；不是笔刷引擎或GPU崩溃。
 - Windows Release `qt_ui_tests` 构建及生成头检查通过；`standardBrushPreviewKeepsBaseEditsAndUpdatesOnlyItsRow`、`combinedBrushFeaturesPreviewSurvivesStateRoundtrip`、`allAutomaticBrushPreviewsStayWhiteWithExactAlphaAndColorIndependentCache`、`brushGroupsAppearInLibraryTreeAndSearchKeepsParent`四项通过（另含初始化/清理）。记录：`artifacts/feedback-step1-tests.txt`。
 - 未完成：大ABR实际导入耗时和滑动帧耗时量化；本步消除已定位的目录刷新放大，不宣称所有导入卡顿已解决。未跑全量/硬件/跨平台/GPU。
+
+## 步骤 2：设置分类按需创建与控件整理
+
+- 12个分类改为仅实例化当前分类，切换时销毁隐藏分类的曲线/控件；编辑值仍保存在BrushLibrary，导入解释选项移到面板状态，文件对话框不依赖已销毁控件。
+- 为原本仅靠提示说明的选择框增加短标题；来源选择采用上下布局；光标图片不透明度改用通用CompactSlider；相对双笔刷隐藏独立直径，标称直径显示保留一位小数。
+- Windows Release构建通过；新增实际分类实例化/切换/值保留/控件显隐用例，以及双尺寸、起收笔、动态来源三项既有Qt真实预览/交换用例通过。记录：`artifacts/feedback-step2-tests.txt`。
+- 本步保持旧相对像素偏移语义；百分比与新持久化语义仍待步骤7。未量化所有硬件上的设置打开时延，未跑全量/跨平台/设备/GPU。

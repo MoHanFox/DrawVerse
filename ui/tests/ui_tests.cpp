@@ -102,6 +102,25 @@ class UiTests final : public QObject {
     QTemporaryDir m_preferences;
 private slots:
 
+    void brushSettingsCreatesOnlyActiveCategoryAndLabelsChoices() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());QTRY_VERIFY(client.ready());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        for(const auto &v:workspace.leftGroups()+workspace.rightGroups()){const auto g=v.toMap();if(g.value("panels").toStringList().contains("brush-settings"))workspace.setActive(g.value("id").toString(),"brush-settings");}
+        QQuickItem *panel=nullptr;QTRY_VERIFY((panel=findVisualItem(window->contentItem(),"brushSettingsPanel")));
+        QVERIFY(findVisualItem(panel,"settingsBrushSize"));QVERIFY(!findVisualItem(panel,"pressureSizeCurve"));QVERIFY(!findVisualItem(panel,"settingsDualSizeMode"));
+        QVERIFY(findVisualItem(panel,"imageTipInterpretationLabel"));
+        panel->setProperty("category",4);
+        QQuickItem *mode=nullptr;QTRY_VERIFY((mode=findVisualItem(panel,"settingsDualSizeMode")));
+        QVERIFY(findVisualItem(panel,"settingsDualSizeModeLabel"));QVERIFY(!findVisualItem(panel,"settingsBrushSize"));
+        mode->setProperty("currentIndex",1);QVERIFY(QMetaObject::invokeMethod(mode,"activated",Q_ARG(int,1)));
+        auto *absolute=findVisualItem(panel,"settingsDualdiameter");auto *relative=findVisualItem(panel,"settingsDualsizingdiameterOffset");QVERIFY(absolute && relative);QVERIFY(!absolute->isVisible());QVERIFY(relative->isVisible());
+        panel->setProperty("category",6);QTRY_VERIFY(findVisualItem(panel,"pressureSizeCurve")==nullptr);QTRY_VERIFY(findVisualItem(panel,"pressureFlowCurve"));
+        panel->setProperty("category",4);QTRY_VERIFY(findVisualItem(panel,"settingsDualSizeMode"));QCOMPARE(client.brushLibrary()->dualBrush().value("sizing").toMap().value("mode").toString(),QString("relative"));
+        panel->setProperty("category",7);QTRY_VERIFY(findVisualItem(panel,"brushCursorImageOpacitySlider"));QVERIFY(!findVisualItem(panel,"pressureFlowCurve"));
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
     void standardBrushPreviewKeepsBaseEditsAndUpdatesOnlyItsRow() {
         BrushLibrary library;
         const auto id=library.selectedId();
