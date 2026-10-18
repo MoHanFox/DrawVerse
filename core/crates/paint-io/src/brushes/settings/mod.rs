@@ -3,6 +3,7 @@ pub mod brush_dual;
 pub mod brush_dual_color;
 pub mod brush_dual_sizing;
 pub mod brush_smoothing;
+pub mod brush_stroke_outline;
 pub mod brush_taper;
 pub mod brush_texture;
 pub mod brush_wet;

@@ -189,6 +189,12 @@ struct Row {
         deserialize_with = "crate::brush_transfer_jitter::present"
     )]
     transfer_jitter: Option<crate::brush_transfer_jitter::TransferParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_stroke_outline::present"
+    )]
+    stroke_outline: Option<crate::brush_stroke_outline::OutlineParameters>,
 }
 pub fn decode(bytes: &[u8], mask_budget: usize) -> Result<BrushCatalog> {
     decode_inner(
@@ -256,7 +262,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=40) {
+    if !matches!(state.version, 1..=41) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -496,6 +502,54 @@ fn decode_inner(
                 "interleaved dual color requires paired dry painting",
             ));
         }
+        if row.stroke_outline.is_some() && state.version < 41 {
+            return Err(Error::Unsupported("stroke outline requires state41".into()));
+        }
+        let outline = if let Some(parameters) = row.stroke_outline {
+            let existing = if let Some(id) = parameters.existing_resource_id() {
+                let mask = resources
+                    .ok_or(Error::Unsupported(
+                        "outline resource store is required".into(),
+                    ))?
+                    .load(id, token)?
+                    .mask;
+                if resident_masks.insert(std::sync::Arc::as_ptr(&mask) as usize) {
+                    resident = resident.saturating_add(mask.resident_bytes());
+                    if resident > mask_budget {
+                        return Err(Error::Limit("outline resource budget"));
+                    }
+                }
+                Some(mask)
+            } else {
+                None
+            };
+            let outline_texture = if let Some(id) = parameters.texture_resource_id() {
+                if !textures.contains_key(id) {
+                    let source = resources
+                        .ok_or(Error::Unsupported("texture resource store required".into()))?
+                        .load(id, token)?
+                        .mask;
+                    if resident_masks.insert(std::sync::Arc::as_ptr(&source) as usize) {
+                        resident = resident.saturating_add(source.resident_bytes());
+                    }
+                    resident =
+                        resident.saturating_add(source.resident_bytes() - source.coverage().len());
+                    if resident > mask_budget {
+                        return Err(Error::Limit("texture mip resource budget"));
+                    }
+                    textures.insert(
+                        id.to_owned(),
+                        std::sync::Arc::new(paint_core::TextureResource::new(source)),
+                    );
+                }
+                Some(textures[id].clone())
+            } else {
+                None
+            };
+            parameters.bind(existing, outline_texture)?
+        } else {
+            Default::default()
+        };
         if let Some(id) = &row.source_resource {
             if state.version < 4 {
                 return Err(Error::Unsupported("brush sources require state v4".into()));
@@ -578,6 +632,7 @@ fn decode_inner(
             row.id,
             row.name,
             BrushSettings {
+                outline,
                 taper: row
                     .stroke_taper
                     .map(|p| p.core().clone())
@@ -639,6 +694,14 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
                 18
             });
             Some(crate::brush_taper::TaperParameters::from_core(&s.taper))
+        } else {
+            None
+        };
+        let stroke_outline = if !s.outline.is_default() {
+            version = version.max(41);
+            Some(crate::brush_stroke_outline::OutlineParameters::from_core(
+                &s.outline,
+            )?)
         } else {
             None
         };
@@ -886,6 +949,7 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             smoothing,
             wet_mix,
             stroke_taper,
+            stroke_outline,
             airbrush,
             speed_dynamics,
             tangent_dynamics,

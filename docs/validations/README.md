@@ -31,6 +31,7 @@
 ## 笔刷核心
 
 - [整条笔触描边分阶段验收](brush/core/brush-stroke-outline-validation.md)
+- [整条笔触描边保存交换验收](brush/core/brush-stroke-outline-io-validation.md)
 
 - [画笔混合原生入口验收](brush/core/brush-blend-abi-validation.md)
 - [画笔颜色混合内核验收](brush/core/brush-blend-validation.md)

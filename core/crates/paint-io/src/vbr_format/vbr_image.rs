@@ -72,6 +72,18 @@ impl ImageBundle {
                 .and_then(|d| d.resource_id())
                 .map(str::to_owned)
         }));
+        referenced.extend(package.brushes.iter().filter_map(|b| {
+            b.stroke_outline
+                .as_ref()
+                .and_then(|o| o.existing_resource_id())
+                .map(str::to_owned)
+        }));
+        referenced.extend(package.brushes.iter().filter_map(|b| {
+            b.stroke_outline
+                .as_ref()
+                .and_then(|o| o.texture_resource_id())
+                .map(str::to_owned)
+        }));
         for source in &sources {
             for id in source.tip_ids() {
                 referenced.insert(id.to_owned());
@@ -204,6 +216,40 @@ impl ImageBundle {
                 .transpose()?;
             definition.dual = d.bind(mask)?;
         }
+        if let Some(o) = &preset.stroke_outline {
+            let existing = o
+                .existing_resource_id()
+                .map(|id| {
+                    self.assets
+                        .get(id)
+                        .map(|a| a.mask())
+                        .ok_or(Error::Invalid("missing outline brush resource"))
+                })
+                .transpose()?;
+            let texture = if let Some(id) = o.texture_resource_id() {
+                let mut cache = self
+                    .textures
+                    .lock()
+                    .map_err(|_| Error::Invalid("texture cache lock"))?;
+                if !cache.contains_key(id) {
+                    drop(cache);
+                    self.prepare_textures()?;
+                    cache = self
+                        .textures
+                        .lock()
+                        .map_err(|_| Error::Invalid("texture cache lock"))?;
+                }
+                Some(
+                    cache
+                        .get(id)
+                        .ok_or(Error::Invalid("outline texture missing resource"))?
+                        .clone(),
+                )
+            } else {
+                None
+            };
+            definition.outline = o.clone().bind(existing, texture)?;
+        }
         Ok(definition)
     }
     fn prepare_textures(&self) -> Result<()> {
@@ -211,7 +257,17 @@ impl ImageBundle {
             .package
             .brushes
             .iter()
-            .filter_map(|b| b.texture.as_ref().and_then(|t| t.resource_id()))
+            .flat_map(|b| {
+                b.texture
+                    .as_ref()
+                    .and_then(|t| t.resource_id())
+                    .into_iter()
+                    .chain(
+                        b.stroke_outline
+                            .as_ref()
+                            .and_then(|o| o.texture_resource_id()),
+                    )
+            })
             .collect::<BTreeSet<_>>();
         let mut resident = self
             .assets
@@ -269,6 +325,16 @@ impl ImageBundle {
                 .iter()
                 .filter_map(|b| b.dual_brush.as_ref().and_then(|d| d.resource_id())),
         );
+        referenced.extend(self.package.brushes.iter().filter_map(|b| {
+            b.stroke_outline
+                .as_ref()
+                .and_then(|o| o.existing_resource_id())
+        }));
+        referenced.extend(self.package.brushes.iter().filter_map(|b| {
+            b.stroke_outline
+                .as_ref()
+                .and_then(|o| o.texture_resource_id())
+        }));
         let mut source_ids = BTreeSet::new();
         let mut originals = BTreeSet::new();
         let mut records = 0usize;
@@ -512,6 +578,7 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                 || b.smoothing.is_some()
                 || b.wet_mix.is_some()
                 || b.stroke_taper.is_some()
+                || b.stroke_outline.is_some()
         })
     {
         return vbr::encode(&bundle.package, token);

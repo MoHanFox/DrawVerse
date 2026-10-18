@@ -109,6 +109,7 @@ fn package(s: &BrushSettings) -> Package {
                 color_dynamics: None,
             },
             stroke_taper: Some(TaperParameters::from_core(&s.taper)),
+            stroke_outline: None,
             wet_mix: (!s.wet.is_default())
                 .then(|| paint_io::brush_wet::WetParameters::from_core(s.wet)),
             smoothing: (!s.smoothing.is_default())

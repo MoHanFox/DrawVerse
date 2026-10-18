@@ -1715,6 +1715,7 @@ fn convert_inner<'a>(
             1.
         };
         let mut settings = BrushSettings {
+            outline: Default::default(),
             taper: Default::default(),
             wet: Default::default(),
             smoothing: Default::default(),

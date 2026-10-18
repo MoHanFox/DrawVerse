@@ -60,6 +60,7 @@ fn bundle_from_bytes(bytes: Vec<u8>) -> ImageBundle {
             let s = p.settings();
             Preset {
                 stroke_taper: None,
+                stroke_outline: None,
                 wet_mix: None,
                 texture: (!s.texture.is_default())
                     .then(|| paint_io::brush_texture::TextureParameters::from_core(&s.texture))
@@ -578,6 +579,7 @@ fn all_1024_presets_can_have_distinct_current_and_baseline_tips_and_originals() 
         );
         brushes.push(Preset {
             stroke_taper: None,
+            stroke_outline: None,
             wet_mix: None,
             smoothing: None,
             dual_brush: Some(paint_io::brush_dual::DualParameters::from_core(&dual).unwrap()),

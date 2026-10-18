@@ -103,6 +103,9 @@ impl TextureParameters {
     pub fn resource_id(&self) -> Option<&str> {
         self.resource.as_deref()
     }
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
     pub fn mode(&self) -> &str {
         &self.mode
     }

@@ -335,6 +335,11 @@ impl SourceArchive {
                 "taper source baseline is not represented".into(),
             ));
         }
+        if !settings.outline.is_default() {
+            return Err(Error::Unsupported(
+                "stroke outline source baseline is not represented".into(),
+            ));
+        }
         if !settings.wet.is_default() {
             return Err(Error::Unsupported(
                 "wet source baseline is not represented".into(),

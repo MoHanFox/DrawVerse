@@ -7,6 +7,7 @@ fn package() -> Package {
         package_id: "12345678-1234-1234-1234-123456789abc".into(),
         brushes: vec![Preset {
             stroke_taper: None,
+            stroke_outline: None,
             wet_mix: None,
             tip_resource: None,
             texture: None,

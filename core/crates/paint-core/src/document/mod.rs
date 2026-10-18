@@ -1299,15 +1299,20 @@ impl Document {
     ) -> Result<()> {
         self.idle()?;
         self.layer_index(self.active_layer)?;
+        let outline_settings = outline_settings
+            .cloned()
+            .unwrap_or_else(|| definition.outline.clone());
         let brush = definition.brush;
         let mut program = if wet.as_ref().is_some_and(|w| w.secondary.is_some()) {
             BrushProgram::compile_wet_pair(definition)?
         } else {
             BrushProgram::compile(definition)?
         };
-        program.outline_work = outline_settings.is_some_and(|s| {
-            s.enabled() && s.width().effective(brush.radius * 2.).is_ok_and(|w| w > 0.)
-        });
+        program.outline_work = outline_settings.enabled()
+            && outline_settings
+                .width()
+                .effective(brush.radius * 2.)
+                .is_ok_and(|w| w > 0.);
         if let Some(wet) = &mut wet {
             self.validate_wet_start(&program, brush, first, wet)?;
         }
@@ -1395,10 +1400,7 @@ impl Document {
             coverage_erase: brush.mode == BrushMode::Erase || first.tool == Tool::Eraser,
             coverage_tool_stable: true,
             taper: None,
-            outline: outline_settings
-                .map(|s| outline::OutlineStroke::new(s, brush.radius * 2., first))
-                .transpose()?
-                .flatten(),
+            outline: outline::OutlineStroke::new(&outline_settings, brush.radius * 2., first)?,
             taper_factors: crate::TaperFactors {
                 diameter: 1.,
                 opacity: 1.,

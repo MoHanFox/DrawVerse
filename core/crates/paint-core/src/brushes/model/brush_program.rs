@@ -60,6 +60,7 @@ pub struct BrushDefinition {
     pub smoothing: crate::BrushSmoothing,
     pub wet: crate::WetSettings,
     pub taper: crate::StrokeTaper,
+    pub outline: crate::StrokeOutline,
     pub airbrush: crate::Airbrush,
     pub write_blend: crate::BlendMode,
 }
@@ -76,6 +77,7 @@ impl From<Brush> for BrushDefinition {
             smoothing: Default::default(),
             wet: Default::default(),
             taper: Default::default(),
+            outline: Default::default(),
             airbrush: Default::default(),
             write_blend: Default::default(),
         }
@@ -266,6 +268,7 @@ impl BrushProgram {
     fn compile_inner(definition: BrushDefinition, wet_pair: bool) -> Result<Self> {
         definition.brush.validate()?;
         definition.tip.validate()?;
+        definition.outline.validate()?;
         if definition.write_blend == crate::BlendMode::PassThrough
             || (definition.write_blend != crate::BlendMode::Normal
                 && definition.brush.mode != crate::BrushMode::Paint)

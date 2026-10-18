@@ -37,6 +37,7 @@ pub use brushes::settings::brush_airbrush;
 pub use brushes::settings::brush_dual;
 pub use brushes::settings::brush_dual_color;
 pub use brushes::settings::brush_dual_sizing;
+pub use brushes::settings::brush_stroke_outline;
 pub use brushes::settings::brush_taper;
 pub use brushes::settings::brush_texture;
 pub use brushes::settings::brush_wet;

@@ -188,6 +188,7 @@ impl Parameters {
             .map(|p| p.core())
             .unwrap_or_default();
         BrushSettings {
+            outline: Default::default(),
             taper: Default::default(),
             wet: Default::default(),
             smoothing: Default::default(),
@@ -251,6 +252,12 @@ pub struct Preset {
         deserialize_with = "crate::brush_taper::present"
     )]
     pub stroke_taper: Option<crate::brush_taper::TaperParameters>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_stroke_outline::present"
+    )]
+    pub stroke_outline: Option<crate::brush_stroke_outline::OutlineParameters>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_resource: Option<String>,
 }
@@ -379,6 +386,12 @@ fn canonical_preset_value() -> &'static Value {
             stroke_taper: Some(crate::brush_taper::TaperParameters::from_core(
                 &paint_core::StrokeTaper::default(),
             )),
+            stroke_outline: Some(
+                crate::brush_stroke_outline::OutlineParameters::from_core(
+                    &paint_core::StrokeOutline::default(),
+                )
+                .expect("default stroke outline"),
+            ),
             source_resource: None,
         };
         let mut value = serde_json::to_value(preset).expect("canonical VBR preset");
@@ -580,6 +593,7 @@ impl Preset {
         for (active, capability) in [
             (self.has_wet_dual(), "wet-dual-color"),
             (self.stroke_taper.is_some(), "stroke-taper"),
+            (self.stroke_outline.is_some(), "stroke-outline"),
             (self.wet_mix.is_some(), "wet-mix"),
             (self.has_dual_color(), "dual-color-stroke"),
             (self.has_interleaved_color(), "dual-color-stamp"),
@@ -647,7 +661,9 @@ impl Preset {
             }
         }
         self.required_capabilities = capabilities;
-        self.behavior_version = if self.has_node_modes() {
+        self.behavior_version = if self.stroke_outline.is_some() {
+            33
+        } else if self.has_node_modes() {
             32
         } else if self.has_relative_taper() {
             31
@@ -791,6 +807,7 @@ fn is_feature_capability(capability: &str) -> bool {
             | "transfer-jitter"
             | "wet-mix"
             | "stroke-taper"
+            | "stroke-outline"
             | "wet-dual-color"
     )
 }
@@ -907,6 +924,7 @@ impl Package {
                             | "transfer-jitter"
                             | "wet-mix"
                             | "stroke-taper"
+                            | "stroke-outline"
                             | "wet-dual-color"
                     )
                 })
@@ -1066,6 +1084,7 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<Package> {
     package.validate()?;
     if package.brushes.iter().any(|b| {
         b.stroke_taper.is_some()
+            || b.stroke_outline.is_some()
             || b.wet_mix.is_some()
             || b.smoothing.is_some()
             || b.tip_resource.is_some()
@@ -1097,6 +1116,7 @@ pub fn encode(package: &Package, token: &CancellationToken) -> Result<Vec<u8>> {
     package.validate()?;
     if package.brushes.iter().any(|b| {
         b.stroke_taper.is_some()
+            || b.stroke_outline.is_some()
             || b.wet_mix.is_some()
             || b.smoothing.is_some()
             || b.tip_resource.is_some()

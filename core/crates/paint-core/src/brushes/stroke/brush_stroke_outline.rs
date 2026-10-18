@@ -127,6 +127,19 @@ impl StrokeOutline {
     pub fn secondary_color(&self) -> bool {
         self.secondary_color
     }
+    pub fn is_default(&self) -> bool {
+        !self.enabled
+            && self.placement == OutlinePlacement::default()
+            && self.width == OutlineWidth::default()
+            && matches!(self.source, OutlineSource::SelfBrush)
+            && !self.secondary_color
+    }
+    pub fn validate(&self) -> Result<()> {
+        if self.enabled && matches!(&self.source, OutlineSource::Texture(t) if !t.enabled()) {
+            return Err(Error::InvalidArgument("stroke outline texture is disabled"));
+        }
+        Ok(())
+    }
 }
 
 fn allocated<T: Clone>(count: usize, value: T) -> Result<Vec<T>> {
