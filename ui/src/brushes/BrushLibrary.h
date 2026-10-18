@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QVariantList>
 #include <QStringList>
+#include <algorithm>
 
 // UI preferences only. Engine access and preview work stay in PaintCoreClient.
 class BrushLibrary final : public QObject {
@@ -68,6 +69,7 @@ class BrushLibrary final : public QObject {
     Q_PROPERTY(bool cursorCenter READ cursorCenter WRITE setCursorCenter NOTIFY cursorChanged)
     Q_PROPERTY(bool cursorHoverOnly READ cursorHoverOnly WRITE setCursorHoverOnly NOTIFY cursorChanged)
     Q_PROPERTY(int cursorWidth READ cursorWidth WRITE setCursorWidth NOTIFY cursorChanged)
+    Q_PROPERTY(int cursorBrightness READ cursorBrightness WRITE setCursorBrightness NOTIFY cursorChanged)
     Q_PROPERTY(bool cursorImage READ cursorImage WRITE setCursorImage NOTIFY cursorChanged)
     Q_PROPERTY(int cursorImageOpacity READ cursorImageOpacity WRITE setCursorImageOpacity NOTIFY cursorChanged)
     Q_PROPERTY(bool cursorComposite READ cursorComposite WRITE setCursorComposite NOTIFY cursorChanged)
@@ -81,6 +83,8 @@ public:
     bool cursorCenter() const {return m_cursorCenter;}
     bool cursorHoverOnly() const {return m_cursorHoverOnly;}
     int cursorWidth() const {return m_cursorWidth;}
+    int cursorBrightness() const {return std::max(1,qRound(QColor(m_cursorColor).valueF()*100));}
+    void setCursorBrightness(int value);
     bool cursorImage() const {return m_cursorImage;}
     int cursorImageOpacity() const {return m_cursorImageOpacity;}
     void setCursorImage(bool value);
@@ -413,7 +417,7 @@ private:
     void cursorPreferenceChanged();
     void setTipDynamics(QVariantMap data);
     bool m_cursorOutline=true,m_cursorCenter=false,m_cursorHoverOnly=false;
-    int m_cursorWidth=1,m_cursorImageOpacity=25;
+    int m_cursorWidth=0,m_cursorImageOpacity=25;
     bool m_cursorImage=false;
     bool m_cursorSimple=false,m_cursorComposite=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";

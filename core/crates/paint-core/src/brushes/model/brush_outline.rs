@@ -9,6 +9,61 @@ pub struct BrushOutlineSegment {
 }
 
 impl BrushMask {
+    /// Bounded display geometry. Conservative pooling keeps thin features visible;
+    /// coordinates retain the original aspect even when a reduced axis is one pixel.
+    pub fn display_outline(&self) -> Result<Vec<BrushOutlineSegment>> {
+        const MAX_DISPLAY_SEGMENTS: usize = 2048;
+        let (original_width, original_height) = self.dimensions();
+        let original_extent = f64::from(original_width.max(original_height));
+        if original_extent <= 128. {
+            let exact = self.outline()?;
+            if exact.len() <= MAX_DISPLAY_SEGMENTS {
+                return Ok(exact);
+            }
+        }
+        let mut reduced: Option<BrushMask> = None;
+        let mut edge = 128u32;
+        loop {
+            let source = reduced.as_ref().unwrap_or(self);
+            let (width, height) = source.dimensions();
+            let extent = width.max(height);
+            let target_width = (width * edge).div_ceil(extent).max(1);
+            let target_height = (height * edge).div_ceil(extent).max(1);
+            let mut coverage = vec![0; (target_width * target_height) as usize];
+            for y in 0..target_height {
+                for x in 0..target_width {
+                    let mut maximum = 0;
+                    for sy in y * height / target_height..((y + 1) * height).div_ceil(target_height)
+                    {
+                        for sx in x * width / target_width..((x + 1) * width).div_ceil(target_width)
+                        {
+                            maximum = maximum.max(source.coverage()[(sy * width + sx) as usize]);
+                        }
+                    }
+                    coverage[(y * target_width + x) as usize] = maximum;
+                }
+            }
+            let mask = BrushMask::new(target_width, target_height, coverage)?;
+            let mut outline = mask.outline()?;
+            if outline.len() <= MAX_DISPLAY_SEGMENTS {
+                let extent = f64::from(target_width.max(target_height));
+                let scale_x =
+                    f64::from(original_width) / original_extent * extent / f64::from(target_width);
+                let scale_y = f64::from(original_height) / original_extent * extent
+                    / f64::from(target_height);
+                for segment in &mut outline {
+                    for point in [&mut segment.start, &mut segment.end] {
+                        point[0] = 0.5 + (point[0] - 0.5) * scale_x;
+                        point[1] = 0.5 + (point[1] - 0.5) * scale_y;
+                    }
+                }
+                return Ok(outline);
+            }
+            reduced = Some(mask);
+            edge /= 2;
+        }
+    }
+
     /// Unit-diameter coordinates, centred at (.5,.5), preserving source aspect.
     /// No simplification or silent truncation occurs at the complexity limit.
     pub fn outline(&self) -> Result<Vec<BrushOutlineSegment>> {

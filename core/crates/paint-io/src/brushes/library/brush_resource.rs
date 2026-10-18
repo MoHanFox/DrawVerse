@@ -431,7 +431,7 @@ impl ResourceStore {
             return Ok(result);
         }
         let resource = self.load(id, token)?;
-        let outline = resource.mask.outline()?;
+        let outline = resource.mask.display_outline()?;
         check(token)?;
         let mut svg = String::new();
         for segment in outline {

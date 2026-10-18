@@ -1,6 +1,29 @@
 use paint_core::{BrushMask, BrushOutlineSegment, Error};
 use std::collections::BTreeMap;
 
+#[test]
+fn display_outline_bounds_complexity_preserves_thin_aspect_and_source() {
+    let pixels: Vec<_> = (0..512 * 512)
+        .map(|i| if (i / 512 + i % 512) % 2 == 0 { 255 } else { 0 })
+        .collect();
+    let mask = BrushMask::new(512, 512, pixels.clone()).unwrap();
+    let outline = mask.display_outline().unwrap();
+    assert!(!outline.is_empty() && outline.len() <= 2048);
+    assert_eq!(components(&outline), 1);
+    assert_eq!(mask.coverage(), pixels);
+    let thin = BrushMask::new(4096, 1, vec![255; 4096]).unwrap();
+    let outline = thin.display_outline().unwrap();
+    assert!(!outline.is_empty() && outline.len() <= 2048);
+    assert_eq!(components(&outline), 1);
+    for segment in outline {
+        for point in [segment.start, segment.end] {
+            assert!((point[1] - 0.5).abs() <= 0.5 / 4096. + 1e-10);
+        }
+    }
+    let simple = BrushMask::new(8, 4, vec![255; 32]).unwrap();
+    assert_eq!(simple.display_outline().unwrap(), simple.outline().unwrap());
+}
+
 fn components(segments: &[BrushOutlineSegment]) -> usize {
     let key = |p: [f64; 2]| ((p[0] * 1e8).round() as i64, (p[1] * 1e8).round() as i64);
     let mut graph = BTreeMap::<_, Vec<_>>::new();

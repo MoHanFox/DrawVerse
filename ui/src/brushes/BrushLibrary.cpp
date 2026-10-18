@@ -555,7 +555,8 @@ void BrushLibrary::cursorPreferenceChanged(){emit cursorChanged();emit persistRe
 void BrushLibrary::setCursorOutline(bool value){if(m_cursorOutline==value)return;m_cursorOutline=value;cursorPreferenceChanged();}
 void BrushLibrary::setCursorCenter(bool value){if(m_cursorCenter==value)return;m_cursorCenter=value;cursorPreferenceChanged();}
 void BrushLibrary::setCursorHoverOnly(bool value){if(m_cursorHoverOnly==value)return;m_cursorHoverOnly=value;cursorPreferenceChanged();}
-void BrushLibrary::setCursorWidth(int value){value=std::clamp(value,1,3);if(m_cursorWidth==value)return;m_cursorWidth=value;cursorPreferenceChanged();}
+void BrushLibrary::setCursorWidth(int value){value=std::clamp(value,0,3);if(m_cursorWidth==value)return;m_cursorWidth=value;cursorPreferenceChanged();}
+void BrushLibrary::setCursorBrightness(int value){auto color=QColor(m_cursorColor);color.setHsvF(color.hsvHueF(),color.hsvSaturationF(),std::clamp(value,1,100)/100.);setCursorColor(color.name());}
 void BrushLibrary::setCursorImage(bool value){if(m_cursorImage==value)return;m_cursorImage=value;cursorPreferenceChanged();}
 void BrushLibrary::setCursorImageOpacity(int value){value=std::clamp(value,1,100);if(m_cursorImageOpacity==value)return;m_cursorImageOpacity=value;cursorPreferenceChanged();}
 void BrushLibrary::setCursorComposite(bool value){if(m_cursorComposite==value)return;m_cursorComposite=value;cursorPreferenceChanged();}
@@ -1384,14 +1385,14 @@ bool BrushLibrary::restore(const QByteArray &json) {
         foreground=QColor(colors.value("foreground").toString());background=QColor(colors.value("background").toString());
         if(!foreground.isValid() || !background.isValid())return false;
     }
-    bool outline=true,center=false,hoverOnly=false,simple=false,composite=false,image=false;int width=1,imageOpacity=25;
+    bool outline=true,center=false,hoverOnly=false,simple=false,composite=false,image=false;int width=0,imageOpacity=25;
     QString color="#000000",secondaryColor="#ffffff";
     if(root.contains("cursor")){
         if(!root.value("cursor").isObject())return false;
         const auto cursor=root.value("cursor").toObject();
         for(const auto &key:{"outline","center","hoverOnly"})if(!cursor.value(key).isBool())return false;
         const double line=cursor.value("width").toDouble(0);
-        if(line<1 || line>3 || std::floor(line)!=line)return false;
+        if(!cursor.value("width").isDouble() || !std::isfinite(line) || line<0 || line>3 || std::floor(line)!=line)return false;
         outline=cursor.value("outline").toBool();center=cursor.value("center").toBool();hoverOnly=cursor.value("hoverOnly").toBool();width=int(line);
         if(cursor.contains("image")){if(!cursor.value("image").isBool())return false;image=cursor.value("image").toBool();}
         if(cursor.contains("imageOpacity")){const auto v=cursor.value("imageOpacity");const auto number=v.toDouble(0);if(!v.isDouble() || !std::isfinite(number) || number<1 || number>100 || std::floor(number)!=number)return false;imageOpacity=int(number);}

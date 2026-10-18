@@ -38,3 +38,11 @@
 - 双击画笔弹出改名框，按捕获的预设ID应用，复用已有名称验证，不改变预设资源身份。
 - Windows Release构建通过；`brushCanStartOutsideDocumentAndPaintEdge`鼠标/合成笔两组从文档外开始、进入文档、单历史与撤销，以及`libraryDoubleClickRenameAndSelfDropFiltering`、既有展开组落点用例通过。记录：`artifacts/feedback-step4-tests.txt`。
 - 画布用例使用实际Main.qml实例及其生命周期；不代表实体数位板或所有鼠标跨窗口拖放已验收。未跑全量/跨平台/GPU。
+
+## 步骤 5：光标细线与有界轮廓
+
+- [设计](../../brush/ui/brush-cursor-bounded-outline-design.md)：默认线宽0，表示单条1界面像素细线；简化模式始终单线，使用外轮廓颜色的HSB亮度生成灰色，B滑条复用现有颜色偏好持久化。
+- 显示轮廓最多2048段。复杂/大资源保守降采样并校正到原长宽比；核心原精确轮廓API、源覆盖、实际绘画像素和PNG图片光标保持。
+- Rust `paint-core --test brush_outline`5项、`paint-io --test brush_resource`9项通过；新测试包含高频512方图、4096×1极薄图、闭合与源数据保持。两crate的lib严格Clippy、格式及Windows Release构建通过。
+- Qt新增零宽/简化亮度/保存与非法值测试，既有全局偏好、图片偏好、真实图片光标轮廓与屏幕宽度三项通过。记录：`artifacts/feedback-step5-tests.txt`。
+- 不保证保留低于简化采样分辨率的孔洞和纹理细节；这些细节仍保存在实际笔尖。未跑全量/实体设备/跨平台/GPU。

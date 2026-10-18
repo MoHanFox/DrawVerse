@@ -417,11 +417,15 @@ ColumnLayout {
                     }
                     Label {visible:root.library.cursorImage && PaintClient.cursorImageMessage.length>0;text:PaintClient.cursorImageMessage;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     CompactCheckBox {objectName:"brushCursorSimple";text:"简化圆形";checked:root.library.cursorSimple;font.pixelSize:10;onToggled:root.library.cursorSimple=checked;tooltip:"使用标称大小的圆形轮廓，不改变实际笔尖。"}
+                    ColumnLayout {Layout.fillWidth:true;visible:root.library.cursorSimple
+                        Label {text:"轮廓亮度 (B)";color:Theme.text;font.pixelSize:10}
+                        CompactSlider {objectName:"brushCursorBrightness";Layout.fillWidth:true;from:1;to:100;stepSize:1;value:root.library.cursorBrightness;onMoved:root.library.cursorBrightness=Math.round(value);tooltip:"HSB亮度，1–100%；简化轮廓以相同亮度的灰色单线显示。"}
+                    }
                     CompactCheckBox {objectName:"brushCursorCenter";text:"中心十字";checked:root.library.cursorCenter;font.pixelSize:10;onToggled:root.library.cursorCenter=checked;tooltip:"在笔尖中心显示精确定位十字。"}
                     CompactCheckBox {objectName:"brushCursorHoverOnly";text:"仅悬停时显示";checked:root.library.cursorHoverOnly;font.pixelSize:10;onToggled:root.library.cursorHoverOnly=checked;tooltip:"开始绘画时隐藏笔尖预览，结束后恢复。"}
                     RowLayout {
                         Label {text:"线宽";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
-                        CompactSpinBox {objectName:"brushCursorWidth";from:1;to:3;editable:true;implicitWidth:66;implicitHeight:20;value:root.library.cursorWidth;onValueModified:root.library.cursorWidth=value;tooltip:"黑白轮廓线宽，单位为界面像素。"}
+                        CompactSpinBox {objectName:"brushCursorWidth";from:0;to:3;editable:true;implicitWidth:66;implicitHeight:20;value:root.library.cursorWidth;onValueModified:root.library.cursorWidth=value;tooltip:"0为单条细线；1–3为双线轮廓宽度，单位为界面像素。"}
                     }
                     RowLayout {
                         Label {text:"轮廓颜色";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
