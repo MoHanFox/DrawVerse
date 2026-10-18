@@ -299,3 +299,50 @@ fn oversized_dimensions_and_actual_animated_png_are_rejected() {
         .is_err());
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
 }
+
+#[test]
+fn resource_inventory_is_sorted_read_only_filters_names_and_bounds_count() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(directory.path().into(), DEFAULT_RESOURCE_BUDGET).unwrap();
+    let token = CancellationToken::default();
+    assert!(store.identities(&token).unwrap().is_empty());
+    let imported = store
+        .import_png(
+            &png(2, 1, &[0, 255], ExtendedColorType::L8),
+            Interpretation::Coverage,
+            &token,
+        )
+        .unwrap();
+    let before = store.encoded(&imported.id).unwrap();
+    let invalid_id = "0".repeat(64);
+    std::fs::write(
+        directory.path().join(format!("{invalid_id}.png")),
+        b"broken",
+    )
+    .unwrap();
+    std::fs::write(directory.path().join("unknown.png"), b"ignored").unwrap();
+    std::fs::write(
+        directory.path().join(format!("{}.txt", "a".repeat(64))),
+        b"ignored",
+    )
+    .unwrap();
+    std::fs::create_dir(directory.path().join(format!("{}.png", "f".repeat(64)))).unwrap();
+    let mut expected = vec![imported.id.clone(), invalid_id.clone()];
+    expected.sort();
+    assert_eq!(store.identities(&token).unwrap(), expected);
+    assert!(store.load(&invalid_id, &token).is_err());
+    assert_eq!(store.encoded(&imported.id).unwrap(), before);
+    drop(imported);
+    drop(store);
+    let reopened = ResourceStore::open(directory.path().into(), DEFAULT_RESOURCE_BUDGET).unwrap();
+    assert_eq!(reopened.resident_bytes(), 0);
+    assert_eq!(reopened.identities(&token).unwrap(), expected);
+    assert_eq!(reopened.resident_bytes(), 0);
+    let cancelled = CancellationToken::default();
+    cancelled.cancel();
+    assert!(reopened.identities(&cancelled).is_err());
+    for i in 1..MAX_RESOURCE_FILES {
+        std::fs::write(directory.path().join(format!("{i:064x}.png")), []).unwrap();
+    }
+    assert!(reopened.identities(&token).is_err());
+}

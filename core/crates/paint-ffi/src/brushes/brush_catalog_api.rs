@@ -615,6 +615,39 @@ pub unsafe extern "C" fn paint_brush_library_import_tip_file(
     })
 }
 
+/// Background-only sorted coverage-resources-v1 JSON inventory; no image decoding.
+/// Includes unreferenced stored PNG identities. Reads do not change the catalog revision.
+/// # Safety
+/// Live library and nonoverlapping writable buffer/required storage required.
+/// Null buffer with zero capacity probes the size; insufficient capacity copies no bytes.
+#[no_mangle]
+pub unsafe extern "C" fn paint_brush_library_resources_json(
+    library: *mut PaintBrushLibrary,
+    buffer: *mut u8,
+    capacity: u64,
+    required: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(required, 0)?;
+        runtime::outside_callback()?;
+        let capacity_bytes = pointers::length(capacity)?;
+        let library = runtime::registry()?.brush_library(library)?;
+        let bytes = library
+            .resource_store()?
+            .inventory_json(&paint_task::CancellationToken::default())
+            .map_err(crate::file_job::io_error)?;
+        if capacity_bytes < bytes.len() {
+            pointers::write(required, bytes.len() as u64)?;
+            return Err(ApiError::new(
+                PAINT_BUFFER_TOO_SMALL,
+                "resource list buffer too small",
+            ));
+        }
+        pointers::valid_pointer(buffer)?;
+        pointers::copy_buffer(&bytes, buffer, capacity, required)
+    })
+}
+
 /// Background-only cached SVG path for the resource's 50% coverage outline.
 /// Coordinates are unit-diameter, centred at (.5,.5); an empty path is valid.
 /// # Safety

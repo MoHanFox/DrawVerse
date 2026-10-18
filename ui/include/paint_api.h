@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 57
+#define PAINT_ABI_MINOR 58
 
 #define PAINT_ABI_PATCH 0
 
@@ -89,6 +89,8 @@
 #define PAINT_FEATURE_BRUSH_PREPARATION 8388608
 
 #define PAINT_FEATURE_BRUSH_RESOURCES 16777216
+
+#define PAINT_FEATURE_BRUSH_RESOURCE_LIST 9007199254740992
 
 /**
  * Deterministic scatter stamps, state v8 / VBR1.6.
@@ -1381,6 +1383,18 @@ PaintStatus paint_brush_library_rename(struct PaintBrushLibrary *library,
                                        uint64_t id_length,
                                        const uint8_t *name,
                                        uint64_t name_length);
+
+/**
+ * Background-only sorted coverage-resources-v1 JSON inventory; no image decoding.
+ * Includes unreferenced stored PNG identities. Reads do not change the catalog revision.
+ * # Safety
+ * Live library and nonoverlapping writable buffer/required storage required.
+ * Null buffer with zero capacity probes the size; insufficient capacity copies no bytes.
+ */
+PaintStatus paint_brush_library_resources_json(struct PaintBrushLibrary *library,
+                                               uint8_t *buffer,
+                                               uint64_t capacity,
+                                               uint64_t *required);
 
 /**
  * Select an existing preset without changing its parameters.

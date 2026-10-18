@@ -186,6 +186,37 @@ impl ResourceStore {
     pub fn directory(&self) -> &Path {
         &self.directory
     }
+    /// Enumerate stored coverage identities without loading or pinning any masks.
+    /// Content verification remains the responsibility of load/cursor_png.
+    pub fn identities(&self, token: &CancellationToken) -> Result<Vec<String>> {
+        let mut ids = Vec::new();
+        for entry in std::fs::read_dir(&self.directory)? {
+            check(token)?;
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+            let name = entry.file_name();
+            let Some(id) = name.to_str().and_then(|name| name.strip_suffix(".png")) else {
+                continue;
+            };
+            if valid_id(id) {
+                if ids.len() == MAX_RESOURCE_FILES {
+                    return Err(Error::Limit("brush resource file count"));
+                }
+                ids.push(id.to_owned());
+            }
+        }
+        check(token)?;
+        ids.sort_unstable();
+        Ok(ids)
+    }
+    pub fn inventory_json(&self, token: &CancellationToken) -> Result<Vec<u8>> {
+        serde_json::to_vec(&serde_json::json!({
+            "model":"coverage-resources-v1", "resources":self.identities(token)?
+        }))
+        .map_err(|e| Error::Codec(e.to_string()))
+    }
     /// Shared source verification context, initialized on the caller's worker.
     pub fn source_store(&self) -> Result<Arc<crate::brush_source::SourceStore>> {
         let mut sources = self

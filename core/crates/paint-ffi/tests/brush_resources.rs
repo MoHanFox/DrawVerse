@@ -206,7 +206,7 @@ fn cursor_image_public_version_and_feature_are_advertised() {
             ..Default::default()
         };
         assert_eq!(paint_core_version(&mut version), PAINT_OK);
-        assert_eq!(version.minor, 53);
+        assert!(version.minor >= 53);
         let mut core = ptr::null_mut();
         assert_eq!(paint_core_create(&mut core), PAINT_OK);
         let mut caps = PaintCapabilities {
@@ -368,5 +368,84 @@ fn resource_import_validates_outputs_before_writing_and_shared_store_outlives_so
         );
         assert_eq!(duplicate, id);
         assert_eq!(paint_brush_library_destroy(&mut preview), PAINT_OK);
+    }
+}
+
+#[test]
+fn resource_inventory_capacity_errors_and_revision_are_stable() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().to_str().unwrap().as_bytes();
+    let id = "a".repeat(64);
+    std::fs::write(
+        directory.path().join(format!("{id}.png")),
+        b"not decoded by inventory",
+    )
+    .unwrap();
+    unsafe {
+        let mut library = ptr::null_mut();
+        assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+        let mut required = 99;
+        assert_eq!(
+            paint_brush_library_resources_json(library, ptr::null_mut(), 0, &mut required),
+            PAINT_NOT_FOUND
+        );
+        assert_eq!(required, 0);
+        assert_eq!(
+            paint_brush_library_bind_resources(library, path.as_ptr(), path.len() as u64),
+            PAINT_OK
+        );
+        let mut info = PaintBrushLibraryInfo {
+            struct_size: std::mem::size_of::<PaintBrushLibraryInfo>() as u32,
+            ..Default::default()
+        };
+        assert_eq!(paint_brush_library_info(library, &mut info), PAINT_OK);
+        let revision = info.revision;
+        assert_eq!(
+            paint_brush_library_resources_json(library, ptr::null_mut(), 0, &mut required),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        let needed = required;
+        assert_eq!(
+            paint_brush_library_resources_json(library, ptr::null_mut(), needed, &mut required),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(required, 0);
+
+        let mut bytes = vec![0xa5; needed as usize + 2];
+        assert_eq!(
+            paint_brush_library_resources_json(
+                library,
+                bytes.as_mut_ptr().add(1),
+                needed - 1,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert_eq!(required, needed);
+        assert!(bytes.iter().all(|b| *b == 0xa5));
+        assert_eq!(
+            paint_brush_library_resources_json(
+                library,
+                bytes.as_mut_ptr().add(1),
+                needed,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        assert_eq!(bytes[0], 0xa5);
+        assert_eq!(*bytes.last().unwrap(), 0xa5);
+        assert_eq!(
+            std::str::from_utf8(&bytes[1..=needed as usize]).unwrap(),
+            format!("{{\"model\":\"coverage-resources-v1\",\"resources\":[\"{id}\"]}}")
+        );
+        assert_eq!(paint_brush_library_info(library, &mut info), PAINT_OK);
+        assert_eq!(info.revision, revision);
+        assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+        required = 99;
+        assert_eq!(
+            paint_brush_library_resources_json(library, ptr::null_mut(), 0, &mut required),
+            PAINT_INVALID_HANDLE
+        );
+        assert_eq!(required, 0);
     }
 }

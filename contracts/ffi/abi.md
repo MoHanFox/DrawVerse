@@ -1,4 +1,10 @@
-# C ABI 1.57.0 契约
+# C ABI 1.58.0 契约
+
+## ABI 1.58 — 覆盖资源清单
+
+`PAINT_FEATURE_BRUSH_RESOURCE_LIST`（bit53）新增后台入口`paint_brush_library_resources_json`，返回UTF-8无NUL的`{"model":"coverage-resources-v1","resources":["64位小写十六进制身份",...]}`。按身份升序，最多4096项，包含库中未引用PNG；只枚举普通文件，不解码、不改变预设或修订。实际使用仍通过原资源哈希/PNG校验。调用方后台查询并按需生成缩略图，不能把枚举成功当作内容有效。
+
+容量不足返回BUFFER_TOO_SMALL及required且不复制；其他错误清零required。资源未绑定返回NOT_FOUND。目录可在两次查询间变化，调用方应重试容量不足；不提供跨查询快照票据。现有DTO布局和state/VBR不变。
 
 当前版本与能力以 `core/crates/paint-ffi/src/abi/api.rs` 和 `ui/include/paint_api.h` 为准。本文所有笔刷文件均指 VBR 1.0，读取按实际字段补全、校验和执行，不以 minor 判断功能。下文按 ABI 发布阶段说明接口边界；ABI、state、behavior 和来源版本独立于文件版本，见 [当前格式契约](../brush/vbr/format.md)。
 
