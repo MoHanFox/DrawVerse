@@ -13,6 +13,13 @@ struct Control {
         deserialize_with = "interpolation_present"
     )]
     interpolation: Option<String>,
+    #[serde(
+        default,
+        rename = "nodeModes",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_pressure::present_node_modes"
+    )]
+    node_modes: Option<Vec<bool>>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,6 +45,13 @@ struct OpacityControl {
         deserialize_with = "interpolation_present"
     )]
     interpolation: Option<String>,
+    #[serde(
+        default,
+        rename = "nodeModes",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_pressure::present_node_modes"
+    )]
+    node_modes: Option<Vec<bool>>,
     enabled: bool,
 }
 fn interpolation_present<'de, D: serde::Deserializer<'de>>(
@@ -130,6 +144,7 @@ impl Serialize for PressureParameters {
             curve: c.curve().points().to_vec(),
             minimum: c.minimum(),
             interpolation: c.curve().is_smooth().then(|| "smooth-pchip-v1".into()),
+            node_modes: c.curve().node_modes().map(<[bool]>::to_vec),
         };
         Data {
             size: control(&self.dynamics.size),
@@ -143,6 +158,12 @@ impl Serialize for PressureParameters {
                     .curve()
                     .is_smooth()
                     .then(|| "smooth-pchip-v1".into()),
+                node_modes: self
+                    .dynamics
+                    .opacity
+                    .curve()
+                    .node_modes()
+                    .map(<[bool]>::to_vec),
                 enabled: self.dynamics.pressure_opacity,
             }),
         }
@@ -160,6 +181,15 @@ impl<'de> Deserialize<'de> for PressureParameters {
                 Some("smooth-pchip-v1") => PressureCurve::new_smooth(c.curve)?,
                 _ => return Err(paint_core::Error::InvalidArgument("pressure interpolation")),
             };
+            let curve = match c.node_modes {
+                Some(modes) if curve.is_smooth() => curve.with_node_modes(modes)?,
+                Some(_) => {
+                    return Err(paint_core::Error::InvalidArgument(
+                        "node modes require smooth interpolation",
+                    ))
+                }
+                None => curve,
+            };
             PressureControl::new(curve, c.minimum)
         };
         let size = control(data.size).map_err(serde::de::Error::custom)?;
@@ -171,6 +201,7 @@ impl<'de> Deserialize<'de> for PressureParameters {
                     curve: c.curve,
                     minimum: c.minimum,
                     interpolation: c.interpolation,
+                    node_modes: c.node_modes,
                 })
                 .map_err(serde::de::Error::custom)?,
                 c.enabled,
@@ -215,4 +246,34 @@ pub fn curve_samples(bytes: &[u8], smooth: bool) -> crate::Result<Vec<f32>> {
         PressureCurve::new(points)?
     };
     Ok(PressureControl::new(curve, 0.)?.samples(257)?)
+}
+
+/// Presence is strict: null, non-booleans and unbounded lists are invalid.
+pub(crate) fn present_node_modes<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<Option<Vec<bool>>, D::Error> {
+    struct Modes;
+    impl<'de> serde::de::Visitor<'de> for Modes {
+        type Value = Vec<bool>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("2 to 17 boolean node modes")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> std::result::Result<Self::Value, A::Error> {
+            let mut modes = Vec::new();
+            while let Some(mode) = seq.next_element::<bool>()? {
+                if modes.len() == 17 {
+                    return Err(serde::de::Error::custom("node mode count"));
+                }
+                modes.push(mode);
+            }
+            if modes.len() < 2 {
+                return Err(serde::de::Error::custom("node mode count"));
+            }
+            Ok(modes)
+        }
+    }
+    d.deserialize_seq(Modes).map(Some)
 }

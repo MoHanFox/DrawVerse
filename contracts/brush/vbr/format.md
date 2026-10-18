@@ -1,5 +1,7 @@
 # VBR 1.0 当前契约
 
+曲线控制对象可选 `nodeModes`，为与 `curve` 等长的2–17项布尔数组：true采用PCHIP切线，false采用该端所在区间的割线；两端false的区间严格线性。出现时必须显式带平滑插值标记（普通控制为 `smooth-pchip-v1`，起收笔为 `pchip`）。缺省继续执行旧插值。关闭配置也保留该字段；拒绝null、非布尔、长度不符。对应state40、behavior32与 `curve-node-modes`，VBR仍为1.0。
+
 VBR 是 ZIP 包，当前写出版本固定为 `1.0`。manifest 的 `format` 为 `DrawVerseBrush`，`version` 为 `{"major":1,"minor":0}`。文件名后缀 `.vbr` 不决定能力；预设实际字段决定功能。
 
 ## 读写兼容

@@ -13,6 +13,13 @@ struct Control {
         deserialize_with = "interpolation"
     )]
     interpolation: Option<String>,
+    #[serde(
+        default,
+        rename = "nodeModes",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_pressure::present_node_modes"
+    )]
+    node_modes: Option<Vec<bool>>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -77,6 +84,7 @@ impl Serialize for RotationParameters {
             curve: c.curve().points().to_vec(),
             minimum: c.minimum(),
             interpolation: c.curve().is_smooth().then(|| "smooth-pchip-v1".into()),
+            node_modes: c.curve().node_modes().map(<[bool]>::to_vec),
         };
         Data {
             model: "rotation-v1".into(),
@@ -100,6 +108,15 @@ impl<'de> Deserialize<'de> for RotationParameters {
                 Some("smooth-pchip-v1") => PressureCurve::new_smooth(c.curve),
                 _ => return Err(paint_core::Error::InvalidArgument("rotation interpolation")),
             }?;
+            let curve = match c.node_modes {
+                Some(modes) if curve.is_smooth() => curve.with_node_modes(modes)?,
+                Some(_) => {
+                    return Err(paint_core::Error::InvalidArgument(
+                        "node modes require smooth interpolation",
+                    ))
+                }
+                None => curve,
+            };
             PressureControl::new(curve, c.minimum)
         };
         let size = control(data.size).map_err(serde::de::Error::custom)?;

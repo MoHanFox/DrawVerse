@@ -77,6 +77,13 @@ pub struct StrokeTaper {
     end: TaperEnd,
 }
 impl StrokeTaper {
+    pub fn has_node_modes(&self) -> bool {
+        [&self.start, &self.end].iter().any(|e| {
+            [e.size(), e.opacity()]
+                .iter()
+                .any(|c| c.curve().node_modes().is_some())
+        })
+    }
     pub fn new(enabled: bool, start: TaperEnd, end: TaperEnd) -> Self {
         Self {
             enabled,

@@ -73,6 +73,117 @@ fn package() -> Package {
 }
 
 #[test]
+fn node_modes_state40_and_vbr10_preserve_closed_controls_and_reject_invalid_fields() {
+    let c = PressureControl::new(
+        PressureCurve::new_smooth(vec![(0., 0.), (0.5, 0.25), (1., 1.)])
+            .unwrap()
+            .with_node_modes(vec![true, false, true])
+            .unwrap(),
+        0.125,
+    )
+    .unwrap();
+    let mut catalog = BrushCatalog::default();
+    let mut settings = catalog.selected().settings().clone();
+    settings.dynamics.size = c.clone();
+    settings.dynamics.opacity = c.clone();
+    settings.dynamics.speed =
+        SpeedDynamics::new(false, 2000., c.clone(), c.clone(), c.clone()).unwrap();
+    settings.dynamics.tangent = TangentDynamics::new(false, c.clone(), c.clone(), c.clone());
+    settings.dynamics.distance =
+        DistanceDynamics::new(false, 1000., c.clone(), c.clone(), c.clone()).unwrap();
+    settings.dynamics.tilt = TiltDynamics::new(false, c.clone(), c.clone(), c.clone());
+    settings.dynamics.rotation = RotationDynamics::new(false, c.clone(), c.clone(), c.clone());
+    settings.dynamics.direction = DirectionDynamics::new(false, c.clone(), c.clone(), c.clone());
+    settings.dynamics.fade =
+        FadeDynamics::new(false, 100, c.clone(), c.clone(), c.clone()).unwrap();
+    settings.taper = StrokeTaper::new(
+        false,
+        TaperEnd::new(12., c.clone(), c.clone()).unwrap(),
+        TaperEnd::new(10., c.clone(), c.clone()).unwrap(),
+    );
+    catalog.edit("round-pressure", settings.clone()).unwrap();
+    let encoded = brush_state::encode(&catalog).unwrap();
+    let state: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(state["version"], 40);
+    let decoded = brush_state::decode(&encoded, MAX_CATALOG_MASK_BYTES).unwrap();
+    assert_eq!(decoded.selected().settings().dynamics, settings.dynamics);
+    assert_eq!(decoded.selected().settings().taper, settings.taper);
+    assert_eq!(encoded, brush_state::encode(&decoded).unwrap());
+    let mut downgraded = state.clone();
+    downgraded["version"] = 39.into();
+    assert!(brush_state::decode(
+        &serde_json::to_vec(&downgraded).unwrap(),
+        MAX_CATALOG_MASK_BYTES
+    )
+    .is_err());
+    let row_index = state["presets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|p| p["id"] == "round-pressure")
+        .unwrap();
+    for path in [
+        "/pressureDynamics/size",
+        "/pressureDynamics/opacity",
+        "/speedDynamics/flow",
+        "/tangentDynamics/size",
+        "/distanceDynamics/opacity",
+        "/tiltDynamics/size",
+        "/rotationDynamics/flow",
+        "/directionDynamics/size",
+        "/fadeDynamics/opacity",
+        "/strokeTaper/start/size",
+    ] {
+        for invalid in [
+            serde_json::Value::Null,
+            serde_json::json!([true, false]),
+            serde_json::json!([true, 0, false]),
+            serde_json::json!(vec![true; 18]),
+        ] {
+            let mut bad = state.clone();
+            bad["presets"][row_index].pointer_mut(path).unwrap()["nodeModes"] = invalid;
+            assert!(
+                brush_state::decode(&serde_json::to_vec(&bad).unwrap(), MAX_CATALOG_MASK_BYTES)
+                    .is_err(),
+                "{path}"
+            );
+        }
+        let mut bad = state.clone();
+        bad["presets"][row_index]
+            .pointer_mut(path)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("interpolation");
+        assert!(
+            brush_state::decode(&serde_json::to_vec(&bad).unwrap(), MAX_CATALOG_MASK_BYTES)
+                .is_err(),
+            "{path}"
+        );
+    }
+    let mut p = package();
+    p.brushes[0].parameters.pressure_dynamics =
+        Some(PressureParameters::from_core(&BrushDynamics {
+            size: c,
+            ..Default::default()
+        }));
+    let normalized = Package::from_json(&serde_json::to_vec(&p).unwrap()).unwrap();
+    assert_eq!(normalized.brushes[0].behavior_version, 32);
+    assert!(normalized.brushes[0]
+        .required_capabilities
+        .iter()
+        .any(|s| s == "curve-node-modes"));
+    let token = CancellationToken::default();
+    let bundle = vbr_image::ImageBundle::new(normalized.clone(), BTreeMap::new(), &token).unwrap();
+    let bytes = vbr_image::encode(&bundle, &token).unwrap();
+    let reopened = vbr_image::decode(&bytes, &token).unwrap().package;
+    assert_eq!(
+        reopened.brushes[0].parameters.definition().dynamics,
+        normalized.brushes[0].parameters.definition().dynamics
+    );
+}
+
+#[test]
 fn pressure_payload_rejects_scatter_while_state8_preserves_it() {
     let mut catalog = BrushCatalog::default();
     let mut settings = catalog.selected().settings().clone();

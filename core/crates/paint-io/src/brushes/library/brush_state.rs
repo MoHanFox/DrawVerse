@@ -256,7 +256,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=39) {
+    if !matches!(state.version, 1..=40) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -562,6 +562,18 @@ fn decode_inner(
         dynamics.matrix = row.source_matrix.map(|p| p.core()).unwrap_or_default();
         dynamics.fade = row.fade_dynamics.map(|p| p.core()).unwrap_or_default();
         dynamics.transfer_jitter = row.transfer_jitter.map(|p| p.core()).unwrap_or_default();
+        if state.version < 40
+            && (dynamics.has_node_modes()
+                || dual.secondary().dynamics().has_node_modes()
+                || row
+                    .stroke_taper
+                    .as_ref()
+                    .is_some_and(|p| p.core().has_node_modes()))
+        {
+            return Err(Error::Unsupported(
+                "curve node modes require state40".into(),
+            ));
+        }
         entries.push((
             row.id,
             row.name,
@@ -614,6 +626,12 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             .preset(id)
             .ok_or(Error::Invalid("brush catalog ID"))?;
         let s = p.settings();
+        if s.dynamics.has_node_modes()
+            || s.dual.secondary().dynamics().has_node_modes()
+            || s.taper.has_node_modes()
+        {
+            version = version.max(40);
+        }
         let stroke_taper = if s.taper != Default::default() {
             version = version.max(if s.taper.has_relative_length() {
                 39

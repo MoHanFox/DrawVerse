@@ -9,6 +9,13 @@ struct Control {
     curve: Vec<(f64, f64)>,
     minimum: f64,
     interpolation: String,
+    #[serde(
+        default,
+        rename = "nodeModes",
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_pressure::present_node_modes"
+    )]
+    node_modes: Option<Vec<bool>>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -82,6 +89,7 @@ impl Control {
                 .map(|&(x, y)| (f64::from(x), f64::from(y)))
                 .collect(),
             minimum: f64::from(c.minimum()),
+            node_modes: c.curve().node_modes().map(<[bool]>::to_vec),
             interpolation: if c.curve().is_smooth() {
                 "pchip"
             } else {
@@ -116,6 +124,13 @@ impl Control {
             _ => return Err("taper interpolation"),
         }
         .map_err(|_| "taper curve")?;
+        let curve = match self.node_modes {
+            Some(modes) if curve.is_smooth() => curve
+                .with_node_modes(modes)
+                .map_err(|_| "taper node modes")?,
+            Some(_) => return Err("node modes require pchip"),
+            None => curve,
+        };
         PressureControl::new(curve, self.minimum as f32).map_err(|_| "taper minimum")
     }
 }

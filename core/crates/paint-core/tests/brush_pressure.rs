@@ -16,6 +16,74 @@ fn definition() -> BrushDefinition {
         ..Default::default()
     }
 }
+#[test]
+fn node_modes_preserve_legacy_samples_bound_mixed_segments_and_only_change_adjacent_spans() {
+    for ys in [[0., 0.2, 0.8, 1.], [0., 0.9, 0.1, 1.], [0.4, 0.4, 0.4, 0.4]] {
+        let points: Vec<_> = [0., 0.25, 0.75, 1.].into_iter().zip(ys).collect();
+        let smooth =
+            PressureControl::new(PressureCurve::new_smooth(points.clone()).unwrap(), 0.).unwrap();
+        let linear = control(points.clone(), 0.);
+        for bits in 0..16 {
+            let modes: Vec<_> = (0..4).map(|i| bits & (1 << i) != 0).collect();
+            let mixed = PressureControl::new(
+                PressureCurve::new_smooth(points.clone())
+                    .unwrap()
+                    .with_node_modes(modes)
+                    .unwrap(),
+                0.,
+            )
+            .unwrap();
+            let samples = mixed.samples(1025).unwrap();
+            if bits == 0 {
+                assert_eq!(samples, linear.samples(1025).unwrap());
+            }
+            if bits == 15 {
+                assert_eq!(samples, smooth.samples(1025).unwrap());
+            }
+            for (i, y) in samples.iter().enumerate() {
+                let x = i as f32 / 1024.;
+                let pair = points.windows(2).find(|p| x <= p[1].0).unwrap();
+                assert!(
+                    *y >= pair[0].1.min(pair[1].1) - 1e-6 && *y <= pair[0].1.max(pair[1].1) + 1e-6
+                );
+                if bits == 13 && x >= 0.75 {
+                    assert_eq!(*y, smooth.response(x).unwrap());
+                }
+            }
+        }
+        assert!(PressureCurve::new_smooth(points)
+            .unwrap()
+            .with_node_modes(vec![true; 3])
+            .is_err());
+    }
+}
+#[test]
+fn node_modes_change_real_pressure_pixels_and_preserve_single_history() {
+    let curve =
+        PressureCurve::new_smooth(vec![(0., 0.), (0.25, 0.1), (0.75, 0.9), (1., 1.)]).unwrap();
+    let mut original = definition();
+    original.tip.pressure_size = false;
+    original.dynamics.flow = PressureControl::new(curve.clone(), 0.).unwrap();
+    let mut mixed = original.clone();
+    mixed.dynamics.flow = PressureControl::new(
+        curve
+            .with_node_modes(vec![true, false, true, true])
+            .unwrap(),
+        0.,
+    )
+    .unwrap();
+    let mut a = Document::new(32, 32).unwrap();
+    let mut b = Document::new(32, 32).unwrap();
+    dot(&mut a, original, 0.125);
+    dot(&mut b, mixed, 0.125);
+    assert_ne!(a.pixel(16, 16), b.pixel(16, 16));
+    assert_eq!(a.history_depth(), b.history_depth());
+    let pixel = b.pixel(16, 16);
+    b.undo().unwrap();
+    assert_eq!(b.pixel(16, 16).alpha(), 0.);
+    b.redo().unwrap();
+    assert_eq!(b.pixel(16, 16), pixel);
+}
 fn dot(document: &mut Document, definition: BrushDefinition, pressure: f32) {
     document
         .begin_brush_stroke(definition, InputPoint::new(16.5, 16.5, pressure))

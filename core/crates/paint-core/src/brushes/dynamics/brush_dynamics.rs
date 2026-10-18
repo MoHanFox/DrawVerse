@@ -6,6 +6,7 @@ use std::sync::{Arc, OnceLock};
 pub struct PressureCurve {
     points: Arc<[(f32, f32)]>,
     smooth: bool,
+    node_modes: Option<Arc<[bool]>>,
 }
 impl Default for PressureCurve {
     fn default() -> Self {
@@ -15,6 +16,7 @@ impl Default for PressureCurve {
                 .get_or_init(|| Arc::from([(0., 0.), (1., 1.)]))
                 .clone(),
             smooth: false,
+            node_modes: None,
         }
     }
 }
@@ -35,6 +37,7 @@ impl PressureCurve {
         Ok(Self {
             points: points.into(),
             smooth: false,
+            node_modes: None,
         })
     }
     /// Shape-preserving C1 cubic interpolation; legacy `new` remains piecewise linear.
@@ -45,6 +48,18 @@ impl PressureCurve {
     }
     pub fn is_smooth(&self) -> bool {
         self.smooth
+    }
+    /// True nodes use PCHIP tangents, false nodes use each adjacent segment's secant.
+    pub fn with_node_modes(mut self, modes: Vec<bool>) -> Result<Self> {
+        if modes.len() != self.points.len() {
+            return Err(Error::InvalidArgument("pressure node mode count"));
+        }
+        self.smooth = true;
+        self.node_modes = Some(modes.into());
+        Ok(self)
+    }
+    pub fn node_modes(&self) -> Option<&[bool]> {
+        self.node_modes.as_deref()
     }
     pub fn points(&self) -> &[(f32, f32)] {
         &self.points
@@ -145,9 +160,21 @@ impl PressureControl {
             .map(|(i, p)| {
                 let (y0, y1) = (f64::from(p[0].1), f64::from(p[1].1));
                 let delta = y1 - y0;
-                let (b, c, d) = if self.curve.smooth {
-                    let b = tangents[i] * h[i];
-                    let end = tangents[i + 1] * h[i];
+                let smooth_at = |index| {
+                    self.curve.smooth && self.curve.node_modes().is_none_or(|modes| modes[index])
+                };
+                let linear = !smooth_at(i) && !smooth_at(i + 1);
+                let (b, c, d) = if !linear {
+                    let b = if smooth_at(i) {
+                        tangents[i] * h[i]
+                    } else {
+                        delta
+                    };
+                    let end = if smooth_at(i + 1) {
+                        tangents[i + 1] * h[i]
+                    } else {
+                        delta
+                    };
                     (b, 3. * delta - 2. * b - end, b + end - 2. * delta)
                 } else {
                     (delta, 0., 0.)
@@ -160,7 +187,7 @@ impl PressureControl {
                     b,
                     c,
                     d,
-                    linear: !self.curve.smooth,
+                    linear,
                     slope: slopes[i],
                 }
             })
@@ -193,6 +220,36 @@ pub struct BrushDynamics {
     pub fade: FadeDynamics,
 }
 impl BrushDynamics {
+    pub fn has_node_modes(&self) -> bool {
+        [
+            &self.size,
+            &self.flow,
+            &self.opacity,
+            &self.speed.size,
+            &self.speed.flow,
+            &self.speed.opacity,
+            &self.tangent.size,
+            &self.tangent.flow,
+            &self.tangent.opacity,
+            &self.distance.size,
+            &self.distance.flow,
+            &self.distance.opacity,
+            &self.tilt.size,
+            &self.tilt.flow,
+            &self.tilt.opacity,
+            &self.rotation.size,
+            &self.rotation.flow,
+            &self.rotation.opacity,
+            &self.direction.size,
+            &self.direction.flow,
+            &self.direction.opacity,
+            &self.fade.size,
+            &self.fade.flow,
+            &self.fade.opacity,
+        ]
+        .iter()
+        .any(|c| c.curve().node_modes().is_some())
+    }
     pub fn is_identity(&self) -> bool {
         self.size.is_identity()
             && self.flow.is_identity()

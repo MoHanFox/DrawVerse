@@ -136,6 +136,11 @@ impl DualParameters {
                 .then(|| crate::brush_shape_jitter::ShapeParameters::from_core(d.shape_jitter)),
         })
     }
+    pub fn has_node_modes(&self) -> bool {
+        self.pressure_dynamics
+            .as_ref()
+            .is_some_and(|p| p.core().has_node_modes())
+    }
     pub fn has_smooth(&self) -> bool {
         self.pressure_dynamics
             .as_ref()
