@@ -84,7 +84,7 @@ bool DocumentManager::activate(const QString &id) {
     auto *value=client(id);if(!value)return false;
     if(m_interactionBlocked && !m_active.isEmpty() && id!=m_active)return false;
     if(id==m_active && m_groups.value(m_documents[index(id)].host).active==id)return true;
-    if(auto *old=client(m_active);old && (old->drawing() || old->liquifyActive() || old->transformActive()))return id==m_active;
+    if(auto *old=client(m_active);old){if(old->drawing() || old->liquifyActive() || old->transformActive())return id==m_active;old->brushLibrary()->flushPersistence();}
     m_active=id;m_groups[m_documents[index(id)].host].active=id;
     if(m_context && m_context->contextProperty("PaintClient").value<QObject*>()!=value)m_context->setContextProperty("PaintClient",value);
     emit activeChanged();emit groupsChanged();return true;
@@ -92,7 +92,8 @@ bool DocumentManager::activate(const QString &id) {
 QString DocumentManager::create(int width,int height,bool transparent,const QUrl &url) {
     if(m_quitting || !m_initial || width<1 || height<1 || width>1000000 || height>1000000)return {};
     if(auto *active=activeClient();active && (active->drawing() || active->liquifyActive() || active->transformActive()))return {};
-    auto *created=new PaintCoreClient(this,m_initial->settingsFile(),m_initial->brushCatalogConnection());track(created);
+    auto *origin=activeClient();if(!origin)origin=m_initial;
+    auto *created=new PaintCoreClient(this,m_initial->settingsFile(),origin->brushCatalogConnection());track(created);
     const auto id=add(created);auto initialized=std::make_shared<bool>(false);
     connect(created,&PaintCoreClient::stateChanged,this,[created,width,height,transparent,url,initialized] {
         if(*initialized || !created->ready())return;
@@ -135,13 +136,16 @@ void DocumentManager::requestClose(const QString &id){if(!m_interactionBlocked &
 bool DocumentManager::closeDocument(const QString &id,bool discard) {
     const int at=index(id);if(at<0)return false;auto *value=m_documents[at].client.data();
     if(!value || value->drawing() || value->liquifyActive() || value->transformActive() || (!discard && (value->modified() || value->fileBusy())))return false;
+    value->brushLibrary()->flushPersistence();
     const auto host=m_documents[at].host;auto &g=m_groups[host];g.documents.removeAll(id);if(g.active==id)g.active=g.documents.value(0);
     if(g.documents.isEmpty() && host!="main")m_groups.remove(host);m_documents.removeAt(at);
     if(m_active==id){m_active.clear();if(!m_documents.isEmpty())activate(m_documents.last().id);else {if(m_context)m_context->setContextProperty("PaintClient",m_initial.data());emit activeChanged();}}
     emit documentsChanged();emit groupsChanged();value->shutdown();return true;
 }
 void DocumentManager::shutdown() {
-    if(m_quitting)return;m_quitting=true;m_drag.finish(true);
+    if(m_quitting)return;
+    if(auto *active=activeClient())active->brushLibrary()->flushPersistence();
+    m_quitting=true;m_drag.finish(true);
     for(const auto &c:m_clients)if(c && !m_stopped.contains(c))c->shutdown();
     if(std::all_of(m_clients.cbegin(),m_clients.cend(),[this](const auto &c){return !c || m_stopped.contains(c);}))emit stopped();
 }

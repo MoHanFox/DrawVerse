@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QVariantList>
 #include <QStringList>
+#include <QTimer>
 #include <algorithm>
 
 // UI preferences only. Engine access and preview work stay in PaintCoreClient.
@@ -105,6 +106,9 @@ public:
     int writeBlend() const {return m_writeBlend;}
     void setWriteBlend(int mode);
     QVariantList presets() const;
+    Q_INVOKABLE QVariantMap presetInfo(const QString &id) const;
+    bool persistencePending() const {return m_persistTimer.isActive();}
+    void flushPersistence();
     QString selectedId() const {return m_selected;}
     QVariantList selectedBrushItems() const;
     bool multiBrushSelection() const;
@@ -419,6 +423,7 @@ signals:
     void cursorChanged();
     void settingsChanged();
     void presetsChanged();
+    void presetChanged(QString id);
     void selectedPreviewChanged();
     void previewChanged(QString id,QString image);
     void selectionChanged();
@@ -444,7 +449,9 @@ private:
     QVariantMap directionControl(const QString &target) const;
     int index(const QString &id) const;
     void update(int field,qreal value);
-    void changed();
+    void changed(bool structure = false, const QString &id = {});
+    void queuePersistence();
+    QTimer m_persistTimer;
     bool applyOrganization(const QJsonObject &candidate);
     QList<Preset> m_presets;
     QJsonObject m_organization;

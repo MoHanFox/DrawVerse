@@ -193,7 +193,7 @@ public:
     Q_INVOKABLE qreal documentHistoryScrollPosition() const {return m_documentHistoryScroll;}
     Q_INVOKABLE void rememberDocumentHistoryScroll(qreal y) {if(!m_historyLiquify)m_documentHistoryScroll=std::max(qreal(0),y);}
     explicit PaintCoreClient(QObject *parent = nullptr, const QString &settingsFile = {},std::shared_ptr<BrushCatalogConnection> brushCatalog = {});
-    std::shared_ptr<BrushCatalogConnection> brushCatalogConnection() const {return m_brushCatalogConnection;}
+    std::shared_ptr<BrushCatalogConnection> brushCatalogConnection() {m_brushLibrary->flushPersistence();return m_brushCatalogConnection;}
     QString settingsFile() const { return m_settingsFile; }
     ~PaintCoreClient() override;
     QVariantMap storageSettings() const { return m_storageSettings; }

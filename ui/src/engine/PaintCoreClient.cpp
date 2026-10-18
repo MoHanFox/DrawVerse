@@ -747,6 +747,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     });
     connect(m_worker,&BackendWorker::nativeBrushCatalog,this,[this](quint64 preparation,const QByteArray &state,const QString &error){
         {QMutexLocker lock(&m_brushCatalogConnection->mutex);if(preparation!=m_brushCatalogConnection->preparation)return;}
+        if(m_brushLibrary->persistencePending())return;
         if(!state.isEmpty() && m_brushLibrary->applyNativeCatalog(state)){QMutexLocker lock(&m_brushCatalogConnection->mutex);if(preparation==m_brushCatalogConnection->preparation)m_brushCatalogConnection->source=error.isEmpty()?m_brushLibrary->catalogSnapshot():QByteArray{};}
         if(!error.isEmpty())showError(error);
     });
@@ -818,7 +819,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     });
     connect(m_brushLibrary,&BrushLibrary::persistRequested,this,&PaintCoreClient::persistBrushPreferences);
     connect(m_brushLibrary,&BrushLibrary::previewRequested,m_worker,&BackendWorker::queueBrushPreview);
-    connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{if(m_hoverPose)paint_brush_pose_clear(m_hoverPose);m_hoverPosePreparation=0;m_poseExpectedSource=m_brushLibrary->catalogSnapshot();m_radius=m_brushLibrary->radius();m_opacity=m_brushLibrary->opacity();m_spacing=m_brushLibrary->spacing();m_liveBasePose={false,m_radius,m_brushLibrary->angle(),m_brushLibrary->roundness()};emit brushChanged();});
+    connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{if(m_hoverPose)paint_brush_pose_clear(m_hoverPose);m_hoverPosePreparation=0;m_poseExpectedSource.clear();m_radius=m_brushLibrary->radius();m_opacity=m_brushLibrary->opacity();m_spacing=m_brushLibrary->spacing();m_liveBasePose={false,m_radius,m_brushLibrary->angle(),m_brushLibrary->roundness()};emit brushChanged();});
     connect(m_brushLibrary,&BrushLibrary::settingsChanged,this,[this]{
         const auto identity=m_brushLibrary->maskResource();const auto second=m_brushLibrary->dualBrush().value("resource").toString();
         const bool changed=identity!=m_outlineResource || second!=m_secondOutlineResource;
@@ -942,6 +943,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
 }
 PaintCoreClient::~PaintCoreClient() {
     if(m_hoverPose)paint_brush_pose_destroy(&m_hoverPose);if(m_strokePose)paint_brush_pose_destroy(&m_strokePose);
+    m_brushLibrary->flushPersistence();
     // Window close uses asynchronous shutdown; this is a lifetime safety net.
     if (m_thread.isRunning()) {
         QMetaObject::invokeMethod(m_worker, &BackendWorker::stop, Qt::BlockingQueuedConnection);
@@ -950,6 +952,7 @@ PaintCoreClient::~PaintCoreClient() {
 }
 void PaintCoreClient::shutdown() {
     if (m_closing) return;
+    m_brushLibrary->flushPersistence();
     m_closing = true; m_ready = false; m_drawing = false;if(m_airbrushTimer)m_airbrushTimer->stop();
     if(m_hoverPose)paint_brush_pose_destroy(&m_hoverPose);if(m_strokePose)paint_brush_pose_destroy(&m_strokePose);
     emit stateChanged(); QMetaObject::invokeMethod(m_worker, &BackendWorker::stop, Qt::QueuedConnection);
@@ -964,6 +967,7 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
     if (type == Properties) { command.visible = flag ? 1 : 0; command.opacity = static_cast<float>(amount); }
     if (type == Move || type == AirbrushTick || type == Begin) command.point = point(sample);
     if (type == Begin) {
+        m_brushLibrary->flushPersistence();
         if(!synchronizeBrushCatalog(m_brushLibrary->snapshot()))return false;
         command.stroke = dto<PaintStrokeDesc>(); // Layer 0 resolves active layer in execution order.
         command.stroke.mode = m_eraser || sample.tool == PAINT_TOOL_ERASER ? PAINT_MODE_ERASE : PAINT_MODE_PAINT;
@@ -1041,7 +1045,7 @@ BrushCursorPose PaintCoreClient::baseCursorPose() const {
     return m_liveBasePose;
 }
 BrushCursorPose PaintCoreClient::brushCursorPose(const InputSample &sample,QPointF direction,bool directionKnown,bool pressureKnown) {
-    auto result=baseCursorPose();if(!m_ready || m_closing || m_liquifyActive)return result;
+    auto result=baseCursorPose();if(!m_ready || m_closing || m_liquifyActive || m_brushLibrary->persistencePending())return result;
     PaintBrushPose *handle=nullptr;
     if(m_drawing){if(!m_strokePoseBound)return result;handle=m_strokePose;}
     else {
@@ -1862,6 +1866,7 @@ bool PaintCoreClient::cleanWetBrush(){return wetBrushAction(false);}
 bool PaintCoreClient::loadWetBrush(){return wetBrushAction(true);}
 bool PaintCoreClient::wetBrushAction(bool reload){
     if(m_closing || !m_ready || m_drawing || m_wetActionBusy || m_liquifyActive || m_transformActive || !m_brushLibrary->wetMix().value("enabled").toBool())return false;
+    m_brushLibrary->flushPersistence();
     if(!synchronizeBrushCatalog(m_brushLibrary->snapshot()))return false;
     quint64 preparation=0;{QMutexLocker lock(&m_brushCatalogConnection->mutex);preparation=m_brushCatalogConnection->preparation;}
     const auto id=m_brushLibrary->selectedId();const auto color=m_color;const auto background=m_secondaryColor;const auto radius=m_brushLibrary->radius();const auto after=m_pendingMutation;m_wetActionBusy=true;emit wetActionChanged();

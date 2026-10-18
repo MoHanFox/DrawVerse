@@ -85,7 +85,7 @@ ColumnLayout {
     property var presetLookup: ({})
     function refreshPresets() {
         const lookup={}
-        for(const preset of library.presets)lookup[preset.id]=preset
+        for(const preset of library.presets)lookup[preset.id]=Object.assign({},preset)
         presetLookup=lookup
     }
     function presetById(id) { return presetLookup[id]||({}) }
@@ -236,6 +236,7 @@ ColumnLayout {
             Connections {
                 target:brushRow.panel.library
                 function onPreviewChanged(id,image){if(id===brushRow.modelData.id)rowPreview.source=image}
+                function onPresetChanged(id){if(id===brushRow.modelData.id)rowPreview.source=brushRow.panel.library.presetInfo(id).preview||""}
                 function onPresetsChanged(){Qt.callLater(()=>{rowPreview.source=brushRow.modelData.kind==="group"?"":brushRow.panel.presetById(brushRow.modelData.id).preview||""})}
             }
             Component.onCompleted:if(modelData.kind!=="group")brushRow.panel.library.requestPreview(modelData.id)
@@ -372,6 +373,6 @@ ColumnLayout {
     FileDialog {id:importDialog;objectName:"brushImportDialog";title:"导入笔刷包";nameFilters:["笔刷包 (*.vbr *.abr)","DrawVerse 笔刷 (*.vbr)","Photoshop 笔刷 (*.abr)"];onAccepted:PaintClient.importBrushes(selectedFile)}
     FileDialog {id:exportDialog;title:"导出画笔 VBR";fileMode:FileDialog.SaveFile;defaultSuffix:"vbr";nameFilters:["DrawVerse 笔刷 (*.vbr)"];onAccepted:PaintClient.exportSelectedBrushes(selectedFile,root.includeExportSource)}
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
-    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}function onPresetsChanged(){root.refreshPresets();root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}}
+    Connections {target:root.library;function onSettingsChanged(){previewDelay.restart()}function onPresetChanged(id){root.presetLookup[id]=Object.assign({},root.library.presetInfo(id))}function onPreviewChanged(id,image){if(root.presetLookup[id])root.presetLookup[id].preview=image}function onPresetsChanged(){root.refreshPresets();root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}}
     Component.onCompleted:{root.refreshPresets();root.groupMenuGroups=(root.library.organization&&root.library.organization.groups)||[];root.refreshGroupedItems()}
 }
