@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新大笔刷小间隔实机验收：2026-10-18 Windows用户以约130px直径、1%间距对比，DrawVerse纯CPU路径比同场景Photoshop更流畅；双方均存在卡顿，用户确认普通大笔刷小间隔性能通过，见`docs/brush-large-dense-performance-validation.md`。该结论不覆盖湿混、非完全覆盖图片笔尖或实体输入专项优化，也不代表跨平台/GPU完成。
+
 - 最新双笔刷覆盖模式：`docs/brush-dual-coverage-modes-design.md` / `docs/brush-dual-coverage-modes-validation.md`；新增颜色加深/线性加深/颜色减淡/线性减淡/叠加/柔光/强光/排除/实色混合/鲜明光/线性光/点光/划分共13种覆盖组合，`DualMode` 复用纹理公式并保留 Subtract/主零覆盖语义；state36/VBR1.43/behavior28/`dual-cover-extended`、ABR `BlnM` 短码/名称及Qt下拉接通。核心11/IO9/ABR34和Windows Qt 5项通过，Release/Clippy/格式通过；Hue/Saturation/Color/Luminosity、随机抖动、16位、硬件/跨平台/GPU仍待。
 
 - 最新双色首层混合快路径：`docs/brush-dual-color-performance-design.md` / `docs/brush-dual-color-performance-validation.md`；首层贡献直接解析到透明底，非`Dissolve`保留源、`Dissolve`用同一哈希决定源/透明，再执行一次目标混合；27模式/两前后顺序/0部分完整覆盖率参考单元通过，`brush_dual_color_performance` 六组RGBA摘要保持，同机中位数约8.2–11.6ms（之前约8.7–12.9ms），不外推所有笔刷/Qt/设备。
