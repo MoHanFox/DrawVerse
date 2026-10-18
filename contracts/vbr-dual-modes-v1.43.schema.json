@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:drawverse:brush:dual-modes:1.43",
+  "title": "DrawVerse VBR 1.43 extended dual coverage modes",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/dual"
+    },
+    {
+      "$ref": "#/$defs/preset"
+    }
+  ],
+  "$defs": {
+    "dual": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "multiply",
+            "darken",
+            "lighten",
+            "subtract",
+            "difference",
+            "screen",
+            "colorBurn",
+            "linearBurn",
+            "colorDodge",
+            "linearDodge",
+            "overlay",
+            "softLight",
+            "hardLight",
+            "exclusion",
+            "hardMix",
+            "vividLight",
+            "linearLight",
+            "pinLight",
+            "divide"
+          ]
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "required": [
+        "dualBrush"
+      ],
+      "properties": {
+        "dualBrush": {
+          "$ref": "#/$defs/dual"
+        }
+      }
+    }
+  }
+}

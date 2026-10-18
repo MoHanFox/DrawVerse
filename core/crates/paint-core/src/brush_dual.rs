@@ -2,6 +2,7 @@
 use crate::brush_program::{MaskDab, TipGeometry};
 use crate::{
     BrushDefinition, BrushDynamics, BrushMask, BrushProgram, BrushTip, Error, InputPoint, Result,
+    TextureMode,
 };
 use std::sync::{Arc, OnceLock};
 
@@ -67,21 +68,65 @@ pub enum DualMode {
     Subtract,
     Difference,
     Screen,
+    ColorBurn,
+    LinearBurn,
+    ColorDodge,
+    LinearDodge,
+    Overlay,
+    SoftLight,
+    HardLight,
+    Exclusion,
+    HardMix,
+    VividLight,
+    LinearLight,
+    PinLight,
+    Divide,
 }
 impl DualMode {
+    pub fn is_extended(self) -> bool {
+        matches!(
+            self,
+            Self::ColorBurn
+                | Self::LinearBurn
+                | Self::ColorDodge
+                | Self::LinearDodge
+                | Self::Overlay
+                | Self::SoftLight
+                | Self::HardLight
+                | Self::Exclusion
+                | Self::HardMix
+                | Self::VividLight
+                | Self::LinearLight
+                | Self::PinLight
+                | Self::Divide
+        )
+    }
     pub fn combine(self, a: f32, b: f32) -> f32 {
         if a == 0. {
             return 0.;
         }
-        match self {
-            Self::Multiply => a * b,
-            Self::Darken => a.min(b),
-            Self::Lighten => a.max(b),
-            Self::Subtract => a * (1. - b),
-            Self::Difference => (a - b).abs(),
-            Self::Screen => a + b - a * b,
-        }
-        .clamp(0., 1.)
+        let mode = match self {
+            Self::Multiply => TextureMode::Multiply,
+            Self::Darken => TextureMode::Darken,
+            Self::Lighten => TextureMode::Lighten,
+            Self::Subtract => return (a * (1. - b)).clamp(0., 1.),
+            Self::Difference => TextureMode::Difference,
+            Self::Screen => TextureMode::Screen,
+            Self::ColorBurn => TextureMode::ColorBurn,
+            Self::LinearBurn => TextureMode::LinearBurn,
+            Self::ColorDodge => TextureMode::ColorDodge,
+            Self::LinearDodge => TextureMode::LinearDodge,
+            Self::Overlay => TextureMode::Overlay,
+            Self::SoftLight => TextureMode::SoftLight,
+            Self::HardLight => TextureMode::HardLight,
+            Self::Exclusion => TextureMode::Exclusion,
+            Self::HardMix => TextureMode::HardMix,
+            Self::VividLight => TextureMode::VividLight,
+            Self::LinearLight => TextureMode::LinearLight,
+            Self::PinLight => TextureMode::PinLight,
+            Self::Divide => TextureMode::Divide,
+        };
+        mode.combine(a, b).clamp(0., 1.)
     }
 }
 #[derive(Clone, Debug)]

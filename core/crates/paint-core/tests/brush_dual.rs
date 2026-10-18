@@ -199,6 +199,29 @@ fn secondary_scatter_pressure_control_changes_real_stamp_count() {
     dab(&mut high, base, InputPoint::new(32.5, 32.5, 1.));
     assert!(high.pixel(32, 32).alpha() > low.pixel(32, 32).alpha());
 }
+
+#[test]
+fn extended_dual_coverage_modes_match_texture_precision() {
+    for (dual, texture) in [
+        (DualMode::ColorBurn, TextureMode::ColorBurn),
+        (DualMode::LinearBurn, TextureMode::LinearBurn),
+        (DualMode::ColorDodge, TextureMode::ColorDodge),
+        (DualMode::LinearDodge, TextureMode::LinearDodge),
+        (DualMode::Overlay, TextureMode::Overlay),
+        (DualMode::SoftLight, TextureMode::SoftLight),
+        (DualMode::HardLight, TextureMode::HardLight),
+        (DualMode::Exclusion, TextureMode::Exclusion),
+        (DualMode::HardMix, TextureMode::HardMix),
+        (DualMode::VividLight, TextureMode::VividLight),
+        (DualMode::LinearLight, TextureMode::LinearLight),
+        (DualMode::PinLight, TextureMode::PinLight),
+        (DualMode::Divide, TextureMode::Divide),
+    ] {
+        for (a, b) in [(1., 1.), (0.75, 0.2), (0.2, 0.9), (0.01, 0.4)] {
+            assert_eq!(dual.combine(a, b), texture.combine(a, b));
+        }
+    }
+}
 #[test]
 fn secondary_images_keep_holes_rotation_and_primary_boundary() {
     let mut bytes = vec![255; 256];

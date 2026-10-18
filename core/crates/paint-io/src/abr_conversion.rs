@@ -1430,6 +1430,19 @@ fn dual_mode(id: &str) -> Option<DualMode> {
         "Sbtr" | "subtract" => Some(DualMode::Subtract),
         "Dfrn" | "difference" => Some(DualMode::Difference),
         "Scrn" | "screen" => Some(DualMode::Screen),
+        "CBrn" | "colorBurn" => Some(DualMode::ColorBurn),
+        "LBrn" | "linearBurn" => Some(DualMode::LinearBurn),
+        "CDdg" | "colorDodge" => Some(DualMode::ColorDodge),
+        "LDdg" | "linearDodge" => Some(DualMode::LinearDodge),
+        "Ovrl" | "overlay" => Some(DualMode::Overlay),
+        "SftL" | "softLight" => Some(DualMode::SoftLight),
+        "HrdL" | "hardLight" => Some(DualMode::HardLight),
+        "Xclu" | "exclusion" => Some(DualMode::Exclusion),
+        "HrdM" | "hardMix" => Some(DualMode::HardMix),
+        "Vvlt" | "vividLight" => Some(DualMode::VividLight),
+        "LinL" | "linearLight" => Some(DualMode::LinearLight),
+        "PntL" | "pinLight" => Some(DualMode::PinLight),
+        "Dvde" | "divide" => Some(DualMode::Divide),
         _ => None,
     }
 }
@@ -1957,6 +1970,7 @@ fn convert_inner<'a>(
         }
         if settings.dynamics.scatter.has_controls()
             || settings.dual.secondary().dynamics().scatter.has_controls()
+            || settings.dual.mode().is_extended()
         {
             converter_version = 12;
         } else if dual_changed {

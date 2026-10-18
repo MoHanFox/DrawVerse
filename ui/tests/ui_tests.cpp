@@ -1603,10 +1603,25 @@ private slots:
         BrushLibrary dualImported;
         QVERIFY(dualImported.importPackage(dualPackage));
         QCOMPARE(dualImported.dualBrush(),library.dualBrush());
+        dual=library.dualBrush();
+        dual["mode"]="overlay";
+        QVERIFY(library.setDualBrush(dual));
+        const auto overlaySaved=library.snapshot();
+        QCOMPARE(QJsonDocument::fromJson(overlaySaved).object().value("version").toInt(),36);
+        BrushLibrary overlayRestored;
+        QVERIFY(overlayRestored.restore(overlaySaved));
+        QCOMPARE(overlayRestored.dualBrush().value("mode").toString(),QString("overlay"));
+        const auto overlayPackage=overlayRestored.exportPackage();
+        const auto overlayPreset=QJsonDocument::fromJson(overlayPackage).object().value("brushes").toArray().first().toObject();
+        QCOMPARE(overlayPreset.value("behaviorVersion").toInt(),28);
+        QVERIFY(overlayPreset.value("requiredCapabilities").toArray().contains("dual-cover-extended"));
+        BrushLibrary overlayImported;
+        QVERIFY(overlayImported.importPackage(overlayPackage));
+        QCOMPARE(overlayImported.dualBrush().value("mode").toString(),QString("overlay"));
     }
     void scatterSettingsPersistExchangePreviewAndCapturedPixels() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
-        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &error:errors)warnings.append(error.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &error:errors)warnings.append(error.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY2(client.ready(),qPrintable(client.lastError()));auto *library=client.brushLibrary();
         for(const auto &value:workspace.leftGroups()+workspace.rightGroups()){const auto group=value.toMap();if(group.value("panels").toStringList().contains("brush-settings"))workspace.setActive(group.value("id").toString(),"brush-settings");}
         QQuickItem *category=nullptr;QTRY_VERIFY((category=findVisualItem(window->contentItem(),"brushCategory:2")));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,category->mapToScene({category->width()/2,category->height()/2}).toPoint());
         auto *toggle=findVisualItem(window->contentItem(),"settingsScatterEnabled");QVERIFY(toggle);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,toggle->mapToScene({toggle->width()/2,toggle->height()/2}).toPoint());QTRY_VERIFY(library->scatterEnabled());

@@ -665,7 +665,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
                         "BlnM",
                         Value::Enumerated {
                             type_id: b"BlnM".to_vec(),
-                            value: b"Mltp".to_vec(),
+                            value: b"Ovrl".to_vec(),
                         },
                     ),
                     ("Spcn", unit(*b"#Prc", 25.)),
@@ -721,7 +721,7 @@ fn abr_computed_dual_brush_maps_shape_mode_and_spacing() {
     .unwrap();
     assert_eq!(p[0].converter_version, 12);
     assert!(p[0].settings.dual.enabled());
-    assert_eq!(p[0].settings.dual.mode(), paint_core::DualMode::Multiply);
+    assert_eq!(p[0].settings.dual.mode(), paint_core::DualMode::Overlay);
     assert_eq!(p[0].settings.dual.secondary().radius(), 4.);
     assert_eq!(p[0].settings.dual.secondary().spacing(), Some(0.25));
     assert_eq!(p[0].settings.dual.secondary().tip().hardness, 0.5);

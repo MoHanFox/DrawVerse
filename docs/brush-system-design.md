@@ -238,3 +238,5 @@ ABI 不扩写现有 DTO 布局。使用版本化的新导出、尺寸检查及�
 2026-10-18 ABR计算双笔刷阶段：ABR `dualBrush.Brsh` 的 computed/sampled 形状、硬度/角度/圆度、独立间距、贡献模式、散布/数量、逐印章随机 Flip 和固定 flipX/flipY 映射到统一双笔刷；sampled第二图片按资源哈希关联，converter11/handoff10、源记录version3/VBR1.41门控及Qt state12导入接通。设备散布控制继续报告未执行。见[设计](abr-dual-brush-design.md)及[验收](abr-dual-brush-validation.md)。
 
 2026-10-18 散布设备控制阶段：主/第二笔尖的散布幅度和数量接入 `fade/pressure/tilt/direction/rotation` 控制，ABR `bVTy=1/2/3/6/8`、`Mnm`、`fStp` 映射到原生执行；state35/VBR1.42/behavior27及`scatter-controls`能力、Qt散布页、ABR handoff11接通。旧默认和旧state/VBR字节保持。Windows最小核心/IO/Qt回归通过，见[设计](brush-scatter-device-design.md)及[验收](brush-scatter-device-validation.md)。实体设备、Hue/Saturation/Color/Luminosity、ABR随机抖动、16位与完整PS等价仍在后续范围。
+
+2026-10-18 双笔刷覆盖模式阶段：在原六种之外加入颜色加深、线性加深、颜色减淡、线性减淡、叠加、柔光、强光、排除、实色混合、鲜明光、线性光、点光和划分，共19种灰度覆盖组合；`DualMode`复用纹理精确公式，ABR `BlnM` 短码/名称、Qt下拉、state36/VBR1.43/behavior28及`dual-cover-extended`接通。核心/IO/ABR及Windows Qt最小回归通过，见[设计](brush-dual-coverage-modes-design.md)及[验收](brush-dual-coverage-modes-validation.md)。颜色模式、随机抖动、16位、实体设备与GPU仍在后续范围。

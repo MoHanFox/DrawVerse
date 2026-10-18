@@ -101,6 +101,19 @@ impl DualParameters {
                 DualMode::Subtract => "subtract",
                 DualMode::Difference => "difference",
                 DualMode::Screen => "screen",
+                DualMode::ColorBurn => "colorBurn",
+                DualMode::LinearBurn => "linearBurn",
+                DualMode::ColorDodge => "colorDodge",
+                DualMode::LinearDodge => "linearDodge",
+                DualMode::Overlay => "overlay",
+                DualMode::SoftLight => "softLight",
+                DualMode::HardLight => "hardLight",
+                DualMode::Exclusion => "exclusion",
+                DualMode::HardMix => "hardMix",
+                DualMode::VividLight => "vividLight",
+                DualMode::LinearLight => "linearLight",
+                DualMode::PinLight => "pinLight",
+                DualMode::Divide => "divide",
             }
             .into(),
             diameter: f64::from(s.radius()) * 2.,
@@ -133,6 +146,24 @@ impl DualParameters {
     pub fn has_scatter_controls(&self) -> bool {
         self.scatter_dynamics.is_some_and(|p| p.has_controls())
     }
+    pub fn has_extended_mode(&self) -> bool {
+        matches!(
+            self.mode.as_str(),
+            "colorBurn"
+                | "linearBurn"
+                | "colorDodge"
+                | "linearDodge"
+                | "overlay"
+                | "softLight"
+                | "hardLight"
+                | "exclusion"
+                | "hardMix"
+                | "vividLight"
+                | "linearLight"
+                | "pinLight"
+                | "divide"
+        )
+    }
     pub(crate) fn active_color(&self) -> bool {
         self.enabled && self.color.as_ref().is_some_and(|p| p.core().enabled())
     }
@@ -153,7 +184,25 @@ impl DualParameters {
     pub fn validate(&self) -> Result<()> {
         if !matches!(
             self.mode.as_str(),
-            "multiply" | "darken" | "lighten" | "subtract" | "difference" | "screen"
+            "multiply"
+                | "darken"
+                | "lighten"
+                | "subtract"
+                | "difference"
+                | "screen"
+                | "colorBurn"
+                | "linearBurn"
+                | "colorDodge"
+                | "linearDodge"
+                | "overlay"
+                | "softLight"
+                | "hardLight"
+                | "exclusion"
+                | "hardMix"
+                | "vividLight"
+                | "linearLight"
+                | "pinLight"
+                | "divide"
         ) || !(self.model == "paired-dab-v1" && self.spacing.is_none()
             || self.model == "path-coverage-v1"
                 && self
@@ -218,6 +267,19 @@ impl DualParameters {
             "subtract" => DualMode::Subtract,
             "difference" => DualMode::Difference,
             "screen" => DualMode::Screen,
+            "colorBurn" => DualMode::ColorBurn,
+            "linearBurn" => DualMode::LinearBurn,
+            "colorDodge" => DualMode::ColorDodge,
+            "linearDodge" => DualMode::LinearDodge,
+            "overlay" => DualMode::Overlay,
+            "softLight" => DualMode::SoftLight,
+            "hardLight" => DualMode::HardLight,
+            "exclusion" => DualMode::Exclusion,
+            "hardMix" => DualMode::HardMix,
+            "vividLight" => DualMode::VividLight,
+            "linearLight" => DualMode::LinearLight,
+            "pinLight" => DualMode::PinLight,
+            "divide" => DualMode::Divide,
             _ => return Err(Error::Invalid("dual mode")),
         };
         Ok(DualBrush::new(self.enabled, mode, secondary)

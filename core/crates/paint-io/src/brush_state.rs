@@ -250,7 +250,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=35) {
+    if !matches!(state.version, 1..=36) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -434,6 +434,11 @@ fn decode_inner(
             if d.has_scatter_controls() && state.version < 35 {
                 return Err(Error::Unsupported(
                     "secondary scatter controls require state35".into(),
+                ));
+            }
+            if d.has_extended_mode() && state.version < 36 {
+                return Err(Error::Unsupported(
+                    "extended dual blend modes require state36".into(),
                 ));
             }
             if state.version < 12 {
@@ -703,7 +708,11 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             if (s.dual.secondary().dynamics().scatter).has_controls() {
                 version = version.max(35);
             }
-            Some(crate::brush_dual::DualParameters::from_core(&s.dual)?)
+            let parameters = crate::brush_dual::DualParameters::from_core(&s.dual)?;
+            if parameters.has_extended_mode() {
+                version = version.max(36);
+            }
+            Some(parameters)
         } else {
             None
         };

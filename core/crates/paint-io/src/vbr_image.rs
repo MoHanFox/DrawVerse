@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-pub const MAX_EXECUTABLE_MINOR: u32 = 42;
+pub const MAX_EXECUTABLE_MINOR: u32 = 43;
 #[path = "vbr_groups.rs"]
 mod groups;
 
@@ -599,6 +599,15 @@ pub fn decode(bytes: &[u8], token: &CancellationToken) -> Result<ImageBundle> {
             "scatter device controls require VBR1.42".into(),
         ));
     }
+    if manifest.version.minor < 43
+        && brushes
+            .iter()
+            .any(|b| b.dual_brush.as_ref().is_some_and(|d| d.has_extended_mode()))
+    {
+        return Err(Error::Unsupported(
+            "extended dual blend modes require VBR1.43".into(),
+        ));
+    }
     if manifest.version.minor < 5 && brushes.iter().any(|b| b.parameters.tip_dynamics.is_some()) {
         return Err(Error::Unsupported("tip dynamics require VBR1.5".into()));
     }
@@ -808,6 +817,13 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
         version: Version {
             major: 1,
             minor: if bundle
+                .package
+                .brushes
+                .iter()
+                .any(|b| b.dual_brush.as_ref().is_some_and(|d| d.has_extended_mode()))
+            {
+                43
+            } else if bundle
                 .sources
                 .iter()
                 .any(|source| source.converter_version() > 11)
@@ -818,7 +834,8 @@ pub fn encode(bundle: &ImageBundle, token: &CancellationToken) -> Result<Vec<u8>
                         || b.dual_brush
                             .as_ref()
                             .is_some_and(|d| d.has_scatter_controls())
-                }) {
+                })
+            {
                 42
             } else if bundle
                 .sources

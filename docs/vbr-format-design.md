@@ -264,3 +264,7 @@ ABR source converter11的source info使用version3并携带`dualBrush`；要求m
 ## VBR1.42：散布设备控制
 
 `scatterDynamics`增加可选`amountControl`/`countControl`，每项包含`source`（`off`/`fade`/`pressure`/`tilt`/`direction`/`rotation`）、`minimum`及渐隐时的`fadeSteps`；缺省保持旧字节。含控制的主/第二笔尖预设要求behavior27、`scatter-controls`能力、manifest minor42与state35；低版本夹带明确拒绝。ABR converter12/handoff11映射`bVTy=1/2/3/6/8`、`Mnm`、`fStp`，双笔刷`dualBrush.scatterDynamics`/`countDynamics`同样映射。Schema为`contracts/vbr-scatter-controls-v1.42.schema.json`。设计/验收见`docs/brush-scatter-device-design.md`和`docs/brush-scatter-device-validation.md`；不宣称16位、Hue/Saturation/Color/Luminosity或完整PS等价。
+
+## VBR1.43：双笔刷扩展覆盖模式
+
+`dualBrush.mode`在原六种之外支持`colorBurn`、`linearBurn`、`colorDodge`、`linearDodge`、`overlay`、`softLight`、`hardLight`、`exclusion`、`hardMix`、`vividLight`、`linearLight`、`pinLight`、`divide`，共19种灰度覆盖组合。含新模式要求behavior28、`dual-cover-extended`能力、manifest minor43与state36；旧版本夹带明确拒绝，原六种模式和旧字节保持。ABR `BlnM` 短码/名称映射见设计文档。Schema为`contracts/vbr-dual-modes-v1.43.schema.json`。颜色语义模式Hue/Saturation/Color/Luminosity仍不执行，16位/随机抖动仍在后续范围。

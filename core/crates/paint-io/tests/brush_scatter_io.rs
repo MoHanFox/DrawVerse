@@ -294,6 +294,21 @@ fn published_scatter_controls_contract_matches_optional_fields() {
 }
 
 #[test]
+fn published_dual_coverage_modes_contract_matches_core_names() {
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../contracts/vbr-dual-modes-v1.43.schema.json"
+    ))
+    .unwrap();
+    assert_eq!(schema["$id"], "urn:drawverse:brush:dual-modes:1.43");
+    let modes = schema["$defs"]["dual"]["properties"]["mode"]["enum"]
+        .as_array()
+        .unwrap();
+    for mode in ["overlay", "softLight", "hardLight", "divide"] {
+        assert!(modes.iter().any(|value| value == mode));
+    }
+}
+
+#[test]
 fn state35_vbr42_preserve_scatter_device_controls_and_real_pixels() {
     let mut s = settings();
     s.dynamics.scatter = s
@@ -403,4 +418,51 @@ fn state35_vbr42_preserve_secondary_scatter_device_controls() {
     );
     assert_eq!(paint(definition), expected);
     assert!(vbr_image::decode(&minor(&bytes, 41), &token).is_err());
+}
+
+#[test]
+fn state36_vbr43_preserve_extended_dual_coverage_modes() {
+    let mut s = settings();
+    s.dual = DualBrush::new(
+        true,
+        DualMode::Overlay,
+        SecondaryTip::new(6., BrushTip::default(), None, BrushDynamics::default()).unwrap(),
+    );
+    let expected = paint(s.definition());
+    let mut catalog = BrushCatalog::default();
+    catalog.edit("round-pressure", s.clone()).unwrap();
+    let encoded = brush_state::encode(&catalog).unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(json["version"], 36);
+    let restored = brush_state::decode(&encoded, MAX_CATALOG_MASK_BYTES).unwrap();
+    let restored_settings = restored.selected().settings().clone();
+    assert_eq!(restored_settings.dual.mode(), DualMode::Overlay);
+    assert_eq!(paint(restored_settings.definition()), expected);
+
+    let mut p = package(&s);
+    p.brushes[0].dual_brush =
+        Some(paint_io::brush_dual::DualParameters::from_core(&s.dual).unwrap());
+    p.brushes[0].behavior_version = 28;
+    p.brushes[0].required_capabilities.push("dual-cover".into());
+    p.brushes[0]
+        .required_capabilities
+        .push("dual-cover-extended".into());
+    let token = CancellationToken::default();
+    let bundle = vbr_image::ImageBundle::new(p, BTreeMap::new(), &token).unwrap();
+    let bytes = vbr_image::encode(&bundle, &token).unwrap();
+    let manifest: serde_json::Value = {
+        let mut zip = ZipArchive::new(Cursor::new(bytes.as_slice())).unwrap();
+        let mut data = Vec::new();
+        zip.by_name("manifest.json")
+            .unwrap()
+            .read_to_end(&mut data)
+            .unwrap();
+        serde_json::from_slice(&data).unwrap()
+    };
+    assert_eq!(manifest["version"]["minor"], 43);
+    let restored = vbr_image::decode(&bytes, &token).unwrap();
+    let definition = restored.definition(0).unwrap();
+    assert_eq!(definition.dual.mode(), DualMode::Overlay);
+    assert_eq!(paint(definition), expected);
+    assert!(vbr_image::decode(&minor(&bytes, 42), &token).is_err());
 }

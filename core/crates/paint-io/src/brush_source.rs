@@ -133,7 +133,7 @@ impl SourceInfo {
                 && !self
                     .dual_brush
                     .as_ref()
-                    .is_some_and(|d| d.has_scatter_controls()))
+                    .is_some_and(|d| d.has_scatter_controls() || d.has_extended_mode()))
             || (self.converter_version < 12
                 && (self
                     .baseline
@@ -142,7 +142,7 @@ impl SourceInfo {
                     || self
                         .dual_brush
                         .as_ref()
-                        .is_some_and(|d| d.has_scatter_controls())))
+                        .is_some_and(|d| d.has_scatter_controls() || d.has_extended_mode())))
         {
             return Err(Error::Unsupported(
                 "converter v1 baseline dynamic controls".into(),

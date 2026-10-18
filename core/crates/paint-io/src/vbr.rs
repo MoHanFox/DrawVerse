@@ -363,6 +363,7 @@ impl Package {
                 || b.dual_brush
                     .as_ref()
                     .is_some_and(|d| d.has_scatter_controls());
+            let dual_extended = b.dual_brush.as_ref().is_some_and(|d| d.has_extended_mode());
             let shape = b.parameters.shape_jitter.is_some();
             let color = b.parameters.color_dynamics.is_some();
             let airbrush = b.parameters.airbrush.is_some();
@@ -402,7 +403,9 @@ impl Package {
                 .as_ref()
                 .is_some_and(|p| p.has_opacity());
             if b.behavior_version
-                != if scatter_controls {
+                != if dual_extended {
+                    28
+                } else if scatter_controls {
                     27
                 } else if fade {
                     26
@@ -464,7 +467,7 @@ impl Package {
             {
                 return Err(Error::Unsupported("VBR behavior profile/version".into()));
             }
-            if b.required_capabilities.len() > 30
+            if b.required_capabilities.len() > 31
                 || b.required_capabilities.iter().any(|c| {
                     !matches!(
                         c.as_str(),
@@ -495,6 +498,7 @@ impl Package {
                             | "dynamics-source-matrix"
                             | "fade-dynamics"
                             | "scatter-controls"
+                            | "dual-cover-extended"
                             | "wet-mix"
                             | "stroke-taper"
                             | "wet-dual-color"
@@ -570,6 +574,11 @@ impl Package {
                         .iter()
                         .any(|c| c == "scatter-controls")
                 || (scatter_controls && b.engine_profile != "drawverse.brush")
+                || dual_extended
+                    != b.required_capabilities
+                        .iter()
+                        .any(|c| c == "dual-cover-extended")
+                || (dual_extended && b.engine_profile != "drawverse.brush")
                 || (b.has_dual_sizing()
                     && (b.engine_profile != "drawverse.brush"
                         || !b
