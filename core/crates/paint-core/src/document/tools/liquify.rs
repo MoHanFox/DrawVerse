@@ -162,26 +162,173 @@ impl FieldSampler<'_> {
         let fx = (x - ix as f64) as f32;
         let fy = (y - iy as f64) as f32;
         let a = self.at(ix, iy);
-        let b = self.at(ix + 1, iy);
-        let c = self.at(ix, iy + 1);
-        let d = self.at(ix + 1, iy + 1);
+        let (b, c, d) = if ix.rem_euclid(64) < 63 && iy.rem_euclid(64) < 63 {
+            self.last.and_then(|(_, pixels)| pixels).map_or(
+                ([0., 0.], [0., 0.], [0., 0.]),
+                |pixels| {
+                    let i = index(ix, iy);
+                    (pixels[i + 1], pixels[i + 64], pixels[i + 65])
+                },
+            )
+        } else {
+            (
+                self.at(ix + 1, iy),
+                self.at(ix, iy + 1),
+                self.at(ix + 1, iy + 1),
+            )
+        };
         [0, 1].map(|k| {
             (a[k] * (1. - fx) + b[k] * fx) * (1. - fy) + (c[k] * (1. - fx) + d[k] * fx) * fy
         })
     }
 }
+type PinnedPixels = Arc<Box<[Pixel]>>;
 struct Source<'a> {
     layer: &'a Layer,
-    pins: BTreeMap<TileCoord, Arc<Box<[Pixel]>>>,
+    pins: BTreeMap<TileCoord, PinnedPixels>,
     order: std::collections::VecDeque<TileCoord>,
-    last: Option<(TileCoord, Arc<Box<[Pixel]>>)>,
+    last: Option<(TileCoord, Option<PinnedPixels>)>,
+}
+
+#[cfg(test)]
+mod sampling_tests {
+    use super::*;
+
+    #[test]
+    fn bilinear_fast_paths_match_four_independent_reads_bit_for_bit() {
+        let mut field = Field::new();
+        let mut layer = Layer::new(1, "Sampling".into());
+        layer.white = (69, 77);
+        for ty in [-2, 0, 1] {
+            for tx in [-2, 0, 2] {
+                let key = TileCoord::from_signed(tx, ty);
+                field.insert(
+                    key,
+                    Arc::new(
+                        (0..4096)
+                            .map(|i| [i as f32 / 19. - 80., (i % 123) as f32 / 7.])
+                            .collect(),
+                    ),
+                );
+                let pixels = (0..4096)
+                    .map(|i| {
+                        Pixel::from_straight([
+                            (i % 31) as f32 / 30.,
+                            (i % 17) as f32 / 16.,
+                            (i % 13) as f32 / 12.,
+                            (i % 7) as f32 / 6.,
+                        ])
+                        .unwrap()
+                    })
+                    .collect();
+                layer
+                    .tiles
+                    .insert(key, Arc::new(Tile::from_pixels(pixels).unwrap()));
+            }
+        }
+        let mut sampler = FieldSampler {
+            field: &field,
+            last: None,
+        };
+        let mut source = Source {
+            layer: &layer,
+            pins: BTreeMap::new(),
+            order: Default::default(),
+            last: None,
+        };
+        for ix in [
+            -130, -129, -128, -65, -64, -1, 0, 1, 62, 63, 64, 68, 69, 76, 77, 127, 128, 256,
+        ] {
+            for iy in [-129, -64, -1, 0, 62, 63, 64, 68, 69, 76, 77, 127, 128] {
+                for fx in [0., 0.125, 0.5, 0.999] {
+                    for fy in [0., 0.125, 0.5, 0.999] {
+                        let at = |x, y| {
+                            field
+                                .get(&coord(x, y))
+                                .map_or([0., 0.], |pixels| pixels[index(x, y)])
+                        };
+                        let (a, b, c, d) = (
+                            at(ix, iy),
+                            at(ix + 1, iy),
+                            at(ix, iy + 1),
+                            at(ix + 1, iy + 1),
+                        );
+                        let expected = [0, 1].map(|k| {
+                            (a[k] * (1. - fx) + b[k] * fx) * (1. - fy)
+                                + (c[k] * (1. - fx) + d[k] * fx) * fy
+                        });
+                        let actual =
+                            sampler.sample(ix as f64 + f64::from(fx), iy as f64 + f64::from(fy));
+                        // Recover the actual f32 fractions after f64 coordinate addition.
+                        let x = ix as f64 + f64::from(fx);
+                        let y = iy as f64 + f64::from(fy);
+                        let rx = (x - x.floor()) as f32;
+                        let ry = (y - y.floor()) as f32;
+                        let expected = if rx == fx && ry == fy {
+                            expected
+                        } else {
+                            [0, 1].map(|k| {
+                                (a[k] * (1. - rx) + b[k] * rx) * (1. - ry)
+                                    + (c[k] * (1. - rx) + d[k] * rx) * ry
+                            })
+                        };
+                        assert_eq!(actual.map(f32::to_bits), expected.map(f32::to_bits));
+                        let pixel = |x, y| {
+                            layer.tiles.get(&coord(x, y)).map_or_else(
+                                || layer.default_pixel(x, y),
+                                |tile| tile.try_pixels().unwrap()[index(x, y)],
+                            )
+                        };
+                        let a = pixel(ix, iy);
+                        let expected = if rx == 0. && ry == 0. {
+                            a
+                        } else {
+                            a.mix(pixel(ix + 1, iy), rx)
+                                .mix(pixel(ix, iy + 1).mix(pixel(ix + 1, iy + 1), rx), ry)
+                        };
+                        assert_eq!(
+                            source.sample(x, y).unwrap().components().map(f32::to_bits),
+                            expected.components().map(f32::to_bits)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn source_fast_path_keeps_the_256_tile_pin_limit() {
+        let mut layer = Layer::new(1, "Pins".into());
+        for x in 0..300 {
+            layer.tiles.insert(
+                TileCoord::from_signed(x, 0),
+                Arc::new(Tile::from_pixels(vec![Pixel::WHITE; 4096]).unwrap()),
+            );
+        }
+        let mut source = Source {
+            layer: &layer,
+            pins: BTreeMap::new(),
+            order: Default::default(),
+            last: None,
+        };
+        for x in (0..300).chain(0..300) {
+            assert_eq!(
+                source.sample(f64::from(x * 64) + 0.25, 0.75).unwrap(),
+                Pixel::WHITE
+            );
+            assert!(source.pins.len() <= 256);
+            assert_eq!(source.pins.len(), source.order.len());
+        }
+    }
 }
 impl Source<'_> {
     fn pixel(&mut self, x: i64, y: i64) -> Result<Pixel> {
         let key = coord(x, y);
         if let Some((old, pixels)) = &self.last {
             if *old == key {
-                return Ok(pixels[index(x, y)]);
+                return Ok(pixels
+                    .as_ref()
+                    .map_or_else(|| self.layer.default_pixel(x, y), |v| v[index(x, y)]));
             }
         }
         if let Some(tile) = self.layer.tiles.get(&key) {
@@ -196,9 +343,10 @@ impl Source<'_> {
             }
             let pixels = self.pins[&key].clone();
             let result = pixels[index(x, y)];
-            self.last = Some((key, pixels));
+            self.last = Some((key, Some(pixels)));
             Ok(result)
         } else {
+            self.last = Some((key, None));
             Ok(self.layer.default_pixel(x, y))
         }
     }
@@ -211,8 +359,26 @@ impl Source<'_> {
         if fx == 0. && fy == 0. {
             return Ok(a);
         }
-        let top = a.mix(self.pixel(ix + 1, iy)?, fx);
-        let bottom = self.pixel(ix, iy + 1)?.mix(self.pixel(ix + 1, iy + 1)?, fx);
+        let (b, c, d) = if ix.rem_euclid(64) < 63 && iy.rem_euclid(64) < 63 {
+            if let Some((_, Some(pixels))) = &self.last {
+                let i = index(ix, iy);
+                (pixels[i + 1], pixels[i + 64], pixels[i + 65])
+            } else {
+                (
+                    self.layer.default_pixel(ix + 1, iy),
+                    self.layer.default_pixel(ix, iy + 1),
+                    self.layer.default_pixel(ix + 1, iy + 1),
+                )
+            }
+        } else {
+            (
+                self.pixel(ix + 1, iy)?,
+                self.pixel(ix, iy + 1)?,
+                self.pixel(ix + 1, iy + 1)?,
+            )
+        };
+        let top = a.mix(b, fx);
+        let bottom = c.mix(d, fx);
         Ok(top.mix(bottom, fy))
     }
 }

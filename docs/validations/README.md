@@ -221,6 +221,7 @@
 - [共用选区与套索验收（2026-10-11）](tools/lasso-selection-validation.md)
 - [液化会话历史最小验收](tools/liquify-history-validation.md)
 - [液化性能最小验收](tools/liquify-performance-validation.md)
+- [大尺寸液化采样与基准验收](tools/liquify-large-brush-performance-validation.md)
 - [液化验收](tools/liquify-validation.md)
 - [框选与套索绘画/擦除性能验收（2026-10-11）](tools/selection-performance-validation.md)
 - [几何选区验收（2026-10-09）](tools/selection-validation.md)

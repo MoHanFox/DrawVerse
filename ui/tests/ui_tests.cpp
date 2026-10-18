@@ -102,6 +102,26 @@ class UiTests final : public QObject {
     QTemporaryDir m_preferences;
 private slots:
 
+    void maximumLiquifySizePublishesPixelsAndKeepsLocalAndDocumentHistory() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("liquify-large.ini"));QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());
+        client.newTransparentDocument(512,512);QTRY_COMPARE(client.documentWidth(),512);QTRY_VERIFY(!client.layerEditBusy());
+        QVERIFY(client.brushLibrary()->select("round-fine"));client.setBrushRadius(35);client.setBrushColor(Qt::red);QVERIFY(client.beginStroke({{220,250},1}));client.strokeTo({{280,250},1});client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        const auto request=[&]{client.requestViewport(0,{0,0,512,512},{512,512});};request();QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(512,512));const auto before=client.frame();
+        client.setLiquifySize(2000);client.setLiquifyStrength(100);client.setLiquifyDensity(100);client.setLiquifyTool(0);QCOMPARE(client.liquifySize(),2000);
+        QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());QElapsedTimer timer;timer.start();
+        QVERIFY(client.beginStroke({{235,250},1}));client.strokeTo({{259,250},1});client.endStroke();const auto dispatch=timer.elapsed();QVERIFY(dispatch<100);
+        QTRY_COMPARE_WITH_TIMEOUT(client.undoDepth(),1,15000);QTRY_VERIFY(!client.liquifyBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());const auto warped=client.frame();QVERIFY(warped!=before);
+        qInfo()<<"2000px liquify GUI dispatch ms"<<dispatch<<"through frame completion ms"<<timer.elapsed();
+        client.undo();QTRY_COMPARE(client.undoDepth(),0);QTRY_VERIFY(!client.liquifyBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),before);
+        client.redo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.liquifyBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),warped);
+        QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());QCOMPARE(client.undoDepth(),1);request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),before);
+        QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());QVERIFY(client.beginStroke({{235,250},1}));client.strokeTo({{259,250},1});client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.liquifyBusy());
+        QVERIFY(client.finishLiquify(true));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());QCOMPARE(client.undoDepth(),2);request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),warped);
+        client.undo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),before);
+        client.redo();QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),warped);QCOMPARE(client.lastError(),QString());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
     void offscreenBrushPreviewsCancelQueuedTokensAndKeepCachedImages() {
         BrushLibrary library;QSignalSpy requested(&library,&BrushLibrary::previewRequested),cancelled(&library,&BrushLibrary::previewCancelled);
         const QString id="round-fine";QVERIFY(library.selectedId()!=id);
