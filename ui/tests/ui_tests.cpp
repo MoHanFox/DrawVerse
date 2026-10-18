@@ -194,6 +194,36 @@ private slots:
     void curvePointKeepsGrabOutsideGraph_data() {
         QTest::addColumn<bool>("speed");QTest::newRow("pressure")<<false;QTest::newRow("speed")<<true;
     }
+    void curveNodeCtrlModes_data() {
+        QTest::addColumn<bool>("speed");QTest::newRow("pressure")<<false;QTest::newRow("speed")<<true;
+    }
+    void curveNodeCtrlModes() {
+        QFETCH(bool,speed);QTemporaryDir temp;const auto path=temp.filePath("curve.ini");PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
+        const QVariantList points{QVariantList{0.,0.},QVariantList{.5,.25},QVariantList{1.,1.}},modes{true,false,true};
+        QVERIFY(speed?library->setSpeedControl("flow",points,.125):library->setPressureControl("flow",points,.125));
+        QQmlEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);QQmlComponent component(&engine);
+        component.setData(speed?QByteArray("import QtQuick\nimport \"qrc:/qml/brushes\"\nSpeedCurveEditor {library:PaintClient.brushLibrary;target:\"flow\";prefix:\"node\";curve:library.speedFlowCurve;minimum:library.speedFlowMinimum;nodeModes:library.speedDynamics.flow.nodeModes || [];setControl:(points,minimum,modes)=>library.setSpeedControl(\"flow\",points,minimum,modes)}"):QByteArray("import QtQuick\nimport \"qrc:/qml/brushes\"\nPressureCurveEditor {library:PaintClient.brushLibrary;target:\"flow\";prefix:\"node\"}"),QUrl());
+        QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));auto *item=qobject_cast<QQuickItem*>(object.data());QVERIFY(item);QQuickWindow window;window.resize(400,350);item->setParentItem(window.contentItem());item->setX(30);item->setY(40);item->setWidth(280);item->setHeight(240);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *graph=findVisualItem(item,"nodeCurve");QVERIFY(graph);const auto at=[&](qreal x,qreal y){return graph->mapToScene({7+x*(graph->width()-14),graph->height()-7-y*(graph->height()-14)}).toPoint();};
+        const auto control=[&]{return (speed?library->speedDynamics():library->pressureDynamics()).value("flow").toMap();};
+        const auto before=item->property("samples").toList();QTest::mousePress(&window,Qt::LeftButton,Qt::ControlModifier,at(.5,.25));QTest::mouseMove(&window,at(.8,.8));QTest::mouseRelease(&window,Qt::LeftButton,Qt::ControlModifier,at(.8,.8));
+        QTRY_COMPARE(control().value("nodeModes").toList(),modes);QCOMPARE(control().value("curve").toList(),points);QCOMPARE(control().value("minimum").toDouble(),.125);QTRY_VERIFY(item->property("samples").toList()!=before);QCOMPARE(item->property("samples").toList(),client.pressureCurveSamples(points,true,modes));
+        QTest::mouseClick(&window,Qt::LeftButton,Qt::ControlModifier,at(.5,.25));QTRY_COMPARE(control().value("nodeModes").toList(),QVariantList({true,true,true}));QCOMPARE(item->property("samples").toList(),before);
+        QTest::mouseClick(&window,Qt::LeftButton,Qt::ControlModifier,at(.5,.25));QTRY_COMPARE(control().value("nodeModes").toList(),modes);
+        QVERIFY(QMetaObject::invokeMethod(item,"addPoint",Q_ARG(QVariant,.75),Q_ARG(QVariant,.6)));QCOMPARE(control().value("nodeModes").toList(),QVariantList({true,false,true,true}));QVERIFY(QMetaObject::invokeMethod(item,"removePoint"));QCOMPARE(control().value("nodeModes").toList(),modes);
+        QVERIFY(QMetaObject::invokeMethod(item,"movePoint",Q_ARG(QVariant,1),Q_ARG(QVariant,.5),Q_ARG(QVariant,.375)));QCOMPARE(control().value("nodeModes").toList(),modes);
+        auto *minimum=findVisualItem(item,"nodeMinimum");QVERIFY(minimum);minimum->setProperty("value",25);QVERIFY(QMetaObject::invokeMethod(minimum,"valueModified"));QCOMPARE(control().value("minimum").toDouble(),.25);QCOMPARE(control().value("nodeModes").toList(),modes);
+        library->setRadius(4);library->setPressureSize(false);library->requestPreview(library->selectedId());QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);QCOMPARE(QJsonDocument::fromJson(library->snapshot()).object().value("version").toInt(),40);
+        QColor actualPixel;
+        if(!speed){client.newTransparentDocument(32,32);QTRY_COMPARE(client.documentWidth(),32);QTRY_VERIFY(client.ready());QVERIFY(client.beginStroke({{16.5,16.5},.25}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());actualPixel=client.sampleDocumentPixel(16.5,16.5);const auto expected=.25+.75*item->property("samples").toList()[64].toDouble();QVERIFY(std::abs(actualPixel.alphaF()-expected)<.01);client.undo();QTRY_COMPARE(client.undoDepth(),0);QTRY_COMPARE(client.sampleDocumentPixel(16.5,16.5).alpha(),0);}
+        const auto final=control();const auto bytes=library->snapshot();BrushLibrary restored;QVERIFY(restored.restore(bytes));QCOMPARE((speed?restored.speedDynamics():restored.pressureDynamics()).value("flow").toMap(),final);auto bad=QJsonDocument::fromJson(bytes).object();bad["version"]=39;QVERIFY(!restored.restore(QJsonDocument(bad).toJson()));
+        const auto file=QUrl::fromLocalFile(temp.filePath("nodes.vbr"));QSignalSpy finished(&client,&PaintCoreClient::brushFileFinished);QVERIFY(client.exportBrush(file));QTRY_COMPARE(finished.size(),1);QVERIFY(finished.last()[0].toBool());
+        item->setParentItem(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+        PaintCoreClient fresh(nullptr,temp.filePath("fresh/state.ini"));QTRY_VERIFY(fresh.ready());QSignalSpy imported(&fresh,&PaintCoreClient::brushFileFinished);QVERIFY(fresh.importBrushes(file));QTRY_COMPARE(imported.size(),1);QVERIFY(imported.last()[0].toBool());QCOMPARE((speed?fresh.brushLibrary()->speedDynamics():fresh.brushLibrary()->pressureDynamics()).value("flow").toMap(),final);
+        if(!speed){fresh.newTransparentDocument(32,32);QTRY_COMPARE(fresh.documentWidth(),32);QTRY_VERIFY(fresh.ready());QVERIFY(fresh.beginStroke({{16.5,16.5},.25}));fresh.endStroke();QTRY_COMPARE(fresh.undoDepth(),1);QTRY_VERIFY(!fresh.layerEditBusy());QCOMPARE(fresh.sampleDocumentPixel(16.5,16.5),actualPixel);}
+        QSignalSpy stoppedFresh(&fresh,&PaintCoreClient::stopped);fresh.shutdown();QTRY_COMPARE(stoppedFresh.size(),1);
+        PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready());QCOMPARE((speed?reopened.brushLibrary()->speedDynamics():reopened.brushLibrary()->pressureDynamics()).value("flow").toMap(),final);QSignalSpy stoppedAgain(&reopened,&PaintCoreClient::stopped);reopened.shutdown();QTRY_COMPARE(stoppedAgain.size(),1);QCOMPARE(warnings,QStringList());
+    }
     void curvePointKeepsGrabOutsideGraph() {
         QFETCH(bool,speed);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("curve.ini"));QTRY_VERIFY(client.ready());auto *library=client.brushLibrary();
         const QVariantList points{QVariantList{0.,0.},QVariantList{.4,.5},QVariantList{1.,1.}};
@@ -228,6 +258,18 @@ private slots:
         panel->setProperty("category",4);QTRY_VERIFY(findVisualItem(panel,"settingsDualSizeMode"));QCOMPARE(client.brushLibrary()->dualBrush().value("sizing").toMap().value("mode").toString(),QString("relative"));
         panel->setProperty("category",7);QTRY_VERIFY(findVisualItem(panel,"brushCursorImageOpacitySlider"));QVERIFY(!findVisualItem(panel,"pressureFlowCurve"));
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void curveNodeMainAdaptersPreserveModes() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("nodes.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());QTRY_VERIFY(client.ready());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);workspace.setActive(workspace.groupForPanel("brush-settings"),"brush-settings");QQuickItem *panel=nullptr;QTRY_VERIFY((panel=findVisualItem(window->contentItem(),"brushSettingsPanel")));auto *library=client.brushLibrary();
+        panel->setProperty("category",6);
+        for(const auto &prefix:{"speed","tangent","distance","tilt","rotation","direction","fade"}){
+            QQuickItem *editor=nullptr;QTRY_VERIFY((editor=findVisualItem(panel,QString(prefix)+"FlowEditor")));QVERIFY(QMetaObject::invokeMethod(editor,"toggleNode",Q_ARG(QVariant,0)));QCOMPARE(editor->property("nodeModes").toList(),QVariantList({true,false}));QVERIFY(QMetaObject::invokeMethod(editor,"addMiddle"));QCOMPARE(editor->property("nodeModes").toList(),QVariantList({true,true,false}));
+        }
+        panel->setProperty("category",4);panel->setProperty("dualPage",1);QQuickItem *dual=nullptr;QTRY_VERIFY((dual=findVisualItem(panel,"dualPressureFlowEditor")));QVERIFY(QMetaObject::invokeMethod(dual,"toggleNode",Q_ARG(QVariant,0)));QCOMPARE(library->dualBrush().value("pressureDynamics").toMap().value("flow").toMap().value("nodeModes").toList(),QVariantList({true,false}));
+        panel->setProperty("category",11);QQuickItem *taper=nullptr;QTRY_VERIFY((taper=findVisualItem(panel,"taperSizeEditor")));QVERIFY(QMetaObject::invokeMethod(taper,"toggleNode",Q_ARG(QVariant,0)));QCOMPARE(library->strokeTaper().value("start").toMap().value("size").toMap().value("nodeModes").toList(),QVariantList({true,false}));
+        library->requestPreview(library->selectedId());QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);QCOMPARE(QJsonDocument::fromJson(library->snapshot()).object().value("version").toInt(),40);const auto state=library->snapshot();BrushLibrary restored;QVERIFY(restored.restore(state));QCOMPARE(restored.speedDynamics(),library->speedDynamics());QCOMPARE(restored.fadeDynamics(),library->fadeDynamics());QCOMPARE(restored.dualBrush(),library->dualBrush());QCOMPARE(restored.strokeTaper(),library->strokeTaper());
+        auto bad=library->strokeTaper();auto end=bad.value("start").toMap();auto c=end.value("size").toMap();c["nodeModes"]=QVariantList{true};end["size"]=c;bad["start"]=end;QVERIFY(!library->setStrokeTaper(bad));QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 
     void standardBrushPreviewKeepsBaseEditsAndUpdatesOnlyItsRow() {

@@ -265,7 +265,7 @@ public:
     void setSamplingRingEnabled(bool enabled);
     bool eyedropperTool() const {return m_eyedropperTool;}
     /// Marquee keeps the last rectangle/ellipse choice; the lasso and the wand are their own tools.
-    Q_INVOKABLE QVariantList pressureCurveSamples(const QVariantList &points,bool smooth) const;
+    Q_INVOKABLE QVariantList pressureCurveSamples(const QVariantList &points,bool smooth,const QVariantList &nodeModes = {}) const;
     Q_INVOKABLE void activateMarquee();
     Q_INVOKABLE void activateLasso();
     bool moveTool() const { return m_moveTool; }

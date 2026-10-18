@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 58
+#define PAINT_ABI_MINOR 59
 
 #define PAINT_ABI_PATCH 0
 
@@ -117,6 +117,8 @@
 #define PAINT_FEATURE_COMPOSITE_BRUSH_POSE 17592186044416
 
 #define PAINT_FEATURE_CPU_VIEWPORT 32
+
+#define PAINT_FEATURE_CURVE_NODE_MODES 18014398509481984
 
 /**
  * Device and path controlled tip geometry, state v7 / VBR1.5.
@@ -1756,7 +1758,8 @@ PaintStatus paint_layer_set_properties(struct PaintCore *core,
 
 /**
  * Pure bounded query; may run on the UI thread. JSON is 2–17 [x,y] pairs.
- * model: 0 legacy linear, 1 smooth-pchip-v1. Returns 257 evenly spaced samples.
+ * model: 0 legacy linear, 1 smooth-pchip-v1, 2 {curve, nodeModes} object.
+ * Returns 257 evenly spaced samples; model 2 requires CURVE_NODE_MODES.
  * # Safety
  * Input readable for length bytes; output aligned writable for 257 f32 values.
  * Buffers must not overlap. No caller memory retained. Errors clear valid output.

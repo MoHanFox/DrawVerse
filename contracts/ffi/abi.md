@@ -1,4 +1,8 @@
-# C ABI 1.58.0 契约
+# C ABI 1.59.0 契约
+
+## ABI 1.59 — 曲线节点采样
+
+新增 `PAINT_FEATURE_CURVE_NODE_MODES`（bit54），已有 `paint_pressure_curve_samples` 的model2接受严格对象 `{curve:[[x,y],...],nodeModes:[bool,...]}`，使用与实际执行相同的节点混合插值，固定输出257个采样。JSON上限4096字节、2–17个节点、布尔模式与节点等长；错误清零有效输出。model0/1的数组输入和计算保持不变。无结构布局变化；格式说明见[当前VBR契约](../brush/vbr/format.md)。
 
 ## ABI 1.58 — 覆盖资源清单
 

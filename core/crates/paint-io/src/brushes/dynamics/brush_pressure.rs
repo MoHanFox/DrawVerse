@@ -248,6 +248,29 @@ pub fn curve_samples(bytes: &[u8], smooth: bool) -> crate::Result<Vec<f32>> {
     Ok(PressureControl::new(curve, 0.)?.samples(257)?)
 }
 
+/// Node-aware editor query; shares strict control parsing and the execution compiler.
+pub fn curve_node_samples(bytes: &[u8]) -> crate::Result<Vec<f32>> {
+    if bytes.is_empty() || bytes.len() > 4096 {
+        return Err(crate::Error::Limit("pressure node JSON bytes"));
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Query {
+        #[serde(deserialize_with = "points")]
+        curve: Vec<(f32, f32)>,
+        #[serde(deserialize_with = "present_node_modes")]
+        node_modes: Option<Vec<bool>>,
+    }
+    let query: Query =
+        serde_json::from_slice(bytes).map_err(|e| crate::Error::Codec(e.to_string()))?;
+    let curve = PressureCurve::new_smooth(query.curve)?.with_node_modes(
+        query
+            .node_modes
+            .ok_or(crate::Error::Invalid("node modes required"))?,
+    )?;
+    Ok(PressureControl::new(curve, 0.)?.samples(257)?)
+}
+
 /// Presence is strict: null, non-booleans and unbounded lists are invalid.
 pub(crate) fn present_node_modes<'de, D: serde::Deserializer<'de>>(
     d: D,

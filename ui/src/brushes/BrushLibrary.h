@@ -124,6 +124,12 @@ public:
     Q_INVOKABLE bool usePresetAsSecondary(const QString &id);
     Q_PROPERTY(QVariantMap airbrush READ airbrush NOTIFY settingsChanged)
     QVariantMap airbrush() const;
+    Q_PROPERTY(QVariantMap speedDynamics READ speedDynamics NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantMap tangentDynamics READ tangentDynamics NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantMap distanceDynamics READ distanceDynamics NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantMap tiltDynamics READ tiltDynamics NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantMap rotationDynamics READ rotationDynamics NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantMap directionDynamics READ directionDynamics NOTIFY settingsChanged)
     QVariantMap speedDynamics() const;
     Q_PROPERTY(bool speedDynamicsEnabled READ speedDynamicsEnabled NOTIFY settingsChanged)
     bool speedDynamicsEnabled() const;
@@ -226,28 +232,28 @@ public:
     Q_INVOKABLE bool setSpeedDynamics(QVariantMap data);
     Q_INVOKABLE bool setSpeedDynamicsEnabled(bool enabled);
     Q_INVOKABLE bool setSpeedDynamicsMaxSpeed(qreal maximum);
-    Q_INVOKABLE bool setSpeedControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool setSpeedControl(const QString &target, QVariantList points, qreal minimum, const QVariantList &nodeModes = {});
     Q_INVOKABLE bool resetSpeedControl(const QString &target);
     Q_INVOKABLE bool setTangentDynamics(QVariantMap data);
     Q_INVOKABLE bool setTangentDynamicsEnabled(bool enabled);
-    Q_INVOKABLE bool setTangentControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool setTangentControl(const QString &target, QVariantList points, qreal minimum, const QVariantList &nodeModes = {});
     Q_INVOKABLE bool resetTangentControl(const QString &target);
     Q_INVOKABLE bool setDistanceDynamics(QVariantMap data);
     Q_INVOKABLE bool setDistanceDynamicsEnabled(bool enabled);
     Q_INVOKABLE bool setDistanceDynamicsMaxDistance(qreal maximum);
-    Q_INVOKABLE bool setDistanceControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool setDistanceControl(const QString &target, QVariantList points, qreal minimum, const QVariantList &nodeModes = {});
     Q_INVOKABLE bool resetDistanceControl(const QString &target);
     Q_INVOKABLE bool setTiltDynamics(QVariantMap data);
     Q_INVOKABLE bool setTiltDynamicsEnabled(bool enabled);
-    Q_INVOKABLE bool setTiltControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool setTiltControl(const QString &target, QVariantList points, qreal minimum, const QVariantList &nodeModes = {});
     Q_INVOKABLE bool resetTiltControl(const QString &target);
     Q_INVOKABLE bool setRotationDynamics(QVariantMap data);
     Q_INVOKABLE bool setRotationDynamicsEnabled(bool enabled);
-    Q_INVOKABLE bool setRotationControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool setRotationControl(const QString &target, QVariantList points, qreal minimum, const QVariantList &nodeModes = {});
     Q_INVOKABLE bool resetRotationControl(const QString &target);
     Q_INVOKABLE bool setDirectionDynamics(QVariantMap data);
     Q_INVOKABLE bool setDirectionDynamicsEnabled(bool enabled);
-    Q_INVOKABLE bool setDirectionControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool setDirectionControl(const QString &target, QVariantList points, qreal minimum, const QVariantList &nodeModes = {});
     Q_INVOKABLE bool resetDirectionControl(const QString &target);
     Q_PROPERTY(QVariantMap fadeDynamics READ fadeDynamics NOTIFY settingsChanged)
     QVariantMap fadeDynamics() const;
@@ -270,7 +276,7 @@ public:
     Q_INVOKABLE bool setFadeDynamics(QVariantMap data);
     Q_INVOKABLE bool setFadeDynamicsEnabled(bool enabled);
     Q_INVOKABLE bool setFadeSteps(int steps);
-    Q_INVOKABLE bool setFadeControl(const QString &target, QVariantList points, qreal minimum);
+    Q_INVOKABLE bool setFadeControl(const QString &target, QVariantList points, qreal minimum, const QVariantList &nodeModes = {});
     Q_INVOKABLE bool resetFadeControl(const QString &target);
     Q_PROPERTY(QVariantMap dynamicsSourceMatrix READ dynamicsSourceMatrix NOTIFY settingsChanged)
     QVariantMap dynamicsSourceMatrix() const;
@@ -288,7 +294,7 @@ public:
     QVariantMap texture() const;
     QVariantMap dualBrush() const;
     Q_INVOKABLE bool setDualBrush(QVariantMap data);
-    Q_INVOKABLE bool setDualPressureControl(const QString &target,const QVariantList &points,qreal minimum);
+    Q_INVOKABLE bool setDualPressureControl(const QString &target,const QVariantList &points,qreal minimum, const QVariantList &nodeModes = {});
     Q_INVOKABLE void resetDualPressureControl(const QString &target);
     bool setDualResource(const QString &id,const QString &resource);
     Q_INVOKABLE void useProceduralDual() {setDualResource(m_selected,{});}
@@ -344,7 +350,7 @@ public:
     void setAngleControl(const QString &control);
     void setTiltRoundness(bool enabled);
     void setMinimumRoundness(qreal minimum);
-    Q_INVOKABLE bool setPressureControl(const QString &target,const QVariantList &points,qreal minimum);
+    Q_INVOKABLE bool setPressureControl(const QString &target,const QVariantList &points,qreal minimum, const QVariantList &nodeModes = {});
     Q_INVOKABLE void resetPressureControl(const QString &target);
     QString sourceResource() const;
     QString maskResource() const;

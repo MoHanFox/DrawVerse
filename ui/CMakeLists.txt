@@ -16,6 +16,7 @@ add_library(drawverse_ui STATIC
     src/canvas/SelectionOverlay.h src/canvas/SelectionOverlay.cpp
     src/color/ColorWheelItem.h src/color/ColorWheelItem.cpp
     src/brushes/BrushLibrary.h src/brushes/BrushLibrary.cpp
+    src/brushes/BrushCurveModes.h
     src/workspace/WorkspaceManager.h src/workspace/WorkspaceManager.cpp)
 target_compile_features(drawverse_ui PUBLIC cxx_std_20)
 target_include_directories(drawverse_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")

@@ -10,15 +10,18 @@ ColumnLayout {
     required property string target
     property bool fixedEndpoints:false
     property string caption:"压力响应曲线"
-    property string curveHelp:"拖动控制点；双击增加控制点。编辑后自动拟合平滑曲线。横轴输入压力，纵轴输出比例。"
+    property string curveHelp:"拖动控制点；双击增加控制点。横轴输入压力，纵轴输出比例。"
     property string minimumHelp:"最低比例与曲线输出组合；只在对应压感开关开启时执行。"
     property string prefix:target==="size"?"pressureSize":target==="opacity"?"pressureOpacity":"pressureFlow"
     readonly property var control:library.pressureDynamics[target]
     readonly property var points:control.curve
-    readonly property var samples:PaintClient.pressureCurveSamples(points,control.interpolation==="smooth-pchip-v1")
+    readonly property var nodeModes:control.nodeModes || []
+    readonly property var samples:PaintClient.pressureCurveSamples(points,control.interpolation==="smooth-pchip-v1",nodeModes)
     property int selected:0
     readonly property var selectedPoint:points[Math.min(selected,points.length-1)]
     Layout.fillWidth:true;spacing:4
+    function copyModes(){var modes=[];for(var i=0;i<points.length;++i)modes.push(nodeModes.length===points.length?Boolean(nodeModes[i]):true);return modes}
+    function toggleNode(index){var modes=copyModes();if(nodeModes.length!==points.length)for(var i=0;i<modes.length;++i)modes[i]=control.interpolation==="smooth-pchip-v1";modes[index]=!modes[index];return library.setPressureControl(target,copyPoints(),control.minimum,modes)}
     function copyPoints(){var result=[];for(var i=0;i<points.length;++i)result.push([Number(points[i][0]),Number(points[i][1])]);return result}
     function movePoint(index,x,y) {
         if(fixedEndpoints && (index===0 || index===points.length-1))return false
@@ -26,17 +29,18 @@ ColumnLayout {
         if(index===0 || index===data.length-1)x=data[index][0]
         if(index>0 && index<data.length-1){const gap=Math.min(0.0001,(data[index+1][0]-data[index-1][0])/4);x=Math.max(data[index-1][0]+gap,Math.min(data[index+1][0]-gap,x))}
         data[index]=[x,y]
-        return library.setPressureControl(target,data,control.minimum)
+        return library.setPressureControl(target,data,control.minimum,copyModes())
     }
     function addPoint(x,y) {
         if(points.length>=17 || x<=0 || x>=1)return
         var data=copyPoints(),index=0
         while(index<data.length && data[index][0]<x)index++
+        var modes=copyModes();modes.splice(index,0,true)
         data.splice(index,0,[x,y])
-        if(library.setPressureControl(target,data,control.minimum))selected=index
+        if(library.setPressureControl(target,data,control.minimum,modes))selected=index
     }
     function addMiddle(){var i=Math.min(selected,points.length-2);addPoint((points[i][0]+points[i+1][0])/2,(points[i][1]+points[i+1][1])/2)}
-    function removePoint(){if(selected<=0 || selected>=points.length-1)return;var data=copyPoints();data.splice(selected,1);if(library.setPressureControl(target,data,control.minimum))selected=Math.max(0,selected-1)}
+    function removePoint(){if(selected<=0 || selected>=points.length-1)return;var data=copyPoints(),modes=copyModes();data.splice(selected,1);modes.splice(selected,1);if(library.setPressureControl(target,data,control.minimum,modes))selected=Math.max(0,selected-1)}
     Label {text:root.caption;color:Theme.text;font.pixelSize:10}
     Canvas {
         id:graph;objectName:root.prefix+"Curve";Layout.fillWidth:true;Layout.preferredHeight:84
@@ -51,18 +55,18 @@ ColumnLayout {
             for(var i=0;i<=4;++i){ctx.beginPath();ctx.moveTo(px(i/4),py(0));ctx.lineTo(px(i/4),py(1));ctx.stroke();ctx.beginPath();ctx.moveTo(px(0),py(i/4));ctx.lineTo(px(1),py(i/4));ctx.stroke()}
             ctx.strokeStyle=Theme.text;ctx.lineWidth=1.5;ctx.beginPath()
             for(i=0;i<root.samples.length;++i){var x=i/(root.samples.length-1),y=root.samples[i];if(i===0)ctx.moveTo(px(x),py(y));else ctx.lineTo(px(x),py(y))}ctx.stroke()
-            for(i=0;i<root.points.length;++i){var p=root.points[i];ctx.fillStyle=i===root.selected?"#4e96ff":Theme.text;ctx.beginPath();ctx.arc(px(p[0]),py(p[1]),3,0,Math.PI*2);ctx.fill()}
+            for(i=0;i<root.points.length;++i){var p=root.points[i];ctx.fillStyle=i===root.selected?"#4e96ff":Theme.text;ctx.beginPath();if(root.nodeModes.length===root.points.length?root.nodeModes[i]:root.control.interpolation==="smooth-pchip-v1")ctx.arc(px(p[0]),py(p[1]),3,0,Math.PI*2);else ctx.rect(px(p[0])-3,py(p[1])-3,6,6);ctx.fill()}
         }
         onWidthChanged:requestPaint()
         onHeightChanged:requestPaint()
         MouseArea {
             objectName:root.prefix+"DragArea";anchors.fill:parent;hoverEnabled:true;preventStealing:true;property bool moving:false
-            ToolTip.delay:1000;ToolTip.visible:containsMouse;ToolTip.text:root.curveHelp
-            onPressed:mouse=>{var nearest=-1,distance=100;for(var i=0;i<root.points.length;++i){var dx=mouse.x-graph.px(root.points[i][0]),dy=mouse.y-graph.py(root.points[i][1]);var d=dx*dx+dy*dy;if(d<distance){distance=d;nearest=i}}moving=nearest>=0;if(moving)root.selected=nearest}
+            ToolTip.delay:1000;ToolTip.visible:containsMouse;ToolTip.text:root.curveHelp+" Ctrl+点击节点切换直线/曲线；圆点为曲线，方点为直线。"
+            onPressed:mouse=>{var nearest=-1,distance=100;for(var i=0;i<root.points.length;++i){var dx=mouse.x-graph.px(root.points[i][0]),dy=mouse.y-graph.py(root.points[i][1]);var d=dx*dx+dy*dy;if(d<distance){distance=d;nearest=i}}moving=nearest>=0;if(moving){root.selected=nearest;if(mouse.modifiers & Qt.ControlModifier){root.toggleNode(nearest);moving=false}}}
             onPositionChanged:mouse=>{if(pressed && moving)root.movePoint(root.selected,graph.inputX(mouse.x),graph.inputY(mouse.y))}
             onReleased:moving=false
             onCanceled:moving=false
-            onDoubleClicked:mouse=>root.addPoint(graph.inputX(mouse.x),graph.inputY(mouse.y))
+            onDoubleClicked:mouse=>{if(!(mouse.modifiers & Qt.ControlModifier))root.addPoint(graph.inputX(mouse.x),graph.inputY(mouse.y))}
         }
     }
     RowLayout {
@@ -81,7 +85,7 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth:true
         Label {text:"最低比例";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
-        CompactSpinBox {objectName:root.prefix+"Minimum";from:0;to:100;editable:true;implicitWidth:66;implicitHeight:20;value:Math.round(root.control.minimum*100);onValueModified:root.library.setPressureControl(root.target,root.points,value/100);tooltip:root.minimumHelp}
+        CompactSpinBox {objectName:root.prefix+"Minimum";from:0;to:100;editable:true;implicitWidth:66;implicitHeight:20;value:Math.round(root.control.minimum*100);onValueModified:root.library.setPressureControl(root.target,root.points,value/100,root.copyModes());tooltip:root.minimumHelp}
         Label {text:"%";color:Theme.muted;font.pixelSize:9}
     }
     Connections {target:root.library;function onSettingsChanged(){root.selected=Math.min(root.selected,root.points.length-1);graph.requestPaint()}}
