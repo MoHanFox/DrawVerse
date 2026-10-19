@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [液化有界并行](tools/liquify-bounded-parallel-design.md)
+
 - [大目录切换与起笔延迟](brush/performance/brush-library-switch-latency-design.md)
 
 - [参数与资源布局](brush/ui/brush-settings-resource-layout-design.md)

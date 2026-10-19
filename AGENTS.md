@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新液化2000px优化：`docs/tools/liquify-bounded-parallel-design.md` / `docs/validations/tools/liquify-bounded-parallel-validation.md`；无选区大区域最多两个工作线程/共享8192瓦片计数/合计256源pin，原子发布与像素保持；2048×1536六输入推移1.49s→0.77s、旋转1.79s→0.87s。核心6+11项/Qt两项/四ABI/完整Release与Clippy通过，持续输入手感仍待实机复核，未跑全量/跨平台/设备/GPU。
+
 - 最新大目录起笔延迟：`docs/brush/performance/brush-library-switch-latency-design.md` / `docs/validations/brush/performance/brush-library-switch-latency-validation.md`；Qt缓存偏好/执行快照与准确同步票据，原生只改选择时复用成功不可变预设，保持冷资源与来源生命周期。448项样本同步起笔最长24ms降至13–14ms，Qt7项/原生67项与Release通过；未复现用户原包强卡顿，仍需实机复核。
 
 - 最新参数/资源布局：`docs/brush/ui/brush-settings-resource-layout-design.md` / `docs/validations/brush/ui/brush-settings-resource-layout-validation.md`；公共ParameterSlider统一同排标题/加减数值与下排滑条，三类图片资源置顶/展开方阵，重命名和建组为面板旁独立Window；Windows Release及8项Qt通过，未跑全量/跨平台/设备/GPU。

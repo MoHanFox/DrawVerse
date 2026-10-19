@@ -185,6 +185,7 @@ impl FieldSampler<'_> {
 type PinnedPixels = Arc<Box<[Pixel]>>;
 struct Source<'a> {
     layer: &'a Layer,
+    pin_limit: usize,
     pins: BTreeMap<TileCoord, PinnedPixels>,
     order: std::collections::VecDeque<TileCoord>,
     last: Option<(TileCoord, Option<PinnedPixels>)>,
@@ -232,6 +233,7 @@ mod sampling_tests {
         };
         let mut source = Source {
             layer: &layer,
+            pin_limit: 256,
             pins: BTreeMap::new(),
             order: Default::default(),
             last: None,
@@ -307,6 +309,7 @@ mod sampling_tests {
         }
         let mut source = Source {
             layer: &layer,
+            pin_limit: 256,
             pins: BTreeMap::new(),
             order: Default::default(),
             last: None,
@@ -333,7 +336,7 @@ impl Source<'_> {
         }
         if let Some(tile) = self.layer.tiles.get(&key) {
             if !self.pins.contains_key(&key) {
-                if self.pins.len() >= 256 {
+                if self.pins.len() >= self.pin_limit {
                     if let Some(old) = self.order.pop_front() {
                         self.pins.remove(&old);
                     }
@@ -380,6 +383,185 @@ impl Source<'_> {
         let top = a.mix(b, fx);
         let bottom = c.mix(d, fx);
         Ok(top.mix(bottom, fy))
+    }
+}
+
+fn claim_field(counter: &std::sync::atomic::AtomicUsize, existing: usize) -> bool {
+    use std::sync::atomic::Ordering::Relaxed;
+    let mut count = counter.load(Relaxed);
+    loop {
+        if existing + count >= MAX_FIELD_TILES {
+            return false;
+        }
+        match counter.compare_exchange_weak(count, count + 1, Relaxed, Relaxed) {
+            Ok(_) => return true,
+            Err(actual) => count = actual,
+        }
+    }
+}
+type RasterOutput = (
+    BTreeMap<TileCoord, Vec<[f32; 2]>>,
+    BTreeMap<TileCoord, Vec<Pixel>>,
+);
+#[derive(Clone, Copy)]
+struct RasterStep {
+    options: LiquifyDab,
+    x: f64,
+    y: f64,
+    radius: f64,
+    amount: f64,
+    dx: f64,
+    dy: f64,
+    time: f64,
+    ox: i64,
+    oy: i64,
+    left: i64,
+    right: i64,
+    top: i64,
+    bottom: i64,
+}
+impl RasterStep {
+    fn raster(
+        &self,
+        layer: &Layer,
+        old_field: &Field,
+        source: &mut Source<'_>,
+        selection: &crate::Selection,
+        cache: &mut crate::selection::SelectionCoverageCache,
+        new_fields: &std::sync::atomic::AtomicUsize,
+    ) -> Result<RasterOutput> {
+        let Self {
+            options,
+            x,
+            y,
+            radius,
+            amount,
+            dx,
+            dy,
+            time,
+            ox,
+            oy,
+            left,
+            right,
+            top,
+            bottom,
+        } = *self;
+        let mut fields = BTreeMap::<TileCoord, Vec<[f32; 2]>>::new();
+        let mut pixels = BTreeMap::<TileCoord, Vec<Pixel>>::new();
+        let mut sampler = FieldSampler {
+            field: old_field,
+            last: None,
+        };
+        for ty in (top - oy).div_euclid(64)..=(bottom - 1 - oy).div_euclid(64) {
+            for tx in (left - ox).div_euclid(64)..=(right - 1 - ox).div_euclid(64) {
+                let key = TileCoord::from_signed(tx as i32, ty as i32);
+                let x0 = left.max(tx * 64 + ox);
+                let x1 = right.min(tx * 64 + ox + 64);
+                let y0 = top.max(ty * 64 + oy);
+                let y1 = bottom.min(ty * 64 + oy + 64);
+                let mut buffers: Option<(Vec<[f32; 2]>, Vec<Pixel>)> = None;
+                for py in y0..y1 {
+                    let coverage = cache.corner_row(selection, x0, py, (x1 - x0) as usize);
+                    for px in x0..x1 {
+                        let vx = px as f64 + 0.5 - x;
+                        let vy = py as f64 + 0.5 - y;
+                        let r = vx.hypot(vy) / radius;
+                        if r >= 1. {
+                            continue;
+                        }
+                        let inner = f64::from(options.density) * 0.9;
+                        let falloff = if r <= inner {
+                            1.
+                        } else {
+                            ((1. - r) / (1. - inner)).powi(2)
+                        };
+                        let weight = amount * falloff * f64::from(coverage[(px - x0) as usize]);
+                        if weight <= 0. {
+                            continue;
+                        }
+                        let lx = px - ox;
+                        let ly = py - oy;
+                        let i = index(lx, ly);
+                        let before = sampler.at(lx, ly);
+                        let after = if options.tool == 3 {
+                            let factor = (1. - weight).max(0.) as f32;
+                            before.map(|v| {
+                                if (v * factor).abs() < 0.0001 {
+                                    0.
+                                } else {
+                                    v * factor
+                                }
+                            })
+                        } else {
+                            let (tx, ty) = match options.tool {
+                                0 => (-dx * weight, -dy * weight),
+                                1 => {
+                                    let factor =
+                                        (-weight * f64::from(options.speed) * time * 2.).exp() - 1.;
+                                    (vx * factor, vy * factor)
+                                }
+                                2 => {
+                                    let angle = -weight
+                                        * f64::from(options.speed)
+                                        * time
+                                        * std::f64::consts::TAU;
+                                    let (s, c) = angle.sin_cos();
+                                    (vx * c - vy * s - vx, vx * s + vy * c - vy)
+                                }
+                                _ => unreachable!(),
+                            };
+                            let sampled = sampler.sample(lx as f64 + tx, ly as f64 + ty);
+                            [
+                                (tx + f64::from(sampled[0])) as f32,
+                                (ty + f64::from(sampled[1])) as f32,
+                            ]
+                        };
+                        if after.iter().any(|v| !v.is_finite() || v.abs() > 2_000_000.) {
+                            return Err(Error::ResourceLimit("liquify displacement range"));
+                        }
+                        if after == before {
+                            continue;
+                        }
+                        if buffers.is_none() {
+                            if !old_field.contains_key(&key)
+                                && !claim_field(new_fields, old_field.len())
+                            {
+                                return Err(Error::ResourceLimit("liquify displacement memory"));
+                            }
+                            let field = old_field
+                                .get(&key)
+                                .map_or_else(|| vec![[0., 0.]; 4096], |v| v.as_ref().clone());
+                            let original = if let Some(tile) = layer.tiles.get(&key) {
+                                tile.try_pixels()?.to_vec()
+                            } else {
+                                let mut out = Vec::with_capacity(4096);
+                                for sy in 0..64 {
+                                    for sx in 0..64 {
+                                        out.push(layer.default_pixel(
+                                            i64::from(key.signed_x()) * 64 + sx,
+                                            i64::from(key.signed_y()) * 64 + sy,
+                                        ));
+                                    }
+                                }
+                                out
+                            };
+                            buffers = Some((field, original));
+                        }
+                        let (field, pixel) = buffers.as_mut().expect("tile buffers");
+                        field[i] = after;
+                        pixel[i] = source.sample(
+                            lx as f64 + f64::from(after[0]),
+                            ly as f64 + f64::from(after[1]),
+                        )?;
+                    }
+                }
+                if let Some((field, pixel)) = buffers {
+                    fields.insert(key, field);
+                    pixels.insert(key, pixel);
+                }
+            }
+        }
+        Ok((fields, pixels))
     }
 }
 impl Document {
@@ -771,6 +953,9 @@ impl Document {
         Ok(true)
     }
     pub fn liquify_dab(&mut self, options: LiquifyDab) -> Result<bool> {
+        self.liquify_dab_impl(options, true)
+    }
+    fn liquify_dab_impl(&mut self, options: LiquifyDab, parallel: bool) -> Result<bool> {
         options.validate()?;
         let mut state = self
             .liquify
@@ -799,6 +984,7 @@ impl Document {
         }
         let mut source = Source {
             layer: &state.original,
+            pin_limit: 256,
             pins: BTreeMap::new(),
             order: Default::default(),
             last: None,
@@ -833,133 +1019,95 @@ impl Document {
                 continue;
             }
             let old_field = &state.field;
-            let mut fields = BTreeMap::<TileCoord, Vec<[f32; 2]>>::new();
-            let mut pixels = BTreeMap::<TileCoord, Vec<Pixel>>::new();
-            let mut sampler = FieldSampler {
-                field: old_field,
-                last: None,
+            let raster = RasterStep {
+                options,
+                x,
+                y,
+                radius,
+                amount,
+                dx,
+                dy,
+                time,
+                ox,
+                oy,
+                left,
+                right,
+                top,
+                bottom,
             };
-            let mut new_fields = 0usize;
-            for ty in (top - oy).div_euclid(64)..=(bottom - 1 - oy).div_euclid(64) {
-                for tx in (left - ox).div_euclid(64)..=(right - 1 - ox).div_euclid(64) {
-                    let key = TileCoord::from_signed(tx as i32, ty as i32);
-                    let x0 = left.max(tx * 64 + ox);
-                    let x1 = right.min(tx * 64 + ox + 64);
-                    let y0 = top.max(ty * 64 + oy);
-                    let y1 = bottom.min(ty * 64 + oy + 64);
-                    let mut buffers: Option<(Vec<[f32; 2]>, Vec<Pixel>)> = None;
-                    for py in y0..y1 {
-                        let coverage = self.selection_cache.corner_row(
-                            &self.selection,
-                            x0,
-                            py,
-                            (x1 - x0) as usize,
-                        );
-                        for px in x0..x1 {
-                            let vx = px as f64 + 0.5 - x;
-                            let vy = py as f64 + 0.5 - y;
-                            let r = vx.hypot(vy) / radius;
-                            if r >= 1. {
-                                continue;
-                            }
-                            let inner = f64::from(options.density) * 0.9;
-                            let falloff = if r <= inner {
-                                1.
-                            } else {
-                                ((1. - r) / (1. - inner)).powi(2)
-                            };
-                            let weight = amount * falloff * f64::from(coverage[(px - x0) as usize]);
-                            if weight <= 0. {
-                                continue;
-                            }
-                            let lx = px - ox;
-                            let ly = py - oy;
-                            let i = index(lx, ly);
-                            let before = sampler.at(lx, ly);
-                            let after = if options.tool == 3 {
-                                let factor = (1. - weight).max(0.) as f32;
-                                before.map(|v| {
-                                    if (v * factor).abs() < 0.0001 {
-                                        0.
-                                    } else {
-                                        v * factor
-                                    }
-                                })
-                            } else {
-                                let (tx, ty) = match options.tool {
-                                    0 => (-dx * weight, -dy * weight),
-                                    1 => {
-                                        let factor =
-                                            (-weight * f64::from(options.speed) * time * 2.).exp()
-                                                - 1.;
-                                        (vx * factor, vy * factor)
-                                    }
-                                    2 => {
-                                        let angle = -weight
-                                            * f64::from(options.speed)
-                                            * time
-                                            * std::f64::consts::TAU;
-                                        let (s, c) = angle.sin_cos();
-                                        (vx * c - vy * s - vx, vx * s + vy * c - vy)
-                                    }
-                                    _ => unreachable!(),
-                                };
-                                let sampled = sampler.sample(lx as f64 + tx, ly as f64 + ty);
-                                [
-                                    (tx + f64::from(sampled[0])) as f32,
-                                    (ty + f64::from(sampled[1])) as f32,
-                                ]
-                            };
-                            if after.iter().any(|v| !v.is_finite() || v.abs() > 2_000_000.) {
-                                return Err(Error::ResourceLimit("liquify displacement range"));
-                            }
-                            if after == before {
-                                continue;
-                            }
-                            if buffers.is_none() {
-                                if old_field.len() + new_fields >= MAX_FIELD_TILES
-                                    && !old_field.contains_key(&key)
-                                {
-                                    return Err(Error::ResourceLimit(
-                                        "liquify displacement memory",
-                                    ));
-                                }
-                                let field = old_field
-                                    .get(&key)
-                                    .map_or_else(|| vec![[0., 0.]; 4096], |v| v.as_ref().clone());
-                                if !old_field.contains_key(&key) {
-                                    new_fields += 1;
-                                }
-                                let original = if let Some(tile) = layer.tiles.get(&key) {
-                                    tile.try_pixels()?.to_vec()
-                                } else {
-                                    let mut out = Vec::with_capacity(4096);
-                                    for sy in 0..64 {
-                                        for sx in 0..64 {
-                                            out.push(layer.default_pixel(
-                                                i64::from(key.signed_x()) * 64 + sx,
-                                                i64::from(key.signed_y()) * 64 + sy,
-                                            ));
-                                        }
-                                    }
-                                    out
-                                };
-                                buffers = Some((field, original));
-                            }
-                            let (field, pixel) = buffers.as_mut().expect("tile buffers");
-                            field[i] = after;
-                            pixel[i] = source.sample(
-                                lx as f64 + f64::from(after[0]),
-                                ly as f64 + f64::from(after[1]),
-                            )?;
-                        }
-                    }
-                    if let Some((field, pixel)) = buffers {
-                        fields.insert(key, field);
-                        pixels.insert(key, pixel);
-                    }
-                }
-            }
+            let new_fields = std::sync::atomic::AtomicUsize::new(0);
+            let first_ty = (top - oy).div_euclid(64);
+            let end_ty = (bottom - 1 - oy).div_euclid(64) + 1;
+            let (fields, mut pixels) = if parallel
+                && !self.selection.enabled()
+                && (right - left) * (bottom - top) >= 262_144
+                && end_ty - first_ty >= 2
+            {
+                // Release serial pins before two 128-tile worker caches take over.
+                source.last = None;
+                source.pins.clear();
+                source.order.clear();
+                // Workers read the same immutable input. Publish only after both succeed.
+                let split = ((first_ty + end_ty) / 2) * 64 + oy;
+                let upper = RasterStep {
+                    bottom: split,
+                    ..raster
+                };
+                let lower = RasterStep {
+                    top: split,
+                    ..raster
+                };
+                let selection = &self.selection;
+                std::thread::scope(|scope| -> Result<RasterOutput> {
+                    let make_source = || Source {
+                        layer: &state.original,
+                        pin_limit: 128,
+                        pins: BTreeMap::new(),
+                        order: Default::default(),
+                        last: None,
+                    };
+                    let lower_layer = &layer;
+                    let count = &new_fields;
+                    let worker = std::thread::Builder::new()
+                        .name("liquify-tiles".into())
+                        .spawn_scoped(scope, move || {
+                            lower.raster(
+                                lower_layer,
+                                old_field,
+                                &mut make_source(),
+                                selection,
+                                &mut crate::selection::SelectionCoverageCache::default(),
+                                count,
+                            )
+                        })
+                        .map_err(|_| Error::ResourceLimit("liquify worker unavailable"))?;
+                    let upper_result = upper.raster(
+                        &layer,
+                        old_field,
+                        &mut make_source(),
+                        selection,
+                        &mut self.selection_cache,
+                        &new_fields,
+                    );
+                    let lower_result = worker
+                        .join()
+                        .map_err(|_| Error::ResourceLimit("liquify worker failed"))?;
+                    let (mut fields, mut pixels) = upper_result?;
+                    let (mut more_fields, mut more_pixels) = lower_result?;
+                    fields.append(&mut more_fields);
+                    pixels.append(&mut more_pixels);
+                    Ok((fields, pixels))
+                })?
+            } else {
+                raster.raster(
+                    &layer,
+                    old_field,
+                    &mut source,
+                    &self.selection,
+                    &mut self.selection_cache,
+                    &new_fields,
+                )?
+            };
             let new_tiles = pixels
                 .keys()
                 .filter(|key| !layer.tiles.contains_key(key))
@@ -998,5 +1146,120 @@ impl Document {
             self.dirty_all();
         }
         Ok(changed)
+    }
+}
+
+#[cfg(test)]
+mod parallel_tests {
+    use super::*;
+    fn seed(white: bool) -> Document {
+        let mut d = Document::new(600, 600).unwrap();
+        let layer = &mut d.layers[0];
+        layer.appearance.offset_x = 17;
+        layer.appearance.offset_y = -11;
+        if white {
+            layer.white = (600, 600);
+        }
+        for ty in 0..10 {
+            for tx in 0..10 {
+                if (tx + ty) % 5 == 0 {
+                    continue;
+                }
+                let pixels = (0..4096)
+                    .map(|i| {
+                        Pixel::from_straight([
+                            (i % 61) as f32 / 60.,
+                            (i % 67) as f32 / 66.,
+                            (tx + ty) as f32 / 18.,
+                            (i % 13) as f32 / 12.,
+                        ])
+                        .unwrap()
+                    })
+                    .collect();
+                layer.tiles.insert(
+                    TileCoord::from_signed(tx, ty),
+                    Arc::new(Tile::from_pixels(pixels).unwrap()),
+                );
+            }
+        }
+        d.begin_liquify().unwrap();
+        d.begin_liquify_stroke().unwrap();
+        d
+    }
+    fn dab(tool: u32) -> LiquifyDab {
+        LiquifyDab {
+            tool,
+            radius: 280.,
+            strength: 0.6,
+            density: 0.7,
+            speed: 0.8,
+            pressure_enabled: true,
+            from: InputPoint::new(280., 290., 0.7),
+            to: InputPoint::new(289., 294., 0.8),
+            elapsed_ms: 16.,
+        }
+    }
+    fn pixels(d: &Document) -> Vec<Pixel> {
+        (0..600)
+            .flat_map(|y| (0..600).map(move |x| d.pixel(x, y)))
+            .collect()
+    }
+    #[test]
+    fn four_tools_match_serial_fields_pixels_history_offsets_and_implicit_white() {
+        for white in [false, true] {
+            for tool in 0..4 {
+                let mut a = seed(white);
+                let mut b = seed(white);
+                let original = pixels(&a);
+                for tool in [0, tool] {
+                    assert_eq!(
+                        a.liquify_dab_impl(dab(tool), false).unwrap(),
+                        b.liquify_dab_impl(dab(tool), true).unwrap()
+                    );
+                    assert_eq!(
+                        a.liquify.as_ref().unwrap().field,
+                        b.liquify.as_ref().unwrap().field
+                    );
+                    assert_eq!(pixels(&a), pixels(&b));
+                }
+                let preview = pixels(&a);
+                assert_ne!(preview, original);
+                a.end_liquify_stroke().unwrap();
+                b.end_liquify_stroke().unwrap();
+                a.undo_liquify().unwrap();
+                b.undo_liquify().unwrap();
+                assert_eq!(pixels(&a), original);
+                assert_eq!(pixels(&b), original);
+                a.redo_liquify().unwrap();
+                b.redo_liquify().unwrap();
+                assert_eq!(pixels(&a), preview);
+                assert_eq!(pixels(&b), preview);
+                a.cancel_liquify().unwrap();
+                b.cancel_liquify().unwrap();
+                assert_eq!(pixels(&a), original);
+                assert_eq!(pixels(&b), original);
+            }
+        }
+    }
+    #[test]
+    fn shared_field_budget_failure_keeps_both_halves_unpublished() {
+        let mut d = seed(false);
+        let before = pixels(&d);
+        let empty = Arc::new(vec![[0.; 2]; 4096]);
+        for x in 0..MAX_FIELD_TILES - 1 {
+            d.liquify
+                .as_mut()
+                .unwrap()
+                .field
+                .insert(TileCoord::from_signed(1000 + x as i32, 1000), empty.clone());
+        }
+        let before_field = d.liquify.as_ref().unwrap().field.clone();
+        assert!(matches!(
+            d.liquify_dab_impl(dab(0), true),
+            Err(Error::ResourceLimit("liquify displacement memory"))
+        ));
+        assert_eq!(d.liquify.as_ref().unwrap().field, before_field);
+        assert_eq!(pixels(&d), before);
+        assert_eq!(d.liquify_history_depth(), Some((0, 0)));
     }
 }

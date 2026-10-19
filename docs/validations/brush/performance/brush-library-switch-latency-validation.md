@@ -1,6 +1,6 @@
 # 大目录切换与起笔延迟验收
 
-2026-10-19，Windows Release。设计见[大目录切换与起笔延迟](../../../../brush/performance/brush-library-switch-latency-design.md)。
+2026-10-19，Windows Release。设计见[大目录切换与起笔延迟](../../../brush/performance/brush-library-switch-latency-design.md)。
 
 Qt 使用公开许可的148项ABR样本导入三次，含默认项共448项，真实Main窗口、后台执行和心跳计时；不是用户约32MB/400项的原包。
 

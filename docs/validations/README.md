@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [液化有界并行](tools/liquify-bounded-parallel-validation.md)
+
 - [大目录切换与起笔延迟](brush/performance/brush-library-switch-latency-validation.md)
 
 - [参数与资源布局](brush/ui/brush-settings-resource-layout-validation.md)
