@@ -18,6 +18,25 @@ static QQuickItem *findVisual(QQuickItem *item,const QString &name){if(item->obj
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void brushGroupCollapseKeepsUnchangedDelegates() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("brush-groups.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();
+        QVERIFY(library->selectBrushItems({QVariantMap{{"kind","preset"},{"id","round-pressure"}}},"round-pressure"));QVERIFY(library->groupSelectedItems("Group"));
+        const auto group=library->organization().value("groups").toList().last().toMap().value("id").toString();QVERIFY(!group.isEmpty());
+        QQmlEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        QQmlComponent component(&engine,QUrl("qrc:/qml/brushes/BrushLibraryPanel.qml"));QQuickWindow window;QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));
+        auto *panel=qobject_cast<QQuickItem*>(object.data());QVERIFY(panel);panel->setParentItem(window.contentItem());panel->setWidth(280);panel->setHeight(600);window.resize(280,600);window.show();
+        QQuickItem *list=nullptr;QTRY_VERIFY((list=findVisual(panel,"brushPresetList")));QTRY_COMPARE(list->property("count").toInt(),5);
+        QPointer<QQuickItem> retained;QTRY_VERIFY((retained=findVisual(panel,"brushPreset:round-fine")));
+        for(int i=0;i<3;++i) {
+            QVERIFY(QMetaObject::invokeMethod(panel,"toggleGroup",Q_ARG(QVariant,group)));QTRY_COMPARE(list->property("count").toInt(),4);QCoreApplication::processEvents();
+            QVERIFY(retained);QCOMPARE(findVisual(panel,"brushPreset:round-fine"),retained.data());
+            QVERIFY(QMetaObject::invokeMethod(panel,"toggleGroup",Q_ARG(QVariant,group)));QTRY_COMPARE(list->property("count").toInt(),5);QCoreApplication::processEvents();
+            QVERIFY(retained);QCOMPARE(findVisual(panel,"brushPreset:round-fine"),retained.data());
+        }
+        QCOMPARE(warnings,QStringList());client.shutdown();
+    }
     void brushScalarControlsCommitIntegerDisplayUnits() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("integer.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);

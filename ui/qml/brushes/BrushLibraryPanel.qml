@@ -136,7 +136,20 @@ ColumnLayout {
         const signature=JSON.stringify({organization:library.organization||{},presets:Object.values(presetLookup).map(p=>[p.id,p.name]),query:search.text,collapsed:collapsedGroups})
         if(signature===groupedSignature) return
         const keepY=search.text.trim().length>0?0:presetList.contentY
-        groupedSignature=signature;groupedModel=groupedItems()
+        const next=groupedItems()
+        groupedSignature=signature
+        for(let i=0;i<next.length;i++) {
+            const key=itemKey(next[i].kind,next[i].id)
+            if(i>=visibleBrushRows.count || itemKey(visibleBrushRows.get(i).entry.kind,visibleBrushRows.get(i).entry.id)!==key) {
+                let found=-1
+                for(let j=i+1;j<visibleBrushRows.count;j++)if(itemKey(visibleBrushRows.get(j).entry.kind,visibleBrushRows.get(j).entry.id)===key){found=j;break}
+                if(found>=0)visibleBrushRows.move(found,i,1)
+                else visibleBrushRows.insert(i,{entry:next[i]})
+            }
+            if(JSON.stringify(visibleBrushRows.get(i).entry)!==JSON.stringify(next[i]))visibleBrushRows.setProperty(i,"entry",next[i])
+        }
+        if(visibleBrushRows.count>next.length)visibleBrushRows.remove(next.length,visibleBrushRows.count-next.length)
+        groupedModel=next
         Qt.callLater(()=>{presetList.contentY=Math.min(keepY,Math.max(0,presetList.contentHeight-presetList.height))})
     }
     function dropToRoot(drop) {
@@ -150,6 +163,7 @@ ColumnLayout {
         return true
     }
     spacing:4
+    ListModel {id:visibleBrushRows;dynamicRoles:true}
     RowLayout {
         Layout.fillWidth:true
         Label {text:"大小";color:Theme.text;font.pixelSize:9;Layout.fillWidth:true}
@@ -179,13 +193,14 @@ ColumnLayout {
     RowLayout {Icon {name:"folder";width:14;height:14} Label {text:"基础与自定义画笔";font.pixelSize:9;color:Theme.text}}
     ListView {
         objectName:"brushPresetList";Layout.fillWidth:true;Layout.fillHeight:true;clip:true;spacing:2
-        id:presetList;interactive:!root.draggingBrush;model:root.groupedModel
+        id:presetList;interactive:!root.draggingBrush;model:visibleBrushRows
         onContentYChanged:{root.cancelVisiblePreviews();visiblePreviewDelay.restart()}
         onHeightChanged:visiblePreviewDelay.restart()
         property var panel:root
         delegate:Rectangle {
             id:brushRow
-            required property var modelData
+            required property var entry
+            readonly property var modelData:entry
             property var panel:root
             objectName:modelData.kind==="group"?"brushGroup:"+modelData.id:"brushPreset:"+modelData.id
             width:ListView.view.width;height:modelData.kind==="group"?30:58

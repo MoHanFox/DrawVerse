@@ -67,3 +67,8 @@
 - 笔刷设置统一整数显示精度、整数输入校验与滑动提交；半径/归一化内部值仍按显示单位换算，曲线不变。
 - Windows Release qt_workflow_tests::brushScalarControlsCommitIntegerDisplayUnits 通过：37.6 滑动提交 38，小数文本拒绝、整数接受，13 个分类内超过 40 个标量控件均为整数精度。
 - 原双笔刷与起收笔 UI 用例的显示/赋值预期同步为整数；完整测试源重新编译后的相关用例继续补验。
+
+## 普通 3：笔刷组闪烁
+
+- 显示列表按稳定身份增删/移动行，展开与折叠不再替换整个模型和全部预览。
+- Windows Release qt_workflow_tests::brushGroupCollapseKeepsUnchangedDelegates 通过；三轮展开/折叠的行数正确，未变化的笔刷 delegate 指针始终保持，没有 QML 警告。
