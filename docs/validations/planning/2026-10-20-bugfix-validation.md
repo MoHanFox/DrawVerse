@@ -25,3 +25,8 @@
 
 - 有限的重复/共线路径在 Qt 提交前成为无操作，保留既有选区、修订与历史，不弹错误。
 - Windows Release Qt：degenerateLassoIsANoopAndSelfIntersectionStillWorks 通过，覆盖自由/多边形套索各三种退化路径，并验证零有向面积的自交套索仍可正常提交。
+
+## 普通 14：变换紧凑菜单
+
+- 右键菜单切换为项目共用 GlassMenu / GlassMenuItem。
+- Windows Release Qt：emptyTransformAndCancelPublishClosedState 通过；实际取消菜单行高度不超过 32、padding 为 6，触发菜单取消及 Escape 均关闭覆盖层。

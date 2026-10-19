@@ -56,6 +56,9 @@ private slots:
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
         auto *overlay=findVisualItem(window->contentItem(),"transformOverlay");QVERIFY(overlay);
+        auto *menu=overlay->findChild<QObject*>("transformContextMenu");QVERIFY(menu);
+        auto *cancel=menu->findChild<QQuickItem*>(QString::fromUtf8("glassMenuItem:取消"));QVERIFY(cancel);
+        QVERIFY(cancel->implicitHeight()<=32);QCOMPARE(menu->property("padding").toInt(),6);
         QSignalSpy states(&client,&PaintCoreClient::stateChanged);
         QVERIFY(client.beginTransform());QVERIFY(overlay->isVisible());
         states.clear();QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
@@ -66,7 +69,7 @@ private slots:
             QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformPoints().size()==16 && !client.transformBusy());
             QVERIFY(overlay->isVisible());states.clear();
             if(escape){window->requestActivate();QVERIFY(QTest::qWaitForWindowActive(window));QTest::keyClick(window,Qt::Key_Escape);}
-            else QVERIFY(client.finishTransform(false));
+            else QVERIFY(QMetaObject::invokeMethod(cancel,"triggered"));
             QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
             QVERIFY(!states.isEmpty());QVERIFY(!overlay->isVisible());QCOMPARE(client.undoDepth(),depth);
         }
