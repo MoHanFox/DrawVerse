@@ -4,6 +4,16 @@ use paint_core::{
 };
 use std::collections::BTreeMap;
 
+#[test]
+fn initial_white_background_has_readable_name_without_allocating_pixels() {
+    let mut doc = Document::new(4096, 2160).unwrap();
+    doc.initialize_white_background().unwrap();
+    assert_eq!(doc.layer(1).unwrap().name(), "背景");
+    assert_eq!(doc.tile_count(), 0);
+    assert_eq!(doc.pixel(4095, 2159), Pixel::WHITE);
+    assert_eq!(doc.revision(), 0);
+}
+
 fn dab(doc: &mut Document, color: f32, pressure: f32) {
     let color = if color <= 0.04045 {
         color / 12.92
