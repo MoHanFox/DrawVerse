@@ -7,6 +7,20 @@
 class SelectionTests: public QObject {
     Q_OBJECT
 private slots:
+    void navigationReusesComplexDocumentGeometry() {
+        const auto step=[](int op,int shape,QRectF r){return QVariantMap{{"operation",op},{"shape",shape},{"x",r.x()},{"y",r.y()},{"width",r.width()},{"height",r.height()}};};
+        SelectionOverlay overlay;overlay.setDocumentSize({4096,2160});overlay.setDocumentRect({0,0,4096,2160});
+        QVariantList steps;
+        for(int i=0;i<24;++i){steps.append(step(i?1:0,0,{double(i*120),0,40,2160}));steps.append(step(1,0,{0,double(i*80),4096,30}));}
+        overlay.setSteps(steps);const auto path=overlay.documentPath();QSignalSpy rebuilt(&overlay,&SelectionOverlay::pathChanged);
+        QElapsedTimer timer;timer.start();
+        for(int i=0;i<100;++i){const auto zoom=.3+i*.01;overlay.setZoom(zoom);overlay.setDocumentRect({double(i),double(-i),4096*zoom,2160*zoom});}
+        qInfo("complex selection 100 navigation updates: %.3f ms",timer.nsecsElapsed()/1e6);
+        QCOMPARE(rebuilt.size(),0);QVERIFY(overlay.documentPath()==path);
+        QVERIFY(path.contains({1,1}));QVERIFY(!path.contains({100,60}));
+        overlay.setDocumentSize({2048,1080});QCOMPARE(rebuilt.size(),1);
+        QVERIFY(!overlay.documentPath().contains({3000,10}));
+    }
     void diagonalsGrayEdgesAndCombinations() {
         SelectionOverlay overlay;overlay.setDocumentRect({0,0,32,32});
         const auto step=[](int op,int shape,QRectF rect,QByteArray mask=QByteArray{}) {

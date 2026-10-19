@@ -61,11 +61,12 @@ void SelectionOverlay::componentComplete(){
 }
 void SelectionOverlay::setSteps(const QVariantList &steps){if(steps==m_steps)return;m_steps=steps;m_shapes.clear();rebuild();}
 void SelectionOverlay::setEnabledSelection(bool enabled){if(m_enabled==enabled)return;m_enabled=enabled;syncAnimation();update();emit geometryChanged();}
-void SelectionOverlay::setDocumentRect(QRectF rect){if(rect==m_documentRect)return;const bool sizeChanged=rect.size()!=m_documentRect.size();m_documentRect=rect;if(sizeChanged)rebuild();else{update();emit geometryChanged();}}
+void SelectionOverlay::setDocumentRect(QRectF rect){if(rect==m_documentRect)return;const bool sizeChanged=rect.size()!=m_documentRect.size();m_documentRect=rect;if(sizeChanged && m_documentSize.isEmpty())rebuild();else{update();emit geometryChanged();}}
+void SelectionOverlay::setDocumentSize(QSizeF size){if(size==m_documentSize || !std::isfinite(size.width()) || !std::isfinite(size.height()) || size.isEmpty())return;m_documentSize=size;rebuild();}
 void SelectionOverlay::setPreview(QRectF rect){if(rect==m_preview)return;m_preview=rect;syncAnimation();update();emit geometryChanged();}
 void SelectionOverlay::setPreviewPoints(const QVariantList &points){if(points==m_previewPoints)return;m_previewPoints=points;syncAnimation();update();emit geometryChanged();}
 void SelectionOverlay::setPreviewKind(int kind){if(kind==m_previewKind)return;m_previewKind=kind;update();emit geometryChanged();}
-void SelectionOverlay::setZoom(qreal zoom){if(!std::isfinite(zoom)||zoom<=0||zoom==m_zoom)return;m_zoom=zoom;rebuild();}
+void SelectionOverlay::setZoom(qreal zoom){if(!std::isfinite(zoom)||zoom<=0||zoom==m_zoom)return;m_zoom=zoom;if(m_documentSize.isEmpty())rebuild();else{update();emit geometryChanged();}}
 void SelectionOverlay::syncAnimation(){
     // Marching ants only run while the owning window is actually on screen, so a hidden window,
     // a minimized window or a torn-down test scene never repaints forever.
@@ -90,7 +91,7 @@ void SelectionOverlay::itemChange(ItemChange change,const ItemChangeData &value)
     }
 }
 void SelectionOverlay::rebuild(){
-    QPainterPath full;full.addRect(QRectF(QPointF(),m_documentRect.size()/m_zoom));
+    QPainterPath full;full.addRect(QRectF(QPointF(),m_documentSize.isEmpty()?m_documentRect.size()/m_zoom:m_documentSize));
     m_path={};
     for(qsizetype index=0;index<m_steps.size();++index){
         const auto &entry=m_steps[index];
@@ -112,7 +113,7 @@ void SelectionOverlay::rebuild(){
         switch(operation){case 0:m_path=shape;break;case 1:m_path=m_path.united(shape);break;case 2:m_path=m_path.subtracted(shape);break;case 3:m_path=m_path.intersected(shape);break;case 4:m_path=full.subtracted(m_path);break;default:break;}
     }
     if(!full.boundingRect().contains(m_path.boundingRect()))m_path=m_path.intersected(full);
-    syncAnimation();update();emit geometryChanged();
+    syncAnimation();update();emit pathChanged();emit geometryChanged();
 }
 void SelectionOverlay::paint(QPainter *painter){
     if(!m_enabled && m_preview.isEmpty() && m_previewPoints.isEmpty())return;

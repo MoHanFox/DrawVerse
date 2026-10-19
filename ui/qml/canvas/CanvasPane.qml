@@ -174,7 +174,7 @@ Rectangle {
     Loader {
         objectName:"selectionOutlineLoader";anchors.fill:parent
         active:root.ownClient.selectionEnabled || canvas.selectionPreviewPoints.length>0 || canvas.selectionPreview.width>0 && canvas.selectionPreview.height>0
-        sourceComponent:SelectionOutline {objectName:"selectionOutline";enabledSelection:root.ownClient.selectionEnabled;steps:root.ownClient.selectionSteps;documentRect:canvas.documentRect;zoom:canvas.zoom;preview:canvas.selectionPreview;previewKind:canvas.selectionPreviewKind;previewPoints:canvas.selectionPreviewPoints}
+        sourceComponent:SelectionOutline {objectName:"selectionOutline";enabledSelection:root.ownClient.selectionEnabled;steps:root.ownClient.selectionSteps;documentSize:Qt.size(root.ownClient.documentWidth,root.ownClient.documentHeight);documentRect:canvas.documentRect;zoom:canvas.zoom;preview:canvas.selectionPreview;previewKind:canvas.selectionPreviewKind;previewPoints:canvas.selectionPreviewPoints}
     }
     EyedropperRing {
         objectName:"eyedropperSamplingRing";z:10

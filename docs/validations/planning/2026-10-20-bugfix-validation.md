@@ -30,3 +30,10 @@
 
 - 右键菜单切换为项目共用 GlassMenu / GlassMenuItem。
 - Windows Release Qt：emptyTransformAndCancelPublishClosedState 通过；实际取消菜单行高度不超过 32、padding 为 6，触发菜单取消及 Escape 均关闭覆盖层。
+
+## 性能 3–5，第一步：导航不重建复杂选区
+
+- 画布向 SelectionOverlay 提供明确文档尺寸；缩放与平移只更新显示，不重建布尔路径。
+- Windows Release qt_selection_tests 六项（含初始化/清理）通过。4096×2160、48 条纵横交织矩形选区，100 次 zoom/rect 更新约 0.013ms，pathChanged 为零、路径保持，文档尺寸改变后才重新裁剪。此数值只含属性和几何更新，不含窗口渲染延迟。
+- 原灰度边缘/对角岛/四组合、复杂蒙版边界、4096 点套索和裁剪回归通过。
+- 复杂蚂蚁线逐帧绘制、AA 判断和实体导航体验仍待后续专项，不将本项扩大为所有选区性能已解决。

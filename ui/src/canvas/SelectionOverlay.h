@@ -14,6 +14,7 @@ class SelectionOverlay : public QQuickPaintedItem {
     Q_PROPERTY(QVariantList steps READ steps WRITE setSteps NOTIFY geometryChanged)
     Q_PROPERTY(bool enabledSelection READ enabledSelection WRITE setEnabledSelection NOTIFY geometryChanged)
     Q_PROPERTY(QRectF documentRect READ documentRect WRITE setDocumentRect NOTIFY geometryChanged)
+    Q_PROPERTY(QSizeF documentSize READ documentSize WRITE setDocumentSize NOTIFY geometryChanged)
     Q_PROPERTY(QVariantList previewPoints READ previewPoints WRITE setPreviewPoints NOTIFY geometryChanged)
     Q_PROPERTY(QRectF preview READ preview WRITE setPreview NOTIFY geometryChanged)
     Q_PROPERTY(int previewKind READ previewKind WRITE setPreviewKind NOTIFY geometryChanged)
@@ -24,6 +25,8 @@ public:
     QVariantList steps() const{return m_steps;}
     bool enabledSelection() const{return m_enabled;}
     QRectF documentRect() const{return m_documentRect;}
+    QSizeF documentSize() const{return m_documentSize;}
+    void setDocumentSize(QSizeF size);
     QVariantList previewPoints() const {return m_previewPoints;}
     void setPreviewPoints(const QVariantList &points);
     QRectF preview() const{return m_preview;}
@@ -40,6 +43,7 @@ public:
     QPainterPath documentPath() const{return m_path;}
 signals:
     void geometryChanged();
+    void pathChanged();
     void dashPhaseChanged();
 protected:
     void itemChange(ItemChange change,const ItemChangeData &value) override;
@@ -53,6 +57,7 @@ private:
     QPainterPath m_path;
     QVector<QPainterPath> m_shapes;
     QRectF m_documentRect,m_preview;
+    QSizeF m_documentSize;
     qreal m_zoom=1;
     int m_previewKind=0;
     int m_phase=0;
