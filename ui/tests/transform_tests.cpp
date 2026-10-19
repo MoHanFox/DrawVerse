@@ -15,6 +15,22 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void degenerateLassoIsANoopAndSelfIntersectionStillWorks() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("tiny-lasso.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
+        QVERIFY(client.selectAll());QTRY_VERIFY(!client.layerEditBusy());
+        const auto before=client.selectionSteps();const auto depth=client.undoDepth();const auto revision=client.revision();
+        QSignalSpy errors(&client,&PaintCoreClient::errorChanged);
+        for(bool polygonal:{false,true})for(const auto &path:QList<QVector<QPointF>>{
+            {{4,4},{4,4}},{{4,4},{4,4},{4,4}},{{4,4},{4.01,4.01},{4.02,4.02}}}) {
+            QVERIFY(!client.editSelectionPath(path,0,polygonal));
+            QCOMPARE(client.selectionSteps(),before);QCOMPARE(client.undoDepth(),depth);QCOMPARE(client.revision(),revision);
+        }
+        QVERIFY(client.editSelectionPath({{8,8},{32,32},{8,32},{32,8}},0,false));
+        QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);
+        QCOMPARE(errors.size(),0);QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
     void invalidIntermediateTransformKeepsLastGeometryAndRecovers() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("invalid-transform.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());

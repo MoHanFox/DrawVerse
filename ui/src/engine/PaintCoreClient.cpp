@@ -1403,6 +1403,14 @@ bool PaintCoreClient::editSelection(QRectF rect,int shape,int operation) {
     return submitSelectionShape(request);
 }
 bool PaintCoreClient::editSelectionPath(const QVector<QPointF> &points,int operation,bool polygonal) {
+    if(points.size()<3)return false;
+    if(std::all_of(points.cbegin(),points.cend(),[](QPointF p){return qIsFinite(p.x()) && qIsFinite(p.y());})) {
+        const auto a=points.first();
+        const auto b=std::find_if(points.cbegin(),points.cend(),[a](QPointF p){return p!=a;});
+        if(b==points.cend() || std::none_of(points.cbegin(),points.cend(),[a,b](QPointF p){
+            return std::abs((b->x()-a.x())*(p.y()-a.y())-(b->y()-a.y())*(p.x()-a.x()))>1e-9;
+        }))return false;
+    }
     QVector<PaintSelectionPoint> path;
     path.reserve(points.size());for(const auto &p:points)path.append({p.x(),p.y()});
     auto request=dto<PaintSelectionShapeEdit>();
