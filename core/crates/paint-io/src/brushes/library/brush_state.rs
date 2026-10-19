@@ -17,6 +17,29 @@ struct State {
     )]
     organization: Option<crate::brush_organization::OrganizationParameters>,
 }
+/// Reuse an immutable compiled catalog when a strictly parsed parameter state only
+/// changes its selection. Parsing the typed DTO still rejects duplicate/unknown fields.
+pub fn reselect_captured(
+    previous: &[u8],
+    next: &[u8],
+    catalog: &BrushCatalog,
+) -> Result<Option<BrushCatalog>> {
+    if previous.len() > 2 * 1024 * 1024 || next.len() > 2 * 1024 * 1024 {
+        return Err(Error::Codec("brush state exceeds 2 MiB".into()));
+    }
+    let mut before: State =
+        serde_json::from_slice(previous).map_err(|e| Error::Codec(e.to_string()))?;
+    let after: State = serde_json::from_slice(next).map_err(|e| Error::Codec(e.to_string()))?;
+    before.selected.clone_from(&after.selected);
+    if serde_json::to_value(&before).map_err(|e| Error::Codec(e.to_string()))?
+        != serde_json::to_value(&after).map_err(|e| Error::Codec(e.to_string()))?
+    {
+        return Ok(None);
+    }
+    let mut selected = catalog.clone();
+    selected.select(&after.selected)?;
+    Ok(Some(selected))
+}
 fn rows<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<Vec<Row>, D::Error> {

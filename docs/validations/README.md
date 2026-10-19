@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [大目录切换与起笔延迟](brush/performance/brush-library-switch-latency-validation.md)
+
 - [参数与资源布局](brush/ui/brush-settings-resource-layout-validation.md)
 
 - [整笔描边 Qt](brush/ui/brush-stroke-outline-ui-validation.md)

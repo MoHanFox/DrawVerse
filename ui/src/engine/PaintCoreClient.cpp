@@ -63,7 +63,7 @@ struct BrushCatalogConnection {
     PaintWetTool *wet=nullptr;
     quint64 preparation=0;
     int workers=0;
-    QByteArray source,preferences;
+    QByteArray source,preferences,requestedState;
 };
 class BackendWorker final : public QObject {
     Q_OBJECT
@@ -1766,15 +1766,16 @@ void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,state]{worker->saveBrushPreferences(state);},Qt::QueuedConnection);
 }
 bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
+    {QMutexLocker lock(&m_brushCatalogConnection->mutex);if(m_brushCatalogConnection->preparation && m_brushCatalogConnection->requestedState==state)return true;}
     const auto root=QJsonDocument::fromJson(state).object();
     QJsonObject catalog{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}};if(root.contains("organization"))catalog["organization"]=root.value("organization");
     const auto source=QJsonDocument(catalog).toJson(QJsonDocument::Compact);
     QMutexLocker lock(&m_brushCatalogConnection->mutex);
     if(!m_brushCatalogConnection->library)return false;
-    if(source==m_brushCatalogConnection->source && m_brushCatalogConnection->preparation)return true;
+    if(source==m_brushCatalogConnection->source && m_brushCatalogConnection->preparation){m_brushCatalogConnection->requestedState=state;return true;}
     uint64_t preparation=0;const auto status=paint_brush_library_prepare_state_groups(m_brushCatalogConnection->library,reinterpret_cast<const uint8_t*>(source.constData()),quint64(source.size()),&preparation);
     if(status!=PAINT_OK){lock.unlock();showError(immediateError(status));return false;}
-    m_brushCatalogConnection->source=source;m_brushCatalogConnection->preparation=preparation;return true;
+    m_brushCatalogConnection->source=source;m_brushCatalogConnection->requestedState=state;m_brushCatalogConnection->preparation=preparation;return true;
 }
 bool PaintCoreClient::exportBrush(const QUrl &path,bool includeSource,const QString &expectedPreset) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty())return false;

@@ -184,6 +184,19 @@ private slots:
         library.requestPreview(library.selectedId());library.cancelPreview(library.selectedId());QCOMPARE(cancelled.size(),1);
     }
 
+    void largeAbrSwitchAndStrokeResponsiveness() {
+        const auto fixture=QFINDTESTDATA("../../core/crates/paint-io/tests/fixtures/abr/myer-settlement-brushes.abr");QVERIFY(!fixture.isEmpty());QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("large.ini"));QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());
+        WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->setClient(nullptr);
+        QSignalSpy imported(&client,&PaintCoreClient::brushFileFinished);for(int pack=0;pack<3;++pack){QVERIFY(client.importBrushes(QUrl::fromLocalFile(fixture)));QTRY_COMPARE_WITH_TIMEOUT(imported.size(),pack+1,30000);QVERIFY(imported.last()[0].toBool());}
+        auto *library=client.brushLibrary();const auto rows=library->presetRows();QCOMPARE(rows.size(),448);client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
+        QElapsedTimer timer;timer.start();qint64 previous=0,longest=0,maxSelect=0,maxBegin=0;QTimer heartbeat;heartbeat.setInterval(5);connect(&heartbeat,&QTimer::timeout,this,[&]{const auto now=timer.elapsed();longest=std::max(longest,now-previous);previous=now;});heartbeat.start();
+        for(int pass=0;pass<2;++pass){const auto started=timer.elapsed();longest=0;previous=started;maxSelect=maxBegin=0;
+            for(int i=0;i<8;++i){const auto selected=timer.nsecsElapsed();QVERIFY(library->select(rows[4+i*17].toMap().value("id").toString()));maxSelect=std::max(maxSelect,(timer.nsecsElapsed()-selected)/1000);InputSample p;p.position={32.5,32.5};p.pressure=1;p.tool=1;const auto begun=timer.nsecsElapsed();QVERIFY(client.beginStroke(p));maxBegin=std::max(maxBegin,(timer.nsecsElapsed()-begun)/1000);client.endStroke();QTRY_VERIFY_WITH_TIMEOUT(!client.drawing() && !client.layerEditBusy(),15000);QTest::qWait(20);}
+            qInfo()<<"448 presets pass"<<pass<<"total ms"<<timer.elapsed()-started<<"max select us"<<maxSelect<<"max begin us"<<maxBegin<<"longest GUI gap ms"<<longest;
+        }
+        heartbeat.stop();QVERIFY(client.lastError().isEmpty());
+    }
+
     void largeAbrImportAndScrollResponsiveness() {
         const auto fixture=QFINDTESTDATA("../../core/crates/paint-io/tests/fixtures/abr/myer-settlement-brushes.abr");QVERIFY(!fixture.isEmpty());
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("state.ini"));QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());

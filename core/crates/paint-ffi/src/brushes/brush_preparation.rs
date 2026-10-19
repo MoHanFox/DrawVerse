@@ -11,7 +11,7 @@ use paint_task::{Priority, TaskError, TaskPool, TaskTicket};
 use std::{
     collections::VecDeque,
     path::PathBuf,
-    sync::{Arc, Mutex, MutexGuard, OnceLock},
+    sync::{Arc, Mutex, MutexGuard, OnceLock, Weak},
     thread,
     time::Duration,
 };
@@ -46,6 +46,7 @@ struct Recipe {
     budget: usize,
     resources: Option<Arc<ResourceStore>>,
     anchors: Arc<Mutex<Vec<Arc<ValidatedSource>>>>,
+    base: Option<Weak<CatalogTicket>>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BrushSupport {
@@ -80,6 +81,21 @@ impl Recipe {
     fn start(self) -> ApiResult<TaskTicket<ApiResult<Arc<BrushCatalog>>>> {
         pool()?
             .submit(Priority::Interactive, move |token| {
+                if let Some(base) = self.base.as_ref().and_then(Weak::upgrade) {
+                    match base.reselect(&self.json, self.support) {
+                        Ok(Some((catalog, receipts))) => {
+                            let result = self.anchors.lock().map_err(|_| ApiError::internal()).map(
+                                |mut held| {
+                                    *held = receipts;
+                                    Arc::new(catalog)
+                                },
+                            );
+                            return Ok(result);
+                        }
+                        Err(error) => return Ok(Err(error)),
+                        Ok(None) => {}
+                    }
+                }
                 let result = match self.resources {
                     Some(resources) => resources.source_store().and_then(|sources| {
                         paint_io::brush_state::decode_captured(
@@ -161,6 +177,39 @@ pub(crate) struct CatalogTicket {
     state: Mutex<TicketState>,
 }
 impl CatalogTicket {
+    // Selection changes cannot alter compiled presets. Only a successful, still-resident
+    // result with the same complete input and entry capability is eligible for reuse.
+    fn reselect(
+        &self,
+        json: &str,
+        support: BrushSupport,
+    ) -> ApiResult<Option<(BrushCatalog, Vec<Arc<ValidatedSource>>)>> {
+        let state = self.state.lock().map_err(|_| ApiError::internal())?;
+        let (Some(Ok(snapshot)), Some(recipe)) = (&state.result, &state.recipe) else {
+            return Ok(None);
+        };
+        if recipe.support != support {
+            return Ok(None);
+        }
+        let snapshot = snapshot.clone();
+        let recipe = recipe.clone();
+        drop(state);
+        let Some(catalog) = paint_io::brush_state::reselect_captured(
+            recipe.json.as_bytes(),
+            json.as_bytes(),
+            &snapshot,
+        )
+        .map_err(io_error)?
+        else {
+            return Ok(None);
+        };
+        let receipts = recipe
+            .anchors
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .clone();
+        Ok(Some((catalog, receipts)))
+    }
     pub fn try_result(&self) -> ApiResult<Arc<BrushCatalog>> {
         let mut state = self.state.lock().map_err(|_| ApiError::internal())?;
         if state.result.is_none() && state.task.is_none() {
@@ -289,11 +338,19 @@ impl PreparedCatalog {
         let budget = current.mask_budget();
         drop(current);
         self.retire_unused_images()?;
+        let base = self
+            .records
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .entries
+            .back()
+            .map(|(_, ticket)| Arc::downgrade(ticket));
         let recipe = Recipe {
             support,
             json,
             budget,
             anchors: Arc::new(Mutex::new(Vec::new())),
+            base,
             resources: self
                 .resources
                 .lock()
@@ -2050,5 +2107,55 @@ mod tests {
             PAINT_INVALID_ARGUMENT
         );
         assert_eq!(library.current().unwrap().ids().len(), 4);
+    }
+
+    #[test]
+    fn selection_reuses_compiled_presets_but_edits_and_invalid_drafts_do_not() {
+        let library = PreparedCatalog::new(BrushCatalog::default());
+        let mut catalog = BrushCatalog::default();
+        let encode = |c: &BrushCatalog| {
+            String::from_utf8(paint_io::brush_state::encode(c).unwrap()).unwrap()
+        };
+        let first = library.submit_groups(encode(&catalog)).unwrap();
+        let original = library.ticket(first).unwrap().wait().unwrap();
+        catalog.select("round-fine").unwrap();
+        let next = library.submit_groups(encode(&catalog)).unwrap();
+        let selected = library.ticket(next).unwrap().wait().unwrap();
+        assert_eq!(selected.selected().id(), "round-fine");
+        assert!(Arc::ptr_eq(
+            &original.selected(),
+            &selected.preset("round-pressure").unwrap()
+        ));
+        let mut settings = catalog.selected().settings().clone();
+        settings.diameter = 37.;
+        catalog.edit("round-fine", settings).unwrap();
+        let edited = library.submit_groups(encode(&catalog)).unwrap();
+        let edited = library.ticket(edited).unwrap().wait().unwrap();
+        assert_eq!(edited.selected().settings().diameter, 37.);
+        assert!(!Arc::ptr_eq(&selected.selected(), &edited.selected()));
+        let valid = encode(&catalog);
+        let invalid = valid.replace("\"selected\":\"round-fine\"", "\"selected\":\"absent\"");
+        assert_ne!(invalid, valid);
+        let bad = library.submit_groups(invalid).unwrap();
+        assert!(library.ticket(bad).unwrap().wait().is_err());
+        let duplicate = valid.replacen(
+            "\"selected\":",
+            "\"selected\":\"round-pressure\",\"selected\":",
+            1,
+        );
+        let bad = library.submit_groups(duplicate).unwrap();
+        assert!(library.ticket(bad).unwrap().wait().is_err());
+        let good = library.submit_groups(valid).unwrap();
+        assert_eq!(
+            library
+                .ticket(good)
+                .unwrap()
+                .wait()
+                .unwrap()
+                .selected()
+                .settings()
+                .diameter,
+            37.
+        );
     }
 }

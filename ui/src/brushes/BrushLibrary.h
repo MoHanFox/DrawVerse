@@ -461,6 +461,7 @@ private:
     void changed(bool structure = false, const QString &id = {});
     void queuePersistence();
     QTimer m_persistTimer;
+    mutable QByteArray m_snapshotCache,m_catalogCache;
     bool applyOrganization(const QJsonObject &candidate);
     QList<Preset> m_presets;
     QJsonObject m_organization;

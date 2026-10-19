@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新大目录起笔延迟：`docs/brush/performance/brush-library-switch-latency-design.md` / `docs/validations/brush/performance/brush-library-switch-latency-validation.md`；Qt缓存偏好/执行快照与准确同步票据，原生只改选择时复用成功不可变预设，保持冷资源与来源生命周期。448项样本同步起笔最长24ms降至13–14ms，Qt7项/原生67项与Release通过；未复现用户原包强卡顿，仍需实机复核。
+
 - 最新参数/资源布局：`docs/brush/ui/brush-settings-resource-layout-design.md` / `docs/validations/brush/ui/brush-settings-resource-layout-validation.md`；公共ParameterSlider统一同排标题/加减数值与下排滑条，三类图片资源置顶/展开方阵，重命名和建组为面板旁独立Window；Windows Release及8项Qt通过，未跑全量/跨平台/设备/GPU。
 
 - 最新整笔描边 Qt：[设计](docs/brush/ui/brush-stroke-outline-ui-design.md) / [验收](docs/validations/brush/ui/brush-stroke-outline-ui-validation.md)；state41/ABI1.60/VBR1.0完整镜像、三来源、三位置、相对/像素宽度、第二颜色、白色预览/真实像素/单历史与新目录资源往返/保存重开，Windows Release与三项Qt通过。未跑全量/设备/跨平台/GPU。

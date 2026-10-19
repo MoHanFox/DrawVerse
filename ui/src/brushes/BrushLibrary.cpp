@@ -574,7 +574,7 @@ void BrushLibrary::setWriteBlend(int mode) {
     m_writeBlend=mode;
     emit settingsChanged();queuePersistence();
 }
-void BrushLibrary::queuePersistence(){m_persistTimer.start();}
+void BrushLibrary::queuePersistence(){m_snapshotCache.clear();m_catalogCache.clear();m_persistTimer.start();}
 void BrushLibrary::flushPersistence(){if(m_persistTimer.isActive()){m_persistTimer.stop();emit persistRequested(snapshot());}}
 QVariantMap BrushLibrary::presetInfo(const QString &id) const {
     const int at=index(id);if(at<0)return {};const auto &p=m_presets[at];
@@ -998,6 +998,7 @@ QJsonObject BrushLibrary::presetRow(const Preset &p,int &version) {
 QJsonObject row{{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opacity},{"spacing",p.spacing},{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}};if(!p.maskResource.isEmpty()){row["maskResource"]=p.maskResource;version=std::max(version,3);}if(!p.sourceResource.isEmpty()){row["sourceResource"]=p.sourceResource;version=std::max(version,4);}if(!p.pressure.isEmpty()){row["pressureDynamics"]=QJsonObject::fromVariantMap(p.pressure);version=std::max(version,p.pressure.contains("opacity")?6:5);}if(!p.device.isEmpty()){row["tipDynamics"]=QJsonObject::fromVariantMap(p.device);version=std::max(version,7);}if(!p.scatter.isEmpty()){row["scatterDynamics"]=QJsonObject::fromVariantMap(p.scatter);version=std::max(version,scatterHasControls(p.scatter)?35:8);}if(!p.shape.isEmpty()){row["shapeJitter"]=QJsonObject::fromVariantMap(p.shape);version=std::max(version,9);}if(!p.transfer.isEmpty()){row["transferJitter"]=QJsonObject::fromVariantMap(p.transfer);version=std::max(version,37);}if(!p.color.isEmpty()){row["colorDynamics"]=QJsonObject::fromVariantMap(p.color);version=std::max(version,10);}if(!p.texture.isEmpty()){row["texture"]=QJsonObject::fromVariantMap(p.texture);version=std::max(version,textureStateVersion(p.texture));}if(!p.dual.isEmpty()){row["dualBrush"]=QJsonObject::fromVariantMap(p.dual);version=std::max(version,12);if(scatterHasControls(p.dual.value("scatterDynamics").toMap()))version=std::max(version,35);if(dualHasExtendedMode(p.dual))version=std::max(version,36);}if(smoothPressure(p.pressure,p.dual))version=std::max(version,13);if(!p.smoothing.isEmpty()){row["smoothing"]=QJsonObject::fromVariantMap(p.smoothing);version=std::max(version,14);}if(p.dual.contains("sizing"))version=std::max(version,dualHasRatio(p.dual)?38:15);if(!p.wet.isEmpty()){row["wetMix"]=QJsonObject::fromVariantMap(p.wet);version=std::max(version,17);}if(!p.taper.isEmpty()){row["strokeTaper"]=QJsonObject::fromVariantMap(p.taper);version=std::max(version,taperHasRelative(p.taper)?39:18);}if(!p.airbrush.isEmpty()){row["airbrush"]=QJsonObject::fromVariantMap(p.airbrush);version=std::max(version,23);}if(!p.speed.isEmpty()){row["speedDynamics"]=QJsonObject::fromVariantMap(p.speed);version=std::max(version,24);}if(!p.tangent.isEmpty()){row["tangentDynamics"]=QJsonObject::fromVariantMap(p.tangent);version=std::max(version,25);}if(!p.distance.isEmpty()){row["distanceDynamics"]=QJsonObject::fromVariantMap(p.distance);version=std::max(version,26);}if(!p.tilt.isEmpty()){row["tiltDynamics"]=QJsonObject::fromVariantMap(p.tilt);version=std::max(version,27);}if(!p.rotation.isEmpty()){row["rotationDynamics"]=QJsonObject::fromVariantMap(p.rotation);version=std::max(version,28);}if(!p.direction.isEmpty()){row["directionDynamics"]=QJsonObject::fromVariantMap(p.direction);version=std::max(version,29);}if(!p.matrix.isEmpty()){row["sourceMatrix"]=QJsonObject::fromVariantMap(p.matrix);version=std::max(version,32);}if(!p.fade.isEmpty()){row["fadeDynamics"]=QJsonObject::fromVariantMap(p.fade);version=std::max(version,34);}if(BrushCurveModes::present(row))version=std::max(version,40);if(!p.outline.isEmpty()){row["strokeOutline"]=QJsonObject::fromVariantMap(p.outline);version=std::max(version,41);}return row;
 }
 QByteArray BrushLibrary::snapshot() const {
+    if(!m_snapshotCache.isEmpty())return m_snapshotCache;
     QJsonArray rows,baselines;QJsonObject editors,resetEditors;int version=2,resetVersion=2;
     auto editor=[](const Preset &p){return QJsonObject{{"existing",p.dualExisting},{"sourceName",p.dualSourceName}};};
     for(const auto &p:m_presets){const auto baseline=m_resetPresets.value(p.id,p);rows.append(presetRow(p,version));baselines.append(presetRow(baseline,resetVersion));if(p.dualExisting || !p.dualSourceName.isEmpty())editors[p.id]=editor(p);if(baseline.dualExisting || !baseline.dualSourceName.isEmpty())resetEditors[p.id]=editor(baseline);}
@@ -1008,7 +1009,7 @@ QByteArray BrushLibrary::snapshot() const {
                                      {"recentColors",QJsonArray::fromStringList(m_recentColors)},{"colorState",QJsonObject{{"foreground",m_foregroundColor.name(QColor::HexArgb)},{"background",m_backgroundColor.name(QColor::HexArgb)}}},{"resetState",resetState},{"brushTool",QJsonObject{{"writeBlend",m_writeBlend}}}};
     if(!m_organization.isEmpty())root["organization"]=m_organization;
     if(!editors.isEmpty())root["dualEditors"]=editors;
-    return QJsonDocument(root).toJson(QJsonDocument::Compact);
+    m_snapshotCache=QJsonDocument(root).toJson(QJsonDocument::Compact);return m_snapshotCache;
 }
 QJsonObject BrushLibrary::exportPreset(const Preset &p,bool includeSource,const QString &id) {
     if(!p.sourceResource.isEmpty() && !includeSource)return {};
@@ -1173,10 +1174,11 @@ QByteArray BrushLibrary::exportSelectionPackage(bool includeSource) const {
     return QJsonDocument(QJsonObject{{"model","ordered-package-v1"},{"package",package},{"organization",normalized}}).toJson(QJsonDocument::Compact);
 }
 QByteArray BrushLibrary::catalogSnapshot() const {
+    if(!m_catalogCache.isEmpty())return m_catalogCache;
     QJsonArray rows;int version=2;for(const auto &p:m_presets)rows.append(presetRow(p,version));
     QJsonObject executing{{"version",version},{"selected",m_selected},{"presets",rows}};
     if(!m_organization.isEmpty()){executing["organization"]=m_organization;executing["version"]=std::max(version,20);}
-    return QJsonDocument(executing).toJson(QJsonDocument::Compact);
+    m_catalogCache=QJsonDocument(executing).toJson(QJsonDocument::Compact);return m_catalogCache;
 }
 
 bool BrushLibrary::applyNativeCatalog(const QByteArray &json) {
@@ -1523,6 +1525,7 @@ bool BrushLibrary::restore(const QByteArray &json) {
             const auto &old=m_presets[current];preset.preview=old.preview;preset.error=old.error;preset.token=old.token;preset.requested=old.requested;
         } else preset.token=++m_nextToken;
     }
+    m_snapshotCache.clear();m_catalogCache.clear();
     m_presets=restored;m_organization=organization;m_selected=selected;m_recentColors=recent;m_writeBlend=writeBlend;
     m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",selected}}};
     const bool colorsChanged=foreground!=m_foregroundColor || background!=m_backgroundColor;
