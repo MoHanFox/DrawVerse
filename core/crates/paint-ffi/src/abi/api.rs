@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 64;
+pub const PAINT_ABI_MINOR: u32 = 65;
 
 /// Mesh-only liquify preview packets; graphics resources belong to the UI renderer.
 pub const PAINT_FEATURE_LIQUIFY_PREVIEW: u64 = 144_115_188_075_855_872;
@@ -638,6 +638,8 @@ pub const PAINT_LAYER_GROUP: u32 = 1;
 pub const PAINT_GROUP_WRAP: u32 = 1;
 pub const PAINT_GROUP_UNGROUP: u32 = 2;
 pub const PAINT_GROUP_REPARENT: u32 = 3;
+/// ABI 1.65: rename an existing pixel layer, group or mask using owned UTF-8 bytes.
+pub const PAINT_GROUP_RENAME_LAYER: u32 = 4;
 
 /// ABI 1.5: independent hierarchy metadata; no existing DTO changes.
 #[repr(C)]

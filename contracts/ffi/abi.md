@@ -1,4 +1,8 @@
-# C ABI 1.64.0 契约
+# C ABI 1.65.0 契约
+
+## ABI 1.65 — 图层/组改名
+
+`paint_session_group` 接受 `PAINT_GROUP_RENAME_LAYER=4`，layer_id 必须为现有节点，parent_id=0，name/name_length 为借入 UTF-8；返回前完整复制。OK 表示入队，空白名称、超过 1024 字节或 NUL 异步拒绝，原名称和历史不变。支持像素层、组和蒙版，同名不产生历史；名称变化以图层属性历史保存，可撤销重做。DTO 布局和旧 kind 语义不变。
 
 ## ABI 1.64 — 自由变换常驻网格预览
 

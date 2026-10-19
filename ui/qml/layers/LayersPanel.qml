@@ -218,6 +218,12 @@ ColumnLayout {
                     property bool active: PaintClient.activeLayer===modelData.id || (maskNode!==null && PaintClient.activeLayer===maskNode.id)
                     // Row background shows selection; the thumbnail frame shows the edit target.
                     property bool multiSelected: PaintClient.selectedLayers.indexOf(modelData.id)>=0
+                    property bool renaming:false
+                    property bool renameRequested:false
+                    function beginRename(){if(!PaintClient.ready || PaintClient.drawing || PaintClient.liquifyActive || PaintClient.transformActive || PaintClient.fileBusy)return;renameRequested=true;tryBeginRename()}
+                    function tryBeginRename(){if(!root.editable)return;renameRequested=false;renaming=true;nameEditor.text=modelData.name;nameEditor.forceActiveFocus();nameEditor.selectAll()}
+                    function finishRename(commit){if(!renaming)return;renaming=false;if(commit && nameEditor.text.trim().length)PaintClient.renameLayer(modelData.id,nameEditor.text);root.forceActiveFocus()}
+                    Connections {target:PaintClient;function onStateChanged(){if(row.renameRequested)row.tryBeginRename()}}
                     Component.onCompleted: { if(!modelData.group)PaintClient.requestLayerPreview(modelData.id) }
                     Component.onDestruction: { if(!modelData.group)PaintClient.releaseLayerPreview(modelData.id) }
                     color: multiSelected ? Theme.selected : Theme.surface
@@ -238,6 +244,7 @@ ColumnLayout {
                             if(mouse.button===Qt.RightButton)root.openLayerContext(row.modelData.id,row,mouse.x,mouse.y,false)
                             else if(!clippingGesture && !dragging){root.forceActiveFocus();PaintClient.selectLayers(row.modelData.id,Number(mouse.modifiers))}
                         }
+                        onDoubleClicked:mouse=>{if(mouse.button===Qt.LeftButton && nameCell.contains(nameCell.mapFromItem(row,mouse.x,mouse.y)))row.beginRename()}
                     }
                     MouseArea {
                         id: clippingBoundary
@@ -333,7 +340,16 @@ ColumnLayout {
                                 else PaintClient.selectLayer(row.maskNode.id)
                             }
                         }
-                        Label { objectName:"layerName:"+row.modelData.id; text:row.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.text; font.pixelSize: 9; font.bold: row.modelData.group; font.underline:root.clippingBases[row.modelData.id]===true }
+                        Item {
+                            id:nameCell
+                            Layout.fillWidth:true;Layout.preferredHeight:20;Layout.minimumWidth:32
+                            Label {objectName:"layerName:"+row.modelData.id;anchors.fill:parent;visible:!row.renaming;text:row.modelData.name;elide:Text.ElideRight;color:Theme.text;font.pixelSize:9;font.bold:row.modelData.group;font.underline:root.clippingBases[row.modelData.id]===true;verticalAlignment:Text.AlignVCenter}
+                            CompactTextField {id:nameEditor;objectName:"layerNameEditor:"+row.modelData.id;anchors.fill:parent;visible:row.renaming;horizontalAlignment:Text.AlignLeft;maximumLength:1024
+                                onAccepted:row.finishRename(true)
+                                onActiveFocusChanged:if(!activeFocus && row.renaming)row.finishRename(true)
+                                Keys.onEscapePressed:event=>{row.finishRename(false);event.accepted=true}
+                            }
+                        }
                         LayerLock { kind: (row.modelData.effectiveLocks & 4) ? 4 : (row.modelData.effectiveLocks & 2) ? 2 : 1; passiveIcon: true; selected: true; visible: row.modelData.effectiveLocks!==0; enabled: false; implicitWidth: 18; implicitHeight: 18 }
                     }
                 }

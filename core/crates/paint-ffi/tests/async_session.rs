@@ -1795,6 +1795,60 @@ struct Harness {
 }
 
 #[test]
+fn layer_rename_abi_copies_utf8_and_preserves_undo() {
+    let h = Harness::new(64, 64);
+    let mut name = "图层改名".as_bytes().to_vec();
+    let request = PaintGroupRequest {
+        struct_size: size_of::<PaintGroupRequest>() as u32,
+        kind: PAINT_GROUP_RENAME_LAYER,
+        layer_id: 1,
+        parent_id: 0,
+        name: name.as_ptr(),
+        name_length: name.len() as u64,
+    };
+    let mut sequence = 0;
+    unsafe {
+        assert_eq!(
+            paint_session_group(h.core, h.session, &request, &mut sequence),
+            PAINT_OK
+        );
+    }
+    name.fill(b'x');
+    let info = h.wait(sequence);
+    assert_eq!(info.undo_depth, 1);
+    let read_name = |publication| {
+        let mut out = [0; 64];
+        let mut required = 0;
+        unsafe {
+            assert_eq!(
+                paint_session_layer_name(
+                    h.core,
+                    h.session,
+                    publication,
+                    1,
+                    out.as_mut_ptr(),
+                    64,
+                    &mut required
+                ),
+                PAINT_OK
+            );
+        }
+        String::from_utf8(out[..required as usize].to_vec()).unwrap()
+    };
+    assert_eq!(read_name(info.publication), "图层改名");
+    let undone = h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_UNDO,
+        ..dto!(PaintCommand)
+    }));
+    assert_eq!(read_name(undone.publication), "Layer 1");
+    let redone = h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_REDO,
+        ..dto!(PaintCommand)
+    }));
+    assert_eq!(read_name(redone.publication), "图层改名");
+}
+
+#[test]
 fn batch_group_abi_copies_selection_and_name_and_is_one_undo_step() {
     let h = Harness::new(32, 32);
     for _ in 0..3 {

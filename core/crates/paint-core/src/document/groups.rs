@@ -300,6 +300,22 @@ impl DocumentSnapshot {
     }
 }
 impl Document {
+    pub fn rename_layer(&mut self, id: LayerId, name: impl Into<String>) -> Result<()> {
+        self.idle()?;
+        let name = name.into();
+        if name.trim().is_empty() || name.len() > 1024 || name.contains('\0') {
+            return Err(Error::InvalidArgument(
+                "layer name must contain 1..=1024 UTF-8 bytes without NUL",
+            ));
+        }
+        let index = self.layer_index(id)?;
+        if self.layers[index].name == name {
+            return Ok(());
+        }
+        let mut after = self.structure();
+        after[index].name = name;
+        self.commit_structure_entry(after, crate::HistoryAction::LayerProperties)
+    }
     /// Dynamic same-parent bases in one bottom-to-top pass, including hidden nodes.
     pub fn layer_clipping_bases(&self) -> Vec<u64> {
         let mut bases = BTreeMap::new();

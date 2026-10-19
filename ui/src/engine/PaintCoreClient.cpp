@@ -1772,7 +1772,7 @@ bool PaintCoreClient::mergeSelectedLayers(){return canMergeLayers() && submitLay
 bool PaintCoreClient::submitGroup(quint32 kind,quint64 id,quint64 parent,const QString &name) {
     if(!m_ready || m_liquifyActive || m_transformActive || m_drawing || layerEditBusy() || m_fileBusy) return false;
     const auto bytes=name.toUtf8();auto request=dto<PaintGroupRequest>();request.kind=kind;request.layer_id=id;request.parent_id=parent;
-    if(kind==PAINT_GROUP_WRAP) {request.name=reinterpret_cast<const uint8_t*>(bytes.constData());request.name_length=static_cast<uint64_t>(bytes.size());}
+    if(kind==PAINT_GROUP_WRAP || kind==PAINT_GROUP_RENAME_LAYER) {request.name=reinterpret_cast<const uint8_t*>(bytes.constData());request.name_length=static_cast<uint64_t>(bytes.size());}
     uint64_t sequence=0;PaintStatus status;QString error;
     {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session) return false;
         status=paint_session_group(m_connection->core,m_connection->session,&request,&sequence);
@@ -1782,6 +1782,11 @@ bool PaintCoreClient::submitGroup(quint32 kind,quint64 id,quint64 parent,const Q
     m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
 }
 bool PaintCoreClient::groupLayer(quint64 id,const QString &name) {return submitGroup(PAINT_GROUP_WRAP,id,0,name);}
+bool PaintCoreClient::renameLayer(quint64 id,const QString &name) {
+    const auto clean=name.trimmed();if(clean.isEmpty() || clean.toUtf8().size()>1024 || clean.contains(QChar(0)))return false;
+    for(const auto &value:m_layers){const auto layer=value.toMap();if(layer.value("id").toULongLong()==id && layer.value("name").toString()==clean)return true;}
+    return submitGroup(PAINT_GROUP_RENAME_LAYER,id,0,clean);
+}
 bool PaintCoreClient::groupSelectedLayers(const QString &name) {
     if(!m_ready || m_liquifyActive || m_transformActive || m_drawing || layerEditBusy() || m_fileBusy || m_selectedLayers.isEmpty())return false;
     clearLayerBlendPreview();

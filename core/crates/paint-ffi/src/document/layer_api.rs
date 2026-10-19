@@ -123,6 +123,10 @@ pub unsafe extern "C" fn paint_session_group(
             return Err(ApiError::invalid("group operation needs explicit layer"));
         }
         let operation = match value.kind {
+            PAINT_GROUP_RENAME_LAYER if value.parent_id == 0 => Operation::RenameLayer(
+                value.layer_id,
+                pointers::utf8(value.name, value.name_length)?,
+            ),
             PAINT_GROUP_WRAP if value.parent_id == 0 => Operation::Group(
                 value.layer_id,
                 pointers::utf8(value.name, value.name_length)?,

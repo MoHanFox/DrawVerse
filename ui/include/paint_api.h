@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 64
+#define PAINT_ABI_MINOR 65
 
 #define PAINT_ABI_PATCH 0
 
@@ -267,6 +267,11 @@
 #define PAINT_FILE_SUCCEEDED 3
 
 #define PAINT_FILE_WEBP 3
+
+/**
+ * ABI 1.65: rename an existing pixel layer, group or mask using owned UTF-8 bytes.
+ */
+#define PAINT_GROUP_RENAME_LAYER 4
 
 #define PAINT_GROUP_REPARENT 3
 

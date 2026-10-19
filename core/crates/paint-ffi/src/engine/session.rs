@@ -71,6 +71,7 @@ pub(crate) enum Operation {
     Appearance(u64, paint_core::LayerAppearance),
     Translate(u64, i32, i32),
     Group(u64, String),
+    RenameLayer(u64, String),
     GroupBatch(Vec<u64>, String),
     Ungroup(u64),
     Reparent(u64, u64),
@@ -831,6 +832,7 @@ impl Engine {
                     | Operation::Translate(..)
                     | Operation::PickLayer(..)
                     | Operation::Group(..)
+                    | Operation::RenameLayer(..)
                     | Operation::GroupBatch(..)
                     | Operation::Ungroup(..)
                     | Operation::Reparent(..)
@@ -1231,6 +1233,11 @@ impl Engine {
             Operation::Group(id, name) => {
                 self.document.group_layer(id, name)?;
                 self.modified = true;
+            }
+            Operation::RenameLayer(id, name) => {
+                let revision = self.document.revision();
+                self.document.rename_layer(id, name)?;
+                self.modified |= revision != self.document.revision();
             }
             Operation::GroupBatch(ids, name) => {
                 self.document.group_layers(&ids, name)?;

@@ -1,5 +1,31 @@
 use paint_core::*;
 #[test]
+fn layer_and_group_rename_are_atomic_undoable_and_do_not_copy_pixels() {
+    let mut doc = Document::new(4096, 2160).unwrap();
+    doc.initialize_white_background().unwrap();
+    let group = doc.group_layer(1, "Group").unwrap();
+    let revision = doc.revision();
+    doc.rename_layer(group, "Group").unwrap();
+    assert_eq!(doc.revision(), revision);
+    for (id, name) in [(1, "背景改名"), (group, "组改名")] {
+        let before = doc.layer(id).unwrap().name().to_owned();
+        let depth = doc.history_depth().0;
+        doc.rename_layer(id, name).unwrap();
+        assert_eq!(doc.layer(id).unwrap().name(), name);
+        assert_eq!(doc.history_depth().0, depth + 1);
+        doc.undo().unwrap();
+        assert_eq!(doc.layer(id).unwrap().name(), before);
+        doc.redo().unwrap();
+        assert_eq!(doc.layer(id).unwrap().name(), name);
+        assert_eq!(doc.tile_count(), 0);
+        assert_eq!(doc.pixel(12, 12), Pixel::WHITE);
+    }
+    let revision = doc.revision();
+    assert!(doc.rename_layer(group, "  ").is_err());
+    assert!(doc.rename_layer(group, "bad\0name").is_err());
+    assert_eq!(doc.revision(), revision);
+}
+#[test]
 fn deleting_all_group_children_and_batch_roots_keeps_empty_state_undoable() {
     let mut doc = Document::new(32, 32).unwrap();
     let group = doc.group_layer(1, "group").unwrap();

@@ -34,6 +34,31 @@ private slots:
         auto *groupPreview=findVisual(panel,QString("contentLayerThumbnail:%1").arg(group));auto *layerPreview=findVisual(panel,QString("contentLayerThumbnail:%1").arg(layer));
         QVERIFY(groupPreview && layerPreview);QVERIFY(!groupPreview->isVisible());QVERIFY(layerPreview->isVisible());client.shutdown();
     }
+    void layerAndGroupNamesEditInlineAndEscapePreservesHistory() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("rename.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());const auto layer=client.activeLayer();
+        QVERIFY(client.groupSelectedLayers("Group"));QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());const auto group=client.activeLayer();
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        QQmlComponent component(&engine,QUrl("qrc:/qml/layers/LayersPanel.qml"));QQuickWindow window;
+        QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));auto *panel=qobject_cast<QQuickItem*>(object.data());QVERIFY(panel);
+        panel->setParentItem(window.contentItem());panel->setWidth(280);panel->setHeight(500);window.resize(280,500);window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));
+        const auto nameOf=[&](quint64 id){for(const auto &value:client.layers()){const auto node=value.toMap();if(node.value("id").toULongLong()==id)return node.value("name").toString();}return QString();};
+        for(const auto id:{layer,group}) {
+            QQuickItem *label=nullptr,*editor=nullptr;QTRY_VERIFY((label=findVisual(panel,QString("layerName:%1").arg(id))));
+            QTRY_VERIFY(label->width()>32 && label->height()>0);
+            const auto before=nameOf(id);const auto after=QString::fromUtf8("改名%1").arg(id);const auto depth=client.undoDepth();
+            QTest::mouseDClick(&window,Qt::LeftButton,Qt::NoModifier,label->mapToScene({label->width()/2,10}).toPoint());
+            QTRY_VERIFY((editor=findVisual(panel,QString("layerNameEditor:%1").arg(id))) && editor->isVisible());
+            editor->setProperty("text",after);QTest::keyClick(&window,Qt::Key_Return);QTRY_COMPARE(nameOf(id),after);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);
+            label=findVisual(panel,QString("layerName:%1").arg(id));QVERIFY(label);
+            QTest::mouseDClick(&window,Qt::LeftButton,Qt::NoModifier,label->mapToScene({label->width()/2,10}).toPoint());
+            QTRY_VERIFY((editor=findVisual(panel,QString("layerNameEditor:%1").arg(id))) && editor->isVisible());editor->setProperty("text","cancelled");QTest::keyClick(&window,Qt::Key_Escape);
+            QTRY_VERIFY(!editor->isVisible());QCOMPARE(nameOf(id),after);QCOMPARE(client.undoDepth(),depth+1);
+            client.undo();QTRY_COMPARE(nameOf(id),before);client.redo();QTRY_COMPARE(nameOf(id),after);QTRY_VERIFY(!client.layerEditBusy());
+        }
+        QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
     void nativeCatalogRefreshPreservesLargeLibraryMultiSelection() {
         BrushLibrary library;auto state=QJsonDocument::fromJson(library.snapshot()).object();
         auto rows=state.value("presets").toArray();const auto original=rows.first().toObject();

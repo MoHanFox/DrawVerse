@@ -53,3 +53,11 @@
 
 - 组行改为 24px，取消组总预览请求和显示；像素层仍为 34px 并保留缩略图。
 - Windows Release qt_workflow_tests::groupRowsAreCompactAndHaveNoAggregateThumbnail 通过，实际 QML 展开组与子层的行高和缩略图可见性符合要求。
+
+## 普通 5：图层和组原位改名
+
+- ABI 1.65，现有 group request 增补改名操作，结构历史只保存元数据并复用像素。首次单击的异步选层会临时置忙，双击改名等待其完成后再开启输入框，避免双击无效。
+- Rust 核心 layer_and_group_rename_are_atomic_undoable_and_do_not_copy_pixels 通过：中文、像素层/组、undo/redo、同名无修订、非法名称拒绝、4K 零瓦片白底保持。
+- 原生 layer_rename_abi_copies_utf8_and_preserves_undo 通过：返回前复制 UTF-8，调用者随后覆写源字节不影响结果；撤销重做保持。
+- Windows Release Qt layerAndGroupNamesEditInlineAndEscapePreservesHistory 通过：真实双击、Enter 保存、Esc 放弃和图层/组历史恢复。
+- 四个 C/C++ 静态/动态 ABI 消费者通过；生成头检查通过，DTO 布局保持。
