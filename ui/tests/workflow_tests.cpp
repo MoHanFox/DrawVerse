@@ -7,10 +7,33 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QQmlContext>
+#include <QQuickItem>
+#include <QQuickWindow>
+#include "platform/MenuSurface.h"
+#include "workspace/WorkspaceManager.h"
+
+static QQuickItem *findVisual(QQuickItem *item,const QString &name){if(item->objectName()==name)return item;for(auto *child:item->childItems())if(auto *found=findVisual(child,name))return found;return nullptr;}
 
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void groupRowsAreCompactAndHaveNoAggregateThumbnail() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("groups.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
+        const auto layer=client.activeLayer();QVERIFY(client.groupSelectedLayers("Group"));QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());const auto group=client.activeLayer();
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        QQmlComponent component(&engine,QUrl("qrc:/qml/layers/LayersPanel.qml"));QQuickWindow window;
+        QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));
+        auto *panel=qobject_cast<QQuickItem*>(object.data());QVERIFY(panel);panel->setParentItem(window.contentItem());panel->setWidth(280);panel->setHeight(500);window.resize(280,500);window.show();
+        QQuickItem *groupRow=nullptr,*layerRow=nullptr;
+        QTRY_VERIFY((groupRow=findVisual(panel,QString("layerRow:%1").arg(group))));
+        QTRY_VERIFY((layerRow=findVisual(panel,QString("layerRow:%1").arg(layer))));
+        QCOMPARE(groupRow->height(),24.);QCOMPARE(layerRow->height(),34.);
+        auto *groupPreview=findVisual(panel,QString("contentLayerThumbnail:%1").arg(group));auto *layerPreview=findVisual(panel,QString("contentLayerThumbnail:%1").arg(layer));
+        QVERIFY(groupPreview && layerPreview);QVERIFY(!groupPreview->isVisible());QVERIFY(layerPreview->isVisible());client.shutdown();
+    }
     void nativeCatalogRefreshPreservesLargeLibraryMultiSelection() {
         BrushLibrary library;auto state=QJsonDocument::fromJson(library.snapshot()).object();
         auto rows=state.value("presets").toArray();const auto original=rows.first().toObject();
@@ -49,6 +72,7 @@ private slots:
 };
 int main(int argc,char **argv) {
     QGuiApplication app(argc,argv);Q_INIT_RESOURCE(ui_resources);QQuickStyle::setStyle("Basic");
+    qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");
     WorkflowTests test;return QTest::qExec(&test,argc,argv);
 }
 #include "workflow_tests.moc"

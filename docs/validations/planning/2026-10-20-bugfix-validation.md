@@ -48,3 +48,8 @@
 
 - 两工具使用“标题、常驻整数滑条、百分比输入”的顺序，保留已有数值编辑。
 - Windows Release qt_workflow_tests::toolPercentSlidersAndInputsStaySynchronized 通过；滑条 75% 更新工具参数及文本、输入 40% 更新滑条，并确认画笔不透明度未被修改。
+
+## 普通 4：图层组行
+
+- 组行改为 24px，取消组总预览请求和显示；像素层仍为 34px 并保留缩略图。
+- Windows Release qt_workflow_tests::groupRowsAreCompactAndHaveNoAggregateThumbnail 通过，实际 QML 展开组与子层的行高和缩略图可见性符合要求。

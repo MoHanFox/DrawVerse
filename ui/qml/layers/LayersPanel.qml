@@ -213,13 +213,13 @@ ColumnLayout {
                     id: row
                     required property var modelData
                     objectName: "layerRow:"+modelData.id
-                    width: layerList.width; height: 34
+                    width: layerList.width; height: modelData.group?24:34
                     property var maskNode: root.masksByOwner[modelData.id] || null
                     property bool active: PaintClient.activeLayer===modelData.id || (maskNode!==null && PaintClient.activeLayer===maskNode.id)
                     // Row background shows selection; the thumbnail frame shows the edit target.
                     property bool multiSelected: PaintClient.selectedLayers.indexOf(modelData.id)>=0
-                    Component.onCompleted: { PaintClient.requestLayerPreview(modelData.id) }
-                    Component.onDestruction: { PaintClient.releaseLayerPreview(modelData.id) }
+                    Component.onCompleted: { if(!modelData.group)PaintClient.requestLayerPreview(modelData.id) }
+                    Component.onDestruction: { if(!modelData.group)PaintClient.releaseLayerPreview(modelData.id) }
                     color: multiSelected ? Theme.selected : Theme.surface
                     border.width: 0
                     border.color: Theme.accent
@@ -297,6 +297,8 @@ ColumnLayout {
                         Label { objectName:"clippingArrow:"+row.modelData.id;visible:row.modelData.clipped;text:"↳";color:Theme.muted;font.pixelSize:17;Layout.preferredWidth:14 }
                         LayerThumbnail {
                             id:contentThumbnail
+                            objectName:"contentLayerThumbnail:"+row.modelData.id
+                            visible:!row.modelData.group
                             node:row.modelData;selected:PaintClient.activeLayer===row.modelData.id
                             Rectangle {visible:row.modelData.image===true;width:11;height:11;anchors.right:parent.right;anchors.bottom:parent.bottom;color:Theme.surface;border.color:Theme.muted;border.width:1;Icon{anchors.fill:parent;anchors.margins:1;name:"page"}}
                             onClicked:modifiers=>{root.forceActiveFocus();PaintClient.selectLayers(row.modelData.id,modifiers)}
