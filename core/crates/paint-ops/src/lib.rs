@@ -1,6 +1,6 @@
 //! Pure numeric requests shared by CPU and GPU. Coordinates are tile-local f32;
 //! document ownership, histories and publishing deliberately live above this layer.
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::Deref, sync::Arc};
 
 pub type Rgba = [f32; 4];
 pub const MAX_SAMPLES: usize = 8_000_000;
@@ -75,7 +75,37 @@ pub struct ElasticOp {
 #[derive(Clone, Debug)]
 pub struct SourceTile {
     pub coord: [i32; 2],
-    pub pixels: Vec<Rgba>,
+    pub pixels: Arc<SourcePixels>,
+}
+#[derive(Debug)]
+pub struct SourcePixels {
+    values: Box<[Rgba]>,
+    valid: bool,
+}
+impl Deref for SourcePixels {
+    type Target = [Rgba];
+    fn deref(&self) -> &[Rgba] {
+        &self.values
+    }
+}
+impl SourceTile {
+    pub fn is_valid(&self) -> bool {
+        self.pixels.valid && self.coord.iter().all(|x| x.unsigned_abs() <= 62500)
+    }
+    pub fn new(coord: [i32; 2], pixels: Vec<Rgba>) -> Self {
+        let valid = pixels.len() == 4096
+            && pixels.iter().all(|p| {
+                p.iter().all(|x| x.is_finite() && (0. ..=1.).contains(x))
+                    && p[..3].iter().all(|x| *x <= p[3])
+            });
+        Self {
+            coord,
+            pixels: Arc::new(SourcePixels {
+                values: pixels.into_boxed_slice(),
+                valid,
+            }),
+        }
+    }
 }
 #[derive(Clone, Debug)]
 pub struct RemapOp {
@@ -94,11 +124,17 @@ pub struct RemapOp {
 pub enum Operator {
     Elastic(ElasticOp),
     Remap(RemapOp),
+    /// One color per stride block. Alpha -1 marks identity: the caller copies
+    /// original pixels exactly. Only unselected, bilinear previews support this.
+    RemapBlocks(RemapOp),
 }
 
 pub trait Executor: Debug + Send + Sync {
     fn execute(&self, operator: &Operator) -> Result<Vec<Rgba>, String>;
     fn name(&self) -> String;
+    fn prepare_sources(&self, _sources: &[SourceTile]) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -116,12 +152,12 @@ mod tests {
                         cell: 2.,
                         vectors: vec![[0.3, -0.7]; 72 * 38],
                     },
-                    source: vec![SourceTile {
-                        coord: [-1, 0],
-                        pixels: (0..4096)
+                    source: vec![SourceTile::new(
+                        [-1, 0],
+                        (0..4096)
                             .map(|i| [(i % 64) as f32 / 128., 0.1, 0.2, 0.7])
                             .collect(),
-                    }],
+                    )],
                     white: [64, 64],
                     tiles: vec![[-1, 0], [0, 0]],
                     selection: (0..8192).map(|i| (i % 5) as f32 / 4.).collect(),
@@ -132,6 +168,34 @@ mod tests {
                     op.pixels(),
                     (0..8192).map(|i| op.pixel(i)).collect::<Vec<_>>()
                 );
+                if !cubic {
+                    let mut compact = op.clone();
+                    compact.selection.clear();
+                    for v in compact.grid.vectors.iter_mut().take(600) {
+                        *v = [0.; 2];
+                    }
+                    let full = compact.pixels();
+                    for (i, pixel) in full.into_iter().enumerate() {
+                        let side = 64 / stride as usize;
+                        let block = i / 4096 * side * side
+                            + (i % 4096 / 64 / stride as usize) * side
+                            + i % 64 / stride as usize;
+                        let color = compact.block(block);
+                        let tile = compact.tiles[i / 4096];
+                        let color = if color[3] == -1. {
+                            compact.source_at(
+                                tile[0] * 64 + (i % 64) as i32,
+                                tile[1] * 64 + (i % 4096 / 64) as i32,
+                            )
+                        } else {
+                            color
+                        };
+                        assert_eq!(
+                            color, pixel,
+                            "compact preview must preserve identity pixels exactly"
+                        );
+                    }
+                }
             }
         }
     }
@@ -216,6 +280,18 @@ fn cubic_weight(x: f32) -> f32 {
     }
 }
 impl RemapOp {
+    fn block(&self, index: usize) -> Rgba {
+        let side = 64 / self.stride as usize;
+        let tile = self.tiles[index / (side * side)];
+        let x = tile[0] * 64 + (index % side) as i32 * self.stride as i32;
+        let y = tile[1] * 64 + ((index / side) % side) as i32 * self.stride as i32;
+        let d = self.grid.sample(x as f32, y as f32);
+        if d == [0.; 2] {
+            [0., 0., 0., -1.]
+        } else {
+            self.sample(x as f32 + d[0], y as f32 + d[1])
+        }
+    }
     fn pixels(&self) -> Vec<Rgba> {
         if self.stride == 1 {
             return (0..self.tiles.len() * 4096)
@@ -328,6 +404,7 @@ impl Operator {
         match self {
             Self::Elastic(v) => (v.size[0] as usize) * (v.size[1] as usize),
             Self::Remap(v) => v.tiles.len() * 4096,
+            Self::RemapBlocks(v) => v.tiles.len() * 4096 / (v.stride.max(1) as usize).pow(2),
         }
     }
     pub fn validate(&self) -> Result<(), String> {
@@ -362,7 +439,12 @@ impl Operator {
                 }
                 (&v.grid, &v.selection)
             }
-            Self::Remap(v) => {
+            Self::Remap(v) | Self::RemapBlocks(v) => {
+                if matches!(self, Self::RemapBlocks(_))
+                    && (v.stride == 1 || v.cubic || !v.selection.is_empty())
+                {
+                    return Err("invalid compact preview".into());
+                }
                 if ![1, 2, 4].contains(&v.stride)
                     || v.white.iter().any(|x| *x > 1_000_000)
                     || v.source.len() > MAX_SOURCE_TILES
@@ -370,12 +452,7 @@ impl Operator {
                     || v.tiles.iter().flatten().any(|x| x.unsigned_abs() > 62500)
                     || v.source.windows(2).any(|w| w[0].coord >= w[1].coord)
                     || v.source.iter().any(|t| {
-                        t.coord.iter().any(|x| x.unsigned_abs() > 62500)
-                            || t.pixels.len() != 4096
-                            || t.pixels.iter().any(|p| {
-                                p.iter().any(|x| !x.is_finite() || !(0. ..=1.).contains(x))
-                                    || p[..3].iter().any(|x| *x > p[3])
-                            })
+                        t.coord.iter().any(|x| x.unsigned_abs() > 62500) || !t.pixels.valid
                     })
                 {
                     return Err("invalid remap request".into());
@@ -402,6 +479,7 @@ impl Executor for Cpu {
         Ok(match op {
             Operator::Elastic(v) => (0..op.count()).map(|i| v.pixel(i)).collect(),
             Operator::Remap(v) => v.pixels(),
+            Operator::RemapBlocks(v) => (0..op.count()).map(|i| v.block(i)).collect(),
         })
     }
 }
@@ -409,19 +487,45 @@ impl Executor for Cpu {
 /// Shared host/shader wire plan. Integer metadata uses bit patterns, never lossy float casts.
 /// First 12 vec4s are the header, followed by grid, weights, output keys, source keys and pixels.
 pub fn pack(op: &Operator) -> Result<Vec<Rgba>, String> {
+    pack_inner(op, None)
+}
+/// Slots address immutable source tiles in a separate GPU storage binding.
+pub fn pack_with_sources(op: &Operator, slots: &[u32]) -> Result<Vec<Rgba>, String> {
+    let expected = match op {
+        Operator::Elastic(_) => 0,
+        Operator::Remap(v) | Operator::RemapBlocks(v) => v.source.len(),
+    };
+    if slots.len() != expected || slots.iter().any(|v| *v >= MAX_SOURCE_TILES as u32) {
+        return Err("invalid source slots".into());
+    }
+    pack_inner(op, Some(slots))
+}
+fn pack_inner(op: &Operator, slots: Option<&[u32]>) -> Result<Vec<Rgba>, String> {
     op.validate()?;
     let (grid, weights) = match op {
         Operator::Elastic(v) => (&v.grid, &v.selection),
-        Operator::Remap(v) => (&v.grid, &v.selection),
+        Operator::Remap(v) | Operator::RemapBlocks(v) => (&v.grid, &v.selection),
     };
-    let mut data = vec![[0.; 4]; 12];
+    let extra = match op {
+        Operator::Elastic(_) => 0,
+        Operator::Remap(v) | Operator::RemapBlocks(v) => {
+            v.tiles.len() + v.source.len() * if slots.is_some() { 1 } else { 4097 }
+        }
+    };
+    let mut data = Vec::with_capacity(12 + grid.vectors.len() + weights.len() + extra);
+    data.resize(12, [0.; 4]);
     data[0] = [
-        f32::from_bits(u32::from(matches!(op, Operator::Remap(_)))),
+        f32::from_bits(match op {
+            Operator::Elastic(_) => 0,
+            Operator::Remap(_) => 1,
+            Operator::RemapBlocks(_) => 2,
+        }),
         f32::from_bits(op.count() as u32),
         f32::from_bits(grid.width),
         f32::from_bits(grid.height),
     ];
     data[1] = [grid.origin[0] as f32, grid.origin[1] as f32, grid.cell, 0.];
+    data[1][3] = f32::from_bits(u32::from(slots.is_some()));
     data.extend(grid.vectors.iter().map(|v| [v[0], v[1], 0., 0.]));
     data[2][0] = f32::from_bits(data.len() as u32);
     data[2][1] = f32::from_bits(weights.len() as u32);
@@ -438,7 +542,7 @@ pub fn pack(op: &Operator) -> Result<Vec<Rgba>, String> {
             data[5] = [v.radius, v.strength, v.density, v.time];
             data[6] = [v.speed, f32::from_bits(v.tool), 0., 0.];
         }
-        Operator::Remap(v) => {
+        Operator::Remap(v) | Operator::RemapBlocks(v) => {
             data[3] = [
                 f32::from_bits(data.len() as u32),
                 f32::from_bits(v.tiles.len() as u32),
@@ -457,12 +561,14 @@ pub fn pack(op: &Operator) -> Result<Vec<Rgba>, String> {
                 [
                     t.coord[0] as f32,
                     t.coord[1] as f32,
-                    f32::from_bits((pixels + i * 4096) as u32),
+                    f32::from_bits(slots.map_or((pixels + i * 4096) as u32, |s| s[i] * 4096)),
                     0.,
                 ]
             }));
-            for t in &v.source {
-                data.extend_from_slice(&t.pixels);
+            if slots.is_none() {
+                for t in &v.source {
+                    data.extend_from_slice(&t.pixels);
+                }
             }
         }
     }

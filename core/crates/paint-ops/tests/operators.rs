@@ -48,10 +48,7 @@ fn identity_remap_preserves_sparse_white_and_negative_tiles() {
             cell: 2.,
             vectors: vec![[0.; 2]; 72 * 38],
         },
-        source: vec![SourceTile {
-            coord: [-1, 0],
-            pixels: source.clone(),
-        }],
+        source: vec![SourceTile::new([-1, 0], source.clone())],
         white: [64, 64],
         tiles: vec![[-1, 0], [0, 0]],
         selection: vec![],
@@ -103,10 +100,7 @@ fn fractional_remap_matches_independent_reads_across_negative_tile_and_white_edg
             cell: 2.,
             vectors: vec![[0.25, 0.75]; 72 * 38],
         },
-        source: vec![SourceTile {
-            coord: [-1, 0],
-            pixels: source.clone(),
-        }],
+        source: vec![SourceTile::new([-1, 0], source.clone())],
         white: [64, 64],
         tiles: vec![[-1, 0], [0, 0]],
         selection: vec![0.5; 8192],

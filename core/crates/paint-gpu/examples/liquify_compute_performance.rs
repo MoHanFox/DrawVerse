@@ -1,7 +1,37 @@
 //! Reproducible end-to-end benchmark; includes uploads, readback, preview and final sampling.
 use paint_core::*;
 use paint_ops::Executor;
-use std::{collections::BTreeMap, sync::Arc, time::Instant};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
+#[derive(Debug)]
+struct Timed {
+    executor: Arc<dyn Executor>,
+    execution_us: AtomicU64,
+}
+impl Executor for Timed {
+    fn prepare_sources(&self, tiles: &[paint_ops::SourceTile]) -> std::result::Result<(), String> {
+        self.executor.prepare_sources(tiles)
+    }
+    fn name(&self) -> String {
+        self.executor.name()
+    }
+    fn execute(
+        &self,
+        op: &paint_ops::Operator,
+    ) -> std::result::Result<Vec<paint_ops::Rgba>, String> {
+        let started = Instant::now();
+        let result = self.executor.execute(op);
+        self.execution_us
+            .fetch_add(started.elapsed().as_micros() as u64, Ordering::Relaxed);
+        result
+    }
+}
 fn seed() -> Document {
     let mut tiles = BTreeMap::new();
     for ty in 0..24 {
@@ -48,12 +78,21 @@ fn main() {
         Arc::new(paint_gpu::Gpu::open(&id).expect("real GPU required"))
     };
     println!("backend={}", compute.name());
+    let compute = Arc::new(Timed {
+        executor: compute,
+        execution_us: AtomicU64::new(0),
+    });
     for tool in [0, 2] {
         let mut d = seed();
         d.set_compute_executor(compute.clone()).unwrap();
+        let enter = Instant::now();
         d.begin_liquify().unwrap();
+        println!("tool={tool} mode_enter_us={}", enter.elapsed().as_micros());
         let started = Instant::now();
+        compute.execution_us.store(0, Ordering::Relaxed);
+        let mut input_us = Vec::new();
         for i in 0..6 {
+            let input_started = Instant::now();
             let from = InputPoint::new(980. + f64::from(i) * 9., 740. + f64::from(i) * 4., 0.7);
             d.liquify_dab(LiquifyDab {
                 tool,
@@ -67,8 +106,13 @@ fn main() {
                 elapsed_ms: 16.,
             })
             .unwrap();
+            input_us.push(input_started.elapsed().as_micros());
         }
         let preview = started.elapsed().as_micros();
+        println!(
+            "tool={tool} per_input_us={input_us:?} executor_us={}",
+            compute.execution_us.load(Ordering::Relaxed)
+        );
         let started = Instant::now();
         d.commit_liquify().unwrap();
         let final_us = started.elapsed().as_micros();

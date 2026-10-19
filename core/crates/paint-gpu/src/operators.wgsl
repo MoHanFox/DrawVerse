@@ -1,6 +1,7 @@
 // Wire layout is authored by paint_ops::pack. No document pointers cross this boundary.
 @group(0) @binding(0) var<storage,read> data:array<vec4<f32>>;
 @group(0) @binding(1) var<storage,read_write> output:array<vec4<f32>>;
+@group(0) @binding(2) var<storage,read> source_pixels:array<vec4<f32>>;
 fn u(v:f32)->u32 {return bitcast<u32>(v);}
 fn linear(a:f32,b:f32,t:f32)->f32 {return a*(1.0-t)+b*t;}
 fn at(x:i32,y:i32)->vec2<f32> {
@@ -36,7 +37,9 @@ fn source(p:vec2<i32>)->vec4<f32> {
         if left>=right {break;}
         let mid=(left+right)/2u;let item=data[table+mid];let k=vec2<i32>(item.xy);
         if k.x==key.x && k.y==key.y {
-            let local=p-key*64;return data[u(item.z)+u32(local.y*64+local.x)];
+            let local=p-key*64;let address=u(item.z)+u32(local.y*64+local.x);
+            if u(data[1].w)>0u {return source_pixels[address];}
+            return data[address];
         }
         if k.x<key.x || (k.x==key.x && k.y<key.y) {left=mid+1u;} else {right=mid;}
     }
@@ -57,18 +60,34 @@ fn sample_image(p:vec2<f32>)->vec4<f32> {
     if uniform {return first;}
     sum.a=clamp(sum.a,0.0,1.0);return vec4(clamp(sum.rgb,vec3(0.0),vec3(sum.a)),sum.a);
 }
-fn remap(i:u32)->vec4<f32> {
-    let tile=vec2<i32>(data[u(data[3].x)+i/4096u].xy);
-    let offset=i%4096u;let p=tile*64+vec2<i32>(i32(offset%64u),i32(offset/64u));
-    let original=source(p);var selected=1.0;
-    if u(data[2].y)>0u {selected=data[u(data[2].x)+i].x;}
-    if selected==0.0 {return original;}
-    let stride=f32(u(data[3].z));let q=floor(vec2<f32>(p)/stride)*stride;let d=grid(q);
-    if all(d==vec2(0.0)) {return original;}
-    return original*(1.0-selected)+sample_image(q+d)*selected;
+// One invocation per preview block, never one repeated sample per output pixel.
+fn compact_block(i:u32)->vec4<f32> {
+    let stride=u(data[3].z);let side=64u/stride;let blocks=side*side;
+    let tile=vec2<i32>(data[u(data[3].x)+i/blocks].xy);
+    let local=vec2<u32>((i%blocks)%side,(i%blocks)/side)*stride;
+    let p=vec2<f32>(tile*64+vec2<i32>(local));let d=grid(p);
+    if all(d==vec2(0.0)) {return vec4(0.0,0.0,0.0,-1.0);}
+    return sample_image(p+d);
+}
+fn remap_block(i:u32) {
+    let stride=u(data[3].z);let side=64u/stride;let blocks=side*side;
+    let tile=vec2<i32>(data[u(data[3].x)+i/blocks].xy);
+    let local=vec2<u32>((i%blocks)%side,(i%blocks)/side)*stride;
+    let p=tile*64+vec2<i32>(local);let d=grid(vec2<f32>(p));
+    let identity=all(d==vec2(0.0));var sampled=vec4(0.0);
+    if !identity {sampled=sample_image(vec2<f32>(p)+d);}
+    for(var y=0u;y<stride;y++){for(var x=0u;x<stride;x++){
+        let index=(i/blocks)*4096u+(local.y+y)*64u+local.x+x;
+        var selected=1.0;if u(data[2].y)>0u {selected=data[u(data[2].x)+index].x;}
+        if identity || selected==0.0 {output[index]=source(p+vec2<i32>(i32(x),i32(y)));}
+        else if selected==1.0 {output[index]=sampled;}
+        else {output[index]=source(p+vec2<i32>(i32(x),i32(y)))*(1.0-selected)+sampled*selected;}
+    }}
 }
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id:vec3<u32>) {
-    let i=id.x+id.y*65535u*64u;if i>=u(data[0].y) {return;}
-    if u(data[0].x)==0u {output[i]=elastic(i);} else {output[i]=remap(i);}
+    let i=id.x+id.y*65535u*64u;
+    if u(data[0].x)==0u {if i<u(data[0].y) {output[i]=elastic(i);}}
+    else if u(data[0].x)==2u {if i<u(data[0].y) {output[i]=compact_block(i);}}
+    else {let stride=u(data[3].z);if i<u(data[0].y)/(stride*stride) {remap_block(i);}}
 }

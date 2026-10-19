@@ -52,16 +52,13 @@ fn actual_gpu_matches_cpu_elastic_and_remap() {
                 vectors: vec![[0.3, -0.7]; 72 * 40],
             },
             source: vec![
-                SourceTile {
-                    coord: [-1, 0],
-                    pixels: (0..4096)
+                SourceTile::new(
+                    [-1, 0],
+                    (0..4096)
                         .map(|i| [(i % 64) as f32 / 128., 0.1, 0.2, 0.7])
                         .collect(),
-                },
-                SourceTile {
-                    coord: [0, 0],
-                    pixels: vec![[0.5, 0.2, 0.1, 0.7]; 4096],
-                },
+                ),
+                SourceTile::new([0, 0], vec![[0.5, 0.2, 0.1, 0.7]; 4096]),
             ],
             white: [64, 64],
             tiles: vec![[-1, 0], [0, 0]],
@@ -70,6 +67,22 @@ fn actual_gpu_matches_cpu_elastic_and_remap() {
             cubic,
         }));
     }
+    let Operator::Remap(template) = ops.last().unwrap() else {
+        unreachable!()
+    };
+    let mut preview = template.clone();
+    preview.cubic = false;
+    preview.selection.clear();
+    for v in preview.grid.vectors.iter_mut().take(600) {
+        *v = [0.; 2];
+    }
+    for stride in [2, 4] {
+        preview.stride = stride;
+        ops.push(Operator::RemapBlocks(preview.clone()));
+    }
+    gpu.prepare_sources(&preview.source).unwrap();
+    preview.source[1] = SourceTile::new([0, 0], vec![[0.2, 0.3, 0.1, 0.8]; 4096]);
+    ops.push(Operator::RemapBlocks(preview));
     for op in ops {
         let a = Cpu.execute(&op).unwrap();
         let b = gpu.execute(&op).unwrap();
@@ -82,5 +95,5 @@ fn actual_gpu_matches_cpu_elastic_and_remap() {
         eprintln!("operator error={max}");
         assert!(max < 0.0001, "CPU/GPU error {max}");
     }
-    assert_eq!(gpu.submissions(), 8);
+    assert_eq!(gpu.submissions(), 11);
 }

@@ -1,10 +1,10 @@
 //! Device ownership is outside paint-core. CPU data remains authoritative.
 use paint_ops::{Cpu, Executor, Operator, Rgba};
+use std::collections::BTreeMap;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Mutex, OnceLock,
+    Arc, Mutex, OnceLock, Weak,
 };
-use wgpu::util::DeviceExt;
 
 #[derive(Clone, Debug)]
 pub struct Hardware {
@@ -60,8 +60,91 @@ pub struct Gpu {
     pipeline: wgpu::ComputePipeline,
     label: String,
     failed: Arc<AtomicBool>,
-    serial: Mutex<()>,
+    serial: Mutex<Option<Buffers>>,
+    sources: Mutex<SourceCache>,
     submissions: AtomicU64,
+}
+#[derive(Debug)]
+struct Buffers {
+    input: wgpu::Buffer,
+    output: wgpu::Buffer,
+    readback: wgpu::Buffer,
+    group: wgpu::BindGroup,
+}
+#[derive(Debug, Default)]
+struct SourceCache {
+    buffer: Option<wgpu::Buffer>,
+    slots: BTreeMap<usize, u32>,
+    // Weak identities prevent address reuse without pinning a completed session's RAM.
+    identities: Vec<Weak<paint_ops::SourcePixels>>,
+}
+impl SourceCache {
+    fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        tiles: &[paint_ops::SourceTile],
+    ) -> Result<(Vec<u32>, bool), String> {
+        if tiles.iter().any(|tile| !tile.is_valid()) {
+            return Err("invalid source tile".into());
+        }
+        let limit = paint_ops::MAX_SOURCE_TILES
+            .min(device.limits().max_storage_buffer_binding_size as usize / 65536);
+        if tiles.len() > limit {
+            return Err("GPU source cache budget".into());
+        }
+        let needed = tiles
+            .iter()
+            .filter(|t| !self.slots.contains_key(&(Arc::as_ptr(&t.pixels) as usize)))
+            .count();
+        if self.slots.len() + needed > limit {
+            self.slots.clear();
+            self.identities.clear();
+        }
+        let required = (self.slots.len() + tiles.len())
+            .min(limit)
+            .max(1)
+            .next_power_of_two()
+            .min(limit) as u64
+            * 65536;
+        let mut recreated = false;
+        if self.buffer.as_ref().is_none_or(|b| b.size() < required) {
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Immutable liquify sources"),
+                size: required,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            if let Some(old) = &self.buffer {
+                let mut encoder = device.create_command_encoder(&Default::default());
+                encoder.copy_buffer_to_buffer(old, 0, &buffer, 0, old.size());
+                queue.submit([encoder.finish()]);
+            }
+            self.buffer = Some(buffer);
+            recreated = true;
+        }
+        let mut result = Vec::with_capacity(tiles.len());
+        for tile in tiles {
+            let key = Arc::as_ptr(&tile.pixels) as usize;
+            let slot = if let Some(slot) = self.slots.get(&key) {
+                *slot
+            } else {
+                let slot = self.slots.len() as u32;
+                queue.write_buffer(
+                    self.buffer.as_ref().expect("source buffer"),
+                    u64::from(slot) * 65536,
+                    bytemuck::cast_slice(&tile.pixels[..]),
+                );
+                self.slots.insert(key, slot);
+                self.identities.push(Arc::downgrade(&tile.pixels));
+                slot
+            };
+            result.push(slot);
+        }
+        Ok((result, recreated))
+    }
 }
 impl Gpu {
     pub fn open(id: &str) -> Result<Self, String> {
@@ -106,7 +189,8 @@ impl Gpu {
             pipeline,
             label: format!("{} ({})", adapter.hardware.name, adapter.hardware.backend),
             failed,
-            serial: Mutex::new(()),
+            serial: Mutex::new(None),
+            sources: Mutex::new(SourceCache::default()),
             submissions: AtomicU64::new(0),
         })
     }
@@ -115,20 +199,36 @@ impl Gpu {
     }
 }
 impl Executor for Gpu {
+    fn prepare_sources(&self, tiles: &[paint_ops::SourceTile]) -> Result<(), String> {
+        let mut buffers = self.serial.lock().map_err(|_| "GPU queue poisoned")?;
+        let mut sources = self.sources.lock().map_err(|_| "GPU sources poisoned")?;
+        let (_, recreated) = sources.prepare(&self.device, &self.queue, tiles)?;
+        if recreated {
+            *buffers = None;
+        }
+        self.queue.submit([]);
+        Ok(())
+    }
     fn name(&self) -> String {
         self.label.clone()
     }
     fn execute(&self, op: &Operator) -> Result<Vec<Rgba>, String> {
-        let _guard = self.serial.lock().map_err(|_| "GPU queue poisoned")?;
+        let mut buffers = self.serial.lock().map_err(|_| "GPU queue poisoned")?;
         if self.failed.load(Ordering::Acquire) {
             return Err("GPU device unavailable".into());
         }
-        let packed = paint_ops::pack(op)?;
-        let bytes: Vec<u8> = packed
-            .iter()
-            .flatten()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
+        op.validate()?;
+        let tiles = match op {
+            Operator::Elastic(_) => &[][..],
+            Operator::Remap(v) | Operator::RemapBlocks(v) => &v.source,
+        };
+        let mut sources = self.sources.lock().map_err(|_| "GPU sources poisoned")?;
+        let (slots, recreated) = sources.prepare(&self.device, &self.queue, tiles)?;
+        if recreated {
+            *buffers = None;
+        }
+        let packed = paint_ops::pack_with_sources(op, &slots)?;
+        let bytes = bytemuck::cast_slice::<Rgba, u8>(&packed);
         let output_size = (op.count() * 16) as u64;
         let limits = self.device.limits();
         if bytes.len() as u64 > u64::from(limits.max_storage_buffer_binding_size)
@@ -136,54 +236,92 @@ impl Executor for Gpu {
         {
             return Err("GPU storage binding budget".into());
         }
-        let input = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        if buffers
+            .as_ref()
+            .is_none_or(|b| b.input.size() < bytes.len() as u64 || b.output.size() < output_size)
+        {
+            let input = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Operator input"),
-                contents: &bytes,
-                usage: wgpu::BufferUsages::STORAGE,
+                size: (bytes.len() as u64)
+                    .next_power_of_two()
+                    .min(u64::from(limits.max_storage_buffer_binding_size))
+                    .max(buffers.as_ref().map_or(0, |b| b.input.size())),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
             });
-        let output = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Operator output"),
-            size: output_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Bounded readback"),
-            size: output_size,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &self.pipeline.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: input.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: output.as_entire_binding(),
-                },
-            ],
-        });
+            let capacity = output_size
+                .next_power_of_two()
+                .min(u64::from(limits.max_storage_buffer_binding_size))
+                .max(buffers.as_ref().map_or(0, |b| b.output.size()));
+            let output = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Operator output"),
+                size: capacity,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Bounded readback"),
+                size: capacity,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.pipeline.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: input.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: output.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: sources
+                            .buffer
+                            .as_ref()
+                            .expect("source buffer")
+                            .as_entire_binding(),
+                    },
+                ],
+            });
+            *buffers = Some(Buffers {
+                input,
+                output,
+                readback,
+                group,
+            });
+        }
+        let Buffers {
+            input,
+            output,
+            readback,
+            group,
+        } = buffers.as_ref().expect("buffers");
+        self.queue.write_buffer(input, 0, bytes);
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_compute_pass(&Default::default());
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &group, &[]);
-            let groups = (op.count() as u32).div_ceil(64);
+            pass.set_bind_group(0, group, &[]);
+            let count = match op {
+                Operator::Remap(v) => op.count() / (v.stride * v.stride) as usize,
+                _ => op.count(),
+            };
+            let groups = (count as u32).div_ceil(64);
             pass.dispatch_workgroups(groups.min(65535), groups.div_ceil(65535), 1);
         }
-        encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, output_size);
+        encoder.copy_buffer_to_buffer(output, 0, readback, 0, output_size);
         self.queue.submit([encoder.finish()]);
         self.submissions.fetch_add(1, Ordering::Relaxed);
         let (send, receive) = std::sync::mpsc::sync_channel(1);
-        readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
-            let _ = send.send(r);
-        });
+        readback
+            .slice(..output_size)
+            .map_async(wgpu::MapMode::Read, move |r| {
+                let _ = send.send(r);
+            });
         // Poll with a finite timeout; device loss cannot hold a document actor forever.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
@@ -206,15 +344,10 @@ impl Executor for Gpu {
                 }
             }
         }
-        let mapped = readback.slice(..).get_mapped_range();
-        let result = mapped
-            .chunks_exact(16)
-            .map(|p| {
-                std::array::from_fn(|k| {
-                    f32::from_le_bytes(p[k * 4..k * 4 + 4].try_into().expect("RGBA word"))
-                })
-            })
-            .collect::<Vec<Rgba>>();
+        let mapped = readback.slice(..output_size).get_mapped_range();
+        let result = bytemuck::try_cast_slice::<u8, Rgba>(&mapped)
+            .map_err(|e| e.to_string())?
+            .to_vec();
         drop(mapped);
         readback.unmap();
         if self.failed.load(Ordering::Acquire) {
@@ -259,16 +392,29 @@ impl Accelerated {
     }
 }
 impl Executor for Accelerated {
+    fn prepare_sources(&self, tiles: &[paint_ops::SourceTile]) -> Result<(), String> {
+        if !self.disabled.load(Ordering::Acquire) {
+            if let Some(gpu) = &self.gpu {
+                if let Err(reason) = gpu.prepare_sources(tiles) {
+                    *self.reason.lock().unwrap_or_else(|e| e.into_inner()) = reason;
+                    self.disabled.store(true, Ordering::Release);
+                }
+            }
+        }
+        Ok(())
+    }
     fn name(&self) -> String {
         self.status()
     }
     fn execute(&self, op: &Operator) -> Result<Vec<Rgba>, String> {
-        op.validate()?;
         if !self.disabled.load(Ordering::Acquire) {
             if let Some(gpu) = &self.gpu {
                 match gpu.execute(op) {
                     Ok(result) => return Ok(result),
                     Err(reason) => {
+                        // An invalid request is not a device fault. Successful requests
+                        // are validated once by pack, without rescanning source pixels.
+                        op.validate()?;
                         *self.reason.lock().unwrap_or_else(|e| e.into_inner()) = reason;
                         self.disabled.store(true, Ordering::Release);
                     }

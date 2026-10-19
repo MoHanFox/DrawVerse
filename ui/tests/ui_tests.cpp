@@ -182,9 +182,13 @@ private slots:
         const auto request=[&]{client.requestViewport(0,{0,0,512,512},{512,512});};request();QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().size()==QSize(512,512));const auto before=client.frame();
         client.setLiquifySize(2000);client.setLiquifyStrength(100);client.setLiquifyDensity(100);client.setLiquifyTool(0);QCOMPARE(client.liquifySize(),2000);
         QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());QElapsedTimer timer;timer.start();
-        QVERIFY(client.beginStroke({{235,250},1}));client.strokeTo({{259,250},1});client.endStroke();const auto dispatch=timer.elapsed();QVERIFY(dispatch<100);
+        const auto beforeBurst=client.revision();
+        QVERIFY(client.beginStroke({{235,250},1}));
+        for(int i=1;i<=64;++i)client.strokeTo({{235+24.*i/64.,250},1});
+        client.endStroke();const auto dispatch=timer.elapsed();QVERIFY(dispatch<100);
         QTRY_COMPARE_WITH_TIMEOUT(client.undoDepth(),1,15000);QTRY_VERIFY(!client.liquifyBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());const auto warped=client.frame();QVERIFY(warped!=before);
         qInfo()<<"2000px liquify GUI dispatch ms"<<dispatch<<"through frame completion ms"<<timer.elapsed();
+        QVERIFY2(client.revision()-beforeBurst<=2,"a burst of pointer events must not queue a preview for each event");
         client.undo();QTRY_COMPARE(client.undoDepth(),0);QTRY_VERIFY(!client.liquifyBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),before);
         client.redo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.liquifyBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),warped);
         QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());QCOMPARE(client.undoDepth(),1);request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),before);
@@ -4654,6 +4658,7 @@ private slots:
         {
             PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());
             client.inspectCompute();QTRY_VERIFY(!client.computeBusy() && !client.computeHardware().isEmpty());
+            QCOMPARE(client.computeDevice(),QStringLiteral("auto"));
             QCOMPARE(client.computeHardware().first().toMap().value("id").toString(),QStringLiteral("cpu"));
             QVERIFY(client.saveComputeDevice("missing-device-qt-regression"));
             QTRY_VERIFY(!client.computeBusy());QTRY_COMPARE(client.computeDevice(),QStringLiteral("missing-device-qt-regression"));

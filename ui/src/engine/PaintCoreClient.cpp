@@ -165,7 +165,7 @@ public:
         if(!m_session || m_stopped || (!force && m_computeClock.isValid() && m_computeClock.elapsed()<500))return;
         m_computeClock.restart();
         auto info=dto<PaintSessionInfo>();if(paint_session_info(m_core,m_session,&info)!=PAINT_OK)return;
-        const auto desired=preferences()->value("performance/computeDevice","cpu").toString();
+        const auto desired=preferences()->value("performance/computeDevice","auto").toString();
         if((desired!=m_computeDevice || info.document_generation!=m_computeGeneration) && !info.stroke_active && !(info.flags&(PAINT_SESSION_LIQUIFY|PAINT_SESSION_TRANSFORM))) {
             const auto bytes=desired.toUtf8();quint64 sequence=0;
             if(paint_session_set_compute(m_core,m_session,reinterpret_cast<const uint8_t*>(bytes.constData()),quint64(bytes.size()),&sequence)==PAINT_OK) {
@@ -906,6 +906,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(info.completed_sequence>=m_pendingTransform)m_transformActive=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
         if(info.completed_sequence>=m_lastTransform){const auto points=transform.value("points").toList();const bool warp=transform.value("warp").toBool();const int interpolation=transform.value("interpolation").toInt();const auto skewH=transform.value("skewH").toDouble(),skewV=transform.value("skewV").toDouble();if(points!=m_transformPoints || warp!=m_transformWarp || interpolation!=m_transformInterpolation || skewH!=m_transformSkewH || skewV!=m_transformSkewV){m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=skewH;m_transformSkewV=skewV;emit transformChanged();}}
         m_completedSequence=info.completed_sequence;
+        if(m_drawing && m_liquifyActive && !m_dropStroke)flushLiquifyInput();
         m_generation = info.document_generation;
         m_revision = info.revision; m_width = static_cast<int>(info.width); m_height = static_cast<int>(info.height);
         m_undo = static_cast<int>(info.undo_depth); m_redo = static_cast<int>(info.redo_depth);
@@ -1374,7 +1375,7 @@ bool PaintCoreClient::submitLiquifyDab(const InputSample &from,const InputSample
 bool PaintCoreClient::beginStroke(const InputSample &s) {
     if (!m_ready || m_drawing || m_wetActionBusy || layerEditBusy() || m_pendingLiquify) return false;
     if(m_brushLibrary->brushSelectionBlocksPainting())return false;
-    if(m_liquifyActive) {m_dropStroke=false;m_liquifyLast=s;m_liquifyClock.restart();if(!submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_BEGIN))return false;if(!submitLiquifyDab(s,s,16)){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);return false;}m_drawing=true;emit stateChanged();return true;}
+    if(m_liquifyActive) {m_dropStroke=false;m_hasLiquifyPending=false;m_liquifyLast=s;m_liquifyClock.restart();if(!submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_BEGIN))return false;if(!submitLiquifyDab(s,s,16)){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);return false;}m_drawing=true;emit stateChanged();return true;}
     for(const auto &value:m_layers) { const auto layer=value.toMap(); if(layer.value("id").toULongLong()!=m_active) continue;
         if(layer.value("group").toBool()) {showError(QStringLiteral("请选中组内像素图层绘画，或先新建图层"));return false;}
         if(layer.value("effectiveLocks").toUInt() & PAINT_LOCK_ALL) {showError(QStringLiteral("当前图层或所属组已完全锁定，请先解锁"));return false;}
@@ -1395,7 +1396,7 @@ void PaintCoreClient::strokeTo(const InputSample &s) {
     InputSample adjusted=s;
     if(m_airbrushEnabled && adjusted.timestamp<m_airbrushTimestamp)adjusted.timestamp=m_airbrushTimestamp;
     m_airbrushSample=adjusted;
-    if(m_liquifyActive){if(submitLiquifyDab(m_liquifyLast,adjusted,std::clamp(int(m_liquifyClock.restart()),0,50)))m_liquifyLast=adjusted;else m_dropStroke=true;}
+    if(m_liquifyActive){m_liquifyPending=adjusted;m_hasLiquifyPending=true;flushLiquifyInput();}
     else submit(Move,adjusted);
 }
 void PaintCoreClient::airbrushTick() {
@@ -1405,10 +1406,22 @@ void PaintCoreClient::airbrushTick() {
     sample.timestamp=next;
     if(submit(AirbrushTick,sample))m_airbrushTimestamp=next;else m_dropStroke=true;
 }
-void PaintCoreClient::liquifyTick() {if(m_drawing && m_liquifyActive && !m_dropStroke && (m_liquifyTool==1 || m_liquifyTool==2)) {if(!submitLiquifyDab(m_liquifyLast,m_liquifyLast,std::clamp(int(m_liquifyClock.restart()),0,50)))m_dropStroke=true;m_liquifyClock.restart();}}
+void PaintCoreClient::flushLiquifyInput(bool force) {
+    if(!m_hasLiquifyPending || m_dropStroke || (!force && m_lastLiquifyDab>m_completedSequence))return;
+    const auto sample=m_liquifyPending;m_hasLiquifyPending=false;
+    if(submitLiquifyDab(m_liquifyLast,sample,std::clamp(int(m_liquifyClock.restart()),0,50)))m_liquifyLast=sample;
+    else m_dropStroke=true;
+}
+void PaintCoreClient::liquifyTick() {
+    if(!m_drawing || !m_liquifyActive || m_dropStroke || m_lastLiquifyDab>m_completedSequence)return;
+    if(m_hasLiquifyPending){flushLiquifyInput();return;}
+    if(m_liquifyTool==1 || m_liquifyTool==2) {
+        if(!submitLiquifyDab(m_liquifyLast,m_liquifyLast,std::clamp(int(m_liquifyClock.restart()),0,50)))m_dropStroke=true;
+    }
+}
 void PaintCoreClient::endStroke() {
     if (!m_drawing) return;
-    if(m_liquifyActive){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
+    if(m_liquifyActive){flushLiquifyInput(true);submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(End);
     // A committed stroke is what makes the colour "recently used"; a cancelled one never shows up.
     if (!m_dropStroke && m_strokeColor.isValid()) m_brushLibrary->useColor(m_strokeColor.name(QColor::HexArgb));
@@ -1416,7 +1429,7 @@ void PaintCoreClient::endStroke() {
 }
 void PaintCoreClient::cancelStroke() {
     if (!m_drawing) return;
-    if(m_liquifyActive){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
+    if(m_liquifyActive){flushLiquifyInput(true);submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(Cancel);
     m_airbrushTimer->stop();m_airbrushEnabled=false;m_dropStroke = true;m_drawing = false;if(m_strokePose)paint_brush_pose_clear(m_strokePose);m_strokePoseBound=false;m_strokeOutlineResource.clear();m_strokeOutlinePath.clear();m_strokeSecondOutlineResource.clear();m_strokeSecondOutlinePath.clear();m_strokeSecondOutlineReady=false;requestBrushOutlines();emit brushOutlineChanged();emit stateChanged();
 }

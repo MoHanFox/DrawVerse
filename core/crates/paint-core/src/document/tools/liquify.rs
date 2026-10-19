@@ -6,6 +6,8 @@ type Field = BTreeMap<TileCoord, Arc<Vec<[f32; 2]>>>;
 pub(super) struct LiquifyState {
     original: Layer,
     field: Field,
+    cell: i64,
+    sources: Arc<std::sync::Mutex<BTreeMap<TileCoord, paint_ops::SourceTile>>>,
     focus: bool,
     checkpoint: Option<Arc<Checkpoint>>,
     history: Arc<LocalHistory>,
@@ -14,12 +16,14 @@ pub(super) struct LiquifyState {
 struct Checkpoint {
     layer: Layer,
     field: Field,
+    cell: i64,
     action: crate::HistoryAction,
 }
 #[derive(Debug)]
 struct LocalStep {
     pixels: Vec<TileChange>,
     fields: crate::history_storage::Payload,
+    cells: [i64; 2],
     action: crate::HistoryAction,
 }
 #[derive(Clone, Debug, Default)]
@@ -195,13 +199,17 @@ impl Document {
         if original.group {
             return Err(Error::InvalidArgument("liquify needs raster layer or mask"));
         }
-        self.liquify = Some(LiquifyState {
+        let mut state = LiquifyState {
             original,
             field: Field::new(),
+            cell: 2,
+            sources: Arc::default(),
             focus: false,
             checkpoint: None,
             history: Arc::default(),
-        });
+        };
+        self.warm_liquify_sources(&mut state)?;
+        self.liquify = Some(state);
         Ok(())
     }
     fn restore_liquify_original(&mut self) -> Result<()> {
@@ -318,6 +326,7 @@ impl Document {
         let checkpoint = Checkpoint {
             layer,
             field: state.field.clone(),
+            cell: state.cell,
             action: crate::HistoryAction::Liquify,
         };
         self.liquify.as_mut().expect("state").checkpoint = Some(Arc::new(checkpoint));
@@ -340,7 +349,10 @@ impl Document {
             .collect();
         let changed: Vec<_> = keys
             .into_iter()
-            .filter(|key| !same_field(before.field.get(key), state.field.get(key)))
+            .filter(|key| {
+                before.cell != state.cell
+                    || !same_field(before.field.get(key), state.field.get(key))
+            })
             .collect();
         if changed.is_empty() {
             self.liquify.as_mut().expect("state").checkpoint = None;
@@ -391,6 +403,7 @@ impl Document {
             },
         )?;
         let step = Arc::new(LocalStep {
+            cells: [before.cell, state.cell],
             pixels,
             fields,
             action: before.action,
@@ -533,6 +546,7 @@ impl Document {
         self.layers[at] = layer;
         let state = self.liquify.as_mut().expect("state");
         state.field = field;
+        state.cell = step.cells[usize::from(redo)];
         let history = Arc::make_mut(&mut state.history);
         if redo {
             history.redo.pop();

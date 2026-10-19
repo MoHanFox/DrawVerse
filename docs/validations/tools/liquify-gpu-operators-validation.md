@@ -4,6 +4,29 @@
 
 状态：Windows 功能与目标回归通过，连续大范围输入手感待实机复核。用户在收尾阶段明确要求液化只做最小测试；此后仅运行算子最小回归、三个 Qt 目标用例和四项 ABI，没有重跑全量。
 
+## 2000 px 实机反馈后的交互修订（2026-10-19）
+
+用户确认初版 2000 px 拖拽粘滞、GPU 占用较高，初版性能不予实机通过。此次默认偏好改为“自动选择 GPU”，保留已保存的显式 CPU 选择。当前性能结果与实现以下述修订为准，后文保留初版记录供对照。
+
+修订包括：按半径选择 2/4/8/16 px 网格、较小笔刷细化旧场且历史保存前后间距；无选区预览读回紧凑块颜色后展开，恒等标志恢复原始逐像素数据；复用经一次校验的不可变源数值和 GPU 源槽；小于等于 2048 源瓦片的图像进入液化时预热；GPU 上传/读回缓冲区复用。CPU/GPU 源缓存分别上限 2048 瓦片（各 128 MiB），GPU 持有弱身份，不 pin 已结束会话的 CPU 源。位移场、历史和文档仍由 CPU 管理，画布外恢复和最终全分辨率采样保留。
+
+输入现在仅允许一个在途更新和一个待处理最新位置；忙时合并中间位置，反馈后继续，抬笔先提交末位置再结束历史。此策略会简化繁忙期间的中间轨迹，不能宣称每个设备原始样本均独立执行。单输入预算改计节点更新加一次预览面积，避免快划合并后仍按多次全像素预览误拒绝。
+
+相同 RTX 4060 / Vulkan、2048×1536、2000 px、六输入非零位移的 Release 示例，包含 CPU 准备、GPU 运算、传输和结果采用；不包含 Qt 画面合成。单次本机对照：
+
+| 工具 | 初版六输入预览 | 修订六输入预览 | 修订单次输入 | 修订进入模式预热 | 初版/修订最终完成 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 推移 | 2.433 s | 0.199 s | 31.5–35.7 ms | 47.5 ms | 0.811 / 0.377 s |
+| 旋转 | 2.401 s | 0.193 s | 29.6–34.2 ms | 41.5 ms | 0.769 / 0.356 s |
+
+六输入计算约为初版的 1/12；预热明确单独计时，不将其隐藏进初始化之外。两组六输入中执行器内部累计耗时约 28.1/26.0 ms，其余主要是 CPU 文档/像素处理。GPU 利用率百分比没有采集，也没有运行同输入的 Photoshop 基准，不能据此宣称与 PS 等速或 GPU 占用已达标。用户实体设备与全窗口连续手感仍需复核。过程日志：`artifacts/liquify-interaction-profile.txt`；可复现命令仍为 `cargo run -p paint-gpu --release --locked --example liquify_compute_performance -- auto`。
+
+本轮最小回归：`cargo test -p paint-ops -p paint-gpu --release --locked -- --nocapture` 共 10 项通过，含紧凑结果/恒等恢复、GPU 源预热及同坐标不同源身份缓存隔离、CPU/GPU 数值对照和失效回退；`paint-core --test liquify --test liquify_elastic` 共 14 项通过、1 项手动性能忽略；`paint-core --lib large_mesh_refines` 1 项通过，验证画布外场在细化前后保持、撤销/重做恢复间距和场。相关三个库的 `cargo clippy ... --lib --locked -- -D warnings` 通过。日志为 `artifacts/gpu-interaction-final.txt`、`gpu-interaction-lint.txt`。
+
+Qt 只执行 `computeHardwareSelectionPersistsAndFallsBackVisibly` 和 `maximumLiquifySizePublishesPixelsAndKeepsLocalAndDocumentHistory`，2 项功能通过（含初始化/清理共 4 passed）。前者增加新配置默认 auto 检查；后者在同一事件循环内送入 64 个位置并抬笔，确认没有逐事件排队，末位置有像素结果且局部/文档历史精确恢复。512 px 画布上该用例至帧完成约 51 ms，含 UI/轮询等待，不能外推全尺寸窗口。日志为 `artifacts/gpu-interaction-qt.txt`。
+
+Windows Release 构建与 Qt 运行库部署通过。原 `build/verify-ui/bin/Release/drawverse.exe` 被用户运行中的进程锁定，保留该进程，使用本地 CMake `CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE` 构建到 `build/verify-ui/bin/Release-wgpu/`；不修改仓库构建配置、不终止用户进程。日志为 `artifacts/gpu-interaction-ui-build.txt`。本轮未重跑全量验证，不改变后文记载的既有全量图层断言失败。
+
 ## 实现范围
 
 分支为 `feat/wgpu-support`。`paint-ops` 提供弹性场更新/重映射契约与 CPU 执行器，`paint-gpu` 使用 wgpu 26.0.1；设备由 FFI 装配，核心不依赖 wgpu。性能设置可选 CPU、自动或真实硬件，并保存偏好、显示失败回退原因。ABI 升至 1.61，新增三个计算设备接口及 bit 56，生成头同步。

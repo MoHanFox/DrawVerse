@@ -511,7 +511,7 @@ private:
     QSet<quint64> m_collapsedGroups;
     QVariantMap m_storageSettings, m_activeStorageSettings, m_storageInfo;
     QVariantList m_computeHardware;
-    QString m_computeDevice = "cpu", m_computeStatus = "CPU";
+    QString m_computeDevice = "auto", m_computeStatus = "正在初始化计算硬件…";
     bool m_computeBusy = false;
     QString m_storageMessage;
     bool m_storageBusy = true;
@@ -567,6 +567,9 @@ private:
     quint64 m_pendingLiquify=0,m_lastLiquifyDab=0;
     bool m_liquifyCommitting=false;
     InputSample m_liquifyLast;
+    InputSample m_liquifyPending;
+    bool m_hasLiquifyPending=false;
+    void flushLiquifyInput(bool force=false);
     QElapsedTimer m_liquifyClock;
     QTimer *m_airbrushTimer=nullptr;
     InputSample m_airbrushSample;

@@ -2,15 +2,111 @@
 use super::*;
 use paint_ops::{Cpu, ElasticOp, Executor, Grid, Operator, RemapOp, SourceTile};
 
-const CELL: i64 = 2;
 const BATCH_TILES: usize = 128;
 
-fn grid(field: &Field, rect: [i64; 4]) -> Result<Grid> {
+fn mesh_cell(radius: f32) -> i64 {
+    let mut cell = 2;
+    while cell < 16 && radius > (cell * 64) as f32 {
+        cell *= 2;
+    }
+    cell
+}
+
+#[cfg(test)]
+mod adaptive_tests {
+    use super::*;
+    #[test]
+    fn large_mesh_refines_without_losing_outside_field_or_history() {
+        let mut d = Document::new(96, 96).unwrap();
+        d.begin_liquify().unwrap();
+        d.begin_liquify_stroke().unwrap();
+        let mut dab = LiquifyDab {
+            tool: 0,
+            radius: 1000.,
+            strength: 0.6,
+            density: 0.7,
+            speed: 1.,
+            pressure_enabled: false,
+            from: InputPoint::new(48., 48., 1.),
+            to: InputPoint::new(57., 52., 1.),
+            elapsed_ms: 16.,
+        };
+        d.liquify_dab(dab).unwrap();
+        d.end_liquify_stroke().unwrap();
+        let before = d.liquify.as_ref().unwrap().clone();
+        assert_eq!(before.cell, 16);
+        assert!(
+            before.field.len() <= 16,
+            "large brush must not allocate a pixel-sized mesh"
+        );
+        d.begin_liquify_stroke().unwrap();
+        dab.radius = 24.;
+        dab.to = InputPoint::new(60., 54., 1.);
+        d.liquify_dab(dab).unwrap();
+        d.end_liquify_stroke().unwrap();
+        let after = d.liquify.as_ref().unwrap().clone();
+        assert_eq!(after.cell, 2);
+        let rect = [-440, -440, -350, -350];
+        let a = grid(&before.field, rect, before.cell)
+            .unwrap()
+            .sample(-400., -400.);
+        let b = grid(&after.field, rect, after.cell)
+            .unwrap()
+            .sample(-400., -400.);
+        assert_eq!(a, b, "refinement must preserve the off-canvas membrane");
+        d.undo_liquify().unwrap();
+        assert_eq!(d.liquify.as_ref().unwrap().cell, before.cell);
+        assert_eq!(d.liquify.as_ref().unwrap().field, before.field);
+        d.redo_liquify().unwrap();
+        assert_eq!(d.liquify.as_ref().unwrap().cell, after.cell);
+        assert_eq!(d.liquify.as_ref().unwrap().field, after.field);
+    }
+}
+
+// Refine only when a smaller brush needs more detail. Interpolation preserves the
+// existing membrane; histories retain both resolutions, including off-canvas nodes.
+fn refine(state: &mut LiquifyState, cell: i64) -> Result<()> {
+    let mut output = BTreeSet::new();
+    for key in state.field.keys() {
+        let x = i64::from(key.signed_x()) * 64 * state.cell;
+        let y = i64::from(key.signed_y()) * 64 * state.cell;
+        output.extend(keys([
+            (x - state.cell).div_euclid(cell),
+            (y - state.cell).div_euclid(cell),
+            (x + 64 * state.cell).div_euclid(cell) + 1,
+            (y + 64 * state.cell).div_euclid(cell) + 1,
+        ])?);
+        if output.len() * 4096 > MAX_VISITS {
+            return Err(Error::ResourceLimit("liquify refinement budget"));
+        }
+    }
+    let mut field = Field::new();
+    for key in output {
+        let x = i64::from(key.signed_x()) * 64 * cell;
+        let y = i64::from(key.signed_y()) * 64 * cell;
+        let old = grid(
+            &state.field,
+            [x, y, x + 64 * cell, y + 64 * cell],
+            state.cell,
+        )?;
+        let values = (0..4096)
+            .map(|i| old.sample((x + i % 64 * cell) as f32, (y + i / 64 * cell) as f32))
+            .collect::<Vec<_>>();
+        if values.iter().any(|v| *v != [0.; 2]) {
+            field.insert(key, Arc::new(values));
+        }
+    }
+    state.field = field;
+    state.cell = cell;
+    Ok(())
+}
+
+fn grid(field: &Field, rect: [i64; 4], cell: i64) -> Result<Grid> {
     let [left, top, right, bottom] = rect;
-    let gx = left.div_euclid(CELL) - 2;
-    let gy = top.div_euclid(CELL) - 2;
-    let width = (right.div_euclid(CELL) - gx + 3) as u32;
-    let height = (bottom.div_euclid(CELL) - gy + 3) as u32;
+    let gx = left.div_euclid(cell) - 2;
+    let gy = top.div_euclid(cell) - 2;
+    let width = (right.div_euclid(cell) - gx + 3) as u32;
+    let height = (bottom.div_euclid(cell) - gy + 3) as u32;
     if u64::from(width) * u64::from(height) > paint_ops::MAX_SAMPLES as u64 {
         return Err(Error::ResourceLimit("liquify operator grid"));
     }
@@ -21,10 +117,10 @@ fn grid(field: &Field, rect: [i64; 4]) -> Result<Grid> {
         }
     }
     Ok(Grid {
-        origin: [(gx * CELL) as i32, (gy * CELL) as i32],
+        origin: [(gx * cell) as i32, (gy * cell) as i32],
         width,
         height,
-        cell: CELL as f32,
+        cell: cell as f32,
         vectors,
     })
 }
@@ -62,6 +158,29 @@ fn execute(executor: &dyn Executor, op: &Operator) -> Result<Vec<[f32; 4]>> {
     Ok(values)
 }
 impl Document {
+    pub(super) fn warm_liquify_sources(&self, state: &mut LiquifyState) -> Result<()> {
+        if state.original.tiles.len() > paint_ops::MAX_SOURCE_TILES {
+            return Ok(());
+        }
+        let mut cache = state
+            .sources
+            .lock()
+            .map_err(|_| Error::Storage("liquify source cache poisoned".into()))?;
+        for (key, tile) in &state.original.tiles {
+            cache.insert(
+                *key,
+                SourceTile::new(
+                    [key.signed_x(), key.signed_y()],
+                    tile.try_pixels()?.iter().map(|p| p.components()).collect(),
+                ),
+            );
+        }
+        let sources = cache.values().cloned().collect::<Vec<_>>();
+        self.compute
+            .prepare_sources(&sources)
+            .or_else(|_| Cpu.prepare_sources(&sources))
+            .map_err(Error::Storage)
+    }
     pub(super) fn elastic_liquify_dab(&mut self, options: LiquifyDab) -> Result<bool> {
         options.validate()?;
         let mut state = self
@@ -69,13 +188,24 @@ impl Document {
             .as_ref()
             .ok_or(Error::InvalidArgument("no liquify transaction"))?
             .clone();
+        if options.tool == 0 && options.from.x == options.to.x && options.from.y == options.to.y {
+            return Ok(false);
+        }
         let at = self.layer_index(state.original.id)?;
         let radius = f64::from(options.radius);
+        let desired = mesh_cell(options.radius);
+        if state.field.is_empty() {
+            state.cell = desired;
+        } else if desired < state.cell {
+            refine(&mut state, desired)?;
+        }
+        let cell = state.cell;
         let distance = (options.to.x - options.from.x).hypot(options.to.y - options.from.y);
         let steps = (distance / (radius * 0.08).max(0.5)).ceil().max(1.) as usize;
         let area = ((radius * 2. + 2.).min(f64::from(self.width))
             * (radius * 2. + 2.).min(f64::from(self.height))) as usize;
-        if steps > 4096 || steps.saturating_mul(area) > MAX_VISITS {
+        let mesh_area = ((radius * 2. / cell as f64 + 4.).ceil() as usize).pow(2);
+        if steps > 4096 || steps.saturating_mul(mesh_area).saturating_add(area) > MAX_VISITS {
             return Err(Error::ResourceLimit("liquify input work budget"));
         }
         let mut layer = self.layers[at].clone();
@@ -108,11 +238,11 @@ impl Document {
             // a signed mesh over document-local coordinates, with identity outside it.
             let cx = x - ox as f64;
             let cy = y - oy as f64;
-            let support = radius.max(CELL as f64);
-            let left = ((cx - support).floor() as i64).div_euclid(CELL) * CELL;
-            let top = ((cy - support).floor() as i64).div_euclid(CELL) * CELL;
-            let right = ((cx + support).ceil() as i64).div_euclid(CELL) * CELL + CELL;
-            let bottom = ((cy + support).ceil() as i64).div_euclid(CELL) * CELL + CELL;
+            let support = radius.max(cell as f64);
+            let left = ((cx - support).floor() as i64).div_euclid(cell) * cell;
+            let top = ((cy - support).floor() as i64).div_euclid(cell) * cell;
+            let right = ((cx + support).ceil() as i64).div_euclid(cell) * cell + cell;
+            let bottom = ((cy + support).ceil() as i64).div_euclid(cell) * cell + cell;
             // Only the inverse step and the stiffness stencil read neighbours.
             // A brush-sized halo would prepare four times as many mesh nodes.
             let time = options.elapsed_ms / 1000. / steps as f32;
@@ -122,25 +252,26 @@ impl Document {
                 2 => support * f64::from(strength * options.speed * time) * std::f64::consts::TAU,
                 _ => 0.,
             };
-            let margin = reach.ceil() as i64 + CELL * 3;
+            let margin = reach.ceil() as i64 + cell * 3;
             let input = grid(
                 &state.field,
                 [left - margin, top - margin, right + margin, bottom + margin],
+                cell,
             )?;
             let start = [
-                ((left - i64::from(input.origin[0])) / CELL) as u32,
-                ((top - i64::from(input.origin[1])) / CELL) as u32,
+                ((left - i64::from(input.origin[0])) / cell) as u32,
+                ((top - i64::from(input.origin[1])) / cell) as u32,
             ];
             let size = [
-                ((right - left) / CELL) as u32,
-                ((bottom - top) / CELL) as u32,
+                ((right - left) / cell) as u32,
+                ((bottom - top) / cell) as u32,
             ];
             let mut selection = Vec::with_capacity(size[0] as usize * size[1] as usize);
             for gy in 0..size[1] {
                 for gx in 0..size[0] {
                     selection.push(self.selection.coverage(
-                        (left + i64::from(gx) * CELL + ox) as f64 + 0.5,
-                        (top + i64::from(gy) * CELL + oy) as f64 + 0.5,
+                        (left + i64::from(gx) * cell + ox) as f64 + 0.5,
+                        (top + i64::from(gy) * cell + oy) as f64 + 0.5,
                     ));
                 }
             }
@@ -161,8 +292,8 @@ impl Document {
             let values = execute(self.compute.as_ref(), &op)?;
             let mut updated = BTreeMap::<TileCoord, Vec<[f32; 2]>>::new();
             for (i, value) in values.iter().enumerate() {
-                let gx = left / CELL + (i as i64 % i64::from(size[0]));
-                let gy = top / CELL + (i as i64 / i64::from(size[0]));
+                let gx = left / cell + (i as i64 % i64::from(size[0]));
+                let gy = top / cell + (i as i64 / i64::from(size[0]));
                 let key = coord(gx, gy);
                 let offset = index(gx, gy);
                 let old = state.field.get(&key).map_or([0.; 2], |v| v[offset]);
@@ -194,10 +325,10 @@ impl Document {
                 }
             }
             dirty.extend(keys([
-                left - CELL * 2,
-                top - CELL * 2,
-                right + CELL * 2,
-                bottom + CELL * 2,
+                left - cell * 2,
+                top - cell * 2,
+                right + cell * 2,
+                bottom + cell * 2,
             ])?);
             if dirty.len() > 8192 {
                 return Err(Error::ResourceLimit("liquify output tile budget"));
@@ -207,9 +338,15 @@ impl Document {
         if !changed {
             return Ok(false);
         }
-        // Small brushes retain full preview precision. Large brushes use a 2x proxy;
+        // Small brushes retain full preview precision. Large brushes use a 2x/4x proxy;
         // final sampling always reads the immutable source at full pixel resolution.
-        let stride = if options.radius >= 64. { 2 } else { 1 };
+        let stride = if options.radius >= 256. {
+            4
+        } else if options.radius >= 64. {
+            2
+        } else {
+            1
+        };
         // The viewport is clipped, but the editing field and immutable source are not.
         // Off-canvas pixels are only materialized during the full-quality commit.
         let preview_tiles = dirty
@@ -241,6 +378,7 @@ impl Document {
             .liquify
             .as_ref()
             .ok_or(Error::InvalidArgument("no liquify transaction"))?;
+        let cell = state.cell;
         let current = self.layer(state.original.id).expect("liquify layer");
         let mut result = state.original.clone();
         let mut affected = current
@@ -273,10 +411,10 @@ impl Document {
                 let x = i64::from(key.signed_x()) * 64;
                 let y = i64::from(key.signed_y()) * 64;
                 affected.extend(keys([
-                    (x + bounds[0] - 1) * CELL,
-                    (y + bounds[1] - 1) * CELL,
-                    (x + bounds[2] + 1) * CELL,
-                    (y + bounds[3] + 1) * CELL,
+                    (x + bounds[0] - 1) * cell,
+                    (y + bounds[1] - 1) * cell,
+                    (x + bounds[2] + 1) * cell,
+                    (y + bounds[3] + 1) * cell,
                 ])?);
                 if affected.len() > 8192 {
                     return Err(Error::ResourceLimit("liquify final tile budget"));
@@ -321,7 +459,7 @@ impl Document {
                 .map(|k| i64::from(k.signed_y()) * 64 + 64)
                 .max()
                 .expect("batch");
-            let input = grid(&state.field, [left, top, right, bottom])?;
+            let input = grid(&state.field, [left, top, right, bottom], state.cell)?;
             let maximum = input.vectors.iter().fold([0_f32; 2], |m, v| {
                 [m[0].max(v[0].abs()), m[1].max(v[1].abs())]
             });
@@ -332,6 +470,10 @@ impl Document {
                 (bottom + maximum[1].ceil() as i64 + 3).div_euclid(64),
             ];
             let mut source = Vec::new();
+            let mut cached = state
+                .sources
+                .lock()
+                .map_err(|_| Error::Storage("liquify source cache poisoned".into()))?;
             for (key, tile) in &state.original.tiles {
                 let x = i64::from(key.signed_x());
                 let y = i64::from(key.signed_y());
@@ -345,11 +487,21 @@ impl Document {
                 if source.len() >= paint_ops::MAX_SOURCE_TILES {
                     return Err(Error::ResourceLimit("liquify source staging budget"));
                 }
-                source.push(SourceTile {
-                    coord: [key.signed_x(), key.signed_y()],
-                    pixels: tile.try_pixels()?.iter().map(|p| p.components()).collect(),
-                });
+                if !cached.contains_key(key) {
+                    if cached.len() >= paint_ops::MAX_SOURCE_TILES {
+                        cached.clear();
+                    }
+                    cached.insert(
+                        *key,
+                        SourceTile::new(
+                            [key.signed_x(), key.signed_y()],
+                            tile.try_pixels()?.iter().map(|p| p.components()).collect(),
+                        ),
+                    );
+                }
+                source.push(cached[key].clone());
             }
+            drop(cached);
             source.sort_by_key(|t| t.coord);
             let mut selection = Vec::new();
             if self.selection.enabled() {
@@ -373,7 +525,8 @@ impl Document {
                     }
                 }
             }
-            let op = Operator::Remap(RemapOp {
+            let compact = stride > 1 && selection.is_empty() && !cubic;
+            let remap = RemapOp {
                 grid: input,
                 source,
                 white: [state.original.white.0, state.original.white.1],
@@ -381,13 +534,51 @@ impl Document {
                 selection,
                 stride,
                 cubic,
-            });
+            };
+            let op = if compact {
+                Operator::RemapBlocks(remap)
+            } else {
+                Operator::Remap(remap)
+            };
             let values = execute(self.compute.as_ref(), &op)?;
-            for (key, rgba) in batch.iter().zip(values.chunks_exact(4096)) {
-                let pixels = rgba
-                    .iter()
-                    .map(|v| Pixel::from_premultiplied(*v))
-                    .collect::<Result<Vec<_>>>()?;
+            let samples = if compact {
+                4096 / (stride * stride) as usize
+            } else {
+                4096
+            };
+            for (key, rgba) in batch.iter().zip(values.chunks_exact(samples)) {
+                let pixels = if compact {
+                    let mut pixels = if let Some(original) = state.original.tiles.get(key) {
+                        original.try_pixels()?.to_vec()
+                    } else {
+                        (0..4096)
+                            .map(|i| {
+                                state.original.default_pixel(
+                                    i64::from(key.signed_x()) * 64 + i % 64,
+                                    i64::from(key.signed_y()) * 64 + i / 64,
+                                )
+                            })
+                            .collect()
+                    };
+                    let stride = stride as usize;
+                    let side = 64 / stride;
+                    for (i, color) in rgba.iter().enumerate() {
+                        if *color == [0., 0., 0., -1.] {
+                            continue;
+                        }
+                        let pixel = Pixel::from_premultiplied(*color)?;
+                        let x = i % side * stride;
+                        let y = i / side * stride;
+                        for row in y..y + stride {
+                            pixels[row * 64 + x..row * 64 + x + stride].fill(pixel);
+                        }
+                    }
+                    pixels
+                } else {
+                    rgba.iter()
+                        .map(|v| Pixel::from_premultiplied(*v))
+                        .collect::<Result<Vec<_>>>()?
+                };
                 // Identity restores source tile identities, including explicit transparent
                 // overrides on implicit white layers. Empty off-canvas output is sparse.
                 let same = if let Some(original) = state.original.tiles.get(key) {
