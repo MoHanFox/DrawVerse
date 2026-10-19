@@ -90,3 +90,8 @@
 - 多选拖动复用现有 MIME，一次组织事务移动全部最高层选择，按树顺序保留排列；选中组与其后代不重复移动，自身/子组环与不存在目标均原子拒绝。
 - Windows Release Qt multiBrushMoveIsAtomicOrderedAndRejectsCycles、multiBrushDropMovesEntireSelectionIntoGroup、brushGroupsCreateDirectlyAndRenameInline 通过。覆盖一次变更通知、同父重排、循环拒绝后字节保持、保存重开及窗口实际 MIME drop 将两个笔刷一起放入组。
 - Release 已重建到 build/qt/bin/Release；真实跨窗口鼠标拖动未自动化。
+
+## 整数参数与分组共享 UI 补验
+
+- 完整 qt_ui_tests 源重新编译后，existingSecondaryPickerPreviewPixelsFreshStoreAndReopen、dualRatioControlsPreviewExchangeAndReopen、taperControlsCaptureWhitePreviewPixelsVbrAndReopen 两模式均通过，包含实际像素、预览、VBR 与重开。
+- 三项旧分组用例改为等待实际 delegate 创建完成，brushGroupsAppearInLibraryTreeAndSearchKeepsParent、brushLibraryShiftControlSelectionAndRootReorder、expandedGroupLowerDropInsertsFirstForBrushesAndLayers 全部通过；覆盖搜索保留父组、Ctrl/Shift 选择、根目录重排及笔刷/图层展开组下半部投放。
