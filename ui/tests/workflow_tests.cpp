@@ -10,14 +10,41 @@
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QBuffer>
 #include "platform/MenuSurface.h"
 #include "workspace/WorkspaceManager.h"
 
 static QQuickItem *findVisual(QQuickItem *item,const QString &name){if(item->objectName()==name)return item;for(auto *child:item->childItems())if(auto *found=findVisual(child,name))return found;return nullptr;}
 
+class ResourcePreviewCacheProbe : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(quint64 brushResourcePreviewRevision MEMBER revision NOTIFY brushResourcePreviewsChanged)
+public:
+    quint64 revision=0;int requests=0;QHash<QString,QString> cache;
+    Q_INVOKABLE QString brushResourcePreview(const QString &id)const{return cache.value(id);}
+    Q_INVOKABLE bool requestBrushResourcePreview(const QString &){++requests;return false;}
+    void changed(){++revision;emit brushResourcePreviewsChanged();}
+signals:
+    void brushResourcePreviewsChanged();
+    void brushLibraryReadyChanged();
+};
+
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void visibleResourceThumbnailSurvivesSharedCacheEviction() {
+        ResourcePreviewCacheProbe client;const auto first=QString(64,'a'),second=QString(64,'b');
+        QImage image(2,2,QImage::Format_RGBA8888);image.fill(Qt::white);QByteArray bytes;QBuffer buffer(&bytes);QVERIFY(buffer.open(QIODevice::WriteOnly));QVERIFY(image.save(&buffer,"PNG"));
+        const auto png="data:image/png;base64,"+QString::fromLatin1(bytes.toBase64());client.cache.insert(first,png);
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);
+        QQmlComponent component(&engine,QUrl("qrc:/qml/brushes/BrushResourceThumbnail.qml"));
+        QScopedPointer<QObject> thumbnail(component.createWithInitialProperties({{"resource",first}}));QVERIFY2(thumbnail,qPrintable(component.errorString()));
+        QCOMPARE(thumbnail->property("imageSource").toString(),png);QCOMPARE(client.requests,0);
+        client.cache.clear();for(int i=0;i<70;++i)client.changed();
+        QCOMPARE(thumbnail->property("imageSource").toString(),png);QCOMPARE(client.requests,0);
+        thumbnail->setProperty("resource",second);QVERIFY(thumbnail->property("imageSource").toString().isEmpty());QCOMPARE(client.requests,1);
+        client.cache.insert(second,png);client.changed();QCOMPARE(thumbnail->property("imageSource").toString(),png);
+    }
     void brushGroupCollapseKeepsUnchangedDelegates() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("brush-groups.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();

@@ -72,3 +72,9 @@
 
 - 显示列表按稳定身份增删/移动行，展开与折叠不再替换整个模型和全部预览。
 - Windows Release qt_workflow_tests::brushGroupCollapseKeepsUnchangedDelegates 通过；三轮展开/折叠的行数正确，未变化的笔刷 delegate 指针始终保持，没有 QML 警告。
+
+## 普通 2：资源缩略图闪烁
+
+- 可见项保留内容身份对应的不可变缩略图；全局缓存淘汰不再清空图片或重复排队，切换资源身份才请求新图。
+- Windows Release qt_workflow_tests::visibleResourceThumbnailSurvivesSharedCacheEviction 通过；70 次全局完成信号及缓存淘汰后原图片保持、零重复请求，更换身份后只请求一次并正确采用新图。
+- Release 程序已重建到 build/qt/bin/Release。测试覆盖缓存生命周期，实体滚动视觉仍需用户复核。
