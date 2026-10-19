@@ -1,5 +1,5 @@
+use super::color_region::RegionDiscovery;
 use super::*;
-use std::collections::VecDeque;
 
 pub(super) const MAX_FILL_TILES: usize = 4096;
 const MAX_FILL_PIXELS: u64 = MAX_FILL_TILES as u64 * 4096;
@@ -57,26 +57,6 @@ pub(super) fn match_weight(reference: [f32; 4], pixel: Pixel, options: BucketFil
         0.
     }
 }
-pub(super) fn enqueue(
-    visited: &mut BTreeMap<(u32, u32), [u64; 64]>,
-    queue: &mut VecDeque<(u32, u32)>,
-    x: u32,
-    y: u32,
-) -> Result<()> {
-    let key = (x / 64, y / 64);
-    if !visited.contains_key(&key) && visited.len() == MAX_FILL_TILES {
-        return Err(Error::ResourceLimit(
-            "bucket visited tile limit; no pixels changed",
-        ));
-    }
-    let row = &mut visited.entry(key).or_insert([0; 64])[(y % 64) as usize];
-    let bit = 1u64 << (x % 64);
-    if *row & bit == 0 {
-        *row |= bit;
-        queue.push_back((x, y));
-    }
-    Ok(())
-}
 impl Document {
     /// Atomic fill of the active pixel layer. Discovery always samples pre-fill pixels.
     pub fn bucket_fill(&mut self, options: BucketFill) -> Result<bool> {
@@ -125,125 +105,175 @@ impl Document {
             return Ok(false);
         }
         let reference = compare_color(sample(self, options.x, options.y)?);
-        let mut matches: BTreeMap<(u32, u32), Box<[f32; 4096]>> = BTreeMap::new();
-        let mut visited = BTreeMap::new();
-        let mut queue = VecDeque::new();
+        let mut selection_cache = crate::selection::SelectionCoverageCache::default();
+        let mut discovery = RegionDiscovery::new(self.width, self.height, |x, y, count| {
+            let selection = if self.selection.enabled() {
+                selection_cache.row(&self.selection, x.into(), y.into(), count as usize)
+            } else {
+                [1.; 64]
+            };
+            let pixels = if options.all_layers {
+                self.read_row(x, y, count)?
+            } else {
+                layer.read_canvas_row(x, y, count)?
+            };
+            Ok(pixels
+                .into_iter()
+                .enumerate()
+                .map(|(i, pixel)| {
+                    let weight = if selection[i] == 0. {
+                        0.
+                    } else {
+                        match_weight(reference, pixel, options)
+                    };
+                    (weight * selection[i], weight != 0.)
+                })
+                .collect())
+        });
         if options.contiguous {
-            enqueue(&mut visited, &mut queue, options.x, options.y)?;
+            discovery.contiguous(options.x, options.y)?;
+        } else {
+            discovery.global()?;
         }
-        let mut scan = 0u64;
-        loop {
-            let (x, y) = if options.contiguous {
-                let Some(point) = queue.pop_front() else {
-                    break;
-                };
-                point
-            } else {
-                if scan == u64::from(self.width) * u64::from(self.height) {
-                    break;
-                }
-                let point = (
-                    (scan % u64::from(self.width)) as u32,
-                    (scan / u64::from(self.width)) as u32,
-                );
-                scan += 1;
-                point
-            };
-            let selected = if self.selection.enabled() {
-                self.selection_cache
-                    .row(&self.selection, i64::from(x), i64::from(y), 1)[0]
-            } else {
-                1.
-            };
-            if selected == 0. {
-                continue;
-            }
-            let weight = match_weight(reference, sample(self, x, y)?, options);
-            if weight == 0. {
-                continue;
-            }
-            let key = (x / 64, y / 64);
-            if !matches.contains_key(&key) && matches.len() == MAX_FILL_TILES {
-                return Err(Error::ResourceLimit(
-                    "bucket match tile limit; no pixels changed",
-                ));
-            }
-            matches.entry(key).or_insert_with(|| Box::new([0.; 4096]))
-                [((y % 64) * 64 + x % 64) as usize] = weight * selected;
-            if options.contiguous {
-                if x > 0 {
-                    enqueue(&mut visited, &mut queue, x - 1, y)?;
-                }
-                if x + 1 < self.width {
-                    enqueue(&mut visited, &mut queue, x + 1, y)?;
-                }
-                if y > 0 {
-                    enqueue(&mut visited, &mut queue, x, y - 1)?;
-                }
-                if y + 1 < self.height {
-                    enqueue(&mut visited, &mut queue, x, y + 1)?;
-                }
-            }
-        }
-        drop(queue);
-        drop(visited);
         let appearance = layer.appearance;
         let alpha_locked = !layer.mask && appearance.locks & crate::LOCK_TRANSPARENCY != 0;
         let color = compare_color(options.color);
         let mask_tone = 1. - (0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]) / 255.;
+        let paint = |before: Pixel, weight: f32| -> Result<Pixel> {
+            let amount = weight * options.opacity;
+            if layer.mask {
+                Pixel::from_straight([
+                    0.,
+                    0.,
+                    0.,
+                    before.alpha() * (1. - amount * options.color.alpha())
+                        + mask_tone * amount * options.color.alpha(),
+                ])
+            } else if alpha_locked {
+                Ok(before.paint_preserving_alpha(options.color, amount))
+            } else {
+                Ok(options.color.scaled(amount).over(before))
+            }
+        };
         let mut staged: BTreeMap<TileCoord, Vec<Pixel>> = BTreeMap::new();
-        for ((tx, ty), weights) in matches {
-            for (offset, &weight) in weights.iter().enumerate() {
-                if weight == 0. {
-                    continue;
-                }
-                let x = i64::from(tx * 64) + (offset % 64) as i64 - i64::from(appearance.offset_x);
-                let y = i64::from(ty * 64) + (offset / 64) as i64 - i64::from(appearance.offset_y);
-                let coord =
-                    TileCoord::from_signed(x.div_euclid(64) as i32, y.div_euclid(64) as i32);
-                let before = layer.canvas_pixel(
-                    (tx * 64) + (offset % 64) as u32,
-                    (ty * 64) + (offset / 64) as u32,
-                )?;
-                let amount = weight * options.opacity;
-                let after = if layer.mask {
-                    Pixel::from_straight([
-                        0.,
-                        0.,
-                        0.,
-                        before.alpha() * (1. - amount * options.color.alpha())
-                            + mask_tone * amount * options.color.alpha(),
-                    ])?
-                } else if alpha_locked {
-                    before.paint_preserving_alpha(options.color, amount)
-                } else {
-                    options.color.scaled(amount).over(before)
-                };
-                if after == before {
-                    continue;
-                }
-                if !staged.contains_key(&coord) {
-                    if staged.len() == MAX_FILL_TILES {
-                        return Err(Error::ResourceLimit(
-                            "bucket output tile limit; no pixels changed",
-                        ));
+        for ((tx, ty), region) in discovery.tiles {
+            if region.selected.iter().all(|&row| row == 0) {
+                continue;
+            }
+            if appearance.offset_x % 64 == 0 && appearance.offset_y % 64 == 0 {
+                let coord = TileCoord::from_signed(
+                    tx as i32 - appearance.offset_x / 64,
+                    ty as i32 - appearance.offset_y / 64,
+                );
+                let original = layer
+                    .tiles
+                    .get(&coord)
+                    .map(|tile| tile.try_pixels())
+                    .transpose()?;
+                let whole = region.selected.iter().all(|&row| row == u64::MAX)
+                    && region.weights.iter().all(|&weight| weight == 1.)
+                    && !layer.mask
+                    && !alpha_locked
+                    && options.opacity == 1.
+                    && options.color.alpha() == 1.;
+                if whole {
+                    if original
+                        .as_ref()
+                        .is_none_or(|pixels| pixels.iter().any(|&pixel| pixel != options.color))
+                    {
+                        staged.insert(coord, vec![options.color; 4096]);
                     }
-                    let pixels = if let Some(tile) = layer.tiles.get(&coord) {
-                        tile.try_pixels()?.to_vec()
-                    } else {
+                    continue;
+                }
+                let mut pixels = original.as_ref().map_or_else(
+                    || {
                         (0..4096)
                             .map(|i| {
                                 layer.default_pixel(
-                                    x.div_euclid(64) * 64 + i % 64,
-                                    y.div_euclid(64) * 64 + i / 64,
+                                    i64::from(coord.signed_x()) * 64 + i % 64,
+                                    i64::from(coord.signed_y()) * 64 + i / 64,
                                 )
                             })
                             .collect()
-                    };
+                    },
+                    |pixels| pixels.to_vec(),
+                );
+                let mut changed = false;
+                for (y, mut bits) in region.selected.into_iter().enumerate() {
+                    while bits != 0 {
+                        let x = bits.trailing_zeros() as usize;
+                        bits &= bits - 1;
+                        let i = y * 64 + x;
+                        if region.weights[i] == 0. {
+                            continue;
+                        }
+                        let after = paint(pixels[i], region.weights[i])?;
+                        changed |= after != pixels[i];
+                        pixels[i] = after;
+                    }
+                }
+                if changed {
                     staged.insert(coord, pixels);
                 }
-                staged.get_mut(&coord).expect("staged tile")
-                    [(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize] = after;
+                continue;
+            }
+
+            for (ly, mut bits) in region.selected.into_iter().enumerate() {
+                if bits == 0 {
+                    continue;
+                }
+                let canvas_y = ty * 64 + ly as u32;
+                let count = (self.width - tx * 64).min(64);
+                let before_row = layer.read_canvas_row(tx * 64, canvas_y, count)?;
+                // An offset canvas row touches at most two local tiles. Collect real changes,
+                // then look up each output tile once per row, rather than once per pixel.
+                let mut changes: BTreeMap<TileCoord, Vec<(usize, Pixel)>> = BTreeMap::new();
+                while bits != 0 {
+                    let lx = bits.trailing_zeros();
+                    bits &= bits - 1;
+                    let weight = region.weights[ly * 64 + lx as usize];
+                    if weight == 0. {
+                        continue;
+                    }
+                    let x = i64::from(tx * 64 + lx) - i64::from(appearance.offset_x);
+                    let y = i64::from(canvas_y) - i64::from(appearance.offset_y);
+                    let coord =
+                        TileCoord::from_signed(x.div_euclid(64) as i32, y.div_euclid(64) as i32);
+                    let before = before_row[lx as usize];
+                    let after = paint(before, weight)?;
+                    if after != before {
+                        changes
+                            .entry(coord)
+                            .or_default()
+                            .push(((y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize, after));
+                    }
+                }
+                for (coord, row_changes) in changes {
+                    if !staged.contains_key(&coord) {
+                        if staged.len() == MAX_FILL_TILES {
+                            return Err(Error::ResourceLimit(
+                                "bucket output tile limit; no pixels changed",
+                            ));
+                        }
+                        let pixels = if let Some(tile) = layer.tiles.get(&coord) {
+                            tile.try_pixels()?.to_vec()
+                        } else {
+                            (0..4096)
+                                .map(|i| {
+                                    layer.default_pixel(
+                                        i64::from(coord.signed_x()) * 64 + i % 64,
+                                        i64::from(coord.signed_y()) * 64 + i / 64,
+                                    )
+                                })
+                                .collect()
+                        };
+                        staged.insert(coord, pixels);
+                    }
+                    let pixels = staged.get_mut(&coord).expect("staged tile");
+                    for (offset, after) in row_changes {
+                        pixels[offset] = after;
+                    }
+                }
             }
         }
         if staged.is_empty() {
@@ -283,15 +313,7 @@ impl Document {
 mod tests {
     use super::*;
     #[test]
-    fn visited_working_set_and_history_failure_are_bounded_and_atomic() {
-        let mut visited = BTreeMap::new();
-        let mut queue = VecDeque::new();
-        for x in 0..MAX_FILL_TILES as u32 {
-            enqueue(&mut visited, &mut queue, x * 64, 0).unwrap();
-        }
-        assert!(enqueue(&mut visited, &mut queue, MAX_FILL_TILES as u32 * 64, 0).is_err());
-        assert_eq!(visited.len(), MAX_FILL_TILES);
-        assert_eq!(queue.len(), MAX_FILL_TILES);
+    fn history_failure_is_atomic() {
         let mut doc = Document::with_options(
             128,
             128,

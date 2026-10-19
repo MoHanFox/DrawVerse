@@ -6,7 +6,10 @@ type Field = BTreeMap<TileCoord, Arc<Vec<[f32; 2]>>>;
 pub(super) struct LiquifyState {
     original: Layer,
     field: Field,
+    cell: i64,
+    sources: Arc<std::sync::Mutex<BTreeMap<TileCoord, paint_ops::SourceTile>>>,
     focus: bool,
+    preview_source: Option<Arc<LiquifyPreviewSource>>,
     checkpoint: Option<Arc<Checkpoint>>,
     history: Arc<LocalHistory>,
 }
@@ -14,12 +17,14 @@ pub(super) struct LiquifyState {
 struct Checkpoint {
     layer: Layer,
     field: Field,
+    cell: i64,
     action: crate::HistoryAction,
 }
 #[derive(Debug)]
 struct LocalStep {
     pixels: Vec<TileChange>,
     fields: crate::history_storage::Payload,
+    cells: [i64; 2],
     action: crate::HistoryAction,
 }
 #[derive(Clone, Debug, Default)]
@@ -122,7 +127,7 @@ impl LiquifyDab {
         self.to.validate()?;
         if self.tool > 3
             || !self.radius.is_finite()
-            || !(0.5..=1000.).contains(&self.radius)
+            || !(0.5..=7500.).contains(&self.radius)
             || [self.strength, self.density, self.speed]
                 .iter()
                 .any(|v| !v.is_finite() || !(0.01..=1.).contains(v))
@@ -139,430 +144,6 @@ fn coord(x: i64, y: i64) -> TileCoord {
 }
 fn index(x: i64, y: i64) -> usize {
     (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize
-}
-struct FieldSampler<'a> {
-    field: &'a Field,
-    last: Option<(TileCoord, Option<&'a [[f32; 2]]>)>,
-}
-impl FieldSampler<'_> {
-    fn at(&mut self, x: i64, y: i64) -> [f32; 2] {
-        let key = coord(x, y);
-        if let Some((old, pixels)) = self.last {
-            if old == key {
-                return pixels.map_or([0., 0.], |v| v[index(x, y)]);
-            }
-        }
-        let tile = self.field.get(&key).map(|v| v.as_slice());
-        self.last = Some((key, tile));
-        tile.map_or([0., 0.], |v| v[index(x, y)])
-    }
-    fn sample(&mut self, x: f64, y: f64) -> [f32; 2] {
-        let ix = x.floor() as i64;
-        let iy = y.floor() as i64;
-        let fx = (x - ix as f64) as f32;
-        let fy = (y - iy as f64) as f32;
-        let a = self.at(ix, iy);
-        let (b, c, d) = if ix.rem_euclid(64) < 63 && iy.rem_euclid(64) < 63 {
-            self.last.and_then(|(_, pixels)| pixels).map_or(
-                ([0., 0.], [0., 0.], [0., 0.]),
-                |pixels| {
-                    let i = index(ix, iy);
-                    (pixels[i + 1], pixels[i + 64], pixels[i + 65])
-                },
-            )
-        } else {
-            (
-                self.at(ix + 1, iy),
-                self.at(ix, iy + 1),
-                self.at(ix + 1, iy + 1),
-            )
-        };
-        [0, 1].map(|k| {
-            (a[k] * (1. - fx) + b[k] * fx) * (1. - fy) + (c[k] * (1. - fx) + d[k] * fx) * fy
-        })
-    }
-}
-type PinnedPixels = Arc<Box<[Pixel]>>;
-struct Source<'a> {
-    layer: &'a Layer,
-    pin_limit: usize,
-    pins: BTreeMap<TileCoord, PinnedPixels>,
-    order: std::collections::VecDeque<TileCoord>,
-    last: Option<(TileCoord, Option<PinnedPixels>)>,
-}
-
-#[cfg(test)]
-mod sampling_tests {
-    use super::*;
-
-    #[test]
-    fn bilinear_fast_paths_match_four_independent_reads_bit_for_bit() {
-        let mut field = Field::new();
-        let mut layer = Layer::new(1, "Sampling".into());
-        layer.white = (69, 77);
-        for ty in [-2, 0, 1] {
-            for tx in [-2, 0, 2] {
-                let key = TileCoord::from_signed(tx, ty);
-                field.insert(
-                    key,
-                    Arc::new(
-                        (0..4096)
-                            .map(|i| [i as f32 / 19. - 80., (i % 123) as f32 / 7.])
-                            .collect(),
-                    ),
-                );
-                let pixels = (0..4096)
-                    .map(|i| {
-                        Pixel::from_straight([
-                            (i % 31) as f32 / 30.,
-                            (i % 17) as f32 / 16.,
-                            (i % 13) as f32 / 12.,
-                            (i % 7) as f32 / 6.,
-                        ])
-                        .unwrap()
-                    })
-                    .collect();
-                layer
-                    .tiles
-                    .insert(key, Arc::new(Tile::from_pixels(pixels).unwrap()));
-            }
-        }
-        let mut sampler = FieldSampler {
-            field: &field,
-            last: None,
-        };
-        let mut source = Source {
-            layer: &layer,
-            pin_limit: 256,
-            pins: BTreeMap::new(),
-            order: Default::default(),
-            last: None,
-        };
-        for ix in [
-            -130, -129, -128, -65, -64, -1, 0, 1, 62, 63, 64, 68, 69, 76, 77, 127, 128, 256,
-        ] {
-            for iy in [-129, -64, -1, 0, 62, 63, 64, 68, 69, 76, 77, 127, 128] {
-                for fx in [0., 0.125, 0.5, 0.999] {
-                    for fy in [0., 0.125, 0.5, 0.999] {
-                        let at = |x, y| {
-                            field
-                                .get(&coord(x, y))
-                                .map_or([0., 0.], |pixels| pixels[index(x, y)])
-                        };
-                        let (a, b, c, d) = (
-                            at(ix, iy),
-                            at(ix + 1, iy),
-                            at(ix, iy + 1),
-                            at(ix + 1, iy + 1),
-                        );
-                        let expected = [0, 1].map(|k| {
-                            (a[k] * (1. - fx) + b[k] * fx) * (1. - fy)
-                                + (c[k] * (1. - fx) + d[k] * fx) * fy
-                        });
-                        let actual =
-                            sampler.sample(ix as f64 + f64::from(fx), iy as f64 + f64::from(fy));
-                        // Recover the actual f32 fractions after f64 coordinate addition.
-                        let x = ix as f64 + f64::from(fx);
-                        let y = iy as f64 + f64::from(fy);
-                        let rx = (x - x.floor()) as f32;
-                        let ry = (y - y.floor()) as f32;
-                        let expected = if rx == fx && ry == fy {
-                            expected
-                        } else {
-                            [0, 1].map(|k| {
-                                (a[k] * (1. - rx) + b[k] * rx) * (1. - ry)
-                                    + (c[k] * (1. - rx) + d[k] * rx) * ry
-                            })
-                        };
-                        assert_eq!(actual.map(f32::to_bits), expected.map(f32::to_bits));
-                        let pixel = |x, y| {
-                            layer.tiles.get(&coord(x, y)).map_or_else(
-                                || layer.default_pixel(x, y),
-                                |tile| tile.try_pixels().unwrap()[index(x, y)],
-                            )
-                        };
-                        let a = pixel(ix, iy);
-                        let expected = if rx == 0. && ry == 0. {
-                            a
-                        } else {
-                            a.mix(pixel(ix + 1, iy), rx)
-                                .mix(pixel(ix, iy + 1).mix(pixel(ix + 1, iy + 1), rx), ry)
-                        };
-                        assert_eq!(
-                            source.sample(x, y).unwrap().components().map(f32::to_bits),
-                            expected.components().map(f32::to_bits)
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn source_fast_path_keeps_the_256_tile_pin_limit() {
-        let mut layer = Layer::new(1, "Pins".into());
-        for x in 0..300 {
-            layer.tiles.insert(
-                TileCoord::from_signed(x, 0),
-                Arc::new(Tile::from_pixels(vec![Pixel::WHITE; 4096]).unwrap()),
-            );
-        }
-        let mut source = Source {
-            layer: &layer,
-            pin_limit: 256,
-            pins: BTreeMap::new(),
-            order: Default::default(),
-            last: None,
-        };
-        for x in (0..300).chain(0..300) {
-            assert_eq!(
-                source.sample(f64::from(x * 64) + 0.25, 0.75).unwrap(),
-                Pixel::WHITE
-            );
-            assert!(source.pins.len() <= 256);
-            assert_eq!(source.pins.len(), source.order.len());
-        }
-    }
-}
-impl Source<'_> {
-    fn pixel(&mut self, x: i64, y: i64) -> Result<Pixel> {
-        let key = coord(x, y);
-        if let Some((old, pixels)) = &self.last {
-            if *old == key {
-                return Ok(pixels
-                    .as_ref()
-                    .map_or_else(|| self.layer.default_pixel(x, y), |v| v[index(x, y)]));
-            }
-        }
-        if let Some(tile) = self.layer.tiles.get(&key) {
-            if !self.pins.contains_key(&key) {
-                if self.pins.len() >= self.pin_limit {
-                    if let Some(old) = self.order.pop_front() {
-                        self.pins.remove(&old);
-                    }
-                }
-                self.pins.insert(key, tile.try_pixels()?);
-                self.order.push_back(key);
-            }
-            let pixels = self.pins[&key].clone();
-            let result = pixels[index(x, y)];
-            self.last = Some((key, Some(pixels)));
-            Ok(result)
-        } else {
-            self.last = Some((key, None));
-            Ok(self.layer.default_pixel(x, y))
-        }
-    }
-    fn sample(&mut self, x: f64, y: f64) -> Result<Pixel> {
-        let ix = x.floor() as i64;
-        let iy = y.floor() as i64;
-        let fx = (x - ix as f64) as f32;
-        let fy = (y - iy as f64) as f32;
-        let a = self.pixel(ix, iy)?;
-        if fx == 0. && fy == 0. {
-            return Ok(a);
-        }
-        let (b, c, d) = if ix.rem_euclid(64) < 63 && iy.rem_euclid(64) < 63 {
-            if let Some((_, Some(pixels))) = &self.last {
-                let i = index(ix, iy);
-                (pixels[i + 1], pixels[i + 64], pixels[i + 65])
-            } else {
-                (
-                    self.layer.default_pixel(ix + 1, iy),
-                    self.layer.default_pixel(ix, iy + 1),
-                    self.layer.default_pixel(ix + 1, iy + 1),
-                )
-            }
-        } else {
-            (
-                self.pixel(ix + 1, iy)?,
-                self.pixel(ix, iy + 1)?,
-                self.pixel(ix + 1, iy + 1)?,
-            )
-        };
-        let top = a.mix(b, fx);
-        let bottom = c.mix(d, fx);
-        Ok(top.mix(bottom, fy))
-    }
-}
-
-fn claim_field(counter: &std::sync::atomic::AtomicUsize, existing: usize) -> bool {
-    use std::sync::atomic::Ordering::Relaxed;
-    let mut count = counter.load(Relaxed);
-    loop {
-        if existing + count >= MAX_FIELD_TILES {
-            return false;
-        }
-        match counter.compare_exchange_weak(count, count + 1, Relaxed, Relaxed) {
-            Ok(_) => return true,
-            Err(actual) => count = actual,
-        }
-    }
-}
-type RasterOutput = (
-    BTreeMap<TileCoord, Vec<[f32; 2]>>,
-    BTreeMap<TileCoord, Vec<Pixel>>,
-);
-#[derive(Clone, Copy)]
-struct RasterStep {
-    options: LiquifyDab,
-    x: f64,
-    y: f64,
-    radius: f64,
-    amount: f64,
-    dx: f64,
-    dy: f64,
-    time: f64,
-    ox: i64,
-    oy: i64,
-    left: i64,
-    right: i64,
-    top: i64,
-    bottom: i64,
-}
-impl RasterStep {
-    fn raster(
-        &self,
-        layer: &Layer,
-        old_field: &Field,
-        source: &mut Source<'_>,
-        selection: &crate::Selection,
-        cache: &mut crate::selection::SelectionCoverageCache,
-        new_fields: &std::sync::atomic::AtomicUsize,
-    ) -> Result<RasterOutput> {
-        let Self {
-            options,
-            x,
-            y,
-            radius,
-            amount,
-            dx,
-            dy,
-            time,
-            ox,
-            oy,
-            left,
-            right,
-            top,
-            bottom,
-        } = *self;
-        let mut fields = BTreeMap::<TileCoord, Vec<[f32; 2]>>::new();
-        let mut pixels = BTreeMap::<TileCoord, Vec<Pixel>>::new();
-        let mut sampler = FieldSampler {
-            field: old_field,
-            last: None,
-        };
-        for ty in (top - oy).div_euclid(64)..=(bottom - 1 - oy).div_euclid(64) {
-            for tx in (left - ox).div_euclid(64)..=(right - 1 - ox).div_euclid(64) {
-                let key = TileCoord::from_signed(tx as i32, ty as i32);
-                let x0 = left.max(tx * 64 + ox);
-                let x1 = right.min(tx * 64 + ox + 64);
-                let y0 = top.max(ty * 64 + oy);
-                let y1 = bottom.min(ty * 64 + oy + 64);
-                let mut buffers: Option<(Vec<[f32; 2]>, Vec<Pixel>)> = None;
-                for py in y0..y1 {
-                    let coverage = cache.corner_row(selection, x0, py, (x1 - x0) as usize);
-                    for px in x0..x1 {
-                        let vx = px as f64 + 0.5 - x;
-                        let vy = py as f64 + 0.5 - y;
-                        let r = vx.hypot(vy) / radius;
-                        if r >= 1. {
-                            continue;
-                        }
-                        let inner = f64::from(options.density) * 0.9;
-                        let falloff = if r <= inner {
-                            1.
-                        } else {
-                            ((1. - r) / (1. - inner)).powi(2)
-                        };
-                        let weight = amount * falloff * f64::from(coverage[(px - x0) as usize]);
-                        if weight <= 0. {
-                            continue;
-                        }
-                        let lx = px - ox;
-                        let ly = py - oy;
-                        let i = index(lx, ly);
-                        let before = sampler.at(lx, ly);
-                        let after = if options.tool == 3 {
-                            let factor = (1. - weight).max(0.) as f32;
-                            before.map(|v| {
-                                if (v * factor).abs() < 0.0001 {
-                                    0.
-                                } else {
-                                    v * factor
-                                }
-                            })
-                        } else {
-                            let (tx, ty) = match options.tool {
-                                0 => (-dx * weight, -dy * weight),
-                                1 => {
-                                    let factor =
-                                        (-weight * f64::from(options.speed) * time * 2.).exp() - 1.;
-                                    (vx * factor, vy * factor)
-                                }
-                                2 => {
-                                    let angle = -weight
-                                        * f64::from(options.speed)
-                                        * time
-                                        * std::f64::consts::TAU;
-                                    let (s, c) = angle.sin_cos();
-                                    (vx * c - vy * s - vx, vx * s + vy * c - vy)
-                                }
-                                _ => unreachable!(),
-                            };
-                            let sampled = sampler.sample(lx as f64 + tx, ly as f64 + ty);
-                            [
-                                (tx + f64::from(sampled[0])) as f32,
-                                (ty + f64::from(sampled[1])) as f32,
-                            ]
-                        };
-                        if after.iter().any(|v| !v.is_finite() || v.abs() > 2_000_000.) {
-                            return Err(Error::ResourceLimit("liquify displacement range"));
-                        }
-                        if after == before {
-                            continue;
-                        }
-                        if buffers.is_none() {
-                            if !old_field.contains_key(&key)
-                                && !claim_field(new_fields, old_field.len())
-                            {
-                                return Err(Error::ResourceLimit("liquify displacement memory"));
-                            }
-                            let field = old_field
-                                .get(&key)
-                                .map_or_else(|| vec![[0., 0.]; 4096], |v| v.as_ref().clone());
-                            let original = if let Some(tile) = layer.tiles.get(&key) {
-                                tile.try_pixels()?.to_vec()
-                            } else {
-                                let mut out = Vec::with_capacity(4096);
-                                for sy in 0..64 {
-                                    for sx in 0..64 {
-                                        out.push(layer.default_pixel(
-                                            i64::from(key.signed_x()) * 64 + sx,
-                                            i64::from(key.signed_y()) * 64 + sy,
-                                        ));
-                                    }
-                                }
-                                out
-                            };
-                            buffers = Some((field, original));
-                        }
-                        let (field, pixel) = buffers.as_mut().expect("tile buffers");
-                        field[i] = after;
-                        pixel[i] = source.sample(
-                            lx as f64 + f64::from(after[0]),
-                            ly as f64 + f64::from(after[1]),
-                        )?;
-                    }
-                }
-                if let Some((field, pixel)) = buffers {
-                    fields.insert(key, field);
-                    pixels.insert(key, pixel);
-                }
-            }
-        }
-        Ok((fields, pixels))
-    }
 }
 impl Document {
     pub fn liquify_active(&self) -> bool {
@@ -604,6 +185,9 @@ impl Document {
         snapshot
     }
     pub fn begin_liquify(&mut self) -> Result<()> {
+        self.begin_liquify_internal(true)
+    }
+    fn begin_liquify_internal(&mut self, warm: bool) -> Result<()> {
         self.idle()?;
         self.check_ancestors(
             self.active_layer,
@@ -619,13 +203,20 @@ impl Document {
         if original.group {
             return Err(Error::InvalidArgument("liquify needs raster layer or mask"));
         }
-        self.liquify = Some(LiquifyState {
+        let mut state = LiquifyState {
             original,
             field: Field::new(),
+            cell: 2,
+            sources: Arc::default(),
             focus: false,
+            preview_source: None,
             checkpoint: None,
             history: Arc::default(),
-        });
+        };
+        if warm {
+            self.warm_liquify_sources(&mut state)?;
+        }
+        self.liquify = Some(state);
         Ok(())
     }
     fn restore_liquify_original(&mut self) -> Result<()> {
@@ -659,11 +250,12 @@ impl Document {
     }
     pub fn commit_liquify(&mut self) -> Result<bool> {
         self.end_liquify_stroke()?;
+        let candidate = self.final_liquify_layer()?;
         let state = self
             .liquify
             .as_ref()
             .ok_or(Error::InvalidArgument("no liquify transaction"))?;
-        let current = self.layer(state.original.id).expect("transaction layer");
+        let current = &candidate;
         let keys: BTreeSet<_> = current
             .tiles
             .keys()
@@ -712,6 +304,7 @@ impl Document {
             )?;
         }
         let at = self.layer_index(original.id)?;
+        self.layers[at] = candidate;
         for key in unchanged {
             if let Some(tile) = original.tiles.get(&key) {
                 self.layers[at].tiles.insert(key, tile.clone());
@@ -720,7 +313,7 @@ impl Document {
             }
         }
         self.liquify = None;
-        if focused {
+        if focused || changed {
             self.dirty_all();
         }
         Ok(changed)
@@ -740,6 +333,7 @@ impl Document {
         let checkpoint = Checkpoint {
             layer,
             field: state.field.clone(),
+            cell: state.cell,
             action: crate::HistoryAction::Liquify,
         };
         self.liquify.as_mut().expect("state").checkpoint = Some(Arc::new(checkpoint));
@@ -762,14 +356,31 @@ impl Document {
             .collect();
         let changed: Vec<_> = keys
             .into_iter()
-            .filter(|key| !same_field(before.field.get(key), state.field.get(key)))
+            .filter(|key| {
+                before.cell != state.cell
+                    || !same_field(before.field.get(key), state.field.get(key))
+            })
             .collect();
         if changed.is_empty() {
             self.liquify.as_mut().expect("state").checkpoint = None;
             return Ok(false);
         }
-        let pixels = changed
+        let pixel_keys: BTreeSet<_> = before
+            .layer
+            .tiles
+            .keys()
+            .chain(current.tiles.keys())
+            .copied()
+            .collect();
+        let pixels = pixel_keys
             .iter()
+            .filter(
+                |key| match (before.layer.tiles.get(key), current.tiles.get(key)) {
+                    (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
+                    (None, None) => false,
+                    _ => true,
+                },
+            )
             .map(|key| TileChange {
                 coord: *key,
                 before: before.layer.tiles.get(key).cloned(),
@@ -799,6 +410,7 @@ impl Document {
             },
         )?;
         let step = Arc::new(LocalStep {
+            cells: [before.cell, state.cell],
             pixels,
             fields,
             action: before.action,
@@ -941,6 +553,7 @@ impl Document {
         self.layers[at] = layer;
         let state = self.liquify.as_mut().expect("state");
         state.field = field;
+        state.cell = step.cells[usize::from(redo)];
         let history = Arc::make_mut(&mut state.history);
         if redo {
             history.redo.pop();
@@ -952,205 +565,29 @@ impl Document {
         self.dirty_all();
         Ok(true)
     }
-    pub fn liquify_dab(&mut self, options: LiquifyDab) -> Result<bool> {
-        self.liquify_dab_impl(options, true)
+    pub fn set_compute_executor(&mut self, executor: Arc<dyn paint_ops::Executor>) -> Result<()> {
+        self.idle()?;
+        self.compute = executor;
+        Ok(())
     }
-    fn liquify_dab_impl(&mut self, options: LiquifyDab, parallel: bool) -> Result<bool> {
-        options.validate()?;
-        let mut state = self
-            .liquify
-            .as_ref()
-            .ok_or(Error::InvalidArgument("no liquify transaction"))?
-            .clone();
-        let at = self.layer_index(state.original.id)?;
-        if let Some(checkpoint) = state.checkpoint.as_mut() {
-            if checkpoint.action == crate::HistoryAction::Liquify {
-                Arc::make_mut(checkpoint).action = match options.tool {
-                    0 => crate::HistoryAction::LiquifyPush,
-                    1 => crate::HistoryAction::LiquifyBloat,
-                    2 => crate::HistoryAction::LiquifyTwirl,
-                    _ => crate::HistoryAction::LiquifyReconstruct,
-                };
-            }
-        }
-        let mut layer = self.layers[at].clone();
-        let radius = f64::from(options.radius);
-        let distance = (options.to.x - options.from.x).hypot(options.to.y - options.from.y);
-        let steps = (distance / (radius * 0.2).max(1.)).ceil().max(1.) as usize;
-        let area = ((radius * 2. + 2.).min(f64::from(self.width))
-            * (radius * 2. + 2.).min(f64::from(self.height))) as usize;
-        if steps > 4096 || steps.saturating_mul(area) > MAX_VISITS {
-            return Err(Error::ResourceLimit("liquify input work budget"));
-        }
-        let mut source = Source {
-            layer: &state.original,
-            pin_limit: 256,
-            pins: BTreeMap::new(),
-            order: Default::default(),
-            last: None,
-        };
-        let mut previous = options.from;
-        let mut changed = false;
-        for step in 1..=steps {
-            let t = step as f64 / steps as f64;
-            let x = options.from.x + (options.to.x - options.from.x) * t;
-            let y = options.from.y + (options.to.y - options.from.y) * t;
-            let pressure = if options.pressure_enabled {
-                options.from.pressure + (options.to.pressure - options.from.pressure) * t as f32
-            } else {
-                1.
-            };
-            let amount = f64::from(options.strength * pressure);
-            let dx = (x - previous.x).clamp(-radius, radius);
-            let dy = (y - previous.y).clamp(-radius, radius);
-            let time = f64::from(options.elapsed_ms) / 1000. / steps as f64;
-            previous.x = x;
-            previous.y = y;
-            if amount == 0. || (options.tool == 0 && dx == 0. && dy == 0.) {
-                continue;
-            }
-            let ox = i64::from(layer.appearance.offset_x);
-            let oy = i64::from(layer.appearance.offset_y);
-            let left = (x - radius).floor().max(0.) as i64;
-            let top = (y - radius).floor().max(0.) as i64;
-            let right = (x + radius).ceil().min(f64::from(self.width)) as i64;
-            let bottom = (y + radius).ceil().min(f64::from(self.height)) as i64;
-            if left >= right || top >= bottom {
-                continue;
-            }
-            let old_field = &state.field;
-            let raster = RasterStep {
-                options,
-                x,
-                y,
-                radius,
-                amount,
-                dx,
-                dy,
-                time,
-                ox,
-                oy,
-                left,
-                right,
-                top,
-                bottom,
-            };
-            let new_fields = std::sync::atomic::AtomicUsize::new(0);
-            let first_ty = (top - oy).div_euclid(64);
-            let end_ty = (bottom - 1 - oy).div_euclid(64) + 1;
-            let (fields, mut pixels) = if parallel
-                && !self.selection.enabled()
-                && (right - left) * (bottom - top) >= 262_144
-                && end_ty - first_ty >= 2
-            {
-                // Release serial pins before two 128-tile worker caches take over.
-                source.last = None;
-                source.pins.clear();
-                source.order.clear();
-                // Workers read the same immutable input. Publish only after both succeed.
-                let split = ((first_ty + end_ty) / 2) * 64 + oy;
-                let upper = RasterStep {
-                    bottom: split,
-                    ..raster
-                };
-                let lower = RasterStep {
-                    top: split,
-                    ..raster
-                };
-                let selection = &self.selection;
-                std::thread::scope(|scope| -> Result<RasterOutput> {
-                    let make_source = || Source {
-                        layer: &state.original,
-                        pin_limit: 128,
-                        pins: BTreeMap::new(),
-                        order: Default::default(),
-                        last: None,
-                    };
-                    let lower_layer = &layer;
-                    let count = &new_fields;
-                    let worker = std::thread::Builder::new()
-                        .name("liquify-tiles".into())
-                        .spawn_scoped(scope, move || {
-                            lower.raster(
-                                lower_layer,
-                                old_field,
-                                &mut make_source(),
-                                selection,
-                                &mut crate::selection::SelectionCoverageCache::default(),
-                                count,
-                            )
-                        })
-                        .map_err(|_| Error::ResourceLimit("liquify worker unavailable"))?;
-                    let upper_result = upper.raster(
-                        &layer,
-                        old_field,
-                        &mut make_source(),
-                        selection,
-                        &mut self.selection_cache,
-                        &new_fields,
-                    );
-                    let lower_result = worker
-                        .join()
-                        .map_err(|_| Error::ResourceLimit("liquify worker failed"))?;
-                    let (mut fields, mut pixels) = upper_result?;
-                    let (mut more_fields, mut more_pixels) = lower_result?;
-                    fields.append(&mut more_fields);
-                    pixels.append(&mut more_pixels);
-                    Ok((fields, pixels))
-                })?
-            } else {
-                raster.raster(
-                    &layer,
-                    old_field,
-                    &mut source,
-                    &self.selection,
-                    &mut self.selection_cache,
-                    &new_fields,
-                )?
-            };
-            let new_tiles = pixels
-                .keys()
-                .filter(|key| !layer.tiles.contains_key(key))
-                .count();
-            let other_tiles = self.tile_count() - self.layers[at].tiles.len();
-            if other_tiles + layer.tiles.len() + new_tiles > self.options.max_document_tiles {
-                return Err(Error::ResourceLimit("liquify pixel tile budget"));
-            }
-            for (key, field) in fields {
-                changed = true;
-                if field.iter().all(|v| *v == [0., 0.]) {
-                    state.field.remove(&key);
-                    if let Some(tile) = state.original.tiles.get(&key) {
-                        layer.tiles.insert(key, tile.clone());
-                    } else {
-                        layer.tiles.remove(&key);
-                    }
-                } else {
-                    let tile = Arc::new(Tile::from_pixels(pixels.remove(&key).expect("pixels"))?);
-                    self.pool.attach(&tile)?;
-                    // Transparent override tiles are retained for implicit white layers.
-                    if tile.is_empty() && layer.white == (0, 0) {
-                        layer.tiles.remove(&key);
-                    } else {
-                        layer.tiles.insert(key, tile);
-                    }
-                    state.field.insert(key, Arc::new(field));
-                }
-            }
-            self.pool.trim()?;
-        }
-        drop(source);
-        if changed {
-            self.layers[at] = layer;
-            self.liquify = Some(state);
-            self.dirty_all();
-        }
-        Ok(changed)
+    pub fn compute_backend_name(&self) -> String {
+        self.compute.name()
+    }
+    pub fn compute_executor(&self) -> Arc<dyn paint_ops::Executor> {
+        self.compute.clone()
+    }
+    pub fn liquify_dab(&mut self, options: LiquifyDab) -> Result<bool> {
+        self.elastic_liquify_dab(options)
     }
 }
+#[path = "liquify_operators.rs"]
+mod operators;
+#[path = "liquify_preview.rs"]
+mod preview;
+pub use preview::{LiquifyPreview, LiquifyPreviewSource};
 
 #[cfg(test)]
-mod parallel_tests {
+mod operator_transaction_tests {
     use super::*;
     fn seed(white: bool) -> Document {
         let mut d = Document::new(600, 600).unwrap();
@@ -1205,7 +642,7 @@ mod parallel_tests {
             .collect()
     }
     #[test]
-    fn four_tools_match_serial_fields_pixels_history_offsets_and_implicit_white() {
+    fn four_tools_have_deterministic_fields_pixels_history_offsets_and_implicit_white() {
         for white in [false, true] {
             for tool in 0..4 {
                 let mut a = seed(white);
@@ -1213,8 +650,8 @@ mod parallel_tests {
                 let original = pixels(&a);
                 for tool in [0, tool] {
                     assert_eq!(
-                        a.liquify_dab_impl(dab(tool), false).unwrap(),
-                        b.liquify_dab_impl(dab(tool), true).unwrap()
+                        a.liquify_dab(dab(tool)).unwrap(),
+                        b.liquify_dab(dab(tool)).unwrap()
                     );
                     assert_eq!(
                         a.liquify.as_ref().unwrap().field,
@@ -1242,7 +679,7 @@ mod parallel_tests {
         }
     }
     #[test]
-    fn shared_field_budget_failure_keeps_both_halves_unpublished() {
+    fn field_budget_failure_keeps_candidate_unpublished() {
         let mut d = seed(false);
         let before = pixels(&d);
         let empty = Arc::new(vec![[0.; 2]; 4096]);
@@ -1255,7 +692,7 @@ mod parallel_tests {
         }
         let before_field = d.liquify.as_ref().unwrap().field.clone();
         assert!(matches!(
-            d.liquify_dab_impl(dab(0), true),
+            d.liquify_dab(dab(0)),
             Err(Error::ResourceLimit("liquify displacement memory"))
         ));
         assert_eq!(d.liquify.as_ref().unwrap().field, before_field);

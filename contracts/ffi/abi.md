@@ -1,4 +1,36 @@
-# C ABI 1.60.0 契约
+# C ABI 1.64.0 契约
+
+## ABI 1.64 — 自由变换常驻网格预览
+
+`PAINT_FEATURE_TRANSFORM_RESIDENT=576460752303423488`；新增 `paint_session_begin_transform_layers_deferred`，参数/所有权与普通 begin layers 相同。兼容单层普通Normal栅格与置入图片请求常驻预览，复杂组合或选区保留像素路径；旧入口行为保持。OK表示入队，异步错误通过会话发布。
+
+已经开始的变换（包括文件置入自动创建的会话）可用 `PAINT_TRANSFORM_ENABLE_RESIDENT=8` 请求接入，geometry须null；没有活动会话异步报错，已接入时幂等。旧begin与UPDATE/关闭语义不变。
+
+共用 `PaintResidentPreviewInfo` 的 `focus` 定义为位标记：bit0仍为隔离原图，bit1为正向变换网格，只有新入口会发布bit1。正向网格顶点位置是曲面映射结果，UV来自不可变源；消费者先将原图网格渲染至视口纹理，再在完整画布上与静态上下层合成，不能沿用逆向场的单遍局部合成。DTO布局与LE顶点包不变，旧液化/移动标记不变。网格至多145×145，静态资产最长边2048。
+
+更新只改变几何，保持相邻绝对输入合并与checkpoint关闭顺序；确认从原始源完整重采样并生成单历史（Warp与预览共用正向三角面覆盖和行序后面覆盖前面规则，非Warp保留逆矩阵），取消恢复基线，资源失败保留会话可修正。详见[设计](../../docs/tools/transform-resident-preview-design.md)。
+
+## ABI 1.63 — 图层移动会话与共用常驻预览
+
+`PAINT_FEATURE_LAYER_MOVE_PREVIEW=288230376151711744`，`PAINT_SESSION_LAYER_MOVE=32`。`paint_session_layer_move(core,session,kind,layer_id,x,y,out_sequence)`：0/1 为普通/请求常驻预览的 BEGIN（id 指定图层，x/y=0）；2/3 为 PICK（x/y 为非负文档像素坐标，命中后捕获目标）；4 为相对会话起点的绝对整数位移 UPDATE；5 为携带最终位移的 COMMIT；6 为 CANCEL（x/y=0）。x/y 绝对值不得超过 MAX_DIMENSION，非法参数清零 sequence。除 BEGIN 外 layer_id 忽略。OK 表示排队；BEGIN/PICK 完成后检查会话标记，空白 PICK 不创建会话，锁定目标异步报错。
+
+UPDATE 不写历史，相邻未执行更新可合并；COMMIT/CANCEL 使用关闭屏障，不能丢失最终位置。提交复用原有移动历史命令，取消恢复基线；其他编辑与文件操作在会话内拒绝。组/蒙版保持共同移动，置入图片保留原始模型。CPU 回退照常生成像素帧；兼容普通栅格栈使用四顶点和静态源纹理，视口0/1暂停重采样。
+
+`PaintResidentPreviewInfo` 是 `PaintLiquifyPreviewInfo` 的布局兼容别名。`paint_session_resident_preview_info` / `paint_session_read_resident_preview` 为液化和移动共用的查询，票据、容量、像素格式和预算沿用下述 ABI 1.62 协议；旧液化命名入口保留为兼容别名。会话之间的 source_id 不复用；旧 revision 网格读返回 BUSY。详见[移动设计](../../docs/tools/layer-move-preview-design.md)。
+
+## ABI 1.62 — 液化网格预览
+
+`PAINT_FEATURE_LIQUIFY_PREVIEW`（bit57）提供 `PAINT_LIQUIFY_BEGIN_DEFERRED`（11）。兼容的无选区、顶层正常混合栅格栈使用网格预览；不支持的组合继续普通像素预览。旧 BEGIN 和动作语义保持。液化半径范围扩展至 7500px（直径 15000px），非法输入依旧拒绝。
+
+`paint_session_liquify_preview_info` 返回带 generation/revision/source_id 的不可变网格信息；普通像素路径或会话结束返回 NOT_FOUND。`paint_session_read_liquify_preview` 的 kind0 返回 columns×rows 个小端 f32 `(x,y,u,v)`（目标文档坐标、源纹理 UV），必须匹配全部票据。kind1 返回六个小端 u32（原图、下层、上层各自 width/height），随后为三张紧密 RGBA8 sRGB 预乘图片；静态图片只匹配 generation/source_id，不因同源网格新修订而失效。纹理最长边 2048px，各自最多 4Mi 像素；网格最多 257×257 节点。容量探测写 required，不足时不部分写；kind1 首次读取可执行静态代理渲染，必须在后台线程调用，后续同源复用缓存。
+
+原图包含保留的画布外像素。GPU 显示资源由 UI 渲染线程持有，不通过 ABI 传递图形指针。直接预览时视口0/1不生成 CPU 帧，调用方使用网格显示；完成/取消后恢复普通帧。CPU 数值执行器也能独立运行 deferred 核心，但软件 UI 应使用普通 BEGIN。见[设计](../../docs/tools/liquify-resident-preview-design.md)。
+
+## ABI 1.61 — 可选 GPU 计算算子
+
+`PAINT_FEATURE_COMPUTE_OPERATORS`（bit56）表示共享数值算子接口，不表示 GPU 画布合成或设备必定可用。新增 `paint_compute_hardware` 返回无 NUL 的 UTF-8 JSON 数组（`id/name/backend`）；始终包含 `cpu`，GPU 构建另有 `auto` 和真实设备。按已有容量探测契约返回 required，不足时不写部分内容。枚举应在调用方后台线程执行。
+
+`paint_session_set_compute` 复制 1–1024 字节 UTF-8 设备 ID 并排队，返回 OK 仅代表入队。活动笔触、液化、变换或文件作业拒绝切换；新建和载入文档保持会话后端。未知、失效或执行失败的硬件以同一输入回退 CPU，`paint_session_compute_status` 返回实际后端和回退原因。CPU-only 构建只枚举 CPU；现有 DTO、VBR/state 与图层像素格式不变。见[设计](../../docs/tools/liquify-gpu-operators-design.md)。
 
 ## ABI 1.60 — 整条笔触描边入口
 

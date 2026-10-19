@@ -76,7 +76,8 @@ pub use brush_scatter::{ScatterControl, ScatterControlSource, ScatterDynamics};
 pub use brush_shape_jitter::ShapeJitter;
 pub use brush_transfer_jitter::{TransferJitter, TransferSample};
 pub use document::{
-    BucketFill, DirtyTiles, Document, DocumentOptions, DocumentSnapshot, LiquifyDab, PlacedImage,
+    BucketFill, DirtyTiles, Document, DocumentOptions, DocumentSnapshot, LiquifyDab,
+    LiquifyPreview, LiquifyPreviewSource, PlacedImage, ResidentPreview, ResidentPreviewSource,
     StrokePageResult, TransformGeometry, WandSelection, MAX_DIMENSION,
 };
 pub use error::{Error, Result};

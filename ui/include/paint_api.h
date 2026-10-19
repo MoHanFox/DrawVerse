@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 60
+#define PAINT_ABI_MINOR 64
 
 #define PAINT_ABI_PATCH 0
 
@@ -116,6 +116,11 @@
 
 #define PAINT_FEATURE_COMPOSITE_BRUSH_POSE 17592186044416
 
+/**
+ * Optional numeric acceleration; does not imply GPU viewport composition.
+ */
+#define PAINT_FEATURE_COMPUTE_OPERATORS 72057594037927936
+
 #define PAINT_FEATURE_CPU_VIEWPORT 32
 
 #define PAINT_FEATURE_CURVE_NODE_MODES 18014398509481984
@@ -159,9 +164,19 @@
 
 #define PAINT_FEATURE_LAYER_GROUPS 512
 
+/**
+ * ABI 1.63: integer layer translation transaction and shared resident presentation.
+ */
+#define PAINT_FEATURE_LAYER_MOVE_PREVIEW 288230376151711744
+
 #define PAINT_FEATURE_LINEAR_TILE_READ 4
 
 #define PAINT_FEATURE_LIQUIFY 262144
+
+/**
+ * Mesh-only liquify preview packets; graphics resources belong to the UI renderer.
+ */
+#define PAINT_FEATURE_LIQUIFY_PREVIEW 144115188075855872
 
 #define PAINT_FEATURE_MASKS 1024
 
@@ -203,6 +218,11 @@
 #define PAINT_FEATURE_STROKE_TAPER 70368744177664
 
 #define PAINT_FEATURE_TRANSFORM 524288
+
+/**
+ * Opt-in CPU geometry / resident GPU presentation; software uses the original entry point.
+ */
+#define PAINT_FEATURE_TRANSFORM_RESIDENT 576460752303423488
 
 #define PAINT_FEATURE_VBR 2097152
 
@@ -354,9 +374,25 @@
 
 #define PAINT_LAYER_MASK 2
 
+#define PAINT_LAYER_MOVE_BEGIN 0
+
+#define PAINT_LAYER_MOVE_BEGIN_DEFERRED 1
+
+#define PAINT_LAYER_MOVE_CANCEL 6
+
+#define PAINT_LAYER_MOVE_COMMIT 5
+
+#define PAINT_LAYER_MOVE_PICK 2
+
+#define PAINT_LAYER_MOVE_PICK_DEFERRED 3
+
+#define PAINT_LAYER_MOVE_UPDATE 4
+
 #define PAINT_LAYER_PIXEL 0
 
 #define PAINT_LIQUIFY_BEGIN 0
+
+#define PAINT_LIQUIFY_BEGIN_DEFERRED 11
 
 #define PAINT_LIQUIFY_CANCEL 3
 
@@ -434,6 +470,8 @@
 
 #define PAINT_SESSION_FAILED 4
 
+#define PAINT_SESSION_LAYER_MOVE 32
+
 #define PAINT_SESSION_LIQUIFY 8
 
 #define PAINT_SESSION_MODIFIED 2
@@ -461,6 +499,11 @@
 #define PAINT_TRANSFORM_CHECKPOINT 2
 
 #define PAINT_TRANSFORM_COMMIT 4
+
+/**
+ * ABI1.64: opt an already active placement/transform session into resident presentation.
+ */
+#define PAINT_TRANSFORM_ENABLE_RESIDENT 8
 
 #define PAINT_TRANSFORM_RASTERIZE 7
 
@@ -937,6 +980,26 @@ typedef struct PaintLiquifyDab {
   struct PaintPoint from;
   struct PaintPoint to;
 } PaintLiquifyDab;
+
+typedef struct PaintLiquifyPreviewInfo {
+  uint32_t struct_size;
+  /**
+   * bit0: isolated source; bit1 (ABI1.64 opt-in): forward transform mesh.
+   */
+  uint32_t focus;
+  uint64_t document_generation;
+  uint64_t revision;
+  uint64_t source_id;
+  uint32_t columns;
+  uint32_t rows;
+  uint32_t document_width;
+  uint32_t document_height;
+} PaintLiquifyPreviewInfo;
+
+/**
+ * Same versioned packet as ABI 1.62; usable by move and liquify.
+ */
+typedef struct PaintLiquifyPreviewInfo PaintResidentPreviewInfo;
 
 /**
  * ABI 1.17: bounded color-region selection; flags 0/1, reserved zero.
@@ -1584,6 +1647,16 @@ PaintStatus paint_brush_pose_read_composite(struct PaintBrushPose *pose,
                                             struct PaintCompositeTipPose *out);
 
 /**
+ * UTF-8 JSON hardware list. Includes CPU; GPU builds also include auto and hardware. No terminator.
+ * # Safety
+ * Follow the caller-memory contract. out_required must be writable; buffer has capacity bytes.
+ */
+PaintStatus paint_compute_hardware(struct PaintCore *core,
+                                   uint8_t *buffer,
+                                   uint64_t capacity,
+                                   uint64_t *out_required);
+
+/**
  * Begin one undoable stroke on desc.layer_id; invalid input preserves active-layer selection.
  * # Safety
  * Follow input struct_size, handle and ordered-command contracts in contracts/ffi/abi.md.
@@ -1601,7 +1674,7 @@ PaintStatus paint_core_begin_stroke(struct PaintCore *core,
 PaintStatus paint_core_cancel_stroke(struct PaintCore *core, struct PaintDocument *doc);
 
 /**
- * Only reports implemented features. No GPU capability is advertised.
+ * Reports numeric GPU acceleration separately from CPU viewport rendering.
  * # Safety
  * Follow the caller-memory and handle contract in contracts/ffi/abi.md.
  */
@@ -1903,6 +1976,18 @@ PaintStatus paint_session_begin_transform_layers(struct PaintCore *core,
                                                  uint64_t *out_sequence);
 
 /**
+ * ABI 1.64: opt into resident geometry-only transform preview when the stack is compatible.
+ * Unsupported stacks keep the pixel preview. Read the common resident preview publication.
+ * # Safety
+ * Same ownership, readable IDs and writable sequence contract as the ordinary begin entry.
+ */
+PaintStatus paint_session_begin_transform_layers_deferred(struct PaintCore *core,
+                                                          struct PaintSession *session,
+                                                          const uint64_t *ids,
+                                                          uint64_t count,
+                                                          uint64_t *out_sequence);
+
+/**
  * Enqueue reservoir binding. Active session painting rejects binding asynchronously.
  * # Safety
  * Live matching core/session and tool tokens plus writable sequence required.
@@ -1922,6 +2007,17 @@ PaintStatus paint_session_bucket_fill(struct PaintCore *core,
                                       struct PaintSession *session,
                                       const struct PaintBucketFill *request,
                                       uint64_t *out_sequence);
+
+/**
+ * Current selected executor, including the reason for a CPU fallback. No terminator.
+ * # Safety
+ * Follow the caller-memory contract; capacity and out_required use bytes.
+ */
+PaintStatus paint_session_compute_status(struct PaintCore *core,
+                                         struct PaintSession *session,
+                                         uint8_t *buffer,
+                                         uint64_t capacity,
+                                         uint64_t *out_required);
 
 /**
  * ABI 1.1: create an owning async document session. Creation/destruction run off the UI thread.
@@ -2164,6 +2260,21 @@ PaintStatus paint_session_layer_is_image(struct PaintCore *core,
                                          uint32_t *out);
 
 /**
+ * ABI 1.63: begin (id), pick-and-begin (x/y), absolute update, final commit or cancel.
+ * BEGIN/PICK_DEFERRED request shared resident presentation where exactly supported.
+ * Updates never write history. COMMIT includes the final delta. OK means queued.
+ * # Safety
+ * Valid serialized handles and writable nonoverlapping sequence are required.
+ */
+PaintStatus paint_session_layer_move(struct PaintCore *core,
+                                     struct PaintSession *session,
+                                     uint32_t kind,
+                                     uint64_t layer_id,
+                                     int32_t x,
+                                     int32_t y,
+                                     uint64_t *out_sequence);
+
+/**
  * Copy UTF-8 without NUL. NULL/0 capacity query returns required bytes.
  * # Safety
  * Follow nonoverlapping caller buffers and exact publication contract.
@@ -2188,6 +2299,15 @@ PaintStatus paint_session_liquify(struct PaintCore *core,
                                   uint32_t kind,
                                   const struct PaintLiquifyDab *dab,
                                   uint64_t *out_sequence);
+
+/**
+ * ABI 1.62: immutable mesh-only preview metadata, or NOT_FOUND for the pixel path.
+ * # Safety
+ * Valid serialized handles and an initialized writable sized output are required.
+ */
+PaintStatus paint_session_liquify_preview_info(struct PaintCore *core,
+                                               struct PaintSession *session,
+                                               struct PaintLiquifyPreviewInfo *out_info);
 
 /**
  * ABI 1.4: integer relative non-destructive content translation, checked by the actor.
@@ -2241,6 +2361,39 @@ PaintStatus paint_session_read_layer_clipboard(struct PaintCore *core,
                                                uint64_t *required);
 
 /**
+ * ABI 1.62: kind 0 = LE f32 x/y/u/v vertices; kind 1 = six LE u32 image
+ * dimensions followed by three tightly packed sRGB premultiplied RGBA8 images.
+ * Mesh reads require the exact revision; static assets only require source/generation.
+ * Capacity probes write required only; insufficient buffers never receive partial bytes.
+ * # Safety
+ * Follow the caller-memory contract. The output buffer and required must not overlap.
+ */
+PaintStatus paint_session_read_liquify_preview(struct PaintCore *core,
+                                               struct PaintSession *session,
+                                               uint64_t generation,
+                                               uint64_t revision,
+                                               uint64_t source_id,
+                                               uint32_t kind,
+                                               uint8_t *buffer,
+                                               uint64_t capacity,
+                                               uint64_t *out_required);
+
+/**
+ * ABI 1.63: shared resident mesh/assets, with the ABI 1.62 packet format.
+ * # Safety
+ * Follow paint_session_read_liquify_preview's capacity and lifetime contract.
+ */
+PaintStatus paint_session_read_resident_preview(struct PaintCore *core,
+                                                struct PaintSession *session,
+                                                uint64_t generation,
+                                                uint64_t revision,
+                                                uint64_t source_id,
+                                                uint32_t kind,
+                                                uint8_t *buffer,
+                                                uint64_t capacity,
+                                                uint64_t *out_required);
+
+/**
  * ABI 1.13: atomic batch deletion, with optional group-only removal.
  * # Safety
  * Provide 1–4096 aligned readable IDs and a nonoverlapping writable sequence. Follow session ownership.
@@ -2251,6 +2404,15 @@ PaintStatus paint_session_remove_layers(struct PaintCore *core,
                                         uint32_t count,
                                         uint32_t mode,
                                         uint64_t *out_sequence);
+
+/**
+ * ABI 1.63: shared immutable resident presentation metadata (move or liquify).
+ * # Safety
+ * Follow paint_session_liquify_preview_info's caller-memory contract.
+ */
+PaintStatus paint_session_resident_preview_info(struct PaintCore *core,
+                                                struct PaintSession *session,
+                                                PaintResidentPreviewInfo *out_info);
 
 /**
  * ABI 1.12: read one pixel of an already rendered viewport for the eyedropper. Read-only: the
@@ -2336,6 +2498,18 @@ PaintStatus paint_session_set_blend_preview(struct PaintCore *core,
                                             uint32_t blend_mode,
                                             const struct PaintViewport *viewport,
                                             uint64_t *out_request);
+
+/**
+ * Queue a backend preference. CPU works without wgpu; unknown/lost devices fall back visibly.
+ * Takes effect when idle; active liquify/strokes reject it without replacing their executor.
+ * # Safety
+ * Provide readable UTF-8 id_length bytes, valid handles and writable out_sequence.
+ */
+PaintStatus paint_session_set_compute(struct PaintCore *core,
+                                      struct PaintSession *session,
+                                      const uint8_t *id,
+                                      uint64_t id_length,
+                                      uint64_t *out_sequence);
 
 /**
  * ABI 1.11: retarget the per-document history command limit. Accepted like a command and applied

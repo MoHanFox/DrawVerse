@@ -15,5 +15,9 @@ if (-not (Test-Path -LiteralPath (Join-Path $taskSdk 'lib/cmake/Qt6/Qt6Config.cm
     & $taskPython -m aqt install-qt windows desktop $Version win64_msvc2022_64 -O (Join-Path $taskRoot '.tools/qt') --archives qtbase qtdeclarative
     if ($LASTEXITCODE -ne 0) { throw 'Qt SDK installation failed.' }
 }
+if (-not (Test-Path -LiteralPath (Join-Path $taskSdk 'lib/cmake/Qt6ShaderTools/Qt6ShaderToolsConfig.cmake'))) {
+    & $taskPython -m aqt install-qt windows desktop $Version win64_msvc2022_64 -O (Join-Path $taskRoot '.tools/qt') -m qtshadertools --archives qtshadertools
+    if ($LASTEXITCODE -ne 0) { throw 'Qt ShaderTools installation failed.' }
+}
 Write-Output "Qt SDK: $taskSdk"
 Write-Output "Configure with: cmake -S . -B build/qt -DDRAWVERSE_BUILD_UI=ON -DCMAKE_PREFIX_PATH=`"$taskSdk`" -DCMAKE_BUILD_TYPE=Release"

@@ -15,7 +15,13 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 60;
+pub const PAINT_ABI_MINOR: u32 = 64;
+
+/// Mesh-only liquify preview packets; graphics resources belong to the UI renderer.
+pub const PAINT_FEATURE_LIQUIFY_PREVIEW: u64 = 144_115_188_075_855_872;
+
+/// Optional numeric acceleration; does not imply GPU viewport composition.
+pub const PAINT_FEATURE_COMPUTE_OPERATORS: u64 = 72_057_594_037_927_936;
 pub const PAINT_FEATURE_STROKE_OUTLINE: u64 = 36028797018963968;
 pub const PAINT_FEATURE_CURVE_NODE_MODES: u64 = 18014398509481984;
 pub const PAINT_FEATURE_BRUSH_RESOURCE_LIST: u64 = 9007199254740992;
@@ -154,6 +160,22 @@ pub const PAINT_LIQUIFY_STROKE_BEGIN: u32 = 7;
 pub const PAINT_LIQUIFY_STROKE_END: u32 = 8;
 pub const PAINT_LIQUIFY_UNDO: u32 = 9;
 pub const PAINT_LIQUIFY_REDO: u32 = 10;
+pub const PAINT_LIQUIFY_BEGIN_DEFERRED: u32 = 11;
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintLiquifyPreviewInfo {
+    pub struct_size: u32,
+    /// bit0: isolated source; bit1 (ABI1.64 opt-in): forward transform mesh.
+    pub focus: u32,
+    pub document_generation: u64,
+    pub revision: u64,
+    pub source_id: u64,
+    pub columns: u32,
+    pub rows: u32,
+    pub document_width: u32,
+    pub document_height: u32,
+}
 pub const PAINT_HISTORY_LIQUIFY_PUSH: u32 = 31;
 pub const PAINT_HISTORY_LIQUIFY_BLOAT: u32 = 32;
 pub const PAINT_HISTORY_LIQUIFY_TWIRL: u32 = 33;
@@ -790,6 +812,10 @@ pub const PAINT_TRANSFORM_COMMIT: u32 = 4;
 pub const PAINT_TRANSFORM_UNDO: u32 = 5;
 pub const PAINT_TRANSFORM_REDO: u32 = 6;
 pub const PAINT_TRANSFORM_RASTERIZE: u32 = 7;
+/// ABI1.64: opt an already active placement/transform session into resident presentation.
+pub const PAINT_TRANSFORM_ENABLE_RESIDENT: u32 = 8;
+/// Opt-in CPU geometry / resident GPU presentation; software uses the original entry point.
+pub const PAINT_FEATURE_TRANSFORM_RESIDENT: u64 = 576_460_752_303_423_488;
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct PaintTransform {
@@ -899,3 +925,16 @@ pub struct PaintWetToolInfoDual {
     pub secondary_center_linear_premul_rgba: [f32; 4],
     pub reserved: [u32; 4],
 }
+
+/// ABI 1.63: integer layer translation transaction and shared resident presentation.
+pub const PAINT_FEATURE_LAYER_MOVE_PREVIEW: u64 = 288_230_376_151_711_744;
+pub const PAINT_SESSION_LAYER_MOVE: u32 = 32;
+pub const PAINT_LAYER_MOVE_BEGIN: u32 = 0;
+pub const PAINT_LAYER_MOVE_BEGIN_DEFERRED: u32 = 1;
+pub const PAINT_LAYER_MOVE_PICK: u32 = 2;
+pub const PAINT_LAYER_MOVE_PICK_DEFERRED: u32 = 3;
+pub const PAINT_LAYER_MOVE_UPDATE: u32 = 4;
+pub const PAINT_LAYER_MOVE_COMMIT: u32 = 5;
+pub const PAINT_LAYER_MOVE_CANCEL: u32 = 6;
+/// Same versioned packet as ABI 1.62; usable by move and liquify.
+pub type PaintResidentPreviewInfo = PaintLiquifyPreviewInfo;

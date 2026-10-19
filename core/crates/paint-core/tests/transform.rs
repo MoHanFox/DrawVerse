@@ -269,3 +269,62 @@ fn selected_pixels_move_without_touching_the_rest_and_history_restores_selection
     d.cancel_transform().unwrap();
     assert_eq!(d.pixel(11, 6), selected);
 }
+
+#[test]
+fn folded_selection_and_content_share_the_same_surface_coverage() {
+    let mut d = Document::new(96, 96).unwrap();
+    d.bucket_fill(BucketFill {
+        x: 0,
+        y: 0,
+        color: Pixel::WHITE,
+        opacity: 1.,
+        tolerance: 0,
+        antialias: false,
+        contiguous: true,
+        all_layers: false,
+    })
+    .unwrap();
+    d.set_selection(Selection::all(96, 96)).unwrap();
+    d.begin_transform_layers_deferred(&[d.active_layer()])
+        .unwrap();
+    assert!(!d.transform_deferred());
+    let mut g = d.transform_geometry().unwrap();
+    g.warp = true;
+    g.interpolation = 0;
+    g.points = [
+        [26., 6.],
+        [59., 15.],
+        [64., 5.],
+        [77., 9.],
+        [26., 46.],
+        [41., 21.],
+        [72., 39.],
+        [94., 35.],
+        [11., 43.],
+        [44., 68.],
+        [67., 69.],
+        [49., 39.],
+        [12., 71.],
+        [29., 97.],
+        [61., 99.],
+        [94., 68.],
+    ];
+    d.update_transform(g).unwrap();
+    let mut covered = 0;
+    for y in 0..96 {
+        for x in 0..96 {
+            let alpha = d.pixel(x, y).alpha();
+            assert_eq!(
+                alpha,
+                d.selection().coverage(x as f64 + 0.5, y as f64 + 0.5),
+                "{x},{y}"
+            );
+            covered += usize::from(alpha > 0.);
+        }
+    }
+    assert!(covered > 1000 && covered < 8000);
+    d.commit_transform().unwrap();
+    d.undo().unwrap();
+    assert_eq!(d.pixel(0, 0), Pixel::WHITE);
+    assert_eq!(d.selection().coverage(0.5, 0.5), 1.);
+}

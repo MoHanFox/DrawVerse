@@ -13,6 +13,8 @@ Flickable {
         id:content;height:root.height;spacing:5
         Icon {name:"liquify";Layout.preferredWidth:17;Layout.preferredHeight:17}
         Label {text:"液化";color:Theme.text;font.pixelSize:10}
+        ProgressBar {objectName:"liquifyCommitProgress";visible:root.controller.liquifyCommitting;indeterminate:true;Layout.preferredWidth:70}
+        Label {visible:root.controller.liquifyCommitting;text:"正在生成最终像素…";color:Theme.muted;font.pixelSize:10}
         Rectangle {objectName:"liquifyTitleSeparator";Layout.preferredWidth:1;Layout.preferredHeight:22;color:Theme.line}
         Repeater {
             model:[{key:"Push",title:"推拉",icon:"liquifyPush",tool:0},{key:"Bloat",title:"膨大",icon:"liquifyBloat",tool:1},{key:"Twirl",title:"扭曲",icon:"liquifyTwirl",tool:2},{key:"Reconstruct",title:"重建",icon:"liquifyReconstruct",tool:3},{key:"Reset",title:"重置",icon:"undo",tool:4},{key:"Cancel",title:"取消",icon:"close",tool:5},{key:"Commit",title:"确定",icon:"check",tool:6}]
@@ -29,7 +31,7 @@ Flickable {
         }
         Rectangle {Layout.preferredWidth:1;Layout.preferredHeight:22;color:Theme.line}
         Repeater {
-            model:[{key:"Size",title:"尺寸",property:"liquifySize",max:2000,unit:"px",tip:"液化笔刷直径（像素）"},{key:"Strength",title:"强度",property:"liquifyStrength",max:100,unit:"%",tip:"每次推动、膨大、扭曲或重建的幅度"},{key:"Density",title:"密度",property:"liquifyDensity",max:100,unit:"%",tip:"中心影响区域与边缘衰减；越高中心影响区域越宽、边缘更硬"},{key:"Speed",title:"速度",property:"liquifySpeed",max:100,unit:"%",tip:"按住膨大、扭曲时每秒变化的速度"}]
+            model:[{key:"Size",title:"尺寸",property:"liquifySize",max:15000,unit:"px",tip:"液化笔刷直径（像素）"},{key:"Strength",title:"强度",property:"liquifyStrength",max:100,unit:"%",tip:"每次推动、膨大、扭曲或重建的幅度"},{key:"Density",title:"密度",property:"liquifyDensity",max:100,unit:"%",tip:"中心影响区域与边缘衰减；越高中心影响区域越宽、边缘更硬"},{key:"Speed",title:"速度",property:"liquifySpeed",max:100,unit:"%",tip:"按住膨大、扭曲时每秒变化的速度"}]
             delegate:RowLayout {
                 id:parameter;required property var modelData;spacing:3
                 readonly property bool usable:!root.controller.liquifyBusy && !root.controller.drawing && (modelData.key!=="Speed" || root.controller.liquifyTool===1 || root.controller.liquifyTool===2)

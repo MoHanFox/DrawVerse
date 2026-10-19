@@ -8,6 +8,9 @@
 
 #define CHECK(condition) do { if (!(condition)) { fprintf(stderr, "C ABI check failed at line %d: %s\n", __LINE__, #condition); return 1; } } while (0)
 _Static_assert(sizeof(void *) == 8, "ABI v1 requires a 64-bit target");
+_Static_assert(PAINT_FEATURE_COMPUTE_OPERATORS == UINT64_C(72057594037927936), "compute capability must be a 64-bit mask");
+_Static_assert(PAINT_FEATURE_LAYER_MOVE_PREVIEW == UINT64_C(288230376151711744), "move capability must be a 64-bit mask");
+_Static_assert(sizeof(PaintResidentPreviewInfo) == 48, "resident packet layout drift");
 _Static_assert(sizeof(PaintVersion) == 16, "version layout drift");
 _Static_assert(sizeof(PaintCapabilities) == 32, "capability layout drift");
 _Static_assert(sizeof(PaintDocumentDesc) == 32, "desc layout drift");
@@ -70,6 +73,7 @@ int main(void) {
     CHECK(paint_core_create(&core) == PAINT_OK && core != NULL);
     caps.struct_size = sizeof(caps);
     CHECK(paint_core_capabilities(core, &caps) == PAINT_OK);
+    CHECK((caps.features & PAINT_FEATURE_LAYER_MOVE_PREVIEW) != 0);
     CHECK((caps.features & PAINT_FEATURE_WET_BRUSH) != 0);
     CHECK((caps.features & PAINT_FEATURE_WET_DUAL_COLOR) != 0);
     CHECK((caps.features & PAINT_FEATURE_BRUSH_CURSOR_IMAGE) != 0);

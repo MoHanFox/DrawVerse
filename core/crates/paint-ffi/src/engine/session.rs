@@ -25,6 +25,7 @@ use std::{
 
 #[derive(Clone)]
 pub(crate) enum Operation {
+    Compute(String),
     File(crate::file_job::Request),
     #[cfg(test)]
     PanicForTest,
@@ -39,8 +40,9 @@ pub(crate) enum Operation {
     DropBatch(Vec<u64>, u64, u32),
     RemoveBatch(Vec<u64>, bool),
     Transform(u32, Option<paint_core::TransformGeometry>),
-    TransformLayers(Vec<u64>),
+    TransformLayers(Vec<u64>, bool),
     Liquify(u32, Option<paint_core::LiquifyDab>),
+    LayerMove(u32, u64, i32, i32),
     CopyLayers(Vec<u64>),
     PasteLayers(Vec<u8>, u64),
     DuplicateLayers(Vec<u64>),
@@ -88,6 +90,8 @@ pub(crate) struct LayerState {
     pub clipping: PaintLayerClipping,
 }
 pub(crate) struct Publication {
+    pub resident_preview: Option<Arc<paint_core::ResidentPreview>>,
+    pub compute: String,
     pub transform: Option<paint_core::TransformGeometry>,
     pub history: Vec<PaintHistoryEntry>,
     pub selection: paint_core::Selection,
@@ -108,9 +112,11 @@ pub(crate) struct StampedFrame {
     pub id: u64,
     pub request_id: u64,
     pub generation: u64,
-    pub frame: RenderFrame,
+    pub revision: u64,
+    pub frame: Arc<RenderFrame>,
 }
 struct Shared {
+    preview_assets: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     publication: Mutex<Arc<Publication>>,
     clipboard: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     views: Mutex<[ViewSlot; 4]>,
@@ -157,6 +163,8 @@ struct Engine {
     aborted: bool,
     floor: u64,
     frames: u64,
+    // (latest document revision, oldest revision with identical rendered pixels).
+    equivalent_pixels: (u64, u64),
     failed_views: [Option<(u64, u64, u64)>; 4],
 }
 impl Session {
@@ -195,6 +203,7 @@ impl Session {
             Document::with_storage(width, height, storage.options, storage.space.clone())?;
         let initial = publish(&document, 1, 1, 0, None, false);
         let shared = Arc::new(Shared {
+            preview_assets: Mutex::new(None),
             generation: AtomicU64::new(1),
             floor: AtomicU64::new(0),
             publication: Mutex::new(Arc::new(initial)),
@@ -232,6 +241,7 @@ impl Session {
             aborted: false,
             floor: 0,
             frames: 0,
+            equivalent_pixels: (0, 0),
             failed_views: std::array::from_fn(|_| None),
         };
         engine.default_view();
@@ -326,6 +336,18 @@ impl Session {
         } else if matches!(operation, Operation::Liquify(PAINT_LIQUIFY_STROKE_END, _)) {
             // Reserve closure without discarding any deformation samples.
             self.sender.send_cancel(command, |_| false)
+        } else if matches!(operation, Operation::LayerMove(PAINT_LAYER_MOVE_UPDATE, ..)) {
+            self.sender.send_cancel(command, |c| {
+                matches!(
+                    c.operation,
+                    Operation::LayerMove(PAINT_LAYER_MOVE_UPDATE, ..)
+                )
+            })
+        } else if matches!(
+            operation,
+            Operation::LayerMove(PAINT_LAYER_MOVE_COMMIT | PAINT_LAYER_MOVE_CANCEL, ..)
+        ) {
+            self.sender.send_cancel(command, |_| false)
         } else if matches!(operation, Operation::Transform(PAINT_TRANSFORM_UPDATE, _)) {
             // Absolute previews supersede only an adjacent preview tail, never a checkpoint.
             self.sender.send_cancel(command, |c| {
@@ -400,6 +422,37 @@ impl Session {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner()),
         )
+    }
+    pub fn resident_assets(
+        &self,
+        preview: &paint_core::ResidentPreview,
+    ) -> ApiResult<Arc<Vec<u8>>> {
+        if let Some((id, bytes)) = self
+            .shared
+            .preview_assets
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .as_ref()
+        {
+            if *id == preview.source.id {
+                return Ok(bytes.clone());
+            }
+        }
+        let bytes = Arc::new(crate::liquify_api::preview_assets(&preview.source)?);
+        let current = self.publication();
+        if current
+            .resident_preview
+            .as_ref()
+            .is_none_or(|p| p.source.id != preview.source.id)
+        {
+            return Err(ApiError::new(PAINT_BUSY, "liquify source replaced"));
+        }
+        *self
+            .shared
+            .preview_assets
+            .lock()
+            .map_err(|_| ApiError::internal())? = Some((preview.source.id, bytes.clone()));
+        Ok(bytes)
     }
     pub fn info(&self) -> PaintSessionInfo {
         let mut info = self.publication().info;
@@ -531,7 +584,7 @@ impl Session {
             .clone()
             .ok_or_else(|| ApiError::new(PAINT_BUSY, "frame pending or viewport disabled"))?;
         if frame.generation != self.shared.generation.load(Ordering::Acquire)
-            || frame.frame.revision < self.shared.floor.load(Ordering::Acquire)
+            || frame.revision < self.shared.floor.load(Ordering::Acquire)
         {
             return Err(ApiError::new(PAINT_BUSY, "frame predates document change"));
         }
@@ -619,11 +672,18 @@ fn publish(
         })
         .collect();
     Publication {
+        resident_preview: doc.resident_preview().map(Arc::new),
+        compute: doc.compute_backend_name(),
         transform: doc.transform_geometry(),
         selection: doc.selection().clone(),
         info: PaintSessionInfo {
             struct_size: std::mem::size_of::<PaintSessionInfo>() as u32,
             flags: PAINT_SESSION_RUNNING
+                | if doc.layer_move_active() {
+                    PAINT_SESSION_LAYER_MOVE
+                } else {
+                    0
+                }
                 | if doc.transform_active() {
                     PAINT_SESSION_TRANSFORM
                 } else {
@@ -697,8 +757,44 @@ impl Engine {
         drop(slots);
         drop(removed);
     }
+    fn pixel_revision(&self) -> u64 {
+        if self.equivalent_pixels.0 == self.document.revision() {
+            self.equivalent_pixels.1
+        } else {
+            self.document.revision()
+        }
+    }
+    fn selection_only(&self, operation: &Operation) -> bool {
+        if matches!(operation, Operation::Selection(..) | Operation::Wand(..)) {
+            return true;
+        }
+        if self.document.liquify_active() || self.document.transform_active() {
+            return false;
+        }
+        let (undo, _) = self.document.history_depth();
+        let index = match operation {
+            Operation::Undo if undo > 0 => undo,
+            Operation::Redo => undo + 1,
+            _ => return false,
+        };
+        matches!(
+            self.document.history_actions().get(index),
+            Some(
+                paint_core::HistoryAction::SelectAll
+                    | paint_core::HistoryAction::Selection
+                    | paint_core::HistoryAction::Deselect
+                    | paint_core::HistoryAction::InvertSelection
+                    | paint_core::HistoryAction::EllipseSelection
+                    | paint_core::HistoryAction::LassoSelection
+                    | paint_core::HistoryAction::MagicSelection
+                    | paint_core::HistoryAction::PolygonSelection
+            )
+        )
+    }
     fn execute(&mut self, command: Command) {
         let old_revision = self.document.revision();
+        let pixel_revision = self.pixel_revision();
+        let selection_only = self.selection_only(&command.operation);
         let finish = matches!(command.operation, Operation::End);
         let stroke_command = matches!(
             command.operation,
@@ -708,7 +804,8 @@ impl Engine {
             Operation::Begin(..) | Operation::BeginPrepared(..)
         ) && !self.document.stroke_active());
         let liquify_control = matches!(command.operation, Operation::Liquify(kind, _) if !matches!(kind,PAINT_LIQUIFY_DAB|PAINT_LIQUIFY_STROKE_BEGIN|PAINT_LIQUIFY_STROKE_END));
-        let barrier = matches!(command.operation, Operation::TransformLayers(..))
+        let barrier = matches!(command.operation, Operation::LayerMove(kind, ..) if kind != PAINT_LAYER_MOVE_UPDATE)
+            || matches!(command.operation, Operation::TransformLayers(..))
             || matches!(command.operation,Operation::Transform(kind,_) if kind!=PAINT_TRANSFORM_UPDATE && kind!=PAINT_TRANSFORM_CHECKPOINT)
             || matches!(
                 command.operation,
@@ -745,7 +842,13 @@ impl Engine {
         if let Err(error) = result {
             self.command_failed(command.sequence, error, stroke_command);
         }
-        if barrier && (old_revision != self.document.revision() || liquify_control) {
+        if selection_only && old_revision != self.document.revision() {
+            self.equivalent_pixels = (self.document.revision(), pixel_revision);
+        }
+        if barrier
+            && !selection_only
+            && (old_revision != self.document.revision() || liquify_control)
+        {
             self.floor = self.document.revision();
         }
         self.shared.floor.store(self.floor, Ordering::Release);
@@ -774,10 +877,52 @@ impl Engine {
         {
             return Err(paint_core::Error::Busy.into());
         }
+        if self.document.layer_move_active() && !matches!(operation, Operation::LayerMove(..)) {
+            return Err(paint_core::Error::Busy.into());
+        }
         match operation {
-            Operation::TransformLayers(ids) => self.document.begin_transform_layers(&ids)?,
+            Operation::LayerMove(kind, id, x, y) => match kind {
+                PAINT_LAYER_MOVE_BEGIN
+                | PAINT_LAYER_MOVE_BEGIN_DEFERRED
+                | PAINT_LAYER_MOVE_PICK
+                | PAINT_LAYER_MOVE_PICK_DEFERRED => {
+                    if self.files.running() {
+                        return Err(paint_core::Error::Busy.into());
+                    }
+                    let target = if kind >= PAINT_LAYER_MOVE_PICK {
+                        self.document.pick_layer(x as u32, y as u32, 0, 0)?
+                    } else {
+                        Some(id)
+                    };
+                    if let Some(target) = target {
+                        self.document.begin_layer_move(
+                            target,
+                            kind == PAINT_LAYER_MOVE_BEGIN_DEFERRED
+                                || kind == PAINT_LAYER_MOVE_PICK_DEFERRED,
+                        )?;
+                    }
+                }
+                PAINT_LAYER_MOVE_UPDATE => self.document.update_layer_move(x, y)?,
+                PAINT_LAYER_MOVE_COMMIT => {
+                    self.document.commit_layer_move(x, y)?;
+                    self.modified |= x != 0 || y != 0;
+                }
+                PAINT_LAYER_MOVE_CANCEL => self.document.cancel_layer_move()?,
+                _ => return Err(ApiError::invalid("layer move kind")),
+            },
+            Operation::TransformLayers(ids, deferred) => {
+                if self.files.running() {
+                    return Err(paint_core::Error::Busy.into());
+                }
+                if deferred {
+                    self.document.begin_transform_layers_deferred(&ids)?;
+                } else {
+                    self.document.begin_transform_layers(&ids)?;
+                }
+            }
             Operation::Transform(kind, g) => match kind {
                 PAINT_TRANSFORM_BEGIN => self.document.begin_transform()?,
+                PAINT_TRANSFORM_ENABLE_RESIDENT => self.document.enable_transform_deferred()?,
                 PAINT_TRANSFORM_UPDATE => self
                     .document
                     .update_transform(g.ok_or_else(|| ApiError::invalid("missing geometry"))?)?,
@@ -802,11 +947,15 @@ impl Engine {
                 _ => return Err(ApiError::invalid("transform kind")),
             },
             Operation::Liquify(kind, dab) => match kind {
-                PAINT_LIQUIFY_BEGIN => {
+                PAINT_LIQUIFY_BEGIN | PAINT_LIQUIFY_BEGIN_DEFERRED => {
                     if self.files.running() {
                         return Err(paint_core::Error::Busy.into());
                     }
-                    self.document.begin_liquify()?;
+                    if kind == PAINT_LIQUIFY_BEGIN_DEFERRED {
+                        self.document.begin_liquify_deferred()?;
+                    } else {
+                        self.document.begin_liquify()?;
+                    }
                 }
                 PAINT_LIQUIFY_DAB => {
                     self.document
@@ -919,6 +1068,13 @@ impl Engine {
                 self.document.drop_layer(id, target, placement)?;
                 self.modified |= r != self.document.revision();
             }
+            Operation::Compute(id) => {
+                if self.document.stroke_active() || self.files.running() {
+                    return Err(paint_core::Error::Busy.into());
+                }
+                let executor = crate::engine::compute_api::executor(&id);
+                self.document.set_compute_executor(executor)?;
+            }
             Operation::HistoryLimit(max_commands) => {
                 self.document.set_max_history_commands(max_commands)?;
             }
@@ -927,12 +1083,15 @@ impl Engine {
                 self.document.initialize_white_background()?;
             }
             Operation::New(w, h) => {
-                self.document = Document::with_storage(
+                let executor = self.document.compute_executor();
+                let mut document = Document::with_storage(
                     w,
                     h,
                     self.document.document_options(),
                     self.document.storage(),
                 )?;
+                document.set_compute_executor(executor)?;
+                self.document = document;
                 self.wet_lease.take();
                 self.generation += 1;
                 self.shared
@@ -1104,7 +1263,14 @@ impl Engine {
             self.document.stroke_active(),
             Some(&mut self.document),
         ) {
-            if let Some(document) = document {
+            if let Some(mut document) = document {
+                // Hardware belongs to the session, including file replacement.
+                if let Err(error) = document.set_compute_executor(self.document.compute_executor())
+                {
+                    self.error = Some((self.completed, error.into()));
+                    self.dirty = true;
+                    return;
+                }
                 self.document = document;
                 self.wet_lease.take();
                 self.generation += 1;
@@ -1132,6 +1298,13 @@ impl Engine {
                 self.error.as_ref(),
                 self.modified,
             ));
+            if publication.resident_preview.is_none() {
+                self.shared
+                    .preview_assets
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
+            }
             let old = std::mem::replace(
                 &mut *self
                     .shared
@@ -1144,8 +1317,25 @@ impl Engine {
             self.dirty = false;
         }
         for index in 0..4 {
+            let revision = self.document.revision();
+            let pixel_revision = self.pixel_revision();
             let mut slots = self.shared.views.lock().unwrap_or_else(|e| e.into_inner());
             let slot = &mut slots[index];
+            if let Some(frame) = slot
+                .frame
+                .as_ref()
+                .filter(|frame| frame.revision >= pixel_revision && frame.revision < revision)
+            {
+                // Keep immutable pixel storage alive across stamped publication changes.
+                self.frames += 1;
+                slot.frame = Some(Arc::new(StampedFrame {
+                    id: self.frames,
+                    request_id: frame.request_id,
+                    generation: frame.generation,
+                    revision,
+                    frame: Arc::clone(&frame.frame),
+                }));
+            }
             let obsolete = self.jobs[index].as_ref().is_some_and(|job| {
                 job.request_id != slot.request_id
                     || job.generation != self.generation
@@ -1170,17 +1360,21 @@ impl Engine {
                         if job.generation == self.generation
                             && slot.request_id == job.request_id
                             && frame.revision >= self.floor
-                            && slot
-                                .frame
-                                .as_ref()
-                                .is_none_or(|old| frame.revision >= old.frame.revision)
+                            && slot.frame.as_ref().is_none_or(|old| {
+                                frame.revision >= old.revision || frame.revision >= pixel_revision
+                            })
                         {
                             self.frames += 1;
                             let old = slot.frame.replace(Arc::new(StampedFrame {
                                 id: self.frames,
                                 request_id: job.request_id,
                                 generation: job.generation,
-                                frame,
+                                revision: if frame.revision >= pixel_revision {
+                                    revision
+                                } else {
+                                    frame.revision
+                                },
+                                frame: Arc::new(frame),
                             }));
                             drop(slots);
                             drop(old);
@@ -1209,13 +1403,22 @@ impl Engine {
             let Some(request) = slot.request else {
                 continue;
             };
+            if index < 2
+                && (self.document.liquify_deferred()
+                    || self.document.layer_move_deferred()
+                    || self.document.transform_deferred())
+            {
+                // The scene graph renders resident sources using the published mesh.
+                // No CPU frame jobs or preview colour readbacks while dragging.
+                continue;
+            }
             if slot.preview_layer != 0 && self.document.stroke_active() {
                 continue;
             }
             if slot
                 .frame
                 .as_ref()
-                .is_some_and(|frame| frame.frame.revision == self.document.revision())
+                .is_some_and(|frame| frame.revision == self.document.revision())
             {
                 continue;
             }
@@ -1315,7 +1518,7 @@ impl StampedFrame {
             struct_size: std::mem::size_of::<PaintFrameInfo>() as u32,
             format: PAINT_TILE_RGBA8_SRGB_PREMULTIPLIED,
             document_generation: self.generation,
-            revision: self.frame.revision,
+            revision: self.revision,
             request_id: self.request_id,
             frame_id: self.id,
             pixel_width: self.frame.width,
@@ -1335,7 +1538,73 @@ mod actor_tests {
     use super::*;
     use std::{thread, time::Instant};
     #[test]
-    fn liquify_preview_keeps_render_floor_but_controls_advance_it() {
+    fn selection_edits_reuse_pixels_but_keep_stamps_and_next_paint_fresh() {
+        let session = Session::new(128, 128).unwrap();
+        let run = |operation| {
+            let sequence = session.submit(operation).unwrap();
+            let start = Instant::now();
+            loop {
+                let info = session.info();
+                assert!(start.elapsed() < Duration::from_secs(5));
+                if info.completed_sequence >= sequence {
+                    assert_eq!(info.last_error_status, PAINT_OK);
+                    if let Ok(frame) = session.frame(0) {
+                        if frame.revision == info.revision {
+                            break frame;
+                        }
+                    }
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+        };
+        let base = run(Operation::Selection(crate::selection_api::Edit::Clear));
+        let floor = session.shared.floor.load(Ordering::Acquire);
+        let shape =
+            paint_core::SelectionShape::polygon(vec![[0., 0.], [128., 0.], [128., 128.]], true, 0.)
+                .unwrap();
+        for operation in [
+            Operation::Selection(crate::selection_api::Edit::Styled(
+                shape,
+                paint_core::SelectionOperation::Replace,
+                paint_core::HistoryAction::LassoSelection,
+            )),
+            Operation::Selection(crate::selection_api::Edit::Invert),
+            Operation::Undo,
+            Operation::Redo,
+            Operation::Wand(paint_core::WandSelection {
+                x: 0,
+                y: 0,
+                sample_size: 1,
+                tolerance: 10,
+                antialias: true,
+                contiguous: true,
+                all_layers: false,
+                operation: paint_core::SelectionOperation::Replace,
+            }),
+            Operation::Selection(crate::selection_api::Edit::Clear),
+        ] {
+            let frame = run(operation);
+            assert!(Arc::ptr_eq(&base.frame, &frame.frame));
+            assert_eq!(frame.info().revision, session.info().revision);
+            assert_eq!(session.shared.floor.load(Ordering::Acquire), floor);
+        }
+        run(Operation::Begin(
+            Box::new(paint_core::Brush::default().into()),
+            InputPoint::new(40., 40., 1.),
+            0,
+        ));
+        let painted = run(Operation::End);
+        assert!(!Arc::ptr_eq(&base.frame, &painted.frame));
+        assert_ne!(base.bytes(), painted.bytes());
+        let undo = run(Operation::Undo);
+        assert!(!Arc::ptr_eq(&painted.frame, &undo.frame));
+        assert_eq!(base.bytes(), undo.bytes());
+        let recreated = run(Operation::New(64, 64));
+        assert_eq!(recreated.frame.width, 64);
+        assert!(!Arc::ptr_eq(&base.frame, &recreated.frame));
+    }
+    #[test]
+    fn resident_preview_keeps_render_floor_but_controls_advance_it() {
         let session = Session::new(128, 128).unwrap();
         let run = |operation| {
             let seq = session.submit(operation).unwrap();
@@ -1384,6 +1653,16 @@ mod actor_tests {
             session.shared.floor.load(Ordering::Acquire),
             cancelled.revision
         );
+        run(Operation::LayerMove(PAINT_LAYER_MOVE_BEGIN, 1, 0, 0));
+        let floor = session.shared.floor.load(Ordering::Acquire);
+        let preview = run(Operation::LayerMove(PAINT_LAYER_MOVE_UPDATE, 0, 10, 2));
+        assert!(preview.revision > floor);
+        assert_eq!(session.shared.floor.load(Ordering::Acquire), floor);
+        let committed = run(Operation::LayerMove(PAINT_LAYER_MOVE_COMMIT, 0, 11, 3));
+        assert_eq!(
+            session.shared.floor.load(Ordering::Acquire),
+            committed.revision
+        );
     }
     #[test]
     fn eyedropper_maps_document_pixels_to_scaled_fractional_viewports() {
@@ -1391,7 +1670,8 @@ mod actor_tests {
             id: 1,
             request_id: 1,
             generation: 1,
-            frame: RenderFrame {
+            revision: 1,
+            frame: Arc::new(RenderFrame {
                 region: Region {
                     x: 10.25,
                     y: 20.25,
@@ -1405,18 +1685,18 @@ mod actor_tests {
                 pixels: FramePixels::Srgb(vec![
                     255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 64, 32, 0, 128,
                 ]),
-            },
+            }),
         };
         assert_eq!(frame.sample(10, 20).unwrap(), [1., 0., 0., 1.]);
         assert_eq!(frame.sample(11, 20).unwrap(), [0., 1., 0., 1.]);
         // Downscaled output: each output pixel represents two document pixels per axis.
-        frame.frame.region.width = 4.;
-        frame.frame.region.height = 4.;
+        Arc::get_mut(&mut frame.frame).unwrap().region.width = 4.;
+        Arc::get_mut(&mut frame.frame).unwrap().region.height = 4.;
         assert_eq!(frame.sample(12, 20).unwrap(), [0., 1., 0., 1.]);
         assert_eq!(frame.sample(10, 22).unwrap(), [0., 0., 1., 1.]);
         // Enlarged/DPI output: two output pixels per document pixel, with a fractional origin.
-        frame.frame.region.width = 1.;
-        frame.frame.region.height = 1.;
+        Arc::get_mut(&mut frame.frame).unwrap().region.width = 1.;
+        Arc::get_mut(&mut frame.frame).unwrap().region.height = 1.;
         assert_eq!(frame.sample(10, 20).unwrap(), [1., 0., 0., 1.]);
         assert_eq!(frame.sample(i64::MIN, i64::MIN).unwrap(), [1., 0., 0., 1.]);
         let edge = frame.sample(i64::MAX, i64::MAX).unwrap();

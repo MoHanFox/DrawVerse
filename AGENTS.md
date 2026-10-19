@@ -1,5 +1,19 @@
 # DrawVerse
 
+- 最新Warp折叠一致性：`docs/tools/transform-resident-preview-design.md` / `docs/validations/tools/transform-fold-consistency-validation.md`；参考PhotoCraft最终三角栅格，预览/CPU物化共享145×145拓扑与行序覆盖，移除Warp单初值Newton（避免多根换面/透明洞），选区同步覆盖；Qt有序透明通道One/Zero写入，避免深度首面锁定与alpha重复。核心5/变换7/原生2、真实D3D11双功能（含不透明/半透明折叠）、软件Qt与四ABI/Clippy/完整Release通过，ABI1.64不变，产物 `build/verify-ui/bin/Release-wgpu-transform/`。预览代理/边缘采样仍近似；未跑全量/跨平台/实体连续输入。
+
+- 最新自由变换常驻预览：`docs/tools/transform-resident-preview-design.md` / `docs/validations/tools/transform-resident-preview-validation.md`；ABI1.64，参考PhotoCraft不可变源/前向细分，单目标普通栈含置入图片拖动只算CPU几何，Qt GPU纹理合成，确认才原全精度取样；复用液化/移动静态协议，145×145网格/2048代理与视口上限，选区/复杂组合/软件保留像素路径。固定512px六输入Warp核心约1190→1.83ms，2000px约5.71ms，不含UI显示；Rust3+6/原生2及共享回归、真实GPU/软件Qt、四ABI/Clippy/格式/生成头与完整Release通过，产物 `build/verify-ui/bin/Release-wgpu-transform/`。未跑全量/跨平台/实体连续手感，预览近似与边界见设计。
+
+- 最新套索/魔棒/油漆桶性能：`docs/tools/selection-complexity-performance-design.md` / `docs/validations/tools/selection-complexity-performance-validation.md`；魔棒与桶共用CPU有界扫描线算子/按行分类，桶批量瓦片写入；轮廓沿暴露边追踪缓存，纯选区修订复用核心像素与Qt图像纹理身份，实际绘画仍刷新。固定Release中位数4K空白桶1996→194ms，1024魔棒单层连续247→53ms/四层423→98ms，碎片轮廓35.4→0.67ms；不代表UI延迟或任意复杂图。核心区域4/工具18/原生4/公开4、Qt几何3/软件8/硬件5、四ABI/Clippy/格式/生成头/完整Release通过；产物 `build/verify-ui/bin/Release-wgpu-selection/`。ABI1.63与格式不变，光标线宽默认0已确认；CPU蚂蚁线与复杂多路径布尔组合仍保留，未跑全量/跨平台/实体手感。
+
+- 最新图层实时移动：`docs/tools/layer-move-preview-design.md` / `docs/validations/tools/layer-move-preview-validation.md`；ABI1.63，鼠标/Ctrl拾取/平板共用绝对位移会话、16ms最新输入、松手单历史、Esc/失焦取消；普通栅格栈复用液化原图/上下层常驻纹理与四顶点，组/蒙版/特殊混合/置入图片/软件保留像素回退。只捕获外观基线，共用源按栈分区避免重复克隆；实际窗口 rendererInterface 判定后端并通知QML，修复软件被全局API误判为GPU导致停帧。Rust7项/硬件Qt4项/软件Qt5项、四ABI、Clippy/格式/生成头与Release通过；产物 `build/verify-ui/bin/Release-wgpu-move/`。未跑全量/跨平台/实体输入，初始代理构建与持续手感待实机复核。
+
+- GPU 加速总入口：`docs/platform/gpu-acceleration-design.md`（使用、算子与 Qt 显示职责、代码示例、已加速/未加速功能）。本轮导航/轮廓：`docs/interface/canvas-navigation-adaptive-cursor-design.md` / `docs/validations/interface/canvas-navigation-adaptive-cursor-validation.md`；缩放动画、惯性、ROI 周边预取与 view1 概览兜底，Qt 有界局部 shader 自适应黑白轮廓、软件黑白回退，无 ABI/格式变化；真实 GPU5/软件6项、四ABI、Release通过，产物 `build/verify-ui/bin/Release-wgpu-navigation/`。既有跨文档颜色断言在旧/新产物均失败，详情见验收；未跑全量/跨平台/实体输入，连续手感与占用待实机复核。
+
+- 最新液化常驻纹理预览：`docs/tools/liquify-resident-preview-design.md` / `docs/validations/tools/liquify-resident-preview-validation.md`；ABI1.62，兼容普通栅格栈拖动只更新共享 Elastic 场/有界网格，Qt复用原图与上下层纹理，完成才全精度物化；CPU/软件与复杂组合保留像素路径，直径支持15000px。RTX4060六输入核心与网格发布约11–17ms，收笔约0.4–0.5ms；真实GPU/软件各一Qt与核心/ABI最小回归、四ABI及Release通过。异步取帧用例约73ms含50ms测试轮询，不等同实际帧延迟；连续手感/占用待实机复核。未跑全量/跨平台/实体输入，源码与设备边界见设计。
+
+- 最新 GPU 算子与弹性液化：`docs/tools/liquify-gpu-operators-design.md` / `docs/validations/tools/liquify-gpu-operators-validation.md`；分支 `feat/wgpu-support`，ABI1.61，默认 auto/可见 CPU 回退；2–16px 自适应场/紧凑块读回/不可变源 CPU 与 GPU 各 2048 瓦片缓存及预热/有界最新输入，保持画布外恢复与精确历史。初版实机2000px性能未达标；同机RTX4060 Vulkan六输入约2.4s→0.20s，预热约45ms，实际连续手感/GPU占用待用户复核。最小Rust25项/Qt两项与Release通过；原EXE运行锁定，新版位于 `build/verify-ui/bin/Release-wgpu/`。未重跑全量/跨平台/实体设备，既有全量图层断言失败见验收。
+
 - 最新液化2000px优化：`docs/tools/liquify-bounded-parallel-design.md` / `docs/validations/tools/liquify-bounded-parallel-validation.md`；无选区大区域最多两个工作线程/共享8192瓦片计数/合计256源pin，原子发布与像素保持；2048×1536六输入推移1.49s→0.77s、旋转1.79s→0.87s。核心6+11项/Qt两项/四ABI/完整Release与Clippy通过，持续输入手感仍待实机复核，未跑全量/跨平台/设备/GPU。
 
 - 最新大目录起笔延迟：`docs/brush/performance/brush-library-switch-latency-design.md` / `docs/validations/brush/performance/brush-library-switch-latency-validation.md`；Qt缓存偏好/执行快照与准确同步票据，原生只改选择时复用成功不可变预设，保持冷资源与来源生命周期。448项样本同步起笔最长24ms降至13–14ms，Qt7项/原生67项与Release通过；未复现用户原包强卡顿，仍需实机复核。

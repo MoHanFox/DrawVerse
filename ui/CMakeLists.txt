@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(DrawVerseUI LANGUAGES CXX)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Test)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Test ShaderTools)
 set(CMAKE_AUTOMOC ON)
 
 add_library(drawverse_ui STATIC
@@ -14,6 +14,7 @@ add_library(drawverse_ui STATIC
     src/platform/MenuBlurLayer.h src/platform/MenuBlurLayer.cpp
     src/engine/PaintCoreClient.h src/engine/PaintCoreClient.cpp
     src/canvas/CanvasItem.h src/canvas/CanvasItem.cpp
+    src/canvas/LiquifyPreviewNode.h src/canvas/LiquifyPreviewNode.cpp
     src/canvas/SelectionOverlay.h src/canvas/SelectionOverlay.cpp
     src/color/ColorWheelItem.h src/color/ColorWheelItem.cpp
     src/brushes/BrushLibrary.h src/brushes/BrushLibrary.cpp
@@ -32,7 +33,7 @@ set(_drawverse_ui_resources
     qml/app/Main.qml qml/app/WorkspaceStatusBar.qml
     qml/workspace/DockWorkspace.qml qml/workspace/DockTile.qml qml/workspace/DockDivider.qml qml/workspace/DockEdgePreview.qml qml/workspace/DockHintWindow.qml qml/workspace/FloatingPanel.qml qml/workspace/PanelGroup.qml qml/workspace/PanelFlyout.qml qml/workspace/PanelContent.qml
     qml/documents/DocumentArea.qml qml/documents/DocumentWindow.qml
-    qml/canvas/CanvasPane.qml qml/canvas/TransformOverlay.qml qml/canvas/TransparencyGrid.qml qml/canvas/EyedropperRing.qml
+    qml/canvas/CanvasPane.qml qml/canvas/AdaptiveCursor.qml qml/canvas/TransformOverlay.qml qml/canvas/TransparencyGrid.qml qml/canvas/EyedropperRing.qml
     qml/brushes/BrushLibraryPanel.qml qml/brushes/BrushSettingsPanel.qml qml/brushes/PressureCurveEditor.qml qml/brushes/SpeedCurveEditor.qml
     qml/brushes/BrushResourceThumbnail.qml qml/brushes/BrushResourcePicker.qml
     qml/layers/LayersPanel.qml qml/layers/LayerLock.qml qml/layers/LayerThumbnail.qml
@@ -46,6 +47,8 @@ set(_drawverse_ui_resources
     qml/theme/qmldir qml/assets/logo.png qml/assets/transparency.png)
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES ${_drawverse_ui_resources})
+qt_add_shaders(drawverse_ui liquify_shaders PREFIX "/shaders" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag shaders/adaptive-cursor.frag shaders/transform-composite.frag)
 
 # Editing QML or an asset must recompile the generated resource object.
 get_target_property(_drawverse_qrc_sources drawverse_ui SOURCES)
@@ -73,6 +76,21 @@ add_custom_target(drawverse_license ALL
     VERBATIM)
 
 qt_add_executable(qt_ui_tests tests/ui_tests.cpp)
+
+qt_add_executable(qt_transform_tests tests/transform_tests.cpp)
+target_link_libraries(qt_transform_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_transform_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_transform_tests COMMAND qt_transform_tests)
+set_tests_properties(qt_transform_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+
+# Focused selection geometry regression and reproducible complexity benchmark.
+qt_add_executable(qt_selection_tests tests/selection_tests.cpp src/canvas/SelectionOverlay.cpp src/canvas/SelectionOverlay.h)
+target_include_directories(qt_selection_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(qt_selection_tests PRIVATE cxx_std_20)
+target_link_libraries(qt_selection_tests PRIVATE Qt6::Quick Qt6::Test)
+set_target_properties(qt_selection_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_selection_tests COMMAND qt_selection_tests)
+set_tests_properties(qt_selection_tests PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 target_link_libraries(qt_ui_tests PRIVATE drawverse_ui Qt6::Test)
 set_target_properties(qt_ui_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
 set_target_properties(qt_ui_tests PROPERTIES WIN32_EXECUTABLE FALSE)

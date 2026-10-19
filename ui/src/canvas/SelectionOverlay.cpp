@@ -1,7 +1,6 @@
 #include "canvas/SelectionOverlay.h"
 #include <QPainter>
 #include <QQuickWindow>
-#include <QRegion>
 #include <cmath>
 
 namespace {
@@ -14,6 +13,37 @@ constexpr int kDashPeriod = kDashOn + kDashGap;
 constexpr int kPhaseStep = 1;
 // One step every 60ms: a calm crawl rather than a busy strobing outline.
 constexpr int kTickMs = 80;
+
+// Trace directed exposed pixel edges. Right turns keep diagonally touching islands separate;
+// OddEvenFill preserves holes. Work is linear in mask area + perimeter, without path booleans
+// over thousands of interior row rectangles. One visited byte per mask pixel bounds scratch.
+QPainterPath maskBoundary(const QByteArray &mask,int w,int h,QPointF origin) {
+    QPainterPath path;path.setFillRule(Qt::OddEvenFill);
+    if(w<=0 || h<=0 || qint64(w)*h!=mask.size())return path;
+    QByteArray visited(mask.size(),'\0');
+    const auto inside=[&](int x,int y){return x>=0 && x<w && y>=0 && y<h && static_cast<unsigned char>(mask[y*w+x])>=128;};
+    const auto edge=[&](int x,int y,int d){
+        constexpr int dx[]{0,1,0,-1},dy[]{-1,0,1,0};
+        return inside(x,y) && !inside(x+dx[d],y+dy[d]);
+    };
+    constexpr int cx[]{0,-1,-1,0},cy[]{0,0,-1,-1}; // cell whose directed edge starts at vertex
+    constexpr int vx[]{1,1,0,0},vy[]{0,1,1,0};    // end vertex relative to that cell
+    for(int y=0;y<h;++y)for(int x=0;x<w;++x){
+        if(!edge(x,y,0) || (visited[y*w+x]&1))continue;
+        int px=x,py=y,d=0;path.moveTo(origin+QPointF(x,y));
+        do {
+            visited[py*w+px]=char(visited[py*w+px]|(1<<d));
+            const int ex=px+vx[d],ey=py+vy[d];
+            int nd=d;
+            for(const int candidate:{(d+1)%4,d,(d+3)%4})
+                if(edge(ex+cx[candidate],ey+cy[candidate],candidate)){nd=candidate;break;}
+            if(nd!=d)path.lineTo(origin+QPointF(ex,ey));
+            px=ex+cx[nd];py=ey+cy[nd];d=nd;
+        }while(px!=x || py!=y || d!=0);
+        path.closeSubpath();
+    }
+    return path;
+}
 }
 
 SelectionOverlay::SelectionOverlay(QQuickItem *parent):QQuickPaintedItem(parent){
@@ -29,7 +59,7 @@ void SelectionOverlay::componentComplete(){
     QQuickPaintedItem::componentComplete();
     syncAnimation();
 }
-void SelectionOverlay::setSteps(const QVariantList &steps){if(steps==m_steps)return;m_steps=steps;rebuild();}
+void SelectionOverlay::setSteps(const QVariantList &steps){if(steps==m_steps)return;m_steps=steps;m_shapes.clear();rebuild();}
 void SelectionOverlay::setEnabledSelection(bool enabled){if(m_enabled==enabled)return;m_enabled=enabled;syncAnimation();update();emit geometryChanged();}
 void SelectionOverlay::setDocumentRect(QRectF rect){if(rect==m_documentRect)return;const bool sizeChanged=rect.size()!=m_documentRect.size();m_documentRect=rect;if(sizeChanged)rebuild();else{update();emit geometryChanged();}}
 void SelectionOverlay::setPreview(QRectF rect){if(rect==m_preview)return;m_preview=rect;syncAnimation();update();emit geometryChanged();}
@@ -62,25 +92,27 @@ void SelectionOverlay::itemChange(ItemChange change,const ItemChangeData &value)
 void SelectionOverlay::rebuild(){
     QPainterPath full;full.addRect(QRectF(QPointF(),m_documentRect.size()/m_zoom));
     m_path={};
-    for(const auto &entry:m_steps){
+    for(qsizetype index=0;index<m_steps.size();++index){
+        const auto &entry=m_steps[index];
         const auto step=entry.toMap();const int operation=step.value("operation").toInt();
-        QPainterPath shape;const QRectF rect(step.value("x").toDouble(),step.value("y").toDouble(),step.value("width").toDouble(),step.value("height").toDouble());
+        QPainterPath shape;
+        if(index<m_shapes.size())shape=m_shapes[index];
+        else {
+        const QRectF rect(step.value("x").toDouble(),step.value("y").toDouble(),step.value("width").toDouble(),step.value("height").toDouble());
         if(step.value("shape").toInt()==2) {
             const auto points=step.value("points").toList();
             for(qsizetype i=0;i<points.size();++i){const auto p=points[i].toPointF();if(i==0)shape.moveTo(p);else shape.lineTo(p);}
             shape.closeSubpath();shape.setFillRule(Qt::OddEvenFill);
         } else if(step.value("shape").toInt()==3) {
             const auto mask=step.value("mask").toByteArray();const int w=qRound(rect.width()),h=qRound(rect.height());
-            if(w>0 && h>0 && qint64(w)*h==mask.size()) {
-                QVector<QRect> runs;
-                for(int y=0;y<h;++y){int x=0;while(x<w){while(x<w && static_cast<unsigned char>(mask[y*w+x])<128)++x;const int left=x;while(x<w && static_cast<unsigned char>(mask[y*w+x])>=128)++x;if(x>left)runs.append(QRect(left,y,x-left,1));}}
-                QRegion region;region.setRects(runs.constData(),static_cast<int>(runs.size()));
-                shape.setFillRule(Qt::WindingFill);for(const auto &r:region)shape.addRect(QRectF(r).translated(rect.topLeft()));shape=shape.simplified();
-            }
+            shape=maskBoundary(mask,w,h,rect.topLeft());
         } else if(step.value("shape").toInt()==1)shape.addEllipse(rect);else shape.addRect(rect);
+        m_shapes.append(shape);
+        }
         switch(operation){case 0:m_path=shape;break;case 1:m_path=m_path.united(shape);break;case 2:m_path=m_path.subtracted(shape);break;case 3:m_path=m_path.intersected(shape);break;case 4:m_path=full.subtracted(m_path);break;default:break;}
     }
-    m_path=m_path.intersected(full);syncAnimation();update();emit geometryChanged();
+    if(!full.boundingRect().contains(m_path.boundingRect()))m_path=m_path.intersected(full);
+    syncAnimation();update();emit geometryChanged();
 }
 void SelectionOverlay::paint(QPainter *painter){
     if(!m_enabled && m_preview.isEmpty() && m_previewPoints.isEmpty())return;

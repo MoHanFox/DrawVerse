@@ -15,6 +15,11 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(qreal zoom READ zoom NOTIFY viewChanged)
     Q_PROPERTY(QRectF documentRect READ documentRect NOTIFY viewChanged)
     Q_PROPERTY(QRectF visibleDocumentRect READ visibleDocumentRect NOTIFY viewChanged)
+    Q_PROPERTY(QRectF prefetchedDocumentRect READ prefetchedDocumentRect NOTIFY viewChanged)
+    Q_PROPERTY(bool gpuDisplay READ gpuDisplay NOTIFY gpuDisplayChanged)
+    Q_PROPERTY(bool forwardPreview READ forwardPreview NOTIFY residentPresentationChanged)
+    Q_PROPERTY(int previewPart READ previewPart WRITE setPreviewPart NOTIFY residentPresentationChanged)
+    Q_PROPERTY(QRectF presentationRect READ presentationRect WRITE setPresentationRect NOTIFY residentPresentationChanged)
     Q_PROPERTY(QRectF secondaryCursorRect READ secondaryCursorRect NOTIFY brushCursorChanged)
     Q_PROPERTY(qreal secondaryCursorAngle READ secondaryCursorAngle NOTIFY brushCursorChanged)
     Q_PROPERTY(qreal secondaryCursorRoundness READ secondaryCursorRoundness NOTIFY brushCursorChanged)
@@ -42,6 +47,13 @@ public:
     qreal zoom() const { return m_zoom; }
     QRectF documentRect() const;
     QRectF visibleDocumentRect() const;
+    QRectF prefetchedDocumentRect() const;
+    bool gpuDisplay() const;
+    bool forwardPreview() const {return !m_previewPart && m_residentPreview && m_residentPreview->forward;}
+    int previewPart() const {return m_previewPart;}
+    void setPreviewPart(int part) {if(part<0 || part>2 || part==m_previewPart)return;m_previewPart=part;refresh();emit residentPresentationChanged();}
+    QRectF presentationRect() const {return m_presentationRect;}
+    void setPresentationRect(QRectF rect) {m_presentationRect=rect;update();emit residentPresentationChanged();}
     QRectF brushCursorRect() const;
     QRectF secondaryCursorRect() const;
     qreal secondaryCursorAngle() const {return m_pose.secondaryAngle;}
@@ -75,6 +87,8 @@ public:
     int selectionPreviewKind() const { return m_selectionKind; }
     Q_INVOKABLE void cancelSelectionDrag();
 signals:
+    void residentPresentationChanged();
+    void gpuDisplayChanged();
     void clientChanged();
     void viewChanged();
     void interactiveChanged();
@@ -97,6 +111,8 @@ protected:
     void hoverLeaveEvent(QHoverEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 private:
+    int m_previewPart=0;
+    QRectF m_presentationRect;
     InputSample mouseSample(QPointF local, Qt::MouseButtons buttons);
     void refresh();
     void requestView();
@@ -111,9 +127,16 @@ private:
     void setSpacePanning(bool held);
     void setKeySpace(bool held);
     void zoomAround(qreal factor,QPointF position);
+    void stopNavigation();
+    void animateNavigation();
+    void beginPan(QPointF position);
+    void movePan(QPointF position);
+    void endPan();
     bool beginLayerMove(QPointF local, bool pick = false);
     bool m_pickMoving = false;
     void finishLayerMove(QPointF local);
+    void updateLayerMove(QPointF local);
+    void cancelLayerMove();
     bool beginSelection(QPointF local, Qt::KeyboardModifiers modifiers);
     void updateSelection(QPointF local,Qt::KeyboardModifiers modifiers);
     QRectF selectionPreviewRect() const;
@@ -127,10 +150,18 @@ private:
     PaintCoreClient *m_client = nullptr;
     QPointer<QQuickWindow> m_observedWindow;
     QImage m_image;
+    QImage m_overview;
+    ResidentPreviewPtr m_residentPreview;
     QRectF m_imageRegion;
     quint64 m_generation = 0;
     QTimer m_liquifyTimer;
     QTimer m_viewTimer;
+    QTimer m_navigationTimer;
+    QElapsedTimer m_navigationClock, m_panClock;
+    qreal m_zoomFrom=1, m_zoomTarget=1;
+    qint64 m_zoomStarted=0, m_navigationLast=0, m_inertiaStarted=0;
+    QPointF m_zoomAnchor, m_zoomDocument, m_velocity;
+    bool m_zoomAnimating=false;
     QMetaObject::Connection m_dpiConnection;
     qreal m_zoom = 1;
     qreal m_initialFitRatio = 1;
@@ -151,7 +182,7 @@ private:
     void endPicking();
     QPointF m_moveStart;
     bool m_moving = false;
-    quint64 m_moveLayer = 0, m_moveGeneration = 0;
+    quint64 m_moveGeneration = 0;
     QPointF m_selectionStart, m_selectionEnd;
     quint64 m_selectionGeneration = 0;
     int m_selectionKind = 0, m_selectionOperation = 0;

@@ -1,5 +1,9 @@
 use super::*;
 use std::collections::VecDeque;
+#[path = "transform_mesh.rs"]
+mod mesh;
+#[path = "transform_preview.rs"]
+mod preview;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransformGeometry {
@@ -168,34 +172,6 @@ impl TransformGeometry {
             m[0] * m[4] - m[1] * m[3],
         ])
     }
-    fn inverse(&self, x: f64, y: f64, guess: [f64; 2]) -> Option<[f64; 2]> {
-        let [mut u, mut v] = guess;
-        for _ in 0..14 {
-            let p = self.map(u, v);
-            let dx = x - p[0];
-            let dy = y - p[1];
-            if dx.abs() + dy.abs() < 1e-5 {
-                return (u >= -1e-7 && v >= -1e-7 && u <= 1.0000001 && v <= 1.0000001)
-                    .then_some([u.clamp(0., 1.), v.clamp(0., 1.)]);
-            }
-            let a = self.map(u + 0.0001, v);
-            let b = self.map(u, v + 0.0001);
-            let ax = (a[0] - p[0]) * 10000.;
-            let ay = (a[1] - p[1]) * 10000.;
-            let bx = (b[0] - p[0]) * 10000.;
-            let by = (b[1] - p[1]) * 10000.;
-            let det = ax * by - bx * ay;
-            if det.abs() < 1e-9 {
-                return None;
-            }
-            u += (dx * by - bx * dy) / det;
-            v += (ax * dy - dx * ay) / det;
-            if u.abs() > 4. || v.abs() > 4. {
-                return None;
-            }
-        }
-        None
-    }
 }
 fn cell(v: f64) -> (i32, f64) {
     let q = v.clamp(0., 1.) * 3.;
@@ -217,6 +193,7 @@ pub struct PlacedImage {
 }
 #[derive(Clone, Debug)]
 pub(super) struct TransformState {
+    preview_source: Option<Arc<crate::ResidentPreviewSource>>,
     original: Layer,
     source: Arc<PlacedImage>,
     current: TransformGeometry,
@@ -476,6 +453,7 @@ impl Document {
         }
         let current = source.geometry.clone();
         self.transform = Some(TransformState {
+            preview_source: None,
             original,
             source,
             current: current.clone(),
@@ -627,6 +605,7 @@ impl Document {
             geometry: geometry.clone(),
         });
         self.transform = Some(TransformState {
+            preview_source: None,
             original: layer,
             source: image,
             current: geometry.clone(),
@@ -649,6 +628,11 @@ impl Document {
     }
     pub fn update_transform(&mut self, geometry: TransformGeometry) -> Result<()> {
         geometry.validate()?;
+        if self.transform_deferred() {
+            self.transform.as_mut().expect("session").current = geometry;
+            self.dirty_all();
+            return Ok(());
+        }
         let state = self
             .transform
             .as_ref()
@@ -726,22 +710,35 @@ impl Document {
         let origin = initial.points[0];
         let w = initial.points[3][0] - origin[0];
         let h = initial.points[12][1] - origin[1];
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let px = x as f64 + 0.5;
-                let py = y as f64 + 0.5;
-                let uv = if let Some(m) = inverse {
-                    let z = m[6] * px + m[7] * py + m[8];
-                    let u = (m[0] * px + m[1] * py + m[2]) / z;
-                    let v = (m[3] * px + m[4] * py + m[5]) / z;
-                    ((0. ..=1.).contains(&u) && (0. ..=1.).contains(&v)).then_some([u, v])
-                } else {
-                    geometry.inverse(px, py, [(px - origin[0]) / w, (py - origin[1]) / h])
-                };
-                if let Some([u, v]) = uv {
-                    coverage[(y * self.width + x) as usize] =
-                        (selection.coverage(origin[0] + u * w, origin[1] + v * h) * 255.).round()
-                            as u8;
+        let warp_mesh = geometry.warp.then(|| mesh::TransformMesh::new(geometry));
+        let raster = warp_mesh
+            .as_ref()
+            .map(|m| mesh::MeshRaster::new(m, [0, 0, self.width as i64, self.height as i64]))
+            .transpose()?;
+        for ty in 0..(self.height as i64 + 63) / 64 {
+            for tx in 0..(self.width as i64 + 63) / 64 {
+                let uv_tile = raster.as_ref().map(|r| r.tile_uvs(tx, ty));
+                for y in ty * 64..((ty + 1) * 64).min(self.height as i64) {
+                    for x in tx * 64..((tx + 1) * 64).min(self.width as i64) {
+                        let px = x as f64 + 0.5;
+                        let py = y as f64 + 0.5;
+                        let uv = if let Some(tile) = &uv_tile {
+                            let p = tile[(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize];
+                            p[0].is_finite().then_some(p)
+                        } else if let Some(m) = inverse {
+                            let z = m[6] * px + m[7] * py + m[8];
+                            let u = (m[0] * px + m[1] * py + m[2]) / z;
+                            let v = (m[3] * px + m[4] * py + m[5]) / z;
+                            ((0. ..=1.).contains(&u) && (0. ..=1.).contains(&v)).then_some([u, v])
+                        } else {
+                            None
+                        };
+                        if let Some([u, v]) = uv {
+                            coverage[y as usize * self.width as usize + x as usize] =
+                                (selection.coverage(origin[0] + u * w, origin[1] + v * h) * 255.)
+                                    .round() as u8;
+                        }
+                    }
                 }
             }
         }
@@ -794,6 +791,10 @@ impl Document {
                 ];
             }
         }
+        let warp_mesh = geometry.warp.then(|| mesh::TransformMesh::new(geometry));
+        if let Some(mesh) = &warp_mesh {
+            b = mesh.bounds();
+        }
         let mut extent = b;
         if state.selection.is_some() {
             let o = layer_bounds(original)?;
@@ -811,6 +812,10 @@ impl Document {
         if x1 <= x0 || y1 <= y0 || (x1 - x0).saturating_mul(y1 - y0) > 16_777_216 {
             return Err(Error::ResourceLimit("transform output pixels"));
         }
+        let raster = warp_mesh
+            .as_ref()
+            .map(|m| mesh::MeshRaster::new(m, [x0, y0, x1, y1]))
+            .transpose()?;
         let mut layer = original.clone();
         layer.tiles.clear();
         layer.white = (0, 0);
@@ -857,21 +862,21 @@ impl Document {
             for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
                 let mut pixels = vec![Pixel::TRANSPARENT; 4096];
                 let mut nonempty = false;
+                let uv_tile = raster.as_ref().map(|r| r.tile_uvs(tx, ty));
                 for y in y0.max(ty * 64)..y1.min((ty + 1) * 64) {
                     for x in x0.max(tx * 64)..x1.min((tx + 1) * 64) {
                         let px = x as f64 + 0.5;
                         let py = y as f64 + 0.5;
-                        let uv = if let Some(m) = inverse_matrix {
+                        let uv = if let Some(tile) = &uv_tile {
+                            let p = tile[(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize];
+                            p[0].is_finite().then_some(p)
+                        } else if let Some(m) = inverse_matrix {
                             let z = m[6] * px + m[7] * py + m[8];
                             let u = (m[0] * px + m[1] * py + m[2]) / z;
                             let v = (m[3] * px + m[4] * py + m[5]) / z;
                             (u >= 0. && v >= 0. && u <= 1. && v <= 1.).then_some([u, v])
                         } else {
-                            geometry.inverse(
-                                px,
-                                py,
-                                [(px - b[0]) / (b[2] - b[0]), (py - b[1]) / (b[3] - b[1])],
-                            )
+                            None
                         };
                         let mut pixel = Pixel::TRANSPARENT;
                         if let Some([u, v]) = uv {
@@ -986,6 +991,14 @@ impl Document {
         Ok(())
     }
     pub fn commit_transform(&mut self) -> Result<bool> {
+        if self.transform_deferred() {
+            let state = self.transform.as_mut().expect("session");
+            let geometry = state.current.clone();
+            let source = state.preview_source.take();
+            let result = self.update_transform(geometry);
+            self.transform.as_mut().expect("session").preview_source = source;
+            result?;
+        }
         let s = self
             .transform
             .as_ref()

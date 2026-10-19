@@ -435,7 +435,7 @@ ColumnLayout {
                 Loader {objectName:"brushSettingsCategory:7";Layout.fillWidth:true;Layout.minimumWidth:0;active:root.category===7;visible:active
                     sourceComponent:ColumnLayout {
                     visible:root.category===7;Layout.fillWidth:true;spacing:10
-                    CompactCheckBox {objectName:"brushCursorEnabled";text:"笔尖轮廓";checked:root.library.cursorOutline;font.pixelSize:10;onToggled:root.library.cursorOutline=checked;tooltip:"显示实际圆度与角度的双线笔尖边界。"}
+                    CompactCheckBox {objectName:"brushCursorEnabled";text:"笔尖轮廓";checked:root.library.cursorOutline;font.pixelSize:10;onToggled:root.library.cursorOutline=checked;tooltip:"按画布明暗自动调整笔尖边界的黑白颜色。"}
                     CompactCheckBox {objectName:"brushCursorComposite";text:"复合光标";checked:root.library.cursorComposite;font.pixelSize:10;onToggled:root.library.cursorComposite=checked;tooltip:"同时显示允许溢出的第二基础笔尖范围；只影响显示，不改变实际笔触，不预演随机散布。"}
                     CompactCheckBox {objectName:"brushCursorImageEnabled";text:"半透明图片";checked:root.library.cursorImage;font.pixelSize:10;onToggled:root.library.cursorImage=checked;tooltip:"用白色显示实际图片笔尖覆盖，不影响绘画；简化圆形模式下隐藏。"}
                     ColumnLayout {
@@ -449,20 +449,12 @@ ColumnLayout {
                     }
                     Label {visible:root.library.cursorImage && PaintClient.cursorImageMessage.length>0;text:PaintClient.cursorImageMessage;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     CompactCheckBox {objectName:"brushCursorSimple";text:"简化圆形";checked:root.library.cursorSimple;font.pixelSize:10;onToggled:root.library.cursorSimple=checked;tooltip:"使用标称大小的圆形轮廓，不改变实际笔尖。"}
-                    ColumnLayout {Layout.fillWidth:true;visible:root.library.cursorSimple
-                        Label {text:"轮廓亮度 (B)";color:Theme.text;font.pixelSize:10}
-                        CompactSlider {objectName:"brushCursorBrightness";Layout.fillWidth:true;from:1;to:100;stepSize:1;value:root.library.cursorBrightness;onMoved:root.library.cursorBrightness=Math.round(value);tooltip:"HSB亮度，1–100%；简化轮廓以相同亮度的灰色单线显示。"}
-                    }
+                    Label {objectName:"brushCursorAdaptiveHint";text:"轮廓自动适应画布明暗：暗处亮、亮处暗；软件显示使用黑白轮廓。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     CompactCheckBox {objectName:"brushCursorCenter";text:"中心十字";checked:root.library.cursorCenter;font.pixelSize:10;onToggled:root.library.cursorCenter=checked;tooltip:"在笔尖中心显示精确定位十字。"}
                     CompactCheckBox {objectName:"brushCursorHoverOnly";text:"仅悬停时显示";checked:root.library.cursorHoverOnly;font.pixelSize:10;onToggled:root.library.cursorHoverOnly=checked;tooltip:"开始绘画时隐藏笔尖预览，结束后恢复。"}
                     RowLayout {
                         Label {text:"线宽";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                         CompactSpinBox {objectName:"brushCursorWidth";from:0;to:3;editable:true;implicitWidth:66;implicitHeight:20;value:root.library.cursorWidth;onValueModified:root.library.cursorWidth=value;tooltip:"0为单条细线；1–3为双线轮廓宽度，单位为界面像素。"}
-                    }
-                    RowLayout {
-                        Label {text:"轮廓颜色";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
-                        Rectangle {objectName:"brushCursorColor";implicitWidth:24;implicitHeight:20;color:root.library.cursorColor;border.color:Theme.muted;MouseArea {anchors.fill:parent;hoverEnabled:true;onClicked:outerColor.open();ToolTip.delay:1000;ToolTip.visible:containsMouse;ToolTip.text:"外侧轮廓颜色"}}
-                        Rectangle {objectName:"brushCursorSecondaryColor";implicitWidth:24;implicitHeight:20;color:root.library.cursorSecondaryColor;border.color:Theme.muted;MouseArea {anchors.fill:parent;hoverEnabled:true;onClicked:innerColor.open();ToolTip.delay:1000;ToolTip.visible:containsMouse;ToolTip.text:"内侧轮廓颜色"}}
                     }
                     Label {text:"全局绘画偏好；不随笔刷包导出。CapsLock 切换精确光标。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     Label {text:PaintClient.brushOutlineMessage;visible:text.length>0;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
@@ -654,8 +646,6 @@ ColumnLayout {
     FileDialog {id:tipDialog;title:"导入图片笔尖";nameFilters:["PNG 图片 (*.png)"];onAccepted:PaintClient.importBrushTip(selectedFile,root.tipInterpretationMode)}
     FileDialog {id:textureDialog;title:"导入纹理";nameFilters:["PNG 图片 (*.png)"];onAccepted:PaintClient.importBrushTexture(selectedFile,root.textureInterpretationMode)}
     FileDialog {id:dualDialog;title:"导入第二笔尖";nameFilters:["PNG 图片 (*.png)"];onAccepted:PaintClient.importDualBrushTip(selectedFile,root.dualInterpretationMode)}
-    ColorDialog {id:outerColor;title:"外侧轮廓颜色";selectedColor:root.library.cursorColor;onAccepted:root.library.cursorColor=selectedColor}
-    ColorDialog {id:innerColor;title:"内侧轮廓颜色";selectedColor:root.library.cursorSecondaryColor;onAccepted:root.library.cursorSecondaryColor=selectedColor}
     Component.onCompleted:previewDelay.restart()
     Connections {target:root.library;function onSettingsChanged(){root.wetError="";previewDelay.restart();if(root.category===8 && root.inspectedSource!==root.library.sourceResource)root.inspectSource()}}
 }

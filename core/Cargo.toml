@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/paint-storage", "crates/paint-core", "crates/paint-task", "crates/paint-render", "crates/paint-io", "crates/paint-ffi", "tools/paint-api-gen"]
+members = ["crates/paint-ops", "crates/paint-gpu", "crates/paint-storage", "crates/paint-core", "crates/paint-task", "crates/paint-render", "crates/paint-io", "crates/paint-ffi", "tools/paint-api-gen"]
 default-members = ["crates/paint-core", "crates/paint-task", "crates/paint-render", "crates/paint-io", "crates/paint-ffi"]
 resolver = "2"
 

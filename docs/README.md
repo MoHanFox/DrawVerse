@@ -1,5 +1,18 @@
 # DrawVerse 文档索引
 
+- [自由变换与网格变形常驻预览](tools/transform-resident-preview-design.md)
+
+- [复杂图像套索、魔棒与油漆桶性能](tools/selection-complexity-performance-design.md)
+
+- [图层移动实时预览](tools/layer-move-preview-design.md)
+
+- [GPU 加速规则、使用方法与代码入口](platform/gpu-acceleration-design.md)
+- [平滑画布导航与自适应笔尖轮廓](interface/canvas-navigation-adaptive-cursor-design.md)
+
+- [液化常驻纹理预览](tools/liquify-resident-preview-design.md)
+
+- [GPU 算子与可恢复弹性液化](tools/liquify-gpu-operators-design.md)
+
 - [液化有界并行](tools/liquify-bounded-parallel-design.md)
 
 - [大目录切换与起笔延迟](brush/performance/brush-library-switch-latency-design.md)

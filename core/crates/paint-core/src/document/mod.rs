@@ -189,11 +189,12 @@ mod history_failure_tests {
         doc.begin_liquify().unwrap();
         doc.liquify_dab(dab).unwrap();
         doc.commit_liquify().unwrap();
+        let final_pixels = pixels(&doc);
         assert!(doc.history_disk_bytes() > 0);
         doc.undo().unwrap();
         assert_eq!(pixels(&doc), original);
         doc.redo().unwrap();
-        assert_eq!(pixels(&doc), preview);
+        assert_eq!(pixels(&doc), final_pixels);
     }
     #[test]
     fn damaged_backing_does_not_partially_undo_or_redo() {
@@ -481,6 +482,7 @@ struct Stroke {
 
 #[derive(Debug)]
 pub struct Document {
+    compute: Arc<dyn paint_ops::Executor>,
     pool: Arc<crate::page_pool::PagePool>,
     width: u32,
     height: u32,
@@ -504,6 +506,7 @@ pub struct Document {
     stagnant_mix_skips: usize,
     liquify: Option<liquify::LiquifyState>,
     transform: Option<transform::TransformState>,
+    layer_move: Option<layer_move::LayerMoveState>,
     revision: u64,
     dirty: DirtyTiles,
     selection: crate::Selection,
@@ -512,17 +515,24 @@ pub struct Document {
 
 #[path = "tools/bucket.rs"]
 mod bucket;
+#[path = "tools/color_region.rs"]
+mod color_region;
 pub use bucket::BucketFill;
 #[path = "tools/wand.rs"]
 mod wand;
 pub use wand::WandSelection;
+#[path = "tools/layer_move.rs"]
+mod layer_move;
 #[path = "tools/liquify.rs"]
 mod liquify;
 #[path = "tools/smudge.rs"]
 mod smudge;
 #[path = "stroke/document_wet.rs"]
 mod wet;
-pub use liquify::LiquifyDab;
+pub use liquify::{LiquifyDab, LiquifyPreview, LiquifyPreviewSource};
+/// Shared resident presentation packet; original names remain source-compatible.
+pub type ResidentPreview = LiquifyPreview;
+pub type ResidentPreviewSource = LiquifyPreviewSource;
 
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
     if layers.iter().any(|l| l.group || l.mask || l.clipped) {
@@ -725,6 +735,7 @@ impl Document {
                 options.max_scratch_bytes,
                 storage,
             ),
+            compute: Arc::new(paint_ops::Cpu),
             width,
             height,
             layers: vec![Layer::new(1, "Layer 1".into())],
@@ -747,6 +758,7 @@ impl Document {
             stagnant_mix_skips: 0,
             liquify: None,
             transform: None,
+            layer_move: None,
             selection: crate::Selection::default(),
             selection_cache: Default::default(),
             revision: 0,
@@ -976,7 +988,11 @@ impl Document {
     }
 
     fn idle(&self) -> Result<()> {
-        if self.stroke.is_some() || self.liquify.is_some() || self.transform.is_some() {
+        if self.stroke.is_some()
+            || self.liquify.is_some()
+            || self.transform.is_some()
+            || self.layer_move.is_some()
+        {
             Err(Error::Busy)
         } else {
             Ok(())

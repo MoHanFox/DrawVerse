@@ -213,16 +213,13 @@ fn flat_image_spacing_covers_short_axis_with_rotation_padding_and_paging() {
                 let paint = |split: bool, paged: bool| {
                     let mut d = Document::new(64, 64).unwrap();
                     d.begin_brush_stroke(b.clone(), point(8.5)).unwrap();
-                    let drain = |doc: &mut Document| loop {
-                        match doc
+                    let drain = |doc: &mut Document| {
+                        while let StrokePageResult::Pending = doc
                             .continue_stroke_page(
                                 InputScheduleBudget::new(2, 8_000_000, 2).unwrap(),
                             )
                             .unwrap()
-                        {
-                            StrokePageResult::Pending => {}
-                            _ => break,
-                        }
+                        {}
                     };
                     for end in if split {
                         vec![24.5, 40.5, 56.5]

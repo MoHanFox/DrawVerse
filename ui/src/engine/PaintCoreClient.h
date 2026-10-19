@@ -1,5 +1,6 @@
 #pragma once
 #include "brushes/BrushLibrary.h"
+#include "engine/LiquifyPreview.h"
 #include <QColor>
 #include <QImage>
 #include <QHash>
@@ -40,6 +41,10 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QVariantMap storageInfo READ storageInfo NOTIFY storageChanged)
     Q_PROPERTY(bool storageBusy READ storageBusy NOTIFY storageChanged)
     Q_PROPERTY(QString storageMessage READ storageMessage NOTIFY storageChanged)
+    Q_PROPERTY(QVariantList computeHardware READ computeHardware NOTIFY computeChanged)
+    Q_PROPERTY(QString computeDevice READ computeDevice NOTIFY computeChanged)
+    Q_PROPERTY(QString computeStatus READ computeStatus NOTIFY computeChanged)
+    Q_PROPERTY(bool computeBusy READ computeBusy NOTIFY computeChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
     Q_PROPERTY(bool brushLibraryReady READ brushLibraryReady NOTIFY brushLibraryReadyChanged)
     Q_PROPERTY(bool wetActionBusy READ wetActionBusy NOTIFY wetActionChanged)
@@ -77,6 +82,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool activeImage READ activeImage NOTIFY stateChanged)
     Q_PROPERTY(bool liquifyActive READ liquifyActive NOTIFY stateChanged)
     Q_PROPERTY(bool liquifyBusy READ liquifyBusy NOTIFY stateChanged)
+    Q_PROPERTY(bool liquifyCommitting READ liquifyCommitting NOTIFY stateChanged)
     Q_PROPERTY(int liquifyTool READ liquifyTool WRITE setLiquifyTool NOTIFY liquifyOptionsChanged)
     Q_PROPERTY(int liquifySize READ liquifySize WRITE setLiquifySize NOTIFY liquifyOptionsChanged)
     Q_PROPERTY(int liquifyStrength READ liquifyStrength WRITE setLiquifyStrength NOTIFY liquifyOptionsChanged)
@@ -202,6 +208,12 @@ public:
     bool storageBusy() const { return m_storageBusy; }
     QString storageMessage() const { return m_storageMessage; }
     Q_INVOKABLE bool inspectStorage();
+    QVariantList computeHardware() const { return m_computeHardware; }
+    QString computeDevice() const { return m_computeDevice; }
+    QString computeStatus() const { return m_computeStatus; }
+    bool computeBusy() const { return m_computeBusy; }
+    Q_INVOKABLE void inspectCompute();
+    Q_INVOKABLE bool saveComputeDevice(const QString &id);
     Q_INVOKABLE bool saveStorageSettings(const QString &directory, int memoryMiB, int scratchGiB, int reserveMiB);
     Q_INVOKABLE QString localFolderPath(const QUrl &url) const { return url.toLocalFile(); }
     bool ready() const { return m_ready; }
@@ -269,7 +281,7 @@ public:
     Q_INVOKABLE void activateMarquee();
     Q_INVOKABLE void activateLasso();
     bool moveTool() const { return m_moveTool; }
-    bool layerEditBusy() const { return m_pendingLayer != 0 || m_pendingCopy != 0; }
+    bool layerEditBusy() const { return m_layerMoveActive || m_pendingLayer != 0 || m_pendingCopy != 0; }
     void setMoveTool(bool enabled);
     bool selectionEnabled() const { return m_selection.value("enabled").toBool(); }
     QVariantList selectionSteps() const { return m_selection.value("steps").toList(); }
@@ -304,11 +316,16 @@ public:
     Q_INVOKABLE bool clearSelection();
     Q_INVOKABLE bool invertSelection();
     const QImage &frame(int view = 0) const { return m_frames[view == 1 ? 1 : 0]; }
+    ResidentPreviewPtr residentPreview() const { return m_residentPreview; }
+    ResidentPreviewPtr liquifyPreview() const { return residentPreview(); }
+    void setResidentGpuPreviewAvailable(bool value) { m_residentGpuPreviewAvailable=value; }
+    void setLiquifyGpuPreviewAvailable(bool value) { setResidentGpuPreviewAvailable(value); }
     QRectF frameRegion(int view = 0) const { return m_regions[view == 1 ? 1 : 0]; }
     quint64 frameRevision(int view = 0) const { return m_frameRevisions[view == 1 ? 1 : 0]; }
     quint64 revision() const { return m_revision; }
     quint64 generation() const { return m_generation; }
     void requestViewport(int view, QRectF region, QSize physicalPixels, bool enabled = true);
+    void ensureOverview();
     int historyLimit() const {return m_historyLimit;}
     void setHistoryLimit(int commands);
     Q_INVOKABLE void applyHistoryLimit();
@@ -322,6 +339,10 @@ public:
     void setTransformReference(int v){if(v>=0 && v<=8 && v!=m_transformReference){m_transformReference=v;emit transformChanged();}}
     bool transformLinked() const {return m_transformLinked;}
     void setTransformLinked(bool v){if(v!=m_transformLinked){m_transformLinked=v;emit transformChanged();}}
+    bool beginLayerMove(QPointF position, bool pick = false);
+    void updateLayerMove(QPoint delta);
+    void finishLayerMove(QPoint delta, bool commit);
+    bool layerMoveActive() const { return m_layerMoveActive; }
     bool transformActive() const {return m_transformActive;}
     bool transformBusy() const {return m_pendingTransform>m_completedSequence;}
     QVariantList transformPoints() const {return m_transformPoints;}
@@ -338,6 +359,7 @@ public:
     Q_INVOKABLE bool rasterizeImage();
     bool liquifyActive() const {return m_liquifyActive;}
     bool liquifyBusy() const {return m_pendingLiquify!=0 || layerEditBusy();}
+    bool liquifyCommitting() const {return m_liquifyCommitting;}
     int liquifyTool() const {return m_liquifyTool;}
     int liquifySize() const {return m_liquifySize;}
     int liquifyStrength() const {return m_liquifyStrength;}
@@ -432,6 +454,7 @@ signals:
     void liquifyOptionsChanged();
     void historyChanged();
     void storageChanged();
+    void computeChanged();
     void storageFinished(bool success);
     void stateChanged();
     void layerShortcutsChanged();
@@ -497,6 +520,9 @@ private:
     bool submitSelection(quint32 action, QRectF rectangle = {}, int shape = 0, int operation = 0);
     QSet<quint64> m_collapsedGroups;
     QVariantMap m_storageSettings, m_activeStorageSettings, m_storageInfo;
+    QVariantList m_computeHardware;
+    QString m_computeDevice = "auto", m_computeStatus = "正在初始化计算硬件…";
+    bool m_computeBusy = false;
     QString m_storageMessage;
     bool m_storageBusy = true;
     QString m_settingsFile;
@@ -537,6 +563,12 @@ private:
     bool deferTransformAction(std::function<void()> action);
     std::function<void()> m_afterTransform;
     bool submitTransform(quint32 kind,const PaintTransform *geometry=nullptr);
+    void flushLayerMove();
+    QTimer *m_layerMoveTimer=nullptr;
+    bool m_layerMoveActive=false,m_layerMoveStarting=false,m_layerMoveClosing=false;
+    bool m_layerMoveDirty=false,m_layerMoveFinish=false,m_layerMoveCommit=false;
+    quint64 m_layerMoveSequence=0,m_residentPreviewFloor=0;
+    QPoint m_layerMoveDelta;
     bool m_transformActive=false,m_transformWarp=false,m_transformPublished=false,m_transformLinked=true;
     QVariantList m_transformInitialPoints;
     qreal m_transformSkewH=0,m_transformSkewV=0;
@@ -549,7 +581,11 @@ private:
     int m_liquifyTool=0,m_liquifySize=200,m_liquifyStrength=50,m_liquifyDensity=100,m_liquifySpeed=100;
     quint64 m_completedSequence=0;
     quint64 m_pendingLiquify=0,m_lastLiquifyDab=0;
+    bool m_liquifyCommitting=false;
     InputSample m_liquifyLast;
+    InputSample m_liquifyPending;
+    bool m_hasLiquifyPending=false;
+    void flushLiquifyInput(bool force=false);
     QElapsedTimer m_liquifyClock;
     QTimer *m_airbrushTimer=nullptr;
     InputSample m_airbrushSample;
@@ -583,6 +619,8 @@ private:
     bool m_historyLiquify=false;
     qreal m_documentHistoryScroll=0;
     QImage m_frames[2];
+    ResidentPreviewPtr m_residentPreview;
+    bool m_residentGpuPreviewAvailable=false;
     QRectF m_regions[2], m_requestedRegions[2];
     QSize m_requestedPixels[2];
     quint64 m_requests[2]{}, m_frameRevisions[2]{};

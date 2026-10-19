@@ -1,0 +1,8 @@
+[package]
+name = "paint-ops"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Bounded numeric operators and CPU reference execution, without document or device ownership"
+[lints]
+workspace = true

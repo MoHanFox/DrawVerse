@@ -1,0 +1,15 @@
+[package]
+name = "paint-gpu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Optional wgpu numeric executor with bounded readback and CPU fallback"
+[dependencies]
+paint-ops = { path = "../paint-ops" }
+wgpu = { version = "=26.0.1", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "vulkan", "wgsl"] }
+pollster = "=0.4.0"
+bytemuck = "=1.25.2"
+[dev-dependencies]
+paint-core = { path = "../paint-core" }
+[lints]
+workspace = true

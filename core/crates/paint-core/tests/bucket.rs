@@ -1,4 +1,112 @@
 use paint_core::*;
+#[test]
+fn batched_tiles_match_pixel_reference_with_offsets_feather_alpha_locks_and_partial_edges() {
+    for (offset_x, offset_y) in [(0, 0), (-3, 5), (64, -64)] {
+        for locked in [false, true] {
+            for selected in [false, true] {
+                for contiguous in [false, true] {
+                    let mut tiles = std::collections::BTreeMap::new();
+                    for ty in 0..2 {
+                        for tx in 0..3 {
+                            let pixels = (0..4096)
+                                .map(|i| {
+                                    if tx * 64 + i % 64 >= 137 || ty * 64 + i / 64 >= 83 {
+                                        return Pixel::TRANSPARENT;
+                                    }
+                                    let value = ((i + tx * 3 + ty * 7) % 101) as f32 / 110.;
+                                    Pixel::from_straight([value, 0.3, 0.2, 0.1 + value * 0.8])
+                                        .unwrap()
+                                })
+                                .collect();
+                            tiles.insert(
+                                TileCoord { x: tx, y: ty },
+                                Tile::from_pixels(pixels).unwrap(),
+                            );
+                        }
+                    }
+                    let mut doc = Document::from_import(
+                        137,
+                        83,
+                        vec![ImportedLayer {
+                            name: "source".into(),
+                            properties: LayerProperties::default(),
+                            tiles,
+                        }],
+                        0,
+                        DocumentOptions::default(),
+                    )
+                    .unwrap();
+                    doc.set_layer_appearance(
+                        1,
+                        LayerAppearance {
+                            offset_x,
+                            offset_y,
+                            locks: if locked { LOCK_TRANSPARENCY } else { 0 },
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                    if selected {
+                        let mut shape = SelectionShape::geometry(
+                            SelectionKind::Ellipse,
+                            10.,
+                            8.,
+                            115.,
+                            65.,
+                            true,
+                        );
+                        shape.feather = 3.;
+                        doc.set_selection(
+                            Selection::default()
+                                .apply(shape, SelectionOperation::Replace, 137, 83)
+                                .unwrap(),
+                        )
+                        .unwrap();
+                    }
+                    let source = doc.snapshot();
+                    let color = Pixel::from_straight([0.8, 0.1, 0.4, 0.7]).unwrap();
+                    let mut options = fill(64, 40, color);
+                    options.tolerance = 255;
+                    options.opacity = 0.37;
+                    options.contiguous = contiguous;
+                    let depth = doc.history_depth().0;
+                    assert!(doc.bucket_fill(options).unwrap());
+                    assert_eq!(doc.history_depth().0, depth + 1);
+                    let result = doc.snapshot();
+                    for y in 0..128 {
+                        for x in 0..192 {
+                            let before = source.layers()[0].canvas_pixel(x, y).unwrap();
+                            let coverage = if x >= 137 || y >= 83 {
+                                0.
+                            } else {
+                                source.selection().coverage(x as f64 + 0.5, y as f64 + 0.5)
+                            };
+                            let expected = if locked {
+                                let mut c = before.components();
+                                let fill = color.components();
+                                let amount = coverage * options.opacity;
+                                for i in 0..3 {
+                                    c[i] = (c[i] * (1. - fill[3] * amount)
+                                        + fill[i] * amount * c[3])
+                                        .min(c[3]);
+                                }
+                                c
+                            } else {
+                                color
+                                    .scaled(coverage * options.opacity)
+                                    .over(before)
+                                    .components()
+                            };
+                            assert_eq!(result.layers()[0].canvas_pixel(x,y).unwrap().components(),expected,"offset={offset_x},{offset_y} lock={locked} selected={selected} contiguous={contiguous} x={x} y={y}");
+                        }
+                    }
+                    doc.undo().unwrap();
+                    assert_eq!(doc.pixel(64, 40), source.pixel(64, 40));
+                }
+            }
+        }
+    }
+}
 fn fill(x: u32, y: u32, color: Pixel) -> BucketFill {
     BucketFill {
         x,

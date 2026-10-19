@@ -7,6 +7,43 @@ use crate::{
 use paint_core::{BlendMode, LayerAppearance};
 use std::mem::size_of;
 
+/// ABI 1.63: begin (id), pick-and-begin (x/y), absolute update, final commit or cancel.
+/// BEGIN/PICK_DEFERRED request shared resident presentation where exactly supported.
+/// Updates never write history. COMMIT includes the final delta. OK means queued.
+/// # Safety
+/// Valid serialized handles and writable nonoverlapping sequence are required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_layer_move(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    kind: u32,
+    layer_id: u64,
+    x: i32,
+    y: i32,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        if kind > PAINT_LAYER_MOVE_CANCEL
+            || x.unsigned_abs() > paint_core::MAX_DIMENSION
+            || y.unsigned_abs() > paint_core::MAX_DIMENSION
+            || matches!(kind, PAINT_LAYER_MOVE_PICK | PAINT_LAYER_MOVE_PICK_DEFERRED)
+                && (x < 0 || y < 0)
+            || matches!(
+                kind,
+                PAINT_LAYER_MOVE_BEGIN | PAINT_LAYER_MOVE_BEGIN_DEFERRED | PAINT_LAYER_MOVE_CANCEL
+            ) && (x != 0 || y != 0)
+        {
+            return Err(ApiError::invalid("layer move arguments"));
+        }
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .submit(Operation::LayerMove(kind, layer_id, x, y))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+
 /// ABI 1.24: asynchronously select the top visible content pixel at document coordinates.
 /// Optional translation is a single normal history entry. Empty pixels are no-ops;
 /// position-locked layers can be selected but remain stationary. No caller memory is retained.

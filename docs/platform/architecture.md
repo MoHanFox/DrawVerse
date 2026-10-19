@@ -1,5 +1,7 @@
 # DrawVerse 架构设计
 
+2026-10-19：液化以 `paint-ops` / 可选 `paint-gpu` 执行共享算子。兼容普通栅格栈增加 Qt 场景图常驻纹理与网格预览，完成才物化像素；其余组合与 CPU/软件显示保持像素路径。核心与 Qt 不共享设备或原生纹理，见[常驻预览设计](../tools/liquify-resident-preview-design.md)及[算子设计](../tools/liquify-gpu-operators-design.md)。
+
 当前 Rust / C++ / QML 源码职责、实际依赖及文件落点见 [源码目录设计](source-layout-design.md)（2026-10-18）。本文保留早期总体设计与阶段记录，其中尚未实施的 crate 和历史限制不能作为当前代码目录依据。
 
 状态：2026-10-08 已实施 paint-core、paint-task、CPU paint-render、paint-io、paint-ffi ABI 1.5 与 QML UI；隔离组见 groups-design.md，显示透明棋盘格见 transparency-design.md。异步任务/视口细节见 task-render-design.md；IO 实施细节见 io-design.md；下文 GPU、色彩、PSD/自有格式、插件仍为后续设计。
@@ -67,7 +69,7 @@ Qt 文档确认 QMainWindow 支持 nested/tabbed docks 与布局状态保存：[
 
 主窗与浮窗采用 QML ApplicationWindow。WorkspaceManager 管理工具标签组、工具条和原生浮窗的二维分割树；垂直工具列共用顶部栏，只保留图标折叠并继承接收列状态，图标临时面板受全局外部点击管理并沿列侧边滑动，布局 v6 保存树、图标状态与几何。主窗中的 __canvas 叶是始终保留的文档区域，并非可停靠到工具树的文档；旧 v5 混合画布/工具树迁移时将画布分离。DocumentManager 管理独立 PaintCoreClient 文档、主区/浮窗标签与活动文档；每个 CanvasPane 始终绑定自己的客户端，GUI 公共工具通过活动客户端访问 C ABI，切换只替换 QML 工具上下文而不重建文档。UI 所有权明确保留在 C++，关闭异步停止对应后台线程，退出等待全部停止。WindowDrag 捕获鼠标移动实际 QWindow，取消恢复模型快照；画布与工具有分离的目标集合，当前拖动窗口不在候选中。主窗无文档时保留 #17191C 留空区。设计见 document-workspace-design.md。最后一轮 Python 使用声明式面板数据经消息队列更新，不能调用 Qt。
 
-画布比较：QQuickItem 适合 QML、需遵守 scene graph 线程约束；QOpenGLWidget 适合 Widgets；直接 QRhi 与版本/API 耦合。当前使用 QQuickItem 显示 worker 合成的 CPU 图像，由 Qt scene graph 创建纹理并支持软件后端；尚未接入 Rust GPU 合成。后续 GPU 先读回有界显示瓦片，再优化平台纹理共享。
+画布比较：QQuickItem 适合 QML、需遵守 scene graph 线程约束；QOpenGLWidget 适合 Widgets；直接 QRhi 与版本/API 耦合。常规画布使用 QQuickItem 显示 worker 合成的 CPU 图像，由 Qt scene graph 创建纹理并支持软件后端。液化兼容栅格栈以自定义 QSGGeometryNode/材质显示原图与逆向网格；仍不包含 Rust/Qt 原生纹理共享。
 
 视觉方向借鉴专业工具的信息密度，采用原创绘画布局：
 

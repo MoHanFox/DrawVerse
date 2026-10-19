@@ -22,6 +22,7 @@ Dialog {
         storageReserve.value = values.reserveMiB === undefined ? 512 : Number(values.reserveMiB)
         historyLimit.value = PaintClient.historyLimit
         PaintClient.inspectStorage()
+        PaintClient.inspectCompute()
     }
     contentItem: ColumnLayout {
         spacing: 10
@@ -67,6 +68,21 @@ Dialog {
                         // 1) Performance: the working scratch-disk and cache settings plus stubs.
                         ColumnLayout {
                             spacing: 8
+                            Label { text: "计算硬件"; font.pixelSize: 10; color: Theme.accent }
+                            ComboBox {
+                                id: computeDevice; objectName: "computeDevice"
+                                Layout.fillWidth: true
+                                model: PaintClient.computeHardware
+                                textRole: "name"; valueRole: "id"
+                                enabled: !PaintClient.computeBusy && !PaintClient.drawing && !PaintClient.liquifyActive && !PaintClient.transformActive
+                                currentIndex: Math.max(0, indexOfValue(PaintClient.computeDevice))
+                            }
+                            Label {
+                                objectName: "computeStatus"
+                                Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 9; color: Theme.muted
+                                text: PaintClient.computeStatus + "\n加速液化计算。硬件不可用时自动使用 CPU；原图与撤销记录保持。"
+                            }
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
                             Label { text: "存储与缓存"; font.pixelSize: 10; color: Theme.accent }
                             GridLayout {
                                 columns: 2; columnSpacing: 12; rowSpacing: 8; Layout.fillWidth: true
@@ -132,7 +148,7 @@ Dialog {
                     // Pending preferences carry their own "待支持" badge and are never interactive.
                     Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
                     Repeater {
-                        model: ["GPU 与多屏合成", "内存上限（文档自动回收）", "记录条数按总字节上限（自动压缩）", "主题与强调色", "界面缩放与字体", "快捷键自定义", "数位板映射"]
+                        model: ["GPU 画布合成与多屏显示", "内存上限（文档自动回收）", "记录条数按总字节上限（自动压缩）", "主题与强调色", "界面缩放与字体", "快捷键自定义", "数位板映射"]
                         component Pending: RowLayout {
                             id: pendingRow
                             required property string modelData
@@ -151,11 +167,13 @@ Dialog {
                 text: "标注“待支持”的项目尚未实现，不能设置。"
             }
             Button {
-                objectName: "saveStorageSettings"; text: "保存设置"; enabled: !PaintClient.storageBusy && !PaintClient.drawing
+                objectName: "saveStorageSettings"; text: "保存设置"; enabled: !PaintClient.storageBusy && !PaintClient.computeBusy && !PaintClient.drawing
                 onClicked: {
                     PaintClient.historyLimit = historyLimit.value
                     PaintClient.saveStorageSettings(storageDirectory.text, storageMemory.options[storageMemory.currentIndex], storageScratch.value, storageReserve.value)
                     PaintClient.applyHistoryLimit()
+                    if (computeDevice.currentValue !== undefined && computeDevice.currentValue !== PaintClient.computeDevice)
+                        PaintClient.saveComputeDevice(computeDevice.currentValue)
                 }
             }
             Button { text: "关闭"; onClicked: root.close() }

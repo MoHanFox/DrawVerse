@@ -1,5 +1,7 @@
 #include "brushes/BrushCurveModes.h"
 #include "engine/PaintCoreClient.h"
+#include <QtEndian>
+#include <cstring>
 #include "paint_api.h"
 #include <QMutex>
 #include <QMutexLocker>
@@ -55,6 +57,7 @@ struct BackendConnection {
     PaintSession *session = nullptr;
     std::atomic_bool framePending[2]{};
     std::atomic_bool metadataPending{false};
+    std::atomic_bool residentPreviewPending{false};
     std::atomic<quint64> fileJob{0};
 };
 struct BrushCatalogConnection {
@@ -75,8 +78,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 57) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.57 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 62) {
+            emit failure(QStringLiteral("GPU 液化预览需要核心 ABI 1.62 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -145,6 +148,38 @@ public:
     }
     // Disk queries and QSettings synchronization stay on the backend thread.
     void inspectStorage() { evaluateStorage(m_saved, false); }
+    void inspectCompute() {
+        if (!m_core || !m_session || m_stopped) return;
+        uint64_t size=0;
+        if(paint_compute_hardware(m_core,nullptr,0,&size)==PAINT_BUFFER_TOO_SMALL && size<=65536) {
+            QByteArray bytes(qsizetype(size),'\0');
+            if(paint_compute_hardware(m_core,reinterpret_cast<uint8_t*>(bytes.data()),size,&size)==PAINT_OK)
+                m_computeHardware=QJsonDocument::fromJson(bytes).array().toVariantList();
+        }
+        pollCompute(true);
+    }
+    void saveCompute(const QString &id) {
+        if(!m_session || m_stopped)return;
+        auto settings=preferences();settings->setValue("performance/computeDevice",id);settings->sync();
+        if(settings->status()!=QSettings::NoError){emit computeState(m_computeHardware,m_computeDevice,QStringLiteral("无法保存 GPU 设置"),false);return;}
+        pollCompute(true);
+    }
+    void pollCompute(bool force=false) {
+        if(!m_session || m_stopped || (!force && m_computeClock.isValid() && m_computeClock.elapsed()<500))return;
+        m_computeClock.restart();
+        auto info=dto<PaintSessionInfo>();if(paint_session_info(m_core,m_session,&info)!=PAINT_OK)return;
+        const auto desired=preferences()->value("performance/computeDevice","auto").toString();
+        if((desired!=m_computeDevice) && !info.stroke_active && !(info.flags&(PAINT_SESSION_LIQUIFY|PAINT_SESSION_TRANSFORM))) {
+            const auto bytes=desired.toUtf8();quint64 sequence=0;
+            if(paint_session_set_compute(m_core,m_session,reinterpret_cast<const uint8_t*>(bytes.constData()),quint64(bytes.size()),&sequence)==PAINT_OK) {
+                m_computeDevice=desired;m_computeSequence=sequence;
+            }
+        }
+        QString status=QStringLiteral("正在初始化计算硬件…");
+        const bool busy=info.completed_sequence<m_computeSequence;
+        if(!busy){uint64_t size=0;if(paint_session_compute_status(m_core,m_session,nullptr,0,&size)==PAINT_BUFFER_TOO_SMALL && size<=65536){QByteArray bytes(qsizetype(size),'\0');if(paint_session_compute_status(m_core,m_session,reinterpret_cast<uint8_t*>(bytes.data()),size,&size)==PAINT_OK)status=QString::fromUtf8(bytes);}}
+        emit computeState(m_computeHardware,desired,status,busy);
+    }
     void saveStorage(const QVariantMap &values) { evaluateStorage(values, true); }
     void saveBrushPreferences(const QByteArray &json){m_pendingBrushPreferences=json;pollBrushState();}
     void saveLiquifyOptions(const QVariantMap &values) {auto settings=preferences();for(auto it=values.cbegin();it!=values.cend();++it)settings->setValue("liquify/"+it.key(),it.value());settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存液化设置，请检查配置目录权限"));}
@@ -261,6 +296,7 @@ public:
         emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting,abr);
     }
 signals:
+    void residentPreviewReady(ResidentPreviewPtr preview);
     void wetActionReady(bool success,QString error);
     void brushSourceReady(QString identity,quint64 token,QByteArray record,QString error);
     void brushOutlineReady(QString identity,QString path,QString error);
@@ -276,6 +312,7 @@ signals:
     void brushPreviewReady(QString id,quint64 token,QString image);
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
     void storageDone(bool success);
+    void computeState(QVariantList hardware,QString device,QString status,bool busy);
     void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform);
     void thumbnailReady(quint64 generation, quint64 revision, quint64 layer, QString image);
     void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request);
@@ -414,6 +451,7 @@ public:
     }
     void poll() {
         if (!m_session || m_stopped) return;
+        pollCompute();
         pollBrushState();
         pollWetAction();
         pollBrushOutline();
@@ -476,6 +514,9 @@ public:
                 }
             }
         }
+        pollResidentPreview();
+        const int pollInterval=m_residentPreview?8:16;
+        if(m_timer->interval()!=pollInterval)m_timer->setInterval(pollInterval);
         for (uint32_t view = 0; view < 2; ++view) {
             // At most one queued QImage per view when the GUI is busy.
             if (m_connection->framePending[view].load()) continue;
@@ -498,6 +539,50 @@ public:
                 frame.document_generation, frame.revision, frame.request_id);
         }
     }
+    void pollResidentPreview() {
+        if(m_connection->residentPreviewPending.load())return;
+        auto info=dto<PaintResidentPreviewInfo>();
+        const auto status=paint_session_resident_preview_info(m_core,m_session,&info);
+        if(status==PAINT_NOT_FOUND){m_residentPreview.reset();return;}
+        if(!check(status))return;
+        if(m_residentPreview && m_residentPreview->sourceId==info.source_id && m_residentPreview->revision==info.revision)return;
+        auto next=std::make_shared<ResidentPreviewFrame>();
+        next->generation=info.document_generation;next->revision=info.revision;next->sourceId=info.source_id;
+        next->columns=info.columns;next->rows=info.rows;next->documentSize=QSize(int(info.document_width),int(info.document_height));next->focus=(info.focus&1)!=0;next->forward=(info.focus&2)!=0;
+        const auto read=[&](quint32 kind,QByteArray &bytes) {
+            uint64_t required=0;
+            auto s=paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,nullptr,0,&required);
+            if(s==PAINT_BUSY || s==PAINT_NOT_FOUND)return false;
+            if(s!=PAINT_BUFFER_TOO_SMALL || required>64ull*1024*1024){check(s);return false;}
+            bytes.resize(qsizetype(required));
+            s=paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,reinterpret_cast<uint8_t*>(bytes.data()),required,&required);
+            return s==PAINT_OK;
+        };
+        if(m_residentPreview && m_residentPreview->sourceId==next->sourceId)next->images=m_residentPreview->images;
+        else {
+            QByteArray assets;if(!read(1,assets) || assets.size()<24)return;
+            qsizetype offset=24;
+            for(int i=0;i<3;++i){
+                const auto w=qFromLittleEndian<quint32>(assets.constData()+i*8),h=qFromLittleEndian<quint32>(assets.constData()+i*8+4);
+                const quint64 size=quint64(w)*h*4;
+                if(!w || !h || w>2048 || h>2048 || size>quint64(assets.size()-offset))return;
+                next->images[size_t(i)]=QImage(reinterpret_cast<const uchar*>(assets.constData()+offset),int(w),int(h),int(w*4),QImage::Format_RGBA8888_Premultiplied).copy();
+                if(next->images[size_t(i)].isNull())return;
+                offset+=qsizetype(size);
+            }
+            if(offset!=assets.size())return;
+        }
+        QByteArray mesh;if(!read(0,mesh))return;
+        const auto count=quint64(next->columns)*next->rows;
+        if(next->columns<2 || next->rows<2 || count>257*257 || quint64(mesh.size())!=count*16)return;
+        next->vertices.resize(qsizetype(count));
+        for(qsizetype i=0;i<qsizetype(count);++i)for(int k=0;k<4;++k){
+            const auto bits=qFromLittleEndian<quint32>(mesh.constData()+i*16+k*4);
+            float value=0;std::memcpy(&value,&bits,4);if(!std::isfinite(value))return;
+            next->vertices[i][size_t(k)]=value;
+        }
+        m_residentPreview=next;m_connection->residentPreviewPending.store(true);emit residentPreviewReady(next);
+    }
     // One background preview at a time, only after a quiet document interval.
     // Slot 2 is bounded by the core and is cancelled whenever painting resumes.
     void disablePreview(const PaintSessionInfo &info) {
@@ -506,7 +591,7 @@ public:
     }
     void pollPreviews(const PaintSessionInfo &info) {
         const auto now=m_previewClock.elapsed();
-        if(info.document_generation!=m_seenGeneration || info.revision!=m_seenRevision || info.stroke_active) {
+        if(info.document_generation!=m_seenGeneration || info.revision!=m_seenRevision || info.stroke_active || (info.flags&PAINT_SESSION_LAYER_MOVE)) {
             m_seenGeneration=info.document_generation; m_seenRevision=info.revision; m_quietSince=now;
             m_previewIndex=0;
             if(m_previewRequest) disablePreview(info);
@@ -709,11 +794,16 @@ public:
     QVariantMap m_saved, m_active;
     // Persisted history command limit, loaded with the other preferences on boot.
     int m_historyLimit = 100;
+    QVariantList m_computeHardware;
+    QString m_computeDevice;
+    QElapsedTimer m_computeClock;
+    quint64 m_computeSequence=0;
     std::shared_ptr<BackendConnection> m_connection;
     QTimer *m_timer;
     PaintCore *m_core = nullptr;
     PaintSession *m_session = nullptr;
     quint64 m_layerCopySequence=0;
+    ResidentPreviewPtr m_residentPreview;
     quint64 m_publication = 0, m_completed = 0, m_errorSequence = 0, m_frames[2]{};
     quint64 m_deliveredFile = 0;
     uint32_t m_flags = 0;
@@ -728,13 +818,15 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(qGuiApp,&QGuiApplication::focusObjectChanged,this,[this]{emit layerShortcutsChanged();});
     connect(this,&PaintCoreClient::stateChanged,this,&PaintCoreClient::layerShortcutsChanged);
     m_brushLibrary=new BrushLibrary(this);
+    m_layerMoveTimer=new QTimer(this);m_layerMoveTimer->setInterval(16);
+    connect(m_layerMoveTimer,&QTimer::timeout,this,&PaintCoreClient::flushLayerMove);
     m_airbrushTimer=new QTimer(this);connect(m_airbrushTimer,&QTimer::timeout,this,&PaintCoreClient::airbrushTick);
     connect(m_brushLibrary,&BrushLibrary::activeColorsChanged,this,[this]{m_color=m_brushLibrary->foregroundColor();m_secondaryColor=m_brushLibrary->backgroundColor();emit brushChanged();});
     qRegisterMetaType<PaintSessionInfo>();
     qRegisterMetaType<PaintFileJobInfo>();
     m_worker = new BackendWorker(m_connection, settingsFile,m_brushCatalogConnection); m_worker->moveToThread(&m_thread);
     connect(m_worker,&BackendWorker::liquifyPreferences,this,[this](const QVariantMap &values){
-        m_liquifyTool=std::clamp(values.value("tool").toInt(),0,3);m_liquifySize=std::clamp(values.value("size").toInt(),1,2000);m_liquifyStrength=std::clamp(values.value("strength").toInt(),1,100);m_liquifyDensity=std::clamp(values.value("density").toInt(),1,100);m_liquifySpeed=std::clamp(values.value("speed").toInt(),1,100);m_liquifyPressure=values.value("pressure").toBool();emit liquifyOptionsChanged();
+        m_liquifyTool=std::clamp(values.value("tool").toInt(),0,3);m_liquifySize=std::clamp(values.value("size").toInt(),1,15000);m_liquifyStrength=std::clamp(values.value("strength").toInt(),1,100);m_liquifyDensity=std::clamp(values.value("density").toInt(),1,100);m_liquifySpeed=std::clamp(values.value("speed").toInt(),1,100);m_liquifyPressure=values.value("pressure").toBool();emit liquifyOptionsChanged();
     });
     connect(m_worker,&BackendWorker::layerClipboardReady,this,[this](const QByteArray &bytes){
         if(m_closing)return;
@@ -840,6 +932,10 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(m_worker,&BackendWorker::storageDone,this,[this](bool success) {
         m_storageBusy=false; emit storageChanged(); emit storageFinished(success);
     });
+    connect(m_worker,&BackendWorker::computeState,this,[this](QVariantList hardware,QString device,QString status,bool busy) {
+        if(m_computeHardware==hardware && m_computeDevice==device && m_computeStatus==status && m_computeBusy==busy)return;
+        m_computeHardware=std::move(hardware);m_computeDevice=std::move(device);m_computeStatus=std::move(status);m_computeBusy=busy;emit computeChanged();
+    });
     connect(&m_thread, &QThread::started, m_worker, &BackendWorker::boot);
     connect(m_worker, &BackendWorker::metadata, this, [this](PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform) {
         m_connection->metadataPending.store(false);
@@ -852,18 +948,31 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         const bool changedLayers = m_layers != layers;
         const bool activeChanged = info.active_layer_id != m_active;
         const bool changedGeneration = info.document_generation != m_generation;
-        if(changedGeneration){m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
+        if(changedGeneration){m_residentPreview.reset();m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
         else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
         if(changedGeneration) m_nextDefaultLayer=1;
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
-        if(info.completed_sequence>=m_pendingLiquify) {m_pendingLiquify=0;m_liquifyActive=(info.flags&PAINT_SESSION_LIQUIFY)!=0;}
+        if(info.completed_sequence>=m_pendingLiquify) {m_pendingLiquify=0;m_liquifyCommitting=false;m_liquifyActive=(info.flags&PAINT_SESSION_LIQUIFY)!=0;}
         const bool publishedTransform=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
-        if(publishedTransform && !m_transformPublished){m_transformInitialPoints=transform.value("points").toList();emit transformChanged();}
+        if(publishedTransform && !m_transformPublished){
+            m_transformInitialPoints=transform.value("points").toList();m_residentPreviewFloor=info.revision;
+            // Placement opens inside the file worker: opt in after file-result delivery.
+            if(m_residentGpuPreviewAvailable)QTimer::singleShot(0,this,[this]{if(m_transformActive && m_transformPublished && m_pendingTransform<=m_completedSequence && m_residentGpuPreviewAvailable)submitTransform(PAINT_TRANSFORM_ENABLE_RESIDENT);});
+            emit transformChanged();
+        }
         m_transformPublished=publishedTransform;
         if(!publishedTransform && m_transformActive && info.completed_sequence>=m_pendingTransform && m_afterTransform){auto action=std::move(m_afterTransform);QTimer::singleShot(0,this,std::move(action));}
         if(info.completed_sequence>=m_pendingTransform)m_transformActive=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
         if(info.completed_sequence>=m_lastTransform){const auto points=transform.value("points").toList();const bool warp=transform.value("warp").toBool();const int interpolation=transform.value("interpolation").toInt();const auto skewH=transform.value("skewH").toDouble(),skewV=transform.value("skewV").toDouble();if(points!=m_transformPoints || warp!=m_transformWarp || interpolation!=m_transformInterpolation || skewH!=m_transformSkewH || skewV!=m_transformSkewV){m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=skewH;m_transformSkewV=skewV;emit transformChanged();}}
         m_completedSequence=info.completed_sequence;
+        if(m_layerMoveActive && (changedGeneration || (m_completedSequence>=m_layerMoveSequence && !(info.flags&PAINT_SESSION_LAYER_MOVE)))) {
+            m_layerMoveActive=false;m_layerMoveStarting=false;m_layerMoveClosing=false;
+            m_layerMoveTimer->stop();
+        } else if(m_layerMoveStarting && m_completedSequence>=m_layerMoveSequence) {
+            m_layerMoveStarting=false;
+        }
+        if(m_layerMoveActive && !m_layerMoveStarting)flushLayerMove();
+        if(m_drawing && m_liquifyActive && !m_dropStroke)flushLiquifyInput();
         m_generation = info.document_generation;
         m_revision = info.revision; m_width = static_cast<int>(info.width); m_height = static_cast<int>(info.height);
         m_undo = static_cast<int>(info.undo_depth); m_redo = static_cast<int>(info.redo_depth);
@@ -919,11 +1028,20 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             emit layerThumbnailsChanged();return;
         }
     });
+    connect(m_worker,&BackendWorker::residentPreviewReady,this,[this](ResidentPreviewPtr preview){
+        m_connection->residentPreviewPending.store(false);
+        if(m_closing || m_pendingNew || preview->generation!=m_generation || preview->revision<m_residentPreviewFloor || (!m_liquifyActive && !m_layerMoveActive && !m_transformActive))return;
+        m_residentPreview=std::move(preview);emit frameChanged();
+    });
     connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request) {
         m_connection->framePending[view].store(false);
         if (m_closing || m_pendingNew || generation != m_generation ||
             (m_requests[view] && request != m_requests[view]) || revision < m_frameRevisions[view]) return;
-        m_frames[view] = image; m_regions[view] = region; m_frameRevisions[view] = revision; emit frameChanged();
+        if(view==0 && m_residentPreview && (generation!=m_residentPreview->generation || (!m_liquifyActive && !m_layerMoveActive && !m_transformActive && revision>=m_revision)))m_residentPreview.reset();
+        // Selection-only publications advance the revision while keeping the same pixels.
+        // Preserve QImage identity so CanvasItem also retains its scene graph texture.
+        if(m_frames[view]!=image)m_frames[view]=image;
+        m_regions[view] = region; m_frameRevisions[view] = revision; emit frameChanged();
     });
     connect(m_worker, &BackendWorker::failure, this, &PaintCoreClient::showError);
     connect(m_worker, &BackendWorker::fileResult, this, [this](PaintFileJobInfo info, const QString &message) {
@@ -958,6 +1076,7 @@ PaintCoreClient::~PaintCoreClient() {
 void PaintCoreClient::shutdown() {
     if (m_closing) return;
     m_brushLibrary->flushPersistence();
+    m_layerMoveTimer->stop();m_layerMoveActive=false;
     m_closing = true; m_ready = false; m_drawing = false;if(m_airbrushTimer)m_airbrushTimer->stop();
     if(m_hoverPose)paint_brush_pose_destroy(&m_hoverPose);if(m_strokePose)paint_brush_pose_destroy(&m_strokePose);
     emit stateChanged(); QMetaObject::invokeMethod(m_worker, &BackendWorker::stop, Qt::QueuedConnection);
@@ -1077,6 +1196,12 @@ BrushCursorPose PaintCoreClient::brushCursorPose(const InputSample &sample,QPoin
     if(poseStatus==PAINT_OK)result={true,pose.primary.radius,pose.primary.angle,pose.primary.roundness,bool((pose.flags&PAINT_POSE_SECONDARY) && (pose.flags&PAINT_POSE_SECONDARY_OVERFLOW)),pose.secondary.radius,pose.secondary.angle,pose.secondary.roundness};
     return result;
 }
+void PaintCoreClient::ensureOverview() {
+    const QRectF document(0,0,documentWidth(),documentHeight());
+    if(document.isEmpty() || (m_viewEnabled[1] && m_requestedRegions[1]==document))return;
+    const auto scale=std::min(1.,512./std::max(document.width(),document.height()));
+    requestViewport(1,document,{std::max(1,qCeil(document.width()*scale)),std::max(1,qCeil(document.height()*scale))});
+}
 void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, bool enabled) {
     if (!m_ready || m_closing || view < 0 || view > 1) return;
     if (enabled) {
@@ -1118,6 +1243,15 @@ void PaintCoreClient::setHistoryLimit(int commands) {
 void PaintCoreClient::applyHistoryLimit() {
     // Persist the preference and make it take effect on the open document as well.
     if(m_worker)QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->applyHistoryLimit();},Qt::QueuedConnection);
+}
+void PaintCoreClient::inspectCompute() {
+    if(m_worker)QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->inspectCompute();},Qt::QueuedConnection);
+}
+bool PaintCoreClient::saveComputeDevice(const QString &id) {
+    if(id.isEmpty() || id.size()>1024 || m_closing || m_drawing || m_liquifyActive || m_transformActive || m_computeBusy || !m_worker)return false;
+    m_computeBusy=true;emit computeChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,id]{worker->saveCompute(id);},Qt::QueuedConnection);
+    return true;
 }
 void PaintCoreClient::setBrushColor(const QColor &c) {
     // Picking a colour is only a preview: the swatch row advances when the pixel stroke commits.
@@ -1286,7 +1420,7 @@ void PaintCoreClient::persistLiquifyOptions() {
     if(m_worker && !m_closing)QMetaObject::invokeMethod(m_worker,[worker=m_worker,values]{worker->saveLiquifyOptions(values);},Qt::QueuedConnection);
 }
 void PaintCoreClient::setLiquifyTool(int v){if(v<0 || v>3 || m_drawing || v==m_liquifyTool)return;m_liquifyTool=v;persistLiquifyOptions();}
-void PaintCoreClient::setLiquifySize(int v){if(v<1 || v>2000 || m_drawing || v==m_liquifySize)return;m_liquifySize=v;persistLiquifyOptions();}
+void PaintCoreClient::setLiquifySize(int v){if(v<1 || v>15000 || m_drawing || v==m_liquifySize)return;m_liquifySize=v;persistLiquifyOptions();}
 void PaintCoreClient::setLiquifyStrength(int v){if(v<1 || v>100 || m_drawing || v==m_liquifyStrength)return;m_liquifyStrength=v;persistLiquifyOptions();}
 void PaintCoreClient::setLiquifyDensity(int v){if(v<1 || v>100 || m_drawing || v==m_liquifyDensity)return;m_liquifyDensity=v;persistLiquifyOptions();}
 void PaintCoreClient::setLiquifySpeed(int v){if(v<1 || v>100 || m_drawing || v==m_liquifySpeed)return;m_liquifySpeed=v;persistLiquifyOptions();}
@@ -1297,13 +1431,14 @@ bool PaintCoreClient::submitLiquifyControl(quint32 kind) {
     {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_liquify(m_connection->core,m_connection->session,kind,nullptr,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){showError(error);return false;}
     m_pendingLiquify=sequence;
-    if(kind==PAINT_LIQUIFY_BEGIN){m_liquifyActive=true;m_liquifyFocus=false;emit liquifyOptionsChanged();}
+    m_liquifyCommitting=kind==PAINT_LIQUIFY_COMMIT;
+    if(kind==PAINT_LIQUIFY_BEGIN || kind==PAINT_LIQUIFY_BEGIN_DEFERRED){m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();m_liquifyActive=true;m_liquifyFocus=false;emit liquifyOptionsChanged();}
     emit stateChanged();return true;
 }
 bool PaintCoreClient::beginLiquify() {
     if(m_liquifyActive)return false;
     for(const auto &value:m_layers){const auto l=value.toMap();if(l.value("id").toULongLong()==m_active && (l.value("group").toBool() || l.value("effectiveLocks").toUInt())) {showError(QStringLiteral("液化需要未锁定的像素图层或蒙版"));return false;}}
-    clearLayerBlendPreview();clearError();return submitLiquifyControl(PAINT_LIQUIFY_BEGIN);
+    clearLayerBlendPreview();clearError();return submitLiquifyControl(m_residentGpuPreviewAvailable && m_computeDevice!="cpu"?PAINT_LIQUIFY_BEGIN_DEFERRED:PAINT_LIQUIFY_BEGIN);
 }
 void PaintCoreClient::setLiquifyFocus(bool value){if(value==m_liquifyFocus || !m_liquifyActive)return;if(submitLiquifyControl(value?PAINT_LIQUIFY_FOCUS_ON:PAINT_LIQUIFY_FOCUS_OFF)){m_liquifyFocus=value;emit liquifyOptionsChanged();}}
 bool PaintCoreClient::resetLiquify(){return m_liquifyActive && submitLiquifyControl(PAINT_LIQUIFY_RESET);}
@@ -1322,7 +1457,7 @@ bool PaintCoreClient::submitLiquifyDab(const InputSample &from,const InputSample
 bool PaintCoreClient::beginStroke(const InputSample &s) {
     if (!m_ready || m_drawing || m_wetActionBusy || layerEditBusy() || m_pendingLiquify) return false;
     if(m_brushLibrary->brushSelectionBlocksPainting())return false;
-    if(m_liquifyActive) {m_dropStroke=false;m_liquifyLast=s;m_liquifyClock.restart();if(!submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_BEGIN))return false;if(!submitLiquifyDab(s,s,16)){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);return false;}m_drawing=true;emit stateChanged();return true;}
+    if(m_liquifyActive) {m_dropStroke=false;m_hasLiquifyPending=false;m_liquifyLast=s;m_liquifyClock.restart();if(!submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_BEGIN))return false;if(!submitLiquifyDab(s,s,16)){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);return false;}m_drawing=true;emit stateChanged();return true;}
     for(const auto &value:m_layers) { const auto layer=value.toMap(); if(layer.value("id").toULongLong()!=m_active) continue;
         if(layer.value("group").toBool()) {showError(QStringLiteral("请选中组内像素图层绘画，或先新建图层"));return false;}
         if(layer.value("effectiveLocks").toUInt() & PAINT_LOCK_ALL) {showError(QStringLiteral("当前图层或所属组已完全锁定，请先解锁"));return false;}
@@ -1343,7 +1478,7 @@ void PaintCoreClient::strokeTo(const InputSample &s) {
     InputSample adjusted=s;
     if(m_airbrushEnabled && adjusted.timestamp<m_airbrushTimestamp)adjusted.timestamp=m_airbrushTimestamp;
     m_airbrushSample=adjusted;
-    if(m_liquifyActive){if(submitLiquifyDab(m_liquifyLast,adjusted,std::clamp(int(m_liquifyClock.restart()),0,50)))m_liquifyLast=adjusted;else m_dropStroke=true;}
+    if(m_liquifyActive){m_liquifyPending=adjusted;m_hasLiquifyPending=true;flushLiquifyInput();}
     else submit(Move,adjusted);
 }
 void PaintCoreClient::airbrushTick() {
@@ -1353,10 +1488,22 @@ void PaintCoreClient::airbrushTick() {
     sample.timestamp=next;
     if(submit(AirbrushTick,sample))m_airbrushTimestamp=next;else m_dropStroke=true;
 }
-void PaintCoreClient::liquifyTick() {if(m_drawing && m_liquifyActive && !m_dropStroke && (m_liquifyTool==1 || m_liquifyTool==2)) {if(!submitLiquifyDab(m_liquifyLast,m_liquifyLast,std::clamp(int(m_liquifyClock.restart()),0,50)))m_dropStroke=true;m_liquifyClock.restart();}}
+void PaintCoreClient::flushLiquifyInput(bool force) {
+    if(!m_hasLiquifyPending || m_dropStroke || (!force && m_lastLiquifyDab>m_completedSequence))return;
+    const auto sample=m_liquifyPending;m_hasLiquifyPending=false;
+    if(submitLiquifyDab(m_liquifyLast,sample,std::clamp(int(m_liquifyClock.restart()),0,50)))m_liquifyLast=sample;
+    else m_dropStroke=true;
+}
+void PaintCoreClient::liquifyTick() {
+    if(!m_drawing || !m_liquifyActive || m_dropStroke || m_lastLiquifyDab>m_completedSequence)return;
+    if(m_hasLiquifyPending){flushLiquifyInput();return;}
+    if(m_liquifyTool==1 || m_liquifyTool==2) {
+        if(!submitLiquifyDab(m_liquifyLast,m_liquifyLast,std::clamp(int(m_liquifyClock.restart()),0,50)))m_dropStroke=true;
+    }
+}
 void PaintCoreClient::endStroke() {
     if (!m_drawing) return;
-    if(m_liquifyActive){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
+    if(m_liquifyActive){flushLiquifyInput(true);submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(End);
     // A committed stroke is what makes the colour "recently used"; a cancelled one never shows up.
     if (!m_dropStroke && m_strokeColor.isValid()) m_brushLibrary->useColor(m_strokeColor.name(QColor::HexArgb));
@@ -1364,12 +1511,12 @@ void PaintCoreClient::endStroke() {
 }
 void PaintCoreClient::cancelStroke() {
     if (!m_drawing) return;
-    if(m_liquifyActive){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
+    if(m_liquifyActive){flushLiquifyInput(true);submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(Cancel);
     m_airbrushTimer->stop();m_airbrushEnabled=false;m_dropStroke = true;m_drawing = false;if(m_strokePose)paint_brush_pose_clear(m_strokePose);m_strokePoseBound=false;m_strokeOutlineResource.clear();m_strokeOutlinePath.clear();m_strokeSecondOutlineResource.clear();m_strokeSecondOutlinePath.clear();m_strokeSecondOutlineReady=false;requestBrushOutlines();emit brushOutlineChanged();emit stateChanged();
 }
-void PaintCoreClient::undo() { if (m_ready && !m_drawing) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_UNDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_UNDO);else submit(Undo);} }
-void PaintCoreClient::redo() { if (m_ready && !m_drawing) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_REDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_REDO);else submit(Redo);} }
+void PaintCoreClient::undo() { if (m_ready && !m_drawing && !m_layerMoveActive) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_UNDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_UNDO);else submit(Undo);} }
+void PaintCoreClient::redo() { if (m_ready && !m_drawing && !m_layerMoveActive) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_REDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_REDO);else submit(Redo);} }
 
 QColor PaintCoreClient::sampleDocumentPixel(qreal x, qreal y) const {
     if(!m_connection || m_closing || !std::isfinite(x) || !std::isfinite(y)) return {};
@@ -1503,6 +1650,40 @@ void PaintCoreClient::requestLayerPreview(quint64 id) {
 }
 void PaintCoreClient::releaseLayerPreview(quint64 id) {
     if(!m_closing) QMetaObject::invokeMethod(m_worker,[worker=m_worker,id]{worker->referencePreview(id,false);},Qt::QueuedConnection);
+}
+bool PaintCoreClient::beginLayerMove(QPointF position,bool pick) {
+    if(!m_ready || m_closing || m_fileBusy || m_drawing || m_liquifyActive || m_transformActive || layerEditBusy())return false;
+    if(pick && (!std::isfinite(position.x()) || !std::isfinite(position.y()) || position.x()<0 || position.y()<0 || position.x()>=m_width || position.y()>=m_height))return false;
+    const bool resident=m_residentGpuPreviewAvailable;
+    const auto kind=pick?(resident?PAINT_LAYER_MOVE_PICK_DEFERRED:PAINT_LAYER_MOVE_PICK):(resident?PAINT_LAYER_MOVE_BEGIN_DEFERRED:PAINT_LAYER_MOVE_BEGIN);
+    uint64_t sequence=0;
+    PaintStatus status;QString error;
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_layer_move(m_connection->core,m_connection->session,kind,m_active,pick?int(position.x()):0,pick?int(position.y()):0,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    if(status!=PAINT_OK){showError(error);return false;}
+    m_layerMoveSequence=sequence;m_layerMoveDelta={};m_layerMoveDirty=false;m_layerMoveFinish=false;
+    m_layerMoveActive=true;m_layerMoveStarting=true;m_layerMoveClosing=false;
+    m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();m_layerMoveTimer->start();emit stateChanged();return true;
+}
+void PaintCoreClient::updateLayerMove(QPoint delta) {
+    if(!m_layerMoveActive || m_layerMoveClosing || m_layerMoveFinish)return;
+    if(delta==m_layerMoveDelta)return;
+    m_layerMoveDelta=delta;m_layerMoveDirty=true;
+}
+void PaintCoreClient::finishLayerMove(QPoint delta,bool commit) {
+    if(!m_layerMoveActive || m_layerMoveClosing)return;
+    m_layerMoveDelta=delta;m_layerMoveFinish=true;m_layerMoveCommit=commit;flushLayerMove();
+}
+void PaintCoreClient::flushLayerMove() {
+    if(!m_layerMoveActive || m_layerMoveStarting || m_layerMoveClosing || m_completedSequence<m_layerMoveSequence || (!m_layerMoveDirty && !m_layerMoveFinish))return;
+    const auto kind=m_layerMoveFinish?(m_layerMoveCommit?PAINT_LAYER_MOVE_COMMIT:PAINT_LAYER_MOVE_CANCEL):PAINT_LAYER_MOVE_UPDATE;
+    const auto delta=kind==PAINT_LAYER_MOVE_CANCEL?QPoint{}:m_layerMoveDelta;
+    uint64_t sequence=0;
+    PaintStatus status;QString error;
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return;status=paint_session_layer_move(m_connection->core,m_connection->session,kind,0,delta.x(),delta.y(),&sequence);if(status!=PAINT_OK && status!=PAINT_BUSY)error=immediateError(status);}
+    if(status==PAINT_BUSY)return;
+    if(status!=PAINT_OK){showError(error);m_layerMoveFinish=true;m_layerMoveCommit=false;return;}
+    m_layerMoveSequence=sequence;m_layerMoveDirty=false;
+    if(m_layerMoveFinish){m_layerMoveClosing=true;if(m_layerMoveCommit && !delta.isNull())m_pendingMutation=sequence;}
 }
 bool PaintCoreClient::moveLayer(quint64 id,int dx,int dy) {
     if(!m_ready || m_liquifyActive || m_transformActive || m_drawing || layerEditBusy() || (!dx && !dy)) return false;
@@ -1696,11 +1877,11 @@ void PaintCoreClient::toggleGroupExpanded(quint64 id) {
 }
 void PaintCoreClient::newTransparentDocument(int w,int h) {
     if(w<1 || h<1 || w>1000000 || h>1000000) {showError(QStringLiteral("画布尺寸支持 1–1,000,000 像素"));return;}
-    if(m_ready && !m_drawing && !m_fileBusy && submit(New,{},static_cast<quint64>(w),{},h)) {m_documentUrl={};m_sourceUrl={};emit stateChanged();}
+    if(m_ready && !m_drawing && !m_fileBusy && !m_layerMoveActive && submit(New,{},static_cast<quint64>(w),{},h)) {m_documentUrl={};m_sourceUrl={};emit stateChanged();}
 }
 void PaintCoreClient::newDocument(int w, int h) {
     if (w < 1 || h < 1 || w > 1000000 || h > 1000000) { showError(QStringLiteral("画布尺寸支持 1–1,000,000 像素")); return; }
-    if (m_ready && !m_drawing && !m_fileBusy && submit(NewWhite, {}, static_cast<quint64>(w), {}, h)) {
+    if (m_ready && !m_drawing && !m_fileBusy && !m_layerMoveActive && submit(NewWhite, {}, static_cast<quint64>(w), {}, h)) {
         m_documentUrl = {}; m_sourceUrl = {}; emit stateChanged();
     }
 }
@@ -1801,7 +1982,7 @@ bool PaintCoreClient::exportSelectedBrushes(const QUrl &path,bool includeSource)
 }
 bool PaintCoreClient::saveDocument(const QUrl &path, int format) { return submitFile(path, PAINT_FILE_SAVE, format); }
 bool PaintCoreClient::submitFile(const QUrl &path, int kind, int format) {
-    if (!m_ready || m_liquifyActive || m_transformActive || m_drawing || m_fileBusy || m_closing) return false;
+    if (!m_ready || m_layerMoveActive || m_liquifyActive || m_transformActive || m_drawing || m_fileBusy || m_closing) return false;
     clearLayerBlendPreview();
     if (!path.isLocalFile() || path.toLocalFile().isEmpty()) { showError(QStringLiteral("请选择本地文件")); return false; }
     auto request = dto<PaintFileRequest>(); request.kind = static_cast<uint32_t>(kind);
@@ -1847,10 +2028,10 @@ bool PaintCoreClient::placeImage(const QUrl &path){return submitFile(path,PAINT_
 bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometry){
     if(!m_ready || m_closing || m_fileBusy || m_drawing || (kind==PAINT_TRANSFORM_BEGIN && (m_liquifyActive || m_transformActive || layerEditBusy())))return false;
     uint64_t sequence=0;PaintStatus status;QString error;
-    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(kind==PAINT_TRANSFORM_BEGIN){QList<quint64> ids=m_selectedLayers;if(ids.isEmpty())ids={m_active};QVector<uint64_t> targets;for(auto id:ids)targets.append(id);status=paint_session_begin_transform_layers(m_connection->core,m_connection->session,targets.data(),targets.size(),&sequence);}else status=paint_session_transform(m_connection->core,m_connection->session,kind,geometry,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(kind==PAINT_TRANSFORM_BEGIN){QList<quint64> ids=m_selectedLayers;if(ids.isEmpty())ids={m_active};QVector<uint64_t> targets;for(auto id:ids)targets.append(id);status=(m_residentGpuPreviewAvailable?paint_session_begin_transform_layers_deferred:paint_session_begin_transform_layers)(m_connection->core,m_connection->session,targets.data(),targets.size(),&sequence);}else status=paint_session_transform(m_connection->core,m_connection->session,kind,geometry,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){showError(error);return false;}m_lastTransform=sequence;
     if(kind!=PAINT_TRANSFORM_UPDATE)m_pendingTransform=sequence;
-    if(kind==PAINT_TRANSFORM_BEGIN)m_transformActive=true;
+    if(kind==PAINT_TRANSFORM_BEGIN){m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();}
     if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE)m_pendingMutation=sequence;
     emit stateChanged();return true;
 }
