@@ -1,5 +1,6 @@
 #pragma once
 #include "brushes/BrushLibrary.h"
+#include "engine/LiquifyPreview.h"
 #include <QColor>
 #include <QImage>
 #include <QHash>
@@ -315,6 +316,8 @@ public:
     Q_INVOKABLE bool clearSelection();
     Q_INVOKABLE bool invertSelection();
     const QImage &frame(int view = 0) const { return m_frames[view == 1 ? 1 : 0]; }
+    LiquifyPreviewPtr liquifyPreview() const { return m_liquifyPreview; }
+    void setLiquifyGpuPreviewAvailable(bool value) { m_liquifyGpuPreviewAvailable=value; }
     QRectF frameRegion(int view = 0) const { return m_regions[view == 1 ? 1 : 0]; }
     quint64 frameRevision(int view = 0) const { return m_frameRevisions[view == 1 ? 1 : 0]; }
     quint64 revision() const { return m_revision; }
@@ -603,6 +606,8 @@ private:
     bool m_historyLiquify=false;
     qreal m_documentHistoryScroll=0;
     QImage m_frames[2];
+    LiquifyPreviewPtr m_liquifyPreview;
+    bool m_liquifyGpuPreviewAvailable=false;
     QRectF m_regions[2], m_requestedRegions[2];
     QSize m_requestedPixels[2];
     quint64 m_requests[2]{}, m_frameRevisions[2]{};

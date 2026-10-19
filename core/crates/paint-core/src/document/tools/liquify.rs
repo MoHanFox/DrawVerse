@@ -9,6 +9,7 @@ pub(super) struct LiquifyState {
     cell: i64,
     sources: Arc<std::sync::Mutex<BTreeMap<TileCoord, paint_ops::SourceTile>>>,
     focus: bool,
+    preview_source: Option<Arc<LiquifyPreviewSource>>,
     checkpoint: Option<Arc<Checkpoint>>,
     history: Arc<LocalHistory>,
 }
@@ -126,7 +127,7 @@ impl LiquifyDab {
         self.to.validate()?;
         if self.tool > 3
             || !self.radius.is_finite()
-            || !(0.5..=1000.).contains(&self.radius)
+            || !(0.5..=7500.).contains(&self.radius)
             || [self.strength, self.density, self.speed]
                 .iter()
                 .any(|v| !v.is_finite() || !(0.01..=1.).contains(v))
@@ -184,6 +185,9 @@ impl Document {
         snapshot
     }
     pub fn begin_liquify(&mut self) -> Result<()> {
+        self.begin_liquify_internal(true)
+    }
+    fn begin_liquify_internal(&mut self, warm: bool) -> Result<()> {
         self.idle()?;
         self.check_ancestors(
             self.active_layer,
@@ -205,10 +209,13 @@ impl Document {
             cell: 2,
             sources: Arc::default(),
             focus: false,
+            preview_source: None,
             checkpoint: None,
             history: Arc::default(),
         };
-        self.warm_liquify_sources(&mut state)?;
+        if warm {
+            self.warm_liquify_sources(&mut state)?;
+        }
         self.liquify = Some(state);
         Ok(())
     }
@@ -575,6 +582,9 @@ impl Document {
 }
 #[path = "liquify_operators.rs"]
 mod operators;
+#[path = "liquify_preview.rs"]
+mod preview;
+pub use preview::{LiquifyPreview, LiquifyPreviewSource};
 
 #[cfg(test)]
 mod operator_transaction_tests {

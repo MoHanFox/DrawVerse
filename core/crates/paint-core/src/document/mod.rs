@@ -524,7 +524,7 @@ mod liquify;
 mod smudge;
 #[path = "stroke/document_wet.rs"]
 mod wet;
-pub use liquify::LiquifyDab;
+pub use liquify::{LiquifyDab, LiquifyPreview, LiquifyPreviewSource};
 
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
     if layers.iter().any(|l| l.group || l.mask || l.clipped) {

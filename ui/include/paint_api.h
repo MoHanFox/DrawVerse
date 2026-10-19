@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 61
+#define PAINT_ABI_MINOR 62
 
 #define PAINT_ABI_PATCH 0
 
@@ -167,6 +167,11 @@
 #define PAINT_FEATURE_LINEAR_TILE_READ 4
 
 #define PAINT_FEATURE_LIQUIFY 262144
+
+/**
+ * Mesh-only liquify preview packets; graphics resources belong to the UI renderer.
+ */
+#define PAINT_FEATURE_LIQUIFY_PREVIEW 144115188075855872
 
 #define PAINT_FEATURE_MASKS 1024
 
@@ -362,6 +367,8 @@
 #define PAINT_LAYER_PIXEL 0
 
 #define PAINT_LIQUIFY_BEGIN 0
+
+#define PAINT_LIQUIFY_BEGIN_DEFERRED 11
 
 #define PAINT_LIQUIFY_CANCEL 3
 
@@ -942,6 +949,18 @@ typedef struct PaintLiquifyDab {
   struct PaintPoint from;
   struct PaintPoint to;
 } PaintLiquifyDab;
+
+typedef struct PaintLiquifyPreviewInfo {
+  uint32_t struct_size;
+  uint32_t focus;
+  uint64_t document_generation;
+  uint64_t revision;
+  uint64_t source_id;
+  uint32_t columns;
+  uint32_t rows;
+  uint32_t document_width;
+  uint32_t document_height;
+} PaintLiquifyPreviewInfo;
 
 /**
  * ABI 1.17: bounded color-region selection; flags 0/1, reserved zero.
@@ -2216,6 +2235,15 @@ PaintStatus paint_session_liquify(struct PaintCore *core,
                                   uint64_t *out_sequence);
 
 /**
+ * ABI 1.62: immutable mesh-only preview metadata, or NOT_FOUND for the pixel path.
+ * # Safety
+ * Valid serialized handles and an initialized writable sized output are required.
+ */
+PaintStatus paint_session_liquify_preview_info(struct PaintCore *core,
+                                               struct PaintSession *session,
+                                               struct PaintLiquifyPreviewInfo *out_info);
+
+/**
  * ABI 1.4: integer relative non-destructive content translation, checked by the actor.
  * # Safety
  * Follow writable sequence, session ownership and serialized destruction contracts.
@@ -2265,6 +2293,24 @@ PaintStatus paint_session_read_layer_clipboard(struct PaintCore *core,
                                                uint8_t *buffer,
                                                uint64_t capacity,
                                                uint64_t *required);
+
+/**
+ * ABI 1.62: kind 0 = LE f32 x/y/u/v vertices; kind 1 = six LE u32 image
+ * dimensions followed by three tightly packed sRGB premultiplied RGBA8 images.
+ * Mesh reads require the exact revision; static assets only require source/generation.
+ * Capacity probes write required only; insufficient buffers never receive partial bytes.
+ * # Safety
+ * Follow the caller-memory contract. The output buffer and required must not overlap.
+ */
+PaintStatus paint_session_read_liquify_preview(struct PaintCore *core,
+                                               struct PaintSession *session,
+                                               uint64_t generation,
+                                               uint64_t revision,
+                                               uint64_t source_id,
+                                               uint32_t kind,
+                                               uint8_t *buffer,
+                                               uint64_t capacity,
+                                               uint64_t *out_required);
 
 /**
  * ABI 1.13: atomic batch deletion, with optional group-only removal.

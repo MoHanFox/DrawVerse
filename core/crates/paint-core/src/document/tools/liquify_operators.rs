@@ -6,7 +6,7 @@ const BATCH_TILES: usize = 128;
 
 fn mesh_cell(radius: f32) -> i64 {
     let mut cell = 2;
-    while cell < 16 && radius > (cell * 64) as f32 {
+    while cell < 128 && radius > (cell * 64) as f32 {
         cell *= 2;
     }
     cell
@@ -126,6 +126,9 @@ fn grid(field: &Field, rect: [i64; 4], cell: i64) -> Result<Grid> {
 }
 fn keys(rect: [i64; 4]) -> Result<Vec<TileCoord>> {
     let [l, t, r, b] = rect;
+    if r <= l || b <= t {
+        return Ok(Vec::new());
+    }
     let (l, t, r, b) = (
         l.div_euclid(64),
         t.div_euclid(64),
@@ -158,6 +161,34 @@ fn execute(executor: &dyn Executor, op: &Operator) -> Result<Vec<[f32; 4]>> {
     Ok(values)
 }
 impl Document {
+    pub(super) fn warm_liquify_mesh(&self) -> Result<()> {
+        // Warm lazy driver compilation before the first pointer movement. This
+        // identity request contains no source colours and never touches the field.
+        execute(
+            self.compute.as_ref(),
+            &Operator::Elastic(ElasticOp {
+                grid: Grid {
+                    origin: [0, 0],
+                    width: 4,
+                    height: 4,
+                    cell: 2.,
+                    vectors: vec![[0.; 2]; 16],
+                },
+                start: [1, 1],
+                size: [1, 1],
+                center: [2., 2.],
+                delta: [0., 0.],
+                radius: 2.,
+                strength: 0.,
+                density: 0.5,
+                time: 0.,
+                speed: 1.,
+                tool: 0,
+                selection: vec![1.],
+            }),
+        )?;
+        Ok(())
+    }
     pub(super) fn warm_liquify_sources(&self, state: &mut LiquifyState) -> Result<()> {
         if state.original.tiles.len() > paint_ops::MAX_SOURCE_TILES {
             return Ok(());
@@ -202,8 +233,13 @@ impl Document {
         let cell = state.cell;
         let distance = (options.to.x - options.from.x).hypot(options.to.y - options.from.y);
         let steps = (distance / (radius * 0.08).max(0.5)).ceil().max(1.) as usize;
-        let area = ((radius * 2. + 2.).min(f64::from(self.width))
-            * (radius * 2. + 2.).min(f64::from(self.height))) as usize;
+        let deferred = state.preview_source.is_some();
+        let area = if deferred {
+            0
+        } else {
+            ((radius * 2. + 2.).min(f64::from(self.width))
+                * (radius * 2. + 2.).min(f64::from(self.height))) as usize
+        };
         let mesh_area = ((radius * 2. / cell as f64 + 4.).ceil() as usize).pow(2);
         if steps > 4096 || steps.saturating_mul(mesh_area).saturating_add(area) > MAX_VISITS {
             return Err(Error::ResourceLimit("liquify input work budget"));
@@ -266,13 +302,19 @@ impl Document {
                 ((right - left) / cell) as u32,
                 ((bottom - top) / cell) as u32,
             ];
-            let mut selection = Vec::with_capacity(size[0] as usize * size[1] as usize);
-            for gy in 0..size[1] {
-                for gx in 0..size[0] {
-                    selection.push(self.selection.coverage(
-                        (left + i64::from(gx) * cell + ox) as f64 + 0.5,
-                        (top + i64::from(gy) * cell + oy) as f64 + 0.5,
-                    ));
+            let mut selection = if self.selection.enabled() {
+                Vec::new()
+            } else {
+                vec![1.; size[0] as usize * size[1] as usize]
+            };
+            if self.selection.enabled() {
+                for gy in 0..size[1] {
+                    for gx in 0..size[0] {
+                        selection.push(self.selection.coverage(
+                            (left + i64::from(gx) * cell + ox) as f64 + 0.5,
+                            (top + i64::from(gy) * cell + oy) as f64 + 0.5,
+                        ));
+                    }
                 }
             }
             let op = Operator::Elastic(ElasticOp {
@@ -324,12 +366,14 @@ impl Document {
                     state.field.insert(key, Arc::new(values));
                 }
             }
-            dirty.extend(keys([
-                left - cell * 2,
-                top - cell * 2,
-                right + cell * 2,
-                bottom + cell * 2,
-            ])?);
+            if !deferred {
+                dirty.extend(keys([
+                    (left - cell * 2).max(-ox),
+                    (top - cell * 2).max(-oy),
+                    (right + cell * 2).min(i64::from(self.width) - ox),
+                    (bottom + cell * 2).min(i64::from(self.height) - oy),
+                ])?);
+            }
             if dirty.len() > 8192 {
                 return Err(Error::ResourceLimit("liquify output tile budget"));
             }
@@ -357,7 +401,9 @@ impl Document {
                 x < i64::from(self.width) && y < i64::from(self.height) && x + 64 > 0 && y + 64 > 0
             })
             .collect::<Vec<_>>();
-        self.remap_liquify(&state, &mut layer, &preview_tiles, stride, false)?;
+        if !deferred {
+            self.remap_liquify(&state, &mut layer, &preview_tiles, stride, false)?;
+        }
         if let Some(checkpoint) = state.checkpoint.as_mut() {
             if checkpoint.action == crate::HistoryAction::Liquify {
                 Arc::make_mut(checkpoint).action = match options.tool {
@@ -381,6 +427,22 @@ impl Document {
         let cell = state.cell;
         let current = self.layer(state.original.id).expect("liquify layer");
         let mut result = state.original.clone();
+        let source = super::preview::source_bounds(&state.original);
+        let mut extrema = [0_f32; 4];
+        for v in state.field.values().flat_map(|tile| tile.iter()) {
+            extrema[0] = extrema[0].min(v[0]);
+            extrema[1] = extrema[1].min(v[1]);
+            extrema[2] = extrema[2].max(v[0]);
+            extrema[3] = extrema[3].max(v[1]);
+        }
+        // An inverse sample can only contain colour if p + D(p) reaches the
+        // immutable source. Include cubic support and retained negative tiles.
+        let reachable = [
+            source[0] - extrema[2].ceil() as i64 - 3,
+            source[1] - extrema[3].ceil() as i64 - 3,
+            source[2] - extrema[0].floor() as i64 + 3,
+            source[3] - extrema[1].floor() as i64 + 3,
+        ];
         let mut affected = current
             .tiles
             .keys()
@@ -411,10 +473,10 @@ impl Document {
                 let x = i64::from(key.signed_x()) * 64;
                 let y = i64::from(key.signed_y()) * 64;
                 affected.extend(keys([
-                    (x + bounds[0] - 1) * cell,
-                    (y + bounds[1] - 1) * cell,
-                    (x + bounds[2] + 1) * cell,
-                    (y + bounds[3] + 1) * cell,
+                    ((x + bounds[0] - 1) * cell).max(reachable[0]),
+                    ((y + bounds[1] - 1) * cell).max(reachable[1]),
+                    ((x + bounds[2] + 1) * cell).min(reachable[2]),
+                    ((y + bounds[3] + 1) * cell).min(reachable[3]),
                 ])?);
                 if affected.len() > 8192 {
                     return Err(Error::ResourceLimit("liquify final tile budget"));

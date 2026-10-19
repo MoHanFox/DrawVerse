@@ -15,7 +15,10 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 61;
+pub const PAINT_ABI_MINOR: u32 = 62;
+
+/// Mesh-only liquify preview packets; graphics resources belong to the UI renderer.
+pub const PAINT_FEATURE_LIQUIFY_PREVIEW: u64 = 144_115_188_075_855_872;
 
 /// Optional numeric acceleration; does not imply GPU viewport composition.
 pub const PAINT_FEATURE_COMPUTE_OPERATORS: u64 = 72_057_594_037_927_936;
@@ -157,6 +160,21 @@ pub const PAINT_LIQUIFY_STROKE_BEGIN: u32 = 7;
 pub const PAINT_LIQUIFY_STROKE_END: u32 = 8;
 pub const PAINT_LIQUIFY_UNDO: u32 = 9;
 pub const PAINT_LIQUIFY_REDO: u32 = 10;
+pub const PAINT_LIQUIFY_BEGIN_DEFERRED: u32 = 11;
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintLiquifyPreviewInfo {
+    pub struct_size: u32,
+    pub focus: u32,
+    pub document_generation: u64,
+    pub revision: u64,
+    pub source_id: u64,
+    pub columns: u32,
+    pub rows: u32,
+    pub document_width: u32,
+    pub document_height: u32,
+}
 pub const PAINT_HISTORY_LIQUIFY_PUSH: u32 = 31;
 pub const PAINT_HISTORY_LIQUIFY_BLOAT: u32 = 32;
 pub const PAINT_HISTORY_LIQUIFY_TWIRL: u32 = 33;

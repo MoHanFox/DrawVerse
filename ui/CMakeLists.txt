@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(DrawVerseUI LANGUAGES CXX)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Test)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 Test ShaderTools)
 set(CMAKE_AUTOMOC ON)
 
 add_library(drawverse_ui STATIC
@@ -14,6 +14,7 @@ add_library(drawverse_ui STATIC
     src/platform/MenuBlurLayer.h src/platform/MenuBlurLayer.cpp
     src/engine/PaintCoreClient.h src/engine/PaintCoreClient.cpp
     src/canvas/CanvasItem.h src/canvas/CanvasItem.cpp
+    src/canvas/LiquifyPreviewNode.h src/canvas/LiquifyPreviewNode.cpp
     src/canvas/SelectionOverlay.h src/canvas/SelectionOverlay.cpp
     src/color/ColorWheelItem.h src/color/ColorWheelItem.cpp
     src/brushes/BrushLibrary.h src/brushes/BrushLibrary.cpp
@@ -46,6 +47,8 @@ set(_drawverse_ui_resources
     qml/theme/qmldir qml/assets/logo.png qml/assets/transparency.png)
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES ${_drawverse_ui_resources})
+qt_add_shaders(drawverse_ui liquify_shaders PREFIX "/shaders" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag)
 
 # Editing QML or an asset must recompile the generated resource object.
 get_target_property(_drawverse_qrc_sources drawverse_ui SOURCES)

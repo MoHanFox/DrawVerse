@@ -127,6 +127,7 @@ private:
     PaintCoreClient *m_client = nullptr;
     QPointer<QQuickWindow> m_observedWindow;
     QImage m_image;
+    LiquifyPreviewPtr m_liquifyPreview;
     QRectF m_imageRegion;
     quint64 m_generation = 0;
     QTimer m_liquifyTimer;

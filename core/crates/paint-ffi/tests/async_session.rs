@@ -945,6 +945,176 @@ fn liquify_abi_validation_preview_cancel_and_single_history() {
 }
 
 #[test]
+fn deferred_liquify_packets_are_stamped_and_drag_keeps_cpu_frame() {
+    let h = Harness::new(128, 96);
+    let initial = h.wait(h.stroke(40., 40.));
+    let before = h.frame(0, initial.revision);
+    unsafe {
+        let mut seq = 0;
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_BEGIN_DEFERRED,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        h.wait(seq);
+        let mut info = dto!(PaintLiquifyPreviewInfo);
+        assert_eq!(
+            paint_session_liquify_preview_info(h.core, h.session, &mut info),
+            PAINT_OK
+        );
+        let mut required = 0;
+        assert_eq!(
+            paint_session_read_liquify_preview(
+                h.core,
+                h.session,
+                info.document_generation,
+                info.revision,
+                info.source_id,
+                0,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert_eq!(
+            required,
+            u64::from(info.columns) * u64::from(info.rows) * 16
+        );
+        let mut short = vec![0xAB; required as usize - 1];
+        assert_eq!(
+            paint_session_read_liquify_preview(
+                h.core,
+                h.session,
+                info.document_generation,
+                info.revision,
+                info.source_id,
+                0,
+                short.as_mut_ptr(),
+                short.len() as u64,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert!(short.iter().all(|b| *b == 0xAB));
+        let dab = PaintLiquifyDab {
+            radius: 7500.,
+            strength: 0.8,
+            density: 0.7,
+            speed: 1.,
+            elapsed_ms: 16.,
+            from: PaintPoint {
+                x: 40.,
+                y: 40.,
+                pressure: 1.,
+                tool: PAINT_TOOL_MOUSE,
+                ..dto!(PaintPoint)
+            },
+            to: PaintPoint {
+                x: 70.,
+                y: 40.,
+                pressure: 1.,
+                tool: PAINT_TOOL_MOUSE,
+                ..dto!(PaintPoint)
+            },
+            ..dto!(PaintLiquifyDab)
+        };
+        assert_eq!(
+            paint_session_liquify(h.core, h.session, PAINT_LIQUIFY_DAB, &dab, &mut seq),
+            PAINT_OK
+        );
+        let dragged = h.wait(seq);
+        assert_eq!(dragged.last_error_status, PAINT_OK);
+        assert_eq!(
+            paint_session_read_liquify_preview(
+                h.core,
+                h.session,
+                info.document_generation,
+                info.revision,
+                info.source_id,
+                0,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUSY
+        );
+        assert_eq!(
+            paint_session_read_liquify_preview(
+                h.core,
+                h.session,
+                info.document_generation + 1,
+                info.revision,
+                info.source_id,
+                1,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUSY
+        );
+        assert_eq!(
+            paint_session_read_liquify_preview(
+                h.core,
+                h.session,
+                info.document_generation,
+                info.revision,
+                info.source_id,
+                1,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        let mut assets = vec![0; required as usize];
+        assert_eq!(
+            paint_session_read_liquify_preview(
+                h.core,
+                h.session,
+                info.document_generation,
+                info.revision,
+                info.source_id,
+                1,
+                assets.as_mut_ptr(),
+                assets.len() as u64,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        assert!(assets.len() > 24);
+        let mut frame = dto!(PaintFrameInfo);
+        assert_eq!(
+            paint_session_frame_info(h.core, h.session, 0, &mut frame),
+            PAINT_BUSY,
+            "mesh drag must not generate a CPU frame at the new render floor"
+        );
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_COMMIT,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        let committed = h.wait(seq);
+        assert_eq!(committed.last_error_status, PAINT_OK);
+        assert_eq!(
+            paint_session_liquify_preview_info(h.core, h.session, &mut info),
+            PAINT_NOT_FOUND
+        );
+        assert!(h.frame(0, committed.revision).revision > before.revision);
+    }
+}
+
+#[test]
 fn smudge_validation_copy_real_pixels_and_single_history() {
     assert_eq!(size_of::<PaintSmudgeStrokeDesc>(), 88);
     assert_eq!(offset_of!(PaintSmudgeStrokeDesc, brush), 32);

@@ -175,6 +175,62 @@ private slots:
         QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void liquifyResidentMeshRendersAndCommitsWithoutCpuFrames() {
+        if(QQuickWindow::graphicsApi()==QSGRendererInterface::Software)QSKIP("Requires the hardware scene graph; run this target with the RHI backend");
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("mesh.ini"));
+        QTRY_VERIFY2(client.ready(),qPrintable(client.lastError()));QTRY_VERIFY(client.brushLibraryReady());
+        client.newDocument(2048,1536);QTRY_COMPARE(client.documentWidth(),2048);QTRY_VERIFY(!client.layerEditBusy());
+        client.addLayer("deform");QTRY_VERIFY(!client.layerEditBusy());const auto active=client.activeLayer();
+        client.setBrushRadius(30);client.setBrushColor(Qt::red);
+        QVERIFY(client.beginStroke({{980,768},1}));client.strokeTo({{1040,768},1});client.endStroke();QTRY_VERIFY(!client.layerEditBusy());
+        client.setLayerProperties(active,true,.6);QTRY_VERIFY(!client.layerEditBusy());
+        QQuickWindow window;window.resize(1024,832);window.setColor(Qt::black);
+        auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1024,832});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        QTRY_COMPARE(client.frameRegion(),canvas->visibleDocumentRect());
+        const auto region=canvas->visibleDocumentRect();
+        const QSize pixels(qCeil(region.width()*canvas->zoom()*window.devicePixelRatio()),qCeil(region.height()*canvas->zoom()*window.devicePixelRatio()));
+        QTRY_COMPARE(client.frame().size(),pixels);
+        QTRY_VERIFY(client.frameRevision()>=client.revision());
+        // Asynchronous scene graph capture avoids grabWindow synchronizing twice
+        // with an already queued threaded-render-loop update.
+        const auto capture=[&]{auto result=canvas->grabToImage();if(!result || !QTest::qWaitFor([&]{return !result->image().isNull();},5000))return QImage{};return result->image();};
+        const auto before=capture();QVERIFY(!before.isNull());
+        const auto original=client.frame();const auto depth=client.undoDepth();
+        for(const int size:{2000,15000}){
+            client.setLiquifySize(size);client.setLiquifyStrength(100);client.setLiquifyDensity(100);client.setLiquifyTool(0);
+            QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());
+            QTRY_VERIFY(client.liquifyPreview());const auto source=client.liquifyPreview()->sourceId;
+            QTRY_VERIFY(client.liquifyPreview()->revision>=client.revision());
+            const auto identity=capture();QVERIFY(!identity.isNull());
+            // Check linear-space normal-over, not gamma-space mixing of separate textures.
+            const auto p=canvas->documentRect().topLeft()+QPointF(1010,768)*canvas->zoom();
+            const auto pixel=QPoint(qRound(p.x()*identity.width()/canvas->width()),qRound(p.y()*identity.height()/canvas->height()));
+            const auto expected=before.pixelColor(pixel),actual=identity.pixelColor(pixel);
+            if(qAbs(expected.red()-actual.red())>3 || qAbs(expected.green()-actual.green())>3 || qAbs(expected.blue()-actual.blue())>3){
+                qInfo()<<"identity expected"<<expected<<"actual"<<actual<<"position"<<pixel<<"frame region"<<client.frameRegion()<<"canvas"<<canvas->documentRect();
+                before.save("artifacts/liquify-resident-before.png");identity.save("artifacts/liquify-resident-identity.png");
+            }
+            QVERIFY2(qAbs(expected.red()-actual.red())<=3 && qAbs(expected.green()-actual.green())<=3 && qAbs(expected.blue()-actual.blue())<=3,"identity preview must preserve linear compositing");
+            const auto cpuRevision=client.frameRevision();const auto revision=client.revision();
+            QElapsedTimer timer;timer.start();QVERIFY(client.beginStroke({{995,768},1}));
+            for(int i=1;i<=64;++i)client.strokeTo({{995+48.*i/64.,768},1});client.endStroke();
+            QTRY_VERIFY(!client.liquifyBusy());const auto completed=timer.elapsed();QTRY_VERIFY(client.liquifyPreview()->revision>revision);
+            const auto published=timer.elapsed();const auto warped=capture();const auto presented=timer.elapsed();QVERIFY(warped!=identity);
+            QCOMPARE(client.frameRevision(),cpuRevision);QCOMPARE(client.frame(),original);
+            QCOMPARE(client.liquifyPreview()->sourceId,source);QVERIFY(client.revision()-revision<=2);
+            qInfo()<<size<<"px mesh input through actual GPU frame ms"<<presented<<"completion ms"<<completed<<"publication ms"<<published<<"vertices"<<client.liquifyPreview()->vertices.size();
+            const auto positions=client.liquifyPreview()->vertices;
+            client.undo();QTRY_VERIFY(!client.liquifyBusy());QTRY_VERIFY(client.liquifyPreview()->revision>=client.revision());
+            QVERIFY(capture()==identity);
+            client.redo();QTRY_VERIFY(!client.liquifyBusy());QTRY_VERIFY(client.liquifyPreview()->revision>=client.revision());QCOMPARE(client.liquifyPreview()->vertices,positions);
+            QVERIFY(client.finishLiquify(size==15000));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());
+            QTRY_VERIFY(!client.liquifyPreview());QTRY_VERIFY(client.frameRevision()>=client.revision());
+            if(size==2000){QCOMPARE(client.frame(),original);QCOMPARE(client.undoDepth(),depth);}
+            else {QVERIFY(client.frame()!=original);QCOMPARE(client.undoDepth(),depth+1);client.undo();QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),original);}
+        }
+        QCOMPARE(client.lastError(),QString());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void maximumLiquifySizePublishesPixelsAndKeepsLocalAndDocumentHistory() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("liquify-large.ini"));QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());
         client.newTransparentDocument(512,512);QTRY_COMPARE(client.documentWidth(),512);QTRY_VERIFY(!client.layerEditBusy());

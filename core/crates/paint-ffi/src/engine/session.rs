@@ -89,6 +89,7 @@ pub(crate) struct LayerState {
     pub clipping: PaintLayerClipping,
 }
 pub(crate) struct Publication {
+    pub liquify_preview: Option<Arc<paint_core::LiquifyPreview>>,
     pub compute: String,
     pub transform: Option<paint_core::TransformGeometry>,
     pub history: Vec<PaintHistoryEntry>,
@@ -113,6 +114,7 @@ pub(crate) struct StampedFrame {
     pub frame: RenderFrame,
 }
 struct Shared {
+    preview_assets: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     publication: Mutex<Arc<Publication>>,
     clipboard: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     views: Mutex<[ViewSlot; 4]>,
@@ -197,6 +199,7 @@ impl Session {
             Document::with_storage(width, height, storage.options, storage.space.clone())?;
         let initial = publish(&document, 1, 1, 0, None, false);
         let shared = Arc::new(Shared {
+            preview_assets: Mutex::new(None),
             generation: AtomicU64::new(1),
             floor: AtomicU64::new(0),
             publication: Mutex::new(Arc::new(initial)),
@@ -402,6 +405,34 @@ impl Session {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner()),
         )
+    }
+    pub fn liquify_assets(&self, preview: &paint_core::LiquifyPreview) -> ApiResult<Arc<Vec<u8>>> {
+        if let Some((id, bytes)) = self
+            .shared
+            .preview_assets
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .as_ref()
+        {
+            if *id == preview.source.id {
+                return Ok(bytes.clone());
+            }
+        }
+        let bytes = Arc::new(crate::liquify_api::preview_assets(&preview.source)?);
+        let current = self.publication();
+        if current
+            .liquify_preview
+            .as_ref()
+            .is_none_or(|p| p.source.id != preview.source.id)
+        {
+            return Err(ApiError::new(PAINT_BUSY, "liquify source replaced"));
+        }
+        *self
+            .shared
+            .preview_assets
+            .lock()
+            .map_err(|_| ApiError::internal())? = Some((preview.source.id, bytes.clone()));
+        Ok(bytes)
     }
     pub fn info(&self) -> PaintSessionInfo {
         let mut info = self.publication().info;
@@ -621,6 +652,7 @@ fn publish(
         })
         .collect();
     Publication {
+        liquify_preview: doc.liquify_preview().map(Arc::new),
         compute: doc.compute_backend_name(),
         transform: doc.transform_geometry(),
         selection: doc.selection().clone(),
@@ -805,11 +837,15 @@ impl Engine {
                 _ => return Err(ApiError::invalid("transform kind")),
             },
             Operation::Liquify(kind, dab) => match kind {
-                PAINT_LIQUIFY_BEGIN => {
+                PAINT_LIQUIFY_BEGIN | PAINT_LIQUIFY_BEGIN_DEFERRED => {
                     if self.files.running() {
                         return Err(paint_core::Error::Busy.into());
                     }
-                    self.document.begin_liquify()?;
+                    if kind == PAINT_LIQUIFY_BEGIN_DEFERRED {
+                        self.document.begin_liquify_deferred()?;
+                    } else {
+                        self.document.begin_liquify()?;
+                    }
                 }
                 PAINT_LIQUIFY_DAB => {
                     self.document
@@ -1152,6 +1188,13 @@ impl Engine {
                 self.error.as_ref(),
                 self.modified,
             ));
+            if publication.liquify_preview.is_none() {
+                self.shared
+                    .preview_assets
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
+            }
             let old = std::mem::replace(
                 &mut *self
                     .shared
@@ -1229,6 +1272,11 @@ impl Engine {
             let Some(request) = slot.request else {
                 continue;
             };
+            if index < 2 && self.document.liquify_deferred() {
+                // The scene graph renders resident sources using the published mesh.
+                // No CPU frame jobs or preview colour readbacks while dragging.
+                continue;
+            }
             if slot.preview_layer != 0 && self.document.stroke_active() {
                 continue;
             }

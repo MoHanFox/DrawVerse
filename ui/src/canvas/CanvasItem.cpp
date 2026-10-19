@@ -1,4 +1,5 @@
 #include "canvas/CanvasItem.h"
+#include "canvas/LiquifyPreviewNode.h"
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
 #include <QTabletEvent>
@@ -17,9 +18,11 @@
 #endif
 
 namespace {
-class CanvasNode final : public QSGSimpleTextureNode {
+class CanvasNode final : public QSGNode {
 public:
     qint64 imageKey = 0;
+    QSGSimpleTextureNode *image=nullptr;
+    LiquifyPreviewNode *preview=nullptr;
 };
 // Application-wide space-pan hold: the canvas that owns keyboard focus raises it, every canvas observes it.
 bool spaceHeld=false;
@@ -220,14 +223,17 @@ void CanvasItem::hoverMoveEvent(QHoverEvent *event){
 void CanvasItem::hoverLeaveEvent(QHoverEvent *event){if(ignoreCachedMouseHover(event) || m_tablet)return;setTabletWindowCursor(false);m_cursorInside=false;refreshBrushCursor();}
 void CanvasItem::refresh() {
     if (!m_client) return;
+    if(m_interactive && window()){const auto api=QQuickWindow::graphicsApi();m_client->setLiquifyGpuPreviewAvailable(api!=QSGRendererInterface::Software && api!=QSGRendererInterface::Unknown && api!=QSGRendererInterface::Null);}
     if (m_generation != m_client->generation()) { endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
     const int view = m_interactive ? 0 : 1;
     m_image = m_client->frame(view); m_imageRegion = m_client->frameRegion(view);
+    m_liquifyPreview=m_client->liquifyPreview();
     if (m_fitPending) fitToView();
     update();
 }
 void CanvasItem::requestView() {
     if (!m_client || !m_client->ready() || !window() || width() < 1 || height() < 1) return;
+    if(m_interactive){const auto api=QQuickWindow::graphicsApi();m_client->setLiquifyGpuPreviewAvailable(api!=QSGRendererInterface::Software && api!=QSGRendererInterface::Unknown && api!=QSGRendererInterface::Null);}
     const QRectF document(0, 0, m_client->documentWidth(), m_client->documentHeight());
     const QRectF visible(documentPoint({0, 0}), QSizeF(width() / m_zoom, height() / m_zoom));
     const QRectF region = m_interactive ? visible.intersected(document) : document;
@@ -283,17 +289,25 @@ void CanvasItem::restoreLayoutPosition() {
 }
 QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     auto *node = static_cast<CanvasNode *>(old);
-    if (m_image.isNull() || !window()) { delete node; return nullptr; }
-    if (!node) { node = new CanvasNode; node->setOwnsTexture(true); node->setFiltering(QSGTexture::Linear); }
+    if ((!m_liquifyPreview && m_image.isNull()) || !window()) { delete node; return nullptr; }
+    if(!node)node=new CanvasNode;
+    if(m_liquifyPreview){
+        if(node->image){delete node->image;node->image=nullptr;node->imageKey=0;}
+        if(!node->preview){node->preview=new LiquifyPreviewNode;node->appendChildNode(node->preview);}
+        if(!node->preview->sync(window(),*m_liquifyPreview,documentRect())){qWarning("Unable to allocate liquify preview textures");delete node;return nullptr;}
+        return node;
+    }
+    if(node->preview){delete node->preview;node->preview=nullptr;}
+    if(!node->image){node->image=new QSGSimpleTextureNode;node->image->setOwnsTexture(true);node->image->setFiltering(QSGTexture::Linear);node->appendChildNode(node->image);}
     // The scene graph owns GPU resources; no graphics objects cross the GUI/worker boundary.
     if (node->imageKey != m_image.cacheKey()) {
         QSGTexture *texture = window()->createTextureFromImage(m_image);
         if (!texture) { delete node; return nullptr; }
         // setTexture deletes the previous texture when ownsTexture is true.
-        node->setTexture(texture); node->imageKey = m_image.cacheKey();
+        node->image->setTexture(texture); node->imageKey = m_image.cacheKey();
     }
     // A viewport frame covers only its document-space region, never the whole canvas.
-    node->setRect(QRectF(documentRect().topLeft() + m_imageRegion.topLeft() * m_zoom,
+    node->image->setRect(QRectF(documentRect().topLeft() + m_imageRegion.topLeft() * m_zoom,
                                  m_imageRegion.size() * m_zoom));
     return node;
 }

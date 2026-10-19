@@ -2,6 +2,8 @@
 
 2026-10-19，功能分支 `feat/wgpu-support`。验收记录见 [验收](../validations/tools/liquify-gpu-operators-validation.md)。
 
+后续实时显示架构已由[常驻纹理预览](liquify-resident-preview-design.md)扩展：适用栅格栈拖动时只更新场，GPU 直接采样静态纹理，旧像素预览保留为回退。下文描述早期像素预览路径，不代表直接预览仍每次生成颜色瓦片。
+
 ## 边界与行为
 
 文档、输入顺序、资源预算、历史、分页与原子发布仍由 CPU 管理。新增无 UI 的算子请求/结果和 CPU 参考执行器；wgpu 只负责批量数值计算，失败时用同一不可变输入执行 CPU，不发布半个 GPU 结果。不改变 VBR 或工作像素线性预乘 RGBA32F。

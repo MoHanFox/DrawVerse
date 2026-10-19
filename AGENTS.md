@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新液化常驻纹理预览：`docs/tools/liquify-resident-preview-design.md` / `docs/validations/tools/liquify-resident-preview-validation.md`；ABI1.62，兼容普通栅格栈拖动只更新共享 Elastic 场/有界网格，Qt复用原图与上下层纹理，完成才全精度物化；CPU/软件与复杂组合保留像素路径，直径支持15000px。RTX4060六输入核心与网格发布约11–17ms，收笔约0.4–0.5ms；真实GPU/软件各一Qt与核心/ABI最小回归、四ABI及Release通过。异步取帧用例约73ms含50ms测试轮询，不等同实际帧延迟；连续手感/占用待实机复核。未跑全量/跨平台/实体输入，源码与设备边界见设计。
+
 - 最新 GPU 算子与弹性液化：`docs/tools/liquify-gpu-operators-design.md` / `docs/validations/tools/liquify-gpu-operators-validation.md`；分支 `feat/wgpu-support`，ABI1.61，默认 auto/可见 CPU 回退；2–16px 自适应场/紧凑块读回/不可变源 CPU 与 GPU 各 2048 瓦片缓存及预热/有界最新输入，保持画布外恢复与精确历史。初版实机2000px性能未达标；同机RTX4060 Vulkan六输入约2.4s→0.20s，预热约45ms，实际连续手感/GPU占用待用户复核。最小Rust25项/Qt两项与Release通过；原EXE运行锁定，新版位于 `build/verify-ui/bin/Release-wgpu/`。未重跑全量/跨平台/实体设备，既有全量图层断言失败见验收。
 
 - 最新液化2000px优化：`docs/tools/liquify-bounded-parallel-design.md` / `docs/validations/tools/liquify-bounded-parallel-validation.md`；无选区大区域最多两个工作线程/共享8192瓦片计数/合计256源pin，原子发布与像素保持；2048×1536六输入推移1.49s→0.77s、旋转1.79s→0.87s。核心6+11项/Qt两项/四ABI/完整Release与Clippy通过，持续输入手感仍待实机复核，未跑全量/跨平台/设备/GPU。

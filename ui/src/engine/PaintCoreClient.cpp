@@ -1,5 +1,7 @@
 #include "brushes/BrushCurveModes.h"
 #include "engine/PaintCoreClient.h"
+#include <QtEndian>
+#include <cstring>
 #include "paint_api.h"
 #include <QMutex>
 #include <QMutexLocker>
@@ -55,6 +57,7 @@ struct BackendConnection {
     PaintSession *session = nullptr;
     std::atomic_bool framePending[2]{};
     std::atomic_bool metadataPending{false};
+    std::atomic_bool liquifyPreviewPending{false};
     std::atomic<quint64> fileJob{0};
 };
 struct BrushCatalogConnection {
@@ -75,8 +78,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 57) {
-            emit failure(QStringLiteral("笔刷系统需要核心 ABI 1.57 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 62) {
+            emit failure(QStringLiteral("GPU 液化预览需要核心 ABI 1.62 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -166,10 +169,10 @@ public:
         m_computeClock.restart();
         auto info=dto<PaintSessionInfo>();if(paint_session_info(m_core,m_session,&info)!=PAINT_OK)return;
         const auto desired=preferences()->value("performance/computeDevice","auto").toString();
-        if((desired!=m_computeDevice || info.document_generation!=m_computeGeneration) && !info.stroke_active && !(info.flags&(PAINT_SESSION_LIQUIFY|PAINT_SESSION_TRANSFORM))) {
+        if((desired!=m_computeDevice) && !info.stroke_active && !(info.flags&(PAINT_SESSION_LIQUIFY|PAINT_SESSION_TRANSFORM))) {
             const auto bytes=desired.toUtf8();quint64 sequence=0;
             if(paint_session_set_compute(m_core,m_session,reinterpret_cast<const uint8_t*>(bytes.constData()),quint64(bytes.size()),&sequence)==PAINT_OK) {
-                m_computeDevice=desired;m_computeGeneration=info.document_generation;m_computeSequence=sequence;
+                m_computeDevice=desired;m_computeSequence=sequence;
             }
         }
         QString status=QStringLiteral("正在初始化计算硬件…");
@@ -293,6 +296,7 @@ public:
         emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting,abr);
     }
 signals:
+    void liquifyPreviewReady(LiquifyPreviewPtr preview);
     void wetActionReady(bool success,QString error);
     void brushSourceReady(QString identity,quint64 token,QByteArray record,QString error);
     void brushOutlineReady(QString identity,QString path,QString error);
@@ -510,6 +514,9 @@ public:
                 }
             }
         }
+        pollLiquifyPreview();
+        const int pollInterval=m_liquifyPreview?8:16;
+        if(m_timer->interval()!=pollInterval)m_timer->setInterval(pollInterval);
         for (uint32_t view = 0; view < 2; ++view) {
             // At most one queued QImage per view when the GUI is busy.
             if (m_connection->framePending[view].load()) continue;
@@ -531,6 +538,50 @@ public:
             emit pixels(static_cast<int>(view), image, QRectF(frame.x, frame.y, frame.width, frame.height),
                 frame.document_generation, frame.revision, frame.request_id);
         }
+    }
+    void pollLiquifyPreview() {
+        if(m_connection->liquifyPreviewPending.load())return;
+        auto info=dto<PaintLiquifyPreviewInfo>();
+        const auto status=paint_session_liquify_preview_info(m_core,m_session,&info);
+        if(status==PAINT_NOT_FOUND){m_liquifyPreview.reset();return;}
+        if(!check(status))return;
+        if(m_liquifyPreview && m_liquifyPreview->sourceId==info.source_id && m_liquifyPreview->revision==info.revision)return;
+        auto next=std::make_shared<LiquifyPreviewFrame>();
+        next->generation=info.document_generation;next->revision=info.revision;next->sourceId=info.source_id;
+        next->columns=info.columns;next->rows=info.rows;next->documentSize=QSize(int(info.document_width),int(info.document_height));next->focus=info.focus!=0;
+        const auto read=[&](quint32 kind,QByteArray &bytes) {
+            uint64_t required=0;
+            auto s=paint_session_read_liquify_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,nullptr,0,&required);
+            if(s==PAINT_BUSY || s==PAINT_NOT_FOUND)return false;
+            if(s!=PAINT_BUFFER_TOO_SMALL || required>64ull*1024*1024){check(s);return false;}
+            bytes.resize(qsizetype(required));
+            s=paint_session_read_liquify_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,reinterpret_cast<uint8_t*>(bytes.data()),required,&required);
+            return s==PAINT_OK;
+        };
+        if(m_liquifyPreview && m_liquifyPreview->sourceId==next->sourceId)next->images=m_liquifyPreview->images;
+        else {
+            QByteArray assets;if(!read(1,assets) || assets.size()<24)return;
+            qsizetype offset=24;
+            for(int i=0;i<3;++i){
+                const auto w=qFromLittleEndian<quint32>(assets.constData()+i*8),h=qFromLittleEndian<quint32>(assets.constData()+i*8+4);
+                const quint64 size=quint64(w)*h*4;
+                if(!w || !h || w>2048 || h>2048 || size>quint64(assets.size()-offset))return;
+                next->images[size_t(i)]=QImage(reinterpret_cast<const uchar*>(assets.constData()+offset),int(w),int(h),int(w*4),QImage::Format_RGBA8888_Premultiplied).copy();
+                if(next->images[size_t(i)].isNull())return;
+                offset+=qsizetype(size);
+            }
+            if(offset!=assets.size())return;
+        }
+        QByteArray mesh;if(!read(0,mesh))return;
+        const auto count=quint64(next->columns)*next->rows;
+        if(next->columns<2 || next->rows<2 || count>257*257 || quint64(mesh.size())!=count*16)return;
+        next->vertices.resize(qsizetype(count));
+        for(qsizetype i=0;i<qsizetype(count);++i)for(int k=0;k<4;++k){
+            const auto bits=qFromLittleEndian<quint32>(mesh.constData()+i*16+k*4);
+            float value=0;std::memcpy(&value,&bits,4);if(!std::isfinite(value))return;
+            next->vertices[i][size_t(k)]=value;
+        }
+        m_liquifyPreview=next;m_connection->liquifyPreviewPending.store(true);emit liquifyPreviewReady(next);
     }
     // One background preview at a time, only after a quiet document interval.
     // Slot 2 is bounded by the core and is cancelled whenever painting resumes.
@@ -746,12 +797,13 @@ public:
     QVariantList m_computeHardware;
     QString m_computeDevice;
     QElapsedTimer m_computeClock;
-    quint64 m_computeGeneration=0,m_computeSequence=0;
+    quint64 m_computeSequence=0;
     std::shared_ptr<BackendConnection> m_connection;
     QTimer *m_timer;
     PaintCore *m_core = nullptr;
     PaintSession *m_session = nullptr;
     quint64 m_layerCopySequence=0;
+    LiquifyPreviewPtr m_liquifyPreview;
     quint64 m_publication = 0, m_completed = 0, m_errorSequence = 0, m_frames[2]{};
     quint64 m_deliveredFile = 0;
     uint32_t m_flags = 0;
@@ -772,7 +824,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     qRegisterMetaType<PaintFileJobInfo>();
     m_worker = new BackendWorker(m_connection, settingsFile,m_brushCatalogConnection); m_worker->moveToThread(&m_thread);
     connect(m_worker,&BackendWorker::liquifyPreferences,this,[this](const QVariantMap &values){
-        m_liquifyTool=std::clamp(values.value("tool").toInt(),0,3);m_liquifySize=std::clamp(values.value("size").toInt(),1,2000);m_liquifyStrength=std::clamp(values.value("strength").toInt(),1,100);m_liquifyDensity=std::clamp(values.value("density").toInt(),1,100);m_liquifySpeed=std::clamp(values.value("speed").toInt(),1,100);m_liquifyPressure=values.value("pressure").toBool();emit liquifyOptionsChanged();
+        m_liquifyTool=std::clamp(values.value("tool").toInt(),0,3);m_liquifySize=std::clamp(values.value("size").toInt(),1,15000);m_liquifyStrength=std::clamp(values.value("strength").toInt(),1,100);m_liquifyDensity=std::clamp(values.value("density").toInt(),1,100);m_liquifySpeed=std::clamp(values.value("speed").toInt(),1,100);m_liquifyPressure=values.value("pressure").toBool();emit liquifyOptionsChanged();
     });
     connect(m_worker,&BackendWorker::layerClipboardReady,this,[this](const QByteArray &bytes){
         if(m_closing)return;
@@ -894,7 +946,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         const bool changedLayers = m_layers != layers;
         const bool activeChanged = info.active_layer_id != m_active;
         const bool changedGeneration = info.document_generation != m_generation;
-        if(changedGeneration){m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
+        if(changedGeneration){m_liquifyPreview.reset();m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
         else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
         if(changedGeneration) m_nextDefaultLayer=1;
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
@@ -962,10 +1014,16 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             emit layerThumbnailsChanged();return;
         }
     });
+    connect(m_worker,&BackendWorker::liquifyPreviewReady,this,[this](LiquifyPreviewPtr preview){
+        m_connection->liquifyPreviewPending.store(false);
+        if(m_closing || m_pendingNew || preview->generation!=m_generation || !m_liquifyActive)return;
+        m_liquifyPreview=std::move(preview);emit frameChanged();
+    });
     connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request) {
         m_connection->framePending[view].store(false);
         if (m_closing || m_pendingNew || generation != m_generation ||
             (m_requests[view] && request != m_requests[view]) || revision < m_frameRevisions[view]) return;
+        if(view==0 && m_liquifyPreview && (generation!=m_liquifyPreview->generation || (!m_liquifyActive && revision>=m_revision)))m_liquifyPreview.reset();
         m_frames[view] = image; m_regions[view] = region; m_frameRevisions[view] = revision; emit frameChanged();
     });
     connect(m_worker, &BackendWorker::failure, this, &PaintCoreClient::showError);
@@ -1338,7 +1396,7 @@ void PaintCoreClient::persistLiquifyOptions() {
     if(m_worker && !m_closing)QMetaObject::invokeMethod(m_worker,[worker=m_worker,values]{worker->saveLiquifyOptions(values);},Qt::QueuedConnection);
 }
 void PaintCoreClient::setLiquifyTool(int v){if(v<0 || v>3 || m_drawing || v==m_liquifyTool)return;m_liquifyTool=v;persistLiquifyOptions();}
-void PaintCoreClient::setLiquifySize(int v){if(v<1 || v>2000 || m_drawing || v==m_liquifySize)return;m_liquifySize=v;persistLiquifyOptions();}
+void PaintCoreClient::setLiquifySize(int v){if(v<1 || v>15000 || m_drawing || v==m_liquifySize)return;m_liquifySize=v;persistLiquifyOptions();}
 void PaintCoreClient::setLiquifyStrength(int v){if(v<1 || v>100 || m_drawing || v==m_liquifyStrength)return;m_liquifyStrength=v;persistLiquifyOptions();}
 void PaintCoreClient::setLiquifyDensity(int v){if(v<1 || v>100 || m_drawing || v==m_liquifyDensity)return;m_liquifyDensity=v;persistLiquifyOptions();}
 void PaintCoreClient::setLiquifySpeed(int v){if(v<1 || v>100 || m_drawing || v==m_liquifySpeed)return;m_liquifySpeed=v;persistLiquifyOptions();}
@@ -1350,13 +1408,13 @@ bool PaintCoreClient::submitLiquifyControl(quint32 kind) {
     if(status!=PAINT_OK){showError(error);return false;}
     m_pendingLiquify=sequence;
     m_liquifyCommitting=kind==PAINT_LIQUIFY_COMMIT;
-    if(kind==PAINT_LIQUIFY_BEGIN){m_liquifyActive=true;m_liquifyFocus=false;emit liquifyOptionsChanged();}
+    if(kind==PAINT_LIQUIFY_BEGIN || kind==PAINT_LIQUIFY_BEGIN_DEFERRED){m_liquifyPreview.reset();m_liquifyActive=true;m_liquifyFocus=false;emit liquifyOptionsChanged();}
     emit stateChanged();return true;
 }
 bool PaintCoreClient::beginLiquify() {
     if(m_liquifyActive)return false;
     for(const auto &value:m_layers){const auto l=value.toMap();if(l.value("id").toULongLong()==m_active && (l.value("group").toBool() || l.value("effectiveLocks").toUInt())) {showError(QStringLiteral("液化需要未锁定的像素图层或蒙版"));return false;}}
-    clearLayerBlendPreview();clearError();return submitLiquifyControl(PAINT_LIQUIFY_BEGIN);
+    clearLayerBlendPreview();clearError();return submitLiquifyControl(m_liquifyGpuPreviewAvailable && m_computeDevice!="cpu"?PAINT_LIQUIFY_BEGIN_DEFERRED:PAINT_LIQUIFY_BEGIN);
 }
 void PaintCoreClient::setLiquifyFocus(bool value){if(value==m_liquifyFocus || !m_liquifyActive)return;if(submitLiquifyControl(value?PAINT_LIQUIFY_FOCUS_ON:PAINT_LIQUIFY_FOCUS_OFF)){m_liquifyFocus=value;emit liquifyOptionsChanged();}}
 bool PaintCoreClient::resetLiquify(){return m_liquifyActive && submitLiquifyControl(PAINT_LIQUIFY_RESET);}

@@ -72,6 +72,12 @@ fn seed() -> Document {
 
 fn main() {
     let id = std::env::args().nth(1).unwrap_or_else(|| "cpu".into());
+    let resident = std::env::args().any(|v| v == "--resident");
+    let radius = if std::env::args().any(|v| v == "--large") {
+        7500.
+    } else {
+        1000.
+    };
     let compute: Arc<dyn Executor> = if id == "cpu" {
         Arc::new(paint_ops::Cpu)
     } else {
@@ -86,8 +92,13 @@ fn main() {
         let mut d = seed();
         d.set_compute_executor(compute.clone()).unwrap();
         let enter = Instant::now();
-        d.begin_liquify().unwrap();
+        if resident {
+            d.begin_liquify_deferred().unwrap();
+        } else {
+            d.begin_liquify().unwrap();
+        }
         println!("tool={tool} mode_enter_us={}", enter.elapsed().as_micros());
+        d.begin_liquify_stroke().unwrap();
         let started = Instant::now();
         compute.execution_us.store(0, Ordering::Relaxed);
         let mut input_us = Vec::new();
@@ -96,7 +107,7 @@ fn main() {
             let from = InputPoint::new(980. + f64::from(i) * 9., 740. + f64::from(i) * 4., 0.7);
             d.liquify_dab(LiquifyDab {
                 tool,
-                radius: 1000.,
+                radius,
                 strength: 0.6,
                 density: 0.7,
                 speed: 0.8,
@@ -106,6 +117,9 @@ fn main() {
                 elapsed_ms: 16.,
             })
             .unwrap();
+            if resident {
+                std::hint::black_box(d.liquify_preview().unwrap());
+            }
             input_us.push(input_started.elapsed().as_micros());
         }
         let preview = started.elapsed().as_micros();
@@ -113,6 +127,9 @@ fn main() {
             "tool={tool} per_input_us={input_us:?} executor_us={}",
             compute.execution_us.load(Ordering::Relaxed)
         );
+        let ended = Instant::now();
+        d.end_liquify_stroke().unwrap();
+        println!("tool={tool} stroke_end_us={}", ended.elapsed().as_micros());
         let started = Instant::now();
         d.commit_liquify().unwrap();
         let final_us = started.elapsed().as_micros();
@@ -126,6 +143,6 @@ fn main() {
                 }
             }
         }
-        println!("tool={tool} radius=1000 inputs=6 preview_us={preview} final_us={final_us} rgba8_digest={digest:016x}");
+        println!("tool={tool} radius={radius} resident={resident} inputs=6 preview_us={preview} final_us={final_us} rgba8_digest={digest:016x}");
     }
 }

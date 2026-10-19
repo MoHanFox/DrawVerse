@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [液化常驻纹理预览](tools/liquify-resident-preview-design.md)
+
 - [GPU 算子与可恢复弹性液化](tools/liquify-gpu-operators-design.md)
 
 - [液化有界并行](tools/liquify-bounded-parallel-design.md)

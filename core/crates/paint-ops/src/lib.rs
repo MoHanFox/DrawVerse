@@ -423,7 +423,7 @@ impl Operator {
                         .is_none_or(|y| y > v.grid.height)
                     || v.tool > 3
                     || !v.radius.is_finite()
-                    || !(0.5..=1000.).contains(&v.radius)
+                    || !(0.5..=7500.).contains(&v.radius)
                     || [v.strength, v.density, v.speed]
                         .iter()
                         .any(|x| !x.is_finite() || !(0. ..=1.).contains(x))

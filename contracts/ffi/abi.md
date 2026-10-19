@@ -1,4 +1,12 @@
-# C ABI 1.61.0 契约
+# C ABI 1.62.0 契约
+
+## ABI 1.62 — 液化网格预览
+
+`PAINT_FEATURE_LIQUIFY_PREVIEW`（bit57）提供 `PAINT_LIQUIFY_BEGIN_DEFERRED`（11）。兼容的无选区、顶层正常混合栅格栈使用网格预览；不支持的组合继续普通像素预览。旧 BEGIN 和动作语义保持。液化半径范围扩展至 7500px（直径 15000px），非法输入依旧拒绝。
+
+`paint_session_liquify_preview_info` 返回带 generation/revision/source_id 的不可变网格信息；普通像素路径或会话结束返回 NOT_FOUND。`paint_session_read_liquify_preview` 的 kind0 返回 columns×rows 个小端 f32 `(x,y,u,v)`（目标文档坐标、源纹理 UV），必须匹配全部票据。kind1 返回六个小端 u32（原图、下层、上层各自 width/height），随后为三张紧密 RGBA8 sRGB 预乘图片；静态图片只匹配 generation/source_id，不因同源网格新修订而失效。纹理最长边 2048px，各自最多 4Mi 像素；网格最多 257×257 节点。容量探测写 required，不足时不部分写；kind1 首次读取可执行静态代理渲染，必须在后台线程调用，后续同源复用缓存。
+
+原图包含保留的画布外像素。GPU 显示资源由 UI 渲染线程持有，不通过 ABI 传递图形指针。直接预览时视口0/1不生成 CPU 帧，调用方使用网格显示；完成/取消后恢复普通帧。CPU 数值执行器也能独立运行 deferred 核心，但软件 UI 应使用普通 BEGIN。见[设计](../../docs/tools/liquify-resident-preview-design.md)。
 
 ## ABI 1.61 — 可选 GPU 计算算子
 
