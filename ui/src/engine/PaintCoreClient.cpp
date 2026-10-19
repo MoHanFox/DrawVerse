@@ -1017,7 +1017,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             if(!m_selectedLayers.contains(selectedId)){m_selectedLayers={selectedId};emit selectedLayersChanged();}
         }
         if (changedLayers || activeChanged) pruneSelectedLayers();
-        if (wasLiquify!=m_liquifyActive || wasTransform!=m_transformActive || wasTransformBusy!=transformBusy() || wasLiquifyBusy!=liquifyBusy() || propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
+        if (wasLiquify!=m_liquifyActive || m_transformActive || wasTransform!=m_transformActive || wasTransformBusy!=transformBusy() || wasLiquifyBusy!=liquifyBusy() || propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
     });
     connect(m_worker,&BackendWorker::thumbnailReady,this,[this](quint64 generation,quint64 revision,quint64 id,const QString &image) {
         if(m_closing || generation!=m_generation || revision!=m_revision)return;
@@ -2030,7 +2030,11 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
     if(!m_ready || m_closing || m_fileBusy || m_drawing || (kind==PAINT_TRANSFORM_BEGIN && (m_liquifyActive || m_transformActive || layerEditBusy())))return false;
     uint64_t sequence=0;PaintStatus status;QString error;
     {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(kind==PAINT_TRANSFORM_BEGIN){QList<quint64> ids=m_selectedLayers;if(ids.isEmpty())ids={m_active};QVector<uint64_t> targets;for(auto id:ids)targets.append(id);status=(m_residentGpuPreviewAvailable?paint_session_begin_transform_layers_deferred:paint_session_begin_transform_layers)(m_connection->core,m_connection->session,targets.data(),targets.size(),&sequence);}else status=paint_session_transform(m_connection->core,m_connection->session,kind,geometry,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
-    if(status!=PAINT_OK){showError(error);return false;}m_lastTransform=sequence;
+    if(status!=PAINT_OK){
+        // Invalid intermediate handles keep the last valid geometry; the next move can recover.
+        if(kind!=PAINT_TRANSFORM_UPDATE || status!=PAINT_INVALID_ARGUMENT || !error.contains("degenerate or crossed transform"))showError(error);
+        return false;
+    }m_lastTransform=sequence;
     if(kind!=PAINT_TRANSFORM_UPDATE)m_pendingTransform=sequence;
     if(kind==PAINT_TRANSFORM_BEGIN){m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();}
     if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE)m_pendingMutation=sequence;

@@ -14,3 +14,9 @@
 - 白色新文档的背景名称从错误编码字面量恢复为“背景”。不改用户已有文档名称。
 - paint-core masks 的 initial_white_background_has_readable_name_without_allocating_pixels 通过；验证 4096×2160 名称、白底、零瓦片和零修订。
 - Release 随本批验收构建更新到指定目录。
+
+## 普通 18：变换交叉/退化拖动
+
+- Qt 仅静默处理原生校验返回的交叉/退化 UPDATE，不采用无效控制点，其他错误保留。
+- Windows Release Qt：invalidIntermediateTransformKeepsLastGeometryAndRecovers 通过；退化、交叉两种输入后控制点不变且无错误通知，后续有效移动和取消正常。
+- 同跑 emptyTransformAndCancelPublishClosedState 通过，保留会话期间修订通知。

@@ -15,6 +15,21 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void invalidIntermediateTransformKeepsLastGeometryAndRecovers() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("invalid-transform.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
+        QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformPoints().size()==16 && !client.transformBusy());
+        const auto initial=client.transformPoints();QSignalSpy errors(&client,&PaintCoreClient::errorChanged);
+        auto invalid=initial;invalid[3]=initial[0];
+        QVERIFY(!client.updateTransform(invalid,false,2));QCOMPARE(client.transformPoints(),initial);QCOMPARE(errors.size(),0);
+        invalid=initial;invalid[0]=initial[15];
+        QVERIFY(!client.updateTransform(invalid,false,2));QCOMPARE(client.transformPoints(),initial);QCOMPARE(errors.size(),0);
+        auto moved=initial;for(auto &value:moved)value=value.toPointF()+QPointF(3,4);
+        QVERIFY(client.updateTransform(moved,false,2));QTRY_COMPARE(client.transformPoints(),moved);
+        QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
+        QCOMPARE(errors.size(),0);QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
     void emptyTransformAndCancelPublishClosedState() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("cancel.ini"));
         WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
