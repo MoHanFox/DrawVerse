@@ -11,3 +11,7 @@ ABI1.60、`PAINT_FEATURE_STROKE_OUTLINE`、`paint_brush_library_prepare_state_ou
 
 `cargo clippy -p paint-ffi --lib --test async_session --locked -- -D warnings`通过；全部paint-ffi测试目标编译通过。未运行全量`tools/check.py`、Release/CTest ABI、Qt、跨平台或设备验收。Qt镜像仍待后续，本阶段不宣称整项描边完成。
 
+
+## 2026-10-19 继续开发前复核
+
+工作区干净，已有核心、IO 和 ABI 提交。依赖升级至 ZIP9/XML 新版后发现编译失败，已按新接口显式处理文件名解码结果、取得独立字符串并使用文本字节迭代；安全路径、重复项和预算检查保持。修复后核心描边13项、IO描边3项、ABI描边2项通过；ORA files18项、VBR image13项、IO内部7项通过，paint-io全部测试目标编译通过，生成头一致。没有运行全量验证。

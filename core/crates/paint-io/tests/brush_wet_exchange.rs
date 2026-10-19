@@ -361,14 +361,14 @@ fn rewrite_manifest(bytes: &[u8], minor: u32) -> Vec<u8> {
         let mut f = archive.by_index(i).unwrap();
         let mut data = Vec::new();
         f.read_to_end(&mut data).unwrap();
-        if f.name() == "manifest.json" {
+        if f.name().unwrap() == "manifest.json" {
             let mut m: serde_json::Value = serde_json::from_slice(&data).unwrap();
             assert_eq!(m["version"]["minor"], 0);
             m["version"]["minor"] = minor.into();
             data = serde_json::to_vec(&m).unwrap();
         }
         writer
-            .start_file(f.name(), SimpleFileOptions::default())
+            .start_file(f.name().unwrap(), SimpleFileOptions::default())
             .unwrap();
         writer.write_all(&data).unwrap();
     }

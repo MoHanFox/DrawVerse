@@ -161,7 +161,7 @@ fn invalid_editable_manifest_never_falls_back_to_a_flattened_success() {
         let mut f = source.by_index(i).unwrap();
         let mut b = Vec::new();
         f.read_to_end(&mut b).unwrap();
-        files.push((f.name().to_owned(), b));
+        files.push((f.name().unwrap().into_owned(), b));
     }
     for case in 0..3 {
         let path = temp.path().join(format!("bad-{case}.ora"));

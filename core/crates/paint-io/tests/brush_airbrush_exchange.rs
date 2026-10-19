@@ -78,13 +78,13 @@ fn downgrade(bytes: &[u8], minor: u32) -> Vec<u8> {
         let mut entry = input.by_index(i).unwrap();
         let mut body = Vec::new();
         entry.read_to_end(&mut body).unwrap();
-        if entry.name() == "manifest.json" {
+        if entry.name().unwrap() == "manifest.json" {
             let mut value: serde_json::Value = serde_json::from_slice(&body).unwrap();
             value["version"]["minor"] = minor.into();
             body = serde_json::to_vec(&value).unwrap();
         }
         output
-            .start_file(entry.name(), SimpleFileOptions::default())
+            .start_file(entry.name().unwrap(), SimpleFileOptions::default())
             .unwrap();
         output.write_all(&body).unwrap();
     }

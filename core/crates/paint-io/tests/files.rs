@@ -523,7 +523,7 @@ fn openraster_preserves_order_names_offsets_selection_properties_and_zip_layout(
     let bytes = std::fs::read(path).unwrap();
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
     let f = zip.by_index(0).unwrap();
-    assert_eq!(f.name(), "mimetype");
+    assert_eq!(f.name().unwrap(), "mimetype");
     assert_eq!(f.compression(), zip::CompressionMethod::Stored);
     drop(f);
     assert!(zip.by_name("mergedimage.png").is_ok());

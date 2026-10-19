@@ -89,9 +89,9 @@ fn rewrite(bytes: &[u8], mut edit: impl FnMut(&str, &mut Vec<u8>)) -> Vec<u8> {
         let mut file = source.by_index(i).unwrap();
         let mut data = Vec::new();
         file.read_to_end(&mut data).unwrap();
-        edit(file.name(), &mut data);
+        edit(&file.name().unwrap(), &mut data);
         target
-            .start_file(file.name(), SimpleFileOptions::default())
+            .start_file(file.name().unwrap(), SimpleFileOptions::default())
             .unwrap();
         target.write_all(&data).unwrap();
     }

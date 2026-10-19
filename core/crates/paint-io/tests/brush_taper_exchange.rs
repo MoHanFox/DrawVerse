@@ -180,13 +180,13 @@ fn rewrite_minor(bytes: &[u8], minor: u32) -> Vec<u8> {
         let mut f = a.by_index(i).unwrap();
         let mut b = Vec::new();
         f.read_to_end(&mut b).unwrap();
-        if f.name() == "manifest.json" {
+        if f.name().unwrap() == "manifest.json" {
             let mut m: serde_json::Value = serde_json::from_slice(&b).unwrap();
             assert_eq!(m["version"]["minor"], 0);
             m["version"]["minor"] = minor.into();
             b = serde_json::to_vec(&m).unwrap();
         }
-        w.start_file(f.name(), SimpleFileOptions::default())
+        w.start_file(f.name().unwrap(), SimpleFileOptions::default())
             .unwrap();
         w.write_all(&b).unwrap();
     }

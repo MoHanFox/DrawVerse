@@ -1001,9 +1001,9 @@ pub(crate) fn checked_archive<'a>(
     for i in 0..zip.len() {
         check(token)?;
         let entry = zip.by_index(i)?;
-        let name = entry.name();
-        if !path_valid(name)
-            || !paths.insert(name.to_owned())
+        let name = entry.name()?;
+        if !path_valid(&name)
+            || !paths.insert(name.to_string())
             || !names.insert(name.to_ascii_lowercase())
             || entry.is_symlink()
             || entry.encrypted()

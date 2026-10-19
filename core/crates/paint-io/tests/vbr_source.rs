@@ -317,8 +317,8 @@ fn rewrite(bytes: &[u8], mut edit: impl FnMut(&str, &mut Vec<u8>) -> bool) -> Ve
         let mut entry = archive.by_index(i).unwrap();
         let mut data = Vec::new();
         entry.read_to_end(&mut data).unwrap();
-        if edit(entry.name(), &mut data) {
-            zip.start_file(entry.name(), SimpleFileOptions::default())
+        if edit(&entry.name().unwrap(), &mut data) {
+            zip.start_file(entry.name().unwrap(), SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(&data).unwrap();
         }

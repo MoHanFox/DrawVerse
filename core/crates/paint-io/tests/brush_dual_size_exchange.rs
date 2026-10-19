@@ -224,14 +224,14 @@ fn sizing_contract_and_manifest_downgrade_are_strict() {
         let mut file = archive.by_index(i).unwrap();
         let mut data = Vec::new();
         file.read_to_end(&mut data).unwrap();
-        if file.name() == "manifest.json" {
+        if file.name().unwrap() == "manifest.json" {
             let mut json: serde_json::Value = serde_json::from_slice(&data).unwrap();
             assert_eq!(json["version"]["minor"], 0);
             json["version"]["minor"] = 12.into();
             data = serde_json::to_vec(&json).unwrap();
         }
         writer
-            .start_file(file.name(), SimpleFileOptions::default())
+            .start_file(file.name().unwrap(), SimpleFileOptions::default())
             .unwrap();
         writer.write_all(&data).unwrap();
     }

@@ -100,7 +100,7 @@ fn v2_masks_remain_readable_and_invalid_clipping_metadata_is_rejected() {
         let mut f = zip.by_index(i).unwrap();
         let mut data = Vec::new();
         f.read_to_end(&mut data).unwrap();
-        entries.push((f.name().to_owned(), data));
+        entries.push((f.name().unwrap().into_owned(), data));
     }
     for case in 0..3 {
         let path = temp.path().join(format!("case{case}.ora"));

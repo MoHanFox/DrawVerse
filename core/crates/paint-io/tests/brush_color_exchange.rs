@@ -137,12 +137,12 @@ fn minor(bytes: &[u8], v: u32) -> Vec<u8> {
         let mut entry = input.by_index(i).unwrap();
         let mut data = Vec::new();
         entry.read_to_end(&mut data).unwrap();
-        if entry.name() == "manifest.json" {
+        if entry.name().unwrap() == "manifest.json" {
             let mut m: serde_json::Value = serde_json::from_slice(&data).unwrap();
             m["version"]["minor"] = v.into();
             data = serde_json::to_vec(&m).unwrap();
         }
-        out.start_file(entry.name(), SimpleFileOptions::default())
+        out.start_file(entry.name().unwrap(), SimpleFileOptions::default())
             .unwrap();
         out.write_all(&data).unwrap();
     }

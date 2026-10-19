@@ -357,7 +357,7 @@ fn parse_stack(xml: &[u8]) -> Result<ParsedStack> {
                 image_open = false;
             }
             Event::Decl(_) | Event::Comment(_) => {}
-            Event::Text(ref e) if e.as_ref().iter().all(u8::is_ascii_whitespace) => {}
+            Event::Text(ref e) if e.iter().all(u8::is_ascii_whitespace) => {}
             Event::Eof => break,
             _ => {
                 return Err(Error::Unsupported(
@@ -472,7 +472,8 @@ pub(crate) fn decode(
     for i in 0..zip.len() {
         check(token)?;
         let f = zip.by_index(i)?;
-        if !safe_path(f.name().trim_end_matches('/')) || !names.insert(f.name().to_owned()) {
+        let name = f.name()?;
+        if !safe_path(name.trim_end_matches('/')) || !names.insert(name.into_owned()) {
             return Err(Error::Invalid("unsafe/duplicate archive entry"));
         }
         if !matches!(
@@ -490,7 +491,7 @@ pub(crate) fn decode(
     }
     {
         let first = zip.by_index(0)?;
-        if first.name() != "mimetype" || first.compression() != CompressionMethod::Stored {
+        if first.name()? != "mimetype" || first.compression() != CompressionMethod::Stored {
             return Err(Error::Invalid(
                 "OpenRaster mimetype must be first and stored",
             ));

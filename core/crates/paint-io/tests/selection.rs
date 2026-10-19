@@ -63,7 +63,7 @@ fn ora_selection_roundtrip_does_not_crop_pixels_or_create_history() {
         let mut f = zip.by_index(i).unwrap();
         let mut bytes = Vec::new();
         f.read_to_end(&mut bytes).unwrap();
-        entries.push((f.name().to_owned(), bytes));
+        entries.push((f.name().unwrap().into_owned(), bytes));
     }
     let bad = temp.path().join("bad.ora");
     let mut writer = zip::ZipWriter::new(std::fs::File::create(&bad).unwrap());
