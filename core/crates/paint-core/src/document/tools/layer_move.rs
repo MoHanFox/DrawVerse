@@ -3,7 +3,7 @@ use super::*;
 
 #[derive(Debug)]
 pub(super) struct LayerMoveState {
-    id: LayerId,
+    ids: Vec<LayerId>,
     baseline: Vec<(usize, crate::LayerAppearance)>,
     delta: (i32, i32),
     source: Option<Arc<ResidentPreviewSource>>,
@@ -11,27 +11,38 @@ pub(super) struct LayerMoveState {
 
 impl Document {
     pub fn begin_layer_move(&mut self, id: LayerId, deferred: bool) -> Result<()> {
-        self.idle()?;
-        self.check_ancestors(id, crate::LOCK_POSITION | crate::LOCK_ALL)?;
-        let at = self.layer_index(id)?;
-        let range = if self.layers[at].group || self.mask_for(id).is_some() {
-            self.subtree(id)?
-        } else {
-            at..at + 1
-        };
+        self.begin_layer_moves(&[id], deferred)
+    }
+
+    fn layer_move_baseline(&self, ids: &[LayerId]) -> Result<Vec<(usize, crate::LayerAppearance)>> {
         let mut baseline = Vec::new();
-        for i in range {
-            self.check_ancestors(self.layers[i].id, crate::LOCK_POSITION | crate::LOCK_ALL)?;
-            if !self.layers[i].group {
-                baseline.push((i, self.layers[i].appearance));
+        for id in self.batch_roots(ids)? {
+            self.check_ancestors(id, crate::LOCK_POSITION | crate::LOCK_ALL)?;
+            let at = self.layer_index(id)?;
+            let range = if self.layers[at].group || self.mask_for(id).is_some() {
+                self.subtree(id)?
+            } else {
+                at..at + 1
+            };
+            for i in range {
+                self.check_ancestors(self.layers[i].id, crate::LOCK_POSITION | crate::LOCK_ALL)?;
+                if !self.layers[i].group {
+                    baseline.push((i, self.layers[i].appearance));
+                }
             }
         }
+        Ok(baseline)
+    }
+
+    pub fn begin_layer_moves(&mut self, ids: &[LayerId], deferred: bool) -> Result<()> {
+        self.idle()?;
+        let baseline = self.layer_move_baseline(ids)?;
         self.layer_move = Some(LayerMoveState {
-            id,
+            ids: ids.to_vec(),
             baseline,
             delta: (0, 0),
-            source: if deferred {
-                self.resident_source(id)
+            source: if deferred && ids.len() == 1 {
+                self.resident_source(ids[0])
             } else {
                 None
             },
@@ -85,12 +96,30 @@ impl Document {
         for (i, appearance) in state.baseline {
             self.layers[i].appearance = appearance;
         }
-        let result = self.move_layer(state.id, dx, dy);
+        let result = self.move_layers(&state.ids, dx, dy);
         // A zero-distance completion still publishes a final frame for handoff.
         if dx == 0 && dy == 0 || result.is_err() {
             self.dirty_all();
         }
         result
+    }
+
+    /// Translate all normalized roots with one metadata-only history transaction.
+    pub fn move_layers(&mut self, ids: &[LayerId], dx: i32, dy: i32) -> Result<()> {
+        self.idle()?;
+        let baseline = self.layer_move_baseline(ids)?;
+        let changes = baseline
+            .iter()
+            .map(|&(i, a)| Ok((i, a.translated(dx, dy)?)))
+            .collect::<Result<Vec<_>>>()?;
+        if (dx == 0 && dy == 0) || changes.is_empty() {
+            return Ok(());
+        }
+        let mut nodes = self.structure();
+        for (i, a) in changes {
+            nodes[i].appearance = a;
+        }
+        self.commit_structure_entry(nodes, crate::HistoryAction::MoveLayer)
     }
 
     /// Common resident packet: deformation uses a bounded grid, translation four vertices.
@@ -141,6 +170,83 @@ mod tests {
         d
     }
 
+    #[test]
+    fn layer_moves_normalize_overlaps_and_commit_one_history() {
+        let mut d = seed();
+        let a = d.active_layer();
+        let b = d.add_layer("other").unwrap();
+        let mask = d.add_mask(a).unwrap();
+        let group = d.group_layer(a, "group").unwrap();
+        let ids = [group, a, mask, b];
+        let depth = d.history_depth();
+        let tiles = d.layer(a).unwrap().tiles.clone();
+        d.begin_layer_moves(&ids, true).unwrap();
+        assert!(!d.layer_move_deferred());
+        for (x, y) in [(3, 5), (-18, 12), (0, 0), (9, -7)] {
+            d.update_layer_move(x, y).unwrap();
+            for id in [a, mask, b] {
+                let a = d.layer(id).unwrap().appearance;
+                assert_eq!((a.offset_x, a.offset_y), (x, y));
+            }
+            assert_eq!(d.history_depth(), depth);
+        }
+        d.cancel_layer_move().unwrap();
+        for id in [a, mask, b] {
+            assert_eq!(d.layer(id).unwrap().appearance.offset_x, 0);
+        }
+        d.begin_layer_moves(&ids, true).unwrap();
+        d.update_layer_move(20, 1).unwrap();
+        d.commit_layer_move(11, -4).unwrap();
+        assert_eq!(d.history_depth().0, depth.0 + 1);
+        for id in [a, mask, b] {
+            assert_eq!(d.layer(id).unwrap().appearance.offset_x, 11);
+        }
+        d.undo().unwrap();
+        for id in [a, mask, b] {
+            assert_eq!(d.layer(id).unwrap().appearance.offset_x, 0);
+        }
+        d.redo().unwrap();
+        for id in [a, mask, b] {
+            assert_eq!(d.layer(id).unwrap().appearance.offset_y, -4);
+        }
+        for (key, tile) in tiles {
+            assert!(Arc::ptr_eq(&tile, &d.layer(a).unwrap().tiles[&key]));
+        }
+        let depth = d.history_depth();
+        d.begin_layer_moves(&ids, false).unwrap();
+        d.update_layer_move(5, 5).unwrap();
+        d.commit_layer_move(0, 0).unwrap();
+        assert_eq!(d.history_depth(), depth);
+    }
+    #[test]
+    fn layer_moves_validate_every_target_before_changes() {
+        let mut d = seed();
+        let a = d.active_layer();
+        let b = d.add_layer("other").unwrap();
+        let mut locked = d.layer(b).unwrap().appearance;
+        locked.locks = crate::LOCK_POSITION;
+        d.set_layer_appearance(b, locked).unwrap();
+        let depth = d.history_depth();
+        assert!(d.begin_layer_moves(&[a, b], false).is_err());
+        assert!(!d.layer_move_active());
+        assert!(d.move_layers(&[a, b], 5, 2).is_err());
+        assert_eq!(d.layer(a).unwrap().appearance.offset_x, 0);
+        assert_eq!(d.history_depth(), depth);
+        locked.locks = 0;
+        d.set_layer_appearance(b, locked).unwrap();
+        assert!(d.begin_layer_moves(&[a, a], false).is_err());
+        assert!(d.begin_layer_moves(&[a, 9999], false).is_err());
+        assert!(d.begin_layer_moves(&[], false).is_err());
+        let depth = d.history_depth();
+        d.begin_layer_moves(&[a, b], false).unwrap();
+        d.update_layer_move(3, 2).unwrap();
+        assert!(d.commit_layer_move(i32::MAX, 2).is_err());
+        assert!(!d.layer_move_active());
+        assert_eq!(d.history_depth(), depth);
+        for id in [a, b] {
+            assert_eq!(d.layer(id).unwrap().appearance.offset_x, 0);
+        }
+    }
     #[test]
     fn layer_move_absolute_preview_cancel_commit_and_history() {
         for deferred in [false, true] {

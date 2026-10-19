@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新多选图层移动：当前多选归并最高层子树，绝对位移预览/取消与最终单历史共用 layer_move；ABI1.67 复制多目标数组。核心5/原生新1旧1/Qt1、四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`；多目标仍 CPU 回退，GPU 与首次移动性能另行优化，详情见 2026-10-20 分项设计/验收。
+
 - 最新常驻 GPU 蚂蚁线：`docs/tools/selection-resident-ants-design.md` / `docs/validations/tools/selection-resident-ants-validation.md`；CPU 选区几何、Qt 静态遮罩与动画 shader，文档宽高≤4096/实际 GPU 后端启用，软件/更大文档回退。真实 D3D11 交织 4K 选区 12 帧导航栅格化 1→1，软件 2 项/几何 4 项与 Release 通过，ABI1.65 不变，产物 `build/qt/bin/Release`。初始栅格化、低倍近似及显示内存边界见设计；未跑全量/跨平台/实体输入。
 
 - 2026-10-20 用户问题清单：`docs/planning/2026-10-20-bugfix-design.md` / `docs/validations/planning/2026-10-20-bugfix-validation.md`；直接 master 分项验证、提交与推送，用户验收输出 `build/qt/bin/Release`。自由变换开始失败/取消需同时通知 active 与 busy 变化，避免核心已关闭但 QML 覆盖层残留；其余项以清单和验收记录为准。

@@ -1667,7 +1667,7 @@ bool PaintCoreClient::beginLayerMove(QPointF position,bool pick) {
     const auto kind=pick?(resident?PAINT_LAYER_MOVE_PICK_DEFERRED:PAINT_LAYER_MOVE_PICK):(resident?PAINT_LAYER_MOVE_BEGIN_DEFERRED:PAINT_LAYER_MOVE_BEGIN);
     uint64_t sequence=0;
     PaintStatus status;QString error;
-    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_layer_move(m_connection->core,m_connection->session,kind,m_active,pick?int(position.x()):0,pick?int(position.y()):0,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(!pick && m_selectedLayers.size()>1){QVector<uint64_t> ids;for(auto id:m_selectedLayers)ids.append(id);status=paint_session_begin_layer_moves(m_connection->core,m_connection->session,ids.data(),uint32_t(ids.size()),resident?1:0,&sequence);}else status=paint_session_layer_move(m_connection->core,m_connection->session,kind,m_active,pick?int(position.x()):0,pick?int(position.y()):0,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){showError(error);return false;}
     m_layerMoveSequence=sequence;m_layerMoveDelta={};m_layerMoveDirty=false;m_layerMoveFinish=false;
     m_layerMoveActive=true;m_layerMoveStarting=true;m_layerMoveClosing=false;

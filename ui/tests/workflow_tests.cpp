@@ -39,6 +39,16 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void multipleLayersMoveTogetherAndCancelRestoresAll() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("multi-move.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());const auto a=client.activeLayer();
+        client.setBrushRadius(3);QVERIFY(client.beginStroke({{12,12},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.addLayer("second");QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());const auto b=client.activeLayer();QVERIFY(client.beginStroke({{32,32},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),3);QTRY_VERIFY(!client.layerEditBusy());
+        client.selectLayers(a,int(Qt::ControlModifier));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.selectedLayers().size(),2);const auto selected=client.selectedLayers();const auto depth=client.undoDepth();
+        const auto offset=[&](quint64 id){for(const auto &v:client.layers()){const auto l=v.toMap();if(l.value("id").toULongLong()==id)return QPoint(l.value("offsetX").toInt(),l.value("offsetY").toInt());}return QPoint(-999,-999);};
+        QVERIFY(client.beginLayerMove({0,0},false));client.updateLayerMove({5,-3});QTRY_COMPARE(offset(a),QPoint(5,-3));QTRY_COMPARE(offset(b),QPoint(5,-3));QCOMPARE(client.undoDepth(),depth);QCOMPARE(client.selectedLayers(),selected);
+        client.finishLayerMove({11,4},true);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(offset(a),QPoint(11,4));QCOMPARE(offset(b),QPoint(11,4));QCOMPARE(client.undoDepth(),depth+1);
+        client.undo();QTRY_VERIFY(!client.layerEditBusy());QTRY_COMPARE(offset(a),QPoint());QCOMPARE(offset(b),QPoint());
+        QVERIFY(client.beginLayerMove({0,0},false));client.updateLayerMove({7,2});QTRY_COMPARE(offset(b),QPoint(7,2));client.finishLayerMove({},false);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(offset(a),QPoint());QCOMPARE(offset(b),QPoint());QCOMPARE(client.undoDepth(),depth);QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
     void fullImageFlipClientRefreshesPixelsAndUndo() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("flip.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(65,41);QTRY_COMPARE(client.documentWidth(),65);QTRY_VERIFY(!client.layerEditBusy());
         client.requestViewport(0,{0,0,65,41},{65,41});client.setBrushRadius(3);client.setBrushColor(Qt::black);QVERIFY(client.beginStroke({{12,10},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!client.frame().isNull());QTRY_VERIFY(client.frame().pixelColor(12,10).red()<20);

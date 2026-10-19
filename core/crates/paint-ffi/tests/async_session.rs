@@ -4038,3 +4038,79 @@ fn full_image_flip_abi_pixels_single_history_and_descriptor_validation() {
         }
     }
 }
+
+#[test]
+fn layer_moves_abi_copies_targets_and_final_delta_is_one_history() {
+    let h = Harness::new(64, 64);
+    h.wait(h.stroke(12., 12.));
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_ADD_LAYER,
+        text: b"second".as_ptr(),
+        text_length: 6,
+        ..dto!(PaintCommand)
+    }));
+    let before = h.wait(h.stroke(32., 32.));
+    unsafe {
+        let mut seq = 99;
+        let valid = [1u64, 2];
+        let duplicate = [1u64, 1];
+        let zero = [1u64, 0];
+        for (ids, count, flags) in [
+            (ptr::null(), 1, 0),
+            (valid.as_ptr(), 0, 0),
+            (duplicate.as_ptr(), 2, 0),
+            (zero.as_ptr(), 2, 0),
+            (valid.as_ptr(), 2, 2),
+        ] {
+            assert_eq!(
+                paint_session_begin_layer_moves(h.core, h.session, ids, count, flags, &mut seq),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(seq, 0);
+        }
+        let mut ids = [1u64, 2];
+        assert_eq!(
+            paint_session_begin_layer_moves(h.core, h.session, ids.as_ptr(), 2, 1, &mut seq),
+            PAINT_OK
+        );
+        ids.fill(9999);
+        let begun = h.wait(seq);
+        assert_ne!(begun.flags & PAINT_SESSION_LAYER_MOVE, 0);
+        assert_eq!(begun.undo_depth, before.undo_depth);
+        for (kind, x, y) in [
+            (PAINT_LAYER_MOVE_UPDATE, 4, 3),
+            (PAINT_LAYER_MOVE_COMMIT, 9, -2),
+        ] {
+            assert_eq!(
+                paint_session_layer_move(h.core, h.session, kind, 0, x, y, &mut seq),
+                PAINT_OK
+            );
+            let info = h.wait(seq);
+            assert_eq!(info.last_error_status, PAINT_OK);
+            assert_eq!(
+                info.undo_depth,
+                before.undo_depth + u32::from(kind == PAINT_LAYER_MOVE_COMMIT)
+            );
+            for id in [1, 2] {
+                let mut a = dto!(PaintLayerAppearance);
+                assert_eq!(
+                    paint_session_layer_appearance(h.core, h.session, info.publication, id, &mut a),
+                    PAINT_OK
+                );
+                assert_eq!((a.offset_x, a.offset_y), (x, y));
+            }
+        }
+        let original = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        for id in [1, 2] {
+            let mut a = dto!(PaintLayerAppearance);
+            assert_eq!(
+                paint_session_layer_appearance(h.core, h.session, original.publication, id, &mut a),
+                PAINT_OK
+            );
+            assert_eq!(a.offset_x, 0);
+        }
+    }
+}

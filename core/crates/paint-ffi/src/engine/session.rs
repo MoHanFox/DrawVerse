@@ -43,6 +43,7 @@ pub(crate) enum Operation {
     TransformLayers(Vec<u64>, bool),
     Liquify(u32, Option<paint_core::LiquifyDab>),
     LayerMove(u32, u64, i32, i32),
+    LayerMoves(Vec<u64>, bool),
     CopyLayers(Vec<u64>),
     PasteLayers(Vec<u8>, u64),
     DuplicateLayers(Vec<u64>),
@@ -806,7 +807,10 @@ impl Engine {
         ) && !self.document.stroke_active());
         let liquify_control = matches!(command.operation, Operation::Liquify(kind, _) if !matches!(kind,PAINT_LIQUIFY_DAB|PAINT_LIQUIFY_STROKE_BEGIN|PAINT_LIQUIFY_STROKE_END));
         let barrier = matches!(command.operation, Operation::LayerMove(kind, ..) if kind != PAINT_LAYER_MOVE_UPDATE)
-            || matches!(command.operation, Operation::TransformLayers(..))
+            || matches!(
+                command.operation,
+                Operation::TransformLayers(..) | Operation::LayerMoves(..)
+            )
             || matches!(command.operation,Operation::Transform(kind,_) if kind!=PAINT_TRANSFORM_UPDATE && kind!=PAINT_TRANSFORM_CHECKPOINT)
             || matches!(
                 command.operation,
@@ -883,6 +887,12 @@ impl Engine {
             return Err(paint_core::Error::Busy.into());
         }
         match operation {
+            Operation::LayerMoves(ids, deferred) => {
+                if self.files.running() {
+                    return Err(paint_core::Error::Busy.into());
+                }
+                self.document.begin_layer_moves(&ids, deferred)?;
+            }
             Operation::LayerMove(kind, id, x, y) => match kind {
                 PAINT_LAYER_MOVE_BEGIN
                 | PAINT_LAYER_MOVE_BEGIN_DEFERRED

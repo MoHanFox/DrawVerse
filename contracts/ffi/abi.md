@@ -1,4 +1,8 @@
-# C ABI 1.66.0 契约
+# C ABI 1.67.0 契约
+
+## ABI 1.67 — 多图层移动会话
+
+`paint_session_begin_layer_moves(core,session,ids,count,deferred,out_sequence)` 在返回前复制 1–4096 个不重复、非零 ID，deferred 为0/1；其余操作复用 `paint_session_layer_move` 的 UPDATE/COMMIT/CANCEL。重叠子树归并、所有锁/坐标先验证，一次最终历史，取消恢复全部目标；多目标当前保留 CPU 显示回退，deferred 只对兼容单目标常驻生效。DTO 不变，旧入口保留。
 
 ## ABI 1.66 — 完整图像翻转
 

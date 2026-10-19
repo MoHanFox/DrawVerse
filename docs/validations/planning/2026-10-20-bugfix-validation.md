@@ -133,3 +133,10 @@
 - Windows Release Qt fullImageFlipClientRefreshesPixelsAndUndo 通过，实际异步客户端翻转/刷新与撤销；变换会话中拒绝翻转。共享 qt_transform_tests 全部 7 项通过（含初始化/清理），包括实际窗口强折叠不透明/半透明预览与完成零差异。
 - ABI 1.66，DTO 布局不变；四个 C/C++ 静态/动态消费者、严格 Clippy、格式与生成头检查通过。Release 输出 build/qt/bin/Release。
 - 仍受坐标、逻辑瓦片与暂存预算限制，失败保留文档；没有新增 GPU 算子，也尚未接长任务分步进度。未跑全量/跨平台/实体设备。
+
+## 普通 16，第一步：多选图层移动
+
+- 图层工具普通拖动提交当前多选，组/子节点重叠归并，绝对位移预览与取消覆盖全部目标；松手最终坐标一次生成历史。Ctrl 拾取仍为单目标。
+- 核心 layer_move 5 项通过，覆盖两个独立根、组与蒙版重叠、锁拒绝原子性、取消、最终坐标、单历史与瓦片 Arc 保持。原生数组复制/参数校验 1 项与既有常驻移动屏障回归 1 项通过。
+- Windows Release Qt multipleLayersMoveTogetherAndCancelRestoresAll 通过：两实际绘画图层的多选、实时位移、最终坐标、undo、取消与选择保持。四 ABI 消费者、严格 Clippy、格式与生成头检查通过，ABI1.67，Release 输出 build/qt/bin/Release。
+- 多目标目前使用 CPU 像素回退，单目标常驻 GPU 保持；本项不宣称多目标或大画布首次移动性能达标，未跑全量/跨平台/实体连续输入。

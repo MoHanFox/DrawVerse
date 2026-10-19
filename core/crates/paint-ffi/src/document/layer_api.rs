@@ -44,6 +44,42 @@ pub unsafe extern "C" fn paint_session_layer_move(
     })
 }
 
+/// ABI 1.67: begin one move session for copied layer/group IDs. Existing UPDATE/COMMIT/CANCEL apply.
+/// # Safety
+/// Owned serialized handles, count readable IDs and writable nonoverlapping sequence.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_begin_layer_moves(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    ids: *const u64,
+    count: u32,
+    deferred: u32,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        if count == 0 || count > 4096 || deferred > 1 {
+            return Err(ApiError::invalid("layer move targets/flags"));
+        }
+        let ids = pointers::layer_ids(ids, count)?;
+        if ids.contains(&0)
+            || ids
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != ids.len()
+        {
+            return Err(ApiError::invalid("layer move target IDs"));
+        }
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .submit(Operation::LayerMoves(ids, deferred != 0))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+
 /// ABI 1.24: asynchronously select the top visible content pixel at document coordinates.
 /// Optional translation is a single normal history entry. Empty pixels are no-ops;
 /// position-locked layers can be selected but remain stationary. No caller memory is retained.

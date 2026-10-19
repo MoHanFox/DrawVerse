@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 66
+#define PAINT_ABI_MINOR 67
 
 #define PAINT_ABI_PATCH 0
 
@@ -1900,6 +1900,18 @@ PaintStatus paint_session_begin_brush(struct PaintCore *core,
                                       const struct PaintBrushStrokeDesc *request,
                                       const struct PaintPoint *point,
                                       uint64_t *out_sequence);
+
+/**
+ * ABI 1.67: begin one move session for copied layer/group IDs. Existing UPDATE/COMMIT/CANCEL apply.
+ * # Safety
+ * Owned serialized handles, count readable IDs and writable nonoverlapping sequence.
+ */
+PaintStatus paint_session_begin_layer_moves(struct PaintCore *core,
+                                            struct PaintSession *session,
+                                            const uint64_t *ids,
+                                            uint32_t count,
+                                            uint32_t deferred,
+                                            uint64_t *out_sequence);
 
 /**
  * Begin after an exact prepared revision, with waiting confined to Rust workers.
