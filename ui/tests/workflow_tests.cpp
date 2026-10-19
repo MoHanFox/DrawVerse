@@ -36,6 +36,13 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void repeatedWandClicksDoNotGrowSelectionOrPublishNewGeometry() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("wand-repeat.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());client.setBrushRadius(4);client.setBrushColor(Qt::black);QVERIFY(client.beginStroke({{32,32},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.activateWand();
+        QVERIFY(client.selectWand({0,0},1));QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.selectWand({32,32},1));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.selectionSteps().size(),2);
+        const auto before=client.selectionSteps();const auto revision=client.revision();const auto history=client.undoDepth();QSignalSpy changes(&client,&PaintCoreClient::selectionChanged);
+        for(int i=0;i<16;++i){QVERIFY(client.selectWand({32,32},1));QTRY_VERIFY(!client.layerEditBusy());}
+        QCOMPARE(client.selectionSteps(),before);QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),history);QCOMPARE(changes.size(),0);QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
     void visibleResourceThumbnailSurvivesSharedCacheEviction() {
         ResourcePreviewCacheProbe client;const auto first=QString(64,'a'),second=QString(64,'b');
         QImage image(2,2,QImage::Format_RGBA8888);image.fill(Qt::white);QByteArray bytes;QBuffer buffer(&bytes);QVERIFY(buffer.open(QIODevice::WriteOnly));QVERIFY(image.save(&buffer,"PNG"));

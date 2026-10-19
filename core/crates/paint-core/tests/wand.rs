@@ -159,3 +159,34 @@ fn clipped_average_all_sizes_composite_offsets_locks_and_partial_aa() {
     a.select_wand(o).unwrap();
     assert_eq!(a.selection().coverage(1.5, 0.5), 0.);
 }
+
+#[test]
+fn repeated_add_and_intersect_clicks_keep_steps_revision_history_and_pixels() {
+    for operation in [SelectionOperation::Add, SelectionOperation::Intersect] {
+        let mut d = split();
+        d.select_wand(wand(0, 0)).unwrap();
+        let mut options = wand(5, 0);
+        options.operation = operation;
+        d.select_wand(options).unwrap();
+        let selection = d.selection().clone();
+        let revision = d.revision();
+        let history = d.history_depth();
+        let pixels = d.snapshot();
+        for _ in 0..100 {
+            d.select_wand(options).unwrap();
+        }
+        assert_eq!(d.selection(), &selection);
+        assert_eq!(d.revision(), revision);
+        assert_eq!(d.history_depth(), history);
+        assert_eq!(d.selection().steps().len(), 2);
+        for y in 0..4 {
+            for x in 0..8 {
+                assert_eq!(d.pixel(x, y), pixels.pixel(x, y));
+            }
+        }
+        assert_eq!(
+            Selection::from_text(&d.selection().to_text()).unwrap(),
+            selection
+        );
+    }
+}

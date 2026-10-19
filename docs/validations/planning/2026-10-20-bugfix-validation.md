@@ -108,3 +108,14 @@
 - 后台复用 PNG 资源导入，role=3 应用到开始导入时的目标预设，保留主笔纹理和既有描边纹理参数。切换笔刷后导入完成不会污染新笔刷。
 - Windows Release qt_workflow_tests 全部 13 项（含初始化/清理）通过，新用例 outlineTextureCanBeChosenWithoutMainTextureAndImportKeepsTarget 覆盖待选入口、直接导入、目标切换、主纹理不变、资源重新选择及状态重开。Release 已重建到 build/qt/bin/Release。
 - SDF 算法与自身描边独立纹理扩展未在本项完成，未新增 GPU 算子。
+
+## 性能 3，第二步：重复魔棒不增加步骤
+
+- 同一连续 Add/max 或 Intersect/min 段的相同形状复用原选区身份；完整比较几何及灰度 alpha，保留跨操作次序和重复减法语义。
+- 核心幂等单元 1 与 wand 集成 3 通过；Add/Intersect 各重复 100 次，步骤数、修订、历史及像素不变，灰度减法仍逐次累积。
+- Windows Release Qt repeatedWandClicksDoNotGrowSelectionOrPublishNewGeometry 通过；真实客户端/原生队列重复点击 16 次后仍两步、零 selectionChanged，无多余历史与错误。
+- paint-core / paint-ffi 严格 Clippy、格式与生成头检查通过，Release 已重建到 build/qt/bin/Release。独立复杂蚂蚁线绘制与 AA 专项仍待后续。
+
+## 涂抹与描边共享 UI 补验
+
+- 完整 Qt UI 目标重新编译、链接后，wetSmudgeUsesOwnToolStrengthAndFingerPolicyWithUndo、smudgeSharedBrushParametersInputAndDelayedHelp、strokeOutlineQtPreviewPixelsExchangeAndReopen、strokeOutlineResourcesExchangeToFreshStore 均通过；覆盖真实涂抹/撤销和描边预览、像素、资源交换及重开。

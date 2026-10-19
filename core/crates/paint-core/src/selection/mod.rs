@@ -750,6 +750,26 @@ impl Selection {
         if operation == SelectionOperation::Invert {
             return Err(Error::InvalidArgument("shape supplied for inversion"));
         }
+        // max/min are idempotent within a contiguous run. Do not cross subtract/invert:
+        // graded masks make repeated subtraction meaningful, even with identical geometry.
+        if self.enabled
+            && matches!(
+                operation,
+                SelectionOperation::Add | SelectionOperation::Intersect
+            )
+        {
+            for step in self.steps.iter().rev() {
+                if step.operation != operation && step.operation != SelectionOperation::Replace {
+                    break;
+                }
+                if step.shape.as_ref() == Some(&shape) {
+                    return Ok(self.clone());
+                }
+                if step.operation == SelectionOperation::Replace {
+                    break;
+                }
+            }
+        }
         let mut steps = if operation == SelectionOperation::Replace {
             Vec::new()
         } else if !self.enabled && operation == SelectionOperation::Subtract {
@@ -1152,4 +1172,43 @@ mod coverage_cache_tests {
         cache.clear();
         assert!(cache.blocks.is_empty() && cache.order.is_empty() && cache.identity.is_none());
     }
+}
+
+#[cfg(test)]
+#[test]
+fn identical_add_and_intersect_keep_identity_but_graded_subtraction_remains_ordered() {
+    let shape = |alpha| {
+        let mut shape = SelectionShape::geometry(SelectionKind::Mask, 0., 0., 1., 1., true);
+        shape.mask = Some(SelectionMask::from_alpha(1, 1, vec![alpha]).unwrap());
+        shape
+    };
+    let a = shape(192);
+    let b = shape(64);
+    for operation in [SelectionOperation::Add, SelectionOperation::Intersect] {
+        let first = Selection::default()
+            .apply(a.clone(), SelectionOperation::Replace, 1, 1)
+            .unwrap()
+            .apply(b.clone(), operation, 1, 1)
+            .unwrap();
+        let mut current = first.clone();
+        for _ in 0..100 {
+            current = current.apply(a.clone(), operation, 1, 1).unwrap();
+            current = current.apply(b.clone(), operation, 1, 1).unwrap();
+        }
+        assert_eq!(current, first);
+        assert!(Arc::ptr_eq(&current.steps, &first.steps));
+    }
+    let first = Selection::default()
+        .apply(a.clone(), SelectionOperation::Replace, 1, 1)
+        .unwrap();
+    let subtracted = first
+        .apply(b.clone(), SelectionOperation::Subtract, 1, 1)
+        .unwrap()
+        .apply(b, SelectionOperation::Subtract, 1, 1)
+        .unwrap();
+    assert_eq!(subtracted.steps().len(), 3);
+    assert!((subtracted.coverage(0.5, 0.5) - 64. / 255.).abs() < 1e-6);
+    let restored = subtracted.apply(a, SelectionOperation::Add, 1, 1).unwrap();
+    assert_eq!(restored.steps().len(), 4);
+    assert!((restored.coverage(0.5, 0.5) - 192. / 255.).abs() < 1e-6);
 }
