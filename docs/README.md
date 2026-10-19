@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [复杂图像套索、魔棒与油漆桶性能](tools/selection-complexity-performance-design.md)
+
 - [图层移动实时预览](tools/layer-move-preview-design.md)
 
 - [GPU 加速规则、使用方法与代码入口](platform/gpu-acceleration-design.md)

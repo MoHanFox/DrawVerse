@@ -1,7 +1,7 @@
-use super::bucket::{compare_color, enqueue, match_weight, MAX_FILL_TILES};
+use super::bucket::{compare_color, match_weight};
+use super::color_region::RegionDiscovery;
 use super::*;
 use crate::{HistoryAction, SelectionMask, SelectionOperation};
-use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug)]
 pub struct WandSelection {
@@ -45,11 +45,11 @@ impl Document {
         {
             return Err(Error::ResourceLimit("wand global scan"));
         }
-        let sample = |x, y| {
+        let read_row = |x, y, count| {
             if options.all_layers {
-                self.try_pixel(x, y)
+                self.read_row(x, y, count)
             } else {
-                layer.canvas_pixel(x, y)
+                layer.read_canvas_row(x, y, count)
             }
         };
         let radius = options.sample_size / 2;
@@ -58,10 +58,10 @@ impl Document {
         for y in
             options.y.saturating_sub(radius)..=options.y.saturating_add(radius).min(self.height - 1)
         {
-            for x in options.x.saturating_sub(radius)
-                ..=options.x.saturating_add(radius).min(self.width - 1)
-            {
-                let c = compare_color(sample(x, y)?);
+            let left = options.x.saturating_sub(radius);
+            let right = options.x.saturating_add(radius).min(self.width - 1);
+            for pixel in read_row(left, y, right - left + 1)? {
+                let c = compare_color(pixel);
                 for i in 0..4 {
                     reference[i] += c[i];
                 }
@@ -81,60 +81,33 @@ impl Document {
             contiguous: options.contiguous,
             all_layers: options.all_layers,
         };
-        let mut visited = BTreeMap::new();
-        let mut queue = VecDeque::new();
-        let mut matches: BTreeMap<(u32, u32), Box<[u8; 4096]>> = BTreeMap::new();
-        let (mut left, mut top, mut right, mut bottom) = (self.width, self.height, 0, 0);
+        let mut discovery = RegionDiscovery::new(self.width, self.height, |x, y, count| {
+            Ok(read_row(x, y, count)?
+                .into_iter()
+                .map(|pixel| {
+                    let weight = (match_weight(reference, pixel, compare) * 255.).round() as u8;
+                    (weight, weight != 0)
+                })
+                .collect())
+        });
         if options.contiguous {
-            enqueue(&mut visited, &mut queue, options.x, options.y)?;
+            discovery.contiguous(options.x, options.y)?;
+        } else {
+            discovery.global()?;
         }
-        let mut scan = 0u64;
-        loop {
-            let (x, y) = if options.contiguous {
-                let Some(p) = queue.pop_front() else { break };
-                p
-            } else {
-                if scan == u64::from(self.width) * u64::from(self.height) {
-                    break;
-                }
-                let p = (
-                    (scan % u64::from(self.width)) as u32,
-                    (scan / u64::from(self.width)) as u32,
-                );
-                scan += 1;
-                p
-            };
-            let weight = (match_weight(reference, sample(x, y)?, compare) * 255.).round() as u8;
-            if weight == 0 {
-                continue;
-            }
-            let key = (x / 64, y / 64);
-            if !matches.contains_key(&key) && matches.len() == MAX_FILL_TILES {
-                return Err(Error::ResourceLimit("wand match tiles"));
-            }
-            matches.entry(key).or_insert_with(|| Box::new([0; 4096]))
-                [((y % 64) * 64 + x % 64) as usize] = weight;
-            left = left.min(x);
-            top = top.min(y);
-            right = right.max(x);
-            bottom = bottom.max(y);
-            if options.contiguous {
-                if x > 0 {
-                    enqueue(&mut visited, &mut queue, x - 1, y)?;
-                }
-                if x + 1 < self.width {
-                    enqueue(&mut visited, &mut queue, x + 1, y)?;
-                }
-                if y > 0 {
-                    enqueue(&mut visited, &mut queue, x, y - 1)?;
-                }
-                if y + 1 < self.height {
-                    enqueue(&mut visited, &mut queue, x, y + 1)?;
+        let (mut left, mut top, mut right, mut bottom) = (self.width, self.height, 0, 0);
+        for (&(tx, ty), tile) in &discovery.tiles {
+            for (y, &bits) in tile.selected.iter().enumerate() {
+                if bits != 0 {
+                    left = left.min(tx * 64 + bits.trailing_zeros());
+                    right = right.max(tx * 64 + 63 - bits.leading_zeros());
+                    top = top.min(ty * 64 + y as u32);
+                    bottom = bottom.max(ty * 64 + y as u32);
                 }
             }
         }
         // A zero mask is a real empty region, so all four combination rules remain consistent.
-        let (left, top, width, height) = if matches.is_empty() {
+        let (left, top, width, height) = if left == self.width {
             (0, 0, 1, 1)
         } else {
             (left, top, right - left + 1, bottom - top + 1)
@@ -144,17 +117,25 @@ impl Document {
             return Err(Error::ResourceLimit("wand bounding mask"));
         }
         let mut alpha = vec![0; bytes as usize];
-        for ((tx, ty), weights) in matches {
-            for (i, &v) in weights.iter().enumerate() {
-                if v == 0 {
-                    continue;
+        for ((tx, ty), tile) in discovery.tiles {
+            for (ly, mut bits) in tile.selected.into_iter().enumerate() {
+                while bits != 0 {
+                    let lx = bits.trailing_zeros();
+                    bits &= bits - 1;
+                    let (x, y) = (tx * 64 + lx, ty * 64 + ly as u32);
+                    alpha[((y - top) * width + x - left) as usize] =
+                        tile.weights[ly * 64 + lx as usize];
                 }
-                let x = tx * 64 + (i % 64) as u32;
-                let y = ty * 64 + (i / 64) as u32;
-                alpha[((y - top) * width + x - left) as usize] = v;
             }
         }
-        let mut shape = crate::mask_shape(left, top, width, height, vec![0; bytes as usize])?;
+        let mut shape = crate::SelectionShape::geometry(
+            crate::SelectionKind::Mask,
+            left.into(),
+            top.into(),
+            width.into(),
+            height.into(),
+            options.antialias,
+        );
         shape.mask = Some(SelectionMask::from_alpha(width, height, alpha)?);
         shape.antialias = options.antialias;
         let next = self

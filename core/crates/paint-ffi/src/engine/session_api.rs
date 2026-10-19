@@ -431,7 +431,7 @@ pub unsafe extern "C" fn paint_session_read_frame(
         }
         tile.width = width;
         tile.height = height;
-        tile.revision = frame.frame.revision;
+        tile.revision = frame.revision;
         pointers::write(out_tile, tile)
     })
 }

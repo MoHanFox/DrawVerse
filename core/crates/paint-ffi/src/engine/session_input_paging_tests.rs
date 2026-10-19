@@ -144,6 +144,7 @@ fn engine(tool: WetTool) -> Engine {
         aborted: false,
         floor: 0,
         frames: 0,
+        equivalent_pixels: (0, 0),
         failed_views: std::array::from_fn(|_| None),
     }
 }

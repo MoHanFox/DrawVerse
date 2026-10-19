@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [复杂图像套索、魔棒与油漆桶性能](tools/selection-complexity-performance-validation.md)
+
 - [图层移动实时预览](tools/layer-move-preview-validation.md)
 
 - [平滑画布导航与自适应笔尖轮廓](interface/canvas-navigation-adaptive-cursor-validation.md)

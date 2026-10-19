@@ -76,6 +76,15 @@ add_custom_target(drawverse_license ALL
     VERBATIM)
 
 qt_add_executable(qt_ui_tests tests/ui_tests.cpp)
+
+# Focused selection geometry regression and reproducible complexity benchmark.
+qt_add_executable(qt_selection_tests tests/selection_tests.cpp src/canvas/SelectionOverlay.cpp src/canvas/SelectionOverlay.h)
+target_include_directories(qt_selection_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(qt_selection_tests PRIVATE cxx_std_20)
+target_link_libraries(qt_selection_tests PRIVATE Qt6::Quick Qt6::Test)
+set_target_properties(qt_selection_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_selection_tests COMMAND qt_selection_tests)
+set_tests_properties(qt_selection_tests PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 target_link_libraries(qt_ui_tests PRIVATE drawverse_ui Qt6::Test)
 set_target_properties(qt_ui_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
 set_target_properties(qt_ui_tests PROPERTIES WIN32_EXECUTABLE FALSE)

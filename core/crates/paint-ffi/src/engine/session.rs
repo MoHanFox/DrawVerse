@@ -112,7 +112,8 @@ pub(crate) struct StampedFrame {
     pub id: u64,
     pub request_id: u64,
     pub generation: u64,
-    pub frame: RenderFrame,
+    pub revision: u64,
+    pub frame: Arc<RenderFrame>,
 }
 struct Shared {
     preview_assets: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
@@ -162,6 +163,8 @@ struct Engine {
     aborted: bool,
     floor: u64,
     frames: u64,
+    // (latest document revision, oldest revision with identical rendered pixels).
+    equivalent_pixels: (u64, u64),
     failed_views: [Option<(u64, u64, u64)>; 4],
 }
 impl Session {
@@ -238,6 +241,7 @@ impl Session {
             aborted: false,
             floor: 0,
             frames: 0,
+            equivalent_pixels: (0, 0),
             failed_views: std::array::from_fn(|_| None),
         };
         engine.default_view();
@@ -580,7 +584,7 @@ impl Session {
             .clone()
             .ok_or_else(|| ApiError::new(PAINT_BUSY, "frame pending or viewport disabled"))?;
         if frame.generation != self.shared.generation.load(Ordering::Acquire)
-            || frame.frame.revision < self.shared.floor.load(Ordering::Acquire)
+            || frame.revision < self.shared.floor.load(Ordering::Acquire)
         {
             return Err(ApiError::new(PAINT_BUSY, "frame predates document change"));
         }
@@ -753,8 +757,44 @@ impl Engine {
         drop(slots);
         drop(removed);
     }
+    fn pixel_revision(&self) -> u64 {
+        if self.equivalent_pixels.0 == self.document.revision() {
+            self.equivalent_pixels.1
+        } else {
+            self.document.revision()
+        }
+    }
+    fn selection_only(&self, operation: &Operation) -> bool {
+        if matches!(operation, Operation::Selection(..) | Operation::Wand(..)) {
+            return true;
+        }
+        if self.document.liquify_active() || self.document.transform_active() {
+            return false;
+        }
+        let (undo, _) = self.document.history_depth();
+        let index = match operation {
+            Operation::Undo if undo > 0 => undo,
+            Operation::Redo => undo + 1,
+            _ => return false,
+        };
+        matches!(
+            self.document.history_actions().get(index),
+            Some(
+                paint_core::HistoryAction::SelectAll
+                    | paint_core::HistoryAction::Selection
+                    | paint_core::HistoryAction::Deselect
+                    | paint_core::HistoryAction::InvertSelection
+                    | paint_core::HistoryAction::EllipseSelection
+                    | paint_core::HistoryAction::LassoSelection
+                    | paint_core::HistoryAction::MagicSelection
+                    | paint_core::HistoryAction::PolygonSelection
+            )
+        )
+    }
     fn execute(&mut self, command: Command) {
         let old_revision = self.document.revision();
+        let pixel_revision = self.pixel_revision();
+        let selection_only = self.selection_only(&command.operation);
         let finish = matches!(command.operation, Operation::End);
         let stroke_command = matches!(
             command.operation,
@@ -802,7 +842,13 @@ impl Engine {
         if let Err(error) = result {
             self.command_failed(command.sequence, error, stroke_command);
         }
-        if barrier && (old_revision != self.document.revision() || liquify_control) {
+        if selection_only && old_revision != self.document.revision() {
+            self.equivalent_pixels = (self.document.revision(), pixel_revision);
+        }
+        if barrier
+            && !selection_only
+            && (old_revision != self.document.revision() || liquify_control)
+        {
             self.floor = self.document.revision();
         }
         self.shared.floor.store(self.floor, Ordering::Release);
@@ -1261,8 +1307,25 @@ impl Engine {
             self.dirty = false;
         }
         for index in 0..4 {
+            let revision = self.document.revision();
+            let pixel_revision = self.pixel_revision();
             let mut slots = self.shared.views.lock().unwrap_or_else(|e| e.into_inner());
             let slot = &mut slots[index];
+            if let Some(frame) = slot
+                .frame
+                .as_ref()
+                .filter(|frame| frame.revision >= pixel_revision && frame.revision < revision)
+            {
+                // Keep immutable pixel storage alive across stamped publication changes.
+                self.frames += 1;
+                slot.frame = Some(Arc::new(StampedFrame {
+                    id: self.frames,
+                    request_id: frame.request_id,
+                    generation: frame.generation,
+                    revision,
+                    frame: Arc::clone(&frame.frame),
+                }));
+            }
             let obsolete = self.jobs[index].as_ref().is_some_and(|job| {
                 job.request_id != slot.request_id
                     || job.generation != self.generation
@@ -1287,17 +1350,21 @@ impl Engine {
                         if job.generation == self.generation
                             && slot.request_id == job.request_id
                             && frame.revision >= self.floor
-                            && slot
-                                .frame
-                                .as_ref()
-                                .is_none_or(|old| frame.revision >= old.frame.revision)
+                            && slot.frame.as_ref().is_none_or(|old| {
+                                frame.revision >= old.revision || frame.revision >= pixel_revision
+                            })
                         {
                             self.frames += 1;
                             let old = slot.frame.replace(Arc::new(StampedFrame {
                                 id: self.frames,
                                 request_id: job.request_id,
                                 generation: job.generation,
-                                frame,
+                                revision: if frame.revision >= pixel_revision {
+                                    revision
+                                } else {
+                                    frame.revision
+                                },
+                                frame: Arc::new(frame),
                             }));
                             drop(slots);
                             drop(old);
@@ -1339,7 +1406,7 @@ impl Engine {
             if slot
                 .frame
                 .as_ref()
-                .is_some_and(|frame| frame.frame.revision == self.document.revision())
+                .is_some_and(|frame| frame.revision == self.document.revision())
             {
                 continue;
             }
@@ -1439,7 +1506,7 @@ impl StampedFrame {
             struct_size: std::mem::size_of::<PaintFrameInfo>() as u32,
             format: PAINT_TILE_RGBA8_SRGB_PREMULTIPLIED,
             document_generation: self.generation,
-            revision: self.frame.revision,
+            revision: self.revision,
             request_id: self.request_id,
             frame_id: self.id,
             pixel_width: self.frame.width,
@@ -1458,6 +1525,72 @@ impl StampedFrame {
 mod actor_tests {
     use super::*;
     use std::{thread, time::Instant};
+    #[test]
+    fn selection_edits_reuse_pixels_but_keep_stamps_and_next_paint_fresh() {
+        let session = Session::new(128, 128).unwrap();
+        let run = |operation| {
+            let sequence = session.submit(operation).unwrap();
+            let start = Instant::now();
+            loop {
+                let info = session.info();
+                assert!(start.elapsed() < Duration::from_secs(5));
+                if info.completed_sequence >= sequence {
+                    assert_eq!(info.last_error_status, PAINT_OK);
+                    if let Ok(frame) = session.frame(0) {
+                        if frame.revision == info.revision {
+                            break frame;
+                        }
+                    }
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+        };
+        let base = run(Operation::Selection(crate::selection_api::Edit::Clear));
+        let floor = session.shared.floor.load(Ordering::Acquire);
+        let shape =
+            paint_core::SelectionShape::polygon(vec![[0., 0.], [128., 0.], [128., 128.]], true, 0.)
+                .unwrap();
+        for operation in [
+            Operation::Selection(crate::selection_api::Edit::Styled(
+                shape,
+                paint_core::SelectionOperation::Replace,
+                paint_core::HistoryAction::LassoSelection,
+            )),
+            Operation::Selection(crate::selection_api::Edit::Invert),
+            Operation::Undo,
+            Operation::Redo,
+            Operation::Wand(paint_core::WandSelection {
+                x: 0,
+                y: 0,
+                sample_size: 1,
+                tolerance: 10,
+                antialias: true,
+                contiguous: true,
+                all_layers: false,
+                operation: paint_core::SelectionOperation::Replace,
+            }),
+            Operation::Selection(crate::selection_api::Edit::Clear),
+        ] {
+            let frame = run(operation);
+            assert!(Arc::ptr_eq(&base.frame, &frame.frame));
+            assert_eq!(frame.info().revision, session.info().revision);
+            assert_eq!(session.shared.floor.load(Ordering::Acquire), floor);
+        }
+        run(Operation::Begin(
+            Box::new(paint_core::Brush::default().into()),
+            InputPoint::new(40., 40., 1.),
+            0,
+        ));
+        let painted = run(Operation::End);
+        assert!(!Arc::ptr_eq(&base.frame, &painted.frame));
+        assert_ne!(base.bytes(), painted.bytes());
+        let undo = run(Operation::Undo);
+        assert!(!Arc::ptr_eq(&painted.frame, &undo.frame));
+        assert_eq!(base.bytes(), undo.bytes());
+        let recreated = run(Operation::New(64, 64));
+        assert_eq!(recreated.frame.width, 64);
+        assert!(!Arc::ptr_eq(&base.frame, &recreated.frame));
+    }
     #[test]
     fn resident_preview_keeps_render_floor_but_controls_advance_it() {
         let session = Session::new(128, 128).unwrap();
@@ -1525,7 +1658,8 @@ mod actor_tests {
             id: 1,
             request_id: 1,
             generation: 1,
-            frame: RenderFrame {
+            revision: 1,
+            frame: Arc::new(RenderFrame {
                 region: Region {
                     x: 10.25,
                     y: 20.25,
@@ -1539,18 +1673,18 @@ mod actor_tests {
                 pixels: FramePixels::Srgb(vec![
                     255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 64, 32, 0, 128,
                 ]),
-            },
+            }),
         };
         assert_eq!(frame.sample(10, 20).unwrap(), [1., 0., 0., 1.]);
         assert_eq!(frame.sample(11, 20).unwrap(), [0., 1., 0., 1.]);
         // Downscaled output: each output pixel represents two document pixels per axis.
-        frame.frame.region.width = 4.;
-        frame.frame.region.height = 4.;
+        Arc::get_mut(&mut frame.frame).unwrap().region.width = 4.;
+        Arc::get_mut(&mut frame.frame).unwrap().region.height = 4.;
         assert_eq!(frame.sample(12, 20).unwrap(), [0., 1., 0., 1.]);
         assert_eq!(frame.sample(10, 22).unwrap(), [0., 0., 1., 1.]);
         // Enlarged/DPI output: two output pixels per document pixel, with a fractional origin.
-        frame.frame.region.width = 1.;
-        frame.frame.region.height = 1.;
+        Arc::get_mut(&mut frame.frame).unwrap().region.width = 1.;
+        Arc::get_mut(&mut frame.frame).unwrap().region.height = 1.;
         assert_eq!(frame.sample(10, 20).unwrap(), [1., 0., 0., 1.]);
         assert_eq!(frame.sample(i64::MIN, i64::MIN).unwrap(), [1., 0., 0., 1.]);
         let edge = frame.sample(i64::MAX, i64::MAX).unwrap();

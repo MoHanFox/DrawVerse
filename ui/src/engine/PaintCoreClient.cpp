@@ -1033,7 +1033,10 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if (m_closing || m_pendingNew || generation != m_generation ||
             (m_requests[view] && request != m_requests[view]) || revision < m_frameRevisions[view]) return;
         if(view==0 && m_residentPreview && (generation!=m_residentPreview->generation || (!m_liquifyActive && !m_layerMoveActive && revision>=m_revision)))m_residentPreview.reset();
-        m_frames[view] = image; m_regions[view] = region; m_frameRevisions[view] = revision; emit frameChanged();
+        // Selection-only publications advance the revision while keeping the same pixels.
+        // Preserve QImage identity so CanvasItem also retains its scene graph texture.
+        if(m_frames[view]!=image)m_frames[view]=image;
+        m_regions[view] = region; m_frameRevisions[view] = revision; emit frameChanged();
     });
     connect(m_worker, &BackendWorker::failure, this, &PaintCoreClient::showError);
     connect(m_worker, &BackendWorker::fileResult, this, [this](PaintFileJobInfo info, const QString &message) {

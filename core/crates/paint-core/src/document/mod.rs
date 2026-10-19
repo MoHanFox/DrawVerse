@@ -515,6 +515,8 @@ pub struct Document {
 
 #[path = "tools/bucket.rs"]
 mod bucket;
+#[path = "tools/color_region.rs"]
+mod color_region;
 pub use bucket::BucketFill;
 #[path = "tools/wand.rs"]
 mod wand;

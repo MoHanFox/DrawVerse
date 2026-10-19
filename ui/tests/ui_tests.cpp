@@ -4335,6 +4335,26 @@ private slots:
         client.setSelectionTool(4);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,at({20,20}));QTest::keyClick(window,Qt::Key_Return);QCOMPARE(client.undoDepth(),3);QVERIFY(canvas->selectionPreviewPoints().isEmpty());
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void selectionOnlyFramesKeepImageIdentityAndPaintingRefreshesIt() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection-frame.ini"));
+        QTRY_VERIFY(client.ready());client.newTransparentDocument(64,64);
+        QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
+        client.requestViewport(0,{0,0,64,64},{64,64});
+        QTRY_VERIFY(client.frame().size()==QSize(64,64) && client.frameRevision()>=client.revision());
+        const auto key=client.frame().cacheKey();
+        QCOMPARE(client.brushLibrary()->cursorWidth(),0);
+        QVERIFY(client.selectAll());QTRY_VERIFY(client.selectionEnabled());QTRY_VERIFY(client.frameRevision()>=client.revision());
+        QCOMPARE(client.frame().cacheKey(),key);QTRY_VERIFY(!client.layerEditBusy());
+        client.undo();QTRY_VERIFY(!client.selectionEnabled());QTRY_VERIFY(client.frameRevision()>=client.revision());
+        QCOMPARE(client.frame().cacheKey(),key);QTRY_VERIFY(!client.layerEditBusy());
+        client.redo();QTRY_VERIFY(client.selectionEnabled());QTRY_VERIFY(client.frameRevision()>=client.revision());
+        QCOMPARE(client.frame().cacheKey(),key);QTRY_VERIFY(!client.layerEditBusy());
+        InputSample sample;sample.position={32,32};sample.pressure=1.;sample.tool=1;
+        QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),2);
+        QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(client.frame().cacheKey()!=key);
+        QVERIFY(client.frame().pixelColor(32,32).alpha()>0);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void selectionsDragCombineUndoConstrainAndPersist() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());

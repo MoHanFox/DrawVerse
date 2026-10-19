@@ -51,6 +51,7 @@ private:
     QVariantList m_steps,m_previewPoints;
     QPainterPath currentPreview() const;
     QPainterPath m_path;
+    QVector<QPainterPath> m_shapes;
     QRectF m_documentRect,m_preview;
     qreal m_zoom=1;
     int m_previewKind=0;
