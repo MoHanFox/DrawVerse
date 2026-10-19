@@ -945,6 +945,182 @@ fn liquify_abi_validation_preview_cancel_and_single_history() {
 }
 
 #[test]
+fn deferred_transform_packets_and_latest_geometry_commit() {
+    let h = Harness::new(128, 96);
+    let initial = h.wait(h.stroke(20., 20.));
+    unsafe {
+        let mut seq = 99;
+        assert_eq!(
+            paint_session_begin_transform_layers_deferred(
+                h.core,
+                h.session,
+                ptr::null(),
+                0,
+                &mut seq
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(seq, 0);
+        assert_eq!(
+            paint_session_begin_transform_layers_deferred(
+                h.core,
+                h.session,
+                &initial.active_layer_id,
+                1,
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        let begun = h.wait(seq);
+        assert_eq!(begun.last_error_status, PAINT_OK);
+        let mut packet = dto!(PaintResidentPreviewInfo);
+        assert_eq!(
+            paint_session_resident_preview_info(h.core, h.session, &mut packet),
+            PAINT_OK
+        );
+        assert_eq!(packet.focus, 2);
+        assert!(packet.columns <= 145 && packet.rows <= 145);
+        let mut g = dto!(PaintTransform);
+        assert_eq!(
+            paint_session_transform_info(h.core, h.session, begun.publication, &mut g),
+            PAINT_OK
+        );
+        let original = g.points;
+        for i in 1..=1000 {
+            g.points = original;
+            g.warp = 1;
+            for p in g.points.chunks_exact_mut(2) {
+                p[0] += i as f64 / 100.;
+            }
+            g.points[11] += 3.;
+            assert_eq!(
+                paint_session_transform(h.core, h.session, PAINT_TRANSFORM_UPDATE, &g, &mut seq),
+                PAINT_OK
+            );
+        }
+        let updated = h.wait(seq);
+        assert_eq!(updated.last_error_status, PAINT_OK);
+        assert_eq!(updated.undo_depth, begun.undo_depth);
+        let mut latest = dto!(PaintResidentPreviewInfo);
+        assert_eq!(
+            paint_session_resident_preview_info(h.core, h.session, &mut latest),
+            PAINT_OK
+        );
+        assert_eq!(latest.source_id, packet.source_id);
+        let mut required = 0;
+        assert_eq!(
+            paint_session_read_resident_preview(
+                h.core,
+                h.session,
+                packet.document_generation,
+                packet.revision,
+                packet.source_id,
+                0,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUSY
+        );
+        assert_eq!(
+            paint_session_read_resident_preview(
+                h.core,
+                h.session,
+                latest.document_generation,
+                latest.revision,
+                latest.source_id,
+                0,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        let mut bytes = vec![0x5a; required as usize];
+        assert_eq!(
+            paint_session_read_resident_preview(
+                h.core,
+                h.session,
+                latest.document_generation,
+                latest.revision,
+                latest.source_id,
+                0,
+                bytes.as_mut_ptr(),
+                required - 1,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert!(bytes.iter().all(|&b| b == 0x5a));
+        let mut current = dto!(PaintTransform);
+        assert_eq!(
+            paint_session_transform_info(h.core, h.session, updated.publication, &mut current),
+            PAINT_OK
+        );
+        assert_eq!(current.points, g.points);
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_CHECKPOINT,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        h.wait(seq);
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_COMMIT,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        let committed = h.wait(seq);
+        assert_eq!(committed.last_error_status, PAINT_OK);
+        assert_eq!(committed.undo_depth, initial.undo_depth + 1);
+        assert_eq!(committed.flags & PAINT_SESSION_TRANSFORM, 0);
+        assert_eq!(
+            paint_session_resident_preview_info(h.core, h.session, &mut latest),
+            PAINT_NOT_FOUND
+        );
+        let pixels = h.pixels(0, h.frame(0, committed.revision));
+        assert!(pixels[(20 * 128 + 30) * 4] > 200);
+        h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        // File placement opens an ordinary transform first; explicit opt-in must work too.
+        for kind in [PAINT_TRANSFORM_BEGIN, PAINT_TRANSFORM_ENABLE_RESIDENT] {
+            assert_eq!(
+                paint_session_transform(h.core, h.session, kind, ptr::null(), &mut seq),
+                PAINT_OK
+            );
+            assert_eq!(h.wait(seq).last_error_status, PAINT_OK);
+        }
+        assert_eq!(
+            paint_session_resident_preview_info(h.core, h.session, &mut latest),
+            PAINT_OK
+        );
+        assert_eq!(latest.focus, 2);
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_CANCEL,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        h.wait(seq);
+    }
+}
+
+#[test]
 fn layer_move_resident_packets_absolute_updates_and_final_barrier() {
     let h = Harness::new(128, 96);
     let initial = h.wait(h.stroke(20., 20.));

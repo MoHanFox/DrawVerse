@@ -548,7 +548,7 @@ public:
         if(m_residentPreview && m_residentPreview->sourceId==info.source_id && m_residentPreview->revision==info.revision)return;
         auto next=std::make_shared<ResidentPreviewFrame>();
         next->generation=info.document_generation;next->revision=info.revision;next->sourceId=info.source_id;
-        next->columns=info.columns;next->rows=info.rows;next->documentSize=QSize(int(info.document_width),int(info.document_height));next->focus=info.focus!=0;
+        next->columns=info.columns;next->rows=info.rows;next->documentSize=QSize(int(info.document_width),int(info.document_height));next->focus=(info.focus&1)!=0;next->forward=(info.focus&2)!=0;
         const auto read=[&](quint32 kind,QByteArray &bytes) {
             uint64_t required=0;
             auto s=paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,nullptr,0,&required);
@@ -954,7 +954,12 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
         if(info.completed_sequence>=m_pendingLiquify) {m_pendingLiquify=0;m_liquifyCommitting=false;m_liquifyActive=(info.flags&PAINT_SESSION_LIQUIFY)!=0;}
         const bool publishedTransform=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
-        if(publishedTransform && !m_transformPublished){m_transformInitialPoints=transform.value("points").toList();emit transformChanged();}
+        if(publishedTransform && !m_transformPublished){
+            m_transformInitialPoints=transform.value("points").toList();m_residentPreviewFloor=info.revision;
+            // Placement opens inside the file worker: opt in after file-result delivery.
+            if(m_residentGpuPreviewAvailable)QTimer::singleShot(0,this,[this]{if(m_transformActive && m_transformPublished && m_pendingTransform<=m_completedSequence && m_residentGpuPreviewAvailable)submitTransform(PAINT_TRANSFORM_ENABLE_RESIDENT);});
+            emit transformChanged();
+        }
         m_transformPublished=publishedTransform;
         if(!publishedTransform && m_transformActive && info.completed_sequence>=m_pendingTransform && m_afterTransform){auto action=std::move(m_afterTransform);QTimer::singleShot(0,this,std::move(action));}
         if(info.completed_sequence>=m_pendingTransform)m_transformActive=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
@@ -1025,14 +1030,14 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     });
     connect(m_worker,&BackendWorker::residentPreviewReady,this,[this](ResidentPreviewPtr preview){
         m_connection->residentPreviewPending.store(false);
-        if(m_closing || m_pendingNew || preview->generation!=m_generation || preview->revision<m_residentPreviewFloor || (!m_liquifyActive && !m_layerMoveActive))return;
+        if(m_closing || m_pendingNew || preview->generation!=m_generation || preview->revision<m_residentPreviewFloor || (!m_liquifyActive && !m_layerMoveActive && !m_transformActive))return;
         m_residentPreview=std::move(preview);emit frameChanged();
     });
     connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request) {
         m_connection->framePending[view].store(false);
         if (m_closing || m_pendingNew || generation != m_generation ||
             (m_requests[view] && request != m_requests[view]) || revision < m_frameRevisions[view]) return;
-        if(view==0 && m_residentPreview && (generation!=m_residentPreview->generation || (!m_liquifyActive && !m_layerMoveActive && revision>=m_revision)))m_residentPreview.reset();
+        if(view==0 && m_residentPreview && (generation!=m_residentPreview->generation || (!m_liquifyActive && !m_layerMoveActive && !m_transformActive && revision>=m_revision)))m_residentPreview.reset();
         // Selection-only publications advance the revision while keeping the same pixels.
         // Preserve QImage identity so CanvasItem also retains its scene graph texture.
         if(m_frames[view]!=image)m_frames[view]=image;
@@ -2023,10 +2028,10 @@ bool PaintCoreClient::placeImage(const QUrl &path){return submitFile(path,PAINT_
 bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometry){
     if(!m_ready || m_closing || m_fileBusy || m_drawing || (kind==PAINT_TRANSFORM_BEGIN && (m_liquifyActive || m_transformActive || layerEditBusy())))return false;
     uint64_t sequence=0;PaintStatus status;QString error;
-    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(kind==PAINT_TRANSFORM_BEGIN){QList<quint64> ids=m_selectedLayers;if(ids.isEmpty())ids={m_active};QVector<uint64_t> targets;for(auto id:ids)targets.append(id);status=paint_session_begin_transform_layers(m_connection->core,m_connection->session,targets.data(),targets.size(),&sequence);}else status=paint_session_transform(m_connection->core,m_connection->session,kind,geometry,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(kind==PAINT_TRANSFORM_BEGIN){QList<quint64> ids=m_selectedLayers;if(ids.isEmpty())ids={m_active};QVector<uint64_t> targets;for(auto id:ids)targets.append(id);status=(m_residentGpuPreviewAvailable?paint_session_begin_transform_layers_deferred:paint_session_begin_transform_layers)(m_connection->core,m_connection->session,targets.data(),targets.size(),&sequence);}else status=paint_session_transform(m_connection->core,m_connection->session,kind,geometry,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){showError(error);return false;}m_lastTransform=sequence;
     if(kind!=PAINT_TRANSFORM_UPDATE)m_pendingTransform=sequence;
-    if(kind==PAINT_TRANSFORM_BEGIN)m_transformActive=true;
+    if(kind==PAINT_TRANSFORM_BEGIN){m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();}
     if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE)m_pendingMutation=sequence;
     emit stateChanged();return true;
 }

@@ -107,7 +107,7 @@ pub unsafe extern "C" fn paint_session_liquify_preview_info(
             out_info,
             PaintLiquifyPreviewInfo {
                 struct_size: std::mem::size_of::<PaintLiquifyPreviewInfo>() as u32,
-                focus: u32::from(preview.focus),
+                focus: u32::from(preview.focus) | (u32::from(preview.forward) << 1),
                 document_generation: publication.info.document_generation,
                 revision: preview.revision,
                 source_id: preview.source.id,

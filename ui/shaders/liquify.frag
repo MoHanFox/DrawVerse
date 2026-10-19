@@ -25,6 +25,7 @@ vec4 sampleLinear(sampler2D image,vec2 uv){
 }
 vec4 over(vec4 a,vec4 b){return a+b*(1.0-a.a);}
 void main(){
+    if(any(lessThan(documentCoord,vec2(0.0))) || any(greaterThan(documentCoord,vec2(1.0))))discard;
     vec4 c=sampleLinear(sourceImage,sourceCoord);
     if(ub.focus<0.5)c=over(sampleLinear(aboveImage,documentCoord),over(c,sampleLinear(belowImage,documentCoord)));
     if(c.a<=0.0){fragColor=vec4(0.0);return;}

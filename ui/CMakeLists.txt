@@ -48,7 +48,7 @@ set(_drawverse_ui_resources
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES ${_drawverse_ui_resources})
 qt_add_shaders(drawverse_ui liquify_shaders PREFIX "/shaders" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-    GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag shaders/adaptive-cursor.frag)
+    GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag shaders/adaptive-cursor.frag shaders/transform-composite.frag)
 
 # Editing QML or an asset must recompile the generated resource object.
 get_target_property(_drawverse_qrc_sources drawverse_ui SOURCES)
@@ -76,6 +76,12 @@ add_custom_target(drawverse_license ALL
     VERBATIM)
 
 qt_add_executable(qt_ui_tests tests/ui_tests.cpp)
+
+qt_add_executable(qt_transform_tests tests/transform_tests.cpp)
+target_link_libraries(qt_transform_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_transform_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_transform_tests COMMAND qt_transform_tests)
+set_tests_properties(qt_transform_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 
 # Focused selection geometry regression and reproducible complexity benchmark.
 qt_add_executable(qt_selection_tests tests/selection_tests.cpp src/canvas/SelectionOverlay.cpp src/canvas/SelectionOverlay.h)

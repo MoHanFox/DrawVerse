@@ -82,12 +82,13 @@ CanvasItem::~CanvasItem() {
     setTabletWindowCursor(false);
     qApp->removeEventFilter(this);
     if (m_observedWindow) m_observedWindow->removeEventFilter(this);
-    if (m_client && !m_interactive) m_client->requestViewport(1, {}, {}, false);
+    if (m_client && !m_interactive && !m_previewPart) m_client->requestViewport(1, {}, {}, false);
 }
 void CanvasItem::setClient(PaintCoreClient *client) {
     if (m_client == client) return;
     cancelLayerMove();
     stopNavigation();m_image={};m_overview={};m_residentPreview={};
+    emit residentPresentationChanged();
     setTabletWindowCursor(false);
     endPicking();
     if (m_client) disconnect(m_client, nullptr, this, nullptr);
@@ -235,6 +236,12 @@ void CanvasItem::hoverMoveEvent(QHoverEvent *event){
 void CanvasItem::hoverLeaveEvent(QHoverEvent *event){if(ignoreCachedMouseHover(event) || m_tablet)return;setTabletWindowCursor(false);m_cursorInside=false;refreshBrushCursor();}
 void CanvasItem::refresh() {
     if (!m_client) return;
+    if(m_previewPart){
+        m_residentPreview=m_client->residentPreview();
+        const auto image=m_residentPreview?m_residentPreview->images[size_t(m_previewPart)]:QImage();
+        if(image.cacheKey()!=m_image.cacheKey()){m_image=image;update();}
+        return;
+    }
     if(m_interactive && window())m_client->setResidentGpuPreviewAvailable(gpuDisplay());
     if (m_generation != m_client->generation()) { stopNavigation();m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
     const int view = m_interactive ? 0 : 1;
@@ -242,11 +249,14 @@ void CanvasItem::refresh() {
     const QRectF document(0,0,m_client->documentWidth(),m_client->documentHeight());
     if(m_interactive && m_client->frameRegion(1)==document)m_overview=m_client->frame(1);
     if(m_interactive && m_overview.isNull() && !m_viewTimer.isActive())m_viewTimer.start();
+    const bool wasForward=forwardPreview();
     m_residentPreview=m_client->residentPreview();
+    if(wasForward!=forwardPreview())emit residentPresentationChanged();
     if (m_fitPending) fitToView();
     update();
 }
 void CanvasItem::requestView() {
+    if(m_previewPart)return;
     if (!m_client || !m_client->ready() || !window() || width() < 1 || height() < 1) return;
     if(m_interactive)m_client->setResidentGpuPreviewAvailable(gpuDisplay());
     const QRectF document(0, 0, m_client->documentWidth(), m_client->documentHeight());
@@ -357,6 +367,14 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     auto *node = static_cast<CanvasNode *>(old);
     if ((!m_residentPreview && m_image.isNull() && m_overview.isNull()) || !window()) { delete node; return nullptr; }
     if(!node)node=new CanvasNode;
+    if(m_previewPart){
+        if(!node->image){node->image=new QSGSimpleTextureNode;node->image->setOwnsTexture(true);node->appendChildNode(node->image);}
+        if(node->imageKey!=m_image.cacheKey()){
+            auto *texture=window()->createTextureFromImage(m_image);if(!texture){delete node;return nullptr;}
+            node->image->setTexture(texture);node->image->setFiltering(QSGTexture::Linear);node->imageKey=m_image.cacheKey();
+        }
+        node->image->setRect(m_presentationRect);return node;
+    }
     if(m_residentPreview){
         for(auto *tile:node->overview)if(tile)tile->setRect({});
         if(node->image){delete node->image;node->image=nullptr;node->imageKey=0;}

@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 63;
+pub const PAINT_ABI_MINOR: u32 = 64;
 
 /// Mesh-only liquify preview packets; graphics resources belong to the UI renderer.
 pub const PAINT_FEATURE_LIQUIFY_PREVIEW: u64 = 144_115_188_075_855_872;
@@ -166,6 +166,7 @@ pub const PAINT_LIQUIFY_BEGIN_DEFERRED: u32 = 11;
 #[derive(Clone, Copy, Default)]
 pub struct PaintLiquifyPreviewInfo {
     pub struct_size: u32,
+    /// bit0: isolated source; bit1 (ABI1.64 opt-in): forward transform mesh.
     pub focus: u32,
     pub document_generation: u64,
     pub revision: u64,
@@ -811,6 +812,10 @@ pub const PAINT_TRANSFORM_COMMIT: u32 = 4;
 pub const PAINT_TRANSFORM_UNDO: u32 = 5;
 pub const PAINT_TRANSFORM_REDO: u32 = 6;
 pub const PAINT_TRANSFORM_RASTERIZE: u32 = 7;
+/// ABI1.64: opt an already active placement/transform session into resident presentation.
+pub const PAINT_TRANSFORM_ENABLE_RESIDENT: u32 = 8;
+/// Opt-in CPU geometry / resident GPU presentation; software uses the original entry point.
+pub const PAINT_FEATURE_TRANSFORM_RESIDENT: u64 = 576_460_752_303_423_488;
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct PaintTransform {

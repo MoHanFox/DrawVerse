@@ -1,5 +1,7 @@
 use super::*;
 use std::collections::VecDeque;
+#[path = "transform_preview.rs"]
+mod preview;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransformGeometry {
@@ -217,6 +219,7 @@ pub struct PlacedImage {
 }
 #[derive(Clone, Debug)]
 pub(super) struct TransformState {
+    preview_source: Option<Arc<crate::ResidentPreviewSource>>,
     original: Layer,
     source: Arc<PlacedImage>,
     current: TransformGeometry,
@@ -476,6 +479,7 @@ impl Document {
         }
         let current = source.geometry.clone();
         self.transform = Some(TransformState {
+            preview_source: None,
             original,
             source,
             current: current.clone(),
@@ -627,6 +631,7 @@ impl Document {
             geometry: geometry.clone(),
         });
         self.transform = Some(TransformState {
+            preview_source: None,
             original: layer,
             source: image,
             current: geometry.clone(),
@@ -649,6 +654,11 @@ impl Document {
     }
     pub fn update_transform(&mut self, geometry: TransformGeometry) -> Result<()> {
         geometry.validate()?;
+        if self.transform_deferred() {
+            self.transform.as_mut().expect("session").current = geometry;
+            self.dirty_all();
+            return Ok(());
+        }
         let state = self
             .transform
             .as_ref()
@@ -986,6 +996,14 @@ impl Document {
         Ok(())
     }
     pub fn commit_transform(&mut self) -> Result<bool> {
+        if self.transform_deferred() {
+            let state = self.transform.as_mut().expect("session");
+            let geometry = state.current.clone();
+            let source = state.preview_source.take();
+            let result = self.update_transform(geometry);
+            self.transform.as_mut().expect("session").preview_source = source;
+            result?;
+        }
         let s = self
             .transform
             .as_ref()

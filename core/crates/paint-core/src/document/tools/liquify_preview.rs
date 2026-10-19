@@ -19,6 +19,8 @@ pub struct LiquifyPreview {
     pub source: Arc<LiquifyPreviewSource>,
     pub revision: u64,
     pub focus: bool,
+    /// Forward source mesh, captured before full-document linear compositing.
+    pub forward: bool,
     pub columns: u32,
     pub rows: u32,
     /// Regular destination positions and inverse source UVs: x, y, u, v.
@@ -67,6 +69,18 @@ impl Document {
         &self,
         id: LayerId,
     ) -> Option<Arc<LiquifyPreviewSource>> {
+        let original = self.layers.get(self.layer_index(id).ok()?)?;
+        if original.is_image() {
+            return None;
+        }
+        self.resident_source_layer(id, original.clone())
+    }
+
+    pub(in crate::document) fn resident_source_layer(
+        &self,
+        id: LayerId,
+        original: Layer,
+    ) -> Option<Arc<LiquifyPreviewSource>> {
         let compatible = self.layers.iter().all(|l| {
             !l.group
                 && !l.mask
@@ -78,11 +92,10 @@ impl Document {
             return None;
         }
         let at = self.layer_index(id).ok()?;
-        let original = &self.layers[at];
-        if !original.properties.visible || original.is_image() {
+        if !original.properties.visible {
             return None;
         }
-        let [l, t, r, b] = source_bounds(original);
+        let [l, t, r, b] = source_bounds(&original);
         // Keep a one-pixel transparent guard. No clipping of retained source tiles.
         let width = r - l + 2;
         let height = b - t + 2;
@@ -100,7 +113,7 @@ impl Document {
             layers,
             selection: self.selection.clone(),
         };
-        let mut layer = original.clone();
+        let mut layer = original;
         layer.appearance.offset_x = (1 - l) as i32;
         layer.appearance.offset_y = (1 - t) as i32;
         let mut image = snapshot(vec![layer]);
@@ -171,6 +184,7 @@ impl Document {
             source,
             revision: self.revision,
             focus: state.focus,
+            forward: false,
             columns,
             rows,
             vertices,

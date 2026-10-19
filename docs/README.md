@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [自由变换与网格变形常驻预览](tools/transform-resident-preview-design.md)
+
 - [复杂图像套索、魔棒与油漆桶性能](tools/selection-complexity-performance-design.md)
 
 - [图层移动实时预览](tools/layer-move-preview-design.md)

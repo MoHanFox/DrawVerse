@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新自由变换常驻预览：`docs/tools/transform-resident-preview-design.md` / `docs/validations/tools/transform-resident-preview-validation.md`；ABI1.64，参考PhotoCraft不可变源/前向细分，单目标普通栈含置入图片拖动只算CPU几何，Qt GPU纹理合成，确认才原全精度取样；复用液化/移动静态协议，145×145网格/2048代理与视口上限，选区/复杂组合/软件保留像素路径。固定512px六输入Warp核心约1190→1.83ms，2000px约5.71ms，不含UI显示；Rust3+6/原生2及共享回归、真实GPU/软件Qt、四ABI/Clippy/格式/生成头与完整Release通过，产物 `build/verify-ui/bin/Release-wgpu-transform/`。未跑全量/跨平台/实体连续手感，预览近似与边界见设计。
+
 - 最新套索/魔棒/油漆桶性能：`docs/tools/selection-complexity-performance-design.md` / `docs/validations/tools/selection-complexity-performance-validation.md`；魔棒与桶共用CPU有界扫描线算子/按行分类，桶批量瓦片写入；轮廓沿暴露边追踪缓存，纯选区修订复用核心像素与Qt图像纹理身份，实际绘画仍刷新。固定Release中位数4K空白桶1996→194ms，1024魔棒单层连续247→53ms/四层423→98ms，碎片轮廓35.4→0.67ms；不代表UI延迟或任意复杂图。核心区域4/工具18/原生4/公开4、Qt几何3/软件8/硬件5、四ABI/Clippy/格式/生成头/完整Release通过；产物 `build/verify-ui/bin/Release-wgpu-selection/`。ABI1.63与格式不变，光标线宽默认0已确认；CPU蚂蚁线与复杂多路径布尔组合仍保留，未跑全量/跨平台/实体手感。
 
 - 最新图层实时移动：`docs/tools/layer-move-preview-design.md` / `docs/validations/tools/layer-move-preview-validation.md`；ABI1.63，鼠标/Ctrl拾取/平板共用绝对位移会话、16ms最新输入、松手单历史、Esc/失焦取消；普通栅格栈复用液化原图/上下层常驻纹理与四顶点，组/蒙版/特殊混合/置入图片/软件保留像素回退。只捕获外观基线，共用源按栈分区避免重复克隆；实际窗口 rendererInterface 判定后端并通知QML，修复软件被全局API误判为GPU导致停帧。Rust7项/硬件Qt4项/软件Qt5项、四ABI、Clippy/格式/生成头与Release通过；产物 `build/verify-ui/bin/Release-wgpu-move/`。未跑全量/跨平台/实体输入，初始代理构建与持续手感待实机复核。

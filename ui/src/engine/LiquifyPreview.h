@@ -11,7 +11,7 @@ struct ResidentPreviewFrame {
     quint64 generation=0,revision=0,sourceId=0;
     quint32 columns=0,rows=0;
     QSize documentSize;
-    bool focus=false;
+    bool focus=false,forward=false;
     std::array<QImage,3> images;
     QVector<std::array<float,4>> vertices;
 };

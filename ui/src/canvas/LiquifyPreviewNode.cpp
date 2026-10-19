@@ -55,8 +55,9 @@ bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &fr
     auto *m=static_cast<Material*>(material());
     if(m_source!=frame.sourceId){
         std::array<QSGTexture*,3> next{};
+        QImage empty(1,1,QImage::Format_RGBA8888_Premultiplied);empty.fill(Qt::transparent);
         for(size_t i=0;i<3;++i){
-            next[i]=window->createTextureFromImage(frame.images[i],QQuickWindow::TextureHasAlphaChannel);
+            next[i]=window->createTextureFromImage(frame.forward && i>0?empty:frame.images[i],QQuickWindow::TextureHasAlphaChannel);
             if(!next[i]){for(auto *texture:next)delete texture;return false;}
             next[i]->setFiltering(QSGTexture::Nearest);
             next[i]->setHorizontalWrapMode(QSGTexture::ClampToEdge);next[i]->setVerticalWrapMode(QSGTexture::ClampToEdge);
@@ -64,7 +65,8 @@ bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &fr
         for(auto *texture:m->textures)delete texture;
         m->textures=next;m_source=frame.sourceId;m_revision=0;markDirty(DirtyMaterial);
     }
-    if(m->focus!=frame.focus){m->focus=frame.focus;markDirty(DirtyMaterial);}
+    const bool sourceOnly=frame.focus || frame.forward;
+    if(m->focus!=sourceOnly){m->focus=sourceOnly;markDirty(DirtyMaterial);}
     if(m_revision==frame.revision && m_rect==rect)return true;
     auto *g=geometry();
     const auto count=int(frame.vertices.size());

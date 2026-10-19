@@ -40,7 +40,7 @@ pub(crate) enum Operation {
     DropBatch(Vec<u64>, u64, u32),
     RemoveBatch(Vec<u64>, bool),
     Transform(u32, Option<paint_core::TransformGeometry>),
-    TransformLayers(Vec<u64>),
+    TransformLayers(Vec<u64>, bool),
     Liquify(u32, Option<paint_core::LiquifyDab>),
     LayerMove(u32, u64, i32, i32),
     CopyLayers(Vec<u64>),
@@ -910,9 +910,19 @@ impl Engine {
                 PAINT_LAYER_MOVE_CANCEL => self.document.cancel_layer_move()?,
                 _ => return Err(ApiError::invalid("layer move kind")),
             },
-            Operation::TransformLayers(ids) => self.document.begin_transform_layers(&ids)?,
+            Operation::TransformLayers(ids, deferred) => {
+                if self.files.running() {
+                    return Err(paint_core::Error::Busy.into());
+                }
+                if deferred {
+                    self.document.begin_transform_layers_deferred(&ids)?;
+                } else {
+                    self.document.begin_transform_layers(&ids)?;
+                }
+            }
             Operation::Transform(kind, g) => match kind {
                 PAINT_TRANSFORM_BEGIN => self.document.begin_transform()?,
+                PAINT_TRANSFORM_ENABLE_RESIDENT => self.document.enable_transform_deferred()?,
                 PAINT_TRANSFORM_UPDATE => self
                     .document
                     .update_transform(g.ok_or_else(|| ApiError::invalid("missing geometry"))?)?,
@@ -1394,7 +1404,9 @@ impl Engine {
                 continue;
             };
             if index < 2
-                && (self.document.liquify_deferred() || self.document.layer_move_deferred())
+                && (self.document.liquify_deferred()
+                    || self.document.layer_move_deferred()
+                    || self.document.transform_deferred())
             {
                 // The scene graph renders resident sources using the published mesh.
                 // No CPU frame jobs or preview colour readbacks while dragging.

@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 63
+#define PAINT_ABI_MINOR 64
 
 #define PAINT_ABI_PATCH 0
 
@@ -218,6 +218,11 @@
 #define PAINT_FEATURE_STROKE_TAPER 70368744177664
 
 #define PAINT_FEATURE_TRANSFORM 524288
+
+/**
+ * Opt-in CPU geometry / resident GPU presentation; software uses the original entry point.
+ */
+#define PAINT_FEATURE_TRANSFORM_RESIDENT 576460752303423488
 
 #define PAINT_FEATURE_VBR 2097152
 
@@ -494,6 +499,11 @@
 #define PAINT_TRANSFORM_CHECKPOINT 2
 
 #define PAINT_TRANSFORM_COMMIT 4
+
+/**
+ * ABI1.64: opt an already active placement/transform session into resident presentation.
+ */
+#define PAINT_TRANSFORM_ENABLE_RESIDENT 8
 
 #define PAINT_TRANSFORM_RASTERIZE 7
 
@@ -973,6 +983,9 @@ typedef struct PaintLiquifyDab {
 
 typedef struct PaintLiquifyPreviewInfo {
   uint32_t struct_size;
+  /**
+   * bit0: isolated source; bit1 (ABI1.64 opt-in): forward transform mesh.
+   */
   uint32_t focus;
   uint64_t document_generation;
   uint64_t revision;
@@ -1961,6 +1974,18 @@ PaintStatus paint_session_begin_transform_layers(struct PaintCore *core,
                                                  const uint64_t *ids,
                                                  uint64_t count,
                                                  uint64_t *out_sequence);
+
+/**
+ * ABI 1.64: opt into resident geometry-only transform preview when the stack is compatible.
+ * Unsupported stacks keep the pixel preview. Read the common resident preview publication.
+ * # Safety
+ * Same ownership, readable IDs and writable sequence contract as the ordinary begin entry.
+ */
+PaintStatus paint_session_begin_transform_layers_deferred(struct PaintCore *core,
+                                                          struct PaintSession *session,
+                                                          const uint64_t *ids,
+                                                          uint64_t count,
+                                                          uint64_t *out_sequence);
 
 /**
  * Enqueue reservoir binding. Active session painting rejects binding asynchronously.

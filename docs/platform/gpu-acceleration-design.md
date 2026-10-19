@@ -27,6 +27,7 @@ DrawVerse 使用 wgpu 做 Rust 算子计算，使用 Qt Quick 场景图/RHI 做�
 | 弹性液化算子 | wgpu 场更新与重采样算子，自动设备与失败回退 | CPU 参考实现、文档历史、取消与精确提交；不是所有工具都 GPU 化 |
 | 液化常驻预览 | Qt 静态原图/上下层纹理 + 有界网格，拖动只更新网格 | 普通兼容栅格栈使用此路径；选区、复杂组合、软件/CPU 模式保留像素预览 |
 | 图层实时移动 | Qt 共用原图/上下层常驻纹理 + 2×2 位移网格，拖动无全图回读 | 核心偏移/历史与提交保持 CPU；组、蒙版、特殊混合、置入图片和软件显示回退像素预览 |
+| 自由变换/控制点变形 | CPU正向有界细分 + Qt原图常驻纹理/视口离屏合成，更新不物化全图 | 兼容单层普通栅格/置入图片；选区、组/多选、复杂栈与软件回退；最终取样与历史在CPU |
 | 画布缩放/平移 | Qt 复用纹理与显示几何，平滑缩放/惯性/周边预取 | 动画与速度计算、普通栅格视口合成仍为 CPU |
 | 笔尖自适应轮廓 | Qt fragment shader 按最终背景亮度选择黑/白，局部 GPU 离屏纹理 | 软件后端黑白轮廓；不改变实际绘画像素 |
 | 普通画笔、湿混、涂抹、油漆桶、选区、通用图层合成 | 当前不宣称已有 wgpu 计算加速 | 仍使用既有 CPU 路径；Qt 显示其结果不等于算法 GPU 化 |
@@ -34,6 +35,8 @@ DrawVerse 使用 wgpu 做 Rust 算子计算，使用 Qt Quick 场景图/RHI 做�
 液化会话始终保留不可变源和弹性场，画布外只是裁剪。预览资产最长边 2048、网格最多 257×257；完成才全精度物化。详细适用边界见 [常驻预览](../tools/liquify-resident-preview-design.md) 与 [GPU 算子](../tools/liquify-gpu-operators-design.md)。
 
 图层移动的会话、ABI 1.63、输入合并和代码入口见[实时移动设计](../tools/layer-move-preview-design.md)，检查范围见[验收](../validations/tools/layer-move-preview-validation.md)。移动没有新增 wgpu 算子：位移为 CPU 整数外观状态，GPU 只做纹理呈现。
+
+自由变换和网格变形见[常驻预览设计](../tools/transform-resident-preview-design.md)。它复用原图资产与呈现网格，但使用独立控制点曲面，液化继续使用Elastic场。Qt通过正向源层与完整画布合成保留透明上下层；无需wgpu控制点算子，GPU显示不受计算设备选择CPU影响。
 
 套索、魔棒和油漆桶的性能路径见[选区与填充优化](../tools/selection-complexity-performance-design.md)：CPU 共用扫描线区域算子、按行取样和瓦片写入；纯选区修改共享已有像素帧，Qt 保留相同图像的纹理身份。轮廓使用线性边界追踪和几何缓存。此轮没有增加 wgpu 选色计算或专用 GPU 蚂蚁线 shader，软件后端同样获益。
 

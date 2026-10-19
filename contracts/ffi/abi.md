@@ -1,4 +1,14 @@
-# C ABI 1.63.0 契约
+# C ABI 1.64.0 契约
+
+## ABI 1.64 — 自由变换常驻网格预览
+
+`PAINT_FEATURE_TRANSFORM_RESIDENT=576460752303423488`；新增 `paint_session_begin_transform_layers_deferred`，参数/所有权与普通 begin layers 相同。兼容单层普通Normal栅格与置入图片请求常驻预览，复杂组合或选区保留像素路径；旧入口行为保持。OK表示入队，异步错误通过会话发布。
+
+已经开始的变换（包括文件置入自动创建的会话）可用 `PAINT_TRANSFORM_ENABLE_RESIDENT=8` 请求接入，geometry须null；没有活动会话异步报错，已接入时幂等。旧begin与UPDATE/关闭语义不变。
+
+共用 `PaintResidentPreviewInfo` 的 `focus` 定义为位标记：bit0仍为隔离原图，bit1为正向变换网格，只有新入口会发布bit1。正向网格顶点位置是曲面映射结果，UV来自不可变源；消费者先将原图网格渲染至视口纹理，再在完整画布上与静态上下层合成，不能沿用逆向场的单遍局部合成。DTO布局与LE顶点包不变，旧液化/移动标记不变。网格至多145×145，静态资产最长边2048。
+
+更新只改变几何，保持相邻绝对输入合并与checkpoint关闭顺序；确认调用既有最终重采样并生成单历史，取消恢复基线，资源失败保留会话可修正。详见[设计](../../docs/tools/transform-resident-preview-design.md)。
 
 ## ABI 1.63 — 图层移动会话与共用常驻预览
 

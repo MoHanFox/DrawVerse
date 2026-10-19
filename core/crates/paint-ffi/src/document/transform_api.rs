@@ -18,7 +18,7 @@ pub unsafe extern "C" fn paint_session_transform(
     boundary(|| unsafe {
         pointers::write(out_sequence, 0)?;
         runtime::outside_callback()?;
-        if kind > PAINT_TRANSFORM_RASTERIZE {
+        if kind > PAINT_TRANSFORM_ENABLE_RESIDENT {
             return Err(ApiError::invalid("transform kind"));
         }
         let g = if kind == PAINT_TRANSFORM_UPDATE {
@@ -123,6 +123,32 @@ pub unsafe extern "C" fn paint_session_begin_transform_layers(
     count: u64,
     out_sequence: *mut u64,
 ) -> PaintStatus {
+    unsafe { begin_layers(core, session, ids, count, out_sequence, false) }
+}
+
+/// ABI 1.64: opt into resident geometry-only transform preview when the stack is compatible.
+/// Unsupported stacks keep the pixel preview. Read the common resident preview publication.
+/// # Safety
+/// Same ownership, readable IDs and writable sequence contract as the ordinary begin entry.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_begin_transform_layers_deferred(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    ids: *const u64,
+    count: u64,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    unsafe { begin_layers(core, session, ids, count, out_sequence, true) }
+}
+
+unsafe fn begin_layers(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    ids: *const u64,
+    count: u64,
+    out_sequence: *mut u64,
+    deferred: bool,
+) -> PaintStatus {
     boundary(|| unsafe {
         pointers::write(out_sequence, 0)?;
         runtime::outside_callback()?;
@@ -142,7 +168,7 @@ pub unsafe extern "C" fn paint_session_begin_transform_layers(
         }
         let sequence = runtime::registry()?
             .session(core, session)?
-            .submit(Operation::TransformLayers(ids))?;
+            .submit(Operation::TransformLayers(ids, deferred))?;
         pointers::write(out_sequence, sequence)
     })
 }

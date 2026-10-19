@@ -17,6 +17,9 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(QRectF visibleDocumentRect READ visibleDocumentRect NOTIFY viewChanged)
     Q_PROPERTY(QRectF prefetchedDocumentRect READ prefetchedDocumentRect NOTIFY viewChanged)
     Q_PROPERTY(bool gpuDisplay READ gpuDisplay NOTIFY gpuDisplayChanged)
+    Q_PROPERTY(bool forwardPreview READ forwardPreview NOTIFY residentPresentationChanged)
+    Q_PROPERTY(int previewPart READ previewPart WRITE setPreviewPart NOTIFY residentPresentationChanged)
+    Q_PROPERTY(QRectF presentationRect READ presentationRect WRITE setPresentationRect NOTIFY residentPresentationChanged)
     Q_PROPERTY(QRectF secondaryCursorRect READ secondaryCursorRect NOTIFY brushCursorChanged)
     Q_PROPERTY(qreal secondaryCursorAngle READ secondaryCursorAngle NOTIFY brushCursorChanged)
     Q_PROPERTY(qreal secondaryCursorRoundness READ secondaryCursorRoundness NOTIFY brushCursorChanged)
@@ -46,6 +49,11 @@ public:
     QRectF visibleDocumentRect() const;
     QRectF prefetchedDocumentRect() const;
     bool gpuDisplay() const;
+    bool forwardPreview() const {return !m_previewPart && m_residentPreview && m_residentPreview->forward;}
+    int previewPart() const {return m_previewPart;}
+    void setPreviewPart(int part) {if(part<0 || part>2 || part==m_previewPart)return;m_previewPart=part;refresh();emit residentPresentationChanged();}
+    QRectF presentationRect() const {return m_presentationRect;}
+    void setPresentationRect(QRectF rect) {m_presentationRect=rect;update();emit residentPresentationChanged();}
     QRectF brushCursorRect() const;
     QRectF secondaryCursorRect() const;
     qreal secondaryCursorAngle() const {return m_pose.secondaryAngle;}
@@ -79,6 +87,7 @@ public:
     int selectionPreviewKind() const { return m_selectionKind; }
     Q_INVOKABLE void cancelSelectionDrag();
 signals:
+    void residentPresentationChanged();
     void gpuDisplayChanged();
     void clientChanged();
     void viewChanged();
@@ -102,6 +111,8 @@ protected:
     void hoverLeaveEvent(QHoverEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 private:
+    int m_previewPart=0;
+    QRectF m_presentationRect;
     InputSample mouseSample(QPointF local, Qt::MouseButtons buttons);
     void refresh();
     void requestView();

@@ -114,12 +114,13 @@ impl Document {
                 source,
                 revision: self.revision,
                 focus: false,
+                forward: false,
                 columns: 2,
                 rows: 2,
                 vertices,
             });
         }
-        self.liquify_preview()
+        self.transform_preview().or_else(|| self.liquify_preview())
     }
 }
 
