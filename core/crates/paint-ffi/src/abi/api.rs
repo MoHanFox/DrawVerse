@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 65;
+pub const PAINT_ABI_MINOR: u32 = 66;
 
 /// Mesh-only liquify preview packets; graphics resources belong to the UI renderer.
 pub const PAINT_FEATURE_LIQUIFY_PREVIEW: u64 = 144_115_188_075_855_872;
@@ -816,6 +816,9 @@ pub const PAINT_TRANSFORM_REDO: u32 = 6;
 pub const PAINT_TRANSFORM_RASTERIZE: u32 = 7;
 /// ABI1.64: opt an already active placement/transform session into resident presentation.
 pub const PAINT_TRANSFORM_ENABLE_RESIDENT: u32 = 8;
+/// ABI 1.66: atomic full-document reflection, including hidden/locked layers and selection.
+pub const PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL: u32 = 9;
+pub const PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL: u32 = 10;
 /// Opt-in CPU geometry / resident GPU presentation; software uses the original entry point.
 pub const PAINT_FEATURE_TRANSFORM_RESIDENT: u64 = 576_460_752_303_423_488;
 #[repr(C)]

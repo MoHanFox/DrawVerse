@@ -18,7 +18,7 @@ pub unsafe extern "C" fn paint_session_transform(
     boundary(|| unsafe {
         pointers::write(out_sequence, 0)?;
         runtime::outside_callback()?;
-        if kind > PAINT_TRANSFORM_ENABLE_RESIDENT {
+        if kind > PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL {
             return Err(ApiError::invalid("transform kind"));
         }
         let g = if kind == PAINT_TRANSFORM_UPDATE {

@@ -124,3 +124,12 @@
 
 - 4096×2160 交织选区在真实 D3D11 的 12 次已呈现导航中，静态遮罩只栅格化一次；动画不再周期性重描整个路径。软件/超大文档回退与几何回归通过，详情见[专项验收](../tools/selection-resident-ants-validation.md)。
 - Release 已重建到 build/qt/bin/Release。此项解决有界 GPU 画布的复杂选区显示，不宣称初始几何、全部 AA 场景或软件性能已经解决。
+
+## 普通 15：完整图像翻转
+
+- 图像菜单已接水平/垂直翻转，复用 transform 源取样与 LayerEdit 历史；整数镜像不做插值。所有图层/蒙版及选择一起翻转，隐式白底保留、画布外像素可恢复、置入图片源不变；含隐藏/锁定层，单次撤销。
+- Rust 核心新 3 项通过：129×77 奇数尺寸、实心/半透明与透明白底覆盖、实际图层/组蒙版、负坐标隐藏层、灰度/羽化选择、双翻转与 undo/redo；源 Arc 保持、资源失败后修订/像素/选择/历史不变；与自由变换 nearest 镜像逐像素一致。
+- 原生 full_image_flip_abi_pixels_single_history_and_descriptor_validation 通过：33×19 半透明实际像素、两轴、单历史/撤销重做、空指针描述符契约和未知 kind 拒绝。
+- Windows Release Qt fullImageFlipClientRefreshesPixelsAndUndo 通过，实际异步客户端翻转/刷新与撤销；变换会话中拒绝翻转。共享 qt_transform_tests 全部 7 项通过（含初始化/清理），包括实际窗口强折叠不透明/半透明预览与完成零差异。
+- ABI 1.66，DTO 布局不变；四个 C/C++ 静态/动态消费者、严格 Clippy、格式与生成头检查通过。Release 输出 build/qt/bin/Release。
+- 仍受坐标、逻辑瓦片与暂存预算限制，失败保留文档；没有新增 GPU 算子，也尚未接长任务分步进度。未跑全量/跨平台/实体设备。

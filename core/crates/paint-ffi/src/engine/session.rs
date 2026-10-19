@@ -925,6 +925,14 @@ impl Engine {
             Operation::Transform(kind, g) => match kind {
                 PAINT_TRANSFORM_BEGIN => self.document.begin_transform()?,
                 PAINT_TRANSFORM_ENABLE_RESIDENT => self.document.enable_transform_deferred()?,
+                PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL | PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL => {
+                    if self.files.running() {
+                        return Err(paint_core::Error::Busy.into());
+                    }
+                    self.document
+                        .flip_image(kind == PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL)?;
+                    self.modified = true;
+                }
                 PAINT_TRANSFORM_UPDATE => self
                     .document
                     .update_transform(g.ok_or_else(|| ApiError::invalid("missing geometry"))?)?,

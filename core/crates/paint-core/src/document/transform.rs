@@ -1,5 +1,7 @@
 use super::*;
 use std::collections::VecDeque;
+#[path = "image_flip.rs"]
+mod image_flip;
 #[path = "transform_mesh.rs"]
 mod mesh;
 #[path = "transform_preview.rs"]

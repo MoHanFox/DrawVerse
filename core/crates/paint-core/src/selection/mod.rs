@@ -683,6 +683,56 @@ pub struct Selection {
     steps: Arc<[SelectionStep]>,
 }
 impl Selection {
+    /// Mirror complete shape coverage without flattening the selection or losing graded alpha.
+    pub(crate) fn reflected(&self, width: u32, height: u32, horizontal: bool) -> Result<Self> {
+        let axis = usize::from(!horizontal);
+        let extent = if horizontal { width } else { height } as f64;
+        let mut steps = self.steps().to_vec();
+        for step in &mut steps {
+            let Some(shape) = &mut step.shape else {
+                continue;
+            };
+            if shape.kind == SelectionKind::Polygon {
+                *shape = SelectionShape::polygon(
+                    shape
+                        .points
+                        .iter()
+                        .map(|&p| {
+                            let mut p = p;
+                            p[axis] = extent - p[axis];
+                            p
+                        })
+                        .collect(),
+                    shape.antialias,
+                    shape.feather,
+                )?;
+            } else {
+                if horizontal {
+                    shape.x = extent - shape.x - shape.width;
+                } else {
+                    shape.y = extent - shape.y - shape.height;
+                }
+                if let Some(mask) = &mut shape.mask {
+                    let mut data = mask.coverage.to_vec();
+                    let w = mask.width as usize;
+                    if horizontal {
+                        for row in data.chunks_exact_mut(w) {
+                            row.reverse();
+                        }
+                    } else {
+                        for y in 0..mask.height as usize / 2 {
+                            for x in 0..w {
+                                data.swap(y * w + x, (mask.height as usize - 1 - y) * w + x);
+                            }
+                        }
+                    }
+                    mask.coverage = data.into();
+                }
+            }
+        }
+        Self::from_steps(self.enabled(), steps)
+    }
+
     pub fn enabled(&self) -> bool {
         self.enabled
     }

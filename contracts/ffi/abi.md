@@ -1,4 +1,8 @@
-# C ABI 1.65.0 契约
+# C ABI 1.66.0 契约
+
+## ABI 1.66 — 完整图像翻转
+
+现有 `paint_session_transform` 增补 `FLIP_IMAGE_HORIZONTAL=9`、`FLIP_IMAGE_VERTICAL=10`；geometry 必须为 null，异步 sequence/barrier 与已有变换一致。只在文档空闲且无文件任务时执行，不进入编辑会话；全部图层（含隐藏/锁定/组蒙版与置入图片）、画布外像素及选择同步镜像，画布尺寸不变。单条 LayerEdit 历史、失败原子保持；CPU 整数取样不插值，无新增 GPU 算子。DTO 布局不变。
 
 ## ABI 1.65 — 图层/组改名
 

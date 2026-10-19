@@ -3,7 +3,8 @@
 - 最新常驻 GPU 蚂蚁线：`docs/tools/selection-resident-ants-design.md` / `docs/validations/tools/selection-resident-ants-validation.md`；CPU 选区几何、Qt 静态遮罩与动画 shader，文档宽高≤4096/实际 GPU 后端启用，软件/更大文档回退。真实 D3D11 交织 4K 选区 12 帧导航栅格化 1→1，软件 2 项/几何 4 项与 Release 通过，ABI1.65 不变，产物 `build/qt/bin/Release`。初始栅格化、低倍近似及显示内存边界见设计；未跑全量/跨平台/实体输入。
 
 - 2026-10-20 用户问题清单：`docs/planning/2026-10-20-bugfix-design.md` / `docs/validations/planning/2026-10-20-bugfix-validation.md`；直接 master 分项验证、提交与推送，用户验收输出 `build/qt/bin/Release`。自由变换开始失败/取消需同时通知 active 与 busy 变化，避免核心已关闭但 QML 覆盖层残留；其余项以清单和验收记录为准。
-- 当前 ABI 1.65：现有 group request 增补 RENAME_LAYER=4，节点名称以图层属性历史保存，原位改名需等待首次点击的异步选层完成再聚焦输入框；详情同上述分项设计/验收。早期条目版本为各次历史记录。
+- 最新整图水平/垂直翻转：transform 共享整数源取样与单 LayerEdit 历史，全部图层/蒙版/选区镜像，保留隐式白底、画布外像素与置入源；核心3/原生1/Qt1与共享变换5、四ABI/Clippy/Release通过。ABI1.66，既有 transform kind 新增9/10，输出 `build/qt/bin/Release`；长任务进度仍待，详情见本轮分项设计/验收。
+- ABI 1.65 历史：现有 group request 增补 RENAME_LAYER=4，节点名称以图层属性历史保存，原位改名需等待首次点击的异步选层完成再聚焦输入框；详情同上述分项设计/验收。早期条目版本为各次历史记录。
 
 - 最新Warp折叠一致性：`docs/tools/transform-resident-preview-design.md` / `docs/validations/tools/transform-fold-consistency-validation.md`；参考PhotoCraft最终三角栅格，预览/CPU物化共享145×145拓扑与行序覆盖，移除Warp单初值Newton（避免多根换面/透明洞），选区同步覆盖；Qt有序透明通道One/Zero写入，避免深度首面锁定与alpha重复。核心5/变换7/原生2、真实D3D11双功能（含不透明/半透明折叠）、软件Qt与四ABI/Clippy/完整Release通过，ABI1.64不变，产物 `build/verify-ui/bin/Release-wgpu-transform/`。预览代理/边缘采样仍近似；未跑全量/跨平台/实体连续输入。
 

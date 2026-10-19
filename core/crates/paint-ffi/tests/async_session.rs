@@ -3943,3 +3943,98 @@ mod wet_dual_api;
 
 #[path = "support/compute_api.rs"]
 mod compute_api;
+
+#[test]
+fn full_image_flip_abi_pixels_single_history_and_descriptor_validation() {
+    let h = Harness::new(33, 19);
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_BEGIN_STROKE,
+        stroke: PaintStrokeDesc {
+            mode: PAINT_MODE_PAINT,
+            radius: 3.,
+            opacity: 1.,
+            spacing: 0.15,
+            linear_rgba: [1., 0., 0., 0.5],
+            ..dto!(PaintStrokeDesc)
+        },
+        point: PaintPoint {
+            x: 7.,
+            y: 6.,
+            pressure: 1.,
+            tool: PAINT_TOOL_MOUSE,
+            ..dto!(PaintPoint)
+        },
+        ..dto!(PaintCommand)
+    }));
+    let info = h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_END_STROKE,
+        ..dto!(PaintCommand)
+    }));
+    let original = h.pixels(0, h.frame(0, info.revision));
+    unsafe {
+        let mut sequence = 99;
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL,
+                &dto!(PaintTransform),
+                &mut sequence
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL + 1,
+                ptr::null(),
+                &mut sequence
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        for kind in [
+            PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL,
+            PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL,
+        ] {
+            assert_eq!(
+                paint_session_transform(h.core, h.session, kind, ptr::null(), &mut sequence),
+                PAINT_OK
+            );
+            let info = h.wait(sequence);
+            assert_eq!(info.last_error_status, PAINT_OK);
+            assert_eq!(info.undo_depth, 2);
+            assert_eq!(info.flags & PAINT_SESSION_TRANSFORM, 0);
+            let flipped = h.pixels(0, h.frame(0, info.revision));
+            for y in 0..19 {
+                for x in 0..33 {
+                    let (sx, sy) = if kind == PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL {
+                        (32 - x, y)
+                    } else {
+                        (x, 18 - y)
+                    };
+                    assert_eq!(
+                        &flipped[(y * 33 + x) * 4..(y * 33 + x + 1) * 4],
+                        &original[(sy * 33 + sx) * 4..(sy * 33 + sx + 1) * 4]
+                    );
+                }
+            }
+            let info = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_UNDO,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(h.pixels(0, h.frame(0, info.revision)), original);
+            let info = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_REDO,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(h.pixels(0, h.frame(0, info.revision)), flipped);
+            h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_UNDO,
+                ..dto!(PaintCommand)
+            }));
+        }
+    }
+}

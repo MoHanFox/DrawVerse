@@ -2050,13 +2050,15 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
     }m_lastTransform=sequence;
     if(kind!=PAINT_TRANSFORM_UPDATE)m_pendingTransform=sequence;
     if(kind==PAINT_TRANSFORM_BEGIN){m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();}
-    if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE)m_pendingMutation=sequence;
+    if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE || kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL)m_pendingMutation=sequence;
+    if(kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL)m_pendingLayer=sequence;
     emit stateChanged();return true;
 }
 bool PaintCoreClient::beginTransform(){clearLayerBlendPreview();return submitTransform(PAINT_TRANSFORM_BEGIN);}
 bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int interpolation,qreal skewH,qreal skewV){if(!m_transformActive || points.size()!=16)return false;auto g=dto<PaintTransform>();g.warp=warp;g.interpolation=interpolation;g.skew_h=qIsFinite(skewH)?skewH:m_transformSkewH;g.skew_v=qIsFinite(skewV)?skewV:m_transformSkewV;for(int i=0;i<16;++i){const auto p=points[i].toPointF();g.points[i*2]=p.x();g.points[i*2+1]=p.y();}if(!submitTransform(PAINT_TRANSFORM_UPDATE,&g))return false;m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=g.skew_h;m_transformSkewV=g.skew_v;emit transformChanged();return true;}
 bool PaintCoreClient::checkpointTransform(){return m_transformActive && submitTransform(PAINT_TRANSFORM_CHECKPOINT);}
 bool PaintCoreClient::finishTransform(bool commit){return m_transformActive && submitTransform(commit?PAINT_TRANSFORM_COMMIT:PAINT_TRANSFORM_CANCEL);}
+bool PaintCoreClient::flipImage(bool horizontal){if(m_transformActive || m_liquifyActive || layerEditBusy())return false;clearLayerBlendPreview();return submitTransform(horizontal?PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL:PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL);}
 bool PaintCoreClient::rasterizeImage(){return !m_transformActive && submitTransform(PAINT_TRANSFORM_RASTERIZE);}
 
 bool PaintCoreClient::deferTransformAction(std::function<void()> action){if(!m_transformActive)return false;m_afterTransform=std::move(action);if(!finishTransform(true))m_afterTransform={};return true;}

@@ -357,6 +357,7 @@ public:
     Q_INVOKABLE bool checkpointTransform();
     Q_INVOKABLE bool finishTransform(bool commit);
     Q_INVOKABLE bool rasterizeImage();
+    Q_INVOKABLE bool flipImage(bool horizontal);
     bool liquifyActive() const {return m_liquifyActive;}
     bool liquifyBusy() const {return m_pendingLiquify!=0 || layerEditBusy();}
     bool liquifyCommitting() const {return m_liquifyCommitting;}

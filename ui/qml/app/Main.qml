@@ -319,8 +319,8 @@ ApplicationWindow {
                 objectName:"imageRotateSubmenu";title:"画布旋转";cascadeParent:imageMenu
                 Action { objectName:"canvasRotateCwAction";text:"顺时针 90°（待支持）";enabled:false }
                 Action { objectName:"canvasRotateCcwAction";text:"逆时针 90°（待支持）";enabled:false }
-                Action { objectName:"canvasFlipVerticalAction";text:"垂直翻转（待支持）";enabled:false }
-                Action { objectName:"canvasFlipHorizontalAction";text:"水平翻转（待支持）";enabled:false }
+                Action { objectName:"canvasFlipVerticalAction";text:"垂直翻转";enabled:PaintClient.ready && !PaintClient.fileBusy && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.transformActive && !PaintClient.liquifyActive;onTriggered:PaintClient.flipImage(false) }
+                Action { objectName:"canvasFlipHorizontalAction";text:"水平翻转";enabled:PaintClient.ready && !PaintClient.fileBusy && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.transformActive && !PaintClient.liquifyActive;onTriggered:PaintClient.flipImage(true) }
             }
             MenuSeparator {}
             Action { text: "图像大小…（待支持）"; enabled: false }

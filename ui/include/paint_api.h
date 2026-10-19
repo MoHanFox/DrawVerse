@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 65
+#define PAINT_ABI_MINOR 66
 
 #define PAINT_ABI_PATCH 0
 
@@ -509,6 +509,13 @@
  * ABI1.64: opt an already active placement/transform session into resident presentation.
  */
 #define PAINT_TRANSFORM_ENABLE_RESIDENT 8
+
+/**
+ * ABI 1.66: atomic full-document reflection, including hidden/locked layers and selection.
+ */
+#define PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL 9
+
+#define PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL 10
 
 #define PAINT_TRANSFORM_RASTERIZE 7
 

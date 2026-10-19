@@ -39,6 +39,16 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void fullImageFlipClientRefreshesPixelsAndUndo() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("flip.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(65,41);QTRY_COMPARE(client.documentWidth(),65);QTRY_VERIFY(!client.layerEditBusy());
+        client.requestViewport(0,{0,0,65,41},{65,41});client.setBrushRadius(3);client.setBrushColor(Qt::black);QVERIFY(client.beginStroke({{12,10},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!client.frame().isNull());QTRY_VERIFY(client.frame().pixelColor(12,10).red()<20);
+        for(bool horizontal:{true,false}) {
+            QVERIFY(client.flipImage(horizontal));QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());QVERIFY(!client.transformActive());
+            const auto x=horizontal?52:12,y=horizontal?10:30;QTRY_VERIFY(client.frame().pixelColor(x,y).red()<20);QTRY_VERIFY(client.frame().pixelColor(12,10).red()>240);
+            client.undo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frame().pixelColor(12,10).red()<20);
+        }
+        QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformActive() && !client.layerEditBusy());QVERIFY(!client.flipImage(true));QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.layerEditBusy());QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
     void selectionMaskAnimationDoesNotRasterizeAgain() {
         QQuickWindow window;window.resize(128,128);auto *mask=new SelectionOverlay();mask->setParentItem(window.contentItem());mask->setSize({128,128});mask->setDocumentSize({128,128});mask->setDocumentRect({0,0,128,128});mask->setMaskOnly(true);mask->setEnabledSelection(true);
         const auto step=[](int x){return QVariantMap{{"operation",0},{"shape",0},{"x",x},{"y",8},{"width",60},{"height",80}};};mask->setSteps({step(8)});window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));QTRY_VERIFY(mask->maskRasterizations()>0);
