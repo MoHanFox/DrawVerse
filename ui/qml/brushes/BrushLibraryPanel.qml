@@ -70,9 +70,15 @@ ColumnLayout {
         selectionAnchor=key
         library.selectBrushItems([{kind:modelData.kind,id:modelData.id}],modelData.kind==="preset"?modelData.id:"")
     }
-    function openSelectedGroupDialog() {
-        if(library.selectedBrushItems.length===0)return
-        groupSelectedMode=true;groupParentId="";groupName.text="";groupDialog.title="将选中项创建为组";groupDialog.open()
+    property string renameGroupId:""
+    function beginRenameGroup(id){renameGroupId=id}
+    function createSelectedGroup() {
+        const names=(library.organization.groups||[]).map(group=>group.name)
+        let number=1
+        while(names.indexOf("笔刷组"+number)>=0)number++
+        const name="笔刷组"+number
+        if(library.selectedBrushItems.length>0)library.groupSelectedItems(name)
+        else library.createGroup(name,"")
     }
     readonly property var library:PaintClient.brushLibrary
     property var groupedModel:[]
@@ -217,7 +223,19 @@ ColumnLayout {
             }
             visible:modelData.kind==="group" || root.presetById(modelData.id).id!==undefined
             Image {id:rowPreview;visible:modelData.kind!=="group";anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.leftMargin:4+modelData.depth*14;anchors.rightMargin:4;anchors.topMargin:4;height:35;source:modelData.kind==="group"?"":root.presetById(modelData.id).preview;fillMode:Image.PreserveAspectFit;asynchronous:true}
-            Text {visible:modelData.kind==="group";x:8+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:(root.isGroupCollapsed(modelData.id)?"▸  ":"▾  ")+modelData.name;color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
+            Text {id:groupLabel;objectName:"brushGroupName:"+modelData.id;visible:modelData.kind==="group" && root.renameGroupId!==modelData.id;x:30+modelData.depth*14;y:0;width:parent.width-x-8;height:30;textFormat:Text.PlainText;text:modelData.name||"";color:Theme.text;font.pixelSize:10;verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight}
+            TextField {
+                objectName:"brushGroupNameEditor:"+modelData.id;z:3
+                visible:modelData.kind==="group" && root.renameGroupId===modelData.id
+                x:groupLabel.x;y:2;width:groupLabel.width;height:26;maximumLength:80;selectByMouse:true;font.pixelSize:10
+                function finish(commit){if(root.renameGroupId!==modelData.id)return;root.renameGroupId="";if(commit && text.trim().length)root.library.renameGroup(modelData.id,text);root.forceActiveFocus()}
+                onVisibleChanged:if(visible){text=modelData.name;Qt.callLater(()=>{if(visible){forceActiveFocus();selectAll()}})}
+                onAccepted:finish(true)
+                onActiveFocusChanged:if(!activeFocus && visible)finish(true)
+                Keys.onEscapePressed:event=>{finish(false);event.accepted=true}
+            }
+            Text {visible:modelData.kind==="group";x:8+modelData.depth*14;width:20;height:30;text:root.isGroupCollapsed(modelData.id)?"▸":"▾";color:Theme.text;verticalAlignment:Text.AlignVCenter}
+            MouseArea {objectName:"brushGroupToggle:"+modelData.id;z:2;visible:modelData.kind==="group";x:6+modelData.depth*14;width:22;height:30;onClicked:root.toggleGroup(modelData.id)}
             Text {visible:modelData.kind!=="group";x:6+modelData.depth*14;y:40;width:parent.width-x-6;textFormat:Text.PlainText;text:root.presetById(modelData.id).name||"";color:Theme.text;font.pixelSize:9;elide:Text.ElideRight}
             MouseArea {
                 anchors.fill:parent;acceptedButtons:Qt.LeftButton|Qt.RightButton
@@ -229,7 +247,7 @@ ColumnLayout {
                 onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;brushRow.panel.draggingBrush=true;brushRow.panel.draggedBrushKey=modelData.kind+":"+modelData.id;PaintClient.beginBrushDrag(brushRow.panel.draggedBrushKey);brushRow.panel.draggedBrushKey="";brushRow.panel.draggingBrush=false;brushRow.panel.draggedBrushKey="";brushRow.panel.dragViewportY=-1}}
                 onReleased:function(){dragging=false;brushRow.panel.draggingBrush=false;brushRow.panel.draggedBrushKey="";brushRow.panel.dragViewportY=-1}
                 onCanceled:function(){dragging=false;brushRow.panel.draggingBrush=false;brushRow.panel.draggedBrushKey="";brushRow.panel.dragViewportY=-1}
-                onDoubleClicked:function(mouse){if(mouse.button===Qt.LeftButton && modelData.kind==="preset" && !suppressClick)brushRow.panel.beginRenamePreset(modelData.id)}
+                onDoubleClicked:function(mouse){if(mouse.button!==Qt.LeftButton || suppressClick)return;if(modelData.kind==="group" && mouse.x>=groupLabel.x)brushRow.panel.beginRenameGroup(modelData.id);else if(modelData.kind==="preset")brushRow.panel.beginRenamePreset(modelData.id)}
                 onClicked:function(mouse) {
                     if(suppressClick){suppressClick=false;return}
                     if(mouse.button===Qt.RightButton) {
@@ -238,7 +256,6 @@ ColumnLayout {
                         else {brushRow.panel.contextPresetId=modelData.id;presetMenu.popup()}
                     } else {
                         brushRow.panel.handleBrushClick(modelData,mouse.modifiers)
-                        if(modelData.kind==="group" && !(mouse.modifiers & (Qt.ControlModifier|Qt.MetaModifier|Qt.ShiftModifier)))brushRow.panel.toggleGroup(modelData.id)
                     }
                 }
             }
@@ -290,7 +307,6 @@ ColumnLayout {
         footer:DropArea {
             objectName:"brushRootDrop";width:ListView.view.width;height:24;keys:["application/x-drawverse-brush"]
             Rectangle {anchors.fill:parent;color:parent.containsDrag?Theme.selected:Theme.strip;border.color:Theme.line}
-            Label {anchors.centerIn:parent;text:"拖到这里移到画笔库根目录";color:Theme.muted;font.pixelSize:9}
             onDropped:function(drop){presetList.panel.dropToRoot(drop)}
         }
     }
@@ -302,7 +318,7 @@ ColumnLayout {
         Item {Layout.fillWidth:true}
         IconButton {objectName:"importBrushPackage";glyph:"folder";tooltip:"导入 VBR / ABR 笔刷包";implicitHeight:22;enabled:!PaintClient.brushFileBusy;onClicked:importDialog.open()}
         IconButton {glyph:"plus";tooltip:"保存当前设置为新画笔";implicitHeight:22;onClicked:saveDialog.open()}
-        IconButton {objectName:"createBrushGroup";glyph:"folder";tooltip:root.library.selectedBrushItems.length>0?"将选中项创建为组":"新建画笔组";implicitHeight:22;onClicked:{if(root.library.selectedBrushItems.length>0)root.openSelectedGroupDialog();else{root.groupSelectedMode=false;root.groupParentId="";groupName.text="";groupDialog.title="新建画笔组";groupDialog.open()}}}
+        IconButton {objectName:"createBrushGroup";glyph:"folder";tooltip:"创建组";implicitHeight:22;onClicked:root.createSelectedGroup()}
         IconButton {glyph:"trash";tooltip:"删除自定义画笔";implicitHeight:22;enabled:!!root.presetById(root.library.selectedId).id && !root.presetById(root.library.selectedId).builtin;onClicked:root.library.remove(root.library.selectedId)}
     }
     GlassMenu {
@@ -310,13 +326,13 @@ ColumnLayout {
         objectName:"brushGroupContextMenu"
         topLevel:true
         Instantiator {
-            model:root.library.selectedBrushItems.length>1?[0]:[]
-            delegate:GlassMenuItem {text:"创建分组";onTriggered:root.openSelectedGroupDialog()}
+            model:root.library.selectedBrushItems.length>0?[0]:[]
+            delegate:GlassMenuItem {text:"创建组";onTriggered:root.createSelectedGroup()}
             onObjectAdded:(index,object)=>groupMenu.insertItem(index,object)
             onObjectRemoved:(index,object)=>groupMenu.removeItem(object)
         }
         GlassMenuItem {text:"新建子组";onTriggered:{root.groupSelectedMode=false;root.groupParentId=root.contextGroupId;groupName.text="";groupDialog.title="新建子组";groupDialog.open()}}
-        GlassMenuItem {text:"重命名";onTriggered:{root.groupSelectedMode=false;root.groupParentId="";groupName.text=root.contextGroupName;groupDialog.title="重命名组";groupDialog.open()}}
+        GlassMenuItem {text:"重命名";onTriggered:root.beginRenameGroup(root.contextGroupId)}
         GlassMenuItem {text:root.library.selectedBrushItems.length>1?"导出选中笔刷":"导出该组笔刷";onTriggered:root.beginSelectionExport()}
         MenuSeparator {}
         GlassMenuItem {text:"移动到根目录";onTriggered:root.library.moveGroupToGroup(root.contextGroupId,"")}
@@ -343,8 +359,8 @@ ColumnLayout {
         id:presetMenu;objectName:"brushPresetContextMenu"
         topLevel:true
         Instantiator {
-            model:root.library.selectedBrushItems.length>1?[0]:[]
-            delegate:GlassMenuItem {text:"创建分组";onTriggered:root.openSelectedGroupDialog()}
+            model:root.library.selectedBrushItems.length>0?[0]:[]
+            delegate:GlassMenuItem {text:"创建组";onTriggered:root.createSelectedGroup()}
             onObjectAdded:(index,object)=>presetMenu.insertItem(index,object)
             onObjectRemoved:(index,object)=>presetMenu.removeItem(object)
         }

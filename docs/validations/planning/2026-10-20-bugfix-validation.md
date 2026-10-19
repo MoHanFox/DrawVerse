@@ -78,3 +78,9 @@
 - 可见项保留内容身份对应的不可变缩略图；全局缓存淘汰不再清空图片或重复排队，切换资源身份才请求新图。
 - Windows Release qt_workflow_tests::visibleResourceThumbnailSurvivesSharedCacheEviction 通过；70 次全局完成信号及缓存淘汰后原图片保持、零重复请求，更换身份后只请求一次并正确采用新图。
 - Release 程序已重建到 build/qt/bin/Release。测试覆盖缓存生命周期，实体滚动视觉仍需用户复核。
+
+## 普通 6，第一步：笔刷组创建与原位改名
+
+- 创建组直接分组所选笔刷，自动使用未占用的“笔刷组N”；根目录投放提示已移除。组名单击只选择，三角按钮折叠，双击名称原位编辑。
+- Windows Release Qt brushGroupsCreateDirectlyAndRenameInline 与 brushGroupCollapseKeepsUnchangedDelegates 通过；验证两个自动名称、单笔刷归组、仅三角折叠、真实双击/Enter 保存/Esc 放弃，以及三轮折叠保持其他预览。折叠后输入测试等待真实 frameSwapped，避免在布局尚未呈现时使用旧位置。
+- Release 已重建到 build/qt/bin/Release。多选拖动另列下一项。

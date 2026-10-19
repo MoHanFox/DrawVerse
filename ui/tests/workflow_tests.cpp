@@ -45,6 +45,31 @@ private slots:
         thumbnail->setProperty("resource",second);QVERIFY(thumbnail->property("imageSource").toString().isEmpty());QCOMPARE(client.requests,1);
         client.cache.insert(second,png);client.changed();QCOMPARE(thumbnail->property("imageSource").toString(),png);
     }
+    void brushGroupsCreateDirectlyAndRenameInline() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("brush-group-edit.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        QQmlComponent component(&engine,QUrl("qrc:/qml/brushes/BrushLibraryPanel.qml"));QQuickWindow window;QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));
+        auto *panel=qobject_cast<QQuickItem*>(object.data());QVERIFY(panel);panel->setParentItem(window.contentItem());panel->setWidth(280);panel->setHeight(600);window.resize(280,600);window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));
+        const auto groups=[&](){return library->organization().value("groups").toList();};
+        for(const auto &preset:QStringList{"round-pressure","round-fine"}) {
+            QVERIFY(library->selectBrushItems({QVariantMap{{"kind","preset"},{"id",preset}}},preset));
+            QVERIFY(QMetaObject::invokeMethod(panel,"createSelectedGroup"));
+        }
+        QTRY_COMPARE(groups().size(),2);QString group;QSet<QString> names;for(const auto &value:groups()){const auto row=value.toMap();names.insert(row.value("name").toString());QCOMPARE(row.value("items").toList().size(),1);if(row.value("name").toString()==QString::fromUtf8("笔刷组1"))group=row.value("id").toString();}QVERIFY(names.contains(QString::fromUtf8("笔刷组1")) && names.contains(QString::fromUtf8("笔刷组2")));QVERIFY(!group.isEmpty());
+        const auto nameOf=[&](){for(const auto &value:groups()){const auto row=value.toMap();if(row.value("id").toString()==group)return row.value("name").toString();}return QString();};
+        QQuickItem *label=nullptr,*toggle=nullptr,*editor=nullptr,*list=nullptr;
+        QTRY_VERIFY((label=findVisual(panel,"brushGroupName:"+group)) && label->width()>32);QTRY_VERIFY((toggle=findVisual(panel,"brushGroupToggle:"+group)));QTRY_VERIFY((list=findVisual(panel,"brushPresetList")));
+        const auto count=list->property("count").toInt();
+        QTest::mouseClick(&window,Qt::LeftButton,Qt::NoModifier,label->mapToScene({40,15}).toPoint());QCOMPARE(list->property("count").toInt(),count);
+        QTest::mouseClick(&window,Qt::LeftButton,Qt::NoModifier,toggle->mapToScene({10,15}).toPoint());QTRY_COMPARE(list->property("count").toInt(),count-1);
+        QTest::mouseClick(&window,Qt::LeftButton,Qt::NoModifier,toggle->mapToScene({10,15}).toPoint());QTRY_COMPARE(list->property("count").toInt(),count);
+        QVERIFY(QMetaObject::invokeMethod(list,"forceLayout"));QSignalSpy frame(&window,&QQuickWindow::frameSwapped);window.update();QTRY_VERIFY(!frame.isEmpty());QTest::mouseDClick(&window,Qt::LeftButton,Qt::NoModifier,label->mapToScene({40,15}).toPoint());
+        QTRY_VERIFY((editor=findVisual(panel,"brushGroupNameEditor:"+group)) && editor->isVisible());QTRY_VERIFY(editor->hasActiveFocus());editor->setProperty("text","discard");QTest::keyClick(&window,Qt::Key_Escape);
+        QTRY_VERIFY(!editor->isVisible());QCOMPARE(nameOf(),QString::fromUtf8("笔刷组1"));
+        QTest::mouseDClick(&window,Qt::LeftButton,Qt::NoModifier,label->mapToScene({40,15}).toPoint());QTRY_VERIFY(editor->isVisible());QTRY_VERIFY(editor->hasActiveFocus());editor->setProperty("text",QString::fromUtf8("原位改名"));QTest::keyClick(&window,Qt::Key_Return);
+        QTRY_COMPARE(nameOf(),QString::fromUtf8("原位改名"));client.shutdown();
+    }
     void brushGroupCollapseKeepsUnchangedDelegates() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("brush-groups.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();
