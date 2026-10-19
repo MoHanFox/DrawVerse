@@ -4,6 +4,8 @@
 
 ## 跨语言边界
 
+GPU 使用与算子/显示接入规则统一见 [GPU 加速入口](gpu-acceleration-design.md)。画布导航在 `ui/src/canvas/CanvasItem.*`，有界自适应轮廓在 `ui/qml/canvas/AdaptiveCursor.qml` 与 `ui/shaders/adaptive-cursor.frag`；共享几何装配位于 `CanvasPane.qml`。
+
 2026-10-19 新增 `paint-ops`（有界算子 DTO、校验、CPU 数值执行与 WGSL 数据编码）和 `paint-gpu`（设备、队列、融合计算、读回及故障回退）。FFI 装配执行器，`paint-core` 仅依赖 `paint-ops`，不持有 wgpu 设备类型；液化的不可变源、网格、历史和发布归 `document/tools`。Qt 常驻纹理、几何和材质归 `ui/src/canvas/LiquifyPreviewNode.*`，不可变跨线程包归 `ui/src/engine/LiquifyPreview.h`，着色器位于 `ui/shaders/` 并由 ShaderTools 构建。见[GPU 与液化设计](../tools/liquify-gpu-operators-design.md)及[常驻预览设计](../tools/liquify-resident-preview-design.md)。
 
 ```text

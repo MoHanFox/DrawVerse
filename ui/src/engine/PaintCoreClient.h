@@ -323,6 +323,7 @@ public:
     quint64 revision() const { return m_revision; }
     quint64 generation() const { return m_generation; }
     void requestViewport(int view, QRectF region, QSize physicalPixels, bool enabled = true);
+    void ensureOverview();
     int historyLimit() const {return m_historyLimit;}
     void setHistoryLimit(int commands);
     Q_INVOKABLE void applyHistoryLimit();

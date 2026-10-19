@@ -33,7 +33,7 @@ set(_drawverse_ui_resources
     qml/app/Main.qml qml/app/WorkspaceStatusBar.qml
     qml/workspace/DockWorkspace.qml qml/workspace/DockTile.qml qml/workspace/DockDivider.qml qml/workspace/DockEdgePreview.qml qml/workspace/DockHintWindow.qml qml/workspace/FloatingPanel.qml qml/workspace/PanelGroup.qml qml/workspace/PanelFlyout.qml qml/workspace/PanelContent.qml
     qml/documents/DocumentArea.qml qml/documents/DocumentWindow.qml
-    qml/canvas/CanvasPane.qml qml/canvas/TransformOverlay.qml qml/canvas/TransparencyGrid.qml qml/canvas/EyedropperRing.qml
+    qml/canvas/CanvasPane.qml qml/canvas/AdaptiveCursor.qml qml/canvas/TransformOverlay.qml qml/canvas/TransparencyGrid.qml qml/canvas/EyedropperRing.qml
     qml/brushes/BrushLibraryPanel.qml qml/brushes/BrushSettingsPanel.qml qml/brushes/PressureCurveEditor.qml qml/brushes/SpeedCurveEditor.qml
     qml/brushes/BrushResourceThumbnail.qml qml/brushes/BrushResourcePicker.qml
     qml/layers/LayersPanel.qml qml/layers/LayerLock.qml qml/layers/LayerThumbnail.qml
@@ -48,7 +48,7 @@ set(_drawverse_ui_resources
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES ${_drawverse_ui_resources})
 qt_add_shaders(drawverse_ui liquify_shaders PREFIX "/shaders" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-    GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag)
+    GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag shaders/adaptive-cursor.frag)
 
 # Editing QML or an asset must recompile the generated resource object.
 get_target_property(_drawverse_qrc_sources drawverse_ui SOURCES)

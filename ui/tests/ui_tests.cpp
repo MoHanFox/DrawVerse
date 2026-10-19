@@ -102,6 +102,110 @@ class UiTests final : public QObject {
     QTemporaryDir m_preferences;
 private slots:
 
+    void canvasNavigationAnimatesAnchorsAndInertiaWithoutHistory() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("navigation.ini"));QTRY_VERIFY(client.ready());
+        client.newDocument(2048,1536);QTRY_COMPARE(client.documentWidth(),2048);QTRY_VERIFY(!client.layerEditBusy());
+        QQuickWindow window;window.resize(640,480);
+        auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({640,480});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        QTRY_COMPARE(client.frameRegion(),canvas->prefetchedDocumentRect());
+        QVERIFY(canvas->prefetchedDocumentRect().contains(canvas->visibleDocumentRect()));
+        QVERIFY(canvas->prefetchedDocumentRect().width()>canvas->visibleDocumentRect().width());
+        QTRY_VERIFY(!client.frame(1).isNull());QCOMPARE(client.frameRegion(1),QRectF(0,0,2048,1536));
+        QVERIFY(client.frame(1).width()<=512 && client.frame(1).height()<=512);
+        const auto revision=client.revision();const auto depth=client.undoDepth();
+        const QPointF anchor(173,119);const auto doc=canvas->documentPoint(anchor);
+        QWheelEvent wheel(anchor,canvas->mapToGlobal(anchor),{},QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+        QCoreApplication::sendEvent(canvas,&wheel);QTest::qWait(32);
+        QVERIFY(canvas->zoom()>1 && canvas->zoom()<1.15);QVERIFY(QLineF(doc,canvas->documentPoint(anchor)).length()<1e-6);
+        QCoreApplication::sendEvent(canvas,&wheel);QTRY_COMPARE(canvas->zoom(),qreal(1.15*1.15));
+        QVERIFY(QLineF(doc,canvas->documentPoint(anchor)).length()<1e-6);
+        canvas->zoomBy(.5);QTRY_COMPARE(canvas->zoom(),qreal(1.15*1.15*.5));
+        canvas->actualSize();
+        QTest::mousePress(&window,Qt::MiddleButton,Qt::NoModifier,{320,240});QTest::qWait(20);
+        QTest::mouseMove(&window,{380,260});const auto released=canvas->documentRect().topLeft();
+        QTest::mouseRelease(&window,Qt::MiddleButton,Qt::NoModifier,{380,260});QTest::qWait(48);
+        QVERIFY(canvas->documentRect().left()>released.x()+1);
+        // Starting another drag cancels momentum before input coordinates are used.
+        QTest::mousePress(&window,Qt::MiddleButton,Qt::NoModifier,{380,260});const auto stopped=canvas->documentRect();
+        QTest::qWait(90);QCOMPARE(canvas->documentRect(),stopped);QTest::mouseRelease(&window,Qt::MiddleButton,Qt::NoModifier,{380,260});
+        QTest::qWait(50);QCOMPARE(canvas->documentRect(),stopped);
+        canvas->zoomBy(2);canvas->setVisible(false);const auto hidden=canvas->zoom();QTest::qWait(160);QCOMPARE(canvas->zoom(),hidden);
+        QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),depth);
+        QSignalSpy finished(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(finished.size(),1);
+    }
+
+    void overviewKeepsTransparentPixelsAndCoversFastPan() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("overview.ini"));QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(1024,512);QTRY_COMPARE(client.documentWidth(),1024);QTRY_VERIFY(!client.layerEditBusy());
+        auto *library=client.brushLibrary();QVERIFY(library->select("round-fine"));library->setPressureSize(false);library->setPressureOpacity(false);library->setHardness(1);
+        client.setBrushRadius(1000);client.setBrushColor(Qt::red);client.setBrushOpacity(.5);QVERIFY(client.beginStroke({{512,256},1}));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());
+        QQuickWindow window;window.resize(320,240);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({320,240});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        QTRY_COMPARE(client.frameRegion(),canvas->prefetchedDocumentRect());QTRY_VERIFY(client.frameRevision()>=client.revision());
+        QTRY_VERIFY(!client.frame(1).isNull() && client.frameRevision(1)>=client.revision());
+        const auto capture=[&]{auto result=canvas->grabToImage();if(!result || !QTest::qWaitFor([&]{return !result->image().isNull();},5000))return QImage{};return result->image();};
+        const auto pixel=[&](const QImage &image,QPointF document){const auto p=canvas->documentRect().topLeft()+document*canvas->zoom();const auto dpr=image.width()/canvas->width();return image.pixelColor(qRound(p.x()*dpr),qRound(p.y()*dpr));};
+        const auto before=capture();QVERIFY(!before.isNull());const auto expected=pixel(before,{512,256});QVERIFY(expected.alpha()>=126 && expected.alpha()<=129);QVERIFY(expected.red()>250);
+        QVERIFY(!client.frameRegion().contains(QPointF(850,256)));const auto depth=client.undoDepth();const auto revision=client.revision();
+        QTest::mousePress(&window,Qt::MiddleButton,Qt::NoModifier,{310,120});QTest::mouseMove(&window,{10,120});
+        const auto shifted=capture();QVERIFY(!shifted.isNull());const auto actual=pixel(shifted,{850,256});QVERIFY(qAbs(actual.alpha()-expected.alpha())<=1);QVERIFY(actual.red()>250);
+        QTest::mouseRelease(&window,Qt::MiddleButton,Qt::NoModifier,{10,120});canvas->actualSize();
+        QCOMPARE(client.undoDepth(),depth);QCOMPARE(client.revision(),revision);
+        QSignalSpy finished(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(finished.size(),1);
+    }
+
+    void adaptiveCursorContrastsBothSidesAndTracksLiquifyPreview() {
+        if(QQuickWindow::graphicsApi()==QSGRendererInterface::Software)QSKIP("Run with the RHI backend for shader pixels");
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("adaptive.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        client.newDocument(256,256);QTRY_COMPARE(client.documentWidth(),256);QTRY_VERIFY(!client.layerEditBusy());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();
+        auto *library=client.brushLibrary();QVERIFY(library->select("round-fine"));library->setPressureSize(false);library->setPressureOpacity(false);library->setHardness(1);
+        client.setBrushRadius(64);client.setBrushColor(Qt::black);QVERIFY(client.beginStroke({{64,32},1}));client.strokeTo({{64,224},1});client.endStroke();QTRY_VERIFY(!client.layerEditBusy());
+        QTRY_VERIFY(client.frameRevision()>=client.revision());library->setCursorSimple(true);library->setCursorWidth(0);library->setCursorBrightness(40);client.setBrushRadius(32);
+        const auto local=canvas->documentRect().topLeft()+QPointF(128,128);window->requestActivate();canvas->forceActiveFocus();
+        QTest::mouseMove(window,canvas->mapToScene(local).toPoint());if(!canvas->brushCursorVisible())QTest::keyClick(window,Qt::Key_CapsLock);QTRY_VERIFY(canvas->brushCursorVisible());
+        auto *adaptive=findVisualItem(window->contentItem(),"adaptiveBrushCursor");QVERIFY(adaptive);QTRY_VERIFY(adaptive->isVisible());
+        QVERIFY(adaptive->width()<100 && adaptive->height()<100);
+        auto *pane=canvas->parentItem()->parentItem();
+        const auto capture=[&]{auto result=pane->grabToImage();if(!result || !QTest::qWaitFor([&]{return !result->image().isNull();},5000))return QImage{};return result->image();};
+        const auto check=[&](const QImage &image){
+            if(image.isNull())return false;
+            const auto center=canvas->mapToItem(pane,local);const auto scale=image.width()/pane->width();
+            // A small band includes the antialiased contour and its opposite halo.
+            int light=0,dark=0;
+            for(int y=-3;y<=3;++y)for(int x=-2;x<=2;++x){
+                const auto l=image.pixelColor(qRound((center.x()-32+x)*scale),qRound((center.y()+y)*scale));
+                const auto r=image.pixelColor(qRound((center.x()+32+x)*scale),qRound((center.y()+y)*scale));
+                if(l.red()>210)++light;if(r.red()<45)++dark;
+            }
+            return light>3 && dark>3;
+        };
+        QTest::qWait(120);capture().save("artifacts/adaptive-cursor.png");
+        QTRY_VERIFY(check(capture()));const auto revision=client.revision();const auto depth=client.undoDepth();
+        library->setCursorSimple(false);QTRY_VERIFY(check(capture()));
+        QImage tip(16,16,QImage::Format_RGBA8888);tip.fill(Qt::white);for(int y=6;y<10;++y)for(int x=6;x<10;++x)tip.setPixelColor(x,y,Qt::transparent);
+        const auto file=temp.filePath("cursor-tip.png");QVERIFY(tip.save(file));QSignalSpy imported(&client,&PaintCoreClient::brushFileFinished);QVERIFY(client.importBrushTip(QUrl::fromLocalFile(file),1));QTRY_COMPARE(imported.size(),1);QVERIFY(imported.last()[0].toBool());
+        client.setBrushRadius(32);QTRY_VERIFY(client.cursorHasImage() && client.cursorOutlineReady());QTRY_VERIFY(check(capture()));
+        auto dual=library->dualBrush();dual["enabled"]=true;dual["diameter"]=80.;QVERIFY(library->setDualBrush(dual));library->setCursorComposite(true);
+        // Current grayscale dual tips are clipped to the primary coverage;
+        // retired dual-color overflow must not become a spurious second cursor.
+        QVERIFY(!canvas->secondaryCursorVisible());QTRY_VERIFY(check(capture()));
+        dual["enabled"]=false;QVERIFY(library->setDualBrush(dual));library->setCursorComposite(false);
+        QCOMPARE(client.revision(),revision);
+        QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());QTRY_VERIFY(client.liquifyPreview());client.setLiquifySize(64);
+        QTRY_VERIFY(check(capture()));client.setLiquifySize(15000);QTRY_VERIFY(!adaptive->isVisible());
+        client.setLiquifySize(64);QTRY_VERIFY(adaptive->isVisible());QTRY_VERIFY(check(capture()));
+        QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());
+        QTest::mouseMove(window,{1,1});QTRY_VERIFY(!adaptive->isVisible());
+        QCOMPARE(client.sampleDocumentPixel(96,128),QColor(Qt::black));QCOMPARE(client.sampleDocumentPixel(160,128),QColor(Qt::white));
+        QCOMPARE(client.undoDepth(),depth);QCOMPARE(warnings,QStringList());
+        QSignalSpy finished(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(finished.size(),1);
+    }
+
     void sharedParameterLayoutAndPanelDialogUseSeparateWindow() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("layout.ini"));WorkspaceManager workspace(temp.filePath("workspace.ini"));QQmlApplicationEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());workspace.setActive(workspace.groupForPanel("brush-settings"),"brush-settings");
         QQuickItem *panel=nullptr;QTRY_VERIFY((panel=findVisualItem(window->contentItem(),"brushSettingsPanel")));panel->setProperty("category",3);
@@ -187,8 +291,8 @@ private slots:
         QQuickWindow window;window.resize(1024,832);window.setColor(Qt::black);
         auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1024,832});canvas->setClient(&client);
         window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
-        QTRY_COMPARE(client.frameRegion(),canvas->visibleDocumentRect());
-        const auto region=canvas->visibleDocumentRect();
+        QTRY_COMPARE(client.frameRegion(),canvas->prefetchedDocumentRect());
+        const auto region=canvas->prefetchedDocumentRect();
         const QSize pixels(qCeil(region.width()*canvas->zoom()*window.devicePixelRatio()),qCeil(region.height()*canvas->zoom()*window.devicePixelRatio()));
         QTRY_COMPARE(client.frame().size(),pixels);
         QTRY_VERIFY(client.frameRevision()>=client.revision());
@@ -376,14 +480,16 @@ private slots:
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready());QCOMPARE(reopened.brushLibrary()->radius(),1000.);QCOMPARE(reopened.brushLibrary()->dualBrush().value("diameter").toDouble(),2000.);
     }
 
-    void cursorZeroWidthAndSimpleBrightnessStayDisplayOnly() {
+    void cursorLegacyBrightnessIsIgnoredByAdaptiveDisplay() {
         BrushLibrary model;QCOMPARE(model.cursorWidth(),0);const auto catalog=model.catalogSnapshot();QSignalSpy settings(&model,&BrushLibrary::settingsChanged),preview(&model,&BrushLibrary::previewRequested);
         model.setCursorSimple(true);model.setCursorBrightness(40);QCOMPARE(model.cursorBrightness(),40);QCOMPARE(settings.size(),0);QCOMPARE(preview.size(),0);QCOMPARE(model.catalogSnapshot(),catalog);
         BrushLibrary restored;QVERIFY(restored.restore(model.snapshot()));QCOMPARE(restored.cursorWidth(),0);QCOMPARE(restored.cursorBrightness(),40);QVERIFY(restored.cursorSimple());
         auto invalid=QJsonDocument::fromJson(model.snapshot()).object();auto cursor=invalid.value("cursor").toObject();cursor["width"]=-1;invalid["cursor"]=cursor;const auto before=restored.snapshot();QVERIFY(!restored.restore(QJsonDocument(invalid).toJson()));QCOMPARE(restored.snapshot(),before);
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("cursor.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());QTRY_VERIFY(client.ready());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
-        auto *outer=window->findChild<QObject*>("brushCursorArcOuter");auto *inner=window->findChild<QObject*>("brushCursorArcInner");QVERIFY(outer && inner);auto *library=client.brushLibrary();library->setCursorWidth(0);QCOMPARE(outer->property("strokeWidth").toReal(),1.);QCOMPARE(inner->property("strokeWidth").toReal(),-1.);
-        library->setCursorWidth(3);QCOMPARE(outer->property("strokeWidth").toReal(),3.);QCOMPARE(inner->property("strokeWidth").toReal(),3.);library->setCursorSimple(true);library->setCursorBrightness(40);QCOMPARE(outer->property("strokeWidth").toReal(),1.);QCOMPARE(inner->property("strokeWidth").toReal(),-1.);const auto color=outer->property("strokeColor").value<QColor>();QVERIFY(std::abs(color.redF()-.4)<.01);QCOMPARE(color.red(),color.green());QCOMPARE(color.green(),color.blue());
+        auto *outer=window->findChild<QObject*>("brushCursorArcOuter");auto *inner=window->findChild<QObject*>("brushCursorArcInner");QVERIFY(outer && inner);auto *library=client.brushLibrary();library->setCursorWidth(0);QCOMPARE(outer->property("strokeWidth").toReal(),QQuickWindow::graphicsApi()==QSGRendererInterface::Software?2.:1.);QCOMPARE(inner->property("strokeWidth").toReal(),QQuickWindow::graphicsApi()==QSGRendererInterface::Software?2.:-1.);
+        library->setCursorWidth(3);QCOMPARE(outer->property("strokeWidth").toReal(),3.);QCOMPARE(inner->property("strokeWidth").toReal(),3.);library->setCursorSimple(true);library->setCursorBrightness(40);QCOMPARE(outer->property("strokeWidth").toReal(),QQuickWindow::graphicsApi()==QSGRendererInterface::Software?2.:1.);QCOMPARE(inner->property("strokeWidth").toReal(),QQuickWindow::graphicsApi()==QSGRendererInterface::Software?2.:-1.);const auto color=outer->property("strokeColor").value<QColor>();QCOMPARE(color,QColor(Qt::black));QCOMPARE(color.red(),color.green());QCOMPARE(color.green(),color.blue());
+        workspace.setActive(workspace.groupForPanel("brush-settings"),"brush-settings");QQuickItem *panel=nullptr;QTRY_VERIFY((panel=findVisualItem(window->contentItem(),"brushSettingsPanel")));panel->setProperty("category",7);
+        QTRY_VERIFY(findVisualItem(panel,"brushCursorAdaptiveHint"));QVERIFY(!findVisualItem(panel,"brushCursorBrightness"));QVERIFY(!findVisualItem(panel,"brushCursorColor"));
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 
@@ -3165,8 +3271,9 @@ private slots:
             for(auto *object:preview->parentItem()->findChildren<QObject*>())if(object->property("text").toString()==QStringLiteral("适合窗口  F") || object->property("text").toString()==QStringLiteral("实际像素  100%"))return false;
             return QLineF(frame->position(),expected.topLeft()).length()<.01 && std::abs(frame->width()-expected.width())<.01 && std::abs(frame->height()-expected.height())<.01 && QQmlProperty::read(frame,"border.color").value<QColor>()==QColor("#ff3434") && mini->size()==preview->size();
         };
-        auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->fitToView();QTRY_VERIFY(check(main,canvas));QCOMPARE(canvas->visibleDocumentRect(),QRectF(0,0,960,640));canvas->zoomBy(3);QTRY_VERIFY(check(main,canvas));QVERIFY(canvas->visibleDocumentRect().width()<960);
+        auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->fitToView();QTRY_VERIFY(check(main,canvas));QCOMPARE(canvas->visibleDocumentRect(),QRectF(0,0,960,640));const auto target=canvas->zoom()*3;canvas->zoomBy(3);QTRY_COMPARE(canvas->zoom(),target);QTRY_VERIFY(check(main,canvas));QVERIFY(canvas->visibleDocumentRect().width()<960);
         const auto before=canvas->visibleDocumentRect();const auto center=canvas->mapToScene({canvas->width()/2,canvas->height()/2}).toPoint();QTest::mousePress(main,Qt::MiddleButton,Qt::NoModifier,center);QTest::mouseMove(main,center+QPoint(25,15));QTest::mouseRelease(main,Qt::MiddleButton,Qt::NoModifier,center+QPoint(25,15));QTRY_VERIFY(canvas->visibleDocumentRect()!=before);QTRY_VERIFY(check(main,canvas));QCOMPARE(client.undoDepth(),0);
+        QTest::qWait(1050);QTRY_VERIFY(check(main,canvas)); // Release inertia settles before retaining the view.
         workspace.setColumnCollapsed(group,true);auto *icon=findVisualItem(main->contentItem(),"railPanel:navigator");QVERIFY(icon);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,icon->mapToScene({14,14}).toPoint());QQuickWindow *floating=nullptr;QTRY_VERIFY([&]{for(auto *w:applicationWindows())if(w->objectName().endsWith(":navigator"))floating=qobject_cast<QQuickWindow*>(w);return floating!=nullptr;}());QTRY_VERIFY(check(floating,canvas));
         const auto retained=canvas->visibleDocumentRect();auto *documents=main->findChild<DocumentManager*>("documentManager");QVERIFY(documents);const auto first=documents->activeId(),second=documents->newDocument(128,64,true);QVERIFY(!second.isEmpty());QTRY_VERIFY(documents->activeClient()->ready());auto current=[&]{return qobject_cast<CanvasItem*>(main->property("canvas").value<QObject*>());};QTRY_VERIFY(current() && current()!=canvas);QTRY_VERIFY(check(floating,current()));
         documents->floatDocument(second);QTRY_VERIFY(current()->window()!=main);current()->zoomBy(3);QTRY_VERIFY(check(floating,current()));QVERIFY(documents->activate(first));QTRY_VERIFY(check(floating,canvas));QCOMPARE(canvas->visibleDocumentRect(),retained);
@@ -3249,7 +3356,7 @@ private slots:
         canvas->actualSize();const QPointF center(canvas->width()/2,canvas->height()/2);const auto documentPoint=canvas->documentPoint(center);const int undo=client.undoDepth();
         QVERIFY(click("statusZoomIn"));QTRY_VERIFY(std::abs(canvas->zoom()-1.15)<.0001);QVERIFY(QLineF(documentPoint,canvas->documentPoint(center)).length()<.001);QTRY_COMPARE(label("statusZoom"),QString("115.0%"));
         QVERIFY(click("statusZoomOut"));QTRY_VERIFY(std::abs(canvas->zoom()-1)<.0001);QVERIFY(QLineF(documentPoint,canvas->documentPoint(center)).length()<.001);QCOMPARE(client.undoDepth(),undo);
-        canvas->zoomBy(std::numeric_limits<double>::quiet_NaN());canvas->zoomBy(-1);QCOMPARE(canvas->zoom(),qreal(1));canvas->zoomBy(100);QCOMPARE(canvas->zoom(),qreal(8));QVERIFY(click("statusFit"));QTRY_VERIFY(canvas->zoom()<8);QCOMPARE(client.undoDepth(),undo);
+        canvas->zoomBy(std::numeric_limits<double>::quiet_NaN());canvas->zoomBy(-1);QCOMPARE(canvas->zoom(),qreal(1));canvas->zoomBy(100);QTRY_COMPARE(canvas->zoom(),qreal(8));QVERIFY(click("statusFit"));QTRY_VERIFY(canvas->zoom()<8);QCOMPARE(client.undoDepth(),undo);
         auto *documents=main->findChild<DocumentManager*>("documentManager");QVERIFY(documents);const auto first=documents->activeId();const auto second=documents->newDocument(128,256,true);QVERIFY(!second.isEmpty());QTRY_VERIFY(documents->activeClient()->ready());QTRY_COMPARE(label("statusCanvas"),QStringLiteral("画布  128 × 256"));QTRY_COMPARE(label("statusLayers"),QStringLiteral("图层  1"));
         QVERIFY(documents->activate(first));QTRY_COMPARE(label("statusCanvas"),QStringLiteral("画布  960 × 640"));QTRY_COMPARE(label("statusLayers"),QStringLiteral("图层  2"));QVERIFY(documents->closeDocument(first,true));QVERIFY(documents->closeDocument(second,true));
         QTRY_COMPARE(label("statusCanvas"),QStringLiteral("画布  —"));QTRY_VERIFY(!findVisualItem(main->contentItem(),"statusFit")->isEnabled());
@@ -4266,7 +4373,7 @@ private slots:
     }
     void collapsedExpandButtonDragsWithoutExpandingAndPixelsStayInPlace() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
-        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->zoomBy(2);
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();canvas->zoomBy(2);QTRY_COMPARE(canvas->zoom(),qreal(2));
         const auto origin=canvas->mapToScene(canvas->documentRect().topLeft());const auto zoom=canvas->zoom();const auto left=workspace.groupForPanel("brush"),right=workspace.groupForPanel("color");
         for(const auto &id:QStringList{right,left})for(const bool folded:{true,false,true}) {workspace.setColumnCollapsed(id,folded);QTRY_VERIFY(QLineF(origin,canvas->mapToScene(canvas->documentRect().topLeft())).length()<.01);QCOMPARE(canvas->zoom(),zoom);}
         QQuickWindow *frameWindow=nullptr;for(auto *w:QGuiApplication::allWindows())if(w->objectName()=="applicationOutlineWindow")frameWindow=qobject_cast<QQuickWindow*>(w);QVERIFY(frameWindow);
@@ -4285,7 +4392,7 @@ private slots:
         QTest::mouseDClick(main,Qt::LeftButton,Qt::NoModifier,click);QVERIFY(!findVisualItem(main->contentItem(),"brushColorHex"));
 
         auto *canvas=main->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->forceActiveFocus();canvas->actualSize();client.setBrushRadius(15);QHoverEvent hover(QEvent::HoverMove,{100,100},canvas->mapToGlobal({100,100}),{90,90});QCoreApplication::sendEvent(canvas,&hover);const bool originallyVisible=canvas->brushCursorVisible();if(!originallyVisible)QTest::keyClick(main,Qt::Key_CapsLock);QTRY_VERIFY(canvas->brushCursorVisible());QCOMPARE(canvas->brushCursorRect(),QRectF(85,85,30,30));QCOMPARE(canvas->cursor().shape(),Qt::BlankCursor);auto *outline=findVisualItem(main->contentItem(),"brushCursorOutline");QVERIFY(outline && outline->isVisible());
-        canvas->zoomBy(2);QCOMPARE(canvas->brushCursorRect().width(),qreal(60));client.setEraser(true);client.setBrushRadius(6);QCOMPARE(canvas->brushCursorRect().width(),qreal(24));client.setEraser(false);QCOMPARE(client.brushRadius(),qreal(6));QTest::keyClick(main,Qt::Key_CapsLock);QVERIFY(!canvas->brushCursorVisible());QCOMPARE(canvas->cursor().shape(),Qt::CrossCursor);QTest::keyClick(main,Qt::Key_CapsLock);QVERIFY(canvas->brushCursorVisible());client.setMoveTool(true);QVERIFY(!canvas->brushCursorVisible());QCOMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);client.setEraser(false);QVERIFY(canvas->brushCursorVisible());if(!originallyVisible)QTest::keyClick(main,Qt::Key_CapsLock);
+        canvas->zoomBy(2);QTRY_COMPARE(canvas->brushCursorRect().width(),qreal(60));client.setEraser(true);client.setBrushRadius(6);QCOMPARE(canvas->brushCursorRect().width(),qreal(24));client.setEraser(false);QCOMPARE(client.brushRadius(),qreal(6));QTest::keyClick(main,Qt::Key_CapsLock);QVERIFY(!canvas->brushCursorVisible());QCOMPARE(canvas->cursor().shape(),Qt::CrossCursor);QTest::keyClick(main,Qt::Key_CapsLock);QVERIFY(canvas->brushCursorVisible());client.setMoveTool(true);QVERIFY(!canvas->brushCursorVisible());QCOMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);client.setEraser(false);QVERIFY(canvas->brushCursorVisible());if(!originallyVisible)QTest::keyClick(main,Qt::Key_CapsLock);
         const auto brushGroup=workspace.groupForPanel("brush");workspace.setActive(brushGroup,"brush");QQuickItem *preset=nullptr;QTRY_VERIFY((preset=findVisualItem(main->contentItem(),"brushPreset:round-fine")));QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,preset->mapToScene({20,20}).toPoint());preset->forceActiveFocus();QVERIFY(!canvas->hasActiveFocus());
         const auto oldOrigin=canvas->mapToScene(canvas->documentRect().topLeft());const auto center=canvas->mapToScene({canvas->width()/2,canvas->height()/2}).toPoint();QTest::keyPress(main,Qt::Key_Space);QTest::mousePress(main,Qt::LeftButton,Qt::NoModifier,center);QTest::mouseMove(main,center+QPoint(30,20));QTest::mouseRelease(main,Qt::LeftButton,Qt::NoModifier,center+QPoint(30,20));QTest::keyRelease(main,Qt::Key_Space);QTRY_VERIFY(QLineF(canvas->mapToScene(canvas->documentRect().topLeft()),oldOrigin+QPointF(30,20)).length()<.01);QCOMPARE(client.undoDepth(),0);
         canvas->fitToView();const auto outside=canvas->mapToScene(canvas->documentRect().bottomRight()+QPointF(4,6))*main->devicePixelRatio();QTRY_COMPARE(main->grabWindow().pixelColor(outside.toPoint()),QColor("#17191c"));

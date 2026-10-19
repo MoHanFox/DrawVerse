@@ -15,6 +15,8 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(qreal zoom READ zoom NOTIFY viewChanged)
     Q_PROPERTY(QRectF documentRect READ documentRect NOTIFY viewChanged)
     Q_PROPERTY(QRectF visibleDocumentRect READ visibleDocumentRect NOTIFY viewChanged)
+    Q_PROPERTY(QRectF prefetchedDocumentRect READ prefetchedDocumentRect NOTIFY viewChanged)
+    Q_PROPERTY(bool gpuDisplay READ gpuDisplay CONSTANT)
     Q_PROPERTY(QRectF secondaryCursorRect READ secondaryCursorRect NOTIFY brushCursorChanged)
     Q_PROPERTY(qreal secondaryCursorAngle READ secondaryCursorAngle NOTIFY brushCursorChanged)
     Q_PROPERTY(qreal secondaryCursorRoundness READ secondaryCursorRoundness NOTIFY brushCursorChanged)
@@ -42,6 +44,8 @@ public:
     qreal zoom() const { return m_zoom; }
     QRectF documentRect() const;
     QRectF visibleDocumentRect() const;
+    QRectF prefetchedDocumentRect() const;
+    bool gpuDisplay() const;
     QRectF brushCursorRect() const;
     QRectF secondaryCursorRect() const;
     qreal secondaryCursorAngle() const {return m_pose.secondaryAngle;}
@@ -111,6 +115,11 @@ private:
     void setSpacePanning(bool held);
     void setKeySpace(bool held);
     void zoomAround(qreal factor,QPointF position);
+    void stopNavigation();
+    void animateNavigation();
+    void beginPan(QPointF position);
+    void movePan(QPointF position);
+    void endPan();
     bool beginLayerMove(QPointF local, bool pick = false);
     bool m_pickMoving = false;
     void finishLayerMove(QPointF local);
@@ -127,11 +136,18 @@ private:
     PaintCoreClient *m_client = nullptr;
     QPointer<QQuickWindow> m_observedWindow;
     QImage m_image;
+    QImage m_overview;
     LiquifyPreviewPtr m_liquifyPreview;
     QRectF m_imageRegion;
     quint64 m_generation = 0;
     QTimer m_liquifyTimer;
     QTimer m_viewTimer;
+    QTimer m_navigationTimer;
+    QElapsedTimer m_navigationClock, m_panClock;
+    qreal m_zoomFrom=1, m_zoomTarget=1;
+    qint64 m_zoomStarted=0, m_navigationLast=0, m_inertiaStarted=0;
+    QPointF m_zoomAnchor, m_zoomDocument, m_velocity;
+    bool m_zoomAnimating=false;
     QMetaObject::Connection m_dpiConnection;
     qreal m_zoom = 1;
     qreal m_initialFitRatio = 1;

@@ -1,5 +1,8 @@
 # DrawVerse 文档索引
 
+- [GPU 加速规则、使用方法与代码入口](platform/gpu-acceleration-design.md)
+- [平滑画布导航与自适应笔尖轮廓](interface/canvas-navigation-adaptive-cursor-design.md)
+
 - [液化常驻纹理预览](tools/liquify-resident-preview-design.md)
 
 - [GPU 算子与可恢复弹性液化](tools/liquify-gpu-operators-design.md)

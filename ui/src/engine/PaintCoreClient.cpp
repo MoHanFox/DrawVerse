@@ -1178,6 +1178,12 @@ BrushCursorPose PaintCoreClient::brushCursorPose(const InputSample &sample,QPoin
     if(poseStatus==PAINT_OK)result={true,pose.primary.radius,pose.primary.angle,pose.primary.roundness,bool((pose.flags&PAINT_POSE_SECONDARY) && (pose.flags&PAINT_POSE_SECONDARY_OVERFLOW)),pose.secondary.radius,pose.secondary.angle,pose.secondary.roundness};
     return result;
 }
+void PaintCoreClient::ensureOverview() {
+    const QRectF document(0,0,documentWidth(),documentHeight());
+    if(document.isEmpty() || (m_viewEnabled[1] && m_requestedRegions[1]==document))return;
+    const auto scale=std::min(1.,512./std::max(document.width(),document.height()));
+    requestViewport(1,document,{std::max(1,qCeil(document.width()*scale)),std::max(1,qCeil(document.height()*scale))});
+}
 void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, bool enabled) {
     if (!m_ready || m_closing || view < 0 || view > 1) return;
     if (enabled) {

@@ -15,12 +15,16 @@ Rectangle {
     property alias canvasView:canvas
     readonly property bool singleCursorLine:ownClient.brushLibrary.cursorSimple || ownClient.brushLibrary.cursorWidth===0
     readonly property real cursorLineWidth:singleCursorLine?1:ownClient.brushLibrary.cursorWidth
-    readonly property color cursorLineColor:ownClient.brushLibrary.cursorSimple?Qt.rgba(ownClient.brushLibrary.cursorBrightness/100,ownClient.brushLibrary.cursorBrightness/100,ownClient.brushLibrary.cursorBrightness/100,1):ownClient.brushLibrary.cursorColor
+    readonly property color cursorLineColor:"black"
+    readonly property real fallbackWidth:singleCursorLine && !canvas.gpuDisplay?2:cursorLineWidth
     color:Theme.background;clip:true
     function park(){parent=parkingParent;visible=false}
     function attach(host){parent=host;width=Qt.binding(()=>host.width);height=Qt.binding(()=>host.height);visible=true;canvas.forceActiveFocus()}
-    TransparencyGrid {objectName:"canvasTransparency";x:canvas.documentRect.x;y:canvas.documentRect.y;width:canvas.documentRect.width;height:canvas.documentRect.height}
-    PaintCanvas {id:canvas;initialFitRatio:.76;objectName:root.initialDocument?"mainCanvas":"documentCanvas:"+root.documentId;anchors.fill:parent;client:root.ownClient;focus:true;enabled:!root.savingBlocked}
+    Rectangle {
+        id:canvasBackground;anchors.fill:parent;color:Theme.background
+        TransparencyGrid {objectName:"canvasTransparency";x:canvas.documentRect.x;y:canvas.documentRect.y;width:canvas.documentRect.width;height:canvas.documentRect.height}
+        PaintCanvas {id:canvas;initialFitRatio:.76;objectName:root.initialDocument?"mainCanvas":"documentCanvas:"+root.documentId;anchors.fill:parent;client:root.ownClient;focus:true;enabled:!root.savingBlocked}
+    }
     Image {
         objectName:"secondaryBrushCursorImage";z:8
         x:canvas.secondaryCursorRect.x;y:canvas.secondaryCursorRect.y+(canvas.secondaryCursorRect.height-height)/2
@@ -41,6 +45,8 @@ Rectangle {
         source:visible?root.ownClient.cursorTipImage:""
         cache:false;smooth:true
     }
+    Item {
+        id:outlineSource;anchors.fill:parent;z:9
     Shape {
         objectName:"secondaryBrushCursorOutline";z:9
         id:secondCursor
@@ -52,24 +58,24 @@ Rectangle {
         rotation:simplified?0:canvas.secondaryCursorAngle
         visible:canvas.secondaryCursorVisible && canvas.secondaryCursorRect.width>0 && (root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorOutline)
         ShapePath {
-            objectName:"secondaryBrushCursorArcOuter";strokeWidth:secondCursor.imageOutline?-1:root.ownClient.liquifyActive?1:root.cursorLineWidth;strokeColor:root.ownClient.liquifyActive?"black":root.cursorLineColor;fillColor:"transparent"
+            objectName:"secondaryBrushCursorArcOuter";strokeWidth:secondCursor.imageOutline?-1:root.ownClient.liquifyActive?1:root.fallbackWidth;strokeColor:root.ownClient.liquifyActive?"black":root.cursorLineColor;fillColor:"transparent"
             PathAngleArc {centerX:secondCursor.width/2;centerY:secondCursor.height/2;radiusX:secondCursor.width/2;radiusY:secondCursor.height/2;startAngle:0;sweepAngle:360}
         }
         ShapePath {
-            objectName:"secondaryBrushCursorArcInner";strokeWidth:secondCursor.imageOutline || root.singleCursorLine && !root.ownClient.liquifyActive?-1:root.ownClient.liquifyActive?1:root.cursorLineWidth;strokeColor:root.ownClient.liquifyActive?"white":root.ownClient.brushLibrary.cursorSecondaryColor;fillColor:"transparent"
-            PathAngleArc {centerX:secondCursor.width/2;centerY:secondCursor.height/2;radiusX:Math.max(.5,secondCursor.width/2-(root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth));radiusY:Math.max(.5,secondCursor.height/2-(root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth));startAngle:0;sweepAngle:360}
+            objectName:"secondaryBrushCursorArcInner";strokeWidth:secondCursor.imageOutline || root.singleCursorLine && canvas.gpuDisplay && !root.ownClient.liquifyActive?-1:root.ownClient.liquifyActive?1:root.fallbackWidth;strokeColor:"white";fillColor:"transparent"
+            PathAngleArc {centerX:secondCursor.width/2;centerY:secondCursor.height/2;radiusX:Math.max(.5,secondCursor.width/2-(root.ownClient.liquifyActive || root.singleCursorLine?1:root.ownClient.brushLibrary.cursorWidth));radiusY:Math.max(.5,secondCursor.height/2-(root.ownClient.liquifyActive || root.singleCursorLine?1:root.ownClient.brushLibrary.cursorWidth));startAngle:0;sweepAngle:360}
         }
         ShapePath {
             objectName:"secondaryImageBrushOuterPath"
             scale:Qt.size(secondCursor.width,secondCursor.height)
-            strokeWidth:secondCursor.imageOutline?(root.singleCursorLine?1:root.cursorLineWidth+2):-1;strokeColor:root.cursorLineColor;fillColor:"transparent"
+            strokeWidth:secondCursor.imageOutline?(root.singleCursorLine?root.fallbackWidth:root.cursorLineWidth+2):-1;strokeColor:root.cursorLineColor;fillColor:"transparent"
             capStyle:ShapePath.RoundCap
             PathSvg {path:secondCursor.imageOutline?root.ownClient.cursorSecondaryOutlinePath:""}
         }
         ShapePath {
             objectName:"secondaryImageBrushInnerPath"
             scale:Qt.size(secondCursor.width,secondCursor.height)
-            strokeWidth:secondCursor.imageOutline && !root.singleCursorLine?root.cursorLineWidth:-1;strokeColor:root.ownClient.brushLibrary.cursorSecondaryColor;fillColor:"transparent"
+            strokeWidth:secondCursor.imageOutline && (!root.singleCursorLine || !canvas.gpuDisplay)?root.cursorLineWidth:-1;strokeColor:"white";fillColor:"transparent"
             capStyle:ShapePath.RoundCap
             PathSvg {path:secondCursor.imageOutline?root.ownClient.cursorSecondaryOutlinePath:""}
         }
@@ -85,26 +91,60 @@ Rectangle {
         rotation:simplified?0:canvas.brushCursorAngle
         visible:canvas.brushCursorVisible && canvas.brushCursorRect.width>0 && (root.ownClient.liquifyActive || root.ownClient.brushLibrary.cursorOutline)
         ShapePath {
-            objectName:"brushCursorArcOuter";strokeWidth:tipCursor.imageOutline?-1:root.ownClient.liquifyActive?1:root.cursorLineWidth;strokeColor:root.ownClient.liquifyActive?"black":root.cursorLineColor;fillColor:"transparent"
+            objectName:"brushCursorArcOuter";strokeWidth:tipCursor.imageOutline?-1:root.ownClient.liquifyActive?1:root.fallbackWidth;strokeColor:root.ownClient.liquifyActive?"black":root.cursorLineColor;fillColor:"transparent"
             PathAngleArc {centerX:tipCursor.width/2;centerY:tipCursor.height/2;radiusX:tipCursor.width/2;radiusY:tipCursor.height/2;startAngle:0;sweepAngle:360}
         }
         ShapePath {
-            objectName:"brushCursorArcInner";strokeWidth:tipCursor.imageOutline || root.singleCursorLine && !root.ownClient.liquifyActive?-1:root.ownClient.liquifyActive?1:root.cursorLineWidth;strokeColor:root.ownClient.liquifyActive?"white":root.ownClient.brushLibrary.cursorSecondaryColor;fillColor:"transparent"
-            PathAngleArc {centerX:tipCursor.width/2;centerY:tipCursor.height/2;radiusX:Math.max(.5,tipCursor.width/2-(root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth));radiusY:Math.max(.5,tipCursor.height/2-(root.ownClient.liquifyActive?1:root.ownClient.brushLibrary.cursorWidth));startAngle:0;sweepAngle:360}
+            objectName:"brushCursorArcInner";strokeWidth:tipCursor.imageOutline || root.singleCursorLine && canvas.gpuDisplay && !root.ownClient.liquifyActive?-1:root.ownClient.liquifyActive?1:root.fallbackWidth;strokeColor:"white";fillColor:"transparent"
+            PathAngleArc {centerX:tipCursor.width/2;centerY:tipCursor.height/2;radiusX:Math.max(.5,tipCursor.width/2-(root.ownClient.liquifyActive || root.singleCursorLine?1:root.ownClient.brushLibrary.cursorWidth));radiusY:Math.max(.5,tipCursor.height/2-(root.ownClient.liquifyActive || root.singleCursorLine?1:root.ownClient.brushLibrary.cursorWidth));startAngle:0;sweepAngle:360}
         }
         ShapePath {
             objectName:"imageBrushOuterPath"
             scale:Qt.size(tipCursor.width,tipCursor.height)
-            strokeWidth:tipCursor.imageOutline?(root.singleCursorLine?1:root.cursorLineWidth+2):-1;strokeColor:root.cursorLineColor;fillColor:"transparent"
+            strokeWidth:tipCursor.imageOutline?(root.singleCursorLine?root.fallbackWidth:root.cursorLineWidth+2):-1;strokeColor:root.cursorLineColor;fillColor:"transparent"
             capStyle:ShapePath.RoundCap
             PathSvg {path:tipCursor.imageOutline?root.ownClient.cursorOutlinePath:""}
         }
         ShapePath {
             objectName:"imageBrushInnerPath"
             scale:Qt.size(tipCursor.width,tipCursor.height)
-            strokeWidth:tipCursor.imageOutline && !root.singleCursorLine?root.cursorLineWidth:-1;strokeColor:root.ownClient.brushLibrary.cursorSecondaryColor;fillColor:"transparent"
+            strokeWidth:tipCursor.imageOutline && (!root.singleCursorLine || !canvas.gpuDisplay)?root.cursorLineWidth:-1;strokeColor:"white";fillColor:"transparent"
             capStyle:ShapePath.RoundCap
             PathSvg {path:tipCursor.imageOutline?root.ownClient.cursorOutlinePath:""}
+        }
+    }
+    }
+    AdaptiveCursor {
+        objectName:"adaptiveBrushCursor";z:10
+        backgroundItem:canvasBackground;outlineItem:outlineSource
+        active:canvas.gpuDisplay && root.visible && (tipCursor.visible || secondCursor.visible)
+        function bounds(shape) {
+            if(!shape.visible)return null
+            if(!shape.imageOutline && shape.width>0 && shape.height>0){
+                // A giant ellipse can surround the entire viewport with its
+                // contour outside it. Avoid two full-window passes in that case.
+                const inset=root.cursorLineWidth+4
+                const rx=shape.width/2-inset,ry=shape.height/2-inset
+                let inside=rx>0 && ry>0
+                for(const corner of [Qt.point(0,0),Qt.point(root.width,0),Qt.point(0,root.height),Qt.point(root.width,root.height)]){
+                    const p=shape.mapFromItem(outlineSource,corner)
+                    inside=inside && Math.pow((p.x-shape.width/2)/rx,2)+Math.pow((p.y-shape.height/2)/ry,2)<1
+                }
+                if(inside)return null
+            }
+            return shape.mapToItem(outlineSource,Qt.rect(0,0,shape.width,shape.height))
+        }
+        captureRect: {
+            // Explicit dependencies also track rotated ellipses and the second tip.
+            const pose=[tipCursor.x,tipCursor.y,tipCursor.width,tipCursor.height,tipCursor.rotation,secondCursor.x,secondCursor.y,secondCursor.width,secondCursor.height,secondCursor.rotation]
+            let a=bounds(tipCursor),b=bounds(secondCursor)
+            if(!a && !b)return Qt.rect(0,0,0,0)
+            if(!a)a=b
+            if(!b)b=a
+            const padding=root.cursorLineWidth+4
+            const left=Math.max(0,Math.floor(Math.min(a.x,b.x)-padding)),top=Math.max(0,Math.floor(Math.min(a.y,b.y)-padding))
+            const right=Math.min(root.width,Math.ceil(Math.max(a.x+a.width,b.x+b.width)+padding)),bottom=Math.min(root.height,Math.ceil(Math.max(a.y+a.height,b.y+b.height)+padding))
+            return Qt.rect(left,top,Math.max(0,right-left),Math.max(0,bottom-top))
         }
     }
     Item {
