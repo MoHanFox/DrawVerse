@@ -1,4 +1,12 @@
-# C ABI 1.62.0 契约
+# C ABI 1.63.0 契约
+
+## ABI 1.63 — 图层移动会话与共用常驻预览
+
+`PAINT_FEATURE_LAYER_MOVE_PREVIEW=288230376151711744`，`PAINT_SESSION_LAYER_MOVE=32`。`paint_session_layer_move(core,session,kind,layer_id,x,y,out_sequence)`：0/1 为普通/请求常驻预览的 BEGIN（id 指定图层，x/y=0）；2/3 为 PICK（x/y 为非负文档像素坐标，命中后捕获目标）；4 为相对会话起点的绝对整数位移 UPDATE；5 为携带最终位移的 COMMIT；6 为 CANCEL（x/y=0）。x/y 绝对值不得超过 MAX_DIMENSION，非法参数清零 sequence。除 BEGIN 外 layer_id 忽略。OK 表示排队；BEGIN/PICK 完成后检查会话标记，空白 PICK 不创建会话，锁定目标异步报错。
+
+UPDATE 不写历史，相邻未执行更新可合并；COMMIT/CANCEL 使用关闭屏障，不能丢失最终位置。提交复用原有移动历史命令，取消恢复基线；其他编辑与文件操作在会话内拒绝。组/蒙版保持共同移动，置入图片保留原始模型。CPU 回退照常生成像素帧；兼容普通栅格栈使用四顶点和静态源纹理，视口0/1暂停重采样。
+
+`PaintResidentPreviewInfo` 是 `PaintLiquifyPreviewInfo` 的布局兼容别名。`paint_session_resident_preview_info` / `paint_session_read_resident_preview` 为液化和移动共用的查询，票据、容量、像素格式和预算沿用下述 ABI 1.62 协议；旧液化命名入口保留为兼容别名。会话之间的 source_id 不复用；旧 revision 网格读返回 BUSY。详见[移动设计](../../docs/tools/layer-move-preview-design.md)。
 
 ## ABI 1.62 — 液化网格预览
 

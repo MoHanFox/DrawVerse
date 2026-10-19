@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 62;
+pub const PAINT_ABI_MINOR: u32 = 63;
 
 /// Mesh-only liquify preview packets; graphics resources belong to the UI renderer.
 pub const PAINT_FEATURE_LIQUIFY_PREVIEW: u64 = 144_115_188_075_855_872;
@@ -920,3 +920,16 @@ pub struct PaintWetToolInfoDual {
     pub secondary_center_linear_premul_rgba: [f32; 4],
     pub reserved: [u32; 4],
 }
+
+/// ABI 1.63: integer layer translation transaction and shared resident presentation.
+pub const PAINT_FEATURE_LAYER_MOVE_PREVIEW: u64 = 288_230_376_151_711_744;
+pub const PAINT_SESSION_LAYER_MOVE: u32 = 32;
+pub const PAINT_LAYER_MOVE_BEGIN: u32 = 0;
+pub const PAINT_LAYER_MOVE_BEGIN_DEFERRED: u32 = 1;
+pub const PAINT_LAYER_MOVE_PICK: u32 = 2;
+pub const PAINT_LAYER_MOVE_PICK_DEFERRED: u32 = 3;
+pub const PAINT_LAYER_MOVE_UPDATE: u32 = 4;
+pub const PAINT_LAYER_MOVE_COMMIT: u32 = 5;
+pub const PAINT_LAYER_MOVE_CANCEL: u32 = 6;
+/// Same versioned packet as ABI 1.62; usable by move and liquify.
+pub type PaintResidentPreviewInfo = PaintLiquifyPreviewInfo;

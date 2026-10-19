@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图层实时移动：`docs/tools/layer-move-preview-design.md` / `docs/validations/tools/layer-move-preview-validation.md`；ABI1.63，鼠标/Ctrl拾取/平板共用绝对位移会话、16ms最新输入、松手单历史、Esc/失焦取消；普通栅格栈复用液化原图/上下层常驻纹理与四顶点，组/蒙版/特殊混合/置入图片/软件保留像素回退。只捕获外观基线，共用源按栈分区避免重复克隆；实际窗口 rendererInterface 判定后端并通知QML，修复软件被全局API误判为GPU导致停帧。Rust7项/硬件Qt4项/软件Qt5项、四ABI、Clippy/格式/生成头与Release通过；产物 `build/verify-ui/bin/Release-wgpu-move/`。未跑全量/跨平台/实体输入，初始代理构建与持续手感待实机复核。
+
 - GPU 加速总入口：`docs/platform/gpu-acceleration-design.md`（使用、算子与 Qt 显示职责、代码示例、已加速/未加速功能）。本轮导航/轮廓：`docs/interface/canvas-navigation-adaptive-cursor-design.md` / `docs/validations/interface/canvas-navigation-adaptive-cursor-validation.md`；缩放动画、惯性、ROI 周边预取与 view1 概览兜底，Qt 有界局部 shader 自适应黑白轮廓、软件黑白回退，无 ABI/格式变化；真实 GPU5/软件6项、四ABI、Release通过，产物 `build/verify-ui/bin/Release-wgpu-navigation/`。既有跨文档颜色断言在旧/新产物均失败，详情见验收；未跑全量/跨平台/实体输入，连续手感与占用待实机复核。
 
 - 最新液化常驻纹理预览：`docs/tools/liquify-resident-preview-design.md` / `docs/validations/tools/liquify-resident-preview-validation.md`；ABI1.62，兼容普通栅格栈拖动只更新共享 Elastic 场/有界网格，Qt复用原图与上下层纹理，完成才全精度物化；CPU/软件与复杂组合保留像素路径，直径支持15000px。RTX4060六输入核心与网格发布约11–17ms，收笔约0.4–0.5ms；真实GPU/软件各一Qt与核心/ABI最小回归、四ABI及Release通过。异步取帧用例约73ms含50ms测试轮询，不等同实际帧延迟；连续手感/占用待实机复核。未跑全量/跨平台/实体输入，源码与设备边界见设计。

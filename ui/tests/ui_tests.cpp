@@ -42,6 +42,7 @@
 #endif
 
 namespace {
+bool softwareSceneGraph() { QQuickWindow probe;return probe.rendererInterface()->graphicsApi()==QSGRendererInterface::Software; }
 // Independent generated ABR wire fixture, not an external Photoshop asset.
 QByteArray abrEntryFixture(bool bad=false,double opacity=100,bool pressure=false,int scatter=-1,int color=-1,bool perTip=true,int shapeDynamics=-1,int deviceControl=-1) {
     const auto be16=[](quint16 n){QByteArray b;QDataStream out(&b,QIODevice::WriteOnly);out<<n;return b;};
@@ -156,7 +157,7 @@ private slots:
     }
 
     void adaptiveCursorContrastsBothSidesAndTracksLiquifyPreview() {
-        if(QQuickWindow::graphicsApi()==QSGRendererInterface::Software)QSKIP("Run with the RHI backend for shader pixels");
+        if(softwareSceneGraph())QSKIP("Run with the RHI backend for shader pixels");
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("adaptive.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));
@@ -280,7 +281,7 @@ private slots:
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void liquifyResidentMeshRendersAndCommitsWithoutCpuFrames() {
-        if(QQuickWindow::graphicsApi()==QSGRendererInterface::Software)QSKIP("Requires the hardware scene graph; run this target with the RHI backend");
+        if(softwareSceneGraph())QSKIP("Requires the hardware scene graph; run this target with the RHI backend");
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("mesh.ini"));
         QTRY_VERIFY2(client.ready(),qPrintable(client.lastError()));QTRY_VERIFY(client.brushLibraryReady());
         client.newDocument(2048,1536);QTRY_COMPARE(client.documentWidth(),2048);QTRY_VERIFY(!client.layerEditBusy());
@@ -486,8 +487,8 @@ private slots:
         BrushLibrary restored;QVERIFY(restored.restore(model.snapshot()));QCOMPARE(restored.cursorWidth(),0);QCOMPARE(restored.cursorBrightness(),40);QVERIFY(restored.cursorSimple());
         auto invalid=QJsonDocument::fromJson(model.snapshot()).object();auto cursor=invalid.value("cursor").toObject();cursor["width"]=-1;invalid["cursor"]=cursor;const auto before=restored.snapshot();QVERIFY(!restored.restore(QJsonDocument(invalid).toJson()));QCOMPARE(restored.snapshot(),before);
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("cursor.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());QTRY_VERIFY(client.ready());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
-        auto *outer=window->findChild<QObject*>("brushCursorArcOuter");auto *inner=window->findChild<QObject*>("brushCursorArcInner");QVERIFY(outer && inner);auto *library=client.brushLibrary();library->setCursorWidth(0);QCOMPARE(outer->property("strokeWidth").toReal(),QQuickWindow::graphicsApi()==QSGRendererInterface::Software?2.:1.);QCOMPARE(inner->property("strokeWidth").toReal(),QQuickWindow::graphicsApi()==QSGRendererInterface::Software?2.:-1.);
-        library->setCursorWidth(3);QCOMPARE(outer->property("strokeWidth").toReal(),3.);QCOMPARE(inner->property("strokeWidth").toReal(),3.);library->setCursorSimple(true);library->setCursorBrightness(40);QCOMPARE(outer->property("strokeWidth").toReal(),QQuickWindow::graphicsApi()==QSGRendererInterface::Software?2.:1.);QCOMPARE(inner->property("strokeWidth").toReal(),QQuickWindow::graphicsApi()==QSGRendererInterface::Software?2.:-1.);const auto color=outer->property("strokeColor").value<QColor>();QCOMPARE(color,QColor(Qt::black));QCOMPARE(color.red(),color.green());QCOMPARE(color.green(),color.blue());
+        auto *outer=window->findChild<QObject*>("brushCursorArcOuter");auto *inner=window->findChild<QObject*>("brushCursorArcInner");QVERIFY(outer && inner);auto *library=client.brushLibrary();library->setCursorWidth(0);QCOMPARE(outer->property("strokeWidth").toReal(),softwareSceneGraph()?2.:1.);QCOMPARE(inner->property("strokeWidth").toReal(),softwareSceneGraph()?2.:-1.);
+        library->setCursorWidth(3);QCOMPARE(outer->property("strokeWidth").toReal(),3.);QCOMPARE(inner->property("strokeWidth").toReal(),3.);library->setCursorSimple(true);library->setCursorBrightness(40);QCOMPARE(outer->property("strokeWidth").toReal(),softwareSceneGraph()?2.:1.);QCOMPARE(inner->property("strokeWidth").toReal(),softwareSceneGraph()?2.:-1.);const auto color=outer->property("strokeColor").value<QColor>();QCOMPARE(color,QColor(Qt::black));QCOMPARE(color.red(),color.green());QCOMPARE(color.green(),color.blue());
         workspace.setActive(workspace.groupForPanel("brush-settings"),"brush-settings");QQuickItem *panel=nullptr;QTRY_VERIFY((panel=findVisualItem(window->contentItem(),"brushSettingsPanel")));panel->setProperty("category",7);
         QTRY_VERIFY(findVisualItem(panel,"brushCursorAdaptiveHint"));QVERIFY(!findVisualItem(panel,"brushCursorBrightness"));QVERIFY(!findVisualItem(panel,"brushCursorColor"));
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
@@ -4783,6 +4784,54 @@ private slots:
             QTest::qWait(350); QVERIFY(window->grabWindow().save(preview));
         }
         QCOMPARE(warnings,QStringList()); QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
+    }
+    void layerMoveFollowsBeforeReleaseAndCancelsWithSingleHistory() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("move.ini"));
+        QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());
+        client.newTransparentDocument(128,96);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
+        client.setBrushRadius(4);client.setBrushColor(Qt::red);
+        QVERIFY(client.beginStroke({{16.5,16.5},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);
+        QQuickWindow window;window.resize(640,480);window.setColor(Qt::black);
+        auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({640,480});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));window.requestActivate();QTRY_VERIFY(window.isActive());canvas->actualSize();canvas->forceActiveFocus();
+        QTRY_VERIFY(client.frameRevision()>=client.revision());
+        const auto screen=[&](QPointF p){return (canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
+        const auto capture=[&]{auto result=canvas->grabToImage();if(!result || !QTest::qWaitFor([&]{return !result->image().isNull();},5000))return QImage{};return result->image();};
+        const auto redAt=[&](const QImage &image,QPoint p){const auto c=image.pixelColor(p*window.devicePixelRatio());return c.red()>200 && c.green()<60 && c.blue()<60;};
+        const auto before=capture();QVERIFY(!before.isNull());QVERIFY(redAt(before,screen({16,16})));
+        client.setMoveTool(true);const auto start=screen({16,16}),end=screen({36,21});
+        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,start);QTest::mouseMove(&window,end);
+        QTRY_COMPARE(client.layers().first().toMap().value("offsetX").toInt(),20);
+        QCOMPARE(client.undoDepth(),1);QVERIFY(client.layerMoveActive());
+        if(canvas->gpuDisplay()){QTRY_VERIFY(client.liquifyPreview());QTRY_VERIFY(client.liquifyPreview()->revision>=client.revision());QCOMPARE(client.liquifyPreview()->vertices.size(),4);}
+        else {QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(!client.liquifyPreview());}
+        QImage moved;
+        const auto report=[&]{moved.save("artifacts/layer-move-capture-failure.png");client.frame().save("artifacts/layer-move-frame-failure.png");return QString("active=%1 window=%2 offset=%3 revision=%4 frame=%5 region=%6,%7").arg(client.layerMoveActive()).arg(window.isActive()).arg(client.layers().first().toMap().value("offsetX").toInt()).arg(client.revision()).arg(client.frameRevision()).arg(client.frameRegion().x()).arg(client.frameRegion().y());};
+        QTRY_VERIFY2(!(moved=capture()).isNull() && redAt(moved,end),qPrintable(report()));QVERIFY(!redAt(moved,start));
+        QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,end);
+        QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),2);
+        QTRY_VERIFY(client.frameRevision()>=client.revision());QTRY_VERIFY(!client.liquifyPreview());
+        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,end);QTest::mouseMove(&window,end+QPoint(12,0));
+        QTRY_COMPARE(client.layers().first().toMap().value("offsetX").toInt(),32);
+        QTest::keyClick(&window,Qt::Key_Escape);QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,end+QPoint(12,0));
+        QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.layers().first().toMap().value("offsetX").toInt(),20);QCOMPARE(client.undoDepth(),2);
+        // A quick empty Ctrl pick must never translate the previous active layer.
+        QTest::mousePress(&window,Qt::LeftButton,Qt::ControlModifier,screen({110,80}));
+        QTest::mouseRelease(&window,Qt::LeftButton,Qt::ControlModifier,screen({115,82}));
+        QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.layers().first().toMap().value("offsetX").toInt(),20);QCOMPARE(client.undoDepth(),2);
+        client.undo();QTRY_COMPARE(client.undoDepth(),1);QCOMPARE(client.layers().first().toMap().value("offsetX").toInt(),0);
+        static QPointingDevice pen("layer move pen",714,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto send=[&](QEvent::Type type,QPoint p){QTabletEvent event(type,&pen,p,window.mapToGlobal(p),.5,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(&window,&event);return event.isAccepted();};
+        QVERIFY(send(QEvent::TabletPress,start));QVERIFY(send(QEvent::TabletMove,start+QPoint(8,7)));
+        QTRY_COMPARE(client.layers().first().toMap().value("offsetX").toInt(),8);QCOMPARE(client.undoDepth(),1);
+        QVERIFY(send(QEvent::TabletRelease,start+QPoint(9,7)));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),2);QCOMPARE(client.layers().first().toMap().value("offsetX").toInt(),9);
+        // A non-normal blend must use pixel presentation even on a hardware scene graph.
+        QVERIFY(client.setLayerBlend(client.activeLayer(),1));QTRY_VERIFY(!client.layerEditBusy());const auto depth=client.undoDepth();
+        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,start+QPoint(9,7));QTest::mouseMove(&window,start+QPoint(14,10));
+        QTRY_COMPARE(client.layers().first().toMap().value("offsetX").toInt(),14);QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(!client.residentPreview());
+        QEvent deactivate(QEvent::WindowDeactivate);QCoreApplication::sendEvent(&window,&deactivate);
+        QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,start+QPoint(14,10));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.layers().first().toMap().value("offsetX").toInt(),9);QCOMPARE(client.undoDepth(),depth);
+        QVERIFY(client.lastError().isEmpty());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void moveToolMouseKeyboardAndPositionLock() {
         QTemporaryDir temp; PaintCoreClient client(nullptr,temp.filePath("storage.ini")); WorkspaceManager workspace(temp.filePath("layout.ini")); QQmlApplicationEngine engine;

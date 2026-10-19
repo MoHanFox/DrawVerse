@@ -16,6 +16,8 @@ DrawVerse 使用 wgpu 做 Rust 算子计算，使用 Qt Quick 场景图/RHI 做�
 
 `ui/src/canvas/CanvasItem.cpp` 持有 GUI 线程快照，`updatePaintNode()` 在场景图同步阶段更新节点。纹理由场景图拥有，源身份不变时复用，不能把 QSGTexture/Qt 对象传进 Rust 或工作线程。移动/缩放只改显示几何，不能每帧提交全图像素作导航。
 
+显示能力以窗口 `rendererInterface()->graphicsApi()` 为准，窗口绑定/场景图初始化时更新；全局 `QQuickWindow::graphicsApi()` 只是图形 API 设置，不能据此判断软件场景图是否支持 ShaderEffect 或自定义材质。
+
 自定义材质使用 `ui/shaders` 的 GLSL，经 `ui/CMakeLists.txt` 中 `qt_add_shaders` 烘焙为 `.qsb`，由 Qt 生成各后端 shader。上传 QSGTexture 时在 `updateSampledImage()` 调用 `commitTextureOperations()`。资源只能在所属渲染生命周期创建/销毁；软件显示应有明确回退。
 
 ## 已完成范围
@@ -24,11 +26,14 @@ DrawVerse 使用 wgpu 做 Rust 算子计算，使用 Qt Quick 场景图/RHI 做�
 | --- | --- | --- |
 | 弹性液化算子 | wgpu 场更新与重采样算子，自动设备与失败回退 | CPU 参考实现、文档历史、取消与精确提交；不是所有工具都 GPU 化 |
 | 液化常驻预览 | Qt 静态原图/上下层纹理 + 有界网格，拖动只更新网格 | 普通兼容栅格栈使用此路径；选区、复杂组合、软件/CPU 模式保留像素预览 |
+| 图层实时移动 | Qt 共用原图/上下层常驻纹理 + 2×2 位移网格，拖动无全图回读 | 核心偏移/历史与提交保持 CPU；组、蒙版、特殊混合、置入图片和软件显示回退像素预览 |
 | 画布缩放/平移 | Qt 复用纹理与显示几何，平滑缩放/惯性/周边预取 | 动画与速度计算、普通栅格视口合成仍为 CPU |
 | 笔尖自适应轮廓 | Qt fragment shader 按最终背景亮度选择黑/白，局部 GPU 离屏纹理 | 软件后端黑白轮廓；不改变实际绘画像素 |
 | 普通画笔、湿混、涂抹、油漆桶、选区、通用图层合成 | 当前不宣称已有 wgpu 计算加速 | 仍使用既有 CPU 路径；Qt 显示其结果不等于算法 GPU 化 |
 
 液化会话始终保留不可变源和弹性场，画布外只是裁剪。预览资产最长边 2048、网格最多 257×257；完成才全精度物化。详细适用边界见 [常驻预览](../tools/liquify-resident-preview-design.md) 与 [GPU 算子](../tools/liquify-gpu-operators-design.md)。
+
+图层移动的会话、ABI 1.63、输入合并和代码入口见[实时移动设计](../tools/layer-move-preview-design.md)，检查范围见[验收](../validations/tools/layer-move-preview-validation.md)。移动没有新增 wgpu 算子：位移为 CPU 整数外观状态，GPU 只做纹理呈现。
 
 ## 新功能如何接入
 
@@ -98,6 +103,8 @@ AdaptiveCursor {
 ## 使用与验证
 
 设置 → 性能 → GPU 加速硬件：默认自动选择，通常优先独显，其次集显；下拉框可选择明确设备或 CPU，保存后看实际后端状态和回退原因。此项控制 Rust 算子；Qt 显示按应用图形后端工作，自适应轮廓不需要新增开关。
+
+V 移动工具或 Ctrl 拾取拖动可实时预览，松手提交一条历史，Esc 取消。
 
 缩放支持滚轮、Ctrl 加/减；中键或空格拖动后松手产生惯性，再次按下立即停止。100% 与适合窗口直接精确定位。轮廓随背景变化，无需手调亮度。
 

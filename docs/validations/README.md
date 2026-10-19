@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [图层移动实时预览](tools/layer-move-preview-validation.md)
+
 - [平滑画布导航与自适应笔尖轮廓](interface/canvas-navigation-adaptive-cursor-validation.md)
 
 - [液化常驻纹理预览](tools/liquify-resident-preview-validation.md)

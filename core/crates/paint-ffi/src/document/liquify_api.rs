@@ -6,8 +6,50 @@ use crate::{
 };
 use paint_render::{CachedCpuRenderer, FramePixels, PixelFormat, Region, RenderRequest, Renderer};
 
+/// ABI 1.63: shared immutable resident presentation metadata (move or liquify).
+/// # Safety
+/// Follow paint_session_liquify_preview_info's caller-memory contract.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_resident_preview_info(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    out_info: *mut PaintResidentPreviewInfo,
+) -> PaintStatus {
+    unsafe { paint_session_liquify_preview_info(core, session, out_info) }
+}
+
+/// ABI 1.63: shared resident mesh/assets, with the ABI 1.62 packet format.
+/// # Safety
+/// Follow paint_session_read_liquify_preview's capacity and lifetime contract.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_read_resident_preview(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    generation: u64,
+    revision: u64,
+    source_id: u64,
+    kind: u32,
+    buffer: *mut u8,
+    capacity: u64,
+    out_required: *mut u64,
+) -> PaintStatus {
+    unsafe {
+        paint_session_read_liquify_preview(
+            core,
+            session,
+            generation,
+            revision,
+            source_id,
+            kind,
+            buffer,
+            capacity,
+            out_required,
+        )
+    }
+}
+
 pub(crate) fn preview_assets(
-    source: &paint_core::LiquifyPreviewSource,
+    source: &paint_core::ResidentPreviewSource,
 ) -> crate::error::ApiResult<Vec<u8>> {
     let mut output = Vec::new();
     let mut images = Vec::new();
@@ -58,7 +100,7 @@ pub unsafe extern "C" fn paint_session_liquify_preview_info(
         pointers::sized_pointer(out_info)?;
         let publication = runtime::registry()?.session(core, session)?.publication();
         let preview = publication
-            .liquify_preview
+            .resident_preview
             .as_ref()
             .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "pixel preview"))?;
         pointers::write(
@@ -101,7 +143,7 @@ pub unsafe extern "C" fn paint_session_read_liquify_preview(
         let session = runtime::registry()?.session(core, session)?;
         let publication = session.publication();
         let preview = publication
-            .liquify_preview
+            .resident_preview
             .as_ref()
             .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "pixel preview"))?;
         if publication.info.document_generation != generation
@@ -126,7 +168,7 @@ pub unsafe extern "C" fn paint_session_read_liquify_preview(
                 pointers::copy_buffer(&bytes, buffer, capacity, out_required)
             }
             1 => pointers::copy_buffer(
-                &session.liquify_assets(preview)?,
+                &session.resident_assets(preview)?,
                 buffer,
                 capacity,
                 out_required,

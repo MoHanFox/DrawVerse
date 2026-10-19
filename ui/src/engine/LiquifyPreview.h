@@ -7,7 +7,7 @@
 #include <memory>
 
 // Immutable CPU presentation packet. GPU resources never cross the render thread.
-struct LiquifyPreviewFrame {
+struct ResidentPreviewFrame {
     quint64 generation=0,revision=0,sourceId=0;
     quint32 columns=0,rows=0;
     QSize documentSize;
@@ -15,5 +15,7 @@ struct LiquifyPreviewFrame {
     std::array<QImage,3> images;
     QVector<std::array<float,4>> vertices;
 };
-using LiquifyPreviewPtr=std::shared_ptr<const LiquifyPreviewFrame>;
-Q_DECLARE_METATYPE(LiquifyPreviewPtr)
+using LiquifyPreviewFrame = ResidentPreviewFrame;
+using ResidentPreviewPtr=std::shared_ptr<const ResidentPreviewFrame>;
+using LiquifyPreviewPtr=ResidentPreviewPtr;
+Q_DECLARE_METATYPE(ResidentPreviewPtr)

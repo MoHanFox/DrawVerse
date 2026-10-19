@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [图层移动实时预览](tools/layer-move-preview-design.md)
+
 - [GPU 加速规则、使用方法与代码入口](platform/gpu-acceleration-design.md)
 - [平滑画布导航与自适应笔尖轮廓](interface/canvas-navigation-adaptive-cursor-design.md)
 

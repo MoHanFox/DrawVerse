@@ -281,7 +281,7 @@ public:
     Q_INVOKABLE void activateMarquee();
     Q_INVOKABLE void activateLasso();
     bool moveTool() const { return m_moveTool; }
-    bool layerEditBusy() const { return m_pendingLayer != 0 || m_pendingCopy != 0; }
+    bool layerEditBusy() const { return m_layerMoveActive || m_pendingLayer != 0 || m_pendingCopy != 0; }
     void setMoveTool(bool enabled);
     bool selectionEnabled() const { return m_selection.value("enabled").toBool(); }
     QVariantList selectionSteps() const { return m_selection.value("steps").toList(); }
@@ -316,8 +316,10 @@ public:
     Q_INVOKABLE bool clearSelection();
     Q_INVOKABLE bool invertSelection();
     const QImage &frame(int view = 0) const { return m_frames[view == 1 ? 1 : 0]; }
-    LiquifyPreviewPtr liquifyPreview() const { return m_liquifyPreview; }
-    void setLiquifyGpuPreviewAvailable(bool value) { m_liquifyGpuPreviewAvailable=value; }
+    ResidentPreviewPtr residentPreview() const { return m_residentPreview; }
+    ResidentPreviewPtr liquifyPreview() const { return residentPreview(); }
+    void setResidentGpuPreviewAvailable(bool value) { m_residentGpuPreviewAvailable=value; }
+    void setLiquifyGpuPreviewAvailable(bool value) { setResidentGpuPreviewAvailable(value); }
     QRectF frameRegion(int view = 0) const { return m_regions[view == 1 ? 1 : 0]; }
     quint64 frameRevision(int view = 0) const { return m_frameRevisions[view == 1 ? 1 : 0]; }
     quint64 revision() const { return m_revision; }
@@ -337,6 +339,10 @@ public:
     void setTransformReference(int v){if(v>=0 && v<=8 && v!=m_transformReference){m_transformReference=v;emit transformChanged();}}
     bool transformLinked() const {return m_transformLinked;}
     void setTransformLinked(bool v){if(v!=m_transformLinked){m_transformLinked=v;emit transformChanged();}}
+    bool beginLayerMove(QPointF position, bool pick = false);
+    void updateLayerMove(QPoint delta);
+    void finishLayerMove(QPoint delta, bool commit);
+    bool layerMoveActive() const { return m_layerMoveActive; }
     bool transformActive() const {return m_transformActive;}
     bool transformBusy() const {return m_pendingTransform>m_completedSequence;}
     QVariantList transformPoints() const {return m_transformPoints;}
@@ -557,6 +563,12 @@ private:
     bool deferTransformAction(std::function<void()> action);
     std::function<void()> m_afterTransform;
     bool submitTransform(quint32 kind,const PaintTransform *geometry=nullptr);
+    void flushLayerMove();
+    QTimer *m_layerMoveTimer=nullptr;
+    bool m_layerMoveActive=false,m_layerMoveStarting=false,m_layerMoveClosing=false;
+    bool m_layerMoveDirty=false,m_layerMoveFinish=false,m_layerMoveCommit=false;
+    quint64 m_layerMoveSequence=0,m_residentPreviewFloor=0;
+    QPoint m_layerMoveDelta;
     bool m_transformActive=false,m_transformWarp=false,m_transformPublished=false,m_transformLinked=true;
     QVariantList m_transformInitialPoints;
     qreal m_transformSkewH=0,m_transformSkewV=0;
@@ -607,8 +619,8 @@ private:
     bool m_historyLiquify=false;
     qreal m_documentHistoryScroll=0;
     QImage m_frames[2];
-    LiquifyPreviewPtr m_liquifyPreview;
-    bool m_liquifyGpuPreviewAvailable=false;
+    ResidentPreviewPtr m_residentPreview;
+    bool m_residentGpuPreviewAvailable=false;
     QRectF m_regions[2], m_requestedRegions[2];
     QSize m_requestedPixels[2];
     quint64 m_requests[2]{}, m_frameRevisions[2]{};

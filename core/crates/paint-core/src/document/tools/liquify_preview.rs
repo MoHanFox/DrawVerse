@@ -45,61 +45,81 @@ impl Document {
     /// Unsupported stacks keep the established pixel preview and transaction semantics.
     pub fn begin_liquify_deferred(&mut self) -> Result<()> {
         self.begin_liquify_internal(false)?;
-        let compatible = !self.selection.enabled()
-            && self.layers.iter().all(|l| {
-                !l.group
-                    && !l.mask
-                    && !l.clipped
-                    && l.parent == 0
-                    && l.appearance.blend == crate::BlendMode::Normal
-            });
-        if !compatible {
+        let source = if self.selection.enabled() {
+            None
+        } else {
+            self.resident_source(self.active_layer)
+        };
+        self.liquify.as_mut().expect("state").preview_source = source;
+        if !self.liquify_deferred() {
             return Ok(());
         }
-        let at = self.layer_index(self.active_layer)?;
-        let original = &self.layers[at];
-        if !original.properties.visible {
-            return Ok(());
-        }
-        let [l, t, r, b] = source_bounds(original);
-        // Keep a one-pixel transparent guard. No clipping of retained source tiles.
-        let width = r - l + 2;
-        let height = b - t + 2;
-        if width > i64::from(MAX_DIMENSION) || height > i64::from(MAX_DIMENSION) {
-            return Ok(());
-        }
-        let ox = i64::from(original.appearance.offset_x);
-        let oy = i64::from(original.appearance.offset_y);
-        let mut image = self.snapshot();
-        let mut layer = original.clone();
-        layer.appearance.offset_x = (1 - l) as i32;
-        layer.appearance.offset_y = (1 - t) as i32;
-        image.layers = vec![layer];
-        image.width = width.max(2) as u32;
-        image.height = height.max(2) as u32;
-        let mut below = self.snapshot();
-        below.layers.truncate(at);
-        let mut above = self.snapshot();
-        above.layers = above.layers.split_off(at + 1);
-        self.liquify.as_mut().expect("state").preview_source =
-            Some(Arc::new(LiquifyPreviewSource {
-                id: NEXT_SOURCE.fetch_add(1, Ordering::Relaxed),
-                bounds: [
-                    (l - 1 + ox) as i32,
-                    (t - 1 + oy) as i32,
-                    width.max(2) as i32,
-                    height.max(2) as i32,
-                ],
-                image,
-                below,
-                above,
-            }));
         if let Err(error) = self.warm_liquify_mesh() {
             self.liquify = None;
             return Err(error);
         }
         self.dirty_all();
         Ok(())
+    }
+
+    /// Immutable split shared by deformation and translation previews.
+    pub(in crate::document) fn resident_source(
+        &self,
+        id: LayerId,
+    ) -> Option<Arc<LiquifyPreviewSource>> {
+        let compatible = self.layers.iter().all(|l| {
+            !l.group
+                && !l.mask
+                && !l.clipped
+                && l.parent == 0
+                && l.appearance.blend == crate::BlendMode::Normal
+        });
+        if !compatible {
+            return None;
+        }
+        let at = self.layer_index(id).ok()?;
+        let original = &self.layers[at];
+        if !original.properties.visible || original.is_image() {
+            return None;
+        }
+        let [l, t, r, b] = source_bounds(original);
+        // Keep a one-pixel transparent guard. No clipping of retained source tiles.
+        let width = r - l + 2;
+        let height = b - t + 2;
+        if width > i64::from(MAX_DIMENSION) || height > i64::from(MAX_DIMENSION) {
+            return None;
+        }
+        let ox = i64::from(original.appearance.offset_x);
+        let oy = i64::from(original.appearance.offset_y);
+        // Partition once instead of cloning every layer's tile map three times.
+        let snapshot = |layers| DocumentSnapshot {
+            pool: Arc::clone(&self.pool),
+            width: self.width,
+            height: self.height,
+            revision: self.revision,
+            layers,
+            selection: self.selection.clone(),
+        };
+        let mut layer = original.clone();
+        layer.appearance.offset_x = (1 - l) as i32;
+        layer.appearance.offset_y = (1 - t) as i32;
+        let mut image = snapshot(vec![layer]);
+        image.width = width.max(2) as u32;
+        image.height = height.max(2) as u32;
+        let below = snapshot(self.layers[..at].to_vec());
+        let above = snapshot(self.layers[at + 1..].to_vec());
+        Some(Arc::new(LiquifyPreviewSource {
+            id: NEXT_SOURCE.fetch_add(1, Ordering::Relaxed),
+            bounds: [
+                (l - 1 + ox) as i32,
+                (t - 1 + oy) as i32,
+                width.max(2) as i32,
+                height.max(2) as i32,
+            ],
+            image,
+            below,
+            above,
+        }))
     }
 
     pub fn liquify_deferred(&self) -> bool {

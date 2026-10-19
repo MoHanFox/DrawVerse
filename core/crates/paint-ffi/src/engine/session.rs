@@ -42,6 +42,7 @@ pub(crate) enum Operation {
     Transform(u32, Option<paint_core::TransformGeometry>),
     TransformLayers(Vec<u64>),
     Liquify(u32, Option<paint_core::LiquifyDab>),
+    LayerMove(u32, u64, i32, i32),
     CopyLayers(Vec<u64>),
     PasteLayers(Vec<u8>, u64),
     DuplicateLayers(Vec<u64>),
@@ -89,7 +90,7 @@ pub(crate) struct LayerState {
     pub clipping: PaintLayerClipping,
 }
 pub(crate) struct Publication {
-    pub liquify_preview: Option<Arc<paint_core::LiquifyPreview>>,
+    pub resident_preview: Option<Arc<paint_core::ResidentPreview>>,
     pub compute: String,
     pub transform: Option<paint_core::TransformGeometry>,
     pub history: Vec<PaintHistoryEntry>,
@@ -331,6 +332,18 @@ impl Session {
         } else if matches!(operation, Operation::Liquify(PAINT_LIQUIFY_STROKE_END, _)) {
             // Reserve closure without discarding any deformation samples.
             self.sender.send_cancel(command, |_| false)
+        } else if matches!(operation, Operation::LayerMove(PAINT_LAYER_MOVE_UPDATE, ..)) {
+            self.sender.send_cancel(command, |c| {
+                matches!(
+                    c.operation,
+                    Operation::LayerMove(PAINT_LAYER_MOVE_UPDATE, ..)
+                )
+            })
+        } else if matches!(
+            operation,
+            Operation::LayerMove(PAINT_LAYER_MOVE_COMMIT | PAINT_LAYER_MOVE_CANCEL, ..)
+        ) {
+            self.sender.send_cancel(command, |_| false)
         } else if matches!(operation, Operation::Transform(PAINT_TRANSFORM_UPDATE, _)) {
             // Absolute previews supersede only an adjacent preview tail, never a checkpoint.
             self.sender.send_cancel(command, |c| {
@@ -406,7 +419,10 @@ impl Session {
                 .unwrap_or_else(|e| e.into_inner()),
         )
     }
-    pub fn liquify_assets(&self, preview: &paint_core::LiquifyPreview) -> ApiResult<Arc<Vec<u8>>> {
+    pub fn resident_assets(
+        &self,
+        preview: &paint_core::ResidentPreview,
+    ) -> ApiResult<Arc<Vec<u8>>> {
         if let Some((id, bytes)) = self
             .shared
             .preview_assets
@@ -421,7 +437,7 @@ impl Session {
         let bytes = Arc::new(crate::liquify_api::preview_assets(&preview.source)?);
         let current = self.publication();
         if current
-            .liquify_preview
+            .resident_preview
             .as_ref()
             .is_none_or(|p| p.source.id != preview.source.id)
         {
@@ -652,13 +668,18 @@ fn publish(
         })
         .collect();
     Publication {
-        liquify_preview: doc.liquify_preview().map(Arc::new),
+        resident_preview: doc.resident_preview().map(Arc::new),
         compute: doc.compute_backend_name(),
         transform: doc.transform_geometry(),
         selection: doc.selection().clone(),
         info: PaintSessionInfo {
             struct_size: std::mem::size_of::<PaintSessionInfo>() as u32,
             flags: PAINT_SESSION_RUNNING
+                | if doc.layer_move_active() {
+                    PAINT_SESSION_LAYER_MOVE
+                } else {
+                    0
+                }
                 | if doc.transform_active() {
                     PAINT_SESSION_TRANSFORM
                 } else {
@@ -743,7 +764,8 @@ impl Engine {
             Operation::Begin(..) | Operation::BeginPrepared(..)
         ) && !self.document.stroke_active());
         let liquify_control = matches!(command.operation, Operation::Liquify(kind, _) if !matches!(kind,PAINT_LIQUIFY_DAB|PAINT_LIQUIFY_STROKE_BEGIN|PAINT_LIQUIFY_STROKE_END));
-        let barrier = matches!(command.operation, Operation::TransformLayers(..))
+        let barrier = matches!(command.operation, Operation::LayerMove(kind, ..) if kind != PAINT_LAYER_MOVE_UPDATE)
+            || matches!(command.operation, Operation::TransformLayers(..))
             || matches!(command.operation,Operation::Transform(kind,_) if kind!=PAINT_TRANSFORM_UPDATE && kind!=PAINT_TRANSFORM_CHECKPOINT)
             || matches!(
                 command.operation,
@@ -809,7 +831,39 @@ impl Engine {
         {
             return Err(paint_core::Error::Busy.into());
         }
+        if self.document.layer_move_active() && !matches!(operation, Operation::LayerMove(..)) {
+            return Err(paint_core::Error::Busy.into());
+        }
         match operation {
+            Operation::LayerMove(kind, id, x, y) => match kind {
+                PAINT_LAYER_MOVE_BEGIN
+                | PAINT_LAYER_MOVE_BEGIN_DEFERRED
+                | PAINT_LAYER_MOVE_PICK
+                | PAINT_LAYER_MOVE_PICK_DEFERRED => {
+                    if self.files.running() {
+                        return Err(paint_core::Error::Busy.into());
+                    }
+                    let target = if kind >= PAINT_LAYER_MOVE_PICK {
+                        self.document.pick_layer(x as u32, y as u32, 0, 0)?
+                    } else {
+                        Some(id)
+                    };
+                    if let Some(target) = target {
+                        self.document.begin_layer_move(
+                            target,
+                            kind == PAINT_LAYER_MOVE_BEGIN_DEFERRED
+                                || kind == PAINT_LAYER_MOVE_PICK_DEFERRED,
+                        )?;
+                    }
+                }
+                PAINT_LAYER_MOVE_UPDATE => self.document.update_layer_move(x, y)?,
+                PAINT_LAYER_MOVE_COMMIT => {
+                    self.document.commit_layer_move(x, y)?;
+                    self.modified |= x != 0 || y != 0;
+                }
+                PAINT_LAYER_MOVE_CANCEL => self.document.cancel_layer_move()?,
+                _ => return Err(ApiError::invalid("layer move kind")),
+            },
             Operation::TransformLayers(ids) => self.document.begin_transform_layers(&ids)?,
             Operation::Transform(kind, g) => match kind {
                 PAINT_TRANSFORM_BEGIN => self.document.begin_transform()?,
@@ -1188,7 +1242,7 @@ impl Engine {
                 self.error.as_ref(),
                 self.modified,
             ));
-            if publication.liquify_preview.is_none() {
+            if publication.resident_preview.is_none() {
                 self.shared
                     .preview_assets
                     .lock()
@@ -1272,7 +1326,9 @@ impl Engine {
             let Some(request) = slot.request else {
                 continue;
             };
-            if index < 2 && self.document.liquify_deferred() {
+            if index < 2
+                && (self.document.liquify_deferred() || self.document.layer_move_deferred())
+            {
                 // The scene graph renders resident sources using the published mesh.
                 // No CPU frame jobs or preview colour readbacks while dragging.
                 continue;
@@ -1403,7 +1459,7 @@ mod actor_tests {
     use super::*;
     use std::{thread, time::Instant};
     #[test]
-    fn liquify_preview_keeps_render_floor_but_controls_advance_it() {
+    fn resident_preview_keeps_render_floor_but_controls_advance_it() {
         let session = Session::new(128, 128).unwrap();
         let run = |operation| {
             let seq = session.submit(operation).unwrap();
@@ -1451,6 +1507,16 @@ mod actor_tests {
         assert_eq!(
             session.shared.floor.load(Ordering::Acquire),
             cancelled.revision
+        );
+        run(Operation::LayerMove(PAINT_LAYER_MOVE_BEGIN, 1, 0, 0));
+        let floor = session.shared.floor.load(Ordering::Acquire);
+        let preview = run(Operation::LayerMove(PAINT_LAYER_MOVE_UPDATE, 0, 10, 2));
+        assert!(preview.revision > floor);
+        assert_eq!(session.shared.floor.load(Ordering::Acquire), floor);
+        let committed = run(Operation::LayerMove(PAINT_LAYER_MOVE_COMMIT, 0, 11, 3));
+        assert_eq!(
+            session.shared.floor.load(Ordering::Acquire),
+            committed.revision
         );
     }
     #[test]

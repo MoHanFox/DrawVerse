@@ -506,6 +506,7 @@ pub struct Document {
     stagnant_mix_skips: usize,
     liquify: Option<liquify::LiquifyState>,
     transform: Option<transform::TransformState>,
+    layer_move: Option<layer_move::LayerMoveState>,
     revision: u64,
     dirty: DirtyTiles,
     selection: crate::Selection,
@@ -518,6 +519,8 @@ pub use bucket::BucketFill;
 #[path = "tools/wand.rs"]
 mod wand;
 pub use wand::WandSelection;
+#[path = "tools/layer_move.rs"]
+mod layer_move;
 #[path = "tools/liquify.rs"]
 mod liquify;
 #[path = "tools/smudge.rs"]
@@ -525,6 +528,9 @@ mod smudge;
 #[path = "stroke/document_wet.rs"]
 mod wet;
 pub use liquify::{LiquifyDab, LiquifyPreview, LiquifyPreviewSource};
+/// Shared resident presentation packet; original names remain source-compatible.
+pub type ResidentPreview = LiquifyPreview;
+pub type ResidentPreviewSource = LiquifyPreviewSource;
 
 fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
     if layers.iter().any(|l| l.group || l.mask || l.clipped) {
@@ -750,6 +756,7 @@ impl Document {
             stagnant_mix_skips: 0,
             liquify: None,
             transform: None,
+            layer_move: None,
             selection: crate::Selection::default(),
             selection_cache: Default::default(),
             revision: 0,
@@ -979,7 +986,11 @@ impl Document {
     }
 
     fn idle(&self) -> Result<()> {
-        if self.stroke.is_some() || self.liquify.is_some() || self.transform.is_some() {
+        if self.stroke.is_some()
+            || self.liquify.is_some()
+            || self.transform.is_some()
+            || self.layer_move.is_some()
+        {
             Err(Error::Busy)
         } else {
             Ok(())

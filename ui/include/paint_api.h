@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 62
+#define PAINT_ABI_MINOR 63
 
 #define PAINT_ABI_PATCH 0
 
@@ -163,6 +163,11 @@
 #define PAINT_FEATURE_LAYER_APPEARANCE 256
 
 #define PAINT_FEATURE_LAYER_GROUPS 512
+
+/**
+ * ABI 1.63: integer layer translation transaction and shared resident presentation.
+ */
+#define PAINT_FEATURE_LAYER_MOVE_PREVIEW 288230376151711744
 
 #define PAINT_FEATURE_LINEAR_TILE_READ 4
 
@@ -364,6 +369,20 @@
 
 #define PAINT_LAYER_MASK 2
 
+#define PAINT_LAYER_MOVE_BEGIN 0
+
+#define PAINT_LAYER_MOVE_BEGIN_DEFERRED 1
+
+#define PAINT_LAYER_MOVE_CANCEL 6
+
+#define PAINT_LAYER_MOVE_COMMIT 5
+
+#define PAINT_LAYER_MOVE_PICK 2
+
+#define PAINT_LAYER_MOVE_PICK_DEFERRED 3
+
+#define PAINT_LAYER_MOVE_UPDATE 4
+
 #define PAINT_LAYER_PIXEL 0
 
 #define PAINT_LIQUIFY_BEGIN 0
@@ -445,6 +464,8 @@
 #define PAINT_SELECTION_SUBTRACT 2
 
 #define PAINT_SESSION_FAILED 4
+
+#define PAINT_SESSION_LAYER_MOVE 32
 
 #define PAINT_SESSION_LIQUIFY 8
 
@@ -961,6 +982,11 @@ typedef struct PaintLiquifyPreviewInfo {
   uint32_t document_width;
   uint32_t document_height;
 } PaintLiquifyPreviewInfo;
+
+/**
+ * Same versioned packet as ABI 1.62; usable by move and liquify.
+ */
+typedef struct PaintLiquifyPreviewInfo PaintResidentPreviewInfo;
 
 /**
  * ABI 1.17: bounded color-region selection; flags 0/1, reserved zero.
@@ -2209,6 +2235,21 @@ PaintStatus paint_session_layer_is_image(struct PaintCore *core,
                                          uint32_t *out);
 
 /**
+ * ABI 1.63: begin (id), pick-and-begin (x/y), absolute update, final commit or cancel.
+ * BEGIN/PICK_DEFERRED request shared resident presentation where exactly supported.
+ * Updates never write history. COMMIT includes the final delta. OK means queued.
+ * # Safety
+ * Valid serialized handles and writable nonoverlapping sequence are required.
+ */
+PaintStatus paint_session_layer_move(struct PaintCore *core,
+                                     struct PaintSession *session,
+                                     uint32_t kind,
+                                     uint64_t layer_id,
+                                     int32_t x,
+                                     int32_t y,
+                                     uint64_t *out_sequence);
+
+/**
  * Copy UTF-8 without NUL. NULL/0 capacity query returns required bytes.
  * # Safety
  * Follow nonoverlapping caller buffers and exact publication contract.
@@ -2313,6 +2354,21 @@ PaintStatus paint_session_read_liquify_preview(struct PaintCore *core,
                                                uint64_t *out_required);
 
 /**
+ * ABI 1.63: shared resident mesh/assets, with the ABI 1.62 packet format.
+ * # Safety
+ * Follow paint_session_read_liquify_preview's capacity and lifetime contract.
+ */
+PaintStatus paint_session_read_resident_preview(struct PaintCore *core,
+                                                struct PaintSession *session,
+                                                uint64_t generation,
+                                                uint64_t revision,
+                                                uint64_t source_id,
+                                                uint32_t kind,
+                                                uint8_t *buffer,
+                                                uint64_t capacity,
+                                                uint64_t *out_required);
+
+/**
  * ABI 1.13: atomic batch deletion, with optional group-only removal.
  * # Safety
  * Provide 1–4096 aligned readable IDs and a nonoverlapping writable sequence. Follow session ownership.
@@ -2323,6 +2379,15 @@ PaintStatus paint_session_remove_layers(struct PaintCore *core,
                                         uint32_t count,
                                         uint32_t mode,
                                         uint64_t *out_sequence);
+
+/**
+ * ABI 1.63: shared immutable resident presentation metadata (move or liquify).
+ * # Safety
+ * Follow paint_session_liquify_preview_info's caller-memory contract.
+ */
+PaintStatus paint_session_resident_preview_info(struct PaintCore *core,
+                                                struct PaintSession *session,
+                                                PaintResidentPreviewInfo *out_info);
 
 /**
  * ABI 1.12: read one pixel of an already rendered viewport for the eyedropper. Read-only: the
