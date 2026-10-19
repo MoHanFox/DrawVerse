@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 2026-10-20 用户问题清单：`docs/planning/2026-10-20-bugfix-design.md` / `docs/validations/planning/2026-10-20-bugfix-validation.md`；直接 master 分项验证、提交与推送，用户验收输出 `build/qt/bin/Release`。自由变换开始失败/取消需同时通知 active 与 busy 变化，避免核心已关闭但 QML 覆盖层残留；其余项以清单和验收记录为准。
+
 - 最新Warp折叠一致性：`docs/tools/transform-resident-preview-design.md` / `docs/validations/tools/transform-fold-consistency-validation.md`；参考PhotoCraft最终三角栅格，预览/CPU物化共享145×145拓扑与行序覆盖，移除Warp单初值Newton（避免多根换面/透明洞），选区同步覆盖；Qt有序透明通道One/Zero写入，避免深度首面锁定与alpha重复。核心5/变换7/原生2、真实D3D11双功能（含不透明/半透明折叠）、软件Qt与四ABI/Clippy/完整Release通过，ABI1.64不变，产物 `build/verify-ui/bin/Release-wgpu-transform/`。预览代理/边缘采样仍近似；未跑全量/跨平台/实体连续输入。
 
 - 最新自由变换常驻预览：`docs/tools/transform-resident-preview-design.md` / `docs/validations/tools/transform-resident-preview-validation.md`；ABI1.64，参考PhotoCraft不可变源/前向细分，单目标普通栈含置入图片拖动只算CPU几何，Qt GPU纹理合成，确认才原全精度取样；复用液化/移动静态协议，145×145网格/2048代理与视口上限，选区/复杂组合/软件保留像素路径。固定512px六输入Warp核心约1190→1.83ms，2000px约5.71ms，不含UI显示；Rust3+6/原生2及共享回归、真实GPU/软件Qt、四ABI/Clippy/格式/生成头与完整Release通过，产物 `build/verify-ui/bin/Release-wgpu-transform/`。未跑全量/跨平台/实体连续手感，预览近似与边界见设计。

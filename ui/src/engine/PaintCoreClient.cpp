@@ -944,6 +944,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             || static_cast<int>(info.undo_depth) != m_undo || static_cast<int>(info.redo_depth) != m_redo
             || info.active_layer_id != m_active;
         const bool wasLiquify=m_liquifyActive,wasLiquifyBusy=liquifyBusy();
+        const bool wasTransform=m_transformActive,wasTransformBusy=transformBusy();
         const bool wasReady = m_ready, wasModified = modified(), wasLayerBusy=layerEditBusy();
         const bool changedLayers = m_layers != layers;
         const bool activeChanged = info.active_layer_id != m_active;
@@ -1016,7 +1017,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             if(!m_selectedLayers.contains(selectedId)){m_selectedLayers={selectedId};emit selectedLayersChanged();}
         }
         if (changedLayers || activeChanged) pruneSelectedLayers();
-        if (wasLiquify!=m_liquifyActive || m_transformActive || wasLiquifyBusy!=liquifyBusy() || propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
+        if (wasLiquify!=m_liquifyActive || wasTransform!=m_transformActive || wasTransformBusy!=transformBusy() || wasLiquifyBusy!=liquifyBusy() || propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
     });
     connect(m_worker,&BackendWorker::thumbnailReady,this,[this](quint64 generation,quint64 revision,quint64 id,const QString &image) {
         if(m_closing || generation!=m_generation || revision!=m_revision)return;

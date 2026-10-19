@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [2026-10-20 分项修复验收](planning/2026-10-20-bugfix-validation.md)
+
 - [Warp强折叠预览与确认一致性](tools/transform-fold-consistency-validation.md)
 
 - [自由变换与网格变形常驻预览](tools/transform-resident-preview-validation.md)

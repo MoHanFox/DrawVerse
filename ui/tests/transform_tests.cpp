@@ -15,6 +15,33 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void emptyTransformAndCancelPublishClosedState() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("cancel.ini"));
+        WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);
+        engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
+        auto *overlay=findVisualItem(window->contentItem(),"transformOverlay");QVERIFY(overlay);
+        QSignalSpy states(&client,&PaintCoreClient::stateChanged);
+        QVERIFY(client.beginTransform());QVERIFY(overlay->isVisible());
+        states.clear();QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
+        QVERIFY(!states.isEmpty());QVERIFY(!overlay->isVisible());
+        client.activateBrush();client.setBrushRadius(4);QVERIFY(client.beginStroke({{32,32},1}));client.endStroke();
+        QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());const auto depth=client.undoDepth();
+        for(bool escape:{false,true}) {
+            QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformPoints().size()==16 && !client.transformBusy());
+            QVERIFY(overlay->isVisible());states.clear();
+            if(escape){window->requestActivate();QVERIFY(QTest::qWaitForWindowActive(window));QTest::keyClick(window,Qt::Key_Escape);}
+            else QVERIFY(client.finishTransform(false));
+            QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
+            QVERIFY(!states.isEmpty());QVERIFY(!overlay->isVisible());QCOMPARE(client.undoDepth(),depth);
+        }
+        auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);
+        QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void transformResidentPreviewFollowsAndCompositesTransparentStack() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("transform-resident.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors)warnings.append(e.toString());});

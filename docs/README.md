@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [2026-10-20 问题清单与分项修复](planning/2026-10-20-bugfix-design.md)
+
 - [自由变换与网格变形常驻预览](tools/transform-resident-preview-design.md)
 
 - [复杂图像套索、魔棒与油漆桶性能](tools/selection-complexity-performance-design.md)
