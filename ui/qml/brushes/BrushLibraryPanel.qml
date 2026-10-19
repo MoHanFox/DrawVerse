@@ -351,22 +351,22 @@ ColumnLayout {
         }
         }
     }
-    Dialog {
+    PanelDialog {
+        anchorItem:root
         id:renameDialog;objectName:"renameBrushDialog";title:"重命名画笔";modal:true;standardButtons:Dialog.Ok|Dialog.Cancel
-        anchors.centerIn:Overlay.overlay
         contentItem:TextField {id:renameName;objectName:"renameBrushName";placeholderText:"画笔名称";maximumLength:80;selectByMouse:true;onAccepted:renameDialog.accept()}
         onOpened:{renameName.forceActiveFocus();renameName.selectAll()}
         onAccepted:root.library.rename(root.renamePresetId,renameName.text)
     }
-    Dialog {
+    PanelDialog {
+        anchorItem:root
         id:saveDialog;title:"保存画笔";modal:true;standardButtons:Dialog.Ok|Dialog.Cancel
-        anchors.centerIn:Overlay.overlay
         TextField {id:brushName;placeholderText:"画笔名称";maximumLength:80;text:root.library.selectedName+" 副本"}
         onAccepted:root.library.saveCopy(brushName.text)
     }
-    Dialog {
+    PanelDialog {
+        anchorItem:root
         id:groupDialog;objectName:"brushGroupDialog";title:"新建画笔组";modal:true;standardButtons:Dialog.Ok|Dialog.Cancel
-        anchors.centerIn:Overlay.overlay
         contentItem:TextField {id:groupName;objectName:"brushGroupName";placeholderText:"组名称";maximumLength:80;selectByMouse:true}
         onAccepted: {
             if(title==="重命名组") root.library.renameGroup(root.contextGroupId,groupName.text)

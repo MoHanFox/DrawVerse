@@ -1,32 +1,74 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import "../controls"
 import "../theme"
 
-CompactComboBox {
-    id:root
-    property string resource:""
-    property int resourceRole:0
-    model:PaintClient.brushResources
-    currentIndex:model.indexOf(resource)
-    displayText:currentIndex<0?"选择已导入图片":"图片 "+(currentIndex+1)+" · "+resource.slice(0,8)
-    enabled:!PaintClient.brushFileBusy && count>0
-    tooltip:"复用已导入的图片覆盖；先预览再选择。"
-    Component.onCompleted:PaintClient.refreshBrushResources()
-    Connections {target:PaintClient;function onBrushLibraryReadyChanged(){if(PaintClient.brushLibraryReady)PaintClient.refreshBrushResources()}}
-    Connections {target:root.popup;function onAboutToShow(){PaintClient.refreshBrushResources()}}
-    onActivated:{const identity=model[currentIndex];if(identity)PaintClient.selectBrushResource(identity,resourceRole);currentIndex=Qt.binding(function(){return root.model.indexOf(root.resource)})}
-    delegate:ItemDelegate {
-        required property int index
-        required property var modelData
-        objectName:root.objectName+"Option:"+index
-        width:root.popup.availableWidth;height:20;padding:2
-        highlighted:root.highlightedIndex===index
-        contentItem:Row {
-            spacing:5
-            BrushResourceThumbnail {objectName:root.objectName+"Thumbnail:"+index;width:18;height:16;resource:modelData}
-            Text {text:"图片 "+(index+1)+" · "+modelData.slice(0,8);color:Theme.text;font:root.font;anchors.verticalCenter:parent.verticalCenter}
+ColumnLayout {
+    id: root
+    property string resource: ""
+    property int resourceRole: 0
+    property bool expanded: false
+    property bool showActions: true
+    property string importName: ""
+    property string resetName: ""
+    readonly property var model: PaintClient.brushResources
+    readonly property int count: model.length
+    property int currentIndex: model.indexOf(resource)
+    signal activated(int index)
+    signal importRequested()
+    signal resetRequested()
+    spacing: 4
+    Layout.minimumWidth: 0
+    onActivated: index => {if(index>=0 && index<model.length)PaintClient.selectBrushResource(model[index],resourceRole)}
+    Component.onCompleted: PaintClient.refreshBrushResources()
+    onExpandedChanged: if(expanded)PaintClient.refreshBrushResources()
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 3
+        BrushResourceThumbnail {
+            objectName: root.objectName.replace("Picker","Thumbnail")
+            resource: root.resource
+            Layout.preferredWidth: 64
+            Layout.preferredHeight: 64
+            MouseArea {anchors.fill:parent;onClicked:root.expanded=!root.expanded}
         }
-        background:Rectangle {color:parent.hovered || parent.highlighted?Theme.hover:Theme.surface}
+        IconButton {objectName:root.objectName+"Expand";glyph:"down";rotation:root.expanded?180:0;implicitWidth:18;implicitHeight:64;tooltip:root.expanded?"收起资源":"展开资源";onClicked:root.expanded=!root.expanded}
+        Item {Layout.fillWidth:true}
+        ColumnLayout {
+            visible: root.showActions
+            spacing: 2
+            IconButton {objectName:root.importName;glyph:"plus";enabled:!PaintClient.brushFileBusy;tooltip:"导入图片";onClicked:root.importRequested()}
+            IconButton {objectName:root.resetName;glyph:"minus";enabled:root.resource.length>0 && !PaintClient.brushFileBusy;tooltip:root.resourceRole===1?"移除纹理":"使用程序笔尖";onClicked:root.resetRequested()}
+        }
     }
+    GridView {
+        id: grid
+        objectName: root.objectName+"Grid"
+        visible: root.expanded
+        Layout.fillWidth: true
+        Layout.preferredHeight: root.expanded?Math.min(204,Math.ceil(root.count/columns)*cellHeight):0
+        readonly property int columns: Math.max(1,Math.floor(width/48))
+        cellWidth: width/columns
+        cellHeight: cellWidth
+        clip: true
+        reuseItems: true
+        model: root.expanded?root.model:[]
+        ScrollBar.vertical: ScrollBar {}
+        delegate: Item {
+            required property int index
+            required property string modelData
+            width: grid.cellWidth
+            height: grid.cellHeight
+            BrushResourceThumbnail {
+                objectName:root.objectName+"Thumbnail:"+index
+                anchors.fill:parent
+                anchors.margins:1
+                resource:parent.modelData
+                border.color:root.resource===resource?Theme.accent:Theme.line
+                MouseArea {anchors.fill:parent;enabled:!PaintClient.brushFileBusy;onClicked:root.activated(index)}
+            }
+        }
+    }
+    Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
 }

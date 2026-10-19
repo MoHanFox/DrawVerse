@@ -41,6 +41,7 @@ Item {
         trash: "M3 6H21M9 6V3H15V6M5 6L6 21H18L19 6M10 10V17M14 10V17",
         mask: "M3 5H21V19H3ZM16 12A4 4 0 1 1 8 12A4 4 0 1 1 16 12",
         plus: "M12 4V20M4 12H20",
+        minus: "M4 12H20",
         close: "M6 6L18 18M18 6L6 18",
         down: "M5 9L12 16L19 9",
         collapse: "M8 6L14 12L8 18M14 6L20 12L14 18",

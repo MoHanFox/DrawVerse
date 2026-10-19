@@ -150,13 +150,7 @@ ColumnLayout {
                 Loader {objectName:"brushSettingsCategory:0";Layout.fillWidth:true;Layout.minimumWidth:0;active:root.category===0;visible:active
                     sourceComponent:ColumnLayout {
                     visible:root.category===0;Layout.fillWidth:true;spacing:5
-                    RowLayout {
-                        Layout.fillWidth:true
-                        Button {objectName:"importImageBrushTip";text:"导入图片";implicitHeight:24;enabled:!PaintClient.brushFileBusy;onClicked:tipDialog.open()}
-                        BrushResourceThumbnail {objectName:"settingsTipResourceThumbnail";resource:root.library.maskResource}
-                        Button {objectName:"proceduralBrushTip";text:"程序笔尖";implicitHeight:24;enabled:root.library.maskResource.length>0;onClicked:root.library.useProceduralTip()}
-                    }
-                    BrushResourcePicker {objectName:"settingsTipResourcePicker";Layout.fillWidth:true;resource:root.library.maskResource;resourceRole:0}
+                    BrushResourcePicker {objectName:"settingsTipResourcePicker";Layout.fillWidth:true;resource:root.library.maskResource;resourceRole:0;importName:"importImageBrushTip";resetName:"proceduralBrushTip";onImportRequested:tipDialog.open();onResetRequested:root.library.useProceduralTip()}
                     Label {objectName:"imageTipInterpretationLabel";text:"图片覆盖方式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                     CompactComboBox {id:tipInterpretation;objectName:"imageTipInterpretation";Layout.fillWidth:true;model:["灰度覆盖（白色绘制）","透明度覆盖","反向亮度（黑色绘制）"];currentIndex:root.tipInterpretationMode;onActivated:root.tipInterpretationMode=currentIndex;tooltip:"灰度覆盖以白色绘制；透明度使用图片 alpha；反向亮度以黑色绘制。"}
                     Label {visible:root.library.maskResource.length>0;text:"图片覆盖 · 硬度来自图片";color:Theme.muted;font.pixelSize:9;Layout.fillWidth:true;wrapMode:Text.WordWrap}
@@ -237,13 +231,8 @@ ColumnLayout {
                 }
                 Loader {objectName:"brushSettingsCategory:3";Layout.fillWidth:true;Layout.minimumWidth:0;active:root.category===3;visible:active
                     sourceComponent:ColumnLayout {Layout.minimumWidth:0;visible:root.category===3;Layout.fillWidth:true;spacing:5
+                    BrushResourcePicker {objectName:"settingsTextureResourcePicker";Layout.fillWidth:true;resource:root.library.texture.resource||"";resourceRole:1;importName:"importBrushTexture";resetName:"removeBrushTexture";onImportRequested:textureDialog.open();onResetRequested:root.library.removeTexture()}
                     CompactCheckBox {objectName:"settingsTextureEnabled";text:"启用纹理";enabled:!!root.library.texture.resource;checked:root.library.texture.enabled;font.pixelSize:10;onToggled:root.setTextureField("enabled",checked);tooltip:"使用图片覆盖调制笔触；关闭保留纹理和参数。"}
-                    RowLayout {Layout.fillWidth:true
-                        Button {objectName:"importBrushTexture";text:"导入";Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredWidth:0;implicitHeight:24;enabled:!PaintClient.brushFileBusy;onClicked:textureDialog.open();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"导入 PNG 纹理"}
-                        BrushResourceThumbnail {objectName:"settingsTextureResourceThumbnail";resource:root.library.texture.resource||""}
-                        Button {objectName:"removeBrushTexture";text:"移除";Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredWidth:0;implicitHeight:24;enabled:!!root.library.texture.resource;onClicked:root.library.removeTexture();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"移除纹理图片并关闭纹理，保留其他参数"}
-                    }
-                    BrushResourcePicker {objectName:"settingsTextureResourcePicker";Layout.fillWidth:true;resource:root.library.texture.resource||"";resourceRole:1}
                     Label {objectName:"textureInterpretationLabel";text:"图片覆盖方式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                     CompactComboBox {id:textureInterpretation;objectName:"textureInterpretation";Layout.fillWidth:true;model:["灰度覆盖（白色绘制）","透明度覆盖","反向亮度（黑色绘制）"];currentIndex:root.textureInterpretationMode;onActivated:root.textureInterpretationMode=currentIndex;tooltip:"将图片转换为可重复的灰度覆盖，纹理与笔尖独立。"}
                     Label {objectName:"settingsTextureModeLabel";text:"纹理混合模式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
@@ -267,6 +256,7 @@ ColumnLayout {
                 }
                 Loader {objectName:"brushSettingsCategory:4";Layout.fillWidth:true;Layout.minimumWidth:0;active:root.category===4;visible:active
                     sourceComponent:ColumnLayout {Layout.minimumWidth:0;visible:root.category===4;Layout.fillWidth:true;spacing:5
+                    BrushResourcePicker {objectName:"settingsDualResourcePicker";Layout.fillWidth:true;resource:root.dual.resource||"";resourceRole:2;importName:"importDualBrushTip";resetName:"proceduralDualBrushTip";onImportRequested:dualDialog.open();onResetRequested:root.library.useProceduralDual()}
                     CompactCheckBox {objectName:"settingsDualEnabled";text:"启用双重笔刷";checked:root.dual.enabled;font.pixelSize:10;onToggled:if(!root.setDualField("enabled",checked))checked=Qt.binding(function(){return root.dual.enabled});tooltip:"第二笔尖调制主笔尖覆盖；关闭时保留全部设置。"}
                     Label {text:"第二笔刷来源";color:Theme.text;font.pixelSize:10}
                     CompactComboBox {objectName:"settingsDualSourceMode";Layout.fillWidth:true;model:["自定义","现有"];currentIndex:root.library.dualExisting?1:0;onActivated:root.library.dualExisting=currentIndex===1}
@@ -298,12 +288,6 @@ ColumnLayout {
                         CompactCheckBox {objectName:"settingsDualFlipY";text:"固定垂直镜像";checked:root.dual.flipY===true;onToggled:root.setDualField("flipY",checked);tooltip:"固定镜像第二笔刷形状的 Y 轴；可与随机翻转同时使用。"}
                         Label {objectName:"settingsDualModelLabel";text:"第二笔尖间距方式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                         CompactComboBox {objectName:"settingsDualModel";Layout.fillWidth:true;model:["独立路径间距","每个主印章配对"];currentIndex:root.dual.model==="paired-dab-v1"?1:0;onActivated:{let data=Object.assign({},root.dual);data.model=currentIndex===1?"paired-dab-v1":"path-coverage-v1";data.spacing=currentIndex===1?null:0.25;root.library.setDualBrush(data)} tooltip:"独立路径使用第二笔尖自己的间距；配对在每个主印章的位置生成第二笔尖。"}
-                        RowLayout {Layout.fillWidth:true
-                            BrushResourceThumbnail {objectName:"settingsDualResourceThumbnail";resource:root.dual.resource||""}
-                            Button {objectName:"importDualBrushTip";text:"导入";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:24;enabled:!PaintClient.brushFileBusy;onClicked:dualDialog.open();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"导入第二笔尖 PNG 图片"}
-                            Button {objectName:"proceduralDualBrushTip";text:"程序";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:24;enabled:!!root.dual.resource;onClicked:root.library.useProceduralDual();ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"恢复程序第二笔尖，保留其他参数"}
-                        }
-                        BrushResourcePicker {objectName:"settingsDualResourcePicker";Layout.fillWidth:true;resource:root.dual.resource||"";resourceRole:2}
                         Label {objectName:"dualTipInterpretationLabel";text:"图片覆盖方式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                         CompactComboBox {id:dualInterpretation;objectName:"dualTipInterpretation";Layout.fillWidth:true;model:["灰度覆盖（白色绘制）","透明度覆盖","反向亮度（黑色绘制）"];currentIndex:root.dualInterpretationMode;onActivated:root.dualInterpretationMode=currentIndex;tooltip:"选择导入图片的覆盖解释。"}
                         Label {visible:PaintClient.brushImportMessage.length>0;text:PaintClient.brushImportMessage;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
@@ -311,11 +295,7 @@ ColumnLayout {
                         CompactComboBox {objectName:"settingsDualSizeMode";Layout.fillWidth:true;model:["独立尺寸","相对主笔百分比","旧版像素偏移"];currentIndex:root.dualModule("sizing").mode!=="relative"?0:root.dualModule("sizing").model==="relative-ratio-v1"?1:2;onActivated:root.setDualSizeMode(currentIndex);tooltip:"百分比随主笔大小缩放；旧版像素偏移保持原文件语义。"}
                         DualField {title:"大小";field:"diameter";from:1;to:2000;factor:1;unit:"px";visible:root.dualModule("sizing").mode!=="relative"}
                         DualField {title:"直径偏移";field:"diameterOffset";module:"sizing";from:-511;to:511;factor:1;unit:"px";visible:root.dualModule("sizing").mode==="relative" && root.dualModule("sizing").model==="relative-size-v1"}
-                        ColumnLayout {Layout.fillWidth:true;visible:root.dualModule("sizing").model==="relative-ratio-v1" && root.dualModule("sizing").mode==="relative"
-                            Label {text:"相对大小 (%)";color:Theme.text;font.pixelSize:10}
-                            TextField {objectName:"settingsDualRatioInput";Layout.fillWidth:true;implicitHeight:22;text:Number(root.dualModule("sizing").diameterRatio*100).toFixed(2);color:Theme.text;validator:DoubleValidator {bottom:0.05;top:200000;decimals:4;locale:"C"} onEditingFinished:if(acceptableInput)root.setDualField("diameterRatio",Number(text)/100,"sizing")}
-                            CompactSlider {objectName:"settingsDualRatio";Layout.fillWidth:true;from:0.05;to:400;value:Math.min(to,root.dualModule("sizing").diameterRatio*100);onMoved:root.setDualField("diameterRatio",value/100,"sizing");tooltip:"主笔大小的百分比；输入框可输入超出滑条范围的比例。"}
-                        }
+                        ParameterSlider {title:"相对大小";sliderName:"settingsDualRatio";visible:root.dualModule("sizing").model==="relative-ratio-v1" && root.dualModule("sizing").mode==="relative";from:0.05;to:200000;sliderTo:400;decimals:4;unit:"%";value:root.dualModule("sizing").diameterRatio*100;onCommitted:value=>root.setDualField("diameterRatio",value/100,"sizing");tooltip:"主笔大小的百分比；输入框可输入超出滑条范围的比例。"}
                         Label {objectName:"settingsDualWidthRuleLabel";text:"相对尺寸响应";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true;visible:root.dualModule("sizing").mode==="relative"}
                         CompactComboBox {objectName:"settingsDualWidthRule";Layout.fillWidth:true;visible:root.dualModule("sizing").mode==="relative";model:["跟随尺寸压感","固定描边宽度"];currentIndex:root.dualModule("sizing").widthRule==="fixed-width"?1:0;onActivated:root.setDualField("widthRule",currentIndex===1?"fixed-width":"follow-pressure","sizing");tooltip:"固定宽度先计算主笔实际尺寸再加偏移，不重复执行第二大小压感和大小抖动；旧配置仍保留。"}
                         Label {objectName:"settingsDualEffectiveSize";text:"标称直径："+root.dualNominalDiameter().toFixed(1)+" px";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
@@ -536,7 +516,7 @@ ColumnLayout {
                             ParameterSlider {title:"数量";sliderName:"settingsOutlineBrushCount";from:1;to:16;value:root.outline.source.brush?.scatterDynamics?.count||1;onCommitted:value=>root.setOutlineScatter("count",Math.round(value))}
                         }
                         ColumnLayout {visible:root.outline.source.model==="texture";Layout.fillWidth:true
-                            BrushResourcePicker {objectName:"settingsOutlineTexturePicker";Layout.fillWidth:true;resource:root.outline.source.texture?.resource||"";resourceRole:3}
+                            BrushResourcePicker {objectName:"settingsOutlineTexturePicker";Layout.fillWidth:true;resource:root.outline.source.texture?.resource||"";resourceRole:3;showActions:false}
                             Label {text:"选择已导入纹理；可先在纹理页导入图片。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
                             CompactComboBox {objectName:"settingsOutlineTextureSpace";Layout.fillWidth:true;model:["文档纸纹","笔尖局部"];currentIndex:root.outline.source.texture?.space==="tip"?1:0;onActivated:root.setOutlineTexture("space",currentIndex===1?"tip":"document")}
                             ParameterSlider {title:"深度";sliderName:"settingsOutlineTextureDepth";unit:"%";value:(root.outline.source.texture?.depth||0)*100;onCommitted:value=>root.setOutlineTexture("depth",value/100)}
@@ -613,96 +593,62 @@ ColumnLayout {
         Layout.fillWidth:true;Layout.minimumWidth:0;font.pixelSize:10
         contentItem:Text {text:wetCheck.text;font:wetCheck.font;color:wetCheck.enabled?Theme.text:Theme.disabled;leftPadding:19;verticalAlignment:Text.AlignVCenter;wrapMode:Text.WordWrap}
     }
-    component WetField: ColumnLayout {
-        id:wetControl
-        property string title
+    component WetField: ParameterSlider {
         property string field
-        property string help
-        Layout.fillWidth:true;Layout.minimumWidth:0;spacing:2
-        Label {text:wetControl.title;color:Theme.text;font.pixelSize:10;Layout.fillWidth:true;Layout.minimumWidth:0}
-        RowLayout {Layout.fillWidth:true;Layout.minimumWidth:0;spacing:2
-            Item {Layout.fillWidth:true;Layout.minimumWidth:0;implicitWidth:0}
-            CompactSpinBox {objectName:"settingsWet"+wetControl.field+"Input";implicitWidth:66;Layout.minimumWidth:66;Layout.preferredWidth:66;implicitHeight:20;editable:true;from:0;to:100;value:Math.round(root.library.wetMix[wetControl.field]*100);onValueModified:root.setWetField(wetControl.field,value/100);tooltip:wetControl.help}
-            Label {text:"%";color:Theme.muted;font.pixelSize:9}
-        }
-        CompactSlider {objectName:"settingsWet"+wetControl.field;Layout.fillWidth:true;from:0;to:100;value:root.library.wetMix[wetControl.field]*100;onMoved:root.setWetField(wetControl.field,value/100);tooltip:wetControl.help}
+        property string help:""
+        unit:"%"
+        sliderName:"settingsWet"+field
+        value:root.library.wetMix[field]*100
+        tooltip:help
+        onCommitted:value=>root.setWetField(field,value/100)
     }
-    component SmoothingField: ColumnLayout {
-        id:smoothingControl
-        property string title
+    component SmoothingField: ParameterSlider {
         property string field
         property real factor:1
-        property real to:100
-        property string unit:""
         property string help:""
-        Layout.fillWidth:true;Layout.minimumWidth:0;spacing:2
-        function commit(value){let data=Object.assign({},root.library.smoothing);data[field]=value/factor;root.library.setSmoothing(data)}
-        Label {text:smoothingControl.title+" ("+smoothingControl.unit+")";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
-        CompactSpinBox {objectName:"settingsSmoothing"+smoothingControl.field+"Input";Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:20;from:0;to:smoothingControl.to;editable:true;value:Math.round(root.library.smoothing[smoothingControl.field]*smoothingControl.factor);onValueModified:smoothingControl.commit(value);tooltip:smoothingControl.help}
-        CompactSlider {objectName:"settingsSmoothing"+smoothingControl.field;Layout.fillWidth:true;from:0;to:smoothingControl.to;value:root.library.smoothing[smoothingControl.field]*smoothingControl.factor;onMoved:smoothingControl.commit(value);tooltip:smoothingControl.help}
+        sliderName:"settingsSmoothing"+field
+        value:root.library.smoothing[field]*factor
+        tooltip:help
+        onCommitted:value=>{let data=Object.assign({},root.library.smoothing);data[field]=value/factor;root.library.setSmoothing(data)}
     }
-    component DualField: ColumnLayout {
-        id:dualControl
-        property string title
+    component DualField: ParameterSlider {
         property string field
         property string module:""
         property string prefix:"settingsDual"
-        property int decimals:0
-        property real from:0
-        property real to:100
         property real factor:100
-        property string unit:"%"
-        readonly property real currentValue:Number((module?root.dualModule(module):root.dual)[field] || 0)*factor
-        Layout.fillWidth:true;Layout.minimumWidth:0;spacing:2
-        Label {text:dualControl.title+(dualControl.unit.length?" ("+dualControl.unit+")":"");color:Theme.text;font.pixelSize:10;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight}
-        CompactSpinBox {objectName:dualControl.prefix+dualControl.module+dualControl.field+"Input";visible:dualControl.decimals===0;Layout.fillWidth:true;Layout.minimumWidth:0;implicitHeight:20;editable:true;from:dualControl.from;to:dualControl.to;value:Math.round(dualControl.currentValue);onValueModified:root.setDualField(dualControl.field,value/dualControl.factor,dualControl.module);tooltip:"第二笔尖的"+dualControl.title+"；关闭功能后仍保留设置。"}
-        CompactTextField {objectName:dualControl.prefix+dualControl.module+dualControl.field+"Decimal";visible:dualControl.decimals>0;Layout.fillWidth:true;text:dualControl.currentValue.toFixed(dualControl.decimals);validator:DoubleValidator {bottom:dualControl.from;top:dualControl.to;decimals:dualControl.decimals;locale:"C"} onEditingFinished:{if(acceptableInput)root.setDualField(dualControl.field,Number(text)/dualControl.factor,dualControl.module);text=Qt.binding(function(){return dualControl.currentValue.toFixed(dualControl.decimals)})}}
-        CompactSlider {objectName:dualControl.prefix+dualControl.module+dualControl.field;Layout.fillWidth:true;from:dualControl.from;to:dualControl.to;value:dualControl.currentValue;onMoved:root.setDualField(dualControl.field,value/dualControl.factor,dualControl.module)}
+        unit:"%"
+        sliderName:prefix+module+field
+        inputName:sliderName+(decimals>0?"Decimal":"Input")
+        value:Number((module?root.dualModule(module):root.dual)[field]||0)*factor
+        onCommitted:value=>root.setDualField(field,value/factor,module)
+        tooltip:"第二笔尖的"+title+"；关闭功能后仍保留设置。"
     }
-    component TextureField: ColumnLayout {
-        property string title
+    component TextureField: ParameterSlider {
         property string field
-        property real from:0
-        property real to:100
         property real factor:100
-        property string unit:""
         property string help:""
-        id:textureControl
-        Layout.fillWidth:true;spacing:2
-        Label {text:textureControl.title+(textureControl.unit.length?" ("+textureControl.unit+")":"");color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
-        CompactSpinBox {objectName:"settingsTexture"+textureControl.field+"Input";Layout.fillWidth:true;Layout.minimumWidth:0;implicitWidth:110;implicitHeight:20;editable:true;from:textureControl.from;to:textureControl.to;value:Math.round((root.library.texture[textureControl.field]||0)*textureControl.factor);onValueModified:root.setTextureField(textureControl.field,value/textureControl.factor);tooltip:textureControl.help}
-        CompactSlider {objectName:"settingsTexture"+textureControl.field;Layout.fillWidth:true;from:textureControl.from;to:textureControl.to;value:(root.library.texture[textureControl.field]||0)*textureControl.factor;onMoved:root.setTextureField(textureControl.field,value/textureControl.factor);tooltip:textureControl.help}
+        sliderName:"settingsTexture"+field
+        value:(root.library.texture[field]||0)*factor
+        tooltip:help
+        onCommitted:value=>root.setTextureField(field,value/factor)
     }
-    component TipField: ColumnLayout {
-        property string title
+    component TipField: ParameterSlider {
         property string field
-        property real from:0
-        property real to:100
         property real factor:100
-        property string unit:""
         property string help:""
-        property string sliderName:"settingsBrush"+field
-        id:control
-        Layout.fillWidth:true;spacing:2
-        RowLayout {
-            Label {text:control.title;color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
-            CompactSpinBox {objectName:control.sliderName+"Input";implicitWidth:66;implicitHeight:20;editable:true;from:control.from;to:control.to;value:Math.round(root.library[control.field]*control.factor);onValueModified:root.library[control.field]=value/control.factor}
-            Label {text:control.unit;color:Theme.muted;font.pixelSize:9}
-        }
-        CompactSlider {objectName:control.sliderName;Layout.fillWidth:true;from:control.from;to:control.to;value:root.library[control.field]*control.factor;onMoved:root.library[control.field]=value/control.factor;tooltip:control.help}
+        sliderName:"settingsBrush"+field
+        value:root.library[field]*factor
+        tooltip:help
+        onCommitted:value=>root.library[field]=value/factor
     }
-    component TransferField: ColumnLayout {
-        property string title
+    component TransferField: ParameterSlider {
         property string field
         property string help:""
-        id:transferControl
-        Layout.fillWidth:true;spacing:2
-        RowLayout {
-            Label {text:transferControl.title;color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
-            CompactSpinBox {objectName:"settingsTransfer"+transferControl.field+"Input";implicitWidth:66;implicitHeight:20;editable:true;from:0;to:100;value:Math.round(root.library.transferJitter[transferControl.field]*100);onValueModified:root.setTransferJitterField(transferControl.field,value)}
-            Label {text:"%";color:Theme.muted;font.pixelSize:9}
-        }
-        CompactSlider {objectName:"settingsTransfer"+transferControl.field;Layout.fillWidth:true;from:0;to:100;value:root.library.transferJitter[transferControl.field]*100;onMoved:root.setTransferJitterField(transferControl.field,value);tooltip:transferControl.help}
+        unit:"%"
+        sliderName:"settingsTransfer"+field
+        value:root.library.transferJitter[field]*100
+        tooltip:help
+        onCommitted:value=>root.setTransferJitterField(field,value)
     }
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
     FileDialog {id:tipDialog;title:"导入图片笔尖";nameFilters:["PNG 图片 (*.png)"];onAccepted:PaintClient.importBrushTip(selectedFile,root.tipInterpretationMode)}

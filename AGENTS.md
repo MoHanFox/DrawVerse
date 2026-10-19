@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新参数/资源布局：`docs/brush/ui/brush-settings-resource-layout-design.md` / `docs/validations/brush/ui/brush-settings-resource-layout-validation.md`；公共ParameterSlider统一同排标题/加减数值与下排滑条，三类图片资源置顶/展开方阵，重命名和建组为面板旁独立Window；Windows Release及8项Qt通过，未跑全量/跨平台/设备/GPU。
+
 - 最新整笔描边 Qt：[设计](docs/brush/ui/brush-stroke-outline-ui-design.md) / [验收](docs/validations/brush/ui/brush-stroke-outline-ui-validation.md)；state41/ABI1.60/VBR1.0完整镜像、三来源、三位置、相对/像素宽度、第二颜色、白色预览/真实像素/单历史与新目录资源往返/保存重开，Windows Release与三项Qt通过。未跑全量/设备/跨平台/GPU。
 
 - 当前契约入口：`contracts/README.md`，仅展示当前规范；开发迭代 schema 位于 `core/crates/paint-io/tests/fixtures/schema-history/`，仅供回归。当前笔刷文件为 VBR 1.0；VBR 读取按实际字段补全、校验和执行，不以 minor 判断功能，ABI/state/behavior 版本独立。
