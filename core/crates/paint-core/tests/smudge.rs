@@ -185,3 +185,45 @@ fn composite_sampling_offsets_selection_alpha_lock_and_masks_share_pipeline() {
     d.undo().unwrap();
     assert_eq!(d.pixel(2, 2).alpha(), 1.);
 }
+
+#[test]
+fn smudge_transport_ignores_primary_and_secondary_spacing_and_keeps_tip_shape() {
+    use std::sync::Arc;
+    let render = |spacing: f32, secondary_spacing: Option<f32>, image_tip: bool| {
+        let mut d = seed();
+        let mut secondary =
+            SecondaryTip::new(1.5, BrushTip::default(), None, BrushDynamics::default()).unwrap();
+        if let Some(value) = secondary_spacing {
+            secondary = secondary.with_spacing(value).unwrap();
+        }
+        let definition = BrushDefinition {
+            brush: Brush {
+                spacing,
+                ..smudge(0.8, false, false, false)
+            },
+            mask: image_tip.then(|| {
+                Arc::new(BrushMask::new(3, 3, vec![0, 0, 0, 255, 255, 255, 0, 0, 0]).unwrap())
+            }),
+            dual: DualBrush::new(true, DualMode::Multiply, secondary),
+            ..Default::default()
+        };
+        d.begin_brush_stroke(definition, InputPoint::new(2.5, 2.5, 1.))
+            .unwrap();
+        d.stroke_to(InputPoint::new(8.5, 2.5, 1.)).unwrap();
+        d.end_stroke().unwrap();
+        (0..5)
+            .flat_map(|y| (0..12).map(move |x| (x, y)))
+            .map(|(x, y)| d.pixel(x, y))
+            .collect::<Vec<_>>()
+    };
+    for image_tip in [false, true] {
+        let expected = render(0.02, None, image_tip);
+        for spacing in [0.02, 0.25, 1.] {
+            for secondary in [None, Some(0.01), Some(1.)] {
+                assert_eq!(render(spacing, secondary, image_tip), expected);
+            }
+        }
+        assert!(expected[2 * 12 + 4].alpha() > 0.);
+    }
+    assert_ne!(render(1., Some(1.), false), render(1., Some(1.), true));
+}

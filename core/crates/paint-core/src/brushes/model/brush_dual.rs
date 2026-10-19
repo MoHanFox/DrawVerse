@@ -448,6 +448,9 @@ impl CompiledDual {
     pub fn step(&self) -> Option<f64> {
         self.step
     }
+    pub(crate) fn pair_sampling_with_primary(&mut self) {
+        self.step = None;
+    }
     pub fn colored_work(&self, count: usize, tool_blend: crate::BlendMode) -> usize {
         let diameter = (self.maximum_radius
             * 2.

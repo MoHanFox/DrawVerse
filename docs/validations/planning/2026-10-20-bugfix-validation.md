@@ -95,3 +95,9 @@
 
 - 完整 qt_ui_tests 源重新编译后，existingSecondaryPickerPreviewPixelsFreshStoreAndReopen、dualRatioControlsPreviewExchangeAndReopen、taperControlsCaptureWhitePreviewPixelsVbrAndReopen 两模式均通过，包含实际像素、预览、VBR 与重开。
 - 三项旧分组用例改为等待实际 delegate 创建完成，brushGroupsAppearInLibraryTreeAndSearchKeepsParent、brushLibraryShiftControlSelectionAndRootReorder、expandedGroupLowerDropInsertsFirstForBrushesAndLayers 全部通过；覆盖搜索保留父组、Ctrl/Shift 选择、根目录重排及笔刷/图层展开组下半部投放。
+
+## 普通 17：涂抹独立采样
+
+- 主笔采用按笔尖尺寸/短轴决定的 0.25–2px 有界密集步长，第二笔尖配对采样，均忽略预设间距；仍使用 CPU 位移取样与原分页算子。普通画笔、橡皮间距不变。
+- Rust 33 项通过：涂抹 4、步长边界 1、双笔刷 11、独立路径 7、湿混涂抹 6、双色工具策略 3、输入分页 1。新回归比较三种主间距与三种副间距，像素完全相同，程序/图片笔尖仍有不同形状，撤销重做、取样、锁和取消保持。
+- paint-core / paint-ffi 严格 Clippy、格式及生成头检查通过；完整 drawverse Release 构建通过并输出到 build/qt/bin/Release。未做连续实体输入/大尺寸性能验收，不将更密集采样宣称为性能提升或 GPU 加速。

@@ -281,6 +281,11 @@ impl BrushProgram {
             definition.tip.pressure_size,
             &definition.dynamics.size,
         )?;
+        if matches!(definition.brush.mode, crate::BrushMode::Smudge { .. }) {
+            if let Some(secondary) = dual.as_mut() {
+                secondary.pair_sampling_with_primary();
+            }
+        }
         // Dual color is meaningful for painting and finger-painting smudge.
         // Other tools retain grayscale secondary coverage but ignore colors.
         let preserve_dual_color = match definition.brush.mode {
@@ -496,7 +501,14 @@ impl BrushProgram {
             .map_or(1., |mask| mask.spacing_scale(self.tip.roundness))
     }
     pub(crate) fn step(&self, brush: Brush) -> f64 {
-        brush.step() * self.spacing_scale()
+        if matches!(brush.mode, crate::BrushMode::Smudge { .. }) {
+            // Transport a continuous field rather than inherit the preset's stamp spacing.
+            // Bound both tiny-tip sampling and large-tip work; paging still limits each input.
+            (f64::from(brush.radius * self.tip.roundness) * 0.1 * self.spacing_scale())
+                .clamp(0.25, 2.)
+        } else {
+            brush.step() * self.spacing_scale()
+        }
     }
     fn base_geometry(&self) -> TipGeometry {
         TipGeometry {
@@ -753,4 +765,37 @@ fn source_matrix_selects_dynamics_per_target_channel() {
     assert!((factors.0 - 0.8).abs() < 1e-6);
     assert!((factors.1 - 0.12).abs() < 1e-6);
     assert!((factors.2 - 0.16).abs() < 1e-6);
+}
+
+#[cfg(test)]
+#[test]
+fn smudge_sampling_is_bounded_and_paint_keeps_preset_spacing() {
+    let program = BrushProgram::compile(BrushDefinition::default()).unwrap();
+    for radius in [0.5, 12., crate::MAX_BRUSH_RADIUS] {
+        for spacing in [0.02, 0.25, 1.] {
+            let brush = Brush {
+                radius,
+                spacing,
+                ..Default::default()
+            };
+            assert_eq!(program.step(brush), brush.step());
+            let brush = Brush {
+                mode: crate::BrushMode::Smudge {
+                    all_layers: false,
+                    finger_painting: false,
+                    pressure_strength: false,
+                },
+                ..brush
+            };
+            let step = program.step(brush);
+            assert!((0.25..=2.).contains(&step));
+            assert_eq!(
+                step,
+                program.step(Brush {
+                    spacing: 0.02,
+                    ..brush
+                })
+            );
+        }
+    }
 }
