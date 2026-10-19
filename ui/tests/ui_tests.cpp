@@ -153,6 +153,28 @@ private slots:
         QVERIFY(library.select("round-fine"));library.setRadius(3.25);library.setScatterEnabled(true);library.setScatterCount(3);const auto source=library.saveCopy("source");QVERIFY(library.select(copy));QVERIFY(library.usePresetAsOutline(source));const auto captured=library.strokeOutline();QCOMPARE(captured.value("source").toMap().value("brush").toMap().value("diameter").toDouble(),6.5);QVERIFY(library.remove(source));QCOMPARE(library.strokeOutline(),captured);
     }
 
+    void liquifyMouseAndPenCanStartOutsideClippedCanvas() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("outside.ini"));
+        QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());
+        client.newTransparentDocument(96,96);QTRY_COMPARE(client.documentWidth(),96);QTRY_VERIFY(!client.layerEditBusy());
+        WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();
+        QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());
+        const auto local=canvas->documentRect().topLeft()+QPointF(-20,48);
+        const auto outside=canvas->mapToScene(local).toPoint();
+        const auto inside=canvas->mapToScene(canvas->documentRect().topLeft()+QPointF(8,48)).toPoint();
+        QVERIFY(!canvas->documentRect().contains(local));QVERIFY(canvas->contains(local));
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,outside);QVERIFY(client.drawing());
+        QTest::mouseMove(window,inside);QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,inside);QTRY_VERIFY(!client.liquifyBusy());
+        static QPointingDevice pen("outside liquify pen",713,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto send=[&](QEvent::Type type){QTabletEvent event(type,&pen,outside,window->mapToGlobal(outside),.5,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(window,&event);return event.isAccepted();};
+        QVERIFY(send(QEvent::TabletPress));QVERIFY(client.drawing());QVERIFY(send(QEvent::TabletRelease));QTRY_VERIFY(!client.liquifyBusy());
+        QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void maximumLiquifySizePublishesPixelsAndKeepsLocalAndDocumentHistory() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("liquify-large.ini"));QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());
         client.newTransparentDocument(512,512);QTRY_COMPARE(client.documentWidth(),512);QTRY_VERIFY(!client.layerEditBusy());
@@ -167,9 +189,9 @@ private slots:
         client.redo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.liquifyBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),warped);
         QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());QCOMPARE(client.undoDepth(),1);request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),before);
         QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());QVERIFY(client.beginStroke({{235,250},1}));client.strokeTo({{259,250},1});client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.liquifyBusy());
-        QVERIFY(client.finishLiquify(true));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());QCOMPARE(client.undoDepth(),2);request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),warped);
+        QVERIFY(client.finishLiquify(true));QVERIFY(client.liquifyCommitting());QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());QVERIFY(!client.liquifyCommitting());QCOMPARE(client.undoDepth(),2);request();QTRY_VERIFY(client.frameRevision()>=client.revision());const auto finalPixels=client.frame();QVERIFY(finalPixels!=before);
         client.undo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),before);
-        client.redo();QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),warped);QCOMPARE(client.lastError(),QString());
+        client.redo();QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());request();QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(),finalPixels);QCOMPARE(client.lastError(),QString());
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 
@@ -4627,6 +4649,32 @@ private slots:
         QImage thumbnail; const auto base64=client.layers().first().toMap().value("thumbnail").toString().section(',',1).toLatin1(); QVERIFY(thumbnail.loadFromData(QByteArray::fromBase64(base64),"PNG")); QVERIFY(thumbnail.width()<=64 && thumbnail.height()<=64);
         QVERIFY(client.lastError().isEmpty()); QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
     }
+    void computeHardwareSelectionPersistsAndFallsBackVisibly() {
+        QTemporaryDir temp;const auto path=temp.filePath("compute.ini");
+        {
+            PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());
+            client.inspectCompute();QTRY_VERIFY(!client.computeBusy() && !client.computeHardware().isEmpty());
+            QCOMPARE(client.computeHardware().first().toMap().value("id").toString(),QStringLiteral("cpu"));
+            QVERIFY(client.saveComputeDevice("missing-device-qt-regression"));
+            QTRY_VERIFY(!client.computeBusy());QTRY_COMPARE(client.computeDevice(),QStringLiteral("missing-device-qt-regression"));
+            QTRY_VERIFY(client.computeStatus().startsWith("CPU"));
+            QSettings settings(path,QSettings::IniFormat);QCOMPARE(settings.value("performance/computeDevice").toString(),client.computeDevice());
+            QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());
+            QVERIFY(!client.saveComputeDevice("cpu"));
+            QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());
+            QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+        }
+        PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());
+        QTRY_COMPARE(client.computeDevice(),QStringLiteral("missing-device-qt-regression"));
+        QTRY_VERIFY(!client.computeBusy() && client.computeStatus().startsWith("CPU"));
+        QVERIFY(client.saveComputeDevice("auto"));QTRY_VERIFY(!client.computeBusy());
+        QTRY_COMPARE(client.computeDevice(),QStringLiteral("auto"));
+        QVERIFY(client.computeStatus().startsWith("GPU") || client.computeStatus().startsWith("CPU"));
+        qInfo()<<"Selected compute backend:"<<client.computeStatus();
+        QVERIFY(client.saveComputeDevice("cpu"));QTRY_VERIFY(!client.computeBusy());QTRY_COMPARE(client.computeStatus(),QStringLiteral("CPU"));
+        QSignalSpy unchanged(&client,&PaintCoreClient::computeChanged);QTest::qWait(650);QCOMPARE(unchanged.size(),0);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void storageSettingsDialogShowsAppliedAndPendingValues() {
         QTemporaryDir temp; QVERIFY(temp.isValid()); PaintCoreClient client(nullptr,temp.filePath("storage.ini"));
         WorkspaceManager workspace(temp.filePath("layout.ini")); QQmlApplicationEngine engine; QStringList warnings;
@@ -4646,6 +4694,8 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(customDialog,"reject"));QTRY_VERIFY(!customDialog->property("opened").toBool());
         auto *storageAction=window->findChild<QObject*>("storagePreferencesAction");QVERIFY(storageAction);QVERIFY(storageAction->property("enabled").toBool());
         auto *dialog=window->findChild<QObject*>("preferencesDialog"); QVERIFY(dialog);QVERIFY(QMetaObject::invokeMethod(storageAction,"triggered"));QTRY_VERIFY(dialog->property("opened").toBool());QTRY_VERIFY(!client.storageBusy());
+        auto *compute=dialog->findChild<QObject*>("computeDevice");QVERIFY(compute);QTRY_VERIFY(compute->property("count").toInt()>=1);
+        QVERIFY(dialog->findChild<QObject*>("computeStatus"));
         auto *memory=dialog->findChild<QObject*>("storageMemory"); QVERIFY(memory); QCOMPARE(memory->property("currentIndex").toInt(),2);
         auto *scratch=dialog->findChild<QObject*>("storageScratch"); QVERIFY(scratch); QCOMPARE(scratch->property("value").toInt(),8);
         auto *reserve=dialog->findChild<QObject*>("storageReserve"); QVERIFY(reserve); QCOMPARE(reserve->property("value").toInt(),512);

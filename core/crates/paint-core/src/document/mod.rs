@@ -189,11 +189,12 @@ mod history_failure_tests {
         doc.begin_liquify().unwrap();
         doc.liquify_dab(dab).unwrap();
         doc.commit_liquify().unwrap();
+        let final_pixels = pixels(&doc);
         assert!(doc.history_disk_bytes() > 0);
         doc.undo().unwrap();
         assert_eq!(pixels(&doc), original);
         doc.redo().unwrap();
-        assert_eq!(pixels(&doc), preview);
+        assert_eq!(pixels(&doc), final_pixels);
     }
     #[test]
     fn damaged_backing_does_not_partially_undo_or_redo() {
@@ -481,6 +482,7 @@ struct Stroke {
 
 #[derive(Debug)]
 pub struct Document {
+    compute: Arc<dyn paint_ops::Executor>,
     pool: Arc<crate::page_pool::PagePool>,
     width: u32,
     height: u32,
@@ -725,6 +727,7 @@ impl Document {
                 options.max_scratch_bytes,
                 storage,
             ),
+            compute: Arc::new(paint_ops::Cpu),
             width,
             height,
             layers: vec![Layer::new(1, "Layer 1".into())],

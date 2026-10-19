@@ -1,5 +1,7 @@
 # DrawVerse 架构设计
 
+2026-10-19：液化已引入 `paint-ops` / 可选 `paint-gpu` 数值执行边界，GPU 只加速算子计算，视口合成仍由 CPU 完成。当前实现与验收见[GPU 算子与液化设计](../tools/liquify-gpu-operators-design.md)。
+
 当前 Rust / C++ / QML 源码职责、实际依赖及文件落点见 [源码目录设计](source-layout-design.md)（2026-10-18）。本文保留早期总体设计与阶段记录，其中尚未实施的 crate 和历史限制不能作为当前代码目录依据。
 
 状态：2026-10-08 已实施 paint-core、paint-task、CPU paint-render、paint-io、paint-ffi ABI 1.5 与 QML UI；隔离组见 groups-design.md，显示透明棋盘格见 transparency-design.md。异步任务/视口细节见 task-render-design.md；IO 实施细节见 io-design.md；下文 GPU、色彩、PSD/自有格式、插件仍为后续设计。

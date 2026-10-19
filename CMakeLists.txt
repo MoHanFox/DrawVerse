@@ -54,8 +54,9 @@ set_target_properties(drawverse_ffi_static PROPERTIES IMPORTED_LOCATION "${ffi_s
     INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/ui/include")
 add_dependencies(drawverse_ffi_static drawverse_header_check)
 if(WIN32)
-    # rustc --print native-static-libs for the Windows MSVC standard library.
-    target_link_libraries(drawverse_ffi_static INTERFACE kernel32 ntdll userenv ws2_32 dbghelp)
+    # Rust std and wgpu's Windows/COM support. Dynamic GPU entrypoints load at runtime.
+    target_link_libraries(drawverse_ffi_static INTERFACE kernel32 ntdll userenv ws2_32 dbghelp
+        ole32 oleaut32 propsys runtimeobject)
 else()
     target_link_libraries(drawverse_ffi_static INTERFACE Threads::Threads ${CMAKE_DL_LIBS} m)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

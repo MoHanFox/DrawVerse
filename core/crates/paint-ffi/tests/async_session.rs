@@ -3399,3 +3399,6 @@ mod outline_api;
 
 #[path = "support/wet_dual_api.rs"]
 mod wet_dual_api;
+
+#[path = "support/compute_api.rs"]
+mod compute_api;

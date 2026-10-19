@@ -1,4 +1,10 @@
-# C ABI 1.60.0 契约
+# C ABI 1.61.0 契约
+
+## ABI 1.61 — 可选 GPU 计算算子
+
+`PAINT_FEATURE_COMPUTE_OPERATORS`（bit56）表示共享数值算子接口，不表示 GPU 画布合成或设备必定可用。新增 `paint_compute_hardware` 返回无 NUL 的 UTF-8 JSON 数组（`id/name/backend`）；始终包含 `cpu`，GPU 构建另有 `auto` 和真实设备。按已有容量探测契约返回 required，不足时不写部分内容。枚举应在调用方后台线程执行。
+
+`paint_session_set_compute` 复制 1–1024 字节 UTF-8 设备 ID 并排队，返回 OK 仅代表入队。活动笔触、液化、变换或文件作业拒绝切换；新建和载入文档保持会话后端。未知、失效或执行失败的硬件以同一输入回退 CPU，`paint_session_compute_status` 返回实际后端和回退原因。CPU-only 构建只枚举 CPU；现有 DTO、VBR/state 与图层像素格式不变。见[设计](../../docs/tools/liquify-gpu-operators-design.md)。
 
 ## ABI 1.60 — 整条笔触描边入口
 

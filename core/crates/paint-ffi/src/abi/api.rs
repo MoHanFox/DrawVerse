@@ -15,7 +15,10 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 60;
+pub const PAINT_ABI_MINOR: u32 = 61;
+
+/// Optional numeric acceleration; does not imply GPU viewport composition.
+pub const PAINT_FEATURE_COMPUTE_OPERATORS: u64 = 72_057_594_037_927_936;
 pub const PAINT_FEATURE_STROKE_OUTLINE: u64 = 36028797018963968;
 pub const PAINT_FEATURE_CURVE_NODE_MODES: u64 = 18014398509481984;
 pub const PAINT_FEATURE_BRUSH_RESOURCE_LIST: u64 = 9007199254740992;

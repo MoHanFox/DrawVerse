@@ -403,7 +403,7 @@ void CanvasItem::mousePressEvent(QMouseEvent *e) {
     m_cursorInside=contains(e->position());m_cursorPosition=e->position();setCursorSample(mouseSample(e->position(),e->buttons()),e->type()==QEvent::MouseButtonPress);refreshBrushCursor();
     if (e->button() == Qt::MiddleButton || m_space || spaceHeld) { m_panning = true; e->accept(); return; }
     if(m_client->liquifyActive()) {
-        if(e->button()==Qt::LeftButton && documentRect().contains(e->position())) {m_stroke=m_client->beginStroke(mouseSample(e->position(),e->buttons()));if(m_stroke)m_liquifyTimer.start();}
+        if(e->button()==Qt::LeftButton) {m_stroke=m_client->beginStroke(mouseSample(e->position(),e->buttons()));if(m_stroke)m_liquifyTimer.start();}
         e->accept();return;
     }
     if(e->button()==Qt::LeftButton && e->modifiers().testFlag(Qt::ControlModifier) && !m_client->transformActive() && documentRect().contains(e->position())) {
@@ -561,7 +561,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         e->accept();return true; // avoid synthesized mouse hover replacing pen position
     }
     const bool brushInput=!m_client->liquifyActive() && !m_client->selectionTool() && !m_client->bucketTool() && !m_client->moveTool() && !m_client->eyedropperTool() && !spacePanning() && !e->modifiers().testFlag(Qt::ControlModifier) && !e->modifiers().testFlag(Qt::AltModifier);
-    if (!m_tablet && (event->type() != QEvent::TabletPress || !contains(local) || (!documentRect().contains(local) && !brushInput))) return false;
+    if (!m_tablet && (event->type() != QEvent::TabletPress || !contains(local) || (!documentRect().contains(local) && !brushInput && !m_client->liquifyActive()))) return false;
     if(m_panning || spacePanning()) {
         if(event->type()==QEvent::TabletPress){m_last=local;m_panning=m_tablet=true;}
         else if(event->type()==QEvent::TabletMove){m_pan+=local-m_last;m_last=local;emit viewChanged();update();}

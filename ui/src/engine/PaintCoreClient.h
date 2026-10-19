@@ -40,6 +40,10 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QVariantMap storageInfo READ storageInfo NOTIFY storageChanged)
     Q_PROPERTY(bool storageBusy READ storageBusy NOTIFY storageChanged)
     Q_PROPERTY(QString storageMessage READ storageMessage NOTIFY storageChanged)
+    Q_PROPERTY(QVariantList computeHardware READ computeHardware NOTIFY computeChanged)
+    Q_PROPERTY(QString computeDevice READ computeDevice NOTIFY computeChanged)
+    Q_PROPERTY(QString computeStatus READ computeStatus NOTIFY computeChanged)
+    Q_PROPERTY(bool computeBusy READ computeBusy NOTIFY computeChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
     Q_PROPERTY(bool brushLibraryReady READ brushLibraryReady NOTIFY brushLibraryReadyChanged)
     Q_PROPERTY(bool wetActionBusy READ wetActionBusy NOTIFY wetActionChanged)
@@ -77,6 +81,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool activeImage READ activeImage NOTIFY stateChanged)
     Q_PROPERTY(bool liquifyActive READ liquifyActive NOTIFY stateChanged)
     Q_PROPERTY(bool liquifyBusy READ liquifyBusy NOTIFY stateChanged)
+    Q_PROPERTY(bool liquifyCommitting READ liquifyCommitting NOTIFY stateChanged)
     Q_PROPERTY(int liquifyTool READ liquifyTool WRITE setLiquifyTool NOTIFY liquifyOptionsChanged)
     Q_PROPERTY(int liquifySize READ liquifySize WRITE setLiquifySize NOTIFY liquifyOptionsChanged)
     Q_PROPERTY(int liquifyStrength READ liquifyStrength WRITE setLiquifyStrength NOTIFY liquifyOptionsChanged)
@@ -202,6 +207,12 @@ public:
     bool storageBusy() const { return m_storageBusy; }
     QString storageMessage() const { return m_storageMessage; }
     Q_INVOKABLE bool inspectStorage();
+    QVariantList computeHardware() const { return m_computeHardware; }
+    QString computeDevice() const { return m_computeDevice; }
+    QString computeStatus() const { return m_computeStatus; }
+    bool computeBusy() const { return m_computeBusy; }
+    Q_INVOKABLE void inspectCompute();
+    Q_INVOKABLE bool saveComputeDevice(const QString &id);
     Q_INVOKABLE bool saveStorageSettings(const QString &directory, int memoryMiB, int scratchGiB, int reserveMiB);
     Q_INVOKABLE QString localFolderPath(const QUrl &url) const { return url.toLocalFile(); }
     bool ready() const { return m_ready; }
@@ -338,6 +349,7 @@ public:
     Q_INVOKABLE bool rasterizeImage();
     bool liquifyActive() const {return m_liquifyActive;}
     bool liquifyBusy() const {return m_pendingLiquify!=0 || layerEditBusy();}
+    bool liquifyCommitting() const {return m_liquifyCommitting;}
     int liquifyTool() const {return m_liquifyTool;}
     int liquifySize() const {return m_liquifySize;}
     int liquifyStrength() const {return m_liquifyStrength;}
@@ -432,6 +444,7 @@ signals:
     void liquifyOptionsChanged();
     void historyChanged();
     void storageChanged();
+    void computeChanged();
     void storageFinished(bool success);
     void stateChanged();
     void layerShortcutsChanged();
@@ -497,6 +510,9 @@ private:
     bool submitSelection(quint32 action, QRectF rectangle = {}, int shape = 0, int operation = 0);
     QSet<quint64> m_collapsedGroups;
     QVariantMap m_storageSettings, m_activeStorageSettings, m_storageInfo;
+    QVariantList m_computeHardware;
+    QString m_computeDevice = "cpu", m_computeStatus = "CPU";
+    bool m_computeBusy = false;
     QString m_storageMessage;
     bool m_storageBusy = true;
     QString m_settingsFile;
@@ -549,6 +565,7 @@ private:
     int m_liquifyTool=0,m_liquifySize=200,m_liquifyStrength=50,m_liquifyDensity=100,m_liquifySpeed=100;
     quint64 m_completedSequence=0;
     quint64 m_pendingLiquify=0,m_lastLiquifyDab=0;
+    bool m_liquifyCommitting=false;
     InputSample m_liquifyLast;
     QElapsedTimer m_liquifyClock;
     QTimer *m_airbrushTimer=nullptr;

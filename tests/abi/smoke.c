@@ -8,6 +8,7 @@
 
 #define CHECK(condition) do { if (!(condition)) { fprintf(stderr, "C ABI check failed at line %d: %s\n", __LINE__, #condition); return 1; } } while (0)
 _Static_assert(sizeof(void *) == 8, "ABI v1 requires a 64-bit target");
+_Static_assert(PAINT_FEATURE_COMPUTE_OPERATORS == UINT64_C(72057594037927936), "compute capability must be a 64-bit mask");
 _Static_assert(sizeof(PaintVersion) == 16, "version layout drift");
 _Static_assert(sizeof(PaintCapabilities) == 32, "capability layout drift");
 _Static_assert(sizeof(PaintDocumentDesc) == 32, "desc layout drift");

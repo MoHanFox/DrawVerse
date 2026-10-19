@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 60
+#define PAINT_ABI_MINOR 61
 
 #define PAINT_ABI_PATCH 0
 
@@ -115,6 +115,11 @@
 #define PAINT_FEATURE_COLOR_DYNAMICS 68719476736
 
 #define PAINT_FEATURE_COMPOSITE_BRUSH_POSE 17592186044416
+
+/**
+ * Optional numeric acceleration; does not imply GPU viewport composition.
+ */
+#define PAINT_FEATURE_COMPUTE_OPERATORS 72057594037927936
 
 #define PAINT_FEATURE_CPU_VIEWPORT 32
 
@@ -1584,6 +1589,16 @@ PaintStatus paint_brush_pose_read_composite(struct PaintBrushPose *pose,
                                             struct PaintCompositeTipPose *out);
 
 /**
+ * UTF-8 JSON hardware list. Includes CPU; GPU builds also include auto and hardware. No terminator.
+ * # Safety
+ * Follow the caller-memory contract. out_required must be writable; buffer has capacity bytes.
+ */
+PaintStatus paint_compute_hardware(struct PaintCore *core,
+                                   uint8_t *buffer,
+                                   uint64_t capacity,
+                                   uint64_t *out_required);
+
+/**
  * Begin one undoable stroke on desc.layer_id; invalid input preserves active-layer selection.
  * # Safety
  * Follow input struct_size, handle and ordered-command contracts in contracts/ffi/abi.md.
@@ -1601,7 +1616,7 @@ PaintStatus paint_core_begin_stroke(struct PaintCore *core,
 PaintStatus paint_core_cancel_stroke(struct PaintCore *core, struct PaintDocument *doc);
 
 /**
- * Only reports implemented features. No GPU capability is advertised.
+ * Reports numeric GPU acceleration separately from CPU viewport rendering.
  * # Safety
  * Follow the caller-memory and handle contract in contracts/ffi/abi.md.
  */
@@ -1922,6 +1937,17 @@ PaintStatus paint_session_bucket_fill(struct PaintCore *core,
                                       struct PaintSession *session,
                                       const struct PaintBucketFill *request,
                                       uint64_t *out_sequence);
+
+/**
+ * Current selected executor, including the reason for a CPU fallback. No terminator.
+ * # Safety
+ * Follow the caller-memory contract; capacity and out_required use bytes.
+ */
+PaintStatus paint_session_compute_status(struct PaintCore *core,
+                                         struct PaintSession *session,
+                                         uint8_t *buffer,
+                                         uint64_t capacity,
+                                         uint64_t *out_required);
 
 /**
  * ABI 1.1: create an owning async document session. Creation/destruction run off the UI thread.
@@ -2336,6 +2362,18 @@ PaintStatus paint_session_set_blend_preview(struct PaintCore *core,
                                             uint32_t blend_mode,
                                             const struct PaintViewport *viewport,
                                             uint64_t *out_request);
+
+/**
+ * Queue a backend preference. CPU works without wgpu; unknown/lost devices fall back visibly.
+ * Takes effect when idle; active liquify/strokes reject it without replacing their executor.
+ * # Safety
+ * Provide readable UTF-8 id_length bytes, valid handles and writable out_sequence.
+ */
+PaintStatus paint_session_set_compute(struct PaintCore *core,
+                                      struct PaintSession *session,
+                                      const uint8_t *id,
+                                      uint64_t id_length,
+                                      uint64_t *out_sequence);
 
 /**
  * ABI 1.11: retarget the per-document history command limit. Accepted like a command and applied

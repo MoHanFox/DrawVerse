@@ -1075,6 +1075,7 @@ impl SelectionCoverageCache {
     ) -> [f32; COVERAGE_BLOCK] {
         self.row_at(selection, x, y, length, true)
     }
+    #[cfg(test)]
     pub(crate) fn corner_row(
         &mut self,
         selection: &Selection,

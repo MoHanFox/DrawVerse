@@ -145,6 +145,38 @@ public:
     }
     // Disk queries and QSettings synchronization stay on the backend thread.
     void inspectStorage() { evaluateStorage(m_saved, false); }
+    void inspectCompute() {
+        if (!m_core || !m_session || m_stopped) return;
+        uint64_t size=0;
+        if(paint_compute_hardware(m_core,nullptr,0,&size)==PAINT_BUFFER_TOO_SMALL && size<=65536) {
+            QByteArray bytes(qsizetype(size),'\0');
+            if(paint_compute_hardware(m_core,reinterpret_cast<uint8_t*>(bytes.data()),size,&size)==PAINT_OK)
+                m_computeHardware=QJsonDocument::fromJson(bytes).array().toVariantList();
+        }
+        pollCompute(true);
+    }
+    void saveCompute(const QString &id) {
+        if(!m_session || m_stopped)return;
+        auto settings=preferences();settings->setValue("performance/computeDevice",id);settings->sync();
+        if(settings->status()!=QSettings::NoError){emit computeState(m_computeHardware,m_computeDevice,QStringLiteral("无法保存 GPU 设置"),false);return;}
+        pollCompute(true);
+    }
+    void pollCompute(bool force=false) {
+        if(!m_session || m_stopped || (!force && m_computeClock.isValid() && m_computeClock.elapsed()<500))return;
+        m_computeClock.restart();
+        auto info=dto<PaintSessionInfo>();if(paint_session_info(m_core,m_session,&info)!=PAINT_OK)return;
+        const auto desired=preferences()->value("performance/computeDevice","cpu").toString();
+        if((desired!=m_computeDevice || info.document_generation!=m_computeGeneration) && !info.stroke_active && !(info.flags&(PAINT_SESSION_LIQUIFY|PAINT_SESSION_TRANSFORM))) {
+            const auto bytes=desired.toUtf8();quint64 sequence=0;
+            if(paint_session_set_compute(m_core,m_session,reinterpret_cast<const uint8_t*>(bytes.constData()),quint64(bytes.size()),&sequence)==PAINT_OK) {
+                m_computeDevice=desired;m_computeGeneration=info.document_generation;m_computeSequence=sequence;
+            }
+        }
+        QString status=QStringLiteral("正在初始化计算硬件…");
+        const bool busy=info.completed_sequence<m_computeSequence;
+        if(!busy){uint64_t size=0;if(paint_session_compute_status(m_core,m_session,nullptr,0,&size)==PAINT_BUFFER_TOO_SMALL && size<=65536){QByteArray bytes(qsizetype(size),'\0');if(paint_session_compute_status(m_core,m_session,reinterpret_cast<uint8_t*>(bytes.data()),size,&size)==PAINT_OK)status=QString::fromUtf8(bytes);}}
+        emit computeState(m_computeHardware,desired,status,busy);
+    }
     void saveStorage(const QVariantMap &values) { evaluateStorage(values, true); }
     void saveBrushPreferences(const QByteArray &json){m_pendingBrushPreferences=json;pollBrushState();}
     void saveLiquifyOptions(const QVariantMap &values) {auto settings=preferences();for(auto it=values.cbegin();it!=values.cend();++it)settings->setValue("liquify/"+it.key(),it.value());settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存液化设置，请检查配置目录权限"));}
@@ -276,6 +308,7 @@ signals:
     void brushPreviewReady(QString id,quint64 token,QString image);
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
     void storageDone(bool success);
+    void computeState(QVariantList hardware,QString device,QString status,bool busy);
     void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform);
     void thumbnailReady(quint64 generation, quint64 revision, quint64 layer, QString image);
     void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request);
@@ -414,6 +447,7 @@ public:
     }
     void poll() {
         if (!m_session || m_stopped) return;
+        pollCompute();
         pollBrushState();
         pollWetAction();
         pollBrushOutline();
@@ -709,6 +743,10 @@ public:
     QVariantMap m_saved, m_active;
     // Persisted history command limit, loaded with the other preferences on boot.
     int m_historyLimit = 100;
+    QVariantList m_computeHardware;
+    QString m_computeDevice;
+    QElapsedTimer m_computeClock;
+    quint64 m_computeGeneration=0,m_computeSequence=0;
     std::shared_ptr<BackendConnection> m_connection;
     QTimer *m_timer;
     PaintCore *m_core = nullptr;
@@ -840,6 +878,10 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(m_worker,&BackendWorker::storageDone,this,[this](bool success) {
         m_storageBusy=false; emit storageChanged(); emit storageFinished(success);
     });
+    connect(m_worker,&BackendWorker::computeState,this,[this](QVariantList hardware,QString device,QString status,bool busy) {
+        if(m_computeHardware==hardware && m_computeDevice==device && m_computeStatus==status && m_computeBusy==busy)return;
+        m_computeHardware=std::move(hardware);m_computeDevice=std::move(device);m_computeStatus=std::move(status);m_computeBusy=busy;emit computeChanged();
+    });
     connect(&m_thread, &QThread::started, m_worker, &BackendWorker::boot);
     connect(m_worker, &BackendWorker::metadata, this, [this](PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform) {
         m_connection->metadataPending.store(false);
@@ -856,7 +898,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
         if(changedGeneration) m_nextDefaultLayer=1;
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
-        if(info.completed_sequence>=m_pendingLiquify) {m_pendingLiquify=0;m_liquifyActive=(info.flags&PAINT_SESSION_LIQUIFY)!=0;}
+        if(info.completed_sequence>=m_pendingLiquify) {m_pendingLiquify=0;m_liquifyCommitting=false;m_liquifyActive=(info.flags&PAINT_SESSION_LIQUIFY)!=0;}
         const bool publishedTransform=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
         if(publishedTransform && !m_transformPublished){m_transformInitialPoints=transform.value("points").toList();emit transformChanged();}
         m_transformPublished=publishedTransform;
@@ -1119,6 +1161,15 @@ void PaintCoreClient::applyHistoryLimit() {
     // Persist the preference and make it take effect on the open document as well.
     if(m_worker)QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->applyHistoryLimit();},Qt::QueuedConnection);
 }
+void PaintCoreClient::inspectCompute() {
+    if(m_worker)QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->inspectCompute();},Qt::QueuedConnection);
+}
+bool PaintCoreClient::saveComputeDevice(const QString &id) {
+    if(id.isEmpty() || id.size()>1024 || m_closing || m_drawing || m_liquifyActive || m_transformActive || m_computeBusy || !m_worker)return false;
+    m_computeBusy=true;emit computeChanged();
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,id]{worker->saveCompute(id);},Qt::QueuedConnection);
+    return true;
+}
 void PaintCoreClient::setBrushColor(const QColor &c) {
     // Picking a colour is only a preview: the swatch row advances when the pixel stroke commits.
     if (c.isValid() && c != m_color) m_brushLibrary->setActiveColors(c,m_secondaryColor);
@@ -1297,6 +1348,7 @@ bool PaintCoreClient::submitLiquifyControl(quint32 kind) {
     {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_liquify(m_connection->core,m_connection->session,kind,nullptr,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){showError(error);return false;}
     m_pendingLiquify=sequence;
+    m_liquifyCommitting=kind==PAINT_LIQUIFY_COMMIT;
     if(kind==PAINT_LIQUIFY_BEGIN){m_liquifyActive=true;m_liquifyFocus=false;emit liquifyOptionsChanged();}
     emit stateChanged();return true;
 }

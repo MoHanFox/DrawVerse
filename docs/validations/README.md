@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [GPU 算子与弹性液化](tools/liquify-gpu-operators-validation.md)
+
 - [液化有界并行](tools/liquify-bounded-parallel-validation.md)
 
 - [大目录切换与起笔延迟](brush/performance/brush-library-switch-latency-validation.md)

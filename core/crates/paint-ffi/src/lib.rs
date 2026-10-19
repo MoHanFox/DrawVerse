@@ -20,6 +20,7 @@ use document::{
     bucket_api, layer_actions_api, layer_api, liquify_api, selection_api, smudge_api,
     transform_api, wand_api,
 };
+pub use engine::compute_api::*;
 use engine::{runtime, session, session_api, storage_api};
 use files::{file_api, file_job};
 
@@ -107,7 +108,7 @@ pub unsafe extern "C" fn paint_core_version(out_version: *mut PaintVersion) -> P
     })
 }
 
-/// Only reports implemented features. No GPU capability is advertised.
+/// Reports numeric GPU acceleration separately from CPU viewport rendering.
 /// # Safety
 /// Follow the caller-memory and handle contract in contracts/ffi/abi.md.
 #[no_mangle]
@@ -129,7 +130,8 @@ pub unsafe extern "C" fn paint_core_capabilities(
             PaintCapabilities {
                 struct_size: size_of::<PaintCapabilities>() as u32,
                 abi_major: PAINT_ABI_MAJOR,
-                features: PAINT_FEATURE_DOCUMENT
+                features: PAINT_FEATURE_COMPUTE_OPERATORS
+                    | PAINT_FEATURE_DOCUMENT
                     | PAINT_FEATURE_CLIPPING
                     | PAINT_FEATURE_SELECTION
                     | PAINT_FEATURE_BUCKET

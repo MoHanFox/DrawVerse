@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新 GPU 算子与弹性液化：`docs/tools/liquify-gpu-operators-design.md` / `docs/validations/tools/liquify-gpu-operators-validation.md`；分支 `feat/wgpu-support`，paint-ops CPU 契约/paint-gpu wgpu、ABI1.61 与性能设置硬件选择/可见回退接通；不可变源与有符号网格保留画布外内容，预览/最终采样分离。RTX4060 Vulkan 数值/文档、CPU-only、液化目标/Qt三项/四ABI与Release通过；用户要求液化仅最小测试。2000px连续输入仍待实机复核，跨平台/实体设备未验收，全量旧图层断言失败见验收，不能宣称全量通过。
+
 - 最新液化2000px优化：`docs/tools/liquify-bounded-parallel-design.md` / `docs/validations/tools/liquify-bounded-parallel-validation.md`；无选区大区域最多两个工作线程/共享8192瓦片计数/合计256源pin，原子发布与像素保持；2048×1536六输入推移1.49s→0.77s、旋转1.79s→0.87s。核心6+11项/Qt两项/四ABI/完整Release与Clippy通过，持续输入手感仍待实机复核，未跑全量/跨平台/设备/GPU。
 
 - 最新大目录起笔延迟：`docs/brush/performance/brush-library-switch-latency-design.md` / `docs/validations/brush/performance/brush-library-switch-latency-validation.md`；Qt缓存偏好/执行快照与准确同步票据，原生只改选择时复用成功不可变预设，保持冷资源与来源生命周期。448项样本同步起笔最长24ms降至13–14ms，Qt7项/原生67项与Release通过；未复现用户原包强卡顿，仍需实机复核。

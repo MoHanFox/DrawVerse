@@ -20,7 +20,7 @@ fn seed() -> Document {
                 })
                 .collect();
             tiles.insert(
-                TileCoord::from_signed(tx as i32, ty as i32),
+                TileCoord::from_signed(tx, ty),
                 Tile::from_pixels(pixels).unwrap(),
             );
         }

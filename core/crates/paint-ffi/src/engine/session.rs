@@ -25,6 +25,7 @@ use std::{
 
 #[derive(Clone)]
 pub(crate) enum Operation {
+    Compute(String),
     File(crate::file_job::Request),
     #[cfg(test)]
     PanicForTest,
@@ -88,6 +89,7 @@ pub(crate) struct LayerState {
     pub clipping: PaintLayerClipping,
 }
 pub(crate) struct Publication {
+    pub compute: String,
     pub transform: Option<paint_core::TransformGeometry>,
     pub history: Vec<PaintHistoryEntry>,
     pub selection: paint_core::Selection,
@@ -619,6 +621,7 @@ fn publish(
         })
         .collect();
     Publication {
+        compute: doc.compute_backend_name(),
         transform: doc.transform_geometry(),
         selection: doc.selection().clone(),
         info: PaintSessionInfo {
@@ -919,6 +922,13 @@ impl Engine {
                 self.document.drop_layer(id, target, placement)?;
                 self.modified |= r != self.document.revision();
             }
+            Operation::Compute(id) => {
+                if self.document.stroke_active() || self.files.running() {
+                    return Err(paint_core::Error::Busy.into());
+                }
+                let executor = crate::engine::compute_api::executor(&id);
+                self.document.set_compute_executor(executor)?;
+            }
             Operation::HistoryLimit(max_commands) => {
                 self.document.set_max_history_commands(max_commands)?;
             }
@@ -927,12 +937,15 @@ impl Engine {
                 self.document.initialize_white_background()?;
             }
             Operation::New(w, h) => {
-                self.document = Document::with_storage(
+                let executor = self.document.compute_executor();
+                let mut document = Document::with_storage(
                     w,
                     h,
                     self.document.document_options(),
                     self.document.storage(),
                 )?;
+                document.set_compute_executor(executor)?;
+                self.document = document;
                 self.wet_lease.take();
                 self.generation += 1;
                 self.shared
@@ -1104,7 +1117,14 @@ impl Engine {
             self.document.stroke_active(),
             Some(&mut self.document),
         ) {
-            if let Some(document) = document {
+            if let Some(mut document) = document {
+                // Hardware belongs to the session, including file replacement.
+                if let Err(error) = document.set_compute_executor(self.document.compute_executor())
+                {
+                    self.error = Some((self.completed, error.into()));
+                    self.dirty = true;
+                    return;
+                }
                 self.document = document;
                 self.wet_lease.take();
                 self.generation += 1;

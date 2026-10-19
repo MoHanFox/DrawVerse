@@ -9,6 +9,9 @@ description = "Versioned C ABI for the DrawVerse painting kernel"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
+paint-ops = { path = "../paint-ops" }
+serde_json = "1"
+paint-gpu = { path = "../paint-gpu", optional = true }
 paint-storage = { path = "../paint-storage" }
 paint-core = { path = "../paint-core" }
 paint-task = { path = "../paint-task" }
@@ -17,6 +20,10 @@ paint-io = { path = "../paint-io" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[features]
+default = ["gpu"]
+gpu = ["dep:paint-gpu"]
 
 # Unsafe is restricted to this boundary crate; paint-core still forbids it.
 [lints.rust]
