@@ -15,6 +15,12 @@ RowLayout {
     CompactSpinBox {objectName:"smudgeBrushSize";from:1;to:2000;editable:true;value:Math.round(root.client.brushRadius*2);Layout.preferredWidth:76;Layout.preferredHeight:24;onValueModified:root.client.brushRadius=value/2}
     Label {text:"px";color:Theme.muted}
     Label {text:"强度：";color:Theme.muted}
+    CompactSlider {
+        objectName:"smudgeStrengthInlineSlider";from:0;to:100;stepSize:1;snapMode:Slider.SnapAlways
+        Layout.preferredWidth:90;value:Math.round(root.client.smudgeStrength*100)
+        onMoved:root.client.smudgeStrength=Math.round(value)/100
+        tooltip:"控制每次涂抹搬运颜色的程度。"
+    }
     LayerPercent {tooltip:"控制每次涂抹搬运颜色的程度，并与笔刷不透明度共同生效。";objectName:"smudgeStrength";fraction:root.client.smudgeStrength;Layout.preferredWidth:70;Layout.preferredHeight:24;onCommitted:fraction=>root.client.smudgeStrength=fraction}
     Repeater {
         model:[{key:"Pressure",note:"使用数位笔压力控制涂抹强度；笔刷大小仍随压力变化。",title:"压感"},{key:"AllLayers",note:"从所有可见图层的合成颜色取样；只涂抹到当前图层。蒙版不支持此选项。",title:"对所有图层取样"},{key:"FingerPainting",note:"每条笔触起点带入前景色，随后继续搬运画布上的颜色；不使用背景色。",title:"手指绘画"}]

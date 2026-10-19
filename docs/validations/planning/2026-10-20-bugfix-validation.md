@@ -43,3 +43,8 @@
 - 只在原生目录同步路径保留仍存在的笔刷/组选择；常规文件 restore 仍恢复活动预设。
 - Windows Release qt_workflow_tests::nativeCatalogRefreshPreservesLargeLibraryMultiSelection 通过；400 个合法预设加组，参数同步后两笔刷和一组仍被选中、活动 ID 正确、保持多选禁画；普通 restore 回到单选。
 - 使用小型 workflow Qt 测试目标验证工作流，避免每次编译整个大型 UI 测试源文件。
+
+## 普通 9：桶与涂抹同排滑条
+
+- 两工具使用“标题、常驻整数滑条、百分比输入”的顺序，保留已有数值编辑。
+- Windows Release qt_workflow_tests::toolPercentSlidersAndInputsStaySynchronized 通过；滑条 75% 更新工具参数及文本、输入 40% 更新滑条，并确认画笔不透明度未被修改。

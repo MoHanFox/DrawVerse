@@ -11,6 +11,12 @@ RowLayout {
     spacing:8
     Icon {objectName:"bucketOptionsIcon";name:"bucket";Layout.preferredWidth:17;Layout.preferredHeight:17}
     Label {text:"不透明度：";color:Theme.muted}
+    CompactSlider {
+        objectName:"bucketOpacityInlineSlider";from:0;to:100;stepSize:1;snapMode:Slider.SnapAlways
+        Layout.preferredWidth:90;value:Math.round(root.client.bucketOpacity*100)
+        onMoved:root.client.bucketOpacity=Math.round(value)/100
+        tooltip:"控制填充颜色的不透明度。"
+    }
     LayerPercent {
         tooltip:"控制填充颜色的不透明度。";objectName:"bucketOpacity";fraction:root.client.bucketOpacity
         Layout.preferredWidth:80;Layout.preferredHeight:24

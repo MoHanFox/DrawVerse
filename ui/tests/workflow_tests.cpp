@@ -26,7 +26,26 @@ private slots:
         QVERIFY(library.brushSelectionBlocksPainting());QCOMPARE(library.selectedId(),id(0));
         QVERIFY(library.restore(library.snapshot()));QCOMPARE(library.selectedBrushItems().size(),1);
     }
-
+    void toolPercentSlidersAndInputsStaySynchronized() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("percent.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QQmlEngine engine;
+        for(const auto &tool:QStringList{"bucket","smudge"}) {
+            const bool bucket=tool=="bucket";
+            QQmlComponent component(&engine,QUrl(bucket?"qrc:/qml/tools/BucketOptionsBar.qml":"qrc:/qml/tools/SmudgeOptionsBar.qml"));
+            QScopedPointer<QObject> bar(component.createWithInitialProperties({{"client",QVariant::fromValue(&client)}}));
+            QVERIFY2(bar,qPrintable(component.errorString()));
+            const auto key=bucket?QString("bucketOpacity"):QString("smudgeStrength");
+            auto *slider=bar->findChild<QObject*>(key+"InlineSlider");auto *edit=bar->findChild<QObject*>(key+"Input");
+            QVERIFY(slider && edit);QCOMPARE(slider->property("stepSize").toInt(),1);
+            slider->setProperty("value",75);QVERIFY(QMetaObject::invokeMethod(slider,"moved"));
+            QCOMPARE(bucket?client.bucketOpacity():client.smudgeStrength(),.75);QCOMPARE(edit->property("text").toString(),QString("75%"));
+            edit->setProperty("text","40%");QVERIFY(QMetaObject::invokeMethod(edit,"editingFinished"));
+            QCOMPARE(bucket?client.bucketOpacity():client.smudgeStrength(),.4);QCOMPARE(slider->property("value").toInt(),40);
+            QCOMPARE(client.brushOpacity(),1.);
+        }
+        client.shutdown();
+    }
 };
 int main(int argc,char **argv) {
     QGuiApplication app(argc,argv);Q_INIT_RESOURCE(ui_resources);QQuickStyle::setStyle("Basic");
