@@ -17,20 +17,28 @@ const QSGGeometry::AttributeSet attributeSet={3,sizeof(Vertex),attributes};
 class Material;
 class Shader final : public QSGMaterialShader {
 public:
-    Shader(){setShaderFileName(VertexStage,QStringLiteral(":/shaders/liquify.vert.qsb"));setShaderFileName(FragmentStage,QStringLiteral(":/shaders/liquify.frag.qsb"));}
+    Shader(){setFlags(UpdatesGraphicsPipelineState);setShaderFileName(VertexStage,QStringLiteral(":/shaders/liquify.vert.qsb"));setShaderFileName(FragmentStage,QStringLiteral(":/shaders/liquify.frag.qsb"));}
     bool updateUniformData(RenderState &state,QSGMaterial *material,QSGMaterial *) override;
+    bool updateGraphicsPipelineState(RenderState &,GraphicsPipelineState *,QSGMaterial *,QSGMaterial *) override;
     void updateSampledImage(RenderState &,int binding,QSGTexture **texture,QSGMaterial *material,QSGMaterial *) override;
 };
 class Material final : public QSGMaterial {
 public:
     std::array<QSGTexture*,3> textures{};
-    bool focus=false;
+    bool focus=false,forward=false;
     Material(){setFlag(Blending);}
     ~Material() override {for(auto *texture:textures)delete texture;}
     QSGMaterialType *type() const override {static QSGMaterialType t;return &t;}
     QSGMaterialShader *createShader(QSGRendererInterface::RenderMode) const override {return new Shader;}
     int compare(const QSGMaterial *other) const override {return this==other?0:std::less<const QSGMaterial*>{}(this,other)?-1:1;}
 };
+bool Shader::updateGraphicsPipelineState(RenderState &,GraphicsPipelineState *pipeline,QSGMaterial *material,QSGMaterial *) {
+    if(!static_cast<Material*>(material)->forward)return false;
+    // Stay in Qt's ordered transparent pass (no opaque depth ownership), but replace RGBA.
+    // Folding one layer must not accumulate its opacity or let the first sheet keep depth.
+    pipeline->srcColor=GraphicsPipelineState::One;pipeline->dstColor=GraphicsPipelineState::Zero;
+    pipeline->separateBlendFactors=false;return true;
+}
 bool Shader::updateUniformData(RenderState &state,QSGMaterial *material,QSGMaterial *) {
     auto *bytes=state.uniformData();
     if(state.isMatrixDirty()){const auto matrix=state.combinedMatrix();std::memcpy(bytes->data(),matrix.constData(),64);}
@@ -65,6 +73,7 @@ bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &fr
         for(auto *texture:m->textures)delete texture;
         m->textures=next;m_source=frame.sourceId;m_revision=0;markDirty(DirtyMaterial);
     }
+    if(m->forward!=frame.forward){m->forward=frame.forward;markDirty(DirtyMaterial);}
     const bool sourceOnly=frame.focus || frame.forward;
     if(m->focus!=sourceOnly){m->focus=sourceOnly;markDirty(DirtyMaterial);}
     if(m_revision==frame.revision && m_rect==rect)return true;

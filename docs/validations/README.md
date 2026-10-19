@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [Warp强折叠预览与确认一致性](tools/transform-fold-consistency-validation.md)
+
 - [自由变换与网格变形常驻预览](tools/transform-resident-preview-validation.md)
 
 - [复杂图像套索、魔棒与油漆桶性能](tools/selection-complexity-performance-validation.md)

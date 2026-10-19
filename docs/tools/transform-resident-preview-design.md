@@ -1,6 +1,6 @@
 # 自由变换与网格变形的常驻预览
 
-2026-10-19。目标是解决拖动时画面滞后：交互只计算几何，确认才重采样原始像素；CPU与GPU职责分开，软件及复杂组合保留原有正确路径。
+2026-10-19。目标是解决拖动时画面滞后：交互只计算几何，确认才重采样原始像素；CPU与GPU职责分开，软件及复杂组合保留CPU像素路径。
 
 参考 PhotoCraft `d95fdf3181c01ad41e95456091a394b105a9afb2` 的 `ui-egui/src/transform_tool.rs`、`transform_tex.rs`、`warp_preview.rs`：会话保留源纹理，控制点改变有界细分曲面，最终算法独立执行。DrawVerse 保留自己的4×4插值Catmull曲面与投影变换，不把液化Elastic位移场冒充控制点变形。
 
@@ -9,7 +9,7 @@
 ## 实施与边界
 
 - 显式deferred开始入口；兼容单一普通Normal栅格/置入图片栈捕获原图、上下层，拖动只更改控制点及CPU正向细分网格。复用液化/移动的静态资产协议，不回读GPU预览。
-- CPU使用现有 `TransformGeometry::map`，网格包含控制点分界，按曲面跨度有界细分。warp与液化仅共享呈现架构，算法仍独立。最终确认调用既有全精度CPU取样，保持六种插值、原图、单历史、撤销/取消和资源失败语义。
+- CPU使用现有 `TransformGeometry::map`，网格包含控制点分界，按曲面跨度有界细分。warp与液化仅共享呈现架构，算法仍独立。最终确认从原始源执行CPU取样（Warp使用共享三角面，非Warp使用逆矩阵），保持六种插值、原图、单历史、撤销/取消和资源失败语义。
 - Qt以正向网格绘制原图到有界视口纹理，再在线性颜色空间与静态上下层纹理合成。透明像素、变形外区域和裁剪都要正确，不能只在变形三角形内显示上下层，也不能重复混合透明背景。静态纹理不随控制点更新上传。
 - 更新只合并相邻绝对几何；checkpoint/undo/redo/commit/cancel必须保留顺序，确认采用最后一次已提交几何。预览保留至最终像素帧接管。
 - 有选区、组/多选、蒙版/裁剪/特殊混合和软件显示保留像素路径。本轮不将通用图层合成器迁移至GPU，不启用wgpu计算来处理少量控制点。
@@ -20,7 +20,7 @@
 
 ## 代码与调用
 
-- `core/crates/paint-core/src/document/transform.rs`：继续定义几何、原图、局部历史和最终逆向取样；新增状态只在deferred更新时绕过像素生成，确认临时退出deferred后调用同一个旧取样器，失败保留会话可调整或取消。
+- `core/crates/paint-core/src/document/transform.rs`：继续定义几何、原图、局部历史和最终取样；新增状态只在deferred更新时绕过像素生成，确认临时退出deferred后调用同一个完整源取样器，失败保留会话可调整或取消。
 - `transform_preview.rs`：`begin_transform_layers_deferred(ids)` 与 `enable_transform_deferred()`。后者接入置入图片自动打开的会话。`transform_preview()` 通过现有 `TransformGeometry::map(u,v)` 发布正向位置和源UV；包含每个1/3控制节点，轴向至多145点，共21025顶点。跨度细分受预算约束，不随原图像素数量线性增加。
 - `tools/liquify_preview.rs::resident_source_layer`：与液化/移动共用静态源切分；置入图片采用保留的原始模型像素，不使用上一次变换生成的缓存作为下一次原图。三工具共用 `ResidentPreview`，正向/逆向语义显式区分。
 - ABI1.64：新 `paint_session_begin_transform_layers_deferred`；已有会话通过 `paint_session_transform(...,PAINT_TRANSFORM_ENABLE_RESIDENT,null,...)` 请求接入。`focus` bit0仍为隔离源，bit1表示正向网格。旧入口默认像素路径，旧液化/移动包不改语义。
@@ -30,6 +30,16 @@
 
 在硬件Qt窗口中照常 Ctrl+T 或置入图片，兼容目标自动使用该预览；不需要启用wgpu计算。性能设置选择CPU只控制wgpu算子，变换控制点本来就在CPU上，Qt硬件显示继续工作。软件场景图、有选区或复杂栈自动保留原路径。
 
-PhotoCraft采用Bezier曲面与预览纹理/mip缓存；本实现保留DrawVerse插值Catmull节点、既有六种最终插值与Newton逆向最终取样，未移植其曲面/折叠顺序或整个GPU合成器。预览是有界细分、RGBA8与2048静态代理，极端透视、放大细节和自交折叠可能与最终精确像素有差别；不声称与Photoshop或PhotoCraft逐像素等价。首次代理准备与最终重采样仍有后台开销。
+PhotoCraft采用Bezier曲面与预览纹理/mip缓存；本实现保留DrawVerse插值Catmull节点与既有六种最终颜色插值；Warp的预览与最终取样共享三角覆盖，后绘制的面拥有像素，未移植其Bezier曲面或整个GPU合成器。预览是有界细分、RGBA8与2048静态代理，极端透视、放大细节、代理量化和采样核可能导致预览与最终像素有差别；不声称与Photoshop或PhotoCraft逐像素等价。首次代理准备与最终重采样仍有后台开销。
 
 实测见[验收](../validations/tools/transform-resident-preview-validation.md)。
+
+## 折叠网格一致性修复（2026-10-19）
+
+用户截图显示确认后出现透明洞和跨区域换面。预览的前向三角形在折叠处仍有覆盖，而最终单一初值Newton反求既不保证收敛，也无法定义多根的遮挡关系；此前温和变形测试不能覆盖这一情况。
+
+将Warp预览和CPU物化共用同一有界正向网格拓扑。CPU按目标瓦片分桶，三角形重心坐标确定源UV，不再用全局猜测反求Warp；共享边使用半开覆盖，退化三角跳过，按固定行序后绘制的面拥有覆盖像素。GPU正向源层在Qt有序透明绘制通道内使用One/Zero覆盖写入，避免不透明通道深度让第一面固定占据像素，也避免同一图层折叠导致alpha重复累加，完整上下层仍单独正常合成。非Warp透视继续使用精确逆矩阵；最终在原始源上执行已有六种颜色插值。
+
+固定拓扑为预览近似与最终采样定义相同的表面，不能声称任意曲率下等于连续Catmull曲面精确求逆。目标输出/瓦片预算继续生效，三角-瓦片引用另设上限，失败不得发布部分结果。最小回归须覆盖强折叠多根区域、透明源、共享边、画布外及确认/撤销，并对比GPU预览与最终画面。
+
+折叠修复的验证见[一致性验收](../validations/tools/transform-fold-consistency-validation.md)。

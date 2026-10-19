@@ -2,6 +2,8 @@
 
 2026-10-19，Windows 11 / Qt 6.8.3 / RTX 4060 Laptop GPU，分支 `feat/wgpu-support`，ABI 1.64。设计与调用见[设计](../../tools/transform-resident-preview-design.md)，加速职责见[GPU总入口](../../platform/gpu-acceleration-design.md)。
 
+后续强折叠一致性修复替换了本文初版的Warp Newton定位路径，见[折叠回归](transform-fold-consistency-validation.md)。本文基准保留为初版历史记录。
+
 ## 实现与参考
 
 比较本地 PhotoCraft `d95fdf3181c01ad41e95456091a394b105a9afb2` 的 `crates/ui-egui/src/transform_tool.rs`、`transform_tex.rs`、`warp_preview.rs` 与最终取样路径。采用不可变原图、CPU前向有界细分、GPU常驻纹理显示、确认独立物化的架构；保留DrawVerse的4×4插值Catmull节点和既有最终Newton逆向取样，没有移植Bezier控制语义或最终三角栅格算法。

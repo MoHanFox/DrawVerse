@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新Warp折叠一致性：`docs/tools/transform-resident-preview-design.md` / `docs/validations/tools/transform-fold-consistency-validation.md`；参考PhotoCraft最终三角栅格，预览/CPU物化共享145×145拓扑与行序覆盖，移除Warp单初值Newton（避免多根换面/透明洞），选区同步覆盖；Qt有序透明通道One/Zero写入，避免深度首面锁定与alpha重复。核心5/变换7/原生2、真实D3D11双功能（含不透明/半透明折叠）、软件Qt与四ABI/Clippy/完整Release通过，ABI1.64不变，产物 `build/verify-ui/bin/Release-wgpu-transform/`。预览代理/边缘采样仍近似；未跑全量/跨平台/实体连续输入。
+
 - 最新自由变换常驻预览：`docs/tools/transform-resident-preview-design.md` / `docs/validations/tools/transform-resident-preview-validation.md`；ABI1.64，参考PhotoCraft不可变源/前向细分，单目标普通栈含置入图片拖动只算CPU几何，Qt GPU纹理合成，确认才原全精度取样；复用液化/移动静态协议，145×145网格/2048代理与视口上限，选区/复杂组合/软件保留像素路径。固定512px六输入Warp核心约1190→1.83ms，2000px约5.71ms，不含UI显示；Rust3+6/原生2及共享回归、真实GPU/软件Qt、四ABI/Clippy/格式/生成头与完整Release通过，产物 `build/verify-ui/bin/Release-wgpu-transform/`。未跑全量/跨平台/实体连续手感，预览近似与边界见设计。
 
 - 最新套索/魔棒/油漆桶性能：`docs/tools/selection-complexity-performance-design.md` / `docs/validations/tools/selection-complexity-performance-validation.md`；魔棒与桶共用CPU有界扫描线算子/按行分类，桶批量瓦片写入；轮廓沿暴露边追踪缓存，纯选区修订复用核心像素与Qt图像纹理身份，实际绘画仍刷新。固定Release中位数4K空白桶1996→194ms，1024魔棒单层连续247→53ms/四层423→98ms，碎片轮廓35.4→0.67ms；不代表UI延迟或任意复杂图。核心区域4/工具18/原生4/公开4、Qt几何3/软件8/硬件5、四ABI/Clippy/格式/生成头/完整Release通过；产物 `build/verify-ui/bin/Release-wgpu-selection/`。ABI1.63与格式不变，光标线宽默认0已确认；CPU蚂蚁线与复杂多路径布尔组合仍保留，未跑全量/跨平台/实体手感。

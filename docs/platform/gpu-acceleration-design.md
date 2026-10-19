@@ -36,7 +36,7 @@ DrawVerse 使用 wgpu 做 Rust 算子计算，使用 Qt Quick 场景图/RHI 做�
 
 图层移动的会话、ABI 1.63、输入合并和代码入口见[实时移动设计](../tools/layer-move-preview-design.md)，检查范围见[验收](../validations/tools/layer-move-preview-validation.md)。移动没有新增 wgpu 算子：位移为 CPU 整数外观状态，GPU 只做纹理呈现。
 
-自由变换和网格变形见[常驻预览设计](../tools/transform-resident-preview-design.md)。它复用原图资产与呈现网格，但使用独立控制点曲面，液化继续使用Elastic场。Qt通过正向源层与完整画布合成保留透明上下层；无需wgpu控制点算子，GPU显示不受计算设备选择CPU影响。
+自由变换和网格变形见[常驻预览设计](../tools/transform-resident-preview-design.md)。它复用原图资产与呈现网格，但使用独立控制点曲面，液化继续使用Elastic场。Qt通过正向源层与完整画布合成保留透明上下层；无需wgpu控制点算子，GPU显示不受计算设备选择CPU影响。Warp确认与预览共用正向网格覆盖，CPU按瓦片定位源UV；GPU源层在有序透明通道覆盖写入，折叠处不重复叠加图层透明度。
 
 套索、魔棒和油漆桶的性能路径见[选区与填充优化](../tools/selection-complexity-performance-design.md)：CPU 共用扫描线区域算子、按行取样和瓦片写入；纯选区修改共享已有像素帧，Qt 保留相同图像的纹理身份。轮廓使用线性边界追踪和几何缓存。此轮没有增加 wgpu 选色计算或专用 GPU 蚂蚁线 shader，软件后端同样获益。
 

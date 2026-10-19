@@ -42,47 +42,29 @@ impl Document {
         let state = self.transform.as_ref()?;
         let source = state.preview_source.as_ref()?.clone();
         let geometry = &state.current;
-        let extent = |axis| {
-            let lo = geometry
-                .points
-                .iter()
-                .map(|p| p[axis])
-                .fold(f64::INFINITY, f64::min);
-            let hi = geometry
-                .points
-                .iter()
-                .map(|p| p[axis])
-                .fold(f64::NEG_INFINITY, f64::max);
-            hi - lo
-        };
-        // Include all 1/3 control-node boundaries. At most 145² vertices, independent of pixels.
-        // Projective maps also tessellate: UV interpolation is affine within each triangle.
-        let columns = ((extent(0) / 18.).ceil() as u32).clamp(6, 48) * 3 + 1;
-        let rows = ((extent(1) / 18.).ceil() as u32).clamp(6, 48) * 3 + 1;
+        let mesh = super::mesh::TransformMesh::new(geometry);
         let bounds = state.source.bounds;
-        let mut vertices = Vec::with_capacity((columns * rows) as usize);
-        for y in 0..rows {
-            let v = y as f64 / (rows - 1) as f64;
-            for x in 0..columns {
-                let u = x as f64 / (columns - 1) as f64;
-                let p = geometry.map(u, v);
-                vertices.push([
-                    p[0] as f32,
-                    p[1] as f32,
-                    ((bounds[0] + u * bounds[2] - source.bounds[0] as f64)
+        let vertices = mesh
+            .vertices
+            .into_iter()
+            .map(|p| {
+                [
+                    p[0],
+                    p[1],
+                    ((bounds[0] + p[2] as f64 * bounds[2] - source.bounds[0] as f64)
                         / source.bounds[2] as f64) as f32,
-                    ((bounds[1] + v * bounds[3] - source.bounds[1] as f64)
+                    ((bounds[1] + p[3] as f64 * bounds[3] - source.bounds[1] as f64)
                         / source.bounds[3] as f64) as f32,
-                ]);
-            }
-        }
+                ]
+            })
+            .collect();
         Some(crate::ResidentPreview {
             source,
             revision: self.revision,
             focus: false,
             forward: true,
-            columns,
-            rows,
+            columns: mesh.columns,
+            rows: mesh.rows,
             vertices,
         })
     }
@@ -227,5 +209,107 @@ mod tests {
         }
         d.update_transform(initial).unwrap();
         d.cancel_transform().unwrap();
+    }
+    #[test]
+    fn folded_warp_matches_independent_forward_triangles_and_history() {
+        let mut d = seed();
+        let original = d.layers[0].clone();
+        let before = d.history_depth();
+        d.begin_transform_layers_deferred(&[d.active_layer()])
+            .unwrap();
+        let mut g = d.transform_geometry().unwrap();
+        g.warp = true;
+        g.interpolation = 0;
+        // Reproduce the screenshot's crossed rows, reversed cells and off-canvas lower edge.
+        g.points = [
+            [35., 6.],
+            [78., 15.],
+            [85., 5.],
+            [103., 9.],
+            [35., 46.],
+            [54., 21.],
+            [96., 39.],
+            [126., 35.],
+            [15., 43.],
+            [59., 68.],
+            [89., 69.],
+            [66., 39.],
+            [16., 71.],
+            [39., 97.],
+            [82., 99.],
+            [125., 68.],
+        ];
+        d.update_transform(g).unwrap();
+        let preview = d.transform_preview().unwrap();
+        let mut expected = vec![[f64::NAN; 2]; 128 * 96];
+        let mut hits = vec![0u32; 128 * 96];
+        // Independent reference: brute-force barycentric ownership of published triangles.
+        for row in 0..preview.rows - 1 {
+            for col in 0..preview.columns - 1 {
+                let a = (row * preview.columns + col) as usize;
+                let c = a + preview.columns as usize;
+                for ids in [[a, a + 1, c + 1], [a, c + 1, c]] {
+                    let [a, b, c] = ids.map(|i| preview.vertices[i].map(f64::from));
+                    let det = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+                    if det.abs() < 1e-12 {
+                        continue;
+                    }
+                    for y in 0..96 {
+                        for x in 0..128 {
+                            let px = x as f64 + 0.5;
+                            let py = y as f64 + 0.5;
+                            let l0 =
+                                ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / det;
+                            let l1 =
+                                ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / det;
+                            let l2 = 1. - l0 - l1;
+                            if l0 >= 0. && l1 >= 0. && l2 >= 0. {
+                                let k = y * 128 + x;
+                                hits[k] += 1;
+                                expected[k] = [
+                                    l0 * a[2] + l1 * b[2] + l2 * c[2],
+                                    l0 * a[3] + l1 * b[3] + l2 * c[3],
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            hits.iter().filter(|&&n| n > 1).count() > 100,
+            "fixture must actually fold"
+        );
+        d.commit_transform().unwrap();
+        let mut sampler = SourceSampler::new(&original);
+        for y in 0..96 {
+            for x in 0..128 {
+                let uv = expected[y * 128 + x];
+                let expected = if uv[0].is_finite() {
+                    sample(
+                        &mut sampler,
+                        preview.source.bounds[0] as f64 + uv[0] * preview.source.bounds[2] as f64
+                            - 0.5,
+                        preview.source.bounds[1] as f64 + uv[1] * preview.source.bounds[3] as f64
+                            - 0.5,
+                        0,
+                        1.,
+                    )
+                    .unwrap()
+                } else {
+                    Pixel::TRANSPARENT
+                };
+                assert_eq!(
+                    d.pixel(x as u32, y as u32),
+                    expected,
+                    "folded pixel {x},{y}"
+                );
+            }
+        }
+        assert_eq!(d.history_depth().0, before.0 + 1);
+        d.undo().unwrap();
+        assert_eq!(d.pixel(0, 0), Pixel::WHITE);
+        d.redo().unwrap();
+        assert!(d.pixel(0, 0).alpha() < 1.);
     }
 }
