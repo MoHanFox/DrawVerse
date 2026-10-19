@@ -61,3 +61,9 @@
 - 原生 layer_rename_abi_copies_utf8_and_preserves_undo 通过：返回前复制 UTF-8，调用者随后覆写源字节不影响结果；撤销重做保持。
 - Windows Release Qt layerAndGroupNamesEditInlineAndEscapePreservesHistory 通过：真实双击、Enter 保存、Esc 放弃和图层/组历史恢复。
 - 四个 C/C++ 静态/动态 ABI 消费者通过；生成头检查通过，DTO 布局保持。
+
+## 普通 8：整数参数编辑
+
+- 笔刷设置统一整数显示精度、整数输入校验与滑动提交；半径/归一化内部值仍按显示单位换算，曲线不变。
+- Windows Release qt_workflow_tests::brushScalarControlsCommitIntegerDisplayUnits 通过：37.6 滑动提交 38，小数文本拒绝、整数接受，13 个分类内超过 40 个标量控件均为整数精度。
+- 原双笔刷与起收笔 UI 用例的显示/赋值预期同步为整数；完整测试源重新编译后的相关用例继续补验。

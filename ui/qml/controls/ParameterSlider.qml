@@ -20,6 +20,8 @@ ColumnLayout {
     Layout.fillWidth: true
     Layout.minimumWidth: 0
     spacing: 2
+    IntValidator {id:integerValidator;bottom:Math.ceil(root.from);top:Math.floor(root.to);locale:"C"}
+    DoubleValidator {id:decimalValidator;bottom:root.from;top:root.to;decimals:root.decimals;locale:"C"}
     RowLayout {
         Layout.fillWidth: true
         Layout.minimumWidth: 0
@@ -35,7 +37,7 @@ ColumnLayout {
             to: Math.round(root.to*root.precisionFactor)
             stepSize: root.precisionFactor
             value: Math.round(root.value*root.precisionFactor)
-            validator: DoubleValidator {bottom:root.from;top:root.to;decimals:root.decimals;locale:"C"}
+            validator: root.decimals===0?integerValidator:decimalValidator
             textFromValue: function(value,locale) {return Number(value/root.precisionFactor).toFixed(root.decimals).replace(/(\.[0-9]*?)0+$/, "$1").replace(/\.$/, "")}
             valueFromText: function(text,locale) {return Math.round(Number(text)*root.precisionFactor)}
             onValueModified: root.committed(value/root.precisionFactor)
@@ -49,7 +51,9 @@ ColumnLayout {
         from: root.from
         to: root.sliderTo
         value: Math.min(to,root.value)
-        onMoved: root.committed(value)
+        stepSize:1/root.precisionFactor
+        snapMode:Slider.SnapAlways
+        onMoved: root.committed(Math.round(value*root.precisionFactor)/root.precisionFactor)
         tooltip: root.tooltip
     }
 }

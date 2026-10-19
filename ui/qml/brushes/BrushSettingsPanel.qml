@@ -161,7 +161,7 @@ ColumnLayout {
                         CompactSpinBox {objectName:"settingsBrushSize";implicitWidth:68;implicitHeight:20;editable:true;from:1;to:2000;value:Math.round(root.library.radius*2);onValueModified:root.library.radius=value/2}
                         Label {text:"px";font.pixelSize:9;color:Theme.muted}
                     }
-                    CompactSlider {Layout.fillWidth:true;from:1;to:2000;value:root.library.radius*2;onMoved:root.library.radius=value/2}
+                    CompactSlider {Layout.fillWidth:true;from:1;to:2000;value:root.library.radius*2;stepSize:1;snapMode:Slider.SnapAlways;onMoved:root.library.radius=Math.round(value)/2}
                     TipField {enabled:!root.library.maskResource.length;title:"硬度";field:"hardness";from:0;to:100;factor:100;unit:"%";help:"实心中心占笔尖半径的比例；降低后形成柔软边缘。"}
                     TipField {title:"圆度";field:"roundness";from:1;to:100;factor:100;unit:"%";help:"笔尖短轴与长轴的比例。"}
                     TipField {title:"角度";field:"angle";from:-180;to:180;factor:1;unit:"°";help:"椭圆笔尖在画布上的方向。"}
@@ -270,10 +270,10 @@ ColumnLayout {
                         }
                         Label {text:root.library.dualSourceName?"已复制笔尖参数，可调整下列设置。":"选择一个笔刷作为第二笔尖。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
                         ColumnLayout {visible:root.library.dualSourceName.length>0;Layout.fillWidth:true;spacing:5
-                            DualField {prefix:"settingsExistingDual";decimals:2;title:"大小";field:"diameter";from:1;to:2000;factor:1;unit:"px"}
-                            DualField {prefix:"settingsExistingDual";decimals:2;title:"间距";field:"spacing";from:1;to:1000}
+                            DualField {prefix:"settingsExistingDual";decimals:0;title:"大小";field:"diameter";from:1;to:2000;factor:1;unit:"px"}
+                            DualField {prefix:"settingsExistingDual";decimals:0;title:"间距";field:"spacing";from:1;to:1000}
                             CompactCheckBox {objectName:"settingsExistingDualScatterEnabled";text:"启用散布";checked:root.dualModule("scatterDynamics").enabled;onToggled:root.setDualField("enabled",checked,"scatterDynamics")}
-                            DualField {prefix:"settingsExistingDual";decimals:2;title:"散布";field:"amount";module:"scatterDynamics";to:1000}
+                            DualField {prefix:"settingsExistingDual";decimals:0;title:"散布";field:"amount";module:"scatterDynamics";to:1000}
                             CompactCheckBox {objectName:"settingsExistingDualBothAxes";text:"双轴";checked:root.dualModule("scatterDynamics").bothAxes;onToggled:root.setDualField("bothAxes",checked,"scatterDynamics")}
                             DualField {prefix:"settingsExistingDual";title:"数量";field:"count";module:"scatterDynamics";from:1;to:16;factor:1;unit:""}
                         }
@@ -295,7 +295,7 @@ ColumnLayout {
                         CompactComboBox {objectName:"settingsDualSizeMode";Layout.fillWidth:true;model:["独立尺寸","相对主笔百分比","旧版像素偏移"];currentIndex:root.dualModule("sizing").mode!=="relative"?0:root.dualModule("sizing").model==="relative-ratio-v1"?1:2;onActivated:root.setDualSizeMode(currentIndex);tooltip:"百分比随主笔大小缩放；旧版像素偏移保持原文件语义。"}
                         DualField {title:"大小";field:"diameter";from:1;to:2000;factor:1;unit:"px";visible:root.dualModule("sizing").mode!=="relative"}
                         DualField {title:"直径偏移";field:"diameterOffset";module:"sizing";from:-511;to:511;factor:1;unit:"px";visible:root.dualModule("sizing").mode==="relative" && root.dualModule("sizing").model==="relative-size-v1"}
-                        ParameterSlider {title:"相对大小";sliderName:"settingsDualRatio";visible:root.dualModule("sizing").model==="relative-ratio-v1" && root.dualModule("sizing").mode==="relative";from:0.05;to:200000;sliderTo:400;decimals:4;unit:"%";value:root.dualModule("sizing").diameterRatio*100;onCommitted:value=>root.setDualField("diameterRatio",value/100,"sizing");tooltip:"主笔大小的百分比；输入框可输入超出滑条范围的比例。"}
+                        ParameterSlider {title:"相对大小";sliderName:"settingsDualRatio";visible:root.dualModule("sizing").model==="relative-ratio-v1" && root.dualModule("sizing").mode==="relative";from:1;to:200000;sliderTo:400;decimals:0;unit:"%";value:root.dualModule("sizing").diameterRatio*100;onCommitted:value=>root.setDualField("diameterRatio",value/100,"sizing");tooltip:"主笔大小的百分比；输入框可输入超出滑条范围的比例。"}
                         Label {objectName:"settingsDualWidthRuleLabel";text:"相对尺寸响应";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true;visible:root.dualModule("sizing").mode==="relative"}
                         CompactComboBox {objectName:"settingsDualWidthRule";Layout.fillWidth:true;visible:root.dualModule("sizing").mode==="relative";model:["跟随尺寸压感","固定描边宽度"];currentIndex:root.dualModule("sizing").widthRule==="fixed-width"?1:0;onActivated:root.setDualField("widthRule",currentIndex===1?"fixed-width":"follow-pressure","sizing");tooltip:"固定宽度先计算主笔实际尺寸再加偏移，不重复执行第二大小压感和大小抖动；旧配置仍保留。"}
                         Label {objectName:"settingsDualEffectiveSize";text:"标称直径："+root.dualNominalDiameter().toFixed(1)+" px";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
@@ -493,18 +493,18 @@ ColumnLayout {
                         CompactCheckBox {objectName:"settingsOutlineSecondaryColor";text:"使用色轮第二颜色";checked:root.outline.secondaryColor;onToggled:root.setOutlineField("secondaryColor",checked)}
                         Label {text:"宽度方式";color:Theme.text;font.pixelSize:10}
                         CompactComboBox {objectName:"settingsOutlineWidthMode";Layout.fillWidth:true;model:["独立像素","相对主笔百分比"];currentIndex:root.outline.width.relative?1:0;onActivated:root.setOutlineWidth("relative",currentIndex===1)}
-                        ParameterSlider {title:"宽度";sliderName:"settingsOutlinePixels";visible:!root.outline.width.relative;to:2000;decimals:2;unit:"px";value:root.outline.width.pixels;onCommitted:value=>root.setOutlineWidth("pixels",value)}
-                        ParameterSlider {title:"相对宽度";sliderName:"settingsOutlinePercent";visible:root.outline.width.relative;to:10000;decimals:2;unit:"%";value:root.outline.width.percent;onCommitted:value=>root.setOutlineWidth("percent",value)}
+                        ParameterSlider {title:"宽度";sliderName:"settingsOutlinePixels";visible:!root.outline.width.relative;to:2000;decimals:0;unit:"px";value:root.outline.width.pixels;onCommitted:value=>root.setOutlineWidth("pixels",value)}
+                        ParameterSlider {title:"相对宽度";sliderName:"settingsOutlinePercent";visible:root.outline.width.relative;to:10000;decimals:0;unit:"%";value:root.outline.width.percent;onCommitted:value=>root.setOutlineWidth("percent",value)}
                         Label {text:"描边来源";color:Theme.text;font.pixelSize:10}
                         CompactComboBox {objectName:"settingsOutlineSource";Layout.fillWidth:true;model:["自身笔刷","已有笔刷","纹理"];property var values:["self-brush","existing-brush","texture"];currentIndex:values.indexOf(root.outline.source.model)
                             onActivated:{if(currentIndex===0)root.setOutlineField("source",{model:"self-brush"});else if(currentIndex===1)root.library.usePresetAsOutline(root.library.selectedId);else if(!root.library.useTextureAsOutline(root.library.texture.resource||""))currentIndex=Qt.binding(function(){return values.indexOf(root.outline.source.model)})}}
                         ColumnLayout {visible:root.outline.source.model==="existing-brush";Layout.fillWidth:true
                             CompactComboBox {objectName:"settingsOutlinePreset";Layout.fillWidth:true;model:root.library.presetRows();textRole:"name";currentIndex:-1;displayText:"选择笔刷并捕获快照";onActivated:{if(currentIndex>=0)root.library.usePresetAsOutline(model[currentIndex].id);currentIndex=-1}}
-                            ParameterSlider {title:"大小";sliderName:"settingsOutlineBrushSize";from:1;to:2000;decimals:2;unit:"px";value:root.outline.source.brush?.diameter||24;onCommitted:value=>root.setOutlineBrush("diameter",value)}
-                            ParameterSlider {title:"间距";sliderName:"settingsOutlineBrushSpacing";from:1;to:1000;decimals:2;unit:"%";value:(root.outline.source.brush?.spacing||.25)*100;onCommitted:value=>root.setOutlineBrush("spacing",value/100)}
+                            ParameterSlider {title:"大小";sliderName:"settingsOutlineBrushSize";from:1;to:2000;decimals:0;unit:"px";value:root.outline.source.brush?.diameter||24;onCommitted:value=>root.setOutlineBrush("diameter",value)}
+                            ParameterSlider {title:"间距";sliderName:"settingsOutlineBrushSpacing";from:1;to:1000;decimals:0;unit:"%";value:(root.outline.source.brush?.spacing||.25)*100;onCommitted:value=>root.setOutlineBrush("spacing",value/100)}
                             CompactCheckBox {text:"启用散布";checked:root.outline.source.brush?.scatterDynamics?.enabled||false;onToggled:root.setOutlineScatter("enabled",checked)}
                             CompactCheckBox {text:"双轴散布";checked:root.outline.source.brush?.scatterDynamics?.bothAxes||false;onToggled:root.setOutlineScatter("bothAxes",checked)}
-                            ParameterSlider {title:"散布";sliderName:"settingsOutlineBrushScatter";to:1000;decimals:2;unit:"%";value:(root.outline.source.brush?.scatterDynamics?.amount||0)*100;onCommitted:value=>root.setOutlineScatter("amount",value/100)}
+                            ParameterSlider {title:"散布";sliderName:"settingsOutlineBrushScatter";to:1000;decimals:0;unit:"%";value:(root.outline.source.brush?.scatterDynamics?.amount||0)*100;onCommitted:value=>root.setOutlineScatter("amount",value/100)}
                             ParameterSlider {title:"数量";sliderName:"settingsOutlineBrushCount";from:1;to:16;value:root.outline.source.brush?.scatterDynamics?.count||1;onCommitted:value=>root.setOutlineScatter("count",Math.round(value))}
                         }
                         ColumnLayout {visible:root.outline.source.model==="texture";Layout.fillWidth:true
@@ -526,16 +526,16 @@ ColumnLayout {
                     CompactCheckBox {objectName:"settingsTaperTransparent";text:"端部透明";checked:root.library.strokeTaper[root.taperEnd].opacity.minimum<1;onToggled:root.setTaperTransparent(checked);tooltip:"关闭后不额外减淡该端，尺寸曲线仍然生效。"}
                     RowLayout {Layout.fillWidth:true;visible:!root.taperRelative
                         Label {text:"长度";color:Theme.text;Layout.fillWidth:true}
-                        CompactTextField {objectName:"settingsTaperLength";Layout.preferredWidth:90;implicitHeight:20;text:root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(2);validator:DoubleValidator {bottom:0;top:4096;decimals:2;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPx",Number(text));text=Qt.binding(function(){return root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(2)})} hoverEnabled:true;ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"文档像素距离，0 表示该端不处理；不随笔刷尺寸缩放。"}
+                        CompactTextField {objectName:"settingsTaperLength";Layout.preferredWidth:90;implicitHeight:20;text:root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(0);validator:IntValidator {bottom:0;top:4096;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPx",Math.round(Number(text)));text=Qt.binding(function(){return root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(0)})} hoverEnabled:true;ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"文档像素距离，0 表示该端不处理；不随笔刷尺寸缩放。"}
                         Label {text:"px";color:Theme.muted}
                     }
-                    CompactSlider {objectName:"settingsTaperLengthSlider";visible:!root.taperRelative;Layout.fillWidth:true;from:0;to:4096;value:root.library.strokeTaper[root.taperEnd].lengthPx;onMoved:root.setTaperEndField("lengthPx",value)}
+                    CompactSlider {objectName:"settingsTaperLengthSlider";visible:!root.taperRelative;Layout.fillWidth:true;from:0;to:4096;value:root.library.strokeTaper[root.taperEnd].lengthPx;stepSize:1;snapMode:Slider.SnapAlways;onMoved:root.setTaperEndField("lengthPx",Math.round(value))}
                     RowLayout {Layout.fillWidth:true;visible:root.taperRelative
                         Label {text:"相对长度";color:Theme.text;Layout.fillWidth:true}
-                        CompactTextField {objectName:"settingsTaperPercent";Layout.preferredWidth:90;implicitHeight:20;text:Number(root.library.strokeTaper[root.taperEnd].lengthPercent||0).toFixed(2);validator:DoubleValidator {bottom:0;top:10000;decimals:2;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPercent",Number(text));text=Qt.binding(function(){return Number(root.library.strokeTaper[root.taperEnd].lengthPercent||0).toFixed(2)})}}
+                        CompactTextField {objectName:"settingsTaperPercent";Layout.preferredWidth:90;implicitHeight:20;text:Number(root.library.strokeTaper[root.taperEnd].lengthPercent||0).toFixed(0);validator:IntValidator {bottom:0;top:10000;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPercent",Math.round(Number(text)));text=Qt.binding(function(){return Number(root.library.strokeTaper[root.taperEnd].lengthPercent||0).toFixed(0)})}}
                         Label {text:"%";color:Theme.muted}
                     }
-                    CompactSlider {objectName:"settingsTaperPercentSlider";visible:root.taperRelative;Layout.fillWidth:true;from:0;to:10000;value:root.library.strokeTaper[root.taperEnd].lengthPercent||0;onMoved:root.setTaperEndField("lengthPercent",value)}
+                    CompactSlider {objectName:"settingsTaperPercentSlider";visible:root.taperRelative;Layout.fillWidth:true;from:0;to:10000;value:root.library.strokeTaper[root.taperEnd].lengthPercent||0;stepSize:1;snapMode:Slider.SnapAlways;onMoved:root.setTaperEndField("lengthPercent",Math.round(value))}
                     Label {visible:root.taperRelative;text:"实际长度 "+Math.min(4096,root.library.radius*2*(root.library.strokeTaper[root.taperEnd].lengthPercent||0)/100).toFixed(2)+" px（上限4096）";color:Theme.muted;font.pixelSize:9}
                     PressureCurveEditor {library:taperControls;target:"size";prefix:"taperSize";fixedEndpoints:true;caption:"尺寸随距离变化";curveHelp:"横轴为从笔端向内的归一化距离，纵轴为尺寸比例；Ctrl点击节点切换直线/曲线。端点固定。";minimumHelp:"最低尺寸比例；100% 表示不缩小笔尖。"}
                     PressureCurveEditor {library:taperControls;target:"opacity";prefix:"taperOpacity";fixedEndpoints:true;caption:"不透明度随距离变化";curveHelp:"横轴为从笔端向内的归一化距离，纵轴为不透明度比例；独立于尺寸曲线。端点固定。";minimumHelp:"最低不透明度比例；100% 表示不额外减淡。"}

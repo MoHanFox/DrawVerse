@@ -18,6 +18,22 @@ static QQuickItem *findVisual(QQuickItem *item,const QString &name){if(item->obj
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void brushScalarControlsCommitIntegerDisplayUnits() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("integer.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);
+        QQmlComponent scalar(&engine,QUrl("qrc:/qml/controls/ParameterSlider.qml"));
+        QScopedPointer<QObject> control(scalar.createWithInitialProperties({{"sliderName","integer"},{"value",37.6}}));QVERIFY2(control,qPrintable(scalar.errorString()));
+        auto *slider=control->findChild<QObject*>("integer");auto *edit=control->findChild<QObject*>("integerInputText");QVERIFY(slider && edit);
+        QSignalSpy commits(control.data(),SIGNAL(committed(double)));QVERIFY(commits.isValid());QCOMPARE(slider->property("stepSize").toInt(),1);
+        slider->setProperty("value",37.6);QVERIFY(QMetaObject::invokeMethod(slider,"moved"));QCOMPARE(commits.size(),1);QCOMPARE(commits.last()[0].toDouble(),38.);
+        edit->setProperty("text","37.6");QVERIFY(!edit->property("acceptableInput").toBool());edit->setProperty("text","37");QVERIFY(edit->property("acceptableInput").toBool());
+        QQmlComponent settings(&engine,QUrl("qrc:/qml/brushes/BrushSettingsPanel.qml"));QScopedPointer<QObject> panel(settings.create());QVERIFY2(panel,qPrintable(settings.errorString()));
+        int fields=0;
+        for(int category=0;category<=12;++category){panel->setProperty("category",category);QCoreApplication::processEvents();
+            for(auto *child:panel->findChildren<QObject*>())if(child->property("precisionFactor").isValid()){QCOMPARE(child->property("decimals").toInt(),0);QCOMPARE(child->property("precisionFactor").toInt(),1);++fields;}
+        }
+        QVERIFY(fields>40);client.shutdown();
+    }
     void groupRowsAreCompactAndHaveNoAggregateThumbnail() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("groups.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());
