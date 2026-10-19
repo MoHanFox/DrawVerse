@@ -119,3 +119,8 @@
 ## 涂抹与描边共享 UI 补验
 
 - 完整 Qt UI 目标重新编译、链接后，wetSmudgeUsesOwnToolStrengthAndFingerPolicyWithUndo、smudgeSharedBrushParametersInputAndDelayedHelp、strokeOutlineQtPreviewPixelsExchangeAndReopen、strokeOutlineResourcesExchangeToFreshStore 均通过；覆盖真实涂抹/撤销和描边预览、像素、资源交换及重开。
+
+## 性能 4–5：GPU 常驻蚂蚁线
+
+- 4096×2160 交织选区在真实 D3D11 的 12 次已呈现导航中，静态遮罩只栅格化一次；动画不再周期性重描整个路径。软件/超大文档回退与几何回归通过，详情见[专项验收](../tools/selection-resident-ants-validation.md)。
+- Release 已重建到 build/qt/bin/Release。此项解决有界 GPU 画布的复杂选区显示，不宣称初始几何、全部 AA 场景或软件性能已经解决。

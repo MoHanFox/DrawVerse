@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [选区常驻遮罩与 GPU 蚂蚁线](tools/selection-resident-ants-validation.md)
+
 - [2026-10-20 分项修复验收](planning/2026-10-20-bugfix-validation.md)
 
 - [Warp强折叠预览与确认一致性](tools/transform-fold-consistency-validation.md)

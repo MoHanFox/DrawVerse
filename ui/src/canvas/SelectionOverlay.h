@@ -5,6 +5,7 @@
 #include <QTimer>
 #include <QPointer>
 #include <QWindow>
+#include <atomic>
 
 // Consumes only copied C ABI geometry and paints the selection outline as marching ants: a black
 // underlay with a white dashed line whose dash phase advances, so the user can confirm the region.
@@ -20,6 +21,7 @@ class SelectionOverlay : public QQuickPaintedItem {
     Q_PROPERTY(int previewKind READ previewKind WRITE setPreviewKind NOTIFY geometryChanged)
     Q_PROPERTY(qreal zoom READ zoom WRITE setZoom NOTIFY geometryChanged)
     Q_PROPERTY(int dashPhase READ dashPhase NOTIFY dashPhaseChanged)
+    Q_PROPERTY(bool maskOnly READ maskOnly WRITE setMaskOnly NOTIFY geometryChanged)
 public:
     explicit SelectionOverlay(QQuickItem *parent=nullptr);
     QVariantList steps() const{return m_steps;}
@@ -33,6 +35,9 @@ public:
     int previewKind() const{return m_previewKind;}
     qreal zoom() const{return m_zoom;}
     int dashPhase() const{return m_phase;}
+    bool maskOnly() const{return m_maskOnly;}
+    void setMaskOnly(bool maskOnly);
+    quint64 maskRasterizations() const{return m_maskRasterizations.load(std::memory_order_relaxed);}
     void setSteps(const QVariantList &steps);
     void setEnabledSelection(bool enabled);
     void setDocumentRect(QRectF rect);
@@ -61,7 +66,8 @@ private:
     qreal m_zoom=1;
     int m_previewKind=0;
     int m_phase=0;
-    bool m_enabled=false;
+    bool m_enabled=false,m_maskOnly=false;
+    std::atomic<quint64> m_maskRasterizations{0};
     QTimer m_ants;
     QPointer<QWindow> m_hostWindow;
 };

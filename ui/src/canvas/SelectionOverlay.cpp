@@ -52,13 +52,14 @@ SelectionOverlay::SelectionOverlay(QQuickItem *parent):QQuickPaintedItem(parent)
     connect(&m_ants,&QTimer::timeout,this,[this]{
         m_phase=(m_phase+kPhaseStep)%kDashPeriod;
         emit dashPhaseChanged();
-        update();
+        if(!m_maskOnly)update();
     });
 }
 void SelectionOverlay::componentComplete(){
     QQuickPaintedItem::componentComplete();
     syncAnimation();
 }
+void SelectionOverlay::setMaskOnly(bool maskOnly){if(maskOnly==m_maskOnly)return;m_maskOnly=maskOnly;update();emit geometryChanged();}
 void SelectionOverlay::setSteps(const QVariantList &steps){if(steps==m_steps)return;m_steps=steps;m_shapes.clear();rebuild();}
 void SelectionOverlay::setEnabledSelection(bool enabled){if(m_enabled==enabled)return;m_enabled=enabled;syncAnimation();update();emit geometryChanged();}
 void SelectionOverlay::setDocumentRect(QRectF rect){if(rect==m_documentRect)return;const bool sizeChanged=rect.size()!=m_documentRect.size();m_documentRect=rect;if(sizeChanged && m_documentSize.isEmpty())rebuild();else{update();emit geometryChanged();}}
@@ -73,12 +74,13 @@ void SelectionOverlay::syncAnimation(){
     const bool hasOutline=m_enabled||!m_preview.isEmpty()||!m_previewPoints.isEmpty();
     QQuickWindow *host=window();
     const bool shown=host && host->isVisible() && host->visibility()!=QWindow::Minimized;
-    const bool active=hasOutline&&shown;
+    const bool active=hasOutline&&shown&&isVisible();
     if(active && !m_ants.isActive())m_ants.start();
     else if(!active && m_ants.isActive())m_ants.stop();
 }
 void SelectionOverlay::itemChange(ItemChange change,const ItemChangeData &value){
     QQuickPaintedItem::itemChange(change,value);
+    if(change==ItemVisibleHasChanged){syncAnimation();return;}
     if(change!=ItemSceneChange)return;
     syncAnimation();
     // Track the hosting window so hiding, minimizing or closing it stops the animation instead of
@@ -118,6 +120,7 @@ void SelectionOverlay::rebuild(){
 void SelectionOverlay::paint(QPainter *painter){
     if(!m_enabled && m_preview.isEmpty() && m_previewPoints.isEmpty())return;
     painter->setRenderHint(QPainter::Antialiasing);
+    if(m_maskOnly){m_maskRasterizations.fetch_add(1,std::memory_order_relaxed);painter->fillPath(m_path,Qt::white);return;}
     painter->setBrush(Qt::NoBrush);
     // Solid black underlay in document space: it hugs the selection exactly.
     painter->save();

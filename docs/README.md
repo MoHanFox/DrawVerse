@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [选区常驻遮罩与 GPU 蚂蚁线](tools/selection-resident-ants-design.md)
+
 - [2026-10-20 问题清单与分项修复](planning/2026-10-20-bugfix-design.md)
 
 - [自由变换与网格变形常驻预览](tools/transform-resident-preview-design.md)

@@ -1,4 +1,7 @@
 #include "engine/PaintCoreClient.h"
+#include "canvas/SelectionOverlay.h"
+#include <QQuickItemGrabResult>
+#include <QSGRendererInterface>
 #include <QtTest>
 #include <QQmlEngine>
 #include <QQmlComponent>
@@ -36,6 +39,34 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void selectionMaskAnimationDoesNotRasterizeAgain() {
+        QQuickWindow window;window.resize(128,128);auto *mask=new SelectionOverlay();mask->setParentItem(window.contentItem());mask->setSize({128,128});mask->setDocumentSize({128,128});mask->setDocumentRect({0,0,128,128});mask->setMaskOnly(true);mask->setEnabledSelection(true);
+        const auto step=[](int x){return QVariantMap{{"operation",0},{"shape",0},{"x",x},{"y",8},{"width",60},{"height",80}};};mask->setSteps({step(8)});window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));QTRY_VERIFY(mask->maskRasterizations()>0);
+        const auto count=mask->maskRasterizations();QSignalSpy phases(mask,&SelectionOverlay::dashPhaseChanged);QTRY_VERIFY(phases.size()>2);QCOMPARE(mask->maskRasterizations(),count);
+        mask->setSteps({step(20)});QTRY_VERIFY(mask->maskRasterizations()>count);window.close();
+    }
+    void residentSelectionAntsKeepTextureDuringNavigation() {
+        QQuickWindow window;window.setColor(Qt::transparent);window.resize(560,320);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("Requires a real GPU scene graph");
+        QQmlEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        QQmlComponent clientComponent(&engine);clientComponent.setData("import QtQuick; QtObject {property int documentWidth:4096;property int documentHeight:2160;property bool selectionEnabled:true;property var selectionSteps:[]}",QUrl());QScopedPointer<QObject> client(clientComponent.create());QVERIFY2(client,qPrintable(clientComponent.errorString()));
+        QQmlComponent viewComponent(&engine);viewComponent.setData("import QtQuick; QtObject {property bool gpuDisplay:true;property real zoom:.125;property rect documentRect:Qt.rect(20,20,512,270);property rect selectionPreview:Qt.rect(0,0,0,0);property int selectionPreviewKind:0;property var selectionPreviewPoints:[]}",QUrl());QScopedPointer<QObject> view(viewComponent.create());QVERIFY2(view,qPrintable(viewComponent.errorString()));
+        QVariantList steps;const auto step=[](int op,QRectF r){return QVariantMap{{"operation",op},{"shape",0},{"x",r.x()},{"y",r.y()},{"width",r.width()},{"height",r.height()}};};
+        for(int i=0;i<24;++i){steps.append(step(i?1:0,{double(i*160),0,40,2160}));steps.append(step(1,{0,double(i*85),4096,30}));}client->setProperty("selectionSteps",steps);
+        QQmlComponent presentation(&engine,QUrl("qrc:/qml/canvas/SelectionPresentation.qml"));QScopedPointer<QObject> object(presentation.createWithInitialProperties({{"client",QVariant::fromValue(client.data())},{"canvasSurface",QVariant::fromValue(view.data())}}));QVERIFY2(object,qPrintable(presentation.errorString()));auto *root=qobject_cast<QQuickItem*>(object.data());QVERIFY(root);root->setParentItem(window.contentItem());root->setSize({560,320});
+        SelectionOverlay *mask=nullptr;QTRY_VERIFY((mask=qobject_cast<SelectionOverlay*>(findVisual(root,"selectionOutline"))) && mask->maskOnly());QTRY_VERIFY(mask->maskRasterizations()>0);
+        QTRY_VERIFY(findVisual(root,"residentSelectionAntsShader"));auto grab=window.contentItem()->grabToImage();QVERIFY(grab);QTRY_VERIFY(!grab->image().isNull());const auto image=grab->image();if(const auto output=qEnvironmentVariable("DRAWVERSE_SELECTION_PREVIEW");!output.isEmpty())QVERIFY(image.save(output));int dark=0,light=0,clear=0;
+        for(int y=0;y<image.height();++y)for(int x=0;x<image.width();++x){const auto c=image.pixelColor(x,y);if(c.alpha()<10)++clear;else if(c.alpha()>30){if(c.red()>180)++light;if(c.red()<50)++dark;}}
+        QVERIFY2(dark>50 && light>50,qPrintable(QString("black=%1 white=%2").arg(dark).arg(light)));QVERIFY(clear>image.width()*image.height()/3);
+        const auto count=mask->maskRasterizations();const auto path=mask->documentPath();QSignalSpy geometry(mask,&SelectionOverlay::pathChanged);QSignalSpy phases(mask,&SelectionOverlay::dashPhaseChanged);
+        for(int i=0;i<12;++i){QSignalSpy frames(&window,&QQuickWindow::frameSwapped);const auto zoom=.12+i*.002;view->setProperty("zoom",zoom);view->setProperty("documentRect",QRectF(20+i,20-i,4096*zoom,2160*zoom));window.update();QTRY_VERIFY(!frames.isEmpty());}
+        QTRY_VERIFY(phases.size()>2);QCOMPARE(mask->maskRasterizations(),count);QCOMPARE(geometry.size(),0);QVERIFY(mask->documentPath()==path);QCOMPARE(mask->documentRect(),QRectF(0,0,4096,2160));qInfo("resident ants: %d path elements, mask rasterizations %llu -> %llu across 12 displayed navigation frames",path.elementCount(),static_cast<unsigned long long>(count),static_cast<unsigned long long>(mask->maskRasterizations()));QCOMPARE(warnings,QStringList());window.close();
+    }
+    void selectionPresentationRetainsSoftwareAndLargeDocumentFallback() {
+        QQmlEngine engine;QQmlComponent probe(&engine);probe.setData("import QtQuick; QtObject {property bool gpuDisplay:false;property int documentWidth:64;property int documentHeight:64;property bool selectionEnabled:true;property var selectionSteps:[];property real zoom:1;property rect documentRect:Qt.rect(0,0,64,64);property rect selectionPreview:Qt.rect(0,0,0,0);property int selectionPreviewKind:0;property var selectionPreviewPoints:[]}",QUrl());QScopedPointer<QObject> data(probe.create());QVERIFY2(data,qPrintable(probe.errorString()));data->setProperty("selectionSteps",QVariantList{QVariantMap{{"operation",0},{"shape",0},{"x",8},{"y",8},{"width",32},{"height",32}}});
+        QQmlComponent presentation(&engine,QUrl("qrc:/qml/canvas/SelectionPresentation.qml"));QScopedPointer<QObject> object(presentation.createWithInitialProperties({{"client",QVariant::fromValue(data.data())},{"canvasSurface",QVariant::fromValue(data.data())}}));QVERIFY2(object,qPrintable(presentation.errorString()));auto *root=qobject_cast<QQuickItem*>(object.data());QVERIFY(root);auto *outline=qobject_cast<SelectionOverlay*>(findVisual(root,"selectionOutline"));QVERIFY(outline && !outline->maskOnly());QVERIFY(outline->documentPath().contains({10,10}));QVERIFY(!outline->documentPath().contains({50,50}));
+        data->setProperty("documentWidth",8192);data->setProperty("gpuDisplay",true);QVERIFY(!root->property("resident").toBool());QVERIFY(!findVisual(root,"residentSelectionAntsShader"));QVERIFY(outline->documentPath().contains({10,10}));
+    }
     void repeatedWandClicksDoNotGrowSelectionOrPublishNewGeometry() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("wand-repeat.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());client.setBrushRadius(4);client.setBrushColor(Qt::black);QVERIFY(client.beginStroke({{32,32},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.activateWand();
         QVERIFY(client.selectWand({0,0},1));QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.selectWand({32,32},1));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.selectionSteps().size(),2);
@@ -237,7 +268,7 @@ private slots:
 };
 int main(int argc,char **argv) {
     QGuiApplication app(argc,argv);Q_INIT_RESOURCE(ui_resources);QQuickStyle::setStyle("Basic");
-    qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");
+    qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
     WorkflowTests test;return QTest::qExec(&test,argc,argv);
 }
 #include "workflow_tests.moc"
