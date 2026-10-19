@@ -309,7 +309,18 @@ bool BrushLibrary::usePresetAsOutline(const QString &id){
     if(!p.device.isEmpty())brush["tipDynamics"]=p.device;if(!p.scatter.isEmpty())brush["scatterDynamics"]=p.scatter;if(!p.shape.isEmpty())brush["shapeJitter"]=p.shape;
     auto outline=strokeOutline();outline["source"]=QVariantMap{{"model","existing-brush"},{"brush",brush}};return setStrokeOutline(outline);
 }
-bool BrushLibrary::useTextureAsOutline(const QString &resource){auto texture=defaultTexture();texture["enabled"]=!resource.isEmpty();texture["resource"]=resource.isEmpty()?QVariant{}:QVariant{resource};auto outline=strokeOutline();outline["source"]=QVariantMap{{"model","texture"},{"texture",texture}};return setStrokeOutline(outline);}
+bool BrushLibrary::useTextureAsOutline(const QString &resource){return setOutlineTextureResource(m_selected,resource);}
+bool BrushLibrary::setOutlineTextureResource(const QString &id,const QString &resource) {
+    const int at=index(id);if(at<0)return false;auto &preset=m_presets[at];
+    auto outline=preset.outline.isEmpty()?defaultOutline():preset.outline;
+    const auto source=outline.value("source").toMap();
+    auto texture=source.value("model").toString()=="texture"?source.value("texture").toMap():defaultTexture();
+    texture["enabled"]=!resource.isEmpty();texture["resource"]=resource.isEmpty()?QVariant{}:QVariant{resource};
+    outline["source"]=QVariantMap{{"model","texture"},{"texture",texture}};
+    if(!validOutline(QJsonObject::fromVariantMap(outline)))return false;
+    if(preset.outline==outline)return true;
+    preset.outline=outline;preset.preview.clear();preset.error.clear();preset.token=++m_nextToken;preset.requested=0;changed();return true;
+}
 QVariantMap BrushLibrary::dualBrush() const{const auto &data=m_presets[index(m_selected)].dual;return data.isEmpty()?defaultDual():data;}
 bool BrushLibrary::dualExisting() const{return m_presets[index(m_selected)].dualExisting;}
 QString BrushLibrary::dualSourceName() const{return m_presets[index(m_selected)].dualSourceName;}

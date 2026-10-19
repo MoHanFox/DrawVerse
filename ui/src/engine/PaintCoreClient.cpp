@@ -890,9 +890,9 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     });
     connect(m_worker,&BackendWorker::brushTipReady,this,[this](const QString &target,const QString &resource,int depth,const QString &error,int role){
         bool success=error.isEmpty();
-        if(success && !(role==2?m_brushLibrary->setDualResource(target,resource):role==1?m_brushLibrary->setTextureResource(target,resource):m_brushLibrary->setMaskResource(target,resource))){success=false;showError(QStringLiteral("目标笔刷已删除，未应用图片资源"));}
+        if(success && !(role==3?m_brushLibrary->setOutlineTextureResource(target,resource):role==2?m_brushLibrary->setDualResource(target,resource):role==1?m_brushLibrary->setTextureResource(target,resource):m_brushLibrary->setMaskResource(target,resource))){success=false;showError(QStringLiteral("目标笔刷已删除，未应用图片资源"));}
         if(!error.isEmpty())showError(error);
-        m_brushImportMessage=success?(depth==16?QStringLiteral("已导入：16 位覆盖已转换为 8 位"):role==2?QStringLiteral("第二笔尖已导入"):role==1?QStringLiteral("纹理已导入"):QStringLiteral("图片笔尖已导入")):QString{};
+        m_brushImportMessage=success?(depth==16?QStringLiteral("已导入：16 位覆盖已转换为 8 位"):role==2?QStringLiteral("第二笔尖已导入"):role==3?QStringLiteral("描边纹理已导入"):role==1?QStringLiteral("纹理已导入"):QStringLiteral("图片笔尖已导入")):QString{};
         m_brushFileBusy=false;emit brushFileChanged();emit brushFileFinished(success);
         if(success)refreshBrushResources();
     });
@@ -1938,16 +1938,16 @@ bool PaintCoreClient::requestBrushResourcePreview(const QString &identity) {
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,identity]{worker->previewBrushResource(identity);},Qt::QueuedConnection);return true;
 }
 bool PaintCoreClient::selectBrushResource(const QString &identity,int role) {
-    if(role==3)return !m_closing && m_brushLibraryReady && m_brushResources.contains(identity) && m_brushLibrary->useTextureAsOutline(identity);
+    if(role==3)return !m_closing && m_brushLibraryReady && !m_brushFileBusy && m_brushResources.contains(identity) && m_brushLibrary->useTextureAsOutline(identity);
     if(m_closing || !m_ready || !m_brushLibraryReady || m_brushFileBusy || role<0 || role>2 || identity.size()!=64)return false;
     for(const auto c:identity)if(!((c>='0' && c<='9') || (c>='a' && c<='f')))return false;
     const auto target=m_brushLibrary->selectedId();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,identity,target,role]{worker->selectBrushResource(identity,target,role);},Qt::QueuedConnection);return true;
 }
-bool PaintCoreClient::importBrushTexture(const QUrl &path,int interpretation) {
+bool PaintCoreClient::importBrushTexture(const QUrl &path,int interpretation,bool outline) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty() || interpretation<0 || interpretation>2)return false;
     const auto target=m_brushLibrary->selectedId();m_brushImportMessage.clear();m_brushFileBusy=true;emit brushFileChanged();
-    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),target,interpretation]{worker->importBrushTip(path,target,interpretation,1);},Qt::QueuedConnection);return true;
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),target,interpretation,outline]{worker->importBrushTip(path,target,interpretation,outline?3:1);},Qt::QueuedConnection);return true;
 }
 bool PaintCoreClient::importDualBrushTip(const QUrl &path,int interpretation) {
     if(m_closing || !m_ready || m_brushFileBusy || !path.isLocalFile() || path.toLocalFile().isEmpty() || interpretation<0 || interpretation>2)return false;

@@ -49,6 +49,20 @@ private slots:
         thumbnail->setProperty("resource",second);QVERIFY(thumbnail->property("imageSource").toString().isEmpty());QCOMPARE(client.requests,1);
         client.cache.insert(second,png);client.changed();QCOMPARE(thumbnail->property("imageSource").toString(),png);
     }
+    void outlineTextureCanBeChosenWithoutMainTextureAndImportKeepsTarget() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("outline-texture.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();const auto target=library->selectedId();const auto main=library->texture();
+        auto outline=library->strokeOutline();outline["enabled"]=true;QVERIFY(library->setStrokeOutline(outline));
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);QQmlComponent component(&engine,QUrl("qrc:/qml/brushes/BrushSettingsPanel.qml"));QScopedPointer<QObject> object(component.createWithInitialProperties({{"category",12}}));QVERIFY2(object,qPrintable(component.errorString()));
+        auto *panel=qobject_cast<QQuickItem*>(object.data());QVERIFY(panel);auto *source=findVisual(panel,"settingsOutlineSource");QVERIFY(source);source->setProperty("currentIndex",2);QVERIFY(QMetaObject::invokeMethod(source,"activated",Q_ARG(int,2)));
+        auto *picker=findVisual(panel,"settingsOutlineTexturePicker");auto *importButton=findVisual(panel,"importOutlineTexture");QVERIFY(picker && picker->isVisible() && importButton && importButton->isVisible());QCOMPARE(library->strokeOutline(),outline);QCOMPARE(library->texture(),main);
+        auto *algorithm=findVisual(panel,"settingsOutlineAlgorithm");QVERIFY(algorithm);QCOMPARE(algorithm->property("text").toString(),QString::fromUtf8("算法：建路径"));
+        QImage texture(4,4,QImage::Format_RGBA8888);texture.fill(Qt::white);texture.setPixelColor(0,0,Qt::black);const auto input=temp.filePath("texture.png");QVERIFY(texture.save(input));QSignalSpy finished(&client,&PaintCoreClient::brushFileFinished);
+        QVERIFY(client.importBrushTexture(QUrl::fromLocalFile(input),0,true));QVERIFY(library->select("round-fine"));QTRY_COMPARE(finished.size(),1);QVERIFY(finished.last()[0].toBool());QVERIFY(library->texture().value("resource").isNull());QCOMPARE(library->strokeOutline().value("source").toMap().value("model").toString(),QString("self-brush"));
+        QVERIFY(library->select(target));const auto stored=library->strokeOutline();QCOMPARE(stored.value("source").toMap().value("model").toString(),QString("texture"));const auto resource=stored.value("source").toMap().value("texture").toMap().value("resource").toString();QCOMPARE(resource.size(),64);QVERIFY(stored.value("enabled").toBool());QCOMPARE(library->texture(),main);
+        BrushLibrary restored;QVERIFY(restored.restore(library->snapshot()));QVERIFY(restored.select(target));QCOMPARE(restored.strokeOutline(),stored);QCOMPARE(restored.texture(),main);
+        QTRY_VERIFY(client.brushResources().contains(resource));auto reset=stored;reset["source"]=QVariantMap{{"model","self-brush"}};QVERIFY(library->setStrokeOutline(reset));source->setProperty("currentIndex",2);QVERIFY(QMetaObject::invokeMethod(source,"activated",Q_ARG(int,2)));QVERIFY(picker->isVisible());
+        const int resourceIndex=client.brushResources().indexOf(resource);QVERIFY(resourceIndex>=0);QVERIFY(QMetaObject::invokeMethod(picker,"activated",Q_ARG(int,resourceIndex)));QCOMPARE(library->strokeOutline().value("source").toMap().value("model").toString(),QString("texture"));QCOMPARE(library->texture(),main);client.shutdown();
+    }
     void multiBrushMoveIsAtomicOrderedAndRejectsCycles() {
         BrushLibrary library;const auto group=library.createGroup("Destination"),child=library.createGroup("Child",group);QVERIFY(!group.isEmpty() && !child.isEmpty());
         const auto preset=[](const QString &id){return QVariantMap{{"kind","preset"},{"id",id}};};
