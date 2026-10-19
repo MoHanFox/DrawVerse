@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [整笔描边 Qt](brush/ui/brush-stroke-outline-ui-design.md)
+
 设计与说明按功能领域组织；所有独立验收记录统一位于 [validations](validations/README.md)，按相同领域分类。新增设计使用 `*-design.md`，新增验收使用 `*-validation.md`，并维护设计与验收之间的相对链接。
 
 | 领域 | 设计与说明 | 验收记录 | 内容 |

@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [整笔描边 Qt](brush/ui/brush-stroke-outline-ui-validation.md)
+
 所有独立验收记录集中在 `docs/validations/`，按功能领域与设计目录对应分类，保留原文件名、日期、测试结果和未完成范围。设计及说明仍位于 `docs/brush/`、`docs/tools/` 等领域目录；总入口见 [文档索引](../README.md)。
 
 记录描述当时实际执行的范围，不代表当前全量测试或所有平台均通过。当前结构整理及已知失败项见 [源码与契约目录调整验收](platform/source-layout-validation.md)。

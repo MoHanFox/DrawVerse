@@ -122,6 +122,11 @@ public:
     QVariantMap wetMix() const;
     Q_PROPERTY(QVariantMap strokeTaper READ strokeTaper NOTIFY settingsChanged)
     QVariantMap strokeTaper() const;
+    Q_PROPERTY(QVariantMap strokeOutline READ strokeOutline NOTIFY settingsChanged)
+    QVariantMap strokeOutline() const;
+    Q_INVOKABLE bool setStrokeOutline(QVariantMap data);
+    Q_INVOKABLE bool usePresetAsOutline(const QString &id);
+    Q_INVOKABLE bool useTextureAsOutline(const QString &resource);
     Q_PROPERTY(bool dualExisting READ dualExisting WRITE setDualExisting NOTIFY settingsChanged)
     Q_PROPERTY(QString dualSourceName READ dualSourceName NOTIFY settingsChanged)
     bool dualExisting() const;
@@ -443,7 +448,7 @@ private:
     bool m_cursorSimple=false,m_cursorComposite=false;
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
-        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,transfer,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation,direction,matrix,fade;bool dualExisting=false;QString dualSourceName;};
+        qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,transfer,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation,direction,matrix,fade,outline;bool dualExisting=false;QString dualSourceName;};
     static QJsonObject presetRow(const Preset &preset,int &version);
     static QJsonObject exportPreset(const Preset &preset,bool includeSource,const QString &id);
     QVariantMap tangentControl(const QString &target) const;

@@ -25,6 +25,12 @@ ColumnLayout {
     function setTaperLengthMode(relative){let data=Object.assign({},library.strokeTaper);let end=Object.assign({},data[taperEnd]);if(end.lengthPercent===undefined)end.lengthPercent=Math.min(10000,end.lengthPx/(library.radius*2)*100);end.lengthMode=relative?"relative":"independent";data[taperEnd]=end;return library.setStrokeTaper(data)}
     function setTaperTransparent(transparent){let opacity=Object.assign({},library.strokeTaper[taperEnd].opacity);opacity.minimum=transparent?0:1;return setTaperEndField("opacity",opacity)}
     function setTaperEndField(key,value){let data=Object.assign({},library.strokeTaper);let end=Object.assign({},data[taperEnd]);end[key]=value;data[taperEnd]=end;return library.setStrokeTaper(data)}
+    readonly property var outline:library.strokeOutline
+    function setOutlineField(key,value){let data=Object.assign({},outline);data[key]=value;return library.setStrokeOutline(data)}
+    function setOutlineWidth(key,value){let width=Object.assign({},outline.width);width[key]=value;return setOutlineField("width",width)}
+    function setOutlineBrush(key,value){let source=Object.assign({},outline.source);let brush=Object.assign({},source.brush);brush[key]=value;source.brush=brush;return setOutlineField("source",source)}
+    function setOutlineScatter(key,value){let data=Object.assign({},outline.source.brush.scatterDynamics||{enabled:false,amount:0,bothAxes:false,count:1,countJitter:0,seed:"0000000000000000"});data[key]=value;return setOutlineBrush("scatterDynamics",data)}
+    function setOutlineTexture(key,value){let source=Object.assign({},outline.source);let texture=Object.assign({},source.texture);texture[key]=value;source.texture=texture;return setOutlineField("source",source)}
     QtObject {
         id:taperControls
         readonly property var pressureDynamics: {
@@ -122,7 +128,7 @@ ColumnLayout {
         ColumnLayout {
             Layout.preferredWidth:76;Layout.minimumWidth:76;Layout.maximumWidth:76;Layout.alignment:Qt.AlignTop;spacing:2
             Repeater {
-                model:["笔尖形状","形状动态","散布","纹理","双重笔刷","颜色动态","传递","光标与预览","来源与兼容","平滑","湿混与载色","起收笔"]
+                model:["笔尖形状","形状动态","散布","纹理","双重笔刷","颜色动态","传递","光标与预览","来源与兼容","平滑","湿混与载色","起收笔","整笔描边"]
                 Rectangle {
                     required property string modelData
                     required property int index
@@ -506,6 +512,37 @@ ColumnLayout {
                         }
                     }
                 }
+                }
+                Loader {objectName:"brushSettingsCategory:12";Layout.fillWidth:true;Layout.minimumWidth:0;active:root.category===12;visible:active
+                    sourceComponent:ColumnLayout {Layout.fillWidth:true;spacing:5
+                        CompactCheckBox {objectName:"settingsOutlineEnabled";text:"启用整笔描边";checked:root.outline.enabled;onToggled:if(!root.setOutlineField("enabled",checked))checked=Qt.binding(function(){return root.outline.enabled})}
+                        Label {text:"位置";color:Theme.text;font.pixelSize:10}
+                        CompactComboBox {objectName:"settingsOutlinePlacement";Layout.fillWidth:true;model:["外描边","居中描边","内描边"];property var values:["outside","center","inside"];currentIndex:values.indexOf(root.outline.placement);onActivated:root.setOutlineField("placement",values[currentIndex])}
+                        CompactCheckBox {objectName:"settingsOutlineSecondaryColor";text:"使用色轮第二颜色";checked:root.outline.secondaryColor;onToggled:root.setOutlineField("secondaryColor",checked)}
+                        Label {text:"宽度方式";color:Theme.text;font.pixelSize:10}
+                        CompactComboBox {objectName:"settingsOutlineWidthMode";Layout.fillWidth:true;model:["独立像素","相对主笔百分比"];currentIndex:root.outline.width.relative?1:0;onActivated:root.setOutlineWidth("relative",currentIndex===1)}
+                        ParameterSlider {title:"宽度";sliderName:"settingsOutlinePixels";visible:!root.outline.width.relative;to:2000;decimals:2;unit:"px";value:root.outline.width.pixels;onCommitted:value=>root.setOutlineWidth("pixels",value)}
+                        ParameterSlider {title:"相对宽度";sliderName:"settingsOutlinePercent";visible:root.outline.width.relative;to:10000;decimals:2;unit:"%";value:root.outline.width.percent;onCommitted:value=>root.setOutlineWidth("percent",value)}
+                        Label {text:"描边来源";color:Theme.text;font.pixelSize:10}
+                        CompactComboBox {objectName:"settingsOutlineSource";Layout.fillWidth:true;model:["自身笔刷","已有笔刷","纹理"];property var values:["self-brush","existing-brush","texture"];currentIndex:values.indexOf(root.outline.source.model)
+                            onActivated:{if(currentIndex===0)root.setOutlineField("source",{model:"self-brush"});else if(currentIndex===1)root.library.usePresetAsOutline(root.library.selectedId);else if(!root.library.useTextureAsOutline(root.library.texture.resource||""))currentIndex=Qt.binding(function(){return values.indexOf(root.outline.source.model)})}}
+                        ColumnLayout {visible:root.outline.source.model==="existing-brush";Layout.fillWidth:true
+                            CompactComboBox {objectName:"settingsOutlinePreset";Layout.fillWidth:true;model:root.library.presetRows();textRole:"name";currentIndex:-1;displayText:"选择笔刷并捕获快照";onActivated:{if(currentIndex>=0)root.library.usePresetAsOutline(model[currentIndex].id);currentIndex=-1}}
+                            ParameterSlider {title:"大小";sliderName:"settingsOutlineBrushSize";from:1;to:2000;decimals:2;unit:"px";value:root.outline.source.brush?.diameter||24;onCommitted:value=>root.setOutlineBrush("diameter",value)}
+                            ParameterSlider {title:"间距";sliderName:"settingsOutlineBrushSpacing";from:1;to:1000;decimals:2;unit:"%";value:(root.outline.source.brush?.spacing||.25)*100;onCommitted:value=>root.setOutlineBrush("spacing",value/100)}
+                            CompactCheckBox {text:"启用散布";checked:root.outline.source.brush?.scatterDynamics?.enabled||false;onToggled:root.setOutlineScatter("enabled",checked)}
+                            CompactCheckBox {text:"双轴散布";checked:root.outline.source.brush?.scatterDynamics?.bothAxes||false;onToggled:root.setOutlineScatter("bothAxes",checked)}
+                            ParameterSlider {title:"散布";sliderName:"settingsOutlineBrushScatter";to:1000;decimals:2;unit:"%";value:(root.outline.source.brush?.scatterDynamics?.amount||0)*100;onCommitted:value=>root.setOutlineScatter("amount",value/100)}
+                            ParameterSlider {title:"数量";sliderName:"settingsOutlineBrushCount";from:1;to:16;value:root.outline.source.brush?.scatterDynamics?.count||1;onCommitted:value=>root.setOutlineScatter("count",Math.round(value))}
+                        }
+                        ColumnLayout {visible:root.outline.source.model==="texture";Layout.fillWidth:true
+                            BrushResourcePicker {objectName:"settingsOutlineTexturePicker";Layout.fillWidth:true;resource:root.outline.source.texture?.resource||"";resourceRole:3}
+                            Label {text:"选择已导入纹理；可先在纹理页导入图片。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+                            CompactComboBox {objectName:"settingsOutlineTextureSpace";Layout.fillWidth:true;model:["文档纸纹","笔尖局部"];currentIndex:root.outline.source.texture?.space==="tip"?1:0;onActivated:root.setOutlineTexture("space",currentIndex===1?"tip":"document")}
+                            ParameterSlider {title:"深度";sliderName:"settingsOutlineTextureDepth";unit:"%";value:(root.outline.source.texture?.depth||0)*100;onCommitted:value=>root.setOutlineTexture("depth",value/100)}
+                        }
+                        Label {text:"沿整条笔触轮廓生成；当前支持干画笔普通像素层。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+                    }
                 }
                 Loader {objectName:"brushSettingsCategory:11";Layout.fillWidth:true;Layout.minimumWidth:0;active:root.category===11;visible:active
                     sourceComponent:ColumnLayout {visible:root.category===11;Layout.fillWidth:true;Layout.minimumWidth:0;spacing:5

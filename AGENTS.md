@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新整笔描边 Qt：[设计](docs/brush/ui/brush-stroke-outline-ui-design.md) / [验收](docs/validations/brush/ui/brush-stroke-outline-ui-validation.md)；state41/ABI1.60/VBR1.0完整镜像、三来源、三位置、相对/像素宽度、第二颜色、白色预览/真实像素/单历史与新目录资源往返/保存重开，Windows Release与三项Qt通过。未跑全量/设备/跨平台/GPU。
+
 - 当前契约入口：`contracts/README.md`，仅展示当前规范；开发迭代 schema 位于 `core/crates/paint-io/tests/fixtures/schema-history/`，仅供回归。当前笔刷文件为 VBR 1.0；VBR 读取按实际字段补全、校验和执行，不以 minor 判断功能，ABI/state/behavior 版本独立。
 
 - 源码目录入口：`docs/platform/source-layout-design.md`；Rust 保留现有 crate 分工，内部按 `brushes` / `document` / `layers` / `history` / `pixels`、格式和 ABI 职责归档；C++ 见 `ui/src/{app,documents,canvas,engine,brushes,workspace,platform,color}`，项目头使用相对 `ui/src` 的显式目录路径；QML 按功能面板/应用装配/公共控件分组，跨目录显式 import，Theme 位于 `ui/qml/theme`，入口为 `qrc:/qml/app/Main.qml`，资源清单以 `ui/CMakeLists.txt` 为准。构建/运行记录见 `docs/validations/platform/source-layout-validation.md`，完整验证入口仍为 `python tools/check.py`。
