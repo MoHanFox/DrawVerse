@@ -158,13 +158,18 @@ ColumnLayout {
         groupedModel=next
         Qt.callLater(()=>{presetList.contentY=Math.min(keepY,Math.max(0,presetList.contentHeight-presetList.height))})
     }
+    function moveBrushItems(kind,id,parentId,index) {
+        if(isBrushItemSelected(kind,id) && library.selectedBrushItems.length>1)return library.moveSelectedItemsToGroupAt(parentId,index)
+        if(kind==="preset")return library.movePresetToGroupAt(id,parentId,index)
+        if(kind==="group")return library.moveGroupToGroupAt(id,parentId,index)
+        return false
+    }
     function dropToRoot(drop) {
         const payload=drop.getDataAsString("application/x-drawverse-brush"),separator=payload.indexOf(":")
         if(separator<=0)return false
         const kind=payload.slice(0,separator),id=payload.slice(separator+1)
         if(kind!=="preset" && kind!=="group")return false
-        if(kind==="preset")root.library.movePresetToGroupAt(id,"",-1)
-        else root.library.moveGroupToGroupAt(id,"",-1)
+        if(!moveBrushItems(kind,id,"",-1))return false
         drop.acceptProposedAction()
         return true
     }
@@ -244,7 +249,7 @@ ColumnLayout {
                 property bool dragging:false
                 property bool suppressClick:false
                 onPressed:function(mouse){origin=Qt.point(mouse.x,mouse.y);dragging=false;suppressClick=false;brushRow.panel.draggingBrush=false}
-                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;brushRow.panel.draggingBrush=true;brushRow.panel.draggedBrushKey=modelData.kind+":"+modelData.id;PaintClient.beginBrushDrag(brushRow.panel.draggedBrushKey);brushRow.panel.draggedBrushKey="";brushRow.panel.draggingBrush=false;brushRow.panel.draggedBrushKey="";brushRow.panel.dragViewportY=-1}}
+                onPositionChanged:function(mouse){if(pressed && (pressedButtons&Qt.LeftButton) && !dragging && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>8){dragging=true;suppressClick=true;if(!brushRow.panel.isBrushItemSelected(modelData.kind,modelData.id))brushRow.panel.handleBrushClick(modelData,Qt.NoModifier);brushRow.panel.draggingBrush=true;brushRow.panel.draggedBrushKey=modelData.kind+":"+modelData.id;PaintClient.beginBrushDrag(brushRow.panel.draggedBrushKey);brushRow.panel.draggedBrushKey="";brushRow.panel.draggingBrush=false;brushRow.panel.draggedBrushKey="";brushRow.panel.dragViewportY=-1}}
                 onReleased:function(){dragging=false;brushRow.panel.draggingBrush=false;brushRow.panel.draggedBrushKey="";brushRow.panel.dragViewportY=-1}
                 onCanceled:function(){dragging=false;brushRow.panel.draggingBrush=false;brushRow.panel.draggedBrushKey="";brushRow.panel.dragViewportY=-1}
                 onDoubleClicked:function(mouse){if(mouse.button!==Qt.LeftButton || suppressClick)return;if(modelData.kind==="group" && mouse.x>=groupLabel.x)brushRow.panel.beginRenameGroup(modelData.id);else if(modelData.kind==="preset")brushRow.panel.beginRenamePreset(modelData.id)}
@@ -276,9 +281,7 @@ ColumnLayout {
                     let parentId=modelData.parent,index=modelData.index
                     if(modelData.kind==="group" && brushRow.dropPlacement===0){parentId=modelData.id;index=0}
                     else if(brushRow.dropPlacement===2)index=modelData.index+1
-                    if(kind==="preset")brushRow.panel.library.movePresetToGroupAt(id,parentId,index)
-                    else if(kind==="group")brushRow.panel.library.moveGroupToGroupAt(id,parentId,index)
-                    drop.acceptProposedAction()
+                    if(brushRow.panel.moveBrushItems(kind,id,parentId,index))drop.acceptProposedAction()
                 }
             }
             Rectangle {anchors.fill:parent;border.width:2;border.color:Theme.accent;visible:brushDrop.containsDrag && dropPlacement===0}

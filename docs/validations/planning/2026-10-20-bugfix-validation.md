@@ -84,3 +84,9 @@
 - 创建组直接分组所选笔刷，自动使用未占用的“笔刷组N”；根目录投放提示已移除。组名单击只选择，三角按钮折叠，双击名称原位编辑。
 - Windows Release Qt brushGroupsCreateDirectlyAndRenameInline 与 brushGroupCollapseKeepsUnchangedDelegates 通过；验证两个自动名称、单笔刷归组、仅三角折叠、真实双击/Enter 保存/Esc 放弃，以及三轮折叠保持其他预览。折叠后输入测试等待真实 frameSwapped，避免在布局尚未呈现时使用旧位置。
 - Release 已重建到 build/qt/bin/Release。多选拖动另列下一项。
+
+## 普通 6，第二步：多选拖放
+
+- 多选拖动复用现有 MIME，一次组织事务移动全部最高层选择，按树顺序保留排列；选中组与其后代不重复移动，自身/子组环与不存在目标均原子拒绝。
+- Windows Release Qt multiBrushMoveIsAtomicOrderedAndRejectsCycles、multiBrushDropMovesEntireSelectionIntoGroup、brushGroupsCreateDirectlyAndRenameInline 通过。覆盖一次变更通知、同父重排、循环拒绝后字节保持、保存重开及窗口实际 MIME drop 将两个笔刷一起放入组。
+- Release 已重建到 build/qt/bin/Release；真实跨窗口鼠标拖动未自动化。

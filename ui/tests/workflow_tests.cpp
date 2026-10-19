@@ -11,6 +11,10 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QBuffer>
+#include <QMimeData>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include "platform/MenuSurface.h"
 #include "workspace/WorkspaceManager.h"
 
@@ -44,6 +48,34 @@ private slots:
         QCOMPARE(thumbnail->property("imageSource").toString(),png);QCOMPARE(client.requests,0);
         thumbnail->setProperty("resource",second);QVERIFY(thumbnail->property("imageSource").toString().isEmpty());QCOMPARE(client.requests,1);
         client.cache.insert(second,png);client.changed();QCOMPARE(thumbnail->property("imageSource").toString(),png);
+    }
+    void multiBrushMoveIsAtomicOrderedAndRejectsCycles() {
+        BrushLibrary library;const auto group=library.createGroup("Destination"),child=library.createGroup("Child",group);QVERIFY(!group.isEmpty() && !child.isEmpty());
+        const auto preset=[](const QString &id){return QVariantMap{{"kind","preset"},{"id",id}};};
+        const auto groupItem=[](const QString &id){return QVariantMap{{"kind","group"},{"id",id}};};
+        const auto original=library.organization().value("roots").toList();QStringList ordered;
+        for(const auto &value:original){const auto item=value.toMap();if(item.value("kind")=="preset")ordered.append(item.value("id").toString());}QVERIFY(ordered.size()>=3);
+        QVERIFY(library.selectBrushItems({preset(ordered[1]),preset(ordered[0])},ordered[0]));
+        QSignalSpy changes(&library,&BrushLibrary::presetsChanged);QVERIFY(library.moveSelectedItemsToGroupAt(group,0));QCOMPARE(changes.size(),1);
+        const auto itemsOf=[&](const QString &id){for(const auto &value:library.organization().value("groups").toList()){const auto item=value.toMap();if(item.value("id").toString()==id)return item.value("items").toList();}return QVariantList{};};
+        auto moved=itemsOf(group);QCOMPARE(moved.size(),3);QCOMPARE(moved[0].toMap().value("id").toString(),ordered[0]);QCOMPARE(moved[1].toMap().value("id").toString(),ordered[1]);
+        QVERIFY(library.selectBrushItems({groupItem(group),groupItem(child),preset(ordered[0])}));const auto before=library.snapshot();
+        QVERIFY(!library.moveSelectedItemsToGroupAt(child,0));QCOMPARE(library.snapshot(),before);QVERIFY(!library.moveSelectedItemsToGroupAt("missing",0));QCOMPARE(library.snapshot(),before);
+        QVERIFY(library.moveSelectedItemsToGroupAt("",0));QCOMPARE(itemsOf(group),moved);QCOMPARE(library.organization().value("roots").toList().first().toMap().value("id").toString(),group);
+        QVERIFY(library.selectBrushItems({preset(ordered[0]),preset(ordered[1])},ordered[0]));QVERIFY(library.moveSelectedItemsToGroupAt("",1));
+        const auto roots=library.organization().value("roots").toList();QCOMPARE(roots[1].toMap().value("id").toString(),ordered[0]);QCOMPARE(roots[2].toMap().value("id").toString(),ordered[1]);
+        QVERIFY(library.moveSelectedItemsToGroupAt("",3));QCOMPARE(library.organization().value("roots").toList(),roots);
+        BrushLibrary restored;QVERIFY(restored.restore(library.snapshot()));QCOMPARE(restored.organization(),library.organization());
+    }
+    void multiBrushDropMovesEntireSelectionIntoGroup() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("brush-drop.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();
+        const auto group=library->createGroup("Destination");QVERIFY(!group.isEmpty());QVERIFY(library->selectBrushItems({QVariantMap{{"kind","preset"},{"id","round-pressure"}},QVariantMap{{"kind","preset"},{"id","round-fine"}}},"round-pressure"));
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);QQmlComponent component(&engine,QUrl("qrc:/qml/brushes/BrushLibraryPanel.qml"));
+        QQuickWindow window;QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));auto *panel=qobject_cast<QQuickItem*>(object.data());QVERIFY(panel);panel->setParentItem(window.contentItem());panel->setWidth(280);panel->setHeight(600);window.resize(280,600);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        QQuickItem *row=nullptr;QTRY_VERIFY((row=findVisual(panel,"brushGroup:"+group)) && row->width()>32);
+        QMimeData mime;mime.setData("application/x-drawverse-brush","preset:round-pressure");const auto point=row->mapToScene({row->width()/2,row->height()-2}).toPoint();
+        QDragEnterEvent enter(point,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&enter);QDragMoveEvent move(point,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&move);QDropEvent drop(point,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&drop);QVERIFY(drop.isAccepted());
+        QVariantList items;for(const auto &value:library->organization().value("groups").toList())if(value.toMap().value("id").toString()==group)items=value.toMap().value("items").toList();QCOMPARE(items.size(),2);QSet<QString> ids;for(const auto &value:items)ids.insert(value.toMap().value("id").toString());QVERIFY(ids.contains("round-pressure") && ids.contains("round-fine"));QCOMPARE(library->selectedBrushItems().size(),2);client.shutdown();
     }
     void brushGroupsCreateDirectlyAndRenameInline() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("brush-group-edit.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));

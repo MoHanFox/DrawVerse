@@ -854,6 +854,48 @@ bool BrushLibrary::moveGroupToGroupAt(const QString &groupId,const QString &pare
     else {auto all=candidate.value("groups").toArray();for(qsizetype i=0;i<all.size();++i){auto group=all[i].toObject();if(group.value("id").toString()==parentId){group["items"]=destination;all[i]=group;break;}}candidate["groups"]=all;}
     return applyOrganization(candidate);
 }
+bool BrushLibrary::moveSelectedItemsToGroupAt(const QString &parentId,int index) {
+    if(m_selectedItems.isEmpty())return false;
+    auto organization=m_organization;
+    if(organization.isEmpty()) {
+        QJsonArray roots;for(const auto &preset:m_presets)roots.append(BrushOrganization::presetItem(preset.id));
+        organization=QJsonObject{{"model","ordered-tree-v1"},{"roots",roots},{"groups",QJsonArray{}}};
+    }
+    QHash<QString,QJsonArray> children;bool found=parentId.isEmpty();
+    for(const auto &value:organization.value("groups").toArray()) {
+        const auto group=value.toObject();const auto id=group.value("id").toString();children.insert(id,group.value("items").toArray());
+        if(id==parentId)found=true;
+    }
+    if(!found)return false;
+    QSet<QString> selected;for(const auto &value:m_selectedItems){const auto item=value.toObject();selected.insert(item.value("kind").toString()+":"+item.value("id").toString());}
+    QJsonArray moved;
+    const auto visit=[&](auto &&self,const QJsonArray &items)->void {
+        for(const auto &value:items) {
+            const auto item=value.toObject();const auto kind=item.value("kind").toString(),id=item.value("id").toString();
+            if(selected.contains(kind+":"+id))moved.append(item);
+            else if(kind=="group")self(self,children.value(id));
+        }
+    };
+    visit(visit,organization.value("roots").toArray());
+    if(moved.isEmpty())return false;
+    int adjusted=index;
+    for(const auto &value:moved) {
+        const auto item=value.toObject();
+        if(item.value("kind").toString()=="group" && !parentId.isEmpty() && groupContainsGroup(organization,item.value("id").toString(),parentId))return false;
+        int at=-1;const auto parent=findItemParent(organization,item,at);
+        if(parent==parentId && at>=0 && at<index)--adjusted;
+    }
+    auto candidate=organization;
+    for(const auto &value:moved)removeOrganizationItem(candidate,value.toObject());
+    auto groups=candidate.value("groups").toArray();
+    QJsonArray destination=parentId.isEmpty()?candidate.value("roots").toArray():QJsonArray{};
+    for(const auto &value:groups)if(value.toObject().value("id").toString()==parentId)destination=value.toObject().value("items").toArray();
+    const int at=index<0?int(destination.size()):std::clamp(adjusted,0,int(destination.size()));
+    for(qsizetype i=0;i<moved.size();++i)destination.insert(at+int(i),moved[i]);
+    if(parentId.isEmpty())candidate["roots"]=destination;
+    else {for(qsizetype i=0;i<groups.size();++i){auto group=groups[i].toObject();if(group.value("id").toString()==parentId){group["items"]=destination;groups[i]=group;break;}}candidate["groups"]=groups;}
+    return applyOrganization(candidate);
+}
 bool BrushLibrary::groupSelectedItems(const QString &name) {
     const auto clean=name.trimmed();
     if(clean.isEmpty() || clean.size()>80 || clean.contains(QChar(0)) || m_selectedItems.isEmpty())return false;

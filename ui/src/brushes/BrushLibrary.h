@@ -400,6 +400,7 @@ public:
     Q_INVOKABLE bool selectBrushItems(const QVariantList &items,const QString &activePreset={});
     Q_INVOKABLE void clearBrushSelection();
     Q_INVOKABLE bool groupSelectedItems(const QString &name);
+    Q_INVOKABLE bool moveSelectedItemsToGroupAt(const QString &parentId,int index);
     Q_INVOKABLE bool useColor(const QString &color);
     Q_INVOKABLE QString saveCopy(const QString &name);
     Q_INVOKABLE QString createOutlinePreset(bool fixedWidth);
