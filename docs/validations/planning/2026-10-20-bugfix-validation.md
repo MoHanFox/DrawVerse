@@ -37,3 +37,9 @@
 - Windows Release qt_selection_tests 六项（含初始化/清理）通过。4096×2160、48 条纵横交织矩形选区，100 次 zoom/rect 更新约 0.013ms，pathChanged 为零、路径保持，文档尺寸改变后才重新裁剪。此数值只含属性和几何更新，不含窗口渲染延迟。
 - 原灰度边缘/对角岛/四组合、复杂蒙版边界、4096 点套索和裁剪回归通过。
 - 复杂蚂蚁线逐帧绘制、AA 判断和实体导航体验仍待后续专项，不将本项扩大为所有选区性能已解决。
+
+## 普通 7：大目录多选保持
+
+- 只在原生目录同步路径保留仍存在的笔刷/组选择；常规文件 restore 仍恢复活动预设。
+- Windows Release qt_workflow_tests::nativeCatalogRefreshPreservesLargeLibraryMultiSelection 通过；400 个合法预设加组，参数同步后两笔刷和一组仍被选中、活动 ID 正确、保持多选禁画；普通 restore 回到单选。
+- 使用小型 workflow Qt 测试目标验证工作流，避免每次编译整个大型 UI 测试源文件。

@@ -83,6 +83,12 @@ set_target_properties(qt_transform_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${
 add_test(NAME qt_transform_tests COMMAND qt_transform_tests)
 set_tests_properties(qt_transform_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 
+qt_add_executable(qt_workflow_tests tests/workflow_tests.cpp)
+target_link_libraries(qt_workflow_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_workflow_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_workflow_tests COMMAND qt_workflow_tests)
+set_tests_properties(qt_workflow_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+
 # Focused selection geometry regression and reproducible complexity benchmark.
 qt_add_executable(qt_selection_tests tests/selection_tests.cpp src/canvas/SelectionOverlay.cpp src/canvas/SelectionOverlay.h)
 target_include_directories(qt_selection_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")

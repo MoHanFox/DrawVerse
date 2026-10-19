@@ -1186,7 +1186,7 @@ bool BrushLibrary::applyNativeCatalog(const QByteArray &json) {
     if((native.value("version").toInt()!=2 && native.value("version").toInt()!=3 && native.value("version").toInt()!=4 && native.value("version").toInt()!=5 && native.value("version").toInt()!=6 && native.value("version").toInt()!=7 && native.value("version").toInt()!=8 && native.value("version").toInt()!=9 && native.value("version").toInt()!=10 && native.value("version").toInt()!=11 && native.value("version").toInt()!=12 && native.value("version").toInt()!=13 && native.value("version").toInt()!=14 && native.value("version").toInt()!=15 && native.value("version").toInt()!=16 && native.value("version").toInt()!=17 && native.value("version").toInt()!=18 && native.value("version").toInt()!=19 && native.value("version").toInt()!=20 && native.value("version").toInt()!=21 && native.value("version").toInt()!=22 && native.value("version").toInt()!=23 && native.value("version").toInt()!=24 && native.value("version").toInt()!=25 && native.value("version").toInt()!=26 && native.value("version").toInt()!=27 && native.value("version").toInt()!=28 && native.value("version").toInt()!=29 && native.value("version").toInt()!=30 && native.value("version").toInt()!=31 && native.value("version").toInt()!=32 && native.value("version").toInt()!=33 && native.value("version").toInt()!=34 && native.value("version").toInt()!=35 && native.value("version").toInt()!=36 && native.value("version").toInt()!=37 && native.value("version").toInt()!=38 && native.value("version").toInt()!=39 && native.value("version").toInt()!=40 && native.value("version").toInt()!=41) || !native.value("presets").isArray() || !native.value("selected").isString())return false;
     if(equivalentSettings(native,QJsonDocument::fromJson(catalogSnapshot()).object()))return true;
     auto state=QJsonDocument::fromJson(snapshot()).object();state["version"]=native.value("version");state["selected"]=native.value("selected");state["presets"]=native.value("presets");if(native.contains("organization"))state["organization"]=native.value("organization");else state.remove("organization");
-    return restore(QJsonDocument(state).toJson(QJsonDocument::Compact));
+    return restore(QJsonDocument(state).toJson(QJsonDocument::Compact),true);
 }
 bool BrushLibrary::importPackage(const QByteArray &json,const QString &groupName) {
     if(json.size()>2*1024*1024)return false;
@@ -1387,7 +1387,7 @@ bool BrushLibrary::importAbr(const QByteArray &json,const QString &groupName) {
     if(!restore(QJsonDocument(state).toJson(QJsonDocument::Compact)))return false;
     queuePersistence();return true;
 }
-bool BrushLibrary::restore(const QByteArray &json) {
+bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
     if(json.size()>4*1024*1024+16384)return false;
     const auto root=QJsonDocument::fromJson(json).object();const auto rows=root.value("presets").toArray();
     QJsonObject executing{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}};
@@ -1527,7 +1527,14 @@ bool BrushLibrary::restore(const QByteArray &json) {
     }
     m_snapshotCache.clear();m_catalogCache.clear();
     m_presets=restored;m_organization=organization;m_selected=selected;m_recentColors=recent;m_writeBlend=writeBlend;
-    m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",selected}}};
+    QJsonArray selectedItems;
+    if(preserveSelection)for(const auto &value:m_selectedItems) {
+        const auto item=value.toObject();const auto kind=item.value("kind").toString(),id=item.value("id").toString();
+        bool valid=kind=="preset" && seen.contains(id);
+        if(kind=="group")for(const auto &group:organization.value("groups").toArray())if(group.toObject().value("id").toString()==id){valid=true;break;}
+        if(valid)selectedItems.append(item);
+    }
+    m_selectedItems=preserveSelection && (!selectedItems.isEmpty() || m_selectedItems.isEmpty())?selectedItems:QJsonArray{QJsonObject{{"kind","preset"},{"id",selected}}};
     const bool colorsChanged=foreground!=m_foregroundColor || background!=m_backgroundColor;
     m_foregroundColor=foreground;m_backgroundColor=background;
     if(colorsChanged)emit activeColorsChanged();
