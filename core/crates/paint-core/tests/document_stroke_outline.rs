@@ -1,8 +1,8 @@
 use paint_core::{
     Brush, BrushDefinition, BrushMask, BrushProgram, BrushTexture, BrushTip, Document,
-    DocumentOptions, InputPoint, InputScheduleBudget, OutlinePlacement, OutlineSource,
-    OutlineWidth, Pixel, PressureControl, PressureCurve, StrokeOutline, StrokePageResult,
-    StrokeTaper, TaperEnd, TextureResource, TextureSettings, TextureSpace,
+    DocumentOptions, InputPoint, InputScheduleBudget, OutlineAlgorithm, OutlinePlacement,
+    OutlineSource, OutlineWidth, Pixel, PressureControl, PressureCurve, StrokeOutline,
+    StrokePageResult, StrokeTaper, TaperEnd, TextureResource, TextureSettings, TextureSpace,
 };
 use std::sync::Arc;
 
@@ -162,29 +162,32 @@ fn tapered_outline_paging_matches_direct_and_tail_replay_does_not_leave_old_shap
         InputPoint::new(56., 32., 0.7),
         InputPoint::new(98., 40., 1.),
     ];
-    let settings = outline(OutlinePlacement::Outside, 3., OutlineSource::SelfBrush);
-    let mut results = Vec::new();
-    for paged in [false, true] {
-        let mut doc = Document::new(128, 64).unwrap();
-        doc.begin_outlined_brush_stroke(definition.clone(), points[0], &settings)
-            .unwrap();
-        for point in &points[1..] {
-            if paged {
-                doc.begin_stroke_input(*point).unwrap();
-                while matches!(
-                    doc.continue_stroke_page(InputScheduleBudget::new(3, 100000, 3).unwrap())
-                        .unwrap(),
-                    StrokePageResult::Pending
-                ) {}
-            } else {
-                doc.stroke_to(*point).unwrap();
+    for algorithm in [OutlineAlgorithm::Path, OutlineAlgorithm::Sdf] {
+        let settings = outline(OutlinePlacement::Outside, 3., OutlineSource::SelfBrush)
+            .with_algorithm(algorithm);
+        let mut results = Vec::new();
+        for paged in [false, true] {
+            let mut doc = Document::new(128, 64).unwrap();
+            doc.begin_outlined_brush_stroke(definition.clone(), points[0], &settings)
+                .unwrap();
+            for point in &points[1..] {
+                if paged {
+                    doc.begin_stroke_input(*point).unwrap();
+                    while matches!(
+                        doc.continue_stroke_page(InputScheduleBudget::new(3, 100000, 3).unwrap())
+                            .unwrap(),
+                        StrokePageResult::Pending
+                    ) {}
+                } else {
+                    doc.stroke_to(*point).unwrap();
+                }
             }
+            finish(&mut doc, paged);
+            assert_eq!(doc.history_depth(), (1, 0));
+            results.push(pixels(&doc, 128, 64));
         }
-        finish(&mut doc, paged);
-        assert_eq!(doc.history_depth(), (1, 0));
-        results.push(pixels(&doc, 128, 64));
+        assert_eq!(results[0], results[1]);
     }
-    assert_eq!(results[0], results[1]);
 }
 
 #[test]
@@ -369,4 +372,91 @@ fn selection_layer_offset_and_transparency_lock_apply_to_outline_pixels() {
     assert_eq!(locked.history_depth().0, history.0 + 1);
     assert!(locked.pixel(38, 32).components()[2] > 0.);
     assert_eq!(locked.pixel(42, 32), Pixel::TRANSPARENT);
+}
+
+#[test]
+fn sdf_actual_stroke_has_all_placements_aa_max_opacity_and_exact_history() {
+    for placement in [
+        OutlinePlacement::Outside,
+        OutlinePlacement::Inside,
+        OutlinePlacement::Center,
+    ] {
+        let mut definition = brush();
+        definition.brush.opacity = 0.5;
+        let settings =
+            outline(placement, 4., OutlineSource::SelfBrush).with_algorithm(OutlineAlgorithm::Sdf);
+        let mut doc = Document::new(96, 64).unwrap();
+        doc.begin_outlined_brush_stroke(
+            definition.clone(),
+            InputPoint::new(28., 32., 1.),
+            &settings,
+        )
+        .unwrap();
+        doc.stroke_to(InputPoint::new(68., 32., 1.)).unwrap();
+        doc.end_stroke().unwrap();
+        let result = pixels(&doc, 96, 64);
+        let blue: Vec<_> = result.iter().map(|p| f32::from_bits(p[2])).collect();
+        assert!(blue.iter().any(|v| *v > 0.4), "{placement:?}");
+        assert!(blue.iter().any(|v| *v > 0. && *v < 0.1));
+        assert!(blue.iter().all(|v| *v <= 0.5), "stamp overlap must use max");
+        assert_eq!(
+            doc.pixel(48, 32).components()[2],
+            0.,
+            "inside must not cover eroded interior"
+        );
+        assert_eq!(doc.history_depth(), (1, 0));
+        doc.undo().unwrap();
+        assert!(pixels(&doc, 96, 64).iter().all(|p| *p == [0; 4]));
+        doc.redo().unwrap();
+        assert_eq!(pixels(&doc, 96, 64), result);
+        doc.begin_outlined_brush_stroke(definition, InputPoint::new(48., 20., 1.), &settings)
+            .unwrap();
+        doc.cancel_stroke().unwrap();
+        assert_eq!(pixels(&doc, 96, 64), result);
+    }
+}
+
+#[test]
+fn sdf_captured_image_tip_and_outline_texture_change_only_the_outline() {
+    let definition = brush();
+    let image = Arc::new(
+        BrushMask::new(
+            4,
+            4,
+            vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0],
+        )
+        .unwrap(),
+    );
+    let texture = BrushTexture::new(
+        true,
+        TextureSettings::default(),
+        Some(Arc::new(TextureResource::new(Arc::new(
+            BrushMask::new(1, 1, vec![0]).unwrap(),
+        )))),
+    )
+    .unwrap();
+    let existing =
+        paint_core::SecondaryTip::new(8., BrushTip::default(), Some(image), Default::default())
+            .unwrap();
+    let mut outputs = Vec::new();
+    for source in [
+        OutlineSource::SelfBrush,
+        OutlineSource::Existing(Arc::new(existing)),
+        OutlineSource::SelfTextured(texture),
+    ] {
+        let settings =
+            outline(OutlinePlacement::Outside, 5., source).with_algorithm(OutlineAlgorithm::Sdf);
+        let mut doc = Document::new(64, 64).unwrap();
+        doc.begin_outlined_brush_stroke(
+            definition.clone(),
+            InputPoint::new(32., 32., 1.),
+            &settings,
+        )
+        .unwrap();
+        doc.end_stroke().unwrap();
+        assert_eq!(doc.pixel(32, 32), definition.brush.color);
+        outputs.push(pixels(&doc, 64, 64));
+    }
+    assert_ne!(outputs[0], outputs[1]);
+    assert!(outputs[2].iter().all(|p| f32::from_bits(p[2]) == 0.));
 }

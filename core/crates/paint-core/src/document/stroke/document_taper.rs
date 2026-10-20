@@ -392,6 +392,9 @@ impl Document {
         restore_field(&mut stroke.wet_primary_field, journal.wet_primary);
         restore_field(&mut stroke.wet_secondary_field, journal.wet_secondary);
         if let Some(outline) = &mut stroke.outline {
+            if !journal.outline.is_empty() {
+                outline.invalidate_cache();
+            }
             for (coord, tile) in journal.outline {
                 if let Some(tile) = tile {
                     outline.shape.insert(coord, tile);

@@ -3,6 +3,15 @@ use crate::{BrushTexture, Error, Result, SecondaryTip};
 use std::sync::Arc;
 
 pub const STROKE_OUTLINE_MODEL: &str = "stroke-contour-v1";
+pub const STROKE_SDF_OUTLINE_MODEL: &str = "stroke-sdf-v1";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OutlineAlgorithm {
+    #[default]
+    Path,
+    Sdf,
+}
+
 pub const MAX_STROKE_OUTLINE_PIXELS: usize = 8 * 1024 * 1024;
 pub const MAX_STROKE_OUTLINE_WIDTH: f32 = 2000.;
 
@@ -89,6 +98,7 @@ pub enum OutlineSource {
 
 #[derive(Clone, Debug, Default)]
 pub struct StrokeOutline {
+    algorithm: OutlineAlgorithm,
     enabled: bool,
     placement: OutlinePlacement,
     width: OutlineWidth,
@@ -107,12 +117,26 @@ impl StrokeOutline {
             return Err(Error::InvalidArgument("stroke outline texture is disabled"));
         }
         Ok(Self {
+            algorithm: OutlineAlgorithm::Path,
             enabled,
             placement,
             width,
             source,
             secondary_color,
         })
+    }
+    pub fn with_algorithm(mut self, algorithm: OutlineAlgorithm) -> Self {
+        self.algorithm = algorithm;
+        self
+    }
+    pub fn algorithm(&self) -> OutlineAlgorithm {
+        self.algorithm
+    }
+    pub fn model(&self) -> &'static str {
+        match self.algorithm {
+            OutlineAlgorithm::Path => STROKE_OUTLINE_MODEL,
+            OutlineAlgorithm::Sdf => STROKE_SDF_OUTLINE_MODEL,
+        }
     }
     pub fn enabled(&self) -> bool {
         self.enabled
@@ -130,7 +154,8 @@ impl StrokeOutline {
         self.secondary_color
     }
     pub fn is_default(&self) -> bool {
-        !self.enabled
+        self.algorithm == OutlineAlgorithm::Path
+            && !self.enabled
             && self.placement == OutlinePlacement::default()
             && self.width == OutlineWidth::default()
             && matches!(self.source, OutlineSource::SelfBrush)
