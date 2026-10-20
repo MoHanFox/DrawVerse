@@ -2022,9 +2022,13 @@ bool PaintCoreClient::restoreBrushPreferences(const QByteArray &state) {
 }
 bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
     {QMutexLocker lock(&m_brushCatalogConnection->mutex);if(m_brushCatalogConnection->preparation && m_brushCatalogConnection->requestedState==state)return true;}
-    const auto root=QJsonDocument::fromJson(state).object();
-    QJsonObject catalog{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}};if(root.contains("organization"))catalog["organization"]=root.value("organization");
-    const auto source=QJsonDocument(catalog).toJson(QJsonDocument::Compact);
+    QByteArray source;
+    if(state==m_brushLibrary->snapshot())source=m_brushLibrary->catalogSnapshot();
+    else {
+        const auto root=QJsonDocument::fromJson(state).object();
+        QJsonObject catalog{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}};if(root.contains("organization"))catalog["organization"]=root.value("organization");
+        source=QJsonDocument(catalog).toJson(QJsonDocument::Compact);
+    }
     QMutexLocker lock(&m_brushCatalogConnection->mutex);
     if(!m_brushCatalogConnection->library)return false;
     if(source==m_brushCatalogConnection->source && m_brushCatalogConnection->preparation){m_brushCatalogConnection->requestedState=state;return true;}

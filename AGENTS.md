@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新笔刷选择缓存：仅选中项变更保留JSON预设/reset/隔离数组、按需更新selected，不再广播presetChanged；真实参数/资源/组织/上下文/restore失效。512项三档选择与隔离/共享/实际起笔六项软件、两项D3D11及Release通过。448项同机两轮总338/361→294/284ms、GUI最长38/31→29/28ms，选择本身仍波动，原包手感未验收。见大目录延迟设计/验收，ABI1.74/state44保持。
+
 - 最新方向盘局部草稿：主/第二笔尖手势只更新轻量图元与数值，释放才提交一次参数并刷新完整笔触预览；连续20次真实鼠标移动零设置/预览失效信号，释放各一次，旧形状/同步两项软件 Qt 与 D3D11 通过，Release 输出 `build/qt/bin/Release`。见笔尖方向盘设计/验收，ABI1.74/state44 保持。
 
 - 最新资源滚轮隔离：共享 BrushResourcePicker 的 WheelHandler 消费边界/快速滚轮与触摸板动量，网格外正常滚设置页；100资源/双向100事件/pixelDelta/动量/外层对照在软件 Qt 和 D3D11 通过，无 QML 警告，Release 输出 `build/qt/bin/Release`。见资源滚轮设计/验收；无 ABI/格式/GPU 变化，实体触摸板待验收。

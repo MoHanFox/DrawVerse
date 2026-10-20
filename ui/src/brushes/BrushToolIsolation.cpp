@@ -54,7 +54,7 @@ void BrushLibrary::setToolContext(int tool,bool persist) {
     }
     if(persist)changed(true);
     else {
-        m_snapshotCache.clear();m_catalogCache.clear();
+        m_snapshotCache.clear();m_catalogCache.clear();m_snapshotObjectCache={};m_catalogObjectCache={};
         emit settingsChanged();emit presetsChanged();emit selectedPreviewChanged();
     }
 }

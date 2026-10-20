@@ -48,6 +48,27 @@ class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
 
+    void selectingBrushReusesRowsAndPreservesAllPreferenceScopes() {
+        for(int isolation=0;isolation<=2;++isolation) {
+            BrushLibrary library;auto state=QJsonDocument::fromJson(library.catalogSnapshot()).object();auto rows=state.value("presets").toArray();const auto base=rows.first().toObject();
+            for(int i=4;i<512;++i){auto row=base;row["id"]=QString("cached-%1").arg(i);row["name"]=QString("Cached %1").arg(i);rows.append(row);}state["presets"]=rows;QVERIFY(library.restore(QJsonDocument(state).toJson()));
+            library.setToolIsolation(isolation);library.setToolContext(1);library.setRadius(19);library.setToolContext(0);
+            const auto original=QJsonDocument::fromJson(library.snapshot()).object();const auto execution=QJsonDocument::fromJson(library.catalogSnapshot()).object();
+            QSignalSpy presets(&library,&BrushLibrary::presetChanged),catalogs(&library,&BrushLibrary::presetsChanged);
+            QElapsedTimer timer;timer.start();
+            for(int i=0;i<20;++i){QVERIFY(library.selectBrushItems({QVariantMap{{"kind","preset"},{"id",QString("cached-%1").arg(i+4)}}}));library.snapshot();library.catalogSnapshot();}
+            qInfo()<<"512 preset cached selection+snapshots isolation"<<isolation<<"20 switches us"<<timer.nsecsElapsed()/1000;
+            QCOMPARE(presets.size(),0);QCOMPARE(catalogs.size(),0);
+            auto expected=original;expected["selected"]=library.selectedId();auto reset=expected.value("resetState").toObject();reset["selected"]=library.selectedId();expected["resetState"]=reset;
+            if(isolation){auto scopes=expected.value("toolIsolation").toObject();auto profiles=scopes.value("profiles").toArray();auto profile=profiles[0].toObject();profile["selected"]=library.selectedId();profiles[0]=profile;scopes["profiles"]=profiles;expected["toolIsolation"]=scopes;}
+            QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object(),expected);auto expectedExecution=execution;expectedExecution["selected"]=library.selectedId();QCOMPARE(QJsonDocument::fromJson(library.catalogSnapshot()).object(),expectedExecution);
+            BrushLibrary restored;QVERIFY(restored.restore(library.snapshot()));QCOMPARE(restored.selectedId(),library.selectedId());QCOMPARE(restored.toolIsolation(),isolation);
+            library.setRadius(31);const auto edited=QJsonDocument::fromJson(library.catalogSnapshot()).object().value("presets").toArray();bool found=false;for(const auto &value:edited){const auto row=value.toObject();if(row.value("id").toString()==library.selectedId()){QCOMPARE(row.value("radius").toDouble(),31.);found=true;}}QVERIFY(found);
+            const auto changed=library.snapshot();QVERIFY(changed!=QJsonDocument(expected).toJson(QJsonDocument::Compact));
+            library.setToolContext(1);if(isolation==1)QVERIFY(library.select("round-pressure"));if(isolation)QCOMPARE(library.radius(),19.);
+        }
+    }
+
     void resourceGridConsumesFastWheelAtBothEdges() {
         ResourcePreviewCacheProbe client;for(int i=0;i<100;++i)client.resources.append(QString::number(i));
         QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);

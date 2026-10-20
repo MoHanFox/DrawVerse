@@ -474,9 +474,11 @@ private:
     int index(const QString &id) const;
     void update(int field,qreal value);
     void changed(bool structure = false, const QString &id = {});
+    void selectedSettingsChanged();
     void queuePersistence(bool catalog=true);
     QTimer m_persistTimer;
     mutable QByteArray m_snapshotCache,m_catalogCache;
+    mutable QJsonObject m_snapshotObjectCache,m_catalogObjectCache;
     bool applyOrganization(const QJsonObject &candidate);
     QList<Preset> m_presets;
     QJsonObject m_organization;

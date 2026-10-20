@@ -592,7 +592,7 @@ void BrushLibrary::setWriteBlend(int mode) {
     m_writeBlend=mode;
     emit settingsChanged();queuePersistence();
 }
-void BrushLibrary::queuePersistence(bool catalog){m_snapshotCache.clear();if(catalog)m_catalogCache.clear();m_persistTimer.start();}
+void BrushLibrary::queuePersistence(bool catalog){m_snapshotCache.clear();m_snapshotObjectCache={};if(catalog){m_catalogCache.clear();m_catalogObjectCache={};}m_persistTimer.start();}
 void BrushLibrary::flushPersistence(){if(m_persistTimer.isActive()){m_persistTimer.stop();emit persistRequested(snapshot());}}
 QVariantMap BrushLibrary::presetInfo(const QString &id) const {
     const int at=index(id);if(at<0)return {};const auto &p=m_presets[at];
@@ -602,6 +602,12 @@ void BrushLibrary::changed(bool structure,const QString &id){
     queuePersistence();emit settingsChanged();
     if(structure)emit presetsChanged();else emit presetChanged(id.isEmpty()?m_selected:id);
     emit selectedPreviewChanged();
+}
+void BrushLibrary::selectedSettingsChanged(){
+    // Selecting a preset changes no preset, reset baseline or isolated parameter row.
+    // Keep their immutable JSON arrays; patch selection when a snapshot is requested.
+    m_snapshotCache.clear();m_catalogCache.clear();m_persistTimer.start();
+    emit settingsChanged();emit selectedPreviewChanged();
 }
 void BrushLibrary::update(int field,qreal value) {
     if(!std::isfinite(value))return;
@@ -650,7 +656,7 @@ bool BrushLibrary::select(const QString &id){
     const QJsonArray selection{QJsonObject{{"kind","preset"},{"id",id}}};
     const bool selectionWasChanged=selection!=m_selectedItems;m_selectedItems=selection;
     if(selectionWasChanged)emit selectionChanged();
-    if(id!=m_selected){m_selected=id;changed();}
+    if(id!=m_selected){m_selected=id;selectedSettingsChanged();}
     return true;
 }
 QVariantList BrushLibrary::selectedBrushItems() const {return m_selectedItems.toVariantList();}
@@ -679,7 +685,7 @@ bool BrushLibrary::selectBrushItems(const QVariantList &items,const QString &act
     const bool activeWasChanged=!preset.isEmpty() && preset!=m_selected;
     if(activeWasChanged)m_selected=preset;
     if(selectionWasChanged)emit selectionChanged();
-    if(activeWasChanged)changed();
+    if(activeWasChanged)selectedSettingsChanged();
     return true;
 }
 void BrushLibrary::clearBrushSelection() {
@@ -1064,6 +1070,13 @@ QJsonObject row{{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opa
 }
 QByteArray BrushLibrary::snapshot() const {
     if(!m_snapshotCache.isEmpty())return m_snapshotCache;
+    if(!m_snapshotObjectCache.isEmpty()) {
+        auto &root=m_snapshotObjectCache;root["selected"]=m_selected;
+        auto reset=root.value("resetState").toObject();reset["selected"]=m_selected;root["resetState"]=reset;
+        auto isolation=root.value("toolIsolation").toObject();auto profiles=isolation.value("profiles").toArray();
+        if(m_toolIsolation && m_toolContext<profiles.size()){auto profile=profiles[m_toolContext].toObject();profile["selected"]=m_selected;profiles[m_toolContext]=profile;isolation["profiles"]=profiles;root["toolIsolation"]=isolation;}
+        m_snapshotCache=QJsonDocument(root).toJson(QJsonDocument::Compact);return m_snapshotCache;
+    }
     QJsonArray rows,baselines;QJsonObject editors,resetEditors;int version=2,resetVersion=2;
     auto editor=[](const Preset &p){return QJsonObject{{"existing",p.dualExisting},{"sourceName",p.dualSourceName}};};
     for(const auto &p:m_presets){const auto baseline=m_resetPresets.value(p.id,p);rows.append(presetRow(p,version));baselines.append(presetRow(baseline,resetVersion));if(p.dualExisting || !p.dualSourceName.isEmpty())editors[p.id]=editor(p);if(baseline.dualExisting || !baseline.dualSourceName.isEmpty())resetEditors[p.id]=editor(baseline);}
@@ -1075,7 +1088,7 @@ QByteArray BrushLibrary::snapshot() const {
     if(!m_organization.isEmpty())root["organization"]=m_organization;
     if(!editors.isEmpty())root["dualEditors"]=editors;
     root["toolIsolation"]=toolIsolationState();
-    m_snapshotCache=QJsonDocument(root).toJson(QJsonDocument::Compact);return m_snapshotCache;
+    m_snapshotObjectCache=root;m_snapshotCache=QJsonDocument(root).toJson(QJsonDocument::Compact);return m_snapshotCache;
 }
 QJsonObject BrushLibrary::exportPreset(const Preset &p,bool includeSource,const QString &id) {
     if(!p.sourceResource.isEmpty() && !includeSource)return {};
@@ -1242,10 +1255,14 @@ QByteArray BrushLibrary::exportSelectionPackage(bool includeSource) const {
 }
 QByteArray BrushLibrary::catalogSnapshot() const {
     if(!m_catalogCache.isEmpty())return m_catalogCache;
+    if(!m_catalogObjectCache.isEmpty()) {
+        m_catalogObjectCache["selected"]=m_selected;
+        m_catalogCache=QJsonDocument(m_catalogObjectCache).toJson(QJsonDocument::Compact);return m_catalogCache;
+    }
     QJsonArray rows;int version=2;for(const auto &p:m_presets)rows.append(presetRow(p,version));
     QJsonObject executing{{"version",version},{"selected",m_selected},{"presets",rows}};
     if(!m_organization.isEmpty()){executing["organization"]=m_organization;executing["version"]=std::max(version,20);}
-    m_catalogCache=QJsonDocument(executing).toJson(QJsonDocument::Compact);return m_catalogCache;
+    m_catalogObjectCache=executing;m_catalogCache=QJsonDocument(executing).toJson(QJsonDocument::Compact);return m_catalogCache;
 }
 
 bool BrushLibrary::applyNativeCatalog(const QByteArray &json) {
@@ -1595,7 +1612,7 @@ bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
             const auto &old=m_presets[current];preset.preview=old.preview;preset.error=old.error;preset.token=old.token;preset.requested=old.requested;
         } else preset.token=++m_nextToken;
     }
-    m_snapshotCache.clear();m_catalogCache.clear();
+    m_snapshotCache.clear();m_catalogCache.clear();m_snapshotObjectCache={};m_catalogObjectCache={};
     m_presets=restored;m_organization=organization;m_selected=selected;m_recentColors=recent;m_writeBlend=writeBlend;
     QJsonArray selectedItems;
     if(preserveSelection)for(const auto &value:m_selectedItems) {
