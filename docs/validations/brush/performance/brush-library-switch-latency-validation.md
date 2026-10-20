@@ -42,3 +42,10 @@ Qt 使用公开许可的148项ABR样本导入三次，含默认项共448项，�
 手动探针：设置 `DRAWVERSE_BRUSH_REPRO_SETTINGS` 为 INI 路径，同级提供 `brush-resources`，运行 `qt_workflow_tests liveBrushSelectionWithLargePreferences`；没有环境变量时跳过。原生状态与 Qt 比较只读且在后台使用不可变副本；实际差异、失败和陈旧票据保护保持。
 
 尚待：首次加载/冷资源、其他复杂预览、多文档全量偏好广播及实体连续切换；历史热缓存改造、全量和跨平台未完成。
+
+## 2026-10-21 多文档选择增量恢复
+
+- 新用例 sharedSelectionRestoreKeepsValidatedRowsAndToolProfiles：512 预设、三档隔离各六次接收；零目录重建/持久化反馈，完整快照一致，多选保留。非法 selected 和尾部非法参数均原子拒绝，真实半径修改完整恢复，其他工具参数保持。
+- 软件与 D3D11 均运行新用例及四个既有选择/隔离/原生默认压力回归，均通过。
+- 手工响应探针复制用户 489 预设/资源，真实 Main 窗口中新增第二文档并通过 DocumentManager 广播；接收目录重建为零。D3D11 单文档热轮最长 GUI 间隔 54ms，两文档轮 189ms，首次轮 776ms。该数据仍显示停顿，不可称全部切换流畅；软件后端对应为 58ms/154ms/784ms。两后端新项、四共享回归及真实窗口探针各六项通过。没有同场景旧版双文档时延基线。
+- Release 主程序和 qt_workflow_tests 构建成功，生成头检查通过。无 ABI/state/VBR 改动。历史热恢复、首次冷路径、不同工具上下文广播和完整 8K/16K 处理验收仍待。

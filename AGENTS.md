@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新多文档选择增量恢复：已验证快照只允许顶层/reset/profile选中项差异，整对象精确比较，其余完整校验；保持预览和多选、零目录重建/持久化反馈。512项三档及四共享回归在软件/D3D11通过，489真实配置双文档D3D11最长GUI间隔189ms、热单文档54ms、首轮776ms，仍有停顿；Release通过，ABI1.74/state44保持。见 brush-library-switch-latency 设计/验收；不同上下文广播、冷加载与热历史待。
+
 - 最新真实笔刷切换回传修复：489预设配置/资源副本复现默认pressureDynamics显式/省略差异引起每次GUI整库restore约350–410ms；共享语义比较、后台先比同票据输入，等价不回传恢复。重复切换D3D11最长GUI间隔389→60ms、软件62ms，整库变化0；两后端新2+共享4及Release通过，ABI1.74/state44保持。首次冷路径仍约836–843ms、跨文档全量广播/历史热缓存待；见 brush-library-switch-latency 设计/验收，不能称所有切换瞬时完成。
 
 - 最新液化资源预算：`docs/tools/long-task-resource-budget-design.md` / 对应 validations；paint-ops 自适应批次规划与 fallible 按需采样，液化暂存超限拆批/单瓦片超限 CPU 流式后备，取消独立8192输出瓦片限制并受文档配额约束。算子24/核心3+11/软件Qt1与D3D11 Qt2/四ABI/Clippy/Release通过，ABI1.74保持，输出 `build/qt/bin/Release`。8K/16K只验证范围规划，未验收整图耗时；笔刷切换、热历史、其他长任务迁移仍待，不能称全部大图路径已解决。

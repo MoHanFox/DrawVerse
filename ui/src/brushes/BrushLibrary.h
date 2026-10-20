@@ -477,6 +477,7 @@ private:
     void update(int field,qreal value);
     void changed(bool structure = false, const QString &id = {});
     void selectedSettingsChanged();
+    bool restoreSelectionOnly(const QJsonObject &root,bool preserveSelection);
     void queuePersistence(bool catalog=true);
     QTimer m_persistTimer;
     mutable QByteArray m_snapshotCache,m_catalogCache;

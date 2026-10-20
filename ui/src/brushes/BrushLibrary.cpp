@@ -1490,9 +1490,45 @@ bool BrushLibrary::importAbr(const QByteArray &json,const QString &groupName) {
     if(!restore(QJsonDocument(state).toJson(QJsonDocument::Compact)))return false;
     queuePersistence();return true;
 }
+bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSelection) {
+    // Only reuse our own previously validated snapshot. Every other field must
+    // match exactly; external edits still pass through the complete validator.
+    if(m_snapshotObjectCache.isEmpty())return false;
+    snapshot(); // Bring selection fields in the cached object up to date.
+    auto expected=m_snapshotObjectCache;
+    const auto selected=root.value("selected");
+    if(!selected.isString() || index(selected.toString())<0)return false;
+    expected["selected"]=selected;
+    auto reset=expected.value("resetState").toObject();
+    const auto resetSelected=root.value("resetState").toObject().value("selected");
+    if(!resetSelected.isString() || !m_resetPresets.contains(resetSelected.toString()))return false;
+    reset["selected"]=resetSelected;expected["resetState"]=reset;
+    auto isolation=expected.value("toolIsolation").toObject();
+    auto profiles=isolation.value("profiles").toArray();
+    const auto incoming=root.value("toolIsolation").toObject().value("profiles").toArray();
+    if(incoming.size()!=profiles.size())return false;
+    for(int i=0;i<profiles.size();++i) {
+        const auto id=incoming[i].toObject().value("selected");
+        if(!id.isString() || index(id.toString())<0)return false;
+        auto profile=profiles[i].toObject();profile["selected"]=id;profiles[i]=profile;
+    }
+    isolation["profiles"]=profiles;expected["toolIsolation"]=isolation;
+    if(expected!=root)return false;
+    const bool changed=m_selected!=selected.toString();
+    m_selected=selected.toString();
+    for(int i=0;i<profiles.size();++i)m_toolProfiles[i].selected=profiles[i].toObject().value("selected").toString();
+    const auto items=preserveSelection?m_selectedItems:QJsonArray{QJsonObject{{"kind","preset"},{"id",m_selected}}};
+    const bool selectionChangedValue=items!=m_selectedItems;m_selectedItems=items;
+    m_snapshotObjectCache=root;m_snapshotCache.clear();m_catalogCache.clear();
+    if(changed){emit settingsChanged();emit selectedPreviewChanged();}
+    if(selectionChangedValue)emit selectionChanged();
+    return true;
+}
 bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
     if(json.size()>32*1024*1024)return false;
-    const auto root=QJsonDocument::fromJson(json).object();const auto rows=root.value("presets").toArray();
+    const auto root=QJsonDocument::fromJson(json).object();
+    if(restoreSelectionOnly(root,preserveSelection))return true;
+    const auto rows=root.value("presets").toArray();
     QJsonObject executing{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}};
     if(root.contains("organization"))executing["organization"]=root.value("organization");
     if(QJsonDocument(executing).toJson(QJsonDocument::Compact).size()>2*1024*1024)return false;

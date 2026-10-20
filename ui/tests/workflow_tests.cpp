@@ -89,7 +89,16 @@ private slots:
             qInfo()<<"live settings presets"<<rows.size()<<"pass"<<pass<<"max select us"<<maxSelect<<"longest GUI gap ms"<<longest;
             QCOMPARE(catalogChanges.size(),0);
         }
-        heartbeat.stop();QVERIFY(client.lastError().isEmpty());auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+        auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);
+        const auto originalDocument=documents->activeId();const auto secondDocument=documents->newDocument(32,32,true);QVERIFY(!secondDocument.isEmpty());
+        auto *receiver=documents->client(secondDocument);QVERIFY(receiver);QTRY_VERIFY(receiver->ready() && receiver->brushLibraryReady() && !receiver->layerEditBusy());
+        QVERIFY(documents->activate(originalDocument));QTest::qWait(200);
+        QSignalSpy receivedCatalogChanges(receiver->brushLibrary(),&BrushLibrary::presetsChanged);
+        longest=maxSelect=0;previous=clock.elapsed();
+        for(int i=0;i<16;++i){const auto start=clock.nsecsElapsed();QVERIFY(library->select(rows[(5+i*17)%rows.size()].toMap().value("id").toString()));maxSelect=std::max(maxSelect,(clock.nsecsElapsed()-start)/1000);QTest::qWait(180);}
+        qInfo()<<"live two-document selection max us"<<maxSelect<<"longest GUI gap ms"<<longest<<"receiver catalog rebuilds"<<receivedCatalogChanges.size();
+        QCOMPARE(receivedCatalogChanges.size(),0);QCOMPARE(receiver->brushLibrary()->selectedId(),library->selectedId());QVERIFY(receiver->lastError().isEmpty());
+        heartbeat.stop();QVERIFY(client.lastError().isEmpty());QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 
     void selectingBrushReusesRowsAndPreservesAllPreferenceScopes() {
@@ -110,6 +119,31 @@ private slots:
             library.setRadius(31);const auto edited=QJsonDocument::fromJson(library.catalogSnapshot()).object().value("presets").toArray();bool found=false;for(const auto &value:edited){const auto row=value.toObject();if(row.value("id").toString()==library.selectedId()){QCOMPARE(row.value("radius").toDouble(),31.);found=true;}}QVERIFY(found);
             const auto changed=library.snapshot();QVERIFY(changed!=QJsonDocument(expected).toJson(QJsonDocument::Compact));
             library.setToolContext(1);if(isolation==1)QVERIFY(library.select("round-pressure"));if(isolation)QCOMPARE(library.radius(),19.);
+        }
+    }
+
+    void sharedSelectionRestoreKeepsValidatedRowsAndToolProfiles() {
+        for(int mode=0;mode<=2;++mode) {
+            BrushLibrary source;auto root=QJsonDocument::fromJson(source.catalogSnapshot()).object();auto rows=root.value("presets").toArray();
+            for(int i=4;i<512;++i){auto row=rows.first().toObject();row["id"]=QString("shared-%1").arg(i);row["name"]=QString("Shared %1").arg(i);rows.append(row);}
+            root["presets"]=rows;QVERIFY(source.restore(QJsonDocument(root).toJson()));source.setToolIsolation(mode);
+            source.setToolContext(1);source.setRadius(19);source.setToolContext(0);
+            BrushLibrary receiver;QVERIFY(receiver.restore(source.snapshot()));receiver.snapshot();
+            QSignalSpy catalog(&receiver,&BrushLibrary::presetsChanged),persist(&receiver,&BrushLibrary::persistRequested);
+            QElapsedTimer timer;timer.start();
+            for(int i=4;i<10;++i){QVERIFY(source.select(QString("shared-%1").arg(i)));QVERIFY(receiver.restore(source.snapshot()));QCOMPARE(receiver.selectedId(),source.selectedId());}
+            qInfo()<<"512 shared selection restores mode"<<mode<<"six updates us"<<timer.nsecsElapsed()/1000;
+            QCOMPARE(catalog.size(),0);QCOMPARE(persist.size(),0);QVERIFY(!receiver.persistencePending());QCOMPARE(receiver.snapshot(),source.snapshot());
+            // Multi-selection preservation follows the full restore contract.
+            QVERIFY(receiver.selectBrushItems({QVariantMap{{"kind","preset"},{"id","round-pressure"}},QVariantMap{{"kind","preset"},{"id","round-fine"}}}));receiver.flushPersistence();
+            const auto selection=receiver.selectedBrushItems();QVERIFY(receiver.restore(source.snapshot(),true));QCOMPARE(receiver.selectedBrushItems(),selection);QCOMPARE(catalog.size(),0);
+            const auto before=receiver.snapshot();auto invalid=QJsonDocument::fromJson(before).object();invalid["selected"]="missing";
+            QVERIFY(!receiver.restore(QJsonDocument(invalid).toJson()));QCOMPARE(receiver.snapshot(),before);
+            invalid=QJsonDocument::fromJson(before).object();auto badRows=invalid.value("presets").toArray();auto bad=badRows.last().toObject();bad["radius"]=-1;badRows[badRows.size()-1]=bad;invalid["presets"]=badRows;
+            QVERIFY(!receiver.restore(QJsonDocument(invalid).toJson()));QCOMPARE(receiver.snapshot(),before);
+            // Real parameter changes still restore, rather than being mistaken for selection.
+            source.setRadius(31);QVERIFY(receiver.restore(source.snapshot()));QCOMPARE(receiver.radius(),31.);QCOMPARE(catalog.size(),1);
+            receiver.setToolContext(1);if(mode==1)QVERIFY(receiver.select("round-pressure"));if(mode)QCOMPARE(receiver.radius(),19.);
         }
     }
 
