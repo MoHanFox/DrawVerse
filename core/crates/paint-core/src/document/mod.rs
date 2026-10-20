@@ -19,6 +19,9 @@ pub use input_paging::StrokePageResult;
 mod dual_paint;
 pub(crate) mod groups;
 mod layer_actions;
+#[cfg(test)]
+#[path = "tools/liquify_result_history_tests.rs"]
+mod liquify_result_history_tests;
 #[path = "stroke/document_outline.rs"]
 mod outline;
 #[path = "stroke/document_taper.rs"]
@@ -34,6 +37,8 @@ pub struct DocumentOptions {
     pub max_scratch_bytes: u64,
     /// Retained in-memory history accounting. Oversized commands use lossless
     /// encoding and bounded temporary disk storage, not stroke rejection.
+    /// Completed large liquify results charge reference metadata here; their
+    /// pixels share the document residency and scratch budgets.
     pub max_history_bytes: usize,
     pub max_history_commands: usize,
 }
@@ -158,7 +163,7 @@ mod history_failure_tests {
         assert_eq!(doc.layer(1).unwrap().properties().opacity, 1.);
     }
     #[test]
-    fn liquify_history_failure_keeps_cancelable_preview_and_backed_undo_is_exact() {
+    fn liquify_result_commit_avoids_redundant_history_writes_and_undo_is_exact() {
         let mut doc = document();
         let original = pixels(&doc);
         let depth = doc.history_depth();
@@ -177,20 +182,24 @@ mod history_failure_tests {
         doc.liquify_dab(dab).unwrap();
         let preview = pixels(&doc);
         assert_ne!(preview, original);
-        crate::history_storage::fail_writes_for_test(true);
-        let result = doc.commit_liquify();
-        crate::history_storage::fail_writes_for_test(false);
-        assert!(matches!(result, Err(Error::HistoryStorage(_))));
-        assert!(doc.liquify_active());
-        assert_eq!(pixels(&doc), preview);
         assert_eq!(doc.history_depth(), depth);
         doc.cancel_liquify().unwrap();
         assert_eq!(pixels(&doc), original);
         doc.begin_liquify().unwrap();
         doc.liquify_dab(dab).unwrap();
-        doc.commit_liquify().unwrap();
+        // The immutable results already have bounded document backing. A second
+        // encoded history file is unnecessary, even at this low history budget.
+        crate::history_storage::fail_writes_for_test(true);
+        let result = doc.commit_liquify();
+        crate::history_storage::fail_writes_for_test(false);
+        assert!(result.unwrap());
+        assert!(!doc.liquify_active());
         let final_pixels = pixels(&doc);
-        assert!(doc.history_disk_bytes() > 0);
+        assert_eq!(doc.history_disk_bytes(), 0);
+        assert!(matches!(
+            doc.history.undo.back(),
+            Some(StoredCommand::Paged(..))
+        ));
         doc.undo().unwrap();
         assert_eq!(pixels(&doc), original);
         doc.redo().unwrap();
@@ -1032,11 +1041,15 @@ impl Document {
         self.commit_with_action(command, action)
     }
     fn commit_with_action(&mut self, command: Command, action: crate::HistoryAction) -> Result<()> {
-        let stored = StoredCommand::prepare_in(
-            &command,
-            self.options.max_history_bytes,
-            self.pool.storage(),
-        )?;
+        let stored = if action == crate::HistoryAction::Liquify {
+            StoredCommand::prepare_result_in(&command, self.options.max_history_bytes, &self.pool)?
+        } else {
+            StoredCommand::prepare_in(
+                &command,
+                self.options.max_history_bytes,
+                self.pool.storage(),
+            )?
+        };
         self.history.commit(
             stored.with_action(action),
             self.options.max_history_bytes,

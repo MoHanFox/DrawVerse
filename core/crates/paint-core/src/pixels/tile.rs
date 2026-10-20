@@ -74,6 +74,14 @@ impl Default for Tile {
     }
 }
 impl Tile {
+    pub(crate) fn belongs_to(&self, pool: &Arc<PagePool>) -> bool {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pool
+            .upgrade()
+            .is_some_and(|owner| Arc::ptr_eq(&owner, pool))
+    }
     pub(crate) fn can_edit_private(tile: &Arc<Self>) -> bool {
         if Arc::strong_count(tile) != 1 {
             return false;

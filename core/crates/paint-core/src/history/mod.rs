@@ -116,6 +116,8 @@ pub(crate) enum Command {
 pub(crate) enum StoredCommand {
     Inline(Command, HistoryAction),
     Encoded(Payload, HistoryAction),
+    /// Result references: pixel residency and cold backing belong to PagePool.
+    Paged(Command, HistoryAction, usize),
 }
 impl StoredCommand {
     #[cfg(test)]
@@ -136,6 +138,37 @@ impl StoredCommand {
             ))
         }
     }
+    /// Reuse immutable results for long tasks whose tiles already belong to the
+    /// document cache. Metadata has a history budget; pixels keep the existing
+    /// shared residency/scratch budgets instead of a second encoded copy.
+    pub fn prepare_result_in(
+        command: &Command,
+        max_bytes: usize,
+        pool: &Arc<crate::page_pool::PagePool>,
+    ) -> Result<Self> {
+        if command.bytes() > max_bytes {
+            if let Command::Stroke { changes, .. } = command {
+                // Charge the change table plus a conservative allowance per
+                // tile reference for Tile/Page/cache bookkeeping. No pixel pins.
+                let bytes = changes
+                    .len()
+                    .saturating_mul(std::mem::size_of::<TileChange>() + 2 * 256)
+                    .saturating_add(128);
+                if bytes <= max_bytes
+                    && changes.iter().all(|change| {
+                        change
+                            .before
+                            .iter()
+                            .chain(&change.after)
+                            .all(|tile| tile.belongs_to(pool))
+                    })
+                {
+                    return Ok(Self::Paged(command.clone(), command.action(), bytes));
+                }
+            }
+        }
+        Self::prepare_in(command, max_bytes, pool.storage())
+    }
     #[cfg(test)]
     pub fn materialize(&self) -> Result<Command> {
         self.materialize_in(None)
@@ -145,7 +178,7 @@ impl StoredCommand {
         pool: Option<&Arc<crate::page_pool::PagePool>>,
     ) -> Result<Command> {
         match self {
-            Self::Inline(command, _) => {
+            Self::Inline(command, _) | Self::Paged(command, _, _) => {
                 // Inline history now retains identities, including cold pages.
                 // Validate those pages before moving either history stack.
                 command.verify_tiles()?;
@@ -161,22 +194,23 @@ impl StoredCommand {
         match self {
             Self::Inline(command, _) => command.bytes(),
             Self::Encoded(payload, _) => payload.memory_bytes() + 128,
+            Self::Paged(_, _, bytes) => *bytes,
         }
     }
     fn disk_bytes(&self) -> u64 {
         match self {
-            Self::Inline(..) => 0,
+            Self::Inline(..) | Self::Paged(..) => 0,
             Self::Encoded(payload, _) => payload.disk_bytes(),
         }
     }
     pub fn action(&self) -> HistoryAction {
         match self {
-            Self::Inline(_, a) | Self::Encoded(_, a) => *a,
+            Self::Inline(_, a) | Self::Encoded(_, a) | Self::Paged(_, a, _) => *a,
         }
     }
     pub fn with_action(mut self, action: HistoryAction) -> Self {
         match &mut self {
-            Self::Inline(_, a) | Self::Encoded(_, a) => *a = action,
+            Self::Inline(_, a) | Self::Encoded(_, a) | Self::Paged(_, a, _) => *a = action,
         };
         self
     }
@@ -407,6 +441,76 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn result_references_require_managed_tiles_and_metadata_budget() {
+        let pool = crate::page_pool::PagePool::new(4, 1 << 20);
+        let tile = Arc::new(Tile::default());
+        let command = Command::Stroke {
+            layer: 1,
+            changes: vec![TileChange {
+                coord: TileCoord { x: 0, y: 0 },
+                before: None,
+                after: Some(tile.clone()),
+            }],
+        };
+        assert!(matches!(
+            StoredCommand::prepare_result_in(&command, 1024, &pool).unwrap(),
+            StoredCommand::Encoded(..)
+        ));
+        crate::history_storage::fail_writes_for_test(true);
+        let failed = StoredCommand::prepare_result_in(&command, 128, &pool);
+        crate::history_storage::fail_writes_for_test(false);
+        assert!(failed.is_err());
+        pool.attach(&tile).unwrap();
+        assert!(matches!(
+            StoredCommand::prepare_result_in(&command, 128, &pool).unwrap(),
+            StoredCommand::Encoded(..)
+        ));
+        let result = StoredCommand::prepare_result_in(&command, 1024, &pool)
+            .unwrap()
+            .with_action(HistoryAction::Liquify);
+        assert!(matches!(result, StoredCommand::Paged(..)));
+        assert!(result.bytes() <= 1024);
+        assert_eq!(result.disk_bytes(), 0);
+        assert_eq!(result.action(), HistoryAction::Liquify);
+        let foreign = crate::page_pool::PagePool::new(4, 1 << 20);
+        assert!(matches!(
+            StoredCommand::prepare_result_in(&command, 1024, &foreign).unwrap(),
+            StoredCommand::Encoded(..)
+        ));
+    }
+    #[test]
+    fn result_metadata_eviction_releases_old_identities() {
+        let pool = crate::page_pool::PagePool::new(4, 1 << 20);
+        let mut history = History::default();
+        let mut first = None;
+        for x in 0..2 {
+            let tile = Arc::new(Tile::default());
+            pool.attach(&tile).unwrap();
+            if x == 0 {
+                first = Some(Arc::downgrade(&tile));
+            }
+            let command = Command::Stroke {
+                layer: 1,
+                changes: vec![TileChange {
+                    coord: TileCoord { x, y: 0 },
+                    before: None,
+                    after: Some(tile),
+                }],
+            };
+            history.commit(
+                StoredCommand::prepare_result_in(&command, 1024, &pool).unwrap(),
+                1024,
+                100,
+            );
+        }
+        assert_eq!(history.undo.len(), 1);
+        assert!(history.evicted);
+        assert!(history.bytes <= 1024);
+        assert!(first.unwrap().upgrade().is_none());
+        drop(history);
+        assert_eq!(pool.stats().registered_tiles, 0);
+    }
     #[test]
     fn disk_quota_evicts_oldest_and_deletes_only_its_backing() {
         let command = Command::Stroke {
