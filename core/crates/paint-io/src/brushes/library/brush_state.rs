@@ -285,7 +285,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=41) {
+    if !matches!(state.version, 1..=42) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -525,8 +525,14 @@ fn decode_inner(
                 "interleaved dual color requires paired dry painting",
             ));
         }
-        if row.stroke_outline.is_some() && state.version < 41 {
-            return Err(Error::Unsupported("stroke outline requires state41".into()));
+        if row
+            .stroke_outline
+            .as_ref()
+            .is_some_and(|p| state.version < p.state_version())
+        {
+            return Err(Error::Unsupported(
+                "stroke outline requires its declared state version".into(),
+            ));
         }
         let outline = if let Some(parameters) = row.stroke_outline {
             let existing = if let Some(id) = parameters.existing_resource_id() {
@@ -721,10 +727,9 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
             None
         };
         let stroke_outline = if !s.outline.is_default() {
-            version = version.max(41);
-            Some(crate::brush_stroke_outline::OutlineParameters::from_core(
-                &s.outline,
-            )?)
+            let parameters = crate::brush_stroke_outline::OutlineParameters::from_core(&s.outline)?;
+            version = version.max(parameters.state_version());
+            Some(parameters)
         } else {
             None
         };

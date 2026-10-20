@@ -183,7 +183,7 @@ public:
     Q_INVOKABLE bool inspectBrushSource();
     Q_INVOKABLE bool importBrushes(const QUrl &path);
     Q_INVOKABLE bool importBrushTip(const QUrl &path,int interpretation);
-    Q_INVOKABLE bool importBrushTexture(const QUrl &path,int interpretation,bool outline=false);
+    Q_INVOKABLE bool importBrushTexture(const QUrl &path,int interpretation,bool outline=false,bool selfOutline=false);
     Q_INVOKABLE bool importDualBrushTip(const QUrl &path,int interpretation);
     QStringList brushResources() const {return m_brushResources;}
     bool brushResourcesBusy() const {return m_brushResourcesBusy;}

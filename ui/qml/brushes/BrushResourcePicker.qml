@@ -39,7 +39,7 @@ ColumnLayout {
             visible: root.showActions
             spacing: 2
             IconButton {objectName:root.importName;glyph:"plus";enabled:!PaintClient.brushFileBusy;tooltip:"导入图片";onClicked:root.importRequested()}
-            IconButton {objectName:root.resetName;glyph:"minus";enabled:root.resource.length>0 && !PaintClient.brushFileBusy;tooltip:root.resourceRole===1?"移除纹理":"使用程序笔尖";onClicked:root.resetRequested()}
+            IconButton {objectName:root.resetName;glyph:"minus";enabled:root.resource.length>0 && !PaintClient.brushFileBusy;tooltip:(root.resourceRole===1 || root.resourceRole===3 || root.resourceRole===4)?"移除纹理":"使用程序笔尖";onClicked:root.resetRequested()}
         }
     }
     GridView {

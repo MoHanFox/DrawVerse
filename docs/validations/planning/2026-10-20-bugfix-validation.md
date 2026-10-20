@@ -178,3 +178,10 @@
 
 - 已完成可复用CPU距离场、等距线弧长采样、max印章与灰度遮罩布尔；旧建路径复用平方距离变换。详见[SDF算子验收](../brush/core/brush-sdf-outline-validation.md)。新增算子10/旧核心13/原生2/旧Qt3通过，Clippy/格式/生成头及完整Release通过，输出build/qt/bin/Release。
 - 新SDF设置与实际笔触、灰度形状缓存、独立自身纹理尚未接入，本项仍在进行，没有新增GPU计算。保留此边界以免把算子测试当成用户功能完成。
+
+## 普通 13，第二步：自身描边独立纹理
+
+- 自身来源可单独选择/导入描边纹理，并调整空间/深度、禁用/移除；主纹理保持独立。state42、VBR1.0/behavior34及`outline-self-texture`完整往返，原state41/behavior33保持。ABI1.70，原DTO及入口保持。
+- IO4（含新增1和旧资源用例扩展）、新Qt2与旧纹理入口1、原生描边2、严格Clippy通过；新用例检查实际预览/主红笔与蓝描边差异、单历史、资源进入新目录、最近快照与重启、非法状态原子性、异步捕获来源/目标及原有资源重选。
+- SDF实际笔触、缓存和算法选择仍未接入，普通13整体仍在进行。详见[SDF及独立纹理验收](../brush/core/brush-sdf-outline-validation.md)。
+- 工作流整组30通过、软件后端GPU专项1跳过；四ABI消费者、格式/生成头与完整Release通过，输出build/qt/bin/Release。未跑全量/跨平台/实体连续输入。

@@ -18,9 +18,16 @@ struct Width {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "model", rename_all = "kebab-case", deny_unknown_fields)]
 enum Source {
-    SelfBrush,
-    ExistingBrush { brush: Box<DualParameters> },
-    Texture { texture: TextureParameters },
+    SelfBrush {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        texture: Option<TextureParameters>,
+    },
+    ExistingBrush {
+        brush: Box<DualParameters>,
+    },
+    Texture {
+        texture: TextureParameters,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -43,7 +50,10 @@ impl OutlineParameters {
     pub fn from_core(outline: &StrokeOutline) -> Result<Self> {
         outline.validate()?;
         let source = match outline.source() {
-            OutlineSource::SelfBrush => Source::SelfBrush,
+            OutlineSource::SelfBrush => Source::SelfBrush { texture: None },
+            OutlineSource::SelfTextured(texture) => Source::SelfBrush {
+                texture: Some(TextureParameters::from_core(texture)?),
+            },
             OutlineSource::Existing(tip) => Source::ExistingBrush {
                 brush: Box::new(DualParameters::from_core(&DualBrush::new(
                     false,
@@ -79,6 +89,16 @@ impl OutlineParameters {
     pub fn enabled(&self) -> bool {
         self.data.enabled
     }
+    pub fn has_self_texture(&self) -> bool {
+        matches!(self.data.source, Source::SelfBrush { texture: Some(_) })
+    }
+    pub fn state_version(&self) -> u32 {
+        if self.has_self_texture() {
+            42
+        } else {
+            41
+        }
+    }
     pub fn existing_resource_id(&self) -> Option<&str> {
         match &self.data.source {
             Source::ExistingBrush { brush } => brush.resource_id(),
@@ -87,7 +107,10 @@ impl OutlineParameters {
     }
     pub fn texture_resource_id(&self) -> Option<&str> {
         match &self.data.source {
-            Source::Texture { texture } => texture.resource_id(),
+            Source::Texture { texture }
+            | Source::SelfBrush {
+                texture: Some(texture),
+            } => texture.resource_id(),
             _ => None,
         }
     }
@@ -112,7 +135,11 @@ impl OutlineParameters {
             self.data.width.percent as f32,
         )?;
         match &self.data.source {
-            Source::SelfBrush => {}
+            Source::SelfBrush { texture } => {
+                if let Some(texture) = texture {
+                    texture.validate()?;
+                }
+            }
             Source::ExistingBrush { brush } => brush.validate()?,
             Source::Texture { texture } => {
                 texture.validate()?;
@@ -130,11 +157,16 @@ impl OutlineParameters {
     ) -> Result<StrokeOutline> {
         self.validate()?;
         let source = match self.data.source {
-            Source::SelfBrush => {
-                if existing.is_some() || texture.is_some() {
+            Source::SelfBrush {
+                texture: parameters,
+            } => {
+                if existing.is_some() || (parameters.is_none() && texture.is_some()) {
                     return Err(Error::Invalid("self outline resource binding"));
                 }
-                OutlineSource::SelfBrush
+                match parameters {
+                    Some(parameters) => OutlineSource::SelfTextured(parameters.bind(texture)?),
+                    None => OutlineSource::SelfBrush,
+                }
             }
             Source::ExistingBrush { brush } => {
                 if texture.is_some() {

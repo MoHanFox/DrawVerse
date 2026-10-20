@@ -87,8 +87,20 @@ fn package(settings: &BrushSettings) -> Package {
             id: "12345678-1234-4234-8234-123456789abd".into(),
             name: "Outline".into(),
             engine_profile: "drawverse.brush".into(),
-            behavior_version: 33,
-            required_capabilities: vec!["stroke-outline".into()],
+            behavior_version: if matches!(settings.outline.source(), OutlineSource::SelfTextured(_))
+            {
+                34
+            } else {
+                33
+            },
+            required_capabilities: if matches!(
+                settings.outline.source(),
+                OutlineSource::SelfTextured(_)
+            ) {
+                vec!["stroke-outline".into(), "outline-self-texture".into()]
+            } else {
+                vec!["stroke-outline".into()]
+            },
             parameters: parameters(settings),
             stroke_outline: Some(OutlineParameters::from_core(&settings.outline).unwrap()),
             tip_resource: None,
@@ -223,6 +235,7 @@ fn existing_and_texture_outline_resources_roundtrip_from_fresh_state_and_vbr() {
     for source in [
         OutlineSource::Existing(Arc::new(existing_tip.clone())),
         OutlineSource::Texture(texture.clone()),
+        OutlineSource::SelfTextured(texture.clone()),
     ] {
         let settings = settings(outline(true, OutlinePlacement::Inside, source));
         let mut catalog = BrushCatalog::default();
@@ -314,4 +327,90 @@ fn outline_parameters_reject_unknown_null_and_pre_rounding_out_of_range_fields()
     let mut extra = valid;
     extra["width"]["extra"] = true.into();
     assert!(serde_json::from_value::<OutlineParameters>(extra).is_err());
+}
+
+#[test]
+fn self_texture_requires_state42_preserves_closed_values_and_changes_only_outline() {
+    let token = CancellationToken::default();
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().join("resources"), MAX_CATALOG_MASK_BYTES).unwrap();
+    let (id, bytes, mask) = resource(&[0; 16], 4);
+    store.put_verified(&id, &bytes, &token).unwrap();
+    let plain = settings(outline(
+        true,
+        OutlinePlacement::Outside,
+        OutlineSource::SelfBrush,
+    ));
+    let plain_pixels = draw(definition(&plain));
+    for outline_enabled in [false, true] {
+        for texture_enabled in [false, true] {
+            let texture = BrushTexture::new(
+                texture_enabled,
+                TextureSettings::default(),
+                Some(Arc::new(TextureResource::new(mask.clone()))),
+            )
+            .unwrap();
+            let actual = settings(outline(
+                outline_enabled,
+                OutlinePlacement::Outside,
+                OutlineSource::SelfTextured(texture),
+            ));
+            let mut catalog = BrushCatalog::default();
+            catalog.edit("round-pressure", actual.clone()).unwrap();
+            let state = brush_state::encode(&catalog).unwrap();
+            let mut json: serde_json::Value = serde_json::from_slice(&state).unwrap();
+            assert_eq!(json["version"], 42);
+            assert_eq!(
+                json["presets"][0]["strokeOutline"]["source"]["model"],
+                "self-brush"
+            );
+            let restored =
+                brush_state::decode_with_resources(&state, MAX_CATALOG_MASK_BYTES, &store, &token)
+                    .unwrap();
+            assert_eq!(brush_state::encode(&restored).unwrap(), state);
+            assert!(!restored.selected().settings().texture.enabled());
+            let pixels = draw(definition(restored.selected().settings()));
+            assert_eq!(pixels, draw(definition(&actual)));
+            if outline_enabled && !texture_enabled {
+                assert_eq!(pixels, plain_pixels);
+            }
+            if outline_enabled && texture_enabled {
+                assert_ne!(pixels, plain_pixels);
+                // Main red stroke remains; the black outline-only texture removes blue.
+                assert_eq!(pixels[24 * 72 + 36], plain_pixels[24 * 72 + 36]);
+                assert!(pixels.iter().all(|p| f32::from_bits(p[2]) == 0.));
+            }
+            json["version"] = 41.into();
+            assert!(brush_state::decode_with_resources(
+                &serde_json::to_vec(&json).unwrap(),
+                MAX_CATALOG_MASK_BYTES,
+                &store,
+                &token
+            )
+            .is_err());
+            let package = package(&actual);
+            package.validate().unwrap();
+            assert_eq!(package.brushes[0].behavior_version, 34);
+            assert!(package.brushes[0]
+                .required_capabilities
+                .iter()
+                .any(|c| c == "outline-self-texture"));
+            let bundle = ImageBundle::new(
+                package,
+                BTreeMap::from([(id.clone(), bytes.clone())]),
+                &token,
+            )
+            .unwrap();
+            let reopened =
+                vbr_image::decode(&vbr_image::encode(&bundle, &token).unwrap(), &token).unwrap();
+            assert_eq!(draw(reopened.definition(0).unwrap()), pixels);
+            let mut old_metadata: serde_json::Value =
+                serde_json::from_slice(&bundle.package.to_json().unwrap()).unwrap();
+            old_metadata["brushes"][0]["behaviorVersion"] = 1.into();
+            old_metadata["brushes"][0]["requiredCapabilities"] = serde_json::json!([]);
+            let normalized =
+                Package::from_json(&serde_json::to_vec(&old_metadata).unwrap()).unwrap();
+            assert_eq!(normalized.brushes[0].behavior_version, 34);
+        }
+    }
 }

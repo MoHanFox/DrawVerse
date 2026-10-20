@@ -1,4 +1,8 @@
-# C ABI 1.69.0 契约
+# C ABI 1.70.0 契约
+
+## ABI 1.70 — 自身描边独立纹理
+
+完整描边及Groups准备/包入口支持state42：`strokeOutline.source`在`model:"self-brush"`时可含独立`texture`对象，参数、资源与关闭值复用现有纹理规则。只改变描边覆盖，不改主纹理；不含该字段时旧state41编码保持。state41携带此扩展拒绝。VBR1.0按字段补齐并重算behavior34及`outline-self-texture`能力，旧模式仍behavior33。既有bit55/入口及DTO布局保持，无新增GPU计算。
 
 ## ABI 1.69 — 成功笔触提交回执
 

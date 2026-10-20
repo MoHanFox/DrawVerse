@@ -594,6 +594,12 @@ impl Preset {
             (self.has_wet_dual(), "wet-dual-color"),
             (self.stroke_taper.is_some(), "stroke-taper"),
             (self.stroke_outline.is_some(), "stroke-outline"),
+            (
+                self.stroke_outline
+                    .as_ref()
+                    .is_some_and(|p| p.has_self_texture()),
+                "outline-self-texture",
+            ),
             (self.wet_mix.is_some(), "wet-mix"),
             (self.has_dual_color(), "dual-color-stroke"),
             (self.has_interleaved_color(), "dual-color-stamp"),
@@ -661,7 +667,13 @@ impl Preset {
             }
         }
         self.required_capabilities = capabilities;
-        self.behavior_version = if self.stroke_outline.is_some() {
+        self.behavior_version = if self
+            .stroke_outline
+            .as_ref()
+            .is_some_and(|p| p.has_self_texture())
+        {
+            34
+        } else if self.stroke_outline.is_some() {
             33
         } else if self.has_node_modes() {
             32
@@ -808,6 +820,7 @@ fn is_feature_capability(capability: &str) -> bool {
             | "wet-mix"
             | "stroke-taper"
             | "stroke-outline"
+            | "outline-self-texture"
             | "wet-dual-color"
     )
 }
@@ -925,6 +938,7 @@ impl Package {
                             | "wet-mix"
                             | "stroke-taper"
                             | "stroke-outline"
+                            | "outline-self-texture"
                             | "wet-dual-color"
                     )
                 })

@@ -511,11 +511,12 @@ ColumnLayout {
                             ParameterSlider {title:"散布";sliderName:"settingsOutlineBrushScatter";to:1000;decimals:0;unit:"%";value:(root.outline.source.brush?.scatterDynamics?.amount||0)*100;onCommitted:value=>root.setOutlineScatter("amount",value/100)}
                             ParameterSlider {title:"数量";sliderName:"settingsOutlineBrushCount";from:1;to:16;value:root.outline.source.brush?.scatterDynamics?.count||1;onCommitted:value=>root.setOutlineScatter("count",Math.round(value))}
                         }
-                        ColumnLayout {visible:root.choosingOutlineTexture || root.outline.source.model==="texture";Layout.fillWidth:true
-                            BrushResourcePicker {objectName:"settingsOutlineTexturePicker";Layout.fillWidth:true;resource:root.outline.source.texture?.resource||"";resourceRole:3;showActions:true;importName:"importOutlineTexture";resetName:"resetOutlineTexture";onImportRequested:outlineTextureDialog.open();onResetRequested:{root.choosingOutlineTexture=true;root.setOutlineField("source",{model:"self-brush"})}}
-                            Label {text:"选择资源或直接导入描边纹理；独立于主笔刷纹理。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
-                            CompactComboBox {objectName:"settingsOutlineTextureSpace";Layout.fillWidth:true;enabled:root.outline.source.model==="texture";model:["文档纸纹","笔尖局部"];currentIndex:root.outline.source.texture?.space==="tip"?1:0;onActivated:root.setOutlineTexture("space",currentIndex===1?"tip":"document")}
-                            ParameterSlider {title:"深度";sliderName:"settingsOutlineTextureDepth";enabled:root.outline.source.model==="texture";unit:"%";value:(root.outline.source.texture?.depth||0)*100;onCommitted:value=>root.setOutlineTexture("depth",value/100)}
+                        ColumnLayout {visible:root.choosingOutlineTexture || root.outline.source.model==="texture" || root.outline.source.model==="self-brush";Layout.fillWidth:true
+                            BrushResourcePicker {objectName:"settingsOutlineTexturePicker";Layout.fillWidth:true;resource:root.outline.source.texture?.resource||"";resourceRole:root.outline.source.model==="self-brush" && !root.choosingOutlineTexture?4:3;showActions:true;importName:"importOutlineTexture";resetName:"resetOutlineTexture";onImportRequested:{outlineTextureDialog.selfBrush=root.outline.source.model==="self-brush" && !root.choosingOutlineTexture;outlineTextureDialog.open()} onResetRequested:{root.choosingOutlineTexture=root.outline.source.model==="texture" || root.choosingOutlineTexture;root.setOutlineField("source",{model:"self-brush"})}}
+                            Label {objectName:"settingsOutlineTextureHint";text:root.outline.source.model==="self-brush" && !root.choosingOutlineTexture?"自身描边独立纹理；不改变主笔刷纹理。":"选择资源或直接导入描边纹理；独立于主笔刷纹理。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+                            CompactCheckBox {objectName:"settingsSelfOutlineTextureEnabled";visible:root.outline.source.model==="self-brush" && !root.choosingOutlineTexture;enabled:root.outline.source.texture!==undefined;text:"启用描边纹理";checked:root.outline.source.texture?.enabled||false;onToggled:root.setOutlineTexture("enabled",checked)}
+                            CompactComboBox {objectName:"settingsOutlineTextureSpace";Layout.fillWidth:true;enabled:root.outline.source.texture!==undefined;model:["文档纸纹","笔尖局部"];currentIndex:root.outline.source.texture?.space==="tip"?1:0;onActivated:root.setOutlineTexture("space",currentIndex===1?"tip":"document")}
+                            ParameterSlider {title:"深度";sliderName:"settingsOutlineTextureDepth";enabled:root.outline.source.texture!==undefined;unit:"%";value:(root.outline.source.texture?.depth||0)*100;onCommitted:value=>root.setOutlineTexture("depth",value/100)}
                         }
                         Label {text:"沿整条笔触轮廓生成；当前支持干画笔普通像素层。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
                     }
@@ -648,7 +649,7 @@ ColumnLayout {
     }
     Timer {id:previewDelay;interval:100;onTriggered:root.library.requestPreview(root.library.selectedId)}
     FileDialog {id:tipDialog;title:"导入图片笔尖";nameFilters:["PNG 图片 (*.png)"];onAccepted:PaintClient.importBrushTip(selectedFile,root.tipInterpretationMode)}
-    FileDialog {id:outlineTextureDialog;title:"导入描边纹理";nameFilters:["PNG 图片 (*.png)"];onAccepted:PaintClient.importBrushTexture(selectedFile,root.textureInterpretationMode,true)}
+    FileDialog {id:outlineTextureDialog;property bool selfBrush:false;title:"导入描边纹理";nameFilters:["PNG 图片 (*.png)"];onAccepted:PaintClient.importBrushTexture(selectedFile,root.textureInterpretationMode,true,selfBrush)}
     FileDialog {id:textureDialog;title:"导入纹理";nameFilters:["PNG 图片 (*.png)"];onAccepted:PaintClient.importBrushTexture(selectedFile,root.textureInterpretationMode)}
     FileDialog {id:dualDialog;title:"导入第二笔尖";nameFilters:["PNG 图片 (*.png)"];onAccepted:PaintClient.importDualBrushTip(selectedFile,root.dualInterpretationMode)}
     Component.onCompleted:previewDelay.restart()

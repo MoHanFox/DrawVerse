@@ -37,3 +37,7 @@ manifest 的 `groups` 保持空数组；实际分组在可选 `organization` 的
 ## 起收笔相对长度
 
 `strokeTaper.start/end`可带成对的`lengthMode`（independent/relative）和`lengthPercent`（有限0–10000），并保留`lengthPx`。缺少新增字段时沿用独立像素语义；独立模式也保存关闭的百分比。相对执行长度为起笔实际主直径×百分比/100，最多4096px，不扩大输入和尾部预算。该对象写state39、behavior31和`taper-relative-length`；VBR仍为1.0。不透明度minimum=1表示该端不额外减淡，尺寸曲线独立。
+
+## 自身描边纹理扩展（2026-10-20）
+
+整笔描边的自身来源可写`source:{"model":"self-brush","texture":{...}}`；texture采用完整既有纹理参数及内容身份资源绑定，缺失表示自身描边无独立纹理。启用状态与关闭参数均保留，主笔刷texture独立。该字段要求behavior34和`outline-self-texture`，同时保留`stroke-outline`；没有该字段的描边仍behavior33。VBR格式继续1.0，读入按实际字段重算能力，资源包必须包含该纹理的实际内容。

@@ -314,7 +314,7 @@ public:
     Q_INVOKABLE void useProceduralDual() {setDualResource(m_selected,{});}
     Q_INVOKABLE bool setTexture(QVariantMap data);
     bool setTextureResource(const QString &id,const QString &resource);
-    bool setOutlineTextureResource(const QString &id,const QString &resource);
+    bool setOutlineTextureResource(const QString &id,const QString &resource,bool selfBrush=false);
     Q_INVOKABLE void removeTexture() {setTextureResource(m_selected,{});}
     QVariantMap colorDynamics() const;
     Q_INVOKABLE bool setColorDynamics(QVariantMap data);

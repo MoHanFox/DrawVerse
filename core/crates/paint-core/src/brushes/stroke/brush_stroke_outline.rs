@@ -81,6 +81,8 @@ impl OutlineWidth {
 pub enum OutlineSource {
     #[default]
     SelfBrush,
+    /// Main stroke geometry, with a separately captured outline-only texture.
+    SelfTextured(BrushTexture),
     Existing(Arc<SecondaryTip>),
     Texture(BrushTexture),
 }

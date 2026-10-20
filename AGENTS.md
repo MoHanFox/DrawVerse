@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新自身描边独立纹理：普通13第二步，建路径自身来源支持独立资源选择/异步导入/空间深度/开关移除，主纹理不改；角色4捕获来源和目标，state42/behavior34/outline-self-texture、ABI1.70，旧state41/behavior33保持。IO4/新Qt2旧1/原生2/工作流30（软件GPU专项跳过1）/四ABI/Clippy/Release通过，产物 `build/qt/bin/Release`；详情见 `docs/validations/brush/core/brush-sdf-outline-validation.md`。新SDF仍只有算子，实际笔触/缓存/算法选择及最终GPU说明尚待，未跑全量/跨平台/实体输入。
+
 - 最新SDF描边算子（第一步）：`docs/brush/core/brush-sdf-outline-design.md` / `docs/validations/brush/core/brush-sdf-outline-validation.md`；paint-ops提供负内正外距离场、等距线弧长印章、max及灰度布尔，旧建路径复用EDT；8Mi像素/262144线段与印章/6400万采样上限。新算子10/旧核心13/原生2/Qt3/Clippy与Release通过，ABI1.69及state41/VBR不变，输出 `build/qt/bin/Release`。新SDF设置、实际笔触/缓存及自身独立纹理尚待接入，没有新增GPU计算，勿视作普通13已完成。
 
 - 最新最近八笔参数：搜索下八格按成功且改变像素的End回执记录起笔预设/混合，完整参数去重、同笔不同尺寸独立，显示笔尖+直径、点击恢复/删除后新副本/重启保持。ABI1.69准确publication增量回执（共享4096序列）；Qt待确认4096项/16MiB、单记录≤2MiB/总偏好≤32MiB，VBR/state/DTO保持。跨文档即时同步并保持各工具上下文，无额外保存反馈。原生1/分页6/新Qt5、工作流28（软件跳过GPU1）、旧共享4/四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`；详情见本轮分项设计/验收。

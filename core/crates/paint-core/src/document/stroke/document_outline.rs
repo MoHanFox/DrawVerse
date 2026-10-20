@@ -225,7 +225,9 @@ impl Document {
             self.options,
         )?;
         let texture = match outline.settings.source() {
-            OutlineSource::Texture(texture) => texture.compile(),
+            OutlineSource::Texture(texture) | OutlineSource::SelfTextured(texture) => {
+                texture.compile()
+            }
             _ => None,
         };
         let texture = texture
