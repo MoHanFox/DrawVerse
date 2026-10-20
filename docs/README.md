@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [图层元数据更新保留列表行](layers/layer-row-residency-design.md)
+
 - [复刻主体落笔描边（接入中）](brush/core/brush-stroke-replay-outline-design.md)
 
 - [长任务真实进度与延迟显示](tools/long-task-progress-design.md)

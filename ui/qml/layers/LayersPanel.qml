@@ -152,11 +152,13 @@ ColumnLayout {
         LayerPercent {objectName:"maskDensity";Layout.preferredWidth:73;fraction:root.selected.opacity;enabled:root.unlocked;onCommitted:fraction=>PaintClient.setLayerProperties(root.selected.id,root.selected.visible,fraction)}
     }
     Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+    ListModel {id:layerRows;dynamicRoles:true}
     ListView {
         id: layerList
         objectName: "layerList"
         Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 1; cacheBuffer: 34
-        model: {
+        model: layerRows
+        readonly property var visibleRows: {
             const all=PaintClient.layers.filter(function(l){return !l.mask}); const query=search.text.trim().toLowerCase()
             if(query.length>0) {
                 const byId={}, matches={}, shown={}
@@ -185,6 +187,22 @@ ColumnLayout {
                 return true
             })
         }
+        function synchronizeRows() {
+            const rows=visibleRows
+            for(let i=0;i<rows.length;i++) {
+                if(i>=layerRows.count)layerRows.append({entry:rows[i]})
+                else if(layerRows.get(i).entry.id!==rows[i].id) {
+                    let found=-1
+                    for(let j=i+1;j<layerRows.count;j++)if(layerRows.get(j).entry.id===rows[i].id){found=j;break}
+                    if(found>=0)layerRows.move(found,i,1)
+                    else layerRows.insert(i,{entry:rows[i]})
+                }
+                layerRows.setProperty(i,"entry",rows[i])
+            }
+            if(layerRows.count>rows.length)layerRows.remove(rows.length,layerRows.count-rows.length)
+        }
+        onVisibleRowsChanged:synchronizeRows()
+        Component.onCompleted:synchronizeRows()
         ScrollBar.vertical: ScrollBar {}
         WheelHandler {
             objectName:"layerListWheel"
@@ -193,7 +211,7 @@ ColumnLayout {
         }
         Label {objectName:"layerSearchEmpty";anchors.centerIn:parent;visible:search.text.trim().length>0 && layerList.count===0;text:"没有匹配的图层";color:Theme.muted;font.pixelSize:10}
         currentIndex: {
-            const rows=layerList.model
+            const rows=layerList.visibleRows
             for(let i=0;i<rows.length;i++)if(rows[i].id===root.control.id)return i
             return -1
         }
@@ -211,7 +229,8 @@ ColumnLayout {
         delegate:
                 Rectangle {
                     id: row
-                    required property var modelData
+                    required property var entry
+                    readonly property var modelData:entry
                     objectName: "layerRow:"+modelData.id
                     width: layerList.width; height: modelData.group?24:34
                     property var maskNode: root.masksByOwner[modelData.id] || null
@@ -316,7 +335,6 @@ ColumnLayout {
                             property bool linked:row.maskNode!==null && row.maskNode.maskLinked!==false
                             visible:row.maskNode!==null
                             enabled:!PaintClient.layerEditBusy
-                            opacity:enabled ? 1 : .5
                             Layout.preferredWidth:10;implicitHeight:24
                             Canvas {
                                 id:linkCanvas
@@ -334,8 +352,10 @@ ColumnLayout {
                             node:row.maskNode;selected:row.maskNode!==null && PaintClient.activeLayer===row.maskNode.id
                             property var requestedMask: 0
                             onNodeChanged: {
+                                const next=node ? node.id : 0
+                                if(next===requestedMask)return
                                 if(requestedMask)PaintClient.releaseLayerPreview(requestedMask)
-                                requestedMask=node ? node.id : 0
+                                requestedMask=next
                                 if(requestedMask)PaintClient.requestLayerPreview(requestedMask)
                             }
                             Component.onDestruction:if(requestedMask)PaintClient.releaseLayerPreview(requestedMask)

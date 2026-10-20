@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图层行驻留：`docs/layers/layer-row-residency-design.md` / 对应验收；按 ID 更新/移动 ListModel 行，蒙版引用仅换 ID 时转移，busy 链条保持亮度。真实点击/移动/undo/redo 对象身份与像素行为在软件 Qt 和 D3D11 各通过，Release 输出 `build/qt/bin/Release`；ABI1.74 保持，组内/固定蒙版核心回退仍待优化。
+
 - 新描边复刻算子第一步：`docs/brush/core/brush-stroke-replay-outline-design.md` / 对应validations；paint-ops::replay_outline按实际印章两尺度与四通道灰度max差集形成描边，允许溢出控制主体几何裁剪，64×64/8Mi像素有界，私有候选失败不改输入。新7/包回归16及Clippy/格式通过；尚未接实际笔触/预览/设置/旧算法移除，不是新描边功能完成，ABI1.74/state44保持，无新增GPU。
 
 - 最新完整子树变换预览：transform-resident-preview设计/验收；根层链接自身蒙版、完整Normal/独立穿透根组、连续根多选捕获不可变原始源与世界选框，拖动CPU网格/Qt GPU代理，确认原分层分别采样。核心8+2+1+1+1、原生1、软件Qt5/D3D11 Qt5、四ABI/Clippy/Release通过；2000px双蒙版组Warp六输入核心中位8625→5.63ms，非UI时延。ABI1.74保持，输出 `build/qt/bin/Release`；组内单层/固定蒙版/非连续/选区/首次资产与实体持续性能仍待，预合成半透明/Warp存在近似。

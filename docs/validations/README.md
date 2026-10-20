@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [图层行驻留与蒙版链接闪烁](layers/layer-row-residency-validation.md)
+
 - [复刻主体落笔描边（接入中）](brush/core/brush-stroke-replay-outline-validation.md)
 
 - [长任务真实进度与延迟显示](tools/long-task-progress-validation.md)
