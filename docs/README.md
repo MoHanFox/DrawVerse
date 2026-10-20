@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [SDF 遮罩描边算子与接入边界](brush/core/brush-sdf-outline-design.md)
+
 - [选区常驻遮罩与 GPU 蚂蚁线](tools/selection-resident-ants-design.md)
 
 - [2026-10-20 问题清单与分项修复](planning/2026-10-20-bugfix-design.md)

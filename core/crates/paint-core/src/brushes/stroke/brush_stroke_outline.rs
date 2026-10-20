@@ -151,42 +151,6 @@ fn allocated<T: Clone>(count: usize, value: T) -> Result<Vec<T>> {
     Ok(output)
 }
 
-/// Squared distance to the closest finite parabola, in one linear pass.
-fn distance_line(input: &[f64], output: &mut [f64], sites: &mut [usize], edges: &mut [f64]) {
-    let mut count = 0;
-    for (q, &value) in input.iter().enumerate().filter(|(_, v)| v.is_finite()) {
-        let mut crossing = f64::NEG_INFINITY;
-        while count > 0 {
-            let p = sites[count - 1];
-            crossing = ((value + (q as f64).powi(2)) - (input[p] + (p as f64).powi(2)))
-                / (2. * (q - p) as f64);
-            if crossing > edges[count - 1] {
-                break;
-            }
-            count -= 1;
-        }
-        sites[count] = q;
-        edges[count] = if count == 0 {
-            f64::NEG_INFINITY
-        } else {
-            crossing
-        };
-        count += 1;
-    }
-    if count == 0 {
-        output.fill(f64::INFINITY);
-        return;
-    }
-    let mut site = 0;
-    for (q, result) in output.iter_mut().enumerate() {
-        while site + 1 < count && edges[site + 1] < q as f64 {
-            site += 1;
-        }
-        let p = sites[site];
-        *result = (q as f64 - p as f64).powi(2) + input[p];
-    }
-}
-
 /// Antialiased band around the UNION of the supplied stroke coverage, at 50%.
 /// The caller supplies transparent padding for an outside band. Beyond this
 /// raster is transparent, including when every supplied pixel is covered.
@@ -218,12 +182,7 @@ pub fn stroke_outline_band(
         return Ok(output);
     }
     let (width, height) = (width as usize, height as usize);
-    let longest = width.max(height);
     let mut distance = allocated(count, f64::INFINITY)?;
-    let mut line = allocated(longest, 0_f64)?;
-    let mut transformed = allocated(longest, 0_f64)?;
-    let mut sites = allocated(longest, 0_usize)?;
-    let mut edges = allocated(longest, 0_f64)?;
     let (outside, inside) = placement.extents(band_width);
     for target_inside in [true, false] {
         for (d, value) in distance.iter_mut().zip(coverage) {
@@ -233,28 +192,15 @@ pub fn stroke_outline_band(
                 f64::INFINITY
             };
         }
-        for x in 0..width {
-            for y in 0..height {
-                line[y] = distance[y * width + x];
-            }
-            distance_line(
-                &line[..height],
-                &mut transformed[..height],
-                &mut sites,
-                &mut edges,
-            );
-            for y in 0..height {
-                distance[y * width + x] = transformed[y];
-            }
-        }
+        paint_ops::sdf::squared_distance_transform(width as u32, height as u32, &mut distance)
+            .map_err(|error| match error {
+                paint_ops::sdf::Error::Invalid(_) => {
+                    Error::InvalidArgument("stroke outline distance")
+                }
+                paint_ops::sdf::Error::Limit(_) => Error::ResourceLimit("stroke outline distance"),
+            })?;
         for y in 0..height {
-            distance_line(
-                &distance[y * width..(y + 1) * width],
-                &mut transformed[..width],
-                &mut sites,
-                &mut edges,
-            );
-            for (x, &squared) in transformed[..width].iter().enumerate() {
+            for (x, &squared) in distance[y * width..(y + 1) * width].iter().enumerate() {
                 let i = y * width + x;
                 if (coverage[i] >= 128) == target_inside {
                     continue;

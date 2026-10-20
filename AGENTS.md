@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新SDF描边算子（第一步）：`docs/brush/core/brush-sdf-outline-design.md` / `docs/validations/brush/core/brush-sdf-outline-validation.md`；paint-ops提供负内正外距离场、等距线弧长印章、max及灰度布尔，旧建路径复用EDT；8Mi像素/262144线段与印章/6400万采样上限。新算子10/旧核心13/原生2/Qt3/Clippy与Release通过，ABI1.69及state41/VBR不变，输出 `build/qt/bin/Release`。新SDF设置、实际笔触/缓存及自身独立纹理尚待接入，没有新增GPU计算，勿视作普通13已完成。
+
 - 最新最近八笔参数：搜索下八格按成功且改变像素的End回执记录起笔预设/混合，完整参数去重、同笔不同尺寸独立，显示笔尖+直径、点击恢复/删除后新副本/重启保持。ABI1.69准确publication增量回执（共享4096序列）；Qt待确认4096项/16MiB、单记录≤2MiB/总偏好≤32MiB，VBR/state/DTO保持。跨文档即时同步并保持各工具上下文，无额外保存反馈。原生1/分页6/新Qt5、工作流28（软件跳过GPU1）、旧共享4/四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`；详情见本轮分项设计/验收。
 
 - 最新笔刷系统隔离：设置→偏好三档，默认共用/仅每预设大小不透明度流量/完整参数与所选笔刷混合；三工具上下文共用目录与资源，Qt偏好独立version1/每套≤2MiB/总输入≤12MiB，state/VBR/ABI1.68不变。新增Qt3、工作流整组23（软件跳过GPU1）、旧共享工具4与Release通过，输出 `build/qt/bin/Release`；更改级别以当前配置初始化，详情见本轮分项设计/验收。

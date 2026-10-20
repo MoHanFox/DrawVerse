@@ -2,6 +2,8 @@
 //! document ownership, histories and publishing deliberately live above this layer.
 use std::{fmt::Debug, ops::Deref, sync::Arc};
 
+pub mod sdf;
+
 pub type Rgba = [f32; 4];
 pub const MAX_SAMPLES: usize = 8_000_000;
 pub const MAX_SOURCE_TILES: usize = 2048;

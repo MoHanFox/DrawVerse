@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [SDF 遮罩描边算子](brush/core/brush-sdf-outline-validation.md)
+
 - [选区常驻遮罩与 GPU 蚂蚁线](tools/selection-resident-ants-validation.md)
 
 - [2026-10-20 分项修复验收](planning/2026-10-20-bugfix-validation.md)
