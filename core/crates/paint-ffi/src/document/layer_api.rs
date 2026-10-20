@@ -159,6 +159,11 @@ pub unsafe extern "C" fn paint_session_group(
             return Err(ApiError::invalid("group operation needs explicit layer"));
         }
         let operation = match value.kind {
+            PAINT_GROUP_MASK_LINK
+                if value.parent_id <= 1 && value.name.is_null() && value.name_length == 0 =>
+            {
+                Operation::MaskLink(value.layer_id, value.parent_id != 0)
+            }
             PAINT_GROUP_RENAME_LAYER if value.parent_id == 0 => Operation::RenameLayer(
                 value.layer_id,
                 pointers::utf8(value.name, value.name_length)?,
@@ -498,5 +503,31 @@ pub unsafe extern "C" fn paint_session_remove_layers(
                     mode == PAINT_REMOVE_KEEP_GROUP_CHILDREN,
                 ))?;
         pointers::write(out_sequence, sequence)
+    })
+}
+
+/// ABI 1.68: exact-publication mask link query (non-mask layers return 1).
+/// # Safety
+/// Handles follow session ownership; out must be writable and nonoverlapping.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_layer_mask_linked(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    publication: u64,
+    layer_id: u64,
+    out: *mut u32,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out, 0)?;
+        let state = runtime::registry()?.session(core, session)?.publication();
+        if state.info.publication != publication {
+            return Err(ApiError::new(PAINT_BUSY, "publication changed"));
+        }
+        let layer = state
+            .layers
+            .iter()
+            .find(|l| l.info.layer_id == layer_id)
+            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "layer not found"))?;
+        pointers::write(out, u32::from(layer.mask_linked))
     })
 }

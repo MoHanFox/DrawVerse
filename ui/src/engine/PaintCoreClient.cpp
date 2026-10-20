@@ -394,11 +394,12 @@ public:
             status=paint_session_layer_clipping(m_core,m_session,info.publication,layer.layer_id,&clipping);
             if(status==PAINT_BUSY) return false;
             if(!check(status)) return false;
+            uint32_t maskLinked=1;status=paint_session_layer_mask_linked(m_core,m_session,info.publication,layer.layer_id,&maskLinked);if(status==PAINT_BUSY)return false;if(!check(status))return false;
             uint32_t image=0;status=paint_session_layer_is_image(m_core,m_session,info.publication,layer.layer_id,&image);if(status==PAINT_BUSY)return false;if(!check(status))return false;
             layers.prepend(QVariantMap{{"id", QVariant::fromValue<qulonglong>(layer.layer_id)},
                 {"image",image!=0},{"name", QString::fromUtf8(name)}, {"visible", layer.visible != 0}, {"opacity", layer.opacity},
                 {"fill",appearance.fill},{"blendMode",appearance.blend_mode},{"locks",appearance.locks},
-                {"mask",hierarchy.kind==PAINT_LAYER_MASK},{"group",hierarchy.kind==PAINT_LAYER_GROUP},{"parent",QVariant::fromValue<qulonglong>(hierarchy.parent_id)},{"depth",hierarchy.depth},{"effectiveLocks",hierarchy.effective_locks},
+                {"maskLinked",maskLinked!=0},{"mask",hierarchy.kind==PAINT_LAYER_MASK},{"group",hierarchy.kind==PAINT_LAYER_GROUP},{"parent",QVariant::fromValue<qulonglong>(hierarchy.parent_id)},{"depth",hierarchy.depth},{"effectiveLocks",hierarchy.effective_locks},
                 {"offsetX",appearance.offset_x},{"offsetY",appearance.offset_y},{"dissolveSeed",appearance.dissolve_seed},
                 {"thumbnail",m_thumbnails.value(layer.layer_id)}});
             auto entry=layers.first().toMap();entry.insert("clipped",clipping.enabled!=0);
@@ -1782,6 +1783,10 @@ bool PaintCoreClient::submitGroup(quint32 kind,quint64 id,quint64 parent,const Q
     m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
 }
 bool PaintCoreClient::groupLayer(quint64 id,const QString &name) {return submitGroup(PAINT_GROUP_WRAP,id,0,name);}
+bool PaintCoreClient::setMaskLinked(quint64 id,bool linked) {
+    if(!ready() || layerEditBusy() || m_transformActive || m_liquifyActive)return false;
+    return submitGroup(PAINT_GROUP_MASK_LINK,id,linked?1:0,{});
+}
 bool PaintCoreClient::renameLayer(quint64 id,const QString &name) {
     const auto clean=name.trimmed();if(clean.isEmpty() || clean.toUtf8().size()>1024 || clean.contains(QChar(0)))return false;
     for(const auto &value:m_layers){const auto layer=value.toMap();if(layer.value("id").toULongLong()==id && layer.value("name").toString()==clean)return true;}

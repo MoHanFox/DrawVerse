@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 67
+#define PAINT_ABI_MINOR 68
 
 #define PAINT_ABI_PATCH 0
 
@@ -267,6 +267,11 @@
 #define PAINT_FILE_SUCCEEDED 3
 
 #define PAINT_FILE_WEBP 3
+
+/**
+ * ABI 1.68: layer_id is the mask, parent_id is linked (0/1), name must be empty.
+ */
+#define PAINT_GROUP_MASK_LINK 5
 
 /**
  * ABI 1.65: rename an existing pixel layer, group or mask using owned UTF-8 bytes.
@@ -2282,6 +2287,17 @@ PaintStatus paint_session_layer_is_image(struct PaintCore *core,
                                          uint64_t publication,
                                          uint64_t id,
                                          uint32_t *out);
+
+/**
+ * ABI 1.68: exact-publication mask link query (non-mask layers return 1).
+ * # Safety
+ * Handles follow session ownership; out must be writable and nonoverlapping.
+ */
+PaintStatus paint_session_layer_mask_linked(struct PaintCore *core,
+                                            struct PaintSession *session,
+                                            uint64_t publication,
+                                            uint64_t layer_id,
+                                            uint32_t *out);
 
 /**
  * ABI 1.63: begin (id), pick-and-begin (x/y), absolute update, final commit or cancel.

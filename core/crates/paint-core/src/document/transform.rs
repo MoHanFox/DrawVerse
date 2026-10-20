@@ -384,7 +384,7 @@ impl Document {
         if original.group {
             return self.begin_transform_layers(&[original.id]);
         }
-        let source = if let Some(p) = &original.placed {
+        let mut source = if let Some(p) = &original.placed {
             let mut p = (**p).clone();
             p.geometry.skew_h = 0.;
             p.geometry.skew_v = 0.;
@@ -408,15 +408,6 @@ impl Document {
                 geometry,
             })
         };
-        let mut source = source;
-        if original.mask {
-            let owner = self.layer(original.parent).expect("mask owner");
-            let p = Arc::make_mut(&mut source);
-            for point in &mut p.geometry.points {
-                point[0] += owner.appearance.offset_x as f64;
-                point[1] += owner.appearance.offset_y as f64;
-            }
-        }
         let selected = if self.selection.enabled() && !original.is_image() && !original.mask {
             Some(self.selection.clone())
         } else {
@@ -489,7 +480,10 @@ impl Document {
         let mut targets = Vec::new();
         for id in roots {
             for layer in &self.layers[self.subtree(id)?] {
-                if !layer.group && (!layer.tiles.is_empty() || layer.white != (0, 0)) {
+                if !layer.group
+                    && (!layer.mask || layer.mask_linked || ids.contains(&layer.id))
+                    && (!layer.tiles.is_empty() || layer.white != (0, 0))
+                {
                     targets.push(layer.id);
                 }
             }
@@ -823,24 +817,6 @@ impl Document {
         layer.white = (0, 0);
         layer.appearance.offset_x = 0;
         layer.appearance.offset_y = 0;
-        if original.mask {
-            let owner = self.layer(original.parent).expect("owner");
-            let owner_transformed = std::iter::once(&state.original)
-                .chain(state.extra.iter().map(|(l, _)| l))
-                .any(|l| l.id == owner.id);
-            if !owner_transformed {
-                layer.appearance.offset_x = owner
-                    .appearance
-                    .offset_x
-                    .checked_neg()
-                    .ok_or(Error::InvalidArgument("mask position"))?;
-                layer.appearance.offset_y = owner
-                    .appearance
-                    .offset_y
-                    .checked_neg()
-                    .ok_or(Error::InvalidArgument("mask position"))?;
-            }
-        }
         let bounds = source.bounds;
         let mut sampler = SourceSampler::new(&source.source);
         sampler.selection = state.selection.as_ref();

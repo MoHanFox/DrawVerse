@@ -1,4 +1,4 @@
-# C ABI 1.67.0 契约
+# C ABI 1.68.0 契约
 
 ## ABI 1.67 — 多图层移动会话
 
@@ -560,3 +560,11 @@ The four older preparation levels still reject group records, including empty fo
 PAINT_FEATURE_BRUSH_GROUP_PACKAGE (bit50) adds paint_brush_library_package_read_groups and paint_brush_library_package_write_groups with the existing bounded path/JSON and buffer contracts. JSON is the strict ordered-package-v1 wrapper with model string, package and required ordered-tree-v1 organization. Flat packages also have an explicit flat organization. PackageHandoff validates all package fields and the exact DFS preset projection, rejects unknown/null/wrong-model fields and applies the existing 2MiB limit to the complete wrapper. See contracts/brush/library/brush-package-handoff.schema.json and examples; global tree/projection semantics are checked in Rust.
 
 Read capacity probes do not install assets or sources, and required is initialized to zero on errors. Successful read installs immutable resources and complete source batches before returning metadata, without replacing current catalog. Write validates the wrapper before resource lookup, retains source baselines/current resources and uses existing atomic file save. Legacy/Wet/Taper/WetDual readers/writers retain their group rejection. Group-state preparation remains the ABI1.54 entry; VBR 1.0/state20 versions do not change. Qt complete mirrored state, copied tree merge/reset baselines and group management are not yet enabled by this capability.
+
+### ABI 1.68：蒙版移动链接
+
+PAINT_GROUP_MASK_LINK=5 使用现有 PaintGroupRequest：layer_id 为蒙版，parent_id 为链接布尔值0/1，name=NULL/name_length=0。返回OK只表示排队，非蒙版/锁/忙/历史失败由actor返回；同值不增加修订历史。链接默认开启，关闭后移动/变换所有者或组跳过该蒙版，显式选中蒙版仍可移动。
+
+paint_session_layer_mask_linked(core,session,publication,layer_id,out_u32) 按准确 publication 返回0/1；非蒙版返回1，未知节点NOT_FOUND，旧publication返回BUSY。输出须可写且不与其他参数重叠，失败清零；不借用内部指针，不改变已有DTO。
+
+持久化：旧二进制 mask 字节0/1不变，3表示解除链接蒙版，其他值拒绝；历史与剪贴板保留该标志。ORA 无解除链接仍写4（栅格）/5（置入模型）；解除链接写6/7，dv:mask-linked=0（缺省1），只有5/7必须含drawverse/layers.bin。旧读取器拒绝6/7；所有候选及历史成功后才发布。

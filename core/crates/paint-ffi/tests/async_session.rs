@@ -4114,3 +4114,123 @@ fn layer_moves_abi_copies_targets_and_final_delta_is_one_history() {
         }
     }
 }
+
+#[test]
+fn mask_link_abi_publication_history_movement_and_validation() {
+    let h = Harness::new(64, 64);
+    h.wait(h.stroke(20., 20.));
+    let original = h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_ADD_MASK,
+        layer_id: 1,
+        ..dto!(PaintCommand)
+    }));
+    let mask = original.active_layer_id;
+    unsafe {
+        let query = |publication, id| {
+            let mut linked = 99;
+            let status =
+                paint_session_layer_mask_linked(h.core, h.session, publication, id, &mut linked);
+            (status, linked)
+        };
+        assert_eq!(query(original.publication, mask), (PAINT_OK, 1));
+        assert_eq!(query(original.publication, 1), (PAINT_OK, 1));
+        assert_eq!(query(original.publication, 9999), (PAINT_NOT_FOUND, 0));
+        assert_eq!(
+            paint_session_layer_mask_linked(
+                h.core,
+                h.session,
+                original.publication,
+                mask,
+                ptr::null_mut()
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        let mut seq = 99;
+        let mut request = PaintGroupRequest {
+            kind: PAINT_GROUP_MASK_LINK,
+            layer_id: mask,
+            parent_id: 2,
+            struct_size: size_of::<PaintGroupRequest>() as u32,
+            name: ptr::null(),
+            name_length: 0,
+        };
+        assert_eq!(
+            paint_session_group(h.core, h.session, &request, &mut seq),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(seq, 0);
+        request.parent_id = 0;
+        request.name = b"x".as_ptr();
+        request.name_length = 1;
+        assert_eq!(
+            paint_session_group(h.core, h.session, &request, &mut seq),
+            PAINT_INVALID_ARGUMENT
+        );
+        request.name = ptr::null();
+        request.name_length = 0;
+        assert_eq!(
+            paint_session_group(h.core, h.session, &request, &mut seq),
+            PAINT_OK
+        );
+        let info = h.wait(seq);
+        assert_eq!(info.last_error_status, PAINT_OK);
+        assert_eq!(info.undo_depth, original.undo_depth + 1);
+        assert_ne!(info.flags & PAINT_SESSION_MODIFIED, 0);
+        assert_eq!(query(info.publication, mask), (PAINT_OK, 0));
+        assert_eq!(query(original.publication, mask), (PAINT_BUSY, 0));
+        assert_eq!(
+            paint_session_group(h.core, h.session, &request, &mut seq),
+            PAINT_OK
+        );
+        let info = h.wait(seq);
+        assert_eq!(info.undo_depth, original.undo_depth + 1);
+        assert_eq!(
+            paint_session_layer_move(h.core, h.session, PAINT_LAYER_MOVE_BEGIN, 1, 0, 0, &mut seq),
+            PAINT_OK
+        );
+        h.wait(seq);
+        assert_eq!(
+            paint_session_layer_move(
+                h.core,
+                h.session,
+                PAINT_LAYER_MOVE_COMMIT,
+                0,
+                8,
+                3,
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        let moved = h.wait(seq);
+        for (id, x) in [(1, 8), (mask, 0)] {
+            let mut a = dto!(PaintLayerAppearance);
+            assert_eq!(
+                paint_session_layer_appearance(h.core, h.session, moved.publication, id, &mut a),
+                PAINT_OK
+            );
+            assert_eq!(a.offset_x, x);
+        }
+        h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        let undone = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(query(undone.publication, mask), (PAINT_OK, 1));
+        let redone = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_REDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(query(redone.publication, mask), (PAINT_OK, 0));
+        request.layer_id = 1;
+        assert_eq!(
+            paint_session_group(h.core, h.session, &request, &mut seq),
+            PAINT_OK
+        );
+        let failed = h.wait(seq);
+        assert_eq!(failed.last_error_status, PAINT_INVALID_ARGUMENT);
+        assert_eq!(failed.undo_depth, redone.undo_depth);
+    }
+}

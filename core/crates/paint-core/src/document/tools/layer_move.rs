@@ -25,6 +25,10 @@ impl Document {
                 at..at + 1
             };
             for i in range {
+                let layer = &self.layers[i];
+                if layer.mask && !layer.mask_linked && !ids.contains(&layer.id) {
+                    continue;
+                }
                 self.check_ancestors(self.layers[i].id, crate::LOCK_POSITION | crate::LOCK_ALL)?;
                 if !self.layers[i].group {
                     baseline.push((i, self.layers[i].appearance));
@@ -353,5 +357,159 @@ mod tests {
         ));
         d.undo().unwrap();
         assert_eq!(d.layer(id).unwrap().appearance.offset_x, 0);
+    }
+    fn masked_seed() -> (Document, LayerId, LayerId) {
+        let mut d = Document::new(128, 96).unwrap();
+        let owner = d.active_layer();
+        d.layers[0].tiles.insert(
+            TileCoord::from_signed(0, 0),
+            Arc::new(Tile::from_pixels(vec![Pixel::WHITE; 4096]).unwrap()),
+        );
+        d.move_layer(owner, 12, 7).unwrap();
+        let mask = d.add_mask(owner).unwrap();
+        let i = d.layer_index(mask).unwrap();
+        let pixels = (0..4096)
+            .map(|i| {
+                if i % 64 < 30 {
+                    Pixel::from_straight([0., 0., 0., 0.75]).unwrap()
+                } else {
+                    Pixel::TRANSPARENT
+                }
+            })
+            .collect();
+        d.layers[i].tiles.insert(
+            TileCoord::from_signed(0, 0),
+            Arc::new(Tile::from_pixels(pixels).unwrap()),
+        );
+        d.layers[i].appearance.offset_x = 4;
+        d.layers[i].appearance.offset_y = 9;
+        (d, owner, mask)
+    }
+    #[test]
+    fn mask_link_history_movement_locks_and_bundle_preserve_independent_coordinates() {
+        let (mut d, owner, mask) = masked_seed();
+        assert!(d.layer(mask).unwrap().mask_linked());
+        assert!(d.set_mask_linked(owner, false).is_err());
+        let depth = d.history_depth();
+        let tile = d
+            .layer(mask)
+            .unwrap()
+            .tiles
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        d.set_mask_linked(mask, false).unwrap();
+        assert_eq!(d.history_depth().0, depth.0 + 1);
+        d.set_mask_linked(mask, false).unwrap();
+        assert_eq!(d.history_depth().0, depth.0 + 1);
+        d.undo().unwrap();
+        assert!(d.layer(mask).unwrap().mask_linked());
+        d.redo().unwrap();
+        assert!(!d.layer(mask).unwrap().mask_linked());
+        assert!(Arc::ptr_eq(
+            &tile,
+            d.layer(mask).unwrap().tiles.values().next().unwrap()
+        ));
+        let mut a = d.layer(mask).unwrap().appearance();
+        a.locks = crate::LOCK_POSITION;
+        d.set_layer_appearance(mask, a).unwrap();
+        d.begin_layer_move(owner, false).unwrap();
+        d.update_layer_move(5, 3).unwrap();
+        assert_eq!(d.layer(owner).unwrap().appearance.offset_x, 17);
+        assert_eq!(d.layer(mask).unwrap().appearance.offset_x, 4);
+        d.cancel_layer_move().unwrap();
+        d.move_layer(owner, 5, 3).unwrap();
+        assert_eq!(d.layer(mask).unwrap().appearance.offset_y, 9);
+        assert!(d.move_layers(&[owner, mask], 1, 1).is_err());
+        a.locks = 0;
+        d.set_layer_appearance(mask, a).unwrap();
+        d.move_layer(mask, 2, 1).unwrap();
+        assert_eq!(d.layer(owner).unwrap().appearance.offset_x, 17);
+        assert_eq!(d.layer(mask).unwrap().appearance.offset_x, 6);
+        let group = d.group_layer(owner, "group").unwrap();
+        let gm = d.add_mask(group).unwrap();
+        d.set_mask_linked(gm, false).unwrap();
+        d.move_layer(group, 3, 2).unwrap();
+        assert_eq!(d.layer(owner).unwrap().appearance.offset_x, 20);
+        assert_eq!(d.layer(mask).unwrap().appearance.offset_x, 6);
+        assert_eq!(d.layer(gm).unwrap().appearance.offset_x, 0);
+        d.set_mask_linked(mask, true).unwrap();
+        d.move_layer(group, 1, 1).unwrap();
+        assert_eq!(d.layer(mask).unwrap().appearance.offset_x, 7);
+        let bytes = d.embedded_layers().unwrap();
+        let restored = Document::from_embedded_layers(
+            128,
+            96,
+            &bytes,
+            owner,
+            DocumentOptions::default(),
+            paint_storage::ScratchSpace::system(),
+        )
+        .unwrap();
+        assert!(restored.layer(mask).unwrap().mask_linked());
+        assert!(!restored.layer(gm).unwrap().mask_linked());
+        let copied = d.copy_layers(&[group]).unwrap();
+        let pasted = d.paste_layers(&copied, group).unwrap();
+        assert!(!d.mask_for(pasted).unwrap().mask_linked());
+    }
+    #[test]
+    fn mask_transform_uses_absolute_coordinates_and_respects_link_policy() {
+        for linked in [false, true] {
+            for mask_only in [false, true] {
+                let (mut d, owner, mask) = masked_seed();
+                d.set_mask_linked(mask, linked).unwrap();
+                let bytes = d.embedded_layers().unwrap();
+                let mut expected = Document::from_embedded_layers(
+                    128,
+                    96,
+                    &bytes,
+                    owner,
+                    DocumentOptions::default(),
+                    paint_storage::ScratchSpace::system(),
+                )
+                .unwrap();
+                let target = if mask_only { mask } else { owner };
+                expected.move_layer(target, 5, 3).unwrap();
+                if mask_only {
+                    d.set_active_layer(mask).unwrap();
+                    d.begin_transform().unwrap();
+                } else {
+                    d.begin_transform_layers(&[owner]).unwrap();
+                }
+                let mut g = d.transform_geometry().unwrap();
+                g.interpolation = 0;
+                for p in &mut g.points {
+                    p[0] += 5.;
+                    p[1] += 3.;
+                }
+                d.update_transform(g).unwrap();
+                d.commit_transform().unwrap();
+                for y in 0..96 {
+                    for x in 0..128 {
+                        assert_eq!(
+                            d.pixel(x, y),
+                            expected.pixel(x, y),
+                            "linked={linked} mask_only={mask_only} at {x},{y}"
+                        );
+                    }
+                }
+                d.undo().unwrap();
+                let before = Document::from_embedded_layers(
+                    128,
+                    96,
+                    &bytes,
+                    owner,
+                    DocumentOptions::default(),
+                    paint_storage::ScratchSpace::system(),
+                )
+                .unwrap();
+                for y in 0..96 {
+                    for x in 0..128 {
+                        assert_eq!(d.pixel(x, y), before.pixel(x, y));
+                    }
+                }
+            }
+        }
     }
 }

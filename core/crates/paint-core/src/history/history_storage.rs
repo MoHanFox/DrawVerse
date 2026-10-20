@@ -423,7 +423,15 @@ fn encode_layer(w: &mut impl Write, index: usize, layer: &Layer) -> io::Result<(
     appearance(w, layer.appearance)?;
     put_u64(w, layer.parent)?;
     put_u8(w, u8::from(layer.group))?;
-    put_u8(w, u8::from(layer.mask))?;
+    put_u8(
+        w,
+        u8::from(layer.mask)
+            | if layer.mask && !layer.mask_linked {
+                2
+            } else {
+                0
+            },
+    )?;
     put_u8(w, u8::from(layer.clipped))?;
     put_u32(w, layer.white.0)?;
     put_u32(w, layer.white.1)?;
@@ -469,7 +477,12 @@ fn decode_layer_depth<R: Read>(r: &mut CheckedReader<R>, depth: usize) -> Result
     layer.appearance = read_appearance(r)?;
     layer.parent = u64_value(r)?;
     layer.group = boolean(r)?;
-    layer.mask = boolean(r)?;
+    let mask = u8_value(r)?;
+    if !matches!(mask, 0 | 1 | 3) {
+        return Err(invalid());
+    }
+    layer.mask = mask != 0;
+    layer.mask_linked = mask != 3;
     layer.clipped = boolean(r)?;
     layer.white = (u32_value(r)?, u32_value(r)?);
     if (layer.white.0 == 0) != (layer.white.1 == 0)
@@ -1102,6 +1115,34 @@ mod tests {
                     if !noisy {
                         assert!(payload.memory_bytes() < 128);
                     }
+                }
+            }
+        }
+    }
+    #[test]
+    fn mask_link_metadata_survives_disk_history_and_legacy_mask_bytes() {
+        for linked in [false, true] {
+            let mut owner = Layer::new(1, "owner".into());
+            owner.appearance.offset_x = 12;
+            let mut mask = Layer::new(2, "mask".into());
+            mask.mask = true;
+            mask.parent = 1;
+            mask.mask_linked = linked;
+            mask.appearance.offset_x = 4;
+            let command = Command::Structure {
+                before: vec![mask.clone(), owner.clone()],
+                after: vec![mask, owner],
+            };
+            for budget in [0, 1024 * 1024] {
+                let payload = Payload::encode(&command, budget).unwrap();
+                let Command::Structure { before, after } = payload.decode().unwrap() else {
+                    panic!("structure history");
+                };
+                for layers in [before, after] {
+                    assert!(layers[0].mask);
+                    assert_eq!(layers[0].mask_linked, linked);
+                    assert_eq!(layers[0].appearance.offset_x, 4);
+                    assert_eq!(layers[1].appearance.offset_x, 12);
                 }
             }
         }

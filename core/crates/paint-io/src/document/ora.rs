@@ -71,6 +71,7 @@ struct LayerSpec {
     parent: Option<usize>,
     group: bool,
     mask: bool,
+    mask_linked: bool,
     clipped: bool,
     white: (u32, u32),
     explicit_id: u64,
@@ -213,6 +214,14 @@ fn parse_node(
     } else {
         (false, (0, 0), 0, 0)
     };
+    let mask_linked = if owned {
+        number::<u32>(&mut a, "dv:mask-linked", Some(1))?
+    } else {
+        1
+    };
+    if mask_linked > 1 || (!mask && mask_linked == 0) {
+        return Err(Error::Invalid("invalid mask link flag"));
+    }
     let selected = match a.remove("selected").as_deref().unwrap_or("false") {
         "true" => true,
         "false" => false,
@@ -225,6 +234,7 @@ fn parse_node(
         parent,
         group,
         mask,
+        mask_linked: mask_linked == 1,
         clipped: clipped == 1,
         white,
         explicit_id,
@@ -278,7 +288,7 @@ fn parse_stack(xml: &[u8]) -> Result<ParsedStack> {
                 editable = marker == 2;
                 if let Some(ns) = a.remove("xmlns:dv") {
                     extension_version = number::<u32>(&mut a, "dv:version", Some(1))?;
-                    if ns != "urn:drawverse:layers:1" || !matches!(extension_version, 1..=5) {
+                    if ns != "urn:drawverse:layers:1" || !matches!(extension_version, 1..=7) {
                         return Err(Error::Unsupported(
                             "DrawVerse layer extension version".into(),
                         ));
@@ -377,6 +387,9 @@ fn parse_stack(xml: &[u8]) -> Result<ParsedStack> {
     }
     if extension_version >= 2 && layers.iter().any(|l| l.explicit_id == 0) {
         return Err(Error::Invalid("version 2 requires explicit IDs"));
+    }
+    if extension_version < 6 && layers.iter().any(|l| !l.mask_linked) {
+        return Err(Error::Invalid("mask link requires extension version 6"));
     }
     if extension_version < 3 && layers.iter().any(|l| l.clipped) {
         return Err(Error::Invalid("clipping requires extension version 3"));
@@ -523,6 +536,8 @@ pub(crate) fn decode(
     let mut pixels = 0u64;
     let mut tiles = 0;
     let node_count = specs.len();
+    let mut mask_links: Vec<_> = specs.iter().map(|s| s.mask_linked).collect();
+    mask_links.reverse();
     let mut clipping: Vec<_> = specs.iter().map(|s| s.clipped).collect();
     clipping.reverse();
     let mut hierarchy: Vec<_> = specs
@@ -572,10 +587,10 @@ pub(crate) fn decode(
     let active = layers.len().saturating_sub(1 + active);
     layers.reverse();
     appearances.reverse();
-    if (model_version == 5) != names.contains("drawverse/layers.bin") {
+    if (matches!(model_version, 5 | 7)) != names.contains("drawverse/layers.bin") {
         return Err(Error::Invalid("image model/version mismatch"));
     }
-    let model = if model_version == 5 {
+    let model = if matches!(model_version, 5 | 7) {
         Some(entry(&mut zip, "drawverse/layers.bin", crate::MAX_INPUT)?)
     } else {
         None
@@ -595,6 +610,7 @@ pub(crate) fn decode(
     )?;
     document.set_import_nodes(&hierarchy)?;
     document.set_import_clipping(&clipping)?;
+    document.set_import_mask_links(&mask_links)?;
     if let Some(model) = model {
         document = Document::from_embedded_layers(
             w,
@@ -645,10 +661,15 @@ pub(crate) fn encode(
         zip.start_file("drawverse/layers.bin", options)?;
         zip.write_all(&snapshot.embedded_layers()?)?;
     }
-    let model_version = if snapshot.layers().iter().any(|l| l.is_image()) {
-        5
-    } else {
-        4
+    let unlinked = snapshot
+        .layers()
+        .iter()
+        .any(|l| l.is_mask() && !l.mask_linked());
+    let model_version = match (snapshot.layers().iter().any(|l| l.is_image()), unlinked) {
+        (false, false) => 4,
+        (true, false) => 5,
+        (false, true) => 6,
+        (true, true) => 7,
     };
     let mut xml=format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><image w=\"{}\" h=\"{}\" version=\"0.0.6\" xmlns:dv=\"urn:drawverse:layers:1\" dv:version=\"{}\" dv:selection=\"{}\"><stack>",snapshot.width,snapshot.height,model_version,snapshot.selection().to_text());
     let mut pixels = 0u64;
@@ -732,7 +753,10 @@ pub(crate) fn encode(
         raster::png(&mut zip, &rgba, w, h)?;
         let props = layer.properties();
         let a = layer.appearance();
-        let extension=format!(" dv:id=\"{}\" dv:parent=\"{}\" dv:mask=\"{}\" dv:white-width=\"{}\" dv:white-height=\"{}\" dv:clipped=\"{}\"",layer.id(),layer.parent_id(),u32::from(layer.is_mask()),layer.white_extent().0,layer.white_extent().1,u32::from(layer.is_clipped()));
+        let mut extension=format!(" dv:id=\"{}\" dv:parent=\"{}\" dv:mask=\"{}\" dv:white-width=\"{}\" dv:white-height=\"{}\" dv:clipped=\"{}\"",layer.id(),layer.parent_id(),u32::from(layer.is_mask()),layer.white_extent().0,layer.white_extent().1,u32::from(layer.is_clipped()));
+        if layer.is_mask() && !layer.mask_linked() {
+            extension.push_str(" dv:mask-linked=\"0\"");
+        }
         xml.push_str(&format!("<layer{extension} name=\"{}\" src=\"{path}\" x=\"{}\" y=\"{}\" opacity=\"{}\" visibility=\"{}\" composite-op=\"{}\" selected=\"{}\" dv:fill=\"{}\" dv:blend=\"{}\" dv:locks=\"{}\" dv:offset-x=\"{}\" dv:offset-y=\"{}\" dv:local-x=\"{x}\" dv:local-y=\"{y}\" dv:opacity=\"{}\" dv:seed=\"{}\"/>",escaped(layer.name())?,x+i64::from(a.offset_x),y+i64::from(a.offset_y),props.opacity*a.fill,if props.visible {"visible"}else{"hidden"},standard_blend(a.blend),layer.id()==active,a.fill,a.blend as u32,a.locks,a.offset_x,a.offset_y,props.opacity,a.dissolve_seed));
     }
     for _ in open_groups {

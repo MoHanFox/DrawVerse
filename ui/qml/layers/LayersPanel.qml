@@ -312,14 +312,20 @@ ColumnLayout {
                             onContextRequested:(x,y)=>root.openLayerContext(row.modelData.id,contentThumbnail,x,y,false)
                         }
                         Item {
-                            visible:row.maskNode!==null && !row.modelData.group
+                            objectName:"maskLink:"+row.modelData.id
+                            property bool linked:row.maskNode!==null && row.maskNode.maskLinked!==false
+                            visible:row.maskNode!==null
+                            enabled:!PaintClient.layerEditBusy
+                            opacity:enabled ? 1 : .5
                             Layout.preferredWidth:10;implicitHeight:24
                             Canvas {
+                                id:linkCanvas
                                 anchors.fill:parent
-                                onPaint:{const c=getContext("2d");c.reset();c.strokeStyle=Theme.muted;c.lineWidth=1.3;c.lineCap="round";c.beginPath();c.moveTo(2,12);c.lineTo(2,6);c.quadraticCurveTo(5,2,8,6);c.lineTo(8,12);c.stroke();c.beginPath();c.moveTo(2,12);c.lineTo(2,18);c.quadraticCurveTo(5,22,8,18);c.lineTo(8,12);c.stroke();c.beginPath();c.moveTo(5,8);c.lineTo(5,16);c.stroke()}
+                                onPaint:{const c=getContext("2d");c.reset();c.strokeStyle=parent.linked ? Theme.text : Theme.muted;c.lineWidth=1.3;c.lineCap="round";c.beginPath();c.moveTo(2,12);c.lineTo(2,6);c.quadraticCurveTo(5,2,8,6);c.lineTo(8,12);c.stroke();c.beginPath();c.moveTo(2,12);c.lineTo(2,18);c.quadraticCurveTo(5,22,8,18);c.lineTo(8,12);c.stroke();if(parent.linked){c.beginPath();c.moveTo(5,8);c.lineTo(5,16);c.stroke()}}
                             }
-                            ToolTip.delay:1000;ToolTip.visible:linkHover.containsMouse;ToolTip.text:"蒙版随图层一起移动"
-                            MouseArea{id:linkHover;anchors.fill:parent;hoverEnabled:true;acceptedButtons:Qt.NoButton}
+                            onLinkedChanged:linkCanvas.requestPaint()
+                            ToolTip.delay:1000;ToolTip.visible:linkHover.containsMouse;ToolTip.text:linked ? "蒙版随图层一起移动（点击解除）" : "蒙版独立移动（点击链接）"
+                            MouseArea{id:linkHover;anchors.fill:parent;hoverEnabled:true;cursorShape:Qt.PointingHandCursor;onClicked:PaintClient.setMaskLinked(row.maskNode.id,!parent.linked)}
                         }
                         LayerThumbnail {
                             id:maskThumbnail

@@ -1195,12 +1195,7 @@ impl Document {
         Ok(())
     }
     pub fn move_layer(&mut self, id: LayerId, dx: i32, dy: i32) -> Result<()> {
-        self.idle()?;
-        if self.layer(id).ok_or(Error::LayerNotFound(id))?.group || self.mask_for(id).is_some() {
-            return self.move_group(id, dx, dy);
-        }
-        let before = self.layer(id).ok_or(Error::LayerNotFound(id))?.appearance;
-        self.set_layer_appearance(id, before.translated(dx, dy)?)
+        self.move_layers(&[id], dx, dy)
     }
     /// Pick visible content, then optionally translate it in one normal history command.
     /// Empty canvas is a no-op. This runs on the document actor, never the UI thread.

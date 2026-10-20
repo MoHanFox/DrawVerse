@@ -36,6 +36,7 @@ pub struct Layer {
     pub(crate) parent: LayerId,
     pub(crate) group: bool,
     pub(crate) mask: bool,
+    pub(crate) mask_linked: bool,
     pub(crate) clipped: bool,
     pub(crate) white: (u32, u32),
     pub(crate) placed: Option<Arc<crate::PlacedImage>>,
@@ -57,6 +58,7 @@ impl Layer {
             parent: 0,
             group: false,
             mask: false,
+            mask_linked: true,
             clipped: false,
             white: (0, 0),
         }
@@ -83,6 +85,9 @@ impl Layer {
     pub fn is_mask(&self) -> bool {
         self.mask
     }
+    pub fn mask_linked(&self) -> bool {
+        self.mask_linked
+    }
     pub fn is_clipped(&self) -> bool {
         self.clipped
     }
@@ -104,6 +109,7 @@ impl Layer {
         node.parent = self.parent;
         node.group = self.group;
         node.mask = self.mask;
+        node.mask_linked = self.mask_linked;
         node.clipped = self.clipped;
         node.white = self.white;
         node.placed = self.placed.clone();

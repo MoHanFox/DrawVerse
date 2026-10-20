@@ -13,6 +13,9 @@ pub(crate) fn validate(layers: &[Layer]) -> Result<()> {
     let mut masks = BTreeSet::new();
     let mut spans = BTreeMap::<u64, (usize, usize)>::new();
     for (i, l) in layers.iter().enumerate() {
+        if !l.mask && !l.mask_linked {
+            return Err(Error::InvalidArgument("only masks can be unlinked"));
+        }
         if l.appearance.blend == crate::BlendMode::PassThrough && !l.group {
             return Err(Error::InvalidArgument("pass through requires a group"));
         }
@@ -582,20 +585,34 @@ impl Document {
         self.dirty_all();
         Ok(())
     }
-    pub(super) fn move_group(&mut self, id: u64, dx: i32, dy: i32) -> Result<()> {
-        self.check_ancestors(id, crate::LOCK_POSITION | crate::LOCK_ALL)?;
-        if dx == 0 && dy == 0 {
+    pub fn set_mask_linked(&mut self, id: LayerId, linked: bool) -> Result<()> {
+        self.idle()?;
+        let i = self.layer_index(id)?;
+        if !self.layers[i].mask {
+            return Err(Error::InvalidArgument("link requires a mask"));
+        }
+        self.check_ancestors(id, crate::LOCK_ALL)?;
+        if self.layers[i].mask_linked == linked {
             return Ok(());
         }
-        let range = self.subtree(id)?;
         let mut nodes = self.structure();
-        for node in &mut nodes[range] {
-            self.check_ancestors(node.id, crate::LOCK_POSITION | crate::LOCK_ALL)?;
-            if !node.group {
-                node.appearance = node.appearance.translated(dx, dy)?;
-            }
+        nodes[i].mask_linked = linked;
+        self.commit_structure_entry(nodes, crate::HistoryAction::LayerProperties)
+    }
+    /// Construction-only link flags; legacy imports use linked masks.
+    pub fn set_import_mask_links(&mut self, flags: &[bool]) -> Result<()> {
+        self.idle()?;
+        if self.revision != 0 || self.history_depth() != (0, 0) || flags.len() != self.layers.len()
+        {
+            return Err(Error::InvalidArgument("mask links require fresh import"));
         }
-        self.commit_structure(nodes)
+        let mut nodes = self.structure();
+        for (node, &flag) in nodes.iter_mut().zip(flags) {
+            node.mask_linked = flag;
+        }
+        validate(&nodes)?;
+        self.apply_structure(&nodes);
+        Ok(())
     }
     pub fn mask_for(&self, id: u64) -> Option<&Layer> {
         self.layers.iter().find(|l| l.mask && l.parent == id)

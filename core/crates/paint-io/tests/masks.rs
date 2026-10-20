@@ -197,3 +197,101 @@ fn invalid_editable_manifest_never_falls_back_to_a_flattened_success() {
         assert!(load(&path, &token).is_err());
     }
 }
+
+#[test]
+fn mask_link_flags_roundtrip_legacy_and_image_models_and_reject_invalid_flags() {
+    let temp = tempfile::tempdir().unwrap();
+    let token = CancellationToken::default();
+    for image in [false, true] {
+        for linked in [false, true] {
+            let mut doc = Document::new(64, 64).unwrap();
+            paint(&mut doc, 0.5, 12.);
+            let owner = if image {
+                let source = doc.layers()[0].clone();
+                let id = doc.place_image(source, 64, 64, "placed".into()).unwrap();
+                doc.commit_transform().unwrap();
+                id
+            } else {
+                1
+            };
+            let mask = doc.add_mask(owner).unwrap();
+            paint(&mut doc, 0., 5.);
+            doc.set_mask_linked(mask, linked).unwrap();
+            doc.move_layer(owner, 3, 2).unwrap();
+            let path = temp.path().join(format!("links-{image}-{linked}.ora"));
+            save(
+                &path,
+                &doc.snapshot(),
+                mask,
+                options(Format::OpenRaster),
+                &token,
+            )
+            .unwrap();
+            let mut restored = load(&path, &token).unwrap();
+            let rm = restored.layers().iter().find(|l| l.is_mask()).unwrap().id();
+            let ro = restored.layer(rm).unwrap().parent_id();
+            assert_eq!(restored.layer(rm).unwrap().mask_linked(), linked);
+            assert_eq!(restored.layer(ro).unwrap().is_image(), image);
+            for y in 0..64 {
+                for x in 0..64 {
+                    let a = doc.pixel(x, y).components();
+                    let b = restored.pixel(x, y).components();
+                    for (a, b) in a.into_iter().zip(b) {
+                        assert!((a - b).abs() < 0.0041);
+                    }
+                }
+            }
+            let before = restored.layer(rm).unwrap().appearance();
+            restored.move_layer(ro, 7, 4).unwrap();
+            assert_eq!(
+                restored.layer(rm).unwrap().appearance().offset_x,
+                before.offset_x + if linked { 7 } else { 0 }
+            );
+            let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
+            let mut xml = String::new();
+            zip.by_name("drawverse/stack.xml")
+                .unwrap()
+                .read_to_string(&mut xml)
+                .unwrap();
+            let version = match (image, linked) {
+                (false, true) => 4,
+                (true, true) => 5,
+                (false, false) => 6,
+                (true, false) => 7,
+            };
+            assert!(xml.contains(&format!("dv:version=\"{version}\"")));
+            assert_eq!(zip.by_name("drawverse/layers.bin").is_ok(), image);
+            if !linked {
+                let mut files = Vec::new();
+                for i in 0..zip.len() {
+                    let mut f = zip.by_index(i).unwrap();
+                    let name = f.name().unwrap().into_owned();
+                    let mut b = Vec::new();
+                    f.read_to_end(&mut b).unwrap();
+                    files.push((name, b));
+                }
+                for invalid in ["dv:mask-linked=\"2\"", "dv:mask-linked=\"-1\""] {
+                    let bad = temp.path().join("invalid.ora");
+                    let mut out = zip::ZipWriter::new(std::fs::File::create(&bad).unwrap());
+                    for (name, b) in &files {
+                        out.start_file(name, zip::write::SimpleFileOptions::default())
+                            .unwrap();
+                        if name == "drawverse/stack.xml" {
+                            out.write_all(
+                                String::from_utf8(b.clone())
+                                    .unwrap()
+                                    .replace("dv:mask-linked=\"0\"", invalid)
+                                    .as_bytes(),
+                            )
+                            .unwrap();
+                        } else {
+                            out.write_all(b).unwrap();
+                        }
+                    }
+                    out.finish().unwrap();
+                    assert!(load(&bad, &token).is_err());
+                }
+            }
+        }
+    }
+}

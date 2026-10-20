@@ -33,6 +33,7 @@ pub(crate) enum Operation {
     NewWhite(u32, u32),
     Mask(u64),
     Clipping(u64, bool),
+    MaskLink(u64, bool),
     Selection(crate::selection_api::Edit),
     Bucket(paint_core::BucketFill),
     Wand(paint_core::WandSelection),
@@ -85,6 +86,7 @@ struct Command {
 }
 pub(crate) struct LayerState {
     pub image: bool,
+    pub mask_linked: bool,
     pub info: PaintLayerInfo,
     pub name: String,
     pub appearance: paint_core::LayerAppearance,
@@ -641,6 +643,7 @@ fn publish(
         .zip(doc.layer_hierarchies())
         .zip(doc.layer_clipping_bases())
         .map(|((layer, (parent, depth, locks)), base)| LayerState {
+            mask_linked: layer.mask_linked(),
             image: layer.is_image(),
             clipping: PaintLayerClipping {
                 struct_size: std::mem::size_of::<PaintLayerClipping>() as u32,
@@ -818,6 +821,7 @@ impl Engine {
                     | Operation::NewWhite(..)
                     | Operation::Mask(_)
                     | Operation::Clipping(..)
+                    | Operation::MaskLink(..)
                     | Operation::Selection(..)
                     | Operation::Bucket(..)
                     | Operation::Wand(..)
@@ -1015,6 +1019,11 @@ impl Engine {
             Operation::Mask(id) => {
                 self.document.add_mask(id)?;
                 self.modified = true;
+            }
+            Operation::MaskLink(id, linked) => {
+                let r = self.document.revision();
+                self.document.set_mask_linked(id, linked)?;
+                self.modified |= r != self.document.revision();
             }
             Operation::Clipping(id, enabled) => {
                 let r = self.document.revision();

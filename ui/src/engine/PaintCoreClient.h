@@ -387,6 +387,7 @@ public:
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
     Q_INVOKABLE void addLayer(const QString &name);
+    Q_INVOKABLE bool setMaskLinked(quint64 id, bool linked);
     Q_INVOKABLE bool renameLayer(quint64 id,const QString &name);
     Q_INVOKABLE void removeLayer(quint64 id);
     Q_INVOKABLE void requestSelectedLayerRemoval();
