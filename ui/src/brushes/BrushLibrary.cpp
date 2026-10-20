@@ -617,7 +617,7 @@ void BrushLibrary::update(int field,qreal value) {
 void BrushLibrary::setRadius(qreal value){
     update(0,value);
 }
-void BrushLibrary::setEraser(bool eraser){if(m_eraser!=eraser){m_eraser=eraser;emit settingsChanged();}}
+void BrushLibrary::setEraser(bool eraser){setToolContext(eraser?1:0);}
 void BrushLibrary::setOpacity(qreal value){update(1,value);}
 void BrushLibrary::setSpacing(qreal value){update(2,value);}
 void BrushLibrary::setHardness(qreal value){update(3,value);}
@@ -1062,6 +1062,7 @@ QByteArray BrushLibrary::snapshot() const {
                                      {"recentColors",QJsonArray::fromStringList(m_recentColors)},{"colorState",QJsonObject{{"foreground",m_foregroundColor.name(QColor::HexArgb)},{"background",m_backgroundColor.name(QColor::HexArgb)}}},{"resetState",resetState},{"brushTool",QJsonObject{{"writeBlend",m_writeBlend}}}};
     if(!m_organization.isEmpty())root["organization"]=m_organization;
     if(!editors.isEmpty())root["dualEditors"]=editors;
+    root["toolIsolation"]=toolIsolationState();
     m_snapshotCache=QJsonDocument(root).toJson(QJsonDocument::Compact);return m_snapshotCache;
 }
 QJsonObject BrushLibrary::exportPreset(const Preset &p,bool includeSource,const QString &id) {
@@ -1441,7 +1442,7 @@ bool BrushLibrary::importAbr(const QByteArray &json,const QString &groupName) {
     queuePersistence();return true;
 }
 bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
-    if(json.size()>4*1024*1024+16384)return false;
+    if(json.size()>12*1024*1024)return false;
     const auto root=QJsonDocument::fromJson(json).object();const auto rows=root.value("presets").toArray();
     QJsonObject executing{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}};
     if(root.contains("organization"))executing["organization"]=root.value("organization");
@@ -1570,7 +1571,10 @@ bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
         else if(!baselines.contains(p.id))baselines[p.id]=p;
     }
     for(auto it=baselines.begin();it!=baselines.end();)if(!seen.contains(it.key()))it=baselines.erase(it);else ++it;
+    int isolation=0,context=0;std::array<ToolProfile,3> profiles;
+    if(!parseToolIsolation(root.value("toolIsolation"),isolation,context,profiles))return false;
     m_resetPresets=baselines;
+    m_toolIsolation=isolation;m_toolContext=context;m_toolProfiles=std::move(profiles);
     for(auto &preset:restored) {
         const int current=index(preset.id);int oldVersion=2,newVersion=2;
         auto previewSettings=[](QJsonObject row){for(const auto &key:{"name","radius","opacity","flow"})row.remove(key);return row;};

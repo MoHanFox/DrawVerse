@@ -37,7 +37,7 @@ Dialog {
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: 6; spacing: 4
                     Repeater {
-                        model: ["性能", "历史", "界面"]
+                        model: ["性能", "历史", "界面", "偏好"]
                         Button {
                             required property int index
                             required property string modelData
@@ -143,6 +143,23 @@ Dialog {
                                 onToggled: Workspace.developerConsole = checked
                             }
                             Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                        }
+                        ColumnLayout {
+                            spacing: 8
+                            Label { text: "笔刷系统"; font.pixelSize: 10; color: Theme.accent }
+                            Label { text: "笔刷系统隔离"; font.pixelSize: 9; color: Theme.text }
+                            ComboBox {
+                                objectName: "brushToolIsolation"
+                                Layout.fillWidth: true
+                                model: ["不隔离（橡皮、涂抹继承画笔）", "仅大小、不透明度、流量", "隔离（三个工具各自设置）"]
+                                currentIndex: PaintClient.brushLibrary.toolIsolation
+                                enabled: !PaintClient.drawing && PaintClient.brushLibraryReady
+                                onActivated: PaintClient.brushLibrary.toolIsolation = currentIndex
+                            }
+                            Label {
+                                Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.muted; font.pixelSize: 8
+                                text: "切换隔离级别时，以当前参数初始化三套设置。笔刷名称、分组和资源库保持共用。设置自动保存。"
+                            }
                         }
                     }
                     // Pending preferences carry their own "待支持" badge and are never interactive.

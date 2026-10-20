@@ -17,7 +17,7 @@ add_library(drawverse_ui STATIC
     src/canvas/LiquifyPreviewNode.h src/canvas/LiquifyPreviewNode.cpp
     src/canvas/SelectionOverlay.h src/canvas/SelectionOverlay.cpp
     src/color/ColorWheelItem.h src/color/ColorWheelItem.cpp
-    src/brushes/BrushLibrary.h src/brushes/BrushLibrary.cpp
+    src/brushes/BrushLibrary.h src/brushes/BrushLibrary.cpp src/brushes/BrushToolIsolation.cpp
     src/brushes/BrushCurveModes.h
     src/workspace/WorkspaceManager.h src/workspace/WorkspaceManager.cpp)
 target_compile_features(drawverse_ui PUBLIC cxx_std_20)

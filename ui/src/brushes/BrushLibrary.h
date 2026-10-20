@@ -9,11 +9,13 @@
 #include <QStringList>
 #include <QTimer>
 #include <algorithm>
+#include <array>
 
 // UI preferences only. Engine access and preview work stay in PaintCoreClient.
 class BrushLibrary final : public QObject {
     Q_OBJECT
     Q_PROPERTY(int writeBlend READ writeBlend WRITE setWriteBlend NOTIFY settingsChanged)
+    Q_PROPERTY(int toolIsolation READ toolIsolation WRITE setToolIsolation NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList presets READ presets NOTIFY presetsChanged)
     Q_PROPERTY(QVariantMap organization READ organization NOTIFY presetsChanged)
     Q_PROPERTY(QVariantList selectedBrushItems READ selectedBrushItems NOTIFY selectionChanged)
@@ -395,6 +397,10 @@ public:
     QVariantList recentColors() const;
     void setRadius(qreal value);
     void setEraser(bool eraser);
+    int toolIsolation() const {return m_toolIsolation;}
+    int toolContext() const {return m_toolContext;}
+    void setToolIsolation(int mode);
+    void setToolContext(int tool);
     void setOpacity(qreal value);
     void setSpacing(qreal value);
     Q_INVOKABLE bool select(const QString &id);
@@ -452,6 +458,12 @@ private:
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
         qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,transfer,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation,direction,matrix,fade,outline;bool dualExisting=false;QString dualSourceName;};
     static QJsonObject presetRow(const Preset &preset,int &version);
+    struct ToolProfile {QHash<QString,Preset> presets;QString selected="round-pressure";int writeBlend=0;};
+    QJsonObject toolIsolationState() const;
+    static bool parseToolIsolation(const QJsonValue &value,int &mode,int &context,std::array<ToolProfile,3> &profiles);
+    void captureToolProfile();
+    int m_toolIsolation=0,m_toolContext=0;
+    std::array<ToolProfile,3> m_toolProfiles;
     static QJsonObject exportPreset(const Preset &preset,bool includeSource,const QString &id);
     QVariantMap tangentControl(const QString &target) const;
     QVariantMap distanceControl(const QString &target) const;
@@ -473,7 +485,6 @@ private:
     // Most recently used colours first; the colour panel shows them as its swatch row.
     QStringList m_recentColors;
     int m_writeBlend=0;
-    bool m_eraser=false;
     QColor m_foregroundColor{"#2ea99d"},m_backgroundColor=Qt::white;
     quint64 m_nextToken=16;
 };

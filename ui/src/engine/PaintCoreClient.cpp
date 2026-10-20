@@ -838,6 +838,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(m_worker,&BackendWorker::brushPreferences,m_brushLibrary,[this](const QByteArray &json){
         QByteArray source=json;{QMutexLocker lock(&m_brushCatalogConnection->mutex);if(!m_brushCatalogConnection->preferences.isEmpty())source=m_brushCatalogConnection->preferences;}
         if(!source.isEmpty() && !m_brushLibrary->restore(source))showError(QStringLiteral("无法恢复笔刷设置，原配置已保留"));
+        m_brushLibrary->setToolContext(m_smudgeTool?2:m_eraser?1:0);
         synchronizeBrushCatalog(m_brushLibrary->snapshot());
         if(!m_brushLibraryReady){m_brushLibraryReady=true;emit brushLibraryReadyChanged();}
         if(!m_pendingBrushImport.isEmpty()){const auto path=m_pendingBrushImport;m_pendingBrushImport.clear();m_brushFileBusy=false;emit brushFileChanged();QMetaObject::invokeMethod(this,[this,path]{importBrushes(QUrl::fromLocalFile(path));},Qt::QueuedConnection);}
@@ -1271,14 +1272,14 @@ void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
 // Active tools are exclusive; the remembered marquee shape is separate from these flags.
 void PaintCoreClient::setEraser(bool e) {
     if(deferTransformAction([this ,e]{setEraser(e);}))return;
-    if(m_drawing || m_liquifyActive || m_transformActive || (e==m_eraser && !m_moveTool && !m_selectionTool && !m_eyedropperTool && !m_bucketTool && !m_smudgeTool)) return;
+    if(m_drawing || m_liquifyActive || m_transformActive || (e==m_eraser && !m_moveTool && !m_selectionTool && !m_eyedropperTool && !m_bucketTool && !m_smudgeTool && m_brushLibrary->toolContext()==(e?1:0))) return;
     m_moveTool=false;m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;
     m_eraser=e; m_brushLibrary->setEraser(e); emit brushChanged();
 }
 void PaintCoreClient::setMoveTool(bool enabled) {
     if(deferTransformAction([this,enabled]{setMoveTool(enabled);}))return;
     if(m_drawing || m_liquifyActive || m_transformActive || enabled==m_moveTool) return;
-    if(enabled){m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;m_eraser=false;m_brushLibrary->setEraser(false);}
+    if(enabled){m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;m_eraser=false;}
     m_moveTool=enabled; emit brushChanged();
 }
 void PaintCoreClient::setSelectionTool(int tool) {
@@ -1287,7 +1288,7 @@ void PaintCoreClient::setSelectionTool(int tool) {
     m_selectionTool=tool;
     if(tool>0) {
         if(tool<=2)m_marqueeShape=tool;else if(tool<=4)m_lassoShape=tool;
-        m_moveTool=false;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;m_eraser=false;m_brushLibrary->setEraser(false);
+        m_moveTool=false;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;m_eraser=false;
     }
     emit brushChanged();
 }
@@ -1312,14 +1313,13 @@ void PaintCoreClient::activateMoveTool() {if(deferTransformAction([this]{activat
     if(m_drawing || m_liquifyActive)return;
     if(m_eyedropperTool){m_eyedropperTool=false;emit brushChanged();}
     if(m_selectionTool!=0) {m_selectionTool=0; emit brushChanged();}
-    setEraser(false);
     setMoveTool(true);
 }
 void PaintCoreClient::activateMarquee() {if(deferTransformAction([this]{activateMarquee();}))return;
     if(m_drawing || m_liquifyActive)return;
     // Activating the slot restores its remembered shape.
     const int shape = (m_selectionTool==1 || m_selectionTool==2) ? m_selectionTool : m_marqueeShape;
-    setMoveTool(false); setEraser(false);
+    setMoveTool(false);
     setSelectionTool(shape);
 }
 void PaintCoreClient::activateLasso() {setSelectionTool(m_lassoShape);}
@@ -1348,7 +1348,7 @@ void PaintCoreClient::activateEyedropper() {if(deferTransformAction([this]{activ
 
 void PaintCoreClient::setSamplingRingEnabled(bool enabled) {if(enabled==m_samplingRingEnabled)return;m_samplingRingEnabled=enabled;emit samplingRingEnabledChanged();}
 void PaintCoreClient::activateBucket() {if(deferTransformAction([this]{activateBucket();}))return;if(m_drawing || m_liquifyActive)return;activateBrush();m_bucketTool=true;emit brushChanged();}
-void PaintCoreClient::activateSmudge() {if(deferTransformAction([this]{activateSmudge();}))return;if(m_drawing || m_liquifyActive)return;activateBrush();m_smudgeTool=true;emit brushChanged();}
+void PaintCoreClient::activateSmudge() {if(deferTransformAction([this]{activateSmudge();}))return;if(m_drawing || m_liquifyActive || m_transformActive)return;m_moveTool=false;m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_eraser=false;m_smudgeTool=true;m_brushLibrary->setToolContext(2);emit brushChanged();}
 void PaintCoreClient::setSmudgeStrength(qreal value) {if(!std::isfinite(value) || value<0 || value>1 || value==m_smudgeStrength)return;m_smudgeStrength=value;emit smudgeOptionsChanged();}
 void PaintCoreClient::setSmudgePressure(bool value) {if(value==m_smudgePressure)return;m_smudgePressure=value;emit smudgeOptionsChanged();}
 void PaintCoreClient::setSmudgeAllLayers(bool value) {if(value==m_smudgeAllLayers)return;m_smudgeAllLayers=value;emit smudgeOptionsChanged();}

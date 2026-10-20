@@ -40,6 +40,50 @@ class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
 
+    void brushToolIsolationLevelsPreserveParametersAndSharedCatalog() {
+        BrushLibrary b;b.setRadius(10);b.setOpacity(.6);b.setFlow(.8);
+        b.setEraser(true);b.setRadius(11);b.setEraser(false);QCOMPARE(b.radius(),11.); // Default remains shared.
+        b.setToolIsolation(1);b.setRadius(20);b.setEraser(true);QCOMPARE(b.radius(),11.);
+        b.setRadius(30);b.setOpacity(.4);b.setFlow(.3);b.setSpacing(.6);
+        b.setToolContext(2);QCOMPARE(b.radius(),11.);b.setRadius(40);
+        b.setToolContext(0);QCOMPARE(b.radius(),20.);QCOMPARE(b.opacity(),.6);QCOMPARE(b.flow(),.8);QCOMPARE(b.spacing(),.6);
+        QVERIFY(b.select("round-fine"));b.setRadius(7);b.setEraser(true);QCOMPARE(b.selectedId(),QString("round-fine"));QCOMPARE(b.radius(),3.);
+        b.setToolContext(0);QCOMPARE(b.radius(),7.);QVERIFY(b.select("round-pressure"));b.setHardness(.25);
+        b.setToolIsolation(2);b.setEraser(true);QCOMPARE(b.radius(),20.);b.setRadius(31);b.setHardness(.9);b.setWriteBlend(8);QVERIFY(b.select("round-fine"));
+        b.setToolContext(2);QCOMPARE(b.selectedId(),QString("round-pressure"));QCOMPARE(b.radius(),20.);QCOMPARE(b.hardness(),.25);b.setRadius(42);
+        b.setToolContext(0);QCOMPARE(b.radius(),20.);QCOMPARE(b.hardness(),.25);QCOMPARE(b.writeBlend(),0);
+        const auto copy=b.saveCopy("Shared copy");QVERIFY(!copy.isEmpty());const auto group=b.createGroup("Shared group");QVERIFY(b.movePresetToGroup(copy,group));QVERIFY(b.rename(copy,"Renamed"));const auto organization=b.organization();
+        b.setEraser(true);QCOMPARE(b.selectedId(),QString("round-fine"));QCOMPARE(b.writeBlend(),8);QVERIFY(b.select("round-pressure"));QCOMPARE(b.radius(),31.);QCOMPARE(b.hardness(),.9);QCOMPARE(b.organization(),organization);QCOMPARE(b.presetInfo(copy).value("name").toString(),QString("Renamed"));
+        QVERIFY(b.select(copy));b.setToolContext(0);QVERIFY(b.remove(copy));b.setEraser(true);QCOMPARE(b.selectedId(),QString("round-pressure"));QVERIFY(b.presetInfo(copy).isEmpty());
+        b.setToolIsolation(0);b.setRadius(51);b.setToolContext(2);QCOMPARE(b.radius(),51.);QCOMPARE(b.toolIsolation(),0);
+    }
+
+    void brushToolIsolationRoundtripNativeSyncAndInvalidStateAreAtomic() {
+        BrushLibrary b;b.setToolIsolation(2);b.setRadius(20);b.setToolContext(1);b.setRadius(31);b.setToolContext(2);b.setRadius(42);
+        const auto stored=b.snapshot();BrushLibrary loaded;QVERIFY(loaded.restore(stored));QCOMPARE(loaded.toolContext(),2);QCOMPARE(loaded.radius(),42.);
+        loaded.setToolContext(0);QCOMPARE(loaded.radius(),20.);loaded.setToolContext(1);QCOMPARE(loaded.radius(),31.);
+        auto native=QJsonDocument::fromJson(loaded.catalogSnapshot()).object();auto rows=native.value("presets").toArray();auto row=rows[0].toObject();row["hardness"]=.5;rows[0]=row;native["presets"]=rows;
+        QVERIFY(loaded.applyNativeCatalog(QJsonDocument(native).toJson()));QCOMPARE(loaded.hardness(),.5);loaded.setToolContext(0);QCOMPARE(loaded.hardness(),1.);QCOMPARE(loaded.radius(),20.);
+        const auto before=loaded.snapshot();auto root=QJsonDocument::fromJson(before).object();auto isolation=root.value("toolIsolation").toObject();auto profiles=isolation.value("profiles").toArray();auto invalid=profiles[1].toObject();invalid["resetState"]=invalid;profiles[1]=invalid;isolation["profiles"]=profiles;root["toolIsolation"]=isolation;
+        QVERIFY(!loaded.restore(QJsonDocument(root).toJson()));QCOMPARE(loaded.snapshot(),before);
+        root=QJsonDocument::fromJson(before).object();isolation=root.value("toolIsolation").toObject();isolation["mode"]=1.5;root["toolIsolation"]=isolation;QVERIFY(!loaded.restore(QJsonDocument(root).toJson()));QCOMPARE(loaded.snapshot(),before);
+        auto legacy=QJsonDocument::fromJson(before).object();legacy.remove("toolIsolation");QVERIFY(loaded.restore(QJsonDocument(legacy).toJson()));QCOMPARE(loaded.toolIsolation(),0);
+        BrushLibrary preview;quint64 token=0;connect(&preview,&BrushLibrary::previewRequested,this,[&](const QString &,quint64 t,qreal,qreal,qreal,QVariantMap){token=t;});preview.requestPreview(preview.selectedId());QVERIFY(token);preview.acceptPreview(preview.selectedId(),token,"cached-preview");preview.setToolIsolation(2);preview.setToolContext(1);preview.setRadius(33);preview.setToolContext(0);QCOMPARE(preview.selectedPreview(),QString("cached-preview"));
+    }
+
+    void brushToolIsolationPreferenceAndClientSwitchesPersist() {
+        QTemporaryDir temp;const auto path=temp.filePath("isolation.ini");
+        {
+            PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready() && client.brushLibraryReady());WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+            QQmlComponent component(&engine,QUrl("qrc:/qml/preferences/PreferencesPanel.qml"));QScopedPointer<QObject> dialog(component.create());QVERIFY2(dialog,qPrintable(component.errorString()));auto *combo=dialog->findChild<QObject*>("brushToolIsolation");QVERIFY(combo);QCOMPARE(combo->property("count").toInt(),3);combo->setProperty("currentIndex",2);QVERIFY(QMetaObject::invokeMethod(combo,"activated",Q_ARG(int,2)));auto *b=client.brushLibrary();QCOMPARE(b->toolIsolation(),2);
+            b->setRadius(3);b->setPressureSize(false);client.activateEraser();b->setRadius(6);b->setOpacity(.5);client.activateSmudge();b->setRadius(9);b->setHardness(.4);client.activateMoveTool();QCOMPARE(b->toolContext(),2);client.activateBrush();QCOMPARE(client.brushRadius(),3.);QCOMPARE(client.brushOpacity(),1.);
+            client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());client.setBrushColor(Qt::black);QVERIFY(client.beginStroke({{32,32},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(client.sampleDocumentPixel(32,32).alpha()>245);
+            client.activateEraser();QCOMPARE(client.brushRadius(),6.);QCOMPARE(client.brushOpacity(),.5);b->setPressureSize(false);QVERIFY(client.beginStroke({{32,32},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(client.sampleDocumentPixel(32,32).alpha()<180);
+            client.activateSmudge();QCOMPARE(client.brushRadius(),9.);QCOMPARE(b->hardness(),.4);b->flushPersistence();QTRY_VERIFY(!b->persistencePending());QVERIFY(client.lastError().isEmpty());client.shutdown();
+        }
+        PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready() && reopened.brushLibraryReady());QCOMPARE(reopened.brushLibrary()->toolIsolation(),2);QCOMPARE(reopened.brushRadius(),3.);reopened.activateEraser();QCOMPARE(reopened.brushRadius(),6.);QCOMPARE(reopened.brushOpacity(),.5);reopened.activateSmudge();QCOMPARE(reopened.brushRadius(),9.);QVERIFY(std::abs(reopened.brushLibrary()->hardness()-.4)<1e-6);QVERIFY(reopened.lastError().isEmpty());reopened.shutdown();
+    }
+
     void selected4kWhiteTransformRetainsOutsidePixelsAndCompactSelection() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selected-4k.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(4096,2160);QTRY_COMPARE(client.documentWidth(),4096);QTRY_VERIFY(!client.layerEditBusy());
         client.requestViewport(0,{800,400,1200,700},{600,350});QVERIFY(client.editSelectionPath({{1024,512},{1280,512},{1280,768},{1024,768}},0,false));QTRY_VERIFY(!client.layerEditBusy());const auto depth=client.undoDepth();const auto originalSelection=client.selectionSteps();
