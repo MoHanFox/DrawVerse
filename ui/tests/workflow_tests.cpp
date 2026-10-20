@@ -1,6 +1,10 @@
 #include "engine/PaintCoreClient.h"
 #include "documents/DocumentManager.h"
 #include "canvas/SelectionOverlay.h"
+#include "canvas/CanvasItem.h"
+#include "color/ColorWheelItem.h"
+#include <QQmlApplicationEngine>
+#include <QDirIterator>
 #include <QQuickItemGrabResult>
 #include <QSGRendererInterface>
 #include <QtTest>
@@ -47,6 +51,46 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void nativeIdentityPressureDoesNotRebuildBrushRows() {
+        BrushLibrary library;const auto original=library.snapshot();
+        const QJsonObject control{{"curve",QJsonArray{QJsonArray{0.,0.},QJsonArray{1.,1.}}},{"minimum",0.}};
+        QSignalSpy settings(&library,&BrushLibrary::settingsChanged),presets(&library,&BrushLibrary::presetsChanged),previews(&library,&BrushLibrary::selectedPreviewChanged);
+        for(int version:{5,6,44}) {
+            auto native=QJsonDocument::fromJson(library.catalogSnapshot()).object();auto rows=native.value("presets").toArray();auto row=rows[0].toObject();
+            auto pressure=QJsonObject{{"size",control},{"flow",control}};if(version>=6){auto opacity=control;opacity["enabled"]=false;pressure["opacity"]=opacity;}
+            row["pressureDynamics"]=pressure;rows[0]=row;native["presets"]=rows;native["version"]=version;
+            QVERIFY(library.applyNativeCatalog(QJsonDocument(native).toJson()));QCOMPARE(library.snapshot(),original);QCOMPARE(settings.size(),0);QCOMPARE(presets.size(),0);QCOMPARE(previews.size(),0);
+            native["version"]=2;QVERIFY(!library.applyNativeCatalog(QJsonDocument(native).toJson()));QCOMPARE(library.snapshot(),original);
+        }
+        auto native=QJsonDocument::fromJson(library.catalogSnapshot()).object();auto rows=native.value("presets").toArray();auto row=rows[0].toObject();auto changed=control;changed["minimum"]=.25;
+        row["pressureDynamics"]=QJsonObject{{"size",changed},{"flow",control}};rows[0]=row;native["presets"]=rows;native["version"]=5;
+        QVERIFY(library.applyNativeCatalog(QJsonDocument(native).toJson()));QCOMPARE(presets.size(),1);QCOMPARE(library.pressureDynamics().value("size").toMap().value("minimum").toDouble(),.25);
+        const auto accepted=library.snapshot();auto invalid=row.value("pressureDynamics").toObject();invalid["unexpected"]=true;row["pressureDynamics"]=invalid;rows[0]=row;native["presets"]=rows;
+        QVERIFY(!library.applyNativeCatalog(QJsonDocument(native).toJson()));QCOMPARE(library.snapshot(),accepted);
+    }
+    void liveBrushSelectionWithLargePreferences() {
+        QTemporaryDir temp;
+        const auto source=qEnvironmentVariable("DRAWVERSE_BRUSH_REPRO_SETTINGS");
+        const auto path=temp.filePath("brush-switch.ini");
+        if(source.isEmpty())QSKIP("Manual responsiveness probe: set DRAWVERSE_BRUSH_REPRO_SETTINGS to a copied INI");
+        QVERIFY(QFile::copy(source,path));
+        const QDir resources(QFileInfo(source).dir().filePath("brush-resources"));QDirIterator files(resources.absolutePath(),QDir::Files,QDirIterator::Subdirectories);
+        while(files.hasNext()){const auto file=files.next();const auto copy=temp.filePath("brush-resources/"+resources.relativeFilePath(file));QVERIFY(QDir().mkpath(QFileInfo(copy).absolutePath()));QVERIFY(QFile::copy(file,copy));}
+        QSettings settings(path,QSettings::IniFormat);const auto saved=settings.value("brushes/state").toByteArray();qInfo()<<"copied preset count"<<QJsonDocument::fromJson(saved).object().value("presets").toArray().size()<<"bytes"<<saved.size();
+        PaintCoreClient client(nullptr,path);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->resize(1600,1000);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        auto *library=client.brushLibrary();const auto rows=library->presetRows();QVERIFY2(rows.size()>4,qPrintable(client.lastError()));
+        QElapsedTimer clock;clock.start();qint64 longest=0,previous=0,maxSelect=0;QTimer heartbeat;heartbeat.setInterval(2);connect(&heartbeat,&QTimer::timeout,this,[&]{const auto now=clock.elapsed();longest=std::max(longest,now-previous);previous=now;});heartbeat.start();
+        QSignalSpy catalogChanges(library,&BrushLibrary::presetsChanged);
+        for(int pass=0;pass<2;++pass){
+            maxSelect=longest=0;previous=clock.elapsed();
+            for(int i=0;i<16;++i){const auto start=clock.nsecsElapsed();QVERIFY(library->select(rows[(4+i*17)%rows.size()].toMap().value("id").toString()));maxSelect=std::max(maxSelect,(clock.nsecsElapsed()-start)/1000);QTest::qWait(180);}
+            qInfo()<<"live settings presets"<<rows.size()<<"pass"<<pass<<"max select us"<<maxSelect<<"longest GUI gap ms"<<longest;
+            QCOMPARE(catalogChanges.size(),0);
+        }
+        heartbeat.stop();QVERIFY(client.lastError().isEmpty());auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
 
     void selectingBrushReusesRowsAndPreservesAllPreferenceScopes() {
         for(int isolation=0;isolation<=2;++isolation) {
@@ -560,6 +604,7 @@ Flickable {objectName:"outer";width:300;height:380;contentWidth:width;contentHei
 int main(int argc,char **argv) {
     QGuiApplication app(argc,argv);Q_INIT_RESOURCE(ui_resources);QQuickStyle::setStyle("Basic");
     qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
+    qmlRegisterType<DocumentManager>("DrawVerse",1,0,"DocumentManager");qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
     WorkflowTests test;return QTest::qExec(&test,argc,argv);
 }
 #include "workflow_tests.moc"

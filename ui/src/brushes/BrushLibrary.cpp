@@ -1265,10 +1265,29 @@ QByteArray BrushLibrary::catalogSnapshot() const {
     m_catalogObjectCache=executing;m_catalogCache=QJsonDocument(executing).toJson(QJsonDocument::Compact);return m_catalogCache;
 }
 
+bool BrushLibrary::equivalentCatalogState(const QByteArray &nativeJson,const QByteArray &currentJson) {
+    const auto native=QJsonDocument::fromJson(nativeJson).object(),current=QJsonDocument::fromJson(currentJson).object();
+    const auto schema=native.value("version").toDouble(-1);
+    if(schema<2 || schema>44 || schema!=std::floor(schema) || current.isEmpty()
+        || !native.value("presets").isArray() || !native.value("selected").isString())return false;
+    auto comparable=native;auto rows=comparable.value("presets").toArray();const auto version=native.value("version").toDouble();
+    if(version==std::floor(version) && version>=current.value("version").toInt()) {
+        // The native writer can retain explicit identity pressure curves while
+        // Qt omits them. Compare their validated meaning before rebuilding all
+        // presets, reset baselines, previews and QML rows on every selection.
+        for(qsizetype i=0;i<rows.size();++i){auto row=rows[i].toObject();const auto value=row.value("pressureDynamics");if(!value.isObject())continue;const auto pressure=value.toObject();
+            if(version<(pressure.contains("opacity")?6:5) || !validPressure(pressure))continue;
+            if(canonicalPressure(pressure.toVariantMap()).isEmpty()){row.remove("pressureDynamics");rows[i]=row;}
+        }
+        comparable["presets"]=rows;comparable["version"]=current.value("version");
+    }
+    return equivalentSettings(comparable,current);
+}
+
 bool BrushLibrary::applyNativeCatalog(const QByteArray &json) {
     const auto native=QJsonDocument::fromJson(json).object();
     if((native.value("version").toInt()!=2 && native.value("version").toInt()!=3 && native.value("version").toInt()!=4 && native.value("version").toInt()!=5 && native.value("version").toInt()!=6 && native.value("version").toInt()!=7 && native.value("version").toInt()!=8 && native.value("version").toInt()!=9 && native.value("version").toInt()!=10 && native.value("version").toInt()!=11 && native.value("version").toInt()!=12 && native.value("version").toInt()!=13 && native.value("version").toInt()!=14 && native.value("version").toInt()!=15 && native.value("version").toInt()!=16 && native.value("version").toInt()!=17 && native.value("version").toInt()!=18 && native.value("version").toInt()!=19 && native.value("version").toInt()!=20 && native.value("version").toInt()!=21 && native.value("version").toInt()!=22 && native.value("version").toInt()!=23 && native.value("version").toInt()!=24 && native.value("version").toInt()!=25 && native.value("version").toInt()!=26 && native.value("version").toInt()!=27 && native.value("version").toInt()!=28 && native.value("version").toInt()!=29 && native.value("version").toInt()!=30 && native.value("version").toInt()!=31 && native.value("version").toInt()!=32 && native.value("version").toInt()!=33 && native.value("version").toInt()!=34 && native.value("version").toInt()!=35 && native.value("version").toInt()!=36 && native.value("version").toInt()!=37 && native.value("version").toInt()!=38 && native.value("version").toInt()!=39 && native.value("version").toInt()!=40 && native.value("version").toInt()!=41 && native.value("version").toInt()!=42 && native.value("version").toInt()!=43 && native.value("version").toInt()!=44) || !native.value("presets").isArray() || !native.value("selected").isString())return false;
-    if(equivalentSettings(native,QJsonDocument::fromJson(catalogSnapshot()).object()))return true;
+    if(equivalentCatalogState(json,catalogSnapshot()))return true;
     auto state=QJsonDocument::fromJson(snapshot()).object();state["version"]=native.value("version");state["selected"]=native.value("selected");state["presets"]=native.value("presets");if(native.contains("organization"))state["organization"]=native.value("organization");else state.remove("organization");
     return restore(QJsonDocument(state).toJson(QJsonDocument::Compact),true);
 }

@@ -431,6 +431,8 @@ public:
     QByteArray snapshot() const;
     QByteArray catalogSnapshot() const;
     bool applyNativeCatalog(const QByteArray &json);
+    // Pure immutable comparison; safe for native preparation on a worker.
+    static bool equivalentCatalogState(const QByteArray &native,const QByteArray &current);
     QColor foregroundColor() const {return m_foregroundColor;}
     QColor backgroundColor() const {return m_backgroundColor;}
     void setActiveColors(const QColor &foreground,const QColor &background);

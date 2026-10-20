@@ -654,8 +654,8 @@ public:
     }
     // Preview documents run in their own Rust actor; no mutation of the user's document.
     void pollBrushState() {
-        PaintBrushLibrary *library=nullptr;quint64 preparation=0;QByteArray wanted;
-        {QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;preparation=m_catalog->preparation;wanted=m_catalog->preferences;}
+        PaintBrushLibrary *library=nullptr;quint64 preparation=0;QByteArray wanted,submitted;
+        {QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;preparation=m_catalog->preparation;wanted=m_catalog->preferences;submitted=m_catalog->source;}
         if(!library || !preparation){m_pendingBrushPreferences.clear();return;}
         if(m_pendingBrushPreferences.isEmpty() && preparation==m_reportedBrushPreparation)return;
         QByteArray canonical(2*1024*1024,'\0');uint64_t required=0;
@@ -664,7 +664,11 @@ public:
         QString error;
         if(status!=PAINT_OK){error=immediateError(status);if(paint_brush_library_current_state(library,reinterpret_cast<uint8_t*>(canonical.data()),quint64(canonical.size()),&required)!=PAINT_OK)canonical.clear();}
         if(!canonical.isEmpty())canonical.resize(qsizetype(required));
-        if(preparation!=m_reportedBrushPreparation){m_reportedBrushPreparation=preparation;emit nativeBrushCatalog(preparation,canonical,error);}
+        if(preparation!=m_reportedBrushPreparation){m_reportedBrushPreparation=preparation;
+            // Identity/default normalization must not rebuild the entire live
+            // library. Compare this exact prepared input on the worker first.
+            if(!error.isEmpty() || !BrushLibrary::equivalentCatalogState(canonical,submitted))emit nativeBrushCatalog(preparation,canonical,error);
+        }
         if(!m_pendingBrushPreferences.isEmpty()){
             const auto pending=std::exchange(m_pendingBrushPreferences,{});
             if(pending!=wanted || !error.isEmpty())return;
