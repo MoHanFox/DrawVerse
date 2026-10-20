@@ -2,6 +2,8 @@
 
 设计：[笔尖角度与圆度控制器](../../../brush/ui/brush-tip-shape-control-design.md)。
 
+2026-10-21 更新：真实鼠标连续 20 次移动期间，方向盘显示达到 90°，核心参数仍为 0°，settingsChanged/selectedPreviewChanged 均为 0；释放后均恰好一次，参数为 90°。原角度、旋转圆度、边界、数值同步与主/第二笔尖独立两个用例在软件 Qt 和 D3D11 各通过，Release 构建通过。ABI1.74/state44 不变；本项减少完整预览请求，未声称实体持续输入性能已经验收。
+
 2026-10-20，Windows Release，Qt 6.8.3。
 
 - `qt_workflow_tests tipShapeDialDragsAngleAndRotatedRoundness`：真实鼠标拖动角度至 90°，沿旋转后的短轴改圆度，1% 下限与拖出圆盘恢复 100%，释放后移动不改值；外部参数更新、右侧输入双向同步与 0/101% 输入拒绝通过。

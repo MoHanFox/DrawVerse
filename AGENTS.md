@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新方向盘局部草稿：主/第二笔尖手势只更新轻量图元与数值，释放才提交一次参数并刷新完整笔触预览；连续20次真实鼠标移动零设置/预览失效信号，释放各一次，旧形状/同步两项软件 Qt 与 D3D11 通过，Release 输出 `build/qt/bin/Release`。见笔尖方向盘设计/验收，ABI1.74/state44 保持。
+
 - 最新资源滚轮隔离：共享 BrushResourcePicker 的 WheelHandler 消费边界/快速滚轮与触摸板动量，网格外正常滚设置页；100资源/双向100事件/pixelDelta/动量/外层对照在软件 Qt 和 D3D11 通过，无 QML 警告，Release 输出 `build/qt/bin/Release`。见资源滚轮设计/验收；无 ABI/格式/GPU 变化，实体触摸板待验收。
 
 - 最新图层行驻留：`docs/layers/layer-row-residency-design.md` / 对应验收；按 ID 更新/移动 ListModel 行，蒙版引用仅换 ID 时转移，busy 链条保持亮度。真实点击/移动/undo/redo 对象身份与像素行为在软件 Qt 和 D3D11 各通过，Release 输出 `build/qt/bin/Release`；ABI1.74 保持，组内/固定蒙版核心回退仍待优化。

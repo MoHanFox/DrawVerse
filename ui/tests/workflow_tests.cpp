@@ -139,6 +139,12 @@ Flickable {objectName:"outer";width:300;height:380;contentWidth:width;contentHei
         auto *dial=findVisual(item,"settingsBrushTipDial");QVERIFY(dial);
         const auto at=[&](double x,double y){return dial->mapToScene({48+x*40,48+y*40}).toPoint();};
         const auto drag=[&](QPoint a,QPoint b){QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,a);QTest::mouseMove(&window,b,10);QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,b);};
+        QSignalSpy changes(library,&BrushLibrary::settingsChanged),previews(library,&BrushLibrary::selectedPreviewChanged);
+        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,at(1,0));
+        for(int i=1;i<=20;++i){const auto radians=i*3.141592653589793/40;QTest::mouseMove(&window,at(std::cos(radians),std::sin(radians)),10);}
+        QCOMPARE(changes.size(),0);QCOMPARE(previews.size(),0);QCOMPARE(item->property("displayedAngle").toDouble(),90.);QCOMPARE(library->angle(),0.);
+        QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,at(0,1));QCOMPARE(changes.size(),1);QCOMPARE(previews.size(),1);QCOMPARE(library->angle(),90.);
+        library->setAngle(0);
         drag(at(1,0),at(0,1));QCOMPARE(library->angle(),90.);QCOMPARE(library->roundness(),1.);
         drag(at(-1,0),at(-.5,0));QCOMPARE(library->angle(),90.);QCOMPARE(library->roundness(),.5);
         drag(at(-.5,0),at(0,0));QCOMPARE(library->roundness(),.01);
