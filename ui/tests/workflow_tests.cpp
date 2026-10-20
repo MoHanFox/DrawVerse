@@ -41,6 +41,53 @@ class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
 
+    void tipShapeDialDragsAngleAndRotatedRoundness() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("tip-dial.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();
+        library->setAngle(0);library->setRoundness(1);
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);
+        QQmlComponent component(&engine);
+        component.setData("import QtQuick\nimport \"qrc:/qml/brushes\"\nBrushTipShapeControl {angle:PaintClient.brushLibrary.angle; roundness:PaintClient.brushLibrary.roundness; onAngleEdited:value=>PaintClient.brushLibrary.angle=value; onRoundnessEdited:value=>PaintClient.brushLibrary.roundness=value}",QUrl());
+        QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));
+        auto *item=qobject_cast<QQuickItem*>(object.data());QVERIFY(item);
+        QQuickWindow window;window.setColor(QColor("#25262b"));window.resize(300,130);item->setParentItem(window.contentItem());item->setX(10);item->setY(10);item->setWidth(280);item->setHeight(106);window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *dial=findVisual(item,"settingsBrushTipDial");QVERIFY(dial);
+        const auto at=[&](double x,double y){return dial->mapToScene({48+x*40,48+y*40}).toPoint();};
+        const auto drag=[&](QPoint a,QPoint b){QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,a);QTest::mouseMove(&window,b,10);QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,b);};
+        drag(at(1,0),at(0,1));QCOMPARE(library->angle(),90.);QCOMPARE(library->roundness(),1.);
+        drag(at(-1,0),at(-.5,0));QCOMPARE(library->angle(),90.);QCOMPARE(library->roundness(),.5);
+        drag(at(-.5,0),at(0,0));QCOMPARE(library->roundness(),.01);
+        drag(at(0,0),at(-2,0));QCOMPARE(library->roundness(),1.);QCOMPARE(library->angle(),90.);
+        QTest::mouseMove(&window,at(0,-1));QCOMPARE(library->angle(),90.);QCOMPARE(library->roundness(),1.);
+        library->setAngle(-45);library->setRoundness(.37);
+        auto *angle=findVisual(item,"settingsBrushangleInput");auto *roundness=findVisual(item,"settingsBrushroundnessInput");QVERIFY(angle && roundness);
+        QCOMPARE(angle->property("value").toInt(),-45);QCOMPARE(roundness->property("value").toInt(),37);
+        if(const auto capture=qEnvironmentVariable("DRAWVERSE_TEST_CAPTURE");!capture.isEmpty()){QTest::qWait(50);QVERIFY(window.grabWindow().save(capture));}
+        angle->setProperty("value",-120);QVERIFY(QMetaObject::invokeMethod(angle,"valueModified"));QCOMPARE(library->angle(),-120.);
+        roundness->setProperty("value",64);QVERIFY(QMetaObject::invokeMethod(roundness,"valueModified"));QCOMPARE(library->roundness(),.64);
+        library->setAngle(12);library->setRoundness(.22);QCOMPARE(angle->property("value").toInt(),12);QCOMPARE(roundness->property("value").toInt(),22);
+        auto *text=findVisual(item,"settingsBrushroundnessInputText");QVERIFY(text);text->setProperty("text","0");QVERIFY(!text->property("acceptableInput").toBool());text->setProperty("text","101");QVERIFY(!text->property("acceptableInput").toBool());text->setProperty("text","50");QVERIFY(text->property("acceptableInput").toBool());
+        client.shutdown();
+    }
+
+    void tipShapeSettingsShareControlAndPreserveIndependentParameters() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("tip-settings.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        auto *library=client.brushLibrary();library->setAngle(23.25);library->setRoundness(.456);
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);
+        QQmlComponent component(&engine,QUrl("qrc:/qml/brushes/BrushSettingsPanel.qml"));QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));
+        auto *panel=qobject_cast<QQuickItem*>(object.data());QVERIFY(panel);auto *main=findVisual(panel,"settingsBrushTipShape");QVERIFY(main);
+        QCOMPARE(library->angle(),23.25);QCOMPARE(library->roundness(),.456);QCOMPARE(main->property("angle").toDouble(),23.25);
+        auto dual=library->dualBrush();dual["enabled"]=true;dual["angle"]=-67.;dual["roundness"]=.28;QVERIFY(library->setDualBrush(dual));
+        panel->setProperty("category",4);auto *secondary=findVisual(panel,"settingsDualTipShape");QVERIFY(secondary);QVERIFY(secondary->isVisible());
+        QCOMPARE(secondary->property("angle").toDouble(),-67.);QCOMPARE(secondary->property("roundness").toDouble(),.28);
+        auto *edit=findVisual(panel,"settingsDualangleInput");QVERIFY(edit);edit->setProperty("value",80);QVERIFY(QMetaObject::invokeMethod(edit,"valueModified"));
+        QCOMPARE(library->dualBrush().value("angle").toDouble(),80.);QCOMPARE(library->angle(),23.25);QCOMPARE(library->roundness(),.456);
+        library->setDualExisting(true);QVERIFY(!secondary->isVisible());library->setDualExisting(false);QVERIFY(secondary->isVisible());
+        BrushLibrary restored;QVERIFY(restored.restore(library->snapshot()));QCOMPARE(restored.angle(),23.25);QCOMPARE(restored.roundness(),.456);QCOMPARE(restored.dualBrush().value("angle").toDouble(),80.);QCOMPARE(restored.dualBrush().value("roundness").toDouble(),.28);
+        client.shutdown();
+    }
+
     void recentBrushesShareAcrossDocumentsBeforeThePreferenceTimer() {
         QTemporaryDir temp;PaintCoreClient a(nullptr,temp.filePath("shared-recent.ini"));QTRY_VERIFY(a.ready() && a.brushLibraryReady());QObject root;DocumentManager manager;manager.configure(&a,&root);const auto id=manager.newDocument(64,64,true);QVERIFY(!id.isEmpty());auto *b=manager.client(id);QVERIFY(b);QTRY_VERIFY(b->ready() && b->brushLibraryReady());QTRY_COMPARE(b->documentWidth(),64);
         a.brushLibrary()->setToolIsolation(2);a.brushLibrary()->setRadius(3);a.activateEraser();a.brushLibrary()->setRadius(7);a.activateBrush();a.brushLibrary()->flushPersistence();b->activateEraser();QCOMPARE(b->brushRadius(),7.);b->brushLibrary()->flushPersistence();

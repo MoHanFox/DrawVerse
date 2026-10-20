@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [笔尖角度与圆度控制器](brush/ui/brush-tip-shape-control-validation.md)
+
 - [SDF 遮罩描边接入](brush/core/brush-sdf-outline-validation.md)
 
 - [选区常驻遮罩与 GPU 蚂蚁线](tools/selection-resident-ants-validation.md)

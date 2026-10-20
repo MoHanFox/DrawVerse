@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新笔尖方向盘：`docs/brush/ui/brush-tip-shape-control-design.md` / `docs/validations/brush/ui/brush-tip-shape-control-validation.md`；参考 PhotoCraft 短轴手柄投影交互，主/可编辑第二笔尖共用角度与圆度控件、数值双向同步，已有来源继承且隐藏。真实鼠标/参数恢复两项及整数回归在软件通过，前两项 D3D11 通过并检查截图，Release 输出 `build/qt/bin/Release`；ABI1.71/state/VBR 不变，未跑全量/跨平台/实体设备。
+
 - 最新SDF描边实际接入：普通13已接通灰度形状/A+场+遮罩缓存、等距线max印章、真实笔触/预览和算法选择，保留建路径默认；自身/已有图片笔尖与独立纹理复用采样，尾部回放失效缓存。state43/behavior35/stroke-outline-sdf、ABI1.71，旧41/42保持；核心15+内部3/IO5/原生2/工作流31（软件GPU专项跳过1）/D3D11 SDF1/旧Qt3/四ABI/Clippy/Release通过，产物 `build/qt/bin/Release`。实际笔刷和SDF仍CPU，Qt硬件显示/轮廓为GPU，GPU总入口已补齐代码与范围；50%几何/细区域无内等距线/8Mi像素与6400万采样边界见SDF设计/验收，未跑全量/跨平台/实体持续性能。
 
 - 最新自身描边独立纹理：普通13第二步，建路径自身来源支持独立资源选择/异步导入/空间深度/开关移除，主纹理不改；角色4捕获来源和目标，state42/behavior34/outline-self-texture、ABI1.70，旧state41/behavior33保持。IO4/新Qt2旧1/原生2/工作流30（软件GPU专项跳过1）/四ABI/Clippy/Release通过，产物 `build/qt/bin/Release`；详情见 `docs/validations/brush/core/brush-sdf-outline-validation.md`。新SDF仍只有算子，实际笔触/缓存/算法选择及最终GPU说明尚待，未跑全量/跨平台/实体输入。

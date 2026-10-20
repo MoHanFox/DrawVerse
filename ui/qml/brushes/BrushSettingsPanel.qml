@@ -166,8 +166,12 @@ ColumnLayout {
                     }
                     CompactSlider {Layout.fillWidth:true;from:1;to:2000;value:root.library.radius*2;stepSize:1;snapMode:Slider.SnapAlways;onMoved:root.library.radius=Math.round(value)/2}
                     TipField {enabled:!root.library.maskResource.length;title:"硬度";field:"hardness";from:0;to:100;factor:100;unit:"%";help:"实心中心占笔尖半径的比例；降低后形成柔软边缘。"}
-                    TipField {title:"圆度";field:"roundness";from:1;to:100;factor:100;unit:"%";help:"笔尖短轴与长轴的比例。"}
-                    TipField {title:"角度";field:"angle";from:-180;to:180;factor:1;unit:"°";help:"椭圆笔尖在画布上的方向。"}
+                    BrushTipShapeControl {
+                        objectName:"settingsBrushTipShape"
+                        angle:root.library.angle; roundness:root.library.roundness
+                        onAngleEdited:value=>root.library.angle=value
+                        onRoundnessEdited:value=>root.library.roundness=value
+                    }
                     TipField {title:"间距";field:"spacing";from:1;to:50;factor:50;unit:"%";help:"相邻印章的距离，以直径百分比表示，最低 1%。";sliderName:"settingsBrushSpacing"}
                 }
                 }
@@ -305,8 +309,12 @@ ColumnLayout {
 
                         DualField {title:"间距";field:"spacing";from:1;to:100;factor:100;unit:"%";visible:root.dual.model==="path-coverage-v1"}
                         DualField {title:"硬度";field:"hardness";enabled:!root.dual.resource}
-                        DualField {title:"圆度";field:"roundness";from:1}
-                        DualField {title:"角度";field:"angle";from:-180;to:180;factor:1;unit:"°"}
+                        BrushTipShapeControl {
+                            objectName:"settingsDualTipShape"; namePrefix:"settingsDual"
+                            angle:root.dual.angle; roundness:root.dual.roundness
+                            onAngleEdited:value=>root.setDualField("angle",value)
+                            onRoundnessEdited:value=>root.setDualField("roundness",value)
+                        }
                         DualField {title:"流量";field:"flow"}
                         Label {text:"第二笔尖改变实际覆盖；可在光标与预览中开启复合光标。";Layout.fillWidth:true;wrapMode:Text.WordWrap;color:Theme.muted;font.pixelSize:9}
                     }
