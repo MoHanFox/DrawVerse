@@ -1426,6 +1426,94 @@ fn layer_move_resident_packets_absolute_updates_and_final_barrier() {
 }
 
 #[test]
+fn complex_move_coarse_frames_restore_full_resolution_on_commit_and_cancel() {
+    let h = Harness::new(64, 64);
+    h.wait(h.stroke(20., 20.));
+    let masked = h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_ADD_MASK,
+        layer_id: 1,
+        ..dto!(PaintCommand)
+    }));
+    unsafe {
+        let mut seq = 0;
+        let link = PaintGroupRequest {
+            kind: PAINT_GROUP_MASK_LINK,
+            layer_id: masked.active_layer_id,
+            parent_id: 0,
+            struct_size: size_of::<PaintGroupRequest>() as u32,
+            name: ptr::null(),
+            name_length: 0,
+        };
+        assert_eq!(
+            paint_session_group(h.core, h.session, &link, &mut seq),
+            PAINT_OK
+        );
+        let initial = h.wait(seq);
+        for view_id in 0..2 {
+            let view = PaintViewport {
+                view_id,
+                enabled: 1,
+                document_generation: initial.document_generation,
+                width: 64.,
+                height: 64.,
+                pixel_width: 1024,
+                pixel_height: 1024,
+                ..dto!(PaintViewport)
+            };
+            let mut request = 0;
+            assert_eq!(
+                paint_session_set_viewport(h.core, h.session, &view, &mut request),
+                PAINT_OK
+            );
+            assert_eq!(h.frame(view_id, initial.revision).pixel_width, 1024);
+        }
+        let run = |kind, x, y, seq: &mut u64| {
+            assert_eq!(
+                paint_session_layer_move(h.core, h.session, kind, 1, x, y, seq),
+                PAINT_OK
+            );
+            let info = h.wait(*seq);
+            assert_eq!(info.last_error_status, PAINT_OK);
+            info
+        };
+        run(PAINT_LAYER_MOVE_BEGIN_DEFERRED, 0, 0, &mut seq);
+        let moved = run(PAINT_LAYER_MOVE_UPDATE, 8, 3, &mut seq);
+        for view in 0..2 {
+            let frame = h.frame(view, moved.revision);
+            assert_eq!((frame.pixel_width, frame.pixel_height), (512, 512));
+            let pixels = h.pixels(view, frame);
+            let i = (184 * 512 + 224) * 4;
+            assert!(pixels[i] > 200 && pixels[i + 1] < 30 && pixels[i + 2] < 30);
+        }
+        let done = run(PAINT_LAYER_MOVE_COMMIT, 8, 3, &mut seq);
+        assert_eq!(done.undo_depth, initial.undo_depth + 1);
+        for view in 0..2 {
+            assert_eq!(h.frame(view, done.revision).pixel_width, 1024);
+        }
+        run(PAINT_LAYER_MOVE_BEGIN_DEFERRED, 0, 0, &mut seq);
+        let moved = run(PAINT_LAYER_MOVE_UPDATE, 4, 2, &mut seq);
+        assert_eq!(h.frame(0, moved.revision).pixel_width, 512);
+        let cancelled = run(PAINT_LAYER_MOVE_CANCEL, 0, 0, &mut seq);
+        assert_eq!(cancelled.undo_depth, done.undo_depth);
+        for view in 0..2 {
+            assert_eq!(h.frame(view, cancelled.revision).pixel_width, 1024);
+        }
+        let mut appearance = dto!(PaintLayerAppearance);
+        assert_eq!(
+            paint_session_layer_appearance(
+                h.core,
+                h.session,
+                cancelled.publication,
+                1,
+                &mut appearance
+            ),
+            PAINT_OK
+        );
+        assert_eq!((appearance.offset_x, appearance.offset_y), (8, 3));
+    }
+}
+
+#[test]
 fn deferred_liquify_packets_are_stamped_and_drag_keeps_cpu_frame() {
     let h = Harness::new(128, 96);
     let initial = h.wait(h.stroke(40., 40.));

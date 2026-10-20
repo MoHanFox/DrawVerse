@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [复杂图层移动的有界预览](tools/layer-move-bounded-fallback-validation.md)
+
 - [资源列表滚轮隔离](brush/ui/brush-resource-wheel-validation.md)
 
 - [图层行驻留与蒙版链接闪烁](layers/layer-row-residency-validation.md)

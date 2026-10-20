@@ -1660,6 +1660,8 @@ impl Engine {
                 snapshot
             };
             let renderer = Arc::clone(&self.renderers[index]);
+            let interactive_move =
+                index < 2 && preview_layer == 0 && self.document.layer_move_active();
             let revision = snapshot.revision;
             let priority = if index == 0 {
                 Priority::Interactive
@@ -1667,7 +1669,12 @@ impl Engine {
                 Priority::Background
             };
             if let Ok(ticket) = self.pool.submit(priority, move |token| {
-                match renderer.render(&snapshot, request, &token) {
+                let frame = if interactive_move {
+                    paint_render::render_interactive(&snapshot, request, &token)
+                } else {
+                    renderer.render(&snapshot, request, &token)
+                };
+                match frame {
                     Err(RenderError::Cancelled) => Err(TaskError::Cancelled),
                     result => Ok(result.map_err(render_error)),
                 }

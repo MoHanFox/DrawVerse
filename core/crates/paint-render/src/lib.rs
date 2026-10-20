@@ -5,6 +5,8 @@ use std::{
     collections::{BTreeSet, HashMap},
     sync::{Arc, Mutex, Weak},
 };
+mod interactive;
+pub use interactive::render_interactive;
 
 pub const MAX_OUTPUT_PIXELS: u64 = 4_194_304;
 pub const MAX_OUTPUT_EDGE: u32 = 4096;
