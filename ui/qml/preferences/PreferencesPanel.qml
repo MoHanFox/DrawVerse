@@ -21,6 +21,7 @@ Dialog {
         storageScratch.value = Number(values.scratchGiB || 8)
         storageReserve.value = values.reserveMiB === undefined ? 512 : Number(values.reserveMiB)
         historyLimit.value = PaintClient.historyLimit
+        taskProgressDelay.value = PaintClient.longTaskDelay
         PaintClient.inspectStorage()
         PaintClient.inspectCompute()
     }
@@ -83,6 +84,13 @@ Dialog {
                                 text: PaintClient.computeStatus + "\n加速液化计算。硬件不可用时自动使用 CPU；原图与撤销记录保持。"
                             }
                             Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                            RowLayout {
+                                Layout.fillWidth:true
+                                Label {text:"长任务进度延迟";color:Theme.text;font.pixelSize:9;Layout.fillWidth:true}
+                                SpinBox {id:taskProgressDelay;objectName:"taskProgressDelay";from:0;to:10000;stepSize:100;editable:true}
+                                Label {text:"毫秒";color:Theme.muted;font.pixelSize:9}
+                            }
+                            Label {text:"计算超过此时间才显示进度；0 为立即显示。";color:Theme.muted;font.pixelSize:8;Layout.fillWidth:true}
                             Label { text: "存储与缓存"; font.pixelSize: 10; color: Theme.accent }
                             GridLayout {
                                 columns: 2; columnSpacing: 12; rowSpacing: 8; Layout.fillWidth: true
@@ -187,6 +195,7 @@ Dialog {
                 objectName: "saveStorageSettings"; text: "保存设置"; enabled: !PaintClient.storageBusy && !PaintClient.computeBusy && !PaintClient.drawing
                 onClicked: {
                     PaintClient.historyLimit = historyLimit.value
+                    PaintClient.longTaskDelay = taskProgressDelay.value
                     PaintClient.saveStorageSettings(storageDirectory.text, storageMemory.options[storageMemory.currentIndex], storageScratch.value, storageReserve.value)
                     PaintClient.applyHistoryLimit()
                     if (computeDevice.currentValue !== undefined && computeDevice.currentValue !== PaintClient.computeDevice)

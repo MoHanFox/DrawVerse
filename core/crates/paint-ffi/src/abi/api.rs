@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 73;
+pub const PAINT_ABI_MINOR: u32 = 74;
 
 /// Optional secondary-tip texture through catalog preparation and resource bundles.
 pub const PAINT_FEATURE_DUAL_TIP_TEXTURE: u64 = 1_152_921_504_606_846_976;
@@ -963,4 +963,34 @@ pub struct PaintHistorySelect {
     pub reserved: u32,
     pub document_generation: u64,
     pub revision: u64,
+}
+
+/// Live progress is independent of completed document publications.
+pub const PAINT_FEATURE_TASK_PROGRESS: u64 = 4_611_686_018_427_387_904;
+pub const PAINT_TASK_RUNNING: u32 = 1;
+pub const PAINT_TASK_SUCCEEDED: u32 = 2;
+pub const PAINT_TASK_FAILED: u32 = 3;
+pub const PAINT_TASK_TRANSFORM: u32 = 1;
+pub const PAINT_TASK_LIQUIFY: u32 = 2;
+pub const PAINT_TASK_FLIP: u32 = 3;
+pub const PAINT_TASK_PHASE_PREPARING: u32 = 0;
+pub const PAINT_TASK_PHASE_RESAMPLING: u32 = 1;
+pub const PAINT_TASK_PHASE_SELECTION: u32 = 2;
+pub const PAINT_TASK_PHASE_COMPARING: u32 = 3;
+pub const PAINT_TASK_PHASE_HISTORY: u32 = 4;
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintTaskProgress {
+    pub struct_size: u32,
+    pub state: u32,
+    pub kind: u32,
+    pub phase: u32,
+    pub status: PaintStatus,
+    pub reserved: u32,
+    pub sequence: u64,
+    pub document_generation: u64,
+    pub stage: u64,
+    pub completed: u64,
+    pub total: u64,
+    pub elapsed_ms: u64,
 }

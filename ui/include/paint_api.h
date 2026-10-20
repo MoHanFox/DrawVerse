@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 73
+#define PAINT_ABI_MINOR 74
 
 #define PAINT_ABI_PATCH 0
 
@@ -226,6 +226,11 @@
  * Complete state18/VBR1.22 stroke taper parameter entry (ABI1.51).
  */
 #define PAINT_FEATURE_STROKE_TAPER 70368744177664
+
+/**
+ * Live progress is independent of completed document publications.
+ */
+#define PAINT_FEATURE_TASK_PROGRESS 4611686018427387904
 
 #define PAINT_FEATURE_TRANSFORM 524288
 
@@ -507,6 +512,28 @@
 #define PAINT_SESSION_TRANSFORM 16
 
 #define PAINT_STORAGE_RGBA32F_PREMULTIPLIED 1
+
+#define PAINT_TASK_FAILED 3
+
+#define PAINT_TASK_FLIP 3
+
+#define PAINT_TASK_LIQUIFY 2
+
+#define PAINT_TASK_PHASE_COMPARING 3
+
+#define PAINT_TASK_PHASE_HISTORY 4
+
+#define PAINT_TASK_PHASE_PREPARING 0
+
+#define PAINT_TASK_PHASE_RESAMPLING 1
+
+#define PAINT_TASK_PHASE_SELECTION 2
+
+#define PAINT_TASK_RUNNING 1
+
+#define PAINT_TASK_SUCCEEDED 2
+
+#define PAINT_TASK_TRANSFORM 1
 
 #define PAINT_TILE_RGBA32F_LINEAR_PREMULTIPLIED 2
 
@@ -1114,6 +1141,21 @@ typedef struct PaintCommand {
   float opacity;
   uint32_t reserved[2];
 } PaintCommand;
+
+typedef struct PaintTaskProgress {
+  uint32_t struct_size;
+  uint32_t state;
+  uint32_t kind;
+  uint32_t phase;
+  PaintStatus status;
+  uint32_t reserved;
+  uint64_t sequence;
+  uint64_t document_generation;
+  uint64_t stage;
+  uint64_t completed;
+  uint64_t total;
+  uint64_t elapsed_ms;
+} PaintTaskProgress;
 
 typedef struct PaintTransform {
   uint32_t struct_size;
@@ -2672,6 +2714,16 @@ PaintStatus paint_session_submit(struct PaintCore *core,
                                  struct PaintSession *handle,
                                  const struct PaintCommand *command,
                                  uint64_t *out_sequence);
+
+/**
+ * Read a live independent progress snapshot without waiting for actor completion.
+ * # Safety
+ * out_progress is writable and begins with initialized struct_size; normal handle
+ * lifetime and nonoverlap requirements apply. Failure resets the output prefix.
+ */
+PaintStatus paint_session_task_progress(struct PaintCore *core,
+                                        struct PaintSession *handle,
+                                        struct PaintTaskProgress *out_progress);
 
 /**
  * Queue a transform operation. UPDATE alone requires geometry; input is copied.

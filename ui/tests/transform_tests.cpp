@@ -11,10 +11,37 @@
 #include <QQuickWindow>
 #include <QQuickItemGrabResult>
 #include <QTemporaryDir>
+#include <QTimer>
+#include <QSettings>
 static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item->objectName()==name)return item;for(auto *child:item->childItems())if(auto *found=findVisualItem(child,name))return found;return nullptr;}
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void longTaskProgressUsesActualWorkAndConfiguredDelay() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("task-progress.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &error:errors)warnings.append(error.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->resize(1800,1000);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QCOMPARE(client.longTaskDelay(),1000);client.setLongTaskDelay(10000);client.newTransparentDocument(4096,2160);QTRY_COMPARE(client.documentWidth(),4096);QTRY_VERIFY(!client.layerEditBusy());client.activateBucket();client.setBrushColor(QColor("#bf3311"));QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY_WITH_TIMEOUT(!client.layerEditBusy(),30000);
+        auto *overlay=findVisualItem(window->contentItem(),"longTaskProgress");QVERIFY(overlay);QVERIFY(!overlay->isVisible());
+        bool sawVisible=false,sawActualCount=false;int heartbeats=0;QTimer heartbeat;heartbeat.setInterval(1);connect(&heartbeat,&QTimer::timeout,this,[&]{++heartbeats;});
+        connect(&client,&PaintCoreClient::computationProgressChanged,this,[&]{sawVisible|=client.longTaskVisible();const auto progress=client.computationProgress();sawActualCount|=progress.value("state").toInt()==1 && progress.value("completed").toULongLong()>0 && progress.value("completed").toULongLong()<progress.value("total").toULongLong();});
+        const auto depth=client.undoDepth();QVERIFY(client.flipImage(true));QTRY_COMPARE_WITH_TIMEOUT(client.undoDepth(),depth+1,30000);QTRY_COMPARE(client.computationProgress().value("state").toInt(),2);QVERIFY(!sawVisible);QVERIFY(!overlay->isVisible());
+        client.setLongTaskDelay(0);sawVisible=false;sawActualCount=false;heartbeat.start();QVERIFY(client.flipImage(true));QTRY_COMPARE_WITH_TIMEOUT(client.undoDepth(),depth+2,30000);heartbeat.stop();QTRY_COMPARE(client.computationProgress().value("state").toInt(),2);QCOMPARE(client.computationProgress().value("kind").toInt(),3);QVERIFY(sawVisible);QVERIFY(sawActualCount);QVERIFY(heartbeats>1);QVERIFY(!client.longTaskVisible());QVERIFY(!overlay->isVisible());
+        QVERIFY(!window->findChild<QObject*>("liquifyCommitProgress"));QVERIFY(client.lastError().isEmpty());QCOMPARE(warnings,QStringList());
+        auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void taskProgressPreferencesAndEditingScopesStayWithTheirDocument() {
+        QTemporaryDir temp;const auto settings=temp.filePath("task-settings.ini");PaintCoreClient client(nullptr,settings);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);const auto initial=documents->activeId();const auto second=documents->newDocument(64,64,true);QVERIFY(!second.isEmpty());auto *other=documents->client(second);QVERIFY(other);QTRY_VERIFY(other->ready() && other->brushLibraryReady());
+        client.setLongTaskDelay(240);QCOMPARE(other->longTaskDelay(),240);other->setLongTaskDelay(470);QCOMPARE(client.longTaskDelay(),470);QTRY_COMPARE(QSettings(settings,QSettings::IniFormat).value("performance/taskProgressDelayMs").toInt(),470);
+        QVERIFY(documents->activate(initial));auto *dialog=window->findChild<QObject*>("preferencesDialog");QVERIFY(dialog);QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(dialog->property("opened").toBool());auto *delay=dialog->findChild<QObject*>("taskProgressDelay");QVERIFY(delay);QCOMPARE(delay->property("value").toInt(),470);delay->setProperty("value",350);auto *save=dialog->findChild<QObject*>("saveStorageSettings");QVERIFY(save);QVERIFY(QMetaObject::invokeMethod(save,"clicked"));QTRY_COMPARE(client.longTaskDelay(),350);QCOMPARE(other->longTaskDelay(),350);QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QTRY_VERIFY(!client.storageBusy());
+        other->setBrushRadius(5);QVERIFY(other->beginStroke({{32,32},1}));other->endStroke();QTRY_VERIFY(!other->layerEditBusy());QVERIFY(documents->activate(second));documents->floatDocument(second);QTRY_VERIFY(!documents->windows().isEmpty());
+        QVERIFY(other->beginTransform());QTRY_VERIFY(other->transformActive() && !other->transformBusy());auto points=other->transformPoints();for(auto &point:points)point=point.toPointF()+QPointF(4,2);QVERIFY(other->updateTransform(points,false,3));QTRY_VERIFY(!other->transformBusy());QVERIFY(other->finishTransform(true));QTRY_VERIFY(!other->transformActive());QTRY_COMPARE(other->computationProgress().value("state").toInt(),2);QCOMPARE(other->computationProgress().value("kind").toInt(),1);QVERIFY(!client.longTaskVisible());
+        QVERIFY(other->beginLiquify());QTRY_VERIFY(other->liquifyActive() && !other->liquifyBusy());other->setLiquifySize(24);QVERIFY(other->beginStroke({{36,34},1}));other->strokeTo({{41,34},1});other->endStroke();QTRY_VERIFY(!other->liquifyBusy());QVERIFY(other->finishLiquify(true));QTRY_VERIFY(!other->liquifyActive());QTRY_COMPARE(other->computationProgress().value("state").toInt(),2);QCOMPARE(other->computationProgress().value("kind").toInt(),2);QVERIFY(!other->longTaskVisible());QVERIFY(!client.longTaskVisible());QVERIFY(other->lastError().isEmpty());
+        QTRY_COMPARE(QSettings(settings,QSettings::IniFormat).value("performance/taskProgressDelayMs").toInt(),350);PaintCoreClient reopened(nullptr,settings);QTRY_VERIFY(reopened.ready());QCOMPARE(reopened.longTaskDelay(),350);reopened.shutdown();
+        QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void compoundLayerMovesKeepResidentSources_data() {
         QTest::addColumn<int>("kind");QTest::newRow("linked-owner-mask")<<0;QTest::newRow("masked-group")<<1;QTest::newRow("continuous-multiple")<<2;
     }

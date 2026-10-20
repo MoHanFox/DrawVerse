@@ -519,3 +519,25 @@ pub unsafe extern "C" fn paint_session_select_history(
         pointers::write(out_sequence, sequence)
     })
 }
+
+/// Read a live independent progress snapshot without waiting for actor completion.
+/// # Safety
+/// out_progress is writable and begins with initialized struct_size; normal handle
+/// lifetime and nonoverlap requirements apply. Failure resets the output prefix.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_task_progress(
+    core: *mut PaintCore,
+    handle: *mut PaintSession,
+    out_progress: *mut PaintTaskProgress,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::reset_sized(
+            out_progress,
+            PaintTaskProgress {
+                struct_size: size_of::<PaintTaskProgress>() as u32,
+                ..Default::default()
+            },
+        )?;
+        pointers::write(out_progress, session(core, handle)?.task_progress())
+    })
+}

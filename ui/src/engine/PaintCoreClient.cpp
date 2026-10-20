@@ -78,8 +78,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 73) {
-            emit failure(QStringLiteral("GPU 液化预览需要核心 ABI 1.62 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 74) {
+            emit failure(QStringLiteral("当前功能需要核心 ABI 1.74 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -109,7 +109,7 @@ public:
         inspectStorage();
         auto caps = dto<PaintCapabilities>();
         if (!check(paint_core_capabilities(m_core, &caps))) return;
-        constexpr uint64_t required = PAINT_FEATURE_HISTORY_SELECT | PAINT_FEATURE_DUAL_TIP_TEXTURE | PAINT_FEATURE_STROKE_OUTLINE | PAINT_FEATURE_BRUSH_GROUP_PACKAGE | PAINT_FEATURE_CURVE_NODE_MODES | PAINT_FEATURE_BRUSH_GROUP_STATE | PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_COLOR_INTERLEAVED | PAINT_FEATURE_AIRBRUSH | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
+        constexpr uint64_t required = PAINT_FEATURE_TASK_PROGRESS | PAINT_FEATURE_HISTORY_SELECT | PAINT_FEATURE_DUAL_TIP_TEXTURE | PAINT_FEATURE_STROKE_OUTLINE | PAINT_FEATURE_BRUSH_GROUP_PACKAGE | PAINT_FEATURE_CURVE_NODE_MODES | PAINT_FEATURE_BRUSH_GROUP_STATE | PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_COLOR_INTERLEAVED | PAINT_FEATURE_AIRBRUSH | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
         if ((caps.features & (required | PAINT_FEATURE_SELECTION)) != (required | PAINT_FEATURE_SELECTION)) { emit failure(QStringLiteral("当前核心缺少异步视口或选区能力")); return; }
         auto desc = dto<PaintDocumentDesc>(); desc.width = 960; desc.height = 640;
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
@@ -295,7 +295,16 @@ public:
         }
         emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting,abr);
     }
+    void pollTaskProgress() {
+        auto progress=dto<PaintTaskProgress>();
+        if(paint_session_task_progress(m_core,m_session,&progress)!=PAINT_OK)return;
+        QVariantMap values{{"state",progress.state},{"kind",progress.kind},{"phase",progress.phase},{"status",progress.status},
+            {"sequence",qulonglong(progress.sequence)},{"generation",qulonglong(progress.document_generation)},
+            {"stage",qulonglong(progress.stage)},{"completed",qulonglong(progress.completed)},{"total",qulonglong(progress.total)},{"elapsedMs",qulonglong(progress.elapsed_ms)}};
+        if(values!=m_lastTaskProgress){m_lastTaskProgress=values;emit taskProgress(values);}
+    }
 signals:
+    void taskProgress(QVariantMap values);
     void residentPreviewReady(ResidentPreviewPtr preview);
     void wetActionReady(bool success,QString error);
     void brushSourceReady(QString identity,quint64 token,QByteArray record,QString error);
@@ -455,6 +464,7 @@ public:
     }
     void poll() {
         if (!m_session || m_stopped) return;
+        pollTaskProgress();
         pollCompute();
         pollBrushState();
         pollWetAction();
@@ -803,6 +813,7 @@ public:
     QElapsedTimer m_computeClock;
     quint64 m_computeSequence=0;
     std::shared_ptr<BackendConnection> m_connection;
+    QVariantMap m_lastTaskProgress;
     QTimer *m_timer;
     PaintCore *m_core = nullptr;
     PaintSession *m_session = nullptr;
@@ -817,6 +828,7 @@ public:
 };
 
 PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,std::shared_ptr<BrushCatalogConnection> brushCatalog) : QObject(parent), m_settingsFile(settingsFile), m_connection(std::make_shared<BackendConnection>()),m_brushCatalogConnection(brushCatalog?std::move(brushCatalog):std::make_shared<BrushCatalogConnection>()) {
+    {auto settings=m_settingsFile.isEmpty()?std::make_unique<QSettings>(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse"):std::make_unique<QSettings>(m_settingsFile,QSettings::IniFormat);m_longTaskDelay=std::clamp(settings->value("performance/taskProgressDelayMs",1000).toInt(),0,10000);}
     connect(QGuiApplication::clipboard(),&QClipboard::dataChanged,this,&PaintCoreClient::stateChanged);
     // Focus changes can occur inside a QML enabled binding. Notify only the
     // shortcuts that depend on focus, without reentering document/busy bindings.
@@ -931,6 +943,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(changed)emit brushOutlineChanged();requestBrushOutlines();
     });
     connect(m_brushLibrary,&BrushLibrary::recentColorsChanged,this,&PaintCoreClient::recentColorsChanged);
+    connect(m_worker,&BackendWorker::taskProgress,this,[this](const QVariantMap &values){if(m_closing || m_computationProgress==values)return;m_computationProgress=values;emit computationProgressChanged();});
     connect(m_worker,&BackendWorker::storageState,this,[this](QVariantMap saved,QVariantMap active,QVariantMap info,QString message) {
         m_storageSettings=std::move(saved); m_activeStorageSettings=std::move(active);
         m_storageInfo=std::move(info); m_storageMessage=std::move(message); emit storageChanged();
@@ -988,7 +1001,9 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         }
         if(m_layerMoveActive && !m_layerMoveStarting)flushLayerMove();
         if(m_drawing && m_liquifyActive && !m_dropStroke)flushLiquifyInput();
+        const bool progressGenerationChanged=m_generation!=info.document_generation;
         m_generation = info.document_generation;
+        if(progressGenerationChanged)emit computationProgressChanged();
         m_revision = info.revision; m_width = static_cast<int>(info.width); m_height = static_cast<int>(info.height);
         m_undo = static_cast<int>(info.undo_depth); m_redo = static_cast<int>(info.redo_depth);
         if (info.completed_sequence >= m_pendingMutation) m_pendingMutation = 0;
@@ -1092,7 +1107,7 @@ void PaintCoreClient::shutdown() {
     if (m_closing) return;
     m_brushLibrary->flushPersistence();
     m_layerMoveTimer->stop();m_layerMoveActive=false;
-    m_closing = true; m_ready = false; m_drawing = false;if(m_airbrushTimer)m_airbrushTimer->stop();
+    m_closing = true;emit computationProgressChanged(); m_ready = false; m_drawing = false;if(m_airbrushTimer)m_airbrushTimer->stop();
     if(m_hoverPose)paint_brush_pose_destroy(&m_hoverPose);if(m_strokePose)paint_brush_pose_destroy(&m_strokePose);
     emit stateChanged(); QMetaObject::invokeMethod(m_worker, &BackendWorker::stop, Qt::QueuedConnection);
 }
@@ -1536,6 +1551,13 @@ void PaintCoreClient::cancelStroke() {
     if(m_liquifyActive){flushLiquifyInput(true);submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(Cancel);
     m_airbrushTimer->stop();m_airbrushEnabled=false;m_dropStroke = true;m_drawing = false;if(m_strokePose)paint_brush_pose_clear(m_strokePose);m_strokePoseBound=false;m_strokeOutlineResource.clear();m_strokeOutlinePath.clear();m_strokeSecondOutlineResource.clear();m_strokeSecondOutlinePath.clear();m_strokeSecondOutlineReady=false;requestBrushOutlines();emit brushOutlineChanged();emit stateChanged();
+}
+void PaintCoreClient::restoreLongTaskDelay(int value) {
+    value=std::clamp(value,0,10000);if(m_longTaskDelay==value)return;m_longTaskDelay=value;emit longTaskDelayChanged();emit computationProgressChanged();
+}
+void PaintCoreClient::setLongTaskDelay(int value) {
+    value=std::clamp(value,0,10000);if(m_longTaskDelay==value)return;restoreLongTaskDelay(value);
+    if(!m_closing){auto settings=m_settingsFile.isEmpty()?std::make_unique<QSettings>(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse"):std::make_unique<QSettings>(m_settingsFile,QSettings::IniFormat);settings->setValue("performance/taskProgressDelayMs",value);settings->sync();if(settings->status()!=QSettings::NoError)showError(QStringLiteral("无法保存进度显示延迟"));}
 }
 bool PaintCoreClient::selectHistory(int depth) {
     if(!m_ready || m_closing || m_drawing || m_fileBusy || layerEditBusy() || m_layerMoveActive || m_pendingLiquify || m_pendingTransform>m_completedSequence || depth<0 || depth>m_undo+m_redo)return false;

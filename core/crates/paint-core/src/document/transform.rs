@@ -767,6 +767,11 @@ impl Document {
             .as_ref()
             .map(|m| mesh::MeshRaster::new(m, [x0, y0, x1.max(x0 + 1), y1.max(y0 + 1)]))
             .transpose()?;
+        self.progress_stage(
+            ComputationPhase::Selection,
+            (((x1 + 63).div_euclid(64) - x0.div_euclid(64)).max(0)
+                * ((y1 + 63).div_euclid(64) - y0.div_euclid(64)).max(0)) as usize,
+        );
         for ty in y0.div_euclid(64)..(y1 + 63).div_euclid(64) {
             for tx in x0.div_euclid(64)..(x1 + 63).div_euclid(64) {
                 let uv_tile = raster.as_ref().map(|r| r.tile_uvs(tx, ty));
@@ -792,6 +797,7 @@ impl Document {
                         }
                     }
                 }
+                self.progress_advance(1);
             }
         }
         let mut shape = crate::SelectionShape::geometry(
@@ -920,6 +926,11 @@ impl Document {
             };
         // Render and page one tile at a time; an off-canvas large image does not allocate
         // an unpaged full-size destination buffer. Publish only after every tile succeeds.
+        self.progress_stage(
+            ComputationPhase::Resampling,
+            (((x1 - 1).div_euclid(64) - x0.div_euclid(64) + 1)
+                * ((y1 - 1).div_euclid(64) - y0.div_euclid(64) + 1)) as usize,
+        );
         for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
             for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
                 let key = TileCoord::from_signed(tx as i32, ty as i32);
@@ -1000,6 +1011,7 @@ impl Document {
                 } else if partial {
                     layer.tiles.remove(&key);
                 }
+                self.progress_advance(1);
             }
         }
         if original.placed.is_some() || state.placed.is_some() {
@@ -1160,6 +1172,7 @@ impl Document {
                     crate::HistoryAction::Transform,
                 )
             };
+            self.progress_stage(ComputationPhase::History, 0);
             self.commit_with_action(command, action)?;
         } else {
             self.layers[at] = s.original.clone();

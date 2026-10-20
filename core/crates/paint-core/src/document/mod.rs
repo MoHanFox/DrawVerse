@@ -482,6 +482,7 @@ struct Stroke {
 
 #[derive(Debug)]
 pub struct Document {
+    computation_progress: Option<Arc<ComputationProgress>>,
     compute: Arc<dyn paint_ops::Executor>,
     pool: Arc<crate::page_pool::PagePool>,
     width: u32,
@@ -522,6 +523,8 @@ pub use bucket::BucketFill;
 mod wand;
 pub use wand::WandSelection;
 mod history_travel;
+mod progress;
+pub use progress::{ComputationPhase, ComputationProgress, ComputationSnapshot};
 #[path = "tools/layer_move.rs"]
 mod layer_move;
 #[path = "tools/liquify.rs"]
@@ -731,6 +734,7 @@ impl Document {
             return Err(Error::InvalidArgument("invalid document/history budget"));
         }
         Ok(Self {
+            computation_progress: None,
             pool: crate::page_pool::PagePool::with_storage(
                 options.max_resident_tiles,
                 options.max_scratch_bytes,

@@ -130,7 +130,8 @@ pub unsafe extern "C" fn paint_core_capabilities(
             PaintCapabilities {
                 struct_size: size_of::<PaintCapabilities>() as u32,
                 abi_major: PAINT_ABI_MAJOR,
-                features: PAINT_FEATURE_HISTORY_SELECT
+                features: PAINT_FEATURE_TASK_PROGRESS
+                    | PAINT_FEATURE_HISTORY_SELECT
                     | PAINT_FEATURE_DUAL_TIP_TEXTURE
                     | PAINT_FEATURE_TRANSFORM_RESIDENT
                     | PAINT_FEATURE_LAYER_MOVE_PREVIEW

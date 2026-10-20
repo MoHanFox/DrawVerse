@@ -37,6 +37,9 @@ struct PaintSelectionShapeEdit;
 // The only UI-facing core service. Owns no model pointers on the GUI thread.
 class PaintCoreClient final : public QObject {
     Q_OBJECT
+    Q_PROPERTY(QVariantMap computationProgress READ computationProgress NOTIFY computationProgressChanged)
+    Q_PROPERTY(bool longTaskVisible READ longTaskVisible NOTIFY computationProgressChanged)
+    Q_PROPERTY(int longTaskDelay READ longTaskDelay WRITE setLongTaskDelay NOTIFY longTaskDelayChanged)
     Q_PROPERTY(QVariantMap storageSettings READ storageSettings NOTIFY storageChanged)
     Q_PROPERTY(QVariantMap activeStorageSettings READ activeStorageSettings NOTIFY storageChanged)
     Q_PROPERTY(QVariantMap storageInfo READ storageInfo NOTIFY storageChanged)
@@ -203,6 +206,11 @@ public:
     std::shared_ptr<BrushCatalogConnection> brushCatalogConnection() {m_brushLibrary->flushPersistence();return m_brushCatalogConnection;}
     QString settingsFile() const { return m_settingsFile; }
     ~PaintCoreClient() override;
+    QVariantMap computationProgress() const {return m_computationProgress;}
+    bool longTaskVisible() const {return !m_closing && m_computationProgress.value("state").toUInt()==1 && m_computationProgress.value("generation").toULongLong()==m_generation && m_computationProgress.value("elapsedMs").toULongLong()>=qulonglong(m_longTaskDelay);}
+    int longTaskDelay() const {return m_longTaskDelay;}
+    void setLongTaskDelay(int value);
+    void restoreLongTaskDelay(int value);
     QVariantMap storageSettings() const { return m_storageSettings; }
     QVariantMap activeStorageSettings() const { return m_activeStorageSettings; }
     QVariantMap storageInfo() const { return m_storageInfo; }
@@ -459,6 +467,8 @@ signals:
     void brushFileFinished(bool success);
     void liquifyOptionsChanged();
     void historyChanged();
+    void computationProgressChanged();
+    void longTaskDelayChanged();
     void storageChanged();
     void computeChanged();
     void storageFinished(bool success);
@@ -525,6 +535,8 @@ private:
     bool submitSelectionShape(const PaintSelectionShapeEdit &request);
     bool submitSelection(quint32 action, QRectF rectangle = {}, int shape = 0, int operation = 0);
     QSet<quint64> m_collapsedGroups;
+    QVariantMap m_computationProgress;
+    int m_longTaskDelay=1000;
     QVariantMap m_storageSettings, m_activeStorageSettings, m_storageInfo;
     QVariantList m_computeHardware;
     QString m_computeDevice = "auto", m_computeStatus = "正在初始化计算硬件…";

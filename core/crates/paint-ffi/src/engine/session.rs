@@ -126,7 +126,17 @@ pub(crate) struct StampedFrame {
     pub revision: u64,
     pub frame: Arc<RenderFrame>,
 }
+struct TaskProgressState {
+    sequence: u64,
+    generation: u64,
+    kind: u32,
+    started: Instant,
+    finished: Option<Instant>,
+    status: PaintStatus,
+    progress: Arc<paint_core::ComputationProgress>,
+}
 struct Shared {
+    task_progress: Mutex<Option<TaskProgressState>>,
     preview_assets: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     publication: Mutex<Arc<Publication>>,
     clipboard: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
@@ -215,6 +225,7 @@ impl Session {
             Document::with_storage(width, height, storage.options, storage.space.clone())?;
         let initial = publish(&document, 1, 1, 0, None, false);
         let shared = Arc::new(Shared {
+            task_progress: Mutex::new(None),
             preview_assets: Mutex::new(None),
             generation: AtomicU64::new(1),
             floor: AtomicU64::new(0),
@@ -466,6 +477,46 @@ impl Session {
             .lock()
             .map_err(|_| ApiError::internal())? = Some((preview.source.id, bytes.clone()));
         Ok(bytes)
+    }
+    pub fn task_progress(&self) -> PaintTaskProgress {
+        let task = self
+            .shared
+            .task_progress
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut result = PaintTaskProgress {
+            struct_size: std::mem::size_of::<PaintTaskProgress>() as u32,
+            ..Default::default()
+        };
+        if let Some(task) = task.as_ref() {
+            let progress = task.progress.snapshot();
+            result.state = if task.finished.is_none() {
+                PAINT_TASK_RUNNING
+            } else if task.status == PAINT_OK {
+                PAINT_TASK_SUCCEEDED
+            } else {
+                PAINT_TASK_FAILED
+            };
+            result.kind = task.kind;
+            result.phase = progress.phase as u32;
+            result.status = task.status;
+            result.sequence = task.sequence;
+            result.document_generation = task.generation;
+            result.stage = progress.stage;
+            result.completed = progress.completed;
+            result.total = progress.total;
+            result.elapsed_ms = task
+                .finished
+                .unwrap_or_else(Instant::now)
+                .duration_since(task.started)
+                .as_millis()
+                .min(u64::MAX as u128) as u64;
+            if result.state == PAINT_TASK_RUNNING && self.sender.state() == WorkerState::Panicked {
+                result.state = PAINT_TASK_FAILED;
+                result.status = PAINT_INTERNAL_ERROR;
+            }
+        }
+        result
     }
     pub fn info(&self) -> PaintSessionInfo {
         let mut info = self.publication().info;
@@ -886,7 +937,50 @@ impl Engine {
                     | Operation::Add(_)
             )
             || liquify_control;
+        let task_kind = match &command.operation {
+            Operation::Transform(PAINT_TRANSFORM_COMMIT, _) => PAINT_TASK_TRANSFORM,
+            Operation::Liquify(PAINT_LIQUIFY_COMMIT, _) => PAINT_TASK_LIQUIFY,
+            Operation::Transform(
+                PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL | PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL,
+                _,
+            ) => PAINT_TASK_FLIP,
+            _ => 0,
+        };
+        let progress =
+            (task_kind != 0).then(|| Arc::new(paint_core::ComputationProgress::default()));
+        let previous_progress = if let Some(progress) = &progress {
+            *self
+                .shared
+                .task_progress
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(TaskProgressState {
+                sequence: command.sequence,
+                generation: self.generation,
+                kind: task_kind,
+                started: Instant::now(),
+                finished: None,
+                status: PAINT_OK,
+                progress: Arc::clone(progress),
+            });
+            self.document
+                .set_computation_progress(Some(Arc::clone(progress)))
+        } else {
+            None
+        };
         let result = self.apply(command.operation, command.sequence);
+        if progress.is_some() {
+            self.document.set_computation_progress(previous_progress);
+            if let Some(task) = self
+                .shared
+                .task_progress
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_mut()
+            {
+                task.finished = Some(Instant::now());
+                task.status = result.as_ref().err().map_or(PAINT_OK, |e| e.status);
+            }
+        }
         let pending = result.is_ok() && self.document.stroke_input_pending();
         if let Err(error) = result {
             self.command_failed(command.sequence, error, stroke_command);

@@ -4401,3 +4401,6 @@ fn mask_link_abi_publication_history_movement_and_validation() {
 
 #[path = "support/history_select_api.rs"]
 mod history_select_api;
+
+#[path = "support/task_progress_api.rs"]
+mod task_progress_api;

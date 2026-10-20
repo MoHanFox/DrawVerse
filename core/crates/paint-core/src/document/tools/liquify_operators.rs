@@ -500,6 +500,7 @@ impl Document {
         stride: u32,
         cubic: bool,
     ) -> Result<()> {
+        self.progress_stage(ComputationPhase::Resampling, tiles.len());
         for batch in tiles.chunks(BATCH_TILES) {
             let left = batch
                 .iter()
@@ -681,6 +682,7 @@ impl Document {
                 }
                 self.pool.trim()?;
             }
+            self.progress_advance(batch.len());
         }
         Ok(())
     }

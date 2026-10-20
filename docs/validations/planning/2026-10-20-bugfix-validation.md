@@ -230,3 +230,8 @@ CanvasPane 在自身液化/变换状态关闭后延后一轮恢复可见、启�
 ## 追加：移动完整组/链接蒙版/连续多选常驻源
 
 完整根子树首次合成后复用四顶点预览，不再每次位移回退重算。核心新2+旧7、共享液化3/变换6、原生1，真实D3D11新3行/共享2行与软件新3行/共享2行、四ABI/Clippy/Release通过；详见[移动专项验收](../tools/layer-move-preview-validation.md)。ABI1.73保持，产物build/qt/bin/Release。首次源构建、组内单层/固定蒙版/非连续及复杂组合仍待，不宣称4K连续实机性能通过。
+
+
+## 追加：长任务真实进度
+
+三类完成任务接入可独立读取的实际瓦片进度、默认1000ms/可配置0–10000ms延迟与各文档界面归属。核心1项覆盖三类像素/历史及资源失败，原生1+actor回归1、软件Qt2/D3D11 Qt2、四ABI/Clippy/Release通过；详见[专项验收](../tools/long-task-progress-validation.md)。ABI1.74，产物build/qt/bin/Release；其他新描边、选区/复杂目标常驻和实体持续性能待办保持。

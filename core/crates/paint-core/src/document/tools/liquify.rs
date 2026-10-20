@@ -264,6 +264,7 @@ impl Document {
             .collect();
         let mut changes = Vec::new();
         let mut unchanged = Vec::new();
+        self.progress_stage(ComputationPhase::Comparing, keys.len());
         for key in keys {
             let before = state.original.tiles.get(&key);
             let after = current.tiles.get(&key);
@@ -290,11 +291,13 @@ impl Document {
             } else {
                 unchanged.push(key);
             }
+            self.progress_advance(1);
         }
         let original = state.original.clone();
         let focused = state.focus;
         let changed = !changes.is_empty();
         if changed {
+            self.progress_stage(ComputationPhase::History, 0);
             self.commit_with_action(
                 Command::Stroke {
                     layer: original.id,

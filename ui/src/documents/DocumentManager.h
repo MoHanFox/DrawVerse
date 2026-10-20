@@ -63,6 +63,7 @@ private:
     QList<Document> m_dragDocuments;
     WindowDrag m_drag;
     bool m_quitting=false;
+    bool m_syncProgressDelay=false;
     bool m_interactionBlocked=false;
     int index(const QString &id) const;
     QString add(PaintCoreClient *client);

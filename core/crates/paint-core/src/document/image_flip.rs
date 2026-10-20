@@ -55,6 +55,7 @@ impl Document {
             } else {
                 original.white.1
             } as i64;
+            self.progress_stage(ComputationPhase::Preparing, 0);
             let mut keys = BTreeSet::new();
             for key in original.tiles.keys() {
                 let x = key.signed_x() as i64 * 64;
@@ -76,6 +77,7 @@ impl Document {
             }
             layer.tiles.clear();
             let mut sampler = SourceSampler::new(original);
+            self.progress_stage(ComputationPhase::Resampling, keys.len());
             for key in keys {
                 let mut pixels = Vec::with_capacity(4096);
                 let mut changed = false;
@@ -101,11 +103,14 @@ impl Document {
                     layer.tiles.insert(key, tile);
                     self.pool.trim()?;
                 }
+                self.progress_advance(1);
             }
         }
+        self.progress_stage(ComputationPhase::Selection, 0);
         let selection = self
             .selection
             .reflected(self.width, self.height, horizontal)?;
+        self.progress_stage(ComputationPhase::History, 0);
         self.commit_with_action(
             Command::LayerEdit {
                 before: self.layers.clone(),

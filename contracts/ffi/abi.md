@@ -1,4 +1,4 @@
-# C ABI 1.71.0 契约
+# C ABI 1.74.0 契约
 
 ## ABI 1.71 — SDF 整笔描边
 
@@ -594,3 +594,10 @@ paint_session_layer_mask_linked(core,session,publication,layer_id,out_u32) 按�
 `PAINT_FEATURE_HISTORY_SELECT`（bit61）增加 `paint_session_select_history(core, session, request, out_sequence)`。`PaintHistorySelect` 为32字节：struct_size、scope、depth、reserved 四个u32，document_generation、revision 两个u64；reserved必须0，generation非0，scope为 DOCUMENT=0、LIQUIFY=1、TRANSFORM=2。depth指保留边界起的真实深度，包含redo。请求和输出内存须可读/可写且不重叠；读取并复制请求后排队，不保留调用者内存，立即失败清零sequence。
 
 返回OK表示接受异步任务；actor验证generation、revision及当前历史域完全一致，过期或域不符返回BUSY。目标越界、资源错误在完成回执中报告，失败不改变像素、选区、历史和修订。同深度成功但无修订；有效跳转只增加一次修订并保留redo，仅发布最终状态。文档跳转逐条私有解码，变换只物化最终几何，液化恢复保存的场和瓦片；压缩/磁盘读取不是恒定时间。未结束笔触/拖动及文件任务仍遵守忙状态，Qt禁用重复点击。已有undo/redo入口、磁盘历史编码、state44和VBR1.0保持。
+
+
+## ABI1.74：独立长任务进度
+
+`PAINT_FEATURE_TASK_PROGRESS`（bit62）新增 `paint_session_task_progress(core,session,out)`。`PaintTaskProgress` 为72字节：六个32位字段 struct_size/state/kind/phase/status/reserved，随后六个u64 sequence/document_generation/stage/completed/total/elapsed_ms；status为有符号PaintStatus。调用前填写struct_size，指针、对齐和大小沿既有边界校验；查询错误清零有效输出。
+
+查询独立共享快照，不等待actor、不要求publication；运行中的sequence可以大于会话已完成序列。state为0无任务、1运行、2成功、3失败；kind为1变换完成、2液化完成、3整图翻转。phase为0准备、1采样、2选区、3比较、4历史。stage每次切换增加，completed/total只代表当前阶段已完成/总瓦片或批次单位；total=0未知，不能构造全局百分比。elapsed_ms取真实单调时钟，结束后冻结；保留最近任务直到下一任务，document_generation用于拒绝其他文档的旧显示。成功结果仍以既有异步publication为准，失败不替代原错误回执。没有任务时除struct_size外清零；worker异常转失败/Internal。旧ABI入口、state44/behavior36/VBR不变。

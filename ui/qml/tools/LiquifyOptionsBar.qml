@@ -13,8 +13,6 @@ Flickable {
         id:content;height:root.height;spacing:5
         Icon {name:"liquify";Layout.preferredWidth:17;Layout.preferredHeight:17}
         Label {text:"液化";color:Theme.text;font.pixelSize:10}
-        ProgressBar {objectName:"liquifyCommitProgress";visible:root.controller.liquifyCommitting;indeterminate:true;Layout.preferredWidth:70}
-        Label {visible:root.controller.liquifyCommitting;text:"正在生成最终像素…";color:Theme.muted;font.pixelSize:10}
         Rectangle {objectName:"liquifyTitleSeparator";Layout.preferredWidth:1;Layout.preferredHeight:22;color:Theme.line}
         Repeater {
             model:[{key:"Push",title:"推拉",icon:"liquifyPush",tool:0},{key:"Bloat",title:"膨大",icon:"liquifyBloat",tool:1},{key:"Twirl",title:"扭曲",icon:"liquifyTwirl",tool:2},{key:"Reconstruct",title:"重建",icon:"liquifyReconstruct",tool:3},{key:"Reset",title:"重置",icon:"undo",tool:4},{key:"Cancel",title:"取消",icon:"close",tool:5},{key:"Commit",title:"确定",icon:"check",tool:6}]

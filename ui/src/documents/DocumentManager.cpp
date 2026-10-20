@@ -33,7 +33,9 @@ void DocumentManager::track(PaintCoreClient *client) {
     // Invokable getters expose these objects to JS; ownership remains with the
     // application/manager, including the externally supplied first client.
     QQmlEngine::setObjectOwnership(client,QQmlEngine::CppOwnership);
+    if(m_initial && client!=m_initial)client->restoreLongTaskDelay(m_initial->longTaskDelay());
     m_clients.append(client);
+    connect(client,&PaintCoreClient::longTaskDelayChanged,this,[this,client]{if(m_syncProgressDelay || m_quitting)return;m_syncProgressDelay=true;for(const auto &other:m_clients)if(other && other!=client && !m_stopped.contains(other))other->restoreLongTaskDelay(client->longTaskDelay());m_syncProgressDelay=false;});
     if(!m_brushPreferenceWriter)m_brushPreferenceWriter=client;
     client->setBrushPreferencePersistenceEnabled(client==m_brushPreferenceWriter);
     // One application brush preference state. Restore publishes a copy without

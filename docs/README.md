@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [长任务真实进度与延迟显示](tools/long-task-progress-design.md)
+
 - [笔尖角度与圆度控制器](brush/ui/brush-tip-shape-control-design.md)
 
 - [SDF 遮罩描边：算子、笔触、缓存与设置](brush/core/brush-sdf-outline-design.md)

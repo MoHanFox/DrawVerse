@@ -33,7 +33,7 @@ set(_drawverse_ui_resources
     qml/app/Main.qml qml/app/WorkspaceStatusBar.qml
     qml/workspace/DockWorkspace.qml qml/workspace/DockTile.qml qml/workspace/DockDivider.qml qml/workspace/DockEdgePreview.qml qml/workspace/DockHintWindow.qml qml/workspace/FloatingPanel.qml qml/workspace/PanelGroup.qml qml/workspace/PanelFlyout.qml qml/workspace/PanelContent.qml
     qml/documents/DocumentArea.qml qml/documents/DocumentWindow.qml
-    qml/canvas/CanvasPane.qml qml/canvas/SelectionPresentation.qml qml/canvas/AdaptiveCursor.qml qml/canvas/TransformOverlay.qml qml/canvas/TransparencyGrid.qml qml/canvas/EyedropperRing.qml
+    qml/canvas/CanvasPane.qml qml/canvas/TaskProgressOverlay.qml qml/canvas/SelectionPresentation.qml qml/canvas/AdaptiveCursor.qml qml/canvas/TransformOverlay.qml qml/canvas/TransparencyGrid.qml qml/canvas/EyedropperRing.qml
     qml/brushes/BrushLibraryPanel.qml qml/brushes/BrushSettingsPanel.qml qml/brushes/PressureCurveEditor.qml qml/brushes/SpeedCurveEditor.qml
     qml/brushes/BrushResourceThumbnail.qml qml/brushes/BrushResourcePicker.qml qml/brushes/BrushTipShapeControl.qml
     qml/layers/LayersPanel.qml qml/layers/LayerLock.qml qml/layers/LayerThumbnail.qml
