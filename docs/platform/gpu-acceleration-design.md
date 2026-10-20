@@ -152,3 +152,6 @@ let outline_alpha = sdf::compose_outline(&field, &alpha, &layer, 6.0, Placement:
 实际笔刷采样在 `core/crates/paint-core/src/document/stroke/outline_sdf.rs`，灰度形状/缓存和像素事务在 `document_outline.rs`，通用算子在 `paint-ops/src/sdf/`。缓存仅在该笔触形状不变时复用；形状增长、起收笔回放立即失效，结束或取消释放。边界近似、8Mi像素/262144印章/6400万次采样预算以及没有内等距线的极细区域见[SDF设计](../brush/core/brush-sdf-outline-design.md)；超限回滚整笔。
 
 GPU计算下拉框仍控制现有wgpu算子，选择GPU不会把SDF自动转为GPU计算。以后加速描边，应复用 A/场/遮罩身份和有界工作范围，先比较“上传/读回＋距离场/提线/盖章”的总成本与CPU，再增加真正的统一执行器请求；不能仅将CPU回调包装成GPU后端，也不能为了预览每次全图往返。
+
+
+双重笔刷的已有来源纹理已通过 SecondaryTip 的可选 BrushTexture 接入（state44/behavior36、ABI1.72）：主/第二笔尖共用 CPU TextureDab 采样和资源/mip缓存，预览与实际笔触一致；此项没有新增GPU计算，Qt仍负责硬件显示。来源、覆盖组合和交换说明见[本轮清单](../planning/2026-10-20-bugfix-design.md)。

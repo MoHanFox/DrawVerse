@@ -171,6 +171,7 @@ pub struct SecondaryTip {
     radius: f32,
     tip: BrushTip,
     mask: Option<Arc<BrushMask>>,
+    texture: crate::BrushTexture,
     dynamics: BrushDynamics,
     spacing: Option<f32>,
     flip: bool,
@@ -183,6 +184,7 @@ impl Default for SecondaryTip {
             radius: 12.,
             tip: BrushTip::default(),
             mask: None,
+            texture: Default::default(),
             dynamics: BrushDynamics::default(),
             spacing: None,
             flip: false,
@@ -219,12 +221,20 @@ impl SecondaryTip {
             radius,
             tip,
             mask,
+            texture: Default::default(),
             dynamics,
             spacing: None,
             flip: false,
             flip_x: false,
             flip_y: false,
         })
+    }
+    pub fn with_texture(mut self, texture: crate::BrushTexture) -> Self {
+        self.texture = texture;
+        self
+    }
+    pub fn texture(&self) -> &crate::BrushTexture {
+        &self.texture
     }
     pub fn radius(&self) -> f32 {
         self.radius
@@ -275,6 +285,7 @@ impl SecondaryTip {
         self.radius == 12.
             && self.tip == BrushTip::default()
             && self.mask.is_none()
+            && self.texture.is_default()
             && self.dynamics == BrushDynamics::default()
             && self.spacing == Some(0.25)
             && !self.flip
@@ -382,6 +393,7 @@ impl DualBrush {
             },
             tip: secondary.tip,
             mask: secondary.mask.clone(),
+            texture: secondary.texture.clone(),
             dynamics: secondary.dynamics.clone(),
             ..Default::default()
         };
@@ -530,7 +542,9 @@ impl CompiledDual {
             || self.color.random_active()
     }
     pub fn sample_cost(&self) -> usize {
-        self.program.scatter.maximum_count() * if self.program.has_mask() { 8 } else { 1 }
+        self.program.scatter.maximum_count()
+            * (if self.program.has_mask() { 8 } else { 1 }
+                + if self.program.has_texture() { 8 } else { 0 })
     }
     pub fn maximum_count(&self) -> usize {
         self.program.scatter.maximum_count()
@@ -601,6 +615,12 @@ impl CompiledDual {
                 radius,
                 geometry,
                 mask,
+                texture: self.program.texture_dab(center, geometry),
+                texture_document_space: self
+                    .program
+                    .texture
+                    .as_ref()
+                    .is_some_and(|t| t.document_space()),
                 flip_x,
                 flip_y,
             });
@@ -619,6 +639,8 @@ struct SecondaryDab<'a> {
     radius: f64,
     geometry: TipGeometry,
     mask: Option<MaskDab<'a>>,
+    texture: Option<crate::brush_texture::TextureDab<'a>>,
+    texture_document_space: bool,
     flip_x: bool,
     flip_y: bool,
 }
@@ -682,43 +704,37 @@ impl DualDab<'_> {
     pub(crate) fn shape_coverage(&self, index: usize, x: f64, y: f64) -> f32 {
         let dab = &self.dabs[index];
         let (dx, dy) = dab.local(x, y);
-        if dab.radius <= 0. {
+        let base = if dab.radius <= 0. {
             0.
         } else if let Some(mask) = &dab.mask {
             mask.coverage(dx, dy)
         } else {
             self.program
                 .procedural_coverage_with_geometry(dx, dy, dab.radius, dab.geometry)
+        };
+        if base == 0. {
+            return 0.;
         }
+        // Document-space texture remains anchored; tip-space texture follows the
+        // reflected secondary tip, using the same TextureDab operator as primary.
+        dab.texture.as_ref().map_or(base, |t| {
+            if dab.texture_document_space {
+                t.apply(base, x, y)
+            } else {
+                t.apply(base, dab.x + dx, dab.y + dy)
+            }
+        })
     }
     pub fn coverage(&self, index: usize, x: f64, y: f64) -> f32 {
-        let dab = &self.dabs[index];
-        let (dx, dy) = dab.local(x, y);
-        if dab.radius == 0. {
-            0.
-        } else if let Some(mask) = &dab.mask {
-            mask.coverage(dx, dy) * self.flow
-        } else {
-            self.program
-                .procedural_coverage_with_geometry(dx, dy, dab.radius, dab.geometry)
-                * self.flow
-        }
+        self.shape_coverage(index, x, y) * self.flow
     }
     pub fn combine(&self, primary: f32, x: f64, y: f64) -> f32 {
         if primary == 0. {
             return 0.;
         }
         let mut coverage = 0.;
-        for dab in &self.dabs {
-            let (dx, dy) = dab.local(x, y);
-            let amount = if dab.radius == 0. {
-                0.
-            } else if let Some(mask) = &dab.mask {
-                mask.coverage(dx, dy)
-            } else {
-                self.program
-                    .procedural_coverage_with_geometry(dx, dy, dab.radius, dab.geometry)
-            } * self.flow;
+        for index in 0..self.dabs.len() {
+            let amount = self.coverage(index, x, y);
             coverage += amount * (1. - coverage);
         }
         self.mode.combine(primary, coverage)

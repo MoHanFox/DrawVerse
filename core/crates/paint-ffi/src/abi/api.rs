@@ -15,7 +15,10 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 71;
+pub const PAINT_ABI_MINOR: u32 = 72;
+
+/// Optional secondary-tip texture through catalog preparation and resource bundles.
+pub const PAINT_FEATURE_DUAL_TIP_TEXTURE: u64 = 1_152_921_504_606_846_976;
 
 /// Mesh-only liquify preview packets; graphics resources belong to the UI renderer.
 pub const PAINT_FEATURE_LIQUIFY_PREVIEW: u64 = 144_115_188_075_855_872;

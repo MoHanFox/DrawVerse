@@ -338,12 +338,13 @@ unsafe fn paint_brush_library_package_write_impl(
         let secondary_ids = package
             .brushes
             .iter()
-            .filter_map(|b| {
+            .flat_map(|b| {
                 b.dual_brush
                     .as_ref()
-                    .and_then(|d| d.resource_id())
-                    .map(str::to_owned)
+                    .into_iter()
+                    .flat_map(|d| d.resource_id().into_iter().chain(d.texture_resource_id()))
             })
+            .map(str::to_owned)
             .collect::<std::collections::BTreeSet<_>>();
         let outline_ids = package
             .brushes

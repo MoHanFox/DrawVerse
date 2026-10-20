@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 71
+#define PAINT_ABI_MINOR 72
 
 #define PAINT_ABI_PATCH 0
 
@@ -151,6 +151,11 @@
  * Complete relative secondary sizing state15 / VBR1.13 user entry.
  */
 #define PAINT_FEATURE_DUAL_RELATIVE_SIZE 4398046511104
+
+/**
+ * Optional secondary-tip texture through catalog preparation and resource bundles.
+ */
+#define PAINT_FEATURE_DUAL_TIP_TEXTURE 1152921504606846976
 
 #define PAINT_FEATURE_EVENTS 8
 

@@ -5,6 +5,12 @@ use std::sync::Arc;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DualParameters {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::brush_texture::present"
+    )]
+    texture: Option<crate::brush_texture::TextureParameters>,
     model: String,
     enabled: bool,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -80,6 +86,9 @@ impl DualParameters {
             })
             .transpose()?;
         Ok(Self {
+            texture: (!s.texture().is_default())
+                .then(|| crate::brush_texture::TextureParameters::from_core(s.texture()))
+                .transpose()?,
             color: (dual.color() != Default::default())
                 .then(|| crate::brush_dual_color::ColorParameters::from_core(dual.color())),
             sizing: (dual.sizing() != Default::default())
@@ -135,6 +144,15 @@ impl DualParameters {
             shape_jitter: (d.shape_jitter != Default::default())
                 .then(|| crate::brush_shape_jitter::ShapeParameters::from_core(d.shape_jitter)),
         })
+    }
+    pub fn texture(&self) -> Option<&crate::brush_texture::TextureParameters> {
+        self.texture.as_ref()
+    }
+    pub fn texture_resource_id(&self) -> Option<&str> {
+        self.texture.as_ref().and_then(|t| t.resource_id())
+    }
+    pub fn has_texture(&self) -> bool {
+        self.texture.is_some()
     }
     pub fn has_node_modes(&self) -> bool {
         self.pressure_dynamics
@@ -193,6 +211,9 @@ impl DualParameters {
         self.resource.as_deref()
     }
     pub fn validate(&self) -> Result<()> {
+        if let Some(t) = &self.texture {
+            t.validate()?;
+        }
         if !matches!(
             self.mode.as_str(),
             "multiply"
@@ -246,6 +267,13 @@ impl DualParameters {
         Ok(())
     }
     pub fn bind(&self, mask: Option<Arc<BrushMask>>) -> Result<DualBrush> {
+        self.bind_with_texture(mask, None)
+    }
+    pub fn bind_with_texture(
+        &self,
+        mask: Option<Arc<BrushMask>>,
+        texture: Option<Arc<paint_core::TextureResource>>,
+    ) -> Result<DualBrush> {
         self.validate()?;
         if self.resource.is_some() != mask.is_some()
             || mask
@@ -271,6 +299,11 @@ impl DualParameters {
             pressure_flow: self.pressure_flow,
         };
         let mut secondary = SecondaryTip::new(self.diameter as f32 / 2., tip, mask, dynamics)?;
+        if let Some(t) = &self.texture {
+            secondary = secondary.with_texture(t.bind(texture)?);
+        } else if texture.is_some() {
+            return Err(Error::Invalid("unexpected secondary texture binding"));
+        }
         if let Some(spacing) = self.spacing {
             secondary = secondary.with_spacing(spacing as f32)?;
         }

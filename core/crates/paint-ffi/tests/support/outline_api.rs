@@ -83,10 +83,11 @@ fn outline_public_preparation_executes_real_pixels_history_and_rejects_old_entri
             unsafe {
                 let mut version = dto!(PaintVersion);
                 assert_eq!(paint_core_version(&mut version), PAINT_OK);
-                assert!(version.minor >= 71);
+                assert!(version.minor >= 72);
                 let mut capabilities = dto!(PaintCapabilities);
                 assert_eq!(paint_core_capabilities(h.core, &mut capabilities), PAINT_OK);
                 assert_ne!(capabilities.features & PAINT_FEATURE_STROKE_OUTLINE, 0);
+                assert_ne!(capabilities.features & PAINT_FEATURE_DUAL_TIP_TEXTURE, 0);
 
                 let mut library = ptr::null_mut();
                 assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);

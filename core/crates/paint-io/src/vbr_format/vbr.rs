@@ -591,6 +591,10 @@ impl Preset {
             required.push("image-tip");
         }
         for (active, capability) in [
+            (
+                self.dual_brush.as_ref().is_some_and(|d| d.has_texture()),
+                "dual-tip-texture",
+            ),
             (self.has_wet_dual(), "wet-dual-color"),
             (self.stroke_taper.is_some(), "stroke-taper"),
             (self.stroke_outline.is_some(), "stroke-outline"),
@@ -671,7 +675,9 @@ impl Preset {
             }
         }
         self.required_capabilities = capabilities;
-        self.behavior_version = if self.stroke_outline.as_ref().is_some_and(|p| p.is_sdf()) {
+        self.behavior_version = if self.dual_brush.as_ref().is_some_and(|d| d.has_texture()) {
+            36
+        } else if self.stroke_outline.as_ref().is_some_and(|p| p.is_sdf()) {
             35
         } else if self
             .stroke_outline
@@ -826,6 +832,7 @@ fn is_feature_capability(capability: &str) -> bool {
             | "wet-mix"
             | "stroke-taper"
             | "stroke-outline"
+            | "dual-tip-texture"
             | "stroke-outline-sdf"
             | "outline-self-texture"
             | "wet-dual-color"
@@ -945,6 +952,7 @@ impl Package {
                             | "wet-mix"
                             | "stroke-taper"
                             | "stroke-outline"
+                            | "dual-tip-texture"
                             | "stroke-outline-sdf"
                             | "outline-self-texture"
                             | "wet-dual-color"

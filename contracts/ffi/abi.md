@@ -582,3 +582,8 @@ PAINT_GROUP_MASK_LINK=5 使用现有 PaintGroupRequest：layer_id 为蒙版，pa
 paint_session_layer_mask_linked(core,session,publication,layer_id,out_u32) 按准确 publication 返回0/1；非蒙版返回1，未知节点NOT_FOUND，旧publication返回BUSY。输出须可写且不与其他参数重叠，失败清零；不借用内部指针，不改变已有DTO。
 
 持久化：旧二进制 mask 字节0/1不变，3表示解除链接蒙版，其他值拒绝；历史与剪贴板保留该标志。ORA 无解除链接仍写4（栅格）/5（置入模型）；解除链接写6/7，dv:mask-linked=0（缺省1），只有5/7必须含drawverse/layers.bin。旧读取器拒绝6/7；所有候选及历史成功后才发布。
+
+
+## ABI1.72：第二笔尖继承纹理
+
+`PAINT_FEATURE_DUAL_TIP_TEXTURE`（bit60）表示既有准确目录准备与 Groups 包入口支持 state44 的可选 `dualBrush.texture`，VBR1.0/behavior36/dual-tip-texture。DTO和导出签名保持；无纹理字段旧编码不变，旧 state 携带新字段拒绝。图片/mip 共用有界资源缓存、去重包导出与捕获生命周期。Qt 最低 ABI1.72；实际笔触及预览均由 CPU TextureDab 算子执行，没有新增 GPU 计算。

@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新双重笔刷来源/纹理：来源与覆盖组合置顶共用，已有来源隐藏独立资源并继承源纹理，删除源后快照保留，主体纹理不改；SecondaryTip复用CPU TextureDab，state44/behavior36/dual-tip-texture、ABI1.72 bit60，旧编码保持。核心19/IO5/原生2/软件Qt5行、四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`；详情见本轮清单/验收，无新增GPU计算，未跑全量/跨平台/实体持续输入。
+
 - 最新历史笔刷删除：按最后指令移除八格/恢复/完整参数快照/偏好写出及即时广播，旧字段忽略；ABI1.69 End 回执保留，仅记录成功且改变像素的最近颜色。工作流7行含 path/sdf 与隔离/迁移通过，Release 输出 `build/qt/bin/Release`；ABI1.71/state43/behavior35/VBR1.0 不变，详情见本轮清单/验收。早期最近八笔条目仅为历史记录。
 
 - 最新无关组/蒙版常驻源：普通 Normal 根层的变换/移动/液化按分割边界捕获完整上下子树，无关组和蒙版不再全局关闭预览；目标自身蒙版、组内、多目标、选区、上方剪贴/特殊混合仍待。Rust2+既有4+7、D3D11两行和软件三行/Clippy/Release通过，ABI1.71不变，输出 `build/qt/bin/Release`；见 transform-resident-preview 设计/验收，未测4K实体连续时延。

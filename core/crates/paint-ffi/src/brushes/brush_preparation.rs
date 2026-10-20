@@ -268,6 +268,7 @@ impl CatalogTicket {
                                 p.settings().mask.is_some()
                                     || p.settings().texture.resource().is_some()
                                     || p.settings().dual.secondary().mask().is_some()
+                                    || p.settings().dual.secondary().texture().resource().is_some()
                                     || !p.settings().outline.is_default()
                                     || p.source_resource().is_some()
                             })
@@ -484,6 +485,7 @@ impl PreparedCatalog {
                     .into_iter()
                     .chain(p.texture.as_ref().and_then(|t| t.resource_id()))
                     .chain(p.dual_brush.as_ref().and_then(|d| d.resource_id()))
+                    .chain(p.dual_brush.as_ref().and_then(|d| d.texture_resource_id()))
             })
             .collect::<std::collections::BTreeSet<_>>();
         for (id, asset) in bundle.assets() {
@@ -596,6 +598,13 @@ impl PreparedCatalog {
                             == Some(resource.id.as_str())
                             || p.settings()
                                 .texture
+                                .resource()
+                                .and_then(|t| t.source().resource_id())
+                                == Some(resource.id.as_str())
+                            || p.settings()
+                                .dual
+                                .secondary()
+                                .texture()
                                 .resource()
                                 .and_then(|t| t.source().resource_id())
                                 == Some(resource.id.as_str())

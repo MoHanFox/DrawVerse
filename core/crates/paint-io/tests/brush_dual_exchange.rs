@@ -352,3 +352,102 @@ fn historical_dual_schema_allows_optional_flip_fields() {
             .contains(&serde_json::json!(key)));
     }
 }
+
+#[test]
+fn inherited_secondary_texture_state44_bundle_pixels_and_resource_failures() {
+    let temp = tempfile::tempdir().unwrap();
+    let token = CancellationToken::default();
+    let store = ResourceStore::open(temp.path().join("assets"), MAX_CATALOG_MASK_BYTES).unwrap();
+    let png = encode_mask(&BrushMask::new(4, 2, vec![0, 64, 128, 255, 255, 128, 64, 0]).unwrap())
+        .unwrap();
+    let id = hash(&png);
+    store.put_verified(&id, &png, &token).unwrap();
+    let mask = store.load(&id, &token).unwrap().mask;
+    let resource = Arc::new(TextureResource::new(mask.clone()));
+    let budget = mask.resident_bytes() + resource.mip_bytes();
+    for enabled in [false, true] {
+        for path in [false, true] {
+            let texture = BrushTexture::new(
+                true,
+                TextureSettings::new(TextureSpace::Tip, 1.3, 23., 0.8, false, 0.2, -0.4).unwrap(),
+                Some(resource.clone()),
+            )
+            .unwrap();
+            let mut tip = SecondaryTip::new(
+                4.,
+                BrushTip {
+                    pressure_size: false,
+                    pressure_flow: false,
+                    ..Default::default()
+                },
+                None,
+                Default::default(),
+            )
+            .unwrap()
+            .with_texture(texture);
+            if path {
+                tip = tip.with_spacing(0.25).unwrap();
+            }
+            let settings = BrushSettings {
+                diameter: 12.,
+                dual: DualBrush::new(enabled, DualMode::Multiply, tip),
+                ..Default::default()
+            };
+            let mut limited = BrushCatalog::with_mask_budget(budget - 1).unwrap();
+            let revision = limited.revision();
+            assert!(limited.edit("round-pressure", settings.clone()).is_err());
+            assert_eq!(limited.revision(), revision);
+            let expected = pixels(settings.definition());
+            let mut catalog = BrushCatalog::default();
+            catalog.edit("round-pressure", settings.clone()).unwrap();
+            let state = brush_state::encode(&catalog).unwrap();
+            let mut json: serde_json::Value = serde_json::from_slice(&state).unwrap();
+            assert_eq!(json["version"], 44);
+            let restored =
+                brush_state::decode_with_resources(&state, budget, &store, &token).unwrap();
+            assert_eq!(
+                pixels(restored.selected().settings().definition()),
+                expected
+            );
+            assert_eq!(brush_state::encode(&restored).unwrap(), state);
+            json["version"] = 43.into();
+            assert!(brush_state::decode_with_resources(
+                &serde_json::to_vec(&json).unwrap(),
+                budget,
+                &store,
+                &token
+            )
+            .is_err());
+            assert!(brush_state::decode(&state, budget).is_err());
+            assert!(
+                brush_state::decode_with_resources(&state, budget - 1, &store, &token).is_err()
+            );
+            let mut package = package(&settings);
+            package.brushes[0].texture = None;
+            let package = Package::from_json(&serde_json::to_vec(&package).unwrap()).unwrap();
+            assert_eq!(package.brushes[0].behavior_version, 36);
+            assert!(package.brushes[0]
+                .required_capabilities
+                .iter()
+                .any(|c| c == "dual-tip-texture"));
+            assert!(ImageBundle::new(package.clone(), BTreeMap::new(), &token).is_err());
+            let bundle =
+                ImageBundle::new(package, [(id.clone(), png.clone())].into(), &token).unwrap();
+            let encoded = vbr_image::encode(&bundle, &token).unwrap();
+            let recovered = vbr_image::decode(&encoded, &token).unwrap();
+            assert_eq!(recovered.assets().len(), 1);
+            assert_eq!(pixels(recovered.definition(0).unwrap()), expected);
+            let actual = recovered.definition(0).unwrap();
+            let params = DualParameters::from_core(&actual.dual).unwrap();
+            assert!(params.bind(None).is_err());
+            assert!(params
+                .bind_with_texture(
+                    None,
+                    Some(Arc::new(TextureResource::new(Arc::new(
+                        BrushMask::new(1, 1, vec![0]).unwrap()
+                    ))))
+                )
+                .is_err());
+        }
+    }
+}

@@ -524,3 +524,52 @@ fn default_closed_path_and_explicit_paired_are_distinct() {
     assert!(!paired.is_default());
     assert_eq!(paired.secondary().spacing(), None);
 }
+
+#[test]
+fn inherited_secondary_texture_matches_primary_operator_for_both_spacing_models() {
+    for space in [TextureSpace::Document, TextureSpace::Tip] {
+        for path in [false, true] {
+            for depth in [0., 0.65, 1.] {
+                let texture = BrushTexture::new(
+                    true,
+                    TextureSettings::new(space, 1.3, 23., depth, false, 0.2, -0.4).unwrap(),
+                    Some(Arc::new(TextureResource::new(Arc::new(
+                        BrushMask::new(4, 2, vec![0, 64, 128, 255, 255, 128, 64, 0]).unwrap(),
+                    )))),
+                )
+                .unwrap();
+                let mut single = brush();
+                single.dual = Default::default();
+                single.brush.radius = 6.;
+                single.tip.angle = 17.;
+                single.tip.roundness = 0.65;
+                single.texture = texture.clone();
+                let mut second = SecondaryTip::new(6., single.tip, None, Default::default())
+                    .unwrap()
+                    .with_texture(texture);
+                if path {
+                    second = second.with_spacing(0.25).unwrap();
+                }
+                let mut paired = brush();
+                paired.brush.radius = 24.;
+                paired.dual = DualBrush::new(true, DualMode::Multiply, second);
+                let mut a = Document::new(64, 64).unwrap();
+                let mut b = Document::new(64, 64).unwrap();
+                let point = InputPoint::new(32.5, 32.5, 0.7);
+                dab(&mut a, single, point);
+                dab(&mut b, paired, point);
+                for (a, b) in pixels(&a).iter().zip(pixels(&b)) {
+                    assert!(
+                        (a.alpha() - b.alpha()).abs() < 1e-6,
+                        "space={space:?}, path={path}, depth={depth}: {a:?} != {b:?}"
+                    );
+                }
+                let result = pixels(&b);
+                b.undo().unwrap();
+                assert!(pixels(&b).iter().all(|p| *p == Pixel::TRANSPARENT));
+                b.redo().unwrap();
+                assert_eq!(pixels(&b), result);
+            }
+        }
+    }
+}

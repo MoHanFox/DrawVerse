@@ -206,3 +206,12 @@ CanvasPane 在自身液化/变换状态关闭后延后一轮恢复可见、启�
 - Windows Release 工作流专项 7 行通过（另含初始化/清理）：旧偏好迁移/实际面板缺少八格/成功与取消及零不透明度颜色；跨文档偏好无反馈、三档工具隔离/原生同步/持久化，以及自身独立纹理 path/sdf 两行。
 - Release 应用、变换/选区/工作流目标构建通过。ABI1.71、state43/behavior35/VBR1.0 保持。未跑全量、跨平台和实体设备。
 - 补充：qt_ui_tests 重建通过，activeAndRecentColorsPersistAcrossRestartAndStayOutOfPresets 通过；扩展 canvasZoomKeysAndGlobalColorsWorkAcrossDocumentsAndFloatingWindows 在相同 #ff2ea99d/#80336699 断言失败，与导航专项改动前/后已记录的既有失败一致，见 [导航验收](../interface/canvas-navigation-adaptive-cursor-validation.md)。不宣称全量 UI 通过。
+
+
+## 追加：双重笔刷公共来源/组合与继承纹理
+
+- 来源和覆盖组合置顶并共用；已有来源隐藏独立资源选择，复制来源纹理与资源身份到第二笔尖，主体纹理保持，来源删除后可继续执行。CPU SecondaryTip / TextureDab 共用形状、文档/笔尖坐标与采样算子；未增加GPU计算。
+- state44 / behavior36 / dual-tip-texture；旧字段缺失的编码与像素保持，旧state携带新字段拒绝。ABI1.72 新 bit60，无DTO/签名变化，Qt最低72；生成头检查通过。资源和mip按身份缓存、有界计费，完整包导出包含第二纹理。
+- 核心19项（含新纹理算子对照与两种间距、两种坐标、深度、撤销/重做及旧双笔刷路径）通过；IO5项含新state44/VBR真实像素往返、关闭值保留、缺失/错误资源和低预算拒绝及目录原子性，旧state12全组合保持。原生既有描边公开入口2项及新feature断言、四C/C++静态/动态ABI消费者、严格Clippy通过。
+- Windows软件Qt5行通过：纯参数来源快照/删除/重置；真实shape与shape-and-texture两行（实际PNG、预览、像素、全新资源库VBR、undo/redo、重启保持）；资源布局、旧双笔刷尺寸版本回归。测试按原生f32精度构造深度以比较持久化字节；预览请求遗漏state44在测试中发现并修复。
+- Release应用与QtUI及四ABI目标构建通过，输出 build/qt/bin/Release。没有跑全量、跨平台或实体持续输入；历史跳转/新描边方案等其他待办仍保留。

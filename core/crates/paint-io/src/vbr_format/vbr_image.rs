@@ -69,6 +69,12 @@ impl ImageBundle {
         referenced.extend(package.brushes.iter().filter_map(|b| {
             b.dual_brush
                 .as_ref()
+                .and_then(|d| d.texture_resource_id())
+                .map(str::to_owned)
+        }));
+        referenced.extend(package.brushes.iter().filter_map(|b| {
+            b.dual_brush
+                .as_ref()
                 .and_then(|d| d.resource_id())
                 .map(str::to_owned)
         }));
@@ -214,7 +220,29 @@ impl ImageBundle {
                         .ok_or(Error::Invalid("missing secondary resource"))
                 })
                 .transpose()?;
-            definition.dual = d.bind(mask)?;
+            let texture = if let Some(id) = d.texture_resource_id() {
+                let mut cache = self
+                    .textures
+                    .lock()
+                    .map_err(|_| Error::Invalid("texture cache lock"))?;
+                if !cache.contains_key(id) {
+                    drop(cache);
+                    self.prepare_textures()?;
+                    cache = self
+                        .textures
+                        .lock()
+                        .map_err(|_| Error::Invalid("texture cache lock"))?;
+                }
+                Some(
+                    cache
+                        .get(id)
+                        .ok_or(Error::Invalid("outline texture missing resource"))?
+                        .clone(),
+                )
+            } else {
+                None
+            };
+            definition.dual = d.bind_with_texture(mask, texture)?;
         }
         if let Some(o) = &preset.stroke_outline {
             let existing = o
@@ -262,6 +290,7 @@ impl ImageBundle {
                     .as_ref()
                     .and_then(|t| t.resource_id())
                     .into_iter()
+                    .chain(b.dual_brush.as_ref().and_then(|d| d.texture_resource_id()))
                     .chain(
                         b.stroke_outline
                             .as_ref()
@@ -324,6 +353,12 @@ impl ImageBundle {
                 .brushes
                 .iter()
                 .filter_map(|b| b.dual_brush.as_ref().and_then(|d| d.resource_id())),
+        );
+        referenced.extend(
+            self.package
+                .brushes
+                .iter()
+                .filter_map(|b| b.dual_brush.as_ref().and_then(|d| d.texture_resource_id())),
         );
         referenced.extend(self.package.brushes.iter().filter_map(|b| {
             b.stroke_outline

@@ -267,12 +267,25 @@ impl BrushCatalog {
                 .iter()
                 .chain(settings.texture.resource().map(|r| r.source()))
                 .chain(settings.dual.secondary().mask())
+                .chain(
+                    settings
+                        .dual
+                        .secondary()
+                        .texture()
+                        .resource()
+                        .map(|r| r.source()),
+                )
             {
                 if ids.insert(Arc::as_ptr(mask) as usize) {
                     total = total.saturating_add(mask.resident_bytes());
                 }
             }
-            if let Some(texture) = settings.texture.resource() {
+            for texture in settings
+                .texture
+                .resource()
+                .into_iter()
+                .chain(settings.dual.secondary().texture().resource())
+            {
                 if texture_ids.insert(Arc::as_ptr(texture) as usize) {
                     total = total.saturating_add(texture.mip_bytes());
                 }

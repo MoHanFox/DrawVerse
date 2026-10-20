@@ -263,19 +263,21 @@ ColumnLayout {
                 }
                 Loader {objectName:"brushSettingsCategory:4";Layout.fillWidth:true;Layout.minimumWidth:0;active:root.category===4;visible:active
                     sourceComponent:ColumnLayout {Layout.minimumWidth:0;visible:root.category===4;Layout.fillWidth:true;spacing:5
-                    BrushResourcePicker {objectName:"settingsDualResourcePicker";Layout.fillWidth:true;resource:root.dual.resource||"";resourceRole:2;importName:"importDualBrushTip";resetName:"proceduralDualBrushTip";onImportRequested:dualDialog.open();onResetRequested:root.library.useProceduralDual()}
-                    CompactCheckBox {objectName:"settingsDualEnabled";text:"启用双重笔刷";checked:root.dual.enabled;font.pixelSize:10;onToggled:if(!root.setDualField("enabled",checked))checked=Qt.binding(function(){return root.dual.enabled});tooltip:"第二笔尖调制主笔尖覆盖；关闭时保留全部设置。"}
                     Label {text:"第二笔刷来源";color:Theme.text;font.pixelSize:10}
                     CompactComboBox {objectName:"settingsDualSourceMode";Layout.fillWidth:true;model:["自定义","现有"];currentIndex:root.library.dualExisting?1:0;onActivated:root.library.dualExisting=currentIndex===1}
+Label {objectName:"settingsDualModeLabel";text:"覆盖组合模式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
+CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;readonly property var modes:["multiply","darken","overlay","colorDodge","colorBurn","linearBurn","hardMix","linearHeight"];model:["正片叠底","变暗","叠加","颜色减淡","颜色加深","线性加深","实色混合","线性高度"];currentIndex:Math.max(0,modes.indexOf(root.dual.mode));onActivated:root.setDualField("mode",modes[currentIndex]);tooltip:"组合两个笔尖的灰度覆盖。"}
+                    CompactCheckBox {objectName:"settingsDualEnabled";text:"启用双重笔刷";checked:root.dual.enabled;font.pixelSize:10;onToggled:if(!root.setDualField("enabled",checked))checked=Qt.binding(function(){return root.dual.enabled});tooltip:"第二笔尖调制主笔尖覆盖；关闭时保留全部设置。"}
+                    BrushResourcePicker {objectName:"settingsDualResourcePicker";visible:!root.library.dualExisting;Layout.fillWidth:true;resource:root.dual.resource||"";resourceRole:2;importName:"importDualBrushTip";resetName:"proceduralDualBrushTip";onImportRequested:dualDialog.open();onResetRequested:root.library.useProceduralDual()}
                     ColumnLayout {visible:root.library.dualExisting;Layout.fillWidth:true;spacing:5
                         CompactComboBox {
                             id:existingDualPreset;objectName:"settingsExistingDualPreset";Layout.fillWidth:true
                             model:root.library.presetRows();textRole:"name";currentIndex:-1;displayText:root.library.dualSourceName||"选择现有笔刷"
                             onActivated:{if(currentIndex>=0)root.library.usePresetAsSecondary(model[currentIndex].id);currentIndex=-1}
-                            tooltip:"复制主笔尖形状、压力和散布；来源后续修改不影响当前快照。"
+                            tooltip:"复制主笔尖形状、压力、散布和纹理；来源后续修改不影响当前快照。"
                             Connections {target:root.library;function onPresetsChanged(){existingDualPreset.model=root.library.presetRows()}}
                         }
-                        Label {text:root.library.dualSourceName?"已复制笔尖参数，可调整下列设置。":"选择一个笔刷作为第二笔尖。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+                        Label {text:root.library.dualSourceName?"已复制笔尖和纹理，可调整下列设置。":"选择一个笔刷作为第二笔尖。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
                         ColumnLayout {visible:root.library.dualSourceName.length>0;Layout.fillWidth:true;spacing:5
                             DualField {prefix:"settingsExistingDual";decimals:0;title:"大小";field:"diameter";from:1;to:2000;factor:1;unit:"px"}
                             DualField {prefix:"settingsExistingDual";decimals:0;title:"间距";field:"spacing";from:1;to:1000}
@@ -288,8 +290,6 @@ ColumnLayout {
                     Label {objectName:"settingsDualPageLabel";visible:!root.library.dualExisting;text:"第二笔刷设置页面";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                     CompactComboBox {objectName:"settingsDualPage";visible:!root.library.dualExisting;Layout.fillWidth:true;model:["笔尖与组合","设备与压力","散布","形状抖动"];currentIndex:Math.min(root.dualPage,3);onActivated:root.dualPage=currentIndex;tooltip:"编辑第二笔尖的形状、压力与随机动态。"}
                     ColumnLayout {Layout.minimumWidth:0;visible:!root.library.dualExisting && root.dualPage===0;Layout.fillWidth:true;spacing:5
-                        Label {objectName:"settingsDualModeLabel";text:"覆盖组合模式";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
-                        CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;readonly property var modes:["multiply","darken","overlay","colorDodge","colorBurn","linearBurn","hardMix","linearHeight"];model:["正片叠底","变暗","叠加","颜色减淡","颜色加深","线性加深","实色混合","线性高度"];currentIndex:Math.max(0,modes.indexOf(root.dual.mode));onActivated:root.setDualField("mode",modes[currentIndex]);tooltip:"组合两个笔尖的灰度覆盖。"}
                         CompactCheckBox {objectName:"settingsDualFlip";text:"随机翻转第二笔刷";checked:root.dual.flip===true;onToggled:root.setDualField("flip",checked);tooltip:"每个第二笔刷印章随机翻转形状；用于图片或非对称笔尖。"}
                         CompactCheckBox {objectName:"settingsDualFlipX";text:"固定水平镜像";checked:root.dual.flipX===true;onToggled:root.setDualField("flipX",checked);tooltip:"固定镜像第二笔刷形状的 X 轴；可与随机翻转同时使用。"}
                         CompactCheckBox {objectName:"settingsDualFlipY";text:"固定垂直镜像";checked:root.dual.flipY===true;onToggled:root.setDualField("flipY",checked);tooltip:"固定镜像第二笔刷形状的 Y 轴；可与随机翻转同时使用。"}

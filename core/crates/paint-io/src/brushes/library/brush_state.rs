@@ -285,7 +285,7 @@ fn decode_inner(
     }
     let state: State =
         serde_json::from_slice(bytes).map_err(|e| Error::Codec(format!("brush state: {e}")))?;
-    if !matches!(state.version, 1..=43) {
+    if !matches!(state.version, 1..=44) {
         return Err(Error::Unsupported("brush state version".into()));
     }
     if let Some(organization) = &state.organization {
@@ -466,6 +466,11 @@ fn decode_inner(
             ));
         }
         let dual = if let Some(d) = row.dual_brush {
+            if d.has_texture() && state.version < 44 {
+                return Err(Error::Unsupported(
+                    "secondary texture requires state44".into(),
+                ));
+            }
             if d.has_color() && state.version < 16 {
                 return Err(Error::Unsupported("dual-color requires state16".into()));
             }
@@ -512,7 +517,30 @@ fn decode_inner(
             } else {
                 None
             };
-            d.bind(mask)?
+            let secondary_texture = if let Some(id) = d.texture_resource_id() {
+                if !textures.contains_key(id) {
+                    let source = resources
+                        .ok_or(Error::Unsupported("texture resource store required".into()))?
+                        .load(id, token)?
+                        .mask;
+                    if resident_masks.insert(std::sync::Arc::as_ptr(&source) as usize) {
+                        resident = resident.saturating_add(source.resident_bytes());
+                    }
+                    resident =
+                        resident.saturating_add(source.resident_bytes() - source.coverage().len());
+                    if resident > mask_budget {
+                        return Err(Error::Limit("texture mip resource budget"));
+                    }
+                    textures.insert(
+                        id.to_owned(),
+                        std::sync::Arc::new(paint_core::TextureResource::new(source)),
+                    );
+                }
+                Some(textures[id].clone())
+            } else {
+                None
+            };
+            d.bind_with_texture(mask, secondary_texture)?
         } else {
             Default::default()
         };
@@ -856,6 +884,9 @@ pub fn encode(catalog: &BrushCatalog) -> Result<Vec<u8>> {
                 version = version.max(35);
             }
             let parameters = crate::brush_dual::DualParameters::from_core(&s.dual)?;
+            if parameters.has_texture() {
+                version = version.max(44);
+            }
             if parameters.has_extended_mode() {
                 version = version.max(36);
             }
