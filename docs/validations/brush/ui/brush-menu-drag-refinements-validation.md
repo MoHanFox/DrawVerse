@@ -8,3 +8,5 @@
 - 既有画笔组树、搜索、滚动、滚轮拖动和多选测试继续通过。Windows Release 完整构建成功。
 
 未运行全量测试、跨平台、实体设备或 GPU 验收。
+
+2026-10-21追加：删除用户截图中尾部可见固定拖放条；同一`brushLibraryShiftControlSelectionAndRootReorder`断言旧条不存在，改在自然空白区真实拖放，软件与D3D11均通过，多选、行级重排、菜单和警告检查保持。Release构建成功；旧`drawverse.exe`被运行窗口锁定，主程序另输出同目录`drawverse-next.exe`，不关闭用户窗口。此次没有ABI或算法变化。

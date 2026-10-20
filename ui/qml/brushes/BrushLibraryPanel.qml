@@ -290,11 +290,6 @@ ColumnLayout {
             Rectangle {anchors.fill:parent;color:parent.containsDrag?Theme.selected:"transparent"}
             onDropped:function(drop){presetList.panel.dropToRoot(drop)}
         }
-        footer:DropArea {
-            objectName:"brushRootDrop";width:ListView.view.width;height:24;keys:["application/x-drawverse-brush"]
-            Rectangle {anchors.fill:parent;color:parent.containsDrag?Theme.selected:Theme.strip;border.color:Theme.line}
-            onDropped:function(drop){presetList.panel.dropToRoot(drop)}
-        }
     }
     Timer {
         interval:60;repeat:true;running:root.draggingBrush && root.dragViewportY>=0
