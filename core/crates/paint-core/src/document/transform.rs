@@ -532,7 +532,12 @@ impl Document {
                 f64::NEG_INFINITY,
                 f64::NEG_INFINITY,
             ];
-            for source in std::iter::once(&first.source).chain(first.extra.iter().map(|(_, s)| s)) {
+            // Attached masks follow the transform but never define its handles.
+            // A mask explicitly selected as a root keeps its own editing bounds.
+            for (_, source) in std::iter::once((&first.original, &first.source))
+                .chain(first.extra.iter().map(|(layer, source)| (layer, source)))
+                .filter(|(layer, _)| !layer.mask || roots.contains(&layer.id))
+            {
                 for p in source.geometry.points {
                     b = [
                         b[0].min(p[0]),
@@ -541,6 +546,9 @@ impl Document {
                         b[3].max(p[1]),
                     ];
                 }
+            }
+            if !b.iter().all(|v| v.is_finite()) {
+                return Err(Error::InvalidArgument("empty transform content"));
             }
             first.current = TransformGeometry::rectangle(b[0], b[1], b[2] - b[0], b[3] - b[1]);
             first.initial = first.current.clone();

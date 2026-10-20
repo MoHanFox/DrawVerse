@@ -17,6 +17,14 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void attachedMaskDoesNotChangeTransformHandles() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("mask-handles.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,96);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
+        client.setBrushRadius(8);client.brushLibrary()->setPressureSize(false);client.setBrushColor(Qt::red);QVERIFY(client.beginStroke({{60,48},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);
+        const auto owner=client.activeLayer();QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformActive() && !client.transformBusy());const auto expected=client.transformPoints();QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive());
+        QVERIFY(client.addMask(owner));QTRY_VERIFY(!client.layerEditBusy());client.setBrushRadius(64);client.setBrushColor(Qt::white);QVERIFY(client.beginStroke({{60,48},1}));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());client.selectLayer(owner);QTRY_COMPARE(client.activeLayer(),owner);QTRY_VERIFY(!client.layerEditBusy());
+        QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformActive() && !client.transformBusy());QCOMPARE(client.transformPoints(),expected);QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive());QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
     void longTaskProgressUsesActualWorkAndConfiguredDelay() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("task-progress.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &error:errors)warnings.append(error.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));

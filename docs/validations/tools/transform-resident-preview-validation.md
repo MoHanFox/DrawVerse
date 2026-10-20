@@ -71,3 +71,9 @@ Release示例 `cargo run -p paint-core --release --locked --example transform_pe
 - ABI1.74、state44/VBR不变，生成头/格式、严格Clippy、四ABI消费者和Release构建通过，产物 `build/qt/bin/Release`。没有新GPU计算，CPU几何/Qt GPU显示职责保持。
 
 复合预览先合成蒙版/层，再对2048代理采样；最终分别重采样原始层/蒙版，半透明边缘、局部Warp细分和极端放大仍允许近似差异。首次资产构建、选区、组内单层、固定蒙版和非连续目标继续待优化，未跑全量/跨平台/实体4K持续时延。
+
+## 2026-10-21：控制框不合并附带蒙版
+
+核心新增attached_masks_never_define_transform_handles通过：普通/常驻、根层/组、链接/固定共8组合，全遮挡且范围更大的蒙版不改变原内容控制点；取消保留像素/历史，显式蒙版独立编辑仍用自身范围。共享变换预览整组9、公开transform7、原生deferred_transform_packets_and_latest_geometry_commit1通过。
+
+真实Qt客户端新增attachedMaskDoesNotChangeTransformHandles在软件与D3D11各通过：开启/取消原图变换，添加大白色遮挡蒙版后再次开启，16个控制点相同且无错误。四ABI依次、严格Clippy、格式与Release通过。原运行EXE锁定，新程序为build/qt/bin/Release/drawverse-next.exe；ABI1.74保持。未跑全量/跨平台/实体持续手感。

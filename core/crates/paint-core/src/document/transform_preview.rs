@@ -129,6 +129,63 @@ mod tests {
         }
         d
     }
+    #[test]
+    fn attached_masks_never_define_transform_handles() {
+        for deferred in [false, true] {
+            for grouped in [false, true] {
+                for linked in [false, true] {
+                    let mut d = seed();
+                    let owner = d.active_layer();
+                    d.begin_transform_layers(&[owner]).unwrap();
+                    let expected = d.transform_geometry().unwrap().points;
+                    d.cancel_transform().unwrap();
+                    let mask = d.add_mask(owner).unwrap();
+                    let at = d.layer_index(mask).unwrap();
+                    d.layers[at].tiles.insert(
+                        TileCoord::from_signed(-1, -1),
+                        Arc::new(Tile::from_pixels(vec![Pixel::WHITE; 4096]).unwrap()),
+                    );
+                    // Hide every source pixel as well as extending outside its bounds.
+                    for tx in 0..2 {
+                        for ty in 0..2 {
+                            d.layers[at].tiles.insert(
+                                TileCoord::from_signed(tx, ty),
+                                Arc::new(Tile::from_pixels(vec![Pixel::WHITE; 4096]).unwrap()),
+                            );
+                        }
+                    }
+                    d.set_mask_linked(mask, linked).unwrap();
+                    let root = if grouped {
+                        d.group_layer(owner, "masked content").unwrap()
+                    } else {
+                        owner
+                    };
+                    let before = pixels(&d);
+                    let depth = d.history_depth();
+                    if deferred {
+                        d.begin_transform_layers_deferred(&[root]).unwrap();
+                    } else {
+                        d.begin_transform_layers(&[root]).unwrap();
+                    }
+                    assert_eq!(d.transform_geometry().unwrap().points, expected);
+                    let mut geometry = d.transform_geometry().unwrap();
+                    for p in &mut geometry.points {
+                        p[0] += 3.;
+                    }
+                    d.update_transform(geometry).unwrap();
+                    d.cancel_transform().unwrap();
+                    assert_eq!(pixels(&d), before);
+                    assert_eq!(d.history_depth(), depth);
+                    // Explicit mask editing still uses its own full extent.
+                    d.begin_transform_layers(&[mask]).unwrap();
+                    let g = d.transform_geometry().unwrap();
+                    assert_eq!(g.points[0], [-64., -64.]);
+                    assert_eq!(g.points[15], [128., 128.]);
+                    d.cancel_transform().unwrap();
+                }
+            }
+        }
+    }
     fn compound_seed(kind: u8) -> (Document, Vec<LayerId>) {
         let mut d = seed();
         let owner = d.active_layer();

@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新变换框忽略附带蒙版：初始框合并非蒙版源，附带蒙版不扩框、不按遮挡alpha缩框；显示/原分层变换保持，显式蒙版独立编辑仍按自身范围。核心新8组合/预览9/公开7/原生1，软件Qt1/D3D11 Qt1、四ABI/Clippy/格式/Release通过；ABI1.74保持，旧EXE运行锁定产物为 `build/qt/bin/Release/drawverse-next.exe`。见变换设计/验收。
+
 - 最新笔刷列表尾条删除：用户红框的固定24px根拖放footer已删，自然空白透明拖放保留；原真实多选/重排/菜单用例改验证空白落点，软件/D3D11通过。见画笔菜单拖动设计/验收；Release旧EXE运行锁定，新主程序为 `build/qt/bin/Release/drawverse-next.exe`，无ABI/算法变化。
 
 - 最新复杂移动有界预览：`docs/tools/layer-move-bounded-fallback-design.md` / 对应验收；固定蒙版/半透明或蒙版祖先等CPU回退只采最长边512的最近邻帧，源样本≤输出16倍、区段≤4096、sRGB近似≤1色阶，结束恢复完整显示。paint-render23/原生新旧各1、软件Qt7/D3D11 Qt7、四ABI/Clippy/格式/完整Release通过；固定3840×2160 CPU渲染中位394.346→42.927ms，非UI时延。ABI1.74/state44保持、无新增GPU算子；Release输出 `build/qt/bin/Release`，未验收实体连续手感或任意深组。
