@@ -45,8 +45,8 @@ impl Document {
             ids: ids.to_vec(),
             baseline,
             delta: (0, 0),
-            source: if deferred && ids.len() == 1 {
-                self.resident_source(ids[0])
+            source: if deferred {
+                self.resident_move_source(ids)
             } else {
                 None
             },
@@ -185,7 +185,7 @@ mod tests {
         let depth = d.history_depth();
         let tiles = d.layer(a).unwrap().tiles.clone();
         d.begin_layer_moves(&ids, true).unwrap();
-        assert!(!d.layer_move_deferred());
+        assert!(d.layer_move_deferred());
         for (x, y) in [(3, 5), (-18, 12), (0, 0), (9, -7)] {
             d.update_layer_move(x, y).unwrap();
             for id in [a, mask, b] {
@@ -311,7 +311,7 @@ mod tests {
         let owner = d.active_layer();
         let mask = d.add_mask(owner).unwrap();
         d.begin_layer_move(owner, true).unwrap();
-        assert!(!d.layer_move_deferred());
+        assert!(d.layer_move_deferred());
         d.update_layer_move(7, -5).unwrap();
         for id in [owner, mask] {
             assert_eq!(d.layer(id).unwrap().appearance.offset_x, 7);
@@ -511,5 +511,159 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod compound_tests {
+    use super::*;
+    fn fill(d: &mut Document, id: u64, color: [f32; 4], offset: (i32, i32)) {
+        let at = d.layer_index(id).unwrap();
+        d.layers[at].tiles.insert(
+            TileCoord::from_signed(0, 0),
+            Arc::new(Tile::from_pixels(vec![Pixel::from_straight(color).unwrap(); 4096]).unwrap()),
+        );
+        d.layers[at].appearance.offset_x = offset.0;
+        d.layers[at].appearance.offset_y = offset.1;
+    }
+    fn seed(kind: u8) -> (Document, Vec<u64>) {
+        let mut d = Document::new(64, 64).unwrap();
+        let background = d.active_layer();
+        fill(&mut d, background, [0.2, 0.4, 0.8, 0.7], (0, 0));
+        let a = d.add_layer("moving").unwrap();
+        fill(&mut d, a, [1., 0.1, 0., 0.6], (-9, 4));
+        let mask = d.add_mask(a).unwrap();
+        fill(&mut d, mask, [1., 1., 1., 0.35], (3, -2));
+        let mut roots = vec![a];
+        if kind == 1 || kind == 2 {
+            let group = d.group_layer(a, "moving group").unwrap();
+            let at = d.layer_index(group).unwrap();
+            d.layers[at].appearance.blend = if kind == 1 {
+                crate::BlendMode::Normal
+            } else {
+                crate::BlendMode::PassThrough
+            };
+            d.layers[at].properties.opacity = 0.55;
+            let gm = d.add_mask(group).unwrap();
+            fill(&mut d, gm, [1., 1., 1., 0.25], (-4, 3));
+            d.set_active_layer(a).unwrap();
+            let child = d.add_layer("inside").unwrap();
+            fill(&mut d, child, [0.3, 1., 0.1, 0.5], (8, 7));
+            let at = d.layer_index(child).unwrap();
+            if kind == 1 {
+                d.layers[at].appearance.blend = crate::BlendMode::Multiply;
+                d.layers[at].clipped = true;
+            }
+            roots = vec![group];
+            d.set_active_layer(group).unwrap();
+        }
+        let partner = d.add_layer("partner").unwrap();
+        d.reparent_layer(partner, 0).unwrap();
+        fill(&mut d, partner, [0., 1., 0.5, 0.4], (3, -6));
+        if kind == 3 {
+            roots.push(partner);
+        }
+        let above = d.add_layer("above").unwrap();
+        fill(&mut d, above, [0.8, 0.5, 0.1, 0.2], (0, 0));
+        (d, roots)
+    }
+    fn pixels(d: &Document) -> Vec<Pixel> {
+        (0..64)
+            .flat_map(|y| d.snapshot().read_row(0, y, 64).unwrap())
+            .collect()
+    }
+    #[test]
+    fn compound_move_sources_match_pixels_reuse_tiles_and_commit_one_history() {
+        for kind in 0..4 {
+            let (mut d, ids) = seed(kind);
+            let before = pixels(&d);
+            let originals = d.layers.clone();
+            let depth = d.history_depth();
+            d.begin_layer_moves(&ids, true).unwrap();
+            assert!(d.layer_move_deferred(), "kind {kind}");
+            let source = d.resident_preview().unwrap().source;
+            assert!(source.image.layers.iter().any(|l| l.mask));
+            for (dx, dy) in [(0, 0), (9, -4), (-3, 5), (6, 2)] {
+                d.update_layer_move(dx, dy).unwrap();
+                assert!(Arc::ptr_eq(&source, &d.resident_preview().unwrap().source));
+                for layer in &originals {
+                    for (key, tile) in &layer.tiles {
+                        assert!(Arc::ptr_eq(tile, &d.layer(layer.id).unwrap().tiles[key]));
+                    }
+                }
+                for y in 0..64 {
+                    for x in 0..64 {
+                        let image = source.image.pixel(
+                            (x as i32 - dx - source.bounds[0]) as u32,
+                            (y as i32 - dy - source.bounds[1]) as u32,
+                        );
+                        let split = source
+                            .above
+                            .pixel(x, y)
+                            .over(image.over(source.below.pixel(x, y)));
+                        for (a, b) in split
+                            .components()
+                            .into_iter()
+                            .zip(d.pixel(x, y).components())
+                        {
+                            assert!(
+                                (a - b).abs() < 1e-6,
+                                "kind {kind}, {dx},{dy} at {x},{y}: {a}/{b}"
+                            );
+                        }
+                    }
+                }
+                assert_eq!(d.history_depth(), depth);
+            }
+            d.cancel_layer_move().unwrap();
+            assert_eq!(pixels(&d), before);
+            d.begin_layer_moves(&ids, true).unwrap();
+            d.commit_layer_move(6, 2).unwrap();
+            let after = pixels(&d);
+            assert_eq!(d.history_depth().0, depth.0 + 1);
+            d.undo().unwrap();
+            assert_eq!(pixels(&d), before);
+            d.redo().unwrap();
+            assert_eq!(pixels(&d), after);
+        }
+    }
+    #[test]
+    fn compound_move_rejects_fixed_masks_gaps_and_backdrop_dependencies() {
+        let (mut d, ids) = seed(0);
+        let mask = d.mask_for(ids[0]).unwrap().id;
+        let at = d.layer_index(mask).unwrap();
+        d.layers[at].mask_linked = false;
+        d.begin_layer_moves(&ids, true).unwrap();
+        assert!(!d.layer_move_deferred());
+        d.cancel_layer_move().unwrap();
+        let (mut d, ids) = seed(2);
+        let child = d.layers.iter().find(|l| l.name == "inside").unwrap().id;
+        let at = d.layer_index(child).unwrap();
+        d.layers[at].appearance.blend = crate::BlendMode::Multiply;
+        d.begin_layer_moves(&ids, true).unwrap();
+        assert!(!d.layer_move_deferred());
+        d.cancel_layer_move().unwrap();
+        let (mut d, ids) = seed(0);
+        let above = d.layers.iter().find(|l| l.name == "above").unwrap().id;
+        d.begin_layer_moves(&[ids[0], above], true).unwrap();
+        assert!(!d.layer_move_deferred());
+        d.cancel_layer_move().unwrap();
+        let mask = d.mask_for(ids[0]).unwrap().id;
+        d.begin_layer_move(mask, true).unwrap();
+        assert!(!d.layer_move_deferred());
+        d.cancel_layer_move().unwrap();
+        let (mut isolated, roots) = seed(1);
+        let child = isolated
+            .layers
+            .iter()
+            .position(|l| l.name == "inside")
+            .unwrap();
+        isolated.layers[child].appearance.blend = crate::BlendMode::Dissolve;
+        isolated.begin_layer_moves(&roots, true).unwrap();
+        assert!(!isolated.layer_move_deferred());
+        let above = d.layer_index(above).unwrap();
+        d.layers[above].clipped = true;
+        d.begin_layer_moves(&ids, true).unwrap();
+        assert!(!d.layer_move_deferred());
     }
 }

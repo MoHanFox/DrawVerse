@@ -92,25 +92,105 @@ impl Document {
             || original.appearance.blend != crate::BlendMode::Normal
             || self.mask_for(id).is_some()
             || !original.properties.visible
-            || self.layers[at + 1..].iter().any(|l| {
-                l.clipped
-                    || (!l.mask
-                        && l.appearance.blend != crate::BlendMode::Normal
-                        && !(l.group && l.appearance.blend == crate::BlendMode::PassThrough))
-            })
+            || !self.resident_foreground_is_normal(at + 1)
         {
             return None;
         }
         let [l, t, r, b] = source_bounds(&original);
-        // Keep a one-pixel transparent guard. No clipping of retained source tiles.
+        let ox = i64::from(original.appearance.offset_x);
+        let oy = i64::from(original.appearance.offset_y);
+        self.partition_resident_source(at..at + 1, vec![original], [l + ox, t + oy, r + ox, b + oy])
+    }
+
+    /// Translation moves complete linked subtrees together; deformation cannot use
+    /// this flattened source because an unwarped mask must retain its own coordinates.
+    pub(in crate::document) fn resident_move_source(
+        &self,
+        ids: &[LayerId],
+    ) -> Option<Arc<LiquifyPreviewSource>> {
+        let mut roots = self.batch_roots(ids).ok()?;
+        roots.sort_by_key(|id| self.layer_index(*id).ok());
+        let start = self.subtree(*roots.first()?).ok()?.start;
+        let mut end = start;
+        for id in roots {
+            let range = self.subtree(id).ok()?;
+            let root = &self.layers[self.layer_index(id).ok()?];
+            if range.start != end
+                || root.parent != 0
+                || root.mask
+                || root.clipped
+                || !root.properties.visible
+                || !(root.appearance.blend == crate::BlendMode::Normal
+                    || root.group && root.appearance.blend == crate::BlendMode::PassThrough)
+            {
+                return None;
+            }
+            // Normal groups isolate their internal blending. A pass-through source
+            // may only be flattened if its descendants do not depend on the backdrop.
+            if root.group
+                && root.appearance.blend == crate::BlendMode::PassThrough
+                && self.layers[range.clone()].iter().any(|layer| {
+                    !layer.mask
+                        && (layer.clipped
+                            || !(layer.appearance.blend == crate::BlendMode::Normal
+                                || layer.group
+                                    && layer.appearance.blend == crate::BlendMode::PassThrough))
+                })
+            {
+                return None;
+            }
+            end = range.end;
+        }
+        let layers = &self.layers[start..end];
+        if layers.iter().any(|l| {
+            l.is_image()
+                || l.mask && !l.mask_linked
+                || l.appearance.blend == crate::BlendMode::Dissolve
+        }) || !self.resident_foreground_is_normal(end)
+        {
+            return None;
+        }
+        let mut bounds: Option<[i64; 4]> = None;
+        for layer in layers.iter().filter(|l| !l.group && !l.mask) {
+            let [l, t, r, b] = source_bounds(layer);
+            let (ox, oy) = (
+                i64::from(layer.appearance.offset_x),
+                i64::from(layer.appearance.offset_y),
+            );
+            let next = [l + ox, t + oy, r + ox, b + oy];
+            bounds = Some(bounds.map_or(next, |old| {
+                [
+                    old[0].min(next[0]),
+                    old[1].min(next[1]),
+                    old[2].max(next[2]),
+                    old[3].max(next[3]),
+                ]
+            }));
+        }
+        self.partition_resident_source(start..end, layers.to_vec(), bounds?)
+    }
+
+    fn resident_foreground_is_normal(&self, start: usize) -> bool {
+        !self.layers[start..].iter().any(|l| {
+            l.clipped
+                || !l.mask
+                    && l.appearance.blend != crate::BlendMode::Normal
+                    && !(l.group && l.appearance.blend == crate::BlendMode::PassThrough)
+        })
+    }
+
+    fn partition_resident_source(
+        &self,
+        range: std::ops::Range<usize>,
+        mut layers: Vec<Layer>,
+        [l, t, r, b]: [i64; 4],
+    ) -> Option<Arc<LiquifyPreviewSource>> {
+        // Retain off-canvas pixels and one transparent guard pixel on every edge.
         let width = r - l + 2;
         let height = b - t + 2;
         if width > i64::from(MAX_DIMENSION) || height > i64::from(MAX_DIMENSION) {
             return None;
         }
-        let ox = i64::from(original.appearance.offset_x);
-        let oy = i64::from(original.appearance.offset_y);
-        // Partition once instead of cloning every layer's tile map three times.
         let snapshot = |layers| DocumentSnapshot {
             pool: Arc::clone(&self.pool),
             width: self.width,
@@ -119,25 +199,26 @@ impl Document {
             layers,
             selection: self.selection.clone(),
         };
-        let mut layer = original;
-        layer.appearance.offset_x = (1 - l) as i32;
-        layer.appearance.offset_y = (1 - t) as i32;
-        let mut image = snapshot(vec![layer]);
+        for layer in layers.iter_mut().filter(|l| !l.group) {
+            layer.appearance.offset_x =
+                i32::try_from(i64::from(layer.appearance.offset_x) + 1 - l).ok()?;
+            layer.appearance.offset_y =
+                i32::try_from(i64::from(layer.appearance.offset_y) + 1 - t).ok()?;
+        }
+        let mut image = snapshot(layers);
         image.width = width.max(2) as u32;
         image.height = height.max(2) as u32;
-        let below = snapshot(self.layers[..at].to_vec());
-        let above = snapshot(self.layers[at + 1..].to_vec());
         Some(Arc::new(LiquifyPreviewSource {
             id: NEXT_SOURCE.fetch_add(1, Ordering::Relaxed),
             bounds: [
-                (l - 1 + ox) as i32,
-                (t - 1 + oy) as i32,
+                i32::try_from(l - 1).ok()?,
+                i32::try_from(t - 1).ok()?,
                 width.max(2) as i32,
                 height.max(2) as i32,
             ],
             image,
-            below,
-            above,
+            below: snapshot(self.layers[..range.start].to_vec()),
+            above: snapshot(self.layers[range.end..].to_vec()),
         }))
     }
 

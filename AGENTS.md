@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新完整子树移动常驻源：根组/链接蒙版/连续根多选完整后序子树静态合成，位移只改四顶点；Normal隔离组内非Dissolve混合/剪贴可保留，透传仅独立Normal组合。源与瓦片身份保持；组内单层/固定蒙版/非连续/背景相关组合/置入仍回退，首次资产待。核心2+7/液化3/变换6/原生1、D3D11新3+共享2及软件新3+共享2/四ABI/Clippy/Release通过，ABI1.73不变，输出 `build/qt/bin/Release`；见移动设计/验收，未测4K实体连续时延。
+
 - 最新直接历史跳转：参考PhotoCraft私有游标后一次恢复，文档/变换/液化一次请求/一条修订，只发布最终状态并保留redo；文档和液化读取失败回滚，generation/revision/scope拒绝陈旧请求。ABI1.73 bit61/新32字节PaintHistorySelect，state44/behavior36/VBR1.0保持。核心4/原生1/软件Qt工作流1与真实UI2、D3D11 UI1/焦点回归1、四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`；见历史标签设计/本轮清单验收，冷页IO仍与跨越记录相关，未跑全量/跨平台/实体持续性能。
 
 - 最新双重笔刷来源/纹理：来源与覆盖组合置顶共用，已有来源隐藏独立资源并继承源纹理，删除源后快照保留，主体纹理不改；SecondaryTip复用CPU TextureDab，state44/behavior36/dual-tip-texture、ABI1.72 bit60，旧编码保持。核心19/IO5/原生2/软件Qt5行、四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`；详情见本轮清单/验收，无新增GPU计算，未跑全量/跨平台/实体持续输入。
