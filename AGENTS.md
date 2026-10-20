@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新历史笔刷删除：按最后指令移除八格/恢复/完整参数快照/偏好写出及即时广播，旧字段忽略；ABI1.69 End 回执保留，仅记录成功且改变像素的最近颜色。工作流7行含 path/sdf 与隔离/迁移通过，Release 输出 `build/qt/bin/Release`；ABI1.71/state43/behavior35/VBR1.0 不变，详情见本轮清单/验收。早期最近八笔条目仅为历史记录。
+
 - 最新无关组/蒙版常驻源：普通 Normal 根层的变换/移动/液化按分割边界捕获完整上下子树，无关组和蒙版不再全局关闭预览；目标自身蒙版、组内、多目标、选区、上方剪贴/特殊混合仍待。Rust2+既有4+7、D3D11两行和软件三行/Clippy/Release通过，ABI1.71不变，输出 `build/qt/bin/Release`；见 transform-resident-preview 设计/验收，未测4K实体连续时延。
 
 - 最新笔尖方向盘：`docs/brush/ui/brush-tip-shape-control-design.md` / `docs/validations/brush/ui/brush-tip-shape-control-validation.md`；参考 PhotoCraft 短轴手柄投影交互，主/可编辑第二笔尖共用角度与圆度控件、数值双向同步，已有来源继承且隐藏。真实鼠标/参数恢复两项及整数回归在软件通过，前两项 D3D11 通过并检查截图，Release 输出 `build/qt/bin/Release`；ABI1.71/state/VBR 不变，未跑全量/跨平台/实体设备。

@@ -183,46 +183,6 @@ ColumnLayout {
     }
     CompactSlider {Layout.fillWidth:true;from:1;to:2000;value:root.library.radius*2;onMoved:root.library.radius=value/2}
     TextField {id:search;objectName:"brushSearch";Layout.fillWidth:true;implicitHeight:22;font.pixelSize:9;placeholderText:"搜索画笔";color:Theme.text;background:Rectangle {color:Theme.input;border.color:Theme.line} onTextChanged:root.refreshGroupedItems();onAccepted:root.finishSearch(false);Keys.onEscapePressed:event=>{root.finishSearch(true);event.accepted=true}}
-    RowLayout {
-        Layout.fillWidth:true;spacing:2
-        Repeater {
-            model:8
-            Button {
-                id:recentButton
-                required property int index
-                readonly property var entry:root.library.recentBrushes[index] || null
-                objectName:"recentBrush:"+index
-                Layout.fillWidth:true;implicitWidth:20;implicitHeight:42;padding:1
-                enabled:entry !== null && !PaintClient.drawing
-                onClicked:root.library.applyRecentBrush(index)
-                ToolTip.visible:hovered && entry !== null
-                ToolTip.text:entry ? entry.name + " · " + Math.round(entry.diameter) + " px" : ""
-                background:Rectangle {color:parent.hovered?Theme.hover:Theme.strip;border.color:Theme.line}
-                contentItem:ColumnLayout {
-                    spacing:1
-                    Item {
-                        Layout.fillWidth:true;Layout.preferredHeight:24
-                        BrushResourceThumbnail {objectName:"recentBrushTip:"+recentButton.index;anchors.fill:parent;visible:recentButton.entry !== null && recentButton.entry.resource.length>0;resource:recentButton.entry ? recentButton.entry.resource : ""}
-                        Canvas {
-                            anchors.fill:parent;visible:recentButton.entry !== null && !recentButton.entry.resource.length;antialiasing:true
-                            onWidthChanged:requestPaint()
-                            onHeightChanged:requestPaint()
-                            property var tip:recentButton.entry
-                            onTipChanged:requestPaint()
-                            onPaint:{
-                                const c=getContext("2d");c.reset();if(!tip)return
-                                const r=Math.max(1,Math.min(width,height)*0.38)
-                                c.save();c.translate(width/2,height/2);c.rotate(tip.angle*Math.PI/180);c.scale(1,tip.roundness)
-                                const gradient=c.createRadialGradient(0,0,Math.min(0.999,tip.hardness)*r,0,0,r)
-                                gradient.addColorStop(0,Theme.text);gradient.addColorStop(1,"transparent");c.fillStyle=gradient;c.beginPath();c.arc(0,0,r,0,Math.PI*2);c.fill();c.restore()
-                            }
-                        }
-                    }
-                    Text {Layout.fillWidth:true;text:recentButton.entry ? Math.round(recentButton.entry.diameter) : "—";horizontalAlignment:Text.AlignHCenter;font.pixelSize:8;color:Theme.muted}
-                }
-            }
-        }
-    }
     Label {objectName:"brushImportSummary";textFormat:Text.PlainText;text:PaintClient.brushImportMessage;visible:text.length>0;Layout.fillWidth:true;wrapMode:Text.WordWrap;font.pixelSize:9;color:Theme.muted}
     RowLayout {Icon {name:"folder";width:14;height:14} Label {text:"基础与自定义画笔";font.pixelSize:9;color:Theme.text}}
     ListView {

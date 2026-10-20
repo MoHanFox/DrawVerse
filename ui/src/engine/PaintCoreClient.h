@@ -561,10 +561,7 @@ private:
     QColor m_color{"#2ea99d"};
     // Colour of the stroke in progress: recent colours only advance on a committed stroke.
     QColor m_strokeColor;
-    QByteArray m_strokeBrushSnapshot;
-    struct PendingBrushSnapshot {QByteArray preset;QColor color;};
-    QMap<quint64,PendingBrushSnapshot> m_pendingBrushSnapshots;
-    qsizetype m_pendingBrushBytes=0;
+    QMap<quint64,QColor> m_pendingStrokeColors;
     qreal m_radius = 12, m_opacity = 1;
     // Per-document history command limit; persisted as a preference and applied to new sessions.
     void persistLiquifyOptions();

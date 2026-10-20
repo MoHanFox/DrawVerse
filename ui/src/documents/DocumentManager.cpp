@@ -36,12 +36,6 @@ void DocumentManager::track(PaintCoreClient *client) {
     m_clients.append(client);
     if(!m_brushPreferenceWriter)m_brushPreferenceWriter=client;
     client->setBrushPreferencePersistenceEnabled(client==m_brushPreferenceWriter);
-    connect(client->brushLibrary(),&BrushLibrary::recentBrushRecorded,this,[this,client](const QByteArray &snapshot){
-        if(m_quitting)return;
-        // Share each receipt immediately, before another document can record a stroke.
-        // Receivers update their UI cache without another save/broadcast request.
-        for(const auto &other:m_clients)if(other && other!=client && !m_stopped.contains(other))other->brushLibrary()->recordRecentBrush(snapshot,false);
-    });
     // One application brush preference state. Restore publishes a copy without
     // requesting another disk save, so inactive documents cannot overwrite it.
     connect(client->brushLibrary(),&BrushLibrary::persistRequested,this,[this,client](const QByteArray &state){

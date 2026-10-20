@@ -1068,12 +1068,7 @@ QByteArray BrushLibrary::snapshot() const {
     if(!m_organization.isEmpty())root["organization"]=m_organization;
     if(!editors.isEmpty())root["dualEditors"]=editors;
     root["toolIsolation"]=toolIsolationState();
-    root["recentBrushes"]=recentBrushState();
     m_snapshotCache=QJsonDocument(root).toJson(QJsonDocument::Compact);return m_snapshotCache;
-}
-bool BrushLibrary::sameBrushSnapshot(const QByteArray &left,const QByteArray &right) {
-    auto normalized=[](const QByteArray &bytes){auto state=QJsonDocument::fromJson(bytes).object();auto p=state.value("preset").toObject();p.remove("name");state["preset"]=p;return state;};
-    return equivalentSettings(normalized(left),normalized(right));
 }
 QJsonObject BrushLibrary::exportPreset(const Preset &p,bool includeSource,const QString &id) {
     if(!p.sourceResource.isEmpty() && !includeSource)return {};
@@ -1583,11 +1578,8 @@ bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
     for(auto it=baselines.begin();it!=baselines.end();)if(!seen.contains(it.key()))it=baselines.erase(it);else ++it;
     int isolation=0,context=0;std::array<ToolProfile,3> profiles;
     if(!parseToolIsolation(root.value("toolIsolation"),isolation,context,profiles))return false;
-    QList<QByteArray> recentBrushes;
-    if(!parseRecentBrushes(root.value("recentBrushes"),recentBrushes))return false;
     m_resetPresets=baselines;
     m_toolIsolation=isolation;m_toolContext=context;m_toolProfiles=std::move(profiles);
-    m_recentBrushSnapshots=std::move(recentBrushes);
     for(auto &preset:restored) {
         const int current=index(preset.id);int oldVersion=2,newVersion=2;
         auto previewSettings=[](QJsonObject row){for(const auto &key:{"name","radius","opacity","flow"})row.remove(key);return row;};
@@ -1609,5 +1601,5 @@ bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
     m_foregroundColor=foreground;m_backgroundColor=background;
     if(colorsChanged)emit activeColorsChanged();
     m_cursorOutline=outline;m_cursorCenter=center;m_cursorHoverOnly=hoverOnly;m_cursorWidth=width;m_cursorSimple=simple;m_cursorComposite=composite;m_cursorImage=image;m_cursorImageOpacity=imageOpacity;m_cursorColor=color;m_cursorSecondaryColor=secondaryColor;emit cursorChanged();
-    emit settingsChanged();emit presetsChanged();emit selectedPreviewChanged();emit selectionChanged();emit recentColorsChanged();emit recentBrushesChanged();return true;
+    emit settingsChanged();emit presetsChanged();emit selectedPreviewChanged();emit selectionChanged();emit recentColorsChanged();return true;
 }

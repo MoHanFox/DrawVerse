@@ -198,3 +198,11 @@ CanvasPane 在自身液化/变换状态关闭后延后一轮恢复可见、启�
 ## 普通13：SDF实际笔触与完整接入
 
 分项证据见[SDF接入验收](../brush/core/brush-sdf-outline-validation.md)。核心实际笔触/缓存、设置、预览、交换、最近快照/重启与独立自身纹理完成；新模型state43/behavior35及ABI1.71。核心描边15及内部3项、IO5/原生2、工作流31通过（软件GPU专项1跳过）、D3D11 SDF1及旧Qt3、四ABI/Clippy/格式/生成头/Release通过。用户产物`build/qt/bin/Release`。GPU覆盖及代码入口已补齐，无新增wgpu笔刷计算；持续性能、极细内等距线与资源预算限制保留，不宣称全量/跨平台/实体输入验收。
+
+
+## 追加：删除历史笔刷
+
+- 已移除搜索下八格、恢复 API、记录实现、完整参数快照和最近笔刷跨文档广播；旧 recentBrushes 偏好读取时忽略，下次保存删除。保留 ABI1.69 成功 End 增量回执，仅用有界序列/颜色队列记录真实成功且改变像素的最近颜色。
+- Windows Release 工作流专项 7 行通过（另含初始化/清理）：旧偏好迁移/实际面板缺少八格/成功与取消及零不透明度颜色；跨文档偏好无反馈、三档工具隔离/原生同步/持久化，以及自身独立纹理 path/sdf 两行。
+- Release 应用、变换/选区/工作流目标构建通过。ABI1.71、state43/behavior35/VBR1.0 保持。未跑全量、跨平台和实体设备。
+- 补充：qt_ui_tests 重建通过，activeAndRecentColorsPersistAcrossRestartAndStayOutOfPresets 通过；扩展 canvasZoomKeysAndGlobalColorsWorkAcrossDocumentsAndFloatingWindows 在相同 #ff2ea99d/#80336699 断言失败，与导航专项改动前/后已记录的既有失败一致，见 [导航验收](../interface/canvas-navigation-adaptive-cursor-validation.md)。不宣称全量 UI 通过。
