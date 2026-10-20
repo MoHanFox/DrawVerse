@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 新描边复刻算子第一步：`docs/brush/core/brush-stroke-replay-outline-design.md` / 对应validations；paint-ops::replay_outline按实际印章两尺度与四通道灰度max差集形成描边，允许溢出控制主体几何裁剪，64×64/8Mi像素有界，私有候选失败不改输入。新7/包回归16及Clippy/格式通过；尚未接实际笔触/预览/设置/旧算法移除，不是新描边功能完成，ABI1.74/state44保持，无新增GPU。
+
 - 最新完整子树变换预览：transform-resident-preview设计/验收；根层链接自身蒙版、完整Normal/独立穿透根组、连续根多选捕获不可变原始源与世界选框，拖动CPU网格/Qt GPU代理，确认原分层分别采样。核心8+2+1+1+1、原生1、软件Qt5/D3D11 Qt5、四ABI/Clippy/Release通过；2000px双蒙版组Warp六输入核心中位8625→5.63ms，非UI时延。ABI1.74保持，输出 `build/qt/bin/Release`；组内单层/固定蒙版/非连续/选区/首次资产与实体持续性能仍待，预合成半透明/Warp存在近似。
 
 - 最新长任务进度：`docs/tools/long-task-progress-design.md` / `docs/validations/tools/long-task-progress-validation.md`；液化完成/变换完成/整图翻转按实际瓦片与批次报告分阶段计数，未知总量不定进度，默认1000ms/设置0–10000ms，各文档与浮动窗口独立显示。ABI1.74/bit62/72B只读快照，不等actor与publication；state44/VBR保持。核心三类像素/历史及低预算失败1、原生1/actor1、软件Qt2/D3D11 Qt2、四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`；既有有界瓦片复用，未验收任意OS OOM/跨平台/实体持续性能。

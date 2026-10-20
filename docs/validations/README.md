@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [复刻主体落笔描边（接入中）](brush/core/brush-stroke-replay-outline-validation.md)
+
 - [长任务真实进度与延迟显示](tools/long-task-progress-validation.md)
 
 - [笔尖角度与圆度控制器](brush/ui/brush-tip-shape-control-validation.md)

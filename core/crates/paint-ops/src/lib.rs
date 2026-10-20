@@ -2,6 +2,7 @@
 //! document ownership, histories and publishing deliberately live above this layer.
 use std::{fmt::Debug, ops::Deref, sync::Arc};
 
+pub mod replay_outline;
 pub mod sdf;
 
 pub type Rgba = [f32; 4];
