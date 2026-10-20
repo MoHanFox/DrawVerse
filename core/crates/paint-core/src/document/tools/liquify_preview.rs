@@ -92,14 +92,19 @@ impl Document {
             || original.appearance.blend != crate::BlendMode::Normal
             || self.mask_for(id).is_some()
             || !original.properties.visible
-            || !self.resident_foreground_is_normal(at + 1)
+            || !Self::resident_foreground_is_normal(&self.layers, at + 1)
         {
             return None;
         }
         let [l, t, r, b] = source_bounds(&original);
         let ox = i64::from(original.appearance.offset_x);
         let oy = i64::from(original.appearance.offset_y);
-        self.partition_resident_source(at..at + 1, vec![original], [l + ox, t + oy, r + ox, b + oy])
+        self.partition_resident_source(
+            &self.layers,
+            at..at + 1,
+            vec![original],
+            [l + ox, t + oy, r + ox, b + oy],
+        )
     }
 
     /// Translation moves complete linked subtrees together; liquid distortion keeps
@@ -108,7 +113,59 @@ impl Document {
         &self,
         ids: &[LayerId],
     ) -> Option<Arc<LiquifyPreviewSource>> {
-        self.resident_subtree_source(ids, &[])
+        if let Some(source) = self.resident_subtree_source(ids, &[]) {
+            return Some(source);
+        }
+        // Identity ancestors can be removed from the presentation split without
+        // changing the real hierarchy. This keeps a normal child (and its linked
+        // mask) resident instead of re-compositing the document on every move.
+        let mut ancestors = BTreeSet::new();
+        for id in self.batch_roots(ids).ok()? {
+            let mut parent = self.layer(id)?.parent;
+            while parent != 0 {
+                let group = self.layer(parent)?;
+                if !group.group
+                    || !group.properties.visible
+                    || group.properties.opacity != 1.
+                    || group.appearance.fill != 1.
+                    || group.clipped
+                    || self.mask_for(parent).is_some()
+                    || !matches!(
+                        group.appearance.blend,
+                        crate::BlendMode::Normal | crate::BlendMode::PassThrough
+                    )
+                {
+                    return None;
+                }
+                if group.appearance.blend == crate::BlendMode::Normal
+                    && self.layers[self.subtree(parent).ok()?].iter().any(|l| {
+                        !l.mask
+                            && (l.clipped
+                                || !matches!(
+                                    l.appearance.blend,
+                                    crate::BlendMode::Normal | crate::BlendMode::PassThrough
+                                ))
+                    })
+                {
+                    return None;
+                }
+                ancestors.insert(parent);
+                parent = group.parent;
+            }
+        }
+        if ancestors.is_empty() {
+            return None;
+        }
+        let mut context = self.layers.clone();
+        for layer in &mut context {
+            if ancestors.contains(&layer.id) {
+                layer.properties.visible = false;
+            }
+            while ancestors.contains(&layer.parent) {
+                layer.parent = self.layer(layer.parent)?.parent;
+            }
+        }
+        self.resident_subtree_source_in(ids, &[], &context)
     }
 
     /// Immutable original overrides allow late transform opt-in after pixel previews.
@@ -117,13 +174,22 @@ impl Document {
         ids: &[LayerId],
         originals: &[Layer],
     ) -> Option<Arc<LiquifyPreviewSource>> {
+        self.resident_subtree_source_in(ids, originals, &self.layers)
+    }
+
+    fn resident_subtree_source_in(
+        &self,
+        ids: &[LayerId],
+        originals: &[Layer],
+        context: &[Layer],
+    ) -> Option<Arc<LiquifyPreviewSource>> {
         let mut roots = self.batch_roots(ids).ok()?;
         roots.sort_by_key(|id| self.layer_index(*id).ok());
         let start = self.subtree(*roots.first()?).ok()?.start;
         let mut end = start;
         for id in roots {
             let range = self.subtree(id).ok()?;
-            let root = &self.layers[self.layer_index(id).ok()?];
+            let root = &context[self.layer_index(id).ok()?];
             if range.start != end
                 || root.parent != 0
                 || root.mask
@@ -138,7 +204,7 @@ impl Document {
             // may only be flattened if its descendants do not depend on the backdrop.
             if root.group
                 && root.appearance.blend == crate::BlendMode::PassThrough
-                && self.layers[range.clone()].iter().any(|layer| {
+                && context[range.clone()].iter().any(|layer| {
                     !layer.mask
                         && (layer.clipped
                             || !(layer.appearance.blend == crate::BlendMode::Normal
@@ -150,7 +216,7 @@ impl Document {
             }
             end = range.end;
         }
-        let mut layers = self.layers[start..end].to_vec();
+        let mut layers = context[start..end].to_vec();
         if !originals.is_empty()
             && layers.iter().any(|l| {
                 !l.group
@@ -168,7 +234,7 @@ impl Document {
             l.is_image()
                 || l.mask && !l.mask_linked
                 || l.appearance.blend == crate::BlendMode::Dissolve
-        }) || !self.resident_foreground_is_normal(end)
+        }) || !Self::resident_foreground_is_normal(context, end)
         {
             return None;
         }
@@ -189,11 +255,11 @@ impl Document {
                 ]
             }));
         }
-        self.partition_resident_source(start..end, layers, bounds?)
+        self.partition_resident_source(context, start..end, layers, bounds?)
     }
 
-    fn resident_foreground_is_normal(&self, start: usize) -> bool {
-        !self.layers[start..].iter().any(|l| {
+    fn resident_foreground_is_normal(context: &[Layer], start: usize) -> bool {
+        !context[start..].iter().any(|l| {
             l.clipped
                 || !l.mask
                     && l.appearance.blend != crate::BlendMode::Normal
@@ -203,6 +269,7 @@ impl Document {
 
     fn partition_resident_source(
         &self,
+        context: &[Layer],
         range: std::ops::Range<usize>,
         mut layers: Vec<Layer>,
         [l, t, r, b]: [i64; 4],
@@ -239,8 +306,8 @@ impl Document {
                 height.max(2) as i32,
             ],
             image,
-            below: snapshot(self.layers[..range.start].to_vec()),
-            above: snapshot(self.layers[range.end..].to_vec()),
+            below: snapshot(context[..range.start].to_vec()),
+            above: snapshot(context[range.end..].to_vec()),
         }))
     }
 

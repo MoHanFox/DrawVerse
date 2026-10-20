@@ -43,7 +43,7 @@ private slots:
         QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void compoundLayerMovesKeepResidentSources_data() {
-        QTest::addColumn<int>("kind");QTest::newRow("linked-owner-mask")<<0;QTest::newRow("masked-group")<<1;QTest::newRow("continuous-multiple")<<2;
+        QTest::addColumn<int>("kind");QTest::newRow("linked-owner-mask")<<0;QTest::newRow("masked-group")<<1;QTest::newRow("continuous-multiple")<<2;QTest::newRow("nested-normal-child")<<3;QTest::newRow("nested-pass-through-child")<<4;
     }
     void compoundLayerMovesKeepResidentSources() {
         QFETCH(int,kind);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("compound-move.ini"));
@@ -52,6 +52,7 @@ private slots:
         QVERIFY(client.addMask(owner));QTRY_VERIFY(!client.layerEditBusy());client.selectLayer(owner);QTRY_COMPARE(client.activeLayer(),owner);QTRY_VERIFY(!client.layerEditBusy());
         if(kind==1){QVERIFY(client.groupSelectedLayers("moving group"));QTRY_VERIFY(!client.layerEditBusy());const auto group=client.activeLayer();QVERIFY(client.addMask(group));QTRY_VERIFY(!client.layerEditBusy());client.selectLayer(group);QTRY_COMPARE(client.activeLayer(),group);QTRY_VERIFY(!client.layerEditBusy());}
         if(kind==2){client.addLayer("partner");QTRY_VERIFY(!client.layerEditBusy());const auto partner=client.activeLayer();client.setBrushColor(Qt::blue);QVERIFY(client.beginStroke({{32.5,60.5},1}));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());client.selectLayer(owner);QTRY_COMPARE(client.activeLayer(),owner);client.selectLayers(partner,Qt::ControlModifier);QTRY_COMPARE(client.selectedLayers().size(),2);QTRY_VERIFY(!client.layerEditBusy());}
+        if(kind>=3){quint64 target=owner;for(int i=0;i<2;++i){QVERIFY(client.groupLayer(target,"ancestor"));QTRY_VERIFY(!client.layerEditBusy());target=client.activeLayer();QVERIFY(client.setLayerBlend(target,kind==3?0:27));QTRY_VERIFY(!client.layerEditBusy());}client.selectLayer(owner);QTRY_COMPARE(client.activeLayer(),owner);QTRY_VERIFY(!client.layerEditBusy());}
         QQuickWindow window;window.resize(640,480);window.setColor(Qt::black);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({640,480});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));window.requestActivate();QTRY_VERIFY(window.isActive());canvas->actualSize();canvas->forceActiveFocus();QTRY_VERIFY(client.frameRevision()>=client.revision());
         const auto screen=[&](QPointF p){return(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
         const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return QImage{};return grab->image();};

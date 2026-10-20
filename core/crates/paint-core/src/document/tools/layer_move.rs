@@ -535,6 +535,21 @@ mod compound_tests {
         let mask = d.add_mask(a).unwrap();
         fill(&mut d, mask, [1., 1., 1., 0.35], (3, -2));
         let mut roots = vec![a];
+        if kind >= 4 {
+            let inner = d.group_layer(a, "inner context").unwrap();
+            let sibling = d.add_layer("stationary sibling").unwrap();
+            d.reparent_layer(sibling, inner).unwrap();
+            fill(&mut d, sibling, [0.4, 0.2, 0.9, 0.3], (13, -3));
+            let outer = d.group_layer(inner, "outer context").unwrap();
+            for id in [inner, outer] {
+                let at = d.layer_index(id).unwrap();
+                d.layers[at].appearance.blend = if kind == 4 {
+                    crate::BlendMode::Normal
+                } else {
+                    crate::BlendMode::PassThrough
+                };
+            }
+        }
         if kind == 1 || kind == 2 {
             let group = d.group_layer(a, "moving group").unwrap();
             let at = d.layer_index(group).unwrap();
@@ -574,7 +589,7 @@ mod compound_tests {
     }
     #[test]
     fn compound_move_sources_match_pixels_reuse_tiles_and_commit_one_history() {
-        for kind in 0..4 {
+        for kind in 0..6 {
             let (mut d, ids) = seed(kind);
             let before = pixels(&d);
             let originals = d.layers.clone();
@@ -665,5 +680,36 @@ mod compound_tests {
         d.layers[above].clipped = true;
         d.begin_layer_moves(&ids, true).unwrap();
         assert!(!d.layer_move_deferred());
+    }
+
+    #[test]
+    fn nested_move_keeps_ancestor_masks_opacity_and_backdrop_dependencies_on_cpu() {
+        for kind in 0..5 {
+            let (mut d, ids) = seed(4);
+            let parent = d.layer(ids[0]).unwrap().parent;
+            let at = d.layer_index(parent).unwrap();
+            match kind {
+                0 => d.layers[at].properties.opacity = 0.5,
+                1 => d.layers[at].appearance.fill = 0.5,
+                2 => {
+                    d.add_mask(parent).unwrap();
+                }
+                3 => d.layers[at].appearance.blend = crate::BlendMode::Multiply,
+                _ => {
+                    let sibling = d
+                        .layers
+                        .iter()
+                        .position(|l| l.name == "stationary sibling")
+                        .unwrap();
+                    d.layers[sibling].appearance.blend = crate::BlendMode::Multiply;
+                }
+            }
+            let before = pixels(&d);
+            d.begin_layer_moves(&ids, true).unwrap();
+            assert!(!d.layer_move_deferred(), "unsupported ancestor case {kind}");
+            d.update_layer_move(3, 2).unwrap();
+            d.cancel_layer_move().unwrap();
+            assert_eq!(pixels(&d), before);
+        }
     }
 }

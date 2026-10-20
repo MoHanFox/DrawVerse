@@ -1,5 +1,13 @@
 # 图层移动实时预览验收
 
+## 2026-10-21：组内子层常驻
+
+新增两个祖先级别的Normal/PassThrough组内单层（含自身链接蒙版）源切分；真实组与瓦片不改。核心移动10项通过，扩展的完整逐像素对照覆盖六种来源、多次位移、半透明/负坐标/不动的同组兄弟、取消与单历史/undo/redo。新增祖先opacity/fill/蒙版/特殊混合及隔离背景依赖五类回退验证。共享液化3项、变换8项、原生延迟包1项回归通过。
+
+软件Qt五行与真实D3D11五行通过，新增Normal/PassThrough两级组内目标；硬件要求gpuDisplay为真，32次鼠标移动后松手前像素跟随、sourceId与纹理cacheKey不变、四顶点、最终单历史与undo均通过。四ABI顺序、严格Clippy、格式、生成头与完整Release通过，输出 `build/qt/bin/Release`，ABI1.74/state44不变。
+
+祖先半透明、祖先蒙版、固定自身蒙版、非连续多目标及背景相关混合仍保留CPU回退；本项未将96px窗口功能验证当作4K实体持续时延测试。
+
 2026-10-19，Windows 11 / Qt 6.8.3 / MSVC 2022，分支 `feat/wgpu-support`，ABI 1.63。
 
 设计与代码入口见[移动设计](../../tools/layer-move-preview-design.md)，GPU 范围见[加速规则](../../platform/gpu-acceleration-design.md)。
