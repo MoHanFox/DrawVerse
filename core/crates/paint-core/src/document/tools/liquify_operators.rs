@@ -16,6 +16,107 @@ fn mesh_cell(radius: f32) -> i64 {
 mod adaptive_tests {
     use super::*;
     #[test]
+    fn large_source_footprints_split_then_stream_with_exact_sampling() {
+        let mut d = Document::new(3072, 3072).unwrap();
+        d.begin_liquify().unwrap();
+        let mut state = d.liquify.as_ref().unwrap().clone();
+        let pixels = (0..4096)
+            .map(|i| {
+                Pixel::from_straight([(i % 64) as f32 / 64., (i / 64) as f32 / 64., 0.2, 0.75])
+                    .unwrap()
+            })
+            .collect();
+        let tile = Arc::new(Tile::from_pixels(pixels).unwrap());
+        state.original.tiles = (0..48)
+            .flat_map(|x| (0..48).map(move |y| TileCoord { x, y }))
+            .map(|key| (key, tile.clone()))
+            .collect();
+        // A single output tile's conservative footprint exceeds the real 2048
+        // source staging budget; only a few source tiles are sampled in fact.
+        state.field.insert(
+            TileCoord { x: 0, y: 0 },
+            Arc::new(vec![[3000.25, 3000.75]; 4096]),
+        );
+        let output = [TileCoord { x: 0, y: 0 }];
+        assert!(plan_remap(&state, &output, paint_ops::MAX_SOURCE_TILES)
+            .unwrap()
+            .is_none());
+        let reference_source = state
+            .original
+            .tiles
+            .iter()
+            .filter(|(key, _)| **key == output[0] || (key.x >= 46 && key.y >= 46))
+            .map(|(key, tile)| {
+                SourceTile::new(
+                    [key.signed_x(), key.signed_y()],
+                    tile.try_pixels()
+                        .unwrap()
+                        .iter()
+                        .map(|p| p.components())
+                        .collect(),
+                )
+            })
+            .collect();
+        let mut op = RemapOp {
+            grid: grid(&state.field, batch_bounds(&output), state.cell).unwrap(),
+            source: reference_source,
+            white: [0, 0],
+            tiles: vec![[0, 0]],
+            selection: Vec::new(),
+            stride: 1,
+            cubic: false,
+        };
+        for (stride, cubic, selected) in [(1, false, false), (1, true, true), (4, false, false)] {
+            op.stride = stride;
+            op.cubic = cubic;
+            op.selection = if selected {
+                (0..4096).map(|i| (i % 5) as f32 / 4.).collect()
+            } else {
+                Vec::new()
+            };
+            let expected = Cpu.execute(&Operator::Remap(op.clone())).unwrap();
+            assert_eq!(stream_remap(&state, &op).unwrap(), expected);
+        }
+        let mut result = state.original.clone();
+        d.remap_liquify(&state, &mut result, &output, 1, true)
+            .unwrap();
+        op.stride = 1;
+        op.cubic = true;
+        op.selection.clear();
+        let expected = Cpu.execute(&Operator::Remap(op)).unwrap();
+        assert_eq!(
+            result.tiles[&output[0]]
+                .try_pixels()
+                .unwrap()
+                .iter()
+                .map(|p| p.components())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(
+            state.sources.lock().unwrap().is_empty(),
+            "streaming must not fill the staging cache"
+        );
+
+        // A normal large batch is divided rather than rejecting the operation.
+        state.field.clear();
+        let work = (0..128).map(|y| TileCoord { x: 0, y }).collect::<Vec<_>>();
+        let (count, plan) =
+            paint_ops::batching::plan_batch(&work, 128, |batch| plan_remap(&state, batch, 64))
+                .unwrap();
+        assert!(count < 128 && plan.is_some());
+    }
+
+    #[test]
+    fn eight_and_sixteen_k_output_use_document_quota_not_batch_size() {
+        for side in [8192, 16384] {
+            let tiles = keys([0, 0, side, side], 1_000_000).unwrap();
+            assert_eq!(tiles.len(), (side / 64 * side / 64) as usize);
+            assert!(tiles.len() > 8192);
+            assert!(keys([0, 0, side, side], tiles.len() - 1).is_err());
+        }
+    }
+    #[test]
     fn large_mesh_refines_without_losing_outside_field_or_history() {
         let mut d = Document::new(96, 96).unwrap();
         d.begin_liquify().unwrap();
@@ -70,12 +171,15 @@ fn refine(state: &mut LiquifyState, cell: i64) -> Result<()> {
     for key in state.field.keys() {
         let x = i64::from(key.signed_x()) * 64 * state.cell;
         let y = i64::from(key.signed_y()) * 64 * state.cell;
-        output.extend(keys([
-            (x - state.cell).div_euclid(cell),
-            (y - state.cell).div_euclid(cell),
-            (x + 64 * state.cell).div_euclid(cell) + 1,
-            (y + 64 * state.cell).div_euclid(cell) + 1,
-        ])?);
+        output.extend(keys(
+            [
+                (x - state.cell).div_euclid(cell),
+                (y - state.cell).div_euclid(cell),
+                (x + 64 * state.cell).div_euclid(cell) + 1,
+                (y + 64 * state.cell).div_euclid(cell) + 1,
+            ],
+            MAX_FIELD_TILES,
+        )?);
         if output.len() * 4096 > MAX_VISITS {
             return Err(Error::ResourceLimit("liquify refinement budget"));
         }
@@ -124,7 +228,7 @@ fn grid(field: &Field, rect: [i64; 4], cell: i64) -> Result<Grid> {
         vectors,
     })
 }
-fn keys(rect: [i64; 4]) -> Result<Vec<TileCoord>> {
+fn keys(rect: [i64; 4], limit: usize) -> Result<Vec<TileCoord>> {
     let [l, t, r, b] = rect;
     if r <= l || b <= t {
         return Ok(Vec::new());
@@ -138,12 +242,94 @@ fn keys(rect: [i64; 4]) -> Result<Vec<TileCoord>> {
     if r < l || b < t {
         return Ok(Vec::new());
     }
-    if (r - l + 1) * (b - t + 1) > 8192 {
-        return Err(Error::ResourceLimit("liquify output tile budget"));
+    if (r - l + 1) * (b - t + 1) > limit as i64 {
+        return Err(Error::ResourceLimit("liquify document tile quota"));
     }
     Ok((l..=r)
         .flat_map(|x| (t..=b).map(move |y| TileCoord::from_signed(x as i32, y as i32)))
         .collect())
+}
+
+fn batch_bounds(batch: &[TileCoord]) -> [i64; 4] {
+    let mut bounds = [i64::MAX, i64::MAX, i64::MIN, i64::MIN];
+    for key in batch {
+        let x = i64::from(key.signed_x()) * 64;
+        let y = i64::from(key.signed_y()) * 64;
+        bounds = [
+            bounds[0].min(x),
+            bounds[1].min(y),
+            bounds[2].max(x + 64),
+            bounds[3].max(y + 64),
+        ];
+    }
+    bounds
+}
+
+type RemapPlan = (Grid, Vec<TileCoord>);
+fn plan_remap(
+    state: &LiquifyState,
+    batch: &[TileCoord],
+    limit: usize,
+) -> Result<Option<RemapPlan>> {
+    let [left, top, right, bottom] = batch_bounds(batch);
+    // Sparse output can span a huge rectangle; split before allocating its grid.
+    let nodes =
+        ((right - left).div_euclid(state.cell) + 6) * ((bottom - top).div_euclid(state.cell) + 6);
+    if nodes > paint_ops::MAX_SAMPLES as i64 {
+        return Ok(None);
+    }
+    let input = grid(&state.field, [left, top, right, bottom], state.cell)?;
+    // Include identity/source-at-output reads, selection blending and cubic support.
+    let extrema = input.vectors.iter().fold([0_f32; 4], |m, v| {
+        [
+            m[0].min(v[0]),
+            m[1].min(v[1]),
+            m[2].max(v[0]),
+            m[3].max(v[1]),
+        ]
+    });
+    let bounds = [
+        (left + extrema[0].floor() as i64 - 3).div_euclid(64),
+        (top + extrema[1].floor() as i64 - 3).div_euclid(64),
+        (right + extrema[2].ceil() as i64 + 3).div_euclid(64),
+        (bottom + extrema[3].ceil() as i64 + 3).div_euclid(64),
+    ];
+    let mut source = Vec::new();
+    for key in state.original.tiles.keys() {
+        let (x, y) = (i64::from(key.signed_x()), i64::from(key.signed_y()));
+        if x >= bounds[0] && y >= bounds[1] && x <= bounds[2] && y <= bounds[3] {
+            if source.len() == limit {
+                return Ok(None);
+            }
+            source.push(*key);
+        }
+    }
+    Ok(Some((input, source)))
+}
+
+fn stream_remap(state: &LiquifyState, op: &RemapOp) -> Result<Vec<[f32; 4]>> {
+    let mut cache = BTreeMap::new();
+    let mut order = std::collections::VecDeque::new();
+    let mut source = |x: i32, y: i32| -> Result<[f32; 4]> {
+        let key = TileCoord::from_signed(x.div_euclid(64), y.div_euclid(64));
+        let Some(tile) = state.original.tiles.get(&key) else {
+            return Ok(state
+                .original
+                .default_pixel(i64::from(x), i64::from(y))
+                .components());
+        };
+        if !cache.contains_key(&key) {
+            if cache.len() == 64 {
+                cache.remove(&order.pop_front().expect("source cache"));
+            }
+            cache.insert(key, tile.try_pixels()?);
+            order.push_back(key);
+        }
+        Ok(cache[&key][(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize].components())
+    };
+    (0..op.tiles.len() * 4096)
+        .map(|index| op.try_pixel_with(index, &mut source))
+        .collect()
 }
 fn execute(executor: &dyn Executor, op: &Operator) -> Result<Vec<[f32; 4]>> {
     let values = executor
@@ -367,15 +553,18 @@ impl Document {
                 }
             }
             if !deferred {
-                dirty.extend(keys([
-                    (left - cell * 2).max(-ox),
-                    (top - cell * 2).max(-oy),
-                    (right + cell * 2).min(i64::from(self.width) - ox),
-                    (bottom + cell * 2).min(i64::from(self.height) - oy),
-                ])?);
+                dirty.extend(keys(
+                    [
+                        (left - cell * 2).max(-ox),
+                        (top - cell * 2).max(-oy),
+                        (right + cell * 2).min(i64::from(self.width) - ox),
+                        (bottom + cell * 2).min(i64::from(self.height) - oy),
+                    ],
+                    self.options.max_document_tiles,
+                )?);
             }
-            if dirty.len() > 8192 {
-                return Err(Error::ResourceLimit("liquify output tile budget"));
+            if dirty.len() > self.options.max_document_tiles {
+                return Err(Error::ResourceLimit("liquify document tile quota"));
             }
             changed = true;
         }
@@ -472,14 +661,17 @@ impl Document {
             if bounds[2] > 0 {
                 let x = i64::from(key.signed_x()) * 64;
                 let y = i64::from(key.signed_y()) * 64;
-                affected.extend(keys([
-                    ((x + bounds[0] - 1) * cell).max(reachable[0]),
-                    ((y + bounds[1] - 1) * cell).max(reachable[1]),
-                    ((x + bounds[2] + 1) * cell).min(reachable[2]),
-                    ((y + bounds[3] + 1) * cell).min(reachable[3]),
-                ])?);
-                if affected.len() > 8192 {
-                    return Err(Error::ResourceLimit("liquify final tile budget"));
+                affected.extend(keys(
+                    [
+                        ((x + bounds[0] - 1) * cell).max(reachable[0]),
+                        ((y + bounds[1] - 1) * cell).max(reachable[1]),
+                        ((x + bounds[2] + 1) * cell).min(reachable[2]),
+                        ((y + bounds[3] + 1) * cell).min(reachable[3]),
+                    ],
+                    self.options.max_document_tiles,
+                )?);
+                if affected.len() > self.options.max_document_tiles {
+                    return Err(Error::ResourceLimit("liquify document tile quota"));
                 }
             }
         }
@@ -501,70 +693,49 @@ impl Document {
         cubic: bool,
     ) -> Result<()> {
         self.progress_stage(ComputationPhase::Resampling, tiles.len());
-        for batch in tiles.chunks(BATCH_TILES) {
-            let left = batch
-                .iter()
-                .map(|k| i64::from(k.signed_x()) * 64)
-                .min()
-                .expect("batch");
-            let top = batch
-                .iter()
-                .map(|k| i64::from(k.signed_y()) * 64)
-                .min()
-                .expect("batch");
-            let right = batch
-                .iter()
-                .map(|k| i64::from(k.signed_x()) * 64 + 64)
-                .max()
-                .expect("batch");
-            let bottom = batch
-                .iter()
-                .map(|k| i64::from(k.signed_y()) * 64 + 64)
-                .max()
-                .expect("batch");
-            let input = grid(&state.field, [left, top, right, bottom], state.cell)?;
-            let maximum = input.vectors.iter().fold([0_f32; 2], |m, v| {
-                [m[0].max(v[0].abs()), m[1].max(v[1].abs())]
-            });
-            let source_bounds = [
-                (left - maximum[0].ceil() as i64 - 3).div_euclid(64),
-                (top - maximum[1].ceil() as i64 - 3).div_euclid(64),
-                (right + maximum[0].ceil() as i64 + 3).div_euclid(64),
-                (bottom + maximum[1].ceil() as i64 + 3).div_euclid(64),
-            ];
-            let mut source = Vec::new();
-            let mut cached = state
-                .sources
-                .lock()
-                .map_err(|_| Error::Storage("liquify source cache poisoned".into()))?;
-            for (key, tile) in &state.original.tiles {
-                let x = i64::from(key.signed_x());
-                let y = i64::from(key.signed_y());
-                if x < source_bounds[0]
-                    || y < source_bounds[1]
-                    || x > source_bounds[2]
-                    || y > source_bounds[3]
-                {
-                    continue;
-                }
-                if source.len() >= paint_ops::MAX_SOURCE_TILES {
-                    return Err(Error::ResourceLimit("liquify source staging budget"));
-                }
-                if !cached.contains_key(key) {
-                    if cached.len() >= paint_ops::MAX_SOURCE_TILES {
-                        cached.clear();
+        let mut offset = 0;
+        while offset < tiles.len() {
+            let (count, plan) =
+                paint_ops::batching::plan_batch(&tiles[offset..], BATCH_TILES, |batch| {
+                    plan_remap(state, batch, paint_ops::MAX_SOURCE_TILES)
+                })?;
+            let batch = &tiles[offset..offset + count];
+            offset += count;
+            let streaming = plan.is_none();
+            let (input, source_keys) = match plan {
+                Some(plan) => plan,
+                None => (
+                    grid(&state.field, batch_bounds(batch), state.cell)?,
+                    Vec::new(),
+                ),
+            };
+            let mut source = Vec::with_capacity(source_keys.len());
+            if !streaming {
+                let mut cached = state
+                    .sources
+                    .lock()
+                    .map_err(|_| Error::Storage("liquify source cache poisoned".into()))?;
+                for key in source_keys {
+                    if !cached.contains_key(&key) {
+                        // Evict one entry instead of flushing the complete cache.
+                        if cached.len() >= paint_ops::MAX_SOURCE_TILES {
+                            cached.pop_first();
+                        }
+                        cached.insert(
+                            key,
+                            SourceTile::new(
+                                [key.signed_x(), key.signed_y()],
+                                state.original.tiles[&key]
+                                    .try_pixels()?
+                                    .iter()
+                                    .map(|p| p.components())
+                                    .collect(),
+                            ),
+                        );
                     }
-                    cached.insert(
-                        *key,
-                        SourceTile::new(
-                            [key.signed_x(), key.signed_y()],
-                            tile.try_pixels()?.iter().map(|p| p.components()).collect(),
-                        ),
-                    );
+                    source.push(cached[&key].clone());
                 }
-                source.push(cached[key].clone());
             }
-            drop(cached);
             source.sort_by_key(|t| t.coord);
             let mut selection = Vec::new();
             if self.selection.enabled() {
@@ -588,7 +759,7 @@ impl Document {
                     }
                 }
             }
-            let compact = stride > 1 && selection.is_empty() && !cubic;
+            let compact = !streaming && stride > 1 && selection.is_empty() && !cubic;
             let remap = RemapOp {
                 grid: input,
                 source,
@@ -598,12 +769,16 @@ impl Document {
                 stride,
                 cubic,
             };
-            let op = if compact {
-                Operator::RemapBlocks(remap)
+            let values = if streaming {
+                stream_remap(state, &remap)?
             } else {
-                Operator::Remap(remap)
+                let op = if compact {
+                    Operator::RemapBlocks(remap)
+                } else {
+                    Operator::Remap(remap)
+                };
+                execute(self.compute.as_ref(), &op)?
             };
-            let values = execute(self.compute.as_ref(), &op)?;
             let samples = if compact {
                 4096 / (stride * stride) as usize
             } else {

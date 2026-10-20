@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [长任务资源预算与大画布](tools/long-task-resource-budget-validation.md)
+
 - [复杂图层移动的有界预览](tools/layer-move-bounded-fallback-validation.md)
 
 - [资源列表滚轮隔离](brush/ui/brush-resource-wheel-validation.md)

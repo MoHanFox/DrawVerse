@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [长任务资源预算、大画布与历史架构调查](tools/long-task-resource-budget-design.md)
+
 - [复杂图层移动的有界预览](tools/layer-move-bounded-fallback-design.md)
 
 - [资源列表滚轮隔离](brush/ui/brush-resource-wheel-design.md)

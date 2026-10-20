@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新液化资源预算：`docs/tools/long-task-resource-budget-design.md` / 对应 validations；paint-ops 自适应批次规划与 fallible 按需采样，液化暂存超限拆批/单瓦片超限 CPU 流式后备，取消独立8192输出瓦片限制并受文档配额约束。算子24/核心3+11/软件Qt1与D3D11 Qt2/四ABI/Clippy/Release通过，ABI1.74保持，输出 `build/qt/bin/Release`。8K/16K只验证范围规划，未验收整图耗时；笔刷切换、热历史、其他长任务迁移仍待，不能称全部大图路径已解决。
+
 - 最新变换框忽略附带蒙版：初始框合并非蒙版源，附带蒙版不扩框、不按遮挡alpha缩框；显示/原分层变换保持，显式蒙版独立编辑仍按自身范围。核心新8组合/预览9/公开7/原生1，软件Qt1/D3D11 Qt1、四ABI/Clippy/格式/Release通过；ABI1.74保持，旧EXE运行锁定产物为 `build/qt/bin/Release/drawverse-next.exe`。见变换设计/验收。
 
 - 最新笔刷列表尾条删除：用户红框的固定24px根拖放footer已删，自然空白透明拖放保留；原真实多选/重排/菜单用例改验证空白落点，软件/D3D11通过。见画笔菜单拖动设计/验收；Release旧EXE运行锁定，新主程序为 `build/qt/bin/Release/drawverse-next.exe`，无ABI/算法变化。

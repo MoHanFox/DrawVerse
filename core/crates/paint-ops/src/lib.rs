@@ -2,6 +2,7 @@
 //! document ownership, histories and publishing deliberately live above this layer.
 use std::{fmt::Debug, ops::Deref, sync::Arc};
 
+pub mod batching;
 pub mod replay_outline;
 pub mod sdf;
 
@@ -346,24 +347,35 @@ impl RemapOp {
         }
     }
     fn sample(&self, x: f32, y: f32) -> Rgba {
+        self.try_sample_with(x, y, &mut |x, y| {
+            Ok::<_, std::convert::Infallible>(self.source_at(x, y))
+        })
+        .unwrap()
+    }
+    fn try_sample_with<E>(
+        &self,
+        x: f32,
+        y: f32,
+        source: &mut impl FnMut(i32, i32) -> Result<Rgba, E>,
+    ) -> Result<Rgba, E> {
         let (ix, iy) = (x.floor() as i32, y.floor() as i32);
         let (fx, fy) = (x - x.floor(), y - y.floor());
         if !self.cubic {
             let (a, b, c, d) = (
-                self.source_at(ix, iy),
-                self.source_at(ix + 1, iy),
-                self.source_at(ix, iy + 1),
-                self.source_at(ix + 1, iy + 1),
+                source(ix, iy)?,
+                source(ix + 1, iy)?,
+                source(ix, iy + 1)?,
+                source(ix + 1, iy + 1)?,
             );
-            return [0, 1, 2, 3].map(|k| lerp(lerp(a[k], b[k], fx), lerp(c[k], d[k], fx), fy));
+            return Ok([0, 1, 2, 3].map(|k| lerp(lerp(a[k], b[k], fx), lerp(c[k], d[k], fx), fy)));
         }
         let mut out = [0.; 4];
-        let first = self.source_at(ix, iy);
+        let first = source(ix, iy)?;
         let mut uniform = true;
         for dy in -1..=2 {
             for dx in -1..=2 {
                 let w = cubic_weight(dx as f32 - fx) * cubic_weight(dy as f32 - fy);
-                let p = self.source_at(ix + dx, iy + dy);
+                let p = source(ix + dx, iy + dy)?;
                 uniform &= p == first;
                 for k in 0..4 {
                     out[k] += p[k] * w;
@@ -371,15 +383,27 @@ impl RemapOp {
             }
         }
         if uniform {
-            return first;
+            return Ok(first);
         }
         out[3] = out[3].clamp(0., 1.);
         for k in 0..3 {
             out[k] = out[k].clamp(0., out[3]);
         }
-        out
+        Ok(out)
     }
     fn pixel(&self, index: usize) -> Rgba {
+        self.try_pixel_with(index, |x, y| {
+            Ok::<_, std::convert::Infallible>(self.source_at(x, y))
+        })
+        .unwrap()
+    }
+    /// Evaluate a pixel with bounded, fallible source access instead of staging
+    /// the whole source footprint. The caller validates the request and index.
+    pub fn try_pixel_with<E>(
+        &self,
+        index: usize,
+        mut source: impl FnMut(i32, i32) -> Result<Rgba, E>,
+    ) -> Result<Rgba, E> {
         let tile = self.tiles[index / 4096];
         let offset = (index % 4096) as i32;
         let (x, y) = (tile[0] * 64 + offset % 64, tile[1] * 64 + offset / 64);
@@ -388,18 +412,18 @@ impl RemapOp {
         } else {
             self.selection[index]
         };
-        let original = self.source_at(x, y);
+        let original = source(x, y)?;
         if selected == 0. {
-            return original;
+            return Ok(original);
         }
         let stride = self.stride as i32;
         let (px, py) = (x.div_euclid(stride) * stride, y.div_euclid(stride) * stride);
         let d = self.grid.sample(px as f32, py as f32);
         if d == [0., 0.] {
-            return original;
+            return Ok(original);
         }
-        let sampled = self.sample(px as f32 + d[0], py as f32 + d[1]);
-        [0, 1, 2, 3].map(|k| lerp(original[k], sampled[k], selected))
+        let sampled = self.try_sample_with(px as f32 + d[0], py as f32 + d[1], &mut source)?;
+        Ok([0, 1, 2, 3].map(|k| lerp(original[k], sampled[k], selected)))
     }
 }
 impl Operator {
