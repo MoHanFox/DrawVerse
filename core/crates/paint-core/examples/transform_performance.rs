@@ -6,7 +6,8 @@ fn main() {
     let size = args.get(1).map_or(512, |s| s.parse::<u32>().unwrap());
     let deferred = args.get(2).is_none_or(|s| s == "mesh");
     let warp = args.get(3).is_none_or(|s| s == "warp");
-    let selected = args.get(4).is_some_and(|s| s == "selection");
+    let scope = args.get(4).map_or("layer", String::as_str);
+    let selected = scope == "selection";
     let height = if selected { size * 2160 / 4096 } else { size };
     let mut d = Document::new(size, height.max(1)).unwrap();
     if selected {
@@ -44,12 +45,25 @@ fn main() {
         })
         .unwrap();
     }
-    let id = d.active_layer();
+    let mut id = d.active_layer();
+    if matches!(scope, "mask" | "group") {
+        d.add_mask(id).unwrap();
+        if scope == "group" {
+            id = d.group_layer(id, "transform group").unwrap();
+            d.add_mask(id).unwrap();
+        }
+    }
+    let start = Instant::now();
     if deferred {
         d.begin_transform_layers_deferred(&[id]).unwrap();
     } else {
         d.begin_transform_layers(&[id]).unwrap();
     }
+    println!(
+        "scope={scope} begin_ms={:.3} resident={}",
+        start.elapsed().as_secs_f64() * 1000.,
+        d.transform_deferred()
+    );
     let initial = d.transform_geometry().unwrap();
     for pass in 0..3 {
         let start = Instant::now();

@@ -196,6 +196,8 @@ pub struct PlacedImage {
 #[derive(Clone, Debug)]
 pub(super) struct TransformState {
     preview_source: Option<Arc<crate::ResidentPreviewSource>>,
+    preview_bounds: Option<[f64; 4]>,
+    roots: Vec<LayerId>,
     original: Layer,
     original_bounds: [f64; 4],
     source: Arc<PlacedImage>,
@@ -463,6 +465,8 @@ impl Document {
         let current = source.geometry.clone();
         self.transform = Some(TransformState {
             preview_source: None,
+            preview_bounds: None,
+            roots: vec![original.id],
             original,
             original_bounds,
             source,
@@ -495,7 +499,7 @@ impl Document {
             return result;
         }
         let mut targets = Vec::new();
-        for id in roots {
+        for &id in &roots {
             for layer in &self.layers[self.subtree(id)?] {
                 if !layer.group
                     && (!layer.mask || layer.mask_linked || ids.contains(&layer.id))
@@ -542,6 +546,7 @@ impl Document {
             first.initial = first.current.clone();
             first.checkpoint = first.current.clone();
         }
+        first.roots = roots;
         first.previous_active = active;
         self.transform = Some(first);
         Ok(())
@@ -619,6 +624,8 @@ impl Document {
         });
         self.transform = Some(TransformState {
             preview_source: None,
+            preview_bounds: None,
+            roots: vec![id],
             original: layer,
             original_bounds: image.bounds,
             source: image,

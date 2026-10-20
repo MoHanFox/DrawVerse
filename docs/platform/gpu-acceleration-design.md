@@ -155,3 +155,6 @@ GPU计算下拉框仍控制现有wgpu算子，选择GPU不会把SDF自动转为G
 
 
 双重笔刷的已有来源纹理已通过 SecondaryTip 的可选 BrushTexture 接入（state44/behavior36、ABI1.72）：主/第二笔尖共用 CPU TextureDab 采样和资源/mip缓存，预览与实际笔触一致；此项没有新增GPU计算，Qt仍负责硬件显示。来源、覆盖组合和交换说明见[本轮清单](../planning/2026-10-20-bugfix-design.md)。
+
+
+2026-10-20扩展：根层链接自身蒙版、完整根组、连续根多选的自由变换已接常驻代理，CPU只更新几何，Qt硬件显示；确认仍在CPU对原始分层/蒙版分别取样。复合预览存在预合成/代理近似，固定蒙版、组内单层与选区等保留CPU预览，见[变换设计](../tools/transform-resident-preview-design.md)。三类完成任务的真实进度和延迟显示见[长任务设计](../tools/long-task-progress-design.md)，不新增GPU算子。

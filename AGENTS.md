@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新完整子树变换预览：transform-resident-preview设计/验收；根层链接自身蒙版、完整Normal/独立穿透根组、连续根多选捕获不可变原始源与世界选框，拖动CPU网格/Qt GPU代理，确认原分层分别采样。核心8+2+1+1+1、原生1、软件Qt5/D3D11 Qt5、四ABI/Clippy/Release通过；2000px双蒙版组Warp六输入核心中位8625→5.63ms，非UI时延。ABI1.74保持，输出 `build/qt/bin/Release`；组内单层/固定蒙版/非连续/选区/首次资产与实体持续性能仍待，预合成半透明/Warp存在近似。
+
 - 最新长任务进度：`docs/tools/long-task-progress-design.md` / `docs/validations/tools/long-task-progress-validation.md`；液化完成/变换完成/整图翻转按实际瓦片与批次报告分阶段计数，未知总量不定进度，默认1000ms/设置0–10000ms，各文档与浮动窗口独立显示。ABI1.74/bit62/72B只读快照，不等actor与publication；state44/VBR保持。核心三类像素/历史及低预算失败1、原生1/actor1、软件Qt2/D3D11 Qt2、四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`；既有有界瓦片复用，未验收任意OS OOM/跨平台/实体持续性能。
 
 - 最新完整子树移动常驻源：根组/链接蒙版/连续根多选完整后序子树静态合成，位移只改四顶点；Normal隔离组内非Dissolve混合/剪贴可保留，透传仅独立Normal组合。源与瓦片身份保持；组内单层/固定蒙版/非连续/背景相关组合/置入仍回退，首次资产待。核心2+7/液化3/变换6/原生1、D3D11新3+共享2及软件新3+共享2/四ABI/Clippy/Release通过，ABI1.73不变，输出 `build/qt/bin/Release`；见移动设计/验收，未测4K实体连续时延。

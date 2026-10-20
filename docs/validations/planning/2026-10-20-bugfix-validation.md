@@ -235,3 +235,8 @@ CanvasPane 在自身液化/变换状态关闭后延后一轮恢复可见、启�
 ## 追加：长任务真实进度
 
 三类完成任务接入可独立读取的实际瓦片进度、默认1000ms/可配置0–10000ms延迟与各文档界面归属。核心1项覆盖三类像素/历史及资源失败，原生1+actor回归1、软件Qt2/D3D11 Qt2、四ABI/Clippy/Release通过；详见[专项验收](../tools/long-task-progress-validation.md)。ABI1.74，产物build/qt/bin/Release；其他新描边、选区/复杂目标常驻和实体持续性能待办保持。
+
+
+## 追加：完整链接子树变换常驻预览
+
+自身链接蒙版、完整根组、连续根多选复用不可变预合成源与CPU网格，确认逐层原图重采样。核心变换8/移动2/蒙版1/共享1/进度1、原生1、软件Qt5/D3D11 Qt5、四ABI/Clippy/Release通过；2000px固定双蒙版组Warp六输入核心中位8625.200→5.633ms，非UI时延。见[专项验收](../tools/transform-resident-preview-validation.md)。ABI1.74保持，产物build/qt/bin/Release；组内单层、固定蒙版、非连续/选区、首次资产及实体持续时延仍待。

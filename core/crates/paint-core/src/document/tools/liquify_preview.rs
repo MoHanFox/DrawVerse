@@ -102,11 +102,20 @@ impl Document {
         self.partition_resident_source(at..at + 1, vec![original], [l + ox, t + oy, r + ox, b + oy])
     }
 
-    /// Translation moves complete linked subtrees together; deformation cannot use
-    /// this flattened source because an unwarped mask must retain its own coordinates.
+    /// Translation moves complete linked subtrees together; liquid distortion keeps
+    /// its mask fixed and must continue using the separate ordinary-source predicate.
     pub(in crate::document) fn resident_move_source(
         &self,
         ids: &[LayerId],
+    ) -> Option<Arc<LiquifyPreviewSource>> {
+        self.resident_subtree_source(ids, &[])
+    }
+
+    /// Immutable original overrides allow late transform opt-in after pixel previews.
+    pub(in crate::document) fn resident_subtree_source(
+        &self,
+        ids: &[LayerId],
+        originals: &[Layer],
     ) -> Option<Arc<LiquifyPreviewSource>> {
         let mut roots = self.batch_roots(ids).ok()?;
         roots.sort_by_key(|id| self.layer_index(*id).ok());
@@ -141,7 +150,20 @@ impl Document {
             }
             end = range.end;
         }
-        let layers = &self.layers[start..end];
+        let mut layers = self.layers[start..end].to_vec();
+        if !originals.is_empty()
+            && layers.iter().any(|l| {
+                !l.group
+                    && (!l.tiles.is_empty() || l.white != (0, 0))
+                    && !originals.iter().any(|original| original.id == l.id)
+            })
+        {
+            return None;
+        }
+        for original in originals {
+            let layer = layers.iter_mut().find(|l| l.id == original.id)?;
+            *layer = original.clone();
+        }
         if layers.iter().any(|l| {
             l.is_image()
                 || l.mask && !l.mask_linked
@@ -167,7 +189,7 @@ impl Document {
                 ]
             }));
         }
-        self.partition_resident_source(start..end, layers.to_vec(), bounds?)
+        self.partition_resident_source(start..end, layers, bounds?)
     }
 
     fn resident_foreground_is_normal(&self, start: usize) -> bool {

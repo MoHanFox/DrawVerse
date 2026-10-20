@@ -16,18 +16,44 @@ impl Document {
         if state.preview_source.is_some() {
             return Ok(());
         }
-        if state.selection.is_some() || !state.extra.is_empty() || state.original.mask {
+        if state.selection.is_some() {
             return Ok(());
         }
-        // Placed images use their immutable original pixels, including repeated scaling/warping.
-        let mut layer = state.source.source.clone();
-        layer.properties = state.original.properties;
-        layer.appearance = state.original.appearance;
-        layer.appearance.offset_x = 0;
-        layer.appearance.offset_y = 0;
-        layer.placed = None;
-        let source = self.resident_source_layer(state.original.id, layer);
-        self.transform.as_mut().expect("session").preview_source = source;
+        let (source, bounds) = if state.extra.is_empty() && !state.original.mask {
+            // Placed images retain their immutable full-resolution model.
+            let mut layer = state.source.source.clone();
+            layer.properties = state.original.properties;
+            layer.appearance = state.original.appearance;
+            layer.appearance.offset_x = 0;
+            layer.appearance.offset_y = 0;
+            layer.placed = None;
+            (
+                self.resident_source_layer(state.original.id, layer),
+                state.source.bounds,
+            )
+        } else {
+            (None, state.source.bounds)
+        };
+        let (source, bounds) = if source.is_some() {
+            (source, bounds)
+        } else {
+            let originals: Vec<_> = std::iter::once(state.original.clone())
+                .chain(state.extra.iter().map(|(l, _)| l.clone()))
+                .collect();
+            let bounds = [
+                state.initial.points[0][0],
+                state.initial.points[0][1],
+                state.initial.points[3][0] - state.initial.points[0][0],
+                state.initial.points[12][1] - state.initial.points[0][1],
+            ];
+            (
+                self.resident_subtree_source(&state.roots, &originals),
+                bounds,
+            )
+        };
+        let state = self.transform.as_mut().expect("session");
+        state.preview_bounds = source.as_ref().map(|_| bounds);
+        state.preview_source = source;
         self.dirty_all();
         Ok(())
     }
@@ -43,7 +69,7 @@ impl Document {
         let source = state.preview_source.as_ref()?.clone();
         let geometry = &state.current;
         let mesh = super::mesh::TransformMesh::new(geometry);
-        let bounds = state.source.bounds;
+        let bounds = state.preview_bounds?;
         let vertices = mesh
             .vertices
             .into_iter()
@@ -102,6 +128,198 @@ mod tests {
             d.end_stroke().unwrap();
         }
         d
+    }
+    fn compound_seed(kind: u8) -> (Document, Vec<LayerId>) {
+        let mut d = seed();
+        let owner = d.active_layer();
+        d.move_layer(owner, 5, -3).unwrap();
+        let mask = d.add_mask(owner).unwrap();
+        let at = d.layer_index(mask).unwrap();
+        let pixels = (0..4096)
+            .map(|i| Pixel::from_straight([(i % 64) as f32 / 63., 0.3, 0.3, 1.]).unwrap())
+            .collect();
+        d.layers[at].tiles.insert(
+            TileCoord::from_signed(0, 0),
+            Arc::new(Tile::from_pixels(pixels).unwrap()),
+        );
+        d.layers[at].appearance.offset_x = -4;
+        let mut roots = vec![owner];
+        if kind == 1 {
+            let group = d.group_layer(owner, "root group").unwrap();
+            let outer = d.group_layer(group, "outer group").unwrap();
+            d.add_mask(outer).unwrap();
+            let at = d.layer_index(outer).unwrap();
+            d.layers[at].appearance.blend = crate::BlendMode::Normal;
+            d.layers[at].properties.opacity = 0.65;
+            let at = d.layer_index(owner).unwrap();
+            d.layers[at].appearance.blend = crate::BlendMode::Multiply;
+            roots = vec![outer];
+        } else if kind == 2 {
+            let other = d.add_layer("second root").unwrap();
+            d.begin_stroke(
+                crate::Brush {
+                    radius: 12.,
+                    color: Pixel::from_straight([0., 0., 0., 1.]).unwrap(),
+                    ..Default::default()
+                },
+                InputPoint::new(70., 50., 1.),
+            )
+            .unwrap();
+            d.end_stroke().unwrap();
+            roots.push(other);
+        }
+        (d, roots)
+    }
+    fn pixels(d: &Document) -> Vec<Pixel> {
+        (0..96)
+            .flat_map(|y| d.snapshot().read_row(0, y, 128).unwrap())
+            .collect()
+    }
+    #[test]
+    fn compound_transform_preserves_sources_and_final_layer_mask_history() {
+        for kind in 0..3 {
+            for warp in [false, true] {
+                let (mut a, roots) = compound_seed(kind);
+                let (mut b, _) = compound_seed(kind);
+                let baseline = a.layers.clone();
+                let before = pixels(&a);
+                let depth = a.history_depth();
+                a.begin_transform_layers_deferred(&roots).unwrap();
+                b.begin_transform_layers(&roots).unwrap();
+                assert!(a.transform_deferred(), "kind {kind}");
+                let source = a.transform_preview().unwrap().source;
+                for y in (0..96).step_by(5) {
+                    for x in (0..128).step_by(5) {
+                        let image = source.image.pixel(
+                            (x as i32 - source.bounds[0]) as u32,
+                            (y as i32 - source.bounds[1]) as u32,
+                        );
+                        let split = source
+                            .above
+                            .pixel(x, y)
+                            .over(image.over(source.below.pixel(x, y)));
+                        for (p, q) in split
+                            .components()
+                            .into_iter()
+                            .zip(a.pixel(x, y).components())
+                        {
+                            assert!((p - q).abs() < 1e-6, "initial split {kind} {x},{y}");
+                        }
+                    }
+                }
+                let initial = a.transform_geometry().unwrap();
+                let preview = a.transform_preview().unwrap();
+                let expected =
+                    (initial.points[0][0] - source.bounds[0] as f64) / source.bounds[2] as f64;
+                assert!((preview.vertices[0][2] as f64 - expected).abs() < 1e-6);
+                for i in 1..=8 {
+                    let mut g = initial.clone();
+                    g.warp = warp;
+                    for p in &mut g.points {
+                        p[0] += i as f64;
+                        p[1] -= 3.;
+                    }
+                    if warp {
+                        g.points[5][0] += 7.;
+                        g.points[10][1] -= 5.;
+                    }
+                    a.update_transform(g.clone()).unwrap();
+                    b.update_transform(g).unwrap();
+                    assert!(Arc::ptr_eq(&source, &a.transform_preview().unwrap().source));
+                    assert_eq!(a.history_depth(), depth);
+                    for (old, new) in baseline.iter().zip(&a.layers) {
+                        for (key, tile) in &old.tiles {
+                            assert!(Arc::ptr_eq(tile, &new.tiles[key]));
+                        }
+                    }
+                }
+                a.checkpoint_transform().unwrap();
+                a.undo_transform().unwrap();
+                a.redo_transform().unwrap();
+                a.commit_transform().unwrap();
+                b.commit_transform().unwrap();
+                assert_eq!(pixels(&a), pixels(&b));
+                assert_eq!(a.history_depth().0, depth.0 + 1);
+                a.undo().unwrap();
+                assert_eq!(pixels(&a), before);
+                a.redo().unwrap();
+                assert_eq!(pixels(&a), pixels(&b));
+                a.begin_transform_layers_deferred(&roots).unwrap();
+                let mut g = a.transform_geometry().unwrap();
+                g.points[5][0] += 2.;
+                g.warp = true;
+                a.update_transform(g).unwrap();
+                a.cancel_transform().unwrap();
+                assert_eq!(pixels(&a), pixels(&b));
+            }
+        }
+    }
+    #[test]
+    fn compound_transform_late_opt_in_failure_and_incomplete_sources_stay_safe() {
+        let (mut d, roots) = compound_seed(1);
+        let before = pixels(&d);
+        let depth = d.history_depth();
+        d.begin_transform_layers(&roots).unwrap();
+        let mut g = d.transform_geometry().unwrap();
+        for p in &mut g.points {
+            p[0] += 10.;
+        }
+        d.update_transform(g).unwrap();
+        d.enable_transform_deferred().unwrap();
+        assert!(d.transform_deferred());
+        let source = d.transform_preview().unwrap().source;
+        for y in (0..96).step_by(5) {
+            for x in (0..128).step_by(5) {
+                let pixel = source.image.pixel(
+                    (x as i32 - source.bounds[0]) as u32,
+                    (y as i32 - source.bounds[1]) as u32,
+                );
+                for (p, q) in pixel
+                    .components()
+                    .into_iter()
+                    .zip(before[(y * 128 + x) as usize].components())
+                {
+                    assert!((p - q).abs() < 1e-6, "late source must use originals");
+                }
+            }
+        }
+        d.options.max_document_tiles = 0;
+        assert!(d.commit_transform().is_err());
+        assert!(d.transform_deferred());
+        assert_eq!(d.history_depth(), depth);
+        assert!(Arc::ptr_eq(&source, &d.transform_preview().unwrap().source));
+        d.cancel_transform().unwrap();
+        assert_eq!(pixels(&d), before);
+        let (mut d, roots) = compound_seed(0);
+        let mask = d.mask_for(roots[0]).unwrap().id;
+        d.set_mask_linked(mask, false).unwrap();
+        d.begin_transform_layers_deferred(&roots).unwrap();
+        assert!(!d.transform_deferred());
+        d.cancel_transform().unwrap();
+        d.set_mask_linked(mask, true).unwrap();
+        d.set_active_layer(roots[0]).unwrap();
+        d.begin_transform().unwrap();
+        d.enable_transform_deferred().unwrap();
+        assert!(
+            !d.transform_deferred(),
+            "direct single-layer session must not animate its untouched mask"
+        );
+        d.cancel_transform().unwrap();
+        let (mut d, _) = compound_seed(1);
+        let child = d.layers.iter().find(|l| !l.group && !l.mask).unwrap().id;
+        d.begin_transform_layers_deferred(&[child]).unwrap();
+        assert!(!d.transform_deferred());
+        d.cancel_transform().unwrap();
+        let (mut gap, _) = compound_seed(2);
+        let extra = gap.add_layer("third root").unwrap();
+        gap.begin_stroke(crate::Brush::default(), InputPoint::new(10., 10., 1.))
+            .unwrap();
+        gap.end_stroke().unwrap();
+        let bottom = gap.layers.iter().find(|l| !l.group && !l.mask).unwrap().id;
+        gap.begin_transform_layers_deferred(&[bottom, extra])
+            .unwrap();
+        assert!(!gap.transform_deferred());
+        gap.cancel_transform().unwrap();
     }
     #[test]
     fn deferred_transform_keeps_tiles_and_matches_final_pixels_and_history() {
