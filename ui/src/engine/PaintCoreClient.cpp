@@ -313,7 +313,7 @@ signals:
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
     void storageDone(bool success);
     void computeState(QVariantList hardware,QString device,QString status,bool busy);
-    void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform);
+    void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform,QVariantList committedStrokes);
     void thumbnailReady(quint64 generation, quint64 revision, quint64 layer, QString image);
     void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request);
     void failure(QString message);
@@ -447,7 +447,10 @@ public:
         }
         auto transform=dto<PaintTransform>();status=paint_session_transform_info(m_core,m_session,info.publication,&transform);if(status==PAINT_BUSY)return false;if(!check(status))return false;QVariantList transformPoints;for(int i=0;i<16;++i)transformPoints.append(QPointF(transform.points[i*2],transform.points[i*2+1]));
         m_connection->metadataPending.store(true);
-        emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}},history,{{"points",transformPoints},{"warp",transform.warp!=0},{"interpolation",transform.interpolation},{"skewH",transform.skew_h},{"skewV",transform.skew_v}}); m_publication = info.publication;
+        uint64_t committed[4096];uint32_t count=0;const auto committedStatus=paint_session_committed_strokes(m_core,m_session,info.publication,m_strokeCommitCursor,committed,4096,&count);
+        if(committedStatus==PAINT_BUSY)return false;if(!check(committedStatus))return false;
+        QVariantList committedStrokes;for(uint32_t i=0;i<count;++i)committedStrokes.append(QVariant::fromValue<qulonglong>(committed[i]));
+        emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}},history,{{"points",transformPoints},{"warp",transform.warp!=0},{"interpolation",transform.interpolation},{"skewH",transform.skew_h},{"skewV",transform.skew_v}},committedStrokes); m_publication = info.publication;m_strokeCommitCursor=info.completed_sequence;
         return true;
     }
     void poll() {
@@ -806,6 +809,7 @@ public:
     quint64 m_layerCopySequence=0;
     ResidentPreviewPtr m_residentPreview;
     quint64 m_publication = 0, m_completed = 0, m_errorSequence = 0, m_frames[2]{};
+    quint64 m_strokeCommitCursor=0;
     quint64 m_deliveredFile = 0;
     uint32_t m_flags = 0;
     PaintStatus m_errorStatus = PAINT_OK;
@@ -939,7 +943,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         m_computeHardware=std::move(hardware);m_computeDevice=std::move(device);m_computeStatus=std::move(status);m_computeBusy=busy;emit computeChanged();
     });
     connect(&m_thread, &QThread::started, m_worker, &BackendWorker::boot);
-    connect(m_worker, &BackendWorker::metadata, this, [this](PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform) {
+    connect(m_worker, &BackendWorker::metadata, this, [this](PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform,QVariantList committedStrokes) {
         m_connection->metadataPending.store(false);
         const bool propertiesChanged = info.document_generation != m_generation
             || static_cast<int>(info.width) != m_width || static_cast<int>(info.height) != m_height
@@ -968,6 +972,15 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(info.completed_sequence>=m_pendingTransform)m_transformActive=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
         if(info.completed_sequence>=m_lastTransform){const auto points=transform.value("points").toList();const bool warp=transform.value("warp").toBool();const int interpolation=transform.value("interpolation").toInt();const auto skewH=transform.value("skewH").toDouble(),skewV=transform.value("skewV").toDouble();if(points!=m_transformPoints || warp!=m_transformWarp || interpolation!=m_transformInterpolation || skewH!=m_transformSkewH || skewV!=m_transformSkewV){m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=skewH;m_transformSkewV=skewV;emit transformChanged();}}
         m_completedSequence=info.completed_sequence;
+        for(const auto &value:committedStrokes) {
+            const auto found=m_pendingBrushSnapshots.constFind(value.toULongLong());
+            if(found==m_pendingBrushSnapshots.cend())continue;
+            m_brushLibrary->recordRecentBrush(found->preset);
+            if(found->color.isValid())m_brushLibrary->useColor(found->color.name(QColor::HexArgb));
+        }
+        while(!m_pendingBrushSnapshots.isEmpty() && m_pendingBrushSnapshots.firstKey()<=m_completedSequence) {
+            m_pendingBrushBytes-=m_pendingBrushSnapshots.first().preset.size();m_pendingBrushSnapshots.erase(m_pendingBrushSnapshots.begin());
+        }
         if(m_layerMoveActive && (changedGeneration || (m_completedSequence>=m_layerMoveSequence && !(info.flags&PAINT_SESSION_LAYER_MOVE)))) {
             m_layerMoveActive=false;m_layerMoveStarting=false;m_layerMoveClosing=false;
             m_layerMoveTimer->stop();
@@ -1129,6 +1142,9 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
     if (status != PAINT_OK) {
         if ((type == Move || type == AirbrushTick || type == End) && (status == PAINT_LIMIT_EXCEEDED || status == PAINT_CANCELLED)) m_dropStroke = true;
         showError(error); return false;
+    }
+    if(type==End && !m_strokeBrushSnapshot.isEmpty()) {
+        m_pendingBrushBytes+=m_strokeBrushSnapshot.size();m_pendingBrushSnapshots.insert(sequence,{m_strokeBrushSnapshot,m_strokeColor});
     }
     if (type == New || type == NewWhite) { m_pendingNew = sequence; m_ready = false; emit stateChanged(); }
     if(type==Select) { m_pendingLayer=sequence; emit stateChanged(); }
@@ -1472,7 +1488,10 @@ bool PaintCoreClient::beginStroke(const InputSample &s) {
         if(layer.value("group").toBool()) {showError(QStringLiteral("请选中组内像素图层绘画，或先新建图层"));return false;}
         if(layer.value("effectiveLocks").toUInt() & PAINT_LOCK_ALL) {showError(QStringLiteral("当前图层或所属组已完全锁定，请先解锁"));return false;}
     }
+    const auto captured=m_brushLibrary->captureBrushSnapshot();
+    if(m_pendingBrushSnapshots.size()>=4096 || m_pendingBrushBytes+captured.size()>16*1024*1024) {showError(QStringLiteral("正在完成先前笔触，请稍后重试"));return false;}
     m_dropStroke = false; if (!submit(Begin, s)) return false;
+    m_strokeBrushSnapshot=captured;
     const auto capturedDual=m_brushLibrary->dualBrush();
     m_strokeSecondImageEligible=!m_eraser && (!m_smudgeTool || m_smudgeFingerPainting) && s.tool!=PAINT_TOOL_ERASER && capturedDual.value("enabled").toBool();
     m_strokeColor = m_smudgeTool && !m_smudgeFingerPainting ? QColor() : m_color;
@@ -1515,14 +1534,14 @@ void PaintCoreClient::endStroke() {
     if (!m_drawing) return;
     if(m_liquifyActive){flushLiquifyInput(true);submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(End);
-    // A committed stroke is what makes the colour "recently used"; a cancelled one never shows up.
-    if (!m_dropStroke && m_strokeColor.isValid()) m_brushLibrary->useColor(m_strokeColor.name(QColor::HexArgb));
+    m_strokeBrushSnapshot.clear();
     m_airbrushTimer->stop();m_airbrushEnabled=false;m_drawing = false;if(m_strokePose)paint_brush_pose_clear(m_strokePose);m_strokePoseBound=false;m_strokeOutlineResource.clear();m_strokeOutlinePath.clear();m_strokeSecondOutlineResource.clear();m_strokeSecondOutlinePath.clear();m_strokeSecondOutlineReady=false;requestBrushOutlines();emit brushOutlineChanged();emit stateChanged();
 }
 void PaintCoreClient::cancelStroke() {
     if (!m_drawing) return;
     if(m_liquifyActive){flushLiquifyInput(true);submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(Cancel);
+    m_strokeBrushSnapshot.clear();
     m_airbrushTimer->stop();m_airbrushEnabled=false;m_dropStroke = true;m_drawing = false;if(m_strokePose)paint_brush_pose_clear(m_strokePose);m_strokePoseBound=false;m_strokeOutlineResource.clear();m_strokeOutlinePath.clear();m_strokeSecondOutlineResource.clear();m_strokeSecondOutlinePath.clear();m_strokeSecondOutlineReady=false;requestBrushOutlines();emit brushOutlineChanged();emit stateChanged();
 }
 void PaintCoreClient::undo() { if (m_ready && !m_drawing && !m_layerMoveActive) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_UNDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_UNDO);else submit(Undo);} }
@@ -1964,6 +1983,13 @@ void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
     {QMutexLocker lock(&m_brushCatalogConnection->mutex);m_brushCatalogConnection->preferences=state;}
     if(!synchronizeBrushCatalog(state))return;
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,state]{worker->saveBrushPreferences(state);},Qt::QueuedConnection);
+}
+bool PaintCoreClient::restoreBrushPreferences(const QByteArray &state) {
+    if(!m_brushLibrary->restore(state))return false;
+    // Other documents share catalog/preferences, while each client retains its active tool.
+    // Receiving a different tool context must not start a persistence feedback loop.
+    m_brushLibrary->setToolContext(m_smudgeTool?2:m_eraser?1:0,false);
+    return true;
 }
 bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
     {QMutexLocker lock(&m_brushCatalogConnection->mutex);if(m_brushCatalogConnection->preparation && m_brushCatalogConnection->requestedState==state)return true;}

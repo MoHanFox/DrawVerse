@@ -16,6 +16,7 @@ class BrushLibrary final : public QObject {
     Q_OBJECT
     Q_PROPERTY(int writeBlend READ writeBlend WRITE setWriteBlend NOTIFY settingsChanged)
     Q_PROPERTY(int toolIsolation READ toolIsolation WRITE setToolIsolation NOTIFY settingsChanged)
+    Q_PROPERTY(QVariantList recentBrushes READ recentBrushes NOTIFY recentBrushesChanged)
     Q_PROPERTY(QVariantList presets READ presets NOTIFY presetsChanged)
     Q_PROPERTY(QVariantMap organization READ organization NOTIFY presetsChanged)
     Q_PROPERTY(QVariantList selectedBrushItems READ selectedBrushItems NOTIFY selectionChanged)
@@ -400,7 +401,11 @@ public:
     int toolIsolation() const {return m_toolIsolation;}
     int toolContext() const {return m_toolContext;}
     void setToolIsolation(int mode);
-    void setToolContext(int tool);
+    void setToolContext(int tool,bool persist=true);
+    QByteArray captureBrushSnapshot() const;
+    bool recordRecentBrush(const QByteArray &snapshot,bool persist=true);
+    QVariantList recentBrushes() const;
+    Q_INVOKABLE bool applyRecentBrush(int index);
     void setOpacity(qreal value);
     void setSpacing(qreal value);
     Q_INVOKABLE bool select(const QString &id);
@@ -444,6 +449,8 @@ signals:
     void previewChanged(QString id,QString image);
     void selectionChanged();
     void recentColorsChanged();
+    void recentBrushesChanged();
+    void recentBrushRecorded(QByteArray snapshot);
     void persistRequested(QByteArray json);
     void previewRequested(QString id,quint64 token,qreal radius,qreal opacity,qreal spacing,QVariantMap tip);
     void previewCancelled(QString id,quint64 token);
@@ -464,6 +471,11 @@ private:
     void captureToolProfile();
     int m_toolIsolation=0,m_toolContext=0;
     std::array<ToolProfile,3> m_toolProfiles;
+    static bool decodeBrushSnapshot(const QJsonObject &state,Preset &preset,int &blend);
+    static bool parseRecentBrushes(const QJsonValue &value,QList<QByteArray> &snapshots);
+    static bool sameBrushSnapshot(const QByteArray &left,const QByteArray &right);
+    QJsonObject recentBrushState() const;
+    QList<QByteArray> m_recentBrushSnapshots;
     static QJsonObject exportPreset(const Preset &preset,bool includeSource,const QString &id);
     QVariantMap tangentControl(const QString &target) const;
     QVariantMap distanceControl(const QString &target) const;
@@ -473,7 +485,7 @@ private:
     int index(const QString &id) const;
     void update(int field,qreal value);
     void changed(bool structure = false, const QString &id = {});
-    void queuePersistence();
+    void queuePersistence(bool catalog=true);
     QTimer m_persistTimer;
     mutable QByteArray m_snapshotCache,m_catalogCache;
     bool applyOrganization(const QJsonObject &candidate);

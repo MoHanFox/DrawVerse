@@ -4,6 +4,7 @@ use std::{
     ptr, thread,
     time::{Duration, Instant},
 };
+
 macro_rules! dto {
     (PaintTile) => {
         PaintTile {
@@ -26,6 +27,169 @@ macro_rules! dto {
     };
 }
 
+#[test]
+fn committed_stroke_receipts_are_exact_ordered_and_exclude_noop_cancel_and_failure() {
+    let h = Harness::new(80, 40);
+    let begin = |x: f64, opacity: f32, layer_id: u64| PaintCommand {
+        kind: PAINT_COMMAND_BEGIN_STROKE,
+        stroke: PaintStrokeDesc {
+            mode: PAINT_MODE_PAINT,
+            layer_id,
+            radius: 2.,
+            opacity,
+            spacing: 0.15,
+            linear_rgba: [1., 0., 0., 1.],
+            ..dto!(PaintStrokeDesc)
+        },
+        point: PaintPoint {
+            x,
+            y: 8.,
+            pressure: 1.,
+            tool: PAINT_TOOL_MOUSE,
+            ..dto!(PaintPoint)
+        },
+        ..dto!(PaintCommand)
+    };
+    let mut expected = Vec::new();
+    for i in 0..12 {
+        h.submit(begin(3. + i as f64 * 6., 1., 0));
+        expected.push(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_END_STROKE,
+            ..dto!(PaintCommand)
+        }));
+    }
+    let committed = h.wait(*expected.last().unwrap());
+    h.submit(begin(10., 0., 0));
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_END_STROKE,
+        ..dto!(PaintCommand)
+    }));
+    h.submit(begin(40., 1., 0));
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_CANCEL_STROKE,
+        ..dto!(PaintCommand)
+    }));
+    h.wait(h.submit(begin(40., 1., 999)));
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_END_STROKE,
+        ..dto!(PaintCommand)
+    }));
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_UNDO,
+        ..dto!(PaintCommand)
+    }));
+    let info = h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_REDO,
+        ..dto!(PaintCommand)
+    }));
+    unsafe {
+        let mut required = 99;
+        assert_eq!(
+            paint_session_committed_strokes(
+                h.core,
+                h.session,
+                info.publication,
+                0,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert_eq!(required, 12);
+        let mut output = [u64::MAX; 16];
+        assert_eq!(
+            paint_session_committed_strokes(
+                h.core,
+                h.session,
+                info.publication,
+                0,
+                output.as_mut_ptr(),
+                11,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert_eq!(output, [u64::MAX; 16]);
+        assert_eq!(
+            paint_session_committed_strokes(
+                h.core,
+                h.session,
+                info.publication,
+                0,
+                output.as_mut_ptr(),
+                16,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        assert_eq!(&output[..12], expected);
+        assert_eq!(
+            paint_session_committed_strokes(
+                h.core,
+                h.session,
+                info.publication,
+                expected[6],
+                output.as_mut_ptr(),
+                16,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        assert_eq!(required, 5);
+        assert_eq!(&output[..5], &expected[7..]);
+        assert_eq!(
+            paint_session_committed_strokes(
+                h.core,
+                h.session,
+                info.publication,
+                info.completed_sequence,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        assert_eq!(required, 0);
+        assert_eq!(
+            paint_session_committed_strokes(
+                h.core,
+                h.session,
+                committed.publication,
+                0,
+                output.as_mut_ptr(),
+                16,
+                &mut required
+            ),
+            PAINT_BUSY
+        );
+        assert_eq!(required, 0);
+        assert_eq!(
+            paint_session_committed_strokes(
+                h.core,
+                h.session,
+                info.publication,
+                0,
+                ptr::null_mut(),
+                16,
+                &mut required
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            paint_session_committed_strokes(
+                h.core,
+                h.session,
+                info.publication,
+                0,
+                output.as_mut_ptr(),
+                16,
+                ptr::null_mut()
+            ),
+            PAINT_INVALID_ARGUMENT
+        );
+    }
+}
 #[test]
 fn advanced_brush_copies_validated_tip_and_preserves_atomic_history() {
     let h = Harness::new(40, 40);

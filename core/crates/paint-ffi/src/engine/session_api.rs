@@ -24,6 +24,52 @@ fn publication(
     }
     Ok(publication)
 }
+/// ABI 1.69: changed, successfully committed End sequences in chronological order.
+/// Reads the exact publication; only sequences greater than after_sequence are returned.
+/// Retains at most 4096 receipts across document resets. Undo/redo do not create receipts.
+/// Query null/zero for required count; insufficient capacity never writes a partial array.
+/// # Safety
+/// required must be writable; sequences must hold capacity writable aligned u64s.
+/// Outputs must not overlap. No caller memory is retained.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_committed_strokes(
+    core: *mut PaintCore,
+    handle: *mut PaintSession,
+    expected_publication: u64,
+    after_sequence: u64,
+    sequences: *mut u64,
+    capacity: u32,
+    required: *mut u32,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(required, 0)?;
+        let state = publication(core, handle, expected_publication)?;
+        let count = state
+            .committed_strokes
+            .iter()
+            .filter(|&&s| s > after_sequence)
+            .count();
+        pointers::write(required, count as u32)?;
+        if (capacity as usize) < count {
+            return Err(ApiError::new(
+                PAINT_BUFFER_TOO_SMALL,
+                "stroke receipt buffer too small",
+            ));
+        }
+        if count > 0 {
+            pointers::valid_pointer(sequences)?;
+            for (index, &sequence) in state
+                .committed_strokes
+                .iter()
+                .filter(|&&s| s > after_sequence)
+                .enumerate()
+            {
+                ptr::write(sequences.add(index), sequence);
+            }
+        }
+        Ok(())
+    })
+}
 /// ABI 1.10: read retained operation metadata from the exact publication.
 /// Depth zero is INITIAL or TRUNCATED; remaining indices are chronological operations.
 /// # Safety

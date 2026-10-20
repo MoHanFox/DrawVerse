@@ -186,16 +186,39 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth:true;spacing:2
         Repeater {
-            model:[6,12,24,48]
+            model:8
             Button {
-                required property int modelData
-                Layout.fillWidth:true;implicitWidth:26;implicitHeight:30;padding:1
-                onClicked:root.library.radius=modelData/2
+                id:recentButton
+                required property int index
+                readonly property var entry:root.library.recentBrushes[index] || null
+                objectName:"recentBrush:"+index
+                Layout.fillWidth:true;implicitWidth:20;implicitHeight:42;padding:1
+                enabled:entry !== null && !PaintClient.drawing
+                onClicked:root.library.applyRecentBrush(index)
+                ToolTip.visible:hovered && entry !== null
+                ToolTip.text:entry ? entry.name + " · " + Math.round(entry.diameter) + " px" : ""
                 background:Rectangle {color:parent.hovered?Theme.hover:Theme.strip;border.color:Theme.line}
-                contentItem:Column {
-                    spacing:2
-                    Rectangle {width:Math.min(12,modelData/4+3);height:width;radius:width/2;color:Theme.text;anchors.horizontalCenter:parent.horizontalCenter}
-                    Text {text:modelData;font.pixelSize:8;color:Theme.muted;anchors.horizontalCenter:parent.horizontalCenter}
+                contentItem:ColumnLayout {
+                    spacing:1
+                    Item {
+                        Layout.fillWidth:true;Layout.preferredHeight:24
+                        BrushResourceThumbnail {objectName:"recentBrushTip:"+recentButton.index;anchors.fill:parent;visible:recentButton.entry !== null && recentButton.entry.resource.length>0;resource:recentButton.entry ? recentButton.entry.resource : ""}
+                        Canvas {
+                            anchors.fill:parent;visible:recentButton.entry !== null && !recentButton.entry.resource.length;antialiasing:true
+                            onWidthChanged:requestPaint()
+                            onHeightChanged:requestPaint()
+                            property var tip:recentButton.entry
+                            onTipChanged:requestPaint()
+                            onPaint:{
+                                const c=getContext("2d");c.reset();if(!tip)return
+                                const r=Math.max(1,Math.min(width,height)*0.38)
+                                c.save();c.translate(width/2,height/2);c.rotate(tip.angle*Math.PI/180);c.scale(1,tip.roundness)
+                                const gradient=c.createRadialGradient(0,0,Math.min(0.999,tip.hardness)*r,0,0,r)
+                                gradient.addColorStop(0,Theme.text);gradient.addColorStop(1,"transparent");c.fillStyle=gradient;c.beginPath();c.arc(0,0,r,0,Math.PI*2);c.fill();c.restore()
+                            }
+                        }
+                    }
+                    Text {Layout.fillWidth:true;text:recentButton.entry ? Math.round(recentButton.entry.diameter) : "—";horizontalAlignment:Text.AlignHCenter;font.pixelSize:8;color:Theme.muted}
                 }
             }
         }

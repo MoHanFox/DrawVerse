@@ -124,6 +124,7 @@ fn engine(tool: WetTool) -> Engine {
     let file_pool = Arc::new(TaskPool::new(1, 1).unwrap());
     let file = Arc::new(Mutex::new(crate::file_job::FileState::default()));
     Engine {
+        committed_strokes: Arc::new(VecDeque::new()),
         files: crate::file_job::FileService::new(file, file_pool),
         document,
         active_input: None,
@@ -201,6 +202,7 @@ fn paging_actor_delays_completion_and_end_until_pixels_tail_and_history_finish()
     e.receive(command(3, Operation::End));
     assert_eq!(e.completed, 1);
     assert_eq!(e.deferred.len(), 1);
+    assert!(e.committed_strokes.is_empty());
     e.resume_input();
     assert!(e.active_input.is_some());
     assert_eq!(e.completed, 1);
@@ -213,6 +215,10 @@ fn paging_actor_delays_completion_and_end_until_pixels_tail_and_history_finish()
     );
     pump(&mut e, 3);
     assert_eq!(e.document.history_depth(), (1, 0));
+    assert_eq!(
+        e.committed_strokes.iter().copied().collect::<Vec<_>>(),
+        vec![3]
+    );
     assert!(e.modified);
     assert!(!t.is_busy());
     assert_eq!(e.error.as_ref().map(|e| e.1.status), None);
@@ -336,6 +342,7 @@ fn paging_actor_failed_page_discards_the_pair_and_end_cannot_commit_failed_pixel
     assert_eq!(e.error.as_ref().unwrap().0, 2);
     assert_eq!(e.error.as_ref().unwrap().1.status, PAINT_LIMIT_EXCEEDED);
     assert_eq!(e.document.history_depth(), (0, 0));
+    assert!(e.committed_strokes.is_empty());
     assert!(!e.document.stroke_active());
     assert!(!t.is_busy());
     equal_ink(&ink(&t), &before);

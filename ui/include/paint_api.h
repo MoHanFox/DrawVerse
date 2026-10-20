@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 68
+#define PAINT_ABI_MINOR 69
 
 #define PAINT_ABI_PATCH 0
 
@@ -2036,6 +2036,23 @@ PaintStatus paint_session_bucket_fill(struct PaintCore *core,
                                       struct PaintSession *session,
                                       const struct PaintBucketFill *request,
                                       uint64_t *out_sequence);
+
+/**
+ * ABI 1.69: changed, successfully committed End sequences in chronological order.
+ * Reads the exact publication; only sequences greater than after_sequence are returned.
+ * Retains at most 4096 receipts across document resets. Undo/redo do not create receipts.
+ * Query null/zero for required count; insufficient capacity never writes a partial array.
+ * # Safety
+ * required must be writable; sequences must hold capacity writable aligned u64s.
+ * Outputs must not overlap. No caller memory is retained.
+ */
+PaintStatus paint_session_committed_strokes(struct PaintCore *core,
+                                            struct PaintSession *handle,
+                                            uint64_t expected_publication,
+                                            uint64_t after_sequence,
+                                            uint64_t *sequences,
+                                            uint32_t capacity,
+                                            uint32_t *required);
 
 /**
  * Current selected executor, including the reason for a CPU fallback. No terminator.

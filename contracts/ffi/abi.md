@@ -1,4 +1,10 @@
-# C ABI 1.68.0 契约
+# C ABI 1.69.0 契约
+
+## ABI 1.69 — 成功笔触提交回执
+
+`paint_session_committed_strokes(core,session,publication,after_sequence,sequences,capacity,required)` 只查询准确publication；旧票据返回BUSY，required初始清零。返回该publication中所有大于after_sequence的成功且产生像素变更的End命令序列，按提交顺序排列；取消、失败、无变更、Undo/Redo不新增回执。记录跨文档New/Open保留，最多4096项（32KiB序列数据，共享不可变队列）；调用方须及时读取，早于保留窗口的回执不保证存在。
+
+容量以u64元素计，required为u32元素数；null/0查询非空列表返回BUFFER_TOO_SMALL，空列表可返回OK。容量不足不部分写入，足够时输出必须为可写、对齐、互不重叠的存储。返回前完成复制，不持有调用方指针，无DTO布局变化。Qt按End序列匹配起笔快照，记录最多八个最近笔刷参数；该偏好不进入VBR或核心state。
 
 ## ABI 1.67 — 多图层移动会话
 

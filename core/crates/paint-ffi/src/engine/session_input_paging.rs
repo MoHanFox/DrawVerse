@@ -99,6 +99,13 @@ impl Engine {
                     debug_assert!(self.wet_lease.is_none());
                 }
                 self.modified |= changed;
+                if changed {
+                    let committed = Arc::make_mut(&mut self.committed_strokes);
+                    if committed.len() == 4096 {
+                        committed.pop_front();
+                    }
+                    committed.push_back(active.sequence);
+                }
                 self.active_input = None;
                 self.completed = active.sequence;
             }

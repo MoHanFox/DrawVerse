@@ -4,6 +4,7 @@
 #include <QColor>
 #include <QImage>
 #include <QHash>
+#include <QMap>
 #include <QObject>
 #include <QElapsedTimer>
 #include <QPointF>
@@ -241,6 +242,7 @@ public:
     qreal brushOpacity() const { return m_opacity; }
     qreal brushSpacing() const {return m_spacing;}
     BrushLibrary *brushLibrary() const {return m_brushLibrary;}
+    bool restoreBrushPreferences(const QByteArray &state);
     QVariantList recentColors() const;
     bool eraser() const { return m_eraser; }
     /// Tool-slot activation: exactly one painting/selection tool stays active. QML handlers must not
@@ -559,6 +561,10 @@ private:
     QColor m_color{"#2ea99d"};
     // Colour of the stroke in progress: recent colours only advance on a committed stroke.
     QColor m_strokeColor;
+    QByteArray m_strokeBrushSnapshot;
+    struct PendingBrushSnapshot {QByteArray preset;QColor color;};
+    QMap<quint64,PendingBrushSnapshot> m_pendingBrushSnapshots;
+    qsizetype m_pendingBrushBytes=0;
     qreal m_radius = 12, m_opacity = 1;
     // Per-document history command limit; persisted as a preference and applied to new sessions.
     void persistLiquifyOptions();

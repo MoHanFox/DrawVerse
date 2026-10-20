@@ -1,4 +1,5 @@
 #include "engine/PaintCoreClient.h"
+#include "documents/DocumentManager.h"
 #include "canvas/SelectionOverlay.h"
 #include <QQuickItemGrabResult>
 #include <QSGRendererInterface>
@@ -39,6 +40,59 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+
+    void recentBrushesShareAcrossDocumentsBeforeThePreferenceTimer() {
+        QTemporaryDir temp;PaintCoreClient a(nullptr,temp.filePath("shared-recent.ini"));QTRY_VERIFY(a.ready() && a.brushLibraryReady());QObject root;DocumentManager manager;manager.configure(&a,&root);const auto id=manager.newDocument(64,64,true);QVERIFY(!id.isEmpty());auto *b=manager.client(id);QVERIFY(b);QTRY_VERIFY(b->ready() && b->brushLibraryReady());QTRY_COMPARE(b->documentWidth(),64);
+        a.brushLibrary()->setToolIsolation(2);a.brushLibrary()->setRadius(3);a.activateEraser();a.brushLibrary()->setRadius(7);a.activateBrush();a.brushLibrary()->flushPersistence();b->activateEraser();QCOMPARE(b->brushRadius(),7.);b->brushLibrary()->flushPersistence();
+        QVERIFY(a.brushLibrary()->recordRecentBrush(a.brushLibrary()->captureBrushSnapshot()));QCOMPARE(b->brushLibrary()->recentBrushes().size(),1);QCOMPARE(b->brushRadius(),7.);
+        QVERIFY(b->brushLibrary()->recordRecentBrush(b->brushLibrary()->captureBrushSnapshot()));QCOMPARE(a.brushLibrary()->recentBrushes().size(),2);QCOMPARE(a.brushRadius(),3.);QCOMPARE(a.brushLibrary()->recentBrushes(),b->brushLibrary()->recentBrushes());
+        QSignalSpy stopped(&manager,&DocumentManager::stopped);manager.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
+    void sharedRecentPreferencesRetainEachDocumentsIsolatedToolWithoutFeedback() {
+        QTemporaryDir temp;PaintCoreClient a(nullptr,temp.filePath("a.ini"));QTRY_VERIFY(a.ready() && a.brushLibraryReady());PaintCoreClient b(nullptr,temp.filePath("a.ini"),a.brushCatalogConnection());QTRY_VERIFY2(b.ready() && b.brushLibraryReady(),qPrintable(b.lastError()));
+        a.brushLibrary()->setToolIsolation(2);a.brushLibrary()->setRadius(3);a.activateEraser();a.brushLibrary()->setRadius(7);a.activateSmudge();a.brushLibrary()->setRadius(11);a.activateBrush();a.brushLibrary()->flushPersistence();
+        b.activateEraser();QVERIFY(b.restoreBrushPreferences(a.brushLibrary()->snapshot()));QVERIFY(b.eraser());QCOMPARE(b.brushRadius(),7.);QVERIFY(!b.brushLibrary()->persistencePending());
+        a.brushLibrary()->setRadius(5);QVERIFY(a.brushLibrary()->recordRecentBrush(a.brushLibrary()->captureBrushSnapshot()));QVERIFY(b.restoreBrushPreferences(a.brushLibrary()->snapshot()));QCOMPARE(b.brushRadius(),7.);QCOMPARE(b.brushLibrary()->recentBrushes().size(),1);QVERIFY(!b.brushLibrary()->persistencePending());
+        b.activateSmudge();QCOMPARE(b.brushRadius(),11.);b.brushLibrary()->setRadius(13);b.brushLibrary()->flushPersistence();a.brushLibrary()->flushPersistence();QVERIFY(a.restoreBrushPreferences(b.brushLibrary()->snapshot()));QCOMPARE(a.brushRadius(),5.);QVERIFY(!a.brushLibrary()->persistencePending());a.activateSmudge();QCOMPARE(a.brushRadius(),13.);a.shutdown();b.shutdown();
+    }
+
+    void recentImageTipAndAdvancedOutlineRestoreAndDisplayWithoutCursorImage() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("recent-image.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());auto *b=client.brushLibrary();QVERIFY(!b->cursorImage());
+        QImage tip(8,8,QImage::Format_RGBA8888);tip.fill(Qt::transparent);for(int y=1;y<7;++y)for(int x=2;x<5;++x)tip.setPixelColor(x,y,Qt::white);const auto path=temp.filePath("tip.png");QVERIFY(tip.save(path));QVERIFY(client.importBrushTip(QUrl::fromLocalFile(path),0));QTRY_VERIFY(!client.brushFileBusy());const auto resource=b->maskResource();QVERIFY(!resource.isEmpty());
+        auto outline=b->strokeOutline();outline["enabled"]=true;QVERIFY(b->setStrokeOutline(outline));b->setRadius(8);b->setPressureSize(false);b->setPressureFlow(false);QVERIFY(client.beginStroke({{32,32},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_COMPARE(b->recentBrushes().size(),1);QCOMPARE(b->recentBrushes().first().toMap().value("resource").toString(),resource);
+        b->useProceduralTip();outline["enabled"]=false;QVERIFY(b->setStrokeOutline(outline));QVERIFY(b->applyRecentBrush(0));QCOMPARE(b->maskResource(),resource);QVERIFY(b->strokeOutline().value("enabled").toBool());
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);QQmlComponent component(&engine,QUrl("qrc:/qml/brushes/BrushLibraryPanel.qml"));QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));auto *panel=qobject_cast<QQuickItem*>(object.data());QVERIFY(panel);QQuickWindow window;panel->setParentItem(window.contentItem());panel->setSize({300,600});window.resize(300,600);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));QQuickItem *image=nullptr;QTRY_VERIFY((image=findVisual(panel,"recentBrushTip:0")) && !image->property("imageSource").toString().isEmpty());
+        auto *tipImage=image->findChild<QQuickItem*>("recentBrushTip:0Image");QVERIFY(tipImage);QTRY_COMPARE(tipImage->property("status").toInt(),1);QSignalSpy frames(&window,&QQuickWindow::frameSwapped);window.update();QTRY_VERIFY(!frames.isEmpty());
+        const auto shown=window.grabWindow();const auto rect=image->mapRectToScene(image->boundingRect()).adjusted(2,2,-2,-2);const qreal sx=qreal(shown.width())/window.width(),sy=qreal(shown.height())/window.height();int bright=0;for(int y=qCeil(rect.top()*sy);y<qFloor(rect.bottom()*sy);++y)for(int x=qCeil(rect.left()*sx);x<qFloor(rect.right()*sx);++x)if(qGray(shown.pixel(x,y))>180)++bright;QVERIFY(bright>5);
+        const auto capture=qEnvironmentVariable("DRAWVERSE_TEST_CAPTURE");if(!capture.isEmpty())QVERIFY(shown.save(capture));
+        BrushLibrary restored;QVERIFY(restored.restore(b->snapshot()));QVERIFY(restored.applyRecentBrush(0));QCOMPARE(restored.maskResource(),resource);QVERIFY(restored.strokeOutline().value("enabled").toBool());QVERIFY(client.lastError().isEmpty());window.close();client.shutdown();
+    }
+
+    void recentBrushSnapshotsKeepEightVariantsAndRestoreDeletedPresetWithoutCatalogRollback() {
+        BrushLibrary b;QVERIFY(b.recentBrushes().isEmpty());const auto copy=b.saveCopy("Recent custom");QVERIFY(!copy.isEmpty());const auto group=b.createGroup("Preserved");QVERIFY(b.movePresetToGroup(copy,group));
+        b.setToolIsolation(2);b.setWriteBlend(8);b.setRadius(13);b.setHardness(.4);QVERIFY(b.recordRecentBrush(b.captureBrushSnapshot()));b.setRadius(19);QVERIFY(b.recordRecentBrush(b.captureBrushSnapshot()));QCOMPARE(b.recentBrushes().size(),2);
+        const auto state=QJsonDocument::fromJson(b.snapshot()).object();QVERIFY(state.value("recentBrushes").toObject().value("items").toArray().size()==2);QVERIFY(b.rename(copy,"Renamed catalog"));const auto organization=b.organization();
+        b.setRadius(44);QVERIFY(b.applyRecentBrush(1));QCOMPARE(b.radius(),13.);QCOMPARE(b.writeBlend(),8);QCOMPARE(b.selectedName(),QString("Renamed catalog"));QCOMPARE(b.organization(),organization);QCOMPARE(b.recentBrushes().size(),2);
+        auto snapshot=b.captureBrushSnapshot();QVERIFY(b.recordRecentBrush(snapshot));QCOMPARE(b.recentBrushes().size(),2);QCOMPARE(b.recentBrushes().first().toMap().value("diameter").toDouble(),26.);
+        QVERIFY(b.remove(copy));const auto afterRemoval=b.organization();QVERIFY(b.applyRecentBrush(0));QVERIFY(b.selectedId()!=copy);QVERIFY(b.presetInfo(copy).isEmpty());QCOMPARE(b.radius(),13.);QCOMPARE(b.selectedName(),QString("Renamed catalog"));QVERIFY(b.organization()!=afterRemoval); // A new copy is added; old groups survive.
+        for(int i=0;i<12;++i){b.setRadius(i+1);QVERIFY(b.recordRecentBrush(b.captureBrushSnapshot()));}QCOMPARE(b.recentBrushes().size(),8);QCOMPARE(b.recentBrushes().first().toMap().value("diameter").toDouble(),24.);QCOMPARE(b.recentBrushes().last().toMap().value("diameter").toDouble(),10.);
+        BrushLibrary restored;QVERIFY(restored.restore(b.snapshot()));QCOMPARE(restored.recentBrushes(),b.recentBrushes());const auto before=restored.snapshot();auto invalid=QJsonDocument::fromJson(before).object();auto recent=invalid.value("recentBrushes").toObject();auto items=recent.value("items").toArray();auto item=items[0].toObject();item["recursive"]=recent;items[0]=item;recent["items"]=items;invalid["recentBrushes"]=recent;QVERIFY(!restored.restore(QJsonDocument(invalid).toJson()));QCOMPARE(restored.snapshot(),before);
+    }
+
+    void recentBrushesFollowCommittedStrokeParametersAndActualEightButtons() {
+        QTemporaryDir temp;const auto path=temp.filePath("recent.ini");
+        {
+            PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(300,80);QTRY_COMPARE(client.documentWidth(),300);QTRY_VERIFY(!client.layerEditBusy());auto *b=client.brushLibrary();b->setPressureSize(false);b->setPressureFlow(false);client.setBrushColor(Qt::black);
+            for(int i=0;i<12;++i){b->setRadius(i+1);QVERIFY(client.beginStroke({{12.+i*24.,40},1}));client.endStroke();}QTRY_COMPARE(client.undoDepth(),12);QTRY_COMPARE(b->recentBrushes().size(),8);QCOMPARE(b->recentBrushes().first().toMap().value("diameter").toDouble(),24.);QCOMPARE(b->recentBrushes().last().toMap().value("diameter").toDouble(),10.);
+            b->setRadius(21);QVERIFY(client.beginStroke({{150,12},1}));b->setRadius(33);client.endStroke();QTRY_COMPARE(client.undoDepth(),13);QTRY_COMPARE(b->recentBrushes().first().toMap().value("diameter").toDouble(),42.); // Parameters are captured at Begin.
+            const auto before=b->recentBrushes();b->setRadius(45);QVERIFY(client.beginStroke({{20,12},1}));client.cancelStroke();b->setOpacity(0);QVERIFY(client.beginStroke({{20,12},1}));client.endStroke();QTest::qWait(120);QCOMPARE(b->recentBrushes(),before);
+            QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});QQmlComponent component(&engine,QUrl("qrc:/qml/brushes/BrushLibraryPanel.qml"));QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));auto *panel=qobject_cast<QQuickItem*>(object.data());QVERIFY(panel);QQuickWindow window;panel->setParentItem(window.contentItem());panel->setSize({300,600});window.resize(300,600);window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));
+            for(int i=0;i<8;++i){QQuickItem *button=nullptr;QTRY_VERIFY((button=findVisual(panel,QString("recentBrush:%1").arg(i))) && button->isVisible());QVERIFY(button->isEnabled());}
+            auto *button=findVisual(panel,"recentBrush:1");QVERIFY(button);QTest::mouseClick(&window,Qt::LeftButton,Qt::NoModifier,button->mapToScene({button->width()/2,button->height()/2}).toPoint());QCOMPARE(b->radius(),12.);QCOMPARE(b->opacity(),1.);QCOMPARE(warnings,QStringList());window.close();b->flushPersistence();QVERIFY(client.lastError().isEmpty());client.shutdown();
+        }
+        PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready() && reopened.brushLibraryReady());QCOMPARE(reopened.brushLibrary()->recentBrushes().size(),8);QCOMPARE(reopened.brushLibrary()->recentBrushes().first().toMap().value("diameter").toDouble(),42.);QVERIFY(reopened.brushLibrary()->applyRecentBrush(0));QCOMPARE(reopened.brushRadius(),21.);reopened.shutdown();
+    }
 
     void brushToolIsolationLevelsPreserveParametersAndSharedCatalog() {
         BrushLibrary b;b.setRadius(10);b.setOpacity(.6);b.setFlow(.8);

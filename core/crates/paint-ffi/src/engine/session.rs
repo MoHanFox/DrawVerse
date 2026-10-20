@@ -94,6 +94,7 @@ pub(crate) struct LayerState {
     pub clipping: PaintLayerClipping,
 }
 pub(crate) struct Publication {
+    pub committed_strokes: Arc<VecDeque<u64>>,
     pub resident_preview: Option<Arc<paint_core::ResidentPreview>>,
     pub compute: String,
     pub transform: Option<paint_core::TransformGeometry>,
@@ -147,6 +148,7 @@ struct RenderJob {
     revision: u64,
 }
 struct Engine {
+    committed_strokes: Arc<VecDeque<u64>>,
     files: crate::file_job::FileService,
     document: Document,
     active_input: Option<input_paging::Active>,
@@ -239,6 +241,7 @@ impl Session {
             generation: 1,
             publication: 1,
             completed: 0,
+            committed_strokes: Arc::new(VecDeque::new()),
             error: None,
             modified: false,
             dirty: true,
@@ -677,6 +680,7 @@ fn publish(
         })
         .collect();
     Publication {
+        committed_strokes: Arc::new(VecDeque::new()),
         resident_preview: doc.resident_preview().map(Arc::new),
         compute: doc.compute_backend_name(),
         transform: doc.transform_geometry(),
@@ -1324,14 +1328,16 @@ impl Engine {
         }
         if self.dirty {
             self.publication += 1;
-            let publication = Arc::new(publish(
+            let mut publication = publish(
                 &self.document,
                 self.generation,
                 self.publication,
                 self.completed,
                 self.error.as_ref(),
                 self.modified,
-            ));
+            );
+            publication.committed_strokes = Arc::clone(&self.committed_strokes);
+            let publication = Arc::new(publication);
             if publication.resident_preview.is_none() {
                 self.shared
                     .preview_assets

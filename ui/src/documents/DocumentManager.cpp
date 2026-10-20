@@ -36,18 +36,24 @@ void DocumentManager::track(PaintCoreClient *client) {
     m_clients.append(client);
     if(!m_brushPreferenceWriter)m_brushPreferenceWriter=client;
     client->setBrushPreferencePersistenceEnabled(client==m_brushPreferenceWriter);
+    connect(client->brushLibrary(),&BrushLibrary::recentBrushRecorded,this,[this,client](const QByteArray &snapshot){
+        if(m_quitting)return;
+        // Share each receipt immediately, before another document can record a stroke.
+        // Receivers update their UI cache without another save/broadcast request.
+        for(const auto &other:m_clients)if(other && other!=client && !m_stopped.contains(other))other->brushLibrary()->recordRecentBrush(snapshot,false);
+    });
     // One application brush preference state. Restore publishes a copy without
     // requesting another disk save, so inactive documents cannot overwrite it.
     connect(client->brushLibrary(),&BrushLibrary::persistRequested,this,[this,client](const QByteArray &state){
         if(m_quitting)return;
         m_brushPreferenceState=state;
-        for(const auto &other:m_clients)if(other && other!=client && !m_stopped.contains(other))other->brushLibrary()->restore(state);
+        for(const auto &other:m_clients)if(other && other!=client && !m_stopped.contains(other))other->restoreBrushPreferences(state);
         if(m_brushPreferenceWriter && client!=m_brushPreferenceWriter)m_brushPreferenceWriter->persistBrushPreferences(state);
     });
     connect(client,&PaintCoreClient::stateChanged,this,[this,client,initialized=false]() mutable {
         if(initialized || !client->ready())return;initialized=true;
-        if(!m_brushPreferenceState.isEmpty())client->brushLibrary()->restore(m_brushPreferenceState);
-        else if(m_brushPreferenceWriter && client!=m_brushPreferenceWriter && m_brushPreferenceWriter->ready())client->brushLibrary()->restore(m_brushPreferenceWriter->brushLibrary()->snapshot());
+        if(!m_brushPreferenceState.isEmpty())client->restoreBrushPreferences(m_brushPreferenceState);
+        else if(m_brushPreferenceWriter && client!=m_brushPreferenceWriter && m_brushPreferenceWriter->ready())client->restoreBrushPreferences(m_brushPreferenceWriter->brushLibrary()->snapshot());
     });
     connect(client,&PaintCoreClient::stateChanged,this,&DocumentManager::documentsChanged);
     connect(client,&PaintCoreClient::stopped,this,[this,client] {

@@ -20,7 +20,7 @@ void BrushLibrary::setToolIsolation(int mode) {
     changed();
 }
 
-void BrushLibrary::setToolContext(int tool) {
+void BrushLibrary::setToolContext(int tool,bool persist) {
     if(tool<0 || tool>2 || tool==m_toolContext)return;
     if(m_toolIsolation)captureToolProfile();
     m_toolContext=tool;
@@ -52,7 +52,11 @@ void BrushLibrary::setToolContext(int tool) {
         m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",m_selected}}};
         emit selectionChanged();
     }
-    changed(true);
+    if(persist)changed(true);
+    else {
+        m_snapshotCache.clear();m_catalogCache.clear();
+        emit settingsChanged();emit presetsChanged();emit selectedPreviewChanged();
+    }
 }
 
 QJsonObject BrushLibrary::toolIsolationState() const {
