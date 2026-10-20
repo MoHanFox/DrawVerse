@@ -2,6 +2,15 @@
 
 对应[问题清单与设计](../../../planning/2026-10-20-bugfix-design.md)。在 master 按项提交并推送；以下只记录实际完成的项。
 
+## 追加：编辑结束后的快捷键焦点
+
+CanvasPane 在自身液化/变换状态关闭后延后一轮恢复可见、启用、活动窗口内画布焦点，避免被隐藏的选项栏按钮继续持有焦点。会话仍开启时不触发，未主动激活其他窗口。
+
+- `qt_transform_tests::finishingEditRestoresCanvasShortcutsWithoutAClick`：主窗口实际装配，液化/变换各确认和取消四种路径，先让选项栏按钮持有焦点再真实点击，结束后不点画布，E/B 和方括号快捷键均通过。
+- `emptyTransformAndCancelPublishClosedState`：空内容开始失败、取消与 Esc 旧回归通过。
+- Windows 软件后端两项通过；`drawverse`、变换/选区/工作流测试目标 Release 构建通过、生成头检查通过。构建其他测试目标不代表运行其全部测试。产物 `build/qt/bin/Release`。
+- 无 ABI、文件格式或计算路径变化；未跑全量、跨平台、实体输入和多浮窗持续交互测试。
+
 ## 严重 1：自由变换退出
 
 - 修复 Qt 漏发 active 关闭与 busy 结束通知；空图层开始失败后也恢复界面。

@@ -13,6 +13,14 @@ Rectangle {
     property var mainWindow
     property bool savingBlocked: false
     property alias canvasView:canvas
+    readonly property bool editing:ownClient.liquifyActive || ownClient.transformActive
+    onEditingChanged: {
+        if (!editing) Qt.callLater(function() {
+            const host=canvas.Window.window
+            if (!root.editing && root.visible && canvas.enabled && host && host.active)
+                canvas.forceActiveFocus(Qt.OtherFocusReason)
+        })
+    }
     readonly property bool singleCursorLine:ownClient.brushLibrary.cursorSimple || ownClient.brushLibrary.cursorWidth===0
     readonly property real cursorLineWidth:singleCursorLine?1:ownClient.brushLibrary.cursorWidth
     readonly property color cursorLineColor:"black"

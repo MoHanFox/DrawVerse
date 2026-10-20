@@ -15,6 +15,37 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void finishingEditRestoresCanvasShortcutsWithoutAClick() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("finish-focus.ini"));
+        WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        window->resize(1800,900);window->requestActivate();QVERIFY(QTest::qWaitForWindowActive(window));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(64,64);
+        QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
+        client.setBrushRadius(4);QVERIFY(client.beginStroke({{32,32},1}));client.endStroke();QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);
+        for(bool liquify:{false,true})for(bool commit:{false,true}) {
+            QVERIFY(liquify?client.beginLiquify():client.beginTransform());
+            QTRY_VERIFY(liquify?!client.liquifyBusy():!client.transformBusy());
+            const auto prefix=liquify?QString("liquify"):QString("transform");
+            auto *bar=findVisualItem(window->contentItem(),prefix+"OptionsBar");QVERIFY(bar);
+            auto *button=findVisualItem(bar,prefix+(commit?"Commit":"Cancel"));QVERIFY(button);
+            button->forceActiveFocus();QTRY_VERIFY(button->hasActiveFocus());QVERIFY(!canvas->hasActiveFocus());
+            // Finish via the toolbar; no canvas focus helper or canvas click follows.
+            const auto position=button->mapToScene({button->width()/2,button->height()/2}).toPoint();
+            QVERIFY(QRect(QPoint(0,0),window->size()).contains(position));
+            QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,position);
+            QTRY_VERIFY(!client.liquifyActive() && !client.transformActive());
+            QTRY_VERIFY(canvas->hasActiveFocus());
+            QTest::keyClick(window,Qt::Key_E);QTRY_VERIFY(client.eraser());
+            QTest::keyClick(window,Qt::Key_B);QTRY_VERIFY(!client.eraser());
+            const auto radius=client.brushRadius();QTest::keyClick(window,Qt::Key_BracketRight);QTRY_VERIFY(client.brushRadius()>radius);
+        }
+        auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);
+        QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void degenerateLassoIsANoopAndSelfIntersectionStillWorks() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("tiny-lasso.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());
