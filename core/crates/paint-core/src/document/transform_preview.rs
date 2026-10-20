@@ -312,4 +312,163 @@ mod tests {
         d.redo().unwrap();
         assert!(d.pixel(0, 0).alpha() < 1.);
     }
+    #[test]
+    fn selected_bounded_materialisation_matches_full_reference_with_all_interpolations() {
+        for mode in 0..3 {
+            for kind in 0..6 {
+                for warp in [false, true] {
+                    let mut d = Document::new(128, 96).unwrap();
+                    if mode != 1 {
+                        d.initialize_white_background().unwrap();
+                    }
+                    let pixels = (0..4096)
+                        .map(|i| {
+                            Pixel::from_straight([
+                                (i % 17) as f32 / 17.,
+                                0.2,
+                                0.7,
+                                if i % 7 == 0 { 0. } else { 0.65 },
+                            ])
+                            .unwrap()
+                        })
+                        .collect();
+                    d.layers[0].tiles.insert(
+                        TileCoord::from_signed(0, 0),
+                        Arc::new(Tile::from_pixels(pixels).unwrap()),
+                    );
+                    let untouched = Arc::new(Tile::from_pixels(vec![Pixel::WHITE; 4096]).unwrap());
+                    d.layers[0]
+                        .tiles
+                        .insert(TileCoord::from_signed(1, 0), untouched.clone());
+                    if mode == 2 {
+                        d.move_layer(1, 3, -2).unwrap();
+                    }
+                    let shape = crate::SelectionShape::polygon(
+                        vec![[17., 13.], [43., 16.], [39., 37.], [14., 34.]],
+                        true,
+                        if mode == 0 { 2. } else { 0. },
+                    )
+                    .unwrap();
+                    d.set_selection(
+                        crate::Selection::default()
+                            .apply(shape, crate::SelectionOperation::Replace, 128, 96)
+                            .unwrap(),
+                    )
+                    .unwrap();
+                    let before = d.snapshot();
+                    let depth = d.history_depth();
+                    d.begin_transform_layers(&[1]).unwrap();
+                    let initial = d.transform_geometry().unwrap();
+                    let mut g = initial.clone();
+                    g.interpolation = kind;
+                    g.warp = warp;
+                    for p in &mut g.points {
+                        p[0] = p[0] * 0.91 - 12.25;
+                        p[1] = p[1] * 1.13 + 2.5;
+                    }
+                    if warp {
+                        g.points[5][0] += 11.;
+                        g.points[10][1] -= 10.;
+                    }
+                    let state = d.transform.as_ref().unwrap();
+                    let reference = d
+                        .render_transform_target_impl(&state.original, &state.source, &g, false)
+                        .unwrap();
+                    let reference_selection = d
+                        .transformed_selection_impl(
+                            state.selection.as_ref().unwrap(),
+                            &initial,
+                            &g,
+                            false,
+                        )
+                        .unwrap();
+                    d.update_transform(g).unwrap();
+                    let actual = d.layer(1).unwrap();
+                    for y in -16..112 {
+                        let a = actual
+                            .read_local_row(
+                                -20 - actual.appearance.offset_x as i64,
+                                y - actual.appearance.offset_y as i64,
+                                176,
+                            )
+                            .unwrap();
+                        let b = reference
+                            .read_local_row(
+                                -20 - reference.appearance.offset_x as i64,
+                                y - reference.appearance.offset_y as i64,
+                                176,
+                            )
+                            .unwrap();
+                        for (x, (a, b)) in a.iter().zip(&b).enumerate() {
+                            for (a, b) in a.components().into_iter().zip(b.components()) {
+                                assert!((a-b).abs()<2e-6,"mode={mode} interpolation={kind} warp={warp} x={x} y={y}: {a}!={b}");
+                            }
+                        }
+                    }
+                    for y in 0..96 {
+                        for x in 0..128 {
+                            assert_eq!(
+                                d.selection().coverage(x as f64 + 0.5, y as f64 + 0.5),
+                                reference_selection.coverage(x as f64 + 0.5, y as f64 + 0.5)
+                            );
+                        }
+                    }
+                    if mode != 2 {
+                        assert!(Arc::ptr_eq(
+                            &untouched,
+                            d.layers[0]
+                                .tiles
+                                .get(&TileCoord::from_signed(1, 0))
+                                .unwrap()
+                        ));
+                    }
+                    d.commit_transform().unwrap();
+                    assert_eq!(d.history_depth().0, depth.0 + 1);
+                    d.undo().unwrap();
+                    for y in 0..96 {
+                        for x in 0..128 {
+                            assert_eq!(d.pixel(x, y), before.pixel(x, y));
+                        }
+                    }
+                    d.redo().unwrap();
+                }
+            }
+        }
+    }
+    #[test]
+    fn cropped_selected_transform_empty_and_far_edges_keep_coverage() {
+        let mut d = seed();
+        let selection = crate::Selection::all(128, 96);
+        let initial = TransformGeometry::rectangle(0., 0., 128., 96.);
+        for (dx, dy) in [(-200., 0.), (0., 200.), (-10.25, -5.5), (120., 80.)] {
+            for warp in [false, true] {
+                let mut g = initial.clone();
+                g.warp = warp;
+                for p in &mut g.points {
+                    p[0] += dx;
+                    p[1] += dy;
+                }
+                if warp {
+                    g.points[5][0] -= 25.;
+                    g.points[10][1] += 20.;
+                }
+                let a = d
+                    .transformed_selection_impl(&selection, &initial, &g, true)
+                    .unwrap();
+                let b = d
+                    .transformed_selection_impl(&selection, &initial, &g, false)
+                    .unwrap();
+                for y in 0..96 {
+                    for x in 0..128 {
+                        assert_eq!(
+                            a.coverage(x as f64 + 0.5, y as f64 + 0.5),
+                            b.coverage(x as f64 + 0.5, y as f64 + 0.5)
+                        );
+                    }
+                }
+            }
+        }
+        d.begin_transform_layers(&[1]).unwrap();
+        d.cancel_transform().unwrap();
+    }
 }

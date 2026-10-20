@@ -197,6 +197,7 @@ pub struct PlacedImage {
 pub(super) struct TransformState {
     preview_source: Option<Arc<crate::ResidentPreviewSource>>,
     original: Layer,
+    original_bounds: [f64; 4],
     source: Arc<PlacedImage>,
     current: TransformGeometry,
     checkpoint: TransformGeometry,
@@ -252,32 +253,43 @@ impl<'a> SourceSampler<'a> {
             offset: [0., 0.],
         }
     }
-    fn covered(&self, p: Pixel, x: i64, y: i64) -> Pixel {
-        self.selection.map_or(p, |s| {
-            p.scaled(s.coverage(
-                x as f64 + 0.5 + self.offset[0],
-                y as f64 + 0.5 + self.offset[1],
-            ))
-        })
-    }
     fn pixel(&mut self, x: i64, y: i64) -> Result<Pixel> {
         let key = TileCoord::from_signed(x.div_euclid(64) as i32, y.div_euclid(64) as i32);
         if !self.cache.contains_key(&key) {
-            let Some(tile) = self.source.tiles.get(&key) else {
-                return Ok(self.covered(self.source.default_pixel(x, y), x, y));
+            let tile = self.source.tiles.get(&key);
+            if tile.is_none() && self.selection.is_none() {
+                return Ok(self.source.default_pixel(x, y));
+            }
+            let x0 = x.div_euclid(64) * 64;
+            let y0 = y.div_euclid(64) * 64;
+            let mut pixels = if let Some(tile) = tile {
+                tile.try_pixels()?.to_vec()
+            } else {
+                (0..4096)
+                    .map(|i| self.source.default_pixel(x0 + i % 64, y0 + i / 64))
+                    .collect()
             };
-            let pixels = tile.try_pixels()?.to_vec();
+            if let Some(selection) = self.selection {
+                let mut coverage = [0.; 64];
+                for row in 0..64 {
+                    selection.coverage_span(
+                        x0 as f64 + 0.5 + self.offset[0],
+                        (y0 + row) as f64 + 0.5 + self.offset[1],
+                        &mut coverage,
+                    );
+                    for (col, &alpha) in coverage.iter().enumerate() {
+                        let i = row as usize * 64 + col;
+                        pixels[i] = pixels[i].scaled(alpha);
+                    }
+                }
+            }
             if self.order.len() == 64 {
                 self.cache.remove(&self.order.pop_front().expect("cache"));
             }
             self.order.push_back(key);
             self.cache.insert(key, pixels);
         }
-        Ok(self.covered(
-            self.cache[&key][(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize],
-            x,
-            y,
-        ))
+        Ok(self.cache[&key][(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize])
     }
 }
 fn cubic_weight(x: f64, a: f64) -> f64 {
@@ -408,6 +420,7 @@ impl Document {
                 geometry,
             })
         };
+        let original_bounds = source.bounds;
         let selected = if self.selection.enabled() && !original.is_image() && !original.mask {
             Some(self.selection.clone())
         } else {
@@ -420,9 +433,12 @@ impl Document {
                 return Err(Error::ResourceLimit("selection transform coverage"));
             }
             let mut bounds = None::<[u32; 4]>;
+            let mut coverage = vec![0.; self.width as usize];
             for y in 0..self.height {
-                for x in 0..self.width {
-                    if selection.coverage(x as f64 + 0.5, y as f64 + 0.5) > 0. {
+                selection.coverage_span(0.5, y as f64 + 0.5, &mut coverage);
+                for (x, &alpha) in coverage.iter().enumerate() {
+                    let x = x as u32;
+                    if alpha > 0. {
                         bounds = Some(bounds.map_or([x, y, x + 1, y + 1], |b| {
                             [b[0].min(x), b[1].min(y), b[2].max(x + 1), b[3].max(y + 1)]
                         }));
@@ -448,6 +464,7 @@ impl Document {
         self.transform = Some(TransformState {
             preview_source: None,
             original,
+            original_bounds,
             source,
             current: current.clone(),
             checkpoint: current.clone(),
@@ -603,6 +620,7 @@ impl Document {
         self.transform = Some(TransformState {
             preview_source: None,
             original: layer,
+            original_bounds: image.bounds,
             source: image,
             current: geometry.clone(),
             checkpoint: geometry.clone(),
@@ -694,10 +712,48 @@ impl Document {
         initial: &TransformGeometry,
         geometry: &TransformGeometry,
     ) -> Result<crate::Selection> {
+        self.transformed_selection_impl(selection, initial, geometry, true)
+    }
+    fn transformed_selection_impl(
+        &self,
+        selection: &crate::Selection,
+        initial: &TransformGeometry,
+        geometry: &TransformGeometry,
+        cropped: bool,
+    ) -> Result<crate::Selection> {
         if initial == geometry {
             return Ok(selection.clone());
         }
-        let count = (self.width as usize).saturating_mul(self.height as usize);
+        let warp_mesh = geometry.warp.then(|| mesh::TransformMesh::new(geometry));
+        let bounds = warp_mesh.as_ref().map_or_else(
+            || {
+                let p = [
+                    geometry.points[0],
+                    geometry.points[3],
+                    geometry.points[12],
+                    geometry.points[15],
+                ];
+                [
+                    p.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min),
+                    p.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min),
+                    p.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max),
+                    p.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max),
+                ]
+            },
+            |m| m.bounds(),
+        );
+        let bounds = if cropped {
+            bounds
+        } else {
+            [0., 0., self.width as f64, self.height as f64]
+        };
+        let x0 = (bounds[0].floor() as i64).clamp(0, self.width as i64);
+        let y0 = (bounds[1].floor() as i64).clamp(0, self.height as i64);
+        let x1 = (bounds[2].ceil() as i64).clamp(0, self.width as i64);
+        let y1 = (bounds[3].ceil() as i64).clamp(0, self.height as i64);
+        let width = (x1 - x0).max(1) as u32;
+        let height = (y1 - y0).max(1) as u32;
+        let count = (width as usize).saturating_mul(height as usize);
         if count > crate::MAX_SELECTION_MASK_BYTES {
             return Err(Error::ResourceLimit("selection transform coverage"));
         }
@@ -706,16 +762,16 @@ impl Document {
         let origin = initial.points[0];
         let w = initial.points[3][0] - origin[0];
         let h = initial.points[12][1] - origin[1];
-        let warp_mesh = geometry.warp.then(|| mesh::TransformMesh::new(geometry));
+
         let raster = warp_mesh
             .as_ref()
-            .map(|m| mesh::MeshRaster::new(m, [0, 0, self.width as i64, self.height as i64]))
+            .map(|m| mesh::MeshRaster::new(m, [x0, y0, x1.max(x0 + 1), y1.max(y0 + 1)]))
             .transpose()?;
-        for ty in 0..(self.height as i64 + 63) / 64 {
-            for tx in 0..(self.width as i64 + 63) / 64 {
+        for ty in y0.div_euclid(64)..(y1 + 63).div_euclid(64) {
+            for tx in x0.div_euclid(64)..(x1 + 63).div_euclid(64) {
                 let uv_tile = raster.as_ref().map(|r| r.tile_uvs(tx, ty));
-                for y in ty * 64..((ty + 1) * 64).min(self.height as i64) {
-                    for x in tx * 64..((tx + 1) * 64).min(self.width as i64) {
+                for y in y0.max(ty * 64)..((ty + 1) * 64).min(y1) {
+                    for x in x0.max(tx * 64)..((tx + 1) * 64).min(x1) {
                         let px = x as f64 + 0.5;
                         let py = y as f64 + 0.5;
                         let uv = if let Some(tile) = &uv_tile {
@@ -730,7 +786,7 @@ impl Document {
                             None
                         };
                         if let Some([u, v]) = uv {
-                            coverage[y as usize * self.width as usize + x as usize] =
+                            coverage[(y - y0) as usize * width as usize + (x - x0) as usize] =
                                 (selection.coverage(origin[0] + u * w, origin[1] + v * h) * 255.)
                                     .round() as u8;
                         }
@@ -740,18 +796,14 @@ impl Document {
         }
         let mut shape = crate::SelectionShape::geometry(
             crate::SelectionKind::Rectangle,
-            0.,
-            0.,
-            self.width as f64,
-            self.height as f64,
+            x0 as f64,
+            y0 as f64,
+            width as f64,
+            height as f64,
             false,
         );
         shape.kind = crate::SelectionKind::Mask;
-        shape.mask = Some(crate::SelectionMask::from_alpha(
-            self.width,
-            self.height,
-            coverage,
-        )?);
+        shape.mask = Some(crate::SelectionMask::from_alpha(width, height, coverage)?);
         crate::Selection::from_steps(
             true,
             vec![crate::SelectionStep {
@@ -765,6 +817,15 @@ impl Document {
         original: &Layer,
         source: &Arc<PlacedImage>,
         geometry: &TransformGeometry,
+    ) -> Result<Layer> {
+        self.render_transform_target_impl(original, source, geometry, true)
+    }
+    fn render_transform_target_impl(
+        &self,
+        original: &Layer,
+        source: &Arc<PlacedImage>,
+        geometry: &TransformGeometry,
+        bounded: bool,
     ) -> Result<Layer> {
         let state = self.transform.as_ref().expect("session");
         if state.selection.is_some() && *geometry == state.initial {
@@ -792,13 +853,34 @@ impl Document {
             b = mesh.bounds();
         }
         let mut extent = b;
+        let mut partial = false;
         if state.selection.is_some() {
-            let o = layer_bounds(original)?;
+            let o = state.original_bounds;
             extent = [
                 extent[0].min(o[0] + original.appearance.offset_x as f64),
                 extent[1].min(o[1] + original.appearance.offset_y as f64),
                 extent[2].max(o[0] + o[2] + original.appearance.offset_x as f64),
                 extent[3].max(o[1] + o[3] + original.appearance.offset_y as f64),
+            ];
+            partial = bounded
+                && original.appearance.offset_x == 0
+                && original.appearance.offset_y == 0
+                && original.placed.is_none()
+                && state.placed.is_none()
+                && o[0] >= 0.
+                && o[1] >= 0.
+                && o[0] + o[2] <= self.width as f64
+                && o[1] + o[3] <= self.height as f64;
+        }
+        let scale = ((extent[2].ceil() - extent[0].floor()) / source.bounds[2])
+            .min((extent[3].ceil() - extent[1].floor()) / source.bounds[3]);
+        if partial {
+            let initial = &state.initial;
+            extent = [
+                b[0].min(initial.points[0][0]),
+                b[1].min(initial.points[0][1]),
+                b[2].max(initial.points[3][0]),
+                b[3].max(initial.points[12][1]),
             ];
         }
         let x0 = extent[0].floor() as i64;
@@ -813,8 +895,10 @@ impl Document {
             .map(|m| mesh::MeshRaster::new(m, [x0, y0, x1, y1]))
             .transpose()?;
         let mut layer = original.clone();
-        layer.tiles.clear();
-        layer.white = (0, 0);
+        if !partial {
+            layer.tiles.clear();
+            layer.white = (0, 0);
+        }
         layer.appearance.offset_x = 0;
         layer.appearance.offset_y = 0;
         let bounds = source.bounds;
@@ -826,7 +910,7 @@ impl Document {
         ];
         let mut background = SourceSampler::new(original);
         let inverse_matrix = geometry.inverse_matrix();
-        let scale = ((x1 - x0) as f64 / bounds[2]).min((y1 - y0) as f64 / bounds[3]);
+
         let retained = self.tile_count()
             - self.layers[self.layer_index(original.id)?].retained_tile_count()
             + if original.is_image() || state.placed.is_some() {
@@ -838,11 +922,31 @@ impl Document {
         // an unpaged full-size destination buffer. Publish only after every tile succeeds.
         for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
             for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
-                let mut pixels = vec![Pixel::TRANSPARENT; 4096];
-                let mut nonempty = false;
+                let key = TileCoord::from_signed(tx as i32, ty as i32);
+                let mut pixels = if partial {
+                    if let Some(tile) = original.tiles.get(&key) {
+                        tile.try_pixels()?.to_vec()
+                    } else {
+                        (0..4096)
+                            .map(|i| original.default_pixel(tx * 64 + i % 64, ty * 64 + i / 64))
+                            .collect()
+                    }
+                } else {
+                    vec![Pixel::TRANSPARENT; 4096]
+                };
                 let uv_tile = raster.as_ref().map(|r| r.tile_uvs(tx, ty));
                 for y in y0.max(ty * 64)..y1.min((ty + 1) * 64) {
-                    for x in x0.max(tx * 64)..x1.min((tx + 1) * 64) {
+                    let mut old_coverage = [0.; 64];
+                    let start = x0.max(tx * 64);
+                    let end = x1.min((tx + 1) * 64);
+                    if let Some(selection) = &state.selection {
+                        selection.coverage_span(
+                            start as f64 + 0.5,
+                            y as f64 + 0.5,
+                            &mut old_coverage[..(end - start) as usize],
+                        );
+                    }
+                    for x in start..end {
                         let px = x as f64 + 0.5;
                         let py = y as f64 + 0.5;
                         let uv = if let Some(tile) = &uv_tile {
@@ -866,23 +970,25 @@ impl Document {
                                 scale,
                             )?;
                         }
-                        if let Some(selection) = &state.selection {
+                        if state.selection.is_some() {
                             let old = background
                                 .pixel(
                                     x - original.appearance.offset_x as i64,
                                     y - original.appearance.offset_y as i64,
                                 )?
-                                .scaled(1. - selection.coverage(px, py));
+                                .scaled(1. - old_coverage[(x - start) as usize]);
                             pixel = pixel.over(old);
                         }
-                        if pixel.alpha() > 0. {
-                            nonempty = true;
-                            pixels[(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize] = pixel;
-                        }
+                        pixels[(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize] = pixel;
                     }
                 }
-                if nonempty {
-                    if retained + layer.tiles.len() >= self.options.max_document_tiles {
+                let changed = pixels.iter().enumerate().any(|(i, &p)| {
+                    p != layer.default_pixel(tx * 64 + (i % 64) as i64, ty * 64 + (i / 64) as i64)
+                });
+                if changed {
+                    if retained + layer.tiles.len() - usize::from(layer.tiles.contains_key(&key))
+                        >= self.options.max_document_tiles
+                    {
                         return Err(Error::ResourceLimit("transform tiles"));
                     }
                     let tile = Arc::new(Tile::from_pixels(pixels)?);
@@ -891,6 +997,8 @@ impl Document {
                         .tiles
                         .insert(TileCoord::from_signed(tx as i32, ty as i32), tile);
                     self.pool.trim()?;
+                } else if partial {
+                    layer.tiles.remove(&key);
                 }
             }
         }

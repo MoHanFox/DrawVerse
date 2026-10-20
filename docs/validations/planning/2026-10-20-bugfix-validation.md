@@ -149,3 +149,11 @@
 - 原生新链接 1 项与旧蒙版 1 项通过；查询准确 publication、失败输出、非法描述符、同值无历史、实际移动、undo/redo 与 modified 发布均验证。
 - Windows Release Qt maskLinkButtonMovesIndependentlyAndPersistsWithUndo 通过：真实鼠标点击、独立移动、撤销重做、保存/重开、重新链接和组蒙版；重开按蒙版/所有者关系重新定位（ORA 导入会重分配节点 ID）。多选移动共享 Qt 回归通过。
 - ABI1.68，已有 DTO 布局不变；四 C/C++ 消费者、严格 Clippy、格式、生成头与 Release 通过，产物 build/qt/bin/Release。未跑全量/跨平台/实体连续输入。
+
+## 性能 2，第一步：CPU 选区变换有界物化
+
+- 选区边界与源覆盖使用扫描行算子，64 个源瓦片缓存已乘覆盖率的像素；原图边界仅在开始会话时计算。符合条件的普通栅格复用未修改瓦片和隐式白底，只物化源选区与变换目标的包围框；选区 mask 仅存目标在画布内的范围。位移图层、画布外源等保留全图回退。
+- 同机 Release 固定 4096×2160 白底、约256px套索、六次仿射输入/三轮中位数 1444.145→157.085ms，最终全图像素摘要均 a3f1645cf488e376，保留瓦片2176→12。示例命令为 `cargo run --release --manifest-path core/Cargo.toml -p paint-core --example transform_performance -- 4096 pixel affine selection`。计时不含开始会话、界面和显示，也不代表大面积选区或任意硬件。
+- 核心私有变换10项、公开变换7项、原生变换2项通过；新对照用例比较旧全图算法与有界路径，覆盖六种插值×仿射/Warp×白底羽化/透明AA/位移回退共36组，负坐标与边缘、半透明、未修改瓦片Arc、单历史与撤销；裁剪选区逐像素等价，完全越界仍为空遮罩。
+- Windows Release Qt selected4kWhiteTransformRetainsOutsidePixelsAndCompactSelection 通过，实际客户端连续六次更新、透明洞、目标和画布其他位置、紧凑mask、完成/撤销/重做/取消均验证。真实D3D11共享变换5项（不含初始化/清理）通过，四ABI消费者、严格Clippy、格式与生成头检查通过。Release输出 build/qt/bin/Release，ABI1.68不变。
+- 此步仍是CPU计算，未接选区常驻GPU预览，未做实体连续输入或全量/跨平台验收；选区很大时工作范围仍可能接近全图。

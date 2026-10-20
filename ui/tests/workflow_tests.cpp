@@ -40,6 +40,17 @@ class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
 
+    void selected4kWhiteTransformRetainsOutsidePixelsAndCompactSelection() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selected-4k.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(4096,2160);QTRY_COMPARE(client.documentWidth(),4096);QTRY_VERIFY(!client.layerEditBusy());
+        client.requestViewport(0,{800,400,1200,700},{600,350});QVERIFY(client.editSelectionPath({{1024,512},{1280,512},{1280,768},{1024,768}},0,false));QTRY_VERIFY(!client.layerEditBusy());const auto depth=client.undoDepth();const auto originalSelection=client.selectionSteps();
+        QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformActive() && !client.transformBusy());const auto initial=client.transformPoints();QVERIFY(!client.residentPreview());
+        for(int i=1;i<=6;++i){const auto revision=client.revision();auto points=initial;for(auto &v:points)v=v.toPointF()+QPointF(i*64,0);QVERIFY(client.updateTransform(points,false,0));QTRY_VERIFY(client.revision()>revision);}
+        QTRY_VERIFY(client.sampleDocumentPixel(1100,600).alpha()<10);QVERIFY(client.sampleDocumentPixel(1500,600).alpha()>245);QVERIFY(client.sampleDocumentPixel(3000,1800).alpha()>245);
+        QTRY_VERIFY(!client.selectionSteps().isEmpty() && client.selectionSteps().first().toMap().value("shape").toInt()==3);QVERIFY(client.selectionSteps().first().toMap().value("width").toDouble()<=258);QVERIFY(client.selectionSteps().first().toMap().value("height").toDouble()<=258);
+        QVERIFY(client.finishTransform(true));QTRY_VERIFY(!client.transformActive());QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(client.lastError().isEmpty());
+        client.undo();QTRY_VERIFY(!client.layerEditBusy());QTRY_COMPARE(client.selectionSteps(),originalSelection);QVERIFY(client.sampleDocumentPixel(1100,600).alpha()>245);client.redo();QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.sampleDocumentPixel(1100,600).alpha()<10);
+        const auto before=client.selectionSteps();QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy());auto points=client.transformPoints();for(auto &v:points)v=v.toPointF()+QPointF(-32,0);QVERIFY(client.updateTransform(points,false,0));QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive());QTRY_COMPARE(client.selectionSteps(),before);QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
     void maskLinkButtonMovesIndependentlyAndPersistsWithUndo() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("links.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         client.newDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());auto owner=client.activeLayer();QVERIFY(client.addMask(owner));QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());auto mask=client.activeLayer();

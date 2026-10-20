@@ -6,18 +6,44 @@ fn main() {
     let size = args.get(1).map_or(512, |s| s.parse::<u32>().unwrap());
     let deferred = args.get(2).is_none_or(|s| s == "mesh");
     let warp = args.get(3).is_none_or(|s| s == "warp");
-    let mut d = Document::new(size, size).unwrap();
-    d.bucket_fill(BucketFill {
-        x: 0,
-        y: 0,
-        color: Pixel::WHITE,
-        opacity: 1.,
-        tolerance: 0,
-        antialias: false,
-        contiguous: true,
-        all_layers: false,
-    })
-    .unwrap();
+    let selected = args.get(4).is_some_and(|s| s == "selection");
+    let height = if selected { size * 2160 / 4096 } else { size };
+    let mut d = Document::new(size, height.max(1)).unwrap();
+    if selected {
+        d.initialize_white_background().unwrap();
+        let x = f64::from(size) * 0.3;
+        let y = f64::from(height) * 0.3;
+        let r = f64::from(size.min(1024)) * 0.25;
+        let shape = SelectionShape::polygon(
+            vec![
+                [x, y],
+                [x + r, y + 3.],
+                [x + r * 0.8, y + r],
+                [x - 3., y + r * 0.7],
+            ],
+            true,
+            0.,
+        )
+        .unwrap();
+        d.set_selection(
+            Selection::default()
+                .apply(shape, SelectionOperation::Replace, size, height)
+                .unwrap(),
+        )
+        .unwrap();
+    } else {
+        d.bucket_fill(BucketFill {
+            x: 0,
+            y: 0,
+            color: Pixel::WHITE,
+            opacity: 1.,
+            tolerance: 0,
+            antialias: false,
+            contiguous: true,
+            all_layers: false,
+        })
+        .unwrap();
+    }
     let id = d.active_layer();
     if deferred {
         d.begin_transform_layers_deferred(&[id]).unwrap();
@@ -44,7 +70,21 @@ fn main() {
                 std::hint::black_box(p);
             }
         }
-        println!("size={size} mesh={deferred} warp={warp} pass={pass} six_inputs_ms={:.3} vertices={vertices}",start.elapsed().as_secs_f64()*1000.);
+        println!("selected={selected} height={height} size={size} mesh={deferred} warp={warp} pass={pass} six_inputs_ms={:.3} vertices={vertices}",start.elapsed().as_secs_f64()*1000.);
+    }
+    if selected {
+        use std::hash::{Hash, Hasher};
+        let mut digest = std::collections::hash_map::DefaultHasher::new();
+        for y in 0..height {
+            for p in d.read_row(0, y, size).unwrap() {
+                p.components().map(f32::to_bits).hash(&mut digest);
+            }
+        }
+        println!(
+            "final_digest={:016x} retained_tiles={}",
+            digest.finish(),
+            d.layers()[0].tile_count()
+        );
     }
     d.cancel_transform().unwrap();
 }
