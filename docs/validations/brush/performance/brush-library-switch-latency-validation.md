@@ -42,4 +42,3 @@ Qt 使用公开许可的148项ABR样本导入三次，含默认项共448项，�
 手动探针：设置 `DRAWVERSE_BRUSH_REPRO_SETTINGS` 为 INI 路径，同级提供 `brush-resources`，运行 `qt_workflow_tests liveBrushSelectionWithLargePreferences`；没有环境变量时跳过。原生状态与 Qt 比较只读且在后台使用不可变副本；实际差异、失败和陈旧票据保护保持。
 
 尚待：首次加载/冷资源、其他复杂预览、多文档全量偏好广播及实体连续切换；历史热缓存改造、全量和跨平台未完成。
-
