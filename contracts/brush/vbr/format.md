@@ -41,3 +41,5 @@ manifest 的 `groups` 保持空数组；实际分组在可选 `organization` 的
 ## 自身描边纹理扩展（2026-10-20）
 
 整笔描边的自身来源可写`source:{"model":"self-brush","texture":{...}}`；texture采用完整既有纹理参数及内容身份资源绑定，缺失表示自身描边无独立纹理。启用状态与关闭参数均保留，主笔刷texture独立。该字段要求behavior34和`outline-self-texture`，同时保留`stroke-outline`；没有该字段的描边仍behavior33。VBR格式继续1.0，读入按实际字段重算能力，资源包必须包含该纹理的实际内容。
+
+SDF描边使用同一可选strokeOutline对象，model为`stroke-sdf-v1`，参数/三来源/独立纹理结构不变；要求behavior35和`stroke-outline-sdf`及`stroke-outline`，自身含texture时还要求`outline-self-texture`。读取按实际model重算，不按manifest minor判断。旧`stroke-contour-v1`默认和编码保持。

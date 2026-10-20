@@ -595,6 +595,10 @@ impl Preset {
             (self.stroke_taper.is_some(), "stroke-taper"),
             (self.stroke_outline.is_some(), "stroke-outline"),
             (
+                self.stroke_outline.as_ref().is_some_and(|p| p.is_sdf()),
+                "stroke-outline-sdf",
+            ),
+            (
                 self.stroke_outline
                     .as_ref()
                     .is_some_and(|p| p.has_self_texture()),
@@ -667,7 +671,9 @@ impl Preset {
             }
         }
         self.required_capabilities = capabilities;
-        self.behavior_version = if self
+        self.behavior_version = if self.stroke_outline.as_ref().is_some_and(|p| p.is_sdf()) {
+            35
+        } else if self
             .stroke_outline
             .as_ref()
             .is_some_and(|p| p.has_self_texture())
@@ -820,6 +826,7 @@ fn is_feature_capability(capability: &str) -> bool {
             | "wet-mix"
             | "stroke-taper"
             | "stroke-outline"
+            | "stroke-outline-sdf"
             | "outline-self-texture"
             | "wet-dual-color"
     )
@@ -938,6 +945,7 @@ impl Package {
                             | "wet-mix"
                             | "stroke-taper"
                             | "stroke-outline"
+                            | "stroke-outline-sdf"
                             | "outline-self-texture"
                             | "wet-dual-color"
                     )

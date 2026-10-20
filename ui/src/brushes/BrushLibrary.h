@@ -388,6 +388,7 @@ public:
     QByteArray exportSelectionPackage(bool includeSource=false) const;
     bool importPackage(const QByteArray &json,const QString &groupName={});
     bool importAbr(const QByteArray &json,const QString &groupName={});
+    static int outlineStateVersion(const QVariantMap &outline);
     static int textureStateVersion(const QVariantMap &texture);
     void setHardness(qreal value);
     void setRoundness(qreal value);

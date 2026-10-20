@@ -719,7 +719,7 @@ public:
             if(tip.value("dualBrush").toMap().contains("color"))raiseBrushStateVersion(state,16);
             if(!tip.value("wetMix").toMap().isEmpty()){row["wetMix"]=QJsonObject::fromVariantMap(tip.value("wetMix").toMap());raiseBrushStateVersion(state,17);}
             if(!tip.value("strokeTaper").toMap().isEmpty()){row["strokeTaper"]=QJsonObject::fromVariantMap(tip.value("strokeTaper").toMap());const auto taper=tip.value("strokeTaper").toMap();raiseBrushStateVersion(state,taper.value("start").toMap().contains("lengthMode") || taper.value("end").toMap().contains("lengthMode")?39:18);}
-            if(!tip.value("strokeOutline").toMap().isEmpty()){const auto outline=tip.value("strokeOutline").toMap();row["strokeOutline"]=QJsonObject::fromVariantMap(outline);const auto source=outline.value("source").toMap();raiseBrushStateVersion(state,source.value("model").toString()=="self-brush" && source.contains("texture")?42:41);}
+            if(!tip.value("strokeOutline").toMap().isEmpty()){const auto outline=tip.value("strokeOutline").toMap();row["strokeOutline"]=QJsonObject::fromVariantMap(outline);raiseBrushStateVersion(state,BrushLibrary::outlineStateVersion(outline));}
             if(BrushCurveModes::present(QJsonObject::fromVariantMap(tip)))raiseBrushStateVersion(state,40);
             if(tip.value("wetMix").toMap().contains("dualColor"))raiseBrushStateVersion(state,19);
             if(tip.value("dualBrush").toMap().value("color").toMap().value("model").toString()=="interleaved-stamp-v1")state["version"]=std::max(state.value("version").toInt(),22);

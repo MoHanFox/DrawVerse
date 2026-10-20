@@ -1,7 +1,7 @@
 use super::*;
 use paint_core::{
-    BrushCatalog, BrushMask, BrushSettings, BrushTip, Document, InputPoint, OutlinePlacement,
-    OutlineSource, OutlineWidth, Pixel, SecondaryTip, StrokeOutline,
+    BrushCatalog, BrushMask, BrushSettings, BrushTip, Document, InputPoint, OutlineAlgorithm,
+    OutlinePlacement, OutlineSource, OutlineWidth, Pixel, SecondaryTip, StrokeOutline,
 };
 use std::sync::Arc;
 
@@ -77,90 +77,93 @@ fn prepared(library: *mut PaintBrushLibrary, settings: &BrushSettings) -> (u64, 
 
 #[test]
 fn outline_public_preparation_executes_real_pixels_history_and_rejects_old_entries() {
-    for enabled in [false, true] {
-        let h = Harness::new(64, 64);
-        unsafe {
-            let mut version = dto!(PaintVersion);
-            assert_eq!(paint_core_version(&mut version), PAINT_OK);
-            assert!(version.minor >= 60);
-            let mut capabilities = dto!(PaintCapabilities);
-            assert_eq!(paint_core_capabilities(h.core, &mut capabilities), PAINT_OK);
-            assert_ne!(capabilities.features & PAINT_FEATURE_STROKE_OUTLINE, 0);
+    for algorithm in [OutlineAlgorithm::Path, OutlineAlgorithm::Sdf] {
+        for enabled in [false, true] {
+            let h = Harness::new(64, 64);
+            unsafe {
+                let mut version = dto!(PaintVersion);
+                assert_eq!(paint_core_version(&mut version), PAINT_OK);
+                assert!(version.minor >= 71);
+                let mut capabilities = dto!(PaintCapabilities);
+                assert_eq!(paint_core_capabilities(h.core, &mut capabilities), PAINT_OK);
+                assert_ne!(capabilities.features & PAINT_FEATURE_STROKE_OUTLINE, 0);
 
-            let mut library = ptr::null_mut();
-            assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
-            let preset = settings(enabled);
-            let (capture, json) = prepared(library, &preset);
-            let mut sequence = 99;
-            assert_eq!(
-                paint_brush_library_prepare_state_taper(
-                    library,
-                    json.as_ptr(),
-                    json.len() as u64,
-                    &mut sequence
-                ),
-                PAINT_OK
-            );
-            let rejected = wait(|| {
-                let mut required = 0;
-                let status = paint_brush_library_prepared_state(
-                    library,
-                    sequence,
-                    ptr::null_mut(),
-                    0,
-                    &mut required,
+                let mut library = ptr::null_mut();
+                assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
+                let mut preset = settings(enabled);
+                preset.outline = preset.outline.with_algorithm(algorithm);
+                let (capture, json) = prepared(library, &preset);
+                let mut sequence = 99;
+                assert_eq!(
+                    paint_brush_library_prepare_state_taper(
+                        library,
+                        json.as_ptr(),
+                        json.len() as u64,
+                        &mut sequence
+                    ),
+                    PAINT_OK
                 );
-                if status == PAINT_BUSY {
-                    None
-                } else {
-                    Some((status, required))
-                }
-            });
-            assert_eq!(rejected, (PAINT_UNSUPPORTED, 0));
+                let rejected = wait(|| {
+                    let mut required = 0;
+                    let status = paint_brush_library_prepared_state(
+                        library,
+                        sequence,
+                        ptr::null_mut(),
+                        0,
+                        &mut required,
+                    );
+                    if status == PAINT_BUSY {
+                        None
+                    } else {
+                        Some((status, required))
+                    }
+                });
+                assert_eq!(rejected, (PAINT_UNSUPPORTED, 0));
 
-            let mut reference = Document::new(64, 64).unwrap();
-            let mut definition = preset.definition();
-            definition.brush.color = Pixel::from_straight([0., 0., 1., 1.]).unwrap();
-            definition.brush.background_color = Pixel::WHITE;
-            h.wait(super::wet_api::begin(&h, library, capture, 16.5));
-            reference
-                .begin_brush_stroke(definition.clone(), InputPoint::new(16.5, 32.5, 1.))
-                .unwrap();
-            prepared(library, &settings(false));
-            h.wait(h.submit(PaintCommand {
-                kind: PAINT_COMMAND_STROKE_TO,
-                point: PaintPoint {
-                    x: 48.5,
-                    y: 32.5,
-                    pressure: 1.,
-                    tool: PAINT_TOOL_MOUSE,
-                    ..dto!(PaintPoint)
-                },
-                ..dto!(PaintCommand)
-            }));
-            reference
-                .stroke_to(InputPoint::new(48.5, 32.5, 1.))
-                .unwrap();
-            h.wait(h.submit(PaintCommand {
-                kind: PAINT_COMMAND_END_STROKE,
-                ..dto!(PaintCommand)
-            }));
-            assert!(reference.end_stroke().unwrap());
-            assert_eq!(
-                super::wet_api::copied(&h),
-                reference.copy_layers(&[1]).unwrap()
-            );
-            let after = super::wet_api::copied(&h);
-            h.wait(h.submit(PaintCommand {
-                kind: PAINT_COMMAND_UNDO,
-                ..dto!(PaintCommand)
-            }));
-            h.wait(h.submit(PaintCommand {
-                kind: PAINT_COMMAND_REDO,
-                ..dto!(PaintCommand)
-            }));
-            assert_eq!(super::wet_api::copied(&h), after);
-            assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+                let mut reference = Document::new(64, 64).unwrap();
+                let mut definition = preset.definition();
+                definition.brush.color = Pixel::from_straight([0., 0., 1., 1.]).unwrap();
+                definition.brush.background_color = Pixel::WHITE;
+                h.wait(super::wet_api::begin(&h, library, capture, 16.5));
+                reference
+                    .begin_brush_stroke(definition.clone(), InputPoint::new(16.5, 32.5, 1.))
+                    .unwrap();
+                prepared(library, &settings(false));
+                h.wait(h.submit(PaintCommand {
+                    kind: PAINT_COMMAND_STROKE_TO,
+                    point: PaintPoint {
+                        x: 48.5,
+                        y: 32.5,
+                        pressure: 1.,
+                        tool: PAINT_TOOL_MOUSE,
+                        ..dto!(PaintPoint)
+                    },
+                    ..dto!(PaintCommand)
+                }));
+                reference
+                    .stroke_to(InputPoint::new(48.5, 32.5, 1.))
+                    .unwrap();
+                h.wait(h.submit(PaintCommand {
+                    kind: PAINT_COMMAND_END_STROKE,
+                    ..dto!(PaintCommand)
+                }));
+                assert!(reference.end_stroke().unwrap());
+                assert_eq!(
+                    super::wet_api::copied(&h),
+                    reference.copy_layers(&[1]).unwrap()
+                );
+                let after = super::wet_api::copied(&h);
+                h.wait(h.submit(PaintCommand {
+                    kind: PAINT_COMMAND_UNDO,
+                    ..dto!(PaintCommand)
+                }));
+                h.wait(h.submit(PaintCommand {
+                    kind: PAINT_COMMAND_REDO,
+                    ..dto!(PaintCommand)
+                }));
+                assert_eq!(super::wet_api::copied(&h), after);
+                assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+            }
         }
     }
 }

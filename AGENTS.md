@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新SDF描边实际接入：普通13已接通灰度形状/A+场+遮罩缓存、等距线max印章、真实笔触/预览和算法选择，保留建路径默认；自身/已有图片笔尖与独立纹理复用采样，尾部回放失效缓存。state43/behavior35/stroke-outline-sdf、ABI1.71，旧41/42保持；核心15+内部3/IO5/原生2/工作流31（软件GPU专项跳过1）/D3D11 SDF1/旧Qt3/四ABI/Clippy/Release通过，产物 `build/qt/bin/Release`。实际笔刷和SDF仍CPU，Qt硬件显示/轮廓为GPU，GPU总入口已补齐代码与范围；50%几何/细区域无内等距线/8Mi像素与6400万采样边界见SDF设计/验收，未跑全量/跨平台/实体持续性能。
+
 - 最新自身描边独立纹理：普通13第二步，建路径自身来源支持独立资源选择/异步导入/空间深度/开关移除，主纹理不改；角色4捕获来源和目标，state42/behavior34/outline-self-texture、ABI1.70，旧state41/behavior33保持。IO4/新Qt2旧1/原生2/工作流30（软件GPU专项跳过1）/四ABI/Clippy/Release通过，产物 `build/qt/bin/Release`；详情见 `docs/validations/brush/core/brush-sdf-outline-validation.md`。新SDF仍只有算子，实际笔触/缓存/算法选择及最终GPU说明尚待，未跑全量/跨平台/实体输入。
 
 - 最新SDF描边算子（第一步）：`docs/brush/core/brush-sdf-outline-design.md` / `docs/validations/brush/core/brush-sdf-outline-validation.md`；paint-ops提供负内正外距离场、等距线弧长印章、max及灰度布尔，旧建路径复用EDT；8Mi像素/262144线段与印章/6400万采样上限。新算子10/旧核心13/原生2/Qt3/Clippy与Release通过，ABI1.69及state41/VBR不变，输出 `build/qt/bin/Release`。新SDF设置、实际笔触/缓存及自身独立纹理尚待接入，没有新增GPU计算，勿视作普通13已完成。

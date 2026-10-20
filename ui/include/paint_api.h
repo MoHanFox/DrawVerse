@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 70
+#define PAINT_ABI_MINOR 71
 
 #define PAINT_ABI_PATCH 0
 

@@ -1,8 +1,8 @@
 //! Complete whole-stroke outline settings with strict pre-rounding validation.
 use crate::{brush_dual::DualParameters, brush_texture::TextureParameters, Error, Result};
 use paint_core::{
-    BrushMask, DualBrush, DualMode, OutlinePlacement, OutlineSource, OutlineWidth, StrokeOutline,
-    TextureResource, STROKE_OUTLINE_MODEL,
+    BrushMask, DualBrush, DualMode, OutlineAlgorithm, OutlinePlacement, OutlineSource,
+    OutlineWidth, StrokeOutline, TextureResource, STROKE_OUTLINE_MODEL, STROKE_SDF_OUTLINE_MODEL,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -66,7 +66,7 @@ impl OutlineParameters {
             },
         };
         let data = Data {
-            model: STROKE_OUTLINE_MODEL.into(),
+            model: outline.model().into(),
             enabled: outline.enabled(),
             placement: match outline.placement() {
                 OutlinePlacement::Outside => "outside",
@@ -92,8 +92,13 @@ impl OutlineParameters {
     pub fn has_self_texture(&self) -> bool {
         matches!(self.data.source, Source::SelfBrush { texture: Some(_) })
     }
+    pub fn is_sdf(&self) -> bool {
+        self.data.model == STROKE_SDF_OUTLINE_MODEL
+    }
     pub fn state_version(&self) -> u32 {
-        if self.has_self_texture() {
+        if self.is_sdf() {
+            43
+        } else if self.has_self_texture() {
             42
         } else {
             41
@@ -115,13 +120,14 @@ impl OutlineParameters {
         }
     }
     pub fn validate(&self) -> Result<()> {
-        if self.data.model != STROKE_OUTLINE_MODEL
-            || !matches!(
-                self.data.placement.as_str(),
-                "outside" | "center" | "inside"
-            )
-            || !(0. ..=f64::from(paint_core::MAX_STROKE_OUTLINE_WIDTH))
-                .contains(&self.data.width.pixels)
+        if !matches!(
+            self.data.model.as_str(),
+            STROKE_OUTLINE_MODEL | STROKE_SDF_OUTLINE_MODEL
+        ) || !matches!(
+            self.data.placement.as_str(),
+            "outside" | "center" | "inside"
+        ) || !(0. ..=f64::from(paint_core::MAX_STROKE_OUTLINE_WIDTH))
+            .contains(&self.data.width.pixels)
             || !(0. ..=10_000.).contains(&self.data.width.percent)
             || [self.data.width.pixels, self.data.width.percent]
                 .iter()
@@ -201,6 +207,13 @@ impl OutlineParameters {
             source,
             self.data.secondary_color,
         )
+        .map(|outline| {
+            outline.with_algorithm(if self.data.model == STROKE_SDF_OUTLINE_MODEL {
+                OutlineAlgorithm::Sdf
+            } else {
+                OutlineAlgorithm::Path
+            })
+        })
         .map_err(Error::Core)
     }
 }

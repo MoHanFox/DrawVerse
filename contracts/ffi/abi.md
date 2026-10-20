@@ -1,4 +1,8 @@
-# C ABI 1.70.0 契约
+# C ABI 1.71.0 契约
+
+## ABI 1.71 — SDF 整笔描边
+
+既有完整描边及 Groups 准备/包入口支持 state43、`strokeOutline.model:"stroke-sdf-v1"`。旧建路径模型、state41/42 及字段编码保持；state<43 携带 SDF 拒绝。VBR1.0按实际字段重算behavior35及`stroke-outline-sdf`，保留`stroke-outline`和存在独立自身纹理时的`outline-self-texture`。CPU有界算子服务实际笔触与预览；没有增加GPU计算。bit55、入口签名、DTO布局不变。
 
 ## ABI 1.70 — 自身描边独立纹理
 
