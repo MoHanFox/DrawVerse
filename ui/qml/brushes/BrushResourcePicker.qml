@@ -54,6 +54,16 @@ ColumnLayout {
         clip: true
         reuseItems: true
         model: root.expanded?root.model:[]
+        WheelHandler {
+            target: null
+            onWheel: event=>{
+                grid.cancelFlick()
+                const delta=event.pixelDelta.y!==0?event.pixelDelta.y:event.angleDelta.y*.5
+                const first=grid.originY,last=first+Math.max(0,grid.contentHeight-grid.height)
+                grid.contentY=Math.max(first,Math.min(last,grid.contentY-delta))
+                event.accepted=true
+            }
+        }
         ScrollBar.vertical: ScrollBar {}
         delegate: Item {
             required property int index

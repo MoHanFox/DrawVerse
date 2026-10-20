@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新资源滚轮隔离：共享 BrushResourcePicker 的 WheelHandler 消费边界/快速滚轮与触摸板动量，网格外正常滚设置页；100资源/双向100事件/pixelDelta/动量/外层对照在软件 Qt 和 D3D11 通过，无 QML 警告，Release 输出 `build/qt/bin/Release`。见资源滚轮设计/验收；无 ABI/格式/GPU 变化，实体触摸板待验收。
+
 - 最新图层行驻留：`docs/layers/layer-row-residency-design.md` / 对应验收；按 ID 更新/移动 ListModel 行，蒙版引用仅换 ID 时转移，busy 链条保持亮度。真实点击/移动/undo/redo 对象身份与像素行为在软件 Qt 和 D3D11 各通过，Release 输出 `build/qt/bin/Release`；ABI1.74 保持，组内/固定蒙版核心回退仍待优化。
 
 - 新描边复刻算子第一步：`docs/brush/core/brush-stroke-replay-outline-design.md` / 对应validations；paint-ops::replay_outline按实际印章两尺度与四通道灰度max差集形成描边，允许溢出控制主体几何裁剪，64×64/8Mi像素有界，私有候选失败不改输入。新7/包回归16及Clippy/格式通过；尚未接实际笔触/预览/设置/旧算法移除，不是新描边功能完成，ABI1.74/state44保持，无新增GPU。

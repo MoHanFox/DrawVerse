@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [资源列表滚轮隔离](brush/ui/brush-resource-wheel-design.md)
+
 - [图层元数据更新保留列表行](layers/layer-row-residency-design.md)
 
 - [复刻主体落笔描边（接入中）](brush/core/brush-stroke-replay-outline-design.md)

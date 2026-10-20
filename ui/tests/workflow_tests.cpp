@@ -19,6 +19,7 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QWheelEvent>
 #include "platform/MenuSurface.h"
 #include "workspace/WorkspaceManager.h"
 
@@ -27,7 +28,13 @@ static QQuickItem *findVisual(QQuickItem *item,const QString &name){if(item->obj
 class ResourcePreviewCacheProbe : public QObject {
     Q_OBJECT
     Q_PROPERTY(quint64 brushResourcePreviewRevision MEMBER revision NOTIFY brushResourcePreviewsChanged)
+    Q_PROPERTY(QStringList brushResources MEMBER resources CONSTANT)
+    Q_PROPERTY(bool brushFileBusy READ busy CONSTANT)
 public:
+    QStringList resources;
+    bool busy() const{return false;}
+    Q_INVOKABLE void refreshBrushResources(){}
+    Q_INVOKABLE void selectBrushResource(const QString &,int){}
     quint64 revision=0;int requests=0;QHash<QString,QString> cache;
     Q_INVOKABLE QString brushResourcePreview(const QString &id)const{return cache.value(id);}
     Q_INVOKABLE bool requestBrushResourcePreview(const QString &){++requests;return false;}
@@ -40,6 +47,32 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+
+    void resourceGridConsumesFastWheelAtBothEdges() {
+        ResourcePreviewCacheProbe client;for(int i=0;i<100;++i)client.resources.append(QString::number(i));
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);
+        QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        QQmlComponent component(&engine);component.setData(R"(
+import QtQuick
+import "qrc:/qml/brushes"
+Flickable {objectName:"outer";width:300;height:380;contentWidth:width;contentHeight:1000;contentY:40;clip:true
+    BrushResourcePicker {objectName:"resources";width:280;y:70;expanded:true}
+})",QUrl());
+        QScopedPointer<QObject> object(component.create());QVERIFY2(object,qPrintable(component.errorString()));auto *outer=qobject_cast<QQuickItem*>(object.data());QVERIFY(outer);
+        QQuickWindow window;window.resize(300,380);outer->setParentItem(window.contentItem());window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *grid=findVisual(outer,"resourcesGrid");QVERIFY(grid);QTRY_VERIFY(grid->height()>0 && grid->property("contentHeight").toReal()>grid->height());
+        const auto wheel=[&](QQuickItem *target,QPoint angle,QPoint pixels,Qt::ScrollPhase phase){const auto local=target->mapToScene({target->width()/2,target->height()/2}).toPoint();QWheelEvent event(local,window.mapToGlobal(local),pixels,angle,Qt::NoButton,Qt::NoModifier,phase,false);QCoreApplication::sendEvent(&window,&event);};
+        const auto first=grid->property("originY").toReal();const auto last=first+grid->property("contentHeight").toReal()-grid->height();
+        for(int i=0;i<50;++i)wheel(grid,{0,-120},{},Qt::NoScrollPhase);
+        QCOMPARE(grid->property("contentY").toReal(),last);QCOMPARE(outer->property("contentY").toReal(),40.);
+        for(int i=0;i<50;++i)wheel(grid,{0,120},{},Qt::NoScrollPhase);
+        QCOMPARE(grid->property("contentY").toReal(),first);QCOMPARE(outer->property("contentY").toReal(),40.);
+        wheel(grid,{},{0,-37},Qt::ScrollUpdate);QCOMPARE(grid->property("contentY").toReal(),first+37);
+        wheel(grid,{},{0,10000},Qt::ScrollMomentum);QCOMPARE(grid->property("contentY").toReal(),first);QCOMPARE(outer->property("contentY").toReal(),40.);
+        // Outside the resource grid, the settings page still accepts normal wheel input.
+        const QPoint local(290,350);QWheelEvent event(local,window.mapToGlobal(local),{},QPoint(0,-120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QCoreApplication::sendEvent(&window,&event);QTRY_VERIFY(outer->property("contentY").toReal()>40.);
+        QCOMPARE(warnings,QStringList());
+    }
 
     void directHistorySelectionAcrossEditingScopes() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("history-select.ini"));

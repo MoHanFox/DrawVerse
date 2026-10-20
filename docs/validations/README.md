@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [资源列表滚轮隔离](brush/ui/brush-resource-wheel-validation.md)
+
 - [图层行驻留与蒙版链接闪烁](layers/layer-row-residency-validation.md)
 
 - [复刻主体落笔描边（接入中）](brush/core/brush-stroke-replay-outline-validation.md)
