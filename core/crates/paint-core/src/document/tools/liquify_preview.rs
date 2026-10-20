@@ -81,18 +81,24 @@ impl Document {
         id: LayerId,
         original: Layer,
     ) -> Option<Arc<LiquifyPreviewSource>> {
-        let compatible = self.layers.iter().all(|l| {
-            !l.group
-                && !l.mask
-                && !l.clipped
-                && l.parent == 0
-                && l.appearance.blend == crate::BlendMode::Normal
-        });
-        if !compatible {
-            return None;
-        }
         let at = self.layer_index(id).ok()?;
-        if !original.properties.visible {
+        // A root is a complete subtree boundary. Its backdrop can be arbitrarily
+        // complex; only the moving source and foreground must be normal-over.
+        // Do not split an owner from its mask, an ancestor group, or a clip chain.
+        if original.group
+            || original.mask
+            || original.clipped
+            || original.parent != 0
+            || original.appearance.blend != crate::BlendMode::Normal
+            || self.mask_for(id).is_some()
+            || !original.properties.visible
+            || self.layers[at + 1..].iter().any(|l| {
+                l.clipped
+                    || (!l.mask
+                        && l.appearance.blend != crate::BlendMode::Normal
+                        && !(l.group && l.appearance.blend == crate::BlendMode::PassThrough))
+            })
+        {
             return None;
         }
         let [l, t, r, b] = source_bounds(&original);
@@ -229,6 +235,167 @@ mod tests {
             );
         }
         d
+    }
+
+    fn subtree_seed() -> (Document, LayerId) {
+        let mut d = seed();
+        let bottom = d.active_layer();
+        let group = d.group_layer(bottom, "below").unwrap();
+        let at = d.layer_index(bottom).unwrap();
+        d.layers[at].appearance.blend = crate::BlendMode::Multiply;
+        d.add_mask(group).unwrap();
+        let moving = d.add_layer("moving").unwrap();
+        d.reparent_layer(moving, 0).unwrap();
+        let above = d.add_layer("above").unwrap();
+        for (id, color) in [(moving, [1., 0.1, 0.2, 0.7]), (above, [0.1, 1., 0.3, 0.4])] {
+            let at = d.layer_index(id).unwrap();
+            d.layers[at].tiles.insert(
+                TileCoord::from_signed(0, 0),
+                Arc::new(
+                    Tile::from_pixels(vec![Pixel::from_straight(color).unwrap(); 4096]).unwrap(),
+                ),
+            );
+            d.layers[at].properties.opacity = 0.65;
+        }
+        let group = d.group_layer(above, "above").unwrap();
+        let outer = d.group_layer(group, "nested above").unwrap();
+        for id in [above, group, outer] {
+            let mask = d.add_mask(id).unwrap();
+            let at = d.layer_index(mask).unwrap();
+            d.layers[at].tiles.insert(
+                TileCoord::from_signed(0, 0),
+                Arc::new(Tile::from_pixels(vec![Pixel::WHITE.scaled(0.25); 4096]).unwrap()),
+            );
+            let at = d.layer_index(id).unwrap();
+            d.layers[at].properties.opacity = 0.55;
+        }
+        d.set_active_layer(moving).unwrap();
+        (d, moving)
+    }
+
+    #[test]
+    fn unrelated_masked_subtrees_split_without_changing_compositing() {
+        let (d, moving) = subtree_seed();
+        let source = d.resident_source(moving).unwrap();
+        assert!(source.below.layers.iter().any(|l| l.group));
+        assert!(source.above.layers.iter().any(|l| l.mask));
+        for y in (0..96).step_by(3) {
+            for x in (0..128).step_by(3) {
+                let image = source.image.pixel(
+                    (x as i32 - source.bounds[0]) as u32,
+                    (y as i32 - source.bounds[1]) as u32,
+                );
+                let split = source
+                    .above
+                    .pixel(x, y)
+                    .over(image.over(source.below.pixel(x, y)));
+                for (a, b) in split
+                    .components()
+                    .into_iter()
+                    .zip(d.pixel(x, y).components())
+                {
+                    assert!((a - b).abs() < 1e-6, "split mismatch at {x},{y}: {a} / {b}");
+                }
+            }
+        }
+        let (mut d, moving) = subtree_seed();
+        let above = d
+            .layers
+            .iter()
+            .position(|l| l.name == "above" && !l.group)
+            .unwrap();
+        d.layers[above].appearance.blend = crate::BlendMode::Multiply;
+        assert!(
+            d.resident_source(moving).is_none(),
+            "backdrop-dependent foreground"
+        );
+        d.layers[above].appearance.blend = crate::BlendMode::Normal;
+        // An owner mask still needs its own presentation path, not an unrelated mask split.
+        d.add_mask(moving).unwrap();
+        assert!(d.resident_source(moving).is_none());
+    }
+
+    #[test]
+    fn unrelated_subtrees_share_transform_move_and_liquify_resident_sources() {
+        for operation in 0..3 {
+            let (mut a, id) = subtree_seed();
+            let (mut b, _) = subtree_seed();
+            let before = a.layer(id).unwrap().tiles.clone();
+            let depth = a.history_depth();
+            match operation {
+                0 => {
+                    a.begin_transform_layers_deferred(&[id]).unwrap();
+                    b.begin_transform_layers(&[id]).unwrap();
+                    assert!(a.transform_deferred());
+                    let source = a.transform_preview().unwrap().source;
+                    let initial = a.transform_geometry().unwrap();
+                    for i in 1..=8 {
+                        let mut g = initial.clone();
+                        g.warp = true;
+                        g.points[5][0] += i as f64;
+                        g.points[10][1] -= i as f64;
+                        a.update_transform(g.clone()).unwrap();
+                        b.update_transform(g).unwrap();
+                        assert!(Arc::ptr_eq(&source, &a.transform_preview().unwrap().source));
+                    }
+                }
+                1 => {
+                    a.begin_layer_move(id, true).unwrap();
+                    b.begin_layer_move(id, false).unwrap();
+                    assert!(a.layer_move_deferred());
+                    a.update_layer_move(7, -3).unwrap();
+                    b.update_layer_move(7, -3).unwrap();
+                }
+                _ => {
+                    a.begin_liquify_deferred().unwrap();
+                    b.begin_liquify().unwrap();
+                    assert!(a.liquify_deferred());
+                    for d in [&mut a, &mut b] {
+                        d.begin_liquify_stroke().unwrap();
+                        d.liquify_dab(LiquifyDab {
+                            tool: 0,
+                            radius: 30.,
+                            strength: 0.7,
+                            density: 0.5,
+                            speed: 1.,
+                            pressure_enabled: false,
+                            from: InputPoint::new(32., 32., 1.),
+                            to: InputPoint::new(39., 29., 1.),
+                            elapsed_ms: 16.,
+                        })
+                        .unwrap();
+                        d.end_liquify_stroke().unwrap();
+                    }
+                }
+            }
+            for (key, tile) in &before {
+                assert!(Arc::ptr_eq(tile, &a.layer(id).unwrap().tiles[key]));
+            }
+            assert_eq!(a.history_depth(), depth);
+            for d in [&mut a, &mut b] {
+                match operation {
+                    0 => {
+                        d.commit_transform().unwrap();
+                    }
+                    1 => {
+                        d.commit_layer_move(7, -3).unwrap();
+                    }
+                    _ => {
+                        d.commit_liquify().unwrap();
+                    }
+                }
+            }
+            for y in 0..96 {
+                assert_eq!(
+                    a.snapshot().read_row(0, y, 128).unwrap(),
+                    b.snapshot().read_row(0, y, 128).unwrap()
+                );
+            }
+            assert_eq!(a.history_depth(), b.history_depth());
+            a.undo().unwrap();
+            a.redo().unwrap();
+            assert_eq!(a.pixel(40, 40), b.pixel(40, 40));
+        }
     }
     #[test]
     fn deferred_drag_keeps_pixels_and_sources_until_commit_and_matches_pixel_path() {

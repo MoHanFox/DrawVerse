@@ -1,5 +1,14 @@
 # 自由变换常驻纹理预览验收
 
+## 2026-10-20：无关组和蒙版的共享常驻源
+
+- 原判据整栈禁用组/蒙版，现按真实根层边界检查；下方完整复杂栈、上方 Normal/穿透组及蒙版保留为静态资产。目标自身蒙版、组内目标、多目标、选区和上方剪贴/特殊混合仍回退，未宣称全部复杂栈性能完成。
+- Rust 新增 2 项：半透明嵌套组/图层蒙版/组蒙版三层合成与原图误差 <1e-6；变换八次 Warp 更新复用源与原瓦片、移动和液化同享快路径，最终整图逐行与 CPU 路径相等，历史/撤销/重做保持。
+- 既有 deferred 4 项、layer_move 7 项通过；严格 paint-core Clippy 通过。
+- `qt_transform_tests::transformResidentPreviewFollowsAndCompositesTransparentStack`：原平坦栈及新增上下组/蒙版两行，真实 D3D11 通过；覆盖 100 次更新、静态资产身份、半透明合成、最终确认和取消。
+- 同两行与已修复快捷键回归在软件后端通过。Release 目标 drawverse/transform/selection/workflow 构建和生成头检查通过，输出 `build/qt/bin/Release`。
+- ABI 1.71 不变。未做本项 4K 实体连续拖动性能测量、全量、跨平台或实体设备验证，不将结构复用测试当作 UI 延迟数据。
+
 2026-10-19，Windows 11 / Qt 6.8.3 / RTX 4060 Laptop GPU，分支 `feat/wgpu-support`，ABI 1.64。设计与调用见[设计](../../tools/transform-resident-preview-design.md)，加速职责见[GPU总入口](../../platform/gpu-acceleration-design.md)。
 
 后续强折叠一致性修复替换了本文初版的Warp Newton定位路径，见[折叠回归](transform-fold-consistency-validation.md)。本文基准保留为初版历史记录。

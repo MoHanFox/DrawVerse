@@ -107,15 +107,27 @@ private slots:
         auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);
         QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void transformResidentPreviewFollowsAndCompositesTransparentStack_data() {
+        QTest::addColumn<bool>("subtrees");QTest::newRow("flat")<<false;QTest::newRow("unrelated-groups-and-masks")<<true;
+    }
     void transformResidentPreviewFollowsAndCompositesTransparentStack() {
+        QFETCH(bool,subtrees);
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("transform-resident.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors)warnings.append(e.toString());});
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());
         client.newTransparentDocument(96,96);QTRY_COMPARE(client.documentWidth(),96);QTRY_VERIFY(!client.layerEditBusy());
-        client.activateBucket();client.setBrushColor(Qt::blue);QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY(!client.layerEditBusy());client.setLayerProperties(client.activeLayer(),true,.5);QTRY_VERIFY(!client.layerEditBusy());
+        client.activateBucket();client.setBrushColor(Qt::blue);QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY(!client.layerEditBusy());client.setLayerProperties(client.activeLayer(),true,.5);QTRY_VERIFY(!client.layerEditBusy());const auto bottom=client.activeLayer();
         client.addLayer("moving");QTRY_VERIFY(!client.layerEditBusy());const auto moving=client.activeLayer();client.activateBrush();client.setBrushRadius(6);client.setBrushColor(Qt::red);QVERIFY(client.beginStroke({{32.5,32.5},1}));client.endStroke();QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());
-        client.addLayer("above");QTRY_VERIFY(!client.layerEditBusy());client.activateBucket();client.setBrushColor(Qt::green);QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY(!client.layerEditBusy());client.setLayerProperties(client.activeLayer(),true,.25);QTRY_VERIFY(!client.layerEditBusy());client.selectLayer(moving);QTRY_COMPARE(client.activeLayer(),moving);QTRY_VERIFY(!client.layerEditBusy());
+        client.addLayer("above");QTRY_VERIFY(!client.layerEditBusy());client.activateBucket();client.setBrushColor(Qt::green);QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY(!client.layerEditBusy());client.setLayerProperties(client.activeLayer(),true,.25);QTRY_VERIFY(!client.layerEditBusy());const auto above=client.activeLayer();
+        if(subtrees) {
+            client.selectLayer(bottom);QTRY_COMPARE(client.activeLayer(),bottom);QTRY_VERIFY(!client.layerEditBusy());
+            QVERIFY(client.groupSelectedLayers("below group"));QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.addMask(client.activeLayer()));QTRY_VERIFY(!client.layerEditBusy());
+            client.selectLayer(above);QTRY_COMPARE(client.activeLayer(),above);QTRY_VERIFY(!client.layerEditBusy());
+            QVERIFY(client.addMask(above));QTRY_VERIFY(!client.layerEditBusy());client.selectLayer(above);QTRY_COMPARE(client.activeLayer(),above);QTRY_VERIFY(!client.layerEditBusy());
+            QVERIFY(client.groupSelectedLayers("above group"));QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.addMask(client.activeLayer()));QTRY_VERIFY(!client.layerEditBusy());
+        }
+        client.selectLayer(moving);QTRY_COMPARE(client.activeLayer(),moving);QTRY_VERIFY(!client.layerEditBusy());
         auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->actualSize();QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.frameRevision()>=client.revision());
         const auto capture=[&]{if(auto *overlay=findVisualItem(window->contentItem(),"transformOverlay"))overlay->setVisible(false);auto grab=window->contentItem()->grabToImage();if(!grab)return QImage();QSignalSpy ready(grab.data(),&QQuickItemGrabResult::ready);if(grab->image().isNull() && !ready.wait(2000))return QImage();auto image=grab->image();if(image.isNull())return image;const auto dpr=double(image.width())/window->width();const auto origin=canvas->mapToScene({0,0})*dpr;auto result=image.copy(QRect(origin.toPoint(),QSize(qRound(canvas->width()*dpr),qRound(canvas->height()*dpr))));result.setDevicePixelRatio(dpr);return result;};
         const auto at=[&](const QImage &image,QPointF p){const auto v=(canvas->documentRect().topLeft()+p*canvas->zoom())*image.devicePixelRatio();return image.pixelColor(v.toPoint());};
