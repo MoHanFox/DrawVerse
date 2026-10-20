@@ -93,13 +93,10 @@ Item {
         id: historyPanel
         ColumnLayout {
             id: historyContent
-            property int targetDepth: -1
-            property var generation: PaintClient.generation
-            onGenerationChanged: targetDepth=-1
             property bool restoringHistory:false
             function restoreHistoryScroll(){restoringHistory=true;Qt.callLater(()=>{historyView.contentY=Math.min(PaintClient.documentHistoryScrollPosition(),Math.max(0,historyView.contentHeight-historyView.height));restoringHistory=false})}
             Component.onCompleted:if(!PaintClient.liquifyActive && !PaintClient.transformActive)restoreHistoryScroll()
-            Connections {target:PaintClient;function onHistoryScopeChanging(liquify){historyContent.targetDepth=-1;if(!liquify)historyContent.restoringHistory=true}function onHistoryChanged(){if(historyContent.restoringHistory)historyContent.restoreHistoryScroll()}}
+            Connections {target:PaintClient;function onHistoryScopeChanging(liquify){if(!liquify)historyContent.restoringHistory=true}function onHistoryChanged(){if(historyContent.restoringHistory)historyContent.restoreHistoryScroll()}}
             spacing: 1
             ListView {
                 id:historyView
@@ -120,15 +117,11 @@ Item {
                         Icon {objectName:"historyIcon:"+depth;name:modelData.icon;width:12;height:12;color:depth>PaintClient.undoDepth?Theme.disabled:Theme.text}
                         Text {objectName:"historyTitle:"+depth;text:modelData.title;color:depth>PaintClient.undoDepth?Theme.disabled:Theme.text;font.pixelSize:9}
                     }
-                    MouseArea {anchors.fill:parent;enabled:!PaintClient.drawing&&!PaintClient.fileBusy;onClicked:historyContent.targetDepth=parent.depth}
+                    MouseArea {anchors.fill:parent;enabled:PaintClient.ready&&!PaintClient.drawing&&!PaintClient.fileBusy&&!PaintClient.layerEditBusy&&!PaintClient.liquifyBusy&&!PaintClient.transformBusy;onClicked:PaintClient.selectHistory(parent.depth)}
                 }
                 ScrollBar.vertical:ScrollBar {}
             }
-            Timer {
-                objectName:"historyReplayTimer"
-                interval:20;repeat:true;running:historyContent.targetDepth>=0
-                onTriggered:{if(historyContent.targetDepth===PaintClient.undoDepth){historyContent.targetDepth=-1;return}if(!PaintClient.ready||PaintClient.drawing||PaintClient.fileBusy||PaintClient.layerEditBusy)return;if(historyContent.targetDepth<PaintClient.undoDepth)PaintClient.undo();else PaintClient.redo()}
-            }
+
         }
     }
     Component {

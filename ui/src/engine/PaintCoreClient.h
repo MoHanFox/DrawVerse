@@ -386,6 +386,7 @@ public:
     void airbrushTick();
     void endStroke();
     Q_INVOKABLE void cancelStroke();
+    Q_INVOKABLE bool selectHistory(int depth);
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
     Q_INVOKABLE void addLayer(const QString &name);

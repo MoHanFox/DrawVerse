@@ -521,6 +521,7 @@ pub use bucket::BucketFill;
 #[path = "tools/wand.rs"]
 mod wand;
 pub use wand::WandSelection;
+mod history_travel;
 #[path = "tools/layer_move.rs"]
 mod layer_move;
 #[path = "tools/liquify.rs"]

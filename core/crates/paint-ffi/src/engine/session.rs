@@ -78,6 +78,12 @@ pub(crate) enum Operation {
     Ungroup(u64),
     Reparent(u64, u64),
     HistoryLimit(usize),
+    HistorySelect {
+        generation: u64,
+        revision: u64,
+        scope: u32,
+        depth: usize,
+    },
 }
 #[derive(Clone)]
 struct Command {
@@ -781,6 +787,34 @@ impl Engine {
             return false;
         }
         let (undo, _) = self.document.history_depth();
+        if let Operation::HistorySelect {
+            scope: PAINT_HISTORY_SCOPE_DOCUMENT,
+            depth,
+            ..
+        } = operation
+        {
+            if *depth == undo {
+                return false;
+            }
+            let actions = self.document.history_actions();
+            let lo = undo.min(*depth) + 1;
+            let hi = undo.max(*depth);
+            return actions.get(lo..=hi).is_some_and(|actions| {
+                actions.iter().all(|action| {
+                    matches!(
+                        action,
+                        paint_core::HistoryAction::SelectAll
+                            | paint_core::HistoryAction::Selection
+                            | paint_core::HistoryAction::Deselect
+                            | paint_core::HistoryAction::InvertSelection
+                            | paint_core::HistoryAction::EllipseSelection
+                            | paint_core::HistoryAction::LassoSelection
+                            | paint_core::HistoryAction::MagicSelection
+                            | paint_core::HistoryAction::PolygonSelection
+                    )
+                })
+            });
+        }
         let index = match operation {
             Operation::Undo if undo > 0 => undo,
             Operation::Redo => undo + 1,
@@ -837,6 +871,7 @@ impl Engine {
                     | Operation::MergeLayers(..)
                     | Operation::Cancel(_)
                     | Operation::Undo
+                    | Operation::HistorySelect { .. }
                     | Operation::Redo
                     | Operation::Remove(_)
                     | Operation::Properties(..)
@@ -881,13 +916,19 @@ impl Engine {
         if self.document.transform_active()
             && !matches!(
                 operation,
-                Operation::Transform(..) | Operation::TransformLayers(..) | Operation::File(_)
+                Operation::Transform(..)
+                    | Operation::TransformLayers(..)
+                    | Operation::HistorySelect { .. }
+                    | Operation::File(_)
             )
         {
             return Err(ApiError::new(PAINT_BUSY, "transform active"));
         }
         if self.document.liquify_active()
-            && !matches!(operation, Operation::Liquify(..) | Operation::File(_))
+            && !matches!(
+                operation,
+                Operation::Liquify(..) | Operation::HistorySelect { .. } | Operation::File(_)
+            )
         {
             return Err(paint_core::Error::Busy.into());
         }
@@ -1233,6 +1274,39 @@ impl Engine {
                         PAINT_LIMIT_EXCEEDED,
                         "input queue full; entire stroke cancelled",
                     ));
+                }
+            }
+            Operation::HistorySelect {
+                generation,
+                revision,
+                scope,
+                depth,
+            } => {
+                let actual_scope = if self.document.transform_active() {
+                    PAINT_HISTORY_SCOPE_TRANSFORM
+                } else if self.document.liquify_active() {
+                    PAINT_HISTORY_SCOPE_LIQUIFY
+                } else {
+                    PAINT_HISTORY_SCOPE_DOCUMENT
+                };
+                if self.files.running()
+                    || generation != self.generation
+                    || revision != self.document.revision()
+                    || scope != actual_scope
+                {
+                    return Err(ApiError::new(PAINT_BUSY, "history selection state changed"));
+                }
+                match scope {
+                    PAINT_HISTORY_SCOPE_DOCUMENT => {
+                        self.modified |= self.document.select_history(depth)?
+                    }
+                    PAINT_HISTORY_SCOPE_LIQUIFY => {
+                        self.document.select_liquify_history(depth)?;
+                    }
+                    PAINT_HISTORY_SCOPE_TRANSFORM => {
+                        self.document.select_transform_history(depth)?;
+                    }
+                    _ => return Err(ApiError::invalid("history scope")),
                 }
             }
             Operation::Undo => self.modified |= self.document.undo()?,

@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 72
+#define PAINT_ABI_MINOR 73
 
 #define PAINT_ABI_PATCH 0
 
@@ -162,6 +162,11 @@
 #define PAINT_FEATURE_FILE_IO 64
 
 #define PAINT_FEATURE_HISTORY 2
+
+/**
+ * One atomic travel across the retained history of the specified editing domain.
+ */
+#define PAINT_FEATURE_HISTORY_SELECT 2305843009213693952
 
 #define PAINT_FEATURE_LAYER_ACTIONS 131072
 
@@ -356,6 +361,12 @@
 #define PAINT_HISTORY_REMOVE_LAYER 8
 
 #define PAINT_HISTORY_REPARENT 16
+
+#define PAINT_HISTORY_SCOPE_DOCUMENT 0
+
+#define PAINT_HISTORY_SCOPE_LIQUIFY 1
+
+#define PAINT_HISTORY_SCOPE_TRANSFORM 2
 
 #define PAINT_HISTORY_SELECTION 4
 
@@ -1022,6 +1033,15 @@ typedef struct PaintLiquifyPreviewInfo {
  * Same versioned packet as ABI 1.62; usable by move and liquify.
  */
 typedef struct PaintLiquifyPreviewInfo PaintResidentPreviewInfo;
+
+typedef struct PaintHistorySelect {
+  uint32_t struct_size;
+  uint32_t scope;
+  uint32_t depth;
+  uint32_t reserved;
+  uint64_t document_generation;
+  uint64_t revision;
+} PaintHistorySelect;
 
 /**
  * ABI 1.17: bounded color-region selection; flags 0/1, reserved zero.
@@ -2489,6 +2509,19 @@ PaintStatus paint_session_sample_pixel(struct PaintCore *core,
                                        int64_t x,
                                        int64_t y,
                                        float *out_rgba);
+
+/**
+ * ABI1.73: submit one atomic history selection. Depth counts from the retained
+ * boundary; generation/revision/scope are checked again when the actor executes.
+ * Stale requests fail without changing any history or document state.
+ * # Safety
+ * Initialize the descriptor size and reserved field; out_sequence must be writable.
+ * Caller memory is copied and never retained. Serialize with other session submits.
+ */
+PaintStatus paint_session_select_history(struct PaintCore *core,
+                                         struct PaintSession *handle,
+                                         const struct PaintHistorySelect *request,
+                                         uint64_t *out_sequence);
 
 /**
  * Copy and enqueue a magic-wand selection.

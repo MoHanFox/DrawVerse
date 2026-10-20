@@ -481,3 +481,41 @@ pub unsafe extern "C" fn paint_session_read_frame(
         pointers::write(out_tile, tile)
     })
 }
+
+/// ABI1.73: submit one atomic history selection. Depth counts from the retained
+/// boundary; generation/revision/scope are checked again when the actor executes.
+/// Stale requests fail without changing any history or document state.
+/// # Safety
+/// Initialize the descriptor size and reserved field; out_sequence must be writable.
+/// Caller memory is copied and never retained. Serialize with other session submits.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_select_history(
+    core: *mut PaintCore,
+    handle: *mut PaintSession,
+    request: *const PaintHistorySelect,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        let request = pointers::read_sized(request)?;
+        if request.reserved != 0
+            || !matches!(
+                request.scope,
+                PAINT_HISTORY_SCOPE_DOCUMENT
+                    | PAINT_HISTORY_SCOPE_LIQUIFY
+                    | PAINT_HISTORY_SCOPE_TRANSFORM
+            )
+            || request.document_generation == 0
+        {
+            return Err(ApiError::invalid("history selection descriptor"));
+        }
+        let sequence = session(core, handle)?.submit(Operation::HistorySelect {
+            generation: request.document_generation,
+            revision: request.revision,
+            scope: request.scope,
+            depth: request.depth as usize,
+        })?;
+        pointers::write(out_sequence, sequence)
+    })
+}

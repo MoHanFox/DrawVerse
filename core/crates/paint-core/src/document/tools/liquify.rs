@@ -455,6 +455,39 @@ impl Document {
             .collect()
         })
     }
+    pub fn select_liquify_history(&mut self, depth: usize) -> Result<bool> {
+        let backup = self
+            .liquify
+            .clone()
+            .ok_or(Error::InvalidArgument("no liquify transaction"))?;
+        if backup.checkpoint.is_some() {
+            return Err(Error::Busy);
+        }
+        let undo = backup.history.undo.len();
+        let redo = backup.history.redo.len();
+        if depth > undo + redo {
+            return Err(Error::InvalidArgument("liquify history depth"));
+        }
+        if depth == undo {
+            return Ok(false);
+        }
+        let at = self.layer_index(backup.original.id)?;
+        let layer = self.layers[at].clone();
+        let revision = self.revision;
+        let dirty = self.dirty.clone();
+        // Existing local steps restore fields and immutable tiles without resampling.
+        for _ in 0..depth.abs_diff(undo) {
+            if let Err(error) = self.travel_liquify(depth > undo) {
+                self.layers[at] = layer;
+                self.liquify = Some(backup);
+                self.revision = revision;
+                self.dirty = dirty;
+                return Err(error);
+            }
+        }
+        self.revision = revision.saturating_add(1);
+        Ok(true)
+    }
     pub fn undo_liquify(&mut self) -> Result<bool> {
         self.travel_liquify(false)
     }
@@ -698,5 +731,87 @@ mod operator_transaction_tests {
         assert_eq!(d.liquify.as_ref().unwrap().field, before_field);
         assert_eq!(pixels(&d), before);
         assert_eq!(d.liquify_history_depth(), Some((0, 0)));
+    }
+}
+
+#[cfg(test)]
+mod history_select_tests {
+    use super::*;
+    fn seed() -> Document {
+        let mut doc = Document::new(64, 64).unwrap();
+        let pixels = (0..4096)
+            .map(|i| {
+                Pixel::from_straight([(i % 64) as f32 / 63., (i / 64) as f32 / 63., 0.3, 1.])
+                    .unwrap()
+            })
+            .collect();
+        doc.layers[0].tiles.insert(
+            TileCoord::from_signed(0, 0),
+            Arc::new(Tile::from_pixels(pixels).unwrap()),
+        );
+        doc.begin_liquify().unwrap();
+        for i in 0..3 {
+            doc.begin_liquify_stroke().unwrap();
+            doc.liquify_dab(LiquifyDab {
+                tool: 0,
+                radius: 16.,
+                strength: 0.5,
+                density: 0.5,
+                speed: 0.5,
+                pressure_enabled: false,
+                from: InputPoint::new(24., 24. + i as f64, 1.),
+                to: InputPoint::new(28., 26. + i as f64, 1.),
+                elapsed_ms: 16.,
+            })
+            .unwrap();
+            doc.end_liquify_stroke().unwrap();
+        }
+        assert_eq!(doc.liquify_history_depth(), Some((3, 0)));
+        doc
+    }
+    fn image(doc: &Document) -> Vec<Pixel> {
+        (0..64)
+            .flat_map(|y| (0..64).map(move |x| doc.pixel(x, y)))
+            .collect()
+    }
+    #[test]
+    fn direct_liquify_travel_restores_fields_and_pixels_once_with_atomic_read_failure() {
+        let mut direct = seed();
+        let mut stepped = seed();
+        for target in [0, 3, 1, 2, 0, 3] {
+            let revision = direct.revision();
+            direct.select_liquify_history(target).unwrap();
+            assert_eq!(direct.revision(), revision + 1);
+            while stepped.liquify_history_depth().unwrap().0 > target {
+                stepped.undo_liquify().unwrap();
+            }
+            while stepped.liquify_history_depth().unwrap().0 < target {
+                stepped.redo_liquify().unwrap();
+            }
+            assert_eq!(image(&direct), image(&stepped));
+            assert_eq!(
+                direct.liquify.as_ref().unwrap().field,
+                stepped.liquify.as_ref().unwrap().field
+            );
+            assert_eq!(
+                direct.liquify_history_depth(),
+                stepped.liquify_history_depth()
+            );
+        }
+        let revision = direct.revision();
+        let before = image(&direct);
+        let field = direct.liquify.as_ref().unwrap().field.clone();
+        let dirty = direct.dirty.clone();
+        let history = Arc::make_mut(&mut direct.liquify.as_mut().unwrap().history);
+        Arc::get_mut(history.undo.front_mut().unwrap())
+            .unwrap()
+            .fields
+            .truncate_for_test();
+        assert!(direct.select_liquify_history(0).is_err());
+        assert_eq!(image(&direct), before);
+        assert_eq!(direct.revision(), revision);
+        assert_eq!(direct.dirty, dirty);
+        assert_eq!(direct.liquify_history_depth(), Some((3, 0)));
+        assert_eq!(direct.liquify.as_ref().unwrap().field, field);
     }
 }

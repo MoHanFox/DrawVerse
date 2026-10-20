@@ -78,7 +78,7 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 72) {
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 73) {
             emit failure(QStringLiteral("GPU 液化预览需要核心 ABI 1.62 或兼容后续版本")); return;
         }
         auto settings = preferences();
@@ -109,7 +109,7 @@ public:
         inspectStorage();
         auto caps = dto<PaintCapabilities>();
         if (!check(paint_core_capabilities(m_core, &caps))) return;
-        constexpr uint64_t required = PAINT_FEATURE_DUAL_TIP_TEXTURE | PAINT_FEATURE_STROKE_OUTLINE | PAINT_FEATURE_BRUSH_GROUP_PACKAGE | PAINT_FEATURE_CURVE_NODE_MODES | PAINT_FEATURE_BRUSH_GROUP_STATE | PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_COLOR_INTERLEAVED | PAINT_FEATURE_AIRBRUSH | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
+        constexpr uint64_t required = PAINT_FEATURE_HISTORY_SELECT | PAINT_FEATURE_DUAL_TIP_TEXTURE | PAINT_FEATURE_STROKE_OUTLINE | PAINT_FEATURE_BRUSH_GROUP_PACKAGE | PAINT_FEATURE_CURVE_NODE_MODES | PAINT_FEATURE_BRUSH_GROUP_STATE | PAINT_FEATURE_BRUSH_CURSOR_IMAGE | PAINT_FEATURE_WET_DUAL_COLOR | PAINT_FEATURE_STROKE_TAPER | PAINT_FEATURE_WET_BRUSH | PAINT_FEATURE_COMPOSITE_BRUSH_POSE | PAINT_FEATURE_DUAL_COLOR_STROKE | PAINT_FEATURE_DUAL_COLOR_INTERLEAVED | PAINT_FEATURE_AIRBRUSH | PAINT_FEATURE_DUAL_RELATIVE_SIZE | PAINT_FEATURE_PATH_SMOOTHING | PAINT_FEATURE_PRESSURE_SMOOTH | PAINT_FEATURE_BRUSH_WRITE_BLEND | PAINT_FEATURE_ASYNC_SESSION | PAINT_FEATURE_CPU_VIEWPORT | PAINT_FEATURE_FILE_IO | PAINT_FEATURE_STORAGE_SETTINGS | PAINT_FEATURE_LAYER_APPEARANCE | PAINT_FEATURE_LAYER_GROUPS | PAINT_FEATURE_MASKS | PAINT_FEATURE_CLIPPING;
         if ((caps.features & (required | PAINT_FEATURE_SELECTION)) != (required | PAINT_FEATURE_SELECTION)) { emit failure(QStringLiteral("当前核心缺少异步视口或选区能力")); return; }
         auto desc = dto<PaintDocumentDesc>(); desc.width = 960; desc.height = 640;
         desc.working_space = PAINT_WORKING_LINEAR_SRGB; desc.pixel_format = PAINT_STORAGE_RGBA32F_PREMULTIPLIED;
@@ -1536,6 +1536,20 @@ void PaintCoreClient::cancelStroke() {
     if(m_liquifyActive){flushLiquifyInput(true);submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);m_drawing=false;m_pendingLayer=m_lastLiquifyDab>m_completedSequence?m_lastLiquifyDab:0;emit stateChanged();return;}
     if (!m_dropStroke) submit(Cancel);
     m_airbrushTimer->stop();m_airbrushEnabled=false;m_dropStroke = true;m_drawing = false;if(m_strokePose)paint_brush_pose_clear(m_strokePose);m_strokePoseBound=false;m_strokeOutlineResource.clear();m_strokeOutlinePath.clear();m_strokeSecondOutlineResource.clear();m_strokeSecondOutlinePath.clear();m_strokeSecondOutlineReady=false;requestBrushOutlines();emit brushOutlineChanged();emit stateChanged();
+}
+bool PaintCoreClient::selectHistory(int depth) {
+    if(!m_ready || m_closing || m_drawing || m_fileBusy || layerEditBusy() || m_layerMoveActive || m_pendingLiquify || m_pendingTransform>m_completedSequence || depth<0 || depth>m_undo+m_redo)return false;
+    if(depth==m_undo)return true;
+    auto request=dto<PaintHistorySelect>();request.depth=static_cast<uint32_t>(depth);request.document_generation=m_generation;request.revision=m_revision;
+    request.scope=m_transformActive?PAINT_HISTORY_SCOPE_TRANSFORM:m_liquifyActive?PAINT_HISTORY_SCOPE_LIQUIFY:PAINT_HISTORY_SCOPE_DOCUMENT;
+    uint64_t sequence=0;PaintStatus status;QString error;
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_select_history(m_connection->core,m_connection->session,&request,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    if(status!=PAINT_OK){showError(error);return false;}
+    m_pendingLayer=sequence;
+    if(m_transformActive){m_lastTransform=sequence;m_pendingTransform=sequence;m_residentPreviewFloor=m_revision+1;}
+    else if(m_liquifyActive){m_pendingLiquify=sequence;m_residentPreviewFloor=m_revision+1;}
+    else {m_pendingMutation=sequence;m_modified=true;}
+    emit stateChanged();return true;
 }
 void PaintCoreClient::undo() { if (m_ready && !m_drawing && !m_layerMoveActive) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_UNDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_UNDO);else submit(Undo);} }
 void PaintCoreClient::redo() { if (m_ready && !m_drawing && !m_layerMoveActive) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_REDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_REDO);else submit(Redo);} }

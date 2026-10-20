@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 72;
+pub const PAINT_ABI_MINOR: u32 = 73;
 
 /// Optional secondary-tip texture through catalog preparation and resource bundles.
 pub const PAINT_FEATURE_DUAL_TIP_TEXTURE: u64 = 1_152_921_504_606_846_976;
@@ -948,3 +948,19 @@ pub const PAINT_LAYER_MOVE_COMMIT: u32 = 5;
 pub const PAINT_LAYER_MOVE_CANCEL: u32 = 6;
 /// Same versioned packet as ABI 1.62; usable by move and liquify.
 pub type PaintResidentPreviewInfo = PaintLiquifyPreviewInfo;
+
+/// One atomic travel across the retained history of the specified editing domain.
+pub const PAINT_FEATURE_HISTORY_SELECT: u64 = 2_305_843_009_213_693_952;
+pub const PAINT_HISTORY_SCOPE_DOCUMENT: u32 = 0;
+pub const PAINT_HISTORY_SCOPE_LIQUIFY: u32 = 1;
+pub const PAINT_HISTORY_SCOPE_TRANSFORM: u32 = 2;
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintHistorySelect {
+    pub struct_size: u32,
+    pub scope: u32,
+    pub depth: u32,
+    pub reserved: u32,
+    pub document_generation: u64,
+    pub revision: u64,
+}

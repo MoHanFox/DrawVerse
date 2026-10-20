@@ -587,3 +587,10 @@ paint_session_layer_mask_linked(core,session,publication,layer_id,out_u32) 按�
 ## ABI1.72：第二笔尖继承纹理
 
 `PAINT_FEATURE_DUAL_TIP_TEXTURE`（bit60）表示既有准确目录准备与 Groups 包入口支持 state44 的可选 `dualBrush.texture`，VBR1.0/behavior36/dual-tip-texture。DTO和导出签名保持；无纹理字段旧编码不变，旧 state 携带新字段拒绝。图片/mip 共用有界资源缓存、去重包导出与捕获生命周期。Qt 最低 ABI1.72；实际笔触及预览均由 CPU TextureDab 算子执行，没有新增 GPU 计算。
+
+
+## ABI1.73：原子指定历史深度
+
+`PAINT_FEATURE_HISTORY_SELECT`（bit61）增加 `paint_session_select_history(core, session, request, out_sequence)`。`PaintHistorySelect` 为32字节：struct_size、scope、depth、reserved 四个u32，document_generation、revision 两个u64；reserved必须0，generation非0，scope为 DOCUMENT=0、LIQUIFY=1、TRANSFORM=2。depth指保留边界起的真实深度，包含redo。请求和输出内存须可读/可写且不重叠；读取并复制请求后排队，不保留调用者内存，立即失败清零sequence。
+
+返回OK表示接受异步任务；actor验证generation、revision及当前历史域完全一致，过期或域不符返回BUSY。目标越界、资源错误在完成回执中报告，失败不改变像素、选区、历史和修订。同深度成功但无修订；有效跳转只增加一次修订并保留redo，仅发布最终状态。文档跳转逐条私有解码，变换只物化最终几何，液化恢复保存的场和瓦片；压缩/磁盘读取不是恒定时间。未结束笔触/拖动及文件任务仍遵守忙状态，Qt禁用重复点击。已有undo/redo入口、磁盘历史编码、state44和VBR1.0保持。

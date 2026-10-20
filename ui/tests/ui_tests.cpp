@@ -1587,7 +1587,7 @@ private slots:
     }
     void historyUsesRealToolLabelsAndHidesEvictedInitialState() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
-        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->resize(1800,1000);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready());
         client.newTransparentDocument(32,32);QTRY_COMPARE(client.documentWidth(),32);QTRY_VERIFY(client.ready());for(auto *canvas:window->findChildren<CanvasItem*>())canvas->setClient(nullptr);
         QTRY_COMPARE(client.historyEntries().size(),1);QCOMPARE(client.historyEntries().first().toMap().value("title").toString(),QString("初始状态"));
         client.setBrushRadius(1);InputSample sample;sample.position={16,16};sample.pressure=1;
@@ -1602,7 +1602,7 @@ private slots:
         const auto records=client.historyEntries();client.undo();QTRY_COMPARE(client.redoDepth(),1);QCOMPARE(client.historyEntries(),records);client.redo();QTRY_COMPARE(client.redoDepth(),0);QCOMPARE(client.historyEntries(),records);
         const auto group=workspace.groupForPanel("history");workspace.setActive(group,"history");QQuickItem *title=nullptr;QTRY_VERIFY((title=findVisualItem(window->contentItem(),"historyTitle:"+QString::number(client.undoDepth()))));QCOMPARE(title->property("text").toString(),QString("橡皮擦"));
         auto *icon=findVisualItem(window->contentItem(),"historyIcon:"+QString::number(client.undoDepth()));QVERIFY(icon);QCOMPARE(icon->property("name").toString(),QString("eraser"));QVERIFY(!findVisualItem(window->contentItem(),"historyEntry:0"));
-        QQuickItem *previous=nullptr;QTRY_VERIFY((previous=findVisualItem(window->contentItem(),"historyEntry:"+QString::number(client.undoDepth()-1))));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,previous->mapToScene({20,12}).toPoint());QTRY_COMPARE(client.redoDepth(),1);QCOMPARE(client.historyEntries(),records);
+        auto *historyList=findVisualItem(window->contentItem(),"historyList");QVERIFY(historyList);QTest::qWait(100);historyList->setProperty("contentY",qreal((client.undoDepth()-2)*24));QQuickItem *previous=nullptr;QTRY_VERIFY2((previous=findVisualItem(window->contentItem(),"historyEntry:"+QString::number(client.undoDepth()-1))),qPrintable(QString("count=%1 height=%2 contentY=%3 undo=%4").arg(historyList->property("count").toInt()).arg(historyList->height()).arg(historyList->property("contentY").toReal()).arg(client.undoDepth())));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,previous->mapToScene({20,12}).toPoint());QTRY_COMPARE(client.redoDepth(),1);QCOMPARE(client.historyEntries(),records);
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void liveTabletPoseTracksTiltRotationPressureAndCapturedStroke() {
@@ -5397,7 +5397,7 @@ private slots:
         QTRY_VERIFY(workspace.groupDefinition(navigator).value("icons").toBool());for(const auto &id:workspace.columnGroups(navigator))QVERIFY(workspace.groupDefinition(id).value("icons").toBool());
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
-    void textFieldsKeepSpaceAndHistoryReplayStaysStepped() {
+    void textFieldsKeepSpaceAndHistorySelectsDirectly() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
         client.newTransparentDocument(48,48);QTRY_COMPARE(client.documentWidth(),48);QTRY_VERIFY(client.ready());client.setBrushRadius(3);client.setBrushColor(Qt::black);
@@ -5409,22 +5409,17 @@ private slots:
         QVERIFY(field);field->setParentItem(main->contentItem());field->setWidth(120);field->setHeight(24);field->setProperty("text",QString("78"));field->forceActiveFocus();QTRY_COMPARE(main->activeFocusItem(),field);
         const auto undoBefore=client.undoDepth();QTest::keyClick(main,Qt::Key_Space);QVERIFY(!view->spacePanning());QTRY_COMPARE(field->property("text").toString(),QString("78 "));QCOMPARE(client.undoDepth(),undoBefore);
         QTest::keyClick(main,Qt::Key_Backspace);QTRY_COMPARE(field->property("text").toString(),QString("78"));
-        // Request 27: four replay steps must be observable one at a time, not an instant jump.
+        // The newer user requirement replaces stepped replay with one final publication.
         const auto group=workspace.groupForPanel("history");workspace.setActive(group,"history");
         auto *historyTab=findVisualItem(main->contentItem(),"panelTab:history");QVERIFY(historyTab);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,historyTab->mapToScene({8,10}).toPoint());QTRY_VERIFY(findVisualItem(main->contentItem(),"historyList"));
         client.setBrushRadius(3);InputSample sample;sample.position={24,24};sample.pressure=1;
         for(int i=0;i<4;++i) {const auto stroke=i+1;client.setBrushColor(i%2?Qt::black:Qt::white);QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),stroke);QTRY_VERIFY(!client.layerEditBusy());}
         QQuickItem *list=findVisualItem(main->contentItem(),"historyList");QVERIFY(list);QTRY_VERIFY(list->property("count").toInt()>0);
-        auto *timer=main->findChild<QObject*>("historyReplayTimer");QVERIFY(timer);QCOMPARE(timer->property("interval").toInt(),20);QVERIFY(!timer->property("running").toBool());
-        auto *previous=findVisualItem(main->contentItem(),"historyEntry:0");QVERIFY(previous);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,previous->mapToScene({20,12}).toPoint());
-        QTRY_VERIFY(timer->property("running").toBool());
-        QList<int> seen;QStringList trace;
-        for(int i=0;i<40;++i) {const int depth=client.undoDepth();if(seen.isEmpty() || seen.last()!=depth){seen.append(depth);trace.append(QString::number(depth));}if(depth==0)break;QTest::qWait(5);}
-        QTRY_COMPARE(client.undoDepth(),0);QCOMPARE(client.redoDepth(),4);
-        QVERIFY2(seen.size()>=3 && seen.first()==4 && seen.last()==0,qPrintable("single-step replay did not walk through every depth: "+trace.join(",")));
-        bool stoppedRunning=false;
-        for(int i=0;i<100 && !stoppedRunning;++i) {stoppedRunning=!timer->property("running").toBool();if(!stoppedRunning)QTest::qWait(5);}
-        QVERIFY2(stoppedRunning,qPrintable(QString("replay timer kept running: undo=%1 redo=%2 target=%3").arg(client.undoDepth()).arg(client.redoDepth()).arg(list->parentItem()?list->parentItem()->property("targetDepth").toInt():-99)));
+        QVERIFY(!main->findChild<QObject*>("historyReplayTimer"));
+        QList<int> seen;connect(&client,&PaintCoreClient::stateChanged,this,[&]{seen.append(client.undoDepth());});
+        const auto revision=client.revision();auto *previous=findVisualItem(main->contentItem(),"historyEntry:0");QVERIFY(previous);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,previous->mapToScene({20,12}).toPoint());
+        QTRY_COMPARE(client.undoDepth(),0);QCOMPARE(client.redoDepth(),4);QCOMPARE(client.revision(),revision+1);QVERIFY(seen.contains(0));for(int depth:seen)QVERIFY(depth==4 || depth==0);
+        seen.clear();QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.selectHistory(4));QTRY_COMPARE(client.undoDepth(),4);QCOMPARE(client.redoDepth(),0);QCOMPARE(client.revision(),revision+2);for(int depth:seen)QVERIFY(depth==0 || depth==4);
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void editMenuOpensKeyboardShortcutList() {

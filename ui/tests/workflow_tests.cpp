@@ -41,6 +41,33 @@ class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
 
+    void directHistorySelectionAcrossEditingScopes() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("history-select.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
+        client.setBrushRadius(6);client.brushLibrary()->setPressureSize(false);client.brushLibrary()->setPressureFlow(false);
+        for(int i=0;i<4;++i){QVERIFY(client.beginStroke({{qreal(14+i*8),32},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),i+1);}
+        const auto jump=[&](int depth,int total){
+            const auto revision=client.revision();QVERIFY(client.selectHistory(depth));
+            QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy() && !client.transformBusy() && !client.liquifyBusy());
+            QCOMPARE(client.redoDepth(),total-depth);QCOMPARE(client.revision(),revision+1);QVERIFY(client.lastError().isEmpty());
+        };
+        jump(0,4);jump(4,4);
+        QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformActive() && !client.transformBusy());
+        const auto initial=client.transformPoints();
+        for(int i=1;i<=4;++i){auto points=initial;for(auto &v:points)v=v.toPointF()+QPointF(i*2,0);
+            QVERIFY(client.updateTransform(points,false,0));QVERIFY(client.checkpointTransform());
+            QTRY_COMPARE(client.undoDepth(),i);QTRY_VERIFY(!client.transformBusy());}
+        const auto transformed=client.transformPoints();jump(0,4);QCOMPARE(client.transformPoints(),initial);jump(4,4);QCOMPARE(client.transformPoints(),transformed);
+        QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.layerEditBusy());QCOMPARE(client.undoDepth(),4);
+        QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());client.setLiquifySize(24);client.setLiquifyStrength(50);
+        for(int i=0;i<3;++i){InputSample sample;sample.position={qreal(20+i*5),32};sample.pressure=1;
+            QVERIFY(client.beginStroke(sample));sample.position+=QPointF(5,3);client.strokeTo(sample);client.endStroke();
+            QTRY_COMPARE(client.undoDepth(),i+1);QTRY_VERIFY(!client.liquifyBusy());}
+        jump(0,3);jump(3,3);QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.layerEditBusy());
+        QCOMPARE(client.undoDepth(),4);QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
+
     void removedRecentBrushesMigratePreferencesAndKeepCommittedColors() {
         BrushLibrary legacy;legacy.setToolIsolation(2);legacy.setRadius(17);const auto id=legacy.selectedId();
         auto state=QJsonDocument::fromJson(legacy.snapshot()).object();

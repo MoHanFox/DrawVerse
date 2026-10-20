@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新直接历史跳转：参考PhotoCraft私有游标后一次恢复，文档/变换/液化一次请求/一条修订，只发布最终状态并保留redo；文档和液化读取失败回滚，generation/revision/scope拒绝陈旧请求。ABI1.73 bit61/新32字节PaintHistorySelect，state44/behavior36/VBR1.0保持。核心4/原生1/软件Qt工作流1与真实UI2、D3D11 UI1/焦点回归1、四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`；见历史标签设计/本轮清单验收，冷页IO仍与跨越记录相关，未跑全量/跨平台/实体持续性能。
+
 - 最新双重笔刷来源/纹理：来源与覆盖组合置顶共用，已有来源隐藏独立资源并继承源纹理，删除源后快照保留，主体纹理不改；SecondaryTip复用CPU TextureDab，state44/behavior36/dual-tip-texture、ABI1.72 bit60，旧编码保持。核心19/IO5/原生2/软件Qt5行、四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`；详情见本轮清单/验收，无新增GPU计算，未跑全量/跨平台/实体持续输入。
 
 - 最新历史笔刷删除：按最后指令移除八格/恢复/完整参数快照/偏好写出及即时广播，旧字段忽略；ABI1.69 End 回执保留，仅记录成功且改变像素的最近颜色。工作流7行含 path/sdf 与隔离/迁移通过，Release 输出 `build/qt/bin/Release`；ABI1.71/state43/behavior35/VBR1.0 不变，详情见本轮清单/验收。早期最近八笔条目仅为历史记录。

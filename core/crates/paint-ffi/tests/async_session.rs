@@ -4398,3 +4398,6 @@ fn mask_link_abi_publication_history_movement_and_validation() {
         assert_eq!(failed.undo_depth, redone.undo_depth);
     }
 }
+
+#[path = "support/history_select_api.rs"]
+mod history_select_api;

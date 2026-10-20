@@ -1026,6 +1026,44 @@ impl Document {
         }
         Ok(true)
     }
+    pub fn select_transform_history(&mut self, depth: usize) -> Result<bool> {
+        let backup = self
+            .transform
+            .clone()
+            .ok_or(Error::InvalidArgument("no transform session"))?;
+        if backup.current != backup.checkpoint {
+            return Err(Error::Busy);
+        }
+        let undo = backup.undo.len();
+        let redo = backup.redo.len();
+        if depth > undo + redo {
+            return Err(Error::InvalidArgument("transform history depth"));
+        }
+        if depth == undo {
+            return Ok(false);
+        }
+        let target = if depth < undo {
+            backup.undo[depth].clone()
+        } else {
+            backup.redo[redo - (depth - undo)].clone()
+        };
+        // A single final materialization, including software/selection fallback.
+        self.update_transform(target.clone())?;
+        let s = self.transform.as_mut().expect("session");
+        let mut current = backup.current;
+        while s.undo.len() > depth {
+            let previous = s.undo.pop_back().expect("depth");
+            s.redo.push(current);
+            current = previous;
+        }
+        while s.undo.len() < depth {
+            let next = s.redo.pop().expect("depth");
+            s.undo.push_back(current);
+            current = next;
+        }
+        s.checkpoint = target;
+        Ok(true)
+    }
     pub fn undo_transform(&mut self) -> Result<bool> {
         self.travel_transform(false)
     }
