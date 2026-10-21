@@ -114,10 +114,12 @@ private slots:
             QCOMPARE(presets.size(),0);QCOMPARE(catalogs.size(),0);
             auto expected=original;expected["selected"]=library.selectedId();auto reset=expected.value("resetState").toObject();reset["selected"]=library.selectedId();expected["resetState"]=reset;
             if(isolation){auto scopes=expected.value("toolIsolation").toObject();auto profiles=scopes.value("profiles").toArray();auto profile=profiles[0].toObject();profile["selected"]=library.selectedId();profiles[0]=profile;scopes["profiles"]=profiles;expected["toolIsolation"]=scopes;}
-            QCOMPARE(QJsonDocument::fromJson(library.snapshot()).object(),expected);auto expectedExecution=execution;expectedExecution["selected"]=library.selectedId();QCOMPARE(QJsonDocument::fromJson(library.catalogSnapshot()).object(),expectedExecution);
+            QCOMPARE(library.snapshot(),QJsonDocument(expected).toJson(QJsonDocument::Compact));auto expectedExecution=execution;expectedExecution["selected"]=library.selectedId();QCOMPARE(QJsonDocument::fromJson(library.catalogSnapshot()).object(),expectedExecution);
             BrushLibrary restored;QVERIFY(restored.restore(library.snapshot()));QCOMPARE(restored.selectedId(),library.selectedId());QCOMPARE(restored.toolIsolation(),isolation);
             library.setRadius(31);const auto edited=QJsonDocument::fromJson(library.catalogSnapshot()).object().value("presets").toArray();bool found=false;for(const auto &value:edited){const auto row=value.toObject();if(row.value("id").toString()==library.selectedId()){QCOMPARE(row.value("radius").toDouble(),31.);found=true;}}QVERIFY(found);
             const auto changed=library.snapshot();QVERIFY(changed!=QJsonDocument(expected).toJson(QJsonDocument::Compact));
+            QCOMPARE(changed,QJsonDocument(QJsonDocument::fromJson(changed).object()).toJson(QJsonDocument::Compact));
+            BrushLibrary editedRestore;QVERIFY(editedRestore.restore(changed));QCOMPARE(editedRestore.radius(),31.);
             library.setToolContext(1);if(isolation==1)QVERIFY(library.select("round-pressure"));if(isolation)QCOMPARE(library.radius(),19.);
         }
     }
