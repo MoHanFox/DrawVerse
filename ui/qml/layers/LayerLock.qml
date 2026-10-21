@@ -7,6 +7,9 @@ ToolButton {
     property int kind: 1
     property bool selected: false
     property bool passiveIcon: false
+    onSelectedChanged: if(icon)icon.requestPaint()
+    onEnabledChanged: if(icon)icon.requestPaint()
+    onKindChanged: if(icon)icon.requestPaint()
     padding: passiveIcon ? 1 : 3
     implicitWidth: 19; implicitHeight: 20
     ToolTip.delay:1000;ToolTip.visible: hovered
@@ -15,7 +18,6 @@ ToolButton {
     contentItem: Canvas {
         id: icon
         implicitWidth: 14; implicitHeight: 14
-        Connections { target: root; function onSelectedChanged() { icon.requestPaint() } function onEnabledChanged() { icon.requestPaint() } function onKindChanged() { icon.requestPaint() } }
         onPaint: {
             const c=getContext("2d"); c.reset()
             const scale=Math.min(width,height)/18

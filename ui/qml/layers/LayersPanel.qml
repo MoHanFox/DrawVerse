@@ -429,7 +429,7 @@ ColumnLayout {
             delegate: GlassMenuItem {
                 required property var modelData
                 objectName: "moveLayerInto:"+modelData.id
-                text: "移入："+modelData.name; enabled: !root.selected.mask && root.canMoveInto(modelData)
+                text: "移入："+modelData.name; enabled: root.selected!==undefined && !root.selected.mask && root.canMoveInto(modelData)
                 onTriggered: PaintClient.dropSelectedLayers(modelData.id,0)
             }
             onObjectAdded: (index,object) => groupMenu.insertItem(index+7,object)

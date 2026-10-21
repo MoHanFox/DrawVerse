@@ -13,3 +13,9 @@
 根因是测试仍要求早期26条，当前35条包含图层复制/粘贴、复制、合并、成组、删除、全选/取消/反选、移动工具九项。核对Main快捷键后，测试验证九项名称与键位、所有行三列非空及名称唯一、模型与实际行数一致，保留渲染像素和打开/关闭验证；没有删除产品快捷键迁就旧断言。
 
 软件和D3D11下 `editMenuOpensKeyboardShortcutList` 各通过（含初始化清理3 passed），零QML警告。日志 artifacts/remaining-u3-{software,d3d11}.txt。Release/全部Qt及四ABI目标构建通过，生成头一致；无生产代码或ABI变化。其余待办保持。
+
+## U2：异步图层面板创建
+
+PanelContent异步创建LayersPanel期间，自定义属性尚未全部就绪；LayerLock内部Connections提前连接selected/kind时收到不存在信号警告，Instantiator的菜单项提前读取selected.mask。锁图标改为控件自身的属性变更处理，图标尚未创建时不请求绘画；菜单在selected尚未就绪时禁用。没有屏蔽Connections警告或改成同步加载。
+
+`panelTabsRetractWithoutExpandingRailsAndKeepSharedPresentation` 在软件和D3D11通过，原7条QML警告消失，保留所有折叠、跨窗口、源栏状态断言；日志 artifacts/remaining-ui-probe.txt、remaining-u2-d3d11.txt。Release与Qt目标构建通过，ABI/state不变。退出仍有4个异步创建对象诊断，由U5继续跟踪；没有把该诊断称为已解决。
