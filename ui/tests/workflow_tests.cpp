@@ -98,6 +98,17 @@ private slots:
         for(int i=0;i<16;++i){const auto start=clock.nsecsElapsed();QVERIFY(library->select(rows[(5+i*17)%rows.size()].toMap().value("id").toString()));maxSelect=std::max(maxSelect,(clock.nsecsElapsed()-start)/1000);QTest::qWait(180);}
         qInfo()<<"live two-document selection max us"<<maxSelect<<"longest GUI gap ms"<<longest<<"receiver catalog rebuilds"<<receivedCatalogChanges.size();
         QCOMPARE(receivedCatalogChanges.size(),0);QCOMPARE(receiver->brushLibrary()->selectedId(),library->selectedId());QVERIFY(receiver->lastError().isEmpty());
+        for(int mode=1;mode<=2;++mode) {
+            library->setToolIsolation(mode);library->flushPersistence();QTest::qWait(300);
+            receiver->activateEraser();receiver->brushLibrary()->flushPersistence();QTest::qWait(300);
+            QVERIFY(receiver->restoreBrushPreferences(library->snapshot(),library));receiver->brushLibrary()->snapshot();
+            const auto receiverSelected=receiver->brushLibrary()->selectedId();
+            receivedCatalogChanges.clear();catalogChanges.clear();longest=maxSelect=0;previous=clock.elapsed();
+            for(int i=0;i<16;++i){const auto start=clock.nsecsElapsed();QVERIFY(library->select(rows[(6+i*17)%rows.size()].toMap().value("id").toString()));maxSelect=std::max(maxSelect,(clock.nsecsElapsed()-start)/1000);QTest::qWait(180);}
+            qInfo()<<"live cross-tool selection isolation"<<mode<<"max us"<<maxSelect<<"longest GUI gap ms"<<longest<<"receiver catalog rebuilds"<<receivedCatalogChanges.size();
+            QCOMPARE(receivedCatalogChanges.size(),0);QCOMPARE(catalogChanges.size(),0);QVERIFY(receiver->eraser());QCOMPARE(receiver->brushLibrary()->toolContext(),1);
+            QCOMPARE(receiver->brushLibrary()->selectedId(),mode==2?receiverSelected:library->selectedId());QVERIFY(receiver->lastError().isEmpty());
+        }
         heartbeat.stop();QVERIFY(client.lastError().isEmpty());QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 
@@ -146,6 +157,35 @@ private slots:
             // Real parameter changes still restore, rather than being mistaken for selection.
             source.setRadius(31);QVERIFY(receiver.restore(source.snapshot()));QCOMPARE(receiver.radius(),31.);QCOMPARE(catalog.size(),1);
             receiver.setToolContext(1);if(mode==1)QVERIFY(receiver.select("round-pressure"));if(mode)QCOMPARE(receiver.radius(),19.);
+        }
+    }
+
+    void sharedSelectionAcrossToolContextsKeepsProfilesAndPreviews() {
+        for(int mode=0;mode<=2;++mode)for(int tool=0;tool<3;++tool) {
+            BrushLibrary source;auto initial=QJsonDocument::fromJson(source.catalogSnapshot()).object();auto rows=initial.value("presets").toArray();
+            for(int i=4;i<512;++i){auto row=rows.first().toObject();row["id"]=QString("context-%1").arg(i);rows.append(row);}
+            initial["presets"]=rows;QVERIFY(source.restore(QJsonDocument(initial).toJson()));source.setToolIsolation(mode);
+            source.setToolContext(1);source.setRadius(19);source.setToolContext(2);source.setRadius(23);source.setToolContext(0);source.flushPersistence();
+            BrushLibrary receiver,reference;QVERIFY(receiver.restore(source.snapshot()));receiver.setToolContext(tool,false);receiver.snapshot();
+            quint64 previewToken=0;connect(&receiver,&BrushLibrary::previewRequested,this,[&](const QString &,quint64 token,qreal,qreal,qreal,QVariantMap){previewToken=token;});
+            receiver.requestPreview("round-pressure");QVERIFY(previewToken);receiver.acceptPreview("round-pressure",previewToken,"context-preview");
+            QSignalSpy catalog(&receiver,&BrushLibrary::presetsChanged),persist(&receiver,&BrushLibrary::persistRequested);
+            QElapsedTimer timer;timer.start();qint64 reuseNs=0,referenceNs=0;
+            for(int i=4;i<10;++i) {
+                source.setToolContext(i%3,false);QVERIFY(source.select(QString("context-%1").arg(i)));source.snapshot();
+                auto start=timer.nsecsElapsed();QVERIFY(receiver.restoreSharedSelection(source));reuseNs+=timer.nsecsElapsed()-start;QCOMPARE(receiver.toolContext(),tool);
+                start=timer.nsecsElapsed();QVERIFY(reference.restore(source.snapshot()));reference.setToolContext(tool,false);referenceNs+=timer.nsecsElapsed()-start;
+                QCOMPARE(receiver.snapshot(),reference.snapshot());
+            }
+            qInfo()<<"512 cross-tool shared selection mode"<<mode<<"receiver tool"<<tool<<"six restores us reuse/full"<<reuseNs/1000<<referenceNs/1000;
+            QCOMPARE(catalog.size(),0);QCOMPARE(persist.size(),0);QVERIFY(!receiver.persistencePending());
+            QCOMPARE(receiver.presetInfo("round-pressure").value("preview").toString(),QString("context-preview"));
+            const auto before=receiver.snapshot();source.setRadius(31);source.snapshot();
+            QVERIFY(!receiver.restoreSharedSelection(source));QCOMPARE(receiver.snapshot(),before);
+            QVERIFY(reference.restore(source.snapshot()));reference.setToolContext(tool,false);
+            QVERIFY(receiver.restore(source.snapshot()));receiver.setToolContext(tool,false);QCOMPARE(receiver.snapshot(),reference.snapshot());
+            source.setActiveColors(Qt::red,Qt::blue);source.snapshot();const auto beforeColor=receiver.snapshot();
+            QVERIFY(!receiver.restoreSharedSelection(source));QCOMPARE(receiver.snapshot(),beforeColor);
         }
     }
 
@@ -283,9 +323,11 @@ Flickable {objectName:"outer";width:300;height:380;contentWidth:width;contentHei
     void sharedBrushPreferencesRetainEachDocumentsIsolatedToolWithoutFeedback() {
         QTemporaryDir temp;PaintCoreClient a(nullptr,temp.filePath("a.ini"));QTRY_VERIFY(a.ready() && a.brushLibraryReady());PaintCoreClient b(nullptr,temp.filePath("a.ini"),a.brushCatalogConnection());QTRY_VERIFY2(b.ready() && b.brushLibraryReady(),qPrintable(b.lastError()));
         a.brushLibrary()->setToolIsolation(2);a.brushLibrary()->setRadius(3);a.activateEraser();a.brushLibrary()->setRadius(7);a.activateSmudge();a.brushLibrary()->setRadius(11);a.activateBrush();a.brushLibrary()->flushPersistence();
-        b.activateEraser();QVERIFY(b.restoreBrushPreferences(a.brushLibrary()->snapshot()));QVERIFY(b.eraser());QCOMPARE(b.brushRadius(),7.);QVERIFY(!b.brushLibrary()->persistencePending());
-        a.brushLibrary()->setRadius(5);QVERIFY(b.restoreBrushPreferences(a.brushLibrary()->snapshot()));QCOMPARE(b.brushRadius(),7.);QVERIFY(!b.brushLibrary()->persistencePending());
-        b.activateSmudge();QCOMPARE(b.brushRadius(),11.);b.brushLibrary()->setRadius(13);b.brushLibrary()->flushPersistence();a.brushLibrary()->flushPersistence();QVERIFY(a.restoreBrushPreferences(b.brushLibrary()->snapshot()));QCOMPARE(a.brushRadius(),5.);QVERIFY(!a.brushLibrary()->persistencePending());a.activateSmudge();QCOMPARE(a.brushRadius(),13.);a.shutdown();b.shutdown();
+        b.activateEraser();QVERIFY(b.restoreBrushPreferences(a.brushLibrary()->snapshot(),a.brushLibrary()));QVERIFY(b.eraser());QCOMPARE(b.brushRadius(),7.);QVERIFY(!b.brushLibrary()->persistencePending());
+        a.brushLibrary()->setRadius(5);QVERIFY(b.restoreBrushPreferences(a.brushLibrary()->snapshot(),a.brushLibrary()));QCOMPARE(b.brushRadius(),7.);QVERIFY(!b.brushLibrary()->persistencePending());
+        const auto before=b.brushLibrary()->snapshot();auto malformed=QJsonDocument::fromJson(a.brushLibrary()->snapshot()).object();malformed["selected"]="missing";
+        QVERIFY(!b.restoreBrushPreferences(QJsonDocument(malformed).toJson(),a.brushLibrary()));QCOMPARE(b.brushLibrary()->snapshot(),before);
+        b.activateSmudge();QCOMPARE(b.brushRadius(),11.);b.brushLibrary()->setRadius(13);b.brushLibrary()->flushPersistence();a.brushLibrary()->flushPersistence();QVERIFY(a.restoreBrushPreferences(b.brushLibrary()->snapshot(),b.brushLibrary()));QCOMPARE(a.brushRadius(),5.);QVERIFY(!a.brushLibrary()->persistencePending());a.activateSmudge();QCOMPARE(a.brushRadius(),13.);a.shutdown();b.shutdown();
     }
 
 

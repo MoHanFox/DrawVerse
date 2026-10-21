@@ -43,7 +43,7 @@ void DocumentManager::track(PaintCoreClient *client) {
     connect(client->brushLibrary(),&BrushLibrary::persistRequested,this,[this,client](const QByteArray &state){
         if(m_quitting)return;
         m_brushPreferenceState=state;
-        for(const auto &other:m_clients)if(other && other!=client && !m_stopped.contains(other))other->restoreBrushPreferences(state);
+        for(const auto &other:m_clients)if(other && other!=client && !m_stopped.contains(other))other->restoreBrushPreferences(state,client->brushLibrary());
         if(m_brushPreferenceWriter && client!=m_brushPreferenceWriter)m_brushPreferenceWriter->persistBrushPreferences(state);
     });
     connect(client,&PaintCoreClient::stateChanged,this,[this,client,initialized=false]() mutable {

@@ -428,6 +428,7 @@ public:
     Q_INVOKABLE void cancelPreview(const QString &id);
     Q_INVOKABLE void retryPreview();
     bool restore(const QByteArray &json,bool preserveSelection=false);
+    bool restoreSharedSelection(const BrushLibrary &source);
     QByteArray snapshot() const;
     QByteArray catalogSnapshot() const;
     bool applyNativeCatalog(const QByteArray &json);

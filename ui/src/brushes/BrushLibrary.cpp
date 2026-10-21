@@ -1515,6 +1515,23 @@ bool BrushLibrary::importAbr(const QByteArray &json,const QString &groupName) {
     if(!restore(QJsonDocument(state).toJson(QJsonDocument::Compact)))return false;
     queuePersistence();return true;
 }
+bool BrushLibrary::restoreSharedSelection(const BrushLibrary &source) {
+    // Both objects are GUI-owned validated models. Keep the receiver's active
+    // tool; all profile parameters must still match before accepting selection.
+    if(m_toolIsolation!=source.m_toolIsolation)return false;
+    auto incoming=source.snapshotObject();const auto current=snapshotObject();
+    auto isolation=incoming.value("toolIsolation").toObject();
+    isolation["context"]=current.value("toolIsolation").toObject().value("context");
+    incoming["toolIsolation"]=isolation;
+    if(m_toolIsolation) {
+        // These executing fields are duplicated in the active tool profile.
+        // Comparing every profile below detects real edits in any tool, while
+        // retaining the receiver's already-applied executing parameters.
+        for(const auto &key:{"version","presets","brushTool"})incoming[key]=current.value(key);
+        if(m_toolIsolation==2)incoming["selected"]=isolation.value("profiles").toArray()[m_toolContext].toObject().value("selected");
+    }
+    return restoreSelectionOnly(incoming,false);
+}
 bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSelection) {
     // Only reuse our own previously validated snapshot. Every other field must
     // match exactly; external edits still pass through the complete validator.

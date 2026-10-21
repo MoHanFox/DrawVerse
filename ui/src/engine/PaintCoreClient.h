@@ -250,7 +250,7 @@ public:
     qreal brushOpacity() const { return m_opacity; }
     qreal brushSpacing() const {return m_spacing;}
     BrushLibrary *brushLibrary() const {return m_brushLibrary;}
-    bool restoreBrushPreferences(const QByteArray &state);
+    bool restoreBrushPreferences(const QByteArray &state,const BrushLibrary *source=nullptr);
     QVariantList recentColors() const;
     bool eraser() const { return m_eraser; }
     /// Tool-slot activation: exactly one painting/selection tool stays active. QML handlers must not
