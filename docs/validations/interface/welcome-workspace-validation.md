@@ -33,3 +33,12 @@ Main原来把每次文件成功回执写为“文件操作完成”，跨文档�
 原有欢迎生命周期的软件与 D3D11 回归均通过，关闭后显式检查所有窗口的 panelContentLoader 均不激活，并检查孵化控制器归零。对原始残留计数、DelegateModel::cancel 与交换链 alpha 诊断启用 failOnWarning，未使用 ignoreMessage 或屏蔽日志。图层列表等外层异步创建完成后再填充，卸载正在 Loading 的内容前完成已开始的 deferred 控件；浮窗固定透明 surface，背景仍由矩形绘制。此前仅取消 Loader 的候选出现 DelegateModel::cancel，仍有两个遗留计数，已改正。
 
 候选三软件：欢迎生命周期及拖动合并三行通过；D3D11 追加白底/透明保存关闭两行共六行通过，零上述诊断。证据 artifacts/lifecycle-candidate3-{software,d3d11}.txt。最终显式隐藏 Loader 断言、六行软件和 D3D11 均通过，日志 artifacts/batch-workflow-{software,d3d11}.txt；完整 Release 构建通过，输出 build/qt/bin/Release/drawverse.exe。ABI/state/VBR 不变；未跑全量或跨平台。
+
+
+## 2026-10-21：U1 浮动画布真实绘画与 GPU 跨窗迁移
+
+原0/1失败实际位于重做：测试使用Ctrl+Y，当前界面及快捷键表为Ctrl+Shift+Z，鼠标笔触和撤销本已完成。修正为当前快捷键并检查重做后红色像素；缩放等待实际1.15终值，平移先验证12/8再以静止中键停止惯性，继续验证跨窗保留状态，不加固定sleep。
+
+继续跑D3D11发现真实产品错误：切换浮窗标签时park先修改parent、后隐藏，自适应轮廓ShaderEffectSource尚绑定旧窗口，出现Cannot use same item/不同窗口source提示，画布停在主窗口。CanvasPane现在先隐藏解绑，再改变parent并重新显示。完整原测试软件及D3D11均通过，含真实鼠标绘画/撤销/重做、缩放与惯性停止、多文档标签/保存重开/手写笔/跨窗停靠及关闭保护。日志 artifacts/canvas-window-{software,d3d11}.txt；原两个GPU窗口归属诊断消失。测试有两条故意将捕获鼠标坐标送到窗外的QtTest提示，未屏蔽，不属于QML/GPU警告。
+
+首开80层面板软件与D3D11各通过，异步属性保持，最长心跳20/27ms、实显5行；完整Release构建通过，输出标准drawverse.exe。未跑全量/跨平台/实体输入。

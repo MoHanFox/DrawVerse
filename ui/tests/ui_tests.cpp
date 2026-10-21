@@ -3013,12 +3013,14 @@ private slots:
         };
         QTest::mouseClick(floating,Qt::LeftButton,Qt::NoModifier,paintAt);QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(centerColor().red()>200);
         QTest::keyClick(floating,Qt::Key_Z,Qt::ControlModifier);QTRY_COMPARE(client.undoDepth(),0);
-        QTest::keyClick(floating,Qt::Key_Y,Qt::ControlModifier);QTRY_COMPARE(client.undoDepth(),1);
+        QTest::keyClick(floating,Qt::Key_Z,Qt::ControlModifier|Qt::ShiftModifier);QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(centerColor().red()>200);
         const auto at=canvas->mapToScene({canvas->width()/2,canvas->height()/2});QWheelEvent wheel(at,floating->mapToGlobal(at.toPoint()),{},QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
-        QCoreApplication::sendEvent(floating,&wheel);QVERIFY(canvas->zoom()>1);const auto zoom=canvas->zoom();
+        QCoreApplication::sendEvent(floating,&wheel);QTRY_VERIFY(qAbs(canvas->zoom()-1.15)<1e-6);const auto zoom=canvas->zoom();
         const auto panAt=canvas->mapToScene({canvas->width()/2,canvas->height()/2}).toPoint();
         QTest::mousePress(floating,Qt::MiddleButton,Qt::NoModifier,panAt);QTest::mouseMove(floating,panAt+QPoint(12,8));QTest::mouseRelease(floating,Qt::MiddleButton,Qt::NoModifier,panAt+QPoint(12,8));
         const auto pan=canvas->documentRect().center()-QPointF(canvas->width()/2,canvas->height()/2);QCOMPARE(pan,QPointF(12,8));
+        // A second stationary pan press stops the requested navigation inertia.
+        QTest::mouseClick(floating,Qt::MiddleButton,Qt::NoModifier,panAt+QPoint(12,8));
         auto *documents=main->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QCOMPARE(documents->windows().size(),1);
         const auto first=documents->activeId(),host=documents->windows().first().toMap().value("id").toString();
         auto *extraTitle=findVisualItem(floating->contentItem(),"documentWindowTitle:"+host);QVERIFY(extraTitle);QCOMPARE(extraTitle->height(),qreal(0));

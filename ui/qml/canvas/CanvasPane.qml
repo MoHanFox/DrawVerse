@@ -26,8 +26,9 @@ Rectangle {
     readonly property color cursorLineColor:"black"
     readonly property real fallbackWidth:singleCursorLine && !canvas.gpuDisplay?2:cursorLineWidth
     color:Theme.background;clip:true
-    function park(){parent=parkingParent;visible=false}
-    function attach(host){parent=host;width=Qt.binding(()=>host.width);height=Qt.binding(()=>host.height);visible=true;canvas.forceActiveFocus()}
+    // Release window-owned cursor/selection texture sources before reparenting.
+    function park(){visible=false;parent=parkingParent}
+    function attach(host){visible=false;parent=host;width=Qt.binding(()=>host.width);height=Qt.binding(()=>host.height);visible=true;canvas.forceActiveFocus()}
     Rectangle {
         id:canvasBackground;anchors.fill:parent;color:Theme.background
         TransparencyGrid {objectName:"canvasTransparency";x:canvas.documentRect.x;y:canvas.documentRect.y;width:canvas.documentRect.width;height:canvas.documentRect.height}
