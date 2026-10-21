@@ -123,3 +123,11 @@ preparePreferences 在 BackendWorker 校验并预编码完整配置，GUI 仅应
 489项同机五次中位：完整同步恢复软件187.095ms、D3D11进程177.729ms；准备后GUI应用0.171/0.177ms。真实首轮最长心跳仍469/361ms、热轮19/17ms、双文档17/18ms且重建0；前者包含其他首次显示工作，不能称P1全完成或用数据应用耗时替代端到端延迟。临时事件探针定位首次QML实例化仍有独立阻塞，已移除探针。将全部笔刷面板改为异步的候选影响原即时控件访问且未充分验收，已撤回，没有放宽原断言。保留日志cold-event-probe、cold-prepared-probe、cold-panels-probe及cold-ui-software中的失败；最终证据artifacts/cold-revised-{software,d3d11}.txt与cold-revised-ui-{software,d3d11}.txt。
 
 完整Windows Release/生成头与diff检查通过，标准drawverse.exe已更新；纯Qt配置准备，无ABI/state/VBR/GPU算子变化。未跑全量、跨平台或实体持续输入，首次QML/资源与持续手感仍待。
+
+## 隔离工具内存切换与预览缓存（2026-10-21）
+
+512预设、同机30次工具上下文切换：完整隔离旧207.502ms→软件13.463ms / D3D11进程13.192ms；仅大小/透明度/流量旧9.414ms→10.143/10.160ms，未声称该档计算更快。计时仅 `BrushLibrary::setToolContext` 内存操作，不含持久化序列化、核心回传、GUI到屏幕延迟。两档现在均不触发目录重建。
+
+基线新测试真实失败：已有主体缓存在切换到其他形状再切回后丢失。首版修复仍失败，原因是相同形状的空当前图覆盖目标缓存；已改为优先非空有效图。最终两档通过并保留原参数隔离、目标未缓存时请求新图的语义。
+
+新增 `isolatedToolSwitchRetainsPreviewJobsWithoutRebuildingCatalog` 软件4行/D3D11含输入批次9行；原参数隔离、完整恢复/失败原子性、真实客户端绘画/橡皮像素与设置重开、512项共享/跨工具同步五项在软件/D3D11各7行通过，无QML警告。日志 `artifacts/isolation-switch-final-*.txt`。完整Release/生成头通过 `artifacts/isolation-switch-final-build.txt`，产物 `build/bin/Release/drawverse.exe`；ABI1.78/state45不变。工具独立所选笔刷、首次资源、快照编码与实体持续手感未完成。

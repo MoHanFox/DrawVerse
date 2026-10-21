@@ -1,5 +1,6 @@
 #include "brushes/BrushLibrary.h"
 #include <QJsonDocument>
+#include <tuple>
 
 void BrushLibrary::captureToolProfile() {
     auto &profile=m_toolProfiles[m_toolContext];
@@ -33,6 +34,7 @@ void BrushLibrary::setToolContext(int tool,bool persist) {
         return;
     }
     const auto &profile=m_toolProfiles[tool];
+    QStringList previewChanges;
     for(auto &p:m_presets) {
         const auto found=profile.presets.constFind(p.id);
         if(found==profile.presets.cend())continue;
@@ -42,13 +44,20 @@ void BrushLibrary::setToolContext(int tool,bool persist) {
             auto next=*found;
             // Catalog identity, naming and import provenance belong to the shared library.
             next.id=p.id;next.name=p.name;next.builtin=p.builtin;next.sourceResource=p.sourceResource;
-            int oldVersion=2,newVersion=2;
-            auto oldRow=presetRow(p,oldVersion),newRow=presetRow(next,newVersion);
-            for(const auto &key:{"name","radius","opacity","flow"}){oldRow.remove(key);newRow.remove(key);}
-            if(oldRow==newRow) {
-                next.preview=p.preview;next.error=p.error;next.token=p.token;next.requested=p.requested;
+            // Compare the stored preview inputs directly; exporting two complete
+            // JSON rows for every brush made switching scale with serialization.
+            const auto previewInputs=[](const Preset &v){return std::tie(v.spacing,v.hardness,v.roundness,v.angle,v.pressureSize,v.pressureFlow,
+                v.maskResource,v.pressure,v.device,v.scatter,v.shape,v.transfer,v.color,v.texture,v.dual,v.smoothing,v.wet,v.taper,
+                v.airbrush,v.speed,v.tangent,v.distance,v.tilt,v.rotation,v.direction,v.matrix,v.fade,v.outline);};
+            if(previewInputs(p)==previewInputs(next)) {
+                if(!p.preview.isEmpty() || next.preview.isEmpty()){next.preview=p.preview;next.error=p.error;}
+                if(next.preview!=p.preview)previewChanges.append(p.id);
+                next.token=p.token;next.requested=p.requested;
             } else {
-                next.preview.clear();next.error.clear();next.token=++m_nextToken;next.requested=0;
+                // The target profile owns a valid cached image. Retain it, but
+                // retire any old in-flight request before publishing this profile.
+                next.token=++m_nextToken;next.requested=0;
+                previewChanges.append(p.id);
             }
             p=std::move(next);
         }
@@ -59,11 +68,11 @@ void BrushLibrary::setToolContext(int tool,bool persist) {
         m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",m_selected}}};
         emit selectionChanged();
     }
-    if(persist)changed(true);
-    else {
-        m_snapshotCache.clear();m_catalogCache.clear();m_snapshotObjectCache={};m_catalogObjectCache={};
-        emit settingsChanged();emit presetsChanged();emit selectedPreviewChanged();
-    }
+    if(persist)queuePersistence();
+    else {m_snapshotCache.clear();m_catalogCache.clear();m_snapshotObjectCache={};m_catalogObjectCache={};}
+    emit settingsChanged();
+    for(const auto &id:previewChanges)emit presetChanged(id);
+    emit selectedPreviewChanged();
 }
 
 QJsonObject BrushLibrary::toolIsolationState() const {

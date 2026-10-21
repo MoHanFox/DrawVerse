@@ -14,6 +14,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QSettings>
+#include <QJsonDocument>
 #include <QTabletEvent>
 #include <QPointingDevice>
 static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item->objectName()==name)return item;for(auto *child:item->childItems())if(auto *found=findVisualItem(child,name))return found;return nullptr;}
@@ -218,6 +219,23 @@ private slots:
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && red(at(undone,{100,1080})) && white(at(undone,{2000,1080})));
         client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage redone;QTRY_VERIFY(!(redone=capture()).isNull() && white(at(redone,{100,1080})) && white(at(redone,{2000,1080})));
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void isolatedToolSwitchRetainsPreviewJobsWithoutRebuildingCatalog_data() {
+        QTest::addColumn<int>("mode");QTest::newRow("size-opacity-flow")<<1;QTest::newRow("all-parameters")<<2;
+    }
+    void isolatedToolSwitchRetainsPreviewJobsWithoutRebuildingCatalog() {
+        QFETCH(int,mode);BrushLibrary library;auto root=QJsonDocument::fromJson(library.catalogSnapshot()).object();auto rows=root.value("presets").toArray();
+        for(int i=4;i<512;++i){auto row=rows.first().toObject();row["id"]=QString("switch-%1").arg(i);rows.append(row);}root["presets"]=rows;QVERIFY(library.restore(QJsonDocument(root).toJson()));
+        library.setToolIsolation(mode);quint64 token=0;connect(&library,&BrushLibrary::previewRequested,this,[&](const QString &,quint64 t,qreal,qreal,qreal,QVariantMap){token=t;});
+        library.requestPreview(library.selectedId());QVERIFY(token);library.acceptPreview(library.selectedId(),token,"shared-preview");
+        library.setToolContext(1);library.setRadius(31);if(mode==2)library.setHardness(.3);library.setToolContext(2);library.setRadius(42);library.setToolContext(0);
+        QSignalSpy rebuilt(&library,&BrushLibrary::presetsChanged);QElapsedTimer timer;timer.start();
+        for(int i=0;i<10;++i)for(int tool:{1,2,0})library.setToolContext(tool);
+        qInfo()<<"512-preset isolated tool switches mode"<<mode<<"30 switches us"<<timer.nsecsElapsed()/1000;
+        QCOMPARE(library.radius(),12.);QCOMPARE(library.selectedPreview(),QString("shared-preview"));
+        // A real profile difference still restores its parameters and invalidates its thumbnail.
+        library.setToolContext(1);QCOMPARE(library.radius(),31.);if(mode==2){QCOMPARE(library.hardness(),.3);QVERIFY(library.selectedPreview().isEmpty());}
+        QCOMPARE(rebuilt.size(),0);
     }
     void tabletBackendSelectionChecksDriverStateAndPersistsChoice() {
 #ifdef Q_OS_WIN
