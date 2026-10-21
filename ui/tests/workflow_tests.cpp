@@ -115,6 +115,30 @@ private slots:
         heartbeat.stop();QVERIFY(client.lastError().isEmpty());QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 
+    void fullPreferenceRestoreReusesRowsWithoutSkippingRoleValidation() {
+        BrushLibrary source;QVERIFY(source.setPressureControl("size",{QVariantList{0.,0.},QVariantList{1.,1.}},.2));source.setToolIsolation(2);
+        source.setToolContext(1);source.setRadius(19);source.setWriteBlend(8);source.setToolContext(2);source.setRadius(23);source.setToolContext(0);
+        const auto root=QJsonDocument::fromJson(source.snapshot()).object();BrushLibrary restored;QVERIFY(restored.restore(source.snapshot()));QCOMPARE(restored.snapshot(),source.snapshot());
+        restored.setToolContext(1);QCOMPARE(restored.radius(),19.);QCOMPARE(restored.writeBlend(),8);restored.setToolContext(2);QCOMPARE(restored.radius(),23.);
+        const auto before=restored.snapshot();QSignalSpy settings(&restored,&BrushLibrary::settingsChanged),presets(&restored,&BrushLibrary::presetsChanged);
+        for(int failure=0;failure<6;++failure) {
+            auto invalid=root;auto isolation=invalid.value("toolIsolation").toObject();auto profiles=isolation.value("profiles").toArray();auto profile=profiles[2].toObject();auto rows=profile.value("presets").toArray();
+            if(failure==0)profile["version"]=2; // Same rows require pressure schema >=5.
+            if(failure==1)rows.append(rows.first()); // A cached ID must still reject duplicates.
+            if(failure==2){auto row=rows.last().toObject();row["radius"]=-1;rows[rows.size()-1]=row;}
+            if(failure==3)profile["selected"]="missing";
+            if(failure==4)profile["dualEditors"]=QJsonObject{{"round-pressure",QJsonObject{{"existing",3},{"sourceName","invalid"}}}};
+            if(failure==5){auto reset=invalid.value("resetState").toObject();auto resetRows=reset.value("presets").toArray();auto row=resetRows.last().toObject();row["radius"]=-1;resetRows[resetRows.size()-1]=row;reset["presets"]=resetRows;invalid["resetState"]=reset;}
+            profile["presets"]=rows;profiles[2]=profile;isolation["profiles"]=profiles;invalid["toolIsolation"]=isolation;
+            QVERIFY(!restored.restore(QJsonDocument(invalid).toJson()));QCOMPARE(restored.snapshot(),before);
+        }
+        QCOMPARE(settings.size(),0);QCOMPARE(presets.size(),0);
+        // Per-profile editor metadata is validated and applied after row reuse.
+        auto edited=root;auto isolation=edited.value("toolIsolation").toObject();auto profiles=isolation.value("profiles").toArray();auto profile=profiles[2].toObject();
+        profile["dualEditors"]=QJsonObject{{"round-pressure",QJsonObject{{"existing",true},{"sourceName","Inherited tip"}}}};profiles[2]=profile;isolation["profiles"]=profiles;edited["toolIsolation"]=isolation;
+        QVERIFY(restored.restore(QJsonDocument(edited).toJson()));restored.setToolContext(2);QVERIFY(restored.dualExisting());QCOMPARE(restored.radius(),23.);
+    }
+
     void sharedToolContextUpdatesCachedPreferencesWithoutCatalogWork() {
         BrushLibrary library;const auto catalog=library.catalogSnapshot();library.snapshot();
         QSignalSpy models(&library,&BrushLibrary::presetsChanged),persist(&library,&BrushLibrary::persistRequested),settings(&library,&BrushLibrary::settingsChanged);

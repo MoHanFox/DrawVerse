@@ -1568,12 +1568,15 @@ bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSel
 }
 bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
     if(json.size()>32*1024*1024)return false;
-    const auto root=QJsonDocument::fromJson(json).object();
+    const auto root=QJsonDocument::fromJson(json).object();RestoreRows decoded;
+    return restoreObject(root,preserveSelection,decoded);
+}
+bool BrushLibrary::restoreObject(const QJsonObject &root,bool preserveSelection,RestoreRows &decoded,bool executingBounded) {
     if(restoreSelectionOnly(root,preserveSelection))return true;
     const auto rows=root.value("presets").toArray();
     QJsonObject executing{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}};
     if(root.contains("organization"))executing["organization"]=root.value("organization");
-    if(QJsonDocument(executing).toJson(QJsonDocument::Compact).size()>2*1024*1024)return false;
+    if(!executingBounded && QJsonDocument(executing).toJson(QJsonDocument::Compact).size()>2*1024*1024)return false;
     const int version=root.value("version").toInt();
     if((version<1 || version>44) || !root.value("version").isDouble() || root.value("version").toDouble()!=version || rows.size()<4 || rows.size()>1024)return false;
     if(version<40 && BrushCurveModes::present(root.value("presets")))return false;
@@ -1581,7 +1584,13 @@ bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
     for(const auto &row:rows)organizationIds.append(row.toObject().value("id").toString());
     if(root.contains("organization") && (version<20 || !root.value("organization").isObject() || !BrushOrganization::normalize(root.value("organization").toObject(),organizationIds,organization,organizationOrder)))return false;
     const QSet<QString> builtins{"round-pressure","round-fine","round-translucent","round-wide"};QSet<QString> seen;QList<Preset> restored;
-    for(const auto &row:rows){const auto p=row.toObject();Preset b;b.id=p.value("id").toString();b.name=p.value("name").toString();b.radius=p.value("radius").toDouble(std::numeric_limits<double>::quiet_NaN());b.opacity=p.value("opacity").toDouble(std::numeric_limits<double>::quiet_NaN());b.spacing=p.value("spacing").toDouble(std::numeric_limits<double>::quiet_NaN());
+    for(const auto &row:rows){const auto p=row.toObject();const auto id=p.value("id").toString();
+        if(seen.contains(id))return false;
+        const auto cached=decoded.constFind(id);
+        if(cached!=decoded.cend() && cached->version==version && cached->input==p) {
+            restored.append(cached->preset);seen.insert(id);continue;
+        }
+        Preset b;b.id=id;b.name=p.value("name").toString();b.radius=p.value("radius").toDouble(std::numeric_limits<double>::quiet_NaN());b.opacity=p.value("opacity").toDouble(std::numeric_limits<double>::quiet_NaN());b.spacing=p.value("spacing").toDouble(std::numeric_limits<double>::quiet_NaN());
         if(b.id.isEmpty() || b.id.size()>64 || seen.contains(b.id) || b.name.trimmed().isEmpty() || b.name.size()>80 || !std::isfinite(b.radius) || b.radius<.5 || b.radius>1000 || !std::isfinite(b.opacity) || b.opacity<0 || b.opacity>1 || !std::isfinite(b.spacing) || b.spacing<.02 || b.spacing>1)return false;
         if(p.contains("maskResource")) {
             static const QRegularExpression identity("^[0-9a-f]{64}$");
@@ -1622,7 +1631,7 @@ bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
             if(!std::isfinite(b.hardness) || b.hardness<0 || b.hardness>1 || !std::isfinite(b.roundness) || b.roundness<.01 || b.roundness>1 || !std::isfinite(b.angle) || b.angle<-180 || b.angle>180 || !std::isfinite(b.flow) || b.flow<0 || b.flow>1)return false;
             b.pressureSize=p.value("pressureSize").toBool();b.pressureFlow=p.value("pressureFlow").toBool();
         }
-        b.builtin=builtins.contains(b.id);seen.insert(b.id);restored.append(b);}
+        b.builtin=builtins.contains(b.id);decoded.insert(b.id,RestoredRow{version,p,b});seen.insert(b.id);restored.append(b);}
     const auto selected=root.value("selected").toString();if(!seen.contains(selected) || !seen.contains(builtins))return false;
     const auto sizes=root.value("toolRadii").toArray();
     qreal brush=12,eraser=12;
@@ -1690,7 +1699,7 @@ bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
         const auto saved=root.value("resetState").toObject();
         if(saved.contains("resetState") || QJsonDocument(saved).toJson(QJsonDocument::Compact).size()>2*1024*1024)return false;
         BrushLibrary validator;
-        if(!validator.restore(QJsonDocument(saved).toJson(QJsonDocument::Compact)))return false;
+        if(!validator.restoreObject(saved,false,decoded,true))return false;
         for(const auto &p:validator.m_presets)baselines.insert(p.id,p);
     }
     for(const auto &p:restored) {
@@ -1699,7 +1708,7 @@ bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
     }
     for(auto it=baselines.begin();it!=baselines.end();)if(!seen.contains(it.key()))it=baselines.erase(it);else ++it;
     int isolation=0,context=0;std::array<ToolProfile,3> profiles;
-    if(!parseToolIsolation(root.value("toolIsolation"),isolation,context,profiles))return false;
+    if(!parseToolIsolation(root.value("toolIsolation"),isolation,context,profiles,decoded))return false;
     m_resetPresets=baselines;
     m_toolIsolation=isolation;m_toolContext=context;m_toolProfiles=std::move(profiles);
     for(auto &preset:restored) {

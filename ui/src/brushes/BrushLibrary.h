@@ -461,10 +461,13 @@ private:
     QString m_cursorColor="#000000",m_cursorSecondaryColor="#ffffff";
     struct Preset {QString id,name; qreal radius=12,opacity=1,spacing=.15; bool builtin=false;QString preview;quint64 token=1,requested=0;QString error;
         qreal hardness=1,roundness=1,angle=0,flow=1;bool pressureSize=true,pressureFlow=true;QString maskResource,sourceResource;QVariantMap pressure,device,scatter,shape,transfer,color,texture,dual,smoothing,wet,taper,airbrush,speed,tangent,distance,tilt,rotation,direction,matrix,fade,outline;bool dualExisting=false;QString dualSourceName;};
+    struct RestoredRow {int version;QJsonObject input;Preset preset;};
+    using RestoreRows=QHash<QString,RestoredRow>;
+    bool restoreObject(const QJsonObject &root,bool preserveSelection,RestoreRows &decoded,bool executingBounded=false);
     static QJsonObject presetRow(const Preset &preset,int &version);
     struct ToolProfile {QHash<QString,Preset> presets;QString selected="round-pressure";int writeBlend=0;};
     QJsonObject toolIsolationState() const;
-    static bool parseToolIsolation(const QJsonValue &value,int &mode,int &context,std::array<ToolProfile,3> &profiles);
+    static bool parseToolIsolation(const QJsonValue &value,int &mode,int &context,std::array<ToolProfile,3> &profiles,RestoreRows &decoded);
     void captureToolProfile();
     int m_toolIsolation=0,m_toolContext=0;
     std::array<ToolProfile,3> m_toolProfiles;

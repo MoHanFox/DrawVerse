@@ -87,7 +87,7 @@ QJsonObject BrushLibrary::toolIsolationState() const {
     return {{"version",1},{"mode",m_toolIsolation},{"context",m_toolContext},{"profiles",profiles}};
 }
 
-bool BrushLibrary::parseToolIsolation(const QJsonValue &value,int &mode,int &context,std::array<ToolProfile,3> &profiles) {
+bool BrushLibrary::parseToolIsolation(const QJsonValue &value,int &mode,int &context,std::array<ToolProfile,3> &profiles,RestoreRows &decoded) {
     mode=0;context=0;
     if(value.isUndefined())return true;
     if(!value.isObject())return false;
@@ -104,7 +104,7 @@ bool BrushLibrary::parseToolIsolation(const QJsonValue &value,int &mode,int &con
         const auto json=QJsonDocument(row).toJson(QJsonDocument::Compact);
         if(json.size()>2*1024*1024)return false;
         BrushLibrary validator;
-        if(!validator.restore(json))return false;
+        if(!validator.restoreObject(row,false,decoded,true))return false;
         auto &profile=profiles[tool];profile.selected=validator.m_selected;profile.writeBlend=validator.m_writeBlend;
         for(const auto &p:validator.m_presets)profile.presets.insert(p.id,p);
     }
