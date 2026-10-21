@@ -15,7 +15,9 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 74;
+pub const PAINT_ABI_MINOR: u32 = 75;
+/// Resolved-dab outline replay and allowOverflow through state45 preparation.
+pub const PAINT_FEATURE_STROKE_REPLAY_OUTLINE: u64 = 9_223_372_036_854_775_808;
 
 /// Optional secondary-tip texture through catalog preparation and resource bundles.
 pub const PAINT_FEATURE_DUAL_TIP_TEXTURE: u64 = 1_152_921_504_606_846_976;

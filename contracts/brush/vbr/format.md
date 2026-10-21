@@ -46,3 +46,7 @@ SDF描边使用同一可选strokeOutline对象，model为`stroke-sdf-v1`，参�
 
 
 第二笔尖的可选 `dualBrush.texture` 复用预设 texture 的字段、校验与资源身份；缺失保持旧编码，存在时行为版本36及 `dual-tip-texture`，Qt/core 目录 state44。纹理在第二印章自身坐标/文档坐标采样后参与灰度覆盖组合，与主体纹理独立。关闭的第二笔刷仍保留该字段与资源；VBR 包版本仍为1.0，读取按实际字段补全并重算行为能力。
+
+## 复刻描边
+
+新写出 `strokeOutline.model: "stroke-replay-v1"`，保留 enabled/placement/width/source/secondaryColor，新增必需布尔 allowOverflow。VBR仍1.0，实际字段决定behavior37与stroke-outline-replay；state45。已有笔刷来源允许嵌套brush.texture并复用资源身份；默认不溢出主体描边包络。Qt读取旧轮廓/SDF描边时保留参数及资源、转换为新模型，视觉结果会依照新算法变化；不将新模型编码为旧behavior。原生IO仍可严格读取旧模型用于兼容和验证，新UI不再提供旧算法选择。

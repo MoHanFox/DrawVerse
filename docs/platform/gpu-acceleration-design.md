@@ -31,7 +31,7 @@ DrawVerse 使用 wgpu 做 Rust 算子计算，使用 Qt Quick 场景图/RHI 做�
 | 画布缩放/平移 | Qt 复用纹理与显示几何，平滑缩放/惯性/周边预取 | 动画与速度计算、普通栅格视口合成仍为 CPU |
 | 笔尖自适应轮廓 | Qt fragment shader 按最终背景亮度选择黑/白，局部 GPU 离屏纹理 | 软件后端黑白轮廓；不改变实际绘画像素 |
 | 选区蚂蚁线 | Qt 常驻文档遮罩 + fragment shader，动画与导航只改参数 | CPU 选区发现/布尔几何；宽高超过 4096 或软件后端走向量显示 |
-| 整笔描边（建路径/SDF遮罩） | Qt 显示核心生成的像素结果 | SDF/等距线/印章max/纹理/布尔遮罩和最终着色均CPU；没有wgpu描边shader |
+| 整笔描边（主体印章复刻） | Qt 显示核心生成的像素结果 | 两尺度复刻/四通道max/差集/纹理及最终着色均CPU；没有wgpu描边shader |
 | 普通画笔、湿混、涂抹、油漆桶、选区发现、通用图层合成 | 当前不宣称已有 wgpu 计算加速 | 仍使用既有 CPU 路径；Qt 显示其结果不等于算法 GPU 化 |
 
 液化会话始终保留不可变源和弹性场，画布外只是裁剪。预览资产最长边 2048、网格最多 257×257；完成才全精度物化。详细适用边界见 [常驻预览](../tools/liquify-resident-preview-design.md) 与 [GPU 算子](../tools/liquify-gpu-operators-design.md)。
@@ -123,36 +123,22 @@ V 移动工具或 Ctrl 拾取拖动可实时预览，松手提交一条历史，
 
 ## 笔刷的 GPU 范围与 SDF 用法
 
-截至本轮，普通画笔、图片笔尖、纹理、双笔刷、湿混、涂抹、橡皮以及两种整笔描边的像素计算均在 CPU。已做的覆盖账本、瓦片批写、不可变资源和 SDF 缓存属于 CPU 优化。Qt 在硬件后端呈现这些像素，并为笔尖轮廓提供 GPU 背景亮度自适应；这不等于主笔刷在 GPU 上盖章。笔刷面板里的真实笔触预览也由同一 CPU 核心生成，QML 只显示返回图像。
+截至本轮，普通画笔、图片笔尖、纹理、双笔刷、湿混、涂抹、橡皮以及整笔描边的像素计算均在 CPU。Qt 在硬件后端呈现这些像素，并为笔尖轮廓提供 GPU 背景亮度自适应；这不等于主笔刷在 GPU 上盖章。笔刷面板里的真实笔触预览也由同一 CPU 核心生成，QML 只显示返回图像。
 
-设置→笔刷→整笔描边→算法可选“建路径”或“SDF 遮罩”。SDF 按总宽 W 在偏移等距线上以半径 W/2、约0.4W间距采样所选笔尖；重叠取 max，再用独立 A 做外/内/居中裁剪，只进行一次预乘着色。自身来源可选独立描边纹理；已有笔刷捕获笔尖图片/硬度/圆度/角度，大小、间距和散布由新算法的宽度与弧长控制，因此对应旧参数在SDF时隐藏。
+整笔描边现在复刻主体已经确定的印章中心、压力尺寸、方向/随机形状及尾部回放，按大/小两尺度累计四通道max，最后做几何差集并着色。允许溢出只影响独立来源的主体包络裁剪，仍受画布、选区、锁透明和文档配额约束。Qt不再提供建路径/SDF算法选项，也不调度独立描边路径的间距/散布；旧设置读取后迁移为新模型。
 
 ```rust
 use paint_core::{OutlineAlgorithm, OutlinePlacement, OutlineSource, OutlineWidth, StrokeOutline};
-
 let outline = StrokeOutline::new(
     true, OutlinePlacement::Outside, OutlineWidth::new(false, 6.0, 10.0)?,
     OutlineSource::SelfBrush, true,
-)?.with_algorithm(OutlineAlgorithm::Sdf);
-// 放入 BrushDefinition.outline 后，begin_brush_stroke 使用同一个实际执行入口。
+)?.with_algorithm(OutlineAlgorithm::Replay).with_allow_overflow(false);
+// 放入 BrushDefinition.outline 后，实际笔触与笔刷预览共用 CPU 执行入口。
 ```
 
-算子示例（CPU，可供未来后端对照）：
+实际采样见 `core/crates/paint-core/src/document/stroke/outline_replay.rs`，主体解析后的覆盖闭包复用见 `document/mod.rs`，覆盖发布、选区/图层约束与单笔历史见 `document_outline.rs`；纯算子为 `paint-ops/src/replay_outline.rs`。64×64四通道瓦片由现有尾部日志保存/恢复；一次区域/整笔边界8Mi像素限制，失败回滚整笔。详见[复刻描边设计](../brush/core/brush-stroke-replay-outline-design.md)。旧SDF算子与测试仍用于历史兼容/对照，不是当前Qt可选算法。
 
-```rust
-use paint_ops::sdf::{self, DistanceField, Placement};
-let field = DistanceField::from_alpha(width, height, &alpha)?;
-let stamps = field.outline_stamps(6.0, Placement::Outside)?;
-let layer = sdf::rasterize_max(width, height, &stamps, |stamp, pixel| {
-    Ok(sdf::disk_coverage(stamp, pixel))
-})?;
-let outline_alpha = sdf::compose_outline(&field, &alpha, &layer, 6.0, Placement::Outside)?;
-```
-
-实际笔刷采样在 `core/crates/paint-core/src/document/stroke/outline_sdf.rs`，灰度形状/缓存和像素事务在 `document_outline.rs`，通用算子在 `paint-ops/src/sdf/`。缓存仅在该笔触形状不变时复用；形状增长、起收笔回放立即失效，结束或取消释放。边界近似、8Mi像素/262144印章/6400万次采样预算以及没有内等距线的极细区域见[SDF设计](../brush/core/brush-sdf-outline-design.md)；超限回滚整笔。
-
-GPU计算下拉框仍控制现有wgpu算子，选择GPU不会把SDF自动转为GPU计算。以后加速描边，应复用 A/场/遮罩身份和有界工作范围，先比较“上传/读回＋距离场/提线/盖章”的总成本与CPU，再增加真正的统一执行器请求；不能仅将CPU回调包装成GPU后端，也不能为了预览每次全图往返。
-
+GPU计算设置仍控制现有wgpu算子，选择GPU不会把描边自动转为GPU计算。将来加速须复用不可变采样与四通道覆盖身份、相同差集语义及有界范围，比较上传/回读在内的总成本，不能将CPU回调包装为GPU后端或为每次预览全图往返。
 
 双重笔刷的已有来源纹理已通过 SecondaryTip 的可选 BrushTexture 接入（state44/behavior36、ABI1.72）：主/第二笔尖共用 CPU TextureDab 采样和资源/mip缓存，预览与实际笔触一致；此项没有新增GPU计算，Qt仍负责硬件显示。来源、覆盖组合和交换说明见[本轮清单](../planning/2026-10-20-bugfix-design.md)。
 

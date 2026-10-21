@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 74
+#define PAINT_ABI_MINOR 75
 
 #define PAINT_ABI_PATCH 0
 
@@ -221,6 +221,11 @@
 #define PAINT_FEATURE_STORAGE_SETTINGS 128
 
 #define PAINT_FEATURE_STROKE_OUTLINE 36028797018963968
+
+/**
+ * Resolved-dab outline replay and allowOverflow through state45 preparation.
+ */
+#define PAINT_FEATURE_STROKE_REPLAY_OUTLINE 9223372036854775808ull
 
 /**
  * Complete state18/VBR1.22 stroke taper parameter entry (ABI1.51).

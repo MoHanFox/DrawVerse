@@ -252,7 +252,7 @@ private slots:
         outline["placement"]="inside";outline["secondaryColor"]=true;outline["width"]=QVariantMap{{"relative",true},{"pixels",3.25},{"percent",18.75}};
         QVERIFY(library.setStrokeOutline(outline));const auto copy=library.saveCopy("outline baseline");QVERIFY(!copy.isEmpty());
         auto edited=outline;edited["enabled"]=true;QVERIFY(library.setStrokeOutline(edited));
-        const auto state=library.snapshot();QCOMPARE(QJsonDocument::fromJson(state).object().value("version").toInt(),41);
+        const auto state=library.snapshot();QCOMPARE(QJsonDocument::fromJson(state).object().value("version").toInt(),45);
         BrushLibrary restored;QVERIFY(restored.restore(state));QCOMPARE(restored.strokeOutline(),edited);QVERIFY(restored.resetPreset());QCOMPARE(restored.strokeOutline(),outline);
         BrushLibrary imported;QVERIFY(imported.importPackage(library.exportPackage()));QCOMPARE(imported.strokeOutline(),edited);
         const auto unchanged=library.snapshot();auto invalid=edited;auto width=invalid.value("width").toMap();width["pixels"]=2000.00001;invalid["width"]=width;QVERIFY(!library.setStrokeOutline(invalid));invalid=edited;invalid["unknown"]=1;QVERIFY(!library.setStrokeOutline(invalid));QCOMPARE(library.snapshot(),unchanged);

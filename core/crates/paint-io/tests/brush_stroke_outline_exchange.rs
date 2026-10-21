@@ -87,7 +87,9 @@ fn package(settings: &BrushSettings) -> Package {
             id: "12345678-1234-4234-8234-123456789abd".into(),
             name: "Outline".into(),
             engine_profile: "drawverse.brush".into(),
-            behavior_version: if settings.outline.algorithm() == OutlineAlgorithm::Sdf {
+            behavior_version: if settings.outline.algorithm() == OutlineAlgorithm::Replay {
+                37
+            } else if settings.outline.algorithm() == OutlineAlgorithm::Sdf {
                 35
             } else if matches!(settings.outline.source(), OutlineSource::SelfTextured(_)) {
                 34
@@ -101,6 +103,9 @@ fn package(settings: &BrushSettings) -> Package {
                 }
                 if settings.outline.algorithm() == OutlineAlgorithm::Sdf {
                     caps.push("stroke-outline-sdf".into());
+                }
+                if settings.outline.algorithm() == OutlineAlgorithm::Replay {
+                    caps.push("stroke-outline-replay".into());
                 }
                 caps
             },
@@ -501,4 +506,113 @@ fn sdf_state43_roundtrips_closed_and_active_models_resources_and_actual_pixels()
                 .any(|c| c == "stroke-outline-sdf"));
         }
     }
+}
+
+#[test]
+fn replay_state45_and_vbr37_roundtrip_all_sources_overflow_and_real_pixels() {
+    let token = CancellationToken::default();
+    let temp = tempfile::tempdir().unwrap();
+    let store = ResourceStore::open(temp.path().into(), MAX_CATALOG_MASK_BYTES).unwrap();
+    let (id, bytes, mask) = resource(&[0, 100, 220, 255], 2);
+    store.put_verified(&id, &bytes, &token).unwrap();
+    let texture = BrushTexture::new(
+        true,
+        TextureSettings::default(),
+        Some(Arc::new(TextureResource::new(mask.clone()))),
+    )
+    .unwrap();
+    let existing = SecondaryTip::new(15., BrushTip::default(), Some(mask), Default::default())
+        .unwrap()
+        .with_texture(texture.clone());
+    for source in [
+        OutlineSource::SelfBrush,
+        OutlineSource::SelfTextured(texture.clone()),
+        OutlineSource::Texture(texture),
+        OutlineSource::Existing(Arc::new(existing)),
+    ] {
+        for enabled in [false, true] {
+            for allow in [false, true] {
+                let current = settings(Arc::new(
+                    outline(enabled, OutlinePlacement::Outside, source.clone())
+                        .as_ref()
+                        .clone()
+                        .with_algorithm(OutlineAlgorithm::Replay)
+                        .with_allow_overflow(allow),
+                ));
+                let expected = draw(definition(&current));
+                let mut catalog = BrushCatalog::default();
+                catalog.edit("round-pressure", current.clone()).unwrap();
+                let state = brush_state::encode(&catalog).unwrap();
+                let json: serde_json::Value = serde_json::from_slice(&state).unwrap();
+                assert_eq!(json["version"], 45);
+                let reopened = brush_state::decode_with_resources(
+                    &state,
+                    MAX_CATALOG_MASK_BYTES,
+                    &store,
+                    &token,
+                )
+                .unwrap();
+                assert_eq!(brush_state::encode(&reopened).unwrap(), state);
+                assert_eq!(draw(definition(reopened.selected().settings())), expected);
+                let mut old = json.clone();
+                old["version"] = 44.into();
+                assert!(brush_state::decode_with_resources(
+                    &serde_json::to_vec(&old).unwrap(),
+                    MAX_CATALOG_MASK_BYTES,
+                    &store,
+                    &token
+                )
+                .is_err());
+                let package = package(&current);
+                package.validate().unwrap();
+                let resources = if matches!(source, OutlineSource::SelfBrush) {
+                    BTreeMap::new()
+                } else {
+                    BTreeMap::from([(id.clone(), bytes.clone())])
+                };
+                let bundle = ImageBundle::new(package, resources, &token).unwrap();
+                let reopened =
+                    vbr_image::decode(&vbr_image::encode(&bundle, &token).unwrap(), &token)
+                        .unwrap();
+                let definition = reopened.definition(0).unwrap();
+                assert_eq!(definition.outline.algorithm(), OutlineAlgorithm::Replay);
+                assert_eq!(definition.outline.allow_overflow(), allow);
+                assert_eq!(draw(definition), expected);
+                let mut stale: serde_json::Value =
+                    serde_json::from_slice(&bundle.package.to_json().unwrap()).unwrap();
+                stale["brushes"][0]["behaviorVersion"] = 1.into();
+                stale["brushes"][0]["requiredCapabilities"] = serde_json::json!([]);
+                let normalized = Package::from_json(&serde_json::to_vec(&stale).unwrap()).unwrap();
+                assert_eq!(normalized.brushes[0].behavior_version, 37);
+                assert!(normalized.brushes[0]
+                    .required_capabilities
+                    .iter()
+                    .any(|c| c == "stroke-outline-replay"));
+            }
+        }
+    }
+}
+
+#[test]
+fn replay_fields_are_strict_and_legacy_models_keep_original_encoding() {
+    let legacy = OutlineParameters::from_core(&StrokeOutline::default()).unwrap();
+    let mut value = serde_json::to_value(&legacy).unwrap();
+    assert!(value.get("allowOverflow").is_none());
+    value["allowOverflow"] = false.into();
+    assert!(serde_json::from_value::<OutlineParameters>(value).is_err());
+    let settings = StrokeOutline::default().with_algorithm(OutlineAlgorithm::Replay);
+    let value = serde_json::to_value(OutlineParameters::from_core(&settings).unwrap()).unwrap();
+    assert_eq!(value["allowOverflow"], false);
+    for bad in [
+        serde_json::Value::Null,
+        serde_json::json!(1),
+        serde_json::json!("true"),
+    ] {
+        let mut invalid = value.clone();
+        invalid["allowOverflow"] = bad;
+        assert!(serde_json::from_value::<OutlineParameters>(invalid).is_err());
+    }
+    let mut missing = value;
+    missing.as_object_mut().unwrap().remove("allowOverflow");
+    assert!(serde_json::from_value::<OutlineParameters>(missing).is_err());
 }

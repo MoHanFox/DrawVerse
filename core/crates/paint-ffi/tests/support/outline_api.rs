@@ -77,16 +77,24 @@ fn prepared(library: *mut PaintBrushLibrary, settings: &BrushSettings) -> (u64, 
 
 #[test]
 fn outline_public_preparation_executes_real_pixels_history_and_rejects_old_entries() {
-    for algorithm in [OutlineAlgorithm::Path, OutlineAlgorithm::Sdf] {
+    for algorithm in [
+        OutlineAlgorithm::Path,
+        OutlineAlgorithm::Sdf,
+        OutlineAlgorithm::Replay,
+    ] {
         for enabled in [false, true] {
             let h = Harness::new(64, 64);
             unsafe {
                 let mut version = dto!(PaintVersion);
                 assert_eq!(paint_core_version(&mut version), PAINT_OK);
-                assert!(version.minor >= 72);
+                assert!(version.minor >= 75);
                 let mut capabilities = dto!(PaintCapabilities);
                 assert_eq!(paint_core_capabilities(h.core, &mut capabilities), PAINT_OK);
                 assert_ne!(capabilities.features & PAINT_FEATURE_STROKE_OUTLINE, 0);
+                assert_ne!(
+                    capabilities.features & PAINT_FEATURE_STROKE_REPLAY_OUTLINE,
+                    0
+                );
                 assert_ne!(capabilities.features & PAINT_FEATURE_DUAL_TIP_TEXTURE, 0);
 
                 let mut library = ptr::null_mut();

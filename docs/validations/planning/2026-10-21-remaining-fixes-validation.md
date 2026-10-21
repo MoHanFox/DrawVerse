@@ -28,6 +28,10 @@ PanelContent异步创建LayersPanel期间，自定义属性尚未全部就绪；
 
 同批附加的旧液化事务用例软件通过、D3D11在3953行等待CPU frameRevision失败；未删除断言或标记通过，GPU常驻显示路径不保证逐笔CPU图像，该用例仍需专门分析。U1/U5及算法剩余项目保持待办。
 
+## O1 新描边可操作链路
+
+核心按实际主体印章复刻四通道max差集；Qt删除旧算法选择及独立建路径调度，接入允许溢出、实际笔触与预览、state45/VBR37及旧设置迁移。核心新5/旧11/内部3、IO7、原生1、Qt workflow软件/D3D11各8行、UiTests各3项、四ABI、严格Clippy/格式及Release通过。详见[描边验收](../brush/core/brush-stroke-replay-outline-validation.md)。原生旧Path/Sdf仍为兼容/参考执行保留，不将O1的“删除旧算法代码”标为完成；T1/T2/M1/H1/P1及U1/U5仍待。
+
 ## S1 大范围像素滑条
 
 共用有符号对数坐标与指数反函数，跨度≥512px时启用，保留1px加减与精确输入。软件/D3D11各7项通过，含真实输入/鼠标/键盘及笔刷、液化模型双向同步；Release构建通过。详见[设计](../../interface/pixel-slider-exponential-design.md)与[验收](../interface/pixel-slider-exponential-validation.md)。U4共享方向盘两项D3D11也通过。U5透明交换链提示在3行真实拖放仍存在，默认alpha缓冲配置并未消除提示，因此撤回该无效候选，不称其修复。

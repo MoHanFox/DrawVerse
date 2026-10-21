@@ -2,7 +2,8 @@
 use crate::{brush_dual::DualParameters, brush_texture::TextureParameters, Error, Result};
 use paint_core::{
     BrushMask, DualBrush, DualMode, OutlineAlgorithm, OutlinePlacement, OutlineSource,
-    OutlineWidth, StrokeOutline, TextureResource, STROKE_OUTLINE_MODEL, STROKE_SDF_OUTLINE_MODEL,
+    OutlineWidth, StrokeOutline, TextureResource, STROKE_OUTLINE_MODEL,
+    STROKE_REPLAY_OUTLINE_MODEL, STROKE_SDF_OUTLINE_MODEL,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -39,6 +40,8 @@ struct Data {
     width: Width,
     source: Source,
     secondary_color: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    allow_overflow: Option<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -81,6 +84,8 @@ impl OutlineParameters {
             },
             source,
             secondary_color: outline.secondary_color(),
+            allow_overflow: (outline.algorithm() == OutlineAlgorithm::Replay)
+                .then_some(outline.allow_overflow()),
         };
         let parameters = Self { data };
         parameters.validate()?;
@@ -95,8 +100,13 @@ impl OutlineParameters {
     pub fn is_sdf(&self) -> bool {
         self.data.model == STROKE_SDF_OUTLINE_MODEL
     }
+    pub fn is_replay(&self) -> bool {
+        self.data.model == STROKE_REPLAY_OUTLINE_MODEL
+    }
     pub fn state_version(&self) -> u32 {
-        if self.is_sdf() {
+        if self.is_replay() {
+            45
+        } else if self.is_sdf() {
             43
         } else if self.has_self_texture() {
             42
@@ -116,13 +126,14 @@ impl OutlineParameters {
             | Source::SelfBrush {
                 texture: Some(texture),
             } => texture.resource_id(),
+            Source::ExistingBrush { brush } => brush.texture_resource_id(),
             _ => None,
         }
     }
     pub fn validate(&self) -> Result<()> {
         if !matches!(
             self.data.model.as_str(),
-            STROKE_OUTLINE_MODEL | STROKE_SDF_OUTLINE_MODEL
+            STROKE_OUTLINE_MODEL | STROKE_SDF_OUTLINE_MODEL | STROKE_REPLAY_OUTLINE_MODEL
         ) || !matches!(
             self.data.placement.as_str(),
             "outside" | "center" | "inside"
@@ -135,6 +146,11 @@ impl OutlineParameters {
         {
             return Err(Error::Invalid("stroke outline model/placement/width"));
         }
+        if self.is_replay() != self.data.allow_overflow.is_some() {
+            return Err(Error::Invalid(
+                "replay outline requires allowOverflow; legacy models cannot carry it",
+            ));
+        }
         OutlineWidth::new(
             self.data.width.relative,
             self.data.width.pixels as f32,
@@ -146,7 +162,14 @@ impl OutlineParameters {
                     texture.validate()?;
                 }
             }
-            Source::ExistingBrush { brush } => brush.validate()?,
+            Source::ExistingBrush { brush } => {
+                brush.validate()?;
+                if !self.is_replay() && brush.has_texture() {
+                    return Err(Error::Invalid(
+                        "existing outline texture requires replay model",
+                    ));
+                }
+            }
             Source::Texture { texture } => {
                 texture.validate()?;
                 if self.data.enabled && !texture.enabled() {
@@ -175,10 +198,7 @@ impl OutlineParameters {
                 }
             }
             Source::ExistingBrush { brush } => {
-                if texture.is_some() {
-                    return Err(Error::Invalid("existing outline resource binding"));
-                }
-                let bound = (*brush).bind(existing)?;
+                let bound = (*brush).bind_with_texture(existing, texture)?;
                 OutlineSource::Existing(Arc::new(bound.secondary().clone()))
             }
             Source::Texture {
@@ -208,11 +228,15 @@ impl OutlineParameters {
             self.data.secondary_color,
         )
         .map(|outline| {
-            outline.with_algorithm(if self.data.model == STROKE_SDF_OUTLINE_MODEL {
-                OutlineAlgorithm::Sdf
-            } else {
-                OutlineAlgorithm::Path
-            })
+            outline
+                .with_allow_overflow(self.data.allow_overflow.unwrap_or(false))
+                .with_algorithm(if self.data.model == STROKE_REPLAY_OUTLINE_MODEL {
+                    OutlineAlgorithm::Replay
+                } else if self.data.model == STROKE_SDF_OUTLINE_MODEL {
+                    OutlineAlgorithm::Sdf
+                } else {
+                    OutlineAlgorithm::Path
+                })
         })
         .map_err(Error::Core)
     }

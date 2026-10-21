@@ -1,4 +1,4 @@
-# C ABI 1.74.0 契约
+# C ABI 1.75.0 契约
 
 ## ABI 1.71 — SDF 整笔描边
 
@@ -601,3 +601,7 @@ paint_session_layer_mask_linked(core,session,publication,layer_id,out_u32) 按�
 `PAINT_FEATURE_TASK_PROGRESS`（bit62）新增 `paint_session_task_progress(core,session,out)`。`PaintTaskProgress` 为72字节：六个32位字段 struct_size/state/kind/phase/status/reserved，随后六个u64 sequence/document_generation/stage/completed/total/elapsed_ms；status为有符号PaintStatus。调用前填写struct_size，指针、对齐和大小沿既有边界校验；查询错误清零有效输出。
 
 查询独立共享快照，不等待actor、不要求publication；运行中的sequence可以大于会话已完成序列。state为0无任务、1运行、2成功、3失败；kind为1变换完成、2液化完成、3整图翻转。phase为0准备、1采样、2选区、3比较、4历史。stage每次切换增加，completed/total只代表当前阶段已完成/总瓦片或批次单位；total=0未知，不能构造全局百分比。elapsed_ms取真实单调时钟，结束后冻结；保留最近任务直到下一任务，document_generation用于拒绝其他文档的旧显示。成功结果仍以既有异步publication为准，失败不替代原错误回执。没有任务时除struct_size外清零；worker异常转失败/Internal。旧ABI入口、state44/behavior36/VBR不变。
+
+## ABI1.75：复刻实际印章的描边
+
+`PAINT_FEATURE_STROKE_REPLAY_OUTLINE` 为bit63（u64），表示既有完整描边/Groups准备及资源包入口支持state45的 `strokeOutline.model: "stroke-replay-v1"` 与必需布尔 `allowOverflow`。布局和签名不变；旧模型不允许携带新字段，state<45携带新模型拒绝。VBR1.0根据实际字段重算behavior37与 `stroke-outline-replay`，保留 `stroke-outline` 及存在自身纹理时的能力。已有来源可附带独立纹理资源，按原有资源缓存/预算/生命周期校验。核心CPU复刻确定的主体印章，预览与实际笔触共用、单历史，未新增GPU计算。Qt最低ABI1.75/对应feature，旧UI不能冒充新模型执行。

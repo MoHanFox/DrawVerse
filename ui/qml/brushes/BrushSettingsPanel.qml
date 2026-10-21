@@ -500,9 +500,7 @@ CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;readonly pr
                 Loader {objectName:"brushSettingsCategory:12";Layout.fillWidth:true;Layout.minimumWidth:0;active:root.category===12;visible:active
                     sourceComponent:ColumnLayout {Layout.fillWidth:true;spacing:5
                         CompactCheckBox {objectName:"settingsOutlineEnabled";text:"启用整笔描边";checked:root.outline.enabled;onToggled:if(!root.setOutlineField("enabled",checked))checked=Qt.binding(function(){return root.outline.enabled})}
-                        Label {text:"算法";color:Theme.text;font.pixelSize:10}
-                        CompactComboBox {objectName:"settingsOutlineAlgorithm";Layout.fillWidth:true;model:["建路径","SDF 遮罩"];property var values:["stroke-contour-v1","stroke-sdf-v1"];currentIndex:values.indexOf(root.outline.model);onActivated:root.setOutlineField("model",values[currentIndex])}
-                        Label {visible:root.outline.model==="stroke-sdf-v1";text:"按描边宽度等距盖章，重叠取最大覆盖；不使用来源笔刷的大小、间距或散布。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+                        CompactCheckBox {objectName:"settingsOutlineAllowOverflow";text:"允许溢出";checked:root.outline.allowOverflow;onToggled:root.setOutlineField("allowOverflow",checked);tooltip:"允许独立来源的描边超出主体描边形状；仍遵守画布、选区和图层锁定。"}
                         Label {text:"位置";color:Theme.text;font.pixelSize:10}
                         CompactComboBox {objectName:"settingsOutlinePlacement";Layout.fillWidth:true;model:["外描边","居中描边","内描边"];property var values:["outside","center","inside"];currentIndex:values.indexOf(root.outline.placement);onActivated:root.setOutlineField("placement",values[currentIndex])}
                         CompactCheckBox {objectName:"settingsOutlineSecondaryColor";text:"使用色轮第二颜色";checked:root.outline.secondaryColor;onToggled:root.setOutlineField("secondaryColor",checked)}
@@ -514,13 +512,8 @@ CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;readonly pr
                         CompactComboBox {objectName:"settingsOutlineSource";Layout.fillWidth:true;model:["自身笔刷","已有笔刷","纹理"];property var values:["self-brush","existing-brush","texture"];currentIndex:root.choosingOutlineTexture?2:values.indexOf(root.outline.source.model)
                             onActivated:{root.choosingOutlineTexture=currentIndex===2;if(currentIndex===0)root.setOutlineField("source",{model:"self-brush"});else if(currentIndex===1)root.library.usePresetAsOutline(root.library.selectedId)}}
                         CompactComboBox {objectName:"settingsOutlinePreset";visible:root.outline.source.model==="existing-brush";Layout.fillWidth:true;model:root.library.presetRows();textRole:"name";currentIndex:-1;displayText:"选择笔刷并捕获快照";onActivated:{if(currentIndex>=0)root.library.usePresetAsOutline(model[currentIndex].id);currentIndex=-1}}
-                        ColumnLayout {visible:root.outline.source.model==="existing-brush" && root.outline.model!=="stroke-sdf-v1";Layout.fillWidth:true
+                        ColumnLayout {visible:root.outline.source.model==="existing-brush";Layout.fillWidth:true
                             ParameterSlider {title:"大小";sliderName:"settingsOutlineBrushSize";from:1;to:2000;decimals:0;unit:"px";value:root.outline.source.brush?.diameter||24;onCommitted:value=>root.setOutlineBrush("diameter",value)}
-                            ParameterSlider {title:"间距";sliderName:"settingsOutlineBrushSpacing";from:1;to:1000;decimals:0;unit:"%";value:(root.outline.source.brush?.spacing||.25)*100;onCommitted:value=>root.setOutlineBrush("spacing",value/100)}
-                            CompactCheckBox {text:"启用散布";checked:root.outline.source.brush?.scatterDynamics?.enabled||false;onToggled:root.setOutlineScatter("enabled",checked)}
-                            CompactCheckBox {text:"双轴散布";checked:root.outline.source.brush?.scatterDynamics?.bothAxes||false;onToggled:root.setOutlineScatter("bothAxes",checked)}
-                            ParameterSlider {title:"散布";sliderName:"settingsOutlineBrushScatter";to:1000;decimals:0;unit:"%";value:(root.outline.source.brush?.scatterDynamics?.amount||0)*100;onCommitted:value=>root.setOutlineScatter("amount",value/100)}
-                            ParameterSlider {title:"数量";sliderName:"settingsOutlineBrushCount";from:1;to:16;value:root.outline.source.brush?.scatterDynamics?.count||1;onCommitted:value=>root.setOutlineScatter("count",Math.round(value))}
                         }
                         ColumnLayout {visible:root.choosingOutlineTexture || root.outline.source.model==="texture" || root.outline.source.model==="self-brush";Layout.fillWidth:true
                             BrushResourcePicker {objectName:"settingsOutlineTexturePicker";Layout.fillWidth:true;resource:root.outline.source.texture?.resource||"";resourceRole:root.outline.source.model==="self-brush" && !root.choosingOutlineTexture?4:3;showActions:true;importName:"importOutlineTexture";resetName:"resetOutlineTexture";onImportRequested:{outlineTextureDialog.selfBrush=root.outline.source.model==="self-brush" && !root.choosingOutlineTexture;outlineTextureDialog.open()} onResetRequested:{root.choosingOutlineTexture=root.outline.source.model==="texture" || root.choosingOutlineTexture;root.setOutlineField("source",{model:"self-brush"})}}
@@ -529,7 +522,7 @@ CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;readonly pr
                             CompactComboBox {objectName:"settingsOutlineTextureSpace";Layout.fillWidth:true;enabled:root.outline.source.texture!==undefined;model:["文档纸纹","笔尖局部"];currentIndex:root.outline.source.texture?.space==="tip"?1:0;onActivated:root.setOutlineTexture("space",currentIndex===1?"tip":"document")}
                             ParameterSlider {title:"深度";sliderName:"settingsOutlineTextureDepth";enabled:root.outline.source.texture!==undefined;unit:"%";value:(root.outline.source.texture?.depth||0)*100;onCommitted:value=>root.setOutlineTexture("depth",value/100)}
                         }
-                        Label {text:"沿整条笔触轮廓生成；当前支持干画笔普通像素层。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
+                        Label {text:"复刻主体每次落笔的大小与动作；当前支持干画笔普通像素层。";color:Theme.muted;font.pixelSize:9;wrapMode:Text.WordWrap;Layout.fillWidth:true}
                     }
                 }
                 Loader {objectName:"brushSettingsCategory:11";Layout.fillWidth:true;Layout.minimumWidth:0;active:root.category===11;visible:active

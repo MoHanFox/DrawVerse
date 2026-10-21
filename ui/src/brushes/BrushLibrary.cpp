@@ -289,9 +289,10 @@ QVariantMap canonicalDual(QVariantMap data){
     for(const auto &key:{"flipX","flipY"})if(data.contains(key) && !data.value(key).toBool())data.remove(key);
     if(QJsonObject::fromVariantMap(data)==QJsonObject::fromVariantMap(defaultDual()))data.clear();return data;
 }
-QVariantMap defaultOutline(){return {{"model","stroke-contour-v1"},{"enabled",false},{"placement","outside"},{"secondaryColor",false},{"width",QVariantMap{{"relative",false},{"pixels",2.},{"percent",10.}}},{"source",QVariantMap{{"model","self-brush"}}}};}
+QVariantMap defaultOutline(){return {{"allowOverflow",false},{"model","stroke-replay-v1"},{"enabled",false},{"placement","outside"},{"secondaryColor",false},{"width",QVariantMap{{"relative",false},{"pixels",2.},{"percent",10.}}},{"source",QVariantMap{{"model","self-brush"}}}};}
 bool validOutline(const QJsonObject &data){
-    if(data.size()!=6 || !QStringList{"stroke-contour-v1","stroke-sdf-v1"}.contains(data.value("model").toString()) || !data.value("enabled").isBool() || !data.value("secondaryColor").isBool() || !QStringList{"outside","center","inside"}.contains(data.value("placement").toString()) || !data.value("width").isObject() || !data.value("source").isObject())return false;
+    const bool replay=data.value("model").toString()=="stroke-replay-v1";
+    if(data.size()!=(replay?7:6) || (replay && !data.value("allowOverflow").isBool()) || !QStringList{"stroke-contour-v1","stroke-sdf-v1","stroke-replay-v1"}.contains(data.value("model").toString()) || !data.value("enabled").isBool() || !data.value("secondaryColor").isBool() || !QStringList{"outside","center","inside"}.contains(data.value("placement").toString()) || !data.value("width").isObject() || !data.value("source").isObject())return false;
     const auto width=data.value("width").toObject();if(width.size()!=3 || !width.value("relative").isBool())return false;
     for(const auto &key:{"pixels","percent"}){const auto v=width.value(key);const auto n=v.toDouble();if(!v.isDouble() || !std::isfinite(n) || n<0 || n>(QString(key)=="pixels"?2000:10000))return false;}
     const auto source=data.value("source").toObject();const auto model=source.value("model").toString();
@@ -301,10 +302,12 @@ bool validOutline(const QJsonObject &data){
     return false;
 }
 
+QVariantMap replayOutline(QVariantMap data){data["model"]="stroke-replay-v1";if(!data.contains("allowOverflow"))data["allowOverflow"]=false;return data;}
 }
 QVariantMap BrushLibrary::strokeOutline() const{const auto &data=m_presets[index(m_selected)].outline;return data.isEmpty()?defaultOutline():data;}
 bool BrushLibrary::setStrokeOutline(QVariantMap data){
     if(!validOutline(QJsonObject::fromVariantMap(data)))return false;
+    data=replayOutline(data);
     if(QJsonObject::fromVariantMap(data)==QJsonObject::fromVariantMap(defaultOutline()))data.clear();
     auto &p=m_presets[index(m_selected)];if(p.outline==data)return true;p.outline=data;p.preview.clear();p.error.clear();p.token=++m_nextToken;p.requested=0;changed();return true;
 }
@@ -313,6 +316,7 @@ bool BrushLibrary::usePresetAsOutline(const QString &id){
     brush["diameter"]=p.radius*2;brush["spacing"]=p.spacing/2;brush["hardness"]=p.hardness;brush["roundness"]=p.roundness;brush["angle"]=p.angle;brush["flow"]=p.flow;brush["pressureSize"]=p.pressureSize;brush["pressureFlow"]=p.pressureFlow;brush["resource"]=p.maskResource.isEmpty()?QVariant{}:QVariant{p.maskResource};
     auto pressure=p.pressure;pressure.remove("opacity");if(!pressure.isEmpty())brush["pressureDynamics"]=pressure;
     if(!p.device.isEmpty())brush["tipDynamics"]=p.device;if(!p.scatter.isEmpty())brush["scatterDynamics"]=p.scatter;if(!p.shape.isEmpty())brush["shapeJitter"]=p.shape;
+    if(!p.texture.isEmpty())brush["texture"]=p.texture;
     auto outline=strokeOutline();outline["source"]=QVariantMap{{"model","existing-brush"},{"brush",brush}};return setStrokeOutline(outline);
 }
 bool BrushLibrary::useTextureAsOutline(const QString &resource){return setOutlineTextureResource(m_selected,resource);}
@@ -1052,6 +1056,7 @@ void BrushLibrary::cancelPreview(const QString &id) {
 void BrushLibrary::retryPreview(){auto &p=m_presets[index(m_selected)];p.preview.clear();p.error.clear();p.requested=0;p.token=++m_nextToken;requestPreview(m_selected);emit previewChanged(p.id,{});emit selectedPreviewChanged();}
 void BrushLibrary::acceptPreview(const QString &id,quint64 token,const QString &image){const int i=index(id);if(i<0 || m_presets[i].token!=token)return;m_presets[i].requested=0;m_presets[i].preview=image;m_presets[i].error=image.isEmpty()?QStringLiteral("预览暂不可用"):QString();emit previewChanged(id,image);if(id==m_selected)emit selectedPreviewChanged();}
 int BrushLibrary::outlineStateVersion(const QVariantMap &outline) {
+    if(outline.value("model").toString()=="stroke-replay-v1")return 45;
     if(outline.value("model").toString()=="stroke-sdf-v1")return 43;
     const auto source=outline.value("source").toMap();
     return source.value("model").toString()=="self-brush" && source.contains("texture")?42:41;
@@ -1150,8 +1155,8 @@ QJsonObject BrushLibrary::exportPreset(const Preset &p,bool includeSource,const 
     if(!p.maskResource.isEmpty())preset["tipResource"]=p.maskResource;
     if(!p.sourceResource.isEmpty())preset["sourceResource"]=p.sourceResource;
     if(BrushCurveModes::present(preset)){preset["behaviorVersion"]=32;auto caps=preset.value("requiredCapabilities").toArray();caps.append("curve-node-modes");preset["requiredCapabilities"]=caps;}
-    if(!p.outline.isEmpty()){preset["strokeOutline"]=QJsonObject::fromVariantMap(p.outline);const bool selfTexture=p.outline.value("source").toMap().value("model").toString()=="self-brush" && p.outline.value("source").toMap().contains("texture");const bool sdf=p.outline.value("model").toString()=="stroke-sdf-v1";preset["behaviorVersion"]=sdf?35:(selfTexture?34:33);auto caps=preset.value("requiredCapabilities").toArray();caps.append("stroke-outline");if(selfTexture)caps.append("outline-self-texture");if(sdf)caps.append("stroke-outline-sdf");preset["requiredCapabilities"]=caps;}
-    if(p.dual.contains("texture")){preset["behaviorVersion"]=36;auto caps=preset.value("requiredCapabilities").toArray();caps.append("dual-tip-texture");preset["requiredCapabilities"]=caps;}
+    if(!p.outline.isEmpty()){preset["strokeOutline"]=QJsonObject::fromVariantMap(p.outline);const bool selfTexture=p.outline.value("source").toMap().value("model").toString()=="self-brush" && p.outline.value("source").toMap().contains("texture");preset["behaviorVersion"]=37;auto caps=preset.value("requiredCapabilities").toArray();caps.append("stroke-outline");caps.append("stroke-outline-replay");if(selfTexture)caps.append("outline-self-texture");preset["requiredCapabilities"]=caps;}
+    if(p.dual.contains("texture")){preset["behaviorVersion"]=std::max(preset.value("behaviorVersion").toInt(),36);auto caps=preset.value("requiredCapabilities").toArray();caps.append("dual-tip-texture");preset["requiredCapabilities"]=caps;}
     return preset;
 }
 QByteArray BrushLibrary::exportPackage(bool includeSource) const {
@@ -1311,7 +1316,7 @@ bool BrushLibrary::equivalentCatalogState(const QByteArray &nativeJson,const QBy
 
 bool BrushLibrary::applyNativeCatalog(const QByteArray &json) {
     const auto native=QJsonDocument::fromJson(json).object();
-    if((native.value("version").toInt()!=2 && native.value("version").toInt()!=3 && native.value("version").toInt()!=4 && native.value("version").toInt()!=5 && native.value("version").toInt()!=6 && native.value("version").toInt()!=7 && native.value("version").toInt()!=8 && native.value("version").toInt()!=9 && native.value("version").toInt()!=10 && native.value("version").toInt()!=11 && native.value("version").toInt()!=12 && native.value("version").toInt()!=13 && native.value("version").toInt()!=14 && native.value("version").toInt()!=15 && native.value("version").toInt()!=16 && native.value("version").toInt()!=17 && native.value("version").toInt()!=18 && native.value("version").toInt()!=19 && native.value("version").toInt()!=20 && native.value("version").toInt()!=21 && native.value("version").toInt()!=22 && native.value("version").toInt()!=23 && native.value("version").toInt()!=24 && native.value("version").toInt()!=25 && native.value("version").toInt()!=26 && native.value("version").toInt()!=27 && native.value("version").toInt()!=28 && native.value("version").toInt()!=29 && native.value("version").toInt()!=30 && native.value("version").toInt()!=31 && native.value("version").toInt()!=32 && native.value("version").toInt()!=33 && native.value("version").toInt()!=34 && native.value("version").toInt()!=35 && native.value("version").toInt()!=36 && native.value("version").toInt()!=37 && native.value("version").toInt()!=38 && native.value("version").toInt()!=39 && native.value("version").toInt()!=40 && native.value("version").toInt()!=41 && native.value("version").toInt()!=42 && native.value("version").toInt()!=43 && native.value("version").toInt()!=44) || !native.value("presets").isArray() || !native.value("selected").isString())return false;
+    if((native.value("version").toInt()!=2 && native.value("version").toInt()!=3 && native.value("version").toInt()!=4 && native.value("version").toInt()!=5 && native.value("version").toInt()!=6 && native.value("version").toInt()!=7 && native.value("version").toInt()!=8 && native.value("version").toInt()!=9 && native.value("version").toInt()!=10 && native.value("version").toInt()!=11 && native.value("version").toInt()!=12 && native.value("version").toInt()!=13 && native.value("version").toInt()!=14 && native.value("version").toInt()!=15 && native.value("version").toInt()!=16 && native.value("version").toInt()!=17 && native.value("version").toInt()!=18 && native.value("version").toInt()!=19 && native.value("version").toInt()!=20 && native.value("version").toInt()!=21 && native.value("version").toInt()!=22 && native.value("version").toInt()!=23 && native.value("version").toInt()!=24 && native.value("version").toInt()!=25 && native.value("version").toInt()!=26 && native.value("version").toInt()!=27 && native.value("version").toInt()!=28 && native.value("version").toInt()!=29 && native.value("version").toInt()!=30 && native.value("version").toInt()!=31 && native.value("version").toInt()!=32 && native.value("version").toInt()!=33 && native.value("version").toInt()!=34 && native.value("version").toInt()!=35 && native.value("version").toInt()!=36 && native.value("version").toInt()!=37 && native.value("version").toInt()!=38 && native.value("version").toInt()!=39 && native.value("version").toInt()!=40 && native.value("version").toInt()!=41 && native.value("version").toInt()!=42 && native.value("version").toInt()!=43 && native.value("version").toInt()!=44 && native.value("version").toInt()!=45) || !native.value("presets").isArray() || !native.value("selected").isString())return false;
     if(equivalentCatalogState(json,catalogSnapshot()))return true;
     auto state=QJsonDocument::fromJson(snapshot()).object();state["version"]=native.value("version");state["selected"]=native.value("selected");state["presets"]=native.value("presets");if(native.contains("organization"))state["organization"]=native.value("organization");else state.remove("organization");
     return restore(QJsonDocument(state).toJson(QJsonDocument::Compact),true);
@@ -1578,7 +1583,7 @@ bool BrushLibrary::restoreObject(const QJsonObject &root,bool preserveSelection,
     if(root.contains("organization"))executing["organization"]=root.value("organization");
     if(!executingBounded && QJsonDocument(executing).toJson(QJsonDocument::Compact).size()>2*1024*1024)return false;
     const int version=root.value("version").toInt();
-    if((version<1 || version>44) || !root.value("version").isDouble() || root.value("version").toDouble()!=version || rows.size()<4 || rows.size()>1024)return false;
+    if((version<1 || version>45) || !root.value("version").isDouble() || root.value("version").toDouble()!=version || rows.size()<4 || rows.size()>1024)return false;
     if(version<40 && BrushCurveModes::present(root.value("presets")))return false;
     QJsonObject organization;QStringList organizationIds,organizationOrder;
     for(const auto &row:rows)organizationIds.append(row.toObject().value("id").toString());
@@ -1612,7 +1617,7 @@ bool BrushLibrary::restoreObject(const QJsonObject &root,bool preserveSelection,
         if(p.contains("dualBrush")){auto dual=p.value("dualBrush").toObject();dual["mode"]=normalizeDualMode(dual.value("mode").toString());dual.remove("color");if(version<12 || (version<44 && dual.contains("texture")) || (version<15 && dual.contains("sizing")) || (version<38 && dualHasRatio(dual.toVariantMap())) || (version<35 && scatterHasControls(dual.value("scatterDynamics").toObject().toVariantMap())) || (version<36 && dualHasExtendedMode(dual.toVariantMap())) || !p.value("dualBrush").isObject() || !validDual(dual))return false;b.dual=canonicalDual(dual.toVariantMap());}
         if(p.contains("smoothing")){if(version<14 || !p.value("smoothing").isObject() || !validSmoothing(p.value("smoothing").toObject()))return false;b.smoothing=p.value("smoothing").toObject().toVariantMap();if(b.smoothing==defaultSmoothing())b.smoothing.clear();}
         if(p.contains("wetMix")){auto wet=p.value("wetMix").toObject();wet.remove("dualColor");if(version<17 || !p.value("wetMix").isObject() || !validWetMix(wet))return false;b.wet=canonicalWetMix(wet.toVariantMap());}
-        if(p.contains("strokeOutline")){if(version<41 || !p.value("strokeOutline").isObject() || !validOutline(p.value("strokeOutline").toObject()))return false;if(version<outlineStateVersion(p.value("strokeOutline").toObject().toVariantMap()))return false;b.outline=p.value("strokeOutline").toObject().toVariantMap();if(QJsonObject::fromVariantMap(b.outline)==QJsonObject::fromVariantMap(defaultOutline()))b.outline.clear();}
+        if(p.contains("strokeOutline")){if(version<41 || !p.value("strokeOutline").isObject() || !validOutline(p.value("strokeOutline").toObject()))return false;if(version<outlineStateVersion(p.value("strokeOutline").toObject().toVariantMap()))return false;b.outline=replayOutline(p.value("strokeOutline").toObject().toVariantMap());if(QJsonObject::fromVariantMap(b.outline)==QJsonObject::fromVariantMap(defaultOutline()))b.outline.clear();}
         if(p.contains("strokeTaper")){if(version<18 || (version<39 && taperHasRelative(p.value("strokeTaper").toObject().toVariantMap())) || !p.value("strokeTaper").isObject() || !validTaper(p.value("strokeTaper").toObject()))return false;b.taper=p.value("strokeTaper").toObject().toVariantMap();if(b.taper==defaultTaper())b.taper.clear();}
         if(p.contains("airbrush")){if(version<23 || !p.value("airbrush").isObject() || !validAirbrush(p.value("airbrush").toObject()))return false;b.airbrush=canonicalAirbrush(p.value("airbrush").toObject().toVariantMap());}
         if(p.contains("speedDynamics")){if(version<24 || !p.value("speedDynamics").isObject() || !validSpeedDynamics(p.value("speedDynamics").toObject()))return false;b.speed=canonicalSpeedDynamics(p.value("speedDynamics").toObject().toVariantMap());}
