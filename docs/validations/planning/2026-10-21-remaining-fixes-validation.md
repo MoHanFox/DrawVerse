@@ -177,3 +177,8 @@ M1继续：固定/祖先蒙版等CPU回退按实际预览坐标合成，与普�
 - 实际 Main 窗口以 Ctrl+C 复制选中红点并粘贴到独立文档，验证另一未选红点不复制；Delete 后原层ID/数量与选区保留、另一红点不变、历史为清除选区内容、undo/redo像素恢复。软件/D3D11各7行，含原编辑结束焦点、笔丢release两行与变换浮面板；`selection-pixels-{software,d3d11}.txt`。
 - 初次真实界面回归暴露新增历史名称未同步图标列表的越界崩溃；已补齐 eraser 图标且 known 同时检查两列表长度，随后两后端均通过。未屏蔽失败或删除像素断言。
 - 四ABI、严格Clippy、fmt与生成头/完整Release通过，`selection-pixels-abi.txt`、`selection-pixels-clippy.txt`、`selection-pixels-release.txt`。标准产物 `build/bin/Release/drawverse.exe`，ABI1.79/state45保持。未验收8K/16K连续大图交互或实体手绘板；P1/H1/T2与I3/I6剩余原因继续跟踪。
+
+
+## 编辑结束原生笔事件补验（2026-10-22）
+
+`finishingEditRestoresCanvasShortcutsWithoutAClick` 增加 mouse/pen 两行：两工具×确定/取消，笔通过 Qt QWindowSystemInterface 的平台事件队列（含真实 Qt 鼠标后备），不直接调用按钮或退出接口；结束后直接E/B/右括号。软件新两行与D3D11新两行连同异常离笔/浮面板通过，日志 `pen-finish-{software,d3d11}.txt`。测试初次把逻辑坐标传给要求原生坐标的QWS接口而点偏，改用配套QHighDpi转换后通过，未更改产品交互；直接sendEvent不经过QtGui后备，不作为按钮验收依据。测试目标显式链接配套GuiPrivate，产品ABI/state无变化。仍为注入输入，不能替代实体板在Ink关闭后的持续压力/焦点验收，I3/I6实体复现仍保持。

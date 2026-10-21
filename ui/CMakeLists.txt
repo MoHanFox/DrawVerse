@@ -89,7 +89,7 @@ add_custom_target(drawverse_license ALL
 qt_add_executable(qt_ui_tests tests/ui_tests.cpp)
 
 qt_add_executable(qt_transform_tests tests/transform_tests.cpp)
-target_link_libraries(qt_transform_tests PRIVATE drawverse_ui Qt6::Test)
+target_link_libraries(qt_transform_tests PRIVATE drawverse_ui Qt6::Test Qt6::GuiPrivate)
 set_target_properties(qt_transform_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
 add_test(NAME qt_transform_tests COMMAND qt_transform_tests)
 set_tests_properties(qt_transform_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")

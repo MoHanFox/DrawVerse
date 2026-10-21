@@ -20,6 +20,8 @@
 #include <QClipboard>
 #include <QMimeData>
 #include <QScopeGuard>
+#include <qpa/qwindowsysteminterface.h>
+#include <private/qhighdpiscaling_p.h>
 static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item->objectName()==name)return item;for(auto *child:item->childItems())if(auto *found=findVisualItem(child,name))return found;return nullptr;}
 class TransformTests : public QObject {
     Q_OBJECT
@@ -331,7 +333,9 @@ private slots:
         QVERIFY(client.beginLiquify());QTRY_VERIFY(!client.liquifyBusy());QTRY_VERIFY(!panel->isVisible());QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());QTRY_VERIFY(panel->isVisible());
         auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void finishingEditRestoresCanvasShortcutsWithoutAClick_data() {QTest::addColumn<bool>("tablet");QTest::newRow("mouse")<<false;QTest::newRow("pen")<<true;}
     void finishingEditRestoresCanvasShortcutsWithoutAClick() {
+        QFETCH(bool,tablet);
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("finish-focus.ini"));
         WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
@@ -352,7 +356,10 @@ private slots:
             // Finish via the toolbar; no canvas focus helper or canvas click follows.
             const auto position=button->mapToScene({button->width()/2,button->height()/2}).toPoint();
             QVERIFY(QRect(QPoint(0,0),window->size()).contains(position));
-            QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,position);
+            if(tablet) {
+                auto *pen=new QPointingDevice("edit finish pen",9183,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);pen->setParent(qApp);QWindowSystemInterface::registerInputDevice(pen);
+                for(bool press:{true,false}){QWindowSystemInterface::handleTabletEvent(window,pen,QHighDpi::toNativeLocalPosition(QPointF(position),window),QHighDpi::toNativeGlobalPosition(QPointF(window->mapToGlobal(position)),window),press?Qt::LeftButton:Qt::NoButton,press?.5:0.,0,0,0,0,0);QWindowSystemInterface::flushWindowSystemEvents();}
+            } else QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,position);
             QTRY_VERIFY(!client.liquifyActive() && !client.transformActive());
             QTRY_VERIFY(canvas->hasActiveFocus());
             QTest::keyClick(window,Qt::Key_E);QTRY_VERIFY(client.eraser());
