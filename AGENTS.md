@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新组内液化：liquify-resident-preview设计/验收末节；复用移动/变换私有祖先快照，支持可消去Normal/PassThrough祖先中的普通层（含套索/羽化），真实parent不改。核心4项含36组合/7拒绝、公开11/变换14/原生1、软件及D3D11各5行及旧硬件15000px、四ABI/Clippy/fmt/头/完整Release通过；build/bin/Release，ABI1.78/state45保持。自身/祖先蒙版/半透明祖先仍回退，极窄选区粗场/2048近似/实体持续性能未结项；软件一次撤销抓图失败与最终按实际像素等待通过详见验收。
+
 - 最新变换双源GPU预热：transform-resident-preview设计/验收末节；ABI1.78 kind3预读备用资产，Qt一次解码两套，窗口/sourceId弱注册共享纹理，首次网格帧提交两套上传，退出卸载上下层Loader。原生3/Actor1、4K硬件五行首拖及两轮原位往返上传各1→1，软件共享14/硬件16、两后端焦点/欢迎各9、四ABI/Clippy/fmt/头/完整Release通过；build/bin/Release，state45保持。首真实帧前极早输入/驱动冷启动与实体端到端仍待，复杂T2/M1/H1/P1/L1边界保持。
 
 - 最新套索液化常驻预览：liquify-resident-preview设计/验收末节；选区不再关闭普通根层网格路径，CPU场/静态mask共用按行覆盖，Qt GPU目标坐标混合恒等与变形源。ABI1.77 focus bit2/kind2、state45不变。核心12组合/采样3/公开11/原生2、软件及D3D11各2套索行与既有无选区硬件、四ABI/Clippy/fmt/头/完整Release通过；2048×1536六输入核心1441.085→17.376ms、最终摘要相同，非UI延迟。标准build/bin/Release；复杂栈/软件仍回退，2048近似、极窄选区粗场与实体持续性能保持待办。

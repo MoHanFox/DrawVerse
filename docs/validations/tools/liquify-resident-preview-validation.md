@@ -57,3 +57,15 @@ Qt硬件用例的64输入突发至异步 GPU 图像取回均约73ms；该数字�
 日志artifacts/selected-liquify-{core,coverage,selection,public,native,native-shared,software,d3d11,pixel-perf,mesh-perf,shared-d3d11,abi,clippy,fmt,header,build}.txt。性能示例原来只对deferred执行确认，导致预览与最终摘要不一致；已统一两条路径确认后比较。
 
 目标自身蒙版/组内及其他不支持组合仍像素回退；2048代理/遮罩和网格插值是预览近似。极小选区与巨大笔刷粗场节点漏采语义未改变；12组合有选区时使用128px笔刷，无选区使用15000px，不混称该边界已覆盖。state45/behavior37/VBR1.0保持，用户程序位于build/bin/Release/drawverse.exe。未跑全量、跨平台、实体持续输入或8K/16K整图。
+
+## 2026-10-21 复用祖先快照的组内液化
+
+液化进入时复用移动/变换的resident_hierarchy_context：完全不透明、可见、无蒙版/剪贴且不依赖外部背景的Normal/PassThrough祖先可在显示快照中消去，活动普通层按快照parent与原顺序分割上下栈。原始图层、选区、源、场和历史保留真实层级；通用变换根层判定未放宽。自身/祖先蒙版、半透明祖先及特殊混合仍走像素回退。
+
+- 核心预览4项通过：其中同一测试扩大至4工具×无/硬/羽化选区×根层/两级Normal/两级PassThrough共36组合，拖动零Remap、源瓦片身份/场历史保持，最终逐瓦片与CPU像素路径相同，确认及文档历史不改变parent。另一个测试包含7类不安全源/祖先，均保持回退。新增范围不等于任意深度/任意混合组合已验收。
+- 公开液化11项通过、1手工项忽略；共享核心变换14、原生选区mask包1通过。严格core/ffi全目标Clippy、fmt/生成头、四ABI及完整标准Release通过，标准输出build/bin/Release/drawverse.exe。
+- 实际2048×1536/2000px笔刷的Qt硬边/羽化根层、两级Normal/PassThrough及祖先蒙版回退，共软件/D3D11各5行通过。验证源/mask身份、GPU拖动CPU帧不变、选区外蓝色与白色不改、局部历史、取消/确认和文档撤销重做；祖先蒙版用例明确不发布resident。既有D3D11无选区2000/15000px路径亦通过。
+
+首次软件批次原根层羽化用例的一次撤销抓图未匹配，独立重跑通过。该断言改为按相同RGB容差等待实际渲染像素匹配，不用固定延时或删除校验；最终软件/D3D11整批通过。首次核心命令使用错误模块过滤得到0项，未作为通过证据，最终按完整真实模块执行4项。
+
+日志artifacts/liquify-nested-{core,rejections,public,transform-core,native,clippy,fmt,build,final-build,software,software-rerun,d3d11,final-software,final-d3d11,shared-d3d11,abi}.txt。ABI1.78/state45/behavior37/VBR保持；未新增wgpu算子或改变CPU最终取样。静态资产进入成本、2048近似、极窄选区粗场边界、复杂蒙版组合及实体持续性能仍待，不宣称全量或任意大图瞬时响应。

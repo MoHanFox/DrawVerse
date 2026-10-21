@@ -18,28 +18,31 @@ class TransformTests : public QObject {
     Q_OBJECT
 private slots:
     void selectedLiquifyKeepsTheMeshPathAndProtectsUnselectedPixels_data() {
-        QTest::addColumn<int>("feather");QTest::newRow("hard-lasso")<<0;QTest::newRow("feathered-lasso")<<8;
+        QTest::addColumn<int>("feather");QTest::addColumn<int>("context");QTest::newRow("hard-lasso")<<0<<0;QTest::newRow("feathered-lasso")<<8<<0;QTest::newRow("nested-normal-lasso")<<8<<1;QTest::newRow("nested-pass-lasso")<<8<<2;QTest::newRow("ancestor-mask-fallback")<<8<<3;
     }
     void selectedLiquifyKeepsTheMeshPathAndProtectsUnselectedPixels() {
-        QFETCH(int,feather);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selected-liquify.ini"));QTRY_VERIFY(client.ready()&&client.brushLibraryReady());
+        QFETCH(int,feather);QFETCH(int,context);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selected-liquify.ini"));QTRY_VERIFY(client.ready()&&client.brushLibraryReady());
         client.newDocument(2048,1536);QTRY_COMPARE(client.documentWidth(),2048);QTRY_VERIFY(!client.layerEditBusy());client.addLayer("selected liquify");QTRY_VERIFY(!client.layerEditBusy());
         const auto paint=[&](QPointF p,QColor c){client.setBrushColor(c);client.setBrushRadius(24);return client.beginStroke({p,1});};
         QVERIFY(paint({980.5,768.5},Qt::red));client.endStroke();QTRY_COMPARE(client.undoDepth(),2);QVERIFY(paint({1080.5,768.5},Qt::blue));client.endStroke();QTRY_COMPARE(client.undoDepth(),3);
+        const auto owner=client.activeLayer();
+        if(context){quint64 target=owner;for(int i=0;i<2;++i){QVERIFY(client.groupLayer(target,"liquify ancestor"));QTRY_VERIFY(!client.layerEditBusy());target=client.activeLayer();QVERIFY(client.setLayerBlend(target,context==2?27:0));QTRY_VERIFY(!client.layerEditBusy());}if(context==3){QVERIFY(client.addMask(target));QTRY_VERIFY(!client.layerEditBusy());}client.selectLayer(owner);QTRY_COMPARE(client.activeLayer(),owner);QTRY_VERIFY(!client.layerEditBusy());}
         client.setSelectionFeather(feather);QVERIFY(client.editSelectionPath({{700,500},{1040,500},{1040,1100},{700,1100}},0,false));QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.selectionEnabled());const auto selection=client.selectionSteps();const auto depth=client.undoDepth();
         QQuickWindow window;window.resize(1024,832);window.setColor(Qt::black);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1024,832});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();QTRY_VERIFY(client.frameRevision()>=client.revision());
         const auto capture=[&]{auto result=canvas->grabToImage();if(!result || !QTest::qWaitFor([&]{return !result->image().isNull();},5000))return QImage{};return result->image();};
         const auto at=[&](const QImage &image,QPointF p){const auto local=canvas->documentRect().topLeft()+p*canvas->zoom();return image.pixelColor(qRound(local.x()*image.width()/canvas->width()),qRound(local.y()*image.height()/canvas->height()));};
         const auto close=[](QColor a,QColor b){return qAbs(a.red()-b.red())<=3 && qAbs(a.green()-b.green())<=3 && qAbs(a.blue()-b.blue())<=3;};
-        const auto original=capture();QVERIFY(!original.isNull());const bool gpu=canvas->gpuDisplay();
+        const auto original=capture();QVERIFY(!original.isNull());const bool gpu=canvas->gpuDisplay() && context!=3;
         for(bool commit:{false,true}){
             client.setLiquifySize(2000);client.setLiquifyStrength(100);client.setLiquifyDensity(100);QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive()&&!client.liquifyBusy());
+            if(context==3)QVERIFY(!client.residentPreview());
             quint64 source=0,mask=0;if(gpu){QTRY_VERIFY(client.residentPreview()&&!client.residentPreview()->selection.isNull());source=client.residentPreview()->sourceId;mask=client.residentPreview()->selection.cacheKey();QTRY_VERIFY(client.residentPreview()->revision>=client.revision());}
             const auto identity=capture();QVERIFY(!identity.isNull());QVERIFY(close(at(identity,{980,768}),at(original,{980,768})));const auto cpuRevision=client.frameRevision();
             QElapsedTimer timer;timer.start();QVERIFY(client.beginStroke({{980,768},1}));for(int i=1;i<=16;++i)client.strokeTo({{980+40.*i/16.,768},1});client.endStroke();QTRY_VERIFY(!client.liquifyBusy());
             if(gpu){QTRY_VERIFY(client.residentPreview()->revision>=client.revision());QCOMPARE(client.frameRevision(),cpuRevision);QCOMPARE(client.residentPreview()->sourceId,source);QCOMPARE(client.residentPreview()->selection.cacheKey(),mask);}else{QTRY_VERIFY(client.frameRevision()>=client.revision());}
             const auto warped=capture();QVERIFY(!warped.isNull());QVERIFY(warped!=identity);QVERIFY(close(at(warped,{1080,768}),at(original,{1080,768})));QVERIFY(close(at(warped,{1150,768}),at(original,{1150,768})));QVERIFY(at(warped,{1015,768}).red()>220 && at(warped,{1015,768}).green()<80);
             qInfo()<<"selected liquify feather"<<feather<<"gpu"<<gpu<<"input through captured frame ms"<<timer.elapsed();
-            client.undo();QTRY_VERIFY(!client.liquifyBusy());if(gpu){QTRY_VERIFY(client.residentPreview()->revision>=client.revision());}else{QTRY_VERIFY(client.frameRevision()>=client.revision());}QVERIFY(close(at(capture(),{980,768}),at(identity,{980,768})));
+            client.undo();QTRY_VERIFY(!client.liquifyBusy());if(gpu){QTRY_VERIFY(client.residentPreview()->revision>=client.revision());}else{QTRY_VERIFY(client.frameRevision()>=client.revision());}QTRY_VERIFY(close(at(capture(),{980,768}),at(identity,{980,768})));
             client.redo();QTRY_VERIFY(!client.liquifyBusy());QVERIFY(client.finishLiquify(commit));QTRY_VERIFY(!client.liquifyActive()&&!client.liquifyBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.selectionSteps(),selection);
             if(commit){QCOMPARE(client.undoDepth(),depth+1);client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(close(at(capture(),{980,768}),at(original,{980,768})));client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(at(capture(),{1015,768}).green()<80);}else{QCOMPARE(client.undoDepth(),depth);QVERIFY(close(at(capture(),{980,768}),at(original,{980,768})));}
         }

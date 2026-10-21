@@ -49,7 +49,15 @@ impl Document {
     /// Unsupported stacks keep the established pixel preview and transaction semantics.
     pub fn begin_liquify_deferred(&mut self) -> Result<()> {
         self.begin_liquify_internal(false)?;
-        let mut source = self.resident_source(self.active_layer);
+        let mut source = self.resident_source(self.active_layer).or_else(|| {
+            if self.layer(self.active_layer)?.parent == 0 {
+                return None;
+            }
+            let context = self.resident_hierarchy_context(&[self.active_layer])?;
+            let mut original = self.layer(self.active_layer)?.clone();
+            original.parent = context[self.layer_index(self.active_layer).ok()?].parent;
+            self.resident_source_layer_in(self.active_layer, original, &context)
+        });
         if let Some(source) = &mut source {
             Arc::make_mut(source).selected = self.selection.enabled();
         }
@@ -82,6 +90,15 @@ impl Document {
         id: LayerId,
         original: Layer,
     ) -> Option<Arc<LiquifyPreviewSource>> {
+        self.resident_source_layer_in(id, original, &self.layers)
+    }
+
+    fn resident_source_layer_in(
+        &self,
+        id: LayerId,
+        original: Layer,
+        context: &[Layer],
+    ) -> Option<Arc<LiquifyPreviewSource>> {
         let at = self.layer_index(id).ok()?;
         // A root is a complete subtree boundary. Its backdrop can be arbitrarily
         // complex; only the moving source and foreground must be normal-over.
@@ -93,7 +110,7 @@ impl Document {
             || original.appearance.blend != crate::BlendMode::Normal
             || self.mask_for(id).is_some()
             || !original.properties.visible
-            || !Self::resident_foreground_is_normal(&self.layers, at + 1)
+            || !Self::resident_foreground_is_normal(context, at + 1)
         {
             return None;
         }
@@ -101,7 +118,7 @@ impl Document {
         let ox = i64::from(original.appearance.offset_x);
         let oy = i64::from(original.appearance.offset_y);
         self.partition_resident_source(
-            &self.layers,
+            context,
             at..at + 1,
             vec![original],
             [l + ox, t + oy, r + ox, b + oy],
@@ -621,12 +638,62 @@ mod tests {
         }
     }
     #[test]
+    fn liquify_nested_source_rejects_masked_translucent_and_backdrop_dependent_ancestors() {
+        for case in 0..7 {
+            let mut d = seed();
+            let id = d.active_layer;
+            let group = d.group_layer(id, "ancestor").unwrap();
+            let at = d.layer_index(group).unwrap();
+            match case {
+                0 => {
+                    d.add_mask(group).unwrap();
+                }
+                1 => d.layers[at].properties.opacity = 0.5,
+                2 => d.layers[at].appearance.fill = 0.5,
+                3 => d.layers[at].appearance.blend = crate::BlendMode::Multiply,
+                4 => d.layers[at].clipped = true,
+                5 => {
+                    d.add_mask(id).unwrap();
+                }
+                _ => {
+                    d.layers[at].appearance.blend = crate::BlendMode::Normal;
+                    let at = d.layer_index(id).unwrap();
+                    d.layers[at].appearance.blend = crate::BlendMode::Multiply;
+                }
+            }
+            d.set_active_layer(id).unwrap();
+            d.begin_liquify_deferred().unwrap();
+            assert!(
+                !d.liquify_deferred(),
+                "case {case} must preserve pixel fallback"
+            );
+            d.cancel_liquify().unwrap();
+        }
+    }
+    #[test]
     fn deferred_drag_keeps_pixels_and_sources_until_commit_and_matches_pixel_path() {
-        for case in 0..12 {
+        for case in 0..36 {
             let tool = case % 4;
-            let selected = case / 4;
+            let selected = (case / 4) % 3;
+            let context = case / 12;
             let mut a = seed();
             let mut b = seed();
+            let id = a.active_layer;
+            if context > 0 {
+                for d in [&mut a, &mut b] {
+                    let mut target = id;
+                    for _ in 0..2 {
+                        target = d.group_layer(target, "ancestor").unwrap();
+                        let at = d.layer_index(target).unwrap();
+                        d.layers[at].appearance.blend = if context == 1 {
+                            crate::BlendMode::Normal
+                        } else {
+                            crate::BlendMode::PassThrough
+                        };
+                    }
+                    d.set_active_layer(id).unwrap();
+                }
+            }
             if selected > 0 {
                 let shape = crate::SelectionShape::polygon(
                     vec![[5., -8.], [110., 10.], [105., 110.]],
@@ -641,7 +708,12 @@ mod tests {
                     d.set_selection(selection.clone()).unwrap();
                 }
             }
-            let original = a.layers[0].clone();
+            let original = a.layer(id).unwrap().clone();
+            let hierarchy = a
+                .layers
+                .iter()
+                .map(|l| (l.id, l.parent))
+                .collect::<Vec<_>>();
             let counter = Arc::new(Count::default());
             a.set_compute_executor(counter.clone()).unwrap();
             a.begin_liquify_deferred().unwrap();
@@ -679,7 +751,9 @@ mod tests {
                 0,
                 "drag must execute only mesh operators"
             );
-            assert!(a.layers[0]
+            assert!(a
+                .layer(id)
+                .unwrap()
                 .tiles
                 .iter()
                 .all(|(k, t)| Arc::ptr_eq(t, &original.tiles[k])));
@@ -697,19 +771,30 @@ mod tests {
             a.commit_liquify().unwrap();
             b.commit_liquify().unwrap();
             assert!(counter.remaps.load(Ordering::Relaxed) > 0);
-            let keys = a.layers[0]
+            assert_eq!(
+                a.layers
+                    .iter()
+                    .map(|l| (l.id, l.parent))
+                    .collect::<Vec<_>>(),
+                hierarchy
+            );
+            let keys = a
+                .layer(id)
+                .unwrap()
                 .tiles
                 .keys()
-                .chain(b.layers[0].tiles.keys())
+                .chain(b.layer(id).unwrap().tiles.keys())
                 .copied()
                 .collect::<BTreeSet<_>>();
             for key in keys {
                 assert_eq!(
-                    a.layers[0]
+                    a.layer(id)
+                        .unwrap()
                         .tiles
                         .get(&key)
                         .map(|t| t.try_pixels().unwrap().to_vec()),
-                    b.layers[0]
+                    b.layer(id)
+                        .unwrap()
                         .tiles
                         .get(&key)
                         .map(|t| t.try_pixels().unwrap().to_vec())
