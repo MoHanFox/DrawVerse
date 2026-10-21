@@ -26,6 +26,10 @@ void BrushLibrary::setToolIsolation(int mode) {
 
 void BrushLibrary::setToolContext(int tool,bool persist) {
     if(tool<0 || tool>2 || tool==m_toolContext)return;
+    // A valid snapshot already owns the serialized profiles. Flush the old
+    // choice before capturing it; partial isolation patches only its three values.
+    auto cached=m_toolIsolation && !m_snapshotObjectCache.isEmpty()?snapshotObject():QJsonObject{};
+    const int previousTool=m_toolContext;
     if(m_toolIsolation)captureToolProfile();
     else m_toolProfiles[m_toolContext].selected=m_selected;
     m_toolContext=tool;
@@ -77,10 +81,36 @@ void BrushLibrary::setToolContext(int tool,bool persist) {
         m_selected=index(profile.selected)>=0?profile.selected:QStringLiteral("round-pressure");
         if(m_toolIsolation==2)m_writeBlend=profile.writeBlend;
         m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",m_selected}}};
-        emit selectionChanged();
     }
     if(persist)queuePersistence();
     else {m_snapshotCache.clear();m_catalogCache.clear();m_snapshotObjectCache={};m_catalogObjectCache={};}
+    if(!cached.isEmpty()) {
+        auto isolation=cached.value("toolIsolation").toObject();auto profiles=isolation.value("profiles").toArray();
+        if(profiles.size()==3 && profiles[tool].toObject().value("presets").toArray().size()==m_presets.size() && cached.value("presets").toArray().size()==m_presets.size()) {
+            auto target=profiles[tool].toObject();
+            if(m_toolIsolation==1) {
+                // All other inputs belong to the shared current rows. Stored
+                // inactive profiles can contain older shared settings.
+                auto rows=cached.value("presets").toArray();const auto isolated=target.value("presets").toArray();
+                for(qsizetype i=0;i<rows.size();++i){auto row=rows[i].toObject();const auto saved=isolated[i].toObject();bool changed=false;
+                    for(const auto *key:{"radius","opacity","flow"})if(row.value(key)!=saved.value(key)){row[key]=saved.value(key);changed=true;}
+                    if(changed)rows[i]=row;
+                }
+                target["presets"]=rows;target["version"]=profiles[previousTool].toObject().value("version");target["brushTool"]=QJsonObject{{"writeBlend",m_writeBlend}};
+                if(cached.contains("dualEditors"))target["dualEditors"]=cached.value("dualEditors");else target.remove("dualEditors");
+                profiles[tool]=target;isolation["profiles"]=profiles;cached["toolIsolation"]=isolation;
+            }
+            auto root=cached;const auto rows=target.value("presets");
+            const int version=std::max(target.value("version").toInt(2),m_organization.isEmpty()?2:20);
+            root["version"]=version;root["presets"]=rows;
+            root["brushTool"]=QJsonObject{{"writeBlend",m_writeBlend}};
+            if(target.contains("dualEditors"))root["dualEditors"]=target.value("dualEditors");else root.remove("dualEditors");
+            m_snapshotObjectCache=root;
+            m_catalogObjectCache=QJsonObject{{"version",version},{"selected",m_selected},{"presets",rows}};
+            if(!m_organization.isEmpty())m_catalogObjectCache["organization"]=m_organization;
+        }
+    }
+    emit selectionChanged();
     emit settingsChanged();
     for(const auto &id:previewChanges)emit presetChanged(id);
     emit selectedPreviewChanged();

@@ -138,3 +138,12 @@ preparePreferences 在 BackendWorker 校验并预编码完整配置，GUI 仅应
 - 既有 mode1 用例按新需求改为橡皮保留自己的压力圆笔（radius30），不再继承画笔选择的细线圆笔；既有512项选择快照字节对照增加三项身份补丁，目录/参数数组保持精确对照。未删除像素、隔离、失败原子性或同步断言。
 - 软件与D3D11本轮输入/编辑/隔离合并批次各12行通过；原七项共享/参数/真实客户端像素与持久化回归软件9行，原真实跨文档单独3行；D3D11合并八项10行通过，无QML警告。日志 `artifacts/tool-selection-{final-software,d3d11,shared-software,shared-d3d11,crossdoc-software}.txt`。
 - 完整Release和生成头构建 `artifacts/tool-selection-release.txt` 通过，产物 `build/bin/Release/drawverse.exe`。无Rust/ABI/state/VBR修改；仅Qt toolIsolation子结构version2。新独立选择功能已完成，未据此宣称端到端切换延迟、实体压感、所有停刷原因、P1/H1/T2或选区Delete/Copy已完成。
+
+
+## 隔离快照编码与真实跨文档切换（2026-10-22）
+
+512项、30次切换连同每次偏好与执行目录编码，基线部分隔离711.802ms / 完整隔离738.441ms；最终软件49.261/29.250ms，D3D11进程47.906/27.867ms。输出总字节分别15589623/15587540，与基线一致。该指标是内存模型及序列化工作，不是端到端UI响应。新两档用例每次切换后强制完整重建并逐字节比较；同步selection订阅、重开参数与真实修改后再次切换也通过。三工具独立选择及预览复用合并两后端各9行，日志brush-snapshot-after-{software,d3d11}.txt。
+
+真实489项配置副本新增18次刷/擦/涂抹切换：首版部分隔离跨文档出现1次整库恢复，最长GUI心跳227ms，测试失败而未删除断言。定位为闲置profile旧共享输入被当成修改；按有效参数修复后两个隔离档、两文档目录重建均0。软件部分/完整隔离最大调用11.094/7.220ms，最长GUI间隔24/29ms；D3D11最大调用9.951/7.070ms，GUI间隔20/19ms。真实探针两后端各3行通过，软件首轮55ms、硬件首轮478ms，首次资源问题仍存在；非实体笔输入或稳定帧时保证。日志brush-snapshot-live-{software,d3d11}.txt。
+
+新增部分隔离旧共享输入回归与原六项共享、隔离、失败原子性、持久化两后端各9行通过，真实共享修改仍拒绝快路径。完整Release及生成头构建brush-snapshot-release.txt通过，四ABI消费者通过，diff检查通过，标准build/bin/Release/drawverse.exe更新。ABI1.79/state45/behavior37/VBR1.0保持；没有新增GPU计算。P1首次QML/资源、复杂T2、H1会话字段引用、实体手绘板冻结和压感仍未结项。

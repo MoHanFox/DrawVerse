@@ -1083,7 +1083,14 @@ QByteArray BrushLibrary::encodeSnapshotObject(const QJsonObject &root,const QStr
         const auto key=path+"/"+it.key();const auto value=it.value();
         if(it.key()=="presets" && value.isArray()) {
             auto &cached=m_encodedPresetArrays[key];
-            if(cached.second.isEmpty() || cached.first!=value){cached.first=value;cached.second=encode(value);}
+            if(cached.second.isEmpty() || cached.first!=value){
+                QByteArray bytes;
+                // Active preferences/catalog rows can be the same immutable
+                // array already encoded in one of the three tool profiles.
+                for(auto source=m_encodedPresetArrays.cbegin();source!=m_encodedPresetArrays.cend();++source)
+                    if(!source->second.isEmpty() && source->first==value){bytes=source->second;break;}
+                cached.first=value;cached.second=bytes.isEmpty()?encode(value):bytes;
+            }
             result+=cached.second;
         } else if(it.key()=="resetState" || it.key()=="toolIsolation") {
             result+=encodeSnapshotObject(value.toObject(),key);
@@ -1530,6 +1537,27 @@ bool BrushLibrary::restoreSharedSelection(const BrushLibrary &source) {
     auto isolation=incoming.value("toolIsolation").toObject();
     isolation["context"]=current.value("toolIsolation").toObject().value("context");
     incoming["toolIsolation"]=isolation;
+    if(m_toolIsolation==1) {
+        // Inactive partial profiles retain only three effective parameters.
+        // Their old shared fields must not make a tool switch look like an edit.
+        auto rows=incoming.value("presets").toArray();const auto active=current.value("presets").toArray();
+        if(rows.size()!=active.size() || incoming.value("version")!=current.value("version") || incoming.value("brushTool")!=current.value("brushTool"))return false;
+        for(qsizetype i=0;i<rows.size();++i){auto row=rows[i].toObject();const auto target=active[i].toObject();
+            for(const auto *key:{"radius","opacity","flow"})row[key]=target.value(key);
+            if(row!=target)return false;
+        }
+        auto profiles=isolation.value("profiles").toArray();const auto targets=current.value("toolIsolation").toObject().value("profiles").toArray();
+        if(profiles.size()!=3 || targets.size()!=3)return false;
+        for(int tool=0;tool<3;++tool){const auto profile=profiles[tool].toObject();auto target=targets[tool].toObject();
+            const auto sourceRows=profile.value("presets").toArray(),targetRows=target.value("presets").toArray();
+            if(sourceRows.size()!=targetRows.size())return false;
+            for(qsizetype i=0;i<sourceRows.size();++i){const auto row=sourceRows[i].toObject(),other=targetRows[i].toObject();
+                for(const auto *key:{"id","radius","opacity","flow"})if(row.value(key)!=other.value(key))return false;
+            }
+            target["selected"]=profile.value("selected");profiles[tool]=target;
+        }
+        isolation["profiles"]=profiles;incoming["toolIsolation"]=isolation;
+    }
     if(m_toolIsolation) {
         // These executing fields are duplicated in the active tool profile.
         // Comparing every profile below detects real edits in any tool, while

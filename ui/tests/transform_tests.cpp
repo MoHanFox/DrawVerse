@@ -274,6 +274,25 @@ private slots:
         library.setToolContext(1);QCOMPARE(library.radius(),31.);if(mode==2){QCOMPARE(library.hardness(),.3);QVERIFY(library.selectedPreview().isEmpty());}
         QCOMPARE(rebuilt.size(),0);
     }
+    void isolatedToolSnapshotsMatchFreshEncoding_data() {QTest::addColumn<int>("mode");QTest::newRow("partial")<<1;QTest::newRow("full")<<2;}
+    void isolatedToolSnapshotsMatchFreshEncoding() {
+        QFETCH(int,mode);BrushLibrary library;auto root=QJsonDocument::fromJson(library.catalogSnapshot()).object();auto rows=root.value("presets").toArray();
+        for(int i=4;i<512;++i){auto row=rows.first().toObject();row["id"]=QString("snapshot-%1").arg(i);rows.append(row);}root["presets"]=rows;QVERIFY(library.restore(QJsonDocument(root).toJson()));library.setToolIsolation(mode);
+        for(int tool=0;tool<3;++tool){library.setToolContext(tool);QVERIFY(library.select(QStringList{"round-pressure","round-fine","round-wide"}[tool]));library.setRadius(17+tool*11);library.setHardness(.2+tool*.2);library.setWriteBlend(tool);}
+        QByteArray published;connect(&library,&BrushLibrary::selectionChanged,this,[&]{published=library.snapshot();});
+        library.snapshot();library.catalogSnapshot();QElapsedTimer timer;timer.start();qsizetype bytes=0;
+        for(int i=0;i<10;++i)for(int tool:{0,1,2}){library.setToolContext(tool);bytes+=library.snapshot().size()+library.catalogSnapshot().size();}
+        qInfo()<<"512-preset switch + preference/catalog snapshots mode"<<mode<<"30 switches ms"<<timer.nsecsElapsed()/1000000.<<"bytes"<<bytes;
+        for(int tool:{0,1,2,0,2,1}) {
+            library.setToolContext(tool);const auto fast=library.snapshot(),catalog=library.catalogSnapshot();QCOMPARE(published,fast);
+            // Force the independent full construction path without changing final values.
+            const auto width=library.cursorWidth();library.setCursorWidth(width==0?1:0);library.setCursorWidth(width);
+            QCOMPARE(library.snapshot(),fast);QCOMPARE(library.catalogSnapshot(),catalog);
+            BrushLibrary reopened;QVERIFY(reopened.restore(fast));QCOMPARE(reopened.toolContext(),tool);QCOMPARE(reopened.selectedId(),library.selectedId());QCOMPARE(reopened.radius(),library.radius());QCOMPARE(reopened.hardness(),library.hardness());QCOMPARE(reopened.writeBlend(),library.writeBlend());
+        }
+        QVERIFY(!library.createOutlinePreset(false).isEmpty());QVERIFY(library.rename("snapshot-10","changed shared name"));library.setHardness(.77);library.snapshot();library.catalogSnapshot();library.setToolContext(2);
+        const auto edited=library.snapshot(),catalog=library.catalogSnapshot();library.setCursorWidth(1);library.setCursorWidth(0);QCOMPARE(library.snapshot(),edited);QCOMPARE(library.catalogSnapshot(),catalog);
+    }
     void tabletBackendSelectionChecksDriverStateAndPersistsChoice() {
 #ifdef Q_OS_WIN
         configureTabletInput("windows-ink");QCOMPARE(activeTabletInputBackend(),QString("windows-ink"));

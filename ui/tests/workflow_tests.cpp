@@ -549,7 +549,11 @@ Main {
             for(int i=0;i<16;++i){const auto start=clock.nsecsElapsed();QVERIFY(library->select(rows[(6+i*17)%rows.size()].toMap().value("id").toString()));maxSelect=std::max(maxSelect,(clock.nsecsElapsed()-start)/1000);QTest::qWait(180);}
             qInfo()<<"live cross-tool selection isolation"<<mode<<"max us"<<maxSelect<<"longest GUI gap ms"<<longest<<"receiver catalog rebuilds"<<receivedCatalogChanges.size();
             QCOMPARE(receivedCatalogChanges.size(),0);QCOMPARE(catalogChanges.size(),0);QVERIFY(receiver->eraser());QCOMPARE(receiver->brushLibrary()->toolContext(),1);
-            QCOMPARE(receiver->brushLibrary()->selectedId(),mode==2?receiverSelected:library->selectedId());QVERIFY(receiver->lastError().isEmpty());
+            QCOMPARE(receiver->brushLibrary()->selectedId(),receiverSelected);QVERIFY(receiver->lastError().isEmpty());
+            catalogChanges.clear();receivedCatalogChanges.clear();longest=maxSelect=0;previous=clock.elapsed();
+            for(int i=0;i<18;++i){const auto start=clock.nsecsElapsed();if(i%3==0)client.activateEraser();else if(i%3==1)client.activateSmudge();else client.activateBrush();maxSelect=std::max(maxSelect,(clock.nsecsElapsed()-start)/1000);QTest::qWait(80);}
+            qInfo()<<"live isolated tool switches mode"<<mode<<"max call us"<<maxSelect<<"longest GUI gap ms"<<longest;
+            QCOMPARE(catalogChanges.size(),0);QCOMPARE(receivedCatalogChanges.size(),0);QCOMPARE(receiver->brushLibrary()->selectedId(),receiverSelected);QVERIFY(receiver->eraser());
         }
         heartbeat.stop();QVERIFY(client.lastError().isEmpty());QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
@@ -684,6 +688,19 @@ Main {
             source.setActiveColors(Qt::red,Qt::blue);source.snapshot();const auto beforeColor=receiver.snapshot();
             QVERIFY(!receiver.restoreSharedSelection(source));QCOMPARE(receiver.snapshot(),beforeColor);
         }
+    }
+
+    void partialToolSwitchIgnoresStaleInactiveSharedParameters() {
+        BrushLibrary source,receiver,reference;source.setToolIsolation(1);source.setHardness(.37);source.setWriteBlend(4);
+        QVERIFY(receiver.restore(source.snapshot()));receiver.setToolContext(1,false);receiver.snapshot();
+        QSignalSpy catalog(&receiver,&BrushLibrary::presetsChanged);
+        for(int tool:{1,2,0,2,1,0}) {
+            source.setToolContext(tool);source.snapshot();QVERIFY(receiver.restoreSharedSelection(source));
+            QVERIFY(reference.restore(source.snapshot()));reference.setToolContext(1,false);
+            QCOMPARE(receiver.catalogSnapshot(),reference.catalogSnapshot());QCOMPARE(receiver.hardness(),reference.hardness());QCOMPARE(receiver.writeBlend(),reference.writeBlend());
+        }
+        QCOMPARE(catalog.size(),0);const auto before=receiver.snapshot();
+        source.setHardness(.81);source.snapshot();QVERIFY(!receiver.restoreSharedSelection(source));QCOMPARE(receiver.snapshot(),before);
     }
 
     void resourceGridConsumesFastWheelAtBothEdges() {
