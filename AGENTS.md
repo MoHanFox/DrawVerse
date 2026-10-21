@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新套索液化常驻预览：liquify-resident-preview设计/验收末节；选区不再关闭普通根层网格路径，CPU场/静态mask共用按行覆盖，Qt GPU目标坐标混合恒等与变形源。ABI1.77 focus bit2/kind2、state45不变。核心12组合/采样3/公开11/原生2、软件及D3D11各2套索行与既有无选区硬件、四ABI/Clippy/fmt/头/完整Release通过；2048×1536六输入核心1441.085→17.376ms、最终摘要相同，非UI延迟。标准build/bin/Release；复杂栈/软件仍回退，2048近似、极窄选区粗场与实体持续性能保持待办。
+
 - 最新翻转历史/冷页恢复：ABI1.76 kind39/40区分水平/垂直，纯自由变换同用；Inline/Paged按身份去重校验冷页checksum而不载入像素LRU，显示再按需读。1024密集低驻留六次跳转核心369→215ms（热OS后备非UI）；Release单元192/公开24/原生2、软件与D3D11各10行Qt、四ABI/Clippy/fmt/头/新路径Release通过。见history-storage/history-labels验收；未称全量，耗时mix未验，套索液化及实体/冷盘仍待。
 
 - 最新变换首拖CPU准备：deferred BEGIN/ENABLE确认前Actor合成真实移动源2048代理，会话双源最多两套三图，历史往返复用、结束清空。Actor1/核心14/软件与D3D11各6行Qt/四ABI/Clippy/fmt/新路径Release通过，见transform-resident-preview末节。ABI1.75/state45不变；Qt首次纹理上传及复杂回退/实体时延仍待，不称全部资源预热。

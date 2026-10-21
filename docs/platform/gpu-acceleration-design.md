@@ -4,6 +4,8 @@
 
 ## 两条 GPU 路径
 
+2026-10-21套索液化扩展（ABI1.77）：兼容普通根层允许带选区使用常驻网格预览，CPU按行采样选区、Elastic更新场，Qt GPU复用原图/上下层/目标坐标遮罩四张静态纹理。拖动不逐次物化颜色，确认才完整重采样；没有新增wgpu算子。软件及复杂图层组合保留像素路径，2048代理和遮罩允许预览近似。代码为paint-core的liquify_preview/liquify_operators、paint-ffi的liquify_api kind2、Qt的LiquifyPreviewNode和liquify.frag，详见[设计](../tools/liquify-resident-preview-design.md)及[验收](../validations/tools/liquify-resident-preview-validation.md)。
+
 DrawVerse 使用 wgpu 做 Rust 算子计算，使用 Qt Quick 场景图/RHI 做界面显示。两者职责、设备和资源生命周期独立；选择 wgpu 设备不等于切换 Qt 显示设备。CPU 保持文档、历史、输入和最终像素真值。
 
 ### 算子计算

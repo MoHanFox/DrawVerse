@@ -7,6 +7,8 @@ static NEXT_SOURCE: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone, Debug)]
 pub struct LiquifyPreviewSource {
     pub id: u64,
+    /// Fixed destination-space coverage for selected liquify presentation.
+    pub selected: bool,
     /// Canvas-space rectangle including off-canvas source pixels and transparent padding.
     pub bounds: [i32; 4],
     pub image: DocumentSnapshot,
@@ -47,11 +49,10 @@ impl Document {
     /// Unsupported stacks keep the established pixel preview and transaction semantics.
     pub fn begin_liquify_deferred(&mut self) -> Result<()> {
         self.begin_liquify_internal(false)?;
-        let source = if self.selection.enabled() {
-            None
-        } else {
-            self.resident_source(self.active_layer)
-        };
+        let mut source = self.resident_source(self.active_layer);
+        if let Some(source) = &mut source {
+            Arc::make_mut(source).selected = self.selection.enabled();
+        }
         self.liquify.as_mut().expect("state").preview_source = source;
         if !self.liquify_deferred() {
             return Ok(());
@@ -350,6 +351,7 @@ impl Document {
         image.height = height.max(2) as u32;
         Some(Arc::new(LiquifyPreviewSource {
             id: NEXT_SOURCE.fetch_add(1, Ordering::Relaxed),
+            selected: false,
             bounds: [
                 i32::try_from(l - 1).ok()?,
                 i32::try_from(t - 1).ok()?,
@@ -620,9 +622,25 @@ mod tests {
     }
     #[test]
     fn deferred_drag_keeps_pixels_and_sources_until_commit_and_matches_pixel_path() {
-        for tool in 0..4 {
+        for case in 0..12 {
+            let tool = case % 4;
+            let selected = case / 4;
             let mut a = seed();
             let mut b = seed();
+            if selected > 0 {
+                let shape = crate::SelectionShape::polygon(
+                    vec![[5., -8.], [110., 10.], [105., 110.]],
+                    true,
+                    if selected == 1 { 0. } else { 2. },
+                )
+                .unwrap();
+                let selection = crate::Selection::default()
+                    .apply_shape(Some(shape), crate::SelectionOperation::Replace, 128, 96)
+                    .unwrap();
+                for d in [&mut a, &mut b] {
+                    d.set_selection(selection.clone()).unwrap();
+                }
+            }
             let original = a.layers[0].clone();
             let counter = Arc::new(Count::default());
             a.set_compute_executor(counter.clone()).unwrap();
@@ -630,6 +648,7 @@ mod tests {
             b.begin_liquify().unwrap();
             assert!(a.liquify_deferred());
             let source = a.liquify_preview().unwrap().source;
+            assert_eq!(source.selected, selected > 0);
             assert!(
                 source.bounds[0] < 0,
                 "off-canvas source must remain available"
@@ -639,7 +658,7 @@ mod tests {
                 d.begin_liquify_stroke().unwrap();
                 let mut dab = LiquifyDab {
                     tool: 0,
-                    radius: 7500.,
+                    radius: if selected > 0 { 64. } else { 7500. },
                     strength: 0.7,
                     density: 0.8,
                     speed: 1.,
@@ -666,7 +685,10 @@ mod tests {
                 .all(|(k, t)| Arc::ptr_eq(t, &original.tiles[k])));
             let warped = a.liquify_preview().unwrap();
             assert!(Arc::ptr_eq(&source, &warped.source));
-            assert_ne!(initial, warped.vertices);
+            assert!(
+                initial != warped.vertices,
+                "case {case} must deform the mesh"
+            );
             a.undo_liquify().unwrap();
             assert_eq!(a.liquify_preview().unwrap().vertices, initial);
             a.redo_liquify().unwrap();

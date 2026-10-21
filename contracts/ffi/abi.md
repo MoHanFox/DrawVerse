@@ -1,4 +1,4 @@
-# C ABI 1.76.0 契约
+# C ABI 1.77.0 契约
 
 ## ABI 1.71 — SDF 整笔描边
 
@@ -612,3 +612,9 @@ paint_session_layer_mask_linked(core,session,publication,layer_id,out_u32) 按�
 ## ABI1.76：翻转历史名称
 
 PaintHistoryEntry既有kind增加PAINT_HISTORY_FLIP_HORIZONTAL=39、PAINT_HISTORY_FLIP_VERTICAL=40，分别用于图像整图翻转和自由变换中的纯轴反射。其他kind/DTO/签名/能力位保持，旧客户端可按未知kind显示通用名称；本版Qt最低ABI1.76。局部变换历史按相邻已确认几何判断，永久历史按起始和最终几何判断；包含其他变化的组合变换仍可显示自由变换。没有新增持久化字段或改变state45/VBR1.0。
+
+## ABI1.77：液化选区常驻遮罩
+
+既有预览信息focus增加bit2（PAINT_RESIDENT_PREVIEW_SELECTED=4），表示静态目标域选区。仅带选区的液化常驻源设置该位；bit0/bit1、DTO布局、符号和能力位不变，Qt最低ABI1.77。原液化及resident命名读取入口的kind2新增静态包：小端u32宽高、四个小端f32（identity UV偏移x/y、比例x/y），随后width×height个R8覆盖值。覆盖在文档归一化坐标采样；原图UV=文档归一化坐标×比例+偏移。最长边2048，数据头24字节；尺寸、浮点有限/正比例须校验。
+
+kind2与kind1一样按generation/source身份读取，不要求最新revision；无选区返回NOT_FOUND、过期身份BUSY。容量查询及不足不部分写入保持原契约，会话结束释放静态缓存。显示在线性预乘空间按覆盖混合恒等源与变形源，再按原规则合成上下层；确认仍用原选区与完整场重采样。state45/behavior37/VBR1.0不变。

@@ -38,9 +38,28 @@ fn seed() -> Document {
     )
     .unwrap()
 }
-fn run(radius: f32, tool: u32) -> (u128, u64) {
+fn run(radius: f32, tool: u32, selected: bool, deferred: bool) -> (u128, u64) {
     let mut doc = seed();
-    doc.begin_liquify().unwrap();
+    if selected {
+        let shape = SelectionShape::polygon(
+            vec![[256., 256.], [1792., 320.], [1600., 1300.], [300., 1200.]],
+            true,
+            2.,
+        )
+        .unwrap();
+        doc.set_selection(
+            Selection::default()
+                .apply_shape(Some(shape), SelectionOperation::Replace, 2048, 1536)
+                .unwrap(),
+        )
+        .unwrap();
+    }
+    if deferred {
+        doc.begin_liquify_deferred().unwrap();
+        assert!(doc.liquify_deferred());
+    } else {
+        doc.begin_liquify().unwrap();
+    }
     let started = Instant::now();
     for i in 0..6 {
         let from = InputPoint::new(980. + i as f64 * 9., 740. + i as f64 * 4., 0.7);
@@ -57,8 +76,12 @@ fn run(radius: f32, tool: u32) -> (u128, u64) {
             elapsed_ms: 16.,
         })
         .unwrap();
+        if deferred {
+            std::hint::black_box(doc.liquify_preview().unwrap());
+        }
     }
     let elapsed = started.elapsed().as_micros();
+    doc.commit_liquify().unwrap();
     let mut digest = 0xcbf29ce484222325u64;
     for y in 0..1536 {
         for x in 0..2048 {
@@ -70,12 +93,19 @@ fn run(radius: f32, tool: u32) -> (u128, u64) {
     (elapsed, digest)
 }
 fn main() {
-    for tool in [0, 2] {
-        for radius in [128., 512., 1000.] {
+    let args = std::env::args().collect::<Vec<_>>();
+    let selected = args.iter().any(|a| a == "--selected");
+    let deferred = args.iter().any(|a| a == "--mesh");
+    for tool in if selected { vec![0] } else { vec![0, 2] } {
+        for radius in if selected {
+            vec![1000.]
+        } else {
+            vec![128., 512., 1000.]
+        } {
             let mut times = Vec::new();
             let mut digest = None;
             for _ in 0..3 {
-                let (time, value) = run(radius, tool);
+                let (time, value) = run(radius, tool, selected, deferred);
                 if let Some(before) = digest {
                     assert_eq!(before, value);
                 }

@@ -137,6 +137,7 @@ struct TaskProgressState {
 }
 struct Shared {
     task_progress: Mutex<Option<TaskProgressState>>,
+    preview_selection: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     // Identity and deformed selection assets, bounded to one active session.
     preview_assets: Mutex<Vec<(u64, Arc<Vec<u8>>)>>,
     publication: Mutex<Arc<Publication>>,
@@ -227,6 +228,7 @@ impl Session {
         let initial = publish(&document, 1, 1, 0, None, false);
         let shared = Arc::new(Shared {
             task_progress: Mutex::new(None),
+            preview_selection: Mutex::new(None),
             preview_assets: Mutex::new(Vec::new()),
             generation: AtomicU64::new(1),
             floor: AtomicU64::new(0),
@@ -480,6 +482,37 @@ impl Session {
             assets.remove(0);
         }
         assets.push((preview.source.id, bytes.clone()));
+        Ok(bytes)
+    }
+    pub fn resident_selection(
+        &self,
+        preview: &paint_core::ResidentPreview,
+    ) -> ApiResult<Arc<Vec<u8>>> {
+        if let Some((id, bytes)) = self
+            .shared
+            .preview_selection
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .as_ref()
+        {
+            if *id == preview.source.id {
+                return Ok(bytes.clone());
+            }
+        }
+        let bytes = Arc::new(crate::liquify_api::preview_selection(&preview.source)?);
+        if self
+            .publication()
+            .resident_preview
+            .as_ref()
+            .is_none_or(|p| p.source.id != preview.source.id)
+        {
+            return Err(ApiError::new(PAINT_BUSY, "resident selection replaced"));
+        }
+        *self
+            .shared
+            .preview_selection
+            .lock()
+            .map_err(|_| ApiError::internal())? = Some((preview.source.id, bytes.clone()));
         Ok(bytes)
     }
     pub fn task_progress(&self) -> PaintTaskProgress {
@@ -1549,6 +1582,11 @@ impl Engine {
             publication.committed_strokes = Arc::clone(&self.committed_strokes);
             let publication = Arc::new(publication);
             if publication.resident_preview.is_none() {
+                self.shared
+                    .preview_selection
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
                 self.shared
                     .preview_assets
                     .lock()

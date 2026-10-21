@@ -368,7 +368,7 @@ impl SelectionShape {
     }
     /// Fill one subpixel sample row with the even-odd polygon rule. Edge work is per row,
     /// not per pixel; spans share exactly the same sample positions as scalar coverage.
-    fn polygon_sample_row(&self, x: f64, y: f64, weight: f32, output: &mut [f32]) {
+    fn polygon_sample_row(&self, x: f64, y: f64, spacing: f64, weight: f32, output: &mut [f32]) {
         let mut crossings = Vec::new();
         let mut boundaries = Vec::new();
         self.polygon_edges(y, |a, b| {
@@ -390,28 +390,32 @@ impl SelectionShape {
             .map(|pair| (pair[0], pair[1]))
             .chain(boundaries.iter().copied())
         {
-            let start = (left - x).ceil().clamp(0., output.len() as f64) as usize;
-            let end = ((right - x).floor() + 1.).clamp(0., output.len() as f64) as usize;
+            let start = ((left - x) / spacing).ceil().clamp(0., output.len() as f64) as usize;
+            let end =
+                (((right - x) / spacing).floor() + 1.).clamp(0., output.len() as f64) as usize;
             if start < end {
                 covered[start..end].fill(true);
             }
             // At exact subpixel crossings floating point projection may distinguish the
             // boundary from its mathematical line; retain the existing scalar decision.
             for edge in [left, right] {
-                let offset = (edge - x).round();
-                if offset >= 0. && offset < output.len() as f64 && (x + offset - edge).abs() < 1e-10
+                let offset = ((edge - x) / spacing).round();
+                if offset >= 0.
+                    && offset < output.len() as f64
+                    && (x + offset * spacing - edge).abs() < 1e-10
                 {
-                    covered[offset as usize] = self.distance(x + offset, y) >= 0.;
+                    covered[offset as usize] = self.distance(x + offset * spacing, y) >= 0.;
                 }
             }
         }
         // A horizontal boundary's projection can round just outside the shape.
         // Preserve the scalar result for this exceptional row, after all spans.
         for (left, right) in boundaries {
-            let start = (left - x).ceil().clamp(0., output.len() as f64) as usize;
-            let end = ((right - x).floor() + 1.).clamp(0., output.len() as f64) as usize;
+            let start = ((left - x) / spacing).ceil().clamp(0., output.len() as f64) as usize;
+            let end =
+                (((right - x) / spacing).floor() + 1.).clamp(0., output.len() as f64) as usize;
             for (i, inside) in covered.iter_mut().enumerate().take(end).skip(start) {
-                *inside = self.distance(x + i as f64, y) >= 0.;
+                *inside = self.distance(x + i as f64 * spacing, y) >= 0.;
             }
         }
         for (value, inside) in output.iter_mut().zip(covered) {
@@ -420,35 +424,35 @@ impl SelectionShape {
             }
         }
     }
-    fn coverage_span(&self, x: f64, y: f64, output: &mut [f32]) {
+    fn coverage_samples(&self, x: f64, y: f64, spacing: f64, output: &mut [f32]) {
         output.fill(0.);
         if y < self.y - self.feather - 1.
             || y > self.y + self.height + self.feather + 1.
-            || x + (output.len() as f64) < self.x - self.feather - 1.
+            || x + (output.len() as f64) * spacing < self.x - self.feather - 1.
             || x > self.x + self.width + self.feather + 1.
         {
             return;
         }
         if self.kind != SelectionKind::Polygon {
             for (i, value) in output.iter_mut().enumerate() {
-                *value = self.coverage(x + i as f64, y);
+                *value = self.coverage(x + i as f64 * spacing, y);
             }
             return;
         }
         if self.feather > 0. {
-            self.polygon_sample_row(x, y, 1., output);
+            self.polygon_sample_row(x, y, spacing, 1., output);
             let mut distances = vec![self.feather * self.feather; output.len()];
             self.polygon_edges(y, |a, b| {
                 let dx = b[0] - a[0];
                 let dy = b[1] - a[1];
                 let length = dx * dx + dy * dy;
-                let start = (a[0].min(b[0]) - self.feather - x)
+                let start = ((a[0].min(b[0]) - self.feather - x) / spacing)
                     .ceil()
                     .clamp(0., output.len() as f64) as usize;
-                let end = ((a[0].max(b[0]) + self.feather - x).floor() + 1.)
+                let end = (((a[0].max(b[0]) + self.feather - x) / spacing).floor() + 1.)
                     .clamp(0., output.len() as f64) as usize;
                 for (i, nearest) in distances.iter_mut().enumerate().take(end).skip(start) {
-                    let px = x + i as f64 - a[0];
+                    let px = x + i as f64 * spacing - a[0];
                     let py = y - a[1];
                     let t = if length > 0. {
                         (px * dx + py * dy) / length
@@ -472,13 +476,14 @@ impl SelectionShape {
                     self.polygon_sample_row(
                         x - 0.5 + (sx as f64 + 0.5) * 0.25,
                         y - 0.5 + (sy as f64 + 0.5) * 0.25,
+                        spacing,
                         1. / 16.,
                         output,
                     );
                 }
             }
         } else {
-            self.polygon_sample_row(x, y, 1., output);
+            self.polygon_sample_row(x, y, spacing, 1., output);
         }
     }
     pub fn coverage(&self, x: f64, y: f64) -> f32 {
@@ -946,6 +951,15 @@ impl Selection {
 
     /// Coverage for consecutive document pixel centers. Shared by all selection tools.
     pub fn coverage_span(&self, x: f64, y: f64, output: &mut [f32]) {
+        self.coverage_samples(x, y, 1., output)
+    }
+    /// Exact coverage at regularly spaced document positions. Polygon edge work
+    /// stays per row, shared by mesh operators and bounded display masks.
+    pub fn coverage_samples(&self, x: f64, y: f64, spacing: f64, output: &mut [f32]) {
+        if !spacing.is_finite() || spacing <= 0. {
+            output.fill(0.);
+            return;
+        }
         if !self.enabled {
             output.fill(1.);
             return;
@@ -954,7 +968,7 @@ impl Selection {
         let mut shape = vec![0.; output.len()];
         for step in self.steps.iter() {
             if let Some(s) = &step.shape {
-                s.coverage_span(x, y, &mut shape);
+                s.coverage_samples(x, y, spacing, &mut shape);
             }
             for (value, &coverage) in output.iter_mut().zip(&shape) {
                 *value = match step.operation {
@@ -1235,6 +1249,50 @@ impl SelectionCoverageCache {
 #[cfg(test)]
 mod coverage_cache_tests {
     use super::*;
+    #[test]
+    fn spaced_polygon_rows_match_scalar_samples_for_meshes_and_previews() {
+        for feather in [0., 2., 8.] {
+            for antialias in [false, true] {
+                let shape = SelectionShape::polygon(
+                    vec![[-3., -2.], [80., 4.], [5., 65.], [70., 72.], [10., -2.]],
+                    antialias,
+                    feather,
+                )
+                .unwrap();
+                let mut selection = Selection::default()
+                    .apply_shape(Some(shape), SelectionOperation::Replace, 128, 96)
+                    .unwrap();
+                selection = selection
+                    .apply_shape(
+                        Some(SelectionShape::geometry(
+                            SelectionKind::Ellipse,
+                            15.,
+                            10.,
+                            42.,
+                            40.,
+                            true,
+                        )),
+                        SelectionOperation::Subtract,
+                        128,
+                        96,
+                    )
+                    .unwrap();
+                for spacing in [0.25, 1., 2., 8.5, 128.] {
+                    for y in [-2., 0.5, 4., 10.5, 35.5, 65., 72., 95.5] {
+                        let mut row = vec![0.; 128];
+                        selection.coverage_samples(-10.5, y, spacing, &mut row);
+                        for (i, value) in row.iter().enumerate() {
+                            let expected = selection.coverage(-10.5 + i as f64 * spacing, y);
+                            assert!(
+                                (value - expected).abs() < 1e-6,
+                                "{feather} {antialias} {spacing} {y} {i}: {value} != {expected}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
     #[test]
     fn cache_reuses_blocks_bounds_memory_and_invalidates_only_with_selection_identity() {
         let triangle =

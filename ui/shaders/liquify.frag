@@ -2,10 +2,11 @@
 layout(location=0) in vec2 sourceCoord;
 layout(location=1) in vec2 documentCoord;
 layout(location=0) out vec4 fragColor;
-layout(std140,binding=0) uniform State {mat4 matrix;float opacity;float focus;} ub;
+layout(std140,binding=0) uniform State {mat4 matrix;float opacity;float focus;float selected;vec4 identity;} ub;
 layout(binding=1) uniform sampler2D sourceImage;
 layout(binding=2) uniform sampler2D belowImage;
 layout(binding=3) uniform sampler2D aboveImage;
+layout(binding=4) uniform sampler2D selectionImage;
 vec4 decode(vec4 c){
     if(c.a<=0.0)return vec4(0.0);
     vec3 s=clamp(c.rgb/c.a,0.0,1.0);
@@ -27,6 +28,7 @@ vec4 over(vec4 a,vec4 b){return a+b*(1.0-a.a);}
 void main(){
     if(any(lessThan(documentCoord,vec2(0.0))) || any(greaterThan(documentCoord,vec2(1.0))))discard;
     vec4 c=sampleLinear(sourceImage,sourceCoord);
+    if(ub.selected>0.5)c=mix(sampleLinear(sourceImage,documentCoord*ub.identity.zw+ub.identity.xy),c,texture(selectionImage,documentCoord).r);
     if(ub.focus<0.5)c=over(sampleLinear(aboveImage,documentCoord),over(c,sampleLinear(belowImage,documentCoord)));
     if(c.a<=0.0){fragColor=vec4(0.0);return;}
     vec3 l=clamp(c.rgb/c.a,0.0,1.0);

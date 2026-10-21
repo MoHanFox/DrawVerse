@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 76
+#define PAINT_ABI_MINOR 77
 
 #define PAINT_ABI_PATCH 0
 
@@ -481,6 +481,11 @@
  * ABI 1.13: delete selected subtrees, or unwrap selected groups while retaining children.
  */
 #define PAINT_REMOVE_SUBTREES 0
+
+/**
+ * ABI1.77: focus flags bit2 and read-resident kind2 carry a fixed selection mask.
+ */
+#define PAINT_RESIDENT_PREVIEW_SELECTED 4
 
 #define PAINT_SELECTION_ADD 1
 
@@ -2499,6 +2504,8 @@ PaintStatus paint_session_read_layer_clipboard(struct PaintCore *core,
 /**
  * ABI 1.62: kind 0 = LE f32 x/y/u/v vertices; kind 1 = six LE u32 image
  * dimensions followed by three tightly packed sRGB premultiplied RGBA8 images.
+ * ABI 1.77: kind 2 = LE u32 width/height, four LE f32 identity UV coefficients,
+ * then width*height R8 destination selection coverage (only with the selected flag).
  * Mesh reads require the exact revision; static assets only require source/generation.
  * Capacity probes write required only; insufficient buffers never receive partial bytes.
  * # Safety

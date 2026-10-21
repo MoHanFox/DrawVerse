@@ -1574,6 +1574,171 @@ fn complex_move_coarse_frames_restore_full_resolution_on_commit_and_cancel() {
 }
 
 #[test]
+fn selected_liquify_mask_is_static_stamped_and_capacity_safe() {
+    let h = Harness::new(128, 96);
+    h.wait(h.stroke(40., 40.));
+    unsafe {
+        let mut seq = 0;
+        let selection = PaintSelectionEdit {
+            width: 64.,
+            height: 96.,
+            antialias: 1,
+            ..dto!(PaintSelectionEdit)
+        };
+        assert_eq!(
+            paint_session_edit_selection(h.core, h.session, &selection, &mut seq),
+            PAINT_OK
+        );
+        h.wait(seq);
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_BEGIN_DEFERRED,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        h.wait(seq);
+        let mut info = dto!(PaintLiquifyPreviewInfo);
+        assert_eq!(
+            paint_session_liquify_preview_info(h.core, h.session, &mut info),
+            PAINT_OK
+        );
+        assert_ne!(info.focus & PAINT_RESIDENT_PREVIEW_SELECTED, 0);
+        let mut required = 0;
+        let read = |generation, source, buffer, capacity, required| {
+            paint_session_read_resident_preview(
+                h.core,
+                h.session,
+                generation,
+                info.revision,
+                source,
+                2,
+                buffer,
+                capacity,
+                required,
+            )
+        };
+        assert_eq!(
+            read(
+                info.document_generation,
+                info.source_id,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert_eq!(required, 24 + 128 * 96);
+        let mut bytes = vec![0xAB; required as usize];
+        assert_eq!(
+            read(
+                info.document_generation,
+                info.source_id,
+                bytes.as_mut_ptr(),
+                required - 1,
+                &mut required
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert!(bytes.iter().all(|v| *v == 0xAB));
+        assert_eq!(
+            read(
+                info.document_generation,
+                info.source_id,
+                bytes.as_mut_ptr(),
+                required,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        assert_eq!(u32::from_le_bytes(bytes[..4].try_into().unwrap()), 128);
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 96);
+        for part in bytes[8..24].chunks_exact(4) {
+            assert!(f32::from_le_bytes(part.try_into().unwrap()).is_finite());
+        }
+        for (i, coverage) in bytes[24..].iter().enumerate() {
+            assert_eq!(*coverage, if i % 128 < 64 { 255 } else { 0 });
+        }
+        let dab = PaintLiquifyDab {
+            radius: 64.,
+            strength: 0.8,
+            density: 0.7,
+            speed: 1.,
+            elapsed_ms: 16.,
+            from: PaintPoint {
+                x: 40.,
+                y: 40.,
+                pressure: 1.,
+                tool: PAINT_TOOL_MOUSE,
+                ..dto!(PaintPoint)
+            },
+            to: PaintPoint {
+                x: 50.,
+                y: 40.,
+                pressure: 1.,
+                tool: PAINT_TOOL_MOUSE,
+                ..dto!(PaintPoint)
+            },
+            ..dto!(PaintLiquifyDab)
+        };
+        assert_eq!(
+            paint_session_liquify(h.core, h.session, PAINT_LIQUIFY_DAB, &dab, &mut seq),
+            PAINT_OK
+        );
+        assert!(h.wait(seq).revision > info.revision);
+        let original = bytes.clone();
+        bytes.fill(0);
+        // Static coverage accepts the old revision within the same immutable source.
+        assert_eq!(
+            read(
+                info.document_generation,
+                info.source_id,
+                bytes.as_mut_ptr(),
+                required,
+                &mut required
+            ),
+            PAINT_OK
+        );
+        assert_eq!(bytes, original);
+        for (generation, source) in [
+            (info.document_generation + 1, info.source_id),
+            (info.document_generation, info.source_id + 1),
+        ] {
+            assert_eq!(
+                read(generation, source, ptr::null_mut(), 0, &mut required),
+                PAINT_BUSY
+            );
+            assert_eq!(required, 0);
+        }
+        assert_eq!(
+            paint_session_liquify(
+                h.core,
+                h.session,
+                PAINT_LIQUIFY_CANCEL,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        h.wait(seq);
+        assert_eq!(
+            read(
+                info.document_generation,
+                info.source_id,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_NOT_FOUND
+        );
+        assert_eq!(required, 0);
+    }
+}
+
+#[test]
 fn deferred_liquify_packets_are_stamped_and_drag_keeps_cpu_frame() {
     let h = Harness::new(128, 96);
     let initial = h.wait(h.stroke(40., 40.));

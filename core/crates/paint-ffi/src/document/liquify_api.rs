@@ -87,6 +87,47 @@ pub(crate) fn preview_assets(
     Ok(output)
 }
 
+pub(crate) fn preview_selection(
+    source: &paint_core::ResidentPreviewSource,
+) -> crate::error::ApiResult<Vec<u8>> {
+    if !source.selected {
+        return Err(ApiError::new(PAINT_NOT_FOUND, "no resident selection"));
+    }
+    let (dw, dh) = (source.below.width, source.below.height);
+    let scale = (2048. / f64::from(dw.max(dh))).min(1.);
+    let (width, height) = (
+        (f64::from(dw) * scale).ceil().max(1.) as u32,
+        (f64::from(dh) * scale).ceil().max(1.) as u32,
+    );
+    let mut bytes = Vec::with_capacity(24 + (width * height) as usize);
+    bytes.extend(width.to_le_bytes());
+    bytes.extend(height.to_le_bytes());
+    let [x, y, w, h] = source.bounds;
+    for value in [
+        -(x as f32) / w as f32,
+        -(y as f32) / h as f32,
+        dw as f32 / w as f32,
+        dh as f32 / h as f32,
+    ] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let (sx, sy) = (
+        f64::from(dw) / f64::from(width),
+        f64::from(dh) / f64::from(height),
+    );
+    let mut row = vec![0_f32; width as usize];
+    for y in 0..height {
+        source.image.selection().coverage_samples(
+            sx * 0.5,
+            (f64::from(y) + 0.5) * sy,
+            sx,
+            &mut row,
+        );
+        bytes.extend(row.iter().map(|v| (v.clamp(0., 1.) * 255.).round() as u8));
+    }
+    Ok(bytes)
+}
+
 /// ABI 1.62: immutable mesh-only preview metadata, or NOT_FOUND for the pixel path.
 /// # Safety
 /// Valid serialized handles and an initialized writable sized output are required.
@@ -107,7 +148,13 @@ pub unsafe extern "C" fn paint_session_liquify_preview_info(
             out_info,
             PaintLiquifyPreviewInfo {
                 struct_size: std::mem::size_of::<PaintLiquifyPreviewInfo>() as u32,
-                focus: u32::from(preview.focus) | (u32::from(preview.forward) << 1),
+                focus: u32::from(preview.focus)
+                    | (u32::from(preview.forward) << 1)
+                    | if preview.source.selected {
+                        PAINT_RESIDENT_PREVIEW_SELECTED
+                    } else {
+                        0
+                    },
                 document_generation: publication.info.document_generation,
                 revision: preview.revision,
                 source_id: preview.source.id,
@@ -122,6 +169,8 @@ pub unsafe extern "C" fn paint_session_liquify_preview_info(
 
 /// ABI 1.62: kind 0 = LE f32 x/y/u/v vertices; kind 1 = six LE u32 image
 /// dimensions followed by three tightly packed sRGB premultiplied RGBA8 images.
+/// ABI 1.77: kind 2 = LE u32 width/height, four LE f32 identity UV coefficients,
+/// then width*height R8 destination selection coverage (only with the selected flag).
 /// Mesh reads require the exact revision; static assets only require source/generation.
 /// Capacity probes write required only; insufficient buffers never receive partial bytes.
 /// # Safety
@@ -169,6 +218,12 @@ pub unsafe extern "C" fn paint_session_read_liquify_preview(
             }
             1 => pointers::copy_buffer(
                 &session.resident_assets(preview)?,
+                buffer,
+                capacity,
+                out_required,
+            ),
+            2 => pointers::copy_buffer(
+                &session.resident_selection(preview)?,
                 buffer,
                 capacity,
                 out_required,

@@ -126,3 +126,9 @@ PanelContent 检查真实窗口可见与客户端关闭状态；卸载仍在 Loa
 Release核心单元192通过、4手工项忽略、1项耗时mix测试过滤；公开paging3/history_storage3/transform7/liquify11通过（液化1既有手工项忽略），原生整图翻转及变换各1，严格Clippy/fmt/生成头通过。实际Qt图像/自由变换×水平/垂直四行，均反复直接历史恢复精确像素；4K选区变换五行及结束工具快捷键一行，软件/D3D11各10行通过。四ABI及完整标准Release通过，build/bin/Release/drawverse.exe更新。
 
 首次Debug宽范围单元运行发现上述旧桶断言及新冷页测试在把受损页读热后的测试顺序错误；均修正并在Release回归通过。Debug耗时mix用例主动停止，未称全量通过。最终日志artifacts/flip-history-core-release.txt、flip-history-public.txt、flip-history-native.txt、flip-history-transform-native.txt、flip-history-final-{software,d3d11}.txt、flip-history-abi.txt及final-build/clippy/header-check。未跑跨平台、实体连续时延及16K整图。
+
+## 2026-10-21 套索液化粘滞
+
+兼容普通根层选区液化不再逐输入物化像素，CPU按行覆盖/场更新、Qt GPU目标坐标遮罩混合恒等与变形源；确认完整采样。新增ABI1.77的focus bit2/kind2，DTO/state45不变。核心12组合、选区行采样3、公开液化11及原生2通过；Qt硬/羽化套索软件/D3D11各2行，验证选区外保护、源/遮罩身份、局部历史、取消/确认与文档历史；既有D3D11无选区2000/15000px亦通过。
+
+固定2048×1536套索六输入核心像素1441.085→网格17.376ms，最终摘要一致，不含资产准备/首次上传/显示/确认。四ABI、严格Clippy/fmt/生成头、完整标准Release通过。复杂图层/软件回退、2048代理与极窄选区粗场边界仍在；详见液化常驻预览验收末节。首次GPU资产和实体持续性能仍列待办，不能称整份清单全部完成。

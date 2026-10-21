@@ -4,5 +4,5 @@ layout(location=1) in vec2 sourceUv;
 layout(location=2) in vec2 documentUv;
 layout(location=0) out vec2 sourceCoord;
 layout(location=1) out vec2 documentCoord;
-layout(std140,binding=0) uniform State {mat4 matrix;float opacity;float focus;} ub;
+layout(std140,binding=0) uniform State {mat4 matrix;float opacity;float focus;float selected;vec4 identity;} ub;
 void main(){sourceCoord=sourceUv;documentCoord=documentUv;gl_Position=ub.matrix*vec4(position,0.0,1.0);}

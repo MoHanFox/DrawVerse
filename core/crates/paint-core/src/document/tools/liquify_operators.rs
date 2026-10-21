@@ -337,18 +337,18 @@ impl Document {
                 ((bottom - top) / cell) as u32,
             ];
             let mut selection = if self.selection.enabled() {
-                Vec::new()
+                vec![0.; size[0] as usize * size[1] as usize]
             } else {
                 vec![1.; size[0] as usize * size[1] as usize]
             };
             if self.selection.enabled() {
-                for gy in 0..size[1] {
-                    for gx in 0..size[0] {
-                        selection.push(self.selection.coverage(
-                            (left + i64::from(gx) * cell + ox) as f64 + 0.5,
-                            (top + i64::from(gy) * cell + oy) as f64 + 0.5,
-                        ));
-                    }
+                for (gy, row) in selection.chunks_mut(size[0] as usize).enumerate() {
+                    self.selection.coverage_samples(
+                        (left + ox) as f64 + 0.5,
+                        (top + gy as i64 * cell + oy) as f64 + 0.5,
+                        cell as f64,
+                        row,
+                    );
                 }
             }
             let op = Operator::Elastic(ElasticOp {

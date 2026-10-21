@@ -78,8 +78,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 76) {
-            emit failure(QStringLiteral("当前功能需要核心 ABI 1.76 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 77) {
+            emit failure(QStringLiteral("当前功能需要核心 ABI 1.77 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -577,7 +577,7 @@ public:
             s=paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,reinterpret_cast<uint8_t*>(bytes.data()),required,&required);
             return s==PAINT_OK;
         };
-        if(m_residentPreview && m_residentPreview->sourceId==next->sourceId)next->images=m_residentPreview->images;
+        if(m_residentPreview && m_residentPreview->sourceId==next->sourceId){next->images=m_residentPreview->images;next->selection=m_residentPreview->selection;next->identity=m_residentPreview->identity;}
         else {
             QByteArray assets;if(!read(1,assets) || assets.size()<24)return;
             qsizetype offset=24;
@@ -590,6 +590,15 @@ public:
                 offset+=qsizetype(size);
             }
             if(offset!=assets.size())return;
+            if(info.focus&PAINT_RESIDENT_PREVIEW_SELECTED){
+                QByteArray mask;if(!read(2,mask) || mask.size()<24)return;
+                const auto w=qFromLittleEndian<quint32>(mask.constData()),h=qFromLittleEndian<quint32>(mask.constData()+4);
+                if(!w || !h || w>2048 || h>2048 || quint64(mask.size())!=24+quint64(w)*h)return;
+                for(int k=0;k<4;++k){const auto bits=qFromLittleEndian<quint32>(mask.constData()+8+k*4);std::memcpy(&next->identity[size_t(k)],&bits,4);if(!std::isfinite(next->identity[size_t(k)]))return;}
+                if(next->identity[2]<=0 || next->identity[3]<=0)return;
+                next->selection=QImage(int(w),int(h),QImage::Format_RGBA8888);if(next->selection.isNull())return;
+                for(quint32 y=0;y<h;++y){auto *row=next->selection.scanLine(int(y));for(quint32 x=0;x<w;++x){const auto value=quint8(mask[qsizetype(24+quint64(y)*w+x)]);row[x*4]=value;row[x*4+1]=value;row[x*4+2]=value;row[x*4+3]=255;}}
+            }
         }
         QByteArray mesh;if(!read(0,mesh))return;
         const auto count=quint64(next->columns)*next->rows;

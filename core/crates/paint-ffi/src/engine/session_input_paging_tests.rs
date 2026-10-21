@@ -108,6 +108,7 @@ fn engine(tool: WetTool) -> Engine {
     let shared = Arc::new(Shared {
         task_progress: Mutex::new(None),
         preview_assets: Mutex::new(Vec::new()),
+        preview_selection: Mutex::new(None),
         generation: AtomicU64::new(1),
         floor: AtomicU64::new(0),
         publication: Mutex::new(Arc::new(initial)),

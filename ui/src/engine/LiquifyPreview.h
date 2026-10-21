@@ -12,6 +12,8 @@ struct ResidentPreviewFrame {
     quint32 columns=0,rows=0;
     QSize documentSize;
     bool focus=false,forward=false;
+    QImage selection;
+    std::array<float,4> identity{};
     std::array<QImage,3> images;
     QVector<std::array<float,4>> vertices;
 };
