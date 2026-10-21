@@ -146,7 +146,8 @@ ColumnLayout {
         Rectangle {Layout.fillHeight:true;width:1;color:Theme.line}
         ScrollView {
             id:parameterScroll;objectName:"brushParameterScroll"
-            Layout.fillWidth:true;Layout.fillHeight:true;clip:true
+            implicitWidth:0
+            Layout.fillWidth:true;Layout.fillHeight:true;Layout.minimumWidth:0;clip:true
             contentWidth:root.category===11?Math.max(200,availableWidth):availableWidth
             ColumnLayout {
                 width:parameterScroll.contentWidth;spacing:5

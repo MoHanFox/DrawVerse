@@ -19,3 +19,11 @@
 PanelContent异步创建LayersPanel期间，自定义属性尚未全部就绪；LayerLock内部Connections提前连接selected/kind时收到不存在信号警告，Instantiator的菜单项提前读取selected.mask。锁图标改为控件自身的属性变更处理，图标尚未创建时不请求绘画；菜单在selected尚未就绪时禁用。没有屏蔽Connections警告或改成同步加载。
 
 `panelTabsRetractWithoutExpandingRailsAndKeepSharedPresentation` 在软件和D3D11通过，原7条QML警告消失，保留所有折叠、跨窗口、源栏状态断言；日志 artifacts/remaining-ui-probe.txt、remaining-u2-d3d11.txt。Release与Qt目标构建通过，ABI/state不变。退出仍有4个异步创建对象诊断，由U5继续跟踪；没有把该诊断称为已解决。
+
+## U4 窄笔刷设置面板（2026-10-21）
+
+方向盘固定横排的最小宽度使左列设置超宽，大小输入框点击落入画布。BrushTipShapeControl 在宽度小于220px时改为纵排；ScrollView 最小/隐式宽度为0，由外部面板分配，消除独立创建时的内容宽度循环。标准预览固定大小/不透明度，旧测试改验此契约；不同预设各自保留参数，切换默认压力圆笔验12px半径，再切回细线笔验20px半径。
+
+原 `brushLibrarySettingsAndEnginePreviewsShareSelectionAcrossWindows` 在软件与D3D11各通过一次，保留真实40px输入、跨窗选中同步、标准预览/间距变化、实际透明像素、单历史及保存重开验证。日志：`artifacts/pixel-slider-ui-software.txt` / `artifacts/pixel-slider-ui-d3d11.txt`。方向盘两项软件通过；D3D11随S1最终共享回归记录。完整Release构建通过。
+
+同批附加的旧液化事务用例软件通过、D3D11在3953行等待CPU frameRevision失败；未删除断言或标记通过，GPU常驻显示路径不保证逐笔CPU图像，该用例仍需专门分析。U1/U5及算法剩余项目保持待办。

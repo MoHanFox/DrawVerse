@@ -5,7 +5,7 @@ import QtQuick.Shapes
 import "../controls"
 import "../theme"
 
-RowLayout {
+GridLayout {
     id: root
     property real angle: 0
     property real roundness: 1
@@ -16,7 +16,10 @@ RowLayout {
     signal angleEdited(real value)
     signal roundnessEdited(real value)
     Layout.fillWidth: true
-    spacing: 8
+    Layout.minimumWidth: 0
+    columns: width>=220 ? 2 : 1
+    columnSpacing: 8
+    rowSpacing: 8
 
     Item {
         id: dial
