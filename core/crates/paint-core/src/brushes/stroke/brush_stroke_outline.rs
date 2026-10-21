@@ -2,17 +2,7 @@
 use crate::{BrushTexture, Error, Result, SecondaryTip};
 use std::sync::Arc;
 
-pub const STROKE_OUTLINE_MODEL: &str = "stroke-contour-v1";
-pub const STROKE_SDF_OUTLINE_MODEL: &str = "stroke-sdf-v1";
 pub const STROKE_REPLAY_OUTLINE_MODEL: &str = "stroke-replay-v1";
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum OutlineAlgorithm {
-    #[default]
-    Path,
-    Sdf,
-    Replay,
-}
 
 pub const MAX_STROKE_OUTLINE_PIXELS: usize = 8 * 1024 * 1024;
 pub const MAX_STROKE_OUTLINE_WIDTH: f32 = 2000.;
@@ -100,7 +90,6 @@ pub enum OutlineSource {
 
 #[derive(Clone, Debug, Default)]
 pub struct StrokeOutline {
-    algorithm: OutlineAlgorithm,
     enabled: bool,
     placement: OutlinePlacement,
     width: OutlineWidth,
@@ -120,7 +109,6 @@ impl StrokeOutline {
             return Err(Error::InvalidArgument("stroke outline texture is disabled"));
         }
         Ok(Self {
-            algorithm: OutlineAlgorithm::Path,
             enabled,
             placement,
             width,
@@ -128,13 +116,6 @@ impl StrokeOutline {
             secondary_color,
             allow_overflow: false,
         })
-    }
-    pub fn with_algorithm(mut self, algorithm: OutlineAlgorithm) -> Self {
-        self.algorithm = algorithm;
-        self
-    }
-    pub fn algorithm(&self) -> OutlineAlgorithm {
-        self.algorithm
     }
     pub fn with_allow_overflow(mut self, allow: bool) -> Self {
         self.allow_overflow = allow;
@@ -144,11 +125,7 @@ impl StrokeOutline {
         self.allow_overflow
     }
     pub fn model(&self) -> &'static str {
-        match self.algorithm {
-            OutlineAlgorithm::Path => STROKE_OUTLINE_MODEL,
-            OutlineAlgorithm::Sdf => STROKE_SDF_OUTLINE_MODEL,
-            OutlineAlgorithm::Replay => STROKE_REPLAY_OUTLINE_MODEL,
-        }
+        STROKE_REPLAY_OUTLINE_MODEL
     }
     pub fn enabled(&self) -> bool {
         self.enabled
@@ -166,8 +143,7 @@ impl StrokeOutline {
         self.secondary_color
     }
     pub fn is_default(&self) -> bool {
-        self.algorithm == OutlineAlgorithm::Path
-            && !self.enabled
+        !self.enabled
             && self.placement == OutlinePlacement::default()
             && self.width == OutlineWidth::default()
             && matches!(self.source, OutlineSource::SelfBrush)
@@ -180,83 +156,4 @@ impl StrokeOutline {
         }
         Ok(())
     }
-}
-
-fn allocated<T: Clone>(count: usize, value: T) -> Result<Vec<T>> {
-    let mut output = Vec::new();
-    output
-        .try_reserve_exact(count)
-        .map_err(|_| Error::ResourceLimit("stroke outline scratch allocation"))?;
-    output.resize(count, value);
-    Ok(output)
-}
-
-/// Antialiased band around the UNION of the supplied stroke coverage, at 50%.
-/// The caller supplies transparent padding for an outside band. Beyond this
-/// raster is transparent, including when every supplied pixel is covered.
-/// No document pixels are read: drawing the same colour over itself keeps its contour.
-pub fn stroke_outline_band(
-    width: u32,
-    height: u32,
-    coverage: &[u8],
-    band_width: f32,
-    placement: OutlinePlacement,
-) -> Result<Vec<f32>> {
-    if width == 0 || height == 0 {
-        return Err(Error::InvalidArgument("stroke outline raster dimensions"));
-    }
-    let count = (width as usize)
-        .checked_mul(height as usize)
-        .ok_or(Error::ResourceLimit("stroke outline raster size"))?;
-    if count > MAX_STROKE_OUTLINE_PIXELS {
-        return Err(Error::ResourceLimit("stroke outline raster pixel limit"));
-    }
-    if coverage.len() != count
-        || !band_width.is_finite()
-        || !(0. ..=MAX_STROKE_OUTLINE_WIDTH).contains(&band_width)
-    {
-        return Err(Error::InvalidArgument("stroke outline raster parameters"));
-    }
-    let mut output = allocated(count, 0_f32)?;
-    if band_width == 0. || !coverage.iter().any(|v| *v >= 128) {
-        return Ok(output);
-    }
-    let (width, height) = (width as usize, height as usize);
-    let mut distance = allocated(count, f64::INFINITY)?;
-    let (outside, inside) = placement.extents(band_width);
-    for target_inside in [true, false] {
-        for (d, value) in distance.iter_mut().zip(coverage) {
-            *d = if (*value >= 128) == target_inside {
-                0.
-            } else {
-                f64::INFINITY
-            };
-        }
-        paint_ops::sdf::squared_distance_transform(width as u32, height as u32, &mut distance)
-            .map_err(|error| match error {
-                paint_ops::sdf::Error::Invalid(_) => {
-                    Error::InvalidArgument("stroke outline distance")
-                }
-                paint_ops::sdf::Error::Limit(_) => Error::ResourceLimit("stroke outline distance"),
-            })?;
-        for y in 0..height {
-            for (x, &squared) in distance[y * width..(y + 1) * width].iter().enumerate() {
-                let i = y * width + x;
-                if (coverage[i] >= 128) == target_inside {
-                    continue;
-                }
-                let mut squared = squared;
-                if !target_inside {
-                    let border = (x + 1).min(width - x).min(y + 1).min(height - y) as f64;
-                    squared = squared.min(border * border);
-                }
-                let distance = squared.sqrt() - 0.5;
-                let signed = if target_inside { -distance } else { distance };
-                output[i] = ((signed + f64::from(outside) + 0.5).clamp(0., 1.)
-                    * (f64::from(inside) - signed + 0.5).clamp(0., 1.))
-                    as f32;
-            }
-        }
-    }
-    Ok(output)
 }

@@ -1,8 +1,8 @@
 use paint_core::{
     Brush, BrushDefinition, BrushMask, BrushProgram, BrushTip, Document, DocumentOptions,
-    InputPoint, InputScheduleBudget, OutlineAlgorithm, OutlinePlacement, OutlineSource,
-    OutlineWidth, Pixel, PressureControl, PressureCurve, SecondaryTip, StrokeOutline,
-    StrokePageResult, StrokeTaper, TaperEnd,
+    InputPoint, InputScheduleBudget, OutlinePlacement, OutlineSource, OutlineWidth, Pixel,
+    PressureControl, PressureCurve, SecondaryTip, StrokeOutline, StrokePageResult, StrokeTaper,
+    TaperEnd,
 };
 use paint_ops::replay_outline::{self, ReplayDab};
 use std::sync::Arc;
@@ -33,7 +33,6 @@ fn outline(placement: OutlinePlacement, source: OutlineSource) -> StrokeOutline 
         true,
     )
     .unwrap()
-    .with_algorithm(OutlineAlgorithm::Replay)
 }
 fn pixels(doc: &Document) -> Vec<Pixel> {
     (0..64)
@@ -231,8 +230,7 @@ fn replay_limits_roll_back_pixels_and_leave_document_usable() {
         OutlineSource::SelfBrush,
         true,
     )
-    .unwrap()
-    .with_algorithm(OutlineAlgorithm::Replay);
+    .unwrap();
     assert!(doc
         .begin_outlined_brush_stroke(brush(), InputPoint::new(64., 64., 1.), &wide)
         .is_err());

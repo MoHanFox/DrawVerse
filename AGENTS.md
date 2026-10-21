@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新旧描边执行清理：复刻描边设计/验收末节；删除Path/SDF执行模块、缓存、二值band及核心OutlineAlgorithm，旧模型名只在IO校验/迁移，唯一Replay/state45。核心19/算子7/IO描边7共享24/原生三模型1、软件与D3D11工作流各6行及UI各3/四ABI/Clippy/Release通过；ABI1.75不变。用户运行锁定原EXE，新产物 `build/qt/bin/Release/drawverse-next.exe`。O1完成，T1/T2/M1/H1/P1、U1/U5仍待；干画笔普通层/原预算/无新增GPU。
+
 - 最新复刻描边实际接入：`docs/brush/core/brush-stroke-replay-outline-design.md` / 对应验收；实际主体印章/尾部四通道max差集、预览与单历史，Qt移除旧算法/独立路径调度并加允许溢出，旧设置严格校验后迁移；state45/behavior37/ABI1.75 bit63，VBR1.0。核心新5旧11内部3/IO7/原生1、软件与D3D11工作流各8行及UI各3/四ABI/Clippy/Release通过，输出 `build/qt/bin/Release`。仍CPU/干画笔普通层/8Mi预算，原生Path/Sdf兼容执行仍在，O1旧代码删除及T1/T2/M1/H1/P1、U1/U5仍待，不称清单全部完成。
 
 - 最新大范围像素滑条：`docs/interface/pixel-slider-exponential-design.md` / 对应验收；跨度≥512px像素使用共享有符号指数轨道，含笔刷/液化/描边/起收笔/纹理偏移，1px加减与精确输入保留，非像素/小范围线性。软件/D3D11各7项、跨窗笔刷及Release通过；ABI/state不变。统一剩余清单U2/U3/U4已修复，U1/U5及算法项仍待。

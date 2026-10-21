@@ -1,8 +1,8 @@
 use paint_core::{
     Brush, BrushDefinition, BrushMask, BrushProgram, BrushTexture, BrushTip, Document,
-    DocumentOptions, InputPoint, InputScheduleBudget, OutlineAlgorithm, OutlinePlacement,
-    OutlineSource, OutlineWidth, Pixel, PressureControl, PressureCurve, StrokeOutline,
-    StrokePageResult, StrokeTaper, TaperEnd, TextureResource, TextureSettings, TextureSpace,
+    DocumentOptions, InputPoint, InputScheduleBudget, OutlinePlacement, OutlineSource,
+    OutlineWidth, Pixel, PressureControl, PressureCurve, StrokeOutline, StrokePageResult,
+    StrokeTaper, TaperEnd, TextureResource, TextureSettings, TextureSpace,
 };
 use std::sync::Arc;
 
@@ -64,18 +64,6 @@ fn document_three_placements_match_independent_geometry_and_keep_one_history_com
     let definition = brush();
     let program = BrushProgram::compile(definition.clone()).unwrap();
     let point = InputPoint::new(32., 32., 1.);
-    let mask: Vec<_> = (0..64)
-        .flat_map(|y| {
-            let program = &program;
-            (0..64).map(move |x| {
-                if program.coverage(x as f64 + 0.5 - 32., y as f64 + 0.5 - 32., 8.) >= 0.5 {
-                    255
-                } else {
-                    0
-                }
-            })
-        })
-        .collect();
     for placement in [
         OutlinePlacement::Outside,
         OutlinePlacement::Center,
@@ -85,7 +73,26 @@ fn document_three_placements_match_independent_geometry_and_keep_one_history_com
             let mut base = Document::new(64, 64).unwrap();
             base.begin_brush_stroke(definition.clone(), point).unwrap();
             base.end_stroke().unwrap();
-            let band = paint_core::stroke_outline_band(64, 64, &mask, width, placement).unwrap();
+            // Independent two-radius reference, without invoking the replay operator.
+            let (outward, inward) = placement.extents(width);
+            let coverage = |x: u32, y: u32, radius: f64| {
+                if radius <= 0. {
+                    return 0;
+                }
+                (program.coverage(
+                    (x as f64 + 0.5 - 32.) * 8. / radius,
+                    (y as f64 + 0.5 - 32.) * 8. / radius,
+                    8.,
+                ) * 255.)
+                    .round() as u8
+            };
+            let band: Vec<_> = (0..64 * 64)
+                .map(|i| {
+                    let outer = coverage(i % 64, i / 64, 8. + f64::from(outward));
+                    let inner = coverage(i % 64, i / 64, (8. - f64::from(inward)).max(0.));
+                    f32::from(outer.saturating_sub(inner)) / 255.
+                })
+                .collect();
             let mut actual = Document::new(64, 64).unwrap();
             actual
                 .begin_outlined_brush_stroke(
@@ -136,11 +143,13 @@ fn drawing_same_colour_still_has_outline_and_cancellation_restores_previous_pixe
     doc.cancel_stroke().unwrap();
     assert_eq!(pixels(&doc, 96, 64), original);
     assert_eq!(doc.history_depth(), (1, 0));
-    doc.begin_outlined_brush_stroke(definition, start, &settings)
+    doc.begin_outlined_brush_stroke(definition.clone(), start, &settings)
         .unwrap();
     doc.stroke_to(end).unwrap();
     doc.end_stroke().unwrap();
-    assert_eq!(doc.pixel(48, 24).components()[2], 1.);
+    let primary = BrushProgram::compile(definition).unwrap();
+    let edge = (primary.coverage(0.5, -7.5, 8.) * 255.).round() / 255.;
+    assert_eq!(doc.pixel(48, 24).components()[2], edge);
     assert_eq!(doc.pixel(48, 32).components()[0], 1.);
     assert_eq!(doc.history_depth(), (2, 0));
     doc.undo().unwrap();
@@ -162,9 +171,8 @@ fn tapered_outline_paging_matches_direct_and_tail_replay_does_not_leave_old_shap
         InputPoint::new(56., 32., 0.7),
         InputPoint::new(98., 40., 1.),
     ];
-    for algorithm in [OutlineAlgorithm::Path, OutlineAlgorithm::Sdf] {
-        let settings = outline(OutlinePlacement::Outside, 3., OutlineSource::SelfBrush)
-            .with_algorithm(algorithm);
+    {
+        let settings = outline(OutlinePlacement::Outside, 3., OutlineSource::SelfBrush);
         let mut results = Vec::new();
         for paged in [false, true] {
             let mut doc = Document::new(128, 64).unwrap();
@@ -203,7 +211,9 @@ fn outlines_capture_geometry_outside_canvas_instead_of_outlining_canvas_border()
     .unwrap();
     doc.end_stroke().unwrap();
     assert_eq!(doc.pixel(0, 32), definition.brush.color);
-    assert_eq!(doc.pixel(7, 32), definition.brush.background_color);
+    let primary = BrushProgram::compile(definition.clone()).unwrap();
+    let edge = (primary.coverage(11.5, 0.5, 12.) * 255.).round() / 255.;
+    assert_eq!(doc.pixel(7, 32).components()[2], edge);
     let mut outside = Document::new(64, 64).unwrap();
     definition.brush.radius = 8.;
     outside
@@ -375,7 +385,7 @@ fn selection_layer_offset_and_transparency_lock_apply_to_outline_pixels() {
 }
 
 #[test]
-fn sdf_actual_stroke_has_all_placements_aa_max_opacity_and_exact_history() {
+fn replay_actual_stroke_has_all_placements_aa_max_opacity_and_exact_history() {
     for placement in [
         OutlinePlacement::Outside,
         OutlinePlacement::Inside,
@@ -383,8 +393,7 @@ fn sdf_actual_stroke_has_all_placements_aa_max_opacity_and_exact_history() {
     ] {
         let mut definition = brush();
         definition.brush.opacity = 0.5;
-        let settings =
-            outline(placement, 4., OutlineSource::SelfBrush).with_algorithm(OutlineAlgorithm::Sdf);
+        let settings = outline(placement, 4., OutlineSource::SelfBrush);
         let mut doc = Document::new(96, 64).unwrap();
         doc.begin_outlined_brush_stroke(
             definition.clone(),
@@ -417,7 +426,7 @@ fn sdf_actual_stroke_has_all_placements_aa_max_opacity_and_exact_history() {
 }
 
 #[test]
-fn sdf_captured_image_tip_and_outline_texture_change_only_the_outline() {
+fn replay_captured_image_tip_and_outline_texture_change_only_the_outline() {
     let definition = brush();
     let image = Arc::new(
         BrushMask::new(
@@ -444,8 +453,7 @@ fn sdf_captured_image_tip_and_outline_texture_change_only_the_outline() {
         OutlineSource::Existing(Arc::new(existing)),
         OutlineSource::SelfTextured(texture),
     ] {
-        let settings =
-            outline(OutlinePlacement::Outside, 5., source).with_algorithm(OutlineAlgorithm::Sdf);
+        let settings = outline(OutlinePlacement::Outside, 5., source);
         let mut doc = Document::new(64, 64).unwrap();
         doc.begin_outlined_brush_stroke(
             definition.clone(),

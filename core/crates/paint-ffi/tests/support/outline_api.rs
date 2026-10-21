@@ -1,7 +1,7 @@
 use super::*;
 use paint_core::{
-    BrushCatalog, BrushMask, BrushSettings, BrushTip, Document, InputPoint, OutlineAlgorithm,
-    OutlinePlacement, OutlineSource, OutlineWidth, Pixel, SecondaryTip, StrokeOutline,
+    BrushCatalog, BrushMask, BrushSettings, BrushTip, Document, InputPoint, OutlinePlacement,
+    OutlineSource, OutlineWidth, Pixel, SecondaryTip, StrokeOutline,
 };
 use std::sync::Arc;
 
@@ -30,16 +30,34 @@ fn settings(enabled: bool) -> BrushSettings {
 }
 
 fn prepared(library: *mut PaintBrushLibrary, settings: &BrushSettings) -> (u64, Vec<u8>) {
+    prepared_model(library, settings, "stroke-replay-v1")
+}
+
+fn prepared_model(
+    library: *mut PaintBrushLibrary,
+    settings: &BrushSettings,
+    model: &str,
+) -> (u64, Vec<u8>) {
     let mut catalog = BrushCatalog::default();
     catalog.edit("round-pressure", settings.clone()).unwrap();
     let json = paint_io::brush_state::encode(&catalog).unwrap();
+    let mut wire: serde_json::Value = serde_json::from_slice(&json).unwrap();
+    if model != "stroke-replay-v1" {
+        wire["version"] = if model == "stroke-sdf-v1" { 43 } else { 41 }.into();
+        wire["presets"][0]["strokeOutline"]["model"] = model.into();
+        wire["presets"][0]["strokeOutline"]
+            .as_object_mut()
+            .unwrap()
+            .remove("allowOverflow");
+    }
+    let wire = serde_json::to_vec(&wire).unwrap();
     let mut sequence = 0;
     unsafe {
         assert_eq!(
             paint_brush_library_prepare_state_outline(
                 library,
-                json.as_ptr(),
-                json.len() as u64,
+                wire.as_ptr(),
+                wire.len() as u64,
                 &mut sequence
             ),
             PAINT_OK
@@ -77,11 +95,7 @@ fn prepared(library: *mut PaintBrushLibrary, settings: &BrushSettings) -> (u64, 
 
 #[test]
 fn outline_public_preparation_executes_real_pixels_history_and_rejects_old_entries() {
-    for algorithm in [
-        OutlineAlgorithm::Path,
-        OutlineAlgorithm::Sdf,
-        OutlineAlgorithm::Replay,
-    ] {
+    for model in ["stroke-contour-v1", "stroke-sdf-v1", "stroke-replay-v1"] {
         for enabled in [false, true] {
             let h = Harness::new(64, 64);
             unsafe {
@@ -99,9 +113,8 @@ fn outline_public_preparation_executes_real_pixels_history_and_rejects_old_entri
 
                 let mut library = ptr::null_mut();
                 assert_eq!(paint_brush_library_create(0, &mut library), PAINT_OK);
-                let mut preset = settings(enabled);
-                preset.outline = preset.outline.with_algorithm(algorithm);
-                let (capture, json) = prepared(library, &preset);
+                let preset = settings(enabled);
+                let (capture, json) = prepared_model(library, &preset, model);
                 let mut sequence = 99;
                 assert_eq!(
                     paint_brush_library_prepare_state_taper(

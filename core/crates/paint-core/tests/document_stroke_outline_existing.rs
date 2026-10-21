@@ -45,7 +45,7 @@ fn finish(doc: &mut Document, paged: bool) {
 }
 
 #[test]
-fn existing_brush_snapshot_supports_images_spacing_scatter_and_hole_contours() {
+fn existing_brush_replays_primary_actions_and_keeps_image_holes() {
     let primary_pixels: Vec<_> = (0..64)
         .map(|i| {
             if (2..6).contains(&(i % 8)) && (2..6).contains(&(i / 8)) {
@@ -71,7 +71,7 @@ fn existing_brush_snapshot_supports_images_spacing_scatter_and_hole_contours() {
             ..Default::default()
         };
         let tip = SecondaryTip::new(
-            3.,
+            12.,
             BrushTip {
                 pressure_size: false,
                 pressure_flow: false,
@@ -106,7 +106,7 @@ fn existing_brush_snapshot_supports_images_spacing_scatter_and_hole_contours() {
                 .collect();
             assert!(output.iter().any(|pixel| f32::from_bits(*pixel) > 0.2));
             assert_eq!(doc.pixel(32, 32), Pixel::TRANSPARENT);
-            assert!((25..30).any(|x| doc.pixel(x, 32).components()[2] > 0.));
+            assert!((0..64 * 64).any(|i| doc.pixel(i % 64, i / 64).components()[2] > 0.2));
             if paged {
                 assert_eq!(*results.last().unwrap(), output);
             } else {
@@ -114,5 +114,8 @@ fn existing_brush_snapshot_supports_images_spacing_scatter_and_hole_contours() {
             }
         }
     }
-    assert_ne!(results[0], results[1]);
+    assert_eq!(
+        results[0], results[1],
+        "source spacing/scatter cannot schedule independent actions"
+    );
 }

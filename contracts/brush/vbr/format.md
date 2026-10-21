@@ -49,4 +49,4 @@ SDF描边使用同一可选strokeOutline对象，model为`stroke-sdf-v1`，参�
 
 ## 复刻描边
 
-新写出 `strokeOutline.model: "stroke-replay-v1"`，保留 enabled/placement/width/source/secondaryColor，新增必需布尔 allowOverflow。VBR仍1.0，实际字段决定behavior37与stroke-outline-replay；state45。已有笔刷来源允许嵌套brush.texture并复用资源身份；默认不溢出主体描边包络。Qt读取旧轮廓/SDF描边时保留参数及资源、转换为新模型，视觉结果会依照新算法变化；不将新模型编码为旧behavior。原生IO仍可严格读取旧模型用于兼容和验证，新UI不再提供旧算法选择。
+新写出 `strokeOutline.model: "stroke-replay-v1"`，保留 enabled/placement/width/source/secondaryColor，新增必需布尔 allowOverflow。VBR仍1.0，实际字段决定behavior37与stroke-outline-replay；state45。已有笔刷来源允许嵌套brush.texture并复用资源身份；默认不溢出主体描边包络。Qt读取旧轮廓/SDF描边时保留参数及资源、转换为新模型，视觉结果会依照新算法变化；不将新模型编码为旧behavior。原生IO严格校验旧模型并在绑定核心时统一迁移为Replay，allowOverflow默认false；从核心重新编码目录为state45。原始VBR参数对象可保持旧字段和对应元数据用于资源转存，但不能再执行旧算法。缺项补全沿用原始轮廓字段默认值，不能给旧模型注入allowOverflow，显式Replay缺少该布尔字段仍拒绝。新UI不再提供旧算法选择。

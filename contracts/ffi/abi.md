@@ -605,3 +605,5 @@ paint_session_layer_mask_linked(core,session,publication,layer_id,out_u32) 按�
 ## ABI1.75：复刻实际印章的描边
 
 `PAINT_FEATURE_STROKE_REPLAY_OUTLINE` 为bit63（u64），表示既有完整描边/Groups准备及资源包入口支持state45的 `strokeOutline.model: "stroke-replay-v1"` 与必需布尔 `allowOverflow`。布局和签名不变；旧模型不允许携带新字段，state<45携带新模型拒绝。VBR1.0根据实际字段重算behavior37与 `stroke-outline-replay`，保留 `stroke-outline` 及存在自身纹理时的能力。已有来源可附带独立纹理资源，按原有资源缓存/预算/生命周期校验。核心CPU复刻确定的主体印章，预览与实际笔触共用、单历史，未新增GPU计算。Qt最低ABI1.75/对应feature，旧UI不能冒充新模型执行。
+
+2026-10-21旧描边执行清理：旧state41/42/43先按原声明校验，准确准备绑定后统一为Replay，prepared_state返回state45规范目录；旧资源和关闭参数保留。旧Path/SDF原生执行、缓存及Rust算法选择接口已删除，C ABI1.75/布局不变。旧SDF能力位表示可读取迁移该格式，不再表示继续运行旧距离场描边。

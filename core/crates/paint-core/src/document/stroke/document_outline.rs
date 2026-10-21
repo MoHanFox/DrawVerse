@@ -1,19 +1,12 @@
 //! Outline geometry belongs to the current stroke, never to destination pixel differences.
 use super::*;
-use crate::{OutlineAlgorithm, OutlineSource, StrokeOutline, MAX_STROKE_OUTLINE_PIXELS};
-#[path = "outline_brush.rs"]
-mod outline_brush;
-
+use crate::{OutlineSource, StrokeOutline, MAX_STROKE_OUTLINE_PIXELS};
 #[path = "outline_replay.rs"]
 mod outline_replay;
-#[path = "outline_sdf.rs"]
-mod outline_sdf;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct ShapeCoverage {
     rows: [u64; 64],
-    // Empty for the original binary path. Allocated only for SDF shape tiles.
-    alpha: Vec<u8>,
     replay: Vec<paint_ops::replay_outline::Coverage>,
 }
 pub(super) type ShapeTile = Arc<ShapeCoverage>;
@@ -24,51 +17,32 @@ pub(super) type ShapeUpdates = Vec<(TileCoord, ShapeCoverage)>;
 pub(super) struct OutlineStroke {
     settings: StrokeOutline,
     width: f32,
-    first: InputPoint,
     pub(super) shape: ShapeTiles,
-    sdf_cache: Option<outline_sdf::Cache>,
     preview: BTreeMap<TileCoord, Option<Arc<Tile>>>,
     replay_program: Option<BrushProgram>,
 }
 impl OutlineStroke {
-    pub(super) fn new(
-        settings: &StrokeOutline,
-        diameter: f32,
-        first: InputPoint,
-    ) -> Result<Option<Self>> {
+    pub(super) fn new(settings: &StrokeOutline, diameter: f32) -> Result<Option<Self>> {
         let width = settings.width().effective(diameter)?;
         if !settings.enabled() || width == 0. {
             return Ok(None);
         }
-        let replay_program = if settings.algorithm() == OutlineAlgorithm::Replay {
-            match settings.source() {
-                OutlineSource::Existing(tip) => Some(BrushProgram::compile(BrushDefinition {
-                    tip: tip.tip(),
-                    mask: tip.mask().cloned(),
-                    texture: tip.texture().clone(),
-                    ..Default::default()
-                })?),
-                _ => None,
-            }
-        } else {
-            None
+        let replay_program = match settings.source() {
+            OutlineSource::Existing(tip) => Some(BrushProgram::compile(BrushDefinition {
+                tip: tip.tip(),
+                mask: tip.mask().cloned(),
+                texture: tip.texture().clone(),
+                ..Default::default()
+            })?),
+            _ => None,
         };
         Ok(Some(Self {
             settings: settings.clone(),
             width,
-            first,
             shape: BTreeMap::new(),
             preview: BTreeMap::new(),
-            sdf_cache: None,
             replay_program,
         }))
-    }
-    pub(super) fn invalidate_cache(&mut self) {
-        self.sdf_cache = None;
-    }
-    fn padding(&self) -> i64 {
-        let (outside, inside) = self.settings.placement().extents(self.width);
-        outside.max(inside).ceil() as i64 + 1
     }
 }
 impl Document {
@@ -120,7 +94,7 @@ impl Document {
         }
     }
 
-    /// Explicit core entry while IO and the native bridge are being connected.
+    /// Begin a dry pixel stroke using the shared two-scale replay operator.
     pub fn begin_outlined_brush_stroke(
         &mut self,
         definition: BrushDefinition,
@@ -154,74 +128,10 @@ impl Document {
         radius: f64,
         sample: impl Fn(f64, f64) -> Result<f32>,
     ) -> Result<ShapeUpdates> {
-        let Some(outline) = &stroke.outline else {
-            return Ok(Vec::new());
-        };
-        if outline.settings.algorithm() == OutlineAlgorithm::Replay {
-            return outline_replay::accumulate(self, stroke, bounds, point, radius, sample);
-        }
-        let padding = outline.padding();
-        let (left, top, right, bottom) = (
-            (bounds.0.floor() as i64).max(-padding),
-            (bounds.1.floor() as i64).max(-padding),
-            (bounds.2.ceil() as i64).min(i64::from(self.width) + padding),
-            (bounds.3.ceil() as i64).min(i64::from(self.height) + padding),
-        );
-        if left >= right || top >= bottom {
+        if stroke.outline.is_none() {
             return Ok(Vec::new());
         }
-        if (right - left) as usize * (bottom - top) as usize > MAX_STROKE_OUTLINE_PIXELS {
-            return Err(Error::ResourceLimit("stroke outline dab area"));
-        }
-        let mut updates = Vec::new();
-        for ty in top.div_euclid(64)..=(bottom - 1).div_euclid(64) {
-            for tx in left.div_euclid(64)..=(right - 1).div_euclid(64) {
-                let coord = TileCoord::from_signed(tx as i32, ty as i32);
-                let old = outline.shape.get(&coord);
-                let sdf = outline.settings.algorithm() == OutlineAlgorithm::Sdf;
-                let mut data = ShapeCoverage {
-                    rows: old.map_or([0; 64], |p| p.rows),
-                    alpha: Vec::new(),
-                    replay: Vec::new(),
-                };
-                if sdf {
-                    data.alpha
-                        .try_reserve_exact(4096)
-                        .map_err(|_| Error::ResourceLimit("outline alpha tile allocation"))?;
-                    if let Some(old) = old {
-                        data.alpha.extend_from_slice(&old.alpha);
-                    } else {
-                        data.alpha.resize(4096, 0);
-                    }
-                }
-                for y in top.max(ty * 64)..bottom.min((ty + 1) * 64) {
-                    for x in left.max(tx * 64)..right.min((tx + 1) * 64) {
-                        let bit = 1_u64 << x.rem_euclid(64);
-                        let row_index = y.rem_euclid(64) as usize;
-                        let row = &mut data.rows[row_index];
-                        if sdf {
-                            let i = row_index * 64 + x.rem_euclid(64) as usize;
-                            if data.alpha[i] < 255 {
-                                let value = sample(x as f64 + 0.5, y as f64 + 0.5)?;
-                                data.alpha[i] =
-                                    data.alpha[i].max((value.clamp(0., 1.) * 255.).round() as u8);
-                                if data.alpha[i] != 0 {
-                                    *row |= bit;
-                                }
-                            }
-                        } else if *row & bit == 0 && sample(x as f64 + 0.5, y as f64 + 0.5)? >= 0.5
-                        {
-                            *row |= bit;
-                        }
-                    }
-                }
-                if old.is_some_and(|p| **p == data) || data.rows.iter().all(|r| *r == 0) {
-                    continue;
-                }
-                updates.push((coord, data));
-            }
-        }
-        Ok(updates)
+        outline_replay::accumulate(self, stroke, bounds, point, radius, sample)
     }
 
     pub(super) fn render_stroke_outline(&mut self, stroke: &mut Stroke) -> Result<bool> {
@@ -244,88 +154,13 @@ impl Document {
                 bounds.3 = bounds.3.max(ty + y as i64 + 1);
             }
         }
-        let replay = outline.settings.algorithm() == OutlineAlgorithm::Replay;
-        let padding = if replay { 0 } else { outline.padding() };
-        let (left, top, right, bottom) = (
-            bounds.0 - padding,
-            bounds.1 - padding,
-            bounds.2 + padding,
-            bounds.3 + padding,
-        );
+        let (left, top, right, bottom) = bounds;
         let (width, height) = ((right - left) as usize, (bottom - top) as usize);
-        let count = width
+        width
             .checked_mul(height)
             .filter(|n| *n <= MAX_STROKE_OUTLINE_PIXELS)
             .ok_or(Error::ResourceLimit("stroke outline bounds pixel limit"))?;
-        let sdf = outline.settings.algorithm() == OutlineAlgorithm::Sdf;
-        let band = if replay {
-            outline_replay::compose(outline, left, top, width, height)?
-        } else if let Some(cache) = outline.sdf_cache.as_ref().filter(|_| sdf) {
-            Arc::clone(&cache.band)
-        } else {
-            let mut shape = Vec::new();
-            shape
-                .try_reserve_exact(count)
-                .map_err(|_| Error::ResourceLimit("stroke outline shape allocation"))?;
-            shape.resize(count, 0_u8);
-            for (coord, tile) in &outline.shape {
-                let (tx, ty) = (
-                    i64::from(coord.signed_x()) * 64,
-                    i64::from(coord.signed_y()) * 64,
-                );
-                for (y, &row) in tile.rows.iter().enumerate() {
-                    let mut bits = row;
-                    while bits != 0 {
-                        let x = i64::from(bits.trailing_zeros());
-                        shape[(ty + y as i64 - top) as usize * width + (tx + x - left) as usize] =
-                            if sdf {
-                                tile.alpha[y * 64 + x as usize]
-                            } else {
-                                255
-                            };
-                        bits &= bits - 1;
-                    }
-                }
-            }
-            if sdf {
-                let cache =
-                    outline_sdf::render(outline, &stroke.program, left, top, width, height, shape)?;
-                let band = Arc::clone(&cache.band);
-                outline.sdf_cache = Some(cache);
-                band
-            } else {
-                let mut band = crate::stroke_outline_band(
-                    width as u32,
-                    height as u32,
-                    &shape,
-                    outline.width,
-                    outline.settings.placement(),
-                )?;
-                outline_brush::apply_brush(
-                    width,
-                    height,
-                    &shape,
-                    &mut band,
-                    &outline.settings,
-                    outline.width,
-                    self.options,
-                )?;
-                Arc::from(band)
-            }
-        };
-        let texture = match outline.settings.source() {
-            OutlineSource::Texture(texture) | OutlineSource::SelfTextured(texture) => {
-                if sdf || replay {
-                    None
-                } else {
-                    texture.compile()
-                }
-            }
-            _ => None,
-        };
-        let texture = texture
-            .as_ref()
-            .map(|t| t.dab(outline.first.x, outline.first.y, 1., 0., 1.));
+        let band = outline_replay::compose(outline, left, top, width, height)?;
         let color = if outline.settings.secondary_color() {
             stroke.brush.background_color
         } else {
@@ -370,12 +205,8 @@ impl Document {
                     for x in start..end {
                         let (wx, wy) = (x + ox, y + oy);
                         let coverage = band[(wy - top) as usize * width + (wx - left) as usize];
-                        let amount = coverage
-                            * selected[(x - start) as usize]
-                            * stroke.brush.opacity
-                            * texture
-                                .as_ref()
-                                .map_or(1., |t| t.coverage(wx as f64 + 0.5, wy as f64 + 0.5));
+                        let amount =
+                            coverage * selected[(x - start) as usize] * stroke.brush.opacity;
                         if amount == 0. {
                             continue;
                         }
@@ -461,9 +292,6 @@ pub(super) fn install_shape(
         return Ok(());
     };
     let limit = limit.min(MAX_STROKE_OUTLINE_PIXELS / 4096);
-    if !updates.is_empty() {
-        outline.sdf_cache = None;
-    }
     for (coord, rows) in updates {
         if !outline.shape.contains_key(&coord) && outline.shape.len() >= limit {
             return Err(Error::ResourceLimit("stroke outline shape tile limit"));
@@ -481,87 +309,6 @@ mod tests {
         BrushTip, OutlinePlacement, OutlineWidth, PressureControl, PressureCurve, StrokeTaper,
         TaperEnd,
     };
-
-    #[test]
-    fn sdf_cache_reuses_exact_shape_and_invalidates_on_new_coverage() {
-        let definition = BrushDefinition {
-            brush: Brush {
-                radius: 8.,
-                ..Default::default()
-            },
-            tip: BrushTip {
-                hardness: 0.5,
-                pressure_size: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let settings = StrokeOutline::new(
-            true,
-            OutlinePlacement::Outside,
-            OutlineWidth::new(false, 4., 10.).unwrap(),
-            OutlineSource::SelfBrush,
-            true,
-        )
-        .unwrap()
-        .with_algorithm(OutlineAlgorithm::Sdf);
-        let mut doc = Document::new(96, 64).unwrap();
-        doc.begin_outlined_brush_stroke(definition, InputPoint::new(24., 32., 1.), &settings)
-            .unwrap();
-        let cache = Arc::clone(
-            &doc.stroke
-                .as_ref()
-                .unwrap()
-                .outline
-                .as_ref()
-                .unwrap()
-                .sdf_cache
-                .as_ref()
-                .unwrap()
-                .band,
-        );
-        assert!(doc
-            .stroke
-            .as_ref()
-            .unwrap()
-            .outline
-            .as_ref()
-            .unwrap()
-            .shape
-            .values()
-            .any(|tile| tile.alpha.iter().any(|a| *a > 0 && *a < 255)));
-        doc.prepare_outline_input();
-        doc.publish_outline().unwrap();
-        assert!(Arc::ptr_eq(
-            &cache,
-            &doc.stroke
-                .as_ref()
-                .unwrap()
-                .outline
-                .as_ref()
-                .unwrap()
-                .sdf_cache
-                .as_ref()
-                .unwrap()
-                .band
-        ));
-        doc.stroke_to(InputPoint::new(64., 32., 1.)).unwrap();
-        assert!(!Arc::ptr_eq(
-            &cache,
-            &doc.stroke
-                .as_ref()
-                .unwrap()
-                .outline
-                .as_ref()
-                .unwrap()
-                .sdf_cache
-                .as_ref()
-                .unwrap()
-                .band
-        ));
-        doc.cancel_stroke().unwrap();
-        assert!(doc.stroke.is_none());
-    }
 
     #[test]
     fn outline_tail_shape_matches_one_pass_known_final_endpoint() {

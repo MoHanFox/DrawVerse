@@ -1,7 +1,7 @@
 use paint_core::{
     BrushCatalog, BrushDynamics, BrushMask, BrushSettings, BrushTexture, BrushTip, Document,
-    InputPoint, OutlineAlgorithm, OutlinePlacement, OutlineSource, OutlineWidth, Pixel,
-    SecondaryTip, StrokeOutline, TextureResource, TextureSettings, MAX_CATALOG_MASK_BYTES,
+    InputPoint, OutlinePlacement, OutlineSource, OutlineWidth, Pixel, SecondaryTip, StrokeOutline,
+    TextureResource, TextureSettings, MAX_CATALOG_MASK_BYTES,
 };
 use paint_io::{
     brush_resource::{encode_mask, hash, ResourceStore},
@@ -87,25 +87,11 @@ fn package(settings: &BrushSettings) -> Package {
             id: "12345678-1234-4234-8234-123456789abd".into(),
             name: "Outline".into(),
             engine_profile: "drawverse.brush".into(),
-            behavior_version: if settings.outline.algorithm() == OutlineAlgorithm::Replay {
-                37
-            } else if settings.outline.algorithm() == OutlineAlgorithm::Sdf {
-                35
-            } else if matches!(settings.outline.source(), OutlineSource::SelfTextured(_)) {
-                34
-            } else {
-                33
-            },
+            behavior_version: 37,
             required_capabilities: {
-                let mut caps = vec!["stroke-outline".into()];
+                let mut caps = vec!["stroke-outline".into(), "stroke-outline-replay".into()];
                 if matches!(settings.outline.source(), OutlineSource::SelfTextured(_)) {
                     caps.push("outline-self-texture".into());
-                }
-                if settings.outline.algorithm() == OutlineAlgorithm::Sdf {
-                    caps.push("stroke-outline-sdf".into());
-                }
-                if settings.outline.algorithm() == OutlineAlgorithm::Replay {
-                    caps.push("stroke-outline-replay".into());
                 }
                 caps
             },
@@ -146,7 +132,7 @@ fn draw(mut definition: paint_core::BrushDefinition) -> Vec<[u32; 4]> {
 }
 
 #[test]
-fn state41_and_image_vbr_preserve_closed_settings_and_self_outline_pixels() {
+fn replay_state_and_image_vbr_preserve_closed_settings_and_self_outline_pixels() {
     let token = CancellationToken::default();
     let default = brush_state::encode(&BrushCatalog::default()).unwrap();
     assert_eq!(
@@ -170,7 +156,7 @@ fn state41_and_image_vbr_preserve_closed_settings_and_self_outline_pixels() {
         catalog.edit("round-pressure", settings.clone()).unwrap();
         let state = brush_state::encode(&catalog).unwrap();
         let json: serde_json::Value = serde_json::from_slice(&state).unwrap();
-        assert_eq!(json["version"], 41);
+        assert_eq!(json["version"], 45);
         assert_eq!(json["presets"][0]["strokeOutline"]["enabled"], enabled);
         let restored = brush_state::decode(&state, MAX_CATALOG_MASK_BYTES).unwrap();
         assert_eq!(brush_state::encode(&restored).unwrap(), state);
@@ -179,6 +165,20 @@ fn state41_and_image_vbr_preserve_closed_settings_and_self_outline_pixels() {
             draw(definition(&settings))
         );
         let mut old = json;
+        old["version"] = 41.into();
+        old["presets"][0]["strokeOutline"]["model"] = "stroke-contour-v1".into();
+        old["presets"][0]["strokeOutline"]
+            .as_object_mut()
+            .unwrap()
+            .remove("allowOverflow");
+        let migrated =
+            brush_state::decode(&serde_json::to_vec(&old).unwrap(), MAX_CATALOG_MASK_BYTES)
+                .unwrap();
+        assert_eq!(brush_state::encode(&migrated).unwrap(), state);
+        assert_eq!(
+            draw(definition(migrated.selected().settings())),
+            draw(definition(&settings))
+        );
         old["version"] = 40.into();
         assert!(
             brush_state::decode(&serde_json::to_vec(&old).unwrap(), MAX_CATALOG_MASK_BYTES)
@@ -188,10 +188,10 @@ fn state41_and_image_vbr_preserve_closed_settings_and_self_outline_pixels() {
         let bundle = ImageBundle::new(package(&settings), BTreeMap::new(), &token).unwrap();
         let bytes = vbr_image::encode(&bundle, &token).unwrap();
         let reopened = vbr_image::decode(&bytes, &token).unwrap();
-        assert_eq!(reopened.package.brushes[0].behavior_version, 33);
+        assert_eq!(reopened.package.brushes[0].behavior_version, 37);
         assert_eq!(
             reopened.package.brushes[0].required_capabilities,
-            ["stroke-outline"]
+            ["stroke-outline", "stroke-outline-replay"]
         );
         assert_eq!(
             draw(reopened.definition(0).unwrap()),
@@ -338,7 +338,7 @@ fn outline_parameters_reject_unknown_null_and_pre_rounding_out_of_range_fields()
 }
 
 #[test]
-fn self_texture_requires_state42_preserves_closed_values_and_changes_only_outline() {
+fn replay_self_texture_preserves_closed_values_and_changes_only_outline() {
     let token = CancellationToken::default();
     let temp = tempfile::tempdir().unwrap();
     let store = ResourceStore::open(temp.path().join("resources"), MAX_CATALOG_MASK_BYTES).unwrap();
@@ -367,7 +367,7 @@ fn self_texture_requires_state42_preserves_closed_values_and_changes_only_outlin
             catalog.edit("round-pressure", actual.clone()).unwrap();
             let state = brush_state::encode(&catalog).unwrap();
             let mut json: serde_json::Value = serde_json::from_slice(&state).unwrap();
-            assert_eq!(json["version"], 42);
+            assert_eq!(json["version"], 45);
             assert_eq!(
                 json["presets"][0]["strokeOutline"]["source"]["model"],
                 "self-brush"
@@ -388,6 +388,21 @@ fn self_texture_requires_state42_preserves_closed_values_and_changes_only_outlin
                 assert_eq!(pixels[24 * 72 + 36], plain_pixels[24 * 72 + 36]);
                 assert!(pixels.iter().all(|p| f32::from_bits(p[2]) == 0.));
             }
+            json["version"] = 42.into();
+            json["presets"][0]["strokeOutline"]["model"] = "stroke-contour-v1".into();
+            json["presets"][0]["strokeOutline"]
+                .as_object_mut()
+                .unwrap()
+                .remove("allowOverflow");
+            let migrated = brush_state::decode_with_resources(
+                &serde_json::to_vec(&json).unwrap(),
+                MAX_CATALOG_MASK_BYTES,
+                &store,
+                &token,
+            )
+            .unwrap();
+            assert_eq!(brush_state::encode(&migrated).unwrap(), state);
+            assert_eq!(draw(definition(migrated.selected().settings())), pixels);
             json["version"] = 41.into();
             assert!(brush_state::decode_with_resources(
                 &serde_json::to_vec(&json).unwrap(),
@@ -398,7 +413,7 @@ fn self_texture_requires_state42_preserves_closed_values_and_changes_only_outlin
             .is_err());
             let package = package(&actual);
             package.validate().unwrap();
-            assert_eq!(package.brushes[0].behavior_version, 34);
+            assert_eq!(package.brushes[0].behavior_version, 37);
             assert!(package.brushes[0]
                 .required_capabilities
                 .iter()
@@ -418,13 +433,13 @@ fn self_texture_requires_state42_preserves_closed_values_and_changes_only_outlin
             old_metadata["brushes"][0]["requiredCapabilities"] = serde_json::json!([]);
             let normalized =
                 Package::from_json(&serde_json::to_vec(&old_metadata).unwrap()).unwrap();
-            assert_eq!(normalized.brushes[0].behavior_version, 34);
+            assert_eq!(normalized.brushes[0].behavior_version, 37);
         }
     }
 }
 
 #[test]
-fn sdf_state43_roundtrips_closed_and_active_models_resources_and_actual_pixels() {
+fn legacy_state43_migrates_closed_and_active_models_resources_and_actual_pixels() {
     let token = CancellationToken::default();
     let temp = tempfile::tempdir().unwrap();
     let store = ResourceStore::open(temp.path().join("resources"), MAX_CATALOG_MASK_BYTES).unwrap();
@@ -454,7 +469,6 @@ fn sdf_state43_roundtrips_closed_and_active_models_resources_and_actual_pixels()
                 outline(enabled, OutlinePlacement::Inside, source)
                     .as_ref()
                     .clone()
-                    .with_algorithm(OutlineAlgorithm::Sdf)
                     .into(),
             );
             let expected = draw(definition(&actual));
@@ -462,11 +476,18 @@ fn sdf_state43_roundtrips_closed_and_active_models_resources_and_actual_pixels()
             catalog.edit("round-pressure", actual.clone()).unwrap();
             let state = brush_state::encode(&catalog).unwrap();
             let mut json: serde_json::Value = serde_json::from_slice(&state).unwrap();
-            assert_eq!(json["version"], 43);
+            let current = state.clone();
+            json["version"] = 43.into();
+            json["presets"][0]["strokeOutline"]["model"] = "stroke-sdf-v1".into();
+            json["presets"][0]["strokeOutline"]
+                .as_object_mut()
+                .unwrap()
+                .remove("allowOverflow");
+            let state = serde_json::to_vec(&json).unwrap();
             let reopened =
                 brush_state::decode_with_resources(&state, MAX_CATALOG_MASK_BYTES, &store, &token)
                     .unwrap();
-            assert_eq!(brush_state::encode(&reopened).unwrap(), state);
+            assert_eq!(brush_state::encode(&reopened).unwrap(), current);
             assert_eq!(draw(definition(reopened.selected().settings())), expected);
             for version in [41, 42] {
                 json["version"] = version.into();
@@ -478,9 +499,20 @@ fn sdf_state43_roundtrips_closed_and_active_models_resources_and_actual_pixels()
                 )
                 .is_err());
             }
-            let package = package(&actual);
+            let mut package = package(&actual);
+            let mut legacy =
+                serde_json::to_value(package.brushes[0].stroke_outline.as_ref().unwrap()).unwrap();
+            legacy["model"] = "stroke-sdf-v1".into();
+            legacy.as_object_mut().unwrap().remove("allowOverflow");
+            package.brushes[0].stroke_outline = Some(serde_json::from_value(legacy).unwrap());
+            package.brushes[0].behavior_version = 35;
+            package.brushes[0]
+                .required_capabilities
+                .retain(|c| c != "stroke-outline-replay");
+            package.brushes[0]
+                .required_capabilities
+                .push("stroke-outline-sdf".into());
             package.validate().unwrap();
-            assert_eq!(package.brushes[0].behavior_version, 35);
             let resources = if matches!(actual.outline.source(), OutlineSource::SelfBrush) {
                 BTreeMap::new()
             } else {
@@ -490,8 +522,8 @@ fn sdf_state43_roundtrips_closed_and_active_models_resources_and_actual_pixels()
             let decoded =
                 vbr_image::decode(&vbr_image::encode(&bundle, &token).unwrap(), &token).unwrap();
             assert_eq!(
-                decoded.definition(0).unwrap().outline.algorithm(),
-                OutlineAlgorithm::Sdf
+                decoded.definition(0).unwrap().outline.model(),
+                "stroke-replay-v1"
             );
             assert_eq!(draw(decoded.definition(0).unwrap()), expected);
             let mut old: serde_json::Value =
@@ -536,7 +568,6 @@ fn replay_state45_and_vbr37_roundtrip_all_sources_overflow_and_real_pixels() {
                     outline(enabled, OutlinePlacement::Outside, source.clone())
                         .as_ref()
                         .clone()
-                        .with_algorithm(OutlineAlgorithm::Replay)
                         .with_allow_overflow(allow),
                 ));
                 let expected = draw(definition(&current));
@@ -575,7 +606,7 @@ fn replay_state45_and_vbr37_roundtrip_all_sources_overflow_and_real_pixels() {
                     vbr_image::decode(&vbr_image::encode(&bundle, &token).unwrap(), &token)
                         .unwrap();
                 let definition = reopened.definition(0).unwrap();
-                assert_eq!(definition.outline.algorithm(), OutlineAlgorithm::Replay);
+                assert_eq!(definition.outline.model(), "stroke-replay-v1");
                 assert_eq!(definition.outline.allow_overflow(), allow);
                 assert_eq!(draw(definition), expected);
                 let mut stale: serde_json::Value =
@@ -595,12 +626,20 @@ fn replay_state45_and_vbr37_roundtrip_all_sources_overflow_and_real_pixels() {
 
 #[test]
 fn replay_fields_are_strict_and_legacy_models_keep_original_encoding() {
-    let legacy = OutlineParameters::from_core(&StrokeOutline::default()).unwrap();
-    let mut value = serde_json::to_value(&legacy).unwrap();
+    let mut value =
+        serde_json::to_value(OutlineParameters::from_core(&StrokeOutline::default()).unwrap())
+            .unwrap();
+    value["model"] = "stroke-contour-v1".into();
+    value.as_object_mut().unwrap().remove("allowOverflow");
+    let legacy: OutlineParameters = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&legacy).unwrap(), value);
+    let migrated = legacy.bind(None, None).unwrap();
+    assert_eq!(migrated.model(), "stroke-replay-v1");
+    assert!(!migrated.allow_overflow());
     assert!(value.get("allowOverflow").is_none());
     value["allowOverflow"] = false.into();
     assert!(serde_json::from_value::<OutlineParameters>(value).is_err());
-    let settings = StrokeOutline::default().with_algorithm(OutlineAlgorithm::Replay);
+    let settings = StrokeOutline::default();
     let value = serde_json::to_value(OutlineParameters::from_core(&settings).unwrap()).unwrap();
     assert_eq!(value["allowOverflow"], false);
     for bad in [

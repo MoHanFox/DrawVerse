@@ -395,6 +395,16 @@ fn canonical_preset_value() -> &'static Value {
             source_resource: None,
         };
         let mut value = serde_json::to_value(preset).expect("canonical VBR preset");
+        // Missing legacy fields use the original wire defaults. Never inject a
+        // replay-only field into a legacy record (or invent a missing required
+        // allowOverflow for an explicitly selected replay model).
+        if let Some(outline) = value
+            .get_mut("strokeOutline")
+            .and_then(Value::as_object_mut)
+        {
+            outline.insert("model".into(), Value::String("stroke-contour-v1".into()));
+            outline.remove("allowOverflow");
+        }
         if let Some(dual) = value.get_mut("dualBrush").and_then(Value::as_object_mut) {
             for (key, entry) in [
                 (

@@ -121,22 +121,22 @@ V 移动工具或 Ctrl 拾取拖动可实时预览，松手提交一条历史，
 
 当前平台验收、构建路径与尚待实机检查的连续手感见 [导航与轮廓验收](../validations/interface/canvas-navigation-adaptive-cursor-validation.md)。
 
-## 笔刷的 GPU 范围与 SDF 用法
+## 笔刷的 GPU 范围与复刻描边用法
 
 截至本轮，普通画笔、图片笔尖、纹理、双笔刷、湿混、涂抹、橡皮以及整笔描边的像素计算均在 CPU。Qt 在硬件后端呈现这些像素，并为笔尖轮廓提供 GPU 背景亮度自适应；这不等于主笔刷在 GPU 上盖章。笔刷面板里的真实笔触预览也由同一 CPU 核心生成，QML 只显示返回图像。
 
 整笔描边现在复刻主体已经确定的印章中心、压力尺寸、方向/随机形状及尾部回放，按大/小两尺度累计四通道max，最后做几何差集并着色。允许溢出只影响独立来源的主体包络裁剪，仍受画布、选区、锁透明和文档配额约束。Qt不再提供建路径/SDF算法选项，也不调度独立描边路径的间距/散布；旧设置读取后迁移为新模型。
 
 ```rust
-use paint_core::{OutlineAlgorithm, OutlinePlacement, OutlineSource, OutlineWidth, StrokeOutline};
+use paint_core::{OutlinePlacement, OutlineSource, OutlineWidth, StrokeOutline};
 let outline = StrokeOutline::new(
     true, OutlinePlacement::Outside, OutlineWidth::new(false, 6.0, 10.0)?,
     OutlineSource::SelfBrush, true,
-)?.with_algorithm(OutlineAlgorithm::Replay).with_allow_overflow(false);
+)?.with_allow_overflow(false);
 // 放入 BrushDefinition.outline 后，实际笔触与笔刷预览共用 CPU 执行入口。
 ```
 
-实际采样见 `core/crates/paint-core/src/document/stroke/outline_replay.rs`，主体解析后的覆盖闭包复用见 `document/mod.rs`，覆盖发布、选区/图层约束与单笔历史见 `document_outline.rs`；纯算子为 `paint-ops/src/replay_outline.rs`。64×64四通道瓦片由现有尾部日志保存/恢复；一次区域/整笔边界8Mi像素限制，失败回滚整笔。详见[复刻描边设计](../brush/core/brush-stroke-replay-outline-design.md)。旧SDF算子与测试仍用于历史兼容/对照，不是当前Qt可选算法。
+实际采样见 `core/crates/paint-core/src/document/stroke/outline_replay.rs`，主体解析后的覆盖闭包复用见 `document/mod.rs`，覆盖发布、选区/图层约束与单笔历史见 `document_outline.rs`；纯算子为 `paint-ops/src/replay_outline.rs`。64×64四通道瓦片由现有尾部日志保存/恢复；一次区域/整笔边界8Mi像素限制，失败回滚整笔。详见[复刻描边设计](../brush/core/brush-stroke-replay-outline-design.md)。旧Path/SDF描边执行器、缓存和算法选择类型已删除；旧模型名仅在IO读取校验处保留，绑定核心时统一迁移。paint-ops中的通用SDF数值算子不属于描边执行器，独立保留。
 
 GPU计算设置仍控制现有wgpu算子，选择GPU不会把描边自动转为GPU计算。将来加速须复用不可变采样与四通道覆盖身份、相同差集语义及有界范围，比较上传/回读在内的总成本，不能将CPU回调包装为GPU后端或为每次预览全图往返。
 

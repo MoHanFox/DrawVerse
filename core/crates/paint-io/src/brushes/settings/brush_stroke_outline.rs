@@ -1,12 +1,15 @@
 //! Complete whole-stroke outline settings with strict pre-rounding validation.
 use crate::{brush_dual::DualParameters, brush_texture::TextureParameters, Error, Result};
 use paint_core::{
-    BrushMask, DualBrush, DualMode, OutlineAlgorithm, OutlinePlacement, OutlineSource,
-    OutlineWidth, StrokeOutline, TextureResource, STROKE_OUTLINE_MODEL,
-    STROKE_REPLAY_OUTLINE_MODEL, STROKE_SDF_OUTLINE_MODEL,
+    BrushMask, DualBrush, DualMode, OutlinePlacement, OutlineSource, OutlineWidth, StrokeOutline,
+    TextureResource, STROKE_REPLAY_OUTLINE_MODEL,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+
+// Legacy names are accepted only at the serialization boundary.
+const STROKE_OUTLINE_MODEL: &str = "stroke-contour-v1";
+const STROKE_SDF_OUTLINE_MODEL: &str = "stroke-sdf-v1";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -84,8 +87,7 @@ impl OutlineParameters {
             },
             source,
             secondary_color: outline.secondary_color(),
-            allow_overflow: (outline.algorithm() == OutlineAlgorithm::Replay)
-                .then_some(outline.allow_overflow()),
+            allow_overflow: Some(outline.allow_overflow()),
         };
         let parameters = Self { data };
         parameters.validate()?;
@@ -227,17 +229,7 @@ impl OutlineParameters {
             source,
             self.data.secondary_color,
         )
-        .map(|outline| {
-            outline
-                .with_allow_overflow(self.data.allow_overflow.unwrap_or(false))
-                .with_algorithm(if self.data.model == STROKE_REPLAY_OUTLINE_MODEL {
-                    OutlineAlgorithm::Replay
-                } else if self.data.model == STROKE_SDF_OUTLINE_MODEL {
-                    OutlineAlgorithm::Sdf
-                } else {
-                    OutlineAlgorithm::Path
-                })
-        })
+        .map(|outline| outline.with_allow_overflow(self.data.allow_overflow.unwrap_or(false)))
         .map_err(Error::Core)
     }
 }

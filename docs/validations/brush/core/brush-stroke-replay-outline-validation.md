@@ -21,3 +21,11 @@ IO描边交换7项通过，新增四来源（含已有图片笔尖+纹理）×�
 Qt workflow软件/D3D11各8行通过：旧Path/Sdf迁移与失败原子性；真实鼠标点击溢出开关改变像素和标准预览、单笔历史及撤销重做；自身独立纹理新路径和旧SDF迁移两行；异步导入角色捕获；无主纹理选择描边纹理；整数控件及大范围像素滑条。UiTests原描边设置/复制重置、预览/像素/交换重开、资源迁移三项在软件/D3D11各通过。日志 `artifacts/replay-{workflow,ui}-{software,d3d11}.txt`；D3D11设置截图 `artifacts/replay-outline-d3d11.png`已检查，算法入口消失，溢出/大小及来源可见。
 
 迁移测试初次失败是QVariant数字/null的JSON往返类型差异，改为按QJsonObject比较完整语义后通过，未删字段断言。完整Release及Qt目标构建、C11/C++20静态/共享四ABI通过；ABI1.75 bit63、state45、behavior37，产物 `build/qt/bin/Release`。未跑全量check/跨平台/实体连续输入；新功能限干画笔普通像素层、原预算保持，无新增GPU。旧UI入口已移除，原生旧算法兼容执行尚在，不宣称旧代码删除完成。
+
+## 2026-10-21 删除旧原生算法
+
+旧建路径盖章、SDF描边执行器/缓存、二值band和核心算法选择类型已删除，默认唯一Replay。原数值旧band测试随退役功能移除，三位置实际笔触改用独立两半径灰度量化参考；旧边缘满覆盖断言改验真实采样的精确灰度AA，而非放宽误差。已有来源的独立间距/散布不再另排动作，测试验证输出相同、图片孔洞/实际第二颜色和分页一致。
+
+核心设置2、实际笔触9、来源图片1、预览1、Replay5、内部尾部参考1及paint-ops复刻7通过。IO描边7通过，包含旧state41/42/43迁移为新规范目录、资源/关闭参数和真实像素；VBR5/图像13/state6共享24通过。原生准备1覆盖旧轮廓、旧SDF、新Replay三个模型，验证prepared目录为state45、实际像素/历史一致和旧入口拒绝。三crate全目标严格Clippy及格式通过。
+
+Qt工作流软件/D3D11各6行、UiTests各3项及四ABI通过；日志 `artifacts/replay-cleanup-{workflow,ui}-{software,rhi}.txt`。生成头一致，ABI1.75/state45/behavior37保持。完整Release依赖与全部测试目标成功；原drawverse.exe被用户正在运行的进程占用，未结束该进程，新主程序输出 `build/qt/bin/Release/drawverse-next.exe`，原EXE仍为前版。O1功能及旧执行删除完成，限制仍为干画笔普通层、既有预算、未新增GPU，未验收全量/跨平台/实体持续输入。

@@ -35,3 +35,7 @@ PanelContent异步创建LayersPanel期间，自定义属性尚未全部就绪；
 ## S1 大范围像素滑条
 
 共用有符号对数坐标与指数反函数，跨度≥512px时启用，保留1px加减与精确输入。软件/D3D11各7项通过，含真实输入/鼠标/键盘及笔刷、液化模型双向同步；Release构建通过。详见[设计](../../interface/pixel-slider-exponential-design.md)与[验收](../interface/pixel-slider-exponential-validation.md)。U4共享方向盘两项D3D11也通过。U5透明交换链提示在3行真实拖放仍存在，默认alpha缓冲配置并未消除提示，因此撤回该无效候选，不称其修复。
+
+## O1 旧原生执行清理完成
+
+删除Path/SDF实际执行、缓存和核心选择接口；旧格式只在IO严格解析，绑定时产出Replay，规范目录写回state45。核心19、纯算子7、IO新旧迁移7/共享24、原生三模型1、软件/D3D11工作流各6行及UI各3、四ABI、严格Clippy/格式/生成头与Release均通过。旧主程序正在运行而链接失败，保留用户进程，新产物为 `build/qt/bin/Release/drawverse-next.exe`。详见描边验收末节；O1标完成，其余T1/T2/M1/H1/P1、U1/U5仍待。

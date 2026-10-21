@@ -1429,7 +1429,7 @@ impl Document {
             coverage_erase: brush.mode == BrushMode::Erase || first.tool == Tool::Eraser,
             coverage_tool_stable: true,
             taper: None,
-            outline: outline::OutlineStroke::new(&outline_settings, brush.radius * 2., first)?,
+            outline: outline::OutlineStroke::new(&outline_settings, brush.radius * 2.)?,
             taper_factors: crate::TaperFactors {
                 diameter: 1.,
                 opacity: 1.,

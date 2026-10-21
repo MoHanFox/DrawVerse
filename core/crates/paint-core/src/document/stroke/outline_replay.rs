@@ -83,7 +83,6 @@ pub(super) fn accumulate(
             );
             let mut tile = ShapeCoverage {
                 rows: previous.map_or([0; 64], |p| p.rows),
-                alpha: Vec::new(),
                 replay: Vec::new(),
             };
             tile.replay
