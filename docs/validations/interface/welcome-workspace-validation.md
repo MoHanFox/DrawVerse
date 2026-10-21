@@ -42,3 +42,7 @@ Main原来把每次文件成功回执写为“文件操作完成”，跨文档�
 继续跑D3D11发现真实产品错误：切换浮窗标签时park先修改parent、后隐藏，自适应轮廓ShaderEffectSource尚绑定旧窗口，出现Cannot use same item/不同窗口source提示，画布停在主窗口。CanvasPane现在先隐藏解绑，再改变parent并重新显示。完整原测试软件及D3D11均通过，含真实鼠标绘画/撤销/重做、缩放与惯性停止、多文档标签/保存重开/手写笔/跨窗停靠及关闭保护。日志 artifacts/canvas-window-{software,d3d11}.txt；原两个GPU窗口归属诊断消失。测试有两条故意将捕获鼠标坐标送到窗外的QtTest提示，未屏蔽，不属于QML/GPU警告。
 
 首开80层面板软件与D3D11各通过，异步属性保持，最长心跳20/27ms、实显5行；完整Release构建通过，输出标准drawverse.exe。未跑全量/跨平台/实体输入。
+
+## U5 补充：快速收起分类的直接销毁
+
+附加共享面板回归发现，快速双击图层标签收起分类仍在退出留下两个创建计数，功能断言通过不代表生命周期通过。PanelContent 销毁时补齐 Loading 完成和 Loader 卸载，覆盖未先触发 requested 的父级直接销毁。原 panelTabsRetractWithoutExpandingRailsAndKeepSharedPresentation 增加残留/cancel/alpha 的 failOnWarning；候选软件与D3D11无上述诊断，D3D11共享笔刷设置窗口也通过。最终构建、原用例与欢迎/拖动共享回归记录于 remaining-fixes 验收末节。

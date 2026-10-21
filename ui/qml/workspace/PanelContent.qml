@@ -16,6 +16,12 @@ Item {
     property var canvasView
     readonly property var definition: Workspace.panelDefinition(panelId)
     readonly property string kind: definition.kind || ""
+    Component.onDestruction: {
+        // Category replacement can destroy this item before requested changes.
+        // Complete deferred controls while their creation context still exists.
+        if(content.status===Loader.Loading)content.asynchronous=false
+        content.active=false
+    }
     Loader {
         id:content
         // Loader is a focus scope, including asynchronously created panel content.

@@ -29,3 +29,5 @@ PanelContent 的 Loader 只在内容可见、实际宿主窗口可见且当前�
 
 
 跨窗口画布迁移先将 CanvasPane 隐藏，使自适应轮廓/选区的 ShaderEffectSource 解绑，再改变 parent，最后显示并恢复焦点。原来的 park 先改变 parent，GPU纹理源仍持有旧窗口，会阻止子树正确迁移并在后续标签激活时停留在主窗口。保留Canvas实例、客户端、缩放与平移；回归用当前Ctrl+Shift+Z、实际缩放动画完成及通过静止中键停止惯性验证状态，不用固定等待。
+
+快速双击标签收起分类时，父级可能直接销毁 PanelContent，来不及改变 requested。Component.onDestruction 同样先完成 Loading 控件，再关闭 Loader；覆盖整个分类替换的销毁路径，保持正常异步首开。

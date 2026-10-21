@@ -75,3 +75,9 @@ PanelContent 检查真实窗口可见与客户端关闭状态；卸载仍在 Loa
 ## P1：state45 等价目录误判修复
 
 等价比较上界44与已支持45不一致，导致原生回传及文档间偏好反复完整恢复。补齐45，保留46/非法低版本拒绝与真实参数变更恢复。确定性回归软件/D3D11各通过；真实489项约2MB目录，两后端各80次选择的本地/双文档/跨工具隔离通过，双文档目录重建16→0，热轮GUI最大间隔16/23ms，双文档17/18ms。首轮仍374/367ms，冷restore168/179ms，不能标P1全完成。Release已更新；证据与计时限制见笔刷切换延迟验收。
+
+## U5 补充收尾与批量共享回归
+
+额外原分类双击回归发现直接销毁仍遗留2个创建计数（artifacts/batch-panels-software.txt），已在 PanelContent.Component.onDestruction 完成 Loading 后卸载。原测试增加 failOnWarning，不屏蔽或等待：最终软件与D3D11各2项（快速收起分类、跨窗共享笔刷设置）通过，欢迎生命周期/白底透明关闭/原生拖动三来源/state45等价目录各7行通过，无残留/cancel/alpha或QML警告。日志 artifacts/panel-destroy-final-{software,d3d11}.txt 与 panel-destroy-shared-{software,d3d11}.txt。
+
+共享复合移动与变换回归两后端各14行通过（artifacts/batch-shared-transform-{software,d3d11}.txt）。最终完整Release与生成头检查通过，标准 build/qt/bin/Release/drawverse.exe 更新于2026-10-21 14:32。未跑全量check、跨平台或实体持续输入；T2复杂回退、M1/H1及P1冷准备继续保留待办。

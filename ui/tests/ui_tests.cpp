@@ -5368,6 +5368,7 @@ private slots:
         QVERIFY(window->close()); QVERIFY(!window->isVisible());
     }
     void panelTabsRetractWithoutExpandingRailsAndKeepSharedPresentation() {
+        QTest::failOnWarning(QRegularExpression(".*(items in the process|DelegateModel::cancel|Swapchain says).*"));
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
         // The default right column groups navigator/layers/history with the shared colour panel.
