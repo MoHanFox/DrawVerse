@@ -51,6 +51,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(bool computeBusy READ computeBusy NOTIFY computeChanged)
     Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
     Q_PROPERTY(bool brushLibraryReady READ brushLibraryReady NOTIFY brushLibraryReadyChanged)
+    Q_PROPERTY(bool brushCatalogPrepared READ brushCatalogPrepared NOTIFY brushCatalogPreparedChanged)
     Q_PROPERTY(bool wetActionBusy READ wetActionBusy NOTIFY wetActionChanged)
     Q_PROPERTY(bool brushFileBusy READ brushFileBusy NOTIFY brushFileChanged)
     Q_PROPERTY(QVariantMap brushSourceInfo READ brushSourceInfo NOTIFY brushSourceChanged)
@@ -176,6 +177,7 @@ public:
     QString brushOutlineMessage() const {return !m_brushLibrary->cursorComposite() || m_secondOutlineMessage.isEmpty()?m_brushOutlineMessage:m_brushOutlineMessage.isEmpty()?m_secondOutlineMessage:m_brushOutlineMessage+QStringLiteral("\n")+m_secondOutlineMessage;}
     bool brushOutlineReady() const {return m_brushOutlineReady;}
     bool brushLibraryReady() const {return m_brushLibraryReady;}
+    bool brushCatalogPrepared() const {return m_brushCatalogPrepared;}
     QVariantMap brushSourceInfo() const {return m_brushSourceInfo;}
     QString brushSourceMessage() const {return m_brushSourceMessage;}
     bool brushSourceBusy() const {return m_brushSourceBusy;}
@@ -457,6 +459,7 @@ signals:
     void brushCursorImageChanged();
     void brushOutlineChanged();
     void brushLibraryReadyChanged();
+    void brushCatalogPreparedChanged();
     void wetActionChanged();
     void wetBrushFinished(bool success);
     void brushFileChanged();
@@ -512,6 +515,7 @@ private:
     QString m_outlineResource,m_brushOutlinePath,m_brushOutlineMessage;
     bool m_brushOutlineReady=false;
     bool m_brushLibraryReady=false;
+    bool m_brushCatalogPrepared=false;
     QString m_pendingBrushImport;
     QString m_brushImportGroupName;
     QString m_secondOutlineResource,m_secondOutlinePath,m_secondOutlineMessage,m_strokeSecondOutlineResource,m_strokeSecondOutlinePath;

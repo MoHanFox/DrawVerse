@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [无文档欢迎工作区](interface/welcome-workspace-design.md)
+
 - [长任务资源预算、大画布与历史架构调查](tools/long-task-resource-budget-design.md)
 
 - [复杂图层移动的有界预览](tools/layer-move-bounded-fallback-design.md)

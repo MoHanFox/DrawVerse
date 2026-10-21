@@ -314,6 +314,7 @@ signals:
     void brushResourcePreviewReady(QString identity,QString image);
     void brushTipReady(QString target,QString resource,int depth,QString error,int role);
     void nativeBrushCatalog(quint64 preparation,QByteArray state,QString error);
+    void brushPreparationFinished(quint64 preparation,bool success);
     void brushFileReady(QByteArray package,QString error,bool exporting,bool abr);
     void layerClipboardReady(QByteArray bytes);
     void liquifyPreferences(QVariantMap values);
@@ -668,6 +669,7 @@ public:
             // Identity/default normalization must not rebuild the entire live
             // library. Compare this exact prepared input on the worker first.
             if(!error.isEmpty() || !BrushLibrary::equivalentCatalogState(canonical,submitted))emit nativeBrushCatalog(preparation,canonical,error);
+            emit brushPreparationFinished(preparation,error.isEmpty());
         }
         if(!m_pendingBrushPreferences.isEmpty()){
             const auto pending=std::exchange(m_pendingBrushPreferences,{});
@@ -862,6 +864,11 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         synchronizeBrushCatalog(m_brushLibrary->snapshot());
         if(!m_brushLibraryReady){m_brushLibraryReady=true;emit brushLibraryReadyChanged();}
         if(!m_pendingBrushImport.isEmpty()){const auto path=m_pendingBrushImport;m_pendingBrushImport.clear();m_brushFileBusy=false;emit brushFileChanged();QMetaObject::invokeMethod(this,[this,path]{importBrushes(QUrl::fromLocalFile(path));},Qt::QueuedConnection);}
+    });
+    connect(m_worker,&BackendWorker::brushPreparationFinished,this,[this](quint64 preparation,bool success){
+        if(m_closing || m_brushCatalogPrepared || !success)return;
+        {QMutexLocker lock(&m_brushCatalogConnection->mutex);if(preparation!=m_brushCatalogConnection->preparation)return;}
+        m_brushCatalogPrepared=true;emit brushCatalogPreparedChanged();
     });
     connect(m_worker,&BackendWorker::nativeBrushCatalog,this,[this](quint64 preparation,const QByteArray &state,const QString &error){
         {QMutexLocker lock(&m_brushCatalogConnection->mutex);if(preparation!=m_brushCatalogConnection->preparation)return;}

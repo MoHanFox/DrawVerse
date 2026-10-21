@@ -27,7 +27,7 @@ private slots:
     }
     void longTaskProgressUsesActualWorkAndConfiguredDelay() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("task-progress.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
-        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &error:errors)warnings.append(error.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &error:errors)warnings.append(error.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->resize(1800,1000);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         QCOMPARE(client.longTaskDelay(),1000);client.setLongTaskDelay(10000);client.newTransparentDocument(4096,2160);QTRY_COMPARE(client.documentWidth(),4096);QTRY_VERIFY(!client.layerEditBusy());client.activateBucket();client.setBrushColor(QColor("#bf3311"));QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY_WITH_TIMEOUT(!client.layerEditBusy(),30000);
         auto *overlay=findVisualItem(window->contentItem(),"longTaskProgress");QVERIFY(overlay);QVERIFY(!overlay->isVisible());
@@ -40,7 +40,7 @@ private slots:
     }
     void taskProgressPreferencesAndEditingScopesStayWithTheirDocument() {
         QTemporaryDir temp;const auto settings=temp.filePath("task-settings.ini");PaintCoreClient client(nullptr,settings);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
-        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);const auto initial=documents->activeId();const auto second=documents->newDocument(64,64,true);QVERIFY(!second.isEmpty());auto *other=documents->client(second);QVERIFY(other);QTRY_VERIFY(other->ready() && other->brushLibraryReady());
         client.setLongTaskDelay(240);QCOMPARE(other->longTaskDelay(),240);other->setLongTaskDelay(470);QCOMPARE(client.longTaskDelay(),470);QTRY_COMPARE(QSettings(settings,QSettings::IniFormat).value("performance/taskProgressDelayMs").toInt(),470);
         QVERIFY(documents->activate(initial));auto *dialog=window->findChild<QObject*>("preferencesDialog");QVERIFY(dialog);QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(dialog->property("opened").toBool());auto *delay=dialog->findChild<QObject*>("taskProgressDelay");QVERIFY(delay);QCOMPARE(delay->property("value").toInt(),470);delay->setProperty("value",350);auto *save=dialog->findChild<QObject*>("saveStorageSettings");QVERIFY(save);QVERIFY(QMetaObject::invokeMethod(save,"clicked"));QTRY_COMPARE(client.longTaskDelay(),350);QCOMPARE(other->longTaskDelay(),350);QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QTRY_VERIFY(!client.storageBusy());
@@ -83,7 +83,7 @@ private slots:
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("finish-focus.ini"));
         WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
-        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         window->resize(1800,900);window->requestActivate();QVERIFY(QTest::qWaitForWindowActive(window));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(64,64);
@@ -146,7 +146,7 @@ private slots:
         WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);
         engine.rootContext()->setContextProperty("Workspace",&workspace);
-        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
@@ -178,7 +178,7 @@ private slots:
         QFETCH(bool,subtrees);QFETCH(int,compound);
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("transform-resident.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors)warnings.append(e.toString());});
-        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());QTRY_VERIFY(client.brushLibraryReady());
         client.newTransparentDocument(96,96);QTRY_COMPARE(client.documentWidth(),96);QTRY_VERIFY(!client.layerEditBusy());
         client.activateBucket();client.setBrushColor(Qt::blue);QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY(!client.layerEditBusy());client.setLayerProperties(client.activeLayer(),true,.5);QTRY_VERIFY(!client.layerEditBusy());const auto bottom=client.activeLayer();
@@ -222,7 +222,7 @@ private slots:
         WorkspaceManager workspace(temp.filePath("layout.ini")); QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);
         engine.rootContext()->setContextProperty("Workspace",&workspace);
-        engine.load(QUrl("qrc:/qml/app/Main.qml")); QVERIFY(!engine.rootObjects().isEmpty());
+        engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml")); QVERIFY(!engine.rootObjects().isEmpty());
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); QVERIFY(window);
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         client.newTransparentDocument(96,96); QTRY_COMPARE(client.documentWidth(),96); QTRY_VERIFY(!client.layerEditBusy());

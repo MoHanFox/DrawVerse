@@ -52,6 +52,7 @@ int main(int argc,char **argv) {
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("PaintClient",&client);
     engine.rootContext()->setContextProperty("Workspace",&workspace);
+    if(!testPath.isEmpty())engine.setInitialProperties({{"createInitialDocument",true}});
     engine.load(QUrl("qrc:/qml/app/Main.qml"));
     if(engine.rootObjects().isEmpty()) return 1;
     if(!testPath.isEmpty())QObject::connect(&client,&PaintCoreClient::stopped,&app,&QCoreApplication::quit);

@@ -61,11 +61,14 @@ void DocumentManager::track(PaintCoreClient *client) {
         if(m_quitting && std::all_of(m_clients.cbegin(),m_clients.cend(),[this](const auto &c){return !c || m_stopped.contains(c);}))emit stopped();
     });
 }
-void DocumentManager::configure(PaintCoreClient *initial,QObject *root) {
+void DocumentManager::configure(PaintCoreClient *initial,QObject *root,bool createInitialDocument) {
     if(m_initial || !initial || !root)return;
     m_initial=initial;
     if(auto *context=qmlContext(root))m_context=context->engine()->rootContext();
-    track(initial);activate(add(initial));
+    track(initial);
+    // The initial client owns application services; normal startup has no document.
+    // Explicit preview/benchmark hosts may adopt its existing canvas.
+    if(createInitialDocument)activate(add(initial));
 }
 int DocumentManager::index(const QString &id) const {for(int i=0;i<m_documents.size();++i)if(m_documents[i].id==id)return i;return -1;}
 QString DocumentManager::add(PaintCoreClient *client) {

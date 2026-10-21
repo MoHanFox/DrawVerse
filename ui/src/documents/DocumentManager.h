@@ -17,7 +17,7 @@ class DocumentManager : public QObject {
     Q_PROPERTY(bool interactionBlocked MEMBER m_interactionBlocked)
 public:
     explicit DocumentManager(QObject *parent=nullptr);
-    Q_INVOKABLE void configure(PaintCoreClient *initial,QObject *root);
+    Q_INVOKABLE void configure(PaintCoreClient *initial,QObject *root,bool createInitialDocument=false);
     QVariantList documents() const;
     QVariantList windows() const;
     QString activeId() const {return m_active;}

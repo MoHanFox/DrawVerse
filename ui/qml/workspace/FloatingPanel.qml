@@ -16,7 +16,8 @@ PanelWindow {
     // which hides them from capture sources such as OBS. It can still be activated, which the
     // window drag and the dock interactions rely on.
     property bool liquifyHidden:false
-    visible:!liquifyHidden;flags:Qt.Window|Qt.FramelessWindowHint
+    property bool workspaceHidden:false
+    visible:!liquifyHidden && !workspaceHidden;flags:Qt.Window|Qt.FramelessWindowHint
     title:"DrawVerse · "+windowData.panels.map(p=>Workspace.panelDefinition(p).title).join(" / ")
     color:windowData.icons?Theme.surface:"transparent"
     Rectangle {anchors.fill:parent;color:"transparent";border.color:Theme.line}

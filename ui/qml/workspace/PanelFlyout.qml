@@ -48,6 +48,8 @@ PanelWindow {
         y=Math.round(Math.max(navLow,Math.min(wantedY,navHigh)))
         positioning=false;remember()
     }
+    readonly property bool workspaceHidden:sourceWindow && ("hasDocuments" in sourceWindow ? !sourceWindow.hasDocuments : ("workspaceHidden" in sourceWindow && sourceWindow.workspaceHidden))
+    onWorkspaceHiddenChanged:if(workspaceHidden)close()
     property bool retainedLiquifyVisibility:false
     readonly property bool liquifying:PaintClient.liquifyActive
     onLiquifyingChanged:{
@@ -55,7 +57,7 @@ PanelWindow {
         else if(retainedLiquifyVisibility){retainedLiquifyVisibility=false;visible=true;Workspace.watchPanelFlyout(root,ownerTile,true)}
     }
     function showPanel(panel){
-        if(liquifying)return
+        if(liquifying || workspaceHidden)return
 
         selectedPanel=panel;refreshGroup();Workspace.setActive(Workspace.groupForPanel(panel),panel)
         if(!visible){

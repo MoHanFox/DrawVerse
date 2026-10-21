@@ -9,6 +9,7 @@
 #include <QSGRendererInterface>
 #include <QtTest>
 #include <QQmlEngine>
+#include <QQmlIncubationController>
 #include <QQmlComponent>
 #include <QQuickStyle>
 #include <QTemporaryDir>
@@ -51,6 +52,67 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void welcomeProgressUsesExplicitReadiness() {
+        QQmlEngine engine;QQmlComponent component(&engine,QUrl("qrc:/qml/app/WelcomeScreen.qml"));
+        QScopedPointer<QObject> welcome(component.create());QVERIFY2(welcome,qPrintable(component.errorString()));
+        welcome->setProperty("stage",QStringLiteral("正在准备笔刷资源…"));
+        auto *status=welcome->findChild<QQuickItem*>("welcomeLoadingStatus");auto *actions=welcome->findChild<QQuickItem*>("welcomeActions");
+        QVERIFY(status && actions);QVERIFY(status->isVisible());QVERIFY(!actions->isVisible());
+        QCOMPARE(status->property("text").toString(),QStringLiteral("正在准备笔刷资源…"));
+        welcome->setProperty("error",QStringLiteral("资源加载失败"));QCOMPARE(status->property("text").toString(),QStringLiteral("资源加载失败"));
+        welcome->setProperty("error",QString());welcome->setProperty("ready",true);
+        QVERIFY(!status->isVisible());QVERIFY(actions->isVisible());
+    }
+    void welcomeWorkspaceDocumentLifecycle() {
+        QTemporaryDir temp;PaintCoreClient service(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
+        workspace.detachGroup(workspace.groupForPanel("color"));workspace.floatToolStrip(100,100);
+        QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &error:errors)warnings.append(error.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&service);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        auto *manager=window->findChild<DocumentManager*>("documentManager");QVERIFY(manager);QVERIFY(manager->documents().isEmpty());QVERIFY(manager->activeId().isEmpty());
+        auto *welcome=window->findChild<QQuickItem*>("welcomeScreen");auto *editor=window->findChild<QQuickItem*>("editorWorkspace");
+        auto *options=window->findChild<QQuickItem*>("brushOptionsBar");QVERIFY(welcome && editor && options);
+        QVERIFY(welcome->isVisible());QVERIFY(!editor->isVisible());QVERIFY(!options->isVisible());QCOMPARE(options->height(),qreal(0));
+        QTRY_VERIFY_WITH_TIMEOUT(window->property("startupReady").toBool(),30000);QVERIFY(service.brushCatalogPrepared());
+        if(qEnvironmentVariable("QSG_RHI_BACKEND")=="d3d11" && qEnvironmentVariable("QT_QUICK_BACKEND")!="software")QCOMPARE(window->rendererInterface()->graphicsApi(),QSGRendererInterface::Direct3D11);
+        auto floating=[&]{QList<QQuickWindow*> result;for(auto *candidate:QGuiApplication::allWindows())if(candidate->objectName().startsWith("floatingDock:") || candidate->objectName()=="floatingToolStrip")result.append(qobject_cast<QQuickWindow*>(candidate));return result;};
+        QTRY_COMPARE(floating().size(),2);for(auto *panel:floating())QVERIFY(!panel->isVisible());
+        const auto layout=workspace.floatingWindows();
+        for(const auto &name:{"freeTransformAction","liquifyAction","placeImageAction","selectionAllAction","canvasFlipHorizontalAction"}) {auto *action=window->findChild<QObject*>(name);QVERIFY(action);QVERIFY(!action->property("enabled").toBool());}
+        const auto capture=qEnvironmentVariable("DRAWVERSE_WELCOME_CAPTURE");
+        if(!capture.isEmpty()){QTest::qWait(100);QVERIFY(window->grabWindow().save(capture));}
+        auto *newButton=findVisual(window->contentItem(),"welcomeNewCanvas");QVERIFY(newButton);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,newButton->mapToScene(QPointF(newButton->width()/2,newButton->height()/2)).toPoint());
+        auto *dialog=window->findChild<QObject*>("newDocumentDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("opened").toBool());QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
+        auto *openButton=findVisual(window->contentItem(),"welcomeOpen");QVERIFY(openButton);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,openButton->mapToScene(QPointF(openButton->width()/2,openButton->height()/2)).toPoint());
+        auto *openDialog=window->findChild<QObject*>("openDocumentDialog");QVERIFY(openDialog);QTRY_VERIFY(openDialog->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(openDialog,"close"));
+        const auto first=manager->newDocument(96,64,true);QVERIFY(!first.isEmpty());auto *firstClient=manager->client(first);QVERIFY(firstClient && firstClient!=&service);
+        QTRY_VERIFY(firstClient->ready());QTRY_COMPARE(QSize(firstClient->documentWidth(),firstClient->documentHeight()),QSize(96,64));
+        QTRY_VERIFY(editor->isVisible());QVERIFY(!welcome->isVisible());QVERIFY(options->isVisible());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);QCOMPARE(canvas->client(),firstClient);
+        for(auto *panel:floating())QTRY_VERIFY(panel->isVisible());
+        const auto second=manager->newDocument(64,48);QVERIFY(!second.isEmpty());QTRY_VERIFY(manager->client(second)->ready());QTRY_COMPARE(manager->client(second)->documentWidth(),64);
+        QVERIFY(manager->closeDocument(first,true));QVERIFY(editor->isVisible());
+        workspace.setColumnCollapsed(workspace.groupForPanel("layers"),true);
+        QQuickItem *rail=nullptr;QTRY_VERIFY((rail=findVisual(window->contentItem(),"railGrip:layers")));QTRY_VERIFY(rail->isVisible());
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,rail->mapToScene({14,14}).toPoint());
+        QPointer<QQuickWindow> flyout;QTRY_VERIFY([&]{for(auto *candidate:QGuiApplication::allWindows())if(candidate->objectName().startsWith("panelFlyout:") && candidate->isVisible())flyout=qobject_cast<QQuickWindow*>(candidate);return !flyout.isNull();}());
+        QVERIFY(manager->closeDocument(second,true));QTRY_VERIFY(!flyout || !flyout->isVisible());QTRY_VERIFY(welcome->isVisible());QVERIFY(!editor->isVisible());QVERIFY(service.ready());
+        for(auto *panel:floating())QVERIFY(!panel->isVisible());QCOMPARE(workspace.floatingWindows(),layout);
+        // A later open must use the new client, even after the first pane was parked.
+        QImage image(32,24,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::red);const auto path=temp.filePath("sample.png");QVERIFY(image.save(path));
+        const auto opened=manager->openDocument(QUrl::fromLocalFile(path));QVERIFY(!opened.isEmpty());auto *openedClient=manager->client(opened);QVERIFY(openedClient);
+        QTRY_VERIFY_WITH_TIMEOUT(openedClient->ready() && !openedClient->fileBusy() && QSize(openedClient->documentWidth(),openedClient->documentHeight())==image.size(),30000);
+        QTRY_VERIFY(editor->isVisible());QVERIFY(manager->closeDocument(opened,true));QTRY_VERIFY(welcome->isVisible());
+        QSignalSpy failed(manager,&DocumentManager::fileFailed);const auto missing=manager->openDocument(QUrl::fromLocalFile(temp.filePath("missing.png")));QVERIFY(!missing.isEmpty());
+        QTRY_COMPARE(failed.size(),1);QTRY_VERIFY(manager->documents().isEmpty());QTRY_VERIFY(welcome->isVisible());
+        QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));
+        QSignalSpy stopped(manager,&DocumentManager::stopped);manager->shutdown();QTRY_COMPARE(stopped.size(),1);
+        QTRY_VERIFY(!engine.incubationController() || engine.incubationController()->incubatingObjectCount()==0);
+    }
     void nativeIdentityPressureDoesNotRebuildBrushRows() {
         BrushLibrary library;const auto original=library.snapshot();
         const QJsonObject control{{"curve",QJsonArray{QJsonArray{0.,0.},QJsonArray{1.,1.}}},{"minimum",0.}};
@@ -81,7 +143,7 @@ private slots:
         for(int i=0;i<5;++i){BrushLibrary cold;QElapsedTimer timer;timer.start();QVERIFY(cold.restore(saved));coldRestoreUs.append(timer.nsecsElapsed()/1000);}
         std::sort(coldRestoreUs.begin(),coldRestoreUs.end());qInfo()<<"copied preferences full restore median us"<<coldRestoreUs[2];
         PaintCoreClient client(nullptr,path);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
-        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->resize(1600,1000);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         auto *library=client.brushLibrary();const auto rows=library->presetRows();QVERIFY2(rows.size()>4,qPrintable(client.lastError()));
         QElapsedTimer clock;clock.start();qint64 longest=0,previous=0,maxSelect=0;QTimer heartbeat;heartbeat.setInterval(2);connect(&heartbeat,&QTimer::timeout,this,[&]{const auto now=clock.elapsed();longest=std::max(longest,now-previous);previous=now;});heartbeat.start();
