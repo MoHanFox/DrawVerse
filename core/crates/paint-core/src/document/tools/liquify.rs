@@ -1,6 +1,9 @@
 use super::*;
+#[path = "liquify_field_history.rs"]
+mod field_history;
 #[path = "liquify_history_codec.rs"]
 mod history_codec;
+use field_history::FieldHistory;
 const MAX_FIELD_TILES: usize = 8192;
 const MAX_VISITS: usize = 8_000_000;
 type Field = BTreeMap<TileCoord, Arc<Vec<[f32; 2]>>>;
@@ -25,7 +28,7 @@ struct Checkpoint {
 #[derive(Debug)]
 struct LocalStep {
     pixels: Vec<TileChange>,
-    fields: crate::history_storage::Payload,
+    fields: FieldHistory,
     cells: [i64; 2],
     action: crate::HistoryAction,
 }
@@ -392,23 +395,12 @@ impl Document {
                 after: current.tiles.get(key).cloned(),
             })
             .collect();
-        let fields = crate::history_storage::Payload::blob_in(
+        let fields = FieldHistory::capture(
+            &changed,
+            &before.field,
+            &state.field,
             self.options.max_history_bytes / self.options.max_history_commands,
             self.storage(),
-            |writer| {
-                writer.write_all(&(changed.len() as u32).to_le_bytes())?;
-                for key in &changed {
-                    writer.write_all(&key.x.to_le_bytes())?;
-                    writer.write_all(&key.y.to_le_bytes())?;
-                    for field in [before.field.get(key), state.field.get(key)] {
-                        writer.write_all(&[u8::from(field.is_some())])?;
-                        if let Some(field) = field {
-                            history_codec::write(writer, field)?;
-                        }
-                    }
-                }
-                Ok(())
-            },
         )?;
         let step = Arc::new(LocalStep {
             cells: [before.cell, state.cell],
@@ -509,54 +501,7 @@ impl Document {
         .cloned();
         let Some(step) = step else { return Ok(false) };
         let mut field = state.field.clone();
-        step.fields.read_blob(|reader| {
-            let mut bytes = [0; 4];
-            reader
-                .read_exact(&mut bytes)
-                .map_err(|e| Error::HistoryStorage(e.to_string()))?;
-            let count = u32::from_le_bytes(bytes) as usize;
-            if count > MAX_FIELD_TILES * 2 {
-                return Err(Error::HistoryStorage(
-                    "invalid liquify history count".into(),
-                ));
-            }
-            for _ in 0..count {
-                reader
-                    .read_exact(&mut bytes)
-                    .map_err(|e| Error::HistoryStorage(e.to_string()))?;
-                let x = u32::from_le_bytes(bytes);
-                reader
-                    .read_exact(&mut bytes)
-                    .map_err(|e| Error::HistoryStorage(e.to_string()))?;
-                let key = TileCoord {
-                    x,
-                    y: u32::from_le_bytes(bytes),
-                };
-                for side in 0..2 {
-                    let mut present = [0];
-                    reader
-                        .read_exact(&mut present)
-                        .map_err(|e| Error::HistoryStorage(e.to_string()))?;
-                    let value = match present[0] {
-                        0 => None,
-                        1 => history_codec::read(reader, side == usize::from(redo))?,
-                        _ => {
-                            return Err(Error::HistoryStorage(
-                                "invalid liquify history flag".into(),
-                            ))
-                        }
-                    };
-                    if side == usize::from(redo) {
-                        if let Some(value) = value {
-                            field.insert(key, value);
-                        } else {
-                            field.remove(&key);
-                        }
-                    }
-                }
-            }
-            Ok(())
-        })?;
+        step.fields.restore(&mut field, redo)?;
         let id = state.original.id;
         let at = self.layer_index(id)?;
         let mut layer = self.layers[at].clone();
@@ -761,7 +706,7 @@ mod history_select_tests {
                     history.undo.back_mut()
                 }
                 .unwrap();
-                Arc::get_mut(step).unwrap().fields = payload;
+                Arc::get_mut(step).unwrap().fields = FieldHistory::encoded_for_test(payload);
                 let result = if redo {
                     doc.redo_liquify()
                 } else {
@@ -843,7 +788,10 @@ mod history_select_tests {
         }
     }
     fn seed() -> Document {
-        let mut doc = Document::new(64, 64).unwrap();
+        seed_with_options(DocumentOptions::default())
+    }
+    fn seed_with_options(options: DocumentOptions) -> Document {
+        let mut doc = Document::with_options(64, 64, options).unwrap();
         let pixels = (0..4096)
             .map(|i| {
                 Pixel::from_straight([(i % 64) as f32 / 63., (i / 64) as f32 / 63., 0.3, 1.])
@@ -879,6 +827,79 @@ mod history_select_tests {
             .flat_map(|y| (0..64).map(move |x| doc.pixel(x, y)))
             .collect()
     }
+    #[test]
+    fn referenced_and_spilled_session_histories_match_pixels_fields_and_redo_branches() {
+        let mut referenced = seed();
+        let mut spilled = seed_with_options(DocumentOptions {
+            max_history_bytes: 2 * TILE_BYTES + 256,
+            ..Default::default()
+        });
+        assert!(referenced
+            .liquify
+            .as_ref()
+            .unwrap()
+            .history
+            .undo
+            .iter()
+            .all(|s| s.fields.disk_bytes() == 0));
+        assert!(spilled
+            .liquify
+            .as_ref()
+            .unwrap()
+            .history
+            .undo
+            .iter()
+            .all(|s| s.fields.disk_bytes() > 0));
+        let saved = referenced.liquify.as_ref().unwrap().field.clone();
+        for target in [0, 3, 1, 2, 0, 3] {
+            referenced.select_liquify_history(target).unwrap();
+            spilled.select_liquify_history(target).unwrap();
+            assert_eq!(image(&referenced), image(&spilled));
+            assert_eq!(
+                referenced.liquify.as_ref().unwrap().field,
+                spilled.liquify.as_ref().unwrap().field
+            );
+            assert_eq!(
+                referenced.liquify_history_depth(),
+                spilled.liquify_history_depth()
+            );
+        }
+        for (key, value) in &saved {
+            assert!(Arc::ptr_eq(
+                value,
+                &referenced.liquify.as_ref().unwrap().field[key]
+            ));
+        }
+        for doc in [&mut referenced, &mut spilled] {
+            doc.select_liquify_history(1).unwrap();
+            doc.begin_liquify_stroke().unwrap();
+            doc.liquify_dab(LiquifyDab {
+                tool: 3,
+                radius: 12.,
+                strength: 0.6,
+                density: 0.5,
+                speed: 0.5,
+                pressure_enabled: false,
+                from: InputPoint::new(25., 25., 1.),
+                to: InputPoint::new(30., 27., 1.),
+                elapsed_ms: 16.,
+            })
+            .unwrap();
+            assert!(doc.end_liquify_stroke().unwrap());
+            assert_eq!(doc.liquify_history_depth(), Some((2, 0)));
+            doc.select_liquify_history(0).unwrap();
+            doc.select_liquify_history(2).unwrap();
+            assert!(doc.commit_liquify().unwrap());
+        }
+        assert_eq!(image(&referenced), image(&spilled));
+        referenced.undo().unwrap();
+        spilled.undo().unwrap();
+        assert_eq!(image(&referenced), image(&spilled));
+        referenced.redo().unwrap();
+        spilled.redo().unwrap();
+        assert_eq!(image(&referenced), image(&spilled));
+    }
+
     #[test]
     fn direct_liquify_travel_restores_fields_and_pixels_once_with_atomic_read_failure() {
         let mut direct = seed();

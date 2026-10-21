@@ -17,9 +17,9 @@ Item {
         Label {
             objectName:"welcomeTitle"
             width:parent.width
-            text:"欢迎来到DrawVerse"
+            text:"DrawVerse"
             horizontalAlignment:Text.AlignHCenter
-            color:"#eeeeee";font.pixelSize:28;font.weight:Font.Medium
+            color:"#eeeeee";font.pixelSize:36;font.weight:Font.Medium
         }
         Item {
             width:parent.width;height:44
@@ -40,7 +40,7 @@ Item {
                 anchors.centerIn:parent;spacing:14
                 visible:root.ready
                 Repeater {
-                    model:["新建画布","打开"]
+                    model:["新建画布...","打开..."]
                     delegate:Button {
                         id:actionButton
                         required property int index

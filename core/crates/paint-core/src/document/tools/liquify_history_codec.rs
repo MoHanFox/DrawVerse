@@ -8,6 +8,20 @@ use std::{
 const VECTORS: usize = 4096;
 const BLOCK_VECTORS: usize = 512;
 
+pub(super) fn validate(values: &[[f32; 2]]) -> Result<()> {
+    if values.len() != VECTORS
+        || values
+            .iter()
+            .flatten()
+            .any(|v| !v.is_finite() || v.abs() > 2_000_000.)
+    {
+        return Err(Error::HistoryStorage(
+            "invalid liquify history displacement".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn write(writer: &mut dyn Write, values: &[[f32; 2]]) -> io::Result<()> {
     debug_assert_eq!(values.len(), VECTORS);
     let mut bytes = [0; BLOCK_VECTORS * 8];
