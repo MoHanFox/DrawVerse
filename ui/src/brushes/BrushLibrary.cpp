@@ -1298,7 +1298,7 @@ QByteArray BrushLibrary::catalogSnapshot() const {
 bool BrushLibrary::equivalentCatalogState(const QByteArray &nativeJson,const QByteArray &currentJson) {
     const auto native=QJsonDocument::fromJson(nativeJson).object(),current=QJsonDocument::fromJson(currentJson).object();
     const auto schema=native.value("version").toDouble(-1);
-    if(schema<2 || schema>44 || schema!=std::floor(schema) || current.isEmpty()
+    if(schema<2 || schema>45 || schema!=std::floor(schema) || current.isEmpty()
         || !native.value("presets").isArray() || !native.value("selected").isString())return false;
     auto comparable=native;auto rows=comparable.value("presets").toArray();const auto version=native.value("version").toDouble();
     if(version==std::floor(version) && version>=current.value("version").toInt()) {

@@ -289,12 +289,13 @@ private slots:
         BrushLibrary library;const auto original=library.snapshot();
         const QJsonObject control{{"curve",QJsonArray{QJsonArray{0.,0.},QJsonArray{1.,1.}}},{"minimum",0.}};
         QSignalSpy settings(&library,&BrushLibrary::settingsChanged),presets(&library,&BrushLibrary::presetsChanged),previews(&library,&BrushLibrary::selectedPreviewChanged);
-        for(int version:{5,6,44}) {
+        for(int version:{5,6,44,45}) {
             auto native=QJsonDocument::fromJson(library.catalogSnapshot()).object();auto rows=native.value("presets").toArray();auto row=rows[0].toObject();
             auto pressure=QJsonObject{{"size",control},{"flow",control}};if(version>=6){auto opacity=control;opacity["enabled"]=false;pressure["opacity"]=opacity;}
             row["pressureDynamics"]=pressure;rows[0]=row;native["presets"]=rows;native["version"]=version;
             QVERIFY(library.applyNativeCatalog(QJsonDocument(native).toJson()));QCOMPARE(library.snapshot(),original);QCOMPARE(settings.size(),0);QCOMPARE(presets.size(),0);QCOMPARE(previews.size(),0);
             native["version"]=2;QVERIFY(!library.applyNativeCatalog(QJsonDocument(native).toJson()));QCOMPARE(library.snapshot(),original);
+            native["version"]=46;QVERIFY(!library.applyNativeCatalog(QJsonDocument(native).toJson()));QCOMPARE(library.snapshot(),original);
         }
         auto native=QJsonDocument::fromJson(library.catalogSnapshot()).object();auto rows=native.value("presets").toArray();auto row=rows[0].toObject();auto changed=control;changed["minimum"]=.25;
         row["pressureDynamics"]=QJsonObject{{"size",changed},{"flow",control}};rows[0]=row;native["presets"]=rows;native["version"]=5;

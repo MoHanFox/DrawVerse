@@ -104,3 +104,14 @@ fullPreferenceRestoreReusesRowsWithoutSkippingRoleValidation 验证压力非默�
 同机489项约2MB原始偏好，五次新建BrushLibrary完整恢复中位：修改前348.705ms，修改后软件264.598ms、D3D11进程247.736ms；这是CPU模型恢复，不含原生资源准备/显示/文件冷IO。缓存只存活于本次恢复，不长期记住外部输入。
 
 真实Main窗口首次轮软件604ms、D3D11 528ms；热轮均18ms，同工具双文档16/18ms，跨工具两隔离档软件40/22ms、D3D11 34/17ms，均为最长GUI心跳间隔、零目录重建。首次成本仍明显，不能称启动或全部冷路径已完成。未跑全量check、跨平台和实体持续输入。
+
+
+## 2026-10-21 state45 等价目录回归
+
+新复刻描边使原生状态可能为45，Qt applyNativeCatalog接受45，但 equivalentCatalogState仍拒绝>44，导致已规范化的相同回传也重建。真实489预设/2039050字节配置隔离副本复现：选择同步约3–7ms，之后可反复全目录恢复；双文档16次选择中接收方重建16次、GUI最大间隔868ms。另次调试热轮也出现8次目录广播。仅恢复合法45的原等价检查，不放宽字段校验、f32语义或未知未来版本。
+
+确定性nativeIdentityPressureDoesNotRebuildBrushRows软件/D3D11通过：5/6/44/45合法恒等笔压不重建/不通知；46与非法低版本拒绝，非默认真实曲线仍更新。真实liveBrushSelectionWithLargePreferences两后端通过，单文档两轮、双文档及两种跨工具隔离共80次选择，接收方目录重建均0，工具隔离选择规则保持。
+
+软件：单文档首轮最长间隔374ms、热轮16ms；双文档17ms，跨工具两档36/17ms。D3D11：首轮367ms、热轮23ms，双文档18ms，跨工具17/18ms。调用select本身软件最长5.1–7.1ms、硬件5.2–7.7ms。完整冷restore中位168/179ms。日志 artifacts/brush-state45-{software,d3d11}.txt；旧失败日志batch-brush-probe.txt、brush-restore-debug.txt。计时为本机单次观察，旧探针期间另有编译负载，不能把最大间隔直接当通用端到端提升倍数。
+
+完整Release构建通过，标准build/qt/bin/Release/drawverse.exe更新。当前热路径回归修复；首次冷资源/配置准备仍有数百毫秒间隔，P1不标为全部完成。ABI/state/VBR与准备票据未改，未跑全量或跨平台。
