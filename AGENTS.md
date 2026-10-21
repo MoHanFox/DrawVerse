@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新默认暂存路径提示：性能设置及旧暂存框在空值时显示默认实际系统目录，恢复系统目录/保存/重开仍保持空值自动选择；两后端各5项创建与设置Qt通过，无QML警告，Release及生成头更新。见scratch-directory-creation-validation末节，ABI/state保持。
+
 - 最新暂存缺失目录修复：Release错误8来自已保存D:/DrawVerse/tmp不存在，同一DLL系统目录正常；ScratchSpace后台初始化递归建目录，失败含路径/原因，不回退或改配置。实际原路径修复后返回0；存储9/软件与D3D11各4项Qt、四ABI/存储严格Clippy/格式及README原命令完整Release部署通过。README补齐workspace九包职责；详见build-reproducibility及scratch-directory-creation-validation。ABI1.75/state45保持，其他性能待办不变。
 
 - 最新多类长任务结果历史：变换/整图翻转/栅格化LayerEdit及桶Stroke复用PagePool引用，选区按真实内存保守计账，未托管/跨池/元数据超预算保持编码后备；见history-storage及remaining-fixes设计/验收。核心结果6/历史5/直接跳转3/进度1/公开变换7/原生3、软件与D3D11各9行Qt、四ABI/严格Clippy/格式/生成头/Release通过。75MiB热样本物化中位275.930→0.129ms，仅核心非UI/冷IO；标准drawverse.exe于2026-10-21 17:16更新，ABI1.75/state45保持。会话字段/其他命令/完整8K16K、T2复杂回退/M1/P1首次资源仍待。

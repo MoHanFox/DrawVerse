@@ -47,7 +47,7 @@ Dialog {
             Label { text: "保留磁盘空闲空间" }
             SpinBox { id: reserve; objectName: "storageReserve"; from: 0; to: 16384; editable: true; stepSize: 256; Layout.fillWidth: true; enabled: !PaintClient.storageBusy }
             Label { text: "暂存目录" }
-            TextField { id: directory; objectName: "storageDirectory"; placeholderText: "留空使用系统临时目录"; placeholderTextColor: Theme.muted; Layout.fillWidth: true; enabled: !PaintClient.storageBusy; selectByMouse: true }
+            TextField { id: directory; objectName: "storageDirectory"; placeholderText: "默认：" + (PaintClient.storageInfo.systemDirectory || "系统临时目录"); placeholderTextColor: Theme.muted; Layout.fillWidth: true; enabled: !PaintClient.storageBusy; selectByMouse: true }
         }
         RowLayout {
             Layout.alignment: Qt.AlignRight

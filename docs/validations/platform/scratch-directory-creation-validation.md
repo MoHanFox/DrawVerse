@@ -14,3 +14,9 @@
 - README职责表核对core/Cargo.toml：八个运行库与paint-api-gen共九包齐全，区分数值算子、wgpu执行与Qt显示。
 
 未跑全量测试或跨平台；本次不改变磁盘满、权限失败、暂存配额等错误处理，不提供历史崩溃恢复。
+
+## 默认目录输入提示
+
+性能首选项及旧暂存对话框的输入框在空值时显示“默认：”和storageInfo提供的实际系统临时目录；输入自定义路径后按输入值显示。没有把提示或本次系统临时路径当作自定义值保存。
+
+新增真实QML工作流验证默认实际路径、自定义输入、点击“使用系统目录”、保存仍为空值、重开仍显示默认路径；与缺失目录创建及原三项设置回归合计软件/D3D11各五项通过，无QML警告。证据artifacts/scratch-default-{workflow,ui}-{software,d3d11}.txt。Release应用、workflow/UI测试和生成头增量构建通过（scratch-default-build.txt），标准drawverse.exe更新于18:57；未更改Rust/ABI或存储算法，不重复四ABI。

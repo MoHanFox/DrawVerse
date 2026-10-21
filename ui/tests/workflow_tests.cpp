@@ -56,6 +56,23 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void defaultStorageDirectoryIsVisibleAndKeepsAutomaticSelection() {
+        QTemporaryDir temp;const auto settings=temp.filePath("storage.ini");PaintCoreClient client(nullptr,settings);WorkspaceManager workspace(temp.filePath("layout.ini"));
+        QQmlApplicationEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &error:errors)warnings.append(error.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        QTRY_VERIFY(client.ready() && !client.storageBusy());auto *dialog=engine.rootObjects().first()->findChild<QObject*>("preferencesDialog");QVERIFY(dialog);
+        QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(dialog->property("opened").toBool() && !client.storageBusy());
+        auto *directory=dialog->findChild<QObject*>("storageDirectory");QVERIFY(directory);QCOMPARE(directory->property("text").toString(),QString());
+        QCOMPARE(directory->property("placeholderText").toString(),QStringLiteral("默认：")+QDir::tempPath());
+        QVERIFY(directory->setProperty("text",temp.path()));QCOMPARE(directory->property("text").toString(),temp.path());
+        auto *system=dialog->findChild<QObject*>("useSystemStorageDirectory");QVERIFY(system);QVERIFY(QMetaObject::invokeMethod(system,"clicked"));QCOMPARE(directory->property("text").toString(),QString());
+        QCOMPARE(directory->property("placeholderText").toString(),QStringLiteral("默认：")+QDir::tempPath());
+        QSignalSpy saved(&client,&PaintCoreClient::storageFinished);auto *save=dialog->findChild<QObject*>("saveStorageSettings");QVERIFY(save);QVERIFY(QMetaObject::invokeMethod(save,"clicked"));QTRY_COMPARE(saved.size(),1);QVERIFY(saved.first().first().toBool());
+        QSettings persisted(settings,QSettings::IniFormat);QCOMPARE(persisted.value("storage/directory").toString(),QString());
+        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(dialog->property("opened").toBool() && !client.storageBusy());QCOMPARE(directory->property("text").toString(),QString());
+        QCOMPARE(directory->property("placeholderText").toString(),QStringLiteral("默认：")+QDir::tempPath());QCOMPARE(warnings,QStringList());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void missingStartupStorageDirectoryIsCreatedAndRetained() {
         QTemporaryDir temp;QVERIFY(temp.isValid());const auto settings=temp.filePath("storage.ini");
         const auto directory=temp.filePath(QStringLiteral("新暂存盘/nested/cache"));

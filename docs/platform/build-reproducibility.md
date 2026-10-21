@@ -8,6 +8,8 @@
 
 README的Rust职责表按core/Cargo.toml补齐全部八个运行库和paint-api-gen构建工具，区分paint-ops纯计算、paint-gpu执行设备与Qt显示职责。验收见[暂存目录自动创建](../validations/platform/scratch-directory-creation-validation.md)。
 
+默认暂存配置仍以空字符串表示“每次运行使用系统临时目录”，性能设置和旧暂存对话框的目录输入框将其显示为 `默认：<实际系统临时目录>`。切换到“使用系统目录”立即恢复此提示，输入自定义路径时显示输入值；提示不写入配置，不把本机临时路径固定成自定义目录。
+
 性能对照使用 Windows 新建工作树时，core.autocrlf=true 将源文件与已生成头转换成 CRLF；cbindgen 的字节一致性检查随之失败。源目录当前手工生成的 LF 头能通过，不等于新检出能通过。
 
 比较两种方案：检查时宽松忽略换行，会让生成物存在多个字节版本且无法防止源注释影响生成结果；在仓库声明文本 LF，则源文件、生成头和构建脚本在三个平台相同。采用 .gitattributes 的 text=auto eol=lf，常用图片/归档/字体显式 binary。保留 cbindgen 严格字节检查，不修改用户全局 Git 配置，不改变 ABI。

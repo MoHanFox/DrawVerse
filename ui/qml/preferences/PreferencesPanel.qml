@@ -106,11 +106,11 @@ Dialog {
                                 Label { text: "保留磁盘空闲空间"; color: Theme.text; font.pixelSize: 9 }
                                 SpinBox { id: storageReserve; objectName: "storageReserve"; from: 0; to: 16384; editable: true; stepSize: 256; Layout.fillWidth: true; enabled: !PaintClient.storageBusy }
                                 Label { text: "暂存目录"; color: Theme.text; font.pixelSize: 9 }
-                                TextField { id: storageDirectory; objectName: "storageDirectory"; placeholderText: "留空使用系统临时目录"; Layout.fillWidth: true; enabled: !PaintClient.storageBusy; selectByMouse: true }
+                                TextField { id: storageDirectory; objectName: "storageDirectory"; placeholderText: "默认：" + (PaintClient.storageInfo.systemDirectory || "系统临时目录"); Layout.fillWidth: true; enabled: !PaintClient.storageBusy; selectByMouse: true }
                             }
                             RowLayout {
                                 Layout.alignment: Qt.AlignRight
-                                Button { text: "使用系统目录"; enabled: !PaintClient.storageBusy; onClicked: storageDirectory.text = "" }
+                                Button { objectName: "useSystemStorageDirectory"; text: "使用系统目录"; enabled: !PaintClient.storageBusy; onClicked: storageDirectory.text = "" }
                                 Button { text: "选择目录…"; enabled: !PaintClient.storageBusy; onClicked: folder.open() }
                             }
                             Label {
