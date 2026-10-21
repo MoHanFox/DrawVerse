@@ -2,6 +2,12 @@
 use super::*;
 
 impl Document {
+    /// Immutable presentation assets needed by the first actual drag. The
+    /// identity preview may use another source to preserve feathered seams.
+    pub fn transform_preparation_source(&self) -> Option<Arc<crate::ResidentPreviewSource>> {
+        self.transform.as_ref()?.preview_source.clone()
+    }
+
     pub fn begin_transform_layers_deferred(&mut self, ids: &[u64]) -> Result<()> {
         self.begin_transform_layers(ids)?;
         if let Err(error) = self.enable_transform_deferred() {

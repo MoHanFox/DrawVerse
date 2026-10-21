@@ -106,3 +106,11 @@ PanelContent 检查真实窗口可见与客户端关闭状态；卸载仍在 Loa
 用户报告结束液化/变换仍需点击画布。新增editingCompletionRestoresShortcuts在实际选项控件持有焦点、另一原生窗口激活时结束会话，旧代码transform-cancel-main稳定失败于宿主未激活。修复保留待恢复标记，等busy/窗口/可见状态满足后完成焦点恢复。
 
 最终用例实际修改变换几何或液化像素后，通过选项确定/取消，主窗口/浮动文档共8行；结束后不调用focus辅助、不点击画布，直接E/B/M均成功。软件及D3D11各8行与欢迎页文档生命周期1行通过，零QML警告。日志artifacts/edit-focus-before.txt及edit-focus-final-{software,d3d11}.txt。完整标准Release构建通过，build/bin/Release/drawverse.exe更新；ABI1.75/state45保持。本项不宣称其他性能问题已完成。
+
+## 2026-10-21 首拖CPU代理准备提前至进入工具
+
+新增Actor回归确认：带羽化套索的BEGIN完成前，真实拖动sourceId的资产已缓存，和初始精确图sourceId不同；首次UPDATE直接返回同一Arc字节身份，三次初始/变形往返均复用两套，CANCEL清空。该回归1项、核心变换预览14项、paint-core/paint-ffi所有目标严格Clippy及fmt通过。
+
+实际4K Qt套索affine/Warp及两级Normal/PassThrough五行、原工具完成快捷键一行，软件/D3D11各6行通过，含静止余像素、纹理身份、取消及文档历史。完整标准Release/生成头、四ABI通过，输出build/bin/Release/drawverse.exe。日志artifacts/transform-preparation-{actor,core,clippy,software,d3d11,abi,build}.txt。
+
+没有将缓存命中或核心计时称为首拖端到端延迟；Qt显卡纹理首上传、复杂CPU回退及实体持续性能仍需验收。ABI1.75/state45保持。

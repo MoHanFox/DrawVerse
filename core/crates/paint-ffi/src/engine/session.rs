@@ -137,7 +137,8 @@ struct TaskProgressState {
 }
 struct Shared {
     task_progress: Mutex<Option<TaskProgressState>>,
-    preview_assets: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
+    // Identity and deformed selection assets, bounded to one active session.
+    preview_assets: Mutex<Vec<(u64, Arc<Vec<u8>>)>>,
     publication: Mutex<Arc<Publication>>,
     clipboard: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     views: Mutex<[ViewSlot; 4]>,
@@ -226,7 +227,7 @@ impl Session {
         let initial = publish(&document, 1, 1, 0, None, false);
         let shared = Arc::new(Shared {
             task_progress: Mutex::new(None),
-            preview_assets: Mutex::new(None),
+            preview_assets: Mutex::new(Vec::new()),
             generation: AtomicU64::new(1),
             floor: AtomicU64::new(0),
             publication: Mutex::new(Arc::new(initial)),
@@ -451,16 +452,15 @@ impl Session {
         &self,
         preview: &paint_core::ResidentPreview,
     ) -> ApiResult<Arc<Vec<u8>>> {
-        if let Some((id, bytes)) = self
+        if let Some((_, bytes)) = self
             .shared
             .preview_assets
             .lock()
             .map_err(|_| ApiError::internal())?
-            .as_ref()
+            .iter()
+            .find(|(id, _)| *id == preview.source.id)
         {
-            if *id == preview.source.id {
-                return Ok(bytes.clone());
-            }
+            return Ok(bytes.clone());
         }
         let bytes = Arc::new(crate::liquify_api::preview_assets(&preview.source)?);
         let current = self.publication();
@@ -471,11 +471,15 @@ impl Session {
         {
             return Err(ApiError::new(PAINT_BUSY, "liquify source replaced"));
         }
-        *self
+        let mut assets = self
             .shared
             .preview_assets
             .lock()
-            .map_err(|_| ApiError::internal())? = Some((preview.source.id, bytes.clone()));
+            .map_err(|_| ApiError::internal())?;
+        if assets.len() == 2 {
+            assets.remove(0);
+        }
+        assets.push((preview.source.id, bytes.clone()));
         Ok(bytes)
     }
     pub fn task_progress(&self) -> PaintTaskProgress {
@@ -794,6 +798,40 @@ fn publish(
     }
 }
 impl Engine {
+    fn prepare_transform_assets(&mut self) -> ApiResult<()> {
+        let Some(source) = self.document.transform_preparation_source() else {
+            return Ok(());
+        };
+        if self
+            .shared
+            .preview_assets
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .iter()
+            .any(|(id, _)| *id == source.id)
+        {
+            return Ok(());
+        }
+        // Prepare on the document actor before BEGIN is acknowledged, rather
+        // than making the first pointer update pay for full proxy compositing.
+        let bytes = match crate::liquify_api::preview_assets(&source) {
+            Ok(bytes) => Arc::new(bytes),
+            Err(error) => {
+                self.document.cancel_transform()?;
+                return Err(error);
+            }
+        };
+        let mut assets = self
+            .shared
+            .preview_assets
+            .lock()
+            .map_err(|_| ApiError::internal())?;
+        if assets.len() == 2 {
+            assets.remove(0);
+        }
+        assets.push((source.id, bytes));
+        Ok(())
+    }
     fn default_view(&self) {
         let (width, height) = self.document.dimensions();
         let scale = (f64::from(width) / 1024.)
@@ -1071,13 +1109,17 @@ impl Engine {
                 }
                 if deferred {
                     self.document.begin_transform_layers_deferred(&ids)?;
+                    self.prepare_transform_assets()?;
                 } else {
                     self.document.begin_transform_layers(&ids)?;
                 }
             }
             Operation::Transform(kind, g) => match kind {
                 PAINT_TRANSFORM_BEGIN => self.document.begin_transform()?,
-                PAINT_TRANSFORM_ENABLE_RESIDENT => self.document.enable_transform_deferred()?,
+                PAINT_TRANSFORM_ENABLE_RESIDENT => {
+                    self.document.enable_transform_deferred()?;
+                    self.prepare_transform_assets()?;
+                }
                 PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL | PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL => {
                     if self.files.running() {
                         return Err(paint_core::Error::Busy.into());
@@ -1511,7 +1553,7 @@ impl Engine {
                     .preview_assets
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .take();
+                    .clear();
             }
             let old = std::mem::replace(
                 &mut *self
@@ -1817,6 +1859,78 @@ mod actor_tests {
         let recreated = run(Operation::New(64, 64));
         assert_eq!(recreated.frame.width, 64);
         assert!(!Arc::ptr_eq(&base.frame, &recreated.frame));
+    }
+    #[test]
+    fn transform_begin_prepares_first_drag_assets_and_keeps_both_selection_sources() {
+        let session = Session::new(128, 128).unwrap();
+        let run = |operation| {
+            let seq = session.submit(operation).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while session.info().completed_sequence < seq {
+                assert!(Instant::now() < deadline);
+                thread::sleep(Duration::from_millis(1));
+            }
+            assert_eq!(session.info().last_error_status, PAINT_OK);
+            session.publication()
+        };
+        run(Operation::Begin(
+            Box::new(paint_core::Brush::default().into()),
+            InputPoint::new(40., 40., 1.),
+            0,
+        ));
+        run(Operation::End);
+        let shape =
+            paint_core::SelectionShape::polygon(vec![[10., 10.], [90., 10.], [90., 90.]], true, 2.)
+                .unwrap();
+        run(Operation::Selection(crate::selection_api::Edit::Styled(
+            shape,
+            paint_core::SelectionOperation::Replace,
+            paint_core::HistoryAction::LassoSelection,
+        )));
+        let publication = run(Operation::TransformLayers(
+            vec![session.info().active_layer_id],
+            true,
+        ));
+        let identity = publication.resident_preview.as_ref().unwrap();
+        let (prepared_id, prepared) = {
+            let assets = session.shared.preview_assets.lock().unwrap();
+            assert_eq!(assets.len(), 1);
+            assets[0].clone()
+        };
+        assert_ne!(
+            prepared_id, identity.source.id,
+            "initial feathered image differs from moving source"
+        );
+        let identity_bytes = session.resident_assets(identity).unwrap();
+        let mut geometry = publication.transform.clone().unwrap();
+        for point in &mut geometry.points {
+            point[0] += 4.;
+        }
+        for _ in 0..3 {
+            let moved = run(Operation::Transform(
+                PAINT_TRANSFORM_UPDATE,
+                Some(geometry.clone()),
+            ));
+            let preview = moved.resident_preview.as_ref().unwrap();
+            assert_eq!(preview.source.id, prepared_id);
+            assert!(Arc::ptr_eq(
+                &prepared,
+                &session.resident_assets(preview).unwrap()
+            ));
+            let initial = run(Operation::Transform(
+                PAINT_TRANSFORM_UPDATE,
+                publication.transform.clone(),
+            ));
+            assert!(Arc::ptr_eq(
+                &identity_bytes,
+                &session
+                    .resident_assets(initial.resident_preview.as_ref().unwrap())
+                    .unwrap()
+            ));
+            assert_eq!(session.shared.preview_assets.lock().unwrap().len(), 2);
+        }
+        run(Operation::Transform(PAINT_TRANSFORM_CANCEL, None));
+        assert!(session.shared.preview_assets.lock().unwrap().is_empty());
     }
     #[test]
     fn resident_preview_keeps_render_floor_but_controls_advance_it() {

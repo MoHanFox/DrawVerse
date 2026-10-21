@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新变换首拖CPU准备：deferred BEGIN/ENABLE确认前Actor合成真实移动源2048代理，会话双源最多两套三图，历史往返复用、结束清空。Actor1/核心14/软件与D3D11各6行Qt/四ABI/Clippy/fmt/新路径Release通过，见transform-resident-preview末节。ABI1.75/state45不变；Qt首次纹理上传及复杂回退/实体时延仍待，不称全部资源预热。
+
 - 最新编辑结束焦点修复：CanvasPane保留恢复请求至busy/可见/宿主激活满足，不再跳过未激活窗口。真实变换/液化、确定/取消及主/浮文档8组合，结束不点击直接E/B/M；软件/D3D11各9行含欢迎生命周期通过，完整新路径Release更新。见transform-resident-preview验收末节；ABI1.75/state45保持，其他新增问题继续。
 
 - 最新液化会话历史分块读写：4KiB缓冲保持编码/两侧完整校验，仅分配恢复侧；核心16/公开11/原生1、软件Qt3/D3D11 Qt3、四ABI/Clippy/fmt及新路径Release/Debug通过。字段六跳转内存174→109ms、磁盘热缓存274→174ms，非UI/冷盘；D3D11 focus帧事务回归在旧新程序均失败，见长任务预算验收。ABI1.75/state45保持，新增套索液化/翻转历史/焦点/变换首拖问题继续处理。
