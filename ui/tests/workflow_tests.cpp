@@ -1,9 +1,11 @@
+#include "platform/UiResources.h"
 #include "engine/PaintCoreClient.h"
 #include "documents/DocumentManager.h"
 #include "canvas/SelectionOverlay.h"
 #include "canvas/CanvasItem.h"
 #include "color/ColorWheelItem.h"
 #include <QQmlApplicationEngine>
+#include <private/qqmlmetatype_p.h>
 #include <QDirIterator>
 #include <QQuickItemGrabResult>
 #include <QSGRendererInterface>
@@ -59,6 +61,41 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void packagedQmlHasCompatibleBuiltInBytecodeAndCurrentSources() {
+        QDirIterator files(":/qml",QStringList{"*.qml"},QDir::Files,QDirIterator::Subdirectories);int count=0;
+        while(files.hasNext()) {
+            const auto resource=files.next();const auto url=QUrl("qrc"+resource);
+            QQmlMetaType::CachedUnitLookupError status;
+            QVERIFY2(QQmlMetaType::findCachedCompilationUnit(url,QQmlMetaType::AcceptUntyped,&status),qPrintable(resource));
+            QVERIFY(status==QQmlMetaType::CachedUnitLookupError::NoError);
+            QFile packaged(resource),source(QStringLiteral(DRAWVERSE_QML_TEST_SOURCE_DIR)+resource.mid(5));
+            QVERIFY(packaged.open(QIODevice::ReadOnly));QVERIFY2(source.open(QIODevice::ReadOnly),qPrintable(source.fileName()));
+            QCOMPARE(packaged.readAll(),source.readAll());++count;
+        }
+        QVERIFY(count>50);qInfo()<<"packaged QML bytecode and source pairs"<<count;
+    }
+    void packagedBrushPanelMatchesFreshSourceLoading() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("settings.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QList<qint64> cachedUs,sourceUs;const QDir original(QStringLiteral(DRAWVERSE_QML_TEST_SOURCE_DIR));
+        for(int sample=0;sample<5;++sample) {
+            const auto directory=temp.filePath(QString::number(sample));QDirIterator files(original.absolutePath(),QDir::Files,QDirIterator::Subdirectories);
+            while(files.hasNext()){const auto file=files.next(),copy=directory+"/"+original.relativeFilePath(file);QVERIFY(QDir().mkpath(QFileInfo(copy).absolutePath()));QVERIFY(QFile::copy(file,copy));}
+            for(int phase=0;phase<2;++phase) {
+                const bool source=(sample+phase)%2;QQmlEngine engine;QStringList warnings;
+                connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &error:errors)warnings.append(error.toString());});
+                engine.rootContext()->setContextProperty("PaintClient",&client);QElapsedTimer clock;clock.start();
+                QQmlComponent component(&engine,source?QUrl::fromLocalFile(directory+"/brushes/BrushSettingsPanel.qml"):QUrl("qrc:/qml/brushes/BrushSettingsPanel.qml"));
+                QScopedPointer<QObject> panel(component.create());const auto elapsed=clock.nsecsElapsed()/1000;
+                QVERIFY2(panel,qPrintable(component.errorString()));QVERIFY(panel->findChild<QObject*>("settingsBrushSize"));
+                QCOMPARE(panel->property("category").toInt(),0);QCOMPARE(client.brushLibrary()->radius(),12.);
+                QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));(source?sourceUs:cachedUs).append(elapsed);
+            }
+        }
+        std::sort(cachedUs.begin(),cachedUs.end());std::sort(sourceUs.begin(),sourceUs.end());
+        qInfo()<<"brush panel fresh engine load+create median us packaged/fresh-source"<<cachedUs[2]<<sourceUs[2];
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
     void qmlPreviewReadsEditedSourcesAndUsesTemporarySettings() {
         const auto executable=QCoreApplication::applicationDirPath()+"/drawverse_qml_preview.exe";
         if(!QFileInfo::exists(executable))QSKIP("Build the qml-preview preset to verify the opt-in developer host");
@@ -1194,7 +1231,7 @@ Flickable {objectName:"outer";width:300;height:380;contentWidth:width;contentHei
     }
 };
 int main(int argc,char **argv) {
-    QGuiApplication app(argc,argv);Q_INIT_RESOURCE(ui_resources);QQuickStyle::setStyle("Basic");
+    QGuiApplication app(argc,argv);initializeDrawVerseUiResources();QQuickStyle::setStyle("Basic");
     qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
     qmlRegisterType<DocumentManager>("DrawVerse",1,0,"DocumentManager");qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
     WorkflowTests test;return QTest::qExec(&test,argc,argv);

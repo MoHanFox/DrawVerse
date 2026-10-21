@@ -1,3 +1,4 @@
+#include "platform/UiResources.h"
 #include "canvas/CanvasItem.h"
 #include "canvas/SelectionOverlay.h"
 #include "color/ColorWheelItem.h"
@@ -566,7 +567,7 @@ private slots:
 };
 int main(int argc,char **argv){
     QGuiApplication app(argc,argv);app.setOrganizationName("DrawVerseTests");app.setApplicationName("TransformTests");
-    Q_INIT_RESOURCE(ui_resources);QQuickStyle::setStyle("Basic");
+    initializeDrawVerseUiResources();QQuickStyle::setStyle("Basic");
     qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
     qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");qmlRegisterType<DocumentManager>("DrawVerse",1,0,"DocumentManager");
     TransformTests test;return QTest::qExec(&test,argc,argv);

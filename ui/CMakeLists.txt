@@ -10,7 +10,7 @@ add_library(drawverse_ui STATIC
     src/documents/DocumentManager.h src/documents/DocumentManager.cpp
     src/workspace/DockTree.h src/workspace/DockTree.cpp
     src/platform/TabletInput.h src/platform/TabletInput.cpp
-    src/platform/UiScale.h
+    src/platform/UiResources.h src/platform/UiScale.h
     src/platform/MenuSurface.h src/platform/MenuSurface.cpp
     src/platform/MenuBlurLayer.h src/platform/MenuBlurLayer.cpp
     src/engine/PaintCoreClient.h src/engine/PaintCoreClient.cpp
@@ -47,8 +47,33 @@ set(_drawverse_ui_resources
     qml/windows/PanelWindow.qml qml/windows/ResizeFrame.qml qml/windows/WindowOutline.qml
     qml/theme/Theme.qml
     qml/theme/qmldir qml/assets/logo.png qml/assets/transparency.png)
+# Keep existing qrc:/qml URLs and relative imports, but build bytecode rather
+# than parsing all application QML on the first interactive frame. The private
+# packaging URI is the existing resource directory, not a new runtime import.
+set(_drawverse_ui_qml "")
+set(_drawverse_ui_assets "")
+foreach(_drawverse_resource IN LISTS _drawverse_ui_resources)
+    if(_drawverse_resource MATCHES "\\.qml$")
+        list(APPEND _drawverse_ui_qml "${_drawverse_resource}")
+        string(REGEX REPLACE "^qml/" "" _drawverse_alias "${_drawverse_resource}")
+        set_source_files_properties("${_drawverse_resource}" PROPERTIES QT_RESOURCE_ALIAS "${_drawverse_alias}")
+    else()
+        list(APPEND _drawverse_ui_assets "${_drawverse_resource}")
+    endif()
+endforeach()
+# Keep existing relative-directory imports instead of adding qmldir redirects.
+set(_drawverse_qml_directory_options "")
+if(Qt6_VERSION VERSION_GREATER_EQUAL 6.8)
+    list(APPEND _drawverse_qml_directory_options NO_GENERATE_EXTRA_QMLDIRS)
+endif()
+set_source_files_properties(qml/theme/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_target_properties(drawverse_ui PROPERTIES QT_QMLCACHEGEN_ARGUMENTS "--only-bytecode")
+qt_add_qml_module(drawverse_ui URI qml VERSION 1.0
+    OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml"
+    RESOURCE_PREFIX "/" NO_PLUGIN NO_GENERATE_QMLTYPES ${_drawverse_qml_directory_options}
+    QML_FILES ${_drawverse_ui_qml})
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
-    FILES ${_drawverse_ui_resources})
+    FILES ${_drawverse_ui_assets})
 qt_add_shaders(drawverse_ui liquify_shaders PREFIX "/shaders" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
     GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag shaders/adaptive-cursor.frag shaders/transform-composite.frag shaders/selection-ants.frag)
 
@@ -95,7 +120,7 @@ add_test(NAME qt_transform_tests COMMAND qt_transform_tests)
 set_tests_properties(qt_transform_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 
 qt_add_executable(qt_workflow_tests tests/workflow_tests.cpp)
-target_link_libraries(qt_workflow_tests PRIVATE drawverse_ui Qt6::Test)
+target_link_libraries(qt_workflow_tests PRIVATE drawverse_ui Qt6::Test Qt6::QmlPrivate)
 target_compile_definitions(qt_workflow_tests PRIVATE DRAWVERSE_QML_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")
 set_target_properties(qt_workflow_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
 add_test(NAME qt_workflow_tests COMMAND qt_workflow_tests)
@@ -121,7 +146,7 @@ add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     foldedNeighboursKeepTheirSizes independentFoldedColumnsKeepExpandedNeighboursAndRestore
     mainWindowRestoresWithoutNativeFrameOrClippedContent
     maximizedTitleBarDragRestoresAndFollowsPointer nativeMenuBlurLayerFollowsWindowAndHidesBeforeMinimize
-    brushPresetClicksKeepEraserAndShareActualStrokeSettings
+    brushPresetClicksKeepEraserAndUseSelectedPresetSize
     dockSeparatorsUseThinDarkGrayAcrossMainAndFloatingColumns
     draggingPanelsSelectsNearestExposedEdgeAndShowsEdgeGlow
     panelTabsSwapWithinTheirBarBeforeDetaching
@@ -156,7 +181,7 @@ add_test(NAME qt_ui_highdpi COMMAND qt_ui_tests qmlMouseTabletAndFloatingWindows
     polygonDoubleClickClosureAndTabletFreehandUseSameInputPath
     selectionsDragCombineUndoConstrainAndPersist
     panelTabsRetractWithoutExpandingRailsAndKeepSharedPresentation
-    textFieldsKeepSpaceAndHistoryReplayStaysStepped
+    textFieldsKeepSpaceAndHistorySelectsDirectly
     editMenuOpensKeyboardShortcutList
     selectionToolVariantsUseCornerMarkAndRightClickPanel
     closingDockedCategoryKeepsOtherHeightsAndFullToolColumn

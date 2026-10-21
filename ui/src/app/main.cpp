@@ -1,3 +1,4 @@
+#include "platform/UiResources.h"
 #include "canvas/CanvasItem.h"
 #include "color/ColorWheelItem.h"
 #include "canvas/SelectionOverlay.h"
@@ -51,7 +52,7 @@ int main(int argc,char **argv) {
     if(parser.isSet("canvas") && parser.value("qml-entry")!="app/Main.qml") {qCritical("--canvas requires app/Main.qml");return 2;}
 #endif
     if(app.arguments().contains("--migrate-workspace")) { WorkspaceManager workspace; workspace.saveLayout(); return 0; }
-    Q_INIT_RESOURCE(ui_resources);
+    initializeDrawVerseUiResources();
     app.setWindowIcon(QIcon(":/qml/assets/logo.png"));
     QQuickStyle::setStyle("Basic");
     QPalette palette;

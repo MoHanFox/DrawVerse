@@ -1,3 +1,4 @@
+#include "platform/UiResources.h"
 #include "canvas/CanvasItem.h"
 #include "color/ColorWheelItem.h"
 #include "canvas/SelectionOverlay.h"
@@ -1931,7 +1932,9 @@ private slots:
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,fine->mapToScene({fine->width()/2,fine->height()/2}).toPoint());QTRY_COMPARE(library->selectedId(),QString("round-fine"));QVERIFY(client.eraser());
         library->setRadius(8);library->setOpacity(.5);library->setSpacing(.25);QCOMPARE(client.brushRadius(),qreal(8));QCOMPARE(client.brushOpacity(),qreal(.5));QCOMPARE(client.brushSpacing(),qreal(.25));
         QVERIFY(stroke());QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(rendered());const int erased=client.frame().pixelColor(64,64).alpha();QVERIFY(erased<painted);
-        auto *brush=findVisualItem(window->contentItem(),"brushTool");QVERIFY(brush);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,brush->mapToScene({brush->width()/2,brush->height()/2}).toPoint());QVERIFY(!client.eraser());QCOMPARE(library->selectedId(),QString("round-fine"));QCOMPARE(client.brushRadius(),qreal(8));QCOMPARE(client.brushOpacity(),qreal(.5));QCOMPARE(client.brushSpacing(),qreal(.25));
+        auto *brush=findVisualItem(window->contentItem(),"brushTool");QVERIFY(brush);QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,brush->mapToScene({brush->width()/2,brush->height()/2}).toPoint());QVERIFY(!client.eraser());
+        // Parameter sharing does not merge each tool's selected preset.
+        QCOMPARE(library->selectedId(),QString("round-pressure"));QCOMPARE(client.brushRadius(),qreal(12));QCOMPARE(client.brushOpacity(),qreal(1));QCOMPARE(client.brushSpacing(),qreal(.15));
         QVERIFY(stroke());QTRY_COMPARE(client.undoDepth(),3);QTRY_VERIFY(rendered());QVERIFY(client.frame().pixelColor(64,64).alpha()>erased);
         canvas->setClient(&client);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
@@ -3323,7 +3326,7 @@ private slots:
         const auto brush=workspace.leftGroups().first().toMap().value("id").toString(),color=workspace.rightGroups().first().toMap().value("id").toString();workspace.setActive(brush,"brush");
         auto *nav=findVisualItem(main->contentItem(),"columnHeader:"+brush),*tabs=findVisualItem(main->contentItem(),"panelTabBar:"+brush),*tab=findVisualItem(main->contentItem(),"panelTab:brush");QVERIFY(nav && tabs && tab);
         QCOMPARE(nav->property("color").value<QColor>(),QColor("#05080a"));QCOMPARE(tabs->property("color").value<QColor>(),QColor("#05080a"));QCOMPARE(tab->property("radius").toReal(),qreal(3));
-        auto *preset=findVisualItem(main->contentItem(),"brushPreset:round-pressure");QTRY_VERIFY(preset);QCOMPARE(QQmlProperty::read(preset,"border.color").value<QColor>(),QColor("#1b1c1f"));
+        QQuickItem *preset=nullptr;QTRY_VERIFY((preset=findVisualItem(main->contentItem(),"brushPreset:round-pressure")));QCOMPARE(QQmlProperty::read(preset,"border.color").value<QColor>(),QColor("#1b1c1f"));
         workspace.setColumnCollapsed(color,true);const auto click=[&](const QString &panel){auto *icon=findVisualItem(main->contentItem(),"railPanel:"+panel);if(!icon)return false;QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,icon->mapToScene({14,14}).toPoint());return true;};
         const auto flyout=[&](const QString &panel)->QQuickWindow*{for(auto *w:applicationWindows())if(w->objectName().endsWith(":"+panel) && w->objectName().startsWith("panelFlyout:") && w->isVisible())return qobject_cast<QQuickWindow*>(w);return nullptr;};
         QVERIFY(click("color"));QTRY_VERIFY(flyout("color"));QPointer<QQuickWindow> panel=flyout("color");panel->resize(250,panel->minimumHeight());QTest::qWait(30);
@@ -5494,7 +5497,7 @@ int main(int argc,char **argv) {
     if (qEnvironmentVariable("QT_QPA_PLATFORM") == "offscreen")
         qputenv("QT_QPA_FONTDIR",QDir(qEnvironmentVariable("WINDIR")).filePath("Fonts").toUtf8());
 #endif
-    QGuiApplication app(argc,argv); Q_INIT_RESOURCE(ui_resources);
+    QGuiApplication app(argc,argv); initializeDrawVerseUiResources();
     QQuickStyle::setStyle("Basic"); qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");
     qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
     qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");

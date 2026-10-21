@@ -52,3 +52,8 @@ README的Rust职责表按core/Cargo.toml补齐全部八个运行库和paint-api-
 本次用户桌面副本的原因是桌面目录带有可继承的 Windows 低完整性标签，EXE 继承后以低完整性运行，不能写入普通中完整性的用户配置和临时目录。它与 Qt DLL 缺失、CWD 或 VBR 版本无关。可用 `icacls <Release路径>` 与 `icacls <Release路径>/drawverse.exe` 核对 Mandatory Label。处理应限制在已确认的应用副本范围，恢复其普通中完整性标签，或重新部署到具有正常权限的目录；不要放宽用户数据目录的写权限，也无需把应用设为管理员运行。
 
 本机仅修正了用户指定的 `C:/Users/MOHAN/Desktop/Release` 及子文件，保留桌面本身的权限。新建的其他桌面文件夹仍可能继承桌面的低完整性标签，遇到同类问题需要重新核对。详见 [Release 目录权限验收](../validations/platform/release-directory-permissions-validation.md)。
+
+
+## 打包 QML 构建时字节码（2026-10-22）
+
+原手动CMake命令及build/run输出目录保持。UI构建通过同一资源清单生成Qt字节码，原qrc地址不变；应用和测试显式保留静态库缓存初始化，避免仅生成却被链接器剔除。首次构建增加62个小型生成源，后续按文件增量更新。磁盘源码预览不使用内置URL缓存，Qt Creator编辑重载保持。详见[设计](qml-bytecode-design.md)与[验收](../validations/platform/qml-bytecode-validation.md)。
