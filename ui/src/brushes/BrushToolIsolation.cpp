@@ -24,7 +24,14 @@ void BrushLibrary::setToolContext(int tool,bool persist) {
     if(tool<0 || tool>2 || tool==m_toolContext)return;
     if(m_toolIsolation)captureToolProfile();
     m_toolContext=tool;
-    if(!m_toolIsolation)return;
+    if(!m_toolIsolation) {
+        m_snapshotCache.clear();
+        if(!m_snapshotObjectCache.isEmpty()) {
+            auto isolation=m_snapshotObjectCache.value("toolIsolation").toObject();isolation["context"]=tool;
+            m_snapshotObjectCache["toolIsolation"]=isolation;
+        }
+        return;
+    }
     const auto &profile=m_toolProfiles[tool];
     for(auto &p:m_presets) {
         const auto found=profile.presets.constFind(p.id);

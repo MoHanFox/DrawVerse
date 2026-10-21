@@ -77,6 +77,9 @@ private slots:
         const QDir resources(QFileInfo(source).dir().filePath("brush-resources"));QDirIterator files(resources.absolutePath(),QDir::Files,QDirIterator::Subdirectories);
         while(files.hasNext()){const auto file=files.next();const auto copy=temp.filePath("brush-resources/"+resources.relativeFilePath(file));QVERIFY(QDir().mkpath(QFileInfo(copy).absolutePath()));QVERIFY(QFile::copy(file,copy));}
         QSettings settings(path,QSettings::IniFormat);const auto saved=settings.value("brushes/state").toByteArray();qInfo()<<"copied preset count"<<QJsonDocument::fromJson(saved).object().value("presets").toArray().size()<<"bytes"<<saved.size();
+        QList<qint64> coldRestoreUs;
+        for(int i=0;i<5;++i){BrushLibrary cold;QElapsedTimer timer;timer.start();QVERIFY(cold.restore(saved));coldRestoreUs.append(timer.nsecsElapsed()/1000);}
+        std::sort(coldRestoreUs.begin(),coldRestoreUs.end());qInfo()<<"copied preferences full restore median us"<<coldRestoreUs[2];
         PaintCoreClient client(nullptr,path);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->resize(1600,1000);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
@@ -110,6 +113,17 @@ private slots:
             QCOMPARE(receiver->brushLibrary()->selectedId(),mode==2?receiverSelected:library->selectedId());QVERIFY(receiver->lastError().isEmpty());
         }
         heartbeat.stop();QVERIFY(client.lastError().isEmpty());QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+
+    void sharedToolContextUpdatesCachedPreferencesWithoutCatalogWork() {
+        BrushLibrary library;const auto catalog=library.catalogSnapshot();library.snapshot();
+        QSignalSpy models(&library,&BrushLibrary::presetsChanged),persist(&library,&BrushLibrary::persistRequested),settings(&library,&BrushLibrary::settingsChanged);
+        for(const auto tool:{1,2,0,2,1,0}) {
+            library.setToolContext(tool);const auto bytes=library.snapshot();
+            QCOMPARE(QJsonDocument::fromJson(bytes).object().value("toolIsolation").toObject().value("context").toInt(),tool);
+            QCOMPARE(library.catalogSnapshot(),catalog);BrushLibrary restored;QVERIFY(restored.restore(bytes));QCOMPARE(restored.toolContext(),tool);
+        }
+        QCOMPARE(models.size(),0);QCOMPARE(settings.size(),0);QCOMPARE(persist.size(),0);QVERIFY(!library.persistencePending());
     }
 
     void selectingBrushReusesRowsAndPreservesAllPreferenceScopes() {
