@@ -1,3 +1,4 @@
+#include "platform/TabletInput.h"
 #include "brushes/BrushCurveModes.h"
 #include "engine/PaintCoreClient.h"
 #include <QtEndian>
@@ -1810,6 +1811,19 @@ bool PaintCoreClient::pickLayer(QPointF point,int dx,int dy) {
          uint32_t(std::floor(point.x())),uint32_t(std::floor(point.y())),dx,dy,&sequence);}
     if(status!=PAINT_OK)return false;
     m_pendingLayer=sequence;if(dx || dy)m_pendingMutation=sequence;emit stateChanged();return true;
+}
+QString PaintCoreClient::tabletInputMode() const {
+    auto settings=m_settingsFile.isEmpty()?std::make_unique<QSettings>(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse"):std::make_unique<QSettings>(m_settingsFile,QSettings::IniFormat);
+    const auto mode=settings->value("input/tabletApi","auto").toString();
+    return mode=="windows-ink" || mode=="wintab"?mode:QStringLiteral("auto");
+}
+QString PaintCoreClient::tabletInputBackend() const {return activeTabletInputBackend();}
+void PaintCoreClient::setTabletInputMode(const QString &mode) {
+    if(m_closing || (mode!="auto" && mode!="windows-ink" && mode!="wintab") || mode==tabletInputMode())return;
+    auto settings=m_settingsFile.isEmpty()?std::make_unique<QSettings>(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse"):std::make_unique<QSettings>(m_settingsFile,QSettings::IniFormat);
+    settings->setValue("input/tabletApi",mode);settings->sync();
+    if(settings->status()!=QSettings::NoError){showError(QStringLiteral("无法保存手绘板输入设置"));return;}
+    emit tabletInputSettingsChanged();
 }
 bool PaintCoreClient::textInputFocused() const {
     const auto *focus=QGuiApplication::focusObject();

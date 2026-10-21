@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新 WinTab 输入：remaining-fixes末节；窗口创建前通过 Qt 配套 GuiPrivate 原生接口启用 WinTab，自动以实际 enabled 判定并后备 Windows Ink；偏好新增三档/当前后端，重启生效。真实 native 初始化本机 wintab，六驱动组合/持久化/QML及编辑回归软件/D3D11各7行、完整Release/头/真实应用预览通过。build/bin/Release，ABI1.78/state45保持；实体关闭Ink连续压力/倾斜/翻面/重复输入尚待，I1/I3/I5/I6和P1/H1/T2继续。
+
 - 最新手绘笔异常离开/变换面板：remaining-fixes末节；proximity丢release结束笔触/液化timer并释放手势，鼠标失抓清tablet，笔绘制主动焦点；editing锁与liquify隐藏分开，变换保留浮窗、状态栏正确工具、结束清编辑守卫提示。软件/D3D11各6行及完整Release/头通过，build/bin/Release，ABI1.78/state45保持。实体压感及其他停刷/快捷键原因、I1/I2/I5和P1/H1/T2仍待。
 
 - 最新复杂移动稀疏合成：layer-move-bounded-fallback设计/验收末节；共享RowSamples/read_sampled_row与原组/蒙版/剪贴/混合规则，仅合成512px显示所需坐标，瓦片按需pin。核心3/render23/共享定向28/原生2、4K有效固定自身及祖先蒙版与旧七类移动软件/D3D11各11行、四ABI/严格Clippy/fmt/头/完整Release通过。4K CPU预览46.208→20.461ms、2000px48.657→32.193ms，非UI延迟；种子白色蒙版误设修正黑色后窗口像素通过。标准build/bin/Release，ABI1.78/state45保持；M1首次资产/实体持续及T2/H1/P1/L1边界仍待。

@@ -5,6 +5,8 @@
 #include "documents/DocumentManager.h"
 #include "app/PaintingBenchmark.h"
 #include "platform/UiScale.h"
+#include "platform/TabletInput.h"
+#include <QSettings>
 #include "platform/MenuSurface.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -29,6 +31,8 @@ int main(int argc,char **argv) {
     QQuickWindow::setDefaultAlphaBuffer(true);
     QGuiApplication app(argc,argv);
     app.setOrganizationName("DrawVerse"); app.setApplicationName("DrawVerse");
+    const QSettings inputSettings(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse");
+    configureTabletInput(inputSettings.value("input/tabletApi","auto").toString());
 #ifdef DRAWVERSE_QML_SOURCE_DIR
     // Only this separate developer executable enables the Qt Creator preview service.
     QQmlDebuggingEnabler::enableDebugging(true);

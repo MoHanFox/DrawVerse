@@ -9,6 +9,7 @@ add_library(drawverse_ui STATIC
     src/platform/WindowDrag.h src/platform/WindowDrag.cpp
     src/documents/DocumentManager.h src/documents/DocumentManager.cpp
     src/workspace/DockTree.h src/workspace/DockTree.cpp
+    src/platform/TabletInput.h src/platform/TabletInput.cpp
     src/platform/UiScale.h
     src/platform/MenuSurface.h src/platform/MenuSurface.cpp
     src/platform/MenuBlurLayer.h src/platform/MenuBlurLayer.cpp
@@ -26,7 +27,7 @@ target_include_directories(drawverse_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
 target_link_libraries(drawverse_ui PUBLIC Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2
     PRIVATE drawverse_ffi_static)
 if(WIN32)
-    target_link_libraries(drawverse_ui PRIVATE dwmapi windowsapp CoreMessaging)
+    target_link_libraries(drawverse_ui PRIVATE dwmapi windowsapp CoreMessaging Qt6::GuiPrivate)
 endif()
 
 # Keep the resource manifest and its rebuild dependencies in one place.

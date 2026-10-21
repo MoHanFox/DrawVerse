@@ -158,3 +158,13 @@ M1继续：固定/祖先蒙版等CPU回退按实际预览坐标合成，与普�
 - 新真实窗口用例 `tabletProximityLossEndsStrokeAndEditingRemainsUsable` 两行：刷/液化 press+move 后不发 release 直接 proximity loss，确认 drawing/busy 结束，迟到 release 后再次起笔/收笔可用，编辑可开始/取消，最后图像可抓取。`transformKeepsFloatingPanelsAndUsesCorrectFileGuard` 验证实际浮动笔刷面板在变换保留、液化隐藏/恢复、正确状态栏与清空提示。复用原 `finishingEditRestoresCanvasShortcutsWithoutAClick`。
 - 软件与 D3D11 各 6 行（含 init/cleanup）通过，无 QML 诊断；日志 `artifacts/tablet-interaction-final-{software,d3d11}.txt`。完整 Release/生成头构建通过，日志 `artifacts/tablet-interaction-release.txt`，产物 `build/bin/Release/drawverse.exe`。无 Rust/ABI/state 改动。
 - 限制：输入为真实窗口上注入的 QTabletEvent，未声称实体驱动压感已通过；未定位所有“命令继续但图像不刷”的原因，I3/I6及 I1/I2/I5 与 P1/H1/T2 继续跟踪。
+
+## Windows Ink 关闭后的 WinTab 输入接入（2026-10-21）
+
+- 启动后、创建任何应用窗口前初始化 Qt 的 `QNativeInterface::Private::QWindowsApplication`。自动默认尝试 WinTab，读取 `isWinTabEnabled()` 判定实际打开成功，未成功回到 Windows Ink。不能只信 `setWinTabEnabled()` 返回值：Qt 6.8.3 `initTablet()` 在 create 返回空时仍可返回 true。
+- 首选项→偏好新增自动/Windows Ink/WinTab 与实际当前后端，选项写入同一个 INI `input/tabletApi`，重启生效。非法值拒绝写入；异常旧值按自动处理。不会在进行中的笔触切换驱动后端，也不会伪造鼠标压力。
+- 平台私有 API 限定于 `platform/TabletInput.cpp`，Windows 目标链接与所用 Qt 配套的 GuiPrivate，其他平台不调用 Windows API。升级 Qt 时需重新构建此适配层。
+- 源码依据：Qt v6.8.3 `src/plugins/platforms/windows/qwindowsapplication.cpp`（`setWinTabEnabled/isWinTabEnabled`）、`qwindowscontext.cpp`（`initTablet`）、`qwindowstabletsupport.cpp`（打开驱动并注册带压力能力的设备）。检查副本保存在 `artifacts/qt-6.8.3-*.cpp`，未复制进产品。
+- 新用例覆盖三种请求×有/无驱动六组合（包括“初始化返回 true 但实际未启用”的情况）、真实 Qt native interface 手动 Ink 与自动初始化、真实 QML 首选项选择及落盘/非法值。此机器实际自动后端为 `wintab`；软件/D3D11各7行（含既有异常笔触/编辑焦点/浮窗与init/cleanup）通过。日志 `artifacts/tablet-backend-final-{software,d3d11}.txt`。
+- 完整 Release及生成头通过：`artifacts/tablet-backend-release.txt`；追加 Qt 用例构建 `tablet-backend-final-test-build.txt`。真实应用 D3D11 `--preview` 正常退出并生成 `artifacts/tablet-backend-startup.png`。最终产物 `build/bin/Release/drawverse.exe`。无 Rust/ABI/state变化。
+- 实体驱动关闭 Ink 后的连续压力曲线、倾斜/橡皮翻面及重复输入还需设备验证；初始化成功不等于实机压感验收完成。首次误在测试新二进制链接前运行得到 unknown-function，已在最终链接完成后重跑上述两后端通过，未计作有效验收。

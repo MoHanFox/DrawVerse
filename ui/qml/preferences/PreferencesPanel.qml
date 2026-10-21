@@ -154,6 +154,19 @@ Dialog {
                         }
                         ColumnLayout {
                             spacing: 8
+                            Label { text: "手绘板输入"; font.pixelSize: 10; color: Theme.accent }
+                            ComboBox {
+                                objectName: "tabletInputApi"; Layout.fillWidth: true
+                                property var modes: ["auto", "windows-ink", "wintab"]
+                                model: ["自动（优先 WinTab，未检测到驱动则使用 Windows Ink）", "Windows Ink", "WinTab（适用于驱动关闭 Windows Ink）"]
+                                currentIndex: Math.max(0,modes.indexOf(PaintClient.tabletInputMode))
+                                onActivated: PaintClient.tabletInputMode = modes[currentIndex]
+                            }
+                            Label {
+                                objectName: "tabletInputStatus"; Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.muted; font.pixelSize: 8
+                                text: "当前输入："+PaintClient.tabletInputBackend+"。更改后重启生效。WinTab 需要手绘板驱动提供支持。"
+                            }
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
                             Label { text: "笔刷系统"; font.pixelSize: 10; color: Theme.accent }
                             Label { text: "笔刷系统隔离"; font.pixelSize: 9; color: Theme.text }
                             ComboBox {

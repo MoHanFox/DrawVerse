@@ -39,6 +39,8 @@ class PaintCoreClient final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantMap computationProgress READ computationProgress NOTIFY computationProgressChanged)
     Q_PROPERTY(bool longTaskVisible READ longTaskVisible NOTIFY computationProgressChanged)
+    Q_PROPERTY(QString tabletInputMode READ tabletInputMode WRITE setTabletInputMode NOTIFY tabletInputSettingsChanged)
+    Q_PROPERTY(QString tabletInputBackend READ tabletInputBackend CONSTANT)
     Q_PROPERTY(int longTaskDelay READ longTaskDelay WRITE setLongTaskDelay NOTIFY longTaskDelayChanged)
     Q_PROPERTY(QVariantMap storageSettings READ storageSettings NOTIFY storageChanged)
     Q_PROPERTY(QVariantMap activeStorageSettings READ activeStorageSettings NOTIFY storageChanged)
@@ -211,6 +213,9 @@ public:
     QVariantMap computationProgress() const {return m_computationProgress;}
     bool longTaskVisible() const {return !m_closing && m_computationProgress.value("state").toUInt()==1 && m_computationProgress.value("generation").toULongLong()==m_generation && m_computationProgress.value("elapsedMs").toULongLong()>=qulonglong(m_longTaskDelay);}
     int longTaskDelay() const {return m_longTaskDelay;}
+    QString tabletInputMode() const;
+    QString tabletInputBackend() const;
+    void setTabletInputMode(const QString &mode);
     void setLongTaskDelay(int value);
     void restoreLongTaskDelay(int value);
     QVariantMap storageSettings() const { return m_storageSettings; }
@@ -471,6 +476,7 @@ signals:
     void liquifyOptionsChanged();
     void historyChanged();
     void computationProgressChanged();
+    void tabletInputSettingsChanged();
     void longTaskDelayChanged();
     void storageChanged();
     void computeChanged();

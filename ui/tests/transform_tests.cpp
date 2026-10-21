@@ -4,6 +4,7 @@
 #include "documents/DocumentManager.h"
 #include "workspace/WorkspaceManager.h"
 #include "platform/MenuSurface.h"
+#include "platform/TabletInput.h"
 #include <QtTest>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -217,6 +218,27 @@ private slots:
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && red(at(undone,{100,1080})) && white(at(undone,{2000,1080})));
         client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage redone;QTRY_VERIFY(!(redone=capture()).isNull() && white(at(redone,{100,1080})) && white(at(redone,{2000,1080})));
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void tabletBackendSelectionChecksDriverStateAndPersistsChoice() {
+#ifdef Q_OS_WIN
+        configureTabletInput("windows-ink");QCOMPARE(activeTabletInputBackend(),QString("windows-ink"));
+        configureTabletInput("auto");QVERIFY(activeTabletInputBackend()=="windows-ink" || activeTabletInputBackend()=="wintab");
+#endif
+        for(const auto &mode:{QString("auto"),QString("windows-ink"),QString("wintab")})for(bool driver:{false,true}) {
+            bool enabled=false;int calls=0;
+            const auto result=selectTabletInputBackend(mode,[&](bool requested){++calls;enabled=requested && driver;return true;},[&]{return enabled;});
+            QCOMPARE(calls,1);QCOMPARE(result,(driver && mode!="windows-ink")?QString("wintab"):QString("windows-ink"));
+        }
+        QTemporaryDir temp;const auto path=temp.filePath("tablet.ini");PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());
+        QCOMPARE(client.tabletInputMode(),QString("auto"));QSignalSpy changes(&client,&PaintCoreClient::tabletInputSettingsChanged);
+        client.setTabletInputMode("wintab");QCOMPARE(client.tabletInputMode(),QString("wintab"));QCOMPARE(changes.size(),1);
+        client.setTabletInputMode("invalid");QCOMPARE(changes.size(),1);QCOMPARE(QSettings(path,QSettings::IniFormat).value("input/tabletApi").toString(),QString("wintab"));
+        client.setTabletInputMode("windows-ink");QCOMPARE(client.tabletInputMode(),QString("windows-ink"));
+        WorkspaceManager workspace(temp.filePath("tablet-layout.ini"));QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        QQmlComponent component(&engine,QUrl("qrc:/qml/preferences/PreferencesPanel.qml"));QScopedPointer<QObject> dialog(component.create());QVERIFY2(dialog,qPrintable(component.errorString()));
+        auto *combo=dialog->findChild<QObject*>("tabletInputApi");QVERIFY(combo);QCOMPARE(combo->property("count").toInt(),3);QCOMPARE(combo->property("currentIndex").toInt(),1);
+        combo->setProperty("currentIndex",2);QVERIFY(QMetaObject::invokeMethod(combo,"activated",Q_ARG(int,2)));QCOMPARE(client.tabletInputMode(),QString("wintab"));
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void tabletProximityLossEndsStrokeAndEditingRemainsUsable_data() {
         QTest::addColumn<bool>("liquify");QTest::newRow("brush")<<false;QTest::newRow("liquify")<<true;
