@@ -1,5 +1,13 @@
 # 跨平台检出与生成头一致性（2026-10-09）
 
+## 当前应用构建与运行入口（2026-10-21）
+
+标准用户Release目录统一为 `build/bin/Release`，手动CMake使用 `-B build`；旧记录中的build/qt及各验证目录是当时的证据位置，不批量改写。Debug应用使用 `cmake-build-debug/bin/Debug`。README保留完整构建命令。
+
+CMakePresets.json提供build/Release和run/Debug两个Ninja配置，开启Qt界面，共用项目Qt SDK默认路径；本机可通过CMake profile或CMakeUserPresets.json覆盖。共享CLion运行配置在.run/：build选中drawverse_runtime作只构建目标，run先构建drawverse_runtime，再执行drawverse。虽然codemodel中的UI子项目名为DrawVerseUI，CLion读取配置后实际规范化为根项目DrawVerse；共享XML保留IDE实际采用的名称。CLion重新加载并启用相同名称的profile后使用。
+
+drawverse_runtime只构建应用、LICENSE并部署对应配置的Qt DLL及QML，避免一键应用构建隐式编译大型Qt测试；完整默认all仍通过deploy_qt构建并部署测试程序和offscreen插件，统一验证入口不缩减。Qt部署步骤在依赖链中顺序执行，不并发写同一运行库目录。核心仍沿用现有Rust release库，Debug表示C++/Qt配置，不声称Rust debug。两配置分别构建，避免同时重写同一Cargo产物。详见[应用构建配置验收](../validations/platform/application-build-profiles-validation.md)。
+
 ## 2026-10-21：构建后启动报核心错误8
 
 使用README两条CMake命令构建的Release仍会读取用户配置。此次错误可由同一Release的C ABI直接复现：已保存的 `D:/DrawVerse/tmp` 不存在，paint_core_create_with_storage返回8和Windows错误2；同一DLL使用默认系统临时目录返回0。它是暂存目录初始化失败，不是DLL或部署文件缺失。

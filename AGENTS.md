@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 当前用户交付统一输出 `build/bin/Release/drawverse.exe`，以后完成优化须更新此路径；旧build/qt验收路径仅保留历史。最新build/run配置：CMakePresets及.run共享CLion配置，build只构建/部署Release应用，run先部署Debug再执行cmake-build-debug/bin/Debug/drawverse.exe；drawverse_runtime不编译测试，默认完整构建保持。两预设/README完整Release、两配置独立目录D3D11启动绘制、四ABI与新路径软件/D3D11各5项工作流通过。见build-reproducibility及application-build-profiles-validation，无ABI/state变化；余下优化继续按remaining-fixes推进。
+
 - 最新默认暂存路径提示：性能设置及旧暂存框在空值时显示默认实际系统目录，恢复系统目录/保存/重开仍保持空值自动选择；两后端各5项创建与设置Qt通过，无QML警告，Release及生成头更新。见scratch-directory-creation-validation末节，ABI/state保持。
 
 - 最新暂存缺失目录修复：Release错误8来自已保存D:/DrawVerse/tmp不存在，同一DLL系统目录正常；ScratchSpace后台初始化递归建目录，失败含路径/原因，不回退或改配置。实际原路径修复后返回0；存储9/软件与D3D11各4项Qt、四ABI/存储严格Clippy/格式及README原命令完整Release部署通过。README补齐workspace九包职责；详见build-reproducibility及scratch-directory-creation-validation。ABI1.75/state45保持，其他性能待办不变。

@@ -66,11 +66,11 @@ Windows 使用 x64 MSVC 与 Windows SDK，在 Developer PowerShell 中运行以�
 powershell -ExecutionPolicy Bypass -File tools/setup-qt.ps1
 
 # 从仓库根目录配置并构建完整应用。
-cmake -S . -B build/qt -DCMAKE_BUILD_TYPE=Release -DDRAWVERSE_BUILD_UI=ON -DCMAKE_PREFIX_PATH=.tools/qt/6.8.3/msvc2022_64
-cmake --build build/qt --config Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDRAWVERSE_BUILD_UI=ON -DCMAKE_PREFIX_PATH=.tools/qt/6.8.3/msvc2022_64
+cmake --build build --config Release
 
 # 启动；Windows 构建会部署所需 Qt DLL 与 QML 插件。
-./build/qt/bin/Release/drawverse.exe
+./build/bin/Release/drawverse.exe
 ```
 
 这些命令构建并部署应用，运行时仍会读取当前用户已有的配置。Windows 默认配置位于 `%APPDATA%/DrawVerse/DrawVerse.ini`，笔刷资源在同目录的 `brush-resources`。暂存使用系统临时目录，或偏好设置中保存的自定义目录；自定义目录被删除时，应用会自动创建所需目录。若磁盘离线、权限不足或同名文件占用路径，仍会报告具体路径及原因，可在设置中更换暂存目录；无需删除笔刷或整份配置。
@@ -81,7 +81,20 @@ cmake --build build/qt --config Release
 cargo build --manifest-path core/Cargo.toml -p paint-core -p paint-ffi --release --locked
 ```
 
-CLion 从仓库根目录的 `CMakeLists.txt` 加载项目。Windows 不混用 MSVC Rust 与 MinGW C++；切换工具链时使用独立构建目录。更多说明及 Release 复制后的权限排查见 [构建复现](docs/platform/build-reproducibility.md)。
+CLion 从仓库根目录加载项目，重新加载 CMake 后启用 `build`、`run` 两个 preset/profile；共享运行配置位于 `.run/`。选择 `build` 后点击构建，一键生成并部署 `build/bin/Release/drawverse.exe`；选择 `run` 后点击运行，先构建及部署，再启动 `cmake-build-debug/bin/Debug/drawverse.exe`。应用构建入口 `drawverse_runtime` 包含 Qt 运行库、QML 插件和 LICENSE，单独使用它不编译测试程序；上面的完整构建仍包含测试目标。
+
+同一套预设也可在 Developer PowerShell 中使用（需 Ninja 在 PATH 中）：
+
+```powershell
+cmake --preset build
+cmake --build --preset build
+
+cmake --preset run
+cmake --build --preset run
+./cmake-build-debug/bin/Debug/drawverse.exe
+```
+
+Windows 不混用 MSVC Rust 与 MinGW C++；切换工具链时使用独立构建目录。已有 Qt SDK 可在 CMake profile 或本机 `CMakeUserPresets.json` 中覆盖 `CMAKE_PREFIX_PATH`。更多说明及 Release 复制后的权限排查见 [构建复现](docs/platform/build-reproducibility.md)。
 
 ## 验证
 

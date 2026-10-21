@@ -176,14 +176,18 @@ if(WIN32)
     get_target_property(qt_qmake Qt6::qmake IMPORTED_LOCATION)
     get_filename_component(qt_bin "${qt_qmake}" DIRECTORY)
     find_program(qt_deploy NAMES windeployqt HINTS "${qt_bin}" REQUIRED NO_DEFAULT_PATH)
-    add_custom_target(deploy_qt ALL
+    add_custom_target(drawverse_runtime
         COMMAND "${qt_deploy}" "$<IF:$<CONFIG:Debug>,--debug,--release>" --no-translations --qmldir "${CMAKE_CURRENT_SOURCE_DIR}/qml"
                 "$<TARGET_FILE:drawverse>"
+        DEPENDS drawverse drawverse_license VERBATIM)
+    add_custom_target(deploy_qt ALL
         COMMAND "${qt_deploy}" "$<IF:$<CONFIG:Debug>,--debug,--release>" --no-translations --qmldir "${CMAKE_CURRENT_SOURCE_DIR}/qml"
                 "$<TARGET_FILE:qt_ui_tests>"
         # windeployqt selects qwindows by default; Qt Test explicitly uses offscreen.
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
                 "${qt_bin}/../plugins/platforms/qoffscreen$<$<CONFIG:Debug>:d>.dll"
                 "$<TARGET_FILE_DIR:qt_ui_tests>/platforms/"
-        DEPENDS drawverse qt_ui_tests VERBATIM)
+        DEPENDS drawverse_runtime qt_ui_tests VERBATIM)
+else()
+    add_custom_target(drawverse_runtime DEPENDS drawverse drawverse_license)
 endif()

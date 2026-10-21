@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 .venv/
 *.user
+/CMakeUserPresets.json
 /.idea/
 /cmake-build-*/
 /ui/cmake-build-*/

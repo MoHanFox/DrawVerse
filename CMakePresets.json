@@ -1,0 +1,45 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "app",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "DRAWVERSE_BUILD_UI": "ON",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/.tools/qt/6.8.3/msvc2022_64"
+      }
+    },
+    {
+      "name": "build",
+      "displayName": "Build Release application",
+      "inherits": "app",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "run",
+      "displayName": "Build and run Debug application",
+      "inherits": "app",
+      "binaryDir": "${sourceDir}/cmake-build-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build",
+      "configurePreset": "build",
+      "configuration": "Release",
+      "targets": ["drawverse_runtime"],
+      "jobs": 2
+    },
+    {
+      "name": "run",
+      "configurePreset": "run",
+      "configuration": "Debug",
+      "targets": ["drawverse_runtime"],
+      "jobs": 2
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [应用 build/run 配置与统一产物目录](platform/application-build-profiles-validation.md)
+
 - [大范围像素滑条指数调节](interface/pixel-slider-exponential-validation.md)
 
 - [原始清单与 UI 回归统一修复验收](planning/2026-10-21-remaining-fixes-validation.md)
