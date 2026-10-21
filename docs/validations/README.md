@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [原始清单与 UI 回归统一修复验收](planning/2026-10-21-remaining-fixes-validation.md)
+
 - [折叠列弹出面板的标签合并](interface/collapsed-panel-flyout-merge-validation.md)
 
 - [无文档欢迎工作区](interface/welcome-workspace-validation.md)
