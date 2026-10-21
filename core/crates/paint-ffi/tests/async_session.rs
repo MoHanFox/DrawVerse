@@ -4827,3 +4827,128 @@ mod history_select_api;
 
 #[path = "support/task_progress_api.rs"]
 mod task_progress_api;
+
+#[test]
+fn selected_pixel_actions_clipboard_history_and_selection_gate() {
+    let h = Harness::new(64, 64);
+    let gate = Harness::new(64, 64);
+    h.wait(h.stroke(16., 16.));
+    h.wait(h.stroke(48., 48.));
+    let ids = [1];
+    let mut sequence = 0;
+    unsafe {
+        assert_eq!(
+            paint_session_layer_action(
+                gate.core,
+                gate.session,
+                PAINT_LAYER_ACTION_CLEAR_SELECTED_PIXELS,
+                ids.as_ptr(),
+                1,
+                0,
+                ptr::null(),
+                0,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        assert_eq!(
+            gate.wait(sequence).last_error_status,
+            PAINT_INVALID_ARGUMENT
+        );
+        let request = PaintSelectionEdit {
+            width: 32.,
+            height: 32.,
+            ..dto!(PaintSelectionEdit)
+        };
+        assert_eq!(
+            paint_session_edit_selection(h.core, h.session, &request, &mut sequence),
+            PAINT_OK
+        );
+        let selected = h.wait(sequence);
+        assert_eq!(selected.last_error_status, PAINT_OK);
+        assert_eq!(
+            paint_session_layer_action(
+                h.core,
+                h.session,
+                PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS,
+                ids.as_ptr(),
+                1,
+                0,
+                ptr::null(),
+                0,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let copied = h.wait(sequence);
+        assert_eq!(copied.undo_depth, selected.undo_depth);
+        assert_eq!(copied.last_error_status, PAINT_OK);
+        let mut size = 0;
+        assert_eq!(
+            paint_session_read_layer_clipboard(
+                h.core,
+                h.session,
+                sequence,
+                ptr::null_mut(),
+                0,
+                &mut size
+            ),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert!(size > 16);
+        let mut bytes = vec![0; size as usize];
+        assert_eq!(
+            paint_session_read_layer_clipboard(
+                h.core,
+                h.session,
+                sequence,
+                bytes.as_mut_ptr(),
+                size,
+                &mut size
+            ),
+            PAINT_OK
+        );
+        assert_eq!(
+            paint_session_layer_action(
+                h.core,
+                h.session,
+                PAINT_LAYER_ACTION_CLEAR_SELECTED_PIXELS,
+                ids.as_ptr(),
+                1,
+                0,
+                ptr::null(),
+                0,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let cleared = h.wait(sequence);
+        assert_eq!(cleared.last_error_status, PAINT_OK);
+        assert_eq!(cleared.layer_count, 1);
+        assert_eq!(cleared.undo_depth, selected.undo_depth + 1);
+        let restored = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(restored.undo_depth, selected.undo_depth);
+        assert_eq!(restored.layer_count, 1);
+        let other = Harness::new(64, 64);
+        assert_eq!(
+            paint_session_layer_action(
+                other.core,
+                other.session,
+                PAINT_LAYER_ACTION_PASTE,
+                ptr::null(),
+                0,
+                1,
+                bytes.as_ptr(),
+                size,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let pasted = other.wait(sequence);
+        assert_eq!(pasted.last_error_status, PAINT_OK);
+        assert_eq!(pasted.layer_count, 2);
+    }
+}

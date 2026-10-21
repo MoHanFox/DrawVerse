@@ -1,4 +1,4 @@
-# C ABI 1.78.0 契约
+# C ABI 1.79.0 契约
 
 ## ABI 1.71 — SDF 整笔描边
 
@@ -624,3 +624,7 @@ kind2与kind1一样按generation/source身份读取，不要求最新revision；
 既有resident/liquify读取入口新增kind3：小端u64备用sourceId，后接该源的完整kind1三图包（24字节尺寸头及RGBA8像素）。查询必须使用当前可见预览的generation/sourceId，revision同其他静态包不要求最新；无备用源NOT_FOUND、当前身份过期BUSY、容量不足不写入像素且报告所需大小。备用sourceId不能作为当前网格票据，必须等核心真正切换源后才可读取其kind0。DTO、符号、能力位与state45/behavior37/VBR1.0不变，Qt最低ABI1.78。
 
 局部选区变换BEGIN完成前已经准备真实移动源；kind3允许Qt在恒等源显示时提前取得它。两套静态源按会话有界，Qt在窗口自己的渲染线程创建并提交纹理上传，身份/变形往返只复用，图形对象不通过FFI或GUI传递。会话退出释放强引用，不形成跨会话永久纹理缓存。
+
+## ABI1.79：选区内容编辑
+
+既有layer_action新增kind4 CLEAR_SELECTED_PIXELS与kind5 COPY_SELECTED_PIXELS，沿用非粘贴操作的IDs/零target/无bytes约束。两者要求当前有启用选区，无选区拒绝；kind5完成后沿用只读clipboard sequence查询，原kind0整层复制及duplicate保持。kind4按选区覆盖清除目标普通像素层（组递归子层，自身蒙版仅显式选中时编辑），保留图层ID/选区，一次原子LayerEdit历史；历史kind41清除选区内容。预算/锁定/读取失败不发布候选，空操作不增加历史。Qt最低ABI1.79；DTO/符号/能力位/state45/behavior37/VBR保持。

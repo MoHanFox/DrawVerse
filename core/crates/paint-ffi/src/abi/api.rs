@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 78;
+pub const PAINT_ABI_MINOR: u32 = 79;
 /// ABI1.77: focus flags bit2 and read-resident kind2 carry a fixed selection mask.
 pub const PAINT_RESIDENT_PREVIEW_SELECTED: u32 = 4;
 /// Resolved-dab outline replay and allowOverflow through state45 preparation.
@@ -210,6 +210,8 @@ pub const PAINT_LAYER_ACTION_COPY: u32 = 0;
 pub const PAINT_LAYER_ACTION_PASTE: u32 = 1;
 pub const PAINT_LAYER_ACTION_DUPLICATE: u32 = 2;
 pub const PAINT_LAYER_ACTION_MERGE: u32 = 3;
+pub const PAINT_LAYER_ACTION_CLEAR_SELECTED_PIXELS: u32 = 4;
+pub const PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS: u32 = 5;
 pub const PAINT_HISTORY_DUPLICATE_LAYERS: u32 = 27;
 pub const PAINT_HISTORY_PASTE_LAYERS: u32 = 28;
 pub const PAINT_HISTORY_MERGE_LAYERS: u32 = 29;
@@ -831,6 +833,7 @@ pub const PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL: u32 = 10;
 /// ABI1.76: distinct reflection history labels, including pure free transforms.
 pub const PAINT_HISTORY_FLIP_HORIZONTAL: u32 = 39;
 pub const PAINT_HISTORY_FLIP_VERTICAL: u32 = 40;
+pub const PAINT_HISTORY_CLEAR_SELECTED_PIXELS: u32 = 41;
 /// Opt-in CPU geometry / resident GPU presentation; software uses the original entry point.
 pub const PAINT_FEATURE_TRANSFORM_RESIDENT: u64 = 576_460_752_303_423_488;
 #[repr(C)]

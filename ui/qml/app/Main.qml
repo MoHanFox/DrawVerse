@@ -527,7 +527,7 @@ ApplicationWindow {
     }
     Shortcut {context:Qt.ApplicationShortcut;sequences:[StandardKey.Copy];enabled: root.hasDocuments && (PaintClient.layerShortcutsAllowed);onActivated:PaintClient.copySelectedLayers()}
     Shortcut {context:Qt.ApplicationShortcut;sequences:[StandardKey.Paste];enabled: root.hasDocuments && (PaintClient.layerShortcutsAllowed && PaintClient.canPasteLayers);onActivated:PaintClient.pasteLayers()}
-    Shortcut {context:Qt.ApplicationShortcut;sequence:"Delete";enabled: root.hasDocuments && (PaintClient.layerShortcutsAllowed);onActivated:PaintClient.requestSelectedLayerRemoval()}
+    Shortcut {context:Qt.ApplicationShortcut;sequence:"Delete";enabled: root.hasDocuments && (PaintClient.layerShortcutsAllowed);onActivated:PaintClient.deleteSelectionOrLayers()}
     Shortcut {context:Qt.ApplicationShortcut;sequence:Qt.platform.os==="osx"?"Meta+J":"Ctrl+J";enabled: root.hasDocuments && (PaintClient.layerShortcutsAllowed);onActivated:PaintClient.duplicateSelectedLayers()}
     Shortcut {context:Qt.ApplicationShortcut;sequence:Qt.platform.os==="osx"?"Meta+E":"Ctrl+E";enabled: root.hasDocuments && (PaintClient.layerShortcutsAllowed && PaintClient.canMergeLayers);onActivated:PaintClient.mergeSelectedLayers()}
     Shortcut {context:Qt.ApplicationShortcut;sequence:Qt.platform.os==="osx"?"Meta+G":"Ctrl+G";enabled: root.hasDocuments && (PaintClient.layerShortcutsAllowed);onActivated:PaintClient.groupSelectedLayers("组")}

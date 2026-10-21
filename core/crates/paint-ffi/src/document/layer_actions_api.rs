@@ -39,6 +39,8 @@ pub unsafe extern "C" fn paint_session_layer_action(
                 PAINT_LAYER_ACTION_COPY => Operation::CopyLayers(ids),
                 PAINT_LAYER_ACTION_DUPLICATE => Operation::DuplicateLayers(ids),
                 PAINT_LAYER_ACTION_MERGE => Operation::MergeLayers(ids),
+                PAINT_LAYER_ACTION_CLEAR_SELECTED_PIXELS => Operation::ClearSelectedPixels(ids),
+                PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS => Operation::CopySelectedPixels(ids),
                 _ => return Err(ApiError::invalid("layer action kind")),
             }
         };

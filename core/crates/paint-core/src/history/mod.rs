@@ -48,6 +48,7 @@ pub enum HistoryAction {
     Rasterize = 38,
     FlipHorizontal = 39,
     FlipVertical = 40,
+    ClearSelectionPixels = 41,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }

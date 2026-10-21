@@ -409,6 +409,7 @@ public:
     Q_INVOKABLE bool renameLayer(quint64 id,const QString &name);
     Q_INVOKABLE void removeLayer(quint64 id);
     Q_INVOKABLE void requestSelectedLayerRemoval();
+    Q_INVOKABLE void deleteSelectionOrLayers();
     Q_INVOKABLE bool confirmSelectedLayerRemoval(int choice);
     Q_INVOKABLE bool dropSelectedLayers(quint64 target, int placement);
     Q_INVOKABLE QVariantList layerDragIds(const QString &payload) const;

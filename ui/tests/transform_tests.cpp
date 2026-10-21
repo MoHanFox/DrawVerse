@@ -17,6 +17,9 @@
 #include <QJsonDocument>
 #include <QTabletEvent>
 #include <QPointingDevice>
+#include <QClipboard>
+#include <QMimeData>
+#include <QScopeGuard>
 static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item->objectName()==name)return item;for(auto *child:item->childItems())if(auto *found=findVisualItem(child,name))return found;return nullptr;}
 class TransformTests : public QObject {
     Q_OBJECT
@@ -219,6 +222,19 @@ private slots:
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && red(at(undone,{100,1080})) && white(at(undone,{2000,1080})));
         client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage redone;QTRY_VERIFY(!(redone=capture()).isNull() && white(at(redone,{100,1080})) && white(at(redone,{2000,1080})));
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void selectionDeleteAndCopyEditPixelsWithoutRemovingTheLayer() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection-edit.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->requestActivate();QVERIFY(QTest::qWaitForWindowActive(window));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,128);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());client.setBrushRadius(8);client.setBrushColor(Qt::red);client.brushLibrary()->setPressureSize(false);
+        for(const auto &p:{QPointF(32,32),QPointF(96,96)}){QVERIFY(client.beginStroke({p,1}));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());}
+        QVERIFY(client.editSelectionPath({{8,8},{56,8},{56,56},{8,56}},0,false));QTRY_VERIFY(!client.layerEditBusy() && client.selectionEnabled());const auto depth=client.undoDepth();const auto layers=client.layers().size();const auto owner=client.activeLayer();
+        qInfo("selection phase: prepared");auto *saved=new QMimeData;const auto *original=QGuiApplication::clipboard()->mimeData();if(original)for(const auto &format:original->formats())saved->setData(format,original->data(format));const auto restore=qScopeGuard([saved]{QGuiApplication::clipboard()->setMimeData(saved);});QGuiApplication::clipboard()->clear();
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->forceActiveFocus();QTest::keyClick(window,Qt::Key_C,Qt::ControlModifier);QTRY_VERIFY(!client.layerEditBusy() && QGuiApplication::clipboard()->mimeData()->hasFormat("application/x-drawverse-layers-v1"));QCOMPARE(client.undoDepth(),depth);
+        qInfo("selection phase: copied");PaintCoreClient pasted(nullptr,temp.filePath("pasted.ini"));QTRY_VERIFY(pasted.ready() && pasted.brushLibraryReady());pasted.newTransparentDocument(128,128);QTRY_COMPARE(pasted.documentWidth(),128);QTRY_VERIFY(!pasted.layerEditBusy());QVERIFY(pasted.pasteLayers());QTRY_VERIFY(!pasted.layerEditBusy());QTRY_VERIFY(pasted.sampleDocumentPixel(32,32).alpha()>240);QCOMPARE(pasted.sampleDocumentPixel(96,96).alpha(),0);
+        qInfo("selection phase: pasted");window->requestActivate();QVERIFY(QTest::qWaitForWindowActive(window));canvas->forceActiveFocus();QTest::keyClick(window,Qt::Key_Delete);QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.layers().size(),layers);QCOMPARE(client.activeLayer(),owner);QVERIFY(client.selectionEnabled());QTRY_COMPARE(client.sampleDocumentPixel(32,32).alpha(),0);QVERIFY(client.sampleDocumentPixel(96,96).alpha()>240);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QString("清除选区内容"));
+        client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.sampleDocumentPixel(32,32).alpha()>240);client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy());QTRY_COMPARE(client.sampleDocumentPixel(32,32).alpha(),0);QVERIFY(client.selectionEnabled());
+        QSignalSpy targetStopped(&pasted,&PaintCoreClient::stopped);pasted.shutdown();QTRY_COMPARE(targetStopped.size(),1);auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void eachBrushToolRemembersSelectionInEveryIsolationMode_data() {
         QTest::addColumn<int>("mode");for(int mode=0;mode<3;++mode)QTest::newRow(qPrintable(QString::number(mode)))<<mode;

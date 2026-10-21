@@ -46,6 +46,8 @@ pub(crate) enum Operation {
     LayerMove(u32, u64, i32, i32),
     LayerMoves(Vec<u64>, bool),
     CopyLayers(Vec<u64>),
+    CopySelectedPixels(Vec<u64>),
+    ClearSelectedPixels(Vec<u64>),
     PasteLayers(Vec<u8>, u64),
     DuplicateLayers(Vec<u64>),
     MergeLayers(Vec<u64>),
@@ -1001,6 +1003,7 @@ impl Engine {
                     | Operation::PasteLayers(..)
                     | Operation::DuplicateLayers(..)
                     | Operation::MergeLayers(..)
+                    | Operation::ClearSelectedPixels(..)
                     | Operation::Cancel(_)
                     | Operation::Undo
                     | Operation::HistorySelect { .. }
@@ -1299,6 +1302,18 @@ impl Engine {
                     .lock()
                     .map_err(|_| ApiError::invalid("clipboard poisoned"))? =
                     Some((sequence, Arc::new(bytes)));
+            }
+            Operation::CopySelectedPixels(ids) => {
+                let bytes = self.document.copy_selected_pixels(&ids)?;
+                *self
+                    .shared
+                    .clipboard
+                    .lock()
+                    .map_err(|_| ApiError::invalid("clipboard poisoned"))? =
+                    Some((sequence, Arc::new(bytes)));
+            }
+            Operation::ClearSelectedPixels(ids) => {
+                self.modified |= self.document.clear_selected_pixels(&ids)?;
             }
             Operation::PasteLayers(bytes, target) => {
                 self.document.paste_layers(&bytes, target)?;

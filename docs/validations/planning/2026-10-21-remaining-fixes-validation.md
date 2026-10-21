@@ -168,3 +168,12 @@ M1继续：固定/祖先蒙版等CPU回退按实际预览坐标合成，与普�
 - 新用例覆盖三种请求×有/无驱动六组合（包括“初始化返回 true 但实际未启用”的情况）、真实 Qt native interface 手动 Ink 与自动初始化、真实 QML 首选项选择及落盘/非法值。此机器实际自动后端为 `wintab`；软件/D3D11各7行（含既有异常笔触/编辑焦点/浮窗与init/cleanup）通过。日志 `artifacts/tablet-backend-final-{software,d3d11}.txt`。
 - 完整 Release及生成头通过：`artifacts/tablet-backend-release.txt`；追加 Qt 用例构建 `tablet-backend-final-test-build.txt`。真实应用 D3D11 `--preview` 正常退出并生成 `artifacts/tablet-backend-startup.png`。最终产物 `build/bin/Release/drawverse.exe`。无 Rust/ABI/state变化。
 - 实体驱动关闭 Ink 后的连续压力曲线、倾斜/橡皮翻面及重复输入还需设备验证；初始化成功不等于实机压感验收完成。首次误在测试新二进制链接前运行得到 unknown-function，已在最终链接完成后重跑上述两后端通过，未计作有效验收。
+
+
+## 选区删除与复制（2026-10-22）
+
+- 核心新增3项：12组羽化/反选/负偏移的逐像素复制与清除、撤销重做；低预算/锁定/无覆盖不改变文档；组附带蒙版保持与置入源撤销身份恢复。原层操作/选区/蒙版/组共28项通过。日志 `artifacts/selection-pixels-core-final.txt`、`selection-pixels-shared-core.txt`。
+- 新原生异步测试验证选区门禁、剪贴板结果、单历史/保留图层与粘贴后像素，日志 `selection-pixels-native.txt`。无选区失败使用独立会话，避免既有 sticky last_error_status 干扰后续成功断言。
+- 实际 Main 窗口以 Ctrl+C 复制选中红点并粘贴到独立文档，验证另一未选红点不复制；Delete 后原层ID/数量与选区保留、另一红点不变、历史为清除选区内容、undo/redo像素恢复。软件/D3D11各7行，含原编辑结束焦点、笔丢release两行与变换浮面板；`selection-pixels-{software,d3d11}.txt`。
+- 初次真实界面回归暴露新增历史名称未同步图标列表的越界崩溃；已补齐 eraser 图标且 known 同时检查两列表长度，随后两后端均通过。未屏蔽失败或删除像素断言。
+- 四ABI、严格Clippy、fmt与生成头/完整Release通过，`selection-pixels-abi.txt`、`selection-pixels-clippy.txt`、`selection-pixels-release.txt`。标准产物 `build/bin/Release/drawverse.exe`，ABI1.79/state45保持。未验收8K/16K连续大图交互或实体手绘板；P1/H1/T2与I3/I6剩余原因继续跟踪。

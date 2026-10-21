@@ -26,6 +26,7 @@ mod layer_actions;
 mod liquify_result_history_tests;
 #[path = "stroke/document_outline.rs"]
 mod outline;
+mod selection_pixels;
 #[path = "stroke/document_taper.rs"]
 mod taper;
 mod transform;
@@ -1073,6 +1074,7 @@ impl Document {
                 | crate::HistoryAction::FlipHorizontal
                 | crate::HistoryAction::FlipVertical
                 | crate::HistoryAction::Rasterize
+                | crate::HistoryAction::ClearSelectionPixels
                 | crate::HistoryAction::Bucket
         ) {
             StoredCommand::prepare_result_in(&command, self.options.max_history_bytes, &self.pool)?

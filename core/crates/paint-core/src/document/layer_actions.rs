@@ -1,7 +1,7 @@
 use super::*;
 
 impl Document {
-    fn copied_nodes(&self, ids: &[u64]) -> Result<Vec<Layer>> {
+    pub(super) fn copied_nodes(&self, ids: &[u64]) -> Result<Vec<Layer>> {
         let roots = self.batch_roots(ids)?;
         let mut nodes = Vec::new();
         for id in roots {
