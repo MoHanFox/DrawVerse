@@ -93,7 +93,9 @@ ApplicationWindow {
     property url pendingOpen: ""
     property bool savingBeforeAction: false
     property string fileNotice: ""
-    readonly property bool liquifying:PaintClient.liquifyActive || PaintClient.transformActive
+    readonly property bool liquifying:PaintClient.liquifyActive
+    readonly property bool editing:liquifying || PaintClient.transformActive
+    onEditingChanged:if(!editing && (fileNotice==="请先确定或取消液化" || fileNotice==="请先确定或取消自由变换"))fileNotice=""
     property var floatingWindows: ({})
     property var dockingHint:null
     Component {id:hintFactory;DockHintWindow {}}
@@ -185,7 +187,7 @@ ApplicationWindow {
         else if (action === "new") documents.newDocument(newWidth.value,newHeight.value,transparentBackground.checked)
     }
     function requestAction(action) {
-        if(liquifying){fileNotice="请先确定或取消液化";return}
+        if(editing){fileNotice=PaintClient.transformActive?"请先确定或取消自由变换":"请先确定或取消液化";return}
 
         pendingAction = action
         if (action==="close") {executePending();return}
@@ -297,7 +299,7 @@ ApplicationWindow {
             Action { text: "导出 TIFF…（待支持）"; enabled: false }
             Action { text: "导出 GIF…（待支持）"; enabled: false }
             MenuSeparator {}
-            Action { objectName:"placeImageAction";text:"置入图片…";enabled: root.hasDocuments && (PaintClient.ready && !PaintClient.fileBusy && !PaintClient.drawing && !root.liquifying);onTriggered:placeDialog.open() }
+            Action { objectName:"placeImageAction";text:"置入图片…";enabled: root.hasDocuments && (PaintClient.ready && !PaintClient.fileBusy && !PaintClient.drawing && !root.editing);onTriggered:placeDialog.open() }
             MenuSeparator {}
             Action { text: "退出"; onTriggered: root.close() }
         }
@@ -308,7 +310,7 @@ ApplicationWindow {
             Action { objectName:"keyboardShortcutsAction"; text: "键盘快捷键…"; enabled: !PaintClient.closing; onTriggered: shortcutsDialog.open() }
             MenuSeparator {}
             Action { text: "撤销"; shortcut: StandardKey.Undo; enabled: root.hasDocuments && (PaintClient.undoDepth>0 && !PaintClient.drawing); onTriggered: PaintClient.undo() }
-            Action {objectName:"freeTransformAction";text:"自由变换";shortcut:"Ctrl+T";enabled: root.hasDocuments && (!PaintClient.textInputFocused && PaintClient.ready && !root.liquifying && !PaintClient.drawing && !PaintClient.fileBusy);onTriggered:PaintClient.beginTransform()}
+            Action {objectName:"freeTransformAction";text:"自由变换";shortcut:"Ctrl+T";enabled: root.hasDocuments && (!PaintClient.textInputFocused && PaintClient.ready && !root.editing && !PaintClient.drawing && !PaintClient.fileBusy);onTriggered:PaintClient.beginTransform()}
             Action { text: "重做"; shortcut: "Ctrl+Shift+Z"; enabled: root.hasDocuments && (PaintClient.redoDepth>0 && !PaintClient.drawing); onTriggered: PaintClient.redo() }
         }
         GlassMenu {
@@ -338,7 +340,7 @@ ApplicationWindow {
         GlassMenu {
             topLevel:true
             title: "图层"
-            Action {objectName:"rasterizeImageAction";text:"栅格化图片";enabled: root.hasDocuments && (PaintClient.activeImage && !root.liquifying && !PaintClient.fileBusy && !PaintClient.drawing);onTriggered:PaintClient.rasterizeImage()}
+            Action {objectName:"rasterizeImageAction";text:"栅格化图片";enabled: root.hasDocuments && (PaintClient.activeImage && !root.editing && !PaintClient.fileBusy && !PaintClient.drawing);onTriggered:PaintClient.rasterizeImage()}
             Action { text: "新建图层"; enabled: root.hasDocuments && (!PaintClient.liquifyActive && !PaintClient.transformActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy); onTriggered: PaintClient.addDefaultLayer() }
             Action {objectName:"duplicateLayersAction";text:"复制图层";enabled: root.hasDocuments && (!PaintClient.liquifyActive && !PaintClient.transformActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy);onTriggered:PaintClient.duplicateSelectedLayers()}
             Action {objectName:"mergeLayersAction";text:PaintClient.mergeLayersText;enabled: root.hasDocuments && (PaintClient.canMergeLayers);onTriggered:PaintClient.mergeSelectedLayers()}

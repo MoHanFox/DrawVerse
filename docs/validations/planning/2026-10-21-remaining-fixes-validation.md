@@ -150,3 +150,11 @@ L1扩大到可消去Normal/PassThrough祖先的组内普通层，有/无选区�
 M1继续：固定/祖先蒙版等CPU回退按实际预览坐标合成，与普通行共用完整组/蒙版/剪贴/PassThrough及混合规则；每层不再合成并丢弃相邻采样点之间的源像素，冷瓦片按需读取。共享Rust入口 `read_sampled_row` 可供其他代理复用，当前仅接复杂移动。
 
 3项核心新回归、paint-render全部23项、共享定向28项、原生2项通过；4K密集层及有效固定自身/祖先蒙版的真实鼠标移动、取消、确认、完整帧恢复及undo/redo，连同原七类移动软件/D3D11各11行通过。严格Clippy/fmt/生成头、四ABI及标准完整Release通过。4K基准46.208→20.461ms、2000px48.657→32.193ms，仅CPU帧合成；首次资源、冷IO/深组和实体持续延迟仍待。ABI1.78/state45不变，输出build/bin/Release/drawverse.exe；详见layer-move-bounded-fallback验收末节及move-sparse日志。
+
+## 手绘笔异常离开与变换面板（2026-10-21）
+
+- `CanvasItem` 对 TabletLeaveProximity 结束已接受笔触一次，停止液化 timer，释放 pen-owned 移动/导航/选区手势；鼠标失抓同样清掉 tablet 标志。绘画 TabletPress 与鼠标保持一致，主动取得画布焦点。
+- Main 将 liquifying（仅液化隐藏）与 editing（两工具操作锁）分开。自由变换保留浮面板和其他文档窗，文件操作守卫显示正确工具名，结束只清自己的编辑守卫文字，真实文件失败保持；状态栏明确显示当前液化/自由变换。
+- 新真实窗口用例 `tabletProximityLossEndsStrokeAndEditingRemainsUsable` 两行：刷/液化 press+move 后不发 release 直接 proximity loss，确认 drawing/busy 结束，迟到 release 后再次起笔/收笔可用，编辑可开始/取消，最后图像可抓取。`transformKeepsFloatingPanelsAndUsesCorrectFileGuard` 验证实际浮动笔刷面板在变换保留、液化隐藏/恢复、正确状态栏与清空提示。复用原 `finishingEditRestoresCanvasShortcutsWithoutAClick`。
+- 软件与 D3D11 各 6 行（含 init/cleanup）通过，无 QML 诊断；日志 `artifacts/tablet-interaction-final-{software,d3d11}.txt`。完整 Release/生成头构建通过，日志 `artifacts/tablet-interaction-release.txt`，产物 `build/bin/Release/drawverse.exe`。无 Rust/ABI/state 改动。
+- 限制：输入为真实窗口上注入的 QTabletEvent，未声称实体驱动压感已通过；未定位所有“命令继续但图像不刷”的原因，I3/I6及 I1/I2/I5 与 P1/H1/T2 继续跟踪。

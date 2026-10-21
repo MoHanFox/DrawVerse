@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新手绘笔异常离开/变换面板：remaining-fixes末节；proximity丢release结束笔触/液化timer并释放手势，鼠标失抓清tablet，笔绘制主动焦点；editing锁与liquify隐藏分开，变换保留浮窗、状态栏正确工具、结束清编辑守卫提示。软件/D3D11各6行及完整Release/头通过，build/bin/Release，ABI1.78/state45保持。实体压感及其他停刷/快捷键原因、I1/I2/I5和P1/H1/T2仍待。
+
 - 最新复杂移动稀疏合成：layer-move-bounded-fallback设计/验收末节；共享RowSamples/read_sampled_row与原组/蒙版/剪贴/混合规则，仅合成512px显示所需坐标，瓦片按需pin。核心3/render23/共享定向28/原生2、4K有效固定自身及祖先蒙版与旧七类移动软件/D3D11各11行、四ABI/严格Clippy/fmt/头/完整Release通过。4K CPU预览46.208→20.461ms、2000px48.657→32.193ms，非UI延迟；种子白色蒙版误设修正黑色后窗口像素通过。标准build/bin/Release，ABI1.78/state45保持；M1首次资产/实体持续及T2/H1/P1/L1边界仍待。
 
 - 最新 Qt Creator QML 预览：`ui/qml/README.md` / qml-preview设计与验收；独立按需宿主读取源码，临时偏好/布局，五个工作区运行项及真实六类控件台。Live按文件事件300ms合并、hash过滤及原子保存重绑，全会话析构重建，语法错误修正后可恢复；刷新清空临时编辑，正式qrc/设置保持。软件/D3D11各15行及四ABI/生成头/应用与预览Release构建通过，输出build/bin/Release；无ABI/state变化。Qt原生preview探测不稳定，最终用独立监听；未验收IDE GUI操作/Designer拖拽，首次资产性能待办保持。

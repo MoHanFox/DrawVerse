@@ -13,6 +13,8 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QSettings>
+#include <QTabletEvent>
+#include <QPointingDevice>
 static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item->objectName()==name)return item;for(auto *child:item->childItems())if(auto *found=findVisualItem(child,name))return found;return nullptr;}
 class TransformTests : public QObject {
     Q_OBJECT
@@ -215,6 +217,44 @@ private slots:
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && red(at(undone,{100,1080})) && white(at(undone,{2000,1080})));
         client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage redone;QTRY_VERIFY(!(redone=capture()).isNull() && white(at(redone,{100,1080})) && white(at(redone,{2000,1080})));
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void tabletProximityLossEndsStrokeAndEditingRemainsUsable_data() {
+        QTest::addColumn<bool>("liquify");QTest::newRow("brush")<<false;QTest::newRow("liquify")<<true;
+    }
+    void tabletProximityLossEndsStrokeAndEditingRemainsUsable() {
+        QFETCH(bool,liquify);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("pen-proximity.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,128);
+        QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());client.setBrushRadius(12);
+        QVERIFY(client.beginStroke({{64,64},1}));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());
+        QQuickWindow window;window.resize(512,512);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,512});canvas->setClient(&client);
+        auto *focus=new QQuickItem(window.contentItem());focus->setFlag(QQuickItem::ItemIsFocusScope);window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
+        if(liquify){QVERIFY(client.beginLiquify());QTRY_VERIFY(!client.liquifyBusy());}
+        focus->forceActiveFocus();QVERIFY(!canvas->hasActiveFocus());
+        QPointingDevice pen("proximity pen",9182,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto at=canvas->documentRect().center();
+        const auto send=[&](QEvent::Type type,QPointF p){QTabletEvent e(type,&pen,p,canvas->mapToGlobal(p),type==QEvent::TabletRelease?0.:.6,0,0,0,0,0,Qt::NoModifier,type==QEvent::TabletMove?Qt::NoButton:Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(&window,&e);};
+        send(QEvent::TabletPress,at);QVERIFY(client.drawing());QVERIFY(canvas->hasActiveFocus());send(QEvent::TabletMove,at+QPointF(20,0));
+        QEvent leave(QEvent::TabletLeaveProximity);QCoreApplication::sendEvent(qApp,&leave);
+        QTRY_VERIFY(!client.drawing() && !client.layerEditBusy() && !client.liquifyBusy());
+        // A late release must not end the next stroke or leave the canvas pen-owned.
+        send(QEvent::TabletRelease,at);send(QEvent::TabletPress,at);QVERIFY(client.drawing());send(QEvent::TabletRelease,at);
+        QTRY_VERIFY(!client.drawing() && !client.layerEditBusy() && !client.liquifyBusy());
+        if(liquify){QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());}
+        QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy());QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
+        QTRY_VERIFY(client.frameRevision()>=client.revision());auto grab=canvas->grabToImage();QVERIFY(grab);QTRY_VERIFY(!grab->image().isNull());
+        QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void transformKeepsFloatingPanelsAndUsesCorrectFileGuard() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("panels.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        const auto group=workspace.groupForPanel("brush");workspace.detachGroup(group);QQuickWindow *panel=nullptr;
+        QTRY_VERIFY([&]{for(auto *w:QGuiApplication::allWindows())if(w->objectName()=="floatingDock:"+group)panel=qobject_cast<QQuickWindow*>(w);return panel && panel->isVisible();}());
+        QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy());QVERIFY(panel->isVisible());auto *status=findVisualItem(window->contentItem(),"workspaceStatusBar");QVERIFY(status);QCOMPARE(status->property("toolName").toString(),QString("自由变换"));QVERIFY(!window->property("liquifying").toBool());QVERIFY(window->property("editing").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window,"requestAction",Q_ARG(QVariant,QVariant("new"))));QCOMPARE(window->property("fileNotice").toString(),QString("请先确定或取消自由变换"));
+        QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.transformBusy());QVERIFY(panel->isVisible());QCOMPARE(window->property("fileNotice").toString(),QString());
+        QVERIFY(client.beginLiquify());QTRY_VERIFY(!client.liquifyBusy());QTRY_VERIFY(!panel->isVisible());QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());QTRY_VERIFY(panel->isVisible());
+        auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void finishingEditRestoresCanvasShortcutsWithoutAClick() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("finish-focus.ini"));

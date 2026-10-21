@@ -592,7 +592,7 @@ void CanvasItem::mouseUngrabEvent() {
     if(m_panning || m_stroke)stopNavigation();
     endPicking();
     if (m_stroke && m_client) m_client->cancelStroke();
-    m_stroke = false; m_panning = false; m_moving=false;if(m_selectionKind!=3)cancelSelectionDrag();refreshBrushCursor();
+    m_stroke = false; m_tablet = false; m_panning = false; m_moving=false;if(m_selectionKind!=3)cancelSelectionDrag();refreshBrushCursor();
 }
 void CanvasItem::wheelEvent(QWheelEvent *e) {
     if (!m_interactive) { e->ignore(); return; }
@@ -655,7 +655,16 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
             setKeySpace(event->type()==QEvent::KeyPress);setSpacePanning(event->type()==QEvent::KeyPress);refreshBrushCursor();key->accept();return true;
         }
     }
-    if(event->type()==QEvent::TabletLeaveProximity){if(m_moving){cancelLayerMove();m_tablet=false;}setTabletWindowCursor(false);m_havePoseSample=false;m_poseDirectionKnown=false;endPicking();m_cursorInside=false;refreshBrushCursor();return false;}
+    if(event->type()==QEvent::TabletLeaveProximity){
+        // Drivers can report proximity loss without a final contact release.
+        // Finish the accepted samples once, then release every pen-owned gesture.
+        if(m_tablet){
+            if(m_stroke && m_client)m_client->endStroke();
+            m_liquifyTimer.stop();m_stroke=false;
+            cancelLayerMove();stopNavigation();cancelSelectionDrag();m_tablet=false;
+        }
+        setTabletWindowCursor(false);m_havePoseSample=false;m_poseDirectionKnown=false;endPicking();m_cursorInside=false;refreshBrushCursor();return false;
+    }
     const bool tabletEvent=event->type()==QEvent::TabletPress || event->type()==QEvent::TabletMove || event->type()==QEvent::TabletRelease;
     if(tabletEvent) {
         const auto item=qobject_cast<QQuickItem*>(watched);
@@ -749,7 +758,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         else if(event->type()==QEvent::TabletRelease) { finishLayerMove(local); m_tablet=false; }
         e->accept(); return true;
     }
-    if (event->type() == QEvent::TabletPress) {m_tablet = m_stroke = m_client->beginStroke(s);if(m_stroke && m_client->liquifyActive())m_liquifyTimer.start();}
+    if (event->type() == QEvent::TabletPress) {forceActiveFocus();m_tablet = m_stroke = m_client->beginStroke(s);if(m_stroke && m_client->liquifyActive())m_liquifyTimer.start();}
     else if (event->type() == QEvent::TabletMove && m_stroke) m_client->strokeTo(s);
     else if (event->type() == QEvent::TabletRelease) { if (m_stroke) m_client->endStroke(); m_tablet = m_stroke = false; }
     refreshBrushCursor();e->accept(); return true;
