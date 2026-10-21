@@ -626,7 +626,7 @@ ApplicationWindow {
     Connections {
         target: PaintClient
         function onFileFinished(success) {
-            root.fileNotice=success ? "文件操作完成" : "文件操作未完成"
+            root.fileNotice=success ? "" : "文件操作未完成"
             if (root.savingBeforeAction) {
                 root.savingBeforeAction=false
                 if (success && !PaintClient.modified) root.executePending()

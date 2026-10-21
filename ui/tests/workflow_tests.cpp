@@ -158,6 +158,19 @@ private slots:
         welcome->setProperty("error",QString());welcome->setProperty("ready",true);
         QVERIFY(!status->isVisible());QVERIFY(actions->isVisible());
     }
+    void closingCanvasKeepsWelcomeFreeOfSuccessNotices_data() {
+        QTest::addColumn<bool>("transparent");QTest::newRow("white")<<false;QTest::newRow("transparent")<<true;
+    }
+    void closingCanvasKeepsWelcomeFreeOfSuccessNotices() {
+        QFETCH(bool,transparent);QTemporaryDir temp;PaintCoreClient service(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &error:errors)warnings.append(error.toString());});engine.rootContext()->setContextProperty("PaintClient",&service);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);auto *manager=window->findChild<DocumentManager*>("documentManager");QVERIFY(manager);auto *welcome=window->findChild<QQuickItem*>("welcomeScreen");QVERIFY(welcome);QTRY_VERIFY(window->property("startupReady").toBool());
+        const auto close=[&](const QString &id){return manager->closeDocument(id,true);};
+        const auto fresh=manager->newDocument(48,32,transparent);QVERIFY(!fresh.isEmpty());auto *client=manager->client(fresh);QVERIFY(client);QTRY_VERIFY(client->ready() && client->documentWidth()==48 && client->documentHeight()==32);QCOMPARE(window->property("fileNotice").toString(),QString());QVERIFY(close(fresh));QTRY_VERIFY(welcome->isVisible());QCOMPARE(welcome->property("error").toString(),QString());
+        const auto saved=manager->newDocument(48,32,transparent);client=manager->client(saved);QVERIFY(client);QTRY_VERIFY(client->ready() && client->documentWidth()==48 && client->documentHeight()==32);QSignalSpy finished(client,&PaintCoreClient::fileFinished);const auto path=temp.filePath("saved.ora");QVERIFY(client->saveDocument(QUrl::fromLocalFile(path)));QTRY_COMPARE(finished.size(),1);QVERIFY(finished.first().first().toBool());QVERIFY(QFileInfo::exists(path));QCOMPARE(window->property("fileNotice").toString(),QString());QVERIFY(close(saved));QTRY_VERIFY(welcome->isVisible());QCOMPARE(welcome->property("error").toString(),QString());
+        QSignalSpy failed(manager,&DocumentManager::fileFailed);QVERIFY(!manager->openDocument(QUrl::fromLocalFile(temp.filePath("missing.png"))).isEmpty());QTRY_COMPARE(failed.size(),1);QTRY_VERIFY(manager->documents().isEmpty() && welcome->isVisible());QVERIFY(!window->property("fileNotice").toString().isEmpty());QVERIFY(!welcome->property("error").toString().isEmpty());
+        QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));QSignalSpy stopped(manager,&DocumentManager::stopped);manager->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void welcomeWorkspaceDocumentLifecycle() {
         QTemporaryDir temp;PaintCoreClient service(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
         workspace.detachGroup(workspace.groupForPanel("color"));workspace.floatToolStrip(100,100);

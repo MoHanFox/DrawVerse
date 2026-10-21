@@ -20,3 +20,9 @@
 没有运行全量 check/跨平台/实体设备或首次加载时延基准。欢迎页显示真实阶段，不等同于消除同步偏好恢复的全部阻塞。Rust算法、ABI1.74、state44、VBR保持。
 
 本地证据：`artifacts/welcome-workflow-{software,d3d11}.txt`、`welcome-transform-software.txt`、`welcome-ui-software.txt`、`welcome-d3d11.png`；构建记录 `history-build.txt` / `interaction-build.txt`，不入版本库。
+
+## 2026-10-21：移除通用文件成功通知
+
+Main原来把每次文件成功回执写为“文件操作完成”，跨文档切换后仍保存在窗口fileNotice，并被欢迎区当错误显示。成功现在清空通知；失败通知和保存后继续关闭/并发修改保护仍保留。
+
+新增 `closingCanvasKeepsWelcomeFreeOfSuccessNotices` 白底/透明两行，软件及D3D11各通过：真实新建后直接关闭无通知；另建画布实际保存ORA、检查成功回执/文件存在，再关闭，欢迎区仍无成功文字；真实打开不存在文件仍显示失败。日志 `artifacts/welcome-notice-{software,d3d11}.txt`。Release及Qt目标构建通过，ABI/state不变。D3D11透明行退出仍报告1个异步创建对象，属于U5未解决范围，没有屏蔽或称作零诊断；功能断言及QML警告收集通过。

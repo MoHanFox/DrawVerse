@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新文件成功提示移除：welcome-workspace设计/验收末节；文件成功清空fileNotice，去掉欢迎页残留“文件操作完成”，失败及保存关闭保护保持。白底/透明新建直接关闭、真实保存后关闭/打开失败，软件与D3D11各2行及Release通过；ABI/state不变。D3D11退出仍有1个异步对象诊断，U5未完成。
+
 - 最新局部选区变换常驻源：transform-resident-preview设计/验收末节；普通Normal根层、opacity/fill均1、无自身蒙版，按原选区一次分割移动源/余像素，原位资产避免羽化切缝；拖动只CPU几何/Qt GPU显示，确认原六种取样，蚂蚁线确认后更新。核心12/公开7/原生2、软件及D3D11各10行/四ABI/Clippy/格式/生成头/Release通过；4096×2160约256px套索六次Warp核心中位334.561→1.556ms，最终摘要一致，非UI时延。ABI1.75/state45不变，用户旧EXE锁定，新产物 `build/qt/bin/Release/drawverse-next.exe`。复杂T2、首次两套资产与实体持续手感仍待，2048代理仍近似。
 
 - 最新旧描边执行清理：复刻描边设计/验收末节；删除Path/SDF执行模块、缓存、二值band及核心OutlineAlgorithm，旧模型名只在IO校验/迁移，唯一Replay/state45。核心19/算子7/IO描边7共享24/原生三模型1、软件与D3D11工作流各6行及UI各3/四ABI/Clippy/Release通过；ABI1.75不变。用户运行锁定原EXE，新产物 `build/qt/bin/Release/drawverse-next.exe`。O1完成，T1/T2/M1/H1/P1、U1/U5仍待；干画笔普通层/原预算/无新增GPU。
