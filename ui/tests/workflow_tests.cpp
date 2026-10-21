@@ -26,6 +26,9 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QProcess>
+#include <QRegularExpression>
+#include <QSaveFile>
 #include <QWheelEvent>
 #include <limits>
 #include <future>
@@ -56,6 +59,138 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void qmlPreviewReadsEditedSourcesAndUsesTemporarySettings() {
+        const auto executable=QCoreApplication::applicationDirPath()+"/drawverse_qml_preview.exe";
+        if(!QFileInfo::exists(executable))QSKIP("Build the qml-preview preset to verify the opt-in developer host");
+        QTemporaryDir temp;QVERIFY(temp.isValid());
+        const auto entry=temp.filePath("Probe.qml");QStringList preferencePaths;
+        for(const auto &marker:QStringList{"source-version-one","source-version-two"}) {
+            QFile file(entry);QVERIFY(file.open(QIODevice::WriteOnly));
+            const auto qml=QString(R"(
+import QtQuick
+import QtQuick.Window
+import DrawVerse 1.0
+Window {
+    visible: true; width: 160; height: 100
+    PaintCanvas {width: 100; height: 100}
+    ColorWheel {visible: false}
+    SelectionOutline {visible: false}
+    DocumentManager {}
+    Timer {
+        interval: 20; running: true; repeat: true
+        onTriggered: {
+            if(!PaintClient.ready || !PaintClient.brushCatalogPrepared)return
+            running=false
+            Workspace.saveLayout()
+            PaintClient.brushRadius=47
+            console.log("%1")
+            PaintClient.shutdown()
+        }
+    }
+    Connections {target: PaintClient; function onStopped(){Qt.quit()}}
+}
+)").arg(marker).toUtf8();QCOMPARE(file.write(qml),qml.size());file.close();
+            QProcess process;process.setProcessChannelMode(QProcess::MergedChannels);
+            auto environment=QProcessEnvironment::systemEnvironment();environment.insert("QT_LOGGING_TO_CONSOLE","1");process.setProcessEnvironment(environment);
+            process.start(executable,{"--qml-root",temp.path(),"--qml-entry","Probe.qml"});
+            QVERIFY(process.waitForStarted());QVERIFY2(process.waitForFinished(20000),qPrintable(process.errorString()));
+            const auto output=QString::fromUtf8(process.readAll());QCOMPARE(process.exitStatus(),QProcess::NormalExit);QVERIFY2(process.exitCode()==0,qPrintable(output));
+            QVERIFY2(output.contains(marker),qPrintable(output));QVERIFY2(!output.contains("ReferenceError")&&!output.contains("TypeError"),qPrintable(output));
+            const auto match=QRegularExpression("QML preview preferences: ([^\\r\\n]+)").match(output);QVERIFY2(match.hasMatch(),qPrintable(output));
+            const auto path=match.captured(1).trimmed();QVERIFY(!path.isEmpty());QVERIFY(!QFileInfo::exists(path));preferencePaths.append(path);
+        }
+        QVERIFY(preferencePaths[0]!=preferencePaths[1]);
+        QProcess invalid;invalid.start(executable,{"--qml-root",temp.path(),"--qml-entry","missing.qml"});
+        QVERIFY(invalid.waitForFinished(10000));QCOMPARE(invalid.exitCode(),2);
+    }
+    void qmlComponentGalleryUsesRealControlsWithoutWarnings() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady() && client.brushCatalogPrepared());
+        QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &error:errors)warnings.append(error.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.load(QUrl::fromLocalFile(QString(DRAWVERSE_QML_TEST_SOURCE_DIR)+"/preview/ComponentGallery.qml"));
+        QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        auto *choice=window->findChild<QObject*>("previewComponentChoice");QVERIFY(choice);
+        auto *loader=window->findChild<QObject*>("previewComponentLoader");QVERIFY(loader);
+        for(int index=0;index<6;++index) {
+            choice->setProperty("currentIndex",index);QTRY_VERIFY(loader->property("item").value<QObject*>());
+            QTRY_VERIFY(!window->grabWindow().isNull());QCOMPARE(warnings,QStringList());
+        }
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void qmlLivePreviewReloadsSavedSource() {
+        const auto executable=QCoreApplication::applicationDirPath()+"/drawverse_qml_preview.exe";
+        if(!QFileInfo::exists(executable))QSKIP("Build qml-preview to verify live source reloads");
+        QTemporaryDir temp;QVERIFY(temp.isValid());const auto entry=temp.filePath("Live.qml");
+        auto write=[&](const QString &version){QSaveFile file(entry);if(!file.open(QIODevice::WriteOnly))return false;
+            const auto qml=QString(R"(
+import QtQuick
+import QtQuick.Window
+Window {
+    visible: true; width: 180; height: 100
+    Component.onCompleted: console.log("live-%1")
+    Timer {
+        interval: 50; running: true; repeat: true
+        onTriggered: {
+            if("%1"!=="second" || !PaintClient.ready)return
+            running=false; PaintClient.shutdown()
+        }
+    }
+    Connections {target: PaintClient; function onStopped(){Qt.quit()}}
+    Timer {interval: 12000; running: true; onTriggered: PaintClient.shutdown()}
+}
+)").arg(version).toUtf8();return file.write(qml)==qml.size() && file.commit();};
+        QVERIFY(write("first"));QProcess process;process.setProcessChannelMode(QProcess::MergedChannels);
+        auto environment=QProcessEnvironment::systemEnvironment();environment.insert("QT_FORCE_STDERR_LOGGING","1");process.setProcessEnvironment(environment);
+        process.start(executable,{"--watch","--qml-root",temp.path(),"--qml-entry","Live.qml"});QVERIFY(process.waitForStarted());
+        QString output;auto received=[&](const QString &marker){output+=QString::fromUtf8(process.readAll());return output.contains(marker);};
+        QTRY_VERIFY_WITH_TIMEOUT(received("live-first"),10000);
+        QVERIFY(write("second"));QTRY_VERIFY2_WITH_TIMEOUT(received("live-second"),qPrintable(output),10000);
+        QVERIFY2(process.waitForFinished(10000),qPrintable(output));QCOMPARE(process.exitCode(),0);
+        QVERIFY2(!output.contains("ReferenceError")&&!output.contains("TypeError"),qPrintable(output));
+    }
+    void qmlLivePreviewRecreatesDocumentsAndRecoversFromSyntaxErrors() {
+        const auto executable=QCoreApplication::applicationDirPath()+"/drawverse_qml_preview.exe";
+        if(!QFileInfo::exists(executable))QSKIP("Build qml-preview to verify document reloads");
+        QTemporaryDir temp;QVERIFY(temp.isValid());const auto entry=temp.filePath("Live.qml");
+        const auto appUrl=QUrl::fromLocalFile(QString(DRAWVERSE_QML_TEST_SOURCE_DIR)+"/app").toString();
+        auto write=[&](const QString &version) {
+            QSaveFile file(entry);if(!file.open(QIODevice::WriteOnly))return false;
+            const auto qml=version=="invalid"?QByteArray("import QtQuick\nItem { invalid syntax\n"):QString(R"(
+import QtQuick
+import "%1"
+Main {
+    property int previewStage: 0
+    Timer {
+        interval: 50; running: true; repeat: true
+        onTriggered: {
+            if(!startupReady || !PaintClient.ready)return
+            if(previewStage<2){previewStage++;requestAction("new");return}
+            if(!hasDocuments)return
+            running=false;console.log("full-live-%2")
+            if("%2"==="second")quitApp()
+        }
+    }
+    Timer {interval: 18000; running: true; onTriggered: quitApp()}
+}
+)").arg(appUrl,version).toUtf8();return file.write(qml)==qml.size() && file.commit();
+        };
+        QVERIFY(write("first"));QProcess process;process.setProcessChannelMode(QProcess::MergedChannels);
+        auto environment=QProcessEnvironment::systemEnvironment();environment.insert("QT_FORCE_STDERR_LOGGING","1");process.setProcessEnvironment(environment);
+        process.start(executable,{"--watch","--qml-root",temp.path(),"--qml-entry","Live.qml"});QVERIFY(process.waitForStarted());
+        QString output;auto received=[&](const QString &marker){output+=QString::fromUtf8(process.readAll());return output.contains(marker);};
+        QTRY_VERIFY2_WITH_TIMEOUT(received("full-live-first"),qPrintable(output),10000);
+        QVERIFY(write("invalid"));QTRY_VERIFY2_WITH_TIMEOUT(received("QQmlApplicationEngine failed"),qPrintable(output),10000);
+        QVERIFY(write("second"));QTRY_VERIFY2_WITH_TIMEOUT(received("full-live-second"),qPrintable(output),10000);
+        QVERIFY2(process.waitForFinished(10000),qPrintable(output));QCOMPARE(process.exitCode(),0);
+        output+=QString::fromUtf8(process.readAll());
+        QVERIFY2(!output.contains("ReferenceError")&&!output.contains("TypeError")&&!output.contains("still "),qPrintable(output));
+        auto matches=QRegularExpression("QML preview preferences: ([^\\r\\n]+)").globalMatch(output);int sessions=0;
+        while(matches.hasNext()){QVERIFY(!QFileInfo::exists(matches.next().captured(1).trimmed()));++sessions;}
+        QCOMPARE(sessions,3);
+    }
     void editingCompletionRestoresShortcuts_data() {
         QTest::addColumn<bool>("liquify");QTest::addColumn<bool>("commit");QTest::addColumn<bool>("floating");
         for(bool liquify:{false,true})for(bool commit:{false,true})for(bool floating:{false,true})

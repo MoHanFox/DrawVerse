@@ -15,6 +15,13 @@
 #include <QPalette>
 #include <QIcon>
 #include <QTemporaryDir>
+#ifdef DRAWVERSE_QML_SOURCE_DIR
+#include "app/QmlSourceWatcher.h"
+#include <QCommandLineParser>
+#include <QDir>
+#include <QFileInfo>
+#include <QQmlDebuggingEnabler>
+#endif
 #include <cmath>
 
 int main(int argc,char **argv) {
@@ -22,6 +29,23 @@ int main(int argc,char **argv) {
     QQuickWindow::setDefaultAlphaBuffer(true);
     QGuiApplication app(argc,argv);
     app.setOrganizationName("DrawVerse"); app.setApplicationName("DrawVerse");
+#ifdef DRAWVERSE_QML_SOURCE_DIR
+    // Only this separate developer executable enables the Qt Creator preview service.
+    QQmlDebuggingEnabler::enableDebugging(true);
+    QCommandLineParser parser;
+    parser.setApplicationDescription("DrawVerse QML source preview (temporary preferences and workspace)");
+    parser.addHelpOption();
+    parser.addOption({"qml-root","Directory containing the editable QML sources.","directory",DRAWVERSE_QML_SOURCE_DIR});
+    parser.addOption({"qml-entry","QML window to load, relative to --qml-root.","file","app/Main.qml"});
+    parser.addOption({"canvas","Create a temporary canvas in app/Main.qml."});
+    parser.addOption({"watch","Reload the isolated preview session when QML or an asset is saved."});
+    parser.process(app);
+    qputenv("QML_DISABLE_DISK_CACHE","1");
+    const QDir qmlRoot(parser.value("qml-root"));
+    const QFileInfo qmlEntry(qmlRoot.filePath(parser.value("qml-entry")));
+    if(!qmlEntry.isFile()) {qCritical().noquote()<<"QML preview entry does not exist:"<<qmlEntry.absoluteFilePath();return 2;}
+    if(parser.isSet("canvas") && parser.value("qml-entry")!="app/Main.qml") {qCritical("--canvas requires app/Main.qml");return 2;}
+#endif
     if(app.arguments().contains("--migrate-workspace")) { WorkspaceManager workspace; workspace.saveLayout(); return 0; }
     Q_INIT_RESOURCE(ui_resources);
     app.setWindowIcon(QIcon(":/qml/assets/logo.png"));
@@ -37,6 +61,10 @@ int main(int argc,char **argv) {
     qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
     qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");
     qmlRegisterType<DocumentManager>("DrawVerse",1,0,"DocumentManager");
+#ifdef DRAWVERSE_QML_SOURCE_DIR
+    bool reloadRequested=false;
+    const auto runPreview=[&]() -> int {
+#endif
     const QStringList arguments=app.arguments();
     const int previewIndex=arguments.indexOf("--preview");
     const QString previewPath=previewIndex>=0 && previewIndex+1<arguments.size()?arguments[previewIndex+1]:QString();
@@ -44,17 +72,59 @@ int main(int argc,char **argv) {
     const QString benchmarkPath=benchmarkIndex>=0 && benchmarkIndex+1<arguments.size()?arguments[benchmarkIndex+1]:QString();
     const QString testPath=!benchmarkPath.isEmpty()?benchmarkPath:previewPath;
     QTemporaryDir testPreferences;
-    if(!testPath.isEmpty() && !testPreferences.isValid())return 1;
-    PaintCoreClient client(nullptr,testPath.isEmpty()?QString():testPreferences.filePath("preferences.ini"));
-    WorkspaceManager workspace(testPath.isEmpty()?QString():testPath+".workspace.ini");
+    bool isolatedPreferences=!testPath.isEmpty();
+#ifdef DRAWVERSE_QML_SOURCE_DIR
+    isolatedPreferences=true;
+#endif
+    if(isolatedPreferences && !testPreferences.isValid())return 1;
+    PaintCoreClient client(nullptr,isolatedPreferences?testPreferences.filePath("preferences.ini"):QString());
+    QString workspacePath=testPath.isEmpty()?QString():testPath+".workspace.ini";
+#ifdef DRAWVERSE_QML_SOURCE_DIR
+    workspacePath=testPreferences.filePath("workspace.ini");
+    qInfo().noquote()<<"QML preview source:"<<qmlEntry.absoluteFilePath();
+    qInfo().noquote()<<"QML preview preferences:"<<testPreferences.path();
+#endif
+    WorkspaceManager workspace(workspacePath);
+#ifndef DRAWVERSE_QML_SOURCE_DIR
     if(!workspace.applyDeveloperConsole())qWarning("Developer console could not be opened");
+#endif
     if(!previewPath.isEmpty()) workspace.resetLayout();
+#ifdef DRAWVERSE_QML_SOURCE_DIR
+    std::unique_ptr<QmlSourceWatcher> sourceWatcher;
+    if(parser.isSet("watch"))sourceWatcher=std::make_unique<QmlSourceWatcher>(qmlRoot.absolutePath(),[&] {
+        qInfo("QML source changed; restarting the temporary preview session");
+        reloadRequested=true;app.exit(0);
+    });
+#endif
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("PaintClient",&client);
     engine.rootContext()->setContextProperty("Workspace",&workspace);
     if(!testPath.isEmpty())engine.setInitialProperties({{"createInitialDocument",true}});
+#ifdef DRAWVERSE_QML_SOURCE_DIR
+    if(parser.isSet("canvas"))engine.setInitialProperties({{"createInitialDocument",true}});
+    engine.load(QUrl::fromLocalFile(qmlEntry.absoluteFilePath()));
+#else
     engine.load(QUrl("qrc:/qml/app/Main.qml"));
-    if(engine.rootObjects().isEmpty()) return 1;
+#endif
+    if(engine.rootObjects().isEmpty()) {
+#ifdef DRAWVERSE_QML_SOURCE_DIR
+        if(!parser.isSet("watch"))return 1;
+        engine.loadData(R"(
+import QtQuick
+import QtQuick.Window
+Window {
+    visible: true; width: 640; height: 240; color: "#17191c"; title: "DrawVerse QML preview error"
+    Text {
+        anchors.fill: parent; anchors.margins: 24; color: "#efb2ab"; wrapMode: Text.Wrap
+        text: "QML 加载失败。请查看 Qt Creator 的应用输出，修正源码并保存后会自动重试。"
+    }
+}
+)");
+        if(engine.rootObjects().isEmpty())return 1;
+#else
+        return 1;
+#endif
+    }
     if(!testPath.isEmpty())QObject::connect(&client,&PaintCoreClient::stopped,&app,&QCoreApplication::quit);
     if(!benchmarkPath.isEmpty()) {
         startPaintingBenchmark(client,*qobject_cast<QQuickWindow*>(engine.rootObjects().first()),benchmarkPath);
@@ -85,4 +155,10 @@ int main(int argc,char **argv) {
         QTimer::singleShot(30000,&app,[&] { client.shutdown(); });
     }
     return app.exec();
+#ifdef DRAWVERSE_QML_SOURCE_DIR
+    };
+    int previewResult=0;
+    do {reloadRequested=false;previewResult=runPreview();}while(reloadRequested);
+    return previewResult;
+#endif
 }

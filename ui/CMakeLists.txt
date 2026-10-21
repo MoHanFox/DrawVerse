@@ -69,6 +69,15 @@ qt_add_executable(drawverse src/app/main.cpp src/app/PaintingBenchmark.h src/app
 target_link_libraries(drawverse PRIVATE drawverse_ui)
 set_target_properties(drawverse PROPERTIES WIN32_EXECUTABLE TRUE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
 
+# Developer host: real C++ types, editable disk QML, isolated settings. Not shipped by default.
+qt_add_executable(drawverse_qml_preview EXCLUDE_FROM_ALL src/app/main.cpp src/app/PaintingBenchmark.h src/app/PaintingBenchmark.cpp)
+target_link_libraries(drawverse_qml_preview PRIVATE drawverse_ui)
+target_compile_definitions(drawverse_qml_preview PRIVATE DRAWVERSE_QML_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")
+set_target_properties(drawverse_qml_preview PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+if(MSVC)
+    target_compile_options(drawverse_qml_preview PRIVATE /W4 /WX /utf-8)
+endif()
+
 add_custom_target(drawverse_license ALL
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "${CMAKE_SOURCE_DIR}/LICENSE" "$<TARGET_FILE_DIR:drawverse>/LICENSE"
@@ -86,6 +95,7 @@ set_tests_properties(qt_transform_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QP
 
 qt_add_executable(qt_workflow_tests tests/workflow_tests.cpp)
 target_link_libraries(qt_workflow_tests PRIVATE drawverse_ui Qt6::Test)
+target_compile_definitions(qt_workflow_tests PRIVATE DRAWVERSE_QML_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")
 set_target_properties(qt_workflow_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
 add_test(NAME qt_workflow_tests COMMAND qt_workflow_tests)
 set_tests_properties(qt_workflow_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
@@ -177,6 +187,10 @@ if(WIN32)
     get_target_property(qt_qmake Qt6::qmake IMPORTED_LOCATION)
     get_filename_component(qt_bin "${qt_qmake}" DIRECTORY)
     find_program(qt_deploy NAMES windeployqt HINTS "${qt_bin}" REQUIRED NO_DEFAULT_PATH)
+    add_custom_target(drawverse_qml_preview_runtime
+        COMMAND "${qt_deploy}" "$<IF:$<CONFIG:Debug>,--debug,--release>" --no-translations --qmldir "${CMAKE_CURRENT_SOURCE_DIR}/qml"
+                "$<TARGET_FILE:drawverse_qml_preview>"
+        DEPENDS drawverse_qml_preview VERBATIM)
     add_custom_target(drawverse_runtime
         COMMAND "${qt_deploy}" "$<IF:$<CONFIG:Debug>,--debug,--release>" --no-translations --qmldir "${CMAKE_CURRENT_SOURCE_DIR}/qml"
                 "$<TARGET_FILE:drawverse>"
@@ -191,4 +205,5 @@ if(WIN32)
         DEPENDS drawverse_runtime qt_ui_tests VERBATIM)
 else()
     add_custom_target(drawverse_runtime DEPENDS drawverse drawverse_license)
+    add_custom_target(drawverse_qml_preview_runtime DEPENDS drawverse_qml_preview)
 endif()

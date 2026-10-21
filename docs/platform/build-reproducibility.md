@@ -1,5 +1,7 @@
 # 跨平台检出与生成头一致性（2026-10-09）
 
+QML 界面编辑另有按需 `qml-preview` 构建预设和 `ui/qml/.qtcreator/project.json` 工作区运行配置，输出 `build/bin/Release/drawverse_qml_preview.exe`。源码监听/临时配置/控件预览台及边界见 [QML 预览设计](qml-preview-design.md) 和 [操作说明](../../ui/qml/README.md)；正式 build/run 配置保持。
+
 ## 当前应用构建与运行入口（2026-10-21）
 
 标准用户Release目录统一为 `build/bin/Release`，手动CMake使用 `-B build`；旧记录中的build/qt及各验证目录是当时的证据位置，不批量改写。Debug应用使用 `cmake-build-debug/bin/Debug`。README保留完整构建命令。

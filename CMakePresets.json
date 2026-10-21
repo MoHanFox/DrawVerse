@@ -28,6 +28,13 @@
   ],
   "buildPresets": [
     {
+      "name": "qml-preview",
+      "configurePreset": "build",
+      "configuration": "Release",
+      "targets": ["drawverse_qml_preview_runtime"],
+      "jobs": 2
+    },
+    {
       "name": "build",
       "configurePreset": "build",
       "configuration": "Release",

@@ -1,0 +1,37 @@
+{
+    "$schema": "https://download.qt.io/official_releases/qtcreator/latest/installer_source/jsonschemas/project.json",
+    "project.name": "DrawVerse QML",
+    "targets": [
+        {
+            "name": "DrawVerse - Live QML preview",
+            "executable": "../../build/bin/Release/drawverse_qml_preview.exe",
+            "arguments": ["--watch"],
+            "workingDirectory": "../.."
+        },
+        {
+            "name": "DrawVerse - Live component gallery",
+            "executable": "../../build/bin/Release/drawverse_qml_preview.exe",
+            "arguments": ["--watch", "--qml-entry", "preview/ComponentGallery.qml"],
+            "workingDirectory": "../.."
+        },
+        {
+            "name": "DrawVerse - QML source preview",
+            "executable": "../../build/bin/Release/drawverse_qml_preview.exe",
+            "workingDirectory": "../.."
+        },
+        {
+            "name": "DrawVerse - QML canvas preview",
+            "executable": "../../build/bin/Release/drawverse_qml_preview.exe",
+            "arguments": ["--canvas"],
+            "workingDirectory": "../.."
+        },
+        {
+            "name": "DrawVerse - QML component gallery",
+            "executable": "../../build/bin/Release/drawverse_qml_preview.exe",
+            "arguments": ["--qml-entry", "preview/ComponentGallery.qml"],
+            "workingDirectory": "../.."
+        }
+    ],
+    "build.configuration": [{"name": "QML editing (no compilation)", "steps": []}],
+    "files.exclude": [".qtcreator/project.json.user"]
+}
