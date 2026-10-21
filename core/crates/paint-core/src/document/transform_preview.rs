@@ -4,7 +4,11 @@ use super::*;
 impl Document {
     pub fn begin_transform_layers_deferred(&mut self, ids: &[u64]) -> Result<()> {
         self.begin_transform_layers(ids)?;
-        self.enable_transform_deferred()
+        if let Err(error) = self.enable_transform_deferred() {
+            self.cancel_transform()?;
+            return Err(error);
+        }
+        Ok(())
     }
 
     /// Also usable by a placement session already opened by the file worker.
@@ -17,6 +21,18 @@ impl Document {
             return Ok(());
         }
         if state.selection.is_some() {
+            if let Some((source, identity)) = self.selected_transform_preview()? {
+                let state = self.transform.as_mut().expect("session");
+                state.preview_bounds = Some([
+                    state.initial.points[0][0],
+                    state.initial.points[0][1],
+                    state.initial.points[3][0] - state.initial.points[0][0],
+                    state.initial.points[12][1] - state.initial.points[0][1],
+                ]);
+                state.preview_source = Some(source);
+                state.preview_identity = Some(identity);
+                self.dirty_all();
+            }
             return Ok(());
         }
         let (source, bounds) = if state.extra.is_empty() && !state.original.mask {
@@ -58,6 +74,112 @@ impl Document {
         Ok(())
     }
 
+    /// Capture the selected pixels and the cut-out remainder once. Only the
+    /// moving part is sampled by the display during subsequent geometry updates.
+    fn selected_transform_preview(
+        &self,
+    ) -> Result<
+        Option<(
+            Arc<crate::ResidentPreviewSource>,
+            Arc<crate::ResidentPreviewSource>,
+        )>,
+    > {
+        let state = self.transform.as_ref().expect("session");
+        let original = &state.original;
+        // Partial opacity must be applied after combining the moving pixels and
+        // the remainder. The existing three-image protocol cannot represent that.
+        if !state.extra.is_empty()
+            || original.is_image()
+            || original.group
+            || original.mask
+            || original.properties.opacity != 1.
+            || original.appearance.fill != 1.
+            || self
+                .resident_source_layer(original.id, original.clone())
+                .is_none()
+        {
+            return Ok(None);
+        }
+        let selection = state.selection.as_ref().expect("selected session");
+        let origin = state.initial.points[0];
+        let end = state.initial.points[15];
+        let bounds = [
+            origin[0] as i64,
+            origin[1] as i64,
+            end[0] as i64,
+            end[1] as i64,
+        ];
+        let ox = i64::from(original.appearance.offset_x);
+        let oy = i64::from(original.appearance.offset_y);
+        let [x0, y0, x1, y1] = [
+            bounds[0] - ox,
+            bounds[1] - oy,
+            bounds[2] - ox,
+            bounds[3] - oy,
+        ];
+        let tile_count = ((x1 - 1).div_euclid(64) - x0.div_euclid(64) + 1) as usize
+            * ((y1 - 1).div_euclid(64) - y0.div_euclid(64) + 1) as usize;
+        if tile_count.saturating_mul(2) > self.options.max_document_tiles {
+            return Ok(None);
+        }
+        let mut moving = original.clone();
+        moving.tiles.clear();
+        moving.white = (0, 0);
+        let mut remaining = original.clone();
+        for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
+            for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
+                let key = TileCoord::from_signed(tx as i32, ty as i32);
+                let input = original
+                    .tiles
+                    .get(&key)
+                    .map(|t| t.try_pixels())
+                    .transpose()?;
+                let mut selected = Vec::new();
+                let mut rest = Vec::new();
+                selected
+                    .try_reserve_exact(4096)
+                    .map_err(|_| Error::ResourceLimit("selection preview allocation"))?;
+                rest.try_reserve_exact(4096)
+                    .map_err(|_| Error::ResourceLimit("selection preview allocation"))?;
+                let mut touched = false;
+                let mut nonempty = false;
+                for row in 0..64 {
+                    let mut coverage = [0.; 64];
+                    selection.coverage_span(
+                        (tx * 64 + ox) as f64 + 0.5,
+                        (ty * 64 + row + oy) as f64 + 0.5,
+                        &mut coverage,
+                    );
+                    for (col, alpha) in coverage.into_iter().enumerate() {
+                        let index = row as usize * 64 + col;
+                        let pixel = input.as_ref().map_or_else(
+                            || original.default_pixel(tx * 64 + col as i64, ty * 64 + row),
+                            |v| v[index],
+                        );
+                        let sample = pixel.scaled(alpha);
+                        nonempty |= sample != Pixel::TRANSPARENT;
+                        touched |= alpha > 0.;
+                        selected.push(sample);
+                        rest.push(pixel.scaled(1. - alpha));
+                    }
+                }
+                drop(input);
+                if nonempty {
+                    let tile = Arc::new(Tile::from_pixels(selected)?);
+                    self.pool.attach(&tile)?;
+                    moving.tiles.insert(key, tile);
+                }
+                if touched {
+                    let tile = Arc::new(Tile::from_pixels(rest)?);
+                    self.pool.attach(&tile)?;
+                    remaining.tiles.insert(key, tile);
+                }
+                self.pool.trim()?;
+            }
+        }
+        Ok(self.resident_selection_source(original, moving, remaining, bounds))
+    }
+
     pub fn transform_deferred(&self) -> bool {
         self.transform
             .as_ref()
@@ -66,7 +188,15 @@ impl Document {
 
     pub fn transform_preview(&self) -> Option<crate::ResidentPreview> {
         let state = self.transform.as_ref()?;
-        let source = state.preview_source.as_ref()?.clone();
+        let source = if state.current == state.initial {
+            state
+                .preview_identity
+                .as_ref()
+                .or(state.preview_source.as_ref())?
+                .clone()
+        } else {
+            state.preview_source.as_ref()?.clone()
+        };
         let geometry = &state.current;
         let mesh = super::mesh::TransformMesh::new(geometry);
         let bounds = state.preview_bounds?;
@@ -128,6 +258,247 @@ mod tests {
             d.end_stroke().unwrap();
         }
         d
+    }
+    fn selected_seed(transparent: bool) -> Document {
+        let mut d = seed();
+        if transparent {
+            d.add_layer("selected transparent pixels").unwrap();
+            d.begin_stroke(
+                Brush {
+                    radius: 22.,
+                    color: Pixel::from_straight([0.8, 0.1, 0.2, 0.6]).unwrap(),
+                    ..Default::default()
+                },
+                InputPoint::new(48., 42., 1.),
+            )
+            .unwrap();
+            d.end_stroke().unwrap();
+            d.move_layer(d.active_layer(), 13, -3).unwrap();
+        }
+        d.set_selection(
+            crate::Selection::default()
+                .apply(
+                    crate::SelectionShape::polygon(
+                        vec![[22.25, 15.5], [75.75, 21.25], [69.5, 67.75], [26.5, 61.25]],
+                        true,
+                        1.5,
+                    )
+                    .unwrap(),
+                    crate::SelectionOperation::Replace,
+                    128,
+                    96,
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        d
+    }
+    #[test]
+    fn selected_resident_preview_retains_tiles_and_matches_all_final_interpolations() {
+        for transparent in [false, true] {
+            for warp in [false, true] {
+                for interpolation in 0..6 {
+                    let mut a = selected_seed(transparent);
+                    let mut b = selected_seed(transparent);
+                    let original = a.snapshot();
+                    let baseline = a.layers.clone();
+                    let selection = a.selection.clone();
+                    let depth = a.history_depth();
+                    let id = a.active_layer();
+                    a.begin_transform_layers_deferred(&[id]).unwrap();
+                    b.begin_transform_layers(&[id]).unwrap();
+                    assert!(a.transform_deferred());
+                    let identity = a.transform_preview().unwrap().source;
+                    for y in 0..96 {
+                        for x in 0..128 {
+                            assert_eq!(
+                                identity.below.pixel(x, y),
+                                original.pixel(x, y),
+                                "exact initial feather/alpha"
+                            );
+                        }
+                    }
+                    assert!(identity.image.layers.is_empty() && identity.above.layers.is_empty());
+                    let initial = a.transform_geometry().unwrap();
+                    let mut source = None;
+                    for pass in 1..=4 {
+                        let mut g = initial.clone();
+                        g.warp = warp;
+                        g.interpolation = interpolation;
+                        for p in &mut g.points {
+                            p[0] += pass as f64 * 3.;
+                            p[1] -= 2.;
+                        }
+                        if warp {
+                            g.points[5][0] += 9.;
+                            g.points[10][1] -= 7.;
+                        }
+                        a.update_transform(g.clone()).unwrap();
+                        b.update_transform(g).unwrap();
+                        let now = a.transform_preview().unwrap().source;
+                        assert_ne!(now.id, identity.id);
+                        if let Some(source) = &source {
+                            assert!(Arc::ptr_eq(source, &now));
+                        }
+                        source = Some(now);
+                        assert_eq!(a.history_depth(), depth);
+                        for (old, new) in baseline.iter().zip(&a.layers) {
+                            for (key, tile) in &old.tiles {
+                                assert!(Arc::ptr_eq(tile, &new.tiles[key]));
+                            }
+                        }
+                    }
+                    a.checkpoint_transform().unwrap();
+                    a.undo_transform().unwrap();
+                    assert!(Arc::ptr_eq(
+                        &identity,
+                        &a.transform_preview().unwrap().source
+                    ));
+                    a.redo_transform().unwrap();
+                    assert!(Arc::ptr_eq(
+                        source.as_ref().unwrap(),
+                        &a.transform_preview().unwrap().source
+                    ));
+                    a.commit_transform().unwrap();
+                    b.commit_transform().unwrap();
+                    assert_eq!(pixels(&a), pixels(&b));
+                    assert_eq!(a.selection.steps(), b.selection.steps());
+                    assert_eq!(a.history_depth().0, depth.0 + 1);
+                    a.undo().unwrap();
+                    assert_eq!(
+                        pixels(&a),
+                        (0..96)
+                            .flat_map(|y| original.read_row(0, y, 128).unwrap())
+                            .collect::<Vec<_>>()
+                    );
+                    assert_eq!(a.selection.steps(), selection.steps());
+                    a.redo().unwrap();
+                    assert_eq!(pixels(&a), pixels(&b));
+                }
+            }
+        }
+    }
+    #[test]
+    fn selected_preview_split_late_enable_cancel_and_safe_fallbacks() {
+        let mut d = selected_seed(true);
+        let before = pixels(&d);
+        let selected = d.selection.clone();
+        let depth = d.history_depth();
+        let id = d.active_layer();
+        d.begin_transform_layers(&[id]).unwrap();
+        let mut g = d.transform_geometry().unwrap();
+        for p in &mut g.points {
+            p[0] += 12.;
+            p[1] -= 2.;
+        }
+        d.update_transform(g).unwrap();
+        let expected = pixels(&d);
+        d.enable_transform_deferred().unwrap();
+        assert!(d.transform_deferred());
+        let source = d.transform_preview().unwrap().source;
+        // Integer translation + bilinear sampling at pixel centres is exact;
+        // compare every pixel, including fractional selection and source alpha.
+        for y in 0..96 {
+            for x in 0..128 {
+                let moving = source.image.pixel(
+                    (x as i64 - 12 - i64::from(source.bounds[0])) as u32,
+                    (y as i64 + 2 - i64::from(source.bounds[1])) as u32,
+                );
+                let split = source
+                    .above
+                    .pixel(x, y)
+                    .over(moving.over(source.below.pixel(x, y)));
+                for (a, b) in split
+                    .components()
+                    .into_iter()
+                    .zip(expected[(y * 128 + x) as usize].components())
+                {
+                    assert!((a - b).abs() < 2e-6, "split {x},{y}: {a}!={b}");
+                }
+            }
+        }
+        d.cancel_transform().unwrap();
+        assert_eq!(pixels(&d), before);
+        assert_eq!(d.history_depth(), depth);
+        assert_eq!(d.selection.steps(), selected.steps());
+        for kind in 0..5 {
+            let mut d = selected_seed(true);
+            let id = d.active_layer();
+            match kind {
+                0 => d
+                    .set_layer_properties(
+                        id,
+                        LayerProperties {
+                            opacity: 0.5,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap(),
+                1 => d.layers.last_mut().unwrap().appearance.fill = 0.5,
+                2 => {
+                    d.add_mask(id).unwrap();
+                }
+                3 => {
+                    d.group_layer(id, "nested").unwrap();
+                }
+                _ => {
+                    d.options.max_document_tiles = 1;
+                }
+            }
+            d.begin_transform_layers_deferred(&[id]).unwrap();
+            assert!(!d.transform_deferred(), "fallback {kind}");
+            d.cancel_transform().unwrap();
+        }
+    }
+    #[test]
+    fn selected_preview_allocation_failure_cancels_new_session_without_pixel_or_history_changes() {
+        let blocked = tempfile::NamedTempFile::new().unwrap();
+        let storage = paint_storage::ScratchSpace::new(paint_storage::Config {
+            directory: blocked.path().to_path_buf(),
+            min_free_bytes: 0,
+        });
+        let mut d = Document::with_storage(
+            128,
+            96,
+            crate::DocumentOptions {
+                max_resident_tiles: 1,
+                max_scratch_bytes: 65552,
+                ..Default::default()
+            },
+            storage,
+        )
+        .unwrap();
+        d.initialize_white_background().unwrap();
+        d.set_selection(
+            crate::Selection::default()
+                .apply(
+                    crate::SelectionShape::geometry(
+                        crate::SelectionKind::Rectangle,
+                        20.,
+                        20.,
+                        80.,
+                        30.,
+                        false,
+                    ),
+                    crate::SelectionOperation::Replace,
+                    128,
+                    96,
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        let before = pixels(&d);
+        let depth = d.history_depth();
+        let selection = d.selection.clone();
+        assert!(d
+            .begin_transform_layers_deferred(&[d.active_layer()])
+            .is_err());
+        assert!(d.transform.is_none());
+        assert_eq!(pixels(&d), before);
+        assert_eq!(d.history_depth(), depth);
+        assert_eq!(d.selection.steps(), selection.steps());
+        d.begin_transform_layers(&[d.active_layer()]).unwrap();
+        d.cancel_transform().unwrap();
     }
     #[test]
     fn attached_masks_never_define_transform_handles() {
@@ -429,7 +800,7 @@ mod tests {
         }
     }
     #[test]
-    fn deferred_transform_cancel_placed_source_and_selection_fallback() {
+    fn deferred_transform_cancel_placed_source_and_selection_capture() {
         let mut d = seed();
         let id = d.active_layer();
         d.begin_transform_layers_deferred(&[id]).unwrap();
@@ -459,7 +830,7 @@ mod tests {
         d.set_selection(crate::Selection::all(128, 96)).unwrap();
         d.begin_transform_layers_deferred(&[d.active_layer()])
             .unwrap();
-        assert!(!d.transform_deferred());
+        assert!(d.transform_deferred());
         d.cancel_transform().unwrap();
     }
 

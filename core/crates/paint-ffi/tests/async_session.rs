@@ -1110,9 +1110,33 @@ fn liquify_abi_validation_preview_cancel_and_single_history() {
 
 #[test]
 fn deferred_transform_packets_and_latest_geometry_commit() {
+    run_deferred_transform_packets(false);
+}
+#[test]
+fn selected_deferred_transform_packets_and_latest_geometry_commit() {
+    run_deferred_transform_packets(true);
+}
+fn run_deferred_transform_packets(selected: bool) {
     let h = Harness::new(128, 96);
-    let initial = h.wait(h.stroke(20., 20.));
+    let mut initial = h.wait(h.stroke(20., 20.));
     unsafe {
+        if selected {
+            let selection = PaintSelectionEdit {
+                x: 12.,
+                y: 12.,
+                width: 32.,
+                height: 32.,
+                antialias: 1,
+                ..dto!(PaintSelectionEdit)
+            };
+            let mut sequence = 0;
+            assert_eq!(
+                paint_session_edit_selection(h.core, h.session, &selection, &mut sequence),
+                PAINT_OK
+            );
+            initial = h.wait(sequence);
+            assert_eq!(initial.last_error_status, PAINT_OK);
+        }
         let mut seq = 99;
         assert_eq!(
             paint_session_begin_transform_layers_deferred(
@@ -1170,7 +1194,11 @@ fn deferred_transform_packets_and_latest_geometry_commit() {
             paint_session_resident_preview_info(h.core, h.session, &mut latest),
             PAINT_OK
         );
-        assert_eq!(latest.source_id, packet.source_id);
+        if selected {
+            assert_ne!(latest.source_id, packet.source_id);
+        } else {
+            assert_eq!(latest.source_id, packet.source_id);
+        }
         let mut required = 0;
         assert_eq!(
             paint_session_read_resident_preview(

@@ -77,3 +77,28 @@ Release示例 `cargo run -p paint-core --release --locked --example transform_pe
 核心新增attached_masks_never_define_transform_handles通过：普通/常驻、根层/组、链接/固定共8组合，全遮挡且范围更大的蒙版不改变原内容控制点；取消保留像素/历史，显式蒙版独立编辑仍用自身范围。共享变换预览整组9、公开transform7、原生deferred_transform_packets_and_latest_geometry_commit1通过。
 
 真实Qt客户端新增attachedMaskDoesNotChangeTransformHandles在软件与D3D11各通过：开启/取消原图变换，添加大白色遮挡蒙版后再次开启，16个控制点相同且无错误。四ABI依次、严格Clippy、格式与Release通过。原运行EXE锁定，新程序为build/qt/bin/Release/drawverse-next.exe；ABI1.74保持。未跑全量/跨平台/实体持续手感。
+
+## 2026-10-21：4K 局部选区常驻变换（T1）
+
+进入普通Normal根层的选区变换时，一次分割原始选中像素与静态余像素；原位另用原图合成资产，避免羽化/alpha边界出现切缝。原始图层瓦片和选区留在会话，拖动只发布CPU网格，Qt GPU显示，确认才按原六种取样生成最终像素与选区。软件保持逐像素路径。图层属性opacity/fill低于1、自身蒙版、组内、多目标、特殊混合继续回退，像素本身半透明及羽化已支持。
+
+- `cargo test -p paint-core --lib transform::preview::tests`：12项通过。新增3项覆盖透明/不透明、偏移、羽化、普通/Warp、全部六种最终取样与CPU逐像素等价；原始瓦片/移动源/原位源身份、局部undo/redo、延迟启用、取消/永久历史；受限捕获回退与真实暂存失败的新会话回滚。
+- `cargo test -p paint-core --test transform`：7项通过。旧折叠用例的“选区必须回退”断言已过时，改为同时验证CPU实时路径和常驻确认路径；两者保留折叠像素alpha/目标选区覆盖相同、永久undo恢复原像素与选区的断言。
+- `cargo test -p paint-ffi --test async_session deferred_transform_packets`：2项通过，含选区身份切换、1000次绝对更新、陈旧包/容量不足拒绝、最新几何确认、局部历史/取消及真实像素。
+- 新Qt `selected4kTransformKeepsResidentTexturesAndRestoresHistory` 普通/Warp两行，在软件与真实D3D11各通过。4096×2160透明目标层上，羽化多边形只移动红色半透明笔触，外部蓝色笔触不变；确认前实际窗口显示移动结果/原位置空洞，连续12次更新保留sourceId和三张图像cacheKey，硬件不生成CPU帧；确认/撤销/重做/取消及选区恢复通过，无QML警告。
+- 共用Qt普通栈/无关子树/链接蒙版/完整组/连续多选5行、折叠1、取消关闭状态1、蒙版不改控制框1，加新4K两行，共软件/D3D11各10行通过（含初始化清理显示12 passed）。日志 `artifacts/selected-transform-shared-{software,d3d11}.txt`。修复截图夹具后D3D11 Warp独立连续复跑3次通过，日志 `selected-transform-final-warp-{1,2,3}.txt`。
+
+首次硬件测试捕获了截图夹具访问异常，调试栈位于 `QQuickItemGrabResult::render`：新夹具轮询图像非空，尚未收到ready就释放截图对象。改为等待Qt的ready信号后读取，未改生产渲染或压低颜色断言。另一次夹具误把文档历史深度与会话局部深度比较，现分别记录；保留确认只增一条文档历史。没有把两次失败作为产品已通过的证据。
+
+同机Release固定4096×2160隐式白底、约256px多边形套索、强Warp六次输入×3遍：
+
+| 范围 | 原CPU像素预览 | 常驻几何预览 |
+| --- | ---: | ---: |
+| 核心begin（不含Qt资产） | 17.278ms | 24.054ms |
+| 六次更新+网格发布中位数 | 334.561ms | 1.556ms |
+| 最终commit | 0.319ms | 61.887ms |
+| 最终像素摘要 | `42e02ac6a1396125` | `42e02ac6a1396125` |
+
+示例 `cargo run -p paint-core --release --example transform_performance -- 4096 <pixel|mesh> warp selection`，日志 `artifacts/selection-transform-{cpu,resident}.txt`。旧路径已在更新时物化，所以commit较短；新路径把取样留到确认。两者最终19瓦片、摘要相同。计时不含Actor/Qt调度、代理生成/上传、GPU显示或实体输入，不能当端到端时延。
+
+四ABI消费者顺序通过，生成头检查、格式、core/ffi全目标严格Clippy与Windows Release通过；ABI1.75、state45/VBR保持。用户正在运行旧drawverse.exe，未终止该进程，新程序为 `build/qt/bin/Release/drawverse-next.exe`。两套首次资产仍各可能构建/上传；2048代理与有限网格为预览近似，最终不采样代理。未跑全量check、跨平台、实体连续拖动及GPU持续占用。

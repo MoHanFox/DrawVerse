@@ -107,6 +107,32 @@ impl Document {
         )
     }
 
+    /// A selected portion is a normal-over source above its stationary remainder.
+    /// Identity uses the exact original composite, avoiding a feathered cut seam.
+    pub(in crate::document) fn resident_selection_source(
+        &self,
+        original: &Layer,
+        moving: Layer,
+        remaining: Layer,
+        bounds: [i64; 4],
+    ) -> Option<(Arc<LiquifyPreviewSource>, Arc<LiquifyPreviewSource>)> {
+        // Reuse the ordinary root/mask/foreground eligibility contract.
+        self.resident_source_layer(original.id, original.clone())?;
+        let at = self.layer_index(original.id).ok()?;
+        let mut source =
+            self.partition_resident_source(&self.layers, at..at + 1, vec![moving], bounds)?;
+        Arc::make_mut(&mut source).below.layers.push(remaining);
+        let mut identity =
+            self.partition_resident_source(&self.layers, at..at + 1, Vec::new(), bounds)?;
+        let identity_data = Arc::make_mut(&mut identity);
+        identity_data.below.layers.push(original.clone());
+        identity_data
+            .below
+            .layers
+            .append(&mut identity_data.above.layers);
+        Some((source, identity))
+    }
+
     /// Translation moves complete linked subtrees together; liquid distortion keeps
     /// its mask fixed and must continue using the separate ordinary-source predicate.
     pub(in crate::document) fn resident_move_source(

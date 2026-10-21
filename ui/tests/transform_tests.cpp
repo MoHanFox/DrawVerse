@@ -17,6 +17,41 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void selected4kTransformKeepsResidentTexturesAndRestoresHistory_data() {
+        QTest::addColumn<bool>("warp");QTest::newRow("affine")<<false;QTest::newRow("warp")<<true;
+    }
+    void selected4kTransformKeepsResidentTexturesAndRestoresHistory() {
+        QFETCH(bool,warp);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selected4k.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newDocument(4096,2160);QTRY_COMPARE(client.documentWidth(),4096);QTRY_VERIFY(!client.layerEditBusy());client.addLayer("partial selection");QTRY_VERIFY(!client.layerEditBusy());client.activateBrush();client.setBrushRadius(64);client.setBrushOpacity(.6);client.brushLibrary()->setPressureSize(false);client.brushLibrary()->setPressureFlow(false);
+        for(const auto &p:QList<QPair<QPointF,QColor>>{{{1400.5,900.5},Qt::red},{{2200.5,900.5},Qt::blue}}){client.setBrushColor(p.second);QVERIFY(client.beginStroke({p.first,1}));client.endStroke();QTRY_VERIFY(!client.layerEditBusy() && !client.drawing());}
+        client.setSelectionFeather(2);QVERIFY(client.editSelectionPath({{1200,700},{1600,710},{1590,1100},{1210,1090}},0,false));QTRY_VERIFY(!client.layerEditBusy() && client.selectionEnabled());const auto selection=client.selectionSteps();const auto depth=client.undoDepth();
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);QVERIFY(QTest::qWaitForWindowExposed(window));canvas->fitToView();QTRY_VERIFY(client.frameRevision()>=client.revision());
+        const auto capture=[&]{if(auto *overlay=findVisualItem(window->contentItem(),"transformOverlay"))overlay->setVisible(false);auto grab=window->contentItem()->grabToImage();if(!grab)return QImage{};QSignalSpy ready(grab.data(),&QQuickItemGrabResult::ready);if(!ready.wait(5000))return QImage{};return grab->image();};
+        const auto at=[&](const QImage &image,QPointF p){const double dpr=double(image.width())/window->width();const auto v=canvas->mapToScene(canvas->documentRect().topLeft()+p*canvas->zoom())*dpr;return image.pixelColor(v.toPoint());};
+        const auto close=[](QColor a,QColor b){return qAbs(a.red()-b.red())<10 && qAbs(a.green()-b.green())<10 && qAbs(a.blue()-b.blue())<10;};
+        QImage before;QTRY_VERIFY(!(before=capture()).isNull() && at(before,{1400,900}).red()>at(before,{1400,900}).green()+60);const auto red=at(before,{1400,900}),blue=at(before,{2200,900}),background=at(before,{1400,800});
+        if(qEnvironmentVariable("QT_QUICK_BACKEND")=="rhi")QVERIFY(canvas->gpuDisplay());
+        QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformActive() && !client.transformBusy());const auto localDepth=client.undoDepth();const auto initial=client.transformPoints();
+        if(canvas->gpuDisplay())QTRY_VERIFY(client.residentPreview() && canvas->forwardPreview());
+        const auto identity=client.residentPreview();auto points=initial;for(auto &v:points)v=v.toPointF()+QPointF(512,0);if(warp){points[5]=points[5].toPointF()+QPointF(12,-8);points[10]=points[10].toPointF()+QPointF(-8,6);}
+        QVERIFY(client.updateTransform(points,warp,2));QTRY_VERIFY(!client.transformBusy());
+        ResidentPreviewPtr moving;
+        if(canvas->gpuDisplay()){QTRY_VERIFY(client.residentPreview() && client.residentPreview()->sourceId!=identity->sourceId);moving=client.residentPreview();}
+        const auto frameRevision=client.frameRevision();
+        for(int i=1;i<=12;++i){auto next=points;for(auto &v:next)v=v.toPointF()+QPointF(i,0);QVERIFY(client.updateTransform(next,warp,2));}
+        QTRY_VERIFY(!client.transformBusy());QCOMPARE(client.undoDepth(),localDepth);
+        if(moving){QTRY_COMPARE(client.residentPreview()->revision,client.revision());QCOMPARE(client.residentPreview()->sourceId,moving->sourceId);for(int i=0;i<3;++i)QCOMPARE(client.residentPreview()->images[i].cacheKey(),moving->images[i].cacheKey());QCOMPARE(client.frameRevision(),frameRevision);}
+        QImage preview;QTRY_VERIFY(!(preview=capture()).isNull() && close(at(preview,{1924,900}),red));QVERIFY(close(at(preview,{1400,900}),background));QVERIFY(close(at(preview,{2200,900}),blue));
+        QVERIFY(client.finishTransform(true));QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy(),30000);QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());
+        QImage final;QTRY_VERIFY(!(final=capture()).isNull() && close(at(final,{1924,900}),red));QVERIFY(close(at(final,{2200,900}),blue));QVERIFY(client.selectionSteps()!=selection);
+        client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.selectionSteps(),selection);QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && close(at(undone,{1400,900}),red));
+        client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision());const auto finalSelection=client.selectionSteps();
+        QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy());auto cancelled=client.transformPoints();for(auto &v:cancelled)v=v.toPointF()+QPointF(-100,0);QVERIFY(client.updateTransform(cancelled,warp,2));QTRY_VERIFY(!client.transformBusy());QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.transformBusy());QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.undoDepth(),depth+1);QCOMPARE(client.selectionSteps(),finalSelection);
+        QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));QVERIFY(client.lastError().isEmpty());auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void attachedMaskDoesNotChangeTransformHandles() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("mask-handles.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,96);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());

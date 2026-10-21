@@ -87,6 +87,9 @@ fn main() {
         println!("selected={selected} height={height} size={size} mesh={deferred} warp={warp} pass={pass} six_inputs_ms={:.3} vertices={vertices}",start.elapsed().as_secs_f64()*1000.);
     }
     if selected {
+        let start = Instant::now();
+        d.commit_transform().unwrap();
+        println!("commit_ms={:.3}", start.elapsed().as_secs_f64() * 1000.);
         use std::hash::{Hash, Hasher};
         let mut digest = std::collections::hash_map::DefaultHasher::new();
         for y in 0..height {
@@ -100,5 +103,7 @@ fn main() {
             d.layers()[0].tile_count()
         );
     }
-    d.cancel_transform().unwrap();
+    if !selected {
+        d.cancel_transform().unwrap();
+    }
 }

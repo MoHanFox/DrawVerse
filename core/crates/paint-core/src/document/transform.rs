@@ -196,6 +196,7 @@ pub struct PlacedImage {
 #[derive(Clone, Debug)]
 pub(super) struct TransformState {
     preview_source: Option<Arc<crate::ResidentPreviewSource>>,
+    preview_identity: Option<Arc<crate::ResidentPreviewSource>>,
     preview_bounds: Option<[f64; 4]>,
     roots: Vec<LayerId>,
     original: Layer,
@@ -465,6 +466,7 @@ impl Document {
         let current = source.geometry.clone();
         self.transform = Some(TransformState {
             preview_source: None,
+            preview_identity: None,
             preview_bounds: None,
             roots: vec![original.id],
             original,
@@ -632,6 +634,7 @@ impl Document {
         });
         self.transform = Some(TransformState {
             preview_source: None,
+            preview_identity: None,
             preview_bounds: None,
             roots: vec![id],
             original: layer,

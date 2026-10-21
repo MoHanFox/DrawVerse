@@ -5,6 +5,9 @@ Item {
     id:root
     required property var client
     required property var canvasSurface
+    // The transform cage presents the live boundary; publish the precise
+    // transformed selection once final sampling completes.
+    visible:!(canvasSurface.forwardPreview && client.transformActive)
     readonly property bool resident:canvasSurface.gpuDisplay && client.documentWidth>0 && client.documentHeight>0 && client.documentWidth<=4096 && client.documentHeight<=4096
     Loader {
         anchors.fill:parent
