@@ -1,4 +1,5 @@
 #include "canvas/LiquifyPreviewNode.h"
+#include "canvas/ResidentPreviewTextures.h"
 #include <QQuickWindow>
 #include <QSGMaterial>
 #include <QSGMaterialShader>
@@ -24,12 +25,11 @@ public:
 };
 class Material final : public QSGMaterial {
 public:
-    std::array<QSGTexture*,4> textures{};
+    std::array<std::shared_ptr<ResidentPreviewTextures>,2> sources{};
     std::array<float,4> identity{};
     bool selected=false;
     bool focus=false,forward=false;
     Material(){setFlag(Blending);}
-    ~Material() override {for(auto *texture:textures)delete texture;}
     QSGMaterialType *type() const override {static QSGMaterialType t;return &t;}
     QSGMaterialShader *createShader(QSGRendererInterface::RenderMode) const override {return new Shader;}
     int compare(const QSGMaterial *other) const override {return this==other?0:std::less<const QSGMaterial*>{}(this,other)?-1:1;}
@@ -47,12 +47,13 @@ bool Shader::updateUniformData(RenderState &state,QSGMaterial *material,QSGMater
     const float opacity=state.opacity(),focus=static_cast<Material*>(material)->focus?1.f:0.f;
     std::memcpy(bytes->data()+64,&opacity,4);std::memcpy(bytes->data()+68,&focus,4);
     const auto *m=static_cast<Material*>(material);const float selected=m->selected?1.f:0.f;
+    for(const auto &source:m->sources)if(source)source->commit(state);
     std::memcpy(bytes->data()+72,&selected,4);std::memcpy(bytes->data()+80,m->identity.data(),16);
     return true;
 }
 void Shader::updateSampledImage(RenderState &state,int binding,QSGTexture **texture,QSGMaterial *material,QSGMaterial *) {
     if(binding>=1 && binding<=4){
-        *texture=static_cast<Material*>(material)->textures[size_t(binding-1)];
+        *texture=static_cast<Material*>(material)->sources[0]->images[size_t(binding-1)];
         if(*texture)(*texture)->commitTextureOperations(state.rhi(),state.resourceUpdateBatch());
     }
 }
@@ -66,17 +67,12 @@ LiquifyPreviewNode::LiquifyPreviewNode() {
 bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &frame,const QRectF &rect) {
     auto *m=static_cast<Material*>(material());
     if(m_source!=frame.sourceId){
-        std::array<QSGTexture*,4> next{};
-        QImage empty(1,1,QImage::Format_RGBA8888_Premultiplied);empty.fill(Qt::transparent);
-        for(size_t i=0;i<4;++i){
-            const auto image=i==3?(frame.selection.isNull()?empty:frame.selection):(frame.forward && i>0?empty:frame.images[i]);
-            next[i]=window->createTextureFromImage(image,QQuickWindow::TextureHasAlphaChannel);
-            if(!next[i]){for(auto *texture:next)delete texture;return false;}
-            next[i]->setFiltering(i==3?QSGTexture::Linear:QSGTexture::Nearest);
-            next[i]->setHorizontalWrapMode(QSGTexture::ClampToEdge);next[i]->setVerticalWrapMode(QSGTexture::ClampToEdge);
-        }
-        for(auto *texture:m->textures)delete texture;
-        m->textures=next;m->selected=!frame.selection.isNull();m->identity=frame.identity;m_source=frame.sourceId;m_revision=0;markDirty(DirtyMaterial);
+        auto current=ResidentPreviewTextures::acquire(window,frame);
+        if(!current)return false;
+        auto prepared=frame.prepared?ResidentPreviewTextures::acquire(window,*frame.prepared):nullptr;
+        if(frame.prepared && !prepared)return false;
+        m->sources={std::move(current),std::move(prepared)};
+        m->selected=!frame.selection.isNull();m->identity=frame.identity;m_source=frame.sourceId;m_revision=0;markDirty(DirtyMaterial);
     }
     if(m->forward!=frame.forward){m->forward=frame.forward;markDirty(DirtyMaterial);}
     const bool sourceOnly=frame.focus || frame.forward;

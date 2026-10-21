@@ -149,3 +149,14 @@ Release固定4096×2160约256px套索、两级Normal祖先：六次Warp中位345
 实际4K Qt套索affine/Warp及两级Normal/PassThrough五行、原工具完成快捷键一行，软件/D3D11各6行通过，含静止余像素、纹理身份、取消及文档历史。完整标准Release/生成头、四ABI通过，输出build/bin/Release/drawverse.exe。日志artifacts/transform-preparation-{actor,core,clippy,software,d3d11,abi,build}.txt。
 
 没有将缓存命中或核心计时称为首拖端到端延迟；Qt显卡纹理首上传、复杂CPU回退及实体持续性能仍需验收。ABI1.75/state45保持。
+
+## 2026-10-21 进入工具预读取及上传两套纹理
+
+ABI1.78新增kind3静态包，提供与当前源同会话的备用sourceId和三图；Actor仍在BEGIN前准备CPU源。Qt后台一次解码两套QImage，源切换仅交换共享资产。ResidentPreviewTextures以窗口/sourceId共享主网格及上下层纹理，注册表仅弱引用，节点最多保留两套；主材质首次更新将备用纹理一起提交RHI批次。上下层改为会话Loader，退出不遗留隐藏节点强引用。
+
+- 原生三项（普通、选区、组内）及Actor一项通过。新增kind3容量探测/不足不改缓冲区、过期generation、无备用NOT_FOUND、初始备用sourceId与实际首拖ID/字节相同。
+- 实际D3D11 4K套索五行（affine/Warp、两级Normal/PassThrough）：拖动前两套各提交一次上传；首拖、两轮返回原位再拖动、12次持续更新后仍各一次，移动QImage cacheKey及共享计数身份与预读源相同。画面红色移动/蓝色静止、羽化原位显示、确认/取消/永久历史保持正确。该计数是上传批次，不是GPU时间测量或端到端零延迟承诺。
+- 软件4K选区五行、复合移动七行、选区液化两行均通过；D3D11完整复合变换七行、移动七行及选区液化两行通过。编辑结束主/浮窗×确定/取消八行及欢迎关闭生命周期一行在软件/D3D11各通过，零QML警告。
+- 四ABI、core/ffi全目标严格Clippy、fmt/生成头、完整标准Release通过。新程序build/bin/Release/drawverse.exe；state45/behavior37/VBR1.0保持。
+
+日志artifacts/transform-gpu-preparation-{native,actor,d3d11,final-d3d11,software,shared-d3d11,workflow-software,workflow-d3d11,abi,clippy,fmt,header-check,check-build}.txt。两套三图GPU像素最坏约96MiB，另有现有视口目标；仅活动会话有强引用，跨窗口分别创建。上传在进入后的首个真实帧提交，极早输入仍可能与其重叠；未测驱动物理冷启动、实体首拖端到端、全量、跨平台或16K整图。

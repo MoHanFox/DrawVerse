@@ -86,15 +86,24 @@ private slots:
         if(qEnvironmentVariable("QT_QUICK_BACKEND")=="rhi")QVERIFY(canvas->gpuDisplay());
         QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformActive() && !client.transformBusy());const auto localDepth=client.undoDepth();const auto initial=client.transformPoints();
         if(canvas->gpuDisplay())QTRY_VERIFY(client.residentPreview() && canvas->forwardPreview());
-        const auto identity=client.residentPreview();auto points=initial;for(auto &v:points)v=v.toPointF()+QPointF(512,0);if(warp){points[5]=points[5].toPointF()+QPointF(12,-8);points[10]=points[10].toPointF()+QPointF(-8,6);}
+        const auto identity=client.residentPreview();
+        quint64 initialUploads=0,movingUploads=0;
+        if(identity){QVERIFY(identity->prepared);QTRY_VERIFY(identity->uploads->load()>0 && identity->prepared->uploads->load()>0);initialUploads=identity->uploads->load();movingUploads=identity->prepared->uploads->load();}
+        auto points=initial;for(auto &v:points)v=v.toPointF()+QPointF(512,0);if(warp){points[5]=points[5].toPointF()+QPointF(12,-8);points[10]=points[10].toPointF()+QPointF(-8,6);}
         QVERIFY(client.updateTransform(points,warp,2));QTRY_VERIFY(!client.transformBusy());
         ResidentPreviewPtr moving;
-        if(canvas->gpuDisplay()){QTRY_VERIFY(client.residentPreview() && client.residentPreview()->sourceId!=identity->sourceId);moving=client.residentPreview();}
+        if(canvas->gpuDisplay()){QTRY_VERIFY(client.residentPreview() && client.residentPreview()->sourceId!=identity->sourceId);moving=client.residentPreview();QCOMPARE(moving->sourceId,identity->prepared->sourceId);for(int i=0;i<3;++i)QCOMPARE(moving->images[i].cacheKey(),identity->prepared->images[i].cacheKey());QCOMPARE(moving->uploads,identity->prepared->uploads);}
+        if(moving)for(int i=0;i<2;++i){
+            QVERIFY(client.updateTransform(initial,false,2));QTRY_VERIFY(!client.transformBusy());QTRY_COMPARE(client.residentPreview()->sourceId,identity->sourceId);
+            QImage restored;QTRY_VERIFY(!(restored=capture()).isNull() && close(at(restored,{1400,900}),red));
+            QVERIFY(client.updateTransform(points,warp,2));QTRY_VERIFY(!client.transformBusy());QTRY_COMPARE(client.residentPreview()->sourceId,moving->sourceId);
+        }
         const auto frameRevision=client.frameRevision();
         for(int i=1;i<=12;++i){auto next=points;for(auto &v:next)v=v.toPointF()+QPointF(i,0);QVERIFY(client.updateTransform(next,warp,2));}
         QTRY_VERIFY(!client.transformBusy());QCOMPARE(client.undoDepth(),localDepth);
         if(moving){QTRY_COMPARE(client.residentPreview()->revision,client.revision());QCOMPARE(client.residentPreview()->sourceId,moving->sourceId);for(int i=0;i<3;++i)QCOMPARE(client.residentPreview()->images[i].cacheKey(),moving->images[i].cacheKey());QCOMPARE(client.frameRevision(),frameRevision);}
         QImage preview;QTRY_VERIFY(!(preview=capture()).isNull() && close(at(preview,{1924,900}),red));QVERIFY(close(at(preview,{1400,900}),background));QVERIFY(close(at(preview,{2200,900}),blue));
+        if(moving){QCOMPARE(moving->uploads->load(),movingUploads);QCOMPARE(identity->uploads->load(),initialUploads);qInfo()<<"prepared source batches before first drag"<<initialUploads<<movingUploads<<"after drag"<<identity->uploads->load()<<moving->uploads->load();}
         QVERIFY(client.finishTransform(true));QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy(),30000);QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());
         QImage final;QTRY_VERIFY(!(final=capture()).isNull() && close(at(final,{1924,900}),red));QVERIFY(close(at(final,{2200,900}),blue));QVERIFY(client.selectionSteps()!=selection);
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.selectionSteps(),selection);QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && close(at(undone,{1400,900}),red));

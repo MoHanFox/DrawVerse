@@ -78,8 +78,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 77) {
-            emit failure(QStringLiteral("当前功能需要核心 ABI 1.77 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 78) {
+            emit failure(QStringLiteral("当前功能需要核心 ABI 1.78 或兼容后续版本")); return;
         }
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
@@ -568,28 +568,37 @@ public:
         auto next=std::make_shared<ResidentPreviewFrame>();
         next->generation=info.document_generation;next->revision=info.revision;next->sourceId=info.source_id;
         next->columns=info.columns;next->rows=info.rows;next->documentSize=QSize(int(info.document_width),int(info.document_height));next->focus=(info.focus&1)!=0;next->forward=(info.focus&2)!=0;
-        const auto read=[&](quint32 kind,QByteArray &bytes) {
+        const auto read=[&](quint32 kind,QByteArray &bytes,PaintStatus *result=nullptr) {
             uint64_t required=0;
             auto s=paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,nullptr,0,&required);
+            if(result)*result=s;
             if(s==PAINT_BUSY || s==PAINT_NOT_FOUND)return false;
             if(s!=PAINT_BUFFER_TOO_SMALL || required>64ull*1024*1024){check(s);return false;}
             bytes.resize(qsizetype(required));
             s=paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,reinterpret_cast<uint8_t*>(bytes.data()),required,&required);
+            if(result)*result=s;
             return s==PAINT_OK;
         };
-        if(m_residentPreview && m_residentPreview->sourceId==next->sourceId){next->images=m_residentPreview->images;next->selection=m_residentPreview->selection;next->identity=m_residentPreview->identity;}
-        else {
-            QByteArray assets;if(!read(1,assets) || assets.size()<24)return;
+        const auto decodeAssets=[](const QByteArray &assets,ResidentPreviewAssets &output){
+            if(assets.size()<24)return false;
             qsizetype offset=24;
             for(int i=0;i<3;++i){
                 const auto w=qFromLittleEndian<quint32>(assets.constData()+i*8),h=qFromLittleEndian<quint32>(assets.constData()+i*8+4);
                 const quint64 size=quint64(w)*h*4;
-                if(!w || !h || w>2048 || h>2048 || size>quint64(assets.size()-offset))return;
-                next->images[size_t(i)]=QImage(reinterpret_cast<const uchar*>(assets.constData()+offset),int(w),int(h),int(w*4),QImage::Format_RGBA8888_Premultiplied).copy();
-                if(next->images[size_t(i)].isNull())return;
+                if(!w || !h || w>2048 || h>2048 || size>quint64(assets.size()-offset))return false;
+                output.images[size_t(i)]=QImage(reinterpret_cast<const uchar*>(assets.constData()+offset),int(w),int(h),int(w*4),QImage::Format_RGBA8888_Premultiplied).copy();
+                if(output.images[size_t(i)].isNull())return false;
                 offset+=qsizetype(size);
             }
-            if(offset!=assets.size())return;
+            return offset==assets.size();
+        };
+        if(m_residentPreview && m_residentPreview->sourceId==next->sourceId){
+            static_cast<ResidentPreviewAssets&>(*next)=*m_residentPreview;next->prepared=m_residentPreview->prepared;
+        }else if(m_residentPreview && m_residentPreview->prepared && m_residentPreview->prepared->sourceId==next->sourceId){
+            static_cast<ResidentPreviewAssets&>(*next)=*m_residentPreview->prepared;
+            next->prepared=std::make_shared<ResidentPreviewAssets>(*m_residentPreview);
+        }else {
+            QByteArray assets;if(!read(1,assets) || !decodeAssets(assets,*next))return;
             if(info.focus&PAINT_RESIDENT_PREVIEW_SELECTED){
                 QByteArray mask;if(!read(2,mask) || mask.size()<24)return;
                 const auto w=qFromLittleEndian<quint32>(mask.constData()),h=qFromLittleEndian<quint32>(mask.constData()+4);
@@ -598,6 +607,15 @@ public:
                 if(next->identity[2]<=0 || next->identity[3]<=0)return;
                 next->selection=QImage(int(w),int(h),QImage::Format_RGBA8888);if(next->selection.isNull())return;
                 for(quint32 y=0;y<h;++y){auto *row=next->selection.scanLine(int(y));for(quint32 x=0;x<w;++x){const auto value=quint8(mask[qsizetype(24+quint64(y)*w+x)]);row[x*4]=value;row[x*4+1]=value;row[x*4+2]=value;row[x*4+3]=255;}}
+            }
+            if(next->forward){
+                QByteArray packet;PaintStatus result=PAINT_OK;
+                if(read(3,packet,&result)){
+                    if(packet.size()<32)return;
+                    auto prepared=std::make_shared<ResidentPreviewAssets>();prepared->sourceId=qFromLittleEndian<quint64>(packet.constData());
+                    if(!prepared->sourceId || prepared->sourceId==next->sourceId || !decodeAssets(packet.sliced(8),*prepared))return;
+                    next->prepared=prepared;
+                }else if(result!=PAINT_NOT_FOUND)return;
             }
         }
         QByteArray mesh;if(!read(0,mesh))return;

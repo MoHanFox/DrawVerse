@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 77
+#define PAINT_ABI_MINOR 78
 
 #define PAINT_ABI_PATCH 0
 
@@ -2506,6 +2506,7 @@ PaintStatus paint_session_read_layer_clipboard(struct PaintCore *core,
  * dimensions followed by three tightly packed sRGB premultiplied RGBA8 images.
  * ABI 1.77: kind 2 = LE u32 width/height, four LE f32 identity UV coefficients,
  * then width*height R8 destination selection coverage (only with the selected flag).
+ * ABI 1.78: kind 3 = LE u64 alternate source ID followed by its kind-1 static assets.
  * Mesh reads require the exact revision; static assets only require source/generation.
  * Capacity probes write required only; insufficient buffers never receive partial bytes.
  * # Safety

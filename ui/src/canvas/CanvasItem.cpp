@@ -1,5 +1,6 @@
 #include "canvas/CanvasItem.h"
 #include "canvas/LiquifyPreviewNode.h"
+#include "canvas/ResidentPreviewTextures.h"
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
 #include <QTabletEvent>
@@ -20,13 +21,14 @@
 namespace {
 class CanvasNode final : public QSGNode {
 public:
-    ~CanvasNode() override { for(auto *tile:overview)delete tile;delete overviewTexture; }
+    ~CanvasNode() override { delete image;for(auto *tile:overview)delete tile;delete overviewTexture; }
     std::array<QSGSimpleTextureNode*,4> overview{};
     QSGTexture *overviewTexture=nullptr;
     qint64 overviewKey=0;
     qint64 imageKey = 0;
     QSGSimpleTextureNode *image=nullptr;
     LiquifyPreviewNode *preview=nullptr;
+    std::array<std::shared_ptr<ResidentPreviewTextures>,2> sources{};
 };
 // Application-wide space-pan hold: the canvas that owns keyboard focus raises it, every canvas observes it.
 bool spaceHeld=false;
@@ -239,7 +241,7 @@ void CanvasItem::refresh() {
     if(m_previewPart){
         m_residentPreview=m_client->residentPreview();
         const auto image=m_residentPreview?m_residentPreview->images[size_t(m_previewPart)]:QImage();
-        if(image.cacheKey()!=m_image.cacheKey()){m_image=image;update();}
+        m_image=image;update();
         return;
     }
     if(m_interactive && window())m_client->setResidentGpuPreviewAvailable(gpuDisplay());
@@ -368,13 +370,20 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     if ((!m_residentPreview && m_image.isNull() && m_overview.isNull()) || !window()) { delete node; return nullptr; }
     if(!node)node=new CanvasNode;
     if(m_previewPart){
-        if(!node->image){node->image=new QSGSimpleTextureNode;node->image->setOwnsTexture(true);node->appendChildNode(node->image);}
-        if(node->imageKey!=m_image.cacheKey()){
-            auto *texture=window()->createTextureFromImage(m_image);if(!texture){delete node;return nullptr;}
-            node->image->setTexture(texture);node->image->setFiltering(QSGTexture::Linear);node->imageKey=m_image.cacheKey();
+        if(!m_residentPreview){delete node;return nullptr;}
+        const auto previous=node->sources;
+        if(!node->sources[0] || node->sources[0]->sourceId!=m_residentPreview->sourceId){
+            auto current=ResidentPreviewTextures::acquire(window(),*m_residentPreview);
+            auto prepared=m_residentPreview->prepared?ResidentPreviewTextures::acquire(window(),*m_residentPreview->prepared):nullptr;
+            if(!current || (m_residentPreview->prepared && !prepared)){delete node;return nullptr;}
+            if(node->image && node->image->ownsTexture()){delete node->image;node->image=nullptr;}
+            node->sources={std::move(current),std::move(prepared)};
         }
+        if(!node->image){node->image=new QSGSimpleTextureNode;node->appendChildNode(node->image);}
+        node->image->setTexture(node->sources[0]->images[size_t(m_previewPart)]);node->image->setFiltering(QSGTexture::Linear);
         node->image->setRect(m_presentationRect);return node;
     }
+    if(node->sources[0]){delete node->image;node->image=nullptr;node->imageKey=0;node->sources={};}
     if(m_residentPreview){
         for(auto *tile:node->overview)if(tile)tile->setRect({});
         if(node->image){delete node->image;node->image=nullptr;node->imageKey=0;}

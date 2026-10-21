@@ -1200,6 +1200,81 @@ fn run_deferred_transform_packets(selected: bool, nested: bool) {
         );
         assert_eq!(packet.focus, 2);
         assert!(packet.columns <= 145 && packet.rows <= 145);
+        let alternate = if selected {
+            let mut required = 0;
+            let read = |generation, buffer, capacity, required| {
+                paint_session_read_resident_preview(
+                    h.core,
+                    h.session,
+                    generation,
+                    packet.revision,
+                    packet.source_id,
+                    3,
+                    buffer,
+                    capacity,
+                    required,
+                )
+            };
+            assert_eq!(
+                read(
+                    packet.document_generation,
+                    ptr::null_mut(),
+                    0,
+                    &mut required
+                ),
+                PAINT_BUFFER_TOO_SMALL
+            );
+            assert!(required > 32);
+            let mut bytes = vec![0xAB; required as usize];
+            assert_eq!(
+                read(
+                    packet.document_generation,
+                    bytes.as_mut_ptr(),
+                    required - 1,
+                    &mut required
+                ),
+                PAINT_BUFFER_TOO_SMALL
+            );
+            assert!(bytes.iter().all(|v| *v == 0xAB));
+            assert_eq!(
+                read(
+                    packet.document_generation,
+                    bytes.as_mut_ptr(),
+                    required,
+                    &mut required
+                ),
+                PAINT_OK
+            );
+            assert_eq!(
+                read(
+                    packet.document_generation + 1,
+                    ptr::null_mut(),
+                    0,
+                    &mut required
+                ),
+                PAINT_BUSY
+            );
+            assert_eq!(required, 0);
+            Some(bytes)
+        } else {
+            let mut required = 99;
+            assert_eq!(
+                paint_session_read_resident_preview(
+                    h.core,
+                    h.session,
+                    packet.document_generation,
+                    packet.revision,
+                    packet.source_id,
+                    3,
+                    ptr::null_mut(),
+                    0,
+                    &mut required
+                ),
+                PAINT_NOT_FOUND
+            );
+            assert_eq!(required, 0);
+            None
+        };
         let mut g = dto!(PaintTransform);
         assert_eq!(
             paint_session_transform_info(h.core, h.session, begun.publication, &mut g),
@@ -1228,6 +1303,28 @@ fn run_deferred_transform_packets(selected: bool, nested: bool) {
         );
         if selected {
             assert_ne!(latest.source_id, packet.source_id);
+            let alternate = alternate.unwrap();
+            assert_eq!(
+                u64::from_le_bytes(alternate[..8].try_into().unwrap()),
+                latest.source_id
+            );
+            let mut required = 0;
+            let mut bytes = vec![0; alternate.len() - 8];
+            assert_eq!(
+                paint_session_read_resident_preview(
+                    h.core,
+                    h.session,
+                    latest.document_generation,
+                    packet.revision,
+                    latest.source_id,
+                    1,
+                    bytes.as_mut_ptr(),
+                    bytes.len() as u64,
+                    &mut required
+                ),
+                PAINT_OK
+            );
+            assert_eq!(bytes, alternate[8..]);
         } else {
             assert_eq!(latest.source_id, packet.source_id);
         }

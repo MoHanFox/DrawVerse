@@ -484,6 +484,16 @@ impl Session {
         assets.push((preview.source.id, bytes.clone()));
         Ok(bytes)
     }
+    pub fn resident_alternate_assets(&self, current_source: u64) -> ApiResult<(u64, Arc<Vec<u8>>)> {
+        self.shared
+            .preview_assets
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .iter()
+            .find(|(id, _)| *id != current_source)
+            .cloned()
+            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "no alternate resident source"))
+    }
     pub fn resident_selection(
         &self,
         preview: &paint_core::ResidentPreview,
@@ -1939,6 +1949,11 @@ mod actor_tests {
             prepared_id, identity.source.id,
             "initial feathered image differs from moving source"
         );
+        let alternate = session
+            .resident_alternate_assets(identity.source.id)
+            .unwrap();
+        assert_eq!(alternate.0, prepared_id);
+        assert!(Arc::ptr_eq(&alternate.1, &prepared));
         let identity_bytes = session.resident_assets(identity).unwrap();
         let mut geometry = publication.transform.clone().unwrap();
         for point in &mut geometry.points {

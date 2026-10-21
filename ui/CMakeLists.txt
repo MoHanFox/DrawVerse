@@ -15,6 +15,7 @@ add_library(drawverse_ui STATIC
     src/engine/PaintCoreClient.h src/engine/PaintCoreClient.cpp
     src/canvas/CanvasItem.h src/canvas/CanvasItem.cpp
     src/canvas/LiquifyPreviewNode.h src/canvas/LiquifyPreviewNode.cpp
+    src/canvas/ResidentPreviewTextures.h src/canvas/ResidentPreviewTextures.cpp
     src/canvas/SelectionOverlay.h src/canvas/SelectionOverlay.cpp
     src/color/ColorWheelItem.h src/color/ColorWheelItem.cpp
     src/brushes/BrushLibrary.h src/brushes/BrushLibrary.cpp src/brushes/BrushToolIsolation.cpp

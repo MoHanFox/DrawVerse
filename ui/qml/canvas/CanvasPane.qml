@@ -51,8 +51,8 @@ Rectangle {
         TransparencyGrid {objectName:"canvasTransparency";x:canvas.documentRect.x;y:canvas.documentRect.y;width:canvas.documentRect.width;height:canvas.documentRect.height}
         // Layers are viewport-sized. Their opacity applies after capture, so the two static
         // providers are sampled by the compositor without drawing a duplicate backdrop.
-        PaintCanvas {id:transformBelow;previewPart:1;interactive:false;client:root.ownClient;anchors.fill:parent;presentationRect:canvas.documentRect;opacity:0;visible:canvas.forwardPreview;layer.enabled:canvas.forwardPreview;layer.textureSize:canvas.layer.textureSize}
-        PaintCanvas {id:transformAbove;previewPart:2;interactive:false;client:root.ownClient;anchors.fill:parent;presentationRect:canvas.documentRect;opacity:0;visible:canvas.forwardPreview;layer.enabled:canvas.forwardPreview;layer.textureSize:canvas.layer.textureSize}
+        Loader {id:transformBelow;anchors.fill:parent;active:canvas.forwardPreview;sourceComponent:PaintCanvas {previewPart:1;interactive:false;client:root.ownClient;anchors.fill:parent;presentationRect:canvas.documentRect;opacity:0;layer.enabled:true;layer.textureSize:canvas.layer.textureSize}}
+        Loader {id:transformAbove;anchors.fill:parent;active:canvas.forwardPreview;sourceComponent:PaintCanvas {previewPart:2;interactive:false;client:root.ownClient;anchors.fill:parent;presentationRect:canvas.documentRect;opacity:0;layer.enabled:true;layer.textureSize:canvas.layer.textureSize}}
         PaintCanvas {
             id:canvas;initialFitRatio:.76;objectName:root.initialDocument?"mainCanvas":"documentCanvas:"+root.documentId;anchors.fill:parent;client:root.ownClient;focus:true;enabled:!root.savingBlocked
             layer.enabled:forwardPreview
@@ -60,8 +60,8 @@ Rectangle {
             layer.smooth:true
             layer.effect:ShaderEffect {
                 property var source
-                property var belowImage:transformBelow
-                property var aboveImage:transformAbove
+                property var belowImage:transformBelow.item
+                property var aboveImage:transformAbove.item
                 fragmentShader:"qrc:/shaders/transform-composite.frag.qsb"
             }
         }

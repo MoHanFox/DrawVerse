@@ -171,6 +171,7 @@ pub unsafe extern "C" fn paint_session_liquify_preview_info(
 /// dimensions followed by three tightly packed sRGB premultiplied RGBA8 images.
 /// ABI 1.77: kind 2 = LE u32 width/height, four LE f32 identity UV coefficients,
 /// then width*height R8 destination selection coverage (only with the selected flag).
+/// ABI 1.78: kind 3 = LE u64 alternate source ID followed by its kind-1 static assets.
 /// Mesh reads require the exact revision; static assets only require source/generation.
 /// Capacity probes write required only; insufficient buffers never receive partial bytes.
 /// # Safety
@@ -228,6 +229,18 @@ pub unsafe extern "C" fn paint_session_read_liquify_preview(
                 capacity,
                 out_required,
             ),
+            3 => {
+                let (id, assets) = session.resident_alternate_assets(preview.source.id)?;
+                let needed = 8 + assets.len() as u64;
+                pointers::write(out_required, needed)?;
+                if capacity < needed {
+                    return Err(ApiError::new(PAINT_BUFFER_TOO_SMALL, "buffer too small"));
+                }
+                let mut packet = Vec::with_capacity(needed as usize);
+                packet.extend(id.to_le_bytes());
+                packet.extend_from_slice(&assets);
+                pointers::copy_buffer(&packet, buffer, capacity, out_required)
+            }
             _ => Err(ApiError::invalid("liquify preview packet kind")),
         }
     })

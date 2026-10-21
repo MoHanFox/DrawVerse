@@ -1,4 +1,4 @@
-# C ABI 1.77.0 契约
+# C ABI 1.78.0 契约
 
 ## ABI 1.71 — SDF 整笔描边
 
@@ -618,3 +618,9 @@ PaintHistoryEntry既有kind增加PAINT_HISTORY_FLIP_HORIZONTAL=39、PAINT_HISTOR
 既有预览信息focus增加bit2（PAINT_RESIDENT_PREVIEW_SELECTED=4），表示静态目标域选区。仅带选区的液化常驻源设置该位；bit0/bit1、DTO布局、符号和能力位不变，Qt最低ABI1.77。原液化及resident命名读取入口的kind2新增静态包：小端u32宽高、四个小端f32（identity UV偏移x/y、比例x/y），随后width×height个R8覆盖值。覆盖在文档归一化坐标采样；原图UV=文档归一化坐标×比例+偏移。最长边2048，数据头24字节；尺寸、浮点有限/正比例须校验。
 
 kind2与kind1一样按generation/source身份读取，不要求最新revision；无选区返回NOT_FOUND、过期身份BUSY。容量查询及不足不部分写入保持原契约，会话结束释放静态缓存。显示在线性预乘空间按覆盖混合恒等源与变形源，再按原规则合成上下层；确认仍用原选区与完整场重采样。state45/behavior37/VBR1.0不变。
+
+## ABI1.78：预读取变换备用静态源
+
+既有resident/liquify读取入口新增kind3：小端u64备用sourceId，后接该源的完整kind1三图包（24字节尺寸头及RGBA8像素）。查询必须使用当前可见预览的generation/sourceId，revision同其他静态包不要求最新；无备用源NOT_FOUND、当前身份过期BUSY、容量不足不写入像素且报告所需大小。备用sourceId不能作为当前网格票据，必须等核心真正切换源后才可读取其kind0。DTO、符号、能力位与state45/behavior37/VBR1.0不变，Qt最低ABI1.78。
+
+局部选区变换BEGIN完成前已经准备真实移动源；kind3允许Qt在恒等源显示时提前取得它。两套静态源按会话有界，Qt在窗口自己的渲染线程创建并提交纹理上传，身份/变形往返只复用，图形对象不通过FFI或GUI传递。会话退出释放强引用，不形成跨会话永久纹理缓存。
