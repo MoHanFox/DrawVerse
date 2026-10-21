@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新多类长任务结果历史：变换/整图翻转/栅格化LayerEdit及桶Stroke复用PagePool引用，选区按真实内存保守计账，未托管/跨池/元数据超预算保持编码后备；见history-storage及remaining-fixes设计/验收。核心结果6/历史5/直接跳转3/进度1/公开变换7/原生3、软件与D3D11各9行Qt、四ABI/严格Clippy/格式/生成头/Release通过。75MiB热样本物化中位275.930→0.129ms，仅核心非UI/冷IO；标准drawverse.exe于2026-10-21 17:16更新，ABI1.75/state45保持。会话字段/其他命令/完整8K16K、T2复杂回退/M1/P1首次资源仍待。
+
 - 最新启动笔刷配置后台准备：BrushLibrary::preparePreferences沿用完整校验并预编码，BackendWorker传不可变无QObject数据，GUI一次应用、重新校验共享输入身份并丢弃关闭结果。软件/D3D11工作流各11行、共享UI各3项及Release/生成头通过；489项同步恢复187/178ms→已准备GUI应用0.171/0.177ms，非端到端。首次QML/资源仍469/361ms心跳，P1部分完成；详见笔刷切换延迟和remaining-fixes验收末节，ABI/state/VBR无变化。
 
 - 最新浮面板销毁补齐：PanelContent在分类直接销毁时同样完成Loading再卸载，修复快速双击收起后遗留2个创建计数；原回归新增残留/cancel/alpha failOnWarning。软件/D3D11各2项共享UI与7行欢迎/关闭/拖动/state45通过，无上述诊断；共享移动/变换各14行通过。完整Release/生成头通过，标准drawverse.exe于2026-10-21 14:32更新；见remaining-fixes和welcome-workspace验收末节，其余复杂性能待办保持。

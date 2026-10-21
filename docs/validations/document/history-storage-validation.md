@@ -1,5 +1,20 @@
 # 大笔触历史存储验收
 
+## 2026-10-21：长任务共享结果历史扩展
+
+变换、整图翻转、栅格化和油漆桶复用已完成液化的 PagePool 结果引用。LayerEdit 保留图层及置入源瓦片身份，选区按实际保留的遮罩、点和索引计账。未托管、跨池或元数据超预算保留编码后备，小命令仍 Inline。测试发现常量遮罩的压缩文本远小于真实内存，已改为不序列化的保守内存计账并补回归。
+
+验证结果（Windows x64）：
+
+- 核心 result_history 六项通过、两项手工基准默认忽略；历史存储五项、直接历史三项、进度一项、公开变换七项和原生 deferred_transform_packets 三项通过。覆盖热引用身份、低驻留预算实际冷读、选区保持、redo 分支丢弃、置入源恢复，以及损坏 backing 后 undo/redo 的像素/历史/修订不变。
+- 显式运行新的 Release 基准：600块原始及结果瓦片，共75MiB逻辑像素，64MiB历史预算、4096驻留瓦片。编码准备271.691ms、结果引用准备0.111ms；五次热物化中位275.930ms与0.129ms，引用身份保持。只测核心历史物化，不包含文档应用、actor、GUI显示或冷磁盘读取。
+- 软件和D3D11各九行真实Qt用例通过：4K选区变换五行、长任务进度一行、直接历史选择一行、整图翻转一行、油漆桶一行；没有QML警告。这些用例不等于75MiB历史界面响应基准。
+- paint-core/paint-ffi全部目标严格Clippy、格式、生成头、四组C/C++静态/动态ABI检查及完整Windows Release通过。ABI1.75/state45/behavior37/VBR1.0保持，无新增GPU算子；标准 build/qt/bin/Release/drawverse.exe 更新于17:16。
+
+本机证据：artifacts/shared-results-{core-final,unit,public,native,clippy,perf,release-build,abi}.txt，以及 shared-results-{qt,workflow,bucket}-{software,d3d11}.txt。未运行全量测试、跨平台或实体持续输入；液化会话字段历史、其他命令类型、冷读取时延及完整8K/16K负载仍待。暂存容量和IO失败保护继续生效。
+
+## 2026-10-08：原始编码历史验收
+
 2026-10-08，Windows 11 x64 / Rust 1.99.0 MSVC release / Qt 6.8.3。ABI 保持 1.2.0，生成头无漂移，常用 build/qt 启动目录已更新。
 
 移除的是 dab 中按整笔 touched tiles 预测 64MiB 历史后直接回滚的门槛，不是隐藏错误。小命令保留 Arc 快照；大命令采用 RGBA32F 位模式无损编码（游程或原始瓦片），超内存限额时写独占临时文件。保留磁盘历史限额 4GiB、最多 100 命令；超过预算淘汰最旧记录。临时文件使用系统临时目录，正常淘汰/退出自动删除。

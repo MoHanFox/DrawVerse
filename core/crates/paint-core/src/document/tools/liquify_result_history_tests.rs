@@ -1,6 +1,6 @@
 use super::*;
 
-fn document(resident: usize) -> Document {
+pub(super) fn document(resident: usize) -> Document {
     let tiles = (0..4)
         .map(|index| {
             let pixels = (0..4096)

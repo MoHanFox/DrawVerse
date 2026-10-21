@@ -683,6 +683,57 @@ pub struct Selection {
     steps: Arc<[SelectionStep]>,
 }
 impl Selection {
+    /// Conservative retained allocation size, without serializing raster coverage.
+    pub(crate) fn retained_bytes(&self) -> usize {
+        let mut bytes = std::mem::size_of::<Self>()
+            .saturating_add(2 * std::mem::size_of::<usize>())
+            .saturating_add(
+                self.steps
+                    .len()
+                    .saturating_mul(std::mem::size_of::<SelectionStep>()),
+            );
+        for step in self.steps.iter() {
+            if let Some(shape) = &step.shape {
+                bytes = bytes
+                    .saturating_add(
+                        shape
+                            .points
+                            .len()
+                            .saturating_mul(std::mem::size_of::<[f64; 2]>()),
+                    )
+                    .saturating_add(2 * std::mem::size_of::<usize>());
+                if let Some(mask) = &shape.mask {
+                    bytes = bytes.saturating_add(mask.bytes()).saturating_add(
+                        std::mem::size_of::<SelectionMask>() + 2 * std::mem::size_of::<usize>(),
+                    );
+                }
+                if let Some(index) = &shape.index {
+                    bytes = bytes
+                        .saturating_add(
+                            std::mem::size_of::<PolygonIndex>() + 2 * std::mem::size_of::<usize>(),
+                        )
+                        .saturating_add(
+                            index
+                                .points
+                                .len()
+                                .saturating_mul(std::mem::size_of::<[f64; 2]>()),
+                        )
+                        .saturating_add(
+                            index
+                                .rows
+                                .capacity()
+                                .saturating_mul(std::mem::size_of::<Vec<usize>>()),
+                        );
+                    for row in &index.rows {
+                        bytes = bytes.saturating_add(
+                            row.capacity().saturating_mul(std::mem::size_of::<usize>()),
+                        );
+                    }
+                }
+            }
+        }
+        bytes
+    }
     /// Mirror complete shape coverage without flattening the selection or losing graded alpha.
     pub(crate) fn reflected(&self, width: u32, height: u32, horizontal: bool) -> Result<Self> {
         let axis = usize::from(!horizontal);

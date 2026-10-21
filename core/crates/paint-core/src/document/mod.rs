@@ -27,6 +27,8 @@ mod outline;
 #[path = "stroke/document_taper.rs"]
 mod taper;
 mod transform;
+#[cfg(test)]
+mod transform_result_history_tests;
 pub use transform::{PlacedImage, TransformGeometry};
 
 #[derive(Clone, Copy, Debug)]
@@ -1041,7 +1043,13 @@ impl Document {
         self.commit_with_action(command, action)
     }
     fn commit_with_action(&mut self, command: Command, action: crate::HistoryAction) -> Result<()> {
-        let stored = if action == crate::HistoryAction::Liquify {
+        let stored = if matches!(
+            action,
+            crate::HistoryAction::Liquify
+                | crate::HistoryAction::Transform
+                | crate::HistoryAction::Rasterize
+                | crate::HistoryAction::Bucket
+        ) {
             StoredCommand::prepare_result_in(&command, self.options.max_history_bytes, &self.pool)?
         } else {
             StoredCommand::prepare_in(

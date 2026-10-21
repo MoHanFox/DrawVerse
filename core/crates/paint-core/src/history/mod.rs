@@ -147,22 +147,52 @@ impl StoredCommand {
         pool: &Arc<crate::page_pool::PagePool>,
     ) -> Result<Self> {
         if command.bytes() > max_bytes {
-            if let Command::Stroke { changes, .. } = command {
+            let retained = if let Command::Stroke { changes, .. } = command {
                 // Charge the change table plus a conservative allowance per
                 // tile reference for Tile/Page/cache bookkeeping. No pixel pins.
                 let bytes = changes
                     .len()
                     .saturating_mul(std::mem::size_of::<TileChange>() + 2 * 256)
                     .saturating_add(128);
-                if bytes <= max_bytes
-                    && changes.iter().all(|change| {
-                        change
-                            .before
-                            .iter()
-                            .chain(&change.after)
-                            .all(|tile| tile.belongs_to(pool))
+                let managed = changes.iter().all(|change| {
+                    change
+                        .before
+                        .iter()
+                        .chain(&change.after)
+                        .all(|tile| tile.belongs_to(pool))
+                });
+                Some((bytes, managed))
+            } else if let Command::LayerEdit {
+                before,
+                after,
+                selection,
+            } = command
+            {
+                let mut bytes = selection
+                    .as_ref()
+                    .map_or(0, |(a, b)| {
+                        a.retained_bytes().saturating_add(b.retained_bytes())
                     })
-                {
+                    .saturating_add(128);
+                let mut managed = true;
+                for layer in before.iter().chain(after) {
+                    // Layer/placed geometry, map nodes and page identities; no pixel pins.
+                    bytes = bytes.saturating_add(2048).saturating_add(layer.name.len());
+                    for tile in layer
+                        .tiles
+                        .values()
+                        .chain(layer.placed.iter().flat_map(|p| p.source.tiles.values()))
+                    {
+                        bytes = bytes.saturating_add(512);
+                        managed &= tile.belongs_to(pool);
+                    }
+                }
+                Some((bytes, managed))
+            } else {
+                None
+            };
+            if let Some((bytes, true)) = retained {
+                if bytes <= max_bytes {
                     return Ok(Self::Paged(command.clone(), command.action(), bytes));
                 }
             }
@@ -322,14 +352,13 @@ impl Command {
                 after,
                 selection,
             } => {
-                selection
-                    .as_ref()
-                    .map_or(0, |(a, b)| a.to_text().len() + b.to_text().len())
-                    + before
-                        .iter()
-                        .chain(after)
-                        .map(|l| l.retained_tile_count() * TILE_BYTES + 2048)
-                        .sum::<usize>()
+                selection.as_ref().map_or(0, |(a, b)| {
+                    a.retained_bytes().saturating_add(b.retained_bytes())
+                }) + before
+                    .iter()
+                    .chain(after)
+                    .map(|l| l.retained_tile_count() * TILE_BYTES + 2048)
+                    .sum::<usize>()
             }
             Self::Selection { before, after } => (before.steps().len() + after.steps().len()) * 64,
             Self::Structure { before, after } => before
@@ -510,6 +539,54 @@ mod tests {
         assert!(first.unwrap().upgrade().is_none());
         drop(history);
         assert_eq!(pool.stats().registered_tiles, 0);
+    }
+    #[test]
+    fn layer_result_references_require_owned_pages_and_count_selection_metadata() {
+        let pool = crate::page_pool::PagePool::new(4, 1 << 20);
+        let tile = Arc::new(Tile::default());
+        let mut layer = Layer::new(1, "result".into());
+        layer.tiles.insert(TileCoord { x: 0, y: 0 }, tile.clone());
+        let mut command = Command::LayerEdit {
+            before: vec![layer.clone()],
+            after: vec![layer],
+            selection: None,
+        };
+        assert!(matches!(
+            StoredCommand::prepare_result_in(&command, 8192, &pool).unwrap(),
+            StoredCommand::Encoded(..)
+        ));
+        pool.attach(&tile).unwrap();
+        assert!(matches!(
+            StoredCommand::prepare_result_in(&command, 8192, &pool).unwrap(),
+            StoredCommand::Paged(..)
+        ));
+        assert!(matches!(
+            StoredCommand::prepare_result_in(&command, 1024, &pool).unwrap(),
+            StoredCommand::Encoded(..)
+        ));
+        let foreign = crate::page_pool::PagePool::new(4, 1 << 20);
+        assert!(matches!(
+            StoredCommand::prepare_result_in(&command, 8192, &foreign).unwrap(),
+            StoredCommand::Encoded(..)
+        ));
+        let selection = crate::Selection::default();
+        let mut shape =
+            crate::SelectionShape::geometry(crate::SelectionKind::Mask, 0., 0., 128., 128., false);
+        shape.mask =
+            Some(crate::SelectionMask::from_alpha(128, 128, vec![128; 128 * 128]).unwrap());
+        let selection = selection
+            .apply_shape(Some(shape), crate::SelectionOperation::Replace, 128, 128)
+            .unwrap();
+        if let Command::LayerEdit {
+            selection: pair, ..
+        } = &mut command
+        {
+            *pair = Some((selection.clone(), selection));
+        }
+        assert!(matches!(
+            StoredCommand::prepare_result_in(&command, 8192, &pool).unwrap(),
+            StoredCommand::Encoded(..)
+        ));
     }
     #[test]
     fn disk_quota_evicts_oldest_and_deletes_only_its_backing() {
