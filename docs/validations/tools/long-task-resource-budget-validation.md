@@ -48,3 +48,14 @@
 cargo fmt --all -- --check 与 cargo clippy --workspace --all-targets --locked -- -D warnings 均通过，扩大检查覆盖测试、示例等全部目标。实际Rust模块路径的定向回归：document::transform::preview 9项、document::history_travel 3项、document::liquify::operators::adaptive_tests 3项通过，无忽略。最初按文件名过滤的两条命令命中0项，不计验收；修正为模块路径后重跑。
 
 本项仅调整测试，运行时算法/ABI1.74/state44/格式保持，不重复四ABI或重建Release；本轮前两项Qt修复已完成Windows Release、两后端各九项回归，产物 build/qt/bin/Release/drawverse.exe。未宣称全量测试运行通过，8K/16K仍仅包含规划回归，首次加载与其他长任务迁移等剩余边界不变。
+
+## 2026-10-21 液化会话位移场历史分块读写
+
+会话字段每块改为4KiB有界读写，保持原小端浮点编码、完整校验和及两侧有限/范围校验。读取仅为需要恢复的一侧分配位移数组，未使用的一侧仍逐值校验。不是字段引用历史迁移，也没有新增无预算缓存。
+
+- 核心液化单元16通过/2手工项忽略、公开液化11通过/1忽略；新增逐位字节兼容、截断/非法浮点与有效校验和但未使用侧损坏的原子回滚测试。
+- 显式Release字段负载：64块、每个检查点前后共4MiB、4检查点、五次中位数。六次直接跳转累计跨20条：内存174.236→109.497ms，磁盘后备274.228→174.277ms；单检查点提交内存6.743→5.938ms、磁盘17.187→17.591ms，磁盘写入基本持平。磁盘处于OS热缓存，且只测字段处理，不代表UI、完整像素重采样或物理冷盘速度。
+- 原生液化1、软件Qt液化发布/事务2及直接历史1通过；D3D11液化发布/常驻网格2及直接历史1通过。D3D11事务用例在3955行等待focus模式像素帧修订失败，两次复现；旧build/qt的改动前程序同项同位置也失败，记录为既有问题，不能称该项通过。
+- 四ABI、paint-core/paint-ffi所有目标严格Clippy、fmt、完整Release及Debug应用构建通过。标准输出build/bin/Release/drawverse.exe；ABI1.75/state45不变。
+
+日志：artifacts/liquify-fields-{before,after,core,public,native,clippy,abi}.txt及对应ui/workflow/build日志。未验收完整8K/16K、冷盘或实体持续交互。套索液化、翻转历史、结束编辑焦点及变换首次资源准备按用户新增问题继续处理。

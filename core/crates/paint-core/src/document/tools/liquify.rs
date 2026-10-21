@@ -1,4 +1,6 @@
 use super::*;
+#[path = "liquify_history_codec.rs"]
+mod history_codec;
 const MAX_FIELD_TILES: usize = 8192;
 const MAX_VISITS: usize = 8_000_000;
 type Field = BTreeMap<TileCoord, Arc<Vec<[f32; 2]>>>;
@@ -401,11 +403,7 @@ impl Document {
                     for field in [before.field.get(key), state.field.get(key)] {
                         writer.write_all(&[u8::from(field.is_some())])?;
                         if let Some(field) = field {
-                            for vector in field.iter() {
-                                for value in vector {
-                                    writer.write_all(&value.to_le_bytes())?;
-                                }
-                            }
+                            history_codec::write(writer, field)?;
                         }
                     }
                 }
@@ -541,23 +539,7 @@ impl Document {
                         .map_err(|e| Error::HistoryStorage(e.to_string()))?;
                     let value = match present[0] {
                         0 => None,
-                        1 => {
-                            let mut values = vec![[0.; 2]; 4096];
-                            for vector in &mut values {
-                                for value in vector {
-                                    reader
-                                        .read_exact(&mut bytes)
-                                        .map_err(|e| Error::HistoryStorage(e.to_string()))?;
-                                    *value = f32::from_le_bytes(bytes);
-                                    if !value.is_finite() || value.abs() > 2_000_000. {
-                                        return Err(Error::HistoryStorage(
-                                            "invalid liquify history displacement".into(),
-                                        ));
-                                    }
-                                }
-                            }
-                            Some(Arc::new(values))
-                        }
+                        1 => history_codec::read(reader, side == usize::from(redo))?,
                         _ => {
                             return Err(Error::HistoryStorage(
                                 "invalid liquify history flag".into(),
@@ -740,6 +722,126 @@ mod operator_transaction_tests {
 #[cfg(test)]
 mod history_select_tests {
     use super::*;
+    #[test]
+    fn unused_field_side_is_validated_before_publishing_history() {
+        for redo in [false, true] {
+            for spilled in [false, true] {
+                let mut doc = seed();
+                if redo {
+                    doc.undo_liquify().unwrap();
+                }
+                let pixels = image(&doc);
+                let field = doc.liquify.as_ref().unwrap().field.clone();
+                let revision = doc.revision;
+                let dirty = doc.dirty.clone();
+                let depth = doc.liquify_history_depth();
+                let payload = crate::history_storage::Payload::blob_in(
+                    if spilled { 0 } else { usize::MAX },
+                    doc.storage(),
+                    |writer| {
+                        writer.write_all(&1_u32.to_le_bytes())?;
+                        writer.write_all(&0_u32.to_le_bytes())?;
+                        writer.write_all(&0_u32.to_le_bytes())?;
+                        for side in 0..2 {
+                            writer.write_all(&[1])?;
+                            let mut values = vec![[0.; 2]; 4096];
+                            if side != usize::from(redo) {
+                                values[4095][1] = f32::NAN;
+                            }
+                            history_codec::write(writer, &values)?;
+                        }
+                        Ok(())
+                    },
+                )
+                .unwrap();
+                let history = Arc::make_mut(&mut doc.liquify.as_mut().unwrap().history);
+                let step = if redo {
+                    history.redo.last_mut()
+                } else {
+                    history.undo.back_mut()
+                }
+                .unwrap();
+                Arc::get_mut(step).unwrap().fields = payload;
+                let result = if redo {
+                    doc.redo_liquify()
+                } else {
+                    doc.undo_liquify()
+                };
+                assert!(matches!(result, Err(Error::HistoryStorage(_))));
+                let target = if redo { 3 } else { 2 };
+                assert!(matches!(
+                    doc.select_liquify_history(target),
+                    Err(Error::HistoryStorage(_))
+                ));
+                assert_eq!(image(&doc), pixels);
+                assert_eq!(doc.liquify.as_ref().unwrap().field, field);
+                assert_eq!(doc.revision, revision);
+                assert_eq!(doc.dirty, dirty);
+                assert_eq!(doc.liquify_history_depth(), depth);
+            }
+        }
+    }
+    #[test]
+    #[ignore = "manual Release comparison of liquify session field history"]
+    fn large_liquify_session_field_history_workload() {
+        for spilled in [false, true] {
+            let mut commits = Vec::new();
+            let mut travels = Vec::new();
+            for _ in 0..5 {
+                let mut doc = Document::with_options(
+                    64,
+                    64,
+                    DocumentOptions {
+                        max_history_bytes: if spilled {
+                            2 * TILE_BYTES + 256
+                        } else {
+                            32 * 1024 * 1024
+                        },
+                        max_history_commands: 4,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                doc.begin_liquify().unwrap();
+                for key in 0..64 {
+                    doc.liquify.as_mut().unwrap().field.insert(
+                        TileCoord::from_signed(key, 0),
+                        Arc::new(vec![[0.; 2]; 4096]),
+                    );
+                }
+                let mut elapsed = std::time::Duration::ZERO;
+                for step in 1..=4 {
+                    doc.begin_liquify_stroke().unwrap();
+                    for field in doc.liquify.as_mut().unwrap().field.values_mut() {
+                        *field = Arc::new(vec![[step as f32, -(step as f32)]; 4096]);
+                    }
+                    let start = std::time::Instant::now();
+                    assert!(doc.end_liquify_stroke().unwrap());
+                    elapsed += start.elapsed();
+                }
+                commits.push(elapsed.as_secs_f64() * 1000. / 4.);
+                assert_eq!(
+                    doc.liquify.as_ref().unwrap().history.undo[0]
+                        .fields
+                        .disk_bytes()
+                        > 0,
+                    spilled
+                );
+                let start = std::time::Instant::now();
+                for target in [0, 4, 1, 3, 0, 4] {
+                    assert!(doc.select_liquify_history(target).unwrap());
+                }
+                travels.push(start.elapsed().as_secs_f64() * 1000.);
+                for field in doc.liquify.as_ref().unwrap().field.values() {
+                    assert!(field.iter().all(|vector| *vector == [4., -4.]));
+                }
+                assert_eq!(doc.liquify_history_depth(), Some((4, 0)));
+            }
+            commits.sort_by(f64::total_cmp);
+            travels.sort_by(f64::total_cmp);
+            eprintln!("liquify session fields disk={spilled}: checkpoint median {:.3}ms, six history selections median {:.3}ms", commits[2], travels[2]);
+        }
+    }
     fn seed() -> Document {
         let mut doc = Document::new(64, 64).unwrap();
         let pixels = (0..4096)
