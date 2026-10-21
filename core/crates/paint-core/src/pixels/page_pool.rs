@@ -333,7 +333,7 @@ pub(crate) fn fail_writes_for_test(value: bool) {
     FAIL_WRITES.with(|flag| flag.set(value));
 }
 impl Page {
-    pub fn read(&self) -> Result<Arc<Box<[crate::Pixel]>>> {
+    fn verified_bytes(&self) -> Result<Vec<u8>> {
         let mut bytes = vec![0; self.length];
         {
             let mut disk = self.pool.disk.lock().unwrap_or_else(|e| e.into_inner());
@@ -348,6 +348,13 @@ impl Page {
         if history_storage::hash(history_storage::HASH_START, &bytes) != self.checksum {
             return Err(error("document scratch checksum mismatch"));
         }
+        Ok(bytes)
+    }
+    pub fn verify(&self) -> Result<()> {
+        self.verified_bytes().map(|_| ())
+    }
+    pub fn read(&self) -> Result<Arc<Box<[crate::Pixel]>>> {
+        let bytes = self.verified_bytes()?;
         Ok(Arc::new(
             history_storage::decode_page(&bytes)
                 .map_err(error)?

@@ -4319,6 +4319,19 @@ fn full_image_flip_abi_pixels_single_history_and_descriptor_validation() {
             assert_eq!(info.last_error_status, PAINT_OK);
             assert_eq!(info.undo_depth, 2);
             assert_eq!(info.flags & PAINT_SESSION_TRANSFORM, 0);
+            let mut entry = dto!(PaintHistoryEntry);
+            assert_eq!(
+                paint_session_history_entry(h.core, h.session, info.publication, 2, &mut entry),
+                PAINT_OK
+            );
+            assert_eq!(
+                entry.kind,
+                if kind == PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL {
+                    PAINT_HISTORY_FLIP_HORIZONTAL
+                } else {
+                    PAINT_HISTORY_FLIP_VERTICAL
+                }
+            );
             let flipped = h.pixels(0, h.frame(0, info.revision));
             for y in 0..19 {
                 for x in 0..33 {

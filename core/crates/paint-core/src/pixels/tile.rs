@@ -146,6 +146,22 @@ impl Tile {
             empty,
         })
     }
+    /// Validate immutable backing without making history travel populate or
+    /// churn the pixel LRU. Pages were encoded from validated pixels; their
+    /// checksum covers every encoded byte, including values and run lengths.
+    pub(crate) fn verify_storage(&self) -> Result<()> {
+        let backing = {
+            let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if state.resident.is_some() {
+                return Ok(());
+            }
+            state
+                .backing
+                .clone()
+                .ok_or_else(|| crate::Error::Storage("tile has no backing".into()))?
+        };
+        backing.verify()
+    }
     /// Pin once per tile batch. Never replace an IO failure with transparent data.
     pub fn try_pixels(&self) -> Result<Arc<Box<[Pixel]>>> {
         let (resident, backing, pool) = {

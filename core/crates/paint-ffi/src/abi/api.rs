@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 75;
+pub const PAINT_ABI_MINOR: u32 = 76;
 /// Resolved-dab outline replay and allowOverflow through state45 preparation.
 pub const PAINT_FEATURE_STROKE_REPLAY_OUTLINE: u64 = 9_223_372_036_854_775_808;
 
@@ -826,6 +826,9 @@ pub const PAINT_TRANSFORM_ENABLE_RESIDENT: u32 = 8;
 /// ABI 1.66: atomic full-document reflection, including hidden/locked layers and selection.
 pub const PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL: u32 = 9;
 pub const PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL: u32 = 10;
+/// ABI1.76: distinct reflection history labels, including pure free transforms.
+pub const PAINT_HISTORY_FLIP_HORIZONTAL: u32 = 39;
+pub const PAINT_HISTORY_FLIP_VERTICAL: u32 = 40;
 /// Opt-in CPU geometry / resident GPU presentation; software uses the original entry point.
 pub const PAINT_FEATURE_TRANSFORM_RESIDENT: u64 = 576_460_752_303_423_488;
 #[repr(C)]

@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新翻转历史/冷页恢复：ABI1.76 kind39/40区分水平/垂直，纯自由变换同用；Inline/Paged按身份去重校验冷页checksum而不载入像素LRU，显示再按需读。1024密集低驻留六次跳转核心369→215ms（热OS后备非UI）；Release单元192/公开24/原生2、软件与D3D11各10行Qt、四ABI/Clippy/fmt/头/新路径Release通过。见history-storage/history-labels验收；未称全量，耗时mix未验，套索液化及实体/冷盘仍待。
+
 - 最新变换首拖CPU准备：deferred BEGIN/ENABLE确认前Actor合成真实移动源2048代理，会话双源最多两套三图，历史往返复用、结束清空。Actor1/核心14/软件与D3D11各6行Qt/四ABI/Clippy/fmt/新路径Release通过，见transform-resident-preview末节。ABI1.75/state45不变；Qt首次纹理上传及复杂回退/实体时延仍待，不称全部资源预热。
 
 - 最新编辑结束焦点修复：CanvasPane保留恢复请求至busy/可见/宿主激活满足，不再跳过未激活窗口。真实变换/液化、确定/取消及主/浮文档8组合，结束不点击直接E/B/M；软件/D3D11各9行含欢迎生命周期通过，完整新路径Release更新。见transform-resident-preview验收末节；ABI1.75/state45保持，其他新增问题继续。

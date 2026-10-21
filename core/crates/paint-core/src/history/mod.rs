@@ -46,6 +46,8 @@ pub enum HistoryAction {
     PlaceImage = 36,
     Transform = 37,
     Rasterize = 38,
+    FlipHorizontal = 39,
+    FlipVertical = 40,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }
@@ -296,6 +298,14 @@ impl Command {
         }
     }
     fn verify_tiles(&self) -> Result<()> {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut verify = |tile: &Arc<Tile>| {
+            if seen.insert(tile.id) {
+                tile.verify_storage()
+            } else {
+                Ok(())
+            }
+        };
         match self {
             Self::LayerEdit { before, after, .. } => {
                 for layer in before.iter().chain(after) {
@@ -304,7 +314,7 @@ impl Command {
                         .values()
                         .chain(layer.placed.iter().flat_map(|p| p.source.tiles.values()))
                     {
-                        drop(tile.try_pixels()?);
+                        verify(tile)?;
                     }
                 }
             }
@@ -320,14 +330,14 @@ impl Command {
                         .values()
                         .chain(layer.placed.iter().flat_map(|p| p.source.tiles.values()))
                     {
-                        drop(tile.try_pixels()?);
+                        verify(tile)?;
                     }
                 }
             }
             Self::Stroke { changes, .. } => {
                 for change in changes {
                     for tile in change.before.iter().chain(&change.after) {
-                        drop(tile.try_pixels()?);
+                        verify(tile)?;
                     }
                 }
             }
@@ -337,7 +347,7 @@ impl Command {
                     .values()
                     .chain(layer.placed.iter().flat_map(|p| p.source.tiles.values()))
                 {
-                    drop(tile.try_pixels()?);
+                    verify(tile)?;
                 }
             }
             Self::Properties { .. } | Self::Appearance { .. } => {}
@@ -470,6 +480,41 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn history_verifies_shared_cold_pages_once_without_loading_or_evicting_pixels() {
+        let pool = crate::page_pool::PagePool::new(1, 1 << 20);
+        let cold = Arc::new(Tile::default());
+        pool.attach(&cold).unwrap();
+        let hot = Arc::new(Tile::from_pixels(vec![crate::Pixel::WHITE; 4096]).unwrap());
+        pool.attach(&hot).unwrap();
+        let mut layer = Layer::new(1, "shared".into());
+        layer.tiles.insert(TileCoord { x: 0, y: 0 }, cold.clone());
+        layer.tiles.insert(TileCoord { x: 1, y: 0 }, hot.clone());
+        let command = Command::LayerEdit {
+            before: vec![layer.clone()],
+            after: vec![layer],
+            selection: None,
+        };
+        let stored = StoredCommand::prepare_result_in(&command, 8192, &pool).unwrap();
+        let before = pool.stats();
+        stored.materialize_in(Some(&pool)).unwrap();
+        let after = pool.stats();
+        assert_eq!(after.resident_tiles, before.resident_tiles);
+        assert_eq!(
+            after.page_reads,
+            before.page_reads + 1,
+            "shared before/after page verified only once"
+        );
+        assert_eq!(after.page_writes, before.page_writes);
+        // If verification had loaded the cold page, accessing it now would not
+        // require another read, and the original hot tile would be evicted.
+        cold.try_pixels().unwrap();
+        assert_eq!(pool.stats().page_reads, after.page_reads + 1);
+        drop(hot.try_pixels().unwrap());
+        pool.trim().unwrap();
+        pool.corrupt_for_test();
+        assert!(stored.materialize_in(Some(&pool)).is_err());
+    }
     #[test]
     fn result_references_require_managed_tiles_and_metadata_budget() {
         let pool = crate::page_pool::PagePool::new(4, 1 << 20);

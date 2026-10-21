@@ -313,12 +313,13 @@ impl Document {
 mod tests {
     use super::*;
     #[test]
-    fn history_failure_is_atomic() {
+    fn storage_failure_is_atomic() {
         let mut doc = Document::with_options(
             128,
             128,
             DocumentOptions {
                 max_history_bytes: 2 * TILE_BYTES + 256,
+                max_resident_tiles: 1,
                 ..DocumentOptions::default()
             },
         )
@@ -333,9 +334,9 @@ mod tests {
             contiguous: true,
             all_layers: false,
         };
-        crate::history_storage::fail_writes_for_test(true);
+        crate::page_pool::fail_writes_for_test(true);
         let result = doc.bucket_fill(options);
-        crate::history_storage::fail_writes_for_test(false);
+        crate::page_pool::fail_writes_for_test(false);
         assert!(result.is_err());
         assert_eq!(doc.revision(), 0);
         assert_eq!(doc.history_depth(), (0, 0));

@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 75
+#define PAINT_ABI_MINOR 76
 
 #define PAINT_ABI_PATCH 0
 
@@ -319,6 +319,13 @@
 #define PAINT_HISTORY_ELLIPSE_SELECTION 20
 
 #define PAINT_HISTORY_ERASER 2
+
+/**
+ * ABI1.76: distinct reflection history labels, including pure free transforms.
+ */
+#define PAINT_HISTORY_FLIP_HORIZONTAL 39
+
+#define PAINT_HISTORY_FLIP_VERTICAL 40
 
 #define PAINT_HISTORY_GROUP 14
 

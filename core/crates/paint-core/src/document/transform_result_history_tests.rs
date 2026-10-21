@@ -41,6 +41,61 @@ fn same_tiles(a: &BTreeMap<TileCoord, Arc<Tile>>, b: &BTreeMap<TileCoord, Arc<Ti
     }
 }
 #[test]
+#[ignore = "manual Release comparison of cold flip history"]
+fn cold_flip_history_selection_benchmark() {
+    use std::time::Instant;
+    let mut doc = Document::with_options(
+        1024,
+        1024,
+        DocumentOptions {
+            max_resident_tiles: 16,
+            max_history_bytes: 1024 * 1024,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    for y in 0..16 {
+        for x in 0..16 {
+            let tile = Arc::new(
+                Tile::from_pixels(
+                    (0..4096)
+                        .map(|i| {
+                            Pixel::from_straight([
+                                ((i * 17 + x * 31 + y * 71) % 4096) as f32 / 4096.,
+                                (i % 641) as f32 / 641.,
+                                0.3,
+                                1.,
+                            ])
+                            .unwrap()
+                        })
+                        .collect(),
+                )
+                .unwrap(),
+            );
+            doc.pool.attach(&tile).unwrap();
+            doc.layers[0].tiles.insert(TileCoord { x, y }, tile);
+        }
+    }
+    doc.flip_image(true).unwrap();
+    let mut times = Vec::new();
+    for _ in 0..5 {
+        let start = Instant::now();
+        for target in [0, 1, 0, 1, 0, 1] {
+            doc.select_history(target).unwrap();
+        }
+        times.push(start.elapsed().as_secs_f64() * 1000.);
+    }
+    times.sort_by(f64::total_cmp);
+    eprintln!(
+        "cold flip six history selections median {:.3}ms, resident {}, page reads {}",
+        times[2],
+        doc.storage_stats().resident_tiles,
+        doc.storage_stats().page_reads
+    );
+    assert_eq!(doc.history_depth(), (1, 0));
+    assert!(doc.storage_stats().resident_tiles <= 16);
+}
+#[test]
 fn completed_transform_flip_and_bucket_reuse_results_and_preserve_selection() {
     for kind in 0..3 {
         for resident in [1, 128] {

@@ -17,6 +17,27 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void reflectionHistoryHasSpecificLabelsAndRestoresPixels_data() {
+        QTest::addColumn<bool>("horizontal");QTest::addColumn<bool>("transform");
+        for(bool horizontal:{false,true})for(bool transform:{false,true})QTest::newRow(qPrintable(QString("%1-%2").arg(transform?"transform":"image",horizontal?"horizontal":"vertical")))<<horizontal<<transform;
+    }
+    void reflectionHistoryHasSpecificLabelsAndRestoresPixels() {
+        QFETCH(bool,horizontal);QFETCH(bool,transform);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("flip.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(128,96);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());client.setBrushColor(Qt::red);client.setBrushRadius(12);QVERIFY(client.beginStroke({{30,30},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());client.setBrushColor(Qt::blue);QVERIFY(client.beginStroke({{70,50},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->setClient(nullptr);
+        const auto ready=[&]{client.requestViewport(0,{0,0,128,96},{128,96});return client.frameRevision()>=client.revision() && client.frame().size()==QSize(128,96);};QTRY_VERIFY(ready());const auto before=client.frame();const auto depth=client.undoDepth();
+        const auto label=horizontal?QStringLiteral("水平翻转"):QStringLiteral("垂直翻转");
+        if(transform){
+            QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy());auto points=client.transformPoints();const auto center=(points[0].toPointF()+points[15].toPointF())*.5;
+            for(auto &point:points){auto p=point.toPointF();if(horizontal)p.setX(2*center.x()-p.x());else p.setY(2*center.y()-p.y());point=p;}
+            QVERIFY(client.updateTransform(points,false,client.transformInterpolation()));QVERIFY(client.checkpointTransform());QTRY_COMPARE(client.undoDepth(),1);QTRY_COMPARE(client.historyEntries().last().toMap().value("title").toString(),label);
+            QVERIFY(client.selectHistory(0));QTRY_COMPARE(client.undoDepth(),0);QTRY_VERIFY(!client.transformBusy());QVERIFY(client.selectHistory(1));QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.transformBusy());QVERIFY(client.finishTransform(true));QTRY_VERIFY(!client.transformActive()&&!client.transformBusy());
+        }else{auto *action=window->findChild<QObject*>(horizontal?"canvasFlipHorizontalAction":"canvasFlipVerticalAction");QVERIFY(action);QVERIFY(QMetaObject::invokeMethod(action,"trigger"));}
+        QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_COMPARE(client.historyEntries().last().toMap().value("title").toString(),label);QTRY_VERIFY(ready());const auto after=client.frame();QVERIFY(after!=before);
+        for(int i=0;i<3;++i){QVERIFY(client.selectHistory(depth));QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(ready());QCOMPARE(client.frame(),before);QVERIFY(client.selectHistory(depth+1));QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(ready());QCOMPARE(client.frame(),after);}
+        QVERIFY(client.lastError().isEmpty());auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void selected4kTransformKeepsResidentTexturesAndRestoresHistory_data() {
         QTest::addColumn<bool>("warp");QTest::addColumn<int>("context");QTest::newRow("affine")<<false<<0;QTest::newRow("warp")<<true<<0;QTest::newRow("nested-normal-affine")<<false<<1;QTest::newRow("nested-normal-warp")<<true<<1;QTest::newRow("nested-pass-warp")<<true<<2;
     }

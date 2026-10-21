@@ -117,7 +117,11 @@ impl Document {
                 after: after.clone(),
                 selection: Some((self.selection.clone(), selection.clone())),
             },
-            crate::HistoryAction::Transform,
+            if horizontal {
+                crate::HistoryAction::FlipHorizontal
+            } else {
+                crate::HistoryAction::FlipVertical
+            },
         )?;
         self.layers = after;
         self.selection = selection;
@@ -225,6 +229,14 @@ mod tests {
             let depth = d.history_depth();
             let active = d.active_layer();
             d.flip_image(horizontal).unwrap();
+            assert_eq!(
+                *d.history_actions().last().unwrap(),
+                if horizontal {
+                    crate::HistoryAction::FlipHorizontal
+                } else {
+                    crate::HistoryAction::FlipVertical
+                }
+            );
             assert_eq!(d.history_depth().0, depth.0 + 1);
             assert_eq!(d.active_layer(), active);
             for y in 0..d.height {

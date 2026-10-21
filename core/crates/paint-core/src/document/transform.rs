@@ -18,6 +18,23 @@ pub struct TransformGeometry {
     pub interpolation: u32,
 }
 impl TransformGeometry {
+    fn history_action(&self, after: &Self) -> crate::HistoryAction {
+        if self != after && self.warp == after.warp {
+            for (axis, action) in [
+                (0, crate::HistoryAction::FlipHorizontal),
+                (1, crate::HistoryAction::FlipVertical),
+            ] {
+                let sum = self.points[0][axis] + after.points[0][axis];
+                if self.points.iter().zip(&after.points).all(|(a, b)| {
+                    (a[axis] + b[axis] - sum).abs() < 1e-7
+                        && (a[1 - axis] - b[1 - axis]).abs() < 1e-7
+                }) {
+                    return action;
+                }
+            }
+        }
+        crate::HistoryAction::Transform
+    }
     pub fn rectangle(x: f64, y: f64, w: f64, h: f64) -> Self {
         Self {
             points: std::array::from_fn(|i| {
@@ -377,15 +394,22 @@ impl Document {
     }
     pub fn transform_history_actions(&self) -> Option<Vec<crate::HistoryAction>> {
         self.transform.as_ref().map(|s| {
+            let mut states = s
+                .undo
+                .iter()
+                .chain(std::iter::once(&s.checkpoint))
+                .chain(s.redo.iter().rev());
+            let mut previous = states.next().expect("current checkpoint");
             std::iter::once(if s.evicted {
                 crate::HistoryAction::Truncated
             } else {
                 crate::HistoryAction::Initial
             })
-            .chain(std::iter::repeat_n(
-                crate::HistoryAction::Transform,
-                s.undo.len() + s.redo.len(),
-            ))
+            .chain(states.map(|next| {
+                let action = previous.history_action(next);
+                previous = next;
+                action
+            }))
             .collect()
         })
     }
@@ -1187,7 +1211,7 @@ impl Document {
                             )
                             .collect(),
                     },
-                    crate::HistoryAction::Transform,
+                    s.initial.history_action(&s.current),
                 )
             };
             self.progress_stage(ComputationPhase::History, 0);

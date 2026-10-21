@@ -1047,6 +1047,8 @@ impl Document {
             action,
             crate::HistoryAction::Liquify
                 | crate::HistoryAction::Transform
+                | crate::HistoryAction::FlipHorizontal
+                | crate::HistoryAction::FlipVertical
                 | crate::HistoryAction::Rasterize
                 | crate::HistoryAction::Bucket
         ) {
