@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新三工具独立笔刷选择：brush-library-switch-latency末节；三个参数隔离档均独立记忆刷/擦/涂抹选择，切换隔离级别保留；Qt toolIsolation v2固定三选择ID，v1共享档迁移与完整隔离保持，选择补丁/接收方工具投影同步。新三档及输入/编辑合并软件/D3D11各12行、共享八项分别通过，完整Release/头更新build/bin/Release。ABI1.78/state45/VBR保持；I1端到端延迟、实体压感/全部停刷与焦点、I5/P1/H1/T2仍待。
+
 - 最新隔离工具预览复用：brush-library-switch-latency末节；直接比较实际预览输入替代每预设两次JSON导出，目标缓存图保留且不同形状退役旧token，只增量更新预览行。512项完整隔离30切换207.502→13.463ms（仅内存模型，非端到端），软件/D3D11新两档及原五项各通过，完整Release/头更新build/bin/Release。ABI1.78/state45保持；三工具所有隔离档独立所选笔刷、快照编码与P1/H1/T2仍待。
 
 - 最新 WinTab 输入：remaining-fixes末节；窗口创建前通过 Qt 配套 GuiPrivate 原生接口启用 WinTab，自动以实际 enabled 判定并后备 Windows Ink；偏好新增三档/当前后端，重启生效。真实 native 初始化本机 wintab，六驱动组合/持久化/QML及编辑回归软件/D3D11各7行、完整Release/头/真实应用预览通过。build/bin/Release，ABI1.78/state45保持；实体关闭Ink连续压力/倾斜/翻面/重复输入尚待，I1/I3/I5/I6和P1/H1/T2继续。

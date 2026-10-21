@@ -11,6 +11,8 @@ void BrushLibrary::captureToolProfile() {
 
 void BrushLibrary::setToolIsolation(int mode) {
     if(mode<0 || mode>2 || mode==m_toolIsolation)return;
+    m_toolProfiles[m_toolContext].selected=m_selected;
+    std::array<QString,3> selections;for(int i=0;i<3;++i)selections[i]=m_toolProfiles[i].selected;
     m_toolIsolation=mode;
     m_toolProfiles={};
     if(mode) {
@@ -18,18 +20,27 @@ void BrushLibrary::setToolIsolation(int mode) {
         const auto initial=m_toolProfiles[m_toolContext];
         for(auto &profile:m_toolProfiles)profile=initial;
     }
+    for(int i=0;i<3;++i)m_toolProfiles[i].selected=selections[i];
     changed();
 }
 
 void BrushLibrary::setToolContext(int tool,bool persist) {
     if(tool<0 || tool>2 || tool==m_toolContext)return;
     if(m_toolIsolation)captureToolProfile();
+    else m_toolProfiles[m_toolContext].selected=m_selected;
     m_toolContext=tool;
     if(!m_toolIsolation) {
         m_snapshotCache.clear();
         if(!m_snapshotObjectCache.isEmpty()) {
             auto isolation=m_snapshotObjectCache.value("toolIsolation").toObject();isolation["context"]=tool;
             m_snapshotObjectCache["toolIsolation"]=isolation;
+        }
+        const auto selected=index(m_toolProfiles[tool].selected)>=0?m_toolProfiles[tool].selected:QStringLiteral("round-pressure");
+        if(m_selected!=selected){
+            m_selected=selected;m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",m_selected}}};
+            emit selectionChanged();
+            if(persist)selectedSettingsChanged();
+            else {m_catalogCache.clear();emit settingsChanged();emit selectedPreviewChanged();}
         }
         return;
     }
@@ -62,9 +73,9 @@ void BrushLibrary::setToolContext(int tool,bool persist) {
             p=std::move(next);
         }
     }
-    if(m_toolIsolation==2) {
+    {
         m_selected=index(profile.selected)>=0?profile.selected:QStringLiteral("round-pressure");
-        m_writeBlend=profile.writeBlend;
+        if(m_toolIsolation==2)m_writeBlend=profile.writeBlend;
         m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",m_selected}}};
         emit selectionChanged();
     }
@@ -93,15 +104,20 @@ QJsonObject BrushLibrary::toolIsolationState() const {
         if(!editors.isEmpty())state["dualEditors"]=editors;
         profiles.append(state);
     }
-    return {{"version",1},{"mode",m_toolIsolation},{"context",m_toolContext},{"profiles",profiles}};
+    QJsonArray selections;
+    for(int tool=0;tool<3;++tool){auto id=tool==m_toolContext?m_selected:m_toolProfiles[tool].selected;selections.append(index(id)>=0?id:QStringLiteral("round-pressure"));}
+    return {{"version",2},{"mode",m_toolIsolation},{"context",m_toolContext},{"profiles",profiles},{"selections",selections}};
 }
 
-bool BrushLibrary::parseToolIsolation(const QJsonValue &value,int &mode,int &context,std::array<ToolProfile,3> &profiles,RestoreRows &decoded) {
+bool BrushLibrary::parseToolIsolation(const QJsonValue &value,int &mode,int &context,std::array<ToolProfile,3> &profiles,RestoreRows &decoded,const QSet<QString> &ids,const QString &selected) {
     mode=0;context=0;
+    for(auto &profile:profiles)profile.selected=selected;
     if(value.isUndefined())return true;
     if(!value.isObject())return false;
     const auto state=value.toObject();
-    if(state.size()!=4 || state.value("version")!=QJsonValue(1) || !state.value("profiles").isArray())return false;
+    const bool legacy=state.value("version")==QJsonValue(1);
+    if((!legacy && state.value("version")!=QJsonValue(2)) || state.size()!=(legacy?4:5) || !state.value("profiles").isArray())return false;
+    for(auto it=state.begin();it!=state.end();++it)if(it.key()!="version" && it.key()!="mode" && it.key()!="context" && it.key()!="profiles" && (legacy || it.key()!="selections"))return false;
     const auto m=state.value("mode"),c=state.value("context");
     if(!m.isDouble() || !c.isDouble() || m.toDouble()!=m.toInt(-1) || c.toDouble()!=c.toInt(-1) || m.toInt()<0 || m.toInt()>2 || c.toInt()<0 || c.toInt()>2)return false;
     mode=m.toInt();context=c.toInt();const auto rows=state.value("profiles").toArray();
@@ -117,5 +133,11 @@ bool BrushLibrary::parseToolIsolation(const QJsonValue &value,int &mode,int &con
         auto &profile=profiles[tool];profile.selected=validator.m_selected;profile.writeBlend=validator.m_writeBlend;
         for(const auto &p:validator.m_presets)profile.presets.insert(p.id,p);
     }
+    if(!legacy){
+        if(!state.value("selections").isArray())return false;
+        const auto selections=state.value("selections").toArray();if(selections.size()!=3)return false;
+        for(int tool=0;tool<3;++tool){if(!selections[tool].isString() || !ids.contains(selections[tool].toString()))return false;profiles[tool].selected=selections[tool].toString();}
+    }else if(mode<2){for(auto &profile:profiles)profile.selected=selected;}
+    profiles[context].selected=selected;
     return true;
 }

@@ -220,6 +220,25 @@ private slots:
         client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage redone;QTRY_VERIFY(!(redone=capture()).isNull() && white(at(redone,{100,1080})) && white(at(redone,{2000,1080})));
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void eachBrushToolRemembersSelectionInEveryIsolationMode_data() {
+        QTest::addColumn<int>("mode");for(int mode=0;mode<3;++mode)QTest::newRow(qPrintable(QString::number(mode)))<<mode;
+    }
+    void eachBrushToolRemembersSelectionInEveryIsolationMode() {
+        QFETCH(int,mode);QTemporaryDir temp;const auto path=temp.filePath("tool-selections.ini");
+        const QStringList ids{"round-fine","round-wide","round-translucent"};
+        {
+            PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();library->setToolIsolation(mode);
+            client.activateBrush();QVERIFY(library->select(ids[0]));client.activateEraser();QVERIFY(library->select(ids[1]));client.activateSmudge();QVERIFY(library->select(ids[2]));
+            for(int i=0;i<3;++i){client.activateBrush();QCOMPARE(library->selectedId(),ids[0]);client.activateEraser();QCOMPARE(library->selectedId(),ids[1]);client.activateSmudge();QCOMPARE(library->selectedId(),ids[2]);}
+            const auto stored=library->snapshot();BrushLibrary restored;QVERIFY(restored.restore(stored));for(int tool=0;tool<3;++tool){restored.setToolContext(tool);QCOMPARE(restored.selectedId(),ids[tool]);}
+            // Isolation governs parameters, while changing it preserves each choice.
+            for(int next=0;next<3;++next){restored.setToolIsolation(next);for(int tool=0;tool<3;++tool){restored.setToolContext(tool);QCOMPARE(restored.selectedId(),ids[tool]);}}
+            const auto before=library->snapshot();auto invalid=QJsonDocument::fromJson(before).object();auto scopes=invalid.value("toolIsolation").toObject();scopes["selections"]=QJsonArray{"missing","round-wide","round-translucent"};invalid["toolIsolation"]=scopes;QVERIFY(!library->restore(QJsonDocument(invalid).toJson()));QCOMPARE(library->snapshot(),before);
+            auto legacy=QJsonDocument::fromJson(before).object();scopes=legacy.value("toolIsolation").toObject();scopes["version"]=1;scopes.remove("selections");legacy["toolIsolation"]=scopes;BrushLibrary migrated;QVERIFY(migrated.restore(QJsonDocument(legacy).toJson()));if(mode<2)for(int tool=0;tool<3;++tool){migrated.setToolContext(tool);QCOMPARE(migrated.selectedId(),ids[2]);}
+            library->flushPersistence();QTRY_VERIFY(!library->persistencePending());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+        }
+        PaintCoreClient reopened(nullptr,path);QTRY_VERIFY(reopened.ready() && reopened.brushLibraryReady());reopened.activateBrush();QCOMPARE(reopened.brushLibrary()->selectedId(),ids[0]);reopened.activateEraser();QCOMPARE(reopened.brushLibrary()->selectedId(),ids[1]);reopened.activateSmudge();QCOMPARE(reopened.brushLibrary()->selectedId(),ids[2]);QVERIFY(reopened.lastError().isEmpty());QSignalSpy stopped(&reopened,&PaintCoreClient::stopped);reopened.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void isolatedToolSwitchRetainsPreviewJobsWithoutRebuildingCatalog_data() {
         QTest::addColumn<int>("mode");QTest::newRow("size-opacity-flow")<<1;QTest::newRow("all-parameters")<<2;
     }

@@ -172,14 +172,14 @@ Dialog {
                             ComboBox {
                                 objectName: "brushToolIsolation"
                                 Layout.fillWidth: true
-                                model: ["不隔离（橡皮、涂抹继承画笔）", "仅大小、不透明度、流量", "隔离（三个工具各自设置）"]
+                                model: ["不隔离（共用笔刷参数）", "仅大小、不透明度、流量", "隔离（三个工具各自设置）"]
                                 currentIndex: PaintClient.brushLibrary.toolIsolation
                                 enabled: !PaintClient.drawing && PaintClient.brushLibraryReady
                                 onActivated: PaintClient.brushLibrary.toolIsolation = currentIndex
                             }
                             Label {
                                 Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.muted; font.pixelSize: 8
-                                text: "切换隔离级别时，以当前参数初始化三套设置。笔刷名称、分组和资源库保持共用。设置自动保存。"
+                                text: "切换隔离级别时，以当前参数初始化三套设置。三个工具始终分别记住所选笔刷。笔刷名称、分组和资源库保持共用。设置自动保存。"
                             }
                         }
                     }

@@ -474,7 +474,7 @@ private:
     static QJsonObject presetRow(const Preset &preset,int &version);
     struct ToolProfile {QHash<QString,Preset> presets;QString selected="round-pressure";int writeBlend=0;};
     QJsonObject toolIsolationState() const;
-    static bool parseToolIsolation(const QJsonValue &value,int &mode,int &context,std::array<ToolProfile,3> &profiles,RestoreRows &decoded);
+    static bool parseToolIsolation(const QJsonValue &value,int &mode,int &context,std::array<ToolProfile,3> &profiles,RestoreRows &decoded,const QSet<QString> &ids,const QString &selected);
     void captureToolProfile();
     int m_toolIsolation=0,m_toolContext=0;
     std::array<ToolProfile,3> m_toolProfiles;

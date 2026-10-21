@@ -1104,7 +1104,9 @@ QJsonObject BrushLibrary::snapshotObject() const {
         auto &root=m_snapshotObjectCache;root["selected"]=m_selected;
         auto reset=root.value("resetState").toObject();reset["selected"]=m_selected;root["resetState"]=reset;
         auto isolation=root.value("toolIsolation").toObject();auto profiles=isolation.value("profiles").toArray();
-        if(m_toolIsolation && m_toolContext<profiles.size()){auto profile=profiles[m_toolContext].toObject();profile["selected"]=m_selected;profiles[m_toolContext]=profile;isolation["profiles"]=profiles;root["toolIsolation"]=isolation;}
+        if(m_toolIsolation && m_toolContext<profiles.size()){auto profile=profiles[m_toolContext].toObject();profile["selected"]=m_selected;profiles[m_toolContext]=profile;isolation["profiles"]=profiles;}
+        QJsonArray selections;for(int tool=0;tool<3;++tool){auto id=tool==m_toolContext?m_selected:m_toolProfiles[tool].selected;selections.append(index(id)>=0?id:QStringLiteral("round-pressure"));}
+        isolation["context"]=m_toolContext;isolation["selections"]=selections;root["toolIsolation"]=isolation;
         return root;
     }
     QJsonArray rows,baselines;QJsonObject editors,resetEditors;int version=2,resetVersion=2;
@@ -1533,8 +1535,9 @@ bool BrushLibrary::restoreSharedSelection(const BrushLibrary &source) {
         // Comparing every profile below detects real edits in any tool, while
         // retaining the receiver's already-applied executing parameters.
         for(const auto &key:{"version","presets","brushTool"})incoming[key]=current.value(key);
-        if(m_toolIsolation==2)incoming["selected"]=isolation.value("profiles").toArray()[m_toolContext].toObject().value("selected");
     }
+    incoming["selected"]=isolation.value("selections").toArray()[m_toolContext];
+    auto reset=incoming.value("resetState").toObject();reset["selected"]=incoming.value("selected");incoming["resetState"]=reset;
     return restoreSelectionOnly(incoming,false);
 }
 bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSelection) {
@@ -1559,11 +1562,15 @@ bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSel
         if(!id.isString() || index(id.toString())<0)return false;
         auto profile=profiles[i].toObject();profile["selected"]=id;profiles[i]=profile;
     }
-    isolation["profiles"]=profiles;expected["toolIsolation"]=isolation;
+    const auto selections=root.value("toolIsolation").toObject().value("selections").toArray();
+    if(selections.size()!=3)return false;
+    for(const auto &id:selections)if(!id.isString() || index(id.toString())<0)return false;
+    if(selections[m_toolContext]!=selected)return false;
+    isolation["selections"]=selections;isolation["profiles"]=profiles;expected["toolIsolation"]=isolation;
     if(expected!=root)return false;
     const bool changed=m_selected!=selected.toString();
     m_selected=selected.toString();
-    for(int i=0;i<profiles.size();++i)m_toolProfiles[i].selected=profiles[i].toObject().value("selected").toString();
+    for(int i=0;i<3;++i)m_toolProfiles[i].selected=selections[i].toString();
     const auto items=preserveSelection?m_selectedItems:QJsonArray{QJsonObject{{"kind","preset"},{"id",m_selected}}};
     const bool selectionChangedValue=items!=m_selectedItems;m_selectedItems=items;
     m_snapshotObjectCache=root;m_snapshotCache.clear();m_catalogCache.clear();
@@ -1767,7 +1774,7 @@ bool BrushLibrary::restoreObject(const QJsonObject &root,bool preserveSelection,
     }
     for(auto it=baselines.begin();it!=baselines.end();)if(!seen.contains(it.key()))it=baselines.erase(it);else ++it;
     int isolation=0,context=0;std::array<ToolProfile,3> profiles;
-    if(!parseToolIsolation(root.value("toolIsolation"),isolation,context,profiles,decoded))return false;
+    if(!parseToolIsolation(root.value("toolIsolation"),isolation,context,profiles,decoded,seen,selected))return false;
     m_resetPresets=baselines;
     m_toolIsolation=isolation;m_toolContext=context;m_toolProfiles=std::move(profiles);
     reusePreviews(restored);

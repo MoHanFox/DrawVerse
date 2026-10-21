@@ -131,3 +131,10 @@ preparePreferences 在 BackendWorker 校验并预编码完整配置，GUI 仅应
 基线新测试真实失败：已有主体缓存在切换到其他形状再切回后丢失。首版修复仍失败，原因是相同形状的空当前图覆盖目标缓存；已改为优先非空有效图。最终两档通过并保留原参数隔离、目标未缓存时请求新图的语义。
 
 新增 `isolatedToolSwitchRetainsPreviewJobsWithoutRebuildingCatalog` 软件4行/D3D11含输入批次9行；原参数隔离、完整恢复/失败原子性、真实客户端绘画/橡皮像素与设置重开、512项共享/跨工具同步五项在软件/D3D11各7行通过，无QML警告。日志 `artifacts/isolation-switch-final-*.txt`。完整Release/生成头通过 `artifacts/isolation-switch-final-build.txt`，产物 `build/bin/Release/drawverse.exe`；ABI1.78/state45不变。工具独立所选笔刷、首次资源、快照编码与实体持续手感未完成。
+
+## 三工具独立选择与旧偏好迁移（2026-10-21）
+
+- 新 `eachBrushToolRemembersSelectionInEveryIsolationMode` 三档，真实PaintCoreClient刷/擦/涂抹各选不同预设、反复工具切换、完整snapshot恢复、跨隔离级别保留、缺失ID拒绝且原状态不变、旧version1迁移、落盘关闭和重新打开后逐工具核对。
+- 既有 mode1 用例按新需求改为橡皮保留自己的压力圆笔（radius30），不再继承画笔选择的细线圆笔；既有512项选择快照字节对照增加三项身份补丁，目录/参数数组保持精确对照。未删除像素、隔离、失败原子性或同步断言。
+- 软件与D3D11本轮输入/编辑/隔离合并批次各12行通过；原七项共享/参数/真实客户端像素与持久化回归软件9行，原真实跨文档单独3行；D3D11合并八项10行通过，无QML警告。日志 `artifacts/tool-selection-{final-software,d3d11,shared-software,shared-d3d11,crossdoc-software}.txt`。
+- 完整Release和生成头构建 `artifacts/tool-selection-release.txt` 通过，产物 `build/bin/Release/drawverse.exe`。无Rust/ABI/state/VBR修改；仅Qt toolIsolation子结构version2。新独立选择功能已完成，未据此宣称端到端切换延迟、实体压感、所有停刷原因、P1/H1/T2或选区Delete/Copy已完成。

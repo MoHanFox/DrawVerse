@@ -621,7 +621,7 @@ Main {
             qInfo()<<"512 preset cached selection+snapshots isolation"<<isolation<<"20 switches us"<<timer.nsecsElapsed()/1000;
             QCOMPARE(presets.size(),0);QCOMPARE(catalogs.size(),0);
             auto expected=original;expected["selected"]=library.selectedId();auto reset=expected.value("resetState").toObject();reset["selected"]=library.selectedId();expected["resetState"]=reset;
-            if(isolation){auto scopes=expected.value("toolIsolation").toObject();auto profiles=scopes.value("profiles").toArray();auto profile=profiles[0].toObject();profile["selected"]=library.selectedId();profiles[0]=profile;scopes["profiles"]=profiles;expected["toolIsolation"]=scopes;}
+            {auto scopes=expected.value("toolIsolation").toObject();auto selections=scopes.value("selections").toArray();selections[0]=library.selectedId();scopes["selections"]=selections;if(isolation){auto profiles=scopes.value("profiles").toArray();auto profile=profiles[0].toObject();profile["selected"]=library.selectedId();profiles[0]=profile;scopes["profiles"]=profiles;}expected["toolIsolation"]=scopes;}
             QCOMPARE(library.snapshot(),QJsonDocument(expected).toJson(QJsonDocument::Compact));auto expectedExecution=execution;expectedExecution["selected"]=library.selectedId();QCOMPARE(QJsonDocument::fromJson(library.catalogSnapshot()).object(),expectedExecution);
             BrushLibrary restored;QVERIFY(restored.restore(library.snapshot()));QCOMPARE(restored.selectedId(),library.selectedId());QCOMPARE(restored.toolIsolation(),isolation);
             library.setRadius(31);const auto edited=QJsonDocument::fromJson(library.catalogSnapshot()).object().value("presets").toArray();bool found=false;for(const auto &value:edited){const auto row=value.toObject();if(row.value("id").toString()==library.selectedId()){QCOMPARE(row.value("radius").toDouble(),31.);found=true;}}QVERIFY(found);
@@ -835,7 +835,7 @@ Flickable {objectName:"outer";width:300;height:380;contentWidth:width;contentHei
         b.setRadius(30);b.setOpacity(.4);b.setFlow(.3);b.setSpacing(.6);
         b.setToolContext(2);QCOMPARE(b.radius(),11.);b.setRadius(40);
         b.setToolContext(0);QCOMPARE(b.radius(),20.);QCOMPARE(b.opacity(),.6);QCOMPARE(b.flow(),.8);QCOMPARE(b.spacing(),.6);
-        QVERIFY(b.select("round-fine"));b.setRadius(7);b.setEraser(true);QCOMPARE(b.selectedId(),QString("round-fine"));QCOMPARE(b.radius(),3.);
+        QVERIFY(b.select("round-fine"));b.setRadius(7);b.setEraser(true);QCOMPARE(b.selectedId(),QString("round-pressure"));QCOMPARE(b.radius(),30.);
         b.setToolContext(0);QCOMPARE(b.radius(),7.);QVERIFY(b.select("round-pressure"));b.setHardness(.25);
         b.setToolIsolation(2);b.setEraser(true);QCOMPARE(b.radius(),20.);b.setRadius(31);b.setHardness(.9);b.setWriteBlend(8);QVERIFY(b.select("round-fine"));
         b.setToolContext(2);QCOMPARE(b.selectedId(),QString("round-pressure"));QCOMPARE(b.radius(),20.);QCOMPARE(b.hardness(),.25);b.setRadius(42);
