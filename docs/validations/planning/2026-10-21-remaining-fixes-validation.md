@@ -60,3 +60,8 @@ PanelContent异步创建LayersPanel期间，自定义属性尚未全部就绪；
 ## U5：隐藏窗口孵化和浮窗透明 surface
 
 PanelContent 检查真实窗口可见与客户端关闭状态；卸载仍在 Loading 的内容时先完成已启动的 deferred 控件，再卸载。LayersPanel 自身完成后才填充子委托，浮动列展开/折叠保持透明 surface。软件及D3D11的欢迎生命周期、白底/透明保存关闭、原生拖动合并三来源共各6行通过；显式检查关闭后的Loader不激活，并将残留创建/cancel/alpha诊断作为测试失败，零上述诊断。完整Release通过，标准drawverse.exe已更新。见欢迎页验收及 artifacts/batch-workflow-{software,d3d11}.txt；U1与原始性能项目继续推进。
+
+
+## T2：组内局部选区常驻
+
+两级Normal/PassThrough下的局部套索接入共享祖先显示分割，核心预览14/公开7/共享移动3/液化3、软件与D3D11各5行4K实际预览通过；六种确认插值、历史/取消及晚启用与CPU一致。固定4K六次Warp中位345.593→1.528ms，最终摘要一致，仅核心计时；完整Release/四ABI/严格Clippy/格式与生成头通过。详见变换验收末节，固定/祖先蒙版、非连续等复杂T2范围及首次资产持续时延仍待。

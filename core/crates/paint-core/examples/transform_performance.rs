@@ -7,8 +7,8 @@ fn main() {
     let deferred = args.get(2).is_none_or(|s| s == "mesh");
     let warp = args.get(3).is_none_or(|s| s == "warp");
     let scope = args.get(4).map_or("layer", String::as_str);
-    let selected = scope == "selection";
-    let nested = matches!(scope, "nested-normal" | "nested-pass-through");
+    let selected = scope.starts_with("selection");
+    let nested = scope.contains("nested-");
     let height = if selected { size * 2160 / 4096 } else { size };
     let mut d = Document::new(size, height.max(1)).unwrap();
     if selected {
@@ -55,23 +55,25 @@ fn main() {
         }
     }
     if nested {
-        d.add_mask(id).unwrap();
-        d.bucket_fill(BucketFill {
-            x: 0,
-            y: 0,
-            color: Pixel::from_straight([0.6, 0.6, 0.6, 1.]).unwrap(),
-            opacity: 1.,
-            tolerance: 0,
-            antialias: false,
-            contiguous: true,
-            all_layers: false,
-        })
-        .unwrap();
+        if !selected {
+            d.add_mask(id).unwrap();
+            d.bucket_fill(BucketFill {
+                x: 0,
+                y: 0,
+                color: Pixel::from_straight([0.6, 0.6, 0.6, 1.]).unwrap(),
+                opacity: 1.,
+                tolerance: 0,
+                antialias: false,
+                contiguous: true,
+                all_layers: false,
+            })
+            .unwrap();
+        }
         let mut parent = id;
         for _ in 0..2 {
             parent = d.group_layer(parent, "identity ancestor").unwrap();
             let mut appearance = d.layer(parent).unwrap().appearance();
-            appearance.blend = if scope == "nested-normal" {
+            appearance.blend = if scope.ends_with("normal") {
                 BlendMode::Normal
             } else {
                 BlendMode::PassThrough

@@ -18,15 +18,16 @@ class TransformTests : public QObject {
     Q_OBJECT
 private slots:
     void selected4kTransformKeepsResidentTexturesAndRestoresHistory_data() {
-        QTest::addColumn<bool>("warp");QTest::newRow("affine")<<false;QTest::newRow("warp")<<true;
+        QTest::addColumn<bool>("warp");QTest::addColumn<int>("context");QTest::newRow("affine")<<false<<0;QTest::newRow("warp")<<true<<0;QTest::newRow("nested-normal-affine")<<false<<1;QTest::newRow("nested-normal-warp")<<true<<1;QTest::newRow("nested-pass-warp")<<true<<2;
     }
     void selected4kTransformKeepsResidentTexturesAndRestoresHistory() {
-        QFETCH(bool,warp);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selected4k.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        QFETCH(bool,warp);QFETCH(int,context);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selected4k.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &e:errors)warnings.append(e.toString());});
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         client.newDocument(4096,2160);QTRY_COMPARE(client.documentWidth(),4096);QTRY_VERIFY(!client.layerEditBusy());client.addLayer("partial selection");QTRY_VERIFY(!client.layerEditBusy());client.activateBrush();client.setBrushRadius(64);client.setBrushOpacity(.6);client.brushLibrary()->setPressureSize(false);client.brushLibrary()->setPressureFlow(false);
         for(const auto &p:QList<QPair<QPointF,QColor>>{{{1400.5,900.5},Qt::red},{{2200.5,900.5},Qt::blue}}){client.setBrushColor(p.second);QVERIFY(client.beginStroke({p.first,1}));client.endStroke();QTRY_VERIFY(!client.layerEditBusy() && !client.drawing());}
+        if(context){const auto owner=client.activeLayer();for(int i=0;i<2;++i){QVERIFY(client.groupSelectedLayers("selection ancestor"));QTRY_VERIFY(!client.layerEditBusy());if(context==1){QVERIFY(client.setLayerBlend(client.activeLayer(),0));QTRY_VERIFY(!client.layerEditBusy());}}client.selectLayer(owner);QTRY_COMPARE(client.activeLayer(),owner);QTRY_VERIFY(!client.layerEditBusy());}
         client.setSelectionFeather(2);QVERIFY(client.editSelectionPath({{1200,700},{1600,710},{1590,1100},{1210,1090}},0,false));QTRY_VERIFY(!client.layerEditBusy() && client.selectionEnabled());const auto selection=client.selectionSteps();const auto depth=client.undoDepth();
         auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);QVERIFY(QTest::qWaitForWindowExposed(window));canvas->fitToView();QTRY_VERIFY(client.frameRevision()>=client.revision());
         const auto capture=[&]{if(auto *overlay=findVisualItem(window->contentItem(),"transformOverlay"))overlay->setVisible(false);auto grab=window->contentItem()->grabToImage();if(!grab)return QImage{};QSignalSpy ready(grab.data(),&QQuickItemGrabResult::ready);if(!ready.wait(5000))return QImage{};return grab->image();};

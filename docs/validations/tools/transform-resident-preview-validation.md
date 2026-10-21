@@ -124,3 +124,14 @@ Release固定2000×2000白色内容、全幅0.6灰度链接蒙版、两级Normal
 `cargo run -p paint-core --release --example transform_performance -- 2000 <pixel|mesh> warp nested-normal`；日志 `artifacts/nested-transform-{cpu,resident}.txt`。新路径21025顶点，原完整图层/蒙版取样转到确认。数字不含Actor/Qt调度、初次代理生成/上传、GPU显示和实体输入；不承诺8K/16K或持续时延，最终3.2秒仍是后台完整提交工作。
 
 最终Windows Release及Qt/四ABI目标构建通过，生成头一致，四ABI消费者顺序通过；新二进制两条组内用例D3D11再次通过，日志 `nested-transform-final-d3d11.txt`。原EXE已无占用，标准产物更新为 `build/qt/bin/Release/drawverse.exe`，构建日志 `nested-transform-release-build.txt`。ABI1.75、state45/VBR不变，无新增wgpu算子。未跑全量check、跨平台、实体持续手感/占用，首次资产、固定/祖先蒙版与非连续目标仍待。
+
+
+## 组内局部选区常驻预览（2026-10-21）
+
+移动、完整变换与选区分割共用私有祖先上下文，移动/剩余/初始源保持该上下文 parent，真实组织不改。核心预览14项通过，其中两种祖先×六种最终插值×affine/Warp及alpha/羽化/offset确认与CPU完全相同，覆盖原始瓦片身份、局部/永久历史、延迟启用、取消和不安全祖先回退。公开变换7、共享复合移动3、液化预览3、严格Clippy与格式/生成头通过。
+
+真实Qt 4096×2160局部套索：原affine/Warp及新增两级Normal affine/Warp、两级PassThrough Warp，共软件/D3D11各5行通过。确认前检查移动红色区域、静止蓝色余像素和背景，硬件连续更新保持sourceId/三图cacheKey/CPU帧修订，确认/撤销/重做恢复选区和像素。日志 artifacts/selection-nested-{software,d3d11}.txt。
+
+Release固定4096×2160约256px套索、两级Normal祖先：六次Warp中位345.593→1.528ms，begin13.625→20.864ms，commit0.283→59.841ms，最终摘要两者42e02ac6a1396125。入口 transform_performance 4096 cpu/mesh warp selection-nested-normal；日志 artifacts/selection-nested-{cpu,mesh}-perf.txt。此计时仅核心与网格发布，不含Actor、首次代理/上传或窗口显示，确认原采样转为后台一次执行。
+
+完整Release及四ABI构建和四消费者顺序通过，标准build/qt/bin/Release/drawverse.exe更新。固定/祖先蒙版、图层低opacity/fill、非连续及背景相关混合继续CPU回退；未跑全量/跨平台/实体持续时延。

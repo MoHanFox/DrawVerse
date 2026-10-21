@@ -116,16 +116,25 @@ impl Document {
         remaining: Layer,
         bounds: [i64; 4],
     ) -> Option<(Arc<LiquifyPreviewSource>, Arc<LiquifyPreviewSource>)> {
-        // Reuse the ordinary root/mask/foreground eligibility contract.
-        self.resident_source_layer(original.id, original.clone())?;
+        if self.mask_for(original.id).is_some() {
+            return None;
+        }
+        let context = self.resident_hierarchy_context(&[original.id])?;
+        self.resident_subtree_source_in(&[original.id], std::slice::from_ref(original), &context)?;
         let at = self.layer_index(original.id).ok()?;
+        let mut moving = moving;
+        let mut remaining = remaining;
+        moving.parent = context[at].parent;
+        remaining.parent = context[at].parent;
         let mut source =
-            self.partition_resident_source(&self.layers, at..at + 1, vec![moving], bounds)?;
+            self.partition_resident_source(&context, at..at + 1, vec![moving], bounds)?;
         Arc::make_mut(&mut source).below.layers.push(remaining);
         let mut identity =
-            self.partition_resident_source(&self.layers, at..at + 1, Vec::new(), bounds)?;
+            self.partition_resident_source(&context, at..at + 1, Vec::new(), bounds)?;
         let identity_data = Arc::make_mut(&mut identity);
-        identity_data.below.layers.push(original.clone());
+        let mut original = original.clone();
+        original.parent = context[at].parent;
+        identity_data.below.layers.push(original);
         identity_data
             .below
             .layers
@@ -152,6 +161,11 @@ impl Document {
         if let Some(source) = self.resident_subtree_source(ids, originals) {
             return Some(source);
         }
+        let context = self.resident_hierarchy_context(ids)?;
+        self.resident_subtree_source_in(ids, originals, &context)
+    }
+
+    fn resident_hierarchy_context(&self, ids: &[LayerId]) -> Option<Vec<Layer>> {
         // Identity ancestors can be removed from the presentation split without
         // changing the real hierarchy. This keeps a normal child (and its linked
         // mask) resident instead of re-compositing the document on every move.
@@ -189,9 +203,6 @@ impl Document {
                 parent = group.parent;
             }
         }
-        if ancestors.is_empty() {
-            return None;
-        }
         let mut context = self.layers.clone();
         for layer in &mut context {
             if ancestors.contains(&layer.id) {
@@ -201,7 +212,7 @@ impl Document {
                 layer.parent = self.layer(layer.parent)?.parent;
             }
         }
-        self.resident_subtree_source_in(ids, originals, &context)
+        Some(context)
     }
 
     /// Immutable original overrides allow late transform opt-in after pixel previews.

@@ -94,8 +94,9 @@ impl Document {
             || original.mask
             || original.properties.opacity != 1.
             || original.appearance.fill != 1.
+            || self.mask_for(original.id).is_some()
             || self
-                .resident_source_layer(original.id, original.clone())
+                .resident_hierarchy_source(&[original.id], std::slice::from_ref(original))
                 .is_none()
         {
             return Ok(None);
@@ -295,11 +296,29 @@ mod tests {
     }
     #[test]
     fn selected_resident_preview_retains_tiles_and_matches_all_final_interpolations() {
-        for transparent in [false, true] {
+        for kind in 0..4 {
             for warp in [false, true] {
                 for interpolation in 0..6 {
-                    let mut a = selected_seed(transparent);
-                    let mut b = selected_seed(transparent);
+                    let make = || {
+                        let mut d = selected_seed(kind != 0);
+                        if kind >= 2 {
+                            let id = d.active_layer();
+                            let inner = d.group_layer(id, "selection context").unwrap();
+                            let outer = d.group_layer(inner, "outer selection context").unwrap();
+                            for group in [inner, outer] {
+                                let at = d.layer_index(group).unwrap();
+                                d.layers[at].appearance.blend = if kind == 2 {
+                                    crate::BlendMode::Normal
+                                } else {
+                                    crate::BlendMode::PassThrough
+                                };
+                            }
+                            d.set_active_layer(id).unwrap();
+                        }
+                        d
+                    };
+                    let mut a = make();
+                    let mut b = make();
                     let original = a.snapshot();
                     let baseline = a.layers.clone();
                     let selection = a.selection.clone();
@@ -439,7 +458,8 @@ mod tests {
                     d.add_mask(id).unwrap();
                 }
                 3 => {
-                    d.group_layer(id, "nested").unwrap();
+                    let group = d.group_layer(id, "masked ancestor").unwrap();
+                    d.add_mask(group).unwrap();
                 }
                 _ => {
                     d.options.max_document_tiles = 1;
@@ -448,6 +468,63 @@ mod tests {
             d.begin_transform_layers_deferred(&[id]).unwrap();
             assert!(!d.transform_deferred(), "fallback {kind}");
             d.cancel_transform().unwrap();
+        }
+    }
+    #[test]
+    fn selected_nested_late_enable_and_cancel_preserve_original_hierarchy() {
+        for blend in [crate::BlendMode::Normal, crate::BlendMode::PassThrough] {
+            let mut d = selected_seed(true);
+            let id = d.active_layer();
+            let inner = d.group_layer(id, "selection context").unwrap();
+            let outer = d.group_layer(inner, "outer context").unwrap();
+            for group in [inner, outer] {
+                let at = d.layer_index(group).unwrap();
+                d.layers[at].appearance.blend = blend;
+            }
+            d.set_active_layer(id).unwrap();
+            let before = pixels(&d);
+            let selection = d.selection.clone();
+            let depth = d.history_depth();
+            d.begin_transform_layers(&[id]).unwrap();
+            let mut geometry = d.transform_geometry().unwrap();
+            for p in &mut geometry.points {
+                p[0] += 12.;
+                p[1] -= 2.;
+            }
+            d.update_transform(geometry).unwrap();
+            let expected = pixels(&d);
+            d.enable_transform_deferred().unwrap();
+            assert!(d.transform_deferred());
+            let source = d.transform_preview().unwrap().source;
+            for y in 0..96 {
+                for x in 0..128 {
+                    let moving = source.image.pixel(
+                        (x as i64 - 12 - i64::from(source.bounds[0])) as u32,
+                        (y as i64 + 2 - i64::from(source.bounds[1])) as u32,
+                    );
+                    let actual = source
+                        .above
+                        .pixel(x, y)
+                        .over(moving.over(source.below.pixel(x, y)));
+                    for (a, b) in actual
+                        .components()
+                        .into_iter()
+                        .zip(expected[(y * 128 + x) as usize].components())
+                    {
+                        assert!(
+                            (a - b).abs() < 2e-6,
+                            "nested selected split {x},{y}: {a}!={b}"
+                        );
+                    }
+                }
+            }
+            assert_eq!(d.layer(id).unwrap().parent, inner);
+            assert_eq!(d.layer(inner).unwrap().parent, outer);
+            d.cancel_transform().unwrap();
+            assert_eq!(pixels(&d), before);
+            assert_eq!(d.selection.steps(), selection.steps());
+            assert_eq!(d.history_depth(), depth);
+            assert_eq!(d.layer(id).unwrap().parent, inner);
         }
     }
     #[test]
