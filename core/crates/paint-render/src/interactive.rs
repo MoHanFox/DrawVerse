@@ -2,8 +2,6 @@
 use super::*;
 
 const EDGE: u32 = 512;
-const SAMPLES_PER_OUTPUT: usize = 16;
-const ROW_SPAN: u32 = 4096;
 
 // The linear quantization error maps to less than half an 8-bit sRGB step.
 // Materialisation and export retain the ordinary exact transfer curve.
@@ -36,29 +34,6 @@ fn display(value: [f32; 4]) -> [u8; 4] {
     ]
 }
 
-fn spans(xs: &[u32]) -> Vec<(usize, usize, u32, u32)> {
-    let mut spans = Vec::new();
-    let mut i = 0;
-    while i < xs.len() {
-        if xs[i] == u32::MAX {
-            i += 1;
-            continue;
-        }
-        let first = xs[i];
-        let mut end = i + 1;
-        while end < xs.len() && xs[end] != u32::MAX {
-            let count = xs[end] - first + 1;
-            if count > ROW_SPAN || count as usize > (end - i + 1) * SAMPLES_PER_OUTPUT {
-                break;
-            }
-            end += 1;
-        }
-        spans.push((i, end, first, xs[end - 1] - first + 1));
-        i = end;
-    }
-    spans
-}
-
 /// Bounded nearest-neighbour display only. Never use for materialisation or export.
 pub fn render_interactive(
     snapshot: &DocumentSnapshot,
@@ -73,7 +48,12 @@ pub fn render_interactive(
     let r = request.region;
     let xs = axis(r.x, r.width, request.width, snapshot.width, 1).pixels;
     let ys = axis(r.y, r.height, request.height, snapshot.height, 1).pixels;
-    let spans = spans(&xs);
+    // Canvas clipping occupies the two ends of this monotone sample axis.
+    let first = xs.iter().position(|x| *x != u32::MAX).unwrap_or(xs.len());
+    let end = xs
+        .iter()
+        .rposition(|x| *x != u32::MAX)
+        .map_or(first, |x| x + 1);
     let count = (request.width * request.height) as usize;
     let mut pixels = match request.format {
         PixelFormat::LinearRgba32F => {
@@ -95,22 +75,19 @@ pub fn render_interactive(
     };
     for (y, sy) in ys.into_iter().enumerate() {
         checkpoint(cancel)?;
-        if sy == u32::MAX {
+        if sy == u32::MAX || first == end {
             continue;
         }
-        for &(first, end, sx, length) in &spans {
-            checkpoint(cancel)?;
-            let row = snapshot
-                .read_row(sx, sy, length)
-                .map_err(|e| RenderError::Storage(e.to_string()))?;
-            for (x, source) in xs.iter().enumerate().take(end).skip(first) {
-                let value = row[(*source - sx) as usize].components();
-                let target = y * request.width as usize + x;
-                match &mut pixels {
-                    FramePixels::Linear(values) => values[target] = value,
-                    FramePixels::Srgb(bytes) => {
-                        bytes[target * 4..target * 4 + 4].copy_from_slice(&display(value))
-                    }
+        let row = snapshot
+            .read_sampled_row(&xs[first..end], sy)
+            .map_err(|e| RenderError::Storage(e.to_string()))?;
+        for (x, source) in row.into_iter().enumerate() {
+            let value = source.components();
+            let target = y * request.width as usize + first + x;
+            match &mut pixels {
+                FramePixels::Linear(values) => values[target] = value,
+                FramePixels::Srgb(bytes) => {
+                    bytes[target * 4..target * 4 + 4].copy_from_slice(&display(value))
                 }
             }
         }
@@ -141,18 +118,6 @@ mod tests {
                     assert!(actual.abs_diff(reference) <= 1);
                 }
             }
-        }
-    }
-    #[test]
-    fn sparse_and_dense_row_spans_bound_source_work() {
-        for stride in [0, 1, 7, 16, 17, 2000] {
-            let mut xs = vec![u32::MAX; 3];
-            xs.extend((0..500).map(|x| x * stride));
-            xs.push(u32::MAX);
-            let plan = spans(&xs);
-            assert!(plan.iter().all(|p| p.3 <= ROW_SPAN));
-            assert!(plan.iter().map(|p| p.3 as usize).sum::<usize>() <= 500 * SAMPLES_PER_OUTPUT);
-            assert_eq!(plan.iter().map(|p| p.1 - p.0).sum::<usize>(), 500);
         }
     }
 }

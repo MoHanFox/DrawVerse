@@ -105,14 +105,22 @@ fn visibility(layers: &[Layer]) -> Vec<bool> {
 /// Postorder permits isolated group rows to be completed before blending into
 /// their parent. Only one scan and bounded rows; cold pages are pinned per row.
 pub(crate) fn composite_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Result<Vec<Pixel>> {
+    composite_samples(layers, RowSamples::Dense { x, count }, y)
+}
+
+pub(super) fn composite_samples(
+    layers: &[Layer],
+    samples: RowSamples<'_>,
+    y: u32,
+) -> Result<Vec<Pixel>> {
     if layers
         .iter()
         .any(|l| l.appearance.blend == crate::BlendMode::PassThrough)
     {
-        return pass_through::composite_row(layers, x, y, count);
+        return pass_through::composite_samples(layers, samples, y);
     }
     if layers.iter().any(|l| l.clipped) {
-        return clipped_row(layers, x, y, count);
+        return clipped_row(layers, samples, y);
     }
     let mut rows = BTreeMap::<u64, Vec<Pixel>>::new();
     let mut masks = BTreeMap::<u64, Vec<Pixel>>::new();
@@ -123,8 +131,8 @@ pub(crate) fn composite_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Res
         if layer.mask {
             masks.insert(
                 layer.parent,
-                layer
-                    .read_canvas_row(x, y, count)?
+                samples
+                    .read(layer, y)?
                     .into_iter()
                     .map(|p| p.scaled(layer.properties.opacity))
                     .collect(),
@@ -133,9 +141,9 @@ pub(crate) fn composite_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Res
         }
         let mut source = if layer.group {
             rows.remove(&layer.id)
-                .unwrap_or_else(|| vec![Pixel::TRANSPARENT; count as usize])
+                .unwrap_or_else(|| vec![Pixel::TRANSPARENT; samples.len()])
         } else {
-            layer.read_canvas_row(x, y, count)?
+            samples.read(layer, y)?
         };
         if let Some(mask) = masks.remove(&layer.id) {
             for (p, m) in source.iter_mut().zip(mask) {
@@ -144,13 +152,13 @@ pub(crate) fn composite_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Res
         }
         let output = rows
             .entry(layer.parent)
-            .or_insert_with(|| vec![Pixel::TRANSPARENT; count as usize]);
+            .or_insert_with(|| vec![Pixel::TRANSPARENT; samples.len()]);
         for (i, (destination, source)) in output.iter_mut().zip(source).enumerate() {
             *destination = crate::blend_pixel(
                 source.scaled(layer.properties.opacity * layer.appearance.fill),
                 *destination,
                 layer.appearance.blend,
-                x + i as u32,
+                samples.x(i),
                 y,
                 u64::from(layer.appearance.dissolve_seed),
             );
@@ -158,7 +166,7 @@ pub(crate) fn composite_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Res
     }
     Ok(rows
         .remove(&0)
-        .unwrap_or_else(|| vec![Pixel::TRANSPARENT; count as usize]))
+        .unwrap_or_else(|| vec![Pixel::TRANSPARENT; samples.len()]))
 }
 
 struct ClipRow<'a> {
@@ -169,7 +177,7 @@ fn flush_clip(
     parent: u64,
     pending: &mut BTreeMap<u64, ClipRow<'_>>,
     rows: &mut BTreeMap<u64, Vec<Pixel>>,
-    x: u32,
+    samples: RowSamples<'_>,
     y: u32,
 ) {
     let Some(chain) = pending.remove(&parent) else {
@@ -183,7 +191,7 @@ fn flush_clip(
             src.scaled(chain.base.properties.opacity * chain.base.appearance.fill),
             *dst,
             chain.base.appearance.blend,
-            x + i as u32,
+            samples.x(i),
             y,
             u64::from(chain.base.appearance.dissolve_seed),
         );
@@ -191,7 +199,7 @@ fn flush_clip(
 }
 /// Resolve each sibling chain before compositing its base into the parent.
 /// Hidden bases remain structural boundaries; clipping never expands their alpha.
-fn clipped_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Result<Vec<Pixel>> {
+fn clipped_row(layers: &[Layer], samples: RowSamples<'_>, y: u32) -> Result<Vec<Pixel>> {
     let mut rows = BTreeMap::new();
     let mut pending = BTreeMap::<u64, ClipRow<'_>>::new();
     let mut masks = BTreeMap::<u64, Vec<Pixel>>::new();
@@ -200,8 +208,8 @@ fn clipped_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Result<Vec<Pixel
             if shown {
                 masks.insert(
                     layer.parent,
-                    layer
-                        .read_canvas_row(x, y, count)?
+                    samples
+                        .read(layer, y)?
                         .into_iter()
                         .map(|p| p.scaled(layer.properties.opacity))
                         .collect(),
@@ -210,16 +218,16 @@ fn clipped_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Result<Vec<Pixel
             continue;
         }
         if layer.group {
-            flush_clip(layer.id, &mut pending, &mut rows, x, y);
+            flush_clip(layer.id, &mut pending, &mut rows, samples, y);
         }
         let mut source = if !shown {
             rows.remove(&layer.id);
-            vec![Pixel::TRANSPARENT; count as usize]
+            vec![Pixel::TRANSPARENT; samples.len()]
         } else if layer.group {
             rows.remove(&layer.id)
-                .unwrap_or_else(|| vec![Pixel::TRANSPARENT; count as usize])
+                .unwrap_or_else(|| vec![Pixel::TRANSPARENT; samples.len()])
         } else {
-            layer.read_canvas_row(x, y, count)?
+            samples.read(layer, y)?
         };
         if let Some(mask) = masks.remove(&layer.id) {
             for (p, m) in source.iter_mut().zip(mask) {
@@ -251,7 +259,7 @@ fn clipped_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Result<Vec<Pixel
                         src.scaled(layer.properties.opacity * layer.appearance.fill),
                         opaque,
                         layer.appearance.blend,
-                        x + i as u32,
+                        samples.x(i),
                         y,
                         u64::from(layer.appearance.dissolve_seed),
                     )
@@ -259,7 +267,7 @@ fn clipped_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Result<Vec<Pixel
                 }
             }
         } else {
-            flush_clip(layer.parent, &mut pending, &mut rows, x, y);
+            flush_clip(layer.parent, &mut pending, &mut rows, samples, y);
             pending.insert(
                 layer.parent,
                 ClipRow {
@@ -270,11 +278,11 @@ fn clipped_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Result<Vec<Pixel
         }
     }
     for parent in pending.keys().copied().collect::<Vec<_>>() {
-        flush_clip(parent, &mut pending, &mut rows, x, y);
+        flush_clip(parent, &mut pending, &mut rows, samples, y);
     }
     Ok(rows
         .remove(&0)
-        .unwrap_or_else(|| vec![Pixel::TRANSPARENT; count as usize]))
+        .unwrap_or_else(|| vec![Pixel::TRANSPARENT; samples.len()]))
 }
 
 impl DocumentSnapshot {

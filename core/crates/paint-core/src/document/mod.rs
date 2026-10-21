@@ -12,6 +12,8 @@ pub const MAX_DIMENSION: u32 = 1_000_000;
 const MAX_DABS_PER_SEGMENT: usize = crate::MAX_INPUT_PAGE_DABS;
 const MAX_PIXEL_VISITS_PER_SEGMENT: usize = crate::MAX_INPUT_PAGE_VISITS;
 mod batch;
+mod row_samples;
+use row_samples::RowSamples;
 #[path = "stroke/document_input_paging.rs"]
 mod input_paging;
 pub use input_paging::StrokePageResult;
@@ -342,6 +344,23 @@ impl DocumentSnapshot {
         }
         composite_row(&self.layers, x, y, count)
     }
+    /// Exact composition at ordered canvas coordinates, including duplicates.
+    /// Display renderers can skip unused source pixels without changing blend rules.
+    pub fn read_sampled_row(&self, xs: &[u32], y: u32) -> Result<Vec<Pixel>> {
+        if y >= self.height
+            || xs.len() > MAX_DIMENSION as usize
+            || xs.iter().any(|x| *x >= self.width)
+            || xs.windows(2).any(|pair| pair[0] > pair[1])
+        {
+            return Err(Error::InvalidArgument(
+                "samples outside ordered document row",
+            ));
+        }
+        if xs.is_empty() {
+            return Ok(Vec::new());
+        }
+        composite_samples(&self.layers, RowSamples::Sparse(xs), y)
+    }
     pub fn storage_stats(&self) -> crate::StorageStats {
         self.pool.stats()
     }
@@ -572,21 +591,25 @@ fn composite(layers: &[Layer], x: u32, y: u32) -> Result<Pixel> {
 
 /// Batch pins keep disk access outside the pixel loop.
 fn composite_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Result<Vec<Pixel>> {
+    composite_samples(layers, RowSamples::Dense { x, count }, y)
+}
+
+fn composite_samples(layers: &[Layer], samples: RowSamples<'_>, y: u32) -> Result<Vec<Pixel>> {
     if layers.iter().any(|l| l.group || l.mask || l.clipped) {
-        return groups::composite_row(layers, x, y, count);
+        return groups::composite_samples(layers, samples, y);
     }
-    let mut output = vec![Pixel::TRANSPARENT; count as usize];
+    let mut output = vec![Pixel::TRANSPARENT; samples.len()];
     for layer in layers
         .iter()
         .filter(|l| l.properties.visible && l.properties.opacity * l.appearance.fill > 0.)
     {
-        let row = layer.read_canvas_row(x, y, count)?;
+        let row = samples.read(layer, y)?;
         for (i, (destination, source)) in output.iter_mut().zip(row).enumerate() {
             *destination = crate::blend_pixel(
                 source.scaled(layer.properties.opacity * layer.appearance.fill),
                 *destination,
                 layer.appearance.blend,
-                x + i as u32,
+                samples.x(i),
                 y,
                 u64::from(layer.appearance.dissolve_seed),
             );

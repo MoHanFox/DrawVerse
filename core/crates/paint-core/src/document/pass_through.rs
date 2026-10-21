@@ -1,6 +1,10 @@
 use super::*;
 
-pub(super) fn composite_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Result<Vec<Pixel>> {
+pub(super) fn composite_samples(
+    layers: &[Layer],
+    samples: RowSamples<'_>,
+    y: u32,
+) -> Result<Vec<Pixel>> {
     let mut renderer = Rows {
         shown: layers
             .iter()
@@ -10,9 +14,8 @@ pub(super) fn composite_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Res
         intrinsic: std::cell::RefCell::new(BTreeMap::new()),
         children: BTreeMap::new(),
         masks: BTreeMap::new(),
-        x,
+        samples,
         y,
-        count,
     };
     for layer in layers {
         if layer.mask {
@@ -25,16 +28,15 @@ pub(super) fn composite_row(layers: &[Layer], x: u32, y: u32, count: u32) -> Res
                 .push(layer);
         }
     }
-    renderer.stack(0, vec![Pixel::TRANSPARENT; count as usize])
+    renderer.stack(0, vec![Pixel::TRANSPARENT; samples.len()])
 }
 struct Rows<'a> {
     shown: BTreeMap<u64, bool>,
     intrinsic: std::cell::RefCell<BTreeMap<u64, Vec<Pixel>>>,
     children: BTreeMap<u64, Vec<&'a Layer>>,
     masks: BTreeMap<u64, &'a Layer>,
-    x: u32,
+    samples: RowSamples<'a>,
     y: u32,
-    count: u32,
 }
 impl Rows<'_> {
     fn shown(&self, l: &Layer) -> bool {
@@ -42,28 +44,29 @@ impl Rows<'_> {
     }
     fn mask(&self, l: &Layer) -> Result<Vec<f32>> {
         if let Some(mask) = self.masks.get(&l.id).filter(|m| self.shown(m)) {
-            Ok(mask
-                .read_canvas_row(self.x, self.y, self.count)?
+            Ok(self
+                .samples
+                .read(mask, self.y)?
                 .iter()
                 .map(|p| 1. - p.alpha() * mask.properties.opacity)
                 .collect())
         } else {
-            Ok(vec![1.; self.count as usize])
+            Ok(vec![1.; self.samples.len()])
         }
     }
     fn raw(&self, l: &Layer) -> Result<Vec<Pixel>> {
         if !self.shown(l) {
-            return Ok(vec![Pixel::TRANSPARENT; self.count as usize]);
+            return Ok(vec![Pixel::TRANSPARENT; self.samples.len()]);
         }
         if l.group {
             if let Some(row) = self.intrinsic.borrow().get(&l.id) {
                 return Ok(row.clone());
             }
-            let row = self.stack(l.id, vec![Pixel::TRANSPARENT; self.count as usize])?;
+            let row = self.stack(l.id, vec![Pixel::TRANSPARENT; self.samples.len()])?;
             self.intrinsic.borrow_mut().insert(l.id, row.clone());
             Ok(row)
         } else {
-            l.read_canvas_row(self.x, self.y, self.count)
+            self.samples.read(l, self.y)
         }
     }
     fn source(&self, l: &Layer) -> Result<Vec<Pixel>> {
@@ -121,7 +124,7 @@ impl Rows<'_> {
                         src.scaled(weight),
                         opaque,
                         l.appearance.blend,
-                        self.x + i as u32,
+                        self.samples.x(i),
                         self.y,
                         u64::from(l.appearance.dissolve_seed),
                     )
@@ -163,7 +166,7 @@ impl Rows<'_> {
                 }
             } else {
                 let mut source = self.source(base)?;
-                let coverage = vec![1.; self.count as usize];
+                let coverage = vec![1.; self.samples.len()];
                 for clipped in &children[at + 1..end] {
                     self.clipped(clipped, &mut source, &coverage)?;
                 }
@@ -172,7 +175,7 @@ impl Rows<'_> {
                         src.scaled(weight),
                         *dst,
                         base.appearance.blend,
-                        self.x + i as u32,
+                        self.samples.x(i),
                         self.y,
                         u64::from(base.appearance.dissolve_seed),
                     );

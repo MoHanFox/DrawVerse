@@ -172,3 +172,64 @@ fn interactive_preview_validates_requests_and_honours_cancellation() {
         Err(RenderError::InvalidRequest)
     ));
 }
+
+#[test]
+fn sparse_large_canvas_preview_keeps_exact_samples_and_clips_empty_viewports() {
+    for width in [16_384, 1_000_000] {
+        let mut d = Document::new(width, 64).unwrap();
+        d.initialize_white_background().unwrap();
+        let owner = d.add_layer("distant").unwrap();
+        d.begin_stroke(
+            Brush {
+                radius: 15.,
+                color: Pixel::from_straight([0.8, 0.2, 0.4, 0.6]).unwrap(),
+                ..Default::default()
+            },
+            InputPoint::new(f64::from(width) / 2., 32., 1.),
+        )
+        .unwrap();
+        d.end_stroke().unwrap();
+        d.add_mask(owner).unwrap();
+        d.begin_layer_move(owner, false).unwrap();
+        d.update_layer_move(7, -3).unwrap();
+        let snapshot = d.snapshot();
+        for x in [-f64::from(width), -32., 0., f64::from(width)] {
+            let request = RenderRequest {
+                region: Region {
+                    x,
+                    y: -8.,
+                    width: f64::from(width) + 64.,
+                    height: 80.,
+                },
+                width: 1024,
+                height: 16,
+                format: PixelFormat::LinearRgba32F,
+            };
+            let frame =
+                render_interactive(&snapshot, request, &CancellationToken::default()).unwrap();
+            assert_eq!((frame.width, frame.height), (512, 8));
+            let FramePixels::Linear(pixels) = frame.pixels else {
+                panic!()
+            };
+            for y in 0..frame.height {
+                for x in 0..frame.width {
+                    let sx = (request.region.x
+                        + (f64::from(x) + 0.5) * request.region.width / f64::from(frame.width))
+                    .floor();
+                    let sy = (request.region.y
+                        + (f64::from(y) + 0.5) * request.region.height / f64::from(frame.height))
+                    .floor();
+                    let expected = if sx < 0. || sy < 0. {
+                        Pixel::TRANSPARENT
+                    } else {
+                        snapshot.pixel(sx as u32, sy as u32)
+                    };
+                    assert_eq!(
+                        pixels[(y * frame.width + x) as usize],
+                        expected.components()
+                    );
+                }
+            }
+        }
+    }
+}

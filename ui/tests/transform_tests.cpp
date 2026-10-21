@@ -176,6 +176,46 @@ private slots:
         QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,screen({48,32}));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());QTRY_VERIFY(redAt(capture(),screen({48,32})));
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(client.frameRevision()>=client.revision());QTRY_VERIFY(redAt(capture(),screen({32,32})));QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);client.shutdown();
     }
+    void complex4kLayerMoveRestoresFullFramesAndHistory_data() {
+        QTest::addColumn<bool>("ancestorMask");
+        QTest::newRow("fixed-owner-mask")<<false;QTest::newRow("fixed-ancestor-mask")<<true;
+    }
+    void complex4kLayerMoveRestoresFullFramesAndHistory() {
+        QFETCH(bool,ancestorMask);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("4k-complex-move.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(3840,2160);
+        QTRY_COMPARE(client.documentWidth(),3840);QTRY_VERIFY(!client.layerEditBusy());client.addLayer("moving full layer");QTRY_VERIFY(!client.layerEditBusy());
+        const auto owner=client.activeLayer();client.activateBucket();client.setBrushColor(Qt::red);QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY_WITH_TIMEOUT(!client.layerEditBusy(),30000);
+        quint64 maskOwner=owner;if(ancestorMask){QVERIFY(client.groupLayer(owner,"masked ancestor"));QTRY_VERIFY(!client.layerEditBusy());maskOwner=client.activeLayer();}
+        QVERIFY(client.addMask(maskOwner));QTRY_VERIFY(!client.layerEditBusy());const auto mask=client.activeLayer();
+        client.activateBrush();client.setBrushColor(Qt::black);client.setBrushRadius(90);client.brushLibrary()->setPressureSize(false);
+        QVERIFY(client.beginStroke({{2000.5,1080.5},1}));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());
+        if(!ancestorMask){QVERIFY(client.setMaskLinked(mask,false));QTRY_VERIFY(!client.layerEditBusy());}
+        client.selectLayer(owner);QTRY_COMPARE(client.activeLayer(),owner);QTRY_VERIFY(!client.layerEditBusy());const auto depth=client.undoDepth();
+        QQuickWindow window;window.resize(1024,720);window.setColor(Qt::black);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1024,720});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));window.requestActivate();QTRY_VERIFY(window.isActive());canvas->fitToView();canvas->forceActiveFocus();QTRY_VERIFY(client.frameRevision()>=client.revision());
+        const auto screen=[&](QPointF p){return(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
+        const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return QImage{};return grab->image();};
+        const auto at=[&](const QImage &image,QPointF p){const auto v=screen(p);return image.pixelColor(qRound(v.x()*image.width()/canvas->width()),qRound(v.y()*image.height()/canvas->height()));};
+        const auto red=[](QColor c){return c.red()>200 && c.green()<60 && c.blue()<60;};
+        const auto white=[](QColor c){return c.red()>220 && c.green()>220 && c.blue()>220;};
+        QImage initial;const auto report=[&]{initial.save("artifacts/move-sparse-initial.png");client.frame().save("artifacts/move-sparse-frame.png");return QString("capture=%1x%2 zoom=%3 origin=%4,%5 first=%6 mask=%7 frame=%8/%9").arg(initial.width()).arg(initial.height()).arg(canvas->zoom()).arg(canvas->documentRect().x()).arg(canvas->documentRect().y()).arg(initial.isNull()?QString("null"):at(initial,{100,1080}).name()).arg(initial.isNull()?QString("null"):at(initial,{2000,1080}).name()).arg(client.frameRevision()).arg(client.revision());};
+        QTRY_VERIFY2(!(initial=capture()).isNull() && red(at(initial,{100,1080})) && white(at(initial,{2000,1080})),qPrintable(report()));QVERIFY(client.frame().width()>512);
+        client.setMoveTool(true);
+        for(bool commit:{false,true}) {
+            QElapsedTimer timer;timer.start();QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,screen({1200,1080}));QTRY_VERIFY(client.layerMoveActive());QVERIFY(!client.residentPreview());
+            for(int i=1;i<=12;++i)QTest::mouseMove(&window,screen({1200+32.*i,1080}));
+            QImage moved;QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().width()<=512 && !(moved=capture()).isNull() && white(at(moved,{100,1080})) && red(at(moved,{800,1080})) && white(at(moved,{2000,1080})));
+            qInfo()<<"4K complex move through captured preview ms"<<timer.elapsed()<<"ancestor mask"<<ancestorMask;
+            QCOMPARE(client.undoDepth(),depth);
+            if(!commit)QTest::keyClick(&window,Qt::Key_Escape);
+            QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,screen({1584,1080}));QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().width()>512);
+            QCOMPARE(client.undoDepth(),depth+(commit?1:0));QImage final;
+            QTRY_VERIFY(!(final=capture()).isNull() && (commit?white(at(final,{100,1080})):red(at(final,{100,1080}))) && white(at(final,{2000,1080})));
+        }
+        client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && red(at(undone,{100,1080})) && white(at(undone,{2000,1080})));
+        client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage redone;QTRY_VERIFY(!(redone=capture()).isNull() && white(at(redone,{100,1080})) && white(at(redone,{2000,1080})));
+        QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void finishingEditRestoresCanvasShortcutsWithoutAClick() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("finish-focus.ini"));
         WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
