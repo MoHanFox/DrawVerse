@@ -139,7 +139,17 @@ impl Document {
         &self,
         ids: &[LayerId],
     ) -> Option<Arc<LiquifyPreviewSource>> {
-        if let Some(source) = self.resident_subtree_source(ids, &[]) {
+        self.resident_hierarchy_source(ids, &[])
+    }
+
+    /// Shared presentation-only ancestor removal. Original overrides keep late
+    /// transform opt-in independent of any already materialised pixel preview.
+    pub(in crate::document) fn resident_hierarchy_source(
+        &self,
+        ids: &[LayerId],
+        originals: &[Layer],
+    ) -> Option<Arc<LiquifyPreviewSource>> {
+        if let Some(source) = self.resident_subtree_source(ids, originals) {
             return Some(source);
         }
         // Identity ancestors can be removed from the presentation split without
@@ -191,7 +201,7 @@ impl Document {
                 layer.parent = self.layer(layer.parent)?.parent;
             }
         }
-        self.resident_subtree_source_in(ids, &[], &context)
+        self.resident_subtree_source_in(ids, originals, &context)
     }
 
     /// Immutable original overrides allow late transform opt-in after pixel previews.
@@ -254,7 +264,11 @@ impl Document {
         }
         for original in originals {
             let layer = layers.iter_mut().find(|l| l.id == original.id)?;
+            let parent = layer.parent;
             *layer = original.clone();
+            // This snapshot may have lifted the target out of identity groups.
+            // Preserve that presentation parent, never mutate the real hierarchy.
+            layer.parent = parent;
         }
         if layers.iter().any(|l| {
             l.is_image()

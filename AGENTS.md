@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新组内变换共享常驻源：transform-resident-preview设计/验收末节；移动/变换共用可消去Normal/PassThrough祖先分割，变换原层覆盖保留显示parent，真实层级不变；完整普通目标/链接蒙版可常驻，固定/祖先蒙版、非连续和选区复杂目标仍回退。核心变换13/公开7/移动3/液化3/原生3、软件与D3D11复合变换各7行及共享移动7/4K选区2、四ABI/Clippy/格式/生成头/Release通过；硬件焦点批次激活失败后独立通过，见验收。2000px链接灰蒙版+两级Normal组六输入核心中位18335.863→5.087ms，确认3.23s，摘要一致，非UI时延。ABI1.75/state45保持，标准 `build/qt/bin/Release/drawverse.exe` 已更新；T2仅部分完成，首次资产/实体持续性能及其余清单待。
+
 - 最新文件成功提示移除：welcome-workspace设计/验收末节；文件成功清空fileNotice，去掉欢迎页残留“文件操作完成”，失败及保存关闭保护保持。白底/透明新建直接关闭、真实保存后关闭/打开失败，软件与D3D11各2行及Release通过；ABI/state不变。D3D11退出仍有1个异步对象诊断，U5未完成。
 
 - 最新局部选区变换常驻源：transform-resident-preview设计/验收末节；普通Normal根层、opacity/fill均1、无自身蒙版，按原选区一次分割移动源/余像素，原位资产避免羽化切缝；拖动只CPU几何/Qt GPU显示，确认原六种取样，蚂蚁线确认后更新。核心12/公开7/原生2、软件及D3D11各10行/四ABI/Clippy/格式/生成头/Release通过；4096×2160约256px套索六次Warp核心中位334.561→1.556ms，最终摘要一致，非UI时延。ABI1.75/state45不变，用户旧EXE锁定，新产物 `build/qt/bin/Release/drawverse-next.exe`。复杂T2、首次两套资产与实体持续手感仍待，2048代理仍近似。

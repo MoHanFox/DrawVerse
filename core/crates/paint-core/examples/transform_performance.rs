@@ -8,6 +8,7 @@ fn main() {
     let warp = args.get(3).is_none_or(|s| s == "warp");
     let scope = args.get(4).map_or("layer", String::as_str);
     let selected = scope == "selection";
+    let nested = matches!(scope, "nested-normal" | "nested-pass-through");
     let height = if selected { size * 2160 / 4096 } else { size };
     let mut d = Document::new(size, height.max(1)).unwrap();
     if selected {
@@ -53,6 +54,31 @@ fn main() {
             d.add_mask(id).unwrap();
         }
     }
+    if nested {
+        d.add_mask(id).unwrap();
+        d.bucket_fill(BucketFill {
+            x: 0,
+            y: 0,
+            color: Pixel::from_straight([0.6, 0.6, 0.6, 1.]).unwrap(),
+            opacity: 1.,
+            tolerance: 0,
+            antialias: false,
+            contiguous: true,
+            all_layers: false,
+        })
+        .unwrap();
+        let mut parent = id;
+        for _ in 0..2 {
+            parent = d.group_layer(parent, "identity ancestor").unwrap();
+            let mut appearance = d.layer(parent).unwrap().appearance();
+            appearance.blend = if scope == "nested-normal" {
+                BlendMode::Normal
+            } else {
+                BlendMode::PassThrough
+            };
+            d.set_layer_appearance(parent, appearance).unwrap();
+        }
+    }
     let start = Instant::now();
     if deferred {
         d.begin_transform_layers_deferred(&[id]).unwrap();
@@ -86,7 +112,7 @@ fn main() {
         }
         println!("selected={selected} height={height} size={size} mesh={deferred} warp={warp} pass={pass} six_inputs_ms={:.3} vertices={vertices}",start.elapsed().as_secs_f64()*1000.);
     }
-    if selected {
+    if selected || nested {
         let start = Instant::now();
         d.commit_transform().unwrap();
         println!("commit_ms={:.3}", start.elapsed().as_secs_f64() * 1000.);
@@ -103,7 +129,7 @@ fn main() {
             d.layers()[0].tile_count()
         );
     }
-    if !selected {
+    if !selected && !nested {
         d.cancel_transform().unwrap();
     }
 }

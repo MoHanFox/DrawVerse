@@ -1110,16 +1110,48 @@ fn liquify_abi_validation_preview_cancel_and_single_history() {
 
 #[test]
 fn deferred_transform_packets_and_latest_geometry_commit() {
-    run_deferred_transform_packets(false);
+    run_deferred_transform_packets(false, false);
 }
 #[test]
 fn selected_deferred_transform_packets_and_latest_geometry_commit() {
-    run_deferred_transform_packets(true);
+    run_deferred_transform_packets(true, false);
 }
-fn run_deferred_transform_packets(selected: bool) {
+#[test]
+fn nested_deferred_transform_packets_and_latest_geometry_commit() {
+    run_deferred_transform_packets(false, true);
+}
+fn run_deferred_transform_packets(selected: bool, nested: bool) {
     let h = Harness::new(128, 96);
     let mut initial = h.wait(h.stroke(20., 20.));
     unsafe {
+        if nested {
+            let owner = initial.active_layer_id;
+            let mut target = owner;
+            for _ in 0..2 {
+                let request = PaintGroupRequest {
+                    struct_size: size_of::<PaintGroupRequest>() as u32,
+                    kind: PAINT_GROUP_WRAP,
+                    layer_id: target,
+                    parent_id: 0,
+                    name: b"Ancestor".as_ptr(),
+                    name_length: 8,
+                };
+                let mut sequence = 0;
+                assert_eq!(
+                    paint_session_group(h.core, h.session, &request, &mut sequence),
+                    PAINT_OK
+                );
+                initial = h.wait(sequence);
+                assert_eq!(initial.last_error_status, PAINT_OK);
+                target = initial.active_layer_id;
+            }
+            initial = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_SELECT_LAYER,
+                layer_id: owner,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(initial.active_layer_id, owner);
+        }
         if selected {
             let selection = PaintSelectionEdit {
                 x: 12.,

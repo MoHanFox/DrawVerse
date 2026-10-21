@@ -49,3 +49,9 @@ PanelContent异步创建LayersPanel期间，自定义属性尚未全部就绪；
 ## U6 文件成功文字残留
 
 移除通用“文件操作完成”，文件成功清空旧通知，失败与保存关闭保护保持。白底/透明真实新建直接关闭、实际保存ORA再关闭、打开不存在文件报错，软件/D3D11各2行通过；Release构建通过。D3D11退出仍有1个异步对象诊断，继续归U5。见[欢迎页验收末节](../interface/welcome-workspace-validation.md)。
+
+## T2 第一项：组内完整普通目标
+
+移动和变换共用可消去祖先分割，变换覆盖不可变原层时保留显示parent；两级Normal/PassThrough祖先、链接蒙版、半透明目标及静态兄弟可常驻，真实结构不改。核心变换13/公开7/共享移动3/液化3、原生3、Qt复合变换软件/D3D11各7行及共享移动7/4K选区2通过；硬件焦点混合批次未能激活窗口，独立同例通过，原失败保留。四ABI、严格Clippy/格式/生成头/Release通过。
+
+2000px带灰度链接蒙版、两级Normal组的六次Warp核心中位18335.863→5.087ms，确认355.272→3231.376ms，最终摘要相同；不含首次资产或UI显示。标准 `build/qt/bin/Release/drawverse.exe` 已可写且更新。详见[变换验收末节](../tools/transform-resident-preview-validation.md)。固定/祖先蒙版、非连续等T2剩余项及M1/H1/P1、U1/U5保持待办。

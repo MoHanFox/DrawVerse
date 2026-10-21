@@ -102,3 +102,25 @@ Release示例 `cargo run -p paint-core --release --locked --example transform_pe
 示例 `cargo run -p paint-core --release --example transform_performance -- 4096 <pixel|mesh> warp selection`，日志 `artifacts/selection-transform-{cpu,resident}.txt`。旧路径已在更新时物化，所以commit较短；新路径把取样留到确认。两者最终19瓦片、摘要相同。计时不含Actor/Qt调度、代理生成/上传、GPU显示或实体输入，不能当端到端时延。
 
 四ABI消费者顺序通过，生成头检查、格式、core/ffi全目标严格Clippy与Windows Release通过；ABI1.75、state45/VBR保持。用户正在运行旧drawverse.exe，未终止该进程，新程序为 `build/qt/bin/Release/drawverse-next.exe`。两套首次资产仍各可能构建/上传；2048代理与有限网格为预览近似，最终不采样代理。未跑全量check、跨平台、实体连续拖动及GPU持续占用。
+
+## 2026-10-21：组内目标与移动共享常驻源（T2 第一项）
+
+移动的私有祖先消去抽为 `resident_hierarchy_source(ids, originals)`，变换传不可变会话原层，移动传空覆盖。仅显示快照提升祖先直属子树；覆盖原层后保留提升过的parent，真实层结构不变。支持可消去的Normal/PassThrough多级组内完整普通目标及其链接蒙版；祖先需可见、opacity/fill均1、无蒙版/剪贴，Normal祖先子树无特殊混合/剪贴。选区、固定/祖先蒙版、非连续目标及背景依赖继续回退，T2不标全部完成。
+
+- 核心 `transform::preview::tests` 整组13项通过。复合用例扩为5种目标×普通/Warp，新增两级Normal/PassThrough祖先、静态兄弟、半透明目标、带offset灰度蒙版；初始分割合成、8次更新source/瓦片/真实parent及属性保持、局部历史、确认与原CPU逐像素等价、单历史/永久undo/redo/取消。新增延迟启用用例逐像素核对会话原始源，低预算确认失败保留会话/源/历史，取消恢复；8种不可消去祖先/固定蒙版条件拒绝常驻。
+- 公开变换7、移动复合3及液化共用预览3通过；`async_session deferred_transform_packets` 原生3通过，新增两级组内目标覆盖1000次更新、包身份/陈旧包/容量拒绝、最新几何确认及显式启用/取消。core/ffi全目标严格Clippy及格式通过。
+- Qt `transformResidentPreviewFollowsAndCompositesTransparentStack` 软件/D3D11各7行通过（新增Normal/PassThrough组内两行），窗口实际像素核对目标100次更新后已移动、静态兄弟保持、source/image cacheKey复用、局部撤销/Warp变化、确认/永久历史/取消，无QML警告。日志 `artifacts/nested-transform-d3d11.txt`、`nested-transform-shared-software.txt`。
+- 共用移动7行（含组内两种和固定/祖先蒙版回退）及4K选区变换2行，在软件/D3D11通过；硬件折叠与蒙版控制框通过。硬件快捷键焦点在混合批次等待窗口激活失败（尚未进入编辑步骤），独立启动同一用例通过，未改产品或删断言；日志 `nested-transform-shared-d3d11.txt`、`nested-transform-focus-d3d11.txt`，不能将原混合批次写为零失败。
+
+Release固定2000×2000白色内容、全幅0.6灰度链接蒙版、两级Normal祖先，强Warp六次输入×3遍：
+
+| 范围 | 原CPU像素预览 | 常驻几何预览 |
+| --- | ---: | ---: |
+| 核心begin（不含Qt资产） | 20.202ms | 22.309ms |
+| 六次更新+网格发布中位数 | 18335.863ms | 5.087ms |
+| 最终commit | 355.272ms | 3231.376ms |
+| 最终合成像素摘要 | `6a20870d922fcdcb` | `6a20870d922fcdcb` |
+
+`cargo run -p paint-core --release --example transform_performance -- 2000 <pixel|mesh> warp nested-normal`；日志 `artifacts/nested-transform-{cpu,resident}.txt`。新路径21025顶点，原完整图层/蒙版取样转到确认。数字不含Actor/Qt调度、初次代理生成/上传、GPU显示和实体输入；不承诺8K/16K或持续时延，最终3.2秒仍是后台完整提交工作。
+
+最终Windows Release及Qt/四ABI目标构建通过，生成头一致，四ABI消费者顺序通过；新二进制两条组内用例D3D11再次通过，日志 `nested-transform-final-d3d11.txt`。原EXE已无占用，标准产物更新为 `build/qt/bin/Release/drawverse.exe`，构建日志 `nested-transform-release-build.txt`。ABI1.75、state45/VBR不变，无新增wgpu算子。未跑全量check、跨平台、实体持续手感/占用，首次资产、固定/祖先蒙版与非连续目标仍待。

@@ -63,7 +63,7 @@ impl Document {
                 state.initial.points[12][1] - state.initial.points[0][1],
             ];
             (
-                self.resident_subtree_source(&state.roots, &originals),
+                self.resident_hierarchy_source(&state.roots, &originals),
                 bounds,
             )
         };
@@ -595,6 +595,32 @@ mod tests {
             .unwrap();
             d.end_stroke().unwrap();
             roots.push(other);
+        } else if kind >= 3 {
+            let inner = d.group_layer(owner, "inner context").unwrap();
+            d.set_active_layer(owner).unwrap();
+            let sibling = d.add_layer("stationary sibling").unwrap();
+            d.begin_stroke(
+                crate::Brush {
+                    radius: 8.,
+                    color: Pixel::from_straight([0., 1., 0.3, 0.65]).unwrap(),
+                    ..Default::default()
+                },
+                InputPoint::new(100., 75., 1.),
+            )
+            .unwrap();
+            d.end_stroke().unwrap();
+            assert_eq!(d.layer(sibling).unwrap().parent, inner);
+            let outer = d.group_layer(inner, "outer context").unwrap();
+            for id in [inner, outer] {
+                let at = d.layer_index(id).unwrap();
+                d.layers[at].appearance.blend = if kind == 3 {
+                    crate::BlendMode::Normal
+                } else {
+                    crate::BlendMode::PassThrough
+                };
+            }
+            let at = d.layer_index(owner).unwrap();
+            d.layers[at].properties.opacity = 0.65;
         }
         (d, roots)
     }
@@ -605,7 +631,7 @@ mod tests {
     }
     #[test]
     fn compound_transform_preserves_sources_and_final_layer_mask_history() {
-        for kind in 0..3 {
+        for kind in 0..5 {
             for warp in [false, true] {
                 let (mut a, roots) = compound_seed(kind);
                 let (mut b, _) = compound_seed(kind);
@@ -656,6 +682,9 @@ mod tests {
                     assert!(Arc::ptr_eq(&source, &a.transform_preview().unwrap().source));
                     assert_eq!(a.history_depth(), depth);
                     for (old, new) in baseline.iter().zip(&a.layers) {
+                        assert_eq!(old.parent, new.parent);
+                        assert_eq!(old.properties, new.properties);
+                        assert_eq!(old.appearance, new.appearance);
                         for (key, tile) in &old.tiles {
                             assert!(Arc::ptr_eq(tile, &new.tiles[key]));
                         }
@@ -747,6 +776,90 @@ mod tests {
             .unwrap();
         assert!(!gap.transform_deferred());
         gap.cancel_transform().unwrap();
+    }
+
+    #[test]
+    fn nested_transform_late_originals_failure_and_unsafe_ancestors() {
+        for kind in 3..5 {
+            let (mut d, roots) = compound_seed(kind);
+            let before = pixels(&d);
+            let hierarchy: Vec<_> = d.layers.iter().map(|l| (l.id, l.parent)).collect();
+            let depth = d.history_depth();
+            d.begin_transform_layers(&roots).unwrap();
+            let mut g = d.transform_geometry().unwrap();
+            for p in &mut g.points {
+                p[0] += 15.;
+            }
+            d.update_transform(g).unwrap();
+            d.enable_transform_deferred().unwrap();
+            assert!(d.transform_deferred());
+            let source = d.transform_preview().unwrap().source;
+            for y in 0..96 {
+                for x in 0..128 {
+                    let image = source.image.pixel(
+                        (x as i32 - source.bounds[0]) as u32,
+                        (y as i32 - source.bounds[1]) as u32,
+                    );
+                    let split = source
+                        .above
+                        .pixel(x, y)
+                        .over(image.over(source.below.pixel(x, y)));
+                    for (a, b) in split
+                        .components()
+                        .into_iter()
+                        .zip(before[(y * 128 + x) as usize].components())
+                    {
+                        assert!(
+                            (a - b).abs() < 1e-6,
+                            "nested late original {kind} {x},{y}: {a}/{b}"
+                        );
+                    }
+                }
+            }
+            d.options.max_document_tiles = 0;
+            assert!(d.commit_transform().is_err());
+            assert!(Arc::ptr_eq(&source, &d.transform_preview().unwrap().source));
+            assert_eq!(d.history_depth(), depth);
+            d.cancel_transform().unwrap();
+            assert_eq!(pixels(&d), before);
+            assert_eq!(
+                d.layers
+                    .iter()
+                    .map(|l| (l.id, l.parent))
+                    .collect::<Vec<_>>(),
+                hierarchy
+            );
+        }
+        for kind in 0..8 {
+            let (mut d, roots) = compound_seed(3);
+            let parent = d.layer(roots[0]).unwrap().parent;
+            let at = d.layer_index(parent).unwrap();
+            match kind {
+                0 => {
+                    d.add_mask(parent).unwrap();
+                }
+                1 => d.layers[at].properties.opacity = 0.5,
+                2 => d.layers[at].appearance.fill = 0.5,
+                3 => d.layers[at].appearance.blend = crate::BlendMode::Multiply,
+                4 => d.layers[at].properties.visible = false,
+                5 => d.layers[at].clipped = true,
+                6 => {
+                    let mask = d.mask_for(roots[0]).unwrap().id;
+                    d.set_mask_linked(mask, false).unwrap();
+                }
+                _ => {
+                    let sibling = d
+                        .layers
+                        .iter_mut()
+                        .find(|l| l.name == "stationary sibling")
+                        .unwrap();
+                    sibling.appearance.blend = crate::BlendMode::Multiply;
+                }
+            }
+            d.begin_transform_layers_deferred(&roots).unwrap();
+            assert!(!d.transform_deferred(), "unsafe ancestor {kind}");
+            d.cancel_transform().unwrap();
+        }
     }
     #[test]
     fn deferred_transform_keeps_tiles_and_matches_final_pixels_and_history() {
