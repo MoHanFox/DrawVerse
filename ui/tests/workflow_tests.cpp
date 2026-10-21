@@ -113,6 +113,67 @@ private slots:
         QSignalSpy stopped(manager,&DocumentManager::stopped);manager->shutdown();QTRY_COMPARE(stopped.size(),1);
         QTRY_VERIFY(!engine.incubationController() || engine.incubationController()->incubatingObjectCount()==0);
     }
+    void collapsedFlyoutMergesMimeDropsAndKeepsTabOrder() {
+        QTemporaryDir temp;const auto layout=temp.filePath("layout.ini");PaintCoreClient client(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(layout);
+        const auto incoming=workspace.addCustomPanel("Incoming","palette");QVERIFY(!incoming.isEmpty());workspace.detachPanel(workspace.groupForPanel(incoming),incoming);
+        const auto source=workspace.groupForPanel(incoming),target=workspace.groupForPanel("color");workspace.setColumnCollapsed(target,true);
+        QQmlApplicationEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        auto *rail=findVisual(main->contentItem(),"railGrip:color");QVERIFY(rail);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,rail->mapToScene({14,14}).toPoint());
+        QPointer<QQuickWindow> flyout;QTRY_VERIFY([&]{for(auto *w:QGuiApplication::allWindows())if(w->isVisible() && w->objectName().startsWith("panelFlyout:") && w->objectName().endsWith(":color"))flyout=qobject_cast<QQuickWindow*>(w);return !flyout.isNull();}());
+        auto *group=findVisual(flyout->contentItem(),"dockGroup:"+target);QVERIFY(group);const auto center=group->mapToScene({group->width()/2,group->height()/2}).toPoint();
+        QMimeData mime;mime.setData("application/x-drawverse-panel",QJsonDocument(QJsonObject{{"group",source},{"panel",incoming},{"whole",false}}).toJson(QJsonDocument::Compact));
+        QDragEnterEvent enter(center,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(flyout,&enter);QVERIFY(enter.isAccepted());
+        QDragMoveEvent move(center,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(flyout,&move);QVERIFY(move.isAccepted());
+        QDropEvent drop(center,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(flyout,&drop);QVERIFY(drop.isAccepted());
+        QCOMPARE(workspace.groupForPanel(incoming),target);QCOMPARE(workspace.groupDefinition(target).value("panels").toStringList(),(QStringList{"color",incoming}));QVERIFY(workspace.groupDefinition(target).value("icons").toBool());
+        QTRY_VERIFY(flyout && flyout->isVisible());
+        QTRY_COMPARE(flyout->property("selectedPanel").toString(),incoming);
+        auto *colorIcon=findVisual(main->contentItem(),"railPanel:color"),*newIcon=findVisual(main->contentItem(),"railPanel:"+incoming);QVERIFY(colorIcon && newIcon);QTRY_VERIFY(colorIcon->y()<newIcon->y());
+        rail=findVisual(main->contentItem(),"railGrip:color");QVERIFY(rail);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,rail->mapToScene({14,14}).toPoint());QTRY_VERIFY(flyout && flyout->isVisible());
+        auto *incomingIcon=findVisual(main->contentItem(),"railGrip:"+incoming);QVERIFY(incomingIcon);
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,incomingIcon->mapToScene({14,14}).toPoint());QTRY_VERIFY(flyout && flyout->isVisible());
+        int count=0;for(auto *w:QGuiApplication::allWindows())if(w->isVisible() && w->objectName().startsWith("panelFlyout:"))++count;QCOMPARE(count,1);
+        QTRY_COMPARE(workspace.groupDefinition(target).value("active").toString(),incoming);
+        workspace.swapPanelTabs(target,"color",incoming);const QStringList expected{incoming,"color"};QCOMPARE(workspace.categoryDefinition(target).value("panels").toStringList(),expected);
+        auto *firstIcon=findVisual(main->contentItem(),"railPanel:"+incoming),*secondIcon=findVisual(main->contentItem(),"railPanel:color");QVERIFY(firstIcon && secondIcon);QTRY_VERIFY(firstIcon->y()<secondIcon->y());
+        auto *firstTab=findVisual(flyout->contentItem(),"panelTab:"+incoming),*secondTab=findVisual(flyout->contentItem(),"panelTab:color");QVERIFY(firstTab && secondTab);QTRY_VERIFY(firstTab->x()<secondTab->x());
+        workspace.saveLayout();{WorkspaceManager restored(layout);QCOMPARE(restored.groupForPanel(incoming),target);QCOMPARE(restored.groupDefinition(target).value("panels").toStringList(),expected);QVERIFY(restored.groupDefinition(target).value("icons").toBool());}
+        QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));auto *manager=main->findChild<DocumentManager*>("documentManager");QVERIFY(manager);QSignalSpy stopped(manager,&DocumentManager::stopped);manager->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void collapsedFlyoutMergesNativeWindowDrag_data() {
+        QTest::addColumn<int>("sourceKind");QTest::newRow("single-panel")<<0;QTest::newRow("one-group")<<1;QTest::newRow("whole-column")<<2;
+    }
+    void collapsedFlyoutMergesNativeWindowDrag() {
+        QFETCH(int,sourceKind);const bool multipleGroups=sourceKind==2,singlePanel=sourceKind==0;QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
+        const auto target=workspace.groupForPanel("color"),originalBrush=workspace.groupForPanel("brush");
+        if(singlePanel)workspace.detachPanel(originalBrush,"brush");
+        else if(multipleGroups){workspace.detachPanel(originalBrush,"brush-settings");workspace.detachPanel(workspace.groupForPanel("brush"),"brush");}
+        else workspace.detachGroup(originalBrush);
+        const auto source=workspace.groupForPanel("brush");
+        if(multipleGroups){const auto secondary=workspace.groupForPanel("brush-settings");QVERIFY(workspace.dockPayload(QString::fromUtf8(QJsonDocument(QJsonObject{{"group",secondary},{"whole",true}}).toJson()),"floating",source,"after"));}
+        workspace.setColumnCollapsed(target,true);
+        QQmlApplicationEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
+        auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
+        auto *rail=findVisual(main->contentItem(),"railGrip:color");QVERIFY(rail);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,rail->mapToScene({14,14}).toPoint());
+        QPointer<QQuickWindow> flyout,sourceWindow;QTRY_VERIFY([&]{for(auto *w:QGuiApplication::allWindows()){if(w->isVisible() && w->objectName().startsWith("panelFlyout:") && w->objectName().endsWith(":color"))flyout=qobject_cast<QQuickWindow*>(w);if(w->isVisible() && w->objectName().startsWith("floatingDock:") && findVisual(qobject_cast<QQuickWindow*>(w)->contentItem(),"dockGroup:"+source))sourceWindow=qobject_cast<QQuickWindow*>(w);}return flyout && sourceWindow;}());
+        auto *group=findVisual(flyout->contentItem(),"dockGroup:"+target);QVERIFY(group);const auto global=group->mapToGlobal({10,18}).toPoint();
+        const auto sendMove=[&]{QMouseEvent event(QEvent::MouseMove,sourceWindow->mapFromGlobal(global),global,Qt::NoButton,Qt::LeftButton,Qt::NoModifier);QCoreApplication::sendEvent(sourceWindow,&event);};
+        const auto begin=[&]{QTest::mousePress(sourceWindow,Qt::LeftButton,Qt::NoModifier,{24,4});workspace.beginDrag(source,{},true);};
+        begin();QTRY_VERIFY(workspace.dragging());sendMove();QTRY_COMPARE(workspace.dragTarget(),target);QCOMPARE(workspace.dragPlacement(),QString("merge"));QCOMPARE(workspace.dragBeforePanel(),QString("color"));
+        QTest::keyPress(sourceWindow,Qt::Key_Control);QTRY_VERIFY(workspace.dragTarget().isEmpty());QTest::keyRelease(sourceWindow,Qt::Key_Control);QTRY_COMPARE(workspace.dragTarget(),target);
+        QTest::keyClick(sourceWindow,Qt::Key_Escape);QTRY_VERIFY(!workspace.dragging());QCOMPARE(workspace.groupDefinition(target).value("panels").toStringList(),QStringList{"color"});QCOMPARE(workspace.groupForPanel("brush"),source);
+        begin();QTRY_VERIFY(workspace.dragging());sendMove();QTRY_COMPARE(workspace.dragTarget(),target);
+        QMouseEvent release(QEvent::MouseButtonRelease,sourceWindow->mapFromGlobal(global),global,Qt::LeftButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(sourceWindow,&release);
+        QTRY_VERIFY(!workspace.dragging());QCOMPARE(workspace.groupForPanel("brush"),target);if(!singlePanel)QCOMPARE(workspace.groupForPanel("brush-settings"),target);
+        const QStringList expected=singlePanel?QStringList{"brush","color"}:QStringList{"brush","brush-settings","color"};
+        QCOMPARE(workspace.groupDefinition(target).value("panels").toStringList(),expected);QVERIFY(workspace.groupDefinition(target).value("icons").toBool());QTRY_VERIFY(flyout && flyout->isVisible());
+        const auto capture=qEnvironmentVariable("DRAWVERSE_FLYOUT_CAPTURE");if(!capture.isEmpty()){QTest::qWait(100);QVERIFY(flyout->grabWindow().save(capture+"-"+QString::fromLatin1(QTest::currentDataTag())+".png"));}
+        QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));auto *manager=main->findChild<DocumentManager*>("documentManager");QVERIFY(manager);QSignalSpy stopped(manager,&DocumentManager::stopped);manager->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void nativeIdentityPressureDoesNotRebuildBrushRows() {
         BrushLibrary library;const auto original=library.snapshot();
         const QJsonObject control{{"curve",QJsonArray{QJsonArray{0.,0.},QJsonArray{1.,1.}}},{"minimum",0.}};

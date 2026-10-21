@@ -29,6 +29,7 @@ class WorkspaceManager final : public QObject, public QAbstractNativeEventFilter
     Q_PROPERTY(bool dockingSuppressed READ dockingSuppressed NOTIFY dragModifiersChanged)
     Q_PROPERTY(QString dragTarget READ dragTarget NOTIFY dragModifiersChanged)
     Q_PROPERTY(QString dragPlacement READ dragPlacement NOTIFY dragModifiersChanged)
+    Q_PROPERTY(QString dragBeforePanel READ dragBeforePanel NOTIFY dragModifiersChanged)
     Q_PROPERTY(QRectF dragPreviewRect READ dragPreviewRect NOTIFY dragModifiersChanged)
     Q_PROPERTY(bool dragging READ dragging NOTIFY dragModifiersChanged)
     Q_PROPERTY(QStringList dragGroups READ dragGroups NOTIFY dragModifiersChanged)
@@ -70,10 +71,13 @@ public:
     bool dockingSuppressed() const { return m_dockingSuppressed; }
     QString dragTarget() const {return m_dragTarget;}
     QString dragPlacement() const {return m_dragPlacement;}
+    QString dragBeforePanel() const {return m_dragBeforePanel;}
     QRectF dragPreviewRect() const {return m_dragPreviewRect;}
     bool dragging() const {return m_windowDrag.active();}
     QStringList dragGroups() const {return m_dragGroups;}
     Q_INVOKABLE void registerTarget(const QString &group,QQuickItem *item);
+    Q_INVOKABLE void registerFlyoutTarget(const QString &group,QQuickItem *item);
+    Q_INVOKABLE void unregisterFlyoutTarget(const QString &group,QQuickItem *item);
     Q_INVOKABLE void registerWorkspace(QQuickItem *item);
     Q_INVOKABLE QStringList columnGroups(const QString &group) const;
     Q_INVOKABLE QStringList categoryGroups(const QString &group) const;
@@ -159,6 +163,9 @@ private:
     QHash<QString,QRect> m_windowGeometry;
     QSet<QString> m_iconGroups;
     QMap<QString,QPointer<QQuickItem>> m_targets;
+    QMap<QString,QPointer<QQuickItem>> m_flyoutTargets;
+    QString m_dragBeforePanel;
+    bool m_dragFlyoutMerge=false;
     QPointer<QQuickItem> m_workspaceArea;
     WindowDrag m_windowDrag;
     WindowDrag m_titleDrag{this};

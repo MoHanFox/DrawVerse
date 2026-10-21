@@ -20,6 +20,9 @@ Rectangle {
     readonly property int minimumPanelHeight: Workspace.panelDefinition(selected).kind === "layers" ? 250 : Workspace.panelDefinition(selected).kind === "brush-settings" ? 260 : 120
     property string dropMode: "merge"
     property string beforePanel: ""
+    readonly property string insertionPanel:Workspace.dragTarget===groupData.id && Workspace.dragPlacement==="merge"?Workspace.dragBeforePanel:beforePanel
+    Component.onCompleted:if(flyout)Workspace.registerFlyoutTarget(groupData.id,root)
+    Component.onDestruction:if(flyout)Workspace.unregisterFlyoutTarget(groupData.id,root)
     property bool reorderDrop:false
     property string tabDragPanel:""
     property string tabDropTarget:""
@@ -49,12 +52,22 @@ Rectangle {
     }
     function acceptsDrop(d){
         if(Workspace.dockingSuppressed || PaintClient.drawing)return false
-        if(d.y>=28 && Math.min(d.x,width-d.x,d.y,height-d.y)>24)return false
+        if((!flyout || d.formats.indexOf("application/x-drawverse-tool-strip")>=0) && d.y>=28 && Math.min(d.x,width-d.x,d.y,height-d.y)>24)return false
         if(d.formats.indexOf("application/x-drawverse-tool-strip")>=0)return root.groupData.id!=="__toolstrip"
         try {const data=JSON.parse(d.getDataAsString("application/x-drawverse-panel"));return data.group!=="__canvas" && (data.group!==root.groupData.id || !data.whole && d.y<28 && root.groupData.panels.length>1)}catch(e){return false}
     }
+    function mergeBeforePanelAt(x,y) {
+        if(y<8 || y>=28)return ""
+        const p=tabRow.mapFromItem(root,x,y)
+        for(let i=0;i<tabRepeater.count;i++) {
+            const tab=tabRepeater.itemAt(i)
+            if(p.x<tab.x+tab.width/2)return tab.modelData
+        }
+        return ""
+    }
     function locateDrop(x,y,special) {
         beforePanel=""
+        if(flyout && !special){dropMode="merge";beforePanel=mergeBeforePanelAt(x,y);return}
         if(!special && y>=8 && y<28 && (reorderDrop || x>24 && x<width-24)) {
             dropMode="merge"
             if(y<28) {
@@ -206,9 +219,9 @@ Rectangle {
         mode:Workspace.dragTarget===root.groupData.id?Workspace.dragPlacement:root.dropMode
     }
     Rectangle {
-        visible: drop.containsDrag && root.dropMode==="merge" && root.beforePanel.length>0
+        visible: (drop.containsDrag || Workspace.dragTarget===root.groupData.id) && (Workspace.dragTarget===root.groupData.id?Workspace.dragPlacement:root.dropMode)==="merge" && root.insertionPanel.length>0
         x: {
-            for(let i=0;i<tabRepeater.count;i++) { const tab=tabRepeater.itemAt(i); if(tab.modelData===root.beforePanel) return tab.mapToItem(root,0,0).x }
+            for(let i=0;i<tabRepeater.count;i++) { const tab=tabRepeater.itemAt(i); if(tab.modelData===root.insertionPanel) return tab.mapToItem(root,0,0).x }
             return 0
         }
         y: 8; width: 2; height: 20; color: Theme.accent

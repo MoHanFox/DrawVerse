@@ -127,8 +127,8 @@ WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent)
     });
     connect(&m_windowDrag,&WindowDrag::finished,this,[this](bool cancelled) {
         m_pointerButtons&=~Qt::MouseButtons(Qt::LeftButton);
-        const auto target=m_dragTarget,placement=m_dragPlacement,host=m_dragHost;const auto moving=m_dragGroups;
-        m_dragHost.clear();m_dragGroups.clear();m_dragTarget.clear();m_dragPlacement.clear();m_dockingSuppressed=false;emit dragModifiersChanged();
+        const auto target=m_dragTarget,placement=m_dragPlacement,host=m_dragHost;const auto moving=m_dragGroups;const auto beforePanel=m_dragBeforePanel;const bool flyoutMerge=m_dragFlyoutMerge;
+        m_dragHost.clear();m_dragGroups.clear();m_dragTarget.clear();m_dragPlacement.clear();m_dragBeforePanel.clear();m_dragFlyoutMerge=false;m_dockingSuppressed=false;emit dragModifiersChanged();
         if(cancelled){m_docks=m_beforeDocks;m_windowGeometry=m_beforeWindows;m_groups=m_beforeGroups;m_iconGroups=m_beforeIcons;m_retainedHeights=m_beforeRetainedHeights;m_retainedWidths=m_beforeRetainedWidths;syncToolsLocation();emit groupsChanged();return;}
         if(target.isEmpty())return;
         if(target.startsWith("__workspace_")) {
@@ -142,8 +142,8 @@ WorkspaceManager::WorkspaceManager(const QString &settingsFile, QObject *parent)
         QString previous=target;
         for(const auto &id:moving) {
             const auto location=groupDefinition(previous).value("location").toString();
-            const auto mode=id==moving.first()?placement:QStringLiteral("after");
-            dockPayload(payload(id,{},true),location,previous,mode);
+            const auto mode=(flyoutMerge || id==moving.first())?placement:QStringLiteral("after");
+            dockPayload(payload(id,{},true),location,previous,mode,mode=="merge"?beforePanel:QString());
             if(mode!="merge")previous=id;
         }
     });
@@ -175,7 +175,7 @@ bool WorkspaceManager::nativeEventFilter(const QByteArray &eventType,void *messa
     return false;
 }
 void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
-    QString target,placement;QRectF preview; qreal best=25;
+    QString target,placement,beforePanel;QRectF preview; qreal best=25;bool flyoutMerge=false;
     auto *moving=m_windowDrag.window();
     const auto exposed=[&](QWindow *window,QPointF point,bool workspace) {
 #ifdef Q_OS_WIN
@@ -192,15 +192,24 @@ void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
 #endif
         Q_UNUSED(window); Q_UNUSED(point); Q_UNUSED(workspace); return true;
     };
-    const auto consider=[&](const QString &id,QQuickItem *item,bool workspace,QRectF columnArea=QRectF()) {
+    const auto consider=[&](const QString &id,QQuickItem *item,bool workspace,QRectF columnArea=QRectF(),bool flyout=false) {
         if(!item || !item->isVisible() || !item->window() || !item->window()->isVisible() || item->window()->visibility()==QWindow::Minimized)return;
         const bool wholeColumn=!columnArea.isEmpty();
         const QRectF area=wholeColumn?columnArea:QRectF(item->mapToGlobal({0,0}),QSizeF(item->width(),item->height()));
+        if(flyout) {
+            if(best>0 && area.contains(global) && !m_dragGroups.contains("__toolstrip") && exposed(item->window(),global,false)) {
+                target=id;placement="merge";preview=area;best=0;flyoutMerge=true;
+                const auto at=QPointF(global)-area.topLeft();QVariant insertion;
+                QMetaObject::invokeMethod(item,"mergeBeforePanelAt",Q_RETURN_ARG(QVariant,insertion),Q_ARG(QVariant,at.x()),Q_ARG(QVariant,at.y()));
+                beforePanel=insertion.toString();
+            }
+            return;
+        }
         const auto offer=[&](qreal distance,const QString &edge,QPointF contact) {
             contact.setX(std::clamp(contact.x(),area.left()+1,area.right()-1));
             contact.setY(std::clamp(contact.y(),area.top()+1,area.bottom()-1));
             if(distance<=24 && distance<best && exposed(item->window(),contact,workspace)) {
-                best=distance;target=workspace?"__workspace_"+edge:id;placement=workspace?edge:wholeColumn?"column-"+edge:sidePlacement(id,edge);
+                best=distance;flyoutMerge=false;beforePanel.clear();target=workspace?"__workspace_"+edge:id;placement=workspace?edge:wholeColumn?"column-"+edge:sidePlacement(id,edge);
                 preview=placement.startsWith("column-")?columnRect(id):area;
             }
         };
@@ -220,6 +229,10 @@ void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
 
     };
     if(!suppressed) {
+        // Expanded collapsed categories are independent merge targets. Keep their
+        // presentation separate from the rail geometry used by column docking.
+        for(auto it=m_flyoutTargets.cbegin();it!=m_flyoutTargets.cend();++it)
+            if(index(it.key())>=0 && !m_dragGroups.contains(it.key()) && hostFor(it.key())!=m_dragHost)consider(it.key(),it.value(),false,{},true);
         // Main outer edges win ties, but covered edges do not steal another host.
         consider({},m_workspaceArea,true);
         for(auto it=m_targets.cbegin();it!=m_targets.cend();++it)
@@ -232,7 +245,7 @@ void WorkspaceManager::updateDragTarget(QPoint global,bool suppressed) {
             columns.insert(first);consider(first,it.value(),false,columnRect(it.key()));
         }
     }
-    m_dockingSuppressed=suppressed;m_dragTarget=target;m_dragPlacement=placement;m_dragPreviewRect=preview;emit dragModifiersChanged();
+    m_dockingSuppressed=suppressed;m_dragTarget=target;m_dragPlacement=placement;m_dragBeforePanel=beforePanel;m_dragFlyoutMerge=flyoutMerge;m_dragPreviewRect=preview;emit dragModifiersChanged();
 }
 void WorkspaceManager::resetLayout() {
     m_panelViews.clear();
@@ -357,6 +370,8 @@ void WorkspaceManager::fitFloatingDockWidth(const QString &host) {
     if(width>0)m_windowGeometry[host].setWidth(std::clamp(qRound(width)+2,36,3000));
 }
 void WorkspaceManager::registerTarget(const QString &group,QQuickItem *item){if(group!="__canvas")m_targets[group]=item;}
+void WorkspaceManager::registerFlyoutTarget(const QString &group,QQuickItem *item){if(index(group)>=0 && item)m_flyoutTargets[group]=item;}
+void WorkspaceManager::unregisterFlyoutTarget(const QString &group,QQuickItem *item){if(m_flyoutTargets.value(group)==item)m_flyoutTargets.remove(group);}
 void WorkspaceManager::registerWorkspace(QQuickItem *item){
     if(m_workspaceArea==item)return;m_workspaceArea=item;if(!item)return;
     connect(item,&QQuickItem::widthChanged,this,[this,item]{if(m_workspaceArea==item)for(const auto &id:DockTree::leaves(m_docks.value("main")))if(!isIconGroup(id))m_retainedWidths.remove(id);});

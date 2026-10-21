@@ -16,6 +16,7 @@ Item {
     function updateLayout(data){layoutData=data;if(isCanvas && workspace.canvasPane.parent!==canvasHost)workspace.canvasPane.attach(canvasHost)}
     function releaseCanvas(){if(isCanvas && workspace.canvasPane.parent===canvasHost)workspace.canvasPane.park()}
     function iconAnchor(panel){return contentLoader.item && contentLoader.item.iconAnchor?contentLoader.item.iconAnchor(panel):mapToGlobal(0,0)}
+    function updateFlyout(window){if(contentLoader.item && contentLoader.item.updatePeek)contentLoader.item.updatePeek(window)}
     function removeFlyout(window){if(contentLoader.item && contentLoader.item.removePeek)contentLoader.item.removePeek(window)}
     function locateDrop(x,y){
         const distance=Math.min(x,width-x,y,height-y)
@@ -48,12 +49,19 @@ Item {
             property var peeks:({})
             property var flyoutFactory:Qt.createComponent("PanelFlyout.qml")
             function iconAnchor(panel){for(let i=0;i<icons.count;i++){const icon=icons.itemAt(i);if(icon.modelData===panel)return icon.mapToGlobal(0,0)}return root.mapToGlobal(0,0)}
+            function updatePeek(window){
+                const next=Object.assign({},peeks)
+                for(const panel in next)if(next[panel]===window)delete next[panel]
+                for(const panel of Workspace.categoryDefinition(root.layoutData.id).panels)next[panel]=window
+                peeks=next
+            }
             function removePeek(window){const next=Object.assign({},peeks);for(const panel in next)if(next[panel]===window)delete next[panel];peeks=next}
             function openPanel(panel){
                 let peek=peeks[panel]
                 if(peek && peek.visible && peek.selectedPanel===panel){peek.close();return}
                 Workspace.setActive(Workspace.groupForPanel(panel),panel)
-                if(!peek){peek=flyoutFactory.createObject(railRoot,{ownerTile:root,panelKey:panel,canvasView:Qt.binding(()=>root.workspace.canvasView)});const next=Object.assign({},peeks);for(const key of Workspace.categoryDefinition(root.layoutData.id).panels)next[key]=peek;peeks=next}
+                if(!peek)peek=flyoutFactory.createObject(railRoot,{ownerTile:root,panelKey:panel,canvasView:Qt.binding(()=>root.workspace.canvasView)})
+                updatePeek(peek)
                 peek.showPanel(panel)
             }
             Component.onDestruction:{const windows=[];for(const panel in peeks)if(peeks[panel] && windows.indexOf(peeks[panel])<0)windows.push(peeks[panel]);for(const window of windows)window.destroy();peeks=({})}

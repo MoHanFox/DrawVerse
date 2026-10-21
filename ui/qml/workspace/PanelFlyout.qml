@@ -26,7 +26,12 @@ PanelWindow {
     // Each panel kind opens at the height it needs; the frame itself never pads the body to fill the screen.
     readonly property real idealHeight:panelKind==="brush-settings"?260:panelKind==="brush"?420:panelKind==="navigator"?300:panelKind==="history"?380:360
     height:Math.min(idealHeight,Workspace.availableScreenGeometry(root).height)
-    function refreshGroup(){groupData=Workspace.categoryDefinition(ownerTile.layoutData.id)}
+    function refreshGroup(){
+        groupData=Workspace.categoryDefinition(ownerTile.layoutData.id)
+        const selectedGroup=Workspace.groupForPanel(selectedPanel)
+        if(groupData.groups.indexOf(selectedGroup)>=0)selectedPanel=Workspace.groupDefinition(selectedGroup).active
+        ownerTile.updateFlyout(root)
+    }
     function remember(){if(visible && !positioning && !restoring && ownerTile)for(const panel of groupData.panels)Workspace.updatePanelView(panel,width,height,Math.round(y-ownerTile.mapToGlobal(0,0).y))}
     function positionSide(wantedY){
         if(!ownerTile || positioning)return

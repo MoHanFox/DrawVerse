@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [折叠列弹出面板的标签合并](interface/collapsed-panel-flyout-merge-validation.md)
+
 - [无文档欢迎工作区](interface/welcome-workspace-validation.md)
 
 - [长任务资源预算与大画布](tools/long-task-resource-budget-validation.md)
