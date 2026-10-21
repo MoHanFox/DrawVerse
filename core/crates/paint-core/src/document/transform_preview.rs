@@ -327,10 +327,9 @@ mod tests {
         let source = d.transform_preview().unwrap().source;
         for y in (0..96).step_by(5) {
             for x in (0..128).step_by(5) {
-                let pixel = source.image.pixel(
-                    (x as i32 - source.bounds[0]) as u32,
-                    (y as i32 - source.bounds[1]) as u32,
-                );
+                let pixel = source
+                    .image
+                    .pixel((x - source.bounds[0]) as u32, (y - source.bounds[1]) as u32);
                 for (p, q) in pixel
                     .components()
                     .into_iter()

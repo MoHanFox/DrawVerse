@@ -112,7 +112,7 @@ mod tests {
                 },
                 ..Default::default()
             };
-            let mut direct = Document::with_options(192, 128, options.clone()).unwrap();
+            let mut direct = Document::with_options(192, 128, options).unwrap();
             let mut stepped = Document::with_options(192, 128, options).unwrap();
             populate(&mut direct);
             populate(&mut stepped);

@@ -35,3 +35,12 @@
 - 格式及生产 paint-ffi lib 严格 Clippy 通过。扩大到 paint-core --tests 的严格 Clippy 被未修改的四个既有问题阻断：transform_preview 两个 unnecessary_cast、history_travel 的 clone_on_copy、liquify_operators 的 items_after_test_module。初次宽范围 debug 单元测试在旧液化编码断言失败后停止；更新为分页结果契约后定向项通过，未完成全量套件验收。
 
 尚未覆盖：完整 8K/16K 多层物化和历史、任意 OS OOM、实体连续输入、跨平台；液化会话字段历史及其他长任务结果类型未迁移。暂存不足自动释放旧历史后重试仍待，实际物理存储仍可能成为限制。
+
+
+## 2026-10-21 严格检查阻塞修复
+
+已修复上述四处既有Clippy阻塞：变换预览测试只移除实际i32坐标的冗余转换（另一处u32转i32保留）；DocumentOptions按Copy直接传值；将液化adaptive_tests移至文件末尾。核对液化生产代码和测试模块内容均保持，仅调整模块位置，不新增allow或关闭检查。
+
+cargo fmt --all -- --check 与 cargo clippy --workspace --all-targets --locked -- -D warnings 均通过，扩大检查覆盖测试、示例等全部目标。实际Rust模块路径的定向回归：document::transform::preview 9项、document::history_travel 3项、document::liquify::operators::adaptive_tests 3项通过，无忽略。最初按文件名过滤的两条命令命中0项，不计验收；修正为模块路径后重跑。
+
+本项仅调整测试，运行时算法/ABI1.74/state44/格式保持，不重复四ABI或重建Release；本轮前两项Qt修复已完成Windows Release、两后端各九项回归，产物 build/qt/bin/Release/drawverse.exe。未宣称全量测试运行通过，8K/16K仍仅包含规划回归，首次加载与其他长任务迁移等剩余边界不变。

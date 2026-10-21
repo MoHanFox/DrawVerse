@@ -12,158 +12,6 @@ fn mesh_cell(radius: f32) -> i64 {
     cell
 }
 
-#[cfg(test)]
-mod adaptive_tests {
-    use super::*;
-    #[test]
-    fn large_source_footprints_split_then_stream_with_exact_sampling() {
-        let mut d = Document::new(3072, 3072).unwrap();
-        d.begin_liquify().unwrap();
-        let mut state = d.liquify.as_ref().unwrap().clone();
-        let pixels = (0..4096)
-            .map(|i| {
-                Pixel::from_straight([(i % 64) as f32 / 64., (i / 64) as f32 / 64., 0.2, 0.75])
-                    .unwrap()
-            })
-            .collect();
-        let tile = Arc::new(Tile::from_pixels(pixels).unwrap());
-        state.original.tiles = (0..48)
-            .flat_map(|x| (0..48).map(move |y| TileCoord { x, y }))
-            .map(|key| (key, tile.clone()))
-            .collect();
-        // A single output tile's conservative footprint exceeds the real 2048
-        // source staging budget; only a few source tiles are sampled in fact.
-        state.field.insert(
-            TileCoord { x: 0, y: 0 },
-            Arc::new(vec![[3000.25, 3000.75]; 4096]),
-        );
-        let output = [TileCoord { x: 0, y: 0 }];
-        assert!(plan_remap(&state, &output, paint_ops::MAX_SOURCE_TILES)
-            .unwrap()
-            .is_none());
-        let reference_source = state
-            .original
-            .tiles
-            .iter()
-            .filter(|(key, _)| **key == output[0] || (key.x >= 46 && key.y >= 46))
-            .map(|(key, tile)| {
-                SourceTile::new(
-                    [key.signed_x(), key.signed_y()],
-                    tile.try_pixels()
-                        .unwrap()
-                        .iter()
-                        .map(|p| p.components())
-                        .collect(),
-                )
-            })
-            .collect();
-        let mut op = RemapOp {
-            grid: grid(&state.field, batch_bounds(&output), state.cell).unwrap(),
-            source: reference_source,
-            white: [0, 0],
-            tiles: vec![[0, 0]],
-            selection: Vec::new(),
-            stride: 1,
-            cubic: false,
-        };
-        for (stride, cubic, selected) in [(1, false, false), (1, true, true), (4, false, false)] {
-            op.stride = stride;
-            op.cubic = cubic;
-            op.selection = if selected {
-                (0..4096).map(|i| (i % 5) as f32 / 4.).collect()
-            } else {
-                Vec::new()
-            };
-            let expected = Cpu.execute(&Operator::Remap(op.clone())).unwrap();
-            assert_eq!(stream_remap(&state, &op).unwrap(), expected);
-        }
-        let mut result = state.original.clone();
-        d.remap_liquify(&state, &mut result, &output, 1, true)
-            .unwrap();
-        op.stride = 1;
-        op.cubic = true;
-        op.selection.clear();
-        let expected = Cpu.execute(&Operator::Remap(op)).unwrap();
-        assert_eq!(
-            result.tiles[&output[0]]
-                .try_pixels()
-                .unwrap()
-                .iter()
-                .map(|p| p.components())
-                .collect::<Vec<_>>(),
-            expected
-        );
-        assert!(
-            state.sources.lock().unwrap().is_empty(),
-            "streaming must not fill the staging cache"
-        );
-
-        // A normal large batch is divided rather than rejecting the operation.
-        state.field.clear();
-        let work = (0..128).map(|y| TileCoord { x: 0, y }).collect::<Vec<_>>();
-        let (count, plan) =
-            paint_ops::batching::plan_batch(&work, 128, |batch| plan_remap(&state, batch, 64))
-                .unwrap();
-        assert!(count < 128 && plan.is_some());
-    }
-
-    #[test]
-    fn eight_and_sixteen_k_output_use_document_quota_not_batch_size() {
-        for side in [8192, 16384] {
-            let tiles = keys([0, 0, side, side], 1_000_000).unwrap();
-            assert_eq!(tiles.len(), (side / 64 * side / 64) as usize);
-            assert!(tiles.len() > 8192);
-            assert!(keys([0, 0, side, side], tiles.len() - 1).is_err());
-        }
-    }
-    #[test]
-    fn large_mesh_refines_without_losing_outside_field_or_history() {
-        let mut d = Document::new(96, 96).unwrap();
-        d.begin_liquify().unwrap();
-        d.begin_liquify_stroke().unwrap();
-        let mut dab = LiquifyDab {
-            tool: 0,
-            radius: 1000.,
-            strength: 0.6,
-            density: 0.7,
-            speed: 1.,
-            pressure_enabled: false,
-            from: InputPoint::new(48., 48., 1.),
-            to: InputPoint::new(57., 52., 1.),
-            elapsed_ms: 16.,
-        };
-        d.liquify_dab(dab).unwrap();
-        d.end_liquify_stroke().unwrap();
-        let before = d.liquify.as_ref().unwrap().clone();
-        assert_eq!(before.cell, 16);
-        assert!(
-            before.field.len() <= 16,
-            "large brush must not allocate a pixel-sized mesh"
-        );
-        d.begin_liquify_stroke().unwrap();
-        dab.radius = 24.;
-        dab.to = InputPoint::new(60., 54., 1.);
-        d.liquify_dab(dab).unwrap();
-        d.end_liquify_stroke().unwrap();
-        let after = d.liquify.as_ref().unwrap().clone();
-        assert_eq!(after.cell, 2);
-        let rect = [-440, -440, -350, -350];
-        let a = grid(&before.field, rect, before.cell)
-            .unwrap()
-            .sample(-400., -400.);
-        let b = grid(&after.field, rect, after.cell)
-            .unwrap()
-            .sample(-400., -400.);
-        assert_eq!(a, b, "refinement must preserve the off-canvas membrane");
-        d.undo_liquify().unwrap();
-        assert_eq!(d.liquify.as_ref().unwrap().cell, before.cell);
-        assert_eq!(d.liquify.as_ref().unwrap().field, before.field);
-        d.redo_liquify().unwrap();
-        assert_eq!(d.liquify.as_ref().unwrap().cell, after.cell);
-        assert_eq!(d.liquify.as_ref().unwrap().field, after.field);
-    }
-}
-
 // Refine only when a smaller brush needs more detail. Interpolation preserves the
 // existing membrane; histories retain both resolutions, including off-canvas nodes.
 fn refine(state: &mut LiquifyState, cell: i64) -> Result<()> {
@@ -860,5 +708,157 @@ impl Document {
             self.progress_advance(batch.len());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod adaptive_tests {
+    use super::*;
+    #[test]
+    fn large_source_footprints_split_then_stream_with_exact_sampling() {
+        let mut d = Document::new(3072, 3072).unwrap();
+        d.begin_liquify().unwrap();
+        let mut state = d.liquify.as_ref().unwrap().clone();
+        let pixels = (0..4096)
+            .map(|i| {
+                Pixel::from_straight([(i % 64) as f32 / 64., (i / 64) as f32 / 64., 0.2, 0.75])
+                    .unwrap()
+            })
+            .collect();
+        let tile = Arc::new(Tile::from_pixels(pixels).unwrap());
+        state.original.tiles = (0..48)
+            .flat_map(|x| (0..48).map(move |y| TileCoord { x, y }))
+            .map(|key| (key, tile.clone()))
+            .collect();
+        // A single output tile's conservative footprint exceeds the real 2048
+        // source staging budget; only a few source tiles are sampled in fact.
+        state.field.insert(
+            TileCoord { x: 0, y: 0 },
+            Arc::new(vec![[3000.25, 3000.75]; 4096]),
+        );
+        let output = [TileCoord { x: 0, y: 0 }];
+        assert!(plan_remap(&state, &output, paint_ops::MAX_SOURCE_TILES)
+            .unwrap()
+            .is_none());
+        let reference_source = state
+            .original
+            .tiles
+            .iter()
+            .filter(|(key, _)| **key == output[0] || (key.x >= 46 && key.y >= 46))
+            .map(|(key, tile)| {
+                SourceTile::new(
+                    [key.signed_x(), key.signed_y()],
+                    tile.try_pixels()
+                        .unwrap()
+                        .iter()
+                        .map(|p| p.components())
+                        .collect(),
+                )
+            })
+            .collect();
+        let mut op = RemapOp {
+            grid: grid(&state.field, batch_bounds(&output), state.cell).unwrap(),
+            source: reference_source,
+            white: [0, 0],
+            tiles: vec![[0, 0]],
+            selection: Vec::new(),
+            stride: 1,
+            cubic: false,
+        };
+        for (stride, cubic, selected) in [(1, false, false), (1, true, true), (4, false, false)] {
+            op.stride = stride;
+            op.cubic = cubic;
+            op.selection = if selected {
+                (0..4096).map(|i| (i % 5) as f32 / 4.).collect()
+            } else {
+                Vec::new()
+            };
+            let expected = Cpu.execute(&Operator::Remap(op.clone())).unwrap();
+            assert_eq!(stream_remap(&state, &op).unwrap(), expected);
+        }
+        let mut result = state.original.clone();
+        d.remap_liquify(&state, &mut result, &output, 1, true)
+            .unwrap();
+        op.stride = 1;
+        op.cubic = true;
+        op.selection.clear();
+        let expected = Cpu.execute(&Operator::Remap(op)).unwrap();
+        assert_eq!(
+            result.tiles[&output[0]]
+                .try_pixels()
+                .unwrap()
+                .iter()
+                .map(|p| p.components())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(
+            state.sources.lock().unwrap().is_empty(),
+            "streaming must not fill the staging cache"
+        );
+
+        // A normal large batch is divided rather than rejecting the operation.
+        state.field.clear();
+        let work = (0..128).map(|y| TileCoord { x: 0, y }).collect::<Vec<_>>();
+        let (count, plan) =
+            paint_ops::batching::plan_batch(&work, 128, |batch| plan_remap(&state, batch, 64))
+                .unwrap();
+        assert!(count < 128 && plan.is_some());
+    }
+
+    #[test]
+    fn eight_and_sixteen_k_output_use_document_quota_not_batch_size() {
+        for side in [8192, 16384] {
+            let tiles = keys([0, 0, side, side], 1_000_000).unwrap();
+            assert_eq!(tiles.len(), (side / 64 * side / 64) as usize);
+            assert!(tiles.len() > 8192);
+            assert!(keys([0, 0, side, side], tiles.len() - 1).is_err());
+        }
+    }
+    #[test]
+    fn large_mesh_refines_without_losing_outside_field_or_history() {
+        let mut d = Document::new(96, 96).unwrap();
+        d.begin_liquify().unwrap();
+        d.begin_liquify_stroke().unwrap();
+        let mut dab = LiquifyDab {
+            tool: 0,
+            radius: 1000.,
+            strength: 0.6,
+            density: 0.7,
+            speed: 1.,
+            pressure_enabled: false,
+            from: InputPoint::new(48., 48., 1.),
+            to: InputPoint::new(57., 52., 1.),
+            elapsed_ms: 16.,
+        };
+        d.liquify_dab(dab).unwrap();
+        d.end_liquify_stroke().unwrap();
+        let before = d.liquify.as_ref().unwrap().clone();
+        assert_eq!(before.cell, 16);
+        assert!(
+            before.field.len() <= 16,
+            "large brush must not allocate a pixel-sized mesh"
+        );
+        d.begin_liquify_stroke().unwrap();
+        dab.radius = 24.;
+        dab.to = InputPoint::new(60., 54., 1.);
+        d.liquify_dab(dab).unwrap();
+        d.end_liquify_stroke().unwrap();
+        let after = d.liquify.as_ref().unwrap().clone();
+        assert_eq!(after.cell, 2);
+        let rect = [-440, -440, -350, -350];
+        let a = grid(&before.field, rect, before.cell)
+            .unwrap()
+            .sample(-400., -400.);
+        let b = grid(&after.field, rect, after.cell)
+            .unwrap()
+            .sample(-400., -400.);
+        assert_eq!(a, b, "refinement must preserve the off-canvas membrane");
+        d.undo_liquify().unwrap();
+        assert_eq!(d.liquify.as_ref().unwrap().cell, before.cell);
+        assert_eq!(d.liquify.as_ref().unwrap().field, before.field);
+        d.redo_liquify().unwrap();
+        assert_eq!(d.liquify.as_ref().unwrap().cell, after.cell);
+        assert_eq!(d.liquify.as_ref().unwrap().field, after.field);
     }
 }
