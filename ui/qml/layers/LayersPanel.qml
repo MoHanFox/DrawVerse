@@ -10,6 +10,10 @@ ColumnLayout {
     id: root
     objectName: "layersPanel"
     spacing: 3
+    // Do not start a second set of delegate incubators inside an unfinished
+    // asynchronous PanelContent. Its cancellation must own all pending work.
+    property bool componentReady: false
+    Component.onCompleted: { componentReady=true; layerList.synchronizeRows() }
     property var canvasView
     function finishSearch(clear) {
         if(clear) search.clear()
@@ -157,7 +161,7 @@ ColumnLayout {
         id: layerList
         objectName: "layerList"
         Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 1; cacheBuffer: 34
-        model: layerRows
+        model: root.componentReady ? layerRows : null
         readonly property var visibleRows: {
             const all=PaintClient.layers.filter(function(l){return !l.mask}); const query=search.text.trim().toLowerCase()
             if(query.length>0) {
@@ -188,6 +192,7 @@ ColumnLayout {
             })
         }
         function synchronizeRows() {
+            if(!root.componentReady)return
             const rows=visibleRows
             for(let i=0;i<rows.length;i++) {
                 if(i>=layerRows.count)layerRows.append({entry:rows[i]})

@@ -26,3 +26,10 @@
 Main原来把每次文件成功回执写为“文件操作完成”，跨文档切换后仍保存在窗口fileNotice，并被欢迎区当错误显示。成功现在清空通知；失败通知和保存后继续关闭/并发修改保护仍保留。
 
 新增 `closingCanvasKeepsWelcomeFreeOfSuccessNotices` 白底/透明两行，软件及D3D11各通过：真实新建后直接关闭无通知；另建画布实际保存ORA、检查成功回执/文件存在，再关闭，欢迎区仍无成功文字；真实打开不存在文件仍显示失败。日志 `artifacts/welcome-notice-{software,d3d11}.txt`。Release及Qt目标构建通过，ABI/state不变。D3D11透明行退出仍报告1个异步创建对象，属于U5未解决范围，没有屏蔽或称作零诊断；功能断言及QML警告收集通过。
+
+
+## 2026-10-21：U5 关闭孵化与窗口透明状态
+
+原有欢迎生命周期的软件与 D3D11 回归均通过，关闭后显式检查所有窗口的 panelContentLoader 均不激活，并检查孵化控制器归零。对原始残留计数、DelegateModel::cancel 与交换链 alpha 诊断启用 failOnWarning，未使用 ignoreMessage 或屏蔽日志。图层列表等外层异步创建完成后再填充，卸载正在 Loading 的内容前完成已开始的 deferred 控件；浮窗固定透明 surface，背景仍由矩形绘制。此前仅取消 Loader 的候选出现 DelegateModel::cancel，仍有两个遗留计数，已改正。
+
+候选三软件：欢迎生命周期及拖动合并三行通过；D3D11 追加白底/透明保存关闭两行共六行通过，零上述诊断。证据 artifacts/lifecycle-candidate3-{software,d3d11}.txt。最终显式隐藏 Loader 断言、六行软件和 D3D11 均通过，日志 artifacts/batch-workflow-{software,d3d11}.txt；完整 Release 构建通过，输出 build/qt/bin/Release/drawverse.exe。ABI/state/VBR 不变；未跑全量或跨平台。

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import DrawVerse 1.0
 import "../brushes"
 import "../canvas"
@@ -16,14 +17,27 @@ Item {
     readonly property var definition: Workspace.panelDefinition(panelId)
     readonly property string kind: definition.kind || ""
     Loader {
+        id:content
         // Loader is a focus scope, including asynchronously created panel content.
         focus: true
         objectName: "panelContentLoader:"+root.panelId
-        asynchronous: root.kind === "layers"
         anchors.fill: parent
         anchors.margins: 5
-        active: root.visible
-        sourceComponent: root.kind === "color" || root.kind === "palette" ? colorPanel : root.kind === "brush-settings" || (root.kind === "brush" && root.definition.custom) ? brushPanel : root.kind === "brush" ? brushLibrary : root.kind === "layers" ? layersPanel : root.kind === "history" ? historyPanel : root.kind === "navigator" ? navigatorPanel : null
+        // Hiding a native window does not hide its content item's visible property.
+        // Cancel pending incubation for hidden windows and closing clients as well.
+        readonly property bool requested:root.visible && root.Window.window !== null && root.Window.window.visible && !PaintClient.closing
+        readonly property Component requestedComponent:root.kind === "color" || root.kind === "palette" ? colorPanel : root.kind === "brush-settings" || (root.kind === "brush" && root.definition.custom) ? brushPanel : root.kind === "brush" ? brushLibrary : root.kind === "layers" ? layersPanel : root.kind === "history" ? historyPanel : root.kind === "navigator" ? navigatorPanel : null
+        active:false
+        function synchronizeContent() {
+            if(status===Loader.Loading && (!requested || sourceComponent!==requestedComponent))asynchronous=false
+            if(!requested) {active=false;return}
+            asynchronous=root.kind==="layers"
+            sourceComponent=requestedComponent
+            active=true
+        }
+        onRequestedChanged:synchronizeContent()
+        onRequestedComponentChanged:synchronizeContent()
+        Component.onCompleted:synchronizeContent()
     }
     Component {
         id: colorPanel

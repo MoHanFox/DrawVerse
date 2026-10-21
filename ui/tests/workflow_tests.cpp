@@ -172,6 +172,7 @@ private slots:
         QVERIFY2(warnings.isEmpty(),qPrintable(warnings.join('\n')));QSignalSpy stopped(manager,&DocumentManager::stopped);manager->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void welcomeWorkspaceDocumentLifecycle() {
+        QTest::failOnWarning(QRegularExpression(".*(items in the process|DelegateModel::cancel|Swapchain says).*"));
         QTemporaryDir temp;PaintCoreClient service(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
         workspace.detachGroup(workspace.groupForPanel("color"));workspace.floatToolStrip(100,100);
         QQmlApplicationEngine engine;QStringList warnings;
@@ -209,6 +210,7 @@ private slots:
         QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,rail->mapToScene({14,14}).toPoint());
         QPointer<QQuickWindow> flyout;QTRY_VERIFY([&]{for(auto *candidate:QGuiApplication::allWindows())if(candidate->objectName().startsWith("panelFlyout:") && candidate->isVisible())flyout=qobject_cast<QQuickWindow*>(candidate);return !flyout.isNull();}());
         QVERIFY(manager->closeDocument(second,true));QTRY_VERIFY(!flyout || !flyout->isVisible());QTRY_VERIFY(welcome->isVisible());QVERIFY(!editor->isVisible());QVERIFY(service.ready());
+        for(auto *candidate:QGuiApplication::allWindows())if(auto *quick=qobject_cast<QQuickWindow*>(candidate))for(auto *object:quick->contentItem()->findChildren<QObject*>())if(object->objectName().startsWith("panelContentLoader:"))QVERIFY(!object->property("active").toBool());
         for(auto *panel:floating())QVERIFY(!panel->isVisible());QCOMPARE(workspace.floatingWindows(),layout);
         // A later open must use the new client, even after the first pane was parked.
         QImage image(32,24,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::red);const auto path=temp.filePath("sample.png");QVERIFY(image.save(path));
@@ -255,6 +257,7 @@ private slots:
         QTest::addColumn<int>("sourceKind");QTest::newRow("single-panel")<<0;QTest::newRow("one-group")<<1;QTest::newRow("whole-column")<<2;
     }
     void collapsedFlyoutMergesNativeWindowDrag() {
+        QTest::failOnWarning(QRegularExpression(".*(items in the process|DelegateModel::cancel|Swapchain says).*"));
         QFETCH(int,sourceKind);const bool multipleGroups=sourceKind==2,singlePanel=sourceKind==0;QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("settings.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
         const auto target=workspace.groupForPanel("color"),originalBrush=workspace.groupForPanel("brush");
         if(singlePanel)workspace.detachPanel(originalBrush,"brush");

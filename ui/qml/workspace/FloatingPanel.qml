@@ -19,7 +19,8 @@ PanelWindow {
     property bool workspaceHidden:false
     visible:!liquifyHidden && !workspaceHidden;flags:Qt.Window|Qt.FramelessWindowHint
     title:"DrawVerse · "+windowData.panels.map(p=>Workspace.panelDefinition(p).title).join(" / ")
-    color:windowData.icons?Theme.surface:"transparent"
+    // Keep the surface format stable when an icon column expands into panels.
+    color:"transparent"
     Rectangle {anchors.fill:parent;color:"transparent";border.color:Theme.line}
     Rectangle {objectName:"floatingColumnBody";x:1;y:windowData.icons?1:29;width:parent.width-2;height:parent.height-y-1;color:Theme.surface}
     x:windowData.x;y:windowData.y;width:windowData.width;height:windowData.height

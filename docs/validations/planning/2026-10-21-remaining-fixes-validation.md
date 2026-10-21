@@ -55,3 +55,8 @@ PanelContent异步创建LayersPanel期间，自定义属性尚未全部就绪；
 移动和变换共用可消去祖先分割，变换覆盖不可变原层时保留显示parent；两级Normal/PassThrough祖先、链接蒙版、半透明目标及静态兄弟可常驻，真实结构不改。核心变换13/公开7/共享移动3/液化3、原生3、Qt复合变换软件/D3D11各7行及共享移动7/4K选区2通过；硬件焦点混合批次未能激活窗口，独立同例通过，原失败保留。四ABI、严格Clippy/格式/生成头/Release通过。
 
 2000px带灰度链接蒙版、两级Normal组的六次Warp核心中位18335.863→5.087ms，确认355.272→3231.376ms，最终摘要相同；不含首次资产或UI显示。标准 `build/qt/bin/Release/drawverse.exe` 已可写且更新。详见[变换验收末节](../tools/transform-resident-preview-validation.md)。固定/祖先蒙版、非连续等T2剩余项及M1/H1/P1、U1/U5保持待办。
+
+
+## U5：隐藏窗口孵化和浮窗透明 surface
+
+PanelContent 检查真实窗口可见与客户端关闭状态；卸载仍在 Loading 的内容时先完成已启动的 deferred 控件，再卸载。LayersPanel 自身完成后才填充子委托，浮动列展开/折叠保持透明 surface。软件及D3D11的欢迎生命周期、白底/透明保存关闭、原生拖动合并三来源共各6行通过；显式检查关闭后的Loader不激活，并将残留创建/cancel/alpha诊断作为测试失败，零上述诊断。完整Release通过，标准drawverse.exe已更新。见欢迎页验收及 artifacts/batch-workflow-{software,d3d11}.txt；U1与原始性能项目继续推进。
