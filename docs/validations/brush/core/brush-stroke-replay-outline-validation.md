@@ -9,3 +9,7 @@ paint-ops::replay_outline 已实现两尺度落笔、四通道灰度max并集、
 7项新测试通过：Outside/Center/Inside圆环逐像素参考，重复和交叉印章顺序无关，独立形状允许溢出，亚像素软边变换，负世界坐标与分块一致，内半径退化，非法参数/中途采样失败不修改输入。paint-ops完整最小包共8单元+5算子+10 SDF回归通过；严格Clippy和格式通过。
 
 当前尚未接入实际笔触、尾部回放、预览和设置；未移除旧UI/算法，state/VBR/ABI保持。不能把此步视作用户新描边需求已完成。Release程序仍为上一项通过的完整子树变换版本，未将未接入算子宣传为可用功能。
+
+## 2026-10-21 核心实际印章接入
+
+`document_stroke_replay_outline` 新5项通过：真实软边/旋转扁平/图片笔尖三位置逐像素与独立两尺度算子对照，单历史撤销重做；独立笔尖溢出与主体来源等价；压力/收笔/交叉路径分页与直接一致、取消无残留；低瓦片配额失败回滚；画布外几何不沿视口边缘描边。既有document_stroke_outline9、existing1、preview1及内部缓存/尾部3通过。paint-core/all-targets严格Clippy与fmt通过。ABI/格式未变，尚未触及Qt或重建Release，不把该小项称为UI描边完成。

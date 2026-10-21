@@ -2528,37 +2528,38 @@ impl Document {
             None
         };
         if stroke.outline.is_some() && !erase && pressure_opacity != Some(0.) {
-            let updates = self.outline_shape(stroke, (left, top, right, bottom), |x, y| {
-                let mut coverage = if let Some(mask) = &mask_dab {
-                    mask.coverage(x - point.x, y - point.y)
-                } else {
-                    stroke.program.procedural_coverage_with_geometry(
-                        x - point.x,
-                        y - point.y,
-                        radius,
-                        geometry,
-                    )
-                };
-                if DUAL {
-                    coverage = if dual_path {
-                        stroke.program.dual.as_ref().expect("dual").combine(
-                            coverage,
-                            Self::wet_secondary_coverage(stroke, x, y, appearance)?,
+            let updates =
+                self.outline_shape(stroke, (left, top, right, bottom), point, radius, |x, y| {
+                    let mut coverage = if let Some(mask) = &mask_dab {
+                        mask.coverage(x - point.x, y - point.y)
+                    } else {
+                        stroke.program.procedural_coverage_with_geometry(
+                            x - point.x,
+                            y - point.y,
+                            radius,
+                            geometry,
                         )
-                    } else {
-                        dual_dab.as_ref().expect("dual").combine(coverage, x, y)
                     };
-                }
-                if TEXTURED {
-                    let texture = texture_dab.as_ref().expect("texture");
-                    coverage = if paper_texture {
-                        coverage * texture.coverage(x, y)
-                    } else {
-                        texture.apply(coverage, x, y)
-                    };
-                }
-                Ok(coverage)
-            })?;
+                    if DUAL {
+                        coverage = if dual_path {
+                            stroke.program.dual.as_ref().expect("dual").combine(
+                                coverage,
+                                Self::wet_secondary_coverage(stroke, x, y, appearance)?,
+                            )
+                        } else {
+                            dual_dab.as_ref().expect("dual").combine(coverage, x, y)
+                        };
+                    }
+                    if TEXTURED {
+                        let texture = texture_dab.as_ref().expect("texture");
+                        coverage = if paper_texture {
+                            coverage * texture.coverage(x, y)
+                        } else {
+                            texture.apply(coverage, x, y)
+                        };
+                    }
+                    Ok(coverage)
+                })?;
             outline::install_shape(
                 &mut stroke.outline,
                 &mut stroke.taper,

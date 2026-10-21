@@ -142,6 +142,13 @@ pub(crate) struct TipGeometry {
 }
 
 impl TipGeometry {
+    pub(crate) fn texture_dab(
+        self,
+        texture: &crate::brush_texture::CompiledTexture,
+        point: InputPoint,
+    ) -> crate::brush_texture::TextureDab<'_> {
+        texture.dab(point.x, point.y, point.pressure, self.sine, self.cosine)
+    }
     pub(crate) fn wet_geometry(self, point: InputPoint, radius: f64) -> crate::WetDabGeometry {
         crate::WetDabGeometry {
             x: point.x,
@@ -482,15 +489,9 @@ impl BrushProgram {
         point: InputPoint,
         geometry: TipGeometry,
     ) -> Option<crate::brush_texture::TextureDab<'_>> {
-        self.texture.as_ref().map(|t| {
-            t.dab(
-                point.x,
-                point.y,
-                point.pressure,
-                geometry.sine,
-                geometry.cosine,
-            )
-        })
+        self.texture
+            .as_ref()
+            .map(|t| geometry.texture_dab(t, point))
     }
     pub fn has_mask(&self) -> bool {
         self.mask.is_some()

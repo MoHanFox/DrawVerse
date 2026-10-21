@@ -4,6 +4,8 @@ use crate::{OutlineAlgorithm, OutlineSource, StrokeOutline, MAX_STROKE_OUTLINE_P
 #[path = "outline_brush.rs"]
 mod outline_brush;
 
+#[path = "outline_replay.rs"]
+mod outline_replay;
 #[path = "outline_sdf.rs"]
 mod outline_sdf;
 
@@ -12,6 +14,7 @@ pub(super) struct ShapeCoverage {
     rows: [u64; 64],
     // Empty for the original binary path. Allocated only for SDF shape tiles.
     alpha: Vec<u8>,
+    replay: Vec<paint_ops::replay_outline::Coverage>,
 }
 pub(super) type ShapeTile = Arc<ShapeCoverage>;
 pub(super) type ShapeTiles = BTreeMap<TileCoord, ShapeTile>;
@@ -25,6 +28,7 @@ pub(super) struct OutlineStroke {
     pub(super) shape: ShapeTiles,
     sdf_cache: Option<outline_sdf::Cache>,
     preview: BTreeMap<TileCoord, Option<Arc<Tile>>>,
+    replay_program: Option<BrushProgram>,
 }
 impl OutlineStroke {
     pub(super) fn new(
@@ -33,13 +37,30 @@ impl OutlineStroke {
         first: InputPoint,
     ) -> Result<Option<Self>> {
         let width = settings.width().effective(diameter)?;
-        Ok((settings.enabled() && width > 0.).then(|| Self {
+        if !settings.enabled() || width == 0. {
+            return Ok(None);
+        }
+        let replay_program = if settings.algorithm() == OutlineAlgorithm::Replay {
+            match settings.source() {
+                OutlineSource::Existing(tip) => Some(BrushProgram::compile(BrushDefinition {
+                    tip: tip.tip(),
+                    mask: tip.mask().cloned(),
+                    texture: tip.texture().clone(),
+                    ..Default::default()
+                })?),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        Ok(Some(Self {
             settings: settings.clone(),
             width,
             first,
             shape: BTreeMap::new(),
             preview: BTreeMap::new(),
             sdf_cache: None,
+            replay_program,
         }))
     }
     pub(super) fn invalidate_cache(&mut self) {
@@ -129,11 +150,16 @@ impl Document {
         &self,
         stroke: &Stroke,
         bounds: (f64, f64, f64, f64),
+        point: InputPoint,
+        radius: f64,
         sample: impl Fn(f64, f64) -> Result<f32>,
     ) -> Result<ShapeUpdates> {
         let Some(outline) = &stroke.outline else {
             return Ok(Vec::new());
         };
+        if outline.settings.algorithm() == OutlineAlgorithm::Replay {
+            return outline_replay::accumulate(self, stroke, bounds, point, radius, sample);
+        }
         let padding = outline.padding();
         let (left, top, right, bottom) = (
             (bounds.0.floor() as i64).max(-padding),
@@ -156,6 +182,7 @@ impl Document {
                 let mut data = ShapeCoverage {
                     rows: old.map_or([0; 64], |p| p.rows),
                     alpha: Vec::new(),
+                    replay: Vec::new(),
                 };
                 if sdf {
                     data.alpha
@@ -217,7 +244,8 @@ impl Document {
                 bounds.3 = bounds.3.max(ty + y as i64 + 1);
             }
         }
-        let padding = outline.padding();
+        let replay = outline.settings.algorithm() == OutlineAlgorithm::Replay;
+        let padding = if replay { 0 } else { outline.padding() };
         let (left, top, right, bottom) = (
             bounds.0 - padding,
             bounds.1 - padding,
@@ -230,7 +258,9 @@ impl Document {
             .filter(|n| *n <= MAX_STROKE_OUTLINE_PIXELS)
             .ok_or(Error::ResourceLimit("stroke outline bounds pixel limit"))?;
         let sdf = outline.settings.algorithm() == OutlineAlgorithm::Sdf;
-        let band = if let Some(cache) = outline.sdf_cache.as_ref().filter(|_| sdf) {
+        let band = if replay {
+            outline_replay::compose(outline, left, top, width, height)?
+        } else if let Some(cache) = outline.sdf_cache.as_ref().filter(|_| sdf) {
             Arc::clone(&cache.band)
         } else {
             let mut shape = Vec::new();
@@ -285,7 +315,7 @@ impl Document {
         };
         let texture = match outline.settings.source() {
             OutlineSource::Texture(texture) | OutlineSource::SelfTextured(texture) => {
-                if sdf {
+                if sdf || replay {
                     None
                 } else {
                     texture.compile()

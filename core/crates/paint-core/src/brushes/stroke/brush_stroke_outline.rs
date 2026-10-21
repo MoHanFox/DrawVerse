@@ -4,12 +4,14 @@ use std::sync::Arc;
 
 pub const STROKE_OUTLINE_MODEL: &str = "stroke-contour-v1";
 pub const STROKE_SDF_OUTLINE_MODEL: &str = "stroke-sdf-v1";
+pub const STROKE_REPLAY_OUTLINE_MODEL: &str = "stroke-replay-v1";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OutlineAlgorithm {
     #[default]
     Path,
     Sdf,
+    Replay,
 }
 
 pub const MAX_STROKE_OUTLINE_PIXELS: usize = 8 * 1024 * 1024;
@@ -104,6 +106,7 @@ pub struct StrokeOutline {
     width: OutlineWidth,
     source: OutlineSource,
     secondary_color: bool,
+    allow_overflow: bool,
 }
 impl StrokeOutline {
     pub fn new(
@@ -123,6 +126,7 @@ impl StrokeOutline {
             width,
             source,
             secondary_color,
+            allow_overflow: false,
         })
     }
     pub fn with_algorithm(mut self, algorithm: OutlineAlgorithm) -> Self {
@@ -132,10 +136,18 @@ impl StrokeOutline {
     pub fn algorithm(&self) -> OutlineAlgorithm {
         self.algorithm
     }
+    pub fn with_allow_overflow(mut self, allow: bool) -> Self {
+        self.allow_overflow = allow;
+        self
+    }
+    pub fn allow_overflow(&self) -> bool {
+        self.allow_overflow
+    }
     pub fn model(&self) -> &'static str {
         match self.algorithm {
             OutlineAlgorithm::Path => STROKE_OUTLINE_MODEL,
             OutlineAlgorithm::Sdf => STROKE_SDF_OUTLINE_MODEL,
+            OutlineAlgorithm::Replay => STROKE_REPLAY_OUTLINE_MODEL,
         }
     }
     pub fn enabled(&self) -> bool {
@@ -160,6 +172,7 @@ impl StrokeOutline {
             && self.width == OutlineWidth::default()
             && matches!(self.source, OutlineSource::SelfBrush)
             && !self.secondary_color
+            && !self.allow_overflow
     }
     pub fn validate(&self) -> Result<()> {
         if self.enabled && matches!(&self.source, OutlineSource::Texture(t) if !t.enabled()) {

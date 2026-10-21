@@ -40,7 +40,7 @@ pub use brush_smoothing::BrushSmoothing;
 pub use brush_stroke_outline::{
     stroke_outline_band, OutlineAlgorithm, OutlinePlacement, OutlineSource, OutlineWidth,
     StrokeOutline, MAX_STROKE_OUTLINE_PIXELS, MAX_STROKE_OUTLINE_WIDTH, STROKE_OUTLINE_MODEL,
-    STROKE_SDF_OUTLINE_MODEL,
+    STROKE_REPLAY_OUTLINE_MODEL, STROKE_SDF_OUTLINE_MODEL,
 };
 pub use brush_taper::{
     CompiledTaper, StrokeTaper, TaperBuffer, TaperEnd, TaperFactors, TaperRecord, TaperStream,
