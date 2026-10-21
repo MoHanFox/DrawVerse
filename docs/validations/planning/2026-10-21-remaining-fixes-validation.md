@@ -27,3 +27,7 @@ PanelContent异步创建LayersPanel期间，自定义属性尚未全部就绪；
 原 `brushLibrarySettingsAndEnginePreviewsShareSelectionAcrossWindows` 在软件与D3D11各通过一次，保留真实40px输入、跨窗选中同步、标准预览/间距变化、实际透明像素、单历史及保存重开验证。日志：`artifacts/pixel-slider-ui-software.txt` / `artifacts/pixel-slider-ui-d3d11.txt`。方向盘两项软件通过；D3D11随S1最终共享回归记录。完整Release构建通过。
 
 同批附加的旧液化事务用例软件通过、D3D11在3953行等待CPU frameRevision失败；未删除断言或标记通过，GPU常驻显示路径不保证逐笔CPU图像，该用例仍需专门分析。U1/U5及算法剩余项目保持待办。
+
+## S1 大范围像素滑条
+
+共用有符号对数坐标与指数反函数，跨度≥512px时启用，保留1px加减与精确输入。软件/D3D11各7项通过，含真实输入/鼠标/键盘及笔刷、液化模型双向同步；Release构建通过。详见[设计](../../interface/pixel-slider-exponential-design.md)与[验收](../interface/pixel-slider-exponential-validation.md)。U4共享方向盘两项D3D11也通过。U5透明交换链提示在3行真实拖放仍存在，默认alpha缓冲配置并未消除提示，因此撤回该无效候选，不称其修复。

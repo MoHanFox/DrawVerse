@@ -25,6 +25,7 @@
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QWheelEvent>
+#include <limits>
 #include "platform/MenuSurface.h"
 #include "workspace/WorkspaceManager.h"
 
@@ -52,6 +53,67 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void pixelSlidersMapSignedRangesAndKeepExactEdits() {
+        QQmlEngine engine;QQmlComponent component(&engine);
+        component.setData(R"(
+            import QtQuick
+            import "qrc:/qml/controls"
+            Item {
+                width:400;height:220
+                property real amount:20
+                MappedSlider {objectName:"mapped";width:400;height:30;from:1;to:2000;exponential:true;value:parent.amount;onMoved:parent.amount=editedValue}
+                ParameterSlider {objectName:"pixels";y:40;width:400;unit:"px";from:-1000000;to:1000000;value:parent.amount;onCommitted:v=>parent.amount=v}
+                ParameterSlider {objectName:"small";y:100;width:400;unit:"px";to:128;value:64}
+                ParameterSlider {objectName:"percent";y:160;width:400;unit:"%";to:10000;value:5000}
+            }
+        )",QUrl());
+        QScopedPointer<QObject> root(component.create());QVERIFY2(root,qPrintable(component.errorString()));
+        auto *mapped=root->findChild<QQuickItem*>("mapped");QVERIFY(mapped);
+        auto invoke=[&](const char *method,double input){QVariant result;const bool ok=QMetaObject::invokeMethod(mapped,method,Q_RETURN_ARG(QVariant,result),Q_ARG(QVariant,QVariant(input)));if(!ok)return std::numeric_limits<double>::quiet_NaN();return result.toDouble();};
+        for(const auto &range:QList<QPair<double,double>>{{1,2000},{0,2000},{1,15000},{-1000000,1000000},{-511,511}}) {
+            mapped->setProperty("from",range.first);mapped->setProperty("to",range.second);
+            QCOMPARE(invoke("valueAt",0),range.first);QCOMPARE(invoke("valueAt",1),range.second);
+            double previous=range.first;
+            for(int i=0;i<=100;++i){const double p=i/100.;const double value=invoke("valueAt",p);QVERIFY(value>=previous);QVERIFY(qAbs(invoke("positionForValue",value)-p)<1e-9);previous=value;}
+            if(range.first==-range.second)QCOMPARE(invoke("valueAt",.5),0.);
+        }
+        mapped->setProperty("from",1);mapped->setProperty("to",2000);
+        const auto middle=invoke("valueAt",.5);QVERIFY(middle>60 && middle<64);
+        auto *pixels=root->findChild<QObject*>("pixels");QVERIFY(pixels);
+        auto *pixelTrack=pixels->findChild<QObject*>("pixels");QVERIFY(pixelTrack);QVERIFY(pixelTrack->property("exponential").toBool());
+        for(const auto &name:{"small","percent"}){auto *field=root->findChild<QObject*>(name);QVERIFY(field);auto *track=field->findChild<QObject*>(name);QVERIFY(track);QVERIFY(!track->property("exponential").toBool());}
+        QQuickWindow window;window.resize(400,220);qobject_cast<QQuickItem*>(root.data())->setParentItem(window.contentItem());window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));window.requestActivate();QTRY_VERIFY(window.isActive());
+        QTest::mouseClick(&window,Qt::LeftButton,Qt::NoModifier,QPoint(200,15));
+        QVERIFY(root->property("amount").toDouble()>50 && root->property("amount").toDouble()<80);
+        const auto before=root->property("amount").toDouble();QTest::keyClick(&window,Qt::Key_Right);QCOMPARE(root->property("amount").toDouble(),before+1);
+        QTest::keyClick(&window,Qt::Key_End);QCOMPARE(root->property("amount").toDouble(),2000.);
+        QTest::keyClick(&window,Qt::Key_Home);QCOMPARE(root->property("amount").toDouble(),1.);
+        root->setProperty("amount",321);QCOMPARE(mapped->property("value").toDouble(),321.);
+        auto *input=pixels->findChild<QQuickItem*>("pixelsInput");auto *text=pixels->findChild<QQuickItem*>("pixelsInputText");QVERIFY(input && text);text->forceActiveFocus();
+        QTest::keyClick(&window,Qt::Key_A,Qt::ControlModifier);QTest::keyClick(&window,Qt::Key_Minus);QTest::keyClick(&window,Qt::Key_5);QTest::keyClick(&window,Qt::Key_0);QTest::keyClick(&window,Qt::Key_0);QTest::keyClick(&window,Qt::Key_Return);QCOMPARE(root->property("amount").toDouble(),-500.);
+        QTest::mouseClick(&window,Qt::LeftButton,Qt::NoModifier,input->mapToScene(QPointF(input->width()-10,input->height()/2)).toPoint());QCOMPARE(root->property("amount").toDouble(),-499.);
+        QCOMPARE(mapped->property("value").toDouble(),-499.); // External updates still reach the bound track after pointer/key edits.
+    }
+    void largePixelSlidersUpdateBrushAndLiquifyModels() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("pixels.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);
+        QQmlComponent settings(&engine,QUrl("qrc:/qml/brushes/BrushSettingsPanel.qml"));QScopedPointer<QObject> panel(settings.create());QVERIFY2(panel,qPrintable(settings.errorString()));
+        auto *size=panel->findChild<QObject*>("settingsBrushSizeSlider");QVERIFY(size);QVERIFY(size->property("exponential").toBool());
+        QVERIFY(QMetaObject::invokeMethod(size,"moveTo",Q_ARG(QVariant,QVariant(401))));QCOMPARE(client.brushRadius(),200.5);
+        client.setBrushRadius(123);QCOMPARE(size->property("value").toDouble(),246.);
+        for(int category=0;category<=12;++category){panel->setProperty("category",category);QCoreApplication::processEvents();
+            for(auto *field:panel->findChildren<QObject*>())if(field->property("precisionFactor").isValid()){
+                auto *slider=field->findChild<QObject*>(field->property("sliderName").toString());QVERIFY(slider);
+                const bool expected=field->property("unit").toString()=="px" && field->property("sliderTo").toDouble()-field->property("from").toDouble()>=512;
+                QCOMPARE(slider->property("exponential").toBool(),expected);
+            }
+        }
+        QQmlComponent liquify(&engine,QUrl("qrc:/qml/tools/LiquifyOptionsBar.qml"));QScopedPointer<QObject> bar(liquify.createWithInitialProperties({{"controller",QVariant::fromValue(&client)}}));QVERIFY2(bar,qPrintable(liquify.errorString()));
+        auto *liquifySize=findVisual(qobject_cast<QQuickItem*>(bar.data()),"liquifySize");auto *strength=findVisual(qobject_cast<QQuickItem*>(bar.data()),"liquifyStrength");QVERIFY(liquifySize && strength);QVERIFY(liquifySize->property("exponential").toBool());QVERIFY(!strength->property("exponential").toBool());
+        QVERIFY(QMetaObject::invokeMethod(liquifySize,"moveTo",Q_ARG(QVariant,QVariant(15000))));QCOMPARE(client.liquifySize(),15000);
+        client.setLiquifySize(37);QCOMPARE(liquifySize->property("value").toInt(),37);
+        client.shutdown();
+    }
     void welcomeProgressUsesExplicitReadiness() {
         QQmlEngine engine;QQmlComponent component(&engine,QUrl("qrc:/qml/app/WelcomeScreen.qml"));
         QScopedPointer<QObject> welcome(component.create());QVERIFY2(welcome,qPrintable(component.errorString()));

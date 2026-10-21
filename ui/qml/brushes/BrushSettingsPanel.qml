@@ -165,7 +165,7 @@ ColumnLayout {
                         CompactSpinBox {objectName:"settingsBrushSize";implicitWidth:68;implicitHeight:20;editable:true;from:1;to:2000;value:Math.round(root.library.radius*2);onValueModified:root.library.radius=value/2}
                         Label {text:"px";font.pixelSize:9;color:Theme.muted}
                     }
-                    CompactSlider {Layout.fillWidth:true;from:1;to:2000;value:root.library.radius*2;stepSize:1;snapMode:Slider.SnapAlways;onMoved:root.library.radius=Math.round(value)/2}
+                    MappedSlider {objectName:"settingsBrushSizeSlider";Layout.fillWidth:true;from:1;to:2000;exponential:true;value:root.library.radius*2;onMoved:root.library.radius=editedValue/2}
                     TipField {enabled:!root.library.maskResource.length;title:"硬度";field:"hardness";from:0;to:100;factor:100;unit:"%";help:"实心中心占笔尖半径的比例；降低后形成柔软边缘。"}
                     BrushTipShapeControl {
                         objectName:"settingsBrushTipShape"
@@ -545,7 +545,7 @@ CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;readonly pr
                         CompactTextField {objectName:"settingsTaperLength";Layout.preferredWidth:90;implicitHeight:20;text:root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(0);validator:IntValidator {bottom:0;top:4096;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPx",Math.round(Number(text)));text=Qt.binding(function(){return root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(0)})} hoverEnabled:true;ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"文档像素距离，0 表示该端不处理；不随笔刷尺寸缩放。"}
                         Label {text:"px";color:Theme.muted}
                     }
-                    CompactSlider {objectName:"settingsTaperLengthSlider";visible:!root.taperRelative;Layout.fillWidth:true;from:0;to:4096;value:root.library.strokeTaper[root.taperEnd].lengthPx;stepSize:1;snapMode:Slider.SnapAlways;onMoved:root.setTaperEndField("lengthPx",Math.round(value))}
+                    MappedSlider {objectName:"settingsTaperLengthSlider";visible:!root.taperRelative;Layout.fillWidth:true;from:0;to:4096;value:root.library.strokeTaper[root.taperEnd].lengthPx;stepSize:1;exponential:true;onMoved:root.setTaperEndField("lengthPx",editedValue)}
                     RowLayout {Layout.fillWidth:true;visible:root.taperRelative
                         Label {text:"相对长度";color:Theme.text;Layout.fillWidth:true}
                         CompactTextField {objectName:"settingsTaperPercent";Layout.preferredWidth:90;implicitHeight:20;text:Number(root.library.strokeTaper[root.taperEnd].lengthPercent||0).toFixed(0);validator:IntValidator {bottom:0;top:10000;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPercent",Math.round(Number(text)));text=Qt.binding(function(){return Number(root.library.strokeTaper[root.taperEnd].lengthPercent||0).toFixed(0)})}}

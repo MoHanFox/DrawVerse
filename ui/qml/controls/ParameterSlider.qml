@@ -45,15 +45,15 @@ ColumnLayout {
         }
         Label {visible:root.unit.length>0;text:root.unit;color:Theme.muted;font.pixelSize:9}
     }
-    CompactSlider {
+    MappedSlider {
         objectName: root.sliderName
         Layout.fillWidth: true
         from: root.from
         to: root.sliderTo
         value: Math.min(to,root.value)
         stepSize:1/root.precisionFactor
-        snapMode:Slider.SnapAlways
-        onMoved: root.committed(Math.round(value*root.precisionFactor)/root.precisionFactor)
+        exponential: root.unit==="px" && root.sliderTo-root.from>=512
+        onMoved: root.committed(Math.round(editedValue*root.precisionFactor)/root.precisionFactor)
         tooltip: root.tooltip
     }
 }

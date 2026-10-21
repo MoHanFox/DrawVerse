@@ -34,7 +34,7 @@ Flickable {
                 id:parameter;required property var modelData;spacing:3
                 readonly property bool usable:!root.controller.liquifyBusy && !root.controller.drawing && (modelData.key!=="Speed" || root.controller.liquifyTool===1 || root.controller.liquifyTool===2)
                 Label {text:parameter.modelData.title;Layout.preferredWidth:24;color:parameter.usable?Theme.text:Theme.disabled;font.pixelSize:10}
-                CompactSlider {objectName:"liquify"+parameter.modelData.key;Layout.preferredWidth:44;enabled:parameter.usable;from:1;to:parameter.modelData.max;stepSize:1;value:root.controller[parameter.modelData.property];onMoved:root.controller[parameter.modelData.property]=Math.round(value);tooltip:parameter.modelData.tip}
+                MappedSlider {exponential:parameter.modelData.unit==="px";objectName:"liquify"+parameter.modelData.key;Layout.preferredWidth:44;enabled:parameter.usable;from:1;to:parameter.modelData.max;stepSize:1;value:root.controller[parameter.modelData.property];onMoved:root.controller[parameter.modelData.property]=Math.round(editedValue);tooltip:parameter.modelData.tip}
                 CompactSpinBox {objectName:"liquify"+parameter.modelData.key+"Input";Layout.preferredWidth:66;implicitHeight:22;editable:true;enabled:parameter.usable;from:1;to:parameter.modelData.max;value:root.controller[parameter.modelData.property];onValueModified:root.controller[parameter.modelData.property]=value;tooltip:parameter.modelData.tip}
                 Label {text:parameter.modelData.unit;color:Theme.muted;font.pixelSize:9;Layout.preferredWidth:12}
             }

@@ -40,7 +40,7 @@ set(_drawverse_ui_resources
     qml/color/HsvSlider.qml
     qml/tools/ToolStrip.qml qml/tools/ToolVariantsPanel.qml qml/tools/SelectionOptionsBar.qml qml/tools/BucketOptionsBar.qml qml/tools/WandOptionsBar.qml qml/tools/SmudgeOptionsBar.qml qml/tools/LiquifyOptionsBar.qml qml/tools/TransformOptionsBar.qml
     qml/preferences/PreferencesPanel.qml qml/preferences/StoragePreferences.qml qml/preferences/KeyboardShortcutsDialog.qml
-    qml/controls/CompactCheckBox.qml qml/controls/CompactComboBox.qml qml/controls/CompactSlider.qml qml/controls/ParameterSlider.qml qml/controls/PanelDialog.qml qml/controls/CompactSpinBox.qml qml/controls/CompactTextField.qml qml/controls/Icon.qml qml/controls/IconButton.qml qml/controls/ComboPopupWindow.qml qml/controls/LayerPercent.qml
+    qml/controls/CompactCheckBox.qml qml/controls/CompactComboBox.qml qml/controls/CompactSlider.qml qml/controls/MappedSlider.qml qml/controls/ParameterSlider.qml qml/controls/PanelDialog.qml qml/controls/CompactSpinBox.qml qml/controls/CompactTextField.qml qml/controls/Icon.qml qml/controls/IconButton.qml qml/controls/ComboPopupWindow.qml qml/controls/LayerPercent.qml
     qml/menus/GlassMenu.qml qml/menus/GlassMenuItem.qml qml/menus/SideMenuWindow.qml
     qml/windows/PanelWindow.qml qml/windows/ResizeFrame.qml qml/windows/WindowOutline.qml
     qml/theme/Theme.qml

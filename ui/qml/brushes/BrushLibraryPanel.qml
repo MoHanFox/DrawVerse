@@ -181,7 +181,7 @@ ColumnLayout {
         CompactSpinBox {objectName:"libraryBrushSize";from:1;to:2000;editable:true;implicitWidth:76;implicitHeight:20;value:Math.round(root.library.radius*2);onValueModified:root.library.radius=value/2}
         Label {text:"px";color:Theme.muted;font.pixelSize:8}
     }
-    CompactSlider {Layout.fillWidth:true;from:1;to:2000;value:root.library.radius*2;onMoved:root.library.radius=value/2}
+    MappedSlider {objectName:"brushLibrarySizeSlider";Layout.fillWidth:true;from:1;to:2000;exponential:true;value:root.library.radius*2;onMoved:root.library.radius=editedValue/2}
     TextField {id:search;objectName:"brushSearch";Layout.fillWidth:true;implicitHeight:22;font.pixelSize:9;placeholderText:"搜索画笔";color:Theme.text;background:Rectangle {color:Theme.input;border.color:Theme.line} onTextChanged:root.refreshGroupedItems();onAccepted:root.finishSearch(false);Keys.onEscapePressed:event=>{root.finishSearch(true);event.accepted=true}}
     Label {objectName:"brushImportSummary";textFormat:Text.PlainText;text:PaintClient.brushImportMessage;visible:text.length>0;Layout.fillWidth:true;wrapMode:Text.WordWrap;font.pixelSize:9;color:Theme.muted}
     RowLayout {Icon {name:"folder";width:14;height:14} Label {text:"基础与自定义画笔";font.pixelSize:9;color:Theme.text}}

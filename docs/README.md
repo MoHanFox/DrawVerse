@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [大范围像素滑条指数调节](interface/pixel-slider-exponential-design.md)
+
 - [原始清单与 UI 回归统一待修复清单](planning/2026-10-21-remaining-fixes-design.md)
 
 - [折叠列弹出面板的标签合并](interface/collapsed-panel-flyout-merge-design.md)

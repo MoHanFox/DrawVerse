@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新大范围像素滑条：`docs/interface/pixel-slider-exponential-design.md` / 对应验收；跨度≥512px像素使用共享有符号指数轨道，含笔刷/液化/描边/起收笔/纹理偏移，1px加减与精确输入保留，非像素/小范围线性。软件/D3D11各7项、跨窗笔刷及Release通过；ABI/state不变。统一剩余清单U2/U3/U4已修复，U1/U5及算法项仍待。
+
 - 当前统一待修复入口：`docs/planning/2026-10-21-remaining-fixes-design.md` / 对应validation；用户文档(4)剩余描边/选区及复杂变换/移动与历史冷性能，连同U1–U4 UI失败、U5生命周期诊断共同跟踪。直接master按小项验证、提交和push，不能把算子或核心计时当功能全部完成。
 
 - 最新折叠列浮面板合并：内容区追加/标签栏插入，单面板、整组、整列按来源组与标签顺序合入同一组；侧栏图标同步顺序并复用窗口，保持折叠/保存恢复、Ctrl禁用与Esc取消。新4+欢迎2+滚轮1在软件/D3D11各7通过，Release输出 `build/qt/bin/Release`，ABI1.74/state44保持。旧面板专项仍因7条QML警告失败，欢迎页扩展其余3失败未解，不称全量通过；见 collapsed-panel-flyout-merge 设计/验收。
