@@ -122,6 +122,27 @@ pub(crate) enum StoredCommand {
     /// Result references: pixel residency and cold backing belong to PagePool.
     Paged(Command, HistoryAction, usize),
 }
+/// Verification identities live for one private history transaction only.
+/// Pixels remain immutable; later requests always re-check backing storage.
+#[derive(Default)]
+pub(crate) struct HistoryVerification {
+    seen: std::collections::BTreeSet<u64>,
+}
+impl HistoryVerification {
+    const MAX_IDENTITIES: usize = 65_536;
+    fn verify(&mut self, tile: &Arc<Tile>) -> Result<()> {
+        if self.seen.contains(&tile.id) {
+            return Ok(());
+        }
+        tile.verify_storage()?;
+        // A full cache reduces reuse, never rejects an otherwise valid edit.
+        if self.seen.len() < Self::MAX_IDENTITIES {
+            self.seen.insert(tile.id);
+        }
+        Ok(())
+    }
+}
+
 impl StoredCommand {
     #[cfg(test)]
     pub fn prepare(command: &Command, max_bytes: usize) -> Result<Self> {
@@ -210,11 +231,18 @@ impl StoredCommand {
         &self,
         pool: Option<&Arc<crate::page_pool::PagePool>>,
     ) -> Result<Command> {
+        self.materialize_verified_in(pool, &mut HistoryVerification::default())
+    }
+    pub(crate) fn materialize_verified_in(
+        &self,
+        pool: Option<&Arc<crate::page_pool::PagePool>>,
+        verified: &mut HistoryVerification,
+    ) -> Result<Command> {
         match self {
             Self::Inline(command, _) | Self::Paged(command, _, _) => {
                 // Inline history now retains identities, including cold pages.
                 // Validate those pages before moving either history stack.
-                command.verify_tiles()?;
+                command.verify_tiles(verified)?;
                 if let Some(pool) = pool {
                     pool.trim()?;
                 }
@@ -298,15 +326,8 @@ impl Command {
             }
         }
     }
-    fn verify_tiles(&self) -> Result<()> {
-        let mut seen = std::collections::BTreeSet::new();
-        let mut verify = |tile: &Arc<Tile>| {
-            if seen.insert(tile.id) {
-                tile.verify_storage()
-            } else {
-                Ok(())
-            }
-        };
+    fn verify_tiles(&self, verified: &mut HistoryVerification) -> Result<()> {
+        let mut verify = |tile: &Arc<Tile>| verified.verify(tile);
         match self {
             Self::LayerEdit { before, after, .. } => {
                 for layer in before.iter().chain(after) {
@@ -515,6 +536,61 @@ mod tests {
         pool.trim().unwrap();
         pool.corrupt_for_test();
         assert!(stored.materialize_in(Some(&pool)).is_err());
+    }
+    #[test]
+    fn transaction_verification_reuses_cold_pages_but_next_request_rechecks() {
+        let pool = crate::page_pool::PagePool::new(1, 1 << 20);
+        let cold = Arc::new(Tile::default());
+        pool.attach(&cold).unwrap();
+        pool.attach(&Arc::new(
+            Tile::from_pixels(vec![crate::Pixel::WHITE; 4096]).unwrap(),
+        ))
+        .unwrap();
+        let mut layer = Layer::new(1, "shared transaction".into());
+        layer.tiles.insert(TileCoord { x: 0, y: 0 }, cold);
+        let command = Command::LayerEdit {
+            before: vec![layer.clone()],
+            after: vec![layer],
+            selection: None,
+        };
+        let first = StoredCommand::prepare_result_in(&command, 8192, &pool).unwrap();
+        let second = StoredCommand::prepare_result_in(&command, 8192, &pool).unwrap();
+        let mut verified = HistoryVerification::default();
+        let before = pool.stats();
+        first
+            .materialize_verified_in(Some(&pool), &mut verified)
+            .unwrap();
+        second
+            .materialize_verified_in(Some(&pool), &mut verified)
+            .unwrap();
+        assert_eq!(pool.stats().page_reads, before.page_reads + 1);
+        assert_eq!(pool.stats().resident_tiles, before.resident_tiles);
+        assert_eq!(verified.seen.len(), 1);
+        second.materialize_in(Some(&pool)).unwrap();
+        assert_eq!(pool.stats().page_reads, before.page_reads + 2);
+        pool.corrupt_for_test();
+        assert!(first.materialize_in(Some(&pool)).is_err());
+    }
+    #[test]
+    fn full_transaction_verification_cache_falls_back_without_skipping_checks() {
+        let pool = crate::page_pool::PagePool::new(1, 1 << 20);
+        let cold = Arc::new(Tile::default());
+        pool.attach(&cold).unwrap();
+        pool.attach(&Arc::new(
+            Tile::from_pixels(vec![crate::Pixel::WHITE; 4096]).unwrap(),
+        ))
+        .unwrap();
+        let mut verified = HistoryVerification::default();
+        verified
+            .seen
+            .extend((u64::MAX - HistoryVerification::MAX_IDENTITIES as u64)..u64::MAX);
+        let before = pool.stats().page_reads;
+        verified.verify(&cold).unwrap();
+        verified.verify(&cold).unwrap();
+        assert_eq!(pool.stats().page_reads, before + 2);
+        assert_eq!(verified.seen.len(), HistoryVerification::MAX_IDENTITIES);
+        pool.corrupt_for_test();
+        assert!(verified.verify(&cold).is_err());
     }
     #[test]
     fn result_references_require_managed_tiles_and_metadata_budget() {

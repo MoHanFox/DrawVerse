@@ -20,6 +20,7 @@ impl Document {
         let dirty = self.dirty.clone();
         let forward = depth > undo;
         let steps = depth.abs_diff(undo);
+        let mut verified = crate::history::HistoryVerification::default();
         // Leave both history stacks intact until every payload has been checked.
         for index in 0..steps {
             let stored = if forward {
@@ -27,7 +28,7 @@ impl Document {
             } else {
                 &self.history.undo[undo - 1 - index]
             };
-            let command = match stored.materialize_in(Some(&self.pool)) {
+            let command = match stored.materialize_verified_in(Some(&self.pool), &mut verified) {
                 Ok(command) => command,
                 Err(error) => {
                     self.layers = layers;
@@ -161,6 +162,120 @@ mod tests {
             direct.select_history(1).unwrap();
             paint(&mut direct, 50.);
             assert_eq!(direct.history_depth(), (2, 0));
+        }
+    }
+    fn shared_cold_result_document() -> Document {
+        let mut tiles = BTreeMap::new();
+        for y in 0..8 {
+            for x in 0..8 {
+                let values = (0..4096)
+                    .map(|i| {
+                        Pixel::from_straight([i as f32 / 4096., x as f32 / 8., y as f32 / 8., 1.])
+                            .unwrap()
+                    })
+                    .collect();
+                tiles.insert(TileCoord { x, y }, Tile::from_pixels(values).unwrap());
+            }
+        }
+        let mut doc = Document::from_import(
+            512,
+            512,
+            vec![crate::ImportedLayer {
+                name: "dense shared result".into(),
+                properties: LayerProperties::default(),
+                tiles,
+            }],
+            0,
+            DocumentOptions {
+                max_resident_tiles: 1,
+                max_history_bytes: 1 << 20,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        for step in 0..4 {
+            let shape = crate::SelectionShape::geometry(
+                crate::SelectionKind::Rectangle,
+                10. + step as f64 * 5.,
+                10.,
+                1.,
+                1.,
+                false,
+            );
+            doc.selection = crate::Selection::default()
+                .apply(shape, crate::SelectionOperation::Replace, 512, 512)
+                .unwrap();
+            assert!(doc.clear_selected_pixels(&[1]).unwrap());
+        }
+        assert_eq!(doc.history_depth(), (4, 0));
+        assert!(doc
+            .history
+            .undo
+            .iter()
+            .all(|entry| matches!(entry, StoredCommand::Paged(..))));
+        doc
+    }
+    #[test]
+    fn direct_result_travel_verifies_shared_cold_pages_once_per_request() {
+        let mut direct = shared_cold_result_document();
+        let mut stepped = shared_cold_result_document();
+        let a = direct.storage_stats();
+        let b = stepped.storage_stats();
+        let mut direct_ms = 0.;
+        let mut stepped_ms = 0.;
+        for target in [0, 4, 0, 4, 0, 4] {
+            let start = std::time::Instant::now();
+            direct.select_history(target).unwrap();
+            direct_ms += start.elapsed().as_secs_f64() * 1000.;
+            let start = std::time::Instant::now();
+            while stepped.history_depth().0 > target {
+                stepped.undo().unwrap();
+            }
+            while stepped.history_depth().0 < target {
+                stepped.redo().unwrap();
+            }
+            stepped_ms += start.elapsed().as_secs_f64() * 1000.;
+            assert_eq!(direct.history_depth(), stepped.history_depth());
+            assert_eq!(direct.selection, stepped.selection);
+        }
+        let direct_reads = direct.storage_stats().page_reads - a.page_reads;
+        let stepped_reads = stepped.storage_stats().page_reads - b.page_reads;
+        assert!(
+            direct_reads * 2 < stepped_reads,
+            "{direct_reads} vs {stepped_reads}"
+        );
+        assert!(direct.storage_stats().resident_tiles <= 1);
+        assert_eq!(direct.storage_stats().page_writes, a.page_writes);
+        println!("six 512px dense result jumps: direct {direct_reads} reads/{direct_ms:.3}ms, stepped {stepped_reads} reads/{stepped_ms:.3}ms (core, warm OS backing)");
+        for (coord, tile) in &direct.layers[0].tiles {
+            assert_eq!(
+                &*tile.try_pixels().unwrap(),
+                &*stepped.layers[0].tiles[coord].try_pixels().unwrap()
+            );
+        }
+    }
+    #[test]
+    fn later_history_request_revalidates_corrupted_shared_pages_and_rolls_back() {
+        let mut doc = shared_cold_result_document();
+        doc.select_history(0).unwrap();
+        doc.select_history(4).unwrap();
+        let before = doc.layers.clone();
+        let selection = doc.selection.clone();
+        let revision = doc.revision();
+        let depth = doc.history_depth();
+        let dirty = doc.dirty.clone();
+        let active = doc.active_layer;
+        doc.pool.corrupt_for_test();
+        assert!(doc.select_history(0).is_err());
+        assert_eq!(doc.selection, selection);
+        assert_eq!(doc.revision(), revision);
+        assert_eq!(doc.history_depth(), depth);
+        assert_eq!(doc.dirty, dirty);
+        assert_eq!(doc.active_layer, active);
+        for (a, b) in doc.layers.iter().zip(before) {
+            for (coord, tile) in &a.tiles {
+                assert!(Arc::ptr_eq(tile, &b.tiles[coord]));
+            }
         }
     }
     #[test]

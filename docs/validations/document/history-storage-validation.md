@@ -62,3 +62,12 @@ python tools/measure_painting.py build/qt/bin/Release/drawverse.exe artifacts/hi
 Release核心单元192通过、4手工项忽略、1项耗时mix测试过滤；公开paging3/history_storage3/transform7/liquify11通过（液化1既有手工项忽略），原生整图翻转及变换各1，严格Clippy/fmt/生成头通过。实际Qt图像/自由变换×水平/垂直四行，均反复直接历史恢复精确像素；4K选区变换五行及结束工具快捷键一行，软件/D3D11各10行通过。四ABI及完整标准Release通过，build/bin/Release/drawverse.exe更新。
 
 首次Debug宽范围单元运行发现上述旧桶断言及新冷页测试在把受损页读热后的测试顺序错误；均修正并在Release回归通过。Debug耗时mix用例主动停止，未称全量通过。最终日志artifacts/flip-history-core-release.txt、flip-history-public.txt、flip-history-native.txt、flip-history-transform-native.txt、flip-history-final-{software,d3d11}.txt、flip-history-abi.txt及final-build/clippy/header-check。未跑跨平台、实体连续时延及16K整图。
+
+
+## 2026-10-22 单次跳转复用冷页校验
+
+新增4项覆盖：两个独立结果命令共享冷页只读取一次且不改变驻留数，下次请求重新读取并拒绝损坏；临时身份表满时仍校验/拒绝损坏；真实512px密集层四次局部清除形成分页结果，六次直接往返与逐步undo/redo逐瓦片相同且保留redo；成功往返后损坏冷页，下次跳转失败完整回滚引用/选区/修订/dirty/历史。
+
+Release同机样本，驻留1瓦片、64块密集源、四条共享结果、六次跳转：独立逐步校验1554次读/141.698ms，单请求共享402次读/37.146ms。这里只是核心恢复和OS热后备文件，非真实UI/物理冷盘，不代表8K/16K时延。`artifacts/history-transaction-release-core.txt`。Debug同样读取数，计时不用于产品结论。
+
+Release history定向65通过/4手工忽略（过滤已知mix性能项），公开history_storage3/paging3、原生历史元数据1、严格Clippy/fmt通过。首次Debug宽匹配误包含已知耗时mix用例，核对本人进程路径/PID/参数后停止，仅以上最终定向结果为验收，未声称全量通过。日志 `history-transaction-{core,travel,shared-final,public,native,clippy}.txt`。软件/D3D11直接历史三作用域及翻转四行、选区复制清除、鼠标/笔编辑结束回归通过，完整Release/四ABI/生成头通过；后端与构建日志 `history-transaction-{software,d3d11,workflow-software,workflow-d3d11,release,abi}.txt`。标准产物build/bin/Release/drawverse.exe；ABI1.79/state45不变。会话字段引用、Encoded恢复与真实冷盘/首次显示继续H1待办。

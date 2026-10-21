@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新历史事务冷页校验复用：history-storage末节；Inline/Paged在一次直接跳转共享不可变Tile校验身份，下次请求重新验证；65536身份临时表满后原校验后备，不拒绝任务。新4/Release历史65与公开6/原生1/软件D3D11共享通过，四ABI/严格Clippy/fmt/头/完整Release更新build/bin/Release。512px六跳核心读取1554→402、141.698→37.146ms（OS热后备，非UI/冷盘）；ABI1.79/state45保持，H1字段引用/真实冷盘及P1/T2/实体输入仍待。
+
 - 最新选区内容编辑：remaining-fixes设计/验收末节；选区Delete清像素保留层/选区，Ctrl+C只复制所选普通子层内容，组附带蒙版保持，置入清除可撤销恢复原源；共享行覆盖/偏移/瓦片候选与PagePool结果历史。核心新3/共享28/原生1、软件与D3D11各7行、四ABI/严格Clippy/fmt/头/完整Release通过，build/bin/Release。ABI1.79 kind4/5及历史41、state45不变；复制保留森林非合并可见结果，显式蒙版复制仍拒绝，实体输入/P1/H1/T2/I3/I6仍待。
 
 - 最新三工具独立笔刷选择：brush-library-switch-latency末节；三个参数隔离档均独立记忆刷/擦/涂抹选择，切换隔离级别保留；Qt toolIsolation v2固定三选择ID，v1共享档迁移与完整隔离保持，选择补丁/接收方工具投影同步。新三档及输入/编辑合并软件/D3D11各12行、共享八项分别通过，完整Release/头更新build/bin/Release。ABI1.78/state45/VBR保持；I1端到端延迟、实体压感/全部停刷与焦点、I5/P1/H1/T2仍待。
