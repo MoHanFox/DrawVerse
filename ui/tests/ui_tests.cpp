@@ -4970,7 +4970,7 @@ private slots:
             QCOMPARE(client.activeStorageSettings().value("memoryMiB").toInt(),256);
             QCOMPARE(client.undoDepth(),1); QCOMPARE(client.layers().size(),2);
             QVERIFY(client.storageMessage().contains(QStringLiteral("重启")));
-            QVERIFY(client.saveStorageSettings(temp.filePath("missing"),128,4,0));
+            QVERIFY(client.saveStorageSettings(settings,128,4,0));
             QTRY_COMPARE(result.size(),2); QVERIFY(!result.last().first().toBool());
             QCOMPARE(client.storageSettings().value("directory").toString(),chosen);
             QSettings persisted(settings,QSettings::IniFormat); QCOMPARE(persisted.value("storage/memoryMiB").toInt(),64);
@@ -4987,13 +4987,14 @@ private slots:
     }
     void invalidStartupStorageCanBeCorrectedFromQml() {
         QTemporaryDir temp; QVERIFY(temp.isValid()); const auto settings=temp.filePath("bad-storage.ini");
-        { QSettings bad(settings,QSettings::IniFormat); bad.setValue("storage/directory",temp.filePath("missing")); bad.sync(); }
+        { QSettings bad(settings,QSettings::IniFormat); bad.setValue("storage/directory",settings); bad.sync(); }
         PaintCoreClient client(nullptr,settings); WorkspaceManager workspace(temp.filePath("layout.ini"));
         QQmlApplicationEngine engine; QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){ for(const auto &error:errors) warnings.append(error.toString()); });
         engine.rootContext()->setContextProperty("PaintClient",&client); engine.rootContext()->setContextProperty("Workspace",&workspace);
         engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml")); QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));
         QTRY_VERIFY_WITH_TIMEOUT(!client.storageBusy() && !client.lastError().isEmpty(),10000); QVERIFY(!client.ready());
+        QVERIFY(client.lastError().contains(settings));
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first()); QVERIFY(window);
         auto *dialog=window->findChild<QObject*>("preferencesDialog"); QVERIFY(dialog);
         QVERIFY(QMetaObject::invokeMethod(dialog,"open")); QTRY_VERIFY(!client.storageBusy());

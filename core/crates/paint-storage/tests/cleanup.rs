@@ -26,6 +26,33 @@ fn child_holder() {
     let mut byte = [0];
     let _ = std::io::stdin().read(&mut byte);
 }
+
+#[test]
+fn missing_directory_is_created_recursively_and_survives_shutdown() {
+    let base = tempfile::tempdir().unwrap();
+    let directory = base.path().join("新暂存盘/nested/cache");
+    assert!(!directory.exists());
+    for _ in 0..2 {
+        let storage = space(&directory);
+        let report = storage.inspect().unwrap();
+        assert_eq!(report.directory, directory.canonicalize().unwrap());
+        let mut file = storage.tempfile("pages").unwrap();
+        file.write_all(b"unchanged pixels").unwrap();
+        assert!(directory.is_dir());
+    }
+    assert!(directory.is_dir());
+}
+
+#[test]
+fn file_blocking_directory_creation_is_retained_and_error_identifies_path() {
+    let base = tempfile::tempdir().unwrap();
+    let blocker = base.path().join("file");
+    fs::write(&blocker, b"keep").unwrap();
+    let directory = blocker.join("cache");
+    let error = space(&directory).inspect().unwrap_err();
+    assert!(error.to_string().contains(directory.to_str().unwrap()));
+    assert_eq!(fs::read(blocker).unwrap(), b"keep");
+}
 struct Helper(Child);
 impl Drop for Helper {
     fn drop(&mut self) {

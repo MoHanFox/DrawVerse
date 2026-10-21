@@ -13,6 +13,8 @@
 #include <QQmlComponent>
 #include <QQuickStyle>
 #include <QTemporaryDir>
+#include <QSettings>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -54,6 +56,23 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void missingStartupStorageDirectoryIsCreatedAndRetained() {
+        QTemporaryDir temp;QVERIFY(temp.isValid());const auto settings=temp.filePath("storage.ini");
+        const auto directory=temp.filePath(QStringLiteral("新暂存盘/nested/cache"));
+        {QSettings saved(settings,QSettings::IniFormat);saved.setValue("storage/directory",directory);saved.setValue("storage/memoryMiB",64);saved.setValue("storage/scratchGiB",2);saved.setValue("storage/reserveMiB",0);saved.sync();QCOMPARE(saved.status(),QSettings::NoError);}
+        QVERIFY(!QFileInfo::exists(directory));
+        for(int run=0;run<2;++run){
+            PaintCoreClient client(nullptr,settings);QTRY_VERIFY_WITH_TIMEOUT(client.ready() && !client.storageBusy(),10000);
+            QVERIFY2(client.lastError().isEmpty(),qPrintable(client.lastError()));QVERIFY(QFileInfo(directory).isDir());
+            QCOMPARE(client.activeStorageSettings().value("directory").toString(),directory);QCOMPARE(client.activeStorageSettings().value("memoryMiB").toInt(),64);
+            QSettings saved(settings,QSettings::IniFormat);QCOMPARE(saved.value("storage/directory").toString(),directory);
+            client.newTransparentDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(client.ready());
+            InputSample sample;sample.position={32,32};sample.pressure=1;sample.tool=1;QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);
+            client.undo();QTRY_COMPARE(client.redoDepth(),1);client.redo();QTRY_COMPARE(client.undoDepth(),1);
+            QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+        }
+        QVERIFY(QFileInfo(directory).isDir());
+    }
     void replayOutlineOverflowClickChangesPixelsPreviewAndKeepsOneHistory() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("replay.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();
         QVERIFY(library->select("round-fine"));library->setRadius(18);library->setRoundness(.3);library->setPressureSize(false);library->setPressureFlow(false);

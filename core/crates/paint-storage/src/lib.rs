@@ -167,6 +167,15 @@ impl ScratchSpace {
         &self.config
     }
     fn initialize(&self) -> io::Result<Run> {
+        fs::create_dir_all(&self.config.directory).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "cannot create scratch directory '{}': {error}",
+                    self.config.directory.display()
+                ),
+            )
+        })?;
         let directory = self.config.directory.canonicalize()?;
         if !directory.is_dir() {
             return Err(invalid("scratch path must be an existing directory"));

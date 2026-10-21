@@ -41,14 +41,17 @@ DrawVerse/
 └─ tools/              构建检查、环境安装与性能测量脚本
 ```
 
-| Rust crate | 职责 |
+| **Rust crate** | **职责** |
 | --- | --- |
-| `paint-core` | 文档、笔刷执行、图层、选区、像素与历史 |
-| `paint-task` | 有界任务调度、优先级与协作取消 |
-| `paint-render` | 快照合成、CPU 视口与显示帧 |
-| `paint-storage` | 暂存目录、容量检查与生命周期管理 |
-| `paint-io` | 图片、OpenRaster、ABR、VBR 与笔刷状态编解码 |
-| `paint-ffi` | C ABI、句柄、异步会话与调用方内存边界 |
+| `paint-ops` | 可复用数值算子、CPU 执行器、采样与批次规划，以及复刻描边等纯计算；不管理文档或历史 |
+| `paint-gpu` | wgpu 设备选择、受支持算子的 GPU 执行与 CPU 后备；CPU 数据保持权威 |
+| `paint-core` | 文档、笔刷执行、图层、蒙版、选区、变换、液化、瓦片分页与历史事务 |
+| `paint-task` | 有界并行与串行任务调度、优先级、协作取消及进度 |
+| `paint-render` | 文档快照合成、CPU 视口取样与显示帧生成 |
+| `paint-storage` | 暂存目录创建、容量检查、受管临时文件、租约与过期数据清理 |
+| `paint-io` | 图片、OpenRaster、ABR、VBR、笔刷状态及资源与来源数据编解码 |
+| `paint-ffi` | C ABI、句柄、异步会话、命令与显示数据发布，以及调用方内存边界 |
+| `paint-api-gen` | 从 Rust ABI 定义生成 C 头文件，并检查生成头一致性（构建工具） |
 
 文档计算和大块像素处理在 Rust 后台执行；UI 通过会话提交命令、接收元数据和显示帧。目录职责与依赖方向见 [源码结构设计](docs/platform/source-layout-design.md)。
 
@@ -69,6 +72,8 @@ cmake --build build/qt --config Release
 # 启动；Windows 构建会部署所需 Qt DLL 与 QML 插件。
 ./build/qt/bin/Release/drawverse.exe
 ```
+
+这些命令构建并部署应用，运行时仍会读取当前用户已有的配置。Windows 默认配置位于 `%APPDATA%/DrawVerse/DrawVerse.ini`，笔刷资源在同目录的 `brush-resources`。暂存使用系统临时目录，或偏好设置中保存的自定义目录；自定义目录被删除时，应用会自动创建所需目录。若磁盘离线、权限不足或同名文件占用路径，仍会报告具体路径及原因，可在设置中更换暂存目录；无需删除笔刷或整份配置。
 
 只构建 Rust 内核与 FFI：
 

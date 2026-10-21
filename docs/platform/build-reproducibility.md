@@ -1,5 +1,13 @@
 # 跨平台检出与生成头一致性（2026-10-09）
 
+## 2026-10-21：构建后启动报核心错误8
+
+使用README两条CMake命令构建的Release仍会读取用户配置。此次错误可由同一Release的C ABI直接复现：已保存的 `D:/DrawVerse/tmp` 不存在，paint_core_create_with_storage返回8和Windows错误2；同一DLL使用默认系统临时目录返回0。它是暂存目录初始化失败，不是DLL或部署文件缺失。
+
+按用户要求，ScratchSpace初始化先递归创建配置目录，再沿用原canonicalize、空间预留、命名空间与租约校验。已有目录保持，缺失父目录可补齐，不更换保存的路径，不回退系统盘；盘符离线、权限不足或文件占位时仍失败，并在错误中写明尝试创建的路径与系统原因。目录创建在既有后台路径执行，不把磁盘操作移到GUI。暂存关闭只清理受管文件，不删除配置的目录或父目录，配置和笔刷资源保持。
+
+README的Rust职责表按core/Cargo.toml补齐全部八个运行库和paint-api-gen构建工具，区分paint-ops纯计算、paint-gpu执行设备与Qt显示职责。验收见[暂存目录自动创建](../validations/platform/scratch-directory-creation-validation.md)。
+
 性能对照使用 Windows 新建工作树时，core.autocrlf=true 将源文件与已生成头转换成 CRLF；cbindgen 的字节一致性检查随之失败。源目录当前手工生成的 LF 头能通过，不等于新检出能通过。
 
 比较两种方案：检查时宽松忽略换行，会让生成物存在多个字节版本且无法防止源注释影响生成结果；在仓库声明文本 LF，则源文件、生成头和构建脚本在三个平台相同。采用 .gitattributes 的 text=auto eol=lf，常用图片/归档/字体显式 binary。保留 cbindgen 严格字节检查，不修改用户全局 Git 配置，不改变 ABI。
