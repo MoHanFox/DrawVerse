@@ -91,7 +91,7 @@ public:
             if(!m_catalog->wet && !check(paint_wet_tool_create(&m_catalog->wet))){if(!m_catalog->workers)paint_brush_library_destroy(&m_catalog->library);return;}
             ++m_catalog->workers;m_catalogLease=true;
         }
-        emit brushPreferences(settings->value("brushes/state").toByteArray());
+        prepareBrushPreferences(settings->value("brushes/state").toByteArray());
         emit liquifyPreferences({{"tool",settings->value("liquify/tool",0)},{"size",settings->value("liquify/size",200)},{"strength",settings->value("liquify/strength",50)},{"density",settings->value("liquify/density",100)},{"speed",settings->value("liquify/speed",100)},{"pressure",settings->value("liquify/pressure",false)}});
         m_historyLimit = std::clamp(settings->value("history/limit", 100).toInt(), 10, 1000);
         m_saved = QVariantMap{{"directory", settings->value("storage/directory", "")},
@@ -181,6 +181,10 @@ public:
         emit computeState(m_computeHardware,desired,status,busy);
     }
     void saveStorage(const QVariantMap &values) { evaluateStorage(values, true); }
+    void prepareBrushPreferences(QByteArray json) {
+        {QMutexLocker lock(&m_catalog->mutex);if(!m_catalog->preferences.isEmpty())json=m_catalog->preferences;}
+        emit brushPreferences(json,BrushLibrary::preparePreferences(json));
+    }
     void saveBrushPreferences(const QByteArray &json){m_pendingBrushPreferences=json;pollBrushState();}
     void saveLiquifyOptions(const QVariantMap &values) {auto settings=preferences();for(auto it=values.cbegin();it!=values.cend();++it)settings->setValue("liquify/"+it.key(),it.value());settings->sync();if(settings->status()!=QSettings::NoError)emit failure(QStringLiteral("无法保存液化设置，请检查配置目录权限"));}
     void storeHistoryLimit(int commands) {
@@ -318,7 +322,7 @@ signals:
     void brushFileReady(QByteArray package,QString error,bool exporting,bool abr);
     void layerClipboardReady(QByteArray bytes);
     void liquifyPreferences(QVariantMap values);
-    void brushPreferences(QByteArray json);
+    void brushPreferences(QByteArray json,BrushLibrary::PreparedPreferencesPtr prepared);
     void brushPreviewReady(QString id,quint64 token,QString image);
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
     void storageDone(bool success);
@@ -857,9 +861,14 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(!bytes.isEmpty()){auto *mime=new QMimeData;mime->setData("application/x-drawverse-layers-v1",bytes);QGuiApplication::clipboard()->setMimeData(mime);}
         emit stateChanged();
     });
-    connect(m_worker,&BackendWorker::brushPreferences,m_brushLibrary,[this](const QByteArray &json){
+    connect(m_worker,&BackendWorker::brushPreferences,m_brushLibrary,[this](const QByteArray &json,const BrushLibrary::PreparedPreferencesPtr &prepared){
+        if(m_closing)return;
         QByteArray source=json;{QMutexLocker lock(&m_brushCatalogConnection->mutex);if(!m_brushCatalogConnection->preferences.isEmpty())source=m_brushCatalogConnection->preferences;}
-        if(!source.isEmpty() && !m_brushLibrary->restore(source))showError(QStringLiteral("无法恢复笔刷设置，原配置已保留"));
+        if(source!=json) {
+            QMetaObject::invokeMethod(m_worker,[worker=m_worker,source]{worker->prepareBrushPreferences(source);},Qt::QueuedConnection);
+            return;
+        }
+        if(!m_brushLibrary->applyPreparedPreferences(prepared))showError(QStringLiteral("无法恢复笔刷设置，原配置已保留"));
         m_brushLibrary->setToolContext(m_smudgeTool?2:m_eraser?1:0);
         synchronizeBrushCatalog(m_brushLibrary->snapshot());
         if(!m_brushLibraryReady){m_brushLibraryReady=true;emit brushLibraryReadyChanged();}

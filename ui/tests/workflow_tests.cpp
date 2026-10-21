@@ -26,6 +26,7 @@
 #include <QDropEvent>
 #include <QWheelEvent>
 #include <limits>
+#include <future>
 #include "platform/MenuSurface.h"
 #include "workspace/WorkspaceManager.h"
 
@@ -315,6 +316,11 @@ private slots:
         QList<qint64> coldRestoreUs;
         for(int i=0;i<5;++i){BrushLibrary cold;QElapsedTimer timer;timer.start();QVERIFY(cold.restore(saved));coldRestoreUs.append(timer.nsecsElapsed()/1000);}
         std::sort(coldRestoreUs.begin(),coldRestoreUs.end());qInfo()<<"copied preferences full restore median us"<<coldRestoreUs[2];
+        auto job=std::async(std::launch::async,[saved]{return BrushLibrary::preparePreferences(saved);});
+        QTRY_VERIFY(job.wait_for(std::chrono::seconds(0))==std::future_status::ready);
+        const auto prepared=job.get();QVERIFY(prepared);QList<qint64> applyUs;
+        for(int i=0;i<5;++i){BrushLibrary cold;QElapsedTimer timer;timer.start();QVERIFY(cold.applyPreparedPreferences(prepared));applyUs.append(timer.nsecsElapsed()/1000);}
+        std::sort(applyUs.begin(),applyUs.end());qInfo()<<"copied prepared preferences GUI apply median us"<<applyUs[2];
         PaintCoreClient client(nullptr,path);WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->resize(1600,1000);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
@@ -350,6 +356,26 @@ private slots:
         heartbeat.stop();QVERIFY(client.lastError().isEmpty());QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 
+    void preparedStartupPreferencesMatchFullRestoreAndRejectInvalidCandidates() {
+        BrushLibrary source;source.setToolIsolation(2);source.setToolContext(1);source.setRadius(19);source.setWriteBlend(8);
+        source.setToolContext(2);source.setRadius(23);source.setToolContext(0);
+        source.setActiveColors(QColor("#123456"),QColor("#abcdef"));source.setCursorWidth(2);source.setCursorImage(true);source.setCursorImageOpacity(61);
+        source.setCursorCenter(true);source.setCursorHoverOnly(true);source.setCursorSimple(true);source.setCursorComposite(true);
+        source.setCursorColor("#777777");source.setCursorSecondaryColor("#eeeeee");
+        const auto saved=source.snapshot();
+        auto job=std::async(std::launch::async,[saved]{return BrushLibrary::preparePreferences(saved);});
+        QTRY_VERIFY(job.wait_for(std::chrono::seconds(0))==std::future_status::ready);const auto prepared=job.get();QVERIFY(prepared);
+        BrushLibrary restored;QSignalSpy persist(&restored,&BrushLibrary::persistRequested);QVERIFY(restored.applyPreparedPreferences(prepared));
+        QCOMPARE(restored.snapshot(),source.snapshot());QCOMPARE(restored.catalogSnapshot(),source.catalogSnapshot());
+        QVERIFY(restored.cursorImage());QCOMPARE(restored.cursorImageOpacity(),61);QCOMPARE(restored.cursorWidth(),2);QVERIFY(restored.cursorCenter() && restored.cursorHoverOnly() && restored.cursorSimple() && restored.cursorComposite());
+        QCOMPARE(restored.cursorColor(),QString("#777777"));QCOMPARE(restored.cursorSecondaryColor(),QString("#eeeeee"));
+        restored.setToolContext(1);QCOMPARE(restored.radius(),19.);QCOMPARE(restored.writeBlend(),8);restored.setToolContext(2);QCOMPARE(restored.radius(),23.);
+        restored.flushPersistence();persist.clear();const auto before=restored.snapshot();QSignalSpy changes(&restored,&BrushLibrary::presetsChanged);
+        auto invalid=QJsonDocument::fromJson(saved).object();auto isolation=invalid.value("toolIsolation").toObject();auto profiles=isolation.value("profiles").toArray();auto profile=profiles[2].toObject();profile["selected"]="missing";profiles[2]=profile;isolation["profiles"]=profiles;invalid["toolIsolation"]=isolation;
+        QVERIFY(!restored.applyPreparedPreferences(BrushLibrary::preparePreferences(QJsonDocument(invalid).toJson())));
+        QVERIFY(!restored.applyPreparedPreferences(BrushLibrary::preparePreferences("invalid")));QCOMPARE(restored.snapshot(),before);QCOMPARE(changes.size(),0);QCOMPARE(persist.size(),0);
+        QVERIFY(restored.applyPreparedPreferences(BrushLibrary::preparePreferences({})));BrushLibrary defaults;QCOMPARE(restored.snapshot(),defaults.snapshot());
+    }
     void fullPreferenceRestoreReusesRowsWithoutSkippingRoleValidation() {
         BrushLibrary source;QVERIFY(source.setPressureControl("size",{QVariantList{0.,0.},QVariantList{1.,1.}},.2));source.setToolIsolation(2);
         source.setToolContext(1);source.setRadius(19);source.setWriteBlend(8);source.setToolContext(2);source.setRadius(23);source.setToolContext(0);

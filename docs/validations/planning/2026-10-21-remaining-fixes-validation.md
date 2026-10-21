@@ -81,3 +81,7 @@ PanelContent 检查真实窗口可见与客户端关闭状态；卸载仍在 Loa
 额外原分类双击回归发现直接销毁仍遗留2个创建计数（artifacts/batch-panels-software.txt），已在 PanelContent.Component.onDestruction 完成 Loading 后卸载。原测试增加 failOnWarning，不屏蔽或等待：最终软件与D3D11各2项（快速收起分类、跨窗共享笔刷设置）通过，欢迎生命周期/白底透明关闭/原生拖动三来源/state45等价目录各7行通过，无残留/cancel/alpha或QML警告。日志 artifacts/panel-destroy-final-{software,d3d11}.txt 与 panel-destroy-shared-{software,d3d11}.txt。
 
 共享复合移动与变换回归两后端各14行通过（artifacts/batch-shared-transform-{software,d3d11}.txt）。最终完整Release与生成头检查通过，标准 build/qt/bin/Release/drawverse.exe 更新于2026-10-21 14:32。未跑全量check、跨平台或实体持续输入；T2复杂回退、M1/H1及P1冷准备继续保留待办。
+
+## P1 启动配置准备移出GUI
+
+完整Qt校验及快照编码移入BackendWorker，传递无QObject的不可变结果，发布前拒绝陈旧共享偏好、关闭后丢弃，非法候选保留现状。新跨线程配置/工具/颜色/光标/失败原子性及共享工作流各11行、UI各3项在软件/D3D11通过；完整Release/生成头通过。489项完整同步恢复187/178ms，已准备配置GUI应用0.171/0.177ms，首轮其他首次显示心跳仍469/361ms，P1只更新部分完成。证据与撤回异步面板候选见笔刷切换验收末节；ABI/state保持。

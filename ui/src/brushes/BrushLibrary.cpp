@@ -1576,6 +1576,60 @@ bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
     const auto root=QJsonDocument::fromJson(json).object();RestoreRows decoded;
     return restoreObject(root,preserveSelection,decoded);
 }
+struct BrushLibrary::PreparedPreferences {
+    QList<Preset> presets;
+    QHash<QString,Preset> reset;
+    std::array<ToolProfile,3> profiles;
+    int isolation,context,writeBlend;
+    QString selected;
+    QStringList recent;
+    QColor foreground,background;
+    QByteArray snapshot,catalog;
+    QJsonObject root,catalogObject,organization;
+    QHash<QString,QPair<QJsonValue,QByteArray>> encodedArrays;
+};
+BrushLibrary::PreparedPreferencesPtr BrushLibrary::preparePreferences(const QByteArray &json) {
+    BrushLibrary candidate;
+    if(!json.isEmpty() && !candidate.restore(json))return {};
+    auto prepared=std::make_shared<PreparedPreferences>();
+    prepared->snapshot=candidate.snapshot();prepared->catalog=candidate.catalogSnapshot();
+    prepared->presets=candidate.m_presets;prepared->reset=candidate.m_resetPresets;prepared->profiles=candidate.m_toolProfiles;
+    prepared->isolation=candidate.m_toolIsolation;prepared->context=candidate.m_toolContext;prepared->writeBlend=candidate.m_writeBlend;
+    prepared->selected=candidate.m_selected;prepared->recent=candidate.m_recentColors;
+    prepared->foreground=candidate.m_foregroundColor;prepared->background=candidate.m_backgroundColor;
+    prepared->root=candidate.m_snapshotObjectCache;prepared->catalogObject=candidate.m_catalogObjectCache;
+    prepared->organization=candidate.m_organization;prepared->encodedArrays=candidate.m_encodedPresetArrays;
+    return prepared;
+}
+bool BrushLibrary::applyPreparedPreferences(const PreparedPreferencesPtr &prepared) {
+    if(!prepared)return false;
+    auto presets=prepared->presets;reusePreviews(presets);
+    m_presets=std::move(presets);m_resetPresets=prepared->reset;m_toolProfiles=prepared->profiles;
+    m_toolIsolation=prepared->isolation;m_toolContext=prepared->context;m_writeBlend=prepared->writeBlend;
+    m_selected=prepared->selected;m_recentColors=prepared->recent;m_organization=prepared->organization;
+    m_selectedItems=QJsonArray{QJsonObject{{"kind","preset"},{"id",m_selected}}};
+    const bool colorsChanged=m_foregroundColor!=prepared->foreground || m_backgroundColor!=prepared->background;
+    m_foregroundColor=prepared->foreground;m_backgroundColor=prepared->background;
+    const auto cursor=prepared->root.value("cursor").toObject();
+    m_cursorOutline=cursor.value("outline").toBool();m_cursorCenter=cursor.value("center").toBool();m_cursorHoverOnly=cursor.value("hoverOnly").toBool();
+    m_cursorWidth=cursor.value("width").toInt();m_cursorImageOpacity=cursor.value("imageOpacity").toInt(25);
+    m_cursorImage=cursor.value("image").toBool();m_cursorSimple=cursor.value("simple").toBool();m_cursorComposite=cursor.value("composite").toBool();
+    m_cursorColor=cursor.value("color").toString("#000000");m_cursorSecondaryColor=cursor.value("secondaryColor").toString("#ffffff");
+    m_snapshotCache=prepared->snapshot;m_catalogCache=prepared->catalog;m_snapshotObjectCache=prepared->root;m_catalogObjectCache=prepared->catalogObject;
+    m_encodedPresetArrays=prepared->encodedArrays;
+    if(colorsChanged)emit activeColorsChanged();
+    emit cursorChanged();emit settingsChanged();emit presetsChanged();emit selectedPreviewChanged();emit selectionChanged();emit recentColorsChanged();
+    return true;
+}
+void BrushLibrary::reusePreviews(QList<Preset> &presets) {
+    for(auto &preset:presets) {
+        const int current=index(preset.id);int oldVersion=2,newVersion=2;
+        auto previewSettings=[](QJsonObject row){for(const auto &key:{"name","radius","opacity","flow"})row.remove(key);return row;};
+        if(current>=0 && equivalentSettings(previewSettings(presetRow(m_presets[current],oldVersion)),previewSettings(presetRow(preset,newVersion)))) {
+            const auto &old=m_presets[current];preset.preview=old.preview;preset.error=old.error;preset.token=old.token;preset.requested=old.requested;
+        } else {preset.preview.clear();preset.error.clear();preset.requested=0;preset.token=++m_nextToken;}
+    }
+}
 bool BrushLibrary::restoreObject(const QJsonObject &root,bool preserveSelection,RestoreRows &decoded,bool executingBounded) {
     if(restoreSelectionOnly(root,preserveSelection))return true;
     const auto rows=root.value("presets").toArray();
@@ -1716,13 +1770,7 @@ bool BrushLibrary::restoreObject(const QJsonObject &root,bool preserveSelection,
     if(!parseToolIsolation(root.value("toolIsolation"),isolation,context,profiles,decoded))return false;
     m_resetPresets=baselines;
     m_toolIsolation=isolation;m_toolContext=context;m_toolProfiles=std::move(profiles);
-    for(auto &preset:restored) {
-        const int current=index(preset.id);int oldVersion=2,newVersion=2;
-        auto previewSettings=[](QJsonObject row){for(const auto &key:{"name","radius","opacity","flow"})row.remove(key);return row;};
-        if(current>=0 && equivalentSettings(previewSettings(presetRow(m_presets[current],oldVersion)),previewSettings(presetRow(preset,newVersion)))) {
-            const auto &old=m_presets[current];preset.preview=old.preview;preset.error=old.error;preset.token=old.token;preset.requested=old.requested;
-        } else preset.token=++m_nextToken;
-    }
+    reusePreviews(restored);
     m_snapshotCache.clear();m_catalogCache.clear();m_snapshotObjectCache={};m_catalogObjectCache={};
     m_presets=restored;m_organization=organization;m_selected=selected;m_recentColors=recent;m_writeBlend=writeBlend;
     QJsonArray selectedItems;

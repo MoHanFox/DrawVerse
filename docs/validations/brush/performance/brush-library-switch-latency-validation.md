@@ -115,3 +115,11 @@ fullPreferenceRestoreReusesRowsWithoutSkippingRoleValidation 验证压力非默�
 软件：单文档首轮最长间隔374ms、热轮16ms；双文档17ms，跨工具两档36/17ms。D3D11：首轮367ms、热轮23ms，双文档18ms，跨工具17/18ms。调用select本身软件最长5.1–7.1ms、硬件5.2–7.7ms。完整冷restore中位168/179ms。日志 artifacts/brush-state45-{software,d3d11}.txt；旧失败日志batch-brush-probe.txt、brush-restore-debug.txt。计时为本机单次观察，旧探针期间另有编译负载，不能把最大间隔直接当通用端到端提升倍数。
 
 完整Release构建通过，标准build/qt/bin/Release/drawverse.exe更新。当前热路径回归修复；首次冷资源/配置准备仍有数百毫秒间隔，P1不标为全部完成。ABI/state/VBR与准备票据未改，未跑全量或跨平台。
+
+## 启动配置后台准备验收
+
+preparePreferences 在 BackendWorker 校验并预编码完整配置，GUI 仅应用不可变结果；共享偏好已更新时重新后台准备，关闭后丢弃。不合法候选不改变模型，旧同步restore路径保留。新增跨线程准备测试覆盖三工具配置/混合、颜色、光标参数、默认配置、非法晚尾profile与非法JSON失败不变；与完整恢复、重开隔离、真实489项80次切换、欢迎/关闭/拖动/state45共11行，两后端均通过。共享分类/笔刷窗口/80层异步首开各3项两后端通过，无QML或创建残留警告。
+
+489项同机五次中位：完整同步恢复软件187.095ms、D3D11进程177.729ms；准备后GUI应用0.171/0.177ms。真实首轮最长心跳仍469/361ms、热轮19/17ms、双文档17/18ms且重建0；前者包含其他首次显示工作，不能称P1全完成或用数据应用耗时替代端到端延迟。临时事件探针定位首次QML实例化仍有独立阻塞，已移除探针。将全部笔刷面板改为异步的候选影响原即时控件访问且未充分验收，已撤回，没有放宽原断言。保留日志cold-event-probe、cold-prepared-probe、cold-panels-probe及cold-ui-software中的失败；最终证据artifacts/cold-revised-{software,d3d11}.txt与cold-revised-ui-{software,d3d11}.txt。
+
+完整Windows Release/生成头与diff检查通过，标准drawverse.exe已更新；纯Qt配置准备，无ABI/state/VBR/GPU算子变化。未跑全量、跨平台或实体持续输入，首次QML/资源与持续手感仍待。

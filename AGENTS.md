@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新启动笔刷配置后台准备：BrushLibrary::preparePreferences沿用完整校验并预编码，BackendWorker传不可变无QObject数据，GUI一次应用、重新校验共享输入身份并丢弃关闭结果。软件/D3D11工作流各11行、共享UI各3项及Release/生成头通过；489项同步恢复187/178ms→已准备GUI应用0.171/0.177ms，非端到端。首次QML/资源仍469/361ms心跳，P1部分完成；详见笔刷切换延迟和remaining-fixes验收末节，ABI/state/VBR无变化。
+
 - 最新浮面板销毁补齐：PanelContent在分类直接销毁时同样完成Loading再卸载，修复快速双击收起后遗留2个创建计数；原回归新增残留/cancel/alpha failOnWarning。软件/D3D11各2项共享UI与7行欢迎/关闭/拖动/state45通过，无上述诊断；共享移动/变换各14行通过。完整Release/生成头通过，标准drawverse.exe于2026-10-21 14:32更新；见remaining-fixes和welcome-workspace验收末节，其余复杂性能待办保持。
 
 - 最新批量收尾：remaining-fixes清单/验收、welcome-workspace及transform-resident-preview/brush-library-switch-latency末节。U1/U5关闭：Loader按真实窗口/关闭状态卸载，完成未结束deferred控件，图层列表到Component完成再填充；浮窗固定透明surface，CanvasPane跨窗先隐藏解绑纹理源，原跨窗工作流与生命周期软件/D3D11通过。组内局部选区共用祖先分割，核心14/公开7/移动3/液化3/原生3及4K Qt各5通过，4K六次Warp核心345.593→1.528ms、摘要相同。state45等价目录上界修复，真实489项双文档重建16→0，软件/硬件80次选择各通过；首轮仍374/367ms，P1冷准备未完成。四ABI/Clippy/格式/生成头/Release通过，输出 build/qt/bin/Release；T2复杂固定/祖先蒙版/非连续、M1/H1与首次资产/实体持续性能仍待，无新增ABI或GPU算子。

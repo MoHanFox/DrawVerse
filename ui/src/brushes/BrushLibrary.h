@@ -10,6 +10,7 @@
 #include <QTimer>
 #include <algorithm>
 #include <array>
+#include <memory>
 
 // UI preferences only. Engine access and preview work stay in PaintCoreClient.
 class BrushLibrary final : public QObject {
@@ -428,6 +429,11 @@ public:
     Q_INVOKABLE void cancelPreview(const QString &id);
     Q_INVOKABLE void retryPreview();
     bool restore(const QByteArray &json,bool preserveSelection=false);
+    // Validated startup data contains no QObject and may cross the worker boundary.
+    struct PreparedPreferences;
+    using PreparedPreferencesPtr=std::shared_ptr<const PreparedPreferences>;
+    static PreparedPreferencesPtr preparePreferences(const QByteArray &json);
+    bool applyPreparedPreferences(const PreparedPreferencesPtr &prepared);
     bool restoreSharedSelection(const BrushLibrary &source);
     QByteArray snapshot() const;
     QByteArray catalogSnapshot() const;
@@ -464,6 +470,7 @@ private:
     struct RestoredRow {int version;QJsonObject input;Preset preset;};
     using RestoreRows=QHash<QString,RestoredRow>;
     bool restoreObject(const QJsonObject &root,bool preserveSelection,RestoreRows &decoded,bool executingBounded=false);
+    void reusePreviews(QList<Preset> &presets);
     static QJsonObject presetRow(const Preset &preset,int &version);
     struct ToolProfile {QHash<QString,Preset> presets;QString selected="round-pressure";int writeBlend=0;};
     QJsonObject toolIsolationState() const;
