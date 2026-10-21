@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新编辑结束焦点修复：CanvasPane保留恢复请求至busy/可见/宿主激活满足，不再跳过未激活窗口。真实变换/液化、确定/取消及主/浮文档8组合，结束不点击直接E/B/M；软件/D3D11各9行含欢迎生命周期通过，完整新路径Release更新。见transform-resident-preview验收末节；ABI1.75/state45保持，其他新增问题继续。
+
 - 最新液化会话历史分块读写：4KiB缓冲保持编码/两侧完整校验，仅分配恢复侧；核心16/公开11/原生1、软件Qt3/D3D11 Qt3、四ABI/Clippy/fmt及新路径Release/Debug通过。字段六跳转内存174→109ms、磁盘热缓存274→174ms，非UI/冷盘；D3D11 focus帧事务回归在旧新程序均失败，见长任务预算验收。ABI1.75/state45保持，新增套索液化/翻转历史/焦点/变换首拖问题继续处理。
 
 - 当前用户交付统一输出 `build/bin/Release/drawverse.exe`，以后完成优化须更新此路径；旧build/qt验收路径仅保留历史。最新build/run配置：CMakePresets及.run共享CLion配置，build只构建/部署Release应用，run先部署Debug再执行cmake-build-debug/bin/Debug/drawverse.exe；drawverse_runtime不编译测试，默认完整构建保持。两预设/README完整Release、两配置独立目录D3D11启动绘制、四ABI与新路径软件/D3D11各5项工作流通过。见build-reproducibility及application-build-profiles-validation，无ABI/state变化；余下优化继续按remaining-fixes推进。

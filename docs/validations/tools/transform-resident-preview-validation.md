@@ -135,3 +135,9 @@ Release固定2000×2000白色内容、全幅0.6灰度链接蒙版、两级Normal
 Release固定4096×2160约256px套索、两级Normal祖先：六次Warp中位345.593→1.528ms，begin13.625→20.864ms，commit0.283→59.841ms，最终摘要两者42e02ac6a1396125。入口 transform_performance 4096 cpu/mesh warp selection-nested-normal；日志 artifacts/selection-nested-{cpu,mesh}-perf.txt。此计时仅核心与网格发布，不含Actor、首次代理/上传或窗口显示，确认原采样转为后台一次执行。
 
 完整Release及四ABI构建和四消费者顺序通过，标准build/qt/bin/Release/drawverse.exe更新。固定/祖先蒙版、图层低opacity/fill、非连续及背景相关混合继续CPU回退；未跑全量/跨平台/实体持续时延。
+
+## 2026-10-21 编辑结束快捷键恢复
+
+用户报告结束液化/变换仍需点击画布。新增editingCompletionRestoresShortcuts在实际选项控件持有焦点、另一原生窗口激活时结束会话，旧代码transform-cancel-main稳定失败于宿主未激活。修复保留待恢复标记，等busy/窗口/可见状态满足后完成焦点恢复。
+
+最终用例实际修改变换几何或液化像素后，通过选项确定/取消，主窗口/浮动文档共8行；结束后不调用focus辅助、不点击画布，直接E/B/M均成功。软件及D3D11各8行与欢迎页文档生命周期1行通过，零QML警告。日志artifacts/edit-focus-before.txt及edit-focus-final-{software,d3d11}.txt。完整标准Release构建通过，build/bin/Release/drawverse.exe更新；ABI1.75/state45保持。本项不宣称其他性能问题已完成。

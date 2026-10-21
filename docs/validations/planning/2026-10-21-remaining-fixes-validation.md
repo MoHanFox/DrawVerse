@@ -100,3 +100,9 @@ PanelContent 检查真实窗口可见与客户端关闭状态；卸载仍在 Loa
 - 四ABI、paint-core/paint-ffi所有目标严格Clippy、fmt、完整Release及Debug应用构建通过。标准输出build/bin/Release/drawverse.exe；ABI1.75/state45不变。
 
 日志：artifacts/liquify-fields-{before,after,core,public,native,clippy,abi}.txt及对应ui/workflow/build日志。未验收完整8K/16K、冷盘或实体持续交互。套索液化、翻转历史、结束编辑焦点及变换首次资源准备按用户新增问题继续处理。
+
+## 2026-10-21 编辑结束快捷键恢复
+
+用户报告结束液化/变换仍需点击画布。新增editingCompletionRestoresShortcuts在实际选项控件持有焦点、另一原生窗口激活时结束会话，旧代码transform-cancel-main稳定失败于宿主未激活。修复保留待恢复标记，等busy/窗口/可见状态满足后完成焦点恢复。
+
+最终用例实际修改变换几何或液化像素后，通过选项确定/取消，主窗口/浮动文档共8行；结束后不调用focus辅助、不点击画布，直接E/B/M均成功。软件及D3D11各8行与欢迎页文档生命周期1行通过，零QML警告。日志artifacts/edit-focus-before.txt及edit-focus-final-{software,d3d11}.txt。完整标准Release构建通过，build/bin/Release/drawverse.exe更新；ABI1.75/state45保持。本项不宣称其他性能问题已完成。

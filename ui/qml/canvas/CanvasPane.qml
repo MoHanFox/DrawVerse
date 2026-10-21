@@ -14,13 +14,30 @@ Rectangle {
     property bool savingBlocked: false
     property alias canvasView:canvas
     readonly property bool editing:ownClient.liquifyActive || ownClient.transformActive
+    property bool restoreEditingFocus: false
     onEditingChanged: {
-        if (!editing) Qt.callLater(function() {
-            const host=canvas.Window.window
-            if (!root.editing && root.visible && canvas.enabled && host && host.active)
-                canvas.forceActiveFocus(Qt.OtherFocusReason)
-        })
+        restoreEditingFocus=!editing
+        if (!editing) Qt.callLater(restoreCanvasFocus)
     }
+    function restoreCanvasFocus() {
+        if (!restoreEditingFocus || editing || ownClient.transformBusy || ownClient.liquifyBusy || !visible || !canvas.enabled) return
+        const host=canvas.Window.window
+        if (!host || !host.visible) return
+        // Restored floating panels may activate after the editing flag changes.
+        // Keep the request until the document window actually becomes active.
+        canvas.forceActiveFocus(Qt.OtherFocusReason)
+        if (!host.active) host.requestActivate()
+        else restoreEditingFocus=false
+    }
+    Connections {
+        target:root.ownClient
+        function onStateChanged(){if(root.restoreEditingFocus)Qt.callLater(root.restoreCanvasFocus)}
+    }
+    Connections {
+        target:canvas.Window.window
+        function onActiveChanged(){if(root.restoreEditingFocus)Qt.callLater(root.restoreCanvasFocus)}
+    }
+    onVisibleChanged:if(visible && restoreEditingFocus)Qt.callLater(restoreCanvasFocus)
     readonly property bool singleCursorLine:ownClient.brushLibrary.cursorSimple || ownClient.brushLibrary.cursorWidth===0
     readonly property real cursorLineWidth:singleCursorLine?1:ownClient.brushLibrary.cursorWidth
     readonly property color cursorLineColor:"black"

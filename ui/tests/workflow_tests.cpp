@@ -56,6 +56,33 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void editingCompletionRestoresShortcuts_data() {
+        QTest::addColumn<bool>("liquify");QTest::addColumn<bool>("commit");QTest::addColumn<bool>("floating");
+        for(bool liquify:{false,true})for(bool commit:{false,true})for(bool floating:{false,true})
+            QTest::newRow(qPrintable(QString("%1-%2-%3").arg(liquify?"liquify":"transform",commit?"commit":"cancel",floating?"floating":"main")))<<liquify<<commit<<floating;
+    }
+    void editingCompletionRestoresShortcuts() {
+        QFETCH(bool,liquify);QFETCH(bool,commit);QFETCH(bool,floating);
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
+        QQmlApplicationEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &error:errors)warnings.append(error.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);client.newTransparentDocument(128,128);QTRY_COMPARE(client.documentWidth(),128);
+        client.setBrushColor(Qt::red);client.setBrushRadius(12);QVERIFY(client.beginStroke({{60,60},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);if(floating){documents->floatDocument(documents->activeId());QTRY_VERIFY(canvas->window()!=window);}
+        auto *host=canvas->window();host->requestActivate();QTRY_VERIFY(host->isActive());
+        QVERIFY(liquify?client.beginLiquify():client.beginTransform());QTRY_VERIFY(liquify?client.liquifyActive()&&!client.liquifyBusy():client.transformActive()&&!client.transformBusy());
+        if(liquify){client.setLiquifySize(64);QVERIFY(client.beginStroke({{60,60},1}));client.strokeTo({{72,60},1});client.endStroke();QTRY_VERIFY(!client.liquifyBusy());}
+        else{auto points=client.transformPoints();for(auto &point:points)point=point.toPointF()+QPointF(5,3);QVERIFY(client.updateTransform(points,false,client.transformInterpolation()));QVERIFY(client.checkpointTransform());QTRY_VERIFY(!client.transformBusy());}
+        // Finish via a focusable options control, with a different native window
+        // active when the asynchronous completion arrives. No canvas focus helper.
+        auto *button=findVisual(host->contentItem(),QString(liquify?"liquify":"transform")+(commit?"Commit":"Cancel"));QVERIFY(button);button->forceActiveFocus();
+        QQuickWindow other;other.resize(100,100);other.show();other.requestActivate();QTRY_VERIFY(other.isActive());
+        QVERIFY(QMetaObject::invokeMethod(button,"clicked"));QTRY_VERIFY(!client.transformActive()&&!client.liquifyActive());QTRY_VERIFY(!client.transformBusy()&&!client.liquifyBusy());
+        QTRY_VERIFY(host->isActive());QTRY_VERIFY(canvas->hasActiveFocus());
+        QTest::keyClick(host,Qt::Key_E);QTRY_VERIFY(client.eraser());QTest::keyClick(host,Qt::Key_B);QTRY_VERIFY(!client.eraser());QTest::keyClick(host,Qt::Key_M);QTRY_COMPARE(client.selectionTool(),1);
+        QCOMPARE(warnings,QStringList());QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void defaultStorageDirectoryIsVisibleAndKeepsAutomaticSelection() {
         QTemporaryDir temp;const auto settings=temp.filePath("storage.ini");PaintCoreClient client(nullptr,settings);WorkspaceManager workspace(temp.filePath("layout.ini"));
         QQmlApplicationEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError> &errors){for(const auto &error:errors)warnings.append(error.toString());});
