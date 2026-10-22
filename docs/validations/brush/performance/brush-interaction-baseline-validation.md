@@ -349,3 +349,34 @@ python tools/measure_brush_interaction.py build/bin/Release/qt_brush_interaction
 ## 原始证据位置
 
 `artifacts/issue-2a/`：`baseline/`（原提交无诊断冒烟）、`default/`（3次）、`presets-256/`（3次）、`perturbation-off/`（3次）、`final-regression/`、`environment.json`、`analysis.json`。各组有summary.json/summary.csv；各run含raw.json、Qt初始化test.txt、qt.log及计时外window.png。目录由.gitignore忽略，未提交构建产物、配置、资源或报告原始数据。上表已保留独立审阅所需摘要，不依赖本机日志才能理解结论。
+
+## 审查收尾（2026-10-23）
+
+收尾工具提交：`9f1173763f88cca9c4770c5188923e742c6a7b66`。产品仍基于 `7f5bd4c3acd507fc24069350a7a66a276b992976`，没有颜色路径优化、参数同步架构、防抖或通知行为修改。以下专项在该提交的相同工具源码树上运行；二进制编译时 revision 为收尾前 HEAD `dd22fa2`，冒烟 invocation 同时保留实际未提交差异摘要和二进制 SHA256。文档提交仅补证据，不代表重测历史矩阵。
+
+| 收尾项 | 验证和结果 |
+|---|---|
+| 输出目录保护/参数 | 先校验 repeats 正整数、count≥2，再排他创建输出根目录；已存在则在任何写入前拒绝。Python 两项测试通过（含6组非法参数），递归比较旧文件字节、目录及文件 mtime_ns。旧版 repeats=0/-1 返回成功、重复调用覆盖 invocation 的失败证据保留。 |
+| 独立拖动终值 | 可见原生 Release/D3D11，AMD 1002:1638，DPR=1；真实 QML 控件、合成16次移动/Release、目标8ms间隔。半径：此前保存3.5→起始13.5→目标308.5；流量和不透明度各为 .20→.38→.83。独立映射/量化 oracle、模型、控件、实际 INI 保存值三方一致，3字段均通过。以保存目标值和 pending=false 为完成证据，未用固定等待声称完成。没有发现终值回退。 |
+| 记录器关闭 | 测试屏障分别暂停 Scope/point 于接纳前和接纳后：旧实现4个并发用例失败，出现提前导出和跨轮混入；修复后4个用例通过（Qt totals 6 passed含初始化/清理）。停止关闭 epoch 接纳，等待已接纳记录，冻结导出；新轮拒绝旧 epoch 候选；Scope/point 同一生命周期。关闭路径单次原子读取，无逐次锁/分配。 |
+| 小型诊断开/关冒烟 | 各1进程，A0/A1/A2各3次，共18次尝试；各9/9完成、失败/超时/溢出均0，关闭时 trace 为空，绘画/撤销/重做/退出成功。实际 D3D11 初始化日志保留。这些小样本只证明功能，不据其 p95 估计性能或声称零扰动。 |
+| 既有画布发布专项 | `continuousStrokesKeepPublishingFramesAndAllowLaterEdits` 原生 Windows 模式3 passed（含初始化/清理）。首次误用 offscreen 启动在测试日志生成前退出（0xC0000409），当前部署 platforms 仅 qwindows.dll；改用本任务原生模式通过，未修改产品或部署插件。 |
+
+可复制入口（先按前文激活既有 MSVC/Qt 进程环境）：
+
+```powershell
+python tools/test_measure_brush_interaction.py
+cmake --build build --target qt_interaction_trace_tests qt_brush_interaction_baseline qt_transform_tests -j 2
+build/bin/Release/qt_interaction_trace_tests.exe
+# 为每次终值专项准备全新的隔离目录；TEMP/TMP、QML_DISK_CACHE_PATH 也指入该目录
+$env:QT_QPA_PLATFORM='windows'; $env:QSG_RHI_BACKEND='d3d11'; $env:QSG_RHI_DISABLE_DISK_CACHE='1'
+$env:DRAWVERSE_INTERACTION_FINAL_REPORT="$PWD/artifacts/issue-2a/closure/final-values-new/final-values.json"
+build/bin/Release/qt_brush_interaction_baseline.exe dragFinalValues
+Remove-Item Env:DRAWVERSE_INTERACTION_FINAL_REPORT
+python tools/measure_brush_interaction.py build/bin/Release/qt_brush_interaction_baseline.exe artifacts/issue-2a/closure/smoke-new --a2-only --trace --count 3 --repeats 1
+build/bin/Release/qt_transform_tests.exe continuousStrokesKeepPublishingFramesAndAllowLaterEdits
+```
+
+滑块坐标依据 [Qt 6.8.3 Slider 实现](https://github.com/qt/qtdeclarative/blob/v6.8.3/src/quicktemplates/qquickslider.cpp)，半径 log1p/expm1 和直径步长依据仓库 MappedSlider，流量/不透明度按现有 .01 步长独立计算。专项没有改写原 A3 或已有表格。
+
+新证据均在忽略目录 `artifacts/issue-2a/closure/`：runner-before/after.txt、trace-before/after.txt、final-values-1/final-values.json、smoke-on/off、frame-regression-native/test.txt、构建日志。原9进程/6,885场景样本没有重跑、覆盖或重新标注测量 SHA。旧表格继续描述旧工具下的采样；记录器原尾部边界现已证明不严格，不能保证旧轮次最后的并发尾部绝对完整，但没有证据表明原正式数据实际丢失，也不据此宣告整组失效。新关闭测试只建立新生命周期保证，不补造旧事件。原绘画基准入口与输出代码未修改，未运行无关全量检查。
