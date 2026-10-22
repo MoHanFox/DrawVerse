@@ -1,5 +1,13 @@
 # 快捷键光标与鼠标笔触恢复验收
 
+## 2026-10-22：第二点UI的快捷键通知修复
+
+物理按键轮询此前用实时getter比较前后可见性，两次均读到新键态；Alt前后原生光标同为Blank时没有其他变化可触发通知，QML轮廓/十字可能保持旧值。现统一为最近一次光标刷新采样的快捷键快照，轮询先比较旧显示再发布新显示，所有getter及原生光标使用相同快照，笔尖姿态读取保持独立。
+
+新增 `physicalShortcutsUpdateQmlWithoutPointerOrKeyEvents`：真实Windows窗口中用SendInput改变物理Alt/Ctrl，应用事件过滤器阻止KeyPress/KeyRelease/ShortcutOverride进入画布，指针位置不动，分别在鼠标及笔悬停所有权下验证QML绑定的画笔/吸色可见性与窗口原生光标及时切换，按住Alt跨多个16ms周期保持。600ms为测试超时上限，不是响应延迟测量。既有无modifier TabletMove、丢失KeyRelease恢复与鼠标/手绘笔重复Press同时通过。
+
+软件与D3D11各4个功能用例（含初始化/清理各6 passed、0 failed），日志 `artifacts/shortcut-qml-software.txt`、`artifacts/shortcut-qml-d3d11.txt`。Release应用部署和测试目标构建、生成头检查通过；标准 `build/bin/Release/drawverse.exe` 已更新。未改ABI1.80/state45/手势判定或文件格式，未跑全量测试；物理键盘注入与合成笔悬停不能替代实体数位板连续压力/移动验收。
+
 2026-10-22，Windows 11 / Qt 6.8.3 / Release / 原生 windows 平台与 software Quick 后端。
 
 - `shortcutCursorSurvivesModifierlessTabletMoves`：先只用鼠标验证 Alt/Ctrl，收到无 modifier 的 MouseButtonRelease 时立即恢复画笔光标，不依赖手绘板；再验证无 modifier 的 TabletMove 不会冲掉已按下状态，KeyRelease 后再移动仍保持画笔状态且不得重新锁存旧 modifier。另注入只有 KeyPress、没有 KeyRelease 的 Alt/Ctrl，Win32 物理键态短轮询必须清除工具光标；窗口原生 `cursor()` 与 Item 状态一致（Ctrl 时 `SizeAllCursor`，松开后 `BlankCursor`），修复前两者会长期不同步。

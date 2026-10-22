@@ -9,6 +9,7 @@
 #include <QtTest>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlComponent>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QQuickItemGrabResult>
@@ -23,10 +24,61 @@
 #include <QScopeGuard>
 #include <qpa/qwindowsysteminterface.h>
 #include <private/qhighdpiscaling_p.h>
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#undef near
+#endif
 static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item->objectName()==name)return item;for(auto *child:item->childItems())if(auto *found=findVisualItem(child,name))return found;return nullptr;}
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void physicalShortcutsUpdateQmlWithoutPointerOrKeyEvents() {
+#ifdef Q_OS_WIN
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("physical-shortcuts.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QQuickWindow window;window.resize(512,512);
+        auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,512});canvas->setClient(&client);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
+        const auto at=canvas->documentRect().center();QTest::mouseMove(&window,at.toPoint());
+        QQmlEngine engine;engine.rootContext()->setContextProperty("canvasView",canvas);
+        QQmlComponent component(&engine);
+        component.setData("import QtQml\nQtObject { property bool brush: canvasView.brushCursorVisible; property bool eyedropper: canvasView.eyedropperCursorVisible }",QUrl());
+        QScopedPointer<QObject> bindings(component.create());QVERIFY2(bindings,qPrintable(component.errorString()));
+        QTRY_VERIFY(bindings->property("brush").toBool());
+        class KeyBlocker final : public QObject {
+            bool eventFilter(QObject *,QEvent *event) override {
+                return event->type()==QEvent::KeyPress || event->type()==QEvent::KeyRelease || event->type()==QEvent::ShortcutOverride;
+            }
+        } blocker;
+        qApp->installEventFilter(&blocker);
+        const auto key=[](WORD code,bool down){INPUT input{};input.type=INPUT_KEYBOARD;input.ki.wVk=code;input.ki.dwFlags=down?0:KEYEVENTF_KEYUP;return SendInput(1,&input,sizeof(INPUT));};
+        const auto release=qScopeGuard([&]{
+            for(WORD code:{WORD(VK_MENU),WORD(VK_CONTROL)})if(GetAsyncKeyState(code)&0x8000)key(code,false);
+            QCoreApplication::processEvents();qApp->removeEventFilter(&blocker);
+        });
+        QPointingDevice pen("physical shortcut pen",9195,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        for(bool tablet:{false,true}) {
+            if(tablet){QTabletEvent hover(QEvent::TabletMove,&pen,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&hover);}
+            const auto position=canvas->cursorPosition();
+            QCOMPARE(key(VK_MENU,true),UINT(1));
+            QTRY_VERIFY_WITH_TIMEOUT(bindings->property("eyedropper").toBool(),600);
+            QVERIFY(!bindings->property("brush").toBool());QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
+            QTest::qWait(80);QVERIFY(bindings->property("eyedropper").toBool());
+            QCOMPARE(key(VK_MENU,false),UINT(1));
+            QTRY_VERIFY_WITH_TIMEOUT(bindings->property("brush").toBool(),600);
+            QVERIFY(!bindings->property("eyedropper").toBool());
+            QCOMPARE(key(VK_CONTROL,true),UINT(1));
+            QTRY_COMPARE_WITH_TIMEOUT(window.cursor().shape(),Qt::SizeAllCursor,600);
+            QVERIFY(!bindings->property("brush").toBool());
+            QCOMPARE(key(VK_CONTROL,false),UINT(1));
+            QTRY_VERIFY_WITH_TIMEOUT(bindings->property("brush").toBool(),600);
+            QTRY_COMPARE(window.cursor().shape(),Qt::BlankCursor);QCOMPARE(canvas->cursorPosition(),position);
+        }
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+#else
+        QSKIP("Physical keyboard polling is Windows specific");
+#endif
+    }
     void continuousStrokesKeepPublishingFramesAndAllowLaterEdits() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("publication-retry.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,128);
@@ -498,7 +550,7 @@ private slots:
         QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
         QQuickWindow window;window.resize(512,512);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,512});canvas->setClient(&client);
         window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
-        const auto at=canvas->documentRect().center();QTest::mouseMove(&window,canvas->mapToScene(at).toPoint());
+        const auto at=canvas->documentRect().center();QTest::mouseMove(&window,QPoint(1,1));QTest::mouseMove(&window,canvas->mapToScene(at).toPoint());
         QVERIFY(canvas->brushCursorVisible());QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
         QPointingDevice pen("shortcut pen",9194,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
         const auto hover=[&]{QTabletEvent e(QEvent::TabletMove,&pen,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&e);};

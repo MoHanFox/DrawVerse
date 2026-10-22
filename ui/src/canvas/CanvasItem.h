@@ -191,10 +191,12 @@ private:
     bool m_selectionConstrained = false;
     /// Alt is held: the pointer acts as the eyedropper and shows a crosshair.
     bool m_altHeld = false, m_ctrlHeld = false;
+    Qt::KeyboardModifiers m_cursorShortcutModifiers;
     QTimer m_shortcutStateTimer;int m_altReleaseTicks=0,m_ctrlReleaseTicks=0;
     void setAltHeld(bool held);
     void syncShortcutModifiers(Qt::KeyboardModifiers modifiers,bool latchOnly);
     Qt::KeyboardModifiers shortcutCursorModifiers() const;
+    Qt::KeyboardModifiers readShortcutCursorModifiers() const;
     QCursor effectiveCursor() const;
     void refreshShortcutCursor();
     void updateCursorPoll();

@@ -191,6 +191,7 @@ InputSample CanvasItem::tabletSample(QTabletEvent *e,QPointF local) const {
     const auto cap=e->pointingDevice()->capabilities();if(cap.testFlag(QInputDevice::Capability::Pressure))s.capabilities|=1;else s.pressure=1;if(cap.testFlag(QInputDevice::Capability::XTilt)||cap.testFlag(QInputDevice::Capability::YTilt))s.capabilities|=2;if(cap.testFlag(QInputDevice::Capability::Rotation))s.capabilities|=4;if(cap.testFlag(QInputDevice::Capability::TangentialPressure))s.capabilities|=8;return s;
 }
 void CanvasItem::refreshBrushCursor() {
+    m_cursorShortcutModifiers=readShortcutCursorModifiers();
     if(m_client){m_pose=m_client->baseCursorPose();if(m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_pose=m_client->brushCursorPose(m_poseSample,m_poseDirection,m_poseDirectionKnown,m_client->drawing() && !m_client->brushLibrary()->cursorSimple());}
     if(m_client && !m_pose.ready && m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_poseRetry.start();else m_poseRetry.stop();
     setCursor(effectiveCursor());
@@ -704,6 +705,9 @@ void CanvasItem::syncShortcutModifiers(Qt::KeyboardModifiers modifiers,bool latc
     else m_shortcutStateTimer.stop();
 }
 Qt::KeyboardModifiers CanvasItem::shortcutCursorModifiers() const {
+    return m_cursorShortcutModifiers;
+}
+Qt::KeyboardModifiers CanvasItem::readShortcutCursorModifiers() const {
     const auto physical=shortcutModifiersFromSystem();
     if(physical.testFlag(Qt::AltModifier) || physical.testFlag(Qt::ControlModifier))return physical;
     Qt::KeyboardModifiers latched;
@@ -734,6 +738,7 @@ void CanvasItem::refreshShortcutCursor() {
         m_ctrlReleaseTicks=0;
     }
     const bool changed=m_altHeld!=altBefore || m_ctrlHeld!=ctrlBefore;
+    m_cursorShortcutModifiers=readShortcutCursorModifiers();
     setCursor(effectiveCursor());
     if(tabletCursorOwner==this && m_observedWindow)m_observedWindow->setCursor(cursor());
     if(changed || cursor()!=cursorBefore || brushCursorVisible()!=brushBefore || eyedropperCursorVisible()!=eyedropperBefore)emit brushCursorChanged();
