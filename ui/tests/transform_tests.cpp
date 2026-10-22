@@ -427,6 +427,38 @@ private slots:
         QTRY_COMPARE(client.undoDepth(),1);QVERIFY(client.lastError().isEmpty());
         canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void shortcutCursorSurvivesModifierlessTabletMoves() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("pen-shortcuts.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,128);
+        QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
+        QQuickWindow window;window.resize(512,512);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,512});canvas->setClient(&client);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
+        const auto at=canvas->documentRect().center();QTest::mouseMove(&window,canvas->mapToScene(at).toPoint());
+        QPointingDevice pen("shortcut pen",9194,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto hover=[&]{QTabletEvent e(QEvent::TabletMove,&pen,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&e);};
+        QTest::keyPress(&window,Qt::Key_Alt);QTRY_VERIFY(canvas->eyedropperCursorVisible());
+        hover();QVERIFY(canvas->eyedropperCursorVisible());
+        QTest::keyRelease(&window,Qt::Key_Alt);QTRY_VERIFY(!canvas->eyedropperCursorVisible());
+        QTest::keyPress(&window,Qt::Key_Control);QTRY_COMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);
+        hover();QCOMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);
+        QTest::keyRelease(&window,Qt::Key_Control);QTRY_VERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);
+        QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void duplicateMousePressStillEndsOnRelease() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("mouse-duplicate.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,128);
+        QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());client.setBrushRadius(12);
+        QQuickWindow window;window.resize(512,512);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,512});canvas->setClient(&client);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
+        const auto at=canvas->documentRect().center(),moved=at+QPointF(20,0);
+        const auto send=[&](QEvent::Type type,QPointF p,Qt::MouseButton button,Qt::MouseButtons buttons){QMouseEvent e(type,p,canvas->mapToGlobal(p),button,buttons,Qt::NoModifier);QCoreApplication::sendEvent(canvas,&e);};
+        send(QEvent::MouseButtonPress,at,Qt::LeftButton,Qt::LeftButton);QVERIFY(client.drawing());
+        send(QEvent::MouseButtonPress,at,Qt::LeftButton,Qt::LeftButton);QVERIFY(client.drawing());
+        send(QEvent::MouseMove,moved,Qt::NoButton,Qt::LeftButton);QVERIFY(client.drawing());
+        send(QEvent::MouseButtonRelease,moved,Qt::LeftButton,Qt::NoButton);
+        QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());QTRY_COMPARE(client.undoDepth(),1);
+        QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void transformKeepsFloatingPanelsAndUsesCorrectFileGuard() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("panels.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());

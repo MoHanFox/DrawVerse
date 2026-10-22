@@ -190,6 +190,7 @@ private:
     /// Alt is held: the pointer acts as the eyedropper and shows a crosshair.
     bool m_altHeld = false, m_ctrlHeld = false;
     void setAltHeld(bool held);
+    void syncShortcutModifiers(Qt::KeyboardModifiers modifiers,bool latchOnly);
     bool m_selecting = false;
     bool m_interactive = true, m_space = false, m_panning = false, m_stroke = false, m_tablet = false, m_fitPending = true;
     QElapsedTimer m_clock;

@@ -1049,6 +1049,9 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         }
         if(m_layerMoveActive && !m_layerMoveStarting)flushLayerMove();
         if(m_drawing && m_liquifyActive && !m_dropStroke)flushLiquifyInput();
+        if(!m_liquifyActive && !m_layerMoveActive && !m_transformActive && m_residentPreview) {
+            m_residentPreview.reset();emit frameChanged();
+        }
         const bool progressGenerationChanged=m_generation!=info.document_generation;
         m_generation = info.document_generation;
         if(progressGenerationChanged)emit computationProgressChanged();
@@ -1544,6 +1547,7 @@ bool PaintCoreClient::beginStroke(const InputSample &s) {
     if (!m_ready || m_drawing || m_wetActionBusy || layerEditBusy() || m_pendingLiquify) return false;
     if(m_brushLibrary->brushSelectionBlocksPainting())return false;
     if(m_liquifyActive) {m_dropStroke=false;m_hasLiquifyPending=false;m_liquifyLast=s;m_liquifyClock.restart();if(!submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_BEGIN))return false;if(!submitLiquifyDab(s,s,16)){submitLiquifyStrokeMarker(PAINT_LIQUIFY_STROKE_END);return false;}m_drawing=true;emit stateChanged();return true;}
+    if(m_residentPreview){m_residentPreview.reset();emit frameChanged();}
     for(const auto &value:m_layers) { const auto layer=value.toMap(); if(layer.value("id").toULongLong()!=m_active) continue;
         if(layer.value("group").toBool()) {showError(QStringLiteral("请选中组内像素图层绘画，或先新建图层"));return false;}
         if(layer.value("effectiveLocks").toUInt() & PAINT_LOCK_ALL) {showError(QStringLiteral("当前图层或所属组已完全锁定，请先解锁"));return false;}
