@@ -27,6 +27,44 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void continuousStrokesKeepPublishingFramesAndAllowLaterEdits() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("publication-retry.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,128);
+        QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
+        client.setBrushRadius(3);client.setBrushColor(Qt::red);client.brushLibrary()->setPressureSize(false);
+        QQuickWindow window;window.resize(256,256);window.setColor(Qt::white);
+        auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({256,256});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        QSignalSpy frames(&client,&PaintCoreClient::frameChanged);
+        for(int stroke=0;stroke<24;++stroke) {
+            const auto y=8.+stroke*4;
+            QVERIFY(client.beginStroke({{8,y},1}));
+            for(int x=9;x<=112;++x) {
+                client.strokeTo({{double(x),y},1});
+                if(x%8==0)QTest::qWait(1);
+            }
+            client.endStroke();
+            QTRY_COMPARE(client.undoDepth(),stroke+1);QTRY_VERIFY(!client.layerEditBusy());
+        }
+        QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(frames.size()>24);
+        const auto redAt=[&](QPointF p){
+            auto grab=canvas->grabToImage();
+            if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return false;
+            const auto pixel=(canvas->documentRect().topLeft()+p*canvas->zoom())*window.devicePixelRatio();
+            const auto color=grab->image().pixelColor(pixel.toPoint());
+            return color.red()>180 && color.green()<70 && color.blue()<70;
+        };
+        QTRY_VERIFY(redAt({60,100}));
+        QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());
+        QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());
+        QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformActive() && !client.transformBusy());
+        QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
+        client.setBrushColor(Qt::red);QVERIFY(client.beginStroke({{64,116},1}));client.endStroke();
+        QTRY_COMPARE(client.undoDepth(),25);QTRY_VERIFY(!client.layerEditBusy());
+        QTRY_VERIFY(client.frameRevision()>=client.revision());QTRY_VERIFY(redAt({64,116}));
+        QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void directLiquifyHistoryJumpRestoresTheDisplayedResult() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("liquify-jump.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         client.newTransparentDocument(128,96);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());

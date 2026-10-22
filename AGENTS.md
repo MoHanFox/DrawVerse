@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新画布停更竞态：shortcut-cursor-stroke-recovery设计/验收末节；BackendWorker所有精确publication读取成功后才设置metadataPending，最后笔触回执BUSY不再永久阻断元数据与像素轮询。新增24笔连续输入/真实像素、液化与变换退出后第25笔，连同快捷键/重复Press/异常离笔/4K预热移动，软件与D3D11各7功能通过；Release应用与生成头通过，build/bin/Release更新。ABI1.80/state45保持；并发用例不保证命中竞态窗口，实体持续输入仍待。
+
 - 最新WinTab双设备流：wintab-duplicate-device设计/验收；WinTab启用时消费Qt仍并行投递的wmpointer Press/Move/Release及proximity，笔触重复Press幂等且以client drawing收尾，悬停轮廓与卡绘制修复。WinTab/Ink设备选择、双流Press/Leave拒绝、重复Press后Release及笔刷/液化离笔定向6项通过，完整Release与生成头通过，build/bin/Release更新。ABI1.79/state45保持；输入为真实窗口注入事件，实体连续压力/悬停/翻面仍待。
 
 - 最新快捷键光标即时重算：shortcut-cursor-stroke-recovery设计/验收末节；参考PhotoCraft逐帧重算，画布指针在内时每16ms按Win32物理键态统一应用Item与原生窗口光标，Alt/Ctrl按下/释放不依赖单条Hover或KeyRelease，WinTab漏modifier不再闪烁；手势仍按Press时刻修饰键判定。鼠标/手绘快捷键、丢失KeyRelease恢复、重复Press及离笔Transform7项通过，完整Release与生成头通过，build/bin/Release更新；未改ABI/state，实体持续输入仍待。

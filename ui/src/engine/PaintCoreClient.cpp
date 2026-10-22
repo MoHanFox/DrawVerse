@@ -462,10 +462,12 @@ public:
                 {"icon",entry.kind==PAINT_HISTORY_RELEASE_CLIPPING?QStringLiteral("layers"):known?icons[entry.kind]:QStringLiteral("page")}});
         }
         auto transform=dto<PaintTransform>();status=paint_session_transform_info(m_core,m_session,info.publication,&transform);if(status==PAINT_BUSY)return false;if(!check(status))return false;QVariantList transformPoints;for(int i=0;i<16;++i)transformPoints.append(QPointF(transform.points[i*2],transform.points[i*2+1]));
-        m_connection->metadataPending.store(true);
         uint64_t committed[4096];uint32_t count=0;const auto committedStatus=paint_session_committed_strokes(m_core,m_session,info.publication,m_strokeCommitCursor,committed,4096,&count);
         if(committedStatus==PAINT_BUSY)return false;if(!check(committedStatus))return false;
         QVariantList committedStrokes;for(uint32_t i=0;i<count;++i)committedStrokes.append(QVariant::fromValue<qulonglong>(committed[i]));
+        // Only queued metadata has a GUI acknowledgement. A stale publication
+        // above must remain retryable, or poll() also stops delivering pixels.
+        m_connection->metadataPending.store(true);
         emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}},history,{{"points",transformPoints},{"warp",transform.warp!=0},{"interpolation",transform.interpolation},{"skewH",transform.skew_h},{"skewV",transform.skew_v}},committedStrokes); m_publication = info.publication;m_strokeCommitCursor=info.completed_sequence;
         return true;
     }

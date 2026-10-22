@@ -4831,8 +4831,9 @@ private slots:
         QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,start);QTest::mouseMove(&window,end);
         QTRY_COMPARE(client.layers().first().toMap().value("offsetX").toInt(),20);
         QCOMPARE(client.undoDepth(),1);QVERIFY(client.layerMoveActive());
-        if(canvas->gpuDisplay()){QTRY_VERIFY(client.liquifyPreview());QTRY_VERIFY(client.liquifyPreview()->revision>=client.revision());QCOMPARE(client.liquifyPreview()->vertices.size(),4);}
-        else {QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(!client.liquifyPreview());}
+        // Immediate input can precede source preparation even on a hardware backend.
+        QTRY_VERIFY(client.liquifyPreview()?client.liquifyPreview()->revision>=client.revision():client.frameRevision()>=client.revision());
+        if(client.liquifyPreview()){QVERIFY(canvas->gpuDisplay());QCOMPARE(client.liquifyPreview()->vertices.size(),4);}
         QImage moved;
         const auto report=[&]{moved.save("artifacts/layer-move-capture-failure.png");client.frame().save("artifacts/layer-move-frame-failure.png");return QString("active=%1 window=%2 offset=%3 revision=%4 frame=%5 region=%6,%7").arg(client.layerMoveActive()).arg(window.isActive()).arg(client.layers().first().toMap().value("offsetX").toInt()).arg(client.revision()).arg(client.frameRevision()).arg(client.frameRegion().x()).arg(client.frameRegion().y());};
         QTRY_VERIFY2(!(moved=capture()).isNull() && redAt(moved,end),qPrintable(report()));QVERIFY(!redAt(moved,start));

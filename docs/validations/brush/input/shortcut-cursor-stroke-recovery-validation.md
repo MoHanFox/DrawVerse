@@ -11,3 +11,17 @@
 - 鼠标长绘停刷候选已从显示与输入两层收口：普通笔触开始和互动工具状态结束都会清除遗留常驻预览；本地/客户端笔触状态分裂可由下一次 Press/Release 恢复。未用实体笔做长时间连续压力与悬停验收。
 
 ABI1.79/state45 保持不变，未运行无关全量测试。
+
+## 2026-10-22：元数据回执竞态导致永久停更
+
+代码检查发现 `BackendWorker::publish` 在最后一次 `paint_session_committed_strokes` 读取前设置 `metadataPending`。该读取按精确 publication 查询，actor 在两次读取之间发布即可返回 BUSY；失败路径没有发送 metadata 信号，GUI 无法清除标记，后续 `poll` 在 publish 处返回，连像素读取也不再执行。现仅在全部读取成功后、发送信号前置位，BUSY 与错误路径均保持可重试。
+
+新增 `continuousStrokesKeepPublishingFramesAndAllowLaterEdits`：真实 Windows 窗口中连续24笔、每笔104次移动并让事件循环与后台并行运行，确认历史增长、帧修订追上以及末笔真实红色显示；液化和自由变换取消后再画第25笔，确认新像素可见。并发覆盖不保证每次命中最后两次查询之间的竞态，未引入生产故障注入接口。
+
+最小专项：新增用例、快捷键、鼠标重复Press、数位笔重复Press、笔刷/液化异常离笔及4K预热移动，软件与D3D11各7个功能用例（含初始化/清理为9 passed、0 failed），日志 `artifacts/publication-retry-software.txt`、`artifacts/publication-retry-d3d11.txt`。4K用例同时检查未预热输入、同源纹理复用、单历史、取消和最终完整帧；抓图耗时不作为实体输入延迟。
+
+补查 `layerMoveFollowsBeforeReleaseAndCancelsWithSingleHistory` 时，旧测试在D3D11首拖强制要求常驻包，未等待预热，与ABI1.80未就绪立即走完整CPU帧的契约冲突。断言改为等待有效网格或完整帧；保留真实像素随动、原位清除、单历史、取消、空白Ctrl拾取、手绘笔和复杂混合检查。预热后的强制网格/纹理复用仍由4K专项验收。
+
+更新断言后，该UI用例软件和D3D11各1个功能通过（含初始化/清理各3 passed、0 failed）；日志 `artifacts/publication-retry-ctrl-move-software.txt`、`artifacts/publication-retry-ctrl-move-d3d11.txt`。两后端合计各8个功能用例通过。
+
+Release应用与专项测试目标构建、生成头一致检查通过；标准交付 `build/bin/Release/drawverse.exe` 已更新。没有改动Rust、ABI1.80/state45或文件格式，未运行全量测试；实体数位板持续压力/悬停与移动手感仍需实机确认。
