@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [Brush Interaction Baseline（Issue #2-A）](brush/performance/brush-interaction-baseline-validation.md)
+
 - [应用 build/run 配置与统一产物目录](platform/application-build-profiles-validation.md)
 
 - [大范围像素滑条指数调节](interface/pixel-slider-exponential-validation.md)
