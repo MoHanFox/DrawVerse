@@ -1,3 +1,4 @@
+#include "platform/InteractionTrace.h"
 #include "canvas/CanvasItem.h"
 #include "canvas/LiquifyPreviewNode.h"
 #include "canvas/ResidentPreviewTextures.h"
@@ -191,9 +192,15 @@ InputSample CanvasItem::tabletSample(QTabletEvent *e,QPointF local) const {
     const auto cap=e->pointingDevice()->capabilities();if(cap.testFlag(QInputDevice::Capability::Pressure))s.capabilities|=1;else s.pressure=1;if(cap.testFlag(QInputDevice::Capability::XTilt)||cap.testFlag(QInputDevice::Capability::YTilt))s.capabilities|=2;if(cap.testFlag(QInputDevice::Capability::Rotation))s.capabilities|=4;if(cap.testFlag(QInputDevice::Capability::TangentialPressure))s.capabilities|=8;return s;
 }
 void CanvasItem::refreshBrushCursor() {
+    InteractionTrace::Scope trace("refreshBrushCursor");
     m_cursorShortcutModifiers=readShortcutCursorModifiers();
     if(m_client){m_pose=m_client->baseCursorPose();if(m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_pose=m_client->brushCursorPose(m_poseSample,m_poseDirection,m_poseDirectionKnown,m_client->drawing() && !m_client->brushLibrary()->cursorSimple());}
     if(m_client && !m_pose.ready && m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_poseRetry.start();else m_poseRetry.stop();
+    if(InteractionTrace::enabled.load(std::memory_order_relaxed)){
+        InteractionTrace::point("pose.ready",m_pose.ready);
+        InteractionTrace::point("pose.angle",m_pose.angle);
+        InteractionTrace::point("pose.base.angle",m_client?m_client->baseCursorPose().angle:0);
+    }
     applyShortcutCursor();
 }
 void CanvasItem::setTabletWindowCursor(bool active) {

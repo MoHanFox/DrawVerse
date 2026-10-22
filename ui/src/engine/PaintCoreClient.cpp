@@ -1,3 +1,4 @@
+#include "platform/InteractionTrace.h"
 #include "platform/TabletInput.h"
 #include "brushes/BrushCurveModes.h"
 #include "engine/PaintCoreClient.h"
@@ -741,6 +742,7 @@ public:
     }
     // Preview documents run in their own Rust actor; no mutation of the user's document.
     void pollBrushState() {
+        InteractionTrace::Scope trace("worker.pollBrushState");
         PaintBrushLibrary *library=nullptr;quint64 preparation=0;QByteArray wanted,submitted;
         {QMutexLocker lock(&m_catalog->mutex);library=m_catalog->library;preparation=m_catalog->preparation;wanted=m_catalog->preferences;submitted=m_catalog->source;}
         if(!library || !preparation){m_pendingBrushPreferences.clear();return;}
@@ -755,6 +757,7 @@ public:
             // Identity/default normalization must not rebuild the entire live
             // library. Compare this exact prepared input on the worker first.
             if(!error.isEmpty() || !BrushLibrary::equivalentCatalogState(canonical,submitted))emit nativeBrushCatalog(preparation,canonical,error);
+            InteractionTrace::point("catalog.complete.preparation",double(preparation));
             emit brushPreparationFinished(preparation,error.isEmpty());
         }
         if(!m_pendingBrushPreferences.isEmpty()){
@@ -1317,6 +1320,7 @@ BrushCursorPose PaintCoreClient::baseCursorPose() const {
     return m_liveBasePose;
 }
 BrushCursorPose PaintCoreClient::brushCursorPose(const InputSample &sample,QPointF direction,bool directionKnown,bool pressureKnown) {
+    InteractionTrace::Scope trace("brushCursorPose");
     auto result=baseCursorPose();if(!m_ready || m_closing || m_liquifyActive || m_brushLibrary->persistencePending())return result;
     PaintBrushPose *handle=nullptr;
     if(m_drawing){if(!m_strokePoseBound)return result;handle=m_strokePose;}
@@ -1469,6 +1473,7 @@ bool PaintCoreClient::saveComputeDevice(const QString &id) {
     return true;
 }
 void PaintCoreClient::setBrushColor(const QColor &c) {
+    InteractionTrace::Scope trace("setBrushColor");
     // Picking a colour is only a preview: the swatch row advances when the pixel stroke commits.
     if (c.isValid() && c != m_color) m_brushLibrary->setActiveColors(c,m_secondaryColor);
 }
@@ -2218,10 +2223,19 @@ bool PaintCoreClient::importDualBrushTip(const QUrl &path,int interpretation) {
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,path=path.toLocalFile(),target,interpretation]{worker->importBrushTip(path,target,interpretation,2);},Qt::QueuedConnection);return true;
 }
 void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
+    InteractionTrace::Scope trace("persistBrushPreferences");
     if(!m_brushPreferencePersistenceEnabled || m_closing)return;
     {QMutexLocker lock(&m_brushCatalogConnection->mutex);m_brushCatalogConnection->preferences=state;}
     if(!synchronizeBrushCatalog(state))return;
-    QMetaObject::invokeMethod(m_worker,[worker=m_worker,state]{worker->saveBrushPreferences(state);},Qt::QueuedConnection);
+    const bool tracing=InteractionTrace::enabled.load(std::memory_order_relaxed);
+    const auto queuedAt=tracing?InteractionTrace::now():0;
+    const int sourceOperation=tracing?InteractionTrace::operation:-1;
+    QMetaObject::invokeMethod(m_worker,[worker=m_worker,state,queuedAt,sourceOperation]{
+        const int previous=InteractionTrace::operation;InteractionTrace::operation=sourceOperation;
+        if(queuedAt)InteractionTrace::point("preferences.queue_us",double(InteractionTrace::now()-queuedAt)/1000);
+        {InteractionTrace::Scope trace("worker.saveBrushPreferences");worker->saveBrushPreferences(state);}
+        InteractionTrace::operation=previous;
+    },Qt::QueuedConnection);
 }
 bool PaintCoreClient::restoreBrushPreferences(const QByteArray &state,const BrushLibrary *source) {
     if(source && source->snapshot()==state && m_brushLibrary->restoreSharedSelection(*source))return true;
@@ -2232,6 +2246,7 @@ bool PaintCoreClient::restoreBrushPreferences(const QByteArray &state,const Brus
     return true;
 }
 bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
+    InteractionTrace::Scope trace("synchronizeBrushCatalog");
     {QMutexLocker lock(&m_brushCatalogConnection->mutex);if(m_brushCatalogConnection->preparation && m_brushCatalogConnection->requestedState==state)return true;}
     QByteArray source;
     if(state==m_brushLibrary->snapshot())source=m_brushLibrary->catalogSnapshot();
@@ -2245,6 +2260,7 @@ bool PaintCoreClient::synchronizeBrushCatalog(const QByteArray &state) {
     if(source==m_brushCatalogConnection->source && m_brushCatalogConnection->preparation){m_brushCatalogConnection->requestedState=state;return true;}
     uint64_t preparation=0;const auto status=paint_brush_library_prepare_state_groups(m_brushCatalogConnection->library,reinterpret_cast<const uint8_t*>(source.constData()),quint64(source.size()),&preparation);
     if(status!=PAINT_OK){lock.unlock();showError(immediateError(status));return false;}
+    InteractionTrace::point("catalog.request.preparation",double(preparation));
     m_brushCatalogConnection->source=source;m_brushCatalogConnection->requestedState=state;m_brushCatalogConnection->preparation=preparation;return true;
 }
 bool PaintCoreClient::exportBrush(const QUrl &path,bool includeSource,const QString &expectedPreset) {
