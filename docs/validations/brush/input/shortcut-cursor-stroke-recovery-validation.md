@@ -2,7 +2,7 @@
 
 2026-10-22，Windows 11 / Qt 6.8.3 / Release / 原生 windows 平台与 software Quick 后端。
 
-- `shortcutCursorSurvivesModifierlessTabletMoves`：Alt 按下后发送不带 Alt 的 TabletMove，吸色光标保持；Ctrl 按下后发送不带 Ctrl 的 TabletMove，临时移动光标保持；KeyRelease 后恢复画笔状态。修复前 Alt 第一条无 modifier 移动即被清掉。
+- `shortcutCursorSurvivesModifierlessTabletMoves`：先只用鼠标验证 Alt/Ctrl，收到无 modifier 的 MouseButtonRelease 时立即恢复画笔光标，不依赖手绘板；再验证无 modifier 的 TabletMove 不会冲掉已按下状态，KeyRelease 后再移动仍保持画笔状态且不得重新锁存旧 modifier。修复前 Alt 第一条无 modifier 移动即被清掉，Release 兜底还可能把刚释放的系统状态重新写回。
 - `duplicateMousePressStillEndsOnRelease`：真实窗口画布上重复 MouseButtonPress 后仍保持 drawing，Move/Release 正常结束，只提交一条笔触历史。
 - 原 `duplicateTabletPressStillEndsOnRelease` 与笔刷/液化 proximity loss 两行继续通过。
 - `layerMoveFollowsBeforeReleaseAndCancelsWithSingleHistory` 继续通过，覆盖 Ctrl 临时拾取移动、松手单历史、Esc 取消及移动结束后显示刷新。

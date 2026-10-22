@@ -436,12 +436,19 @@ private slots:
         const auto at=canvas->documentRect().center();QTest::mouseMove(&window,canvas->mapToScene(at).toPoint());
         QPointingDevice pen("shortcut pen",9194,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
         const auto hover=[&]{QTabletEvent e(QEvent::TabletMove,&pen,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&e);};
+        const auto mouseRelease=[&]{QMouseEvent e(QEvent::MouseButtonRelease,at,canvas->mapToGlobal(at),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(canvas,&e);};
+        QTest::keyPress(&window,Qt::Key_Alt);QTRY_VERIFY(canvas->eyedropperCursorVisible());
+        mouseRelease();QVERIFY(!canvas->eyedropperCursorVisible());QTest::keyRelease(&window,Qt::Key_Alt);
+        QTest::keyPress(&window,Qt::Key_Control);QTRY_COMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);
+        mouseRelease();QTRY_VERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);QTest::keyRelease(&window,Qt::Key_Control);
         QTest::keyPress(&window,Qt::Key_Alt);QTRY_VERIFY(canvas->eyedropperCursorVisible());
         hover();QVERIFY(canvas->eyedropperCursorVisible());
         QTest::keyRelease(&window,Qt::Key_Alt);QTRY_VERIFY(!canvas->eyedropperCursorVisible());
+        hover();QVERIFY(!canvas->eyedropperCursorVisible());
         QTest::keyPress(&window,Qt::Key_Control);QTRY_COMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);
         hover();QCOMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);
         QTest::keyRelease(&window,Qt::Key_Control);QTRY_VERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);
+        hover();QVERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void duplicateMousePressStillEndsOnRelease() {

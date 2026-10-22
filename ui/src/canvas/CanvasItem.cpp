@@ -590,7 +590,7 @@ void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
     e->accept();
 }
 void CanvasItem::mouseReleaseEvent(QMouseEvent *e) {
-    syncShortcutModifiers(e->modifiers()|QGuiApplication::queryKeyboardModifiers(),false);
+    syncShortcutModifiers(e->modifiers(),false);
     if(!m_tablet){m_cursorPosition=e->position();setCursorSample(mouseSample(e->position(),e->buttons()));}
     if(m_picking && !m_tablet && e->button()==Qt::LeftButton){updatePicking(e->position());endPicking();e->accept();return;}
     if(!m_panning && m_selecting && !m_tablet) finishSelection(e->position(),e->modifiers());
@@ -734,7 +734,8 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     // Let Qt Quick synthesize the same pointer gestures used by transform handles.
     if (m_client->transformActive()) { event->ignore(); return false; }
     auto *e = static_cast<QTabletEvent *>(event);
-    syncShortcutModifiers(e->modifiers()|QGuiApplication::queryKeyboardModifiers(),event->type()==QEvent::TabletMove);
+    const auto tabletModifiers=e->modifiers()|(event->type()==QEvent::TabletPress?QGuiApplication::queryKeyboardModifiers():Qt::KeyboardModifiers{});
+    syncShortcutModifiers(tabletModifiers,event->type()==QEvent::TabletMove);
     m_penOwnsHover=true;
     // Qt Quick may deliver tablet input to an item, whose position is item-local.
     // The global position is shared by both native-window and item delivery paths.
