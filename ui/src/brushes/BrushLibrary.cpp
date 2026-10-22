@@ -1,3 +1,4 @@
+#include "platform/InteractionTrace.h"
 #include "brushes/BrushCurveModes.h"
 #include "brushes/BrushLibrary.h"
 #include "brushes/BrushOrganization.h"
@@ -603,6 +604,7 @@ QVariantMap BrushLibrary::presetInfo(const QString &id) const {
     return {{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opacity},{"spacing",p.spacing},{"builtin",p.builtin},{"preview",p.preview}};
 }
 void BrushLibrary::changed(bool structure,const QString &id){
+    InteractionTrace::Scope trace("library.changed");
     queuePersistence();emit settingsChanged();
     if(structure)emit presetsChanged();else emit presetChanged(id.isEmpty()?m_selected:id);
     emit selectedPreviewChanged();
@@ -1074,6 +1076,7 @@ QJsonObject BrushLibrary::presetRow(const Preset &p,int &version) {
 QJsonObject row{{"id",p.id},{"name",p.name},{"radius",p.radius},{"opacity",p.opacity},{"spacing",p.spacing},{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",p.flow},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow}};if(!p.maskResource.isEmpty()){row["maskResource"]=p.maskResource;version=std::max(version,3);}if(!p.sourceResource.isEmpty()){row["sourceResource"]=p.sourceResource;version=std::max(version,4);}if(!p.pressure.isEmpty()){row["pressureDynamics"]=QJsonObject::fromVariantMap(p.pressure);version=std::max(version,p.pressure.contains("opacity")?6:5);}if(!p.device.isEmpty()){row["tipDynamics"]=QJsonObject::fromVariantMap(p.device);version=std::max(version,7);}if(!p.scatter.isEmpty()){row["scatterDynamics"]=QJsonObject::fromVariantMap(p.scatter);version=std::max(version,scatterHasControls(p.scatter)?35:8);}if(!p.shape.isEmpty()){row["shapeJitter"]=QJsonObject::fromVariantMap(p.shape);version=std::max(version,9);}if(!p.transfer.isEmpty()){row["transferJitter"]=QJsonObject::fromVariantMap(p.transfer);version=std::max(version,37);}if(!p.color.isEmpty()){row["colorDynamics"]=QJsonObject::fromVariantMap(p.color);version=std::max(version,10);}if(!p.texture.isEmpty()){row["texture"]=QJsonObject::fromVariantMap(p.texture);version=std::max(version,textureStateVersion(p.texture));}if(!p.dual.isEmpty()){row["dualBrush"]=QJsonObject::fromVariantMap(p.dual);version=std::max(version,p.dual.contains("texture")?44:12);if(scatterHasControls(p.dual.value("scatterDynamics").toMap()))version=std::max(version,35);if(dualHasExtendedMode(p.dual))version=std::max(version,36);}if(smoothPressure(p.pressure,p.dual))version=std::max(version,13);if(!p.smoothing.isEmpty()){row["smoothing"]=QJsonObject::fromVariantMap(p.smoothing);version=std::max(version,14);}if(p.dual.contains("sizing"))version=std::max(version,dualHasRatio(p.dual)?38:15);if(!p.wet.isEmpty()){row["wetMix"]=QJsonObject::fromVariantMap(p.wet);version=std::max(version,17);}if(!p.taper.isEmpty()){row["strokeTaper"]=QJsonObject::fromVariantMap(p.taper);version=std::max(version,taperHasRelative(p.taper)?39:18);}if(!p.airbrush.isEmpty()){row["airbrush"]=QJsonObject::fromVariantMap(p.airbrush);version=std::max(version,23);}if(!p.speed.isEmpty()){row["speedDynamics"]=QJsonObject::fromVariantMap(p.speed);version=std::max(version,24);}if(!p.tangent.isEmpty()){row["tangentDynamics"]=QJsonObject::fromVariantMap(p.tangent);version=std::max(version,25);}if(!p.distance.isEmpty()){row["distanceDynamics"]=QJsonObject::fromVariantMap(p.distance);version=std::max(version,26);}if(!p.tilt.isEmpty()){row["tiltDynamics"]=QJsonObject::fromVariantMap(p.tilt);version=std::max(version,27);}if(!p.rotation.isEmpty()){row["rotationDynamics"]=QJsonObject::fromVariantMap(p.rotation);version=std::max(version,28);}if(!p.direction.isEmpty()){row["directionDynamics"]=QJsonObject::fromVariantMap(p.direction);version=std::max(version,29);}if(!p.matrix.isEmpty()){row["sourceMatrix"]=QJsonObject::fromVariantMap(p.matrix);version=std::max(version,32);}if(!p.fade.isEmpty()){row["fadeDynamics"]=QJsonObject::fromVariantMap(p.fade);version=std::max(version,34);}if(BrushCurveModes::present(row))version=std::max(version,40);if(!p.outline.isEmpty()){row["strokeOutline"]=QJsonObject::fromVariantMap(p.outline);version=std::max(version,outlineStateVersion(p.outline));}return row;
 }
 QByteArray BrushLibrary::encodeSnapshotObject(const QJsonObject &root,const QString &path) const {
+    InteractionTrace::Scope trace("encodeSnapshotObject");
     // Cache only the bounded, large preset arrays. Selection fields and all other
     // values still use Qt's JSON encoder; changed arrays invalidate by value.
     const auto encode=[](const QJsonValue &value){auto bytes=QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact);return bytes.mid(1,bytes.size()-2);};
@@ -1103,10 +1106,12 @@ QByteArray BrushLibrary::encodeSnapshotObject(const QJsonObject &root,const QStr
     result+='}';return result;
 }
 QByteArray BrushLibrary::snapshot() const {
+    InteractionTrace::Scope trace("snapshot");
     if(!m_snapshotCache.isEmpty())return m_snapshotCache;
     m_snapshotCache=encodeSnapshotObject(snapshotObject(),"preferences");return m_snapshotCache;
 }
 QJsonObject BrushLibrary::snapshotObject() const {
+    InteractionTrace::Scope trace("snapshotObject");
     if(!m_snapshotObjectCache.isEmpty()) {
         auto &root=m_snapshotObjectCache;root["selected"]=m_selected;
         auto reset=root.value("resetState").toObject();reset["selected"]=m_selected;root["resetState"]=reset;
@@ -1293,6 +1298,7 @@ QByteArray BrushLibrary::exportSelectionPackage(bool includeSource) const {
     return QJsonDocument(QJsonObject{{"model","ordered-package-v1"},{"package",package},{"organization",normalized}}).toJson(QJsonDocument::Compact);
 }
 QByteArray BrushLibrary::catalogSnapshot() const {
+    InteractionTrace::Scope trace("catalogSnapshot");
     if(!m_catalogCache.isEmpty())return m_catalogCache;
     if(!m_catalogObjectCache.isEmpty()) {
         m_catalogObjectCache["selected"]=m_selected;

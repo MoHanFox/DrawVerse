@@ -233,3 +233,12 @@ else()
     add_custom_target(drawverse_runtime DEPENDS drawverse drawverse_license)
     add_custom_target(drawverse_qml_preview_runtime DEPENDS drawverse_qml_preview)
 endif()
+
+# Manual investigation only: excluded from default builds and CTest.
+qt_add_executable(qt_brush_interaction_baseline EXCLUDE_FROM_ALL tests/brush_interaction_baseline.cpp)
+target_link_libraries(qt_brush_interaction_baseline PRIVATE drawverse_ui Qt6::Test)
+execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE _interaction_revision OUTPUT_STRIP_TRAILING_WHITESPACE)
+target_compile_definitions(qt_brush_interaction_baseline PRIVATE
+    DRAWVERSE_INTERACTION_BASELINE="7f5bd4c3acd507fc24069350a7a66a276b992976"
+    DRAWVERSE_INTERACTION_REVISION="${_interaction_revision}")
+set_target_properties(qt_brush_interaction_baseline PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")

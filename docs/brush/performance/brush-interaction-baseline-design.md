@@ -1,0 +1,11 @@
+# Issue #2-A investigation protocol
+
+Baseline: upstream/develop 7f5bd4c3acd507fc24069350a7a66a276b992976. Investigation only; no brush behavior, debounce, cache, quality or scheduling changes.
+
+Use an opt-in Qt Test executable, excluded from ALL and CTest, with the existing packaged Main.qml, CanvasItem and controls. Native Windows visible Release window, fixed 1280x800, actual renderer queried after initialization. Separate processes for default and exactly 256 presets, three repeats. Generate copies using BrushLibrary::saveCopy with fixed names, selected round-pressure retained. Generate red/blue patches through the painting API outside timing.
+
+A0 idle; A1 same-color and A2 alternating red/blue synthetic canvas picks; A3 radius/flow/opacity discrete, same-value and continuous drag; A4 pressure-size/flow/opacity toggles and same-value checkbox commit auxiliary control. Record synchronous Qt event dispatch, actual signals, state validation, 8ms heartbeat and post-input persistence/settling observation. First input separate from 50 repeated inputs. Settling uses observations of persistence and signal activity, with explicit timeout; it is not input/display latency. No frameChanged requirement for parameter completion. No screenshots or disk writes in timed phases. Trace uses bounded memory, monotonic timestamps, GUI operation context and nested span IDs. Context on delayed work is temporal, not proof of originating input. Backend prepare completion/queue latency and display latency are unmeasured unless reliable correlation is available.
+
+Minimal opt-in scopes near cursor refresh/pose, snapshots/encoding, BrushLibrary changes and catalog synchronization. Default disabled. Representative A2 repeats with traces off quantify disturbance. Limited direction observation uses synthetic mouse hover; report final outline angle, pose ready and base fallback, without device claims.
+
+Acceptance: expected color/parameters, no dropped attempts, trace overflow counted, native renderer verified, diagnostic-off painting+undo+exit, existing continuousStrokesKeepPublishingFramesAndAllowLaterEdits, unchanged measure_painting.py contract. Raw artifacts ignored. Report separate confirmed behavior, supported hotspots, hypotheses, limitations and at most two next-stage candidates.
