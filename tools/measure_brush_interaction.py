@@ -17,6 +17,8 @@ def main():
     parser.add_argument('--trace', action='store_true')
     parser.add_argument('--a2-only', action='store_true')
     parser.add_argument('--count', type=int, default=51, help='First input plus 50 normal samples by default')
+    parser.add_argument('--product-revision', help='Product revision under comparison, separate from probe changes')
+    parser.add_argument('--tool-revision', help='Shared measurement tool commit for both comparison sides')
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error('--repeats must be a positive integer')
@@ -35,6 +37,10 @@ def main():
     diff = subprocess.check_output(['git', 'diff', 'HEAD', '--', 'ui', 'tools/measure_brush_interaction.py'], cwd=root)
     metadata = {'head': head, 'tracked_diff_sha256': hashlib.sha256(diff).hexdigest(),
                 'executable_sha256': hashlib.sha256(executable.read_bytes()).hexdigest(), 'arguments': vars(args).copy()}
+    metadata['product_revision'] = args.product_revision or head
+    metadata['tool_revision'] = args.tool_revision or head
+    metadata['tool_files_sha256'] = {name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in
+                                   ('tools/measure_brush_interaction.py', 'ui/tests/brush_interaction_baseline.cpp', 'ui/src/platform/InteractionTrace.h')}
     metadata['arguments'] = {key: str(value) if isinstance(value, Path) else value for key, value in metadata['arguments'].items()}
     (output/'invocation.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
     failures = []
