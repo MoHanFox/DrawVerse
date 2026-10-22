@@ -18,8 +18,17 @@ def main():
     parser.add_argument('--a2-only', action='store_true')
     parser.add_argument('--count', type=int, default=51, help='First input plus 50 normal samples by default')
     args = parser.parse_args()
+    if args.repeats < 1:
+        parser.error('--repeats must be a positive integer')
+    if args.count < 2:
+        parser.error('--count must be at least 2 (first and normal samples)')
     executable, output = args.executable.resolve(), args.output.resolve()
-    output.mkdir(parents=True, exist_ok=True)
+    if not executable.is_file():
+        parser.error(f'executable does not exist: {executable}')
+    try:
+        output.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        parser.error(f'output directory already exists; all evidence retained: {output}')
     summary = []
     root = Path(__file__).resolve().parent.parent
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()

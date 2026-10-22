@@ -242,3 +242,8 @@ target_compile_definitions(qt_brush_interaction_baseline PRIVATE
     DRAWVERSE_INTERACTION_BASELINE="7f5bd4c3acd507fc24069350a7a66a276b992976"
     DRAWVERSE_INTERACTION_REVISION="${_interaction_revision}")
 set_target_properties(qt_brush_interaction_baseline PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+qt_add_executable(qt_interaction_trace_tests EXCLUDE_FROM_ALL tests/interaction_trace_tests.cpp)
+target_include_directories(qt_interaction_trace_tests PRIVATE src)
+target_link_libraries(qt_interaction_trace_tests PRIVATE Qt6::Test)
+set_target_properties(qt_interaction_trace_tests PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")

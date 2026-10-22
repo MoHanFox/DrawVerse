@@ -18,6 +18,7 @@
 #include <QJsonArray>
 #include <QFile>
 #include <QDir>
+#include <QSettings>
 #include <functional>
 
 namespace {
@@ -45,6 +46,55 @@ QJsonObject stats(const QList<double> &values) {
 class BrushInteractionBaseline : public QObject {
     Q_OBJECT
 private slots:
+    void dragFinalValues() {
+        const auto output=qEnvironmentVariable("DRAWVERSE_INTERACTION_FINAL_REPORT");
+        if(output.isEmpty())QSKIP("Independent closure regression; set DRAWVERSE_INTERACTION_FINAL_REPORT");
+        const auto directory=QFileInfo(output).absolutePath();QVERIFY(QDir().mkpath(directory));
+        const auto preferences=directory+"/preferences.ini";
+        PaintCoreClient client(nullptr,preferences);WorkspaceManager workspace(directory+"/workspace.ini");
+        QTRY_VERIFY_WITH_TIMEOUT(client.ready() && client.brushLibraryReady() && client.brushCatalogPrepared(),15000);
+        auto *library=client.brushLibrary();
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        window->showNormal();window->resize(1280,800);window->requestActivate();
+        QVERIFY(QTest::qWaitForWindowExposed(window));QVERIFY(QTest::qWaitForWindowActive(window));
+        auto *panel=visual(window->contentItem(),"brushSettingsPanel");QVERIFY(panel);panel->setProperty("category",0);
+        QJsonArray results;bool passed=true;
+        for(const QString field:{QString("radius"),QString("flow"),QString("opacity")}) {
+            const auto name=field=="radius"?QString("settingsBrushSizeSlider"):field=="flow"?QString("brushToolbarFlow"):QString("brushToolbarOpacity");
+            QQuickItem *control=nullptr,*track=nullptr;
+            QTRY_VERIFY((control=visual(window->contentItem(),name)) && control->width()>20);
+            track=field=="radius"?visual(window->contentItem(),name+"Track"):control;QVERIFY(track);
+            auto *handle=track->property("handle").value<QQuickItem*>();QVERIFY(handle);
+            // Qt 6.8 Slider::positionAt: handle centre over availableWidth-handleWidth.
+            const auto at=[&](double fraction){return track->mapToScene(QPointF(track->property("leftPadding").toDouble()+handle->width()/2+fraction*(track->property("availableWidth").toDouble()-handle->width()),track->height()/2));};
+            // Independent oracle: MappedSlider log1p/expm1 then unit diameter
+            // rounding (from=1, step=1), or CompactSlider's .01 quantization.
+            const auto expected=[&](double fraction){return field=="radius"?(1+std::round(std::exp(std::log(2.)+fraction*(std::log(2001.)-std::log(2.)))-2))/2:std::round(fraction*100)/100;};
+            const auto model=[&]{return field=="radius"?library->radius():field=="flow"?library->flow():library->opacity();};
+            const auto saved=[&]{QSettings settings(preferences,QSettings::IniFormat);settings.sync();const auto root=QJsonDocument::fromJson(settings.value("brushes/state").toByteArray()).object();for(const auto &value:root.value("presets").toArray()){const auto row=value.toObject();if(row.value("id").toString()==library->selectedId())return row.value(field).toDouble(-1);}return -1.;};
+            const double previous=expected(.2),start=expected(.38),target=expected(.83);
+            QVERIFY(target!=previous && target!=start && previous!=start);
+            click(window,at(.2));QTRY_VERIFY_WITH_TIMEOUT(std::abs(saved()-previous)<.00001 && !library->persistencePending(),15000);
+            click(window,at(.38));QCOMPARE(model(),start);
+            mouse(window,QEvent::MouseButtonPress,at(.38),Qt::LeftButton,Qt::LeftButton);
+            for(int i=1;i<=16;++i){mouse(window,QEvent::MouseMove,at(.38+(.83-.38)*i/16),Qt::NoButton,Qt::LeftButton);QTest::qWait(8);}
+            mouse(window,QEvent::MouseButtonRelease,at(.83),Qt::LeftButton,Qt::NoButton);
+            // Completion is the actual isolated INI write of the independent
+            // target, not a sleep, signal-quiet guess or model/control equality.
+            const bool persisted=QTest::qWaitFor([&]{return !library->persistencePending() && std::abs(saved()-target)<.00001;},15000);
+            const auto controlValue=control->property("value").toDouble()/(field=="radius"?2:1);
+            const bool valid=persisted && std::abs(model()-target)<.00001 && std::abs(controlValue-target)<.00001;
+            passed=passed && valid;
+            results.append(QJsonObject{{"field",field},{"previous_saved",previous},{"start",start},{"target",target},{"model",model()},{"control",controlValue},{"saved",saved()},{"persisted_target",persisted},{"passed",valid}});
+        }
+        const QJsonObject report{{"input","synthetic real QML drag + Release, 16 moves, requested 8ms gaps"},{"renderer",int(window->rendererInterface()->graphicsApi())},{"dpr",window->devicePixelRatio()},{"results",results},{"passed",passed}};
+        QFile file(output);QVERIFY(file.open(QIODevice::WriteOnly));file.write(QJsonDocument(report).toJson());file.close();
+        if(auto *canvas=window->findChild<CanvasItem*>("mainCanvas"))canvas->setClient(nullptr);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+        QVERIFY2(passed,"A closure blocked: model, QML control and persisted state must each equal the independent target; see final-value report");
+    }
     void matrix() {
         const QString output=qEnvironmentVariable("DRAWVERSE_INTERACTION_REPORT");
         QVERIFY2(!output.isEmpty(),"Set DRAWVERSE_INTERACTION_REPORT to an isolated report path");
@@ -167,7 +217,7 @@ private slots:
             }
             report["direction_observations"]=poses;
         }
-        heartbeatTimer.stop();InteractionTrace::enabled=false;QVERIFY(QTest::qWaitFor([]{return InteractionTrace::activeScopes.load()==0;},5000));report["rows"]=rows;report["trace"]=InteractionTrace::finish();report["trace_dropped"]=double(InteractionTrace::dropped);report["error"]=client.lastError();
+        heartbeatTimer.stop();report["rows"]=rows;report["trace"]=InteractionTrace::finish();report["trace_dropped"]=double(InteractionTrace::dropped);report["error"]=client.lastError();
         // A final artifact is outside all measured segments.
         window->grabWindow().save(directory+"/window.png");
         QFile file(output);QVERIFY(file.open(QIODevice::WriteOnly));file.write(QJsonDocument(report).toJson());file.close();

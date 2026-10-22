@@ -9,3 +9,11 @@ A0 idle; A1 same-color and A2 alternating red/blue synthetic canvas picks; A3 ra
 Minimal opt-in scopes near cursor refresh/pose, snapshots/encoding, BrushLibrary changes and catalog synchronization. Default disabled. Representative A2 repeats with traces off quantify disturbance. Limited direction observation uses synthetic mouse hover; report final outline angle, pose ready and base fallback, without device claims.
 
 Acceptance: expected color/parameters, no dropped attempts, trace overflow counted, native renderer verified, diagnostic-off painting+undo+exit, existing continuousStrokesKeepPublishingFramesAndAllowLaterEdits, unchanged measure_painting.py contract. Raw artifacts ignored. Report separate confirmed behavior, supported hotspots, hypotheses, limitations and at most two next-stage candidates.
+
+## Review closure (2026-10-23)
+
+Runner admission validates repeats > 0 and count >= 2 before exclusively creating the output root. Existing experiments are rejected before any write; stdlib tests compare all file bytes and modification timestamps without starting Qt.
+
+An independent `dragFinalValues` Qt slot uses the real size/flow/opacity controls, previous saved position .2, starting position .38 and final position .83. The oracle implements Qt 6.8 handle-centre geometry, MappedSlider log1p/expm1 plus diameter step=1, or CompactSlider step=.01. It waits for the isolated INI to contain the independent target, then separately verifies model and control. Sixteen synthetic moves request 8ms spacing; these waits generate input cadence, not completion or latency evidence. This does not change historical A3 scenes.
+
+The recorder uses an epoch admission gate for both scopes and points. Stop closes admission under the record mutex, drains admitted records using a condition variable that releases that mutex, then freezes/exports. Start/finish serialize on a separate lifecycle mutex; stale candidates from a previous epoch cannot enter a restarted session. Call start/finish outside recorded scopes. Disabled calls only read the atomic gate. Standalone test-only hooks pause candidates before admission or after admission to cover stopping and restarting deterministically; the 100ms future timeout asserts blocking and is not a performance sample. No hooks are compiled into product translation units.
