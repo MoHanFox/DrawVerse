@@ -6,10 +6,12 @@ use std::{
     sync::{Arc, Mutex, Weak},
 };
 mod interactive;
-pub use interactive::render_interactive;
+pub use interactive::{render_interactive, render_sampled_preview};
 
 pub const MAX_OUTPUT_PIXELS: u64 = 4_194_304;
 pub const MAX_OUTPUT_EDGE: u32 = 4096;
+/// Shared live-move draft budget, independent of document size and display DPI.
+pub const MOVE_PREVIEW_EDGE: u32 = 512;
 const MAX_SOURCE_TILES: usize = 1_000_000;
 const MAX_WORK_BYTES: usize = 96 * 1024 * 1024;
 

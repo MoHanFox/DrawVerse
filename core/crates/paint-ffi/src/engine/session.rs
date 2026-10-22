@@ -466,7 +466,27 @@ impl Session {
         {
             return Ok(bytes.clone());
         }
-        let bytes = Arc::new(crate::liquify_api::preview_assets(&preview.source)?);
+        let bytes = Arc::new(
+            if self.publication().info.flags & PAINT_SESSION_LAYER_MOVE != 0 {
+                let scale = self
+                    .shared
+                    .views
+                    .lock()
+                    .map_err(|_| ApiError::internal())?
+                    .iter()
+                    .take(2)
+                    .filter_map(|slot| slot.request)
+                    .map(|request| {
+                        (f64::from(request.width) / request.region.width)
+                            .max(f64::from(request.height) / request.region.height)
+                    })
+                    .reduce(f64::max)
+                    .unwrap_or(1.);
+                crate::liquify_api::move_preview_assets(&preview.source, scale)?
+            } else {
+                crate::liquify_api::preview_assets(&preview.source)?
+            },
+        );
         let current = self.publication();
         if current
             .resident_preview

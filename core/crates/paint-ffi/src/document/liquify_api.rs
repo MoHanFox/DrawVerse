@@ -51,31 +51,61 @@ pub unsafe extern "C" fn paint_session_read_resident_preview(
 pub(crate) fn preview_assets(
     source: &paint_core::ResidentPreviewSource,
 ) -> crate::error::ApiResult<Vec<u8>> {
+    encode_preview_assets(source, None)
+}
+
+pub(crate) fn move_preview_assets(
+    source: &paint_core::ResidentPreviewSource,
+    display_scale: f64,
+) -> crate::error::ApiResult<Vec<u8>> {
+    encode_preview_assets(source, Some(display_scale))
+}
+
+fn encode_preview_assets(
+    source: &paint_core::ResidentPreviewSource,
+    sampled: Option<f64>,
+) -> crate::error::ApiResult<Vec<u8>> {
     let mut output = Vec::new();
     let mut images = Vec::new();
     for image in [&source.image, &source.below, &source.above] {
-        let scale = (2048. / image.width.max(image.height) as f64).min(1.);
+        // An empty split is identically transparent at every UV. Avoid both
+        // compositing and transferring a full-canvas transparent GPU texture.
+        if sampled.is_some() && image.visible_pixel_layers().is_empty() {
+            output.extend(1_u32.to_le_bytes());
+            output.extend(1_u32.to_le_bytes());
+            images.push(vec![0; 4]);
+            continue;
+        }
+        let edge = if sampled.is_some() {
+            paint_render::MOVE_PREVIEW_EDGE
+        } else {
+            2048
+        };
+        let scale = (f64::from(edge) / image.width.max(image.height) as f64)
+            .min(1.)
+            .min(sampled.unwrap_or(1.));
         let width = (image.width as f64 * scale).ceil().max(1.) as u32;
         let height = (image.height as f64 * scale).ceil().max(1.) as u32;
         output.extend(width.to_le_bytes());
         output.extend(height.to_le_bytes());
-        let frame = CachedCpuRenderer::default()
-            .render(
-                image,
-                RenderRequest {
-                    region: Region {
-                        x: 0.,
-                        y: 0.,
-                        width: image.width as f64,
-                        height: image.height as f64,
-                    },
-                    width,
-                    height,
-                    format: PixelFormat::SrgbRgba8Premultiplied,
-                },
-                &paint_task::CancellationToken::default(),
-            )
-            .map_err(|e| ApiError::new(PAINT_IO_ERROR, e.to_string()))?;
+        let request = RenderRequest {
+            region: Region {
+                x: 0.,
+                y: 0.,
+                width: image.width as f64,
+                height: image.height as f64,
+            },
+            width,
+            height,
+            format: PixelFormat::SrgbRgba8Premultiplied,
+        };
+        let cancel = paint_task::CancellationToken::default();
+        let frame = if sampled.is_some() {
+            paint_render::render_sampled_preview(image, request, &cancel)
+        } else {
+            CachedCpuRenderer::default().render(image, request, &cancel)
+        }
+        .map_err(|e| ApiError::new(PAINT_IO_ERROR, e.to_string()))?;
         let FramePixels::Srgb(bytes) = frame.pixels else {
             return Err(ApiError::internal());
         };
@@ -295,4 +325,146 @@ pub unsafe extern "C" fn paint_session_liquify(
             .submit(Operation::Liquify(kind, options))?;
         pointers::write(out_sequence, sequence)
     })
+}
+
+#[cfg(test)]
+mod move_asset_tests {
+    use super::*;
+
+    #[test]
+    fn move_assets_match_proxy_centres_with_linked_mask_and_off_canvas_source() {
+        use paint_core::*;
+        let mut doc = Document::new(720, 480).unwrap();
+        doc.initialize_white_background().unwrap();
+        let id = doc.add_layer("moving").unwrap();
+        doc.begin_stroke(
+            Brush {
+                radius: 80.,
+                color: Pixel::from_straight([0.8, 0.2, 0.4, 0.6]).unwrap(),
+                ..Default::default()
+            },
+            InputPoint::new(25., 30., 1.),
+        )
+        .unwrap();
+        doc.end_stroke().unwrap();
+        doc.add_mask(id).unwrap();
+        doc.begin_stroke(
+            Brush {
+                radius: 20.,
+                color: Pixel::from_straight([0., 0., 0., 0.7]).unwrap(),
+                ..Default::default()
+            },
+            InputPoint::new(30., 35., 1.),
+        )
+        .unwrap();
+        doc.end_stroke().unwrap();
+        doc.group_layer(id, "group").unwrap();
+        let depth = doc.history_depth();
+        doc.begin_layer_move(id, true).unwrap();
+        let source = doc.resident_preview().unwrap().source;
+        assert!(source.bounds[0] < 0 && source.bounds[1] < 0);
+        for scale in [1., 0.25] {
+            let bytes = move_preview_assets(&source, scale).unwrap();
+            let mut offset = 24;
+            for (i, image) in [&source.image, &source.below, &source.above]
+                .into_iter()
+                .enumerate()
+            {
+                let effective_scale = scale.min(
+                    f64::from(paint_render::MOVE_PREVIEW_EDGE)
+                        / f64::from(image.width.max(image.height)),
+                );
+                let width = u32::from_le_bytes(bytes[i * 8..i * 8 + 4].try_into().unwrap());
+                let height = u32::from_le_bytes(bytes[i * 8 + 4..i * 8 + 8].try_into().unwrap());
+                if image.visible_pixel_layers().is_empty() {
+                    assert_eq!((width, height), (1, 1));
+                    assert_eq!(&bytes[offset..offset + 4], &[0; 4]);
+                } else {
+                    assert_eq!(
+                        (width, height),
+                        (
+                            (f64::from(image.width) * effective_scale).ceil() as u32,
+                            (f64::from(image.height) * effective_scale).ceil() as u32
+                        )
+                    );
+                    for y in (0..height).step_by(7) {
+                        for x in (0..width).step_by(11) {
+                            let at = offset + ((y * width + x) * 4) as usize;
+                            for (actual, expected) in
+                                bytes[at..at + 4].iter().zip(paint_render::display_pixel(
+                                    image
+                                        .pixel(
+                                            ((f64::from(x) + 0.5) * f64::from(image.width)
+                                                / f64::from(width))
+                                                as u32,
+                                            ((f64::from(y) + 0.5) * f64::from(image.height)
+                                                / f64::from(height))
+                                                as u32,
+                                        )
+                                        .components(),
+                                ))
+                            {
+                                assert!(actual.abs_diff(expected) <= 1);
+                            }
+                        }
+                    }
+                }
+                offset += (width * height * 4) as usize;
+            }
+            assert_eq!(offset, bytes.len());
+        }
+        // Other tools retain full ordinary LOD proxy encoding, including empty splits.
+        let ordinary = preview_assets(&source).unwrap();
+        assert_eq!(
+            u32::from_le_bytes(ordinary[16..20].try_into().unwrap()),
+            720
+        );
+        doc.cancel_layer_move().unwrap();
+        assert_eq!(doc.history_depth(), depth);
+    }
+
+    #[test]
+    #[ignore = "manual first move asset workload; excludes document creation and Qt"]
+    fn first_move_asset_workload() {
+        use paint_core::*;
+        let mut doc = Document::new(3840, 2160).unwrap();
+        doc.initialize_white_background().unwrap();
+        let id = doc.add_layer("moving").unwrap();
+        doc.bucket_fill(BucketFill {
+            x: 0,
+            y: 0,
+            color: Pixel::from_straight([0.8, 0.2, 0.4, 0.7]).unwrap(),
+            opacity: 1.,
+            tolerance: 0,
+            antialias: false,
+            contiguous: true,
+            all_layers: false,
+        })
+        .unwrap();
+        doc.add_mask(id).unwrap();
+        doc.begin_stroke(
+            Brush {
+                radius: 300.,
+                color: Pixel::from_straight([0., 0., 0., 1.]).unwrap(),
+                ..Default::default()
+            },
+            InputPoint::new(1500., 1000., 1.),
+        )
+        .unwrap();
+        doc.end_stroke().unwrap();
+        doc.group_layer(id, "group").unwrap();
+        for _ in 0..3 {
+            doc.begin_layer_move(id, true).unwrap();
+            let preview = doc.resident_preview().unwrap();
+            let start = std::time::Instant::now();
+            let bytes = move_preview_assets(&preview.source, 1024. / 3840.).unwrap();
+            println!(
+                "4K move first static assets {:.3}ms bytes={}",
+                start.elapsed().as_secs_f64() * 1000.,
+                bytes.len()
+            );
+            std::hint::black_box(bytes);
+            doc.cancel_layer_move().unwrap();
+        }
+    }
 }

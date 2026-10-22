@@ -1,8 +1,6 @@
 //! Read-only coarse presentation for a live move that cannot use resident textures.
 use super::*;
 
-const EDGE: u32 = 512;
-
 // The linear quantization error maps to less than half an 8-bit sRGB step.
 // Materialisation and export retain the ordinary exact transfer curve.
 fn display(value: [f32; 4]) -> [u8; 4] {
@@ -42,9 +40,23 @@ pub fn render_interactive(
 ) -> Result<RenderFrame, RenderError> {
     request.validate()?;
     checkpoint(cancel)?;
-    let ratio = (f64::from(EDGE) / f64::from(request.width.max(request.height))).min(1.);
+    let ratio =
+        (f64::from(MOVE_PREVIEW_EDGE) / f64::from(request.width.max(request.height))).min(1.);
     request.width = (f64::from(request.width) * ratio).ceil().max(1.) as u32;
     request.height = (f64::from(request.height) * ratio).ceil().max(1.) as u32;
+    render_sampled_preview(snapshot, request, cancel)
+}
+
+/// Display-only point sampling at the requested proxy resolution. Unlike the
+/// ordinary LOD renderer this never composites pixels between output samples.
+/// Callers choose their proxy bound; materialisation/export must not use this.
+pub fn render_sampled_preview(
+    snapshot: &DocumentSnapshot,
+    request: RenderRequest,
+    cancel: &CancellationToken,
+) -> Result<RenderFrame, RenderError> {
+    request.validate()?;
+    checkpoint(cancel)?;
     let r = request.region;
     let xs = axis(r.x, r.width, request.width, snapshot.width, 1).pixels;
     let ys = axis(r.y, r.height, request.height, snapshot.height, 1).pixels;

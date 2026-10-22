@@ -58,6 +58,74 @@ fn seed(mode: BlendMode) -> Document {
 }
 
 #[test]
+fn resident_proxy_keeps_requested_resolution_and_original_composition() {
+    for mode in [
+        BlendMode::Normal,
+        BlendMode::Multiply,
+        BlendMode::PassThrough,
+    ] {
+        let d = seed(mode);
+        let snapshot = d.snapshot();
+        let depth = d.history_depth();
+        let request = RenderRequest {
+            region: Region {
+                x: -20.,
+                y: -10.,
+                width: 180.,
+                height: 120.,
+            },
+            width: 700,
+            height: 37,
+            format: PixelFormat::LinearRgba32F,
+        };
+        let frame =
+            render_sampled_preview(&snapshot, request, &CancellationToken::default()).unwrap();
+        assert_eq!((frame.width, frame.height), (700, 37));
+        let FramePixels::Linear(values) = frame.pixels else {
+            panic!()
+        };
+        let encoded = render_sampled_preview(
+            &snapshot,
+            RenderRequest {
+                format: PixelFormat::SrgbRgba8Premultiplied,
+                ..request
+            },
+            &CancellationToken::default(),
+        )
+        .unwrap();
+        let FramePixels::Srgb(bytes) = encoded.pixels else {
+            panic!()
+        };
+        for y in 0..37 {
+            for x in 0..700 {
+                let sx = (-20. + (x as f64 + 0.5) * 180. / 700.).floor();
+                let sy = (-10. + (y as f64 + 0.5) * 120. / 37.).floor();
+                let reference = if sx < 0. || sy < 0. {
+                    Pixel::TRANSPARENT
+                } else {
+                    snapshot.pixel(sx as u32, sy as u32)
+                };
+                let index = y * 700 + x;
+                assert_eq!(values[index], reference.components());
+                for (actual, expected) in bytes[index * 4..index * 4 + 4]
+                    .iter()
+                    .zip(display_pixel(reference.components()))
+                {
+                    assert!(actual.abs_diff(expected) <= 1);
+                }
+            }
+        }
+        assert_eq!(d.history_depth(), depth);
+        let cancelled = CancellationToken::default();
+        cancelled.cancel();
+        assert_eq!(
+            render_sampled_preview(&snapshot, request, &cancelled).unwrap_err(),
+            RenderError::Cancelled
+        );
+    }
+}
+
+#[test]
 fn coarse_preview_matches_original_pixel_centres_for_masks_groups_and_offsets() {
     for mode in [
         BlendMode::Normal,

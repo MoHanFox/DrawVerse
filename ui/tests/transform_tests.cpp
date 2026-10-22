@@ -208,6 +208,36 @@ private slots:
         QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,screen({48,32}));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());QTRY_VERIFY(redAt(capture(),screen({48,32})));
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(client.frameRevision()>=client.revision());QTRY_VERIFY(redAt(capture(),screen({32,32})));QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);client.shutdown();
     }
+    void first4kResidentMoveAcceptsInputBeforeAssetsAndRestoresFullFrame() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("first-move.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(3840,2160);
+        QTRY_COMPARE(client.documentWidth(),3840);QTRY_VERIFY(!client.layerEditBusy());client.addLayer("moving");QTRY_VERIFY(!client.layerEditBusy());
+        const auto owner=client.activeLayer();client.activateBucket();client.setBrushColor(Qt::red);QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY_WITH_TIMEOUT(!client.layerEditBusy(),30000);
+        QVERIFY(client.addMask(owner));QTRY_VERIFY(!client.layerEditBusy());client.activateBrush();client.setBrushColor(Qt::black);client.setBrushRadius(90);client.brushLibrary()->setPressureSize(false);
+        QVERIFY(client.beginStroke({{2000.5,1080.5},1}));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.groupLayer(owner,"group"));QTRY_VERIFY(!client.layerEditBusy());
+        client.selectLayer(owner);QTRY_COMPARE(client.activeLayer(),owner);QTRY_VERIFY(!client.layerEditBusy());const auto depth=client.undoDepth();
+        QQuickWindow window;window.resize(1024,720);window.setColor(Qt::black);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1024,720});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));window.requestActivate();QTRY_VERIFY(window.isActive());canvas->fitToView();canvas->forceActiveFocus();QTRY_VERIFY(client.frameRevision()>=client.revision());
+        if(qEnvironmentVariable("QT_QUICK_BACKEND")=="rhi")QVERIFY(canvas->gpuDisplay());
+        const auto screen=[&](QPointF p){return(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
+        const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return QImage{};return grab->image();};
+        const auto red=[&](const QImage &image,QPointF p){const auto c=image.pixelColor(screen(p)*window.devicePixelRatio());return c.red()>180 && c.green()<70 && c.blue()<70;};
+        const auto white=[&](const QImage &image,QPointF p){const auto c=image.pixelColor(screen(p)*window.devicePixelRatio());return c.red()>230 && c.green()>230 && c.blue()>230;};
+        QImage initial;QTRY_VERIFY(!(initial=capture()).isNull() && red(initial,{100,1080}) && white(initial,{2000,1080}));
+        client.setMoveTool(true);QElapsedTimer elapsed;elapsed.start();QElapsedTimer beat;beat.start();qint64 maxGuiGap=0;QTimer heartbeat;heartbeat.setInterval(1);connect(&heartbeat,&QTimer::timeout,this,[&]{maxGuiGap=qMax(maxGuiGap,beat.restart());});heartbeat.start();
+        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,screen({1200,1080}));
+        // Send the first delta immediately, while BEGIN/assets may still be pending.
+        QTest::mouseMove(&window,screen({1584,1080}));
+        QImage moved;QTRY_VERIFY(!(moved=capture()).isNull() && white(moved,{100,1080}) && red(moved,{800,1080}) && white(moved,{2384,1080}));
+        heartbeat.stop();qInfo()<<"4K first move through captured changed frame ms"<<elapsed.elapsed()<<"max GUI heartbeat gap ms"<<maxGuiGap<<"gpu"<<canvas->gpuDisplay();
+        const auto source=client.residentPreview();
+        if(canvas->gpuDisplay()){QVERIFY(source);QCOMPARE(source->vertices.size(),4);QCOMPARE(source->images[0].width(),512);QCOMPARE(source->images[2].size(),QSize(1,1));QCOMPARE(source->uploads->load(),1u);}
+        QTest::mouseMove(&window,screen({1648,1080}));
+        if(source){QTRY_COMPARE(client.residentPreview()->revision,client.revision());QCOMPARE(client.residentPreview()->sourceId,source->sourceId);QCOMPARE(client.residentPreview()->images[0].cacheKey(),source->images[0].cacheKey());QCOMPARE(source->uploads->load(),1u);}
+        QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,screen({1648,1080}));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());QVERIFY(client.frame().width()>512);
+        client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(client.frameRevision()>=client.revision());QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && red(undone,{100,1080}));
+        QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);client.shutdown();
+    }
     void complex4kLayerMoveRestoresFullFramesAndHistory_data() {
         QTest::addColumn<bool>("ancestorMask");
         QTest::newRow("fixed-owner-mask")<<false;QTest::newRow("fixed-ancestor-mask")<<true;
