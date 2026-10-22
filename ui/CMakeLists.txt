@@ -247,3 +247,7 @@ qt_add_executable(qt_interaction_trace_tests EXCLUDE_FROM_ALL tests/interaction_
 target_include_directories(qt_interaction_trace_tests PRIVATE src)
 target_link_libraries(qt_interaction_trace_tests PRIVATE Qt6::Test)
 set_target_properties(qt_interaction_trace_tests PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+qt_add_executable(qt_color_state_tests EXCLUDE_FROM_ALL tests/color_state_tests.cpp)
+target_link_libraries(qt_color_state_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_color_state_tests PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")

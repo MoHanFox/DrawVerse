@@ -1043,9 +1043,18 @@ bool BrushLibrary::remove(const QString &id){
     if(selectionWasChanged)emit selectionChanged();changed(true);return true;
 }
 void BrushLibrary::setActiveColors(const QColor &foreground,const QColor &background){
+    InteractionTrace::Scope trace("setActiveColors");
     if(!foreground.isValid() || !background.isValid() || (foreground==m_foregroundColor && background==m_backgroundColor))return;
     m_foregroundColor=foreground;m_backgroundColor=background;
-    emit activeColorsChanged();queuePersistence();
+    emit activeColorsChanged();
+    // Active colors are global preferences, not executing preset/catalog data.
+    // Patch only an already valid object; an earlier parameter/structure edit
+    // leaves it empty and must still take the normal full-rebuild path.
+    m_snapshotCache.clear();
+    if(!m_snapshotObjectCache.isEmpty())
+        m_snapshotObjectCache["colorState"]=QJsonObject{{"foreground",m_foregroundColor.name(QColor::HexArgb)},{"background",m_backgroundColor.name(QColor::HexArgb)}};
+    m_persistTimer.start();
+    InteractionTrace::point("colors.preference_cache_retained",!m_snapshotObjectCache.isEmpty());
 }
 void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;QVariantMap tip={{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",1.},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow},{"maskResource",p.maskResource},{"pressureDynamics",p.pressure},{"tipDynamics",p.device},{"scatterDynamics",p.scatter},{"shapeJitter",p.shape},{"transferJitter",p.transfer},{"colorDynamics",p.color},{"texture",p.texture},{"dualBrush",p.dual},{"smoothing",p.smoothing},{"wetMix",p.wet},{"strokeOutline",p.outline},{"strokeTaper",p.taper},{"airbrush",p.airbrush},{"presetRadius",24.},{"writeBlend",0}};if(!p.speed.isEmpty())tip["speedDynamics"]=p.speed;if(!p.tangent.isEmpty())tip["tangentDynamics"]=p.tangent;if(!p.distance.isEmpty())tip["distanceDynamics"]=p.distance;if(!p.tilt.isEmpty())tip["tiltDynamics"]=p.tilt;if(!p.rotation.isEmpty())tip["rotationDynamics"]=p.rotation;if(!p.direction.isEmpty())tip["directionDynamics"]=p.direction;if(!p.matrix.isEmpty())tip["sourceMatrix"]=p.matrix;if(!p.fade.isEmpty())tip["fadeDynamics"]=p.fade;emit previewRequested(p.id,p.token,24.,1.,p.spacing,tip);}
 void BrushLibrary::cancelPreview(const QString &id) {
@@ -1113,6 +1122,7 @@ QByteArray BrushLibrary::snapshot() const {
 QJsonObject BrushLibrary::snapshotObject() const {
     InteractionTrace::Scope trace("snapshotObject");
     if(!m_snapshotObjectCache.isEmpty()) {
+        InteractionTrace::Scope reuse("snapshotObject.reuse");
         auto &root=m_snapshotObjectCache;root["selected"]=m_selected;
         auto reset=root.value("resetState").toObject();reset["selected"]=m_selected;root["resetState"]=reset;
         auto isolation=root.value("toolIsolation").toObject();auto profiles=isolation.value("profiles").toArray();
@@ -1121,6 +1131,7 @@ QJsonObject BrushLibrary::snapshotObject() const {
         isolation["context"]=m_toolContext;isolation["selections"]=selections;root["toolIsolation"]=isolation;
         return root;
     }
+    InteractionTrace::Scope rebuild("snapshotObject.rebuild");
     QJsonArray rows,baselines;QJsonObject editors,resetEditors;int version=2,resetVersion=2;
     auto editor=[](const Preset &p){return QJsonObject{{"existing",p.dualExisting},{"sourceName",p.dualSourceName}};};
     for(const auto &p:m_presets){const auto baseline=m_resetPresets.value(p.id,p);rows.append(presetRow(p,version));baselines.append(presetRow(baseline,resetVersion));if(p.dualExisting || !p.dualSourceName.isEmpty())editors[p.id]=editor(p);if(baseline.dualExisting || !baseline.dualSourceName.isEmpty())resetEditors[p.id]=editor(baseline);}
@@ -1299,11 +1310,13 @@ QByteArray BrushLibrary::exportSelectionPackage(bool includeSource) const {
 }
 QByteArray BrushLibrary::catalogSnapshot() const {
     InteractionTrace::Scope trace("catalogSnapshot");
-    if(!m_catalogCache.isEmpty())return m_catalogCache;
+    if(!m_catalogCache.isEmpty()){InteractionTrace::point("catalogSnapshot.bytes_reuse",1);return m_catalogCache;}
     if(!m_catalogObjectCache.isEmpty()) {
+        InteractionTrace::Scope reuse("catalogSnapshot.object_reuse");
         m_catalogObjectCache["selected"]=m_selected;
         m_catalogCache=encodeSnapshotObject(m_catalogObjectCache,"catalog");return m_catalogCache;
     }
+    InteractionTrace::Scope rebuild("catalogSnapshot.rebuild");
     QJsonArray rows;int version=2;for(const auto &p:m_presets)rows.append(presetRow(p,version));
     QJsonObject executing{{"version",version},{"selected",m_selected},{"presets",rows}};
     if(!m_organization.isEmpty()){executing["organization"]=m_organization;executing["version"]=std::max(version,20);}

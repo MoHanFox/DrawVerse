@@ -1,6 +1,7 @@
 # 验收文档索引
 
 - [Brush Interaction Baseline（Issue #2-A）](brush/performance/brush-interaction-baseline-validation.md)
+- [Color-only State Invalidation（Issue #2-B）](brush/performance/color-state-invalidation-validation.md)
 
 - [应用 build/run 配置与统一产物目录](platform/application-build-profiles-validation.md)
 

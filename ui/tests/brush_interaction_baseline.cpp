@@ -218,9 +218,14 @@ private slots:
             report["direction_observations"]=poses;
         }
         heartbeatTimer.stop();report["rows"]=rows;report["trace"]=InteractionTrace::finish();report["trace_dropped"]=double(InteractionTrace::dropped);report["error"]=client.lastError();
+        const auto savedColors=[&]{QSettings saved(directory+"/preferences.ini",QSettings::IniFormat);saved.sync();return QJsonDocument::fromJson(saved.value("brushes/state").toByteArray()).object().value("colorState").toObject();};
+        const QJsonObject expectedColors{{"foreground",client.brushColor().name(QColor::HexArgb)},{"background",client.secondaryBrushColor().name(QColor::HexArgb)}};
+        const bool colorsPersisted=QTest::qWaitFor([&]{return savedColors()==expectedColors;},15000);
+        report["expected_final_colors"]=expectedColors;report["saved_final_colors"]=savedColors();report["colors_persisted"]=colorsPersisted;
         // A final artifact is outside all measured segments.
         window->grabWindow().save(directory+"/window.png");
         QFile file(output);QVERIFY(file.open(QIODevice::WriteOnly));file.write(QJsonDocument(report).toJson());file.close();
+        QVERIFY(colorsPersisted);
         for(const auto &row:rows){const auto r=row.toObject();QCOMPARE(r.value("failures").toInt(),0);QCOMPARE(r.value("timeouts").toInt(),0);}
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
