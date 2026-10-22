@@ -274,4 +274,32 @@ mod tests {
         )
         .is_err());
     }
+
+    #[test]
+    fn mixed_backings_restore_in_order_and_release_unreferenced_arrays() {
+        let keys = [TileCoord::from_signed(-2, 0), TileCoord::from_signed(3, -1)];
+        let initial = field(keys[0], 1.);
+        let middle = field(keys[1], 2.);
+        let final_field = field(keys[0], 3.);
+        let weak = Arc::downgrade(&middle[&keys[1]]);
+        let first =
+            FieldHistory::capture(&keys, &initial, &middle, usize::MAX, ScratchSpace::system())
+                .unwrap();
+        let second =
+            FieldHistory::capture(&keys, &middle, &final_field, 0, ScratchSpace::system()).unwrap();
+        assert!(matches!(first.0, Backing::References(_)));
+        assert!(second.disk_bytes() > 0);
+        let mut restored = final_field.clone();
+        second.restore(&mut restored, false).unwrap();
+        first.restore(&mut restored, false).unwrap();
+        assert_eq!(restored, initial);
+        first.restore(&mut restored, true).unwrap();
+        assert_eq!(restored, middle);
+        second.restore(&mut restored, true).unwrap();
+        assert_eq!(restored, final_field);
+        drop(middle);
+        assert!(weak.upgrade().is_some());
+        drop(first);
+        assert!(weak.upgrade().is_none());
+    }
 }

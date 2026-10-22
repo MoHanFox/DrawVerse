@@ -59,3 +59,12 @@ cargo fmt --all -- --check 与 cargo clippy --workspace --all-targets --locked -
 - 四ABI、paint-core/paint-ffi所有目标严格Clippy、fmt、完整Release及Debug应用构建通过。标准输出build/bin/Release/drawverse.exe；ABI1.75/state45不变。
 
 日志：artifacts/liquify-fields-{before,after,core,public,native,clippy,abi}.txt及对应ui/workflow/build日志。未验收完整8K/16K、冷盘或实体持续交互。套索液化、翻转历史、结束编辑焦点及变换首次资源准备按用户新增问题继续处理。
+
+## 2026-10-22 液化会话字段引用
+
+- `FieldHistory` 在原每步字段预算内保留变化表和两侧不可变数组；容量/两侧元数据保守计费，超预算继续原编码与磁盘后备。未新增无界缓存，未提高原步数/磁盘限制，未改ABI1.79/state45。
+- 核心液化23通过/2手工项忽略、公开液化11通过/1手工项忽略、原生液化1通过；新增五项字段测试和一项真实文档对照。覆盖负坐标与浮点逐位、写时复制/身份、容量与预算边界、两侧非法值、增删字段、引用/磁盘混合及释放、重建后redo分支/最终提交/全局撤销重做；既有细化/画布外恢复、写失败重试、损坏未使用侧、跳转失败回滚保持。
+- 同机Release，64块位移场、每检查点两侧共4MiB、4条记录、五轮中位数：预算内单检查点8.379→0.526ms，六次直接跳转（累计跨20条）160.736→0.044ms。超预算磁盘后备仍使用原编解码/校验，本轮测得18.865ms/176.508ms；不以该波动宣称磁盘路径加速。这里只测会话字段处理，无像素重采样/Qt显示，磁盘为OS热缓存，不代表UI、物理冷盘或完整8K/16K手感。
+- 严格Clippy（paint-core/paint-ffi所有目标）、fmt与生成头检查通过。日志：`artifacts/liquify-field-references-{before,after,core-final,public,native,clippy-final,header}.txt`。首次基准命令误构建无关全部集成目标，确认本轮Cargo/子进程身份后停止，改为`--lib`完成基准，未将中断算作通过。
+- 完整Release通过并部署到`build/bin/Release/drawverse.exe`；软件实际窗口：2000px局部/全局历史1、三scope直接跳转1、62QML源码/字节码1、2048×1536羽化套索液化1均通过。D3D11同四项加2000/15000px常驻网格显示1通过，含确认/取消、选区保护与最终像素。四ABI顺序通过；日志为`liquify-field-references-{release,ui-software,ui-d3d11,workflow-software,workflow-d3d11,selected-software,selected-d3d11,abi}.txt`。
+- H1字段引用已接入，超预算冷记录仍需校验IO；未宣称所有长历史跳转或8K/16K整图瞬时完成。T2复杂栈变换、首次资源P1及实体手绘板持续输入仍待。
