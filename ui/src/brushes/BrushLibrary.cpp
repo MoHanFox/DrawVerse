@@ -1046,7 +1046,14 @@ void BrushLibrary::setActiveColors(const QColor &foreground,const QColor &backgr
     InteractionTrace::Scope trace("setActiveColors");
     if(!foreground.isValid() || !background.isValid() || (foreground==m_foregroundColor && background==m_backgroundColor))return;
     m_foregroundColor=foreground;m_backgroundColor=background;
-    emit activeColorsChanged();queuePersistence();
+    emit activeColorsChanged();
+    // Active colors are global preferences, not executing preset/catalog data.
+    // Patch only an already valid object; an earlier parameter/structure edit
+    // leaves it empty and must still take the normal full-rebuild path.
+    m_snapshotCache.clear();
+    if(!m_snapshotObjectCache.isEmpty())
+        m_snapshotObjectCache["colorState"]=QJsonObject{{"foreground",m_foregroundColor.name(QColor::HexArgb)},{"background",m_backgroundColor.name(QColor::HexArgb)}};
+    m_persistTimer.start();
     InteractionTrace::point("colors.preference_cache_retained",!m_snapshotObjectCache.isEmpty());
 }
 void BrushLibrary::requestPreview(const QString &id){const int i=index(id);if(i<0)return;auto &p=m_presets[i];if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;p.requested=p.token;QVariantMap tip={{"hardness",p.hardness},{"roundness",p.roundness},{"angle",p.angle},{"flow",1.},{"pressureSize",p.pressureSize},{"pressureFlow",p.pressureFlow},{"maskResource",p.maskResource},{"pressureDynamics",p.pressure},{"tipDynamics",p.device},{"scatterDynamics",p.scatter},{"shapeJitter",p.shape},{"transferJitter",p.transfer},{"colorDynamics",p.color},{"texture",p.texture},{"dualBrush",p.dual},{"smoothing",p.smoothing},{"wetMix",p.wet},{"strokeOutline",p.outline},{"strokeTaper",p.taper},{"airbrush",p.airbrush},{"presetRadius",24.},{"writeBlend",0}};if(!p.speed.isEmpty())tip["speedDynamics"]=p.speed;if(!p.tangent.isEmpty())tip["tangentDynamics"]=p.tangent;if(!p.distance.isEmpty())tip["distanceDynamics"]=p.distance;if(!p.tilt.isEmpty())tip["tiltDynamics"]=p.tilt;if(!p.rotation.isEmpty())tip["rotationDynamics"]=p.rotation;if(!p.direction.isEmpty())tip["directionDynamics"]=p.direction;if(!p.matrix.isEmpty())tip["sourceMatrix"]=p.matrix;if(!p.fade.isEmpty())tip["fadeDynamics"]=p.fade;emit previewRequested(p.id,p.token,24.,1.,p.spacing,tip);}
