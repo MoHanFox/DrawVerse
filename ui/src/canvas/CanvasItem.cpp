@@ -66,19 +66,17 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
     m_shortcutStateTimer.setInterval(16);
     connect(&m_shortcutStateTimer,&QTimer::timeout,this,[this]{
         const auto modifiers=shortcutModifiersFromSystem();
-        bool changed=false;
         if(m_altHeld && !modifiers.testFlag(Qt::AltModifier)) {
-            if(++m_altReleaseTicks>=2){setAltHeld(false);changed=true;}
+            if(++m_altReleaseTicks>=2)setAltHeld(false);
         } else {
             m_altReleaseTicks=0;
         }
         if(m_ctrlHeld && !modifiers.testFlag(Qt::ControlModifier)) {
-            if(++m_ctrlReleaseTicks>=2){m_ctrlHeld=false;changed=true;}
+            if(++m_ctrlReleaseTicks>=2)m_ctrlHeld=false;
         } else {
             m_ctrlReleaseTicks=0;
         }
-        if(changed)refreshBrushCursor();
-        if(!m_altHeld && !m_ctrlHeld)m_shortcutStateTimer.stop();
+        refreshBrushCursor();
     });
     m_liquifyTimer.setInterval(16);
     connect(&m_liquifyTimer,&QTimer::timeout,this,[this]{if(!m_stroke || !m_client || !m_client->liquifyActive() || !isEnabled() || !isVisible()){m_liquifyTimer.stop();return;}m_client->liquifyTick();});
@@ -172,11 +170,13 @@ bool CanvasItem::brushCursorVisible() const {
     }
     // Alt is the eyedropper: the pointer becomes a crosshair and the brush ring goes away, so the
     // user can see exactly which pixel will be sampled.
-    return m_cursorInside && !(m_client && m_client->transformActive()) && !m_capsLock && !m_altHeld && !m_ctrlHeld && !m_moving && m_interactive && m_client && (m_client->liquifyActive() || (!m_client->eyedropperTool() && !m_client->bucketTool() && !m_client->moveTool() && !m_client->selectionTool())) && !m_space && !spaceHeld && !m_panning && isVisible();
+    const auto shortcut=shortcutCursorModifiers();
+    return m_cursorInside && !(m_client && m_client->transformActive()) && !m_capsLock && !shortcut.testFlag(Qt::AltModifier) && !shortcut.testFlag(Qt::ControlModifier) && !m_moving && m_interactive && m_client && (m_client->liquifyActive() || (!m_client->eyedropperTool() && !m_client->bucketTool() && !m_client->moveTool() && !m_client->selectionTool())) && !m_space && !spaceHeld && !m_panning && isVisible();
 }
 bool CanvasItem::spacePanning() const { return m_space || spaceHeld; }
 bool CanvasItem::eyedropperCursorVisible() const {
-    return m_cursorInside && m_interactive && m_client && !m_client->liquifyActive() && (m_altHeld || m_client->eyedropperTool()) && !m_client->selectionTool()
+    const auto shortcut=shortcutCursorModifiers();
+    return m_cursorInside && m_interactive && m_client && !m_client->liquifyActive() && (shortcut.testFlag(Qt::AltModifier) || m_client->eyedropperTool()) && !m_client->selectionTool()
         && !m_client->moveTool() && !spacePanning() && !m_panning && isVisible();
 }
 bool CanvasItem::samplingRingVisible() const {
@@ -206,9 +206,11 @@ InputSample CanvasItem::tabletSample(QTabletEvent *e,QPointF local) const {
 void CanvasItem::refreshBrushCursor() {
     if(m_client){m_pose=m_client->baseCursorPose();if(m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_pose=m_client->brushCursorPose(m_poseSample,m_poseDirection,m_poseDirectionKnown,m_client->drawing() && !m_client->brushLibrary()->cursorSimple());}
     if(m_client && !m_pose.ready && m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_poseRetry.start();else m_poseRetry.stop();
-    setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && (m_client->moveTool() || m_ctrlHeld || m_moving) && !m_client->liquifyActive() && !m_client->transformActive()?Qt::SizeAllCursor:eyedropperCursorVisible()?Qt::BlankCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
+    const auto shortcut=shortcutCursorModifiers();
+    setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && (m_client->moveTool() || shortcut.testFlag(Qt::ControlModifier) || m_moving) && !m_client->liquifyActive() && !m_client->transformActive()?Qt::SizeAllCursor:eyedropperCursorVisible()?Qt::BlankCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
     if(tabletCursorOwner==this && m_observedWindow)m_observedWindow->setCursor(cursor());
     emit brushCursorChanged();
+    updateCursorPoll();
 }
 void CanvasItem::setTabletWindowCursor(bool active) {
     if(active && m_observedWindow && m_interactive && isEnabled() && isVisible() && m_cursorInside) {
@@ -714,6 +716,18 @@ void CanvasItem::syncShortcutModifiers(Qt::KeyboardModifiers modifiers,bool latc
     if(!latchOnly || ctrl)m_ctrlHeld=ctrl;
     if(m_altHeld || m_ctrlHeld)m_shortcutStateTimer.start();
     else m_shortcutStateTimer.stop();
+}
+Qt::KeyboardModifiers CanvasItem::shortcutCursorModifiers() const {
+    const auto physical=shortcutModifiersFromSystem();
+    if(physical.testFlag(Qt::AltModifier) || physical.testFlag(Qt::ControlModifier))return physical;
+    Qt::KeyboardModifiers latched;
+    if(m_altHeld)latched|=Qt::AltModifier;
+    if(m_ctrlHeld)latched|=Qt::ControlModifier;
+    return latched;
+}
+void CanvasItem::updateCursorPoll() {
+    if(m_interactive && isVisible() && isEnabled() && (m_cursorInside || m_altHeld || m_ctrlHeld))m_shortcutStateTimer.start();
+    else if(!m_altHeld && !m_ctrlHeld)m_shortcutStateTimer.stop();
 }
 bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if((m_penOwnsHover || tabletCursorOwner==this) && (event->type()==QEvent::MouseMove || event->type()==QEvent::MouseButtonPress)) {

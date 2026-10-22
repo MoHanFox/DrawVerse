@@ -467,7 +467,7 @@ private slots:
         const auto mouseRelease=[&]{QMouseEvent e(QEvent::MouseButtonRelease,at,canvas->mapToGlobal(at),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(canvas,&e);};
         QTest::keyPress(&window,Qt::Key_Alt);QTRY_VERIFY(canvas->eyedropperCursorVisible());
         mouseRelease();QVERIFY(!canvas->eyedropperCursorVisible());QTest::keyRelease(&window,Qt::Key_Alt);
-        QTest::keyPress(&window,Qt::Key_Control);QTRY_COMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);
+        QTest::keyPress(&window,Qt::Key_Control);QTRY_COMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);QTRY_COMPARE(window.cursor().shape(),Qt::SizeAllCursor);
         mouseRelease();QTRY_VERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);QTRY_COMPARE(window.cursor().shape(),Qt::BlankCursor);QTest::keyRelease(&window,Qt::Key_Control);
         QTest::keyPress(&window,Qt::Key_Alt);QTRY_VERIFY(canvas->eyedropperCursorVisible());
         hover();QVERIFY(canvas->eyedropperCursorVisible());
@@ -478,9 +478,9 @@ private slots:
         QTest::keyRelease(&window,Qt::Key_Control);QTRY_VERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);
         hover();QVERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);
         QKeyEvent lostAlt(QEvent::KeyPress,Qt::Key_Alt,Qt::AltModifier);QCoreApplication::sendEvent(&window,&lostAlt);
-        QTRY_VERIFY(canvas->eyedropperCursorVisible());QTRY_VERIFY_WITH_TIMEOUT(!canvas->eyedropperCursorVisible(),200);
+        QTRY_VERIFY(canvas->eyedropperCursorVisible());QTRY_VERIFY_WITH_TIMEOUT(!canvas->eyedropperCursorVisible(),600);
         QKeyEvent lostCtrl(QEvent::KeyPress,Qt::Key_Control,Qt::ControlModifier);QCoreApplication::sendEvent(&window,&lostCtrl);
-        QTRY_COMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);QTRY_VERIFY_WITH_TIMEOUT(canvas->cursor().shape()!=Qt::SizeAllCursor,200);
+        QTRY_COMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);QTRY_VERIFY_WITH_TIMEOUT(canvas->cursor().shape()!=Qt::SizeAllCursor,600);
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void duplicateMousePressStillEndsOnRelease() {

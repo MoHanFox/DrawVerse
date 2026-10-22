@@ -2,6 +2,8 @@
 
 - 最新WinTab双设备流：wintab-duplicate-device设计/验收；WinTab启用时消费Qt仍并行投递的wmpointer Press/Move/Release及proximity，笔触重复Press幂等且以client drawing收尾，悬停轮廓与卡绘制修复。WinTab/Ink设备选择、双流Press/Leave拒绝、重复Press后Release及笔刷/液化离笔定向6项通过，完整Release与生成头通过，build/bin/Release更新。ABI1.79/state45保持；输入为真实窗口注入事件，实体连续压力/悬停/翻面仍待。
 
+- 最新快捷键光标即时重算：shortcut-cursor-stroke-recovery设计/验收末节；参考PhotoCraft逐帧重算，画布指针在内时每16ms按Win32物理键态统一应用Item与原生窗口光标，Alt/Ctrl按下/释放不依赖单条Hover或KeyRelease，WinTab漏modifier不再闪烁；手势仍按Press时刻修饰键判定。鼠标/手绘快捷键、丢失KeyRelease恢复、重复Press及离笔Transform7项通过，完整Release与生成头通过，build/bin/Release更新；未改ABI/state，实体持续输入仍待。
+
 - 最新快捷键光标与鼠标笔触恢复：shortcut-cursor-stroke-recovery设计/验收；Ctrl/Alt按输入事件锁存、只在KeyRelease或窗口状态向系统键盘同步时清除，无modifier的TabletMove不再切回画笔轮廓；鼠标重复Press保持本地/client笔触一致并由Release收尾，非活动工具常驻预览不再遮住普通笔触。快捷键光标/重复鼠标Press/重复手绘Press/离笔共Transform7项、Ctrl移动UI3项通过，完整Release与生成头通过，build/bin/Release更新；未改ABI/state，实体长时连续输入仍待。
 
 - 最新移动预热与清晰纹理：layer-move-preview设计/验收末节；撤销512px三纹理降级，移动资产按视口物理密度稀疏采样、最高2048px，空切片可1×1；切换移动工具/目标图层或多选集合后后台准备源，按generation/revision/目标ID集合/请求失效，首拖复用四顶点与同源纹理。预排未就绪时不阻塞输入并保留完整帧，不进入模糊移动纹理；资源准备/抓图计时不是端到端输入延迟。软件、D3D11完整变换套件各69项及2倍DPI首拖、四ABI/严格Clippy/fmt/头/完整Release通过；ABI1.80、state45保持，冷页/实体持续与T2/P1/H1仍待。
