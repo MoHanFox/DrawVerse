@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新WinTab双设备流：wintab-duplicate-device设计/验收；WinTab启用时消费Qt仍并行投递的wmpointer Press/Move/Release及proximity，笔触重复Press幂等且以client drawing收尾，悬停轮廓与卡绘制修复。WinTab/Ink设备选择、双流Press/Leave拒绝、重复Press后Release及笔刷/液化离笔定向6项通过，完整Release与生成头通过，build/bin/Release更新。ABI1.79/state45保持；输入为真实窗口注入事件，实体连续压力/悬停/翻面仍待。
+
 - 最新移动起始资产：layer-move-preview设计/验收末节；移动按视口密度稀疏采样，GPU/CPU共用512px草稿预算，空显示切片1×1，松手完整显示/原层坐标与历史保持。4K首次资产中位611.917→34.714ms（非UI/冷盘），包28.4→1.2MB；渲染24/核心10/Actor2/原生3、软件/D3D11各13工作流及2倍DPI首拖1、四ABI/Clippy/fmt/头/完整Release通过，build/bin/Release更新。真实抓图硬件160/2倍DPI216ms含首次呈现，未称实体瞬时；ABI1.79/state45保持，M1冷页/持续与T2/P1/H1仍待。
 
 - 最新复杂变换CPU采样热点：transform-resident-preview设计/验收末节；SourceSampler保持64瓦片副本/FIFO，固定槽及最近瓦片寻址避免逐样本查树，缺页保留隐式白底/读取错误与单页驻留。核心24/公开7/原生4、软件及D3D11各22行含4K真实固定/祖先蒙版、四ABI/严格Clippy/fmt/头/完整Release通过，build/bin/Release更新；1024px两更新核心减少38.8–56.2%且摘要相同，非UI。ABI1.79/state45保持，实际复杂栈仍CPU物化，T2/M1/P1/H1及实体持续性能仍待。

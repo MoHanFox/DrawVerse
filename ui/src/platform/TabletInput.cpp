@@ -1,5 +1,6 @@
 #include "platform/TabletInput.h"
 #include <QGuiApplication>
+#include <QPointingDevice>
 #ifdef Q_OS_WIN
 #include <QtGui/private/qguiapplication_p.h>
 #endif
@@ -22,3 +23,9 @@ void configureTabletInput(const QString &mode) {
 #endif
 }
 QString activeTabletInputBackend(){return activeBackend;}
+bool acceptTabletInputDevice(const QString &backend,const QPointingDevice *device) {
+    // Qt's Windows pointer handler keeps producing "wmpointer" tablet events
+    // after WinTab is enabled. Mixing both device streams duplicates hover and
+    // contact packets, so only the selected backend may drive canvas gestures.
+    return backend!=QStringLiteral("wintab") || !device || device->name()!=QStringLiteral("wmpointer");
+}

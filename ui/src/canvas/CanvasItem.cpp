@@ -1,6 +1,7 @@
 #include "canvas/CanvasItem.h"
 #include "canvas/LiquifyPreviewNode.h"
 #include "canvas/ResidentPreviewTextures.h"
+#include "platform/TabletInput.h"
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
 #include <QTabletEvent>
@@ -655,11 +656,15 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
             setKeySpace(event->type()==QEvent::KeyPress);setSpacePanning(event->type()==QEvent::KeyPress);refreshBrushCursor();key->accept();return true;
         }
     }
+    if(event->type()==QEvent::TabletEnterProximity || event->type()==QEvent::TabletLeaveProximity) {
+        auto *tablet=static_cast<QTabletEvent*>(event);
+        if(!acceptTabletInputDevice(activeTabletInputBackend(),tablet->pointingDevice())){event->accept();return true;}
+    }
     if(event->type()==QEvent::TabletLeaveProximity){
         // Drivers can report proximity loss without a final contact release.
         // Finish the accepted samples once, then release every pen-owned gesture.
-        if(m_tablet){
-            if(m_stroke && m_client)m_client->endStroke();
+        if(m_tablet || (m_client && m_client->drawing())){
+            if(m_client && m_client->drawing())m_client->endStroke();
             m_liquifyTimer.stop();m_stroke=false;
             cancelLayerMove();stopNavigation();cancelSelectionDrag();m_tablet=false;
         }
@@ -671,6 +676,10 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         const auto receiver=item?item->window():qobject_cast<QQuickWindow*>(watched);
         if(receiver!=m_observedWindow)return false;
     } else if (watched != m_observedWindow) return false;
+    if(tabletEvent) {
+        auto *eventTablet=static_cast<QTabletEvent*>(event);
+        if(!acceptTabletInputDevice(activeTabletInputBackend(),eventTablet->pointingDevice())){event->accept();return true;}
+    }
     if (event->type() == QEvent::ScreenChangeInternal || event->type() == QEvent::Resize) m_viewTimer.start();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
     if (event->type() == QEvent::DevicePixelRatioChange) m_viewTimer.start();
@@ -758,8 +767,20 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         else if(event->type()==QEvent::TabletRelease) { finishLayerMove(local); m_tablet=false; }
         e->accept(); return true;
     }
-    if (event->type() == QEvent::TabletPress) {forceActiveFocus();m_tablet = m_stroke = m_client->beginStroke(s);if(m_stroke && m_client->liquifyActive())m_liquifyTimer.start();}
-    else if (event->type() == QEvent::TabletMove && m_stroke) m_client->strokeTo(s);
-    else if (event->type() == QEvent::TabletRelease) { if (m_stroke) m_client->endStroke(); m_tablet = m_stroke = false; }
+    if (event->type() == QEvent::TabletPress) {
+        forceActiveFocus();
+        if(!m_stroke || !m_client->drawing()) {
+            if(m_client->drawing())m_client->endStroke();
+            m_stroke=m_client->beginStroke(s);
+        }
+        m_tablet=m_stroke;
+        if(m_stroke && m_client->liquifyActive())m_liquifyTimer.start();
+    } else if (event->type() == QEvent::TabletMove && (m_stroke || m_client->drawing())) {
+        // A duplicate press must not detach the canvas from an accepted stroke.
+        m_stroke=true;m_tablet=true;m_client->strokeTo(s);
+    } else if (event->type() == QEvent::TabletRelease) {
+        if(m_client->drawing())m_client->endStroke();
+        m_tablet=m_stroke=false;
+    }
     refreshBrushCursor();e->accept(); return true;
 }

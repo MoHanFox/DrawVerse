@@ -356,6 +356,10 @@ private slots:
             const auto result=selectTabletInputBackend(mode,[&](bool requested){++calls;enabled=requested && driver;return true;},[&]{return enabled;});
             QCOMPARE(calls,1);QCOMPARE(result,(driver && mode!="windows-ink")?QString("wintab"):QString("windows-ink"));
         }
+        QPointingDevice winTab("wintab",9190,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        QPointingDevice windowsInk("wmpointer",9191,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        QVERIFY(acceptTabletInputDevice("wintab",&winTab));QVERIFY(!acceptTabletInputDevice("wintab",&windowsInk));
+        QVERIFY(acceptTabletInputDevice("windows-ink",&windowsInk));QVERIFY(acceptTabletInputDevice("auto",&windowsInk));
         QTemporaryDir temp;const auto path=temp.filePath("tablet.ini");PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());
         QCOMPARE(client.tabletInputMode(),QString("auto"));QSignalSpy changes(&client,&PaintCoreClient::tabletInputSettingsChanged);
         client.setTabletInputMode("wintab");QCOMPARE(client.tabletInputMode(),QString("wintab"));QCOMPARE(changes.size(),1);
@@ -383,7 +387,7 @@ private slots:
         const auto at=canvas->documentRect().center();
         const auto send=[&](QEvent::Type type,QPointF p){QTabletEvent e(type,&pen,p,canvas->mapToGlobal(p),type==QEvent::TabletRelease?0.:.6,0,0,0,0,0,Qt::NoModifier,type==QEvent::TabletMove?Qt::NoButton:Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(&window,&e);};
         send(QEvent::TabletPress,at);QVERIFY(client.drawing());QVERIFY(canvas->hasActiveFocus());send(QEvent::TabletMove,at+QPointF(20,0));
-        QEvent leave(QEvent::TabletLeaveProximity);QCoreApplication::sendEvent(qApp,&leave);
+        QTabletEvent leave(QEvent::TabletLeaveProximity,&pen,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(qApp,&leave);
         QTRY_VERIFY(!client.drawing() && !client.layerEditBusy() && !client.liquifyBusy());
         // A late release must not end the next stroke or leave the canvas pen-owned.
         send(QEvent::TabletRelease,at);send(QEvent::TabletPress,at);QVERIFY(client.drawing());send(QEvent::TabletRelease,at);
@@ -392,6 +396,36 @@ private slots:
         QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy());QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
         QTRY_VERIFY(client.frameRevision()>=client.revision());auto grab=canvas->grabToImage();QVERIFY(grab);QTRY_VERIFY(!grab->image().isNull());
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void duplicateTabletPressStillEndsOnRelease() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("pen-duplicate.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,128);
+        QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());client.setBrushRadius(12);
+        QQuickWindow window;window.resize(512,512);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,512});canvas->setClient(&client);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
+        QPointingDevice pen("duplicate pen",9192,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        QPointingDevice windowsInk("wmpointer",9193,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto at=canvas->documentRect().center();
+        const auto send=[&](const QPointingDevice *device,QEvent::Type type,QPointF p){QTabletEvent e(type,device,p,canvas->mapToGlobal(p),type==QEvent::TabletRelease?0.:.6,0,0,0,0,0,Qt::NoModifier,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(&window,&e);};
+#ifdef Q_OS_WIN
+        configureTabletInput("wintab");
+        if(activeTabletInputBackend()==QStringLiteral("wintab")) {
+            send(&windowsInk,QEvent::TabletPress,at);QVERIFY(!client.drawing());
+        }
+#endif
+        send(&pen,QEvent::TabletPress,at);QVERIFY(client.drawing());
+#ifdef Q_OS_WIN
+        if(activeTabletInputBackend()==QStringLiteral("wintab")) {
+            QTabletEvent leave(QEvent::TabletLeaveProximity,&windowsInk,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);
+            QCoreApplication::sendEvent(&window,&leave);QVERIFY(client.drawing());
+        }
+#endif
+        send(&pen,QEvent::TabletPress,at+QPointF(1,0));QVERIFY(client.drawing());
+        send(&pen,QEvent::TabletMove,at+QPointF(20,0));QVERIFY(client.drawing());
+        send(&pen,QEvent::TabletRelease,at+QPointF(20,0));
+        QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());
+        QTRY_COMPARE(client.undoDepth(),1);QVERIFY(client.lastError().isEmpty());
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void transformKeepsFloatingPanelsAndUsesCorrectFileGuard() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("panels.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
