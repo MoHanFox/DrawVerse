@@ -22,6 +22,7 @@
 #include <QClipboard>
 #include <QMimeData>
 #include <QScopeGuard>
+#include <QScreen>
 #include <qpa/qwindowsysteminterface.h>
 #include <private/qhighdpiscaling_p.h>
 #ifdef Q_OS_WIN
@@ -32,13 +33,197 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void initTestCase() {
+        configureTabletInput("auto");
+        if(auto *screen=QGuiApplication::primaryScreen())qInfo()<<"B1 native test screen:"<<screen->name()<<"logical DPI:"<<screen->logicalDotsPerInch()<<"DPR:"<<screen->devicePixelRatio();
+        for(const auto *device:QInputDevice::devices())qInfo()<<"Initial Qt device:"<<device->name()<<device->systemId()<<device->type();
+    }
+    void tabletContactMoveBelongsToPressedCanvas() {
+        QTemporaryDir temp;PaintCoreClient first(nullptr,temp.filePath("preferences.ini"));
+        QTRY_VERIFY2(first.ready() && first.brushLibraryReady(),qPrintable(first.lastError()));
+        PaintCoreClient second(nullptr,temp.filePath("preferences.ini"),first.brushCatalogConnection());
+        QTRY_VERIFY2(second.ready() && second.brushLibraryReady(),qPrintable(second.lastError()));
+        first.newTransparentDocument(800,300);second.newTransparentDocument(800,300);
+        QTRY_VERIFY(first.documentWidth()==800 && second.documentWidth()==800 && !first.layerEditBusy() && !second.layerEditBusy());
+        QQuickWindow window;window.resize(640,300);
+        auto *a=new CanvasItem(window.contentItem());a->setSize({300,300});a->setClient(&first);
+        auto *b=new CanvasItem(window.contentItem());b->setPosition({320,0});b->setSize({300,300});b->setClient(&second);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));a->actualSize();b->actualSize();
+        first.setBrushColor(Qt::red);first.setBrushRadius(6);first.brushLibrary()->setPressureSize(false);first.brushLibrary()->setPressureFlow(false);
+        const auto pixel=a->documentPoint({210,150});
+        QPointingDevice pen("B1 contact pen",9201,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto send=[&](QEvent::Type type,QPointF scene){QTabletEvent e(type,&pen,scene,window.mapToGlobal(scene),type==QEvent::TabletRelease?0:.7,0,0,0,0,0,Qt::NoModifier,type==QEvent::TabletMove?Qt::NoButton:Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(&window,&e);};
+        QTabletEvent hover(QEvent::TabletMove,&pen,{150,150},window.mapToGlobal(QPointF(150,150)),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&hover);
+        const auto releaseSpace=qScopeGuard([&]{QTest::keyRelease(&window,Qt::Key_Space);});
+        QTest::keyPress(&window,Qt::Key_Space);QCOMPARE(window.cursor().shape(),Qt::OpenHandCursor);QVERIFY(!a->brushCursorVisible());
+        QTest::keyRelease(&window,Qt::Key_Space);QVERIFY(!a->spacePanning());QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
+        send(QEvent::TabletPress,{150,150});QVERIFY(first.drawing());QVERIFY(!second.drawing());
+        // Native contact remains addressed to its original window while crossing
+        // the adjacent canvas. B's later-installed application filter sees it first.
+        send(QEvent::TabletMove,{430,150});
+        QCOMPARE(a->cursorPosition(),QPointF(430,150));QVERIFY(!b->brushCursorVisible());QVERIFY(first.drawing());
+        send(QEvent::TabletRelease,{430,150});QTRY_VERIFY(!first.drawing() && !first.layerEditBusy());
+        QTRY_COMPARE(first.undoDepth(),1);QCOMPARE(second.undoDepth(),0);
+        QTRY_VERIFY(first.frameRevision()>=first.revision());QTRY_VERIFY(first.sampleDocumentPixel(pixel.x(),pixel.y()).alpha()>240);
+        const auto painted=first.sampleDocumentPixel(pixel.x(),pixel.y());QVERIFY(painted.red()>240 && painted.green()<10);
+        first.undo();QTRY_COMPARE(first.undoDepth(),0);QTRY_VERIFY(first.frameRevision()>=first.revision());QTRY_COMPARE(first.sampleDocumentPixel(pixel.x(),pixel.y()).alpha(),0);
+        first.redo();QTRY_COMPARE(first.undoDepth(),1);QTRY_VERIFY(first.frameRevision()>=first.revision());QTRY_COMPARE(first.sampleDocumentPixel(pixel.x(),pixel.y()),painted);
+        send(QEvent::TabletPress,{120,110});send(QEvent::TabletRelease,{120,110});QTRY_COMPARE(first.undoDepth(),2);QTRY_VERIFY(!first.layerEditBusy());
+        a->setClient(nullptr);b->setClient(nullptr);
+        QSignalSpy stoppedA(&first,&PaintCoreClient::stopped),stoppedB(&second,&PaintCoreClient::stopped);
+        first.shutdown();second.shutdown();QTRY_COMPARE(stoppedA.size(),1);QTRY_COMPARE(stoppedB.size(),1);
+    }
+    void proximityLossDoesNotEndMouseOrOtherPenStroke() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("proximity-owner.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,128);
+        QTRY_VERIFY(client.documentWidth()==128 && !client.layerEditBusy());
+        QQuickWindow window;window.resize(400,400);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({400,400});canvas->setClient(&client);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
+        QPointingDevice pen("B1 owned pen",9202,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        QPointingDevice other("B1 other pen",9203,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto at=canvas->documentRect().center();
+        const auto leave=[&](const QPointingDevice *device){QTabletEvent e(QEvent::TabletLeaveProximity,device,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(qApp,&e);};
+        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,at.toPoint());QVERIFY(client.drawing());
+        leave(&other);QVERIFY2(client.drawing(),"Unowned proximity loss ended a mouse stroke");
+        QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,at.toPoint());QTRY_VERIFY(!client.layerEditBusy());
+        QTabletEvent press(QEvent::TabletPress,&pen,at,canvas->mapToGlobal(at),.7,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,Qt::LeftButton);QCoreApplication::sendEvent(&window,&press);QVERIFY(client.drawing());
+        leave(&other);QVERIFY2(client.drawing(),"Another device ended the accepted pen stroke");
+        leave(&pen);QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());QTRY_COMPARE(client.undoDepth(),2);
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void tabletWindowHandoffClearsPreviousOutline() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("handoff.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QQuickWindow first,second;first.resize(300,300);second.resize(300,300);second.setPosition({750,100});
+        auto *a=new CanvasItem(first.contentItem());a->setSize({300,300});a->setClient(&client);
+        auto *b=new CanvasItem(second.contentItem());b->setSize({300,300});b->setClient(&client);
+        first.show();second.show();QVERIFY(QTest::qWaitForWindowExposed(&first));QVERIFY(QTest::qWaitForWindowExposed(&second));
+        QPointingDevice pen("B1 handoff pen",9204,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        QQmlEngine engine;engine.rootContext()->setContextProperty("a",a);engine.rootContext()->setContextProperty("b",b);
+        QQmlComponent component(&engine);component.setData("import QtQml\nQtObject { property bool firstOutline: a.brushCursorVisible; property bool secondOutline: b.brushCursorVisible }",QUrl());
+        QScopedPointer<QObject> state(component.create());QVERIFY2(state,qPrintable(component.errorString()));
+        const auto hover=[&](QQuickWindow *window){QTabletEvent e(QEvent::TabletMove,&pen,{150,150},window->mapToGlobal(QPointF(150,150)),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(window,&e);};
+        hover(&first);QVERIFY(state->property("firstOutline").toBool());QCOMPARE(first.cursor().shape(),Qt::BlankCursor);
+        // A driver may change target without an intervening Quick HoverLeave.
+        hover(&second);QVERIFY(state->property("secondOutline").toBool());QCOMPARE(second.cursor().shape(),Qt::BlankCursor);
+        QVERIFY2(!state->property("firstOutline").toBool(),"Previous window retained a stale pen outline");QVERIFY(first.cursor().shape()!=Qt::BlankCursor);
+        QHoverEvent cached(QEvent::HoverMove,{130,130},first.mapToGlobal(QPointF(130,130)),{150,150});QCoreApplication::sendEvent(a,&cached);
+        QVERIFY(!state->property("firstOutline").toBool());
+        QMouseEvent mouse(QEvent::MouseMove,{140,140},first.mapToGlobal(QPointF(140,140)),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&first,&mouse);
+        QVERIFY(state->property("firstOutline").toBool());QVERIFY(!state->property("secondOutline").toBool());QVERIFY(second.cursor().shape()!=Qt::BlankCursor);
+        hover(&second);b->setVisible(false);QVERIFY(!state->property("secondOutline").toBool());QVERIFY(second.cursor().shape()!=Qt::BlankCursor);b->setVisible(true);
+        a->setClient(nullptr);b->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void selectedBackendAlsoFiltersNativeTabletMenu() {
+#ifdef Q_OS_WIN
+        configureTabletInput("wintab");
+        if(activeTabletInputBackend()!=QStringLiteral("wintab"))QSKIP("WinTab is unavailable; dual-backend menu rejection requires WinTab selection");
+        const auto restore=qScopeGuard([]{configureTabletInput("auto");});
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("menu.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});
+        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.setBrushWriteBlend(0);
+        auto *combo=findVisualItem(main->contentItem(),"brushWriteBlend");QVERIFY(combo);auto *popup=combo->property("popup").value<QObject*>();QVERIFY(popup);
+        QSignalSpy actions(combo,SIGNAL(activated(int)));QVERIFY(actions.isValid());
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,combo->mapToScene({combo->width()/2,combo->height()/2}).toPoint());
+        QQuickItem *option=nullptr;
+        QTRY_VERIFY([&]{for(auto *window:QGuiApplication::allWindows())if(auto *quick=qobject_cast<QQuickWindow*>(window))if((option=findVisualItem(quick->contentItem(),"brushWriteBlendOption:3")))return true;return false;}());
+        QTRY_VERIFY(popup->property("visible").toBool());QVERIFY(option->window()!=main);
+        QPointingDevice rejected("wmpointer",9205,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        QPointingDevice accepted("wintab",9206,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto click=[&](const QPointingDevice *device){const auto global=option->mapToGlobal({option->width()/2,option->height()/2});auto *target=option->window();for(auto type:{QEvent::TabletPress,QEvent::TabletRelease}){QTabletEvent e(type,device,target->mapFromGlobal(global),global,type==QEvent::TabletPress?.5:0,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,type==QEvent::TabletPress?Qt::LeftButton:Qt::NoButton);QCoreApplication::sendEvent(target,&e);}};
+        // Qt's excluded wmpointer stream can name the native popup directly;
+        // canvas-window filtering cannot protect this receiver.
+        click(&rejected);QCOMPARE(actions.size(),0);QCOMPARE(client.brushWriteBlend(),0);QVERIFY(popup->property("visible").toBool());
+        click(&accepted);QTRY_COMPARE(actions.size(),1);QCOMPARE(client.brushWriteBlend(),3);QTRY_VERIFY(!popup->property("visible").toBool());QCOMPARE(client.undoDepth(),0);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+#else
+        QSKIP("Windows backend routing regression");
+#endif
+    }
+    void ordinaryTabletControlsAndTextFocusRemainNormal() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("controls.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());QQmlEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        QQmlComponent component(&engine);component.setData(R"(
+import QtQuick
+import QtQuick.Window
+import "qrc:/qml/controls"
+Window {
+    visible: true; width: 650; height: 300
+    CompactCheckBox { objectName: "toggle"; x: 350; y: 40; width: 180; height: 30; text: "pen toggle" }
+    CompactTextField { objectName: "text"; x: 350; y: 100; width: 180; height: 30 }
+    CompactSlider { objectName: "slider"; x: 350; y: 160; width: 180; from: 0; to: 100; value: 20 }
+})",QUrl());
+        QScopedPointer<QObject> root(component.create());QVERIFY2(root,qPrintable(component.errorString()));auto *window=qobject_cast<QQuickWindow*>(root.data());QVERIFY(window);
+        auto *canvas=new CanvasItem(window->contentItem());canvas->setSize({300,300});canvas->setClient(&client);
+        window->requestActivate();QVERIFY(QTest::qWaitForWindowActive(window));
+        auto *toggle=findVisualItem(window->contentItem(),"toggle"),*text=findVisualItem(window->contentItem(),"text"),*slider=findVisualItem(window->contentItem(),"slider");QVERIFY(toggle && text && slider);
+        QSignalSpy clicks(toggle,SIGNAL(clicked()));QVERIFY(clicks.isValid());
+        auto *pen=new QPointingDevice("B1 controls pen",9207,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure|QInputDevice::Capability::Hover,1,3);pen->setParent(qApp);QWindowSystemInterface::registerInputDevice(pen);
+        const auto input=[&](QPointF scene,Qt::MouseButtons buttons,qreal pressure){QWindowSystemInterface::handleTabletEvent(window,pen,QHighDpi::toNativeLocalPosition(scene,window),QHighDpi::toNativeGlobalPosition(window->mapToGlobal(scene),window),buttons,pressure,0,0,0,0,0);QWindowSystemInterface::flushWindowSystemEvents();};
+        const auto point=toggle->mapToScene({40,15});input(point,Qt::NoButton,0);input(point,Qt::LeftButton,.5);
+        for(int i=0;i<8;++i)input(point+QPointF(i,0),Qt::LeftButton,.5);
+        QCOMPARE(clicks.size(),0);input(point,Qt::NoButton,0);QCOMPARE(clicks.size(),1);QVERIFY(toggle->property("checked").toBool());
+        // Two further valid fast clicks must not be suppressed by a time debounce.
+        for(int i=0;i<2;++i){input(point,Qt::LeftButton,.5);input(point,Qt::NoButton,0);}QCOMPARE(clicks.size(),3);QVERIFY(toggle->property("checked").toBool());
+        input(point,Qt::RightButton,0);input(point,Qt::NoButton,0);QCOMPARE(clicks.size(),3);
+        const auto start=slider->mapToScene({40,11}),end=slider->mapToScene({140,11});input(start,Qt::LeftButton,.5);input(end,Qt::LeftButton,.5);input(end,Qt::NoButton,0);QVERIFY(slider->property("value").toDouble()>60);
+        text->forceActiveFocus();QVERIFY(text->hasActiveFocus());for(auto key:{Qt::Key_A,Qt::Key_Space,Qt::Key_B})QTest::keyClick(window,key);QCOMPARE(text->property("text").toString(),QString("a b"));QVERIFY(!canvas->spacePanning());QVERIFY(!client.drawing());QCOMPARE(client.undoDepth(),0);
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void missingSpaceReleaseRecoversWithoutPointerMovement() {
+#ifdef Q_OS_WIN
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("space.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QQuickWindow window;window.resize(400,400);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({400,400});canvas->setClient(&client);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->forceActiveFocus();
+        QPointingDevice pen("B1 space pen",9209,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto hover=[&]{QTabletEvent e(QEvent::TabletMove,&pen,{200,200},window.mapToGlobal(QPointF(200,200)),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&e);};hover();
+        QQmlEngine engine;engine.rootContext()->setContextProperty("canvasView",canvas);QQmlComponent component(&engine);
+        component.setData("import QtQml\nQtObject { property bool pan: canvasView.spacePanning; property bool brush: canvasView.brushCursorVisible }",QUrl());QScopedPointer<QObject> state(component.create());QVERIFY(state);
+        class ReleaseBlocker final:public QObject {bool eventFilter(QObject *,QEvent *event) override{return event->type()==QEvent::KeyRelease && static_cast<QKeyEvent*>(event)->key()==Qt::Key_Space;}} blocker;
+        qApp->installEventFilter(&blocker);
+        const auto key=[](bool down){INPUT input{};input.type=INPUT_KEYBOARD;input.ki.wVk=VK_SPACE;input.ki.dwFlags=down?0:KEYEVENTF_KEYUP;return SendInput(1,&input,sizeof(INPUT));};
+        const auto release=qScopeGuard([&]{qApp->removeEventFilter(&blocker);if(GetAsyncKeyState(VK_SPACE)&0x8000)key(false);QCoreApplication::processEvents();QKeyEvent up(QEvent::KeyRelease,Qt::Key_Space,Qt::NoModifier);QCoreApplication::sendEvent(&window,&up);});
+        QCOMPARE(key(true),UINT(1));QTRY_VERIFY(state->property("pan").toBool());QCOMPARE(window.cursor().shape(),Qt::OpenHandCursor);
+        hover();QVERIFY(state->property("pan").toBool());QCOMPARE(key(false),UINT(1));
+        QTRY_VERIFY_WITH_TIMEOUT(!state->property("pan").toBool(),600);QVERIFY(state->property("brush").toBool());QCOMPARE(canvas->cursor().shape(),Qt::BlankCursor);QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+#else
+        QSKIP("Windows physical Space release recovery");
+#endif
+    }
+    void tabletFocusAndMouseUngrabCancelOnlyAcceptedStroke() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("cancel.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newTransparentDocument(128,128);QTRY_VERIFY(client.documentWidth()==128 && !client.layerEditBusy());
+        QQuickWindow window;window.resize(400,400);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({400,400});canvas->setClient(&client);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
+        QPointingDevice pen("B1 cancellation pen",9208,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto at=canvas->documentRect().center();const auto input=[&](QEvent::Type type){QTabletEvent e(type,&pen,at,canvas->mapToGlobal(at),type==QEvent::TabletRelease?0:.6,0,0,0,0,0,Qt::NoModifier,Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:Qt::LeftButton);QCoreApplication::sendEvent(&window,&e);};
+        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,at.toPoint());QVERIFY(client.drawing());QCOMPARE(window.mouseGrabberItem(),canvas);
+        canvas->ungrabMouse();QVERIFY(window.mouseGrabberItem()!=canvas);
+        QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());QCOMPARE(client.undoDepth(),0);QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,at.toPoint());
+        input(QEvent::TabletPress);QVERIFY(client.drawing());QEvent deactivate(QEvent::WindowDeactivate);QCoreApplication::sendEvent(&window,&deactivate);QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());QCOMPARE(client.undoDepth(),0);QVERIFY(window.cursor().shape()!=Qt::BlankCursor);
+        QEvent activate(QEvent::WindowActivate);QCoreApplication::sendEvent(&window,&activate);input(QEvent::TabletPress);QVERIFY(client.drawing());input(QEvent::TabletRelease);QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        input(QEvent::TabletPress);QVERIFY(client.drawing());canvas->setVisible(false);QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());QCOMPARE(client.undoDepth(),1);
+        auto *replacement=new CanvasItem(window.contentItem());replacement->setSize({400,400});replacement->setClient(&client);replacement->fitToView();
+        input(QEvent::TabletPress);QVERIFY(client.drawing());input(QEvent::TabletRelease);QTRY_COMPARE(client.undoDepth(),2);QTRY_VERIFY(!client.layerEditBusy());
+        input(QEvent::TabletPress);QVERIFY(client.drawing());
+        QSignalSpy detached(replacement,&QQuickItem::windowChanged);
+        delete replacement;qInfo()<<"Window changes while deleting replacement canvas:"<<detached.size();
+        QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());QCOMPARE(client.undoDepth(),2);canvas->setVisible(true);
+        input(QEvent::TabletPress);QVERIFY(client.drawing());input(QEvent::TabletRelease);QTRY_COMPARE(client.undoDepth(),3);QTRY_VERIFY(!client.layerEditBusy());
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void shortcutKeysUpdateLikeSpaceWithoutPointerMovement() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("shortcut-events.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,128);
         QTRY_VERIFY(!client.layerEditBusy());
         QQuickWindow window;window.resize(512,512);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,512});canvas->setClient(&client);
         window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
-        const auto at=canvas->documentRect().center();QTest::mouseMove(&window,at.toPoint());
+        const auto at=canvas->documentRect().center();
+        // Window activation does not imply a pointer entry after the preceding
+        // native window was destroyed. Seed that entry before stationary-key checks.
+        QEnterEvent enter(at,at,window.mapToGlobal(at));QCoreApplication::sendEvent(&window,&enter);QTest::mouseMove(&window,at.toPoint());
         QVERIFY(canvas->brushCursorVisible());
         const auto key=[&](int code,bool down){QKeyEvent event(down?QEvent::KeyPress:QEvent::KeyRelease,code,Qt::NoModifier);QCoreApplication::sendEvent(&window,&event);};
         QPointingDevice pen("shortcut state pen",9196,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
@@ -72,7 +257,7 @@ private slots:
         QQuickWindow window;window.resize(512,512);
         auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,512});canvas->setClient(&client);
         window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
-        const auto at=canvas->documentRect().center();QTest::mouseMove(&window,at.toPoint());
+        const auto at=canvas->documentRect().center();QEnterEvent enter(at,at,window.mapToGlobal(at));QCoreApplication::sendEvent(&window,&enter);QTest::mouseMove(&window,at.toPoint());
         QQmlEngine engine;engine.rootContext()->setContextProperty("canvasView",canvas);
         QQmlComponent component(&engine);
         component.setData("import QtQml\nQtObject { property bool brush: canvasView.brushCursorVisible; property bool eyedropper: canvasView.eyedropperCursorVisible }",QUrl());
