@@ -5,6 +5,7 @@
 #include "workspace/WorkspaceManager.h"
 #include "documents/DocumentManager.h"
 #include "platform/UiScale.h"
+#include "platform/InteractionTrace.h"
 #include "platform/MenuSurface.h"
 #include <QtTest>
 #include <QQmlApplicationEngine>
@@ -1606,6 +1607,63 @@ private slots:
         auto *icon=findVisualItem(window->contentItem(),"historyIcon:"+QString::number(client.undoDepth()));QVERIFY(icon);QCOMPARE(icon->property("name").toString(),QString("eraser"));QVERIFY(!findVisualItem(window->contentItem(),"historyEntry:0"));
         auto *historyList=findVisualItem(window->contentItem(),"historyList");QVERIFY(historyList);QTest::qWait(100);historyList->setProperty("contentY",qreal((client.undoDepth()-2)*24));QQuickItem *previous=nullptr;QTRY_VERIFY2((previous=findVisualItem(window->contentItem(),"historyEntry:"+QString::number(client.undoDepth()-1))),qPrintable(QString("count=%1 height=%2 contentY=%3 undo=%4").arg(historyList->property("count").toInt()).arg(historyList->height()).arg(historyList->property("contentY").toReal()).arg(client.undoDepth())));QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,previous->mapToScene({20,12}).toPoint());QTRY_COMPARE(client.redoDepth(),1);QCOMPARE(client.historyEntries(),records);
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void capturedCursorPoseSurvivesPendingPreferences() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("pose.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});
+        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(canvas->width()>100 && canvas->height()>100);canvas->actualSize();
+        auto *library=client.brushLibrary();auto *outline=findVisualItem(window->contentItem(),"brushCursorOutline");QVERIFY(outline);
+        const auto configure=[&]{library->setRadius(12);library->setAngle(0);library->setRoundness(.35);library->setAngleControl("pen-rotation");library->setPressureSize(true);library->setPressureFlow(false);library->setTiltRoundness(false);library->setCursorSimple(false);client.setBrushColor(Qt::red);};configure();
+        QPointingDevice pen("B2 captured pose pen",9301,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure|QInputDevice::Capability::Rotation,1,1);
+        const auto start=canvas->documentRect().center(),end=start+QPointF(20,10);
+        const auto send=[&](QEvent::Type type,QPointF at,qreal pressure,qreal rotation){QTabletEvent event(type,&pen,at,canvas->mapToGlobal(at),pressure,0,0,0,rotation,0,Qt::NoModifier,type==QEvent::TabletMove?Qt::NoButton:Qt::LeftButton,type==QEvent::TabletRelease?Qt::NoButton:type==QEvent::TabletPress?Qt::LeftButton:client.drawing()?Qt::LeftButton:Qt::NoButton);QCoreApplication::sendEvent(canvas,&event);};
+        QJsonArray states;InteractionTrace::start(true);
+        const auto evidence=qScopeGuard([&]{const auto trace=InteractionTrace::finish();const auto dir=qEnvironmentVariable("DRAWVERSE_B2_EVIDENCE_DIR");if(!dir.isEmpty()){QFile file(QDir(dir).filePath("captured-pose.json"));if(file.open(QIODevice::WriteOnly))file.write(QJsonDocument(QJsonObject{{"states",states},{"trace",trace}}).toJson());}});
+        const auto record=[&](const char *stage){states.append(QJsonObject{{"stage",stage},{"time_ns",double(InteractionTrace::now())},{"canvas",QString::number(quintptr(canvas),16)},{"device",pen.name()},{"x",canvas->cursorPosition().x()},{"y",canvas->cursorPosition().y()},{"pending",library->persistencePending()},{"drawing",client.drawing()},{"angle",canvas->brushCursorAngle()},{"roundness",canvas->brushCursorRoundness()},{"radius",canvas->brushCursorRect().width()/canvas->zoom()/2},{"visible",canvas->brushCursorVisible()},{"qml_angle",outline->rotation()},{"qml_height",outline->height()}});};
+        send(QEvent::TabletMove,start,0,60);QTRY_COMPARE(canvas->brushCursorAngle(),60.);QVERIFY(canvas->brushCursorVisible());
+        // Reference stroke: same geometry/pressure/buttons; clock timestamps advance naturally.
+        send(QEvent::TabletPress,start,.6,60);send(QEvent::TabletMove,end,.8,45);send(QEvent::TabletRelease,end,0,45);
+        QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(client.frameRevision()>=client.revision());const auto reference=client.frame(0);QVERIFY(!reference.isNull());
+        client.undo();QTRY_COMPARE(client.undoDepth(),0);QTRY_VERIFY(client.frameRevision()>=client.revision());
+        configure();send(QEvent::TabletMove,start,0,60);QTRY_COMPARE(canvas->brushCursorAngle(),60.);
+        send(QEvent::TabletPress,start,.6,60);QVERIFY(client.drawing());QCOMPARE(canvas->brushCursorAngle(),60.);record("captured-valid");
+        client.setBrushColor(Qt::blue);QVERIFY(library->persistencePending());record("color-pending");
+        // Same-stack assertions, before persistence can expire: do not QTRY away the fallback.
+        QCOMPARE(canvas->brushCursorAngle(),60.);QCOMPARE(outline->rotation(),60.);QVERIFY(qAbs(canvas->brushCursorRect().width()/canvas->zoom()-14.4)<.001);
+        library->setAngleControl("fixed");library->setAngle(17);library->setRadius(28);library->setRoundness(.8);record("next-stroke-settings-pending");
+        QCOMPARE(canvas->brushCursorAngle(),60.);QCOMPARE(outline->rotation(),60.);QVERIFY(qAbs(canvas->brushCursorRoundness()-.35)<.001);
+        send(QEvent::TabletMove,end,.8,45);record("new-valid-sample");QCOMPARE(canvas->brushCursorAngle(),45.);QCOMPARE(outline->rotation(),45.);QVERIFY(qAbs(canvas->brushCursorRect().width()/canvas->zoom()-19.2)<.001);
+        send(QEvent::TabletRelease,end,0,45);record("released-new-context");QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(client.frameRevision()>=client.revision());
+        QCOMPARE(client.frame(0),reference);client.undo();QTRY_COMPARE(client.undoDepth(),0);client.redo();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(client.frameRevision()>=client.revision());QCOMPARE(client.frame(0),reference);
+        QTRY_VERIFY(!library->persistencePending());QTRY_COMPARE(canvas->brushCursorAngle(),17.);QTRY_VERIFY(qAbs(canvas->brushCursorRect().width()/canvas->zoom()-56)<.001);QCOMPARE(canvas->brushCursorRoundness(),qreal(float(.8)));record("new-prepared");
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void cursorDirectionStartsAtOwnershipBoundary_data() {
+        QTest::addColumn<QString>("boundary");
+        for(const auto &name:{"device","mouse","leave","document"})QTest::newRow(name)<<QString(name);
+    }
+    void cursorDirectionStartsAtOwnershipBoundary() {
+        QFETCH(QString,boundary);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("direction.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(256,256);QTRY_VERIFY(client.documentWidth()==256 && !client.layerEditBusy());
+        QQuickWindow window;window.resize(500,500);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({500,500});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        auto *library=client.brushLibrary();library->setRadius(12);library->setRoundness(.3);library->setAngle(0);library->setAngleControl("direction");
+        QPointingDevice first("B2 direction first",9302,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        QPointingDevice second("B2 direction second",9303,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto hover=[&](const QPointingDevice *device,QPointF at){QTabletEvent event(QEvent::TabletMove,device,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(canvas,&event);};
+        hover(&first,{230,230});hover(&first,{240,240});QTRY_COMPARE(canvas->brushCursorAngle(),45.);QVERIFY(canvas->brushCursorVisible());
+        const QPointF entry(210,230);const QPointingDevice *device=&first;
+        if(boundary=="device")device=&second;
+        else if(boundary=="mouse") {QMouseEvent mouse(QEvent::MouseMove,entry,window.mapToGlobal(entry),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&mouse);QHoverEvent event(QEvent::HoverMove,entry,window.mapToGlobal(entry),QPointF(240,240));QCoreApplication::sendEvent(canvas,&event);}
+        else if(boundary=="leave") {QEvent event(QEvent::Leave);QCoreApplication::sendEvent(&window,&event);QVERIFY(!canvas->brushCursorVisible());}
+        else {const auto previous=client.generation();client.newTransparentDocument(256,256);QTRY_VERIFY(client.generation()!=previous && client.ready() && !client.layerEditBusy());canvas->actualSize();}
+        if(boundary!="mouse")hover(device,entry);
+        qInfo()<<"B2 boundary"<<boundary<<"first position"<<entry<<"angle"<<canvas->brushCursorAngle();
+        QCOMPARE(canvas->brushCursorAngle(),0.); // No direction exists yet in this input context.
+        if(boundary=="mouse") {const auto next=entry+QPointF(0,10);QHoverEvent event(QEvent::HoverMove,next,window.mapToGlobal(next),entry);QCoreApplication::sendEvent(canvas,&event);}
+        else hover(device,entry+QPointF(0,10));
+        QCOMPARE(canvas->brushCursorAngle(),90.); // First real movement takes over without smoothing.
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void liveTabletPoseTracksTiltRotationPressureAndCapturedStroke() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &error:errors)warnings.append(error.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);QVERIFY(QTest::qWaitForWindowExposed(window));QTRY_VERIFY(canvas->width()>100 && canvas->height()>100);canvas->actualSize();auto *library=client.brushLibrary();library->setRadius(8);library->setRoundness(.5);library->setAngleControl("pen-rotation");library->setTiltRoundness(true);library->setMinimumRoundness(.2);
