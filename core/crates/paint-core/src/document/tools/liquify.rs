@@ -32,6 +32,20 @@ struct LocalStep {
     cells: [i64; 2],
     action: crate::HistoryAction,
 }
+impl LocalStep {
+    fn restore(&self, layer: &mut Layer, field: &mut Field, redo: bool) -> Result<()> {
+        self.fields.restore(field, redo)?;
+        for change in &self.pixels {
+            let value = if redo { &change.after } else { &change.before };
+            if let Some(tile) = value {
+                layer.tiles.insert(change.coord, tile.clone());
+            } else {
+                layer.tiles.remove(&change.coord);
+            }
+        }
+        Ok(())
+    }
+}
 #[derive(Clone, Debug, Default)]
 struct LocalHistory {
     undo: std::collections::VecDeque<Arc<LocalStep>>,
@@ -449,36 +463,55 @@ impl Document {
         })
     }
     pub fn select_liquify_history(&mut self, depth: usize) -> Result<bool> {
-        let backup = self
+        let state = self
             .liquify
-            .clone()
+            .as_ref()
             .ok_or(Error::InvalidArgument("no liquify transaction"))?;
-        if backup.checkpoint.is_some() {
+        if state.checkpoint.is_some() {
             return Err(Error::Busy);
         }
-        let undo = backup.history.undo.len();
-        let redo = backup.history.redo.len();
-        if depth > undo + redo {
+        let undo = state.history.undo.len();
+        let redo_count = state.history.redo.len();
+        if depth > undo + redo_count {
             return Err(Error::InvalidArgument("liquify history depth"));
         }
         if depth == undo {
             return Ok(false);
         }
-        let at = self.layer_index(backup.original.id)?;
-        let layer = self.layers[at].clone();
-        let revision = self.revision;
-        let dirty = self.dirty.clone();
-        // Existing local steps restore fields and immutable tiles without resampling.
-        for _ in 0..depth.abs_diff(undo) {
-            if let Err(error) = self.travel_liquify(depth > undo) {
-                self.layers[at] = layer;
-                self.liquify = Some(backup);
-                self.revision = revision;
-                self.dirty = dirty;
-                return Err(error);
+        let at = self.layer_index(state.original.id)?;
+        let mut layer = self.layers[at].clone();
+        let mut field = state.field.clone();
+        let mut cell = state.cell;
+        let redo = depth > undo;
+        let count = depth.abs_diff(undo);
+        // Apply every checked delta to one private candidate. No intermediate
+        // map copies, cursor changes, revisions or dirty publications.
+        for index in 0..count {
+            let step = if redo {
+                &state.history.redo[redo_count - index - 1]
+            } else {
+                &state.history.undo[undo - index - 1]
+            };
+            step.restore(&mut layer, &mut field, redo)?;
+            cell = step.cells[usize::from(redo)];
+        }
+        let state = self.liquify.as_mut().expect("state");
+        let history = Arc::make_mut(&mut state.history);
+        for _ in 0..count {
+            if redo {
+                history
+                    .undo
+                    .push_back(history.redo.pop().expect("checked redo depth"));
+            } else {
+                history
+                    .redo
+                    .push(history.undo.pop_back().expect("checked undo depth"));
             }
         }
-        self.revision = revision.saturating_add(1);
+        state.field = field;
+        state.cell = cell;
+        self.layers[at] = layer;
+        self.dirty_all();
         Ok(true)
     }
     pub fn undo_liquify(&mut self) -> Result<bool> {
@@ -501,18 +534,9 @@ impl Document {
         .cloned();
         let Some(step) = step else { return Ok(false) };
         let mut field = state.field.clone();
-        step.fields.restore(&mut field, redo)?;
-        let id = state.original.id;
-        let at = self.layer_index(id)?;
+        let at = self.layer_index(state.original.id)?;
         let mut layer = self.layers[at].clone();
-        for change in &step.pixels {
-            let value = if redo { &change.after } else { &change.before };
-            if let Some(tile) = value {
-                layer.tiles.insert(change.coord, tile.clone());
-            } else {
-                layer.tiles.remove(&change.coord);
-            }
-        }
+        step.restore(&mut layer, &mut field, redo)?;
         self.layers[at] = layer;
         let state = self.liquify.as_mut().expect("state");
         state.field = field;
@@ -787,6 +811,72 @@ mod history_select_tests {
             eprintln!("liquify session fields disk={spilled}: checkpoint median {:.3}ms, six history selections median {:.3}ms", commits[2], travels[2]);
         }
     }
+    #[test]
+    #[ignore = "manual Release comparison of sparse history traversal"]
+    fn sparse_field_history_jump_workload() {
+        for spilled in [false, true] {
+            let mut timings = Vec::new();
+            for _ in 0..5 {
+                let mut doc = Document::with_options(
+                    64,
+                    64,
+                    DocumentOptions {
+                        max_history_bytes: if spilled {
+                            2 * TILE_BYTES + 256
+                        } else {
+                            64 * 1024 * 1024
+                        },
+                        max_history_commands: 32,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                doc.begin_liquify().unwrap();
+                let shared = Arc::new(vec![[0.; 2]; 4096]);
+                for key in 0..2048 {
+                    doc.liquify
+                        .as_mut()
+                        .unwrap()
+                        .field
+                        .insert(TileCoord::from_signed(key, 0), shared.clone());
+                }
+                let key = TileCoord::from_signed(0, 0);
+                for step in 1..=32 {
+                    doc.begin_liquify_stroke().unwrap();
+                    doc.liquify
+                        .as_mut()
+                        .unwrap()
+                        .field
+                        .insert(key, Arc::new(vec![[step as f32, 0.]; 4096]));
+                    assert!(doc.end_liquify_stroke().unwrap());
+                }
+                assert_eq!(
+                    doc.liquify.as_ref().unwrap().history.undo[0]
+                        .fields
+                        .disk_bytes()
+                        > 0,
+                    spilled
+                );
+                let start = std::time::Instant::now();
+                for target in [0, 32, 1, 31, 0, 32] {
+                    assert!(doc.select_liquify_history(target).unwrap());
+                }
+                timings.push(start.elapsed().as_secs_f64() * 1000.);
+                let state = doc.liquify.as_ref().unwrap();
+                assert_eq!(state.field.len(), 2048);
+                assert!(state.field[&key].iter().all(|v| *v == [32., 0.]));
+                for value in state.field.values().skip(1) {
+                    assert!(Arc::ptr_eq(value, &shared));
+                }
+                assert_eq!(doc.liquify_history_depth(), Some((32, 0)));
+            }
+            timings.sort_by(f64::total_cmp);
+            eprintln!(
+                "2048 sparse fields disk={spilled}: six jumps median {:.3}ms",
+                timings[2]
+            );
+        }
+    }
     fn seed() -> Document {
         seed_with_options(DocumentOptions::default())
     }
@@ -939,5 +1029,45 @@ mod history_select_tests {
         assert_eq!(direct.dirty, dirty);
         assert_eq!(direct.liquify_history_depth(), Some((3, 0)));
         assert_eq!(direct.liquify.as_ref().unwrap().field, field);
+    }
+
+    #[test]
+    fn direct_liquify_jump_preserves_retained_state_and_rejects_pending_strokes() {
+        let mut doc = seed();
+        let retained = doc.liquify.as_ref().unwrap().clone();
+        let revision = doc.revision();
+        let pixels = image(&doc);
+        assert!(!doc.select_liquify_history(3).unwrap());
+        assert!(matches!(
+            doc.select_liquify_history(4),
+            Err(Error::InvalidArgument(_))
+        ));
+        assert_eq!(doc.revision(), revision);
+        assert!(Arc::ptr_eq(
+            &retained.history,
+            &doc.liquify.as_ref().unwrap().history
+        ));
+        doc.begin_liquify_stroke().unwrap();
+        assert!(matches!(doc.select_liquify_history(0), Err(Error::Busy)));
+        assert!(doc.liquify.as_ref().unwrap().checkpoint.is_some());
+        assert_eq!(doc.revision(), revision);
+        assert_eq!(image(&doc), pixels);
+        assert!(!doc.end_liquify_stroke().unwrap());
+        doc.select_liquify_history(0).unwrap();
+        assert_eq!(retained.history.undo.len(), 3);
+        assert!(retained.history.redo.is_empty());
+        assert!(!Arc::ptr_eq(
+            &retained.history,
+            &doc.liquify.as_ref().unwrap().history
+        ));
+        doc.select_liquify_history(3).unwrap();
+        assert_eq!(image(&doc), pixels);
+        for (key, value) in &retained.field {
+            assert!(Arc::ptr_eq(
+                value,
+                &doc.liquify.as_ref().unwrap().field[key]
+            ));
+        }
+        assert_eq!(doc.revision(), revision + 2);
     }
 }

@@ -27,6 +27,24 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void directLiquifyHistoryJumpRestoresTheDisplayedResult() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("liquify-jump.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newTransparentDocument(128,96);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
+        client.setBrushRadius(10);client.setBrushColor(Qt::red);QVERIFY(client.beginStroke({{42,48},1}));client.strokeTo({{65,48},1});client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
+        QQuickWindow window;window.resize(256,192);window.setColor(Qt::white);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({256,192});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());
+        const bool gpu=canvas->gpuDisplay();
+        const auto settled=[&]{return gpu ? client.residentPreview() && client.residentPreview()->revision>=client.revision() : client.frameRevision()>=client.revision();};
+        const auto capture=[&]{auto result=canvas->grabToImage();if(!result || !QTest::qWaitFor([&]{return !result->image().isNull();},5000))return QImage{};return result->image();};
+        QTRY_VERIFY(settled());const auto identity=capture();QVERIFY(!identity.isNull());client.setLiquifySize(48);client.setLiquifyStrength(100);client.setLiquifyDensity(60);
+        for(int i=0;i<3;++i){QVERIFY(client.beginStroke({{50.+i*3,48},1}));client.strokeTo({{58.+i*3,50},1});client.endStroke();QTRY_COMPARE(client.undoDepth(),i+1);QTRY_VERIFY(!client.liquifyBusy());}
+        QTRY_VERIFY(settled());const auto warped=capture();QVERIFY(!warped.isNull());QVERIFY(warped!=identity);
+        for(int target:{0,3,1,2,0,3}) {
+            const auto revision=client.revision();QVERIFY(client.selectHistory(target));QTRY_COMPARE(client.undoDepth(),target);QTRY_VERIFY(!client.liquifyBusy());QTRY_VERIFY(settled());QCOMPARE(client.revision(),revision+1);QCOMPARE(client.redoDepth(),3-target);
+            if(target==0 || target==3)QCOMPARE(capture(),target==0 ? identity : warped);
+        }
+        QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());QCOMPARE(client.undoDepth(),1);QVERIFY(client.lastError().isEmpty());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void selectedLiquifyKeepsTheMeshPathAndProtectsUnselectedPixels_data() {
         QTest::addColumn<int>("feather");QTest::addColumn<int>("context");QTest::newRow("hard-lasso")<<0<<0;QTest::newRow("feathered-lasso")<<8<<0;QTest::newRow("nested-normal-lasso")<<8<<1;QTest::newRow("nested-pass-lasso")<<8<<2;QTest::newRow("ancestor-mask-fallback")<<8<<3;
     }

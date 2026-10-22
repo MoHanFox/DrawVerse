@@ -68,3 +68,12 @@ cargo fmt --all -- --check 与 cargo clippy --workspace --all-targets --locked -
 - 严格Clippy（paint-core/paint-ffi所有目标）、fmt与生成头检查通过。日志：`artifacts/liquify-field-references-{before,after,core-final,public,native,clippy-final,header}.txt`。首次基准命令误构建无关全部集成目标，确认本轮Cargo/子进程身份后停止，改为`--lib`完成基准，未将中断算作通过。
 - 完整Release通过并部署到`build/bin/Release/drawverse.exe`；软件实际窗口：2000px局部/全局历史1、三scope直接跳转1、62QML源码/字节码1、2048×1536羽化套索液化1均通过。D3D11同四项加2000/15000px常驻网格显示1通过，含确认/取消、选区保护与最终像素。四ABI顺序通过；日志为`liquify-field-references-{release,ui-software,ui-d3d11,workflow-software,workflow-d3d11,selected-software,selected-d3d11,abi}.txt`。
 - H1字段引用已接入，超预算冷记录仍需校验IO；未宣称所有长历史跳转或8K/16K整图瞬时完成。T2复杂栈变换、首次资源P1及实体手绘板持续输入仍待。
+
+## 2026-10-22 多步液化历史的单份候选
+
+直接选择会话历史时只建立一份字段表/图层候选，按顺序应用每条变化且完整校验，成功后一次移动undo/redo游标并增加修订；逐步撤销和直接跳转共用LocalStep::restore。去除逐条完整容器复制与中间dirty更新，失败丢弃候选，既有状态和保留快照不动。
+
+Release显式手工负载：2048字段键、32步、每步只改变一块，初始零字段共享同一数组以隔离容器开销（不是64MiB独立数组内存基准）。五轮六跳中位数5.146→0.198ms；超预算磁盘后备318.435→316.096ms，未见实质IO改善，不宣称磁盘加速。目标序列0/32/1/31/0/32累计跨188步，验证最终字段/未改数组身份与redo深度；只测核心字段恢复，不是UI延迟。
+- 最终核心液化24通过/3手工项忽略、公开11通过/1忽略、原生1通过，严格Clippy/fmt、生成头、完整Release与四ABI通过。新增保留会话快照/无变化跳转/非法深度/未结束笔触拒绝用例；既有中途损坏回滚及逐步/直接像素和字段对照通过。
+- 新Qt用例`directLiquifyHistoryJumpRestoresTheDisplayedResult`在三步液化内跳0/3/1/2/0/3，检查单修订/redo深度，并直接抓取CanvasItem，原始和最终画面逐像素一致。软件四项（显示跳转、羽化套索、2000px局部/全局历史、三scope跳转）与D3D11同四项加2000/15000px常驻显示通过。日志`artifacts/liquify-history-candidate-{before,after,core-final,public,native,clippy,release,test-build,transform-software,transform-d3d11,ui-software,ui-d3d11,workflow-software,workflow-d3d11,abi}.txt`。
+- 标准产物`build/bin/Release/drawverse.exe`更新；ABI1.79/state45保持，无新增GPU算子/缓存/预算。H1真实冷盘IO、T2复杂目标、P1首次资源与实体输入保持待验。
