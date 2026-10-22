@@ -311,6 +311,7 @@ public:
 signals:
     void taskProgress(QVariantMap values);
     void residentPreviewReady(ResidentPreviewPtr preview);
+    void movePreparationReady(quint64 generation,quint64 revision,quint64 layer,quint64 request,ResidentPreviewAssetsPtr assets);
     void wetActionReady(bool success,QString error);
     void brushSourceReady(QString identity,quint64 token,QByteArray record,QString error);
     void brushOutlineReady(QString identity,QString path,QString error);
@@ -534,6 +535,7 @@ public:
                 }
             }
         }
+        pollMovePreparation();
         pollResidentPreview();
         const int pollInterval=m_residentPreview?8:16;
         if(m_timer->interval()!=pollInterval)m_timer->setInterval(pollInterval);
@@ -558,6 +560,52 @@ public:
             emit pixels(static_cast<int>(view), image, QRectF(frame.x, frame.y, frame.width, frame.height),
                 frame.document_generation, frame.revision, frame.request_id);
         }
+    }
+    void pollMovePreparation() {
+        auto info=dto<PaintMovePreparationInfo>();
+        const auto status=paint_session_move_preparation_info(m_core,m_session,&info);
+        if(status==PAINT_NOT_FOUND || status==PAINT_BUSY)return;
+        if(!check(status) || !(info.flags&PAINT_MOVE_PREPARATION_READY))return;
+        const bool sourceReady=(info.flags&PAINT_MOVE_PREPARATION_SOURCE)!=0 && info.source_id!=0;
+        if(m_movePreparationPublishedRequest==info.request_id &&
+           m_movePreparationPublishedSource==info.source_id)return;
+        ResidentPreviewAssetsPtr assets;
+        if(sourceReady) {
+            uint64_t required=0;
+            auto read=paint_session_read_move_preparation(m_core,m_session,info.document_generation,
+                info.request_id,info.source_id,1,nullptr,0,&required);
+            if(read==PAINT_BUSY || read==PAINT_NOT_FOUND)return;
+            if(read!=PAINT_BUFFER_TOO_SMALL || required>64ull*1024*1024) {
+                check(read);return;
+            }
+            QByteArray bytes(static_cast<qsizetype>(required),'\0');
+            read=paint_session_read_move_preparation(m_core,m_session,info.document_generation,
+                info.request_id,info.source_id,1,reinterpret_cast<uint8_t*>(bytes.data()),required,&required);
+            if(read==PAINT_BUSY || read==PAINT_NOT_FOUND)return;
+            if(!check(read))return;
+            auto decoded=std::make_shared<ResidentPreviewAssets>();
+            decoded->sourceId=info.source_id;
+            if(bytes.size()<24)return;
+            qsizetype offset=24;
+            for(int i=0;i<3;++i){
+                const auto w=qFromLittleEndian<quint32>(bytes.constData()+i*8);
+                const auto h=qFromLittleEndian<quint32>(bytes.constData()+i*8+4);
+                const quint64 size=quint64(w)*h*4;
+                if(!w || !h || w>2048 || h>2048 || size>quint64(bytes.size()-offset))return;
+                decoded->images[size_t(i)]=QImage(reinterpret_cast<const uchar*>(bytes.constData()+offset),
+                    int(w),int(h),int(w*4),QImage::Format_RGBA8888_Premultiplied).copy();
+                if(decoded->images[size_t(i)].isNull())return;
+                offset+=qsizetype(size);
+            }
+            if(offset!=bytes.size())return;
+            assets=std::move(decoded);
+            m_movePreparation=assets;
+        }else{
+            m_movePreparation.reset();
+        }
+        m_movePreparationPublishedRequest=info.request_id;
+        m_movePreparationPublishedSource=info.source_id;
+        emit movePreparationReady(info.document_generation,info.revision,info.layer_id,info.request_id,assets);
     }
     void pollResidentPreview() {
         if(m_connection->residentPreviewPending.load())return;
@@ -599,7 +647,11 @@ public:
             static_cast<ResidentPreviewAssets&>(*next)=*m_residentPreview->prepared;
             next->prepared=std::make_shared<ResidentPreviewAssets>(*m_residentPreview);
         }else {
-            QByteArray assets;if(!read(1,assets) || !decodeAssets(assets,*next))return;
+            if(m_movePreparation && m_movePreparation->sourceId==next->sourceId) {
+                static_cast<ResidentPreviewAssets&>(*next)=*m_movePreparation;
+            }else{
+                QByteArray assets;if(!read(1,assets) || !decodeAssets(assets,*next))return;
+            }
             if(info.focus&PAINT_RESIDENT_PREVIEW_SELECTED){
                 QByteArray mask;if(!read(2,mask) || mask.size()<24)return;
                 const auto w=qFromLittleEndian<quint32>(mask.constData()),h=qFromLittleEndian<quint32>(mask.constData()+4);
@@ -857,6 +909,8 @@ public:
     PaintSession *m_session = nullptr;
     quint64 m_layerCopySequence=0;
     ResidentPreviewPtr m_residentPreview;
+    ResidentPreviewAssetsPtr m_movePreparation;
+    quint64 m_movePreparationPublishedRequest=0,m_movePreparationPublishedSource=0;
     quint64 m_publication = 0, m_completed = 0, m_errorSequence = 0, m_frames[2]{};
     quint64 m_strokeCommitCursor=0;
     quint64 m_deliveredFile = 0;
@@ -1098,6 +1152,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         }
         if (changedLayers || activeChanged) pruneSelectedLayers();
         if (wasLiquify!=m_liquifyActive || m_transformActive || wasTransform!=m_transformActive || wasTransformBusy!=transformBusy() || wasLiquifyBusy!=liquifyBusy() || propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
+        requestLayerMovePreparation();
     });
     connect(m_worker,&BackendWorker::thumbnailReady,this,[this](quint64 generation,quint64 revision,quint64 id,const QString &image) {
         if(m_closing || generation!=m_generation || revision!=m_revision)return;
@@ -1113,6 +1168,15 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         m_connection->residentPreviewPending.store(false);
         if(m_closing || m_pendingNew || preview->generation!=m_generation || preview->revision<m_residentPreviewFloor || (!m_liquifyActive && !m_layerMoveActive && !m_transformActive))return;
         m_residentPreview=std::move(preview);emit frameChanged();
+    });
+    connect(m_worker,&BackendWorker::movePreparationReady,this,[this](quint64 generation,quint64 revision,quint64 layer,quint64 request,ResidentPreviewAssetsPtr assets){
+        if(m_closing || !m_moveTool || m_layerMoveActive || generation!=m_generation ||
+           revision!=m_revision || request!=m_movePreparationRequest ||
+           (m_movePreparationIds.size()==1 && layer!=m_active))return;
+        m_movePreparationPendingRequest=0;
+        m_movePreparation=std::move(assets);
+        m_movePreparationCompleted=true;
+        emit movePreparationChanged();
     });
     connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request) {
         m_connection->framePending[view].store(false);
@@ -1284,6 +1348,72 @@ void PaintCoreClient::ensureOverview() {
     const auto scale=std::min(1.,512./std::max(document.width(),document.height()));
     requestViewport(1,document,{std::max(1,qCeil(document.width()*scale)),std::max(1,qCeil(document.height()*scale))});
 }
+qreal PaintCoreClient::currentMovePreparationScale() const {
+    qreal scale=1;
+    bool found=false;
+    for(int view=0;view<2;++view){
+        const auto &region=m_requestedRegions[view];
+        const auto pixels=m_requestedPixels[view];
+        if(!m_viewEnabled[view] || region.isEmpty() || pixels.isEmpty())continue;
+        const qreal density=std::max(qreal(pixels.width())/region.width(),qreal(pixels.height())/region.height());
+        if(std::isfinite(density) && density>0){scale=found?std::max(scale,density):density;found=true;}
+    }
+    return std::min<qreal>(scale,16);
+}
+QVector<quint64> PaintCoreClient::currentMoveTargets() const {
+    if(m_selectedLayers.size()>1)return m_selectedLayers.toVector();
+    return m_active?QVector<quint64>{m_active}:QVector<quint64>{};
+}
+void PaintCoreClient::clearLayerMovePreparation() {
+    if(!m_movePreparationRequest && !m_movePreparation && !m_movePreparationPendingRequest)return;
+    ++m_movePreparationRequest;
+    if(!m_movePreparationRequest)++m_movePreparationRequest;
+    m_movePreparation.reset();
+    m_movePreparationPendingRequest=0;
+    m_movePreparationCompleted=false;
+    emit movePreparationChanged();
+    uint64_t sequence=0;
+    QMutexLocker lock(&m_connection->mutex);
+    if(m_connection->session)paint_session_clear_layer_move_preparation(m_connection->core,m_connection->session,&sequence);
+}
+void PaintCoreClient::requestLayerMovePreparation() {
+    if(m_layerMoveActive)return;
+    if(!m_ready || m_closing || m_pendingNew || !m_moveTool ||
+       m_liquifyActive || m_transformActive || m_drawing || m_fileBusy || !m_active){
+        clearLayerMovePreparation();
+        return;
+    }
+    const auto scale=currentMovePreparationScale();
+    const auto targets=currentMoveTargets();
+    const bool same=m_movePreparationGeneration==m_generation &&
+        m_movePreparationRevision==m_revision && m_movePreparationLayer==m_active &&
+        m_movePreparationIds==targets && qFuzzyCompare(m_movePreparationScale,scale);
+    if(same && (m_movePreparationPendingRequest || m_movePreparationCompleted))return;
+    ++m_movePreparationRequest;
+    if(!m_movePreparationRequest)++m_movePreparationRequest;
+    m_movePreparation.reset();
+    m_movePreparationPendingRequest=m_movePreparationRequest;
+    m_movePreparationCompleted=false;
+    m_movePreparationGeneration=m_generation;
+    m_movePreparationRevision=m_revision;
+    m_movePreparationLayer=m_active;
+    m_movePreparationIds=targets;
+    m_movePreparationScale=scale;
+    emit movePreparationChanged();
+    uint64_t sequence=0;
+    PaintStatus status;
+    {
+        QMutexLocker lock(&m_connection->mutex);
+        if(!m_connection->session){
+            m_movePreparationPendingRequest=0;
+            return;
+        }
+        const std::vector<uint64_t> ids(m_movePreparationIds.cbegin(),m_movePreparationIds.cend());
+        status=paint_session_prepare_layer_move(m_connection->core,m_connection->session,
+            ids.data(),static_cast<uint32_t>(ids.size()),scale,m_movePreparationRequest,&sequence);
+    }
+    if(status!=PAINT_OK)m_movePreparationPendingRequest=0;
+}
 void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, bool enabled) {
     if (!m_ready || m_closing || view < 0 || view > 1) return;
     if (enabled) {
@@ -1310,6 +1440,7 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
     if (status == PAINT_OK) {
         m_requests[view] = request; m_requestedRegions[view] = region; m_requestedPixels[view] = pixels; m_viewEnabled[view] = enabled;
         if (!enabled) { m_frames[view] = {}; m_regions[view] = {}; emit frameChanged(); }
+        requestLayerMovePreparation();
     } else if (!error.isEmpty()) showError(error);
 }
 void PaintCoreClient::showError(const QString &error) { m_error = error; emit errorChanged(); }
@@ -1352,6 +1483,7 @@ void PaintCoreClient::setBrushSpacing(qreal s) {m_brushLibrary->setSpacing(s);}
 void PaintCoreClient::setEraser(bool e) {
     if(deferTransformAction([this ,e]{setEraser(e);}))return;
     if(m_drawing || m_liquifyActive || m_transformActive || (e==m_eraser && !m_moveTool && !m_selectionTool && !m_eyedropperTool && !m_bucketTool && !m_smudgeTool && m_brushLibrary->toolContext()==(e?1:0))) return;
+    if(m_moveTool)clearLayerMovePreparation();
     m_moveTool=false;m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;
     m_eraser=e; m_brushLibrary->setEraser(e); emit brushChanged();
 }
@@ -1360,6 +1492,7 @@ void PaintCoreClient::setMoveTool(bool enabled) {
     if(m_drawing || m_liquifyActive || m_transformActive || enabled==m_moveTool) return;
     if(enabled){m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;m_eraser=false;}
     m_moveTool=enabled; emit brushChanged();
+    if(enabled)requestLayerMovePreparation();else clearLayerMovePreparation();
 }
 void PaintCoreClient::setSelectionTool(int tool) {
     if(deferTransformAction([this,tool]{setSelectionTool(tool);}))return;
@@ -1367,6 +1500,7 @@ void PaintCoreClient::setSelectionTool(int tool) {
     m_selectionTool=tool;
     if(tool>0) {
         if(tool<=2)m_marqueeShape=tool;else if(tool<=4)m_lassoShape=tool;
+        if(m_moveTool)clearLayerMovePreparation();
         m_moveTool=false;m_eyedropperTool=false;m_bucketTool=false;m_smudgeTool=false;m_eraser=false;
     }
     emit brushChanged();
@@ -1427,7 +1561,7 @@ void PaintCoreClient::activateEyedropper() {if(deferTransformAction([this]{activ
 
 void PaintCoreClient::setSamplingRingEnabled(bool enabled) {if(enabled==m_samplingRingEnabled)return;m_samplingRingEnabled=enabled;emit samplingRingEnabledChanged();}
 void PaintCoreClient::activateBucket() {if(deferTransformAction([this]{activateBucket();}))return;if(m_drawing || m_liquifyActive)return;activateBrush();m_bucketTool=true;emit brushChanged();}
-void PaintCoreClient::activateSmudge() {if(deferTransformAction([this]{activateSmudge();}))return;if(m_drawing || m_liquifyActive || m_transformActive)return;m_moveTool=false;m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_eraser=false;m_smudgeTool=true;m_brushLibrary->setToolContext(2);emit brushChanged();}
+void PaintCoreClient::activateSmudge() {if(deferTransformAction([this]{activateSmudge();}))return;if(m_drawing || m_liquifyActive || m_transformActive)return;if(m_moveTool)clearLayerMovePreparation();m_moveTool=false;m_selectionTool=0;m_eyedropperTool=false;m_bucketTool=false;m_eraser=false;m_smudgeTool=true;m_brushLibrary->setToolContext(2);emit brushChanged();}
 void PaintCoreClient::setSmudgeStrength(qreal value) {if(!std::isfinite(value) || value<0 || value>1 || value==m_smudgeStrength)return;m_smudgeStrength=value;emit smudgeOptionsChanged();}
 void PaintCoreClient::setSmudgePressure(bool value) {if(value==m_smudgePressure)return;m_smudgePressure=value;emit smudgeOptionsChanged();}
 void PaintCoreClient::setSmudgeAllLayers(bool value) {if(value==m_smudgeAllLayers)return;m_smudgeAllLayers=value;emit smudgeOptionsChanged();}
@@ -1767,11 +1901,16 @@ void PaintCoreClient::releaseLayerPreview(quint64 id) {
 bool PaintCoreClient::beginLayerMove(QPointF position,bool pick) {
     if(!m_ready || m_closing || m_fileBusy || m_drawing || m_liquifyActive || m_transformActive || layerEditBusy())return false;
     if(pick && (!std::isfinite(position.x()) || !std::isfinite(position.y()) || position.x()<0 || position.y()<0 || position.x()>=m_width || position.y()>=m_height))return false;
-    const bool resident=m_residentGpuPreviewAvailable;
-    const auto kind=pick?(resident?PAINT_LAYER_MOVE_PICK_DEFERRED:PAINT_LAYER_MOVE_PICK):(resident?PAINT_LAYER_MOVE_BEGIN_DEFERRED:PAINT_LAYER_MOVE_BEGIN);
+    const auto targets=currentMoveTargets();
+    const bool prepared=m_residentGpuPreviewAvailable && !pick && m_movePreparationCompleted &&
+        m_movePreparation && m_movePreparationGeneration==m_generation &&
+        m_movePreparationRevision==m_revision &&
+        (m_movePreparationIds.size()>1 || m_movePreparationLayer==m_active) &&
+        m_movePreparationIds==targets;
+    const auto kind=pick?(prepared?PAINT_LAYER_MOVE_PICK_DEFERRED:PAINT_LAYER_MOVE_PICK):(prepared?PAINT_LAYER_MOVE_BEGIN_DEFERRED:PAINT_LAYER_MOVE_BEGIN);
     uint64_t sequence=0;
     PaintStatus status;QString error;
-    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(!pick && m_selectedLayers.size()>1){QVector<uint64_t> ids;for(auto id:m_selectedLayers)ids.append(id);status=paint_session_begin_layer_moves(m_connection->core,m_connection->session,ids.data(),uint32_t(ids.size()),resident?1:0,&sequence);}else status=paint_session_layer_move(m_connection->core,m_connection->session,kind,m_active,pick?int(position.x()):0,pick?int(position.y()):0,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(!pick && m_selectedLayers.size()>1){QVector<uint64_t> ids;for(auto id:m_selectedLayers)ids.append(id);status=paint_session_begin_layer_moves(m_connection->core,m_connection->session,ids.data(),uint32_t(ids.size()),prepared?1:0,&sequence);}else status=paint_session_layer_move(m_connection->core,m_connection->session,kind,m_active,pick?int(position.x()):0,pick?int(position.y()):0,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){showError(error);return false;}
     m_layerMoveSequence=sequence;m_layerMoveDelta={};m_layerMoveDirty=false;m_layerMoveFinish=false;
     m_layerMoveActive=true;m_layerMoveStarting=true;m_layerMoveClosing=false;

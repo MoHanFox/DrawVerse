@@ -45,6 +45,12 @@ pub(crate) enum Operation {
     Liquify(u32, Option<paint_core::LiquifyDab>),
     LayerMove(u32, u64, i32, i32),
     LayerMoves(Vec<u64>, bool),
+    PrepareLayerMove {
+        ids: Vec<u64>,
+        request_id: u64,
+        display_scale: f64,
+    },
+    ClearLayerMovePreparation,
     CopyLayers(Vec<u64>),
     CopySelectedPixels(Vec<u64>),
     ClearSelectedPixels(Vec<u64>),
@@ -137,15 +143,26 @@ struct TaskProgressState {
     status: PaintStatus,
     progress: Arc<paint_core::ComputationProgress>,
 }
+pub(crate) struct MovePreparation {
+    pub request_id: u64,
+    pub ids: Vec<u64>,
+    pub generation: u64,
+    pub revision: u64,
+    pub source: Option<Arc<paint_core::ResidentPreviewSource>>,
+    pub assets: Option<Arc<Vec<u8>>>,
+}
 struct Shared {
     task_progress: Mutex<Option<TaskProgressState>>,
     preview_selection: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     // Identity and deformed selection assets, bounded to one active session.
     preview_assets: Mutex<Vec<(u64, Arc<Vec<u8>>)>>,
+    move_preparation: Mutex<Option<Arc<MovePreparation>>>,
+    move_preparation_request: AtomicU64,
     publication: Mutex<Arc<Publication>>,
     clipboard: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     views: Mutex<[ViewSlot; 4]>,
     generation: AtomicU64,
+    revision: AtomicU64,
     floor: AtomicU64,
 }
 struct Ingress {
@@ -232,7 +249,10 @@ impl Session {
             task_progress: Mutex::new(None),
             preview_selection: Mutex::new(None),
             preview_assets: Mutex::new(Vec::new()),
+            move_preparation: Mutex::new(None),
+            move_preparation_request: AtomicU64::new(0),
             generation: AtomicU64::new(1),
+            revision: AtomicU64::new(1),
             floor: AtomicU64::new(0),
             publication: Mutex::new(Arc::new(initial)),
             clipboard: Mutex::new(None),
@@ -452,10 +472,72 @@ impl Session {
                 .unwrap_or_else(|e| e.into_inner()),
         )
     }
+    pub fn prepare_layer_move(
+        &self,
+        ids: Vec<u64>,
+        request_id: u64,
+        display_scale: f64,
+    ) -> ApiResult<u64> {
+        self.submit(Operation::PrepareLayerMove {
+            ids,
+            request_id,
+            display_scale,
+        })
+    }
+    pub fn clear_layer_move_preparation(&self) -> ApiResult<u64> {
+        self.submit(Operation::ClearLayerMovePreparation)
+    }
+    pub fn move_preparation(&self) -> Option<Arc<MovePreparation>> {
+        let preparation = self
+            .shared
+            .move_preparation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()?;
+        (preparation.generation == self.shared.generation.load(Ordering::Acquire)
+            && preparation.revision == self.shared.revision.load(Ordering::Acquire))
+        .then_some(preparation)
+    }
+    pub fn move_preparation_assets(
+        &self,
+        generation: u64,
+        request_id: u64,
+        source_id: u64,
+    ) -> ApiResult<Arc<Vec<u8>>> {
+        let preparation = self
+            .move_preparation()
+            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "move preparation is stale"))?;
+        if preparation.generation != generation
+            || preparation.request_id != request_id
+            || preparation.source.as_ref().map(|source| source.id) != Some(source_id)
+        {
+            return Err(ApiError::new(PAINT_BUSY, "move preparation replaced"));
+        }
+        preparation
+            .assets
+            .clone()
+            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "move source needs the pixel fallback"))
+    }
     pub fn resident_assets(
         &self,
         preview: &paint_core::ResidentPreview,
     ) -> ApiResult<Arc<Vec<u8>>> {
+        if let Some(bytes) = self
+            .shared
+            .move_preparation
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .as_ref()
+            .filter(|preparation| {
+                preparation
+                    .source
+                    .as_ref()
+                    .is_some_and(|source| source.id == preview.source.id)
+            })
+            .and_then(|preparation| preparation.assets.clone())
+        {
+            return Ok(bytes);
+        }
         if let Some((_, bytes)) = self
             .shared
             .preview_assets
@@ -863,6 +945,123 @@ fn publish(
     }
 }
 impl Engine {
+    fn prepare_layer_move(
+        &mut self,
+        ids: Vec<u64>,
+        request_id: u64,
+        display_scale: f64,
+    ) -> ApiResult<()> {
+        if ids.is_empty()
+            || ids.len() > 4096
+            || ids.contains(&0)
+            || ids
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != ids.len()
+            || request_id == 0
+            || !display_scale.is_finite()
+            || !(0. < display_scale && display_scale <= 16.)
+        {
+            return Err(ApiError::invalid("move preparation arguments"));
+        }
+        self.shared
+            .move_preparation_request
+            .store(request_id, Ordering::Release);
+        self.shared
+            .move_preparation
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .take();
+        if self.files.running()
+            || self.document.stroke_active()
+            || self.document.layer_move_active()
+            || self.document.transform_active()
+            || self.document.liquify_active()
+        {
+            return Err(ApiError::new(PAINT_BUSY, "document is editing"));
+        }
+        let generation = self.generation;
+        let revision = self.document.revision();
+        self.shared.revision.store(revision, Ordering::Release);
+        let source = self.document.prepare_layer_move_source(&ids)?;
+        let Some(source) = source else {
+            *self
+                .shared
+                .move_preparation
+                .lock()
+                .map_err(|_| ApiError::internal())? = Some(Arc::new(MovePreparation {
+                request_id,
+                ids,
+                generation,
+                revision,
+                source: None,
+                assets: None,
+            }));
+            return Ok(());
+        };
+        let shared = Arc::clone(&self.shared);
+        self.pool
+            .submit(Priority::Background, move |cancel| {
+                let assets = crate::liquify_api::move_preview_assets_cancellable(
+                    &source,
+                    display_scale,
+                    &cancel,
+                )
+                .ok()
+                .map(Arc::new);
+                let mut preparation = shared
+                    .move_preparation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if shared.move_preparation_request.load(Ordering::Acquire) != request_id
+                    || shared.generation.load(Ordering::Acquire) != generation
+                    || shared.revision.load(Ordering::Acquire) != revision
+                {
+                    return Err(TaskError::Cancelled);
+                }
+                *preparation = Some(Arc::new(MovePreparation {
+                    request_id,
+                    ids,
+                    generation,
+                    revision,
+                    source: assets.as_ref().map(|_| source),
+                    assets,
+                }));
+                Ok(())
+            })
+            .map_err(|error| ApiError::new(PAINT_BUSY, error.to_string()))?;
+        Ok(())
+    }
+    fn clear_layer_move_preparation(&self) -> ApiResult<()> {
+        self.shared
+            .move_preparation_request
+            .fetch_add(1, Ordering::AcqRel);
+        self.shared
+            .move_preparation
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .take();
+        Ok(())
+    }
+    fn prepared_layer_move_source(
+        &self,
+        ids: &[u64],
+        revision: u64,
+    ) -> Option<Arc<paint_core::ResidentPreviewSource>> {
+        let preparation = self
+            .shared
+            .move_preparation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()?;
+        (preparation.generation == self.generation
+            && preparation.revision == revision
+            && preparation.ids == ids)
+            .then_some(preparation.source.clone())
+            .flatten()
+    }
     fn prepare_transform_assets(&mut self) -> ApiResult<()> {
         let Some(source) = self.document.transform_preparation_source() else {
             return Ok(());
@@ -1098,6 +1297,9 @@ impl Engine {
         {
             self.floor = self.document.revision();
         }
+        self.shared
+            .revision
+            .store(self.document.revision(), Ordering::Release);
         self.shared.floor.store(self.floor, Ordering::Release);
         if pending {
             self.active_input = Some(input_paging::Active {
@@ -1130,7 +1332,14 @@ impl Engine {
         {
             return Err(paint_core::Error::Busy.into());
         }
-        if self.document.layer_move_active() && !matches!(operation, Operation::LayerMove(..)) {
+        if self.document.layer_move_active()
+            && !matches!(
+                operation,
+                Operation::LayerMove(..)
+                    | Operation::PrepareLayerMove { .. }
+                    | Operation::ClearLayerMovePreparation
+            )
+        {
             return Err(paint_core::Error::Busy.into());
         }
         match operation {
@@ -1138,7 +1347,17 @@ impl Engine {
                 if self.files.running() {
                     return Err(paint_core::Error::Busy.into());
                 }
-                self.document.begin_layer_moves(&ids, deferred)?;
+                let revision = self.document.revision();
+                let source = if deferred {
+                    self.prepared_layer_move_source(&ids, revision)
+                } else {
+                    None
+                };
+                if source.is_some() {
+                    self.document.begin_layer_moves_with_source(&ids, source)?;
+                } else {
+                    self.document.begin_layer_moves(&ids, deferred)?;
+                }
             }
             Operation::LayerMove(kind, id, x, y) => match kind {
                 PAINT_LAYER_MOVE_BEGIN
@@ -1154,11 +1373,24 @@ impl Engine {
                         Some(id)
                     };
                     if let Some(target) = target {
-                        self.document.begin_layer_move(
-                            target,
-                            kind == PAINT_LAYER_MOVE_BEGIN_DEFERRED
-                                || kind == PAINT_LAYER_MOVE_PICK_DEFERRED,
-                        )?;
+                        let revision = self.document.revision();
+                        let source = if kind == PAINT_LAYER_MOVE_BEGIN_DEFERRED
+                            || kind == PAINT_LAYER_MOVE_PICK_DEFERRED
+                        {
+                            self.prepared_layer_move_source(&[target], revision)
+                        } else {
+                            None
+                        };
+                        if source.is_some() {
+                            self.document
+                                .begin_layer_moves_with_source(&[target], source)?;
+                        } else {
+                            self.document.begin_layer_moves(
+                                &[target],
+                                kind == PAINT_LAYER_MOVE_BEGIN_DEFERRED
+                                    || kind == PAINT_LAYER_MOVE_PICK_DEFERRED,
+                            )?;
+                        }
                     }
                 }
                 PAINT_LAYER_MOVE_UPDATE => self.document.update_layer_move(x, y)?,
@@ -1169,6 +1401,12 @@ impl Engine {
                 PAINT_LAYER_MOVE_CANCEL => self.document.cancel_layer_move()?,
                 _ => return Err(ApiError::invalid("layer move kind")),
             },
+            Operation::PrepareLayerMove {
+                ids,
+                request_id,
+                display_scale,
+            } => self.prepare_layer_move(ids, request_id, display_scale)?,
+            Operation::ClearLayerMovePreparation => self.clear_layer_move_preparation()?,
             Operation::TransformLayers(ids, deferred) => {
                 if self.files.running() {
                     return Err(paint_core::Error::Busy.into());
@@ -1385,7 +1623,18 @@ impl Engine {
                 self.shared
                     .generation
                     .store(self.generation, Ordering::Release);
+                self.shared
+                    .revision
+                    .store(self.document.revision(), Ordering::Release);
                 self.shared.floor.store(0, Ordering::Release);
+                self.shared
+                    .move_preparation_request
+                    .fetch_add(1, Ordering::AcqRel);
+                self.shared
+                    .move_preparation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
                 self.modified = false;
                 self.aborted = false;
                 self.floor = 0;
@@ -1606,7 +1855,15 @@ impl Engine {
                 self.shared
                     .generation
                     .store(self.generation, Ordering::Release);
+                self.shared
+                    .revision
+                    .store(self.document.revision(), Ordering::Release);
                 self.shared.floor.store(0, Ordering::Release);
+                self.shared
+                    .move_preparation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
                 self.default_view();
             }
             if clear_modified {

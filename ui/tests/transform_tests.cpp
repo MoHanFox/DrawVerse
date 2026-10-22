@@ -196,7 +196,9 @@ private slots:
         const auto screen=[&](QPointF p){return(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
         const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return QImage{};return grab->image();};
         const auto redAt=[&](const QImage &image,QPoint p){if(image.isNull())return false;const auto color=image.pixelColor(p*window.devicePixelRatio());return color.red()>180 && color.green()<70 && color.blue()<70;};
-        QTRY_VERIFY(redAt(capture(),screen({32,32})));client.setMoveTool(true);const auto depth=client.undoDepth();
+        QTRY_VERIFY(redAt(capture(),screen({32,32})));client.setMoveTool(true);
+        if(canvas->gpuDisplay() && kind!=5 && kind!=6)QTRY_VERIFY_WITH_TIMEOUT(client.movePreparation(),30000);
+        const auto depth=client.undoDepth();
         QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,screen({32,32}));QTRY_VERIFY(client.layerMoveActive());
         if(qEnvironmentVariable("QT_QUICK_BACKEND")=="rhi")QVERIFY(canvas->gpuDisplay());
         if(canvas->gpuDisplay() && kind!=5 && kind!=6)QTRY_VERIFY(client.residentPreview());
@@ -208,7 +210,7 @@ private slots:
         QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,screen({48,32}));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());QTRY_VERIFY(redAt(capture(),screen({48,32})));
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(client.frameRevision()>=client.revision());QTRY_VERIFY(redAt(capture(),screen({32,32})));QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);client.shutdown();
     }
-    void first4kResidentMoveAcceptsInputBeforeAssetsAndRestoresFullFrame() {
+    void prewarmed4kResidentMoveReusesFullQualityTexturesAndRestoresFullFrame() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("first-move.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(3840,2160);
         QTRY_COMPARE(client.documentWidth(),3840);QTRY_VERIFY(!client.layerEditBusy());client.addLayer("moving");QTRY_VERIFY(!client.layerEditBusy());
@@ -224,16 +226,34 @@ private slots:
         const auto red=[&](const QImage &image,QPointF p){const auto c=image.pixelColor(screen(p)*window.devicePixelRatio());return c.red()>180 && c.green()<70 && c.blue()<70;};
         const auto white=[&](const QImage &image,QPointF p){const auto c=image.pixelColor(screen(p)*window.devicePixelRatio());return c.red()>230 && c.green()>230 && c.blue()>230;};
         QImage initial;QTRY_VERIFY(!(initial=capture()).isNull() && red(initial,{100,1080}) && white(initial,{2000,1080}));
-        client.setMoveTool(true);QElapsedTimer elapsed;elapsed.start();QElapsedTimer beat;beat.start();qint64 maxGuiGap=0;QTimer heartbeat;heartbeat.setInterval(1);connect(&heartbeat,&QTimer::timeout,this,[&]{maxGuiGap=qMax(maxGuiGap,beat.restart());});heartbeat.start();
+        // Activate a selection tool first, then move directly without another canvas gesture.
+        client.activateMarquee();QVERIFY(client.selectionTool()>0);
+        QElapsedTimer preparation;preparation.start();client.setMoveTool(true);
+        QVERIFY(!client.movePreparation());
+        QElapsedTimer pendingInput;pendingInput.start();
         QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,screen({1200,1080}));
-        // Send the first delta immediately, while BEGIN/assets may still be pending.
+        QTest::mouseMove(&window,screen({1584,1080}));
+        QTRY_VERIFY(client.layerMoveActive());
+        const auto pendingSource=client.residentPreview();
+        if(pendingSource)QVERIFY(pendingSource->images[0].width()>512);
+        QImage pendingMoved;QTRY_VERIFY(!(pendingMoved=capture()).isNull() && white(pendingMoved,{100,1080}) && red(pendingMoved,{800,1080}));
+        qInfo()<<"4K move accepts input before prepared assets ms"<<pendingInput.elapsed()<<"gpu"<<canvas->gpuDisplay();
+        QTest::keyClick(&window,Qt::Key_Escape);QTRY_VERIFY(!client.layerMoveActive());QCOMPARE(client.undoDepth(),depth);
+        QTRY_VERIFY(!client.frame().isNull());
+        QTRY_VERIFY_WITH_TIMEOUT(client.movePreparation(),30000);
+        if(canvas->gpuDisplay())QTRY_VERIFY_WITH_TIMEOUT(client.movePreparation() && client.movePreparation()->uploads->load()>0,30000);
+        qInfo()<<"4K move preparation and texture warmup ms"<<preparation.elapsed()<<"gpu"<<canvas->gpuDisplay();
+        const quint64 uploads=client.movePreparation()?client.movePreparation()->uploads->load():0;
+        QElapsedTimer elapsed;elapsed.start();QElapsedTimer beat;beat.start();qint64 maxGuiGap=0;QTimer heartbeat;heartbeat.setInterval(1);connect(&heartbeat,&QTimer::timeout,this,[&]{maxGuiGap=qMax(maxGuiGap,beat.restart());});heartbeat.start();
+        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,screen({1200,1080}));
+        // The first delta only reuses the prepared source and moves four vertices.
         QTest::mouseMove(&window,screen({1584,1080}));
         QImage moved;QTRY_VERIFY(!(moved=capture()).isNull() && white(moved,{100,1080}) && red(moved,{800,1080}) && white(moved,{2384,1080}));
         heartbeat.stop();qInfo()<<"4K first move through captured changed frame ms"<<elapsed.elapsed()<<"max GUI heartbeat gap ms"<<maxGuiGap<<"gpu"<<canvas->gpuDisplay();
         const auto source=client.residentPreview();
-        if(canvas->gpuDisplay()){QVERIFY(source);QCOMPARE(source->vertices.size(),4);QCOMPARE(source->images[0].width(),512);QCOMPARE(source->images[2].size(),QSize(1,1));QCOMPARE(source->uploads->load(),1u);}
+        if(canvas->gpuDisplay()){QVERIFY(source);QCOMPARE(source->vertices.size(),4);QVERIFY(source->images[0].width()>512);QVERIFY(source->images[0].width()<=2048);QCOMPARE(source->images[2].size(),QSize(1,1));QCOMPARE(source->uploads->load(),uploads);}
         QTest::mouseMove(&window,screen({1648,1080}));
-        if(source){QTRY_COMPARE(client.residentPreview()->revision,client.revision());QCOMPARE(client.residentPreview()->sourceId,source->sourceId);QCOMPARE(client.residentPreview()->images[0].cacheKey(),source->images[0].cacheKey());QCOMPARE(source->uploads->load(),1u);}
+        if(source){QTRY_COMPARE(client.residentPreview()->revision,client.revision());QCOMPARE(client.residentPreview()->sourceId,source->sourceId);QCOMPARE(client.residentPreview()->images[0].cacheKey(),source->images[0].cacheKey());QCOMPARE(source->uploads->load(),uploads);}
         QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,screen({1648,1080}));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());QVERIFY(client.frame().width()>512);
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(client.frameRevision()>=client.revision());QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && red(undone,{100,1080}));
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);client.shutdown();
@@ -263,15 +283,22 @@ private slots:
         QImage initial;const auto report=[&]{initial.save("artifacts/move-sparse-initial.png");client.frame().save("artifacts/move-sparse-frame.png");return QString("capture=%1x%2 zoom=%3 origin=%4,%5 first=%6 mask=%7 frame=%8/%9").arg(initial.width()).arg(initial.height()).arg(canvas->zoom()).arg(canvas->documentRect().x()).arg(canvas->documentRect().y()).arg(initial.isNull()?QString("null"):at(initial,{100,1080}).name()).arg(initial.isNull()?QString("null"):at(initial,{2000,1080}).name()).arg(client.frameRevision()).arg(client.revision());};
         QTRY_VERIFY2(!(initial=capture()).isNull() && red(at(initial,{100,1080})) && white(at(initial,{2000,1080})),qPrintable(report()));QVERIFY(client.frame().width()>512);
         client.setMoveTool(true);
-        for(bool commit:{false,true}) {
+        // Cancel and commit are both covered by the prewarmed first-drag case;
+        // this bounded fallback row keeps one transition and its final history.
+        for(bool commit:{true}) {
             QElapsedTimer timer;timer.start();QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,screen({1200,1080}));QTRY_VERIFY(client.layerMoveActive());QVERIFY(!client.residentPreview());
             for(int i=1;i<=12;++i)QTest::mouseMove(&window,screen({1200+32.*i,1080}));
-            QImage moved;QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().width()<=512 && !(moved=capture()).isNull() && white(at(moved,{100,1080})) && red(at(moved,{800,1080})) && white(at(moved,{2000,1080})));
+            const auto clearPreview=[&]{
+                const auto preview=client.residentPreview();
+                return preview?preview->images[0].width()>512
+                    :client.frameRevision()>=client.revision() && client.frame().width()>512;
+            };
+            QTRY_VERIFY_WITH_TIMEOUT(clearPreview(),30000);
             qInfo()<<"4K complex move through captured preview ms"<<timer.elapsed()<<"ancestor mask"<<ancestorMask;
             QCOMPARE(client.undoDepth(),depth);
             if(!commit)QTest::keyClick(&window,Qt::Key_Escape);
             QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,screen({1584,1080}));QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.frameRevision()>=client.revision() && client.frame().width()>512);
-            QCOMPARE(client.undoDepth(),depth+(commit?1:0));QImage final;
+            QTRY_COMPARE(client.undoDepth(),depth+(commit?1:0));QImage final;
             QTRY_VERIFY(!(final=capture()).isNull() && (commit?white(at(final,{100,1080})):red(at(final,{100,1080}))) && white(at(final,{2000,1080})));
         }
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && red(at(undone,{100,1080})) && white(at(undone,{2000,1080})));

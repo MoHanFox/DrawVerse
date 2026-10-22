@@ -1,4 +1,4 @@
-//! Read-only coarse presentation for a live move that cannot use resident textures.
+//! Read-only sparse presentation for a live move.
 use super::*;
 
 // The linear quantization error maps to less than half an 8-bit sRGB step.
@@ -32,7 +32,7 @@ fn display(value: [f32; 4]) -> [u8; 4] {
     ]
 }
 
-/// Bounded nearest-neighbour display only. Never use for materialisation or export.
+/// Sparse nearest-neighbour display only. Never use for materialisation or export.
 pub fn render_interactive(
     snapshot: &DocumentSnapshot,
     mut request: RenderRequest,
@@ -41,7 +41,7 @@ pub fn render_interactive(
     request.validate()?;
     checkpoint(cancel)?;
     let ratio =
-        (f64::from(MOVE_PREVIEW_EDGE) / f64::from(request.width.max(request.height))).min(1.);
+        (f64::from(MOVE_PREVIEW_MAX_EDGE) / f64::from(request.width.max(request.height))).min(1.);
     request.width = (f64::from(request.width) * ratio).ceil().max(1.) as u32;
     request.height = (f64::from(request.height) * ratio).ceil().max(1.) as u32;
     render_sampled_preview(snapshot, request, cancel)

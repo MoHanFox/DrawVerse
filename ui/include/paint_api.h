@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 79
+#define PAINT_ABI_MINOR 80
 
 #define PAINT_ABI_PATCH 0
 
@@ -472,6 +472,10 @@
 #define PAINT_MODE_ERASE 2
 
 #define PAINT_MODE_PAINT 1
+
+#define PAINT_MOVE_PREPARATION_READY 1
+
+#define PAINT_MOVE_PREPARATION_SOURCE 2
 
 #define PAINT_POSE_PRIMARY_IMAGE 2
 
@@ -1078,6 +1082,21 @@ typedef struct PaintLiquifyPreviewInfo {
   uint32_t document_width;
   uint32_t document_height;
 } PaintLiquifyPreviewInfo;
+
+/**
+ * ABI 1.80: background move-source state bound to one generation/revision/target.
+ */
+typedef struct PaintMovePreparationInfo {
+  uint32_t struct_size;
+  uint32_t flags;
+  uint32_t width;
+  uint32_t height;
+  uint64_t request_id;
+  uint64_t document_generation;
+  uint64_t revision;
+  uint64_t layer_id;
+  uint64_t source_id;
+} PaintMovePreparationInfo;
 
 /**
  * Same versioned packet as ABI 1.62; usable by move and liquify.
@@ -2128,6 +2147,15 @@ PaintStatus paint_session_bucket_fill(struct PaintCore *core,
                                       uint64_t *out_sequence);
 
 /**
+ * ABI 1.80: invalidate any queued or completed move preparation.
+ * # Safety
+ * Valid session handles and writable nonoverlapping sequence are required.
+ */
+PaintStatus paint_session_clear_layer_move_preparation(struct PaintCore *core,
+                                                       struct PaintSession *session,
+                                                       uint64_t *out_sequence);
+
+/**
  * ABI 1.69: changed, successfully committed End sequences in chronological order.
  * Reads the exact publication; only sequences greater than after_sequence are returned.
  * Retains at most 4096 receipts across document resets. Undo/redo do not create receipts.
@@ -2469,6 +2497,15 @@ PaintStatus paint_session_move_layer(struct PaintCore *core,
                                      uint64_t *out_sequence);
 
 /**
+ * ABI 1.80: exact current background move preparation metadata.
+ * # Safety
+ * Provide an initialized writable sized output.
+ */
+PaintStatus paint_session_move_preparation_info(struct PaintCore *core,
+                                                struct PaintSession *session,
+                                                struct PaintMovePreparationInfo *out_info);
+
+/**
  * ABI 1.24: asynchronously select the top visible content pixel at document coordinates.
  * Optional translation is a single normal history entry. Empty pixels are no-ops;
  * position-locked layers can be selected but remain stationary. No caller memory is retained.
@@ -2482,6 +2519,20 @@ PaintStatus paint_session_pick_layer(struct PaintCore *core,
                                      int32_t dx,
                                      int32_t dy,
                                      uint64_t *out_sequence);
+
+/**
+ * ABI 1.80: prepare one normalized move target set off the document actor. The
+ * request ID is owned by the caller and repeated in the immutable result.
+ * # Safety
+ * Valid session handles, 1–4096 readable unique IDs and writable sequence are required.
+ */
+PaintStatus paint_session_prepare_layer_move(struct PaintCore *core,
+                                             struct PaintSession *session,
+                                             const uint64_t *ids,
+                                             uint32_t count,
+                                             double display_scale,
+                                             uint64_t request_id,
+                                             uint64_t *out_sequence);
 
 /**
  * Worker-only RGBA8 frame copy. Exact request/frame IDs are required. Padding is not touched.
@@ -2527,6 +2578,21 @@ PaintStatus paint_session_read_liquify_preview(struct PaintCore *core,
                                                uint8_t *buffer,
                                                uint64_t capacity,
                                                uint64_t *out_required);
+
+/**
+ * ABI 1.80: kind 1 copies the prepared three-image move packet.
+ * # Safety
+ * Follow the standard nonoverlapping caller-buffer contract.
+ */
+PaintStatus paint_session_read_move_preparation(struct PaintCore *core,
+                                                struct PaintSession *session,
+                                                uint64_t generation,
+                                                uint64_t request_id,
+                                                uint64_t source_id,
+                                                uint32_t kind,
+                                                uint8_t *buffer,
+                                                uint64_t capacity,
+                                                uint64_t *out_required);
 
 /**
  * ABI 1.63: shared resident mesh/assets, with the ABI 1.62 packet format.

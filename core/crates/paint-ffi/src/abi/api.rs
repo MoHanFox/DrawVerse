@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 79;
+pub const PAINT_ABI_MINOR: u32 = 80;
 /// ABI1.77: focus flags bit2 and read-resident kind2 carry a fixed selection mask.
 pub const PAINT_RESIDENT_PREVIEW_SELECTED: u32 = 4;
 /// Resolved-dab outline replay and allowOverflow through state45 preparation.
@@ -958,6 +958,22 @@ pub const PAINT_LAYER_MOVE_COMMIT: u32 = 5;
 pub const PAINT_LAYER_MOVE_CANCEL: u32 = 6;
 /// Same versioned packet as ABI 1.62; usable by move and liquify.
 pub type PaintResidentPreviewInfo = PaintLiquifyPreviewInfo;
+pub const PAINT_MOVE_PREPARATION_READY: u32 = 1;
+pub const PAINT_MOVE_PREPARATION_SOURCE: u32 = 2;
+/// ABI 1.80: background move-source state bound to one generation/revision/target.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintMovePreparationInfo {
+    pub struct_size: u32,
+    pub flags: u32,
+    pub width: u32,
+    pub height: u32,
+    pub request_id: u64,
+    pub document_generation: u64,
+    pub revision: u64,
+    pub layer_id: u64,
+    pub source_id: u64,
+}
 
 /// One atomic travel across the retained history of the specified editing domain.
 pub const PAINT_FEATURE_HISTORY_SELECT: u64 = 2_305_843_009_213_693_952;

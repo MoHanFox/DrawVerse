@@ -152,6 +152,8 @@ private:
     QImage m_image;
     QImage m_overview;
     ResidentPreviewPtr m_residentPreview;
+    ResidentPreviewAssetsPtr m_movePreparation;
+    bool m_moveWarmupPending=false;
     QRectF m_imageRegion;
     quint64 m_generation = 0;
     QTimer m_liquifyTimer;

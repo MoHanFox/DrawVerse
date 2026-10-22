@@ -1583,7 +1583,7 @@ fn layer_move_resident_packets_absolute_updates_and_final_barrier() {
 }
 
 #[test]
-fn complex_move_coarse_frames_restore_full_resolution_on_commit_and_cancel() {
+fn resident_move_skips_coarse_cpu_frames_and_restores_full_resolution() {
     let h = Harness::new(64, 64);
     h.wait(h.stroke(20., 20.));
     let masked = h.wait(h.submit(PaintCommand {
@@ -1613,8 +1613,8 @@ fn complex_move_coarse_frames_restore_full_resolution_on_commit_and_cancel() {
                 document_generation: initial.document_generation,
                 width: 64.,
                 height: 64.,
-                pixel_width: 1024,
-                pixel_height: 1024,
+                pixel_width: 544,
+                pixel_height: 384,
                 ..dto!(PaintViewport)
             };
             let mut request = 0;
@@ -1622,7 +1622,7 @@ fn complex_move_coarse_frames_restore_full_resolution_on_commit_and_cancel() {
                 paint_session_set_viewport(h.core, h.session, &view, &mut request),
                 PAINT_OK
             );
-            assert_eq!(h.frame(view_id, initial.revision).pixel_width, 1024);
+            assert_eq!(h.frame(view_id, initial.revision).pixel_width, 544);
         }
         let run = |kind, x, y, seq: &mut u64| {
             assert_eq!(
@@ -1635,25 +1635,32 @@ fn complex_move_coarse_frames_restore_full_resolution_on_commit_and_cancel() {
         };
         run(PAINT_LAYER_MOVE_BEGIN_DEFERRED, 0, 0, &mut seq);
         let moved = run(PAINT_LAYER_MOVE_UPDATE, 8, 3, &mut seq);
+        let mut resident = dto!(PaintResidentPreviewInfo);
+        assert_eq!(
+            paint_session_resident_preview_info(h.core, h.session, &mut resident),
+            PAINT_OK
+        );
+        assert_ne!(resident.source_id, 0);
+        assert_eq!((resident.columns, resident.rows), (2, 2));
         for view in 0..2 {
-            let frame = h.frame(view, moved.revision);
-            assert_eq!((frame.pixel_width, frame.pixel_height), (512, 512));
-            let pixels = h.pixels(view, frame);
-            let i = (184 * 512 + 224) * 4;
-            assert!(pixels[i] > 200 && pixels[i + 1] < 30 && pixels[i + 2] < 30);
+            let mut frame = dto!(PaintFrameInfo);
+            let status = paint_session_frame_info(h.core, h.session, view, &mut frame);
+            assert!(status != PAINT_OK || frame.revision < moved.revision);
         }
         let done = run(PAINT_LAYER_MOVE_COMMIT, 8, 3, &mut seq);
         assert_eq!(done.undo_depth, initial.undo_depth + 1);
         for view in 0..2 {
-            assert_eq!(h.frame(view, done.revision).pixel_width, 1024);
+            assert_eq!(h.frame(view, done.revision).pixel_width, 544);
         }
         run(PAINT_LAYER_MOVE_BEGIN_DEFERRED, 0, 0, &mut seq);
         let moved = run(PAINT_LAYER_MOVE_UPDATE, 4, 2, &mut seq);
-        assert_eq!(h.frame(0, moved.revision).pixel_width, 512);
+        let mut frame = dto!(PaintFrameInfo);
+        let status = paint_session_frame_info(h.core, h.session, 0, &mut frame);
+        assert!(status != PAINT_OK || frame.revision < moved.revision);
         let cancelled = run(PAINT_LAYER_MOVE_CANCEL, 0, 0, &mut seq);
         assert_eq!(cancelled.undo_depth, done.undo_depth);
         for view in 0..2 {
-            assert_eq!(h.frame(view, cancelled.revision).pixel_width, 1024);
+            assert_eq!(h.frame(view, cancelled.revision).pixel_width, 544);
         }
         let mut appearance = dto!(PaintLayerAppearance);
         assert_eq!(
@@ -4699,6 +4706,125 @@ fn layer_moves_abi_copies_targets_and_final_delta_is_one_history() {
             );
             assert_eq!(a.offset_x, 0);
         }
+    }
+}
+
+#[test]
+fn prepared_layer_move_is_density_preserving_and_bound_to_target_revision() {
+    let h = Harness::new(720, 480);
+    h.wait(h.stroke(360., 240.));
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_ADD_LAYER,
+        text: b"second".as_ptr(),
+        text_length: 6,
+        ..dto!(PaintCommand)
+    }));
+    h.wait(h.stroke(120., 120.));
+    unsafe {
+        let mut sequence = 0;
+        let first_ids = [1u64];
+        assert_eq!(
+            paint_session_prepare_layer_move(
+                h.core,
+                h.session,
+                first_ids.as_ptr(),
+                1,
+                1.,
+                41,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let first = wait(|| {
+            let mut info = dto!(PaintMovePreparationInfo);
+            match paint_session_move_preparation_info(h.core, h.session, &mut info) {
+                PAINT_OK => Some(info),
+                PAINT_NOT_FOUND => None,
+                status => panic!("move preparation status {status}"),
+            }
+        });
+        assert_eq!((first.request_id, first.layer_id), (41, 1));
+        assert_ne!(first.flags & PAINT_MOVE_PREPARATION_SOURCE, 0);
+        assert_eq!(first.revision, h.info().revision);
+
+        let second_ids = [2u64];
+        assert_eq!(
+            paint_session_prepare_layer_move(
+                h.core,
+                h.session,
+                second_ids.as_ptr(),
+                1,
+                2.,
+                42,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        let second = wait(|| {
+            let mut info = dto!(PaintMovePreparationInfo);
+            match paint_session_move_preparation_info(h.core, h.session, &mut info) {
+                PAINT_OK if info.request_id == 42 => Some(info),
+                PAINT_OK | PAINT_NOT_FOUND => None,
+                status => panic!("move preparation status {status}"),
+            }
+        });
+        assert_eq!((second.request_id, second.layer_id), (42, 2));
+        assert_ne!(second.flags & PAINT_MOVE_PREPARATION_SOURCE, 0);
+        let mut required = 0;
+        assert_eq!(
+            paint_session_read_move_preparation(
+                h.core,
+                h.session,
+                first.document_generation,
+                first.request_id,
+                first.source_id,
+                1,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUSY
+        );
+        assert_eq!(required, 0);
+
+        assert_eq!(
+            paint_session_layer_move(
+                h.core,
+                h.session,
+                PAINT_LAYER_MOVE_BEGIN_DEFERRED,
+                2,
+                0,
+                0,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        h.wait(sequence);
+        let mut resident = dto!(PaintResidentPreviewInfo);
+        assert_eq!(
+            paint_session_resident_preview_info(h.core, h.session, &mut resident),
+            PAINT_OK
+        );
+        assert_eq!(resident.source_id, second.source_id);
+
+        assert_eq!(
+            paint_session_layer_move(
+                h.core,
+                h.session,
+                PAINT_LAYER_MOVE_COMMIT,
+                0,
+                9,
+                4,
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        h.wait(sequence);
+        let mut stale = dto!(PaintMovePreparationInfo);
+        assert_eq!(
+            paint_session_move_preparation_info(h.core, h.session, &mut stale),
+            PAINT_NOT_FOUND
+        );
     }
 }
 

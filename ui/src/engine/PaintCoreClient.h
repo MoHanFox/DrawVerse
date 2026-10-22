@@ -335,6 +335,7 @@ public:
     const QImage &frame(int view = 0) const { return m_frames[view == 1 ? 1 : 0]; }
     ResidentPreviewPtr residentPreview() const { return m_residentPreview; }
     ResidentPreviewPtr liquifyPreview() const { return residentPreview(); }
+    ResidentPreviewAssetsPtr movePreparation() const { return m_movePreparation; }
     void setResidentGpuPreviewAvailable(bool value) { m_residentGpuPreviewAvailable=value; }
     void setLiquifyGpuPreviewAvailable(bool value) { setResidentGpuPreviewAvailable(value); }
     QRectF frameRegion(int view = 0) const { return m_regions[view == 1 ? 1 : 0]; }
@@ -502,6 +503,7 @@ signals:
     void wandOptionsChanged();
     void errorChanged();
     void frameChanged();
+    void movePreparationChanged();
     void stopped();
     void commandCompleted(bool onWorkerThread);
     void fileFinished(bool success);
@@ -594,6 +596,10 @@ private:
     std::function<void()> m_afterTransform;
     bool submitTransform(quint32 kind,const PaintTransform *geometry=nullptr);
     void flushLayerMove();
+    void requestLayerMovePreparation();
+    void clearLayerMovePreparation();
+    qreal currentMovePreparationScale() const;
+    QVector<quint64> currentMoveTargets() const;
     QTimer *m_layerMoveTimer=nullptr;
     bool m_layerMoveActive=false,m_layerMoveStarting=false,m_layerMoveClosing=false;
     bool m_layerMoveDirty=false,m_layerMoveFinish=false,m_layerMoveCommit=false;
@@ -650,6 +656,12 @@ private:
     qreal m_documentHistoryScroll=0;
     QImage m_frames[2];
     ResidentPreviewPtr m_residentPreview;
+    ResidentPreviewAssetsPtr m_movePreparation;
+    quint64 m_movePreparationRequest=0,m_movePreparationPendingRequest=0;
+    quint64 m_movePreparationGeneration=0,m_movePreparationRevision=0,m_movePreparationLayer=0;
+    QVector<quint64> m_movePreparationIds;
+    qreal m_movePreparationScale=0;
+    bool m_movePreparationCompleted=false;
     bool m_residentGpuPreviewAvailable=false;
     QRectF m_regions[2], m_requestedRegions[2];
     QSize m_requestedPixels[2];

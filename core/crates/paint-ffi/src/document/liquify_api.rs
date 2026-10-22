@@ -51,19 +51,32 @@ pub unsafe extern "C" fn paint_session_read_resident_preview(
 pub(crate) fn preview_assets(
     source: &paint_core::ResidentPreviewSource,
 ) -> crate::error::ApiResult<Vec<u8>> {
-    encode_preview_assets(source, None)
+    encode_preview_assets(source, None, &paint_task::CancellationToken::default())
 }
 
 pub(crate) fn move_preview_assets(
     source: &paint_core::ResidentPreviewSource,
     display_scale: f64,
 ) -> crate::error::ApiResult<Vec<u8>> {
-    encode_preview_assets(source, Some(display_scale))
+    move_preview_assets_cancellable(
+        source,
+        display_scale,
+        &paint_task::CancellationToken::default(),
+    )
+}
+
+pub(crate) fn move_preview_assets_cancellable(
+    source: &paint_core::ResidentPreviewSource,
+    display_scale: f64,
+    cancel: &paint_task::CancellationToken,
+) -> crate::error::ApiResult<Vec<u8>> {
+    encode_preview_assets(source, Some(display_scale), cancel)
 }
 
 fn encode_preview_assets(
     source: &paint_core::ResidentPreviewSource,
     sampled: Option<f64>,
+    cancel: &paint_task::CancellationToken,
 ) -> crate::error::ApiResult<Vec<u8>> {
     let mut output = Vec::new();
     let mut images = Vec::new();
@@ -76,12 +89,8 @@ fn encode_preview_assets(
             images.push(vec![0; 4]);
             continue;
         }
-        let edge = if sampled.is_some() {
-            paint_render::MOVE_PREVIEW_EDGE
-        } else {
-            2048
-        };
-        let scale = (f64::from(edge) / image.width.max(image.height) as f64)
+        let scale = (f64::from(paint_render::MOVE_PREVIEW_MAX_EDGE)
+            / image.width.max(image.height) as f64)
             .min(1.)
             .min(sampled.unwrap_or(1.));
         let width = (image.width as f64 * scale).ceil().max(1.) as u32;
@@ -99,11 +108,10 @@ fn encode_preview_assets(
             height,
             format: PixelFormat::SrgbRgba8Premultiplied,
         };
-        let cancel = paint_task::CancellationToken::default();
         let frame = if sampled.is_some() {
-            paint_render::render_sampled_preview(image, request, &cancel)
+            paint_render::render_sampled_preview(image, request, cancel)
         } else {
-            CachedCpuRenderer::default().render(image, request, &cancel)
+            CachedCpuRenderer::default().render(image, request, cancel)
         }
         .map_err(|e| ApiError::new(PAINT_IO_ERROR, e.to_string()))?;
         let FramePixels::Srgb(bytes) = frame.pixels else {
@@ -332,7 +340,7 @@ mod move_asset_tests {
     use super::*;
 
     #[test]
-    fn move_assets_match_proxy_centres_with_linked_mask_and_off_canvas_source() {
+    fn move_assets_keep_viewport_density_and_match_proxy_centres() {
         use paint_core::*;
         let mut doc = Document::new(720, 480).unwrap();
         doc.initialize_white_background().unwrap();
@@ -371,7 +379,7 @@ mod move_asset_tests {
                 .enumerate()
             {
                 let effective_scale = scale.min(
-                    f64::from(paint_render::MOVE_PREVIEW_EDGE)
+                    f64::from(paint_render::MOVE_PREVIEW_MAX_EDGE)
                         / f64::from(image.width.max(image.height)),
                 );
                 let width = u32::from_le_bytes(bytes[i * 8..i * 8 + 4].try_into().unwrap());

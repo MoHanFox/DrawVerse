@@ -29,7 +29,9 @@ public:
     qint64 imageKey = 0;
     QSGSimpleTextureNode *image=nullptr;
     LiquifyPreviewNode *preview=nullptr;
+    LiquifyPreviewNode *moveWarmup=nullptr;
     std::array<std::shared_ptr<ResidentPreviewTextures>,2> sources{};
+    std::shared_ptr<ResidentPreviewTextures> preparedSource;
 };
 // Application-wide space-pan hold: the canvas that owns keyboard focus raises it, every canvas observes it.
 bool spaceHeld=false;
@@ -65,6 +67,11 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
         if (window) {
             connect(window, &QQuickWindow::screenChanged, this, &CanvasItem::observeScreen);
             connect(window,&QQuickWindow::sceneGraphInitialized,this,[this]{emit gpuDisplayChanged();refresh();},Qt::QueuedConnection);
+            connect(window,&QQuickWindow::frameSwapped,this,[this]{
+                if(m_moveWarmupPending && m_movePreparation && m_movePreparation->uploads->load()){
+                    m_moveWarmupPending=false;update();
+                }
+            });
         }
         emit gpuDisplayChanged();
         observeScreen(window ? window->screen() : nullptr);
@@ -90,7 +97,7 @@ CanvasItem::~CanvasItem() {
 void CanvasItem::setClient(PaintCoreClient *client) {
     if (m_client == client) return;
     cancelLayerMove();
-    stopNavigation();m_image={};m_overview={};m_residentPreview={};
+    stopNavigation();m_image={};m_overview={};m_residentPreview={};m_movePreparation={};m_moveWarmupPending=false;
     emit residentPresentationChanged();
     setTabletWindowCursor(false);
     endPicking();
@@ -102,6 +109,11 @@ void CanvasItem::setClient(PaintCoreClient *client) {
         connect(client, &PaintCoreClient::brushCursorImageChanged,this,&CanvasItem::refreshBrushCursor);
         connect(client, &PaintCoreClient::brushCursorPreferencesChanged,this,&CanvasItem::refreshBrushCursor);
         connect(client, &PaintCoreClient::frameChanged, this, &CanvasItem::refresh);
+        connect(client,&PaintCoreClient::movePreparationChanged,this,[this]{
+            m_movePreparation=m_client?m_client->movePreparation():ResidentPreviewAssetsPtr{};
+            m_moveWarmupPending=m_movePreparation && m_movePreparation->uploads->load()==0;
+            update();
+        });
         connect(client, &PaintCoreClient::brushChanged, this, [this] { cancelSelectionDrag();if(m_picking && !m_altHeld && !m_client->eyedropperTool())endPicking();refreshBrushCursor(); });
         connect(client, &PaintCoreClient::stateChanged, this, [this] { refresh(); emit viewChanged(); });
         connect(client, &PaintCoreClient::samplingRingEnabledChanged, this, &CanvasItem::refreshBrushCursor);
@@ -252,6 +264,8 @@ void CanvasItem::refresh() {
     if (m_generation != m_client->generation()) { stopNavigation();m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
     const int view = m_interactive ? 0 : 1;
     m_image = m_client->frame(view); m_imageRegion = m_client->frameRegion(view);
+    m_movePreparation=m_client->movePreparation();
+    m_moveWarmupPending=m_movePreparation && m_movePreparation->uploads->load()==0;
     const QRectF document(0,0,m_client->documentWidth(),m_client->documentHeight());
     if(m_interactive && m_client->frameRegion(1)==document)m_overview=m_client->frame(1);
     if(m_interactive && m_overview.isNull() && !m_viewTimer.isActive())m_viewTimer.start();
@@ -371,7 +385,7 @@ void CanvasItem::restoreLayoutPosition() {
 }
 QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     auto *node = static_cast<CanvasNode *>(old);
-    if ((!m_residentPreview && m_image.isNull() && m_overview.isNull()) || !window()) { delete node; return nullptr; }
+    if ((!m_residentPreview && !m_movePreparation && m_image.isNull() && m_overview.isNull()) || !window()) { delete node; return nullptr; }
     if(!node)node=new CanvasNode;
     if(m_previewPart){
         if(!m_residentPreview){delete node;return nullptr;}
@@ -388,6 +402,32 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         node->image->setRect(m_presentationRect);return node;
     }
     if(node->sources[0]){delete node->image;node->image=nullptr;node->imageKey=0;node->sources={};}
+    const bool warmMove=!m_residentPreview && m_movePreparation && m_previewPart==0;
+    if(warmMove){
+        if(!node->preparedSource || node->preparedSource->sourceId!=m_movePreparation->sourceId)
+            node->preparedSource=ResidentPreviewTextures::acquire(window(),*m_movePreparation);
+        if(node->preparedSource && m_movePreparation->uploads->load()==0){
+            if(!node->moveWarmup){
+                node->moveWarmup=new LiquifyPreviewNode;
+                if(node->image)node->insertChildNodeBefore(node->moveWarmup,node->image);
+                else node->appendChildNode(node->moveWarmup);
+            }
+            ResidentPreviewFrame frame;
+            static_cast<ResidentPreviewAssets&>(frame)=*m_movePreparation;
+            const auto document=documentRect();
+            frame.documentSize=QSize(m_client?m_client->documentWidth():int(document.width()),
+                m_client?m_client->documentHeight():int(document.height()));
+            frame.columns=2;frame.rows=2;
+            const float w=float(frame.documentSize.width()),h=float(frame.documentSize.height());
+            frame.vertices={{0,0,0,0},{w,0,1,0},{0,h,0,1},{w,h,1,1}};
+            if(!node->moveWarmup->sync(window(),frame,document)){delete node;return nullptr;}
+        }else if(node->moveWarmup){
+            delete node->moveWarmup;node->moveWarmup=nullptr;
+        }
+    }else{
+        if(node->moveWarmup){delete node->moveWarmup;node->moveWarmup=nullptr;}
+        if(!m_movePreparation)node->preparedSource.reset();
+    }
     if(m_residentPreview){
         for(auto *tile:node->overview)if(tile)tile->setRect({});
         if(node->image){delete node->image;node->image=nullptr;node->imageKey=0;}

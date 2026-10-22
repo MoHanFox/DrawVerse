@@ -7,6 +7,133 @@ use crate::{
 use paint_core::{BlendMode, LayerAppearance};
 use std::mem::size_of;
 
+/// ABI 1.80: prepare one normalized move target set off the document actor. The
+/// request ID is owned by the caller and repeated in the immutable result.
+/// # Safety
+/// Valid session handles, 1–4096 readable unique IDs and writable sequence are required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_prepare_layer_move(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    ids: *const u64,
+    count: u32,
+    display_scale: f64,
+    request_id: u64,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        if count == 0
+            || count > 4096
+            || request_id == 0
+            || !display_scale.is_finite()
+            || !(0. < display_scale && display_scale <= 16.)
+        {
+            return Err(ApiError::invalid("move preparation arguments"));
+        }
+        let ids = pointers::layer_ids(ids, count)?;
+        if ids.contains(&0)
+            || ids
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != ids.len()
+        {
+            return Err(ApiError::invalid("move preparation target IDs"));
+        }
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .prepare_layer_move(ids, request_id, display_scale)?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+
+/// ABI 1.80: invalidate any queued or completed move preparation.
+/// # Safety
+/// Valid session handles and writable nonoverlapping sequence are required.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_clear_layer_move_preparation(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .clear_layer_move_preparation()?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+
+/// ABI 1.80: exact current background move preparation metadata.
+/// # Safety
+/// Provide an initialized writable sized output.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_move_preparation_info(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    out_info: *mut PaintMovePreparationInfo,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::sized_pointer(out_info)?;
+        let session = runtime::registry()?.session(core, session)?;
+        let preparation = session
+            .move_preparation()
+            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "no current move preparation"))?;
+        let source = preparation.source.as_ref();
+        pointers::write(
+            out_info,
+            PaintMovePreparationInfo {
+                struct_size: size_of::<PaintMovePreparationInfo>() as u32,
+                flags: PAINT_MOVE_PREPARATION_READY
+                    | if source.is_some() {
+                        PAINT_MOVE_PREPARATION_SOURCE
+                    } else {
+                        0
+                    },
+                width: source.map_or(0, |source| source.below.width),
+                height: source.map_or(0, |source| source.below.height),
+                request_id: preparation.request_id,
+                document_generation: preparation.generation,
+                revision: preparation.revision,
+                layer_id: preparation.ids[0],
+                source_id: source.map_or(0, |source| source.id),
+            },
+        )
+    })
+}
+
+/// ABI 1.80: kind 1 copies the prepared three-image move packet.
+/// # Safety
+/// Follow the standard nonoverlapping caller-buffer contract.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_read_move_preparation(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    generation: u64,
+    request_id: u64,
+    source_id: u64,
+    kind: u32,
+    buffer: *mut u8,
+    capacity: u64,
+    out_required: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_required, 0)?;
+        if kind != 1 {
+            return Err(ApiError::invalid("move preparation packet kind"));
+        }
+        let bytes = runtime::registry()?
+            .session(core, session)?
+            .move_preparation_assets(generation, request_id, source_id)?;
+        pointers::copy_buffer(&bytes, buffer, capacity, out_required)
+    })
+}
+
 /// ABI 1.63: begin (id), pick-and-begin (x/y), absolute update, final commit or cancel.
 /// BEGIN/PICK_DEFERRED request shared resident presentation where exactly supported.
 /// Updates never write history. COMMIT includes the final delta. OK means queued.

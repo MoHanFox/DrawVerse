@@ -1,4 +1,10 @@
-# C ABI 1.79.0 契约
+# C ABI 1.80.0 契约
+
+## ABI 1.80 — 图层移动后台预热
+
+`paint_session_prepare_layer_move(core,session,ids,count,display_scale,request_id,out_sequence)` 在文档 actor 上只捕获兼容的不可变移动源，再把按视口物理密度稀疏采样的三张显示资产交给后台任务。`ids` 为1–4096个非零唯一目标，`request_id` 由调用方生成并原样返回；目标集合、document generation、文档 revision 或请求 ID 任一变化都使结果不可用。`paint_session_clear_layer_move_preparation` 立即使排队或已完成结果失效。
+
+`PaintMovePreparationInfo`（56 字节）返回 READY/SOURCE 标志、宽度/高度、请求 ID、generation、revision、目标图层与 source ID。无兼容常驻源的完整准备仍发布 READY，但 source_id=0，调用方走完整帧路径。`paint_session_read_move_preparation` kind1 使用既有三图包格式，只读取仍匹配的当前后台结果；静态移动纹理最长边 2048px，空切片允许 1×1 透明。资源准备完成不代表端到端输入延迟，未完成时拖动必须保留当前完整画布并立即接收输入。
 
 ## ABI 1.71 — SDF 整笔描边
 

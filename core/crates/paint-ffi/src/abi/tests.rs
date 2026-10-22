@@ -143,6 +143,9 @@ fn abi_layout_matches_frozen_64_bit_contract() {
     assert_eq!(offset_of!(PaintStrokeDesc, linear_rgba), 28);
     assert_eq!(offset_of!(PaintTile, revision), 48);
     assert_eq!(offset_of!(PaintDocumentInfo, document_id), 16);
+    assert_eq!(size_of::<PaintMovePreparationInfo>(), 56);
+    assert_eq!(offset_of!(PaintMovePreparationInfo, request_id), 16);
+    assert_eq!(offset_of!(PaintMovePreparationInfo, source_id), 48);
 }
 
 #[test]

@@ -147,7 +147,7 @@ fn coarse_preview_matches_original_pixel_centres_for_masks_groups_and_offsets() 
             format: PixelFormat::LinearRgba32F,
         };
         let frame = render_interactive(&snapshot, request, &CancellationToken::default()).unwrap();
-        assert_eq!((frame.width, frame.height), (512, 384));
+        assert_eq!((frame.width, frame.height), (1024, 768));
         assert_eq!(frame.revision, snapshot.revision);
         let FramePixels::Linear(values) = frame.pixels else {
             panic!()
@@ -275,7 +275,7 @@ fn sparse_large_canvas_preview_keeps_exact_samples_and_clips_empty_viewports() {
             };
             let frame =
                 render_interactive(&snapshot, request, &CancellationToken::default()).unwrap();
-            assert_eq!((frame.width, frame.height), (512, 8));
+            assert_eq!((frame.width, frame.height), (1024, 16));
             let FramePixels::Linear(pixels) = frame.pixels else {
                 panic!()
             };

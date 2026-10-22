@@ -39,17 +39,38 @@ impl Document {
     }
 
     pub fn begin_layer_moves(&mut self, ids: &[LayerId], deferred: bool) -> Result<()> {
+        let source = if deferred {
+            self.prepare_layer_move_source(ids)?
+        } else {
+            None
+        };
+        self.begin_layer_moves_with_source(ids, source)
+    }
+
+    /// Validate a possible resident move without starting the interactive transaction.
+    pub fn prepare_layer_move_source(
+        &self,
+        ids: &[LayerId],
+    ) -> Result<Option<Arc<ResidentPreviewSource>>> {
+        self.idle()?;
+        self.layer_move_baseline(ids)?;
+        Ok(self.resident_move_source(ids))
+    }
+
+    /// Start from a source captured before BEGIN. Callers must bind it to the
+    /// current generation, revision and target before crossing this boundary.
+    pub fn begin_layer_moves_with_source(
+        &mut self,
+        ids: &[LayerId],
+        source: Option<Arc<ResidentPreviewSource>>,
+    ) -> Result<()> {
         self.idle()?;
         let baseline = self.layer_move_baseline(ids)?;
         self.layer_move = Some(LayerMoveState {
             ids: ids.to_vec(),
             baseline,
             delta: (0, 0),
-            source: if deferred {
-                self.resident_move_source(ids)
-            } else {
-                None
-            },
+            source,
         });
         self.dirty_all();
         Ok(())

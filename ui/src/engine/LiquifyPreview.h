@@ -27,4 +27,6 @@ struct ResidentPreviewFrame : ResidentPreviewAssets {
 using LiquifyPreviewFrame = ResidentPreviewFrame;
 using ResidentPreviewPtr=std::shared_ptr<const ResidentPreviewFrame>;
 using LiquifyPreviewPtr=ResidentPreviewPtr;
+using ResidentPreviewAssetsPtr=std::shared_ptr<const ResidentPreviewAssets>;
 Q_DECLARE_METATYPE(ResidentPreviewPtr)
+Q_DECLARE_METATYPE(ResidentPreviewAssetsPtr)
