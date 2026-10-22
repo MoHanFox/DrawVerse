@@ -4,6 +4,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_SOURCE: AtomicU64 = AtomicU64::new(1);
 
+#[cfg(test)]
+#[path = "resident_identity_mask_tests.rs"]
+mod identity_mask_tests;
+
 #[derive(Clone, Debug)]
 pub struct LiquifyPreviewSource {
     pub id: u64,
@@ -45,6 +49,20 @@ pub(super) fn source_bounds(layer: &Layer) -> [i64; 4] {
 }
 
 impl Document {
+    // Mask RGB/fill do not define coverage: all compositors use
+    // 1 - alpha * opacity. These cases are identity everywhere, even off canvas
+    // or when liquify focus makes a hidden mask visible for presentation.
+    fn resident_mask_is_identity(layer: &Layer) -> bool {
+        layer.mask
+            && (layer.properties.opacity == 0.
+                || layer.placed.is_none() && layer.white == (0, 0) && layer.tiles.is_empty())
+    }
+
+    pub(in crate::document) fn resident_has_effective_mask(&self, id: LayerId) -> bool {
+        self.mask_for(id)
+            .is_some_and(|mask| !Self::resident_mask_is_identity(mask))
+    }
+
     /// Opt in to mesh-only presentation where the stack has an exact normal-over split.
     /// Unsupported stacks keep the established pixel preview and transaction semantics.
     pub fn begin_liquify_deferred(&mut self) -> Result<()> {
@@ -108,7 +126,7 @@ impl Document {
             || original.clipped
             || original.parent != 0
             || original.appearance.blend != crate::BlendMode::Normal
-            || self.mask_for(id).is_some()
+            || self.resident_has_effective_mask(id)
             || !original.properties.visible
             || !Self::resident_foreground_is_normal(context, at + 1)
         {
@@ -134,7 +152,7 @@ impl Document {
         remaining: Layer,
         bounds: [i64; 4],
     ) -> Option<(Arc<LiquifyPreviewSource>, Arc<LiquifyPreviewSource>)> {
-        if self.mask_for(original.id).is_some() {
+        if self.resident_has_effective_mask(original.id) {
             return None;
         }
         let context = self.resident_hierarchy_context(&[original.id])?;
@@ -197,7 +215,7 @@ impl Document {
                     || group.properties.opacity != 1.
                     || group.appearance.fill != 1.
                     || group.clipped
-                    || self.mask_for(parent).is_some()
+                    || self.resident_has_effective_mask(parent)
                     || !matches!(
                         group.appearance.blend,
                         crate::BlendMode::Normal | crate::BlendMode::PassThrough
@@ -285,6 +303,7 @@ impl Document {
         if !originals.is_empty()
             && layers.iter().any(|l| {
                 !l.group
+                    && !Self::resident_mask_is_identity(l)
                     && (!l.tiles.is_empty() || l.white != (0, 0))
                     && !originals.iter().any(|original| original.id == l.id)
             })
@@ -301,7 +320,7 @@ impl Document {
         }
         if layers.iter().any(|l| {
             l.is_image()
-                || l.mask && !l.mask_linked
+                || l.mask && !l.mask_linked && !Self::resident_mask_is_identity(l)
                 || l.appearance.blend == crate::BlendMode::Dissolve
         }) || !Self::resident_foreground_is_normal(context, end)
         {
@@ -349,13 +368,19 @@ impl Document {
         if width > i64::from(MAX_DIMENSION) || height > i64::from(MAX_DIMENSION) {
             return None;
         }
-        let snapshot = |layers| DocumentSnapshot {
-            pool: Arc::clone(&self.pool),
-            width: self.width,
-            height: self.height,
-            revision: self.revision,
-            layers,
-            selection: self.selection.clone(),
+        let snapshot = |mut layers: Vec<Layer>| {
+            // A single-layer/selection split can leave its identity mask on
+            // the other side of the boundary. Remove these only from private
+            // display snapshots so every remaining mask has its owner.
+            layers.retain(|layer| !Self::resident_mask_is_identity(layer));
+            DocumentSnapshot {
+                pool: Arc::clone(&self.pool),
+                width: self.width,
+                height: self.height,
+                revision: self.revision,
+                layers,
+                selection: self.selection.clone(),
+            }
         };
         for layer in layers.iter_mut().filter(|l| !l.group) {
             layer.appearance.offset_x =
@@ -551,7 +576,15 @@ mod tests {
         );
         d.layers[above].appearance.blend = crate::BlendMode::Normal;
         // An owner mask still needs its own presentation path, not an unrelated mask split.
-        d.add_mask(moving).unwrap();
+        let mask = d.add_mask(moving).unwrap();
+        let at = d.layer_index(mask).unwrap();
+        d.layers[at].tiles.insert(
+            TileCoord::from_signed(0, 0),
+            Arc::new(
+                Tile::from_pixels(vec![Pixel::from_straight([0., 0., 0., 1.]).unwrap(); 4096])
+                    .unwrap(),
+            ),
+        );
         assert!(d.resident_source(moving).is_none());
     }
 
@@ -646,14 +679,36 @@ mod tests {
             let at = d.layer_index(group).unwrap();
             match case {
                 0 => {
-                    d.add_mask(group).unwrap();
+                    let mask = d.add_mask(group).unwrap();
+                    let at = d.layer_index(mask).unwrap();
+                    d.layers[at].tiles.insert(
+                        TileCoord::from_signed(0, 0),
+                        Arc::new(
+                            Tile::from_pixels(vec![
+                                Pixel::from_straight([0., 0., 0., 1.]).unwrap();
+                                4096
+                            ])
+                            .unwrap(),
+                        ),
+                    );
                 }
                 1 => d.layers[at].properties.opacity = 0.5,
                 2 => d.layers[at].appearance.fill = 0.5,
                 3 => d.layers[at].appearance.blend = crate::BlendMode::Multiply,
                 4 => d.layers[at].clipped = true,
                 5 => {
-                    d.add_mask(id).unwrap();
+                    let mask = d.add_mask(id).unwrap();
+                    let at = d.layer_index(mask).unwrap();
+                    d.layers[at].tiles.insert(
+                        TileCoord::from_signed(0, 0),
+                        Arc::new(
+                            Tile::from_pixels(vec![
+                                Pixel::from_straight([0., 0., 0., 1.]).unwrap();
+                                4096
+                            ])
+                            .unwrap(),
+                        ),
+                    );
                 }
                 _ => {
                     d.layers[at].appearance.blend = crate::BlendMode::Normal;

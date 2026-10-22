@@ -692,7 +692,8 @@ mod compound_tests {
                 0 => d.layers[at].properties.opacity = 0.5,
                 1 => d.layers[at].appearance.fill = 0.5,
                 2 => {
-                    d.add_mask(parent).unwrap();
+                    let mask = d.add_mask(parent).unwrap();
+                    fill(&mut d, mask, [0., 0., 0., 0.5], (0, 0));
                 }
                 3 => d.layers[at].appearance.blend = crate::BlendMode::Multiply,
                 _ => {

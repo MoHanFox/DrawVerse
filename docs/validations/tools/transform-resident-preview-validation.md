@@ -160,3 +160,20 @@ ABI1.78新增kind3静态包，提供与当前源同会话的备用sourceId和三
 - 四ABI、core/ffi全目标严格Clippy、fmt/生成头、完整标准Release通过。新程序build/bin/Release/drawverse.exe；state45/behavior37/VBR1.0保持。
 
 日志artifacts/transform-gpu-preparation-{native,actor,d3d11,final-d3d11,software,shared-d3d11,workflow-software,workflow-d3d11,abi,clippy,fmt,header-check,check-build}.txt。两套三图GPU像素最坏约96MiB，另有现有视口目标；仅活动会话有强引用，跨窗口分别创建。上传在进入后的首个真实帧提交，极早输入仍可能与其重叠；未测驱动物理冷启动、实体首拖端到端、全量、跨平台或16K整图。
+
+
+## 2026-10-22 空蒙版及零不透明度蒙版共用预览
+
+仅允许全域恒等覆盖：空蒙版（无置入/隐式底色/瓦片）或opacity=0。共享判断用于自身、固定蒙版及可消去Normal/PassThrough祖先；私有三图移除这些蒙版，真实层级、内容、链接和最终采样不变。有实际覆盖的隐藏或fill=0蒙版仍回退。
+
+核心新增三项通过，涵盖72组合（自身/两类祖先×空/opacity=0×链接/固定×选区/无选区×变换/移动/液化），逐瓦片像素/属性/结构、确认/撤销/重做与原CPU路径完全相同；取消保持原文档。三张显示快照独立层级验证及读取，初始和拖动后均通过。旧安全拒绝样本改成实际alpha遮挡，而非用空蒙版代表复杂蒙版。共享液化预览7、变换14、移动10项通过；公开变换7/液化11、原生变换3/移动1/液化1通过。
+
+软件与D3D11各24行实际窗口工作流通过（测试总数各26含初始化/结束）：新增九行覆盖三工具各三类蒙版；4K套索Warp两套纹理进入时各上传一次，12次更新及两轮原位往返均保持源ID、图像身份与上传次数；静止余像素、确认/取消/历史保持。实际遮挡固定/祖先蒙版4K两行仍回退并正确显示/结束。液化三新增行保留所选外像素且确认/取消/会话与文档历史通过。
+
+首次D3D11验证发现单层分割把空蒙版留在没有owner的背景快照，导致postorder parent错误；已修复为在私有快照过滤恒等覆盖，并补齐核心三图校验/读取。初次失败日志保留为artifacts/identity-mask-d3d11.txt；修复后的最终两后端日志均全部通过。没有删除安全断言或屏蔽错误。
+
+单次1024px核心合成工作负载，旧像素路径六次Warp更新合计2422.884ms；新路径只更新CPU几何，完整颜色计算移到确认351.249ms，最终所有瓦片逐像素一致。此数字不含Actor代理图合成、Qt纹理上传、GPU呈现、事件调度或冷盘，不作为用户端拖动延迟；没有声称实际遮挡蒙版全部可常驻。
+
+core/render/ffi全目标严格Clippy、fmt、生成头检查与四ABI消费者通过；完整Release构建部署成功，build/bin/Release/drawverse.exe与paint_ffi.dll更新。ABI1.79/state45/behavior37/VBR1.0不变，无新wgpu算子、协议或预算。
+
+最终日志：artifacts/identity-mask-final-{liquify,transform,move,public-transform,public-liquify,native-transform,native-move,native-liquify,software,d3d11,clippy,fmt,header,abi,workload}.txt；构建artifacts/identity-mask-build-final.txt。手工计时测试identity_mask_transform_preview_workload默认忽略，需--release --lib --ignored显式运行。其余真实遮挡固定/祖先蒙版、半透明祖先、非连续目标、首次资产、冷盘与实体持续性能仍分别按T2/M1/L1/P1/H1跟踪。

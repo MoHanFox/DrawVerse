@@ -100,7 +100,7 @@ impl Document {
             || original.mask
             || original.properties.opacity != 1.
             || original.appearance.fill != 1.
-            || self.mask_for(original.id).is_some()
+            || self.resident_has_effective_mask(original.id)
             || self
                 .resident_hierarchy_source(&[original.id], std::slice::from_ref(original))
                 .is_none()
@@ -461,11 +461,33 @@ mod tests {
                     .unwrap(),
                 1 => d.layers.last_mut().unwrap().appearance.fill = 0.5,
                 2 => {
-                    d.add_mask(id).unwrap();
+                    let mask = d.add_mask(id).unwrap();
+                    let at = d.layer_index(mask).unwrap();
+                    d.layers[at].tiles.insert(
+                        TileCoord::from_signed(0, 0),
+                        Arc::new(
+                            Tile::from_pixels(vec![
+                                Pixel::from_straight([0., 0., 0., 1.]).unwrap();
+                                4096
+                            ])
+                            .unwrap(),
+                        ),
+                    );
                 }
                 3 => {
                     let group = d.group_layer(id, "masked ancestor").unwrap();
-                    d.add_mask(group).unwrap();
+                    let mask = d.add_mask(group).unwrap();
+                    let at = d.layer_index(mask).unwrap();
+                    d.layers[at].tiles.insert(
+                        TileCoord::from_signed(0, 0),
+                        Arc::new(
+                            Tile::from_pixels(vec![
+                                Pixel::from_straight([0., 0., 0., 1.]).unwrap();
+                                4096
+                            ])
+                            .unwrap(),
+                        ),
+                    );
                 }
                 _ => {
                     d.options.max_document_tiles = 1;
@@ -919,7 +941,18 @@ mod tests {
             let at = d.layer_index(parent).unwrap();
             match kind {
                 0 => {
-                    d.add_mask(parent).unwrap();
+                    let mask = d.add_mask(parent).unwrap();
+                    let at = d.layer_index(mask).unwrap();
+                    d.layers[at].tiles.insert(
+                        TileCoord::from_signed(0, 0),
+                        Arc::new(
+                            Tile::from_pixels(vec![
+                                Pixel::from_straight([0., 0., 0., 1.]).unwrap();
+                                4096
+                            ])
+                            .unwrap(),
+                        ),
+                    );
                 }
                 1 => d.layers[at].properties.opacity = 0.5,
                 2 => d.layers[at].appearance.fill = 0.5,
