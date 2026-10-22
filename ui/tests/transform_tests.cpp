@@ -461,13 +461,14 @@ private slots:
         QQuickWindow window;window.resize(512,512);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,512});canvas->setClient(&client);
         window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
         const auto at=canvas->documentRect().center();QTest::mouseMove(&window,canvas->mapToScene(at).toPoint());
+        QVERIFY(canvas->brushCursorVisible());QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
         QPointingDevice pen("shortcut pen",9194,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
         const auto hover=[&]{QTabletEvent e(QEvent::TabletMove,&pen,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&e);};
         const auto mouseRelease=[&]{QMouseEvent e(QEvent::MouseButtonRelease,at,canvas->mapToGlobal(at),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(canvas,&e);};
         QTest::keyPress(&window,Qt::Key_Alt);QTRY_VERIFY(canvas->eyedropperCursorVisible());
         mouseRelease();QVERIFY(!canvas->eyedropperCursorVisible());QTest::keyRelease(&window,Qt::Key_Alt);
         QTest::keyPress(&window,Qt::Key_Control);QTRY_COMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);
-        mouseRelease();QTRY_VERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);QTest::keyRelease(&window,Qt::Key_Control);
+        mouseRelease();QTRY_VERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);QTRY_COMPARE(window.cursor().shape(),Qt::BlankCursor);QTest::keyRelease(&window,Qt::Key_Control);
         QTest::keyPress(&window,Qt::Key_Alt);QTRY_VERIFY(canvas->eyedropperCursorVisible());
         hover();QVERIFY(canvas->eyedropperCursorVisible());
         QTest::keyRelease(&window,Qt::Key_Alt);QTRY_VERIFY(!canvas->eyedropperCursorVisible());
@@ -476,6 +477,10 @@ private slots:
         hover();QCOMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);
         QTest::keyRelease(&window,Qt::Key_Control);QTRY_VERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);
         hover();QVERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);
+        QKeyEvent lostAlt(QEvent::KeyPress,Qt::Key_Alt,Qt::AltModifier);QCoreApplication::sendEvent(&window,&lostAlt);
+        QTRY_VERIFY(canvas->eyedropperCursorVisible());QTRY_VERIFY_WITH_TIMEOUT(!canvas->eyedropperCursorVisible(),200);
+        QKeyEvent lostCtrl(QEvent::KeyPress,Qt::Key_Control,Qt::ControlModifier);QCoreApplication::sendEvent(&window,&lostCtrl);
+        QTRY_COMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);QTRY_VERIFY_WITH_TIMEOUT(canvas->cursor().shape()!=Qt::SizeAllCursor,200);
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void duplicateMousePressStillEndsOnRelease() {

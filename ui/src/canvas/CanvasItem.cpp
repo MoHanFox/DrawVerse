@@ -36,6 +36,16 @@ public:
 // Application-wide space-pan hold: the canvas that owns keyboard focus raises it, every canvas observes it.
 bool spaceHeld=false;
 QPointer<CanvasItem> tabletCursorOwner;
+Qt::KeyboardModifiers shortcutModifiersFromSystem() {
+#ifdef Q_OS_WIN
+    Qt::KeyboardModifiers modifiers;
+    if(GetAsyncKeyState(VK_CONTROL)&0x8000)modifiers|=Qt::ControlModifier;
+    if(GetAsyncKeyState(VK_MENU)&0x8000)modifiers|=Qt::AltModifier;
+    return modifiers;
+#else
+    return QGuiApplication::queryKeyboardModifiers();
+#endif
+}
 }
 
 CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
@@ -53,6 +63,23 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
             m_observedWindow->setCursor(cursor());
     });
     m_poseRetry.setInterval(16);connect(&m_poseRetry,&QTimer::timeout,this,&CanvasItem::refreshBrushCursor);
+    m_shortcutStateTimer.setInterval(16);
+    connect(&m_shortcutStateTimer,&QTimer::timeout,this,[this]{
+        const auto modifiers=shortcutModifiersFromSystem();
+        bool changed=false;
+        if(m_altHeld && !modifiers.testFlag(Qt::AltModifier)) {
+            if(++m_altReleaseTicks>=2){setAltHeld(false);changed=true;}
+        } else {
+            m_altReleaseTicks=0;
+        }
+        if(m_ctrlHeld && !modifiers.testFlag(Qt::ControlModifier)) {
+            if(++m_ctrlReleaseTicks>=2){m_ctrlHeld=false;changed=true;}
+        } else {
+            m_ctrlReleaseTicks=0;
+        }
+        if(changed)refreshBrushCursor();
+        if(!m_altHeld && !m_ctrlHeld)m_shortcutStateTimer.stop();
+    });
     m_liquifyTimer.setInterval(16);
     connect(&m_liquifyTimer,&QTimer::timeout,this,[this]{if(!m_stroke || !m_client || !m_client->liquifyActive() || !isEnabled() || !isVisible()){m_liquifyTimer.stop();return;}m_client->liquifyTick();});
     m_viewTimer.setSingleShot(true); m_viewTimer.setInterval(16);
@@ -582,7 +609,7 @@ void CanvasItem::finishPolygon() {
 void CanvasItem::cancelSelectionDrag(){if(m_selecting){m_selecting=false;m_selectionPoints.clear();emit selectionDragChanged();}}
 void CanvasItem::mousePressEvent(QMouseEvent *e) {
     if (!m_interactive || !m_client || e->source() != Qt::MouseEventNotSynthesized) { e->ignore(); return; }
-    syncShortcutModifiers(e->modifiers()|QGuiApplication::queryKeyboardModifiers(),false);
+    syncShortcutModifiers(e->modifiers()|shortcutModifiersFromSystem(),false);
     stopNavigation();
     forceActiveFocus(); m_last = e->position();
     m_cursorInside=contains(e->position());m_cursorPosition=e->position();setCursorSample(mouseSample(e->position(),e->buttons()),e->type()==QEvent::MouseButtonPress);refreshBrushCursor();
@@ -674,6 +701,9 @@ void CanvasItem::keyReleaseEvent(QKeyEvent *e) {
 void CanvasItem::setAltHeld(bool held) {
     if(m_altHeld==held) return;
     m_altHeld=held;
+    m_altReleaseTicks=0;
+    if(held)m_shortcutStateTimer.start();
+    else if(!m_ctrlHeld)m_shortcutStateTimer.stop();
     if(!held && m_client && !m_client->eyedropperTool())endPicking();
     // The eyedropper takes over the pointer: a crosshair instead of the brush outline.
     refreshBrushCursor();
@@ -682,6 +712,8 @@ void CanvasItem::syncShortcutModifiers(Qt::KeyboardModifiers modifiers,bool latc
     const bool alt=modifiers.testFlag(Qt::AltModifier),ctrl=modifiers.testFlag(Qt::ControlModifier);
     if(!latchOnly || alt)setAltHeld(alt);
     if(!latchOnly || ctrl)m_ctrlHeld=ctrl;
+    if(m_altHeld || m_ctrlHeld)m_shortcutStateTimer.start();
+    else m_shortcutStateTimer.stop();
 }
 bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if((m_penOwnsHover || tabletCursorOwner==this) && (event->type()==QEvent::MouseMove || event->type()==QEvent::MouseButtonPress)) {
@@ -690,7 +722,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     }
     if(watched==m_observedWindow && event->type()==QEvent::Leave && !m_tablet) {setTabletWindowCursor(false);m_cursorInside=false;refreshBrushCursor();}
 
-    if(event->type()==QEvent::ApplicationDeactivate){cancelLayerMove();stopNavigation();setTabletWindowCursor(false);endPicking();setKeySpace(false);setSpacePanning(false);syncShortcutModifiers(QGuiApplication::queryKeyboardModifiers(),false);refreshBrushCursor();}
+    if(event->type()==QEvent::ApplicationDeactivate){cancelLayerMove();stopNavigation();setTabletWindowCursor(false);endPicking();setKeySpace(false);setSpacePanning(false);syncShortcutModifiers(shortcutModifiersFromSystem(),false);refreshBrushCursor();}
     if(watched==m_observedWindow && m_observedWindow && m_observedWindow->isActive() && m_interactive && isVisible() && isEnabled() && m_client && m_client->ready() && !m_client->drawing() && !m_client->textInputFocused()
         && (event->type()==QEvent::KeyPress || event->type()==QEvent::ShortcutOverride)) {
         auto *key=static_cast<QKeyEvent*>(event);const auto modifiers=key->modifiers();
@@ -747,7 +779,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
 #endif
     if (!m_interactive || !m_client) return false;
     if(event->type()==QEvent::KeyPress && static_cast<QKeyEvent*>(event)->key()==Qt::Key_CapsLock && !static_cast<QKeyEvent*>(event)->isAutoRepeat()) {m_capsLock=!m_capsLock;refreshBrushCursor();}
-    if(event->type()==QEvent::WindowActivate)syncShortcutModifiers(QGuiApplication::queryKeyboardModifiers(),false);
+    if(event->type()==QEvent::WindowActivate)syncShortcutModifiers(shortcutModifiersFromSystem(),false);
 #ifdef Q_OS_WIN
     if(event->type()==QEvent::WindowActivate && QGuiApplication::platformName()=="windows"){m_capsLock=(GetKeyState(VK_CAPITAL)&1)!=0;refreshBrushCursor();}
 #endif
@@ -757,7 +789,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         setTabletWindowCursor(false);
         if (m_stroke || m_client->drawing()) m_client->cancelStroke();
         m_stroke = m_tablet = m_panning = m_moving = false;
-        endPicking();syncShortcutModifiers(QGuiApplication::queryKeyboardModifiers(),false);
+        endPicking();syncShortcutModifiers(shortcutModifiersFromSystem(),false);
         setKeySpace(false);setSpacePanning(false);
         m_cursorInside=false;m_havePoseSample=false;m_poseDirectionKnown=false;refreshBrushCursor();
         cancelSelectionDrag();
@@ -774,7 +806,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     // Let Qt Quick synthesize the same pointer gestures used by transform handles.
     if (m_client->transformActive()) { event->ignore(); return false; }
     auto *e = static_cast<QTabletEvent *>(event);
-    const auto tabletModifiers=e->modifiers()|(event->type()==QEvent::TabletPress?QGuiApplication::queryKeyboardModifiers():Qt::KeyboardModifiers{});
+    const auto tabletModifiers=e->modifiers()|(event->type()==QEvent::TabletPress?shortcutModifiersFromSystem():Qt::KeyboardModifiers{});
     syncShortcutModifiers(tabletModifiers,event->type()==QEvent::TabletMove);
     m_penOwnsHover=true;
     // Qt Quick may deliver tablet input to an item, whose position is item-local.
