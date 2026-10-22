@@ -41,7 +41,8 @@ def main():
                 raise SystemExit(f'Invalid run retained: {raw}')
             for index, row in enumerate(data['rows'], 1):
                 events = [event for event in data['trace'] if index*1000 <= event['operation'] < (index+1)*1000]
-                spans = {name: stats([event['duration_us'] for event in events if event['name'] == name]) for name in names}
+                spans = {name: stats([event['value'] if name == 'preferences.queue_us' else event['duration_us']
+                                     for event in events if event['name'] == name]) for name in names}
                 retained = [event['value'] for event in events if event['name'] == 'colors.preference_cache_retained']
                 item = {'run': invocation.parent.name, 'presets': data['preset_count'], 'trace': data['trace_enabled'],
                         'scene': row['scene'], 'attempts': row['attempts'], 'completed': row['completed'],

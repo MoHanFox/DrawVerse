@@ -2,7 +2,17 @@
 #include "engine/PaintCoreClient.h"
 #include "documents/DocumentManager.h"
 #include "platform/InteractionTrace.h"
+#include "platform/UiResources.h"
+#include "platform/MenuSurface.h"
+#include "canvas/CanvasItem.h"
+#include "canvas/SelectionOverlay.h"
+#include "color/ColorWheelItem.h"
+#include "workspace/WorkspaceManager.h"
 #include <QtTest>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQuickStyle>
+#include <QQuickWindow>
 #include <QJsonDocument>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -12,10 +22,32 @@ QJsonObject object(const QByteArray &bytes){return QJsonDocument::fromJson(bytes
 QJsonObject colors(const QColor &front,const QColor &back){return {{"foreground",front.name(QColor::HexArgb)},{"background",back.name(QColor::HexArgb)}};}
 QJsonObject saved(const QString &path){QSettings settings(path,QSettings::IniFormat);settings.sync();return object(settings.value("brushes/state").toByteArray());}
 int count(const QJsonArray &events,const QString &name){int result=0;for(const auto &value:events)if(value.toObject().value("name").toString()==name)++result;return result;}
+QQuickItem *visual(QQuickItem *item,const QString &name){if(item->objectName()==name && item->isVisible())return item;for(auto *child:item->childItems())if(auto *found=visual(child,name))return found;return nullptr;}
 }
 class ColorStateTests : public QObject {
     Q_OBJECT
 private slots:
+    void qmlSwatchesUpdateImmediately() {
+        QTemporaryDir directory;PaintCoreClient client(nullptr,directory.filePath("preferences.ini"));WorkspaceManager workspace(directory.filePath("workspace.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->showNormal();window->resize(1280,800);window->requestActivate();
+        QVERIFY(QTest::qWaitForWindowExposed(window));QVERIFY(QTest::qWaitForWindowActive(window));
+        auto *front=visual(window->contentItem(),"foregroundColorSwatch"),*back=visual(window->contentItem(),"secondaryColorSwatch");QVERIFY(front && back);
+        auto *swatchWindow=front->window();QVERIFY(swatchWindow);
+        QTRY_VERIFY(QRectF(0,0,swatchWindow->width(),swatchWindow->height()).contains(front->mapToScene({12,12})));
+        client.brushLibrary()->snapshot();client.brushLibrary()->catalogSnapshot();
+        client.setBrushColor(Qt::red);client.setSecondaryBrushColor(Qt::blue);
+        // No QTRY/event-loop wait: these real QML color bindings must already
+        // reflect the edits while the persistence debounce is still pending.
+        QCOMPARE(front->property("color").value<QColor>(),QColor(Qt::red));QCOMPARE(back->property("color").value<QColor>(),QColor(Qt::blue));
+        QVERIFY(client.brushLibrary()->persistencePending());
+        QTest::mouseClick(swatchWindow,Qt::LeftButton,Qt::NoModifier,front->mapToScene({12,12}).toPoint());
+        QCOMPARE(front->property("color").value<QColor>(),QColor(Qt::blue));QCOMPARE(back->property("color").value<QColor>(),QColor(Qt::red));
+        if(auto *canvas=window->findChild<CanvasItem*>("mainCanvas"))canvas->setClient(nullptr);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void validCacheRetainsPresetsAndCatalog() {
         BrushLibrary library;library.flushPersistence();
         const auto initial=object(library.snapshot());const auto catalog=library.catalogSnapshot();
@@ -101,5 +133,10 @@ private slots:
         QSignalSpy stopped(&documents,&DocumentManager::stopped);documents.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 };
-QTEST_MAIN(ColorStateTests)
+int main(int argc,char **argv) {
+    QGuiApplication app(argc,argv);initializeDrawVerseUiResources();QQuickStyle::setStyle("Basic");
+    qmlRegisterType<MenuSurface>("DrawVerse",1,0,"MenuSurface");qmlRegisterType<SelectionOverlay>("DrawVerse",1,0,"SelectionOutline");
+    qmlRegisterType<DocumentManager>("DrawVerse",1,0,"DocumentManager");qmlRegisterType<CanvasItem>("DrawVerse",1,0,"PaintCanvas");qmlRegisterType<ColorWheelItem>("DrawVerse",1,0,"ColorWheel");
+    ColorStateTests test;return QTest::qExec(&test,argc,argv);
+}
 #include "color_state_tests.moc"
