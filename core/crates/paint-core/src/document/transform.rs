@@ -6,6 +6,9 @@ mod image_flip;
 mod mesh;
 #[path = "transform_preview.rs"]
 mod preview;
+#[cfg(test)]
+#[path = "transform_sampling_tests.rs"]
+mod sampling_tests;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransformGeometry {
@@ -258,8 +261,11 @@ fn layer_bounds(layer: &Layer) -> Result<[f64; 4]> {
 }
 struct SourceSampler<'a> {
     source: &'a Layer,
-    cache: BTreeMap<TileCoord, Vec<Pixel>>,
-    order: VecDeque<TileCoord>,
+    cache: BTreeMap<TileCoord, usize>,
+    tiles: Vec<(TileCoord, Vec<Pixel>)>,
+    next: usize,
+    last: usize,
+    last_default: Option<TileCoord>,
     selection: Option<&'a crate::Selection>,
     offset: [f64; 2],
 }
@@ -268,16 +274,34 @@ impl<'a> SourceSampler<'a> {
         Self {
             source,
             cache: BTreeMap::new(),
-            order: VecDeque::new(),
+            tiles: Vec::new(),
+            next: 0,
+            last: usize::MAX,
+            last_default: None,
             selection: None,
             offset: [0., 0.],
         }
     }
     fn pixel(&mut self, x: i64, y: i64) -> Result<Pixel> {
         let key = TileCoord::from_signed(x.div_euclid(64) as i32, y.div_euclid(64) as i32);
-        if !self.cache.contains_key(&key) {
+        let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
+        // Interpolation usually reads several neighbours from the same tile.
+        // Keep their address in a stable slot rather than walking the map for
+        // every colour sample. Missing tiles may straddle implicit-white edges.
+        if let Some((coord, pixels)) = self.tiles.get(self.last) {
+            if *coord == key {
+                return Ok(pixels[offset]);
+            }
+        }
+        if self.last_default == Some(key) {
+            return Ok(self.source.default_pixel(x, y));
+        }
+        let slot = if let Some(&slot) = self.cache.get(&key) {
+            slot
+        } else {
             let tile = self.source.tiles.get(&key);
             if tile.is_none() && self.selection.is_none() {
+                self.last_default = Some(key);
                 return Ok(self.source.default_pixel(x, y));
             }
             let x0 = x.div_euclid(64) * 64;
@@ -303,13 +327,22 @@ impl<'a> SourceSampler<'a> {
                     }
                 }
             }
-            if self.order.len() == 64 {
-                self.cache.remove(&self.order.pop_front().expect("cache"));
+            // Read/selection failures above leave the previous cache intact.
+            // Owned copies retain the existing 64-tile working budget without
+            // holding page pins across subsequent source loads.
+            let slot = self.next;
+            if slot == self.tiles.len() {
+                self.tiles.push((key, pixels));
+            } else {
+                self.cache.remove(&self.tiles[slot].0);
+                self.tiles[slot] = (key, pixels);
             }
-            self.order.push_back(key);
-            self.cache.insert(key, pixels);
-        }
-        Ok(self.cache[&key][(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize])
+            self.cache.insert(key, slot);
+            self.next = (slot + 1) % 64;
+            slot
+        };
+        self.last = slot;
+        Ok(self.tiles[slot].1[offset])
     }
 }
 fn cubic_weight(x: f64, a: f64) -> f64 {

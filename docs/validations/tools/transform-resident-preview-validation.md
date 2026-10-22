@@ -177,3 +177,27 @@ ABI1.78新增kind3静态包，提供与当前源同会话的备用sourceId和三
 core/render/ffi全目标严格Clippy、fmt、生成头检查与四ABI消费者通过；完整Release构建部署成功，build/bin/Release/drawverse.exe与paint_ffi.dll更新。ABI1.79/state45/behavior37/VBR1.0不变，无新wgpu算子、协议或预算。
 
 最终日志：artifacts/identity-mask-final-{liquify,transform,move,public-transform,public-liquify,native-transform,native-move,native-liquify,software,d3d11,clippy,fmt,header,abi,workload}.txt；构建artifacts/identity-mask-build-final.txt。手工计时测试identity_mask_transform_preview_workload默认忽略，需--release --lib --ignored显式运行。其余真实遮挡固定/祖先蒙版、半透明祖先、非连续目标、首次资产、冷盘与实体持续性能仍分别按T2/M1/L1/P1/H1跟踪。
+
+
+## 2026-10-22 复杂变换CPU采样瓦片寻址
+
+SourceSampler保留原64个私有像素副本和FIFO语义，将缓存值改为稳定槽索引，连续邻近采样直接访问上个槽；缺失瓦片只记坐标，仍逐点计算隐式底色。源瓦片加载/选区覆盖成功后才替换旧槽，不长期pin源页，不改变插值权重、求和顺序或选区算法。用于所有六种插值、复杂栈预览、延迟预览的最终确认及原位图变换路径；图层移动和液化算法本身未改。
+
+新增三项通过：独立逐点像素参考覆盖负坐标/80瓦片正反往返淘汰、隐式白底同瓦片两条边界和带偏移羽化选区；源读取失败重复返回错误且保留已缓存样本，修复源后可重试；单瓦片PagePool驻留读取80页后仍可回收、不保留页pin。变换相关核心24项/公开7/原生4通过，含六插值、折叠Warp、蒙版与历史失败回滚；三个手工计时用例默认忽略，不计为普通通过。
+
+同一1024px核心工作负载、每种两次更新，修改前后单次测量如下，四种最终全图显示结果摘要均相同：
+
+| CPU回退样本 | 原耗时ms | 本轮ms | 减少 |
+| --- | ---: | ---: | ---: |
+| 固定自身蒙版 affine | 695.550 | 304.707 | 56.2% |
+| 固定自身蒙版 Warp | 752.794 | 342.956 | 54.4% |
+| 选区及祖先蒙版 affine | 257.874 | 150.286 | 41.7% |
+| 选区及祖先蒙版 Warp | 273.087 | 167.262 | 38.8% |
+
+上述只计update_transform，未计进入工具/Qt上传/显示/事件调度/冷盘，不是端到端延迟或统计中位数，也没有承诺复杂变换已经足够跟手。运行：core目录cargo test -p paint-core --lib --release --locked complex_mask_sampling_workload -- --ignored --nocapture。基线/新日志为artifacts/transform-sampling-{before,after}.txt。
+
+实际软件/D3D11各22行工作流通过（各24总数含初始化/结束）：4K套索10行含新增有效固定自身蒙版及祖先蒙版回退，支持栈常驻纹理及预上传复用不变；复合栈7行、折叠Warp一行含两档透明度、整图/工具翻转历史四行。静止余像素、确认/取消和文档历史正确；GPU折叠显示保持已有近邻容差（两档分别302/117像素，均低于20736像素的2%），不称预览与最终完全一致。所有原断言保留，未屏蔽QML警告。
+
+core/render/ffi全目标严格Clippy、fmt、生成头、四ABI消费者和完整Release构建部署通过。build/bin/Release/drawverse.exe与paint_ffi.dll更新，ABI1.79/state45/behavior37/VBR1.0保持，无新增GPU算子/缓存容量/任务上限。T2仍部分完成：有效固定/祖先蒙版继续CPU路径，后续需减少每输入颜色物化；首次资产/冷盘/实体手感另行验收。
+
+日志：artifacts/transform-sampling-{core,transform,public,native,software,d3d11,clippy,fmt,header,abi,build}.txt。

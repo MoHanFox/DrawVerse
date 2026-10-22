@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新复杂变换CPU采样热点：transform-resident-preview设计/验收末节；SourceSampler保持64瓦片副本/FIFO，固定槽及最近瓦片寻址避免逐样本查树，缺页保留隐式白底/读取错误与单页驻留。核心24/公开7/原生4、软件及D3D11各22行含4K真实固定/祖先蒙版、四ABI/严格Clippy/fmt/头/完整Release通过，build/bin/Release更新；1024px两更新核心减少38.8–56.2%且摘要相同，非UI。ABI1.79/state45保持，实际复杂栈仍CPU物化，T2/M1/P1/H1及实体持续性能仍待。
+
 - 最新恒等覆盖蒙版常驻预览：transform-resident-preview设计/验收末节；空/opacity=0自身及可消去祖先蒙版共用移动/变换/液化快速路径，私有三图过滤恒等覆盖避免无owner，真实内容/链接/层级保持。72组合/取消/有效遮挡拒绝与共享核心31、公开18/原生5、软件及D3D11各24行/四ABI/严格Clippy/fmt/头/完整Release通过，build/bin/Release更新；无新算子或ABI1.79/state45改变。实际遮挡固定/祖先蒙版、半透明祖先/非连续目标及首次资产/冷盘/实体性能仍待。
 
 - 最新液化历史单份候选：long-task-resource-budget设计/验收末节；直接跳转只建一次字段/瓦片表，全部校验成功后一次游标/修订发布，逐步恢复共享LocalStep。2048键32步稀疏六跳核心5.146→0.198ms（非UI），磁盘基本持平。核心24/公开11/原生1、软件四项/D3D11五项含实际六跳画面逐像素、四ABI/Clippy/fmt/头/完整Release通过；build/bin/Release更新，ABI1.79/state45保持。H1真实冷盘、T2/P1与实体输入仍待。
