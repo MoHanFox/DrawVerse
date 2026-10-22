@@ -194,11 +194,13 @@ private:
     Qt::KeyboardModifiers m_cursorShortcutModifiers;
     QTimer m_shortcutStateTimer;int m_altReleaseTicks=0,m_ctrlReleaseTicks=0;
     void setAltHeld(bool held);
+    void setCtrlHeld(bool held);
     void syncShortcutModifiers(Qt::KeyboardModifiers modifiers,bool latchOnly);
     Qt::KeyboardModifiers shortcutCursorModifiers() const;
     Qt::KeyboardModifiers readShortcutCursorModifiers() const;
     QCursor effectiveCursor() const;
     void refreshShortcutCursor();
+    void applyShortcutCursor();
     void updateCursorPoll();
     bool m_selecting = false;
     bool m_interactive = true, m_space = false, m_panning = false, m_stroke = false, m_tablet = false, m_fitPending = true;

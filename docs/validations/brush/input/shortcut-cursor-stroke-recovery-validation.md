@@ -1,5 +1,13 @@
 # 快捷键光标与鼠标笔触恢复验收
 
+## 2026-10-22：复用Space即时状态链路
+
+Ctrl/Alt现在与Space一样由当前KeyPress/KeyRelease直接更新CanvasItem状态，并立即通过同一个轻量发布函数同步Item光标、原生窗口光标和QML属性。Hover、TabletMove、MouseMove、MouseRelease不再用缺失或迟到的modifier覆盖键盘状态；16ms轮询只处理丢失KeyRelease的物理状态恢复。笔尖姿态仍只由真实笔样本刷新。
+
+新增 `shortcutKeysUpdateLikeSpaceWithoutPointerMovement`：画笔、橡皮、涂抹及套索连续8轮Space/Alt/Ctrl切换，检查当前事件内的光标与QML可见性，穿插无modifier/旧modifier的TabletMove，笔尖几何不因快捷键闪变。软件与D3D11专项共9 passed、0 failed；另有物理键无Qt事件、漏modifier、重复Press和异常离笔回归通过。日志 `artifacts/shortcut-event-state-software.txt`、`artifacts/shortcut-event-state-d3d11.txt`。
+
+Release应用与生成头检查通过，标准产物 `build/bin/Release/drawverse.exe` 已更新。ABI1.80/state45、工具手势和文件格式保持；实体数位板持续压力/悬停仍需实机确认。
+
 ## 2026-10-22：第二点UI的快捷键通知修复
 
 物理按键轮询此前用实时getter比较前后可见性，两次均读到新键态；Alt前后原生光标同为Blank时没有其他变化可触发通知，QML轮廓/十字可能保持旧值。现统一为最近一次光标刷新采样的快捷键快照，轮询先比较旧显示再发布新显示，所有getter及原生光标使用相同快照，笔尖姿态读取保持独立。

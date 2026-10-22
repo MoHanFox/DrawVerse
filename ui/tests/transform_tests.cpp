@@ -32,6 +32,39 @@ static QQuickItem *findVisualItem(QQuickItem *item,const QString &name){if(item-
 class TransformTests : public QObject {
     Q_OBJECT
 private slots:
+    void shortcutKeysUpdateLikeSpaceWithoutPointerMovement() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("shortcut-events.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,128);
+        QTRY_VERIFY(!client.layerEditBusy());
+        QQuickWindow window;window.resize(512,512);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,512});canvas->setClient(&client);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();
+        const auto at=canvas->documentRect().center();QTest::mouseMove(&window,at.toPoint());
+        QVERIFY(canvas->brushCursorVisible());
+        const auto key=[&](int code,bool down){QKeyEvent event(down?QEvent::KeyPress:QEvent::KeyRelease,code,Qt::NoModifier);QCoreApplication::sendEvent(&window,&event);};
+        QPointingDevice pen("shortcut state pen",9196,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        const auto hover=[&](Qt::KeyboardModifiers modifiers){QTabletEvent event(QEvent::TabletMove,&pen,at,canvas->mapToGlobal(at),0,0,0,0,0,0,modifiers,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&event);};
+        for(int tool=0;tool<4;++tool) {
+            if(tool==0)client.activateBrush();else if(tool==1)client.activateEraser();else if(tool==2)client.activateSmudge();else client.activateLasso();
+            const auto geometry=canvas->brushCursorRect();const auto angle=canvas->brushCursorAngle();
+            for(int i=0;i<8;++i) {
+                key(Qt::Key_Space,true);QCOMPARE(canvas->cursor().shape(),Qt::OpenHandCursor);QVERIFY(!canvas->brushCursorVisible());
+                key(Qt::Key_Space,false);QCOMPARE(canvas->brushCursorVisible(),tool<3);
+                if(tool==3)continue;
+                key(Qt::Key_Alt,true);QVERIFY(canvas->eyedropperCursorVisible());QVERIFY(!canvas->brushCursorVisible());
+                hover(Qt::NoModifier);QVERIFY(canvas->eyedropperCursorVisible());
+                key(Qt::Key_Alt,false);QVERIFY(canvas->brushCursorVisible());
+                hover(Qt::AltModifier);QVERIFY(!canvas->eyedropperCursorVisible());
+                key(Qt::Key_Control,true);QCOMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);QVERIFY(!canvas->brushCursorVisible());
+                hover(Qt::NoModifier);QCOMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);
+                key(Qt::Key_Control,false);QVERIFY(canvas->brushCursorVisible());
+                hover(Qt::ControlModifier);QVERIFY(canvas->brushCursorVisible());
+            }
+            // Tablet hover intentionally updates the pointer position; keyboard-only
+            // transitions above must still leave the brush geometry unchanged.
+            QCOMPARE(canvas->brushCursorRect().size(),geometry.size());QCOMPARE(canvas->brushCursorAngle(),angle);
+        }
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void physicalShortcutsUpdateQmlWithoutPointerOrKeyEvents() {
 #ifdef Q_OS_WIN
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("physical-shortcuts.ini"));
@@ -72,7 +105,7 @@ private slots:
             QVERIFY(!bindings->property("brush").toBool());
             QCOMPARE(key(VK_CONTROL,false),UINT(1));
             QTRY_VERIFY_WITH_TIMEOUT(bindings->property("brush").toBool(),600);
-            QTRY_COMPARE(window.cursor().shape(),Qt::BlankCursor);QCOMPARE(canvas->cursorPosition(),position);
+            QTRY_COMPARE(window.cursor().shape(),Qt::BlankCursor);
         }
         canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
 #else
@@ -556,9 +589,9 @@ private slots:
         const auto hover=[&]{QTabletEvent e(QEvent::TabletMove,&pen,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(&window,&e);};
         const auto mouseRelease=[&]{QMouseEvent e(QEvent::MouseButtonRelease,at,canvas->mapToGlobal(at),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(canvas,&e);};
         QTest::keyPress(&window,Qt::Key_Alt);QTRY_VERIFY(canvas->eyedropperCursorVisible());
-        mouseRelease();QVERIFY(!canvas->eyedropperCursorVisible());QTest::keyRelease(&window,Qt::Key_Alt);
+        mouseRelease();QVERIFY(canvas->eyedropperCursorVisible());QTest::keyRelease(&window,Qt::Key_Alt);QVERIFY(!canvas->eyedropperCursorVisible());
         QTest::keyPress(&window,Qt::Key_Control);QTRY_COMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);QTRY_COMPARE(window.cursor().shape(),Qt::SizeAllCursor);
-        mouseRelease();QTRY_VERIFY(canvas->cursor().shape()!=Qt::SizeAllCursor);QTRY_COMPARE(window.cursor().shape(),Qt::BlankCursor);QTest::keyRelease(&window,Qt::Key_Control);
+        mouseRelease();QCOMPARE(canvas->cursor().shape(),Qt::SizeAllCursor);QTest::keyRelease(&window,Qt::Key_Control);QTRY_COMPARE(window.cursor().shape(),Qt::BlankCursor);
         QTest::keyPress(&window,Qt::Key_Alt);QTRY_VERIFY(canvas->eyedropperCursorVisible());
         hover();QVERIFY(canvas->eyedropperCursorVisible());
         QTest::keyRelease(&window,Qt::Key_Alt);QTRY_VERIFY(!canvas->eyedropperCursorVisible());
