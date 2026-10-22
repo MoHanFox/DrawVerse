@@ -10,6 +10,8 @@ Alt/Ctrl 状态此前有两个不一致来源：键盘事件维护 Ctrl， Table
 
 光标显示本身按 PhotoCraft 的即时模式处理：画布指针在内时每 16ms 以当前物理键态重算并应用 Item 与原生窗口光标，而不是由单条 Hover/Tablet 事件的 modifier 增量改写。WinTab 或 Quick 某条事件漏带 Alt/Ctrl 不再影响显示；手势进入哪条工具路径仍只看按下那一刻的 modifier，避免绘制中误切工具。
 
+快捷键轮询只重算光标形状与可见性，不复用 `refreshBrushCursor()` 的笔尖姿态读取。笔尖轮廓的半径/角度/圆度只由真实 Tablet/Hover 样本更新，避免异步姿态尚未就绪时每帧退回默认姿态造成移动闪烁；Caps Lock 的精确十字路径不经过姿态读取，因此天然稳定。
+
 鼠标绘画与手绘笔共用幂等笔触状态：重复 Press 不丢弃已接受的 `m_stroke`，Move/Release 以本地 stroke 或 `PaintCoreClient::drawing()` 任一为准确认活动笔触，失去抓取时也能取消客户端仍在进行的笔触。此前的本地 false/客户端 true 分裂会让后续 Press 被永久拒绝。
 
 普通画笔开始时清除遗留常驻预览，元数据确认液化、移动或变换全部结束后也发布清除，避免旧 GPU 预览继续遮住已经提交的新笔触。

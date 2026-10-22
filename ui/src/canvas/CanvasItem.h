@@ -195,6 +195,8 @@ private:
     void setAltHeld(bool held);
     void syncShortcutModifiers(Qt::KeyboardModifiers modifiers,bool latchOnly);
     Qt::KeyboardModifiers shortcutCursorModifiers() const;
+    QCursor effectiveCursor() const;
+    void refreshShortcutCursor();
     void updateCursorPoll();
     bool m_selecting = false;
     bool m_interactive = true, m_space = false, m_panning = false, m_stroke = false, m_tablet = false, m_fitPending = true;

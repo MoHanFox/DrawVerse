@@ -64,20 +64,7 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
     });
     m_poseRetry.setInterval(16);connect(&m_poseRetry,&QTimer::timeout,this,&CanvasItem::refreshBrushCursor);
     m_shortcutStateTimer.setInterval(16);
-    connect(&m_shortcutStateTimer,&QTimer::timeout,this,[this]{
-        const auto modifiers=shortcutModifiersFromSystem();
-        if(m_altHeld && !modifiers.testFlag(Qt::AltModifier)) {
-            if(++m_altReleaseTicks>=2)setAltHeld(false);
-        } else {
-            m_altReleaseTicks=0;
-        }
-        if(m_ctrlHeld && !modifiers.testFlag(Qt::ControlModifier)) {
-            if(++m_ctrlReleaseTicks>=2)m_ctrlHeld=false;
-        } else {
-            m_ctrlReleaseTicks=0;
-        }
-        refreshBrushCursor();
-    });
+    connect(&m_shortcutStateTimer,&QTimer::timeout,this,&CanvasItem::refreshShortcutCursor);
     m_liquifyTimer.setInterval(16);
     connect(&m_liquifyTimer,&QTimer::timeout,this,[this]{if(!m_stroke || !m_client || !m_client->liquifyActive() || !isEnabled() || !isVisible()){m_liquifyTimer.stop();return;}m_client->liquifyTick();});
     m_viewTimer.setSingleShot(true); m_viewTimer.setInterval(16);
@@ -206,8 +193,7 @@ InputSample CanvasItem::tabletSample(QTabletEvent *e,QPointF local) const {
 void CanvasItem::refreshBrushCursor() {
     if(m_client){m_pose=m_client->baseCursorPose();if(m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_pose=m_client->brushCursorPose(m_poseSample,m_poseDirection,m_poseDirectionKnown,m_client->drawing() && !m_client->brushLibrary()->cursorSimple());}
     if(m_client && !m_pose.ready && m_havePoseSample && brushCursorVisible() && !m_client->liquifyActive())m_poseRetry.start();else m_poseRetry.stop();
-    const auto shortcut=shortcutCursorModifiers();
-    setCursor(m_space || spaceHeld || m_panning?Qt::OpenHandCursor:m_client && (m_client->moveTool() || shortcut.testFlag(Qt::ControlModifier) || m_moving) && !m_client->liquifyActive() && !m_client->transformActive()?Qt::SizeAllCursor:eyedropperCursorVisible()?Qt::BlankCursor:brushCursorVisible()?Qt::BlankCursor:Qt::CrossCursor);
+    setCursor(effectiveCursor());
     if(tabletCursorOwner==this && m_observedWindow)m_observedWindow->setCursor(cursor());
     emit brushCursorChanged();
     updateCursorPoll();
@@ -708,7 +694,7 @@ void CanvasItem::setAltHeld(bool held) {
     else if(!m_ctrlHeld)m_shortcutStateTimer.stop();
     if(!held && m_client && !m_client->eyedropperTool())endPicking();
     // The eyedropper takes over the pointer: a crosshair instead of the brush outline.
-    refreshBrushCursor();
+    refreshShortcutCursor();
 }
 void CanvasItem::syncShortcutModifiers(Qt::KeyboardModifiers modifiers,bool latchOnly) {
     const bool alt=modifiers.testFlag(Qt::AltModifier),ctrl=modifiers.testFlag(Qt::ControlModifier);
@@ -724,6 +710,34 @@ Qt::KeyboardModifiers CanvasItem::shortcutCursorModifiers() const {
     if(m_altHeld)latched|=Qt::AltModifier;
     if(m_ctrlHeld)latched|=Qt::ControlModifier;
     return latched;
+}
+QCursor CanvasItem::effectiveCursor() const {
+    const auto shortcut=shortcutCursorModifiers();
+    if(m_space || spaceHeld || m_panning)return Qt::OpenHandCursor;
+    if(m_client && (m_client->moveTool() || shortcut.testFlag(Qt::ControlModifier) || m_moving) && !m_client->liquifyActive() && !m_client->transformActive())return Qt::SizeAllCursor;
+    if(eyedropperCursorVisible() || brushCursorVisible())return Qt::BlankCursor;
+    return Qt::CrossCursor;
+}
+void CanvasItem::refreshShortcutCursor() {
+    const bool altBefore=m_altHeld,ctrlBefore=m_ctrlHeld;
+    const bool brushBefore=brushCursorVisible(),eyedropperBefore=eyedropperCursorVisible();
+    const auto cursorBefore=cursor();
+    const auto physical=shortcutModifiersFromSystem();
+    if(m_altHeld && !physical.testFlag(Qt::AltModifier)) {
+        if(++m_altReleaseTicks>=2){m_altHeld=false;if(m_client && !m_client->eyedropperTool())endPicking();}
+    } else {
+        m_altReleaseTicks=0;
+    }
+    if(m_ctrlHeld && !physical.testFlag(Qt::ControlModifier)) {
+        if(++m_ctrlReleaseTicks>=2)m_ctrlHeld=false;
+    } else {
+        m_ctrlReleaseTicks=0;
+    }
+    const bool changed=m_altHeld!=altBefore || m_ctrlHeld!=ctrlBefore;
+    setCursor(effectiveCursor());
+    if(tabletCursorOwner==this && m_observedWindow)m_observedWindow->setCursor(cursor());
+    if(changed || cursor()!=cursorBefore || brushCursorVisible()!=brushBefore || eyedropperCursorVisible()!=eyedropperBefore)emit brushCursorChanged();
+    updateCursorPoll();
 }
 void CanvasItem::updateCursorPoll() {
     if(m_interactive && isVisible() && isEnabled() && (m_cursorInside || m_altHeld || m_ctrlHeld))m_shortcutStateTimer.start();
