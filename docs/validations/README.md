@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [主线 B1 — Tablet Input & Cursor Ownership](brush/input/tablet-input-cursor-ownership-validation.md)
+
 - [Brush Interaction Baseline（Issue #2-A）](brush/performance/brush-interaction-baseline-validation.md)
 - [Color-only State Invalidation（Issue #2-B）](brush/performance/color-state-invalidation-validation.md)
 
@@ -70,7 +72,7 @@
 | [ABR 导入](brush/abr/) | 18 | 描述符、采样、来源关联与参数转换 |
 | [VBR 格式](brush/vbr/) | 5 | VBR 1.0、资源包、来源与兼容 |
 | [画笔库与分组](brush/library/) | 21 | 目录、资源、组织树、持久化与导入导出 |
-| [笔刷输入](brush/input/) | 7 | 输入分页、设备姿态与 Windows 路由 |
+| [笔刷输入](brush/input/) | 10 | 输入分页、设备姿态与 Windows 路由 |
 | [笔刷界面](brush/ui/) | 31 | 画笔设置、库面板、光标、预览和菜单 |
 | [纹理](brush/texture/) | 5 | 覆盖模式、资源、深度与来源 |
 | [笔刷性能](brush/performance/) | 2 | 大笔刷、密集笔触和图片笔尖 |

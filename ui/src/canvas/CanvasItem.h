@@ -123,6 +123,7 @@ private:
     bool ignoreCachedMouseHover(QHoverEvent *event);
     QTimer m_tabletCursorRefresh;
     bool m_penOwnsHover = false;
+    QPointer<const QPointingDevice> m_penDevice;
     QCursor m_savedWindowCursor;
     void setSpacePanning(bool held);
     void setKeySpace(bool held);
@@ -192,7 +193,7 @@ private:
     /// Alt is held: the pointer acts as the eyedropper and shows a crosshair.
     bool m_altHeld = false, m_ctrlHeld = false;
     Qt::KeyboardModifiers m_cursorShortcutModifiers;
-    QTimer m_shortcutStateTimer;int m_altReleaseTicks=0,m_ctrlReleaseTicks=0;
+    QTimer m_shortcutStateTimer;int m_altReleaseTicks=0,m_ctrlReleaseTicks=0,m_spaceReleaseTicks=0;
     void setAltHeld(bool held);
     void setCtrlHeld(bool held);
     void syncShortcutModifiers(Qt::KeyboardModifiers modifiers,bool latchOnly);

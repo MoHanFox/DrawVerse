@@ -1,6 +1,7 @@
 #include "platform/TabletInput.h"
 #include <QGuiApplication>
 #include <QPointingDevice>
+#include <QTabletEvent>
 #ifdef Q_OS_WIN
 #include <QtGui/private/qguiapplication_p.h>
 #endif
@@ -28,4 +29,16 @@ bool acceptTabletInputDevice(const QString &backend,const QPointingDevice *devic
     // after WinTab is enabled. Mixing both device streams duplicates hover and
     // contact packets, so only the selected backend may drive canvas gestures.
     return backend!=QStringLiteral("wintab") || !device || device->name()!=QStringLiteral("wmpointer");
+}
+bool rejectTabletInputEvent(QEvent *event) {
+    switch(event->type()) {
+    case QEvent::TabletPress:case QEvent::TabletMove:case QEvent::TabletRelease:
+    case QEvent::TabletEnterProximity:case QEvent::TabletLeaveProximity:
+        if(!acceptTabletInputDevice(activeTabletInputBackend(),static_cast<QTabletEvent*>(event)->pointingDevice())) {
+            event->accept();return true;
+        }
+        break;
+    default:break;
+    }
+    return false;
 }

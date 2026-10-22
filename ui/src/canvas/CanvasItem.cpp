@@ -13,6 +13,7 @@
 #include <QGuiApplication>
 #include <QPointingDevice>
 #include <QScreen>
+#include <QScopeGuard>
 #include <QLineF>
 #include <algorithm>
 #include <cmath>
@@ -37,6 +38,8 @@ public:
 // Application-wide space-pan hold: the canvas that owns keyboard focus raises it, every canvas observes it.
 bool spaceHeld=false;
 QPointer<CanvasItem> tabletCursorOwner;
+// Contact capture outlives hover ownership when a stroke crosses a canvas edge.
+QPointer<CanvasItem> tabletContactOwner;
 Qt::KeyboardModifiers shortcutModifiersFromSystem() {
 #ifdef Q_OS_WIN
     Qt::KeyboardModifiers modifiers;
@@ -73,6 +76,7 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
     connect(this, &CanvasItem::viewChanged, this, [this] { if (!m_viewTimer.isActive()) m_viewTimer.start(); });
     connect(this,&CanvasItem::viewChanged,this,[this]{if(m_havePoseSample && (!m_client || !m_client->drawing()))m_poseSample.position=documentPoint(m_cursorPosition);refreshBrushCursor();});
     const auto observeWindow=[this](QQuickWindow *window) {
+        if(m_tablet)mouseUngrabEvent();
         cancelLayerMove();stopNavigation();
         setTabletWindowCursor(false);
         if (m_observedWindow) { m_observedWindow->removeEventFilter(this); disconnect(m_observedWindow, nullptr, this, nullptr); }
@@ -91,8 +95,8 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
         m_viewTimer.start();
     };
     connect(this, &QQuickItem::windowChanged, this, observeWindow);
-    connect(this,&QQuickItem::enabledChanged,this,[this] {if(!isEnabled()){cancelLayerMove();stopNavigation();endPicking();setTabletWindowCursor(false);}});
-    connect(this,&QQuickItem::visibleChanged,this,[this] {if(!isVisible()){cancelLayerMove();stopNavigation();endPicking();setTabletWindowCursor(false);}});
+    connect(this,&QQuickItem::enabledChanged,this,[this] {if(!isEnabled()){if(m_tablet)mouseUngrabEvent();cancelLayerMove();stopNavigation();endPicking();setTabletWindowCursor(false);}});
+    connect(this,&QQuickItem::visibleChanged,this,[this] {if(!isVisible()){if(m_tablet)mouseUngrabEvent();cancelLayerMove();stopNavigation();endPicking();setTabletWindowCursor(false);}});
     observeWindow(window());
 }
 void CanvasItem::observeScreen(QScreen *screen) {
@@ -101,6 +105,10 @@ void CanvasItem::observeScreen(QScreen *screen) {
     m_viewTimer.start();
 }
 CanvasItem::~CanvasItem() {
+    // QQuickItem's base destructor can publish window/visibility changes after
+    // our timer members have been destroyed. Do not run constructor callbacks then.
+    disconnect(this,nullptr,this,nullptr);
+    if(m_tablet)mouseUngrabEvent();
     cancelLayerMove();
     setTabletWindowCursor(false);
     qApp->removeEventFilter(this);
@@ -109,6 +117,7 @@ CanvasItem::~CanvasItem() {
 }
 void CanvasItem::setClient(PaintCoreClient *client) {
     if (m_client == client) return;
+    if(m_tablet)mouseUngrabEvent();
     cancelLayerMove();
     stopNavigation();m_image={};m_overview={};m_residentPreview={};m_movePreparation={};m_moveWarmupPending=false;
     emit residentPresentationChanged();
@@ -136,7 +145,7 @@ void CanvasItem::setClient(PaintCoreClient *client) {
     refreshBrushCursor();emit clientChanged();
 }
 void CanvasItem::setInteractive(bool enabled) {
-    if(!enabled){cancelLayerMove();endPicking();setTabletWindowCursor(false);}
+    if(!enabled){if(m_tablet)mouseUngrabEvent();cancelLayerMove();endPicking();setTabletWindowCursor(false);}
     m_interactive = enabled; setAcceptedMouseButtons(enabled ? Qt::LeftButton | Qt::MiddleButton : Qt::NoButton);
     m_fitPending = true; refresh();refreshBrushCursor(); emit interactiveChanged(); emit viewChanged();
 }
@@ -214,8 +223,11 @@ void CanvasItem::setTabletWindowCursor(bool active) {
         m_observedWindow->setCursor(cursor());
     } else if(tabletCursorOwner==this) {
         m_tabletCursorRefresh.stop();
-        if(m_observedWindow)m_observedWindow->setCursor(m_savedWindowCursor);
         tabletCursorOwner.clear();
+        m_cursorInside=false;applyShortcutCursor();
+        // Quick may already have hidden the mouse over this same canvas before
+        // the pen acquired it. That Blank belongs to the outline just released.
+        if(m_observedWindow)m_observedWindow->setCursor(m_savedWindowCursor.shape()==Qt::BlankCursor?cursor():m_savedWindowCursor);
     }
 }
 void CanvasItem::setSpacePanning(bool held) {
@@ -224,6 +236,7 @@ void CanvasItem::setSpacePanning(bool held) {
     if(changed)emit spacePanningChanged();
 }
 void CanvasItem::setKeySpace(bool held) {
+    m_spaceReleaseTicks=0;
     // The focused canvas owns this half of the state; the global hold covers every other canvas.
     const bool changed=(m_space || spaceHeld)!=(held || spaceHeld);m_space=held;
     if(changed)emit spacePanningChanged();
@@ -238,6 +251,7 @@ void CanvasItem::updateTabletHover(QHoverEvent *event) {
     // Some tablet backends deliver only Quick hover events between strokes.
     // Keep device geometry from TabletMove, but always use the current position.
     m_penOwnsHover=true;
+    m_penDevice=event->pointingDevice();
     InputSample sample=m_havePoseSample && (m_poseSample.tool==1 || m_poseSample.tool==2)?m_poseSample:InputSample{};
     sample.position=documentPoint(event->position());sample.pressure=0;
     sample.tool=event->pointingDevice()->pointerType()==QPointingDevice::PointerType::Eraser?2:1;
@@ -659,6 +673,7 @@ void CanvasItem::mouseUngrabEvent() {
     endPicking();
     if (m_client && (m_stroke || m_client->drawing())) m_client->cancelStroke();
     m_stroke = false; m_tablet = false; m_panning = false; m_moving=false;if(m_selectionKind!=3)cancelSelectionDrag();refreshBrushCursor();
+    if(tabletContactOwner==this)tabletContactOwner.clear();
 }
 void CanvasItem::wheelEvent(QWheelEvent *e) {
     if (!m_interactive) { e->ignore(); return; }
@@ -730,6 +745,14 @@ QCursor CanvasItem::effectiveCursor() const {
     return Qt::CrossCursor;
 }
 void CanvasItem::refreshShortcutCursor() {
+    bool releasedSpace=false;
+#ifdef Q_OS_WIN
+    // Recover an already accepted hold only. Never acquire Space by polling:
+    // a text editor may own its KeyPress, and must keep receiving normal spaces.
+    if((m_space || spaceHeld) && !(GetAsyncKeyState(VK_SPACE)&0x8000)) {
+        if(++m_spaceReleaseTicks>=2){setKeySpace(false);setSpacePanning(false);releasedSpace=true;}
+    } else m_spaceReleaseTicks=0;
+#endif
     const auto physical=shortcutModifiersFromSystem();
     if(m_altHeld && !physical.testFlag(Qt::AltModifier)) {
         if(++m_altReleaseTicks>=2){m_altHeld=false;if(m_client && !m_client->eyedropperTool())endPicking();}
@@ -743,7 +766,7 @@ void CanvasItem::refreshShortcutCursor() {
         m_ctrlReleaseTicks=0;
         if(physical.testFlag(Qt::ControlModifier))m_ctrlHeld=true;
     }
-    if(m_cursorShortcutModifiers!=readShortcutCursorModifiers())applyShortcutCursor();
+    if(releasedSpace || m_cursorShortcutModifiers!=readShortcutCursorModifiers())applyShortcutCursor();
     updateCursorPoll();
 }
 void CanvasItem::applyShortcutCursor() {
@@ -754,13 +777,15 @@ void CanvasItem::applyShortcutCursor() {
     updateCursorPoll();
 }
 void CanvasItem::updateCursorPoll() {
-    if(m_interactive && isVisible() && isEnabled() && (m_cursorInside || m_penOwnsHover || tabletCursorOwner==this || m_altHeld || m_ctrlHeld)){if(!m_shortcutStateTimer.isActive())m_shortcutStateTimer.start();}
-    else if(!m_altHeld && !m_ctrlHeld)m_shortcutStateTimer.stop();
+    if(m_interactive && isVisible() && isEnabled() && (m_cursorInside || m_penOwnsHover || tabletCursorOwner==this || m_altHeld || m_ctrlHeld || m_space || spaceHeld)){if(!m_shortcutStateTimer.isActive())m_shortcutStateTimer.start();}
+    else if(!m_altHeld && !m_ctrlHeld && !m_space && !spaceHeld)m_shortcutStateTimer.stop();
 }
 bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
+    if(rejectTabletInputEvent(event))return true;
+    if(tabletContactOwner && !tabletContactOwner->m_tablet)tabletContactOwner.clear();
     if((m_penOwnsHover || tabletCursorOwner==this) && (event->type()==QEvent::MouseMove || event->type()==QEvent::MouseButtonPress)) {
         const auto *mouse=static_cast<QMouseEvent*>(event);
-        if(!m_tablet && mouse->source()==Qt::MouseEventNotSynthesized && mouse->pointingDevice()->type()==QInputDevice::DeviceType::Mouse){m_penOwnsHover=false;setTabletWindowCursor(false);}
+        if(!m_tablet && mouse->source()==Qt::MouseEventNotSynthesized && mouse->pointingDevice()->type()==QInputDevice::DeviceType::Mouse){m_penOwnsHover=false;m_penDevice.clear();setTabletWindowCursor(false);}
     }
     if(watched==m_observedWindow && event->type()==QEvent::Leave && !m_tablet) {setTabletWindowCursor(false);m_cursorInside=false;refreshBrushCursor();}
 
@@ -786,21 +811,21 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
             auto *focused=qobject_cast<QQuickWindow*>(QGuiApplication::focusWindow());
             auto *item=focused?focused->activeFocusItem():nullptr;
             if(event->type()==QEvent::KeyPress && item && item->flags().testFlag(QQuickItem::ItemAcceptsInputMethod))return false;
+            if(tabletCursorOwner && tabletCursorOwner!=this)return false;
             setKeySpace(event->type()==QEvent::KeyPress);setSpacePanning(event->type()==QEvent::KeyPress);applyShortcutCursor();key->accept();return true;
         }
     }
-    if(event->type()==QEvent::TabletEnterProximity || event->type()==QEvent::TabletLeaveProximity) {
-        auto *tablet=static_cast<QTabletEvent*>(event);
-        if(!acceptTabletInputDevice(activeTabletInputBackend(),tablet->pointingDevice())){event->accept();return true;}
-    }
     if(event->type()==QEvent::TabletLeaveProximity){
+        if(m_penDevice!=static_cast<QTabletEvent*>(event)->pointingDevice())return false;
         // Drivers can report proximity loss without a final contact release.
         // Finish the accepted samples once, then release every pen-owned gesture.
-        if(m_tablet || (m_client && m_client->drawing())){
+        if(m_tablet){
             if(m_client && m_client->drawing())m_client->endStroke();
             m_liquifyTimer.stop();m_stroke=false;
             cancelLayerMove();stopNavigation();cancelSelectionDrag();m_tablet=false;
         }
+        if(tabletContactOwner==this)tabletContactOwner.clear();
+        m_penDevice.clear();
         setTabletWindowCursor(false);m_havePoseSample=false;m_poseDirectionKnown=false;endPicking();m_cursorInside=false;refreshBrushCursor();return false;
     }
     const bool tabletEvent=event->type()==QEvent::TabletPress || event->type()==QEvent::TabletMove || event->type()==QEvent::TabletRelease;
@@ -809,10 +834,8 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         const auto receiver=item?item->window():qobject_cast<QQuickWindow*>(watched);
         if(receiver!=m_observedWindow)return false;
     } else if (watched != m_observedWindow) return false;
-    if(tabletEvent) {
-        auto *eventTablet=static_cast<QTabletEvent*>(event);
-        if(!acceptTabletInputDevice(activeTabletInputBackend(),eventTablet->pointingDevice())){event->accept();return true;}
-    }
+    if(tabletEvent && tabletContactOwner && tabletContactOwner!=this)return false;
+    if(tabletEvent && m_tablet && m_penDevice!=static_cast<QTabletEvent*>(event)->pointingDevice())return false;
     if (event->type() == QEvent::ScreenChangeInternal || event->type() == QEvent::Resize) m_viewTimer.start();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
     if (event->type() == QEvent::DevicePixelRatioChange) m_viewTimer.start();
@@ -848,10 +871,18 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     auto *e = static_cast<QTabletEvent *>(event);
     const auto tabletModifiers=e->modifiers()|(event->type()==QEvent::TabletPress?shortcutModifiersFromSystem():Qt::KeyboardModifiers{});
     if(event->type()==QEvent::TabletPress)syncShortcutModifiers(tabletModifiers,true);
-    m_penOwnsHover=true;
     // Qt Quick may deliver tablet input to an item, whose position is item-local.
     // The global position is shared by both native-window and item delivery paths.
     const QPointF local = mapFromGlobal(e->globalPosition());
+    if(!m_tablet && !contains(local)) {
+        if(tabletCursorOwner==this){setTabletWindowCursor(false);refreshBrushCursor();}
+        return false;
+    }
+    m_penOwnsHover=true;m_penDevice=e->pointingDevice();
+    const auto contact=qScopeGuard([this]{
+        if(m_tablet)tabletContactOwner=this;
+        else if(tabletContactOwner==this)tabletContactOwner.clear();
+    });
     if(event->type()==QEvent::TabletPress)stopNavigation();
     const InputSample s=tabletSample(e,local);
     m_cursorInside=contains(local);m_cursorPosition=local;setTabletWindowCursor(m_cursorInside);setCursorSample(s,event->type()==QEvent::TabletPress);refreshBrushCursor();

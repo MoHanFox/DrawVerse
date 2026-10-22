@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [主线 B1 — Tablet Input & Cursor Ownership](brush/input/tablet-input-cursor-ownership-design.md)
+
 - [大范围像素滑条指数调节](interface/pixel-slider-exponential-design.md)
 
 - [原始清单与 UI 回归统一待修复清单](planning/2026-10-21-remaining-fixes-design.md)
@@ -60,7 +62,7 @@
 | ABR 导入 | [19 份](brush/abr/) | [18 份](validations/brush/abr/) | 描述符、采样、来源关联与参数转换 |
 | VBR 格式 | [7 份](brush/vbr/) | [5 份](validations/brush/vbr/) | VBR 1.0、资源包、来源与兼容 |
 | 画笔库与分组 | [21 份](brush/library/) | [21 份](validations/brush/library/) | 目录、资源、组织树、持久化与导入导出 |
-| 笔刷输入 | [8 份](brush/input/) | [7 份](validations/brush/input/) | 输入分页、设备姿态与 Windows 路由 |
+| 笔刷输入 | [11 份](brush/input/) | [10 份](validations/brush/input/) | 输入分页、设备姿态与 Windows 路由 |
 | 笔刷界面 | [31 份](brush/ui/) | [31 份](validations/brush/ui/) | 画笔设置、库面板、光标、预览和菜单 |
 | 纹理 | [5 份](brush/texture/) | [5 份](validations/brush/texture/) | 覆盖模式、资源、深度与来源 |
 | 笔刷性能 | [2 份](brush/performance/) | [2 份](validations/brush/performance/) | 大笔刷、密集笔触和图片笔尖 |
