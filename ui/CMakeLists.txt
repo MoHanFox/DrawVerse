@@ -74,8 +74,33 @@ qt_add_qml_module(drawverse_ui URI qml VERSION 1.0
     QML_FILES ${_drawverse_ui_qml})
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES ${_drawverse_ui_assets})
+# Only this shared material uses build-time HLSL compilation. Keep its URLs and
+# all non-D3D targets unchanged; overlay shaders retain the original options.
+option(DRAWVERSE_PRECOMPILE_MOVE_SHADERS "Precompile Windows move/liquify HLSL using SDK fxc on PATH" ${WIN32})
+set(_drawverse_move_shader_options "")
+if(WIN32 AND DRAWVERSE_PRECOMPILE_MOVE_SHADERS)
+    find_program(_drawverse_fxc NAMES fxc NO_CACHE)
+    if(NOT _drawverse_fxc)
+        message(FATAL_ERROR "Move shader PRECOMPILE needs Windows SDK fxc on PATH (use a Developer Shell). Set DRAWVERSE_PRECOMPILE_MOVE_SHADERS=OFF for the runtime HLSL fallback.")
+    endif()
+    list(APPEND _drawverse_move_shader_options PRECOMPILE)
+    message(STATUS "Move shaders: build-time HLSL -> DXBC with ${_drawverse_fxc}; verified after qsb")
+else()
+    message(STATUS "Move shaders: original runtime HLSL compilation path")
+endif()
 qt_add_shaders(drawverse_ui liquify_shaders PREFIX "/shaders" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-    GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag shaders/adaptive-cursor.frag shaders/transform-composite.frag shaders/selection-ants.frag)
+    ${_drawverse_move_shader_options} GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag)
+qt_add_shaders(drawverse_ui overlay_shaders PREFIX "/shaders" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    GLSL "300es,330" FILES shaders/adaptive-cursor.frag shaders/transform-composite.frag shaders/selection-ants.frag)
+if(WIN32 AND DRAWVERSE_PRECOMPILE_MOVE_SHADERS)
+    # qsb can return success after fxc failed. Fail the build if it retained HLSL.
+    add_custom_target(drawverse_move_shader_check
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/check_move_shader_artifacts.py"
+            "$<TARGET_FILE:Qt6::qsb>" "${CMAKE_CURRENT_BINARY_DIR}/.qsb" --precompiled
+        DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/.qsb/liquify.vert.qsb" "${CMAKE_CURRENT_BINARY_DIR}/.qsb/liquify.frag.qsb"
+        VERBATIM)
+    add_dependencies(drawverse_ui drawverse_move_shader_check)
+endif()
 
 # Editing QML or an asset must recompile the generated resource object.
 get_target_property(_drawverse_qrc_sources drawverse_ui SOURCES)
