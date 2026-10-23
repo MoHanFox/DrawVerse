@@ -67,8 +67,10 @@ private slots:
         QPoint finalDelta;
         for(int phase=0;phase<2;++phase){
             InteractionTrace::operation=phase*1000;
+            client.setMoveTool(false);
+            // Count only this activation's reset and completion, not the preceding clear.
             QSignalSpy preparation(&client,&PaintCoreClient::movePreparationChanged);
-            client.setMoveTool(false);const auto prepareStart=InteractionTrace::now();client.setMoveTool(true);
+            const auto prepareStart=InteractionTrace::now();client.setMoveTool(true);
             if(phase){
                 if(scenario==4)QTRY_VERIFY_WITH_TIMEOUT(preparation.size()>=2,60000);
                 else QTRY_VERIFY_WITH_TIMEOUT(client.movePreparation() && client.movePreparation()->uploads->load()>0,60000);
