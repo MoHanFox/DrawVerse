@@ -315,3 +315,45 @@ fn limited_budget_and_layer_order_changes_never_invent_missing_mips() {
     assert_eq!(d.translation_reason, 5);
     exact(&cache, &doc, r);
 }
+
+#[test]
+fn fixed_nonuniform_upper_layer_and_post_move_edits_do_not_leak_old_composition() {
+    for format in [
+        PixelFormat::LinearRgba32F,
+        PixelFormat::SrgbRgba8Premultiplied,
+    ] {
+        let (mut doc, moving) = fixture(true, false);
+        let upper = doc
+            .add_layer("fixed nonuniform upper contribution")
+            .unwrap();
+        paint(&mut doc, 19);
+        doc.set_active_layer(moving).unwrap();
+        let cache = CachedCpuRenderer::default();
+        let r = request(format, 2);
+        exact(&cache, &doc, r);
+        doc.move_layer(moving, 64, -64).unwrap();
+        let (result, d) = cache.render_diagnosed(&doc.snapshot(), r, &CancellationToken::default());
+        result.unwrap();
+        assert_eq!(d.translation_reason, 4);
+        assert_eq!(d.translations, 0);
+        assert!(d.misses > 0);
+        exact(&cache, &doc, r);
+        paint(&mut doc, 7);
+        exact(&cache, &doc, r);
+        doc.undo().unwrap();
+        exact(&cache, &doc, r);
+        doc.redo().unwrap();
+        exact(&cache, &doc, r);
+        doc.remove_layer(upper).unwrap();
+        exact(&cache, &doc, r);
+        let mut appearance = doc.layer(moving).unwrap().appearance();
+        appearance.fill = 0.43;
+        doc.set_layer_appearance(moving, appearance).unwrap();
+        doc.move_layer(moving, 64, 0).unwrap();
+        let (result, d) = cache.render_diagnosed(&doc.snapshot(), r, &CancellationToken::default());
+        result.unwrap();
+        assert_eq!(d.translations, 0);
+        assert_eq!(d.translation_reason, 5);
+        exact(&cache, &doc, r);
+    }
+}

@@ -63,8 +63,8 @@ pub(super) fn checkpoint(
 thread_local! { static CANCEL_AT: std::cell::Cell<Option<(&'static str,usize)>> = const { std::cell::Cell::new(None) }; }
 
 fn full(coord: TileCoord, dimensions: (u32, u32)) -> bool {
-    (u64::from(coord.x) + 1) * 64 <= u64::from(dimensions.0)
-        && (u64::from(coord.y) + 1) * 64 <= u64::from(dimensions.1)
+    (u64::from(coord.x) + 1) * u64::from(TILE_SIZE) <= u64::from(dimensions.0)
+        && (u64::from(coord.y) + 1) * u64::from(TILE_SIZE) <= u64::from(dimensions.1)
 }
 impl Cache {
     pub(super) fn reconfigure(
@@ -81,7 +81,7 @@ impl Cache {
             if self.entries.is_empty() {
                 return Err(3);
             }
-            if self.dimensions != (snapshot.width, snapshot.height) || lod > 6 {
+            if self.dimensions != (snapshot.width, snapshot.height) || lod > TILE_SIZE.ilog2() {
                 return Err(7);
             }
             let id = self.translation_layer.ok_or(4u32)?;
@@ -107,10 +107,11 @@ impl Cache {
             }
             let dx = i64::from(new.offset.0) - i64::from(old.offset.0);
             let dy = i64::from(new.offset.1) - i64::from(old.offset.1);
-            if (dx == 0 && dy == 0) || dx % 64 != 0 || dy % 64 != 0 {
+            let tile = i64::from(TILE_SIZE);
+            if (dx == 0 && dy == 0) || dx % tile != 0 || dy % tile != 0 {
                 return Err(6);
             }
-            Ok((i, dx / 64, dy / 64, id))
+            Ok((i, dx / tile, dy / tile, id))
         })();
         checkpoint("after_qualification", cancel)?;
         let (i, dx, dy, id) = match qualification {
