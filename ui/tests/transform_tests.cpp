@@ -606,11 +606,14 @@ Window {
             {"dpr",1},{"zoom",0.25},{"document_origin",QJsonArray{32,90}},{"size",QJsonArray{1024,720}},
             {"context_epoch",10},{"input_epoch",2},{"target_plan",2},{"preview_source",0},{"preview_revision",0},
             {"begin_sequence",13},{"target_sequence",14},
-            {"scenario_invalid",false}};
+            {"scenario_invalid",false},{"client_matches",true}};
         const QJsonObject adopted{{"epoch",3},{"valid",true},{"canvas","canvas1"},{"window","window1"},{"generation",3},
             {"resident",false},{"image_key","1234"},{"region",QJsonArray{0,0,3840,2160}},
             {"document_origin",QJsonArray{32,90}},{"zoom",0.25},{"size",QJsonArray{1024,720}}};
         context["render"]=adopted;
+        const auto view=PendingMoveEvidence::viewIdentity(context);
+        auto notified=context;notified["revision"]=8;QCOMPARE(PendingMoveEvidence::viewIdentity(notified),view);
+        notified["zoom"]=0.5;QVERIFY(PendingMoveEvidence::viewIdentity(notified)!=view);
         const auto make=[](QJsonObject s){QJsonObject sample{{"id",1},{"ready_id",1},{"completed",true},{"image_key","grab1"},{"grab_canvas","canvas1"}};
             for(const auto *key:{"request_state","ready_state","complete_state","assertion_state"})sample[key]=s;return sample;};
         const auto accepts=[](const QJsonObject &s){return PendingMoveEvidence::associated(s,3,{384,0},5);};

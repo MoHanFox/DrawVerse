@@ -29,8 +29,8 @@ public:
         connect(client,&PaintCoreClient::stateChanged,this,changed);
         connect(client,&PaintCoreClient::frameChanged,this,changed);
         connect(client,&PaintCoreClient::errorChanged,this,changed);
-        connect(canvas,&CanvasItem::viewChanged,this,[this]{if(m_armed)m_invalid=true;observeContext();});
-        connect(canvas,&CanvasItem::clientChanged,this,[this]{if(m_armed)m_invalid=true;observeContext();});
+        connect(canvas,&CanvasItem::viewChanged,this,changed);
+        connect(canvas,&CanvasItem::clientChanged,this,changed);
         connect(canvas,&QQuickItem::visibleChanged,this,changed);
         connect(canvas,&QQuickItem::widthChanged,this,changed);connect(canvas,&QQuickItem::heightChanged,this,changed);
         connect(canvas,&CanvasItem::residentPresentationChanged,this,changed);
@@ -56,7 +56,9 @@ public:
             qWarning("Unable to export pending move evidence");
     }
     void phase(const char *name) {m_phase=name;mark(name);}
-    void expect(quint64 generation,QPoint delta,int depth) {m_generation=generation;m_delta=delta;m_depth=depth;m_armed=true;}
+    void expect(quint64 generation,QPoint delta,int depth) {
+        m_generation=generation;m_delta=delta;m_depth=depth;m_fixedView=viewIdentity(state());m_armed=true;
+    }
     void passed() {m_assertionPassed=true;m_armed=false;phase("pending-pixels-passed");}
     void send(QEvent::Type type,QPointF position) {
         // A specific live event object, not source/device/time proximity, proves
@@ -84,6 +86,10 @@ public:
             && frame["generation"].toDouble()==double(generation) && frame["view"].toInt(-1)==0
             && frame["revision"].toDouble()==s["revision"].toDouble();
     }
+    static QJsonObject viewIdentity(const QJsonObject &s) {
+        QJsonObject view;for(const auto *key:{"generation","canvas","window","client_matches","zoom","document_origin","size","dpr"})view[key]=s[key];
+        return view;
+    }
     static bool associated(const QJsonObject &sample,quint64 generation,QPoint delta,int depth) {
         if(sample["id"].toInt()<=0 || !sample["completed"].toBool() || sample["image_key"].toString().isEmpty()
             || sample["ready_id"]!=sample["id"])return false;
@@ -91,7 +97,7 @@ public:
         const auto render=request["render"].toObject();
         if(!render["valid"].toBool() || request["scenario_invalid"].toBool() || request["target_plan"].toInt()<2
             || request["context_epoch"].toInt()<=0 || request["input_epoch"].toInt()<=0 || render["epoch"].toInt()<=0
-            || request["frame_key"].toString().isEmpty()
+            || request["frame_key"].toString().isEmpty() || !request["client_matches"].toBool()
             || request["begin_sequence"].toInt()<=0 || request["target_sequence"].toInt()<=request["begin_sequence"].toInt()
             || request["sequence"]!=request["target_sequence"]
             || request["canvas"]!=sample["grab_canvas"] || render["canvas"]!=request["canvas"]
@@ -196,6 +202,9 @@ protected:
 private:
     void observeContext() {
         const auto s=state();QJsonObject token;
+        // stateChanged also emits viewChanged without a transform change.
+        // Compare actual identities rather than notification counts.
+        if(m_armed && viewIdentity(s)!=m_fixedView)m_invalid=true;
         if(m_armed && !m_targetSequence && m_targetPlan && m_beginSequence
             && acceptedContext(s,m_generation,m_delta,m_depth) && m_client->moveSequence()>m_beginSequence)
             m_targetSequence=m_client->moveSequence(); // Actual accepted UPDATE, never a guessed +1.
@@ -223,6 +232,7 @@ private:
         const auto receipt=m_client->moveReceipt();const auto preview=m_client->residentPreview();const auto assets=m_client->movePreparation();
         QJsonObject result{{"ns",double(InteractionTrace::now())},{"owner",double(m_owner)},
             {"canvas",QString::number(quintptr(m_canvas.data()))},{"window",QString::number(quintptr(m_window.data()))},
+            {"client_matches",m_canvas->client()==m_client && m_canvas->window()==m_window},
             {"generation",double(m_client->generation())},{"revision",double(m_client->revision())},
             {"sequence",double(m_client->moveSequence())},{"move",QJsonObject::fromVariantMap(m_client->moveObservation())},
             {"frame",QJsonObject::fromVariantMap(m_client->frameIdentity())},{"frame_key",QString::number(m_client->frame().cacheKey())},
@@ -256,7 +266,7 @@ private:
     std::shared_ptr<CanvasPresentationObservation> m_presentation;
     const QEvent *m_plannedEvent=nullptr;
     quint64 m_planId=0,m_targetPlan=0,m_inputEpoch=0,m_contextEpoch=0,m_beginSequence=0,m_targetSequence=0;
-    bool m_armed=false,m_invalid=false,m_grabFailed=false;QJsonObject m_context;
+    bool m_armed=false,m_invalid=false,m_grabFailed=false;QJsonObject m_context,m_fixedView;
     QSharedPointer<QQuickItemGrabResult> m_failedGrab;
     quint64 m_owner=0,m_request=0,m_generation=0;QPoint m_delta;int m_depth=0;
     QString m_directory,m_phase="initial";bool m_enabled=false,m_anyPixelMatch=false,m_assertionPassed=false;
