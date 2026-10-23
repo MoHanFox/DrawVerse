@@ -517,6 +517,8 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     }
     // The scene graph owns GPU resources; no graphics objects cross the GUI/worker boundary.
     if (node->imageKey != m_image.cacheKey()) {
+        InteractionTrace::Scope trace("move.render.replaceFrameTexture");
+        if(trace.active)trace.event.value=double(m_image.cacheKey());
         QSGTexture *texture = window()->createTextureFromImage(m_image);
         if (!texture) { delete node; return nullptr; }
         // setTexture deletes the previous texture when ownsTexture is true.

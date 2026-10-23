@@ -251,3 +251,8 @@ set_target_properties(qt_interaction_trace_tests PROPERTIES WIN32_EXECUTABLE FAL
 qt_add_executable(qt_color_state_tests EXCLUDE_FROM_ALL tests/color_state_tests.cpp)
 target_link_libraries(qt_color_state_tests PRIVATE drawverse_ui Qt6::Test)
 set_target_properties(qt_color_state_tests PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+# Manual C1 investigation, deliberately absent from default builds and CTest.
+qt_add_executable(qt_layer_move_baseline EXCLUDE_FROM_ALL tests/layer_move_baseline.cpp)
+target_link_libraries(qt_layer_move_baseline PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_layer_move_baseline PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
