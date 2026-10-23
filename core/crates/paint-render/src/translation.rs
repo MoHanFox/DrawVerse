@@ -187,3 +187,7 @@ impl Cache {
         Ok(outcome)
     }
 }
+
+#[cfg(test)]
+#[path = "translation_tests.rs"]
+mod tests;

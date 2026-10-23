@@ -47,8 +47,8 @@ fn request(format: PixelFormat, lod: u32) -> RenderRequest {
             width: 345.,
             height: 280.,
         },
-        width: (345 / (1 << lod)).max(1),
-        height: (280 / (1 << lod)).max(1),
+        width: 345u32.div_ceil(1 << lod),
+        height: 280u32.div_ceil(1 << lod),
         format,
     }
 }
@@ -173,4 +173,145 @@ fn groups_linked_and_fixed_masks_are_exact_fallbacks() {
         doc.move_layer(id, 64, 64).unwrap();
         exact(&cache, &doc, r);
     }
+}
+
+#[test]
+fn actual_translation_counts_are_distinct_and_unsafe_backgrounds_are_rejected() {
+    for background in [false, true] {
+        let (mut doc, id) = fixture(true, background);
+        let cache = CachedCpuRenderer::default();
+        let r = request(PixelFormat::LinearRgba32F, 2);
+        exact(&cache, &doc, r);
+        doc.move_layer(id, 64, 64).unwrap();
+        let (_, d) = cache.render_diagnosed(&doc.snapshot(), r, &CancellationToken::default());
+        if background {
+            assert_eq!(d.translation_reason, 4);
+            assert_eq!(d.translations, 0);
+        } else {
+            assert_eq!(d.translation_reason, 1);
+            assert!(d.translations > 0);
+            assert!(d.misses > 0);
+            assert_eq!(d.hits, 0);
+        }
+        exact(&cache, &doc, r);
+        let (_, warm) = cache.render_diagnosed(&doc.snapshot(), r, &CancellationToken::default());
+        assert_eq!(warm.translations, 0);
+        assert_eq!(warm.misses, 0);
+        assert!(warm.hits > 0);
+    }
+}
+#[test]
+fn non_aligned_special_stacks_and_configuration_changes_do_not_translate() {
+    for change in 0..7 {
+        let (mut doc, id) = fixture(true, false);
+        let cache = CachedCpuRenderer::default();
+        let r = request(PixelFormat::SrgbRgba8Premultiplied, 2);
+        exact(&cache, &doc, r);
+        match change {
+            0 => doc.move_layer(id, 383, 127).unwrap(),
+            1 => doc.move_layer(id, 1, 0).unwrap(),
+            2 => {
+                doc.group_layer(id, "group").unwrap();
+                doc.move_layer(id, 64, 0).unwrap();
+            }
+            3 => {
+                doc.add_mask(id).unwrap();
+                doc.move_layer(id, 64, 0).unwrap();
+            }
+            4 => {
+                let mut a = doc.layer(id).unwrap().appearance();
+                a.blend = BlendMode::Multiply;
+                doc.set_layer_appearance(id, a).unwrap();
+                doc.move_layer(id, 64, 0).unwrap();
+            }
+            5 => {
+                doc.set_layer_properties(
+                    id,
+                    LayerProperties {
+                        visible: true,
+                        opacity: 0.25,
+                    },
+                )
+                .unwrap();
+                doc.move_layer(id, 64, 0).unwrap();
+            }
+            _ => {
+                doc.add_layer("empty but structure changed").unwrap();
+                doc.move_layer(id, 64, 0).unwrap();
+            }
+        }
+        let (_, d) = cache.render_diagnosed(&doc.snapshot(), r, &CancellationToken::default());
+        assert_eq!(d.translations, 0);
+        assert_eq!(
+            d.translation_reason,
+            if change < 2 {
+                6
+            } else if change < 5 {
+                4
+            } else {
+                5
+            }
+        );
+        exact(&cache, &doc, r);
+    }
+}
+#[test]
+fn edited_source_phase_and_panned_view_only_reuse_proven_existing_tiles() {
+    let (mut doc, id) = fixture(true, false);
+    let cache = CachedCpuRenderer::default();
+    let r = request(PixelFormat::LinearRgba32F, 2);
+    doc.move_layer(id, 1, 1).unwrap();
+    exact(&cache, &doc, r);
+    doc.begin_stroke(
+        Brush {
+            radius: 2.,
+            color: Pixel::from_straight([0.8, 0.1, 0.3, 0.5]).unwrap(),
+            ..Default::default()
+        },
+        InputPoint::new(70., 80., 1.),
+    )
+    .unwrap();
+    doc.end_stroke().unwrap();
+    doc.move_layer(id, 64, 64).unwrap();
+    let (_, d) = cache.render_diagnosed(&doc.snapshot(), r, &CancellationToken::default());
+    assert_eq!(d.translation_reason, 1);
+    assert!(d.translations > 0);
+    assert!(d.misses > 0);
+    exact(&cache, &doc, r);
+    doc.move_layer(id, -64, -64).unwrap();
+    let mut pan = r;
+    pan.region.x = 67.25;
+    pan.region.y = 65.5;
+    pan.region.width = 200.;
+    pan.region.height = 190.;
+    exact(&cache, &doc, pan);
+    doc.undo().unwrap();
+    exact(&cache, &doc, r);
+    doc.redo().unwrap();
+    exact(&cache, &doc, r);
+}
+
+#[test]
+fn limited_budget_and_layer_order_changes_never_invent_missing_mips() {
+    let (mut doc, id) = fixture(true, false);
+    let cache = CachedCpuRenderer::with_cache_budget(25_000).unwrap();
+    let r = request(PixelFormat::SrgbRgba8Premultiplied, 2);
+    exact(&cache, &doc, r);
+    let available = cache.cache_stats().entries;
+    assert!(available > 0 && available < 25);
+    doc.move_layer(id, 64, 0).unwrap();
+    let (_, d) = cache.render_diagnosed(&doc.snapshot(), r, &CancellationToken::default());
+    assert!(d.translations <= available as u64);
+    assert!(d.translations > 0);
+    assert!(d.misses > 0);
+    assert!(d.retained_bytes <= 25_000);
+    exact(&cache, &doc, r);
+    let top = doc.add_layer("uniform transparent top").unwrap();
+    exact(&cache, &doc, r);
+    doc.drop_layer(id, top, 1).unwrap();
+    doc.move_layer(id, 64, 0).unwrap();
+    let (_, d) = cache.render_diagnosed(&doc.snapshot(), r, &CancellationToken::default());
+    assert_eq!(d.translations, 0);
+    assert_eq!(d.translation_reason, 5);
+    exact(&cache, &doc, r);
 }
