@@ -1,5 +1,7 @@
 # 主线 C3 — Move Start & Tracking Responsiveness
 
+**当前结论见末尾 [Shader Artifact Check & Precompile Comparison](#c3-shader-artifact-check--precompile-comparison2026-10-23)：已验证 Windows 构建期 DXBC 预编译可减少本机首次材质使用的长等待；持续跟随没有一致改善。下文开头为历史调查，时间、源码身份和失败均保留。**
+
 2026-10-23。本轮交付**有界调查与可执行探针，没有产品优化**。已在两个有效
 原生进程中定位 W 起拖的一段主要等待；后续直接 W 受到非计划输入干扰，按任务
 边界停止原生重复。持续跟随、直接 W 的有效对照及 Main.qml 代表性验证尚未完成，
@@ -386,3 +388,25 @@ python tools/analyze_move_start_tracking.py <evidence-root> <fresh-analysis-dire
 其中after-3 W2收尾39.305ms并不优于before；未宣称全面流畅或修复所有起拖问题。
 学生真实作品、实体输入、GPU fence、物理显示延迟仍未验收。
 本轮到构建修复和有限证据为止，不继续改调度、缓存资格或调参路径。
+
+## C3 合并前最终核查（2026-10-24）
+
+核查起点 `3f9cc6a6c296e63b6a59981637cee07bf271dcd4`，fetch 后 upstream/develop
+仍为 `9b36e2f80f414ddee062eb87fb6ed429359cae17`。完整差异包括 C3 默认关闭观测、
+共用工具 `2f472db`、两份 shader 的构建修改 `6e6e35f`、仅测试使用的 Main 缓存隔离
+`1c867bc` 与文档；后续没有改变已验证产品行为。实际资源 URL、shader 源、Rust、
+移动回执/取消、采样与缓存资格均保持。render 回调只记录线程安全时间/快照，
+临时连接在窗口销毁前断开，诊断默认关闭；测试观察不吞掉真实输入或生命周期事件。
+
+Qt 的 qsb 单一生成规则同时供资源嵌入与 DXBC 检查使用；检查目标是 UI 库的前置依赖，
+没有第二个写同名产物的生成器。新增构建前提、显式 OFF 回退与运行用户不需要 fxc
+已补入 README 和现有构建复现说明。
+
+只补开关证据缺口：独立 `artifacts/issue-2-main-c3-closure/off-build` 配置 OFF，
+仅构建两份 qsb，检查得到 HLSL 50，摘要与原 before 完全一致。当前 ON 的两份包
+再次检查得到 DXBC 50，且唯一嵌入已有正式 EXE；非 D3D 目标齐全，摘要与上节相同。
+日志为该目录的 `off-configure.log`、`off-build.log`、`off-artifacts.txt`、
+`on-artifacts.txt`。未执行新原生/性能矩阵，未为文档重新制作运行包；复用上节
+20组完整 PNG、原生功能及前后数据。非 Windows 行为由条件分支审查，未声称本机编译验证。
+
+当前可以正常提交合并审查；历史异常和未验收范围继续保留，持续跟随没有一致改善。

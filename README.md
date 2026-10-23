@@ -61,6 +61,8 @@ DrawVerse/
 
 Windows 使用 x64 MSVC 与 Windows SDK，在 Developer PowerShell 中运行以下命令，并确保 Rust 和 CMake 已加入 PATH。项目内 Qt 安装脚本需要 Python 3.10+；本机验证使用 Qt 6.8.3 MSVC x64。
 
+Windows 默认在构建期预编译共享移动/液化材质，需要 Developer Shell 的 Windows SDK `fxc` 在 PATH 中；构建会检查生成的 DXBC，缺少工具或预编译失败会报错。可在配置命令中显式加入 `-DDRAWVERSE_PRECOMPILE_MOVE_SHADERS=OFF` 使用原运行时 HLSL 编译路径。其他 shader 和非 Windows 目标保持原行为；运行完整部署包的用户不需要安装 `fxc`。
+
 ```powershell
 # 可选：安装到项目的 .tools/qt；已有 Qt SDK 可直接使用自己的路径。
 powershell -ExecutionPolicy Bypass -File tools/setup-qt.ps1
