@@ -180,3 +180,209 @@ GUI不可交付区间重叠；同源纹理重复创建、Rust BEGIN执行不是�
 最终工具提交包含测量后的验收强化，不能替换原始测量源码摘要。最终构建/确定性结果
 见 `final-build.log`、`deterministic-final/`；工具与本报告分开提交。没有产品修复，也没有
 新运行包；旧包、对照工作树和全部旧证据保持。
+
+## C3 Shader Artifact Check & Precompile Comparison（2026-10-23）
+
+本节为后续独立实验，不改写上文 measurement-source-v2 的身份和结论。
+**结论：支持将共享移动材质的 HLSL 编译移到构建期，以减少本机首次图形使用的长等待；
+持续跟随没有一致改善，C3、实体手感及物理显示延迟没有整体验收。**
+
+### 版本、产物与构建边界
+
+- 起点 `58ef133b838febe23b5d17d17ea0619b8ecce443`，产品基线仍为
+  `9b36e2f80f414ddee062eb87fb6ed429359cae17`；核查时 upstream/develop 未更新。
+- 固定共用探针/分析器：`2f472dbd65b25484bce9ae5242ba65f704c3bebd`。
+  before 独立工作树 `E:/Git/DrawVerse-c3-shader-before` 在该提交，使用自己的 build
+  和 Cargo target；after 构建修改为 `6e6e35f0f097d9c5003315597476269b06ab2295`。
+  两侧 Rust 均独立链接，不借用旁边工作树的静态库。
+- Main.qml 缓存隔离的测试修订另固定于 `1c867bce1d616324472bd5c5167b8f4ab86964b8`。
+  仅向 before 叠加完全相同的两份测试/runner 文件；before HEAD 仍为 2f472db，
+  不能称为干净 checkout。`isolated-main-identities.json` 证明两侧测试源码 SHA256
+  均为 `5b83e4690b65ac7fbd5825a4327d4af9ead2c972c295f345703b3efb68ae9e95`，
+  runner 均为 `7667c76c4cc4e4e9a45abc3655e4346bea171dd553426dd4dda47a392511caee`。
+  此修订只改变 Main 窗口暴露前的缓存位置；冷条件的三对使用原固定探针，不混成新源码测量。
+- 新证据根目录：`artifacts/issue-2-main-c3-shader/`。各 invocation 记录实际 HEAD、
+  全部源码摘要和 EXE 摘要。首次探针 EXE before/after 分别为
+  `7f73e952688962177439d129e4d42d1302d2116845c48f8a2e8b54199e8f0135` /
+  `91542265a0dc0c4ec47276e669517b02daaa12400400fe423129f8f1e827c9ea`；
+  Main 隔离修订后为 `310480cd01e01ab8436ca12222a63cb98852a38cee6d0e9837efbc484fa9aa0c` /
+  `dbaf2a031443d4c35ebe9a9a11f329b242fe58cca81d0b3a7c419b5771e41e03`。
+
+qsb 实测为 **6.8.3 / QSB_VERSION 9 / Standard**。原五个目标为 SPIR-V 100、
+GLSL 300 es / 330、HLSL 50 源码、MSL 12，**没有 DXBC**。
+本机 ShaderTools 宏把 Windows `PRECOMPILE` 转成 qsb `-c`；实际 Ninja 命令保存于
+`commands-before.txt` / `commands-after.txt`，没有添加 `-g`、`-O` 或改变目标列表。
+现有 SDK fxc 为 10.0.22621.0/x64（帮助标识 Direct3D Shader Compiler 10.1）。
+
+| 实际资源 | before SHA256（大小） | after SHA256（大小） |
+|---|---|---|
+| liquify.vert.qsb | 43805311f4c23ed8b73e34ad7a2ccc67ba55509e179493adf05cdf8f49e340b7（1441） | c0df27bee7609a02e88c65da7bdbea213ac60887dce03eaaadddde52e7f732a5（1622） |
+| liquify.frag.qsb | f60e23977a193c6f643669496e4b5ff97e31ae3226aba6e95dd044a182e27fbe（5340） | 3fcd81d67807de47e65dd8b813dd0281e98f23acc36126646f09c4193c005d37（6871） |
+
+after 将 HLSL 50 替换为 DXBC 50。实际提取的 reflection、SPIR-V、两个 GLSL、
+MSL **逐字节相同**，另外三个 shader 的完整包也相同，见
+`artifact-after/non-d3d-equivalence.json`。shader 源码、精度、混合和采样逻辑未改。
+只拆分现有 shader 资源组以限定两个文件，原 alias 未变，没有重复注册。
+`LiquifyPreviewNode.cpp::Shader` 仍绑定 `:/shaders/liquify.vert.qsb` 和
+`:/shaders/liquify.frag.qsb`；移动、液化和常驻变换共用该材质，其他自定义 shader 未预编译。
+QFile 从测试程序同一 URL 导出的包与构建输出一致，完整序列也唯一存在于正式 EXE
+和测试 EXE 中；不是用旁边未链接的 .qsb 代替验证。包中只有 Standard 变体；未直接
+hook D3DCompile，不能仅凭资源 URL 宣称观测到了某次编译函数调用。
+
+Windows 默认 `DRAWVERSE_PRECOMPILE_MOVE_SHADERS=ON`，需要 Developer Shell 的 SDK
+fxc；找不到时配置明确失败，可显式 OFF 退回原 HLSL 路径。非 Windows 不启用
+PRECOMPILE，其他目标保持。构建后还验证实际 DXBC，防止 qsb 外部编译软失败。
+拿真实 before 包要求 DXBC 的负测试按预期失败（`negative-hlsl-check.txt`）。
+最终用户只需部署包，不需要安装 fxc。
+
+依据：[Qt PRECOMPILE 文档](https://doc.qt.io/qt-6.8/qtshadertools-build.html)、
+[Qt 6.8.3 qsb](https://github.com/qt/qtshadertools/blob/v6.8.3/tools/qsb/qsb.cpp)、
+[Qt 6.8.3 D3D11 实现](https://github.com/qt/qtbase/blob/v6.8.3/src/gui/rhi/qrhid3d11.cpp)。
+D3D11 优先取包中 DXBC，缺失时才进入 HLSL/字节码缓存与 D3DCompile 分支；
+DXBC 仍需要创建 D3D shader 和驱动相关工作，不能等同于零管线成本。
+
+### 缓存核查与一次被排除的对照
+
+产品 main.cpp 不设置 QQuickGraphicsConfiguration 或禁用管线缓存；只有独立
+QML source preview 宿主设置 QML_DISABLE_DISK_CACHE。嵌入 QML bytecode、QML
+磁盘缓存、Qt D3D11 HLSL 字节码缓存和驱动缓存是不同层。
+本机 Qt 6.8.3 `QQuickGraphicsConfigurationPrivate::applyEnvironmentSettings()`
+确实读取 `QSG_RHI_DISABLE_DISK_CACHE`，不是仅从变量名字推断。冷条件 raw.cache
+记录 automatic_pipeline=false、显式 load/save 为空、AA_DisableShaderDiskCache=false；
+Qt 初始化日志同时给出 cache collection=0。内存内 QRhi 缓存仍正常工作。
+
+第一次 `main-before` / `main-after` 功能通过，但 Windows Known Folders 没有随
+LOCALAPPDATA 重定向。before 写入了默认 **DrawVerseTests/MoveStartTracking**
+管线缓存，after 有读取该文件的条件；没有足够的对称初态证据，**整对不用于性能归因**。
+其原日志、266.422/156.806ms 准备、20.121/12.930ms 输入→节点值均保留，不能拿后者
+证明修复。未删除或清空这个测试应用缓存，也没有改 DrawVerse 原有 ini/作品。
+
+据此修正局部测试：实际 Main.qml 初始 visible=false，在首次暴露前给目标窗口设置
+各进程独立的 pipeline load/save 路径，然后正常显示。自动缓存策略保持开启；
+两侧断言文件原先不存在，并记录实际 configuration、路径和加载失败（初次无文件）日志。
+合格重测为 `main-isolated-before/after`：before 结束写16988字节，after 没有产生该文件；
+不能把文件缺失称为缓存禁用，实际 automatic_pipeline 和 collection 均为1。
+其他未暴露控件窗 collection=0，目标窗口内 W1/W2 使用同一 QRhi。
+参见 [Qt 缓存配置](https://github.com/qt/qtdeclarative/blob/v6.8.3/src/quick/items/qquickgraphicsconfiguration.cpp)
+和 [Qt 缓存装载/保存](https://github.com/qt/qtdeclarative/blob/v6.8.3/src/quick/scenegraph/qsgrhisupport.cpp)。
+没有清理系统/驱动缓存，没有改变全局设置。Main 对照只修测试缓存前提后补一次，未重跑冷矩阵。
+
+### 输入、图形设备与首次结果
+
+Release/MSVC x64、Qt 6.8.3，实际 threaded render loop、D3D11，均采用
+AMD Radeon(TM) Graphics（1002:1638），逻辑DPI均96，未切换 NVIDIA。最小窗1024×720、DPR1、
+fit=0.16015625；Main.qml1480×780、DPR1.1、fit=0.14599609375，正式 1.1 缩放入口。
+两类窗口不混池。文档均4096²满幅 Normal 内容，保持原 S2 和 (384,0) 最终位移。
+
+每进程直接准备 W1，Press 后立即经已登记的具体 QMouseEvent 发送非零 Move，
+不等 BEGIN；撤销后同窗口 W2 使用120个点、8ms GUI QTimer、12个 timer tick 暂停、
+两次转向。没有移动 OS 光标、过滤真实输入、补发漏点或调用 processEvents 稳定结果。
+各进程两行的 window 和 QRhi 地址相同，source 为1→4（隔离 Main 也为1→4）：
+这是同设备、同材质/Standard 变体的后续使用，**不是同一份纹理**。每个源都只创建/
+上传一次；冷条件各进程 createTextures=2、uploadBatch=2，按住更新复用对应源。
+上传批次是 CPU 命令记录，非 GPU fence。
+
+三对按 before1→after1→before2→after2→before3→after3 交替。共6个合格主进程，
+每段1次首操作，不把三次首次值的 p95 当作稳定分布。下表单位ms，render最大区间
+覆盖准备至按住结束，起点可能在 Press 前；不得与GUI或核心区间相加。
+
+| 进程 W1 | 准备状态观察段 | Press→Move窗口入口 | BEGIN emit→GUI | Move入口→目标节点 | 最大 render 区间 | Release→完整帧/单历史观察 |
+|---|---:|---:|---:|---:|---:|---:|
+| before-1 | 153.700 | 0.794 | 91.096 | 121.112 | 154.924 | 27.681 |
+| after-1 | 154.052 | 1.281 | 0.269 | 16.257 | 2.122 | 30.651 |
+| before-2 | 153.657 | 0.614 | 91.615 | 111.281 | 125.303 | 27.756 |
+| after-2 | 153.676 | 0.504 | 0.262 | 33.403 | 2.060 | 30.429 |
+| before-3 | 153.347 | 0.522 | 80.120 | 95.365 | 123.598 | 27.255 |
+| after-3 | 153.670 | 0.647 | 0.379 | 12.239 | 2.026 | 27.944 |
+| Main isolated before | 158.637 | 7.726 | 57.157 | 77.731 | 124.749 | 33.624 |
+| Main isolated after | 158.701 | 7.160 | 0.022 | 14.739 | 1.783 | 25.319 |
+
+核心 BEGIN 应用的 Press 后包含区间，before三次分别为0.481–0.489、0.290–0.302、
+0.260–0.267ms，after为0.931–0.938、0.221–0.227、0.283–0.290ms；
+Main隔离对照为0.564–0.577→0.520–0.526ms。准确 sequence 的同步FFI包含区间和核心接纳/
+应用上下界保存在分析 JSON，没把 Rust Instant 与 C++ steady_clock 原始值直接相减。
+原本很长的是核心应用之后、worker emit 到 GUI 回调之间。after-2 仍有33ms输入→节点，
+不是所有等待都消失。冷 W1 最大图形区间由123.598–154.924ms变为2.026–2.122ms，
+并且准备段约153–154ms没有增加；长区间从 Press 前开始，不能只报告其 Press 后部分。
+准备数字包含既有状态等待/轮询，只是观察段，不是纯资源准备执行耗时，也不是 GPU 就绪。
+
+关闭详细 Qt/Rust 诊断的一对仍启用必要输入/稳定抓图检查：W1 send入口→目标节点
+114.416→23.203ms、准备153.234→153.615ms、收尾36.081→27.734ms。
+该节点值用唯一目标 revision/source 的采用记录关联，粒度不同，单独列值不混池；
+其 BEGIN/内部渲染阶段未测。不能声称零测量扰动。
+
+### 同进程 W2 跟随结果
+
+各行均实际发送120个 Move、最后(384,0)，正常完成。提交/采用小于120是有界最新值
+合并，不能直接算丢输入。所有准确关联的采用 revision 单调，三段轨迹均有采用，
+未在这些关联样本中发现旧位置回跳；原始绝对输入、回执及节点身份完整保留。
+
+| 进程 W2 | UPDATE提交/准确采用数 | 输入→节点 p50/p95/max ms | 计划→窗口 p95 ms | Move间隔 p95 ms | 移动首尾跨度 ms | 准备/收尾 ms |
+|---|---:|---:|---:|---:|---:|---:|
+| before-1 | 93/93 | 15.927/18.830/24.657 | 0.412 | 8.524 | 1048.587 | 153.247/30.984 |
+| after-1 | 107/107 | 15.356/23.179/24.716 | 0.355 | 8.643 | 1047.991 | 153.116/23.316 |
+| before-2 | 106/106 | 11.061/19.199/20.200 | 0.328 | 8.724 | 1047.246 | 153.491/24.150 |
+| after-2 | 109/109 | 9.172/16.954/18.197 | 0.441 | 8.844 | 1047.798 | 153.137/30.833 |
+| before-3 | 108/108 | 13.706/20.847/22.017 | 1.124 | 8.928 | 1047.869 | 152.853/31.315 |
+| after-3 | 108/108 | 15.803/23.265/24.654 | 0.352 | 8.631 | 1047.839 | 154.069/39.305 |
+| Main isolated before | 106/106 | 12.098/20.145/23.487 | 0.784 | 8.602 | 1047.151 | 158.007/26.435 |
+| Main isolated after | 107/107 | 14.691/22.073/23.919 | 1.006 | 8.867 | 1047.982 | 156.854/25.362 |
+
+W2首个非零输入→节点，三对before为17.532/18.843/13.706ms，after为
+14.810/16.758/15.030ms；Main为13.395→15.007ms，**没有一致改善**。
+W2准备至按住结束的最大render区间，before三次为0.125/0.158/0.154ms，
+after为0.167/0.171/0.148ms，均没有W1中百毫秒级的首次长段。
+暂停产生约104ms的无Move间隔，是既定轨迹，不算发生器阻塞。完整分布/心跳见
+`qualified-summary.json` / `analysis-with-isolated-main/analysis.json`；心跳含正确性和
+收尾阶段，只是事件循环代理。所有节点采用均非 GPU完成或物理显示延迟。
+Qt生命周期 pipeline creation 合计仅作辅助，未全部计入某一 shader。
+
+### 正确性、异常及可运行包
+
+- 6个冷主进程、2个详细诊断关闭进程、2个修正隔离的Main进程，各2段均 committed：
+  合格比较20段，无非计划输入、取消、产品错误、超时或崩溃，计数无溢出。
+  两个旧Main进程的4段功能结果也保留，但缓存前提不合格，未用来推断收益。
+- 合格的5对进程，每对W1/W2各保存计时外同一次稳定关联的按住 grab 和最终完整帧，
+  **20组完整PNG逐字节相同**，不只检查两个红白点。见 `whole-output-qualified.json`。
+  原两个采样点、阈值、planned exact-event识别、target UPDATE和render/grab稳定身份
+  均未放宽。保存动作发生在该段计时之外。
+- before/after 各3个原生功能数据行通过（共6，不含init/cleanup）：
+  `prewarmed4kResidentMoveReusesFullQualityTexturesAndRestoresFullFrame`，
+  `selectedLiquifyKeepsTheMeshPathAndProtectsUnselectedPixels:feathered-lasso`，
+  `transformResidentPreviewFollowsAndCompositesTransparentStack:flat`。
+  覆盖未准备/已准备按住预览、Escape取消、单历史/撤销、完整帧接管与纹理复用；
+  液化还检查羽化选区边缘、撤销/重做/提交/取消，变换检查透明叠层和恢复。
+  见 `regressions-before/after/test.txt`，没有修改夹具或断言。
+- 9项离线归因测试和1项shader目标检查测试通过；实际 HLSL 负检查按预期拒绝。
+  资源导出/原resident关联确定性专项均通过。未改 Rust/cache，复用 C2-B 17项
+  完整像素/取消/预算及历史证据，不重跑缓存或A/B矩阵。未测试的平台不写成通过。
+- C1历史取消/像素失败、C2-A抓图崩溃、历史pendingMoved缺现场仍未归因。
+  本轮全通过不改变这些历史状态，没有归咎用户、Qt或驱动。
+- 完整Release部署至 `artifacts/issue-2-main-c3-shader/release-6e6e35f/`，
+  含Qt DLL、QML、平台插件、LICENSE、BUILD.txt、SHA256.json和start-isolated.ps1。
+  EXE SHA256为 `f36fa7933b098be82341a438ba6c310204bb9fd371258749b0b7d6b4da2cf3f3`。
+  SDK路径从PATH移除后，包内正式EXE以隔离profile和原 `--preview` 入口启动、
+  绘制、保存预览并正常退出0（`package-smoke/`）；这只是部署冒烟，非新增性能样本。
+  windeployqt退出0；`--no-translations`仍报告翻译源路径警告，未影响Qt/QML部署和冒烟。
+  旧包和工作树均保留。正式main.cpp完整启动耗时没有成对测量，不能宣称启动加速。
+
+可复制命令（先使用现有Developer Shell，Qt SDK无需升级）：
+
+```powershell
+cmake --build build --config Release --target qt_move_start_tracking qt_transform_tests drawverse -j2
+python tools/check_move_shader_artifacts.py .tools/qt/6.8.3/msvc2022_64/bin/qsb.exe build/ui/.qsb --precompiled --executable build/bin/Release/drawverse.exe
+python tools/measure_move_start_tracking.py <before-exe> <fresh-before-directory> --shader-pair --trace --source-root <before-worktree>
+python tools/measure_move_start_tracking.py <after-exe> <fresh-after-directory> --shader-pair --trace
+# 修正后的真实QML路径：两侧都用相同最终测试源和下列选项，目录必须全新
+python tools/measure_move_start_tracking.py <exe> <fresh-directory> --shader-pair --main-qml --production-cache --trace
+# 去掉--trace得到有限详细诊断关闭对照；每次目录仍必须全新
+python tools/analyze_move_start_tracking.py <evidence-root> <fresh-analysis-directory>
+```
+
+**因果与停止结论**：只改变两份D3D产物，完整输出一致，首次图形长段和对应GUI交付等待
+同时缩短，第二次使用没有同样长段，支持运行时HLSL编译是这组首次成本的重要贡献。
+没有D3DCompile/驱动的独立调用栈，不能逐毫秒分割全部成本，也不能排除剩余驱动/帧同步。
+没有增加准备、定时器、线程/回执策略或提前预热来转移成本。持续跟随/收尾数值重叠，
+其中after-3 W2收尾39.305ms并不优于before；未宣称全面流畅或修复所有起拖问题。
+学生真实作品、实体输入、GPU fence、物理显示延迟仍未验收。
+本轮到构建修复和有限证据为止，不继续改调度、缓存资格或调参路径。
