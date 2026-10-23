@@ -16,14 +16,14 @@
 
 class PendingMoveEvidence final : public QObject {
 public:
-    PendingMoveEvidence(CanvasItem *canvas,PaintCoreClient *client,QQuickWindow *window,quint64 owner)
+    PendingMoveEvidence(CanvasItem *canvas,PaintCoreClient *client,QQuickWindow *window,quint64 owner,size_t historyCapacity=0,bool memoryEvidence=false)
         :m_canvas(canvas),m_client(client),m_window(window),m_owner(owner),
          m_directory(qEnvironmentVariable("DRAWVERSE_PENDING_MOVE_EVIDENCE")) {
-        m_enabled=!m_directory.isEmpty();
+        m_enabled=!m_directory.isEmpty();m_record=m_enabled || memoryEvidence;
         if(m_enabled && (!QDir(m_directory).exists() || QFile::exists(m_directory+"/pending-evidence.json")))
             qFatal("Pending move evidence requires an existing fresh output directory");
         if(m_enabled)InteractionTrace::start(true);
-        m_presentation=std::make_shared<CanvasPresentationObservation>();canvas->observePresentation(m_presentation);
+        m_presentation=std::make_shared<CanvasPresentationObservation>(historyCapacity);canvas->observePresentation(m_presentation);
         qApp->installEventFilter(this);
         const auto changed=[this]{observeContext();};
         connect(client,&PaintCoreClient::stateChanged,this,changed);
@@ -56,6 +56,11 @@ public:
             qWarning("Unable to export pending move evidence");
     }
     void phase(const char *name) {m_phase=name;mark(name);}
+    QJsonObject observation() {observeContext();return state();}
+    quint64 planId() const {return m_planId;}
+    std::shared_ptr<CanvasPresentationObservation> presentation() const {return m_presentation;}
+    void acceptResidentContextForProbe() {m_allowResident=true;}
+    QJsonObject evidenceData() const {return {{"input_events",m_inputs},{"planned_inputs",m_plans},{"captures",m_captures},{"dropped",m_dropped}};}
     void expect(quint64 generation,QPoint delta,int depth) {
         m_generation=generation;m_delta=delta;m_depth=depth;m_fixedView=viewIdentity(state());m_armed=true;
     }
@@ -69,12 +74,12 @@ public:
         QCoreApplication::sendEvent(m_window,&event);m_plannedEvent=nullptr;
         if(m_armed && type==QEvent::MouseButtonPress)m_beginSequence=m_client->moveSequence();
         if(type==QEvent::MouseMove)m_targetPlan=id;
-        if(m_enabled)append(m_plans,{{"id",double(id)},{"type",int(type)},{"window",QString::number(quintptr(m_window.data()))},
+        if(m_record)append(m_plans,{{"id",double(id)},{"type",int(type)},{"window",QString::number(quintptr(m_window.data()))},
             {"x",position.x()},{"y",position.y()},{"button",int(event.button())},{"buttons",int(event.buttons())},
             {"modifiers",int(event.modifiers())},{"start_ns",double(start)},{"end_ns",double(InteractionTrace::now())},{"accepted",event.isAccepted()}});
         observeContext();
     }
-    static bool acceptedContext(const QJsonObject &s,quint64 generation,QPoint delta,int depth) {
+    static bool acceptedContext(const QJsonObject &s,quint64 generation,QPoint delta,int depth,bool allowResident=false) {
         const auto move=s["move"].toObject(),frame=s["frame"].toObject(),owner=s["owner_metadata"].toObject();
         return s["generation"].toDouble()==double(generation) && s["undo_depth"].toInt()==depth
             && s["error"].toString().isEmpty() && move["active"].toBool() && !move["starting"].toBool()
@@ -84,13 +89,14 @@ public:
             && owner["id"].toDouble()==s["owner"].toDouble() && s["owner"].toDouble()>0
             && QPoint(owner["offsetX"].toInt(),owner["offsetY"].toInt())==delta
             && frame["generation"].toDouble()==double(generation) && frame["view"].toInt(-1)==0
-            && frame["revision"].toDouble()==s["revision"].toDouble();
+            && (frame["revision"].toDouble()==s["revision"].toDouble()
+                || (allowResident && s["preview_source"].toDouble()>0 && s["preview_revision"]==s["revision"]));
     }
     static QJsonObject viewIdentity(const QJsonObject &s) {
         QJsonObject view;for(const auto *key:{"generation","canvas","window","client_matches","zoom","document_origin","size","dpr"})view[key]=s[key];
         return view;
     }
-    static bool associated(const QJsonObject &sample,quint64 generation,QPoint delta,int depth) {
+    static bool associated(const QJsonObject &sample,quint64 generation,QPoint delta,int depth,bool allowResident=false) {
         if(sample["id"].toInt()<=0 || !sample["completed"].toBool() || sample["image_key"].toString().isEmpty()
             || sample["ready_id"]!=sample["id"])return false;
         const auto request=sample["request_state"].toObject();
@@ -109,7 +115,7 @@ public:
         } else if(render["image_key"]!=request["frame_key"] || render["region"]!=request["frame_region"])return false;
         for(const auto *key:{"request_state","ready_state","complete_state","assertion_state"}) {
             const auto s=sample[key].toObject();
-            if(!acceptedContext(s,generation,delta,depth) || s["scenario_invalid"].toBool()
+            if(!acceptedContext(s,generation,delta,depth,allowResident && render["resident"].toBool()) || s["scenario_invalid"].toBool()
                 || !s["active"].toBool() || !s["visible"].toBool() || !s["canvas_visible"].toBool())return false;
             for(const auto *field:{"context_epoch","input_epoch","target_plan","canvas","window","frame","frame_key","preview_source",
                     "preview_revision","render","dpr","zoom","document_origin","size","sequence","begin_sequence","target_sequence"})
@@ -118,7 +124,7 @@ public:
         return true;
     }
     void mark(const char *name) {
-        if(!m_enabled)return;
+        if(!m_record)return;
         append(m_states,QJsonObject{{"name",name},{"state",state()}});
     }
     QImage capture() {
@@ -157,11 +163,11 @@ public:
         const bool pixels=!image.isNull() && a["matches"].toBool() && b["matches"].toBool();
         observeContext();const auto current=state();
         m_lastCapture["assertion_state"]=current;
-        const bool context=associated(m_lastCapture,m_generation,m_delta,m_depth)
+        const bool context=associated(m_lastCapture,m_generation,m_delta,m_depth,m_allowResident)
             && m_lastCapture["image_key"].toString()==QString::number(image.cacheKey());
         const bool good=pixels && context;
         m_anyPixelMatch=m_anyPixelMatch || pixels;
-        if(m_enabled){
+        if(m_record){
             auto sample=m_lastCapture;sample["white_point"]=a;sample["red_point"]=b;
             sample["pixel_and_result"]=pixels;sample["accepted_context"]=context;
             sample["and_result"]=good;sample["assertion_state"]=current;sample["assertion_ns"]=double(InteractionTrace::now());
@@ -185,7 +191,7 @@ protected:
             if(m_armed && event!=m_plannedEvent)m_invalid=true;
         }
         if(application || (target && relevant)){
-            if(!m_enabled)return false;
+            if(!m_record)return false;
             QJsonObject row{{"type",int(type)},{"receiver",QString::number(quintptr(receiver))},{"state",state()}};
             row["provenance"]=receiver==m_window?(event==m_plannedEvent?"planned_exact_event":"unplanned_window_ingress"):
                 "item_delivery_not_a_provenance_claim";
@@ -206,7 +212,7 @@ private:
         // Compare actual identities rather than notification counts.
         if(m_armed && viewIdentity(s)!=m_fixedView)m_invalid=true;
         if(m_armed && !m_targetSequence && m_targetPlan && m_beginSequence
-            && acceptedContext(s,m_generation,m_delta,m_depth) && m_client->moveSequence()>m_beginSequence)
+            && acceptedContext(s,m_generation,m_delta,m_depth,m_allowResident) && m_client->moveSequence()>m_beginSequence)
             m_targetSequence=m_client->moveSequence(); // Actual accepted UPDATE, never a guessed +1.
         for(const auto *key:{"owner","canvas","window","generation","revision","sequence","move","frame","frame_key",
                 "frame_region","owner_metadata","undo_depth","error","active","visible","canvas_visible","dpr","zoom",
@@ -269,7 +275,7 @@ private:
     bool m_armed=false,m_invalid=false,m_grabFailed=false;QJsonObject m_context,m_fixedView;
     QSharedPointer<QQuickItemGrabResult> m_failedGrab;
     quint64 m_owner=0,m_request=0,m_generation=0;QPoint m_delta;int m_depth=0;
-    QString m_directory,m_phase="initial";bool m_enabled=false,m_anyPixelMatch=false,m_assertionPassed=false;
+    QString m_directory,m_phase="initial";bool m_enabled=false,m_record=false,m_allowResident=false,m_anyPixelMatch=false,m_assertionPassed=false;
     int m_dropped=0;QJsonArray m_captures,m_states,m_inputs,m_plans;QJsonObject m_lastCapture;
     QImage m_firstFailure,m_lastFailure,m_success;
 };

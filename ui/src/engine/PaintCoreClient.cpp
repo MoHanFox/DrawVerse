@@ -386,6 +386,10 @@ public:
     }
     bool publish(const PaintSessionInfo &info) {
         if (m_connection->metadataPending.load()) return false;
+        InteractionTrace::Scope metadataTrace("move.worker.metadata");
+        if(metadataTrace.active)metadataTrace.event.value=double(info.completed_sequence);
+        InteractionTrace::point("move.worker.metadata.generation",double(info.document_generation));
+        InteractionTrace::point("move.worker.metadata.revision",double(info.revision));
         QVariantList layers;
         if (info.document_generation != m_previewGeneration) { m_thumbnails.clear(); m_thumbnailRevisions.clear(); m_previewGeneration = info.document_generation; }
         // Exact publication IDs prevent mixing layers from different edits.
@@ -469,6 +473,7 @@ public:
         // Only queued metadata has a GUI acknowledgement. A stale publication
         // above must remain retryable, or poll() also stops delivering pixels.
         m_connection->metadataPending.store(true);
+        InteractionTrace::point("move.worker.metadata.emit",double(info.completed_sequence));
         emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}},history,{{"points",transformPoints},{"warp",transform.warp!=0},{"interpolation",transform.interpolation},{"skewH",transform.skew_h},{"skewV",transform.skew_v}},committedStrokes); m_publication = info.publication;m_strokeCommitCursor=info.completed_sequence;
         return true;
     }
@@ -632,6 +637,7 @@ public:
         InteractionTrace::Scope trace("move.worker.readResident");
         if(trace.active)trace.event.value=double(info.revision);
         InteractionTrace::point("move.resident.source",double(info.source_id));
+        InteractionTrace::point("move.resident.generation",double(info.document_generation));
         auto next=std::make_shared<ResidentPreviewFrame>();
         next->generation=info.document_generation;next->revision=info.revision;next->sourceId=info.source_id;
         next->columns=info.columns;next->rows=info.rows;next->documentSize=QSize(int(info.document_width),int(info.document_height));next->focus=(info.focus&1)!=0;next->forward=(info.focus&2)!=0;
@@ -1079,6 +1085,8 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     });
     connect(&m_thread, &QThread::started, m_worker, &BackendWorker::boot);
     connect(m_worker, &BackendWorker::metadata, this, [this](PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform,QVariantList committedStrokes) {
+        InteractionTrace::Scope entryTrace("move.gui.metadataEntry");
+        if(entryTrace.active)entryTrace.event.value=double(info.completed_sequence);
         m_connection->metadataPending.store(false);
         const bool propertiesChanged = info.document_generation != m_generation
             || static_cast<int>(info.width) != m_width || static_cast<int>(info.height) != m_height
@@ -1199,6 +1207,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         InteractionTrace::Scope trace("move.gui.acceptResident");
         if(trace.active)trace.event.value=double(preview->revision);
         InteractionTrace::point("move.gui.resident.source",double(preview->sourceId));
+        InteractionTrace::point("move.gui.resident.generation",double(preview->generation));
         m_residentPreview=std::move(preview);emit frameChanged();
     });
     connect(m_worker,&BackendWorker::movePreparationReady,this,[this](quint64 generation,quint64 revision,quint64 layer,quint64 request,ResidentPreviewAssetsPtr assets){

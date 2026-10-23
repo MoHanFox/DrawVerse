@@ -256,3 +256,8 @@ set_target_properties(qt_color_state_tests PROPERTIES WIN32_EXECUTABLE FALSE RUN
 qt_add_executable(qt_layer_move_baseline EXCLUDE_FROM_ALL tests/layer_move_baseline.cpp)
 target_link_libraries(qt_layer_move_baseline PRIVATE drawverse_ui Qt6::Test)
 set_target_properties(qt_layer_move_baseline PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+# Focused C3 probe; opt-in, no default build or performance gate.
+qt_add_executable(qt_move_start_tracking EXCLUDE_FROM_ALL tests/move_start_tracking.cpp)
+target_link_libraries(qt_move_start_tracking PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_move_start_tracking PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
