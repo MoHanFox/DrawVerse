@@ -9,6 +9,7 @@
 #include <QTemporaryDir>
 #include <QJsonDocument>
 #include <QFile>
+#include <QCryptographicHash>
 #include <QScopeGuard>
 #include <QTimer>
 #include <QEventLoop>
@@ -27,6 +28,9 @@ private slots:
     void measure() {
         const auto output=qEnvironmentVariable("DRAWVERSE_MOVE_REPORT");
         const auto scenario=qEnvironmentVariableIntValue("DRAWVERSE_MOVE_SCENE");
+        const auto requestedDelta=qEnvironmentVariable("DRAWVERSE_MOVE_DELTA").split(',');
+        bool dxOk=true,dyOk=true;const QPoint targetDelta=requestedDelta.size()==2?QPoint(requestedDelta[0].toInt(&dxOk),requestedDelta[1].toInt(&dyOk)):QPoint(384,128);
+        QVERIFY2(dxOk && dyOk && qAbs(targetDelta.x())<1024 && qAbs(targetDelta.y())<1024,"invalid local test delta");
         const bool tracing=qEnvironmentVariableIntValue("DRAWVERSE_MOVE_TRACE")!=0;
         QJsonObject report{{"schema",2},{"injected_cancel",qEnvironmentVariable("DRAWVERSE_MOVE_INJECT_CANCEL")},{"pid",double(QCoreApplication::applicationPid())},{"qt_version",qVersion()},{"scenario",scenario},{"trace_enabled",tracing},{"input","Qt synthetic mouse events delivered to native QQuickWindow"},{"passed",false}};
         QJsonArray rows,trace;
@@ -82,7 +86,7 @@ private slots:
             QSet<quint64> sources;quint64 maxUploads=0;int observationDropped=0,heartbeatDropped=0;
             const auto start=screen({size*.3,size*.4});
             // Fractional local coordinates preserve a precisely defined 384/128 document delta.
-            const auto end=start+QPointF(384,128)*canvas->zoom();
+            const auto end=start+QPointF(targetDelta)*canvas->zoom();
             const auto expected=canvas->documentPoint(end)-canvas->documentPoint(start);
             finalDelta={qRound(expected.x()),qRound(expected.y())};
             const auto startRevision=client.revision();
@@ -132,7 +136,12 @@ private slots:
             QJsonArray sourceIds;for(auto id:sources)sourceIds.append(double(id));
             row["terminal"]=terminal;row["terminal_ns"]=double(terminalAt);row["end_observation_ns"]=double(InteractionTrace::now());row["cancel_tail_timeout"]=cancelTailTimeout;row["last_error"]=client.lastError();
             const auto receipt=client.moveReceipt();row["terminal_receipt"]=QJsonObject{{"sequence",double(receipt.sequence)},{"generation",double(receipt.generation)},{"revision",double(receipt.revision)},{"kind",receipt.kind}};
-            if(frameDone)row["final_frame_identity"]=QJsonObject::fromVariantMap(client.frameIdentity());
+            if(frameDone){
+                row["final_frame_identity"]=QJsonObject::fromVariantMap(client.frameIdentity());
+                // After the completion timestamp: hash the whole exact normal CPU viewport, not a screenshot.
+                const auto image=client.frame();
+                row["final_normal_frame_sha256"]=QString::fromLatin1(QCryptographicHash::hash(QByteArrayView(reinterpret_cast<const char*>(image.constBits()),image.sizeInBytes()),QCryptographicHash::Sha256).toHex());
+            }
             row["generation"]=double(client.generation());row["start_revision"]=double(startRevision);row["observation_dropped"]=observationDropped;row["heartbeat_dropped"]=heartbeatDropped;row["inputs"]=inputs;row["observations"]=observations;row["attempts"]=sent;row["completed"]=frameDone?1:0;row["timeouts"]=timedOut?1:0;row["move_sync_us"]=stats(sync);row["actual_send_gap_ms"]=stats(gaps);row["heartbeat_ms"]=stats(beats);row["release_ns"]=double(release);row["release_to_metadata_ms"]=metadataDone?double(metadataDone-release)/1e6:-1;row["release_to_full_frame_ms"]=frameDone?double(frameDone-release)/1e6:-1;row["expected_delta"]=QJsonArray{finalDelta.x(),finalDelta.y()};row["final_delta"]=QJsonArray{offset().x(),offset().y()};row["history_delta"]=client.undoDepth()-depth;row["resident_sources"]=sourceIds;row["max_source_upload_batches"]=double(maxUploads);rows.append(row);
             if(terminal!="committed"){
                 QMouseEvent cleanup(QEvent::MouseButtonRelease,lastPosition,window.mapToGlobal(lastPosition),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&cleanup);
