@@ -7,6 +7,8 @@ from measure_layer_move import stats
 
 def analyze(data):
     events = data['trace']
+    ingress_threads = {e['thread'] for e in events if e['name'] == 'input.dispatch'}
+    gui_thread = next(iter(ingress_threads)) if len(ingress_threads) == 1 else None
     rows = []
     for row in data['rows']:
         inside = [e for e in events if row['start_ns'] <= e['start_ns'] and
@@ -34,9 +36,14 @@ def analyze(data):
             spans_ms={name:stats([e['duration_us']/1000 for e in named(name)]) for name in
                       ('snapshotObject.rebuild','catalogSnapshot.rebuild','catalogSnapshot.presetRows',
                        'synchronizeBrushCatalog','refreshBrushCursor','worker.saveBrushPreferences')},
+            gui_spans_ms={name:stats([e['duration_us']/1000 for e in named(name) if e['thread'] == gui_thread]) for name in
+                          ('snapshotObject.rebuild','catalogSnapshot.rebuild','catalogSnapshot.presetRows','synchronizeBrushCatalog','refreshBrushCursor')},
+            gui_catalog_serialized_rows=sum(e['value'] for e in named('catalogSnapshot.serialized_rows') if e['thread'] == gui_thread),
+            gui_catalog_reused_rows=sum(e['value'] for e in named('catalogSnapshot.preference_rows_reused') if e['thread'] == gui_thread),
+            non_gui_catalog_serialized_rows=sum(e['value'] for e in named('catalogSnapshot.serialized_rows') if gui_thread is not None and e['thread'] != gui_thread),
             preparation_requests=len(requests), preparation_observation_ms=stats(delays), unmatched_preparations=unmatched,
             cross_boundary_spans=sum(e['start_ns'] < row['end_ns'] and e['start_ns']+e['duration_us']*1000 > row['start_ns'] and e not in inside for e in events)))
-    return dict(environment=data.get('environment'), passed=data['passed'],
+    return dict(environment=data.get('environment'), passed=data['passed'], gui_thread=gui_thread,
         invalid_input_or_lifecycle=data['invalid_input_or_lifecycle'], trace_dropped=data['trace_dropped'],
         rows=rows, limits='GUI heartbeat and completion waits are proxies, not display latency; spans may nest/overlap and must not be added; async preparation joined by unique ticket in this single-client process')
 
