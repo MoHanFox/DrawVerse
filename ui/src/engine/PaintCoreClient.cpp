@@ -551,7 +551,13 @@ public:
             if (!check(status)) return;
             if (frame.frame_id == m_frames[view]) continue;
             InteractionTrace::Scope frameTrace("move.worker.copyFrame");
-            if(frameTrace.active)frameTrace.event.value=double(frame.revision);
+            if(frameTrace.active){
+                frameTrace.event.value=double(frame.revision);
+                InteractionTrace::point("move.copyFrame.view",view);
+                InteractionTrace::point("move.copyFrame.generation",double(frame.document_generation));
+                InteractionTrace::point("move.copyFrame.request",double(frame.request_id));
+                InteractionTrace::point("move.copyFrame.id",double(frame.frame_id));
+            }
             QImage image(static_cast<int>(frame.pixel_width), static_cast<int>(frame.pixel_height), QImage::Format_RGBA8888_Premultiplied);
             if (image.isNull()) { emit failure(QStringLiteral("无法分配视口显示缓存")); return; }
             auto tile = dto<PaintTile>(); tile.format = PAINT_TILE_RGBA8_SRGB_PREMULTIPLIED;

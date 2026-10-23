@@ -4,6 +4,7 @@ use paint_task::CancellationToken;
 use std::{
     collections::{BTreeSet, HashMap},
     sync::{Arc, Mutex, Weak},
+    time::Instant,
 };
 mod interactive;
 pub use interactive::{render_interactive, render_sampled_preview};
@@ -414,6 +415,21 @@ impl Cache {
         Ok(mip)
     }
 }
+/// Opt-in aggregate measurements for one exact normal render; no pixel-loop events.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RenderDiagnostics {
+    pub lock_ns: u64,
+    pub setup_ns: u64,
+    pub compose_lod_blit_ns: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub source_tiles: usize,
+    pub visible_layers: usize,
+    pub entries: usize,
+    pub retained_bytes: usize,
+    pub configuration_changed: bool,
+    pub lod: u32,
+}
 /// One instance per viewport. Serialization only covers that viewport's cache;
 /// no document/GUI lock is held, and obsolete jobs check cancellation per row/tile.
 pub struct CachedCpuRenderer {
@@ -435,6 +451,30 @@ impl CachedCpuRenderer {
             cache: Mutex::new(Cache::new(bytes)),
         })
     }
+    /// Same renderer and cache path, with aggregate timing only when explicitly called.
+    pub fn render_diagnosed(
+        &self,
+        snapshot: &DocumentSnapshot,
+        request: RenderRequest,
+        cancel: &CancellationToken,
+    ) -> (Result<RenderFrame, RenderError>, RenderDiagnostics) {
+        let mut diagnostic = RenderDiagnostics::default();
+        let result = (|| {
+            request.validate()?;
+            checkpoint(cancel)?;
+            let start = Instant::now();
+            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+            diagnostic.lock_ns = start.elapsed().as_nanos() as u64;
+            let before = cache.stats;
+            let result = render(snapshot, request, cancel, &mut cache, Some(&mut diagnostic));
+            diagnostic.hits = cache.stats.hits - before.hits;
+            diagnostic.misses = cache.stats.misses - before.misses;
+            diagnostic.entries = cache.stats.entries;
+            diagnostic.retained_bytes = cache.stats.retained_bytes;
+            result
+        })();
+        (result, diagnostic)
+    }
     pub fn cache_stats(&self) -> RenderCacheStats {
         self.cache.lock().unwrap_or_else(|e| e.into_inner()).stats
     }
@@ -449,7 +489,7 @@ impl Renderer for CachedCpuRenderer {
         request.validate()?;
         checkpoint(cancel)?;
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        render(snapshot, request, cancel, &mut cache)
+        render(snapshot, request, cancel, &mut cache, None)
     }
 }
 impl Renderer for CpuRenderer {
@@ -459,7 +499,7 @@ impl Renderer for CpuRenderer {
         request: RenderRequest,
         cancel: &CancellationToken,
     ) -> Result<RenderFrame, RenderError> {
-        render(snapshot, request, cancel, &mut Cache::new(0))
+        render(snapshot, request, cancel, &mut Cache::new(0), None)
     }
 }
 struct Axis {
@@ -529,7 +569,9 @@ fn render(
     request: RenderRequest,
     cancel: &CancellationToken,
     cache: &mut Cache,
+    mut diagnostic: Option<&mut RenderDiagnostics>,
 ) -> Result<RenderFrame, RenderError> {
+    let setup_start = diagnostic.as_ref().map(|_| Instant::now());
     request.validate()?;
     checkpoint(cancel)?;
     let r = request.region;
@@ -654,6 +696,12 @@ fn render(
             }
         })
         .collect::<Vec<_>>();
+    if let Some(diagnostic) = diagnostic.as_mut() {
+        diagnostic.configuration_changed = cache.configuration != configuration;
+        diagnostic.source_tiles = coordinates.len();
+        diagnostic.visible_layers = cache.visible.len();
+        diagnostic.lod = lod;
+    }
     if cache.configuration != configuration {
         cache.entries.clear();
         cache.configuration = configuration;
@@ -693,6 +741,10 @@ fn render(
         if lod > 6 { block } else { TILE_SIZE },
     );
     let mut coarse: HashMap<TileCoord, [f32; 4]> = HashMap::new();
+    if let (Some(diagnostic), Some(start)) = (diagnostic.as_mut(), setup_start) {
+        diagnostic.setup_ns = start.elapsed().as_nanos() as u64;
+    }
+    let compose_start = diagnostic.as_ref().map(|_| Instant::now());
     for coord in coordinates {
         checkpoint(cancel)?;
         let mip = cache.mip(snapshot, coord, local, kind, cancel)?;
@@ -750,6 +802,9 @@ fn render(
                 }
             }
         }
+    }
+    if let (Some(diagnostic), Some(start)) = (diagnostic.as_mut(), compose_start) {
+        diagnostic.compose_lod_blit_ns = start.elapsed().as_nanos() as u64;
     }
     checkpoint(cancel)?;
     Ok(RenderFrame {

@@ -191,6 +191,7 @@ def main():
     parser.add_argument('--scenes', type=int, choices=range(1, 5), nargs='+', default=[1, 2, 3, 4])
     parser.add_argument('--repeats', type=int, default=3)
     parser.add_argument('--trace', action='store_true')
+    parser.add_argument('--core-trace', action='store_true', help='bounded Rust task trace, exported at core shutdown')
     args = parser.parse_args()
     if args.reanalyze:
         if not args.audit_output:
@@ -211,10 +212,12 @@ def main():
     root = Path(__file__).resolve().parent.parent
     revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
     digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
-    diff = subprocess.check_output(['git', 'diff', 'HEAD', '--', 'ui', 'tools/measure_layer_move.py'], cwd=root)
+    diff = subprocess.check_output(['git', 'diff', 'HEAD', '--', 'ui', 'core', 'tools/measure_layer_move.py'], cwd=root)
     metadata = dict(product_baseline='b948dccbc2fd767af3a999ee9a03e108455c44cb', tool_revision=revision,
                     tracked_diff_sha256=hashlib.sha256(diff).hexdigest(), executable_sha256=digest(executable),
-                    tool_sha256=digest(Path(__file__)), repeats=args.repeats, scenes=args.scenes, trace=args.trace)
+                    tool_sha256=digest(Path(__file__)), repeats=args.repeats, scenes=args.scenes, trace=args.trace, core_trace=args.core_trace)
+    source_files = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--', 'core', 'ui', 'tools'], cwd=root, text=True).splitlines()
+    metadata['sources_sha256'] = {p: digest(root/p) for p in source_files if (root/p).is_file()}
     metadata['runtime_dlls_sha256'] = {p.name: digest(p) for p in executable.parent.glob('*paint*.dll')}
     (output/'invocation.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
     summaries, failures = [], []
@@ -233,6 +236,9 @@ def main():
                        QSG_RHI_DISABLE_DISK_CACHE='1', QML_DISK_CACHE_PATH=str(directory/'qml-cache'),
                        DRAWVERSE_MOVE_REPORT=str(directory/'raw.json'), DRAWVERSE_MOVE_SCENE=str(scene),
                        DRAWVERSE_MOVE_TRACE=str(int(args.trace)))
+            env.pop('DRAWVERSE_MOVE_COMPLETION_TRACE', None)
+            if args.core_trace:
+                env['DRAWVERSE_MOVE_COMPLETION_TRACE'] = str(directory/'core.json')
             env['PATH'] = str(root/'.tools/qt/6.8.3/msvc2022_64/bin')+os.pathsep+env['PATH']
             with (directory/'qt.log').open('w', encoding='utf-8') as log:
                 process = subprocess.Popen([str(executable), '-o', str(directory/'test.txt')+',txt'], env=env,
@@ -244,6 +250,14 @@ def main():
                     process.kill()
                     process.wait()
                     code = 'process-timeout'
+            if args.core_trace and not code:
+                core_file = directory/'core.json'
+                if not core_file.is_file():
+                    failures.append(dict(scene=scene, run=run, error='core trace missing'))
+                else:
+                    core = json.loads(core_file.read_text(encoding='utf-8'))
+                    if core.get('dropped') or not core.get('closed'):
+                        failures.append(dict(scene=scene, run=run, error='core trace incomplete', dropped=core.get('dropped')))
             if (directory/'raw.json').is_file():
                 data = json.loads((directory/'raw.json').read_text(encoding='utf-8'))
                 summaries.extend(summarize(data, scene, run))

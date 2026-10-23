@@ -1,4 +1,6 @@
 //! Serial document ownership and immutable publication. No caller pointers are retained.
+use super::move_trace::{self, Context as TraceContext};
+
 #[path = "session_input_paging.rs"]
 mod input_paging;
 use crate::{
@@ -179,6 +181,7 @@ pub(crate) struct Session {
     ingress: Mutex<Ingress>,
 }
 struct RenderJob {
+    trace: TraceContext,
     ticket: TaskTicket<ApiResult<RenderFrame>>,
     request_id: u64,
     generation: u64,
@@ -329,6 +332,9 @@ impl Session {
             }),
         })
     }
+    pub fn trace_session_id(&self) -> u64 {
+        Arc::as_ptr(&self.shared) as usize as u64
+    }
     pub fn stop(&self) {
         self.file
             .lock()
@@ -378,6 +384,16 @@ impl Session {
             sequence,
             operation: operation.clone(),
         };
+        let trace = TraceContext {
+            session: Arc::as_ptr(&self.shared) as usize as u64,
+            sequence,
+            generation: self.shared.generation.load(Ordering::Acquire),
+            revision: self.shared.revision.load(Ordering::Acquire),
+            ..Default::default()
+        };
+        if let Operation::LayerMove(kind, ..) = operation {
+            move_trace::point("command.submit", trace, kind as i64);
+        }
         let result = if matches!(operation, Operation::Cancel(_)) {
             self.sender.send_cancel(command, |c| {
                 matches!(c.operation, Operation::Move(_) | Operation::AirbrushTick(_))
@@ -415,6 +431,9 @@ impl Session {
         };
         match result {
             Ok(()) => {
+                if let Operation::LayerMove(kind, ..) = operation {
+                    move_trace::point("command.queued", trace, kind as i64);
+                }
                 ingress.sequence = sequence;
                 if matches!(
                     operation,
@@ -1188,6 +1207,20 @@ impl Engine {
         )
     }
     fn execute(&mut self, command: Command) {
+        let trace = TraceContext {
+            session: Arc::as_ptr(&self.shared) as usize as u64,
+            sequence: command.sequence,
+            generation: self.generation,
+            revision: self.document.revision(),
+            ..Default::default()
+        };
+        let move_kind = match command.operation {
+            Operation::LayerMove(kind, ..) => Some(kind),
+            _ => None,
+        };
+        if let Some(kind) = move_kind {
+            move_trace::point("command.accept", trace, kind as i64);
+        }
         let old_revision = self.document.revision();
         let pixel_revision = self.pixel_revision();
         let selection_only = self.selection_only(&command.operation);
@@ -1282,6 +1315,19 @@ impl Engine {
             {
                 task.finished = Some(Instant::now());
                 task.status = result.as_ref().err().map_or(PAINT_OK, |e| e.status);
+            }
+        }
+        if let Some(kind) = move_kind {
+            move_trace::point(
+                "command.applied",
+                TraceContext {
+                    revision: self.document.revision(),
+                    ..trace
+                },
+                kind as i64,
+            );
+            if let Err(error) = &result {
+                move_trace::point("command.error", trace, error.status as i64);
             }
         }
         let pending = result.is_ok() && self.document.stroke_input_pending();
@@ -1937,6 +1983,7 @@ impl Engine {
             });
             if obsolete {
                 if let Some(job) = self.jobs[index].take() {
+                    move_trace::point("task.obsolete", job.trace, self.floor as i64);
                     self.pool.cancel(&job.ticket);
                 }
             }
@@ -1945,6 +1992,7 @@ impl Engine {
                 .and_then(|job| job.ticket.try_take())
             {
                 let job = self.jobs[index].take().expect("job exists");
+                move_trace::point("task.result", job.trace, if result.is_ok() { 0 } else { 1 });
                 match result {
                     Ok(Ok(frame)) => {
                         if job.generation == self.generation
@@ -1966,12 +2014,26 @@ impl Engine {
                                 },
                                 frame: Arc::new(frame),
                             }));
+                            let published = slot.frame.as_ref().expect("just published");
+                            move_trace::point(
+                                "frame.published",
+                                TraceContext {
+                                    frame: published.id,
+                                    revision: published.revision,
+                                    ..job.trace
+                                },
+                                0,
+                            );
                             drop(slots);
                             drop(old);
                             slots = self.shared.views.lock().unwrap_or_else(|e| e.into_inner());
+                        } else {
+                            move_trace::point("task.discarded", job.trace, self.floor as i64);
                         }
                     }
-                    Err(TaskError::Cancelled) => {}
+                    Err(TaskError::Cancelled) => {
+                        move_trace::point("task.cancelled", job.trace, 0);
+                    }
                     Ok(Err(error)) => {
                         self.failed_views[index] =
                             Some((job.request_id, job.generation, job.revision));
@@ -1988,6 +2050,11 @@ impl Engine {
             }
             let slot = &mut slots[index];
             if self.jobs[index].is_some() || slot.generation != self.generation {
+                if let Some(job) = &self.jobs[index] {
+                    if job.revision < revision && !self.document.layer_move_active() {
+                        move_trace::point("task.wait_old_view", job.trace, revision as i64);
+                    }
+                }
                 continue;
             }
             let Some(request) = slot.request else {
@@ -2021,6 +2088,17 @@ impl Engine {
                 continue;
             }
             drop(slots);
+            let trace = TraceContext {
+                session: Arc::as_ptr(&self.shared) as usize as u64,
+                task: move_trace::id(),
+                sequence: self.completed,
+                view: index as u32,
+                generation: self.generation,
+                request: request_id,
+                revision,
+                frame: 0,
+            };
+            move_trace::point("task.snapshot_begin", trace, preview_layer as i64);
             let snapshot = if preview_layer == 0 {
                 if index < 2 {
                     self.document.liquify_snapshot()
@@ -2041,6 +2119,7 @@ impl Engine {
             } else {
                 snapshot
             };
+            move_trace::point("task.snapshot_end", trace, 0);
             let renderer = Arc::clone(&self.renderers[index]);
             let interactive_move =
                 index < 2 && preview_layer == 0 && self.document.layer_move_active();
@@ -2050,23 +2129,90 @@ impl Engine {
             } else {
                 Priority::Background
             };
+            move_trace::point("task.enqueue", trace, if interactive_move { 1 } else { 0 });
+            if move_trace::enabled() {
+                for other in self.jobs.iter().flatten() {
+                    move_trace::point("task.concurrent", trace, other.trace.task as i64);
+                }
+            }
             if let Ok(ticket) = self.pool.submit(priority, move |token| {
+                move_trace::point("task.start", trace, 0);
                 let frame = if interactive_move {
                     paint_render::render_interactive(&snapshot, request, &token)
+                } else if move_trace::enabled() {
+                    let storage_before = snapshot.storage_stats();
+                    let (result, diagnostic) =
+                        renderer.render_diagnosed(&snapshot, request, &token);
+                    let storage_after = snapshot.storage_stats();
+                    // These are shared PagePool counters over this task interval, not exclusive I/O time.
+                    for (name, value) in [
+                        (
+                            "storage.page_reads_delta",
+                            storage_after
+                                .page_reads
+                                .saturating_sub(storage_before.page_reads)
+                                as i64,
+                        ),
+                        (
+                            "storage.page_writes_delta",
+                            storage_after
+                                .page_writes
+                                .saturating_sub(storage_before.page_writes)
+                                as i64,
+                        ),
+                        (
+                            "storage.resident_before",
+                            storage_before.resident_tiles as i64,
+                        ),
+                        (
+                            "storage.resident_after",
+                            storage_after.resident_tiles as i64,
+                        ),
+                        ("storage.registered", storage_after.registered_tiles as i64),
+                    ] {
+                        move_trace::point(name, trace, value);
+                    }
+                    for (name, value) in [
+                        ("renderer.lock_ns", diagnostic.lock_ns as i64),
+                        ("renderer.setup_ns", diagnostic.setup_ns as i64),
+                        (
+                            "renderer.compose_lod_blit_ns",
+                            diagnostic.compose_lod_blit_ns as i64,
+                        ),
+                        ("renderer.hits", diagnostic.hits as i64),
+                        ("renderer.misses", diagnostic.misses as i64),
+                        ("renderer.source_tiles", diagnostic.source_tiles as i64),
+                        ("renderer.visible_layers", diagnostic.visible_layers as i64),
+                        ("renderer.entries", diagnostic.entries as i64),
+                        ("renderer.retained_bytes", diagnostic.retained_bytes as i64),
+                        (
+                            "renderer.configuration_changed",
+                            diagnostic.configuration_changed as i64,
+                        ),
+                        ("renderer.lod", diagnostic.lod as i64),
+                    ] {
+                        move_trace::point(name, trace, value);
+                    }
+                    result
                 } else {
                     renderer.render(&snapshot, request, &token)
                 };
+                move_trace::point("task.end", trace, if frame.is_ok() { 0 } else { 1 });
                 match frame {
                     Err(RenderError::Cancelled) => Err(TaskError::Cancelled),
                     result => Ok(result.map_err(render_error)),
                 }
             }) {
+                move_trace::point("task.ticket", trace, ticket.id() as i64);
                 self.jobs[index] = Some(RenderJob {
+                    trace,
                     ticket,
                     request_id,
                     generation: self.generation,
                     revision,
                 });
+            } else {
+                move_trace::point("task.enqueue_failed", trace, 0);
             }
         }
     }
