@@ -341,3 +341,104 @@ Remove-Item Env:DRAWVERSE_PENDING_MOVE_EVIDENCE,Env:DRAWVERSE_MOVE_COMPLETION_TR
 ```
 
 未更新运行包：只有测试、按需只读观测和文档改变，原完整Release包/产品SHA `1e50b39e...` 及二进制摘要继续保留。未创建PR、合并、关闭Issue或开展新优化/实体/RSS实验。合并仍缺的具体证据是：历史失败是否在**无非计划输入、目标384已接纳、无合法取消**时仍出现，以及该失败grab实际采用的渲染帧/路径；若再次发生，必须用现场记录分离这些条件，不以更多通过样本代替。当前保留UNRESOLVED，不要求用户现在配合设备或暂停工作。
+
+
+## 当前预览契约验证与合并判定（2026-10-23，独立追加）
+
+**当前建议：READY FOR REVIEW。** 当前 after 在有效计划输入、稳定目标状态及同一次 grab 的 render 采用身份关联下，通过未准备移动的按住预览和原三函数回归。缓存审查沿用上一节，没有新增阻塞或本轮有效场景的产品失败。此建议供人工审查决定，不代表已合并、整个 Issue 或实体体验已验收；本轮未创建 PR。
+
+### 三种状态分别记录
+
+| 状态 | 本轮结论及证据边界 |
+| --- | --- |
+| 历史 after `native-regressions/test.txt` 的 pendingMoved 失败 | **unresolved**：缺输入/抓图现场，未还原，不推定为本轮发现的任一原因，也不改写成已修复 |
+| 上节 before 的非计划输入失败 | 继续按已有记录解释：计划384被其他 MouseMove改成例如(-416,-268)，场景前提不满足；不能据此认定产品像素错误，更不能代替历史after根因 |
+| 当前受控验收 | 修正后 before单独、after单独、after三函数组合各一次通过；目标384实际已接纳并稳定显示，具体身份见下表 |
+
+上一节 UNRESOLVED 是上一轮任务的历史建议。本轮按新的验收要求，将历史根因与当前合并建议分开；没有要求证明历史从未存在产品错误，也没有依靠缺失历史现场跳过当前验收。C1历史取消/像素失败、C2-A探索抓图崩溃及最初失活取消仍全部保留原边界。
+
+### 版本、构建和输入协议
+
+审查起点为 `7fb875c3a7c580b9eff20b0219bf1dbe35c63e59`，工作区干净；fetch origin/upstream 后没有相关新提交，upstream/develop仍为 `9462f84c10b34daf97296416df41d148468d3475`。没有重新审查全部缓存、扩大资格或改动Rust/cache、绘画、预热、取消、线程、采样/质量策略。
+
+| 提交 | 内容 |
+| --- | --- |
+| `a263536acc44a30e2936492bb47cbabb462996df` | 计划窗口事件、稳定grab协议、默认关闭的单槽render采用观测、确定性反例与设计追加 |
+| `447c4020b150a78601e2090224e227e9c450a96f` | 仅修正测试把viewChanged通知误认实际视图变化的条件，并补对照断言；当前已验证代码 |
+| before `010e3bb8defa82b74e8895766a29cf70522b6a25` → `42c1d7ce7cf564ce0ce028dae956981f959da4f4` | 在原独立before工作树准确应用相同两项测试/观测增量，不含缓存优化；未重写原历史 |
+
+当前before仍基于原 `c30ee4e...` 产品，after缓存算法仍为原 `1e50b39e...`；各自独立CMake build/Cargo target。修正后的五个公共C++/测试文件的Git规范化SHA256全部相同，各次invocation保留准确HEAD、EXE及源码摘要。SDK/依赖未升级，C头检查和两侧Release增量构建通过；没有改ABI/锁文件/配置格式。
+
+已实际阅读本机 Qt 6.8.3 `include/QtTest/qtestmouse.h`：QWindow mouseEvent经qt_handleMouseEvent后会调用`qApp->processEvents()`（126行）。因此“在QTest助手调用期间收到”不是来源证明。本测试改用已有基准采用的`QCoreApplication::sendEvent(QWindow*, QMouseEvent*)`：每个独立事件对象有计划编号，保存目标窗口、顺序、坐标、按键、modifier及返回accept状态；应用级过滤器只有在目标窗口入口、指针与当前登记的那个事件完全一致时才标为planned。Canvas的后续交付只记delivery，不按source/device或时间猜来源，不重复算作独立计划输入。
+
+目标夹具仍为3840×2160、满幅红色子层+链接蒙版+PassThrough组，窗口/Canvas 1024×720；DPR=1、DPI=96、zoom=0.25、document origin=(32,90)。计划Press=(332,360)、Move=(428,360)，独立逆映射期望=(384,0)，未吸附/改变产品坐标。后续准备后Press/Move/Move/Release同样显式登记为3/4/5/6号事件。事件经真实QWindow和Canvas正常路由；不移动OS光标，不向其他应用注入事件，没有要求用户停工或额外抢焦点。
+
+观察期间其他窗口入口鼠标/笔/滚轮/键事件和生命周期继续正常传播。目标阶段收到非计划输入或实际文档/视图/窗口身份变化即锁存前提失效，不补发目标位置覆盖干扰；不记录文本内容。输入代数、GUI内容代数及render身份代数独立记录，变化后恢复也不会回退代数。
+
+### 同一次grab的证明规则
+
+`PendingMoveEvidence::associated` 在原12项状态条件之外要求：
+
+1. BEGIN实际sequence与之后完成的目标UPDATE sequence独立记录，不推算“+1”；UPDATE、owner=2、generation=3、delta=(384,0)、undoDepth=5和view0帧revision均吻合。
+2. 请求之前目标Canvas节点已经采用对应GUI imageKey（或resident source/revision）。`CanvasPresentationObservation`只在`CanvasItem::updatePaintNode`的Qt同步阶段发布**成功采用**身份，失败/删除路径发布invalid。GUI线程在该同步阶段被Qt阻塞；观测使用与现有节点设置相同的image/region/documentRect快照，不在异步render回调查询client的sequence/frame元数据。单槽互斥保护，没有GPU对象跨线程，没有额外刷新/定时器，普通产品默认无observer、无逐帧锁和分配。
+3. 对指定Canvas串行grab，独立编号绑定该结果对象的ready回调；保留request/ready/complete/assertion四份状态。四处的操作、GUI内容与输入代数、目标Canvas/窗口、view/frame/request/revision/imageKey、render采用身份/代数、DPR及视图必须一致。render曾换图后恢复也会因代数变化拒绝。
+4. 返回图像cacheKey必须是该次grab实际取得的结果；采样坐标冻结在请求上下文。原white/red标准、两个点及整体AND不变，两点来自同一张图。请求/ready回调和持有结果均在原5000ms完成边界内，作用域退出断开回调；超时后不再启动下一次grab，没有重叠或销毁后的栈回调。
+
+这是**已采用目标节点在稳定区间内、同Canvas的item grab关联**，不是将最新getter重命名为回执，也没有用任意frameSwapped。它不测硬件扫描输出、物理输入到显示延迟或肉眼停更。实际成功均走normal/interactive图像节点，resident采用字段的条件保留但本次目标不以未发生的resident路径冒充验证。
+
+### 确定性辨别力与一次协议误判
+
+保留`pendingMoveObservationRejectsUnrelatedState`的1功能函数/12个状态反例；新增`pendingMoveGrabAssociationRejectsStaleAndInterruptedEvidence`为1功能函数，含13个关联拒绝断言：旧render imageKey、旧revision、请求端其他sequence及整次记录属于另一sequence、输入/内容/计划代数变化、取消标志、render ABA、换generation/zoom、其他Canvas及错误ready编号。另验证实际单槽发布器的ABA代数、失败invalid，以及新revision/imageKey/sequence已正确接管时能通过。JSON条件测试不是原生渲染替代品，下列原生运行补足这一点。最终两个功能函数通过，init/cleanup不计数。
+
+第一次before单独运行（`before-single/`，尚用a263536协议）失败并保留：只有已登记的Press/Move，没有非计划窗口输入，目标最终是384且两点颜色匹配，但记录器已把同步`viewChanged`通知锁存为scenario_invalid。源码 `CanvasItem::setClient` 的stateChanged连接会在refresh后发viewChanged（约142行），这不代表zoom/origin改变；现场在Press前后均为0.25/(32,90)。这是本轮**测试协议的假拒绝**，不是桌面干扰，也不是产品像素错误。
+
+447c402将判定改为比较实际视图身份（含generation、Canvas/client/window、zoom/origin/size/DPR），不是忽略信号或放宽产品像素条件；增加“revision通知但视图相同”与“实际zoom变化”的确定性对照。这个明确新线索只追加一次必要before验证，after两次此前未运行。首个失败不删除、不当通过：保留256条抓图断言记录及49条溢出计数，trace无溢出；修正后以下三次均无溢出。没有第三/第四轮盲目重跑，没有加sleep、扩大超时、改变采样点/颜色/取消或跳过按住预览。
+
+### 原生结果（当前协议）
+
+所有运行均为Windows原生可见Release。Qt日志实际创建D3D11 QRhi并选用AMD Radeon(TM) Graphics（1002:1638）；未切换独显或软件后端。Qt输入后端请求auto、实际报告wintab；本轮为Qt合成鼠标，不等于实体手绘板驱动验证。
+
+| 运行/实际HEAD | 功能pass/fail | 按住记录/成功grab编号 | EXE SHA256 |
+| --- | ---: | --- | --- |
+| 首次before `010e3bb8...`，协议误判保留 | 0/1 | 256保留/无成功，49溢出 | `cddda1a80cd47bde8618fe5da9acef5a7822c2376a1fe5c131191704dea8f5e2` |
+| 必要before对照 `42c1d7ce...`，目标单独 | 1/0 | 6 / #8 | `7a21811bedf84e636ee6bcf03e3d5c7db1b5112c7fbac3f91ea3c1e47d5726cc` |
+| after `447c4020...`，目标单独 | 1/0 | 7 / #9 | `ed8a2b351f75a4c90c7af988f70551a688e606474109c132e132a24bd4786b03` |
+| after `447c4020...`，原三函数组合 | 13/0 | 7 / #9 | 同上 |
+
+三个成功grab均：BEGIN=13、目标UPDATE=14、generation=3、revision=7、owner2 offset=(384,0)、history=5；GUI frame为view0/request4/frame5/revision7。抓图前节点已采用相同imageKey、region=(0,0,3840,2160)，包含两个采样点；request→ready→complete→assertion期间各身份与代数全部一致。白点文档(100,1080)→image(57,360)，RGBA=(255,255,255,255)；红点(800,1080)→(232,360)，RGBA=(255,0,0,255)。两点同图、原阈值通过。
+
+| 成功运行 | GUI/节点imageKey | GUI内容代数 / 输入代数 / render代数 | grab结果imageKey |
+| --- | --- | --- | --- |
+| before单独 | 73014444033 | 6 / 2 / 3 | 90194313218 |
+| after单独 | 81604378625 | 7 / 2 / 3 | 98784247810 |
+| after组合 | 90194313217 | 7 / 2 / 3 | 98784247810 |
+
+图像键是各进程本地身份，不做跨进程相等推论；grab结果键与被采用源键不同是正常的独立结果对象。每次完整字段保存在pending-evidence.json，`verify_current.py`逐一断言四阶段一致、同一grab/Canvas及两侧公共源码摘要相同；摘要保存在`verified-current.json`，不仅摘录完成时getter。
+
+修正后的三次进程退出0、无skip、无意外取消/错误/超时/崩溃或诊断溢出；原定Escape回执及history不变仍通过。后续准备纹理复用、松手单历史/完整帧接管/撤销，和组合的复杂蒙版路径、撤销/重做均由原断言实际执行。功能成功数为1+1+13的重复执行，不是15个新增独立函数。没有新的有效场景产品失败；首次测试协议错误与旧历史失败分别保留。
+
+### 证据、命令与剩余边界
+
+新证据位于忽略目录 `artifacts/issue-2-main-c2b-current-acceptance/`，未提交：
+
+- `before-single/`：首次协议假拒绝，含原图、输入、状态、trace、test.txt、invocation与溢出记录。
+- `view-identity-before-single/`、`view-identity-after-single/`、`view-identity-after-combo/`：当前协议三次运行，含同样完整字段及成功图。
+- `native-order.json` / `view-identity-native-order.json`保留四次实际进程/退出码；`verified-current.json`、`evidence-sha256.json`、公共patch、构建及确定性日志独立保留。
+
+复现仍用两侧各自build（已有MSVC/Qt环境），先运行两个确定性函数，再用新输出目录启用该测试的本地批量导出：
+
+```powershell
+cmake --build build --config Release --target qt_transform_tests -j 2
+./build/bin/Release/qt_transform_tests.exe pendingMoveObservationRejectsUnrelatedState pendingMoveGrabAssociationRejectsStaleAndInterruptedEvidence
+# 输出目录必须新建且不含pending-evidence.json；Qt/配置隔离同本轮invocation
+$env:DRAWVERSE_PENDING_MOVE_EVIDENCE='<新输出目录>'
+$env:DRAWVERSE_MOVE_COMPLETION_TRACE='<新输出目录>/core.json'
+$env:QT_QPA_PLATFORM='windows'; $env:QT_QUICK_BACKEND='rhi'; $env:QSG_RHI_BACKEND='d3d11'
+./build/bin/Release/qt_transform_tests.exe prewarmed4kResidentMoveReusesFullQualityTexturesAndRestoresFullFrame
+# 组合在同一命令后追加：complex4kLayerMoveRestoresFullFramesAndHistory compoundLayerMovesKeepResidentSources
+Remove-Item Env:DRAWVERSE_PENDING_MOVE_EVIDENCE,Env:DRAWVERSE_MOVE_COMPLETION_TRACE
+```
+
+准确隔离路径、参数、实际环境与二进制摘要以各invocation和qt.log为准。没有设置记录变量时不写现场文件；Canvas单槽观察只由这项测试显式启用，产品普通启动默认关闭。没有重新制作运行包：缓存/呈现策略未变，原包保留；原17项核心/确定性取消、性能数据仍按原测量SHA引用，没有重新跑矩阵或提出新的收益数字。
+
+**当前合并建议：READY FOR REVIEW；历史根因状态：unresolved。** 当前测试会拒绝旧节点/旧revision、错误操作及被改变又恢复的输入；已取得真实窗口中目标按住像素及后续专项通过证据。剩余风险是缺现场的历史after失败和原先未归因异常仍不能排除；它们不被改写成已修复。真实作品、实体手绘板手感、肉眼稳定性和物理显示延迟仍未验证。此处停止，不自动PR/合并、不关闭Issue，不进入任何新优化。
