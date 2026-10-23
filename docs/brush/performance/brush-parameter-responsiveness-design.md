@@ -27,3 +27,18 @@ build/Cargo target 中交替执行，4项与256项各3对进程，大小同值/�
 
 证据独占新目录 `artifacts/issue-2-brush-parameters/`，默认诊断关闭。产品修复若通过
 才部署新的完整隔离运行包。分支仅推送 Fork，不创建 PR 或合并。
+
+## 已实施的唯一优化
+
+`BrushLibrary::catalogSnapshot` 仅在自己的 `m_snapshotObjectCache` 非空且目录对象
+需要重建时，投影其中 version/presets/organization，并用当前 m_selected 编码。
+`snapshotObject` 和原冷目录路径均使用同一个 presetRow，根 version 只来自活动行
+及 organization；reset 和其他工具的版本不混入。没有从外来 JSON 直接取未验证缓存。
+restoreSelectionOnly 必须与自己的有效对象精确相等；applyPreparedPreferences 的对象
+由完整验证后的 candidate 生成；工具隔离切换已有同步更新活动行和版本的路径。
+参数/结构修改仍由 queuePersistence 清空两类对象，颜色只更新 colorState；所有这些
+入口保持原样。冷目录查询仍执行原 presetRow 循环，保留精确回退。
+
+没有新增持久缓存或脏标志；QJsonArray 复用现有不可变共享表示，仍执行必要编码、
+目录比较/准备、广播和保存。只减少已经确认重复的活动行构造，不处理剩余偏好快照
+构造、多文档恢复成本或同步输入热点。具体证据见对应验收记录。
