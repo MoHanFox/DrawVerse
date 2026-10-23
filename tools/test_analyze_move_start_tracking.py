@@ -35,6 +35,14 @@ def fixture():
 
 
 class AttributionTests(unittest.TestCase):
+    def test_pair_rows_keep_individual_input_protocol(self):
+        raw, core, row = fixture()
+        raw['tracking'] = False
+        row.update(phase='W2-tracking', tracking=True)
+        result = analyze_row(raw, core, row)
+        self.assertTrue(result['tracking'])
+        self.assertEqual(result['phase'], 'W2-tracking')
+
     def test_exact_sequence_and_independent_clock(self):
         raw, core, row = fixture()
         result = analyze_row(raw, core, row)

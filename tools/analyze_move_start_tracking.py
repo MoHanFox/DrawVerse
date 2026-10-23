@@ -33,7 +33,7 @@ def analyze_row(raw, core, row):
             inp['window_dispatch_ns'] = event['state']['ns']
     moves = [i for i in inputs if i['type'] == 5]
     press, end = row['press_ns'], row.get('hold_end_ns', 0)
-    result = dict(phase=row['phase'], terminal=row['terminal'], tracking=raw['tracking'],
+    result = dict(phase=row['phase'], terminal=row['terminal'], tracking=row.get('tracking', raw['tracking']),
                   direct_w=raw['direct_w'], assets_ready=row['assets_ready'], uploads=row['uploads'],
                   samples=len(moves), held_pixels_and_association=row['held_pixels_and_association'],
                   timing_valid=row['terminal'] == 'committed',
