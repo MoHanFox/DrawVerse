@@ -192,6 +192,7 @@ def main():
     parser.add_argument('--repeats', type=int, default=3)
     parser.add_argument('--trace', action='store_true')
     parser.add_argument('--delta', type=int, nargs=2, default=[384,128], metavar=('DX','DY'))
+    parser.add_argument('--pattern', action='store_true', help='full raster plus six nonuniform colored dabs (S1/S2 only)')
     parser.add_argument('--core-trace', action='store_true', help='bounded Rust task trace, exported at core shutdown')
     args = parser.parse_args()
     if args.reanalyze:
@@ -203,6 +204,8 @@ def main():
         parser.error('executable and output required')
     if any(abs(v)>=1024 for v in args.delta):
         parser.error('local test delta must stay within +/-1023')
+    if args.pattern and any(scene > 2 for scene in args.scenes):
+        parser.error('--pattern only supports S1/S2; S3 fixture stays unchanged')
     if args.repeats < 1:
         parser.error('--repeats must be positive')
     executable, output = args.executable.resolve(), args.output.resolve()
@@ -218,7 +221,7 @@ def main():
     diff = subprocess.check_output(['git', 'diff', 'HEAD', '--', 'ui', 'core', 'tools/measure_layer_move.py'], cwd=root)
     metadata = dict(product_baseline='b948dccbc2fd767af3a999ee9a03e108455c44cb', tool_revision=revision,
                     tracked_diff_sha256=hashlib.sha256(diff).hexdigest(), executable_sha256=digest(executable),
-                    tool_sha256=digest(Path(__file__)), repeats=args.repeats, scenes=args.scenes, trace=args.trace, core_trace=args.core_trace, delta=args.delta)
+                    tool_sha256=digest(Path(__file__)), repeats=args.repeats, scenes=args.scenes, trace=args.trace, core_trace=args.core_trace, delta=args.delta, pattern=args.pattern)
     source_files = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--', 'core', 'ui', 'tools'], cwd=root, text=True).splitlines()
     metadata['sources_sha256'] = {p: digest(root/p) for p in source_files if (root/p).is_file()}
     metadata['runtime_dlls_sha256'] = {p.name: digest(p) for p in executable.parent.glob('*paint*.dll')}
@@ -238,7 +241,7 @@ def main():
             env.update(QT_QPA_PLATFORM='windows', QSG_RHI_BACKEND='d3d11', QSG_INFO='1',
                        QSG_RHI_DISABLE_DISK_CACHE='1', QML_DISK_CACHE_PATH=str(directory/'qml-cache'),
                        DRAWVERSE_MOVE_REPORT=str(directory/'raw.json'), DRAWVERSE_MOVE_SCENE=str(scene),
-                       DRAWVERSE_MOVE_TRACE=str(int(args.trace)), DRAWVERSE_MOVE_DELTA=','.join(map(str,args.delta)))
+                       DRAWVERSE_MOVE_TRACE=str(int(args.trace)), DRAWVERSE_MOVE_DELTA=','.join(map(str,args.delta)), DRAWVERSE_MOVE_PATTERN=str(int(args.pattern)))
             env.pop('DRAWVERSE_MOVE_COMPLETION_TRACE', None)
             if args.core_trace:
                 env['DRAWVERSE_MOVE_COMPLETION_TRACE'] = str(directory/'core.json')

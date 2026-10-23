@@ -28,6 +28,7 @@ private slots:
     void measure() {
         const auto output=qEnvironmentVariable("DRAWVERSE_MOVE_REPORT");
         const auto scenario=qEnvironmentVariableIntValue("DRAWVERSE_MOVE_SCENE");
+        const bool patterned=qEnvironmentVariableIntValue("DRAWVERSE_MOVE_PATTERN")!=0;
         const auto requestedDelta=qEnvironmentVariable("DRAWVERSE_MOVE_DELTA").split(',');
         bool dxOk=true,dyOk=true;const QPoint targetDelta=requestedDelta.size()==2?QPoint(requestedDelta[0].toInt(&dxOk),requestedDelta[1].toInt(&dyOk)):QPoint(384,128);
         QVERIFY2(dxOk && dyOk && qAbs(targetDelta.x())<1024 && qAbs(targetDelta.y())<1024,"invalid local test delta");
@@ -42,6 +43,16 @@ private slots:
         client.newDocument(size,size);QTRY_COMPARE(client.documentWidth(),size);QTRY_VERIFY(!client.layerEditBusy());
         client.addLayer("C1 full red raster");QTRY_VERIFY(!client.layerEditBusy());const auto owner=client.activeLayer();
         client.activateBucket();client.setBrushColor(Qt::red);QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY_WITH_TIMEOUT(!client.layerEditBusy(),60000);
+        if(patterned){
+            QVERIFY(scenario<=2);
+            client.activateBrush();client.setBrushRadius(size*.075);
+            client.brushLibrary()->setPressureSize(false);client.brushLibrary()->setPressureFlow(false);
+            for(int y=0;y<2;++y)for(int x=0;x<3;++x){
+                client.setBrushColor(QColor(20+x*25,80+y*60,220-x*35));
+                QVERIFY(client.beginStroke({{size*(.2+x*.3)+.5,size*(.2+y*.5)+.5},1}));client.endStroke();
+                QTRY_VERIFY(!client.layerEditBusy());
+            }
+        }
         quint64 mask=0;
         if(scenario>=3){
             QVERIFY(client.addMask(owner));QTRY_VERIFY(!client.layerEditBusy());mask=client.activeLayer();
@@ -64,6 +75,8 @@ private slots:
         QImage initial;QTRY_VERIFY(!(initial=capture()).isNull() && red(at(initial,{size*.03,size*.5})));
         if(mask)QVERIFY(white(at(initial,{size*.5,size*.5})));
         report["fixture"]=QJsonObject{{"document_size",size},{"nonempty_raster_bounds",QJsonArray{0,0,size,size}},{"owner",double(owner)},{"mask",double(mask)},{"mask_linked",scenario==3},{"group",scenario==3},{"layers",QJsonArray::fromVariantList(client.layers())},{"window_width",window.width()},{"window_height",window.height()},{"zoom",canvas->zoom()},{"dpr",window.devicePixelRatio()},{"logical_dpi",window.screen()->logicalDotsPerInch()},{"screen",window.screen()->name()},{"graphics_api",int(window.rendererInterface()->graphicsApi())},{"gpu_display",canvas->gpuDisplay()},{"viewport_width",client.frame().width()},{"viewport_height",client.frame().height()}};
+        auto fixture=report["fixture"].toObject();fixture["content"]=patterned?"full red raster plus six differently colored brush dabs at (0.2/0.5/0.8,0.2/0.7), radius=0.075*size":"full red raster";report["fixture"]=fixture;
+        if(patterned){const auto c=at(initial,{size*.2,size*.2});QVERIFY(c.blue()>c.red()+40);}
         const int depth=client.undoDepth();
         const auto offset=[&]{for(const auto &v:client.layers()){const auto m=v.toMap();if(m.value("id").toULongLong()==owner)return QPoint(m.value("offsetX").toInt(),m.value("offsetY").toInt());}return QPoint(INT_MIN,INT_MIN);};
         InteractionTrace::start(tracing);
