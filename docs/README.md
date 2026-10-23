@@ -1,6 +1,7 @@
 # DrawVerse 文档索引
 
 - [主线 B1 — Tablet Input & Cursor Ownership](brush/input/tablet-input-cursor-ownership-design.md)
+- [主线 B2 — Cursor Pose Continuity & Direction Diagnosis](brush/input/cursor-pose-continuity-design.md)
 
 - [大范围像素滑条指数调节](interface/pixel-slider-exponential-design.md)
 

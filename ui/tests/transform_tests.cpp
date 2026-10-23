@@ -6,6 +6,7 @@
 #include "workspace/WorkspaceManager.h"
 #include "platform/MenuSurface.h"
 #include "platform/TabletInput.h"
+#include "platform/InteractionTrace.h"
 #include <QtTest>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -37,6 +38,53 @@ private slots:
         configureTabletInput("auto");
         if(auto *screen=QGuiApplication::primaryScreen())qInfo()<<"B1 native test screen:"<<screen->name()<<"logical DPI:"<<screen->logicalDotsPerInch()<<"DPR:"<<screen->devicePixelRatio();
         for(const auto *device:QInputDevice::devices())qInfo()<<"Initial Qt device:"<<device->name()<<device->systemId()<<device->type();
+    }
+    void cursorDirectionTurnsRebasesAndWraps() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("direction-diagnosis.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newTransparentDocument(256,256);QTRY_VERIFY(client.ready() && client.documentWidth()==256 && !client.layerEditBusy());
+        QQuickWindow window;window.resize(500,500);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({500,500});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        auto *library=client.brushLibrary();library->setRadius(12);library->setAngle(0);library->setRoundness(.3);library->setAngleControl("direction");
+        QPointingDevice pen("B2 direction diagnosis pen",9304,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
+        QJsonArray states;QPointF current(200,200);InteractionTrace::start(true);
+        const auto evidence=qScopeGuard([&]{const auto trace=InteractionTrace::finish();const auto dir=qEnvironmentVariable("DRAWVERSE_B2_EVIDENCE_DIR");if(!dir.isEmpty()){QFile file(QDir(dir).filePath("direction-diagnosis.json"));if(file.open(QIODevice::WriteOnly))file.write(QJsonDocument(QJsonObject{{"synthetic_input",true},{"states",states},{"trace",trace}}).toJson());}});
+        const auto hover=[&](QPointF at){QTabletEvent event(QEvent::TabletMove,&pen,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(canvas,&event);current=at;};
+        const auto record=[&](const char *stage,QPointF delta){states.append(QJsonObject{{"stage",stage},{"time_ns",double(InteractionTrace::now())},{"device",pen.name()},{"canvas",QString::number(quintptr(canvas),16)},{"x",current.x()},{"y",current.y()},{"dx",delta.x()},{"dy",delta.y()},{"document_x",canvas->documentPoint(current).x()},{"document_y",canvas->documentPoint(current).y()},{"zoom",canvas->zoom()},{"angle",canvas->brushCursorAngle()},{"ellipse_angle_mod180",std::remainder(canvas->brushCursorAngle(),180.)},{"radius",canvas->brushCursorRect().width()/canvas->zoom()/2},{"roundness",canvas->brushCursorRoundness()},{"pending",library->persistencePending()},{"visible",canvas->brushCursorVisible()}});};
+        hover(current);hover(current+QPointF(10,10));QTRY_COMPARE(canvas->brushCursorAngle(),45.);record("stable-diagonal",{10,10});
+        for(int i=0;i<5;++i){hover(current);QCOMPARE(canvas->brushCursorAngle(),45.);record("stationary",{});}
+        for(int i=0;i<3;++i){hover(current+QPointF(.1,.05));QVERIFY(qAbs(canvas->brushCursorAngle()-26.565051)<.001);record("slow-stable",{.1,.05});}
+        hover(current+QPointF(0,10));QCOMPARE(canvas->brushCursorAngle(),90.);record("stop-and-turn",{0,10});
+        hover(current+QPointF(-10,.01));const auto upper=canvas->brushCursorAngle();record("wrap-upper",{-10,.01});
+        hover(current+QPointF(-10,-.01));const auto lower=canvas->brushCursorAngle();record("wrap-lower",{-10,-.01});
+        QVERIFY(upper>179 && lower< -179);QVERIFY(qAbs(std::remainder(upper-lower,180.))<1.);
+        // This amplitude is a synthetic probe, not a measured tablet noise distribution.
+        for(const auto &delta:{QPointF(.0001,0),QPointF(0,.0001),QPointF(-.0001,0),QPointF(0,-.0001)}){hover(current+delta);const auto expected=std::atan2(delta.y(),delta.x())*180/3.141592653589793;QVERIFY(qAbs(canvas->brushCursorAngle()-expected)<.001);record("synthetic-near-still",delta);}
+        canvas->zoomBy(1.5);QTRY_VERIFY(qAbs(canvas->zoom()-1.5)<1e-9);hover(current+QPointF(0,10));QCOMPARE(canvas->brushCursorAngle(),90.);record("after-zoom",{0,10});
+        const auto beforePan=canvas->documentPoint({0,0});
+        const auto mouseStart=QPoint(180,180);QTest::mousePress(&window,Qt::MiddleButton,Qt::NoModifier,mouseStart);QTest::mouseMove(&window,mouseStart+QPoint(25,10));QTest::mouseRelease(&window,Qt::MiddleButton,Qt::NoModifier,mouseStart+QPoint(25,10));canvas->zoomBy(1.);
+        QVERIFY(QLineF(beforePan,canvas->documentPoint({0,0})).length()>1);
+        hover(current);hover(current+QPointF(0,10));QCOMPARE(canvas->brushCursorAngle(),90.);record("after-pan",{0,10});
+        library->setRadius(24);QCOMPARE(canvas->brushCursorRect().width()/canvas->zoom(),48.); // Invalidate incompatible old size immediately.
+        library->setAngleControl("fixed");library->setAngle(27);QTRY_VERIFY(!library->persistencePending());QTRY_COMPARE(canvas->brushCursorAngle(),27.);record("new-settings",{});
+        QVERIFY(library->select("round-fine"));QCOMPARE(canvas->brushCursorAngle(),library->angle());QCOMPARE(canvas->brushCursorRoundness(),library->roundness());
+        client.activateEraser();QCOMPARE(canvas->brushCursorRect().width()/canvas->zoom(),library->radius()*2);client.activateBrush();
+        canvas->setVisible(false);QVERIFY(!canvas->brushCursorVisible());canvas->setVisible(true);canvas->setClient(nullptr);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void quickHoverDoesNotReuseAnotherPensGeometry() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("geometry.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QQuickWindow window;window.resize(400,400);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({400,400});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *library=client.brushLibrary();library->setRadius(12);library->setRoundness(.5);library->setAngleControl("pen-rotation");library->setTiltRoundness(true);library->setMinimumRoundness(.2);
+        const auto capabilities=QInputDevice::Capability::Position|QInputDevice::Capability::Pressure|QInputDevice::Capability::XTilt|QInputDevice::Capability::Rotation;
+        QPointingDevice first("B2 geometry first",9305,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,capabilities,1,1),second("B2 geometry second",9306,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,capabilities,1,1);
+        const QPointF at(200,200);QTabletEvent raw(QEvent::TabletMove,&first,at,canvas->mapToGlobal(at),0,60,0,0,80,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(canvas,&raw);QTRY_COMPARE(canvas->brushCursorAngle(),80.);QCOMPARE(canvas->brushCursorRoundness(),.25);
+        QHoverEvent retained(QEvent::HoverMove,at,canvas->mapToGlobal(at),at,Qt::NoModifier,&first);QCoreApplication::sendEvent(canvas,&retained);QCOMPARE(canvas->brushCursorAngle(),80.);QCOMPARE(canvas->brushCursorRoundness(),.25);
+        QHoverEvent switched(QEvent::HoverMove,at,canvas->mapToGlobal(at),at,Qt::NoModifier,&second);QCoreApplication::sendEvent(canvas,&switched);QCOMPARE(canvas->brushCursorAngle(),0.);QCOMPARE(canvas->brushCursorRoundness(),.5);
+        QTabletEvent press(QEvent::TabletPress,&second,at,canvas->mapToGlobal(at),.5,60,0,0,45,0,Qt::NoModifier,Qt::LeftButton,Qt::LeftButton);QCoreApplication::sendEvent(canvas,&press);QVERIFY(client.drawing());
+        QTRY_VERIFY(qAbs(canvas->brushCursorRect().width()/canvas->zoom()-12)<.001);
+        library->setCursorSimple(true);QCOMPARE(canvas->brushCursorRect().width()/canvas->zoom(),24.);
+        library->setCursorSimple(false);QVERIFY(library->persistencePending());QVERIFY(qAbs(canvas->brushCursorRect().width()/canvas->zoom()-12)<.001);QCOMPARE(canvas->brushCursorAngle(),45.);
+        QTabletEvent release(QEvent::TabletRelease,&second,at,canvas->mapToGlobal(at),0,60,0,0,45,0,Qt::NoModifier,Qt::LeftButton,Qt::NoButton);QCoreApplication::sendEvent(canvas,&release);QTRY_VERIFY(!client.drawing() && !client.layerEditBusy());
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void tabletContactMoveBelongsToPressedCanvas() {
         QTemporaryDir temp;PaintCoreClient first(nullptr,temp.filePath("preferences.ini"));

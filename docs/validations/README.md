@@ -1,6 +1,7 @@
 # 验收文档索引
 
 - [主线 B1 — Tablet Input & Cursor Ownership](brush/input/tablet-input-cursor-ownership-validation.md)
+- [主线 B2 — Cursor Pose Continuity & Direction Diagnosis](brush/input/cursor-pose-continuity-validation.md)
 
 - [Brush Interaction Baseline（Issue #2-A）](brush/performance/brush-interaction-baseline-validation.md)
 - [Color-only State Invalidation（Issue #2-B）](brush/performance/color-state-invalidation-validation.md)

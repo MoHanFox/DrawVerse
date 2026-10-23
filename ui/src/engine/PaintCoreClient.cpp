@@ -1321,10 +1321,13 @@ BrushCursorPose PaintCoreClient::baseCursorPose() const {
 }
 BrushCursorPose PaintCoreClient::brushCursorPose(const InputSample &sample,QPointF direction,bool directionKnown,bool pressureKnown) {
     InteractionTrace::Scope trace("brushCursorPose");
-    auto result=baseCursorPose();if(!m_ready || m_closing || m_liquifyActive || m_brushLibrary->persistencePending())return result;
+    auto result=baseCursorPose();if(!m_ready || m_closing || m_liquifyActive)return result;
     PaintBrushPose *handle=nullptr;
     if(m_drawing){if(!m_strokePoseBound)return result;handle=m_strokePose;}
     else {
+        // Pending preferences describe the next stroke. The already bound
+        // stroke pose remains valid; only hover must await the new catalog.
+        if(m_brushLibrary->persistencePending())return result;
         QMutexLocker lock(&m_brushCatalogConnection->mutex);if(!m_brushCatalogConnection->library || !m_brushCatalogConnection->preparation)return result;
         const float radius=static_cast<float>(m_radius);
         if(!m_hoverPose && paint_brush_pose_create(&m_hoverPose)!=PAINT_OK)return result;
