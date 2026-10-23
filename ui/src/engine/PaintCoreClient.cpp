@@ -332,7 +332,7 @@ signals:
     void computeState(QVariantList hardware,QString device,QString status,bool busy);
     void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform,QVariantList committedStrokes);
     void thumbnailReady(quint64 generation, quint64 revision, quint64 layer, QString image);
-    void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request);
+    void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request, quint64 frameId);
     void failure(QString message);
     void completed(bool workerThread);
     void finished();
@@ -564,7 +564,7 @@ public:
             m_frames[view] = frame.frame_id;
             m_connection->framePending[view].store(true);
             emit pixels(static_cast<int>(view), image, QRectF(frame.x, frame.y, frame.width, frame.height),
-                frame.document_generation, frame.revision, frame.request_id);
+                frame.document_generation, frame.revision, frame.request_id, frame.frame_id);
         }
     }
     void pollMovePreparation() {
@@ -1114,6 +1114,11 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             m_pendingStrokeColors.erase(m_pendingStrokeColors.begin());
         }
         if(m_layerMoveActive && (changedGeneration || (m_completedSequence>=m_layerMoveSequence && !(info.flags&PAINT_SESSION_LAYER_MOVE)))) {
+            if(!changedGeneration && m_layerMoveClosing && (info.last_error_status==PAINT_OK || info.last_error_sequence!=m_layerMoveSequence) && (m_layerMoveSubmittedKind==PAINT_LAYER_MOVE_COMMIT || m_layerMoveSubmittedKind==PAINT_LAYER_MOVE_CANCEL)){
+                m_moveReceipt={m_layerMoveSequence,info.document_generation,info.revision,m_layerMoveSubmittedKind};
+                InteractionTrace::point("move.receipt.sequence",double(m_layerMoveSequence));
+                InteractionTrace::point("move.receipt.kind",m_layerMoveSubmittedKind);
+            }
             m_layerMoveActive=false;m_layerMoveStarting=false;m_layerMoveClosing=false;
             m_layerMoveTimer->stop();
         } else if(m_layerMoveStarting && m_completedSequence>=m_layerMoveSequence) {
@@ -1154,7 +1159,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         m_ready = !m_closing && !m_pendingNew && !m_fileOpening && !m_backendFailed;
         if (changedGeneration) {
             for (int i = 0; i < 2; ++i) {
-                m_frames[i] = {}; m_regions[i] = {}; m_frameRevisions[i] = 0;
+                m_frames[i] = {}; m_regions[i] = {}; m_frameRevisions[i] = 0;m_frameIds[i]=0;m_frameRequestIds[i]=0;
                 m_requests[i] = 0; m_requestedRegions[i] = {}; m_requestedPixels[i] = {};
             }
             emit frameChanged();
@@ -1202,7 +1207,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         m_movePreparationCompleted=true;
         emit movePreparationChanged();
     });
-    connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request) {
+    connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request, quint64 frameId) {
         m_connection->framePending[view].store(false);
         if (m_closing || m_pendingNew || generation != m_generation ||
             (m_requests[view] && request != m_requests[view]) || revision < m_frameRevisions[view]) return;
@@ -1213,9 +1218,11 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(trace.active)trace.event.value=double(revision);
         InteractionTrace::point("move.frame.request",double(request));
         InteractionTrace::point("move.frame.view",view);
+        InteractionTrace::point("move.frame.generation",double(generation));
+        InteractionTrace::point("move.frame.id",double(frameId));
         InteractionTrace::point("move.frame.imageKey",double(image.cacheKey()));
         if(m_frames[view]!=image)m_frames[view]=image;
-        m_regions[view] = region; m_frameRevisions[view] = revision; emit frameChanged();
+        m_regions[view] = region; m_frameRevisions[view] = revision;m_frameIds[view]=frameId;m_frameRequestIds[view]=request; emit frameChanged();
     });
     connect(m_worker, &BackendWorker::failure, this, &PaintCoreClient::showError);
     connect(m_worker, &BackendWorker::fileResult, this, [this](PaintFileJobInfo info, const QString &message) {
@@ -1478,7 +1485,7 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
         requestLayerMovePreparation();
     } else if (!error.isEmpty()) showError(error);
 }
-void PaintCoreClient::showError(const QString &error) { m_error = error; emit errorChanged(); }
+void PaintCoreClient::showError(const QString &error) { if(m_layerMoveActive)InteractionTrace::point("move.backend.error",double(m_layerMoveSequence));m_error = error; emit errorChanged(); }
 void PaintCoreClient::clearError() { m_error.clear(); emit errorChanged(); }
 QVariantList PaintCoreClient::recentColors() const {return m_brushLibrary->recentColors();}
 void PaintCoreClient::setHistoryLimit(int commands) {
@@ -1951,6 +1958,7 @@ bool PaintCoreClient::beginLayerMove(QPointF position,bool pick) {
     if(status!=PAINT_OK){showError(error);return false;}
     if(trace.active)trace.event.value=double(sequence);
     InteractionTrace::point("move.begin.prepared",prepared);
+    m_layerMoveSubmittedKind=kind;
     m_layerMoveSequence=sequence;m_layerMoveDelta={};m_layerMoveDirty=false;m_layerMoveFinish=false;
     m_layerMoveActive=true;m_layerMoveStarting=true;m_layerMoveClosing=false;
     m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();m_layerMoveTimer->start();emit stateChanged();return true;
@@ -1980,6 +1988,7 @@ void PaintCoreClient::flushLayerMove() {
     InteractionTrace::point("move.submit.status",status);
     if(status==PAINT_BUSY)return;
     if(status!=PAINT_OK){showError(error);m_layerMoveFinish=true;m_layerMoveCommit=false;return;}
+    m_layerMoveSubmittedKind=kind;
     m_layerMoveSequence=sequence;m_layerMoveDirty=false;
     if(m_layerMoveFinish){m_layerMoveClosing=true;if(m_layerMoveCommit && !delta.isNull())m_pendingMutation=sequence;}
 }

@@ -137,7 +137,7 @@ private:
     bool m_pickMoving = false;
     void finishLayerMove(QPointF local);
     void updateLayerMove(QPointF local);
-    void cancelLayerMove();
+    void cancelLayerMove(const char *reason="move.cancel.other");
     bool beginSelection(QPointF local, Qt::KeyboardModifiers modifiers);
     void updateSelection(QPointF local,Qt::KeyboardModifiers modifiers);
     QRectF selectionPreviewRect() const;

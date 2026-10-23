@@ -15,6 +15,113 @@ def stats(values):
                                 for key, p in [('p50', .5), ('p95', .95), ('max', 1)]})
 
 
+def audit_row(data, row):
+    """No nearest-time identity guesses. Old fields retain their original meaning."""
+    trace = data.get('trace', [])
+    children = {}
+    for event in trace:
+        children.setdefault(event.get('parent'), []).append(event)
+    points = lambda e: {c['name']: c['value'] for c in children.get(e['id'], [])}
+    inputs = row.get('inputs', [])
+    press = next((i for i in inputs if i['type'] == 2), None)
+    moves = [i for i in inputs if i['type'] == 5]
+    release = next((i for i in inputs if i['type'] == 3), None)
+    start = press['start_ns'] if press else None
+    first = moves[0]['start_ns'] if moves else None
+    rel = release['start_ns'] if release else None
+    end = row.get('terminal_ns')
+    if not end and rel and row.get('completed') and row.get('release_to_full_frame_ms', -1) >= 0:
+        end = rel + row['release_to_full_frame_ms']*1e6
+    boundaries = {'preparation': (row.get('prepare_start_ns'), start),
+                  'operation_start': (start, first), 'sustained_drag': (first, rel or end),
+                  'completion': (rel, end)}
+    phase_events = {name: [] for name in boundaries}
+    cross, unassigned = [], []
+    low = row.get('prepare_start_ns', start)
+    # For incomplete historical rows there is no justified terminal timestamp.
+    # Restrict to available input span; don't invent a 90s observation endpoint.
+    high = end or (inputs[-1]['start_ns']+inputs[-1]['sync_us']*1000 if inputs else None)
+    for e in trace:
+        a, b = e['start_ns'], e['start_ns']+e['duration_us']*1000
+        if low is None or high is None or b < low or a > high:
+            continue
+        contained = [name for name, (l, h) in boundaries.items()
+                     if l is not None and h is not None and l <= a < h and b <= h]
+        overlapping = [name for name, (l, h) in boundaries.items()
+                       if l is not None and h is not None and a < h and b > l]
+        if contained:
+            phase_events[contained[0]].append(e)
+        elif len(overlapping) > 1 or overlapping and (a < low or b > high):
+            if len(overlapping)==1:overlapping.append("outside_observation")
+            cross.append(dict(id=e['id'], name=e['name'], phases=overlapping, duration_us=e['duration_us']))
+        else:
+            unassigned.append(e['id'])
+    phases = {}
+    for name, events in phase_events.items():
+        l, h = boundaries[name]
+        phases[name] = dict(start_ns=l, end_ns=h, elapsed_ms=(h-l)/1e6 if l is not None and h is not None else None,
+                            spans={n: stats([e['duration_us'] for e in events if e['name'] == n])
+                                   for n in sorted({e['name'] for e in events})}, event_ids=[e['id'] for e in events])
+    # Prefer explicit request; historical resident rows can recover it from an
+    # unambiguous source child of acceptPreparation. Source 0 is never an identity.
+    request, source = row.get('prepare_request'), row.get('press_source')
+    accepted = [e for e in trace if e['name'] == 'move.gui.acceptPreparation'
+                and (request is not None and e['value'] == request or
+                     request is None and source and points(e).get('move.gui.preparation.source') == source)]
+    preparation = dict(status='unmeasured', reason='missing or ambiguous request/source', request=request, source=source)
+    if len(accepted) == 1:
+        accept = accepted[0]
+        request = accept['value']
+        requested = [e for e in trace if e['name'] == 'move.prepare.request' and e['value'] == request]
+        if len(requested) == 1:
+            preparation = dict(status='matched', request=request, source=points(accept).get('move.gui.preparation.source'),
+                               request_to_gui_ms=(accept['start_ns']-requested[0]['start_ns'])/1e6)
+    # Full identity is required for an exact final-frame join. In C1 v1 the
+    # generation/frame fields were absent; a nearby revision is insufficient.
+    target = row.get('final_frame_identity')
+    frame = dict(status='unmeasured', reason='missing final frame identity')
+    if target and all(k in target for k in ('view', 'generation', 'request', 'revision', 'frame')):
+        matched = []
+        for e in trace:
+            if e['name'] != 'move.gui.acceptFrame':
+                continue
+            p = points(e)
+            identity = {'view': p.get('move.frame.view'), 'generation': p.get('move.frame.generation'),
+                        'request': p.get('move.frame.request'), 'frame': p.get('move.frame.id'), 'revision': e['value']}
+            if identity == target:
+                matched.append(e)
+        frame = dict(status='matched' if len(matched) == 1 else 'unmeasured', identity=target,
+                     event_id=matched[0]['id'] if len(matched) == 1 else None)
+    origin = press.get('end_ns', start+press['sync_us']*1000) if press else None
+    period = row.get('target_interval_ms', 8)*1e6
+    lateness = [(m['start_ns']-(origin+(i+1)*period))/1e6 for i, m in enumerate(moves)] if origin else []
+    gaps = [(b['start_ns']-a['start_ns'])/1e6 for a, b in zip(moves, moves[1:])]
+    cadence = dict(kind='GUI-event-loop-driven trajectory; not external constant 125Hz', moves_sent=len(moves),
+                   press_to_first_move_ms=(first-start)/1e6 if first is not None and start is not None else None,
+                   sustained_move_total_ms=(moves[-1]['start_ns']-first)/1e6 if moves else None,
+                   actual_gap_ms=stats(gaps), relative_schedule_lateness_ms=stats(lateness),
+                   schedule_origin='Press dispatch return; historical return reconstructed from recorded sync_us',
+                   final_lateness_ms=lateness[-1] if lateness else None)
+    return dict(schema=2, terminal=row.get('terminal', 'committed' if row.get('completed') else 'historical_incomplete'),
+                phases=phases, cross_boundary_spans=cross, unassigned_event_ids=unassigned,
+                preparation=preparation, final_frame=frame, cadence=cadence,
+                legacy_total_interval=dict(start_ns=start, end_ns=(row.get('release_ns', 0)+max(0, row.get('release_to_full_frame_ms', -1))*1e6),
+                                           meaning='v1 Press through full-frame observation; incomplete v1 ends at Release'))
+
+
+def reanalyze(roots, output):
+    output.mkdir(parents=True, exist_ok=False)
+    rows = []
+    for root in roots:
+        for path in sorted(root.rglob('raw.json')):
+            data = json.loads(path.read_text(encoding='utf-8'))
+            for row in data.get('rows', []):
+                rows.append(dict(source=str(path.resolve()), source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                                 scene=data.get('scenario'), phase=row['phase'], audit=audit_row(data, row)))
+    (output/'audit.json').write_text(json.dumps(dict(schema=2, rows=rows), indent=2), encoding='utf-8')
+    print(f'Offline audit: {len(rows)} rows, original files unchanged', flush=True)
+
+
 def summarize(data, scene, run):
     trace = data['trace']
     result = []
@@ -25,7 +132,8 @@ def summarize(data, scene, run):
         item = dict(scene=scene, run=run, phase=row['phase'], trace=data['trace_enabled'],
                     attempts=row['attempts'], completed=row['completed'], timeouts=row['timeouts'],
                     passed=data['passed'], observation_dropped=row['observation_dropped'], heartbeat_dropped=row['heartbeat_dropped'], press_us=row['inputs'][0]['sync_us'],
-                    release_us=row['inputs'][-1]['sync_us'],
+                    release_us=next((i['sync_us'] for i in row['inputs'] if i['type']==3), None),
+                    terminal=row.get('terminal', 'committed' if row['completed'] else 'historical_incomplete'),
                     press_assets_ready=row['press_assets_ready'], press_upload_batches=row['press_upload_batches'],
                     release_to_metadata_ms=row['release_to_metadata_ms'],
                     release_to_full_frame_ms=row['release_to_full_frame_ms'],
@@ -61,18 +169,36 @@ def summarize(data, scene, run):
         item['created_source_host_bytes'] = sum(e['value'] for e in events if e['name'] == 'move.texture.hostBytes')
         item['copied_frame_bytes'] = sum(e['value'] for e in events if e['name'] == 'move.copyFrame.bytes')
         item['submit_failures'] = sum(e['name'] == 'move.submit.status' and e['value'] != 0 for e in events)
+        item['legacy_total_interval_meaning'] = 'Press through full-frame receipt; v1 fields unchanged'
+        item['audit'] = audit_row(data, row)
+        item['legacy_total_status'] = 'available' if hi >= lo else 'unmeasured_no_release'
+        if hi < lo:
+            # New early-abort rows have no Release; zero isn't an observed count.
+            for key in list(item):
+                if key.startswith('move.') or key in ('changed_deltas','created_source_host_bytes','copied_frame_bytes','submit_failures'):
+                    item[key] = None
+
         result.append(item)
     return result
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('executable', type=Path)
-    parser.add_argument('output', type=Path)
+    parser.add_argument('executable', type=Path, nargs='?')
+    parser.add_argument('output', type=Path, nargs='?')
+    parser.add_argument('--reanalyze', type=Path, nargs='+')
+    parser.add_argument('--audit-output', type=Path)
     parser.add_argument('--scenes', type=int, choices=range(1, 5), nargs='+', default=[1, 2, 3, 4])
     parser.add_argument('--repeats', type=int, default=3)
     parser.add_argument('--trace', action='store_true')
     args = parser.parse_args()
+    if args.reanalyze:
+        if not args.audit_output:
+            parser.error('--audit-output is required for offline reanalysis')
+        reanalyze(args.reanalyze, args.audit_output)
+        return
+    if not args.executable or not args.output:
+        parser.error('executable and output required')
     if args.repeats < 1:
         parser.error('--repeats must be positive')
     executable, output = args.executable.resolve(), args.output.resolve()

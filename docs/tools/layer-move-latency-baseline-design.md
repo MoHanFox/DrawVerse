@@ -13,3 +13,9 @@ S1 为 1024² 全幅红色 Normal 栅格层；S2 为 4096² 同类图层；S3 �
 详细运行命令、每次结果及限制放入对应验收报告；原始产物放忽略目录 artifacts/issue-2-main-c1/。没有物理设备或显示端到端测量，不据此声称学生手感已修复。
 
 验收：[C1 调查记录](../validations/tools/layer-move-latency-baseline-validation.md)。
+
+## C1 审计收尾契约
+
+原Press→完整帧窗口字段继续保留为legacy total；新增prepare/start/drag/completion四阶段，跨界span单列，不按比例切割、不重复计入。GUI QTimer是随事件循环延后的轨迹发生器，另计首Move延后、持续移动时长与相对8ms计划的累计延后。离线重算写入全新目录；缺少generation/view/request/frame或准备request/source身份时明确未测。
+
+宿主以成功提交/意外取消/产品错误/超时四终态记录。取消必须由成功提交的CANCEL sequence及随后核心completed/非移动状态确认；仅active=false不足以判定。局部取消入口记录默认关闭，包含画布/窗口/设备/代/序列；不修改取消行为，不抢焦点。意外取消停止剩余合成轨迹并作失败，独立有界观察取消帧。准确b948dcc产品基线用独立worktree/build/Cargo target作有限像素对照，不改变旧断言。

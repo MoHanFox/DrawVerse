@@ -78,7 +78,7 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
     const auto observeWindow=[this](QQuickWindow *window) {
         if(m_tablet)mouseUngrabEvent();
         resetCursorSample();
-        cancelLayerMove();stopNavigation();
+        cancelLayerMove("move.cancel.windowChanged");stopNavigation();
         setTabletWindowCursor(false);
         if (m_observedWindow) { m_observedWindow->removeEventFilter(this); disconnect(m_observedWindow, nullptr, this, nullptr); }
         m_observedWindow = window;
@@ -96,8 +96,8 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
         m_viewTimer.start();
     };
     connect(this, &QQuickItem::windowChanged, this, observeWindow);
-    connect(this,&QQuickItem::enabledChanged,this,[this] {if(!isEnabled()){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove();stopNavigation();endPicking();setTabletWindowCursor(false);}});
-    connect(this,&QQuickItem::visibleChanged,this,[this] {if(!isVisible()){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove();stopNavigation();endPicking();setTabletWindowCursor(false);}});
+    connect(this,&QQuickItem::enabledChanged,this,[this] {if(!isEnabled()){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.disabled");stopNavigation();endPicking();setTabletWindowCursor(false);}});
+    connect(this,&QQuickItem::visibleChanged,this,[this] {if(!isVisible()){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.hidden");stopNavigation();endPicking();setTabletWindowCursor(false);}});
     observeWindow(window());
 }
 void CanvasItem::observeScreen(QScreen *screen) {
@@ -110,7 +110,7 @@ CanvasItem::~CanvasItem() {
     // our timer members have been destroyed. Do not run constructor callbacks then.
     disconnect(this,nullptr,this,nullptr);
     if(m_tablet)mouseUngrabEvent();
-    cancelLayerMove();
+    cancelLayerMove("move.cancel.destroyed");
     setTabletWindowCursor(false);
     qApp->removeEventFilter(this);
     if (m_observedWindow) m_observedWindow->removeEventFilter(this);
@@ -119,7 +119,7 @@ CanvasItem::~CanvasItem() {
 void CanvasItem::setClient(PaintCoreClient *client) {
     if (m_client == client) return;
     if(m_tablet)mouseUngrabEvent();
-    cancelLayerMove();
+    cancelLayerMove("move.cancel.clientChanged");
     stopNavigation();m_image={};m_overview={};m_residentPreview={};m_movePreparation={};m_moveWarmupPending=false;
     emit residentPresentationChanged();
     setTabletWindowCursor(false);
@@ -146,7 +146,7 @@ void CanvasItem::setClient(PaintCoreClient *client) {
     refreshBrushCursor();emit clientChanged();
 }
 void CanvasItem::setInteractive(bool enabled) {
-    if(!enabled){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove();endPicking();setTabletWindowCursor(false);}
+    if(!enabled){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.interactiveDisabled");endPicking();setTabletWindowCursor(false);}
     m_interactive = enabled; setAcceptedMouseButtons(enabled ? Qt::LeftButton | Qt::MiddleButton : Qt::NoButton);
     m_fitPending = true; refresh();refreshBrushCursor(); emit interactiveChanged(); emit viewChanged();
 }
@@ -552,7 +552,17 @@ void CanvasItem::finishLayerMove(QPointF local) {
     const bool valid=std::isfinite(delta.x()) && std::isfinite(delta.y()) && std::abs(delta.x())<=1000000 && std::abs(delta.y())<=1000000;
     m_client->finishLayerMove(valid?QPoint(qRound(delta.x()),qRound(delta.y())):QPoint{},valid);
 }
-void CanvasItem::cancelLayerMove() {
+void CanvasItem::cancelLayerMove(const char *reason) {
+    if(m_moving && InteractionTrace::enabled.load(std::memory_order_relaxed)){
+        InteractionTrace::Scope trace("move.cancel.context");
+        InteractionTrace::point(reason,1);
+        InteractionTrace::point("move.cancel.canvas",double(quintptr(this)));
+        InteractionTrace::point("move.cancel.window",double(quintptr(m_observedWindow.data())));
+        InteractionTrace::point("move.cancel.client",double(quintptr(m_client)));
+        InteractionTrace::point("move.cancel.device",m_penDevice?double(m_penDevice->systemId()):0);
+        InteractionTrace::point("move.cancel.generation",m_client?double(m_client->generation()):0);
+        InteractionTrace::point("move.cancel.sequence",m_client?double(m_client->moveSequence()):0);
+    }
     if(m_moving && m_client && m_client->generation()==m_moveGeneration)m_client->finishLayerMove({},false);
     m_moving=false;
 }
@@ -690,7 +700,7 @@ void CanvasItem::mouseReleaseEvent(QMouseEvent *e) {
     if(m_panning)endPan();refreshBrushCursor(); e->accept();
 }
 void CanvasItem::mouseUngrabEvent() {
-    cancelLayerMove();
+    cancelLayerMove("move.cancel.Ungrab");
     if(m_panning || m_stroke)stopNavigation();
     endPicking();
     if (m_client && (m_stroke || m_client->drawing())) m_client->cancelStroke();
@@ -711,7 +721,7 @@ void CanvasItem::keyPressEvent(QKeyEvent *e) {
     else if(m_client && e->key()==Qt::Key_G && e->modifiers()==Qt::NoModifier) {m_client->activateBucket();e->accept();}
     else if(m_client && e->key()==Qt::Key_W && e->modifiers()==Qt::NoModifier) {m_client->activateWand();e->accept();}
     else if(m_client && e->key()==Qt::Key_R && e->modifiers()==Qt::NoModifier) {m_client->activateSmudge();e->accept();}
-    else if (e->key() == Qt::Key_Escape) { if(m_moving)cancelLayerMove();else if(m_client && m_client->liquifyActive()){m_client->cancelStroke();m_client->finishLiquify(false);}else if(m_selecting) cancelSelectionDrag();else if (m_client) m_client->cancelStroke(); m_stroke = false; m_tablet = false; m_moving=false; e->accept(); }
+    else if (e->key() == Qt::Key_Escape) { if(m_moving)cancelLayerMove("move.cancel.Escape");else if(m_client && m_client->liquifyActive()){m_client->cancelStroke();m_client->finishLiquify(false);}else if(m_selecting) cancelSelectionDrag();else if (m_client) m_client->cancelStroke(); m_stroke = false; m_tablet = false; m_moving=false; e->accept(); }
     else if(m_client && m_client->moveTool() && !m_moving && e->key()>=Qt::Key_Left && e->key()<=Qt::Key_Down) {
         const int step=e->modifiers().testFlag(Qt::ShiftModifier) ? 10 : 1;
         m_client->moveLayer(m_client->activeLayer(),e->key()==Qt::Key_Left ? -step : e->key()==Qt::Key_Right ? step : 0,
@@ -811,7 +821,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     }
     if(watched==m_observedWindow && event->type()==QEvent::Leave && !m_tablet) {setTabletWindowCursor(false);resetCursorSample();m_cursorInside=false;refreshBrushCursor();}
 
-    if(event->type()==QEvent::ApplicationDeactivate){cancelLayerMove();stopNavigation();setTabletWindowCursor(false);endPicking();setKeySpace(false);setSpacePanning(false);syncShortcutModifiers(shortcutModifiersFromSystem(),false);refreshBrushCursor();}
+    if(event->type()==QEvent::ApplicationDeactivate){cancelLayerMove("move.cancel.ApplicationDeactivate");stopNavigation();setTabletWindowCursor(false);endPicking();setKeySpace(false);setSpacePanning(false);syncShortcutModifiers(shortcutModifiersFromSystem(),false);refreshBrushCursor();}
     if(watched==m_observedWindow && m_observedWindow && m_observedWindow->isActive() && m_interactive && isVisible() && isEnabled() && m_client && m_client->ready() && !m_client->drawing() && !m_client->textInputFocused()
         && (event->type()==QEvent::KeyPress || event->type()==QEvent::ShortcutOverride)) {
         auto *key=static_cast<QKeyEvent*>(event);const auto modifiers=key->modifiers();
@@ -844,7 +854,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         if(m_tablet){
             if(m_client && m_client->drawing())m_client->endStroke();
             m_liquifyTimer.stop();m_stroke=false;
-            cancelLayerMove();stopNavigation();cancelSelectionDrag();m_tablet=false;
+            cancelLayerMove("move.cancel.proximityOrDeactivate");stopNavigation();cancelSelectionDrag();m_tablet=false;
         }
         if(tabletContactOwner==this)tabletContactOwner.clear();
         m_penDevice.clear();
@@ -869,7 +879,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if(event->type()==QEvent::WindowActivate && QGuiApplication::platformName()=="windows"){m_capsLock=(GetKeyState(VK_CAPITAL)&1)!=0;refreshBrushCursor();}
 #endif
     if (event->type() == QEvent::WindowDeactivate) {
-        cancelLayerMove();
+        cancelLayerMove("move.cancel.WindowDeactivate");
         stopNavigation();
         setTabletWindowCursor(false);
         if (m_stroke || m_client->drawing()) m_client->cancelStroke();

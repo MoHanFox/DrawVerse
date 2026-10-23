@@ -340,6 +340,13 @@ public:
     void setLiquifyGpuPreviewAvailable(bool value) { setResidentGpuPreviewAvailable(value); }
     QRectF frameRegion(int view = 0) const { return m_regions[view == 1 ? 1 : 0]; }
     quint64 frameRevision(int view = 0) const { return m_frameRevisions[view == 1 ? 1 : 0]; }
+    // Local investigation receipts; no ABI or painting policy change.
+    struct MoveReceipt { quint64 sequence=0,generation=0,revision=0; int kind=0; };
+    MoveReceipt moveReceipt() const { return m_moveReceipt; }
+    quint64 moveSequence() const { return m_layerMoveSequence; }
+    quint64 movePreparationRequest() const { return m_movePreparationRequest; }
+    QVariantMap frameIdentity(int view=0) const { const auto i=view==1?1:0;return {{"view",i},{"generation",m_generation},{"request",m_frameRequestIds[i]},{"revision",m_frameRevisions[i]},{"frame",m_frameIds[i]}}; }
+
     quint64 revision() const { return m_revision; }
     quint64 generation() const { return m_generation; }
     void requestViewport(int view, QRectF region, QSize physicalPixels, bool enabled = true);
@@ -604,6 +611,8 @@ private:
     bool m_layerMoveActive=false,m_layerMoveStarting=false,m_layerMoveClosing=false;
     bool m_layerMoveDirty=false,m_layerMoveFinish=false,m_layerMoveCommit=false;
     quint64 m_layerMoveSequence=0,m_residentPreviewFloor=0;
+    int m_layerMoveSubmittedKind=0;
+    MoveReceipt m_moveReceipt;
     QPoint m_layerMoveDelta;
     bool m_transformActive=false,m_transformWarp=false,m_transformPublished=false,m_transformLinked=true;
     QVariantList m_transformInitialPoints;
@@ -665,7 +674,7 @@ private:
     bool m_residentGpuPreviewAvailable=false;
     QRectF m_regions[2], m_requestedRegions[2];
     QSize m_requestedPixels[2];
-    quint64 m_requests[2]{}, m_frameRevisions[2]{};
+    quint64 m_requests[2]{}, m_frameRevisions[2]{},m_frameIds[2]{},m_frameRequestIds[2]{};
     bool m_viewEnabled[2]{};
     quint64 m_blendPreviewLayer = 0;
     int m_blendPreviewMode = 0;

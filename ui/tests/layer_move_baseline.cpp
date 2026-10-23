@@ -28,7 +28,7 @@ private slots:
         const auto output=qEnvironmentVariable("DRAWVERSE_MOVE_REPORT");
         const auto scenario=qEnvironmentVariableIntValue("DRAWVERSE_MOVE_SCENE");
         const bool tracing=qEnvironmentVariableIntValue("DRAWVERSE_MOVE_TRACE")!=0;
-        QJsonObject report{{"pid",double(QCoreApplication::applicationPid())},{"qt_version",qVersion()},{"scenario",scenario},{"trace_enabled",tracing},{"input","Qt synthetic mouse events delivered to native QQuickWindow"},{"passed",false}};
+        QJsonObject report{{"schema",2},{"injected_cancel",qEnvironmentVariable("DRAWVERSE_MOVE_INJECT_CANCEL")},{"pid",double(QCoreApplication::applicationPid())},{"qt_version",qVersion()},{"scenario",scenario},{"trace_enabled",tracing},{"input","Qt synthetic mouse events delivered to native QQuickWindow"},{"passed",false}};
         QJsonArray rows,trace;
         const auto exportReport=qScopeGuard([&]{report["rows"]=rows;report["trace"]=trace;report["trace_dropped"]=double(InteractionTrace::dropped);QFile file(output);if(file.open(QIODevice::WriteOnly))file.write(QJsonDocument(report).toJson());});
         QVERIFY(scenario>=1 && scenario<=4);QVERIFY(!output.isEmpty());
@@ -76,7 +76,7 @@ private slots:
                 else QTRY_VERIFY_WITH_TIMEOUT(client.movePreparation() && client.movePreparation()->uploads->load()>0,60000);
             }
             const auto assets=client.movePreparation();
-            QJsonObject row{{"phase",phase==0?"immediate":"subsequent"},{"prepare_start_ns",double(prepareStart)},{"press_assets_ready",bool(assets)},{"press_upload_batches",assets?double(assets->uploads->load()):0},{"press_source",assets?double(assets->sourceId):0},{"prepare_observation_ms",double(InteractionTrace::now()-prepareStart)/1e6}};
+            QJsonObject row{{"phase",phase==0?"immediate":"subsequent"},{"prepare_start_ns",double(prepareStart)},{"prepare_request",double(client.movePreparationRequest())},{"target_interval_ms",8},{"press_assets_ready",bool(assets)},{"press_upload_batches",assets?double(assets->uploads->load()):0},{"press_source",assets?double(assets->sourceId):0},{"prepare_observation_ms",double(InteractionTrace::now()-prepareStart)/1e6}};
             if(assets){QJsonArray dimensions;for(const auto &image:assets->images)dimensions.append(QJsonArray{image.width(),image.height()});row["source_dimensions"]=dimensions;}
             QJsonArray inputs,observations;QList<double> sync,gaps,beats;
             QSet<quint64> sources;quint64 maxUploads=0;int observationDropped=0,heartbeatDropped=0;
@@ -86,7 +86,8 @@ private slots:
             const auto expected=canvas->documentPoint(end)-canvas->documentPoint(start);
             finalDelta={qRound(expected.x()),qRound(expected.y())};
             const auto startRevision=client.revision();
-            qint64 release=0,metadataDone=0,frameDone=0,lastSend=0,lastBeat=InteractionTrace::now();int sent=0;bool timedOut=false;
+            qint64 release=0,metadataDone=0,frameDone=0,terminalAt=0,lastSend=0,lastBeat=InteractionTrace::now();int sent=0;bool timedOut=false,cancelTailTimeout=false;
+            QString terminal="pending";const auto priorReceipt=client.moveReceipt();const auto initialError=client.lastError();QPointF lastPosition=start;
             QEventLoop loop;QTimer timer,heartbeat,timeout;
             heartbeat.setInterval(8);heartbeat.setTimerType(Qt::PreciseTimer);
             connect(&heartbeat,&QTimer::timeout,&loop,[&]{const auto t=InteractionTrace::now();if(beats.size()<20000)beats.append(double(t-lastBeat)/1e6);else ++heartbeatDropped;lastBeat=t;});
@@ -94,30 +95,49 @@ private slots:
                 const auto t=InteractionTrace::now();const auto p=client.residentPreview();
                 if(p){sources.insert(p->sourceId);maxUploads=qMax(maxUploads,quint64(p->uploads->load()));}
                 if(observations.size()<20000)observations.append(QJsonObject{{"ns",double(t)},{"revision",double(client.revision())},{"frame_revision",double(client.frameRevision())},{"active",client.layerMoveActive()},{"undo_depth",client.undoDepth()},{"source",p?double(p->sourceId):0},{"resident_revision",p?double(p->revision):0},{"offset_x",offset().x()},{"offset_y",offset().y()}});else ++observationDropped;
-                if(release && !client.layerEditBusy() && client.undoDepth()==depth+1 && offset()==finalDelta){
+
+                const auto receipt=client.moveReceipt();
+                if(terminal=="pending" && receipt.sequence>priorReceipt.sequence && receipt.generation==client.generation() && receipt.kind==6){
+                    terminal="unexpected_cancel";terminalAt=t;timer.stop();timeout.start(2000);
+                }
+                if(terminal=="pending" && client.lastError()!=initialError && !client.lastError().isEmpty()){
+                    terminal="product_error";terminalAt=t;timer.stop();loop.quit();return;
+                }
+                if(terminal=="unexpected_cancel"){
+                    if(!client.layerEditBusy() && client.frameRevision()>=receipt.revision && !p)loop.quit();
+                    return;
+                }
+                if(release && receipt.sequence>priorReceipt.sequence && receipt.kind==5 && !client.layerEditBusy() && client.undoDepth()==depth+1 && offset()==finalDelta){
                     if(!metadataDone)metadataDone=t;
-                    if(client.frameRevision()>=client.revision() && client.revision()>startRevision && !p){frameDone=t;loop.quit();}
+                    if(client.frameRevision()>=client.revision() && client.revision()>startRevision && !p){frameDone=t;terminal="committed";terminalAt=t;loop.quit();}
                 }
             };
-            connect(&client,&PaintCoreClient::stateChanged,&loop,observe);connect(&client,&PaintCoreClient::frameChanged,&loop,observe);
+            connect(&client,&PaintCoreClient::stateChanged,&loop,observe);connect(&client,&PaintCoreClient::frameChanged,&loop,observe);connect(&client,&PaintCoreClient::errorChanged,&loop,observe);
             const auto send=[&](QEvent::Type type,QPointF p,int index){
                 InteractionTrace::operation=phase*1000+index;
                 const auto t=InteractionTrace::now();QMouseEvent e(type,p,window.mapToGlobal(p),type==QEvent::MouseMove?Qt::NoButton:Qt::LeftButton,type==QEvent::MouseButtonRelease?Qt::NoButton:Qt::LeftButton,Qt::NoModifier);
                 QCoreApplication::sendEvent(&window,&e);const auto finish=InteractionTrace::now();
-                inputs.append(QJsonObject{{"index",index},{"type",int(type)},{"start_ns",double(t)},{"sync_us",double(finish-t)/1000},{"x",p.x()},{"y",p.y()},{"accepted",e.isAccepted()}});
+                inputs.append(QJsonObject{{"index",index},{"type",int(type)},{"start_ns",double(t)},{"end_ns",double(finish)},{"sync_us",double(finish-t)/1000},{"x",p.x()},{"y",p.y()},{"accepted",e.isAccepted()},{"device",double(e.pointingDevice()->systemId())},{"source",int(e.source())},{"window",double(quintptr(&window))},{"canvas",double(quintptr(canvas))}});
                 if(type==QEvent::MouseMove){sync.append(double(finish-t)/1000);if(lastSend)gaps.append(double(t-lastSend)/1e6);lastSend=t;}
                 InteractionTrace::operation=phase*1000;
             };
             connect(&timer,&QTimer::timeout,&loop,[&]{
-                ++sent;send(QEvent::MouseMove,start+(end-start)*(double(sent)/120),sent);
+                ++sent;lastPosition=start+(end-start)*(double(sent)/120);send(QEvent::MouseMove,lastPosition,sent);
+                if(sent==12 && qEnvironmentVariable("DRAWVERSE_MOVE_INJECT_CANCEL")=="deactivate"){QEvent event(QEvent::WindowDeactivate);QCoreApplication::sendEvent(&window,&event);}
                 if(sent==120){timer.stop();release=InteractionTrace::now();send(QEvent::MouseButtonRelease,end,121);observe();}
             });
             timer.setInterval(8);timer.setTimerType(Qt::PreciseTimer);
-            timeout.setSingleShot(true);connect(&timeout,&QTimer::timeout,&loop,[&]{timedOut=true;loop.quit();});
+            timeout.setSingleShot(true);connect(&timeout,&QTimer::timeout,&loop,[&]{if(terminal=="unexpected_cancel")cancelTailTimeout=true;else{timedOut=true;terminal="timeout";terminalAt=InteractionTrace::now();}loop.quit();});
             heartbeat.start();timeout.start(90000);send(QEvent::MouseButtonPress,start,0);timer.start();loop.exec();timer.stop();heartbeat.stop();timeout.stop();
             QJsonArray sourceIds;for(auto id:sources)sourceIds.append(double(id));
+            row["terminal"]=terminal;row["terminal_ns"]=double(terminalAt);row["end_observation_ns"]=double(InteractionTrace::now());row["cancel_tail_timeout"]=cancelTailTimeout;row["last_error"]=client.lastError();
+            const auto receipt=client.moveReceipt();row["terminal_receipt"]=QJsonObject{{"sequence",double(receipt.sequence)},{"generation",double(receipt.generation)},{"revision",double(receipt.revision)},{"kind",receipt.kind}};
+            if(frameDone)row["final_frame_identity"]=QJsonObject::fromVariantMap(client.frameIdentity());
             row["generation"]=double(client.generation());row["start_revision"]=double(startRevision);row["observation_dropped"]=observationDropped;row["heartbeat_dropped"]=heartbeatDropped;row["inputs"]=inputs;row["observations"]=observations;row["attempts"]=sent;row["completed"]=frameDone?1:0;row["timeouts"]=timedOut?1:0;row["move_sync_us"]=stats(sync);row["actual_send_gap_ms"]=stats(gaps);row["heartbeat_ms"]=stats(beats);row["release_ns"]=double(release);row["release_to_metadata_ms"]=metadataDone?double(metadataDone-release)/1e6:-1;row["release_to_full_frame_ms"]=frameDone?double(frameDone-release)/1e6:-1;row["expected_delta"]=QJsonArray{finalDelta.x(),finalDelta.y()};row["final_delta"]=QJsonArray{offset().x(),offset().y()};row["history_delta"]=client.undoDepth()-depth;row["resident_sources"]=sourceIds;row["max_source_upload_batches"]=double(maxUploads);rows.append(row);
-            QVERIFY2(!timedOut,"timed drag/close barrier did not complete; raw evidence retained");QCOMPARE(sent,120);QCOMPARE(offset(),finalDelta);QCOMPARE(client.undoDepth(),depth+1);
+            if(terminal!="committed"){
+                QMouseEvent cleanup(QEvent::MouseButtonRelease,lastPosition,window.mapToGlobal(lastPosition),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&cleanup);
+            }
+            QVERIFY2(terminal=="committed",qPrintable("terminal="+terminal+"; actual inputs retained"));QCOMPARE(sent,120);QCOMPARE(offset(),finalDelta);QCOMPARE(client.undoDepth(),depth+1);
             if(phase && assets){QCOMPARE(sources.size(),1);QVERIFY(sources.contains(assets->sourceId));QCOMPARE(maxUploads,quint64(assets->uploads->load()));QCOMPARE(maxUploads,quint64(row["press_upload_batches"].toDouble()));}
             if(scenario==4)QVERIFY(sources.isEmpty());
             // Outside measured intervals: reset via real history, never reset the repository or pixels.

@@ -201,3 +201,94 @@ cargo test --manifest-path core/Cargo.toml -p paint-ffi --test async_session vie
 ```
 
 C1只提交/推送Fork，无PR、无develop合并、无Issue关闭，不进入C2。实体数位板当前不可用不阻塞本次调查；B1/B2实机边界继续保留。
+
+
+## 2026-10-23：C1 审计收尾（保留上述历史表）
+
+审计起点 `6a11ecbe6da7750414eee871916bbcfcf71b1285`；产品仍为 `b948dccbc2fd767af3a999ee9a03e108455c44cb` 加默认关闭诊断，未改性能策略。收尾代码与本节同一提交。完整证据使用独立忽略目录 `artifacts/issue-2-main-c1-audit/`，没有覆盖F/S/R/O、原两次取消失败或运行包。
+
+### 统计解释更正
+
+原表copy/纹理/几何/提交指标的窗口是 **Press→最终完整帧接收的总区间**，包括持续拖动与Release后收尾，不能称为“拖动期间成本”。原字段及数字保留；runner加显式legacy总区间说明，新 `audit` 独立分为准备、操作开始(Press→首Move)、持续拖动(首Move→Release)、Release/COMMIT收尾。跨界span完整列入cross_boundary_spans，不分摊、不重复计入某一阶段；跨观察端点也标出outside_observation。
+
+离线命令：
+
+```powershell
+python -m unittest discover -s tools -p test_measure_layer_move.py -v
+python tools/measure_layer_move.py --reanalyze artifacts/issue-2-main-c1/formal-trace artifacts/issue-2-main-c1/supplement artifacts/issue-2-main-c1/fallback-ack artifacts/issue-2-main-c1/diagnostics-off --audit-output artifacts/issue-2-main-c1-audit/<全新目录>
+```
+
+4项离线测试通过，覆盖分段、跨界、多准备请求/非目标帧、取消/不完整。`offline-v2-boundaries/audit.json`重算37段，每源文件保留SHA256。10段可通过source子point→acceptPreparation.request→同request的请求point严格关联准备，其余27段未测，不取附近第一个回调。历史37段均缺最终frame/generation完整身份，严格帧关联均标未测；原完成条件/相对观察时长没有因此被抹掉，但不能补造完整帧票据。
+
+例：F-S2立即三次读帧尝试在持续拖动段为40/39/40，收尾为2/3/1；F-S2成功后续两次持续拖动均0，收尾均1。旧总区间p95不是收尾p95。本次只重算有字段的部分，未重跑原矩阵。
+
+### 输入节奏边界
+
+轨迹由GUI QTimer驱动，**不是恒定125Hz外部输入**。Press→首Move、首末Move总时长、实际间隔与相对原8ms计划延后分开；同步sendEvent仍是调用进入到返回，不包含事件循环未调度时间。计划原点是Press返回(旧记录由start+sync_us重建)，第i个Move计划为原点+i×8ms；并未补发积压事件或另建系统输入发生器。
+
+| 历史运行 | Move数 | Press→首Move ms | 首末Move ms | 实际间隔p50/p95/max ms | 最终相对计划延后 ms |
+| --- | ---: | ---: | ---: | --- | ---: |
+| formal-trace/s1-run-1 immediate | 120 | 8.463 | 951.820 | 7.998/8.148/8.768 | 0.182 |
+| formal-trace/s1-run-1 subsequent | 120 | 99.001 | 1322.787 | 13.788/16.841/50.118 | 461.672 |
+| formal-trace/s1-run-2 immediate | 120 | 7.631 | 960.474 | 8.000/8.421/21.446 | 8.011 |
+| formal-trace/s1-run-2 subsequent | 120 | 72.539 | 1254.577 | 13.503/16.739/16.922 | 366.990 |
+| formal-trace/s1-run-3 immediate | 120 | 8.086 | 952.001 | 8.000/8.562/9.053 | -0.014 |
+| formal-trace/s1-run-3 subsequent | 120 | 90.579 | 1261.420 | 12.325/17.038/46.158 | 391.878 |
+| formal-trace/s2-run-1 immediate | 120 | 7.377 | 952.788 | 8.000/8.436/8.807 | 0.046 |
+| formal-trace/s2-run-1 subsequent | 120 | 106.300 | 997.881 | 8.002/8.730/33.322 | 144.087 |
+| formal-trace/s2-run-2 immediate | 120 | 8.582 | 951.445 | 7.997/8.480/9.059 | -0.085 |
+| formal-trace/s2-run-2 subsequent | 120 | 87.642 | 1279.986 | 13.065/16.759/49.925 | 407.533 |
+| formal-trace/s2-run-3 immediate | 120 | 7.381 | 952.807 | 8.003/8.252/8.735 | 0.080 |
+| formal-trace/s2-run-3 subsequent | 120 | 105.998 | 1270.483 | 13.452/17.091/33.366 | 416.397 |
+| formal-trace/s3-run-1 immediate | 120 | 7.446 | 952.362 | 8.002/8.388/9.200 | -0.316 |
+| formal-trace/s3-run-1 subsequent | 120 | 86.779 | 1298.267 | 13.301/17.030/49.091 | 424.952 |
+| formal-trace/s3-run-2 immediate | 120 | 7.541 | 952.648 | 7.996/8.603/9.073 | 0.093 |
+| formal-trace/s3-run-2 subsequent | 120 | 106.881 | 1230.203 | 12.981/16.785/33.353 | 376.991 |
+| formal-trace/s3-run-3 immediate | 120 | 7.495 | 952.135 | 8.009/8.542/9.028 | -0.460 |
+| formal-trace/s4-run-1 immediate | 120 | 8.369 | 951.637 | 7.999/8.113/8.989 | -0.144 |
+| formal-trace/s4-run-1 subsequent | 120 | 8.130 | 951.562 | 7.995/8.222/8.779 | -0.380 |
+| formal-trace/s4-run-2 immediate | 120 | 8.539 | 951.544 | 7.998/8.165/9.037 | 0.003 |
+| formal-trace/s4-run-2 subsequent | 120 | 7.760 | 952.365 | 8.005/8.251/8.667 | 0.061 |
+| formal-trace/s4-run-3 immediate | 120 | 7.612 | 952.578 | 7.997/8.601/9.156 | 0.108 |
+| formal-trace/s4-run-3 subsequent | 120 | 8.345 | 951.230 | 8.000/8.240/8.486 | -0.495 |
+| supplement/s2-run-1 immediate | 120 | 7.978 | 952.709 | 8.003/8.612/8.662 | 0.585 |
+| supplement/s2-run-1 subsequent | 120 | 90.721 | 1309.510 | 13.741/17.291/33.248 | 440.146 |
+| supplement/s3-run-1 immediate | 120 | 8.223 | 952.286 | 8.004/8.583/8.796 | 0.426 |
+| supplement/s3-run-1 subsequent | 120 | 113.792 | 1230.415 | 11.827/16.743/50.570 | 384.106 |
+| fallback-ack/s4-run-1 immediate | 120 | 7.571 | 952.187 | 8.001/8.646/10.461 | -0.355 |
+| fallback-ack/s4-run-1 subsequent | 120 | 8.012 | 952.034 | 8.002/8.488/8.755 | -0.059 |
+| fallback-ack/s4-run-2 immediate | 120 | 8.581 | 951.485 | 7.993/8.738/11.610 | -0.037 |
+| fallback-ack/s4-run-2 subsequent | 120 | 8.978 | 951.467 | 8.008/8.731/8.868 | 0.354 |
+| fallback-ack/s4-run-3 immediate | 120 | 8.344 | 952.076 | 7.998/8.413/8.948 | 0.273 |
+| fallback-ack/s4-run-3 subsequent | 120 | 7.979 | 952.393 | 8.001/8.449/10.786 | 0.271 |
+| diagnostics-off/s3-run-1 immediate | 120 | 8.169 | 951.928 | 7.999/8.165/8.694 | 0.004 |
+| diagnostics-off/s3-run-1 subsequent | 120 | 96.208 | 1304.414 | 12.488/16.885/47.477 | 440.521 |
+| diagnostics-off/s3-run-2 immediate | 120 | 7.564 | 952.088 | 8.003/8.547/8.935 | -0.447 |
+| diagnostics-off/s3-run-2 subsequent | 120 | 103.721 | 1316.627 | 13.621/16.768/33.398 | 460.260 |
+
+这些数字解释了常驻开始73–114ms观察的一部分属于发生器随GUI延后；不能把该值全称为核心BEGIN执行时间。来源与调度原因仍需其他边界，本轮C2-A优先解释稳定的松手收尾。
+
+### 明确终态与局部取消记录
+
+新raw schema2区分committed/unexpected_cancel/product_error/timeout。PaintCoreClient只在成功提交的COMMIT/CANCEL sequence被核心completed确认、移动flag已关闭且该序列无错误时保存本地回执；宿主结合generation与先前receipt判定。active=false不足以判取消。错误保留last_error；没有可靠回执则保留timeout。意外取消停止计时器，保留实际已发Move、接受/来源字段、位移、历史与回执；必要的取消完整帧恢复另用2秒有界观察，不计为提交完成。没有忽略失焦/失抓或修改取消策略。
+
+Canvas局部默认关闭记录覆盖Window/ApplicationDeactivate、Ungrab、Escape、显隐/交互、client/window变更、销毁及实际proximity入口；含canvas/window/client/笔设备身份、generation和当时sequence。后端错误也有局部点，不监听系统键盘或文本。
+
+验证：`smoke/s2-run-1`两段committed、真实像素/撤销重做/取消专项通过，最终帧可按view/generation/request/revision/frame五元组唯一关联。`cancel-boundary`用宿主专用Qt WindowDeactivate注入(不是环境干扰或实体事件证据)，提交场景按预期失败：15个Move、CANCEL回执sequence15、kind6、位移0、history+0、非timeout；实际入口为move.cancel.WindowDeactivate。验证脚本核对了上述值。历史F两次失败缺原因字段，仍不能追溯声称是相同入口。
+
+### 像素失败限定复核
+
+原完整 `move-regressions.txt` 显示预热用例是init之后第一个功能用例，失败于移动后抓图中的white(100,1080)/red(800,1080)/white(2384,1080)联合断言；日志只知未准备阶段233ms、准备/上传观察390ms、gpu=true，**未保存三个实际颜色及取消入口，不能判断是哪一点或因何失败**。后续复杂/复合用例的顺序不可能作为该次之前的污染证据。
+
+准确b948dcc独立检出 `E:\Git\DrawVerse-c1-audit-baseline`，独立CMake build和Cargo target，复用SDK与复制的依赖缓存，未混用二进制。`pixel-controls/results.json`含二进制SHA、源码HEAD、命令与日志；C1-off为本次审计产品/测试源码的诊断关闭构建，其ui/src差异摘要另保存，不能冒充原6a11ecb的旧二进制。
+
+| 产品/条件 | 顺序 | 本次功能数据行 | 结果 |
+| --- | --- | ---: | --- |
+| 准确b948dcc无C1埋点 | 原相关顺序：prewarmed→complex4k→compound | 13 | 通过 |
+| 准确b948dcc无C1埋点 | prewarmed单独 | 1 | 通过 |
+| C1审计版，诊断关闭 | 同一相关顺序 | 13 | 通过 |
+| C1审计版，诊断关闭 | prewarmed单独 | 1 | 通过 |
+
+每组一次，init/cleanup不计入28个功能数据行。**本次未复现，原失败保留；分类为有限复测仍未归因。** 没有证据支持夹具问题、准确基线产品问题或C1回归中的任一项，未改夹具、像素断言、终值、历史或纹理复用条件。没有因此宣称已证明无问题，也不将B2两个既有失败混入本次。
+
+C1收尾仅推送Fork，不合并。后续C2-A从本收尾准确HEAD建立，暂依赖尚未合并C1；无优化、无PR、无Issue关闭。
