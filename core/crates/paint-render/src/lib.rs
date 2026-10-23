@@ -126,6 +126,8 @@ pub fn display_pixel(linear: [f32; 4]) -> [u8; 4] {
 pub struct RenderCacheStats {
     pub hits: u64,
     pub misses: u64,
+    /// First consumption of a proven translated entry, separate from original-coordinate hits.
+    pub translations: u64,
     pub retained_bytes: usize,
     pub entries: usize,
 }
@@ -418,6 +420,12 @@ impl Cache {
 /// Opt-in aggregate measurements for one exact normal render; no pixel-loop events.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RenderDiagnostics {
+    pub translation_ns: u64,
+    pub translations: u64,
+    pub remapped: u64,
+    /// 0 legacy path; 1 eligible; 2 unchanged; 3 cold; 4 stack; 5 configuration; 6 alignment; 7 dimensions/LOD.
+    pub translation_reason: u32,
+    pub translation_rejected: u64,
     pub lock_ns: u64,
     pub setup_ns: u64,
     pub compose_lod_blit_ns: u64,
@@ -469,6 +477,7 @@ impl CachedCpuRenderer {
             let result = render(snapshot, request, cancel, &mut cache, Some(&mut diagnostic));
             diagnostic.hits = cache.stats.hits - before.hits;
             diagnostic.misses = cache.stats.misses - before.misses;
+            diagnostic.translations = cache.stats.translations - before.translations;
             diagnostic.entries = cache.stats.entries;
             diagnostic.retained_bytes = cache.stats.retained_bytes;
             result
