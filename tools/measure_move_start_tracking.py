@@ -52,6 +52,11 @@ def main():
     env.update(DRAWVERSE_C3_SHADER_PAIR=str(int(a.shader_pair)), DRAWVERSE_C3_MAIN_QML=str(int(a.main_qml)))
     if a.production_cache:
         env.pop('QSG_RHI_DISABLE_DISK_CACHE', None)
+        # Windows QStandardPaths uses Known Folders, not LOCALAPPDATA. Keep the
+        # normal enabled policy but explicitly isolate this test window's file.
+        env['DRAWVERSE_C3_PIPELINE_CACHE'] = str(out/'pipeline.cache')
+    else:
+        env.pop('DRAWVERSE_C3_PIPELINE_CACHE', None)
     if a.trace:
         env['DRAWVERSE_MOVE_COMPLETION_TRACE'] = str(out/'core.json')
     env['PATH'] = str(root/'.tools/qt/6.8.3/msvc2022_64/bin')+os.pathsep+env['PATH']

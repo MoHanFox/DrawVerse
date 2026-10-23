@@ -84,8 +84,16 @@ private slots:
         std::unique_ptr<QQuickWindow> minimal;QQuickWindow *window=nullptr;CanvasItem *canvas=nullptr;
         if(mainQml){
             engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
-            engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));
+            // Configure this window's cache before its first scenegraph exposure.
+            engine.setInitialProperties({{"createInitialDocument",true},{"visible",false}});engine.load(QUrl("qrc:/qml/app/Main.qml"));
             QVERIFY(!engine.rootObjects().isEmpty());window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+            const auto cacheFile=qEnvironmentVariable("DRAWVERSE_C3_PIPELINE_CACHE");
+            if(!cacheFile.isEmpty()){
+                QVERIFY(!QFile::exists(cacheFile));auto configuration=window->graphicsConfiguration();
+                QVERIFY(configuration.isAutomaticPipelineCacheEnabled());
+                configuration.setPipelineCacheLoadFile(cacheFile);configuration.setPipelineCacheSaveFile(cacheFile);
+                window->setGraphicsConfiguration(configuration);report["pipeline_cache_initially_absent"]=true;
+            }
             auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);
             QTRY_VERIFY(!documents->activeId().isEmpty());QCOMPARE(documents->activeClient(),&client);
             canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);
