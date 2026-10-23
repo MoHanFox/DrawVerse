@@ -7,6 +7,7 @@
 #include "platform/MenuSurface.h"
 #include "platform/TabletInput.h"
 #include "platform/InteractionTrace.h"
+#include "PendingMoveEvidence.h"
 #include <QtTest>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -577,8 +578,9 @@ Window {
         QQuickWindow window;window.resize(1024,720);window.setColor(Qt::black);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1024,720});canvas->setClient(&client);
         window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));window.requestActivate();QTRY_VERIFY(window.isActive());canvas->fitToView();canvas->forceActiveFocus();QTRY_VERIFY(client.frameRevision()>=client.revision());
         if(qEnvironmentVariable("QT_QUICK_BACKEND")=="rhi")QVERIFY(canvas->gpuDisplay());
+        PendingMoveEvidence evidence(canvas,&client,&window,owner);
         const auto screen=[&](QPointF p){return(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
-        const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return QImage{};return grab->image();};
+        const auto capture=[&]{return evidence.capture();};
         const auto red=[&](const QImage &image,QPointF p){const auto c=image.pixelColor(screen(p)*window.devicePixelRatio());return c.red()>180 && c.green()<70 && c.blue()<70;};
         const auto white=[&](const QImage &image,QPointF p){const auto c=image.pixelColor(screen(p)*window.devicePixelRatio());return c.red()>230 && c.green()>230 && c.blue()>230;};
         QImage initial;QTRY_VERIFY(!(initial=capture()).isNull() && red(initial,{100,1080}) && white(initial,{2000,1080}));
@@ -586,13 +588,17 @@ Window {
         client.activateMarquee();QVERIFY(client.selectionTool()>0);
         QElapsedTimer preparation;preparation.start();client.setMoveTool(true);
         QVERIFY(!client.movePreparation());
+        evidence.phase("unprepared-press");
         QElapsedTimer pendingInput;pendingInput.start();
         QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,screen({1200,1080}));
         QTest::mouseMove(&window,screen({1584,1080}));
+        evidence.mark("after-original-mouse-move");
         QTRY_VERIFY(client.layerMoveActive());
         const auto pendingSource=client.residentPreview();
         if(pendingSource)QVERIFY(pendingSource->images[0].width()>512);
-        QImage pendingMoved;QTRY_VERIFY(!(pendingMoved=capture()).isNull() && white(pendingMoved,{100,1080}) && red(pendingMoved,{800,1080}));
+        evidence.phase("pendingMoved");
+        QImage pendingMoved;QTRY_VERIFY(evidence.pendingMatches(pendingMoved=capture()));
+        evidence.phase("pending-pixels-passed");
         qInfo()<<"4K move accepts input before prepared assets ms"<<pendingInput.elapsed()<<"gpu"<<canvas->gpuDisplay();
         QTest::keyClick(&window,Qt::Key_Escape);QTRY_VERIFY(!client.layerMoveActive());QCOMPARE(client.undoDepth(),depth);
         QTRY_VERIFY(!client.frame().isNull());
