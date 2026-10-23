@@ -1,3 +1,4 @@
+use super::move_trace::{self, Context as TraceContext};
 use crate::{
     api::*,
     error::{boundary, ApiError, ApiResult},
@@ -408,7 +409,22 @@ pub unsafe extern "C" fn paint_session_frame_info(
                 ..Default::default()
             },
         )?;
-        pointers::write(out_info, session(core, handle)?.frame(view_id)?.info())
+        let target_session = session(core, handle)?;
+        let frame = target_session.frame(view_id)?;
+        move_trace::point(
+            "frame.info",
+            TraceContext {
+                session: target_session.trace_session_id(),
+                generation: frame.generation,
+                request: frame.request_id,
+                revision: frame.revision,
+                frame: frame.id,
+                view: view_id,
+                ..Default::default()
+            },
+            0,
+        );
+        pointers::write(out_info, frame.info())
     })
 }
 /// Worker-only RGBA8 frame copy. Exact request/frame IDs are required. Padding is not touched.
@@ -437,7 +453,8 @@ pub unsafe extern "C" fn paint_session_read_frame(
                 "frame copy requires premultiplied sRGB RGBA8",
             ));
         }
-        let frame = session(core, handle)?.frame(view_id)?;
+        let target_session = session(core, handle)?;
+        let frame = target_session.frame(view_id)?;
         if frame.request_id != request_id || frame.id != frame_id {
             return Err(ApiError::new(
                 PAINT_BUSY,
@@ -475,6 +492,19 @@ pub unsafe extern "C" fn paint_session_read_frame(
                 row * tile.stride as usize,
             );
         }
+        move_trace::point(
+            "frame.copied",
+            TraceContext {
+                session: target_session.trace_session_id(),
+                generation: frame.generation,
+                request: frame.request_id,
+                revision: frame.revision,
+                frame: frame.id,
+                view: view_id,
+                ..Default::default()
+            },
+            required as i64,
+        );
         tile.width = width;
         tile.height = height;
         tile.revision = frame.revision;

@@ -227,6 +227,7 @@ pub unsafe extern "C" fn paint_core_destroy(core: *mut *mut PaintCore) -> PaintS
         if !value.is_null() {
             let removed = { runtime::registry()?.destroy_core(value)? };
             drop(removed);
+            engine::move_trace::flush();
         }
         pointers::write(core, ptr::null_mut())
     })
