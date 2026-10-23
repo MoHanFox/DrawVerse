@@ -34,7 +34,7 @@ public:
         QJsonObject report{{"schema",1},{"captures",m_captures},{"checkpoints",m_states},{"input_events",m_inputs},
             {"dropped",m_dropped},{"trace",trace},{"trace_dropped",double(InteractionTrace::dropped)},
             {"association","grab request/completion are GUI snapshots, NOT proof of the rendered frame identity; correlate trace separately"},
-            {"pending_succeeded",m_pendingSucceeded}};
+            {"any_pixel_match",m_anyPixelMatch},{"pending_assertion_passed",m_assertionPassed}};
         if(!m_firstFailure.isNull())report["first_failure_image_saved"]=m_firstFailure.save(m_directory+"/pending-first-failure.png");
         if(!m_lastFailure.isNull())report["last_failure_image_saved"]=m_lastFailure.save(m_directory+"/pending-last-failure.png");
         if(!m_success.isNull())report["success_image_saved"]=m_success.save(m_directory+"/pending-success.png");
@@ -43,6 +43,20 @@ public:
             qWarning("Unable to export pending move evidence");
     }
     void phase(const char *name) {m_phase=name;mark(name);}
+    void expect(quint64 generation,QPoint delta,int depth) {m_generation=generation;m_delta=delta;m_depth=depth;}
+    void passed() {m_assertionPassed=true;phase("pending-pixels-passed");}
+    static bool acceptedContext(const QJsonObject &s,quint64 generation,QPoint delta,int depth) {
+        const auto move=s["move"].toObject(),frame=s["frame"].toObject(),owner=s["owner_metadata"].toObject();
+        return s["generation"].toDouble()==double(generation) && s["undo_depth"].toInt()==depth
+            && s["error"].toString().isEmpty() && move["active"].toBool() && !move["starting"].toBool()
+            && !move["closing"].toBool() && !move["dirty"].toBool() && move["submittedKind"].toInt()==4
+            && s["sequence"].toDouble()>0 && move["completedSequence"].toDouble()>=s["sequence"].toDouble()
+            && QPoint(move["deltaX"].toInt(),move["deltaY"].toInt())==delta
+            && owner["id"].toDouble()==s["owner"].toDouble() && s["owner"].toDouble()>0
+            && QPoint(owner["offsetX"].toInt(),owner["offsetY"].toInt())==delta
+            && frame["generation"].toDouble()==double(generation) && frame["view"].toInt(-1)==0
+            && frame["revision"].toDouble()==s["revision"].toDouble();
+    }
     void mark(const char *name) {
         if(!m_enabled)return;
         append(m_states,QJsonObject{{"name",name},{"state",state()}});
@@ -73,12 +87,17 @@ public:
     bool pendingMatches(const QImage &image) {
         // Evaluate both points from this one image, preserving the original AND and thresholds.
         const auto a=point(image,{100,1080},true),b=point(image,{800,1080},false);
-        const bool good=!image.isNull() && a["matches"].toBool() && b["matches"].toBool();
+        const bool pixels=!image.isNull() && a["matches"].toBool() && b["matches"].toBool();
+        const auto current=state();
+        const bool context=acceptedContext(current,m_generation,m_delta,m_depth);
+        const bool good=pixels && context;
+        m_anyPixelMatch=m_anyPixelMatch || pixels;
         if(m_enabled){
             auto sample=m_lastCapture;sample["white_point"]=a;sample["red_point"]=b;
-            sample["and_result"]=good;sample["assertion_state"]=state();sample["assertion_ns"]=double(InteractionTrace::now());
+            sample["pixel_and_result"]=pixels;sample["accepted_context"]=context;
+            sample["and_result"]=good;sample["assertion_state"]=current;sample["assertion_ns"]=double(InteractionTrace::now());
             append(m_captures,sample);
-            if(good){m_success=image;m_pendingSucceeded=true;}
+            if(good)m_success=image;
             else {if(m_firstFailure.isNull())m_firstFailure=image;m_lastFailure=image;}
         }
         return good;
@@ -139,7 +158,8 @@ private:
     }
     void append(QJsonArray &array,const QJsonObject &row){if(array.size()<256)array.append(row);else ++m_dropped;}
     QPointer<CanvasItem> m_canvas;QPointer<PaintCoreClient> m_client;QPointer<QQuickWindow> m_window;
-    quint64 m_owner=0,m_request=0;QString m_directory,m_phase="initial";bool m_enabled=false,m_pendingSucceeded=false;
+    quint64 m_owner=0,m_request=0,m_generation=0;QPoint m_delta;int m_depth=0;
+    QString m_directory,m_phase="initial";bool m_enabled=false,m_anyPixelMatch=false,m_assertionPassed=false;
     int m_dropped=0;QJsonArray m_captures,m_states,m_inputs;QJsonObject m_lastCapture;
     QImage m_firstFailure,m_lastFailure,m_success;
 };

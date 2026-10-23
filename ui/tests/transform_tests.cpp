@@ -567,6 +567,27 @@ Window {
         QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,screen({48,32}));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());QTRY_VERIFY(redAt(capture(),screen({48,32})));
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(client.frameRevision()>=client.revision());QTRY_VERIFY(redAt(capture(),screen({32,32})));QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);client.shutdown();
     }
+    void pendingMoveObservationRejectsUnrelatedState() {
+        // Two colors alone also matched recorded wrong displacements. Replay the
+        // context counterexample without a window, asynchronous timing or extra input.
+        QJsonObject valid{{"generation",3},{"owner",2},{"revision",7},{"sequence",14},{"undo_depth",5},{"error",""},
+            {"move",QJsonObject{{"active",true},{"starting",false},{"closing",false},{"dirty",false},
+                {"submittedKind",4},{"completedSequence",14},{"deltaX",384},{"deltaY",0}}},
+            {"frame",QJsonObject{{"generation",3},{"view",0},{"revision",7}}},
+            {"owner_metadata",QJsonObject{{"id",2},{"offsetX",384},{"offsetY",0}}}};
+        const auto accepts=[](const QJsonObject &s){return PendingMoveEvidence::acceptedContext(s,3,{384,0},5);};
+        QVERIFY(accepts(valid));
+        for(const auto &change:QList<QPair<QString,QJsonValue>>{{"deltaX",1880},{"deltaY",56},{"starting",true},
+                {"closing",true},{"dirty",true},{"active",false},{"completedSequence",13}}){
+            auto wrong=valid;auto move=wrong["move"].toObject();move[change.first]=change.second;wrong["move"]=move;
+            QVERIFY2(!accepts(wrong),qPrintable(change.first));
+        }
+        for(const auto &change:QList<QPair<QString,QJsonValue>>{{"generation",4},{"undo_depth",6},{"error","backend error"}}){
+            auto wrong=valid;wrong[change.first]=change.second;QVERIFY2(!accepts(wrong),qPrintable(change.first));
+        }
+        auto stale=valid;auto frame=stale["frame"].toObject();frame["revision"]=5;stale["frame"]=frame;QVERIFY(!accepts(stale));
+        auto wrongOwner=valid;auto owner=wrongOwner["owner_metadata"].toObject();owner["offsetX"]=1880;wrongOwner["owner_metadata"]=owner;QVERIFY(!accepts(wrongOwner));
+    }
     void prewarmed4kResidentMoveReusesFullQualityTexturesAndRestoresFullFrame() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("first-move.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(3840,2160);
@@ -589,6 +610,10 @@ Window {
         QElapsedTimer preparation;preparation.start();client.setMoveTool(true);
         QVERIFY(!client.movePreparation());
         evidence.phase("unprepared-press");
+        // This fixture starts at offset (0,0). Derive the integer target from
+        // the actual rounded screen coordinates, using the same inverse zoom.
+        evidence.expect(client.generation(),QPoint(qRound((screen({1584,1080}).x()-screen({1200,1080}).x())/canvas->zoom()),
+            qRound((screen({1584,1080}).y()-screen({1200,1080}).y())/canvas->zoom())),depth);
         QElapsedTimer pendingInput;pendingInput.start();
         QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,screen({1200,1080}));
         QTest::mouseMove(&window,screen({1584,1080}));
@@ -598,7 +623,7 @@ Window {
         if(pendingSource)QVERIFY(pendingSource->images[0].width()>512);
         evidence.phase("pendingMoved");
         QImage pendingMoved;QTRY_VERIFY(evidence.pendingMatches(pendingMoved=capture()));
-        evidence.phase("pending-pixels-passed");
+        evidence.passed();
         qInfo()<<"4K move accepts input before prepared assets ms"<<pendingInput.elapsed()<<"gpu"<<canvas->gpuDisplay();
         QTest::keyClick(&window,Qt::Key_Escape);QTRY_VERIFY(!client.layerMoveActive());QCOMPARE(client.undoDepth(),depth);
         QTRY_VERIFY(!client.frame().isNull());
