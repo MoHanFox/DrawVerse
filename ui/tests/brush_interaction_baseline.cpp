@@ -43,9 +43,11 @@ QJsonObject stats(const QList<double> &values) {
     return {{"n",values.size()},{"p50",percentile(values,.5)},{"p95",percentile(values,.95)},{"max",values.isEmpty()?0:*std::max_element(values.begin(),values.end())}};
 }
 }
+#include "BrushParameterProbe.h"
 class BrushInteractionBaseline : public QObject {
     Q_OBJECT
 private slots:
+    void parameters(){runBrushParameterProbe();}
     void dragFinalValues() {
         const auto output=qEnvironmentVariable("DRAWVERSE_INTERACTION_FINAL_REPORT");
         if(output.isEmpty())QSKIP("Independent closure regression; set DRAWVERSE_INTERACTION_FINAL_REPORT");

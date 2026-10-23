@@ -16,6 +16,8 @@ def main():
     parser.add_argument('--repeats', type=int, default=3)
     parser.add_argument('--trace', action='store_true')
     parser.add_argument('--a2-only', action='store_true')
+    parser.add_argument('--parameters', action='store_true', help='Current size-only QML probe, separate from historical A3')
+    parser.add_argument('--parameter-controls', action='store_true', help='Also run limited flow/opacity/pressure controls')
     parser.add_argument('--count', type=int, default=51, help='First input plus 50 normal samples by default')
     parser.add_argument('--product-revision', help='Product revision under comparison, separate from probe changes')
     parser.add_argument('--tool-revision', help='Shared measurement tool commit for both comparison sides')
@@ -41,6 +43,8 @@ def main():
     metadata['tool_revision'] = args.tool_revision or head
     metadata['tool_files_sha256'] = {name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in
                                    ('tools/measure_brush_interaction.py', 'ui/tests/brush_interaction_baseline.cpp', 'ui/src/platform/InteractionTrace.h')}
+    if args.parameters:
+        metadata['tool_files_sha256']['ui/tests/BrushParameterProbe.h'] = hashlib.sha256((root/'ui/tests/BrushParameterProbe.h').read_bytes()).hexdigest()
     metadata['arguments'] = {key: str(value) if isinstance(value, Path) else value for key, value in metadata['arguments'].items()}
     (output/'invocation.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
     failures = []
@@ -60,10 +64,11 @@ def main():
                    DRAWVERSE_INTERACTION_REPORT=str(directory/'raw.json'),
                    DRAWVERSE_INTERACTION_PRESETS=str(args.presets), DRAWVERSE_INTERACTION_COUNT=str(args.count),
                    DRAWVERSE_INTERACTION_TRACE=str(int(args.trace)), DRAWVERSE_INTERACTION_A2_ONLY=str(int(args.a2_only)))
+        env['DRAWVERSE_PARAMETER_CONTROLS'] = str(int(args.parameter_controls))
         # Reuse the installed SDK DLLs; the Qt native test window remains visible.
         env['PATH'] = str(root/'.tools/qt/6.8.3/msvc2022_64/bin')+os.pathsep+env['PATH']
         with (directory/'qt.log').open('w', encoding='utf-8') as log:
-            process = subprocess.Popen([str(executable), '-o', str(directory/'test.txt')+',txt'], env=env,
+            process = subprocess.Popen([str(executable), *(['parameters'] if args.parameters else ['matrix']), '-o', str(directory/'test.txt')+',txt'], env=env,
                                        stdout=log, stderr=subprocess.STDOUT,
                                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             try:
@@ -76,6 +81,12 @@ def main():
             print(f'run {run}: no report, exit {code}', flush=True)
             continue
         data = json.loads(raw.read_text(encoding='utf-8'))
+        if args.parameters:
+            if code or not data.get('passed') or data.get('trace_dropped') or data.get('input_dropped') or data.get('heartbeat_dropped'):
+                failures.append({'run': run, 'exit': code, 'error': 'parameter contract failed; raw retained'})
+            summary.extend(dict(run=run, trace=args.trace, presets=data.get('environment', {}).get('preset_count'), **{k:v for k,v in row.items() if k!='samples'}) for row in data['rows'])
+            print(f'run {run}: exit {code}, parameter rows {len(data["rows"])}, passed {data.get("passed")}', flush=True)
+            continue
         if code or data.get('error') or data['trace_dropped']:
             failures.append({'run': run, 'exit': code, 'error': data.get('error'), 'trace_dropped': data['trace_dropped']})
         for row in data['rows']:
