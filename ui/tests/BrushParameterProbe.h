@@ -118,11 +118,13 @@ inline void runBrushParameterProbe(){
                 if(!valid || !done || ingress.invalid)break;
             }
             if(mode=="drag" && !ingress.invalid && !failures && !timeouts && samples.size()==count){const auto t=InteractionTrace::now();ingress.send(QEvent::MouseButtonRelease,at(.83));lastEnd=InteractionTrace::now();releaseUs=double(lastEnd-t)/1000;}
-            const bool persisted=!failures && !timeouts && QTest::qWaitFor([&]{return ingress.invalid || (quiet() && std::abs(saved(field)-expected)<.00001);},15000);
+            const bool tailAttempted=!failures && !timeouts && !ingress.invalid;
+            const bool persisted=tailAttempted && QTest::qWaitFor([&]{return ingress.invalid || (quiet() && std::abs(saved(field)-expected)<.00001);},15000);
+            if(tailAttempted && !persisted)++timeouts;
             const bool finalValid=!ingress.invalid && persisted && correct(expected) && std::abs(saved(field)-expected)<.00001;
             QList<double> beats;for(auto j=h0;j<heartbeat.size();++j)beats.append(heartbeat[j]);
             rows.append(QJsonObject{{"scene",field+"-"+mode},{"start_ns",double(start)},{"end_ns",double(InteractionTrace::now())},
-                {"requested",count},{"attempts",samples.size()},{"completed",completed},{"actual_changes",changes},{"failures",failures},{"timeouts",timeouts+(!persisted)},
+                {"requested",count},{"attempts",samples.size()},{"completed",completed},{"actual_changes",changes},{"failures",failures},{"timeouts",timeouts},{"tail_completion_attempted",tailAttempted},
                 {"samples",samples},{"warm_sync_us",stats(warm)},{"actual_input_gap_ms",stats(gaps)},{"heartbeat_ms",stats(beats)},
                 {"post_input_quiescence_observation_ms",double(InteractionTrace::now()-lastEnd)/1e6},{"release_sync_us",releaseUs},
                 {"settingsChanged",settings-s0},{"brushChanged",brush-b0},{"persistRequested",persist-p0},{"activeColorsChanged",colors-c0},
