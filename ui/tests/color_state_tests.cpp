@@ -27,6 +27,38 @@ QQuickItem *visual(QQuickItem *item,const QString &name){if(item->objectName()==
 class ColorStateTests : public QObject {
     Q_OBJECT
 private slots:
+    void catalogReusesCurrentPreferenceRowsWithoutChangingState() {
+        for(int mode=0;mode<=2;++mode){
+            BrushLibrary library;library.setToolIsolation(mode);
+            // A catalog-first query must retain the original cold exact path.
+            InteractionTrace::start(true);library.catalogSnapshot();
+            QCOMPARE(count(InteractionTrace::finish(),"catalogSnapshot.presetRows"),1);
+            for(int step=0;step<7;++step){
+                library.setRadius(21+step);
+                if(step==1){library.setFlow(.43);library.setOpacity(.61);library.setActiveColors(Qt::red,Qt::blue);}
+                if(step==2){const auto copy=library.saveCopy("parameter reuse");QVERIFY(!copy.isEmpty());const auto group=library.createGroup("reuse group");QVERIFY(library.movePresetToGroup(copy,group));}
+                if(step==3){library.setPressureOpacity(true);library.setAngleControl("direction");}
+                if(step==4){library.setToolContext(1);library.setRadius(48);library.setPressureOpacity(false);}
+                if(step==5){library.setToolContext(0);QVERIFY(library.select("round-fine"));library.setRadius(9);}
+                if(step==6){library.setToolIsolation(0);library.setToolContext(2);library.setRadius(17);}
+                const auto preferences=library.snapshot();const auto root=object(preferences);
+                QJsonObject projection{{"version",root["version"]},{"selected",root["selected"]},{"presets",root["presets"]}};
+                if(root.contains("organization"))projection["organization"]=root["organization"];
+                InteractionTrace::start(true);const auto actual=library.catalogSnapshot();
+                const auto trace=InteractionTrace::finish();
+                QCOMPARE(object(actual),projection);
+                // Independent reference has no preference-object cache: it must
+                // execute the old full row construction on the same active state.
+                BrushLibrary reference;QVERIFY(reference.restore(preferences));
+                InteractionTrace::start(true);const auto exact=reference.catalogSnapshot();
+                QCOMPARE(count(InteractionTrace::finish(),"catalogSnapshot.presetRows"),1);
+                QCOMPARE(actual,exact);
+                QCOMPARE(library.snapshot(),preferences); // Query must not lose dirty preferences.
+                QCOMPARE(count(trace,"catalogSnapshot.presetRows"),0);
+                QCOMPARE(count(trace,"catalogSnapshot.preference_rows_reused"),1);
+            }
+        }
+    }
     void qmlSwatchesUpdateImmediately() {
         QTemporaryDir directory;PaintCoreClient client(nullptr,directory.filePath("preferences.ini"));WorkspaceManager workspace(directory.filePath("workspace.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());

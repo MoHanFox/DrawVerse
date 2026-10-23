@@ -1317,7 +1317,10 @@ QByteArray BrushLibrary::catalogSnapshot() const {
         m_catalogCache=encodeSnapshotObject(m_catalogObjectCache,"catalog");return m_catalogCache;
     }
     InteractionTrace::Scope rebuild("catalogSnapshot.rebuild");
-    QJsonArray rows;int version=2;for(const auto &p:m_presets)rows.append(presetRow(p,version));
+    QJsonArray rows;int version=2;
+    {InteractionTrace::Scope buildRows("catalogSnapshot.presetRows");
+        InteractionTrace::point("catalogSnapshot.serialized_rows",m_presets.size());
+        for(const auto &p:m_presets)rows.append(presetRow(p,version));}
     QJsonObject executing{{"version",version},{"selected",m_selected},{"presets",rows}};
     if(!m_organization.isEmpty()){executing["organization"]=m_organization;executing["version"]=std::max(version,20);}
     m_catalogObjectCache=executing;m_catalogCache=encodeSnapshotObject(executing,"catalog");return m_catalogCache;
