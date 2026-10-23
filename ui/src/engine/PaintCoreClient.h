@@ -343,6 +343,11 @@ public:
     // Local investigation receipts; no ABI or painting policy change.
     struct MoveReceipt { quint64 sequence=0,generation=0,revision=0; int kind=0; };
     MoveReceipt moveReceipt() const { return m_moveReceipt; }
+    // GUI-thread, opt-in test observation only; no ordinary-path polling or allocation.
+    QVariantMap moveObservation() const { return {{"active",m_layerMoveActive},{"starting",m_layerMoveStarting},
+        {"closing",m_layerMoveClosing},{"dirty",m_layerMoveDirty},{"deltaX",m_layerMoveDelta.x()},
+        {"deltaY",m_layerMoveDelta.y()},{"submittedKind",m_layerMoveSubmittedKind},
+        {"completedSequence",m_completedSequence}}; }
     quint64 moveSequence() const { return m_layerMoveSequence; }
     quint64 movePreparationRequest() const { return m_movePreparationRequest; }
     QVariantMap frameIdentity(int view=0) const { const auto i=view==1?1:0;return {{"view",i},{"generation",m_generation},{"request",m_frameRequestIds[i]},{"revision",m_frameRevisions[i]},{"frame",m_frameIds[i]}}; }

@@ -2173,6 +2173,17 @@ impl Engine {
                         move_trace::point(name, trace, value);
                     }
                     for (name, value) in [
+                        ("renderer.translation_ns", diagnostic.translation_ns as i64),
+                        ("renderer.translations", diagnostic.translations as i64),
+                        ("renderer.remapped", diagnostic.remapped as i64),
+                        (
+                            "renderer.translation_reason",
+                            diagnostic.translation_reason as i64,
+                        ),
+                        (
+                            "renderer.translation_rejected",
+                            diagnostic.translation_rejected as i64,
+                        ),
                         ("renderer.lock_ns", diagnostic.lock_ns as i64),
                         ("renderer.setup_ns", diagnostic.setup_ns as i64),
                         (

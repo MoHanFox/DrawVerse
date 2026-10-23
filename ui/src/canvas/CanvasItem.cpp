@@ -1,5 +1,6 @@
 #include "platform/InteractionTrace.h"
 #include "canvas/CanvasItem.h"
+#include "canvas/CanvasPresentationObservation.h"
 #include "canvas/LiquifyPreviewNode.h"
 #include "canvas/ResidentPreviewTextures.h"
 #include "platform/TabletInput.h"
@@ -435,6 +436,10 @@ void CanvasItem::restoreLayoutPosition() {
     m_pan+=m_layoutOrigin-mapToScene(documentRect().topLeft());emit viewChanged();update();
 }
 QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
+    CanvasPresentationIdentity adopted;
+    // Early/error returns publish invalid. Read only the item's synchronized
+    // snapshot, never PaintCoreClient's live GUI metadata in this observer.
+    const auto observation=qScopeGuard([&]{if(m_presentationObserver)m_presentationObserver->adopted(adopted);});
     auto *node = static_cast<CanvasNode *>(old);
     if ((!m_residentPreview && !m_movePreparation && m_image.isNull() && m_overview.isNull()) || !window()) { delete node; return nullptr; }
     if(!node)node=new CanvasNode;
@@ -484,6 +489,8 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         if(node->image){delete node->image;node->image=nullptr;node->imageKey=0;}
         if(!node->preview){node->preview=new LiquifyPreviewNode;node->appendChildNode(node->preview);}
         if(!node->preview->sync(window(),*m_residentPreview,documentRect())){qWarning("Unable to allocate resident preview textures");delete node;return nullptr;}
+        if(m_presentationObserver)adopted={quintptr(this),quintptr(window()),m_generation,m_residentPreview->sourceId,
+            m_residentPreview->revision,0,{},documentRect(),size(),m_zoom,true,true};
         return node;
     }
     if(node->preview){delete node->preview;node->preview=nullptr;}
@@ -527,6 +534,8 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     // A viewport frame covers only its document-space region, never the whole canvas.
     node->image->setRect(QRectF(documentRect().topLeft() + m_imageRegion.topLeft() * m_zoom,
                                  m_imageRegion.size() * m_zoom));
+    if(m_presentationObserver)adopted={quintptr(this),quintptr(window()),m_generation,0,0,node->imageKey,
+        m_imageRegion,documentRect(),size(),m_zoom,false,true};
     return node;
 }
 InputSample CanvasItem::mouseSample(QPointF local, Qt::MouseButtons buttons) {

@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [主线 C2-B — Exact Tile Cache Reuse](tools/exact-tile-cache-reuse-validation.md)
+
 - [主线 C1 — Layer Move Latency Baseline](tools/layer-move-latency-baseline-validation.md)
 
 - [主线 B1 — Tablet Input & Cursor Ownership](brush/input/tablet-input-cursor-ownership-validation.md)
