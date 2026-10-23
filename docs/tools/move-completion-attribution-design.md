@@ -19,3 +19,5 @@ S2/S3 各三次独立原生可见 Release 进程，保留立即/后续两段；S
 跨语言时间线可选有界对时：同一sequence的Rust command.submit发生在C++ move.submit同步scope内；同一五元组的Rust frame.copied发生在C++ copyFrame scope内。两者各给出offset区间，求交并报告区间宽度；若缺少精确身份或交集为空则标未测/不一致。假定单次收尾区间内两种单调时钟速率稳定，第二个独立包含关系用于一致性核对，不宣称绝对时钟同源或物理显示延迟。Rust阶段持续时间不依赖该对时。
 
 记录器是单次进程采集，首次核心销毁后冻结导出；不支持同进程重新start，多核心场景在首次销毁时结束全局采集。本轮宿主只有一个PaintCore；session身份仍区别该Core的文档/临时会话。任务ID为诊断关联ID，同时记录真实TaskTicket ID，未改变任务队列。
+
+正式S3沿用既有夹具：组名C1 Normal group，但实际blendMode=27（PassThrough），子层为Normal。验收按真实图层树说明，不以名称推断混合模式。
