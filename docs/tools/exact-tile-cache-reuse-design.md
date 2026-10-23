@@ -25,3 +25,15 @@
 ## C2-B-R 审查观测补充
 
 缓存产品规则不变。只为原 prewarmed4k 专项增加默认关闭、有界、结束后导出的抓图/输入/状态现场；request/ready/完成/断言快照不冒充渲染帧身份。原像素AND和阈值保留，另核对实际逆变换目标已接纳、历史与GUI帧上下文，避免非计划输入或旧状态在稀疏点位上偶然匹配。ready回调仅在串行grab等待内存活，scope guard断开，失败也导出；不修改预览、输入或取消策略。首轮线索、确定性反例、有限第二轮和UNRESOLVED建议见验收追加节，历史失败未改写。
+
+
+## 当前预览验收协议（2026-10-23，测试/观测增量）
+
+不改变缓存或呈现策略。目标仍是未准备移动按住时的 (384,0)、同一张图中原白/红采样，以及后续 Escape/单历史/完整帧契约。
+
+- QWindow 入口改用同步发送的独立 QMouseEvent，登记具体对象与编号、窗口、坐标、按键和顺序；不移动 OS 光标。应用过滤器只将该对象在目标窗口的入口认作计划事件，Canvas 的转发交付不冒充独立来源。其他输入与生命周期事件仍传播，目标阶段出现时前提永久失效，不自动补发。
+- GUI 内容/文档/视图状态变化递增代数，防止中途变化后恢复的 ABA。Canvas 另有按需启用的单槽、互斥保护观察，仅在 updatePaintNode 的同步阶段记录实际成功采用的 imageKey 或 resident source/revision、Canvas/窗口、区域及变换；失败发布 invalid，不读取额外的 GUI client 状态，不增加刷新。正常产品不启用观察器。
+- 串行 grab 的 request/ready/complete/assertion 必须保持相同 GUI 内容、操作 sequence、输入/内容代数及 render 采用身份。请求之前节点必须已采用对应内容；图像归属于这次同 Canvas 的 grab，颜色坐标冻结在请求上下文。这里证明稳定节点区间中的 item 离屏抓图，不测物理显示延迟，不以 frameSwapped 或完成时 getter 代替关联。
+- 保留原12项状态反例，增加旧 imageKey/revision、其他操作、输入/内容/呈现 ABA、取消、换文档/视图及其他 Canvas/grab 的确定性反例；允许新的有效目标通过。JSON判定回归仅证明拒绝条件，仍须有效原生窗口渲染才可形成当前合并建议。
+
+验收只做 before 单独、after 单独、after 原三函数组合各一次；环境前提失效或关联不足时记录并停止盲目重跑。历史 after 缺现场的失败维持 unresolved，独立于当前 READY FOR REVIEW / BLOCKED / VALIDATION INCOMPLETE。不重跑核心/性能矩阵，不制作新运行包。

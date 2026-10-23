@@ -8,6 +8,7 @@
 #include <QPointer>
 class QScreen;
 class QTabletEvent;
+struct CanvasPresentationObservation;
 
 class CanvasItem : public QQuickItem {
     Q_OBJECT
@@ -44,6 +45,8 @@ public:
     ~CanvasItem() override;
     PaintCoreClient *client() const { return m_client; }
     void setClient(PaintCoreClient *client);
+    // GUI-thread opt-in; updatePaintNode observes only during Quick sync.
+    void observePresentation(std::shared_ptr<CanvasPresentationObservation> observer) {m_presentationObserver=std::move(observer);}
     qreal zoom() const { return m_zoom; }
     QRectF documentRect() const;
     QRectF visibleDocumentRect() const;
@@ -111,6 +114,7 @@ protected:
     void hoverLeaveEvent(QHoverEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 private:
+    std::shared_ptr<CanvasPresentationObservation> m_presentationObserver;
     int m_previewPart=0;
     QRectF m_presentationRect;
     InputSample mouseSample(QPointF local, Qt::MouseButtons buttons);

@@ -588,6 +588,56 @@ Window {
         auto stale=valid;auto frame=stale["frame"].toObject();frame["revision"]=5;stale["frame"]=frame;QVERIFY(!accepts(stale));
         auto wrongOwner=valid;auto owner=wrongOwner["owner_metadata"].toObject();owner["offsetX"]=1880;wrongOwner["owner_metadata"]=owner;QVERIFY(!accepts(wrongOwner));
     }
+    void pendingMoveGrabAssociationRejectsStaleAndInterruptedEvidence() {
+        CanvasPresentationObservation observation;CanvasPresentationIdentity first;
+        first.valid=true;first.imageKey=10;observation.adopted(first);const auto epoch=observation.snapshot().epoch;
+        observation.adopted(first);QCOMPARE(observation.snapshot().epoch,epoch);
+        auto changed=first;changed.imageKey=11;observation.adopted(changed);observation.adopted(first);
+        QCOMPARE(observation.snapshot().epoch,epoch+2); // Actual producer preserves ABA.
+        observation.adopted({});QVERIFY(!observation.snapshot().identity.valid);
+        // Predicate counterexamples, not a substitute for the visible-window test.
+        QJsonObject context{{"generation",3},{"owner",2},{"revision",7},{"sequence",14},{"undo_depth",5},{"error",""},
+            {"move",QJsonObject{{"active",true},{"starting",false},{"closing",false},{"dirty",false},
+                {"submittedKind",4},{"completedSequence",14},{"deltaX",384},{"deltaY",0}}},
+            {"frame",QJsonObject{{"generation",3},{"view",0},{"revision",7},{"request",9},{"frame",20}}},
+            {"owner_metadata",QJsonObject{{"id",2},{"offsetX",384},{"offsetY",0}}},
+            {"frame_key","1234"},{"frame_region",QJsonArray{0,0,3840,2160}},
+            {"canvas","canvas1"},{"window","window1"},{"active",true},{"visible",true},{"canvas_visible",true},
+            {"dpr",1},{"zoom",0.25},{"document_origin",QJsonArray{32,90}},{"size",QJsonArray{1024,720}},
+            {"context_epoch",10},{"input_epoch",2},{"target_plan",2},{"preview_source",0},{"preview_revision",0},
+            {"begin_sequence",13},{"target_sequence",14},
+            {"scenario_invalid",false}};
+        const QJsonObject adopted{{"epoch",3},{"valid",true},{"canvas","canvas1"},{"window","window1"},{"generation",3},
+            {"resident",false},{"image_key","1234"},{"region",QJsonArray{0,0,3840,2160}},
+            {"document_origin",QJsonArray{32,90}},{"zoom",0.25},{"size",QJsonArray{1024,720}}};
+        context["render"]=adopted;
+        const auto make=[](QJsonObject s){QJsonObject sample{{"id",1},{"ready_id",1},{"completed",true},{"image_key","grab1"},{"grab_canvas","canvas1"}};
+            for(const auto *key:{"request_state","ready_state","complete_state","assertion_state"})sample[key]=s;return sample;};
+        const auto accepts=[](const QJsonObject &s){return PendingMoveEvidence::associated(s,3,{384,0},5);};
+        const auto valid=make(context);QVERIFY(accepts(valid));
+        // GUI correct at every endpoint, but the scene graph is still old.
+        auto wrong=context;auto render=adopted;render["image_key"]="old";wrong["render"]=render;QVERIFY(!accepts(make(wrong)));
+        wrong=context;auto frame=wrong["frame"].toObject();frame["revision"]=6;wrong["frame"]=frame;QVERIFY(!accepts(make(wrong)));
+        // Same colors and target displacement, different operation sequence.
+        auto other=valid;wrong=context;wrong["sequence"]=13;other["request_state"]=wrong;QVERIFY(!accepts(other));
+        wrong=context;wrong["sequence"]=15;QVERIFY(!accepts(make(wrong))); // Entire grab belongs to another operation.
+        // ABA: input, document/view, cancellation or content changed then returned.
+        for(const auto *field:{"input_epoch","context_epoch","target_plan"}) {
+            auto interrupted=valid;wrong=context;wrong[field]=context[field].toInt()+1;
+            interrupted["ready_state"]=wrong;QVERIFY2(!accepts(interrupted),field);
+        }
+        auto interrupted=valid;wrong=context;wrong["scenario_invalid"]=true;interrupted["ready_state"]=wrong;QVERIFY(!accepts(interrupted));
+        interrupted=valid;wrong=context;render=adopted;render["epoch"]=5;wrong["render"]=render;interrupted["ready_state"]=wrong;QVERIFY(!accepts(interrupted));
+        for(const auto *field:{"generation","zoom"}) {interrupted=valid;wrong=context;wrong[field]=99;interrupted["ready_state"]=wrong;QVERIFY(!accepts(interrupted));}
+        interrupted=valid;interrupted["grab_canvas"]="otherCanvas";QVERIFY(!accepts(interrupted));
+        interrupted=valid;interrupted["ready_id"]=2;QVERIFY(!accepts(interrupted));
+        // A later, genuinely adopted target is allowed, rather than permanently
+        // pinning the first revision/image. Runtime validates its actual pixels.
+        auto next=context;next["revision"]=8;next["sequence"]=15;next["target_sequence"]=15;next["frame_key"]="new";next["context_epoch"]=11;
+        auto move=next["move"].toObject();move["completedSequence"]=15;next["move"]=move;
+        frame=next["frame"].toObject();frame["revision"]=8;frame["frame"]=21;next["frame"]=frame;
+        render=adopted;render["epoch"]=4;render["image_key"]="new";next["render"]=render;QVERIFY(accepts(make(next)));
+    }
     void prewarmed4kResidentMoveReusesFullQualityTexturesAndRestoresFullFrame() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("first-move.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(3840,2160);
@@ -615,9 +665,9 @@ Window {
         evidence.expect(client.generation(),QPoint(qRound((screen({1584,1080}).x()-screen({1200,1080}).x())/canvas->zoom()),
             qRound((screen({1584,1080}).y()-screen({1200,1080}).y())/canvas->zoom())),depth);
         QElapsedTimer pendingInput;pendingInput.start();
-        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,screen({1200,1080}));
-        QTest::mouseMove(&window,screen({1584,1080}));
-        evidence.mark("after-original-mouse-move");
+        evidence.send(QEvent::MouseButtonPress,screen({1200,1080}));
+        evidence.send(QEvent::MouseMove,screen({1584,1080}));
+        evidence.mark("after-planned-mouse-move");
         QTRY_VERIFY(client.layerMoveActive());
         const auto pendingSource=client.residentPreview();
         if(pendingSource)QVERIFY(pendingSource->images[0].width()>512);
@@ -632,16 +682,16 @@ Window {
         qInfo()<<"4K move preparation and texture warmup ms"<<preparation.elapsed()<<"gpu"<<canvas->gpuDisplay();
         const quint64 uploads=client.movePreparation()?client.movePreparation()->uploads->load():0;
         QElapsedTimer elapsed;elapsed.start();QElapsedTimer beat;beat.start();qint64 maxGuiGap=0;QTimer heartbeat;heartbeat.setInterval(1);connect(&heartbeat,&QTimer::timeout,this,[&]{maxGuiGap=qMax(maxGuiGap,beat.restart());});heartbeat.start();
-        QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,screen({1200,1080}));
+        evidence.send(QEvent::MouseButtonPress,screen({1200,1080}));
         // The first delta only reuses the prepared source and moves four vertices.
-        QTest::mouseMove(&window,screen({1584,1080}));
+        evidence.send(QEvent::MouseMove,screen({1584,1080}));
         QImage moved;QTRY_VERIFY(!(moved=capture()).isNull() && white(moved,{100,1080}) && red(moved,{800,1080}) && white(moved,{2384,1080}));
         heartbeat.stop();qInfo()<<"4K first move through captured changed frame ms"<<elapsed.elapsed()<<"max GUI heartbeat gap ms"<<maxGuiGap<<"gpu"<<canvas->gpuDisplay();
         const auto source=client.residentPreview();
         if(canvas->gpuDisplay()){QVERIFY(source);QCOMPARE(source->vertices.size(),4);QVERIFY(source->images[0].width()>512);QVERIFY(source->images[0].width()<=2048);QCOMPARE(source->images[2].size(),QSize(1,1));QCOMPARE(source->uploads->load(),uploads);}
-        QTest::mouseMove(&window,screen({1648,1080}));
+        evidence.send(QEvent::MouseMove,screen({1648,1080}));
         if(source){QTRY_COMPARE(client.residentPreview()->revision,client.revision());QCOMPARE(client.residentPreview()->sourceId,source->sourceId);QCOMPARE(client.residentPreview()->images[0].cacheKey(),source->images[0].cacheKey());QCOMPARE(source->uploads->load(),uploads);}
-        QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,screen({1648,1080}));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());QVERIFY(client.frame().width()>512);
+        evidence.send(QEvent::MouseButtonRelease,screen({1648,1080}));QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());QVERIFY(client.frame().width()>512);
         client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(client.frameRevision()>=client.revision());QImage undone;QTRY_VERIFY(!(undone=capture()).isNull() && red(undone,{100,1080}));
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);client.shutdown();
     }
