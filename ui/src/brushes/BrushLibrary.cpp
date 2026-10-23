@@ -1317,6 +1317,17 @@ QByteArray BrushLibrary::catalogSnapshot() const {
         m_catalogCache=encodeSnapshotObject(m_catalogObjectCache,"catalog");return m_catalogCache;
     }
     InteractionTrace::Scope rebuild("catalogSnapshot.rebuild");
+    // A valid preference object already owns these exact executing rows and
+    // their canonical version. Do not serialize every preset a second time.
+    // Any parameter/structure/profile edit invalidates this object as before;
+    // a catalog-first query keeps the original cold construction below.
+    if(!m_snapshotObjectCache.isEmpty()) {
+        const auto &root=m_snapshotObjectCache;
+        QJsonObject executing{{"version",root.value("version")},{"selected",m_selected},{"presets",root.value("presets")}};
+        if(root.contains("organization"))executing["organization"]=root.value("organization");
+        InteractionTrace::point("catalogSnapshot.preference_rows_reused",root.value("presets").toArray().size());
+        m_catalogObjectCache=executing;m_catalogCache=encodeSnapshotObject(executing,"catalog");return m_catalogCache;
+    }
     QJsonArray rows;int version=2;
     {InteractionTrace::Scope buildRows("catalogSnapshot.presetRows");
         InteractionTrace::point("catalogSnapshot.serialized_rows",m_presets.size());
