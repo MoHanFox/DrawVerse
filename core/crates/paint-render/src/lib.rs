@@ -7,6 +7,7 @@ use std::{
     time::Instant,
 };
 mod interactive;
+mod translation;
 pub use interactive::{render_interactive, render_sampled_preview};
 
 pub const MAX_OUTPUT_PIXELS: u64 = 4_194_304;
@@ -140,12 +141,14 @@ struct Mip {
     srgb: Option<Vec<[u8; 4]>>,
 }
 struct Entry {
+    translation_layer: Option<u64>,
+    translated: bool,
     sources: Vec<Source>,
     mip: Arc<Mip>,
     bytes: usize,
 }
 type CacheKey = (TileCoord, u32, PixelFormat);
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 struct LayerConfiguration {
     id: u64,
     blend: BlendMode,
@@ -166,6 +169,7 @@ struct Cache {
     stats: RenderCacheStats,
     dimensions: (u32, u32),
     configuration: Vec<LayerConfiguration>,
+    translation_layer: Option<u64>,
     grouped: bool,
     visible: Vec<usize>,
 }
@@ -177,6 +181,7 @@ impl Cache {
             stats: RenderCacheStats::default(),
             dimensions: (0, 0),
             configuration: Vec::new(),
+            translation_layer: None,
             grouped: false,
             visible: Vec::new(),
         }
@@ -239,7 +244,7 @@ impl Cache {
             }
         }
         let key = (coord, lod, format);
-        if let Some(entry) = self.entries.get(&key) {
+        if let Some(entry) = self.entries.get_mut(&key) {
             if sources.len() == entry.sources.len()
                 && sources
                     .iter()
@@ -248,7 +253,12 @@ impl Cache {
                         Arc::as_ptr(tile) == old.tile.as_ptr() && *opacity == old.opacity
                     })
             {
-                self.stats.hits = self.stats.hits.saturating_add(1);
+                if entry.translated {
+                    self.stats.translations = self.stats.translations.saturating_add(1);
+                    entry.translated = false;
+                } else {
+                    self.stats.hits = self.stats.hits.saturating_add(1);
+                }
                 return Ok(Arc::clone(&entry.mip));
             }
         }
@@ -400,6 +410,8 @@ impl Cache {
             self.entries.insert(
                 key,
                 Entry {
+                    translation_layer: self.translation_layer,
+                    translated: false,
                     sources: sources
                         .into_iter()
                         .map(|(tile, opacity, _, _)| Source {
@@ -711,9 +723,32 @@ fn render(
         diagnostic.visible_layers = cache.visible.len();
         diagnostic.lod = lod;
     }
-    if cache.configuration != configuration {
-        cache.entries.clear();
-        cache.configuration = configuration;
+    let translation_start = diagnostic.as_ref().map(|_| Instant::now());
+    cache.translation_layer = translation::certificate(snapshot);
+    let outcome = if cache.configuration != configuration {
+        cache.reconfigure(
+            snapshot,
+            configuration,
+            &coordinates,
+            lod,
+            if lod > 6 {
+                PixelFormat::LinearRgba32F
+            } else {
+                request.format
+            },
+            cancel,
+        )?
+    } else {
+        translation::Outcome {
+            reason: 2,
+            ..Default::default()
+        }
+    };
+    if let Some(diagnostic) = diagnostic.as_mut() {
+        diagnostic.translation_ns = translation_start.unwrap().elapsed().as_nanos() as u64;
+        diagnostic.translation_reason = outcome.reason;
+        diagnostic.remapped = outcome.remapped;
+        diagnostic.translation_rejected = outcome.rejected;
     }
     let local = lod.min(6);
     let edge = TILE_SIZE >> local;
@@ -755,7 +790,7 @@ fn render(
     }
     let compose_start = diagnostic.as_ref().map(|_| Instant::now());
     for coord in coordinates {
-        checkpoint(cancel)?;
+        translation::checkpoint("rebuild", cancel)?;
         let mip = cache.mip(snapshot, coord, local, kind, cancel)?;
         if lod <= 6 {
             blit(
