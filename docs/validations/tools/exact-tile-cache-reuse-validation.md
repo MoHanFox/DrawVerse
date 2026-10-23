@@ -238,3 +238,106 @@ powershell -ExecutionPolicy Bypass -File 'E:/Git/DrawVerse-local-build/artifacts
 启动脚本在包内新建 exclusive session/profile/temp，不覆盖用户 DrawVerse.ini、工作区或绘画。默认关闭诊断。本轮移除 SDK PATH/QT plugin 环境后使用包内依赖进行隔离 `--preview` 冒烟：退出0，生成157385B预览，检查三条实际笔迹；这是既有预览契约冒烟，不是完整人工功能验收或延迟测量。
 
 已证实：受限资格下真正减少合成/LOD工作、独立精确参考完整像素一致、原正常帧与历史屏障保持。未支持：S3组/链接蒙版、非对齐任意拖动、非均匀固定背景/上层等；均回退。未验收：学生真实作品/笔刷、实体数位板真实手感、肉眼顺滑、物理输入到显示延迟和峰值RSS。不会据此称“图层移动整体不卡了”。本轮最需要补的审查证据是上述未归因 pendingMoved 失败时的准确预览/输入状态，而不是继续扩大快路径；不自动实施新的优化。
+
+## C2-B-R 合并前审查（2026-10-23，追加记录）
+
+**合并建议：UNRESOLVED。** 完整缓存审查未发现需要修改的资格/取消/像素正确性漏洞。本轮在准确未优化 before 捕获了一次目标失败，可解释为测试目标输入已被后续非计划 MouseMove 改变；还修正了测试仅凭两点颜色不能核对目标位移的观察缺口。但历史 after pendingMoved 失败没有这些字段，不能将新原因套用到历史失败，也不能仅以第二轮通过改为 READY。没有发现可确证的缓存新回归，故不标 BLOCKED；仍不建议现在合并。
+
+### 审查范围和版本
+
+起点 `55cc2ea89f46f879ef28b2c14fd1b1776028061e`，fetch origin/upstream 后均与已知锚点一致，upstream/develop 仍为 `9462f84c10b34daf97296416df41d148468d3475`。审查的是 **9462f84c..55cc2ea 的全部产品差异**，含 merge 保留的 guarded 实现，而非最后一项文档提交。原三份完整日志及目标函数全部读取，关键输出另核对；没有重写旧分支、重做合并或操作上游工作区。
+
+| 本轮提交 | 内容 |
+| --- | --- |
+| `b17d590ba36469be4c8f21beb2981de3d57a246f` | 目标测试的默认关闭现场记录；PaintCoreClient 增加 GUI 线程按需只读 moveObservation，未进入正常调用路径 |
+| `b4017d146894ca868b704750637da010028d7031` | 测试增加已接纳目标上下文核对与确定性反例；区分“出现过像素匹配”和“整项断言通过” |
+| 对照 `db2108f57f8714208245f777a56e250c83710f40` / `41e749d70fccca64d8507673fa6d620da81e51d0` | 在原独立 before `c30ee4e...` 上分别应用完全相同两项观测/测试增量；没有产品复用快路径 |
+
+本节所在收尾提交只追加文档。缓存/呈现算法、Rust 源码与原 after `1e50b39e...` 相同，原 before 算法仍为准确合并后版本；本轮没有更改 C ABI、锁文件、配置格式、依赖、取消/预热/线程/输入合并或质量。两侧仍各自独立 CMake build/Cargo target，复用 SDK。逐次 invocation 记录准确源码、二进制摘要；每轮两侧的三个变更文件 Git 规范化摘要逐一一致。
+
+### 设计承诺与实现/证据逐项核对
+
+| 审查项 | 实际代码位置与结论 | 已有精确验证 |
+| --- | --- | --- |
+| 完整合成贡献的资格 | `paint-render/src/translation.rs::certificate` 遍历**所有层**，拒绝 group/mask/clipped/parent!=0/非Normal；唯一显式栅格且 white_extent=0，固定层只允许透明或 offset=0、white_extent=文档尺寸的隐式白；不是由 S2 夹具保证 | patterned_signed_moves... 的白/透明/非均匀背景组合；fixed_nonuniform_upper_layer... 的固定上层反例；groups_linked_and_fixed_masks... |
+| 层配置完整性 | `lib.rs::LayerConfiguration` / `render` 编码顺序、ID、blend、offset、seed、parent/group/mask/clip/white/visible/opacity/fill；`Cache::reconfigure` 只接受恰好一个差异，克隆旧项仅替换 offset 后必须完全相等，并匹配证书层 | non_aligned_special_stacks...、limited_budget_and_layer_order...、cold_evicted_edited...；链接状态组合本身已被资格拒绝，不是漏过蒙版贡献 |
+| 证书时效与文档身份 | `Cache::mip` 仅在实际构造 Entry 时盖 translation_layer；原坐标命中不重新盖证。当前 certificate 只用于候选，旧项还须有同证；同尺寸/同layer ID并不足以命中 | coarse_lod_and_same_size_document_replacement...；源编辑、冷/受限缓存和后续绘画/undo/redo测试 |
+| 不可变源与固定贡献 | `reconfigure` / `mip` 比较所有显式 Source 的长度、顺序、Weak分配身份及有效opacity。Weak保留旧分配身份避免地址ABA；`paint-core/src/pixels/tile.rs::Tile::edit_private` 在修改前 Arc::make_mut，使旧 Weak 失效。固定无显式瓦片的贡献由配置/均匀资格约束 | weak_cache_identity_detects_mid_stroke_writes_without_retaining_pixels；edited_source_phase...、actual_translation_counts... |
+| 对齐/相位/边界 | `reconfigure` 相对**当前**configuration，用 i64差值和实际TILE_SIZE取模；`full` 以u64检查旧/新完整瓦片，同维度/level/format、LOD≤TILE_SIZE.ilog2；目标加法/转换checked，缺项/新露出/部分边缘/负向越界拒绝 | 两格式/LOD0、2、6，非64文档、非零原相位、平移视口、(383,127)/(1,0)、正负/返回；独立 CpuRenderer 完整输出严格相等 |
+| 原精确回退 | 资格错误清空旧项并更新configuration；原坐标源不符则移除该项，执行原合成/LOD/blit；不改变offset或像素参考 | 非均匀背景/上层、特殊混合、组和两类蒙版、不对齐的实际计数/像素一致 |
+| 映射与资源 | `reconfigure` 使用独立新表， checked平移是单射，保留level/format且不原地覆盖；移动 Entry/Mip Arc，不增加源图强引用 | limited_budget...、原坐标hit/translation/miss生命周期断言 |
+| 取消和再次使用 | qualification前/后不动旧表；take之后至commit前取消留下空表/旧配置，commit后仅有效新表；Mutex串行持有，重建取消不返回部分帧 | translation_tests.rs 一个函数六个确定性时序，随后连续/返回正常渲染逐元素比对；不是靠随机重跑 |
+| 预算/逻辑计账 | `Entry::bytes` 包含新增Entry元数据；`prune`/`reconfigure`重新求和，移除/插入增减；保留预算不提高。临时表按原条目数有界，源仅Weak，Mip无像素复制 | retained_bytes求和/受限预算断言；没有新增峰值RSS实验，也不将逻辑量当进程总内存 |
+
+相关 `lib.rs` 入口：Cache::prune（189）、Cache::mip（206）、Entry盖证/计账（403起）、CachedCpuRenderer/CpuRenderer::render（504/517）、普通render（588，configuration/资格从699起）；`translation.rs` certificate（6）、full（65）、reconfigure（70）。行号对应本节缓存代码未变的版本，函数名是定位主依据。未发现具体新增核心覆盖缺口，因此复用原17函数和六取消时序，不重跑整包或性能矩阵，也不为覆盖率扩大资格。
+
+**调用范围不是“仅在COMMIT后”。** `paint-ffi/src/engine/session.rs::Engine` 为各view持有 CachedCpuRenderer，正常初始帧、设置后的正常帧、撤销恢复、提交/取消后的正常帧都可进入2143/2209的普通renderer；任意这样的调用都必须满足同一资格。`Engine::prepare_layer_move`（967起）调用 `liquify_api::move_preview_assets_cancellable`；当前 sampled preparation 使用 `render_sampled_preview`，不使用该瓦片缓存。`document/liquify_api.rs::encode_preview_assets` 的非sampled支路也会新建 CachedCpuRenderer，但新实例没有旧项，不能产生平移复用。
+
+对本目标**实际按住阶段**：session.rs 2124起在 index<2、preview_layer=0、layer_move_active 时选择 `render_interactive`→`render_sampled_preview`，不调用普通缓存。不能只依据代码的预期，已以本轮各次 BEGIN/UPDATE 的 sequence/generation 对应 task.enqueue(value=1)、view0/1及task身份核对；没有跨时钟相减。其他视口/在途旧正常任务仍可能并行调用普通renderer，不能笼统说“按住期间整个进程不可能运行缓存”。夹具自身为 PassThrough组+链接蒙版，普通支路也不满足平移资格；after 的相应正常帧记录 reason=4、translations=0，初次/未变配置则按cold/unchanged分类。此证据缩小本轮失败的疑点，不能反推缺现场的历史失败一定与优化无关。
+
+### 原断言到底保证什么
+
+夹具是3840×2160白底上满幅红层，加链接黑色蒙版斑（2000.5,1080.5，半径90），再放入PassThrough组，选中子层。原生窗口1024×720、canvas同尺寸、DPR=1、zoom=0.25、document origin=(32,90)。从文档(1200,1080)→(1584,1080)，实际窗口坐标(332,360)→(428,360)，独立期望整数位移=(384,0)。
+
+白点文档(100,1080)→local/image(57,360)，预期来自新露出白底；红点(800,1080)→(232,360)，预期来自移动后源x=416的红色区域，远离蒙版斑。原阈值 white: r/g/b>230；red: r>180且g/b<70，原整体AND、坐标映射及阈值全部保留。
+
+`layerMoveActive()` 在本地 BEGIN 排队后立即为true，不保证BEGIN/UPDATE已接纳，不保证对应帧到GUI，更不保证异步grab已使用那一帧。原QTRY像素条件会继续重试，但只看两点不能证明目标384已接纳；且颜色在不相关位移/较旧抓图上也可能成立。这是观测契约缺口，不是已证明的产品停更。
+
+### 新现场：一次有证据的新失败，不能覆盖旧失败
+
+首轮严格执行 before组合→after组合→before单独→after单独各一次。before组合目标失败，其余三次目标通过；组合中其他12功能行仍通过。现场记录显示：
+
+- BEGIN sequence=13，未准备；随后测试计划的Move应为(428,360)，但同窗口/画布紧接着收到未在该测试轨迹中请求的Move，例如(228,293)。按原逆变换：((228−332)/0.25,(293−360)/0.25)=**(−416,−268)**；after-original-mouse-move checkpoint已是该值。
+- `move.submit` sequence=14 的UPDATE值确为(−416,−268)，核心同sequence提交/接纳/应用，有对应interactive任务。之后仍有连续变化的输入、位移和新revision/frame，不是证据显示一直卡在同一预览。source=0 / device=1 本身不能区分 Qt合成和OS事件，因此只称“非计划输入”，未判定物理设备、源程序或用户操作。
+- 同一张首次失败图为1024×720、QImage format=18，两个采样均在界内、RGBA都是(255,0,0,255)：white=false、red=true，空图=false。白点不满足本来就要求的384目标。两点不是分别来自不同截图。
+- 记录的抓图#49曾出现 white=(255,255,255,255)、red=(255,0,0,255)，旧像素AND为true；同时GUI请求delta=(1880,56)、dirty=true，已接纳owner offset=(1848,72)。**不能由此说这张图恰按1880渲染**：其精确GPU帧身份未测，但足以反驳“两点匹配即证明当前目标384正确”。最后#51为white/white，红点也失败。
+- 无产品错误、无空图或grab超时；本次观察到的目标阶段没有 ApplicationDeactivate/WindowDeactivate/Ungrab 取消，不能标D。结束时断言失败、move仍active，未执行该测试后面的正常Escape/COMMIT部分，不能把该目标功能行记通过。
+
+分类：本轮这一次是 **B：输入夹具/观察条件不满足（非计划输入）**，并且发生在未优化基线；没有证明基线产品缺陷C，也不能因此排除历史A。历史after失败仍为 **E：现场字段不足、继续未归因**。C1 moved3失败、C2-A探索抓图崩溃、原八次ApplicationDeactivate各保持原边界，未合并归因。
+
+### 局部测试修正与可控反例
+
+没有修改产品缓存或预览策略。`PendingMoveEvidence::acceptedContext` 在**原颜色AND之外增加更强核对**：预期generation、owner、undoDepth和逆变换得到的实际目标delta；active且非starting/closing/dirty；UPDATE已完成（completedSequence≥sequence）；owner元数据offset吻合；GUI view0帧generation/revision与当前状态一致。没有增加超时/sleep、跳过按住阶段或屏蔽失焦/真实鼠标。输入被改变时仍会失败，不将它吞掉或改skip。
+
+确定性回归 `pendingMoveObservationRejectsUnrelatedState`（1功能函数）以记录的反例值检查旧颜色匹配不能替代目标上下文：合法状态接受；wrong dx/dy、starting/closing/dirty/inactive、未完成sequence、换generation、改变history、产品错误、旧frame revision、错误owner offset共12项拒绝。原两个RGBA标准仍在同一张真实grab上执行；初始红/红或空图仍不能通过，GUI帧停在旧revision也不能通过。新条件只是GUI端的必要关联，**不是grab的精确render-frame回执或全GPU像素证明**；稀疏颜色点与渲染侧帧归属的局限保留，不能拿最终getter称肉眼无停更。
+
+新增记录 `ui/tests/PendingMoveEvidence.h` 仅在 `DRAWVERSE_PENDING_MOVE_EVIDENCE` 指向已有新空输出目录时启用；最多256 captures/checkpoints/input行，各自溢出计数，原InteractionTrace仍有自身容量/溢出。仅观察本应用目标窗口/画布的鼠标与生命周期事件，不记录文本或系统键盘。截图来自原capture调用，没有额外截图；最多持有first/last failure及success三张图，结束后才写JSON/PNG。request、ready信号、wait返回、断言状态分别记录，均为GUI线程状态，明确不将ready时的getter认作图像帧身份。
+
+每次grab串行，QSharedPointer在原5000ms等待内保持结果；ready回调有QObject上下文并由scope guard在返回前断开，所有捕获栈引用都仍有效；不留重叠grab或退出后悬空回调。QPointer检测对象存活，observer先于window/client析构，失败返回也执行RAII导出。未跨线程读取GUI对象。首轮字段 `pending_succeeded` 只是“至少一次像素AND匹配”，**不表示Qt断言通过**（before组合就是反例）；第二提交改为any_pixel_match与显式pending_assertion_passed分开，统计始终以Qt结果/通过检查点为准，没有错误计作通过。
+
+### 有限对照结果与保留证据
+
+第一轮出现了上述可检验线索，故只追加第二轮，验证更强的目标状态核对；仍各组一次，不再进行第三轮。每轮顺序固定为before组合、after组合、before单独、after单独；表按目录名列出。全部日志实际创建D3D11并使用AMD 1002:1638，DPR=1/DPI=96；应用请求auto、报告实际启用wintab，本轮输入为Qt合成鼠标，不能将后端选择当实体驱动验收。没有切GPU、请求用户暂停工作或额外抢焦点。8进程退出码为第一轮before组合1、其余0；无崩溃、失活/失抓意外取消、进程超时或诊断溢出，成功函数内原定Escape取消保持。进程时长、QTRY/抓图等待不是处理/显示延迟。
+
+| 轮次/版本/方式 | 测试 HEAD | EXE SHA256 | 功能 pass/fail | 抓图次数 | 目标断言 |
+| --- | --- | --- | ---: | ---: | --- |
+| round-1-after-combo | `b17d590ba36469be4c8f21beb2981de3d57a246f` | `71210ae02f993dcc834a7378b43dd8d9f24cef00daebfa249e2a40f9eb22c838` | 13/0 | 7 | 通过 |
+| round-1-after-single | `b17d590ba36469be4c8f21beb2981de3d57a246f` | `71210ae02f993dcc834a7378b43dd8d9f24cef00daebfa249e2a40f9eb22c838` | 1/0 | 6 | 通过 |
+| round-1-before-combo | `db2108f57f8714208245f777a56e250c83710f40` | `4e64d786c82ea025c197dcd86d4ff6b4d40a730dd1dbec57b8e051d8e48fccd4` | 12/1 | 47 | 失败，保留现场 |
+| round-1-before-single | `db2108f57f8714208245f777a56e250c83710f40` | `4e64d786c82ea025c197dcd86d4ff6b4d40a730dd1dbec57b8e051d8e48fccd4` | 1/0 | 6 | 通过 |
+| round-2-after-combo | `b4017d146894ca868b704750637da010028d7031` | `cc439e1cf5aba66d4fc95aacd3cb1fefcd34254c13bb3a01af1db3f73e85c068` | 13/0 | 5 | 通过 |
+| round-2-after-single | `b4017d146894ca868b704750637da010028d7031` | `cc439e1cf5aba66d4fc95aacd3cb1fefcd34254c13bb3a01af1db3f73e85c068` | 1/0 | 6 | 通过 |
+| round-2-before-combo | `41e749d70fccca64d8507673fa6d620da81e51d0` | `8762681d62ce3f431cc8d8d38a07d30cb4685c5bb86f0a6c4eb0df497c2d0124` | 13/0 | 6 | 通过 |
+| round-2-before-single | `41e749d70fccca64d8507673fa6d620da81e51d0` | `8762681d62ce3f431cc8d8d38a07d30cb4685c5bb86f0a6c4eb0df497c2d0124` | 1/0 | 6 | 通过 |
+
+组合为3功能函数/13功能数据行；单独为1功能行。Qt每进程init/cleanup各一项已扣除。首轮27功能行执行通过/1失败；第二轮28通过/0失败；这是重复执行数，不是55个独立新用例。无窗口确定性回归另1函数通过，12反例不算12功能函数。未修改核心，复用原17函数/六取消时序、原FFI专项与原测量表，不重跑核心/性能全矩阵。只增量构建两侧qt_transform_tests和C头检查，均通过；没有环境/依赖升级，也没有新性能结论。
+
+证据独立放 `artifacts/issue-2-main-c2b-review/`，忽略且不提交：各round目录含invocation（准确HEAD/EXE/源码摘要）、test.txt/qt.log、core.json、pending-evidence.json及三种原图；round-1/2-order.json保留实际PID/退出码。`verified-review.json`核对相同观测源、实际后端、每段任务路径和功能结果；`review-product-diff.patch`保存完整审查差异，`evidence-sha256.json`记录现场文件摘要。原exact-merged及全部旧失败未覆盖。
+
+启用方式（只对这一个专项，输出目录需新建；不设置该变量即关闭现场记录）：
+
+```powershell
+# 已有 MSVC/Qt 环境，使用各工作树自己的build和Cargo target
+cmake --build build --config Release --target qt_transform_tests -j 2
+$reviewOut = Join-Path $PWD 'artifacts/issue-2-main-c2b-review/new-run'
+New-Item -ItemType Directory -Path $reviewOut -ErrorAction Stop
+$env:DRAWVERSE_PENDING_MOVE_EVIDENCE=$reviewOut
+$env:DRAWVERSE_MOVE_COMPLETION_TRACE=Join-Path $reviewOut 'core.json'
+$env:QT_QPA_PLATFORM='windows'; $env:QT_QUICK_BACKEND='rhi'; $env:QSG_RHI_BACKEND='d3d11'
+& ./build/bin/Release/qt_transform_tests.exe prewarmed4kResidentMoveReusesFullQualityTexturesAndRestoresFullFrame -o "$reviewOut/test.txt,txt"
+Remove-Item Env:DRAWVERSE_PENDING_MOVE_EVIDENCE,Env:DRAWVERSE_MOVE_COMPLETION_TRACE
+# 无窗口确定性状态关联回归
+& ./build/bin/Release/qt_transform_tests.exe pendingMoveObservationRejectsUnrelatedState
+```
+
+未更新运行包：只有测试、按需只读观测和文档改变，原完整Release包/产品SHA `1e50b39e...` 及二进制摘要继续保留。未创建PR、合并、关闭Issue或开展新优化/实体/RSS实验。合并仍缺的具体证据是：历史失败是否在**无非计划输入、目标384已接纳、无合法取消**时仍出现，以及该失败grab实际采用的渲染帧/路径；若再次发生，必须用现场记录分离这些条件，不以更多通过样本代替。当前保留UNRESOLVED，不要求用户现在配合设备或暂停工作。
