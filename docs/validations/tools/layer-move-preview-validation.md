@@ -92,3 +92,18 @@ Windows 11 / Qt6.8.3 / MSVC Release验证：
 `e5b8f19` 的512px资产基准与“中间2048方案”不再作为最终质量策略，历史日志 `move-start-density-*` 仅保留作调查记录。最终验收以本轮 `move-prewarm-*` 日志为准。ABI1.80/state45/VBR保持，无新增GPU计算算子。
 
 最终源码验证：`paint-core`移动核心10/10、`paint-render`交互4/4、`paint-ffi`库70通过+1手工忽略、移动/ABI相关`async_session` 63/63；完整`async_session`文件中另有outline与wet-dual两个VBR pressure behavior/capability用例在本次未触及的既有数据校验上单独失败，未混入本项通过计数。完整Qt变换套件软件与D3D11各69/69、D3D11 2倍DPI首拖通过；四套C11/C++20静态/共享ABI 4/4、严格Clippy、fmt与生成头一致检查通过。完整Release构建输出`build/bin/Release/drawverse.exe`、`paint_ffi.dll`及运行依赖，只有Qt SDK缺少translations/catalogs.json的既有部署警告。
+
+
+## 2026-10-26 Ctrl 拾取即时显示与结束闪烁修复
+
+根因：Qt 的 prepared 条件排除 pick，导致 PICK_DEFERRED 分支不可达，Ctrl 移动一直等待 CPU 像素。改为硬件可用时使用既有拾取延迟路径，核心先确认真实拾取目标；后台源就绪后，直接复用最近绝对位移的四顶点显示。普通 V 工具的预排策略保持。
+
+另一根因是关闭元数据处理无条件清除 resident，而当时主视口仍是修改前帧。现在关闭元数据仅在主帧 revision 已达最终 revision 时释放；否则保留到主视口像素回调，将图像与预览在同次 frameChanged 中交接。自由变换与液化沿用该共享交接。概览不能清除预览，关闭后到达的旧 resident 包仍被拒绝。
+
+新增 pickedMoveUsesLatestInputForActualTarget：当前活动层与拾取目标不同、无需事件循环的多次位移、source/image 复用、释放的最终像素/单历史、撤销及空拾取不移动原层。新增 residentCompletionWaitsForFinalPrimaryFrame 四行：移动/变换各提交与取消，通过公开 viewport 协议禁用主视口，等待关闭元数据及最终概览帧，验证预览始终保留；恢复主视口后验证最终像素、取消原图及历史。此五行在客户端层显式启用 resident 协议，不把软件渲染声称为 GPU。
+
+正常 Windows 隐藏服务环境下，完整 qt_transform_tests 软件/D3D11 各89项通过（含初始化/结束）；真实鼠标 Ctrl 拾取、其他活动工具下移动、空拾取、释放/取消及历史两项 UI 回归在两后端各4项通过（含初始化/结束）。完整 Release、生成头及四项 C/C++ 静态/共享 ABI 检查通过。build/bin/Release/drawverse.exe 已更新；ABI1.80/state45不变，无 Rust 核心或最终取样改动。
+
+首次受限沙箱定向运行的五项均停在 ready/brushLibraryReady 初始化失败，未执行功能断言；改在正常 Windows 环境运行定向7项及上述完整回归后通过。首次链接被运行中应用锁定，用户保存退出后完整构建通过。没有隐藏失败项或放宽原断言。
+
+日志：artifacts/move-handoff-focused-native.txt、move-handoff-transform-{software,d3d11}.txt、move-handoff-ui-{software,d3d11}.txt、move-handoff-release-build.log。测试证明即时 CPU 位移发布和交接时序；首次资源准备/冷盘/实体连续输入的端到端手感仍未量测，复杂有效蒙版等仍使用 CPU 回退。

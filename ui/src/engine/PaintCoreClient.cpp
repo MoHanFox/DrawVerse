@@ -1150,13 +1150,15 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         }
         if(m_layerMoveActive && !m_layerMoveStarting)flushLayerMove();
         if(m_drawing && m_liquifyActive && !m_dropStroke)flushLiquifyInput();
-        if(!m_liquifyActive && !m_layerMoveActive && !m_transformActive && m_residentPreview) {
-            m_residentPreview.reset();emit frameChanged();
-        }
         const bool progressGenerationChanged=m_generation!=info.document_generation;
         m_generation = info.document_generation;
         if(progressGenerationChanged)emit computationProgressChanged();
         m_revision = info.revision; m_width = static_cast<int>(info.width); m_height = static_cast<int>(info.height);
+        // Closing metadata can precede the final pixels. Keep the resident
+        // image until the primary frame can replace it without exposing the old frame.
+        if(m_residentPreview && !m_liquifyActive && !m_layerMoveActive && !m_transformActive && m_frameRevisions[0]>=m_revision) {
+            m_residentPreview.reset();emit frameChanged();
+        }
         m_undo = static_cast<int>(info.undo_depth); m_redo = static_cast<int>(info.redo_depth);
         if (info.completed_sequence >= m_pendingMutation) m_pendingMutation = 0;
         if (info.completed_sequence >= m_pendingLayer) m_pendingLayer=0;
@@ -1988,7 +1990,8 @@ bool PaintCoreClient::beginLayerMove(QPointF position,bool pick) {
         m_movePreparationRevision==m_revision &&
         (m_movePreparationIds.size()>1 || m_movePreparationLayer==m_active) &&
         m_movePreparationIds==targets;
-    const auto kind=pick?(prepared?PAINT_LAYER_MOVE_PICK_DEFERRED:PAINT_LAYER_MOVE_PICK):(prepared?PAINT_LAYER_MOVE_BEGIN_DEFERRED:PAINT_LAYER_MOVE_BEGIN);
+    const bool deferred=prepared || (pick && m_residentGpuPreviewAvailable);
+    const auto kind=pick?(deferred?PAINT_LAYER_MOVE_PICK_DEFERRED:PAINT_LAYER_MOVE_PICK):(prepared?PAINT_LAYER_MOVE_BEGIN_DEFERRED:PAINT_LAYER_MOVE_BEGIN);
     uint64_t sequence=0;
     PaintStatus status;QString error;
     {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(!pick && m_selectedLayers.size()>1){QVector<uint64_t> ids;for(auto id:m_selectedLayers)ids.append(id);status=paint_session_begin_layer_moves(m_connection->core,m_connection->session,ids.data(),uint32_t(ids.size()),prepared?1:0,&sequence);}else status=paint_session_layer_move(m_connection->core,m_connection->session,kind,m_active,pick?int(position.x()):0,pick?int(position.y()):0,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
@@ -1998,7 +2001,7 @@ bool PaintCoreClient::beginLayerMove(QPointF position,bool pick) {
     m_layerMoveSubmittedKind=kind;
     m_layerMoveSequence=sequence;m_layerMoveDelta={};m_layerMoveDirty=false;m_layerMoveFinish=false;
     m_layerMoveActive=true;m_layerMoveStarting=true;m_layerMoveClosing=false;
-    m_layerMoveGpuPresentation=prepared;m_layerMoveSource=prepared?m_movePreparation->sourceId:0;m_layerMoveAnchor.reset();
+    m_layerMoveGpuPresentation=deferred;m_layerMoveSource=prepared?m_movePreparation->sourceId:0;m_layerMoveAnchor.reset();
     m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();m_layerMoveTimer->start();emit stateChanged();return true;
 }
 void PaintCoreClient::updateLayerMove(QPoint delta) {

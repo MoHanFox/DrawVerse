@@ -201,3 +201,8 @@ SourceSampler保留原64个私有像素副本和FIFO语义，将缓存值改为�
 core/render/ffi全目标严格Clippy、fmt、生成头、四ABI消费者和完整Release构建部署通过。build/bin/Release/drawverse.exe与paint_ffi.dll更新，ABI1.79/state45/behavior37/VBR1.0保持，无新增GPU算子/缓存容量/任务上限。T2仍部分完成：有效固定/祖先蒙版继续CPU路径，后续需减少每输入颜色物化；首次资产/冷盘/实体手感另行验收。
 
 日志：artifacts/transform-sampling-{core,transform,public,native,software,d3d11,clippy,fmt,header,abi,build}.txt。
+
+
+## 2026-10-26 完成时旧画面闪回修复
+
+共享客户端不再在关闭元数据时提前释放 resident，等待最终主视口帧后交接；若最终帧先到则立即交接。新增自由变换提交/取消以及移动对应两行，刻意禁用主视口，在最终概览帧和关闭元数据均已到达后断言预览仍在，恢复主视口后验证最终像素与历史。完整变换输入软件/D3D11各89项、实际 Ctrl 移动 UI 两后端各4项、完整Release/生成头/四ABI通过。标准 build/bin/Release/drawverse.exe 已更新，无ABI/state或最终取样变化。过程与日志见[移动验收](layer-move-preview-validation.md#2026-10-26-ctrl-拾取即时显示与结束闪烁修复)，未声称实体端到端性能验收。

@@ -641,6 +641,69 @@ Window {
         frame=next["frame"].toObject();frame["revision"]=8;frame["frame"]=21;next["frame"]=frame;
         render=adopted;render["epoch"]=4;render["image_key"]="new";next["render"]=render;QVERIFY(accepts(make(next)));
     }
+    void pickedMoveUsesLatestInputForActualTarget() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("picked-move.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,96);
+        QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
+        const auto target=client.activeLayer();client.setBrushColor(Qt::red);client.setBrushRadius(5);client.brushLibrary()->setPressureSize(false);
+        QVERIFY(client.beginStroke({{32.5,32.5},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);
+        client.addLayer("other active layer");QTRY_VERIFY(!client.layerEditBusy());const auto other=client.activeLayer();QVERIFY(other!=target);
+        client.setResidentGpuPreviewAvailable(true);client.requestViewport(0,{0,0,128,96},{128,96});
+        QTRY_VERIFY(client.frameRevision()>=client.revision());const auto depth=client.undoDepth();
+        QVERIFY(client.beginLayerMove({32,32},true));client.updateLayerMove({14,6});
+        QTRY_VERIFY(!client.moveObservation().value("starting").toBool());QTRY_COMPARE(client.activeLayer(),target);
+        QTRY_VERIFY(client.residentPreview());QTRY_COMPARE(client.residentPreview()->presentationDelta,QPoint(14,6));
+        const auto anchor=client.residentPreview();const auto sequence=client.moveSequence();
+        for(const QPoint delta:{QPoint(-8,4),QPoint(),QPoint(24,12)}) {
+            client.updateLayerMove(delta);QCOMPARE(client.residentPreview()->presentationDelta,delta);
+            QCOMPARE(client.moveSequence(),sequence);QCOMPARE(client.residentPreview()->sourceId,anchor->sourceId);
+            QCOMPARE(client.residentPreview()->images[0].cacheKey(),anchor->images[0].cacheKey());
+        }
+        client.finishLayerMove({24,12},true);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);
+        QTRY_VERIFY(client.frameRevision()>=client.revision() && !client.residentPreview());
+        const auto moved=client.frame().pixelColor(56,44);QVERIFY(moved.red()>200 && moved.green()<60);
+        client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(!client.layerEditBusy());
+        QVERIFY(client.beginLayerMove({110,80},true));client.updateLayerMove({20,10});client.finishLayerMove({20,10},true);
+        QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth);QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
+    void residentCompletionWaitsForFinalPrimaryFrame_data() {
+        QTest::addColumn<bool>("transform");QTest::addColumn<bool>("commit");
+        for(bool transform:{false,true})for(bool commit:{false,true})
+            QTest::newRow(qPrintable(QString("%1-%2").arg(transform?"transform":"move",commit?"commit":"cancel")))<<transform<<commit;
+    }
+    void residentCompletionWaitsForFinalPrimaryFrame() {
+        QFETCH(bool,transform);QFETCH(bool,commit);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("handoff.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,96);
+        QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
+        client.setBrushColor(Qt::red);client.setBrushRadius(5);client.brushLibrary()->setPressureSize(false);
+        QVERIFY(client.beginStroke({{32.5,32.5},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);
+        client.setResidentGpuPreviewAvailable(true);client.requestViewport(0,{0,0,128,96},{128,96});
+        QTRY_VERIFY(client.frameRevision()>=client.revision());const auto before=client.frame();const auto depth=client.undoDepth();
+        if(transform) {
+            QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy());QTRY_VERIFY(client.residentPreview());
+            auto points=client.transformPoints();for(auto &point:points)point=point.toPointF()+QPointF(24,12);
+            QVERIFY(client.updateTransform(points,false,client.transformInterpolation()));
+        } else {
+            QVERIFY(client.beginLayerMove({32,32},true));QTRY_VERIFY(client.residentPreview());client.updateLayerMove({24,12});
+        }
+        QTRY_VERIFY(client.residentPreview()->revision>=client.revision());
+        // Delay only final primary delivery through the public viewport protocol.
+        // Overview pixels and close metadata must not retire the resident image.
+        client.requestViewport(0,{}, {},false);client.requestViewport(1,{0,0,128,96},{128,96});
+        bool exposedOldFrame=false;const auto minimum=client.residentPreview()->revision;
+        const auto observe=connect(&client,&PaintCoreClient::frameChanged,this,[&]{
+            if(!client.residentPreview() && client.frameRevision()<minimum)exposedOldFrame=true;
+        });
+        if(transform)QVERIFY(client.finishTransform(commit));else client.finishLayerMove({24,12},commit);
+        QTRY_VERIFY(!client.transformActive() && !client.layerMoveActive() && !client.transformBusy() && !client.layerEditBusy());
+        QTRY_VERIFY(client.frameRevision(1)>=client.revision());QVERIFY(client.residentPreview());QVERIFY(!exposedOldFrame);
+        const auto finalRevision=client.revision();QCOMPARE(client.undoDepth(),depth+(commit?1:0));
+        client.requestViewport(0,{0,0,128,96},{128,96});
+        QTRY_VERIFY(client.frameRevision()>=finalRevision && !client.residentPreview());QVERIFY(!exposedOldFrame);disconnect(observe);
+        if(commit){QVERIFY(client.frame()!=before);const auto pixel=client.frame().pixelColor(56,44);QVERIFY(pixel.red()>200 && pixel.green()<60);}
+        else QCOMPARE(client.frame(),before);
+        QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
     void residentMoveUsesLatestInputBeforeBackendRoundTrip() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("direct-move.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(128,96);
