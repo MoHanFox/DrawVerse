@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新颜色/基础参数增量发布：shared-settings-publication-fix设计/验收；大小/流量/不透明度补丁快照当前行，同进程验证来源只放行颜色/三值/选择，工具投影与复杂修改完整校验保持，候选相同复用编码。正常隐藏服务及三档隔离/立即像素/保存重开软件与D3D11定向通过；489项1/2/3文档各192移动零整库恢复/重建。单文档D3D11慢速最大心跳色轮297→22ms、三参数361–382→32–38ms，非端到端；三文档仍最高88ms。四ABI/生成头/Release通过，build/bin/Release更新；ABI1.80/state45不变，首次冷加载/实体持续未验收。
+
 - 最新第二点即时状态链路：shortcut-cursor-stroke-recovery设计/验收；Ctrl/Alt复用Space的KeyPress/KeyRelease即时状态发布，Hover/TabletMove/MouseRelease不再覆盖键盘快捷键，16ms轮询仅恢复丢失KeyRelease；画笔/橡皮/涂抹/套索8轮切换、无指针移动、漏modifier/物理键无Qt事件、重复Press与异常离笔软件/D3D11通过，Release与生成头更新build/bin/Release。ABI1.80/state45保持，实体持续输入仍待。
 
 - 最新第二点快捷键UI通知：shortcut-cursor-stroke-recovery设计/验收；光标getter统一读取刷新快照，16ms轮询能比较旧/新可见性，修复Alt前后均Blank时QML轮廓/吸色十字漏通知，笔尖姿态独立。真实Windows SendInput屏蔽Qt键事件、鼠标/笔悬停静止切换及原有漏modifier/重复Press，软件与D3D11各4功能通过；Release应用/头更新build/bin/Release。ABI1.80/state45保持，实体数位板连续输入仍待。

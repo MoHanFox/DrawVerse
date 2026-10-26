@@ -2301,7 +2301,8 @@ void PaintCoreClient::persistBrushPreferences(const QByteArray &state) {
     },Qt::QueuedConnection);
 }
 bool PaintCoreClient::restoreBrushPreferences(const QByteArray &state,const BrushLibrary *source) {
-    if(source && source->snapshot()==state && m_brushLibrary->restoreSharedSelection(*source))return true;
+    InteractionTrace::Scope trace("preferences.receiver.restore");
+    if(source && source->snapshot()==state && m_brushLibrary->restoreSharedSettings(*source))return true;
     if(!m_brushLibrary->restore(state))return false;
     // Other documents share catalog/preferences, while each client retains its active tool.
     // Receiving a different tool context must not start a persistence feedback loop.

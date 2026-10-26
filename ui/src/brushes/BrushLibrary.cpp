@@ -631,7 +631,23 @@ void BrushLibrary::update(int field,qreal value) {
     *target=value;
     // Standard previews use a fixed size, flow and opacity. Keep in-flight jobs valid.
     if(field!=0 && field!=1 && field!=6){p.preview.clear();p.error.clear();p.token=++m_nextToken;p.requested=0;}
-    changed();
+    if(field==0 || field==1 || field==6) {
+        // These three values cannot change the schema or standard preview.
+        // Patch only their executing row; reset baselines remain immutable.
+        const auto key=field==0?QStringLiteral("radius"):field==1?QStringLiteral("opacity"):QStringLiteral("flow");
+        const int at=index(m_selected);
+        const auto patch=[&](QJsonObject &object){auto rows=object.value("presets").toArray();auto row=rows[at].toObject();row[key]=value;rows[at]=row;object["presets"]=rows;};
+        if(!m_snapshotObjectCache.isEmpty()) {
+            patch(m_snapshotObjectCache);
+            if(m_toolIsolation) {
+                auto isolation=m_snapshotObjectCache.value("toolIsolation").toObject();auto profiles=isolation.value("profiles").toArray();
+                auto profile=profiles[m_toolContext].toObject();patch(profile);profiles[m_toolContext]=profile;isolation["profiles"]=profiles;m_snapshotObjectCache["toolIsolation"]=isolation;
+            }
+        }
+        if(!m_catalogObjectCache.isEmpty())patch(m_catalogObjectCache);
+        m_snapshotCache.clear();m_catalogCache.clear();m_persistTimer.start();
+        emit settingsChanged();emit presetChanged(m_selected);emit selectedPreviewChanged();
+    } else changed();
 }
 void BrushLibrary::setRadius(qreal value){
     update(0,value);
@@ -1562,11 +1578,12 @@ bool BrushLibrary::importAbr(const QByteArray &json,const QString &groupName) {
     if(!restore(QJsonDocument(state).toJson(QJsonDocument::Compact)))return false;
     queuePersistence();return true;
 }
-bool BrushLibrary::restoreSharedSelection(const BrushLibrary &source) {
+bool BrushLibrary::restoreSharedSettings(const BrushLibrary &source) {
+    InteractionTrace::Scope trace("preferences.receiver.selectionAttempt");
     // Both objects are GUI-owned validated models. Keep the receiver's active
-    // tool; all profile parameters must still match before accepting selection.
+    // tool; only colors, selection and the three basic scalar values may differ.
     if(m_toolIsolation!=source.m_toolIsolation)return false;
-    auto incoming=source.snapshotObject();const auto current=snapshotObject();
+    const auto published=source.snapshotObject();auto incoming=published;const auto current=snapshotObject();
     auto isolation=incoming.value("toolIsolation").toObject();
     isolation["context"]=current.value("toolIsolation").toObject().value("context");
     incoming["toolIsolation"]=isolation;
@@ -1576,6 +1593,7 @@ bool BrushLibrary::restoreSharedSelection(const BrushLibrary &source) {
         auto rows=incoming.value("presets").toArray();const auto active=current.value("presets").toArray();
         if(rows.size()!=active.size() || incoming.value("version")!=current.value("version") || incoming.value("brushTool")!=current.value("brushTool"))return false;
         for(qsizetype i=0;i<rows.size();++i){auto row=rows[i].toObject();const auto target=active[i].toObject();
+            if(row==target)continue;
             for(const auto *key:{"radius","opacity","flow"})row[key]=target.value(key);
             if(row!=target)return false;
         }
@@ -1584,24 +1602,43 @@ bool BrushLibrary::restoreSharedSelection(const BrushLibrary &source) {
         for(int tool=0;tool<3;++tool){const auto profile=profiles[tool].toObject();auto target=targets[tool].toObject();
             const auto sourceRows=profile.value("presets").toArray(),targetRows=target.value("presets").toArray();
             if(sourceRows.size()!=targetRows.size())return false;
-            for(qsizetype i=0;i<sourceRows.size();++i){const auto row=sourceRows[i].toObject(),other=targetRows[i].toObject();
-                for(const auto *key:{"id","radius","opacity","flow"})if(row.value(key)!=other.value(key))return false;
+            auto patched=targetRows;
+            if(sourceRows!=targetRows)for(qsizetype i=0;i<patched.size();++i){auto row=patched[i].toObject();const auto from=sourceRows[i].toObject();
+                if(row.value("id")!=from.value("id"))return false;
+                bool changed=false;for(const auto *key:{"radius","opacity","flow"})if(row.value(key)!=from.value(key)){row[key]=from.value(key);changed=true;}
+                if(changed)patched[i]=row;
             }
-            target["selected"]=profile.value("selected");profiles[tool]=target;
+            target["presets"]=patched;target["selected"]=profile.value("selected");profiles[tool]=target==profile?profile:target;
         }
         isolation["profiles"]=profiles;incoming["toolIsolation"]=isolation;
     }
     if(m_toolIsolation) {
-        // These executing fields are duplicated in the active tool profile.
-        // Comparing every profile below detects real edits in any tool, while
-        // retaining the receiver's already-applied executing parameters.
+        // Executing fields are duplicated in the active tool profile. Compare
+        // all profiles below, and project scalar values for the receiver's tool.
         for(const auto &key:{"version","presets","brushTool"})incoming[key]=current.value(key);
+        auto rows=incoming.value("presets").toArray();const auto projected=isolation.value("profiles").toArray()[m_toolContext].toObject().value("presets").toArray();
+        if(rows.size()!=projected.size())return false;
+        for(qsizetype i=0;i<rows.size();++i){auto row=rows[i].toObject();const auto from=projected[i].toObject();if(row.value("id")!=from.value("id"))return false;
+            bool changed=false;for(const auto *key:{"radius","opacity","flow"})if(row.value(key)!=from.value(key)){row[key]=from.value(key);changed=true;}
+            if(changed)rows[i]=row;
+        }
+        incoming["presets"]=rows;
     }
     incoming["selected"]=isolation.value("selections").toArray()[m_toolContext];
     auto reset=incoming.value("resetState").toObject();reset["selected"]=incoming.value("selected");incoming["resetState"]=reset;
-    return restoreSelectionOnly(incoming,false);
+    const auto sourceBytes=source.m_snapshotCache;
+    const auto sourceEncodings=source.m_encodedPresetArrays;
+    if(!restoreSelectionOnly(incoming,false,true))return false;
+    // With the same executing context the validated candidate is the exact
+    // source state. Reuse its encoding instead of encoding all rows again on
+    // the service client immediately before it saves this publication.
+    if(incoming==published) {
+        m_snapshotCache=sourceBytes;
+        m_encodedPresetArrays=sourceEncodings;
+    }
+    return true;
 }
-bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSelection) {
+bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSelection,bool sharedParameters) {
     // Only reuse our own previously validated snapshot. Every other field must
     // match exactly; external edits still pass through the complete validator.
     if(m_snapshotObjectCache.isEmpty())return false;
@@ -1628,18 +1665,59 @@ bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSel
     for(const auto &id:selections)if(!id.isString() || index(id.toString())<0)return false;
     if(selections[m_toolContext]!=selected)return false;
     isolation["selections"]=selections;isolation["profiles"]=profiles;expected["toolIsolation"]=isolation;
+    if(sharedParameters) {
+        // Only a validated, byte-matched in-process source can authorize these
+        // differences. External JSON retains the selection-only/full validator.
+        const auto patch=[](QJsonObject &target,const QJsonObject &source){
+            if(target.value("presets")==source.value("presets"))return true;
+            auto rows=target.value("presets").toArray();const auto incoming=source.value("presets").toArray();
+            if(rows.size()!=incoming.size())return false;
+            for(qsizetype i=0;i<rows.size();++i){auto row=rows[i].toObject();const auto from=incoming[i].toObject();
+                if(row==from)continue;
+                for(const auto *key:{"radius","opacity","flow"})row[key]=from.value(key);
+                if(row!=from)return false;
+                rows[i]=row;
+            }
+            target["presets"]=rows;return true;
+        };
+        if(!patch(expected,root))return false;
+        auto isolated=expected.value("toolIsolation").toObject();auto targets=isolated.value("profiles").toArray();
+        for(int i=0;i<targets.size();++i){auto target=targets[i].toObject();if(!patch(target,incoming[i].toObject()))return false;targets[i]=target;}
+        isolated["profiles"]=targets;expected["toolIsolation"]=isolated;
+        expected["colorState"]=root.value("colorState");
+    }
     if(expected!=root)return false;
+    QStringList parameterChanges;
+    const bool colorsChanged=sharedParameters && (m_foregroundColor!=QColor(root.value("colorState").toObject().value("foreground").toString()) || m_backgroundColor!=QColor(root.value("colorState").toObject().value("background").toString()));
+    if(sharedParameters) {
+        const auto assign=[](Preset &preset,const QJsonObject &row){const bool changed=preset.radius!=row.value("radius").toDouble() || preset.opacity!=row.value("opacity").toDouble() || preset.flow!=row.value("flow").toDouble();preset.radius=row.value("radius").toDouble();preset.opacity=row.value("opacity").toDouble();preset.flow=row.value("flow").toDouble();return changed;};
+        const auto rows=root.value("presets").toArray();
+        if(root.value("presets")!=m_snapshotObjectCache.value("presets"))
+            for(qsizetype i=0;i<m_presets.size();++i)if(assign(m_presets[i],rows[i].toObject()))parameterChanges.append(m_presets[i].id);
+        const auto previous=m_snapshotObjectCache.value("toolIsolation").toObject().value("profiles").toArray();
+        for(int tool=0;tool<incoming.size();++tool) {
+            const auto values=incoming[tool].toObject().value("presets");
+            if(values==previous[tool].toObject().value("presets"))continue;
+            for(const auto &value:values.toArray()){const auto row=value.toObject();auto found=m_toolProfiles[tool].presets.find(row.value("id").toString());if(found!=m_toolProfiles[tool].presets.end())assign(*found,row);}
+        }
+        m_foregroundColor=QColor(root.value("colorState").toObject().value("foreground").toString());m_backgroundColor=QColor(root.value("colorState").toObject().value("background").toString());
+    }
     const bool changed=m_selected!=selected.toString();
     m_selected=selected.toString();
     for(int i=0;i<3;++i)m_toolProfiles[i].selected=selections[i].toString();
     const auto items=preserveSelection?m_selectedItems:QJsonArray{QJsonObject{{"kind","preset"},{"id",m_selected}}};
     const bool selectionChangedValue=items!=m_selectedItems;m_selectedItems=items;
-    m_snapshotObjectCache=root;m_snapshotCache.clear();m_catalogCache.clear();
-    if(changed){emit settingsChanged();emit selectedPreviewChanged();}
+    m_snapshotObjectCache=root;m_snapshotCache.clear();
+    if(changed || !parameterChanges.isEmpty())m_catalogCache.clear();
+    if(!parameterChanges.isEmpty())m_catalogObjectCache={};
+    if(colorsChanged)emit activeColorsChanged();
+    if(changed || !parameterChanges.isEmpty()){emit settingsChanged();emit selectedPreviewChanged();}
+    for(const auto &id:parameterChanges)emit presetChanged(id);
     if(selectionChangedValue)emit selectionChanged();
     return true;
 }
 bool BrushLibrary::restore(const QByteArray &json,bool preserveSelection) {
+    InteractionTrace::Scope trace("preferences.restore.bytes");
     if(json.size()>32*1024*1024)return false;
     const auto root=QJsonDocument::fromJson(json).object();RestoreRows decoded;
     return restoreObject(root,preserveSelection,decoded);
@@ -1699,7 +1777,9 @@ void BrushLibrary::reusePreviews(QList<Preset> &presets) {
     }
 }
 bool BrushLibrary::restoreObject(const QJsonObject &root,bool preserveSelection,RestoreRows &decoded,bool executingBounded) {
+    InteractionTrace::Scope trace("preferences.restore.object");
     if(restoreSelectionOnly(root,preserveSelection))return true;
+    InteractionTrace::Scope full("preferences.restore.full");
     const auto rows=root.value("presets").toArray();
     QJsonObject executing{{"version",root.value("version")},{"selected",root.value("selected")},{"presets",root.value("presets")}};
     if(root.contains("organization"))executing["organization"]=root.value("organization");

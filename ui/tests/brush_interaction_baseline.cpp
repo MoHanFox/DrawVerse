@@ -44,9 +44,11 @@ QJsonObject stats(const QList<double> &values) {
 }
 }
 #include "BrushParameterProbe.h"
+#include "SharedSettingsProbe.h"
 class BrushInteractionBaseline : public QObject {
     Q_OBJECT
 private slots:
+    void sharedSettings(){runSharedSettingsProbe();}
     void parameters(){runBrushParameterProbe();}
     void dragFinalValues() {
         const auto output=qEnvironmentVariable("DRAWVERSE_INTERACTION_FINAL_REPORT");

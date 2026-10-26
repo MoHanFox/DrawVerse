@@ -434,7 +434,7 @@ public:
     using PreparedPreferencesPtr=std::shared_ptr<const PreparedPreferences>;
     static PreparedPreferencesPtr preparePreferences(const QByteArray &json);
     bool applyPreparedPreferences(const PreparedPreferencesPtr &prepared);
-    bool restoreSharedSelection(const BrushLibrary &source);
+    bool restoreSharedSettings(const BrushLibrary &source);
     QByteArray snapshot() const;
     QByteArray catalogSnapshot() const;
     bool applyNativeCatalog(const QByteArray &json);
@@ -491,7 +491,7 @@ private:
     QJsonObject snapshotObject() const;
     QByteArray encodeSnapshotObject(const QJsonObject &root,const QString &path) const;
     mutable QHash<QString,QPair<QJsonValue,QByteArray>> m_encodedPresetArrays;
-    bool restoreSelectionOnly(const QJsonObject &root,bool preserveSelection);
+    bool restoreSelectionOnly(const QJsonObject &root,bool preserveSelection,bool sharedParameters=false);
     void queuePersistence(bool catalog=true);
     QTimer m_persistTimer;
     mutable QByteArray m_snapshotCache,m_catalogCache;

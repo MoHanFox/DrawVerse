@@ -711,19 +711,21 @@ Main {
             QElapsedTimer timer;timer.start();qint64 reuseNs=0,referenceNs=0;
             for(int i=4;i<10;++i) {
                 source.setToolContext(i%3,false);QVERIFY(source.select(QString("context-%1").arg(i)));source.snapshot();
-                auto start=timer.nsecsElapsed();QVERIFY(receiver.restoreSharedSelection(source));reuseNs+=timer.nsecsElapsed()-start;QCOMPARE(receiver.toolContext(),tool);
+                auto start=timer.nsecsElapsed();QVERIFY(receiver.restoreSharedSettings(source));reuseNs+=timer.nsecsElapsed()-start;QCOMPARE(receiver.toolContext(),tool);
                 start=timer.nsecsElapsed();QVERIFY(reference.restore(source.snapshot()));reference.setToolContext(tool,false);referenceNs+=timer.nsecsElapsed()-start;
                 QCOMPARE(receiver.snapshot(),reference.snapshot());
             }
             qInfo()<<"512 cross-tool shared selection mode"<<mode<<"receiver tool"<<tool<<"six restores us reuse/full"<<reuseNs/1000<<referenceNs/1000;
             QCOMPARE(catalog.size(),0);QCOMPARE(persist.size(),0);QVERIFY(!receiver.persistencePending());
             QCOMPARE(receiver.presetInfo("round-pressure").value("preview").toString(),QString("context-preview"));
-            const auto before=receiver.snapshot();source.setRadius(31);source.snapshot();
-            QVERIFY(!receiver.restoreSharedSelection(source));QCOMPARE(receiver.snapshot(),before);
+            source.setRadius(31);source.snapshot();
+            QVERIFY(receiver.restoreSharedSettings(source));
             QVERIFY(reference.restore(source.snapshot()));reference.setToolContext(tool,false);
-            QVERIFY(receiver.restore(source.snapshot()));receiver.setToolContext(tool,false);QCOMPARE(receiver.snapshot(),reference.snapshot());
-            source.setActiveColors(Qt::red,Qt::blue);source.snapshot();const auto beforeColor=receiver.snapshot();
-            QVERIFY(!receiver.restoreSharedSelection(source));QCOMPARE(receiver.snapshot(),beforeColor);
+            QCOMPARE(receiver.snapshot(),reference.snapshot());
+            source.setActiveColors(Qt::red,Qt::blue);source.snapshot();
+            QVERIFY(receiver.restoreSharedSettings(source));
+            QVERIFY(reference.restore(source.snapshot()));reference.setToolContext(tool,false);QCOMPARE(receiver.snapshot(),reference.snapshot());
+            QCOMPARE(catalog.size(),0);
         }
     }
 
@@ -732,12 +734,12 @@ Main {
         QVERIFY(receiver.restore(source.snapshot()));receiver.setToolContext(1,false);receiver.snapshot();
         QSignalSpy catalog(&receiver,&BrushLibrary::presetsChanged);
         for(int tool:{1,2,0,2,1,0}) {
-            source.setToolContext(tool);source.snapshot();QVERIFY(receiver.restoreSharedSelection(source));
+            source.setToolContext(tool);source.snapshot();QVERIFY(receiver.restoreSharedSettings(source));
             QVERIFY(reference.restore(source.snapshot()));reference.setToolContext(1,false);
             QCOMPARE(receiver.catalogSnapshot(),reference.catalogSnapshot());QCOMPARE(receiver.hardness(),reference.hardness());QCOMPARE(receiver.writeBlend(),reference.writeBlend());
         }
         QCOMPARE(catalog.size(),0);const auto before=receiver.snapshot();
-        source.setHardness(.81);source.snapshot();QVERIFY(!receiver.restoreSharedSelection(source));QCOMPARE(receiver.snapshot(),before);
+        source.setHardness(.81);source.snapshot();QVERIFY(!receiver.restoreSharedSettings(source));QCOMPARE(receiver.snapshot(),before);
     }
 
     void resourceGridConsumesFastWheelAtBothEdges() {

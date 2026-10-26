@@ -27,6 +27,30 @@ QQuickItem *visual(QQuickItem *item,const QString &name){if(item->objectName()==
 class ColorStateTests : public QObject {
     Q_OBJECT
 private slots:
+    void scalarCacheMatchesColdConstructionAndSharedProjection() {
+        for(int mode=0;mode<3;++mode)for(int sender=0;sender<3;++sender)for(int tool=0;tool<3;++tool) {
+            BrushLibrary source,receiver,reference;source.setToolIsolation(mode);
+            for(int t=0;t<3;++t){source.setToolContext(t);source.setRadius(11+t);source.setFlow(.3+t*.1);source.setOpacity(.6+t*.1);}
+            source.setToolContext(sender);source.flushPersistence();
+            QVERIFY(receiver.restore(source.snapshot()));receiver.setToolContext(tool,false);receiver.snapshot();
+            QSignalSpy rebuilds(&receiver,&BrushLibrary::presetsChanged),feedback(&receiver,&BrushLibrary::persistRequested);
+            source.catalogSnapshot();InteractionTrace::start(true);
+            source.setRadius(36);source.setFlow(.27);source.setOpacity(.42);source.setActiveColors(Qt::red,Qt::blue);
+            const auto bytes=source.snapshot();
+            const auto setterTrace=InteractionTrace::finish();QCOMPARE(count(setterTrace,"snapshotObject.rebuild"),0);
+            BrushLibrary cold;QVERIFY(cold.restore(bytes));QCOMPARE(cold.snapshot(),bytes);QCOMPARE(cold.catalogSnapshot(),source.catalogSnapshot());
+            InteractionTrace::start(true);QVERIFY(receiver.restoreSharedSettings(source));
+            QCOMPARE(count(InteractionTrace::finish(),"preferences.restore.full"),0);
+            QVERIFY(reference.restore(bytes));reference.setToolContext(tool,false);
+            QCOMPARE(receiver.snapshot(),reference.snapshot());QCOMPARE(receiver.catalogSnapshot(),reference.catalogSnapshot());
+            QCOMPARE(receiver.toolContext(),tool);QCOMPARE(rebuilds.size(),0);QCOMPARE(feedback.size(),0);
+            for(int t=0;t<3;++t){receiver.setToolContext(t,false);reference.setToolContext(t,false);QCOMPARE(receiver.radius(),reference.radius());QCOMPARE(receiver.flow(),reference.flow());QCOMPARE(receiver.opacity(),reference.opacity());}
+            receiver.setToolContext(tool,false);receiver.snapshot();
+            const auto before=receiver.snapshot();source.setHardness(.37);QVERIFY(!receiver.restoreSharedSettings(source));QCOMPARE(receiver.snapshot(),before);
+            auto invalid=object(before);auto rows=invalid.value("presets").toArray();auto row=rows.first().toObject();row["flow"]=-1;rows[0]=row;invalid["presets"]=rows;
+            QVERIFY(!receiver.restore(QJsonDocument(invalid).toJson()));QCOMPARE(receiver.snapshot(),before);
+        }
+    }
     void catalogReusesCurrentPreferenceRowsWithoutChangingState() {
         for(int mode=0;mode<=2;++mode){
             BrushLibrary library;library.setToolIsolation(mode);
@@ -55,7 +79,7 @@ private slots:
                 QCOMPARE(actual,exact);
                 QCOMPARE(library.snapshot(),preferences); // Query must not lose dirty preferences.
                 QCOMPARE(count(trace,"catalogSnapshot.presetRows"),0);
-                QCOMPARE(count(trace,"catalogSnapshot.preference_rows_reused"),1);
+                QCOMPARE(count(trace,"catalogSnapshot.preference_rows_reused")+count(trace,"catalogSnapshot.object_reuse"),1);
             }
         }
     }
@@ -145,15 +169,20 @@ private slots:
         QCOMPARE(saved(path).value("colorState").toObject(),colors(Qt::green,Qt::yellow));
         QSignalSpy stopped(&reopened,&PaintCoreClient::stopped);reopened.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void documentBroadcastRetainsIsolatedToolsAndSingleWriter_data() {
+        QTest::addColumn<bool>("adoptInitial");QTest::newRow("normal-hidden-service")<<false;QTest::newRow("adopted-initial")<<true;
+    }
     void documentBroadcastRetainsIsolatedToolsAndSingleWriter() {
+        QFETCH(bool,adoptInitial);
         QTemporaryDir directory;const auto path=directory.filePath("shared.ini");QObject root;
-        PaintCoreClient first(nullptr,path);DocumentManager documents;documents.configure(&first,&root,true);
+        PaintCoreClient first(nullptr,path);DocumentManager documents;documents.configure(&first,&root,adoptInitial);
         QTRY_VERIFY(first.ready() && first.brushLibraryReady() && first.brushCatalogPrepared());
         auto *library=first.brushLibrary();library->setToolIsolation(2);library->setRadius(3);
         first.activateEraser();library->setRadius(7);first.activateBrush();library->flushPersistence();
         const auto id=documents.newDocument(64,64,true);QVERIFY(!id.isEmpty());auto *second=documents.client(id);QVERIFY(second);
         QTRY_VERIFY(second->ready() && second->brushLibraryReady());second->activateEraser();
         QTRY_COMPARE(second->brushRadius(),7.);library->snapshot();library->catalogSnapshot();second->brushLibrary()->snapshot();
+        QSignalSpy firstRebuilds(library,&BrushLibrary::presetsChanged),secondRebuilds(second->brushLibrary(),&BrushLibrary::presetsChanged);
         second->setBrushColor(Qt::red);second->setSecondaryBrushColor(Qt::blue);
         QTRY_COMPARE(first.brushColor(),QColor(Qt::red));QTRY_COMPARE(first.secondaryBrushColor(),QColor(Qt::blue));
         QTRY_VERIFY_WITH_TIMEOUT(saved(path).value("colorState").toObject()==colors(Qt::red,Qt::blue),15000);
@@ -162,6 +191,10 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(saved(path).value("colorState").toObject()==colors(Qt::blue,Qt::red),15000);
         QTRY_VERIFY(!library->persistencePending() && !second->brushLibrary()->persistencePending());
         QCOMPARE(first.brushRadius(),3.);QCOMPARE(second->brushRadius(),7.);
+        second->brushLibrary()->setRadius(9);second->brushLibrary()->setFlow(.31);second->brushLibrary()->setOpacity(.47);second->brushLibrary()->flushPersistence();
+        first.activateEraser();QCOMPARE(first.brushRadius(),9.);QCOMPARE(library->flow(),.31);QCOMPARE(library->opacity(),.47);
+        first.activateBrush();QCOMPARE(first.brushRadius(),3.);
+        QCOMPARE(firstRebuilds.size(),0);QCOMPARE(secondRebuilds.size(),0);
         QSignalSpy stopped(&documents,&DocumentManager::stopped);documents.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 };
