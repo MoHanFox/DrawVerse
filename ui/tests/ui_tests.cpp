@@ -691,7 +691,22 @@ private slots:
         width["pixels"]=120.;outline["width"]=width;QVERIFY(library.setStrokeOutline(outline));QVERIFY(retained());
         QVERIFY(library.setMaskResource(id,QString(64,'b')));prime();library.setHardness(.25);QVERIFY(retained());
         auto dual=library.dualBrush();dual["enabled"]=true;dual["resource"]=QString(64,'c');QVERIFY(library.setDualBrush(dual));prime();dual["hardness"]=.2;QVERIFY(library.setDualBrush(dual));QVERIFY(retained());
-        library.setPressureSize(true);QVERIFY(library.selectedPreview().isEmpty());
+        library.setPressureSize(true);QVERIFY(retained());
+    }
+    void pressureSwitchesKeepPreviewAndPendingJobs() {
+        BrushLibrary library;const auto id=library.selectedId();QSignalSpy requests(&library,&BrushLibrary::previewRequested);
+        library.requestPreview(id);const auto token=requests.last()[1].toULongLong();
+        const auto size=library.pressureSize(),flow=library.pressureFlow(),opacity=library.pressureOpacity();
+        library.setPressureSize(!size);library.setPressureFlow(!flow);library.setPressureOpacity(!opacity);
+        const QVariantList curve{QVariantList{0.,.2},QVariantList{1.,.8}};
+        for(const auto *target:{"size","flow","opacity"})QVERIFY(library.setPressureControl(target,curve,.3));
+        library.requestPreview(id);QCOMPARE(requests.size(),1);
+        library.acceptPreview(id,token,"pressure-cached");QCOMPARE(library.selectedPreview(),QString("pressure-cached"));
+        BrushLibrary reopened;QVERIFY(reopened.restore(library.snapshot()));
+        QCOMPARE(reopened.pressureSize(),!size);QCOMPARE(reopened.pressureFlow(),!flow);QCOMPARE(reopened.pressureOpacity(),!opacity);
+        QCOMPARE(reopened.pressureDynamics(),library.pressureDynamics());
+        library.setPressureSize(size);library.setPressureFlow(flow);library.setPressureOpacity(opacity);
+        library.requestPreview(id);QCOMPARE(requests.size(),1);QCOMPARE(library.selectedPreview(),QString("pressure-cached"));
     }
     void brushPreviewPolicyReusesInactiveToolProfilesAndErrors() {
         BrushLibrary library;const auto id=library.selectedId();QSignalSpy requests(&library,&BrushLibrary::previewRequested);
@@ -712,6 +727,9 @@ private slots:
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();const auto id=library->selectedId();
         library->requestPreview(id);QTRY_VERIFY2_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),qPrintable(library->previewMessage()),10000);
         const auto original=library->selectedPreview();QSignalSpy requests(library,&BrushLibrary::previewRequested);
+        library->setPressureSize(!library->pressureSize());library->setPressureFlow(!library->pressureFlow());library->setPressureOpacity(!library->pressureOpacity());
+        const QVariantList pressureCurve{QVariantList{0.,.2},QVariantList{1.,.8}};
+        for(const auto *target:{"size","flow","opacity"})QVERIFY(library->setPressureControl(target,pressureCurve,.3));
         library->setHueJitter(.8);library->setShapeSizeJitter(.7);library->setScatterAmount(3.);
         auto texture=library->texture();texture["depth"]=.2;QVERIFY(library->setTexture(texture));
         auto smoothing=library->smoothing();smoothing["positionMs"]=80.;QVERIFY(library->setSmoothing(smoothing));

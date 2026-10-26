@@ -13,3 +13,11 @@
 默认笔尖规范化不再借无效的最低圆度字段触发设备能力；预览显式保留启用倾斜/旋转动态所需的模拟样本。对应两项原有生成预览/保存重开测试软件4 passed（含初始化/结束），artifacts/preview-policy-active-device.txt。
 
 Release应用/测试与生成头检查通过，build/bin/Release/drawverse.exe于2026-10-26 22:21:12更新，最终构建日志artifacts/preview-policy-delivery-build.log；diff检查通过。没有运行全套或Rust/四ABI构建（此次无Rust/ABI变化）。没有新增实体笔输入或性能计时结论。
+
+## 2026-10-27 压感开关免刷新
+
+统一规则表以standard-pressure替代原先仅关闭时忽略曲线的规则。主笔尖、副笔尖和描边来源笔尖的标准预览固定开启大小/流量线性压感，不使用不透明度压感或用户曲线/最低值；真实笔刷和保存数据仍使用用户值。缓存键与实际预览请求同时规范化，避免重新生成后出现不同图像。
+
+按用户要求仅做最小验证：三项开关及曲线修改保留在途token和已生成图像，保存重开保留真实开关/曲线；既有条件规则回归；真实引擎修改后强制生成PNG完全一致；既有压感编辑器/导出导入及实际笔触alpha验证通过。四个功能在软件与D3D11各6 passed（含初始化/结束）、0 failed，日志artifacts/preview-pressure-{software,d3d11}.txt。未新增实体笔验收或性能计时。
+
+Release应用/测试构建及生成头检查通过，日志artifacts/preview-pressure-build.log；标准build/bin/Release/drawverse.exe更新于2026-10-27 01:00:08。无Rust源码/ABI1.80/state45变化，未跑无关全套。

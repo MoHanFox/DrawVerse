@@ -1,8 +1,6 @@
 #include "brushes/BrushPreviewPolicy.h"
 
 namespace {
-QVariantMap linearPressure(){return {{"curve",QVariantList{QVariantList{0.,0.},QVariantList{1.,1.}}},{"minimum",0.}};}
-
 void disabledModules(QVariantMap &tip) {
     for(const auto *key:{"scatterDynamics","shapeJitter","colorDynamics","texture","dualBrush","smoothing","wetMix","strokeTaper","strokeOutline",
                          "speedDynamics","tangentDynamics","distanceDynamics","tiltDynamics","rotationDynamics","directionDynamics","fadeDynamics"}) {
@@ -10,16 +8,11 @@ void disabledModules(QVariantMap &tip) {
         if(!module.value("enabled").toBool())tip.remove(key);
     }
 }
-void pressureControls(QVariantMap &tip) {
-    auto pressure=tip.value("pressureDynamics").toMap();
-    if(pressure.isEmpty()){tip.remove("pressureDynamics");return;}
-    for(const auto *target:{"size","flow"}) {
-        const auto flag=QString(target)=="size"?"pressureSize":"pressureFlow";
-        if(!tip.value(flag).toBool())pressure[target]=linearPressure();
-    }
-    if(!pressure.value("opacity").toMap().value("enabled").toBool())pressure.remove("opacity");
-    const QVariantMap defaults{{"size",linearPressure()},{"flow",linearPressure()}};
-    if(pressure==defaults)tip.remove("pressureDynamics");else tip["pressureDynamics"]=pressure;
+void standardPressure(QVariantMap &tip) {
+    // Keep the synthetic stroke independent of live pen pressure settings.
+    // Omitting pressureDynamics selects the engine's linear size/flow curves.
+    tip["pressureSize"]=true;tip["pressureFlow"]=true;
+    tip.remove("pressureDynamics");
 }
 void tipShape(QVariantMap &tip) {
     if(!tip.value("maskResource").toString().isEmpty() || !tip.value("resource").toString().isEmpty())tip["hardness"]=1.;
@@ -43,7 +36,7 @@ void randomSeeds(QVariantMap &tip) {
     }
 }
 void brushRules(QVariantMap &tip) {
-    disabledModules(tip);pressureControls(tip);tipShape(tip);randomSeeds(tip);
+    disabledModules(tip);standardPressure(tip);tipShape(tip);randomSeeds(tip);
 }
 void secondaryBrush(QVariantMap &tip) {
     auto dual=tip.value("dualBrush").toMap();if(dual.isEmpty())return;
@@ -67,7 +60,7 @@ void standardSample(QVariantMap &tip) {
 struct Rule {const char *name;void (*apply)(QVariantMap &);};
 const Rule rules[]={
     {"disabled-modules",disabledModules},
-    {"inactive-pressure-controls",pressureControls},
+    {"standard-pressure",standardPressure},
     {"tip-shape",tipShape},
     {"inactive-random-seeds",randomSeeds},
     {"secondary-brush",secondaryBrush},
