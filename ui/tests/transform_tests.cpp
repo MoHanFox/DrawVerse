@@ -189,6 +189,59 @@ private slots:
         QSKIP("Windows backend routing regression");
 #endif
     }
+    void tabletClickWithNativePenMouseDoesNotRepeatControlsOrDismissMenu() {
+#ifdef Q_OS_WIN
+        configureTabletInput("wintab");
+        if(activeTabletInputBackend()!=QStringLiteral("wintab"))QSKIP("WinTab unavailable");
+        const auto restore=qScopeGuard([]{configureTabletInput("auto");});
+        QVERIFY(isRedundantTabletMouseMessage("wintab",WM_LBUTTONDOWN,0xff515700u));
+        QVERIFY(isRedundantTabletMouseMessage("wintab",WM_LBUTTONUP,0xff515701u));
+        QVERIFY(!isRedundantTabletMouseMessage("wintab",WM_LBUTTONDOWN,0));
+        QVERIFY(!isRedundantTabletMouseMessage("wintab",WM_LBUTTONDOWN,0xff515780u));
+        QVERIFY(!isRedundantTabletMouseMessage("wintab",WM_MOUSEWHEEL,0xff515700u));
+        QVERIFY(!isRedundantTabletMouseMessage("wintab",WM_NCLBUTTONDOWN,0xff515700u));
+        QVERIFY(!isRedundantTabletMouseMessage("windows-ink",WM_LBUTTONDOWN,0xff515700u));
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("pen-click.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});
+        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());window->requestActivate();QVERIFY(QTest::qWaitForWindowActive(window));
+        QQmlComponent stepperComponent(&engine);stepperComponent.setData(R"(
+import QtQuick
+import "qrc:/qml/controls"
+CompactSpinBox { width: 120; height: 26; from: 0; to: 100; value: 10 }
+)",QUrl());
+        QScopedPointer<QObject> stepperObject(stepperComponent.create());auto *stepper=qobject_cast<QQuickItem*>(stepperObject.data());QVERIFY2(stepper,qPrintable(stepperComponent.errorString()));
+        stepper->setParentItem(window->contentItem());stepper->setPosition({350,35});stepper->setZ(10000);
+        auto *pen=new QPointingDevice("wintab",9251,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,3);pen->setParent(qApp);QWindowSystemInterface::registerInputDevice(pen);
+        const auto tablet=[&](QPointF scene,Qt::MouseButtons buttons){QWindowSystemInterface::handleTabletEvent(window,pen,QHighDpi::toNativeLocalPosition(scene,window),QHighDpi::toNativeGlobalPosition(window->mapToGlobal(scene),window),buttons,buttons?.5:0.,0,0,0,0,0);QWindowSystemInterface::flushWindowSystemEvents();};
+        POINT originalCursor;QVERIFY(GetCursorPos(&originalCursor));
+        const auto restoreCursor=qScopeGuard([&]{SetCursorPos(originalCursor.x,originalCursor.y);});
+        const auto native=[&](QPointF scene,ULONG_PTR extra) {
+            const auto global=QHighDpi::toNativeGlobalPosition(window->mapToGlobal(scene),window).toPoint();
+            if(!SetCursorPos(global.x(),global.y()))return false;
+            INPUT messages[2]{};
+            for(int i=0;i<2;++i){messages[i].type=INPUT_MOUSE;messages[i].mi.dwFlags=i?MOUSEEVENTF_LEFTUP:MOUSEEVENTF_LEFTDOWN;messages[i].mi.dwExtraInfo=extra;}
+            const bool sent=SendInput(2,messages,sizeof(INPUT))==2;
+            QTest::qWait(40);return sent;
+        };
+        const auto up=stepper->mapToScene({stepper->width()-10,stepper->height()/2});
+        tablet(up,Qt::LeftButton);tablet(up,Qt::NoButton);QCOMPARE(stepper->property("value").toInt(),11);
+        QVERIFY(native(up,ULONG_PTR(0xff515700)));QCOMPARE(stepper->property("value").toInt(),11);
+        // A real mouse and two independent fast pen clicks remain separate actions.
+        QVERIFY(native(up,0));QCOMPARE(stepper->property("value").toInt(),12);
+        for(int i=0;i<2;++i){tablet(up,Qt::LeftButton);tablet(up,Qt::NoButton);QVERIFY(native(up,ULONG_PTR(0xff515700)));}
+        QCOMPARE(stepper->property("value").toInt(),14);
+        auto *entry=findVisualItem(window->contentItem(),QStringLiteral("menuEntry:文件"));QVERIFY(entry);auto *menu=window->findChild<QObject*>("fileMenuPopup");QVERIFY(menu);
+        const auto menuAt=entry->mapToScene({entry->width()/2,entry->height()/2});
+        tablet(menuAt,Qt::LeftButton);tablet(menuAt,Qt::NoButton);QTRY_VERIFY(menu->property("visible").toBool());
+        QVERIFY(native(menuAt,ULONG_PTR(0xff515700)));QVERIFY(menu->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(menu,"close"));QTRY_VERIFY(!menu->property("visible").toBool());
+        QVERIFY(!client.drawing());QCOMPARE(client.undoDepth(),0);QVERIFY(client.lastError().isEmpty());
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+#else
+        QSKIP("Windows pen promoted mouse regression");
+#endif
+    }
     void ordinaryTabletControlsAndTextFocusRemainNormal() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("controls.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());QQmlEngine engine;
@@ -202,6 +255,7 @@ Window {
     CompactCheckBox { objectName: "toggle"; x: 350; y: 40; width: 180; height: 30; text: "pen toggle" }
     CompactTextField { objectName: "text"; x: 350; y: 100; width: 180; height: 30 }
     CompactSlider { objectName: "slider"; x: 350; y: 160; width: 180; from: 0; to: 100; value: 20 }
+    CompactSpinBox { objectName: "stepper"; x: 350; y: 220; width: 120; from: 0; to: 100; value: 10 }
 })",QUrl());
         QScopedPointer<QObject> root(component.create());QVERIFY2(root,qPrintable(component.errorString()));auto *window=qobject_cast<QQuickWindow*>(root.data());QVERIFY(window);
         auto *canvas=new CanvasItem(window->contentItem());canvas->setSize({300,300});canvas->setClient(&client);
@@ -216,6 +270,10 @@ Window {
         // Two further valid fast clicks must not be suppressed by a time debounce.
         for(int i=0;i<2;++i){input(point,Qt::LeftButton,.5);input(point,Qt::NoButton,0);}QCOMPARE(clicks.size(),3);QVERIFY(toggle->property("checked").toBool());
         input(point,Qt::RightButton,0);input(point,Qt::NoButton,0);QCOMPARE(clicks.size(),3);
+        auto *stepper=findVisualItem(window->contentItem(),"stepper");QVERIFY(stepper);
+        const auto up=stepper->mapToScene({stepper->width()-10,stepper->height()/2});
+        input(up,Qt::NoButton,0);input(up,Qt::LeftButton,.5);input(up,Qt::NoButton,0);
+        QCOMPARE(stepper->property("value").toInt(),11);
         const auto start=slider->mapToScene({40,11}),end=slider->mapToScene({140,11});input(start,Qt::LeftButton,.5);input(end,Qt::LeftButton,.5);input(end,Qt::NoButton,0);QVERIFY(slider->property("value").toDouble()>60);
         text->forceActiveFocus();QVERIFY(text->hasActiveFocus());for(auto key:{Qt::Key_A,Qt::Key_Space,Qt::Key_B})QTest::keyClick(window,key);QCOMPARE(text->property("text").toString(),QString("a b"));QVERIFY(!canvas->spacePanning());QVERIFY(!client.drawing());QCOMPARE(client.undoDepth(),0);
         canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);

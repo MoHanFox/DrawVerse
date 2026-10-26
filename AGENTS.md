@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新手绘笔按钮重复点击：wintab-duplicate-device设计/验收2026-10-26末节；WinTab启用时仅对应用Quick窗口过滤Windows笔标记伴随鼠标消息，原Tablet控件回退保留，无时间防抖。像素单击+1、带标记消息不重复、真实鼠标/快速笔点击及顶栏菜单通过；相关控件/菜单/收笔最小回归软件/D3D11各6，Release与生成头通过，标准exe更新。ABI1.80/state45保持；用户高漫+Ink为背景，测试为真实Windows队列注入，实体驱动仍待用户确认。
+
 - 最新编辑错误及GPU空转修复：layer-move-preview设计/验收2026-10-26末节；移动预热清理按实际资源状态幂等，核心允许液化/变换期间仅清缓存，真实修改仍BUSY。复现两条截图错误，D3D11静止400ms清理/呈现液化28/29、变换31/31→均0/0且零错误。按用户要求最小验证：新增公开ABI1项、Qt两行软件/D3D11各4、四ABI/生成头/fmt/Release应用构建通过，标准exe/DLL更新。ABI1.80/state45不变；未跑全套或量测GPU利用率百分比。
 
 - 最新Ctrl移动及结束闪回修复：layer-move-preview/transform-resident-preview设计验收2026-10-26末节；Ctrl启用既有PICK_DEFERRED，核心拾取实际目标后后台源就绪即复用最新四顶点位移。关闭元数据保留resident至最终主视口revision，避免移动/自由变换露出旧帧；概览不触发交接。新增五行协议回归、完整变换输入软件/D3D11各89、真实Ctrl移动UI各4、四ABI/生成头/完整Release通过，build/bin/Release更新。ABI1.80/state45保持；首次冷资源/实体连续手感未量测，复杂蒙版仍CPU回退。

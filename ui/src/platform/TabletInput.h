@@ -14,3 +14,7 @@ QString activeTabletInputBackend();
 bool acceptTabletInputDevice(const QString &backend,const QPointingDevice *device);
 // Call before either canvas handling or tablet-to-mouse menu forwarding.
 bool rejectTabletInputEvent(QEvent *event);
+
+// Native Windows pen promotion is separate from Tablet and may appear as a
+// primary-mouse event in Qt. Only suppress the redundant WinTab client stream.
+bool isRedundantTabletMouseMessage(const QString &backend,quint32 message,quintptr extraInfo);
