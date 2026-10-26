@@ -1437,7 +1437,9 @@ QVector<quint64> PaintCoreClient::currentMoveTargets() const {
     return m_active?QVector<quint64>{m_active}:QVector<quint64>{};
 }
 void PaintCoreClient::clearLayerMovePreparation() {
-    if(!m_movePreparationRequest && !m_movePreparation && !m_movePreparationPendingRequest)return;
+    // The request counter stays monotonic to reject stale results. It is not
+    // evidence of live preparation: clearing an already empty cache must be a no-op.
+    if(!m_movePreparation && !m_movePreparationPendingRequest && !m_movePreparationCompleted)return;
     ++m_movePreparationRequest;
     if(!m_movePreparationRequest)++m_movePreparationRequest;
     m_movePreparation.reset();

@@ -641,6 +641,35 @@ Window {
         frame=next["frame"].toObject();frame["revision"]=8;frame["frame"]=21;next["frame"]=frame;
         render=adopted;render["epoch"]=4;render["image_key"]="new";next["render"]=render;QVERIFY(accepts(make(next)));
     }
+    void movePreparationClearsOnceDuringOtherEdits_data() {
+        QTest::addColumn<bool>("liquify");QTest::newRow("liquify")<<true;QTest::newRow("transform")<<false;
+    }
+    void movePreparationClearsOnceDuringOtherEdits() {
+        QFETCH(bool,liquify);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("preparation-clear.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,96);
+        QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
+        client.setBrushRadius(5);QVERIFY(client.beginStroke({{32,32},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);
+        QQuickWindow window;window.resize(256,192);auto *canvas=new CanvasItem(window.contentItem());
+        canvas->setSize({256,192});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        QTRY_VERIFY(client.frameRevision()>=client.revision());client.setMoveTool(true);QTRY_VERIFY(client.movePreparation());
+        const auto depth=client.undoDepth();QStringList errors;
+        connect(&client,&PaintCoreClient::errorChanged,this,[&]{if(!client.lastError().isEmpty())errors.append(client.lastError());});
+        QVERIFY(liquify?client.beginLiquify():client.beginTransform());
+        QTRY_VERIFY(liquify?client.liquifyActive()&&!client.liquifyBusy():client.transformActive()&&!client.transformBusy());
+        QTRY_VERIFY(!client.movePreparation());QTest::qWait(250);
+        const auto request=client.movePreparationRequest();const auto completed=client.moveObservation().value("completedSequence");
+        QSignalSpy swaps(&window,&QQuickWindow::frameSwapped);QTest::qWait(400);
+        qInfo()<<"idle edit"<<(liquify?"liquify":"transform")<<"gpu"<<canvas->gpuDisplay()<<"frame swaps in 400ms"<<swaps.size()
+               <<"cleanup requests"<<(client.movePreparationRequest()-request)<<"errors"<<errors.size();
+        QVERIFY2(client.lastError().isEmpty(),qPrintable(client.lastError()));QCOMPARE(errors.size(),0);
+        QCOMPARE(client.movePreparationRequest(),request);QCOMPARE(client.moveObservation().value("completedSequence"),completed);
+        QVERIFY2(swaps.size()<=2,qPrintable(QString("idle frame swaps: %1").arg(swaps.size())));
+        QVERIFY(liquify?client.finishLiquify(false):client.finishTransform(false));
+        QTRY_VERIFY(!client.liquifyActive()&&!client.transformActive());QCOMPARE(client.undoDepth(),depth);
+        QTRY_VERIFY(client.movePreparation());QVERIFY(client.beginLayerMove({32,32}));client.updateLayerMove({8,4});client.finishLayerMove({8,4},true);
+        QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);QVERIFY(client.lastError().isEmpty());
+        canvas->setClient(nullptr);client.shutdown();
+    }
     void pickedMoveUsesLatestInputForActualTarget() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("picked-move.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newTransparentDocument(128,96);

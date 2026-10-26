@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新编辑错误及GPU空转修复：layer-move-preview设计/验收2026-10-26末节；移动预热清理按实际资源状态幂等，核心允许液化/变换期间仅清缓存，真实修改仍BUSY。复现两条截图错误，D3D11静止400ms清理/呈现液化28/29、变换31/31→均0/0且零错误。按用户要求最小验证：新增公开ABI1项、Qt两行软件/D3D11各4、四ABI/生成头/fmt/Release应用构建通过，标准exe/DLL更新。ABI1.80/state45不变；未跑全套或量测GPU利用率百分比。
+
 - 最新Ctrl移动及结束闪回修复：layer-move-preview/transform-resident-preview设计验收2026-10-26末节；Ctrl启用既有PICK_DEFERRED，核心拾取实际目标后后台源就绪即复用最新四顶点位移。关闭元数据保留resident至最终主视口revision，避免移动/自由变换露出旧帧；概览不触发交接。新增五行协议回归、完整变换输入软件/D3D11各89、真实Ctrl移动UI各4、四ABI/生成头/完整Release通过，build/bin/Release更新。ABI1.80/state45保持；首次冷资源/实体连续手感未量测，复杂蒙版仍CPU回退。
 
 - 最新移动GPU即时显示：layer-move-preview设计/验收2026-10-26节；核心确认BEGIN来源后，CPU按最新绝对输入计算四顶点UV，Qt GPU复用纹理，不等待16ms提交/后台回包；独立显示位移参与几何及观察身份，旧回包不回退画面，快释放/取消与无源CPU回退保持。完整变换输入软件/D3D11各84、移动专项各5、高DPI实际DPR3共5、四ABI/生成头/完整Release通过，build/bin/Release更新。软件抓图证据改为等待真实ready回执，原像素/关联条件保持；ABI1.80/state45不变。复杂有效蒙版等仍CPU回退，首次冷页及实体持续手感未验收。

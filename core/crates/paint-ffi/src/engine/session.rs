@@ -1363,6 +1363,7 @@ impl Engine {
             && !matches!(
                 operation,
                 Operation::Transform(..)
+                    | Operation::ClearLayerMovePreparation
                     | Operation::TransformLayers(..)
                     | Operation::HistorySelect { .. }
                     | Operation::File(_)
@@ -1373,7 +1374,10 @@ impl Engine {
         if self.document.liquify_active()
             && !matches!(
                 operation,
-                Operation::Liquify(..) | Operation::HistorySelect { .. } | Operation::File(_)
+                Operation::Liquify(..)
+                    | Operation::ClearLayerMovePreparation
+                    | Operation::HistorySelect { .. }
+                    | Operation::File(_)
             )
         {
             return Err(paint_core::Error::Busy.into());

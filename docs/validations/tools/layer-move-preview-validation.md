@@ -107,3 +107,21 @@ Windows 11 / Qt6.8.3 / MSVC Release验证：
 首次受限沙箱定向运行的五项均停在 ready/brushLibraryReady 初始化失败，未执行功能断言；改在正常 Windows 环境运行定向7项及上述完整回归后通过。首次链接被运行中应用锁定，用户保存退出后完整构建通过。没有隐藏失败项或放宽原断言。
 
 日志：artifacts/move-handoff-focused-native.txt、move-handoff-transform-{software,d3d11}.txt、move-handoff-ui-{software,d3d11}.txt、move-handoff-release-build.log。测试证明即时 CPU 位移发布和交接时序；首次资源准备/冷盘/实体连续输入的端到端手感仍未量测，复杂有效蒙版等仍使用 CPU 回退。
+
+
+## 2026-10-26 液化/自由变换错误循环与静止重绘
+
+用户截图的两条任务错误3均已复现：移动预热后进入液化提示 finish or cancel the active stroke first，进入变换提示 transform active。clearLayerMovePreparation 把永久保留的单调 request ID 当作尚有准备资源，每次 metadata 再次清理；核心编辑互斥又拒绝清理，生成下一次 metadata/error。变换活动状态的通知及液化相关刷新不断使窗口重绘。
+
+修复仅两处生产行为：Qt 按资产/pending/completed 判断是否需要清理，清理后为空即不再提交；Rust 允许液化/变换期间 ClearLayerMovePreparation 这一仅失效共享缓存的操作，真实修改继续BUSY。请求编号仍单调，旧结果拒绝保持。ABI1.80/state45不变。
+
+最小验证遵从用户本次要求，未跑完整套件：公开 async_session 新增一项（覆盖两工具），验证两次清理成功、revision/历史/flags/resident source不变、准备不可再读，以及Undo真实冲突仍BUSY；修复前失败、修复后通过。Qt 新增两行在正常Windows D3D11/software各4项通过（含init/cleanup），覆盖预热→编辑→静止→取消→重新预热→移动单历史。原代码两行均复现截图错误。
+
+| D3D11静止编辑 | 修复前400ms清理请求 | 修复前400ms窗口呈现 | 修复后400ms清理请求/呈现 | 修复后实际错误 |
+| --- | ---: | ---: | ---: | ---: |
+| 液化 | 28 | 29 | 0 / 0 | 0 |
+| 自由变换 | 31 | 31 | 0 / 0 | 0 |
+
+软件后端修复后同样零请求/呈现/错误。窗口呈现与请求计数证明该反馈空转被切断，并非GPU利用率/显存或用户复杂文档拖动负载的百分比实测。已停止静止空转原因，未据此宣称所有GPU负载问题均完成。
+
+Release应用/定向测试构建、生成头检查、重链后的四ABI、fmt与diff检查通过，标准build/bin/Release/drawverse.exe及paint_ffi.dll更新。日志：artifacts/move-clear-{before,d3d11,software}.txt、move-clear-core-{before,after}.txt、move-clear-{build,tests-build,abi-build}.log、move-clear-abi.txt。
