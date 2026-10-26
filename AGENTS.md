@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新移动GPU即时显示：layer-move-preview设计/验收2026-10-26节；核心确认BEGIN来源后，CPU按最新绝对输入计算四顶点UV，Qt GPU复用纹理，不等待16ms提交/后台回包；独立显示位移参与几何及观察身份，旧回包不回退画面，快释放/取消与无源CPU回退保持。完整变换输入软件/D3D11各84、移动专项各5、高DPI实际DPR3共5、四ABI/生成头/完整Release通过，build/bin/Release更新。软件抓图证据改为等待真实ready回执，原像素/关联条件保持；ABI1.80/state45不变。复杂有效蒙版等仍CPU回退，首次冷页及实体持续手感未验收。
+
 - 最新颜色/基础参数增量发布：shared-settings-publication-fix设计/验收；大小/流量/不透明度补丁快照当前行，同进程验证来源只放行颜色/三值/选择，工具投影与复杂修改完整校验保持，候选相同复用编码。正常隐藏服务及三档隔离/立即像素/保存重开软件与D3D11定向通过；489项1/2/3文档各192移动零整库恢复/重建。单文档D3D11慢速最大心跳色轮297→22ms、三参数361–382→32–38ms，非端到端；三文档仍最高88ms。四ABI/生成头/Release通过，build/bin/Release更新；ABI1.80/state45不变，首次冷加载/实体持续未验收。
 
 - 最新第二点即时状态链路：shortcut-cursor-stroke-recovery设计/验收；Ctrl/Alt复用Space的KeyPress/KeyRelease即时状态发布，Hover/TabletMove/MouseRelease不再覆盖键盘快捷键，16ms轮询仅恢复丢失KeyRelease；画笔/橡皮/涂抹/套索8轮切换、无指针移动、漏modifier/物理键无Qt事件、重复Press与异常离笔软件/D3D11通过，Release与生成头更新build/bin/Release。ABI1.80/state45保持，实体持续输入仍待。

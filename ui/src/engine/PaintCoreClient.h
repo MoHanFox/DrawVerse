@@ -608,6 +608,7 @@ private:
     std::function<void()> m_afterTransform;
     bool submitTransform(quint32 kind,const PaintTransform *geometry=nullptr);
     void flushLayerMove();
+    void refreshLayerMovePresentation();
     void requestLayerMovePreparation();
     void clearLayerMovePreparation();
     qreal currentMovePreparationScale() const;
@@ -619,6 +620,9 @@ private:
     int m_layerMoveSubmittedKind=0;
     MoveReceipt m_moveReceipt;
     QPoint m_layerMoveDelta;
+    bool m_layerMoveGpuPresentation=false;
+    quint64 m_layerMoveSource=0;
+    ResidentPreviewPtr m_layerMoveAnchor;
     bool m_transformActive=false,m_transformWarp=false,m_transformPublished=false,m_transformLinked=true;
     QVariantList m_transformInitialPoints;
     qreal m_transformSkewH=0,m_transformSkewV=0;

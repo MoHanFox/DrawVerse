@@ -641,6 +641,59 @@ Window {
         frame=next["frame"].toObject();frame["revision"]=8;frame["frame"]=21;next["frame"]=frame;
         render=adopted;render["epoch"]=4;render["image_key"]="new";next["render"]=render;QVERIFY(accepts(make(next)));
     }
+    void residentMoveUsesLatestInputBeforeBackendRoundTrip() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("direct-move.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(128,96);
+        QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
+        client.addLayer("moving");QTRY_VERIFY(!client.layerEditBusy());
+        client.setBrushColor(Qt::red);client.setBrushRadius(5);client.brushLibrary()->setPressureSize(false);
+        const auto paintDepth=client.undoDepth();
+        QVERIFY(client.beginStroke({{32.5,32.5},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),paintDepth+1);
+        const auto depth=client.undoDepth();
+        QQuickWindow window;window.resize(512,384);auto *canvas=new CanvasItem(window.contentItem());
+        canvas->setSize({512,384});canvas->setClient(&client);window.show();window.requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(&window));canvas->actualSize();
+        const auto screen=[&](QPointF p){return(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
+        const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return QImage{};return grab->image();};
+        const auto red=[&](const QImage &image,QPointF p){const auto c=image.pixelColor(screen(p)*window.devicePixelRatio());return c.red()>200 && c.green()<60 && c.blue()<60;};
+        QTRY_VERIFY(client.frameRevision()>=client.revision());client.setMoveTool(true);
+        QTRY_VERIFY_WITH_TIMEOUT(client.movePreparation(),10000);
+        if(canvas->gpuDisplay())QTRY_VERIFY(client.movePreparation()->uploads->load()>0);
+        QVERIFY(client.beginLayerMove({32,32}));
+        QTRY_VERIFY(!client.moveObservation().value("starting").toBool());
+        if(canvas->gpuDisplay()) {
+            QTRY_VERIFY(client.residentPreview());const auto anchor=client.residentPreview();
+            const auto revision=client.revision(),sequence=client.moveSequence(),uploads=anchor->uploads->load();
+            // No event-loop turn: no timer submission or backend receipt can drive these packets.
+            for(const QPoint delta:{QPoint(19,7),QPoint(-12,-8),QPoint(),QPoint(28,14)}) {
+                client.updateLayerMove(delta);const auto preview=client.residentPreview();QVERIFY(preview);
+                QCOMPARE(preview->presentationDelta,delta);QCOMPARE(client.revision(),revision);QCOMPARE(client.moveSequence(),sequence);
+                QCOMPARE(preview->revision,anchor->revision);QCOMPARE(preview->sourceId,anchor->sourceId);
+                QCOMPARE(preview->images[0].cacheKey(),anchor->images[0].cacheKey());
+                const auto du=(anchor->vertices[1][2]-anchor->vertices[0][2])/128;
+                const auto dv=(anchor->vertices[2][3]-anchor->vertices[0][3])/96;
+                QVERIFY(qAbs(preview->vertices[0][2]-(anchor->vertices[0][2]-delta.x()*du))<1e-6);
+                QVERIFY(qAbs(preview->vertices[0][3]-(anchor->vertices[0][3]-delta.y()*dv))<1e-6);
+            }
+            QImage moved;QTRY_VERIFY(!(moved=capture()).isNull() && red(moved,{60,46}) && !red(moved,{32,32}));
+            QTRY_COMPARE(client.residentPreview()->revision,client.revision());
+            QCOMPARE(client.residentPreview()->presentationDelta,QPoint(28,14));QCOMPARE(anchor->uploads->load(),uploads);
+            QCOMPARE(client.undoDepth(),depth);
+            client.finishLayerMove({},false);QVERIFY(client.residentPreview());QCOMPARE(client.residentPreview()->presentationDelta,QPoint());
+        } else {
+            client.updateLayerMove({28,14});QTRY_COMPARE(client.layers().first().toMap().value("offsetX").toInt(),28);
+            QVERIFY(!client.residentPreview());client.finishLayerMove({},false);
+        }
+        QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth);
+        QTRY_VERIFY(client.frameRevision()>=client.revision());QImage restored;QTRY_VERIFY(!(restored=capture()).isNull() && red(restored,{32,32}));
+        QTRY_VERIFY(client.movePreparation());
+        QVERIFY(client.beginLayerMove({32,32}));client.updateLayerMove({20,9});client.finishLayerMove({21,10},true);
+        QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);
+        QCOMPARE(client.layers().first().toMap().value("offsetX").toInt(),21);
+        client.undo();QTRY_COMPARE(client.undoDepth(),depth);client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);
+        QTRY_VERIFY(client.frameRevision()>=client.revision());QImage committed;QTRY_VERIFY(!(committed=capture()).isNull() && red(committed,{53,42}));
+        QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);client.shutdown();
+    }
     void prewarmed4kResidentMoveReusesFullQualityTexturesAndRestoresFullFrame() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("first-move.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(3840,2160);

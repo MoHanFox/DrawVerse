@@ -490,7 +490,7 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         if(!node->preview){node->preview=new LiquifyPreviewNode;node->appendChildNode(node->preview);}
         if(!node->preview->sync(window(),*m_residentPreview,documentRect())){qWarning("Unable to allocate resident preview textures");delete node;return nullptr;}
         if(m_presentationObserver)adopted={quintptr(this),quintptr(window()),m_generation,m_residentPreview->sourceId,
-            m_residentPreview->revision,0,{},documentRect(),size(),m_zoom,true,true};
+            m_residentPreview->revision,0,{},documentRect(),size(),m_zoom,true,true,m_residentPreview->presentationDelta};
         return node;
     }
     if(node->preview){delete node->preview;node->preview=nullptr;}

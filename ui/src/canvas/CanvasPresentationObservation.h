@@ -17,6 +17,7 @@ struct CanvasPresentationIdentity {
     QSizeF size;
     qreal zoom=0;
     bool resident=false,valid=false;
+    QPoint presentationDelta;
     bool operator==(const CanvasPresentationIdentity &) const = default;
 };
 struct CanvasPresentationObservation {

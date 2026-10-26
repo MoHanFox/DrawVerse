@@ -1,5 +1,26 @@
 # 图层移动实时预览验收
 
+## 2026-10-26：CPU计算最新位移、GPU直接显示
+
+移动已有三纹理/四顶点常驻渲染，本轮去掉持续拖动显示对16ms提交和后台回包的依赖。核心确认BEGIN实际来源后，首个零位移包成为不可变基线，CPU按最新绝对输入更新四个UV；GPU复用同源纹理。后台仍验证并发布实际偏移、revision、最终单条历史。旧回包重用最新显示位移，不累加误差；场景图以独立presentationDelta失效，不伪造文档revision。取消立即显示零位移，快按快放不等待资源；无实际常驻来源则放行CPU回退。ABI1.80/state45/VBR保持。
+
+新增 `residentMoveUsesLatestInputBeforeBackendRoundTrip`：同一调用栈、不运行事件循环，连续正/负/零/最终位移立即更新显示包，同时revision、提交sequence、source ID、图片cacheKey保持；真实窗口红点移动/原位清除、上传计数不增加、取消不增历史、快速释放采用最终位移、undo/redo目标像素检查通过。软件明确不产生常驻包。原组/链接蒙版/连续多选、复杂固定/祖先蒙版、4K未预热/预热首拖及共享变换/液化回归保持。
+
+Windows 11 / Qt6.8.3 / MSVC Release验证：
+
+| 验证 | 结果 | 本地日志 |
+| --- | --- | --- |
+| 完整Qt变换/输入套件，D3D11 | 84 passed，0 failed | `artifacts/move-direct-final-d3d11.txt` |
+| 完整Qt变换/输入套件，software | 84 passed，0 failed | `artifacts/move-direct-final-software.txt` |
+| 移动鼠标/平板、Ctrl拾取、位置锁专项，两后端分别运行 | 各5 passed（含初始化/清理），0 failed | `artifacts/move-direct-ui-rhi.txt`、`artifacts/move-direct-ui-software.txt` |
+| D3D11，QT_SCALE_FACTOR=2（本机实际DPR3），即时显示/4K首拖/抓图关联反例 | 5 passed（含初始化/清理），0 failed | `artifacts/move-direct-final-dpi2.txt` |
+| C11/C++20静态/共享ABI | 4/4 | `ctest --test-dir build -C Release -R '^abi_' --output-on-failure` |
+| 完整Release构建、生成头一致检查 | 通过，应用部署到 `build/bin/Release/drawverse.exe` | `artifacts/move-direct-build-final.log` |
+
+初次新增测试在种子笔触完成前记录历史基线，已改为等待该笔触单历史回执。初次软件完整套件为83通过/1失败，独立导出显示移动后白/红像素均正确、无意外输入，但所有抓图均缺ready记录：软件渲染先填充image，测试过早满足非空条件并断开排队ready信号。`PendingMoveEvidence::capture`现同时等待真实ready回执和非空图像，保持5秒界限与全部原有像素/身份条件。独立复验8次抓图均有ready，3次关联成功、0丢弃；证据在 `artifacts/move-direct-sw-ready-evidence`。随后完整软件84/84及高DPI硬件复验通过。没有放宽断言或修改产品等待。
+
+未运行全量 `tools/check.py` 或跨平台测试；本轮未改Rust/ABI。构建仅有Qt SDK缺少translations/catalogs.json的既有部署警告。实体鼠标/数位板持续手感、首次冷页准备及复杂栈CPU回退的进一步GPU合成仍待；窗口抓图计时不作为端到端输入延迟或FPS结论。
+
 ## 2026-10-21：组内子层常驻
 
 新增两个祖先级别的Normal/PassThrough组内单层（含自身链接蒙版）源切分；真实组与瓦片不改。核心移动10项通过，扩展的完整逐像素对照覆盖六种来源、多次位移、半透明/负坐标/不动的同组兄弟、取消与单历史/undo/redo。新增祖先opacity/fill/蒙版/特殊混合及隔离背景依赖五类回退验证。共享液化3项、变换8项、原生延迟包1项回归通过。

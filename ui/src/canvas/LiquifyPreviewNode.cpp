@@ -78,7 +78,7 @@ bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &fr
     if(m->forward!=frame.forward){m->forward=frame.forward;markDirty(DirtyMaterial);}
     const bool sourceOnly=frame.focus || frame.forward;
     if(m->focus!=sourceOnly){m->focus=sourceOnly;markDirty(DirtyMaterial);}
-    if(m_revision==frame.revision && m_rect==rect)return true;
+    if(m_revision==frame.revision && m_rect==rect && m_presentationDelta==frame.presentationDelta)return true;
     InteractionTrace::Scope trace("move.render.adoptGeometry");
     if(trace.active)trace.event.value=double(frame.revision);
     InteractionTrace::point("move.render.source",double(frame.sourceId));
@@ -98,6 +98,6 @@ bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &fr
         }
         g->markIndexDataDirty();
     }
-    g->markVertexDataDirty();markDirty(DirtyGeometry);m_revision=frame.revision;m_rect=rect;
+    g->markVertexDataDirty();markDirty(DirtyGeometry);m_revision=frame.revision;m_rect=rect;m_presentationDelta=frame.presentationDelta;
     return true;
 }

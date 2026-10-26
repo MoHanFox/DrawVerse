@@ -1134,9 +1134,19 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
                 InteractionTrace::point("move.receipt.kind",m_layerMoveSubmittedKind);
             }
             m_layerMoveActive=false;m_layerMoveStarting=false;m_layerMoveClosing=false;
+            m_layerMoveAnchor.reset();m_layerMoveGpuPresentation=false;m_layerMoveSource=0;
             m_layerMoveTimer->stop();
         } else if(m_layerMoveStarting && m_completedSequence>=m_layerMoveSequence) {
             m_layerMoveStarting=false;
+            if(m_layerMoveGpuPresentation) {
+                // BEGIN may have rebuilt or rejected a preparation after an
+                // intervening edit. Never wait for a source that the core did not adopt.
+                auto preview=dto<PaintResidentPreviewInfo>();
+                QMutexLocker lock(&m_connection->mutex);
+                const auto status=m_connection->session?paint_session_resident_preview_info(m_connection->core,m_connection->session,&preview):PAINT_NOT_FOUND;
+                m_layerMoveGpuPresentation=status==PAINT_OK && preview.document_generation==info.document_generation && preview.revision>=info.revision;
+                m_layerMoveSource=m_layerMoveGpuPresentation?preview.source_id:0;
+            }
         }
         if(m_layerMoveActive && !m_layerMoveStarting)flushLayerMove();
         if(m_drawing && m_liquifyActive && !m_dropStroke)flushLiquifyInput();
@@ -1208,7 +1218,12 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(trace.active)trace.event.value=double(preview->revision);
         InteractionTrace::point("move.gui.resident.source",double(preview->sourceId));
         InteractionTrace::point("move.gui.resident.generation",double(preview->generation));
-        m_residentPreview=std::move(preview);emit frameChanged();
+        if(m_layerMoveGpuPresentation && !m_layerMoveAnchor && !m_layerMoveStarting && !m_layerMoveFinish &&
+           preview->columns==2 && preview->rows==2 && preview->vertices.size()==4 &&
+           preview->sourceId==m_layerMoveSource)
+            m_layerMoveAnchor=preview;
+        m_residentPreview=std::move(preview);
+        if(m_layerMoveAnchor)refreshLayerMovePresentation();else emit frameChanged();
     });
     connect(m_worker,&BackendWorker::movePreparationReady,this,[this](quint64 generation,quint64 revision,quint64 layer,quint64 request,ResidentPreviewAssetsPtr assets){
         if(m_closing || !m_moveTool || m_layerMoveActive || generation!=m_generation ||
@@ -1500,7 +1515,14 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
         requestLayerMovePreparation();
     } else if (!error.isEmpty()) showError(error);
 }
-void PaintCoreClient::showError(const QString &error) { if(m_layerMoveActive)InteractionTrace::point("move.backend.error",double(m_layerMoveSequence));m_error = error; emit errorChanged(); }
+void PaintCoreClient::showError(const QString &error) {
+    if(m_layerMoveActive) {
+        InteractionTrace::point("move.backend.error",double(m_layerMoveSequence));
+        m_layerMoveGpuPresentation=false;m_layerMoveAnchor.reset();m_residentPreview.reset();
+        emit frameChanged();
+    }
+    m_error=error;emit errorChanged();
+}
 void PaintCoreClient::clearError() { m_error.clear(); emit errorChanged(); }
 QVariantList PaintCoreClient::recentColors() const {return m_brushLibrary->recentColors();}
 void PaintCoreClient::setHistoryLimit(int commands) {
@@ -1976,6 +1998,7 @@ bool PaintCoreClient::beginLayerMove(QPointF position,bool pick) {
     m_layerMoveSubmittedKind=kind;
     m_layerMoveSequence=sequence;m_layerMoveDelta={};m_layerMoveDirty=false;m_layerMoveFinish=false;
     m_layerMoveActive=true;m_layerMoveStarting=true;m_layerMoveClosing=false;
+    m_layerMoveGpuPresentation=prepared;m_layerMoveSource=prepared?m_movePreparation->sourceId:0;m_layerMoveAnchor.reset();
     m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();m_layerMoveTimer->start();emit stateChanged();return true;
 }
 void PaintCoreClient::updateLayerMove(QPoint delta) {
@@ -1983,13 +2006,36 @@ void PaintCoreClient::updateLayerMove(QPoint delta) {
     if(delta==m_layerMoveDelta)return;
     InteractionTrace::point("move.changedDelta.x",delta.x());
     m_layerMoveDelta=delta;m_layerMoveDirty=true;
+    refreshLayerMovePresentation();
+}
+void PaintCoreClient::refreshLayerMovePresentation() {
+    if(!m_layerMoveGpuPresentation || !m_layerMoveAnchor || !m_residentPreview ||
+       m_residentPreview->sourceId!=m_layerMoveAnchor->sourceId)return;
+    const QPoint delta=m_layerMoveFinish && !m_layerMoveCommit?QPoint{}:m_layerMoveDelta;
+    auto next=std::make_shared<ResidentPreviewFrame>(*m_residentPreview);
+    // Keep core revision/source identity; only the four UVs follow newer input.
+    // Always derive from zero, never accumulate float error or an older reply's delta.
+    next->vertices=m_layerMoveAnchor->vertices;
+    const auto &v=next->vertices;
+    const float du=(v[1][2]-v[0][2])/float(next->documentSize.width());
+    const float dv=(v[2][3]-v[0][3])/float(next->documentSize.height());
+    for(auto &vertex:next->vertices){vertex[2]-=float(delta.x())*du;vertex[3]-=float(delta.y())*dv;}
+    next->presentationDelta=delta;
+    m_residentPreview=std::move(next);
+    InteractionTrace::point("move.gui.directPresentation.x",delta.x());
+    emit frameChanged();
 }
 void PaintCoreClient::finishLayerMove(QPoint delta,bool commit) {
     if(!m_layerMoveActive || m_layerMoveClosing)return;
-    m_layerMoveDelta=delta;m_layerMoveFinish=true;m_layerMoveCommit=commit;flushLayerMove();
+    m_layerMoveDelta=delta;m_layerMoveFinish=true;m_layerMoveCommit=commit;
+    if(!m_layerMoveAnchor)m_layerMoveGpuPresentation=false;
+    refreshLayerMovePresentation();flushLayerMove();
 }
 void PaintCoreClient::flushLayerMove() {
     if(!m_layerMoveActive || m_layerMoveStarting || m_layerMoveClosing || m_completedSequence<m_layerMoveSequence || (!m_layerMoveDirty && !m_layerMoveFinish))return;
+    // The first resident packet is the core-confirmed zero-delta baseline.
+    // Closing never waits for a display asset, including a quick press/release.
+    if(m_layerMoveGpuPresentation && !m_layerMoveAnchor && !m_layerMoveFinish)return;
     const auto kind=m_layerMoveFinish?(m_layerMoveCommit?PAINT_LAYER_MOVE_COMMIT:PAINT_LAYER_MOVE_CANCEL):PAINT_LAYER_MOVE_UPDATE;
     const auto delta=kind==PAINT_LAYER_MOVE_CANCEL?QPoint{}:m_layerMoveDelta;
     InteractionTrace::Scope trace("move.submit");

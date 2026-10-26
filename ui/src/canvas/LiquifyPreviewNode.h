@@ -10,5 +10,6 @@ public:
     bool sync(QQuickWindow *window,const LiquifyPreviewFrame &frame,const QRectF &rect);
 private:
     quint64 m_source=0,m_revision=0;
+    QPoint m_presentationDelta;
     QRectF m_rect;
 };

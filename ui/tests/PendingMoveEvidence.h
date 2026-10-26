@@ -142,7 +142,9 @@ public:
             observeContext();sample["ready_id"]=double(id);
             sample["ready_ns"]=double(InteractionTrace::now());sample["ready_state"]=state();
         }); // GUI callback disconnected before any captured stack state can go away.
-        const bool completed=grab && QTest::qWaitFor([&]{return !grab->image().isNull();},5000);
+        // Software rendering can populate image() before its queued ready signal.
+        // Wait for that signal too, or disconnecting here loses the required receipt.
+        const bool completed=grab && QTest::qWaitFor([&]{return sample.contains("ready_id") && !grab->image().isNull();},5000);
         if(!completed){m_grabFailed=true;m_failedGrab=grab;}
         QImage image=completed?grab->image():QImage{};
         observeContext();
@@ -263,7 +265,8 @@ private:
             {"generation",double(p.generation)},{"source",double(p.source)},{"revision",double(p.revision)},
             {"image_key",QString::number(p.imageKey)},{"region",rect(p.region)},
             {"document_origin",QJsonArray{p.document.x(),p.document.y()}},{"zoom",p.zoom},
-            {"size",QJsonArray{p.size.width(),p.size.height()}},{"resident",p.resident}};
+            {"size",QJsonArray{p.size.width(),p.size.height()}},{"resident",p.resident},
+            {"presentation_delta",QJsonArray{p.presentationDelta.x(),p.presentationDelta.y()}}};
         for(const auto &row:m_client->layers())if(row.toMap().value("id").toULongLong()==m_owner)result["owner_metadata"]=QJsonObject::fromVariantMap(row.toMap());
         return result;
     }
