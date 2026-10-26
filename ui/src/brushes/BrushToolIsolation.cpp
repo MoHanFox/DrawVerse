@@ -64,10 +64,10 @@ void BrushLibrary::setToolContext(int tool,bool persist) {
             const auto previewInputs=[](const Preset &v){return std::tie(v.spacing,v.hardness,v.roundness,v.angle,v.pressureSize,v.pressureFlow,
                 v.maskResource,v.pressure,v.device,v.scatter,v.shape,v.transfer,v.color,v.texture,v.dual,v.smoothing,v.wet,v.taper,
                 v.airbrush,v.speed,v.tangent,v.distance,v.tilt,v.rotation,v.direction,v.matrix,v.fade,v.outline);};
-            if(previewInputs(p)==previewInputs(next)) {
+            if(previewInputs(p)==previewInputs(next) || previewParameters(p)==previewParameters(next)) {
                 if(!p.preview.isEmpty() || next.preview.isEmpty()){next.preview=p.preview;next.error=p.error;}
                 if(next.preview!=p.preview)previewChanges.append(p.id);
-                next.token=p.token;next.requested=p.requested;
+                next.token=p.token;next.requested=p.requested;next.previewInputs=p.previewInputs.isEmpty()?previewParameters(next):p.previewInputs;
             } else {
                 // The target profile owns a valid cached image. Retain it, but
                 // retire any old in-flight request before publishing this profile.

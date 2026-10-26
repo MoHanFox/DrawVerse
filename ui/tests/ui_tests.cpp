@@ -628,6 +628,101 @@ private slots:
         auto bad=library->strokeTaper();auto end=bad.value("start").toMap();auto c=end.value("size").toMap();c["nodeModes"]=QVariantList{true};end["size"]=c;bad["start"]=end;QVERIFY(!library->setStrokeTaper(bad));QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
 
+    void disabledBrushPreviewModulesKeepCacheAndPendingJobs_data() {
+        QTest::addColumn<int>("module");
+        const QStringList names={"scatter","shape","color","texture","dual","wet","smoothing","taper","outline","speed","tangent","distance","tilt","rotation","direction","fade"};
+        for(int i=0;i<names.size();++i)QTest::newRow(qPrintable(names[i]))<<i;
+    }
+    void disabledBrushPreviewModulesKeepCacheAndPendingJobs() {
+        QFETCH(int,module);BrushLibrary library;
+        struct Module {QVariantMap(BrushLibrary::*get)()const;bool(BrushLibrary::*set)(QVariantMap);QString parent,key;QVariant value;};
+        const Module modules[]={
+            {&BrushLibrary::scatterDynamics,&BrushLibrary::setScatterDynamics,{},"amount",2.},
+            {&BrushLibrary::shapeJitter,&BrushLibrary::setShapeJitter,{},"size",.5},
+            {&BrushLibrary::colorDynamics,&BrushLibrary::setColorDynamics,{},"hue",.5},
+            {&BrushLibrary::texture,&BrushLibrary::setTexture,{},"depth",.25},
+            {&BrushLibrary::dualBrush,&BrushLibrary::setDualBrush,{},"diameter",80.},
+            {&BrushLibrary::wetMix,&BrushLibrary::setWetMix,{},"wetness",.3},
+            {&BrushLibrary::smoothing,&BrushLibrary::setSmoothing,{},"positionMs",24.},
+            {&BrushLibrary::strokeTaper,&BrushLibrary::setStrokeTaper,"start","lengthPx",20.},
+            {&BrushLibrary::strokeOutline,&BrushLibrary::setStrokeOutline,"width","pixels",8.},
+            {&BrushLibrary::speedDynamics,&BrushLibrary::setSpeedDynamics,{},"maxSpeed",500.},
+            {&BrushLibrary::tangentDynamics,&BrushLibrary::setTangentDynamics,"size","minimum",.4},
+            {&BrushLibrary::distanceDynamics,&BrushLibrary::setDistanceDynamics,{},"maxDistance",200.},
+            {&BrushLibrary::tiltDynamics,&BrushLibrary::setTiltDynamics,"size","minimum",.4},
+            {&BrushLibrary::rotationDynamics,&BrushLibrary::setRotationDynamics,"size","minimum",.4},
+            {&BrushLibrary::directionDynamics,&BrushLibrary::setDirectionDynamics,"size","minimum",.4},
+            {&BrushLibrary::fadeDynamics,&BrushLibrary::setFadeDynamics,{},"steps",90}
+        };
+        const auto &rule=modules[module];QSignalSpy requests(&library,&BrushLibrary::previewRequested);
+        const auto id=library.selectedId();library.requestPreview(id);QCOMPARE(requests.size(),1);const auto pending=requests.last();
+        auto data=(library.*rule.get)();
+        if(rule.parent.isEmpty())data[rule.key]=rule.value;else{auto nested=data.value(rule.parent).toMap();nested[rule.key]=rule.value;data[rule.parent]=nested;}
+        QVERIFY((library.*rule.set)(data));library.requestPreview(id);QCOMPARE(requests.size(),1);
+        library.acceptPreview(id,pending[1].toULongLong(),"retained");QCOMPARE(library.selectedPreview(),QString("retained"));
+        const auto saved=library.snapshot();QVERIFY(library.restore(saved));QCOMPARE(library.selectedPreview(),QString("retained"));
+        BrushLibrary reopened;QVERIFY(reopened.restore(saved));QCOMPARE(QJsonObject::fromVariantMap((reopened.*rule.get)()),QJsonObject::fromVariantMap(data));
+        data["enabled"]=true;if(module==3)data["resource"]=QString(64,'a');
+        QVERIFY((library.*rule.set)(data));QVERIFY(library.selectedPreview().isEmpty());library.requestPreview(id);QCOMPARE(requests.size(),2);
+        QVERIFY(requests.last()[1].toULongLong()!=pending[1].toULongLong());
+        library.acceptPreview(id,pending[1].toULongLong(),"stale");QVERIFY(library.selectedPreview().isEmpty());
+        library.acceptPreview(id,requests.last()[1].toULongLong(),"enabled");QCOMPARE(library.selectedPreview(),QString("enabled"));
+    }
+    void inactiveBrushPreviewControlsAndSeedsKeepCache() {
+        BrushLibrary library;const auto id=library.selectedId();QSignalSpy requests(&library,&BrushLibrary::previewRequested);
+        const auto prime=[&]{library.requestPreview(id);library.acceptPreview(id,requests.last()[1].toULongLong(),"retained");};
+        const auto retained=[&]{library.requestPreview(id);return library.selectedPreview()=="retained";};
+        library.setPressureSize(false);library.setPressureFlow(false);prime();const int initial=requests.size();
+        const QVariantList curve{QVariantList{0.,.2},QVariantList{1.,.8}};
+        for(const auto *target:{"size","flow","opacity"}){QVERIFY(library.setPressureControl(target,curve,.3));QVERIFY(retained());}
+        library.setMinimumRoundness(.7);QVERIFY(retained());
+        auto air=library.airbrush();air["intervalMs"]=100.;air["enabled"]=true;QVERIFY(library.setAirbrush(air));QVERIFY(retained());
+        library.setRadius(72);library.setFlow(.4);library.setOpacity(.2);library.setWriteBlend(3);library.setActiveColors(Qt::red,Qt::blue);library.setCursorCenter(true);QVERIFY(retained());QCOMPARE(requests.size(),initial);
+        for(const auto &kind:{QString("shape"),QString("color"),QString("scatter")}) {
+            auto data=kind=="shape"?library.shapeJitter():kind=="color"?library.colorDynamics():library.scatterDynamics();data["enabled"]=true;
+            const auto set=[&](QVariantMap value){return kind=="shape"?library.setShapeJitter(value):kind=="color"?library.setColorDynamics(value):library.setScatterDynamics(value);};
+            QVERIFY(set(data));prime();const int before=requests.size();data["seed"]="0123456789abcdef";QVERIFY(set(data));QVERIFY(retained());QCOMPARE(requests.size(),before);
+            data[kind=="shape"?"size":kind=="color"?"hue":"amount"]=.5;QVERIFY(set(data));prime();
+            data["seed"]="fedcba9876543210";QVERIFY(set(data));QVERIFY(library.selectedPreview().isEmpty());prime();
+        }
+        auto outline=library.strokeOutline();outline["enabled"]=true;QVERIFY(library.setStrokeOutline(outline));prime();
+        auto width=outline.value("width").toMap();width["percent"]=80.;outline["width"]=width;QVERIFY(library.setStrokeOutline(outline));QVERIFY(retained());
+        width["relative"]=true;outline["width"]=width;QVERIFY(library.setStrokeOutline(outline));QVERIFY(library.selectedPreview().isEmpty());prime();
+        width["pixels"]=120.;outline["width"]=width;QVERIFY(library.setStrokeOutline(outline));QVERIFY(retained());
+        QVERIFY(library.setMaskResource(id,QString(64,'b')));prime();library.setHardness(.25);QVERIFY(retained());
+        auto dual=library.dualBrush();dual["enabled"]=true;dual["resource"]=QString(64,'c');QVERIFY(library.setDualBrush(dual));prime();dual["hardness"]=.2;QVERIFY(library.setDualBrush(dual));QVERIFY(retained());
+        library.setPressureSize(true);QVERIFY(library.selectedPreview().isEmpty());
+    }
+    void brushPreviewPolicyReusesInactiveToolProfilesAndErrors() {
+        BrushLibrary library;const auto id=library.selectedId();QSignalSpy requests(&library,&BrushLibrary::previewRequested);
+        library.requestPreview(id);const auto token=requests.last()[1].toULongLong();library.acceptPreview(id,token,"cached");
+        library.setToolIsolation(2);library.setShapeSizeJitter(.7);library.setToolContext(1);
+        QCOMPARE(library.selectedPreview(),QString("cached"));QCOMPARE(library.shapeSizeJitter(),0.);
+        library.setShapeSizeJitter(.4);library.setToolContext(0);QCOMPARE(library.shapeSizeJitter(),.7);
+        QCOMPARE(library.selectedPreview(),QString("cached"));library.requestPreview(id);QCOMPARE(requests.size(),1);
+        library.retryPreview();library.acceptPreview(id,requests.last()[1].toULongLong(),{});
+        const auto error=library.previewMessage();library.setShapeAngleJitter(.3);library.requestPreview(id);
+        QCOMPARE(library.previewMessage(),error);QCOMPARE(requests.size(),2);
+        library.setShapeJitterEnabled(true);library.requestPreview(id);QCOMPARE(requests.size(),3);
+        library.acceptPreview(id,token,"stale");QVERIFY(library.selectedPreview().isEmpty());
+        library.setToolContext(1);QCOMPARE(library.shapeSizeJitter(),.4);QCOMPARE(library.selectedPreview(),QString("cached"));
+    }
+    void brushPreviewPolicyColdRenderMatchesRetainedImage() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("policy.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());auto *library=client.brushLibrary();const auto id=library->selectedId();
+        library->requestPreview(id);QTRY_VERIFY2_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),qPrintable(library->previewMessage()),10000);
+        const auto original=library->selectedPreview();QSignalSpy requests(library,&BrushLibrary::previewRequested);
+        library->setHueJitter(.8);library->setShapeSizeJitter(.7);library->setScatterAmount(3.);
+        auto texture=library->texture();texture["depth"]=.2;QVERIFY(library->setTexture(texture));
+        auto smoothing=library->smoothing();smoothing["positionMs"]=80.;QVERIFY(library->setSmoothing(smoothing));
+        library->requestPreview(id);QCOMPARE(requests.size(),0);QCOMPARE(library->selectedPreview(),original);
+        library->retryPreview();QTRY_VERIFY2_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),qPrintable(library->previewMessage()),10000);
+        QCOMPARE(library->selectedPreview(),original);QCOMPARE(requests.size(),1);
+        library->setShapeJitterEnabled(true);QVERIFY(library->selectedPreview().isEmpty());library->requestPreview(id);
+        QTRY_VERIFY2_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),qPrintable(library->previewMessage()),10000);
+        QVERIFY(library->selectedPreview()!=original);QCOMPARE(requests.size(),2);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void standardBrushPreviewKeepsBaseEditsAndUpdatesOnlyItsRow() {
         BrushLibrary library;
         const auto id=library.selectedId();
