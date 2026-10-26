@@ -12,7 +12,8 @@ QString selectTabletInputBackend(const QString &mode,const std::function<bool(bo
 void configureTabletInput(const QString &mode);
 QString activeTabletInputBackend();
 bool acceptTabletInputDevice(const QString &backend,const QPointingDevice *device);
-// Call before either canvas handling or tablet-to-mouse menu forwarding.
+// Call before canvas/menu routing. Also pairs unmarked legacy mouse button
+// events with accepted WinTab packets by exact timestamp, phase and position.
 bool rejectTabletInputEvent(QEvent *event);
 
 // Native Windows pen promotion is separate from Tablet and may appear as a

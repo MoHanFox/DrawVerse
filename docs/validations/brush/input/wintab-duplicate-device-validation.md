@@ -22,3 +22,21 @@
 ordinaryTabletControlsAndTextFocusRemainNormal追加单路像素按钮+1，原快速点击、复选框/滑条/文本焦点保持；连同selectedBackendAlsoFiltersNativeTabletMenu和duplicateTabletPressStillEndsOnRelease，最终软件/D3D11各6项通过（四功能+初始化/结束）。按用户要求仅跑相关最小用例，未跑全套。Release应用与定向测试构建、生成头检查和diff检查通过，build/bin/Release/drawverse.exe更新。无Rust/ABI1.80/state45变化。
 
 日志：artifacts/pen-click-final-{d3d11,software}.txt、pen-click-final-build.log。测试验证实际Windows输入队列、Qt控件和菜单行为，未使用实体高漫采样，实际驱动持续压感/侧键/翻面与用户点击手感仍待实机确认。
+
+## 2026-10-26 实体反馈未解决，采集进行中
+
+用户确认重复点击仍存在，撤回“已修复”的实体结论。加入默认关闭的DRAWVERSE_TABLET_TRACE诊断，开启时记录点击原生消息/extra标记、实际后端以及到达窗口的Qt指针设备和来源，最多10000行；不记录按键或文档内容，不改变事件接受状态。Qt诊断过滤器只能看到尚未被其他应用过滤器消费的窗口事件，因此缺少Qt事件不能单独证明驱动未发送；原生队列记录用于对照。
+
+drawverse_runtime与qt_transform_tests Release构建通过。开启诊断后仅运行tabletClickWithNativePenMouseDoesNotRepeatControlsOrDismissMenu、ordinaryTabletControlsAndTextFocusRemainNormal，D3D11共4 passed（含初始化/结束）；artifacts/tablet-trace-smoke.txt与tablet-trace-smoke.log确认日志字段，未宣称实体修复。已打开标准exe，实体采集目标为artifacts/gaomon-physical-clicks.log，等待用户单击像素+和文件菜单。
+
+## 实体日志修复与用户复核完成
+
+用户完成像素+、顶部菜单、复选框复现。gaomon-physical-clicks.log显示实际后端wintab；同次点击先送wintab Tablet及Pen设备鼠标回退，再送core pointer的普通鼠标按钮。后一消息时间戳与WinTab完全相同、位置只差取整，extra按下为0x11c/0x48/0x3c等低值、释放为0，上一补丁的Windows笔签名过滤未覆盖。
+
+补充固定32记录的WinTab按钮包配对，在Canvas/Workspace路由前及全局窗口过滤器执行。只消费Mouse设备、同精确timestamp/phase/button且位置距离不超过2逻辑像素的第二路按钮与双击；Pen设备Qt回退、不同timestamp鼠标、Windows Ink及原touch路径保持。不用时间窗口或近邻点击防抖。日志环境变量不设置时不写文件；窗口事件过滤同时承担配对功能，因此不依赖开启诊断。
+
+标准build/bin/Release/drawverse.exe于2026-10-26 20:54:59构建更新后打开，实体复核记录gaomon-physical-recheck.log。用户明确确认“**三项都正常**”：像素+每次只加1、菜单保持展开、复选框只切换一次。本结论覆盖上述实体点击，未扩展为持续压力/侧键/翻面验收。
+
+最小回归仍为四功能：tabletClickWithNativePenMouseDoesNotRepeatControlsOrDismissMenu追加按实体字段保留时间戳的SendInput回放，原生包先排队再交付Tablet，三次像素+各+1、三次菜单保持及三次复选框逐次切换，普通鼠标与快速独立笔点击保留。ordinaryTabletControlsAndTextFocusRemainNormal、duplicateTabletPressStillEndsOnRelease、selectedBackendAlsoFiltersNativeTabletMenu保持。最终软件与D3D11各6 passed（四功能+初始化/清理），日志gaomon-final-{software,d3d11}.txt；Release应用与测试构建、生成头与diff检查通过，无Rust/ABI1.80/state45变化。
+
+中途软件回归的普通鼠标断言失败，点击日志没有对应原生消息；新增WindowFromPoint检查证实落点命中另一个DrawVerse窗口。测试窗口置顶并对原生落点作强断言后，两后端在用户程序仍打开时通过，未放宽按钮或菜单断言。日志gaomon-software-{probe,target}.txt保留失败证据，未作为生产输入过滤依据。按用户要求未运行无关全套。

@@ -204,6 +204,9 @@ private slots:
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("pen-click.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});
         engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        // Keep native SendInput aimed at this fixture when the user's separate
+        // DrawVerse process and its floating panels are open during diagnosis.
+        window->setFlag(Qt::WindowStaysOnTopHint);window->show();window->raise();
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());window->requestActivate();QVERIFY(QTest::qWaitForWindowActive(window));
         QQmlComponent stepperComponent(&engine);stepperComponent.setData(R"(
 import QtQuick
@@ -219,6 +222,11 @@ CompactSpinBox { width: 120; height: 26; from: 0; to: 100; value: 10 }
         const auto native=[&](QPointF scene,ULONG_PTR extra) {
             const auto global=QHighDpi::toNativeGlobalPosition(window->mapToGlobal(scene),window).toPoint();
             if(!SetCursorPos(global.x(),global.y()))return false;
+            const auto target=GetAncestor(WindowFromPoint(POINT{global.x(),global.y()}),GA_ROOT);
+            if(target!=reinterpret_cast<HWND>(window->winId())) {
+                qWarning()<<"Native click target is covered:"<<global<<quintptr(target)<<"expected"<<window->winId();
+                return false;
+            }
             INPUT messages[2]{};
             for(int i=0;i<2;++i){messages[i].type=INPUT_MOUSE;messages[i].mi.dwFlags=i?MOUSEEVENTF_LEFTUP:MOUSEEVENTF_LEFTDOWN;messages[i].mi.dwExtraInfo=extra;}
             const bool sent=SendInput(2,messages,sizeof(INPUT))==2;
@@ -236,6 +244,41 @@ CompactSpinBox { width: 120; height: 26; from: 0; to: 100; value: 10 }
         tablet(menuAt,Qt::LeftButton);tablet(menuAt,Qt::NoButton);QTRY_VERIFY(menu->property("visible").toBool());
         QVERIFY(native(menuAt,ULONG_PTR(0xff515700)));QVERIFY(menu->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(menu,"close"));QTRY_VERIFY(!menu->property("visible").toBool());
+        // Replay the physical Gaomon trace: unmarked legacy mouse packets have
+        // exactly the WinTab timestamp, with subpixel coordinate rounding.
+        const auto legacyClick=[&](QPointF scene) {
+            const auto time=GetTickCount();
+            const auto global=QHighDpi::toNativeGlobalPosition(window->mapToGlobal(scene),window).toPoint();
+            if(!SetCursorPos(global.x(),global.y()))return false;
+            if(GetAncestor(WindowFromPoint(POINT{global.x(),global.y()}),GA_ROOT)!=reinterpret_cast<HWND>(window->winId()))return false;
+            for(int phase=0;phase<2;++phase) {
+                const auto timestamp=time+phase*70;
+                const auto buttons=phase?Qt::NoButton:Qt::LeftButton;
+                // The first native packet can be queued before Qt delivers the
+                // corresponding tablet packet, as in the user's capture.
+                INPUT message{};message.type=INPUT_MOUSE;message.mi.dwFlags=phase?MOUSEEVENTF_LEFTUP:MOUSEEVENTF_LEFTDOWN;
+                message.mi.dwExtraInfo=phase?0:0x11c;message.mi.time=timestamp;
+                if(SendInput(1,&message,sizeof(INPUT))!=1)return false;
+                QWindowSystemInterface::handleTabletEvent(window,timestamp,pen,
+                    QHighDpi::toNativeLocalPosition(scene+QPointF(.4,.3),window),
+                    QHighDpi::toNativeGlobalPosition(window->mapToGlobal(scene+QPointF(.4,.3)),window),
+                    buttons,buttons?.5:0.,0,0,0,0,0);
+                QWindowSystemInterface::flushWindowSystemEvents();QTest::qWait(5);
+            }
+            return true;
+        };
+        for(int i=0;i<3;++i){QVERIFY(legacyClick(up));QCOMPARE(stepper->property("value").toInt(),15+i);}
+        // A different timestamp is a separate real mouse click at the same spot.
+        QTest::qWait(80);QVERIFY(native(up,0));QCOMPARE(stepper->property("value").toInt(),18);
+        for(int i=0;i<3;++i) {
+            QVERIFY(legacyClick(menuAt));QVERIFY(menu->property("visible").toBool());
+            QVERIFY(QMetaObject::invokeMethod(menu,"close"));QTRY_VERIFY(!menu->property("visible").toBool());
+        }
+        QQmlComponent checkboxComponent(&engine);checkboxComponent.setData("import QtQuick\nimport \"qrc:/qml/controls\"\nCompactCheckBox { width: 120; height: 26; text: \"pen\" }",QUrl());
+        QScopedPointer<QObject> checkboxObject(checkboxComponent.create());auto *checkbox=qobject_cast<QQuickItem*>(checkboxObject.data());QVERIFY2(checkbox,qPrintable(checkboxComponent.errorString()));
+        checkbox->setParentItem(window->contentItem());checkbox->setPosition({500,35});checkbox->setZ(10000);
+        const auto checkAt=checkbox->mapToScene({12,13});
+        for(int i=0;i<3;++i){QVERIFY(legacyClick(checkAt));QCOMPARE(checkbox->property("checked").toBool(),i%2==0);}
         QVERIFY(!client.drawing());QCOMPARE(client.undoDepth(),0);QVERIFY(client.lastError().isEmpty());
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
 #else
