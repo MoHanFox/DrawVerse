@@ -145,6 +145,16 @@ set_target_properties(qt_transform_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${
 add_test(NAME qt_transform_tests COMMAND qt_transform_tests)
 set_tests_properties(qt_transform_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
 
+qt_add_executable(qt_composition_transport_tests tests/composition_transport_tests.cpp)
+target_include_directories(qt_composition_transport_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_compile_features(qt_composition_transport_tests PRIVATE cxx_std_20)
+target_link_libraries(qt_composition_transport_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_composition_transport_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_composition_transport_tests COMMAND qt_composition_transport_tests)
+set_tests_properties(qt_composition_transport_tests PROPERTIES TIMEOUT 60
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Test>")
+
 qt_add_executable(qt_workflow_tests tests/workflow_tests.cpp)
 target_link_libraries(qt_workflow_tests PRIVATE drawverse_ui Qt6::Test Qt6::QmlPrivate)
 target_compile_definitions(qt_workflow_tests PRIVATE DRAWVERSE_QML_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")

@@ -154,6 +154,7 @@ pub(crate) struct MovePreparation {
     pub assets: Option<Arc<Vec<u8>>>,
 }
 struct Shared {
+    composition: super::composition::Service,
     task_progress: Mutex<Option<TaskProgressState>>,
     preview_selection: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     // Identity and deformed selection assets, bounded to one active session.
@@ -249,6 +250,7 @@ impl Session {
             Document::with_storage(width, height, storage.options, storage.space.clone())?;
         let initial = publish(&document, 1, 1, 0, None, false);
         let shared = Arc::new(Shared {
+            composition: super::composition::Service::default(),
             task_progress: Mutex::new(None),
             preview_selection: Mutex::new(None),
             preview_assets: Mutex::new(Vec::new()),
@@ -336,6 +338,7 @@ impl Session {
         Arc::as_ptr(&self.shared) as usize as u64
     }
     pub fn stop(&self) {
+        self.shared.composition.close();
         self.file
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -490,6 +493,23 @@ impl Session {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner()),
         )
+    }
+    pub fn composition(&self) -> &super::composition::Service {
+        self.shared
+            .composition
+            .generation(self.shared.generation.load(Ordering::Acquire));
+        &self.shared.composition
+    }
+    pub fn request_composition(&self, request: super::composition::Request) -> ApiResult<u64> {
+        let published = self.publication().info;
+        let request = self.composition().reserve(
+            request,
+            published.document_generation,
+            published.revision,
+        )?;
+        // Display requests have their own bounded/coalescing mailbox. They
+        // never occupy the real pen/history FIFO or consume command sequences.
+        Ok(request.key.lease_id)
     }
     pub fn prepare_layer_move(
         &self,
@@ -1670,6 +1690,7 @@ impl Engine {
                 self.document = document;
                 self.wet_lease.take();
                 self.generation += 1;
+                self.shared.composition.generation(self.generation);
                 self.shared
                     .generation
                     .store(self.generation, Ordering::Release);
@@ -1899,6 +1920,7 @@ impl Engine {
                 self.document = document;
                 self.wet_lease.take();
                 self.generation += 1;
+                self.shared.composition.generation(self.generation);
                 self.floor = 0;
                 self.aborted = false;
                 self.error = None;
@@ -1955,6 +1977,38 @@ impl Engine {
             );
             drop(old);
             self.dirty = false;
+        }
+        // Capture only after the matching metadata publication is available.
+        // A same-tick edit must never pair new pixels with an older publication.
+        for request in self.shared.composition.take_pending() {
+            let result = if request.key.document_generation != self.generation
+                || request.key.revision != self.document.revision()
+            {
+                Err(ApiError::new(
+                    PAINT_BUSY,
+                    "composition document changed before capture",
+                ))
+            } else if self.document.transform_active()
+                || self.document.liquify_active()
+                || self.document.layer_move_active()
+                || self.document.stroke_active()
+                || self.files.running()
+            {
+                Err(ApiError::new(
+                    PAINT_UNSUPPORTED,
+                    "composition during editing session requires CPU",
+                ))
+            } else {
+                super::composition::Service::compile(
+                    &request,
+                    self.document.dimensions(),
+                    self.document.revision(),
+                    self.document.layers(),
+                )
+            };
+            self.shared
+                .composition
+                .complete(&request, self.publication, result);
         }
         for index in 0..4 {
             let revision = self.document.revision();

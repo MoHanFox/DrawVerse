@@ -221,3 +221,48 @@ API/版本和后续技术决定见设计第12节。保留 `probe-d3d-1`（NDC方
 已支持增量仅是独立64²三通道实验与原路径准确基线。未测：实际文档通用瓦片/增量上传/预算拒绝、真实DeviceRemoved/TDR、慢消费者/取消关闭租约、多文档故障恢复、其他Qt/API/硬件、DPR1/2矩阵、自由变换旋转/透视/Warp首帧、复杂栈性能、真实冷盘、实体笔压力、GPU完成/物理显示；保持CPU真值与现有后备，不新增这些支持声明。**G1–G5尚未实施**。
 
 下一步G1：复核本轮Qt6.8.3/RGBA32F同窗口路线，按第9节候选预算实现不可变计划、有界瓦片读取、版本能力、身份/租约与取消关闭，并提供CPU对照的可运行传输成果；默认显示行为保持。G2才迁移实际Normal/自身蒙版显示，G3以本轮严格首帧/单历史/最终主视图屏障为before比较，不能先标记G4/G5完成。
+
+## 11. G1 实施前冻结
+
+起点为G0提交 `bf9bef9`，Qt6.8.3/D3D11/RGBA32F证据继续有效；产品最低Qt6.5与默认显示保持。G1仅实现不可变计划和传输，不能以接口存在宣称G2画布GPU合成已完成。
+
+64² RGBA32F瓦片65536字节，4096块满幅4K即256MiB；第9节64MiB候选租约无法容纳它，故在实施前修订为每租约最多256MiB像素引用、8MiB元数据估算，进程所有计划（含在途读取）合计512MiB，最多两租约/会话；进程读取暂存16MiB、单次最多一块64KiB。实际资源按保守上界计账，构造前预检，失败不生成部分可用计划。GPU预算尚未实现，原256MiB候选不能当保证。
+
+协议独立version=1，能力Normal/自身蒙版/LinearRGBA32F显式协商；未知版本/能力、超限、陈旧generation/revision/request/device epoch显式拒绝。新窗口设备epoch淘汰该view旧资源；新文档、取消与关闭释放计划，正在读取的不可变数据持有预算至完成，不靠裸指针或layerID复用。读取可触发冷盘，只允许worker调用；GUI和渲染线程不调用瓦片读取。真实采样和历史顺序保持，显示计划请求不修改文档。
+
+初始计划只接纳完整闭包的根Normal栅格及自身蒙版，组/剪贴/其他blend/置入图与编辑会话明确unsupported；不拆穿透/剪贴闭包，不静默略过蒙版。按必要源坐标传输真实64²瓦片，显式透明与隐式白分别编码，不用2048代理或逐层mip代替精确输入。先验证CPU计划参考与现有Renderer像素一致，再验证版本化ABI读取及Qt worker→真实窗口的纵向传输。
+
+最小门禁预登记：Normal/透明/偏移/隐式白/自身蒙版CPU对照；稳定瓦片身份与COW失效；尺寸/缓冲/能力/预算；乱序与重复请求；取消/关闭/新文档/设备epoch；并发读取与预算回收；Rust生成头与四ABI消费者；Qt worker可运行链、软件/D3D11默认原路径相关回归。性能不在G1增加新结论；失败与未测追加记录。
+
+## 12. G1 交付记录（2026-10-27）
+
+代码从G0 `bf9bef9` 续接，仍为 `General-purpose-GPU-synthesis`，没有切分支或覆盖原三份入口文档改动。G0的同窗口QRhi试验/Qt6.8.3精度与直显代码保持，本阶段没有更换API、格式或路线；未据此补称Qt6.6/6.7或其他后端已验证。G1使用设备无关Rust计划与ABI1.81/version1传输，默认画布行为保持，state45/behavior37/VBR和文档格式不变。
+
+### 12.1 实际支持与纵向行为
+
+根Normal栅格、透明、opacity/fill、偏移、隐式白与链接自身蒙版编译为不可变节点及原始64²瓦片。组、穿透/隔离、剪贴、其他blend、置入图、固定蒙版以及活动笔触/移动/变换/液化会话明确unsupported，不静默拆闭包；准备失败不改文档last_error。G1不接管这些编辑中的产品显示，原CPU/常驻预览保持。
+
+新独立显示邮箱不消耗业务sequence；288个显示请求与24笔Begin/End交错，最终24个已提交笔触及精确End序号2..48保留。Stable content ID/COW使旧计划像素保持不可变；私有Weak缓存8192项，不传原生指针。调用方提供完整view/request/epoch/generation/revision/lease/publication身份，乱序、旧设备逻辑epoch、新文档和跨core拒绝。关闭与在途引用测试证明取消后不发布缓冲，预算保留到最后所有者释放。
+
+`qt_composition_transport_tests` 在专用QThread创建文档、申请计划、逐块读取、CPU解释并与现有CPU frame逐字节比较，再在真实256×192窗口显示。夹具128×96，白底、彩色半透明笔触、栅格fill0.7/opacity0.6/偏移(-7,3)、自身蒙版opacity0.45。两后端均3节点/7瓦片，pin458752字节、保守计划计账468480字节，单读峰65536字节；CPU参考最大字节误差0、DPR1.5窗口RGB最大误差0。worker与GUI线程不同，等待期间GUI心跳软件15/D3D11为14；不把心跳次数当延迟或无阻塞的普遍证明。释放后计划/读取当前计账均0。
+
+此窗口显示的是worker CPU解释图，报告显式 `gpu_composition=false`；它验证G1可运行传输与语义，不能冒充G2多通道GPU合成。实际GPU上传缓存、合成依赖/脏区、设备预算和渲染节点关联仍待G2。G0独立三通道实验仍是当前直显证据。
+
+### 12.2 门禁与原始产物
+
+原始目录 `artifacts/general-gpu-composition/G1/`，所有日志和PNG均独立于G0，未重跑无关性能矩阵。`native-final/invocation.json` 固定最终源文件/EXE/DLL SHA256、HEAD及工作区，逐后端environment/transport.json/CPU与窗口PNG/QtTest结果保留；此前 `native-1` 通过记录也保留。
+
+- `render-tests.log`：paint-render完整Release40项通过（含新6项：CPU语义、COW身份、闭包拒绝/预算、LE瓦片/取消、先合成再LOD、冷页构造不读盘）。冷页读通过原PagePool计数证明，不是物理冷盘量测。
+- `lease-tests.log`：内部租约/预算/关闭3项Release通过；`public-tests-final.log`：公开ABI6项Release通过，含尺寸/能力/缓冲不部分写、预算/unsupported、新文档/epoch、24笔显示洪泛、8线程读与取消。最终复查将捕获移到本tick元数据发布后，保证key.publication与实际源一致，并新增Qt/公开ABI精确关联断言；未变更原断言。
+- `clippy-final.log`：paint-render/paint-ffi all-targets严格Clippy通过；Rust fmt、Python编译与git diff检查通过，原有CRLF提示保留。未运行总 `python tools/check.py`，不能称完整workspace验收。
+- `native-final`：Qt传输软件/D3D11各1功能及init/cleanup共3项通过；原移动/变换十行功能各通过（含init/cleanup各12）。D3D11日志实际API4，Qt6.8.3；软件API1。没有新增端到端性能after或物理屏幕计时。
+- `consumer-tests-final.log`：四ABI消费者及offscreen软件Qt传输CTest共5项通过；C11/C++20分别静态/动态编译布局断言，并实际申请、读取与释放租约。
+- `release-build-final.log`：完整目标构建/部署成功，Rust生成头和既有DXBC检查通过，保留windeployqt缺translations/catalogs.json警告。`release-smoke-final/result.json` / `qt.log` / `preview.png`：标准 `build/bin/Release/drawverse.exe` 已更新，真实D3D11启动/三笔绘画/窗口图/退出0。EXE SHA256 `3731643f59801a965a58fa72800263fef5b87496ea1b5af9087e9bcc3164fd97`；DLL `1b972ed5c5396f7d9911cf5af1cc80f4177334ff73dd394b13069458c04cb982`。中间构建/冒烟目录均保留，不能与最终二进制摘要混用。
+
+### 12.3 保留失败、未测与下一步
+
+`release-build.log` 首次新Qt测试缺include路径失败，补target include后保留；`release-build-2.log` 因ABI注释变更触发生成头漂移失败，Rust重新生成后第三次通过，不绕过检查。`consumer-tests.log` / `consumer-tests-fixed.log` 的受限环境Qt进程约0.09s无输出退出仍保留；补独立CTest的Qt Test DLL路径后受限环境仍失败，最终原生环境相同CTest5项通过，不能将原失败归因断言或删除。历史G0失败与原未归因记录保持。
+
+未测：实际GPU增量/设备epoch绑定、多文档窗口租约消费与显存计账、真实DeviceRemoved/TDR/低显存、IO损坏故障注入、极限4096节点/瓦片压力、Weak索引满额压测、Qt6.5实际编译/其他SDK与平台。支持矩阵之外仍走原CPU路径。G1没有新增性能承诺；首位移性能门槛仍未通过。
+
+下一步G2：在实际画布用所属窗口QRhi消费计划与增量瓦片，保持完整CPU后备；连续绘画及Normal/自身蒙版/隐式白全像素对照，无变化不重复上传，实际GPU结果直显。随后G3扩展编辑源身份/预热和本地最新绝对几何、快释放及最终主视图原子交接，再按G0冻结边界量测。G2–G5尚未完成。

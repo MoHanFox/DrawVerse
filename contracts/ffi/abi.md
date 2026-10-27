@@ -1,4 +1,20 @@
-# C ABI 1.80.0 契约
+# C ABI 1.81.0 契约
+
+## ABI 1.81 — 不可变显示计划传输（G1）
+
+合成协议独立 version=1，通过 `paint_core_composition_capabilities` 协商 Normal=1、自身蒙版=2、线性预乘 RGBA32F=4；不复用已满的全局 u64 feature mask，不表示 GPU 设备能力。现有显示默认保持 CPU，state45、behavior37、VBR 与文档格式不变。
+
+`paint_session_request_composition` 复制请求到独立有界显示邮箱，不占真实笔采样与历史命令 FIFO，不分配业务 sequence。返回 OK 仅表示接纳。`paint_session_composition_info` 返回 Pending/Ready/Failed；不支持的完整闭包和预算不足为 Failed 租约，status 说明原因，不改文档错误、revision 或历史。每会话最多两租约，待处理的同 view 请求可合并；Ready/Failed 仍需调用 `paint_session_release_composition` 释放。
+
+身份由 view_id、lease_id、request_id、device_epoch、document_generation、revision、publication 组成。每 view 的 request/epoch 单调，epoch 增加淘汰该 view 的旧租约；新文档与关闭取消旧租约。node/tile/read 必须提供完整 Ready key，不能只使用 layer ID 或 revision。跨 core/session 的租约不通用。epoch 是调用方提供的逻辑身份，G1 尚未连接实际窗口设备生命周期。
+
+能力、请求、key、info、node、tile、usage 的 C 布局分别为88、144、56、136、64、40、40字节；调用方填写外层及嵌套 viewport.struct_size，reserved 为0。未知版本/能力拒绝。节点描述 Normal 栅格与自身蒙版、偏移、opacity/fill、隐式白范围及连续瓦片索引，mask_index=UINT32_MAX 表示无蒙版。蒙版 alpha 表示隐藏量，opacity 表示密度；fill=0 隐藏该蒙版，否则不作为密度乘数。组、剪贴、其他混合、置入图、固定蒙版及活动编辑会话明确 unsupported，不生成缺层的部分计划。
+
+`paint_session_composition_node/tile` 读取不可变描述；`paint_session_read_composition_tile` 每次最多一块64×64×16=65536字节，小端 f32 线性预乘 RGBA，format=4，不包含 GPU 指针。content_id 为进程内不复用的内容身份，私有 Weak 索引最多8192项，淘汰只导致缓存未命中。显式透明瓦片覆盖隐式白。源是原始分辨率，LOD 必须在合成后执行。
+
+瓦片读取仅可在 worker 调用，可能触发分页 IO；GUI/渲染线程不得调用。容量查询或不足返回所需65536字节而不读取/部分写入，超过65536的容量拒绝。读取不持有服务锁进行 IO，最终复制前再次校验取消；取消与最终复制有明确线性化顺序，取消后旧结果不写入调用方缓冲区。调用方缓冲区必须在返回前保持有效，遵守原有非重叠与对齐约束。
+
+上限为4096节点/4096瓦片、每租约256MiB像素引用与8MiB保守元数据；进程计划512MiB、读取暂存16MiB，均先预留后构造，失败回收。info.budget_bytes 包含保守预检计账，可大于实际 pinned_bytes+metadata_bytes。`paint_core_composition_usage` 返回进程当前/峰值计账；取消后在途 Arc 持有预算直至最后使用者释放。消费者自身包、暂存和未来 GPU 资源仍需独立预算。没有等待 GPU 或改写 CPU 最终提交的入口。
 
 ## ABI 1.80 — 图层移动后台预热
 

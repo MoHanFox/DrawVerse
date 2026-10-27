@@ -20,6 +20,7 @@ use document::{
     bucket_api, layer_actions_api, layer_api, liquify_api, selection_api, smudge_api,
     transform_api, wand_api,
 };
+pub use engine::composition_api::*;
 pub use engine::compute_api::*;
 use engine::{runtime, session, session_api, storage_api};
 use files::{file_api, file_job};

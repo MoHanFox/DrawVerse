@@ -15,7 +15,11 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 80;
+pub const PAINT_ABI_MINOR: u32 = 81;
+
+#[path = "api_composition.rs"]
+mod composition;
+pub use composition::*;
 /// ABI1.77: focus flags bit2 and read-resident kind2 carry a fixed selection mask.
 pub const PAINT_RESIDENT_PREVIEW_SELECTED: u32 = 4;
 /// Resolved-dab outline replay and allowOverflow through state45 preparation.
