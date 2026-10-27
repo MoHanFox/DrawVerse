@@ -1,6 +1,7 @@
 #pragma once
 #include "brushes/BrushLibrary.h"
 #include "engine/LiquifyPreview.h"
+#include "engine/CompositionPacket.h"
 #include <QColor>
 #include <QImage>
 #include <QHash>
@@ -333,6 +334,9 @@ public:
     Q_INVOKABLE bool clearSelection();
     Q_INVOKABLE bool invertSelection();
     const QImage &frame(int view = 0) const { return m_frames[view == 1 ? 1 : 0]; }
+    CompositionPacketPtr compositionPacket()const{return m_compositionPacket;}
+    QString compositionFallback()const{return m_compositionFallback;}
+    void setCompositionDevice(quint64 epoch,bool enabled);
     ResidentPreviewPtr residentPreview() const { return m_residentPreview; }
     ResidentPreviewPtr liquifyPreview() const { return residentPreview(); }
     ResidentPreviewAssetsPtr movePreparation() const { return m_movePreparation; }
@@ -520,6 +524,8 @@ signals:
     void commandCompleted(bool onWorkerThread);
     void fileFinished(bool success);
 private:
+    CompositionPacketPtr m_compositionPacket;
+    QString m_compositionFallback;
     bool m_brushPreferencePersistenceEnabled=true;
     bool m_wetActionBusy=false;
     bool m_brushFileBusy=false;

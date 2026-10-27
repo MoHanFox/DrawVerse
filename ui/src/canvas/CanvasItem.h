@@ -52,6 +52,8 @@ public:
     QRectF visibleDocumentRect() const;
     QRectF prefetchedDocumentRect() const;
     bool gpuDisplay() const;
+    Q_INVOKABLE QVariantMap compositionStatistics()const;
+    void observeCompositionReadback(std::shared_ptr<CompositionReadback> value){m_compositionCounters->readback=std::move(value);}
     bool forwardPreview() const {return !m_previewPart && m_residentPreview && m_residentPreview->forward;}
     int previewPart() const {return m_previewPart;}
     void setPreviewPart(int part) {if(part<0 || part>2 || part==m_previewPart)return;m_previewPart=part;refresh();emit residentPresentationChanged();}
@@ -114,6 +116,11 @@ protected:
     void hoverLeaveEvent(QHoverEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 private:
+    CompositionPacketPtr m_compositionPacket;
+    std::shared_ptr<CompositionCounters> m_compositionCounters=std::make_shared<CompositionCounters>();
+    quint64 m_compositionEpoch=0;
+    bool m_compositionFailed=false;
+    QString m_compositionFailureReason;
     std::shared_ptr<CanvasPresentationObservation> m_presentationObserver;
     int m_previewPart=0;
     QRectF m_presentationRect;

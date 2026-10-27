@@ -14,6 +14,8 @@ add_library(drawverse_ui STATIC
     src/platform/MenuSurface.h src/platform/MenuSurface.cpp
     src/platform/MenuBlurLayer.h src/platform/MenuBlurLayer.cpp
     src/engine/PaintCoreClient.h src/engine/PaintCoreClient.cpp
+    src/engine/CompositionPacket.h src/engine/CompositionPacket.cpp
+    src/canvas/CompositionNode.h src/canvas/CompositionNode.cpp
     src/canvas/CanvasItem.h src/canvas/CanvasItem.cpp
     src/canvas/LiquifyPreviewNode.h src/canvas/LiquifyPreviewNode.cpp
     src/canvas/ResidentPreviewTextures.h src/canvas/ResidentPreviewTextures.cpp
@@ -24,11 +26,18 @@ add_library(drawverse_ui STATIC
     src/brushes/BrushPreviewPolicy.h src/brushes/BrushPreviewPolicy.cpp
     src/workspace/WorkspaceManager.h src/workspace/WorkspaceManager.cpp)
 target_compile_features(drawverse_ui PUBLIC cxx_std_20)
-target_include_directories(drawverse_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(drawverse_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(drawverse_ui PUBLIC Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2
     PRIVATE drawverse_ffi_static)
 if(WIN32)
     target_link_libraries(drawverse_ui PRIVATE dwmapi windowsapp CoreMessaging Qt6::GuiPrivate)
+endif()
+
+if(Qt6_VERSION VERSION_GREATER_EQUAL 6.6)
+    target_compile_definitions(drawverse_ui PRIVATE DRAWVERSE_HAS_COMPOSITION_RHI)
+    target_link_libraries(drawverse_ui PRIVATE Qt6::GuiPrivate)
+    qt_add_shaders(drawverse_ui composition_shaders PREFIX "/composition" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+        GLSL "300es,330" FILES shaders/composition.vert shaders/composition.frag)
 endif()
 
 # Keep the resource manifest and its rebuild dependencies in one place.
@@ -152,6 +161,14 @@ target_link_libraries(qt_composition_transport_tests PRIVATE drawverse_ui Qt6::T
 set_target_properties(qt_composition_transport_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
 add_test(NAME qt_composition_transport_tests COMMAND qt_composition_transport_tests)
 set_tests_properties(qt_composition_transport_tests PROPERTIES TIMEOUT 60
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Test>")
+
+qt_add_executable(qt_gpu_composition_tests tests/gpu_composition_tests.cpp)
+target_link_libraries(qt_gpu_composition_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_gpu_composition_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_gpu_composition_tests COMMAND qt_gpu_composition_tests)
+set_tests_properties(qt_gpu_composition_tests PROPERTIES TIMEOUT 120
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Test>")
 

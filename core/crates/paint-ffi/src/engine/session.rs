@@ -1991,7 +1991,6 @@ impl Engine {
             } else if self.document.transform_active()
                 || self.document.liquify_active()
                 || self.document.layer_move_active()
-                || self.document.stroke_active()
                 || self.files.running()
             {
                 Err(ApiError::new(

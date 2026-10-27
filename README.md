@@ -123,7 +123,7 @@ ctest --test-dir build/qt -C Release -R "^abi_" --output-on-failure
 
 `ui/include/paint_api.h` 由 `paint-api-gen` 生成。调整 Rust ABI 后，使用不带 `--check` 的同一命令更新生成头。
 
-通用GPU合成的G0试验独立按需构建，产品最低Qt6.5和默认显示行为保持；试验需要Qt6.6+ GuiPrivate，目前仅验证Qt6.8.3 / Windows D3D11。配置 `-DDRAWVERSE_G0_EXPERIMENT=ON` 后显式构建 `qt_gpu_composition_probe` 与 `qt_gpu_composition_baseline`；它们不进入默认构建或CTest。G1新增ABI1.81/version1不可变计划、能力与有界瓦片租约；`qt_composition_transport_tests` 在worker读取并以CPU解释后显示真实窗口，不代表G2 GPU合成。构建此目标后可用 `python tools/validate_general_gpu_g1.py artifacts/general-gpu-composition/G1/new-run` 采集两后端传输与原路径回归，输出目录必须新建。基线、原始证据、失败与支持边界见[通用GPU合成验收](docs/validations/platform/general-gpu-composition-validation.md)。G2–G5未完成，实际画布仍沿用原显示与CPU后备。
+通用GPU合成默认保持原显示；产品最低Qt6.5，实际GPU适配要求Qt6.6+ GuiPrivate，目前仅验证Qt6.8.3 / Windows D3D11。G0试验通过 `-DDRAWVERSE_G0_EXPERIMENT=ON` 后显式构建 `qt_gpu_composition_probe` / `qt_gpu_composition_baseline`，不进入默认构建或CTest。G1为ABI1.81/version1不可变计划/有界租约，`qt_composition_transport_tests` 是CPU传输对照；G2在实际Canvas用同窗口设备增量合成根Normal/链接自身蒙版并直接显示，设置 `DRAWVERSE_GPU_COMPOSITION=1` 才启用。原图及视口各最多4194304像素、边长4096、LOD≤6；复杂组合/预算/设备能力不足明确CPU后备。构建 `qt_gpu_composition_tests` 后可运行 `python tools/validate_general_gpu_g2.py artifacts/general-gpu-composition/G2/new-run` 采集两后端正确性，目录必须新建；G1原路径回归脚本继续有效。基线、原始证据、保留失败和支持边界见[通用GPU合成验收](docs/validations/platform/general-gpu-composition-validation.md)。G3–G5及首位移性能目标尚未完成，不能把GPU可用当作交互延迟已改善。
 
 最近的结构整理已完成 Release 构建、原生启动绘制和专项回归；全套 IO 与额外 Qt 交互检查仍有已知失败项，详见 [结构整理验收](docs/validations/platform/source-layout-validation.md)。各阶段记录不代表当前全量测试或跨平台验证均已通过。
 

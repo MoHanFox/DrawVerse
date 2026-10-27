@@ -28,6 +28,7 @@
 #include <utility>
 
 Q_DECLARE_METATYPE(PaintSessionInfo)
+Q_DECLARE_METATYPE(CompositionPacketPtr)
 Q_DECLARE_METATYPE(PaintFileJobInfo)
 namespace {
 enum Operation { New = 1, Begin, Move, End, Cancel, Undo, Redo, Add, Remove, Select, Properties, NewWhite, AddMask, AirbrushTick };
@@ -59,6 +60,8 @@ struct BackendConnection {
     PaintSession *session = nullptr;
     std::atomic_bool framePending[2]{};
     std::atomic_bool metadataPending{false};
+    std::atomic_bool compositionPending{false};
+    CompositionViewRequest compositionView;
     std::atomic_bool residentPreviewPending{false};
     std::atomic<quint64> fileJob{0};
 };
@@ -217,6 +220,7 @@ public:
     void stop() {
         if (m_stopped) return;
         m_stopped = true; m_timer->stop();
+        m_compositionReader.reset(m_core,m_session);
         if(!m_pendingWet.isEmpty()){m_pendingWet.clear();emit wetActionReady(false,QStringLiteral("后端已关闭"));}
         while(!m_pendingBrushPreferences.isEmpty()){pollBrushState();if(!m_pendingBrushPreferences.isEmpty())QThread::msleep(1);}
         { QMutexLocker lock(&m_connection->mutex); m_connection->session = nullptr; m_connection->core = nullptr; }
@@ -333,6 +337,7 @@ signals:
     void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform,QVariantList committedStrokes);
     void thumbnailReady(quint64 generation, quint64 revision, quint64 layer, QString image);
     void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request, quint64 frameId);
+    void compositionReady(CompositionPacketPtr packet,quint64 serial,QString fallback);
     void failure(QString message);
     void completed(bool workerThread);
     void finished();
@@ -545,6 +550,16 @@ public:
         }
         pollMovePreparation();
         pollResidentPreview();
+        if(!m_connection->compositionPending.load()){
+            CompositionViewRequest view;
+            {QMutexLocker lock(&m_connection->mutex);view=m_connection->compositionView;}
+            QString fallback=m_compositionFallback;
+            auto packet=m_compositionReader.poll(m_core,m_session,info,view,fallback);
+            if(packet || fallback!=m_compositionFallback){
+                m_compositionFallback=fallback;m_connection->compositionPending=true;
+                emit compositionReady(std::move(packet),view.serial,fallback);
+            }
+        }
         const int pollInterval=m_residentPreview?8:16;
         if(m_timer->interval()!=pollInterval)m_timer->setInterval(pollInterval);
         for (uint32_t view = 0; view < 2; ++view) {
@@ -933,6 +948,8 @@ public:
     QTimer *m_timer;
     PaintCore *m_core = nullptr;
     PaintSession *m_session = nullptr;
+    CompositionReader m_compositionReader;
+    QString m_compositionFallback;
     quint64 m_layerCopySequence=0;
     ResidentPreviewPtr m_residentPreview;
     ResidentPreviewAssetsPtr m_movePreparation;
@@ -1239,6 +1256,15 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         m_movePreparationCompleted=true;
         emit movePreparationChanged();
     });
+    connect(m_worker,&BackendWorker::compositionReady,this,[this](CompositionPacketPtr packet,quint64 serial,QString fallback){
+        m_connection->compositionPending=false;
+        {QMutexLocker lock(&m_connection->mutex);if(m_closing || serial!=m_connection->compositionView.serial)return;}
+        m_compositionFallback=std::move(fallback);
+        if(packet && packet->info.key.document_generation==m_generation &&
+           (!m_compositionPacket || packet->info.key.revision>=m_compositionPacket->info.key.revision))m_compositionPacket=std::move(packet);
+        else if(!m_compositionFallback.isEmpty())m_compositionPacket.reset();
+        emit frameChanged();
+    });
     connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request, quint64 frameId) {
         m_connection->framePending[view].store(false);
         if (m_closing || m_pendingNew || generation != m_generation ||
@@ -1489,6 +1515,13 @@ void PaintCoreClient::requestLayerMovePreparation() {
     InteractionTrace::point("move.prepare.request",double(m_movePreparationRequest));
     InteractionTrace::point("move.prepare.sequence",double(sequence));
     if(status!=PAINT_OK)m_movePreparationPendingRequest=0;
+}
+void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
+    enabled=enabled && qEnvironmentVariableIntValue("DRAWVERSE_GPU_COMPOSITION")==1 && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive;
+    QMutexLocker lock(&m_connection->mutex);auto &view=m_connection->compositionView;
+    if(view.epoch==epoch && view.enabled==enabled && view.generation==m_generation && view.region==m_requestedRegions[0] && view.pixels==m_requestedPixels[0])return;
+    ++view.serial;view.epoch=epoch;view.enabled=enabled;view.generation=m_generation;view.region=m_requestedRegions[0];view.pixels=m_requestedPixels[0];
+    if(!enabled || (m_compositionPacket && m_compositionPacket->info.key.document_generation!=m_generation))m_compositionPacket.reset();
 }
 void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, bool enabled) {
     if (!m_ready || m_closing || view < 0 || view > 1) return;

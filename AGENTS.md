@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新通用GPU合成G2：general-gpu-composition验收第13–14节；实际Canvas显式DRAWVERSE_GPU_COMPOSITION=1接所属窗口QRhi，根Normal/链接自身蒙版、偏移/透明/隐式白与原分辨率合成后LOD直显，默认OFF。内容ID增量atlas/瓦片脏区；普通活动笔触CPU候选不可变捕获，历史仍核心提交。4M文档/视口、64节点1024瓦片、单节点256MiB payload/进程2GiB含在途保守预留/CPU块512MiB，超范围CPU；软件及D3D11三进程各13功能行通过，1024²密集全线性误差1.192e-7/窗口≤1，25笔单历史/静止上传0/末笔上传1、五类后备绘画撤销精确及窗口释放归零。render40/公开7/相关严格Clippy/四ABI/头/Release通过，标准exe更新，ABI1.81/state45保持；原CPU视口仍并行准备，无性能after。保留native-3第16笔未归因失败；G3–G5、真实故障/压力/冷盘/实体/总check未完成。
+
 - 最新通用GPU合成G1：general-gpu-composition验收第11–12节；ABI1.81独立version1计划/能力/瓦片/租约，CPU文档与state45不变。根Normal/透明/偏移/隐式白/链接自身蒙版完整闭包，其他组合明确unsupported；每会话两租约、每租约256MiB pin/8MiB元数据、进程512MiB计划/16MiB读取，冷页仅worker读。显示邮箱独立业务FIFO，epoch/新文档/取消关闭拒绝旧发布；COW内容身份有界Weak缓存。render Release40、租约3/公开6、四ABI、Qt传输软件/D3D11及原相关各10行通过；真实3节点7瓦片与CPU/窗口误差0，释放计账0。标准Release更新并D3D11绘画冒烟，默认显示保持；G2–G5/实际GPU增量合成/首帧改善/真实故障/总check未完成。
 
 - 最新通用GPU合成G0：general-gpu-composition设计/验收第9–10节；实际分支General-purpose-GPU-synthesis、起点d13e62b，保留原工作区。Qt6.8.3/D3D11同窗口RGBA32F蒙版/Normal/显示转换三通道直显三轮及软件通过，正常九帧上传1/通道3/读回0，全像素线性误差5.96e-8、RGBA8/窗口误差≤1；第二窗口独立与隐藏重建通过，非真实设备故障。v4移动/变换1024²/4096²各三进程，首移动219/310ms中位、就绪约23–27ms、变换持续约26ms，首帧目标未过；冻结失败/干扰与精确EXE摘要保留。CPU render34、相关Qt软件/D3D11各10、四ABI/头/Release通过，标准build/bin/Release更新；ABI1.80/state45保持。试验默认OFF，产品未接通用合成，G1–G5/真实冷盘/设备故障/实体/物理显示/总check未完成。

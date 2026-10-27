@@ -517,3 +517,56 @@ fn composition_parallel_tile_reads_and_cancel_publish_only_complete_or_untouched
     assert!(usage.plan_bytes <= limits.process_plan_bytes);
     assert!(usage.peak_read_bytes <= limits.process_read_bytes);
 }
+
+#[test]
+fn composition_active_brush_capture_is_immutable_and_never_commits_preview_history() {
+    let h = Harness::new(64, 64);
+    let mut brush = dto!(PaintStrokeDesc);
+    brush.mode = PAINT_MODE_PAINT;
+    brush.radius = 8.;
+    brush.opacity = 1.;
+    brush.spacing = 0.15;
+    brush.linear_rgba = [1., 0., 0., 1.];
+    let begin = h.submit(PaintCommand {
+        kind: PAINT_COMMAND_BEGIN_STROKE,
+        stroke: brush,
+        point: PaintPoint {
+            x: 16.,
+            y: 16.,
+            pressure: 1.,
+            tool: PAINT_TOOL_MOUSE,
+            ..dto!(PaintPoint)
+        },
+        ..dto!(PaintCommand)
+    });
+    let active = h.wait(begin);
+    assert_eq!(active.stroke_active, 1);
+    let plan = acquire(&h, 1, 1);
+    let original = bytes(&h, plan.key, 0);
+    assert_eq!(h.info().undo_depth, active.undo_depth);
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_STROKE_TO,
+        point: PaintPoint {
+            x: 48.,
+            y: 48.,
+            pressure: 1.,
+            tool: PAINT_TOOL_MOUSE,
+            ..dto!(PaintPoint)
+        },
+        ..dto!(PaintCommand)
+    }));
+    assert_eq!(bytes(&h, plan.key, 0), original);
+    let advanced = acquire(&h, 2, 1);
+    assert_ne!(bytes(&h, advanced.key, 0), original);
+    assert_eq!(h.info().undo_depth, active.undo_depth);
+    let end = h.submit(PaintCommand {
+        kind: PAINT_COMMAND_END_STROKE,
+        ..dto!(PaintCommand)
+    });
+    let final_state = h.wait(end);
+    assert_eq!(final_state.undo_depth, active.undo_depth + 1);
+    assert_eq!(final_state.completed_sequence, begin + 2);
+    assert_eq!(bytes(&h, plan.key, 0), original);
+    release(&h, plan);
+    release(&h, advanced);
+}

@@ -22,6 +22,8 @@ struct CanvasPresentationIdentity {
     // core revision and the immediately updated QML control handles.
     quint64 geometryKey=0;
     QPointF firstVertex;
+    quint64 deviceEpoch=0,request=0,publication=0,plan=0;
+    bool composition=false;
     bool operator==(const CanvasPresentationIdentity &) const = default;
 };
 struct CanvasPresentationObservation {
