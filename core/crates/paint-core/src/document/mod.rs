@@ -32,7 +32,7 @@ mod taper;
 mod transform;
 #[cfg(test)]
 mod transform_result_history_tests;
-pub use transform::{PlacedImage, TransformGeometry};
+pub use transform::{PlacedImage, TransformDisplayGeometry, TransformGeometry};
 
 #[derive(Clone, Copy, Debug)]
 pub struct DocumentOptions {

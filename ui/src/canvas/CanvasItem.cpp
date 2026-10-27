@@ -89,12 +89,12 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
         setTabletWindowCursor(false);
         if (m_observedWindow) { m_observedWindow->removeEventFilter(this); disconnect(m_observedWindow, nullptr, this, nullptr); }
         m_observedWindow = window;
-        m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionFailed=false;m_compositionFailureReason.clear();m_compositionPacket.reset();
+        m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionCounters->preciseTransform=0;m_compositionFailed=false;m_compositionFailureReason.clear();m_compositionPacket.reset();
         if (window) {
             connect(window, &QQuickWindow::screenChanged, this, &CanvasItem::observeScreen);
             connect(window,&QQuickWindow::sceneGraphInitialized,this,[this]{emit gpuDisplayChanged();refresh();},Qt::QueuedConnection);
             connect(window,&QQuickWindow::sceneGraphInvalidated,this,[this]{
-                m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionFailed=false;m_compositionFailureReason.clear();m_compositionPacket.reset();refresh();
+                m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionCounters->preciseTransform=0;m_compositionFailed=false;m_compositionFailureReason.clear();m_compositionPacket.reset();refresh();
             },Qt::QueuedConnection);
             connect(window,&QQuickWindow::frameSwapped,this,[this]{
                 if(m_moveWarmupPending && m_movePreparation && m_movePreparation->uploads->load()){
@@ -108,7 +108,13 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
     };
     connect(this, &QQuickItem::windowChanged, this, observeWindow);
     connect(this,&QQuickItem::enabledChanged,this,[this] {if(!isEnabled()){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.disabled");stopNavigation();endPicking();setTabletWindowCursor(false);}});
-    connect(this,&QQuickItem::visibleChanged,this,[this] {if(!isVisible()){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.hidden");stopNavigation();endPicking();setTabletWindowCursor(false);}});
+    connect(this,&QQuickItem::visibleChanged,this,[this] {
+        if(!isVisible()){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.hidden");stopNavigation();endPicking();setTabletWindowCursor(false);}
+        // A final CPU frame may have arrived while hidden. Showing the item
+        // must restart its own display request, even with no further metadata
+        // or frame publication to call refresh(). Queue outside QML bindings.
+        QMetaObject::invokeMethod(this,[this]{refresh();m_viewTimer.start();},Qt::QueuedConnection);
+    });
     observeWindow(window());
 }
 void CanvasItem::observeScreen(QScreen *screen) {
@@ -133,6 +139,7 @@ void CanvasItem::setClient(PaintCoreClient *client) {
     if(m_tablet)mouseUngrabEvent();
     cancelLayerMove("move.cancel.clientChanged");
     if(m_client && m_interactive && !m_previewPart)m_client->setCompositionDevice(m_compositionEpoch,false);
+    m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionCounters->preciseTransform=0;
     stopNavigation();m_image={};m_overview={};m_residentPreview={};m_movePreparation={};m_moveWarmupPending=false;m_compositionPacket.reset();m_compositionFailed=false;m_compositionFailureReason.clear();
     emit residentPresentationChanged();
     setTabletWindowCursor(false);
@@ -324,13 +331,14 @@ void CanvasItem::refresh() {
         m_image=image;update();
         return;
     }
-    if(m_interactive && window())m_client->setResidentGpuPreviewAvailable(gpuDisplay());
+    if(m_interactive && window()){m_client->setResidentGpuPreviewAvailable(gpuDisplay());m_client->setCompositionPrecisionAvailable(m_compositionCounters->preciseTransform.load()>0);}
     if (m_generation != m_client->generation()) { stopNavigation();m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
     const int view = m_interactive ? 0 : 1;
     m_image = m_client->frame(view); m_imageRegion = m_client->frameRegion(view);
     m_imageRevision=m_client->frameRevision(view);
     if(m_interactive && window())m_client->setCompositionDevice(m_compositionEpoch,gpuDisplay() && !m_compositionFailed && isVisible());
-    m_compositionPacket=m_interactive?m_client->compositionPacket():CompositionPacketPtr{};
+    m_compositionPacket=m_interactive && qEnvironmentVariableIntValue("DRAWVERSE_GPU_COMPOSITION")==1?m_client->compositionPacket():CompositionPacketPtr{};
+    m_compositionCounters->handoffRevision=m_interactive?m_client->compositionHandoffRevision():0;
     m_movePreparation=m_client->movePreparation();
     m_moveWarmupPending=m_movePreparation && m_movePreparation->uploads->load()==0;
     const QRectF document(0,0,m_client->documentWidth(),m_client->documentHeight());
@@ -364,8 +372,10 @@ QVariantMap CanvasItem::compositionStatistics()const{
         {"adoptions",c.adoptions.load()},{"revision",c.revision.load()},{"epoch",c.epoch.load()},
         {"request",c.request.load()},{"textureBytes",c.textureBytes.load()},{"failures",c.failures.load()},
         {"processReservedPayloadBytes",CompositionNode::reservedPayloadBytes()},
+        {"lastUploadNs",c.lastUploadNs.load()},{"lastSubmitNs",c.lastSubmitNs.load()},{"lastSubmitGeometry",c.lastSubmitGeometry.load()},
         {"nodeRevision",c.nodeRevision.load()},{"nodeRequest",c.nodeRequest.load()},
-        {"testReadbacks",c.testReadbacks.load()},
+        {"nodeGeometry",c.nodeGeometry.load()},{"nodeEpoch",c.nodeEpoch.load()},
+        {"testReadbacks",c.testReadbacks.load()},{"preciseTransform",c.preciseTransform.load()},{"pipelineCreates",c.pipelineCreates.load()},
         {"composedPixels",c.composedPixels.load()},{"lastDirtyArea",c.lastDirtyArea.load()},
         {"fallback",!m_compositionFailureReason.isEmpty()?m_compositionFailureReason:m_client?m_client->compositionFallback():QString()}};
 }
@@ -474,7 +484,7 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     const bool useComposition=m_interactive && !m_previewPart && !m_residentPreview && m_compositionPacket &&
         !m_compositionFailed && m_compositionPacket->info.key.device_epoch==m_compositionEpoch &&
         m_compositionPacket->info.key.document_generation==m_generation &&
-        (node->composition || m_compositionPacket->info.key.revision>=node->displayedRevision);
+        (node->composition || m_compositionPacket->preview || m_compositionPacket->info.key.revision>=node->displayedRevision);
     if(useComposition){
         if(node->composition && node->compositionEpoch!=m_compositionEpoch){delete node->composition;node->composition=nullptr;}
         if(!node->composition){
@@ -488,7 +498,14 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
                         self->m_compositionFailureReason=reason;
                         if(self->m_client)self->m_client->setCompositionDevice(self->m_compositionEpoch,false);
                     }
-                    self->update();
+                    self->refresh();
+                },Qt::QueuedConnection);
+            },[self](CompositionPacketPtr packet){
+                if(!self)return;
+                const auto key=packet->info.key;
+                QMetaObject::invokeMethod(self,[self,key]{
+                    if(self && self->m_client && self->m_interactive && !self->m_previewPart && self->m_compositionEpoch==key.device_epoch)
+                        self->m_client->compositionPrimaryAdopted(key.document_generation,key.device_epoch,key.revision);
                 },Qt::QueuedConnection);
             });
             if(node->composition){node->compositionEpoch=m_compositionEpoch;node->appendChildNode(node->composition);}
@@ -497,12 +514,14 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         }
         if(node->composition){
             const auto &r=m_compositionPacket->region;
-            const bool present=node->composition->ready() && m_compositionPacket->info.key.revision>=node->displayedRevision;
+            const bool present=node->composition->ready() && (m_compositionPacket->preview || m_compositionPacket->info.key.revision>=node->displayedRevision);
             node->composition->setRect(present?QRectF(documentRect().topLeft()+r.topLeft()*m_zoom,r.size()*m_zoom):QRectF());
             if(present){
                 node->displayedRevision=m_compositionPacket->info.key.revision;
+                m_compositionCounters->nodeEpoch=m_compositionPacket->info.key.device_epoch;
                 m_compositionCounters->nodeRevision=m_compositionPacket->info.key.revision;
                 m_compositionCounters->nodeRequest=m_compositionPacket->info.key.request_id;
+                m_compositionCounters->nodeGeometry=m_compositionPacket->geometrySequence;
                 if(node->image)node->image->setRect({});for(auto *tile:node->overview)if(tile)tile->setRect({});
                 if(node->preview){delete node->preview;node->preview=nullptr;}
                 if(m_presentationObserver){
@@ -510,6 +529,9 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
                     adopted={quintptr(this),quintptr(window()),m_generation,0,key.revision,0,r,documentRect(),size(),m_zoom,false,true};
                     adopted.deviceEpoch=key.device_epoch;adopted.request=key.request_id;adopted.publication=key.publication;
                     adopted.plan=key.lease_id;adopted.composition=true;
+                    adopted.geometryKey=m_compositionPacket->geometrySequence;adopted.presentationDelta=m_compositionPacket->presentationDelta;
+                    adopted.source=m_compositionPacket->editSequence;
+                    if(m_compositionPacket->transform)adopted.firstVertex={m_compositionPacket->transform->geometry.points[0],m_compositionPacket->transform->geometry.points[1]};
                 }
                 return node;
             }
@@ -614,6 +636,13 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     if(m_presentationObserver)adopted={quintptr(this),quintptr(window()),m_generation,0,m_imageRevision,node->imageKey,
         m_imageRegion,documentRect(),size(),m_zoom,false,true};
     node->displayedRevision=std::max(node->displayedRevision,m_imageRevision);
+    if(m_interactive && !m_previewPart && m_compositionCounters->handoffRevision.load() &&
+       m_imageRevision>=m_compositionCounters->handoffRevision.load()){
+        QPointer<CanvasItem> self=this;const auto generation=m_generation,epoch=m_compositionEpoch,revision=m_imageRevision;
+        QMetaObject::invokeMethod(this,[self,generation,epoch,revision]{
+            if(self && self->m_client && self->m_compositionEpoch==epoch)self->m_client->compositionPrimaryAdopted(generation,epoch,revision);
+        },Qt::QueuedConnection);
+    }
     return node;
 }
 InputSample CanvasItem::mouseSample(QPointF local, Qt::MouseButtons buttons) {

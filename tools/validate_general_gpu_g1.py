@@ -1,15 +1,19 @@
 """Run G1 transport and default-display regression in isolated native windows."""
+import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('output', type=Path)
+    parser.add_argument('--full-transform', action='store_true', help='Run the complete original CPU/resident input regression suite')
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    out = Path(sys.argv[1]).resolve()
+    out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
     sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
     files = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--', 'core', 'ui', 'tools'], cwd=root, text=True).splitlines()
@@ -25,6 +29,8 @@ def main():
                    'pickedMoveUsesLatestInputForActualTarget',
                    'residentCompletionWaitsForFinalPrimaryFrame',
                    'residentMoveUsesLatestInputBeforeBackendRoundTrip']
+    if args.full_transform:
+        regressions = []
     results = []
     for backend in ['software', 'd3d11']:
         directory = out/backend
@@ -50,7 +56,7 @@ def main():
                 try:
                     run = subprocess.run([str(root/'build/bin/Release'/executable), *arguments,
                                           '-o', str(directory/(stem+'.txt'))+',txt'], env=env,
-                                         stdout=log, stderr=subprocess.STDOUT, timeout=120,
+                                         stdout=log, stderr=subprocess.STDOUT, timeout=300 if args.full_transform else 120,
                                          creationflags=subprocess.CREATE_NO_WINDOW)
                     code = run.returncode
                 except subprocess.TimeoutExpired:

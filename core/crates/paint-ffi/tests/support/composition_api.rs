@@ -570,3 +570,67 @@ fn composition_active_brush_capture_is_immutable_and_never_commits_preview_histo
     release(&h, plan);
     release(&h, advanced);
 }
+
+#[test]
+fn composition_transform_display_geometry_uses_shared_core_mesh_and_atomic_buffers() {
+    assert_eq!(size_of::<PaintTransformDisplayGeometry>(), 104);
+    for warp in [false, true] {
+        let mut geometry = paint_core::TransformGeometry::rectangle(-32., 11., 128., 96.);
+        geometry.warp = warp;
+        geometry.points[5][0] += 7.;
+        let core = geometry.display_geometry().unwrap();
+        let descriptor = PaintTransform {
+            warp: u32::from(warp),
+            interpolation: 2,
+            points: std::array::from_fn(|i| geometry.points[i / 2][i % 2]),
+            ..dto!(PaintTransform)
+        };
+        let mut info = dto!(PaintTransformDisplayGeometry);
+        let mut floats = vec![12345.; 145 * 145 * 4];
+        assert_eq!(
+            unsafe {
+                paint_transform_display_geometry(&descriptor, &mut info, floats.as_mut_ptr(), 1)
+            },
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert!(floats.iter().all(|v| *v == 12345.));
+        assert_eq!(info.vertex_bytes, (core.vertices.len() * 16) as u64);
+        assert_eq!(
+            unsafe {
+                paint_transform_display_geometry(
+                    &descriptor,
+                    &mut info,
+                    floats.as_mut_ptr(),
+                    floats.len() as u64,
+                )
+            },
+            PAINT_OK
+        );
+        assert_eq!(
+            &floats[..core.vertices.len() * 4],
+            core.vertices.as_flattened()
+        );
+        assert_eq!(info.inverse, core.inverse);
+        assert_eq!((info.columns, info.rows), (core.columns, core.rows));
+        assert!(info.columns <= 145 && info.rows <= 145);
+        assert!(floats[..core.vertices.len() * 4]
+            .iter()
+            .all(|v| v.is_finite()));
+        let invalid = PaintTransform {
+            warp: 2,
+            ..descriptor
+        };
+        assert_eq!(
+            unsafe {
+                paint_transform_display_geometry(
+                    &invalid,
+                    &mut info,
+                    floats.as_mut_ptr(),
+                    floats.len() as u64,
+                )
+            },
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(info.vertex_bytes, 0);
+    }
+}

@@ -1,4 +1,4 @@
-"""G2 correctness in isolated native windows; this is not a latency benchmark."""
+"""G2/G3 correctness in isolated native windows; this is not a latency benchmark."""
 import hashlib
 import json
 import os

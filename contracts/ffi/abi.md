@@ -1,4 +1,8 @@
-# C ABI 1.81.0 契约
+# C ABI 1.82.0 契约
+
+## ABI 1.82 — 无会话的共享变换显示几何
+
+`paint_transform_display_geometry`校验现有PaintTransform并返回独立version1的PaintTransformDisplayGeometry（104字节，inverse偏移24）：columns/rows、vertex_bytes、原核心行优先xyuv网格、非Warp逆投影矩阵；Warp逆矩阵为0。每边最多145顶点，总顶点字节≤336400；调用方float容量最多84100，NULL/0查询返回BUFFER_TOO_SMALL并填描述，不部分写顶点。无文档、IO、GPU对象、历史或Actor等待；调用方须遵守缓冲非重叠及f32对齐，返回后不保留指针。该数值入口不是显示完成或GPU能力承诺，计划协议仍version1，文档/state45格式不变。
 
 ## ABI 1.81 — 不可变显示计划传输（G1）
 
@@ -8,7 +12,7 @@
 
 身份由 view_id、lease_id、request_id、device_epoch、document_generation、revision、publication 组成。每 view 的 request/epoch 单调，epoch 增加淘汰该 view 的旧租约；新文档与关闭取消旧租约。node/tile/read 必须提供完整 Ready key，不能只使用 layer ID 或 revision。跨 core/session 的租约不通用。epoch 是调用方提供的逻辑身份，G1 尚未连接实际窗口设备生命周期。
 
-能力、请求、key、info、node、tile、usage 的 C 布局分别为88、144、56、136、64、40、40字节；调用方填写外层及嵌套 viewport.struct_size，reserved 为0。未知版本/能力拒绝。节点描述 Normal 栅格与自身蒙版、偏移、opacity/fill、隐式白范围及连续瓦片索引，mask_index=UINT32_MAX 表示无蒙版。蒙版 alpha 表示隐藏量，opacity 表示密度；fill=0 隐藏该蒙版，否则不作为密度乘数。组、剪贴、其他混合、置入图、固定蒙版及活动编辑会话明确 unsupported，不生成缺层的部分计划。
+能力、请求、key、info、node、tile、usage 的 C 布局分别为88、144、56、136、64、40、40字节；调用方填写外层及嵌套 viewport.struct_size，reserved 为0。未知版本/能力拒绝。节点描述 Normal 栅格与自身蒙版、偏移、opacity/fill、隐式白范围及连续瓦片索引，mask_index=UINT32_MAX 表示无蒙版。蒙版 alpha 表示隐藏量，opacity 表示密度；fill=0 隐藏该蒙版，否则不作为密度乘数。组、剪贴、其他混合、置入图、固定蒙版及活动移动/变换/液化会话明确 unsupported，不生成缺层的部分计划。普通活动笔触允许捕获CPU候选的不可变源；捕获本身不提交笔触或历史。G3移动/变换使用操作前已发布源与独立本地几何，不能以GPU预览替代最终CPU结果。
 
 `paint_session_composition_node/tile` 读取不可变描述；`paint_session_read_composition_tile` 每次最多一块64×64×16=65536字节，小端 f32 线性预乘 RGBA，format=4，不包含 GPU 指针。content_id 为进程内不复用的内容身份，私有 Weak 索引最多8192项，淘汰只导致缓存未命中。显式透明瓦片覆盖隐式白。源是原始分辨率，LOD 必须在合成后执行。
 

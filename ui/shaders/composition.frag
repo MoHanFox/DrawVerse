@@ -24,6 +24,7 @@ vec4 sampleSource(ivec2 point,ivec4 info,ivec2 origin,sampler2D pageMap){
     return all(greaterThanEqual(local,ivec2(0))) && all(lessThan(local,info.zw))?vec4(1):vec4(0);
 }
 void main(){
+    if(factors.w>3.5){ivec2 p=ivec2(uv*vec2(dimensions.xy));vec4 s=texelFetch(atlas,p,0);color=s+texelFetch(backdrop,p,0)*(1.0-s.a);return;}
     if(factors.w>1.5){color=vec4(0);return;}
     if(factors.w<0.5){
         ivec2 point=ivec2(uv*vec2(dimensions.xy));

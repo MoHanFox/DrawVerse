@@ -20,7 +20,7 @@ def analyze(path):
     result = dict(path=str(path), head=invocation['head'], executable_sha256=invocation['executable_sha256'],
                   passed=data.get('passed', False) and process.get('passed', False),
                   operation=data.get('operation'), size=data.get('size'),
-                  fixture_version=data.get('fixture_version'),
+                  fixture_version=data.get('fixture_version'), warp=data.get('warp', False),
                   trace=data.get('trace_enabled'), api=data.get('api'), dpr=data.get('dpr'), rows=[])
     if not result['passed'] or 'adoptions' not in data:
         return result
@@ -34,6 +34,11 @@ def analyze(path):
             def matches_input(a):
                 if a['ns'] < event['t0_ns']:
                     return False
+                if row.get('composition_expected'):
+                    return (a.get('composition') and a['source'] == row['held_identity']['source'] and
+                            a['device_epoch'] == row['held_identity']['device_epoch'] and
+                            ((abs(a['x0']-event['dx']) < .01 and abs(a['y0']-event['dy']) < .01) if data['operation']=='transform' else
+                             (a['dx'] == event['dx'] and a['dy'] == event['dy'])))
                 if row['resident_expected']:
                     if not a['resident'] or a['source'] != row['held_identity']['source']:
                         return False
@@ -65,9 +70,13 @@ def analyze(path):
                                     frame_ns=frames[0]['ns'] if frames else None))
         first = min(matches, key=lambda m: m['adopted_ns']) if matches else None
         result['rows'].append(dict(phase=row['phase'], resident=row['resident_expected'],
+                                  composition=row.get('composition_expected', False),
                                   preparation_ms=(row['ready_ns']-row['enter_ns'])/1e6,
                                   first_content_ms=(first['adopted_ns']-inputs[0]['t0_ns'])/1e6 if first else None,
                                   first_content_input=first['input'] if first else None,
+                                  first_frame_submit_ms=(first['frame_ns']-inputs[0]['t0_ns'])/1e6 if first and first['frame_ns'] else None,
+                                  matched_frame_submit=stats([(m['frame_ns']-m['input_ns'])/1e6 for m in matches if m['frame_ns']]),
+                                  target_confirmation_ms=(row['target_gui_confirmed_ns']-inputs[0]['t0_ns'])/1e6 if row.get('target_gui_confirmed_ns') else None,
                                   enter_to_content_ms=(first['adopted_ns']-row['enter_ns'])/1e6 if first else None,
                                   matched=stats(latencies), input_count=len(inputs), matches=matches,
                                   actual_gap_ms=stats([(b['t0_ns']-a['t0_ns'])/1e6 for a, b in zip(inputs, inputs[1:])]),

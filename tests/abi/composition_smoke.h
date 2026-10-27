@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <stdlib.h>
 #ifdef __cplusplus
 #define COMPOSITION_ASSERT static_assert
 #else
@@ -17,11 +18,26 @@ COMPOSITION_ASSERT(sizeof(PaintCompositionInfo)==136,"composition info layout");
 COMPOSITION_ASSERT(sizeof(PaintCompositionNode)==64,"composition node layout");
 COMPOSITION_ASSERT(sizeof(PaintCompositionTile)==40,"composition tile layout");
 COMPOSITION_ASSERT(sizeof(PaintCompositionUsage)==40,"composition usage layout");
+COMPOSITION_ASSERT(sizeof(PaintTransformDisplayGeometry)==104,"transform display geometry layout");
+COMPOSITION_ASSERT(offsetof(PaintTransformDisplayGeometry,inverse)==24,"transform inverse offset");
 COMPOSITION_ASSERT(offsetof(PaintCompositionRequest,viewport)==16,"composition viewport offset");
 COMPOSITION_ASSERT(offsetof(PaintCompositionInfo,key)==8,"composition key offset");
 #undef COMPOSITION_ASSERT
 #define COMPOSITION_CHECK(test) do {if(!(test)){fprintf(stderr,"Composition ABI check failed at %d: %s\n",__LINE__,#test);return 1;}}while(0)
 static int composition_smoke(PaintCore *core) {
+    {
+        PaintTransform geometry;PaintTransformDisplayGeometry mesh;float *vertices;
+        memset(&geometry,0,sizeof(geometry));geometry.struct_size=sizeof(geometry);geometry.interpolation=2;
+        for(int i=0;i<16;++i){geometry.points[i*2]=(i%4)*32.;geometry.points[i*2+1]=(i/4)*24.;}
+        memset(&mesh,0,sizeof(mesh));mesh.struct_size=sizeof(mesh);
+        COMPOSITION_CHECK(paint_transform_display_geometry(&geometry,&mesh,NULL,0)==PAINT_BUFFER_TOO_SMALL);
+        COMPOSITION_CHECK(mesh.version==1 && mesh.columns>=19 && mesh.rows>=19 && mesh.vertex_bytes<=145*145*16);
+        vertices=(float*)malloc((size_t)mesh.vertex_bytes);COMPOSITION_CHECK(vertices!=NULL);
+        COMPOSITION_CHECK(paint_transform_display_geometry(&geometry,&mesh,vertices,mesh.vertex_bytes/4)==PAINT_OK);
+        COMPOSITION_CHECK(vertices[0]==0.f && vertices[1]==0.f && vertices[2]==0.f && vertices[3]==0.f);
+        COMPOSITION_CHECK(vertices[mesh.vertex_bytes/4-4]==96.f && vertices[mesh.vertex_bytes/4-3]==72.f);
+        free(vertices);
+    }
     PaintSession *session=NULL;
     PaintDocumentDesc desc;
     PaintSessionInfo state;

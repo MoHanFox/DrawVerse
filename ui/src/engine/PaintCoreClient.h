@@ -334,8 +334,12 @@ public:
     Q_INVOKABLE bool clearSelection();
     Q_INVOKABLE bool invertSelection();
     const QImage &frame(int view = 0) const { return m_frames[view == 1 ? 1 : 0]; }
-    CompositionPacketPtr compositionPacket()const{return m_compositionPacket;}
-    QString compositionFallback()const{return m_compositionFallback;}
+    CompositionPacketPtr compositionPacket()const;
+    quint64 compositionHandoffRevision()const{return m_compositionFinalRevision;}
+    void compositionPrimaryAdopted(quint64 generation,quint64 epoch,quint64 revision);
+    void setCompositionPrecisionAvailable(bool available){m_compositionPrecisionAvailable=available;}
+    qint64 compositionTargetConfirmedNs()const{return m_compositionTargetNs;}
+    QString compositionFallback()const{return m_compositionEditFallbackReason.isEmpty()?m_compositionFallback:m_compositionEditFallbackReason;}
     void setCompositionDevice(quint64 epoch,bool enabled);
     ResidentPreviewPtr residentPreview() const { return m_residentPreview; }
     ResidentPreviewPtr liquifyPreview() const { return residentPreview(); }
@@ -525,7 +529,20 @@ signals:
     void fileFinished(bool success);
 private:
     CompositionPacketPtr m_compositionPacket;
-    QString m_compositionFallback;
+    CompositionPacketPtr m_compositionEditBase,m_compositionEditFrame;
+    QVector<quint64> m_compositionEditTargets;
+    qint64 m_compositionTargetNs=0;
+    quint64 m_compositionGeometry=0,m_compositionFinalRevision=0,m_compositionBeginSequence=0;
+    bool m_compositionMovePick=false,m_compositionMoveConfirmed=false;
+    bool m_compositionPrecisionAvailable=false;
+    bool m_compositionTransformCpu=false;
+    bool m_compositionTransform=false,m_compositionFinalFallback=false;
+    bool prepareCompositionTransform();
+    void refreshCompositionTransform(const PaintTransform *geometry=nullptr);
+    bool prepareCompositionMove(bool pick);
+    void refreshCompositionMove();
+    void clearCompositionEdit();
+    QString m_compositionFallback,m_compositionEditFallbackReason;
     bool m_brushPreferencePersistenceEnabled=true;
     bool m_wetActionBusy=false;
     bool m_brushFileBusy=false;

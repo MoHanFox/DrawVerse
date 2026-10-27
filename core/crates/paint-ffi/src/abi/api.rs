@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 81;
+pub const PAINT_ABI_MINOR: u32 = 82;
 
 #[path = "api_composition.rs"]
 mod composition;
@@ -850,6 +850,20 @@ pub struct PaintTransform {
     pub points: [f64; 32],
     pub skew_h: f64,
     pub skew_v: f64,
+}
+
+/// ABI1.82: pure version1 display geometry, at most 145*145 xyuv vertices.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintTransformDisplayGeometry {
+    pub struct_size: u32,
+    pub version: u32,
+    pub columns: u32,
+    pub rows: u32,
+    pub vertex_bytes: u64,
+    /// Row-major inverse projective map; zero for Warp (use ordered mesh).
+    pub inverse: [f64; 9],
+    pub reserved: u64,
 }
 
 /// Independent per-stroke opacity pressure controls in state v6 and VBR 1.4.

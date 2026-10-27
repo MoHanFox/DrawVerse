@@ -5,9 +5,19 @@
 #include <cmath>
 
 namespace {
-std::atomic<quint64> sourceBytes{0};
+std::atomic<quint64> sourceBytes{0},geometryBytes{0};
+constexpr quint64 geometryCharge=512*1024,geometryLimit=32*1024*1024;
 constexpr quint64 sourceLimit=512ull*1024*1024;
 template<class T> T dto(){T value{};value.struct_size=sizeof(T);return value;}
+}
+CompositionTransform::~CompositionTransform(){geometryBytes.fetch_sub(geometryCharge);}
+std::shared_ptr<CompositionTransform> CompositionTransform::allocate(){
+    auto bytes=geometryBytes.load();
+    do {if(bytes>geometryLimit-geometryCharge)return {};}
+    while(!geometryBytes.compare_exchange_weak(bytes,bytes+geometryCharge));
+    auto undo=qScopeGuard([]{geometryBytes.fetch_sub(geometryCharge);});
+    try {auto value=std::make_shared<CompositionTransform>();undo.dismiss();return value;}
+    catch(const std::bad_alloc &){return {};}
 }
 CompositionTileData::~CompositionTileData(){sourceBytes.fetch_sub(65536);}
 std::shared_ptr<CompositionTileData> CompositionTileData::allocate(){
@@ -36,6 +46,7 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
     }
     m_core=core;m_session=session;
     if(!m_lease){
+        if(qEnvironmentVariable("DRAWVERSE_COMPOSITION_FAIL")=="transport"){fallback=QStringLiteral("CPU: injected composition transport budget");return {};}
         if(m_attemptRevision==state.revision)return {};
         m_attemptRevision=state.revision;
         if(view.pixels.isEmpty() || view.region.isEmpty()){

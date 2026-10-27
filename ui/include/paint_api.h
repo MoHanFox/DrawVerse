@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 81
+#define PAINT_ABI_MINOR 82
 
 #define PAINT_ABI_PATCH 0
 
@@ -1340,6 +1340,22 @@ typedef struct PaintStorageInfo {
   uint32_t skipped_runs;
   uint32_t reserved;
 } PaintStorageInfo;
+
+/**
+ * ABI1.82: pure version1 display geometry, at most 145*145 xyuv vertices.
+ */
+typedef struct PaintTransformDisplayGeometry {
+  uint32_t struct_size;
+  uint32_t version;
+  uint32_t columns;
+  uint32_t rows;
+  uint64_t vertex_bytes;
+  /**
+   * Row-major inverse projective map; zero for Warp (use ordered mesh).
+   */
+  double inverse[9];
+  uint64_t reserved;
+} PaintTransformDisplayGeometry;
 
 typedef struct PaintWetToolInfo {
   uint32_t struct_size;
@@ -3066,6 +3082,19 @@ PaintStatus paint_session_transform_info(struct PaintCore *core,
  */
 PaintStatus paint_storage_inspect(const struct PaintStorageOptions *options,
                                   struct PaintStorageInfo *out_info);
+
+/**
+ * Compute bounded shared display geometry from absolute input, without a session,
+ * pixel reads, IO, history or actor waits. Query with capacity_floats=0/NULL.
+ * BUFFER_TOO_SMALL publishes the descriptor and leaves xyuv untouched.
+ * # Safety
+ * Readable initialized geometry, writable initialized out_info, and writable
+ * nonoverlapping capacity_floats f32s. No pointer is retained after return.
+ */
+PaintStatus paint_transform_display_geometry(const struct PaintTransform *geometry,
+                                             struct PaintTransformDisplayGeometry *out_info,
+                                             float *xyuv,
+                                             uint64_t capacity_floats);
 
 /**
  * Manual idle cleaning. Active painting returns BUSY and preserves ink.

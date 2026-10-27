@@ -33,12 +33,7 @@ if(WIN32)
     target_link_libraries(drawverse_ui PRIVATE dwmapi windowsapp CoreMessaging Qt6::GuiPrivate)
 endif()
 
-if(Qt6_VERSION VERSION_GREATER_EQUAL 6.6)
-    target_compile_definitions(drawverse_ui PRIVATE DRAWVERSE_HAS_COMPOSITION_RHI)
-    target_link_libraries(drawverse_ui PRIVATE Qt6::GuiPrivate)
-    qt_add_shaders(drawverse_ui composition_shaders PREFIX "/composition" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-        GLSL "300es,330" FILES shaders/composition.vert shaders/composition.frag)
-endif()
+
 
 # Keep the resource manifest and its rebuild dependencies in one place.
 set(_drawverse_ui_resources
@@ -110,6 +105,25 @@ if(WIN32 AND DRAWVERSE_PRECOMPILE_MOVE_SHADERS)
         DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/.qsb/liquify.vert.qsb" "${CMAKE_CURRENT_BINARY_DIR}/.qsb/liquify.frag.qsb"
         VERBATIM)
     add_dependencies(drawverse_ui drawverse_move_shader_check)
+endif()
+
+if(Qt6_VERSION VERSION_GREATER_EQUAL 6.6)
+    target_compile_definitions(drawverse_ui PRIVATE DRAWVERSE_HAS_COMPOSITION_RHI)
+    target_link_libraries(drawverse_ui PRIVATE Qt6::GuiPrivate)
+    qt_add_shaders(drawverse_ui composition_shaders PREFIX "/composition" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+        ${_drawverse_move_shader_options} GLSL "300es,330" FILES shaders/composition.vert shaders/composition.frag shaders/composition_transform.vert)
+    qt_add_shaders(drawverse_ui composition_precise_shaders PREFIX "/composition" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+        ${_drawverse_move_shader_options} NOGLSL NOMSL HLSL "50" FILES shaders/composition_precise.frag shaders/composition_warp.frag)
+    if(WIN32 AND DRAWVERSE_PRECOMPILE_MOVE_SHADERS)
+        add_custom_target(drawverse_composition_shader_check
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/check_composition_shader_artifacts.py"
+                "$<TARGET_FILE:Qt6::qsb>" "${CMAKE_CURRENT_BINARY_DIR}/.qsb" --precompiled
+            DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/.qsb/composition.vert.qsb" "${CMAKE_CURRENT_BINARY_DIR}/.qsb/composition.frag.qsb"
+                "${CMAKE_CURRENT_BINARY_DIR}/.qsb/composition_transform.vert.qsb" "${CMAKE_CURRENT_BINARY_DIR}/.qsb/composition_precise.frag.qsb"
+                "${CMAKE_CURRENT_BINARY_DIR}/.qsb/composition_warp.frag.qsb"
+            VERBATIM)
+        add_dependencies(drawverse_ui drawverse_composition_shader_check)
+    endif()
 endif()
 
 # Editing QML or an asset must recompile the generated resource object.

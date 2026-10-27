@@ -18,8 +18,13 @@ def main():
     parser.add_argument('--size', type=int, choices=[1024, 4096], default=1024)
     parser.add_argument('--software', action='store_true')
     parser.add_argument('--trace', action='store_true')
+    parser.add_argument('--composition', action='store_true', help='G3 explicit general compositor; preserve the v4 fixture/input')
+    parser.add_argument('--warp', action='store_true', help='additional v5 transform mode; pair separately from ordinary transform')
+    parser.add_argument('--native-driver', action='store_true', help='v5 native event loop; pair OFF/ON runs; preserve all v4 records')
     parser.add_argument('--repeat', type=int, choices=range(1, 4), default=1)
     args = parser.parse_args()
+    if args.warp and (not args.native_driver or args.operation != 'transform'):
+        parser.error('--warp requires --native-driver --operation transform')
     root = Path(__file__).resolve().parents[1]
     exe, out = args.executable.resolve(), args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
@@ -27,7 +32,10 @@ def main():
         for index in range(1, args.repeat+1):
             command = [os.sys.executable, str(Path(__file__).resolve()), str(exe), str(out/f'run-{index}'),
                        '--operation', args.operation, '--size', str(args.size)]
+            command += ['--warp'] if args.warp else []
+            command += ['--native-driver'] if args.native_driver else []
             command += ['--trace'] if args.trace else []
+            command += ['--composition'] if args.composition else []
             command += ['--software'] if args.software else []
             subprocess.run(command, check=True)
         return
@@ -37,7 +45,7 @@ def main():
                       branch=subprocess.check_output(['git', 'branch', '--show-current'], cwd=root, text=True).strip(),
                       diff=subprocess.check_output(['git', 'status', '--short'], cwd=root, text=True),
                       executable=str(exe), executable_sha256=sha(exe), operation=args.operation,
-                      size=args.size, software=args.software, trace=args.trace,
+                      size=args.size, software=args.software, trace=args.trace, composition=args.composition, native_driver=args.native_driver, warp=args.warp,
                       sources_sha256={f: sha(root/f) for f in files if (root/f).is_file()})
     (out/'invocation.json').write_text(json.dumps(invocation, indent=2), encoding='utf-8')
     env = os.environ.copy()
@@ -54,6 +62,12 @@ def main():
                QML_DISK_CACHE_PATH=str(out/'qml-cache'), QSG_RHI_DISABLE_DISK_CACHE='1')
     if args.software:
         env['QT_QUICK_BACKEND'] = 'software'
+    if args.warp:
+        env['DRAWVERSE_G0_WARP'] = '1'
+    if args.native_driver:
+        env['DRAWVERSE_G0_DRIVER'] = 'native-v5'
+    if args.composition:
+        env['DRAWVERSE_GPU_COMPOSITION'] = '1'
     env['PATH'] = str(root/'.tools/qt/6.8.3/msvc2022_64/bin')+os.pathsep+env['PATH']
     (out/'environment.json').write_text(json.dumps({k: v for k, v in env.items() if k.startswith(('QT_', 'QSG_', 'QML_', 'DRAWVERSE_'))}, indent=2), encoding='utf-8')
     with (out/'qt.log').open('w', encoding='utf-8') as log:

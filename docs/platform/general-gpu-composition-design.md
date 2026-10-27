@@ -1,6 +1,6 @@
 # 通用 GPU 合成与即时编辑显示设计
 
-日期：2026-10-27。状态：G0 基线与独立技术试验已执行，G1–G5 尚未实施，产品尚未接入通用合成器。初稿依据 `develop` 的 `4dba287`；本次 G0 实际起点为 `General-purpose-GPU-synthesis` / `d13e62b`，准确二进制与工作区证据见验收第10节。不固定历史分支或 ABI 版本。
+日期：2026-10-27。状态：G0–G2纵向交付，G3有限范围实现与正确性通过、性能部分完成；默认显示保持，G4–G5尚未实施。初稿依据 `develop` 的 `4dba287`；本次实际起点为 `General-purpose-GPU-synthesis` / `d13e62b`，准确二进制与工作区证据见验收各阶段记录。不固定历史分支或ABI版本。
 
 实施提示词：[开发任务入口](../planning/general-gpu-composition-prompt.md)。验收与阶段记录：[验收计划](../validations/platform/general-gpu-composition-validation.md)。当前已实现范围仍以 [GPU 加速入口](gpu-acceleration-design.md)及原专项验收为准。
 
@@ -176,3 +176,17 @@ ABI1.81使用独立version1能力，发布描述和每次一块64KiB小端线性
 先原分辨率按Normal/链接自身蒙版语义合成，再沿CPU相位做power-of-two LOD/有效边界平均与显示转换。只变瓦片重合成其影响区域，配置改变重合成完整闭包；源ID复用和合成脏区分别统计。普通活动笔触发布CPU候选的不可变源，不改变最终提交或单历史。G2仍并行准备原CPU视口，不以此阶段宣称已消除CPU合成成本或改善输入延迟。
 
 消费者64节点/1024源块/64MiB包，原文档及视口各≤4,194,304像素、边长≤4096、LOD≤6，超出明确CPU后备；4096²原图不缩成代理冒充精确支持。当前纹理payload每节点≤256MiB，进程对延迟销毁按最大payload×(FramesInFlight+2)保守预留≤2GiB，上传共享源至slot复用才释放；驱动隐藏分配未量测。设备身份/epoch变化拒绝旧资源；初始化/上传失败停用该epoch并继续CPU，真实设备恢复/压力与支持范围默认启用仍待G5。准确结果与失败见验收第13–14节，G3首位移仍未通过。
+
+## 15. G3 实施决定（2026-10-27）
+
+根Normal移动在BEGIN确认实际目标后直接修改不可变源包的偏移，链接自身蒙版同移；确认前保存最新绝对输入。自由变换首批限无选区、无自身蒙版的单个根Normal栅格，保留原始瓦片；Rust纯几何ABI1.82生成与最终CPU同源的Warp网格及double逆矩阵，Qt只处理有界几何，不读取冷页或计算整图CPU像素。正常显示不读回，paint-ops/paint-gpu数值任务保持。
+
+源revision、核心业务sequence与本地geometrySequence分开；确认后本地绝对输入直接发布，不等待16ms业务合并或每次Actor回执。BEGIN/结束屏障额外启用最多256次、1ms异步元数据检查，原16ms轮询仍作恢复，无阻塞等待。相同几何不重复推进本地序号，旧metadata不能覆盖更新输入；业务采样与历史仍由原FIFO及核心提交。
+
+FP32固定功能Warp边界不能满足最近邻硬边精度。D3D11变换因此额外协商DoublePrecisionFloatShaderOps与ExtendedDoublesShaderInstructions，用同窗口double采样、显式CPU同源三角归属/顺序覆盖，RGBA32F源/中间和先合成再LOD保持。六种插值均复用核心核函数与钳制语义。double不足、选区、自身蒙版、几何/显存/工作预算不足均显式CPU；G2 Normal不要求double。Qt的qsb生成SPIR-V/DXBC，沿现有构建期预编译开关；检查实际嵌入shader及224字节uniform布局。此限定不代表其他API/硬件已支持。
+
+Warp临时原分辨率纹理、最多145²顶点/41,472三角形、≤2MiB实例缓冲、≤33,554,432裁剪包围像素工作，均纳入预算；每不可变几何计512KiB、进程32MiB，小表/缓冲保守预留4MiB。单节点256MiB与进程2GiB含在途预留保持，分配不通过继续CPU，不降低网格或换2048代理冒充精确。
+
+立即释放提交最新输入，取消立即恢复原几何；保留源直到对应主Canvas实际采用同generation/epoch的最终权威revision。GPU证明来自同节点afterRendering已记录的最终包，CPU证明来自主imageNode实际采用的最终图像；概览或任意frameSwapped不触发交接。切换客户端也更新设备逻辑epoch，跨文档同generation不放行旧回执。传输失败可由对应CPU主节点完成交接，不修改文档或重复历史。节点采用/命令提交/对应frameSwapped均不是物理屏幕显示。
+
+窗口源准备时创建并缓存普通线性、显示、精确变换及Warp四种兼容管线，几何更新不再重建pipeline；创建失败按普通显示/精确变换能力分别后备。隐藏期间到达的最终CPU图像不能直接作为已显示证明，恢复可见时主动刷新并恢复视口请求，由对应主节点完成采用交接。当前功能检查点与保留失败见验收第16节；Warp性能门槛及最终版本配对尚未完成，默认OFF。

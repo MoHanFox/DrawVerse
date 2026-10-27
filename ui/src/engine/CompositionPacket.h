@@ -16,6 +16,16 @@ struct CompositionTileData {
     ~CompositionTileData();
     static std::shared_ptr<CompositionTileData> allocate();
 };
+struct CompositionTransform {
+    ~CompositionTransform();
+    static std::shared_ptr<CompositionTransform> allocate();
+    PaintTransform geometry{};
+    PaintTransformDisplayGeometry display{};
+    QByteArray vertices; // maximum 145*145*16 bytes, produced by the pure Rust helper
+    QRectF sourceBounds;
+    int node=-1;
+    double scale=1;
+};
 struct CompositionPacket {
     PaintCompositionInfo info{};
     QVector<PaintCompositionNode> nodes;
@@ -24,6 +34,11 @@ struct CompositionPacket {
     QRectF region;
     QSize pixels;
     int lod=0;
+    // Local display geometry is independent of the authoritative source key.
+    quint64 geometrySequence=0,editSequence=0;
+    QPoint presentationDelta;
+    bool preview=false;
+    std::shared_ptr<const CompositionTransform> transform;
 };
 using CompositionPacketPtr=std::shared_ptr<const CompositionPacket>;
 struct CompositionViewRequest {
@@ -36,13 +51,19 @@ struct CompositionReadback {
     std::mutex mutex;
     QByteArray linear,display;
     std::atomic<int> completed{0};
+    std::atomic<quint64> version{0},geometry{0};
 };
 struct CompositionCounters {
     std::atomic<quint64> uploads{0},uploadBytes{0},passes{0},adoptions{0},revision{0},epoch{0},request{0},textureBytes{0};
     std::atomic<int> failures{0};
     std::atomic<int> testReadbacks{0};
     std::atomic<quint64> composedPixels{0},lastDirtyArea{0};
-    std::atomic<quint64> nodeRevision{0},nodeRequest{0};
+    std::atomic<quint64> nodeRevision{0},nodeRequest{0},nodeGeometry{0},nodeEpoch{0};
+    std::atomic<quint64> handoffRevision{0};
+    std::atomic<int> preciseTransform{0};
+    std::atomic<qint64> lastUploadNs{0},lastSubmitNs{0};
+    std::atomic<quint64> lastSubmitGeometry{0};
+    std::atomic<quint64> pipelineCreates{0};
     // Set before attaching the Canvas in correctness tests only. Normal null.
     std::shared_ptr<CompositionReadback> readback;
 };

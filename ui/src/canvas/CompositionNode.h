@@ -11,7 +11,8 @@ public:
     static quint64 reservedPayloadBytes();
     static CompositionNode *create(QQuickWindow *window,CompositionPacketPtr packet,
                                   std::shared_ptr<CompositionCounters> counters,
-                                  std::function<void(QString)> fallback);
+                                  std::function<void(QString)> fallback,
+                                  std::function<void(CompositionPacketPtr)> adopted);
     virtual bool sync(CompositionPacketPtr packet)=0;
     virtual bool ready()const=0;
 };
