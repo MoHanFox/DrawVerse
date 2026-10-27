@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新通用GPU合成G4组检查点：general-gpu-composition设计18/验收19节；隔离/穿透嵌套组、有效祖先和固定蒙版同窗口多通道直显，组/子层移动复用源并保留最终主视图交接，组自由变换显式CPU。ABI1.85/GROUPS32、32字节有界操作流，version1/state45/文档保持。软件及D3D11三进程各37项、每轮28份独立核心线性校验最大1.1920929e-7/窗口≤1，根回归两后端75项、传输3/原移动12、Ctrl+X8/快捷键3、render42/公开9/四ABI/Clippy/头/shader/Release/D3D11冒烟通过；最终构建两后端37项及相关回归复验通过。标准build/bin/Release更新。groups-native-1预算观察对象错误失败保留；G4剪贴/Dissolve继续，置入图CPU，默认OFF，无新性能，G3旧门槛/失败及G5/真实故障/总check未完成。
+
 - 最新图层剪切：layer-actions设计/验收2026-10-28；Ctrl+X无选区剪切完整层/组子树、有选区仅剪切内容，先编码后单次原子删除/清除，跨文档粘贴及撤销保持。文本焦点原生剪切、锁定/当前蒙版拒绝保护。ABI1.84增加action6/7，文档/state45不变。核心3/公开1/原选区1、软件与D3D11各8及快捷键列表各3、四ABI/Clippy/fmt/生成头/Release/D3D11冒烟通过，标准build/bin/Release更新。原layer_batch删除全部层断言在89e20f6基线同样失败，保留断言/日志；未跑总check或性能。GPU G4支持边界和默认OFF保持。
 
 - 最新通用GPU合成G4首批：general-gpu-composition设计17/验收18节；根栅格26种非Dissolve混合（含Normal）及固定自身蒙版接同窗口RGBA32F多通道直显，固定蒙版移动保留原坐标，非Normal自由变换显式CPU闭包。ABI1.83新增可协商能力8/16及节点元数据，version1布局/state45/文档不变，旧features7保持。最终软件及D3D11三进程各70项、三轮56份独立核心线性校验最大1.1920929e-7/窗口≤1；参数上传0、背景/蒙版瓦片增量/脏区、固定移动提交/取消及主视图交接通过。原GPU两后端各36、传输各3/原相关各12、render41/公开8/四ABI/相关Clippy/头/shader/Release及实际D3D11冒烟通过，标准build/bin/Release更新。native-1失败保留；G4整体部分，组/祖先蒙版/剪贴/Dissolve/置入图仍整视图CPU，默认OFF。无新性能量测，G3未过门槛及原生输入/zoom旧失败保持，G5/实体/真实故障/总check未完成。

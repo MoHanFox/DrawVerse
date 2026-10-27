@@ -1571,13 +1571,14 @@ bool PaintCoreClient::prepareCompositionMove(bool pick){
        m_compositionPacket->info.key.document_generation!=m_generation || m_compositionPacket->info.key.revision!=m_revision)return false;
     const auto targets=currentMoveTargets();
     if(!pick)for(auto id:targets){
-        const auto at=std::find_if(m_compositionPacket->nodes.begin(),m_compositionPacket->nodes.end(),[id](const auto &node){return node.layer_id==id && node.kind==0;});
+        const auto at=std::find_if(m_compositionPacket->nodes.begin(),m_compositionPacket->nodes.end(),[id](const auto &node){return node.layer_id==id && node.kind!=PAINT_COMPOSITION_MASK;});
         if(at==m_compositionPacket->nodes.end())return false;
     }
     m_compositionEditBase=m_compositionPacket;m_compositionEditTargets=targets;m_compositionMovePick=pick;
     m_compositionMoveConfirmed=false;m_compositionFinalRevision=0;return true;
 }
 bool PaintCoreClient::prepareCompositionTransform(){
+    if(m_compositionPacket && !m_compositionPacket->operations.isEmpty())return false;
     if(!m_compositionPrecisionAvailable || selectionEnabled() || currentMoveTargets().size()!=1 || !prepareCompositionMove(false))return false;
     const auto id=m_compositionEditTargets.front();
     for(const auto &node:m_compositionEditBase->nodes)if(node.layer_id==id && node.kind==0){
@@ -1625,12 +1626,29 @@ void PaintCoreClient::refreshCompositionMove(){
     const auto delta=m_layerMoveFinish && !m_layerMoveCommit?QPoint{}:m_layerMoveDelta;
     QSet<int> moving;
     for(auto id:m_compositionEditTargets){
-        int index=-1;for(int i=0;i<next->nodes.size();++i)if(next->nodes[i].layer_id==id && next->nodes[i].kind==0){index=i;break;}
+        int index=-1;for(int i=0;i<next->nodes.size();++i)if(next->nodes[i].layer_id==id && next->nodes[i].kind!=PAINT_COMPOSITION_MASK){index=i;break;}
         if(index<0){clearCompositionEdit();return;}
-        moving.insert(index);if(next->nodes[index].mask_index<quint32(next->nodes.size()) &&
-            !(next->nodes[int(next->nodes[index].mask_index)].reserved & PAINT_COMPOSITION_NODE_FIXED_MASK))moving.insert(int(next->nodes[index].mask_index));
+        moving.insert(index);
+        if(next->nodes[index].kind==PAINT_COMPOSITION_GROUP){
+            for(int i=0;i<next->nodes.size();++i){
+                int ancestor=i;
+                for(int depth=0;depth<17;++depth){
+                    const auto parent=quint32((next->nodes[ancestor].reserved>>33)&0xffff);
+                    if(!parent || parent>quint32(next->nodes.size()))break;
+                    ancestor=int(parent)-1;if(ancestor==index){moving.insert(i);break;}
+                }
+            }
+        }
     }
-    for(int index:moving){
+    // Masks follow their actual owner's movement only when linked. In
+    // particular, moving a child leaves its ancestor group's mask in place.
+    QSet<int> pixels;
+    for(int index:moving)if(next->nodes[index].kind!=PAINT_COMPOSITION_MASK){
+        if(next->nodes[index].kind==PAINT_COMPOSITION_RASTER)pixels.insert(index);
+        const auto mask=next->nodes[index].mask_index;
+        if(mask<quint32(next->nodes.size()) && !(next->nodes[int(mask)].reserved & PAINT_COMPOSITION_NODE_FIXED_MASK))pixels.insert(int(mask));
+    }
+    for(int index:pixels){
         auto &node=next->nodes[index];const qint64 x=qint64(node.offset_x)+delta.x(),y=qint64(node.offset_y)+delta.y();
         if(std::abs(x)>1048576 || std::abs(y)>1048576){clearCompositionEdit();return;}
         node.offset_x=int(x);node.offset_y=int(y);

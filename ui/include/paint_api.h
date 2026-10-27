@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 84
+#define PAINT_ABI_MINOR 85
 
 #define PAINT_ABI_PATCH 0
 
@@ -63,6 +63,14 @@
 
 #define PAINT_COMPOSITION_BLEND_MODES 16
 
+#define PAINT_COMPOSITION_BLEND_SURFACE 3
+
+#define PAINT_COMPOSITION_CLEAR 0
+
+#define PAINT_COMPOSITION_COPY 1
+
+#define PAINT_COMPOSITION_DRAW_RASTER 2
+
 #define PAINT_COMPOSITION_FAILED 2
 
 /**
@@ -70,13 +78,23 @@
  */
 #define PAINT_COMPOSITION_FIXED_MASK 8
 
+#define PAINT_COMPOSITION_GROUP 2
+
+/**
+ * ABI1.85: ordered group operations and plan-local intermediate surfaces.
+ */
+#define PAINT_COMPOSITION_GROUPS 32
+
+#define PAINT_COMPOSITION_INFLUENCE 4
+
 #define PAINT_COMPOSITION_LINEAR_RGBA32F 4
 
 #define PAINT_COMPOSITION_MASK 1
 
 /**
  * Node.reserved low32 = blend ID when BLEND_MODES is required.
- * Bit32 marks an unlinked mask when FIXED_MASK is required. Other bits are zero.
+ * Bit32 marks an unlinked mask when FIXED_MASK is required. With GROUPS,
+ * bits33..48 hold parent node index+1, or zero for a root. Other bits are zero.
  */
 #define PAINT_COMPOSITION_NODE_FIXED_MASK 4294967296
 
@@ -973,6 +991,10 @@ typedef struct PaintCompositionInfo {
    * Conservative process budget charge, including referenced tile upper bound.
    */
   uint64_t budget_bytes;
+  /**
+   * When GROUPS is required: [operation_count, surface_count<<32 | output].
+   * Otherwise both are zero and the original flat raster order applies.
+   */
   uint64_t reserved[2];
 } PaintCompositionInfo;
 
@@ -995,6 +1017,21 @@ typedef struct PaintCompositionNode {
   uint32_t tile_count;
   uint64_t reserved;
 } PaintCompositionNode;
+
+/**
+ * Fixed-size immutable group work. For CLEAR, source/backdrop are unused;
+ * COPY reads backdrop, DRAW_RASTER reads node/backdrop, BLEND_SURFACE and
+ * INFLUENCE read source/backdrop/node. Output must not alias a read surface.
+ */
+typedef struct PaintCompositionOperation {
+  uint32_t struct_size;
+  uint32_t kind;
+  uint32_t node_index;
+  uint32_t output;
+  uint32_t source;
+  uint32_t backdrop;
+  uint32_t reserved[2];
+} PaintCompositionOperation;
 
 typedef struct PaintCompositionTile {
   uint32_t struct_size;
@@ -2361,7 +2398,7 @@ PaintStatus paint_session_composition_info(struct PaintCore *core,
 /**
  * Read one immutable node; mask_index=UINT32_MAX means no mask. Node/tile
  * indices belong only to this exact lease; explicit transparent tiles override
- * the white_extent default. Version 1 nodes all use Normal source-over.
+ * the white_extent default. Optional capabilities define group/blend metadata.
  * # Safety
  * Initialize key/out_node sizes; outputs must not overlap inputs.
  */
@@ -2370,6 +2407,18 @@ PaintStatus paint_session_composition_node(struct PaintCore *core,
                                            const struct PaintCompositionKey *expected,
                                            uint32_t index,
                                            struct PaintCompositionNode *out_node);
+
+/**
+ * ABI1.85: read one immutable ordered group operation with the exact lease key.
+ * Only plans requiring GROUPS contain operations. No IO or native handles.
+ * # Safety
+ * Initialize key/out_operation sizes; outputs must not overlap inputs.
+ */
+PaintStatus paint_session_composition_operation(struct PaintCore *core,
+                                                struct PaintSession *handle,
+                                                const struct PaintCompositionKey *expected,
+                                                uint32_t index,
+                                                struct PaintCompositionOperation *out_operation);
 
 /**
  * Read a stable tile identity and local signed 64px coordinates, without IO.

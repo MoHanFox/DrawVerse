@@ -68,6 +68,17 @@ vec4 blend(vec4 s,vec4 d,int mode){
     return vec4(clamp((1.0-a)*d.rgb+(1.0-da)*a*sc+da*a*mixed,0.0,alpha),alpha);
 }
 void main(){
+    if(factors.w>4.5){
+        ivec2 p=ivec2(uv*vec2(dimensions.xy));vec4 d=texelFetch(backdrop,p,0);
+        if(factors.w<5.5){color=d;return;}
+        vec4 s=texelFetch(sourceMap,p,0);
+        float mask=1.0-(factors.y>0.0?sampleSource(p,maskInfo,maskOrigin.xy,maskMap).a*factors.y:0.0);
+        if(factors.w<6.5){s*=mask;s*=factors.x;color=blend(s,d,sourceOrigin.z);return;}
+        if(all(equal(d,s))){color=d;return;}
+        float amount=clamp(factors.x*mask,0.0,1.0);
+        float alpha=d.a*(1.0-amount)+s.a*amount;
+        color=vec4(min(d.rgb*(1.0-amount)+s.rgb*amount,vec3(alpha)),alpha);return;
+    }
     if(factors.w>3.5){ivec2 p=ivec2(uv*vec2(dimensions.xy));vec4 s=texelFetch(atlas,p,0);color=s+texelFetch(backdrop,p,0)*(1.0-s.a);return;}
     if(factors.w>1.5){color=vec4(0);return;}
     if(factors.w<0.5){

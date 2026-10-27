@@ -29,6 +29,8 @@ struct CompositionTransform {
 struct CompositionPacket {
     PaintCompositionInfo info{};
     QVector<PaintCompositionNode> nodes;
+    QVector<PaintCompositionOperation> operations;
+    int surfaceCount=2,outputSurface=0;
     QVector<PaintCompositionTile> tiles;
     QVector<std::shared_ptr<const CompositionTileData>> data;
     QRectF region;

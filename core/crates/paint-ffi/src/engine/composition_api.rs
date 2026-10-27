@@ -134,7 +134,7 @@ pub unsafe extern "C" fn paint_session_composition_info(
 
 /// Read one immutable node; mask_index=UINT32_MAX means no mask. Node/tile
 /// indices belong only to this exact lease; explicit transparent tiles override
-/// the white_extent default. Version 1 nodes all use Normal source-over.
+/// the white_extent default. Optional capabilities define group/blend metadata.
 /// # Safety
 /// Initialize key/out_node sizes; outputs must not overlap inputs.
 #[no_mangle]
@@ -164,10 +164,10 @@ pub unsafe extern "C" fn paint_session_composition_node(
             .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "composition node index"))?;
         let node = PaintCompositionNode {
             struct_size: size_of::<PaintCompositionNode>() as u32,
-            kind: if n.kind == NodeKind::Raster {
-                PAINT_COMPOSITION_RASTER
-            } else {
-                PAINT_COMPOSITION_MASK
+            kind: match n.kind {
+                NodeKind::Raster => PAINT_COMPOSITION_RASTER,
+                NodeKind::Mask => PAINT_COMPOSITION_MASK,
+                NodeKind::Group => PAINT_COMPOSITION_GROUP,
             },
             layer_id: n.layer_id,
             mask_index: n.mask.map_or(u32::MAX, |i| i as u32),
@@ -185,9 +185,56 @@ pub unsafe extern "C" fn paint_session_composition_node(
                     PAINT_COMPOSITION_NODE_FIXED_MASK
                 } else {
                     0
+                }
+                | if lease.plan.required_features & PAINT_COMPOSITION_GROUPS != 0 {
+                    n.parent.map_or(0, |i| ((i + 1) as u64) << 33)
+                } else {
+                    0
                 },
         };
         service.publish_read(key, || pointers::write(out_node, node))
+    })
+}
+
+/// ABI1.85: read one immutable ordered group operation with the exact lease key.
+/// Only plans requiring GROUPS contain operations. No IO or native handles.
+/// # Safety
+/// Initialize key/out_operation sizes; outputs must not overlap inputs.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_composition_operation(
+    core: *mut PaintCore,
+    handle: *mut PaintSession,
+    expected: *const PaintCompositionKey,
+    index: u32,
+    out_operation: *mut PaintCompositionOperation,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::reset_sized(
+            out_operation,
+            PaintCompositionOperation {
+                struct_size: size_of::<PaintCompositionOperation>() as u32,
+                ..Default::default()
+            },
+        )?;
+        let key = key(expected)?;
+        let session = session(core, handle)?;
+        let service = session.composition();
+        let (lease, _) = service.get(key)?;
+        let op = lease
+            .plan
+            .operations
+            .get(index as usize)
+            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "composition operation index"))?;
+        let value = PaintCompositionOperation {
+            struct_size: size_of::<PaintCompositionOperation>() as u32,
+            kind: op.kind as u32,
+            node_index: op.node,
+            output: op.output,
+            source: op.source,
+            backdrop: op.backdrop,
+            reserved: [0; 2],
+        };
+        service.publish_read(key, || pointers::write(out_operation, value))
     })
 }
 

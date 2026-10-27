@@ -362,6 +362,12 @@ impl Service {
                 info.pinned_bytes = p.pinned_bytes as u64;
                 info.metadata_bytes = p.metadata_bytes as u64;
                 info.budget_bytes = result._charge.bytes as u64;
+                if !p.operations.is_empty() {
+                    info.reserved = [
+                        p.operations.len() as u64,
+                        (u64::from(p.surface_count) << 32) | u64::from(p.output_surface),
+                    ];
+                }
             }
         }
         Ok(info)

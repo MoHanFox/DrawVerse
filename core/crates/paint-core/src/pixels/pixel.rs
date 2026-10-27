@@ -40,8 +40,13 @@ impl Pixel {
     pub fn alpha(self) -> f32 {
         self.0[3]
     }
-    pub(crate) fn mix(self, source: Self, amount: f32) -> Self {
-        let amount = amount.clamp(0., 1.);
+    /// Premultiplied interpolation used at pass-through group boundaries.
+    pub fn mix(self, source: Self, amount: f32) -> Self {
+        let amount = if amount.is_nan() {
+            0.
+        } else {
+            amount.clamp(0., 1.)
+        };
         let alpha = self.0[3] * (1. - amount) + source.0[3] * amount;
         Self([
             (self.0[0] * (1. - amount) + source.0[0] * amount).min(alpha),
@@ -141,5 +146,6 @@ mod tests {
             }
         }
         assert_eq!(Pixel::TRANSPARENT.scaled(f32::NAN), Pixel::TRANSPARENT);
+        assert_eq!(Pixel::WHITE.mix(Pixel::TRANSPARENT, f32::NAN), Pixel::WHITE);
     }
 }

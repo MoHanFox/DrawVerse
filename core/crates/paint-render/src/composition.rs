@@ -17,7 +17,8 @@ pub const SELF_MASK: u64 = 2;
 pub const LINEAR_RGBA32F: u64 = 4;
 pub const FIXED_MASK: u64 = 8;
 pub const BLEND_MODES: u64 = 16;
-pub const FEATURES: u64 = NORMAL | SELF_MASK | LINEAR_RGBA32F | FIXED_MASK | BLEND_MODES;
+pub const GROUPS: u64 = 32;
+pub const FEATURES: u64 = NORMAL | SELF_MASK | LINEAR_RGBA32F | FIXED_MASK | BLEND_MODES | GROUPS;
 pub const MAX_NODES: usize = 4096;
 pub const MAX_TILES: usize = 4096;
 pub const MAX_PIN_BYTES: usize = MAX_TILES * TILE_BYTES;
@@ -148,9 +149,11 @@ impl ContentIdentities {
 pub enum NodeKind {
     Raster,
     Mask,
+    Group,
 }
 #[derive(Debug)]
 pub struct Node {
+    pub parent: Option<usize>,
     pub blend: BlendMode,
     pub fixed_mask: bool,
     pub layer_id: u64,
@@ -200,9 +203,121 @@ pub struct Plan {
     pub request: RenderRequest,
     pub required_features: u64,
     pub nodes: Vec<Node>,
+    pub operations: Vec<Operation>,
+    pub surface_count: u32,
+    pub output_surface: u32,
     pub tiles: Vec<SourceTile>,
     pub pinned_bytes: usize,
     pub metadata_bytes: usize,
+}
+
+/// Sequential full-resolution work. Surface indices are abstract, plan-local
+/// scratch slots, never device handles. Each operation writes a distinct slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum OperationKind {
+    Clear = 0,
+    Copy = 1,
+    Raster = 2,
+    BlendSurface = 3,
+    Influence = 4,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Operation {
+    pub kind: OperationKind,
+    pub node: u32,
+    pub output: u32,
+    pub source: u32,
+    pub backdrop: u32,
+}
+
+fn compile_groups(nodes: &[Node]) -> Result<(Vec<Operation>, u32, u32), PlanError> {
+    fn stack(
+        nodes: &[Node],
+        children: &[Vec<usize>],
+        parent: usize,
+        depth: u32,
+        mut current: u32,
+        operations: &mut Vec<Operation>,
+        surfaces: &mut u32,
+    ) -> Result<u32, PlanError> {
+        if depth > 16 {
+            return Err(PlanError::Budget);
+        }
+        let first = depth * 2;
+        for &i in &children[parent] {
+            let node = &nodes[i];
+            if !node.visible {
+                continue;
+            }
+            let output = first + u32::from(current == first);
+            if node.kind == NodeKind::Group {
+                let start = (depth + 1) * 2;
+                *surfaces = (*surfaces).max(start + 2);
+                let through = node.blend == BlendMode::PassThrough;
+                operations.push(Operation {
+                    kind: if through {
+                        OperationKind::Copy
+                    } else {
+                        OperationKind::Clear
+                    },
+                    node: i as u32,
+                    output: start,
+                    source: current,
+                    backdrop: current,
+                });
+                let source = stack(nodes, children, i, depth + 1, start, operations, surfaces)?;
+                operations.push(Operation {
+                    kind: if through {
+                        OperationKind::Influence
+                    } else {
+                        OperationKind::BlendSurface
+                    },
+                    node: i as u32,
+                    output,
+                    source,
+                    backdrop: current,
+                });
+            } else {
+                operations.push(Operation {
+                    kind: OperationKind::Raster,
+                    node: i as u32,
+                    output,
+                    source: current,
+                    backdrop: current,
+                });
+            }
+            current = output;
+        }
+        Ok(current)
+    }
+    let mut children = vec![Vec::new(); nodes.len() + 1];
+    for (i, node) in nodes.iter().enumerate() {
+        if node.kind != NodeKind::Mask {
+            children[node.parent.unwrap_or(nodes.len())].push(i);
+        }
+    }
+    let mut operations = vec![Operation {
+        kind: OperationKind::Clear,
+        node: 0,
+        output: 0,
+        source: 1,
+        backdrop: 1,
+    }];
+    let mut surfaces = 2;
+    let output = stack(
+        nodes,
+        &children,
+        nodes.len(),
+        0,
+        0,
+        &mut operations,
+        &mut surfaces,
+    )?;
+    if operations.len() > nodes.len() * 4 + 1 || surfaces > 34 {
+        return Err(PlanError::Budget);
+    }
+    Ok((operations, surfaces, output))
 }
 
 /// Preflight before cloning any Tile Arc or allocating per-layer/tile arrays.
@@ -215,17 +330,15 @@ pub fn estimate(layers: &[Layer], limits: Limits) -> Result<(usize, usize), Plan
     }
     let mut tiles = 0usize;
     for layer in layers {
-        if layer.is_group()
+        if (layer.is_group() && limits.features & GROUPS == 0)
             || layer.is_clipped()
             || layer.is_image()
             || (layer.appearance().blend != BlendMode::Normal
                 && (layer.is_mask()
                     || limits.features & BLEND_MODES == 0
-                    || matches!(
-                        layer.appearance().blend,
-                        BlendMode::Dissolve | BlendMode::PassThrough
-                    )))
-            || (!layer.is_mask() && layer.parent_id() != 0)
+                    || matches!(layer.appearance().blend, BlendMode::Dissolve)
+                    || (layer.appearance().blend == BlendMode::PassThrough && !layer.is_group())))
+            || (!layer.is_mask() && layer.parent_id() != 0 && limits.features & GROUPS == 0)
             || (layer.is_mask()
                 && (limits.features & SELF_MASK == 0
                     || (!layer.mask_linked() && limits.features & FIXED_MASK == 0)))
@@ -241,7 +354,7 @@ pub fn estimate(layers: &[Layer], limits: Limits) -> Result<(usize, usize), Plan
     }
     let pins = tiles.checked_mul(TILE_BYTES).ok_or(PlanError::Budget)?;
     let metadata = 1024usize
-        .checked_add(layers.len() * 512)
+        .checked_add(layers.len() * 768)
         .and_then(|n| n.checked_add(tiles * 1024))
         .ok_or(PlanError::Budget)?;
     if pins > limits.pinned_bytes || metadata > limits.metadata_bytes {
@@ -269,23 +382,41 @@ pub fn prepare(
         .enumerate()
         .map(|(i, l)| (l.id(), i))
         .collect();
-    for layer in layers {
+    for (at, layer) in layers.iter().enumerate() {
         checkpoint(cancel)?;
         if layer.is_mask()
             && !index
                 .get(&layer.parent_id())
-                .is_some_and(|i| !layers[*i].is_mask() && layers[*i].parent_id() == 0)
+                .is_some_and(|i| !layers[*i].is_mask())
         {
             return Err(PlanError::Invalid);
         }
+        // Follow only validated, strictly later post-order parents. Hidden
+        // ancestors suppress source pins and subsequent cold reads.
+        let mut ancestor = layer.parent_id();
+        let mut owner_visible = true;
+        let mut previous = at;
+        let mut depth = 0;
+        while ancestor != 0 {
+            let parent = *index.get(&ancestor).ok_or(PlanError::Invalid)?;
+            if parent <= previous
+                || layers[parent].is_mask()
+                || (!layer.is_mask() || depth > 0) && !layers[parent].is_group()
+            {
+                return Err(PlanError::Invalid);
+            }
+            depth += 1;
+            if depth > 17 {
+                return Err(PlanError::Budget);
+            }
+            let owner = &layers[parent];
+            owner_visible &= owner.properties().visible
+                && owner.properties().opacity * owner.appearance().fill > 0.;
+            ancestor = owner.parent_id();
+            previous = parent;
+        }
         let visible =
             layer.properties().visible && layer.properties().opacity * layer.appearance().fill > 0.;
-        let owner_visible = !layer.is_mask()
-            || index.get(&layer.parent_id()).is_some_and(|i| {
-                let owner = &layers[*i];
-                owner.properties().visible
-                    && owner.properties().opacity * owner.appearance().fill > 0.
-            });
         let first_tile = tiles.len();
         if visible && owner_visible {
             for (coord, tile) in layer.tiles() {
@@ -298,11 +429,14 @@ pub fn prepare(
             }
         }
         nodes.push(Node {
+            parent: index.get(&layer.parent_id()).copied(),
             blend: layer.appearance().blend,
             fixed_mask: layer.is_mask() && !layer.mask_linked(),
             layer_id: layer.id(),
             kind: if layer.is_mask() {
                 NodeKind::Mask
+            } else if layer.is_group() {
+                NodeKind::Group
             } else {
                 NodeKind::Raster
             },
@@ -322,18 +456,27 @@ pub fn prepare(
             return Err(PlanError::Invalid);
         }
     }
-    let required_features = if layers
-        .iter()
-        .any(|l| !l.is_mask() && l.appearance().blend != BlendMode::Normal)
-    {
-        BLEND_MODES
+    let grouped = layers.iter().any(Layer::is_group);
+    let (operations, surface_count, output_surface) = if grouped {
+        compile_groups(&nodes)?
     } else {
-        0
-    } | if layers.iter().any(|l| l.is_mask() && !l.mask_linked()) {
-        FIXED_MASK
-    } else {
-        0
-    } | NORMAL
+        (Vec::new(), 2, 0)
+    };
+    let required_features = if grouped { GROUPS } else { 0 }
+        | if layers
+            .iter()
+            .any(|l| !l.is_mask() && l.appearance().blend != BlendMode::Normal)
+        {
+            BLEND_MODES
+        } else {
+            0
+        }
+        | if layers.iter().any(|l| l.is_mask() && !l.mask_linked()) {
+            FIXED_MASK
+        } else {
+            0
+        }
+        | NORMAL
         | LINEAR_RGBA32F
         | if layers.iter().any(Layer::is_mask) {
             SELF_MASK
@@ -348,6 +491,9 @@ pub fn prepare(
         request,
         required_features,
         nodes,
+        operations,
+        surface_count,
+        output_surface,
         tiles,
         pinned_bytes,
         metadata_bytes,
@@ -391,6 +537,49 @@ impl Plan {
             return Ok(Pixel::TRANSPARENT);
         }
         let mut result = Pixel::TRANSPARENT;
+        if !self.operations.is_empty() {
+            let mut surfaces = vec![Pixel::TRANSPARENT; self.surface_count as usize];
+            for op in &self.operations {
+                checkpoint(cancel)?;
+                let node = &self.nodes[op.node as usize];
+                let before = surfaces[op.backdrop as usize];
+                surfaces[op.output as usize] = match op.kind {
+                    OperationKind::Clear => Pixel::TRANSPARENT,
+                    OperationKind::Copy => before,
+                    kind => {
+                        let source = if kind == OperationKind::Raster {
+                            self.sample(node, x, y)?
+                        } else {
+                            surfaces[op.source as usize]
+                        };
+                        let mask = if let Some(mask) =
+                            node.mask.map(|i| &self.nodes[i]).filter(|m| m.visible)
+                        {
+                            1. - self.sample(mask, x, y)?.alpha() * mask.opacity
+                        } else {
+                            1.
+                        };
+                        if kind == OperationKind::Influence {
+                            if before == source {
+                                before
+                            } else {
+                                before.mix(source, node.opacity * node.fill * mask)
+                            }
+                        } else {
+                            blend_pixel(
+                                source.scaled(mask).scaled(node.opacity * node.fill),
+                                before,
+                                node.blend,
+                                x,
+                                y,
+                                0,
+                            )
+                        }
+                    }
+                };
+            }
+            return Ok(surfaces[self.output_surface as usize]);
+        }
         for node in self
             .nodes
             .iter()

@@ -16,6 +16,8 @@ COMPOSITION_ASSERT(sizeof(PaintCompositionRequest)==144,"composition request lay
 COMPOSITION_ASSERT(sizeof(PaintCompositionKey)==56,"composition key layout");
 COMPOSITION_ASSERT(sizeof(PaintCompositionInfo)==136,"composition info layout");
 COMPOSITION_ASSERT(sizeof(PaintCompositionNode)==64,"composition node layout");
+COMPOSITION_ASSERT(sizeof(PaintCompositionOperation)==32,"composition operation layout");
+COMPOSITION_ASSERT(offsetof(PaintCompositionOperation,reserved)==24,"composition operation reserved offset");
 COMPOSITION_ASSERT(sizeof(PaintCompositionTile)==40,"composition tile layout");
 COMPOSITION_ASSERT(sizeof(PaintCompositionUsage)==40,"composition usage layout");
 COMPOSITION_ASSERT(sizeof(PaintTransformDisplayGeometry)==104,"transform display geometry layout");
@@ -121,6 +123,31 @@ static int composition_smoke(PaintCore *core) {
             COMPOSITION_CHECK(clock()-start<10*CLOCKS_PER_SEC);
         }while(state.completed_sequence<sequence);
         COMPOSITION_CHECK(state.last_error_status==PAINT_OK && state.layer_count==1 && state.undo_depth==3);
+    }
+    {
+        PaintCompositionOperation operation;
+        const uint64_t grouped=state.active_layer_id;
+        COMPOSITION_CHECK((caps.features & PAINT_COMPOSITION_GROUPS)!=0);
+        COMPOSITION_CHECK(paint_session_group_layers(core,session,&grouped,1,(const uint8_t*)"ABI group",9,&sequence)==PAINT_OK);
+        start=clock();do {
+            COMPOSITION_CHECK(paint_session_info(core,session,&state)==PAINT_OK);
+            COMPOSITION_CHECK(clock()-start<10*CLOCKS_PER_SEC);
+        }while(state.completed_sequence<sequence);
+        COMPOSITION_CHECK(state.layer_count==2 && state.undo_depth==4 && state.last_error_status==PAINT_OK);
+        request.revision=state.revision;request.request_id=2;
+        COMPOSITION_CHECK(paint_session_request_composition(core,session,&request,&lease)==PAINT_OK);
+        start=clock();do {
+            COMPOSITION_CHECK(paint_session_composition_info(core,session,lease,&info)==PAINT_OK);
+            COMPOSITION_CHECK(clock()-start<10*CLOCKS_PER_SEC);
+        }while(info.state==PAINT_COMPOSITION_PENDING);
+        COMPOSITION_CHECK(info.state==PAINT_COMPOSITION_READY && (info.required_features & PAINT_COMPOSITION_GROUPS)!=0);
+        COMPOSITION_CHECK(info.reserved[0]==4 && info.reserved[1]>>32==4);
+        memset(&operation,0,sizeof(operation));operation.struct_size=sizeof(operation);
+        COMPOSITION_CHECK(paint_session_composition_operation(core,session,&info.key,3,&operation)==PAINT_OK);
+        COMPOSITION_CHECK(operation.kind==PAINT_COMPOSITION_INFLUENCE && operation.node_index==1 && operation.output==1 && operation.source==3 && operation.backdrop==0);
+        COMPOSITION_CHECK(paint_session_composition_operation(core,session,&info.key,4,&operation)==PAINT_NOT_FOUND && operation.kind==0);
+        COMPOSITION_CHECK(paint_session_release_composition(core,session,lease)==PAINT_OK);
+        COMPOSITION_CHECK(paint_session_composition_operation(core,session,&info.key,0,&operation)==PAINT_CANCELLED);
     }
     COMPOSITION_CHECK(paint_session_destroy(core,&session)==PAINT_OK && session==NULL);
     memset(&usage,0,sizeof(usage));usage.struct_size=sizeof(usage);

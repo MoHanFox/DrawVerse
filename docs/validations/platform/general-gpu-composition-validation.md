@@ -480,3 +480,25 @@ Warp控制轮廓一次快照16点，八条曲线仍各49样本；位于控制行
 `build-6.log`部署显式变换CPU屏障后的生产代码；build7–9补强测试夹具/离线校验并成功构建全部相关目标及drawverse_runtime，最终`build-9.log`成功。`shaders-final.log`检查实际标准EXE五份嵌入QSB、DXBC和double uniform布局。`release-smoke-1/result.json`、qt.log记录标准`build/bin/Release/drawverse.exe`实际D3D11、GPU显式开启、绘画图像生成、退出0；它是冒烟，不代替上述Canvas合成证明。EXE SHA256 `b96501bcb36851689c8419c304d5e72b6eb7bb8a37da36ccec03d981b5053d91`，DLL `0c8b9d68f9bc11ce8d0c3624f983898d52b4037675b9c91c3d485f0364c6602d`。逐批invocation/working-tree.patch保留HEAD51a108a与准确未提交源码/二进制摘要。产物根目录为`artifacts/general-gpu-composition/G4/`；首批失败和原三份在途文档均保留。
 
 本轮没有新增首位移/持续跟随性能量测，不能承诺新模式时延；G3原性能未过门槛、计划外输入、原生点击/zoom和旧未归因失败均不改写。未运行完整`python tools/check.py`，不报告完整验收。G4首批可运行纵向成果已交付，G4整体尚未完成；下一步迁移隔离/穿透组与有效祖先蒙版，再处理完整剪贴闭包和Dissolve坐标/64位种子，对每种组合冻结独立正确性及增量门禁。多文档浮窗/DPI/显存压力、真实DeviceRemoved/TDR故障恢复、冷盘、其他API/硬件、实体输入/物理显示与G5默认启用仍未验收。
+
+## 19. G4组与祖先蒙版门禁冻结（2026-10-28）
+
+89e20f6续接。迁移范围为隔离/穿透组、嵌套边界及有效自身/祖先蒙版；先比较核心权威像素，再在真实窗口全线性误差≤2e-5/显示≤1。冻结透明/白底、两层组混合/嵌套、半透明opacity/fill、祖先灰蒙版链接/固定/隐藏、组内移动与取消/提交/最终交接、背景和蒙版变化的脏区/源增量、隐藏祖先不读源、操作/中间表面预算CPU后备。旧能力请求拒绝整个新闭包，取消/关闭/旧key保持。原G3精确变换/连续绘画/资源释放和四ABI/生成头/相关Rust/Qt/标准Release复查。小图全像素，较大场景不以空白尺寸冒充复杂密集支持；性能另行量测，未测不声明改善。保留第17–18节失败，产物存artifacts/general-gpu-composition/G4/groups-*。
+
+### 19.1 组、祖先蒙版与移动结果
+
+Ctrl+X独立检查点9fc2b02先提交/推送，随后只迁移本节冻结的组范围。`groups-native-2/results.json`：软件及D3D11三进程各37项通过（含init/cleanup），12种嵌套组场景组合内层Normal/PassThrough、外层Normal/Multiply/PassThrough、透明/白底与链接/固定祖先蒙版及LOD1；每场景分别抓初始与参数修改两份线性结果，穿透嵌套固定蒙版场景额外抓背景、蒙版、隐藏、重显。每轮28份真实窗口RGBA32F结果由独立Rust核心混合/Pixel::mix校验，三轮最大误差均1.1920929e-7，窗口显示差≤1；不是独立离屏wgpu或仅PNG。
+
+参数修改上传0；背景/祖先蒙版笔触只上传改变瓦片，数量增量≤4、脏区≤4096；隐藏组后代无源瓦片、无子操作。四个新增组移动用例包含链接组蒙版、固定组蒙版、取消、移动子层而保持祖先固定蒙版；目标确认后最新绝对输入同步改变本地geometrySequence、核心moveSequence不变，瓦片上传/管线创建不增加。CPU预览独立抓图比较，释放保持源直到对应主视图最终revision被采用，错误epoch/generation/revision与概览不交接，撤销原像素精确。包含组的自由变换显式完整CPU闭包通过，未以GPU组通道冒充已实现组变换。
+
+真实2048²组因RGBA32F中间表面超过单节点256MiB而CPU后备，窗口失败计数1、上传/采用0、进程资源预留0，绘画单历史及撤销保持。25笔连续绘画/末笔增量、窗口销毁释放归零通过。保留`groups-native-1`三轮D3D11的同一测试夹具失败：GPU预算后备由Canvas保存，测试误查传输层client原因。生产代码未绕过预算；修正为核对窗口失败计数与明确budget原因，原不丢笔/历史/像素断言保持，`groups-native-2`通过。
+
+`groups-core/render-2.log` paint-render Release42项、`public-1.log`公开composition9项、`consumers-1.log`四C/C++静态/动态消费者通过；新增操作实际读取、布局/元数据、越界、旧能力与取消键均覆盖。`clippy-1.log`相关core/render/ffi all-targets严格Clippy、`header-final.log`、`fmt-final.log`通过。ABI1.85/GROUPS32与独立32字节操作，原结构布局、version1、state45和文档格式保持。当前仍默认OFF，剪贴/Dissolve/置入图整体CPU；没有新增首位移/持续性能量测，G3旧门槛与全部旧失败保持，G4整体尚未完成。
+
+## 20. G4剪贴与Dissolve门禁冻结（2026-10-28，尚未执行）
+
+冻结全栅格剪贴基底/剪贴层各自Normal、非Normal和PassThrough组，嵌套穿透/隔离、基底/剪贴/祖先蒙版与半透明、孤立剪贴与隐藏基底、链接/固定蒙版移动、整链/子层移动、提交取消和主视图最终采用；保持核心逐像素对照，实际窗口线性≤2e-5/显示≤1。Dissolve冻结u32种子0/高位/全1、文档坐标边界、偏移及半透明/蒙版、组与剪贴、先合成后LOD；随机保留/拒绝必须与核心完全一致，不能用颜色容差放过错一个像素。背景/蒙版/剪贴依赖增量、参数上传0、节点/操作/表面预算后备、旧能力与取消键为门禁。产物目录artifacts/general-gpu-composition/G4/closures-*，先冻结再执行；不重跑无关性能矩阵，未量测首位移不宣称新延迟。
+
+### 19.2 最终源码与运行时复验
+
+最后为公开Pixel::mix增加NaN输入保护（有限值公式不变）后，重新构建标准Release与相关Qt/四ABI目标，pixel3/render42/严格Clippy、四ABI通过。`groups-native-final`软件及D3D11各37项，D3D11的28份独立核心线性结果最大1.1920929e-7；`groups-related-final`传输各3/原移动各12通过。`groups-release-smoke-1`标准程序D3D11显式启用合成启动绘画通过，EXE SHA256 `115c127a70e48d541a0c27bd335ad6d41711152947703f58d231bbc3573aeca8`，DLL `d61f3bcaeae4b174d96f7624a0b6994ffac46f47ffa912ca38e9c645e2ce089d`。此前三轮组矩阵与根75项结果保持原版本记录，不冒充最终源码三轮。`groups-core/pixel-1.log`为主动中断编译，未运行失败断言。无新性能量测，G4剩余闭包与G5继续。

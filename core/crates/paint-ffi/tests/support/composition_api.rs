@@ -1,5 +1,95 @@
 use super::*;
 
+#[test]
+fn composition_groups_negotiate_bounded_operations_and_reject_old_keys() {
+    let h = Harness::new(64, 64);
+    h.wait(h.stroke(24., 24.));
+    let mut sequence = 0;
+    assert_eq!(
+        unsafe {
+            paint_session_group_layers(
+                h.core,
+                h.session,
+                [1].as_ptr(),
+                1,
+                b"group".as_ptr(),
+                5,
+                &mut sequence,
+            )
+        },
+        PAINT_OK
+    );
+    let before = h.wait(sequence);
+    assert_eq!(before.last_error_status, PAINT_OK);
+    let (status, id) = submit(
+        &h,
+        &PaintCompositionRequest {
+            features: 31,
+            ..request(&h, 1, 1)
+        },
+    );
+    assert_eq!(status, PAINT_OK);
+    let failed = ready(&h, id);
+    assert_eq!(failed.state, PAINT_COMPOSITION_FAILED);
+    assert_eq!(failed.status, PAINT_UNSUPPORTED);
+    assert_eq!(h.info().last_error_status, PAINT_OK);
+    release(&h, failed);
+    let good = acquire(&h, 2, 1);
+    assert!(good.required_features & PAINT_COMPOSITION_GROUPS != 0);
+    assert_eq!(good.reserved, [4, (4u64 << 32) | 1]);
+    let mut op = dto!(PaintCompositionOperation);
+    for (index, kind) in [
+        PAINT_COMPOSITION_CLEAR,
+        PAINT_COMPOSITION_COPY,
+        PAINT_COMPOSITION_DRAW_RASTER,
+        PAINT_COMPOSITION_INFLUENCE,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(
+            unsafe {
+                paint_session_composition_operation(
+                    h.core,
+                    h.session,
+                    &good.key,
+                    index as u32,
+                    &mut op,
+                )
+            },
+            PAINT_OK
+        );
+        assert_eq!(op.kind, kind);
+        assert_eq!(op.reserved, [0; 2]);
+    }
+    let mut node = dto!(PaintCompositionNode);
+    assert_eq!(
+        unsafe { paint_session_composition_node(h.core, h.session, &good.key, 0, &mut node) },
+        PAINT_OK
+    );
+    assert_eq!(node.reserved >> 33, 2);
+    let bad = PaintCompositionKey {
+        revision: good.key.revision + 1,
+        ..good.key
+    };
+    assert_eq!(
+        unsafe { paint_session_composition_operation(h.core, h.session, &bad, 0, &mut op) },
+        PAINT_BUSY
+    );
+    assert_eq!(op.output, 0);
+    assert_eq!(
+        unsafe { paint_session_composition_operation(h.core, h.session, &good.key, 4, &mut op) },
+        PAINT_NOT_FOUND
+    );
+    release(&h, good);
+    assert_eq!(
+        unsafe { paint_session_composition_operation(h.core, h.session, &good.key, 0, &mut op) },
+        PAINT_CANCELLED
+    );
+    assert_eq!(h.info().undo_depth, before.undo_depth);
+    assert_eq!(h.info().revision, before.revision);
+}
+
 fn caps(h: &Harness) -> PaintCompositionCapabilities {
     let mut caps = dto!(PaintCompositionCapabilities);
     assert_eq!(

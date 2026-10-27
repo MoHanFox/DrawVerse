@@ -60,7 +60,7 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
            quint64(view.pixels.width())*view.pixels.height()>4194304){
             fallback=QStringLiteral("CPU: composition extent/LOD budget");return {};
         }
-        auto request=dto<PaintCompositionRequest>();request.version=1;request.features=PAINT_COMPOSITION_NORMAL|PAINT_COMPOSITION_SELF_MASK|PAINT_COMPOSITION_LINEAR_RGBA32F|PAINT_COMPOSITION_FIXED_MASK|PAINT_COMPOSITION_BLEND_MODES;
+        auto request=dto<PaintCompositionRequest>();request.version=1;request.features=PAINT_COMPOSITION_NORMAL|PAINT_COMPOSITION_SELF_MASK|PAINT_COMPOSITION_LINEAR_RGBA32F|PAINT_COMPOSITION_FIXED_MASK|PAINT_COMPOSITION_BLEND_MODES|PAINT_COMPOSITION_GROUPS;
         request.viewport=dto<PaintViewport>();request.viewport.enabled=1;request.viewport.document_generation=view.generation;
         request.viewport.x=view.region.x();request.viewport.y=view.region.y();request.viewport.width=view.region.width();request.viewport.height=view.region.height();
         request.viewport.pixel_width=quint32(view.pixels.width());request.viewport.pixel_height=quint32(view.pixels.height());
@@ -87,6 +87,25 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
             auto node=dto<PaintCompositionNode>();const auto result=paint_session_composition_node(core,session,&info.key,i,&node);
             if(result!=PAINT_OK)return abandon(result);m_packet->nodes.append(node);
         }
+        if(info.required_features & PAINT_COMPOSITION_GROUPS){
+            const auto count=info.reserved[0],surfaces=info.reserved[1]>>32;const auto output=quint32(info.reserved[1]);
+            if(!count || count>quint64(info.node_count)*4+1 || surfaces<2 || surfaces>34 || output>1)return abandon(PAINT_LIMIT_EXCEEDED);
+            m_packet->surfaceCount=int(surfaces);m_packet->outputSurface=int(output);
+            QVector<bool> initialized(int(surfaces),false);
+            for(quint32 i=0;i<quint32(count);++i){
+                auto op=dto<PaintCompositionOperation>();const auto result=paint_session_composition_operation(core,session,&info.key,i,&op);
+                if(result!=PAINT_OK)return abandon(result);
+                if(op.kind>PAINT_COMPOSITION_INFLUENCE || op.node_index>=info.node_count || op.output>=surfaces ||
+                   op.source>=surfaces || op.backdrop>=surfaces || op.reserved[0] || op.reserved[1])return abandon(PAINT_UNSUPPORTED);
+                if(op.kind!=PAINT_COMPOSITION_CLEAR && (!initialized[int(op.backdrop)] || op.output==op.backdrop))return abandon(PAINT_UNSUPPORTED);
+                if(op.kind>=PAINT_COMPOSITION_BLEND_SURFACE && (!initialized[int(op.source)] || op.output==op.source))return abandon(PAINT_UNSUPPORTED);
+                const auto kind=m_packet->nodes[int(op.node_index)].kind;
+                if((op.kind==PAINT_COMPOSITION_DRAW_RASTER && kind!=PAINT_COMPOSITION_RASTER) ||
+                   (op.kind>=PAINT_COMPOSITION_BLEND_SURFACE && kind!=PAINT_COMPOSITION_GROUP))return abandon(PAINT_UNSUPPORTED);
+                initialized[int(op.output)]=true;m_packet->operations.append(op);
+            }
+            if(!initialized[int(output)])return abandon(PAINT_UNSUPPORTED);
+        }else if(info.reserved[0] || info.reserved[1])return abandon(PAINT_UNSUPPORTED);
         for(quint32 i=0;i<info.tile_count;++i){
             auto tile=dto<PaintCompositionTile>();const auto result=paint_session_composition_tile(core,session,&info.key,i,&tile);
             if(result!=PAINT_OK)return abandon(result);

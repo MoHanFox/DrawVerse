@@ -41,6 +41,125 @@ fn plan(doc: &Document, ids: &mut ContentIdentities) -> Plan {
 }
 
 #[test]
+fn nested_isolated_and_through_groups_masks_match_authoritative_core() {
+    let mut doc = Document::new(130, 90).unwrap();
+    dab(&mut doc, (48., 40.), [0.2, 0.6, 0.4, 0.7]);
+    let bottom = doc.add_layer("inside").unwrap();
+    dab(&mut doc, (53., 42.), [0.8, 0.1, 0.4, 0.8]);
+    let inner = doc.group_layer(bottom, "inner").unwrap();
+    let top = doc.add_layer("top").unwrap();
+    dab(&mut doc, (42., 36.), [0.1, 0.3, 0.9, 0.65]);
+    let outer = doc.group_layer(inner, "outer").unwrap();
+    let mask = doc.add_mask(outer).unwrap();
+    dab(&mut doc, (47., 37.), [0., 0., 0., 0.7]);
+    doc.set_layer_properties(
+        mask,
+        LayerProperties {
+            visible: true,
+            opacity: 0.53,
+        },
+    )
+    .unwrap();
+    doc.set_mask_linked(mask, false).unwrap();
+    doc.add_mask(bottom).unwrap();
+    dab(&mut doc, (58., 44.), [0., 0., 0., 0.5]);
+    let mut identities = ContentIdentities::default();
+    for mode in [
+        BlendMode::Normal,
+        BlendMode::Multiply,
+        BlendMode::SoftLight,
+        BlendMode::Hue,
+        BlendMode::PassThrough,
+    ] {
+        doc.set_layer_appearance(
+            inner,
+            LayerAppearance {
+                blend: mode,
+                fill: 0.71,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        doc.set_layer_properties(
+            inner,
+            LayerProperties {
+                visible: true,
+                opacity: 0.63,
+            },
+        )
+        .unwrap();
+        for outside in [BlendMode::Normal, BlendMode::PassThrough] {
+            doc.set_layer_appearance(
+                outer,
+                LayerAppearance {
+                    blend: outside,
+                    fill: 0.83,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            doc.set_layer_properties(
+                outer,
+                LayerProperties {
+                    visible: true,
+                    opacity: 0.61,
+                },
+            )
+            .unwrap();
+            doc.set_layer_appearance(
+                top,
+                LayerAppearance {
+                    blend: BlendMode::Screen,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let p = plan(&doc, &mut identities);
+            assert_eq!(p.surface_count, 6);
+            assert!(p.required_features & GROUPS != 0);
+            assert!(p.operations.len() <= p.nodes.len() * 4 + 1);
+            let token = CancellationToken::default();
+            for y in 0..90 {
+                for x in 0..130 {
+                    let actual = p.try_pixel(x, y, &token).unwrap().components();
+                    let expected = doc.snapshot().try_pixel(x, y).unwrap().components();
+                    for c in 0..4 {
+                        assert!(
+                            (actual[c] - expected[c]).abs() < 2e-6,
+                            "{mode:?}/{outside:?} at {x},{y}: {actual:?} != {expected:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    doc.set_layer_properties(
+        outer,
+        LayerProperties {
+            visible: false,
+            opacity: 1.,
+        },
+    )
+    .unwrap();
+    let p = plan(&doc, &mut identities);
+    assert_eq!(p.tiles.len(), doc.layer(1).unwrap().tile_count());
+    assert_eq!(p.surface_count, 2);
+    assert!(p
+        .nodes
+        .iter()
+        .filter(|n| n.layer_id != 1)
+        .all(|n| !n.visible && n.tile_count == 0));
+    let old = Limits {
+        features: FEATURES & !GROUPS,
+        ..Default::default()
+    };
+    assert!(matches!(
+        estimate(doc.layers(), old),
+        Err(PlanError::Unsupported(_))
+    ));
+}
+
+#[test]
 fn full_normal_mask_offsets_implicit_white_and_explicit_transparency_match_core() {
     let mut doc = Document::new(130, 90).unwrap();
     doc.initialize_white_background().unwrap();

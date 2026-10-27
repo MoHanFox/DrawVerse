@@ -1,4 +1,12 @@
-# C ABI 1.84.0 契约
+# C ABI 1.85.0 契约
+
+## ABI 1.85 — 有界组操作与中间表面
+
+独立composition version1新增可选GROUPS=32。需要该能力的计划可包含kind=2的组节点；Node.reserved的低32位混合模式/位32固定蒙版保持，位33–48新增parent节点索引+1，根为0，其余位仍0。未需要GROUPS的平面计划所有新位保持0。旧features=7/31请求遇组仍返回整个Failed/UNSUPPORTED租约，不改变文档错误或历史。
+
+PaintCompositionInfo的原136字节布局保持。GROUPS计划的reserved[0]为operation_count，reserved[1]高32位surface_count、低32位最终output_surface。操作数≤4×node_count+1，中间表面最多34，最终表面0/1。其他计划两字段为0，沿用旧根栅格顺序。新增32字节PaintCompositionOperation（reserved偏移24），kind为CLEAR=0、COPY=1、DRAW_RASTER=2、BLEND_SURFACE=3、INFLUENCE=4；node_index/output/source/backdrop均为u32，reserved[2]为0。表面是计划局部抽象编号，不是设备对象。清空不读源；复制只读backdrop；栅格读取node和backdrop；组混合/穿透插值读取source和backdrop及node的蒙版/权重。每条写入表面与所读表面不同，所读表面必须已初始化。组先完整合成，再按LOD显示。
+
+paint_session_composition_operation按完整Ready key读取一条操作，输出初始化/越界NOT_FOUND/身份BUSY/取消CANCELLED及最终发布线性化与node读取保持一致，无IO或GPU指针。元数据预检保守计账包括操作与树，原租约/进程预算不提高。Qt消费上限64节点/257操作/34表面，表面按原256MiB节点/2GiB进程含在途预算预留，超限整个CPU后备。剪贴/Dissolve/置入图仍unsupported；组自由变换暂用完整CPU闭包。文档/state45/behavior/VBR和最终历史提交保持CPU权威。
 
 ## ABI 1.84 — 原子图层/选区剪切
 

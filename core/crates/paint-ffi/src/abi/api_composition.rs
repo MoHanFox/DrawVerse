@@ -6,14 +6,38 @@ pub const PAINT_COMPOSITION_LINEAR_RGBA32F: u64 = 4;
 /// ABI1.83 optional version1 extensions; older feature sets retain old semantics.
 pub const PAINT_COMPOSITION_FIXED_MASK: u64 = 8;
 pub const PAINT_COMPOSITION_BLEND_MODES: u64 = 16;
+/// ABI1.85: ordered group operations and plan-local intermediate surfaces.
+pub const PAINT_COMPOSITION_GROUPS: u64 = 32;
 /// Node.reserved low32 = blend ID when BLEND_MODES is required.
-/// Bit32 marks an unlinked mask when FIXED_MASK is required. Other bits are zero.
+/// Bit32 marks an unlinked mask when FIXED_MASK is required. With GROUPS,
+/// bits33..48 hold parent node index+1, or zero for a root. Other bits are zero.
 pub const PAINT_COMPOSITION_NODE_FIXED_MASK: u64 = 0x1_0000_0000;
 pub const PAINT_COMPOSITION_PENDING: u32 = 0;
 pub const PAINT_COMPOSITION_READY: u32 = 1;
 pub const PAINT_COMPOSITION_FAILED: u32 = 2;
 pub const PAINT_COMPOSITION_RASTER: u32 = 0;
 pub const PAINT_COMPOSITION_MASK: u32 = 1;
+pub const PAINT_COMPOSITION_GROUP: u32 = 2;
+pub const PAINT_COMPOSITION_CLEAR: u32 = 0;
+pub const PAINT_COMPOSITION_COPY: u32 = 1;
+pub const PAINT_COMPOSITION_DRAW_RASTER: u32 = 2;
+pub const PAINT_COMPOSITION_BLEND_SURFACE: u32 = 3;
+pub const PAINT_COMPOSITION_INFLUENCE: u32 = 4;
+
+/// Fixed-size immutable group work. For CLEAR, source/backdrop are unused;
+/// COPY reads backdrop, DRAW_RASTER reads node/backdrop, BLEND_SURFACE and
+/// INFLUENCE read source/backdrop/node. Output must not alias a read surface.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintCompositionOperation {
+    pub struct_size: u32,
+    pub kind: u32,
+    pub node_index: u32,
+    pub output: u32,
+    pub source: u32,
+    pub backdrop: u32,
+    pub reserved: [u32; 2],
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -80,6 +104,8 @@ pub struct PaintCompositionInfo {
     pub metadata_bytes: u64,
     /// Conservative process budget charge, including referenced tile upper bound.
     pub budget_bytes: u64,
+    /// When GROUPS is required: [operation_count, surface_count<<32 | output].
+    /// Otherwise both are zero and the original flat raster order applies.
     pub reserved: [u64; 2],
 }
 
