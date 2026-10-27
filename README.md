@@ -123,6 +123,8 @@ ctest --test-dir build/qt -C Release -R "^abi_" --output-on-failure
 
 `ui/include/paint_api.h` 由 `paint-api-gen` 生成。调整 Rust ABI 后，使用不带 `--check` 的同一命令更新生成头。
 
+通用GPU合成的G0试验独立按需构建，产品最低Qt6.5和默认显示行为保持；试验需要Qt6.6+ GuiPrivate，目前仅验证Qt6.8.3 / Windows D3D11。配置 `-DDRAWVERSE_G0_EXPERIMENT=ON` 后显式构建 `qt_gpu_composition_probe` 与 `qt_gpu_composition_baseline`；它们不进入默认构建或CTest。采集命令、首位移基线、失败与支持边界见[通用GPU合成验收](docs/validations/platform/general-gpu-composition-validation.md#10-g0-交付记录2026-10-27)。G1–G5尚未实施，不能把实验直显当作实际画布通用合成完成。
+
 最近的结构整理已完成 Release 构建、原生启动绘制和专项回归；全套 IO 与额外 Qt 交互检查仍有已知失败项，详见 [结构整理验收](docs/validations/platform/source-layout-validation.md)。各阶段记录不代表当前全量测试或跨平台验证均已通过。
 
 ## VBR 1.0 与文档维护

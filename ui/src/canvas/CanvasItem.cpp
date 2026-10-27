@@ -316,6 +316,7 @@ void CanvasItem::refresh() {
     if (m_generation != m_client->generation()) { stopNavigation();m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
     const int view = m_interactive ? 0 : 1;
     m_image = m_client->frame(view); m_imageRegion = m_client->frameRegion(view);
+    m_imageRevision=m_client->frameRevision(view);
     m_movePreparation=m_client->movePreparation();
     m_moveWarmupPending=m_movePreparation && m_movePreparation->uploads->load()==0;
     const QRectF document(0,0,m_client->documentWidth(),m_client->documentHeight());
@@ -491,6 +492,11 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         if(!node->preview->sync(window(),*m_residentPreview,documentRect())){qWarning("Unable to allocate resident preview textures");delete node;return nullptr;}
         if(m_presentationObserver)adopted={quintptr(this),quintptr(window()),m_generation,m_residentPreview->sourceId,
             m_residentPreview->revision,0,{},documentRect(),size(),m_zoom,true,true,m_residentPreview->presentationDelta};
+        if(m_presentationObserver && !m_residentPreview->vertices.isEmpty()){
+            const auto &vertices=m_residentPreview->vertices;
+            adopted.geometryKey=quint64(qHashBits(vertices.constData(),size_t(vertices.size())*sizeof(vertices[0])));
+            adopted.firstVertex={vertices[0][0],vertices[0][1]};
+        }
         return node;
     }
     if(node->preview){delete node->preview;node->preview=nullptr;}
@@ -534,7 +540,7 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     // A viewport frame covers only its document-space region, never the whole canvas.
     node->image->setRect(QRectF(documentRect().topLeft() + m_imageRegion.topLeft() * m_zoom,
                                  m_imageRegion.size() * m_zoom));
-    if(m_presentationObserver)adopted={quintptr(this),quintptr(window()),m_generation,0,0,node->imageKey,
+    if(m_presentationObserver)adopted={quintptr(this),quintptr(window()),m_generation,0,m_imageRevision,node->imageKey,
         m_imageRegion,documentRect(),size(),m_zoom,false,true};
     return node;
 }

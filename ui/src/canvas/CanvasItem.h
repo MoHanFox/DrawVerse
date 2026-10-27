@@ -155,6 +155,7 @@ private:
     PaintCoreClient *m_client = nullptr;
     QPointer<QQuickWindow> m_observedWindow;
     QImage m_image;
+    quint64 m_imageRevision=0;
     QImage m_overview;
     ResidentPreviewPtr m_residentPreview;
     ResidentPreviewAssetsPtr m_movePreparation;

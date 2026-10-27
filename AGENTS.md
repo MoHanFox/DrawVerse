@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新通用GPU合成G0：general-gpu-composition设计/验收第9–10节；实际分支General-purpose-GPU-synthesis、起点d13e62b，保留原工作区。Qt6.8.3/D3D11同窗口RGBA32F蒙版/Normal/显示转换三通道直显三轮及软件通过，正常九帧上传1/通道3/读回0，全像素线性误差5.96e-8、RGBA8/窗口误差≤1；第二窗口独立与隐藏重建通过，非真实设备故障。v4移动/变换1024²/4096²各三进程，首移动219/310ms中位、就绪约23–27ms、变换持续约26ms，首帧目标未过；冻结失败/干扰与精确EXE摘要保留。CPU render34、相关Qt软件/D3D11各10、四ABI/头/Release通过，标准build/bin/Release更新；ABI1.80/state45保持。试验默认OFF，产品未接通用合成，G1–G5/真实冷盘/设备故障/实体/物理显示/总check未完成。
+
 - 最新压感预览免刷新：brush-preview-refresh-policy设计/验收2026-10-27；具名standard-pressure统一主/副/描边来源笔尖，标准预览固定线性大小/流量压感，三项压感开关、曲线及最低值不失效缓存或在途任务，真实绘画与保存保留用户值。四功能含真实PNG重新生成一致、持久化及实际笔触alpha软件/D3D11各6通过，Release/生成头/diff通过，build/bin/Release更新；ABI1.80/state45保持，无新增实体或全套验收。
 
 - 最新笔刷预览刷新规则：brush-preview-refresh-policy设计/验收；独立具名规则管理关闭模块、无效压感/最低圆度、图片硬度、零抖动种子、备用描边宽度及当前不模拟的喷枪。setter统一比较有效预览参数，请求/恢复/跨工具缓存同源，真实参数仍保存，保留在途任务/错误；启用和有效变化正常刷新。16类关闭模块/条件/异步/隔离/真实冷预览PNG一致与开启变化、原白色五类等软件/D3D11各23通过，倾斜/旋转实际预览重开软件4通过；Release/生成头/diff通过，build/bin/Release更新。ABI1.80/state45不变，未跑无关全套或新增实体/性能验收。
