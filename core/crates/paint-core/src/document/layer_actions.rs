@@ -20,6 +20,21 @@ impl Document {
         self.idle()?;
         crate::history_storage::encode_layer_bundle(&self.copied_nodes(ids)?)
     }
+    /// Prepare the complete clipboard before the single authoritative mutation.
+    /// Failed encoding, locks or history preparation leave the document intact.
+    pub fn cut_layers(&mut self, ids: &[u64], selection_only: bool) -> Result<Vec<u8>> {
+        let bytes = if selection_only {
+            self.copy_selected_pixels(ids)?
+        } else {
+            self.copy_layers(ids)?
+        };
+        if selection_only {
+            self.clear_selected_pixels(ids)?;
+        } else {
+            self.remove_layers(ids, false)?;
+        }
+        Ok(bytes)
+    }
     pub fn paste_layers(&mut self, bytes: &[u8], target: u64) -> Result<u64> {
         self.idle()?;
         let nodes = crate::history_storage::decode_layer_bundle(

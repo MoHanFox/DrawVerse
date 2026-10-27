@@ -100,6 +100,28 @@ static int composition_smoke(PaintCore *core) {
     memcpy(&red,bytes+(24*64+24)*16,sizeof(red));COMPOSITION_CHECK(red==1.f);
     COMPOSITION_CHECK(paint_session_release_composition(core,session,lease)==PAINT_OK);
     COMPOSITION_CHECK(paint_session_composition_info(core,session,lease,&info)==PAINT_CANCELLED);
+    /* Exercise new action numbers and sequence-bound clipboard in every C/C++
+       static/shared consumer, including paste into the now empty document. */
+    {
+        const uint64_t cut_id=node.layer_id;
+        uint8_t *copied;
+        COMPOSITION_CHECK(PAINT_LAYER_ACTION_CUT==6 && PAINT_LAYER_ACTION_CUT_SELECTED_PIXELS==7);
+        COMPOSITION_CHECK(paint_session_layer_action(core,session,PAINT_LAYER_ACTION_CUT,&cut_id,1,0,NULL,0,&sequence)==PAINT_OK);
+        start=clock();do {
+            COMPOSITION_CHECK(paint_session_info(core,session,&state)==PAINT_OK);
+            COMPOSITION_CHECK(clock()-start<10*CLOCKS_PER_SEC);
+        }while(state.completed_sequence<sequence);
+        COMPOSITION_CHECK(state.last_error_status==PAINT_OK && state.layer_count==0 && state.undo_depth==2);
+        COMPOSITION_CHECK(paint_session_read_layer_clipboard(core,session,sequence,NULL,0,&required)==PAINT_BUFFER_TOO_SMALL && required>16 && required<=UINT64_C(268435456));
+        copied=(uint8_t*)malloc((size_t)required);COMPOSITION_CHECK(copied!=NULL);
+        COMPOSITION_CHECK(paint_session_read_layer_clipboard(core,session,sequence,copied,required,&required)==PAINT_OK);
+        COMPOSITION_CHECK(paint_session_layer_action(core,session,PAINT_LAYER_ACTION_PASTE,NULL,0,0,copied,required,&sequence)==PAINT_OK);
+        free(copied);start=clock();do {
+            COMPOSITION_CHECK(paint_session_info(core,session,&state)==PAINT_OK);
+            COMPOSITION_CHECK(clock()-start<10*CLOCKS_PER_SEC);
+        }while(state.completed_sequence<sequence);
+        COMPOSITION_CHECK(state.last_error_status==PAINT_OK && state.layer_count==1 && state.undo_depth==3);
+    }
     COMPOSITION_CHECK(paint_session_destroy(core,&session)==PAINT_OK && session==NULL);
     memset(&usage,0,sizeof(usage));usage.struct_size=sizeof(usage);
     COMPOSITION_CHECK(paint_core_composition_usage(core,&usage)==PAINT_OK && usage.plan_bytes==0 && usage.read_bytes==0);

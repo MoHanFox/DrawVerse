@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图层剪切：layer-actions设计/验收2026-10-28；Ctrl+X无选区剪切完整层/组子树、有选区仅剪切内容，先编码后单次原子删除/清除，跨文档粘贴及撤销保持。文本焦点原生剪切、锁定/当前蒙版拒绝保护。ABI1.84增加action6/7，文档/state45不变。核心3/公开1/原选区1、软件与D3D11各8及快捷键列表各3、四ABI/Clippy/fmt/生成头/Release/D3D11冒烟通过，标准build/bin/Release更新。原layer_batch删除全部层断言在89e20f6基线同样失败，保留断言/日志；未跑总check或性能。GPU G4支持边界和默认OFF保持。
+
 - 最新通用GPU合成G4首批：general-gpu-composition设计17/验收18节；根栅格26种非Dissolve混合（含Normal）及固定自身蒙版接同窗口RGBA32F多通道直显，固定蒙版移动保留原坐标，非Normal自由变换显式CPU闭包。ABI1.83新增可协商能力8/16及节点元数据，version1布局/state45/文档不变，旧features7保持。最终软件及D3D11三进程各70项、三轮56份独立核心线性校验最大1.1920929e-7/窗口≤1；参数上传0、背景/蒙版瓦片增量/脏区、固定移动提交/取消及主视图交接通过。原GPU两后端各36、传输各3/原相关各12、render41/公开8/四ABI/相关Clippy/头/shader/Release及实际D3D11冒烟通过，标准build/bin/Release更新。native-1失败保留；G4整体部分，组/祖先蒙版/剪贴/Dissolve/置入图仍整视图CPU，默认OFF。无新性能量测，G3未过门槛及原生输入/zoom旧失败保持，G5/实体/真实故障/总check未完成。
 
 - 最新通用GPU合成G3续接：general-gpu-composition设计16/验收17节；同源同视口同拓扑自由变换复用窗口页表/轴/参数/SRB，仅更新精确uniform/原网格，resize重投影Qt显示包且保留Rust租约。Warp保持double/原累加精度，优化权重/瓦片寻址与等价轮廓；抓图持有至ready，ProcDump定位一例Qt抓图对象寿命错误，旧异常不统一归因。相邻画布旧鼠标悬停在笔接触期间清除/拒绝缓存hover。最终48项软件及D3D第1/3通过，第2有原zoom失败；57份变换线性误差0/窗口≤1，资源/resize/25笔四进程通过。当前30性能20有效/10失败，9项计划外输入断言、1项目标等待超时伴计划外输入/失活；有效1024移动首5.365ms、普通变换3.934–5.303ms、Warp9.963ms/就绪12.819ms/持续P95 12.1264ms，不能称三轮完整门槛通过。原相关各12/传输各3、四ABI/嵌入shader/头/Release/D3D冒烟通过，标准exe更新；ABI1.82/state45保持。原生点击/zoom及旧失败保留，G3性能/完整回归部分，默认OFF，G4–G5/实体/真实故障/总check未完成。

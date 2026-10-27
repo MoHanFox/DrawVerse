@@ -2330,11 +2330,18 @@ bool PaintCoreClient::submitLayerAction(quint32 kind,const QByteArray &bytes) {
         if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){showError(error);return false;}
     m_pendingLayer=sequence;
-    if(kind==PAINT_LAYER_ACTION_COPY || kind==PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS){m_pendingCopy=sequence;QMetaObject::invokeMethod(m_worker,[worker=m_worker,sequence]{worker->watchLayerCopy(sequence);},Qt::QueuedConnection);}
-    else {m_pendingMutation=sequence;m_modified=true;}
+    const bool copy=kind==PAINT_LAYER_ACTION_COPY || kind==PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS;
+    if(copy || kind==PAINT_LAYER_ACTION_CUT || kind==PAINT_LAYER_ACTION_CUT_SELECTED_PIXELS){m_pendingCopy=sequence;QMetaObject::invokeMethod(m_worker,[worker=m_worker,sequence]{worker->watchLayerCopy(sequence);},Qt::QueuedConnection);}
+    if(!copy){m_pendingMutation=sequence;m_modified=true;}
     emit stateChanged();return true;
 }
 bool PaintCoreClient::copySelectedLayers(){return submitLayerAction(selectionEnabled()?PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS:PAINT_LAYER_ACTION_COPY);}
+bool PaintCoreClient::cutSelectedLayers(){
+    for(const auto &value:m_layers){const auto layer=value.toMap();if(layer.value("id").toULongLong()==m_active && layer.value("mask").toBool()){
+        showError(QStringLiteral("无法单独剪切蒙版，请选择所属图层"));return false;
+    }}
+    return submitLayerAction(selectionEnabled()?PAINT_LAYER_ACTION_CUT_SELECTED_PIXELS:PAINT_LAYER_ACTION_CUT);
+}
 bool PaintCoreClient::pasteLayers(){return canPasteLayers() && submitLayerAction(PAINT_LAYER_ACTION_PASTE,QGuiApplication::clipboard()->mimeData()->data("application/x-drawverse-layers-v1"));}
 bool PaintCoreClient::duplicateSelectedLayers(){return submitLayerAction(PAINT_LAYER_ACTION_DUPLICATE);}
 bool PaintCoreClient::mergeSelectedLayers(){return canMergeLayers() && submitLayerAction(PAINT_LAYER_ACTION_MERGE);}

@@ -20,6 +20,8 @@ DrawVerse 是一款正在开发中的桌面绘画软件。Rust 内核负责笔�
 | 工作区     | 多文档、画布与工具面板停靠、浮动窗口、布局恢复、导航与偏好设置                                               |
 | 文件交换   | PNG / JPEG / WebP 图片读写，OpenRaster 文档读写，图片置入与导出                                              |
 
+图层支持 Ctrl/Cmd+X 剪切：无选区剪切完整图层或组，有选区仅剪切其中内容；Ctrl/Cmd+V 可跨文档粘贴，撤销恢复原内容。锁定和单独蒙版拒绝剪切，文本焦点保留系统剪切。当前 ABI 1.84，文档格式与 state45 保持；验证边界见[图层操作验收](docs/validations/layers/layer-actions-validation.md)。
+
 ABR 导入按实际支持范围转换，部分 Photoshop 行为采用近似并保留来源报告，不代表完全等价。当前支持范围见 [笔刷剩余功能与边界](docs/planning/brush-system-remaining.md)。
 
 ## 项目结构

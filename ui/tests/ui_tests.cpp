@@ -5612,12 +5612,13 @@ private slots:
         // that only reports a model without drawing rows would still fail.
         QObject *list=nullptr;QTRY_VERIFY((list=dialog->findChild<QObject*>("shortcutList")));
         const auto rows=dialog->property("rows").value<QJSValue>().toVariant().toList();
-        QCOMPARE(rows.size(),35);QTRY_COMPARE(list->property("count").toInt(),rows.size());
+        QCOMPARE(rows.size(),36);QTRY_COMPARE(list->property("count").toInt(),rows.size());
         QMap<QString,QString> shortcuts;
         for(const auto &value:rows){const auto row=value.toList();QCOMPARE(row.size(),3);QVERIFY(!row[0].toString().isEmpty());QVERIFY(!row[1].toString().isEmpty());QVERIFY(!row[2].toString().isEmpty());QVERIFY(!shortcuts.contains(row[1].toString()));shortcuts.insert(row[1].toString(),row[2].toString());}
         // These bindings were added after the original 26-row dialog test.
         const QMap<QString,QString> added{{QStringLiteral("拷贝／粘贴图层与组"),"Ctrl+C / Ctrl+V"},{QStringLiteral("复制图层"),"Ctrl+J"},{QStringLiteral("向下合并／合并图层／合并组"),"Ctrl+E"},{QStringLiteral("从图层创建组"),"Ctrl+G"},{QStringLiteral("删除图层／当前蒙版"),"Delete"},{QStringLiteral("全选"),"Ctrl+A"},{QStringLiteral("取消选择"),"Ctrl+D"},{QStringLiteral("反向选择"),"Ctrl+Shift+I"},{QStringLiteral("移动工具"),"V"}};
         for(auto it=added.cbegin();it!=added.cend();++it)QCOMPARE(shortcuts.value(it.key()),it.value());
+        QCOMPARE(shortcuts.value(QStringLiteral("剪切图层／选区内容")),QString("Ctrl+X"));
         auto *dialogContent=qobject_cast<QQuickItem*>(dialog->property("contentItem").value<QObject*>());QVERIFY(dialogContent);
         QQuickItem *listItem=qobject_cast<QQuickItem*>(list);QVERIFY(listItem);
         QImage shot;bool grabbed=false;

@@ -4953,6 +4953,8 @@ mod history_select_api;
 
 #[path = "support/composition_api.rs"]
 mod composition_api;
+#[path = "support/cut_api.rs"]
+mod cut_api;
 #[path = "support/task_progress_api.rs"]
 mod task_progress_api;
 

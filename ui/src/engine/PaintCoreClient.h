@@ -465,6 +465,7 @@ public:
     bool canMergeLayers() const;
     QString mergeLayersText() const;
     Q_INVOKABLE bool copySelectedLayers();
+    Q_INVOKABLE bool cutSelectedLayers();
     Q_INVOKABLE bool pasteLayers();
     Q_INVOKABLE bool duplicateSelectedLayers();
     Q_INVOKABLE bool mergeSelectedLayers();

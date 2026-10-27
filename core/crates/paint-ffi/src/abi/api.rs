@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 83;
+pub const PAINT_ABI_MINOR: u32 = 84;
 
 #[path = "api_composition.rs"]
 mod composition;
@@ -216,6 +216,8 @@ pub const PAINT_LAYER_ACTION_DUPLICATE: u32 = 2;
 pub const PAINT_LAYER_ACTION_MERGE: u32 = 3;
 pub const PAINT_LAYER_ACTION_CLEAR_SELECTED_PIXELS: u32 = 4;
 pub const PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS: u32 = 5;
+pub const PAINT_LAYER_ACTION_CUT: u32 = 6;
+pub const PAINT_LAYER_ACTION_CUT_SELECTED_PIXELS: u32 = 7;
 pub const PAINT_HISTORY_DUPLICATE_LAYERS: u32 = 27;
 pub const PAINT_HISTORY_PASTE_LAYERS: u32 = 28;
 pub const PAINT_HISTORY_MERGE_LAYERS: u32 = 29;

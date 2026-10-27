@@ -54,6 +54,7 @@ pub(crate) enum Operation {
     },
     ClearLayerMovePreparation,
     CopyLayers(Vec<u64>),
+    CutLayers(Vec<u64>, bool),
     CopySelectedPixels(Vec<u64>),
     ClearSelectedPixels(Vec<u64>),
     PasteLayers(Vec<u8>, u64),
@@ -1276,6 +1277,7 @@ impl Engine {
                     | Operation::DuplicateLayers(..)
                     | Operation::MergeLayers(..)
                     | Operation::ClearSelectedPixels(..)
+                    | Operation::CutLayers(..)
                     | Operation::Cancel(_)
                     | Operation::Undo
                     | Operation::HistorySelect { .. }
@@ -1639,6 +1641,19 @@ impl Engine {
                     .lock()
                     .map_err(|_| ApiError::invalid("clipboard poisoned"))? =
                     Some((sequence, Arc::new(bytes)));
+            }
+            Operation::CutLayers(ids, selection_only) => {
+                // Acquire the publication destination before the mutation; a
+                // poisoned clipboard must not remove document content.
+                let mut clipboard = self
+                    .shared
+                    .clipboard
+                    .lock()
+                    .map_err(|_| ApiError::invalid("clipboard poisoned"))?;
+                let revision = self.document.revision();
+                let bytes = self.document.cut_layers(&ids, selection_only)?;
+                *clipboard = Some((sequence, Arc::new(bytes)));
+                self.modified |= revision != self.document.revision();
             }
             Operation::ClearSelectedPixels(ids) => {
                 self.modified |= self.document.clear_selected_pixels(&ids)?;

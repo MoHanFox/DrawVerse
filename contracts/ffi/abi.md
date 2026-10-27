@@ -1,4 +1,8 @@
-# C ABI 1.83.0 契约
+# C ABI 1.84.0 契约
+
+## ABI 1.84 — 原子图层/选区剪切
+
+现有paint_session_layer_action增加CUT=6和CUT_SELECTED_PIXELS=7；DTO/私有MIME/state45及文档格式不变。前者复制所选完整子树后删除，后者复制选区内容后清除像素并保留层与选区。复制编码和既有原子历史准备失败时不提交删除，也不替换会话剪贴板。成功结果通过原read_layer_clipboard和对应命令sequence取得；一次历史沿用删除/清除类别。旧复制/粘贴动作编号不变，剪切成功不清除前序保留的session错误状态，需按last_error_sequence区分。
 
 ## ABI 1.83 — 可协商的根混合与固定蒙版
 
