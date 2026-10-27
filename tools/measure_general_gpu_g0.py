@@ -28,6 +28,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     exe, out = args.executable.resolve(), args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
+    (out/'working-tree.patch').write_bytes(subprocess.check_output(['git', 'diff', '--binary', 'HEAD', '--', 'core', 'ui', 'tools'], cwd=root))
     if args.repeat > 1:
         for index in range(1, args.repeat+1):
             command = [os.sys.executable, str(Path(__file__).resolve()), str(exe), str(out/f'run-{index}'),

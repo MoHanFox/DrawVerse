@@ -302,6 +302,7 @@ void CanvasItem::updateTabletHover(QHoverEvent *event) {
     setTabletWindowCursor(m_cursorInside);setCursorSample(sample,event->pointingDevice());refreshBrushCursor();
 }
 bool CanvasItem::ignoreCachedMouseHover(QHoverEvent *event) {
+    if(tabletContactOwner && tabletContactOwner!=this)return true;
     // Qt Quick frame-sync hover has the primary mouse device and cached mouse
     // position even while Windows Ink is delivering current TabletMove events.
     // A real mouse event releases this ownership in eventFilter before Quick
@@ -376,6 +377,8 @@ QVariantMap CanvasItem::compositionStatistics()const{
         {"nodeRevision",c.nodeRevision.load()},{"nodeRequest",c.nodeRequest.load()},
         {"nodeGeometry",c.nodeGeometry.load()},{"nodeEpoch",c.nodeEpoch.load()},
         {"testReadbacks",c.testReadbacks.load()},{"preciseTransform",c.preciseTransform.load()},{"pipelineCreates",c.pipelineCreates.load()},
+        {"geometryReuses",c.geometryReuses.load()},{"pageTableCreates",c.pageTableCreates.load()},{"axisCreates",c.axisCreates.load()},
+        {"parameterBufferCreates",c.parameterBufferCreates.load()},{"bindingCreates",c.bindingCreates.load()},
         {"composedPixels",c.composedPixels.load()},{"lastDirtyArea",c.lastDirtyArea.load()},
         {"fallback",!m_compositionFailureReason.isEmpty()?m_compositionFailureReason:m_client?m_client->compositionFallback():QString()}};
 }
@@ -982,7 +985,12 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         const auto receiver=item?item->window():qobject_cast<QQuickWindow*>(watched);
         if(receiver!=m_observedWindow)return false;
     } else if (watched != m_observedWindow) return false;
-    if(tabletEvent && tabletContactOwner && tabletContactOwner!=this)return false;
+    if(tabletEvent && tabletContactOwner && tabletContactOwner!=this){
+        if(m_cursorInside || tabletCursorOwner==this){
+            setTabletWindowCursor(false);resetCursorSample();m_cursorInside=false;refreshBrushCursor();
+        }
+        return false;
+    }
     if(tabletEvent && m_tablet && m_penDevice!=static_cast<QTabletEvent*>(event)->pointingDevice())return false;
     if (event->type() == QEvent::ScreenChangeInternal || event->type() == QEvent::Resize) m_viewTimer.start();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
@@ -1023,7 +1031,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     // The global position is shared by both native-window and item delivery paths.
     const QPointF local = mapFromGlobal(e->globalPosition());
     if(!m_tablet && !contains(local)) {
-        if(tabletCursorOwner==this){setTabletWindowCursor(false);refreshBrushCursor();}
+        if(m_cursorInside || tabletCursorOwner==this){setTabletWindowCursor(false);resetCursorSample();m_cursorInside=false;refreshBrushCursor();}
         return false;
     }
     m_penOwnsHover=true;m_penDevice=e->pointingDevice();

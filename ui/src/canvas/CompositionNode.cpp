@@ -183,7 +183,7 @@ private:
         if(doc==documentSize && pixels==outputSize)return true;
         // Resources are owned by this render node. QRhi defers native destruction
         // as required; no cross-window texture registry participates.
-        passes.clear();maps.clear();axisX.reset();axisY.reset();
+        passes.clear();completePasses=false;maps.clear();axisX.reset();axisY.reset();
         if(!reserveTargets(packet))return false;
         if(doc!=documentSize){
             for(auto &t:linear)t={};
@@ -244,7 +244,8 @@ private:
             const float slot=float(locations.value(tile.content_id,-1)+1);
             std::memcpy(out.bytes.data()+(y*w+x)*16,&slot,4);
         }
-        out.texture.reset(rhi->newTexture(QRhiTexture::RGBA32F,out.size));return out.texture->create();
+        out.texture.reset(rhi->newTexture(QRhiTexture::RGBA32F,out.size));if(!out.texture->create())return false;
+        ++counters->pageTableCreates;return true;
     }
     QRhiGraphicsPipeline *pipeline(int kind){
         if(pipelines[size_t(kind)])return pipelines[size_t(kind)].get();
@@ -264,6 +265,7 @@ private:
     bool makePass(Pass &pass,Target &target,QRhiTexture *back,QRhiTexture *a,QRhiTexture *b,QRhiTexture *c){
         pass.uniform.reset(rhi->newBuffer(QRhiBuffer::Dynamic,QRhiBuffer::UniformBuffer,sizeof(Parameters)));
         if(!pass.uniform->create())return false;
+        ++counters->parameterBufferCreates;
         pass.bindings.reset(rhi->newShaderResourceBindings());pass.bindings->setBindings({
             QRhiShaderResourceBinding::uniformBuffer(0,QRhiShaderResourceBinding::VertexStage|QRhiShaderResourceBinding::FragmentStage,pass.uniform.get()),
             QRhiShaderResourceBinding::sampledTexture(1,QRhiShaderResourceBinding::FragmentStage,back,sampler.get()),
@@ -271,6 +273,7 @@ private:
             QRhiShaderResourceBinding::sampledTexture(3,QRhiShaderResourceBinding::FragmentStage,b,sampler.get()),
             QRhiShaderResourceBinding::sampledTexture(4,QRhiShaderResourceBinding::FragmentStage,c,sampler.get())});
         if(!pass.bindings->create())return false;
+        ++counters->bindingCreates;
         pass.pipeline=pipeline(pass.mesh?3:pass.precise?2:target.texture->format()==QRhiTexture::RGBA8?1:0);
         return pass.pipeline!=nullptr;
     }
@@ -278,12 +281,67 @@ private:
         bytes=QByteArray(count*16,'\0');
         for(int i=0;i<count;++i){const double p=start+(double(i)+.5)*span/count;const float value=p<0 || p>=limit?-1.f:float(std::floor(p));std::memcpy(bytes.data()+i*16,&value,4);}
         std::unique_ptr<QRhiTexture> result(rhi->newTexture(QRhiTexture::RGBA32F,{count,1}));
-        if(!result->create())return {};return result;
+        if(!result->create())return {};++counters->axisCreates;return result;
+    }
+    static void transformParameters(Parameters &p,const CompositionTransform &t){
+        const auto b=t.sourceBounds;
+        p.transformBounds={float(b.x()),float(b.y()),float(b.width()),float(b.height())};
+        p.transformInfo={1,float(t.geometry.warp),float(t.geometry.interpolation==5?(t.scale<1?4:3):t.geometry.interpolation),0};
+        p.inverse0={t.display.inverse[0],t.display.inverse[1],t.display.inverse[2],0};
+        p.inverse1={t.display.inverse[3],t.display.inverse[4],t.display.inverse[5],0};
+        p.inverse2={t.display.inverse[6],t.display.inverse[7],t.display.inverse[8],0};
+    }
+    bool reusableTransformPasses()const{
+        const auto &before=renderedPacket;
+        if(!before || !completePasses || passes.empty() || !packet->transform || !before->transform ||
+           packet->info.key.document_generation!=before->info.key.document_generation ||
+           packet->info.key.device_epoch!=before->info.key.device_epoch || packet->info.key.revision!=before->info.key.revision ||
+           packet->info.document_width!=before->info.document_width || packet->info.document_height!=before->info.document_height ||
+           packet->region!=before->region || packet->pixels!=before->pixels || packet->lod!=before->lod ||
+           packet->transform->node!=before->transform->node || packet->transform->sourceBounds!=before->transform->sourceBounds ||
+           packet->transform->geometry.warp!=before->transform->geometry.warp ||
+           packet->nodes.size()!=before->nodes.size() || packet->tiles.size()!=before->tiles.size())return false;
+        // Only local transform geometry/publication may differ. A changed source, tile slot
+        // dependency, viewport or pass topology takes the complete preparation
+        // path. Equality is checked against the packet these live passes used.
+        return (packet->nodes.isEmpty() || !std::memcmp(packet->nodes.constData(),before->nodes.constData(),size_t(packet->nodes.size())*sizeof(PaintCompositionNode))) &&
+            (packet->tiles.isEmpty() || !std::memcmp(packet->tiles.constData(),before->tiles.constData(),size_t(packet->tiles.size())*sizeof(PaintCompositionTile)));
+    }
+    bool prepareMesh(QRhiResourceUpdateBatch *batch){
+        if(!packet->transform || !packet->transform->geometry.warp)return true;
+        const auto &t=*packet->transform;
+        if(!meshVertices){meshVertices.reset(rhi->newBuffer(QRhiBuffer::Dynamic,QRhiBuffer::VertexBuffer,144*144*2*48));
+            if(!meshVertices->create())return fail("CPU: composition transform buffer allocation");}
+        const int count=(int(t.display.columns)-1)*(int(t.display.rows)-1)*2;
+        QByteArray triangles(count*48,Qt::Uninitialized);auto *out=triangles.data();
+        const auto *source=reinterpret_cast<const float*>(t.vertices.constData());quint64 work=0;
+        for(quint32 y=0;y+1<t.display.rows;++y)for(quint32 x=0;x+1<t.display.columns;++x){
+            const quint32 a=y*t.display.columns+x,b=a+1,c=a+t.display.columns,d=c+1;
+            for(const auto indices:std::array<std::array<quint32,3>,2>{{{a,b,d},{a,d,c}}}){
+                float minX=INFINITY,minY=INFINITY,maxX=-INFINITY,maxY=-INFINITY;
+                for(auto index:indices){const auto *vertexData=source+index*4;std::memcpy(out,vertexData,16);out+=16;
+                    minX=std::min(minX,vertexData[0]);minY=std::min(minY,vertexData[1]);maxX=std::max(maxX,vertexData[0]);maxY=std::max(maxY,vertexData[1]);}
+                const int w=std::max(0,std::min(documentSize.width(),int(std::ceil(maxX)))-std::max(0,int(std::floor(minX))));
+                const int h=std::max(0,std::min(documentSize.height(),int(std::ceil(maxY)))-std::max(0,int(std::floor(minY))));
+                work+=quint64(w)*h;if(work>33554432)return fail("CPU: composition transform triangle work budget");
+            }
+        }
+        meshTriangleCount=count;batch->updateDynamicBuffer(meshVertices.get(),0,triangles.size(),triangles.constData());return true;
     }
     bool prepare(QRhiResourceUpdateBatch *batch){
         InteractionTrace::Scope trace("composition.prepare");
         if(!prepareTargets())return false;
-        passes.clear();maps.clear();
+        if(reusableTransformPasses()){
+            if(packet->geometrySequence!=renderedPacket->geometrySequence){
+                if(!prepareMesh(batch))return false;
+                for(auto &pass:passes)if(pass->precise){
+                    transformParameters(pass->parameters,*packet->transform);
+                    batch->updateDynamicBuffer(pass->uniform.get(),0,sizeof(Parameters),&pass->parameters);
+                }
+            }
+            ++counters->geometryReuses;return true;
+        }
+        passes.clear();completePasses=!changed.isEmpty();maps.clear();
         QHash<quint64,int> locations;
         // Retain every source needed by this packet before choosing eviction slots.
         for(const auto &tile:packet->tiles)if(cache.contains(tile.content_id))locations.insert(tile.content_id,cache.value(tile.content_id));
@@ -311,26 +369,7 @@ private:
             batch->uploadTexture(maps[size_t(i)].texture.get(),QRhiTextureUploadDescription({QRhiTextureUploadEntry(0,0,QRhiTextureSubresourceUploadDescription(maps[size_t(i)].bytes))}));
         }
         if(maps.empty())return fail("CPU: composition empty plan");
-        if(packet->transform && packet->transform->geometry.warp){
-            const auto &t=*packet->transform;
-            if(!meshVertices){meshVertices.reset(rhi->newBuffer(QRhiBuffer::Dynamic,QRhiBuffer::VertexBuffer,144*144*2*48));
-                if(!meshVertices->create())return fail("CPU: composition transform buffer allocation");}
-            const int count=(int(t.display.columns)-1)*(int(t.display.rows)-1)*2;
-            QByteArray triangles(count*48,Qt::Uninitialized);auto *out=triangles.data();
-            const auto *source=reinterpret_cast<const float*>(t.vertices.constData());quint64 work=0;
-            for(quint32 y=0;y+1<t.display.rows;++y)for(quint32 x=0;x+1<t.display.columns;++x){
-                const quint32 a=y*t.display.columns+x,b=a+1,c=a+t.display.columns,d=c+1;
-                for(const auto indices:std::array<std::array<quint32,3>,2>{{{a,b,d},{a,d,c}}}){
-                    float minX=INFINITY,minY=INFINITY,maxX=-INFINITY,maxY=-INFINITY;
-                    for(auto index:indices){const auto *vertexData=source+index*4;std::memcpy(out,vertexData,16);out+=16;
-                        minX=std::min(minX,vertexData[0]);minY=std::min(minY,vertexData[1]);maxX=std::max(maxX,vertexData[0]);maxY=std::max(maxY,vertexData[1]);}
-                    const int w=std::max(0,std::min(documentSize.width(),int(std::ceil(maxX)))-std::max(0,int(std::floor(minX))));
-                    const int h=std::max(0,std::min(documentSize.height(),int(std::ceil(maxY)))-std::max(0,int(std::floor(minY))));
-                    work+=quint64(w)*h;if(work>33554432)return fail("CPU: composition transform triangle work budget");
-                }
-            }
-            meshTriangleCount=count;batch->updateDynamicBuffer(meshVertices.get(),0,triangles.size(),triangles.constData());
-        }
+        if(!prepareMesh(batch))return false;
         QByteArray xs,ys;axisX=axis(outputSize.width(),packet->region.x(),packet->region.width(),documentSize.width(),xs);
         axisY=axis(outputSize.height(),packet->region.y(),packet->region.height(),documentSize.height(),ys);
         if(!axisX || !axisY)return fail("CPU: composition axis allocation");
@@ -357,12 +396,7 @@ private:
             p.sourceOrigin={srcMap.origin.x(),srcMap.origin.y(),0,0};p.maskOrigin={maskMap.origin.x(),maskMap.origin.y(),0,0};
             p.factors={node.opacity*node.fill,mi!=i && mask.visible?mask.opacity:0.f,0,0};
             if(packet->transform && packet->transform->node==i){
-                const auto &t=*packet->transform;const auto b=t.sourceBounds;pass->precise=true;
-                p.transformBounds={float(b.x()),float(b.y()),float(b.width()),float(b.height())};
-                p.transformInfo={1,float(t.geometry.warp),float(t.geometry.interpolation==5?(t.scale<1?4:3):t.geometry.interpolation),0};
-                p.inverse0={t.display.inverse[0],t.display.inverse[1],t.display.inverse[2],0};
-                p.inverse1={t.display.inverse[3],t.display.inverse[4],t.display.inverse[5],0};
-                p.inverse2={t.display.inverse[6],t.display.inverse[7],t.display.inverse[8],0};
+                const auto &t=*packet->transform;pass->precise=true;transformParameters(p,t);
                 if(t.geometry.warp){
                     auto clear=std::make_unique<Pass>();clear->output=3;clear->parameters=p;clear->parameters.factors[3]=2;
                     if(!makePass(*clear,scratch,linear[current].texture.get(),atlas.get(),srcMap.texture.get(),maskMap.texture.get()))return fail("CPU: composition transform clear pipeline");
@@ -394,6 +428,8 @@ private:
         auto *cb=static_cast<QRhiCommandBuffer*>(ri->getResource(window,QSGRendererInterface::RhiRedirectCommandBuffer));
         if(!cb){auto *swap=static_cast<QRhiSwapChain*>(ri->getResource(window,QSGRendererInterface::RhiSwapchainResource));if(swap)cb=swap->currentFrameCommandBuffer();}
         if(!cb){fail("CPU: composition window command buffer");return;}
+        InteractionTrace::Scope trace("composition.record");
+        if(InteractionTrace::enabled.load())InteractionTrace::point("composition.previous_completed_gpu_ms",cb->lastCompletedGpuTime()*1000.);
         int finalLinear=0;
         for(const auto &node:packet->nodes)if(node.kind==0 && node.visible)finalLinear=1-finalLinear;
         if(dirty){
@@ -443,7 +479,7 @@ private:
     QRhi *rhi=nullptr;
     int inFlightFrames=0;
     std::shared_ptr<TextureReservation> reservation;
-    bool dirty=true,failed=false,rendered=false;
+    bool dirty=true,failed=false,rendered=false,completePasses=false;
     quint64 readVersion=~quint64(0);
     DirectTexture texture;
     QShader vertex,fragment,meshVertex,preciseFragment,warpFragment;

@@ -64,6 +64,7 @@ struct CompositionCounters {
     std::atomic<qint64> lastUploadNs{0},lastSubmitNs{0};
     std::atomic<quint64> lastSubmitGeometry{0};
     std::atomic<quint64> pipelineCreates{0};
+    std::atomic<quint64> geometryReuses{0},pageTableCreates{0},axisCreates{0},parameterBufferCreates{0},bindingCreates{0};
     // Set before attaching the Canvas in correctness tests only. Normal null.
     std::shared_ptr<CompositionReadback> readback;
 };

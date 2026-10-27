@@ -22,13 +22,21 @@ layout(binding=1) uniform sampler2D backdrop;
 layout(binding=2) uniform sampler2D atlas;
 layout(binding=3) uniform sampler2D sourceMap;
 layout(binding=4) uniform sampler2D maskMap;
-vec4 sampleSource(ivec2 point){
-    ivec2 local=point-sourceInfo.xy;
-    ivec2 tile=ivec2(floor(dvec2(local)/64.0));
+int sourceSlot(ivec2 tile){
     ivec2 page=tile-sourceOrigin.xy;int slot=-1;
     if(all(greaterThanEqual(page,ivec2(0))) && all(lessThan(page,textureSize(sourceMap,0))))slot=int(texelFetch(sourceMap,page,0).r)-1;
+    return slot;
+}
+vec4 sourcePixel(ivec2 local,ivec2 tile,int slot){
     if(slot>=0)return texelFetch(atlas,ivec2(slot%32,slot/32)*64+local-tile*64,0);
     return all(greaterThanEqual(local,ivec2(0))) && all(lessThan(local,sourceInfo.zw))?vec4(1):vec4(0);
+}
+vec4 sampleSource(ivec2 point){
+    ivec2 local=point-sourceInfo.xy;
+    // Arithmetic right shift is floor division for negative tile coordinates.
+    // Source addresses are integral; double conversion/division is unnecessary.
+    ivec2 tile=local >> 6;
+    return sourcePixel(local,tile,sourceSlot(tile));
 }
 double cubic(double x,double a){
     x=abs(x);
@@ -47,9 +55,21 @@ vec4 transformed(dvec2 coordinates){
     ivec2 origin=ivec2(floor(p));precise dvec2 f=p-dvec2(origin);
     if(kind==1)return pixelMix(pixelMix(sampleSource(origin),sampleSource(origin+ivec2(1,0)),float(f.x)),pixelMix(sampleSource(origin+ivec2(0,1)),sampleSource(origin+ivec2(1,1)),float(f.x)),float(f.y));
     double a=kind==3?0.0:(kind==4?-0.75:-0.5);precise vec4 sum=vec4(0);
-    for(int y=-1;y<=2;++y)for(int x=-1;x<=2;++x){
-        precise float weight=float(cubic(double(x)-f.x,a)*cubic(double(y)-f.y,a));
-        sum+=sampleSource(origin+ivec2(x,y))*weight;
+    precise double weightsX[4],weightsY[4];
+    [[unroll]] for(int i=0;i<4;++i){weightsX[i]=cubic(double(i-1)-f.x,a);weightsY[i]=cubic(double(i-1)-f.y,a);}
+    // A 4x4 kernel touches at most two tiles per axis. Resolve those slots
+    // once, including missing/implicit-white pages, then keep the CPU's exact
+    // sample and f32 accumulation order below.
+    ivec2 firstTile=(origin-ivec2(1)-sourceInfo.xy) >> 6,lastTile=(origin+ivec2(2)-sourceInfo.xy) >> 6;
+    ivec4 slots;slots.x=sourceSlot(firstTile);
+    slots.y=lastTile.x==firstTile.x?slots.x:sourceSlot(ivec2(lastTile.x,firstTile.y));
+    slots.z=lastTile.y==firstTile.y?slots.x:sourceSlot(ivec2(firstTile.x,lastTile.y));
+    slots.w=lastTile.y==firstTile.y?slots.y:(lastTile.x==firstTile.x?slots.z:sourceSlot(lastTile));
+    [[unroll]] for(int y=-1;y<=2;++y) [[unroll]] for(int x=-1;x<=2;++x){
+        precise float weight=float(weightsX[x+1]*weightsY[y+1]);
+        ivec2 local=origin+ivec2(x,y)-sourceInfo.xy,tile=local >> 6;
+        int slot=tile.y==firstTile.y?(tile.x==firstTile.x?slots.x:slots.y):(tile.x==firstTile.x?slots.z:slots.w);
+        sum+=sourcePixel(local,tile,slot)*weight;
     }
     sum.a=clamp(sum.a,0.0,1.0);sum.rgb=clamp(sum.rgb,vec3(0),vec3(sum.a));return sum;
 }

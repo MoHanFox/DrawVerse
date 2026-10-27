@@ -98,6 +98,11 @@ private slots:
         auto *a=new CanvasItem(window.contentItem());a->setSize({300,300});a->setClient(&first);
         auto *b=new CanvasItem(window.contentItem());b->setPosition({320,0});b->setSize({300,300});b->setClient(&second);
         window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));a->actualSize();b->actualSize();
+        // A real mouse may have left B's outline visible before the pen enters A.
+        // Seed that state explicitly instead of depending on the desktop pointer.
+        QHoverEvent mouseHover(QEvent::HoverMove,{100,100},b->mapToGlobal({100,100}),{90,90});
+        QCoreApplication::sendEvent(b,&mouseHover);
+        QVERIFY(b->brushCursorVisible());
         first.setBrushColor(Qt::red);first.setBrushRadius(6);first.brushLibrary()->setPressureSize(false);first.brushLibrary()->setPressureFlow(false);
         const auto pixel=a->documentPoint({210,150});
         QPointingDevice pen("B1 contact pen",9201,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
@@ -107,11 +112,13 @@ private slots:
         QTest::keyPress(&window,Qt::Key_Space);QCOMPARE(window.cursor().shape(),Qt::OpenHandCursor);QVERIFY(!a->brushCursorVisible());
         QTest::keyRelease(&window,Qt::Key_Space);QVERIFY(!a->spacePanning());QCOMPARE(window.cursor().shape(),Qt::BlankCursor);
         send(QEvent::TabletPress,{150,150});QVERIFY(first.drawing());QVERIFY(!second.drawing());
+        QCoreApplication::sendEvent(b,&mouseHover);QVERIFY(!b->brushCursorVisible());
         // Native contact remains addressed to its original window while crossing
         // the adjacent canvas. B's later-installed application filter sees it first.
         send(QEvent::TabletMove,{430,150});
         QCOMPARE(a->cursorPosition(),QPointF(430,150));QVERIFY(!b->brushCursorVisible());QVERIFY(first.drawing());
         send(QEvent::TabletRelease,{430,150});QTRY_VERIFY(!first.drawing() && !first.layerEditBusy());
+        QCoreApplication::sendEvent(b,&mouseHover);QVERIFY(b->brushCursorVisible());
         QTRY_COMPARE(first.undoDepth(),1);QCOMPARE(second.undoDepth(),0);
         QTRY_VERIFY(first.frameRevision()>=first.revision());QTRY_VERIFY(first.sampleDocumentPixel(pixel.x(),pixel.y()).alpha()>240);
         const auto painted=first.sampleDocumentPixel(pixel.x(),pixel.y());QVERIFY(painted.red()>240 && painted.green()<10);
@@ -469,7 +476,7 @@ Window {
         QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(frames.size()>24);
         const auto redAt=[&](QPointF p){
             auto grab=canvas->grabToImage();
-            if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return false;
+            if(!grab)return false;QSignalSpy ready(grab.data(),&QQuickItemGrabResult::ready);if(!ready.wait(5000))return false;
             const auto pixel=(canvas->documentRect().topLeft()+p*canvas->zoom())*window.devicePixelRatio();
             const auto color=grab->image().pixelColor(pixel.toPoint());
             return color.red()>180 && color.green()<70 && color.blue()<70;
@@ -493,7 +500,7 @@ Window {
         QVERIFY(client.beginLiquify());QTRY_VERIFY(client.liquifyActive() && !client.liquifyBusy());
         const bool gpu=canvas->gpuDisplay();
         const auto settled=[&]{return gpu ? client.residentPreview() && client.residentPreview()->revision>=client.revision() : client.frameRevision()>=client.revision();};
-        const auto capture=[&]{auto result=canvas->grabToImage();if(!result || !QTest::qWaitFor([&]{return !result->image().isNull();},5000))return QImage{};return result->image();};
+        const auto capture=[&]{auto result=canvas->grabToImage();if(!result)return QImage{};QSignalSpy ready(result.data(),&QQuickItemGrabResult::ready);if(!ready.wait(5000))return QImage{};return result->image();};
         QTRY_VERIFY(settled());const auto identity=capture();QVERIFY(!identity.isNull());client.setLiquifySize(48);client.setLiquifyStrength(100);client.setLiquifyDensity(60);
         for(int i=0;i<3;++i){QVERIFY(client.beginStroke({{50.+i*3,48},1}));client.strokeTo({{58.+i*3,50},1});client.endStroke();QTRY_COMPARE(client.undoDepth(),i+1);QTRY_VERIFY(!client.liquifyBusy());}
         QTRY_VERIFY(settled());const auto warped=capture();QVERIFY(!warped.isNull());QVERIFY(warped!=identity);
@@ -516,7 +523,7 @@ Window {
         if(context==6){QVERIFY(client.addMask(owner));QTRY_VERIFY(!client.layerEditBusy());client.selectLayer(owner);QTRY_COMPARE(client.activeLayer(),owner);QTRY_VERIFY(!client.layerEditBusy());}
         client.setSelectionFeather(feather);QVERIFY(client.editSelectionPath({{700,500},{1040,500},{1040,1100},{700,1100}},0,false));QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.selectionEnabled());const auto selection=client.selectionSteps();const auto depth=client.undoDepth();
         QQuickWindow window;window.resize(1024,832);window.setColor(Qt::black);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1024,832});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();QTRY_VERIFY(client.frameRevision()>=client.revision());
-        const auto capture=[&]{auto result=canvas->grabToImage();if(!result || !QTest::qWaitFor([&]{return !result->image().isNull();},5000))return QImage{};return result->image();};
+        const auto capture=[&]{auto result=canvas->grabToImage();if(!result)return QImage{};QSignalSpy ready(result.data(),&QQuickItemGrabResult::ready);if(!ready.wait(5000))return QImage{};return result->image();};
         const auto at=[&](const QImage &image,QPointF p){const auto local=canvas->documentRect().topLeft()+p*canvas->zoom();return image.pixelColor(qRound(local.x()*image.width()/canvas->width()),qRound(local.y()*image.height()/canvas->height()));};
         const auto close=[](QColor a,QColor b){return qAbs(a.red()-b.red())<=3 && qAbs(a.green()-b.green())<=3 && qAbs(a.blue()-b.blue())<=3;};
         const auto original=capture();QVERIFY(!original.isNull());const bool gpu=canvas->gpuDisplay() && context!=3;
@@ -652,7 +659,7 @@ Window {
         if(kind==6 || kind==8 || kind==9){QVERIFY(client.groupLayer(owner,"masked ancestor"));QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.addMask(client.activeLayer()));QTRY_VERIFY(!client.layerEditBusy());if(kind==6 || kind==9){client.setBrushColor(Qt::black);QVERIFY(client.beginStroke({{80,80},1}));client.endStroke();QTRY_VERIFY(!client.layerEditBusy());}if(kind==9){client.setLayerProperties(client.activeLayer(),true,0);QTRY_VERIFY(!client.layerEditBusy());}client.selectLayer(owner);QTRY_COMPARE(client.activeLayer(),owner);QTRY_VERIFY(!client.layerEditBusy());}
         QQuickWindow window;window.resize(640,480);window.setColor(Qt::black);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({640,480});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));window.requestActivate();QTRY_VERIFY(window.isActive());canvas->actualSize();canvas->forceActiveFocus();QTRY_VERIFY(client.frameRevision()>=client.revision());
         const auto screen=[&](QPointF p){return(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
-        const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return QImage{};return grab->image();};
+        const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab)return QImage{};QSignalSpy ready(grab.data(),&QQuickItemGrabResult::ready);if(!ready.wait(5000))return QImage{};return grab->image();};
         const auto redAt=[&](const QImage &image,QPoint p){if(image.isNull())return false;const auto color=image.pixelColor(p*window.devicePixelRatio());return color.red()>180 && color.green()<70 && color.blue()<70;};
         QTRY_VERIFY(redAt(capture(),screen({32,32})));client.setMoveTool(true);
         if(canvas->gpuDisplay() && kind!=5 && kind!=6)QTRY_VERIFY_WITH_TIMEOUT(client.movePreparation(),30000);
@@ -847,7 +854,7 @@ Window {
         canvas->setSize({512,384});canvas->setClient(&client);window.show();window.requestActivate();
         QVERIFY(QTest::qWaitForWindowActive(&window));canvas->actualSize();
         const auto screen=[&](QPointF p){return(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
-        const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return QImage{};return grab->image();};
+        const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab)return QImage{};QSignalSpy ready(grab.data(),&QQuickItemGrabResult::ready);if(!ready.wait(5000))return QImage{};return grab->image();};
         const auto red=[&](const QImage &image,QPointF p){const auto c=image.pixelColor(screen(p)*window.devicePixelRatio());return c.red()>200 && c.green()<60 && c.blue()<60;};
         QTRY_VERIFY(client.frameRevision()>=client.revision());client.setMoveTool(true);
         QTRY_VERIFY_WITH_TIMEOUT(client.movePreparation(),10000);
@@ -962,7 +969,7 @@ Window {
         QQuickWindow window;window.resize(1024,720);window.setColor(Qt::black);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1024,720});canvas->setClient(&client);
         window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));window.requestActivate();QTRY_VERIFY(window.isActive());canvas->fitToView();canvas->forceActiveFocus();QTRY_VERIFY(client.frameRevision()>=client.revision());
         const auto screen=[&](QPointF p){return(canvas->documentRect().topLeft()+p*canvas->zoom()).toPoint();};
-        const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},5000))return QImage{};return grab->image();};
+        const auto capture=[&]{auto grab=canvas->grabToImage();if(!grab)return QImage{};QSignalSpy ready(grab.data(),&QQuickItemGrabResult::ready);if(!ready.wait(5000))return QImage{};return grab->image();};
         const auto at=[&](const QImage &image,QPointF p){const auto v=screen(p);return image.pixelColor(qRound(v.x()*image.width()/canvas->width()),qRound(v.y()*image.height()/canvas->height()));};
         const auto red=[](QColor c){return c.red()>200 && c.green()<60 && c.blue()<60;};
         const auto white=[](QColor c){return c.red()>220 && c.green()>220 && c.blue()>220;};
@@ -1107,7 +1114,7 @@ Window {
         QTRY_VERIFY(!client.drawing() && !client.layerEditBusy() && !client.liquifyBusy());
         if(liquify){QVERIFY(client.finishLiquify(false));QTRY_VERIFY(!client.liquifyActive() && !client.liquifyBusy());}
         QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy());QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
-        QTRY_VERIFY(client.frameRevision()>=client.revision());auto grab=canvas->grabToImage();QVERIFY(grab);QTRY_VERIFY(!grab->image().isNull());
+        QTRY_VERIFY(client.frameRevision()>=client.revision());auto grab=canvas->grabToImage();QVERIFY(grab);QSignalSpy grabReady(grab.data(),&QQuickItemGrabResult::ready);QVERIFY(grabReady.wait(5000));QVERIFY(!grab->image().isNull());
         QVERIFY(client.lastError().isEmpty());canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void duplicateTabletPressStillEndsOnRelease() {
@@ -1346,6 +1353,35 @@ Window {
         QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy());QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive());
         QCOMPARE(warnings,QStringList());QVERIFY(client.lastError().isEmpty());auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void warpOutlineMatchesAuthoritativeMesh() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("outline-mesh.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QQuickWindow window;auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1024,1024});canvas->setClient(&client);
+        QQmlEngine engine;QQmlComponent component(&engine,QUrl("qrc:/qml/canvas/TransformOverlay.qml"));
+        QScopedPointer<QObject> overlay(component.createWithInitialProperties({{"controller",QVariant::fromValue(&client)},{"canvasView",QVariant::fromValue(canvas)}}));
+        QVERIFY2(overlay,qPrintable(component.errorString()));
+        auto object=engine.newQObject(overlay.data()),mapped=object.property("mapped");QVERIFY(mapped.isCallable());
+        for(bool folded:{false,true}){
+            PaintTransform geometry{};geometry.struct_size=sizeof(geometry);geometry.warp=1;QVariantList points;
+            for(int y=0;y<4;++y)for(int x=0;x<4;++x){
+                const QPointF point(x*400.+(y%2?35.25:-17.5)+(folded && x==2?-720.:0.),y*400.+(x%2?-52.75:23.5));
+                points.append(point);geometry.points[(y*4+x)*2]=point.x();geometry.points[(y*4+x)*2+1]=point.y();
+            }
+            PaintTransformDisplayGeometry info{};info.struct_size=sizeof(info);QVector<float> vertices(84100);
+            QCOMPARE(paint_transform_display_geometry(&geometry,&info,vertices.data(),quint64(vertices.size())),PAINT_OK);
+            QCOMPARE(info.columns,145u);QCOMPARE(info.rows,145u);
+            const auto controls=engine.toScriptValue(points);
+            for(int axis=0;axis<2;++axis)for(int line=0;line<4;++line)for(int step=0;step<=48;++step){
+                const double u=axis?double(line)/3:double(step)/48,v=axis?double(step)/48:double(line)/3;
+                const auto result=mapped.callWithInstance(object,{QJSValue(u),QJSValue(v),controls});QVERIFY2(!result.isError(),qPrintable(result.toString()));
+                const auto actual=result.toVariant().toPointF();const int index=((axis?step*3:line*48)*145+(axis?line*48:step*3))*4;
+                // The display ABI intentionally stores f32 vertices. Guides
+                // retain JS doubles; allow only that coordinate quantization.
+                QVERIFY(qAbs(actual.x()-vertices[index])<.00015);QVERIFY(qAbs(actual.y()-vertices[index+1])<.00015);
+            }
+        }
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void foldedWarpPreviewMatchesCommittedPixels() {
         QTemporaryDir temp; PaintCoreClient client(nullptr,temp.filePath("fold.ini"));
         WorkspaceManager workspace(temp.filePath("layout.ini")); QQmlApplicationEngine engine;
@@ -1363,7 +1399,7 @@ Window {
         const auto capture=[&]{
             canvas->actualSize();
             if(auto *overlay=findVisualItem(window->contentItem(),"transformOverlay"))overlay->setVisible(false);
-            auto grab=window->contentItem()->grabToImage();if(!grab)return QImage();QSignalSpy ready(grab.data(),&QQuickItemGrabResult::ready);if(grab->image().isNull() && !ready.wait(2000))return QImage();auto image=grab->image();if(image.isNull())return image;
+            auto grab=window->contentItem()->grabToImage();if(!grab)return QImage();QSignalSpy ready(grab.data(),&QQuickItemGrabResult::ready);if(!ready.wait(2000))return QImage();auto image=grab->image();if(image.isNull())return image;
             const auto scale=double(image.width())/window->width();
             const auto origin=(canvas->mapToScene({0,0})+canvas->documentRect().topLeft())*scale;
             return image.copy(QRect(origin.toPoint(),QSize(qRound(96*canvas->zoom()*scale),qRound(96*canvas->zoom()*scale))));

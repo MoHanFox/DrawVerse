@@ -96,8 +96,9 @@ private slots:
         QQuickWindow window;window.resize(512,384);window.setColor(Qt::black);
         auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,384});
         const auto readback=std::make_shared<CompositionReadback>();canvas->observeCompositionReadback(readback);
-        canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        canvas->setClient(&client);window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->actualSize();
         const auto targetZoom=zoom/window.devicePixelRatio();
+        const auto retainZoom=qScopeGuard([&]{save("zoom-"+QString::fromLatin1(QTest::currentDataTag()),{{"target",targetZoom},{"actual",canvas->zoom()},{"active",window.isActive()}});});
         if(targetZoom!=1){canvas->zoomBy(targetZoom);QTRY_VERIFY(qAbs(canvas->zoom()-targetZoom)<1e-9);}
         const bool software=window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software;
         if(software){
@@ -145,12 +146,13 @@ private slots:
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(256,192);
         QTRY_VERIFY(client.ready() && client.documentWidth()==256 && !client.layerEditBusy());
         QQuickWindow window;window.resize(512,384);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,384});canvas->setClient(&client);
-        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();client.setBrushRadius(3);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->actualSize();canvas->forceActiveFocus();client.setBrushRadius(3);
         const bool software=window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software;
         for(int i=0;i<24;++i){
+            QVERIFY(window.isActive());
             const auto undo=client.undoDepth();client.setBrushColor(QColor::fromHsv((i*53)%360,220,220));
             const auto position=(canvas->documentRect().topLeft()+QPointF(14+(i%6)*36,14+(i/6)*42)).toPoint();
-            QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,position);QTest::mouseMove(&window,position+QPoint(2,1));QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,position+QPoint(2,1));
+            QTest::mousePress(&window,Qt::LeftButton,Qt::NoModifier,position);QVERIFY(client.drawing());QTest::mouseMove(&window,position+QPoint(2,1));QTest::mouseRelease(&window,Qt::LeftButton,Qt::NoModifier,position+QPoint(2,1));
             save("stroke-last-input",{{"index",i},{"undo_before",undo},{"revision",double(client.revision())},{"drawing",client.drawing()},{"error",client.lastError()},{"zoom",canvas->zoom()},{"x",position.x()},{"y",position.y()},{"active",window.isActive()},{"history_limit",client.historyLimit()}});
             QTRY_COMPARE(client.undoDepth(),undo+1);
         }
@@ -326,6 +328,16 @@ private slots:
                 QTRY_COMPARE(canvas->compositionStatistics()["nodeGeometry"].toULongLong(),client.compositionPacket()->geometrySequence);
                 QCOMPARE(canvas->compositionStatistics()["uploads"].toULongLong(),uploads);
                 QCOMPARE(canvas->compositionStatistics()["pipelineCreates"].toULongLong(),pipelines);
+                // A second, different absolute geometry must change real pixels
+                // while retaining this window's source/pass dependencies.
+                const auto prepared=canvas->compositionStatistics();const auto prior=client.revision();
+                for(int i=0;i<16;++i)points[i]=points[i].toPointF()+QPointF(.625,-.375);
+                QVERIFY(client.updateTransform(points,warp,interpolation));
+                QTRY_VERIFY(client.revision()>prior && client.frameRevision()==client.revision());
+                QTRY_COMPARE(canvas->compositionStatistics()["nodeGeometry"].toULongLong(),client.compositionPacket()->geometrySequence);
+                const auto reused=canvas->compositionStatistics();
+                QVERIFY(reused["geometryReuses"].toULongLong()>prepared["geometryReuses"].toULongLong());
+                for(const auto *key:{"uploads","pipelineCreates","pageTableCreates","axisCreates","parameterBufferCreates","bindingCreates"})QCOMPARE(reused[key],prepared[key]);
                 QTRY_COMPARE(readback->completed.load(),2);readback->completed=0;readback->geometry=client.compositionPacket()->geometrySequence;readback->version=1;window.update();
                 const bool captured=QTest::qWaitFor([&]{window.update();return readback->completed.load()==2;},2000);
                 if(!captured){auto diagnostic=QJsonObject::fromVariantMap(canvas->compositionStatistics());diagnostic["requestedGeometry"]=double(readback->geometry.load());diagnostic["clientGeometry"]=double(client.compositionPacket()->geometrySequence);save("readback-failure-"+QString::fromLatin1(QTest::currentDataTag()),diagnostic);}
@@ -357,6 +369,49 @@ private slots:
         if(commit){client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_COMPARE(client.frameRevision(),client.revision());}
         QCOMPARE(client.frame(),original);QVERIFY(client.lastError().isEmpty());
         save("transform-"+QString::fromLatin1(QTest::currentDataTag()),{{"passed",true},{"software_fallback",software},{"commit",commit},{"precise_capability",precise},{"side",side}});
+    }
+    void transformResourcesFollowViewAndTopology(){
+        qputenv("DRAWVERSE_GPU_COMPOSITION","1");QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("reuse.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());const auto generation=client.generation();client.newDocument(1024,1024);
+        QTRY_VERIFY(client.generation()!=generation && client.documentWidth()==1024 && client.documentHeight()==1024 && !client.layerEditBusy());
+        client.addLayer("view-topology");QTRY_VERIFY(client.layers().size()==2 && !client.layerEditBusy());
+        client.activateBrush();client.setBrushColor(Qt::red);client.setBrushRadius(24);
+        const auto beforeStroke=client.undoDepth();QVERIFY(client.beginStroke({{512,512},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),beforeStroke+1);const auto depth=client.undoDepth();
+        QQuickWindow window;window.resize(384,288);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({384,288});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        const bool software=window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software;
+        if(!software)QTRY_VERIFY(canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision());
+        const bool precise=!software && canvas->compositionStatistics()["preciseTransform"].toInt()>0;
+        QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformActive() && !client.transformBusy());
+        auto points=client.transformPoints();
+        const auto update=[&](bool warp){
+            for(int i=0;i<16;++i)points[i]=points[i].toPointF()+QPointF(2.25,1.5);
+            const auto revision=client.revision();
+            if(!client.updateTransform(points,warp,2))return false;
+            return QTest::qWaitFor([&]{return client.revision()>revision && client.frameRevision()==client.revision() &&
+                (!precise || (client.compositionPacket() && canvas->compositionStatistics()["nodeGeometry"].toULongLong()==client.compositionPacket()->geometrySequence));},5000);
+        };
+        QVERIFY(update(false));const auto first=canvas->compositionStatistics();
+        window.resize(400,300);canvas->setSize({400,300});
+        QTRY_VERIFY(client.frameRegion()==canvas->prefetchedDocumentRect() && client.frame().size()==requestedPixels(*canvas,window));
+        if(precise){
+            QTRY_VERIFY(client.compositionPacket() && client.compositionPacket()->region==canvas->prefetchedDocumentRect() && client.compositionPacket()->pixels==requestedPixels(*canvas,window));
+            QTRY_VERIFY(client.compositionPacket() && canvas->compositionStatistics()["nodeRequest"].toULongLong()==client.compositionPacket()->info.key.request_id && canvas->compositionStatistics()["nodeGeometry"].toULongLong()==client.compositionPacket()->geometrySequence);
+            QVERIFY(canvas->compositionStatistics()["axisCreates"].toULongLong()>first["axisCreates"].toULongLong());
+        }
+        QVERIFY(update(false));const auto resized=canvas->compositionStatistics();
+        points[5]=points[5].toPointF()+QPointF(7,-4);QVERIFY(update(true));
+        if(precise)QVERIFY(canvas->compositionStatistics()["pageTableCreates"].toULongLong()>resized["pageTableCreates"].toULongLong());
+        QVERIFY(update(true));QVERIFY(update(false));QVERIFY(update(false));
+        if(precise){
+            QSignalSpy swapped(&window,&QQuickWindow::frameSwapped);window.update();QTRY_VERIFY(!swapped.isEmpty());const auto gpu=window.grabWindow();
+            qputenv("DRAWVERSE_GPU_COMPOSITION","0");emit client.frameChanged();swapped.clear();window.update();QTRY_VERIFY(!swapped.isEmpty());
+            QVERIFY(difference(gpu,window.grabWindow())<=1);qputenv("DRAWVERSE_GPU_COMPOSITION","1");emit client.frameChanged();
+        }
+        QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
+        QTRY_COMPARE(client.compositionHandoffRevision(),quint64(0));QCOMPARE(client.undoDepth(),depth);QVERIFY(client.lastError().isEmpty());
+        auto report=QJsonObject::fromVariantMap(canvas->compositionStatistics());report["passed"]=true;save("transform-view-topology",report);
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void transformCloseBeforeTarget_data(){QTest::addColumn<bool>("commit");QTest::newRow("commit")<<true;QTest::newRow("cancel")<<false;}
     void transformCloseBeforeTarget(){

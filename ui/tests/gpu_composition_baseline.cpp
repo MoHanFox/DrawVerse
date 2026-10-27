@@ -6,6 +6,7 @@
 #include "canvas/SelectionOverlay.h"
 #include <QtTest>
 #include <QQuickWindow>
+#include <QQuickGraphicsConfiguration>
 #include <QQmlEngine>
 #include <QQmlComponent>
 #include <QQuickItemGrabResult>
@@ -100,6 +101,7 @@ private slots:
         report["fixture_version"]=nativeDriver?5:4;report["event_driver"]=nativeDriver?"native QEventLoop + 1ms bounded predicate timer":"QtTest QTRY/qWait v4";report["history_setup"]="ORA round trip outside measurement; zero initial history; ordered setup barrier";
         client.brushLibrary()->setCursorOutline(false);client.brushLibrary()->setCursorImage(false);
         QQuickWindow window;window.resize(1024,720);window.setColor(Qt::black);
+        if(tracing){auto config=window.graphicsConfiguration();config.setTimestamps(true);window.setGraphicsConfiguration(config);}
         QQmlEngine engine;QQmlComponent component(&engine,QUrl("qrc:/qml/canvas/CanvasPane.qml"));
         std::unique_ptr<QObject> paneObject(component.createWithInitialProperties({{"ownClient",QVariant::fromValue(&client)},{"mainWindow",QVariant::fromValue(&window)}}));
         QVERIFY2(paneObject,qPrintable(component.errorString()));auto *pane=qobject_cast<QQuickItem*>(paneObject.get());QVERIFY(pane);
@@ -127,13 +129,18 @@ private slots:
         report["screen_hz"]=window.screen()->refreshRate();report["zoom"]=canvas->zoom();
         const auto toScreen=[&](QPointF p){return canvas->documentRect().topLeft()+p*canvas->zoom();};
         const auto capture=[&]{const auto opacity=overlay->opacity();overlay->setOpacity(0);auto grab=pane->grabToImage();
-            if(!grab || !QTest::qWaitFor([&]{return !grab->image().isNull();},10000)){overlay->setOpacity(opacity);return QImage{};}
+            if(!grab){overlay->setOpacity(opacity);return QImage{};}
+            // image() is populated on the render thread before cleanup and the
+            // completion event. Hold the result until GUI delivery of ready();
+            // observing a non-null image can otherwise destroy it mid-render.
+            QSignalSpy ready(grab.data(),&QQuickItemGrabResult::ready);
+            if(!ready.wait(10000)){overlay->setOpacity(opacity);return QImage{};}
             const auto image=grab->image();overlay->setOpacity(opacity);return image;};
         // Correctness pass is outside all measured intervals.
         auto initial=capture();QVERIFY(!initial.isNull());QVERIFY(initial.save(output+"-initial.png"));
         Ingress ingress;ingress.window=&window;window.installEventFilter(&ingress);
         QJsonArray swapped;
-        const auto frameConnection=connect(&window,&QQuickWindow::frameSwapped,&window,[&]{
+        const auto frameConnection=connect(&window,&QQuickWindow::frameSwapped,&window,[this,observer]{
             const auto receipt=observer->snapshot();std::lock_guard lock(frameMutex);
             if(frameHistory.size()<4096)frameHistory.push_back({InteractionTrace::now(),receipt});else ++frameDropped;
         },Qt::DirectConnection);

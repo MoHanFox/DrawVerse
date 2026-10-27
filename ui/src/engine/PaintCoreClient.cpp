@@ -1678,6 +1678,26 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
     if (status == PAINT_OK) {
         m_requests[view] = request; m_requestedRegions[view] = region; m_requestedPixels[view] = pixels; m_viewEnabled[view] = enabled;
         if (!enabled) { m_frames[view] = {}; m_regions[view] = {}; emit frameChanged(); }
+        if(view==0 && enabled && m_compositionEditBase &&
+           (m_compositionEditBase->region!=region || m_compositionEditBase->pixels!=pixels)){
+            const double scale=std::min(region.width()/pixels.width(),region.height()/pixels.height());
+            const int lod=scale>=1?int(std::ceil(std::log2(scale))):0;
+            if(pixels.width()>4096 || pixels.height()>4096 || quint64(pixels.width())*pixels.height()>4194304 || lod>6){
+                m_compositionFinalFallback=true;m_compositionEditFallbackReason=QStringLiteral("CPU: composition edit viewport budget");
+            }else{
+                // The bounded source plan contains every visible layer tile,
+                // not just the initial viewport. Retarget only Qt's display
+                // projection; the immutable Rust source/lease identity stays.
+                const auto project=[&](const CompositionPacketPtr &source){
+                    auto next=std::make_shared<CompositionPacket>(*source);
+                    next->region=region;next->pixels=pixels;next->lod=lod;next->geometrySequence=++m_compositionGeometry;
+                    return CompositionPacketPtr(std::move(next));
+                };
+                m_compositionEditBase=project(m_compositionEditBase);
+                if(m_compositionEditFrame)m_compositionEditFrame=project(m_compositionEditFrame);
+            }
+            emit frameChanged();
+        }
         requestLayerMovePreparation();
     } else if (!error.isEmpty()) showError(error);
 }

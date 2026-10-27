@@ -15,6 +15,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
+    (out/'working-tree.patch').write_bytes(subprocess.check_output(['git', 'diff', '--binary', 'HEAD', '--', 'core', 'ui', 'tools'], cwd=root))
     sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
     files = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--', 'core', 'ui', 'tools'], cwd=root, text=True).splitlines()
     (out/'invocation.json').write_text(json.dumps(dict(
