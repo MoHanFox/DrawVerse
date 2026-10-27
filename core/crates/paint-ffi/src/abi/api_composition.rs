@@ -8,9 +8,13 @@ pub const PAINT_COMPOSITION_FIXED_MASK: u64 = 8;
 pub const PAINT_COMPOSITION_BLEND_MODES: u64 = 16;
 /// ABI1.85: ordered group operations and plan-local intermediate surfaces.
 pub const PAINT_COMPOSITION_GROUPS: u64 = 32;
+pub const PAINT_COMPOSITION_DISSOLVE: u64 = 64;
+pub const PAINT_COMPOSITION_CLIPPING: u64 = 128;
+pub const PAINT_COMPOSITION_NODE_CLIPPED: u64 = 1 << 49;
 /// Node.reserved low32 = blend ID when BLEND_MODES is required.
 /// Bit32 marks an unlinked mask when FIXED_MASK is required. With GROUPS,
-/// bits33..48 hold parent node index+1, or zero for a root. Other bits are zero.
+/// bits33..48 hold parent node index+1, or zero for a root. Bit49 marks clipping
+/// only with CLIPPING; all other bits are zero.
 pub const PAINT_COMPOSITION_NODE_FIXED_MASK: u64 = 0x1_0000_0000;
 pub const PAINT_COMPOSITION_PENDING: u32 = 0;
 pub const PAINT_COMPOSITION_READY: u32 = 1;
@@ -23,8 +27,14 @@ pub const PAINT_COMPOSITION_COPY: u32 = 1;
 pub const PAINT_COMPOSITION_DRAW_RASTER: u32 = 2;
 pub const PAINT_COMPOSITION_BLEND_SURFACE: u32 = 3;
 pub const PAINT_COMPOSITION_INFLUENCE: u32 = 4;
+pub const PAINT_COMPOSITION_MASKED_RASTER: u32 = 5;
+pub const PAINT_COMPOSITION_MASK_SURFACE: u32 = 6;
+pub const PAINT_COMPOSITION_CLIP_RASTER: u32 = 7;
+pub const PAINT_COMPOSITION_CLIP_SURFACE: u32 = 8;
+pub const PAINT_COMPOSITION_CLIP_INFLUENCE: u32 = 9;
+pub const PAINT_COMPOSITION_APPLY_PREPARED: u32 = 10;
 
-/// Fixed-size immutable group work. For CLEAR, source/backdrop are unused;
+/// Fixed-size immutable group/clipping work. For CLEAR, source/backdrop are unused;
 /// COPY reads backdrop, DRAW_RASTER reads node/backdrop, BLEND_SURFACE and
 /// INFLUENCE read source/backdrop/node. Output must not alias a read surface.
 #[repr(C)]
@@ -36,6 +46,8 @@ pub struct PaintCompositionOperation {
     pub output: u32,
     pub source: u32,
     pub backdrop: u32,
+    /// With DISSOLVE: seed u32; otherwise zero. With CLIPPING: coverage
+    /// surface+1 for CLIP operations, zero means full coverage.
     pub reserved: [u32; 2],
 }
 
@@ -104,7 +116,7 @@ pub struct PaintCompositionInfo {
     pub metadata_bytes: u64,
     /// Conservative process budget charge, including referenced tile upper bound.
     pub budget_bytes: u64,
-    /// When GROUPS is required: [operation_count, surface_count<<32 | output].
+    /// With GROUPS/DISSOLVE/CLIPPING: [operation_count, surface_count<<32 | output].
     /// Otherwise both are zero and the original flat raster order applies.
     pub reserved: [u64; 2],
 }

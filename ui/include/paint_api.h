@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 85
+#define PAINT_ABI_MINOR 86
 
 #define PAINT_ABI_PATCH 0
 
@@ -61,13 +61,25 @@
 
 #define PAINT_COMMAND_UNDO 6
 
+#define PAINT_COMPOSITION_APPLY_PREPARED 10
+
 #define PAINT_COMPOSITION_BLEND_MODES 16
 
 #define PAINT_COMPOSITION_BLEND_SURFACE 3
 
 #define PAINT_COMPOSITION_CLEAR 0
 
+#define PAINT_COMPOSITION_CLIPPING 128
+
+#define PAINT_COMPOSITION_CLIP_INFLUENCE 9
+
+#define PAINT_COMPOSITION_CLIP_RASTER 7
+
+#define PAINT_COMPOSITION_CLIP_SURFACE 8
+
 #define PAINT_COMPOSITION_COPY 1
+
+#define PAINT_COMPOSITION_DISSOLVE 64
 
 #define PAINT_COMPOSITION_DRAW_RASTER 2
 
@@ -91,10 +103,17 @@
 
 #define PAINT_COMPOSITION_MASK 1
 
+#define PAINT_COMPOSITION_MASKED_RASTER 5
+
+#define PAINT_COMPOSITION_MASK_SURFACE 6
+
+#define PAINT_COMPOSITION_NODE_CLIPPED (1 << 49)
+
 /**
  * Node.reserved low32 = blend ID when BLEND_MODES is required.
  * Bit32 marks an unlinked mask when FIXED_MASK is required. With GROUPS,
- * bits33..48 hold parent node index+1, or zero for a root. Other bits are zero.
+ * bits33..48 hold parent node index+1, or zero for a root. Bit49 marks clipping
+ * only with CLIPPING; all other bits are zero.
  */
 #define PAINT_COMPOSITION_NODE_FIXED_MASK 4294967296
 
@@ -992,7 +1011,7 @@ typedef struct PaintCompositionInfo {
    */
   uint64_t budget_bytes;
   /**
-   * When GROUPS is required: [operation_count, surface_count<<32 | output].
+   * With GROUPS/DISSOLVE/CLIPPING: [operation_count, surface_count<<32 | output].
    * Otherwise both are zero and the original flat raster order applies.
    */
   uint64_t reserved[2];
@@ -1019,7 +1038,7 @@ typedef struct PaintCompositionNode {
 } PaintCompositionNode;
 
 /**
- * Fixed-size immutable group work. For CLEAR, source/backdrop are unused;
+ * Fixed-size immutable group/clipping work. For CLEAR, source/backdrop are unused;
  * COPY reads backdrop, DRAW_RASTER reads node/backdrop, BLEND_SURFACE and
  * INFLUENCE read source/backdrop/node. Output must not alias a read surface.
  */
@@ -1030,6 +1049,10 @@ typedef struct PaintCompositionOperation {
   uint32_t output;
   uint32_t source;
   uint32_t backdrop;
+  /**
+   * With DISSOLVE: seed u32; otherwise zero. With CLIPPING: coverage
+   * surface+1 for CLIP operations, zero means full coverage.
+   */
   uint32_t reserved[2];
 } PaintCompositionOperation;
 
@@ -2410,7 +2433,7 @@ PaintStatus paint_session_composition_node(struct PaintCore *core,
 
 /**
  * ABI1.85: read one immutable ordered group operation with the exact lease key.
- * Only plans requiring GROUPS contain operations. No IO or native handles.
+ * GROUPS/DISSOLVE/CLIPPING plans contain operations. No IO or native handles.
  * # Safety
  * Initialize key/out_operation sizes; outputs must not overlap inputs.
  */

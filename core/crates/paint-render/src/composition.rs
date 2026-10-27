@@ -18,7 +18,12 @@ pub const LINEAR_RGBA32F: u64 = 4;
 pub const FIXED_MASK: u64 = 8;
 pub const BLEND_MODES: u64 = 16;
 pub const GROUPS: u64 = 32;
-pub const FEATURES: u64 = NORMAL | SELF_MASK | LINEAR_RGBA32F | FIXED_MASK | BLEND_MODES | GROUPS;
+pub const DISSOLVE: u64 = 64;
+pub const CLIPPING: u64 = 128;
+pub const FEATURES: u64 =
+    NORMAL | SELF_MASK | LINEAR_RGBA32F | FIXED_MASK | BLEND_MODES | GROUPS | DISSOLVE | CLIPPING;
+#[path = "composition_closures.rs"]
+mod closures;
 pub const MAX_NODES: usize = 4096;
 pub const MAX_TILES: usize = 4096;
 pub const MAX_PIN_BYTES: usize = MAX_TILES * TILE_BYTES;
@@ -153,6 +158,8 @@ pub enum NodeKind {
 }
 #[derive(Debug)]
 pub struct Node {
+    pub clipped: bool,
+    pub dissolve_seed: u32,
     pub parent: Option<usize>,
     pub blend: BlendMode,
     pub fixed_mask: bool,
@@ -221,9 +228,16 @@ pub enum OperationKind {
     Raster = 2,
     BlendSurface = 3,
     Influence = 4,
+    MaskedRaster = 5,
+    MaskSurface = 6,
+    ClipRaster = 7,
+    ClipSurface = 8,
+    ClipInfluence = 9,
+    ApplyPrepared = 10,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Operation {
+    pub coverage: Option<u32>,
     pub kind: OperationKind,
     pub node: u32,
     pub output: u32,
@@ -256,6 +270,7 @@ fn compile_groups(nodes: &[Node]) -> Result<(Vec<Operation>, u32, u32), PlanErro
                 *surfaces = (*surfaces).max(start + 2);
                 let through = node.blend == BlendMode::PassThrough;
                 operations.push(Operation {
+                    coverage: None,
                     kind: if through {
                         OperationKind::Copy
                     } else {
@@ -268,6 +283,7 @@ fn compile_groups(nodes: &[Node]) -> Result<(Vec<Operation>, u32, u32), PlanErro
                 });
                 let source = stack(nodes, children, i, depth + 1, start, operations, surfaces)?;
                 operations.push(Operation {
+                    coverage: None,
                     kind: if through {
                         OperationKind::Influence
                     } else {
@@ -280,6 +296,7 @@ fn compile_groups(nodes: &[Node]) -> Result<(Vec<Operation>, u32, u32), PlanErro
                 });
             } else {
                 operations.push(Operation {
+                    coverage: None,
                     kind: OperationKind::Raster,
                     node: i as u32,
                     output,
@@ -298,6 +315,7 @@ fn compile_groups(nodes: &[Node]) -> Result<(Vec<Operation>, u32, u32), PlanErro
         }
     }
     let mut operations = vec![Operation {
+        coverage: None,
         kind: OperationKind::Clear,
         node: 0,
         output: 0,
@@ -331,12 +349,13 @@ pub fn estimate(layers: &[Layer], limits: Limits) -> Result<(usize, usize), Plan
     let mut tiles = 0usize;
     for layer in layers {
         if (layer.is_group() && limits.features & GROUPS == 0)
-            || layer.is_clipped()
+            || (layer.is_clipped() && limits.features & CLIPPING == 0)
             || layer.is_image()
             || (layer.appearance().blend != BlendMode::Normal
                 && (layer.is_mask()
                     || limits.features & BLEND_MODES == 0
-                    || matches!(layer.appearance().blend, BlendMode::Dissolve)
+                    || (layer.appearance().blend == BlendMode::Dissolve
+                        && limits.features & DISSOLVE == 0)
                     || (layer.appearance().blend == BlendMode::PassThrough && !layer.is_group())))
             || (!layer.is_mask() && layer.parent_id() != 0 && limits.features & GROUPS == 0)
             || (layer.is_mask()
@@ -354,7 +373,7 @@ pub fn estimate(layers: &[Layer], limits: Limits) -> Result<(usize, usize), Plan
     }
     let pins = tiles.checked_mul(TILE_BYTES).ok_or(PlanError::Budget)?;
     let metadata = 1024usize
-        .checked_add(layers.len() * 768)
+        .checked_add(layers.len() * 1536)
         .and_then(|n| n.checked_add(tiles * 1024))
         .ok_or(PlanError::Budget)?;
     if pins > limits.pinned_bytes || metadata > limits.metadata_bytes {
@@ -417,18 +436,9 @@ pub fn prepare(
         }
         let visible =
             layer.properties().visible && layer.properties().opacity * layer.appearance().fill > 0.;
-        let first_tile = tiles.len();
-        if visible && owner_visible {
-            for (coord, tile) in layer.tiles() {
-                checkpoint(cancel)?;
-                tiles.push(SourceTile {
-                    content_id: identities.identify(tile)?,
-                    coord,
-                    tile: Arc::clone(tile),
-                });
-            }
-        }
         nodes.push(Node {
+            clipped: layer.is_clipped(),
+            dissolve_seed: layer.appearance().dissolve_seed,
             parent: index.get(&layer.parent_id()).copied(),
             blend: layer.appearance().blend,
             fixed_mask: layer.is_mask() && !layer.mask_linked(),
@@ -446,8 +456,8 @@ pub fn prepare(
             fill: layer.appearance().fill,
             offset: (layer.appearance().offset_x, layer.appearance().offset_y),
             white_extent: layer.white_extent(),
-            first_tile,
-            tile_count: tiles.len() - first_tile,
+            first_tile: 0,
+            tile_count: 0,
         });
     }
     for (i, layer) in layers.iter().enumerate().filter(|(_, l)| l.is_mask()) {
@@ -457,12 +467,64 @@ pub fn prepare(
         }
     }
     let grouped = layers.iter().any(Layer::is_group);
-    let (operations, surface_count, output_surface) = if grouped {
+    let clipped = layers.iter().any(Layer::is_clipped);
+    let dissolve = layers
+        .iter()
+        .any(|l| l.appearance().blend == BlendMode::Dissolve);
+    let (operations, surface_count, output_surface) = if clipped {
+        closures::compile(&nodes)?
+    } else if grouped || dissolve {
         compile_groups(&nodes)?
     } else {
         (Vec::new(), 2, 0)
     };
+    let mut needed = vec![false; nodes.len()];
+    if operations.is_empty() {
+        for (i, node) in nodes.iter().enumerate() {
+            if node.kind == NodeKind::Raster && node.visible {
+                needed[i] = true;
+                if let Some(m) = node.mask {
+                    needed[m] = true;
+                }
+            }
+        }
+    } else {
+        for op in &operations {
+            if matches!(
+                op.kind,
+                OperationKind::Clear | OperationKind::Copy | OperationKind::ApplyPrepared
+            ) {
+                continue;
+            }
+            let i = op.node as usize;
+            if matches!(
+                op.kind,
+                OperationKind::Raster | OperationKind::MaskedRaster | OperationKind::ClipRaster
+            ) {
+                needed[i] = true;
+            }
+            if let Some(m) = nodes[i].mask {
+                needed[m] = true;
+            }
+        }
+    }
+    for (i, (node, layer)) in nodes.iter_mut().zip(layers).enumerate() {
+        node.first_tile = tiles.len();
+        if needed[i] && node.visible {
+            for (coord, tile) in layer.tiles() {
+                checkpoint(cancel)?;
+                tiles.push(SourceTile {
+                    content_id: identities.identify(tile)?,
+                    coord,
+                    tile: Arc::clone(tile),
+                });
+            }
+        }
+        node.tile_count = tiles.len() - node.first_tile;
+    }
     let required_features = if grouped { GROUPS } else { 0 }
+        | if clipped { CLIPPING } else { 0 }
+        | if dissolve { DISSOLVE } else { 0 }
         | if layers
             .iter()
             .any(|l| !l.is_mask() && l.appearance().blend != BlendMode::Normal)
@@ -547,7 +609,12 @@ impl Plan {
                     OperationKind::Clear => Pixel::TRANSPARENT,
                     OperationKind::Copy => before,
                     kind => {
-                        let source = if kind == OperationKind::Raster {
+                        let source = if matches!(
+                            kind,
+                            OperationKind::Raster
+                                | OperationKind::MaskedRaster
+                                | OperationKind::ClipRaster
+                        ) {
                             self.sample(node, x, y)?
                         } else {
                             surfaces[op.source as usize]
@@ -559,7 +626,20 @@ impl Plan {
                         } else {
                             1.
                         };
-                        if kind == OperationKind::Influence {
+                        if matches!(
+                            kind,
+                            OperationKind::MaskedRaster | OperationKind::MaskSurface
+                        ) {
+                            source.scaled(mask)
+                        } else if matches!(
+                            kind,
+                            OperationKind::ClipRaster
+                                | OperationKind::ClipSurface
+                                | OperationKind::ClipInfluence
+                        ) {
+                            let coverage = op.coverage.map_or(1., |i| surfaces[i as usize].alpha());
+                            clip_pixel(source, before, node, mask, coverage, x, y)
+                        } else if kind == OperationKind::Influence {
                             if before == source {
                                 before
                             } else {
@@ -567,12 +647,18 @@ impl Plan {
                             }
                         } else {
                             blend_pixel(
-                                source.scaled(mask).scaled(node.opacity * node.fill),
+                                source
+                                    .scaled(if kind == OperationKind::ApplyPrepared {
+                                        1.
+                                    } else {
+                                        mask
+                                    })
+                                    .scaled(node.opacity * node.fill),
                                 before,
                                 node.blend,
                                 x,
                                 y,
-                                0,
+                                u64::from(node.dissolve_seed),
                             )
                         }
                     }
@@ -595,9 +681,64 @@ impl Plan {
                 node.blend,
                 x,
                 y,
-                0,
+                u64::from(node.dissolve_seed),
             );
         }
         Ok(result)
     }
+}
+
+fn clip_pixel(
+    source: Pixel,
+    before: Pixel,
+    node: &Node,
+    mask: f32,
+    coverage: f32,
+    x: u32,
+    y: u32,
+) -> Pixel {
+    let weight = node.opacity * node.fill;
+    if node.blend == BlendMode::PassThrough {
+        if before == source {
+            return before;
+        }
+        let a = source.alpha();
+        let color = if a == 0. {
+            Pixel::TRANSPARENT
+        } else {
+            let c = source.components();
+            Pixel::from_straight([c[0] / a, c[1] / a, c[2] / a, before.alpha()])
+                .expect("normalized source")
+        };
+        return before.mix(color, weight * mask * coverage);
+    }
+    let a = before.alpha();
+    if a == 0. {
+        return before;
+    }
+    let source = source.scaled(mask);
+    let next = if node.blend == BlendMode::Normal {
+        // Reconstruct the core's preserving-alpha result through its public
+        // primitive; this keeps exact finite arithmetic and normalized pixels.
+        before.paint_preserving_alpha(source, weight)
+    } else {
+        let c = before.components();
+        let opaque = Pixel::from_straight([
+            (c[0] / a).clamp(0., 1.),
+            (c[1] / a).clamp(0., 1.),
+            (c[2] / a).clamp(0., 1.),
+            1.,
+        ])
+        .expect("normalized backdrop");
+        blend_pixel(
+            source.scaled(weight),
+            opaque,
+            node.blend,
+            x,
+            y,
+            u64::from(node.dissolve_seed),
+        )
+        .scaled(a)
+    };
+    before.mix(next, coverage)
 }

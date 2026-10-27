@@ -181,9 +181,18 @@ set_tests_properties(qt_composition_transport_tests PROPERTIES TIMEOUT 60
 qt_add_executable(qt_gpu_composition_tests tests/gpu_composition_tests.cpp)
 target_link_libraries(qt_gpu_composition_tests PRIVATE drawverse_ui Qt6::Test)
 set_target_properties(qt_gpu_composition_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
-add_test(NAME qt_gpu_composition_tests COMMAND qt_gpu_composition_tests)
-set_tests_properties(qt_gpu_composition_tests PROPERTIES TIMEOUT 120
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
+# Generate independent CPU truth before the window suite; never compile during it.
+set(gpu_closure_fixtures "${CMAKE_BINARY_DIR}/gpu-closure-fixtures/$<CONFIG>")
+add_test(NAME gpu_closure_fixture_setup COMMAND "${CMAKE_COMMAND}" -E env
+    "CARGO_TARGET_DIR=${DRAWVERSE_CARGO_TARGET_DIR}"
+    "DRAWVERSE_G4_FIXTURES=${gpu_closure_fixtures}"
+    "${DRAWVERSE_CARGO_EXECUTABLE}" test --manifest-path "${CMAKE_SOURCE_DIR}/core/Cargo.toml"
+    -p paint-io --release --locked --test gpu_closure_fixtures -- --ignored)
+set_tests_properties(gpu_closure_fixture_setup PROPERTIES TIMEOUT 240 FIXTURES_SETUP gpu_closures)
+add_test(NAME qt_gpu_composition_tests COMMAND qt_gpu_composition_tests
+    -o "${CMAKE_BINARY_DIR}/qt-gpu-composition-$<CONFIG>.txt,txt" -o -,txt)
+set_tests_properties(qt_gpu_composition_tests PROPERTIES TIMEOUT 300 FIXTURES_REQUIRED gpu_closures
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;DRAWVERSE_G4_FIXTURES=${gpu_closure_fixtures}"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Test>")
 
 qt_add_executable(qt_workflow_tests tests/workflow_tests.cpp)

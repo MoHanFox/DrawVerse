@@ -180,7 +180,11 @@ pub unsafe extern "C" fn paint_session_composition_node(
             white_height: n.white_extent.1,
             first_tile: n.first_tile as u32,
             tile_count: n.tile_count as u32,
-            reserved: n.blend as u64
+            reserved: if n.clipped {
+                PAINT_COMPOSITION_NODE_CLIPPED
+            } else {
+                0
+            } | n.blend as u64
                 | if n.fixed_mask {
                     PAINT_COMPOSITION_NODE_FIXED_MASK
                 } else {
@@ -197,7 +201,7 @@ pub unsafe extern "C" fn paint_session_composition_node(
 }
 
 /// ABI1.85: read one immutable ordered group operation with the exact lease key.
-/// Only plans requiring GROUPS contain operations. No IO or native handles.
+/// GROUPS/DISSOLVE/CLIPPING plans contain operations. No IO or native handles.
 /// # Safety
 /// Initialize key/out_operation sizes; outputs must not overlap inputs.
 #[no_mangle]
@@ -232,7 +236,14 @@ pub unsafe extern "C" fn paint_session_composition_operation(
             output: op.output,
             source: op.source,
             backdrop: op.backdrop,
-            reserved: [0; 2],
+            reserved: [
+                if lease.plan.required_features & PAINT_COMPOSITION_DISSOLVE != 0 {
+                    lease.plan.nodes[op.node as usize].dissolve_seed
+                } else {
+                    0
+                },
+                op.coverage.map_or(0, |i| i + 1),
+            ],
         };
         service.publish_read(key, || pointers::write(out_operation, value))
     })

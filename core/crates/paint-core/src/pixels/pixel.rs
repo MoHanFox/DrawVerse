@@ -65,7 +65,13 @@ impl Pixel {
         Self(self.0.map(|v| v * amount))
     }
 
-    pub(crate) fn paint_preserving_alpha(self, color: Self, amount: f32) -> Self {
+    /// Paint with the original alpha, using normalized coverage.
+    pub fn paint_preserving_alpha(self, color: Self, amount: f32) -> Self {
+        let amount = if amount.is_nan() {
+            0.
+        } else {
+            amount.clamp(0., 1.)
+        };
         let remaining = 1. - color.alpha() * amount;
         Self([
             (self.0[0] * remaining + color.0[0] * amount * self.alpha()).min(self.alpha()),

@@ -7,6 +7,7 @@
 #include <QSGRendererInterface>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QDir>
 #include <QJsonDocument>
 #include <QScopeGuard>
 #include <array>
@@ -308,7 +309,85 @@ private slots:
     }
     void explicitFallback_data(){
         QTest::addColumn<QString>("failure");
-        for(const auto *name:{"init","upload","extent","blend","group-budget","clipping"})QTest::newRow(name)<<QString::fromLatin1(name);
+        for(const auto *name:{"init","upload","extent","placed-image","group-budget","clipping-budget","operation-budget"})QTest::newRow(name)<<QString::fromLatin1(name);
+    }
+    void closureFixtures_data(){
+        QTest::addColumn<QString>("fixture");
+        const QDir dir(qEnvironmentVariable("DRAWVERSE_G4_FIXTURES"));
+        const auto files=dir.entryList({"*.ora"},QDir::Files,QDir::Name);
+        QVERIFY2(files.size()==85,"Generate the 85 authoritative ORA fixtures before this test");
+        for(const auto &file:files)QTest::newRow(qPrintable(file))<<dir.absoluteFilePath(file);
+    }
+    void closureFixtures(){
+        QFETCH(QString,fixture);qputenv("DRAWVERSE_GPU_COMPOSITION","1");
+        const auto restore=qScopeGuard([]{qputenv("DRAWVERSE_GPU_COMPOSITION","1");});
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        const auto generation=client.generation();QVERIFY(client.openDocument(QUrl::fromLocalFile(fixture)));
+        QTRY_VERIFY_WITH_TIMEOUT(!client.fileBusy() && client.generation()!=generation,10000);QCOMPARE(client.documentWidth(),96);QCOMPARE(client.documentHeight(),64);
+        QFile truth(fixture.chopped(4)+".linear");QVERIFY(truth.open(QIODevice::ReadOnly));const auto expected=truth.readAll();QCOMPARE(expected.size(),96*64*16);
+        QQuickWindow window;window.resize(384,288);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({384,288});canvas->setAcceptedMouseButtons(Qt::NoButton);
+        auto readback=std::make_shared<CompositionReadback>();canvas->observeCompositionReadback(readback);canvas->setClient(&client);
+        window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->actualSize();
+        const bool lod=fixture.contains("nested-") || fixture.contains("dissolve-");
+        if(lod){const auto zoom=.5/window.devicePixelRatio();canvas->setSize({64+96*zoom,64+64*zoom});canvas->fitToView();QTRY_VERIFY(qAbs(canvas->zoom()-zoom)<1e-9);}
+        const auto revision=client.revision();const auto depth=client.undoDepth();
+        QTRY_VERIFY(client.frameRevision()==revision && client.frameRegion()==canvas->prefetchedDocumentRect() && client.frame().size()==requestedPixels(*canvas,window));
+        const auto name=QFileInfo(fixture).completeBaseName();const int actualLod=client.compositionPacket()?client.compositionPacket()->lod:-1;
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software){save("closure-"+name,{{"passed",true},{"cpu_fallback",true}});return;}
+        QTRY_COMPARE_WITH_TIMEOUT(canvas->compositionStatistics()["nodeRevision"].toULongLong(),revision,15000);
+        QVERIFY2(client.compositionPacket(),qPrintable(client.compositionFallback()));QVERIFY(!client.compositionPacket()->operations.isEmpty());
+        readback->completed=0;readback->geometry=client.compositionPacket()->geometrySequence;++readback->version;window.update();
+        QTRY_VERIFY_WITH_TIMEOUT((window.update(),readback->completed.load()==2),10000);
+        double error=0;QByteArray actual;
+        {std::lock_guard lock(readback->mutex);actual=readback->linear;}
+        QCOMPARE(actual.size(),expected.size());
+        for(qsizetype i=0;i<actual.size();i+=4){float a,b;std::memcpy(&a,actual.constData()+i,4);std::memcpy(&b,expected.constData()+i,4);QVERIFY(std::isfinite(a));error=std::max(error,double(std::abs(a-b)));}
+        QFile capture(qEnvironmentVariable("DRAWVERSE_G2_REPORT_DIR")+"/"+name+".g4truth");QVERIFY(capture.open(QIODevice::WriteOnly));QCOMPARE(capture.write(actual),actual.size());capture.close();
+        QVERIFY2(error<=2e-5,qPrintable(QString("%1: %2").arg(name).arg(error,0,'g',12)));
+        const auto uploads=canvas->compositionStatistics()["uploads"].toULongLong();window.update();QTest::qWait(60);QCOMPARE(canvas->compositionStatistics()["uploads"].toULongLong(),uploads);
+        QSignalSpy swapped(&window,&QQuickWindow::frameSwapped);window.update();QTRY_VERIFY(!swapped.isEmpty());const auto gpu=window.grabWindow();
+        qputenv("DRAWVERSE_GPU_COMPOSITION","0");emit client.frameChanged();swapped.clear();window.update();QTRY_VERIFY(!swapped.isEmpty());const auto cpu=window.grabWindow();
+        const auto windowError=difference(gpu,cpu);QVERIFY2(windowError<=1,qPrintable(QString::number(windowError)));
+        QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),depth);QVERIFY(client.lastError().isEmpty());
+        save("closure-"+name,{{"passed",true},{"linear_error",error},{"window_error",windowError},{"lod",actualLod},{"stationary_upload_delta",0}});
+    }
+    void clippingDependencies(){
+        qputenv("DRAWVERSE_GPU_COMPOSITION","1");QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        const auto generation=client.generation();QVERIFY(client.openDocument(QUrl::fromLocalFile(qEnvironmentVariable("DRAWVERSE_G4_FIXTURES")+"/nested-base27-clip27-outer27.ora")));
+        QTRY_VERIFY(!client.fileBusy() && client.generation()!=generation);
+        quint64 outer=0,mask=0,clip=0,background=0;
+        for(const auto &entry:client.layers()){const auto row=entry.toMap();const auto id=row["id"].toULongLong(),parent=row["parent"].toULongLong();
+            if(row["name"].toString()=="ancestor")outer=id;if(row["name"].toString()=="clip")clip=id;
+            if(!parent && !row["group"].toBool() && !row["mask"].toBool())background=id;
+        }
+        for(const auto &entry:client.layers()){const auto row=entry.toMap();if(row["parent"].toULongLong()==outer && row["mask"].toBool())mask=row["id"].toULongLong();}
+        QVERIFY(outer && mask && clip && background);
+        QQuickWindow window;window.resize(384,288);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({384,288});canvas->setAcceptedMouseButtons(Qt::NoButton);
+        auto readback=std::make_shared<CompositionReadback>();canvas->observeCompositionReadback(readback);canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        const bool software=window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software;
+        int maximum=0;
+        const auto compare=[&]{
+            if(!QTest::qWaitFor([&]{return client.frameRevision()==client.revision() && client.frameRegion()==canvas->prefetchedDocumentRect() && client.frame().size()==requestedPixels(*canvas,window);},10000))return false;
+            if(software)return true;
+            if(!QTest::qWaitFor([&]{return client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision() && canvas->compositionStatistics()["nodeRequest"].toULongLong()==client.compositionPacket()->info.key.request_id;},10000))return false;
+            readback->completed=0;readback->geometry=client.compositionPacket()->geometrySequence;++readback->version;window.update();
+            if(!QTest::qWaitFor([&]{window.update();return readback->completed.load()==2;},10000))return false;
+            QByteArray actual;{std::lock_guard lock(readback->mutex);actual=readback->display;}
+            const auto expected=client.frame().convertToFormat(QImage::Format_RGBA8888_Premultiplied);
+            if(actual.size()!=expected.width()*expected.height()*4)return false;
+            for(int y=0;y<expected.height();++y)for(int x=0;x<expected.width()*4;++x)maximum=std::max(maximum,std::abs(int(uchar(actual[y*expected.width()*4+x]))-int(expected.constScanLine(y)[x])));
+            return maximum<=1;
+        };
+        QVERIFY(compare());auto uploads=canvas->compositionStatistics()["uploads"].toULongLong();auto revision=client.revision();
+        client.setLayerProperties(outer,true,.43);QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());QVERIFY(compare());QCOMPARE(canvas->compositionStatistics()["uploads"].toULongLong(),uploads);
+        const auto depth=client.undoDepth();
+        for(auto id:{background,clip,mask}){
+            client.selectLayer(id);QTRY_VERIFY(client.activeLayer()==id && !client.layerEditBusy());client.setBrushColor(id==mask?Qt::black:Qt::blue);client.setBrushRadius(3);
+            const auto undo=client.undoDepth();QVERIFY(client.beginStroke({{48,32},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),undo+1);QVERIFY(compare());
+            if(!software){const auto next=canvas->compositionStatistics()["uploads"].toULongLong();QVERIFY(next>uploads && next-uploads<=4);uploads=next;QVERIFY(canvas->compositionStatistics()["lastDirtyArea"].toULongLong()<=4096);}
+        }
+        for(int i=0;i<3;++i){client.undo();QTRY_COMPARE(client.undoDepth(),depth+2-i);QVERIFY(compare());}
+        QVERIFY(client.lastError().isEmpty());save("clipping-dependencies",{{"passed",true},{"maximum_display_error",maximum},{"parameter_upload_delta",0},{"cpu_fallback",software}});
     }
     void groupBoundaries_data(){
         QTest::addColumn<int>("innerMode");QTest::addColumn<int>("outerMode");QTest::addColumn<bool>("fixed");
@@ -391,6 +470,11 @@ private slots:
         QTest::newRow("group-fixed-mask")<<true<<false<<true<<false;
         QTest::newRow("group-fixed-cancel")<<true<<false<<false<<false;
         QTest::newRow("group-child-fixed-ancestor")<<true<<false<<true<<false;
+        QTest::newRow("clip-base-fixed")<<true<<false<<true<<false;
+        QTest::newRow("clip-child")<<true<<false<<true<<false;
+        QTest::newRow("clip-chain-cancel")<<true<<false<<false<<false;
+        QTest::newRow("clip-chain-quick")<<true<<false<<true<<true;
+        QTest::newRow("dissolve-fixed")<<true<<false<<true<<false;
         QTest::newRow("pick-confirmed-target")<<false<<true<<true<<false;
         QTest::newRow("cancel")<<true<<false<<false<<false;
         QTest::newRow("quick-release")<<false<<true<<true<<true;
@@ -424,7 +508,26 @@ private slots:
             revision=client.revision();client.setLayerProperties(group,true,.67);QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());
             if(QByteArray(QTest::currentDataTag())!="group-child-fixed-ancestor")target=group;
         }
+        const auto tag=QByteArray(QTest::currentDataTag());quint64 clip=0;
+        if(tag.startsWith("clip-") || tag.startsWith("dissolve-")){
+            auto revision=client.revision();QVERIFY(client.setMaskLinked(client.activeLayer(),false));QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());
+            if(tag.startsWith("dissolve-")){revision=client.revision();QVERIFY(client.setLayerBlend(target,1));QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());}
+            else {
+                client.addLayer("clipped moving");QTRY_VERIFY(!client.layerEditBusy() && client.activeLayer()!=target);clip=client.activeLayer();
+                client.setBrushColor(Qt::blue);client.setBrushRadius(18);const auto undo=client.undoDepth();QVERIFY(client.beginStroke({{38,30},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),undo+1);
+                revision=client.revision();QVERIFY(client.setLayerClipping(clip,true));QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());
+                revision=client.revision();QVERIFY(client.setLayerBlend(clip,3));QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());
+                if(tag=="clip-child")target=clip;
+            }
+        }
         client.selectLayer(pick?background:target);QTRY_VERIFY(client.activeLayer()==(pick?background:target) && !client.layerEditBusy());
+        if(tag.startsWith("clip-chain")){
+            client.selectLayers(clip,int(Qt::ControlModifier));QTRY_COMPARE(client.selectedLayers().size(),2);
+            QTRY_VERIFY(client.activeLayer()==clip && !client.layerEditBusy());
+            QVERIFY(client.selectedLayers().contains(QVariant::fromValue<qulonglong>(target)));
+            QVERIFY(client.selectedLayers().contains(QVariant::fromValue<qulonglong>(clip)));
+        }
+
         QQuickWindow window;window.resize(384,288);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({384,288});canvas->setClient(&client);
         window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();client.setMoveTool(true);
         QTRY_VERIFY(!client.frame().isNull() && client.frameRevision()==client.revision() && client.frameRegion()==canvas->prefetchedDocumentRect() && client.frame().size()==requestedPixels(*canvas,window));
@@ -450,7 +553,7 @@ private slots:
                 QTRY_COMPARE(canvas->compositionStatistics()["nodeGeometry"].toULongLong(),client.compositionPacket()->geometrySequence);
                 QCOMPARE(canvas->compositionStatistics()["uploads"].toULongLong(),uploads);
                 QCOMPARE(canvas->compositionStatistics()["pipelineCreates"].toULongLong(),pipelines);
-                if(disableDuringEdit || QByteArray(QTest::currentDataTag()).startsWith("fixed-mask") || QByteArray(QTest::currentDataTag()).startsWith("group-")){
+                if(disableDuringEdit || QByteArray(QTest::currentDataTag()).startsWith("fixed-mask") || QByteArray(QTest::currentDataTag()).startsWith("group-") || tag.startsWith("clip-") || tag.startsWith("dissolve-")){
                     QTRY_VERIFY(!client.moveObservation()["dirty"].toBool() && client.moveObservation()["completedSequence"].toULongLong()>=client.moveSequence());
                     QTRY_COMPARE(client.frameRevision(),client.revision());
                     QSignalSpy swapped(&window,&QQuickWindow::frameSwapped);window.update();QTRY_VERIFY(!swapped.isEmpty());const auto gpu=window.grabWindow();
@@ -692,18 +795,26 @@ private slots:
     void explicitFallback(){
         QFETCH(QString,failure);qputenv("DRAWVERSE_GPU_COMPOSITION","0");qunsetenv("DRAWVERSE_COMPOSITION_FAIL");
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
-        const int side=failure=="extent"?4096:failure=="group-budget"?2048:128;client.newDocument(side,side);QTRY_VERIFY(client.ready() && client.documentWidth()==side && !client.layerEditBusy());
-        if(failure=="blend"){
-            const auto revision=client.revision();QVERIFY(client.setLayerBlend(client.activeLayer(),1));QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());
+        const int side=failure=="extent"?4096:failure.endsWith("budget")?2048:128;client.newDocument(side,side);QTRY_VERIFY(client.ready() && client.documentWidth()==side && !client.layerEditBusy());
+        if(failure=="placed-image"){
+            const auto raster=client.activeLayer();QImage image(16,16,QImage::Format_RGBA8888);image.fill(Qt::magenta);const auto path=temp.filePath("placed.png");QVERIFY(image.save(path));
+            const auto revision=client.revision();QVERIFY(client.placeImage(QUrl::fromLocalFile(path)));QTRY_VERIFY(!client.fileBusy() && client.revision()>revision && !client.layerEditBusy());
+            client.selectLayer(raster);QTRY_COMPARE(client.activeLayer(),raster);
         }
         if(failure=="group-budget"){
             const auto raster=client.activeLayer();const auto revision=client.revision();QVERIFY(client.groupLayer(raster,"CPU closure"));QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());
             client.selectLayer(raster);QTRY_COMPARE(client.activeLayer(),raster);
         }
-        if(failure=="clipping"){
+        if(failure=="clipping-budget"){
             client.addLayer("clipped");QTRY_VERIFY(client.layers().size()==2 && !client.layerEditBusy());
             const auto revision=client.revision();QVERIFY(client.setLayerClipping(client.activeLayer(),true));QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());
             QTRY_VERIFY(client.layers().first().toMap()["clipped"].toBool());
+        }
+        if(failure=="operation-budget"){
+            const auto generation=client.generation();QVERIFY(client.openDocument(QUrl::fromLocalFile(qEnvironmentVariable("DRAWVERSE_G4_FIXTURES")+"/budgets/operations.ora")));
+            QTRY_VERIFY(!client.fileBusy() && client.generation()!=generation && !client.layerEditBusy());
+            for(const auto &entry:client.layers()){const auto row=entry.toMap();if(!row["group"].toBool() && row["name"].toString()!="empty clip"){client.selectLayer(row["id"].toULongLong());break;}}
+            QTRY_VERIFY(!client.layerEditBusy());
         }
         QQuickWindow window;window.resize(384,384);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({384,384});canvas->setClient(&client);canvas->setAcceptedMouseButtons(Qt::NoButton);
         window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
@@ -714,7 +825,7 @@ private slots:
         qputenv("DRAWVERSE_GPU_COMPOSITION","1");emit client.frameChanged();
         if(!software){
             if(failure=="init" || failure=="upload")QTRY_COMPARE_WITH_TIMEOUT(canvas->compositionStatistics()["failures"].toInt(),1,15000);
-            else if(failure=="group-budget"){
+            else if(failure.endsWith("budget") && failure!="operation-budget"){
                 QTRY_COMPARE_WITH_TIMEOUT(canvas->compositionStatistics()["failures"].toInt(),1,15000);
                 QVERIFY(canvas->compositionStatistics()["fallback"].toString().contains("budget"));
             }else QTRY_VERIFY_WITH_TIMEOUT(!client.compositionFallback().isEmpty() && client.compositionFallback().contains(failure=="extent"?"extent":"transport"),15000);
@@ -723,7 +834,7 @@ private slots:
         save("fallback-state-"+failure,{{"revision_before",double(revision)},{"revision_after",double(client.revision())},{"undo_before",undo},{"undo_after",client.undoDepth()},{"active",window.isActive()},{"drawing",client.drawing()},{"error",client.lastError()}});
         QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),undo);QCOMPARE(client.frame(),reference);
         client.setBrushRadius(4);client.setBrushColor(Qt::black);
-        InputSample input;input.position={double(side)/2,double(side)/2};
+        InputSample input;input.position=failure=="placed-image"?QPointF(8,8):QPointF(double(client.documentWidth())/2,double(client.documentHeight())/2);
         QVERIFY(client.beginStroke(input));client.strokeTo(input);client.endStroke();
         QTRY_COMPARE(client.undoDepth(),undo+1);
         QTRY_VERIFY(client.frameRevision()==client.revision() && client.frame()!=reference);

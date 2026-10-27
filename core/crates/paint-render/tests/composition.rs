@@ -545,11 +545,174 @@ fn root_blends_and_fixed_masks_match_authoritative_pixels_and_old_caps_reject() 
                 doc.revision(),
                 doc.layers(),
                 request(),
-                Limits::default(),
+                Limits {
+                    features: FEATURES & !DISSOLVE,
+                    ..Default::default()
+                },
                 &mut ids,
                 &token
             ),
             Err(PlanError::Unsupported(_))
         ));
     }
+}
+
+#[test]
+fn full_clipping_chains_match_authoritative_groups_and_dissolve() {
+    for base_mode in [
+        BlendMode::Normal,
+        BlendMode::Multiply,
+        BlendMode::PassThrough,
+        BlendMode::Dissolve,
+    ] {
+        for clip_mode in (0..28).map(|i| BlendMode::from_id(i).unwrap()) {
+            let mut doc = Document::new(67, 49).unwrap();
+            dab(&mut doc, (28., 24.), [0.3, 0.7, 0.2, 0.7]);
+            let base_child = doc.add_layer("base").unwrap();
+            dab(&mut doc, (32., 25.), [0.8, 0.1, 0.4, 0.65]);
+            let base = doc.group_layer(base_child, "base group").unwrap();
+            doc.set_layer_appearance(
+                base,
+                LayerAppearance {
+                    blend: base_mode,
+                    fill: 0.71,
+                    dissolve_seed: 0x80000001,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            doc.set_layer_properties(
+                base,
+                LayerProperties {
+                    visible: true,
+                    opacity: 0.61,
+                },
+            )
+            .unwrap();
+            let clip_child = doc.add_layer("clip").unwrap();
+            dab(&mut doc, (40., 26.), [0.1, 0.4, 0.9, 0.8]);
+            let clipped = if clip_mode == BlendMode::PassThrough {
+                doc.group_layer(clip_child, "clip group").unwrap()
+            } else {
+                clip_child
+            };
+            doc.reparent_layer(clipped, 0).unwrap();
+            assert_eq!(
+                doc.layer(clipped).unwrap().parent_id(),
+                doc.layer(base).unwrap().parent_id()
+            );
+            doc.set_layer_clipping(clipped, true).unwrap();
+            doc.set_layer_appearance(
+                clipped,
+                LayerAppearance {
+                    blend: clip_mode,
+                    fill: 0.63,
+                    dissolve_seed: u32::MAX,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            doc.set_layer_properties(
+                clipped,
+                LayerProperties {
+                    visible: true,
+                    opacity: 0.74,
+                },
+            )
+            .unwrap();
+            let cm = doc.add_mask(clipped).unwrap();
+            dab(&mut doc, (35., 22.), [0., 0., 0., 0.4]);
+            doc.set_mask_linked(cm, false).unwrap();
+            doc.add_mask(base).unwrap();
+            dab(&mut doc, (30., 27.), [0., 0., 0., 0.5]);
+            doc.set_active_layer(clipped).unwrap();
+            let extra = doc.add_layer("second clip").unwrap();
+            dab(&mut doc, (32., 23.), [0.2, 0.9, 0.3, 0.6]);
+            doc.reparent_layer(extra, 0).unwrap();
+            doc.set_layer_clipping(extra, true).unwrap();
+            doc.set_layer_appearance(
+                extra,
+                LayerAppearance {
+                    blend: BlendMode::Screen,
+                    fill: 0.83,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let mut ids = ContentIdentities::default();
+            let p = plan(&doc, &mut ids);
+            assert!(p.required_features & CLIPPING != 0);
+            assert!(p.surface_count <= 85 && p.operations.len() <= p.nodes.len() * 16 + 1);
+            let snap = doc.snapshot();
+            for y in 0..49 {
+                for x in 0..67 {
+                    let a = p
+                        .try_pixel(x, y, &CancellationToken::default())
+                        .unwrap()
+                        .components();
+                    let b = snap.try_pixel(x, y).unwrap().components();
+                    for c in 0..4 {
+                        assert!(
+                            (a[c] - b[c]).abs() < 2e-6,
+                            "{base_mode:?}/{clip_mode:?} {x},{y}: {a:?} != {b:?}"
+                        );
+                    }
+                }
+            }
+            doc.set_layer_properties(
+                base,
+                LayerProperties {
+                    visible: false,
+                    opacity: 1.,
+                },
+            )
+            .unwrap();
+            let p = plan(&doc, &mut ids);
+            assert!(
+                p.nodes
+                    .iter()
+                    .filter(|n| n.layer_id != 1)
+                    .all(|n| n.tile_count == 0),
+                "hidden base pins clip source"
+            );
+            assert!(matches!(
+                estimate(
+                    doc.layers(),
+                    Limits {
+                        features: 63,
+                        ..Default::default()
+                    }
+                ),
+                Err(PlanError::Unsupported(_))
+            ));
+        }
+    }
+}
+
+#[test]
+fn nested_through_intrinsic_duplication_is_bounded_before_source_pins() {
+    let mut doc = Document::new(67, 49).unwrap();
+    dab(&mut doc, (30., 24.), [0.7, 0.2, 0.1, 0.8]);
+    let mut base = 1;
+    for _ in 0..8 {
+        base = doc.group_layer(base, "through base").unwrap();
+        let clip = doc.add_layer("clip").unwrap();
+        doc.reparent_layer(clip, 0).unwrap();
+        doc.set_layer_clipping(clip, true).unwrap();
+        base = doc.group_layers(&[base, clip], "outer").unwrap();
+    }
+    let mut identities = ContentIdentities::default();
+    assert!(matches!(
+        prepare(
+            doc.dimensions(),
+            doc.revision(),
+            doc.layers(),
+            request(),
+            Limits::default(),
+            &mut identities,
+            &CancellationToken::default()
+        ),
+        Err(PlanError::Budget)
+    ));
+    assert!(identities.is_empty());
 }

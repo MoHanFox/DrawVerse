@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-G0已交付基线、真实Qt同设备三通道直显试验及选型（第9–10节）；G1已交付不可变计划/有界传输（第11–12节）；G2已接实际Canvas的有限Normal/自身蒙版增量GPU合成及CPU后备（第13–14节）；G3有限范围本地移动/自由变换、交接与资源复用已实现，性能及剩余回归仍部分完成（第15–17节）。G4首批根混合/固定自身蒙版纵向交付，组/祖先蒙版/剪贴尚待迁移，整体未完成（第18节）。默认OFF，G5未执行。第1–7节为总体验收要求，第8节保留初稿检查历史，不代表运行结果。没有新增实体数位板、物理显示或跨平台通过结论。
+G0已交付基线、真实Qt同设备三通道直显试验及选型（第9–10节）；G1已交付不可变计划/有界传输（第11–12节）；G2已接实际Canvas的有限Normal/自身蒙版增量GPU合成及CPU后备（第13–14节）；G3有限范围本地移动/自由变换、交接与资源复用已实现，性能及剩余回归仍部分完成（第15–17节）。G4栅格支持矩阵完成根混合/固定蒙版、隔离/穿透组、有效祖先蒙版、完整剪贴和Dissolve（第18–20节）；置入图、复杂自由变换和超预算整视图CPU。默认OFF，G5续接。第1–7节为总体验收要求，第8节保留初稿检查历史，不代表运行结果。没有新增实体数位板、物理显示或跨平台通过结论。
 
 | 阶段 | 状态 | 必须补充的证据 |
 | --- | --- | --- |
@@ -12,7 +12,7 @@ G0已交付基线、真实Qt同设备三通道直显试验及选型（第9–10�
 | G1 | 计划/传输纵向链完成，默认显示保持 | 第12节；真实GPU资源与窗口epoch绑定仍待G2 |
 | G2 | 有限支持范围纵向完成，显式启用 | 第14节；其他API/完整大图/剩余笔刷矩阵与故障恢复仍待 |
 | G3 | 有限范围实现完成，性能/完整回归部分完成 | 第15–17节；准确版本配对、保留失败及剩余门槛逐批记录 |
-| G4 | 首批根混合/固定自身蒙版完成，整体部分实现 | 第18节；隔离/穿透组、祖先蒙版、剪贴、Dissolve及组合门禁仍待 |
+| G4 | 栅格支持矩阵及组合门禁完成 | 第18–20节；置入图/复杂自由变换及超预算CPU，无新性能 |
 | G5 | 未执行 | 稳定性、默认启用、Release和相关回归 |
 
 ## 1. 记录与基线
@@ -495,10 +495,56 @@ Ctrl+X独立检查点9fc2b02先提交/推送，随后只迁移本节冻结的组
 
 `groups-core/render-2.log` paint-render Release42项、`public-1.log`公开composition9项、`consumers-1.log`四C/C++静态/动态消费者通过；新增操作实际读取、布局/元数据、越界、旧能力与取消键均覆盖。`clippy-1.log`相关core/render/ffi all-targets严格Clippy、`header-final.log`、`fmt-final.log`通过。ABI1.85/GROUPS32与独立32字节操作，原结构布局、version1、state45和文档格式保持。当前仍默认OFF，剪贴/Dissolve/置入图整体CPU；没有新增首位移/持续性能量测，G3旧门槛与全部旧失败保持，G4整体尚未完成。
 
-## 20. G4剪贴与Dissolve门禁冻结（2026-10-28，尚未执行）
+## 20. G4剪贴与Dissolve门禁冻结（2026-10-28）
 
 冻结全栅格剪贴基底/剪贴层各自Normal、非Normal和PassThrough组，嵌套穿透/隔离、基底/剪贴/祖先蒙版与半透明、孤立剪贴与隐藏基底、链接/固定蒙版移动、整链/子层移动、提交取消和主视图最终采用；保持核心逐像素对照，实际窗口线性≤2e-5/显示≤1。Dissolve冻结u32种子0/高位/全1、文档坐标边界、偏移及半透明/蒙版、组与剪贴、先合成后LOD；随机保留/拒绝必须与核心完全一致，不能用颜色容差放过错一个像素。背景/蒙版/剪贴依赖增量、参数上传0、节点/操作/表面预算后备、旧能力与取消键为门禁。产物目录artifacts/general-gpu-composition/G4/closures-*，先冻结再执行；不重跑无关性能矩阵，未量测首位移不宣称新延迟。
 
 ### 19.2 最终源码与运行时复验
 
 最后为公开Pixel::mix增加NaN输入保护（有限值公式不变）后，重新构建标准Release与相关Qt/四ABI目标，pixel3/render42/严格Clippy、四ABI通过。`groups-native-final`软件及D3D11各37项，D3D11的28份独立核心线性结果最大1.1920929e-7；`groups-related-final`传输各3/原移动各12通过。`groups-release-smoke-1`标准程序D3D11显式启用合成启动绘画通过，EXE SHA256 `115c127a70e48d541a0c27bd335ad6d41711152947703f58d231bbc3573aeca8`，DLL `d61f3bcaeae4b174d96f7624a0b6994ffac46f47ffa912ca38e9c645e2ce089d`。此前三轮组矩阵与根75项结果保持原版本记录，不冒充最终源码三轮。`groups-core/pixel-1.log`为主动中断编译，未运行失败断言。无新性能量测，G4剩余闭包与G5继续。
+
+### 20.1 实际夹具与边界补充冻结
+
+在首批5个真实窗口探针后，完整门禁固定81个可重开ORA夹具：原74个混合/穿透/祖先蒙版/隐藏基底/种子/float阈值边界，另加6个普通栅格基底（Normal/Multiply/Dissolve）×Dissolve/穿透剪贴以及透明空基底1项。逐一与重新读取文档后的核心全分辨率线性结果比较，再独立比较同窗口CPU显示。另加剪贴基底/子层/整链移动、取消、快释放及Dissolve固定蒙版移动5项；旧上传/历史/最终主视图交接断言保持。操作递归爆炸须在源pin前有界拒绝。置入图仍整视图CPU，原后备笔触必须落在可见无遮挡位置。
+
+`closures-native-1`在运行窗口前因夹具生成失败停止：核心公开API明确拒绝把首层设为孤立剪贴（clipping requires a lower sibling base），没有绕开合法文档校验；该项改为合法透明空基底下的剪贴覆盖，完整夹具仍81项。孤立剪贴拒绝由核心API验证，不能称窗口接受孤立剪贴。
+
+### 20.2 多层剪贴与操作预算补充冻结
+
+追加3个三层剪贴链夹具（基底Normal/Dissolve/PassThrough，各含PassThrough、Dissolve、Hue剪贴及固定/链接蒙版），完整夹具计84项；另在budgets子目录保存16级穿透与剪贴导致操作预算拒绝的合法文档，用原后备绘画/撤销断言检查。81项三轮矩阵完成后只补跑新增3项及原根混合/精确变换的相关shader回归，不把不同版本测试二进制混称一轮。
+
+### 20.3 上游alpha收缩边界补充冻结
+
+Dissolve还必须接收与核心同舍入的上游alpha：新增两层Normal先合成、再以Dissolve组边界处理的夹具（总85），固定一个core两次舍入会保留、f32 mul_add单次舍入会拒绝的像素；两层原图不透明，精确alpha通过ORA opacity往返保存，拒绝PNG alpha量化掩盖边界。shader对影响alpha的源缩放、蒙版、Normal/非Normal alpha与穿透插值禁止收缩/重排。新shader必须重新运行最终软件/三轮D3D11闭包矩阵，旧81项三轮仅保留旧版本证据。
+
+### 20.4 精度反例与最终版本复验
+
+`closures-native-2`为收缩修复前版本：软件及D3D11三进程各112项通过，每轮81份重新加载ORA后的独立核心线性对照最大1.1920928955078125e-7/窗口≤1。`closures-remaining-1`两后端各107项通过，另覆盖三层剪贴、操作预算及原根混合/精确变换；这些记录保留对应版本，不代替最终85夹具矩阵。
+
+`closures-alpha-probe`在真实D3D11窗口复现上游Normal alpha被驱动收缩导致Dissolve保留决定不同，线性误差1（2通过/1失败）。没有扩大容差或移除该像素；使用GLSL precise约束源/蒙版缩放、Normal/非Normal alpha、穿透插值和其三因子权重，保留核心逐次f32舍入。`closures-alpha-fixed`同一反例通过，线性误差5.9604645e-8/窗口1；最终完整矩阵另列。
+
+CTest增加独立CPU夹具setup与必需fixture依赖，在窗口测试之前运行生成器并传入路径；时限300秒覆盖新增85行及原功能行，生成器240秒。该调整是功能行数及串行构建隔离，不改变任何性能门槛；缺失夹具仍失败，不能跳过。正常显示仍不读回，正确性观察器的线性/显示读回单独计数。
+
+### 20.5 最终闭包矩阵与支持范围
+
+`closures-native-final/results.json`及`summary.json`：软件一次、真实D3D11三个独立进程均117项通过、0失败/跳过（含init/cleanup）。每轮85个可编辑ORA由独立paint-io重开后取得核心96×64全图RGBA32F真值，D3D11逐像素最大误差均2.384185791015625e-7，窗口显示差≤1，均保持冻结容差。新增float随机阈值与上游FMA反例的随机保留决定严格匹配。实际Qt6.8.3 / RTX4060 Laptop / D3D11同窗口RGBA32F多通道直显，正常路径readback=0；正确性观察器单独读回，不是性能阶段。
+
+支持27种栅格混合及组PassThrough；普通/隔离/穿透基底、普通/隔离/穿透剪贴、多层剪贴、有效自身/祖先固定或链接蒙版按完整闭包执行。隐藏基底不pin剪贴源；旧能力63整闭包拒绝。参数变更上传0，背景/剪贴子层/祖先蒙版的实际笔触增量≤4瓦片、脏区≤4096，变更和撤销的显示与CPU差≤1。新增5种剪贴/Dissolve移动通过原源复用、最新绝对输入、快释放/取消、单历史及最终对应主视图采用；原概览/旧epoch不能交接断言保持。连续25笔、静止上传0、末笔增量及窗口释放归零通过。
+
+置入图、包含组/非Normal/剪贴等尚不支持的自由变换继续完整CPU；节点/操作/表面/256MiB单节点/2GiB进程含在途预算不提高。真实2048²组/剪贴中间表面及16级穿透intrinsic展开操作预算均明确CPU，绘画单历史和撤销原像素通过，不能把此范围称4K完整复杂栈精确GPU支持。所有最终修改仍由核心CPU提交。
+
+`closures-core/render-final.log` paint-render Release44项、`public-3.log`公开composition10项、`consumers-final.log`四C/C++静态/动态消费者、`clippy-multi.log`相关core/render/ffi/io all-targets严格Clippy、生成头及fmt通过。ABI1.86仅增可协商DISSOLVE64/CLIPPING128及操作语义，version1布局/state45/文档格式保持；普通自由变换224字节uniform不变。新模块composition_closures在pin前和逐次追加操作时有界检查。
+
+本阶段没有新增首位移/稳定拖动性能量测，不改写G3原未过门槛、输入/zoom及未归因记录。保留closures-quick-2置入图笔触落在遮挡区域的夹具失败、closures-native-1非法孤立剪贴夹具失败、closures-alpha-probe真实精度失败，以及各旧构建结果。未运行总check；真实DeviceRemoved/TDR、驱动OOM/冷盘/实体笔/物理显示与其他API未测。G4在上述栅格支持矩阵内完成，默认仍OFF；按用户授权提交推送后直接继续G5。
+
+### 20.6 完整CTest的选层确认前提
+
+`closures-core/ctest-gpu-final.log`与`ctest-gpu-final-2.log`完整offscreen软件测试返回失败但控制台无断言；保留原记录。另以独立文件日志运行`closures-offscreen-probe`，结果211通过/2失败，均为新增clip-chain-cancel/quick在核心选层确认前发起Begin。selectLayers先同步更新本地两选ID，再异步提交Select；原夹具只检查本地size=2。现加强为实际activeLayer=clip且!layerEditBusy并核对两个目标ID后才Begin，原Begin必须成功/最新输入/快释放/取消/像素/单历史/对应主视图交接断言全部保持。没有修改产品输入或核心忙状态；最终完整CTest与定向真实窗口复验另列。CTest同时按现有qt_ui方式保留`${build}/qt-gpu-composition-Release.txt`文件报告，防止Windows控制台静默掩盖失败。
+
+### 20.7 最终工程检查与G4交付
+
+选层前提补强后，`closures-core/ctest-gpu-final-3.log`夹具setup及完整GPU组合CTest均通过，实际offscreen软件报告213通过/0失败/跳过；`closures-selection-ack`真实窗口软件/D3D11各4项通过（两条目标用例+init/cleanup）。产品源码和标准EXE未因夹具修复变化；此前最终85夹具三轮、原根混合/精确变换两后端76项保留准确测试二进制版本，不冒充补强后重新三轮。`closures-precise-regression`的56份根混合独立核心校验最大1.1920929e-7，19份精确变换线性误差0/20份窗口比较≤1。
+
+`closures-core/build-final.log`标准运行时、`build-selection-ack.log`最终测试构建通过；`shaders-final.log`实际标准EXE五份嵌入QSB/DXBC、double布局检查通过；`fmt-final.log`、`header-check-final.log`、Python编译和diff检查通过。`closures-release-smoke-final`标准程序实际D3D11显式启用合成、绘画生成图像及退出0；EXE SHA256 `4d6a05d6add790a61ad542ae76b37a465a58da43556cfe436b0724192fe16513`，DLL `14c877c90f7b9b7b4cb3b95399826d3e389a9ca833f01693df93335027774f12`。正常直显由上述真实Canvas证明，冒烟PNG不代替合成证明。三份原在途入口文档仍各+2行，不纳入本提交。
+
+完成G4栅格支持矩阵后提交推送当前有效分支，按用户指令直接继续G5。默认OFF、不新增性能或真实设备故障通过结论；总check在G5最终门禁运行，已知原layer_batch全删除断言及所有历史失败继续保留。

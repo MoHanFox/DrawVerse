@@ -1,4 +1,14 @@
-# C ABI 1.85.0 契约
+# C ABI 1.86.0 契约
+
+## ABI 1.86 — 完整栅格剪贴与精确Dissolve
+
+独立version1新增可选DISSOLVE=64和CLIPPING=128，全部能力为255。旧features=7/31/63遇所缺能力仍整个UNSUPPORTED，不发布半条剪贴链。原info136/node64/operation32布局、文档/state45保持。Node.reserved新增bit49剪贴标记，仅CLIPPING时有效；parent33–48不受影响。
+
+GROUPS/DISSOLVE/CLIPPING任一实际必需时，info.reserved继续描述操作数/表面数/最终输出。Dissolve无组计划也用操作流传递完整种子。operation.reserved[0]仅DISSOLVE时为该node的u32种子（其他节点操作也可携带，非随机操作忽略）；reserved[1]仅CLIPPING下的剪贴操作为coverage表面索引+1，0表示全覆盖。旧能力计划保留原零字段。
+
+追加MASKED_RASTER=5（原源×自身蒙版）、MASK_SURFACE=6（源表面×自身蒙版）、CLIP_RASTER=7、CLIP_SURFACE=8（按核心保留背景alpha施加剪贴并按coverage插值）、CLIP_INFLUENCE=9（穿透剪贴保留背景alpha/背景依赖）、APPLY_PREPARED=10（已蒙版/剪贴基底乘权重后混合，不重复施加自身蒙版）。Clear无读取，MaskedRaster只读node；MaskSurface只读source/node；Copy只读backdrop。其余依对应kind读取source/backdrop、node蒙版及可选coverage。所有读取表面先初始化且不能与输出相同。Qt严格检查索引、kind、初始化及能力；不带CLIPPING最多4n+1操作/34表面，带CLIPPING最多16n+1操作/85表面，Qt64节点对应1025条操作。逐条追加前限制操作数量，元数据保守预检每节点1536字节；预算不足在pin前拒绝。
+
+穿透基底保留父before/after，以从透明合成的intrinsic alpha限制剪贴；非穿透基底先蒙版，依序剪贴，再施加基底权重/混合。Dissolve严格按核心文档坐标、u32种子及64位模乘hash，GPU成对u32实现；按精确f32 alpha的整数阈值比较，不能将随机数转float后比较。所有操作保持全分辨率后再LOD。CPU最终历史/保存/导出/吸色不变；置入图、复杂自由变换及预算外组合仍明确完整CPU后备，正常显示无读回。
 
 ## ABI 1.85 — 有界组操作与中间表面
 

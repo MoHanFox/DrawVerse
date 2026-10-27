@@ -136,7 +136,8 @@ public:
             QRhiShaderResourceBinding::sampledTexture(1,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr),
             QRhiShaderResourceBinding::sampledTexture(2,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr),
             QRhiShaderResourceBinding::sampledTexture(3,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr),
-            QRhiShaderResourceBinding::sampledTexture(4,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr)});
+            QRhiShaderResourceBinding::sampledTexture(4,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr),
+            QRhiShaderResourceBinding::sampledTexture(5,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr)});
         if(!pipelineLayout->create())return fail("CPU: composition pipeline layout allocation");
         pipelinePasses[0].reset(linear[0].pass->newCompatibleRenderPassDescriptor());
         pipelinePasses[1].reset(display.pass->newCompatibleRenderPassDescriptor());
@@ -271,7 +272,7 @@ private:
         if(!value->create())return nullptr;
         ++counters->pipelineCreates;pipelines[size_t(kind)]=std::move(value);return pipelines[size_t(kind)].get();
     }
-    bool makePass(Pass &pass,Target &target,QRhiTexture *back,QRhiTexture *a,QRhiTexture *b,QRhiTexture *c){
+    bool makePass(Pass &pass,Target &target,QRhiTexture *back,QRhiTexture *a,QRhiTexture *b,QRhiTexture *c,QRhiTexture *coverage=nullptr){
         pass.uniform.reset(rhi->newBuffer(QRhiBuffer::Dynamic,QRhiBuffer::UniformBuffer,sizeof(Parameters)));
         if(!pass.uniform->create())return false;
         ++counters->parameterBufferCreates;
@@ -280,7 +281,8 @@ private:
             QRhiShaderResourceBinding::sampledTexture(1,QRhiShaderResourceBinding::FragmentStage,back,sampler.get()),
             QRhiShaderResourceBinding::sampledTexture(2,QRhiShaderResourceBinding::FragmentStage,a,sampler.get()),
             QRhiShaderResourceBinding::sampledTexture(3,QRhiShaderResourceBinding::FragmentStage,b,sampler.get()),
-            QRhiShaderResourceBinding::sampledTexture(4,QRhiShaderResourceBinding::FragmentStage,c,sampler.get())});
+            QRhiShaderResourceBinding::sampledTexture(4,QRhiShaderResourceBinding::FragmentStage,c,sampler.get()),
+            QRhiShaderResourceBinding::sampledTexture(5,QRhiShaderResourceBinding::FragmentStage,coverage?coverage:c,sampler.get())});
         if(!pass.bindings->create())return false;
         ++counters->bindingCreates;
         pass.pipeline=pipeline(pass.mesh?3:pass.precise?2:target.texture->format()==QRhiTexture::RGBA8?1:0);
@@ -396,16 +398,18 @@ private:
                 p.dimensions={documentSize.width(),documentSize.height(),outputSize.width(),outputSize.height()};
                 p.source={node.offset_x,node.offset_y,qint32(node.white_width),qint32(node.white_height)};
                 p.mask={mask.offset_x,mask.offset_y,qint32(mask.white_width),qint32(mask.white_height)};
-                p.sourceOrigin={srcMap.origin.x(),srcMap.origin.y(),qint32(quint32(node.reserved)),0};
-                p.maskOrigin={maskMap.origin.x(),maskMap.origin.y(),0,0};
+                p.sourceOrigin={srcMap.origin.x(),srcMap.origin.y(),qint32(quint32(node.reserved)),qint32(op.reserved[0])};
+                p.maskOrigin={maskMap.origin.x(),maskMap.origin.y(),op.reserved[1]?1:0,0};
                 float kind=0;
                 if(op.kind==PAINT_COMPOSITION_CLEAR)kind=2;
                 else if(op.kind==PAINT_COMPOSITION_COPY)kind=5;
                 else if(op.kind==PAINT_COMPOSITION_BLEND_SURFACE)kind=6;
                 else if(op.kind==PAINT_COMPOSITION_INFLUENCE)kind=7;
+                else if(op.kind>=PAINT_COMPOSITION_MASKED_RASTER)kind=float(op.kind+3);
                 p.factors={node.opacity*node.fill,mi!=int(op.node_index) && mask.visible?mask.opacity:0.f,0,kind};
-                auto *source=op.kind>=PAINT_COMPOSITION_BLEND_SURFACE?surface(int(op.source)).texture.get():srcMap.texture.get();
-                if(!makePass(*pass,surface(int(op.output)),surface(int(op.backdrop)).texture.get(),atlas.get(),source,maskMap.texture.get()))return fail("CPU: composition group pipeline allocation");
+                const bool raster=op.kind==PAINT_COMPOSITION_DRAW_RASTER || op.kind==PAINT_COMPOSITION_MASKED_RASTER || op.kind==PAINT_COMPOSITION_CLIP_RASTER;
+                auto *source=raster?srcMap.texture.get():surface(int(op.source)).texture.get();
+                if(!makePass(*pass,surface(int(op.output)),surface(int(op.backdrop)).texture.get(),atlas.get(),source,maskMap.texture.get(),op.reserved[1]?surface(int(op.reserved[1]-1)).texture.get():nullptr))return fail("CPU: composition group pipeline allocation");
                 batch->updateDynamicBuffer(pass->uniform.get(),0,sizeof(p),&p);passes.push_back(std::move(pass));
             }
             current=packet->outputSurface;

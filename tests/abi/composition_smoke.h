@@ -148,6 +148,28 @@ static int composition_smoke(PaintCore *core) {
         COMPOSITION_CHECK(paint_session_composition_operation(core,session,&info.key,4,&operation)==PAINT_NOT_FOUND && operation.kind==0);
         COMPOSITION_CHECK(paint_session_release_composition(core,session,lease)==PAINT_OK);
         COMPOSITION_CHECK(paint_session_composition_operation(core,session,&info.key,0,&operation)==PAINT_CANCELLED);
+        {
+            PaintLayerAppearance appearance;
+            memset(&appearance,0,sizeof(appearance));appearance.struct_size=sizeof(appearance);
+            appearance.blend_mode=1;appearance.fill=.73f;appearance.dissolve_seed=UINT32_C(0x80000001);
+            COMPOSITION_CHECK((caps.features & (PAINT_COMPOSITION_DISSOLVE|PAINT_COMPOSITION_CLIPPING))==(PAINT_COMPOSITION_DISSOLVE|PAINT_COMPOSITION_CLIPPING));
+            COMPOSITION_CHECK(paint_session_set_layer_appearance(core,session,grouped,&appearance,&sequence)==PAINT_OK);
+            start=clock();do {
+                COMPOSITION_CHECK(paint_session_info(core,session,&state)==PAINT_OK);
+                COMPOSITION_CHECK(clock()-start<10*CLOCKS_PER_SEC);
+            }while(state.completed_sequence<sequence);
+            COMPOSITION_CHECK(state.last_error_status==PAINT_OK);
+            request.revision=state.revision;request.request_id=3;
+            COMPOSITION_CHECK(paint_session_request_composition(core,session,&request,&lease)==PAINT_OK);
+            start=clock();do {
+                COMPOSITION_CHECK(paint_session_composition_info(core,session,lease,&info)==PAINT_OK);
+                COMPOSITION_CHECK(clock()-start<10*CLOCKS_PER_SEC);
+            }while(info.state==PAINT_COMPOSITION_PENDING);
+            COMPOSITION_CHECK(info.state==PAINT_COMPOSITION_READY && (info.required_features & PAINT_COMPOSITION_DISSOLVE)!=0);
+            COMPOSITION_CHECK(paint_session_composition_operation(core,session,&info.key,2,&operation)==PAINT_OK);
+            COMPOSITION_CHECK(operation.kind==PAINT_COMPOSITION_DRAW_RASTER && operation.reserved[0]==UINT32_C(0x80000001) && operation.reserved[1]==0);
+            COMPOSITION_CHECK(paint_session_release_composition(core,session,lease)==PAINT_OK);
+        }
     }
     COMPOSITION_CHECK(paint_session_destroy(core,&session)==PAINT_OK && session==NULL);
     memset(&usage,0,sizeof(usage));usage.struct_size=sizeof(usage);

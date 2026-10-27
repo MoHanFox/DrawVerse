@@ -1,6 +1,95 @@
 use super::*;
 
 #[test]
+fn composition_clipping_and_dissolve_negotiate_whole_closures_and_exact_seed() {
+    let h = Harness::new(64, 64);
+    h.wait(h.stroke(24., 24.));
+    h.wait(h.submit(PaintCommand {
+        kind: PAINT_COMMAND_ADD_LAYER,
+        text: b"clip".as_ptr(),
+        text_length: 4,
+        ..dto!(PaintCommand)
+    }));
+    let layer = h.info().active_layer_id;
+    let mut sequence = 0;
+    unsafe {
+        assert_eq!(
+            paint_session_set_layer_clipping(
+                h.core,
+                h.session,
+                layer,
+                &PaintLayerClipping {
+                    enabled: 1,
+                    ..dto!(PaintLayerClipping)
+                },
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        h.wait(sequence);
+        assert_eq!(
+            paint_session_set_layer_appearance(
+                h.core,
+                h.session,
+                layer,
+                &PaintLayerAppearance {
+                    blend_mode: 1,
+                    fill: 0.71,
+                    dissolve_seed: 0x80000001,
+                    ..dto!(PaintLayerAppearance)
+                },
+                &mut sequence
+            ),
+            PAINT_OK
+        );
+        h.wait(sequence);
+    }
+    let before = h.info();
+    let (status, lease) = submit(
+        &h,
+        &PaintCompositionRequest {
+            features: 63,
+            ..request(&h, 1, 1)
+        },
+    );
+    assert_eq!(status, PAINT_OK);
+    let failed = ready(&h, lease);
+    assert_eq!(failed.status, PAINT_UNSUPPORTED);
+    release(&h, failed);
+    let good = acquire(&h, 2, 1);
+    assert_eq!(
+        good.required_features & (PAINT_COMPOSITION_DISSOLVE | PAINT_COMPOSITION_CLIPPING),
+        192
+    );
+    assert!(good.reserved[0] > 2 && good.reserved[0] <= 16 * u64::from(good.node_count) + 1);
+    let mut found = false;
+    for index in 0..good.reserved[0] as u32 {
+        let mut op = dto!(PaintCompositionOperation);
+        assert_eq!(
+            unsafe {
+                paint_session_composition_operation(h.core, h.session, &good.key, index, &mut op)
+            },
+            PAINT_OK
+        );
+        if op.kind == PAINT_COMPOSITION_CLIP_RASTER {
+            assert_eq!(op.reserved[0], 0x80000001);
+            assert_eq!(op.reserved[1], 0);
+            found = true;
+        }
+    }
+    assert!(found);
+    let mut node = dto!(PaintCompositionNode);
+    assert_eq!(
+        unsafe { paint_session_composition_node(h.core, h.session, &good.key, 1, &mut node) },
+        PAINT_OK
+    );
+    assert_ne!(node.reserved & PAINT_COMPOSITION_NODE_CLIPPED, 0);
+    release(&h, good);
+    assert_eq!(h.info().revision, before.revision);
+    assert_eq!(h.info().undo_depth, before.undo_depth);
+}
+
+#[test]
 fn composition_groups_negotiate_bounded_operations_and_reject_old_keys() {
     let h = Harness::new(64, 64);
     h.wait(h.stroke(24., 24.));

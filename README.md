@@ -20,7 +20,7 @@ DrawVerse 是一款正在开发中的桌面绘画软件。Rust 内核负责笔�
 | 工作区     | 多文档、画布与工具面板停靠、浮动窗口、布局恢复、导航与偏好设置                                               |
 | 文件交换   | PNG / JPEG / WebP 图片读写，OpenRaster 文档读写，图片置入与导出                                              |
 
-图层支持 Ctrl/Cmd+X 剪切：无选区剪切完整图层或组，有选区仅剪切其中内容；Ctrl/Cmd+V 可跨文档粘贴，撤销恢复原内容。锁定和单独蒙版拒绝剪切，文本焦点保留系统剪切。当前 ABI 1.85，文档格式与 state45 保持；验证边界见[图层操作验收](docs/validations/layers/layer-actions-validation.md)。
+图层支持 Ctrl/Cmd+X 剪切：无选区剪切完整图层或组，有选区仅剪切其中内容；Ctrl/Cmd+V 可跨文档粘贴，撤销恢复原内容。锁定和单独蒙版拒绝剪切，文本焦点保留系统剪切。当前 ABI 1.86，文档格式与 state45 保持；验证边界见[图层操作验收](docs/validations/layers/layer-actions-validation.md)。
 
 ABR 导入按实际支持范围转换，部分 Photoshop 行为采用近似并保留来源报告，不代表完全等价。当前支持范围见 [笔刷剩余功能与边界](docs/planning/brush-system-remaining.md)。
 
@@ -127,7 +127,7 @@ ctest --test-dir build/qt -C Release -R "^abi_" --output-on-failure
 
 通用GPU合成默认保持原显示；产品最低Qt6.5，实际GPU适配要求Qt6.6+ GuiPrivate，目前仅验证Qt6.8.3 / Windows D3D11。G0试验通过 `-DDRAWVERSE_G0_EXPERIMENT=ON` 后显式构建 `qt_gpu_composition_probe` / `qt_gpu_composition_baseline`，不进入默认构建或CTest。G1为version1不可变计划/有界租约；G2在实际Canvas用同窗口设备增量合成根Normal/链接自身蒙版并直接显示，设置 `DRAWVERSE_GPU_COMPOSITION=1` 才启用。G3复用原源做本地绝对移动/自由变换几何、最终主视图原子交接；自由变换首批限无选区/自身蒙版的单根Normal栅格，精确Warp/六插值另要求D3D11 double能力。同源同视口同拓扑更新复用窗口页表/采样轴/绑定，resize重投影显示包；Warp保持原精度与网格。原图及视口各最多4194304像素、边长4096、LOD≤6；复杂组合/预算/能力不足明确CPU后备。
 
-G4首批增加根栅格26种非Dissolve混合及固定自身蒙版，移动时固定蒙版留在原坐标，非Normal自由变换明确CPU。ABI1.83通过可选能力扩展version1，布局与文档/state45保持，旧features7仍兼容。软件及D3D11三进程各70项、实际窗口56份线性结果逐轮独立核心校验、固定蒙版移动交接及增量依赖通过；G4组续接已支持嵌套隔离/穿透、祖先/固定蒙版及组/子层移动，ABI1.85增加有界操作流；两后端37项与三轮28份独立核心线性对照通过。剪贴/Dissolve/置入图仍整视图CPU，G4整体未完成。构建 `qt_gpu_composition_tests` 后运行 `python tools/validate_general_gpu_g2.py artifacts/general-gpu-composition/G4/new-run --g4` 验证首批矩阵，不带 `--g4` 验证当前完整合成测试，产物目录必须新建；G1原路径回归脚本可加 `--full-transform` 检查完整原输入套件。准确版本、首位移/持续跟随、保留失败和支持边界见[通用GPU合成验收](docs/validations/platform/general-gpu-composition-validation.md)第17–18节。G3性能与完整回归仍部分完成，原生点击/缩放及无效输入批次失败保留；本轮没有新性能量测，G5、真实故障与物理显示未验收，默认开关仍OFF。
+G4支持27种栅格混合（含Dissolve）、固定/链接自身蒙版、嵌套隔离/穿透组、有效祖先蒙版与完整剪贴链；组/链/子层移动仍复用原源并保持最终主视图交接。ABI1.86通过可协商能力及有界操作流扩展version1，布局、文档与state45保持。最终软件及D3D11三进程各117项、每轮85份独立重开文档核心线性对照通过；置入图、复杂自由变换、能力或预算不足明确整视图CPU。构建 `qt_gpu_composition_tests` 后运行 `python tools/validate_general_gpu_g2.py artifacts/general-gpu-composition/G4/new-run --closures` 验证闭包矩阵，`--g4`/`--groups` 验证先前组合，产物目录必须新建；CTest自动准备独立CPU夹具。准确版本和保留失败见[通用GPU合成验收](docs/validations/platform/general-gpu-composition-validation.md)第17–20节。G3性能与完整回归仍部分完成，本阶段无新性能量测；默认仍OFF，G5续接，真实设备故障、驱动OOM与物理显示未验收。
 
 最近的结构整理已完成 Release 构建、原生启动绘制和专项回归；全套 IO 与额外 Qt 交互检查仍有已知失败项，详见 [结构整理验收](docs/validations/platform/source-layout-validation.md)。各阶段记录不代表当前全量测试或跨平台验证均已通过。
 

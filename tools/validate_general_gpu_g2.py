@@ -12,6 +12,7 @@ def main():
     parser.add_argument('output', type=Path)
     parser.add_argument('--g4', action='store_true', help='Run root blend/fixed-mask cases and independent Rust capture validation')
     parser.add_argument('--groups', action='store_true', help='Run nested group boundaries, movement, fallback and independent Rust group captures')
+    parser.add_argument('--closures', action='store_true', help='Run complete clipping/Dissolve ORA fixtures and authoritative CPU pixel truth')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     out = args.output.resolve()
@@ -24,8 +25,17 @@ def main():
         status=subprocess.check_output(['git', 'status', '--short'], cwd=root, text=True),
         sources={f: sha(root/f) for f in files if (root/f).is_file()},
         binaries={name: sha(root/'build/bin/Release'/name) for name in ['drawverse.exe', 'paint_ffi.dll', 'qt_gpu_composition_tests.exe']},
-        purpose='G4 nested group boundaries' if args.groups else 'G4 root blend/fixed mask' if args.g4 else 'G2/G3 correctness, captures permitted; no latency conclusions'
+        purpose='G4 complete clipping/Dissolve closures' if args.closures else 'G4 nested group boundaries' if args.groups else 'G4 root blend/fixed mask' if args.g4 else 'G2/G3 correctness, captures permitted; no latency conclusions'
     ), indent=2), encoding='utf-8')
+    fixtures = out/'fixtures'
+    if args.closures or not (args.g4 or args.groups):
+        fixture_env = os.environ.copy()
+        fixture_env['DRAWVERSE_G4_FIXTURES'] = str(fixtures)
+        with (out/'fixture-generation.log').open('w', encoding='utf-8') as log:
+            subprocess.run(['cargo', 'test', '--manifest-path', str(root/'core/Cargo.toml'), '-p', 'paint-io',
+                            '--release', '--locked', '--test', 'gpu_closure_fixtures', '--', '--ignored', '--nocapture'],
+                           cwd=root, env=fixture_env, stdout=log, stderr=subprocess.STDOUT, timeout=240, check=True)
+        assert (fixtures/'count.txt').read_text() == '85'
     results = []
     for backend, repeat in [('software', 1), ('d3d11', 1), ('d3d11', 2), ('d3d11', 3)]:
         directory = out/f'{backend}-{repeat}'
@@ -41,6 +51,7 @@ def main():
         env.update(QT_QPA_PLATFORM='windows', QSG_RHI_BACKEND='d3d11', QSG_INFO='1',
                    QT_FORCE_STDERR_LOGGING='1', QSG_RHI_DISABLE_DISK_CACHE='1',
                    DRAWVERSE_G2_REPORT_DIR=str(directory))
+        env['DRAWVERSE_G4_FIXTURES'] = str(fixtures)
         env['PATH'] = str(root/'.tools/qt/6.8.3/msvc2022_64/bin')+os.pathsep+env['PATH']
         if backend == 'software':
             env['QT_QUICK_BACKEND'] = backend
@@ -48,11 +59,13 @@ def main():
         functions = ['rootBlendAndFixedMask', 'compositionMoveReusesSource', 'nonNormalTransformUsesCpuFrame', 'explicitFallback'] if args.g4 else []
         if args.groups:
             functions = ['groupBoundaries', 'compositionMoveReusesSource', 'nonNormalTransformUsesCpuFrame', 'explicitFallback', 'windowResourceRelease', 'continuousPaintingAndIncrementalUploads']
+        if args.closures:
+            functions = ['closureFixtures', 'clippingDependencies', 'compositionMoveReusesSource', 'nonNormalTransformUsesCpuFrame', 'explicitFallback', 'windowResourceRelease', 'continuousPaintingAndIncrementalUploads']
         with (directory/'process.log').open('w', encoding='utf-8') as log:
             try:
                 code = subprocess.run([str(root/'build/bin/Release/qt_gpu_composition_tests.exe'), *functions,
                                        '-o', str(directory/'test.txt')+',txt'], env=env,
-                                      stdout=log, stderr=subprocess.STDOUT, timeout=360 if args.g4 or args.groups else 180,
+                                      stdout=log, stderr=subprocess.STDOUT, timeout=900 if args.closures or not (args.g4 or args.groups) else 360,
                                       creationflags=subprocess.CREATE_NO_WINDOW).returncode
             except subprocess.TimeoutExpired:
                 code = 'timeout'
