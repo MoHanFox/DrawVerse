@@ -1,15 +1,19 @@
-"""G2/G3 correctness in isolated native windows; this is not a latency benchmark."""
+"""G2/G3 or first G4 correctness in isolated native windows, not latency."""
+import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('output', type=Path)
+    parser.add_argument('--g4', action='store_true', help='Run root blend/fixed-mask cases and independent Rust capture validation')
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    out = Path(sys.argv[1]).resolve()
+    out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
     (out/'working-tree.patch').write_bytes(subprocess.check_output(['git', 'diff', '--binary', 'HEAD', '--', 'core', 'ui', 'tools'], cwd=root))
     files = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--', 'core', 'ui', 'tools'], cwd=root, text=True).splitlines()
@@ -19,7 +23,7 @@ def main():
         status=subprocess.check_output(['git', 'status', '--short'], cwd=root, text=True),
         sources={f: sha(root/f) for f in files if (root/f).is_file()},
         binaries={name: sha(root/'build/bin/Release'/name) for name in ['drawverse.exe', 'paint_ffi.dll', 'qt_gpu_composition_tests.exe']},
-        purpose='correctness, captures permitted; no latency conclusions'
+        purpose='G4 root blend/fixed mask' if args.g4 else 'G2/G3 correctness, captures permitted; no latency conclusions'
     ), indent=2), encoding='utf-8')
     results = []
     for backend, repeat in [('software', 1), ('d3d11', 1), ('d3d11', 2), ('d3d11', 3)]:
@@ -40,18 +44,28 @@ def main():
         if backend == 'software':
             env['QT_QUICK_BACKEND'] = backend
         (directory/'environment.json').write_text(json.dumps({k: v for k, v in env.items() if k.startswith(('QT_', 'QSG_', 'DRAWVERSE_'))}, indent=2), encoding='utf-8')
+        functions = ['rootBlendAndFixedMask', 'compositionMoveReusesSource', 'nonNormalTransformUsesCpuFrame', 'explicitFallback'] if args.g4 else []
         with (directory/'process.log').open('w', encoding='utf-8') as log:
             try:
-                code = subprocess.run([str(root/'build/bin/Release/qt_gpu_composition_tests.exe'),
+                code = subprocess.run([str(root/'build/bin/Release/qt_gpu_composition_tests.exe'), *functions,
                                        '-o', str(directory/'test.txt')+',txt'], env=env,
-                                      stdout=log, stderr=subprocess.STDOUT, timeout=180,
+                                      stdout=log, stderr=subprocess.STDOUT, timeout=360 if args.g4 else 180,
                                       creationflags=subprocess.CREATE_NO_WINDOW).returncode
             except subprocess.TimeoutExpired:
                 code = 'timeout'
         result = dict(backend=backend, repeat=repeat, exit=code)
         results.append(result)
         print(result, flush=True)
-    passed = all(r['exit'] == 0 for r in results)
+        if args.g4 and backend == 'd3d11':
+            reference_env = os.environ.copy()
+            reference_env['DRAWVERSE_G4_CAPTURES'] = str(directory)
+            with (directory/'linear-reference.log').open('w', encoding='utf-8') as log:
+                reference = subprocess.run(['cargo', 'test', '--manifest-path', str(root/'core/Cargo.toml'),
+                    '-p', 'paint-core', '--release', '--locked', '--lib', 'gpu_blend_capture',
+                    '--', '--ignored', '--nocapture'], env=reference_env, cwd=root,
+                    stdout=log, stderr=subprocess.STDOUT, timeout=120)
+            results.append(dict(backend=backend, repeat=repeat, reference_exit=reference.returncode))
+    passed = all(r.get('exit', r.get('reference_exit')) == 0 for r in results)
     (out/'results.json').write_text(json.dumps(dict(passed=passed, results=results), indent=2), encoding='utf-8')
     raise SystemExit(0 if passed else 1)
 

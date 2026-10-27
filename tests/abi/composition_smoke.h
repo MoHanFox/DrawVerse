@@ -53,6 +53,8 @@ static int composition_smoke(PaintCore *core) {
     clock_t start;
     memset(&caps,0,sizeof(caps));caps.struct_size=sizeof(caps);
     COMPOSITION_CHECK(paint_core_composition_capabilities(core,1,&caps)==PAINT_OK);
+    COMPOSITION_CHECK((caps.features & (PAINT_COMPOSITION_FIXED_MASK|PAINT_COMPOSITION_BLEND_MODES))==(PAINT_COMPOSITION_FIXED_MASK|PAINT_COMPOSITION_BLEND_MODES));
+    COMPOSITION_CHECK(PAINT_COMPOSITION_NODE_FIXED_MASK==(UINT64_C(1)<<32));
     COMPOSITION_CHECK(caps.max_read_bytes==sizeof(bytes) && caps.tile_edge==64 && caps.max_leases_per_session==2);
     memset(&desc,0,sizeof(desc));desc.struct_size=sizeof(desc);desc.width=64;desc.height=64;
     desc.working_space=PAINT_WORKING_LINEAR_SRGB;desc.pixel_format=PAINT_STORAGE_RGBA32F_PREMULTIPLIED;

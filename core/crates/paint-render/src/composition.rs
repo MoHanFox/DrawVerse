@@ -1,7 +1,7 @@
 //! Immutable, device-independent display inputs. This module never reads pixels
 //! while building a plan and never owns a document mutation or a GPU object.
 use crate::{RenderError, RenderRequest};
-use paint_core::{BlendMode, Layer, Pixel, Tile, TileCoord, TILE_BYTES, TILE_SIZE};
+use paint_core::{blend_pixel, BlendMode, Layer, Pixel, Tile, TileCoord, TILE_BYTES, TILE_SIZE};
 use paint_task::CancellationToken;
 use std::{
     collections::{HashMap, VecDeque},
@@ -15,7 +15,9 @@ pub const VERSION: u32 = 1;
 pub const NORMAL: u64 = 1;
 pub const SELF_MASK: u64 = 2;
 pub const LINEAR_RGBA32F: u64 = 4;
-pub const FEATURES: u64 = NORMAL | SELF_MASK | LINEAR_RGBA32F;
+pub const FIXED_MASK: u64 = 8;
+pub const BLEND_MODES: u64 = 16;
+pub const FEATURES: u64 = NORMAL | SELF_MASK | LINEAR_RGBA32F | FIXED_MASK | BLEND_MODES;
 pub const MAX_NODES: usize = 4096;
 pub const MAX_TILES: usize = 4096;
 pub const MAX_PIN_BYTES: usize = MAX_TILES * TILE_BYTES;
@@ -149,6 +151,8 @@ pub enum NodeKind {
 }
 #[derive(Debug)]
 pub struct Node {
+    pub blend: BlendMode,
+    pub fixed_mask: bool,
     pub layer_id: u64,
     pub kind: NodeKind,
     pub mask: Option<usize>,
@@ -214,9 +218,17 @@ pub fn estimate(layers: &[Layer], limits: Limits) -> Result<(usize, usize), Plan
         if layer.is_group()
             || layer.is_clipped()
             || layer.is_image()
-            || layer.appearance().blend != BlendMode::Normal
+            || (layer.appearance().blend != BlendMode::Normal
+                && (layer.is_mask()
+                    || limits.features & BLEND_MODES == 0
+                    || matches!(
+                        layer.appearance().blend,
+                        BlendMode::Dissolve | BlendMode::PassThrough
+                    )))
             || (!layer.is_mask() && layer.parent_id() != 0)
-            || (layer.is_mask() && (!layer.mask_linked() || limits.features & SELF_MASK == 0))
+            || (layer.is_mask()
+                && (limits.features & SELF_MASK == 0
+                    || (!layer.mask_linked() && limits.features & FIXED_MASK == 0)))
         {
             return Err(PlanError::Unsupported("layer closure requires CPU"));
         }
@@ -286,6 +298,8 @@ pub fn prepare(
             }
         }
         nodes.push(Node {
+            blend: layer.appearance().blend,
+            fixed_mask: layer.is_mask() && !layer.mask_linked(),
             layer_id: layer.id(),
             kind: if layer.is_mask() {
                 NodeKind::Mask
@@ -308,7 +322,18 @@ pub fn prepare(
             return Err(PlanError::Invalid);
         }
     }
-    let required_features = NORMAL
+    let required_features = if layers
+        .iter()
+        .any(|l| !l.is_mask() && l.appearance().blend != BlendMode::Normal)
+    {
+        BLEND_MODES
+    } else {
+        0
+    } | if layers.iter().any(|l| l.is_mask() && !l.mask_linked()) {
+        FIXED_MASK
+    } else {
+        0
+    } | NORMAL
         | LINEAR_RGBA32F
         | if layers.iter().any(Layer::is_mask) {
             SELF_MASK
@@ -375,7 +400,14 @@ impl Plan {
             if let Some(mask) = node.mask.map(|i| &self.nodes[i]).filter(|m| m.visible) {
                 source = source.scaled(1. - self.sample(mask, x, y)?.alpha() * mask.opacity);
             }
-            result = source.scaled(node.opacity * node.fill).over(result);
+            result = blend_pixel(
+                source.scaled(node.opacity * node.fill),
+                result,
+                node.blend,
+                x,
+                y,
+                0,
+            );
         }
         Ok(result)
     }

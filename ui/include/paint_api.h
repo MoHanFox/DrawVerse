@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 82
+#define PAINT_ABI_MINOR 83
 
 #define PAINT_ABI_PATCH 0
 
@@ -61,11 +61,24 @@
 
 #define PAINT_COMMAND_UNDO 6
 
+#define PAINT_COMPOSITION_BLEND_MODES 16
+
 #define PAINT_COMPOSITION_FAILED 2
+
+/**
+ * ABI1.83 optional version1 extensions; older feature sets retain old semantics.
+ */
+#define PAINT_COMPOSITION_FIXED_MASK 8
 
 #define PAINT_COMPOSITION_LINEAR_RGBA32F 4
 
 #define PAINT_COMPOSITION_MASK 1
+
+/**
+ * Node.reserved low32 = blend ID when BLEND_MODES is required.
+ * Bit32 marks an unlinked mask when FIXED_MASK is required. Other bits are zero.
+ */
+#define PAINT_COMPOSITION_NODE_FIXED_MASK 4294967296
 
 #define PAINT_COMPOSITION_NORMAL 1
 

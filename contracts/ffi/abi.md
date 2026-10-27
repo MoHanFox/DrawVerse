@@ -1,4 +1,10 @@
-# C ABI 1.82.0 契约
+# C ABI 1.83.0 契约
+
+## ABI 1.83 — 可协商的根混合与固定蒙版
+
+独立composition协议仍version1，新增能力FIXED_MASK=8、BLEND_MODES=16，不占全局feature mask。BLEND_MODES首批表示根栅格的Normal及模式2–26；Dissolve=1、PassThrough=27、组/剪贴/置入图仍返回完整Failed/UNSUPPORTED租约。旧features=7请求保持原支持范围，不会收到扩展节点。
+
+结构布局及PaintCompositionNode的64字节大小保持。其历史命名reserved输出在协商扩展下解释为：低32位blend ID，位32为固定（未链接）蒙版标志，其余位0；BLEND_MODES未要求时低32位0，FIXED_MASK未要求时位32为0。required_features记录实际依赖，节点索引、瓦片身份、不可变租约、取消和有界读契约保持。mask链接标志只约束移动几何，覆盖仍按蒙版自身偏移和密度；不发布原生GPU对象。文档/state45/behavior/VBR均不升版。
 
 ## ABI 1.82 — 无会话的共享变换显示几何
 

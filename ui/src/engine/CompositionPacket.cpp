@@ -60,7 +60,7 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
            quint64(view.pixels.width())*view.pixels.height()>4194304){
             fallback=QStringLiteral("CPU: composition extent/LOD budget");return {};
         }
-        auto request=dto<PaintCompositionRequest>();request.version=1;request.features=7;
+        auto request=dto<PaintCompositionRequest>();request.version=1;request.features=PAINT_COMPOSITION_NORMAL|PAINT_COMPOSITION_SELF_MASK|PAINT_COMPOSITION_LINEAR_RGBA32F|PAINT_COMPOSITION_FIXED_MASK|PAINT_COMPOSITION_BLEND_MODES;
         request.viewport=dto<PaintViewport>();request.viewport.enabled=1;request.viewport.document_generation=view.generation;
         request.viewport.x=view.region.x();request.viewport.y=view.region.y();request.viewport.width=view.region.width();request.viewport.height=view.region.height();
         request.viewport.pixel_width=quint32(view.pixels.width());request.viewport.pixel_height=quint32(view.pixels.height());

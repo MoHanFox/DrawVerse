@@ -174,7 +174,7 @@ fn capabilities_and_budgets_reject_entire_closure_without_partial_plan() {
         run(
             &doc,
             Limits {
-                features: FEATURES | 8,
+                features: FEATURES | (1 << 63),
                 ..Default::default()
             },
             &mut ids
@@ -195,7 +195,14 @@ fn capabilities_and_budgets_reject_entire_closure_without_partial_plan() {
     ));
     doc.set_mask_linked(mask, false).unwrap();
     assert!(matches!(
-        run(&doc, Limits::default(), &mut ids),
+        run(
+            &doc,
+            Limits {
+                features: NORMAL | SELF_MASK | LINEAR_RGBA32F,
+                ..Default::default()
+            },
+            &mut ids
+        ),
         Err(PlanError::Unsupported(_))
     ));
     doc.set_mask_linked(mask, true).unwrap();
@@ -209,7 +216,14 @@ fn capabilities_and_budgets_reject_entire_closure_without_partial_plan() {
     )
     .unwrap();
     assert!(matches!(
-        run(&doc, Limits::default(), &mut ids),
+        run(
+            &doc,
+            Limits {
+                features: NORMAL | SELF_MASK | LINEAR_RGBA32F,
+                ..Default::default()
+            },
+            &mut ids
+        ),
         Err(PlanError::Unsupported(_))
     ));
 }
@@ -327,4 +341,96 @@ fn capture_never_loads_cold_pages_and_worker_reads_keep_original_page_budget() {
     assert!(doc.storage_stats().page_reads > before.page_reads);
     doc.trim_storage().unwrap();
     assert!(doc.storage_stats().resident_tiles <= 1);
+}
+
+#[test]
+fn root_blends_and_fixed_masks_match_authoritative_pixels_and_old_caps_reject() {
+    let token = CancellationToken::default();
+    for white in [false, true] {
+        let mut doc = Document::new(130, 90).unwrap();
+        if white {
+            doc.initialize_white_background().unwrap();
+        }
+        dab(&mut doc, (58., 40.), [0.2, 0.7, 0.4, 0.7]);
+        let top = doc.add_layer("blend").unwrap();
+        dab(&mut doc, (66., 43.), [0.9, 0.1, 0.6, 0.8]);
+        let mask = doc.add_mask(top).unwrap();
+        dab(&mut doc, (62., 41.), [0., 0., 0., 0.8]);
+        doc.set_layer_properties(
+            mask,
+            LayerProperties {
+                visible: true,
+                opacity: 0.63,
+            },
+        )
+        .unwrap();
+        doc.set_mask_linked(mask, false).unwrap();
+        let mut ids = ContentIdentities::default();
+        for id in (0..27).filter(|i| *i != 1) {
+            doc.set_layer_appearance(
+                top,
+                LayerAppearance {
+                    blend: BlendMode::from_id(id).unwrap(),
+                    fill: 0.71,
+                    offset_x: -7,
+                    offset_y: 3,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let p = plan(&doc, &mut ids);
+            assert!(p.required_features & FIXED_MASK != 0);
+            assert!(
+                p.nodes
+                    .iter()
+                    .find(|n| n.layer_id == mask)
+                    .unwrap()
+                    .fixed_mask
+            );
+            for y in 0..90 {
+                for x in 0..130 {
+                    assert_eq!(
+                        p.try_pixel(x, y, &token).unwrap(),
+                        doc.pixel(x, y),
+                        "mode={id}, white={white}, {x},{y}"
+                    );
+                }
+            }
+            assert!(matches!(
+                prepare(
+                    doc.dimensions(),
+                    doc.revision(),
+                    doc.layers(),
+                    request(),
+                    Limits {
+                        features: 7,
+                        ..Default::default()
+                    },
+                    &mut ids,
+                    &token
+                ),
+                Err(PlanError::Unsupported(_))
+            ));
+        }
+        doc.set_layer_appearance(
+            top,
+            LayerAppearance {
+                blend: BlendMode::Dissolve,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            prepare(
+                doc.dimensions(),
+                doc.revision(),
+                doc.layers(),
+                request(),
+                Limits::default(),
+                &mut ids,
+                &token
+            ),
+            Err(PlanError::Unsupported(_))
+        ));
+    }
 }

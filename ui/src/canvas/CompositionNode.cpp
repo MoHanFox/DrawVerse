@@ -393,7 +393,7 @@ private:
             p.dimensions={documentSize.width(),documentSize.height(),outputSize.width(),outputSize.height()};
             p.source={node.offset_x,node.offset_y,qint32(node.white_width),qint32(node.white_height)};
             p.mask={mask.offset_x,mask.offset_y,qint32(mask.white_width),qint32(mask.white_height)};
-            p.sourceOrigin={srcMap.origin.x(),srcMap.origin.y(),0,0};p.maskOrigin={maskMap.origin.x(),maskMap.origin.y(),0,0};
+            p.sourceOrigin={srcMap.origin.x(),srcMap.origin.y(),qint32(quint32(node.reserved)),0};p.maskOrigin={maskMap.origin.x(),maskMap.origin.y(),0,0};
             p.factors={node.opacity*node.fill,mi!=i && mask.visible?mask.opacity:0.f,0,0};
             if(packet->transform && packet->transform->node==i){
                 const auto &t=*packet->transform;pass->precise=true;transformParameters(p,t);

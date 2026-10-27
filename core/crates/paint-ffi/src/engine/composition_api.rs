@@ -180,7 +180,12 @@ pub unsafe extern "C" fn paint_session_composition_node(
             white_height: n.white_extent.1,
             first_tile: n.first_tile as u32,
             tile_count: n.tile_count as u32,
-            reserved: 0,
+            reserved: n.blend as u64
+                | if n.fixed_mask {
+                    PAINT_COMPOSITION_NODE_FIXED_MASK
+                } else {
+                    0
+                },
         };
         service.publish_read(key, || pointers::write(out_node, node))
     })

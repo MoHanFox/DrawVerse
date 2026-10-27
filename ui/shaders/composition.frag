@@ -23,6 +23,50 @@ vec4 sampleSource(ivec2 point,ivec4 info,ivec2 origin,sampler2D pageMap){
     if(slot>=0)return texelFetch(atlas,ivec2(slot%32,slot/32)*64+local-tile*64,0);
     return all(greaterThanEqual(local,ivec2(0))) && all(lessThan(local,info.zw))?vec4(1):vec4(0);
 }
+// Same linear, premultiplied formulas and branch boundaries as
+// paint-core/layers/appearance.rs. Dissolve is not negotiated by this backend.
+float luminance(vec3 c){return c.r*.3+c.g*.59+c.b*.11;}
+float saturation(vec3 c){return max(0.0,max(c.r,max(c.g,c.b)))-min(1.0,min(c.r,min(c.g,c.b)));}
+vec3 setLum(vec3 c,float l){
+    c+=l-luminance(c);float light=luminance(c),lo=min(c.r,min(c.g,c.b)),hi=max(c.r,max(c.g,c.b));
+    if(lo<0.0)c=light+(c-light)*light/(light-lo);
+    if(hi>1.0)c=light+(c-light)*(1.0-light)/(hi-light);
+    return clamp(c,0.0,1.0);
+}
+vec3 setSat(vec3 c,float s){float lo=min(1.0,min(c.r,min(c.g,c.b))),hi=max(0.0,max(c.r,max(c.g,c.b)));return hi<=lo?vec3(0):(c-lo)*s/(hi-lo);}
+float burn(float b,float s){return b>=1.0?1.0:(s<=0.0?0.0:1.0-min((1.0-b)/s,1.0));}
+float dodge(float b,float s){return b<=0.0?0.0:(s>=1.0?1.0:min(b/(1.0-s),1.0));}
+float hard(float b,float s){return s<=.5?2.0*b*s:1.0-2.0*(1.0-b)*(1.0-s);}
+float vivid(float b,float s){return s<=.5?burn(b,2.0*s):dodge(b,2.0*s-1.0);}
+float channel(float b,float s,int mode){
+    if(mode==2)return min(b,s);if(mode==3)return b*s;
+    if(mode==4)return burn(b,s);if(mode==5)return max(b+s-1.0,0.0);
+    if(mode==7)return max(b,s);if(mode==8)return b+s-b*s;
+    if(mode==9)return dodge(b,s);if(mode==10)return min(b+s,1.0);
+    if(mode==12)return hard(s,b);
+    if(mode==13){if(s<=.5)return b-(1.0-2.0*s)*b*(1.0-b);float f=b<=.25?((16.0*b-12.0)*b+4.0)*b:sqrt(b);return b+(2.0*s-1.0)*(f-b);}
+    if(mode==14)return hard(b,s);if(mode==15)return vivid(b,s);
+    if(mode==16)return clamp(b+2.0*s-1.0,0.0,1.0);
+    if(mode==17)return s<=.5?min(b,2.0*s):max(b,2.0*s-1.0);
+    if(mode==18)return vivid(b,s)<.5?0.0:1.0;
+    if(mode==19)return abs(b-s);if(mode==20)return b+s-2.0*b*s;
+    if(mode==21)return max(b-s,0.0);if(mode==22)return b==0.0?0.0:(s==0.0?1.0:min(b/s,1.0));
+    return s;
+}
+vec4 blend(vec4 s,vec4 d,int mode){
+    if(mode==0)return s+d*(1.0-s.a);
+    float a=s.a,da=d.a;if(a==0.0)return d;
+    vec3 sc=s.rgb/a,dc=da>0.0?d.rgb/da:vec3(0),mixed;
+    if(mode==23)mixed=setLum(setSat(sc,saturation(dc)),luminance(dc));
+    else if(mode==24)mixed=setLum(setSat(dc,saturation(sc)),luminance(dc));
+    else if(mode==25)mixed=setLum(sc,luminance(dc));
+    else if(mode==26)mixed=setLum(dc,luminance(sc));
+    else if(mode==6)mixed=luminance(sc)<luminance(dc)?sc:dc;
+    else if(mode==11)mixed=luminance(sc)>luminance(dc)?sc:dc;
+    else mixed=vec3(channel(dc.r,sc.r,mode),channel(dc.g,sc.g,mode),channel(dc.b,sc.b,mode));
+    float alpha=a+da*(1.0-a);
+    return vec4(clamp((1.0-a)*d.rgb+(1.0-da)*a*sc+da*a*mixed,0.0,alpha),alpha);
+}
 void main(){
     if(factors.w>3.5){ivec2 p=ivec2(uv*vec2(dimensions.xy));vec4 s=texelFetch(atlas,p,0);color=s+texelFetch(backdrop,p,0)*(1.0-s.a);return;}
     if(factors.w>1.5){color=vec4(0);return;}
@@ -30,8 +74,9 @@ void main(){
         ivec2 point=ivec2(uv*vec2(dimensions.xy));
         vec4 s=sampleSource(point,sourceInfo,sourceOrigin.xy,sourceMap);
         float hidden=factors.y>0.0?sampleSource(point,maskInfo,maskOrigin.xy,maskMap).a*factors.y:0.0;
-        s*=factors.x*(1.0-hidden);
-        color=s+texelFetch(backdrop,point,0)*(1.0-s.a);
+        s*=1.0-hidden;
+        s*=factors.x;
+        color=blend(s,texelFetch(backdrop,point,0),sourceOrigin.z);
     }else{
         ivec2 outputPoint=ivec2(uv*vec2(dimensions.zw));
         // Axis tables are prepared using the CPU reference's f64 pixel-center

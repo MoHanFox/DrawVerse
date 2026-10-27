@@ -3,6 +3,12 @@ pub const PAINT_COMPOSITION_VERSION: u32 = 1;
 pub const PAINT_COMPOSITION_NORMAL: u64 = 1;
 pub const PAINT_COMPOSITION_SELF_MASK: u64 = 2;
 pub const PAINT_COMPOSITION_LINEAR_RGBA32F: u64 = 4;
+/// ABI1.83 optional version1 extensions; older feature sets retain old semantics.
+pub const PAINT_COMPOSITION_FIXED_MASK: u64 = 8;
+pub const PAINT_COMPOSITION_BLEND_MODES: u64 = 16;
+/// Node.reserved low32 = blend ID when BLEND_MODES is required.
+/// Bit32 marks an unlinked mask when FIXED_MASK is required. Other bits are zero.
+pub const PAINT_COMPOSITION_NODE_FIXED_MASK: u64 = 0x1_0000_0000;
 pub const PAINT_COMPOSITION_PENDING: u32 = 0;
 pub const PAINT_COMPOSITION_READY: u32 = 1;
 pub const PAINT_COMPOSITION_FAILED: u32 = 2;

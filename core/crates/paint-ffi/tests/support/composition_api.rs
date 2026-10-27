@@ -139,7 +139,7 @@ fn composition_protocol_capabilities_validation_and_capture_never_change_documen
     for bad in [
         PaintCompositionRequest { version: 2, ..desc },
         PaintCompositionRequest {
-            features: desc.features | 8,
+            features: desc.features | (1 << 63),
             ..desc
         },
     ] {
@@ -307,13 +307,31 @@ fn composition_budget_and_unsupported_failures_are_explicit_without_document_err
         );
         h.wait(sequence);
     }
-    let (status, id) = submit(&h, &request(&h, 4, 1));
+    let (status, id) = submit(
+        &h,
+        &PaintCompositionRequest {
+            features: 7,
+            ..request(&h, 4, 1)
+        },
+    );
     assert_eq!(status, PAINT_OK);
     let failed = ready(&h, id);
     assert_eq!(failed.state, PAINT_COMPOSITION_FAILED);
     assert_eq!(failed.status, PAINT_UNSUPPORTED);
     assert_eq!(h.info().last_error_status, PAINT_OK);
     release(&h, failed);
+    let good = acquire(&h, 5, 1);
+    assert_eq!(
+        good.required_features & PAINT_COMPOSITION_BLEND_MODES,
+        PAINT_COMPOSITION_BLEND_MODES
+    );
+    let mut node = dto!(PaintCompositionNode);
+    assert_eq!(
+        unsafe { paint_session_composition_node(h.core, h.session, &good.key, 0, &mut node) },
+        PAINT_OK
+    );
+    assert_eq!(node.reserved, paint_core::BlendMode::Multiply as u64);
+    release(&h, good);
 }
 
 #[test]

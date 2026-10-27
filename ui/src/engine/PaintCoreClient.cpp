@@ -1552,7 +1552,7 @@ void PaintCoreClient::requestLayerMovePreparation() {
     if(status!=PAINT_OK)m_movePreparationPendingRequest=0;
 }
 CompositionPacketPtr PaintCoreClient::compositionPacket()const{
-    if(m_compositionFinalFallback)return {};
+    if(m_compositionFinalFallback || m_compositionTransformCpu)return {};
     if(m_compositionFinalRevision && m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation &&
        m_compositionPacket->info.key.revision>=m_compositionFinalRevision)return m_compositionPacket;
     if(m_compositionEditFrame)return m_compositionEditFrame;
@@ -1581,7 +1581,7 @@ bool PaintCoreClient::prepareCompositionTransform(){
     if(!m_compositionPrecisionAvailable || selectionEnabled() || currentMoveTargets().size()!=1 || !prepareCompositionMove(false))return false;
     const auto id=m_compositionEditTargets.front();
     for(const auto &node:m_compositionEditBase->nodes)if(node.layer_id==id && node.kind==0){
-        if(node.mask_index<quint32(m_compositionEditBase->nodes.size())){clearCompositionEdit();return false;}
+        if(node.mask_index<quint32(m_compositionEditBase->nodes.size()) || quint32(node.reserved)!=0){clearCompositionEdit();return false;}
         m_compositionTransform=true;return true;
     }
     clearCompositionEdit();return false;
@@ -1627,7 +1627,8 @@ void PaintCoreClient::refreshCompositionMove(){
     for(auto id:m_compositionEditTargets){
         int index=-1;for(int i=0;i<next->nodes.size();++i)if(next->nodes[i].layer_id==id && next->nodes[i].kind==0){index=i;break;}
         if(index<0){clearCompositionEdit();return;}
-        moving.insert(index);if(next->nodes[index].mask_index<quint32(next->nodes.size()))moving.insert(int(next->nodes[index].mask_index));
+        moving.insert(index);if(next->nodes[index].mask_index<quint32(next->nodes.size()) &&
+            !(next->nodes[int(next->nodes[index].mask_index)].reserved & PAINT_COMPOSITION_NODE_FIXED_MASK))moving.insert(int(next->nodes[index].mask_index));
     }
     for(int index:moving){
         auto &node=next->nodes[index];const qint64 x=qint64(node.offset_x)+delta.x(),y=qint64(node.offset_y)+delta.y();
