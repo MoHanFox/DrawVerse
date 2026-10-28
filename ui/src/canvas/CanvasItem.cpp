@@ -83,7 +83,7 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
     connect(&m_liquifyTimer,&QTimer::timeout,this,[this]{if(!m_stroke || !m_client || !m_client->liquifyActive() || !isEnabled() || !isVisible()){m_liquifyTimer.stop();return;}m_client->liquifyTick();});
     m_viewTimer.setSingleShot(true); m_viewTimer.setInterval(16);
     connect(&m_viewTimer, &QTimer::timeout, this, &CanvasItem::requestView);
-    connect(this, &CanvasItem::viewChanged, this, [this] { if (!m_viewTimer.isActive()) m_viewTimer.start(); });
+    connect(this, &CanvasItem::viewChanged, this, [this] { if(m_compositionPacket)requestView(); else if (!m_viewTimer.isActive()) m_viewTimer.start(); });
     connect(this,&CanvasItem::viewChanged,this,[this]{if(m_havePoseSample && (!m_client || !m_client->drawing()))m_poseSample.position=documentPoint(m_cursorPosition);refreshBrushCursor();});
     const auto observeWindow=[this](QQuickWindow *window) {
         if(m_tablet)mouseUngrabEvent();
@@ -464,17 +464,22 @@ QVariantMap CanvasItem::compositionStatistics()const{
         {"testReadbacks",c.testReadbacks.load()},{"preciseTransform",c.preciseTransform.load()},{"pipelineCreates",c.pipelineCreates.load()},
         {"geometryReuses",c.geometryReuses.load()},{"pageTableCreates",c.pageTableCreates.load()},{"axisCreates",c.axisCreates.load()},
         {"parameterBufferCreates",c.parameterBufferCreates.load()},{"bindingCreates",c.bindingCreates.load()},
-        {"composedPixels",c.composedPixels.load()},{"lastDirtyArea",c.lastDirtyArea.load()},
+        {"composedPixels",c.composedPixels.load()},{"lastDirtyArea",c.lastDirtyArea.load()},{"displayPixels",c.displayPixels.load()},{"lastDisplayArea",c.lastDisplayArea.load()},
         {"fallback",!m_compositionFailureReason.isEmpty()?m_compositionFailureReason:(m_client && !m_client->gpuAccelerationEnabled())?QStringLiteral("CPU: disabled by compute hardware setting"):!compositionDisplayRequested()?QStringLiteral("CPU: composition disabled"):!CompositionNode::supportsWindow(window())?QStringLiteral("CPU: composition requires Qt 6.6+ D3D11"):m_client?m_client->compositionFallback():QString()}};
 }
 QRectF CanvasItem::prefetchedDocumentRect() const {
     if(!m_client || width()<=0 || height()<=0)return {};
+    const qreal dpr=window()?window()->devicePixelRatio():1.;
+    const QRectF document(0,0,m_client->documentWidth(),m_client->documentHeight());
+    const QRectF visible=QRectF(documentPoint({0,0}),QSizeF(width()/m_zoom,height()/m_zoom)).intersected(document);
     const qreal margin=128/m_zoom;
     const auto ahead=m_velocity*.12/m_zoom;
-    QRectF region(documentPoint({0,0}),QSizeF(width()/m_zoom,height()/m_zoom));
-    region.adjust(-margin-std::max(0.,ahead.x()),-margin-std::max(0.,ahead.y()),
-                  margin-std::min(0.,ahead.x()),margin-std::min(0.,ahead.y()));
-    return region.intersected(QRectF(0,0,m_client->documentWidth(),m_client->documentHeight()));
+    QRectF region=visible.adjusted(-margin-std::max(0.,ahead.x()),-margin-std::max(0.,ahead.y()),
+                                  margin-std::min(0.,ahead.x()),margin-std::min(0.,ahead.y())).intersected(document);
+    const double density=m_zoom*dpr;
+    if(region.width()*region.height()*density*density>CompositionBudget::cpuViewPixels() || region.width()*density>8192 || region.height()*density>8192)
+        return visible;
+    return region;
 }
 QRectF CanvasItem::documentRect() const {
     if (!m_client) return {};

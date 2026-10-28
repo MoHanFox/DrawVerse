@@ -14,10 +14,20 @@ Dialog {
     width: 640
     implicitHeight: 520
     property int section: 0
+    property string selectedComputeDevice: "auto"
+    function syncComputeSelection() {
+        if (computeDevice)computeDevice.currentIndex = computeDevice.indexOfValue(root.selectedComputeDevice)
+    }
+    onSelectedComputeDeviceChanged: syncComputeSelection()
     onOpened: {
+        renderMemory.value = PaintClient.renderSettings.memoryMiB
+        renderGpu.value = PaintClient.renderSettings.gpuMiB
         const values = PaintClient.storageSettings
         storageDirectory.text = values.directory || ""
-        storageMemory.currentIndex = Math.max(0, storageMemory.options.indexOf(Number(values.memoryMiB || 256)))
+        storageMemory.value = Number(values.memoryMiB)
+        selectedComputeDevice = PaintClient.computeDevice
+        syncComputeSelection()
+        highestQuality.checked = PaintClient.renderSettings.highestQuality
         storageScratch.value = Number(values.scratchGiB || 8)
         storageReserve.value = values.reserveMiB === undefined ? 512 : Number(values.reserveMiB)
         historyLimit.value = PaintClient.historyLimit
@@ -76,7 +86,13 @@ Dialog {
                                 model: PaintClient.computeHardware
                                 textRole: "name"; valueRole: "id"
                                 enabled: !PaintClient.computeBusy && !PaintClient.drawing && !PaintClient.liquifyActive && !PaintClient.transformActive && !PaintClient.layerEditBusy
-                                currentIndex: Math.max(0, indexOfValue(PaintClient.computeDevice))
+                                // The hardware model arrives asynchronously. indexOfValue()
+                                // alone does not create a binding dependency on its rows.
+                                currentIndex: -1
+                                onModelChanged: Qt.callLater(root.syncComputeSelection)
+                                onCountChanged: Qt.callLater(root.syncComputeSelection)
+                                displayText: currentIndex >= 0 ? currentText : (count === 0 ? "正在读取计算硬件…" : "已保存的设备暂不可用")
+                                onActivated: { root.selectedComputeDevice = currentValue; if(currentValue === "cpu")highestQuality.checked = false }
                             }
                             Label {
                                 objectName: "computeStatus"
@@ -91,16 +107,19 @@ Dialog {
                                 Label {text:"毫秒";color:Theme.muted;font.pixelSize:9}
                             }
                             Label {text:"计算超过此时间才显示进度；0 为立即显示。";color:Theme.muted;font.pixelSize:8;Layout.fillWidth:true}
-                            Label { text: "存储与缓存"; font.pixelSize: 10; color: Theme.accent }
+                            CheckBox { id: highestQuality; objectName: "highestCanvasQuality"; text: "渲染画布最高质量"; checked: false
+                                onToggled: if(checked && root.selectedComputeDevice === "cpu")root.selectedComputeDevice = "auto"
+                            }
+                            Label { text: "最高质量保留整张画布的原分辨率GPU合成，包括视口外；需要GPU加速，保存后生效。"; wrapMode: Text.WordWrap; Layout.fillWidth: true; color: Theme.muted; font.pixelSize: 9 }
+                            Label { text: "存储与缓存（下次启动生效）"; font.pixelSize: 10; color: Theme.accent }
                             GridLayout {
                                 columns: 2; columnSpacing: 12; rowSpacing: 8; Layout.fillWidth: true
-                                Label { text: "像素驻留缓存"; color: Theme.text; font.pixelSize: 9 }
-                                ComboBox {
-                                    id: storageMemory; objectName: "storageMemory"
-                                    property var options: [64, 128, 256, 512, 1024]
-                                    model: ["64 MiB", "128 MiB", "256 MiB", "512 MiB", "1024 MiB"]
-                                    Layout.fillWidth: true; enabled: !PaintClient.storageBusy
-                                }
+                                Label { text: "内存使用量（MB）"; color: Theme.text; font.pixelSize: 9 }
+                                SpinBox { id: renderMemory; from: 512; to: 1048576; stepSize: 256; editable: true; Layout.fillWidth: true }
+                                Label { text: "GPU内存（MB，0=自动）"; color: Theme.text; font.pixelSize: 9 }
+                                SpinBox { id: renderGpu; from: 0; to: 1048576; stepSize: 128; editable: true; Layout.fillWidth: true }
+                                Label { text: "缓存图块大小（MB）"; color: Theme.text; font.pixelSize: 9 }
+                                SpinBox { id: storageMemory; objectName: "storageMemory"; from: 64; to: 1048576; stepSize: 256; editable: true; Layout.fillWidth: true; enabled: !PaintClient.storageBusy }
                                 Label { text: "单文档瓦片暂存上限"; color: Theme.text; font.pixelSize: 9 }
                                 SpinBox { id: storageScratch; objectName: "storageScratch"; from: 1; to: 64; editable: true; Layout.fillWidth: true; enabled: !PaintClient.storageBusy }
                                 Label { text: "保留磁盘空闲空间"; color: Theme.text; font.pixelSize: 9 }
@@ -207,12 +226,14 @@ Dialog {
             Button {
                 objectName: "saveStorageSettings"; text: "保存设置"; enabled: !PaintClient.storageBusy && !PaintClient.computeBusy && !PaintClient.drawing
                 onClicked: {
+                    if(highestQuality.checked && root.selectedComputeDevice === "cpu")root.selectedComputeDevice = "auto"
+                    PaintClient.saveRenderSettings(renderMemory.value, renderGpu.value, highestQuality.checked)
                     PaintClient.historyLimit = historyLimit.value
                     PaintClient.longTaskDelay = taskProgressDelay.value
-                    PaintClient.saveStorageSettings(storageDirectory.text, storageMemory.options[storageMemory.currentIndex], storageScratch.value, storageReserve.value)
+                    PaintClient.saveStorageSettings(storageDirectory.text, storageMemory.value, storageScratch.value, storageReserve.value)
                     PaintClient.applyHistoryLimit()
-                    if (computeDevice.currentValue !== undefined && computeDevice.currentValue !== PaintClient.computeDevice)
-                        PaintClient.saveComputeDevice(computeDevice.currentValue)
+                    if (root.selectedComputeDevice !== PaintClient.computeDevice)
+                        PaintClient.saveComputeDevice(root.selectedComputeDevice)
                 }
             }
             Button { text: "关闭"; onClicked: root.close() }

@@ -33,7 +33,7 @@ unsafe fn configuration(options: *const PaintStorageOptions) -> ApiResult<Arc<Co
     let value = unsafe { pointers::read_sized(options)? };
     if value.reserved != 0
         || value.resident_bytes < TILE_BYTES as u64
-        || value.resident_bytes > 1024 * 1024 * 1024
+        || value.resident_bytes > 1024 * 1024 * 1024 * 1024
         || value.resident_bytes % TILE_BYTES as u64 != 0
         || !(65552..=64 * 1024 * 1024 * 1024).contains(&value.scratch_bytes)
         || value.min_free_bytes > 1024 * 1024 * 1024 * 1024

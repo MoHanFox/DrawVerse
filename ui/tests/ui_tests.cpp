@@ -1,4 +1,5 @@
 #include "platform/UiResources.h"
+#include "platform/MemoryBudget.h"
 #include "canvas/CanvasItem.h"
 #include "color/ColorWheelItem.h"
 #include "canvas/SelectionOverlay.h"
@@ -4817,11 +4818,11 @@ ParameterSlider {width:360;x:20;y:20;sliderName:"deferredSpacing";from:1;to:100;
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY_WITH_TIMEOUT(client.ready(),10000);
         auto layer=[&](quint64 id){for(const auto &v:client.layers())if(v.toMap().value("id").toULongLong()==id)return v.toMap();return QVariantMap();};
         auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);
-        client.newDocument(641,479);QTRY_COMPARE(client.documentWidth(),641);QTRY_VERIFY(client.ready());
+        client.newDocument(1600,63);QTRY_COMPARE(client.documentWidth(),1600);QTRY_VERIFY(client.ready());
         QTRY_VERIFY_WITH_TIMEOUT(!layer(1).value("thumbnail").toString().isEmpty(),10000);
         const auto encoded=layer(1).value("thumbnail").toString().section(',',1).toLatin1();const auto image=QImage::fromData(QByteArray::fromBase64(encoded));QVERIFY(!image.isNull());
         for(int y=0;y<image.height();++y)for(int x=0;x<image.width();++x)QCOMPARE(image.pixelColor(x,y),QColor(Qt::white));
-        auto *thumb=findVisualItem(window->contentItem(),"layerThumbnail:1");auto *checker=findVisualItem(window->contentItem(),"thumbnailTransparency:1");QVERIFY(thumb && checker);QTRY_VERIFY(thumb->property("paintedWidth").toReal()>0);QCOMPARE(checker->width(),thumb->property("paintedWidth").toReal());QCOMPARE(checker->height(),thumb->property("paintedHeight").toReal());
+        auto *thumb=findVisualItem(window->contentItem(),"layerThumbnail:1");auto *checker=findVisualItem(window->contentItem(),"thumbnailTransparency:1");QVERIFY(thumb && checker);QTRY_VERIFY(thumb->property("paintedWidth").toReal()>0);QCOMPARE(checker->width(),thumb->property("paintedWidth").toReal());QCOMPARE(checker->height(),thumb->property("paintedHeight").toReal());QVERIFY(checker->clip());QVERIFY(checker->height()<3);
         const auto opaquePreview=qEnvironmentVariable("DRAWVERSE_CLIPPING_PREVIEW");if(!opaquePreview.isEmpty()){QTRY_VERIFY(client.frameRevision()>=client.revision());QTest::qWait(100);QVERIFY(window->grabWindow().save(opaquePreview+".opaque.png"));}
         client.newTransparentDocument(128,128);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());canvas->actualSize();
         InputSample point;point.position={64.5,64.5};client.setBrushColor(Qt::white);client.setBrushRadius(25);QVERIFY(client.beginStroke(point));client.endStroke();QTRY_COMPARE(client.undoDepth(),1);QTRY_VERIFY(!client.layerEditBusy());
@@ -5165,25 +5166,33 @@ ParameterSlider {width:360;x:20;y:20;sliderName:"deferredSpacing";from:1;to:100;
         auto *compute=dialog->findChild<QObject*>("computeDevice");QVERIFY(compute);QTRY_VERIFY(compute->property("count").toInt()>=1);
         auto *computeHint=dialog->findChild<QObject*>("computeStatus");QVERIFY(computeHint);
         const auto computeText=computeHint->property("text").toString();
-        QVERIFY(computeText.contains(QStringLiteral("关闭文档 GPU 加速")));
-        QVERIFY(computeText.contains(QStringLiteral("自由变换")));
-        QVERIFY(computeText.contains(QStringLiteral("自动使用 CPU")));
+        QVERIFY(computeText.contains(QStringLiteral("画布及图层渲染与合成")));
+        QVERIFY(computeText.contains(QStringLiteral("液化计算")));
+        QVERIFY(computeText.contains(QStringLiteral("各文档空闲时生效")));
         QVERIFY(computeText.contains(QStringLiteral("无需重启")));
-        auto *memory=dialog->findChild<QObject*>("storageMemory"); QVERIFY(memory); QCOMPARE(memory->property("currentIndex").toInt(),2);
+        auto *memory=dialog->findChild<QObject*>("storageMemory"); QVERIFY(memory); QCOMPARE(memory->property("value").toInt(),defaultMemoryMiB());
         auto *scratch=dialog->findChild<QObject*>("storageScratch"); QVERIFY(scratch); QCOMPARE(scratch->property("value").toInt(),8);
         auto *reserve=dialog->findChild<QObject*>("storageReserve"); QVERIFY(reserve); QCOMPARE(reserve->property("value").toInt(),512);
         auto *directory=dialog->findChild<QObject*>("storageDirectory"); QVERIFY(directory); QVERIFY(directory->property("text").toString().isEmpty());
         const auto preview=qEnvironmentVariable("DRAWVERSE_STORAGE_PREVIEW");
         if(!preview.isEmpty()) { QTest::qWait(200); QVERIFY(window->grabWindow().save(preview)); }
-        QVERIFY(memory->setProperty("currentIndex",0)); QVERIFY(scratch->setProperty("value",2));
+        QVERIFY(memory->setProperty("value",64)); QVERIFY(scratch->setProperty("value",2));
         QVERIFY(reserve->setProperty("value",0)); QVERIFY(directory->setProperty("text",temp.path()));
         QSignalSpy saved(&client,&PaintCoreClient::storageFinished);
         auto *button=dialog->findChild<QObject*>("saveStorageSettings"); QVERIFY(button); QVERIFY(QMetaObject::invokeMethod(button,"clicked"));
         QTRY_COMPARE(saved.size(),1); QVERIFY(saved.first().first().toBool());
         QCOMPARE(client.storageSettings().value("memoryMiB").toInt(),64);
-        QCOMPARE(client.activeStorageSettings().value("memoryMiB").toInt(),256);
+        QCOMPARE(client.activeStorageSettings().value("memoryMiB").toInt(),defaultMemoryMiB());
         QVERIFY(QMetaObject::invokeMethod(dialog,"close")); QVERIFY(QMetaObject::invokeMethod(dialog,"open")); QTRY_VERIFY(!client.storageBusy());
-        QCOMPARE(memory->property("currentIndex").toInt(),0); QCOMPARE(reserve->property("value").toInt(),0);
+        QCOMPARE(memory->property("value").toInt(),64); QCOMPARE(reserve->property("value").toInt(),0);
+        auto *quality=dialog->findChild<QObject*>("highestCanvasQuality");QVERIFY(quality);
+        QVERIFY(quality->setProperty("checked",false));QVERIFY(QMetaObject::invokeMethod(button,"clicked"));QTRY_VERIFY(!client.storageBusy() && !client.computeBusy());QVERIFY(!client.highestCanvasQuality());
+        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(!client.storageBusy());QVERIFY(!quality->property("checked").toBool());
+        QVERIFY(client.saveComputeDevice("cpu"));QTRY_VERIFY(client.computeDevice()=="cpu" && !client.computeBusy());
+        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(!client.storageBusy());
+        QVERIFY(quality->setProperty("checked",true));QVERIFY(QMetaObject::invokeMethod(quality,"toggled"));QVERIFY(QMetaObject::invokeMethod(button,"clicked"));QTRY_VERIFY(!client.storageBusy() && client.computeDevice()=="auto" && !client.computeBusy());QVERIFY(client.highestCanvasQuality());
+        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(!client.storageBusy());QVERIFY(quality->property("checked").toBool());
+        {PaintCoreClient reopened(nullptr,temp.filePath("storage.ini"));QTRY_VERIFY(reopened.ready());QVERIFY(reopened.highestCanvasQuality());}
         QCOMPARE(warnings,QStringList()); QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
     }
     void storagePreferencesPersistOnlyAfterValidationAndApplyAfterRestart() {
@@ -5198,7 +5207,7 @@ ParameterSlider {width:360;x:20;y:20;sliderName:"deferredSpacing";from:1;to:100;
             QVERIFY(!client.saveStorageSettings(chosen,128,4,0));
             QTRY_COMPARE(result.size(),1); QVERIFY(result.last().first().toBool());
             QCOMPARE(client.storageSettings().value("directory").toString(),chosen);
-            QCOMPARE(client.activeStorageSettings().value("memoryMiB").toInt(),256);
+            QCOMPARE(client.activeStorageSettings().value("memoryMiB").toInt(),defaultMemoryMiB());
             QCOMPARE(client.undoDepth(),1); QCOMPARE(client.layers().size(),2);
             QVERIFY(client.storageMessage().contains(QStringLiteral("重启")));
             QVERIFY(client.saveStorageSettings(settings,128,4,0));

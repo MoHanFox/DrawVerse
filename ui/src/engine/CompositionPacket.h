@@ -7,10 +7,22 @@
 #include <QString>
 #include <QVector>
 #include <atomic>
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <mutex>
 #include <optional>
+
+// Process-wide payload policy, configured before workers start; hard capability limits remain.
+struct CompositionBudget {
+    inline static std::atomic<quint64> memoryBytes{2048ull*1024*1024};
+    inline static std::atomic<quint64> cacheBytes{256ull*1024*1024};
+    inline static std::atomic<quint64> gpuBytes{1024ull*1024*1024};
+    inline static std::atomic<bool> automaticGpu{true};
+    static quint64 transportLimit(){return std::min<quint64>(512ull*1024*1024,cacheBytes.load());}
+    static quint64 cpuViewPixels(){return std::min<quint64>(16777216,(memoryBytes.load()-std::min(cacheBytes.load(),memoryBytes.load()/2))/64);}
+    static quint64 viewPixels(){return std::min<quint64>(16777216,gpuBytes.load()/4);}
+};
 
 // Supported window backends decide capability separately. An explicit override
 // remains available for CPU reference/recovery; tests may change it per case.
@@ -105,7 +117,7 @@ struct CompositionCounters {
     std::atomic<quint64> uploads{0},uploadBytes{0},passes{0},adoptions{0},revision{0},epoch{0},request{0},textureBytes{0};
     std::atomic<int> failures{0};
     std::atomic<int> testReadbacks{0};
-    std::atomic<quint64> composedPixels{0},lastDirtyArea{0};
+    std::atomic<quint64> composedPixels{0},lastDirtyArea{0},displayPixels{0},lastDisplayArea{0};
     std::atomic<quint64> nodeRevision{0},nodeRequest{0},nodeGeometry{0},nodeEpoch{0};
     std::atomic<quint64> handoffRevision{0};
     std::atomic<int> preciseTransform{0};

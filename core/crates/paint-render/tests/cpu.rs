@@ -173,11 +173,53 @@ fn snapshot_isolation_crop_transparency_display_and_cancellation() {
         CpuRenderer.render(&doc.snapshot(), request(0., 0., 64., 64., 64, 64), &token),
         Err(RenderError::Cancelled)
     ));
-    let mut invalid = request(0., 0., 64., 64., 4096, 4096);
+    let mut invalid = request(0., 0., 64., 64., 8192, 8192);
     assert!(matches!(
         CpuRenderer.render(&doc.snapshot(), invalid, &CancellationToken::default()),
         Err(RenderError::InvalidRequest)
     ));
     invalid.region.x = f64::NAN;
     assert!(invalid.validate().is_err());
+}
+
+#[test]
+fn fractional_zoom_keeps_source_resolution_until_next_full_lod() {
+    let doc = Document::new(128, 128).unwrap();
+    let token = CancellationToken::default();
+    for (pixels, lod) in [(128, 0), (96, 0), (64, 1), (48, 1), (32, 2)] {
+        let frame = CpuRenderer
+            .render(
+                &doc.snapshot(),
+                request(0., 0., 128., 128., pixels, pixels),
+                &token,
+            )
+            .unwrap();
+        assert_eq!(frame.lod, lod);
+    }
+}
+
+#[test]
+fn native_4k_viewport_is_valid_but_output_remains_bounded() {
+    assert!(request(0., 0., 3840., 2160., 3840, 2160).validate().is_ok());
+    assert!(request(0., 0., 8192., 8192., 8192, 8192)
+        .validate()
+        .is_err());
+}
+
+#[test]
+fn full_resolution_4096_2160_streams_beyond_cache_budget() {
+    let mut doc = Document::new(4096, 2160).unwrap();
+    doc.initialize_white_background().unwrap();
+    let frame = CpuRenderer
+        .render(
+            &doc.snapshot(),
+            request(0., 0., 4096., 2160., 4096, 2160),
+            &CancellationToken::default(),
+        )
+        .unwrap();
+    assert_eq!((frame.width, frame.height, frame.lod), (4096, 2160, 0));
+    match frame.pixels {
+        FramePixels::Linear(p) => assert!(p.iter().all(|v| *v == [1.; 4])),
+        _ => panic!("linear expected"),
+    }
 }

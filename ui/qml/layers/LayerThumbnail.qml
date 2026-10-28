@@ -22,6 +22,7 @@ Rectangle {
     // must never show transparency in its border or aspect-ratio letterbox.
     Item {
         id: imageArea
+        clip: true
         objectName: "thumbnailTransparency:" + (root.node ? root.node.id : 0)
         anchors.centerIn: parent
         width: preview.paintedWidth; height: preview.paintedHeight

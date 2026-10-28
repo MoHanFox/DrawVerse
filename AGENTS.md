@@ -1,5 +1,17 @@
 # DrawVerse
 
+- 最新GPU设置框恢复2026-10-29：硬件列表异步到达后显式按已选ID同步ComboBox，去掉未找到强制CPU首项；实际auto/GPU未关闭，用户偏好未改。最高画质独立缺省关闭、显式已存值优先。按用户要求未跑测试，drawverse_runtime构建通过、标准Release更新；运行中的CanvasFixReview保留。设计/验收见general-gpu-composition末节。
+
+- 最新最高画质重启恢复：general-gpu-composition设计/验收2026-10-28末节；INI跨进程恢复的QString false在QML误判真值，renderSettings边界统一toBool，缺省仍开启。独立写/读进程的关闭/开启/缺省三行及跨文档同步通过，修复前两行失败保留；标准Release和CanvasFixReview已更新，标准D3D11冒烟通过。ABI/文档格式不变，无全量或新性能结论。
+
+- 最新长图预览/隐藏编辑/最高画质保存与绘画增量：general-gpu-composition设计/验收2026-10-28末节；长图棋盘显式裁剪，隐藏层/祖先内容编辑静默忽略，最高画质保存即生效并跨文档跟随。原生显示颜色转换按脏区保留，4K小笔触4096/8847360像素且CPU同尺寸通道差≤1、轴复用；定向软件/UI/D3D11及密集曲线通过，旧DPR/参考需求/矩阵夹具失败保留，无新全量或实体性能结论。用户运行Release锁定EXE，标准链接LNK1104保留；最新可运行包build/bin/CanvasFixReview及实际D3D11冒烟通过，未关闭用户进程或更新标准EXE；ABI/文档格式保持。
+
+- 2026-10-28最高质量/预算纠偏：general-gpu-composition设计/验收末节。CPU删除整次瓦片量96MiB拒绝，仍有界缓存/逐瓦片输出；内存/瓦片默认物理RAM一半且可输入，驻留1TiB按需上限。默认最高质量需GPU，整图原尺寸/lod0包括视口外；自动显存读Qt实际DXGI Budget留10%，删除4M/大图单节点及固定256/512MiB/2GiB显存门槛，不重复乘算共享目标在途帧。原协议/节点/源瓦片/16M输出/设备与选区后备保持，不能声称任意文档只因显存不足后备。核心7/存储1、GPU导航预算5/密集曲线及后备4/软件7/设置2/四ABI/Release/实际D3D11冒烟通过，标准Release已更新；旧失败保留，未跑总check/新性能/实体。
+
+
+- 2026-10-28预算/显示续接：general-gpu-composition设计/验收末节；Adjustment紧凑28px/9px标题、NonModal保留导航，Ctrl+M/L/U及快捷键分类。启动内存/瓦片/GPU三项预算约束传输/多通道与在途帧，超GPU预算CPU；CPU预算内最高16M/8192边保留4K原尺寸。预取不挤占可见像素、普通GPU导航重投影全源计划，普通floor LOD/超大稀疏原策略。定向最小验证与原失败详见验收；标准EXE被已有进程占用，独立产物build/bin/CompactReview，未跑总check或性能/实体结论。
+
+
 - 最新图像调整修订：`docs/tools/image-adjustments-design.md` / `docs/validations/tools/image-adjustments-validation.md`；可拖动ApplicationModal透明标题、无磁吸，独立曲线/直方图、色阶三角手柄、HSL彩轨及着色；关闭按钮默认透明/hover实红。D3D11无选区按原通用合成能力在目标源采样后调整，BEGIN中性预备，持续uniform/LUT且零源上传/回读，确认单历史并保留至主画布采用；选区/CPU/能力及故障走核心后备。核心4/算子10/GPU2、软件6/实际D3D11共21功能行、四ABI/相关Clippy/fmt/头/Release通过；原合成D3D11定向95项及56根/28组独立捕获校验通过，实际应用冒烟通过，标准build/bin/Release更新。ABI1.88新增有界原图直方图及着色语义，文档/state45保持；原失败保留，无大图代理/端到端性能/实体或总check结论。
 
 - 最新GPU统一开关：gpu-acceleration-design及general-gpu-composition验收2026-10-28末节；计算硬件CPU统一关闭文档合成/常驻编辑预览/液化数值计算，自动或指定GPU按能力启用，Qt窗口显卡仍独立。切换清预热/恢复CPU需求，多文档空闲跟随，活动编辑不提前采用。软件7/D3D11含原后备10功能、设置各2/原交互各10、四ABI/Release/实际D3D11冒烟通过，标准build/bin/Release更新。初始夹具及并发构建失败保留；无总check/新性能/实体结论，ABI/state/文档不变。

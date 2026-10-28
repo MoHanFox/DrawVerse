@@ -59,3 +59,8 @@ Qt记录和截图在忽略目录 `artifacts/adjustment-*`；最终像素与具�
 4. 新代码的Clippy格式/测试模块位置断言曾失败，修正后严格定向检查通过。
 
 没有运行总check、所有Qt功能矩阵、性能基准或实体笔/跨物理屏幕测试；旧失败保持。不宣称Photoshop/PhotoCraft完整功能或逐像素等价。取消等待当前计算批次完成，无用户批次内中断；无调整层、直方图、自动色阶、分色范围或智能对象支持。
+
+
+## 2026-10-28 紧凑窗口及导航续接
+
+窗口改为NonModal，标题与浮窗一致28px/9px并保留全应用UiScale；紧凑控件与Ctrl+M/L/U入口已接通。原ApplicationModal记录为历史行为。预算/采样与最终最小验证见 `docs/platform/general-gpu-composition-design.md`、`docs/validations/platform/general-gpu-composition-validation.md` 末节。

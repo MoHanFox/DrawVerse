@@ -15,7 +15,7 @@ ColumnLayout {
     signal edited(real number)
     spacing:6
     RowLayout {Layout.fillWidth:true
-        Label {text:root.caption;color:Theme.text;font.pixelSize:13}
+        Label {text:root.caption;color:Theme.text;font.pixelSize:10}
         Item {Layout.fillWidth:true}
         AdjustmentValue {objectName:root.name+"Value";from:root.from;to:root.to;value:root.value;unit:root.unit;onEdited:number=>root.edited(number)}
     }

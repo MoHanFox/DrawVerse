@@ -798,3 +798,50 @@ build-delivery-final更新标准build/bin/Release/drawverse.exe及paint_ffi.dll�
 主工作区同期存在未完成 adjustment 核心/UI 修改，正常构建在paint-ops编译失败（build/flicker-repro-build.log）；未修改该功能，也不称完整工作区构建或总check通过。隔离构建显式复用预编译核心，仅验证本次UI显示层。最终证据 build/flicker-fixed-final.txt。未新增实体笔/物理屏幕验收。
 
 最终隔离D3D11共7功能行通过（Qt总数9含初始化/收尾），Release应用已在build/flicker-isolated/bin/Release部署Qt运行依赖。旧逻辑对照还原后曾因Copy-Item保留较旧mtime而误运行旧二进制，失败记录保留build/flicker-stale-binary.txt；显式更新时间并确认CompositionPacket重新编译/重链接后，build/flicker-fixed-final.txt全7行通过。标准Release未覆盖，避免丢失同期未完成改动。
+
+
+## 2026-10-28：动态预算/紧凑窗口最小验证
+
+最终日志 `artifacts/compact-native-*`：核心paint-render CPU 6项通过（含非整数缩放LOD、4K尺寸合法性及原稀疏路径）；Qt软件调整6行+预算持久化/重启及真实3840×2160输出1项通过；D3D11调整/后备9行通过；D3D11预算后备/视口外像素平移进入/绘画导航/缩放显示共4项通过；快捷键列表1项通过。init/cleanup不计功能行。未跑总check、性能矩阵、实体笔或其他后端。
+
+保留最初非模态测试仍要求modalWindow的6行失败，修改为符合新交互要求的断言后通过；保留首次全区间floor LOD导致超大稀疏测试期望20/实际19的失败，恢复高LOD策略后6项通过。
+
+标准主程序链接遭LNK1104：三个已有DrawVerse进程占用EXE，未关闭用户会话。使用相同构建对象单独链接 `build/bin/CompactReview/drawverse.exe`；最终完整应用D3D11 `--preview` 冒烟成功生成 `artifacts/compact-review-smoke.png`，退出0；调整三窗口截图在 `artifacts/compact-layout`，人工检查色阶/HSL布局无重叠。标准Release的主EXE尚未替换；测试目标为最终源码构建。
+
+
+## 2026-10-28：最高质量与工作预算修订最小验收
+
+- `native-quality-streaming-final.log`：paint-render CPU 7项通过，其中4096×2160隐式白底以lod0完整输出，原整批瓦片量超过96MiB，实际像素全白；超缓存流式执行。
+- `native-quality-storage-test.log`：storage公开测试1项通过，新增32GiB缓存配置创建/文档/释放，非法2TiB仍拒绝。
+- `artifacts/native-quality-gpu-verified.txt`：D3D11五功能通过，4096×2160真实QWheelEvent八次输入保持整图尺寸/lod0、上传不增加、曲线仍GPU；64MiB显式预算CPU后备、视口外像素进入、绘画与缩放原回归。
+- `native-quality-curves-verified.txt`：密集4096×2160真实曲线12次拖动，无源增量上传/资源重建，确认单历史，提交与预览画面对照，以及原三类后备，共4功能通过。
+- `native-quality-settings-final.txt`：软件原调整6行+内存默认/持久化/重启/原尺寸输出1项通过；`native-quality-preferences-verified.txt`：可输入缓存及保存重开2项通过。init/cleanup不计功能。
+- 四ABI重新构建及CTest通过；标准Release主EXE/DLL已更新，真实应用D3D11 --preview成功生成 `artifacts/native-quality-release-smoke.png`。未关闭仍运行的旧CompactReview会话。
+
+保留首轮5项因旧DocumentOptions的1GiB上限导致ready失败；配置边界现已同步放宽。保留新曲线夹具缺modes导致拒绝、旧拖动测试释放时移动回原点导致端点恢复1、设置页旧文案断言失败；分别补齐请求、在最终拖动位置释放、按现行文案验证后通过。未跑总check/性能矩阵/实体或真实显存耗尽故障，不把本轮诊断时刻当端到端性能结论。最高质量仍受设计列出的协议/设备支持范围限制。
+
+
+## 2026-10-28：长图缩略图、隐藏编辑和原生绘画增量修复
+
+- 软件：隐藏图层/隐藏父组两行、renderBudgetSettings 通过（`artifacts/canvas-fixes-hidden-settings.txt`）；按实际文档管理的共享刷库连接、依次初始化两个客户端后，最高画质关闭/开启均跟随，`canvas-fixes-document-settings-verified.txt` 通过。独立刷库同时启动两个同配置客户端的初始夹具 ready 超时保留在 `canvas-fixes-settings-verified.txt`，不冒充通过。
+- 软件 UI 两行通过 `canvas-fixes-ui.txt`。1600×63 不透明长图的棋盘容器尺寸按 paintedWidth/Height，clip=true、高度<3；原剪贴/蒙版及浮窗交互断言保持。最高画质关闭→保存→重开为关闭，CPU状态下勾选→保存自动切GPU，重开与新客户端均开启；无QML警告。最终 D3D11 同两行在显式 CPU 参考需求下通过 `canvas-fixes-ui-verified-d3d11.txt`；首次未启用参考需求等待被主动暂停的CPU帧而失败，保留 `canvas-fixes-ui-d3d11.txt`。
+- 实际 D3D11：`canvas-fixes-gpu-verified.txt` 五功能行通过，包括4096×2160原生24段绘画+第二处远端笔迹、滚轮和曲线、25笔原视口绘画，以及Normal/固定蒙版Multiply两行（后者含背景/蒙版增量）。原生输出像素与同尺寸CPU整图最大通道差≤1，未修改区域逐像素保持白色；最后一笔显示颜色转换仅4096/8847360像素、轴分配保持2、源仅增量上传一个瓦片，非端到端加速倍数或实体输入结论。原生关闭模式的25笔GPU/CPU窗口差≤1，正常呈现零测试回读。
+- 实际 D3D11 隐藏两行及密集4096×2160曲线拖动通过 `canvas-fixes-hidden-curves-d3d11.txt`，12次LUT交互零新增源上传/采样轴/绑定/管线，单历史且预览/确认像素保持。早期将原生纹理与DPR1.5 CPU放大纹理直接比较的连续绘画差异保留在 `canvas-fixes-continuous-diagnostic.txt`；旧视口测试显式关闭最高画质，新增原生测试按同尺寸独立比较，不放宽精度断言。
+- 一次计划外完整root矩阵52行均因旧LOD夹具/缺少必须的捕获目录失败，保留 `canvas-fixes-gpu-final.txt`；修正视口夹具并提供目录后仅定向复验上述两行，没有宣称完整矩阵通过。既有未测/失败边界保持。
+- `canvas-fixes-verified-build` 构建Qt应用库及三个测试目标成功，生成头检查与内嵌shader检查通过；`git diff --check` 通过。标准Release EXE被用户运行中的进程占用，`canvas-fixes-final-build.log` 中 LNK1104 保留，没有结束用户进程。同一最新对象/库重新链接至 `build/bin/CanvasFixReview/drawverse.exe`，独立部署Qt/DLL，日志 `artifacts/canvas-fixes-review-build.txt`，实际D3D11隔离偏好冒烟截图 `canvas-fixes-review-smoke.png` 通过；标准Release EXE未更新。ABI/文档格式未改，本轮没有全量check、真实显存耗尽或实体笔延迟量测。
+
+
+## 2026-10-28：最高画质重启误勾选回归
+
+根因：renderSettings 的 highestQuality 原样返回QSettings QVariant，INI跨进程读取显式布尔键时成为QString，QML把非空字符串false赋给checked后判为true。同进程重建客户端仍共享QSettings的布尔类型缓存，上一轮未覆盖真正进程重启。本轮仅在C++/QML设置边界增加toBool，保留首次缺省开启及已保存的开/关意图。
+
+新增三个独立进程写入→退出→新进程读取的回归行：关闭、开启、从未设置。读取进程同时校验实际模式、QML首选项复选框、QVariant布尔类型，以及打开后再次保存没有反转。修复前显式两行失败、缺省通过，保留 `artifacts/quality-restart-before-fix.txt`；修复后三行及原跨文档同步一行全通过，见 `artifacts/quality-restart-after-fix.txt`，日志分别为QVariant(bool,false/true/true)。只运行相关软件测试，没有全量check或新增性能结论。
+
+`quality-restart-fix-build.log` 的Release应用/测试构建和内嵌shader/生成头检查通过。这次标准Release未被占用，`build/bin/Release/drawverse.exe` 已更新，同时重链接/部署上次 `build/bin/CanvasFixReview/drawverse.exe`。标准Release实际D3D11隔离偏好冒烟通过，截图 `artifacts/quality-restart-release-smoke.png`；未修改用户真实偏好文件。ABI/文档格式不变，原失败保留。
+
+
+## 2026-10-29：GPU下拉框错误显示CPU
+
+用户截图显示下拉CPU但实际NVIDIA Vulkan；只读检查实际偏好computeDevice=auto、highestQuality=false，未修改该文件。QML原indexOfValue只依赖selectedComputeDevice，异步硬件模型完成后没有重新定位，Math.max(0,...)把未找到项显示为首行CPU。改为显式按ID同步并监听model/count，打开时即使草稿ID未变也同步；原草稿保存和最高画质独立默认关闭保持。
+
+按用户此前快速修改/不测试的要求，本轮未运行测试或应用冒烟。`compute-selector-restore-build.log` 的drawverse_runtime构建、QML字节码、生成头及内嵌shader检查成功，标准build/bin/Release已更新。用户仍运行CanvasFixReview进程，未关闭、覆盖该进程或更改真实偏好。没有功能测试通过或全量check结论。

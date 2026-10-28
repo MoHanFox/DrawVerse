@@ -1,4 +1,5 @@
 #include "platform/UiResources.h"
+#include "platform/MemoryBudget.h"
 #include "engine/PaintCoreClient.h"
 #include "canvas/CanvasItem.h"
 #include <QScopeGuard>
@@ -13,11 +14,93 @@
 #include <QQuickStyle>
 #include <QTemporaryDir>
 #include <QDir>
+#include <QSettings>
+#include <QProcess>
+#include <QProcessEnvironment>
 
 class AdjustmentTests : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase(){initializeDrawVerseUiResources();QQuickStyle::setStyle("Basic");}
+    void hiddenLayerEditsAreSilent_data(){QTest::addColumn<bool>("ancestor");QTest::newRow("hidden-layer")<<false;QTest::newRow("hidden-parent")<<true;}
+    void hiddenLayerEditsAreSilent(){
+        QFETCH(bool,ancestor);
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newDocument(64,64);QTRY_VERIFY(client.documentWidth()==64 && !client.layerEditBusy());
+        const auto target=client.activeLayer();quint64 hidden=target;
+        if(ancestor){QVERIFY(client.groupLayer(target,"hidden"));QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());hidden=client.activeLayer();client.selectLayer(target);QTRY_COMPARE(client.activeLayer(),target);QTRY_VERIFY(!client.layerEditBusy());}
+        auto revision=client.revision();client.setLayerProperties(hidden,false,1);QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());
+        revision=client.revision();const auto undo=client.undoDepth();QSignalSpy errors(&client,&PaintCoreClient::errorChanged);
+        InputSample sample;sample.position={32,32};
+        QVERIFY(!client.beginStroke(sample));client.activateEraser();QVERIFY(!client.beginStroke(sample));client.activateSmudge();QVERIFY(!client.beginStroke(sample));client.activateBrush();
+        client.activateBucket();QVERIFY(!client.bucketFill({32,32}));client.activateBrush();QVERIFY(!client.beginLayerMove({32,32},false));QVERIFY(!client.beginLayerMove({32,32},true));QVERIFY(!client.beginTransform());QVERIFY(!client.beginLiquify());QVERIFY(!client.rasterizeImage());
+        for(int kind=0;kind<3;++kind)QVERIFY(!client.beginAdjustment(kind));
+        QVERIFY(client.selectAll());QTRY_VERIFY(client.selectionEnabled() && !client.layerEditBusy());revision=client.revision();const auto selectedUndo=client.undoDepth();
+        client.deleteSelectionOrLayers();QVERIFY(!client.cutSelectedLayers());QTest::qWait(80);
+        QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),selectedUndo);QVERIFY(!client.drawing() && !client.transformActive() && !client.liquifyActive() && !client.adjustmentActive());QCOMPARE(errors.size(),0);QVERIFY(client.lastError().isEmpty());
+        client.clearSelection();QTRY_VERIFY(!client.selectionEnabled() && !client.layerEditBusy());
+        client.setLayerProperties(hidden,true,1);QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(client.revision()>revision);
+        QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_VERIFY(client.undoDepth()>undo);QTRY_VERIFY(!client.layerEditBusy());
+    }
+    void savedQualityReachesOtherDocuments(){
+        QTemporaryDir temp;const auto path=temp.filePath("prefs.ini");PaintCoreClient first(nullptr,path);QTRY_VERIFY(first.ready());
+        PaintCoreClient second(nullptr,path,first.brushCatalogConnection());QTRY_VERIFY(second.ready());
+        QVERIFY(first.highestCanvasQuality() && second.highestCanvasQuality());
+        const auto values=first.renderSettings();QVERIFY(first.saveRenderSettings(values["memoryMiB"].toInt(),values["gpuMiB"].toInt(),false));QVERIFY(!first.highestCanvasQuality());QTRY_VERIFY(!second.highestCanvasQuality());
+        QVERIFY(first.saveRenderSettings(values["memoryMiB"].toInt(),values["gpuMiB"].toInt(),true));QVERIFY(first.highestCanvasQuality());QTRY_VERIFY(second.highestCanvasQuality());
+    }
+    void renderQualitySurvivesProcessRestart_data(){
+        QTest::addColumn<QString>("saved");QTest::newRow("disabled")<<QString("false");QTest::newRow("enabled")<<QString("true");QTest::newRow("unset-default")<<QString("unset");
+    }
+    void renderQualitySurvivesProcessRestart(){
+        QFETCH(QString,saved);QTemporaryDir temp;const auto path=temp.filePath("prefs.ini");
+        for(const auto &mode:{QString("write"),QString("read")}){
+            QProcess process;auto environment=QProcessEnvironment::systemEnvironment();environment.insert("DRAWVERSE_QUALITY_RESTART_PATH",path);environment.insert("DRAWVERSE_QUALITY_RESTART_MODE",mode);environment.insert("DRAWVERSE_QUALITY_RESTART_VALUE",saved);process.setProcessEnvironment(environment);
+            const auto logPath=temp.filePath(mode+".txt");process.setProcessChannelMode(QProcess::MergedChannels);process.start(QCoreApplication::applicationFilePath(),{"renderQualityRestartProbe","-o",logPath+",txt"});QVERIFY(process.waitForStarted());QVERIFY(process.waitForFinished(20000));
+            QFile log(logPath);QVERIFY(log.open(QIODevice::ReadOnly));const auto output=log.readAll()+process.readAll();QVERIFY2(process.exitStatus()==QProcess::NormalExit && process.exitCode()==0,output.constData());
+            if(mode=="read")for(const auto &line:output.split('\n'))if(line.contains("Restarted preference"))qInfo().noquote()<<line.trimmed();
+        }
+    }
+    void renderQualityRestartProbe(){
+        const auto path=qEnvironmentVariable("DRAWVERSE_QUALITY_RESTART_PATH");if(path.isEmpty())QSKIP("Invoked only by cross-process restart regression");
+        const auto saved=qEnvironmentVariable("DRAWVERSE_QUALITY_RESTART_VALUE");const bool expected=saved!="false";
+        PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready() && !client.storageBusy() && !client.computeBusy());
+        if(qEnvironmentVariable("DRAWVERSE_QUALITY_RESTART_MODE")=="write"){
+            if(saved!="unset"){const auto values=client.renderSettings();QVERIFY(client.saveRenderSettings(values["memoryMiB"].toInt(),values["gpuMiB"].toInt(),expected));}
+            return;
+        }
+        const auto restored=client.renderSettings()["highestQuality"];qInfo()<<"Restarted preference"<<restored<<restored.typeName();QCOMPARE(client.highestCanvasQuality(),expected);
+        QQuickWindow owner;owner.resize(800,600);owner.show();QQmlEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);
+        QQmlComponent component(&engine,QUrl("qrc:/qml/preferences/PreferencesPanel.qml"));QScopedPointer<QObject> dialog(component.createWithInitialProperties({{"parent",QVariant::fromValue(owner.contentItem())}}));QVERIFY2(dialog,qPrintable(component.errorString()));
+        QVERIFY(QMetaObject::invokeMethod(dialog.data(),"open"));QTRY_VERIFY(dialog->property("opened").toBool());auto *quality=dialog->findChild<QObject*>("highestCanvasQuality");QVERIFY(quality);QCOMPARE(quality->property("checked").toBool(),expected);QCOMPARE(restored.metaType(),QMetaType::fromType<bool>());
+        QTRY_VERIFY(!client.storageBusy() && !client.computeBusy());auto *save=dialog->findChild<QObject*>("saveStorageSettings");QVERIFY(save);QSignalSpy finished(&client,&PaintCoreClient::storageFinished);QVERIFY(QMetaObject::invokeMethod(save,"clicked"));QTRY_COMPARE(finished.size(),1);QVERIFY(finished.first().first().toBool());
+        QSettings settings(path,QSettings::IniFormat);QCOMPARE(settings.value("performance/highestQuality").toBool(),expected);QCOMPARE(client.highestCanvasQuality(),expected);QVERIFY(QMetaObject::invokeMethod(dialog.data(),"close"));
+    }
+    void renderBudgetSettings(){
+        QTemporaryDir temp;
+        const auto oldMemory=CompositionBudget::memoryBytes.load(),oldCache=CompositionBudget::cacheBytes.load(),oldGpu=CompositionBudget::gpuBytes.load();
+        auto restore=qScopeGuard([&]{CompositionBudget::memoryBytes=oldMemory;CompositionBudget::cacheBytes=oldCache;CompositionBudget::gpuBytes=oldGpu;});
+        {
+            PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready());
+            QCOMPARE(client.renderSettings()["memoryMiB"].toInt(),defaultMemoryMiB());
+            QCOMPARE(client.storageSettings()["memoryMiB"].toInt(),defaultMemoryMiB());
+            QVERIFY(client.highestCanvasQuality());
+            QVERIFY(!client.saveRenderSettings(0,128));QVERIFY(!client.saveRenderSettings(512,-1));
+            client.newDocument(64,64);QTRY_COMPARE(client.documentWidth(),64);
+            client.requestViewport(0,QRectF(0,0,64,64),QSize(3840,2160));
+            QTRY_COMPARE_WITH_TIMEOUT(client.frame().size(),QSize(3840,2160),15000);
+            QVERIFY(client.saveRenderSettings(512,128,false));
+            QVERIFY(!client.highestCanvasQuality());
+            QCOMPARE(client.renderSettings()["memoryMiB"].toInt(),512);
+        }
+        PaintCoreClient reopened(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(reopened.ready());
+        QVERIFY(!reopened.highestCanvasQuality());
+        QCOMPARE(CompositionBudget::memoryBytes.load(),512ull*1024*1024);
+        QCOMPARE(CompositionBudget::gpuBytes.load(),128ull*1024*1024);
+        QCOMPARE(CompositionBudget::viewPixels(),16777216ull);
+        reopened.newDocument(64,64);QTRY_COMPARE(reopened.documentWidth(),64);
+        reopened.requestViewport(0,QRectF(0,0,64,64),QSize(64,64));QTRY_VERIFY(!reopened.frame().isNull());
+    }
     void denseCurveDrag_data(){QTest::addColumn<QSize>("extent");QTest::newRow("2048x2048")<<QSize(2048,2048);QTest::newRow("4096x2160")<<QSize(4096,2160);}
     void denseCurveDrag(){
         QFETCH(QSize,extent);
@@ -40,7 +123,7 @@ private slots:
         QTRY_COMPARE(canvas->compositionStatistics()["lastSubmitGeometry"].toULongLong(),client.compositionPacket()->geometrySequence);
         const auto resources=canvas->compositionStatistics();
         auto *drag=object->findChild<QQuickItem*>("adjustmentCurveDrag");QVERIFY(drag);
-        QTRY_VERIFY(drag->width()>300 && drag->height()>300);
+        QTRY_VERIFY(drag->width()>250 && drag->height()>220);
         auto a=drag->mapToScene({drag->width()-1,1}).toPoint();QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,a);QVERIFY(drag->property("pressed").toBool());qInfo()<<"pressed"<<drag->size()<<a<<drag->property("moving")<<drag->parentItem()->parentItem()->property("selected")<<object->property("curves");
         for(int iteration=0;iteration<12;iteration++){
             const auto previousSequence=client.compositionPacket()->geometrySequence;
@@ -55,7 +138,7 @@ private slots:
             qInfo()<<"dense curve move"<<iteration<<"UI ms"<<double(cpuNs)/1e6<<"submit ms"<<double(timer.nsecsElapsed())/1e6;
             QCOMPARE(client.revision(),revision);QCOMPARE(client.undoDepth(),undo);QVERIFY(!client.adjustmentBusy());
         }
-        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,a);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,drag->mapToScene({drag->width()-1,162}).toPoint());
         const auto after=canvas->compositionStatistics();
         for(const auto *key:{"uploads","pageTableCreates","axisCreates","parameterBufferCreates","bindingCreates","pipelineCreates"})QCOMPARE(after[key],resources[key]);
         QVERIFY(after["textureBytes"].toULongLong()<=(extent.width()>2048?512ull:256ull)*1024*1024);
@@ -134,7 +217,7 @@ private slots:
         client.requestViewport(0,QRectF(0,0,96,80),QSize(96,80));QTRY_VERIFY(!client.frame().isNull() && client.frameRevision()==client.revision());const auto original=client.frame();
         const auto undo=client.undoDepth();
         QVERIFY(QMetaObject::invokeMethod(object.data(),"openFor",Q_ARG(QVariant,kind)));
-        QTRY_VERIFY(window->isVisible());QCOMPARE(window->modality(),Qt::ApplicationModal);
+        QTRY_VERIFY(window->isVisible());QCOMPARE(window->modality(),Qt::NonModal);
         QVERIFY(window->flags()&Qt::FramelessWindowHint);
         QVERIFY(QTest::qWaitForWindowExposed(window));
         if(qEnvironmentVariable("QT_QUICK_BACKEND")=="rhi")QCOMPARE(window->rendererInterface()->graphicsApi(),QSGRendererInterface::Direct3D11);
@@ -181,7 +264,7 @@ private slots:
         client.undo();QTRY_COMPARE(client.undoDepth(),undo);QTRY_VERIFY(client.frameRevision()==client.revision());QCOMPARE(client.frame(),original);
         client.redo();QTRY_COMPARE(client.undoDepth(),undo+1);QTRY_VERIFY(client.frameRevision()==client.revision());QCOMPARE(client.frame(),adjusted);
         QVERIFY(QMetaObject::invokeMethod(object.data(),"openFor",Q_ARG(QVariant,kind)));QTRY_VERIFY(window->isVisible());
-        window->requestActivate();QTRY_VERIFY(window->isActive());QCOMPARE(QGuiApplication::modalWindow(),window);
+        window->requestActivate();QTRY_VERIFY(window->isActive());QVERIFY(QGuiApplication::modalWindow()!=window);
         QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!window->isVisible());QCOMPARE(client.undoDepth(),undo+1);
     }
     void residentCanvas_data(){
@@ -193,7 +276,7 @@ private slots:
         QFETCH(int,kind);QFETCH(int,topology);
         qputenv("DRAWVERSE_GPU_COMPOSITION","1");qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");
         const auto env=qScopeGuard([]{qunsetenv("DRAWVERSE_CPU_DISPLAY_REFERENCE");});
-        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QTemporaryDir temp;{QSettings settings(temp.filePath("prefs.ini"),QSettings::IniFormat);settings.setValue("performance/highestQuality",false);settings.sync();}PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         client.newDocument(96,80);QTRY_VERIFY(client.documentWidth()==96 && !client.layerEditBusy());
         client.addLayer("color");QTRY_VERIFY(client.layers().size()==2 && !client.layerEditBusy());const auto target=client.activeLayer();
         client.setBrushColor(QColor("#de3081"));client.setBrushOpacity(.7);client.setBrushRadius(31);
@@ -244,7 +327,7 @@ private slots:
         if(qEnvironmentVariable("QT_QUICK_BACKEND")!="rhi")QSKIP("Actual D3D11 acceptance only");
         QFETCH(int,mode);qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");
         const auto env=qScopeGuard([]{qunsetenv("DRAWVERSE_CPU_DISPLAY_REFERENCE");qunsetenv("DRAWVERSE_COMPOSITION_FAIL");});
-        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QTemporaryDir temp;{QSettings settings(temp.filePath("prefs.ini"),QSettings::IniFormat);settings.setValue("performance/highestQuality",false);settings.sync();}PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         client.newDocument(96,80);QTRY_VERIFY(client.documentWidth()==96 && !client.layerEditBusy());
         if(mode==1){QVERIFY(client.editSelection({5,5,60,60},0,0));QTRY_VERIFY(client.selectionEnabled() && !client.layerEditBusy());}
         QQuickWindow owner;owner.resize(600,600);auto *canvas=new CanvasItem(owner.contentItem());canvas->setSize({600,600});canvas->setAcceptedMouseButtons(Qt::NoButton);canvas->setClient(&client);

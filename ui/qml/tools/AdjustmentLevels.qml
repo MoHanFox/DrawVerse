@@ -7,7 +7,7 @@ ColumnLayout {
     required property var settings
     property var bins: []
     spacing:5
-    AdjustmentHistogram {Layout.fillWidth:true;Layout.preferredHeight:140;bins:root.bins}
+    AdjustmentHistogram {Layout.fillWidth:true;Layout.preferredHeight:100;bins:root.bins}
     Item {
         Layout.fillWidth:true;Layout.preferredHeight:20
         readonly property real middle:root.settings.black+(root.settings.white-root.settings.black)*Math.pow(.5,root.settings.gamma)
@@ -31,7 +31,7 @@ ColumnLayout {
         Item {Layout.fillWidth:true}
         AdjustmentValue {objectName:"levelsWhiteValue";value:root.settings.white;from:root.settings.black+1;onEdited:number=>root.settings.white=number}
     }
-    Label {Layout.topMargin:10;text:"输出色阶：";color:Theme.text;font.pixelSize:13}
+    Label {Layout.topMargin:10;text:"输出色阶：";color:Theme.text;font.pixelSize:10}
     Rectangle {Layout.fillWidth:true;Layout.preferredHeight:12;gradient:Gradient {orientation:Gradient.Horizontal;GradientStop {position:0;color:"black"} GradientStop {position:1;color:"white"}}}
     Item {
         Layout.fillWidth:true;Layout.preferredHeight:20

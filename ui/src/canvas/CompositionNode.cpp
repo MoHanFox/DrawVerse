@@ -46,12 +46,11 @@ bool CompositionNode::supportsWindow(QQuickWindow *window){
 #define NOMINMAX
 #endif
 #include <d3d11.h>
+#include <dxgi1_4.h>
 #endif
 static void initializeCompositionResources(){Q_INIT_RESOURCE(composition_shaders);Q_INIT_RESOURCE(composition_precise_shaders);}
 
 namespace {
-constexpr quint64 textureLimit=256ull*1024*1024;
-constexpr quint64 processTextureLimit=2ull*1024*1024*1024;
 std::atomic<quint64> reservedTextureBytes{0};
 // Reserve payload for the current allocation plus every possible deferred frame.
 // This is deliberately conservative; driver overhead is not a payload byte count.
@@ -61,7 +60,7 @@ public:
     bool grow(quint64 value){
         if(value<=bytes)return true;
         const auto extra=value-bytes;auto current=reservedTextureBytes.load();
-        do{if(extra>processTextureLimit-current)return false;}
+        do{if(current>CompositionBudget::gpuBytes.load() || extra>CompositionBudget::gpuBytes.load()-current)return false;}
         while(!reservedTextureBytes.compare_exchange_weak(current,current+extra));
         bytes=value;return true;
     }
@@ -137,6 +136,23 @@ public:
         bool doubles=false;
 #ifdef Q_OS_WIN
         auto *device=static_cast<ID3D11Device*>(ri->getResource(window,QSGRendererInterface::DeviceResource));
+        if(device && CompositionBudget::automaticGpu.load()){
+            IDXGIDevice *dxgi=nullptr;IDXGIAdapter *adapter=nullptr;IDXGIAdapter3 *budgetAdapter=nullptr;
+            if(SUCCEEDED(device->QueryInterface(__uuidof(IDXGIDevice),reinterpret_cast<void**>(&dxgi)))){
+                if(SUCCEEDED(dxgi->GetAdapter(&adapter))){
+                    DXGI_ADAPTER_DESC desc{};adapter->GetDesc(&desc);
+                    quint64 limit=desc.DedicatedVideoMemory?desc.DedicatedVideoMemory:desc.SharedSystemMemory;
+                    if(SUCCEEDED(adapter->QueryInterface(__uuidof(IDXGIAdapter3),reinterpret_cast<void**>(&budgetAdapter)))){
+                        DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+                        if(SUCCEEDED(budgetAdapter->QueryVideoMemoryInfo(0,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&info)) && info.Budget)limit=info.Budget;
+                        budgetAdapter->Release();
+                    }
+                    if(limit)CompositionBudget::gpuBytes=limit-limit/10;
+                    adapter->Release();
+                }
+                dxgi->Release();
+            }
+        }
         D3D11_FEATURE_DATA_DOUBLES basic{};D3D11_FEATURE_DATA_D3D11_OPTIONS options{};
         doubles=device && SUCCEEDED(device->CheckFeatureSupport(D3D11_FEATURE_DOUBLES,&basic,sizeof(basic))) && basic.DoublePrecisionFloatShaderOps &&
             SUCCEEDED(device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS,&options,sizeof(options))) && options.ExtendedDoublesShaderInstructions;
@@ -186,7 +202,8 @@ public:
         if(packet && p->info.key.document_generation==packet->info.key.document_generation &&
            p->info.key.request_id<packet->info.key.request_id)return true;
         if(packet==p)return true;
-        updateDirty(p);packet=std::move(p);dirty=true;
+        const QRect pending=dirty?changed:QRect();
+        updateDirty(p);changed=changed.united(pending);packet=std::move(p);dirty=true;
         counters->epoch=packet->info.key.device_epoch;counters->request=packet->info.key.request_id;
         return prepareTargets();
     }
@@ -209,9 +226,8 @@ private:
         if(atlasSlots>4096)return fail("CPU: composition atlas slot budget");
         const quint64 charge=quint64(atlasSlots)*65536+quint64(p->info.document_width)*p->info.document_height*16*surfaces+
             quint64(p->pixels.width())*p->pixels.height()*4+4ull*1024*1024+80ull*1024;
-        const auto limit=quint64(p->info.document_width)*p->info.document_height>4194304?2*textureLimit:textureLimit;
-        if(charge>limit)return fail("CPU: composition GPU payload budget");
-        if(!reservation->grow(charge*quint64(inFlightFrames+2)))return fail("CPU: composition process/in-flight GPU payload budget");
+        if(charge>CompositionBudget::gpuBytes.load())return fail("CPU: composition GPU payload budget");
+        if(!reservation->grow(charge))return fail("CPU: composition process/in-flight GPU payload budget");
         counters->textureBytes=charge;return true;
     }
     bool prepareTargets(){
@@ -458,11 +474,13 @@ private:
         }
         if(maps.empty())return fail("CPU: composition empty plan");
         if(!prepareMesh(batch))return false;
-        QByteArray xs,ys;axisX=axis(outputSize.width(),packet->region.x(),packet->region.width(),documentSize.width(),xs);
-        axisY=axis(outputSize.height(),packet->region.y(),packet->region.height(),documentSize.height(),ys);
-        if(!axisX || !axisY)return fail("CPU: composition axis allocation");
-        batch->uploadTexture(axisX.get(),QRhiTextureUploadDescription({QRhiTextureUploadEntry(0,0,QRhiTextureSubresourceUploadDescription(xs))}));
-        batch->uploadTexture(axisY.get(),QRhiTextureUploadDescription({QRhiTextureUploadEntry(0,0,QRhiTextureSubresourceUploadDescription(ys))}));
+        if(!axisX || !axisY || !renderedPacket || renderedPacket->region!=packet->region || renderedPacket->pixels!=packet->pixels){
+            QByteArray xs,ys;axisX=axis(outputSize.width(),packet->region.x(),packet->region.width(),documentSize.width(),xs);
+            axisY=axis(outputSize.height(),packet->region.y(),packet->region.height(),documentSize.height(),ys);
+            if(!axisX || !axisY)return fail("CPU: composition axis allocation");
+            batch->uploadTexture(axisX.get(),QRhiTextureUploadDescription({QRhiTextureUploadEntry(0,0,QRhiTextureSubresourceUploadDescription(xs))}));
+            batch->uploadTexture(axisY.get(),QRhiTextureUploadDescription({QRhiTextureUploadEntry(0,0,QRhiTextureSubresourceUploadDescription(ys))}));
+        }
         int current=0;
         if(!packet->operations.isEmpty()){
             if(packet->transform)return fail("CPU: composition group transform closure");
@@ -558,8 +576,15 @@ private:
         cb->resourceUpdate(batch);
         for(size_t i=0;i<passes.size();++i){
             const auto &pass=*passes[i];const bool last=pass.output==2;auto &target=last?display:(pass.output==3?scratch:surface(pass.output<2?pass.output:pass.output-2));const auto size=last?outputSize:documentSize;
+            // Native output has a one-to-one document mapping. Preserve its
+            // unchanged pixels just like the linear targets, avoiding full-image
+            // colour conversion for every small brush dab (also outside the view).
+            const bool native=last && rendered && renderedPacket && outputSize==documentSize && packet->lod==0 &&
+                packet->region==QRectF(QPointF(),QSizeF(documentSize)) && renderedPacket->region==packet->region && renderedPacket->pixels==packet->pixels;
+            const auto scissor=last && !native?QRect(QPoint(),size):changed;
+            if(last){counters->lastDisplayArea=quint64(scissor.width())*scissor.height();counters->displayPixels.fetch_add(counters->lastDisplayArea.load());}
+            if(scissor.isEmpty())continue;
             cb->beginPass(target.target.get(),Qt::transparent,{1,0});cb->setGraphicsPipeline(pass.pipeline);cb->setViewport({0,0,float(size.width()),float(size.height())});
-            const auto scissor=last?QRect(QPoint(),size):changed;
             // QRhi scissor coordinates are bottom-left even on D3D11.
             cb->setScissor({scissor.x(),size.height()-scissor.y()-scissor.height(),scissor.width(),scissor.height()});
             cb->setShaderResources(pass.bindings.get());

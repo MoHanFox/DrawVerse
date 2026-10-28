@@ -11,11 +11,11 @@ PanelWindow {
     id: root
     objectName: "adjustmentWindow"
     flags: Qt.Dialog | Qt.FramelessWindowHint
-    modality: Qt.ApplicationModal
+    modality: Qt.NonModal
     color: "transparent"
-    readonly property int preferredHeight: kind===0?530:kind===1?400:305
-    width: 430; height: preferredHeight
-    minimumWidth: 430; maximumWidth: 430
+    readonly property int preferredHeight: kind===0?380:kind===1?340:280
+    width: 330; height: preferredHeight
+    minimumWidth: 330; maximumWidth: 330
     minimumHeight: preferredHeight; maximumHeight: preferredHeight
     property int kind: 0
     property int channel: 0
@@ -84,10 +84,10 @@ PanelWindow {
         function onStateChanged(){const gpu=PaintClient.adjustmentGpuPreview;if(wasGpu && !gpu && root.opened && root.ending===0)root.dirty=true;wasGpu=gpu;if(root.opened && (root.dirty || root.ending!==0))Qt.callLater(root.process)}
     }
     // Like a floating panel, only the title has glass; no docking controller owns this window.
-    Rectangle {x:0;y:34;width:parent.width;height:parent.height-34;color:Theme.surface}
+    Rectangle {x:0;y:28;width:parent.width;height:parent.height-28;color:Theme.surface}
     Rectangle {
-        id:titleBar;x:0;y:0;width:parent.width;height:34;color:Theme.floatingPanelBar
-        Label {anchors.left:parent.left;anchors.leftMargin:12;anchors.verticalCenter:parent.verticalCenter;text:root.title;color:Theme.text;font.pixelSize:13}
+        id:titleBar;x:0;y:0;width:parent.width;height:28;color:Theme.floatingPanelBar
+        Label {anchors.left:parent.left;anchors.leftMargin:12;anchors.verticalCenter:parent.verticalCenter;text:root.title;color:Theme.text;font.pixelSize:9}
         MouseArea {
             objectName:"adjustmentTitleDrag";anchors.fill:parent;anchors.rightMargin:32;preventStealing:true
             property point origin
@@ -96,7 +96,7 @@ PanelWindow {
             onPositionChanged:mouse=>{if(pressed){const p=mapToGlobal(mouse.x,mouse.y);root.x=Math.round(windowOrigin.x+p.x-origin.x);root.y=Math.round(windowOrigin.y+p.y-origin.y)}}
         }
         ToolButton {
-            id:closeButton;objectName:"adjustmentClose";anchors.right:parent.right;width:32;height:32;text:"×";hoverEnabled:true
+            id:closeButton;objectName:"adjustmentClose";anchors.right:parent.right;width:28;height:28;text:"×";hoverEnabled:true
             background:Rectangle {objectName:"adjustmentCloseBackground";color:closeButton.hovered?"#e81123":"transparent"}
             contentItem:Text {text:closeButton.text;color:closeButton.hovered?"white":Theme.text;font.pixelSize:16;horizontalAlignment:Text.AlignHCenter;verticalAlignment:Text.AlignVCenter}
             onClicked:{root.ending=3;root.process()}
@@ -104,12 +104,12 @@ PanelWindow {
     }
     ColumnLayout {
         id:body;focus:true
-        x:12;y:44;width:parent.width-24;spacing:8
+        x:12;y:36;width:parent.width-24;spacing:8
         ColumnLayout {
             Layout.fillWidth:true;enabled:root.ending===0;visible:root.kind===0;spacing:8
             CompactComboBox {objectName:"adjustmentChannel";Layout.fillWidth:true;model:["RGB","红","绿","蓝"];currentIndex:root.channel;onActivated:root.channel=currentIndex}
             AdjustmentCurve {
-                Layout.fillWidth:true;Layout.preferredHeight:400
+                Layout.fillWidth:true;Layout.preferredHeight:260
                 points:root.curves[root.channel];modes:root.modes[root.channel];bins:root.bins
                 lineColor:root.channel===1?"#e98d8d":root.channel===2?"#97d697":root.channel===3?"#9292e9":"#d7d7d7"
                 onEdited:(points,modes)=>{let c=root.curves.slice(),m=root.modes.slice();c[root.channel]=points;m[root.channel]=modes;root.curves=c;root.modes=m;root.dirty=true}
@@ -131,9 +131,9 @@ PanelWindow {
             Layout.fillWidth:true;spacing:6
             CompactCheckBox {text:"预览";checked:root.preview;enabled:root.ending===0;onToggled:root.preview=checked}
             Item {Layout.fillWidth:true}
-            Button {text:"重置";implicitWidth:62;implicitHeight:28;font.pixelSize:12;enabled:root.ending===0;onClicked:root.reset()}
-            Button {objectName:"adjustmentCancel";text:"取消";implicitWidth:62;implicitHeight:28;font.pixelSize:12;onClicked:{root.ending=3;root.process()}}
-            Button {objectName:"adjustmentApply";text:PaintClient.adjustmentBusy && root.ending===2?"应用中…":"确定";implicitWidth:62;implicitHeight:28;font.pixelSize:12;enabled:root.ending===0;onClicked:{root.ending=2;root.dirty=true;root.process()}}
+            Button {text:"重置";implicitWidth:62;implicitHeight:28;font.pixelSize:10;enabled:root.ending===0;onClicked:root.reset()}
+            Button {objectName:"adjustmentCancel";text:"取消";implicitWidth:62;implicitHeight:28;font.pixelSize:10;onClicked:{root.ending=3;root.process()}}
+            Button {objectName:"adjustmentApply";text:PaintClient.adjustmentBusy && root.ending===2?"应用中…":"确定";implicitWidth:62;implicitHeight:28;font.pixelSize:10;enabled:root.ending===0;onClicked:{root.ending=2;root.dirty=true;root.process()}}
         }
     }
 }

@@ -14,7 +14,7 @@ Dialog {
     onOpened: {
         const values = PaintClient.storageSettings
         directory.text = values.directory || ""
-        memory.currentIndex = Math.max(0, memory.options.indexOf(Number(values.memoryMiB || 256)))
+        memory.value = Number(values.memoryMiB)
         scratch.value = Number(values.scratchGiB || 8)
         reserve.value = values.reserveMiB === undefined ? 512 : Number(values.reserveMiB)
         PaintClient.inspectStorage()
@@ -35,13 +35,7 @@ Dialog {
         GridLayout {
             columns: 2; columnSpacing: 16; rowSpacing: 12; Layout.fillWidth: true
             Label { text: "像素驻留缓存" }
-            ComboBox {
-                id: memory; objectName: "storageMemory"
-                palette.dark: Theme.muted
-                property var options: [64, 128, 256, 512, 1024]
-                model: ["64 MiB", "128 MiB", "256 MiB", "512 MiB", "1024 MiB"]
-                Layout.fillWidth: true; enabled: !PaintClient.storageBusy
-            }
+            SpinBox { id: memory; objectName: "storageMemory"; from: 64; to: 1048576; editable: true; Layout.fillWidth: true; enabled: !PaintClient.storageBusy }
             Label { text: "单文档瓦片暂存上限" }
             SpinBox { id: scratch; objectName: "storageScratch"; from: 1; to: 64; editable: true; Layout.fillWidth: true; enabled: !PaintClient.storageBusy }
             Label { text: "保留磁盘空闲空间" }
@@ -73,7 +67,7 @@ Dialog {
             Button { text: "关闭"; onClicked: dialog.close() }
             Button {
                 text: "保存设置"; objectName: "saveStorageSettings"; enabled: !PaintClient.storageBusy
-                onClicked: PaintClient.saveStorageSettings(directory.text, memory.options[memory.currentIndex], scratch.value, reserve.value)
+                onClicked: PaintClient.saveStorageSettings(directory.text, memory.value, scratch.value, reserve.value)
             }
         }
     }

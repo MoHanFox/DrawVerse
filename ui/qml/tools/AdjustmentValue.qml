@@ -9,8 +9,8 @@ TextField {
     property int decimals: 0
     property string unit: ""
     signal edited(real number)
-    implicitWidth: 94; implicitHeight: 28
-    color: Theme.text; font.pixelSize: 13
+    implicitWidth: 78; implicitHeight: 24
+    color: Theme.text; font.pixelSize: 10
     horizontalAlignment: TextInput.AlignHCenter
     selectByMouse: true
     text: Number(value).toFixed(decimals)

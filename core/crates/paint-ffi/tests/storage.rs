@@ -51,7 +51,12 @@ fn storage_probe_core_lifecycle_and_bad_configuration() {
                 .count(),
             1
         );
-        for bytes in [0, 65537, 2 * 1024 * 1024 * 1024] {
+        config.resident_bytes = 32 * 1024 * 1024 * 1024;
+        assert_eq!(paint_core_create_with_storage(&config, &mut core), PAINT_OK);
+        assert_eq!(paint_core_new_document(core, &desc, &mut doc), PAINT_OK);
+        assert_eq!(paint_document_destroy(core, &mut doc), PAINT_OK);
+        assert_eq!(paint_core_destroy(&mut core), PAINT_OK);
+        for bytes in [0, 65537, 2 * 1024 * 1024 * 1024 * 1024] {
             config.resident_bytes = bytes;
             assert_eq!(
                 paint_core_create_with_storage(&config, &mut core),

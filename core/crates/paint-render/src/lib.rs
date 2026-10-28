@@ -11,8 +11,8 @@ mod interactive;
 mod translation;
 pub use interactive::{render_interactive, render_sampled_preview};
 
-pub const MAX_OUTPUT_PIXELS: u64 = 4_194_304;
-pub const MAX_OUTPUT_EDGE: u32 = 4096;
+pub const MAX_OUTPUT_PIXELS: u64 = 16_777_216;
+pub const MAX_OUTPUT_EDGE: u32 = 8192;
 /// Upper bound for move presentation textures. Smaller viewports use their
 /// physical density instead of enlarging the source.
 pub const MOVE_PREVIEW_MAX_EDGE: u32 = 2048;
@@ -599,7 +599,13 @@ fn render(
     let r = request.region;
     let scale = (r.width / f64::from(request.width)).min(r.height / f64::from(request.height));
     let lod = if scale >= 1. {
-        scale.log2().ceil().clamp(0., 20.) as u32
+        // Keep the bounded high-LOD sparse-document path; ordinary zoom must
+        // not halve source resolution before reaching the next full level.
+        if scale >= 128. {
+            scale.log2().ceil().clamp(0., 20.) as u32
+        } else {
+            scale.log2().floor().clamp(0., 20.) as u32
+        }
     } else {
         0
     };
@@ -752,14 +758,8 @@ fn render(
         diagnostic.translation_rejected = outcome.rejected;
     }
     let local = lod.min(6);
-    let edge = TILE_SIZE >> local;
-    if coordinates
-        .len()
-        .checked_mul((edge * edge * 16) as usize)
-        .is_none_or(|work| work > MAX_WORK_BYTES)
-    {
-        return Err(RenderError::ResourceLimit);
-    }
+    // Each mip is composed and blitted separately. Cache retention is bounded
+    // independently; total visited tile bytes are not simultaneous work memory.
     let kind = if lod > 6 {
         PixelFormat::LinearRgba32F
     } else {

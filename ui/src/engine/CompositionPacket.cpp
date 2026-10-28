@@ -22,7 +22,7 @@ std::shared_ptr<CompositionTransform> CompositionTransform::allocate(){
 CompositionTileData::~CompositionTileData(){sourceBytes.fetch_sub(65536);}
 std::shared_ptr<CompositionTileData> CompositionTileData::allocate(){
     auto bytes=sourceBytes.load();
-    do {if(bytes>sourceLimit-65536)return {};}
+    do {if(bytes+65536>std::min(sourceLimit,CompositionBudget::transportLimit()))return {};}
     while(!sourceBytes.compare_exchange_weak(bytes,bytes+65536));
     auto undo=qScopeGuard([]{sourceBytes.fetch_sub(65536);});
     try {
@@ -54,10 +54,10 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         }
         const auto area=quint64(state.width)*state.height;
         const auto scale=std::min(view.region.width()/view.pixels.width(),view.region.height()/view.pixels.height());
-        const int lod=scale>=1?std::clamp(int(std::ceil(std::log2(scale))),0,20):0;
-        if(!area || area>9437184 || state.width>4096 || state.height>4096 || lod>6 ||
-           view.pixels.isEmpty() || view.pixels.width()>4096 || view.pixels.height()>4096 ||
-           quint64(view.pixels.width())*view.pixels.height()>4194304){
+        const int lod=scale>=1?std::clamp(int(std::floor(std::log2(scale))),0,20):0;
+        if(!area || area>CompositionBudget::viewPixels() || state.width>8192 || state.height>8192 || lod>6 ||
+           view.pixels.isEmpty() || view.pixels.width()>8192 || view.pixels.height()>8192 ||
+           quint64(view.pixels.width())*view.pixels.height()>CompositionBudget::viewPixels()){
             fallback=QStringLiteral("CPU: composition extent/LOD budget");return {};
         }
         auto request=dto<PaintCompositionRequest>();request.version=1;request.features=PAINT_COMPOSITION_NORMAL|PAINT_COMPOSITION_SELF_MASK|PAINT_COMPOSITION_LINEAR_RGBA32F|PAINT_COMPOSITION_FIXED_MASK|PAINT_COMPOSITION_BLEND_MODES|PAINT_COMPOSITION_GROUPS|PAINT_COMPOSITION_DISSOLVE|PAINT_COMPOSITION_CLIPPING;
@@ -66,8 +66,8 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         request.viewport.pixel_width=quint32(view.pixels.width());request.viewport.pixel_height=quint32(view.pixels.height());
         request.revision=state.revision;request.request_id=++m_next;request.device_epoch=view.epoch;
         const bool large=area>4194304;
-        request.max_nodes=large?1:64;request.max_tiles=large?4096:1024;
-        request.max_pinned_bytes=(large?256ull:64ull)*1024*1024;request.max_metadata_bytes=(large?8ull:2ull)*1024*1024;
+        request.max_nodes=64;request.max_tiles=4096;
+        request.max_pinned_bytes=std::min((large?256ull:64ull)*1024*1024,static_cast<unsigned long long>(CompositionBudget::transportLimit()));request.max_metadata_bytes=(large?8ull:2ull)*1024*1024;
         const auto status=qEnvironmentVariable("DRAWVERSE_COMPOSITION_FAIL")=="busy"?PAINT_BUSY:paint_session_request_composition(core,session,&request,&m_lease);
         if(status==PAINT_BUSY || status==PAINT_CANCELLED){
             // A concurrent edit invalidates the requested snapshot, not GPU support.
@@ -89,8 +89,7 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         if(status!=PAINT_OK)return abandon(status);
         if(info.state==PAINT_COMPOSITION_PENDING)return {};
         if(info.state!=PAINT_COMPOSITION_READY)return abandon(info.status);
-        const bool large=quint64(state.width)*state.height>4194304;
-        if(info.node_count>quint32(large?1:64) || info.tile_count>quint32(large?4096:1024))return abandon(PAINT_LIMIT_EXCEEDED);
+        if(info.node_count>quint32(64) || info.tile_count>quint32(4096))return abandon(PAINT_LIMIT_EXCEEDED);
         m_packet->info=info;
         for(quint32 i=0;i<info.node_count;++i){
             auto node=dto<PaintCompositionNode>();const auto result=paint_session_composition_node(core,session,&info.key,i,&node);

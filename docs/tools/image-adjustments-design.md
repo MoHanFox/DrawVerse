@@ -45,3 +45,8 @@ ABI1.87 新增独立 `paint_session_adjustment` 和 sized `PaintAdjustment`；�
 移除弹窗外轮廓。GUI只传有界控制点/五色阶值/HSL值；C++通过既有Rust纯曲线采样ABI编译相同4097项LUT，复用原提交/确认逻辑。调参通过Qt.callLater合并最新值，替代16ms轮询；CPU在途请求仍只合并最新，确认/取消等待回执。
 
 验收：先保留原4096×2160无法取得GPU包的失败；同尺寸密集PNG实际模态拖动在释放前提交GPU，revision/历史不动、持续零源上传/资源重建，最终GPU预览与核心提交比对及撤销/取消保持。检查atlas跨原1024槽、增长后未改源不重复上传，复杂/超范围预算后备；保留原2K诊断与失败日志，不把GPU提交时间称物理显示延迟。
+
+
+## 2026-10-28 紧凑窗口及导航续接
+
+窗口改为NonModal，标题与浮窗一致28px/9px并保留全应用UiScale；紧凑控件与Ctrl+M/L/U入口已接通。原ApplicationModal记录为历史行为。预算/采样与最终最小验证见 `docs/platform/general-gpu-composition-design.md`、`docs/validations/platform/general-gpu-composition-validation.md` 末节。

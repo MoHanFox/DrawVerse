@@ -763,7 +763,7 @@ impl Document {
         if options.max_document_tiles == 0
             || options.max_document_tiles > 1_000_000
             || options.max_resident_tiles == 0
-            || options.max_resident_tiles > 16384
+            || options.max_resident_tiles > 16_777_216
             || options.max_scratch_bytes < 65552
             || options.max_scratch_bytes > 64 * 1024 * 1024 * 1024
             || options.max_history_bytes < 2 * TILE_BYTES + 256

@@ -48,6 +48,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QString tabletInputMode READ tabletInputMode WRITE setTabletInputMode NOTIFY tabletInputSettingsChanged)
     Q_PROPERTY(QString tabletInputBackend READ tabletInputBackend CONSTANT)
     Q_PROPERTY(int longTaskDelay READ longTaskDelay WRITE setLongTaskDelay NOTIFY longTaskDelayChanged)
+    Q_PROPERTY(QVariantMap renderSettings READ renderSettings NOTIFY storageChanged)
     Q_PROPERTY(QVariantMap storageSettings READ storageSettings NOTIFY storageChanged)
     Q_PROPERTY(QVariantMap activeStorageSettings READ activeStorageSettings NOTIFY storageChanged)
     Q_PROPERTY(QVariantMap storageInfo READ storageInfo NOTIFY storageChanged)
@@ -224,6 +225,8 @@ public:
     void setTabletInputMode(const QString &mode);
     void setLongTaskDelay(int value);
     void restoreLongTaskDelay(int value);
+    QVariantMap renderSettings() const;
+    Q_INVOKABLE bool saveRenderSettings(int memoryMiB, int gpuMiB, bool highestQuality = false);
     QVariantMap storageSettings() const { return m_storageSettings; }
     QVariantMap activeStorageSettings() const { return m_activeStorageSettings; }
     QVariantMap storageInfo() const { return m_storageInfo; }
@@ -234,6 +237,7 @@ public:
     QString computeDevice() const { return m_computeDevice; }
     QString computeStatus() const { return m_computeStatus; }
     bool computeBusy() const { return m_computeBusy; }
+    bool highestCanvasQuality() const { return m_highestCanvasQuality && gpuAccelerationEnabled(); }
     bool gpuAccelerationEnabled() const { return m_computeDevice != "cpu"; }
     bool gpuCompositionEnabled() const { return gpuAccelerationEnabled() && compositionDisplayRequested(); }
     bool residentGpuPreviewEnabled() const { return gpuAccelerationEnabled() && m_residentGpuPreviewAvailable; }
@@ -615,6 +619,7 @@ private:
     int m_longTaskDelay=1000;
     QVariantMap m_storageSettings, m_activeStorageSettings, m_storageInfo;
     QVariantList m_computeHardware;
+    bool m_highestCanvasQuality=false;
     QString m_computeDevice = "auto", m_computeStatus = "正在初始化计算硬件…";
     bool m_computeBusy = false;
     QString m_storageMessage;
@@ -633,6 +638,8 @@ private:
     quint64 m_active = 1;
     quint64 m_generation = 0, m_revision = 0, m_pendingNew = 0, m_pendingMutation = 0;
     int m_nextDefaultLayer = 1;
+    bool layerContentVisible(quint64 id) const;
+    bool selectedContentVisible() const;
     bool submitLayerAction(quint32 kind, const QByteArray &bytes = {});
     quint64 m_pendingCopy = 0;
     quint64 m_pendingLayer = 0;

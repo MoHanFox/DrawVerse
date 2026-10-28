@@ -320,9 +320,9 @@ ApplicationWindow {
             title: "图像"
             GlassMenu {
                 objectName:"imageAdjustSubmenu";title:"调整";cascadeParent:imageMenu
-                Action { objectName:"adjustCurvesAction";text:"曲线…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(0) }
-                Action { objectName:"adjustLevelsAction";text:"色阶…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(1) }
-                Action { objectName:"adjustHsvAction";text:"色相/饱和度/明度…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(2) }
+                Action { objectName:"adjustCurvesAction";shortcut:"Ctrl+M";text:"曲线…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(0) }
+                Action { objectName:"adjustLevelsAction";shortcut:"Ctrl+L";text:"色阶…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(1) }
+                Action { objectName:"adjustHsvAction";shortcut:"Ctrl+U";text:"色相/饱和度/明度…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(2) }
             }
             MenuSeparator {}
             Action { objectName:"canvasSizeAction";text:"画布大小…（待支持）";enabled:false }

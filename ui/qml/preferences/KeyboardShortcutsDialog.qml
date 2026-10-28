@@ -23,6 +23,9 @@ Dialog {
         ["编辑", "撤销", "Ctrl+Z"],
         ["编辑", "重做", "Ctrl+Shift+Z"],
         ["编辑", "自由变换", "Ctrl+T"],
+        ["调整", "曲线", "Ctrl+M"],
+        ["调整", "色阶", "Ctrl+L"],
+        ["调整", "色相／饱和度", "Ctrl+U"],
         ["视图", "放大／缩小画布", "Ctrl++ / Ctrl+-"],
         ["变换", "确认／取消变换", "Enter / Esc"],
         ["变换", "微调／快速微调", "方向键 / Shift+方向键"],
@@ -59,13 +62,13 @@ Dialog {
             Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.muted; font.pixelSize: 9
             text: "以下为当前实际生效的快捷键；与菜单里显示的快捷键一致。自定义快捷键尚未实现。"
         }
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+        ComboBox { id: category; Layout.fillWidth: true; model: ["全部", "文档", "编辑", "调整", "图层", "选择", "工具", "视图", "变换", "画布", "数位板"] }
         ListView {
             id: list
             objectName: "shortcutList"
             Layout.fillWidth: true; Layout.fillHeight: true
             clip: true; spacing: 5
-            model: root.rows
+            model: root.rows.filter(row => category.currentIndex === 0 || row[0] === category.currentText)
             ScrollBar.vertical: ScrollBar { width: 6 }
             delegate: Item {
                 id: entry
