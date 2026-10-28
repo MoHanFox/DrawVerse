@@ -341,6 +341,8 @@ public:
     qint64 compositionTargetConfirmedNs()const{return m_compositionTargetNs;}
     QString compositionFallback()const{return m_blendPreviewLayer?QStringLiteral("CPU: blend mode hover preview"):m_compositionTransformCpu?QStringLiteral("CPU: composition transform closure"):(m_compositionEditFallbackReason.isEmpty()?m_compositionFallback:m_compositionEditFallbackReason);}
     void setCompositionDevice(quint64 epoch,bool enabled);
+    bool cpuDisplaySuppressed(int view=0)const{return m_cpuViewSuppressed[view==1?1:0];}
+    void setCpuSamplingRequired(bool required){if(required!=m_cpuSamplingRequired){m_cpuSamplingRequired=required;refreshCpuDisplayDemand();}}
     ResidentPreviewPtr residentPreview() const { return m_residentPreview; }
     ResidentPreviewPtr liquifyPreview() const { return residentPreview(); }
     ResidentPreviewAssetsPtr movePreparation() const { return m_movePreparation; }
@@ -529,6 +531,7 @@ signals:
     void commandCompleted(bool onWorkerThread);
     void fileFinished(bool success);
 private:
+    void refreshCpuDisplayDemand();
     CompositionPacketPtr m_compositionPacket;
     CompositionPacketPtr m_compositionEditBase,m_compositionEditFrame;
     QVector<quint64> m_compositionEditTargets;
@@ -709,6 +712,7 @@ private:
     QSize m_requestedPixels[2];
     quint64 m_requests[2]{}, m_frameRevisions[2]{},m_frameIds[2]{},m_frameRequestIds[2]{};
     bool m_viewEnabled[2]{};
+    bool m_cpuViewSuppressed[2]{},m_overviewExplicit=false,m_requestingAutomaticOverview=false,m_compositionDeviceAvailable=false,m_cpuSamplingRequired=false;
     quint64 m_blendPreviewLayer = 0;
     int m_blendPreviewMode = 0;
 };

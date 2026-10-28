@@ -505,7 +505,7 @@ impl BrushProgram {
         if matches!(brush.mode, crate::BrushMode::Smudge { .. }) {
             // Transport a continuous field rather than inherit the preset's stamp spacing.
             // Bound both tiny-tip sampling and large-tip work; paging still limits each input.
-            (f64::from(brush.radius * self.tip.roundness) * 0.1 * self.spacing_scale())
+            (f64::from(brush.radius * self.tip.roundness) * self.spacing_scale() / 10.)
                 .clamp(0.25, 2.)
         } else {
             brush.step() * self.spacing_scale()

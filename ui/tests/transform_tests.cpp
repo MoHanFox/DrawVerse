@@ -36,6 +36,9 @@ class TransformTests : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase() {
+        // This suite asserts the compatibility resident assets. General GPU
+        // composition has its own window/pixel and input regression suites.
+        qputenv("DRAWVERSE_GPU_COMPOSITION","0");
         configureTabletInput("auto");
         if(auto *screen=QGuiApplication::primaryScreen())qInfo()<<"B1 native test screen:"<<screen->name()<<"logical DPI:"<<screen->logicalDotsPerInch()<<"DPR:"<<screen->devicePixelRatio();
         for(const auto *device:QInputDevice::devices())qInfo()<<"Initial Qt device:"<<device->name()<<device->systemId()<<device->type();

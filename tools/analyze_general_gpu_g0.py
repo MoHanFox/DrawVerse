@@ -21,6 +21,8 @@ def analyze(path):
                   passed=data.get('passed', False) and process.get('passed', False),
                   operation=data.get('operation'), size=data.get('size'),
                   fixture_version=data.get('fixture_version'), warp=data.get('warp', False),
+                  captures=data.get('captures', True),
+                  pixel_correctness_checked=data.get('pixel_correctness_checked', True),
                   trace=data.get('trace_enabled'), api=data.get('api'), dpr=data.get('dpr'), rows=[])
     if not result['passed'] or 'adoptions' not in data:
         return result

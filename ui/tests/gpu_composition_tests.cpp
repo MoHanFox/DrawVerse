@@ -86,7 +86,7 @@ QSize requestedPixels(const CanvasItem &canvas,const QQuickWindow &window){
 class GpuCompositionTests final : public QObject {
     Q_OBJECT
 private slots:
-    void initTestCase(){initializeDrawVerseUiResources();qputenv("DRAWVERSE_GPU_COMPOSITION","1");}
+    void initTestCase(){initializeDrawVerseUiResources();qputenv("DRAWVERSE_GPU_COMPOSITION","1");qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");}
     void documentPixels_data(){
         QTest::addColumn<bool>("white");QTest::addColumn<bool>("mask");QTest::addColumn<double>("zoom");QTest::addColumn<int>("lod");QTest::addColumn<int>("side");
         QTest::newRow("transparent-normal")<<false<<false<<1.<<0<<130;

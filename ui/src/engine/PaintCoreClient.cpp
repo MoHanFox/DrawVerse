@@ -1294,6 +1294,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(packet && packet->info.key.document_generation==m_generation &&
            (!m_compositionPacket || packet->info.key.revision>=m_compositionPacket->info.key.revision))m_compositionPacket=std::move(packet);
         else if(!m_compositionFallback.isEmpty())m_compositionPacket.reset();
+        refreshCpuDisplayDemand();
         emit frameChanged();
     });
     connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request, quint64 frameId) {
@@ -1475,7 +1476,9 @@ void PaintCoreClient::ensureOverview() {
     const QRectF document(0,0,documentWidth(),documentHeight());
     if(document.isEmpty() || (m_viewEnabled[1] && m_requestedRegions[1]==document))return;
     const auto scale=std::min(1.,512./std::max(document.width(),document.height()));
+    m_requestingAutomaticOverview=true;
     requestViewport(1,document,{std::max(1,qCeil(document.width()*scale)),std::max(1,qCeil(document.height()*scale))});
+    m_requestingAutomaticOverview=false;
 }
 qreal PaintCoreClient::currentMovePreparationScale() const {
     qreal scale=1;
@@ -1665,14 +1668,45 @@ void PaintCoreClient::compositionPrimaryAdopted(quint64 generation,quint64 epoch
     clearCompositionEdit();emit frameChanged();
 }
 void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
+    m_compositionDeviceAvailable=enabled;
     enabled=enabled && compositionDisplayRequested() && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive && !m_blendPreviewLayer;
-    QMutexLocker lock(&m_connection->mutex);auto &view=m_connection->compositionView;
-    if(view.epoch==epoch && view.enabled==enabled && view.generation==m_generation && view.region==m_requestedRegions[0] && view.pixels==m_requestedPixels[0])return;
-    ++view.serial;view.epoch=epoch;view.enabled=enabled;view.generation=m_generation;view.region=m_requestedRegions[0];view.pixels=m_requestedPixels[0];
-    if(!enabled || (m_compositionPacket && m_compositionPacket->info.key.document_generation!=m_generation))m_compositionPacket.reset();
+    {
+        QMutexLocker lock(&m_connection->mutex);auto &view=m_connection->compositionView;
+        if(view.epoch!=epoch || view.enabled!=enabled || view.generation!=m_generation || view.region!=m_requestedRegions[0] || view.pixels!=m_requestedPixels[0]){
+            ++view.serial;view.epoch=epoch;view.enabled=enabled;view.generation=m_generation;view.region=m_requestedRegions[0];view.pixels=m_requestedPixels[0];
+            if(!enabled || (m_compositionPacket && m_compositionPacket->info.key.document_generation!=m_generation))m_compositionPacket.reset();
+        }
+    }
+    refreshCpuDisplayDemand();
+}
+void PaintCoreClient::refreshCpuDisplayDemand(){
+    if(!m_ready || m_closing)return;
+    const auto packet=compositionPacket();
+    quint64 epoch=0;bool enabled=false;
+    {QMutexLocker lock(&m_connection->mutex);epoch=m_connection->compositionView.epoch;enabled=m_connection->compositionView.enabled;}
+    const bool gpu=m_compositionDeviceAvailable && compositionDisplayRequested() && qEnvironmentVariableIntValue("DRAWVERSE_CPU_DISPLAY_REFERENCE")!=1 &&
+        packet && packet->info.key.document_generation==m_generation && packet->info.key.device_epoch==epoch &&
+        (enabled || (m_compositionEditBase && !m_compositionFinalFallback));
+    for(int view=0;view<2;++view){
+        const bool suppressed=gpu && (view==0 ? !m_cpuSamplingRequired && !m_eyedropperTool : !m_overviewExplicit);
+        if(m_cpuViewSuppressed[view]==suppressed)continue;
+        m_cpuViewSuppressed[view]=suppressed;
+        // A new mailbox request cancels in-flight CPU work. Keep the last
+        // complete display while GPU preparation or CPU recovery is pending.
+        m_requests[view]=0;
+        const bool automatic=m_requestingAutomaticOverview;
+        m_requestingAutomaticOverview=true;
+        requestViewport(view,m_requestedRegions[view],m_requestedPixels[view],m_viewEnabled[view]);
+        m_requestingAutomaticOverview=automatic;
+    }
 }
 void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, bool enabled) {
     if (!m_ready || m_closing || view < 0 || view > 1) return;
+    if(view==1 && !m_requestingAutomaticOverview){
+        if(m_overviewExplicit!=enabled)m_requests[view]=0;
+        m_overviewExplicit=enabled;
+        if(enabled)m_cpuViewSuppressed[view]=false;
+    }
     if (enabled) {
         if (!std::isfinite(region.x()) || !std::isfinite(region.y()) || !std::isfinite(region.width()) ||
             !std::isfinite(region.height()) || region.isEmpty() || pixels.isEmpty()) return;
@@ -1682,6 +1716,7 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
     }
     if (m_requests[view] && m_viewEnabled[view] == enabled && m_requestedRegions[view] == region && m_requestedPixels[view] == pixels) return;
     auto viewport = dto<PaintViewport>(); viewport.view_id = static_cast<uint32_t>(view); viewport.enabled = enabled ? 1 : 0;
+    if(m_cpuViewSuppressed[view] && !(view==1 && m_overviewExplicit))viewport.enabled=0;
     viewport.document_generation = m_generation; viewport.x = region.x(); viewport.y = region.y();
     viewport.width = region.width(); viewport.height = region.height();
     viewport.pixel_width = static_cast<uint32_t>(pixels.width()); viewport.pixel_height = static_cast<uint32_t>(pixels.height());

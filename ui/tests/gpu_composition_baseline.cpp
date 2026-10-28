@@ -71,9 +71,11 @@ private slots:
         const bool warpMode=qEnvironmentVariableIntValue("DRAWVERSE_G0_WARP")==1;
         const bool nativeDriver=qEnvironmentVariable("DRAWVERSE_G0_DRIVER")=="native-v5";
         const bool general=compositionDisplayRequested();
+        const bool captures=qEnvironmentVariable("DRAWVERSE_G0_CAPTURE")!="0";
         QJsonObject report{{"qt",qVersion()},{"passed",false},{"operation",transform?"transform":"move"},
             {"size",size},{"trace_enabled",tracing},{"composition_enabled",general},{"warp",warpMode},{"input","Qt mouse events to native window; not physical pen"}};
         QJsonArray rows;
+        report["captures"]=captures;report["pixel_correctness_checked"]=captures;
         QJsonArray states;int statesDropped=0;
         const auto save=qScopeGuard([&]{report["rows"]=rows;report["trace"]=InteractionTrace::finish();report["trace_dropped"]=double(InteractionTrace::dropped);
             QFile f(output);if(f.open(QIODevice::WriteOnly))f.write(QJsonDocument(report).toJson());});
@@ -98,7 +100,7 @@ private slots:
         QVERIFY(client.saveDocument(fixturePath));DRIVER_VERIFY_TIMEOUT(!client.fileBusy(),60000);QVERIFY(client.lastError().isEmpty());
         const auto generation=client.generation();QVERIFY(client.openDocument(fixturePath));
         DRIVER_VERIFY_TIMEOUT(!client.fileBusy() && client.generation()!=generation,60000);QCOMPARE(client.undoDepth(),0);
-        report["fixture_version"]=nativeDriver?5:4;report["event_driver"]=nativeDriver?"native QEventLoop + 1ms bounded predicate timer":"QtTest QTRY/qWait v4";report["history_setup"]="ORA round trip outside measurement; zero initial history; ordered setup barrier";
+        report["fixture_version"]=!captures?6:nativeDriver?5:4;report["event_driver"]=nativeDriver?"native QEventLoop + 1ms bounded predicate timer":"QtTest QTRY/qWait v4";report["history_setup"]="ORA round trip outside measurement; zero initial history; ordered setup barrier";
         client.brushLibrary()->setCursorOutline(false);client.brushLibrary()->setCursorImage(false);
         QQuickWindow window;window.resize(1024,720);window.setColor(Qt::black);
         if(tracing){auto config=window.graphicsConfiguration();config.setTimestamps(true);window.setGraphicsConfiguration(config);}
@@ -110,15 +112,21 @@ private slots:
         auto observer=std::make_shared<CanvasPresentationObservation>(4096);canvas->observePresentation(observer);
         auto *overlay=pane->findChild<QQuickItem*>("transformOverlay");QVERIFY(overlay);
         window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();canvas->forceActiveFocus();
+        const bool gpuExpected=general && quint64(size)*size<=4194304 && window.rendererInterface()->graphicsApi()!=QSGRendererInterface::Software;
+        if(!gpuExpected){
         DRIVER_VERIFY(client.frameRevision()>=client.revision() && !client.frame().isNull());
         // fitToView can schedule a newer viewport after the first frame. A
         // current revision alone cannot certify sampling density/request.
         DRIVER_VERIFY(client.frameRegion()==canvas->prefetchedDocumentRect() && client.frame().size()==
             QSize(qCeil(client.frameRegion().width()*canvas->zoom()*window.devicePixelRatio()),
                   qCeil(client.frameRegion().height()*canvas->zoom()*window.devicePixelRatio())));
-        if(general && quint64(size)*size<=4194304 && window.rendererInterface()->graphicsApi()!=QSGRendererInterface::Software){
+        }
+        if(gpuExpected){
             DRIVER_VERIFY_TIMEOUT(client.compositionPacket() && observer->snapshot().identity.composition &&
+                client.compositionPacket()->region==canvas->prefetchedDocumentRect() &&
+                client.compositionPacket()->pixels==QSize(qCeil(client.compositionPacket()->region.width()*canvas->zoom()*window.devicePixelRatio()),qCeil(client.compositionPacket()->region.height()*canvas->zoom()*window.devicePixelRatio())) &&
                 observer->snapshot().identity.revision==client.revision() && observer->snapshot().identity.request==client.compositionPacket()->info.key.request_id,15000);
+            if(!captures)DRIVER_VERIFY(client.cpuDisplaySuppressed() && client.cpuDisplaySuppressed(1));
         }
         const auto initialFrame=client.frame();
         report["initial_frame"]=QJsonObject::fromVariantMap(client.frameIdentity());
@@ -137,7 +145,10 @@ private slots:
             if(!ready.wait(10000)){overlay->setOpacity(opacity);return QImage{};}
             const auto image=grab->image();overlay->setOpacity(opacity);return image;};
         // Correctness pass is outside all measured intervals.
-        auto initial=capture();QVERIFY(!initial.isNull());QVERIFY(initial.save(output+"-initial.png"));
+        QImage initial;if(captures){initial=capture();QVERIFY(!initial.isNull());QVERIFY(initial.save(output+"-initial.png"));}
+        const auto originalCursor=QCursor::pos();const auto restoreCursor=qScopeGuard([&]{QCursor::setPos(originalCursor);});
+        QCursor::setPos(window.screen()->geometry().topRight()-QPoint(2,-2));
+        if(nativeDriver)nativeWait([]{return false;},60);else QTest::qWait(60);
         Ingress ingress;ingress.window=&window;window.installEventFilter(&ingress);
         QJsonArray swapped;
         const auto frameConnection=connect(&window,&QQuickWindow::frameSwapped,&window,[this,observer]{
@@ -232,6 +243,8 @@ private slots:
             }
             if(composition)row["target_gui_confirmed_ns"]=double(client.compositionTargetConfirmedNs());
             row["hold_ns"]=double(InteractionTrace::now());row["held_identity"]=identity(observer->snapshot().identity);
+            row["cpu_main_suppressed"]=client.cpuDisplaySuppressed();row["automatic_overview_suppressed"]=client.cpuDisplaySuppressed(1);
+            if(composition && !captures)QVERIFY(client.cpuDisplaySuppressed());
             QCOMPARE(ingress.unexpected,0);
             // Timing has stopped. Freeze the adopted content identity across
             // an independent full image grab; handles are a sibling of Canvas.
@@ -243,13 +256,13 @@ private slots:
                 const auto white=at(preview,{target.x()*.5,size*.4}),red=at(preview,{size*.65,size*.4});
                 return white.red()>230 && white.green()>230 && white.blue()>230 && red.red()>180 && red.green()<70 && red.blue()<70;
             };
-            DRIVER_VERIFY(pixelsMatch());QVERIFY(preview.save(output+QString("-%1-held.png").arg(phase)));
+            if(captures){DRIVER_VERIFY(pixelsMatch());QVERIFY(preview.save(output+QString("-%1-held.png").arg(phase)));}
             row["first_vertex_origin"]=QJsonArray{anchor && !anchor->vertices.isEmpty()?anchor->vertices[0][0]:0,anchor && !anchor->vertices.isEmpty()?anchor->vertices[0][1]:0};
             row["input_count"]=sent;
             row["release_ns"]=double(InteractionTrace::now());send(QEvent::MouseButtonRelease,target,attempts+1,InteractionTrace::now());
             if(transform){DRIVER_VERIFY(!client.transformBusy());QVERIFY(client.finishTransform(true));}
             DRIVER_VERIFY_TIMEOUT(!client.layerEditBusy() && !client.transformActive() && !client.layerMoveActive(),60000);
-            DRIVER_VERIFY_TIMEOUT(!client.residentPreview() && client.frameRevision()>=client.revision(),60000);
+            DRIVER_VERIFY_TIMEOUT(!client.residentPreview() && (composition || client.frameRevision()>=client.revision()),60000);
             if(composition){
                 DRIVER_VERIFY_TIMEOUT(client.compositionHandoffRevision()==0 && observer->snapshot().identity.composition && observer->snapshot().identity.source==0 &&
                     observer->snapshot().identity.revision==client.revision(),15000);
@@ -260,14 +273,18 @@ private slots:
             DRIVER_COMPARE(client.undoDepth(),depth+1);QVERIFY(client.lastError().isEmpty());
             row["history_delta"]=client.undoDepth()-depth;row["inputs"]=inputs;row["states"]=states;row["terminal"]="committed";rows.append(row);stored=true;
             // Independent correctness, including the changed content, not handles.
-            auto held=capture();QVERIFY(!held.isNull());QVERIFY(held!=initial);QVERIFY(held.save(output+QString("-%1-final.png").arg(phase)));
-            client.undo();DRIVER_COMPARE(client.undoDepth(),depth);DRIVER_VERIFY(!client.layerEditBusy() && client.frameRevision()>=client.revision());
+            if(captures){auto held=capture();QVERIFY(!held.isNull());QVERIFY(held!=initial);QVERIFY(held.save(output+QString("-%1-final.png").arg(phase)));}
+            client.undo();DRIVER_COMPARE(client.undoDepth(),depth);DRIVER_VERIFY(!client.layerEditBusy());
+            if(gpuExpected){DRIVER_VERIFY_TIMEOUT(client.compositionPacket() && observer->snapshot().identity.composition && observer->snapshot().identity.revision==client.revision(),15000);}
+            else DRIVER_VERIFY(client.frameRevision()>=client.revision());
+            if(captures){
             DRIVER_COMPARE(client.frame(),initialFrame);
             QImage undone;
             const auto saveUndo=qScopeGuard([&]{if(!undone.isNull())undone.save(output+QString("-%1-undone.png").arg(phase));
                 report["image_metadata"]=QJsonObject{{"initial_format",int(initial.format())},{"undo_format",int(undone.format())},
                     {"initial_dpr",initial.devicePixelRatio()},{"undo_dpr",undone.devicePixelRatio()}};});
             DRIVER_VERIFY((undone=capture())==initial);
+            }
             if(!transform)client.setMoveTool(false);
         }
         QJsonArray adopted;

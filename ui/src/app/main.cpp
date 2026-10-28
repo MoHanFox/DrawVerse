@@ -89,6 +89,9 @@ int main(int argc,char **argv) {
     const int benchmarkIndex=arguments.indexOf("--benchmark");
     const QString benchmarkPath=benchmarkIndex>=0 && benchmarkIndex+1<arguments.size()?arguments[benchmarkIndex+1]:QString();
     const QString testPath=!benchmarkPath.isEmpty()?benchmarkPath:previewPath;
+    // These opt-in QA consumers explicitly inspect CPU viewport pixels and
+    // frame revisions. Keep their reference requests while GPU still displays.
+    if(!testPath.isEmpty())qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");
     QTemporaryDir testPreferences;
     bool isolatedPreferences=!testPath.isEmpty();
 #ifdef DRAWVERSE_QML_SOURCE_DIR

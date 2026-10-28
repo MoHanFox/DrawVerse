@@ -10,6 +10,9 @@
 #include <QScopeGuard>
 #include <memory>
 #include <vector>
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#endif
 
 namespace {
 void save(const QString &name,const QJsonObject &data){
@@ -70,9 +73,58 @@ bool matchesCpu(PaintCoreClient &c,CanvasItem &canvas,QQuickWindow &w){
 class CompositionStabilityTests final : public QObject {
     Q_OBJECT
 private slots:
-    void initTestCase(){initializeDrawVerseUiResources();}
+    void initTestCase(){initializeDrawVerseUiResources();qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");}
     void init(){qunsetenv("DRAWVERSE_GPU_COMPOSITION");qunsetenv("DRAWVERSE_COMPOSITION_FAIL");QTRY_COMPARE(CompositionNode::reservedPayloadBytes(),0);}
     void cleanup(){qunsetenv("DRAWVERSE_GPU_COMPOSITION");qunsetenv("DRAWVERSE_COMPOSITION_FAIL");}
+    void unchangedLayoutKeepsZoomRunning(){
+        QTemporaryDir temp;PaintCoreClient c(nullptr,temp.filePath("prefs.ini"));QVERIFY(ready(c));QVERIFY(document(c,128));
+        QQuickWindow w;auto *canvas=attach(w,c);QVERIFY(canvas);canvas->actualSize();
+        canvas->zoomBy(3);
+        for(int i=0;i<24;++i){canvas->captureLayoutPosition();QTest::qWait(8);canvas->restoreLayoutPosition();}
+        QTRY_COMPARE(canvas->zoom(),3.);
+        const auto origin=canvas->mapToScene(canvas->documentRect().topLeft());
+        canvas->captureLayoutPosition();canvas->setWidth(canvas->width()+30);canvas->restoreLayoutPosition();
+        QCOMPARE(canvas->mapToScene(canvas->documentRect().topLeft()),origin);QCOMPARE(canvas->zoom(),3.);
+    }
+    void cpuDisplayOnlyOnDemand(){
+        qunsetenv("DRAWVERSE_CPU_DISPLAY_REFERENCE");
+        const auto restore=qScopeGuard([]{qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");});
+        QTemporaryDir temp;PaintCoreClient c(nullptr,temp.filePath("prefs.ini"));QVERIFY(ready(c));QVERIFY(document(c,128));
+        QQuickWindow w;auto *canvas=attach(w,c);QVERIFY(canvas);
+        if(software(w)){QVERIFY(cpuReady(c,*canvas,w));QVERIFY(!c.cpuDisplaySuppressed());return;}
+        QVERIFY(gpuReady(c,*canvas));QTRY_VERIFY(c.cpuDisplaySuppressed() && c.cpuDisplaySuppressed(1));
+        QTest::qWait(60);const auto before=c.frameIdentity();const auto overview=c.frameIdentity(1);const int depth=c.undoDepth();
+        for(int i=0;i<25;++i){QVERIFY(dab(c,{28.+i*2.,43}));QVERIFY(gpuReady(c,*canvas));}
+        QCOMPARE(c.undoDepth(),depth+25);QCOMPARE(c.frameIdentity(),before);QCOMPARE(c.frameIdentity(1),overview);
+        // A real navigation consumer has an independent CPU requirement.
+        c.requestViewport(1,{0,0,128,128},{128,128});QTRY_COMPARE(c.frameRevision(1),c.revision());QVERIFY(!c.cpuDisplaySuppressed(1));QVERIFY(c.cpuDisplaySuppressed());
+        c.requestViewport(1,{}, {},false);
+        // A click can finish before the asynchronously resumed CPU reference.
+        c.setBrushColor(Qt::blue);const auto samplingDepth=c.undoDepth();
+        canvas->beginPicking(canvas->documentRect().topLeft()+QPointF(42,43)*canvas->zoom());canvas->endPicking(false);
+        QTRY_COMPARE(c.brushColor(),QColor(Qt::red));QTRY_VERIFY(!canvas->m_pendingSample);QTRY_VERIFY(c.cpuDisplaySuppressed());QCOMPARE(c.undoDepth(),samplingDepth);
+#ifdef Q_OS_WIN
+        // Hold the actual Windows key state: Qt-only synthetic Alt would be
+        // correctly cleared by lost-KeyRelease recovery after two polls.
+        w.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&w));
+        const auto alt=[](bool down){INPUT input{};input.type=INPUT_KEYBOARD;input.ki.wVk=VK_MENU;input.ki.dwFlags=down?0:KEYEVENTF_KEYUP;return SendInput(1,&input,sizeof(INPUT));};
+        const auto releaseAlt=qScopeGuard([&]{alt(false);});
+        c.setBrushColor(Qt::blue);QCOMPARE(alt(true),UINT(1));QTRY_VERIFY(!c.cpuDisplaySuppressed());
+        QTRY_VERIFY(canvas->eyedropperCursorVisible());QTest::qWait(60);QVERIFY(canvas->eyedropperCursorVisible());
+        const auto sample=canvas->documentRect().topLeft()+QPointF(42,43)*canvas->zoom();
+        QTest::mouseClick(&w,Qt::LeftButton,Qt::AltModifier,sample.toPoint());QTRY_COMPARE(c.brushColor(),QColor(Qt::red));
+        QCOMPARE(alt(false),UINT(1));QTRY_VERIFY(c.cpuDisplaySuppressed());
+#endif
+        c.activateEyedropper();QTRY_VERIFY(!c.cpuDisplaySuppressed());
+        c.activateBrush();QTRY_VERIFY(c.cpuDisplaySuppressed());QCOMPARE(c.undoDepth(),samplingDepth);
+        qputenv("DRAWVERSE_COMPOSITION_FAIL","device");QVERIFY(dab(c,{89,75}));QTRY_VERIFY(canvas->compositionStatistics()["failed"].toBool());
+        QVERIFY(cpuReady(c,*canvas,w));QVERIFY(!c.cpuDisplaySuppressed());QCOMPARE(c.undoDepth(),depth+26);
+        const auto cpu=frame(w);qunsetenv("DRAWVERSE_COMPOSITION_FAIL");
+        w.setPersistentGraphics(false);w.setPersistentSceneGraph(false);w.hide();w.releaseResources();QTest::qWait(80);w.show();QVERIFY(QTest::qWaitForWindowExposed(&w));
+        QVERIFY(gpuReady(c,*canvas));QTRY_VERIFY(c.cpuDisplaySuppressed());QVERIFY(difference(cpu,frame(w))<=1);
+        QCOMPARE(canvas->compositionStatistics()["testReadbacks"].toInt(),0);QVERIFY(c.lastError().isEmpty());
+        save("cpu-on-demand",{{"passed",true},{"strokes",26},{"main_mirror_frames",0},{"automatic_overview_frames",0},{"recovered",true}});
+    }
     void readbackRejectsOldVersionAndPacket(){
         CompositionReadback readback;CompositionPacket a;a.info.key.device_epoch=4;a.info.key.document_generation=2;a.info.key.revision=7;a.info.key.request_id=3;
         a.pixels={128,128};a.region={0,0,128,128};readback.request(a);const auto old=readback.version.load();
@@ -225,6 +277,8 @@ private slots:
     void faultDuringMove(){
         QFETCH(bool,commit);QTemporaryDir temp;PaintCoreClient c(nullptr,temp.filePath("prefs.ini"));QVERIFY(ready(c));QVERIFY(document(c,128));c.addLayer("move");QTRY_VERIFY(c.layers().size()==2 && !c.layerEditBusy());QVERIFY(dab(c,{43,38}));
         QQuickWindow w;auto *canvas=attach(w,c);QVERIFY(canvas);QVERIFY(cpuReady(c,*canvas,w));const bool sw=software(w);if(!sw)QVERIFY(gpuReady(c,*canvas));const auto original=c.frame();const auto depth=c.undoDepth();
+        qunsetenv("DRAWVERSE_CPU_DISPLAY_REFERENCE");const auto restore=qScopeGuard([]{qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");});
+        emit c.frameChanged();if(!sw)QTRY_VERIFY(c.cpuDisplaySuppressed());
         c.setMoveTool(true);QVERIFY(c.beginLayerMove({43,38},false));c.updateLayerMove({9,5});QTRY_VERIFY(!c.moveObservation()["starting"].toBool());
         if(!sw){QTRY_VERIFY(c.compositionPacket() && c.compositionPacket()->preview);QTRY_COMPARE(canvas->compositionStatistics()["nodeGeometry"].toULongLong(),c.compositionPacket()->geometrySequence);}
         qputenv("DRAWVERSE_COMPOSITION_FAIL","device");c.updateLayerMove({18,9});if(!sw){QVERIFY(c.compositionPacket());QCOMPARE(c.compositionPacket()->presentationDelta,QPoint(18,9));QTRY_VERIFY(canvas->m_compositionFailed);}

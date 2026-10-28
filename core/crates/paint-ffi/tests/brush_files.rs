@@ -64,6 +64,7 @@ fn library_vbr_resources_are_portable_and_size_queries_do_not_write_assets() {
             PAINT_BUFFER_TOO_SMALL
         );
         assert!(required > 0);
+        let capacity = required;
         assert_eq!(std::fs::read_dir(&target).unwrap().count(), 0);
         assert_eq!(
             paint_brush_library_package_read(
@@ -77,7 +78,8 @@ fn library_vbr_resources_are_portable_and_size_queries_do_not_write_assets() {
             PAINT_INVALID_ARGUMENT
         );
         assert_eq!(std::fs::read_dir(&target).unwrap().count(), 0);
-        let mut buffer = vec![0; required as usize];
+        assert_eq!(required, 0);
+        let mut buffer = vec![0; capacity as usize];
         assert_eq!(
             paint_brush_library_package_read(
                 library,

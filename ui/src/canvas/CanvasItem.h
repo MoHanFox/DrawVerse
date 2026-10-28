@@ -189,6 +189,7 @@ private:
     qreal m_initialFitRatio = 1;
     QPointF m_pan, m_last;
     QPointF m_layoutOrigin;
+    QRectF m_layoutGeometry;
     QPointer<QQuickWindow> m_layoutWindow;
     quint64 m_layoutGeneration=0;
     bool m_layoutCaptured=false;
@@ -200,10 +201,16 @@ private:
     QPointF m_cursorPosition;
     bool m_cursorInside=false,m_capsLock=false;
     bool m_picking=false;
+    bool m_pendingSample=false;
+    QPointF m_pendingSamplePoint;
+    quint64 m_sampleGeneration=0,m_sampleRevision=0;
+    QColor m_pendingSampleColor;
     QColor m_sampledColor, m_previousSampleColor;
     void beginPicking(QPointF local);
     void updatePicking(QPointF local);
-    void endPicking();
+    void endPicking(bool cancel=true);
+    void refreshPendingSample();
+    void updateSamplingDemand();
     QPointF m_moveStart;
     bool m_moving = false;
     quint64 m_moveGeneration = 0;

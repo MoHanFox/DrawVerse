@@ -136,6 +136,7 @@ CanvasItem::~CanvasItem() {
     if (m_observedWindow) m_observedWindow->removeEventFilter(this);
     if (m_client && !m_interactive && !m_previewPart) m_client->requestViewport(1, {}, {}, false);
     if(m_client && m_interactive && !m_previewPart)m_client->setCompositionDevice(m_compositionEpoch,false);
+    if(m_client && m_interactive && !m_previewPart)m_client->setCpuSamplingRequired(false);
 }
 void CanvasItem::setClient(PaintCoreClient *client) {
     if (m_client == client) return;
@@ -147,6 +148,7 @@ void CanvasItem::setClient(PaintCoreClient *client) {
     emit residentPresentationChanged();
     setTabletWindowCursor(false);
     endPicking();
+    if(m_client && m_interactive && !m_previewPart)m_client->setCpuSamplingRequired(false);
     if (m_client) disconnect(m_client, nullptr, this, nullptr);
     m_poseRetry.stop();resetCursorSample();m_client = client; m_fitPending = true;
     if (client) {
@@ -170,6 +172,7 @@ void CanvasItem::setClient(PaintCoreClient *client) {
 }
 void CanvasItem::setInteractive(bool enabled) {
     if(!enabled){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.interactiveDisabled");endPicking();setTabletWindowCursor(false);}
+    if(!enabled && m_client && m_interactive && !m_previewPart)m_client->setCpuSamplingRequired(false);
     m_interactive = enabled; setAcceptedMouseButtons(enabled ? Qt::LeftButton | Qt::MiddleButton : Qt::NoButton);
     m_fitPending = true; refresh();refreshBrushCursor(); emit interactiveChanged(); emit viewChanged();
 }
@@ -207,13 +210,33 @@ void CanvasItem::beginPicking(QPointF local) {
     m_previousSampleColor=m_client->brushColor();m_picking=true;updatePicking(local);
 }
 void CanvasItem::updatePicking(QPointF local) {
+    m_pendingSamplePoint=documentPoint(local);m_sampleGeneration=m_client->generation();m_sampleRevision=m_client->revision();
+    m_pendingSampleColor=m_client->brushColor();m_pendingSample=true;updateSamplingDemand();
     m_cursorPosition=local;m_cursorInside=contains(local);m_sampledColor=pickColorAt(local);
-    if(m_sampledColor.isValid())m_client->setBrushColor(m_sampledColor);
+    if(m_sampledColor.isValid()){m_pendingSample=false;m_client->setBrushColor(m_sampledColor);}
+    if(!QRectF(0,0,m_client->documentWidth(),m_client->documentHeight()).contains(m_pendingSamplePoint))m_pendingSample=false;
     refreshBrushCursor();
 }
-void CanvasItem::endPicking() {
+void CanvasItem::endPicking(bool cancel) {
+    if(cancel)m_pendingSample=false;
+    updateSamplingDemand();
     if(!m_picking)return;
     m_picking=false;m_tablet=false;m_sampledColor=QColor();emit brushCursorChanged();
+    updateSamplingDemand();
+}
+void CanvasItem::updateSamplingDemand(){
+    if(m_client && m_interactive && !m_previewPart)m_client->setCpuSamplingRequired(isVisible() && (m_pendingSample || m_picking || m_altHeld || m_client->eyedropperTool()));
+}
+void CanvasItem::refreshPendingSample(){
+    if(!m_pendingSample || !m_client)return;
+    if(m_sampleGeneration!=m_client->generation() || m_sampleRevision!=m_client->revision() || m_pendingSampleColor!=m_client->brushColor()){
+        m_pendingSample=false;updateSamplingDemand();return;
+    }
+    const auto color=m_client->sampleDocumentPixel(m_pendingSamplePoint.x(),m_pendingSamplePoint.y());
+    if(!color.isValid())return;
+    m_pendingSample=false;
+    if(m_picking)m_sampledColor=color;
+    m_client->setBrushColor(color);updateSamplingDemand();
 }
 void CanvasItem::resetCursorSample(){m_havePoseSample=false;m_poseDirectionKnown=false;m_poseDevice.clear();}
 void CanvasItem::setCursorSample(const InputSample &sample,const QPointingDevice *device,bool resetDirection){
@@ -382,6 +405,7 @@ void CanvasItem::compositionFallback(QString reason,CompositionPacketPtr packet)
 }
 void CanvasItem::refresh() {
     if (!m_client) return;
+    refreshPendingSample();
     if(m_previewPart){
         m_residentPreview=m_client->residentPreview();
         const auto image=m_residentPreview?m_residentPreview->images[size_t(m_previewPart)]:QImage();
@@ -523,13 +547,17 @@ void CanvasItem::geometryChange(const QRectF &geometry, const QRectF &old) {
 }
 void CanvasItem::captureLayoutPosition() {
     if(m_layoutCaptured || !m_interactive || m_fitPending || !m_client || !window())return;
-    stopNavigation();
     m_layoutCaptured=true;m_layoutOrigin=mapToScene(documentRect().topLeft());m_layoutWindow=window();m_layoutGeneration=m_client->generation();
+    m_layoutGeometry={mapToScene({0,0}),size()};
 }
 void CanvasItem::restoreLayoutPosition() {
     if(!m_layoutCaptured)return;
     m_layoutCaptured=false;
     if(window()!=m_layoutWindow || !m_client || m_client->generation()!=m_layoutGeneration || m_fitPending)return;
+    // Repeated layout publication can leave the actual canvas unchanged.
+    // It must not cancel an in-flight zoom or restore its earlier pan.
+    if(m_layoutGeometry==QRectF(mapToScene({0,0}),size()))return;
+    stopNavigation();
     m_pan+=m_layoutOrigin-mapToScene(documentRect().topLeft());emit viewChanged();update();
 }
 QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
@@ -862,7 +890,7 @@ void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
 }
 void CanvasItem::mouseReleaseEvent(QMouseEvent *e) {
     if(!m_tablet){m_cursorPosition=e->position();setCursorSample(mouseSample(e->position(),e->buttons()),e->pointingDevice());}
-    if(m_picking && !m_tablet && e->button()==Qt::LeftButton){updatePicking(e->position());endPicking();e->accept();return;}
+    if(m_picking && !m_tablet && e->button()==Qt::LeftButton){updatePicking(e->position());endPicking(false);e->accept();return;}
     if(!m_panning && m_selecting && !m_tablet) finishSelection(e->position(),e->modifiers());
     if(m_moving && !m_tablet) finishLayerMove(e->position());
     if ((m_stroke || m_client->drawing()) && !m_tablet) { m_client->strokeTo(mouseSample(e->position(), e->buttons())); m_client->endStroke(); m_stroke = false; }
@@ -910,7 +938,7 @@ void CanvasItem::setAltHeld(bool held) {
     m_altReleaseTicks=0;
     if(held)m_shortcutStateTimer.start();
     else if(!m_ctrlHeld)m_shortcutStateTimer.stop();
-    if(!held && m_client && !m_client->eyedropperTool())endPicking();
+    if(!held && m_client && !m_client->eyedropperTool())endPicking(false);
     // The eyedropper takes over the pointer: a crosshair instead of the brush outline.
     applyShortcutCursor();
 }
@@ -956,7 +984,7 @@ void CanvasItem::refreshShortcutCursor() {
 #endif
     const auto physical=shortcutModifiersFromSystem();
     if(m_altHeld && !physical.testFlag(Qt::AltModifier)) {
-        if(++m_altReleaseTicks>=2){m_altHeld=false;if(m_client && !m_client->eyedropperTool())endPicking();}
+        if(++m_altReleaseTicks>=2){m_altHeld=false;if(m_client && !m_client->eyedropperTool())endPicking(false);}
     } else {
         m_altReleaseTicks=0;
         if(physical.testFlag(Qt::AltModifier))m_altHeld=true;
@@ -971,6 +999,7 @@ void CanvasItem::refreshShortcutCursor() {
     updateCursorPoll();
 }
 void CanvasItem::applyShortcutCursor() {
+    updateSamplingDemand();
     m_cursorShortcutModifiers=readShortcutCursorModifiers();
     setCursor(effectiveCursor());
     if(tabletCursorOwner==this && m_observedWindow)m_observedWindow->setCursor(cursor());
@@ -1114,7 +1143,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if(!m_client->liquifyActive() && (m_picking || ((m_altHeld || m_client->eyedropperTool()) && !m_client->selectionTool() && !m_client->moveTool()))) {
         if(event->type()==QEvent::TabletPress){beginPicking(local);m_tablet=true;}
         else if(event->type()==QEvent::TabletMove)updatePicking(local);
-        else if(event->type()==QEvent::TabletRelease){updatePicking(local);endPicking();}
+        else if(event->type()==QEvent::TabletRelease){updatePicking(local);endPicking(false);}
         e->accept();return true;
     }
     if(!m_client->liquifyActive() && (m_client->selectionTool()==5)) {
