@@ -4,7 +4,7 @@
 
 ## 两条 GPU 路径
 
-2026-10-27 后续提案：[通用 GPU 合成与即时编辑显示](general-gpu-composition-design.md)计划保留 CPU 文档真值与后备，在 Qt 窗口设备上增量合成并直接显示；[实施提示词](../planning/general-gpu-composition-prompt.md)与[验收计划](../validations/platform/general-gpu-composition-validation.md)单独维护。该方案尚未实现，不改变下列已完成范围或现有数值算子/显示设备的边界。
+2026-10-27 后续提案：[通用 GPU 合成与即时编辑显示](general-gpu-composition-design.md)计划保留 CPU 文档真值与后备，在 Qt 窗口设备上增量合成并直接显示；[实施提示词](../planning/general-gpu-composition-prompt.md)与[验收计划](../validations/platform/general-gpu-composition-validation.md)单独维护。该方案已实施至 G5，当前范围与限制以对应设计和验收最新节为准；下文日期段保留历史实现背景。2026-10-28 起两条路径统一遵循本文末节的计算硬件开关。
 
 2026-10-22共享蒙版判定：空蒙版及opacity=0蒙版不会改变覆盖，移动、完整/选区变换和液化（含套索）在其原支持栈中继续复用常驻纹理；固定自身及可消去祖先亦适用。仅私有显示快照省去这类蒙版，真实内容/链接/层级和确认像素保留。有实际遮挡的固定/祖先蒙版仍回退；visible=false或fill=0不单独判为无覆盖。代码入口为Document::resident_mask_is_identity/resident_has_effective_mask及partition_resident_source，复用Qt GPU显示，无新wgpu算子或ABI字段。见[共享设计](../tools/transform-resident-preview-design.md#2026-10-22-无效覆盖蒙版共用常驻预览)。
 
@@ -48,7 +48,7 @@ DrawVerse 使用 wgpu 做 Rust 算子计算，使用 Qt Quick 场景图/RHI 做�
 
 图层移动的会话、ABI 1.63、输入合并和代码入口见[实时移动设计](../tools/layer-move-preview-design.md)，检查范围见[验收](../validations/tools/layer-move-preview-validation.md)。移动没有新增 wgpu 算子：位移为 CPU 整数外观状态，GPU 只做纹理呈现。
 
-自由变换和网格变形见[常驻预览设计](../tools/transform-resident-preview-design.md)。它复用原图资产与呈现网格，但使用独立控制点曲面，液化继续使用Elastic场。Qt通过正向源层与完整画布合成保留透明上下层；无需wgpu控制点算子，GPU显示不受计算设备选择CPU影响。Warp确认与预览共用正向网格覆盖，CPU按瓦片定位源UV；GPU源层在有序透明通道覆盖写入，折叠处不重复叠加图层透明度。
+自由变换和网格变形见[常驻预览设计](../tools/transform-resident-preview-design.md)。它复用原图资产与呈现网格，但使用独立控制点曲面，液化继续使用Elastic场。Qt通过正向源层与完整画布合成保留透明上下层；无需wgpu控制点算子，当时GPU显示不受计算设备选择CPU影响；2026-10-28起统一遵循计算硬件开关。Warp确认与预览共用正向网格覆盖，CPU按瓦片定位源UV；GPU源层在有序透明通道覆盖写入，折叠处不重复叠加图层透明度。
 
 套索、魔棒和油漆桶的性能路径见[选区与填充优化](../tools/selection-complexity-performance-design.md)：CPU 共用扫描线区域算子、按行取样和瓦片写入；纯选区修改共享已有像素帧，Qt 保留相同图像的纹理身份。轮廓使用线性边界追踪和几何缓存。后续[常驻选区蚂蚁线](../tools/selection-resident-ants-design.md)增加 Qt 显示 shader：CPU 只在选择变化时栅格化文档遮罩，导航和相位复用纹理；真实 D3D11 与软件边界见[验收](../validations/tools/selection-resident-ants-validation.md)。未增加 wgpu 选色计算。
 
@@ -156,3 +156,11 @@ GPU计算设置仍控制现有wgpu算子，选择GPU不会把描边自动转为G
 2026-10-20扩展：根层链接自身蒙版、完整根组、连续根多选的自由变换已接常驻代理，CPU只更新几何，Qt硬件显示；确认仍在CPU对原始分层/蒙版分别取样。复合预览存在预合成/代理近似，固定蒙版、组内单层与选区等保留CPU预览，见[变换设计](../tools/transform-resident-preview-design.md)。三类完成任务的真实进度和延迟显示见[长任务设计](../tools/long-task-progress-design.md)，不新增GPU算子。
 
 2026-10-21移动扩展：无自身蒙版、完全不透明的普通祖先组可在私有显示快照中消去，使组内普通层继续使用三张常驻纹理和四顶点；固定蒙版、半透明/蒙版祖先等复杂组合使用最长边512的[有界CPU预览](../tools/layer-move-bounded-fallback-design.md)，Qt负责显示。最终显示恢复原完整路径，无新增wgpu计算请求。
+
+## 2026-10-28 统一计算硬件开关
+
+计算硬件作为文档 GPU 加速的统一入口：CPU 关闭液化 GPU 数值计算、通用画布合成及移动/变换/液化常驻预览，选区和光标专用显示亦使用原后备；自动或指定 GPU 按现有能力与预算启用。Qt 界面本身仍可使用系统图形设备，指定计算卡不迁移 Qt 窗口设备。环境变量仅可进一步关闭合成，不能绕过 CPU 设置强行开启。
+
+空闲切换触发所有绑定画布刷新，失效预热请求并恢复 CPU 视口需求；活动笔触、移动、变换、液化期间拒绝切换。共享偏好沿现有后台轮询同步到其他文档，不改变 ABI、历史和文件格式。
+
+验收：软件/D3D11 上检查 CPU 覆盖显式合成启用、auto→CPU→auto 多文档切换、预览能力与预热清理、CPU 绘画及撤销和像素一致；保留硬件/预算 CPU 回退。设置说明准确解释作用范围及计算卡与窗口设备边界。

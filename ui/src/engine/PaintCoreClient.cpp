@@ -174,7 +174,7 @@ public:
         m_computeClock.restart();
         auto info=dto<PaintSessionInfo>();if(paint_session_info(m_core,m_session,&info)!=PAINT_OK)return;
         const auto desired=preferences()->value("performance/computeDevice","auto").toString();
-        if((desired!=m_computeDevice) && !info.stroke_active && !(info.flags&(PAINT_SESSION_LIQUIFY|PAINT_SESSION_TRANSFORM))) {
+        if((desired!=m_computeDevice) && !info.stroke_active && !(info.flags&(PAINT_SESSION_LIQUIFY|PAINT_SESSION_TRANSFORM|PAINT_SESSION_LAYER_MOVE))) {
             const auto bytes=desired.toUtf8();quint64 sequence=0;
             if(paint_session_set_compute(m_core,m_session,reinterpret_cast<const uint8_t*>(bytes.constData()),quint64(bytes.size()),&sequence)==PAINT_OK) {
                 m_computeDevice=desired;m_computeSequence=sequence;
@@ -183,7 +183,7 @@ public:
         QString status=QStringLiteral("正在初始化计算硬件…");
         const bool busy=info.completed_sequence<m_computeSequence;
         if(!busy){uint64_t size=0;if(paint_session_compute_status(m_core,m_session,nullptr,0,&size)==PAINT_BUFFER_TOO_SMALL && size<=65536){QByteArray bytes(qsizetype(size),'\0');if(paint_session_compute_status(m_core,m_session,reinterpret_cast<uint8_t*>(bytes.data()),size,&size)==PAINT_OK)status=QString::fromUtf8(bytes);}}
-        emit computeState(m_computeHardware,desired,status,busy);
+        emit computeState(m_computeHardware,m_computeDevice,status,busy);
     }
     void saveStorage(const QVariantMap &values) { evaluateStorage(values, true); }
     void prepareBrushPreferences(QByteArray json) {
@@ -1120,7 +1120,16 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     });
     connect(m_worker,&BackendWorker::computeState,this,[this](QVariantList hardware,QString device,QString status,bool busy) {
         if(m_computeHardware==hardware && m_computeDevice==device && m_computeStatus==status && m_computeBusy==busy)return;
-        m_computeHardware=std::move(hardware);m_computeDevice=std::move(device);m_computeStatus=std::move(status);m_computeBusy=busy;emit computeChanged();
+        const bool deviceChanged=m_computeDevice!=device;
+        m_computeHardware=std::move(hardware);m_computeDevice=std::move(device);m_computeStatus=std::move(status);m_computeBusy=busy;
+        if(deviceChanged){
+            clearLayerMovePreparation();
+            clearCompositionEdit();
+            emit frameChanged();
+            refreshCpuDisplayDemand();
+            requestLayerMovePreparation();
+        }
+        emit computeChanged();
     });
     connect(&m_thread, &QThread::started, m_worker, &BackendWorker::boot);
     connect(m_worker, &BackendWorker::metadata, this, [this](PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform,QVariantList committedStrokes) {
@@ -1146,7 +1155,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(publishedTransform && !m_transformPublished){
             m_transformInitialPoints=transform.value("points").toList();m_residentPreviewFloor=info.revision;
             // Placement opens inside the file worker: opt in after file-result delivery.
-            if(m_residentGpuPreviewAvailable && !m_compositionTransform && !m_compositionTransformCpu)QTimer::singleShot(0,this,[this]{if(m_transformActive && m_transformPublished && !m_compositionTransform && !m_compositionTransformCpu && m_pendingTransform<=m_completedSequence && m_residentGpuPreviewAvailable)submitTransform(PAINT_TRANSFORM_ENABLE_RESIDENT);});
+            if(residentGpuPreviewEnabled() && !m_compositionTransform && !m_compositionTransformCpu)QTimer::singleShot(0,this,[this]{if(m_transformActive && m_transformPublished && !m_compositionTransform && !m_compositionTransformCpu && m_pendingTransform<=m_completedSequence && residentGpuPreviewEnabled())submitTransform(PAINT_TRANSFORM_ENABLE_RESIDENT);});
             emit transformChanged();
         }
         m_transformPublished=publishedTransform;
@@ -1521,10 +1530,10 @@ void PaintCoreClient::clearLayerMovePreparation() {
 void PaintCoreClient::requestLayerMovePreparation() {
     if(m_layerMoveActive)return;
     if(m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation &&
-       m_compositionPacket->info.key.revision==m_revision && compositionDisplayRequested()){
+       m_compositionPacket->info.key.revision==m_revision && gpuCompositionEnabled()){
         clearLayerMovePreparation();return;
     }
-    if(!m_ready || m_closing || m_pendingNew || !m_moveTool ||
+    if(!gpuAccelerationEnabled() || !m_ready || m_closing || m_pendingNew || !m_moveTool ||
        m_liquifyActive || m_transformActive || m_drawing || m_fileBusy || !m_active){
         clearLayerMovePreparation();
         return;
@@ -1563,7 +1572,7 @@ void PaintCoreClient::requestLayerMovePreparation() {
     if(status!=PAINT_OK)m_movePreparationPendingRequest=0;
 }
 CompositionPacketPtr PaintCoreClient::compositionPacket()const{
-    if(m_blendPreviewLayer || m_compositionFinalFallback || m_compositionTransformCpu)return {};
+    if(!gpuCompositionEnabled() || m_blendPreviewLayer || m_compositionFinalFallback || m_compositionTransformCpu)return {};
     if(m_compositionFinalRevision && m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation &&
        m_compositionPacket->info.key.revision>=m_compositionFinalRevision)return m_compositionPacket;
     if(m_compositionEditFrame)return m_compositionEditFrame;
@@ -1577,8 +1586,8 @@ void PaintCoreClient::clearCompositionEdit(){
 }
 bool PaintCoreClient::prepareCompositionMove(bool pick){
     if(m_compositionFinalRevision){m_compositionFinalFallback=true;m_compositionTransform=false;emit frameChanged();}
-    if(m_compositionEditBase || !m_compositionPacket || !m_residentGpuPreviewAvailable ||
-       !compositionDisplayRequested() ||
+    if(m_compositionEditBase || !m_compositionPacket || !residentGpuPreviewEnabled() ||
+       !gpuCompositionEnabled() ||
        m_compositionPacket->info.key.document_generation!=m_generation || m_compositionPacket->info.key.revision!=m_revision)return false;
     const auto targets=currentMoveTargets();
     if(!pick)for(auto id:targets){
@@ -1677,7 +1686,7 @@ void PaintCoreClient::compositionPrimaryAdopted(quint64 generation,quint64 epoch
 }
 void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
     m_compositionDeviceAvailable=enabled;
-    enabled=enabled && compositionDisplayRequested() && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive && !m_blendPreviewLayer;
+    enabled=enabled && gpuCompositionEnabled() && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive && !m_blendPreviewLayer;
     {
         QMutexLocker lock(&m_connection->mutex);auto &view=m_connection->compositionView;
         if(view.epoch!=epoch || view.enabled!=enabled || view.generation!=m_generation || view.region!=m_requestedRegions[0] || view.pixels!=m_requestedPixels[0]){
@@ -1692,7 +1701,7 @@ void PaintCoreClient::refreshCpuDisplayDemand(){
     const auto packet=compositionPacket();
     quint64 epoch=0;bool enabled=false;
     {QMutexLocker lock(&m_connection->mutex);epoch=m_connection->compositionView.epoch;enabled=m_connection->compositionView.enabled;}
-    const bool gpu=m_compositionDeviceAvailable && compositionDisplayRequested() && qEnvironmentVariableIntValue("DRAWVERSE_CPU_DISPLAY_REFERENCE")!=1 &&
+    const bool gpu=m_compositionDeviceAvailable && gpuCompositionEnabled() && qEnvironmentVariableIntValue("DRAWVERSE_CPU_DISPLAY_REFERENCE")!=1 &&
         packet && packet->info.key.document_generation==m_generation && packet->info.key.device_epoch==epoch &&
         (enabled || (m_compositionEditBase && !m_compositionFinalFallback));
     for(int view=0;view<2;++view){
@@ -1788,7 +1797,7 @@ void PaintCoreClient::inspectCompute() {
     if(m_worker)QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->inspectCompute();},Qt::QueuedConnection);
 }
 bool PaintCoreClient::saveComputeDevice(const QString &id) {
-    if(id.isEmpty() || id.size()>1024 || m_closing || m_drawing || m_liquifyActive || m_transformActive || m_computeBusy || !m_worker)return false;
+    if(id.isEmpty() || id.size()>1024 || m_closing || m_drawing || m_liquifyActive || m_transformActive || m_layerMoveActive || m_computeBusy || !m_worker)return false;
     m_computeBusy=true;emit computeChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,id]{worker->saveCompute(id);},Qt::QueuedConnection);
     return true;
@@ -1989,7 +1998,7 @@ bool PaintCoreClient::submitLiquifyControl(quint32 kind) {
 bool PaintCoreClient::beginLiquify() {
     if(m_liquifyActive)return false;
     for(const auto &value:m_layers){const auto l=value.toMap();if(l.value("id").toULongLong()==m_active && (l.value("group").toBool() || l.value("effectiveLocks").toUInt())) {showError(QStringLiteral("液化需要未锁定的像素图层或蒙版"));return false;}}
-    clearLayerBlendPreview();clearError();return submitLiquifyControl(m_residentGpuPreviewAvailable && m_computeDevice!="cpu"?PAINT_LIQUIFY_BEGIN_DEFERRED:PAINT_LIQUIFY_BEGIN);
+    clearLayerBlendPreview();clearError();return submitLiquifyControl(residentGpuPreviewEnabled()?PAINT_LIQUIFY_BEGIN_DEFERRED:PAINT_LIQUIFY_BEGIN);
 }
 void PaintCoreClient::setLiquifyFocus(bool value){if(value==m_liquifyFocus || !m_liquifyActive)return;if(submitLiquifyControl(value?PAINT_LIQUIFY_FOCUS_ON:PAINT_LIQUIFY_FOCUS_OFF)){m_liquifyFocus=value;emit liquifyOptionsChanged();}}
 bool PaintCoreClient::resetLiquify(){return m_liquifyActive && submitLiquifyControl(PAINT_LIQUIFY_RESET);}
@@ -2232,12 +2241,12 @@ bool PaintCoreClient::beginLayerMove(QPointF position,bool pick) {
     if(pick && (!std::isfinite(position.x()) || !std::isfinite(position.y()) || position.x()<0 || position.y()<0 || position.x()>=m_width || position.y()>=m_height))return false;
     const auto targets=currentMoveTargets();
     const bool composition=prepareCompositionMove(pick);
-    const bool prepared=m_residentGpuPreviewAvailable && !pick && m_movePreparationCompleted &&
+    const bool prepared=residentGpuPreviewEnabled() && !pick && m_movePreparationCompleted &&
         m_movePreparation && m_movePreparationGeneration==m_generation &&
         m_movePreparationRevision==m_revision &&
         (m_movePreparationIds.size()>1 || m_movePreparationLayer==m_active) &&
         m_movePreparationIds==targets;
-    const bool deferred=!composition && (prepared || (pick && m_residentGpuPreviewAvailable));
+    const bool deferred=!composition && (prepared || (pick && residentGpuPreviewEnabled()));
     const auto kind=pick?(deferred?PAINT_LAYER_MOVE_PICK_DEFERRED:PAINT_LAYER_MOVE_PICK):(deferred?PAINT_LAYER_MOVE_BEGIN_DEFERRED:PAINT_LAYER_MOVE_BEGIN);
     uint64_t sequence=0;
     PaintStatus status;QString error;
@@ -2710,7 +2719,7 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
     InteractionTrace::point("transform.submit.kind",kind);
     if(!m_ready || m_closing || m_fileBusy || m_drawing || (kind==PAINT_TRANSFORM_BEGIN && (m_liquifyActive || m_transformActive || layerEditBusy())))return false;
     uint64_t sequence=0;PaintStatus status;QString error;
-    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(kind==PAINT_TRANSFORM_BEGIN){QList<quint64> ids=m_selectedLayers;if(ids.isEmpty())ids={m_active};QVector<uint64_t> targets;for(auto id:ids)targets.append(id);status=(m_residentGpuPreviewAvailable && !m_compositionTransform && !m_compositionTransformCpu?paint_session_begin_transform_layers_deferred:paint_session_begin_transform_layers)(m_connection->core,m_connection->session,targets.data(),targets.size(),&sequence);}else status=paint_session_transform(m_connection->core,m_connection->session,kind,geometry,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(kind==PAINT_TRANSFORM_BEGIN){QList<quint64> ids=m_selectedLayers;if(ids.isEmpty())ids={m_active};QVector<uint64_t> targets;for(auto id:ids)targets.append(id);status=(residentGpuPreviewEnabled() && !m_compositionTransform && !m_compositionTransformCpu?paint_session_begin_transform_layers_deferred:paint_session_begin_transform_layers)(m_connection->core,m_connection->session,targets.data(),targets.size(),&sequence);}else status=paint_session_transform(m_connection->core,m_connection->session,kind,geometry,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){
         // Invalid intermediate handles keep the last valid geometry; the next move can recover.
         if(kind!=PAINT_TRANSFORM_UPDATE || status!=PAINT_INVALID_ARGUMENT || !error.contains("degenerate or crossed transform"))showError(error);
@@ -2730,7 +2739,7 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
     emit stateChanged();return true;
 }
 bool PaintCoreClient::beginTransform(){
-    clearLayerBlendPreview();const bool planned=m_compositionPacket && compositionDisplayRequested();
+    clearLayerBlendPreview();const bool planned=m_compositionPacket && gpuCompositionEnabled();
     prepareCompositionTransform();m_compositionTransformCpu=planned && !m_compositionTransform;
     if(submitTransform(PAINT_TRANSFORM_BEGIN))return true;
     if(m_compositionTransform)clearCompositionEdit();m_compositionTransformCpu=false;return false;

@@ -1,5 +1,6 @@
 #include "platform/UiResources.h"
 #include "canvas/CanvasItem.h"
+#include "canvas/CanvasPresentationObservation.h"
 #include "canvas/CompositionNode.h"
 #include <QtTest>
 #include <QtEndian>
@@ -168,6 +169,29 @@ private slots:
         data["lod"]=lod;data["dpr"]=window.devicePixelRatio();data["api"]=int(window.rendererInterface()->graphicsApi());data["test_readbacks"]=2;data["normal_readbacks"]=0;
         save(QString::fromLatin1(QTest::currentDataTag()),data);
         const auto dir=qEnvironmentVariable("DRAWVERSE_G2_REPORT_DIR");if(!dir.isEmpty()){gpu.save(dir+"/"+QTest::currentDataTag()+"-gpu.png");cpu.save(dir+"/"+QTest::currentDataTag()+"-cpu.png");}
+    }
+    void zoomKeepsCompositionPresentation(){
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));
+        QTRY_VERIFY(client.ready());client.newDocument(256,192);
+        QTRY_VERIFY(client.ready() && client.documentWidth()==256);
+        QQuickWindow window;window.resize(512,384);
+        auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({512,384});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("D3D11 required");
+        QTRY_COMPARE(canvas->compositionStatistics()["nodeRevision"].toULongLong(),client.revision());
+        QTRY_VERIFY(canvas->compositionStatistics()["adoptions"].toULongLong()>0);
+        QTRY_VERIFY(canvas->compositionStatistics()["nodeRequest"].toULongLong()>0);
+        auto observed=std::make_shared<CanvasPresentationObservation>(512);canvas->observePresentation(observed);
+        for(int i=0;i<6;++i){
+            canvas->zoomBy(i%2?1/1.1:1.1);
+            QTest::qWait(60);
+            QTRY_VERIFY(client.compositionPacket() && client.compositionPacket()->pixels==requestedPixels(*canvas,window));
+            window.update();QTest::qWait(30);
+        }
+        const auto samples=observed->samples();QVERIFY(samples.size()>2);
+        for(const auto &sample:samples)QVERIFY2(sample.identity.valid && sample.identity.composition,"zoom exposed a CPU/empty presentation");
+        QCOMPARE(observed->overflow(),quint64(0));
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void continuousPaintingAndIncrementalUploads(){
         qputenv("DRAWVERSE_GPU_COMPOSITION","1");QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));

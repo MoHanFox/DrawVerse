@@ -229,6 +229,9 @@ public:
     QString computeDevice() const { return m_computeDevice; }
     QString computeStatus() const { return m_computeStatus; }
     bool computeBusy() const { return m_computeBusy; }
+    bool gpuAccelerationEnabled() const { return m_computeDevice != "cpu"; }
+    bool gpuCompositionEnabled() const { return gpuAccelerationEnabled() && compositionDisplayRequested(); }
+    bool residentGpuPreviewEnabled() const { return gpuAccelerationEnabled() && m_residentGpuPreviewAvailable; }
     Q_INVOKABLE void inspectCompute();
     Q_INVOKABLE bool saveComputeDevice(const QString &id);
     Q_INVOKABLE bool saveStorageSettings(const QString &directory, int memoryMiB, int scratchGiB, int reserveMiB);
@@ -343,9 +346,9 @@ public:
     void setCompositionDevice(quint64 epoch,bool enabled);
     bool cpuDisplaySuppressed(int view=0)const{return m_cpuViewSuppressed[view==1?1:0];}
     void setCpuSamplingRequired(bool required){if(required!=m_cpuSamplingRequired){m_cpuSamplingRequired=required;refreshCpuDisplayDemand();}}
-    ResidentPreviewPtr residentPreview() const { return m_residentPreview; }
+    ResidentPreviewPtr residentPreview() const { return gpuAccelerationEnabled() ? m_residentPreview : ResidentPreviewPtr{}; }
     ResidentPreviewPtr liquifyPreview() const { return residentPreview(); }
-    ResidentPreviewAssetsPtr movePreparation() const { return m_movePreparation; }
+    ResidentPreviewAssetsPtr movePreparation() const { return gpuAccelerationEnabled() ? m_movePreparation : ResidentPreviewAssetsPtr{}; }
     void setResidentGpuPreviewAvailable(bool value) { m_residentGpuPreviewAvailable=value; }
     void setLiquifyGpuPreviewAvailable(bool value) { setResidentGpuPreviewAvailable(value); }
     QRectF frameRegion(int view = 0) const { return m_regions[view == 1 ? 1 : 0]; }

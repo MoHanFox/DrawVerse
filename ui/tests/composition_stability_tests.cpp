@@ -141,11 +141,52 @@ private slots:
         readback.request(b);QVERIFY(!readback.accept(current,CompositionReadback::identityOf(b),1,"same packet old version"));QCOMPARE(readback.completed.load(),0);
         QCOMPARE(readback.pending(b,current).value(),readback.version.load());
     }
+    void hardwareSwitchUpdatesAllCanvases(){
+        qunsetenv("DRAWVERSE_CPU_DISPLAY_REFERENCE");
+        const auto restore=qScopeGuard([]{qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");});
+        QTemporaryDir temp;const auto prefs=temp.filePath("prefs.ini");
+        PaintCoreClient a(nullptr,prefs);QVERIFY(ready(a));
+        PaintCoreClient b(nullptr,prefs,a.brushCatalogConnection());QVERIFY(ready(b));QVERIFY(document(a,128));QVERIFY(document(b,128));
+        QVERIFY(dab(a,{42,43}));QVERIFY(dab(b,{42,43}));
+        QQuickWindow wa,wb;auto *ca=attach(wa,a);auto *cb=attach(wb,b);QVERIFY(ca);QVERIFY(cb);
+        if(!software(wa)){QVERIFY(gpuReady(a,*ca));QVERIFY(gpuReady(b,*cb));}
+        QVERIFY(b.beginLiquify());QTRY_VERIFY(b.liquifyActive() && !b.liquifyBusy());
+        QTRY_VERIFY(!a.computeBusy());QVERIFY(a.saveComputeDevice("cpu"));
+        QTRY_VERIFY(!a.computeBusy() && a.computeDevice()=="cpu");
+        QTest::qWait(650);QCOMPARE(b.computeDevice(),QStringLiteral("auto"));
+        QVERIFY(b.finishLiquify(false));QTRY_VERIFY(!b.liquifyActive() && !b.liquifyBusy());
+        QTRY_VERIFY(!a.computeBusy() && a.computeDevice()=="cpu" && b.computeDevice()=="cpu");
+        QVERIFY(!ca->gpuDisplay());QVERIFY(!cb->gpuDisplay());
+        QVERIFY(!a.residentGpuPreviewEnabled());QVERIFY(!b.residentGpuPreviewEnabled());
+        QVERIFY(cpuReady(a,*ca,wa));QVERIFY(cpuReady(b,*cb,wb));
+        QVERIFY(!a.cpuDisplaySuppressed());QVERIFY(!b.cpuDisplaySuppressed());
+        QVERIFY(!a.compositionPacket());QVERIFY(!b.compositionPacket());
+        QVERIFY(!a.movePreparation());QVERIFY(!b.movePreparation());
+        QTest::qWait(80);QCOMPARE(CompositionNode::reservedPayloadBytes(),0);
+        QVERIFY(a.beginTransform());QTRY_VERIFY(a.transformActive() && !a.transformBusy());
+        QVERIFY(!a.residentPreview());QVERIFY(!a.saveComputeDevice("auto"));
+        QVERIFY(a.finishTransform(false));QTRY_VERIFY(!a.transformActive() && !a.transformBusy());
+        QVERIFY(a.beginLayerMove({42,43}));QTRY_VERIFY(!a.layerEditBusy() || a.layerMoveActive());
+        QVERIFY(!a.residentPreview());QVERIFY(!a.saveComputeDevice("auto"));
+        a.finishLayerMove({},false);QTRY_VERIFY(!a.layerEditBusy());
+        QVERIFY(cpuReady(a,*ca,wa));
+        const auto cpu=frame(wa);const auto depth=a.undoDepth();
+        QVERIFY(dab(a,{72,73},Qt::blue));a.undo();QTRY_COMPARE(a.undoDepth(),depth);QVERIFY(cpuReady(a,*ca,wa));
+        QVERIFY(difference(cpu,frame(wa))<=1);
+        QVERIFY(a.saveComputeDevice("auto"));
+        QTRY_VERIFY(!a.computeBusy() && a.computeDevice()=="auto" && b.computeDevice()=="auto");
+        if(!software(wa)){
+            QTRY_VERIFY(ca->gpuDisplay() && cb->gpuDisplay());
+            QVERIFY(gpuReady(a,*ca));QVERIFY(gpuReady(b,*cb));
+            QVERIFY(difference(cpu,frame(wa))<=1);
+        }
+    }
     void defaultPolicy_data(){
         QTest::addColumn<QByteArray>("overrideValue");QTest::addColumn<bool>("cpuCompute");
         QTest::newRow("default")<<QByteArray()<<false;QTest::newRow("off")<<QByteArray("0")<<false;
         QTest::newRow("invalid")<<QByteArray("invalid")<<false;QTest::newRow("explicit-on")<<QByteArray("1")<<false;
-        QTest::newRow("cpu-compute-independent")<<QByteArray()<<true;
+        QTest::newRow("cpu-disables-gpu")<<QByteArray()<<true;
+        QTest::newRow("cpu-overrides-explicit-on")<<QByteArray("1")<<true;
     }
     void defaultPolicy(){
         QFETCH(QByteArray,overrideValue);QFETCH(bool,cpuCompute);
@@ -156,7 +197,7 @@ private slots:
         QVERIFY(dab(c,{43,38}));const auto revision=c.revision();const auto depth=c.undoDepth();
         QQuickWindow w;auto *canvas=attach(w,c);QVERIFY(canvas);QVERIFY(cpuReady(c,*canvas,w));
         if(qEnvironmentVariableIsSet("DRAWVERSE_G5_EXPECTED_DPR"))QCOMPARE(w.devicePixelRatio(),qreal(qEnvironmentVariableIntValue("DRAWVERSE_G5_EXPECTED_DPR")));
-        const bool enabled=!software(w) && compositionDisplayRequested();
+        const bool enabled=!cpuCompute && !software(w) && compositionDisplayRequested();
         if(enabled)QVERIFY2(gpuReady(c,*canvas),qPrintable(canvas->compositionStatistics()["fallback"].toString()));
         else {QTest::qWait(60);QCOMPARE(canvas->compositionStatistics()["adoptions"].toULongLong(),0);QVERIFY(!c.compositionPacket());}
         QCOMPARE(c.revision(),revision);QCOMPARE(c.undoDepth(),depth);QCOMPARE(canvas->compositionStatistics()["testReadbacks"].toInt(),0);

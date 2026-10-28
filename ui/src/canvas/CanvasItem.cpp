@@ -157,6 +157,9 @@ void CanvasItem::setClient(PaintCoreClient *client) {
         connect(client, &PaintCoreClient::brushCursorImageChanged,this,&CanvasItem::refreshBrushCursor);
         connect(client, &PaintCoreClient::brushCursorPreferencesChanged,this,&CanvasItem::refreshBrushCursor);
         connect(client, &PaintCoreClient::frameChanged, this, &CanvasItem::refresh);
+        connect(client, &PaintCoreClient::computeChanged, this, [this]{
+            emit gpuDisplayChanged();refresh();refreshBrushCursor();
+        });
         connect(client,&PaintCoreClient::movePreparationChanged,this,[this]{
             m_movePreparation=m_client?m_client->movePreparation():ResidentPreviewAssetsPtr{};
             m_moveWarmupPending=m_movePreparation && m_movePreparation->uploads->load()==0;
@@ -419,7 +422,7 @@ void CanvasItem::refresh() {
     m_image = m_client->frame(view); m_imageRegion = m_client->frameRegion(view);
     m_imageRevision=m_client->frameRevision(view);
     if(m_interactive && window())m_client->setCompositionDevice(m_compositionEpoch,CompositionNode::supportsWindow(window()) && !m_compositionFailed && isVisible());
-    m_compositionPacket=m_interactive && compositionDisplayRequested()?m_client->compositionPacket():CompositionPacketPtr{};
+    m_compositionPacket=m_interactive && m_client->gpuCompositionEnabled()?m_client->compositionPacket():CompositionPacketPtr{};
     m_compositionCounters->handoffRevision=m_interactive?m_client->compositionHandoffRevision():0;
     m_movePreparation=m_client->movePreparation();
     m_moveWarmupPending=m_movePreparation && m_movePreparation->uploads->load()==0;
@@ -446,7 +449,7 @@ void CanvasItem::requestView() {
 }
 bool CanvasItem::gpuDisplay() const {
     const auto api=window()?window()->rendererInterface()->graphicsApi():QSGRendererInterface::Unknown;
-    return api!=QSGRendererInterface::Software && api!=QSGRendererInterface::Unknown && api!=QSGRendererInterface::Null;
+    return m_client && m_client->gpuAccelerationEnabled() && api!=QSGRendererInterface::Software && api!=QSGRendererInterface::Unknown && api!=QSGRendererInterface::Null;
 }
 QVariantMap CanvasItem::compositionStatistics()const{
     const auto &c=*m_compositionCounters;
@@ -461,7 +464,7 @@ QVariantMap CanvasItem::compositionStatistics()const{
         {"geometryReuses",c.geometryReuses.load()},{"pageTableCreates",c.pageTableCreates.load()},{"axisCreates",c.axisCreates.load()},
         {"parameterBufferCreates",c.parameterBufferCreates.load()},{"bindingCreates",c.bindingCreates.load()},
         {"composedPixels",c.composedPixels.load()},{"lastDirtyArea",c.lastDirtyArea.load()},
-        {"fallback",!m_compositionFailureReason.isEmpty()?m_compositionFailureReason:!compositionDisplayRequested()?QStringLiteral("CPU: composition disabled"):!CompositionNode::supportsWindow(window())?QStringLiteral("CPU: composition requires Qt 6.6+ D3D11"):m_client?m_client->compositionFallback():QString()}};
+        {"fallback",!m_compositionFailureReason.isEmpty()?m_compositionFailureReason:(m_client && !m_client->gpuAccelerationEnabled())?QStringLiteral("CPU: disabled by compute hardware setting"):!compositionDisplayRequested()?QStringLiteral("CPU: composition disabled"):!CompositionNode::supportsWindow(window())?QStringLiteral("CPU: composition requires Qt 6.6+ D3D11"):m_client?m_client->compositionFallback():QString()}};
 }
 QRectF CanvasItem::prefetchedDocumentRect() const {
     if(!m_client || width()<=0 || height()<=0)return {};

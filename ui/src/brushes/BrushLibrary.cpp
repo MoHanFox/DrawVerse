@@ -1093,11 +1093,22 @@ QVariantMap BrushLibrary::previewParameters(const Preset &p) {
     return {{"spacing",p.spacing},{"tip",tip}};
 }
 void BrushLibrary::refreshPreviewInputs(Preset &p) {
+    if(m_previewEditing){m_deferredPreviewIds.insert(p.id);return;}
     auto inputs=previewParameters(p);
     if(p.previewInputs==inputs)return;
     p.previewInputs=std::move(inputs);p.preview.clear();p.error.clear();p.token=++m_nextToken;p.requested=0;
 }
+void BrushLibrary::setPreviewEditing(bool editing) {
+    if(m_previewEditing==editing)return;
+    m_previewEditing=editing;
+    if(editing)return;
+    const auto changed=m_deferredPreviewIds;m_deferredPreviewIds.clear();
+    for(const auto &id:changed){const int at=index(id);if(at>=0)refreshPreviewInputs(m_presets[at]);}
+    emit selectedPreviewChanged();emit settingsChanged();
+    requestPreview(m_selected);
+}
 void BrushLibrary::requestPreview(const QString &id) {
+    if(m_previewEditing)return;
     const int i=index(id);if(i<0)return;auto &p=m_presets[i];
     if(!p.preview.isEmpty() || !p.error.isEmpty() || p.requested==p.token)return;
     p.previewInputs=previewParameters(p);p.requested=p.token;

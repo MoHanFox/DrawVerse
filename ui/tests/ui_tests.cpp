@@ -605,6 +605,18 @@ private slots:
         QQuickItem *panel=nullptr;QTRY_VERIFY((panel=findVisualItem(window->contentItem(),"brushSettingsPanel")));
         QVERIFY(findVisualItem(panel,"settingsBrushSize"));QVERIFY(!findVisualItem(panel,"pressureSizeCurve"));QVERIFY(!findVisualItem(panel,"settingsDualSizeMode"));
         QVERIFY(findVisualItem(panel,"imageTipInterpretationLabel"));
+        auto *library=client.brushLibrary();
+        QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);
+        auto *track=findVisualItem(panel,"settingsBrushSpacingTrack");QVERIFY(track);
+        const auto start=track->mapToScene({track->width()*.25,track->height()/2}).toPoint();
+        const auto end=track->mapToScene({track->width()*.7,track->height()/2}).toPoint();
+        const auto preview=library->selectedPreview();QSignalSpy requests(library,&BrushLibrary::previewRequested);
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,start);
+        QTest::mouseMove(window,end);QTest::qWait(200);
+        QCOMPARE(requests.size(),0);QCOMPARE(library->selectedPreview(),preview);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,end);
+        QTRY_COMPARE(requests.size(),1);
+        QTRY_VERIFY_WITH_TIMEOUT(!library->selectedPreview().isEmpty(),10000);
         panel->setProperty("category",4);
         QQuickItem *mode=nullptr;QTRY_VERIFY((mode=findVisualItem(panel,"settingsDualSizeMode")));
         QVERIFY(findVisualItem(panel,"settingsDualSizeModeLabel"));QVERIFY(!findVisualItem(panel,"settingsBrushSize"));
@@ -4607,6 +4619,22 @@ private slots:
 #endif
         QVERIFY(QMetaObject::invokeMethod(menu,"close"));QTRY_VERIFY(!menu->property("opened").toBool());QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void brushSliderPreviewWaitsForRelease() {
+        BrushLibrary library;const auto id=library.selectedId();
+        QSignalSpy requests(&library,&BrushLibrary::previewRequested);
+        library.requestPreview(id);library.acceptPreview(id,requests.last()[1].toULongLong(),"initial");
+        library.setPreviewEditing(true);
+        library.setSpacing(.3);library.requestPreview(id);
+        library.setSpacing(.6);library.requestPreview(id);
+        QCOMPARE(library.spacing(),qreal(.6));QCOMPARE(requests.size(),1);
+        QCOMPARE(library.selectedPreview(),QString("initial"));
+        library.setPreviewEditing(false);QCOMPARE(requests.size(),2);
+        QCOMPARE(requests.last()[4].toReal(),qreal(.6));
+        library.acceptPreview(id,requests.last()[1].toULongLong(),"final");
+        QCOMPARE(library.selectedPreview(),QString("final"));
+        library.setPreviewEditing(true);library.setPreviewEditing(false);
+        QCOMPARE(requests.size(),2);
+    }
     void brushPresetsKeepIndependentSettingsAndRejectStalePreviews() {
         BrushLibrary library;QCOMPARE(library.radius(),qreal(12));library.setRadius(22);library.setOpacity(.4);library.setSpacing(.3);QVERIFY(library.select("round-fine"));QCOMPARE(library.radius(),qreal(3));QCOMPARE(library.opacity(),qreal(1));QVERIFY(library.select("round-pressure"));QCOMPARE(library.radius(),qreal(22));QCOMPARE(library.spacing(),qreal(.3));
         QSignalSpy requests(&library,&BrushLibrary::previewRequested);library.requestPreview(library.selectedId());QCOMPARE(requests.size(),1);QCOMPARE(requests.first()[2].toReal(),qreal(24));const auto oldToken=requests.first()[1].toULongLong();library.setRadius(24);QCOMPARE(requests.size(),1);library.setSpacing(.4);library.acceptPreview(library.selectedId(),oldToken,"stale");QVERIFY(library.selectedPreview().isEmpty());library.requestPreview(library.selectedId());QCOMPARE(requests.size(),2);library.acceptPreview(library.selectedId(),requests.last()[1].toULongLong(),"fresh");QCOMPARE(library.selectedPreview(),QString("fresh"));
@@ -5112,7 +5140,12 @@ private slots:
         auto *storageAction=window->findChild<QObject*>("storagePreferencesAction");QVERIFY(storageAction);QVERIFY(storageAction->property("enabled").toBool());
         auto *dialog=window->findChild<QObject*>("preferencesDialog"); QVERIFY(dialog);QVERIFY(QMetaObject::invokeMethod(storageAction,"triggered"));QTRY_VERIFY(dialog->property("opened").toBool());QTRY_VERIFY(!client.storageBusy());
         auto *compute=dialog->findChild<QObject*>("computeDevice");QVERIFY(compute);QTRY_VERIFY(compute->property("count").toInt()>=1);
-        QVERIFY(dialog->findChild<QObject*>("computeStatus"));
+        auto *computeHint=dialog->findChild<QObject*>("computeStatus");QVERIFY(computeHint);
+        const auto computeText=computeHint->property("text").toString();
+        QVERIFY(computeText.contains(QStringLiteral("关闭文档 GPU 加速")));
+        QVERIFY(computeText.contains(QStringLiteral("自由变换")));
+        QVERIFY(computeText.contains(QStringLiteral("自动使用 CPU")));
+        QVERIFY(computeText.contains(QStringLiteral("无需重启")));
         auto *memory=dialog->findChild<QObject*>("storageMemory"); QVERIFY(memory); QCOMPARE(memory->property("currentIndex").toInt(),2);
         auto *scratch=dialog->findChild<QObject*>("storageScratch"); QVERIFY(scratch); QCOMPARE(scratch->property("value").toInt(),8);
         auto *reserve=dialog->findChild<QObject*>("storageReserve"); QVERIFY(reserve); QCOMPARE(reserve->property("value").toInt(),512);

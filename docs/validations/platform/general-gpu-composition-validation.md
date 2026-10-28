@@ -770,3 +770,23 @@ build-delivery-final更新标准build/bin/Release/drawverse.exe及paint_ffi.dll�
 保留`transform-target-build-real`链接EXE失败LNK1104记录，随后重试和最终构建成功；最初辅助脚本GBK读取中文失败发生在编辑前，原日志保留。未重跑总check或无关核心矩阵；此前总check、UI、原首次移动长尾等失败保持。复杂目标CPU成本、物理显示/实体手感、其他硬件仍未完成验证，不将本轮分发优化称为所有图像滞后已消除。
 
 额外后台轮询的CPU利用率未独立量测；本轮只记录有界持续时间及既有节点采用计时，不作整机功耗或占用承诺。
+
+## 2026-10-28 缩放闪烁最小回归
+
+新增 zoomKeepsCompositionPresentation：等待 GPU 首次真实采用后，六次往返缩放记录实际呈现身份，断言均有效且为 composition。旧 ready 条件实际捕获 CPU 呈现并失败（build/bugfix-before-gpu.txt）；修复后通过。continuousPaintingAndIncrementalUploads 的25笔及静止增量检查通过。初次回归曾包含启动未就绪帧而失败，保留 build/bugfix-gpu-d3d11.txt，最终增加首次采用守卫。未做实体笔/物理屏幕验收或整套check，不称所有闪烁原因消除。
+
+
+## 2026-10-28 计算硬件统一开关验收
+
+设置中的计算硬件统一控制液化数值计算、画布通用合成及移动/自由变换/液化常驻预览；CPU亦令画布的专用光标/选区显示采用原后备。诊断环境变量只能进一步禁止合成，显式1不能覆盖CPU。指定计算卡不迁移Qt窗口显卡，界面本身仍可使用GPU，设置提示已说明。
+
+切换时清理移动预热、失效旧请求、刷新绑定画布并恢复CPU视口需求。其他文档沿原共享设置轮询在空闲时跟随；后台发布已接受的设备，不把尚未应用的偏好提前映射成显示策略。笔触/液化/变换/移动期间拒绝切换。
+
+证据在 artifacts/general-gpu-composition/G5-followup/hardware-switch-*：
+
+- 最终软件 defaultPolicy 六行及 hardwareSwitchUpdatesAllCanvases 一行，共7功能行通过；D3D11补原CPU按需/移动故障提交取消，共10功能行通过。含显式GPU环境覆盖下CPU仍关闭、双文档auto→CPU→auto、另一文档液化期间延后采用、CPU移动/变换无常驻预览、资源释放归零、绘画撤销及切回GPU后窗口误差≤1。
+- 原计算设备持久化/失败回退及真实设置QML各2功能，两后端均通过；新增提示内容断言。D3D11设置截图 settings.png 已检查，提示完整换行、存储控件可滚动。
+- 原套索液化矩阵、蒙版变换边框及连续绘画后编辑两后端各10功能行通过。
+- 四ABI通过；标准build/bin/Release应用、相关测试构建及生成头/shader构建检查通过；实际D3D11 Release --preview绘画冒烟退出0并产出图像。EXE SHA256 5597f89eb9f6bcec6ee50d6e53cef4c0f644af36220c91c836d444fb6b3e3b57。
+
+初次新增双文档夹具没有复用应用的共享笔刷目录连接，ready(b)失败；改为复用brushCatalogConnection后原断言通过，原日志保留。编译期间另一个任务同时构建相同目录，数次对象文件Permission denied记录保留；等其他构建结束后串行发起构建通过（first-move-cost/hardware-switch-build-serial.log）。没有运行总check，没有新增性能、实体笔或物理显示结论。ABI/state/文档格式不变，原有未提交修改保留。

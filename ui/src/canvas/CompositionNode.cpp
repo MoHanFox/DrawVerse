@@ -184,7 +184,8 @@ public:
         counters->epoch=packet->info.key.device_epoch;counters->request=packet->info.key.request_id;
         return prepareTargets();
     }
-    bool ready()const override{return rendered && !failed;}
+    // beforeRendering fills the target before Qt samples it, including after resize.
+    bool ready()const override{return display.texture && !failed;}
 private:
     bool fail(const char *message){if(!failed){failed=true;++counters->failures;fallback(QString::fromUtf8(message),packet);}return false;}
     bool createTarget(Target &t,QRhiTexture::Format format,QSize size){

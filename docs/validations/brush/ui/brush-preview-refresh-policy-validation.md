@@ -21,3 +21,7 @@ Release应用/测试与生成头检查通过，build/bin/Release/drawverse.exe�
 按用户要求仅做最小验证：三项开关及曲线修改保留在途token和已生成图像，保存重开保留真实开关/曲线；既有条件规则回归；真实引擎修改后强制生成PNG完全一致；既有压感编辑器/导出导入及实际笔触alpha验证通过。四个功能在软件与D3D11各6 passed（含初始化/结束）、0 failed，日志artifacts/preview-pressure-{software,d3d11}.txt。未新增实体笔验收或性能计时。
 
 Release应用/测试构建及生成头检查通过，日志artifacts/preview-pressure-build.log；标准build/bin/Release/drawverse.exe更新于2026-10-27 01:00:08。无Rust源码/ABI1.80/state45变化，未跑无关全套。
+
+## 2026-10-28 滑条最小回归
+
+brushSliderPreviewWaitsForRelease 与 brushSettingsCreatesOnlyActiveCategoryAndLabelsChoices（新增真实滑条按住 200ms/松开检查）软件及 D3D11 各两项通过。参数实时改变、拖动保留图片且零请求、释放一次请求及无变化不重绘。旧 brushPresetsKeepIndependentSettingsAndRejectStalePreviews 半径预期48/实际24断言失败保留于 build/bugfix-ui-software.txt，未修改该断言，不报告全套通过。

@@ -425,6 +425,7 @@ public:
     Q_INVOKABLE bool remove(const QString &id);
     Q_INVOKABLE bool resetPreset();
     Q_INVOKABLE bool restoreSourceBaseline(const QVariantMap &info);
+    Q_INVOKABLE void setPreviewEditing(bool editing);
     Q_INVOKABLE void requestPreview(const QString &id);
     Q_INVOKABLE void cancelPreview(const QString &id);
     Q_INVOKABLE void retryPreview();
@@ -508,5 +509,7 @@ private:
     QStringList m_recentColors;
     int m_writeBlend=0;
     QColor m_foregroundColor{"#2ea99d"},m_backgroundColor=Qt::white;
+    QSet<QString> m_deferredPreviewIds;
+    bool m_previewEditing=false;
     quint64 m_nextToken=16;
 };
