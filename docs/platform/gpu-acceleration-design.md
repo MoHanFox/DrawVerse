@@ -4,6 +4,8 @@
 
 ## 两条 GPU 路径
 
+2026-10-27 后续提案：[通用 GPU 合成与即时编辑显示](general-gpu-composition-design.md)计划保留 CPU 文档真值与后备，在 Qt 窗口设备上增量合成并直接显示；[实施提示词](../planning/general-gpu-composition-prompt.md)与[验收计划](../validations/platform/general-gpu-composition-validation.md)单独维护。该方案尚未实现，不改变下列已完成范围或现有数值算子/显示设备的边界。
+
 2026-10-22共享蒙版判定：空蒙版及opacity=0蒙版不会改变覆盖，移动、完整/选区变换和液化（含套索）在其原支持栈中继续复用常驻纹理；固定自身及可消去祖先亦适用。仅私有显示快照省去这类蒙版，真实内容/链接/层级和确认像素保留。有实际遮挡的固定/祖先蒙版仍回退；visible=false或fill=0不单独判为无覆盖。代码入口为Document::resident_mask_is_identity/resident_has_effective_mask及partition_resident_source，复用Qt GPU显示，无新wgpu算子或ABI字段。见[共享设计](../tools/transform-resident-preview-design.md#2026-10-22-无效覆盖蒙版共用常驻预览)。
 
 2026-10-21液化组内扩展：可消去的Normal/PassThrough祖先下，普通活动层也能沿用套索/无选区的常驻网格路径；祖先需完全可见、opacity/fill=1、无蒙版/剪贴，Normal子树不依赖外部背景。复用移动/变换的私有祖先快照，原层级不变；自身/祖先蒙版等仍像素回退。无新增GPU算子或ABI字段，见[液化设计](../tools/liquify-resident-preview-design.md)。

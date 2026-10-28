@@ -1,5 +1,7 @@
 # 验收文档索引
 
+- [通用 GPU 合成验收计划与阶段记录（未实施）](platform/general-gpu-composition-validation.md)
+
 - [主线 C2-B — Exact Tile Cache Reuse](tools/exact-tile-cache-reuse-validation.md)
 
 - [主线 C1 — Layer Move Latency Baseline](tools/layer-move-latency-baseline-validation.md)
