@@ -482,6 +482,11 @@ public:
         emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}},history,{{"points",transformPoints},{"warp",transform.warp!=0},{"interpolation",transform.interpolation},{"skewH",transform.skew_h},{"skewV",transform.skew_v}},committedStrokes); m_publication = info.publication;m_strokeCommitCursor=info.completed_sequence;
         return true;
     }
+    void transformInputActivity(){
+        if(m_stopped)return;
+        m_transformInputClock.start();
+        m_timer->setInterval(2);
+    }
     void watchCompositionAcknowledgement(quint64 sequence){
         pollCompositionAcknowledgement(++m_compositionAckWatch,sequence,256);
     }
@@ -573,7 +578,9 @@ public:
                 emit compositionReady(std::move(packet),view.serial,fallback);
             }
         }
-        const int pollInterval=m_residentPreview?8:16;
+        // Only actual legacy/CPU transform input opens a short response window.
+        // Return to the normal idle cadence without presenting unchanged pixels.
+        const int pollInterval=m_transformInputClock.isValid() && m_transformInputClock.elapsed()<48?2:(m_residentPreview?8:16);
         if(m_timer->interval()!=pollInterval)m_timer->setInterval(pollInterval);
         for (uint32_t view = 0; view < 2; ++view) {
             // At most one queued QImage per view when the GUI is busy.
@@ -963,6 +970,7 @@ public:
     PaintSession *m_session = nullptr;
     CompositionReader m_compositionReader;
     quint64 m_compositionAckWatch=0;
+    QElapsedTimer m_transformInputClock;
     QString m_compositionFallback;
     quint64 m_layerCopySequence=0;
     ResidentPreviewPtr m_residentPreview;
@@ -2710,9 +2718,11 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
     }m_lastTransform=sequence;
     if(trace.active)trace.event.value=double(sequence);
     if(kind!=PAINT_TRANSFORM_UPDATE)m_pendingTransform=sequence;
-    if(kind==PAINT_TRANSFORM_BEGIN){m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();}
+    if(kind==PAINT_TRANSFORM_BEGIN){m_transformPoints.clear();m_transformInitialPoints.clear();m_transformPublished=false;m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();emit transformChanged();}
     if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE || kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL)m_pendingMutation=sequence;
     if(kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL)m_pendingLayer=sequence;
+    if(kind==PAINT_TRANSFORM_UPDATE && !m_compositionTransform)
+        QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->transformInputActivity();},Qt::QueuedConnection);
     if(m_compositionTransform && kind!=PAINT_TRANSFORM_UPDATE){
         if(kind==PAINT_TRANSFORM_BEGIN)m_compositionBeginSequence=sequence;
         QMetaObject::invokeMethod(m_worker,[worker=m_worker,sequence]{worker->watchCompositionAcknowledgement(sequence);},Qt::QueuedConnection);
@@ -2725,7 +2735,7 @@ bool PaintCoreClient::beginTransform(){
     if(submitTransform(PAINT_TRANSFORM_BEGIN))return true;
     if(m_compositionTransform)clearCompositionEdit();m_compositionTransformCpu=false;return false;
 }
-bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int interpolation,qreal skewH,qreal skewV){if(!m_transformActive || points.size()!=16)return false;auto g=dto<PaintTransform>();g.warp=warp;g.interpolation=interpolation;g.skew_h=qIsFinite(skewH)?skewH:m_transformSkewH;g.skew_v=qIsFinite(skewV)?skewV:m_transformSkewV;for(int i=0;i<16;++i){const auto p=points[i].toPointF();g.points[i*2]=p.x();g.points[i*2+1]=p.y();}if(!submitTransform(PAINT_TRANSFORM_UPDATE,&g))return false;m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=g.skew_h;m_transformSkewV=g.skew_v;refreshCompositionTransform(&g);emit transformChanged();return true;}
+bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int interpolation,qreal skewH,qreal skewV){if(!m_transformActive || !m_transformPublished || points.size()!=16)return false;auto g=dto<PaintTransform>();g.warp=warp;g.interpolation=interpolation;g.skew_h=qIsFinite(skewH)?skewH:m_transformSkewH;g.skew_v=qIsFinite(skewV)?skewV:m_transformSkewV;for(int i=0;i<16;++i){const auto p=points[i].toPointF();g.points[i*2]=p.x();g.points[i*2+1]=p.y();}if(!submitTransform(PAINT_TRANSFORM_UPDATE,&g))return false;m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=g.skew_h;m_transformSkewV=g.skew_v;refreshCompositionTransform(&g);emit transformChanged();return true;}
 bool PaintCoreClient::checkpointTransform(){return m_transformActive && submitTransform(PAINT_TRANSFORM_CHECKPOINT);}
 bool PaintCoreClient::finishTransform(bool commit){
     if(!m_transformActive || !submitTransform(commit?PAINT_TRANSFORM_COMMIT:PAINT_TRANSFORM_CANCEL))return false;

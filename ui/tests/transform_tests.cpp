@@ -1292,6 +1292,24 @@ Window {
         QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);
         QCOMPARE(errors.size(),0);QVERIFY(client.lastError().isEmpty());client.shutdown();
     }
+    void transformBeginNeverExposesIdleOrPreviousPoints() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("target.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newDocument(96,96);QTRY_VERIFY(client.documentWidth()==96 && !client.layerEditBusy());
+        const auto bottom=client.activeLayer();client.addLayer("small target");QTRY_VERIFY(!client.layerEditBusy());
+        const auto top=client.activeLayer();client.setBrushRadius(5);QVERIFY(client.beginStroke({{32,40},1}));client.endStroke();
+        QTRY_VERIFY(!client.layerEditBusy());
+        QVariantList first;
+        for(auto target:{bottom,top,bottom}){
+            client.selectLayer(target);QTRY_VERIFY(client.activeLayer()==target && !client.layerEditBusy());
+            QVERIFY(client.beginTransform());QVERIFY(client.transformPoints().isEmpty());
+            QTRY_VERIFY(!client.transformBusy() && client.transformPoints().size()==16);
+            if(target==bottom){if(first.isEmpty())first=client.transformPoints();else QCOMPARE(client.transformPoints(),first);}
+            else QVERIFY(client.transformPoints()!=first);
+            QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
+        }
+        QVERIFY(client.lastError().isEmpty());
+    }
     void invalidIntermediateTransformKeepsLastGeometryAndRecovers() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("invalid-transform.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());

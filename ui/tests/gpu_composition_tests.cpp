@@ -655,7 +655,7 @@ private slots:
         const auto pipelines=canvas->compositionStatistics()["pipelineCreates"].toULongLong();
         const bool precise=!software && canvas->compositionStatistics()["preciseTransform"].toInt()>0;
         if(shape==11 && !software)QVERIFY(!precise);
-        QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformActive() && !client.transformBusy() && client.transformPoints().size()==16);
+        QVERIFY(client.beginTransform());QVERIFY(client.transformPoints().isEmpty());QTRY_VERIFY(client.transformActive() && !client.transformBusy() && client.transformPoints().size()==16);
         if(precise){QVERIFY(client.compositionPacket());QVERIFY(client.compositionPacket()->preview);QVERIFY(client.compositionPacket()->transform);QVERIFY(!client.residentPreview());}
         auto points=client.transformPoints();const auto initial=points;
         for(int i=0;i<16;++i){const auto p=initial[i].toPointF();points[i]=QPointF(p.x()*1.12-p.y()*.17+12.3,p.x()*.13+p.y()*.91-3.1);}
