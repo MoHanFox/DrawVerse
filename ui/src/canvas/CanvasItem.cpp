@@ -60,6 +60,9 @@ Qt::KeyboardModifiers shortcutModifiersFromSystem() {
 }
 
 CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
+    connect(CompositionNode::budgetNotifier(),&CompositionBudgetNotifier::resourcesReleased,this,[this]{
+        if(m_compositionFailed && m_compositionFailureReason.contains("process/in-flight"))refresh();
+    });
     setFlag(ItemHasContents); setAcceptedMouseButtons(Qt::LeftButton | Qt::MiddleButton);
     setCursor(Qt::CrossCursor);setAcceptHoverEvents(true);qApp->installEventFilter(this);
 #ifdef Q_OS_WIN
@@ -89,12 +92,12 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
         setTabletWindowCursor(false);
         if (m_observedWindow) { m_observedWindow->removeEventFilter(this); disconnect(m_observedWindow, nullptr, this, nullptr); }
         m_observedWindow = window;
-        m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionCounters->preciseTransform=0;m_compositionFailed=false;m_compositionFailureReason.clear();m_compositionPacket.reset();
+        resetCompositionDevice();
         if (window) {
             connect(window, &QQuickWindow::screenChanged, this, &CanvasItem::observeScreen);
             connect(window,&QQuickWindow::sceneGraphInitialized,this,[this]{emit gpuDisplayChanged();refresh();},Qt::QueuedConnection);
             connect(window,&QQuickWindow::sceneGraphInvalidated,this,[this]{
-                m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionCounters->preciseTransform=0;m_compositionFailed=false;m_compositionFailureReason.clear();m_compositionPacket.reset();refresh();
+                resetCompositionDevice();refresh();
             },Qt::QueuedConnection);
             connect(window,&QQuickWindow::frameSwapped,this,[this]{
                 if(m_moveWarmupPending && m_movePreparation && m_movePreparation->uploads->load()){
@@ -139,7 +142,7 @@ void CanvasItem::setClient(PaintCoreClient *client) {
     if(m_tablet)mouseUngrabEvent();
     cancelLayerMove("move.cancel.clientChanged");
     if(m_client && m_interactive && !m_previewPart)m_client->setCompositionDevice(m_compositionEpoch,false);
-    m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionCounters->preciseTransform=0;
+    resetCompositionDevice();
     stopNavigation();m_image={};m_overview={};m_residentPreview={};m_movePreparation={};m_moveWarmupPending=false;m_compositionPacket.reset();m_compositionFailed=false;m_compositionFailureReason.clear();
     emit residentPresentationChanged();
     setTabletWindowCursor(false);
@@ -324,6 +327,59 @@ void CanvasItem::hoverMoveEvent(QHoverEvent *event){
     setTabletWindowCursor(false);m_cursorInside=true;m_cursorPosition=event->position();setCursorSample(mouseSample(event->position(),Qt::NoButton),event->pointingDevice());refreshBrushCursor();if(m_selecting && m_selectionKind==3)updateSelection(event->position(),event->modifiers());
 }
 void CanvasItem::hoverLeaveEvent(QHoverEvent *event){if(ignoreCachedMouseHover(event) || m_tablet)return;setTabletWindowCursor(false);resetCursorSample();m_cursorInside=false;refreshBrushCursor();}
+void CanvasItem::resetCompositionDevice(){
+    m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionCounters->preciseTransform=0;
+    m_compositionFailed=false;m_compositionFailureReason.clear();m_compositionPacket.reset();
+    m_failedCompositionDemand=m_failedCompositionRelease=0;m_failedCompositionPreview=false;
+}
+quint64 CanvasItem::compositionDemand()const{
+    if(!m_client)return ~quint64(0);
+    const auto rows=m_client->layers();
+    if(rows.size()>64 || m_client->documentWidth()>4096 || m_client->documentHeight()>4096)return ~quint64(0);
+    QHash<quint64,QVariantMap> layers;
+    for(const auto &row:rows){const auto layer=row.toMap();layers.insert(layer["id"].toULongLong(),layer);}
+    int depth=0;bool clipped=false;
+    for(const auto &row:rows){
+        const auto layer=row.toMap();if(layer["mask"].toBool())continue;
+        auto current=layer;bool visible=true;int steps=0;
+        for(;;){
+            visible&=current["visible"].toBool() && current["opacity"].toDouble()*current["fill"].toDouble()>0;
+            const auto parent=current["parent"].toULongLong();if(!parent)break;
+            if(++steps>16 || !layers.contains(parent))return ~quint64(0);
+            current=layers.value(parent);
+        }
+        if(visible){depth=std::max(depth,layer["depth"].toInt()+int(layer["group"].toBool()));clipped|=layer["clipped"].toBool();}
+    }
+    const quint64 surfaces=quint64(clipped?5:2)*quint64(depth+1);
+    const auto region=prefetchedDocumentRect();const auto dpr=window()?window()->devicePixelRatio():1.;
+    const auto pixels=quint64(std::clamp(std::ceil(region.width()*m_zoom*dpr),0.,4096.))*
+        quint64(std::clamp(std::ceil(region.height()*m_zoom*dpr),0.,4096.));
+    return 68ull*1024*1024+quint64(m_client->documentWidth())*m_client->documentHeight()*16*surfaces+pixels*4;
+}
+void CanvasItem::retryCompositionIfPossible(){
+    if(!m_compositionFailed || !m_client || m_client->drawing() || m_client->layerEditBusy() ||
+       m_client->transformActive() || m_client->liquifyActive() || m_client->compositionHandoffRevision())return;
+    const bool budget=m_compositionFailureReason.contains("budget");
+    const bool released=m_compositionFailureReason.contains("process/in-flight") &&
+        CompositionNode::releasedPayloadSerial()!=m_failedCompositionRelease;
+    if((budget && (released || compositionDemand()<m_failedCompositionDemand)) || m_failedCompositionPreview){
+        ++m_compositionRetries;resetCompositionDevice();
+    }
+}
+void CanvasItem::compositionFallback(QString reason,CompositionPacketPtr packet){
+    if(!packet || !m_client || packet->info.key.device_epoch!=m_compositionEpoch ||
+       packet->info.key.document_generation!=m_client->generation())return;
+    if(!reason.isEmpty()){
+        m_compositionFailed=true;m_compositionPacket.reset();m_compositionFailureReason=reason;
+        m_failedCompositionPreview=packet->preview;
+        m_failedCompositionRelease=CompositionNode::releasedPayloadSerial();
+        m_failedCompositionDemand=68ull*1024*1024+quint64(packet->info.document_width)*packet->info.document_height*16*
+            quint64(packet->surfaceCount+(packet->transform && packet->transform->geometry.warp?1:0))+
+            quint64(packet->pixels.width())*packet->pixels.height()*4;
+        m_client->setCompositionDevice(m_compositionEpoch,false);
+    }
+    refresh();
+}
 void CanvasItem::refresh() {
     if (!m_client) return;
     if(m_previewPart){
@@ -333,12 +389,13 @@ void CanvasItem::refresh() {
         return;
     }
     if(m_interactive && window()){m_client->setResidentGpuPreviewAvailable(gpuDisplay());m_client->setCompositionPrecisionAvailable(m_compositionCounters->preciseTransform.load()>0);}
-    if (m_generation != m_client->generation()) { stopNavigation();m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
+    if (m_generation != m_client->generation()) { resetCompositionDevice();stopNavigation();m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
+    retryCompositionIfPossible();
     const int view = m_interactive ? 0 : 1;
     m_image = m_client->frame(view); m_imageRegion = m_client->frameRegion(view);
     m_imageRevision=m_client->frameRevision(view);
-    if(m_interactive && window())m_client->setCompositionDevice(m_compositionEpoch,gpuDisplay() && !m_compositionFailed && isVisible());
-    m_compositionPacket=m_interactive && qEnvironmentVariableIntValue("DRAWVERSE_GPU_COMPOSITION")==1?m_client->compositionPacket():CompositionPacketPtr{};
+    if(m_interactive && window())m_client->setCompositionDevice(m_compositionEpoch,CompositionNode::supportsWindow(window()) && !m_compositionFailed && isVisible());
+    m_compositionPacket=m_interactive && compositionDisplayRequested()?m_client->compositionPacket():CompositionPacketPtr{};
     m_compositionCounters->handoffRevision=m_interactive?m_client->compositionHandoffRevision():0;
     m_movePreparation=m_client->movePreparation();
     m_moveWarmupPending=m_movePreparation && m_movePreparation->uploads->load()==0;
@@ -360,7 +417,7 @@ void CanvasItem::requestView() {
     const qreal dpr = window()->devicePixelRatio();
     const QSize pixels(qCeil(region.width() * m_zoom * dpr), qCeil(region.height() * m_zoom * dpr));
     m_client->requestViewport(m_interactive ? 0 : 1, region, pixels, !region.isEmpty());
-    if(m_interactive)m_client->setCompositionDevice(m_compositionEpoch,gpuDisplay() && !m_compositionFailed && isVisible());
+    if(m_interactive)m_client->setCompositionDevice(m_compositionEpoch,CompositionNode::supportsWindow(window()) && !m_compositionFailed && isVisible());
     if(m_interactive)m_client->ensureOverview();
 }
 bool CanvasItem::gpuDisplay() const {
@@ -369,7 +426,7 @@ bool CanvasItem::gpuDisplay() const {
 }
 QVariantMap CanvasItem::compositionStatistics()const{
     const auto &c=*m_compositionCounters;
-    return {{"uploads",c.uploads.load()},{"uploadBytes",c.uploadBytes.load()},{"passes",c.passes.load()},
+    return {{"currentEpoch",m_compositionEpoch},{"retries",m_compositionRetries},{"failed",m_compositionFailed},{"uploads",c.uploads.load()},{"uploadBytes",c.uploadBytes.load()},{"passes",c.passes.load()},
         {"adoptions",c.adoptions.load()},{"revision",c.revision.load()},{"epoch",c.epoch.load()},
         {"request",c.request.load()},{"textureBytes",c.textureBytes.load()},{"failures",c.failures.load()},
         {"processReservedPayloadBytes",CompositionNode::reservedPayloadBytes()},
@@ -380,7 +437,7 @@ QVariantMap CanvasItem::compositionStatistics()const{
         {"geometryReuses",c.geometryReuses.load()},{"pageTableCreates",c.pageTableCreates.load()},{"axisCreates",c.axisCreates.load()},
         {"parameterBufferCreates",c.parameterBufferCreates.load()},{"bindingCreates",c.bindingCreates.load()},
         {"composedPixels",c.composedPixels.load()},{"lastDirtyArea",c.lastDirtyArea.load()},
-        {"fallback",!m_compositionFailureReason.isEmpty()?m_compositionFailureReason:m_client?m_client->compositionFallback():QString()}};
+        {"fallback",!m_compositionFailureReason.isEmpty()?m_compositionFailureReason:!compositionDisplayRequested()?QStringLiteral("CPU: composition disabled"):!CompositionNode::supportsWindow(window())?QStringLiteral("CPU: composition requires Qt 6.6+ D3D11"):m_client?m_client->compositionFallback():QString()}};
 }
 QRectF CanvasItem::prefetchedDocumentRect() const {
     if(!m_client || width()<=0 || height()<=0)return {};
@@ -481,7 +538,7 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     // snapshot, never PaintCoreClient's live GUI metadata in this observer.
     const auto observation=qScopeGuard([&]{if(m_presentationObserver)m_presentationObserver->adopted(adopted);});
     auto *node = static_cast<CanvasNode *>(old);
-    if ((!m_residentPreview && !m_movePreparation && m_image.isNull() && m_overview.isNull()) || !window()) { delete node; return nullptr; }
+    if ((!m_residentPreview && !m_movePreparation && !m_compositionPacket && m_image.isNull() && m_overview.isNull()) || !window()) { delete node; return nullptr; }
     if(!node)node=new CanvasNode;
     if(node->generation!=m_generation){node->generation=m_generation;node->displayedRevision=0;}
     const bool useComposition=m_interactive && !m_previewPart && !m_residentPreview && m_compositionPacket &&
@@ -492,16 +549,9 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         if(node->composition && node->compositionEpoch!=m_compositionEpoch){delete node->composition;node->composition=nullptr;}
         if(!node->composition){
             QPointer<CanvasItem> self=this;
-            node->composition=CompositionNode::create(window(),m_compositionPacket,m_compositionCounters,[self](QString reason){
-                if(!self)return;
-                QMetaObject::invokeMethod(self,[self,reason]{
-                    if(!self)return;
-                    if(!reason.isEmpty()){
-                        self->m_compositionFailed=true;self->m_compositionPacket.reset();
-                        self->m_compositionFailureReason=reason;
-                        if(self->m_client)self->m_client->setCompositionDevice(self->m_compositionEpoch,false);
-                    }
-                    self->refresh();
+            node->composition=CompositionNode::create(window(),m_compositionPacket,m_compositionCounters,[self](QString reason,CompositionPacketPtr packet){
+                if(self)QMetaObject::invokeMethod(self,[self,reason,packet=std::move(packet)]{
+                    if(self)self->compositionFallback(reason,packet);
                 },Qt::QueuedConnection);
             },[self](CompositionPacketPtr packet){
                 if(!self)return;

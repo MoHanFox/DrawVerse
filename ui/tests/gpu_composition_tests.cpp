@@ -142,8 +142,8 @@ private slots:
         const auto packet=client.compositionPacket();QCOMPARE(packet->lod,lod);
         // Linear readback is independent of view/LOD: this immutable document
         // stays unchanged while navigation settles.
-        if(readback->completed.load()!=2){window.update();}
-        QTRY_COMPARE_WITH_TIMEOUT(readback->completed.load(),2,10000);
+        readback->request(*packet);window.update();
+        QTRY_VERIFY_WITH_TIMEOUT((window.update(),readback->completed.load()==2),10000);
         double linearError=0;
         {std::lock_guard lock(readback->mutex);
             QCOMPARE(readback->linear.size(),side*height*16);
@@ -265,7 +265,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision(),15000);
         QTRY_VERIFY(client.compositionPacket()->region==canvas->prefetchedDocumentRect() && client.compositionPacket()->pixels==requestedPixels(*canvas,window));
         QTRY_COMPARE(canvas->compositionStatistics()["nodeRequest"].toULongLong(),client.compositionPacket()->info.key.request_id);
-        QTRY_COMPARE(readback->completed.load(),2);
+        readback->request(*client.compositionPacket());window.update();QTRY_VERIFY((window.update(),readback->completed.load()==2));
         const auto packet=client.compositionPacket();QCOMPARE(packet->lod,fixed?1:0);
         const auto directory=qEnvironmentVariable("DRAWVERSE_G2_REPORT_DIR");QVERIFY(!directory.isEmpty());
         {std::lock_guard lock(readback->mutex);QVERIFY(writeLinearCapture(*packet,readback->linear,QString::fromLatin1(QTest::currentDataTag())));}
@@ -278,7 +278,7 @@ private slots:
         if(mode==3 && fixed){
             const auto captureDependency=[&](const QString &name){
                 if(!QTest::qWaitFor([&]{return client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision() && client.frameRevision()==client.revision();},10000))return false;
-                readback->completed=0;readback->geometry=client.compositionPacket()->geometrySequence;++readback->version;window.update();
+                readback->request(*client.compositionPacket());window.update();
                 if(!QTest::qWaitFor([&]{window.update();return readback->completed.load()==2;},10000))return false;
                 std::lock_guard lock(readback->mutex);return writeLinearCapture(*client.compositionPacket(),readback->linear,name);
             };
@@ -336,7 +336,7 @@ private slots:
         if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software){save("closure-"+name,{{"passed",true},{"cpu_fallback",true}});return;}
         QTRY_COMPARE_WITH_TIMEOUT(canvas->compositionStatistics()["nodeRevision"].toULongLong(),revision,15000);
         QVERIFY2(client.compositionPacket(),qPrintable(client.compositionFallback()));QVERIFY(!client.compositionPacket()->operations.isEmpty());
-        readback->completed=0;readback->geometry=client.compositionPacket()->geometrySequence;++readback->version;window.update();
+        readback->request(*client.compositionPacket());window.update();
         QTRY_VERIFY_WITH_TIMEOUT((window.update(),readback->completed.load()==2),10000);
         double error=0;QByteArray actual;
         {std::lock_guard lock(readback->mutex);actual=readback->linear;}
@@ -365,18 +365,35 @@ private slots:
         QQuickWindow window;window.resize(384,288);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({384,288});canvas->setAcceptedMouseButtons(Qt::NoButton);
         auto readback=std::make_shared<CompositionReadback>();canvas->observeCompositionReadback(readback);canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
         const bool software=window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software;
-        int maximum=0;
+        int maximum=0,comparison=0;
         const auto compare=[&]{
-            if(!QTest::qWaitFor([&]{return client.frameRevision()==client.revision() && client.frameRegion()==canvas->prefetchedDocumentRect() && client.frame().size()==requestedPixels(*canvas,window);},10000))return false;
+            ++comparison;QByteArray actual;QImage expected;
+            const auto failed=[&](const char *reason){
+                auto report=QJsonObject::fromVariantMap(canvas->compositionStatistics());report["reason"]=QString::fromLatin1(reason);report["comparison"]=comparison;report["actualBytes"]=actual.size();report["drawing"]=client.drawing();report["editBusy"]=client.layerEditBusy();
+                report["cpu"]=QJsonObject::fromVariantMap(client.frameIdentity());report["cpuWidth"]=client.frame().width();report["cpuHeight"]=client.frame().height();report["maximum"]=maximum;
+                if(const auto packet=client.compositionPacket()){
+                    report["packetRequest"]=double(packet->info.key.request_id);report["packetRevision"]=double(packet->info.key.revision);report["packetGeometry"]=double(packet->geometrySequence);
+                    report["packetWidth"]=packet->pixels.width();report["packetHeight"]=packet->pixels.height();report["preview"]=packet->preview;
+                }
+                const auto name="clipping-failure-"+QString::number(comparison);save(name,report);
+                const auto dir=qEnvironmentVariable("DRAWVERSE_G2_REPORT_DIR");
+                if(!dir.isEmpty()){
+                    QFile pixels(dir+"/"+name+".rgba8");if(pixels.open(QIODevice::WriteOnly))pixels.write(actual);
+                    if(!expected.isNull())expected.save(dir+"/"+name+"-cpu.png");
+                }
+                qWarning()<<"clipping comparison failed"<<comparison<<reason<<maximum;
+                return false;
+            };
+            if(!QTest::qWaitFor([&]{return client.frameRevision()==client.revision() && client.frameRegion()==canvas->prefetchedDocumentRect() && client.frame().size()==requestedPixels(*canvas,window);},10000))return failed("CPU frame not ready");
             if(software)return true;
-            if(!QTest::qWaitFor([&]{return client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision() && canvas->compositionStatistics()["nodeRequest"].toULongLong()==client.compositionPacket()->info.key.request_id;},10000))return false;
-            readback->completed=0;readback->geometry=client.compositionPacket()->geometrySequence;++readback->version;window.update();
-            if(!QTest::qWaitFor([&]{window.update();return readback->completed.load()==2;},10000))return false;
-            QByteArray actual;{std::lock_guard lock(readback->mutex);actual=readback->display;}
-            const auto expected=client.frame().convertToFormat(QImage::Format_RGBA8888_Premultiplied);
-            if(actual.size()!=expected.width()*expected.height()*4)return false;
+            if(!QTest::qWaitFor([&]{return client.compositionPacket() && client.compositionPacket()->region==canvas->prefetchedDocumentRect() && client.compositionPacket()->pixels==requestedPixels(*canvas,window) && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision() && canvas->compositionStatistics()["nodeRequest"].toULongLong()==client.compositionPacket()->info.key.request_id;},10000))return failed("GPU packet not adopted");
+            readback->request(*client.compositionPacket());window.update();
+            if(!QTest::qWaitFor([&]{window.update();return readback->completed.load()==2;},10000))return failed("GPU readback not ready");
+            {std::lock_guard lock(readback->mutex);actual=readback->display;}
+            expected=client.frame().convertToFormat(QImage::Format_RGBA8888_Premultiplied);
+            if(actual.size()!=expected.width()*expected.height()*4)return failed("different display dimensions");
             for(int y=0;y<expected.height();++y)for(int x=0;x<expected.width()*4;++x)maximum=std::max(maximum,std::abs(int(uchar(actual[y*expected.width()*4+x]))-int(expected.constScanLine(y)[x])));
-            return maximum<=1;
+            return maximum<=1 || failed("display pixel mismatch");
         };
         QVERIFY(compare());auto uploads=canvas->compositionStatistics()["uploads"].toULongLong();auto revision=client.revision();
         client.setLayerProperties(outer,true,.43);QTRY_VERIFY(client.revision()>revision && !client.layerEditBusy());QVERIFY(compare());QCOMPARE(canvas->compositionStatistics()["uploads"].toULongLong(),uploads);
@@ -436,7 +453,7 @@ private slots:
         if(software){save("group-"+QString::fromLatin1(QTest::currentDataTag()),{{"passed",true},{"cpu_fallback",true}});return;}
         const auto capture=[&](const QString &suffix){
             if(!QTest::qWaitFor([&]{return client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision() && client.frameRevision()==client.revision();},10000))return false;
-            readback->completed=0;readback->geometry=client.compositionPacket()->geometrySequence;++readback->version;window.update();
+            readback->request(*client.compositionPacket());window.update();
             if(!QTest::qWaitFor([&]{window.update();return readback->completed.load()==2;},10000))return false;
             std::lock_guard lock(readback->mutex);return writeGroupCapture(*client.compositionPacket(),readback->linear,QString::fromLatin1(QTest::currentDataTag())+suffix);
         };
@@ -630,6 +647,9 @@ private slots:
             QTRY_VERIFY_WITH_TIMEOUT(canvas->compositionStatistics()["adoptions"].toULongLong()>0 && client.compositionPacket() && canvas->compositionStatistics()["nodeEpoch"].toULongLong()==client.compositionPacket()->info.key.device_epoch,15000);
             QTRY_COMPARE_WITH_TIMEOUT(canvas->compositionStatistics()["nodeRevision"].toULongLong(),client.revision(),15000);
             emit client.frameChanged();
+            QTRY_VERIFY(client.compositionPacket()->region==canvas->prefetchedDocumentRect() && client.compositionPacket()->pixels==requestedPixels(*canvas,window));
+            QTRY_COMPARE(canvas->compositionStatistics()["nodeRequest"].toULongLong(),client.compositionPacket()->info.key.request_id);
+            readback->request(*client.compositionPacket());window.update();QTRY_VERIFY((window.update(),readback->completed.load()==2));
         }
         const auto uploads=canvas->compositionStatistics()["uploads"].toULongLong();
         const auto pipelines=canvas->compositionStatistics()["pipelineCreates"].toULongLong();
@@ -666,7 +686,7 @@ private slots:
                 const auto reused=canvas->compositionStatistics();
                 QVERIFY(reused["geometryReuses"].toULongLong()>prepared["geometryReuses"].toULongLong());
                 for(const auto *key:{"uploads","pipelineCreates","pageTableCreates","axisCreates","parameterBufferCreates","bindingCreates"})QCOMPARE(reused[key],prepared[key]);
-                QTRY_COMPARE(readback->completed.load(),2);readback->completed=0;readback->geometry=client.compositionPacket()->geometrySequence;readback->version=1;window.update();
+                QTRY_VERIFY((window.update(),readback->completed.load()==2));readback->request(*client.compositionPacket());window.update();
                 const bool captured=QTest::qWaitFor([&]{window.update();return readback->completed.load()==2;},2000);
                 if(!captured){auto diagnostic=QJsonObject::fromVariantMap(canvas->compositionStatistics());diagnostic["requestedGeometry"]=double(readback->geometry.load());diagnostic["clientGeometry"]=double(client.compositionPacket()->geometrySequence);save("readback-failure-"+QString::fromLatin1(QTest::currentDataTag()),diagnostic);}
                 QVERIFY(captured);{std::lock_guard lock(readback->mutex);previewLinear=readback->linear;}

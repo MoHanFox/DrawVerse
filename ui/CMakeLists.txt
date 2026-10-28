@@ -195,6 +195,15 @@ set_tests_properties(qt_gpu_composition_tests PROPERTIES TIMEOUT 300 FIXTURES_RE
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;DRAWVERSE_G4_FIXTURES=${gpu_closure_fixtures}"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Test>")
 
+qt_add_executable(qt_composition_stability_tests tests/composition_stability_tests.cpp)
+target_link_libraries(qt_composition_stability_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_composition_stability_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_composition_stability_tests COMMAND qt_composition_stability_tests
+    -o "${CMAKE_BINARY_DIR}/qt-composition-stability-$<CONFIG>.txt,txt" -o -,txt)
+set_tests_properties(qt_composition_stability_tests PROPERTIES TIMEOUT 240
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Test>")
+
 qt_add_executable(qt_workflow_tests tests/workflow_tests.cpp)
 target_link_libraries(qt_workflow_tests PRIVATE drawverse_ui Qt6::Test Qt6::QmlPrivate)
 target_compile_definitions(qt_workflow_tests PRIVATE DRAWVERSE_QML_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml")

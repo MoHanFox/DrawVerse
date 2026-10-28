@@ -67,8 +67,8 @@ def main():
         env['DRAWVERSE_G0_WARP'] = '1'
     if args.native_driver:
         env['DRAWVERSE_G0_DRIVER'] = 'native-v5'
-    if args.composition:
-        env['DRAWVERSE_GPU_COMPOSITION'] = '1'
+    # Freeze the paired reference even when the product enables GPU by default.
+    env['DRAWVERSE_GPU_COMPOSITION'] = '1' if args.composition else '0'
     env['PATH'] = str(root/'.tools/qt/6.8.3/msvc2022_64/bin')+os.pathsep+env['PATH']
     (out/'environment.json').write_text(json.dumps({k: v for k, v in env.items() if k.startswith(('QT_', 'QSG_', 'QML_', 'DRAWVERSE_'))}, indent=2), encoding='utf-8')
     with (out/'qt.log').open('w', encoding='utf-8') as log:

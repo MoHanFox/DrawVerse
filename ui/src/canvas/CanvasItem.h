@@ -116,6 +116,13 @@ protected:
     void hoverLeaveEvent(QHoverEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 private:
+    friend class CompositionStabilityTests;
+    void resetCompositionDevice();
+    void compositionFallback(QString reason,CompositionPacketPtr packet);
+    quint64 compositionDemand()const;
+    void retryCompositionIfPossible();
+    quint64 m_failedCompositionDemand=0,m_failedCompositionRelease=0,m_compositionRetries=0;
+    bool m_failedCompositionPreview=false;
     CompositionPacketPtr m_compositionPacket;
     std::shared_ptr<CompositionCounters> m_compositionCounters=std::make_shared<CompositionCounters>();
     quint64 m_compositionEpoch=0;

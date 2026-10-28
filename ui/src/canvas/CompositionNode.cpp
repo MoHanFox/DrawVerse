@@ -1,6 +1,8 @@
 #include "CompositionNode.h"
 #include "platform/InteractionTrace.h"
 #include <QQuickWindow>
+#include <QCoreApplication>
+#include <QPointer>
 #include <QFile>
 #include <QSGRendererInterface>
 #include <QtEndian>
@@ -11,6 +13,32 @@
 #include <cstring>
 #include <map>
 #include <tuple>
+namespace {
+std::atomic<quint64> releasedTextureSerial{0};
+std::atomic<bool> budgetNotificationQueued{false};
+[[maybe_unused]] void notifyPayloadReleased(){
+    ++releasedTextureSerial;
+    auto *app=QCoreApplication::instance();
+    if(!app || budgetNotificationQueued.exchange(true))return;
+    if(!QMetaObject::invokeMethod(app,[]{
+        budgetNotificationQueued=false;
+        if(auto *notifier=CompositionNode::budgetNotifier())emit notifier->resourcesReleased();
+    },Qt::QueuedConnection))budgetNotificationQueued=false;
+}
+}
+CompositionBudgetNotifier *CompositionNode::budgetNotifier(){
+    static QPointer<CompositionBudgetNotifier> value;
+    if(!value && QCoreApplication::instance())value=new CompositionBudgetNotifier(QCoreApplication::instance());
+    return value;
+}
+quint64 CompositionNode::releasedPayloadSerial(){return releasedTextureSerial.load();}
+bool CompositionNode::supportsWindow(QQuickWindow *window){
+#ifdef DRAWVERSE_HAS_COMPOSITION_RHI
+    return window && window->rendererInterface()->graphicsApi()==QSGRendererInterface::Direct3D11;
+#else
+    Q_UNUSED(window);return false;
+#endif
+}
 #ifdef DRAWVERSE_HAS_COMPOSITION_RHI
 #include <rhi/qrhi.h>
 #ifdef Q_OS_WIN
@@ -37,7 +65,7 @@ public:
         while(!reservedTextureBytes.compare_exchange_weak(current,current+extra));
         bytes=value;return true;
     }
-    void release(){if(!released.exchange(true))reservedTextureBytes.fetch_sub(bytes);}
+    void release(){if(!released.exchange(true) && bytes){reservedTextureBytes.fetch_sub(bytes);notifyPayloadReleased();}}
     void retire(QQuickWindow *window,int frames,const std::shared_ptr<TextureReservation> &self){
         const auto done=[self]{self->release();for(const auto &c:self->connections)QObject::disconnect(c);};
         connections[0]=QObject::connect(window,&QQuickWindow::beforeRendering,window,[self,frames,done]()mutable{if(--frames<=0)done();},Qt::DirectConnection);
@@ -86,7 +114,7 @@ struct PageMap {
 };
 class RhiCompositionNode final : public CompositionNode {
 public:
-    RhiCompositionNode(QQuickWindow *w,CompositionPacketPtr p,std::shared_ptr<CompositionCounters> c,std::function<void(QString)> f,std::function<void(CompositionPacketPtr)> a)
+    RhiCompositionNode(QQuickWindow *w,CompositionPacketPtr p,std::shared_ptr<CompositionCounters> c,std::function<void(QString,CompositionPacketPtr)> f,std::function<void(CompositionPacketPtr)> a)
         :window(w),packet(std::move(p)),counters(std::move(c)),fallback(std::move(f)),adoption(std::move(a)){}
     ~RhiCompositionNode()override{
         QObject::disconnect(connection);
@@ -158,7 +186,7 @@ public:
     }
     bool ready()const override{return rendered && !failed;}
 private:
-    bool fail(const char *message){if(!failed){failed=true;++counters->failures;fallback(QString::fromUtf8(message));}return false;}
+    bool fail(const char *message){if(!failed){failed=true;++counters->failures;fallback(QString::fromUtf8(message),packet);}return false;}
     bool createTarget(Target &t,QRhiTexture::Format format,QSize size){
         t.texture.reset(rhi->newTexture(format,size,1,QRhiTexture::RenderTarget|QRhiTexture::UsedAsTransferSource));
         if(!t.texture->create())return false;
@@ -459,9 +487,11 @@ private:
     }
     void record(){
         const auto receiver=counters->readback;
-        const bool readRequested=receiver && receiver->version.load()!=readVersion && receiver->geometry.load()==packet->geometrySequence;
+        const auto readRequest=receiver?receiver->pending(*packet,readVersion):std::nullopt;
+        const bool readRequested=readRequest.has_value();
         if(failed || (!dirty && !readRequested))return;
         if(qEnvironmentVariable("DRAWVERSE_COMPOSITION_FAIL")=="upload"){fail("CPU: injected composition upload failure");return;}
+        if(qEnvironmentVariable("DRAWVERSE_COMPOSITION_FAIL")=="device"){fail("CPU: injected composition device epoch lost");return;}
         auto *ri=window->rendererInterface();
         if(ri->getResource(window,QSGRendererInterface::RhiResource)!=rhi || rhi->isDeviceLost()){fail("CPU: composition device epoch lost");return;}
         auto *cb=static_cast<QRhiCommandBuffer*>(ri->getResource(window,QSGRendererInterface::RhiRedirectCommandBuffer));
@@ -492,16 +522,16 @@ private:
             counters->composedPixels.fetch_add(area*(passes.size()-1));
         }
         counters->lastSubmitNs=InteractionTrace::now();counters->lastSubmitGeometry=packet->geometrySequence;
-        renderedPacket=packet;dirty=false;if(!rendered){rendered=true;fallback({});}
+        renderedPacket=packet;dirty=false;if(!rendered){rendered=true;fallback({},packet);}
         }
         if(readRequested){
-            readVersion=receiver->version.load();auto *reads=rhi->nextResourceUpdateBatch();
+            readVersion=*readRequest;const auto identity=CompositionReadback::identityOf(*packet);const auto version=readVersion;auto *reads=rhi->nextResourceUpdateBatch();
             counters->testReadbacks.fetch_add(2);
             for(int i=0;i<2;++i){
                 auto result=std::make_shared<QRhiReadbackResult>();
-                result->completed=[result,receiver,i]{
-                    {std::lock_guard lock(receiver->mutex);(i?receiver->display:receiver->linear)=result->data;}
-                    ++receiver->completed;auto completed=std::move(result->completed);
+                result->completed=[result,receiver,i,identity,version]{
+                    receiver->accept(version,identity,i,result->data);
+                    auto completed=std::move(result->completed);
                 };
                 reads->readBackTexture(QRhiReadbackDescription(i?display.texture.get():linear[finalLinear].texture.get()),result.get());
             }
@@ -512,14 +542,14 @@ private:
     CompositionPacketPtr packet;
     CompositionPacketPtr renderedPacket,adoptedPacket;
     std::shared_ptr<CompositionCounters> counters;
-    std::function<void(QString)> fallback;
+    std::function<void(QString,CompositionPacketPtr)> fallback;
     std::function<void(CompositionPacketPtr)> adoption;
     QMetaObject::Connection connection,adoptionConnection;
     QRhi *rhi=nullptr;
     int inFlightFrames=0;
     std::shared_ptr<TextureReservation> reservation;
     bool dirty=true,failed=false,rendered=false,completePasses=false;
-    quint64 readVersion=~quint64(0);
+    quint64 readVersion=0;
     DirectTexture texture;
     QShader vertex,fragment,meshVertex,preciseFragment,warpFragment;
     QSize documentSize,outputSize;
@@ -550,12 +580,12 @@ quint64 CompositionNode::reservedPayloadBytes(){
     return 0;
 #endif
 }
-CompositionNode *CompositionNode::create(QQuickWindow *window,CompositionPacketPtr packet,std::shared_ptr<CompositionCounters> counters,std::function<void(QString)> fallback,std::function<void(CompositionPacketPtr)> adopted){
+CompositionNode *CompositionNode::create(QQuickWindow *window,CompositionPacketPtr packet,std::shared_ptr<CompositionCounters> counters,std::function<void(QString,CompositionPacketPtr)> fallback,std::function<void(CompositionPacketPtr)> adopted){
 #ifdef DRAWVERSE_HAS_COMPOSITION_RHI
     static const bool initialized=(initializeCompositionResources(),true);Q_UNUSED(initialized);
     auto *node=new RhiCompositionNode(window,std::move(packet),std::move(counters),std::move(fallback),std::move(adopted));
     if(!node->initialize()){delete node;return nullptr;}return node;
 #else
-    Q_UNUSED(window);Q_UNUSED(packet);Q_UNUSED(counters);Q_UNUSED(adopted);fallback(QStringLiteral("CPU: Qt 6.6+ QRhi adapter unavailable"));return nullptr;
+    Q_UNUSED(window);Q_UNUSED(counters);Q_UNUSED(adopted);fallback(QStringLiteral("CPU: Qt 6.6+ QRhi adapter unavailable"),packet);return nullptr;
 #endif
 }

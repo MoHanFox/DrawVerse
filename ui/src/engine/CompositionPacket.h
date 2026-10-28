@@ -9,6 +9,14 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
+
+// Supported window backends decide capability separately. An explicit override
+// remains available for CPU reference/recovery; tests may change it per case.
+inline bool compositionDisplayRequested(){
+    return !qEnvironmentVariableIsSet("DRAWVERSE_GPU_COMPOSITION") ||
+        qEnvironmentVariableIntValue("DRAWVERSE_GPU_COMPOSITION")==1;
+}
 
 // Immutable CPU transport only. No QObject, document mutation, or GPU handle.
 struct CompositionTileData {
@@ -49,11 +57,41 @@ struct CompositionViewRequest {
     QSize pixels;
     bool enabled=false;
 };
+// Correctness-only observer. A result belongs to one explicit immutable
+// packet and request version; normal presentation never creates this observer.
 struct CompositionReadback {
+    struct Identity {
+        quint64 epoch,generation,revision,request,lease,publication,geometry;
+        quint32 view;
+        QRectF region;
+        QSize pixels;
+        bool operator==(const Identity &)const=default;
+    };
+    static Identity identityOf(const CompositionPacket &p){
+        const auto &k=p.info.key;
+        return {k.device_epoch,k.document_generation,k.revision,k.request_id,k.lease_id,k.publication,p.geometrySequence,k.view_id,p.region,p.pixels};
+    }
+    void request(const CompositionPacket &packet){
+        std::lock_guard lock(mutex);target=identityOf(packet);received=0;linear.clear();display.clear();completed=0;
+        geometry=packet.geometrySequence;++version;
+    }
+    std::optional<quint64> pending(const CompositionPacket &packet,quint64 last){
+        std::lock_guard lock(mutex);const auto v=version.load();
+        if(!v || v==last || completed.load()==2 || !(target==identityOf(packet)))return {};
+        return v;
+    }
+    bool accept(quint64 v,const Identity &identity,int output,QByteArray data){
+        std::lock_guard lock(mutex);
+        if(v!=version.load() || !(target==identity) || output<0 || output>1 || (received&(1<<output)))return false;
+        (output?display:linear)=std::move(data);received|=1<<output;++completed;return true;
+    }
     std::mutex mutex;
     QByteArray linear,display;
     std::atomic<int> completed{0};
     std::atomic<quint64> version{0},geometry{0};
+private:
+    Identity target{};
+    int received=0;
 };
 struct CompositionCounters {
     std::atomic<quint64> uploads{0},uploadBytes{0},passes{0},adoptions{0},revision{0},epoch{0},request{0},textureBytes{0};

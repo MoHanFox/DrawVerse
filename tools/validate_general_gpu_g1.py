@@ -46,7 +46,7 @@ def main():
             env[key] = str(path)
         env.update(QT_QPA_PLATFORM='windows', QSG_RHI_BACKEND='d3d11', QSG_INFO='1',
                    QT_FORCE_STDERR_LOGGING='1', QSG_RHI_DISABLE_DISK_CACHE='1',
-                   DRAWVERSE_G1_REPORT=str(directory/'transport.json'))
+                   DRAWVERSE_G1_REPORT=str(directory/'transport.json'), DRAWVERSE_GPU_COMPOSITION='0')
         env['PATH'] = str(root/'.tools/qt/6.8.3/msvc2022_64/bin')+os.pathsep+env['PATH']
         if backend == 'software':
             env['QT_QUICK_BACKEND'] = backend

@@ -70,7 +70,7 @@ private slots:
         const bool tracing=qEnvironmentVariableIntValue("DRAWVERSE_G0_TRACE")!=0;
         const bool warpMode=qEnvironmentVariableIntValue("DRAWVERSE_G0_WARP")==1;
         const bool nativeDriver=qEnvironmentVariable("DRAWVERSE_G0_DRIVER")=="native-v5";
-        const bool general=qEnvironmentVariableIntValue("DRAWVERSE_GPU_COMPOSITION")==1;
+        const bool general=compositionDisplayRequested();
         QJsonObject report{{"qt",qVersion()},{"passed",false},{"operation",transform?"transform":"move"},
             {"size",size},{"trace_enabled",tracing},{"composition_enabled",general},{"warp",warpMode},{"input","Qt mouse events to native window; not physical pen"}};
         QJsonArray rows;

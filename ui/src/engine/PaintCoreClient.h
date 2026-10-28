@@ -339,7 +339,7 @@ public:
     void compositionPrimaryAdopted(quint64 generation,quint64 epoch,quint64 revision);
     void setCompositionPrecisionAvailable(bool available){m_compositionPrecisionAvailable=available;}
     qint64 compositionTargetConfirmedNs()const{return m_compositionTargetNs;}
-    QString compositionFallback()const{return m_compositionTransformCpu?QStringLiteral("CPU: composition transform closure"):(m_compositionEditFallbackReason.isEmpty()?m_compositionFallback:m_compositionEditFallbackReason);}
+    QString compositionFallback()const{return m_blendPreviewLayer?QStringLiteral("CPU: blend mode hover preview"):m_compositionTransformCpu?QStringLiteral("CPU: composition transform closure"):(m_compositionEditFallbackReason.isEmpty()?m_compositionFallback:m_compositionEditFallbackReason);}
     void setCompositionDevice(quint64 epoch,bool enabled);
     ResidentPreviewPtr residentPreview() const { return m_residentPreview; }
     ResidentPreviewPtr liquifyPreview() const { return residentPreview(); }

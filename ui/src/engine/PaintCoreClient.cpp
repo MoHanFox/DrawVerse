@@ -1510,7 +1510,7 @@ void PaintCoreClient::clearLayerMovePreparation() {
 void PaintCoreClient::requestLayerMovePreparation() {
     if(m_layerMoveActive)return;
     if(m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation &&
-       m_compositionPacket->info.key.revision==m_revision && qEnvironmentVariableIntValue("DRAWVERSE_GPU_COMPOSITION")==1){
+       m_compositionPacket->info.key.revision==m_revision && compositionDisplayRequested()){
         clearLayerMovePreparation();return;
     }
     if(!m_ready || m_closing || m_pendingNew || !m_moveTool ||
@@ -1552,7 +1552,7 @@ void PaintCoreClient::requestLayerMovePreparation() {
     if(status!=PAINT_OK)m_movePreparationPendingRequest=0;
 }
 CompositionPacketPtr PaintCoreClient::compositionPacket()const{
-    if(m_compositionFinalFallback || m_compositionTransformCpu)return {};
+    if(m_blendPreviewLayer || m_compositionFinalFallback || m_compositionTransformCpu)return {};
     if(m_compositionFinalRevision && m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation &&
        m_compositionPacket->info.key.revision>=m_compositionFinalRevision)return m_compositionPacket;
     if(m_compositionEditFrame)return m_compositionEditFrame;
@@ -1567,7 +1567,7 @@ void PaintCoreClient::clearCompositionEdit(){
 bool PaintCoreClient::prepareCompositionMove(bool pick){
     if(m_compositionFinalRevision){m_compositionFinalFallback=true;m_compositionTransform=false;emit frameChanged();}
     if(m_compositionEditBase || !m_compositionPacket || !m_residentGpuPreviewAvailable ||
-       qEnvironmentVariableIntValue("DRAWVERSE_GPU_COMPOSITION")!=1 ||
+       !compositionDisplayRequested() ||
        m_compositionPacket->info.key.document_generation!=m_generation || m_compositionPacket->info.key.revision!=m_revision)return false;
     const auto targets=currentMoveTargets();
     if(!pick)for(auto id:targets){
@@ -1665,7 +1665,7 @@ void PaintCoreClient::compositionPrimaryAdopted(quint64 generation,quint64 epoch
     clearCompositionEdit();emit frameChanged();
 }
 void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
-    enabled=enabled && qEnvironmentVariableIntValue("DRAWVERSE_GPU_COMPOSITION")==1 && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive;
+    enabled=enabled && compositionDisplayRequested() && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive && !m_blendPreviewLayer;
     QMutexLocker lock(&m_connection->mutex);auto &view=m_connection->compositionView;
     if(view.epoch==epoch && view.enabled==enabled && view.generation==m_generation && view.region==m_requestedRegions[0] && view.pixels==m_requestedPixels[0])return;
     ++view.serial;view.epoch=epoch;view.enabled=enabled;view.generation=m_generation;view.region=m_requestedRegions[0];view.pixels=m_requestedPixels[0];
@@ -2164,14 +2164,14 @@ void PaintCoreClient::previewLayerBlend(quint64 id,int blend) {
     bool found=false;
     for(const auto &value:m_layers) {const auto layer=value.toMap();if(layer.value("id").toULongLong()==id && !layer.value("mask").toBool() && (blend!=27 || layer.value("group").toBool()) && !(layer.value("effectiveLocks").toUInt()&PAINT_LOCK_ALL))found=true;}
     if(!found || (m_blendPreviewLayer==id && m_blendPreviewMode==blend))return;
-    m_blendPreviewLayer=id;m_blendPreviewMode=blend;
+    m_blendPreviewLayer=id;m_blendPreviewMode=blend;emit frameChanged();
     for(int view=0;view<2;++view)if(m_viewEnabled[view]) {
         m_requests[view]=0;requestViewport(view,m_requestedRegions[view],m_requestedPixels[view]);
     }
 }
 void PaintCoreClient::clearLayerBlendPreview() {
     if(!m_blendPreviewLayer)return;
-    m_blendPreviewLayer=0;
+    m_blendPreviewLayer=0;emit frameChanged();
     for(int view=0;view<2;++view)if(m_viewEnabled[view]) {
         m_requests[view]=0;requestViewport(view,m_requestedRegions[view],m_requestedPixels[view]);
     }
@@ -2685,7 +2685,7 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
     emit stateChanged();return true;
 }
 bool PaintCoreClient::beginTransform(){
-    clearLayerBlendPreview();const bool planned=m_compositionPacket && qEnvironmentVariableIntValue("DRAWVERSE_GPU_COMPOSITION")==1;
+    clearLayerBlendPreview();const bool planned=m_compositionPacket && compositionDisplayRequested();
     prepareCompositionTransform();m_compositionTransformCpu=planned && !m_compositionTransform;
     if(submitTransform(PAINT_TRANSFORM_BEGIN))return true;
     if(m_compositionTransform)clearCompositionEdit();m_compositionTransformCpu=false;return false;
