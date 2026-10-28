@@ -1,5 +1,6 @@
 #include "workspace/WorkspaceManager.h"
 #include "platform/DeveloperConsole.h"
+#include "platform/TabletInput.h"
 #include <QGuiApplication>
 #include <QScreen>
 #include <QWindow>
@@ -839,6 +840,7 @@ bool WorkspaceManager::dockToolStrip(const QString &data,const QString &location
     return dockPayload(payload("__toolstrip",{},true),location,target,placement);
 }
 bool WorkspaceManager::eventFilter(QObject *watched,QEvent *event) {
+    if(rejectTabletInputEvent(event))return true;
     const bool menuMouse=event->type()==QEvent::MouseMove || event->type()==QEvent::MouseButtonPress || event->type()==QEvent::MouseButtonRelease || event->type()==QEvent::MouseButtonDblClick;
     const bool menuTablet=event->type()==QEvent::TabletMove || event->type()==QEvent::TabletPress || event->type()==QEvent::TabletRelease;
     if(!m_menuWindows.isEmpty() && qobject_cast<QWindow*>(watched) && (menuMouse || menuTablet)) {

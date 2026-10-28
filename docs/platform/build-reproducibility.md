@@ -4,6 +4,8 @@ QML 界面编辑另有按需 `qml-preview` 构建预设和 `ui/qml/.qtcreator/pr
 
 ## 当前应用构建与运行入口（2026-10-21）
 
+Windows 默认启用 `DRAWVERSE_PRECOMPILE_MOVE_SHADERS`，仅将共享移动/液化材质的 HLSL 编译为 DXBC。配置时要求 Developer Shell 中 Windows SDK 的 `fxc` 可从 PATH 找到，生成后验证实际 DXBC；找不到工具或产物不符会明确失败。可显式配置 `-DDRAWVERSE_PRECOMPILE_MOVE_SHADERS=OFF` 回退原运行时 HLSL 路径。非 Windows 不启用此预编译，其他 shader 目标保持。此工具只在构建机需要，完整部署包的使用者无需安装 `fxc`。产物与有限前后验证见 [C3 最新验收节](../validations/tools/move-start-tracking-validation.md#c3-shader-artifact-check--precompile-comparison2026-10-23)。
+
 标准用户Release目录统一为 `build/bin/Release`，手动CMake使用 `-B build`；旧记录中的build/qt及各验证目录是当时的证据位置，不批量改写。Debug应用使用 `cmake-build-debug/bin/Debug`。README保留完整构建命令。
 
 CMakePresets.json提供build/Release和run/Debug两个Ninja配置，开启Qt界面，共用项目Qt SDK默认路径；本机可通过CMake profile或CMakeUserPresets.json覆盖。共享CLion运行配置在.run/：build选中drawverse_runtime作只构建目标，run先构建drawverse_runtime，再执行drawverse。虽然codemodel中的UI子项目名为DrawVerseUI，CLion读取配置后实际规范化为根项目DrawVerse；共享XML保留IDE实际采用的名称。CLion重新加载并启用相同名称的profile后使用。

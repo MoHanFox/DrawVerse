@@ -1,0 +1,92 @@
+"""G2/G3 or first G4 correctness in isolated native windows, not latency."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('output', type=Path)
+    parser.add_argument('--g4', action='store_true', help='Run root blend/fixed-mask cases and independent Rust capture validation')
+    parser.add_argument('--groups', action='store_true', help='Run nested group boundaries, movement, fallback and independent Rust group captures')
+    parser.add_argument('--closures', action='store_true', help='Run complete clipping/Dissolve ORA fixtures and authoritative CPU pixel truth')
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parents[1]
+    out = args.output.resolve()
+    out.mkdir(parents=True, exist_ok=False)
+    (out/'working-tree.patch').write_bytes(subprocess.check_output(['git', 'diff', '--binary', 'HEAD', '--', 'core', 'ui', 'tools'], cwd=root))
+    files = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--', 'core', 'ui', 'tools'], cwd=root, text=True).splitlines()
+    sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+    (out/'invocation.json').write_text(json.dumps(dict(
+        head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
+        status=subprocess.check_output(['git', 'status', '--short'], cwd=root, text=True),
+        sources={f: sha(root/f) for f in files if (root/f).is_file()},
+        binaries={name: sha(root/'build/bin/Release'/name) for name in ['drawverse.exe', 'paint_ffi.dll', 'qt_gpu_composition_tests.exe']},
+        purpose='G4 complete clipping/Dissolve closures' if args.closures else 'G4 nested group boundaries' if args.groups else 'G4 root blend/fixed mask' if args.g4 else 'G2/G3 correctness, captures permitted; no latency conclusions'
+    ), indent=2), encoding='utf-8')
+    fixtures = out/'fixtures'
+    if args.closures or not (args.g4 or args.groups):
+        fixture_env = os.environ.copy()
+        fixture_env['DRAWVERSE_G4_FIXTURES'] = str(fixtures)
+        with (out/'fixture-generation.log').open('w', encoding='utf-8') as log:
+            subprocess.run(['cargo', 'test', '--manifest-path', str(root/'core/Cargo.toml'), '-p', 'paint-io',
+                            '--release', '--locked', '--test', 'gpu_closure_fixtures', '--', '--ignored', '--nocapture'],
+                           cwd=root, env=fixture_env, stdout=log, stderr=subprocess.STDOUT, timeout=240, check=True)
+        assert (fixtures/'count.txt').read_text() == '85'
+    results = []
+    for backend, repeat in [('software', 1), ('d3d11', 1), ('d3d11', 2), ('d3d11', 3)]:
+        directory = out/f'{backend}-{repeat}'
+        directory.mkdir()
+        env = os.environ.copy()
+        for key in list(env):
+            if key.startswith(('DRAWVERSE_', 'QT_QUICK_BACKEND', 'QSG_RHI_', 'QT_SCALE_FACTOR')):
+                env.pop(key)
+        for key in ['APPDATA', 'LOCALAPPDATA', 'TMP', 'TEMP']:
+            path = directory/key
+            path.mkdir()
+            env[key] = str(path)
+        env.update(QT_QPA_PLATFORM='windows', QSG_RHI_BACKEND='d3d11', QSG_INFO='1',
+                   QT_FORCE_STDERR_LOGGING='1', QSG_RHI_DISABLE_DISK_CACHE='1',
+                   DRAWVERSE_G2_REPORT_DIR=str(directory))
+        env['DRAWVERSE_G4_FIXTURES'] = str(fixtures)
+        env['PATH'] = str(root/'.tools/qt/6.8.3/msvc2022_64/bin')+os.pathsep+env['PATH']
+        if backend == 'software':
+            env['QT_QUICK_BACKEND'] = backend
+        (directory/'environment.json').write_text(json.dumps({k: v for k, v in env.items() if k.startswith(('QT_', 'QSG_', 'DRAWVERSE_'))}, indent=2), encoding='utf-8')
+        functions = ['rootBlendAndFixedMask', 'compositionMoveReusesSource', 'nonNormalTransformUsesCpuFrame', 'explicitFallback'] if args.g4 else []
+        if args.groups:
+            functions = ['groupBoundaries', 'compositionMoveReusesSource', 'nonNormalTransformUsesCpuFrame', 'explicitFallback', 'windowResourceRelease', 'continuousPaintingAndIncrementalUploads']
+        if args.closures:
+            functions = ['closureFixtures', 'clippingDependencies', 'compositionMoveReusesSource', 'nonNormalTransformUsesCpuFrame', 'explicitFallback', 'windowResourceRelease', 'continuousPaintingAndIncrementalUploads']
+        with (directory/'process.log').open('w', encoding='utf-8') as log:
+            try:
+                code = subprocess.run([str(root/'build/bin/Release/qt_gpu_composition_tests.exe'), *functions,
+                                       '-o', str(directory/'test.txt')+',txt'], env=env,
+                                      stdout=log, stderr=subprocess.STDOUT, timeout=900 if args.closures or not (args.g4 or args.groups) else 360,
+                                      creationflags=subprocess.CREATE_NO_WINDOW).returncode
+            except subprocess.TimeoutExpired:
+                code = 'timeout'
+        result = dict(backend=backend, repeat=repeat, exit=code)
+        results.append(result)
+        print(result, flush=True)
+        if (args.g4 or args.groups) and backend == 'd3d11':
+            reference_env = os.environ.copy()
+            reference_env['DRAWVERSE_G4_CAPTURES'] = str(directory)
+            if args.groups:
+                reference_env['DRAWVERSE_G4_GROUP_CAPTURES'] = str(directory)
+            with (directory/'linear-reference.log').open('w', encoding='utf-8') as log:
+                reference = subprocess.run(['cargo', 'test', '--manifest-path', str(root/'core/Cargo.toml'),
+                    '-p', 'paint-core', '--release', '--locked', '--lib', 'real_window_group_results' if args.groups else 'real_window_linear_results',
+                    '--', '--ignored', '--nocapture'], env=reference_env, cwd=root,
+                    stdout=log, stderr=subprocess.STDOUT, timeout=120)
+            results.append(dict(backend=backend, repeat=repeat, reference_exit=reference.returncode))
+    passed = all(r.get('exit', r.get('reference_exit')) == 0 for r in results)
+    (out/'results.json').write_text(json.dumps(dict(passed=passed, results=results), indent=2), encoding='utf-8')
+    raise SystemExit(0 if passed else 1)
+
+
+if __name__ == '__main__':
+    main()

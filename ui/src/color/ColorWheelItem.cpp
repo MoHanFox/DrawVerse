@@ -1,4 +1,5 @@
 #include "color/ColorWheelItem.h"
+#include "platform/InteractionTrace.h"
 #include <QPainter>
 #include <QMouseEvent>
 #include <QConicalGradient>
@@ -40,6 +41,7 @@ void ColorWheelItem::setColor(const QColor &color) {
 }
 void ColorWheelItem::rebuildTriangle() {
     if(m_cachedHue==m_hue) return;
+    InteractionTrace::Scope trace("colorWheel.rebuildTriangle");
     m_cachedHue=m_hue;
     m_triangle=QImage(resolution,resolution,QImage::Format_ARGB32_Premultiplied);
     m_triangle.fill(Qt::transparent);
@@ -63,6 +65,7 @@ void ColorWheelItem::pickHsv(qreal hue,qreal saturation,qreal value) {
     emit picked(color);
 }
 void ColorWheelItem::paint(QPainter *painter) {
+    InteractionTrace::Scope trace("colorWheel.paint");
     rebuildTriangle();
     const qreal size=std::min(width(),height()), radius=(size-6)/2;
     const QPointF center{width()/2,height()/2};

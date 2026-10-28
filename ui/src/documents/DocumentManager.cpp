@@ -1,4 +1,5 @@
 #include "documents/DocumentManager.h"
+#include "platform/InteractionTrace.h"
 #include <QQmlEngine>
 #include <QQuickWindow>
 #include <QGuiApplication>
@@ -41,6 +42,7 @@ void DocumentManager::track(PaintCoreClient *client) {
     // One application brush preference state. Restore publishes a copy without
     // requesting another disk save, so inactive documents cannot overwrite it.
     connect(client->brushLibrary(),&BrushLibrary::persistRequested,this,[this,client](const QByteArray &state){
+        InteractionTrace::Scope trace("preferences.broadcast");
         if(m_quitting)return;
         m_brushPreferenceState=state;
         for(const auto &other:m_clients)if(other && other!=client && !m_stopped.contains(other))other->restoreBrushPreferences(state,client->brushLibrary());

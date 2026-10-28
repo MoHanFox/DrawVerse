@@ -1,6 +1,7 @@
 #pragma once
 #include "brushes/BrushLibrary.h"
 #include "engine/LiquifyPreview.h"
+#include "engine/CompositionPacket.h"
 #include <QColor>
 #include <QImage>
 #include <QHash>
@@ -333,6 +334,15 @@ public:
     Q_INVOKABLE bool clearSelection();
     Q_INVOKABLE bool invertSelection();
     const QImage &frame(int view = 0) const { return m_frames[view == 1 ? 1 : 0]; }
+    CompositionPacketPtr compositionPacket()const;
+    quint64 compositionHandoffRevision()const{return m_compositionFinalRevision;}
+    void compositionPrimaryAdopted(quint64 generation,quint64 epoch,quint64 revision);
+    void setCompositionPrecisionAvailable(bool available){m_compositionPrecisionAvailable=available;}
+    qint64 compositionTargetConfirmedNs()const{return m_compositionTargetNs;}
+    QString compositionFallback()const{return m_blendPreviewLayer?QStringLiteral("CPU: blend mode hover preview"):m_compositionTransformCpu?QStringLiteral("CPU: composition transform closure"):(m_compositionEditFallbackReason.isEmpty()?m_compositionFallback:m_compositionEditFallbackReason);}
+    void setCompositionDevice(quint64 epoch,bool enabled);
+    bool cpuDisplaySuppressed(int view=0)const{return m_cpuViewSuppressed[view==1?1:0];}
+    void setCpuSamplingRequired(bool required){if(required!=m_cpuSamplingRequired){m_cpuSamplingRequired=required;refreshCpuDisplayDemand();}}
     ResidentPreviewPtr residentPreview() const { return m_residentPreview; }
     ResidentPreviewPtr liquifyPreview() const { return residentPreview(); }
     ResidentPreviewAssetsPtr movePreparation() const { return m_movePreparation; }
@@ -340,6 +350,18 @@ public:
     void setLiquifyGpuPreviewAvailable(bool value) { setResidentGpuPreviewAvailable(value); }
     QRectF frameRegion(int view = 0) const { return m_regions[view == 1 ? 1 : 0]; }
     quint64 frameRevision(int view = 0) const { return m_frameRevisions[view == 1 ? 1 : 0]; }
+    // Local investigation receipts; no ABI or painting policy change.
+    struct MoveReceipt { quint64 sequence=0,generation=0,revision=0; int kind=0; };
+    MoveReceipt moveReceipt() const { return m_moveReceipt; }
+    // GUI-thread, opt-in test observation only; no ordinary-path polling or allocation.
+    QVariantMap moveObservation() const { return {{"active",m_layerMoveActive},{"starting",m_layerMoveStarting},
+        {"closing",m_layerMoveClosing},{"dirty",m_layerMoveDirty},{"deltaX",m_layerMoveDelta.x()},
+        {"deltaY",m_layerMoveDelta.y()},{"submittedKind",m_layerMoveSubmittedKind},
+        {"completedSequence",m_completedSequence}}; }
+    quint64 moveSequence() const { return m_layerMoveSequence; }
+    quint64 movePreparationRequest() const { return m_movePreparationRequest; }
+    QVariantMap frameIdentity(int view=0) const { const auto i=view==1?1:0;return {{"view",i},{"generation",m_generation},{"request",m_frameRequestIds[i]},{"revision",m_frameRevisions[i]},{"frame",m_frameIds[i]}}; }
+
     quint64 revision() const { return m_revision; }
     quint64 generation() const { return m_generation; }
     void requestViewport(int view, QRectF region, QSize physicalPixels, bool enabled = true);
@@ -445,6 +467,7 @@ public:
     bool canMergeLayers() const;
     QString mergeLayersText() const;
     Q_INVOKABLE bool copySelectedLayers();
+    Q_INVOKABLE bool cutSelectedLayers();
     Q_INVOKABLE bool pasteLayers();
     Q_INVOKABLE bool duplicateSelectedLayers();
     Q_INVOKABLE bool mergeSelectedLayers();
@@ -508,6 +531,22 @@ signals:
     void commandCompleted(bool onWorkerThread);
     void fileFinished(bool success);
 private:
+    void refreshCpuDisplayDemand();
+    CompositionPacketPtr m_compositionPacket;
+    CompositionPacketPtr m_compositionEditBase,m_compositionEditFrame;
+    QVector<quint64> m_compositionEditTargets;
+    qint64 m_compositionTargetNs=0;
+    quint64 m_compositionGeometry=0,m_compositionFinalRevision=0,m_compositionBeginSequence=0;
+    bool m_compositionMovePick=false,m_compositionMoveConfirmed=false;
+    bool m_compositionPrecisionAvailable=false;
+    bool m_compositionTransformCpu=false;
+    bool m_compositionTransform=false,m_compositionFinalFallback=false;
+    bool prepareCompositionTransform();
+    void refreshCompositionTransform(const PaintTransform *geometry=nullptr);
+    bool prepareCompositionMove(bool pick);
+    void refreshCompositionMove();
+    void clearCompositionEdit();
+    QString m_compositionFallback,m_compositionEditFallbackReason;
     bool m_brushPreferencePersistenceEnabled=true;
     bool m_wetActionBusy=false;
     bool m_brushFileBusy=false;
@@ -596,6 +635,7 @@ private:
     std::function<void()> m_afterTransform;
     bool submitTransform(quint32 kind,const PaintTransform *geometry=nullptr);
     void flushLayerMove();
+    void refreshLayerMovePresentation();
     void requestLayerMovePreparation();
     void clearLayerMovePreparation();
     qreal currentMovePreparationScale() const;
@@ -604,7 +644,12 @@ private:
     bool m_layerMoveActive=false,m_layerMoveStarting=false,m_layerMoveClosing=false;
     bool m_layerMoveDirty=false,m_layerMoveFinish=false,m_layerMoveCommit=false;
     quint64 m_layerMoveSequence=0,m_residentPreviewFloor=0;
+    int m_layerMoveSubmittedKind=0;
+    MoveReceipt m_moveReceipt;
     QPoint m_layerMoveDelta;
+    bool m_layerMoveGpuPresentation=false;
+    quint64 m_layerMoveSource=0;
+    ResidentPreviewPtr m_layerMoveAnchor;
     bool m_transformActive=false,m_transformWarp=false,m_transformPublished=false,m_transformLinked=true;
     QVariantList m_transformInitialPoints;
     qreal m_transformSkewH=0,m_transformSkewV=0;
@@ -665,8 +710,9 @@ private:
     bool m_residentGpuPreviewAvailable=false;
     QRectF m_regions[2], m_requestedRegions[2];
     QSize m_requestedPixels[2];
-    quint64 m_requests[2]{}, m_frameRevisions[2]{};
+    quint64 m_requests[2]{}, m_frameRevisions[2]{},m_frameIds[2]{},m_frameRequestIds[2]{};
     bool m_viewEnabled[2]{};
+    bool m_cpuViewSuppressed[2]{},m_overviewExplicit=false,m_requestingAutomaticOverview=false,m_compositionDeviceAvailable=false,m_cpuSamplingRequired=false;
     quint64 m_blendPreviewLayer = 0;
     int m_blendPreviewMode = 0;
 };

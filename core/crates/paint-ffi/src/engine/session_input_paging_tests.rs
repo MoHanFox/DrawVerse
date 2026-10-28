@@ -106,6 +106,7 @@ fn engine(tool: WetTool) -> Engine {
     let document = Document::with_storage(128, 64, storage.options, storage.space.clone()).unwrap();
     let initial = publish(&document, 1, 1, 0, None, false);
     let shared = Arc::new(Shared {
+        composition: crate::engine::composition::Service::default(),
         task_progress: Mutex::new(None),
         preview_assets: Mutex::new(Vec::new()),
         preview_selection: Mutex::new(None),

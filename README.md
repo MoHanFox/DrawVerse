@@ -20,6 +20,8 @@ DrawVerse 是一款正在开发中的桌面绘画软件。Rust 内核负责笔�
 | 工作区     | 多文档、画布与工具面板停靠、浮动窗口、布局恢复、导航与偏好设置                                               |
 | 文件交换   | PNG / JPEG / WebP 图片读写，OpenRaster 文档读写，图片置入与导出                                              |
 
+图层支持 Ctrl/Cmd+X 剪切：无选区剪切完整图层或组，有选区仅剪切其中内容；Ctrl/Cmd+V 可跨文档粘贴，撤销恢复原内容。锁定和单独蒙版拒绝剪切，文本焦点保留系统剪切。当前 ABI 1.86，文档格式与 state45 保持；验证边界见[图层操作验收](docs/validations/layers/layer-actions-validation.md)。
+
 ABR 导入按实际支持范围转换，部分 Photoshop 行为采用近似并保留来源报告，不代表完全等价。当前支持范围见 [笔刷剩余功能与边界](docs/planning/brush-system-remaining.md)。
 
 ## 项目结构
@@ -60,6 +62,8 @@ DrawVerse/
 需要 Git、Rust（含 rustfmt 和 clippy）、CMake 3.24+、Python 3.9+、C11 / C++20 编译器及 64 位链接工具。界面需要 Qt 6.5+ 的 Core、Gui、Qml、Quick、QuickControls2 和 Test 模块。
 
 Windows 使用 x64 MSVC 与 Windows SDK，在 Developer PowerShell 中运行以下命令，并确保 Rust 和 CMake 已加入 PATH。项目内 Qt 安装脚本需要 Python 3.10+；本机验证使用 Qt 6.8.3 MSVC x64。
+
+Windows 默认在构建期预编译共享移动/液化材质，需要 Developer Shell 的 Windows SDK `fxc` 在 PATH 中；构建会检查生成的 DXBC，缺少工具或预编译失败会报错。可在配置命令中显式加入 `-DDRAWVERSE_PRECOMPILE_MOVE_SHADERS=OFF` 使用原运行时 HLSL 编译路径。其他 shader 和非 Windows 目标保持原行为；运行完整部署包的用户不需要安装 `fxc`。
 
 ```powershell
 # 可选：安装到项目的 .tools/qt；已有 Qt SDK 可直接使用自己的路径。
@@ -120,6 +124,12 @@ ctest --test-dir build/qt -C Release -R "^abi_" --output-on-failure
 ```
 
 `ui/include/paint_api.h` 由 `paint-api-gen` 生成。调整 Rust ABI 后，使用不带 `--check` 的同一命令更新生成头。
+
+通用GPU合成在支持范围默认启用；产品最低Qt6.5，实际GPU适配要求Qt6.6+ GuiPrivate，目前仅验证Qt6.8.3 / Windows D3D11。设置 `DRAWVERSE_GPU_COMPOSITION=0` 可使用CPU显示参考，显式无效值也关闭；Qt软件和其他显示API保持CPU。G0试验通过 `-DDRAWVERSE_G0_EXPERIMENT=ON` 后显式构建 `qt_gpu_composition_probe` / `qt_gpu_composition_baseline`，不进入默认构建或CTest。G1为version1不可变计划/有界租约；G2在实际Canvas用同窗口设备增量合成根Normal/链接自身蒙版并直接显示，G2阶段曾需显式启用，现由G5默认策略控制。G3复用原源做本地绝对移动/自由变换几何、最终主视图原子交接；自由变换首批限无选区/自身蒙版的单根Normal栅格，精确Warp/六插值另要求D3D11 double能力。同源同视口同拓扑更新复用窗口页表/采样轴/绑定，resize重投影显示包；Warp保持原精度与网格。原图及视口各最多4194304像素、边长4096、LOD≤6；复杂组合/预算/能力不足明确CPU后备。
+
+G4支持27种栅格混合（含Dissolve）、固定/链接自身蒙版、嵌套隔离/穿透组、有效祖先蒙版与完整剪贴链；组/链/子层移动仍复用原源并保持最终主视图交接。ABI1.86通过可协商能力及有界操作流扩展version1，布局、文档与state45保持。最终软件及D3D11三进程各117项、每轮85份独立重开文档核心线性对照通过；置入图、复杂自由变换、能力或预算不足明确整视图CPU。构建 `qt_gpu_composition_tests` 后运行 `python tools/validate_general_gpu_g2.py artifacts/general-gpu-composition/G4/new-run --closures` 验证闭包矩阵，`--g4`/`--groups` 验证先前组合，产物目录必须新建；CTest自动准备独立CPU夹具。准确版本和保留失败见[通用GPU合成验收](docs/validations/platform/general-gpu-composition-validation.md)第17–21节。G3性能与完整回归仍部分完成，没有本阶段新延迟结论。
+
+G5将支持范围默认接入，增加跨窗口/文档的旧epoch拒绝、资源释放或需求降低后的有界恢复，以及混合菜单悬停CPU显示。后续按需显示在GPU计划就绪后暂停主CPU与自动概览镜像；显式导航、Alt/I取色和CPU后备继续请求参考，快速释放不丢取色，相同布局刷新不截断缩放。核心CPU文档/历史/最终提交仍权威，CPU数值设备选择不关闭Qt GPU显示，正常GPU显示不读回。正确性消费者可显式使用 `DRAWVERSE_CPU_DISPLAY_REFERENCE=1`；旧 `--preview` / `--benchmark` QA入口自行请求CPU参考。完整合成两后端各213项、最终稳定性各21项及原导航专项通过；构建 `qt_composition_stability_tests` 后运行 `python tools/validate_general_gpu_g5.py artifacts/general-gpu-composition/G5/new-run`，新建产物目录。v6三轮18个性能进程全部有效，但首次移动97ms长尾和Warp首帧仍保留，G3性能门槛未全部完成。湿画笔分段精度及过时核心/交换夹具已有针对修复；统一工程检查和探索性UI仍非全绿，不能将分段补测称为完整通过。真实DeviceRemoved/TDR、驱动OOM、跨物理屏幕、冷盘、实体笔及其他SDK/API/硬件未测；准确范围、原始产物和保留失败见验收第22节。
 
 最近的结构整理已完成 Release 构建、原生启动绘制和专项回归；全套 IO 与额外 Qt 交互检查仍有已知失败项，详见 [结构整理验收](docs/validations/platform/source-layout-validation.md)。各阶段记录不代表当前全量测试或跨平台验证均已通过。
 

@@ -8,6 +8,19 @@ pub const MAX_INPUT_SEGMENTS: usize = 4096;
 pub const MAX_INPUT_SCHEDULE_DABS: usize = 131_072;
 pub const MAX_INPUT_SCHEDULE_VISITS: usize = 512_000_000;
 
+// Keep a stream's original distance lattice across input/page boundaries.
+// Repeated local += step accumulates a different error after splitting a line;
+// wet feedback can amplify that error when sampling a sharp image mask.
+pub(crate) fn next_input_position(position: f64, path_distance: f64, step: f64) -> f64 {
+    let index = (path_distance + position) / step;
+    let rounded = index.round();
+    if (index - rounded).abs() <= 1e-9 {
+        (rounded + 1.) * step - path_distance
+    } else {
+        position + step
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct InputScheduleWork {
     pub dabs: usize,
@@ -337,7 +350,11 @@ impl BrushInputSchedule {
                 let point = cursor
                     .point
                     .interpolate(active.end, (distance / active.distance).min(1.));
-                active.secondary_position += self.steps.secondary.expect("independent stream");
+                active.secondary_position = next_input_position(
+                    active.secondary_position,
+                    cursor.path_distance,
+                    self.steps.secondary.expect("independent stream"),
+                );
                 active.secondary_left -= 1;
                 (
                     InputScheduleStream::Secondary,
@@ -349,7 +366,11 @@ impl BrushInputSchedule {
                 let point = cursor
                     .point
                     .interpolate(active.end, (distance / active.distance).min(1.));
-                active.primary_position += self.steps.primary;
+                active.primary_position = next_input_position(
+                    active.primary_position,
+                    cursor.path_distance,
+                    self.steps.primary,
+                );
                 active.primary_left -= 1;
                 (
                     InputScheduleStream::Primary,

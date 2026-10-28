@@ -82,7 +82,14 @@ fn groups_state20_nested_empty_duplicate_names_order_and_closed_fields_roundtrip
 #[test]
 fn groups_state20_invalid_downgrade_types_reference_cycles_and_projection_reject() {
     let good = value();
-    for version in [1, 2, 19, 22] {
+    // 22 is now a supported extension of grouped state, not a future version.
+    let mut supported = good.clone();
+    supported["version"] = json!(22);
+    assert_eq!(
+        decode(&supported).unwrap().organization(),
+        grouped().organization()
+    );
+    for version in [1, 2, 19, 46] {
         let mut bad = good.clone();
         bad["version"] = json!(version);
         assert!(decode(&bad).is_err());

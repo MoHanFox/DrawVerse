@@ -285,6 +285,12 @@ fn check_device_bytes(
                 < 1e-6
         );
         std::fs::write(&path, fixture::fixture(6, 2, true)).unwrap();
+        // 5001 px exceeds the ABR converter's supported 1..=5000 px range.
+        // This is a conversion capability rejection, not a resident-byte limit.
+        assert!(matches!(
+            ImportBatch::read(&path, MAX_CATALOG_MASK_BYTES, &token),
+            Err(paint_io::Error::Unsupported(_))
+        ));
         required = 99;
         assert_eq!(
             paint_brush_library_abr_read(
@@ -295,7 +301,7 @@ fn check_device_bytes(
                 bytes.len() as u64,
                 &mut required
             ),
-            PAINT_LIMIT_EXCEEDED
+            PAINT_UNSUPPORTED
         );
         assert_eq!(required, 0);
         assert_eq!(
@@ -308,6 +314,34 @@ fn check_device_bytes(
             PAINT_OK
         );
         assert_eq!(&canonical[..required as usize], state);
+        assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
+    }
+}
+
+#[test]
+fn abr_resource_budget_rejects_without_output_or_catalog_publication() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("bounded.abr");
+    std::fs::write(&path, fixture::fixture(6, 2, false)).unwrap();
+    let text = path.to_str().unwrap();
+    unsafe {
+        let mut library = ptr::null_mut();
+        assert_eq!(paint_brush_library_create(1, &mut library), PAINT_OK);
+        let mut required = 99;
+        let mut output = [0xa5; 32];
+        assert_eq!(
+            paint_brush_library_abr_read(
+                library,
+                text.as_ptr(),
+                text.len() as u64,
+                output.as_mut_ptr(),
+                output.len() as u64,
+                &mut required
+            ),
+            PAINT_LIMIT_EXCEEDED
+        );
+        assert_eq!(required, 0);
+        assert_eq!(output, [0xa5; 32]);
         assert_eq!(paint_brush_library_destroy(&mut library), PAINT_OK);
     }
 }

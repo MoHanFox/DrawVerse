@@ -8,6 +8,7 @@
 #include <QPointer>
 class QScreen;
 class QTabletEvent;
+struct CanvasPresentationObservation;
 
 class CanvasItem : public QQuickItem {
     Q_OBJECT
@@ -44,11 +45,15 @@ public:
     ~CanvasItem() override;
     PaintCoreClient *client() const { return m_client; }
     void setClient(PaintCoreClient *client);
+    // GUI-thread opt-in; updatePaintNode observes only during Quick sync.
+    void observePresentation(std::shared_ptr<CanvasPresentationObservation> observer) {m_presentationObserver=std::move(observer);}
     qreal zoom() const { return m_zoom; }
     QRectF documentRect() const;
     QRectF visibleDocumentRect() const;
     QRectF prefetchedDocumentRect() const;
     bool gpuDisplay() const;
+    Q_INVOKABLE QVariantMap compositionStatistics()const;
+    void observeCompositionReadback(std::shared_ptr<CompositionReadback> value){m_compositionCounters->readback=std::move(value);}
     bool forwardPreview() const {return !m_previewPart && m_residentPreview && m_residentPreview->forward;}
     int previewPart() const {return m_previewPart;}
     void setPreviewPart(int part) {if(part<0 || part>2 || part==m_previewPart)return;m_previewPart=part;refresh();emit residentPresentationChanged();}
@@ -111,6 +116,19 @@ protected:
     void hoverLeaveEvent(QHoverEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 private:
+    friend class CompositionStabilityTests;
+    void resetCompositionDevice();
+    void compositionFallback(QString reason,CompositionPacketPtr packet);
+    quint64 compositionDemand()const;
+    void retryCompositionIfPossible();
+    quint64 m_failedCompositionDemand=0,m_failedCompositionRelease=0,m_compositionRetries=0;
+    bool m_failedCompositionPreview=false;
+    CompositionPacketPtr m_compositionPacket;
+    std::shared_ptr<CompositionCounters> m_compositionCounters=std::make_shared<CompositionCounters>();
+    quint64 m_compositionEpoch=0;
+    bool m_compositionFailed=false;
+    QString m_compositionFailureReason;
+    std::shared_ptr<CanvasPresentationObservation> m_presentationObserver;
     int m_previewPart=0;
     QRectF m_presentationRect;
     InputSample mouseSample(QPointF local, Qt::MouseButtons buttons);
@@ -123,6 +141,7 @@ private:
     bool ignoreCachedMouseHover(QHoverEvent *event);
     QTimer m_tabletCursorRefresh;
     bool m_penOwnsHover = false;
+    QPointer<const QPointingDevice> m_penDevice;
     QCursor m_savedWindowCursor;
     void setSpacePanning(bool held);
     void setKeySpace(bool held);
@@ -136,7 +155,7 @@ private:
     bool m_pickMoving = false;
     void finishLayerMove(QPointF local);
     void updateLayerMove(QPointF local);
-    void cancelLayerMove();
+    void cancelLayerMove(const char *reason="move.cancel.other");
     bool beginSelection(QPointF local, Qt::KeyboardModifiers modifiers);
     void updateSelection(QPointF local,Qt::KeyboardModifiers modifiers);
     QRectF selectionPreviewRect() const;
@@ -150,6 +169,7 @@ private:
     PaintCoreClient *m_client = nullptr;
     QPointer<QQuickWindow> m_observedWindow;
     QImage m_image;
+    quint64 m_imageRevision=0;
     QImage m_overview;
     ResidentPreviewPtr m_residentPreview;
     ResidentPreviewAssetsPtr m_movePreparation;
@@ -169,19 +189,28 @@ private:
     qreal m_initialFitRatio = 1;
     QPointF m_pan, m_last;
     QPointF m_layoutOrigin;
+    QRectF m_layoutGeometry;
     QPointer<QQuickWindow> m_layoutWindow;
     quint64 m_layoutGeneration=0;
     bool m_layoutCaptured=false;
-    void setCursorSample(const InputSample &sample,bool resetDirection=false);
+    void resetCursorSample();
+    void setCursorSample(const InputSample &sample,const QPointingDevice *device,bool resetDirection=false);
     InputSample tabletSample(QTabletEvent *event,QPointF local) const;
+    QPointer<const QPointingDevice> m_poseDevice;quint64 m_poseGeneration=0;
     InputSample m_poseSample;BrushCursorPose m_pose;QPointF m_poseDirection;bool m_havePoseSample=false,m_poseDirectionKnown=false;QTimer m_poseRetry;
     QPointF m_cursorPosition;
     bool m_cursorInside=false,m_capsLock=false;
     bool m_picking=false;
+    bool m_pendingSample=false;
+    QPointF m_pendingSamplePoint;
+    quint64 m_sampleGeneration=0,m_sampleRevision=0;
+    QColor m_pendingSampleColor;
     QColor m_sampledColor, m_previousSampleColor;
     void beginPicking(QPointF local);
     void updatePicking(QPointF local);
-    void endPicking();
+    void endPicking(bool cancel=true);
+    void refreshPendingSample();
+    void updateSamplingDemand();
     QPointF m_moveStart;
     bool m_moving = false;
     quint64 m_moveGeneration = 0;
@@ -192,7 +221,7 @@ private:
     /// Alt is held: the pointer acts as the eyedropper and shows a crosshair.
     bool m_altHeld = false, m_ctrlHeld = false;
     Qt::KeyboardModifiers m_cursorShortcutModifiers;
-    QTimer m_shortcutStateTimer;int m_altReleaseTicks=0,m_ctrlReleaseTicks=0;
+    QTimer m_shortcutStateTimer;int m_altReleaseTicks=0,m_ctrlReleaseTicks=0,m_spaceReleaseTicks=0;
     void setAltHeld(bool held);
     void setCtrlHeld(bool held);
     void syncShortcutModifiers(Qt::KeyboardModifiers modifiers,bool latchOnly);

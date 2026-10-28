@@ -1,4 +1,40 @@
 use super::*;
+#[test]
+fn distance_lattice_keeps_collinear_dabs_identical_across_split_and_single_event_pages() {
+    let start = InputScheduleStart {
+        point: InputPoint::new(32., 32., 1.),
+        primary_next: 0.3,
+        secondary_next: 2.,
+        path_distance: 0.,
+        direction: None,
+    };
+    let steps = InputScheduleSteps {
+        primary: 0.3,
+        secondary: Some(2.),
+        primary_work: InputScheduleWork { dabs: 1, visits: 1 },
+        secondary_work: InputScheduleWork { dabs: 1, visits: 1 },
+    };
+    let whole = collect(
+        BrushInputSchedule::new(start, steps, vec![segment(128., 32., 1.)]).unwrap(),
+        InputScheduleBudget::default(),
+    );
+    let split = collect(
+        BrushInputSchedule::new(
+            start,
+            steps,
+            vec![segment(80., 32., 1.), segment(128., 32., 1.)],
+        )
+        .unwrap(),
+        InputScheduleBudget::new(8192, 8_000_000, 1).unwrap(),
+    );
+    let dabs = |events: Vec<InputScheduleEvent>| {
+        events
+            .into_iter()
+            .filter(|e| matches!(e, InputScheduleEvent::Dab { .. }))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(dabs(whole), dabs(split));
+}
 fn start() -> InputScheduleStart {
     InputScheduleStart {
         point: InputPoint::new(0., 0., 0.2),

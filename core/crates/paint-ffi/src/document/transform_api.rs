@@ -4,6 +4,64 @@ use crate::{
     pointers, runtime,
     session::Operation,
 };
+/// Compute bounded shared display geometry from absolute input, without a session,
+/// pixel reads, IO, history or actor waits. Query with capacity_floats=0/NULL.
+/// BUFFER_TOO_SMALL publishes the descriptor and leaves xyuv untouched.
+/// # Safety
+/// Readable initialized geometry, writable initialized out_info, and writable
+/// nonoverlapping capacity_floats f32s. No pointer is retained after return.
+#[no_mangle]
+pub unsafe extern "C" fn paint_transform_display_geometry(
+    geometry: *const PaintTransform,
+    out_info: *mut PaintTransformDisplayGeometry,
+    xyuv: *mut f32,
+    capacity_floats: u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::reset_sized(
+            out_info,
+            PaintTransformDisplayGeometry {
+                struct_size: std::mem::size_of::<PaintTransformDisplayGeometry>() as u32,
+                version: 1,
+                ..Default::default()
+            },
+        )?;
+        if capacity_floats > 145 * 145 * 4 {
+            return Err(ApiError::invalid("display geometry buffer limit"));
+        }
+        let v = pointers::read_sized(geometry)?;
+        if v.warp > 1 || v.reserved != 0 {
+            return Err(ApiError::invalid("transform flags"));
+        }
+        let value = paint_core::TransformGeometry {
+            points: std::array::from_fn(|i| [v.points[i * 2], v.points[i * 2 + 1]]),
+            warp: v.warp != 0,
+            interpolation: v.interpolation,
+            skew_h: v.skew_h,
+            skew_v: v.skew_v,
+        }
+        .display_geometry()?;
+        pointers::write(
+            out_info,
+            PaintTransformDisplayGeometry {
+                struct_size: std::mem::size_of::<PaintTransformDisplayGeometry>() as u32,
+                version: 1,
+                columns: value.columns,
+                rows: value.rows,
+                vertex_bytes: (value.vertices.len() * 16) as u64,
+                inverse: value.inverse,
+                reserved: 0,
+            },
+        )?;
+        if capacity_floats < (value.vertices.len() * 4) as u64 {
+            return Err(ApiError::new(
+                PAINT_BUFFER_TOO_SMALL,
+                "display geometry buffer too small",
+            ));
+        }
+        pointers::write_slice(xyuv, value.vertices.as_flattened())
+    })
+}
 /// Queue a transform operation. UPDATE alone requires geometry; input is copied.
 /// # Safety
 /// Valid owned handles, readable initialized DTO and writable nonoverlapping sequence.

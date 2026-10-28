@@ -9,3 +9,18 @@ Qt 6.8.3 的 Windows 后端可以同时收到两套数位笔事件：WinTab 支�
 笔触本地状态也改为幂等：已接受的 Press 遇到重复 Press 不清除 `m_stroke/m_tablet`；Release 和 proximity loss 以 `PaintCoreClient::drawing()` 为准结束已接受笔触。即使驱动仍产生重复 Press，后续 Release 也能收笔，不能留下永久绘制态。
 
 本修复不改变输入坐标、压力映射、绘画算法、ABI、state 或文件格式。
+
+
+## 2026-10-26 普通按钮与菜单的重复点击排查
+
+用户反馈手绘笔单击像素加减变动2px，顶部菜单打开后立即关闭。验收使用真实Qt窗口及平台输入入口覆盖像素SpinBox和顶栏菜单，同时检查单路Tablet、双设备Tablet、伴随鼠标及快速独立点击。按事件来源/设备所有权只让一套输入驱动交互，不使用时间防抖；原生鼠标、触摸、控件长按、菜单选项、画布压力与释放不得被误拦。只运行与此次问题相关的最小输入回归，并更新Release交付；实体驱动行为与注入测试区分记录。
+
+
+WinTab路径的补充边界：Windows笔生成的WM_LBUTTON等客户端鼠标消息可伴随Tablet输入。仅在WinTab实际启用时，通过原生事件过滤识别MI_WP_SIGNATURE=0xff515700且非touch的消息，在Qt/菜单路由前消费；普通鼠标、touch标记、滚轮/非客户区消息及Windows Ink路径保持。Qt依据最近WM_POINTER类型决定是否过滤，但WinTab输入不一定更新该类型，不能依赖QMouseEvent.source（可能仍标NotSynthesized）。不按时间/位置推断，不拦截Qt在Tablet未处理时生成的控件鼠标回退。
+
+
+过滤器在配置后端时安装一次，跟随应用销毁，仅接收windows_generic_MSG且hwnd属于已有QQuickWindow；原生文件对话框等非Quick窗口保持系统输入。Windows Ink后端不应用此WinTab补丁。真实鼠标以无笔标记的SendInput检验，笔伴随消息以dwExtraInfo保留标记进入原生队列，不通过SendMessage绕过Qt dispatcher。参考Qt6.8.3的[qwindowspointerhandler.cpp](https://github.com/qt/qtbase/blob/v6.8.3/src/plugins/platforms/windows/qwindowspointerhandler.cpp)鼠标来源处理与[qwindowscontext.cpp](https://github.com/qt/qtbase/blob/v6.8.3/src/plugins/platforms/windows/qwindowscontext.cpp)原生过滤调用位置。
+
+2026-10-26 实体复核：用户报告上述补丁仍未解决高漫+Windows Ink按钮重复。暂不追加输入过滤规则，先以DRAWVERSE_TABLET_TRACE环境变量显式启用有界（10000行）点击日志，记录原生消息/extra标记、当前后端及未消费的Qt窗口点击设备/来源。默认不打开日志文件；只记录指针点击，不记录键盘或文档内容。诊断不改变事件接受状态。采集实体事件后再决定修复与最小回归。
+
+实体日志确认：每次WinTab按钮包与core pointer按钮包时间戳完全相同、全局位置只有取整误差，按下extra为不固定低值、释放为0，没有MI_WP_SIGNATURE。原生消息可能先到，但Qt交付中WinTab总先于core pointer。补充在所有画布/菜单路由前及全局窗口过滤器记录WinTab Press/Release，固定32记录；只拒绝Mouse设备、同精确时间戳/按钮/相位且全局位置距离≤2逻辑像素的第二路鼠标按钮和双击。保留Pen设备的Qt控件回退，不使用时间窗口防抖。Windows Ink路径及未配对鼠标保持。

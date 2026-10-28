@@ -78,7 +78,7 @@ pub use brush_transfer_jitter::{TransferJitter, TransferSample};
 pub use document::{
     BucketFill, DirtyTiles, Document, DocumentOptions, DocumentSnapshot, LiquifyDab,
     LiquifyPreview, LiquifyPreviewSource, PlacedImage, ResidentPreview, ResidentPreviewSource,
-    StrokePageResult, TransformGeometry, WandSelection, MAX_DIMENSION,
+    StrokePageResult, TransformDisplayGeometry, TransformGeometry, WandSelection, MAX_DIMENSION,
 };
 pub use error::{Error, Result};
 pub use history::HistoryAction;

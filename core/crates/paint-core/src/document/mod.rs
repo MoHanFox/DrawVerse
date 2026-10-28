@@ -32,7 +32,7 @@ mod taper;
 mod transform;
 #[cfg(test)]
 mod transform_result_history_tests;
-pub use transform::{PlacedImage, TransformGeometry};
+pub use transform::{PlacedImage, TransformDisplayGeometry, TransformGeometry};
 
 #[derive(Clone, Copy, Debug)]
 pub struct DocumentOptions {
@@ -1749,7 +1749,11 @@ impl Document {
                     self.restore_stroke(&stroke);
                     return Err(error);
                 }
-                secondary_position += dual_step.expect("secondary stream");
+                secondary_position = crate::brush_input_schedule::next_input_position(
+                    secondary_position,
+                    stroke.path_distance,
+                    dual_step.expect("secondary stream"),
+                );
                 secondary_remaining -= 1;
             } else {
                 let sample = stroke
@@ -1764,7 +1768,11 @@ impl Document {
                     }
                 }
                 stroke.last_dab = sample;
-                position += step;
+                position = crate::brush_input_schedule::next_input_position(
+                    position,
+                    stroke.path_distance,
+                    step,
+                );
                 primary_remaining -= 1;
             }
         }

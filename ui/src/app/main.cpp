@@ -18,22 +18,34 @@
 #include <QPalette>
 #include <QIcon>
 #include <QTemporaryDir>
+#include <QDir>
+#include <QScreen>
 #ifdef DRAWVERSE_QML_SOURCE_DIR
 #include "app/QmlSourceWatcher.h"
 #include <QCommandLineParser>
-#include <QDir>
 #include <QFileInfo>
 #include <QQmlDebuggingEnabler>
 #endif
 #include <cmath>
+#include <memory>
 
 int main(int argc,char **argv) {
     configureUiScale();
     QQuickWindow::setDefaultAlphaBuffer(true);
     QGuiApplication app(argc,argv);
     app.setOrganizationName("DrawVerse"); app.setApplicationName("DrawVerse");
-    const QSettings inputSettings(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse");
-    configureTabletInput(inputSettings.value("input/tabletApi","auto").toString());
+    const auto profileIndex=app.arguments().indexOf("--profile-dir");
+    QString profileDir;
+    if(profileIndex>=0) {
+        if(profileIndex+1>=app.arguments().size() || app.arguments()[profileIndex+1].startsWith("--")){qCritical("--profile-dir requires a directory");return 2;}
+        profileDir=QDir(app.arguments()[profileIndex+1]).absolutePath();
+        if(!QDir().mkpath(profileDir)){qCritical("Cannot create profile directory");return 2;}
+        qInfo().noquote()<<"Isolated profile:"<<profileDir;
+        for(auto *screen:app.screens())qInfo()<<"Screen:"<<screen->name()<<"logical DPI:"<<screen->logicalDotsPerInch()<<"DPR:"<<screen->devicePixelRatio();
+    }
+    const auto inputSettings=profileDir.isEmpty()?std::make_unique<QSettings>(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse")
+        :std::make_unique<QSettings>(QDir(profileDir).filePath("DrawVerse.ini"),QSettings::IniFormat);
+    configureTabletInput(inputSettings->value("input/tabletApi","auto").toString());
 #ifdef DRAWVERSE_QML_SOURCE_DIR
     // Only this separate developer executable enables the Qt Creator preview service.
     QQmlDebuggingEnabler::enableDebugging(true);
@@ -44,6 +56,7 @@ int main(int argc,char **argv) {
     parser.addOption({"qml-entry","QML window to load, relative to --qml-root.","file","app/Main.qml"});
     parser.addOption({"canvas","Create a temporary canvas in app/Main.qml."});
     parser.addOption({"watch","Reload the isolated preview session when QML or an asset is saved."});
+    parser.addOption({"profile-dir","Use an explicit isolated preferences and workspace directory.","directory"});
     parser.process(app);
     qputenv("QML_DISABLE_DISK_CACHE","1");
     const QDir qmlRoot(parser.value("qml-root"));
@@ -51,7 +64,7 @@ int main(int argc,char **argv) {
     if(!qmlEntry.isFile()) {qCritical().noquote()<<"QML preview entry does not exist:"<<qmlEntry.absoluteFilePath();return 2;}
     if(parser.isSet("canvas") && parser.value("qml-entry")!="app/Main.qml") {qCritical("--canvas requires app/Main.qml");return 2;}
 #endif
-    if(app.arguments().contains("--migrate-workspace")) { WorkspaceManager workspace; workspace.saveLayout(); return 0; }
+    if(app.arguments().contains("--migrate-workspace")) { WorkspaceManager workspace(profileDir.isEmpty()?QString():QDir(profileDir).filePath("workspace.ini")); workspace.saveLayout(); return 0; }
     initializeDrawVerseUiResources();
     app.setWindowIcon(QIcon(":/qml/assets/logo.png"));
     QQuickStyle::setStyle("Basic");
@@ -76,18 +89,21 @@ int main(int argc,char **argv) {
     const int benchmarkIndex=arguments.indexOf("--benchmark");
     const QString benchmarkPath=benchmarkIndex>=0 && benchmarkIndex+1<arguments.size()?arguments[benchmarkIndex+1]:QString();
     const QString testPath=!benchmarkPath.isEmpty()?benchmarkPath:previewPath;
+    // These opt-in QA consumers explicitly inspect CPU viewport pixels and
+    // frame revisions. Keep their reference requests while GPU still displays.
+    if(!testPath.isEmpty())qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");
     QTemporaryDir testPreferences;
     bool isolatedPreferences=!testPath.isEmpty();
 #ifdef DRAWVERSE_QML_SOURCE_DIR
     isolatedPreferences=true;
 #endif
     if(isolatedPreferences && !testPreferences.isValid())return 1;
-    PaintCoreClient client(nullptr,isolatedPreferences?testPreferences.filePath("preferences.ini"):QString());
-    QString workspacePath=testPath.isEmpty()?QString():testPath+".workspace.ini";
+    PaintCoreClient client(nullptr,!profileDir.isEmpty()?QDir(profileDir).filePath("DrawVerse.ini"):isolatedPreferences?testPreferences.filePath("preferences.ini"):QString());
+    QString workspacePath=!profileDir.isEmpty()?QDir(profileDir).filePath("workspace.ini"):testPath.isEmpty()?QString():testPath+".workspace.ini";
 #ifdef DRAWVERSE_QML_SOURCE_DIR
-    workspacePath=testPreferences.filePath("workspace.ini");
+    if(profileDir.isEmpty())workspacePath=testPreferences.filePath("workspace.ini");
     qInfo().noquote()<<"QML preview source:"<<qmlEntry.absoluteFilePath();
-    qInfo().noquote()<<"QML preview preferences:"<<testPreferences.path();
+    qInfo().noquote()<<"QML preview preferences:"<<(profileDir.isEmpty()?testPreferences.path():profileDir);
 #endif
     WorkspaceManager workspace(workspacePath);
 #ifndef DRAWVERSE_QML_SOURCE_DIR

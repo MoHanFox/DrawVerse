@@ -3,6 +3,7 @@
 #include <functional>
 
 class QPointingDevice;
+class QEvent;
 
 // Selection is performed once before any application windows are created.
 // Probe the actual enabled state: Qt can return true even when no driver opens.
@@ -11,3 +12,10 @@ QString selectTabletInputBackend(const QString &mode,const std::function<bool(bo
 void configureTabletInput(const QString &mode);
 QString activeTabletInputBackend();
 bool acceptTabletInputDevice(const QString &backend,const QPointingDevice *device);
+// Call before canvas/menu routing. Also pairs unmarked legacy mouse button
+// events with accepted WinTab packets by exact timestamp, phase and position.
+bool rejectTabletInputEvent(QEvent *event);
+
+// Native Windows pen promotion is separate from Tablet and may appear as a
+// primary-mouse event in Qt. Only suppress the redundant WinTab client stream.
+bool isRedundantTabletMouseMessage(const QString &backend,quint32 message,quintptr extraInfo);

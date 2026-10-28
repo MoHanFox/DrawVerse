@@ -25,10 +25,14 @@ Item {
     function affine(p,c,a,b,d,e){return p.map(v=>Qt.point(c.x+a*(v.x-c.x)+b*(v.y-c.y),c.y+d*(v.x-c.x)+e*(v.y-c.y)))}
     function contains(q,p){let inside=false;for(let i=0,j=3;i<4;j=i++){if((q[i].y>p.y)!==(q[j].y>p.y) && p.x<(q[j].x-q[i].x)*(p.y-q[i].y)/(q[j].y-q[i].y)+q[i].x)inside=!inside}return inside}
     function hit(local){let n=nodes(points);for(let i=0;i<n.length;i++){let p=screen(n[i]);if(Math.hypot(local.x-p.x,local.y-p.y)<=8)return i}return -1}
-    function mapped(u,v) {
-        function node(x,y,axis) {function row(yy){if(x<0)return 2*points[yy*4][axis]-points[yy*4+1][axis];if(x>3)return 2*points[yy*4+3][axis]-points[yy*4+2][axis];return points[yy*4+x][axis]}if(y<0)return 2*row(0)-row(1);if(y>3)return 2*row(3)-row(2);return row(y)}
+    function mapped(u,v,p) {
+        function node(x,y,axis) {function row(yy){if(x<0)return 2*p[yy*4][axis]-p[yy*4+1][axis];if(x>3)return 2*p[yy*4+3][axis]-p[yy*4+2][axis];return p[yy*4+x][axis]}if(y<0)return 2*row(0)-row(1);if(y>3)return 2*row(3)-row(2);return row(y)}
         function cubic(a,t){return .5*(2*a[1]+(-a[0]+a[2])*t+(2*a[0]-5*a[1]+4*a[2]-a[3])*t*t+(-a[0]+3*a[1]-3*a[2]+a[3])*t*t*t)}
         const ix=Math.min(2,Math.floor(u*3)),iy=Math.min(2,Math.floor(v*3)),tx=u*3-ix,ty=v*3-iy;
+        // The eight guide curves lie on control rows/columns. At a knot the
+        // other Catmull axis is exactly that row/column, so evaluate it once.
+        if(ty===0 || v===1){const row=v===1?3:iy;function horizontal(key){return cubic([node(ix-1,row,key),node(ix,row,key),node(ix+1,row,key),node(ix+2,row,key)],tx)}return Qt.point(horizontal("x"),horizontal("y"))}
+        if(tx===0 || u===1){const column=u===1?3:ix;function vertical(key){return cubic([node(column,iy-1,key),node(column,iy,key),node(column,iy+1,key),node(column,iy+2,key)],ty)}return Qt.point(vertical("x"),vertical("y"))}
         function axis(key){let rows=[];for(let r=0;r<4;r++){let a=[];for(let k=0;k<4;k++)a.push(node(ix+k-1,iy+r-1,key));rows.push(cubic(a,tx))}return cubic(rows,ty)}
         return Qt.point(axis("x"),axis("y"));
     }
@@ -58,8 +62,8 @@ Item {
         id:outline;anchors.fill:parent
         Connections {target:root.controller;function onTransformChanged(){outline.requestPaint()}function onStateChanged(){outline.requestPaint()}}
         Connections {target:root.canvasView;function onViewChanged(){outline.requestPaint()}}
-        onPaint:{let ctx=getContext("2d");ctx.reset();if(!root.visible || root.points.length!==16)return;ctx.strokeStyle="#6598ff";ctx.lineWidth=1;let p=root.points;
-            if(root.controller.transformWarp){for(let axis=0;axis<2;axis++)for(let i=0;i<4;i++){ctx.beginPath();for(let j=0;j<=48;j++){let v=root.screen(root.mapped(axis?i/3:j/48,axis?j/48:i/3));if(j===0)ctx.moveTo(v.x,v.y);else ctx.lineTo(v.x,v.y)}ctx.stroke()}}
+        onPaint:{let ctx=getContext("2d");ctx.reset();if(!root.visible || root.points.length!==16)return;ctx.strokeStyle="#6598ff";ctx.lineWidth=1;let p=root.points.slice();
+            if(root.controller.transformWarp){for(let axis=0;axis<2;axis++)for(let i=0;i<4;i++){ctx.beginPath();for(let j=0;j<=48;j++){let v=root.screen(root.mapped(axis?i/3:j/48,axis?j/48:i/3,p));if(j===0)ctx.moveTo(v.x,v.y);else ctx.lineTo(v.x,v.y)}ctx.stroke()}}
             else {let q=root.corners(p);ctx.beginPath();for(let i=0;i<4;i++){let v=root.screen(q[i]);if(i===0)ctx.moveTo(v.x,v.y);else ctx.lineTo(v.x,v.y)}ctx.closePath();ctx.stroke()}
             let ref=root.screen(root.center(p));ctx.beginPath();ctx.arc(ref.x,ref.y,4,0,Math.PI*2);ctx.moveTo(ref.x-6,ref.y);ctx.lineTo(ref.x+6,ref.y);ctx.moveTo(ref.x,ref.y-6);ctx.lineTo(ref.x,ref.y+6);ctx.stroke();
             let n=root.nodes(p);for(let v of n){v=root.screen(v);ctx.fillStyle=root.controller.transformWarp?"#6598ff":"white";if(root.controller.transformWarp){ctx.beginPath();ctx.arc(v.x,v.y,3.5,0,Math.PI*2);ctx.fill();ctx.stroke()}else{ctx.fillRect(v.x-4,v.y-4,8,8);ctx.strokeRect(v.x-4,v.y-4,8,8)}}

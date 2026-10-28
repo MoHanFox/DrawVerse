@@ -4951,6 +4951,10 @@ fn mask_link_abi_publication_history_movement_and_validation() {
 #[path = "support/history_select_api.rs"]
 mod history_select_api;
 
+#[path = "support/composition_api.rs"]
+mod composition_api;
+#[path = "support/cut_api.rs"]
+mod cut_api;
 #[path = "support/task_progress_api.rs"]
 mod task_progress_api;
 
@@ -5076,5 +5080,121 @@ fn selected_pixel_actions_clipboard_history_and_selection_gate() {
         let pasted = other.wait(sequence);
         assert_eq!(pasted.last_error_status, PAINT_OK);
         assert_eq!(pasted.layer_count, 2);
+    }
+}
+
+#[test]
+fn move_preparation_cleanup_is_allowed_during_resident_edits_without_changing_them() {
+    for liquify in [true, false] {
+        let h = Harness::new(80, 64);
+        h.wait(h.stroke(32., 32.));
+        unsafe {
+            let mut sequence = 0;
+            let ids = [h.info().active_layer_id];
+            assert_eq!(
+                paint_session_prepare_layer_move(
+                    h.core,
+                    h.session,
+                    ids.as_ptr(),
+                    1,
+                    1.,
+                    51,
+                    &mut sequence
+                ),
+                PAINT_OK
+            );
+            h.wait(sequence);
+            let begin = if liquify {
+                paint_session_liquify(
+                    h.core,
+                    h.session,
+                    PAINT_LIQUIFY_BEGIN_DEFERRED,
+                    ptr::null(),
+                    &mut sequence,
+                )
+            } else {
+                paint_session_transform(
+                    h.core,
+                    h.session,
+                    PAINT_TRANSFORM_BEGIN,
+                    ptr::null(),
+                    &mut sequence,
+                )
+            };
+            assert_eq!(begin, PAINT_OK);
+            h.wait(sequence);
+            if !liquify {
+                assert_eq!(
+                    paint_session_transform(
+                        h.core,
+                        h.session,
+                        PAINT_TRANSFORM_ENABLE_RESIDENT,
+                        ptr::null(),
+                        &mut sequence
+                    ),
+                    PAINT_OK
+                );
+                h.wait(sequence);
+            }
+            let before = h.info();
+            let mut preview = dto!(PaintResidentPreviewInfo);
+            assert_eq!(
+                paint_session_resident_preview_info(h.core, h.session, &mut preview),
+                PAINT_OK
+            );
+            for _ in 0..2 {
+                assert_eq!(
+                    paint_session_clear_layer_move_preparation(h.core, h.session, &mut sequence),
+                    PAINT_OK
+                );
+                let after = h.wait(sequence);
+                assert_eq!(after.last_error_status, PAINT_OK);
+                assert_eq!(after.revision, before.revision);
+                assert_eq!(after.undo_depth, before.undo_depth);
+                assert_eq!(after.flags, before.flags);
+                let mut current = dto!(PaintResidentPreviewInfo);
+                assert_eq!(
+                    paint_session_resident_preview_info(h.core, h.session, &mut current),
+                    PAINT_OK
+                );
+                assert_eq!(current.source_id, preview.source_id);
+                let mut preparation = dto!(PaintMovePreparationInfo);
+                assert_eq!(
+                    paint_session_move_preparation_info(h.core, h.session, &mut preparation),
+                    PAINT_NOT_FOUND
+                );
+            }
+            let conflict = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_UNDO,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(conflict.last_error_status, PAINT_BUSY);
+            assert_eq!(
+                conflict.flags & (PAINT_SESSION_LIQUIFY | PAINT_SESSION_TRANSFORM),
+                before.flags & (PAINT_SESSION_LIQUIFY | PAINT_SESSION_TRANSFORM)
+            );
+            let cancel = if liquify {
+                paint_session_liquify(
+                    h.core,
+                    h.session,
+                    PAINT_LIQUIFY_CANCEL,
+                    ptr::null(),
+                    &mut sequence,
+                )
+            } else {
+                paint_session_transform(
+                    h.core,
+                    h.session,
+                    PAINT_TRANSFORM_CANCEL,
+                    ptr::null(),
+                    &mut sequence,
+                )
+            };
+            assert_eq!(cancel, PAINT_OK);
+            assert_eq!(
+                h.wait(sequence).flags & (PAINT_SESSION_LIQUIFY | PAINT_SESSION_TRANSFORM),
+                0
+            );
+        }
     }
 }

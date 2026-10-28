@@ -1,4 +1,52 @@
-# C ABI 1.80.0 契约
+# C ABI 1.86.0 契约
+
+## ABI 1.86 — 完整栅格剪贴与精确Dissolve
+
+独立version1新增可选DISSOLVE=64和CLIPPING=128，全部能力为255。旧features=7/31/63遇所缺能力仍整个UNSUPPORTED，不发布半条剪贴链。原info136/node64/operation32布局、文档/state45保持。Node.reserved新增bit49剪贴标记，仅CLIPPING时有效；parent33–48不受影响。
+
+GROUPS/DISSOLVE/CLIPPING任一实际必需时，info.reserved继续描述操作数/表面数/最终输出。Dissolve无组计划也用操作流传递完整种子。operation.reserved[0]仅DISSOLVE时为该node的u32种子（其他节点操作也可携带，非随机操作忽略）；reserved[1]仅CLIPPING下的剪贴操作为coverage表面索引+1，0表示全覆盖。旧能力计划保留原零字段。
+
+追加MASKED_RASTER=5（原源×自身蒙版）、MASK_SURFACE=6（源表面×自身蒙版）、CLIP_RASTER=7、CLIP_SURFACE=8（按核心保留背景alpha施加剪贴并按coverage插值）、CLIP_INFLUENCE=9（穿透剪贴保留背景alpha/背景依赖）、APPLY_PREPARED=10（已蒙版/剪贴基底乘权重后混合，不重复施加自身蒙版）。Clear无读取，MaskedRaster只读node；MaskSurface只读source/node；Copy只读backdrop。其余依对应kind读取source/backdrop、node蒙版及可选coverage。所有读取表面先初始化且不能与输出相同。Qt严格检查索引、kind、初始化及能力；不带CLIPPING最多4n+1操作/34表面，带CLIPPING最多16n+1操作/85表面，Qt64节点对应1025条操作。逐条追加前限制操作数量，元数据保守预检每节点1536字节；预算不足在pin前拒绝。
+
+穿透基底保留父before/after，以从透明合成的intrinsic alpha限制剪贴；非穿透基底先蒙版，依序剪贴，再施加基底权重/混合。Dissolve严格按核心文档坐标、u32种子及64位模乘hash，GPU成对u32实现；按精确f32 alpha的整数阈值比较，不能将随机数转float后比较。所有操作保持全分辨率后再LOD。CPU最终历史/保存/导出/吸色不变；置入图、复杂自由变换及预算外组合仍明确完整CPU后备，正常显示无读回。
+
+## ABI 1.85 — 有界组操作与中间表面
+
+独立composition version1新增可选GROUPS=32。需要该能力的计划可包含kind=2的组节点；Node.reserved的低32位混合模式/位32固定蒙版保持，位33–48新增parent节点索引+1，根为0，其余位仍0。未需要GROUPS的平面计划所有新位保持0。旧features=7/31请求遇组仍返回整个Failed/UNSUPPORTED租约，不改变文档错误或历史。
+
+PaintCompositionInfo的原136字节布局保持。GROUPS计划的reserved[0]为operation_count，reserved[1]高32位surface_count、低32位最终output_surface。操作数≤4×node_count+1，中间表面最多34，最终表面0/1。其他计划两字段为0，沿用旧根栅格顺序。新增32字节PaintCompositionOperation（reserved偏移24），kind为CLEAR=0、COPY=1、DRAW_RASTER=2、BLEND_SURFACE=3、INFLUENCE=4；node_index/output/source/backdrop均为u32，reserved[2]为0。表面是计划局部抽象编号，不是设备对象。清空不读源；复制只读backdrop；栅格读取node和backdrop；组混合/穿透插值读取source和backdrop及node的蒙版/权重。每条写入表面与所读表面不同，所读表面必须已初始化。组先完整合成，再按LOD显示。
+
+paint_session_composition_operation按完整Ready key读取一条操作，输出初始化/越界NOT_FOUND/身份BUSY/取消CANCELLED及最终发布线性化与node读取保持一致，无IO或GPU指针。元数据预检保守计账包括操作与树，原租约/进程预算不提高。Qt消费上限64节点/257操作/34表面，表面按原256MiB节点/2GiB进程含在途预算预留，超限整个CPU后备。剪贴/Dissolve/置入图仍unsupported；组自由变换暂用完整CPU闭包。文档/state45/behavior/VBR和最终历史提交保持CPU权威。
+
+## ABI 1.84 — 原子图层/选区剪切
+
+现有paint_session_layer_action增加CUT=6和CUT_SELECTED_PIXELS=7；DTO/私有MIME/state45及文档格式不变。前者复制所选完整子树后删除，后者复制选区内容后清除像素并保留层与选区。复制编码和既有原子历史准备失败时不提交删除，也不替换会话剪贴板。成功结果通过原read_layer_clipboard和对应命令sequence取得；一次历史沿用删除/清除类别。旧复制/粘贴动作编号不变，剪切成功不清除前序保留的session错误状态，需按last_error_sequence区分。
+
+## ABI 1.83 — 可协商的根混合与固定蒙版
+
+独立composition协议仍version1，新增能力FIXED_MASK=8、BLEND_MODES=16，不占全局feature mask。BLEND_MODES首批表示根栅格的Normal及模式2–26；Dissolve=1、PassThrough=27、组/剪贴/置入图仍返回完整Failed/UNSUPPORTED租约。旧features=7请求保持原支持范围，不会收到扩展节点。
+
+结构布局及PaintCompositionNode的64字节大小保持。其历史命名reserved输出在协商扩展下解释为：低32位blend ID，位32为固定（未链接）蒙版标志，其余位0；BLEND_MODES未要求时低32位0，FIXED_MASK未要求时位32为0。required_features记录实际依赖，节点索引、瓦片身份、不可变租约、取消和有界读契约保持。mask链接标志只约束移动几何，覆盖仍按蒙版自身偏移和密度；不发布原生GPU对象。文档/state45/behavior/VBR均不升版。
+
+## ABI 1.82 — 无会话的共享变换显示几何
+
+`paint_transform_display_geometry`校验现有PaintTransform并返回独立version1的PaintTransformDisplayGeometry（104字节，inverse偏移24）：columns/rows、vertex_bytes、原核心行优先xyuv网格、非Warp逆投影矩阵；Warp逆矩阵为0。每边最多145顶点，总顶点字节≤336400；调用方float容量最多84100，NULL/0查询返回BUFFER_TOO_SMALL并填描述，不部分写顶点。无文档、IO、GPU对象、历史或Actor等待；调用方须遵守缓冲非重叠及f32对齐，返回后不保留指针。该数值入口不是显示完成或GPU能力承诺，计划协议仍version1，文档/state45格式不变。
+
+## ABI 1.81 — 不可变显示计划传输（G1）
+
+合成协议独立 version=1，通过 `paint_core_composition_capabilities` 协商 Normal=1、自身蒙版=2、线性预乘 RGBA32F=4；不复用已满的全局 u64 feature mask，不表示 GPU 设备能力。现有显示默认保持 CPU，state45、behavior37、VBR 与文档格式不变。
+
+`paint_session_request_composition` 复制请求到独立有界显示邮箱，不占真实笔采样与历史命令 FIFO，不分配业务 sequence。返回 OK 仅表示接纳。`paint_session_composition_info` 返回 Pending/Ready/Failed；不支持的完整闭包和预算不足为 Failed 租约，status 说明原因，不改文档错误、revision 或历史。每会话最多两租约，待处理的同 view 请求可合并；Ready/Failed 仍需调用 `paint_session_release_composition` 释放。
+
+身份由 view_id、lease_id、request_id、device_epoch、document_generation、revision、publication 组成。每 view 的 request/epoch 单调，epoch 增加淘汰该 view 的旧租约；新文档与关闭取消旧租约。node/tile/read 必须提供完整 Ready key，不能只使用 layer ID 或 revision。跨 core/session 的租约不通用。epoch 是调用方提供的逻辑身份，G1 尚未连接实际窗口设备生命周期。
+
+能力、请求、key、info、node、tile、usage 的 C 布局分别为88、144、56、136、64、40、40字节；调用方填写外层及嵌套 viewport.struct_size，reserved 为0。未知版本/能力拒绝。节点描述 Normal 栅格与自身蒙版、偏移、opacity/fill、隐式白范围及连续瓦片索引，mask_index=UINT32_MAX 表示无蒙版。蒙版 alpha 表示隐藏量，opacity 表示密度；fill=0 隐藏该蒙版，否则不作为密度乘数。组、剪贴、其他混合、置入图、固定蒙版及活动移动/变换/液化会话明确 unsupported，不生成缺层的部分计划。普通活动笔触允许捕获CPU候选的不可变源；捕获本身不提交笔触或历史。G3移动/变换使用操作前已发布源与独立本地几何，不能以GPU预览替代最终CPU结果。
+
+`paint_session_composition_node/tile` 读取不可变描述；`paint_session_read_composition_tile` 每次最多一块64×64×16=65536字节，小端 f32 线性预乘 RGBA，format=4，不包含 GPU 指针。content_id 为进程内不复用的内容身份，私有 Weak 索引最多8192项，淘汰只导致缓存未命中。显式透明瓦片覆盖隐式白。源是原始分辨率，LOD 必须在合成后执行。
+
+瓦片读取仅可在 worker 调用，可能触发分页 IO；GUI/渲染线程不得调用。容量查询或不足返回所需65536字节而不读取/部分写入，超过65536的容量拒绝。读取不持有服务锁进行 IO，最终复制前再次校验取消；取消与最终复制有明确线性化顺序，取消后旧结果不写入调用方缓冲区。调用方缓冲区必须在返回前保持有效，遵守原有非重叠与对齐约束。
+
+上限为4096节点/4096瓦片、每租约256MiB像素引用与8MiB保守元数据；进程计划512MiB、读取暂存16MiB，均先预留后构造，失败回收。info.budget_bytes 包含保守预检计账，可大于实际 pinned_bytes+metadata_bytes。`paint_core_composition_usage` 返回进程当前/峰值计账；取消后在途 Arc 持有预算直至最后使用者释放。消费者自身包、暂存和未来 GPU 资源仍需独立预算。没有等待 GPU 或改写 CPU 最终提交的入口。
 
 ## ABI 1.80 — 图层移动后台预热
 

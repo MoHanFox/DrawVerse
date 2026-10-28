@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 80
+#define PAINT_ABI_MINOR 86
 
 #define PAINT_ABI_PATCH 0
 
@@ -60,6 +60,74 @@
 #define PAINT_COMMAND_STROKE_TO 3
 
 #define PAINT_COMMAND_UNDO 6
+
+#define PAINT_COMPOSITION_APPLY_PREPARED 10
+
+#define PAINT_COMPOSITION_BLEND_MODES 16
+
+#define PAINT_COMPOSITION_BLEND_SURFACE 3
+
+#define PAINT_COMPOSITION_CLEAR 0
+
+#define PAINT_COMPOSITION_CLIPPING 128
+
+#define PAINT_COMPOSITION_CLIP_INFLUENCE 9
+
+#define PAINT_COMPOSITION_CLIP_RASTER 7
+
+#define PAINT_COMPOSITION_CLIP_SURFACE 8
+
+#define PAINT_COMPOSITION_COPY 1
+
+#define PAINT_COMPOSITION_DISSOLVE 64
+
+#define PAINT_COMPOSITION_DRAW_RASTER 2
+
+#define PAINT_COMPOSITION_FAILED 2
+
+/**
+ * ABI1.83 optional version1 extensions; older feature sets retain old semantics.
+ */
+#define PAINT_COMPOSITION_FIXED_MASK 8
+
+#define PAINT_COMPOSITION_GROUP 2
+
+/**
+ * ABI1.85: ordered group operations and plan-local intermediate surfaces.
+ */
+#define PAINT_COMPOSITION_GROUPS 32
+
+#define PAINT_COMPOSITION_INFLUENCE 4
+
+#define PAINT_COMPOSITION_LINEAR_RGBA32F 4
+
+#define PAINT_COMPOSITION_MASK 1
+
+#define PAINT_COMPOSITION_MASKED_RASTER 5
+
+#define PAINT_COMPOSITION_MASK_SURFACE 6
+
+#define PAINT_COMPOSITION_NODE_CLIPPED (1 << 49)
+
+/**
+ * Node.reserved low32 = blend ID when BLEND_MODES is required.
+ * Bit32 marks an unlinked mask when FIXED_MASK is required. With GROUPS,
+ * bits33..48 hold parent node index+1, or zero for a root. Bit49 marks clipping
+ * only with CLIPPING; all other bits are zero.
+ */
+#define PAINT_COMPOSITION_NODE_FIXED_MASK 4294967296
+
+#define PAINT_COMPOSITION_NORMAL 1
+
+#define PAINT_COMPOSITION_PENDING 0
+
+#define PAINT_COMPOSITION_RASTER 0
+
+#define PAINT_COMPOSITION_READY 1
+
+#define PAINT_COMPOSITION_SELF_MASK 2
+
+#define PAINT_COMPOSITION_VERSION 1
 
 #define PAINT_EVENT_DOCUMENT_CHANGED 1
 
@@ -413,6 +481,10 @@
 
 #define PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS 5
 
+#define PAINT_LAYER_ACTION_CUT 6
+
+#define PAINT_LAYER_ACTION_CUT_SELECTED_PIXELS 7
+
 #define PAINT_LAYER_ACTION_DUPLICATE 2
 
 #define PAINT_LAYER_ACTION_MERGE 3
@@ -606,6 +678,10 @@
 
 #define PAINT_WORKING_LINEAR_SRGB 1
 
+#define PROCESS_PLAN_BYTES ((512 * 1024) * 1024)
+
+#define PROCESS_READ_BYTES ((16 * 1024) * 1024)
+
 typedef struct PaintBrushLibrary PaintBrushLibrary;
 
 typedef struct PaintBrushPose PaintBrushPose;
@@ -720,6 +796,31 @@ typedef struct PaintCapabilities {
   uint32_t max_read_tile_edge;
   uint32_t reserved;
 } PaintCapabilities;
+
+typedef struct PaintCompositionCapabilities {
+  uint32_t struct_size;
+  uint32_t version;
+  uint64_t features;
+  uint32_t max_nodes;
+  uint32_t max_tiles;
+  uint32_t max_leases_per_session;
+  uint32_t tile_edge;
+  uint64_t max_pinned_bytes;
+  uint64_t max_metadata_bytes;
+  uint64_t max_read_bytes;
+  uint64_t process_plan_bytes;
+  uint64_t process_read_bytes;
+  uint64_t reserved[2];
+} PaintCompositionCapabilities;
+
+typedef struct PaintCompositionUsage {
+  uint32_t struct_size;
+  uint32_t reserved;
+  uint64_t plan_bytes;
+  uint64_t read_bytes;
+  uint64_t peak_plan_bytes;
+  uint64_t peak_read_bytes;
+} PaintCompositionUsage;
 
 /**
  * ABI 1.3: zero path_length selects the system temp directory. Other fields are explicit.
@@ -880,6 +981,90 @@ typedef struct PaintBucketFill {
   uint32_t all_layers;
   uint32_t reserved_tail[3];
 } PaintBucketFill;
+
+typedef struct PaintCompositionKey {
+  uint32_t struct_size;
+  uint32_t view_id;
+  uint64_t lease_id;
+  uint64_t request_id;
+  uint64_t device_epoch;
+  uint64_t document_generation;
+  uint64_t revision;
+  uint64_t publication;
+} PaintCompositionKey;
+
+typedef struct PaintCompositionInfo {
+  uint32_t struct_size;
+  uint32_t state;
+  struct PaintCompositionKey key;
+  PaintStatus status;
+  uint32_t version;
+  uint64_t required_features;
+  uint32_t document_width;
+  uint32_t document_height;
+  uint32_t node_count;
+  uint32_t tile_count;
+  uint64_t pinned_bytes;
+  uint64_t metadata_bytes;
+  /**
+   * Conservative process budget charge, including referenced tile upper bound.
+   */
+  uint64_t budget_bytes;
+  /**
+   * With GROUPS/DISSOLVE/CLIPPING: [operation_count, surface_count<<32 | output].
+   * Otherwise both are zero and the original flat raster order applies.
+   */
+  uint64_t reserved[2];
+} PaintCompositionInfo;
+
+typedef struct PaintCompositionNode {
+  uint32_t struct_size;
+  uint32_t kind;
+  uint64_t layer_id;
+  /**
+   * u32::MAX means no mask. Otherwise an exact node index in this lease.
+   */
+  uint32_t mask_index;
+  uint32_t visible;
+  float opacity;
+  float fill;
+  int32_t offset_x;
+  int32_t offset_y;
+  uint32_t white_width;
+  uint32_t white_height;
+  uint32_t first_tile;
+  uint32_t tile_count;
+  uint64_t reserved;
+} PaintCompositionNode;
+
+/**
+ * Fixed-size immutable group/clipping work. For CLEAR, source/backdrop are unused;
+ * COPY reads backdrop, DRAW_RASTER reads node/backdrop, BLEND_SURFACE and
+ * INFLUENCE read source/backdrop/node. Output must not alias a read surface.
+ */
+typedef struct PaintCompositionOperation {
+  uint32_t struct_size;
+  uint32_t kind;
+  uint32_t node_index;
+  uint32_t output;
+  uint32_t source;
+  uint32_t backdrop;
+  /**
+   * With DISSOLVE: seed u32; otherwise zero. With CLIPPING: coverage
+   * surface+1 for CLIP operations, zero means full coverage.
+   */
+  uint32_t reserved[2];
+} PaintCompositionOperation;
+
+typedef struct PaintCompositionTile {
+  uint32_t struct_size;
+  uint32_t format;
+  uint64_t content_id;
+  int32_t tile_x;
+  int32_t tile_y;
+  uint64_t required_bytes;
+  uint64_t reserved;
+} PaintCompositionTile;
 
 /**
  * placement: 0=inside group/root, 1=above sibling, 2=below sibling.
@@ -1098,6 +1283,35 @@ typedef struct PaintMovePreparationInfo {
   uint64_t source_id;
 } PaintMovePreparationInfo;
 
+typedef struct PaintViewport {
+  uint32_t struct_size;
+  uint32_t view_id;
+  uint32_t enabled;
+  uint32_t reserved;
+  double x;
+  double y;
+  double width;
+  double height;
+  uint32_t pixel_width;
+  uint32_t pixel_height;
+  uint64_t document_generation;
+} PaintViewport;
+
+typedef struct PaintCompositionRequest {
+  uint32_t struct_size;
+  uint32_t version;
+  uint64_t features;
+  struct PaintViewport viewport;
+  uint64_t revision;
+  uint64_t request_id;
+  uint64_t device_epoch;
+  uint64_t max_pinned_bytes;
+  uint64_t max_metadata_bytes;
+  uint32_t max_nodes;
+  uint32_t max_tiles;
+  uint64_t reserved[2];
+} PaintCompositionRequest;
+
 /**
  * Same versioned packet as ABI 1.62; usable by move and liquify.
  */
@@ -1152,20 +1366,6 @@ typedef struct PaintSelectionStep {
   double height;
 } PaintSelectionStep;
 
-typedef struct PaintViewport {
-  uint32_t struct_size;
-  uint32_t view_id;
-  uint32_t enabled;
-  uint32_t reserved;
-  double x;
-  double y;
-  double width;
-  double height;
-  uint32_t pixel_width;
-  uint32_t pixel_height;
-  uint64_t document_generation;
-} PaintViewport;
-
 /**
  * ABI 1.1 asynchronous command. Only fields used by kind are read; reserved is zero.
  */
@@ -1217,6 +1417,22 @@ typedef struct PaintStorageInfo {
   uint32_t skipped_runs;
   uint32_t reserved;
 } PaintStorageInfo;
+
+/**
+ * ABI1.82: pure version1 display geometry, at most 145*145 xyuv vertices.
+ */
+typedef struct PaintTransformDisplayGeometry {
+  uint32_t struct_size;
+  uint32_t version;
+  uint32_t columns;
+  uint32_t rows;
+  uint64_t vertex_bytes;
+  /**
+   * Row-major inverse projective map; zero for Warp (use ordered mesh).
+   */
+  double inverse[9];
+  uint64_t reserved;
+} PaintTransformDisplayGeometry;
 
 typedef struct PaintWetToolInfo {
   uint32_t struct_size;
@@ -1807,6 +2023,25 @@ PaintStatus paint_core_cancel_stroke(struct PaintCore *core, struct PaintDocumen
 PaintStatus paint_core_capabilities(struct PaintCore *core, struct PaintCapabilities *out_caps);
 
 /**
+ * ABI1.81: query display-plan protocol independently of numeric GPU support.
+ * Version 1 transports linear premultiplied little-endian RGBA32F tiles only.
+ * # Safety
+ * Initialize out_caps.struct_size; follow aligned nonoverlapping DTO contracts.
+ */
+PaintStatus paint_core_composition_capabilities(struct PaintCore *core,
+                                                uint32_t version,
+                                                struct PaintCompositionCapabilities *out_caps);
+
+/**
+ * Process-wide current/peak accounting. Plan charges survive cancellation
+ * while a worker owns immutable data; peaks are not reset by this query.
+ * # Safety
+ * Initialize out_usage.struct_size and follow the nonoverlapping DTO contract.
+ */
+PaintStatus paint_core_composition_usage(struct PaintCore *core,
+                                         struct PaintCompositionUsage *out_usage);
+
+/**
  * Create an owning core handle; failure writes NULL.
  * # Safety
  * out_core must be writable nonoverlapping pointer storage; see contracts/ffi/abi.md.
@@ -2173,6 +2408,53 @@ PaintStatus paint_session_committed_strokes(struct PaintCore *core,
                                             uint32_t *required);
 
 /**
+ * Poll bounded metadata. A ready key must be passed unchanged to all reads.
+ * Cancelled/released/old-generation leases return CANCELLED, never stale data.
+ * # Safety
+ * Initialize out_info.struct_size; lifecycle calls must be serialized.
+ */
+PaintStatus paint_session_composition_info(struct PaintCore *core,
+                                           struct PaintSession *handle,
+                                           uint64_t lease,
+                                           struct PaintCompositionInfo *out_info);
+
+/**
+ * Read one immutable node; mask_index=UINT32_MAX means no mask. Node/tile
+ * indices belong only to this exact lease; explicit transparent tiles override
+ * the white_extent default. Optional capabilities define group/blend metadata.
+ * # Safety
+ * Initialize key/out_node sizes; outputs must not overlap inputs.
+ */
+PaintStatus paint_session_composition_node(struct PaintCore *core,
+                                           struct PaintSession *handle,
+                                           const struct PaintCompositionKey *expected,
+                                           uint32_t index,
+                                           struct PaintCompositionNode *out_node);
+
+/**
+ * ABI1.85: read one immutable ordered group operation with the exact lease key.
+ * GROUPS/DISSOLVE/CLIPPING plans contain operations. No IO or native handles.
+ * # Safety
+ * Initialize key/out_operation sizes; outputs must not overlap inputs.
+ */
+PaintStatus paint_session_composition_operation(struct PaintCore *core,
+                                                struct PaintSession *handle,
+                                                const struct PaintCompositionKey *expected,
+                                                uint32_t index,
+                                                struct PaintCompositionOperation *out_operation);
+
+/**
+ * Read a stable tile identity and local signed 64px coordinates, without IO.
+ * # Safety
+ * Initialize key/out_tile sizes; outputs must not overlap inputs.
+ */
+PaintStatus paint_session_composition_tile(struct PaintCore *core,
+                                           struct PaintSession *handle,
+                                           const struct PaintCompositionKey *expected,
+                                           uint32_t index,
+                                           struct PaintCompositionTile *out_tile);
+
+/**
  * Current selected executor, including the reason for a CPU fallback. No terminator.
  * # Safety
  * Follow the caller-memory contract; capacity and out_required use bytes.
@@ -2535,6 +2817,23 @@ PaintStatus paint_session_prepare_layer_move(struct PaintCore *core,
                                              uint64_t *out_sequence);
 
 /**
+ * Worker-only: may perform cold storage IO. Query null/zero returns required
+ * bytes/BUFFER_TOO_SMALL without IO. No partial writes, no compressed format,
+ * no native GPU pointer. Capacity is bytes, at most 64KiB for version 1.
+ * The process staging budget remains charged through the final copy.
+ * # Safety
+ * Required must be writable; buffer must cover capacity, nonoverlapping with
+ * key/required. Do not call from GUI/render threads or inside callbacks.
+ */
+PaintStatus paint_session_read_composition_tile(struct PaintCore *core,
+                                                struct PaintSession *handle,
+                                                const struct PaintCompositionKey *expected,
+                                                uint32_t index,
+                                                uint8_t *buffer,
+                                                uint64_t capacity,
+                                                uint64_t *required);
+
+/**
  * Worker-only RGBA8 frame copy. Exact request/frame IDs are required. Padding is not touched.
  * # Safety
  * Follow capacity/stride/nonoverlap contract. No pixels are written until all inputs validate.
@@ -2610,6 +2909,17 @@ PaintStatus paint_session_read_resident_preview(struct PaintCore *core,
                                                 uint64_t *out_required);
 
 /**
+ * Cancel pending work or release a ready/failed lease. Nonblocking: a worker
+ * already reading retains its immutable data and budget until it finishes,
+ * then rejects publication. New documents/devices and session close cancel too.
+ * # Safety
+ * Follow session lifetime contract; no callbacks or caller pointers retained.
+ */
+PaintStatus paint_session_release_composition(struct PaintCore *core,
+                                              struct PaintSession *handle,
+                                              uint64_t lease);
+
+/**
  * ABI 1.13: atomic batch deletion, with optional group-only removal.
  * # Safety
  * Provide 1–4096 aligned readable IDs and a nonoverlapping writable sequence. Follow session ownership.
@@ -2620,6 +2930,21 @@ PaintStatus paint_session_remove_layers(struct PaintCore *core,
                                         uint32_t count,
                                         uint32_t mode,
                                         uint64_t *out_sequence);
+
+/**
+ * Copy into the actor's separate bounded display mailbox, outside the input
+ * command FIFO. OK means accepted, not ready.
+ * Request IDs and device epochs are monotonic per view, independent of revision.
+ * Up to two ready/pending leases are retained; superseded pending work coalesces.
+ * Unsupported content is reported as a FAILED lease without changing document,
+ * history or last document error. Poll info, then release even failed leases.
+ * # Safety
+ * Initialize outer/nested sizes. No caller memory survives this call.
+ */
+PaintStatus paint_session_request_composition(struct PaintCore *core,
+                                              struct PaintSession *handle,
+                                              const struct PaintCompositionRequest *desc,
+                                              uint64_t *out_lease);
 
 /**
  * ABI 1.63: shared immutable resident presentation metadata (move or liquify).
@@ -2846,6 +3171,19 @@ PaintStatus paint_session_transform_info(struct PaintCore *core,
  */
 PaintStatus paint_storage_inspect(const struct PaintStorageOptions *options,
                                   struct PaintStorageInfo *out_info);
+
+/**
+ * Compute bounded shared display geometry from absolute input, without a session,
+ * pixel reads, IO, history or actor waits. Query with capacity_floats=0/NULL.
+ * BUFFER_TOO_SMALL publishes the descriptor and leaves xyuv untouched.
+ * # Safety
+ * Readable initialized geometry, writable initialized out_info, and writable
+ * nonoverlapping capacity_floats f32s. No pointer is retained after return.
+ */
+PaintStatus paint_transform_display_geometry(const struct PaintTransform *geometry,
+                                             struct PaintTransformDisplayGeometry *out_info,
+                                             float *xyuv,
+                                             uint64_t capacity_floats);
 
 /**
  * Manual idle cleaning. Active painting returns BUSY and preserves ink.

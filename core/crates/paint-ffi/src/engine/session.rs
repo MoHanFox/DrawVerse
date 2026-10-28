@@ -1,4 +1,6 @@
 //! Serial document ownership and immutable publication. No caller pointers are retained.
+use super::move_trace::{self, Context as TraceContext};
+
 #[path = "session_input_paging.rs"]
 mod input_paging;
 use crate::{
@@ -52,6 +54,7 @@ pub(crate) enum Operation {
     },
     ClearLayerMovePreparation,
     CopyLayers(Vec<u64>),
+    CutLayers(Vec<u64>, bool),
     CopySelectedPixels(Vec<u64>),
     ClearSelectedPixels(Vec<u64>),
     PasteLayers(Vec<u8>, u64),
@@ -152,6 +155,7 @@ pub(crate) struct MovePreparation {
     pub assets: Option<Arc<Vec<u8>>>,
 }
 struct Shared {
+    composition: super::composition::Service,
     task_progress: Mutex<Option<TaskProgressState>>,
     preview_selection: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     // Identity and deformed selection assets, bounded to one active session.
@@ -179,6 +183,7 @@ pub(crate) struct Session {
     ingress: Mutex<Ingress>,
 }
 struct RenderJob {
+    trace: TraceContext,
     ticket: TaskTicket<ApiResult<RenderFrame>>,
     request_id: u64,
     generation: u64,
@@ -246,6 +251,7 @@ impl Session {
             Document::with_storage(width, height, storage.options, storage.space.clone())?;
         let initial = publish(&document, 1, 1, 0, None, false);
         let shared = Arc::new(Shared {
+            composition: super::composition::Service::default(),
             task_progress: Mutex::new(None),
             preview_selection: Mutex::new(None),
             preview_assets: Mutex::new(Vec::new()),
@@ -329,7 +335,11 @@ impl Session {
             }),
         })
     }
+    pub fn trace_session_id(&self) -> u64 {
+        Arc::as_ptr(&self.shared) as usize as u64
+    }
     pub fn stop(&self) {
+        self.shared.composition.close();
         self.file
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -378,6 +388,16 @@ impl Session {
             sequence,
             operation: operation.clone(),
         };
+        let trace = TraceContext {
+            session: Arc::as_ptr(&self.shared) as usize as u64,
+            sequence,
+            generation: self.shared.generation.load(Ordering::Acquire),
+            revision: self.shared.revision.load(Ordering::Acquire),
+            ..Default::default()
+        };
+        if let Operation::LayerMove(kind, ..) = operation {
+            move_trace::point("command.submit", trace, kind as i64);
+        }
         let result = if matches!(operation, Operation::Cancel(_)) {
             self.sender.send_cancel(command, |c| {
                 matches!(c.operation, Operation::Move(_) | Operation::AirbrushTick(_))
@@ -415,6 +435,9 @@ impl Session {
         };
         match result {
             Ok(()) => {
+                if let Operation::LayerMove(kind, ..) = operation {
+                    move_trace::point("command.queued", trace, kind as i64);
+                }
                 ingress.sequence = sequence;
                 if matches!(
                     operation,
@@ -471,6 +494,23 @@ impl Session {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner()),
         )
+    }
+    pub fn composition(&self) -> &super::composition::Service {
+        self.shared
+            .composition
+            .generation(self.shared.generation.load(Ordering::Acquire));
+        &self.shared.composition
+    }
+    pub fn request_composition(&self, request: super::composition::Request) -> ApiResult<u64> {
+        let published = self.publication().info;
+        let request = self.composition().reserve(
+            request,
+            published.document_generation,
+            published.revision,
+        )?;
+        // Display requests have their own bounded/coalescing mailbox. They
+        // never occupy the real pen/history FIFO or consume command sequences.
+        Ok(request.key.lease_id)
     }
     pub fn prepare_layer_move(
         &self,
@@ -1188,6 +1228,32 @@ impl Engine {
         )
     }
     fn execute(&mut self, command: Command) {
+        let trace = TraceContext {
+            session: Arc::as_ptr(&self.shared) as usize as u64,
+            sequence: command.sequence,
+            generation: self.generation,
+            revision: self.document.revision(),
+            ..Default::default()
+        };
+        let move_kind = match command.operation {
+            Operation::LayerMove(kind, ..) => Some(kind),
+            _ => None,
+        };
+        if let Some(kind) = move_kind {
+            move_trace::point("command.accept", trace, kind as i64);
+        }
+        // BEGIN has no pixels to render. Its authoritative target is needed by
+        // local geometry immediately; do not wait for the 8 ms service tick.
+        let acknowledge_move = matches!(
+            command.operation,
+            Operation::LayerMove(
+                PAINT_LAYER_MOVE_BEGIN
+                    | PAINT_LAYER_MOVE_BEGIN_DEFERRED
+                    | PAINT_LAYER_MOVE_PICK
+                    | PAINT_LAYER_MOVE_PICK_DEFERRED,
+                ..
+            ) | Operation::LayerMoves(..)
+        );
         let old_revision = self.document.revision();
         let pixel_revision = self.pixel_revision();
         let selection_only = self.selection_only(&command.operation);
@@ -1223,6 +1289,7 @@ impl Engine {
                     | Operation::DuplicateLayers(..)
                     | Operation::MergeLayers(..)
                     | Operation::ClearSelectedPixels(..)
+                    | Operation::CutLayers(..)
                     | Operation::Cancel(_)
                     | Operation::Undo
                     | Operation::HistorySelect { .. }
@@ -1284,6 +1351,19 @@ impl Engine {
                 task.status = result.as_ref().err().map_or(PAINT_OK, |e| e.status);
             }
         }
+        if let Some(kind) = move_kind {
+            move_trace::point(
+                "command.applied",
+                TraceContext {
+                    revision: self.document.revision(),
+                    ..trace
+                },
+                kind as i64,
+            );
+            if let Err(error) = &result {
+                move_trace::point("command.error", trace, error.status as i64);
+            }
+        }
         let pending = result.is_ok() && self.document.stroke_input_pending();
         if let Err(error) = result {
             self.command_failed(command.sequence, error, stroke_command);
@@ -1311,12 +1391,18 @@ impl Engine {
         }
         self.completed = command.sequence;
         self.dirty = true;
+        if acknowledge_move {
+            // Publish errors as well as success. The GUI still checks the exact
+            // sequence, generation and active-edit flag before showing a move.
+            self.publish_document();
+        }
     }
     fn apply(&mut self, operation: Operation, sequence: u64) -> ApiResult<()> {
         if self.document.transform_active()
             && !matches!(
                 operation,
                 Operation::Transform(..)
+                    | Operation::ClearLayerMovePreparation
                     | Operation::TransformLayers(..)
                     | Operation::HistorySelect { .. }
                     | Operation::File(_)
@@ -1327,7 +1413,10 @@ impl Engine {
         if self.document.liquify_active()
             && !matches!(
                 operation,
-                Operation::Liquify(..) | Operation::HistorySelect { .. } | Operation::File(_)
+                Operation::Liquify(..)
+                    | Operation::ClearLayerMovePreparation
+                    | Operation::HistorySelect { .. }
+                    | Operation::File(_)
             )
         {
             return Err(paint_core::Error::Busy.into());
@@ -1570,6 +1659,19 @@ impl Engine {
                     .map_err(|_| ApiError::invalid("clipboard poisoned"))? =
                     Some((sequence, Arc::new(bytes)));
             }
+            Operation::CutLayers(ids, selection_only) => {
+                // Acquire the publication destination before the mutation; a
+                // poisoned clipboard must not remove document content.
+                let mut clipboard = self
+                    .shared
+                    .clipboard
+                    .lock()
+                    .map_err(|_| ApiError::invalid("clipboard poisoned"))?;
+                let revision = self.document.revision();
+                let bytes = self.document.cut_layers(&ids, selection_only)?;
+                *clipboard = Some((sequence, Arc::new(bytes)));
+                self.modified |= revision != self.document.revision();
+            }
             Operation::ClearSelectedPixels(ids) => {
                 self.modified |= self.document.clear_selected_pixels(&ids)?;
             }
@@ -1620,6 +1722,7 @@ impl Engine {
                 self.document = document;
                 self.wet_lease.take();
                 self.generation += 1;
+                self.shared.composition.generation(self.generation);
                 self.shared
                     .generation
                     .store(self.generation, Ordering::Release);
@@ -1828,50 +1931,8 @@ impl Engine {
         }
         Ok(())
     }
-    fn tick(&mut self) {
-        if !self.document.stroke_page_ready_for_publication() {
-            return;
-        }
-        if let Some((document, clear_modified)) = self.files.poll(
-            self.generation,
-            self.document.revision(),
-            self.document.stroke_active(),
-            Some(&mut self.document),
-        ) {
-            if let Some(mut document) = document {
-                // Hardware belongs to the session, including file replacement.
-                if let Err(error) = document.set_compute_executor(self.document.compute_executor())
-                {
-                    self.error = Some((self.completed, error.into()));
-                    self.dirty = true;
-                    return;
-                }
-                self.document = document;
-                self.wet_lease.take();
-                self.generation += 1;
-                self.floor = 0;
-                self.aborted = false;
-                self.error = None;
-                self.shared
-                    .generation
-                    .store(self.generation, Ordering::Release);
-                self.shared
-                    .revision
-                    .store(self.document.revision(), Ordering::Release);
-                self.shared.floor.store(0, Ordering::Release);
-                self.shared
-                    .move_preparation
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .take();
-                self.default_view();
-            }
-            if clear_modified {
-                self.modified = false;
-            }
-            self.dirty = true;
-        }
-        if self.dirty {
+    fn publish_document(&mut self) {
+        if self.dirty && self.document.stroke_page_ready_for_publication() {
             self.publication += 1;
             let mut publication = publish(
                 &self.document,
@@ -1905,6 +1966,94 @@ impl Engine {
             );
             drop(old);
             self.dirty = false;
+            move_trace::point(
+                "metadata.published",
+                TraceContext {
+                    session: Arc::as_ptr(&self.shared) as usize as u64,
+                    sequence: self.completed,
+                    generation: self.generation,
+                    revision: self.document.revision(),
+                    ..Default::default()
+                },
+                self.publication as i64,
+            );
+        }
+    }
+    fn tick(&mut self) {
+        if !self.document.stroke_page_ready_for_publication() {
+            return;
+        }
+        if let Some((document, clear_modified)) = self.files.poll(
+            self.generation,
+            self.document.revision(),
+            self.document.stroke_active(),
+            Some(&mut self.document),
+        ) {
+            if let Some(mut document) = document {
+                // Hardware belongs to the session, including file replacement.
+                if let Err(error) = document.set_compute_executor(self.document.compute_executor())
+                {
+                    self.error = Some((self.completed, error.into()));
+                    self.dirty = true;
+                    return;
+                }
+                self.document = document;
+                self.wet_lease.take();
+                self.generation += 1;
+                self.shared.composition.generation(self.generation);
+                self.floor = 0;
+                self.aborted = false;
+                self.error = None;
+                self.shared
+                    .generation
+                    .store(self.generation, Ordering::Release);
+                self.shared
+                    .revision
+                    .store(self.document.revision(), Ordering::Release);
+                self.shared.floor.store(0, Ordering::Release);
+                self.shared
+                    .move_preparation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
+                self.default_view();
+            }
+            if clear_modified {
+                self.modified = false;
+            }
+            self.dirty = true;
+        }
+        self.publish_document();
+        // Capture only after the matching metadata publication is available.
+        // A same-tick edit must never pair new pixels with an older publication.
+        for request in self.shared.composition.take_pending() {
+            let result = if request.key.document_generation != self.generation
+                || request.key.revision != self.document.revision()
+            {
+                Err(ApiError::new(
+                    PAINT_BUSY,
+                    "composition document changed before capture",
+                ))
+            } else if self.document.transform_active()
+                || self.document.liquify_active()
+                || self.document.layer_move_active()
+                || self.files.running()
+            {
+                Err(ApiError::new(
+                    PAINT_UNSUPPORTED,
+                    "composition during editing session requires CPU",
+                ))
+            } else {
+                super::composition::Service::compile(
+                    &request,
+                    self.document.dimensions(),
+                    self.document.revision(),
+                    self.document.layers(),
+                )
+            };
+            self.shared
+                .composition
+                .complete(&request, self.publication, result);
         }
         for index in 0..4 {
             let revision = self.document.revision();
@@ -1937,6 +2086,7 @@ impl Engine {
             });
             if obsolete {
                 if let Some(job) = self.jobs[index].take() {
+                    move_trace::point("task.obsolete", job.trace, self.floor as i64);
                     self.pool.cancel(&job.ticket);
                 }
             }
@@ -1945,6 +2095,7 @@ impl Engine {
                 .and_then(|job| job.ticket.try_take())
             {
                 let job = self.jobs[index].take().expect("job exists");
+                move_trace::point("task.result", job.trace, if result.is_ok() { 0 } else { 1 });
                 match result {
                     Ok(Ok(frame)) => {
                         if job.generation == self.generation
@@ -1966,12 +2117,26 @@ impl Engine {
                                 },
                                 frame: Arc::new(frame),
                             }));
+                            let published = slot.frame.as_ref().expect("just published");
+                            move_trace::point(
+                                "frame.published",
+                                TraceContext {
+                                    frame: published.id,
+                                    revision: published.revision,
+                                    ..job.trace
+                                },
+                                0,
+                            );
                             drop(slots);
                             drop(old);
                             slots = self.shared.views.lock().unwrap_or_else(|e| e.into_inner());
+                        } else {
+                            move_trace::point("task.discarded", job.trace, self.floor as i64);
                         }
                     }
-                    Err(TaskError::Cancelled) => {}
+                    Err(TaskError::Cancelled) => {
+                        move_trace::point("task.cancelled", job.trace, 0);
+                    }
                     Ok(Err(error)) => {
                         self.failed_views[index] =
                             Some((job.request_id, job.generation, job.revision));
@@ -1988,6 +2153,11 @@ impl Engine {
             }
             let slot = &mut slots[index];
             if self.jobs[index].is_some() || slot.generation != self.generation {
+                if let Some(job) = &self.jobs[index] {
+                    if job.revision < revision && !self.document.layer_move_active() {
+                        move_trace::point("task.wait_old_view", job.trace, revision as i64);
+                    }
+                }
                 continue;
             }
             let Some(request) = slot.request else {
@@ -2021,6 +2191,17 @@ impl Engine {
                 continue;
             }
             drop(slots);
+            let trace = TraceContext {
+                session: Arc::as_ptr(&self.shared) as usize as u64,
+                task: move_trace::id(),
+                sequence: self.completed,
+                view: index as u32,
+                generation: self.generation,
+                request: request_id,
+                revision,
+                frame: 0,
+            };
+            move_trace::point("task.snapshot_begin", trace, preview_layer as i64);
             let snapshot = if preview_layer == 0 {
                 if index < 2 {
                     self.document.liquify_snapshot()
@@ -2041,6 +2222,7 @@ impl Engine {
             } else {
                 snapshot
             };
+            move_trace::point("task.snapshot_end", trace, 0);
             let renderer = Arc::clone(&self.renderers[index]);
             let interactive_move =
                 index < 2 && preview_layer == 0 && self.document.layer_move_active();
@@ -2050,23 +2232,101 @@ impl Engine {
             } else {
                 Priority::Background
             };
+            move_trace::point("task.enqueue", trace, if interactive_move { 1 } else { 0 });
+            if move_trace::enabled() {
+                for other in self.jobs.iter().flatten() {
+                    move_trace::point("task.concurrent", trace, other.trace.task as i64);
+                }
+            }
             if let Ok(ticket) = self.pool.submit(priority, move |token| {
+                move_trace::point("task.start", trace, 0);
                 let frame = if interactive_move {
                     paint_render::render_interactive(&snapshot, request, &token)
+                } else if move_trace::enabled() {
+                    let storage_before = snapshot.storage_stats();
+                    let (result, diagnostic) =
+                        renderer.render_diagnosed(&snapshot, request, &token);
+                    let storage_after = snapshot.storage_stats();
+                    // These are shared PagePool counters over this task interval, not exclusive I/O time.
+                    for (name, value) in [
+                        (
+                            "storage.page_reads_delta",
+                            storage_after
+                                .page_reads
+                                .saturating_sub(storage_before.page_reads)
+                                as i64,
+                        ),
+                        (
+                            "storage.page_writes_delta",
+                            storage_after
+                                .page_writes
+                                .saturating_sub(storage_before.page_writes)
+                                as i64,
+                        ),
+                        (
+                            "storage.resident_before",
+                            storage_before.resident_tiles as i64,
+                        ),
+                        (
+                            "storage.resident_after",
+                            storage_after.resident_tiles as i64,
+                        ),
+                        ("storage.registered", storage_after.registered_tiles as i64),
+                    ] {
+                        move_trace::point(name, trace, value);
+                    }
+                    for (name, value) in [
+                        ("renderer.translation_ns", diagnostic.translation_ns as i64),
+                        ("renderer.translations", diagnostic.translations as i64),
+                        ("renderer.remapped", diagnostic.remapped as i64),
+                        (
+                            "renderer.translation_reason",
+                            diagnostic.translation_reason as i64,
+                        ),
+                        (
+                            "renderer.translation_rejected",
+                            diagnostic.translation_rejected as i64,
+                        ),
+                        ("renderer.lock_ns", diagnostic.lock_ns as i64),
+                        ("renderer.setup_ns", diagnostic.setup_ns as i64),
+                        (
+                            "renderer.compose_lod_blit_ns",
+                            diagnostic.compose_lod_blit_ns as i64,
+                        ),
+                        ("renderer.hits", diagnostic.hits as i64),
+                        ("renderer.misses", diagnostic.misses as i64),
+                        ("renderer.source_tiles", diagnostic.source_tiles as i64),
+                        ("renderer.visible_layers", diagnostic.visible_layers as i64),
+                        ("renderer.entries", diagnostic.entries as i64),
+                        ("renderer.retained_bytes", diagnostic.retained_bytes as i64),
+                        (
+                            "renderer.configuration_changed",
+                            diagnostic.configuration_changed as i64,
+                        ),
+                        ("renderer.lod", diagnostic.lod as i64),
+                    ] {
+                        move_trace::point(name, trace, value);
+                    }
+                    result
                 } else {
                     renderer.render(&snapshot, request, &token)
                 };
+                move_trace::point("task.end", trace, if frame.is_ok() { 0 } else { 1 });
                 match frame {
                     Err(RenderError::Cancelled) => Err(TaskError::Cancelled),
                     result => Ok(result.map_err(render_error)),
                 }
             }) {
+                move_trace::point("task.ticket", trace, ticket.id() as i64);
                 self.jobs[index] = Some(RenderJob {
+                    trace,
                     ticket,
                     request_id,
                     generation: self.generation,
                     revision,
                 });
+            } else {
+                move_trace::point("task.enqueue_failed", trace, 0);
             }
         }
     }
@@ -2134,6 +2394,53 @@ impl StampedFrame {
 mod actor_tests {
     use super::*;
     use std::{thread, time::Instant};
+    #[test]
+    fn move_begin_publications_keep_rejections_and_final_history_authoritative() {
+        let session = Session::new(64, 64).unwrap();
+        let run = |operation| {
+            let sequence = session.submit(operation).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                let info = session.info();
+                if info.completed_sequence >= sequence {
+                    return info;
+                }
+                assert!(Instant::now() < deadline);
+                thread::sleep(Duration::from_millis(1));
+            }
+        };
+        // Picking needs visible content; an empty transparent layer has no hit.
+        run(Operation::NewWhite(64, 64));
+        // An acknowledgement of a rejected target must never look like BEGIN.
+        let rejected = run(Operation::LayerMove(PAINT_LAYER_MOVE_BEGIN, 9999, 0, 0));
+        assert_ne!(rejected.last_error_status, PAINT_OK);
+        assert_eq!(rejected.flags & PAINT_SESSION_LAYER_MOVE, 0);
+        assert_eq!(rejected.undo_depth, 0);
+        let rejected = run(Operation::LayerMoves(vec![1, 9999], false));
+        assert_eq!(rejected.flags & PAINT_SESSION_LAYER_MOVE, 0);
+        assert_eq!(rejected.undo_depth, 0);
+        for operation in [
+            Operation::LayerMove(PAINT_LAYER_MOVE_BEGIN, 1, 0, 0),
+            Operation::LayerMove(PAINT_LAYER_MOVE_PICK, 0, 0, 0),
+            Operation::LayerMoves(vec![1], false),
+        ] {
+            let begun = run(operation);
+            assert_ne!(begun.flags & PAINT_SESSION_LAYER_MOVE, 0);
+            assert_eq!(begun.active_layer_id, 1);
+            assert_eq!(begun.undo_depth, 0);
+            run(Operation::LayerMove(PAINT_LAYER_MOVE_UPDATE, 0, 7, 3));
+            let cancelled = run(Operation::LayerMove(PAINT_LAYER_MOVE_CANCEL, 0, 0, 0));
+            assert_eq!(cancelled.flags & PAINT_SESSION_LAYER_MOVE, 0);
+            assert_eq!(cancelled.undo_depth, 0);
+        }
+        run(Operation::LayerMove(PAINT_LAYER_MOVE_BEGIN, 1, 0, 0));
+        let committed = run(Operation::LayerMove(PAINT_LAYER_MOVE_COMMIT, 0, 9, 4));
+        assert_eq!(committed.flags & PAINT_SESSION_LAYER_MOVE, 0);
+        assert_eq!(committed.undo_depth, 1);
+        let restored = run(Operation::Undo);
+        assert_eq!(restored.undo_depth, 0);
+        assert_eq!(restored.redo_depth, 1);
+    }
     #[test]
     fn selection_edits_reuse_pixels_but_keep_stamps_and_next_paint_fresh() {
         let session = Session::new(128, 128).unwrap();

@@ -4,8 +4,11 @@ use paint_task::CancellationToken;
 use std::{
     collections::{BTreeSet, HashMap},
     sync::{Arc, Mutex, Weak},
+    time::Instant,
 };
+pub mod composition;
 mod interactive;
+mod translation;
 pub use interactive::{render_interactive, render_sampled_preview};
 
 pub const MAX_OUTPUT_PIXELS: u64 = 4_194_304;
@@ -125,6 +128,8 @@ pub fn display_pixel(linear: [f32; 4]) -> [u8; 4] {
 pub struct RenderCacheStats {
     pub hits: u64,
     pub misses: u64,
+    /// First consumption of a proven translated entry, separate from original-coordinate hits.
+    pub translations: u64,
     pub retained_bytes: usize,
     pub entries: usize,
 }
@@ -137,12 +142,14 @@ struct Mip {
     srgb: Option<Vec<[u8; 4]>>,
 }
 struct Entry {
+    translation_layer: Option<u64>,
+    translated: bool,
     sources: Vec<Source>,
     mip: Arc<Mip>,
     bytes: usize,
 }
 type CacheKey = (TileCoord, u32, PixelFormat);
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 struct LayerConfiguration {
     id: u64,
     blend: BlendMode,
@@ -163,6 +170,7 @@ struct Cache {
     stats: RenderCacheStats,
     dimensions: (u32, u32),
     configuration: Vec<LayerConfiguration>,
+    translation_layer: Option<u64>,
     grouped: bool,
     visible: Vec<usize>,
 }
@@ -174,6 +182,7 @@ impl Cache {
             stats: RenderCacheStats::default(),
             dimensions: (0, 0),
             configuration: Vec::new(),
+            translation_layer: None,
             grouped: false,
             visible: Vec::new(),
         }
@@ -236,7 +245,7 @@ impl Cache {
             }
         }
         let key = (coord, lod, format);
-        if let Some(entry) = self.entries.get(&key) {
+        if let Some(entry) = self.entries.get_mut(&key) {
             if sources.len() == entry.sources.len()
                 && sources
                     .iter()
@@ -245,7 +254,12 @@ impl Cache {
                         Arc::as_ptr(tile) == old.tile.as_ptr() && *opacity == old.opacity
                     })
             {
-                self.stats.hits = self.stats.hits.saturating_add(1);
+                if entry.translated {
+                    self.stats.translations = self.stats.translations.saturating_add(1);
+                    entry.translated = false;
+                } else {
+                    self.stats.hits = self.stats.hits.saturating_add(1);
+                }
                 return Ok(Arc::clone(&entry.mip));
             }
         }
@@ -397,6 +411,8 @@ impl Cache {
             self.entries.insert(
                 key,
                 Entry {
+                    translation_layer: self.translation_layer,
+                    translated: false,
                     sources: sources
                         .into_iter()
                         .map(|(tile, opacity, _, _)| Source {
@@ -413,6 +429,27 @@ impl Cache {
         self.stats.entries = self.entries.len();
         Ok(mip)
     }
+}
+/// Opt-in aggregate measurements for one exact normal render; no pixel-loop events.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RenderDiagnostics {
+    pub translation_ns: u64,
+    pub translations: u64,
+    pub remapped: u64,
+    /// 0 legacy path; 1 eligible; 2 unchanged; 3 cold; 4 stack; 5 configuration; 6 alignment; 7 dimensions/LOD.
+    pub translation_reason: u32,
+    pub translation_rejected: u64,
+    pub lock_ns: u64,
+    pub setup_ns: u64,
+    pub compose_lod_blit_ns: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub source_tiles: usize,
+    pub visible_layers: usize,
+    pub entries: usize,
+    pub retained_bytes: usize,
+    pub configuration_changed: bool,
+    pub lod: u32,
 }
 /// One instance per viewport. Serialization only covers that viewport's cache;
 /// no document/GUI lock is held, and obsolete jobs check cancellation per row/tile.
@@ -435,6 +472,31 @@ impl CachedCpuRenderer {
             cache: Mutex::new(Cache::new(bytes)),
         })
     }
+    /// Same renderer and cache path, with aggregate timing only when explicitly called.
+    pub fn render_diagnosed(
+        &self,
+        snapshot: &DocumentSnapshot,
+        request: RenderRequest,
+        cancel: &CancellationToken,
+    ) -> (Result<RenderFrame, RenderError>, RenderDiagnostics) {
+        let mut diagnostic = RenderDiagnostics::default();
+        let result = (|| {
+            request.validate()?;
+            checkpoint(cancel)?;
+            let start = Instant::now();
+            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+            diagnostic.lock_ns = start.elapsed().as_nanos() as u64;
+            let before = cache.stats;
+            let result = render(snapshot, request, cancel, &mut cache, Some(&mut diagnostic));
+            diagnostic.hits = cache.stats.hits - before.hits;
+            diagnostic.misses = cache.stats.misses - before.misses;
+            diagnostic.translations = cache.stats.translations - before.translations;
+            diagnostic.entries = cache.stats.entries;
+            diagnostic.retained_bytes = cache.stats.retained_bytes;
+            result
+        })();
+        (result, diagnostic)
+    }
     pub fn cache_stats(&self) -> RenderCacheStats {
         self.cache.lock().unwrap_or_else(|e| e.into_inner()).stats
     }
@@ -449,7 +511,7 @@ impl Renderer for CachedCpuRenderer {
         request.validate()?;
         checkpoint(cancel)?;
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        render(snapshot, request, cancel, &mut cache)
+        render(snapshot, request, cancel, &mut cache, None)
     }
 }
 impl Renderer for CpuRenderer {
@@ -459,7 +521,7 @@ impl Renderer for CpuRenderer {
         request: RenderRequest,
         cancel: &CancellationToken,
     ) -> Result<RenderFrame, RenderError> {
-        render(snapshot, request, cancel, &mut Cache::new(0))
+        render(snapshot, request, cancel, &mut Cache::new(0), None)
     }
 }
 struct Axis {
@@ -529,7 +591,9 @@ fn render(
     request: RenderRequest,
     cancel: &CancellationToken,
     cache: &mut Cache,
+    mut diagnostic: Option<&mut RenderDiagnostics>,
 ) -> Result<RenderFrame, RenderError> {
+    let setup_start = diagnostic.as_ref().map(|_| Instant::now());
     request.validate()?;
     checkpoint(cancel)?;
     let r = request.region;
@@ -654,9 +718,38 @@ fn render(
             }
         })
         .collect::<Vec<_>>();
-    if cache.configuration != configuration {
-        cache.entries.clear();
-        cache.configuration = configuration;
+    if let Some(diagnostic) = diagnostic.as_mut() {
+        diagnostic.configuration_changed = cache.configuration != configuration;
+        diagnostic.source_tiles = coordinates.len();
+        diagnostic.visible_layers = cache.visible.len();
+        diagnostic.lod = lod;
+    }
+    let translation_start = diagnostic.as_ref().map(|_| Instant::now());
+    cache.translation_layer = translation::certificate(snapshot);
+    let outcome = if cache.configuration != configuration {
+        cache.reconfigure(
+            snapshot,
+            configuration,
+            &coordinates,
+            lod,
+            if lod > 6 {
+                PixelFormat::LinearRgba32F
+            } else {
+                request.format
+            },
+            cancel,
+        )?
+    } else {
+        translation::Outcome {
+            reason: 2,
+            ..Default::default()
+        }
+    };
+    if let Some(diagnostic) = diagnostic.as_mut() {
+        diagnostic.translation_ns = translation_start.unwrap().elapsed().as_nanos() as u64;
+        diagnostic.translation_reason = outcome.reason;
+        diagnostic.remapped = outcome.remapped;
+        diagnostic.translation_rejected = outcome.rejected;
     }
     let local = lod.min(6);
     let edge = TILE_SIZE >> local;
@@ -693,8 +786,12 @@ fn render(
         if lod > 6 { block } else { TILE_SIZE },
     );
     let mut coarse: HashMap<TileCoord, [f32; 4]> = HashMap::new();
+    if let (Some(diagnostic), Some(start)) = (diagnostic.as_mut(), setup_start) {
+        diagnostic.setup_ns = start.elapsed().as_nanos() as u64;
+    }
+    let compose_start = diagnostic.as_ref().map(|_| Instant::now());
     for coord in coordinates {
-        checkpoint(cancel)?;
+        translation::checkpoint("rebuild", cancel)?;
         let mip = cache.mip(snapshot, coord, local, kind, cancel)?;
         if lod <= 6 {
             blit(
@@ -750,6 +847,9 @@ fn render(
                 }
             }
         }
+    }
+    if let (Some(diagnostic), Some(start)) = (diagnostic.as_mut(), compose_start) {
+        diagnostic.compose_lod_blit_ns = start.elapsed().as_nanos() as u64;
     }
     checkpoint(cancel)?;
     Ok(RenderFrame {

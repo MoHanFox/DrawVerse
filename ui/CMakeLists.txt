@@ -14,6 +14,8 @@ add_library(drawverse_ui STATIC
     src/platform/MenuSurface.h src/platform/MenuSurface.cpp
     src/platform/MenuBlurLayer.h src/platform/MenuBlurLayer.cpp
     src/engine/PaintCoreClient.h src/engine/PaintCoreClient.cpp
+    src/engine/CompositionPacket.h src/engine/CompositionPacket.cpp
+    src/canvas/CompositionNode.h src/canvas/CompositionNode.cpp
     src/canvas/CanvasItem.h src/canvas/CanvasItem.cpp
     src/canvas/LiquifyPreviewNode.h src/canvas/LiquifyPreviewNode.cpp
     src/canvas/ResidentPreviewTextures.h src/canvas/ResidentPreviewTextures.cpp
@@ -21,14 +23,17 @@ add_library(drawverse_ui STATIC
     src/color/ColorWheelItem.h src/color/ColorWheelItem.cpp
     src/brushes/BrushLibrary.h src/brushes/BrushLibrary.cpp src/brushes/BrushToolIsolation.cpp
     src/brushes/BrushCurveModes.h
+    src/brushes/BrushPreviewPolicy.h src/brushes/BrushPreviewPolicy.cpp
     src/workspace/WorkspaceManager.h src/workspace/WorkspaceManager.cpp)
 target_compile_features(drawverse_ui PUBLIC cxx_std_20)
-target_include_directories(drawverse_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(drawverse_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(drawverse_ui PUBLIC Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2
     PRIVATE drawverse_ffi_static)
 if(WIN32)
     target_link_libraries(drawverse_ui PRIVATE dwmapi windowsapp CoreMessaging Qt6::GuiPrivate)
 endif()
+
+
 
 # Keep the resource manifest and its rebuild dependencies in one place.
 set(_drawverse_ui_resources
@@ -74,8 +79,52 @@ qt_add_qml_module(drawverse_ui URI qml VERSION 1.0
     QML_FILES ${_drawverse_ui_qml})
 qt_add_resources(drawverse_ui ui_resources PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}"
     FILES ${_drawverse_ui_assets})
+# Only this shared material uses build-time HLSL compilation. Keep its URLs and
+# all non-D3D targets unchanged; overlay shaders retain the original options.
+option(DRAWVERSE_PRECOMPILE_MOVE_SHADERS "Precompile Windows move/liquify HLSL using SDK fxc on PATH" ${WIN32})
+set(_drawverse_move_shader_options "")
+if(WIN32 AND DRAWVERSE_PRECOMPILE_MOVE_SHADERS)
+    find_program(_drawverse_fxc NAMES fxc NO_CACHE)
+    if(NOT _drawverse_fxc)
+        message(FATAL_ERROR "Move shader PRECOMPILE needs Windows SDK fxc on PATH (use a Developer Shell). Set DRAWVERSE_PRECOMPILE_MOVE_SHADERS=OFF for the runtime HLSL fallback.")
+    endif()
+    list(APPEND _drawverse_move_shader_options PRECOMPILE)
+    message(STATUS "Move shaders: build-time HLSL -> DXBC with ${_drawverse_fxc}; verified after qsb")
+else()
+    message(STATUS "Move shaders: original runtime HLSL compilation path")
+endif()
 qt_add_shaders(drawverse_ui liquify_shaders PREFIX "/shaders" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-    GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag shaders/adaptive-cursor.frag shaders/transform-composite.frag shaders/selection-ants.frag)
+    ${_drawverse_move_shader_options} GLSL "300es,330" FILES shaders/liquify.vert shaders/liquify.frag)
+qt_add_shaders(drawverse_ui overlay_shaders PREFIX "/shaders" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    GLSL "300es,330" FILES shaders/adaptive-cursor.frag shaders/transform-composite.frag shaders/selection-ants.frag)
+if(WIN32 AND DRAWVERSE_PRECOMPILE_MOVE_SHADERS)
+    # qsb can return success after fxc failed. Fail the build if it retained HLSL.
+    add_custom_target(drawverse_move_shader_check
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/check_move_shader_artifacts.py"
+            "$<TARGET_FILE:Qt6::qsb>" "${CMAKE_CURRENT_BINARY_DIR}/.qsb" --precompiled
+        DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/.qsb/liquify.vert.qsb" "${CMAKE_CURRENT_BINARY_DIR}/.qsb/liquify.frag.qsb"
+        VERBATIM)
+    add_dependencies(drawverse_ui drawverse_move_shader_check)
+endif()
+
+if(Qt6_VERSION VERSION_GREATER_EQUAL 6.6)
+    target_compile_definitions(drawverse_ui PRIVATE DRAWVERSE_HAS_COMPOSITION_RHI)
+    target_link_libraries(drawverse_ui PRIVATE Qt6::GuiPrivate)
+    qt_add_shaders(drawverse_ui composition_shaders PREFIX "/composition" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+        ${_drawverse_move_shader_options} GLSL "300es,330" FILES shaders/composition.vert shaders/composition.frag shaders/composition_transform.vert)
+    qt_add_shaders(drawverse_ui composition_precise_shaders PREFIX "/composition" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+        ${_drawverse_move_shader_options} NOGLSL NOMSL HLSL "50" FILES shaders/composition_precise.frag shaders/composition_warp.frag)
+    if(WIN32 AND DRAWVERSE_PRECOMPILE_MOVE_SHADERS)
+        add_custom_target(drawverse_composition_shader_check
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/check_composition_shader_artifacts.py"
+                "$<TARGET_FILE:Qt6::qsb>" "${CMAKE_CURRENT_BINARY_DIR}/.qsb" --precompiled
+            DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/.qsb/composition.vert.qsb" "${CMAKE_CURRENT_BINARY_DIR}/.qsb/composition.frag.qsb"
+                "${CMAKE_CURRENT_BINARY_DIR}/.qsb/composition_transform.vert.qsb" "${CMAKE_CURRENT_BINARY_DIR}/.qsb/composition_precise.frag.qsb"
+                "${CMAKE_CURRENT_BINARY_DIR}/.qsb/composition_warp.frag.qsb"
+            VERBATIM)
+        add_dependencies(drawverse_ui drawverse_composition_shader_check)
+    endif()
+endif()
 
 # Editing QML or an asset must recompile the generated resource object.
 get_target_property(_drawverse_qrc_sources drawverse_ui SOURCES)
@@ -118,6 +167,42 @@ target_link_libraries(qt_transform_tests PRIVATE drawverse_ui Qt6::Test Qt6::Gui
 set_target_properties(qt_transform_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
 add_test(NAME qt_transform_tests COMMAND qt_transform_tests)
 set_tests_properties(qt_transform_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+
+qt_add_executable(qt_composition_transport_tests tests/composition_transport_tests.cpp)
+target_include_directories(qt_composition_transport_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_compile_features(qt_composition_transport_tests PRIVATE cxx_std_20)
+target_link_libraries(qt_composition_transport_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_composition_transport_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_composition_transport_tests COMMAND qt_composition_transport_tests)
+set_tests_properties(qt_composition_transport_tests PROPERTIES TIMEOUT 60
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Test>")
+
+qt_add_executable(qt_gpu_composition_tests tests/gpu_composition_tests.cpp)
+target_link_libraries(qt_gpu_composition_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_gpu_composition_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+# Generate independent CPU truth before the window suite; never compile during it.
+set(gpu_closure_fixtures "${CMAKE_BINARY_DIR}/gpu-closure-fixtures/$<CONFIG>")
+add_test(NAME gpu_closure_fixture_setup COMMAND "${CMAKE_COMMAND}" -E env
+    "CARGO_TARGET_DIR=${DRAWVERSE_CARGO_TARGET_DIR}"
+    "DRAWVERSE_G4_FIXTURES=${gpu_closure_fixtures}"
+    "${DRAWVERSE_CARGO_EXECUTABLE}" test --manifest-path "${CMAKE_SOURCE_DIR}/core/Cargo.toml"
+    -p paint-io --release --locked --test gpu_closure_fixtures -- --ignored)
+set_tests_properties(gpu_closure_fixture_setup PROPERTIES TIMEOUT 240 FIXTURES_SETUP gpu_closures)
+add_test(NAME qt_gpu_composition_tests COMMAND qt_gpu_composition_tests
+    -o "${CMAKE_BINARY_DIR}/qt-gpu-composition-$<CONFIG>.txt,txt" -o -,txt)
+set_tests_properties(qt_gpu_composition_tests PROPERTIES TIMEOUT 300 FIXTURES_REQUIRED gpu_closures
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;DRAWVERSE_G4_FIXTURES=${gpu_closure_fixtures}"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Test>")
+
+qt_add_executable(qt_composition_stability_tests tests/composition_stability_tests.cpp)
+target_link_libraries(qt_composition_stability_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_composition_stability_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_composition_stability_tests COMMAND qt_composition_stability_tests
+    -o "${CMAKE_BINARY_DIR}/qt-composition-stability-$<CONFIG>.txt,txt" -o -,txt)
+set_tests_properties(qt_composition_stability_tests PROPERTIES TIMEOUT 240
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Test>")
 
 qt_add_executable(qt_workflow_tests tests/workflow_tests.cpp)
 target_link_libraries(qt_workflow_tests PRIVATE drawverse_ui Qt6::Test Qt6::QmlPrivate)
@@ -233,3 +318,47 @@ else()
     add_custom_target(drawverse_runtime DEPENDS drawverse drawverse_license)
     add_custom_target(drawverse_qml_preview_runtime DEPENDS drawverse_qml_preview)
 endif()
+
+# Manual investigation only: excluded from default builds and CTest.
+option(DRAWVERSE_G0_EXPERIMENT "Build opt-in same-window GPU composition proof (Qt 6.6+)" OFF)
+if(DRAWVERSE_G0_EXPERIMENT)
+    if(Qt6_VERSION VERSION_LESS 6.6)
+        message(FATAL_ERROR "G0 QRhi proof requires Qt 6.6+ GuiPrivate; production Qt 6.5 CPU support is unchanged")
+    endif()
+    qt_add_executable(qt_gpu_composition_probe EXCLUDE_FROM_ALL tests/gpu_composition_probe.cpp)
+    target_compile_features(qt_gpu_composition_probe PRIVATE cxx_std_20)
+    target_link_libraries(qt_gpu_composition_probe PRIVATE Qt6::Quick Qt6::Test Qt6::GuiPrivate)
+    set_target_properties(qt_gpu_composition_probe PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+    qt_add_shaders(qt_gpu_composition_probe g0_shaders PREFIX "/g0" BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+        ${_drawverse_move_shader_options} GLSL "300es,330" FILES shaders/g0.vert shaders/g0.frag)
+    qt_add_executable(qt_gpu_composition_baseline EXCLUDE_FROM_ALL tests/gpu_composition_baseline.cpp)
+    target_link_libraries(qt_gpu_composition_baseline PRIVATE drawverse_ui Qt6::Test)
+    set_target_properties(qt_gpu_composition_baseline PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+endif()
+
+qt_add_executable(qt_brush_interaction_baseline EXCLUDE_FROM_ALL tests/brush_interaction_baseline.cpp)
+target_link_libraries(qt_brush_interaction_baseline PRIVATE drawverse_ui Qt6::Test)
+execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE _interaction_revision OUTPUT_STRIP_TRAILING_WHITESPACE)
+target_compile_definitions(qt_brush_interaction_baseline PRIVATE
+    DRAWVERSE_INTERACTION_BASELINE="7f5bd4c3acd507fc24069350a7a66a276b992976"
+    DRAWVERSE_INTERACTION_REVISION="${_interaction_revision}")
+set_target_properties(qt_brush_interaction_baseline PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+qt_add_executable(qt_interaction_trace_tests EXCLUDE_FROM_ALL tests/interaction_trace_tests.cpp)
+target_include_directories(qt_interaction_trace_tests PRIVATE src)
+target_link_libraries(qt_interaction_trace_tests PRIVATE Qt6::Test)
+set_target_properties(qt_interaction_trace_tests PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+qt_add_executable(qt_color_state_tests EXCLUDE_FROM_ALL tests/color_state_tests.cpp)
+target_link_libraries(qt_color_state_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_color_state_tests PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+# Manual C1 investigation, deliberately absent from default builds and CTest.
+qt_add_executable(qt_layer_move_baseline EXCLUDE_FROM_ALL tests/layer_move_baseline.cpp)
+target_link_libraries(qt_layer_move_baseline PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_layer_move_baseline PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+# Focused C3 probe; opt-in, no default build or performance gate.
+qt_add_executable(qt_move_start_tracking EXCLUDE_FROM_ALL tests/move_start_tracking.cpp)
+target_link_libraries(qt_move_start_tracking PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_move_start_tracking PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")

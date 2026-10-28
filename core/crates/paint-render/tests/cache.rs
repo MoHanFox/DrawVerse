@@ -332,3 +332,46 @@ fn coarse_lod_and_same_size_document_replacement_match_reference() {
         },
     );
 }
+
+#[test]
+fn aggregate_diagnostics_preserve_exact_pixels_cache_and_cancellation() {
+    let doc = document();
+    let snapshot = doc.snapshot();
+    let token = CancellationToken::default();
+    for format in [
+        PixelFormat::LinearRgba32F,
+        PixelFormat::SrgbRgba8Premultiplied,
+    ] {
+        for scale in [1., 2., 8.] {
+            let renderer = CachedCpuRenderer::default();
+            let mut r = request();
+            r.format = format;
+            r.region.width *= scale;
+            r.region.height *= scale;
+            let (frame, cold) = renderer.render_diagnosed(&snapshot, r, &token);
+            equal(
+                frame.unwrap(),
+                CpuRenderer.render(&snapshot, r, &token).unwrap(),
+            );
+            assert!(cold.misses > 0);
+            assert!(cold.configuration_changed);
+            let (frame, warm) = renderer.render_diagnosed(&snapshot, r, &token);
+            equal(
+                frame.unwrap(),
+                renderer.render(&snapshot, r, &token).unwrap(),
+            );
+            assert!(warm.hits > 0);
+            assert_eq!(warm.misses, 0);
+            assert!(!warm.configuration_changed);
+            let cancelled = CancellationToken::default();
+            cancelled.cancel();
+            assert_eq!(
+                renderer
+                    .render_diagnosed(&snapshot, r, &cancelled)
+                    .0
+                    .unwrap_err(),
+                RenderError::Cancelled
+            );
+        }
+    }
+}

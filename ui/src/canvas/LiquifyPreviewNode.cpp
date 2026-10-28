@@ -1,6 +1,7 @@
 #include "canvas/LiquifyPreviewNode.h"
 #include "canvas/ResidentPreviewTextures.h"
 #include <QQuickWindow>
+#include "platform/InteractionTrace.h"
 #include <QSGMaterial>
 #include <QSGMaterialShader>
 #include <QSGTexture>
@@ -77,7 +78,10 @@ bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &fr
     if(m->forward!=frame.forward){m->forward=frame.forward;markDirty(DirtyMaterial);}
     const bool sourceOnly=frame.focus || frame.forward;
     if(m->focus!=sourceOnly){m->focus=sourceOnly;markDirty(DirtyMaterial);}
-    if(m_revision==frame.revision && m_rect==rect)return true;
+    if(m_revision==frame.revision && m_rect==rect && m_presentationDelta==frame.presentationDelta)return true;
+    InteractionTrace::Scope trace("move.render.adoptGeometry");
+    if(trace.active)trace.event.value=double(frame.revision);
+    InteractionTrace::point("move.render.source",double(frame.sourceId));
     auto *g=geometry();
     const auto count=int(frame.vertices.size());
     const auto indices=int((frame.columns-1)*(frame.rows-1)*6);
@@ -94,6 +98,6 @@ bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &fr
         }
         g->markIndexDataDirty();
     }
-    g->markVertexDataDirty();markDirty(DirtyGeometry);m_revision=frame.revision;m_rect=rect;
+    g->markVertexDataDirty();markDirty(DirtyGeometry);m_revision=frame.revision;m_rect=rect;m_presentationDelta=frame.presentationDelta;
     return true;
 }
