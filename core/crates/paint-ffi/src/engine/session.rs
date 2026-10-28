@@ -54,6 +54,7 @@ pub(crate) enum Operation {
     },
     ClearLayerMovePreparation,
     CopyLayers(Vec<u64>),
+    CutLayers(Vec<u64>, bool),
     CopySelectedPixels(Vec<u64>),
     ClearSelectedPixels(Vec<u64>),
     PasteLayers(Vec<u8>, u64),
@@ -154,6 +155,7 @@ pub(crate) struct MovePreparation {
     pub assets: Option<Arc<Vec<u8>>>,
 }
 struct Shared {
+    composition: super::composition::Service,
     task_progress: Mutex<Option<TaskProgressState>>,
     preview_selection: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     // Identity and deformed selection assets, bounded to one active session.
@@ -249,6 +251,7 @@ impl Session {
             Document::with_storage(width, height, storage.options, storage.space.clone())?;
         let initial = publish(&document, 1, 1, 0, None, false);
         let shared = Arc::new(Shared {
+            composition: super::composition::Service::default(),
             task_progress: Mutex::new(None),
             preview_selection: Mutex::new(None),
             preview_assets: Mutex::new(Vec::new()),
@@ -336,6 +339,7 @@ impl Session {
         Arc::as_ptr(&self.shared) as usize as u64
     }
     pub fn stop(&self) {
+        self.shared.composition.close();
         self.file
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -490,6 +494,23 @@ impl Session {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner()),
         )
+    }
+    pub fn composition(&self) -> &super::composition::Service {
+        self.shared
+            .composition
+            .generation(self.shared.generation.load(Ordering::Acquire));
+        &self.shared.composition
+    }
+    pub fn request_composition(&self, request: super::composition::Request) -> ApiResult<u64> {
+        let published = self.publication().info;
+        let request = self.composition().reserve(
+            request,
+            published.document_generation,
+            published.revision,
+        )?;
+        // Display requests have their own bounded/coalescing mailbox. They
+        // never occupy the real pen/history FIFO or consume command sequences.
+        Ok(request.key.lease_id)
     }
     pub fn prepare_layer_move(
         &self,
@@ -1221,6 +1242,18 @@ impl Engine {
         if let Some(kind) = move_kind {
             move_trace::point("command.accept", trace, kind as i64);
         }
+        // BEGIN has no pixels to render. Its authoritative target is needed by
+        // local geometry immediately; do not wait for the 8 ms service tick.
+        let acknowledge_move = matches!(
+            command.operation,
+            Operation::LayerMove(
+                PAINT_LAYER_MOVE_BEGIN
+                    | PAINT_LAYER_MOVE_BEGIN_DEFERRED
+                    | PAINT_LAYER_MOVE_PICK
+                    | PAINT_LAYER_MOVE_PICK_DEFERRED,
+                ..
+            ) | Operation::LayerMoves(..)
+        );
         let old_revision = self.document.revision();
         let pixel_revision = self.pixel_revision();
         let selection_only = self.selection_only(&command.operation);
@@ -1256,6 +1289,7 @@ impl Engine {
                     | Operation::DuplicateLayers(..)
                     | Operation::MergeLayers(..)
                     | Operation::ClearSelectedPixels(..)
+                    | Operation::CutLayers(..)
                     | Operation::Cancel(_)
                     | Operation::Undo
                     | Operation::HistorySelect { .. }
@@ -1357,6 +1391,11 @@ impl Engine {
         }
         self.completed = command.sequence;
         self.dirty = true;
+        if acknowledge_move {
+            // Publish errors as well as success. The GUI still checks the exact
+            // sequence, generation and active-edit flag before showing a move.
+            self.publish_document();
+        }
     }
     fn apply(&mut self, operation: Operation, sequence: u64) -> ApiResult<()> {
         if self.document.transform_active()
@@ -1620,6 +1659,19 @@ impl Engine {
                     .map_err(|_| ApiError::invalid("clipboard poisoned"))? =
                     Some((sequence, Arc::new(bytes)));
             }
+            Operation::CutLayers(ids, selection_only) => {
+                // Acquire the publication destination before the mutation; a
+                // poisoned clipboard must not remove document content.
+                let mut clipboard = self
+                    .shared
+                    .clipboard
+                    .lock()
+                    .map_err(|_| ApiError::invalid("clipboard poisoned"))?;
+                let revision = self.document.revision();
+                let bytes = self.document.cut_layers(&ids, selection_only)?;
+                *clipboard = Some((sequence, Arc::new(bytes)));
+                self.modified |= revision != self.document.revision();
+            }
             Operation::ClearSelectedPixels(ids) => {
                 self.modified |= self.document.clear_selected_pixels(&ids)?;
             }
@@ -1670,6 +1722,7 @@ impl Engine {
                 self.document = document;
                 self.wet_lease.take();
                 self.generation += 1;
+                self.shared.composition.generation(self.generation);
                 self.shared
                     .generation
                     .store(self.generation, Ordering::Release);
@@ -1878,50 +1931,8 @@ impl Engine {
         }
         Ok(())
     }
-    fn tick(&mut self) {
-        if !self.document.stroke_page_ready_for_publication() {
-            return;
-        }
-        if let Some((document, clear_modified)) = self.files.poll(
-            self.generation,
-            self.document.revision(),
-            self.document.stroke_active(),
-            Some(&mut self.document),
-        ) {
-            if let Some(mut document) = document {
-                // Hardware belongs to the session, including file replacement.
-                if let Err(error) = document.set_compute_executor(self.document.compute_executor())
-                {
-                    self.error = Some((self.completed, error.into()));
-                    self.dirty = true;
-                    return;
-                }
-                self.document = document;
-                self.wet_lease.take();
-                self.generation += 1;
-                self.floor = 0;
-                self.aborted = false;
-                self.error = None;
-                self.shared
-                    .generation
-                    .store(self.generation, Ordering::Release);
-                self.shared
-                    .revision
-                    .store(self.document.revision(), Ordering::Release);
-                self.shared.floor.store(0, Ordering::Release);
-                self.shared
-                    .move_preparation
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .take();
-                self.default_view();
-            }
-            if clear_modified {
-                self.modified = false;
-            }
-            self.dirty = true;
-        }
-        if self.dirty {
+    fn publish_document(&mut self) {
+        if self.dirty && self.document.stroke_page_ready_for_publication() {
             self.publication += 1;
             let mut publication = publish(
                 &self.document,
@@ -1955,6 +1966,94 @@ impl Engine {
             );
             drop(old);
             self.dirty = false;
+            move_trace::point(
+                "metadata.published",
+                TraceContext {
+                    session: Arc::as_ptr(&self.shared) as usize as u64,
+                    sequence: self.completed,
+                    generation: self.generation,
+                    revision: self.document.revision(),
+                    ..Default::default()
+                },
+                self.publication as i64,
+            );
+        }
+    }
+    fn tick(&mut self) {
+        if !self.document.stroke_page_ready_for_publication() {
+            return;
+        }
+        if let Some((document, clear_modified)) = self.files.poll(
+            self.generation,
+            self.document.revision(),
+            self.document.stroke_active(),
+            Some(&mut self.document),
+        ) {
+            if let Some(mut document) = document {
+                // Hardware belongs to the session, including file replacement.
+                if let Err(error) = document.set_compute_executor(self.document.compute_executor())
+                {
+                    self.error = Some((self.completed, error.into()));
+                    self.dirty = true;
+                    return;
+                }
+                self.document = document;
+                self.wet_lease.take();
+                self.generation += 1;
+                self.shared.composition.generation(self.generation);
+                self.floor = 0;
+                self.aborted = false;
+                self.error = None;
+                self.shared
+                    .generation
+                    .store(self.generation, Ordering::Release);
+                self.shared
+                    .revision
+                    .store(self.document.revision(), Ordering::Release);
+                self.shared.floor.store(0, Ordering::Release);
+                self.shared
+                    .move_preparation
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
+                self.default_view();
+            }
+            if clear_modified {
+                self.modified = false;
+            }
+            self.dirty = true;
+        }
+        self.publish_document();
+        // Capture only after the matching metadata publication is available.
+        // A same-tick edit must never pair new pixels with an older publication.
+        for request in self.shared.composition.take_pending() {
+            let result = if request.key.document_generation != self.generation
+                || request.key.revision != self.document.revision()
+            {
+                Err(ApiError::new(
+                    PAINT_BUSY,
+                    "composition document changed before capture",
+                ))
+            } else if self.document.transform_active()
+                || self.document.liquify_active()
+                || self.document.layer_move_active()
+                || self.files.running()
+            {
+                Err(ApiError::new(
+                    PAINT_UNSUPPORTED,
+                    "composition during editing session requires CPU",
+                ))
+            } else {
+                super::composition::Service::compile(
+                    &request,
+                    self.document.dimensions(),
+                    self.document.revision(),
+                    self.document.layers(),
+                )
+            };
+            self.shared
+                .composition
+                .complete(&request, self.publication, result);
         }
         for index in 0..4 {
             let revision = self.document.revision();
@@ -2295,6 +2394,53 @@ impl StampedFrame {
 mod actor_tests {
     use super::*;
     use std::{thread, time::Instant};
+    #[test]
+    fn move_begin_publications_keep_rejections_and_final_history_authoritative() {
+        let session = Session::new(64, 64).unwrap();
+        let run = |operation| {
+            let sequence = session.submit(operation).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                let info = session.info();
+                if info.completed_sequence >= sequence {
+                    return info;
+                }
+                assert!(Instant::now() < deadline);
+                thread::sleep(Duration::from_millis(1));
+            }
+        };
+        // Picking needs visible content; an empty transparent layer has no hit.
+        run(Operation::NewWhite(64, 64));
+        // An acknowledgement of a rejected target must never look like BEGIN.
+        let rejected = run(Operation::LayerMove(PAINT_LAYER_MOVE_BEGIN, 9999, 0, 0));
+        assert_ne!(rejected.last_error_status, PAINT_OK);
+        assert_eq!(rejected.flags & PAINT_SESSION_LAYER_MOVE, 0);
+        assert_eq!(rejected.undo_depth, 0);
+        let rejected = run(Operation::LayerMoves(vec![1, 9999], false));
+        assert_eq!(rejected.flags & PAINT_SESSION_LAYER_MOVE, 0);
+        assert_eq!(rejected.undo_depth, 0);
+        for operation in [
+            Operation::LayerMove(PAINT_LAYER_MOVE_BEGIN, 1, 0, 0),
+            Operation::LayerMove(PAINT_LAYER_MOVE_PICK, 0, 0, 0),
+            Operation::LayerMoves(vec![1], false),
+        ] {
+            let begun = run(operation);
+            assert_ne!(begun.flags & PAINT_SESSION_LAYER_MOVE, 0);
+            assert_eq!(begun.active_layer_id, 1);
+            assert_eq!(begun.undo_depth, 0);
+            run(Operation::LayerMove(PAINT_LAYER_MOVE_UPDATE, 0, 7, 3));
+            let cancelled = run(Operation::LayerMove(PAINT_LAYER_MOVE_CANCEL, 0, 0, 0));
+            assert_eq!(cancelled.flags & PAINT_SESSION_LAYER_MOVE, 0);
+            assert_eq!(cancelled.undo_depth, 0);
+        }
+        run(Operation::LayerMove(PAINT_LAYER_MOVE_BEGIN, 1, 0, 0));
+        let committed = run(Operation::LayerMove(PAINT_LAYER_MOVE_COMMIT, 0, 9, 4));
+        assert_eq!(committed.flags & PAINT_SESSION_LAYER_MOVE, 0);
+        assert_eq!(committed.undo_depth, 1);
+        let restored = run(Operation::Undo);
+        assert_eq!(restored.undo_depth, 0);
+        assert_eq!(restored.redo_depth, 1);
+    }
     #[test]
     fn selection_edits_reuse_pixels_but_keep_stamps_and_next_paint_fresh() {
         let session = Session::new(128, 128).unwrap();

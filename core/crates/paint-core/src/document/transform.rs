@@ -20,7 +20,24 @@ pub struct TransformGeometry {
     /// Nearest, linear, cubic, smoother, sharper, automatic.
     pub interpolation: u32,
 }
+pub struct TransformDisplayGeometry {
+    pub inverse: [f64; 9],
+    pub columns: u32,
+    pub rows: u32,
+    pub vertices: Vec<[f32; 4]>,
+}
 impl TransformGeometry {
+    /// Shared pure display geometry. It owns no document, pixels or GPU object.
+    pub fn display_geometry(&self) -> Result<TransformDisplayGeometry> {
+        self.validate()?;
+        let mesh = mesh::TransformMesh::new(self);
+        Ok(TransformDisplayGeometry {
+            inverse: self.inverse_matrix().unwrap_or([0.; 9]),
+            columns: mesh.columns,
+            rows: mesh.rows,
+            vertices: mesh.vertices,
+        })
+    }
     fn history_action(&self, after: &Self) -> crate::HistoryAction {
         if self != after && self.warp == after.warp {
             for (axis, action) in [

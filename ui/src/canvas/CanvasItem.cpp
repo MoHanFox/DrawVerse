@@ -3,6 +3,7 @@
 #include "canvas/CanvasPresentationObservation.h"
 #include "canvas/LiquifyPreviewNode.h"
 #include "canvas/ResidentPreviewTextures.h"
+#include "canvas/CompositionNode.h"
 #include "platform/TabletInput.h"
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
@@ -23,6 +24,7 @@
 #endif
 
 namespace {
+std::atomic<quint64> nextCompositionEpoch{1};
 class CanvasNode final : public QSGNode {
 public:
     ~CanvasNode() override { delete image;for(auto *tile:overview)delete tile;delete overviewTexture; }
@@ -32,6 +34,10 @@ public:
     qint64 imageKey = 0;
     QSGSimpleTextureNode *image=nullptr;
     LiquifyPreviewNode *preview=nullptr;
+    CompositionNode *composition=nullptr;
+    quint64 compositionEpoch=0;
+    quint64 displayedRevision=0;
+    quint64 generation=0;
     LiquifyPreviewNode *moveWarmup=nullptr;
     std::array<std::shared_ptr<ResidentPreviewTextures>,2> sources{};
     std::shared_ptr<ResidentPreviewTextures> preparedSource;
@@ -54,6 +60,9 @@ Qt::KeyboardModifiers shortcutModifiersFromSystem() {
 }
 
 CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
+    connect(CompositionNode::budgetNotifier(),&CompositionBudgetNotifier::resourcesReleased,this,[this]{
+        if(m_compositionFailed && m_compositionFailureReason.contains("process/in-flight"))refresh();
+    });
     setFlag(ItemHasContents); setAcceptedMouseButtons(Qt::LeftButton | Qt::MiddleButton);
     setCursor(Qt::CrossCursor);setAcceptHoverEvents(true);qApp->installEventFilter(this);
 #ifdef Q_OS_WIN
@@ -83,9 +92,13 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
         setTabletWindowCursor(false);
         if (m_observedWindow) { m_observedWindow->removeEventFilter(this); disconnect(m_observedWindow, nullptr, this, nullptr); }
         m_observedWindow = window;
+        resetCompositionDevice();
         if (window) {
             connect(window, &QQuickWindow::screenChanged, this, &CanvasItem::observeScreen);
             connect(window,&QQuickWindow::sceneGraphInitialized,this,[this]{emit gpuDisplayChanged();refresh();},Qt::QueuedConnection);
+            connect(window,&QQuickWindow::sceneGraphInvalidated,this,[this]{
+                resetCompositionDevice();refresh();
+            },Qt::QueuedConnection);
             connect(window,&QQuickWindow::frameSwapped,this,[this]{
                 if(m_moveWarmupPending && m_movePreparation && m_movePreparation->uploads->load()){
                     m_moveWarmupPending=false;update();
@@ -98,7 +111,13 @@ CanvasItem::CanvasItem(QQuickItem *parent) : QQuickItem(parent) {
     };
     connect(this, &QQuickItem::windowChanged, this, observeWindow);
     connect(this,&QQuickItem::enabledChanged,this,[this] {if(!isEnabled()){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.disabled");stopNavigation();endPicking();setTabletWindowCursor(false);}});
-    connect(this,&QQuickItem::visibleChanged,this,[this] {if(!isVisible()){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.hidden");stopNavigation();endPicking();setTabletWindowCursor(false);}});
+    connect(this,&QQuickItem::visibleChanged,this,[this] {
+        if(!isVisible()){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.hidden");stopNavigation();endPicking();setTabletWindowCursor(false);}
+        // A final CPU frame may have arrived while hidden. Showing the item
+        // must restart its own display request, even with no further metadata
+        // or frame publication to call refresh(). Queue outside QML bindings.
+        QMetaObject::invokeMethod(this,[this]{refresh();m_viewTimer.start();},Qt::QueuedConnection);
+    });
     observeWindow(window());
 }
 void CanvasItem::observeScreen(QScreen *screen) {
@@ -116,15 +135,20 @@ CanvasItem::~CanvasItem() {
     qApp->removeEventFilter(this);
     if (m_observedWindow) m_observedWindow->removeEventFilter(this);
     if (m_client && !m_interactive && !m_previewPart) m_client->requestViewport(1, {}, {}, false);
+    if(m_client && m_interactive && !m_previewPart)m_client->setCompositionDevice(m_compositionEpoch,false);
+    if(m_client && m_interactive && !m_previewPart)m_client->setCpuSamplingRequired(false);
 }
 void CanvasItem::setClient(PaintCoreClient *client) {
     if (m_client == client) return;
     if(m_tablet)mouseUngrabEvent();
     cancelLayerMove("move.cancel.clientChanged");
-    stopNavigation();m_image={};m_overview={};m_residentPreview={};m_movePreparation={};m_moveWarmupPending=false;
+    if(m_client && m_interactive && !m_previewPart)m_client->setCompositionDevice(m_compositionEpoch,false);
+    resetCompositionDevice();
+    stopNavigation();m_image={};m_overview={};m_residentPreview={};m_movePreparation={};m_moveWarmupPending=false;m_compositionPacket.reset();m_compositionFailed=false;m_compositionFailureReason.clear();
     emit residentPresentationChanged();
     setTabletWindowCursor(false);
     endPicking();
+    if(m_client && m_interactive && !m_previewPart)m_client->setCpuSamplingRequired(false);
     if (m_client) disconnect(m_client, nullptr, this, nullptr);
     m_poseRetry.stop();resetCursorSample();m_client = client; m_fitPending = true;
     if (client) {
@@ -148,6 +172,7 @@ void CanvasItem::setClient(PaintCoreClient *client) {
 }
 void CanvasItem::setInteractive(bool enabled) {
     if(!enabled){if(m_tablet)mouseUngrabEvent();resetCursorSample();cancelLayerMove("move.cancel.interactiveDisabled");endPicking();setTabletWindowCursor(false);}
+    if(!enabled && m_client && m_interactive && !m_previewPart)m_client->setCpuSamplingRequired(false);
     m_interactive = enabled; setAcceptedMouseButtons(enabled ? Qt::LeftButton | Qt::MiddleButton : Qt::NoButton);
     m_fitPending = true; refresh();refreshBrushCursor(); emit interactiveChanged(); emit viewChanged();
 }
@@ -185,13 +210,33 @@ void CanvasItem::beginPicking(QPointF local) {
     m_previousSampleColor=m_client->brushColor();m_picking=true;updatePicking(local);
 }
 void CanvasItem::updatePicking(QPointF local) {
+    m_pendingSamplePoint=documentPoint(local);m_sampleGeneration=m_client->generation();m_sampleRevision=m_client->revision();
+    m_pendingSampleColor=m_client->brushColor();m_pendingSample=true;updateSamplingDemand();
     m_cursorPosition=local;m_cursorInside=contains(local);m_sampledColor=pickColorAt(local);
-    if(m_sampledColor.isValid())m_client->setBrushColor(m_sampledColor);
+    if(m_sampledColor.isValid()){m_pendingSample=false;m_client->setBrushColor(m_sampledColor);}
+    if(!QRectF(0,0,m_client->documentWidth(),m_client->documentHeight()).contains(m_pendingSamplePoint))m_pendingSample=false;
     refreshBrushCursor();
 }
-void CanvasItem::endPicking() {
+void CanvasItem::endPicking(bool cancel) {
+    if(cancel)m_pendingSample=false;
+    updateSamplingDemand();
     if(!m_picking)return;
     m_picking=false;m_tablet=false;m_sampledColor=QColor();emit brushCursorChanged();
+    updateSamplingDemand();
+}
+void CanvasItem::updateSamplingDemand(){
+    if(m_client && m_interactive && !m_previewPart)m_client->setCpuSamplingRequired(isVisible() && (m_pendingSample || m_picking || m_altHeld || m_client->eyedropperTool()));
+}
+void CanvasItem::refreshPendingSample(){
+    if(!m_pendingSample || !m_client)return;
+    if(m_sampleGeneration!=m_client->generation() || m_sampleRevision!=m_client->revision() || m_pendingSampleColor!=m_client->brushColor()){
+        m_pendingSample=false;updateSamplingDemand();return;
+    }
+    const auto color=m_client->sampleDocumentPixel(m_pendingSamplePoint.x(),m_pendingSamplePoint.y());
+    if(!color.isValid())return;
+    m_pendingSample=false;
+    if(m_picking)m_sampledColor=color;
+    m_client->setBrushColor(color);updateSamplingDemand();
 }
 void CanvasItem::resetCursorSample(){m_havePoseSample=false;m_poseDirectionKnown=false;m_poseDevice.clear();}
 void CanvasItem::setCursorSample(const InputSample &sample,const QPointingDevice *device,bool resetDirection){
@@ -283,6 +328,7 @@ void CanvasItem::updateTabletHover(QHoverEvent *event) {
     setTabletWindowCursor(m_cursorInside);setCursorSample(sample,event->pointingDevice());refreshBrushCursor();
 }
 bool CanvasItem::ignoreCachedMouseHover(QHoverEvent *event) {
+    if(tabletContactOwner && tabletContactOwner!=this)return true;
     // Qt Quick frame-sync hover has the primary mouse device and cached mouse
     // position even while Windows Ink is delivering current TabletMove events.
     // A real mouse event releases this ownership in eventFilter before Quick
@@ -304,18 +350,77 @@ void CanvasItem::hoverMoveEvent(QHoverEvent *event){
     setTabletWindowCursor(false);m_cursorInside=true;m_cursorPosition=event->position();setCursorSample(mouseSample(event->position(),Qt::NoButton),event->pointingDevice());refreshBrushCursor();if(m_selecting && m_selectionKind==3)updateSelection(event->position(),event->modifiers());
 }
 void CanvasItem::hoverLeaveEvent(QHoverEvent *event){if(ignoreCachedMouseHover(event) || m_tablet)return;setTabletWindowCursor(false);resetCursorSample();m_cursorInside=false;refreshBrushCursor();}
+void CanvasItem::resetCompositionDevice(){
+    m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionCounters->preciseTransform=0;
+    m_compositionFailed=false;m_compositionFailureReason.clear();m_compositionPacket.reset();
+    m_failedCompositionDemand=m_failedCompositionRelease=0;m_failedCompositionPreview=false;
+}
+quint64 CanvasItem::compositionDemand()const{
+    if(!m_client)return ~quint64(0);
+    const auto rows=m_client->layers();
+    if(rows.size()>64 || m_client->documentWidth()>4096 || m_client->documentHeight()>4096)return ~quint64(0);
+    QHash<quint64,QVariantMap> layers;
+    for(const auto &row:rows){const auto layer=row.toMap();layers.insert(layer["id"].toULongLong(),layer);}
+    int depth=0;bool clipped=false;
+    for(const auto &row:rows){
+        const auto layer=row.toMap();if(layer["mask"].toBool())continue;
+        auto current=layer;bool visible=true;int steps=0;
+        for(;;){
+            visible&=current["visible"].toBool() && current["opacity"].toDouble()*current["fill"].toDouble()>0;
+            const auto parent=current["parent"].toULongLong();if(!parent)break;
+            if(++steps>16 || !layers.contains(parent))return ~quint64(0);
+            current=layers.value(parent);
+        }
+        if(visible){depth=std::max(depth,layer["depth"].toInt()+int(layer["group"].toBool()));clipped|=layer["clipped"].toBool();}
+    }
+    const quint64 surfaces=quint64(clipped?5:2)*quint64(depth+1);
+    const auto region=prefetchedDocumentRect();const auto dpr=window()?window()->devicePixelRatio():1.;
+    const auto pixels=quint64(std::clamp(std::ceil(region.width()*m_zoom*dpr),0.,4096.))*
+        quint64(std::clamp(std::ceil(region.height()*m_zoom*dpr),0.,4096.));
+    return 68ull*1024*1024+quint64(m_client->documentWidth())*m_client->documentHeight()*16*surfaces+pixels*4;
+}
+void CanvasItem::retryCompositionIfPossible(){
+    if(!m_compositionFailed || !m_client || m_client->drawing() || m_client->layerEditBusy() ||
+       m_client->transformActive() || m_client->liquifyActive() || m_client->compositionHandoffRevision())return;
+    const bool budget=m_compositionFailureReason.contains("budget");
+    const bool released=m_compositionFailureReason.contains("process/in-flight") &&
+        CompositionNode::releasedPayloadSerial()!=m_failedCompositionRelease;
+    if((budget && (released || compositionDemand()<m_failedCompositionDemand)) || m_failedCompositionPreview){
+        ++m_compositionRetries;resetCompositionDevice();
+    }
+}
+void CanvasItem::compositionFallback(QString reason,CompositionPacketPtr packet){
+    if(!packet || !m_client || packet->info.key.device_epoch!=m_compositionEpoch ||
+       packet->info.key.document_generation!=m_client->generation())return;
+    if(!reason.isEmpty()){
+        m_compositionFailed=true;m_compositionPacket.reset();m_compositionFailureReason=reason;
+        m_failedCompositionPreview=packet->preview;
+        m_failedCompositionRelease=CompositionNode::releasedPayloadSerial();
+        m_failedCompositionDemand=68ull*1024*1024+quint64(packet->info.document_width)*packet->info.document_height*16*
+            quint64(packet->surfaceCount+(packet->transform && packet->transform->geometry.warp?1:0))+
+            quint64(packet->pixels.width())*packet->pixels.height()*4;
+        m_client->setCompositionDevice(m_compositionEpoch,false);
+    }
+    refresh();
+}
 void CanvasItem::refresh() {
     if (!m_client) return;
+    refreshPendingSample();
     if(m_previewPart){
         m_residentPreview=m_client->residentPreview();
         const auto image=m_residentPreview?m_residentPreview->images[size_t(m_previewPart)]:QImage();
         m_image=image;update();
         return;
     }
-    if(m_interactive && window())m_client->setResidentGpuPreviewAvailable(gpuDisplay());
-    if (m_generation != m_client->generation()) { stopNavigation();m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
+    if(m_interactive && window()){m_client->setResidentGpuPreviewAvailable(gpuDisplay());m_client->setCompositionPrecisionAvailable(m_compositionCounters->preciseTransform.load()>0);}
+    if (m_generation != m_client->generation()) { resetCompositionDevice();stopNavigation();m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
+    retryCompositionIfPossible();
     const int view = m_interactive ? 0 : 1;
     m_image = m_client->frame(view); m_imageRegion = m_client->frameRegion(view);
+    m_imageRevision=m_client->frameRevision(view);
+    if(m_interactive && window())m_client->setCompositionDevice(m_compositionEpoch,CompositionNode::supportsWindow(window()) && !m_compositionFailed && isVisible());
+    m_compositionPacket=m_interactive && compositionDisplayRequested()?m_client->compositionPacket():CompositionPacketPtr{};
+    m_compositionCounters->handoffRevision=m_interactive?m_client->compositionHandoffRevision():0;
     m_movePreparation=m_client->movePreparation();
     m_moveWarmupPending=m_movePreparation && m_movePreparation->uploads->load()==0;
     const QRectF document(0,0,m_client->documentWidth(),m_client->documentHeight());
@@ -336,11 +441,27 @@ void CanvasItem::requestView() {
     const qreal dpr = window()->devicePixelRatio();
     const QSize pixels(qCeil(region.width() * m_zoom * dpr), qCeil(region.height() * m_zoom * dpr));
     m_client->requestViewport(m_interactive ? 0 : 1, region, pixels, !region.isEmpty());
+    if(m_interactive)m_client->setCompositionDevice(m_compositionEpoch,CompositionNode::supportsWindow(window()) && !m_compositionFailed && isVisible());
     if(m_interactive)m_client->ensureOverview();
 }
 bool CanvasItem::gpuDisplay() const {
     const auto api=window()?window()->rendererInterface()->graphicsApi():QSGRendererInterface::Unknown;
     return api!=QSGRendererInterface::Software && api!=QSGRendererInterface::Unknown && api!=QSGRendererInterface::Null;
+}
+QVariantMap CanvasItem::compositionStatistics()const{
+    const auto &c=*m_compositionCounters;
+    return {{"currentEpoch",m_compositionEpoch},{"retries",m_compositionRetries},{"failed",m_compositionFailed},{"uploads",c.uploads.load()},{"uploadBytes",c.uploadBytes.load()},{"passes",c.passes.load()},
+        {"adoptions",c.adoptions.load()},{"revision",c.revision.load()},{"epoch",c.epoch.load()},
+        {"request",c.request.load()},{"textureBytes",c.textureBytes.load()},{"failures",c.failures.load()},
+        {"processReservedPayloadBytes",CompositionNode::reservedPayloadBytes()},
+        {"lastUploadNs",c.lastUploadNs.load()},{"lastSubmitNs",c.lastSubmitNs.load()},{"lastSubmitGeometry",c.lastSubmitGeometry.load()},
+        {"nodeRevision",c.nodeRevision.load()},{"nodeRequest",c.nodeRequest.load()},
+        {"nodeGeometry",c.nodeGeometry.load()},{"nodeEpoch",c.nodeEpoch.load()},
+        {"testReadbacks",c.testReadbacks.load()},{"preciseTransform",c.preciseTransform.load()},{"pipelineCreates",c.pipelineCreates.load()},
+        {"geometryReuses",c.geometryReuses.load()},{"pageTableCreates",c.pageTableCreates.load()},{"axisCreates",c.axisCreates.load()},
+        {"parameterBufferCreates",c.parameterBufferCreates.load()},{"bindingCreates",c.bindingCreates.load()},
+        {"composedPixels",c.composedPixels.load()},{"lastDirtyArea",c.lastDirtyArea.load()},
+        {"fallback",!m_compositionFailureReason.isEmpty()?m_compositionFailureReason:!compositionDisplayRequested()?QStringLiteral("CPU: composition disabled"):!CompositionNode::supportsWindow(window())?QStringLiteral("CPU: composition requires Qt 6.6+ D3D11"):m_client?m_client->compositionFallback():QString()}};
 }
 QRectF CanvasItem::prefetchedDocumentRect() const {
     if(!m_client || width()<=0 || height()<=0)return {};
@@ -426,13 +547,17 @@ void CanvasItem::geometryChange(const QRectF &geometry, const QRectF &old) {
 }
 void CanvasItem::captureLayoutPosition() {
     if(m_layoutCaptured || !m_interactive || m_fitPending || !m_client || !window())return;
-    stopNavigation();
     m_layoutCaptured=true;m_layoutOrigin=mapToScene(documentRect().topLeft());m_layoutWindow=window();m_layoutGeneration=m_client->generation();
+    m_layoutGeometry={mapToScene({0,0}),size()};
 }
 void CanvasItem::restoreLayoutPosition() {
     if(!m_layoutCaptured)return;
     m_layoutCaptured=false;
     if(window()!=m_layoutWindow || !m_client || m_client->generation()!=m_layoutGeneration || m_fitPending)return;
+    // Repeated layout publication can leave the actual canvas unchanged.
+    // It must not cancel an in-flight zoom or restore its earlier pan.
+    if(m_layoutGeometry==QRectF(mapToScene({0,0}),size()))return;
+    stopNavigation();
     m_pan+=m_layoutOrigin-mapToScene(documentRect().topLeft());emit viewChanged();update();
 }
 QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
@@ -441,8 +566,58 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     // snapshot, never PaintCoreClient's live GUI metadata in this observer.
     const auto observation=qScopeGuard([&]{if(m_presentationObserver)m_presentationObserver->adopted(adopted);});
     auto *node = static_cast<CanvasNode *>(old);
-    if ((!m_residentPreview && !m_movePreparation && m_image.isNull() && m_overview.isNull()) || !window()) { delete node; return nullptr; }
+    if ((!m_residentPreview && !m_movePreparation && !m_compositionPacket && m_image.isNull() && m_overview.isNull()) || !window()) { delete node; return nullptr; }
     if(!node)node=new CanvasNode;
+    if(node->generation!=m_generation){node->generation=m_generation;node->displayedRevision=0;}
+    const bool useComposition=m_interactive && !m_previewPart && !m_residentPreview && m_compositionPacket &&
+        !m_compositionFailed && m_compositionPacket->info.key.device_epoch==m_compositionEpoch &&
+        m_compositionPacket->info.key.document_generation==m_generation &&
+        (node->composition || m_compositionPacket->preview || m_compositionPacket->info.key.revision>=node->displayedRevision);
+    if(useComposition){
+        if(node->composition && node->compositionEpoch!=m_compositionEpoch){delete node->composition;node->composition=nullptr;}
+        if(!node->composition){
+            QPointer<CanvasItem> self=this;
+            node->composition=CompositionNode::create(window(),m_compositionPacket,m_compositionCounters,[self](QString reason,CompositionPacketPtr packet){
+                if(self)QMetaObject::invokeMethod(self,[self,reason,packet=std::move(packet)]{
+                    if(self)self->compositionFallback(reason,packet);
+                },Qt::QueuedConnection);
+            },[self](CompositionPacketPtr packet){
+                if(!self)return;
+                const auto key=packet->info.key;
+                QMetaObject::invokeMethod(self,[self,key]{
+                    if(self && self->m_client && self->m_interactive && !self->m_previewPart && self->m_compositionEpoch==key.device_epoch)
+                        self->m_client->compositionPrimaryAdopted(key.document_generation,key.device_epoch,key.revision);
+                },Qt::QueuedConnection);
+            });
+            if(node->composition){node->compositionEpoch=m_compositionEpoch;node->appendChildNode(node->composition);}
+        }else if(!node->composition->sync(m_compositionPacket)){
+            delete node->composition;node->composition=nullptr;
+        }
+        if(node->composition){
+            const auto &r=m_compositionPacket->region;
+            const bool present=node->composition->ready() && (m_compositionPacket->preview || m_compositionPacket->info.key.revision>=node->displayedRevision);
+            node->composition->setRect(present?QRectF(documentRect().topLeft()+r.topLeft()*m_zoom,r.size()*m_zoom):QRectF());
+            if(present){
+                node->displayedRevision=m_compositionPacket->info.key.revision;
+                m_compositionCounters->nodeEpoch=m_compositionPacket->info.key.device_epoch;
+                m_compositionCounters->nodeRevision=m_compositionPacket->info.key.revision;
+                m_compositionCounters->nodeRequest=m_compositionPacket->info.key.request_id;
+                m_compositionCounters->nodeGeometry=m_compositionPacket->geometrySequence;
+                if(node->image)node->image->setRect({});for(auto *tile:node->overview)if(tile)tile->setRect({});
+                if(node->preview){delete node->preview;node->preview=nullptr;}
+                if(m_presentationObserver){
+                    const auto &key=m_compositionPacket->info.key;
+                    adopted={quintptr(this),quintptr(window()),m_generation,0,key.revision,0,r,documentRect(),size(),m_zoom,false,true};
+                    adopted.deviceEpoch=key.device_epoch;adopted.request=key.request_id;adopted.publication=key.publication;
+                    adopted.plan=key.lease_id;adopted.composition=true;
+                    adopted.geometryKey=m_compositionPacket->geometrySequence;adopted.presentationDelta=m_compositionPacket->presentationDelta;
+                    adopted.source=m_compositionPacket->editSequence;
+                    if(m_compositionPacket->transform)adopted.firstVertex={m_compositionPacket->transform->geometry.points[0],m_compositionPacket->transform->geometry.points[1]};
+                }
+                return node;
+            }
+        }
+    }else if(node->composition){delete node->composition;node->composition=nullptr;node->compositionEpoch=0;}
     if(m_previewPart){
         if(!m_residentPreview){delete node;return nullptr;}
         const auto previous=node->sources;
@@ -491,6 +666,11 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         if(!node->preview->sync(window(),*m_residentPreview,documentRect())){qWarning("Unable to allocate resident preview textures");delete node;return nullptr;}
         if(m_presentationObserver)adopted={quintptr(this),quintptr(window()),m_generation,m_residentPreview->sourceId,
             m_residentPreview->revision,0,{},documentRect(),size(),m_zoom,true,true,m_residentPreview->presentationDelta};
+        if(m_presentationObserver && !m_residentPreview->vertices.isEmpty()){
+            const auto &vertices=m_residentPreview->vertices;
+            adopted.geometryKey=quint64(qHashBits(vertices.constData(),size_t(vertices.size())*sizeof(vertices[0])));
+            adopted.firstVertex={vertices[0][0],vertices[0][1]};
+        }
         return node;
     }
     if(node->preview){delete node->preview;node->preview=nullptr;}
@@ -534,8 +714,16 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     // A viewport frame covers only its document-space region, never the whole canvas.
     node->image->setRect(QRectF(documentRect().topLeft() + m_imageRegion.topLeft() * m_zoom,
                                  m_imageRegion.size() * m_zoom));
-    if(m_presentationObserver)adopted={quintptr(this),quintptr(window()),m_generation,0,0,node->imageKey,
+    if(m_presentationObserver)adopted={quintptr(this),quintptr(window()),m_generation,0,m_imageRevision,node->imageKey,
         m_imageRegion,documentRect(),size(),m_zoom,false,true};
+    node->displayedRevision=std::max(node->displayedRevision,m_imageRevision);
+    if(m_interactive && !m_previewPart && m_compositionCounters->handoffRevision.load() &&
+       m_imageRevision>=m_compositionCounters->handoffRevision.load()){
+        QPointer<CanvasItem> self=this;const auto generation=m_generation,epoch=m_compositionEpoch,revision=m_imageRevision;
+        QMetaObject::invokeMethod(this,[self,generation,epoch,revision]{
+            if(self && self->m_client && self->m_compositionEpoch==epoch)self->m_client->compositionPrimaryAdopted(generation,epoch,revision);
+        },Qt::QueuedConnection);
+    }
     return node;
 }
 InputSample CanvasItem::mouseSample(QPointF local, Qt::MouseButtons buttons) {
@@ -702,7 +890,7 @@ void CanvasItem::mouseMoveEvent(QMouseEvent *e) {
 }
 void CanvasItem::mouseReleaseEvent(QMouseEvent *e) {
     if(!m_tablet){m_cursorPosition=e->position();setCursorSample(mouseSample(e->position(),e->buttons()),e->pointingDevice());}
-    if(m_picking && !m_tablet && e->button()==Qt::LeftButton){updatePicking(e->position());endPicking();e->accept();return;}
+    if(m_picking && !m_tablet && e->button()==Qt::LeftButton){updatePicking(e->position());endPicking(false);e->accept();return;}
     if(!m_panning && m_selecting && !m_tablet) finishSelection(e->position(),e->modifiers());
     if(m_moving && !m_tablet) finishLayerMove(e->position());
     if ((m_stroke || m_client->drawing()) && !m_tablet) { m_client->strokeTo(mouseSample(e->position(), e->buttons())); m_client->endStroke(); m_stroke = false; }
@@ -750,7 +938,7 @@ void CanvasItem::setAltHeld(bool held) {
     m_altReleaseTicks=0;
     if(held)m_shortcutStateTimer.start();
     else if(!m_ctrlHeld)m_shortcutStateTimer.stop();
-    if(!held && m_client && !m_client->eyedropperTool())endPicking();
+    if(!held && m_client && !m_client->eyedropperTool())endPicking(false);
     // The eyedropper takes over the pointer: a crosshair instead of the brush outline.
     applyShortcutCursor();
 }
@@ -796,7 +984,7 @@ void CanvasItem::refreshShortcutCursor() {
 #endif
     const auto physical=shortcutModifiersFromSystem();
     if(m_altHeld && !physical.testFlag(Qt::AltModifier)) {
-        if(++m_altReleaseTicks>=2){m_altHeld=false;if(m_client && !m_client->eyedropperTool())endPicking();}
+        if(++m_altReleaseTicks>=2){m_altHeld=false;if(m_client && !m_client->eyedropperTool())endPicking(false);}
     } else {
         m_altReleaseTicks=0;
         if(physical.testFlag(Qt::AltModifier))m_altHeld=true;
@@ -811,6 +999,7 @@ void CanvasItem::refreshShortcutCursor() {
     updateCursorPoll();
 }
 void CanvasItem::applyShortcutCursor() {
+    updateSamplingDemand();
     m_cursorShortcutModifiers=readShortcutCursorModifiers();
     setCursor(effectiveCursor());
     if(tabletCursorOwner==this && m_observedWindow)m_observedWindow->setCursor(cursor());
@@ -875,7 +1064,12 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
         const auto receiver=item?item->window():qobject_cast<QQuickWindow*>(watched);
         if(receiver!=m_observedWindow)return false;
     } else if (watched != m_observedWindow) return false;
-    if(tabletEvent && tabletContactOwner && tabletContactOwner!=this)return false;
+    if(tabletEvent && tabletContactOwner && tabletContactOwner!=this){
+        if(m_cursorInside || tabletCursorOwner==this){
+            setTabletWindowCursor(false);resetCursorSample();m_cursorInside=false;refreshBrushCursor();
+        }
+        return false;
+    }
     if(tabletEvent && m_tablet && m_penDevice!=static_cast<QTabletEvent*>(event)->pointingDevice())return false;
     if (event->type() == QEvent::ScreenChangeInternal || event->type() == QEvent::Resize) m_viewTimer.start();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
@@ -916,7 +1110,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     // The global position is shared by both native-window and item delivery paths.
     const QPointF local = mapFromGlobal(e->globalPosition());
     if(!m_tablet && !contains(local)) {
-        if(tabletCursorOwner==this){setTabletWindowCursor(false);refreshBrushCursor();}
+        if(m_cursorInside || tabletCursorOwner==this){setTabletWindowCursor(false);resetCursorSample();m_cursorInside=false;refreshBrushCursor();}
         return false;
     }
     m_penOwnsHover=true;m_penDevice=e->pointingDevice();
@@ -949,7 +1143,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
     if(!m_client->liquifyActive() && (m_picking || ((m_altHeld || m_client->eyedropperTool()) && !m_client->selectionTool() && !m_client->moveTool()))) {
         if(event->type()==QEvent::TabletPress){beginPicking(local);m_tablet=true;}
         else if(event->type()==QEvent::TabletMove)updatePicking(local);
-        else if(event->type()==QEvent::TabletRelease){updatePicking(local);endPicking();}
+        else if(event->type()==QEvent::TabletRelease){updatePicking(local);endPicking(false);}
         e->accept();return true;
     }
     if(!m_client->liquifyActive() && (m_client->selectionTool()==5)) {

@@ -15,7 +15,11 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 80;
+pub const PAINT_ABI_MINOR: u32 = 86;
+
+#[path = "api_composition.rs"]
+mod composition;
+pub use composition::*;
 /// ABI1.77: focus flags bit2 and read-resident kind2 carry a fixed selection mask.
 pub const PAINT_RESIDENT_PREVIEW_SELECTED: u32 = 4;
 /// Resolved-dab outline replay and allowOverflow through state45 preparation.
@@ -212,6 +216,8 @@ pub const PAINT_LAYER_ACTION_DUPLICATE: u32 = 2;
 pub const PAINT_LAYER_ACTION_MERGE: u32 = 3;
 pub const PAINT_LAYER_ACTION_CLEAR_SELECTED_PIXELS: u32 = 4;
 pub const PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS: u32 = 5;
+pub const PAINT_LAYER_ACTION_CUT: u32 = 6;
+pub const PAINT_LAYER_ACTION_CUT_SELECTED_PIXELS: u32 = 7;
 pub const PAINT_HISTORY_DUPLICATE_LAYERS: u32 = 27;
 pub const PAINT_HISTORY_PASTE_LAYERS: u32 = 28;
 pub const PAINT_HISTORY_MERGE_LAYERS: u32 = 29;
@@ -846,6 +852,20 @@ pub struct PaintTransform {
     pub points: [f64; 32],
     pub skew_h: f64,
     pub skew_v: f64,
+}
+
+/// ABI1.82: pure version1 display geometry, at most 145*145 xyuv vertices.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintTransformDisplayGeometry {
+    pub struct_size: u32,
+    pub version: u32,
+    pub columns: u32,
+    pub rows: u32,
+    pub vertex_bytes: u64,
+    /// Row-major inverse projective map; zero for Warp (use ordered mesh).
+    pub inverse: [f64; 9],
+    pub reserved: u64,
 }
 
 /// Independent per-stroke opacity pressure controls in state v6 and VBR 1.4.

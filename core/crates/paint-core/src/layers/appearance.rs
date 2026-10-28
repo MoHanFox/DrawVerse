@@ -308,3 +308,7 @@ pub fn blend_pixel(
     });
     Pixel::from_premultiplied([rgb[0], rgb[1], rgb[2], alpha]).expect("normalized composition")
 }
+
+#[cfg(test)]
+#[path = "gpu_blend_capture_tests.rs"]
+mod gpu_blend_capture_tests;

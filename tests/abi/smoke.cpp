@@ -9,6 +9,7 @@
 #include "async_smoke.h"
 #include "storage_smoke.h"
 #include "brush_catalog_smoke.h"
+#include "composition_smoke.h"
 
 #define CHECK(condition) do { if (!(condition)) { std::fprintf(stderr, "C++ ABI check failed at line %d: %s\n", __LINE__, #condition); return 1; } } while (false)
 static_assert(PAINT_FEATURE_LAYER_MOVE_PREVIEW == UINT64_C(288230376151711744));
@@ -98,6 +99,7 @@ int main() {
         CHECK(samples[64]==0.078125f && samples[128]==0.25f && samples[256]==1.f);
     }
     CHECK(async_smoke(kernel.core) == 0);
+    CHECK(composition_smoke(kernel.core) == 0);
     std::puts("C++20 ABI RAII, pressure, history, noexcept callback, and concurrent-reader checks passed.");
     return 0;
 }

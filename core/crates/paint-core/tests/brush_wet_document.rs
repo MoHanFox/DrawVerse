@@ -79,14 +79,22 @@ fn line(
     )
     .unwrap();
     if split {
-        d.stroke_to(InputPoint::new(80. + offset.0, 32. + offset.1, 1.))
-            .unwrap();
+        paged_input(d, InputPoint::new(80. + offset.0, 32. + offset.1, 1.));
     }
-    d.stroke_to(InputPoint::new(128. + offset.0, 32. + offset.1, 1.))
-        .unwrap();
+    paged_input(d, InputPoint::new(128. + offset.0, 32. + offset.1, 1.));
     let (changed, next) = d.end_wet_brush_stroke().unwrap();
     assert!(changed);
     next
+}
+fn paged_input(d: &mut Document, point: InputPoint) {
+    // Exercise the production scheduler: a raw sample can require multiple
+    // bounded pages, which must not become additional input samples.
+    d.begin_stroke_input(point).unwrap();
+    while matches!(
+        d.continue_stroke_page(InputScheduleBudget::default())
+            .unwrap(),
+        StrokePageResult::Pending
+    ) {}
 }
 #[test]
 fn real_document_keeps_two_carried_colors_and_commits_one_undoable_stroke() {

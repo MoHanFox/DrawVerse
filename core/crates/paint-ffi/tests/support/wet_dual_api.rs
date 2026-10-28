@@ -485,6 +485,7 @@ fn wet_dual_public_image_package_roundtrip_and_capacity_checks_do_not_install_re
             )
             .unwrap(),
         )
+        .with_sizing(image_settings.dual.sizing())
         .with_color(image_settings.dual.color());
         image_settings.texture = paint_core::BrushTexture::new(
             true,

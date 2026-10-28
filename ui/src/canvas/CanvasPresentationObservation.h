@@ -18,6 +18,12 @@ struct CanvasPresentationIdentity {
     qreal zoom=0;
     bool resident=false,valid=false;
     QPoint presentationDelta;
+    // Opt-in G0 evidence: identify the content geometry, independently of the
+    // core revision and the immediately updated QML control handles.
+    quint64 geometryKey=0;
+    QPointF firstVertex;
+    quint64 deviceEpoch=0,request=0,publication=0,plan=0;
+    bool composition=false;
     bool operator==(const CanvasPresentationIdentity &) const = default;
 };
 struct CanvasPresentationObservation {

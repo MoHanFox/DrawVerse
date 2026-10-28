@@ -28,6 +28,7 @@
 #include <utility>
 
 Q_DECLARE_METATYPE(PaintSessionInfo)
+Q_DECLARE_METATYPE(CompositionPacketPtr)
 Q_DECLARE_METATYPE(PaintFileJobInfo)
 namespace {
 enum Operation { New = 1, Begin, Move, End, Cancel, Undo, Redo, Add, Remove, Select, Properties, NewWhite, AddMask, AirbrushTick };
@@ -59,6 +60,8 @@ struct BackendConnection {
     PaintSession *session = nullptr;
     std::atomic_bool framePending[2]{};
     std::atomic_bool metadataPending{false};
+    std::atomic_bool compositionPending{false};
+    CompositionViewRequest compositionView;
     std::atomic_bool residentPreviewPending{false};
     std::atomic<quint64> fileJob{0};
 };
@@ -217,6 +220,7 @@ public:
     void stop() {
         if (m_stopped) return;
         m_stopped = true; m_timer->stop();
+        m_compositionReader.reset(m_core,m_session);
         if(!m_pendingWet.isEmpty()){m_pendingWet.clear();emit wetActionReady(false,QStringLiteral("后端已关闭"));}
         while(!m_pendingBrushPreferences.isEmpty()){pollBrushState();if(!m_pendingBrushPreferences.isEmpty())QThread::msleep(1);}
         { QMutexLocker lock(&m_connection->mutex); m_connection->session = nullptr; m_connection->core = nullptr; }
@@ -333,6 +337,7 @@ signals:
     void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform,QVariantList committedStrokes);
     void thumbnailReady(quint64 generation, quint64 revision, quint64 layer, QString image);
     void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request, quint64 frameId);
+    void compositionReady(CompositionPacketPtr packet,quint64 serial,QString fallback);
     void failure(QString message);
     void completed(bool workerThread);
     void finished();
@@ -477,6 +482,19 @@ public:
         emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}},history,{{"points",transformPoints},{"warp",transform.warp!=0},{"interpolation",transform.interpolation},{"skewH",transform.skew_h},{"skewV",transform.skew_v}},committedStrokes); m_publication = info.publication;m_strokeCommitCursor=info.completed_sequence;
         return true;
     }
+    void watchCompositionAcknowledgement(quint64 sequence){
+        pollCompositionAcknowledgement(++m_compositionAckWatch,sequence,256);
+    }
+    void pollCompositionAcknowledgement(quint64 watch,quint64 sequence,int remaining){
+        if(m_stopped || !m_session || watch!=m_compositionAckWatch)return;
+        auto info=dto<PaintSessionInfo>();
+        if(paint_session_info(m_core,m_session,&info)==PAINT_OK && info.completed_sequence>=sequence && publish(info)){
+            InteractionTrace::point("move.worker.compositionAcknowledgement",double(sequence));return;
+        }
+        // Bounded asynchronous acknowledgement observation only. It never reads
+        // pixels, waits for the actor, or replaces the ordinary recovery poll.
+        if(remaining>0)QTimer::singleShot(1,this,[this,watch,sequence,remaining]{pollCompositionAcknowledgement(watch,sequence,remaining-1);});
+    }
     void poll() {
         if (!m_session || m_stopped) return;
         pollTaskProgress();
@@ -545,6 +563,16 @@ public:
         }
         pollMovePreparation();
         pollResidentPreview();
+        if(!m_connection->compositionPending.load()){
+            CompositionViewRequest view;
+            {QMutexLocker lock(&m_connection->mutex);view=m_connection->compositionView;}
+            QString fallback=m_compositionFallback;
+            auto packet=m_compositionReader.poll(m_core,m_session,info,view,fallback);
+            if(packet || fallback!=m_compositionFallback){
+                m_compositionFallback=fallback;m_connection->compositionPending=true;
+                emit compositionReady(std::move(packet),view.serial,fallback);
+            }
+        }
         const int pollInterval=m_residentPreview?8:16;
         if(m_timer->interval()!=pollInterval)m_timer->setInterval(pollInterval);
         for (uint32_t view = 0; view < 2; ++view) {
@@ -933,6 +961,9 @@ public:
     QTimer *m_timer;
     PaintCore *m_core = nullptr;
     PaintSession *m_session = nullptr;
+    CompositionReader m_compositionReader;
+    quint64 m_compositionAckWatch=0;
+    QString m_compositionFallback;
     quint64 m_layerCopySequence=0;
     ResidentPreviewPtr m_residentPreview;
     ResidentPreviewAssetsPtr m_movePreparation;
@@ -1098,7 +1129,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         const bool changedLayers = m_layers != layers;
         const bool activeChanged = info.active_layer_id != m_active;
         const bool changedGeneration = info.document_generation != m_generation;
-        if(changedGeneration){m_residentPreview.reset();m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
+        if(changedGeneration){clearCompositionEdit();m_residentPreview.reset();m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
         else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
         if(changedGeneration) m_nextDefaultLayer=1;
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
@@ -1107,13 +1138,18 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(publishedTransform && !m_transformPublished){
             m_transformInitialPoints=transform.value("points").toList();m_residentPreviewFloor=info.revision;
             // Placement opens inside the file worker: opt in after file-result delivery.
-            if(m_residentGpuPreviewAvailable)QTimer::singleShot(0,this,[this]{if(m_transformActive && m_transformPublished && m_pendingTransform<=m_completedSequence && m_residentGpuPreviewAvailable)submitTransform(PAINT_TRANSFORM_ENABLE_RESIDENT);});
+            if(m_residentGpuPreviewAvailable && !m_compositionTransform && !m_compositionTransformCpu)QTimer::singleShot(0,this,[this]{if(m_transformActive && m_transformPublished && !m_compositionTransform && !m_compositionTransformCpu && m_pendingTransform<=m_completedSequence && m_residentGpuPreviewAvailable)submitTransform(PAINT_TRANSFORM_ENABLE_RESIDENT);});
             emit transformChanged();
         }
         m_transformPublished=publishedTransform;
+        if(!publishedTransform && info.completed_sequence>=m_pendingTransform)m_compositionTransformCpu=false;
         if(!publishedTransform && m_transformActive && info.completed_sequence>=m_pendingTransform && m_afterTransform){auto action=std::move(m_afterTransform);QTimer::singleShot(0,this,std::move(action));}
         if(info.completed_sequence>=m_pendingTransform)m_transformActive=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
         if(info.completed_sequence>=m_lastTransform){const auto points=transform.value("points").toList();const bool warp=transform.value("warp").toBool();const int interpolation=transform.value("interpolation").toInt();const auto skewH=transform.value("skewH").toDouble(),skewV=transform.value("skewV").toDouble();if(points!=m_transformPoints || warp!=m_transformWarp || interpolation!=m_transformInterpolation || skewH!=m_transformSkewH || skewV!=m_transformSkewV){m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=skewH;m_transformSkewV=skewV;emit transformChanged();}}
+        if(m_compositionTransform && info.completed_sequence>=m_pendingTransform){
+            if(publishedTransform){if(!m_compositionMoveConfirmed)m_compositionTargetNs=InteractionTrace::now();m_compositionMoveConfirmed=true;refreshCompositionTransform();}
+            else {m_compositionFinalRevision=info.revision;}
+        }
         InteractionTrace::Scope metadataTrace("move.gui.metadata");
         if(metadataTrace.active)metadataTrace.event.value=double(info.completed_sequence);
         InteractionTrace::point("move.metadata.revision",double(info.revision));
@@ -1132,12 +1168,20 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
                 m_moveReceipt={m_layerMoveSequence,info.document_generation,info.revision,m_layerMoveSubmittedKind};
                 InteractionTrace::point("move.receipt.sequence",double(m_layerMoveSequence));
                 InteractionTrace::point("move.receipt.kind",m_layerMoveSubmittedKind);
+                if(m_compositionEditBase)m_compositionFinalRevision=info.revision;
             }
+            if(m_compositionEditBase && !m_compositionFinalRevision)clearCompositionEdit();
             m_layerMoveActive=false;m_layerMoveStarting=false;m_layerMoveClosing=false;
             m_layerMoveAnchor.reset();m_layerMoveGpuPresentation=false;m_layerMoveSource=0;
             m_layerMoveTimer->stop();
         } else if(m_layerMoveStarting && m_completedSequence>=m_layerMoveSequence) {
             m_layerMoveStarting=false;
+            if(m_compositionEditBase){
+                InteractionTrace::point("move.composition.targetConfirmed",double(m_compositionBeginSequence));
+                m_compositionTargetNs=InteractionTrace::now();m_compositionMoveConfirmed=true;
+                if(m_compositionMovePick)m_compositionEditTargets={info.active_layer_id};
+                refreshCompositionMove();
+            }
             if(m_layerMoveGpuPresentation) {
                 // BEGIN may have rebuilt or rejected a preparation after an
                 // intervening edit. Never wait for a source that the core did not adopt.
@@ -1238,6 +1282,20 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         m_movePreparation=std::move(assets);
         m_movePreparationCompleted=true;
         emit movePreparationChanged();
+    });
+    connect(m_worker,&BackendWorker::compositionReady,this,[this](CompositionPacketPtr packet,quint64 serial,QString fallback){
+        m_connection->compositionPending=false;
+        {QMutexLocker lock(&m_connection->mutex);if(m_closing || serial!=m_connection->compositionView.serial)return;}
+        if(m_compositionFinalRevision && !fallback.isEmpty() && fallback!=QStringLiteral("CPU: disabled or active editing session") && fallback!=QStringLiteral("CPU: composition view unavailable")){
+            QMutexLocker lock(&m_connection->mutex);
+            if(m_connection->compositionView.enabled && !m_connection->compositionView.region.isEmpty() && !m_connection->compositionView.pixels.isEmpty())m_compositionFinalFallback=true;
+        }
+        m_compositionFallback=std::move(fallback);
+        if(packet && packet->info.key.document_generation==m_generation &&
+           (!m_compositionPacket || packet->info.key.revision>=m_compositionPacket->info.key.revision))m_compositionPacket=std::move(packet);
+        else if(!m_compositionFallback.isEmpty())m_compositionPacket.reset();
+        refreshCpuDisplayDemand();
+        emit frameChanged();
     });
     connect(m_worker, &BackendWorker::pixels, this, [this](int view, const QImage &image, QRectF region, quint64 generation, quint64 revision, quint64 request, quint64 frameId) {
         m_connection->framePending[view].store(false);
@@ -1418,7 +1476,9 @@ void PaintCoreClient::ensureOverview() {
     const QRectF document(0,0,documentWidth(),documentHeight());
     if(document.isEmpty() || (m_viewEnabled[1] && m_requestedRegions[1]==document))return;
     const auto scale=std::min(1.,512./std::max(document.width(),document.height()));
+    m_requestingAutomaticOverview=true;
     requestViewport(1,document,{std::max(1,qCeil(document.width()*scale)),std::max(1,qCeil(document.height()*scale))});
+    m_requestingAutomaticOverview=false;
 }
 qreal PaintCoreClient::currentMovePreparationScale() const {
     qreal scale=1;
@@ -1452,6 +1512,10 @@ void PaintCoreClient::clearLayerMovePreparation() {
 }
 void PaintCoreClient::requestLayerMovePreparation() {
     if(m_layerMoveActive)return;
+    if(m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation &&
+       m_compositionPacket->info.key.revision==m_revision && compositionDisplayRequested()){
+        clearLayerMovePreparation();return;
+    }
     if(!m_ready || m_closing || m_pendingNew || !m_moveTool ||
        m_liquifyActive || m_transformActive || m_drawing || m_fileBusy || !m_active){
         clearLayerMovePreparation();
@@ -1490,8 +1554,159 @@ void PaintCoreClient::requestLayerMovePreparation() {
     InteractionTrace::point("move.prepare.sequence",double(sequence));
     if(status!=PAINT_OK)m_movePreparationPendingRequest=0;
 }
+CompositionPacketPtr PaintCoreClient::compositionPacket()const{
+    if(m_blendPreviewLayer || m_compositionFinalFallback || m_compositionTransformCpu)return {};
+    if(m_compositionFinalRevision && m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation &&
+       m_compositionPacket->info.key.revision>=m_compositionFinalRevision)return m_compositionPacket;
+    if(m_compositionEditFrame)return m_compositionEditFrame;
+    if(m_compositionEditBase)return m_compositionEditBase;
+    return m_compositionPacket;
+}
+void PaintCoreClient::clearCompositionEdit(){
+    m_compositionEditBase.reset();m_compositionEditFrame.reset();m_compositionEditTargets.clear();
+    m_compositionFinalRevision=m_compositionBeginSequence=0;m_compositionMoveConfirmed=false;
+    m_compositionTransform=m_compositionFinalFallback=false;m_compositionEditFallbackReason.clear();m_compositionTargetNs=0;
+}
+bool PaintCoreClient::prepareCompositionMove(bool pick){
+    if(m_compositionFinalRevision){m_compositionFinalFallback=true;m_compositionTransform=false;emit frameChanged();}
+    if(m_compositionEditBase || !m_compositionPacket || !m_residentGpuPreviewAvailable ||
+       !compositionDisplayRequested() ||
+       m_compositionPacket->info.key.document_generation!=m_generation || m_compositionPacket->info.key.revision!=m_revision)return false;
+    const auto targets=currentMoveTargets();
+    if(!pick)for(auto id:targets){
+        const auto at=std::find_if(m_compositionPacket->nodes.begin(),m_compositionPacket->nodes.end(),[id](const auto &node){return node.layer_id==id && node.kind!=PAINT_COMPOSITION_MASK;});
+        if(at==m_compositionPacket->nodes.end())return false;
+    }
+    m_compositionEditBase=m_compositionPacket;m_compositionEditTargets=targets;m_compositionMovePick=pick;
+    m_compositionMoveConfirmed=false;m_compositionFinalRevision=0;return true;
+}
+bool PaintCoreClient::prepareCompositionTransform(){
+    if(m_compositionPacket && !m_compositionPacket->operations.isEmpty())return false;
+    if(!m_compositionPrecisionAvailable || selectionEnabled() || currentMoveTargets().size()!=1 || !prepareCompositionMove(false))return false;
+    const auto id=m_compositionEditTargets.front();
+    for(const auto &node:m_compositionEditBase->nodes)if(node.layer_id==id && node.kind==0){
+        if(node.mask_index<quint32(m_compositionEditBase->nodes.size()) || quint32(node.reserved)!=0){clearCompositionEdit();return false;}
+        m_compositionTransform=true;return true;
+    }
+    clearCompositionEdit();return false;
+}
+void PaintCoreClient::refreshCompositionTransform(const PaintTransform *geometry){
+    if(!m_compositionTransform || !m_compositionMoveConfirmed || m_transformInitialPoints.size()!=16 || m_transformPoints.size()!=16)return;
+    auto t=CompositionTransform::allocate();
+    if(!t){m_compositionFinalFallback=true;emit frameChanged();return;}
+    t->geometry=dto<PaintTransform>();
+    if(geometry)t->geometry=*geometry;
+    else {
+        t->geometry.warp=m_transformWarp;t->geometry.interpolation=m_transformInterpolation;
+        t->geometry.skew_h=m_transformSkewH;t->geometry.skew_v=m_transformSkewV;
+        for(int i=0;i<16;++i){const auto p=m_transformPoints[i].toPointF();t->geometry.points[i*2]=p.x();t->geometry.points[i*2+1]=p.y();}
+    }
+    const auto top=m_transformInitialPoints[0].toPointF(),right=m_transformInitialPoints[3].toPointF(),bottom=m_transformInitialPoints[12].toPointF();
+    t->sourceBounds={top,QSizeF(right.x()-top.x(),bottom.y()-top.y())};
+    if(m_compositionEditFrame && m_compositionEditFrame->transform &&
+       m_compositionEditFrame->transform->sourceBounds==t->sourceBounds &&
+       std::memcmp(&m_compositionEditFrame->transform->geometry,&t->geometry,sizeof(PaintTransform))==0)return;
+    if(t->sourceBounds.isEmpty() || t->sourceBounds.width()>4096 || t->sourceBounds.height()>4096 ||
+       std::abs(top.x())>1048576 || std::abs(top.y())>1048576){m_compositionFinalFallback=true;emit frameChanged();return;}
+    t->display=dto<PaintTransformDisplayGeometry>();t->vertices=QByteArray(145*145*16,Qt::Uninitialized);
+    const auto status=paint_transform_display_geometry(&t->geometry,&t->display,reinterpret_cast<float*>(t->vertices.data()),84100);
+    if(status!=PAINT_OK){m_compositionFinalFallback=true;emit frameChanged();return;}
+    t->vertices.resize(qsizetype(t->display.vertex_bytes));
+    double minX=INFINITY,minY=INFINITY,maxX=-INFINITY,maxY=-INFINITY;
+    const float *vertices=reinterpret_cast<const float*>(t->vertices.constData());
+    for(qsizetype i=0;i<t->vertices.size()/16;++i){minX=std::min(minX,double(vertices[i*4]));minY=std::min(minY,double(vertices[i*4+1]));maxX=std::max(maxX,double(vertices[i*4]));maxY=std::max(maxY,double(vertices[i*4+1]));}
+    if(!t->geometry.warp){minX=minY=INFINITY;maxX=maxY=-INFINITY;for(int i:{0,3,12,15}){minX=std::min(minX,t->geometry.points[i*2]);minY=std::min(minY,t->geometry.points[i*2+1]);maxX=std::max(maxX,t->geometry.points[i*2]);maxY=std::max(maxY,t->geometry.points[i*2+1]);}}
+    t->scale=std::min((std::ceil(maxX)-std::floor(minX))/t->sourceBounds.width(),(std::ceil(maxY)-std::floor(minY))/t->sourceBounds.height());
+    for(int i=0;i<m_compositionEditBase->nodes.size();++i)if(m_compositionEditBase->nodes[i].layer_id==m_compositionEditTargets.front() && m_compositionEditBase->nodes[i].kind==0){t->node=i;break;}
+    if(t->node<0){m_compositionFinalFallback=true;emit frameChanged();return;}
+    auto next=std::make_shared<CompositionPacket>(*m_compositionEditBase);
+    next->transform=std::move(t);next->preview=true;next->geometrySequence=++m_compositionGeometry;next->editSequence=m_compositionBeginSequence;
+    m_compositionEditFrame=std::move(next);InteractionTrace::point("transform.composition.localGeometry",double(m_compositionGeometry));emit frameChanged();
+}
+void PaintCoreClient::refreshCompositionMove(){
+    if(!m_compositionEditBase || !m_compositionMoveConfirmed)return;
+    auto next=std::make_shared<CompositionPacket>(*m_compositionEditBase);
+    const auto delta=m_layerMoveFinish && !m_layerMoveCommit?QPoint{}:m_layerMoveDelta;
+    QSet<int> moving;
+    for(auto id:m_compositionEditTargets){
+        int index=-1;for(int i=0;i<next->nodes.size();++i)if(next->nodes[i].layer_id==id && next->nodes[i].kind!=PAINT_COMPOSITION_MASK){index=i;break;}
+        if(index<0){clearCompositionEdit();return;}
+        moving.insert(index);
+        if(next->nodes[index].kind==PAINT_COMPOSITION_GROUP){
+            for(int i=0;i<next->nodes.size();++i){
+                int ancestor=i;
+                for(int depth=0;depth<17;++depth){
+                    const auto parent=quint32((next->nodes[ancestor].reserved>>33)&0xffff);
+                    if(!parent || parent>quint32(next->nodes.size()))break;
+                    ancestor=int(parent)-1;if(ancestor==index){moving.insert(i);break;}
+                }
+            }
+        }
+    }
+    // Masks follow their actual owner's movement only when linked. In
+    // particular, moving a child leaves its ancestor group's mask in place.
+    QSet<int> pixels;
+    for(int index:moving)if(next->nodes[index].kind!=PAINT_COMPOSITION_MASK){
+        if(next->nodes[index].kind==PAINT_COMPOSITION_RASTER)pixels.insert(index);
+        const auto mask=next->nodes[index].mask_index;
+        if(mask<quint32(next->nodes.size()) && !(next->nodes[int(mask)].reserved & PAINT_COMPOSITION_NODE_FIXED_MASK))pixels.insert(int(mask));
+    }
+    for(int index:pixels){
+        auto &node=next->nodes[index];const qint64 x=qint64(node.offset_x)+delta.x(),y=qint64(node.offset_y)+delta.y();
+        if(std::abs(x)>1048576 || std::abs(y)>1048576){clearCompositionEdit();return;}
+        node.offset_x=int(x);node.offset_y=int(y);
+    }
+    next->geometrySequence=++m_compositionGeometry;next->editSequence=m_compositionBeginSequence;
+    next->presentationDelta=delta;next->preview=true;m_compositionEditFrame=std::move(next);
+    InteractionTrace::point("move.composition.localGeometry",double(m_compositionGeometry));
+    emit frameChanged();
+}
+void PaintCoreClient::compositionPrimaryAdopted(quint64 generation,quint64 epoch,quint64 revision){
+    if(!m_compositionFinalRevision || generation!=m_generation || revision<m_compositionFinalRevision)return;
+    {QMutexLocker lock(&m_connection->mutex);if(epoch!=m_connection->compositionView.epoch)return;}
+    InteractionTrace::point("move.composition.finalPrimaryAdopted",double(revision));
+    clearCompositionEdit();emit frameChanged();
+}
+void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
+    m_compositionDeviceAvailable=enabled;
+    enabled=enabled && compositionDisplayRequested() && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive && !m_blendPreviewLayer;
+    {
+        QMutexLocker lock(&m_connection->mutex);auto &view=m_connection->compositionView;
+        if(view.epoch!=epoch || view.enabled!=enabled || view.generation!=m_generation || view.region!=m_requestedRegions[0] || view.pixels!=m_requestedPixels[0]){
+            ++view.serial;view.epoch=epoch;view.enabled=enabled;view.generation=m_generation;view.region=m_requestedRegions[0];view.pixels=m_requestedPixels[0];
+            if(!enabled || (m_compositionPacket && m_compositionPacket->info.key.document_generation!=m_generation))m_compositionPacket.reset();
+        }
+    }
+    refreshCpuDisplayDemand();
+}
+void PaintCoreClient::refreshCpuDisplayDemand(){
+    if(!m_ready || m_closing)return;
+    const auto packet=compositionPacket();
+    quint64 epoch=0;bool enabled=false;
+    {QMutexLocker lock(&m_connection->mutex);epoch=m_connection->compositionView.epoch;enabled=m_connection->compositionView.enabled;}
+    const bool gpu=m_compositionDeviceAvailable && compositionDisplayRequested() && qEnvironmentVariableIntValue("DRAWVERSE_CPU_DISPLAY_REFERENCE")!=1 &&
+        packet && packet->info.key.document_generation==m_generation && packet->info.key.device_epoch==epoch &&
+        (enabled || (m_compositionEditBase && !m_compositionFinalFallback));
+    for(int view=0;view<2;++view){
+        const bool suppressed=gpu && (view==0 ? !m_cpuSamplingRequired && !m_eyedropperTool : !m_overviewExplicit);
+        if(m_cpuViewSuppressed[view]==suppressed)continue;
+        m_cpuViewSuppressed[view]=suppressed;
+        // A new mailbox request cancels in-flight CPU work. Keep the last
+        // complete display while GPU preparation or CPU recovery is pending.
+        m_requests[view]=0;
+        const bool automatic=m_requestingAutomaticOverview;
+        m_requestingAutomaticOverview=true;
+        requestViewport(view,m_requestedRegions[view],m_requestedPixels[view],m_viewEnabled[view]);
+        m_requestingAutomaticOverview=automatic;
+    }
+}
 void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, bool enabled) {
     if (!m_ready || m_closing || view < 0 || view > 1) return;
+    if(view==1 && !m_requestingAutomaticOverview){
+        if(m_overviewExplicit!=enabled)m_requests[view]=0;
+        m_overviewExplicit=enabled;
+        if(enabled)m_cpuViewSuppressed[view]=false;
+    }
     if (enabled) {
         if (!std::isfinite(region.x()) || !std::isfinite(region.y()) || !std::isfinite(region.width()) ||
             !std::isfinite(region.height()) || region.isEmpty() || pixels.isEmpty()) return;
@@ -1501,6 +1716,7 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
     }
     if (m_requests[view] && m_viewEnabled[view] == enabled && m_requestedRegions[view] == region && m_requestedPixels[view] == pixels) return;
     auto viewport = dto<PaintViewport>(); viewport.view_id = static_cast<uint32_t>(view); viewport.enabled = enabled ? 1 : 0;
+    if(m_cpuViewSuppressed[view] && !(view==1 && m_overviewExplicit))viewport.enabled=0;
     viewport.document_generation = m_generation; viewport.x = region.x(); viewport.y = region.y();
     viewport.width = region.width(); viewport.height = region.height();
     viewport.pixel_width = static_cast<uint32_t>(pixels.width()); viewport.pixel_height = static_cast<uint32_t>(pixels.height());
@@ -1516,6 +1732,26 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
     if (status == PAINT_OK) {
         m_requests[view] = request; m_requestedRegions[view] = region; m_requestedPixels[view] = pixels; m_viewEnabled[view] = enabled;
         if (!enabled) { m_frames[view] = {}; m_regions[view] = {}; emit frameChanged(); }
+        if(view==0 && enabled && m_compositionEditBase &&
+           (m_compositionEditBase->region!=region || m_compositionEditBase->pixels!=pixels)){
+            const double scale=std::min(region.width()/pixels.width(),region.height()/pixels.height());
+            const int lod=scale>=1?int(std::ceil(std::log2(scale))):0;
+            if(pixels.width()>4096 || pixels.height()>4096 || quint64(pixels.width())*pixels.height()>4194304 || lod>6){
+                m_compositionFinalFallback=true;m_compositionEditFallbackReason=QStringLiteral("CPU: composition edit viewport budget");
+            }else{
+                // The bounded source plan contains every visible layer tile,
+                // not just the initial viewport. Retarget only Qt's display
+                // projection; the immutable Rust source/lease identity stays.
+                const auto project=[&](const CompositionPacketPtr &source){
+                    auto next=std::make_shared<CompositionPacket>(*source);
+                    next->region=region;next->pixels=pixels;next->lod=lod;next->geometrySequence=++m_compositionGeometry;
+                    return CompositionPacketPtr(std::move(next));
+                };
+                m_compositionEditBase=project(m_compositionEditBase);
+                if(m_compositionEditFrame)m_compositionEditFrame=project(m_compositionEditFrame);
+            }
+            emit frameChanged();
+        }
         requestLayerMovePreparation();
     } else if (!error.isEmpty()) showError(error);
 }
@@ -1963,14 +2199,14 @@ void PaintCoreClient::previewLayerBlend(quint64 id,int blend) {
     bool found=false;
     for(const auto &value:m_layers) {const auto layer=value.toMap();if(layer.value("id").toULongLong()==id && !layer.value("mask").toBool() && (blend!=27 || layer.value("group").toBool()) && !(layer.value("effectiveLocks").toUInt()&PAINT_LOCK_ALL))found=true;}
     if(!found || (m_blendPreviewLayer==id && m_blendPreviewMode==blend))return;
-    m_blendPreviewLayer=id;m_blendPreviewMode=blend;
+    m_blendPreviewLayer=id;m_blendPreviewMode=blend;emit frameChanged();
     for(int view=0;view<2;++view)if(m_viewEnabled[view]) {
         m_requests[view]=0;requestViewport(view,m_requestedRegions[view],m_requestedPixels[view]);
     }
 }
 void PaintCoreClient::clearLayerBlendPreview() {
     if(!m_blendPreviewLayer)return;
-    m_blendPreviewLayer=0;
+    m_blendPreviewLayer=0;emit frameChanged();
     for(int view=0;view<2;++view)if(m_viewEnabled[view]) {
         m_requests[view]=0;requestViewport(view,m_requestedRegions[view],m_requestedPixels[view]);
     }
@@ -1987,30 +2223,35 @@ bool PaintCoreClient::beginLayerMove(QPointF position,bool pick) {
     if(!m_ready || m_closing || m_fileBusy || m_drawing || m_liquifyActive || m_transformActive || layerEditBusy())return false;
     if(pick && (!std::isfinite(position.x()) || !std::isfinite(position.y()) || position.x()<0 || position.y()<0 || position.x()>=m_width || position.y()>=m_height))return false;
     const auto targets=currentMoveTargets();
+    const bool composition=prepareCompositionMove(pick);
     const bool prepared=m_residentGpuPreviewAvailable && !pick && m_movePreparationCompleted &&
         m_movePreparation && m_movePreparationGeneration==m_generation &&
         m_movePreparationRevision==m_revision &&
         (m_movePreparationIds.size()>1 || m_movePreparationLayer==m_active) &&
         m_movePreparationIds==targets;
-    const bool deferred=prepared || (pick && m_residentGpuPreviewAvailable);
-    const auto kind=pick?(deferred?PAINT_LAYER_MOVE_PICK_DEFERRED:PAINT_LAYER_MOVE_PICK):(prepared?PAINT_LAYER_MOVE_BEGIN_DEFERRED:PAINT_LAYER_MOVE_BEGIN);
+    const bool deferred=!composition && (prepared || (pick && m_residentGpuPreviewAvailable));
+    const auto kind=pick?(deferred?PAINT_LAYER_MOVE_PICK_DEFERRED:PAINT_LAYER_MOVE_PICK):(deferred?PAINT_LAYER_MOVE_BEGIN_DEFERRED:PAINT_LAYER_MOVE_BEGIN);
     uint64_t sequence=0;
     PaintStatus status;QString error;
-    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(!pick && m_selectedLayers.size()>1){QVector<uint64_t> ids;for(auto id:m_selectedLayers)ids.append(id);status=paint_session_begin_layer_moves(m_connection->core,m_connection->session,ids.data(),uint32_t(ids.size()),prepared?1:0,&sequence);}else status=paint_session_layer_move(m_connection->core,m_connection->session,kind,m_active,pick?int(position.x()):0,pick?int(position.y()):0,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
-    if(status!=PAINT_OK){showError(error);return false;}
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session){if(composition)clearCompositionEdit();return false;}if(!pick && m_selectedLayers.size()>1){QVector<uint64_t> ids;for(auto id:m_selectedLayers)ids.append(id);status=paint_session_begin_layer_moves(m_connection->core,m_connection->session,ids.data(),uint32_t(ids.size()),deferred?1:0,&sequence);}else status=paint_session_layer_move(m_connection->core,m_connection->session,kind,m_active,pick?int(position.x()):0,pick?int(position.y()):0,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    if(status!=PAINT_OK){if(composition)clearCompositionEdit();showError(error);return false;}
     if(trace.active)trace.event.value=double(sequence);
     InteractionTrace::point("move.begin.prepared",prepared);
     m_layerMoveSubmittedKind=kind;
     m_layerMoveSequence=sequence;m_layerMoveDelta={};m_layerMoveDirty=false;m_layerMoveFinish=false;
+    if(composition)m_compositionBeginSequence=sequence;
     m_layerMoveActive=true;m_layerMoveStarting=true;m_layerMoveClosing=false;
     m_layerMoveGpuPresentation=deferred;m_layerMoveSource=prepared?m_movePreparation->sourceId:0;m_layerMoveAnchor.reset();
-    m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();m_layerMoveTimer->start();emit stateChanged();return true;
+    m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();m_layerMoveTimer->start();
+    if(composition)QMetaObject::invokeMethod(m_worker,[worker=m_worker,sequence]{worker->watchCompositionAcknowledgement(sequence);},Qt::QueuedConnection);
+    emit stateChanged();return true;
 }
 void PaintCoreClient::updateLayerMove(QPoint delta) {
     if(!m_layerMoveActive || m_layerMoveClosing || m_layerMoveFinish)return;
     if(delta==m_layerMoveDelta)return;
     InteractionTrace::point("move.changedDelta.x",delta.x());
     m_layerMoveDelta=delta;m_layerMoveDirty=true;
+    refreshCompositionMove();
     refreshLayerMovePresentation();
 }
 void PaintCoreClient::refreshLayerMovePresentation() {
@@ -2033,6 +2274,7 @@ void PaintCoreClient::refreshLayerMovePresentation() {
 void PaintCoreClient::finishLayerMove(QPoint delta,bool commit) {
     if(!m_layerMoveActive || m_layerMoveClosing)return;
     m_layerMoveDelta=delta;m_layerMoveFinish=true;m_layerMoveCommit=commit;
+    refreshCompositionMove();
     if(!m_layerMoveAnchor)m_layerMoveGpuPresentation=false;
     refreshLayerMovePresentation();flushLayerMove();
 }
@@ -2056,7 +2298,10 @@ void PaintCoreClient::flushLayerMove() {
     if(status!=PAINT_OK){showError(error);m_layerMoveFinish=true;m_layerMoveCommit=false;return;}
     m_layerMoveSubmittedKind=kind;
     m_layerMoveSequence=sequence;m_layerMoveDirty=false;
-    if(m_layerMoveFinish){m_layerMoveClosing=true;if(m_layerMoveCommit && !delta.isNull())m_pendingMutation=sequence;}
+    if(m_layerMoveFinish){
+        m_layerMoveClosing=true;if(m_layerMoveCommit && !delta.isNull())m_pendingMutation=sequence;
+        if(m_compositionEditBase)QMetaObject::invokeMethod(m_worker,[worker=m_worker,sequence]{worker->watchCompositionAcknowledgement(sequence);},Qt::QueuedConnection);
+    }
 }
 bool PaintCoreClient::moveLayer(quint64 id,int dx,int dy) {
     if(!m_ready || m_liquifyActive || m_transformActive || m_drawing || layerEditBusy() || (!dx && !dy)) return false;
@@ -2138,11 +2383,18 @@ bool PaintCoreClient::submitLayerAction(quint32 kind,const QByteArray &bytes) {
         if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){showError(error);return false;}
     m_pendingLayer=sequence;
-    if(kind==PAINT_LAYER_ACTION_COPY || kind==PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS){m_pendingCopy=sequence;QMetaObject::invokeMethod(m_worker,[worker=m_worker,sequence]{worker->watchLayerCopy(sequence);},Qt::QueuedConnection);}
-    else {m_pendingMutation=sequence;m_modified=true;}
+    const bool copy=kind==PAINT_LAYER_ACTION_COPY || kind==PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS;
+    if(copy || kind==PAINT_LAYER_ACTION_CUT || kind==PAINT_LAYER_ACTION_CUT_SELECTED_PIXELS){m_pendingCopy=sequence;QMetaObject::invokeMethod(m_worker,[worker=m_worker,sequence]{worker->watchLayerCopy(sequence);},Qt::QueuedConnection);}
+    if(!copy){m_pendingMutation=sequence;m_modified=true;}
     emit stateChanged();return true;
 }
 bool PaintCoreClient::copySelectedLayers(){return submitLayerAction(selectionEnabled()?PAINT_LAYER_ACTION_COPY_SELECTED_PIXELS:PAINT_LAYER_ACTION_COPY);}
+bool PaintCoreClient::cutSelectedLayers(){
+    for(const auto &value:m_layers){const auto layer=value.toMap();if(layer.value("id").toULongLong()==m_active && layer.value("mask").toBool()){
+        showError(QStringLiteral("无法单独剪切蒙版，请选择所属图层"));return false;
+    }}
+    return submitLayerAction(selectionEnabled()?PAINT_LAYER_ACTION_CUT_SELECTED_PIXELS:PAINT_LAYER_ACTION_CUT);
+}
 bool PaintCoreClient::pasteLayers(){return canPasteLayers() && submitLayerAction(PAINT_LAYER_ACTION_PASTE,QGuiApplication::clipboard()->mimeData()->data("application/x-drawverse-layers-v1"));}
 bool PaintCoreClient::duplicateSelectedLayers(){return submitLayerAction(PAINT_LAYER_ACTION_DUPLICATE);}
 bool PaintCoreClient::mergeSelectedLayers(){return canMergeLayers() && submitLayerAction(PAINT_LAYER_ACTION_MERGE);}
@@ -2446,24 +2698,40 @@ bool PaintCoreClient::saveStorageSettings(const QString &directory,int memoryMiB
 
 bool PaintCoreClient::placeImage(const QUrl &path){return submitFile(path,PAINT_FILE_PLACE,PAINT_FILE_AUTO);}
 bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometry){
+    InteractionTrace::Scope trace("transform.submit");
+    InteractionTrace::point("transform.submit.kind",kind);
     if(!m_ready || m_closing || m_fileBusy || m_drawing || (kind==PAINT_TRANSFORM_BEGIN && (m_liquifyActive || m_transformActive || layerEditBusy())))return false;
     uint64_t sequence=0;PaintStatus status;QString error;
-    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(kind==PAINT_TRANSFORM_BEGIN){QList<quint64> ids=m_selectedLayers;if(ids.isEmpty())ids={m_active};QVector<uint64_t> targets;for(auto id:ids)targets.append(id);status=(m_residentGpuPreviewAvailable?paint_session_begin_transform_layers_deferred:paint_session_begin_transform_layers)(m_connection->core,m_connection->session,targets.data(),targets.size(),&sequence);}else status=paint_session_transform(m_connection->core,m_connection->session,kind,geometry,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;if(kind==PAINT_TRANSFORM_BEGIN){QList<quint64> ids=m_selectedLayers;if(ids.isEmpty())ids={m_active};QVector<uint64_t> targets;for(auto id:ids)targets.append(id);status=(m_residentGpuPreviewAvailable && !m_compositionTransform && !m_compositionTransformCpu?paint_session_begin_transform_layers_deferred:paint_session_begin_transform_layers)(m_connection->core,m_connection->session,targets.data(),targets.size(),&sequence);}else status=paint_session_transform(m_connection->core,m_connection->session,kind,geometry,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){
         // Invalid intermediate handles keep the last valid geometry; the next move can recover.
         if(kind!=PAINT_TRANSFORM_UPDATE || status!=PAINT_INVALID_ARGUMENT || !error.contains("degenerate or crossed transform"))showError(error);
         return false;
     }m_lastTransform=sequence;
+    if(trace.active)trace.event.value=double(sequence);
     if(kind!=PAINT_TRANSFORM_UPDATE)m_pendingTransform=sequence;
     if(kind==PAINT_TRANSFORM_BEGIN){m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();}
     if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE || kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL)m_pendingMutation=sequence;
     if(kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL)m_pendingLayer=sequence;
+    if(m_compositionTransform && kind!=PAINT_TRANSFORM_UPDATE){
+        if(kind==PAINT_TRANSFORM_BEGIN)m_compositionBeginSequence=sequence;
+        QMetaObject::invokeMethod(m_worker,[worker=m_worker,sequence]{worker->watchCompositionAcknowledgement(sequence);},Qt::QueuedConnection);
+    }
     emit stateChanged();return true;
 }
-bool PaintCoreClient::beginTransform(){clearLayerBlendPreview();return submitTransform(PAINT_TRANSFORM_BEGIN);}
-bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int interpolation,qreal skewH,qreal skewV){if(!m_transformActive || points.size()!=16)return false;auto g=dto<PaintTransform>();g.warp=warp;g.interpolation=interpolation;g.skew_h=qIsFinite(skewH)?skewH:m_transformSkewH;g.skew_v=qIsFinite(skewV)?skewV:m_transformSkewV;for(int i=0;i<16;++i){const auto p=points[i].toPointF();g.points[i*2]=p.x();g.points[i*2+1]=p.y();}if(!submitTransform(PAINT_TRANSFORM_UPDATE,&g))return false;m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=g.skew_h;m_transformSkewV=g.skew_v;emit transformChanged();return true;}
+bool PaintCoreClient::beginTransform(){
+    clearLayerBlendPreview();const bool planned=m_compositionPacket && compositionDisplayRequested();
+    prepareCompositionTransform();m_compositionTransformCpu=planned && !m_compositionTransform;
+    if(submitTransform(PAINT_TRANSFORM_BEGIN))return true;
+    if(m_compositionTransform)clearCompositionEdit();m_compositionTransformCpu=false;return false;
+}
+bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int interpolation,qreal skewH,qreal skewV){if(!m_transformActive || points.size()!=16)return false;auto g=dto<PaintTransform>();g.warp=warp;g.interpolation=interpolation;g.skew_h=qIsFinite(skewH)?skewH:m_transformSkewH;g.skew_v=qIsFinite(skewV)?skewV:m_transformSkewV;for(int i=0;i<16;++i){const auto p=points[i].toPointF();g.points[i*2]=p.x();g.points[i*2+1]=p.y();}if(!submitTransform(PAINT_TRANSFORM_UPDATE,&g))return false;m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=g.skew_h;m_transformSkewV=g.skew_v;refreshCompositionTransform(&g);emit transformChanged();return true;}
 bool PaintCoreClient::checkpointTransform(){return m_transformActive && submitTransform(PAINT_TRANSFORM_CHECKPOINT);}
-bool PaintCoreClient::finishTransform(bool commit){return m_transformActive && submitTransform(commit?PAINT_TRANSFORM_COMMIT:PAINT_TRANSFORM_CANCEL);}
+bool PaintCoreClient::finishTransform(bool commit){
+    if(!m_transformActive || !submitTransform(commit?PAINT_TRANSFORM_COMMIT:PAINT_TRANSFORM_CANCEL))return false;
+    if(!commit && m_compositionTransform){auto frame=std::make_shared<CompositionPacket>(*m_compositionEditBase);frame->preview=true;frame->geometrySequence=++m_compositionGeometry;frame->editSequence=m_compositionBeginSequence;m_compositionEditFrame=std::move(frame);emit frameChanged();}
+    return true;
+}
 bool PaintCoreClient::flipImage(bool horizontal){if(m_transformActive || m_liquifyActive || layerEditBusy())return false;clearLayerBlendPreview();return submitTransform(horizontal?PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL:PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL);}
 bool PaintCoreClient::rasterizeImage(){return !m_transformActive && submitTransform(PAINT_TRANSFORM_RASTERIZE);}
 

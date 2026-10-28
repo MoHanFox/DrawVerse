@@ -6,6 +6,7 @@ use std::{
     sync::{Arc, Mutex, Weak},
     time::Instant,
 };
+pub mod composition;
 mod interactive;
 mod translation;
 pub use interactive::{render_interactive, render_sampled_preview};

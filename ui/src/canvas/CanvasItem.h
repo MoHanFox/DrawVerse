@@ -52,6 +52,8 @@ public:
     QRectF visibleDocumentRect() const;
     QRectF prefetchedDocumentRect() const;
     bool gpuDisplay() const;
+    Q_INVOKABLE QVariantMap compositionStatistics()const;
+    void observeCompositionReadback(std::shared_ptr<CompositionReadback> value){m_compositionCounters->readback=std::move(value);}
     bool forwardPreview() const {return !m_previewPart && m_residentPreview && m_residentPreview->forward;}
     int previewPart() const {return m_previewPart;}
     void setPreviewPart(int part) {if(part<0 || part>2 || part==m_previewPart)return;m_previewPart=part;refresh();emit residentPresentationChanged();}
@@ -114,6 +116,18 @@ protected:
     void hoverLeaveEvent(QHoverEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 private:
+    friend class CompositionStabilityTests;
+    void resetCompositionDevice();
+    void compositionFallback(QString reason,CompositionPacketPtr packet);
+    quint64 compositionDemand()const;
+    void retryCompositionIfPossible();
+    quint64 m_failedCompositionDemand=0,m_failedCompositionRelease=0,m_compositionRetries=0;
+    bool m_failedCompositionPreview=false;
+    CompositionPacketPtr m_compositionPacket;
+    std::shared_ptr<CompositionCounters> m_compositionCounters=std::make_shared<CompositionCounters>();
+    quint64 m_compositionEpoch=0;
+    bool m_compositionFailed=false;
+    QString m_compositionFailureReason;
     std::shared_ptr<CanvasPresentationObservation> m_presentationObserver;
     int m_previewPart=0;
     QRectF m_presentationRect;
@@ -155,6 +169,7 @@ private:
     PaintCoreClient *m_client = nullptr;
     QPointer<QQuickWindow> m_observedWindow;
     QImage m_image;
+    quint64 m_imageRevision=0;
     QImage m_overview;
     ResidentPreviewPtr m_residentPreview;
     ResidentPreviewAssetsPtr m_movePreparation;
@@ -174,6 +189,7 @@ private:
     qreal m_initialFitRatio = 1;
     QPointF m_pan, m_last;
     QPointF m_layoutOrigin;
+    QRectF m_layoutGeometry;
     QPointer<QQuickWindow> m_layoutWindow;
     quint64 m_layoutGeneration=0;
     bool m_layoutCaptured=false;
@@ -185,10 +201,16 @@ private:
     QPointF m_cursorPosition;
     bool m_cursorInside=false,m_capsLock=false;
     bool m_picking=false;
+    bool m_pendingSample=false;
+    QPointF m_pendingSamplePoint;
+    quint64 m_sampleGeneration=0,m_sampleRevision=0;
+    QColor m_pendingSampleColor;
     QColor m_sampledColor, m_previousSampleColor;
     void beginPicking(QPointF local);
     void updatePicking(QPointF local);
-    void endPicking();
+    void endPicking(bool cancel=true);
+    void refreshPendingSample();
+    void updateSamplingDemand();
     QPointF m_moveStart;
     bool m_moving = false;
     quint64 m_moveGeneration = 0;

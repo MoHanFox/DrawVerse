@@ -269,17 +269,24 @@ fn subtree_delete_normalizes_overlaps_and_failures_are_atomic() {
     let before = ids(&doc);
     let depth = doc.history_depth();
     let revision = doc.revision();
-    for request in [
-        vec![group, outside],
-        vec![group, 999],
-        vec![group, group],
-        vec![],
-    ] {
+    for request in [vec![group, 999], vec![group, group], vec![]] {
         assert!(doc.remove_layers(&request, false).is_err());
         assert_eq!(ids(&doc), before);
         assert_eq!(doc.history_depth(), depth);
         assert_eq!(doc.revision(), revision);
     }
+    // The later empty-layer-stack contract permits deleting every subtree.
+    // It still has to be one reversible transaction, including the active ID.
+    doc.remove_layers(&[group, outside], false).unwrap();
+    assert!(doc.layers().is_empty());
+    assert_eq!(doc.active_layer(), 0);
+    assert_eq!(doc.history_depth().0, depth.0 + 1);
+    doc.undo().unwrap();
+    assert_eq!(ids(&doc), before);
+    doc.redo().unwrap();
+    assert!(doc.layers().is_empty());
+    doc.undo().unwrap();
+    assert_eq!(ids(&doc), before);
     doc.remove_layers(&[1, group], false).unwrap();
     assert_eq!(ids(&doc), vec![outside]);
     doc.undo().unwrap();

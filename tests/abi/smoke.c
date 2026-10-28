@@ -5,6 +5,7 @@
 #include "async_smoke.h"
 #include "storage_smoke.h"
 #include "brush_catalog_smoke.h"
+#include "composition_smoke.h"
 
 #define CHECK(condition) do { if (!(condition)) { fprintf(stderr, "C ABI check failed at line %d: %s\n", __LINE__, #condition); return 1; } } while (0)
 _Static_assert(sizeof(void *) == 8, "ABI v1 requires a 64-bit target");
@@ -142,6 +143,7 @@ int main(void) {
         CHECK(samples[64]==0.078125f && samples[128]==0.25f && samples[256]==1.f);
     }
     CHECK(async_smoke(core) == 0);
+    CHECK(composition_smoke(core) == 0);
     CHECK(paint_core_destroy(&core) == PAINT_OK && core == NULL);
     CHECK(paint_core_destroy(&core) == PAINT_OK);
     puts("C11 ABI lifecycle, UTF-8, stroke, history, buffer, and callback checks passed.");

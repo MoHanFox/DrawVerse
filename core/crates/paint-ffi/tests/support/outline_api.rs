@@ -236,11 +236,14 @@ fn outline_public_package_entry_preserves_resources_and_old_entries_reject() {
         include_str!("../../../../../contracts/brush/wet/fixtures/vbr-wet-valid.json")
     );
     let mut package = Package::from_json(fixture.as_bytes()).unwrap();
-    package.brushes[0].behavior_version = 33;
+    package.brushes[0].behavior_version = 37;
     package.brushes[0].stroke_outline = Some(OutlineParameters::from_core(&outline).unwrap());
     package.brushes[0]
         .required_capabilities
         .push("stroke-outline".into());
+    package.brushes[0]
+        .required_capabilities
+        .push("stroke-outline-replay".into());
     let json = package.to_json().unwrap();
     let path_bytes = path.to_str().unwrap().as_bytes();
     let source_bytes = source.to_str().unwrap().as_bytes();
