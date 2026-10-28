@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 86;
+pub const PAINT_ABI_MINOR: u32 = 88;
 
 #[path = "api_composition.rs"]
 mod composition;
@@ -1040,3 +1040,26 @@ pub struct PaintTaskProgress {
     pub total: u64,
     pub elapsed_ms: u64,
 }
+
+/// ABI 1.87. RGB LUT in display sRGB; HSL parameters in turns/-1..1.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PaintAdjustment {
+    pub struct_size: u32,
+    pub kind: u32,
+    pub parameters: [f32; 4],
+    pub lut: [[f32; 4]; 4097],
+}
+
+pub const PAINT_SESSION_ADJUSTMENT: u32 = 64;
+
+pub const PAINT_ADJUSTMENT_BEGIN: u32 = 0;
+pub const PAINT_ADJUSTMENT_UPDATE: u32 = 1;
+pub const PAINT_ADJUSTMENT_COMMIT: u32 = 2;
+pub const PAINT_ADJUSTMENT_CANCEL: u32 = 3;
+pub const PAINT_ADJUSTMENT_CURVES: u32 = 0;
+pub const PAINT_ADJUSTMENT_LEVELS: u32 = 1;
+pub const PAINT_ADJUSTMENT_HSL: u32 = 2;
+pub const PAINT_HISTORY_CURVES: u32 = 42;
+pub const PAINT_HISTORY_LEVELS: u32 = 43;
+pub const PAINT_HISTORY_HUE_SATURATION: u32 = 44;

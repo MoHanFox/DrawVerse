@@ -303,6 +303,9 @@ impl Document {
                 stroke.dab_distance = path_distance;
                 stroke.path_distance = path_distance;
                 stroke.direction = direction;
+                if stroke.initial_direction.is_none() {
+                    stroke.initial_direction = direction;
+                }
                 match stream {
                     InputScheduleStream::Primary => {
                         let changed = self.dab(stroke, point)?;
@@ -328,6 +331,9 @@ impl Document {
                 stroke.distance_to_next = primary_next;
                 stroke.dual_next = secondary_next;
                 stroke.direction = direction;
+                if stroke.initial_direction.is_none() {
+                    stroke.initial_direction = direction;
+                }
                 Ok(false)
             }
         }

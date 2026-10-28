@@ -45,6 +45,12 @@ set(_drawverse_ui_resources
     qml/brushes/BrushResourceThumbnail.qml qml/brushes/BrushResourcePicker.qml qml/brushes/BrushTipShapeControl.qml
     qml/layers/LayersPanel.qml qml/layers/LayerLock.qml qml/layers/LayerThumbnail.qml
     qml/color/HsvSlider.qml
+    qml/tools/AdjustmentWindow.qml
+    qml/tools/AdjustmentValue.qml
+    qml/tools/AdjustmentHistogram.qml
+    qml/tools/AdjustmentCurve.qml
+    qml/tools/AdjustmentColorSlider.qml
+    qml/tools/AdjustmentLevels.qml
     qml/tools/ToolStrip.qml qml/tools/ToolVariantsPanel.qml qml/tools/SelectionOptionsBar.qml qml/tools/BucketOptionsBar.qml qml/tools/WandOptionsBar.qml qml/tools/SmudgeOptionsBar.qml qml/tools/LiquifyOptionsBar.qml qml/tools/TransformOptionsBar.qml
     qml/preferences/PreferencesPanel.qml qml/preferences/StoragePreferences.qml qml/preferences/KeyboardShortcutsDialog.qml
     qml/controls/CompactCheckBox.qml qml/controls/CompactComboBox.qml qml/controls/CompactSlider.qml qml/controls/MappedSlider.qml qml/controls/ParameterSlider.qml qml/controls/PanelDialog.qml qml/controls/CompactSpinBox.qml qml/controls/CompactTextField.qml qml/controls/Icon.qml qml/controls/IconButton.qml qml/controls/ComboPopupWindow.qml qml/controls/LayerPercent.qml
@@ -362,3 +368,9 @@ set_target_properties(qt_layer_move_baseline PROPERTIES WIN32_EXECUTABLE FALSE R
 qt_add_executable(qt_move_start_tracking EXCLUDE_FROM_ALL tests/move_start_tracking.cpp)
 target_link_libraries(qt_move_start_tracking PRIVATE drawverse_ui Qt6::Test)
 set_target_properties(qt_move_start_tracking PROPERTIES WIN32_EXECUTABLE FALSE RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+qt_add_executable(qt_adjustment_tests tests/adjustment_tests.cpp)
+target_link_libraries(qt_adjustment_tests PRIVATE drawverse_ui Qt6::Test)
+set_target_properties(qt_adjustment_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>" WIN32_EXECUTABLE FALSE)
+add_test(NAME qt_adjustment_tests COMMAND qt_adjustment_tests)
+set_tests_properties(qt_adjustment_tests PROPERTIES TIMEOUT 90 ENVIRONMENT "QT_QUICK_BACKEND=software" ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Test>")

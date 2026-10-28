@@ -227,3 +227,62 @@ fn image_rotated_corners_survive_and_rotation_interpolation_crosses_zero() {
     doc.end_stroke().unwrap();
     assert!(doc.pixel(12, 16).alpha() > 0.5);
 }
+
+#[test]
+fn initial_direction_waits_then_locks_for_each_stroke() {
+    let mut doc = Document::new(100, 100).unwrap();
+    doc.begin_brush_stroke(
+        brush(AngleControl::InitialDirection, false, 0.01),
+        InputPoint::new(16.5, 8.5, 1.),
+    )
+    .unwrap();
+    assert_eq!(doc.pixel(22, 8), Pixel::TRANSPARENT);
+    doc.stroke_to(InputPoint::new(16.5, 24.5, 1.)).unwrap();
+    assert!(doc.pixel(16, 30).alpha() > 0.9);
+    doc.stroke_to(InputPoint::new(48.5, 24.5, 1.)).unwrap();
+    assert!(doc.pixel(48, 30).alpha() > 0.9);
+    assert_eq!(doc.pixel(54, 24), Pixel::TRANSPARENT);
+    doc.end_stroke().unwrap();
+    doc.begin_brush_stroke(
+        brush(AngleControl::InitialDirection, false, 0.01),
+        InputPoint::new(16.5, 60.5, 1.),
+    )
+    .unwrap();
+    doc.stroke_to(InputPoint::new(32.5, 60.5, 1.)).unwrap();
+    assert!(doc.pixel(38, 60).alpha() > 0.9);
+    doc.end_stroke().unwrap();
+}
+
+#[test]
+fn initial_direction_paged_input_matches_direct_across_turns() {
+    let mut direct = Document::new(80, 80).unwrap();
+    let mut paged = Document::new(80, 80).unwrap();
+    for doc in [&mut direct, &mut paged] {
+        doc.begin_brush_stroke(
+            brush(AngleControl::InitialDirection, false, 0.01),
+            InputPoint::new(16.5, 8.5, 1.),
+        )
+        .unwrap();
+    }
+    for point in [
+        InputPoint::new(16.5, 9., 1.),
+        InputPoint::new(48.5, 9., 1.),
+        InputPoint::new(48.5, 40.5, 1.),
+    ] {
+        direct.stroke_to(point).unwrap();
+        paged.begin_stroke_input(point).unwrap();
+        while !matches!(
+            paged
+                .continue_stroke_page(InputScheduleBudget::new(1, 100000, 1).unwrap())
+                .unwrap(),
+            StrokePageResult::InputComplete
+        ) {}
+    }
+    direct.end_stroke().unwrap();
+    paged.end_stroke().unwrap();
+    for y in 0..80 {
+        for x in 0..80 {
+            assert_eq!(direct.pixel(x, y), paged.pixel(x, y));
+        }
+    }
+}

@@ -162,10 +162,10 @@ ColumnLayout {
                     RowLayout {
                         Layout.fillWidth:true
                         Label {text:"大小";font.pixelSize:10;color:Theme.text;Layout.fillWidth:true}
-                        CompactSpinBox {objectName:"settingsBrushSize";implicitWidth:68;implicitHeight:20;editable:true;from:1;to:2000;value:Math.round(root.library.radius*2);onValueModified:root.library.radius=value/2}
+                        CompactSpinBox {objectName:"settingsBrushSize";implicitWidth:68;implicitHeight:20;editable:true;from:1;to:2000;value:Math.round(brushSizeSlider.pressed?brushSizeSlider.editedValue:root.library.radius*2);onValueModified:root.library.radius=value/2}
                         Label {text:"px";font.pixelSize:9;color:Theme.muted}
                     }
-                    MappedSlider {objectName:"settingsBrushSizeSlider";Layout.fillWidth:true;from:1;to:2000;exponential:true;value:root.library.radius*2;onMoved:root.library.radius=editedValue/2}
+                    MappedSlider {id: brushSizeSlider;objectName:"settingsBrushSizeSlider";Layout.fillWidth:true;from:1;to:2000;exponential:true;value:root.library.radius*2;onMoved:root.library.radius=editedValue/2}
                     TipField {enabled:!root.library.maskResource.length;title:"硬度";field:"hardness";from:0;to:100;factor:100;unit:"%";help:"实心中心占笔尖半径的比例；降低后形成柔软边缘。"}
                     BrushTipShapeControl {
                         objectName:"settingsBrushTipShape"
@@ -187,8 +187,8 @@ ColumnLayout {
                         Label {text:"角度控制";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
                         CompactComboBox {
                             objectName:"settingsAngleControl";implicitWidth:90
-                            readonly property var controls:["fixed","direction","pen-rotation","tilt"]
-                            model:["关闭","方向","笔旋转","笔倾斜"]
+                            readonly property var controls:["fixed","initial-direction","direction","pen-rotation","tilt"]
+                            model:["关闭","初移方向","绘制方向","笔旋转","笔倾斜"]
                             currentIndex:controls.indexOf(root.library.angleControl)
                             onActivated:root.library.angleControl=controls[currentIndex]
                             tooltip:"相对基础角度叠加路径方向、笔旋转或倾斜方位；缺失设备能力时使用基础角度。"
@@ -453,7 +453,7 @@ CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;readonly pr
                     ColumnLayout {
                         Layout.fillWidth:true;spacing:2
                         Label {text:"图片不透明度";color:Theme.text;font.pixelSize:10}
-                        CompactSlider {objectName:"brushCursorImageOpacitySlider";Layout.fillWidth:true;Layout.minimumWidth:0;from:1;to:100;stepSize:1;value:root.library.cursorImageOpacity;enabled:root.library.cursorImage;onMoved:root.library.cursorImageOpacity=Math.round(value);ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"仅调整光标图片的显示透明度，不影响实际笔触。"}
+                        CompactSlider {objectName:"brushCursorImageOpacitySlider";Layout.fillWidth:true;Layout.minimumWidth:0;from:1;to:100;stepSize:1;value:root.library.cursorImageOpacity;enabled:root.library.cursorImage;onEditCommitted:root.library.cursorImageOpacity=Math.round(value);ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"仅调整光标图片的显示透明度，不影响实际笔触。"}
                         RowLayout {
                             CompactSpinBox {objectName:"brushCursorImageOpacity";from:1;to:100;editable:true;implicitWidth:66;implicitHeight:20;value:root.library.cursorImageOpacity;enabled:root.library.cursorImage;onValueModified:root.library.cursorImageOpacity=value;tooltip:"光标图片显示不透明度（%）。"}
                             Label {text:"%";color:Theme.text;font.pixelSize:10}
@@ -535,16 +535,16 @@ CompactComboBox {objectName:"settingsDualMode";Layout.fillWidth:true;readonly pr
                     CompactCheckBox {objectName:"settingsTaperTransparent";text:"端部透明";checked:root.library.strokeTaper[root.taperEnd].opacity.minimum<1;onToggled:root.setTaperTransparent(checked);tooltip:"关闭后不额外减淡该端，尺寸曲线仍然生效。"}
                     RowLayout {Layout.fillWidth:true;visible:!root.taperRelative
                         Label {text:"长度";color:Theme.text;Layout.fillWidth:true}
-                        CompactTextField {objectName:"settingsTaperLength";Layout.preferredWidth:90;implicitHeight:20;text:root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(0);validator:IntValidator {bottom:0;top:4096;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPx",Math.round(Number(text)));text=Qt.binding(function(){return root.library.strokeTaper[root.taperEnd].lengthPx.toFixed(0)})} hoverEnabled:true;ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"文档像素距离，0 表示该端不处理；不随笔刷尺寸缩放。"}
+                        CompactTextField {objectName:"settingsTaperLength";Layout.preferredWidth:90;implicitHeight:20;text:(taperLengthSlider.pressed?taperLengthSlider.editedValue:root.library.strokeTaper[root.taperEnd].lengthPx).toFixed(0);validator:IntValidator {bottom:0;top:4096;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPx",Math.round(Number(text)));text=Qt.binding(function(){return (taperLengthSlider.pressed?taperLengthSlider.editedValue:root.library.strokeTaper[root.taperEnd].lengthPx).toFixed(0)})} hoverEnabled:true;ToolTip.delay:1000;ToolTip.visible:hovered;ToolTip.text:"文档像素距离，0 表示该端不处理；不随笔刷尺寸缩放。"}
                         Label {text:"px";color:Theme.muted}
                     }
-                    MappedSlider {objectName:"settingsTaperLengthSlider";visible:!root.taperRelative;Layout.fillWidth:true;from:0;to:4096;value:root.library.strokeTaper[root.taperEnd].lengthPx;stepSize:1;exponential:true;onMoved:root.setTaperEndField("lengthPx",editedValue)}
+                    MappedSlider {id: taperLengthSlider;objectName:"settingsTaperLengthSlider";visible:!root.taperRelative;Layout.fillWidth:true;from:0;to:4096;value:root.library.strokeTaper[root.taperEnd].lengthPx;stepSize:1;exponential:true;onMoved:root.setTaperEndField("lengthPx",editedValue)}
                     RowLayout {Layout.fillWidth:true;visible:root.taperRelative
                         Label {text:"相对长度";color:Theme.text;Layout.fillWidth:true}
-                        CompactTextField {objectName:"settingsTaperPercent";Layout.preferredWidth:90;implicitHeight:20;text:Number(root.library.strokeTaper[root.taperEnd].lengthPercent||0).toFixed(0);validator:IntValidator {bottom:0;top:10000;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPercent",Math.round(Number(text)));text=Qt.binding(function(){return Number(root.library.strokeTaper[root.taperEnd].lengthPercent||0).toFixed(0)})}}
+                        CompactTextField {objectName:"settingsTaperPercent";Layout.preferredWidth:90;implicitHeight:20;text:Number(taperPercentSlider.pressed?taperPercentSlider.value:(root.library.strokeTaper[root.taperEnd].lengthPercent||0)).toFixed(0);validator:IntValidator {bottom:0;top:10000;locale:"C"} onEditingFinished:{if(acceptableInput)root.setTaperEndField("lengthPercent",Math.round(Number(text)));text=Qt.binding(function(){return Number(taperPercentSlider.pressed?taperPercentSlider.value:(root.library.strokeTaper[root.taperEnd].lengthPercent||0)).toFixed(0)})}}
                         Label {text:"%";color:Theme.muted}
                     }
-                    CompactSlider {objectName:"settingsTaperPercentSlider";visible:root.taperRelative;Layout.fillWidth:true;from:0;to:10000;value:root.library.strokeTaper[root.taperEnd].lengthPercent||0;stepSize:1;snapMode:Slider.SnapAlways;onMoved:root.setTaperEndField("lengthPercent",Math.round(value))}
+                    CompactSlider {id: taperPercentSlider;objectName:"settingsTaperPercentSlider";visible:root.taperRelative;Layout.fillWidth:true;from:0;to:10000;value:root.library.strokeTaper[root.taperEnd].lengthPercent||0;stepSize:1;snapMode:Slider.SnapAlways;onEditCommitted:root.setTaperEndField("lengthPercent",Math.round(value))}
                     Label {visible:root.taperRelative;text:"实际长度 "+Math.min(4096,root.library.radius*2*(root.library.strokeTaper[root.taperEnd].lengthPercent||0)/100).toFixed(2)+" px（上限4096）";color:Theme.muted;font.pixelSize:9}
                     PressureCurveEditor {library:taperControls;target:"size";prefix:"taperSize";fixedEndpoints:true;caption:"尺寸随距离变化";curveHelp:"横轴为从笔端向内的归一化距离，纵轴为尺寸比例；Ctrl点击节点切换直线/曲线。端点固定。";minimumHelp:"最低尺寸比例；100% 表示不缩小笔尖。"}
                     PressureCurveEditor {library:taperControls;target:"opacity";prefix:"taperOpacity";fixedEndpoints:true;caption:"不透明度随距离变化";curveHelp:"横轴为从笔端向内的归一化距离，纵轴为不透明度比例；独立于尺寸曲线。端点固定。";minimumHelp:"最低不透明度比例；100% 表示不额外减淡。"}

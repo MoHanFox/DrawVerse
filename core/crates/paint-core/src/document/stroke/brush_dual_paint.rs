@@ -511,7 +511,15 @@ impl Document {
                 },
         ) * f64::from(speed_size);
         let radius = base_radius * f64::from(stroke.taper_factors.diameter);
-        let geometry = program.dab_geometry(point, stroke.direction, stroke.shape_sample);
+        let geometry = program.dab_geometry(
+            point,
+            if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection {
+                stroke.initial_direction
+            } else {
+                stroke.direction
+            },
+            stroke.shape_sample,
+        );
         let (ex, ey) = program.extent(radius, geometry);
         let mask = if radius > 0. && program.has_mask() {
             program.mask_dab_with_geometry(radius, geometry)
@@ -622,7 +630,15 @@ impl Document {
         let program = stroke.program.clone();
         let dual = program.dual.as_ref().expect("dual color");
         debug_assert_eq!(dual.color.model(), crate::DualColorModel::InterleavedStamp);
-        let geometry = program.dab_geometry(point, stroke.direction, stroke.shape_sample);
+        let geometry = program.dab_geometry(
+            point,
+            if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection {
+                stroke.initial_direction
+            } else {
+                stroke.direction
+            },
+            stroke.shape_sample,
+        );
         let (extent_x, extent_y) = program.extent(radius, geometry);
         let mask = if radius > 0. && program.has_mask() {
             program.mask_dab_with_geometry(radius, geometry)

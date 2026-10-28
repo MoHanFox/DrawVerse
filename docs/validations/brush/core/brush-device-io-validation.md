@@ -13,3 +13,10 @@
 ABI和Qt未升级：现有Qt模型只理解到state6/behavior3，package临时边界防止导入后丢失设置。本阶段没有新增Qt操作界面或动态光标，不能宣称GUI功能完成。下一阶段接原生能力/准确准备与Qt设置、实际输入光标，并解除文件入口临时边界。
 
 Schema为 `core/crates/paint-io/tests/fixtures/schema-history/dynamics/vbr-tip-dynamics-v1.5.schema.json`，此轮Rust读取并检查公开字段，未运行第三方Schema验证器。未跑全量tools/check.py、Qt测试、设备实机、跨平台或性能基准。其余随机/纹理/散布/双笔刷/颜色/平滑/湿混、ABR动态与分组扩展继续后续，完整系统未完成。
+
+## 2026-10-28 最小方向与滑条回归
+
+- paint-core `brush_device` 10项通过，含初移方向下笔无像素、转弯保持角度、新笔重置，以及分页/直接输入逐像素一致。paint-io `brush_pressure initial_direction` 1项状态往返通过。
+- Qt软件后端 `brushSliderCommitsOnlyAfterRelease`、`cursorDirectionStartsAtOwnershipBoundary` 四行、`brushSliderPreviewWaitsForRelease` 共6功能行通过（输出8通过包含初始化/清理）。实际滑条拖动时设置通知0、数值框变化，释放后设置通知1。日志 `build/brush-direction-slider-passed.txt`。
+- Release应用及Qt测试构建、生成头检查、Rust fmt、diff检查通过，标准 build/bin/Release 已更新。无完整check、D3D11或实体笔验收。
+- 保留首次缺少MSVC环境及并发构建失败；软件初始测试夹具层级错误失败，以及修正夹具后发现旧preview结束额外settingsChanged的失败日志。移除滑条不再需要的preview编辑开关后最终通过。

@@ -197,7 +197,7 @@ private:
     void setCursorSample(const InputSample &sample,const QPointingDevice *device,bool resetDirection=false);
     InputSample tabletSample(QTabletEvent *event,QPointF local) const;
     QPointer<const QPointingDevice> m_poseDevice;quint64 m_poseGeneration=0;
-    InputSample m_poseSample;BrushCursorPose m_pose;QPointF m_poseDirection;bool m_havePoseSample=false,m_poseDirectionKnown=false;QTimer m_poseRetry;
+    InputSample m_poseSample;BrushCursorPose m_pose;QPointF m_poseDirection,m_poseDirectionAnchor;bool m_havePoseSample=false,m_poseDirectionKnown=false;QTimer m_poseRetry;
     QPointF m_cursorPosition;
     bool m_cursorInside=false,m_capsLock=false;
     bool m_picking=false;

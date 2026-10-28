@@ -219,7 +219,7 @@ impl Executor for Gpu {
         }
         op.validate()?;
         let tiles = match op {
-            Operator::Elastic(_) => &[][..],
+            Operator::Adjustment(_) | Operator::Elastic(_) => &[][..],
             Operator::Remap(v) | Operator::RemapBlocks(v) => &v.source,
         };
         let mut sources = self.sources.lock().map_err(|_| "GPU sources poisoned")?;
@@ -428,6 +428,53 @@ impl Executor for Accelerated {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn adjustment_shader_matches_cpu_on_transparent_and_translucent_colors() {
+        let gpu = Gpu::open("auto").expect("GPU required for adjustment acceptance");
+        let pixels = (0..8192)
+            .map(|i| {
+                let a = (i % 29) as f32 / 28.;
+                [
+                    (i % 97) as f32 / 96. * a,
+                    (i % 47) as f32 / 46. * a,
+                    (i % 19) as f32 / 18. * a,
+                    a,
+                ]
+            })
+            .collect::<Vec<_>>();
+        for (kind, parameters) in [
+            (0, [0.; 4]),
+            (1, [0.5, 0.5, -0.2, 0.]),
+            (1, [-0.5, -1., 1., 0.]),
+            (1, [0.1, 1., 0., 0.]),
+            (1, [0.7, 0.25, -0.3, 1.]),
+            (1, [0.3, 0., 0.3, 1.]),
+        ] {
+            let op = Operator::Adjustment(paint_ops::AdjustmentOp {
+                pixels: pixels.clone(),
+                kind,
+                parameters,
+                lut: (0..=4096)
+                    .map(|i| {
+                        let x = i as f32 / 4096.;
+                        [x * x, 1. - x, x.sqrt(), 1.]
+                    })
+                    .collect(),
+            });
+            let expected = Cpu.execute(&op).unwrap();
+            let actual = gpu.execute(&op).unwrap();
+            let error = expected
+                .iter()
+                .zip(&actual)
+                .flat_map(|(a, b)| a.iter().zip(b).map(|(x, y)| (x - y).abs()))
+                .fold(0., f32::max);
+            assert!(
+                error < 0.00002,
+                "adjustment kind {kind} maximum error {error}"
+            );
+            assert!(gpu.submissions() > 0);
+        }
+    }
     #[test]
     fn lost_device_replays_immutable_input_and_stays_on_cpu() {
         if hardware().is_empty() {

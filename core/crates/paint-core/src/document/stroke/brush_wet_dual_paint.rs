@@ -152,7 +152,15 @@ impl Document {
                 .carrier
                 .reset_path()?;
         } else {
-            let geometry = program.dab_geometry(point, stroke.direction, stroke.shape_sample);
+            let geometry = program.dab_geometry(
+                point,
+                if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection {
+                    stroke.initial_direction
+                } else {
+                    stroke.direction
+                },
+                stroke.shape_sample,
+            );
             let (ex, ey) = program.extent(radius, geometry);
             let bounds = (
                 point.x - ex - 1.,

@@ -790,3 +790,11 @@ build-delivery-final更新标准build/bin/Release/drawverse.exe及paint_ffi.dll�
 - 四ABI通过；标准build/bin/Release应用、相关测试构建及生成头/shader构建检查通过；实际D3D11 Release --preview绘画冒烟退出0并产出图像。EXE SHA256 5597f89eb9f6bcec6ee50d6e53cef4c0f644af36220c91c836d444fb6b3e3b57。
 
 初次新增双文档夹具没有复用应用的共享笔刷目录连接，ready(b)失败；改为复用brushCatalogConnection后原断言通过，原日志保留。编译期间另一个任务同时构建相同目录，数次对象文件Permission denied记录保留；等其他构建结束后串行发起构建通过（first-move-cost/hardware-switch-build-serial.log）。没有运行总check，没有新增性能、实体笔或物理显示结论。ABI/state/文档格式不变，原有未提交修改保留。
+
+## 2026-10-28 BUSY 闪回续修
+
+新增请求/读取 BUSY 两行，验证繁忙350ms保留已显示包，解除后同revision恢复。隔离HEAD源码叠加本次 CompositionPacket.cpp 和 GPU 测试，使用快照既有核心库：旧处理逻辑两行均失败（build/flicker-busy-baseline.txt），修复后通过。新增18次实际窗口像素检查，绘画及往返缩放期间中心红色笔迹保持；原缩放呈现、连续25笔、init/upload真实回退定向复验。初轮像素行被前一测试留下的GPU关闭值阻断，保留 build/flicker-isolated-tests.txt，补独立初始化后通过。
+
+主工作区同期存在未完成 adjustment 核心/UI 修改，正常构建在paint-ops编译失败（build/flicker-repro-build.log）；未修改该功能，也不称完整工作区构建或总check通过。隔离构建显式复用预编译核心，仅验证本次UI显示层。最终证据 build/flicker-fixed-final.txt。未新增实体笔/物理屏幕验收。
+
+最终隔离D3D11共7功能行通过（Qt总数9含初始化/收尾），Release应用已在build/flicker-isolated/bin/Release部署Qt运行依赖。旧逻辑对照还原后曾因Copy-Item保留较旧mtime而误运行旧二进制，失败记录保留build/flicker-stale-binary.txt；显式更新时间并确认CompositionPacket重新编译/重链接后，build/flicker-fixed-final.txt全7行通过。标准Release未覆盖，避免丢失同期未完成改动。

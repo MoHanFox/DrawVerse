@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum Angle {
+    InitialDirection,
     Fixed,
     Direction,
     PenRotation,
@@ -37,6 +38,7 @@ impl Serialize for TipParameters {
     fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         Data {
             angle_control: match self.tip.angle() {
+                AngleControl::InitialDirection => Angle::InitialDirection,
                 AngleControl::Fixed => Angle::Fixed,
                 AngleControl::Direction => Angle::Direction,
                 AngleControl::PenRotation => Angle::PenRotation,
@@ -52,6 +54,7 @@ impl<'de> Deserialize<'de> for TipParameters {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
         let data = Data::deserialize(d)?;
         let angle = match data.angle_control {
+            Angle::InitialDirection => AngleControl::InitialDirection,
             Angle::Fixed => AngleControl::Fixed,
             Angle::Direction => AngleControl::Direction,
             Angle::PenRotation => AngleControl::PenRotation,

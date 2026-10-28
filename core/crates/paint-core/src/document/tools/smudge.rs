@@ -65,7 +65,15 @@ impl Document {
                     },
             ) * f64::from(speed_size);
             let radius = base_radius * f64::from(stroke.taper_factors.diameter);
-            let geometry = program.dab_geometry(point, stroke.direction, stroke.shape_sample);
+            let geometry = program.dab_geometry(
+                point,
+                if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection {
+                    stroke.initial_direction
+                } else {
+                    stroke.direction
+                },
+                stroke.shape_sample,
+            );
             let mask = if radius > 0. && program.has_mask() {
                 program.mask_dab_with_geometry(radius, geometry)
             } else {

@@ -719,3 +719,5 @@ pub unsafe extern "C" fn paint_error_message(
 #[cfg(test)]
 #[path = "abi/tests.rs"]
 mod tests;
+
+pub use document::adjustment_api::*;

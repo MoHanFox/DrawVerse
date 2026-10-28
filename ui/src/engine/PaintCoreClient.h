@@ -38,6 +38,11 @@ struct PaintSelectionShapeEdit;
 // The only UI-facing core service. Owns no model pointers on the GUI thread.
 class PaintCoreClient final : public QObject {
     Q_OBJECT
+    Q_PROPERTY(QVariantList adjustmentHistogram READ adjustmentHistogram NOTIFY stateChanged)
+    Q_PROPERTY(bool adjustmentGpuPreview READ adjustmentGpuPreview NOTIFY stateChanged)
+    Q_PROPERTY(bool adjustmentFailed READ adjustmentFailed NOTIFY stateChanged)
+    Q_PROPERTY(bool adjustmentActive READ adjustmentActive NOTIFY stateChanged)
+    Q_PROPERTY(bool adjustmentBusy READ adjustmentBusy NOTIFY stateChanged)
     Q_PROPERTY(QVariantMap computationProgress READ computationProgress NOTIFY computationProgressChanged)
     Q_PROPERTY(bool longTaskVisible READ longTaskVisible NOTIFY computationProgressChanged)
     Q_PROPERTY(QString tabletInputMode READ tabletInputMode WRITE setTabletInputMode NOTIFY tabletInputSettingsChanged)
@@ -302,7 +307,7 @@ public:
     Q_INVOKABLE void activateMarquee();
     Q_INVOKABLE void activateLasso();
     bool moveTool() const { return m_moveTool; }
-    bool layerEditBusy() const { return m_layerMoveActive || m_pendingLayer != 0 || m_pendingCopy != 0; }
+    bool layerEditBusy() const { return m_adjustmentActive || m_layerMoveActive || m_pendingLayer != 0 || m_pendingCopy != 0; }
     void setMoveTool(bool enabled);
     bool selectionEnabled() const { return m_selection.value("enabled").toBool(); }
     QVariantList selectionSteps() const { return m_selection.value("steps").toList(); }
@@ -338,7 +343,7 @@ public:
     Q_INVOKABLE bool invertSelection();
     const QImage &frame(int view = 0) const { return m_frames[view == 1 ? 1 : 0]; }
     CompositionPacketPtr compositionPacket()const;
-    quint64 compositionHandoffRevision()const{return m_compositionFinalRevision;}
+    quint64 compositionHandoffRevision()const{return std::max(m_compositionFinalRevision,m_adjustmentFinalRevision);}
     void compositionPrimaryAdopted(quint64 generation,quint64 epoch,quint64 revision);
     void setCompositionPrecisionAvailable(bool available){m_compositionPrecisionAvailable=available;}
     qint64 compositionTargetConfirmedNs()const{return m_compositionTargetNs;}
@@ -400,6 +405,15 @@ public:
     Q_INVOKABLE bool checkpointTransform();
     Q_INVOKABLE bool finishTransform(bool commit);
     Q_INVOKABLE bool rasterizeImage();
+    QVariantList adjustmentHistogram()const{return m_adjustmentHistogram;}
+    bool adjustmentGpuPreview()const{return bool(m_adjustmentBase);}
+    bool adjustmentFailed() const {return m_adjustmentFailed;}
+    bool adjustmentActive() const {return m_adjustmentActive;}
+    bool adjustmentBusy() const {return m_pendingAdjustment!=0;}
+    Q_INVOKABLE bool beginAdjustment(int kind);
+    Q_INVOKABLE bool updateAdjustment(int kind,const QVariantList &lut,qreal hue,qreal saturation,qreal lightness,bool colorize=false);
+    Q_INVOKABLE bool updateAdjustmentControls(int kind,const QVariantMap &values);
+    Q_INVOKABLE bool finishAdjustment(bool commit);
     Q_INVOKABLE bool flipImage(bool horizontal);
     bool liquifyActive() const {return m_liquifyActive;}
     bool liquifyBusy() const {return m_pendingLiquify!=0 || layerEditBusy();}
@@ -535,6 +549,13 @@ signals:
     void fileFinished(bool success);
 private:
     void refreshCpuDisplayDemand();
+    bool m_adjustmentActive=false,m_adjustmentFailed=false;
+    quint64 m_pendingAdjustment=0,m_adjustmentFinalRevision=0;
+    bool m_adjustmentMaterialized=false,m_adjustmentCommitRequested=false;
+    QVariantList m_adjustmentHistogram;
+    std::unique_ptr<PaintAdjustment> m_adjustmentSettings;
+    bool applyAdjustmentSettings(std::unique_ptr<PaintAdjustment> settings);
+    CompositionPacketPtr m_adjustmentBase,m_adjustmentFrame;
     CompositionPacketPtr m_compositionPacket;
     CompositionPacketPtr m_compositionEditBase,m_compositionEditFrame;
     QVector<quint64> m_compositionEditTargets;

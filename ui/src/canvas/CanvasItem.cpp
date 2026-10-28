@@ -246,7 +246,8 @@ void CanvasItem::setCursorSample(const InputSample &sample,const QPointingDevice
     const auto generation=m_client?m_client->generation():0;
     if(resetDirection || m_poseDevice!=device || m_poseGeneration!=generation || (m_havePoseSample && m_poseSample.tool!=sample.tool))resetCursorSample();
     m_poseDevice=device;m_poseGeneration=generation;
-    if(m_havePoseSample){const auto delta=sample.position-m_poseSample.position;if(std::hypot(delta.x(),delta.y())>1e-9){m_poseDirection=delta;m_poseDirectionKnown=true;}}
+    if(m_havePoseSample){const auto delta=sample.position-m_poseDirectionAnchor;if(std::hypot(delta.x(),delta.y())*m_zoom>=2.0){if(!m_poseDirectionKnown || !m_client || !m_client->drawing() || m_client->brushLibrary()->angleControl()!="initial-direction"){m_poseDirection=delta;m_poseDirectionKnown=true;}m_poseDirectionAnchor=sample.position;}}
+    if(!m_havePoseSample)m_poseDirectionAnchor=sample.position;
     m_poseSample=sample;m_havePoseSample=true;
 }
 InputSample CanvasItem::tabletSample(QTabletEvent *e,QPointF local) const {
@@ -453,7 +454,7 @@ bool CanvasItem::gpuDisplay() const {
 }
 QVariantMap CanvasItem::compositionStatistics()const{
     const auto &c=*m_compositionCounters;
-    return {{"currentEpoch",m_compositionEpoch},{"retries",m_compositionRetries},{"failed",m_compositionFailed},{"uploads",c.uploads.load()},{"uploadBytes",c.uploadBytes.load()},{"passes",c.passes.load()},
+    return {{"currentEpoch",m_compositionEpoch},{"retries",m_compositionRetries},{"failed",m_compositionFailed},{"adjustmentUpdates",c.adjustmentUpdates.load()},{"uploads",c.uploads.load()},{"uploadBytes",c.uploadBytes.load()},{"passes",c.passes.load()},
         {"adoptions",c.adoptions.load()},{"revision",c.revision.load()},{"epoch",c.epoch.load()},
         {"request",c.request.load()},{"textureBytes",c.textureBytes.load()},{"failures",c.failures.load()},
         {"processReservedPayloadBytes",CompositionNode::reservedPayloadBytes()},

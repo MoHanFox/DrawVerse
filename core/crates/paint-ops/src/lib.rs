@@ -2,6 +2,8 @@
 //! document ownership, histories and publishing deliberately live above this layer.
 use std::{fmt::Debug, ops::Deref, sync::Arc};
 
+pub mod adjustment;
+pub use adjustment::AdjustmentOp;
 pub mod batching;
 pub mod replay_outline;
 pub mod sdf;
@@ -126,6 +128,7 @@ pub struct RemapOp {
 }
 #[derive(Clone, Debug)]
 pub enum Operator {
+    Adjustment(AdjustmentOp),
     Elastic(ElasticOp),
     Remap(RemapOp),
     /// One color per stride block. Alpha -1 marks identity: the caller copies
@@ -429,6 +432,7 @@ impl RemapOp {
 impl Operator {
     pub fn count(&self) -> usize {
         match self {
+            Self::Adjustment(v) => v.pixels.len(),
             Self::Elastic(v) => (v.size[0] as usize) * (v.size[1] as usize),
             Self::Remap(v) => v.tiles.len() * 4096,
             Self::RemapBlocks(v) => v.tiles.len() * 4096 / (v.stride.max(1) as usize).pow(2),
@@ -439,7 +443,11 @@ impl Operator {
         if count == 0 || count > MAX_SAMPLES {
             return Err("operator work budget".into());
         }
+        if let Self::Adjustment(v) = self {
+            return v.validate();
+        }
         let (grid, weights) = match self {
+            Self::Adjustment(_) => unreachable!(),
             Self::Elastic(v) => {
                 if v.size.contains(&0)
                     || v.start[0]
@@ -504,6 +512,7 @@ impl Executor for Cpu {
     fn execute(&self, op: &Operator) -> Result<Vec<Rgba>, String> {
         op.validate()?;
         Ok(match op {
+            Operator::Adjustment(v) => v.pixels.iter().map(|p| v.pixel(*p)).collect(),
             Operator::Elastic(v) => (0..op.count()).map(|i| v.pixel(i)).collect(),
             Operator::Remap(v) => v.pixels(),
             Operator::RemapBlocks(v) => (0..op.count()).map(|i| v.block(i)).collect(),
@@ -519,7 +528,7 @@ pub fn pack(op: &Operator) -> Result<Vec<Rgba>, String> {
 /// Slots address immutable source tiles in a separate GPU storage binding.
 pub fn pack_with_sources(op: &Operator, slots: &[u32]) -> Result<Vec<Rgba>, String> {
     let expected = match op {
-        Operator::Elastic(_) => 0,
+        Operator::Adjustment(_) | Operator::Elastic(_) => 0,
         Operator::Remap(v) | Operator::RemapBlocks(v) => v.source.len(),
     };
     if slots.len() != expected || slots.iter().any(|v| *v >= MAX_SOURCE_TILES as u32) {
@@ -529,12 +538,16 @@ pub fn pack_with_sources(op: &Operator, slots: &[u32]) -> Result<Vec<Rgba>, Stri
 }
 fn pack_inner(op: &Operator, slots: Option<&[u32]>) -> Result<Vec<Rgba>, String> {
     op.validate()?;
+    if let Operator::Adjustment(v) = op {
+        return Ok(v.pack());
+    }
     let (grid, weights) = match op {
+        Operator::Adjustment(_) => unreachable!(),
         Operator::Elastic(v) => (&v.grid, &v.selection),
         Operator::Remap(v) | Operator::RemapBlocks(v) => (&v.grid, &v.selection),
     };
     let extra = match op {
-        Operator::Elastic(_) => 0,
+        Operator::Adjustment(_) | Operator::Elastic(_) => 0,
         Operator::Remap(v) | Operator::RemapBlocks(v) => {
             v.tiles.len() + v.source.len() * if slots.is_some() { 1 } else { 4097 }
         }
@@ -543,7 +556,7 @@ fn pack_inner(op: &Operator, slots: Option<&[u32]>) -> Result<Vec<Rgba>, String>
     data.resize(12, [0.; 4]);
     data[0] = [
         f32::from_bits(match op {
-            Operator::Elastic(_) => 0,
+            Operator::Adjustment(_) | Operator::Elastic(_) => 0,
             Operator::Remap(_) => 1,
             Operator::RemapBlocks(_) => 2,
         }),
@@ -558,6 +571,7 @@ fn pack_inner(op: &Operator, slots: Option<&[u32]>) -> Result<Vec<Rgba>, String>
     data[2][1] = f32::from_bits(weights.len() as u32);
     data.extend(weights.iter().map(|w| [*w, 0., 0., 0.]));
     match op {
+        Operator::Adjustment(_) => unreachable!(),
         Operator::Elastic(v) => {
             data[3] = [
                 v.start[0] as f32,

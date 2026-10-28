@@ -101,7 +101,7 @@ pub struct BrushProgram {
     flow_response: Option<CompiledPressureControl>,
     opacity_response: Option<CompiledPressureControl>,
     pressure_opacity: bool,
-    tip_dynamics: TipDynamics,
+    pub(crate) tip_dynamics: TipDynamics,
     pub(crate) scatter: crate::ScatterDynamics,
     pub(crate) shape_jitter: crate::ShapeJitter,
     pub(crate) transfer_jitter: crate::TransferJitter,
@@ -526,7 +526,7 @@ impl BrushProgram {
         let tilt_length = f64::from(point.tilt_x).hypot(f64::from(point.tilt_y));
         let angle = match self.tip_dynamics.angle() {
             AngleControl::Fixed => None,
-            AngleControl::Direction => direction,
+            AngleControl::Direction | AngleControl::InitialDirection => direction,
             AngleControl::PenRotation => {
                 (point.capabilities & 4 != 0).then(|| f64::from(point.rotation).to_radians())
             }

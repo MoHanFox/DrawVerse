@@ -273,3 +273,7 @@ BEGIN提交时清除上一会话控制点和源边界，确认前不显示或接
 ## 2026-10-28 缩放显示目标交接
 
 CompositionNode 的可显示条件改为显示目标已分配且未失败。beforeRendering 会在 Qt 采样同一纹理前记录精确合成；不能因为目标尚未提交 rendered 标志而在这一帧展示 CPU 旧图。资源预算、失败回退和实际提交后的采用通知保持原契约。
+
+## 2026-10-28 临时繁忙保持呈现
+
+CompositionReader 的请求及传输入口将 PAINT_BUSY/PAINT_CANCELLED 视为快照暂不可用：释放未完成租约、清除请求尝试修订守卫并重试，保留既有 fallback 与已采用 GPU 包。不能把临时繁忙发布为 CPU 失败，否则 PaintCoreClient 会清除 GPU 包并切回旧 CPU 帧。真正不支持、预算及设备错误沿用原回退。

@@ -81,8 +81,9 @@ struct Parameters {
     std::array<qint32,4> dimensions{},source{},mask{},sourceOrigin{},maskOrigin{};
     std::array<float,4> factors{},transformBounds{},transformInfo{};
     std::array<double,4> inverse0{},inverse1{},inverse2{};
+    std::array<float,4> adjustmentSettings{},adjustmentMode{};
 };
-static_assert(sizeof(Parameters)==224);
+static_assert(sizeof(Parameters)==256);
 static_assert(offsetof(Parameters,inverse0)==128 && offsetof(Parameters,inverse1)==160 && offsetof(Parameters,inverse2)==192);
 class DirectTexture final : public QSGTexture {
 public:
@@ -103,7 +104,7 @@ struct Pass {
     std::unique_ptr<QRhiShaderResourceBindings> bindings;
     QRhiGraphicsPipeline *pipeline=nullptr;
     Parameters parameters;
-    int output=0;
+    int output=0,sourceNode=-1;
     bool mesh=false,precise=false;
 };
 struct PageMap {
@@ -145,9 +146,13 @@ public:
         const int frameSlots=rhi->resourceLimit(QRhi::FramesInFlight);
         if(frameSlots<1 || frameSlots>8)return fail("CPU: composition in-flight budget");
         inFlightFrames=frameSlots;reservation=std::make_shared<TextureReservation>();
+        atlasCapacity=requiredAtlasCapacity(packet);
         if(!reserveTargets(packet))return false;
-        atlas.reset(rhi->newTexture(QRhiTexture::RGBA32F,{2048,2048}));
+        if((atlasCapacity/32)*64>rhi->resourceLimit(QRhi::TextureSizeMax))return fail("CPU: composition atlas extent capability");
+        atlas.reset(rhi->newTexture(QRhiTexture::RGBA32F,{2048,(atlasCapacity/32)*64}));
         if(!atlas->create())return fail("CPU: composition atlas allocation");
+        adjustmentLut.reset(rhi->newTexture(QRhiTexture::RGBA32F,{1024,5}));
+        if(!adjustmentLut->create())return fail("CPU: adjustment LUT allocation");
         staging.resize(frameSlots);
         connection=QObject::connect(window,&QQuickWindow::beforeRendering,window,[this]{record();},Qt::DirectConnection);
         adoptionConnection=QObject::connect(window,&QQuickWindow::afterRendering,window,[this]{
@@ -165,7 +170,8 @@ public:
             QRhiShaderResourceBinding::sampledTexture(2,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr),
             QRhiShaderResourceBinding::sampledTexture(3,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr),
             QRhiShaderResourceBinding::sampledTexture(4,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr),
-            QRhiShaderResourceBinding::sampledTexture(5,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr)});
+            QRhiShaderResourceBinding::sampledTexture(5,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr),
+            QRhiShaderResourceBinding::sampledTexture(6,QRhiShaderResourceBinding::FragmentStage,nullptr,nullptr)});
         if(!pipelineLayout->create())return fail("CPU: composition pipeline layout allocation");
         pipelinePasses[0].reset(linear[0].pass->newCompatibleRenderPassDescriptor());
         pipelinePasses[1].reset(display.pass->newCompatibleRenderPassDescriptor());
@@ -196,17 +202,29 @@ private:
         t.pass.reset(t.target->newCompatibleRenderPassDescriptor());t.target->setRenderPassDescriptor(t.pass.get());
         return t.target->create();
     }
+    static int requiredAtlasCapacity(const CompositionPacketPtr &p){return std::max(1024,((int(p->tiles.size())+31)/32)*32);}
     bool reserveTargets(const CompositionPacketPtr &p){
         const quint64 surfaces=quint64(p->surfaceCount)+(scratch.texture || (p->transform && p->transform->geometry.warp)?1:0);
-        const quint64 charge=64ull*1024*1024+quint64(p->info.document_width)*p->info.document_height*16*surfaces+
-            quint64(p->pixels.width())*p->pixels.height()*4+4ull*1024*1024;
-        if(charge>textureLimit)return fail("CPU: composition GPU payload budget");
+        const auto atlasSlots=std::max(atlasCapacity,requiredAtlasCapacity(p));
+        if(atlasSlots>4096)return fail("CPU: composition atlas slot budget");
+        const quint64 charge=quint64(atlasSlots)*65536+quint64(p->info.document_width)*p->info.document_height*16*surfaces+
+            quint64(p->pixels.width())*p->pixels.height()*4+4ull*1024*1024+80ull*1024;
+        const auto limit=quint64(p->info.document_width)*p->info.document_height>4194304?2*textureLimit:textureLimit;
+        if(charge>limit)return fail("CPU: composition GPU payload budget");
         if(!reservation->grow(charge*quint64(inFlightFrames+2)))return fail("CPU: composition process/in-flight GPU payload budget");
         counters->textureBytes=charge;return true;
     }
     bool prepareTargets(){
         const QSize doc(int(packet->info.document_width),int(packet->info.document_height));
         const auto pixels=packet->pixels;
+        const auto needed=requiredAtlasCapacity(packet);
+        if(needed>atlasCapacity){
+            if(!reserveTargets(packet) || needed>4096 || (needed/32)*64>rhi->resourceLimit(QRhi::TextureSizeMax))return fail("CPU: composition atlas growth budget/capability");
+            passes.clear();completePasses=false;maps.clear();cache.clear();slotIds.fill(0);
+            atlas.reset(rhi->newTexture(QRhiTexture::RGBA32F,{2048,(needed/32)*64}));
+            if(!atlas->create())return fail("CPU: composition atlas growth allocation");
+            atlasCapacity=needed;changed=QRect(QPoint(),doc);
+        }
         if(packet->transform && counters->preciseTransform.load()!=1)return fail("CPU: precise transform device capability");
         if(packet->transform && packet->transform->geometry.warp && !scratch.texture){
             if(!reserveTargets(packet) || !createTarget(scratch,QRhiTexture::RGBA32F,doc))return fail("CPU: composition transform target budget/allocation");
@@ -239,6 +257,7 @@ private:
            next->info.document_width!=packet->info.document_width || next->info.document_height!=packet->info.document_height ||
            next->nodes.size()!=packet->nodes.size() ||
            next->operations.size()!=packet->operations.size() || next->surfaceCount!=packet->surfaceCount || next->outputSurface!=packet->outputSurface ||
+           next->adjustment!=packet->adjustment ||
            (!next->operations.isEmpty() && std::memcmp(next->operations.constData(),packet->operations.constData(),size_t(next->operations.size())*sizeof(PaintCompositionOperation))) ||
            (next->geometrySequence!=packet->geometrySequence && (next->transform || packet->transform))){changed=full;return;}
         for(int i=0;i<next->nodes.size();++i){
@@ -311,7 +330,8 @@ private:
             QRhiShaderResourceBinding::sampledTexture(2,QRhiShaderResourceBinding::FragmentStage,a,sampler.get()),
             QRhiShaderResourceBinding::sampledTexture(3,QRhiShaderResourceBinding::FragmentStage,b,sampler.get()),
             QRhiShaderResourceBinding::sampledTexture(4,QRhiShaderResourceBinding::FragmentStage,c,sampler.get()),
-            QRhiShaderResourceBinding::sampledTexture(5,QRhiShaderResourceBinding::FragmentStage,coverage?coverage:c,sampler.get())});
+            QRhiShaderResourceBinding::sampledTexture(5,QRhiShaderResourceBinding::FragmentStage,coverage?coverage:c,sampler.get()),
+            QRhiShaderResourceBinding::sampledTexture(6,QRhiShaderResourceBinding::FragmentStage,adjustmentLut.get(),sampler.get())});
         if(!pass.bindings->create())return false;
         ++counters->bindingCreates;
         pass.pipeline=pipeline(pass.mesh?3:pass.precise?2:target.texture->format()==QRhiTexture::RGBA8?1:0);
@@ -368,9 +388,37 @@ private:
         }
         meshTriangleCount=count;batch->updateDynamicBuffer(meshVertices.get(),0,triangles.size(),triangles.constData());return true;
     }
+    void adjustmentParameters(Pass &pass){
+        auto &p=pass.parameters;p.adjustmentSettings={};p.adjustmentMode={};
+        if(packet->adjustment && !packet->adjustment->neutral && pass.sourceNode==packet->adjustment->node){
+            p.adjustmentSettings=packet->adjustment->parameters;p.adjustmentMode={1,float(packet->adjustment->kind),0,0};
+        }
+    }
+    bool reusableAdjustmentPasses()const{
+        const auto &before=renderedPacket;
+        if(!before || !completePasses || passes.empty() || (!packet->adjustment && !before->adjustment) || packet->transform || before->transform ||
+           packet->info.key.device_epoch!=before->info.key.device_epoch || packet->info.key.document_generation!=before->info.key.document_generation ||
+           packet->info.key.revision!=before->info.key.revision || packet->info.document_width!=before->info.document_width || packet->info.document_height!=before->info.document_height ||
+           packet->region!=before->region || packet->pixels!=before->pixels || packet->lod!=before->lod ||
+           packet->surfaceCount!=before->surfaceCount || packet->outputSurface!=before->outputSurface || packet->operations.size()!=before->operations.size() ||
+           packet->nodes.size()!=before->nodes.size() || packet->tiles.size()!=before->tiles.size())return false;
+        return (packet->operations.isEmpty() || !std::memcmp(packet->operations.constData(),before->operations.constData(),size_t(packet->operations.size())*sizeof(PaintCompositionOperation))) &&
+            (packet->nodes.isEmpty() || !std::memcmp(packet->nodes.constData(),before->nodes.constData(),size_t(packet->nodes.size())*sizeof(PaintCompositionNode))) &&
+            (packet->tiles.isEmpty() || !std::memcmp(packet->tiles.constData(),before->tiles.constData(),size_t(packet->tiles.size())*sizeof(PaintCompositionTile)));
+    }
     bool prepare(QRhiResourceUpdateBatch *batch){
         InteractionTrace::Scope trace("composition.prepare");
         if(!prepareTargets())return false;
+        if(packet->adjustment && !packet->adjustment->neutral && packet->adjustment->kind==0 && (!renderedPacket || !renderedPacket->adjustment || renderedPacket->adjustment->neutral || renderedPacket->adjustment->kind!=0 || packet->adjustment->lut!=renderedPacket->adjustment->lut)){
+            QByteArray bytes=packet->adjustment->lut;
+            if(bytes.size()!=4097*16)return fail("CPU: invalid adjustment LUT extent");
+            bytes.resize(1024*5*16);
+            batch->uploadTexture(adjustmentLut.get(),QRhiTextureUploadDescription({QRhiTextureUploadEntry(0,0,QRhiTextureSubresourceUploadDescription(bytes))}));
+        }
+        if(reusableAdjustmentPasses()){
+            for(auto &pass:passes){adjustmentParameters(*pass);batch->updateDynamicBuffer(pass->uniform.get(),0,sizeof(Parameters),&pass->parameters);}
+            ++counters->adjustmentUpdates;return true;
+        }
         if(reusableTransformPasses()){
             if(packet->geometrySequence!=renderedPacket->geometrySequence){
                 if(!prepareMesh(batch))return false;
@@ -393,7 +441,7 @@ private:
         for(int i=0;i<packet->tiles.size();++i){
             const auto id=packet->tiles[i].content_id;if(locations.contains(id))continue;
             while(occupied.contains(next))++next;
-            if(next>=1024)return fail("CPU: composition cache full");
+            if(next>=atlasCapacity)return fail("CPU: composition cache full");
             const auto previous=slotIds[size_t(next)];if(previous)cache.remove(previous);
             cache.insert(id,next);slotIds[size_t(next)]=id;locations.insert(id,next);occupied.insert(next);
             QRhiTextureSubresourceUploadDescription upload(packet->data[i]->bytes);upload.setDestinationTopLeft({(next%32)*64,(next/32)*64});upload.setSourceSize({64,64});
@@ -437,6 +485,7 @@ private:
                 else if(op.kind>=PAINT_COMPOSITION_MASKED_RASTER)kind=float(op.kind+3);
                 p.factors={node.opacity*node.fill,mi!=int(op.node_index) && mask.visible?mask.opacity:0.f,0,kind};
                 const bool raster=op.kind==PAINT_COMPOSITION_DRAW_RASTER || op.kind==PAINT_COMPOSITION_MASKED_RASTER || op.kind==PAINT_COMPOSITION_CLIP_RASTER;
+                if(raster)pass->sourceNode=int(op.node_index);adjustmentParameters(*pass);
                 auto *source=raster?srcMap.texture.get():surface(int(op.source)).texture.get();
                 if(!makePass(*pass,surface(int(op.output)),surface(int(op.backdrop)).texture.get(),atlas.get(),source,maskMap.texture.get(),op.reserved[1]?surface(int(op.reserved[1]-1)).texture.get():nullptr))return fail("CPU: composition group pipeline allocation");
                 batch->updateDynamicBuffer(pass->uniform.get(),0,sizeof(p),&p);passes.push_back(std::move(pass));
@@ -462,6 +511,7 @@ private:
             p.mask={mask.offset_x,mask.offset_y,qint32(mask.white_width),qint32(mask.white_height)};
             p.sourceOrigin={srcMap.origin.x(),srcMap.origin.y(),qint32(quint32(node.reserved)),0};p.maskOrigin={maskMap.origin.x(),maskMap.origin.y(),0,0};
             p.factors={node.opacity*node.fill,mi!=i && mask.visible?mask.opacity:0.f,0,0};
+            pass->sourceNode=i;adjustmentParameters(*pass);
             if(packet->transform && packet->transform->node==i){
                 const auto &t=*packet->transform;pass->precise=true;transformParameters(p,t);
                 if(t.geometry.warp){
@@ -556,7 +606,7 @@ private:
     QSize documentSize,outputSize;
     QRect changed;
     std::unique_ptr<QRhiSampler> sampler;
-    std::unique_ptr<QRhiTexture> atlas,axisX,axisY;
+    std::unique_ptr<QRhiTexture> atlas,axisX,axisY,adjustmentLut;
     std::array<Target,2> linear;
     std::vector<Target> groupTargets;
     Target &surface(int index){return index<2?linear[size_t(index)]:groupTargets[size_t(index-2)];}
@@ -569,7 +619,8 @@ private:
     std::array<std::unique_ptr<QRhiRenderPassDescriptor>,2> pipelinePasses;
     std::array<std::unique_ptr<QRhiGraphicsPipeline>,4> pipelines;
     QHash<quint64,int> cache;
-    std::array<quint64,1024> slotIds{};
+    int atlasCapacity=1024;
+    std::array<quint64,4096> slotIds{};
     QVector<QVector<std::shared_ptr<const CompositionTileData>>> staging;
 };
 }

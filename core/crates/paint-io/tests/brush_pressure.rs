@@ -531,3 +531,19 @@ fn smooth_pressure_state13_vbr11_preserve_models_and_reject_old_versions() {
         "smooth-pchip-v1"
     );
 }
+
+#[test]
+fn initial_direction_state_round_trip() {
+    let mut catalog = BrushCatalog::default();
+    let mut settings = catalog.selected().settings().clone();
+    settings.dynamics.tip =
+        paint_core::TipDynamics::new(paint_core::AngleControl::InitialDirection, false, 0.01)
+            .unwrap();
+    catalog.edit("round-pressure", settings).unwrap();
+    let state = brush_state::encode(&catalog).unwrap();
+    let decoded = brush_state::decode(&state, MAX_CATALOG_MASK_BYTES).unwrap();
+    assert_eq!(
+        decoded.selected().settings().dynamics.tip.angle(),
+        paint_core::AngleControl::InitialDirection
+    );
+}

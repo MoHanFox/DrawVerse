@@ -1,5 +1,7 @@
 # DrawVerse 文档索引
 
+- [曲线、色阶与色相/饱和度/明度](tools/image-adjustments-design.md) · [验收](validations/tools/image-adjustments-validation.md)
+
 - [通用 GPU 合成与即时编辑显示（提案）](platform/general-gpu-composition-design.md) · [实施提示词](planning/general-gpu-composition-prompt.md)
 
 - [主线 C2-B — Exact Tile Cache Reuse](tools/exact-tile-cache-reuse-design.md)

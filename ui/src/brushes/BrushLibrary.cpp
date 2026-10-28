@@ -76,7 +76,7 @@ bool validScatter(const QJsonObject &data){
 }
 QVariantMap defaultDevice(){return {{"angleControl","fixed"},{"tiltRoundness",false},{"minimumRoundness",.01}};}
 bool validDevice(const QJsonObject &data){
-    const QStringList controls={"fixed","direction","pen-rotation","tilt"};
+    const QStringList controls={"fixed","direction","pen-rotation","tilt","initial-direction"};
     const auto value=data.value("minimumRoundness");const auto minimum=value.toDouble(-1);
     return data.size()==3 && data.value("angleControl").isString() && controls.contains(data.value("angleControl").toString()) && data.value("tiltRoundness").isBool() && value.isDouble() && std::isfinite(minimum) && minimum>=.01 && minimum<=1;
 }

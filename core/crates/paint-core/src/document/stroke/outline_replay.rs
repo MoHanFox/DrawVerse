@@ -21,8 +21,17 @@ pub(super) fn accumulate(
         OutlineSource::Existing(tip) => radius * f64::from(tip.radius() / stroke.brush.radius),
         _ => radius,
     };
-    let paint_geometry =
-        paint.map(|p| p.dab_geometry(point, stroke.direction, stroke.shape_sample));
+    let paint_geometry = paint.map(|p| {
+        p.dab_geometry(
+            point,
+            if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection {
+                stroke.initial_direction
+            } else {
+                stroke.direction
+            },
+            stroke.shape_sample,
+        )
+    });
     if let Some((program, geometry)) = paint.zip(paint_geometry) {
         let (x, y) = program.extent(paint_radius, geometry);
         extent[0] = extent[0].max(x);
@@ -63,9 +72,15 @@ pub(super) fn accumulate(
         OutlineSource::Texture(t) | OutlineSource::SelfTextured(t) => t.compile(),
         _ => None,
     };
-    let geometry = stroke
-        .program
-        .dab_geometry(point, stroke.direction, stroke.shape_sample);
+    let geometry = stroke.program.dab_geometry(
+        point,
+        if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection {
+            stroke.initial_direction
+        } else {
+            stroke.direction
+        },
+        stroke.shape_sample,
+    );
     let texture = texture.as_ref().map(|t| geometry.texture_dab(t, point));
     let paint_texture = paint
         .zip(paint_geometry)

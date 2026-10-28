@@ -55,7 +55,7 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         const auto area=quint64(state.width)*state.height;
         const auto scale=std::min(view.region.width()/view.pixels.width(),view.region.height()/view.pixels.height());
         const int lod=scale>=1?std::clamp(int(std::ceil(std::log2(scale))),0,20):0;
-        if(!area || area>4194304 || state.width>4096 || state.height>4096 || lod>6 ||
+        if(!area || area>9437184 || state.width>4096 || state.height>4096 || lod>6 ||
            view.pixels.isEmpty() || view.pixels.width()>4096 || view.pixels.height()>4096 ||
            quint64(view.pixels.width())*view.pixels.height()>4194304){
             fallback=QStringLiteral("CPU: composition extent/LOD budget");return {};
@@ -65,23 +65,32 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         request.viewport.x=view.region.x();request.viewport.y=view.region.y();request.viewport.width=view.region.width();request.viewport.height=view.region.height();
         request.viewport.pixel_width=quint32(view.pixels.width());request.viewport.pixel_height=quint32(view.pixels.height());
         request.revision=state.revision;request.request_id=++m_next;request.device_epoch=view.epoch;
-        request.max_nodes=64;request.max_tiles=1024;request.max_pinned_bytes=64ull*1024*1024;request.max_metadata_bytes=2ull*1024*1024;
-        const auto status=paint_session_request_composition(core,session,&request,&m_lease);
+        const bool large=area>4194304;
+        request.max_nodes=large?1:64;request.max_tiles=large?4096:1024;
+        request.max_pinned_bytes=(large?256ull:64ull)*1024*1024;request.max_metadata_bytes=(large?8ull:2ull)*1024*1024;
+        const auto status=qEnvironmentVariable("DRAWVERSE_COMPOSITION_FAIL")=="busy"?PAINT_BUSY:paint_session_request_composition(core,session,&request,&m_lease);
+        if(status==PAINT_BUSY || status==PAINT_CANCELLED){
+            // A concurrent edit invalidates the requested snapshot, not GPU support.
+            // Keep the current presentation and retry even at the same revision.
+            m_attemptRevision=~quint64(0);return {};
+        }
         if(status!=PAINT_OK){fallback=QStringLiteral("CPU: composition request %1").arg(status);return {};}
         m_packet=std::make_shared<CompositionPacket>();m_packet->region=view.region;m_packet->pixels=view.pixels;m_packet->lod=lod;
     }
     auto abandon=[&](PaintStatus status){
         paint_session_release_composition(core,session,m_lease);m_lease=0;m_packet.reset();
-        if(status==PAINT_BUSY || status==PAINT_CANCELLED)m_attemptRevision=~quint64(0);
+        if(status==PAINT_BUSY || status==PAINT_CANCELLED){m_attemptRevision=~quint64(0);return CompositionPacketPtr{};}
         fallback=QStringLiteral("CPU: composition transport %1").arg(status);
         return CompositionPacketPtr{};
     };
+    if(qEnvironmentVariable("DRAWVERSE_COMPOSITION_FAIL")=="busy-read")return abandon(PAINT_BUSY);
     if(m_packet->nodes.isEmpty()){
         auto info=dto<PaintCompositionInfo>();const auto status=paint_session_composition_info(core,session,m_lease,&info);
         if(status!=PAINT_OK)return abandon(status);
         if(info.state==PAINT_COMPOSITION_PENDING)return {};
         if(info.state!=PAINT_COMPOSITION_READY)return abandon(info.status);
-        if(info.node_count>64 || info.tile_count>1024)return abandon(PAINT_LIMIT_EXCEEDED);
+        const bool large=quint64(state.width)*state.height>4194304;
+        if(info.node_count>quint32(large?1:64) || info.tile_count>quint32(large?4096:1024))return abandon(PAINT_LIMIT_EXCEEDED);
         m_packet->info=info;
         for(quint32 i=0;i<info.node_count;++i){
             auto node=dto<PaintCompositionNode>();const auto result=paint_session_composition_node(core,session,&info.key,i,&node);

@@ -174,7 +174,7 @@ public:
         m_computeClock.restart();
         auto info=dto<PaintSessionInfo>();if(paint_session_info(m_core,m_session,&info)!=PAINT_OK)return;
         const auto desired=preferences()->value("performance/computeDevice","auto").toString();
-        if((desired!=m_computeDevice) && !info.stroke_active && !(info.flags&(PAINT_SESSION_LIQUIFY|PAINT_SESSION_TRANSFORM|PAINT_SESSION_LAYER_MOVE))) {
+        if((desired!=m_computeDevice) && !info.stroke_active && !(info.flags&(PAINT_SESSION_LIQUIFY|PAINT_SESSION_TRANSFORM|PAINT_SESSION_LAYER_MOVE|PAINT_SESSION_ADJUSTMENT))) {
             const auto bytes=desired.toUtf8();quint64 sequence=0;
             if(paint_session_set_compute(m_core,m_session,reinterpret_cast<const uint8_t*>(bytes.constData()),quint64(bytes.size()),&sequence)==PAINT_OK) {
                 m_computeDevice=desired;m_computeSequence=sequence;
@@ -458,8 +458,8 @@ public:
         // One entry per HistoryAction discriminant, in order. A missing entry used to fail the whole
         // publish ("无法识别的历史操作"), which silently froze every later UI update, so the list must
         // cover every kind the core can report and the check below treats the rest as unknown text.
-        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹"),QStringLiteral("复制图层"),QStringLiteral("粘贴图层"),QStringLiteral("合并图层"),QStringLiteral("液化"),QStringLiteral("液化 · 推拉"),QStringLiteral("液化 · 膨大"),QStringLiteral("液化 · 扭曲"),QStringLiteral("液化 · 重建"),QStringLiteral("液化 · 重置"),QStringLiteral("置入图片"),QStringLiteral("自由变换"),QStringLiteral("栅格化图片"),QStringLiteral("水平翻转"),QStringLiteral("垂直翻转"),QStringLiteral("清除选区内容")};
-        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge","layers","layers","layers","liquify","liquifyPush","liquifyBloat","liquifyTwirl","liquifyReconstruct","undo","page","move","layers","move","move","eraser"};
+        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹"),QStringLiteral("复制图层"),QStringLiteral("粘贴图层"),QStringLiteral("合并图层"),QStringLiteral("液化"),QStringLiteral("液化 · 推拉"),QStringLiteral("液化 · 膨大"),QStringLiteral("液化 · 扭曲"),QStringLiteral("液化 · 重建"),QStringLiteral("液化 · 重置"),QStringLiteral("置入图片"),QStringLiteral("自由变换"),QStringLiteral("栅格化图片"),QStringLiteral("水平翻转"),QStringLiteral("垂直翻转"),QStringLiteral("清除选区内容"),QStringLiteral("曲线"),QStringLiteral("色阶"),QStringLiteral("色相/饱和度/明度")};
+        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge","layers","layers","layers","liquify","liquifyPush","liquifyBloat","liquifyTwirl","liquifyReconstruct","undo","page","move","layers","move","move","eraser","layers","layers","layers"};
         for(uint32_t depth=0;depth<=info.undo_depth+info.redo_depth;++depth) {
             auto entry=dto<PaintHistoryEntry>();auto historyStatus=paint_session_history_entry(m_core,m_session,info.publication,depth,&entry);
             if(historyStatus==PAINT_BUSY)return false;if(!check(historyStatus))return false;
@@ -475,11 +475,17 @@ public:
         uint64_t committed[4096];uint32_t count=0;const auto committedStatus=paint_session_committed_strokes(m_core,m_session,info.publication,m_strokeCommitCursor,committed,4096,&count);
         if(committedStatus==PAINT_BUSY)return false;if(!check(committedStatus))return false;
         QVariantList committedStrokes;for(uint32_t i=0;i<count;++i)committedStrokes.append(QVariant::fromValue<qulonglong>(committed[i]));
+        QVariantList adjustmentHistogram;
+        if(info.flags&PAINT_SESSION_ADJUSTMENT){
+            float bins[1024];const auto histStatus=paint_session_adjustment_histogram(m_core,m_session,info.publication,bins,1024);
+            if(histStatus==PAINT_BUSY)return false;if(!check(histStatus))return false;
+            for(int c=0;c<4;c++){QVariantList channel;for(int i=0;i<256;i++)channel.append(bins[c*256+i]);adjustmentHistogram.append(QVariant(channel));}
+        }
         // Only queued metadata has a GUI acknowledgement. A stale publication
         // above must remain retryable, or poll() also stops delivering pixels.
         m_connection->metadataPending.store(true);
         InteractionTrace::point("move.worker.metadata.emit",double(info.completed_sequence));
-        emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps}},history,{{"points",transformPoints},{"warp",transform.warp!=0},{"interpolation",transform.interpolation},{"skewH",transform.skew_h},{"skewV",transform.skew_v}},committedStrokes); m_publication = info.publication;m_strokeCommitCursor=info.completed_sequence;
+        emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps},{"adjustmentHistogram",adjustmentHistogram}},history,{{"points",transformPoints},{"warp",transform.warp!=0},{"interpolation",transform.interpolation},{"skewH",transform.skew_h},{"skewV",transform.skew_v}},committedStrokes); m_publication = info.publication;m_strokeCommitCursor=info.completed_sequence;
         return true;
     }
     void transformInputActivity(){
@@ -1136,6 +1142,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         InteractionTrace::Scope entryTrace("move.gui.metadataEntry");
         if(entryTrace.active)entryTrace.event.value=double(info.completed_sequence);
         m_connection->metadataPending.store(false);
+        m_adjustmentHistogram=selection.take("adjustmentHistogram").toList();
         const bool propertiesChanged = info.document_generation != m_generation
             || static_cast<int>(info.width) != m_width || static_cast<int>(info.height) != m_height
             || static_cast<int>(info.undo_depth) != m_undo || static_cast<int>(info.redo_depth) != m_redo
@@ -1146,7 +1153,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         const bool changedLayers = m_layers != layers;
         const bool activeChanged = info.active_layer_id != m_active;
         const bool changedGeneration = info.document_generation != m_generation;
-        if(changedGeneration){clearCompositionEdit();m_residentPreview.reset();m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
+        if(changedGeneration){m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;clearCompositionEdit();m_residentPreview.reset();m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
         else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
         if(changedGeneration) m_nextDefaultLayer=1;
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
@@ -1226,6 +1233,20 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         // A lasso/wand edit is a busy layer edit too: keep the panel and painting idled until the
         // worker published the resulting selection.
 
+        if(m_pendingAdjustment && info.completed_sequence>=m_pendingAdjustment) {
+            m_adjustmentFailed=info.last_error_status!=PAINT_OK && info.last_error_sequence==m_pendingAdjustment;
+            m_pendingAdjustment=0;
+            m_adjustmentActive=(info.flags&PAINT_SESSION_ADJUSTMENT)!=0;
+            if(!m_adjustmentActive){
+                if(m_adjustmentBase && m_adjustmentCommitRequested && !m_adjustmentFailed)m_adjustmentFinalRevision=info.revision;
+                else {m_adjustmentBase.reset();m_adjustmentFrame.reset();}
+                m_adjustmentCommitRequested=false;m_adjustmentSettings.reset();emit frameChanged();
+            }else if(m_adjustmentCommitRequested){
+                if(m_adjustmentFailed)m_adjustmentCommitRequested=false;
+                else finishAdjustment(true);
+            }
+            emit stateChanged();
+        }
         m_active = info.active_layer_id;
         const bool historyLiquify=(info.flags&(PAINT_SESSION_LIQUIFY|PAINT_SESSION_TRANSFORM))!=0;
         if(historyLiquify!=m_historyLiquify){emit historyScopeChanging(historyLiquify);m_historyLiquify=historyLiquify;}
@@ -1573,6 +1594,10 @@ void PaintCoreClient::requestLayerMovePreparation() {
 }
 CompositionPacketPtr PaintCoreClient::compositionPacket()const{
     if(!gpuCompositionEnabled() || m_blendPreviewLayer || m_compositionFinalFallback || m_compositionTransformCpu)return {};
+    if(m_adjustmentBase){
+        if(m_adjustmentFinalRevision && m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation && m_compositionPacket->info.key.revision>=m_adjustmentFinalRevision)return m_compositionPacket;
+        return m_adjustmentFrame?m_adjustmentFrame:m_adjustmentBase;
+    }
     if(m_compositionFinalRevision && m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation &&
        m_compositionPacket->info.key.revision>=m_compositionFinalRevision)return m_compositionPacket;
     if(m_compositionEditFrame)return m_compositionEditFrame;
@@ -1679,12 +1704,19 @@ void PaintCoreClient::refreshCompositionMove(){
     emit frameChanged();
 }
 void PaintCoreClient::compositionPrimaryAdopted(quint64 generation,quint64 epoch,quint64 revision){
+    if(m_adjustmentFinalRevision && generation==m_generation && revision>=m_adjustmentFinalRevision){
+        {QMutexLocker lock(&m_connection->mutex);if(epoch!=m_connection->compositionView.epoch)return;}
+        m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;emit frameChanged();return;
+    }
     if(!m_compositionFinalRevision || generation!=m_generation || revision<m_compositionFinalRevision)return;
     {QMutexLocker lock(&m_connection->mutex);if(epoch!=m_connection->compositionView.epoch)return;}
     InteractionTrace::point("move.composition.finalPrimaryAdopted",double(revision));
     clearCompositionEdit();emit frameChanged();
 }
 void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
+    if(m_adjustmentBase && (!enabled || m_adjustmentBase->info.key.device_epoch!=epoch)){
+        m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;emit stateChanged();emit frameChanged();
+    }
     m_compositionDeviceAvailable=enabled;
     enabled=enabled && gpuCompositionEnabled() && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive && !m_blendPreviewLayer;
     {
@@ -1769,6 +1801,16 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
             }
             emit frameChanged();
         }
+        if(view==0 && enabled && m_adjustmentBase && (m_adjustmentBase->region!=region || m_adjustmentBase->pixels!=pixels)){
+            const double scale=std::min(region.width()/pixels.width(),region.height()/pixels.height());const int lod=scale>=1?int(std::ceil(std::log2(scale))):0;
+            if(pixels.width()>4096 || pixels.height()>4096 || quint64(pixels.width())*pixels.height()>4194304 || lod>6){
+                m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;emit stateChanged();
+            }else{
+                const auto project=[&](const CompositionPacketPtr &source){auto next=std::make_shared<CompositionPacket>(*source);next->region=region;next->pixels=pixels;next->lod=lod;next->geometrySequence=++m_compositionGeometry;return CompositionPacketPtr(std::move(next));};
+                m_adjustmentBase=project(m_adjustmentBase);if(m_adjustmentFrame)m_adjustmentFrame=project(m_adjustmentFrame);
+            }
+            emit frameChanged();
+        }
         requestLayerMovePreparation();
     } else if (!error.isEmpty()) showError(error);
 }
@@ -1797,7 +1839,7 @@ void PaintCoreClient::inspectCompute() {
     if(m_worker)QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->inspectCompute();},Qt::QueuedConnection);
 }
 bool PaintCoreClient::saveComputeDevice(const QString &id) {
-    if(id.isEmpty() || id.size()>1024 || m_closing || m_drawing || m_liquifyActive || m_transformActive || m_layerMoveActive || m_computeBusy || !m_worker)return false;
+    if(id.isEmpty() || id.size()>1024 || m_closing || m_drawing || m_liquifyActive || m_transformActive || m_layerMoveActive || m_adjustmentActive || m_computeBusy || !m_worker)return false;
     m_computeBusy=true;emit computeChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,id]{worker->saveCompute(id);},Qt::QueuedConnection);
     return true;
@@ -2772,4 +2814,91 @@ bool PaintCoreClient::wetBrushAction(bool reload){
     quint64 preparation=0;{QMutexLocker lock(&m_brushCatalogConnection->mutex);preparation=m_brushCatalogConnection->preparation;}
     const auto id=m_brushLibrary->selectedId();const auto color=m_color;const auto background=m_secondaryColor;const auto radius=m_brushLibrary->radius();const auto after=m_pendingMutation;m_wetActionBusy=true;emit wetActionChanged();
     QMetaObject::invokeMethod(m_worker,[worker=m_worker,reload,id,preparation,color,background,radius,after]{worker->queueWetAction(reload,id,preparation,color,background,radius,after);},Qt::QueuedConnection);return true;
+}
+
+bool PaintCoreClient::beginAdjustment(int kind) {
+ if(kind<0 || kind>2 || !m_ready || m_closing || m_drawing || m_fileBusy || layerEditBusy() || m_transformActive || m_liquifyActive)return false;
+ clearLayerBlendPreview();uint64_t sequence=0;PaintStatus status;
+ {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_adjustment(m_connection->core,m_connection->session,0,kind,nullptr,&sequence);}
+ if(status!=PAINT_OK){showError(immediateError(status));return false;}
+ m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentSettings.reset();m_adjustmentFinalRevision=0;
+ m_adjustmentCommitRequested=m_adjustmentMaterialized=false;
+ if(!selectionEnabled() && !m_compositionEditBase && m_compositionDeviceAvailable && gpuCompositionEnabled() && m_compositionPacket &&
+    m_compositionPacket->info.key.revision==m_revision && m_compositionPacket->info.key.document_generation==m_generation){
+    for(int i=0;i<m_compositionPacket->nodes.size();i++){const auto &n=m_compositionPacket->nodes[i];if(n.layer_id==m_active && n.kind==PAINT_COMPOSITION_RASTER){
+        m_adjustmentBase=m_compositionPacket;auto adjustment=std::make_shared<CompositionAdjustment>();adjustment->node=i;adjustment->neutral=true;
+        auto next=std::make_shared<CompositionPacket>(*m_adjustmentBase);next->adjustment=std::move(adjustment);next->preview=true;next->geometrySequence=++m_compositionGeometry;m_adjustmentFrame=std::move(next);break;
+    }}
+ }
+ m_adjustmentActive=true;m_adjustmentFailed=false;m_pendingAdjustment=sequence;emit stateChanged();emit frameChanged();return true;
+}
+bool PaintCoreClient::updateAdjustmentControls(int kind,const QVariantMap &values){
+ if(!m_adjustmentActive || m_pendingAdjustment || kind<0 || kind>2)return false;
+ auto settings=std::make_unique<PaintAdjustment>();settings->struct_size=sizeof(PaintAdjustment);settings->kind=kind;
+ const bool neutral=values.value("neutral").toBool();
+ if(kind==2 && !neutral){
+    const double hue=values.value("hue").toDouble(),sat=values.value("saturation").toDouble(),light=values.value("lightness").toDouble();
+    if(!std::isfinite(hue) || std::abs(hue)>360 || !std::isfinite(sat) || std::abs(sat)>100 || !std::isfinite(light) || std::abs(light)>100)return false;
+    settings->parameters[0]=hue/360.;settings->parameters[1]=sat/100.;settings->parameters[2]=light/100.;settings->parameters[3]=values.value("colorize").toBool()?1.f:0.f;
+ }
+ std::array<std::array<float,257>,4> samples{};
+ if(kind==0 && !neutral){
+    const auto curves=values.value("curves").toList(),modes=values.value("modes").toList();if(curves.size()!=4 || modes.size()!=4)return false;
+    for(int c=0;c<4;c++){
+        const auto points=curves[c].toList(),nodeModes=modes[c].toList();
+        const auto json=nodeModes.isEmpty()?QJsonDocument(QJsonArray::fromVariantList(points)).toJson(QJsonDocument::Compact):QJsonDocument(QJsonObject{{"curve",QJsonArray::fromVariantList(points)},{"nodeModes",QJsonArray::fromVariantList(nodeModes)}}).toJson(QJsonDocument::Compact);
+        if(paint_pressure_curve_samples(reinterpret_cast<const uint8_t*>(json.constData()),uint64_t(json.size()),nodeModes.isEmpty()?1u:2u,samples[c].data())!=PAINT_OK)return false;
+    }
+ }
+ std::array<double,5> levels{0,255,1,0,255};
+ if(kind==1 && !neutral){const auto list=values.value("levels").toList();if(list.size()!=5)return false;for(int i=0;i<5;i++){levels[i]=list[i].toDouble();if(!std::isfinite(levels[i]))return false;}
+    if(levels[0]<0 || levels[1]>255 || levels[0]>=levels[1] || levels[2]<.01 || levels[2]>10 || levels[3]<0 || levels[3]>255 || levels[4]<0 || levels[4]>255)return false;
+ }
+ const auto sample=[](const auto &table,double x){const double f=std::clamp(x,0.,1.)*256;const int a=std::min(255,int(f));return double(table[a])*(1-(f-a))+double(table[a+1])*(f-a);};
+ for(int i=0;i<=4096;i++){
+    const double x=double(i)/4096.;double r=x,g=x,b=x;
+    if(!neutral && kind==0){r=sample(samples[0],sample(samples[1],x));g=sample(samples[0],sample(samples[2],x));b=sample(samples[0],sample(samples[3],x));}
+    else if(!neutral && kind==1 && levels!=std::array<double,5>{0,255,1,0,255}){const double v=std::pow(std::clamp((x*255-levels[0])/(levels[1]-levels[0]),0.,1.),1/levels[2]);r=g=b=(levels[3]+(levels[4]-levels[3])*v)/255;}
+    settings->lut[i][0]=float(r);settings->lut[i][1]=float(g);settings->lut[i][2]=float(b);settings->lut[i][3]=1.f;
+ }
+ return applyAdjustmentSettings(std::move(settings));
+}
+bool PaintCoreClient::updateAdjustment(int kind,const QVariantList &lut,qreal hue,qreal saturation,qreal lightness,bool colorize) {
+ if(!m_adjustmentActive || m_pendingAdjustment || kind<0 || kind>2 || lut.size()!=4097 || !std::isfinite(hue) || std::abs(hue)>360 || !std::isfinite(saturation) || std::abs(saturation)>100 || !std::isfinite(lightness) || std::abs(lightness)>100 || (colorize && kind!=2))return false;
+ auto settings=std::make_unique<PaintAdjustment>();settings->struct_size=sizeof(PaintAdjustment);settings->kind=kind;
+ settings->parameters[0]=hue/360.;settings->parameters[1]=saturation/100.;settings->parameters[2]=lightness/100.;settings->parameters[3]=colorize?1.f:0.f;
+ for(int i=0;i<4097;i++){const auto row=lut[i].toList();if(row.size()!=3)return false;for(int c=0;c<3;c++){const float v=row[c].toFloat();if(!std::isfinite(v) || v<0 || v>1)return false;settings->lut[i][c]=v;}settings->lut[i][3]=1.;}
+ return applyAdjustmentSettings(std::move(settings));
+}
+bool PaintCoreClient::applyAdjustmentSettings(std::unique_ptr<PaintAdjustment> settings){
+ const int kind=int(settings->kind);const bool colorize=settings->parameters[3]==1.f;
+ // Local preview is immutable and touches the target before masks/blending.
+ if(m_adjustmentBase){
+    auto adjustment=std::make_shared<CompositionAdjustment>();adjustment->kind=kind==2?1:0;
+    std::copy_n(settings->parameters,4,adjustment->parameters.begin());
+    adjustment->lut=QByteArray(reinterpret_cast<const char*>(settings->lut),sizeof(settings->lut));
+    for(int i=0;i<m_adjustmentBase->nodes.size();i++)if(m_adjustmentBase->nodes[i].layer_id==m_active && m_adjustmentBase->nodes[i].kind==PAINT_COMPOSITION_RASTER){adjustment->node=i;break;}
+    auto next=std::make_shared<CompositionPacket>(*m_adjustmentBase);bool neutral=!colorize;
+    if(kind==2)neutral=neutral && settings->parameters[0]==0 && settings->parameters[1]==0 && settings->parameters[2]==0;
+    else for(int i=0;i<4097 && neutral;i++)for(int c=0;c<3;c++)if(settings->lut[i][c]!=float(i)/4096.f)neutral=false;
+    adjustment->neutral=neutral;next->adjustment=std::move(adjustment);
+    next->preview=true;next->geometrySequence=++m_compositionGeometry;m_adjustmentFrame=std::move(next);
+    const bool failed=m_adjustmentFailed;m_adjustmentSettings=std::move(settings);m_adjustmentMaterialized=false;m_adjustmentFailed=false;if(failed)emit stateChanged();emit frameChanged();return true;
+ }
+ uint64_t sequence=0;PaintStatus status;
+ {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_adjustment(m_connection->core,m_connection->session,1,kind,settings.get(),&sequence);}
+ if(status!=PAINT_OK){showError(immediateError(status));return false;}
+ m_pendingAdjustment=sequence;emit stateChanged();return true;
+}
+bool PaintCoreClient::finishAdjustment(bool commit) {
+ if(!m_adjustmentActive || m_pendingAdjustment)return false;uint64_t sequence=0;PaintStatus status;
+ if(commit && m_adjustmentBase && m_adjustmentSettings && !m_adjustmentMaterialized){
+    {QMutexLocker lock(&m_connection->mutex);status=paint_session_adjustment(m_connection->core,m_connection->session,1,m_adjustmentSettings->kind,m_adjustmentSettings.get(),&sequence);}
+    if(status!=PAINT_OK){showError(immediateError(status));return false;}
+    m_adjustmentMaterialized=true;m_adjustmentCommitRequested=true;m_pendingAdjustment=sequence;emit stateChanged();return true;
+ }
+ m_adjustmentCommitRequested=commit;
+ {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_adjustment(m_connection->core,m_connection->session,commit?2:3,0,nullptr,&sequence);}
+ if(status!=PAINT_OK){showError(immediateError(status));return false;}
+ m_pendingAdjustment=sequence;if(commit)m_pendingMutation=sequence;emit stateChanged();return true;
 }

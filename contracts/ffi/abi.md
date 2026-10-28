@@ -1,4 +1,16 @@
-# C ABI 1.86.0 契约
+# C ABI 1.88.0 契约
+
+## ABI 1.88 — 调整原图直方图及着色
+
+新增 `paint_session_adjustment_histogram(core,session,publication,bins,count)`。count须1024；输出依次为亮度/R/G/B各256个f32桶。BEGIN worker从原始目标层按固定步长最多采样262144个源像素，桶权重为alpha×选区覆盖，画布外不计入；小图完整扫描。直方图在整个会话固定，精确publication不匹配返回BUSY，无会话返回INVALID_ARGUMENT；只复制不可变桶，不读取冷页。buffer必须容纳1024个float，参数不可重叠。
+
+PaintAdjustment布局不变，parameters[3]由保留0扩展为HSL专用着色开关0/1，非HSL仍仅允许0。着色采用绝对色相及饱和度绝对值，在原HSL明度上调整明度后重建RGB。旧1.87输入保持合法。Qt常驻显示参数不进入文档，最终确认仍经原UPDATE/COMMIT。
+
+## ABI 1.87 — 原子图像调整会话
+
+新增独立 `paint_session_adjustment`，action 为 BEGIN0/UPDATE1/COMMIT2/CANCEL3，kind 为曲线0/色阶1/HSL2。UPDATE 接受 sized `PaintAdjustment`，其他动作要求 NULL。所有输入在返回前复制，OK 表示已排队，调用方以 completed_sequence 和 last_error_sequence 判断执行结果。BEGIN 捕获活动普通栅格层与选区；会话期间拒绝其他业务修改和硬件切换。
+
+PaintAdjustment 大小65576，kind偏移4、parameters偏移8、lut偏移24。parameters为色相圈数、饱和度/明度归一化值及保留0；LUT为4097个float4（RGB归一化值，第四通道保留1）。HSL仍要求有限合法LUT，但不使用其RGB。新增SESSION_ADJUSTMENT=64与历史42/43/44，旧DTO及文档/state不变。预览不修改历史与modified，确认原子保存候选的before/after，取消恢复原图；错误不发布半成品。
 
 ## ABI 1.86 — 完整栅格剪贴与精确Dissolve
 

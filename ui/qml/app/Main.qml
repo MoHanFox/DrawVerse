@@ -15,6 +15,7 @@ import "../windows"
 import "../workspace"
 
 ApplicationWindow {
+    AdjustmentWindow {id:adjustmentWindow;transientParent:root}
     id: root
     objectName: "mainWindow"
     visible: true
@@ -86,6 +87,7 @@ ApplicationWindow {
     // Explicit document bootstrap for embedded preview/benchmark hosts.
     property bool createInitialDocument: false
     property var startupClient: null
+    readonly property bool canAdjustImage:hasDocuments && PaintClient.ready && !editing && !PaintClient.drawing && !PaintClient.fileBusy && !PaintClient.layerEditBusy && PaintClient.layers.some(function(layer){return layer.id===PaintClient.activeLayer && !layer.group && !layer.mask && !layer.image && !(layer.effectiveLocks & 4)})
     readonly property bool hasDocuments: documents.documents.length>0
     readonly property bool startupReady: startupClient!==null && startupClient.ready && startupClient.brushLibraryReady && startupClient.brushCatalogPrepared
     property bool quitting: false
@@ -318,9 +320,9 @@ ApplicationWindow {
             title: "图像"
             GlassMenu {
                 objectName:"imageAdjustSubmenu";title:"调整";cascadeParent:imageMenu
-                Action { objectName:"adjustCurvesAction";text:"曲线…（待支持）";enabled:false }
-                Action { objectName:"adjustLevelsAction";text:"色阶…（待支持）";enabled:false }
-                Action { objectName:"adjustHsvAction";text:"色相/饱和度/明度…（待支持）";enabled:false }
+                Action { objectName:"adjustCurvesAction";text:"曲线…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(0) }
+                Action { objectName:"adjustLevelsAction";text:"色阶…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(1) }
+                Action { objectName:"adjustHsvAction";text:"色相/饱和度/明度…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(2) }
             }
             MenuSeparator {}
             Action { objectName:"canvasSizeAction";text:"画布大小…（待支持）";enabled:false }
@@ -334,8 +336,6 @@ ApplicationWindow {
             MenuSeparator {}
             Action { text: "图像大小…（待支持）"; enabled: false }
             Action { text: "裁剪…（待支持）"; enabled: false }
-            Action { text: "拼合图像（待支持）"; enabled: false }
-            Action { text: "使选区居中（待支持）"; enabled: false }
         }
         GlassMenu {
             topLevel:true

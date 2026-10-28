@@ -7,6 +7,7 @@
 #include <QString>
 #include <QVector>
 #include <atomic>
+#include <array>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -34,6 +35,12 @@ struct CompositionTransform {
     int node=-1;
     double scale=1;
 };
+struct CompositionAdjustment {
+    int node=-1,kind=0;
+    bool neutral=false;
+    std::array<float,4> parameters{};
+    QByteArray lut; // 4097 RGBA32F entries, immutable CPU transport
+};
 struct CompositionPacket {
     PaintCompositionInfo info{};
     QVector<PaintCompositionNode> nodes;
@@ -49,6 +56,7 @@ struct CompositionPacket {
     QPoint presentationDelta;
     bool preview=false;
     std::shared_ptr<const CompositionTransform> transform;
+    std::shared_ptr<const CompositionAdjustment> adjustment;
 };
 using CompositionPacketPtr=std::shared_ptr<const CompositionPacket>;
 struct CompositionViewRequest {
@@ -103,7 +111,7 @@ struct CompositionCounters {
     std::atomic<int> preciseTransform{0};
     std::atomic<qint64> lastUploadNs{0},lastSubmitNs{0};
     std::atomic<quint64> lastSubmitGeometry{0};
-    std::atomic<quint64> pipelineCreates{0};
+    std::atomic<quint64> pipelineCreates{0},adjustmentUpdates{0};
     std::atomic<quint64> geometryReuses{0},pageTableCreates{0},axisCreates{0},parameterBufferCreates{0},bindingCreates{0};
     // Set before attaching the Canvas in correctness tests only. Normal null.
     std::shared_ptr<CompositionReadback> readback;

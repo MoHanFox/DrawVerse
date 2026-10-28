@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 最新图像调整修订：`docs/tools/image-adjustments-design.md` / `docs/validations/tools/image-adjustments-validation.md`；可拖动ApplicationModal透明标题、无磁吸，独立曲线/直方图、色阶三角手柄、HSL彩轨及着色；关闭按钮默认透明/hover实红。D3D11无选区按原通用合成能力在目标源采样后调整，BEGIN中性预备，持续uniform/LUT且零源上传/回读，确认单历史并保留至主画布采用；选区/CPU/能力及故障走核心后备。核心4/算子10/GPU2、软件6/实际D3D11共21功能行、四ABI/相关Clippy/fmt/头/Release通过；原合成D3D11定向95项及56根/28组独立捕获校验通过，实际应用冒烟通过，标准build/bin/Release更新。ABI1.88新增有界原图直方图及着色语义，文档/state45保持；原失败保留，无大图代理/端到端性能/实体或总check结论。
+
 - 最新GPU统一开关：gpu-acceleration-design及general-gpu-composition验收2026-10-28末节；计算硬件CPU统一关闭文档合成/常驻编辑预览/液化数值计算，自动或指定GPU按能力启用，Qt窗口显卡仍独立。切换清预热/恢复CPU需求，多文档空闲跟随，活动编辑不提前采用。软件7/D3D11含原后备10功能、设置各2/原交互各10、四ABI/Release/实际D3D11冒烟通过，标准build/bin/Release更新。初始夹具及并发构建失败保留；无总check/新性能/实体结论，ABI/state/文档不变。
 
 - 最新自由变换边框/响应续查：general-gpu-composition设计23/验收24节；BEGIN成功即清除闲置/上一会话控制点和初始边界，核心确认前拒绝UPDATE，避免Ctrl+T错误边框先显。非通用GPU UPDATE后48ms内后台轮询临时2ms，随后恢复8/16ms，不新增整图任务或近似支持。软件/D3D11变换各12、后备各5、置入图真实QML拖动/快捷键/浮窗各3，最终D3D11精确合成变换24、四ABI/头/shader/Release/实际D3D11冒烟通过，标准build/bin/Release更新。无trace/抓图1024² GPU单次首移节点2.9995ms/对应帧7.6964ms、持续P95 4.3037ms；旧常驻三轮首12.119–17.971ms/持续P95 18.444–23.244ms，配对首帧及最大值更差，不称首帧改善或所有滞后消除。复杂CPU准备/收尾、额外轮询占用/实体/物理屏幕仍待；旧失败保持，ABI1.86/state45/文档不变，无新总check。

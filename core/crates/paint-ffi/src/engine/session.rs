@@ -28,6 +28,7 @@ use std::{
 #[derive(Clone)]
 pub(crate) enum Operation {
     Compute(String),
+    Adjustment(u32, u32, Option<paint_core::Adjustment>),
     File(crate::file_job::Request),
     #[cfg(test)]
     PanicForTest,
@@ -111,6 +112,7 @@ pub(crate) struct LayerState {
     pub clipping: PaintLayerClipping,
 }
 pub(crate) struct Publication {
+    pub adjustment_histogram: Option<Arc<Vec<f32>>>,
     pub committed_strokes: Arc<VecDeque<u64>>,
     pub resident_preview: Option<Arc<paint_core::ResidentPreview>>,
     pub compute: String,
@@ -928,6 +930,7 @@ fn publish(
         })
         .collect();
     Publication {
+        adjustment_histogram: doc.adjustment_histogram(),
         committed_strokes: Arc::new(VecDeque::new()),
         resident_preview: doc.resident_preview().map(Arc::new),
         compute: doc.compute_backend_name(),
@@ -935,7 +938,11 @@ fn publish(
         selection: doc.selection().clone(),
         info: PaintSessionInfo {
             struct_size: std::mem::size_of::<PaintSessionInfo>() as u32,
-            flags: PAINT_SESSION_RUNNING
+            flags: (if doc.adjustment_active() {
+                PAINT_SESSION_ADJUSTMENT
+            } else {
+                0
+            }) | PAINT_SESSION_RUNNING
                 | if doc.layer_move_active() {
                     PAINT_SESSION_LAYER_MOVE
                 } else {
@@ -1018,6 +1025,7 @@ impl Engine {
             || self.document.stroke_active()
             || self.document.layer_move_active()
             || self.document.transform_active()
+            || self.document.adjustment_active()
             || self.document.liquify_active()
         {
             return Err(ApiError::new(PAINT_BUSY, "document is editing"));
@@ -1288,6 +1296,7 @@ impl Engine {
                     | Operation::PasteLayers(..)
                     | Operation::DuplicateLayers(..)
                     | Operation::MergeLayers(..)
+                    | Operation::Adjustment(..)
                     | Operation::ClearSelectedPixels(..)
                     | Operation::CutLayers(..)
                     | Operation::Cancel(_)
@@ -1431,7 +1440,32 @@ impl Engine {
         {
             return Err(paint_core::Error::Busy.into());
         }
+        if self.document.adjustment_active()
+            && !matches!(
+                operation,
+                Operation::Adjustment(..) | Operation::ClearLayerMovePreparation
+            )
+        {
+            return Err(paint_core::Error::Busy.into());
+        }
         match operation {
+            Operation::Adjustment(action, kind, settings) => {
+                if self.files.running() {
+                    return Err(paint_core::Error::Busy.into());
+                }
+                match action {
+                    0 => self.document.begin_adjustment(kind)?,
+                    1 => self.document.update_adjustment(
+                        settings
+                            .as_ref()
+                            .ok_or(ApiError::invalid("adjustment settings"))?,
+                    )?,
+                    2 | 3 => {
+                        self.modified |= self.document.finish_adjustment(action == 2)?;
+                    }
+                    _ => return Err(ApiError::invalid("adjustment action")),
+                }
+            }
             Operation::LayerMoves(ids, deferred) => {
                 if self.files.running() {
                     return Err(paint_core::Error::Busy.into());
@@ -2035,6 +2069,7 @@ impl Engine {
                     "composition document changed before capture",
                 ))
             } else if self.document.transform_active()
+                || self.document.adjustment_active()
                 || self.document.liquify_active()
                 || self.document.layer_move_active()
                 || self.files.running()

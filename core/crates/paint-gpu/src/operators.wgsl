@@ -87,7 +87,29 @@ fn remap_block(i:u32) {
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id:vec3<u32>) {
     let i=id.x+id.y*65535u*64u;
-    if u(data[0].x)==0u {if i<u(data[0].y) {output[i]=elastic(i);}}
+    if u(data[0].x)==3u {if i<u(data[0].y) {output[i]=adjust_pixel(i);}}
+    else if u(data[0].x)==0u {if i<u(data[0].y) {output[i]=elastic(i);}}
     else if u(data[0].x)==2u {if i<u(data[0].y) {output[i]=compact_block(i);}}
     else {let stride=u(data[3].z);if i<u(data[0].y)/(stride*stride) {remap_block(i);}}
+}
+
+fn adjust_encode(v:f32)->f32 {if v<=0.0031308 {return v*12.92;}return 1.055*pow(v,1.0/2.4)-0.055;}
+fn adjust_decode(v:f32)->f32 {if v<=0.04045 {return v/12.92;}return pow((v+0.055)/1.055,2.4);}
+fn adjust_pixel(i:u32)->vec4<f32> {
+ let p=data[4099u+i]; if p.a==0.0 {return p;}
+ var c=vec3(adjust_encode(p.r/p.a),adjust_encode(p.g/p.a),adjust_encode(p.b/p.a));c=clamp(c,vec3(0.0),vec3(1.0));
+ if u(data[0].z)==0u {
+  for(var k=0u;k<3u;k++){let x=c[k]*4096.0;let a=min(u32(floor(x)),4095u);let t=x-f32(a);c[k]=data[2u+a][k]*(1.0-t)+data[3u+a][k]*t;}
+ } else {
+  let original_light=(max(c.r,max(c.g,c.b))+min(c.r,min(c.g,c.b)))*0.5;
+  if data[1].z<0.0 {c=c*(1.0+data[1].z);}else {c=c+(vec3(1.0)-c)*data[1].z;}
+  let hi=max(c.r,max(c.g,c.b));let lo=min(c.r,min(c.g,c.b));let d=hi-lo;let l=(hi+lo)*0.5;var h=0.0;var sat=0.0;
+  if d>0.0 {sat=d/max(1.0-abs(2.0*l-1.0),1e-10);if hi==c.r {h=(c.g-c.b)/d;}else if hi==c.g {h=(c.b-c.r)/d+2.0;}else {h=(c.r-c.g)/d+4.0;}h=h/6.0;}
+  h=fract(h+data[1].x);if data[1].y>0.0 {sat=sat/max(1.0-data[1].y,1.0/512.0);}else {sat=sat*(1.0+data[1].y);}sat=clamp(sat,0.0,1.0);
+  var light=l;
+  if data[1].w==1.0 {h=fract(data[1].x);sat=abs(data[1].y);if data[1].z<0.0 {light=original_light*(1.0+data[1].z);}else{light=original_light+(1.0-original_light)*data[1].z;}}
+  let chroma=(1.0-abs(2.0*light-1.0))*sat;h=h*6.0;let x=chroma*(1.0-abs((h-2.0*floor(h/2.0))-1.0));
+  if h<1.0 {c=vec3(chroma,x,0.0);}else if h<2.0 {c=vec3(x,chroma,0.0);}else if h<3.0 {c=vec3(0.0,chroma,x);}else if h<4.0 {c=vec3(0.0,x,chroma);}else if h<5.0 {c=vec3(x,0.0,chroma);}else {c=vec3(chroma,0.0,x);}c=c+vec3(light-chroma*0.5);
+ }
+ c=clamp(c,vec3(0.0),vec3(1.0));return vec4(vec3(adjust_decode(c.r),adjust_decode(c.g),adjust_decode(c.b))*p.a,p.a);
 }

@@ -9,6 +9,8 @@ ColumnLayout {
     required property var library
     required property string target
     property var curve:[]
+    property bool showMinimum:true
+    property real graphHeight:84
     property real minimum:0
     property bool smooth:true
     property var nodeModes:[]
@@ -47,7 +49,7 @@ ColumnLayout {
     function removePoint(){if(selected<=0 || selected>=points.length-1)return;var data=copyPoints(),modes=copyModes();data.splice(selected,1);modes.splice(selected,1);if(setPressureControl(data,minimum,modes))selected=Math.max(0,selected-1)}
     Label {text:root.caption;color:Theme.text;font.pixelSize:10}
     Canvas {
-        id:graph;objectName:root.prefix+"Curve";Layout.fillWidth:true;Layout.preferredHeight:84
+        id:graph;objectName:root.prefix+"Curve";Layout.fillWidth:true;Layout.preferredHeight:root.graphHeight
         readonly property real margin:7
         function px(x){return margin+x*(width-2*margin)}
         function py(y){return height-margin-y*(height-2*margin)}
@@ -88,6 +90,7 @@ ColumnLayout {
     }
     RowLayout {
         Layout.fillWidth:true
+        visible:root.showMinimum
         Label {text:"最低比例";color:Theme.text;font.pixelSize:10;Layout.fillWidth:true}
         CompactSpinBox {objectName:root.prefix+"Minimum";from:0;to:100;editable:true;implicitWidth:66;implicitHeight:20;value:Math.round(root.minimum*100);onValueModified:root.setPressureControl(root.points,value/100,root.copyModes());tooltip:root.minimumHelp}
         Label {text:"%";color:Theme.muted;font.pixelSize:9}

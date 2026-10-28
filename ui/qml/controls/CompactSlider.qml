@@ -2,20 +2,26 @@ import QtQuick
 import QtQuick.Controls
 import "../theme"
 Slider {
-    // Keep parameter edits live while the settings panel defers its preview.
+    // Brush settings keep edits local until pointer release.
     property var previewEditor: null
+    property bool pendingEdit: false
+    signal editCommitted()
+    onMoved: {
+        if (pressed && previewEditor) pendingEdit = true
+        else editCommitted()
+    }
     onPressedChanged: {
         if (pressed) {
+            pendingEdit = false
             let owner = parent
             while (owner && owner.objectName !== "brushSettingsPanel") owner = owner.parent
             previewEditor = owner ? owner.library : null
-            if (previewEditor) previewEditor.setPreviewEditing(true)
         } else if (previewEditor) {
-            previewEditor.setPreviewEditing(false)
+            if (pendingEdit) editCommitted()
+            pendingEdit = false
             previewEditor = null
         }
     }
-    Component.onDestruction: { if (previewEditor) previewEditor.setPreviewEditing(false) }
     property string tooltip: ""
     hoverEnabled:true
     ToolTip.delay:1000;ToolTip.visible:hovered && tooltip.length>0;ToolTip.text:tooltip

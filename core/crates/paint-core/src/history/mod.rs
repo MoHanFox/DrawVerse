@@ -49,6 +49,9 @@ pub enum HistoryAction {
     FlipHorizontal = 39,
     FlipVertical = 40,
     ClearSelectionPixels = 41,
+    Curves = 42,
+    Levels = 43,
+    HueSaturation = 44,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }

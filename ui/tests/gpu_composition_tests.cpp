@@ -170,6 +170,61 @@ private slots:
         save(QString::fromLatin1(QTest::currentDataTag()),data);
         const auto dir=qEnvironmentVariable("DRAWVERSE_G2_REPORT_DIR");if(!dir.isEmpty()){gpu.save(dir+"/"+QTest::currentDataTag()+"-gpu.png");cpu.save(dir+"/"+QTest::currentDataTag()+"-cpu.png");}
     }
+    void busyCompositionKeepsGpuAndRetriesSameRevision_data(){
+        QTest::addColumn<QByteArray>("failure");
+        QTest::newRow("request")<<QByteArray("busy");
+        QTest::newRow("read")<<QByteArray("busy-read");
+    }
+    void busyCompositionKeepsGpuAndRetriesSameRevision(){
+        QFETCH(QByteArray,failure);
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));
+        QTRY_VERIFY(client.ready());client.newDocument(256,192);
+        QTRY_VERIFY(client.ready() && client.documentWidth()==256);
+        QQuickWindow window;window.resize(512,384);auto *canvas=new CanvasItem(window.contentItem());
+        canvas->setSize({512,384});canvas->setClient(&client);window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("D3D11 required");
+        QTRY_VERIFY(client.compositionPacket());QTRY_VERIFY(canvas->compositionStatistics()["nodeRequest"].toULongLong()>0);
+        const auto revision=client.revision();const auto original=client.compositionPacket();
+        const auto restore=qScopeGuard([]{qunsetenv("DRAWVERSE_COMPOSITION_FAIL");});
+        qputenv("DRAWVERSE_COMPOSITION_FAIL",failure);canvas->zoomBy(1.2);
+        QTest::qWait(350);
+        QCOMPARE(client.compositionPacket(),original);
+        QVERIFY2(client.compositionFallback().isEmpty(),qPrintable(client.compositionFallback()));
+        qunsetenv("DRAWVERSE_COMPOSITION_FAIL");
+        QTRY_VERIFY(client.compositionPacket() && client.compositionPacket()!=original);
+        QCOMPARE(client.revision(),revision);
+        QTRY_VERIFY(client.compositionPacket()->pixels==requestedPixels(*canvas,window));
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void paintedPixelsRemainVisibleDuringNavigation(){
+        qputenv("DRAWVERSE_GPU_COMPOSITION","1");
+        qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","0");
+        const auto restore=qScopeGuard([]{qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");});
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(256,192);
+        QTRY_VERIFY(client.ready() && client.documentWidth()==256 && !client.layerEditBusy());
+        client.setBrushColor(Qt::red);client.setBrushRadius(35);client.brushLibrary()->setPressureSize(false);client.brushLibrary()->setPressureFlow(false);
+        InputSample input;input.position={128,96};const auto depth=client.undoDepth();
+        QVERIFY(client.beginStroke(input));client.endStroke();QTRY_COMPARE(client.undoDepth(),depth+1);
+        QQuickWindow window;window.resize(512,384);auto *canvas=new CanvasItem(window.contentItem());
+        canvas->setSize({512,384});canvas->setClient(&client);window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("D3D11 required");
+        QTRY_COMPARE(canvas->compositionStatistics()["nodeRevision"].toULongLong(),client.revision());
+        QTRY_VERIFY(canvas->compositionStatistics()["adoptions"].toULongLong()>0);
+        for(int i=0;i<6;++i){
+            canvas->zoomBy(i%2?1/1.15:1.15);
+            if(i%3==0){const auto before=client.undoDepth();input.position={30.,30.+i};QVERIFY(client.beginStroke(input));client.endStroke();QTRY_COMPARE(client.undoDepth(),before+1);}
+            for(int frame=0;frame<3;++frame){
+                const auto shot=window.grabWindow();QVERIFY(!shot.isNull());
+                const auto color=shot.pixelColor(shot.width()/2,shot.height()/2);
+                QVERIFY2(color.red()>240 && color.green()<20 && color.blue()<20,qPrintable(QString("frame %1/%2 center %3").arg(i).arg(frame).arg(color.name())));
+                QTest::qWait(16);
+            }
+        }
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void zoomKeepsCompositionPresentation(){
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));
         QTRY_VERIFY(client.ready());client.newDocument(256,192);

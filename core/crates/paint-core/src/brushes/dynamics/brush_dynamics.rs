@@ -744,6 +744,7 @@ impl CompiledFadeDynamics {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AngleControl {
+    InitialDirection,
     #[default]
     Fixed,
     Direction,

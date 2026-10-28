@@ -1777,6 +1777,7 @@ private slots:
         QPointingDevice second("B2 direction second",9303,QInputDevice::DeviceType::Stylus,QPointingDevice::PointerType::Pen,QInputDevice::Capability::Position|QInputDevice::Capability::Pressure,1,1);
         const auto hover=[&](const QPointingDevice *device,QPointF at){QTabletEvent event(QEvent::TabletMove,device,at,canvas->mapToGlobal(at),0,0,0,0,0,0,Qt::NoModifier,Qt::NoButton,Qt::NoButton);QCoreApplication::sendEvent(canvas,&event);};
         hover(&first,{230,230});hover(&first,{240,240});QTRY_COMPARE(canvas->brushCursorAngle(),45.);QVERIFY(canvas->brushCursorVisible());
+        hover(&first,{240.1,239.9});QCOMPARE(canvas->brushCursorAngle(),45.);
         const QPointF entry(210,230);const QPointingDevice *device=&first;
         if(boundary=="device")device=&second;
         else if(boundary=="mouse") {QMouseEvent mouse(QEvent::MouseMove,entry,window.mapToGlobal(entry),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(&window,&mouse);QHoverEvent event(QEvent::HoverMove,entry,window.mapToGlobal(entry),QPointF(240,240));QCoreApplication::sendEvent(canvas,&event);}
@@ -4618,6 +4619,28 @@ private slots:
         if(workspace.windowsWindowFrames()) {QTRY_VERIFY((GetWindowLongPtr(reinterpret_cast<HWND>(popup->winId()),GWL_EXSTYLE)&WS_EX_TOPMOST)!=0);HWND front=nullptr;for(auto w=GetTopWindow(nullptr);w;w=GetWindow(w,GW_HWNDNEXT))if(w==reinterpret_cast<HWND>(popup->winId()) || w==reinterpret_cast<HWND>(floating->winId())){front=w;break;}QCOMPARE(front,reinterpret_cast<HWND>(popup->winId()));}
 #endif
         QVERIFY(QMetaObject::invokeMethod(menu,"close"));QTRY_VERIFY(!menu->property("opened").toBool());QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void brushSliderCommitsOnlyAfterRelease() {
+        BrushLibrary library;library.setSpacing(.25);
+        QQmlEngine engine;engine.rootContext()->setContextProperty("testLibrary",&library);
+        QQmlComponent component(&engine);
+        component.setData(R"(import QtQuick
+import QtQuick.Controls
+import "qrc:/qml/controls"
+Window {width:400;height:160;visible:true
+Item {anchors.fill:parent;objectName:"brushSettingsPanel";property var library:testLibrary
+ParameterSlider {width:360;x:20;y:20;sliderName:"deferredSpacing";from:1;to:100;value:testLibrary.spacing*100;onCommitted:value=>testLibrary.spacing=value/100}
+}})",QUrl());
+        QScopedPointer<QObject> root(component.create());QVERIFY2(root,qPrintable(component.errorString()));
+        auto *window=qobject_cast<QQuickWindow*>(root.data());QVERIFY(window);QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto *track=findVisualItem(window->contentItem(),"deferredSpacingTrack");QVERIFY(track);
+        QSignalSpy changes(&library,&BrushLibrary::settingsChanged);
+        const auto start=track->mapToScene({track->width()*.25,track->height()/2}).toPoint();
+        const auto end=track->mapToScene({track->width()*.8,track->height()/2}).toPoint();
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,start);QTest::mouseMove(window,end);QTest::qWait(50);
+        QCOMPARE(library.spacing(),qreal(.25));QCOMPARE(changes.size(),0);
+        auto *input=findVisualItem(window->contentItem(),"deferredSpacingInput");QVERIFY(input);QVERIFY(input->property("value").toInt()>60);
+        QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,end);QTRY_VERIFY(library.spacing()>.6);QCOMPARE(changes.size(),1);
     }
     void brushSliderPreviewWaitsForRelease() {
         BrushLibrary library;const auto id=library.selectedId();

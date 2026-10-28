@@ -8,12 +8,35 @@ layout(std140,binding=0) uniform Parameters {
     ivec4 sourceOrigin;
     ivec4 maskOrigin;
     vec4 factors; // raster opacity*fill, mask density, LOD block, display pass
+    layout(offset=224) vec4 adjustmentSettings;
+    vec4 adjustmentMode; // enabled, LUT/HSL, reserved
 };
 layout(binding=1) uniform sampler2D backdrop;
 layout(binding=2) uniform sampler2D atlas;
 layout(binding=3) uniform sampler2D sourceMap;
 layout(binding=4) uniform sampler2D maskMap;
 layout(binding=5) uniform sampler2D coverageMap;
+layout(binding=6) uniform sampler2D adjustmentLut;
+float adjustEncode(float v){return v<=.0031308?v*12.92:1.055*pow(v,1.0/2.4)-.055;}
+float adjustDecode(float v){return v<=.04045?v/12.92:pow((v+.055)/1.055,2.4);}
+vec4 lutEntry(int i){return texelFetch(adjustmentLut,ivec2(i%1024,i/1024),0);}
+vec4 adjustSource(vec4 p){
+    if(adjustmentMode.x==0.0 || p.a==0.0)return p;
+    vec3 c=clamp(vec3(adjustEncode(p.r/p.a),adjustEncode(p.g/p.a),adjustEncode(p.b/p.a)),0.0,1.0);
+    if(adjustmentMode.y<.5){
+        for(int k=0;k<3;k++){float x=c[k]*4096.0;int a=min(int(floor(x)),4095);float t=x-float(a);c[k]=lutEntry(a)[k]*(1.0-t)+lutEntry(a+1)[k]*t;}
+    }else{
+        float originalLight=(max(c.r,max(c.g,c.b))+min(c.r,min(c.g,c.b)))*.5;
+        c=adjustmentSettings.z<0.0?c*(1.0+adjustmentSettings.z):c+(1.0-c)*adjustmentSettings.z;
+        float hi=max(c.r,max(c.g,c.b)),lo=min(c.r,min(c.g,c.b)),d=hi-lo,l=(hi+lo)*.5,h=0.0,s=0.0;
+        if(d>0.0){s=d/max(1.0-abs(2.0*l-1.0),1e-10);if(hi==c.r)h=(c.g-c.b)/d;else if(hi==c.g)h=(c.b-c.r)/d+2.0;else h=(c.r-c.g)/d+4.0;h/=6.0;}
+        h=fract(h+adjustmentSettings.x);s=clamp(adjustmentSettings.y>0.0?s/max(1.0-adjustmentSettings.y,1.0/512.0):s*(1.0+adjustmentSettings.y),0.0,1.0);
+        if(adjustmentSettings.w==1.0){h=fract(adjustmentSettings.x);s=abs(adjustmentSettings.y);l=adjustmentSettings.z<0.0?originalLight*(1.0+adjustmentSettings.z):originalLight+(1.0-originalLight)*adjustmentSettings.z;}
+        float chroma=(1.0-abs(2.0*l-1.0))*s;h*=6.0;float x=chroma*(1.0-abs(mod(h,2.0)-1.0));
+        if(h<1.0)c=vec3(chroma,x,0);else if(h<2.0)c=vec3(x,chroma,0);else if(h<3.0)c=vec3(0,chroma,x);else if(h<4.0)c=vec3(0,x,chroma);else if(h<5.0)c=vec3(x,0,chroma);else c=vec3(chroma,0,x);c+=l-chroma*.5;
+    }
+    c=clamp(c,0.0,1.0);return vec4(vec3(adjustDecode(c.r),adjustDecode(c.g),adjustDecode(c.b))*p.a,p.a);
+}
 vec4 sampleSource(ivec2 point,ivec4 info,ivec2 origin,sampler2D pageMap){
     ivec2 local=point-info.xy;
     ivec2 tile=ivec2(floor(vec2(local)/64.0));
@@ -102,7 +125,7 @@ void main(){
         ivec2 p=ivec2(uv*vec2(dimensions.xy));vec4 d=texelFetch(backdrop,p,0);
         int op=int(factors.w);if(op==5){color=d;return;}
         bool raster=op==8 || op==10;
-        precise vec4 s=raster?sampleSource(p,sourceInfo,sourceOrigin.xy,sourceMap):texelFetch(sourceMap,p,0);
+        precise vec4 s=raster?adjustSource(sampleSource(p,sourceInfo,sourceOrigin.xy,sourceMap)):texelFetch(sourceMap,p,0);
         precise float mask=1.0-(factors.y>0.0?sampleSource(p,maskInfo,maskOrigin.xy,maskMap).a*factors.y:0.0);
         if(op==8 || op==9){color=s*mask;return;}
         if(op==6 || op==13){if(op==6)s*=mask;s*=factors.x;color=blend(s,d,sourceOrigin.z,p,uint(sourceOrigin.w));return;}
@@ -129,7 +152,7 @@ void main(){
     if(factors.w>1.5){color=vec4(0);return;}
     if(factors.w<0.5){
         ivec2 point=ivec2(uv*vec2(dimensions.xy));
-        precise vec4 s=sampleSource(point,sourceInfo,sourceOrigin.xy,sourceMap);
+        precise vec4 s=adjustSource(sampleSource(point,sourceInfo,sourceOrigin.xy,sourceMap));
         precise float hidden=factors.y>0.0?sampleSource(point,maskInfo,maskOrigin.xy,maskMap).a*factors.y:0.0;
         s*=1.0-hidden;
         s*=factors.x;

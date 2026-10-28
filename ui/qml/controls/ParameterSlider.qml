@@ -36,7 +36,7 @@ ColumnLayout {
             from: Math.round(root.from*root.precisionFactor)
             to: Math.round(root.to*root.precisionFactor)
             stepSize: root.precisionFactor
-            value: Math.round(root.value*root.precisionFactor)
+            value: Math.round((slider.pressed ? slider.editedValue : root.value)*root.precisionFactor)
             validator: root.decimals===0?integerValidator:decimalValidator
             textFromValue: function(value,locale) {return Number(value/root.precisionFactor).toFixed(root.decimals).replace(/(\.[0-9]*?)0+$/, "$1").replace(/\.$/, "")}
             valueFromText: function(text,locale) {return Math.round(Number(text)*root.precisionFactor)}
@@ -46,6 +46,7 @@ ColumnLayout {
         Label {visible:root.unit.length>0;text:root.unit;color:Theme.muted;font.pixelSize:9}
     }
     MappedSlider {
+        id: slider
         objectName: root.sliderName
         Layout.fillWidth: true
         from: root.from

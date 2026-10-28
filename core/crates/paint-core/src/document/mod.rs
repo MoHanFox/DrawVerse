@@ -17,6 +17,7 @@ use row_samples::RowSamples;
 #[path = "stroke/document_input_paging.rs"]
 mod input_paging;
 pub use input_paging::StrokePageResult;
+mod adjustment;
 #[path = "stroke/brush_dual_paint.rs"]
 mod dual_paint;
 pub(crate) mod groups;
@@ -27,6 +28,7 @@ mod liquify_result_history_tests;
 #[path = "stroke/document_outline.rs"]
 mod outline;
 mod selection_pixels;
+pub use adjustment::Adjustment;
 #[path = "stroke/document_taper.rs"]
 mod taper;
 mod transform;
@@ -471,6 +473,7 @@ fn history_actions_survive_encoded_eviction_undo_redo_and_branching() {
 
 #[derive(Debug)]
 struct Stroke {
+    initial_direction: Option<f64>,
     layer: LayerId,
     brush: Brush,
     program: BrushProgram,
@@ -539,6 +542,7 @@ pub struct Document {
     liquify: Option<liquify::LiquifyState>,
     transform: Option<transform::TransformState>,
     layer_move: Option<layer_move::LayerMoveState>,
+    adjustment: Option<adjustment::AdjustmentState>,
     revision: u64,
     dirty: DirtyTiles,
     selection: crate::Selection,
@@ -799,6 +803,7 @@ impl Document {
             liquify: None,
             transform: None,
             layer_move: None,
+            adjustment: None,
             selection: crate::Selection::default(),
             selection_cache: Default::default(),
             revision: 0,
@@ -1031,6 +1036,7 @@ impl Document {
         if self.stroke.is_some()
             || self.liquify.is_some()
             || self.transform.is_some()
+            || self.adjustment.is_some()
             || self.layer_move.is_some()
         {
             Err(Error::Busy)
@@ -1074,6 +1080,9 @@ impl Document {
                 | crate::HistoryAction::FlipHorizontal
                 | crate::HistoryAction::FlipVertical
                 | crate::HistoryAction::Rasterize
+                | crate::HistoryAction::Curves
+                | crate::HistoryAction::Levels
+                | crate::HistoryAction::HueSaturation
                 | crate::HistoryAction::ClearSelectionPixels
                 | crate::HistoryAction::Bucket
         ) {
@@ -1458,6 +1467,7 @@ impl Document {
             wet,
             distance_to_next: primary_step,
             direction: None,
+            initial_direction: None,
             before: BTreeMap::new(),
             coverage: BTreeMap::new(),
             first_dab: true,
@@ -1730,6 +1740,9 @@ impl Document {
         stroke.speed = speed;
         if distance > 1e-9 {
             stroke.direction = Some((point.y - stroke.last.y).atan2(point.x - stroke.last.x));
+            if stroke.initial_direction.is_none() {
+                stroke.initial_direction = stroke.direction;
+            }
         }
         let mut position = stroke.distance_to_next;
         let mut secondary_position = stroke.dual_next;
@@ -2104,6 +2117,14 @@ impl Document {
         ((1. - gray).clamp(0., 1.), a)
     }
     fn secondary_dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<()> {
+        if stroke.initial_direction.is_none() {
+            stroke.initial_direction = stroke.direction;
+        }
+        if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection
+            && stroke.initial_direction.is_none()
+        {
+            return Ok(());
+        }
         if stroke
             .program
             .dual
@@ -2262,6 +2283,14 @@ impl Document {
         Ok(())
     }
     fn dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
+        if stroke.initial_direction.is_none() {
+            stroke.initial_direction = stroke.direction;
+        }
+        if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection
+            && stroke.initial_direction.is_none()
+        {
+            return Ok(false);
+        }
         if stroke.queue_taper(point, crate::TaperStream::Primary)? {
             return Ok(false);
         }
@@ -2493,9 +2522,15 @@ impl Document {
         if stroke.wet.is_none() && (flow == 0. || stroke.brush.opacity == 0.) {
             return Ok(false);
         }
-        let geometry = stroke
-            .program
-            .dab_geometry(point, stroke.direction, stroke.shape_sample);
+        let geometry = stroke.program.dab_geometry(
+            point,
+            if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection {
+                stroke.initial_direction
+            } else {
+                stroke.direction
+            },
+            stroke.shape_sample,
+        );
         let texture_dab = if TEXTURED {
             stroke.program.texture_dab(point, geometry)
         } else {

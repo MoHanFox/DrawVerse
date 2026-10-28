@@ -13,7 +13,8 @@ FocusScope {
     readonly property real position: positionForValue(value)
     // Keep the caller's value binding intact while delivering a pending edit.
     property real pendingValue: NaN
-    readonly property real editedValue: isNaN(pendingValue) ? value : pendingValue
+    readonly property bool pressed: track.pressed
+    readonly property real editedValue: !isNaN(pendingValue) ? pendingValue : (track.pressed ? clamp(stepSize > 0 ? from+Math.round((valueAt(track.value)-from)/stepSize)*stepSize : valueAt(track.value)) : value)
     signal moved()
     implicitWidth: track.implicitWidth
     implicitHeight: track.implicitHeight
@@ -41,7 +42,7 @@ FocusScope {
         focus: true
         from: 0; to: 1; stepSize: 0
         value: root.position
-        onMoved: root.moveTo(root.valueAt(value))
+        onEditCommitted: root.moveTo(root.valueAt(value))
         Keys.onPressed: event => {
             if (event.key === Qt.Key_Left || event.key === Qt.Key_Down)
                 root.moveTo(root.value-root.stepSize)

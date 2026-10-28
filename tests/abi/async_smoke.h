@@ -10,6 +10,8 @@
 #else
 #define ABI_ASSERT _Static_assert
 #endif
+ABI_ASSERT(sizeof(PaintAdjustment)==65576,"adjustment layout drift");
+ABI_ASSERT(offsetof(PaintAdjustment,lut)==24,"adjustment LUT offset");
 ABI_ASSERT(sizeof(PaintCommand) == 176, "command layout drift");
 ABI_ASSERT(sizeof(PaintBucketFill)==64,"bucket layout drift");
 ABI_ASSERT(offsetof(PaintBucketFill,linear_rgba)==16,"bucket color offset drift");
@@ -45,6 +47,8 @@ ABI_ASSERT(offsetof(PaintSelectionStep,x)==16,"selection step offset drift");
 
 // Compiled and executed by real C11 and C++20 callers, against static and shared ABI.
 static int async_smoke(PaintCore *core) {
+    uint64_t adjustment_sequence=99;
+    ASYNC_CHECK(paint_session_adjustment(core,NULL,PAINT_ADJUSTMENT_UPDATE,PAINT_ADJUSTMENT_CURVES,NULL,&adjustment_sequence)==PAINT_INVALID_ARGUMENT && adjustment_sequence==0);
     PaintSession *session = NULL;
     PaintDocumentDesc desc;
     PaintSessionInfo info;
@@ -260,6 +264,21 @@ static int async_smoke(PaintCore *core) {
         ASYNC_CHECK(paint_session_liquify(core,session,PAINT_LIQUIFY_CANCEL,NULL,&sequence)==PAINT_OK);
         start=clock();do{info.struct_size=sizeof(info);ASYNC_CHECK(paint_session_info(core,session,&info)==PAINT_OK);ASYNC_CHECK(clock()-start<5*CLOCKS_PER_SEC);}while(info.completed_sequence<sequence);
         ASYNC_CHECK(info.last_error_status==PAINT_OK && !(info.flags&PAINT_SESSION_LIQUIFY) && info.undo_depth==depth);
+    }
+    {
+        PaintAdjustment adjustment={0};adjustment.struct_size=sizeof(adjustment);adjustment.kind=PAINT_ADJUSTMENT_HSL;
+        for(int i=0;i<=4096;i++){for(int c=0;c<3;c++)adjustment.lut[i][c]=(float)i/4096.f;adjustment.lut[i][3]=1.f;}
+        ASYNC_CHECK(paint_session_adjustment(core,session,PAINT_ADJUSTMENT_BEGIN,PAINT_ADJUSTMENT_HSL,NULL,&sequence)==PAINT_OK);
+        start=clock();do{info.struct_size=sizeof(info);ASYNC_CHECK(paint_session_info(core,session,&info)==PAINT_OK);ASYNC_CHECK(clock()-start<5*CLOCKS_PER_SEC);}while(info.completed_sequence<sequence);
+        ASYNC_CHECK(info.flags&PAINT_SESSION_ADJUSTMENT);
+        {float bins[1024];ASYNC_CHECK(paint_session_adjustment_histogram(core,session,info.publication,bins,1023)==PAINT_INVALID_ARGUMENT);
+        ASYNC_CHECK(paint_session_adjustment_histogram(core,session,info.publication+1,bins,1024)==PAINT_BUSY);
+        ASYNC_CHECK(paint_session_adjustment_histogram(core,session,info.publication,bins,1024)==PAINT_OK);}
+        adjustment.parameters[3]=1.f;
+        ASYNC_CHECK(paint_session_adjustment(core,session,PAINT_ADJUSTMENT_UPDATE,PAINT_ADJUSTMENT_HSL,&adjustment,&sequence)==PAINT_OK);
+        ASYNC_CHECK(paint_session_adjustment(core,session,PAINT_ADJUSTMENT_CANCEL,PAINT_ADJUSTMENT_HSL,NULL,&sequence)==PAINT_OK);
+        start=clock();do{info.struct_size=sizeof(info);ASYNC_CHECK(paint_session_info(core,session,&info)==PAINT_OK);ASYNC_CHECK(clock()-start<5*CLOCKS_PER_SEC);}while(info.completed_sequence<sequence);
+        ASYNC_CHECK(!(info.flags&PAINT_SESSION_ADJUSTMENT) && info.last_error_sequence!=sequence);
     }
     ASYNC_CHECK(remove(DRAWVERSE_ABI_SMOKE_FILE) == 0);
     ASYNC_CHECK(paint_session_destroy(core, &session) == PAINT_OK && session == NULL);

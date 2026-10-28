@@ -92,3 +92,5 @@ pub use selection::{
 pub use tile::{Tile, TileCoord, TILE_BYTES, TILE_SIZE};
 
 pub use document::{ComputationPhase, ComputationProgress, ComputationSnapshot};
+
+pub use document::Adjustment;

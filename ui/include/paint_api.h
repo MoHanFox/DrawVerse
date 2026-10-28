@@ -16,9 +16,23 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 86
+#define PAINT_ABI_MINOR 88
 
 #define PAINT_ABI_PATCH 0
+
+#define PAINT_ADJUSTMENT_BEGIN 0
+
+#define PAINT_ADJUSTMENT_CANCEL 3
+
+#define PAINT_ADJUSTMENT_COMMIT 2
+
+#define PAINT_ADJUSTMENT_CURVES 0
+
+#define PAINT_ADJUSTMENT_HSL 2
+
+#define PAINT_ADJUSTMENT_LEVELS 1
+
+#define PAINT_ADJUSTMENT_UPDATE 1
 
 #define PAINT_BLEND_PASS_THROUGH 27
 
@@ -382,6 +396,8 @@
 
 #define PAINT_HISTORY_CLIPPING 18
 
+#define PAINT_HISTORY_CURVES 42
+
 #define PAINT_HISTORY_DESELECT 5
 
 #define PAINT_HISTORY_DUPLICATE_LAYERS 27
@@ -399,6 +415,8 @@
 
 #define PAINT_HISTORY_GROUP 14
 
+#define PAINT_HISTORY_HUE_SATURATION 44
+
 #define PAINT_HISTORY_INITIAL 0
 
 #define PAINT_HISTORY_INVERT_SELECTION 6
@@ -415,6 +433,8 @@
 #define PAINT_HISTORY_LAYER_LOCKS 12
 
 #define PAINT_HISTORY_LAYER_PROPERTIES 9
+
+#define PAINT_HISTORY_LEVELS 43
 
 #define PAINT_HISTORY_LIQUIFY 30
 
@@ -597,6 +617,8 @@
 #define PAINT_SELECTION_STEP_INVERT 4
 
 #define PAINT_SELECTION_SUBTRACT 2
+
+#define PAINT_SESSION_ADJUSTMENT 64
 
 #define PAINT_SESSION_FAILED 4
 
@@ -909,6 +931,16 @@ typedef struct PaintLayerInfo {
   uint64_t name_length;
   uint64_t allocated_tiles;
 } PaintLayerInfo;
+
+/**
+ * ABI 1.87. RGB LUT in display sRGB; HSL parameters in turns/-1..1.
+ */
+typedef struct PaintAdjustment {
+  uint32_t struct_size;
+  uint32_t kind;
+  float parameters[4];
+  float lut[4097][4];
+} PaintAdjustment;
 
 typedef struct PaintBrushStrokeDesc {
   uint32_t struct_size;
@@ -2237,6 +2269,31 @@ PaintStatus paint_pressure_curve_samples(const uint8_t *json,
                                          uint64_t length,
                                          uint32_t model,
                                          float *out);
+
+/**
+ * ABI 1.87. action: BEGIN=0, UPDATE=1, COMMIT=2, CANCEL=3. kind: curves=0,
+ * levels=1, HSL=2. Only UPDATE accepts settings; all input is copied before queuing.
+ * # Safety
+ * Valid handles, readable sized settings on UPDATE, writable nonoverlapping sequence.
+ */
+PaintStatus paint_session_adjustment(struct PaintCore *core,
+                                     struct PaintSession *session,
+                                     uint32_t action,
+                                     uint32_t kind,
+                                     const struct PaintAdjustment *settings,
+                                     uint64_t *out_sequence);
+
+/**
+ * ABI 1.88. Read four 256-bin sampled source histograms (luma, R, G, B).
+ * Requires an active adjustment and exact publication. At most 262144 source samples.
+ * # Safety
+ * Writable output for 1024 floats, valid session handles; no overlapping arguments.
+ */
+PaintStatus paint_session_adjustment_histogram(struct PaintCore *core,
+                                               struct PaintSession *session,
+                                               uint64_t publication,
+                                               float *bins,
+                                               uint32_t count);
 
 /**
  * Begin paint, erase or smudge with a copied, validated procedural tip.
