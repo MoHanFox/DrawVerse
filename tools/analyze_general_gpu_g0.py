@@ -13,6 +13,34 @@ def stats(values):
                 p95=values[math.ceil(len(values)*.95)-1], max=values[-1])
 
 
+def move_begin_diagnostics(data, row, core):
+    """Correlate by sequence, keeping Rust/Qt clock differences local."""
+    begins = [e for e in data.get('trace', []) if e['name'] == 'move.begin' and
+              row['enter_ns'] <= e['start_ns'] <= row['hold_ns']]
+    if len(begins) != 1:
+        return None
+    begin = begins[0]
+    sequence = int(begin['value'])
+    emitted = next((e for e in data['trace'] if e['name'] == 'move.worker.metadata.emit' and
+                    e['value'] >= sequence and begin['start_ns'] <= e['start_ns'] <= row['hold_ns']), None)
+    result = dict(sequence=sequence, qt_begin_us=begin['duration_us'],
+                  qt_begin_to_metadata_emit_ms=(emitted['start_ns']-begin['start_ns'])/1e6 if emitted else None,
+                  core_trace_dropped=core.get('dropped'))
+    submitted = [e for e in core.get('events', []) if e['name'] == 'command.submit' and e['sequence'] == sequence]
+    if len(submitted) == 1 and core.get('dropped') == 0:
+        submit = submitted[0]
+        events = {e['name']: e for e in core['events'] if
+                  e['sequence'] == sequence and e['session'] == submit['session']}
+        for field, start, end in [
+            ('core_queue_us', 'command.submit', 'command.accept'),
+            ('core_apply_us', 'command.accept', 'command.applied'),
+            ('core_apply_to_publication_us', 'command.applied', 'metadata.published'),
+            ('core_submit_to_publication_us', 'command.submit', 'metadata.published'),
+        ]:
+            result[field] = (events[end]['ns']-events[start]['ns'])/1000 if start in events and end in events else None
+    return result
+
+
 def analyze(path):
     data = json.loads(path.read_text(encoding='utf-8'))
     invocation = json.loads((path.parent/'invocation.json').read_text(encoding='utf-8'))
@@ -26,6 +54,8 @@ def analyze(path):
                   trace=data.get('trace_enabled'), api=data.get('api'), dpr=data.get('dpr'), rows=[])
     if not result['passed'] or 'adoptions' not in data:
         return result
+    core_path = path.parent/'core-trace.json'
+    core = json.loads(core_path.read_text(encoding='utf-8')) if core_path.exists() else {}
     for row in data['rows']:
         inputs = [i for i in row['inputs'] if i['event_type'] == 5]
         candidates = [a for a in data['adoptions'] if a['valid'] and
@@ -72,6 +102,7 @@ def analyze(path):
                                     frame_ns=frames[0]['ns'] if frames else None))
         first = min(matches, key=lambda m: m['adopted_ns']) if matches else None
         result['rows'].append(dict(phase=row['phase'], resident=row['resident_expected'],
+                                  move_begin_diagnostics=move_begin_diagnostics(data, row, core),
                                   composition=row.get('composition_expected', False),
                                   preparation_ms=(row['ready_ns']-row['enter_ns'])/1e6,
                                   first_content_ms=(first['adopted_ns']-inputs[0]['t0_ns'])/1e6 if first else None,

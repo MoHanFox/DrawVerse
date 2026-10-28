@@ -67,6 +67,11 @@ def main():
                QML_DISK_CACHE_PATH=str(out/'qml-cache'), QSG_RHI_DISABLE_DISK_CACHE='1')
     if args.software:
         env['QT_QUICK_BACKEND'] = 'software'
+    if args.trace:
+        # The existing Rust recorder is bounded in memory and exports only after
+        # worker shutdown. Its clock origin differs from the Qt recorder;
+        # correlate sequence IDs, never subtract timestamps across clocks.
+        env['DRAWVERSE_MOVE_COMPLETION_TRACE'] = str(out/'core-trace.json')
     if args.warp:
         env['DRAWVERSE_G0_WARP'] = '1'
     if args.native_driver:
@@ -87,8 +92,12 @@ def main():
         except subprocess.TimeoutExpired:
             code = 'timeout'
     raw = json.loads((out/'raw.json').read_text(encoding='utf-8')) if (out/'raw.json').exists() else {}
+    core_trace_path = out/'core-trace.json'
+    core_trace = json.loads(core_trace_path.read_text(encoding='utf-8')) if core_trace_path.exists() else {}
     passed = code == 0 and raw.get('passed') and not any(raw.get(k, 0) for k in ['trace_dropped', 'adoptions_dropped', 'frames_dropped', 'states_dropped', 'unplanned_input_count'])
-    (out/'process.json').write_text(json.dumps(dict(exit=code, passed=bool(passed)), indent=2), encoding='utf-8')
+    if args.trace and args.operation != 'probe':
+        passed = passed and core_trace.get('closed') and core_trace.get('dropped') == 0
+    (out/'process.json').write_text(json.dumps(dict(exit=code, passed=bool(passed), core_trace_dropped=core_trace.get('dropped')), indent=2), encoding='utf-8')
     print(out, code, bool(passed), flush=True)
     raise SystemExit(0 if passed else 1)
 

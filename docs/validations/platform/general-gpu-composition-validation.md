@@ -697,3 +697,39 @@ build-delivery-final更新标准build/bin/Release/drawverse.exe及paint_ffi.dll�
 - EXE SHA-256：`3c49e7636ed883c4b1a14afee2a8736cc4b52a1460e29ae15a2e545a74561e94`。
 - DLL SHA-256：`06c1829e82b9ebc91f7bd746901771b26db9436c870b1887f8cf6360475476f8`，与core/target/release实际生成物一致。
 - 原始产物根目录：`artifacts/general-gpu-composition/G5-followup/`；旧阶段产物不覆盖。起点b8cbe24及三份原有文档入口差异保持，沿用General-purpose-GPU-synthesis分支，不修改ABI、state或文档格式来交付显示优化。
+
+## 23. 首次移动开销检查（2026-10-28，冻结条件）
+
+起点82cfee5，标准Release与原v6工具；新产物放`artifacts/general-gpu-composition/first-move-cost/`。先运行三个独立D3D11进程的1024首次/就绪/持续移动诊断，禁止抓图、逐事件磁盘日志及并发构建。保留所有失败与长尾，诊断不覆盖或混入22.4正式分布。Qt/Rust trace各自检查容量与丢弃；命令序号关联，两个时钟不直接相减。已有约12.12ms双名义周期参考门槛保持，节点采用与对应帧提交分开，不声称物理显示。
+
+若实施优化，运行最小对应原生窗口正确性与相同三进程测量；资源优化必须证明上传/分配计数及不支持后备未失效，目标确认仍须核心成功，不以预先显示未确认目标降低数字。原97.389ms和未归因记录保持。
+
+### 23.1 发现与实施范围
+
+`before/run-1..3`均有效，trace丢弃0，无抓图或计划外输入。首次BEGIN核心提交→接受10.1/19.6/16.6µs，执行16.0/21.7/21.3µs；Qt BEGIN→元数据发出9.613/2.662/7.181ms。静态路径确认：命令执行只置dirty，空闲Actor仍需等下一次8ms tick才发布，Qt的1ms异步确认观察无法提前读到该状态。这是确定可移除的周期等待，不能将它单独归因为旧92.040ms的全部来源。
+
+移动BEGIN/PICK（含原resident变体）及多目标BEGIN现在执行后立即复用同一权威发布函数，失败也发布，保留分页可发布守卫。UPDATE、收尾、CPU最终结果和历史协议没有换成GPU结果。新核心用例校验非法ID/部分非法多选拒绝、真实拾取/单目标/多目标成功确认、三次取消无历史及提交一次/撤销恢复。首次新用例误用透明空层导致PICK无命中，`core-move.log`原失败保留；改为显式白底可拾取夹具后原断言保持，`core-move-final.log`通过。
+
+### 23.2 相同诊断开关配对与最终无诊断量测
+
+`before-analysis.json`和`after-analysis.json`各三独立进程，均开启同一Qt/Rust有界trace；Rust采用独立原点，仅按session/sequence关联。首次内容采用中位/最大6.926/9.985→3.411/3.971ms；就绪后首移7.104/7.184→2.397/3.187ms。优化后首次核心提交→权威发布59.5/60.1/58.5µs，执行后→发布16.0/19.8/14.8µs，不再依赖8ms服务tick。此诊断比较不混入22.4原始正式三轮。
+
+最终二进制`final-timing/run-1..3`关闭两个trace，未请求CPU参考、不抓图。三进程全有效，全部输入/采用/帧/状态观测丢弃与计划外输入0，三阶段主CPU及自动概览均暂停。1024/DPR1.5/Qt165.019Hz元数据，非真实冷盘或物理屏幕量测：
+
+| 相位 | 首个有效Move→内容节点采用（逐进程ms） | 对应帧提交（逐进程ms） | 目标确认（逐进程ms） |
+| --- | --- | --- | --- |
+| 首次 | 2.2642 / 1.4973 / 1.7728 | 2.8581 / 2.6472 / 3.7185 | 1.7113 / 0.0916 / 0.0948 |
+| 就绪 | 1.8903 / 1.8398 / 2.6813 | 2.7127 / 2.8480 / 3.9926 | 0.0933 / 0.0971 / 0.1729 |
+
+持续每进程120输入全部匹配，P95分别2.1257/2.1099/2.0755ms，最大2.3925/3.2969/2.3263ms。首次release→最终权威主节点67.282/66.241/67.594ms，收尾CPU路径仍有成本，不与首移混称。原97.389ms有效长尾上述六个配对诊断/三个无诊断进程均未复现，仍未归因，不能声称永久消除或全部G3/G5性能完成。
+
+瓦片上传保持257次/16,842,752字节、testReadbacks=0，各阶段移动无新增源瓦片上传。仍有可评估的资源复用：连续相位页表/轴各18→264，uniform/SRB各24→507；现有只对transform复用，移动每次准备会重建这些对象。诊断首移渲染prepare约0.54–0.85ms（整段CPU准备，并非各资源独立计时），并不是旧92ms确认长尾证据。本轮未扩展这条缓存路径；后续须绑定同源、设备epoch、视口及组/蒙版/剪贴拓扑，不能绕过闭包校验。隐式白、合成后LOD及CPU最终提交不变。
+
+### 23.3 最小验证与交付
+
+- `core-move-final`：Release相关lib4通过/原手工性能1忽略，公开async_session相关8通过；相关严格Clippy、fmt、生成头检查通过。Python工具原6项执行5通过/环境条件1忽略。没有重跑总check或无关性能矩阵，22节已有总检/探索UI失败保持。
+- `final-trace-tool-check`独立验证最终测量工具的Rust closed/dropped检查，退出0、Rust/Qt丢弃0；不并入上述配对或正式分布。
+- `correctness-move-software/d3d11`：各20通过，覆盖18种Normal/蒙版/组/剪贴/Dissolve/拾取/快释放/取消/后备及严格最终主视图交接；为独立正确性抓图，与性能进程分离。
+- `stability-move-*`以及最终二进制`delivery-stability-*`：软件/D3D11各5通过，覆盖移动设备注入故障提交/取消、25笔零CPU镜像及真实取色需求恢复。最终四个C/C++静态/动态ABI消费者通过；ABI1.86/version1/state45/文档不变。
+- `build-final`更新标准EXE/DLL，包含嵌入shader与头一致性检查。`delivery-smoke`在未设置GPU覆盖的标准EXE上实际D3D11/RTX4060 Laptop启动，绘画窗口PNG、退出0；QA入口的CPU参考与抓图不混入性能数字。真实设备故障、驱动OOM、冷盘、实体笔/物理屏幕与其他硬件仍未测。
+- 标准`build/bin/Release/drawverse.exe` SHA256：`771bdffc53bcb41c9960b21fcdf5e77b47616e0002cc7c4ffe47376a3eacf12c`；DLL `d47d9bf50c8df45b7afff1b45e836c1a34af09ba83cfe0f65986d157aac08bdd`与core/target/release一致。原始产物均在`artifacts/general-gpu-composition/first-move-cost/`，分析和计数在`before-analysis.json`、`after-analysis.json`、`final-timing-analysis.json`、`final-summary.json`。
