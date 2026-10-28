@@ -733,3 +733,40 @@ build-delivery-final更新标准build/bin/Release/drawverse.exe及paint_ffi.dll�
 - `stability-move-*`以及最终二进制`delivery-stability-*`：软件/D3D11各5通过，覆盖移动设备注入故障提交/取消、25笔零CPU镜像及真实取色需求恢复。最终四个C/C++静态/动态ABI消费者通过；ABI1.86/version1/state45/文档不变。
 - `build-final`更新标准EXE/DLL，包含嵌入shader与头一致性检查。`delivery-smoke`在未设置GPU覆盖的标准EXE上实际D3D11/RTX4060 Laptop启动，绘画窗口PNG、退出0；QA入口的CPU参考与抓图不混入性能数字。真实设备故障、驱动OOM、冷盘、实体笔/物理屏幕与其他硬件仍未测。
 - 标准`build/bin/Release/drawverse.exe` SHA256：`771bdffc53bcb41c9960b21fcdf5e77b47616e0002cc7c4ffe47376a3eacf12c`；DLL `d47d9bf50c8df45b7afff1b45e836c1a34af09ba83cfe0f65986d157aac08bdd`与core/target/release一致。原始产物均在`artifacts/general-gpu-composition/first-move-cost/`，分析和计数在`before-analysis.json`、`after-analysis.json`、`final-timing-analysis.json`、`final-summary.json`。
+
+## 24. 自由变换目标边框与拖动续查（2026-10-28，验收冻结）
+
+从601a14d续接。回归两种不同范围图层连续开启/取消：BEGIN返回时控制点必须为空，确认后只出现目标范围。普通栅格连续绝对拖动须不等Actor回执就更新本地包，并以已有精确像素/取消/主视图交接用例验收。软件与D3D11分开，置入图/复杂闭包CPU后备不得冒充通用GPU支持。原失败保留，性能独立无抓图。
+
+### 24.1 实现与正确性
+
+确认旧状态来自BEGIN先公开active、但控制点仍为闲置默认值或上一次会话值。提交成功时清空控制点/初始边界并通知，核心确认前拒绝UPDATE。目标范围仍由核心发布，不在GUI猜测图层边界。
+
+原始产物继续位于`artifacts/general-gpu-composition/first-move-cost/`。最终`transform-response-software/d3d11`各12项通过，含不同范围图层三次开启/取消、无效中间几何恢复、真实QML关闭及透明/组栈常驻预览。`transform-local-final-d3d11`24项通过，覆盖原六插值、透视/Warp、本地几何、源复用、像素及快释放/最终交接；新增BEGIN控制点为空的断言保持。`transform-fallback-final-software/d3d11`各5项通过，含非Normal/组变换CPU帧及置入图显示后备绘画/撤销；后者不是置入图变换性能证明。
+
+`transform-placed-ui-final-software/d3d11`各3项通过，运行原真实QML置入图控制点拖动、Warp、撤销/重做、数值修改、Ctrl+T/Escape及浮窗快捷键；不与无抓图性能轮合并。最终C11/C++20静态/动态四ABI消费者退出0，头一致性和`git diff --check`通过。
+
+### 24.2 有界响应优化及测量边界
+
+非通用GPU的UPDATE后48ms内，Worker轮询临时2ms，之后恢复原8/16ms。只提前完成包分发，不新增整图任务或扩大近似支持，CPU最终提交和历史不变。普通GPU路径仍由最新绝对输入同步更新本地几何，不进入该加速轮询。
+
+测量沿用v6、1024²、D3D11、实际DPR1.5、native-driver/timing-only，无trace、无抓图；`transform-response-analysis.json`保存一对前后，`transform-final-analysis.json`保存最终GPU一次与旧常驻路径三次。均通过现有输入/窗口/有界观察有效性检查。以下为内容节点采用，帧提交另列，均不是物理显示。
+
+| 路径/轮次 | 首个有效位移→内容采用 ms | 就绪首移 ms | 持续P95 / 最大 ms | 持续匹配输入 |
+| --- | --- | --- | --- | --- |
+| 旧常驻，优化前单次 | 5.9896 | 16.5959 | 24.0050 / 24.6111 | 100/120 |
+| 旧常驻，优化后配对单次 | 20.2093 | 12.1993 | 18.9017 / 36.2579 | 97/120 |
+| 旧常驻，最终1 | 17.9712 | 17.6482 | 18.4864 / 23.0260 | 101/120 |
+| 旧常驻，最终2 | 12.1190 | 12.0729 | 18.4444 / 18.9986 | 100/120 |
+| 旧常驻，最终3 | 17.9199 | 17.8567 | 23.2435 / 23.9651 | 99/120 |
+| 通用GPU，最终单次 | 2.9995 | 3.7647 | 4.3037 / 5.2586 | 120/120 |
+
+旧常驻显示会合并中间几何，未匹配输入不等于丢弃真实笔采样/历史。优化后配对首帧/最大值更差，最终三轮仍有波动，不能宣称首帧性能改善或G3完整门槛通过。GPU单次首移对应帧提交7.6964ms，就绪4.9683ms；进入变换→首次内容12.4820ms。旧常驻最终三轮准备212.2720–341.3691ms，首相位进入→内容257.7710–277.8538ms，收尾209.3082–251.2529ms仍有成本。GPU收尾223.8241–353.3708ms也不与首移混称。此场景不是实际复杂蒙版、置入图、实体笔或全部目标的性能验收。
+
+### 24.3 构建与剩余边界
+
+`transform-response-build`构建Release应用/变换测试/合成测试/原生测量入口成功，生成头及嵌入shader检查通过。`transform-delivery-smoke`标准EXE实际D3D11/RTX4060 Laptop、默认GPU请求启动绘画退出0；独立QA抓图不计入性能。EXE SHA256 `de90317a400148e17e2fd3bf26c678ca4ce499a1311c9b1ad25d44eab9a5cb6f`，DLL仍为`d47d9bf50c8df45b7afff1b45e836c1a34af09ba83cfe0f65986d157aac08bdd`。标准`build/bin/Release/drawverse.exe`已更新；ABI1.86/version1/state45/文档格式不变。
+
+保留`transform-target-build-real`链接EXE失败LNK1104记录，随后重试和最终构建成功；最初辅助脚本GBK读取中文失败发生在编辑前，原日志保留。未重跑总check或无关核心矩阵；此前总check、UI、原首次移动长尾等失败保持。复杂目标CPU成本、物理显示/实体手感、其他硬件仍未完成验证，不将本轮分发优化称为所有图像滞后已消除。
+
+额外后台轮询的CPU利用率未独立量测；本轮只记录有界持续时间及既有节点采用计时，不作整机功耗或占用承诺。
