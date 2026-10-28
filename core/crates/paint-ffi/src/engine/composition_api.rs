@@ -69,7 +69,7 @@ pub unsafe extern "C" fn paint_core_composition_capabilities(
             PaintCompositionCapabilities {
                 struct_size: size_of::<PaintCompositionCapabilities>() as u32,
                 version,
-                features: paint_render::composition::FEATURES,
+                features: paint_render::composition::FEATURES | PAINT_COMPOSITION_LATEST_SNAPSHOT,
                 max_nodes: MAX_NODES as u32,
                 max_tiles: MAX_TILES as u32,
                 max_leases_per_session: 2,

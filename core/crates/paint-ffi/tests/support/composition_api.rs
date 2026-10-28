@@ -1,6 +1,49 @@
 use super::*;
 
 #[test]
+fn composition_latest_snapshot_reports_actual_revision_and_preserves_guards() {
+    let h = Harness::new(64, 64);
+    let before = h.info();
+    let old = request(&h, 1, 1);
+    h.wait(h.stroke(24., 24.));
+    let after = h.info();
+    assert!(after.revision > before.revision);
+    assert_eq!(submit(&h, &old).0, PAINT_BUSY);
+    let latest = PaintCompositionRequest {
+        features: old.features | PAINT_COMPOSITION_LATEST_SNAPSHOT,
+        ..old
+    };
+    let (status, lease) = submit(&h, &latest);
+    assert_eq!(status, PAINT_OK);
+    let captured = ready(&h, lease);
+    assert_eq!(captured.status, PAINT_OK);
+    assert_eq!(captured.key.revision, after.revision);
+    assert!(captured.key.publication >= after.publication);
+    assert_eq!(
+        captured.required_features & PAINT_COMPOSITION_LATEST_SNAPSHOT,
+        0
+    );
+    release(&h, captured);
+    assert_eq!(
+        submit(
+            &h,
+            &PaintCompositionRequest {
+                request_id: 2,
+                revision: after.revision + 1,
+                ..latest
+            }
+        )
+        .0,
+        PAINT_BUSY
+    );
+    let mut wrong_generation = latest;
+    wrong_generation.request_id = 3;
+    wrong_generation.viewport.document_generation += 1;
+    assert_eq!(submit(&h, &wrong_generation).0, PAINT_BUSY);
+    assert_eq!(h.info().revision, after.revision);
+}
+
+#[test]
 fn composition_clipping_and_dissolve_negotiate_whole_closures_and_exact_seed() {
     let h = Harness::new(64, 64);
     h.wait(h.stroke(24., 24.));
@@ -192,7 +235,7 @@ fn request(h: &Harness, id: u64, epoch: u64) -> PaintCompositionRequest {
     let info = h.info();
     PaintCompositionRequest {
         version: 1,
-        features: c.features,
+        features: c.features & !PAINT_COMPOSITION_LATEST_SNAPSHOT,
         revision: info.revision,
         request_id: id,
         device_epoch: epoch,

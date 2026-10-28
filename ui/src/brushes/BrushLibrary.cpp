@@ -562,7 +562,10 @@ bool BrushLibrary::useColor(const QString &color) {
     m_recentColors.prepend(normalized);
     while(m_recentColors.size()>12)m_recentColors.removeLast();
     emit recentColorsChanged();
-    queuePersistence();
+    // Recent swatches change neither preset arrays nor the executing catalog.
+    m_snapshotCache.clear();
+    if(!m_snapshotObjectCache.isEmpty())m_snapshotObjectCache["recentColors"]=QJsonArray::fromStringList(m_recentColors);
+    m_persistTimer.start();
     return true;
 }
 int BrushLibrary::index(const QString &id) const {for(int i=0;i<m_presets.size();++i)if(m_presets[i].id==id)return i;return -1;}
@@ -1726,8 +1729,10 @@ bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSel
         for(int i=0;i<targets.size();++i){auto target=targets[i].toObject();if(!patch(target,incoming[i].toObject()))return false;targets[i]=target;}
         isolated["profiles"]=targets;expected["toolIsolation"]=isolated;
         expected["colorState"]=root.value("colorState");
+        expected["recentColors"]=root.value("recentColors");
     }
     if(expected!=root)return false;
+    const bool recentChanged=sharedParameters && expected.value("recentColors")!=m_snapshotObjectCache.value("recentColors");
     QStringList parameterChanges;
     const bool colorsChanged=sharedParameters && (m_foregroundColor!=QColor(root.value("colorState").toObject().value("foreground").toString()) || m_backgroundColor!=QColor(root.value("colorState").toObject().value("background").toString()));
     if(sharedParameters) {
@@ -1743,6 +1748,7 @@ bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSel
         }
         m_foregroundColor=QColor(root.value("colorState").toObject().value("foreground").toString());m_backgroundColor=QColor(root.value("colorState").toObject().value("background").toString());
     }
+    if(recentChanged){m_recentColors.clear();for(const auto &value:root.value("recentColors").toArray())m_recentColors.append(value.toString());}
     const bool changed=m_selected!=selected.toString();
     m_selected=selected.toString();
     for(int i=0;i<3;++i)m_toolProfiles[i].selected=selections[i].toString();
@@ -1752,6 +1758,7 @@ bool BrushLibrary::restoreSelectionOnly(const QJsonObject &root,bool preserveSel
     if(changed || !parameterChanges.isEmpty())m_catalogCache.clear();
     if(!parameterChanges.isEmpty())m_catalogObjectCache={};
     if(colorsChanged)emit activeColorsChanged();
+    if(recentChanged)emit recentColorsChanged();
     if(changed || !parameterChanges.isEmpty()){emit settingsChanged();emit selectedPreviewChanged();}
     for(const auto &id:parameterChanges)emit presetChanged(id);
     if(selectionChangedValue)emit selectionChanged();

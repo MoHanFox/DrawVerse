@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QDir>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QScopeGuard>
 #include <QSettings>
 #include <QWheelEvent>
@@ -179,7 +180,9 @@ private slots:
     }
     void busyCompositionKeepsGpuAndRetriesSameRevision(){
         QFETCH(QByteArray,failure);
-        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));
+        QTemporaryDir temp;
+        {QSettings settings(temp.filePath("prefs.ini"),QSettings::IniFormat);settings.setValue("performance/highestQuality",false);settings.sync();}
+        PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));
         QTRY_VERIFY(client.ready());client.newDocument(256,192);
         QTRY_VERIFY(client.ready() && client.documentWidth()==256);
         QQuickWindow window;window.resize(512,384);auto *canvas=new CanvasItem(window.contentItem());
@@ -191,10 +194,15 @@ private slots:
         const auto restore=qScopeGuard([]{qunsetenv("DRAWVERSE_COMPOSITION_FAIL");});
         qputenv("DRAWVERSE_COMPOSITION_FAIL",failure);canvas->zoomBy(1.2);
         QTest::qWait(350);
-        QCOMPARE(client.compositionPacket(),original);
+        // Viewport navigation may locally reproject this immutable source while
+        // transport is BUSY. The source request and pixels must remain intact.
+        QVERIFY(client.compositionPacket());
+        QCOMPARE(client.compositionPacket()->info.key.request_id,original->info.key.request_id);
+        QCOMPARE(client.compositionPacket()->info.key.revision,original->info.key.revision);
+        QCOMPARE(client.compositionPacket()->data,original->data);
         QVERIFY2(client.compositionFallback().isEmpty(),qPrintable(client.compositionFallback()));
         qunsetenv("DRAWVERSE_COMPOSITION_FAIL");
-        QTRY_VERIFY(client.compositionPacket() && client.compositionPacket()!=original);
+        QTRY_VERIFY(client.compositionPacket() && client.compositionPacket()->info.key.request_id>original->info.key.request_id);
         QCOMPARE(client.revision(),revision);
         QTRY_VERIFY(client.compositionPacket()->pixels==(client.highestCanvasQuality()?QSize(client.documentWidth(),client.documentHeight()):requestedPixels(*canvas,window)));
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
@@ -202,7 +210,9 @@ private slots:
     void native4096BrushUpdatesOnlyDirtyPixels(){
         qputenv("DRAWVERSE_GPU_COMPOSITION","1");qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","0");
         auto restore=qScopeGuard([]{qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");});
-        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QTemporaryDir temp;
+        {QSettings settings(temp.filePath("prefs.ini"),QSettings::IniFormat);settings.setValue("performance/highestQuality",true);settings.sync();}
+        PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
         client.newDocument(4096,2160);QTRY_VERIFY(client.documentWidth()==4096 && !client.layerEditBusy());
         QQuickWindow window;window.resize(640,480);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({640,480});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
         if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("D3D11 required");
@@ -214,6 +224,8 @@ private slots:
         auto painted=canvas->compositionStatistics();QVERIFY(painted["lastDisplayArea"].toULongLong()>0);QVERIFY(painted["lastDisplayArea"].toULongLong()<=4096);QCOMPARE(painted["axisCreates"],before["axisCreates"]);
         const auto firstUploads=painted["uploads"].toULongLong();sample.position={2032.5,1072.5};QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),undo+2);QTRY_COMPARE_WITH_TIMEOUT(canvas->compositionStatistics()["revision"].toULongLong(),client.revision(),15000);
         painted=canvas->compositionStatistics();QVERIFY(painted["lastDisplayArea"].toULongLong()>0);QVERIFY(painted["lastDisplayArea"].toULongLong()<=4096);QCOMPARE(painted["uploads"].toULongLong(),firstUploads+1);QCOMPARE(painted["axisCreates"],before["axisCreates"]);
+        for(const auto key:{"pageTableCreates","parameterBufferCreates","bindingCreates","pipelineCreates"})
+            QCOMPARE(painted[key],before[key]);
         QVERIFY2(client.lastError().isEmpty(),qPrintable(client.lastError()));
         const auto readback=std::make_shared<CompositionReadback>();canvas->observeCompositionReadback(readback);readback->request(*client.compositionPacket());window.update();
         QTRY_VERIFY_WITH_TIMEOUT((window.update(),readback->completed.load()==2),15000);
@@ -339,6 +351,138 @@ private slots:
         QCOMPARE(observed->overflow(),quint64(0));
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void denseImageSmallStrokeReadsOnlyChangedTiles(){
+        const auto path=qEnvironmentVariable("DRAWVERSE_DENSE_PAINT_IMAGE");
+        if(path.isEmpty())QSKIP("Set DRAWVERSE_DENSE_PAINT_IMAGE to a dense 4096x2160 PNG");
+        qputenv("DRAWVERSE_GPU_COMPOSITION","1");qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","0");
+        const auto restore=qScopeGuard([]{qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");});
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());QVERIFY(client.openDocument(QUrl::fromLocalFile(path)));
+        QTRY_VERIFY_WITH_TIMEOUT(!client.fileBusy() && client.documentWidth()==4096 && client.documentHeight()==2160,30000);
+        QQuickWindow window;window.resize(640,480);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({640,480});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("D3D11 required");
+        QTRY_VERIFY_WITH_TIMEOUT(client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision(),30000);
+        QVERIFY(client.compositionPacket()->tiles.size()>2048);client.setBrushRadius(3);
+        QJsonArray rows;
+        for(int i=0;i<3;++i){
+            QHash<quint64,const CompositionTileData*> previous;
+            const auto beforePacket=client.compositionPacket();
+            for(int at=0;at<beforePacket->tiles.size();++at)previous.insert(beforePacket->tiles[at].content_id,beforePacket->data[at].get());
+            const auto undo=client.undoDepth();const auto uploads=canvas->compositionStatistics()["uploads"].toULongLong();
+            client.setBrushColor(i<2?Qt::red:Qt::blue);InputSample input;input.position={24.5+i*128.,32.5};
+            QElapsedTimer elapsed;elapsed.start();QVERIFY(client.beginStroke(input));client.endStroke();
+            QTRY_COMPARE(client.undoDepth(),undo+1);
+            QTRY_COMPARE_WITH_TIMEOUT(canvas->compositionStatistics()["nodeRevision"].toULongLong(),client.revision(),30000);
+            const auto reads=client.compositionPacket()->transportReadTiles;
+            qInfo()<<"dense stroke"<<i<<"read tiles"<<reads<<"commit/display ms"<<elapsed.elapsed();
+            rows.append(QJsonObject{{"index",i},{"read_tiles",double(reads)},{"commit_display_ms",double(elapsed.elapsed())}});
+            save("dense-small-strokes",{{"rows",rows}});
+            const auto afterPacket=client.compositionPacket();
+            for(int at=0;at<afterPacket->tiles.size();++at)if(previous.contains(afterPacket->tiles[at].content_id))
+                QCOMPARE(afterPacket->data[at].get(),previous.value(afterPacket->tiles[at].content_id));
+            QVERIFY2(reads<=4,"Small stroke reread unchanged dense image tiles");
+            QVERIFY(canvas->compositionStatistics()["uploads"].toULongLong()-uploads<=4);
+        }
+        const auto undo=client.undoDepth();InputSample input;input.position={100,256};
+        QElapsedTimer clock;clock.start();quint64 seen=client.compositionPacket()->info.key.revision;int updates=0;qint64 last=0,maxGap=0;
+        QVERIFY(client.beginStroke(input));
+        for(int i=0;i<96;++i){input.position={100.+i*4.,256.};input.timestamp+=8000000;client.strokeTo(input);QTest::qWait(8);
+            const auto revision=canvas->compositionStatistics()["nodeRevision"].toULongLong();
+            if(revision!=seen){const auto now=clock.elapsed();maxGap=std::max(maxGap,now-last);last=now;seen=revision;++updates;}
+        }
+        client.endStroke();QTRY_COMPARE(client.undoDepth(),undo+1);
+        QTRY_COMPARE_WITH_TIMEOUT(canvas->compositionStatistics()["nodeRevision"].toULongLong(),client.revision(),30000);
+        qInfo()<<"dense sustained updates"<<updates<<"input/display ms"<<clock.elapsed()<<"max sampled gap ms"<<maxGap;
+        QVERIFY(updates>1);
+        save("dense-sustained",{{"updates",updates},{"elapsed_ms",double(clock.elapsed())},{"max_gap_ms",double(maxGap)}});
+        QVERIFY(client.lastError().isEmpty());
+    }
+    void sustainedPaintingCadence_data(){
+        QTest::addColumn<bool>("gpu");QTest::newRow("cpu")<<false;QTest::newRow("gpu")<<true;
+    }
+    void sustainedPaintingCadence(){
+        QFETCH(bool,gpu);qputenv("DRAWVERSE_GPU_COMPOSITION",gpu?"1":"0");
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(1024,1024);
+        QTRY_VERIFY(client.documentWidth()==1024 && !client.layerEditBusy());
+        QQuickWindow window;window.resize(640,640);auto *canvas=new CanvasItem(window.contentItem());
+        canvas->setSize({640,640});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("D3D11 comparison required");
+        if(gpu)QTRY_VERIFY(canvas->compositionStatistics()["adoptions"].toULongLong()>0);
+        else QTRY_COMPARE(client.frameRevision(),client.revision());
+        client.setBrushRadius(12);client.setBrushColor(Qt::black);
+        QElapsedTimer clock;clock.start();QJsonArray samples;quint64 seen=0;qint64 last=0,maxGap=0;int updates=0;
+        const auto sample=[&]{
+            const auto revision=gpu?canvas->compositionStatistics()["nodeRevision"].toULongLong():client.frameRevision();
+            if(revision!=seen){const auto now=clock.elapsed();if(seen)maxGap=std::max(maxGap,now-last);last=now;seen=revision;++updates;
+                samples.append(QJsonObject{{"ms",double(now)},{"display_revision",double(revision)},{"core_revision",double(client.revision())}});}
+        };
+        const auto undo=client.undoDepth();InputSample input;input.position={100,100};QVERIFY(client.beginStroke(input));
+        for(int i=0;i<160;++i){input.position={100.+i*4.,100.+(i%40)*4.};input.timestamp+=8000000;client.strokeTo(input);QTest::qWait(8);sample();}
+        const auto during=updates;const auto duration=clock.elapsed();client.endStroke();QTRY_COMPARE(client.undoDepth(),undo+1);
+        if(gpu)QTRY_COMPARE_WITH_TIMEOUT(canvas->compositionStatistics()["nodeRevision"].toULongLong(),client.revision(),15000);
+        else QTRY_COMPARE_WITH_TIMEOUT(client.frameRevision(),client.revision(),15000);
+        qInfo()<<"cadence"<<(gpu?"gpu":"cpu")<<"updates during stroke"<<during<<"input ms"<<duration<<"maximum delivery gap ms"<<maxGap;
+        save(gpu?"cadence-gpu":"cadence-cpu",{{"updates",during},{"input_ms",double(duration)},{"max_delivery_gap_ms",double(maxGap)},{"samples",samples}});
+        QVERIFY(client.lastError().isEmpty());QVERIFY(during>1);
+    }
+    void visibilityResponse_data(){
+        QTest::addColumn<bool>("dense");QTest::newRow("sparse")<<false;QTest::newRow("dense")<<true;
+    }
+    void visibilityResponse(){
+        QFETCH(bool,dense);qputenv("DRAWVERSE_GPU_COMPOSITION","1");QTemporaryDir temp;
+        const auto prefs=temp.filePath("prefs.ini");
+        {QSettings settings(prefs,QSettings::IniFormat);settings.setValue("performance/highestQuality",true);settings.sync();}
+        PaintCoreClient client(nullptr,prefs);QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(1024,1024);
+        QTRY_VERIFY(client.ready() && client.documentWidth()==1024 && !client.layerEditBusy());client.addLayer("visibility");QTRY_VERIFY(!client.layerEditBusy() && client.layers().size()==2);
+        const auto id=client.activeLayer();client.setBrushColor(Qt::red);client.setBrushRadius(9);
+        if(dense){client.activateBucket();QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY(!client.layerEditBusy());client.activateBrush();}
+        else {const auto depth=client.undoDepth();QVERIFY(client.beginStroke({{42,38},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),depth+1);}
+        // A remote upper layer detects stale intermediate pixels when hiding
+        // the middle layer changes the final ping-pong target.
+        client.addLayer("remote upper");QTRY_VERIFY(!client.layerEditBusy() && client.layers().size()==3);
+        client.setBrushColor(Qt::blue);const auto upperDepth=client.undoDepth();QVERIFY(client.beginStroke({{700,700},1}));client.endStroke();QTRY_COMPARE(client.undoDepth(),upperDepth+1);
+        QQuickWindow window;window.resize(384,384);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({384,384});const auto readback=std::make_shared<CompositionReadback>();canvas->observeCompositionReadback(readback);canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();canvas->zoomBy(1/window.devicePixelRatio());
+        const bool software=window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software;
+        if(!software)QTRY_COMPARE(canvas->compositionStatistics()["revision"].toULongLong(),client.revision());
+        const auto tables=canvas->compositionStatistics()["pageTableCreates"].toULongLong();
+        QJsonArray times;QImage hiddenImage,visibleImage;
+        for(int i=0;i<12;++i){
+            const bool visible=i%2;const auto previousPacket=client.compositionPacket();const auto revision=client.revision();QElapsedTimer elapsed;elapsed.start();client.setLayerProperties(id,visible,1);
+            QTRY_VERIFY(!client.layerEditBusy() && client.revision()>revision);
+            if(!software){
+                QTRY_COMPARE(canvas->compositionStatistics()["revision"].toULongLong(),client.revision());
+                QCOMPARE(canvas->compositionStatistics()["pageTableCreates"].toULongLong(),tables);
+                if(!dense){
+                    const auto now=client.compositionPacket();QString detail=QString::number(i)+" "+QString::number(canvas->compositionStatistics()["lastDirtyArea"].toULongLong());
+                    if(previousPacket && now)for(int n=0;n<now->nodes.size();++n)detail+=" old="+QByteArray(reinterpret_cast<const char*>(&previousPacket->nodes[n]),sizeof(PaintCompositionNode)).toHex()+" new="+QByteArray(reinterpret_cast<const char*>(&now->nodes[n]),sizeof(PaintCompositionNode)).toHex();
+                    QVERIFY2(canvas->compositionStatistics()["lastDirtyArea"].toULongLong()<=4096,qPrintable(detail));
+                }
+            }
+            if(!software && i>=10){
+                const auto packet=client.compositionPacket();readback->request(*packet);window.update();
+                QTRY_VERIFY_WITH_TIMEOUT((window.update(),readback->completed.load()==2),10000);
+                std::lock_guard lock(readback->mutex);QCOMPARE(readback->linear.size(),1024*1024*16);double error=0;
+                for(int y=0;y<1024;++y)for(int x=0;x<1024;++x){Pixel actual{};std::memcpy(actual.data(),readback->linear.constData()+(y*1024+x)*16,16);const auto expected=reference(*packet,x,y);for(int c=0;c<4;++c){QVERIFY(std::isfinite(actual[c]));error=std::max(error,double(std::abs(actual[c]-expected[c])));}}
+                QVERIFY2(error<=2e-5,qPrintable(QString::number(error,'g',12)));
+            }
+            times.append(double(elapsed.nsecsElapsed())/1e6);
+            QTRY_COMPARE(client.frameRevision(),client.revision());
+            if(!software){if(visible)visibleImage=window.grabWindow();else hiddenImage=window.grabWindow();}
+        }
+        if(!software){
+            qputenv("DRAWVERSE_GPU_COMPOSITION","0");emit client.frameChanged();
+            QSignalSpy frames(&window,&QQuickWindow::frameSwapped);window.update();QTRY_VERIFY(!frames.isEmpty());
+            const auto cpuVisible=window.grabWindow();
+            if(difference(visibleImage,cpuVisible)>1){const auto report=qEnvironmentVariable("DRAWVERSE_G2_REPORT_DIR");visibleImage.save(report+"/visibility-gpu-"+QString::fromLatin1(QTest::currentDataTag())+".png");cpuVisible.save(report+"/visibility-cpu-"+QString::fromLatin1(QTest::currentDataTag())+".png");qInfo()<<"visibility error"<<difference(visibleImage,cpuVisible)<<"zoom"<<canvas->zoom()<<"DPR"<<window.devicePixelRatio();}
+            QVERIFY(difference(visibleImage,cpuVisible)<=1);
+            const auto revision=client.revision();client.setLayerProperties(id,false,1);QTRY_VERIFY(!client.layerEditBusy() && client.revision()>revision);
+            QTRY_COMPARE(client.frameRevision(),client.revision());frames.clear();window.update();QTRY_VERIFY(!frames.isEmpty());
+            QVERIFY(difference(hiddenImage,window.grabWindow())<=1);qputenv("DRAWVERSE_GPU_COMPOSITION","1");
+        }
+        QVERIFY(client.lastError().isEmpty());save("visibility-"+QString::fromLatin1(QTest::currentDataTag()),{{"passed",true},{"observation_ms",times}});
+    }
     void continuousPaintingAndIncrementalUploads(){
         qputenv("DRAWVERSE_GPU_COMPOSITION","1");QTemporaryDir temp;
         // This legacy comparison requests a physical-DPR CPU viewport. Keep the
@@ -368,6 +512,8 @@ private slots:
         if(!software){
             QTRY_COMPARE_WITH_TIMEOUT(canvas->compositionStatistics()["nodeRevision"].toULongLong(),client.revision(),15000);
             QCOMPARE(canvas->compositionStatistics()["uploads"].toULongLong()-before["uploads"].toULongLong(),1);
+            for(const auto key:{"pageTableCreates","parameterBufferCreates","bindingCreates","pipelineCreates"})
+                QCOMPARE(canvas->compositionStatistics()[key],before[key]);
             QVERIFY(canvas->compositionStatistics()["lastDirtyArea"].toULongLong()>0);
             QVERIFY(canvas->compositionStatistics()["lastDirtyArea"].toULongLong()<=4096);
         }
@@ -843,7 +989,7 @@ private slots:
         if(shape==5){points[5]=points[5].toPointF()+QPointF(65,35);points[10]=points[10].toPointF()+QPointF(-65,-35);}
         if(shape==2 || shape==10){points[3]=points[3].toPointF()+QPointF(-10,4);points[15]=points[15].toPointF()+QPointF(4,2);}
         const auto sourceRevision=precise?client.compositionPacket()->info.key.revision:0;
-        const auto revision=client.revision();QVERIFY(client.updateTransform(points,warp,interpolation));
+        const auto revision=client.revision();QSignalSpy geometryState(&client,&PaintCoreClient::stateChanged);QVERIFY(client.updateTransform(points,warp,interpolation));QCOMPARE(geometryState.count(),0);
         if(supported){
             QVERIFY(client.compositionPacket()->transform);QCOMPARE(client.compositionPacket()->transform->geometry.interpolation,quint32(interpolation));
             QCOMPARE(client.compositionPacket()->info.key.revision,sourceRevision);

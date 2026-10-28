@@ -89,11 +89,15 @@ fn cancelled() -> ApiError {
 #[derive(Clone)]
 pub struct Request {
     pub key: PaintCompositionKey,
+    pub latest_snapshot: bool,
     pub render: RenderRequest,
     pub limits: Limits,
     pub cancel: CancellationToken,
 }
 impl Request {
+    pub fn accepts_revision(&self, revision: u64) -> bool {
+        self.key.revision == revision || (self.latest_snapshot && self.key.revision < revision)
+    }
     pub fn parse(desc: PaintCompositionRequest) -> ApiResult<Self> {
         if desc.version != composition::VERSION {
             return Err(ApiError::new(PAINT_UNSUPPORTED, "composition version"));
@@ -113,7 +117,7 @@ impl Request {
             ));
         }
         let limits = Limits {
-            features: desc.features,
+            features: desc.features & !PAINT_COMPOSITION_LATEST_SNAPSHOT,
             nodes: desc.max_nodes as usize,
             tiles: desc.max_tiles as usize,
             pinned_bytes: usize::try_from(desc.max_pinned_bytes)
@@ -145,6 +149,7 @@ impl Request {
                 revision: desc.revision,
                 publication: 0,
             },
+            latest_snapshot: desc.features & PAINT_COMPOSITION_LATEST_SNAPSHOT != 0,
             render,
             limits,
             cancel: CancellationToken::default(),
@@ -184,7 +189,7 @@ impl Service {
         if state.closed {
             return Err(cancelled());
         }
-        if request.key.document_generation != generation || request.key.revision != revision {
+        if request.key.document_generation != generation || !request.accepts_revision(revision) {
             return Err(ApiError::new(
                 PAINT_BUSY,
                 "stale composition document revision",
@@ -287,6 +292,7 @@ impl Service {
         if let Some(slot) = state.slots.get_mut(&request.key.lease_id) {
             if !slot.request.cancel.is_cancelled() {
                 slot.key.publication = publication;
+                slot.key.revision = request.key.revision;
                 slot.result = Some(result);
             }
         }
@@ -437,6 +443,7 @@ mod tests {
                 height: 64,
                 format: PixelFormat::LinearRgba32F,
             },
+            latest_snapshot: false,
             limits: Limits::default(),
             cancel: CancellationToken::default(),
         }
@@ -447,6 +454,44 @@ mod tests {
             .unwrap();
         doc.end_stroke().unwrap();
         doc
+    }
+    #[test]
+    fn latest_snapshot_adopts_capture_identity_without_weakening_exact_requests() {
+        let _guard = TEST.lock().unwrap();
+        let mut doc = document();
+        let service = Service::default();
+        let mut latest = request(1, 1, &doc);
+        let exact = latest.clone();
+        latest.latest_snapshot = true;
+        let floor = doc.revision();
+        doc.begin_stroke(Brush::default(), InputPoint::new(12., 12., 1.))
+            .unwrap();
+        doc.end_stroke().unwrap();
+        assert!(doc.revision() > floor);
+        assert!(!exact.accepts_revision(doc.revision()));
+        assert!(latest.accepts_revision(doc.revision()));
+        assert!(!latest.accepts_revision(floor - 1));
+        assert_eq!(
+            service
+                .reserve(exact, 1, doc.revision())
+                .err()
+                .unwrap()
+                .status,
+            PAINT_BUSY
+        );
+        let mut captured = service.reserve(latest, 1, doc.revision()).unwrap();
+        captured.key.revision = doc.revision();
+        let plan =
+            Service::compile(&captured, doc.dimensions(), doc.revision(), doc.layers()).unwrap();
+        service.complete(&captured, 99, Ok(plan));
+        let info = service.info(captured.key.lease_id).unwrap();
+        assert_eq!(info.key.revision, doc.revision());
+        assert_eq!(info.key.publication, 99);
+        assert_eq!(
+            info.required_features & PAINT_COMPOSITION_LATEST_SNAPSHOT,
+            0
+        );
+        service.release(captured.key.lease_id).unwrap();
     }
     #[test]
     fn lease_close_rejects_inflight_publication_and_retains_charge_until_last_owner() {

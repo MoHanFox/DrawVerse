@@ -64,6 +64,9 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         request.viewport=dto<PaintViewport>();request.viewport.enabled=1;request.viewport.document_generation=view.generation;
         request.viewport.x=view.region.x();request.viewport.y=view.region.y();request.viewport.width=view.region.width();request.viewport.height=view.region.height();
         request.viewport.pixel_width=quint32(view.pixels.width());request.viewport.pixel_height=quint32(view.pixels.height());
+        auto caps=dto<PaintCompositionCapabilities>();
+        if(paint_core_composition_capabilities(core,1,&caps)==PAINT_OK)
+            request.features|=caps.features & PAINT_COMPOSITION_LATEST_SNAPSHOT;
         request.revision=state.revision;request.request_id=++m_next;request.device_epoch=view.epoch;
         const bool large=area>4194304;
         request.max_nodes=64;request.max_tiles=4096;
@@ -75,6 +78,9 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
             m_attemptRevision=~quint64(0);return {};
         }
         if(status!=PAINT_OK){fallback=QStringLiteral("CPU: composition request %1").arg(status);return {};}
+        // Discard expired identities from abandoned/retired plans. With the
+        // transport's two-plan cache bound, retain live hits without pinning pixels.
+        for(auto it=m_cache.begin();it!=m_cache.end();)if(it.value().expired())it=m_cache.erase(it);else ++it;
         m_packet=std::make_shared<CompositionPacket>();m_packet->region=view.region;m_packet->pixels=view.pixels;m_packet->lod=lod;
     }
     auto abandon=[&](PaintStatus status){
@@ -145,11 +151,21 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
                 reinterpret_cast<uint8_t*>(mutableData->bytes.data()),65536,&required);
             if(status!=PAINT_OK)return abandon(status);
             if(required!=65536)return abandon(PAINT_INTERNAL_ERROR);
-            data=std::move(mutableData);if(m_cache.size()>=2048)m_cache.clear();m_cache.insert(identity,data);++reads;
+            ++m_packet->transportReadTiles;
+            data=std::move(mutableData);
+            // Keep both bounded plans' identities while a replacement is read.
+            // Clearing at 2048 thrashed even a single dense 4096x2160 image.
+            if(m_cache.size()>=8192)m_cache.erase(m_cache.begin());
+            m_cache.insert(identity,data);++reads;
         }
         m_packet->data.append(std::move(data));
         if(reads>=128 || elapsed.elapsed()>=4)return {};
     }
+    // Only the completed plan remains as a weak lookup table. While reading,
+    // at most the previous and next plan (4096 tiles each) can be represented.
+    m_cache.clear();
+    for(int i=0;i<m_packet->tiles.size();++i)m_cache.insert(m_packet->tiles[i].content_id,m_packet->data[i]);
+    m_attemptRevision=m_packet->info.key.revision;
     auto result=CompositionPacketPtr(std::move(m_packet));paint_session_release_composition(core,session,m_lease);m_lease=0;
     fallback.clear();return result;
 }

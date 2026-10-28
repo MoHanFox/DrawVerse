@@ -1,4 +1,9 @@
-# C ABI 1.88.0 契约
+# C ABI 1.89.0 契约
+
+## ABI 1.89 — 有界最新显示快照
+
+PAINT_COMPOSITION_LATEST_SNAPSHOT=256为可协商请求能力，加入capabilities.features；请求带位时revision是同generation最低revision，reserve及actor捕获接受不早于它的当前修订，READY key.revision/publication一起标识实际不可变快照。未来revision仍BUSY，generation/device epoch/request顺序、取消/关闭、双租约及预算约束保持。旧请求不带位仍精确匹配，不静默改变旧语义。位在请求解析时从render limits.features移除，不进入计划required_features。version1/全部结构布局/state45/文档保持。
+
 
 ## ABI 1.88 — 调整原图直方图及着色
 

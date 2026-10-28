@@ -26,11 +26,84 @@ impl TransformMesh {
         let columns = ((extent(0) / 18.).ceil() as u32).clamp(6, 48) * 3 + 1;
         let rows = ((extent(1) / 18.).ceil() as u32).clamp(6, 48) * 3 + 1;
         let mut vertices = Vec::with_capacity((columns * rows) as usize);
+        // map() repeats these six extended-row interpolations for every y.
+        // Cache the same expressions, preserving their f64 evaluation order.
+        let horizontal: Vec<[[f64; 2]; 6]> = if geometry.warp {
+            (0..columns)
+                .map(|x| {
+                    let u = x as f64 / (columns - 1) as f64;
+                    let (ix, tx) = cell(u);
+                    std::array::from_fn(|r| {
+                        std::array::from_fn(|axis| {
+                            catmull(
+                                std::array::from_fn(|k| {
+                                    geometry.extended_node(ix + k as i32 - 1, r as i32 - 1, axis)
+                                }),
+                                tx,
+                            )
+                        })
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        // Hoist projective coefficients out of the dense display mesh loop.
+        // Keep map() as the independent scalar reference.
+        let projective = if !geometry.warp {
+            let [a, b, c, d] = [
+                geometry.points[0],
+                geometry.points[3],
+                geometry.points[15],
+                geometry.points[12],
+            ];
+            let dx = b[0] + d[0] - a[0] - c[0];
+            let dy = b[1] + d[1] - a[1] - c[1];
+            let bx = c[0] - b[0];
+            let by = c[1] - b[1];
+            let cx = c[0] - d[0];
+            let cy = c[1] - d[1];
+            let det = bx * cy - cx * by;
+            let (g, h) = if dx.abs() + dy.abs() < 1e-10 {
+                (0., 0.)
+            } else if det.abs() > 1e-12 {
+                ((dx * cy - cx * dy) / det, (bx * dy - dx * by) / det)
+            } else {
+                (0., 0.)
+            };
+            [
+                b[0] - a[0] + g * b[0],
+                d[0] - a[0] + h * d[0],
+                a[0],
+                b[1] - a[1] + g * b[1],
+                d[1] - a[1] + h * d[1],
+                a[1],
+                g,
+                h,
+            ]
+        } else {
+            [0.; 8]
+        };
         for y in 0..rows {
             let v = y as f64 / (rows - 1) as f64;
             for x in 0..columns {
                 let u = x as f64 / (columns - 1) as f64;
-                let p = geometry.map(u, v);
+                let p = if geometry.warp {
+                    let (iy, ty) = cell(v);
+                    std::array::from_fn(|axis| {
+                        catmull(
+                            std::array::from_fn(|r| horizontal[x as usize][iy as usize + r][axis]),
+                            ty,
+                        )
+                    })
+                } else {
+                    let m = projective;
+                    let z = 1. + m[6] * u + m[7] * v;
+                    [
+                        (m[0] * u + m[1] * v + m[2]) / z,
+                        (m[3] * u + m[4] * v + m[5]) / z,
+                    ]
+                };
                 vertices.push([p[0] as f32, p[1] as f32, u as f32, v as f32]);
             }
         }
@@ -211,6 +284,35 @@ impl MeshRaster {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cached_mesh_matches_original_map_bits() {
+        for side in [96., 1024., 4096.] {
+            for mode in 0..4 {
+                let mut g = TransformGeometry::rectangle(-137.25, -19.75, side, side * 0.7);
+                g.warp = mode < 2;
+                if mode == 3 {
+                    g.points[3][0] += side * 0.17;
+                    g.points[15][1] += side * 0.11;
+                }
+                g.points[5][0] += side * if mode == 1 { 1.3 } else { 0.13 };
+                g.points[10][1] -= side * 0.21;
+                let mesh = TransformMesh::new(&g);
+                for y in 0..mesh.rows {
+                    for x in 0..mesh.columns {
+                        let u = x as f64 / (mesh.columns - 1) as f64;
+                        let v = y as f64 / (mesh.rows - 1) as f64;
+                        let expected = g.map(u, v);
+                        let actual = mesh.vertices[(y * mesh.columns + x) as usize];
+                        assert_eq!(
+                            actual.map(f32::to_bits),
+                            [expected[0] as f32, expected[1] as f32, u as f32, v as f32]
+                                .map(f32::to_bits)
+                        );
+                    }
+                }
+            }
+        }
+    }
     #[test]
     fn shared_edges_tiles_negative_coordinates_and_reversed_winding_have_no_holes() {
         for reflected in [false, true] {

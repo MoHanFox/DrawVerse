@@ -27,6 +27,24 @@ QQuickItem *visual(QQuickItem *item,const QString &name){if(item->objectName()==
 class ColorStateTests : public QObject {
     Q_OBJECT
 private slots:
+    void recentColorCommitRetainsValidatedCaches(){
+        for(int mode=0;mode<3;++mode){
+            BrushLibrary source,receiver;source.setToolIsolation(mode);source.snapshot();source.catalogSnapshot();
+            QVERIFY(receiver.restore(source.snapshot()));receiver.snapshot();
+            InteractionTrace::start(true);QVERIFY(source.useColor("#cc123456"));
+            const auto bytes=source.snapshot();const auto catalog=source.catalogSnapshot();
+            const auto trace=InteractionTrace::finish();
+            qInfo()<<"recent color snapshot rebuilds"<<count(trace,"snapshotObject.rebuild");
+            QCOMPARE(count(trace,"snapshotObject.rebuild"),0);
+            QSignalSpy rebuilds(&receiver,&BrushLibrary::presetsChanged);QSignalSpy recent(&receiver,&BrushLibrary::recentColorsChanged);
+            QVERIFY(receiver.restoreSharedSettings(source));QCOMPARE(receiver.recentColors(),source.recentColors());
+            QCOMPARE(rebuilds.size(),0);QCOMPARE(recent.size(),1);
+            BrushLibrary cold;QVERIFY(cold.restore(bytes));QCOMPARE(cold.snapshot(),bytes);QCOMPARE(cold.catalogSnapshot(),catalog);
+            source.flushPersistence();QVERIFY(!source.useColor("#cc123456"));
+            const auto prior=receiver.snapshot();auto invalid=object(prior);invalid["recentColors"]=QJsonArray{"invalid color"};
+            QVERIFY(!receiver.restore(QJsonDocument(invalid).toJson()));QCOMPARE(receiver.snapshot(),prior);
+        }
+    }
     void scalarCacheMatchesColdConstructionAndSharedProjection() {
         for(int mode=0;mode<3;++mode)for(int sender=0;sender<3;++sender)for(int tool=0;tool<3;++tool) {
             BrushLibrary source,receiver,reference;source.setToolIsolation(mode);

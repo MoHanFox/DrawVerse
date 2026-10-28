@@ -80,6 +80,13 @@ public:
     explicit BackendWorker(std::shared_ptr<BackendConnection> connection, QString settingsFile,std::shared_ptr<BrushCatalogConnection> catalog) : m_catalog(std::move(catalog)),m_settingsFile(std::move(settingsFile)), m_connection(std::move(connection)) {
         m_timer = new QTimer(this); m_timer->setInterval(16);
         connect(m_timer, &QTimer::timeout, this, &BackendWorker::poll);
+        m_compositionTimer=new QTimer(this);m_compositionTimer->setInterval(2);
+        m_compositionTimer->setTimerType(Qt::PreciseTimer);
+        connect(m_compositionTimer,&QTimer::timeout,this,[this]{
+            if(!m_session || m_stopped){m_compositionTimer->stop();return;}
+            auto info=dto<PaintSessionInfo>();
+            if(paint_session_info(m_core,m_session,&info)==PAINT_OK)pollComposition(info);
+        });
     }
     void boot() {
         auto version = dto<PaintVersion>();
@@ -222,7 +229,7 @@ public:
     }
     void stop() {
         if (m_stopped) return;
-        m_stopped = true; m_timer->stop();
+        m_stopped = true; m_timer->stop();m_compositionTimer->stop();
         m_compositionReader.reset(m_core,m_session);
         if(!m_pendingWet.isEmpty()){m_pendingWet.clear();emit wetActionReady(false,QStringLiteral("后端已关闭"));}
         while(!m_pendingBrushPreferences.isEmpty()){pollBrushState();if(!m_pendingBrushPreferences.isEmpty())QThread::msleep(1);}
@@ -509,6 +516,21 @@ public:
         // pixels, waits for the actor, or replaces the ordinary recovery poll.
         if(remaining>0)QTimer::singleShot(1,this,[this,watch,sequence,remaining]{pollCompositionAcknowledgement(watch,sequence,remaining-1);});
     }
+    void pollComposition(const PaintSessionInfo &info){
+        CompositionViewRequest view;
+        {QMutexLocker lock(&m_connection->mutex);view=m_connection->compositionView;}
+        const bool active=info.stroke_active && view.enabled && view.generation==info.document_generation && !(info.flags & PAINT_SESSION_FAILED);
+        if(active && !m_compositionTimer->isActive())m_compositionTimer->start();
+        else if(!active)m_compositionTimer->stop();
+        if(!m_connection->compositionPending.load()){
+            QString fallback=m_compositionFallback;
+            auto packet=m_compositionReader.poll(m_core,m_session,info,view,fallback);
+            if(packet || fallback!=m_compositionFallback){
+                m_compositionFallback=fallback;m_connection->compositionPending=true;
+                emit compositionReady(std::move(packet),view.serial,fallback);
+            }
+        }
+    }
     void poll() {
         if (!m_session || m_stopped) return;
         pollTaskProgress();
@@ -577,16 +599,7 @@ public:
         }
         pollMovePreparation();
         pollResidentPreview();
-        if(!m_connection->compositionPending.load()){
-            CompositionViewRequest view;
-            {QMutexLocker lock(&m_connection->mutex);view=m_connection->compositionView;}
-            QString fallback=m_compositionFallback;
-            auto packet=m_compositionReader.poll(m_core,m_session,info,view,fallback);
-            if(packet || fallback!=m_compositionFallback){
-                m_compositionFallback=fallback;m_connection->compositionPending=true;
-                emit compositionReady(std::move(packet),view.serial,fallback);
-            }
-        }
+        pollComposition(info);
         // Only actual legacy/CPU transform input opens a short response window.
         // Return to the normal idle cadence without presenting unchanged pixels.
         const int pollInterval=m_transformInputClock.isValid() && m_transformInputClock.elapsed()<48?2:(m_residentPreview?8:16);
@@ -977,6 +990,7 @@ public:
     QTimer *m_timer;
     PaintCore *m_core = nullptr;
     PaintSession *m_session = nullptr;
+    QTimer *m_compositionTimer=nullptr;
     CompositionReader m_compositionReader;
     quint64 m_compositionAckWatch=0;
     QElapsedTimer m_transformInputClock;
@@ -1298,7 +1312,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             if(!m_selectedLayers.contains(selectedId)){m_selectedLayers={selectedId};emit selectedLayersChanged();}
         }
         if (changedLayers || activeChanged) pruneSelectedLayers();
-        if (wasLiquify!=m_liquifyActive || m_transformActive || wasTransform!=m_transformActive || wasTransformBusy!=transformBusy() || wasLiquifyBusy!=liquifyBusy() || propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
+        if (wasLiquify!=m_liquifyActive || wasTransform!=m_transformActive || wasTransformBusy!=transformBusy() || wasLiquifyBusy!=liquifyBusy() || propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
         requestLayerMovePreparation();
     });
     connect(m_worker,&BackendWorker::thumbnailReady,this,[this](quint64 generation,quint64 revision,quint64 id,const QString &image) {
@@ -1452,6 +1466,7 @@ bool PaintCoreClient::submit(int type, const InputSample &sample, quint64 id, co
         if ((type == Move || type == AirbrushTick || type == End) && (status == PAINT_LIMIT_EXCEEDED || status == PAINT_CANCELLED)) m_dropStroke = true;
         showError(error); return false;
     }
+    if(type==Properties)QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->transformInputActivity();},Qt::QueuedConnection);
     if(type==End && m_strokeColor.isValid())m_pendingStrokeColors.insert(sequence,m_strokeColor);
     if (type == New || type == NewWhite) { m_pendingNew = sequence; m_ready = false; emit stateChanged(); }
     if(type==Select) { m_pendingLayer=sequence; emit stateChanged(); }
@@ -2842,7 +2857,9 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
         if(kind==PAINT_TRANSFORM_BEGIN)m_compositionBeginSequence=sequence;
         QMetaObject::invokeMethod(m_worker,[worker=m_worker,sequence]{worker->watchCompositionAcknowledgement(sequence);},Qt::QueuedConnection);
     }
-    emit stateChanged();return true;
+    // UPDATE changes geometry only; transformChanged is emitted by the caller.
+    // Avoid invalidating every state-bound QML control on each pointer sample.
+    if(kind!=PAINT_TRANSFORM_UPDATE)emit stateChanged();return true;
 }
 bool PaintCoreClient::beginTransform(){
     if(!selectedContentVisible())return false;

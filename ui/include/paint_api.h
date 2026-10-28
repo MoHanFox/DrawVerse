@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 88
+#define PAINT_ABI_MINOR 89
 
 #define PAINT_ABI_PATCH 0
 
@@ -112,6 +112,11 @@
 #define PAINT_COMPOSITION_GROUPS 32
 
 #define PAINT_COMPOSITION_INFLUENCE 4
+
+/**
+ * ABI1.89: request.revision is a lower bound; READY key identifies the captured snapshot.
+ */
+#define PAINT_COMPOSITION_LATEST_SNAPSHOT 256
 
 #define PAINT_COMPOSITION_LINEAR_RGBA32F 4
 

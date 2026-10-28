@@ -1261,6 +1261,7 @@ impl Engine {
                     | PAINT_LAYER_MOVE_PICK_DEFERRED,
                 ..
             ) | Operation::LayerMoves(..)
+                | Operation::Properties(..)
         );
         let old_revision = self.document.revision();
         let pixel_revision = self.pixel_revision();
@@ -2060,9 +2061,9 @@ impl Engine {
         self.publish_document();
         // Capture only after the matching metadata publication is available.
         // A same-tick edit must never pair new pixels with an older publication.
-        for request in self.shared.composition.take_pending() {
+        for mut request in self.shared.composition.take_pending() {
             let result = if request.key.document_generation != self.generation
-                || request.key.revision != self.document.revision()
+                || !request.accepts_revision(self.document.revision())
             {
                 Err(ApiError::new(
                     PAINT_BUSY,
@@ -2079,6 +2080,9 @@ impl Engine {
                     "composition during editing session requires CPU",
                 ))
             } else {
+                // Capture key and pixels together. Newer pen input does not starve
+                // an explicitly negotiated latest-snapshot display request.
+                request.key.revision = self.document.revision();
                 super::composition::Service::compile(
                     &request,
                     self.document.dimensions(),

@@ -55,6 +55,7 @@ struct CompositionAdjustment {
 };
 struct CompositionPacket {
     PaintCompositionInfo info{};
+    quint64 transportReadTiles=0;
     QVector<PaintCompositionNode> nodes;
     QVector<PaintCompositionOperation> operations;
     int surfaceCount=2,outputSurface=0;

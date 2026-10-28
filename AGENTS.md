@@ -1,5 +1,15 @@
 # DrawVerse
 
+- 变换/显隐响应修订2026-10-29：共享网格横向插值/投影系数复用、UPDATE去全局状态通知，显隐即时元数据/短轮询、普通页表保留及有界damage，奇偶交接复制保留远端上层。核心25+公开7、软件/D3D11定向及新增显隐像素/历史/拓扑、四ABI/Clippy/fmt/头/Release/应用D3D11冒烟通过；原失败与DPR夹具纠偏保留。12原生配对进程有效，但普通持续P95及Warp首帧/长尾无稳定改善，不能称几个卡顿已全部解决。标准Release更新；详见general-gpu-composition验收末节，无总check/实体延迟结论。
+
+- 最新实际密集4K/换色收尾2026-10-29：用户PNG2176瓦片触发旧2048源身份整表清空，小笔读2176→1；完成包最多4096 Weak身份、在读硬界8192，像素预算不变。最近颜色仅补丁snapshot并沿可信共享投影，保留catalog/预设数组，外部JSON完整验证。实际图三笔未变数据身份/源增量/历史及96输入50更新、颜色5功能+软件2、原25笔独立复验通过；旧窗口失活/两项修复前失败保留。标准Release更新，实际D3D11冒烟退出0。同期其他任务编译等待/窗口干扰记录，不作精确倍数/实体/任意大图或全量结论，ABI1.89/state45保持。详见general-gpu-composition末节。
+
+- 最新GPU绘画交接2026-10-29：参考PhotoCraft活动笔触刷新，ABI1.89协商LATEST_SNAPSHOT=256按revision下界捕获并回传真实身份，旧精确语义/epoch/取消/预算保持；独立2ms活动显示邮箱轮询，后台其余服务原频率。两轮160输入GPU27/27→93/87更新，最大交付162/127→27/27ms，非实体或屏幕延迟。核心4/公开11、D3D11持续对照/25笔/4K及BUSY两行、软件25笔/四ABI通过。旧BUSY夹具pointer/原生zoom等待失败保留，按source身份及新request恢复复验。初次标准EXE占用、误跑旧测试日志保留，最终标准Release及GpuBrushReview更新，实际标准D3D11冒烟退出0。无全量/实体或独立消融结论，详见general-gpu-composition末节。
+
+- GPU绘画卡顿复查2026-10-29：用户确认资源复用未解决。新增持续160输入不等revision的CPU/GPU诊断，两进程CPU86/89更新、最大交付27/19ms；GPU27/27更新、162/127ms，最终历史/追平通过不代表性能通过。本地PhotoCraft对比指向活动笔触damage直刷与DrawVerse16ms后台/8ms核心/精确revision请求捕获重试链路差异；整栈/prefix及块资源另有差距，未分阶段归因。仅补诊断，无新生产修复或实体延迟结论，详见general-gpu-composition验收末节。
+
+- 最新GPU绘画资源复用2026-10-29：同拓扑普通绘画保留页表纹理/参数缓冲/SRB，只更新页表与增量源，布局/属性/编辑变化仍完整准备。最小D3D11连续25笔及4K连续24段/远端笔触两功能、软件25笔一功能通过，零新增相关资源/单瓦片/历史与CPU像素保持；4K默认夹具失败记录保留，显式开启后通过。Release构建并更新标准包，无全量/实体手感或前后性能结论。详见general-gpu-composition设计/验收末节。
+
 - 最新GPU设置框恢复2026-10-29：硬件列表异步到达后显式按已选ID同步ComboBox，去掉未找到强制CPU首项；实际auto/GPU未关闭，用户偏好未改。最高画质独立缺省关闭、显式已存值优先。按用户要求未跑测试，drawverse_runtime构建通过、标准Release更新；运行中的CanvasFixReview保留。设计/验收见general-gpu-composition末节。
 
 - 最新最高画质重启恢复：general-gpu-composition设计/验收2026-10-28末节；INI跨进程恢复的QString false在QML误判真值，renderSettings边界统一toBool，缺省仍开启。独立写/读进程的关闭/开启/缺省三行及跨文档同步通过，修复前两行失败保留；标准Release和CanvasFixReview已更新，标准D3D11冒烟通过。ABI/文档格式不变，无全量或新性能结论。

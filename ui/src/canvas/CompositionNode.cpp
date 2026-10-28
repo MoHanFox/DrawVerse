@@ -276,9 +276,26 @@ private:
            next->adjustment!=packet->adjustment ||
            (!next->operations.isEmpty() && std::memcmp(next->operations.constData(),packet->operations.constData(),size_t(next->operations.size())*sizeof(PaintCompositionOperation))) ||
            (next->geometrySequence!=packet->geometrySequence && (next->transform || packet->transform))){changed=full;return;}
+        QRect visibilityDamage;
         for(int i=0;i<next->nodes.size();++i){
             auto a=next->nodes[i],b=packet->nodes[i];a.first_tile=a.tile_count=b.first_tile=b.tile_count=0;
-            if(std::memcmp(&a,&b,sizeof(a))){changed=full;return;}
+            if(!std::memcmp(&a,&b,sizeof(a)))continue;
+            // Only independent raster visibility has local influence. Inverted
+            // masks, clipping, groups and other property changes need full damage.
+            const bool visibility=a.visible!=b.visible;
+            a.visible=b.visible;
+            if(!visibility || std::memcmp(&a,&b,sizeof(a)) || a.kind!=0 || a.reserved ||
+               a.mask_index<quint32(next->nodes.size()) || !next->operations.isEmpty() || next->transform || packet->transform){changed=full;return;}
+            for(const auto *p:{next.get(),packet.get()}){
+                const auto &node=p->nodes[i];
+                if(node.white_width && node.white_height)visibilityDamage=visibilityDamage.united(QRect(node.offset_x,node.offset_y,int(node.white_width),int(node.white_height)).intersected(full));
+                for(quint32 t=node.first_tile;t<node.first_tile+node.tile_count;++t){
+                    const auto &tile=p->tiles[int(t)];
+                    const qint64 x=qint64(tile.tile_x)*64+node.offset_x,y=qint64(tile.tile_y)*64+node.offset_y;
+                    const qint64 x0=std::max<qint64>(0,x),y0=std::max<qint64>(0,y),x1=std::min<qint64>(full.width(),x+64),y1=std::min<qint64>(full.height(),y+64);
+                    if(x0<x1 && y0<y1)visibilityDamage=visibilityDamage.united(QRect(int(x0),int(y0),int(x1-x0),int(y1-y0)));
+                }
+            }
         }
         using Key=std::tuple<int,qint32,qint32>;
         using Entry=std::pair<quint64,QRect>;
@@ -296,7 +313,7 @@ private:
             }
             return result;
         };
-        const auto before=entries(*packet),after=entries(*next);changed={};
+        const auto before=entries(*packet),after=entries(*next);changed=visibilityDamage;
         for(const auto &[key,value]:before){const auto at=after.find(key);if(at==after.end() || at->second.first!=value.first)changed=changed.united(value.second);}
         for(const auto &[key,value]:after){const auto at=before.find(key);if(at==before.end() || at->second.first!=value.first)changed=changed.united(value.second);}
     }
@@ -318,6 +335,7 @@ private:
             const float slot=float(locations.value(tile.content_id,-1)+1);
             std::memcpy(out.bytes.data()+(y*w+x)*16,&slot,4);
         }
+        if(out.texture && out.texture->pixelSize()==out.size)return true;
         out.texture.reset(rhi->newTexture(QRhiTexture::RGBA32F,out.size));if(!out.texture->create())return false;
         ++counters->pageTableCreates;return true;
     }
@@ -422,6 +440,23 @@ private:
             (packet->nodes.isEmpty() || !std::memcmp(packet->nodes.constData(),before->nodes.constData(),size_t(packet->nodes.size())*sizeof(PaintCompositionNode))) &&
             (packet->tiles.isEmpty() || !std::memcmp(packet->tiles.constData(),before->tiles.constData(),size_t(packet->tiles.size())*sizeof(PaintCompositionTile)));
     }
+    bool reusablePaintingPasses()const{
+        const auto &before=renderedPacket;
+        if(!before || !completePasses || passes.empty() || packet->transform || before->transform ||
+           packet->adjustment || before->adjustment ||
+           packet->info.key.device_epoch!=before->info.key.device_epoch || packet->info.key.document_generation!=before->info.key.document_generation ||
+           packet->info.document_width!=before->info.document_width || packet->info.document_height!=before->info.document_height ||
+           packet->region!=before->region || packet->pixels!=before->pixels || packet->lod!=before->lod ||
+           packet->surfaceCount!=before->surfaceCount || packet->outputSurface!=before->outputSurface ||
+           packet->operations.size()!=before->operations.size() || packet->nodes.size()!=before->nodes.size())return false;
+        if(!packet->operations.isEmpty() && std::memcmp(packet->operations.constData(),before->operations.constData(),size_t(packet->operations.size())*sizeof(PaintCompositionOperation)))return false;
+        for(int i=0;i<packet->nodes.size();++i){
+            auto a=packet->nodes[i],b=before->nodes[i];
+            a.first_tile=a.tile_count=b.first_tile=b.tile_count=0;
+            if(std::memcmp(&a,&b,sizeof(a)))return false;
+        }
+        return true;
+    }
     bool prepare(QRhiResourceUpdateBatch *batch){
         InteractionTrace::Scope trace("composition.prepare");
         if(!prepareTargets())return false;
@@ -445,7 +480,15 @@ private:
             }
             ++counters->geometryReuses;return true;
         }
-        passes.clear();completePasses=!changed.isEmpty();maps.clear();
+        const bool reusePainting=reusablePaintingPasses();
+        if(!reusePainting){
+            passes.clear();completePasses=!changed.isEmpty();
+            // Node identity survives visibility/opacity changes.
+            bool sameNodes=renderedPacket && !packet->transform && !renderedPacket->transform &&
+                !packet->adjustment && !renderedPacket->adjustment && renderedPacket->nodes.size()==packet->nodes.size();
+            if(sameNodes)for(int i=0;i<packet->nodes.size();++i)if(packet->nodes[i].layer_id!=renderedPacket->nodes[i].layer_id || packet->nodes[i].kind!=renderedPacket->nodes[i].kind){sameNodes=false;break;}
+            if(!sameNodes)maps.clear();
+        }
         QHash<quint64,int> locations;
         // Retain every source needed by this packet before choosing eviction slots.
         for(const auto &tile:packet->tiles)if(cache.contains(tile.content_id))locations.insert(tile.content_id,cache.value(tile.content_id));
@@ -473,6 +516,7 @@ private:
             batch->uploadTexture(maps[size_t(i)].texture.get(),QRhiTextureUploadDescription({QRhiTextureUploadEntry(0,0,QRhiTextureSubresourceUploadDescription(maps[size_t(i)].bytes))}));
         }
         if(maps.empty())return fail("CPU: composition empty plan");
+        if(reusePainting)return true;
         if(!prepareMesh(batch))return false;
         if(!axisX || !axisY || !renderedPacket || renderedPacket->region!=packet->region || renderedPacket->pixels!=packet->pixels){
             QByteArray xs,ys;axisX=axis(outputSize.width(),packet->region.x(),packet->region.width(),documentSize.width(),xs);
@@ -573,6 +617,15 @@ private:
         if(dirty){
         auto *batch=rhi->nextResourceUpdateBatch();
         if(!prepare(batch)){batch->release();return;}
+        if(renderedPacket && packet->operations.isEmpty() && renderedPacket->operations.isEmpty() &&
+           renderedPacket->info.document_width==packet->info.document_width && renderedPacket->info.document_height==packet->info.document_height &&
+           !changed.isEmpty() && changed!=QRect(QPoint(),documentSize)){
+            int previousLinear=renderedPacket->outputSurface;
+            for(const auto &node:renderedPacket->nodes)if(node.kind==0 && node.visible)previousLinear=1-previousLinear;
+            // Visibility can change ping-pong parity. The other target contains
+            // an intermediate stack, not the previous final image outside damage.
+            if(previousLinear!=finalLinear)batch->copyTexture(linear[finalLinear].texture.get(),linear[previousLinear].texture.get());
+        }
         cb->resourceUpdate(batch);
         for(size_t i=0;i<passes.size();++i){
             const auto &pass=*passes[i];const bool last=pass.output==2;auto &target=last?display:(pass.output==3?scratch:surface(pass.output<2?pass.output:pass.output-2));const auto size=last?outputSize:documentSize;

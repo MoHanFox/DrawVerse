@@ -845,3 +845,86 @@ build-delivery-final更新标准build/bin/Release/drawverse.exe及paint_ffi.dll�
 用户截图显示下拉CPU但实际NVIDIA Vulkan；只读检查实际偏好computeDevice=auto、highestQuality=false，未修改该文件。QML原indexOfValue只依赖selectedComputeDevice，异步硬件模型完成后没有重新定位，Math.max(0,...)把未找到项显示为首行CPU。改为显式按ID同步并监听model/count，打开时即使草稿ID未变也同步；原草稿保存和最高画质独立默认关闭保持。
 
 按用户此前快速修改/不测试的要求，本轮未运行测试或应用冒烟。`compute-selector-restore-build.log` 的drawverse_runtime构建、QML字节码、生成头及内嵌shader检查成功，标准build/bin/Release已更新。用户仍运行CanvasFixReview进程，未关闭、覆盖该进程或更改真实偏好。没有功能测试通过或全量check结论。
+
+
+## 2026-10-29：GPU绘画资源复用最小验证
+
+普通绘画每次发布原先销毁并重建页表纹理、uniform和SRB；相同设备/文档/视口/节点属性/操作拓扑现保留资源，重新填写页表并增量上传源。瓦片新增/替换不要求重建绑定；布局、属性、编辑或资源变化仍完整准备。
+
+- artifacts/gpu-paint-reuse-d3d11-final.txt：连续25笔与4096×2160连续24段及远端第二笔两功能通过，新增断言页表/参数缓冲/绑定/管线创建数保持；单瓦片增量、单笔历史与CPU像素差≤1原断言保持。4K最后显示脏区4096/8847360。
+- artifacts/gpu-paint-reuse-software.txt：原连续25笔软件回归通过。
+- build/gpu-paint-reuse-build.log：Release应用及测试构建成功、标准build/bin/Release更新；build/gpu-paint-reuse-test-build.log为夹具修正后测试重建。git diff --check通过。
+
+首轮4K夹具未显式启用最高画质，随当前默认关闭得到864×456，原失败保留artifacts/gpu-paint-reuse-d3d11.txt；显式开启后原4096×2160断言通过。没有全量check、性能前后量测或实体手绘笔验收，不能宣称所有卡顿消除。未修改用户偏好或关闭现有进程；旧运行进程需使用新Release。ABI/文档格式保持。
+
+
+## 2026-10-29：用户反馈资源复用后仍卡，持续输入诊断
+
+上一轮资源复用不能视为用户卡顿已解决。新增sustainedPaintingCadence CPU/GPU两行，1024²、160次约8ms间隔输入，整个笔触期间不等待revision追平，采样CPU frameRevision/GPU nodeRevision交付变化；结束后仍要求最终追平与单笔历史。它是交付节奏诊断，不是物理屏幕或端到端延迟测量，测试PASS仅表示诊断执行及最终一致性成功，不代表性能通过。
+
+两独立进程（artifacts/gpu-paint-cadence-before.txt、gpu-paint-cadence-repeat.txt）：CPU更新86/89次，输入1441/1438ms，最大交付间隔27/19ms；GPU更新27/27次，输入1440/1442ms，最大间隔162/127ms。复现GPU持续更新明显稀疏；未做PhotoCraft同条件性能量测。
+
+只读对比本地D:/PhotoCraft/photocraft-main：ui-egui/src/canvas.rs feed_live_stroke批量增量push并记录damage，gpu_canvas.rs refresh_with按damage直接调用composite；gpu/src/lib.rs使用有界1024²累加块、页面驻留与prefix下层检查点。DrawVerse BackendWorker::poll正常16ms，Session actor服务8ms，composition.rs与session.rs在reserve/capture阶段要求revision精确匹配；CompositionReader经独立请求/读取轮询并完整枚举节点/瓦片描述，变化源再经C ABI复制。CompositionNode仍对脏区执行整栈、使用文档大小线性目标而非块/prefix。前三项是持续绘画优先排查方向，块/prefix对大图复杂栈更相关；未对各阶段耗时或BUSY比例量测，不能把某一个差异确认为唯一根因。
+
+本轮仅新增定向诊断，测试目标构建成功（build/gpu-paint-cadence-build.log），未再次修改生产渲染路径或更新应用行为。下一实现应优先建立活动笔触发布/唤醒与不被较新revision饿死的有界快照交接，保持generation/设备epoch/取消守卫及最终历史权威；不能简单关闭守卫或提升轮询频率后宣称完成。
+
+
+## 2026-10-29：参考PhotoCraft的活动笔触交接实现与最小验收
+
+ABI1.89增加可协商LATEST_SNAPSHOT=256，仅显式请求把revision解释为下界；同generation捕获时将实际revision/publication与像素配对，旧精确请求不变。UI能力查询后启用；完成时记录真实revision。活动笔触采用独立2ms显示邮箱timer，只读session info/composition，停止/禁用/收笔恢复普通节奏，整套后台服务及核心服务周期不加速。来源参考本地PhotoCraft活动笔触damage驱动刷新思想，未移植其代码、整套分块或prefix缓存。
+
+- build/gpu-live-core-test-final.log：租约层4项通过，新增下界/精确语义与返回实际revision/publication、原取消/预算/epoch守卫。首次新测试使用不存在的Brush构造器编译失败保留build/gpu-live-core-test.log，改复用原Brush::default夹具后通过。
+- build/gpu-live-public-test.log：公开composition_api 11项通过，新增陈旧精确请求BUSY/最新请求实际revision/未来revision及跨generation拒绝；原能力、裁剪、组、预算与源读取保持。公共request helper显式不选latest，让旧严格回归继续覆盖旧语义。
+- artifacts/gpu-live-d3d11-final.txt与gpu-live-d3d11-verified.txt：两次持续160输入，GPU分别93/87次交付、最长间隔27/27ms，CPU87/88次、28/27ms。前一版基线GPU27/27次、162/127ms。约1.44秒，观测节点提交/CPU交付revision，不是物理屏幕或实体笔端到端延迟，也没有PhotoCraft性能配对或各改动单独消融归因。
+- 同两日志的连续25笔和4K连续24段/远端笔触通过，单历史、CPU像素差≤1、源增量/零新增资源与4K显示4096/8847360像素保持。artifacts/gpu-live-software.txt原连续25笔通过。
+- BUSY旧测试用pointer判同包，与默认关闭最高画质时既有本地视口重投影冲突；首次两日志失败保留。尝试显式最高画质后zoom本来就不触发请求，恢复等待失败也保留在verified日志。最终显式viewport模式，忙期间要求原source request/revision及完整data指针列表保持、无CPU fallback；恢复后要求新request_id而非单纯新pointer，增强实际传输恢复判据。artifacts/gpu-live-busy-verified.txt两行通过。
+- build/gpu-live-abi.txt：四C/C++静态/动态ABI通过；生成头由paint-api-gen生成，构建时check通过；cargo fmt --all --check、git diff --check通过。没有总check、无关矩阵或新增实体性能验收。
+
+标准EXE初次链接被用户进程占用，LNK1104保留build/gpu-live-build.log；未关闭用户进程。初次在目标尚未重链接时误运行旧Qt测试，日志gpu-live-d3d11.txt保留，不纳入after数据；单独重建测试确认后取得上述final/verified结果。先以相同对象链接部署build/bin/GpuBrushReview/drawverse.exe，实际冒烟生成gpu-live-review-smoke.png；随后标准EXE可写，build/gpu-live-release-final-build.log成功更新标准build/bin/Release，Start-Process等待实际退出0并产出artifacts/gpu-live-release-smoke.png。测试构建记录gpu-live-test-build/gpu-live-test-final-build/gpu-live-busy-fixture-build.log。state45/文档及version1布局保持，原未测边界不变。
+
+
+## 2026-10-29：变换与显隐响应修订（验收条件）
+
+保留修复前二进制、工作区补丁及原生无抓图变换/Warp基线。新增Warp网格逐顶点bit精确map对照，涵盖密集/折叠/负坐标；原变换像素/历史/取消/六插值保持。显隐新增同层反复切换、局部damage、页表零新增和CPU真实窗口对照，软件后备保持；组/蒙版原矩阵另查。最终Release定向回归及原生性能配对，失败轮保留，不将节点采用时间写作物理显示延迟；未完成项如实记录。
+
+
+## 2026-10-29：用户实际密集4K图片与换色首笔收尾
+
+用户图片通过DRAWVERSE_DENSE_PAINT_IMAGE只读传入（4096×2160、约13MiB压缩PNG），无修改原图。它包含2176源瓦片，超过CompositionReader旧2048身份整表清空阈值。每次替换包重复读完整图片；空白4K没有这些源瓦片，前轮测试未覆盖。最近颜色在像素提交回执后调用useColor，旧queuePersistence清空整个设置/catalog对象；共享快速投影未放行recentColors，导致该更改走完整恢复。
+
+修复：缓存完成时只保留当前包的≤4096 Weak身份，读取期间前后包查找表硬界8192、请求开始清过期身份；达到硬界仅淘汰单项，不清整表，源像素分配/预算/取消不变。最近颜色只补丁已有snapshot.recentColors并排队持久化，不失效catalog/预设数组；仅已验证同进程source沿sharedParameters投影recentColors、发一次通知，外部JSON仍完整验证。新增transportReadTiles是Qt包诊断字段，不改变C ABI或持久化格式。
+
+- artifacts/dense-paint-image-before.txt：修复前实际图片小点笔读取2176瓦片，等待提交/显示409ms，新增≤4瓦片断言失败。该耗时受QTRY轮询与同期编译负载影响，不是精确输入到屏幕延迟。
+- artifacts/dense-paint-colors-before.txt：最近颜色导致snapshotObject.rebuild=1，新增零重建断言失败。原失败日志保留。
+- artifacts/dense-paint-image-final.txt：三笔（红/红/蓝）各只读1瓦片、源增量≤4，所有未变content_id的数据指针严格复用，单笔历史/最终节点revision追平/无错误。QTRY观察三笔52/51/51ms不作精确延迟或倍数结论。同图96段连续输入期间50次更新，约915ms含末笔等待、最大采样间隔35ms；非实体/屏幕或完整性能门槛。
+- artifacts/dense-paint-colors-final.txt：5功能行通过，新回归含三隔离模式最近颜色零重建/可信共享零presetsChanged及单通知/快照冷恢复精确/外部非法颜色拒绝；原三标量颜色投影、立即真实像素保存重开、双文档两模式及单写入者保持。artifacts/dense-paint-colors-software.txt同最近颜色与真实像素保存重开两功能通过。
+- artifacts/dense-paint-original-continuous-final.txt：原25笔真实窗口像素/单瓦片/历史回归通过。初次与另一任务窗口基准同时运行，window.isActive断言失败保留dense-paint-image-after.txt；未修改该断言，独立进程复验通过。dense-paint-image-after另记录首轮修复三笔读取均1。
+- build/dense-paint-baseline-build.log、dense-paint-fixed-build.log、dense-paint-final-test-build.log构建成功；原工作区另一任务同时构建核心/Qt目标，出现Cargo锁等待，未停止其他进程，资源计数断言与定向功能结论保持，不以受干扰墙钟作精确性能归因。生成头/内嵌shader检查和git diff --check通过。
+- 标准build/bin/Release已更新，Start-Process等待实际D3D11应用--preview退出0，生成artifacts/dense-paint-release-smoke.png。未改变用户真实偏好、未关闭用户会话。未跑总check/无关矩阵，没有任意大图、冷盘或实体笔全面流畅结论。原transform_mesh.rs及其他任务修改保留；ABI1.89/state45/文档保持。
+
+
+### 2026-10-29：变换/显隐响应修订结果与未解决性能边界
+
+本次改动在已有ABI1.89工作区上进行，保留其他任务的绘画/最近颜色改动。仅优化共享mesh计算、变换通知、Properties权威发布/短轮询和普通节点页表/显隐damage，不扩大GPU变换支持条件、不改网格密度/插值/最终历史。页表复用限于普通无编辑节点；普通/Warp切换继续按原断言重建。显隐奇偶交接有整目标GPU复制，因此局部damage统计只代表合成/颜色转换面积，不能当总GPU访问像素。
+
+证据根目录 `artifacts/transform-visibility-response/`：
+
+- `core-final.log`：核心transform 25通过/3原忽略；`transform-core-final.log`：原公开变换7通过。新增96/1024/4096尺寸、负坐标、普通/透视/Warp/折叠的全部网格顶点与未修改map函数逐f32位精确一致。
+- `verified-software`：原GPU套件所选30功能行、原实际QML变换13功能行通过（含初始化/清理分别32、15）。`verified-d3d11`原变换/后备/六插值/透视/折叠/资源/取消/提交等28功能及实际QML13功能通过；新增显隐两行的窗口截图在DPR1.5、logical zoom1时失败，不计通过。
+- `visibility-final-software/d3d11`：最终稀疏/密集1024层各12次开关及原拓扑往返3功能行均通过。三层夹具含远处上层蓝色内容，验证可见/隐藏两个状态的原尺寸1024²GPU全像素与核心误差≤2e-5；窗口按原同物理像素密度设置zoom=1/DPR，误差≤1，页表零新增，稀疏合成damage≤4096。不得将含抓图/全像素读取和QTRY的observation_ms作性能数据。
+- `first-tests`原稀疏damage断言失败保留：观察节点采用早于对应record提交，改为等待渲染统计revision后原面积阈值通过。`final-d3d11`原拓扑重建断言失败保留，收窄页表复用到非编辑普通包后原断言通过。`verified-d3d11`与`pixel-diagnostic`的DPR1.5截图失败及图像保留；GPU原生纹理线性放大与CPU视口采样不同，匹配物理密度并新增原图全线性校验，未放宽像素阈值。
+- Release最终构建见 `build/interaction-final2-build.log`，测试最终构建见 `build/visibility-final-build.log`；标准 `build/bin/Release` 已更新。`release-smoke`实际应用D3D11 --preview退出0并生成PNG。中间LNK1104保留于interaction-final-build.log，重试成功，未关闭用户进程。
+- `abi-direct`四个C11/C++20静态/动态消费者退出0；头及嵌入shader构建检查通过；核心严格Clippy、fmt、diff检查通过。此配置ctest -R abi报告No tests were found，不计CTest通过，改为直接执行四个真实消费者。初次Cargo过滤命令错误和一次全集编译中断不计测试通过，最终核心定向日志为准。未运行总check。
+
+原生性能继续使用既有v6无trace/无抓图/每轮120个8ms绝对输入，修复前与最终各三独立进程，两场景12进程均有效。旧EXE保留于before；before-three工具采集的源码清单属于测量时工作区，不能当旧EXE源码，其身份以保留二进制和起始before.patch为准。中间after-three也全部保留，不挑最好轮次。
+
+| 1024²节点采用时间ms | 修复前3轮 | 最终3轮 |
+| --- | --- | --- |
+| 普通首次 | 4.444 / 4.473 / 2.951 | 3.899 / 4.376 / 2.623 |
+| 普通就绪首移 | 4.099 / 4.560 / 2.735 | 4.984 / 4.180 / 5.132 |
+| 普通持续P95 | 4.093 / 4.524 / 4.182 | 4.165 / 4.526 / 6.416 |
+| Warp首次 | 8.894 / 8.403 / 9.863 | 8.515 / 10.897 / 7.747 |
+| Warp就绪首移 | 10.761 / 7.796 / 14.555 | 18.050 / 16.223 / 9.998 |
+| Warp持续P95 | 13.104 / 12.244 / 12.955 | 13.548 / 12.576 / 12.377 |
+
+普通连续360输入均匹配；Warp修复前311/360、最终310/360实际采用，合并的输入不算逐条显示。数据见analysis-all.json/final-*-three各轮raw.json及关联帧。**本次没有稳定端到端性能改善证据，Warp首帧/长尾和全部跟手问题未解决，不得宣称这几个卡顿已全部修复。** 结构性重复计算/全局通知/页表重建已减少，显隐局部合成正确性已闭合，但显隐无精确前后延迟配对；下一步仍需对GPU精确Warp采样、帧排队和复杂CPU后备分段归因。上述均非GPU完成/物理屏幕/实体笔延迟，未新增真实冷盘或任意文档全面流畅结论。

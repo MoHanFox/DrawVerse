@@ -10,6 +10,8 @@ pub const PAINT_COMPOSITION_BLEND_MODES: u64 = 16;
 pub const PAINT_COMPOSITION_GROUPS: u64 = 32;
 pub const PAINT_COMPOSITION_DISSOLVE: u64 = 64;
 pub const PAINT_COMPOSITION_CLIPPING: u64 = 128;
+/// ABI1.89: request.revision is a lower bound; READY key identifies the captured snapshot.
+pub const PAINT_COMPOSITION_LATEST_SNAPSHOT: u64 = 256;
 pub const PAINT_COMPOSITION_NODE_CLIPPED: u64 = 1 << 49;
 /// Node.reserved low32 = blend ID when BLEND_MODES is required.
 /// Bit32 marks an unlinked mask when FIXED_MASK is required. With GROUPS,
