@@ -1000,3 +1000,28 @@ transform-adaptive-large-final.txt七项通过：普通/Warp确认及取消四�
 最终补验：软件通用合成组35项通过（transform-adaptive-software.txt），原常驻主帧交接/透明栈/非法中间几何/取消软件与D3D11各15项通过（transform-adaptive-resident-*.txt）。最终应用静态链接产物build/bin/FullResolutionTransformReview/drawverse.exe，D3D11隔离profile/preview冒烟退出0，实际PNG人工查看界面正常（artifacts/transform-adaptive-smoke）。应用嵌入shader字节检查transform-adaptive-embedded.txt通过，git diff --check通过。标准Release仍被已有用户进程使用，未停止或替换；新包包含当前匹配DLL，但应用核心来自静态链接。
 
 实际提供PNG的四个独立进程：artifacts/mohan-image-transform-adaptive/run-{1,2}普通持续P95 12.1362/12.3036ms，120输入分别匹配115/117；mohan-image-warp-adaptive/run-{1,2} Warp持续P95 9.3100/9.9408ms，120输入分别匹配115/118。全部工具判定通过，无trace/抓图、API驱动、DPR1.5，排除真实鼠标命中，不是实体/屏幕延迟或PhotoCraft配对。此PNG旧2048代理单进程基线mohan-image-transform-2048普通持续P95 6.3255ms/120匹配；完整纹理普通尾延迟更高，不能称画质提升没有任何耗时成本或性能再次翻倍。新四进程最终交接仍约1.33–1.62秒，未解决收尾。记录与源码/EXE摘要由原工具保留，最终交付摘要artifacts/transform-adaptive-manifest.json。
+
+## 2026-10-29：进入后连续拖动的源准备修复
+
+实际样本为2024年4月21日14 (赛博朋克)_无水印.png，4096×2160。新增actualTransformEntryAcceptsEarlyDrag在BEGIN权威控制点首次出现后立即连续UPDATE，不等待resident就绪，检查首次源已投影最新控制点、真实Canvas节点采用相同firstVertex、一次上传、取消后无残留和无历史；计时无截图，质量另行逐像素检查。GUI API输入不是实体鼠标/数位板或物理屏幕延迟。
+
+修复前transform-entry-before.txt控制点448ms、源交付3063ms、上传3118ms。仅删除无选区旧包预备并增加原尺寸瓦片路径仍未解决：after-1控制点70ms但交付3191ms。调查trace（transform-entry-final-trace）发现源已编码后，旧revision网格因持续UPDATE失效，约数百次重复复制/解码同源；不能把这些中间轮称为性能通过。改为编码前捕获网格后，ready-trace达到32/1014/1070ms（控制点/源/节点）。进一步将显示查表中的非负roundf替换为加半截断，独立实际源native编码937.96→102.95ms、包984.09→128.59ms（transform-entry-asset-before-rounding.log与asset-diagnostic.log）。这些分阶段量测非完整消融配对。
+
+最终无trace/截图三独立进程transform-entry-verified-{1,2,3}.txt：控制点75/83/64ms，源交付184/175/174ms，首次最新位置真实节点236/232/225ms。每轮均在源未就绪时输入15–22次，首次交付即采用最新绝对位置。每轮缓存4098×2178（透明护边/瓦片尾部），逐像素检查原图4096×2160全部RGBA8通道最大误差0。最终首用仍约0.23秒，不声称零延迟；原确认物化的秒级交接未在本轮优化。
+
+验证：paint-render interactive全部5项（负偏移/白底/alpha/复杂栈/裁剪/取消）、密集查表1项、paint-ffi transform组5项（实际文件诊断无环境时跳过文件工作，另有真实文件独立执行）、公开deferred三项通过；严格相关Clippy/fmt/生成头通过。D3D11大图普通/Warp提交/取消及9000宽、早关闭共9项通过；原常驻/选区4K/预热移动/初始边框D3D11与软件各25项通过。四ABI独立构建及测试通过，应用嵌入shader检查通过。未跑总check，无新实体/其他硬件/PhotoCraft配对结论。
+
+探索性记录保留：transform-entry-native-initial-failure.log测试误用不存在的CancellationToken.reset，改为每行新token后通过；最初ABI构建transform-entry-abi-build.log缺VS环境找不到stdarg.h，经VsDevCmd后transform-entry-abi-final-build.log与四ABI通过。首次三轮QTest输出文件参数错误导致未运行，随后明确构造参数的三轮才计入最终结果。smoke命令末尾打印语法错误不影响应用，独立exit-code.txt实际为0、PNG及空qt.log已检查。
+
+独立可运行包build/bin/TransformStartupReview/drawverse.exe静态链接本轮核心，附匹配共享DLL；实际D3D11隔离profile/preview冒烟退出0，界面/三笔PNG正常。标准Release已有用户进程，未停止或替换。ABI1.90/state45/文档格式保持；预算继续按设备/内存协商，没有新增4096/8192整图阈值。统一resident在途预算及复杂栈冷准备仍保留原限制。
+
+## 2026-10-29：确认收尾的CPU采样优化
+
+在当前develop/c0f5921基础上复用double横纵四权重，保持原dy/dx顺序、乘法后f32转换与通道累加；SourceSampler新增同瓦片四像素连续读取，仍64瓦片有界副本，跨瓦片/缺失/选区/错误走原入口。最终物化及历史仍原图与所选六插值，不使用显示查表/代理替换。
+
+实际4096×2160样本，原measure_general_gpu_g0.py API驱动无trace/抓图，普通/Warp各修复前1进程、后2进程，每进程immediate/ready/continuous三段提交。普通before三次release_to_final_node为1563.76–1636.20ms，after两进程六次1195.15–1293.03ms；Warp before1678.28–1728.60ms，after1251.27–1348.20ms。证据artifacts/{transform,warp}-finish-{before,after}/analysis.json（after在run-1/2内）；这是确认到真实节点采用，非单采样核/实体/屏幕/PhotoCraft配对，仍约1.2–1.35秒，不宣称即时收尾。所有六个修复前后进程工具通过；持续输入匹配117–120/120，不作稳态性能提升结论。
+
+核心变换31通过、原4忽略保持；新增四像素定位独立源对照涵盖正负坐标、跨边、缺失白底、64缓存淘汰和选区，三次插值与原标量独立采样在四种模式/缩放/边界坐标逐位相等。严格paint-core全部target Clippy/fmt通过，CMake生成头与shader检查/标准drawverse_runtime Release构建通过，四ABI独立测试通过。D3D11大图五行含9000宽、普通/Warp提交取消7项通过；原常驻/选区4K/折叠Warp/主帧交接D3D11共24项通过。未跑总check，旧失败与忽略不改。
+
+探索性失败保留：transform-finish-core-initial-failure.log新四像素选区夹具未设置参考的[-13,9]偏移，修正夹具后通过；transform-finish-test-type-failure.log新增标量对照浮点类型未显式f64，修正后31项通过。此前进入阶段的未提交设计/验收说明一起纳入本轮提交。远端提交目标沿当前跟踪origin/develop，不修改master。
+最终补验：软件同组24项通过（transform-finish-resident-software.txt）；标准build/bin/Release/drawverse.exe实际D3D11独立profile/preview冒烟退出0，应用嵌入shader检查通过（transform-finish-embedded.txt），git diff --check通过。

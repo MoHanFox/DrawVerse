@@ -39,6 +39,31 @@ fn selection() -> crate::Selection {
         .unwrap()
 }
 
+#[test]
+fn four_pixel_sampling_matches_independent_source_after_eviction_and_selection() {
+    let layer = source();
+    let mask = selection();
+    for selected in [false, true] {
+        let mut sampler = SourceSampler::new(&layer);
+        sampler.selection = selected.then_some(&mask);
+        sampler.offset = [-13., 9.];
+        for y in [-65, -64, -1, 0, 63, 64, 90, 91] {
+            for tx in (-41..42).chain((-41..42).rev()) {
+                for local in [0, 59, 60, 61, 62, 63] {
+                    let x = tx * 64 + local;
+                    let actual = sampler.four_pixels(x, y).unwrap();
+                    for (i, pixel) in actual.into_iter().enumerate() {
+                        assert_eq!(
+                            pixel,
+                            reference(&layer, selected.then_some(&mask), x + i as i64, y)
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn reference(layer: &Layer, selection: Option<&crate::Selection>, x: i64, y: i64) -> Pixel {
     let pixel = layer
         .tiles
@@ -53,6 +78,65 @@ fn reference(layer: &Layer, selection: Option<&crate::Selection>, x: i64, y: i64
     pixel.scaled(selection.map_or(1., |s| {
         s.coverage(x as f64 + 0.5 - 13., y as f64 + 0.5 + 9.)
     }))
+}
+
+#[test]
+fn cubic_sampling_keeps_original_scalar_accumulation_exact() {
+    let layer = source();
+    let mask = selection();
+    for selected in [false, true] {
+        let mut sampler = SourceSampler::new(&layer);
+        sampler.selection = selected.then_some(&mask);
+        sampler.offset = [-13., 9.];
+        for kind in 2..=5 {
+            for scale in [0.7, 1.3] {
+                for x in [-66., -1., 0., 61., 62., 63., 132.] {
+                    for y in [-64.3f64, -0.8, 0.2, 63.7, 90.2] {
+                        let x: f64 = x + 0.37;
+                        let ix = x.floor() as i64;
+                        let iy = y.floor() as i64;
+                        let effective = if kind == 5 {
+                            if scale < 1. {
+                                4
+                            } else {
+                                3
+                            }
+                        } else {
+                            kind
+                        };
+                        let a = match effective {
+                            3 => 0.,
+                            4 => -0.75,
+                            _ => -0.5,
+                        };
+                        let mut sum = [0f32; 4];
+                        for dy in -1..=2 {
+                            for dx in -1..=2 {
+                                let weight = (cubic_weight(dx as f64 - (x - ix as f64), a)
+                                    * cubic_weight(dy as f64 - (y - iy as f64), a))
+                                    as f32;
+                                let p = reference(&layer, sampler.selection, ix + dx, iy + dy)
+                                    .components();
+                                for k in 0..4 {
+                                    sum[k] += p[k] * weight;
+                                }
+                            }
+                        }
+                        sum[3] = sum[3].clamp(0., 1.);
+                        for k in 0..3 {
+                            sum[k] = sum[k].clamp(0., sum[3]);
+                        }
+                        assert_eq!(
+                            sample(&mut sampler, x, y, kind, scale)
+                                .unwrap()
+                                .components(),
+                            sum
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[test]

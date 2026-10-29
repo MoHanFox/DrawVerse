@@ -287,6 +287,25 @@ struct SourceSampler<'a> {
     offset: [f64; 2],
 }
 impl<'a> SourceSampler<'a> {
+    fn four_pixels(&mut self, x: i64, y: i64) -> Result<[Pixel; 4]> {
+        let first = self.pixel(x, y)?;
+        if x.rem_euclid(64) <= 60 {
+            if let Some((coord, pixels)) = self.tiles.get(self.last) {
+                if coord.signed_x() as i64 == x.div_euclid(64)
+                    && coord.signed_y() as i64 == y.div_euclid(64)
+                {
+                    let offset = (y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize;
+                    return Ok(pixels[offset..offset + 4].try_into().expect("four pixels"));
+                }
+            }
+        }
+        Ok([
+            first,
+            self.pixel(x + 1, y)?,
+            self.pixel(x + 2, y)?,
+            self.pixel(x + 3, y)?,
+        ])
+    }
     fn new(source: &'a Layer) -> Self {
         Self {
             source,
@@ -415,10 +434,13 @@ fn sample(source: &mut SourceSampler<'_>, x: f64, y: f64, kind: u32, scale: f64)
         _ => -0.5,
     };
     let mut sum = [0.; 4];
-    for dy in -1..=2 {
-        for dx in -1..=2 {
-            let weight = (cubic_weight(dx as f64 - fx, a) * cubic_weight(dy as f64 - fy, a)) as f32;
-            let p = source.pixel(ix + dx, iy + dy)?.components();
+    let wx = [-1., 0., 1., 2.].map(|dx| cubic_weight(dx - fx, a));
+    let wy = [-1., 0., 1., 2.].map(|dy| cubic_weight(dy - fy, a));
+    for (row, wy) in wy.into_iter().enumerate() {
+        let pixels = source.four_pixels(ix - 1, iy + row as i64 - 1)?;
+        for (pixel, wx) in pixels.into_iter().zip(wx) {
+            let weight = (wx * wy) as f32;
+            let p = pixel.components();
             for k in 0..4 {
                 sum[k] += p[k] * weight;
             }
