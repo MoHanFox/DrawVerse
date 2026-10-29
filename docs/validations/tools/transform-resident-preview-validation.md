@@ -211,3 +211,12 @@ core/render/ffi全目标严格Clippy、fmt、生成头、四ABI消费者和完�
 ## 2026-10-26 预热清理错误与静止空转
 
 已复现用户截图 transform active，与液化Busy来自相同移动预热清理反馈循环。Qt清理幂等，核心将清缓存作为编辑期间允许的非文档操作；既有编辑互斥保持。D3D11静止400ms的31次清理/31次窗口呈现降为0/0，无实际错误；软件同样通过。按用户要求仅跑新增公开ABI一项、Qt两行各后端4项及四ABI/头/格式/Release构建，未跑全量或GPU利用率百分比。标准程序已更新，详见[共享验收记录](layer-move-preview-validation.md#2026-10-26-液化自由变换错误循环与静止重绘)。
+
+
+## 2026-10-29：大图取消控制框立即退出
+
+PaintCoreClient独立transformControlsVisible控制QML边框寿命，确认/取消成功入队立即隐藏，像素预览仍按原最终revision交接。关闭期间拒绝UPDATE/CHECKPOINT与重复结束，避免隐藏MouseArea的onCanceled提交旧点；元数据完成后恢复可开始状态，关闭失败仍活动时恢复控制。generation变化重置关闭标记。该控件只通过transformChanged通知，元数据最终更新active后再通知，避免属性读取顺序短暂复活。
+
+新增4096×2160实际CanvasPane测试在不处理后台事件前断言QML边框已隐藏，检查旧UPDATE被拒绝、取消历史不增、再次进入边框可见。连同BEGIN旧点、非法中间态、空变换取消、Warp轮廓与折叠回归，软件/D3D11各8行通过（含init/cleanup），artifacts/cancel-direction-{software,d3d11}。GPU未确认关闭commit/cancel及原取消/快释放6行通过cancel-direction-gpu。此测试为白底大图与控制可见性，不冒充用户实体截图或任意尺寸验收。
+
+Release构建/生成头检查通过，标准build/bin/Release更新；用户运行的TransformReview进程未关闭或替换。标准独立profile D3D11 --preview冒烟退出0并输出PNG，见cancel-direction-smoke；构建日志build/cancel-direction-runtime-build.log。ABI/state/文档不变，未跑总check。

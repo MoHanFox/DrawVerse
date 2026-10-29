@@ -349,6 +349,8 @@ public:
     CompositionPacketPtr compositionPacket()const;
     quint64 compositionHandoffRevision()const{return std::max(m_compositionFinalRevision,m_adjustmentFinalRevision);}
     void compositionPrimaryAdopted(quint64 generation,quint64 epoch,quint64 revision);
+    void setTransformPreviewLimits(int edge,quint64 availableGpuBytes);
+    void setTransformPreviewDevice(const std::shared_ptr<CompositionCounters> &device){m_transformPreviewDevice=device;}
     void setCompositionPrecisionAvailable(bool available){m_compositionPrecisionAvailable=available;}
     qint64 compositionTargetConfirmedNs()const{return m_compositionTargetNs;}
     QString compositionFallback()const{return m_blendPreviewLayer?QStringLiteral("CPU: blend mode hover preview"):m_compositionTransformCpu?QStringLiteral("CPU: composition transform closure"):(m_compositionEditFallbackReason.isEmpty()?m_compositionFallback:m_compositionEditFallbackReason);}
@@ -396,6 +398,8 @@ public:
     void finishLayerMove(QPoint delta, bool commit);
     bool layerMoveActive() const { return m_layerMoveActive; }
     bool transformActive() const {return m_transformActive;}
+    Q_PROPERTY(bool transformControlsVisible READ transformControlsVisible NOTIFY transformChanged)
+    bool transformControlsVisible() const {return m_transformActive && !m_transformClosing;}
     bool transformBusy() const {return m_pendingTransform>m_completedSequence;}
     QVariantList transformPoints() const {return m_transformPoints;}
     bool transformWarp() const {return m_transformWarp;}
@@ -571,6 +575,11 @@ private:
     bool m_compositionTransform=false,m_compositionFinalFallback=false;
     bool prepareCompositionTransform();
     void refreshCompositionTransform(const PaintTransform *geometry=nullptr);
+    bool preferTransformMeshPreview() const;
+    void refreshTransformMeshPreview();
+    std::weak_ptr<CompositionCounters> m_transformPreviewDevice;
+    bool m_transformMeshPreview=false;
+    quint64 m_transformMeshGeometry=0;
     bool prepareCompositionMove(bool pick);
     void refreshCompositionMove();
     void clearCompositionEdit();
@@ -681,6 +690,7 @@ private:
     bool m_layerMoveGpuPresentation=false;
     quint64 m_layerMoveSource=0;
     ResidentPreviewPtr m_layerMoveAnchor;
+    bool m_transformClosing=false;
     bool m_transformActive=false,m_transformWarp=false,m_transformPublished=false,m_transformLinked=true;
     QVariantList m_transformInitialPoints;
     qreal m_transformSkewH=0,m_transformSkewV=0;

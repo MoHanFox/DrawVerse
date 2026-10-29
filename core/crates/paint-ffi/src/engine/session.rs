@@ -156,12 +156,19 @@ pub(crate) struct MovePreparation {
     pub source: Option<Arc<paint_core::ResidentPreviewSource>>,
     pub assets: Option<Arc<Vec<u8>>>,
 }
+struct TransformAssetPacket {
+    source_id: u64,
+    max_edge: u32,
+    max_bytes: u64,
+    bytes: Arc<Vec<u8>>,
+}
 struct Shared {
     composition: super::composition::Service,
     task_progress: Mutex<Option<TaskProgressState>>,
     preview_selection: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     // Identity and deformed selection assets, bounded to one active session.
     preview_assets: Mutex<Vec<(u64, Arc<Vec<u8>>)>>,
+    transform_preview_assets: Mutex<Option<TransformAssetPacket>>,
     move_preparation: Mutex<Option<Arc<MovePreparation>>>,
     move_preparation_request: AtomicU64,
     publication: Mutex<Arc<Publication>>,
@@ -257,6 +264,7 @@ impl Session {
             task_progress: Mutex::new(None),
             preview_selection: Mutex::new(None),
             preview_assets: Mutex::new(Vec::new()),
+            transform_preview_assets: Mutex::new(None),
             move_preparation: Mutex::new(None),
             move_preparation_request: AtomicU64::new(0),
             generation: AtomicU64::new(1),
@@ -628,6 +636,62 @@ impl Session {
             assets.remove(0);
         }
         assets.push((preview.source.id, bytes.clone()));
+        Ok(bytes)
+    }
+    pub fn transform_resident_assets(
+        &self,
+        preview: &paint_core::ResidentPreview,
+        max_edge: u32,
+        max_bytes: u64,
+    ) -> ApiResult<Arc<Vec<u8>>> {
+        let publication = self.publication();
+        if publication.info.flags & PAINT_SESSION_TRANSFORM == 0
+            || publication.selection.enabled()
+            || preview.source.selected
+        {
+            return Err(ApiError::new(
+                PAINT_UNSUPPORTED,
+                "full resolution transform source",
+            ));
+        }
+        if let Some(packet) = self
+            .shared
+            .transform_preview_assets
+            .lock()
+            .map_err(|_| ApiError::internal())?
+            .as_ref()
+            .filter(|packet| {
+                packet.source_id == preview.source.id
+                    && packet.max_edge == max_edge
+                    && packet.max_bytes == max_bytes
+            })
+        {
+            return Ok(packet.bytes.clone());
+        }
+        let bytes = Arc::new(crate::liquify_api::transform_preview_assets(
+            &preview.source,
+            max_edge,
+            max_bytes,
+        )?);
+        let current = self.publication();
+        if current.info.document_generation != publication.info.document_generation
+            || current
+                .resident_preview
+                .as_ref()
+                .is_none_or(|p| p.source.id != preview.source.id)
+        {
+            return Err(ApiError::new(PAINT_BUSY, "transform source replaced"));
+        }
+        *self
+            .shared
+            .transform_preview_assets
+            .lock()
+            .map_err(|_| ApiError::internal())? = Some(TransformAssetPacket {
+            source_id: preview.source.id,
+            max_edge,
+            max_bytes,
+            bytes: bytes.clone(),
+        });
         Ok(bytes)
     }
     pub fn resident_alternate_assets(&self, current_source: u64) -> ApiResult<(u64, Arc<Vec<u8>>)> {
@@ -1111,6 +1175,13 @@ impl Engine {
             .flatten()
     }
     fn prepare_transform_assets(&mut self) -> ApiResult<()> {
+        // An unselected transform publishes its immutable source immediately.
+        // Its reader chooses the negotiated full-size packet or the legacy
+        // packet; eagerly encoding the latter stalls BEGIN and duplicates work.
+        // Feathered selections still need both identity and moving assets.
+        if !self.document.selection().enabled() {
+            return Ok(());
+        }
         let Some(source) = self.document.transform_preparation_source() else {
             return Ok(());
         };
@@ -1981,6 +2052,11 @@ impl Engine {
             let publication = Arc::new(publication);
             if publication.resident_preview.is_none() {
                 self.shared
+                    .transform_preview_assets
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take();
+                self.shared
                     .preview_selection
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
@@ -2547,7 +2623,7 @@ mod actor_tests {
         assert!(!Arc::ptr_eq(&base.frame, &recreated.frame));
     }
     #[test]
-    fn transform_begin_prepares_first_drag_assets_and_keeps_both_selection_sources() {
+    fn transform_begin_publishes_unselected_source_and_prepares_selection_pair() {
         let session = Session::new(128, 128).unwrap();
         let run = |operation| {
             let seq = session.submit(operation).unwrap();
@@ -2565,6 +2641,31 @@ mod actor_tests {
             0,
         ));
         run(Operation::End);
+        let unselected = run(Operation::TransformLayers(
+            vec![session.info().active_layer_id],
+            true,
+        ));
+        let preview = unselected.resident_preview.as_ref().unwrap();
+        assert!(
+            session.shared.preview_assets.lock().unwrap().is_empty(),
+            "unselected BEGIN must publish geometry without encoding legacy pixels"
+        );
+        let bytes = session
+            .transform_resident_assets(preview, 16384, 128 * 1024 * 1024)
+            .unwrap();
+        assert!(Arc::ptr_eq(
+            &bytes,
+            &session
+                .transform_resident_assets(preview, 16384, 128 * 1024 * 1024)
+                .unwrap()
+        ));
+        run(Operation::Transform(PAINT_TRANSFORM_CANCEL, None));
+        assert!(session
+            .shared
+            .transform_preview_assets
+            .lock()
+            .unwrap()
+            .is_none());
         let shape =
             paint_core::SelectionShape::polygon(vec![[10., 10.], [90., 10.], [90., 90.]], true, 2.)
                 .unwrap();

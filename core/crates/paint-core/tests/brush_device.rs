@@ -286,3 +286,46 @@ fn initial_direction_paged_input_matches_direct_across_turns() {
         }
     }
 }
+
+#[test]
+fn filtered_direction_is_identical_with_single_event_pages() {
+    for angle in [AngleControl::Direction, AngleControl::InitialDirection] {
+        let mut direct = Document::new(96, 96).unwrap();
+        let mut paged = Document::new(96, 96).unwrap();
+        for doc in [&mut direct, &mut paged] {
+            doc.begin_brush_stroke(brush(angle, false, 0.01), InputPoint::new(32., 32., 1.))
+                .unwrap();
+        }
+        for (x, y) in [
+            (32.1, 32.2),
+            (31.8, 32.1),
+            (32., 36.),
+            (52., 36.),
+            (51.8, 36.1),
+            (40., 35.9),
+            (20., 36.1),
+            (20., 64.),
+        ] {
+            let p = InputPoint::new(x, y, 1.);
+            direct.stroke_to(p).unwrap();
+            paged.begin_stroke_input(p).unwrap();
+            while !matches!(
+                paged
+                    .continue_stroke_page(InputScheduleBudget::new(1, 100000, 1).unwrap())
+                    .unwrap(),
+                StrokePageResult::InputComplete
+            ) {}
+        }
+        direct.end_stroke().unwrap();
+        paged.end_stroke().unwrap();
+        for y in 0..96 {
+            for x in 0..96 {
+                assert_eq!(
+                    direct.pixel(x, y),
+                    paged.pixel(x, y),
+                    "{angle:?} at {x},{y}"
+                );
+            }
+        }
+    }
+}

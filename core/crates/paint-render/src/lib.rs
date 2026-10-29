@@ -9,7 +9,7 @@ use std::{
 pub mod composition;
 mod interactive;
 mod translation;
-pub use interactive::{render_interactive, render_sampled_preview};
+pub use interactive::{render_interactive, render_native_preview, render_sampled_preview};
 
 pub const MAX_OUTPUT_PIXELS: u64 = 16_777_216;
 pub const MAX_OUTPUT_EDGE: u32 = 8192;

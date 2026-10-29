@@ -11,6 +11,8 @@
 // Immutable CPU presentation packet. GPU resources never cross the render thread.
 struct ResidentPreviewAssets {
     quint64 sourceId=0;
+    bool meshPreview=false;
+    bool fullResolution=false;
     QImage selection;
     std::array<float,4> identity{};
     std::array<QImage,3> images;
@@ -19,11 +21,13 @@ struct ResidentPreviewAssets {
 };
 struct ResidentPreviewFrame : ResidentPreviewAssets {
     quint64 generation=0,revision=0;
+    quint64 geometrySequence=0;
     quint32 columns=0,rows=0;
     QSize documentSize;
     // Presentation-only translation; revision always remains a core publication.
     QPoint presentationDelta;
     bool focus=false,forward=false;
+    bool meshNearest=false;
     std::shared_ptr<const ResidentPreviewAssets> prepared;
     QVector<std::array<float,4>> vertices;
 };

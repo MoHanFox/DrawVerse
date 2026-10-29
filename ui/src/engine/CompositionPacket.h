@@ -18,6 +18,7 @@ struct CompositionBudget {
     inline static std::atomic<quint64> memoryBytes{2048ull*1024*1024};
     inline static std::atomic<quint64> cacheBytes{256ull*1024*1024};
     inline static std::atomic<quint64> gpuBytes{1024ull*1024*1024};
+    inline static std::atomic<quint64> gpuReservedBytes{0};
     inline static std::atomic<bool> automaticGpu{true};
     // CPU page caching and immutable GPU source transport have different lifetimes.
     // The source pool includes the displayed, replacement and in-flight packets.
@@ -125,7 +126,7 @@ struct CompositionCounters {
     std::atomic<quint64> composedPixels{0},lastDirtyArea{0},displayPixels{0},lastDisplayArea{0};
     std::atomic<quint64> nodeRevision{0},nodeRequest{0},nodeGeometry{0},nodeEpoch{0};
     std::atomic<quint64> handoffRevision{0};
-    std::atomic<int> preciseTransform{0};
+    std::atomic<int> preciseTransform{0},maxTextureEdge{0};
     std::atomic<qint64> lastUploadNs{0},lastSubmitNs{0};
     std::atomic<quint64> lastSubmitGeometry{0};
     std::atomic<quint64> pipelineCreates{0},adjustmentUpdates{0};

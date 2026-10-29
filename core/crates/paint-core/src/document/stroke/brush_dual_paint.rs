@@ -516,7 +516,7 @@ impl Document {
             if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection {
                 stroke.initial_direction
             } else {
-                stroke.direction
+                stroke.tip_direction
             },
             stroke.shape_sample,
         );
@@ -635,7 +635,7 @@ impl Document {
             if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection {
                 stroke.initial_direction
             } else {
-                stroke.direction
+                stroke.tip_direction
             },
             stroke.shape_sample,
         );

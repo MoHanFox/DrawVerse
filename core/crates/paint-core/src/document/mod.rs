@@ -473,6 +473,8 @@ fn history_actions_survive_encoded_eviction_undo_redo_and_branching() {
 
 #[derive(Debug)]
 struct Stroke {
+    tip_direction_anchor: InputPoint,
+    tip_direction: Option<f64>,
     initial_direction: Option<f64>,
     layer: LayerId,
     brush: Brush,
@@ -1468,6 +1470,8 @@ impl Document {
             distance_to_next: primary_step,
             direction: None,
             initial_direction: None,
+            tip_direction_anchor: first,
+            tip_direction: None,
             before: BTreeMap::new(),
             coverage: BTreeMap::new(),
             first_dab: true,
@@ -1740,9 +1744,6 @@ impl Document {
         stroke.speed = speed;
         if distance > 1e-9 {
             stroke.direction = Some((point.y - stroke.last.y).atan2(point.x - stroke.last.x));
-            if stroke.initial_direction.is_none() {
-                stroke.initial_direction = stroke.direction;
-            }
         }
         let mut position = stroke.distance_to_next;
         let mut secondary_position = stroke.dual_next;
@@ -2117,9 +2118,7 @@ impl Document {
         ((1. - gray).clamp(0., 1.), a)
     }
     fn secondary_dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<()> {
-        if stroke.initial_direction.is_none() {
-            stroke.initial_direction = stroke.direction;
-        }
+        stroke.update_tip_direction(point);
         if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection
             && stroke.initial_direction.is_none()
         {
@@ -2283,9 +2282,7 @@ impl Document {
         Ok(())
     }
     fn dab(&mut self, stroke: &mut Stroke, point: InputPoint) -> Result<bool> {
-        if stroke.initial_direction.is_none() {
-            stroke.initial_direction = stroke.direction;
-        }
+        stroke.update_tip_direction(point);
         if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection
             && stroke.initial_direction.is_none()
         {
@@ -2527,7 +2524,7 @@ impl Document {
             if stroke.program.tip_dynamics.angle() == crate::AngleControl::InitialDirection {
                 stroke.initial_direction
             } else {
-                stroke.direction
+                stroke.tip_direction
             },
             stroke.shape_sample,
         );
@@ -3794,3 +3791,75 @@ mod dual_sizing_tests {
 #[cfg(test)]
 #[path = "stroke/document_input_work_tests.rs"]
 mod input_work_tests;
+
+impl Stroke {
+    fn update_tip_direction(&mut self, point: InputPoint) {
+        let dx = point.x - self.tip_direction_anchor.x;
+        let dy = point.y - self.tip_direction_anchor.y;
+        let distance = dx.hypot(dy);
+        if distance < 0.75 {
+            return;
+        }
+        let target = dy.atan2(dx);
+        let length = (f64::from(self.brush.radius) * 0.3).clamp(1.0, 8.0);
+        self.tip_direction = Some(match self.tip_direction {
+            None => target,
+            Some(angle) => {
+                let delta = (target - angle).sin().atan2((target - angle).cos());
+                angle + delta * (-(-distance / length).exp_m1())
+            }
+        });
+        self.tip_direction_anchor = point;
+        if self.initial_direction.is_none() {
+            self.initial_direction = self.tip_direction;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tip_direction_stability_tests {
+    use super::*;
+    fn document() -> Document {
+        let mut doc = Document::new(128, 128).unwrap();
+        doc.begin_brush_stroke(
+            crate::BrushDefinition::default(),
+            InputPoint::new(32., 32., 1.),
+        )
+        .unwrap();
+        doc
+    }
+    #[test]
+    fn initial_heading_ignores_subpixel_jitter_and_resets() {
+        let mut doc = document();
+        let stroke = doc.stroke.as_mut().unwrap();
+        for (x, y) in [(32.2, 32.1), (31.9, 32.2), (32.1, 31.8)] {
+            stroke.update_tip_direction(InputPoint::new(x, y, 1.));
+        }
+        assert_eq!(stroke.initial_direction, None);
+        stroke.update_tip_direction(InputPoint::new(32., 34., 1.));
+        assert!((stroke.initial_direction.unwrap() - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        stroke.update_tip_direction(InputPoint::new(40., 34., 1.));
+        assert!((stroke.initial_direction.unwrap() - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        assert_eq!(document().stroke.unwrap().initial_direction, None);
+    }
+    #[test]
+    fn heading_wraps_shortest_way_and_real_turn_converges() {
+        let mut doc = document();
+        let s = doc.stroke.as_mut().unwrap();
+        s.tip_direction = Some(179_f64.to_radians());
+        let target = (-179_f64).to_radians();
+        s.update_tip_direction(InputPoint::new(32. + target.cos(), 32. + target.sin(), 1.));
+        assert!((s.tip_direction.unwrap() - 179_f64.to_radians()).abs() < 2.1_f64.to_radians());
+        let a = s.tip_direction.unwrap();
+        let p = s.tip_direction_anchor;
+        s.update_tip_direction(InputPoint::new(p.x, p.y + 1., 1.));
+        assert!(
+            s.tip_direction.unwrap() < a && s.tip_direction.unwrap() > std::f64::consts::FRAC_PI_2
+        );
+        for _ in 0..64 {
+            let p = s.tip_direction_anchor;
+            s.update_tip_direction(InputPoint::new(p.x, p.y + 1., 1.));
+        }
+        assert!((s.tip_direction.unwrap() - std::f64::consts::FRAC_PI_2).abs() < 1e-6);
+    }
+}

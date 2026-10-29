@@ -38,9 +38,12 @@ vec4 sampleSource(ivec2 point){
     ivec2 tile=local >> 6;
     return sourcePixel(local,tile,sourceSlot(tile));
 }
-double cubic(double x,double a){
+// Geometry and pixel addresses stay double. Colour is RGBA32F: computing
+// its small kernel weights in float avoids per-pixel FP64 polynomial work.
+// Keep the ordered accumulation below; GPU/CPU preview tolerance is tested.
+float cubic(float x,float a){
     x=abs(x);
-    if(a==0.0){if(x<1.0)return (4.0-6.0*x*x+3.0*x*x*x)/6.0;if(x<2.0){double v=2.0-x;return v*v*v/6.0;}return 0.0;}
+    if(a==0.0){if(x<1.0)return (4.0-6.0*x*x+3.0*x*x*x)/6.0;if(x<2.0){float v=2.0-x;return v*v*v/6.0;}return 0.0;}
     if(x<1.0)return (a+2.0)*x*x*x-(a+3.0)*x*x+1.0;
     if(x<2.0)return a*x*x*x-5.0*a*x*x+8.0*a*x-4.0*a;
     return 0.0;
@@ -54,9 +57,9 @@ vec4 transformed(dvec2 coordinates){
     if(kind==0)return sampleSource(ivec2(floor(p+0.5)));
     ivec2 origin=ivec2(floor(p));precise dvec2 f=p-dvec2(origin);
     if(kind==1)return pixelMix(pixelMix(sampleSource(origin),sampleSource(origin+ivec2(1,0)),float(f.x)),pixelMix(sampleSource(origin+ivec2(0,1)),sampleSource(origin+ivec2(1,1)),float(f.x)),float(f.y));
-    double a=kind==3?0.0:(kind==4?-0.75:-0.5);precise vec4 sum=vec4(0);
-    precise double weightsX[4],weightsY[4];
-    [[unroll]] for(int i=0;i<4;++i){weightsX[i]=cubic(double(i-1)-f.x,a);weightsY[i]=cubic(double(i-1)-f.y,a);}
+    float a=kind==3?0.0:(kind==4?-0.75:-0.5);precise vec4 sum=vec4(0);
+    precise float weightsX[4],weightsY[4];
+    [[unroll]] for(int i=0;i<4;++i){weightsX[i]=cubic(float(i-1)-float(f.x),a);weightsY[i]=cubic(float(i-1)-float(f.y),a);}
     // A 4x4 kernel touches at most two tiles per axis. Resolve those slots
     // once, including missing/implicit-white pages, then keep the CPU's exact
     // sample and f32 accumulation order below.

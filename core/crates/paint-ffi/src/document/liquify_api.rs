@@ -125,6 +125,171 @@ fn encode_preview_assets(
     Ok(output)
 }
 
+/// Build a display-only texture packet at caller-negotiated device/memory limits.
+/// Chunking bounds renderer scratch space without bounding the complete texture.
+pub(crate) fn transform_preview_assets(
+    source: &paint_core::ResidentPreviewSource,
+    max_edge: u32,
+    max_bytes: u64,
+) -> crate::error::ApiResult<Vec<u8>> {
+    if max_edge == 0 || max_edge > i32::MAX as u32 || max_bytes < 36 {
+        return Err(ApiError::invalid("transform texture limits"));
+    }
+    let images = [&source.image, &source.below, &source.above];
+    let dimensions = images.map(|image| {
+        if image.visible_pixel_layers().is_empty() {
+            (1, 1)
+        } else {
+            (image.width, image.height)
+        }
+    });
+    let sizes = transform_texture_sizes(dimensions, max_edge, max_bytes)?;
+    let total = 24
+        + sizes
+            .iter()
+            .map(|&(w, h)| u64::from(w) * u64::from(h) * 4)
+            .sum::<u64>();
+    let length = usize::try_from(total)
+        .map_err(|_| ApiError::new(PAINT_LIMIT_EXCEEDED, "transform address space"))?;
+    let mut output = Vec::new();
+    output
+        .try_reserve_exact(length)
+        .map_err(|_| ApiError::new(PAINT_LIMIT_EXCEEDED, "transform texture allocation"))?;
+    output.resize(length, 0);
+    let cancel = paint_task::CancellationToken::default();
+    let renderer = CachedCpuRenderer::default();
+    let mut offset = 24;
+    for (i, (image, &(width, height))) in images.iter().zip(&sizes).enumerate() {
+        output[i * 8..i * 8 + 4].copy_from_slice(&width.to_le_bytes());
+        output[i * 8 + 4..i * 8 + 8].copy_from_slice(&height.to_le_bytes());
+        if dimensions[i] != (1, 1) || !image.visible_pixel_layers().is_empty() {
+            // Render bounded strips; no new full-frame limit or point-sampling proxy.
+            let chunk_width = width.min(paint_render::MAX_OUTPUT_EDGE);
+            let chunk_height = height
+                .min(paint_render::MAX_OUTPUT_EDGE)
+                .min((paint_render::MAX_OUTPUT_PIXELS / u64::from(chunk_width)) as u32);
+            for y in (0..height).step_by(chunk_height as usize) {
+                for x in (0..width).step_by(chunk_width as usize) {
+                    let w = chunk_width.min(width - x);
+                    let h = chunk_height.min(height - y);
+                    let sx = f64::from(image.width) / f64::from(width);
+                    let sy = f64::from(image.height) / f64::from(height);
+                    let request = RenderRequest {
+                        region: Region {
+                            x: f64::from(x) * sx,
+                            y: f64::from(y) * sy,
+                            width: f64::from(w) * sx,
+                            height: f64::from(h) * sy,
+                        },
+                        width: w,
+                        height: h,
+                        format: PixelFormat::SrgbRgba8Premultiplied,
+                    };
+                    let frame = paint_render::render_native_preview(image, request, &cancel)
+                        .and_then(|native| match native {
+                            Some(frame) => Ok(frame),
+                            None => renderer.render(image, request, &cancel),
+                        })
+                        .map_err(|e| ApiError::new(PAINT_IO_ERROR, e.to_string()))?;
+                    let FramePixels::Srgb(bytes) = frame.pixels else {
+                        return Err(ApiError::internal());
+                    };
+                    for row in 0..h as usize {
+                        let target =
+                            offset + ((y as usize + row) * width as usize + x as usize) * 4;
+                        let from = row * w as usize * 4;
+                        output[target..target + w as usize * 4]
+                            .copy_from_slice(&bytes[from..from + w as usize * 4]);
+                    }
+                }
+            }
+        }
+        offset += width as usize * height as usize * 4;
+    }
+    Ok(output)
+}
+
+fn transform_texture_sizes(
+    dimensions: [(u32, u32); 3],
+    max_edge: u32,
+    max_bytes: u64,
+) -> crate::error::ApiResult<[(u32, u32); 3]> {
+    let mut scale = 1_f64;
+    for (w, h) in dimensions {
+        scale = scale.min(f64::from(max_edge) / f64::from(w.max(h)));
+    }
+    let at = |s: f64| {
+        dimensions.map(|(w, h)| {
+            (
+                (f64::from(w) * s).floor().max(1.) as u32,
+                (f64::from(h) * s).floor().max(1.) as u32,
+            )
+        })
+    };
+    let fits = |sizes: [(u32, u32); 3]| {
+        24_u128
+            + sizes
+                .iter()
+                .map(|&(w, h)| u128::from(w) * u128::from(h) * 4)
+                .sum::<u128>()
+            <= u128::from(max_bytes)
+    };
+    if !fits(at(0.)) {
+        return Err(ApiError::new(
+            PAINT_LIMIT_EXCEEDED,
+            "transform texture budget",
+        ));
+    }
+    if !fits(at(scale)) {
+        let (mut low, mut high) = (0., scale);
+        for _ in 0..64 {
+            let middle = (low + high) * 0.5;
+            if fits(at(middle)) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        scale = low;
+    }
+    Ok(at(scale))
+}
+
+/// ABI1.90: opt-in source texture limits; old resident packets remain unchanged.
+/// # Safety
+/// Caller-memory capacity/lifetime contract is identical to read_resident_preview.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_read_transform_preview_assets(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    generation: u64,
+    source_id: u64,
+    max_edge: u32,
+    max_bytes: u64,
+    buffer: *mut u8,
+    capacity: u64,
+    out_required: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_required, 0)?;
+        let session = runtime::registry()?.session(core, session)?;
+        let publication = session.publication();
+        let preview = publication
+            .resident_preview
+            .as_ref()
+            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "pixel preview"))?;
+        if publication.info.document_generation != generation || preview.source.id != source_id {
+            return Err(ApiError::new(PAINT_BUSY, "transform source replaced"));
+        }
+        pointers::copy_buffer(
+            &session.transform_resident_assets(preview, max_edge, max_bytes)?,
+            buffer,
+            capacity,
+            out_required,
+        )
+    })
+}
+
 pub(crate) fn preview_selection(
     source: &paint_core::ResidentPreviewSource,
 ) -> crate::error::ApiResult<Vec<u8>> {
@@ -338,6 +503,134 @@ pub unsafe extern "C" fn paint_session_liquify(
 #[cfg(test)]
 mod move_asset_tests {
     use super::*;
+
+    #[test]
+    fn actual_transform_asset_entry_diagnostic() {
+        let Some(path) = std::env::var_os("DRAWVERSE_TRANSFORM_QUALITY_IMAGE") else {
+            return;
+        };
+        let cancel = paint_task::CancellationToken::default();
+        let mut doc = paint_io::load(std::path::Path::new(&path), &cancel).unwrap();
+        let start = std::time::Instant::now();
+        doc.begin_transform_layers_deferred(&[doc.active_layer()])
+            .unwrap();
+        let begun = start.elapsed();
+        let source = doc.resident_preview().unwrap().source;
+        let image = &source.image;
+        let request = RenderRequest {
+            region: Region {
+                x: 0.,
+                y: 0.,
+                width: f64::from(image.width),
+                height: f64::from(image.height),
+            },
+            width: image.width,
+            height: image.height,
+            format: PixelFormat::SrgbRgba8Premultiplied,
+        };
+        let frame = paint_render::render_native_preview(image, request, &cancel).unwrap();
+        eprintln!(
+            "BEGIN {begun:?} native {:?} layers {} qualified {}",
+            start.elapsed() - begun,
+            image.layers().len(),
+            frame.is_some()
+        );
+        for layer in image.layers() {
+            eprintln!("layer {:?} {:?}", layer.properties(), layer.appearance());
+        }
+        let start = std::time::Instant::now();
+        let packet = transform_preview_assets(&source, 16384, 512 * 1024 * 1024).unwrap();
+        eprintln!("packet {:?} bytes {}", start.elapsed(), packet.len());
+        assert!(frame.is_some());
+        doc.cancel_transform().unwrap();
+    }
+
+    #[test]
+    fn transform_texture_plan_uses_device_and_memory_instead_of_resolution_cutoffs() {
+        let dimensions = [(12000, 8000), (1, 1), (1, 1)];
+        assert_eq!(
+            transform_texture_sizes(dimensions, 16384, 400 * 1024 * 1024).unwrap(),
+            dimensions
+        );
+        let by_device = transform_texture_sizes(dimensions, 6000, 400 * 1024 * 1024).unwrap();
+        assert_eq!(by_device[0], (6000, 4000)); // More than the renderer's per-chunk 16M.
+        let by_memory = transform_texture_sizes(dimensions, 16384, 32 * 1024 * 1024).unwrap();
+        assert!(by_memory[0].0 < 6000);
+        let total = 24
+            + by_memory
+                .iter()
+                .map(|&(w, h)| u64::from(w) * u64::from(h) * 4)
+                .sum::<u64>();
+        assert!(total <= 32 * 1024 * 1024);
+        assert!(transform_texture_sizes(dimensions, 16384, 35).is_err());
+    }
+
+    #[test]
+    fn transform_texture_chunks_preserve_a_source_wider_than_renderer_limit() {
+        use paint_core::*;
+        let mut doc = Document::new(9000, 2).unwrap();
+        doc.initialize_white_background().unwrap();
+        doc.begin_transform_layers_deferred(&[doc.active_layer()])
+            .unwrap();
+        let source = doc.resident_preview().unwrap().source;
+        let packet = transform_preview_assets(&source, 16384, 8 * 1024 * 1024).unwrap();
+        let w = u32::from_le_bytes(packet[0..4].try_into().unwrap());
+        let h = u32::from_le_bytes(packet[4..8].try_into().unwrap());
+        assert_eq!((w, h), (source.image.width, source.image.height));
+        assert!(w > 8192);
+        for y in 0..h {
+            for x in 0..w {
+                let offset = 24 + ((y * w + x) * 4) as usize;
+                assert_eq!(
+                    &packet[offset..offset + 4],
+                    &paint_render::display_pixel(source.image.pixel(x, y).components())
+                );
+            }
+        }
+        doc.cancel_transform().unwrap();
+    }
+
+    #[test]
+    fn transform_assets_keep_original_texels_and_legacy_packet_bound() {
+        use paint_core::*;
+        let mut doc = Document::new(4096, 32).unwrap();
+        doc.initialize_white_background().unwrap();
+        doc.begin_stroke(
+            Brush {
+                radius: 0.7,
+                color: Pixel::from_straight([0.1, 0.3, 0.8, 1.]).unwrap(),
+                ..Default::default()
+            },
+            InputPoint::new(1000.5, 8.5, 1.),
+        )
+        .unwrap();
+        doc.end_stroke().unwrap();
+        doc.begin_transform_layers_deferred(&[doc.active_layer()])
+            .unwrap();
+        let source = doc.resident_preview().unwrap().source;
+        let bytes = transform_preview_assets(&source, 16384, 128 * 1024 * 1024).unwrap();
+        let width = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let height = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        assert_eq!((width, height), (source.image.width, source.image.height));
+        assert!(width > 4096); // Includes original transparent guard texels.
+        for y in 0..height {
+            for x in 0..width {
+                let at = 24 + ((y * width + x) * 4) as usize;
+                let expected = paint_render::display_pixel(source.image.pixel(x, y).components());
+                for (actual, expected) in bytes[at..at + 4].iter().zip(expected) {
+                    assert!(actual.abs_diff(expected) <= 1, "texel {x},{y}");
+                }
+            }
+        }
+        // Empty split remains transparent, and opt-in does not change kind1.
+        assert_eq!(
+            &bytes[8..24],
+            &[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+        );
+        let legacy = preview_assets(&source).unwrap();
+        assert_eq!(u32::from_le_bytes(legacy[0..4].try_into().unwrap()), 2048);
+        doc.cancel_transform().unwrap();
+    }
 
     #[test]
     fn move_assets_keep_viewport_density_and_match_proxy_centres() {

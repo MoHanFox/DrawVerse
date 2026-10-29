@@ -5,7 +5,7 @@ Item {
     id:root;objectName:"transformOverlay"
     required property var controller
     required property var canvasView
-    visible:controller.transformActive
+    visible:controller.transformControlsVisible
     readonly property bool linked:controller.transformLinked
     property var startPoints:[]
     property point pressPoint

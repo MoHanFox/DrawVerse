@@ -993,6 +993,7 @@ private slots:
         QTest::newRow("hard-edge-warp")<<2<<7<<true;
         QTest::newRow("dense-affine-1024")<<2<<8<<true;
         QTest::newRow("dense-warp-nearest-1024")<<0<<9<<true;
+        for(int k:{2,3,4})QTest::newRow(qPrintable(QString("dense-warp-kernel-%1-1024").arg(k)))<<k<<12<<true;
         QTest::newRow("dense-perspective-auto-1024")<<5<<10<<true;
         QTest::newRow("precision-capability-fallback")<<2<<11<<true;
         QTest::newRow("cancel")<<2<<1<<false;
@@ -1003,7 +1004,7 @@ private slots:
         qputenv("DRAWVERSE_GPU_COMPOSITION","1");
         if(shape==11)qputenv("DRAWVERSE_COMPOSITION_FAIL","precision");
         const auto restore=qScopeGuard([]{qunsetenv("DRAWVERSE_COMPOSITION_FAIL");});
-        const int side=shape>=8 && shape<=10?1024:128,height=side==128?96:1024;
+        const int side=(shape>=8 && shape<=10) || shape==12?1024:128,height=side==128?96:1024;
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(side,height);
         QTRY_VERIFY(client.documentWidth()==side && !client.layerEditBusy());client.addLayer("transforming");
@@ -1038,7 +1039,7 @@ private slots:
         if(precise){QVERIFY(client.compositionPacket());QVERIFY(client.compositionPacket()->preview);QVERIFY(client.compositionPacket()->transform);QVERIFY(!client.residentPreview());}
         auto points=client.transformPoints();const auto initial=points;
         for(int i=0;i<16;++i){const auto p=initial[i].toPointF();points[i]=QPointF(p.x()*1.12-p.y()*.17+12.3,p.x()*.13+p.y()*.91-3.1);}
-        const bool warp=shape==1 || shape==5 || shape==7 || shape==9;const bool supported=precise;
+        const bool warp=shape==1 || shape==5 || shape==7 || shape==9 || shape==12;const bool supported=precise;
         if(warp){points[5]=points[5].toPointF()+QPointF(9,-7);points[10]=points[10].toPointF()+QPointF(-8,6);}
         if(shape==5){points[5]=points[5].toPointF()+QPointF(65,35);points[10]=points[10].toPointF()+QPointF(-65,-35);}
         if(shape==2 || shape==10){points[3]=points[3].toPointF()+QPointF(-10,4);points[15]=points[15].toPointF()+QPointF(4,2);}
@@ -1096,6 +1097,159 @@ private slots:
         if(commit){client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_COMPARE(client.frameRevision(),client.revision());}
         QCOMPARE(client.frame(),original);QVERIFY(client.lastError().isEmpty());
         save("transform-"+QString::fromLatin1(QTest::currentDataTag()),{{"passed",true},{"software_fallback",software},{"commit",commit},{"precise_capability",precise},{"side",side}});
+    }
+    void actualTransformEntryAcceptsEarlyDrag(){
+        const auto path=qEnvironmentVariable("DRAWVERSE_TRANSFORM_QUALITY_IMAGE");
+        if(path.isEmpty())QSKIP("Set DRAWVERSE_TRANSFORM_QUALITY_IMAGE to diagnose cold transform entry");
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("entry.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        const auto generation=client.generation();QVERIFY(client.openDocument(QUrl::fromLocalFile(path)));
+        QTRY_VERIFY_WITH_TIMEOUT(!client.fileBusy() && client.generation()!=generation,30000);
+        QQuickWindow window;window.resize(1000,600);
+        auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1000,600});canvas->setClient(&client);
+        auto observed=std::make_shared<CanvasPresentationObservation>();canvas->observePresentation(observed);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->fitToView();
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("Requires GPU resident display");
+        QTRY_VERIFY(canvas->compositionStatistics()["maxTextureEdge"].toInt()>0);
+        QTRY_VERIFY(client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision());
+        const bool traceEntry=qEnvironmentVariableIntValue("DRAWVERSE_TRANSFORM_ENTRY_TRACE")!=0;
+        if(traceEntry)InteractionTrace::start(true);
+        QElapsedTimer elapsed;elapsed.start();QVERIFY(client.beginTransform());
+        while(client.transformPoints().size()!=16 && elapsed.elapsed()<30000)QTest::qWait(1);
+        QCOMPARE(client.transformPoints().size(),16);const auto controlsMs=elapsed.elapsed();
+        const auto initial=client.transformPoints();QVariantList latest;
+        int updates=0;const bool pendingAtFirstInput=!client.residentPreview();
+        do {
+            latest=initial;for(auto &point:latest)point=point.toPointF()+QPointF(20+updates,10);
+            QVERIFY(client.updateTransform(latest,false,2));++updates;QTest::qWait(1);
+        }while(!client.residentPreview() && elapsed.elapsed()<30000);
+        QVERIFY(client.residentPreview());const auto assetsMs=elapsed.elapsed();
+        QVERIFY(client.residentPreview()->meshPreview);QVERIFY(client.residentPreview()->fullResolution);QCOMPARE(client.transformPoints(),latest);
+        // The first delivered source must already use the newest drag, even if
+        // the actor changed revision while the immutable texture was encoded.
+        const auto frame=client.residentPreview();QVERIFY(frame->geometrySequence>0);
+        const auto expected=latest[0].toPointF();
+        QVERIFY(QLineF(QPointF(frame->vertices.front()[0],frame->vertices.front()[1]),expected).length()<.01);
+        QTRY_VERIFY_WITH_TIMEOUT(frame->uploads->load()==1,30000);const auto uploadMs=elapsed.elapsed();
+        QTRY_VERIFY_WITH_TIMEOUT(observed->snapshot().identity.resident && QLineF(observed->snapshot().identity.firstVertex,expected).length()<.01,30000);
+        const auto nodeMs=elapsed.elapsed();
+        if(traceEntry)save("actual-transform-entry-trace",{{"events",InteractionTrace::finish()}});
+        qInfo()<<"transform entry controls/assets/upload/node ms"<<controlsMs<<assetsMs<<uploadMs<<nodeMs<<"early updates"<<updates<<"pending at first input"<<pendingAtFirstInput;
+        save("actual-transform-entry",{{"controls_ms",double(controlsMs)},{"assets_ms",double(assetsMs)},
+            {"upload_ms",double(uploadMs)},{"node_ms",double(nodeMs)},{"updates",updates},{"pending_at_first_input",pendingAtFirstInput}});
+        QVERIFY(client.finishTransform(false));QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy(),30000);
+        QTRY_VERIFY_WITH_TIMEOUT(!client.residentPreview(),30000);QCOMPARE(client.undoDepth(),0);QVERIFY(client.lastError().isEmpty());
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void actualTransformImageKeepsOriginalTexels(){
+        const auto path=qEnvironmentVariable("DRAWVERSE_TRANSFORM_QUALITY_IMAGE");
+        if(path.isEmpty())QSKIP("Set DRAWVERSE_TRANSFORM_QUALITY_IMAGE to validate an actual source PNG");
+        const QImage original(path);QVERIFY(!original.isNull());
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("quality.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        const auto generation=client.generation();QVERIFY(client.openDocument(QUrl::fromLocalFile(path)));
+        QTRY_VERIFY_WITH_TIMEOUT(!client.fileBusy() && client.generation()!=generation,30000);
+        QQuickWindow window;window.resize(1000,600);
+        auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1000,600});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->fitToView();
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("Actual mesh source uses D3D11");
+        QTRY_VERIFY(client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision());QVERIFY(client.beginTransform());
+        QTRY_VERIFY_WITH_TIMEOUT(client.residentPreview() && client.residentPreview()->meshPreview,30000);
+        const auto source=client.residentPreview();QVERIFY(source->fullResolution);
+        const auto &image=source->images[0];
+        // Raster bounds include the last partial 64px tile and transparent guard.
+        QVERIFY(image.width()>=original.width()+2 && image.width()<original.width()+66);
+        QVERIFY(image.height()>=original.height()+2 && image.height()<original.height()+66);
+        int maximum=0;
+        for(int y=0;y<original.height();++y)for(int x=0;x<original.width();++x){
+            const auto a=image.pixelColor(x+1,y+1),b=original.pixelColor(x,y);
+            maximum=std::max({maximum,std::abs(a.red()-b.red()),std::abs(a.green()-b.green()),std::abs(a.blue()-b.blue()),std::abs(a.alpha()-b.alpha())});
+        }
+        qInfo()<<"original source dimensions"<<original.size()<<"cached texture"<<image.size()<<"maximum RGBA8 channel error"<<maximum;
+        QVERIFY(maximum<=1);
+        auto points=client.transformPoints();for(auto &point:points)point=point.toPointF()+QPointF(3,2);
+        QVERIFY(client.updateTransform(points,false,2));
+        QTRY_VERIFY(source->uploads->load()==1);
+        QCOMPARE(client.residentPreview()->images[0].cacheKey(),source->images[0].cacheKey());
+        QVERIFY(client.finishTransform(false));QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy(),30000);
+        QTRY_VERIFY_WITH_TIMEOUT(!client.residentPreview(),30000);QCOMPARE(client.undoDepth(),0);QVERIFY(client.lastError().isEmpty());
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void largeTransformUsesCachedScreenMesh_data(){
+        QTest::addColumn<bool>("warp");QTest::addColumn<bool>("commit");QTest::addColumn<int>("width");QTest::addColumn<int>("height");
+        QTest::newRow("affine-cancel")<<false<<false<<1536<<1024;QTest::newRow("warp-cancel")<<true<<false<<1536<<1024;
+        QTest::newRow("affine-commit")<<false<<true<<1536<<1024;QTest::newRow("warp-commit")<<true<<true<<1536<<1024;
+        QTest::newRow("wide-original-cancel")<<false<<false<<9000<<256;
+    }
+    void largeTransformUsesCachedScreenMesh(){
+        QFETCH(bool,warp);QFETCH(bool,commit);QFETCH(int,width);QFETCH(int,height);QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("mesh.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());const auto generation=client.generation();client.newDocument(width,height);
+        QTRY_VERIFY(client.generation()!=generation && !client.layerEditBusy());
+        client.addLayer("large mesh");QTRY_VERIFY(client.layers().size()==2 && !client.layerEditBusy());
+        client.setBrushColor(Qt::blue);client.activateBucket();QVERIFY(client.bucketFill({0,0}));QTRY_VERIFY(!client.layerEditBusy());client.activateBrush();
+        const auto fixture=QUrl::fromLocalFile(temp.filePath("mesh.ora"));QVERIFY(client.saveDocument(fixture));QTRY_VERIFY_WITH_TIMEOUT(!client.fileBusy(),30000);
+        const auto loadedGeneration=client.generation();QVERIFY(client.openDocument(fixture));QTRY_VERIFY_WITH_TIMEOUT(!client.fileBusy() && client.generation()!=loadedGeneration,30000);QCOMPARE(client.undoDepth(),0);
+        const auto depth=client.undoDepth();QQuickWindow window;window.resize(600,400);
+        auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({600,400});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->fitToView();
+        const bool software=window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software;
+        if(!software){
+            QTRY_VERIFY(canvas->compositionStatistics()["maxTextureEdge"].toInt()>0);
+            if(width==1536)QTRY_VERIFY(client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision());
+        }
+        QJsonObject policy{{"gpu",client.gpuCompositionEnabled()},{"residentGpu",client.residentGpuPreviewEnabled()},
+            {"highest",client.highestCanvasQuality()},{"selection",client.selectionEnabled()},
+            {"generation",double(client.generation())},{"revision",double(client.revision())},
+            {"active",double(client.activeLayer())},{"targets",QJsonArray::fromVariantList(client.selectedLayers())},
+            {"canvas",QJsonObject::fromVariantMap(canvas->compositionStatistics())},
+            {"gpuBudget",double(CompositionBudget::gpuBytes.load())},{"reserved",double(CompositionBudget::gpuReservedBytes.load())}};
+        if(const auto packet=client.compositionPacket()){
+            policy["packetGeneration"]=double(packet->info.key.document_generation);policy["packetRevision"]=double(packet->info.key.revision);
+            policy["operations"]=packet->operations.size();QJsonArray nodes;
+            for(const auto &node:packet->nodes)nodes.append(QJsonObject{{"id",double(node.layer_id)},{"blend",int(node.reserved)},
+                {"mask",int(node.mask_index)},{"tiles",int(node.tile_count)},{"whiteWidth",int(node.white_width)},{"whiteHeight",int(node.white_height)}});
+            policy["nodes"]=nodes;
+        }
+        QVERIFY(client.beginTransform());QTRY_VERIFY_WITH_TIMEOUT(client.transformActive() && !client.transformBusy(),30000);
+        policy["exact"]=bool(client.compositionPacket() && client.compositionPacket()->transform);
+        policy["fallback"]=client.compositionFallback();save(QString("mesh-policy-")+QTest::currentDataTag(),policy);
+        if(!software)QTRY_VERIFY_WITH_TIMEOUT(client.residentPreview() && client.residentPreview()->meshPreview,30000);
+        auto points=client.transformPoints();QCOMPARE(points.size(),16);
+        const auto source=client.residentPreview();const auto before=canvas->compositionStatistics();
+        if(source){QVERIFY(source->fullResolution);
+            QVERIFY(source->images[0].width()>=width+2 && source->images[0].width()<width+66);
+            QVERIFY(source->images[0].height()>=height+2 && source->images[0].height()<height+66);}
+        for(int step=0;step<12;++step){
+            for(int i=0;i<16;++i)points[i]=points[i].toPointF()+QPointF(.75,.5);
+            if(warp)points[5]=points[5].toPointF()+QPointF(1,-.5);
+            QVERIFY(client.updateTransform(points,warp,2));
+            if(source){
+                const auto frame=client.residentPreview();QVERIFY(frame);QCOMPARE(frame->sourceId,source->sourceId);
+                QVERIFY(frame->geometrySequence>source->geometrySequence);
+                QCOMPARE(frame->vertices.front()[0],float(points[0].toPointF().x()));
+                for(int i=0;i<3;++i)QCOMPARE(frame->images[i].cacheKey(),source->images[i].cacheKey());
+                QVERIFY(!client.compositionPacket());
+            }
+        }
+        QTRY_VERIFY(!client.transformBusy());QSignalSpy swapped(&window,&QQuickWindow::frameSwapped);window.update();QTRY_VERIFY(!swapped.isEmpty());
+        if(source){
+            const auto picture=window.grabWindow();QVERIFY(!picture.isNull());
+            const auto pixel=[&](QPointF p){const auto screen=canvas->documentRect().topLeft()+p*canvas->zoom();return picture.pixelColor(qRound(screen.x()*window.devicePixelRatio()),qRound(screen.y()*window.devicePixelRatio()));};
+            QVERIFY(pixel({width*.45,height*.4}).blue()>220);if(width==1536)QVERIFY(pixel({4,height*.4}).red()>220);
+        }
+        if(source){QCOMPARE(canvas->compositionStatistics()["uploads"],before["uploads"]);QVERIFY(source->uploads->load()<=1);}
+        QVERIFY(client.finishTransform(commit));QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy(),30000);
+        QTRY_VERIFY_WITH_TIMEOUT(!client.residentPreview(),30000);QTRY_COMPARE(client.undoDepth(),depth+(commit?1:0));
+        if(commit){client.undo();QTRY_COMPARE(client.undoDepth(),depth);client.redo();QTRY_COMPARE(client.undoDepth(),depth+1);}
+        if(source && !warp && !commit && before["preciseTransform"].toInt()>0){
+            QVERIFY(client.saveRenderSettings(512,512,true));QTRY_VERIFY(client.highestCanvasQuality() && client.compositionPacket());
+            QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy());
+            QTRY_VERIFY(client.compositionPacket() && client.compositionPacket()->transform);QVERIFY(!client.residentPreview());
+            QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
+            QVERIFY(client.saveRenderSettings(512,512,false));
+        }
+        QVERIFY(client.lastError().isEmpty());
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void transformResourcesFollowViewAndTopology(){
         qputenv("DRAWVERSE_GPU_COMPOSITION","1");QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("reuse.ini"));

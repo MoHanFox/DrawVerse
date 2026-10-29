@@ -1292,6 +1292,25 @@ Window {
         QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+1);
         QCOMPARE(errors.size(),0);QVERIFY(client.lastError().isEmpty());client.shutdown();
     }
+    void cancelHidesLargeTransformControlsBeforeBackendFinishes() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("cancel-large.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(4096,2160);
+        QTRY_VERIFY(client.documentWidth()==4096 && !client.layerEditBusy());
+        QQuickWindow window;window.resize(640,480);QQmlEngine engine;
+        QQmlComponent component(&engine,QUrl("qrc:/qml/canvas/CanvasPane.qml"));
+        std::unique_ptr<QObject> object(component.createWithInitialProperties({{"ownClient",QVariant::fromValue(&client)},{"mainWindow",QVariant::fromValue(&window)}}));
+        QVERIFY2(object,qPrintable(component.errorString()));auto *pane=qobject_cast<QQuickItem*>(object.get());QVERIFY(pane);
+        pane->setParentItem(window.contentItem());pane->setSize({640,480});window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        auto *overlay=pane->findChild<QQuickItem*>("transformOverlay");QVERIFY(overlay);
+        const auto depth=client.undoDepth();QVERIFY(client.beginTransform());QTRY_VERIFY(client.transformPoints().size()==16 && !client.transformBusy());
+        QVERIFY(overlay->isVisible());auto points=client.transformPoints();for(auto &p:points)p=p.toPointF()+QPointF(48,32);
+        QVERIFY(client.updateTransform(points,true,2));QVERIFY(client.finishTransform(false));
+        QVERIFY(!client.transformControlsVisible());QVERIFY(!overlay->isVisible());
+        QVERIFY(!client.updateTransform(points,true,2));
+        QTRY_VERIFY(!client.transformActive() && !client.transformBusy());QVERIFY(!overlay->isVisible());QCOMPARE(client.undoDepth(),depth);
+        QVERIFY(client.beginTransform());QTRY_VERIFY(!client.transformBusy() && client.transformPoints().size()==16);QVERIFY(overlay->isVisible());
+        QVERIFY(client.finishTransform(false));QTRY_VERIFY(!client.transformActive());
+    }
     void transformBeginNeverExposesIdleOrPreviousPoints() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("target.ini"));
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());

@@ -355,7 +355,7 @@ void CanvasItem::hoverMoveEvent(QHoverEvent *event){
 }
 void CanvasItem::hoverLeaveEvent(QHoverEvent *event){if(ignoreCachedMouseHover(event) || m_tablet)return;setTabletWindowCursor(false);resetCursorSample();m_cursorInside=false;refreshBrushCursor();}
 void CanvasItem::resetCompositionDevice(){
-    m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionCounters->preciseTransform=0;
+    m_compositionEpoch=nextCompositionEpoch.fetch_add(1);m_compositionCounters->preciseTransform=0;m_compositionCounters->maxTextureEdge=0;
     m_compositionFailed=false;m_compositionFailureReason.clear();m_compositionPacket.reset();
     m_failedCompositionDemand=m_failedCompositionRelease=0;m_failedCompositionPreview=false;
 }
@@ -416,7 +416,9 @@ void CanvasItem::refresh() {
         m_image=image;update();
         return;
     }
-    if(m_interactive && window()){m_client->setResidentGpuPreviewAvailable(gpuDisplay());m_client->setCompositionPrecisionAvailable(m_compositionCounters->preciseTransform.load()>0);}
+    if(m_interactive && window()){m_client->setTransformPreviewDevice(m_compositionCounters);m_client->setResidentGpuPreviewAvailable(gpuDisplay());m_client->setCompositionPrecisionAvailable(m_compositionCounters->preciseTransform.load()>0);
+        const auto reserved=CompositionNode::reservedPayloadBytes(),budget=CompositionBudget::gpuBytes.load();
+        m_client->setTransformPreviewLimits(m_compositionCounters->maxTextureEdge.load(),budget-std::min(budget,reserved));}
     if (m_generation != m_client->generation()) { resetCompositionDevice();stopNavigation();m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
     retryCompositionIfPossible();
     const int view = m_interactive ? 0 : 1;
@@ -461,7 +463,7 @@ QVariantMap CanvasItem::compositionStatistics()const{
         {"lastUploadNs",c.lastUploadNs.load()},{"lastSubmitNs",c.lastSubmitNs.load()},{"lastSubmitGeometry",c.lastSubmitGeometry.load()},
         {"nodeRevision",c.nodeRevision.load()},{"nodeRequest",c.nodeRequest.load()},
         {"nodeGeometry",c.nodeGeometry.load()},{"nodeEpoch",c.nodeEpoch.load()},
-        {"testReadbacks",c.testReadbacks.load()},{"preciseTransform",c.preciseTransform.load()},{"pipelineCreates",c.pipelineCreates.load()},
+        {"testReadbacks",c.testReadbacks.load()},{"preciseTransform",c.preciseTransform.load()},{"maxTextureEdge",c.maxTextureEdge.load()},{"pipelineCreates",c.pipelineCreates.load()},
         {"geometryReuses",c.geometryReuses.load()},{"pageTableCreates",c.pageTableCreates.load()},{"axisCreates",c.axisCreates.load()},
         {"parameterBufferCreates",c.parameterBufferCreates.load()},{"bindingCreates",c.bindingCreates.load()},
         {"composedPixels",c.composedPixels.load()},{"lastDirtyArea",c.lastDirtyArea.load()},{"displayPixels",c.displayPixels.load()},{"lastDisplayArea",c.lastDisplayArea.load()},
@@ -570,6 +572,8 @@ void CanvasItem::restoreLayoutPosition() {
     m_pan+=m_layoutOrigin-mapToScene(documentRect().topLeft());emit viewChanged();update();
 }
 QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
+    if(gpuDisplay() && !m_compositionCounters->maxTextureEdge.load())
+        m_compositionCounters->maxTextureEdge=CompositionNode::textureLimit(window());
     CanvasPresentationIdentity adopted;
     // Early/error returns publish invalid. Read only the item's synchronized
     // snapshot, never PaintCoreClient's live GUI metadata in this observer.
@@ -594,8 +598,11 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
                 if(!self)return;
                 const auto key=packet->info.key;
                 QMetaObject::invokeMethod(self,[self,key]{
-                    if(self && self->m_client && self->m_interactive && !self->m_previewPart && self->m_compositionEpoch==key.device_epoch)
+                    if(self && self->m_client && self->m_interactive && !self->m_previewPart && self->m_compositionEpoch==key.device_epoch){
+                        const auto budget=CompositionBudget::gpuBytes.load(),reserved=CompositionNode::reservedPayloadBytes();
+                        self->m_client->setTransformPreviewLimits(self->m_compositionCounters->maxTextureEdge.load(),budget-std::min(budget,reserved));
                         self->m_client->compositionPrimaryAdopted(key.document_generation,key.device_epoch,key.revision);
+                    }
                 },Qt::QueuedConnection);
             });
             if(node->composition){node->compositionEpoch=m_compositionEpoch;node->appendChildNode(node->composition);}
@@ -924,9 +931,6 @@ void CanvasItem::keyPressEvent(QKeyEvent *e) {
     else if(m_selecting && m_selectionKind==3 && e->key()==Qt::Key_Backspace) {if(!m_selectionPoints.isEmpty())m_selectionPoints.removeLast();if(m_selectionPoints.isEmpty())cancelSelectionDrag();else emit selectionDragChanged();e->accept();}
     else if (e->key() == Qt::Key_Alt) {setAltHeld(true); e->accept(); }
     else if (e->key() == Qt::Key_Control) {setCtrlHeld(true); e->accept(); }
-    else if(m_client && e->key()==Qt::Key_G && e->modifiers()==Qt::NoModifier) {m_client->activateBucket();e->accept();}
-    else if(m_client && e->key()==Qt::Key_W && e->modifiers()==Qt::NoModifier) {m_client->activateWand();e->accept();}
-    else if(m_client && e->key()==Qt::Key_R && e->modifiers()==Qt::NoModifier) {m_client->activateSmudge();e->accept();}
     else if (e->key() == Qt::Key_Escape) { if(m_moving)cancelLayerMove("move.cancel.Escape");else if(m_client && m_client->liquifyActive()){m_client->cancelStroke();m_client->finishLiquify(false);}else if(m_selecting) cancelSelectionDrag();else if (m_client) m_client->cancelStroke(); m_stroke = false; m_tablet = false; m_moving=false; e->accept(); }
     else if(m_client && m_client->moveTool() && !m_moving && e->key()>=Qt::Key_Left && e->key()<=Qt::Key_Down) {
         const int step=e->modifiers().testFlag(Qt::ShiftModifier) ? 10 : 1;

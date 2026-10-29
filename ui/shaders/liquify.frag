@@ -2,7 +2,7 @@
 layout(location=0) in vec2 sourceCoord;
 layout(location=1) in vec2 documentCoord;
 layout(location=0) out vec4 fragColor;
-layout(std140,binding=0) uniform State {mat4 matrix;float opacity;float focus;float selected;vec4 identity;} ub;
+layout(std140,binding=0) uniform State {mat4 matrix;float opacity;float focus;float selected;float meshPreview;vec4 identity;} ub;
 layout(binding=1) uniform sampler2D sourceImage;
 layout(binding=2) uniform sampler2D belowImage;
 layout(binding=3) uniform sampler2D aboveImage;
@@ -18,6 +18,13 @@ vec4 texel(sampler2D image,ivec2 p,ivec2 size){
     return decode(texelFetch(image,p,0));
 }
 vec4 sampleLinear(sampler2D image,vec2 uv){
+    // Interactive transform: hardware filtering and cached mip levels operate
+    // at screen density. Other tools retain their linear-light texel path.
+    if(ub.meshPreview>0.5){
+        if(any(lessThan(uv,vec2(0))) || any(greaterThan(uv,vec2(1))))return vec4(0);
+        if(ub.meshPreview>1.5)return texel(image,ivec2(floor(uv*vec2(textureSize(image,0)))),textureSize(image,0));
+        return decode(texture(image,uv));
+    }
     ivec2 size=textureSize(image,0);
     vec2 p=uv*vec2(size)-0.5;
     ivec2 a=ivec2(floor(p));vec2 f=fract(p);

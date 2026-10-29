@@ -2,6 +2,99 @@ use paint_core::*;
 use paint_render::*;
 use paint_task::CancellationToken;
 
+#[test]
+fn native_preview_matches_reference_with_offsets_white_edges_and_alpha() {
+    for white in [false, true] {
+        for offset in [(-17, -9), (1, 1), (71, 35)] {
+            let mut doc = Document::new(139, 101).unwrap();
+            if white {
+                doc.initialize_white_background().unwrap();
+            }
+            doc.begin_stroke(
+                Brush {
+                    radius: 25.,
+                    color: Pixel::from_straight([0.18, 0.71, 0.37, 0.43]).unwrap(),
+                    ..Default::default()
+                },
+                InputPoint::new(60., 40., 1.),
+            )
+            .unwrap();
+            doc.end_stroke().unwrap();
+            let id = doc.active_layer();
+            let mut a = doc.layer(id).unwrap().appearance();
+            a.offset_x = offset.0;
+            a.offset_y = offset.1;
+            doc.set_layer_appearance(id, a).unwrap();
+            let snapshot = doc.snapshot();
+            for (x, y, w, h) in [(0., 0., 139, 101), (23., 7., 69, 73)] {
+                let cancel = CancellationToken::default();
+                let request = RenderRequest {
+                    region: Region {
+                        x,
+                        y,
+                        width: f64::from(w),
+                        height: f64::from(h),
+                    },
+                    width: w,
+                    height: h,
+                    format: PixelFormat::SrgbRgba8Premultiplied,
+                };
+                let native = render_native_preview(&snapshot, request, &cancel)
+                    .unwrap()
+                    .unwrap();
+                let FramePixels::Srgb(bytes) = native.pixels else {
+                    panic!()
+                };
+                // The independent core sampler covers holes, partially covered
+                // white tiles, and shifted pixels across chunk boundaries.
+                for dy in 0..h {
+                    for dx in 0..w {
+                        let expected = display_pixel(
+                            snapshot
+                                .try_pixel(x as u32 + dx, y as u32 + dy)
+                                .unwrap()
+                                .components(),
+                        );
+                        let at = ((dy * w + dx) * 4) as usize;
+                        for (actual, reference) in bytes[at..at + 4].iter().zip(expected) {
+                            assert!(actual.abs_diff(reference) <= 1);
+                        }
+                    }
+                }
+                let scaled = RenderRequest {
+                    width: w / 2,
+                    ..request
+                };
+                assert!(render_native_preview(&snapshot, scaled, &cancel)
+                    .unwrap()
+                    .is_none());
+                cancel.cancel();
+                assert_eq!(
+                    render_native_preview(&snapshot, request, &cancel).unwrap_err(),
+                    RenderError::Cancelled
+                );
+            }
+            doc.add_layer("complex fallback").unwrap();
+            let request = RenderRequest {
+                region: Region {
+                    x: 0.,
+                    y: 0.,
+                    width: 139.,
+                    height: 101.,
+                },
+                width: 139,
+                height: 101,
+                format: PixelFormat::SrgbRgba8Premultiplied,
+            };
+            assert!(
+                render_native_preview(&doc.snapshot(), request, &CancellationToken::default())
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+}
+
 fn seed(mode: BlendMode) -> Document {
     let mut d = Document::new(130, 90).unwrap();
     d.initialize_white_background().unwrap();

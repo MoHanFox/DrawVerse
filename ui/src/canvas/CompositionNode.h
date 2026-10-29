@@ -18,6 +18,7 @@ signals:
 class CompositionNode : public QSGSimpleTextureNode {
 public:
     static quint64 reservedPayloadBytes();
+    static int textureLimit(QQuickWindow *window);
     static quint64 releasedPayloadSerial();
     static bool supportsWindow(QQuickWindow *window);
     // GUI thread, app-owned; release notifications are coalesced from rendering.

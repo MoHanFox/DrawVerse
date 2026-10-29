@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 89
+#define PAINT_ABI_MINOR 90
 
 #define PAINT_ABI_PATCH 0
 
@@ -2969,6 +2969,21 @@ PaintStatus paint_session_read_resident_preview(struct PaintCore *core,
                                                 uint8_t *buffer,
                                                 uint64_t capacity,
                                                 uint64_t *out_required);
+
+/**
+ * ABI1.90: opt-in source texture limits; old resident packets remain unchanged.
+ * # Safety
+ * Caller-memory capacity/lifetime contract is identical to read_resident_preview.
+ */
+PaintStatus paint_session_read_transform_preview_assets(struct PaintCore *core,
+                                                        struct PaintSession *session,
+                                                        uint64_t generation,
+                                                        uint64_t source_id,
+                                                        uint32_t max_edge,
+                                                        uint64_t max_bytes,
+                                                        uint8_t *buffer,
+                                                        uint64_t capacity,
+                                                        uint64_t *out_required);
 
 /**
  * Cancel pending work or release a ready/failed lease. Nonblocking: a worker

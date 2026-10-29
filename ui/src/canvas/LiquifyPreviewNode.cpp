@@ -28,7 +28,7 @@ class Material final : public QSGMaterial {
 public:
     std::array<std::shared_ptr<ResidentPreviewTextures>,2> sources{};
     std::array<float,4> identity{};
-    bool selected=false;
+    bool selected=false,meshPreview=false,meshNearest=false;
     bool focus=false,forward=false;
     Material(){setFlag(Blending);}
     QSGMaterialType *type() const override {static QSGMaterialType t;return &t;}
@@ -50,6 +50,7 @@ bool Shader::updateUniformData(RenderState &state,QSGMaterial *material,QSGMater
     const auto *m=static_cast<Material*>(material);const float selected=m->selected?1.f:0.f;
     for(const auto &source:m->sources)if(source)source->commit(state);
     std::memcpy(bytes->data()+72,&selected,4);std::memcpy(bytes->data()+80,m->identity.data(),16);
+    const float meshPreview=m->meshPreview?(m->meshNearest?2.f:1.f):0.f;std::memcpy(bytes->data()+76,&meshPreview,4);
     return true;
 }
 void Shader::updateSampledImage(RenderState &state,int binding,QSGTexture **texture,QSGMaterial *material,QSGMaterial *) {
@@ -73,12 +74,13 @@ bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &fr
         auto prepared=frame.prepared?ResidentPreviewTextures::acquire(window,*frame.prepared):nullptr;
         if(frame.prepared && !prepared)return false;
         m->sources={std::move(current),std::move(prepared)};
-        m->selected=!frame.selection.isNull();m->identity=frame.identity;m_source=frame.sourceId;m_revision=0;markDirty(DirtyMaterial);
+        m->selected=!frame.selection.isNull();m->meshPreview=frame.meshPreview;m->identity=frame.identity;m_source=frame.sourceId;m_revision=0;markDirty(DirtyMaterial);
     }
     if(m->forward!=frame.forward){m->forward=frame.forward;markDirty(DirtyMaterial);}
+    if(m->meshNearest!=frame.meshNearest){m->meshNearest=frame.meshNearest;markDirty(DirtyMaterial);}
     const bool sourceOnly=frame.focus || frame.forward;
     if(m->focus!=sourceOnly){m->focus=sourceOnly;markDirty(DirtyMaterial);}
-    if(m_revision==frame.revision && m_rect==rect && m_presentationDelta==frame.presentationDelta)return true;
+    if(m_revision==frame.revision && m_geometrySequence==frame.geometrySequence && m_rect==rect && m_presentationDelta==frame.presentationDelta)return true;
     InteractionTrace::Scope trace("move.render.adoptGeometry");
     if(trace.active)trace.event.value=double(frame.revision);
     InteractionTrace::point("move.render.source",double(frame.sourceId));
@@ -98,6 +100,6 @@ bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &fr
         }
         g->markIndexDataDirty();
     }
-    g->markVertexDataDirty();markDirty(DirtyGeometry);m_revision=frame.revision;m_rect=rect;m_presentationDelta=frame.presentationDelta;
+    g->markVertexDataDirty();markDirty(DirtyGeometry);m_revision=frame.revision;m_geometrySequence=frame.geometrySequence;m_rect=rect;m_presentationDelta=frame.presentationDelta;
     return true;
 }

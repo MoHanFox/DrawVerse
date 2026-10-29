@@ -22,9 +22,12 @@ std::shared_ptr<ResidentPreviewTextures> ResidentPreviewTextures::acquire(QQuick
     QImage empty(1,1,QImage::Format_RGBA8888_Premultiplied);empty.fill(Qt::transparent);
     for(size_t i=0;i<4;++i){
         const auto &image=i==3?(assets.selection.isNull()?empty:assets.selection):assets.images[i];
-        next->images[i]=window->createTextureFromImage(image,QQuickWindow::TextureHasAlphaChannel);
+        auto options=QQuickWindow::CreateTextureOptions(QQuickWindow::TextureHasAlphaChannel);
+        if(assets.meshPreview && i<3)options|=QQuickWindow::TextureHasMipmaps;
+        next->images[i]=window->createTextureFromImage(image,options);
         if(!next->images[i])return {};
         next->images[i]->setFiltering(i==3?QSGTexture::Linear:QSGTexture::Nearest);
+        if(assets.meshPreview && i<3){next->images[i]->setFiltering(QSGTexture::Linear);next->images[i]->setMipmapFiltering(QSGTexture::Linear);}
         next->images[i]->setHorizontalWrapMode(QSGTexture::ClampToEdge);next->images[i]->setVerticalWrapMode(QSGTexture::ClampToEdge);
     }
     // A window's nodes are serialized on its own scene-graph thread. Different

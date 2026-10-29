@@ -1,4 +1,5 @@
 import QtQuick
+import DrawVerse 1.0
 import QtQuick.Window
 import QtQuick.Controls
 import "../controls"
@@ -57,7 +58,7 @@ Rectangle {
             id:lassoButton;objectName:"lassoTool";width:26;height:26
             glyph:PaintClient.lassoShape===4?"polygonSelection":"lassoSelection"
             checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && (PaintClient.selectionTool===3||PaintClient.selectionTool===4);hasVariants:true
-            onClicked:{PaintClient.activateLasso();root.focusCanvas()} tooltip:"套索工具 · 右键切换子类"
+            onClicked:{PaintClient.activateLasso();root.focusCanvas()} tooltip:"套索工具 " + ShortcutSettings.bindings.lasso + " · 切换子类 " + ShortcutSettings.bindings.cycleLasso + " / 右键"
             function openVariants() {
                 lassoVariants.toolTitle="套索工具"
                 lassoVariants.entries=[
@@ -80,8 +81,8 @@ Rectangle {
         IconButton {objectName:"smudgeTool";width:26;height:26;glyph:"smudge";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.smudgeTool;onClicked:{PaintClient.activateSmudge();root.focusCanvas()} tooltip:"涂抹 R"}
         IconButton {objectName:"eyedropperTool";width:26;height:26;glyph:"eyedropper";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.eyedropperTool;onClicked:{PaintClient.activateEyedropper();root.focusCanvas()} tooltip:"吸色 I · Alt 临时吸色"}
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
-        IconButton {width:26;height:26;glyph:"undo";enabled:!PaintClient.liquifyActive && PaintClient.undoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.undo();tooltip:"撤销 Ctrl+Z"}
-        IconButton {width:26;height:26;glyph:"redo";enabled:!PaintClient.liquifyActive && PaintClient.redoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.redo();tooltip:"重做 Ctrl+Shift+Z"}
+        IconButton {width:26;height:26;glyph:"undo";enabled:!PaintClient.liquifyActive && PaintClient.undoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.undo();tooltip:"撤销 " + ShortcutSettings.bindings.undo}
+        IconButton {width:26;height:26;glyph:"redo";enabled:!PaintClient.liquifyActive && PaintClient.redoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.redo();tooltip:"重做 " + ShortcutSettings.bindings.redo}
     }
     Rectangle {width:22;height:22;color:PaintClient.brushColor;border.color:Theme.line;anchors.bottom:parent.bottom;anchors.bottomMargin:12;anchors.horizontalCenter:parent.horizontalCenter}
 }

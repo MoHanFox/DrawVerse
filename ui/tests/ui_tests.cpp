@@ -5667,6 +5667,23 @@ ParameterSlider {width:360;x:20;y:20;sliderName:"deferredSpacing";from:1;to:100;
         seen.clear();QTRY_VERIFY(!client.layerEditBusy());QVERIFY(client.selectHistory(4));QTRY_COMPARE(client.undoDepth(),4);QCOMPARE(client.redoDepth(),0);QCOMPARE(client.revision(),revision+2);for(int depth:seen)QVERIFY(depth==0 || depth==4);
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void customShortcutsPersistAndRejectConflicts() {
+        QTemporaryDir temp;const auto file=temp.filePath("keys.ini");
+        ShortcutSettings keys(nullptr,file);
+        QCOMPARE(keys.binding("brush"),QString("B"));
+        QVERIFY(!keys.assign("brush","Ctrl+S").isEmpty());
+        QVERIFY(!keys.assign("brush","Escape").isEmpty());
+        QVERIFY(!keys.assign("brush","Ctrl++").isEmpty());
+        QVERIFY(keys.assign("brush","Ctrl+Alt+B").isEmpty());
+        QCOMPARE(keys.binding("brush"),QString("Ctrl+Alt+B"));
+        keys.setRecording(true);QVERIFY(keys.binding("brush").isEmpty());keys.setRecording(false);
+        ShortcutSettings loaded(nullptr,file);QCOMPARE(loaded.binding("brush"),QString("Ctrl+Alt+B"));
+        QVERIFY(loaded.assign("brush","").isEmpty());
+        ShortcutSettings cleared(nullptr,file);QVERIFY(cleared.binding("brush").isEmpty());
+        QVERIFY(cleared.reset().isEmpty());
+        ShortcutSettings defaults(nullptr,file);QCOMPARE(defaults.binding("brush"),QString("B"));
+        QCOMPARE(keys.fromKey(Qt::Key_F6,Qt::ControlModifier),QString("Ctrl+F6"));
+    }
     void editMenuOpensKeyboardShortcutList() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
         connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join("\n")));auto *main=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(main);QTRY_VERIFY(client.ready());
@@ -5676,14 +5693,16 @@ ParameterSlider {width:360;x:20;y:20;sliderName:"deferredSpacing";from:1;to:100;
         // The list is real: one row per bound shortcut. Assert on the rendered pixels so a dialog
         // that only reports a model without drawing rows would still fail.
         QObject *list=nullptr;QTRY_VERIFY((list=dialog->findChild<QObject*>("shortcutList")));
-        const auto rows=dialog->property("rows").value<QJSValue>().toVariant().toList();
+        const auto rows=dialog->property("rows").toList();
         QCOMPARE(rows.size(),36);QTRY_COMPARE(list->property("count").toInt(),rows.size());
-        QMap<QString,QString> shortcuts;
-        for(const auto &value:rows){const auto row=value.toList();QCOMPARE(row.size(),3);QVERIFY(!row[0].toString().isEmpty());QVERIFY(!row[1].toString().isEmpty());QVERIFY(!row[2].toString().isEmpty());QVERIFY(!shortcuts.contains(row[1].toString()));shortcuts.insert(row[1].toString(),row[2].toString());}
-        // These bindings were added after the original 26-row dialog test.
-        const QMap<QString,QString> added{{QStringLiteral("拷贝／粘贴图层与组"),"Ctrl+C / Ctrl+V"},{QStringLiteral("复制图层"),"Ctrl+J"},{QStringLiteral("向下合并／合并图层／合并组"),"Ctrl+E"},{QStringLiteral("从图层创建组"),"Ctrl+G"},{QStringLiteral("删除图层／当前蒙版"),"Delete"},{QStringLiteral("全选"),"Ctrl+A"},{QStringLiteral("取消选择"),"Ctrl+D"},{QStringLiteral("反向选择"),"Ctrl+Shift+I"},{QStringLiteral("移动工具"),"V"}};
-        for(auto it=added.cbegin();it!=added.cend();++it)QCOMPARE(shortcuts.value(it.key()),it.value());
-        QCOMPARE(shortcuts.value(QStringLiteral("剪切图层／选区内容")),QString("Ctrl+X"));
+        auto *settings=engine.singletonInstance<ShortcutSettings*>("DrawVerse","ShortcutSettings");QVERIFY(settings);
+        const auto originalNew=settings->binding("new");const auto restoreNew=qScopeGuard([&]{settings->assign("new",originalNew);});
+        QObject *capture=nullptr;QTRY_VERIFY((capture=findVisualItem(qobject_cast<QQuickItem*>(dialog->property("contentItem").value<QObject*>()),"shortcutKey:new")));
+        QVERIFY(QMetaObject::invokeMethod(capture,"clicked"));QVERIFY(settings->recording());
+        QTest::keyClick(main,Qt::Key_F8);QTRY_COMPARE(settings->binding("new"),QString("F8"));QVERIFY(!settings->recording());
+        QVERIFY(settings->assign("new",originalNew).isEmpty());
+
+        for(const auto &value:rows){const auto row=value.toMap();QVERIFY(!row["id"].toString().isEmpty());QVERIFY(!row["label"].toString().isEmpty());}
         auto *dialogContent=qobject_cast<QQuickItem*>(dialog->property("contentItem").value<QObject*>());QVERIFY(dialogContent);
         QQuickItem *listItem=qobject_cast<QQuickItem*>(list);QVERIFY(listItem);
         QImage shot;bool grabbed=false;
@@ -5695,6 +5714,15 @@ ParameterSlider {width:360;x:20;y:20;sliderName:"deferredSpacing";from:1;to:100;
             if(shot.pixelColor(int(origin.x())+x,int(origin.y())+y).value()>90)++painted;
         QVERIFY2(painted>40,qPrintable(QString("shortcut rows did not render: %1 lit pixels").arg(painted)));
         QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QTRY_VERIFY(!dialog->property("opened").toBool());
+        auto *keys=engine.singletonInstance<ShortcutSettings*>("DrawVerse","ShortcutSettings");QVERIFY(keys);
+        const auto original=keys->binding("brush");const auto restore=qScopeGuard([&]{keys->assign("brush",original);});
+        QVERIFY(keys->assign("brush","F6").isEmpty());
+        auto *canvas=findVisualItem(main->contentItem(),"mainCanvas");
+        if(!canvas)canvas=main->findChild<QQuickItem*>("mainCanvas");
+        QVERIFY(canvas);canvas->forceActiveFocus();QTRY_VERIFY(canvas->hasActiveFocus());
+        client.activateEraser();QVERIFY(client.eraser());
+        QTest::keyClick(main,Qt::Key_B);QVERIFY(client.eraser());
+        QTest::keyClick(main,Qt::Key_F6);QTRY_VERIFY(!client.eraser());
         QCOMPARE(warnings,QStringList());QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void selectionToolVariantsUseCornerMarkAndRightClickPanel() {        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("storage.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;

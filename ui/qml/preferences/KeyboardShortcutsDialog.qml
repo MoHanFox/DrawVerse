@@ -1,10 +1,9 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import DrawVerse 1.0
 import "../theme"
 
-// Read-only list of the shortcuts the application really binds today. Editing them is not
-// implemented, so the footer says so instead of offering controls that would do nothing.
 Dialog {
     id: root
     objectName: "keyboardShortcutsDialog"
@@ -12,83 +11,68 @@ Dialog {
     modal: true
     parent: Overlay.overlay
     anchors.centerIn: parent
-    width: 520
-    implicitHeight: 460
-    // Only the key column carries an objectName; the labels are plain text next to it.
-    readonly property var rows: [
-        ["文档", "新建画布", "Ctrl+N"],
-        ["文档", "打开…", "Ctrl+O"],
-        ["文档", "保存", "Ctrl+S"],
-        ["文档", "另存为 OpenRaster…", "Ctrl+Shift+S"],
-        ["编辑", "撤销", "Ctrl+Z"],
-        ["编辑", "重做", "Ctrl+Shift+Z"],
-        ["编辑", "自由变换", "Ctrl+T"],
-        ["调整", "曲线", "Ctrl+M"],
-        ["调整", "色阶", "Ctrl+L"],
-        ["调整", "色相／饱和度", "Ctrl+U"],
-        ["视图", "放大／缩小画布", "Ctrl++ / Ctrl+-"],
-        ["变换", "确认／取消变换", "Enter / Esc"],
-        ["变换", "微调／快速微调", "方向键 / Shift+方向键"],
-        ["编辑", "首选项…", "Ctrl+K"],
-        ["编辑", "创建／释放剪贴蒙版", "Ctrl+Alt+G"],
-        ["图层", "拷贝／粘贴图层与组", "Ctrl+C / Ctrl+V"],
-        ["图层", "剪切图层／选区内容", "Ctrl+X"],
-        ["图层", "复制图层", "Ctrl+J"],
-        ["图层", "向下合并／合并图层／合并组", "Ctrl+E"],
-        ["图层", "从图层创建组", "Ctrl+G"],
-        ["图层", "删除图层／当前蒙版", "Delete"],
-        ["选择", "矩形选框", "M"],
-        ["选择", "椭圆选框", "Shift+M"],
-        ["选择", "全选", "Ctrl+A"],
-        ["选择", "取消选择", "Ctrl+D"],
-        ["选择", "反向选择", "Ctrl+Shift+I"],
-        ["工具", "移动工具", "V"],
-        ["工具", "画笔", "B"],
-        ["工具", "油漆桶", "G"],
-        ["工具", "魔棒", "W"],
-        ["工具", "涂抹", "R"],
-        ["工具", "橡皮擦", "E"],
-        ["工具", "吸色", "I / Alt 临时吸色"],
-        ["视图", "适合窗口", "F"],
-        ["视图", "取消当前笔触", "Esc"],
-        ["画布", "平移视图", "按住空格拖动"],
-        ["画布", "临时切换缩小／放大", "Alt＋滚轮"],
-        ["画布", "调整笔刷大小", "Ctrl＋拖动"],
-        ["数位板", "画笔轮廓／精确十字", "CapsLock"]
-    ]
+    width: Math.min(640, parent.width - 24)
+    height: Math.min(520, parent.height - 24)
+    property string editingId: ""
+    property string message: ""
+    readonly property var rows: ShortcutSettings.commands
+    function stopRecording() { editingId = ""; ShortcutSettings.recording = false }
+    function assignKey(id, key) {
+        const error = ShortcutSettings.validate(id, key)
+        if (error) { message = error; return }
+        stopRecording()
+        message = ShortcutSettings.assign(id, key)
+    }
+    onClosed: stopRecording()
     contentItem: ColumnLayout {
-        spacing: 10
-        Label {
-            Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.muted; font.pixelSize: 9
-            text: "以下为当前实际生效的快捷键；与菜单里显示的快捷键一致。自定义快捷键尚未实现。"
+        spacing: 8
+        Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.muted; font.pixelSize: 11; text: "点击快捷键后按下新组合，即时保存；Esc 取消录入。空格平移、Alt 吸色、Ctrl 拖动、缩放、确认/取消及方向键保持固定。" }
+        RowLayout {
+            ComboBox { id: category; model: ["全部", "文档", "编辑", "调整", "图层", "选择", "工具", "视图", "画布"]; onActivated: root.stopRecording() }
+            TextField { id: search; Layout.fillWidth: true; placeholderText: "搜索命令"; onTextEdited: root.stopRecording() }
         }
-        ComboBox { id: category; Layout.fillWidth: true; model: ["全部", "文档", "编辑", "调整", "图层", "选择", "工具", "视图", "变换", "画布", "数位板"] }
         ListView {
             id: list
             objectName: "shortcutList"
-            Layout.fillWidth: true; Layout.fillHeight: true
-            clip: true; spacing: 5
-            model: root.rows.filter(row => category.currentIndex === 0 || row[0] === category.currentText)
-            ScrollBar.vertical: ScrollBar { width: 6 }
-            delegate: Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            spacing: 4
+            model: root.rows.filter(row => (category.currentIndex === 0 || row.category === category.currentText) && (row.label.indexOf(search.text) >= 0 || row.key.toLowerCase().indexOf(search.text.toLowerCase()) >= 0))
+            ScrollBar.vertical: ScrollBar {}
+            delegate: RowLayout {
                 id: entry
                 required property var modelData
-                width: list.width; height: 22
-                Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; width: 36; text: entry.modelData[0]; color: Theme.muted; font.pixelSize: 8; elide: Text.ElideRight }
-                Text { anchors.left: parent.left; anchors.leftMargin: 44; anchors.right: keyBox.left; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; text: entry.modelData[1]; color: Theme.text; font.pixelSize: 9; elide: Text.ElideRight }
-                Rectangle {
-                    id: keyBox
-                    anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                    width: Math.max(46, keyText.implicitWidth + 12); height: 18
-                    color: Theme.input; border.color: Theme.line; radius: 2
-                    Text { id: keyText; objectName: "shortcutKey"; anchors.centerIn: parent; text: entry.modelData[2]; color: Theme.accent; font.pixelSize: 9 }
+                width: list.width
+                height: 30
+                Label { text: entry.modelData.category; color: Theme.muted; font.pixelSize: 10; Layout.preferredWidth: 36 }
+                Label { text: entry.modelData.label; color: Theme.text; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
+                Button {
+                    id: capture
+                    objectName: "shortcutKey:" + entry.modelData.id
+                    Layout.preferredWidth: 160
+                    text: root.editingId === entry.modelData.id ? "请按下快捷键…" : (entry.modelData.key || "未设置")
+                    onClicked: { root.editingId = entry.modelData.id; root.message = ""; ShortcutSettings.recording = true; forceActiveFocus() }
+                    Keys.priority: Keys.BeforeItem
+                    Keys.onShortcutOverride: event => { if (root.editingId === entry.modelData.id) event.accepted = true }
+                    Keys.onPressed: event => {
+                        if (root.editingId !== entry.modelData.id) return
+                        event.accepted = true
+                        if (event.isAutoRepeat) return
+                        if (event.key === Qt.Key_Escape) { root.stopRecording(); return }
+                        const key = ShortcutSettings.fromKey(event.key, event.modifiers)
+                        if (!key) return
+                        root.assignKey(entry.modelData.id, key)
+                    }
                 }
+                Button { text: "清除"; onClicked: { root.assignKey(entry.modelData.id, "") } }
             }
         }
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+        Label { Layout.fillWidth: true; visible: text.length > 0; wrapMode: Text.WordWrap; color: "#ee9966"; text: root.message; font.pixelSize: 11 }
         RowLayout {
             Layout.fillWidth: true
-            Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; color: Theme.disabled; font.pixelSize: 8; text: "自定义快捷键（待支持）" }
+            Button { objectName: "resetKeyboardShortcuts"; text: "恢复全部默认"; onClicked: { root.stopRecording(); root.message = ShortcutSettings.reset() } }
+            Item { Layout.fillWidth: true }
             Button { objectName: "closeKeyboardShortcuts"; text: "关闭"; onClicked: root.close() }
         }
     }

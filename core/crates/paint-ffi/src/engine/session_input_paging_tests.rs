@@ -109,6 +109,7 @@ fn engine(tool: WetTool) -> Engine {
         composition: crate::engine::composition::Service::default(),
         task_progress: Mutex::new(None),
         preview_assets: Mutex::new(Vec::new()),
+        transform_preview_assets: Mutex::new(None),
         preview_selection: Mutex::new(None),
         move_preparation: Mutex::new(None),
         move_preparation_request: AtomicU64::new(0),

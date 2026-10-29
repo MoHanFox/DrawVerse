@@ -27,6 +27,7 @@
 #include <vector>
 #include <cmath>
 #include <utility>
+#include <limits>
 
 Q_DECLARE_METATYPE(PaintSessionInfo)
 Q_DECLARE_METATYPE(CompositionPacketPtr)
@@ -64,6 +65,9 @@ struct BackendConnection {
     std::atomic_bool compositionPending{false};
     CompositionViewRequest compositionView;
     std::atomic_bool residentPreviewPending{false};
+    std::atomic_bool transformMeshAssets{false};
+    std::atomic<quint32> transformMaxEdge{0};
+    std::atomic<quint64> transformMaxBytes{0};
     std::atomic<quint64> fileJob{0};
 };
 struct BrushCatalogConnection {
@@ -94,6 +98,7 @@ public:
         if (version.major != PAINT_ABI_MAJOR || version.minor < 79) {
             emit failure(QStringLiteral("当前功能需要核心 ABI 1.79 或兼容后续版本")); return;
         }
+        m_fullResolutionResidentSupported=version.minor>=90;
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
             if(!m_catalog->library){
@@ -698,24 +703,43 @@ public:
         auto next=std::make_shared<ResidentPreviewFrame>();
         next->generation=info.document_generation;next->revision=info.revision;next->sourceId=info.source_id;
         next->columns=info.columns;next->rows=info.rows;next->documentSize=QSize(int(info.document_width),int(info.document_height));next->focus=(info.focus&1)!=0;next->forward=(info.focus&2)!=0;
+        const bool fullResolution=m_fullResolutionResidentSupported && m_connection->transformMeshAssets.load()
+            && next->forward && !(info.focus&PAINT_RESIDENT_PREVIEW_SELECTED);
+        const auto edge=m_connection->transformMaxEdge.load();
+        const auto budget=m_connection->transformMaxBytes.load();
         const auto read=[&](quint32 kind,QByteArray &bytes,PaintStatus *result=nullptr) {
             uint64_t required=0;
-            auto s=paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,nullptr,0,&required);
+            auto s=kind==4?paint_session_read_transform_preview_assets(m_core,m_session,info.document_generation,info.source_id,edge,budget,nullptr,0,&required):
+                paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,nullptr,0,&required);
             if(result)*result=s;
             if(s==PAINT_BUSY || s==PAINT_NOT_FOUND)return false;
-            if(s!=PAINT_BUFFER_TOO_SMALL || required>64ull*1024*1024){check(s);return false;}
+            if(s!=PAINT_BUFFER_TOO_SMALL || (required>(kind==4?budget:64ull*1024*1024) || required>quint64(std::numeric_limits<qsizetype>::max()))){check(s);return false;}
             bytes.resize(qsizetype(required));
-            s=paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,reinterpret_cast<uint8_t*>(bytes.data()),required,&required);
+            s=kind==4?paint_session_read_transform_preview_assets(m_core,m_session,info.document_generation,info.source_id,edge,budget,reinterpret_cast<uint8_t*>(bytes.data()),required,&required):
+                paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,reinterpret_cast<uint8_t*>(bytes.data()),required,&required);
             if(result)*result=s;
             return s==PAINT_OK;
         };
-        const auto decodeAssets=[](const QByteArray &assets,ResidentPreviewAssets &output){
+        // Capture the small exact-revision mesh BEFORE encoding immutable source
+        // images. Pointer input can advance revision throughout that expensive
+        // read; reading the mesh afterwards repeatedly discarded valid images
+        // until the pointer happened to pause. The GUI mesh path reprojects this
+        // captured UV range using its latest authoritative absolute geometry.
+        QByteArray mesh;
+        const auto count=quint64(next->columns)*next->rows;
+        if(next->columns<2 || next->rows<2 || count>257*257)return;
+        if(fullResolution){
+            mesh.resize(qsizetype(count*16));uint64_t required=0;
+            if(paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,0,
+                reinterpret_cast<uint8_t*>(mesh.data()),uint64_t(mesh.size()),&required)!=PAINT_OK || required!=uint64_t(mesh.size()))return;
+        }
+        const auto decodeAssets=[](const QByteArray &assets,ResidentPreviewAssets &output,int edge=2048){
             if(assets.size()<24)return false;
             qsizetype offset=24;
             for(int i=0;i<3;++i){
                 const auto w=qFromLittleEndian<quint32>(assets.constData()+i*8),h=qFromLittleEndian<quint32>(assets.constData()+i*8+4);
                 const quint64 size=quint64(w)*h*4;
-                if(!w || !h || w>2048 || h>2048 || size>quint64(assets.size()-offset))return false;
+                if(!w || !h || w>quint32(edge) || h>quint32(edge) || size>quint64(assets.size()-offset))return false;
                 output.images[size_t(i)]=QImage(reinterpret_cast<const uchar*>(assets.constData()+offset),int(w),int(h),int(w*4),QImage::Format_RGBA8888_Premultiplied).copy();
                 if(output.images[size_t(i)].isNull())return false;
                 offset+=qsizetype(size);
@@ -731,7 +755,9 @@ public:
             if(m_movePreparation && m_movePreparation->sourceId==next->sourceId) {
                 static_cast<ResidentPreviewAssets&>(*next)=*m_movePreparation;
             }else{
-                QByteArray assets;if(!read(1,assets) || !decodeAssets(assets,*next))return;
+                InteractionTrace::Scope assetsTrace("transform.worker.sourceAssets");
+                QByteArray assets;if(!read(fullResolution?4:1,assets) || !decodeAssets(assets,*next,fullResolution?int(edge):2048))return;
+                next->fullResolution=fullResolution;
             }
             if(info.focus&PAINT_RESIDENT_PREVIEW_SELECTED){
                 QByteArray mask;if(!read(2,mask) || mask.size()<24)return;
@@ -742,7 +768,7 @@ public:
                 next->selection=QImage(int(w),int(h),QImage::Format_RGBA8888);if(next->selection.isNull())return;
                 for(quint32 y=0;y<h;++y){auto *row=next->selection.scanLine(int(y));for(quint32 x=0;x<w;++x){const auto value=quint8(mask[qsizetype(24+quint64(y)*w+x)]);row[x*4]=value;row[x*4+1]=value;row[x*4+2]=value;row[x*4+3]=255;}}
             }
-            if(next->forward){
+            if(next->forward && !fullResolution){
                 QByteArray packet;PaintStatus result=PAINT_OK;
                 if(read(3,packet,&result)){
                     if(packet.size()<32)return;
@@ -752,9 +778,8 @@ public:
                 }else if(result!=PAINT_NOT_FOUND)return;
             }
         }
-        QByteArray mesh;if(!read(0,mesh))return;
-        const auto count=quint64(next->columns)*next->rows;
-        if(next->columns<2 || next->rows<2 || count>257*257 || quint64(mesh.size())!=count*16)return;
+        if(!fullResolution && !read(0,mesh))return;
+        if(quint64(mesh.size())!=count*16)return;
         next->vertices.resize(qsizetype(count));
         for(qsizetype i=0;i<qsizetype(count);++i)for(int k=0;k<4;++k){
             const auto bits=qFromLittleEndian<quint32>(mesh.constData()+i*16+k*4);
@@ -1004,6 +1029,7 @@ public:
     quint64 m_deliveredFile = 0;
     uint32_t m_flags = 0;
     PaintStatus m_errorStatus = PAINT_OK;
+    bool m_fullResolutionResidentSupported=false;
     bool m_stopped = false;
 };
 
@@ -1179,11 +1205,12 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             || info.active_layer_id != m_active;
         const bool wasLiquify=m_liquifyActive,wasLiquifyBusy=liquifyBusy();
         const bool wasTransform=m_transformActive,wasTransformBusy=transformBusy();
+        const bool controlsWereVisible=transformControlsVisible();
         const bool wasReady = m_ready, wasModified = modified(), wasLayerBusy=layerEditBusy();
         const bool changedLayers = m_layers != layers;
         const bool activeChanged = info.active_layer_id != m_active;
         const bool changedGeneration = info.document_generation != m_generation;
-        if(changedGeneration){m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;clearCompositionEdit();m_residentPreview.reset();m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
+        if(changedGeneration){m_transformClosing=false;m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;clearCompositionEdit();m_residentPreview.reset();m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
         else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
         if(changedGeneration) m_nextDefaultLayer=1;
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
@@ -1196,9 +1223,12 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             emit transformChanged();
         }
         m_transformPublished=publishedTransform;
+        if(m_transformClosing && info.completed_sequence>=m_pendingTransform){m_transformClosing=false;}
         if(!publishedTransform && info.completed_sequence>=m_pendingTransform)m_compositionTransformCpu=false;
         if(!publishedTransform && m_transformActive && info.completed_sequence>=m_pendingTransform && m_afterTransform){auto action=std::move(m_afterTransform);QTimer::singleShot(0,this,std::move(action));}
         if(info.completed_sequence>=m_pendingTransform)m_transformActive=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
+        if(!m_transformActive && !m_residentPreview){m_transformMeshPreview=false;m_connection->transformMeshAssets.store(false);}
+        if(controlsWereVisible!=transformControlsVisible())emit transformChanged();
         if(info.completed_sequence>=m_lastTransform){const auto points=transform.value("points").toList();const bool warp=transform.value("warp").toBool();const int interpolation=transform.value("interpolation").toInt();const auto skewH=transform.value("skewH").toDouble(),skewV=transform.value("skewV").toDouble();if(points!=m_transformPoints || warp!=m_transformWarp || interpolation!=m_transformInterpolation || skewH!=m_transformSkewH || skewV!=m_transformSkewV){m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=skewH;m_transformSkewV=skewV;emit transformChanged();}}
         if(m_compositionTransform && info.completed_sequence>=m_pendingTransform){
             if(publishedTransform){if(!m_compositionMoveConfirmed)m_compositionTargetNs=InteractionTrace::now();m_compositionMoveConfirmed=true;refreshCompositionTransform();}
@@ -1255,7 +1285,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         // Closing metadata can precede the final pixels. Keep the resident
         // image until the primary frame can replace it without exposing the old frame.
         if(m_residentPreview && !m_liquifyActive && !m_layerMoveActive && !m_transformActive && m_frameRevisions[0]>=m_revision) {
-            m_residentPreview.reset();emit frameChanged();
+            m_residentPreview.reset();m_transformMeshPreview=false;m_connection->transformMeshAssets.store(false);emit frameChanged();
         }
         m_undo = static_cast<int>(info.undo_depth); m_redo = static_cast<int>(info.redo_depth);
         if (info.completed_sequence >= m_pendingMutation) m_pendingMutation = 0;
@@ -1336,7 +1366,9 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
            preview->columns==2 && preview->rows==2 && preview->vertices.size()==4 &&
            preview->sourceId==m_layerMoveSource)
             m_layerMoveAnchor=preview;
+        if(m_transformMeshPreview && m_transformActive){auto next=std::make_shared<ResidentPreviewFrame>(*preview);next->meshPreview=true;preview=std::move(next);}
         m_residentPreview=std::move(preview);
+        if(m_transformMeshPreview && m_transformActive && !m_transformClosing)refreshTransformMeshPreview();
         if(m_layerMoveAnchor)refreshLayerMovePresentation();else emit frameChanged();
     });
     connect(m_worker,&BackendWorker::movePreparationReady,this,[this](quint64 generation,quint64 revision,quint64 layer,quint64 request,ResidentPreviewAssetsPtr assets){
@@ -1369,7 +1401,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         m_connection->framePending[view].store(false);
         if (m_closing || m_pendingNew || generation != m_generation ||
             (m_requests[view] && request != m_requests[view]) || revision < m_frameRevisions[view]) return;
-        if(view==0 && m_residentPreview && (generation!=m_residentPreview->generation || (!m_liquifyActive && !m_layerMoveActive && !m_transformActive && revision>=m_revision)))m_residentPreview.reset();
+        if(view==0 && m_residentPreview && (generation!=m_residentPreview->generation || (!m_liquifyActive && !m_layerMoveActive && !m_transformActive && revision>=m_revision))){m_residentPreview.reset();m_transformMeshPreview=false;m_connection->transformMeshAssets.store(false);}
         // Selection-only publications advance the revision while keeping the same pixels.
         // Preserve QImage identity so CanvasItem also retains its scene graph texture.
         InteractionTrace::Scope trace("move.gui.acceptFrame");
@@ -1624,6 +1656,7 @@ void PaintCoreClient::requestLayerMovePreparation() {
     if(status!=PAINT_OK)m_movePreparationPendingRequest=0;
 }
 CompositionPacketPtr PaintCoreClient::compositionPacket()const{
+    if(m_transformMeshPreview && (m_transformActive || m_residentPreview))return {};
     if(!gpuCompositionEnabled() || m_blendPreviewLayer || m_compositionFinalFallback || m_compositionTransformCpu)return {};
     if(m_adjustmentBase){
         if(m_adjustmentFinalRevision && m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation && m_compositionPacket->info.key.revision>=m_adjustmentFinalRevision)return m_compositionPacket;
@@ -1662,6 +1695,71 @@ bool PaintCoreClient::prepareCompositionTransform(){
         m_compositionTransform=true;return true;
     }
     clearCompositionEdit();return false;
+}
+void PaintCoreClient::setTransformPreviewLimits(int edge,quint64 availableGpuBytes){
+    if(m_transformActive || m_transformMeshPreview)return;
+    // Keep space for mip levels and concurrent display resources, and for the
+    // Rust packet, worker transfer, Qt host copy and bounded renderer scratch.
+    m_connection->transformMaxEdge.store(quint32(std::max(0,edge)));
+    m_connection->transformMaxBytes.store(std::min(CompositionBudget::memoryBytes.load()/4,availableGpuBytes/2*3/4));
+}
+bool PaintCoreClient::preferTransformMeshPreview() const {
+    // The three-image split is valid only for a single Normal root and a
+    // Normal foreground. Keep the exact compositor for every other stack.
+    if(!residentGpuPreviewEnabled() || !gpuCompositionEnabled() || highestCanvasQuality() || selectionEnabled() ||
+       !m_connection->transformMaxEdge.load() || m_connection->transformMaxBytes.load()<36)return false;
+    const auto targets=currentMoveTargets();if(targets.size()!=1)return false;
+    // The general compositor can decline a large viewport while the cached
+    // source texture still fits the device. Core resident splitting remains
+    // authoritative; metadata permits only the conservative simple-root case.
+    if(!m_compositionPacket || m_compositionPacket->info.key.document_generation!=m_generation ||
+       m_compositionPacket->info.key.revision!=m_revision){
+        if(quint64(m_width)*m_height<=1024ull*1024)return false;
+        bool found=false;
+        for(const auto &entry:m_layers){const auto layer=entry.toMap();
+            if(layer.value("mask").toBool() && layer.value("parent").toULongLong()==targets.front())return false;
+            if(layer.value("id").toULongLong()==targets.front()){
+                if(layer.value("parent").toULongLong() || layer.value("blendMode").toUInt()!=0 ||
+                   layer.value("group").toBool() || layer.value("mask").toBool() || layer.value("image").toBool() || layer.value("clipped").toBool())return false;
+                found=true;
+            }else if(!found && layer.value("visible").toBool() &&
+                (layer.value("blendMode").toUInt()!=0 || layer.value("group").toBool() || layer.value("mask").toBool() || layer.value("clipped").toBool()))return false;
+        }
+        return found;
+    }
+    if(!m_compositionPacket->operations.isEmpty())return false;
+    bool found=false;
+    for(const auto &node:m_compositionPacket->nodes){
+        if(node.kind==PAINT_COMPOSITION_MASK)continue;
+        if(node.layer_id==targets.front()){
+            if(node.mask_index<quint32(m_compositionPacket->nodes.size()) || quint32(node.reserved)!=0)return false;
+            // Small edits retain the exact path. Large edits use the same
+            // bounded immutable assets as the established resident protocol.
+            const quint64 area=std::max<quint64>(quint64(node.white_width)*node.white_height,quint64(node.tile_count)*4096);
+            if(area<=1024ull*1024)return false;
+            found=true;
+        }else if(found && quint32(node.reserved)!=0)return false;
+    }
+    return found;
+}
+void PaintCoreClient::refreshTransformMeshPreview(){
+    if(!m_transformMeshPreview || !m_transformActive || m_transformClosing || !m_transformPublished ||
+       !m_residentPreview || !m_residentPreview->forward || m_residentPreview->vertices.isEmpty() ||
+       m_transformPoints.size()!=16)return;
+    auto geometry=dto<PaintTransform>();geometry.warp=m_transformWarp;geometry.interpolation=m_transformInterpolation;
+    geometry.skew_h=m_transformSkewH;geometry.skew_v=m_transformSkewV;
+    for(int i=0;i<16;++i){const auto p=m_transformPoints[i].toPointF();geometry.points[i*2]=p.x();geometry.points[i*2+1]=p.y();}
+    auto display=dto<PaintTransformDisplayGeometry>();QVector<std::array<float,4>> vertices(145*145);
+    if(paint_transform_display_geometry(&geometry,&display,reinterpret_cast<float*>(vertices.data()),84100)!=PAINT_OK)return;
+    vertices.resize(qsizetype(display.vertex_bytes/16));
+    // Source UV endpoints include the transparent guard and any original
+    // placement bounds. Reproject current input, never a delayed callback's xy.
+    const auto first=m_residentPreview->vertices.front(),last=m_residentPreview->vertices.back();
+    for(auto &v:vertices){v[2]=first[2]+v[2]*(last[2]-first[2]);v[3]=first[3]+v[3]*(last[3]-first[3]);}
+    auto next=std::make_shared<ResidentPreviewFrame>(*m_residentPreview);
+    next->meshPreview=true;next->meshNearest=m_transformInterpolation==0;next->geometrySequence=++m_transformMeshGeometry;
+    next->columns=display.columns;next->rows=display.rows;next->vertices=std::move(vertices);
+    m_residentPreview=std::move(next);
 }
 void PaintCoreClient::refreshCompositionTransform(const PaintTransform *geometry){
     if(!m_compositionTransform || !m_compositionMoveConfirmed || m_transformInitialPoints.size()!=16 || m_transformPoints.size()!=16)return;
@@ -2848,7 +2946,7 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
     }m_lastTransform=sequence;
     if(trace.active)trace.event.value=double(sequence);
     if(kind!=PAINT_TRANSFORM_UPDATE)m_pendingTransform=sequence;
-    if(kind==PAINT_TRANSFORM_BEGIN){m_transformPoints.clear();m_transformInitialPoints.clear();m_transformPublished=false;m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();emit transformChanged();}
+    if(kind==PAINT_TRANSFORM_BEGIN){m_transformClosing=false;m_transformPoints.clear();m_transformInitialPoints.clear();m_transformPublished=false;m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();emit transformChanged();}
     if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE || kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL)m_pendingMutation=sequence;
     if(kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL)m_pendingLayer=sequence;
     if(kind==PAINT_TRANSFORM_UPDATE && !m_compositionTransform)
@@ -2864,14 +2962,22 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
 bool PaintCoreClient::beginTransform(){
     if(!selectedContentVisible())return false;
     clearLayerBlendPreview();const bool planned=m_compositionPacket && gpuCompositionEnabled();
-    prepareCompositionTransform();m_compositionTransformCpu=planned && !m_compositionTransform;
+    if(const auto device=m_transformPreviewDevice.lock()){
+        const auto budget=CompositionBudget::gpuBytes.load(),reserved=CompositionBudget::gpuReservedBytes.load();
+        setTransformPreviewLimits(device->maxTextureEdge.load(),budget-std::min(budget,reserved));
+    }
+    m_transformMeshPreview=preferTransformMeshPreview();
+    m_connection->transformMeshAssets.store(m_transformMeshPreview);
+    if(!m_transformMeshPreview)prepareCompositionTransform();
+    m_compositionTransformCpu=planned && !m_compositionTransform && !m_transformMeshPreview;
     if(submitTransform(PAINT_TRANSFORM_BEGIN))return true;
-    if(m_compositionTransform)clearCompositionEdit();m_compositionTransformCpu=false;return false;
+    if(m_compositionTransform)clearCompositionEdit();m_compositionTransformCpu=false;m_transformMeshPreview=false;m_connection->transformMeshAssets.store(false);return false;
 }
-bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int interpolation,qreal skewH,qreal skewV){if(!m_transformActive || !m_transformPublished || points.size()!=16)return false;auto g=dto<PaintTransform>();g.warp=warp;g.interpolation=interpolation;g.skew_h=qIsFinite(skewH)?skewH:m_transformSkewH;g.skew_v=qIsFinite(skewV)?skewV:m_transformSkewV;for(int i=0;i<16;++i){const auto p=points[i].toPointF();g.points[i*2]=p.x();g.points[i*2+1]=p.y();}if(!submitTransform(PAINT_TRANSFORM_UPDATE,&g))return false;m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=g.skew_h;m_transformSkewV=g.skew_v;refreshCompositionTransform(&g);emit transformChanged();return true;}
-bool PaintCoreClient::checkpointTransform(){return m_transformActive && submitTransform(PAINT_TRANSFORM_CHECKPOINT);}
+bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int interpolation,qreal skewH,qreal skewV){if(!m_transformActive || m_transformClosing || !m_transformPublished || points.size()!=16)return false;auto g=dto<PaintTransform>();g.warp=warp;g.interpolation=interpolation;g.skew_h=qIsFinite(skewH)?skewH:m_transformSkewH;g.skew_v=qIsFinite(skewV)?skewV:m_transformSkewV;for(int i=0;i<16;++i){const auto p=points[i].toPointF();g.points[i*2]=p.x();g.points[i*2+1]=p.y();}if(!submitTransform(PAINT_TRANSFORM_UPDATE,&g))return false;m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=g.skew_h;m_transformSkewV=g.skew_v;refreshCompositionTransform(&g);refreshTransformMeshPreview();if(m_transformMeshPreview)emit frameChanged();emit transformChanged();return true;}
+bool PaintCoreClient::checkpointTransform(){return m_transformActive && !m_transformClosing && submitTransform(PAINT_TRANSFORM_CHECKPOINT);}
 bool PaintCoreClient::finishTransform(bool commit){
-    if(!m_transformActive || !submitTransform(commit?PAINT_TRANSFORM_COMMIT:PAINT_TRANSFORM_CANCEL))return false;
+    if(!m_transformActive || m_transformClosing || !submitTransform(commit?PAINT_TRANSFORM_COMMIT:PAINT_TRANSFORM_CANCEL))return false;
+    m_transformClosing=true;emit transformChanged();
     if(!commit && m_compositionTransform){auto frame=std::make_shared<CompositionPacket>(*m_compositionEditBase);frame->preview=true;frame->geometrySequence=++m_compositionGeometry;frame->editSequence=m_compositionBeginSequence;m_compositionEditFrame=std::move(frame);emit frameChanged();}
     return true;
 }

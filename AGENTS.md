@@ -1,5 +1,15 @@
 # DrawVerse
 
+- 原尺寸变换缓存2026-10-29：ABI1.90按所属窗口QRhi/DXGI与内存预算协商完整源，分块准备不以4096/8192或16M限制整张纹理，通用合成未就绪时保守根栅格可尝试、核心权威分割。用户4096×1782 PNG缓存原图范围RGBA8误差0，9000宽实际D3D11完整上传复用通过；普通/Warp持续P95两进程12.14–12.30/9.31–9.94ms（非实体/屏幕/PhotoCraft配对），交接仍1.33–1.62秒。核心4/公开3/四ABI/Clippy/软件35/原常驻两后端各15及大图五行通过；旧批量拓扑超时与调查失败保留，拓扑独立通过，无总check。独立build/bin/FullResolutionTransformReview静态链接新核心及D3D11冒烟通过，标准EXE未替换；首次重复准备/统一跨resident在途预算仍待，详见general-gpu-composition末节。
+
+- PhotoCraft路线大图变换2026-10-29：普通画质可安全分离的大单根Normal层优先静态三图/mip/本地几何网格预览，最高画质保留原尺寸精确路径，最终原图六插值/历史不变。交互代理仍最长2048，非自适应细分/原图全尺寸mip。实际4096×2160四进程普通持续P95 6.37–10.88ms、Warp10.67–13.24ms；历史float版12.15/30–31ms非同期重建配对，Warp确认仍约2秒，无实体/屏幕结论。新大图四行、软件35/常驻两后端各15/四ABI通过；D3D扩展35通过1旧readback超时保留，原精确组独立27通过。标准EXE锁定，独立build/bin/MeshTransformReview已链接及D3D11冒烟通过；详见general-gpu-composition设计/验收末节，无全量。
+
+- 自定义快捷键：`docs/interface/custom-shortcuts-design.md` / `docs/validations/interface/custom-shortcuts-validation.md`；命令真值在 `ui/src/platform/ShortcutSettings.h`，菜单和各画布读取 bindings，录入/冲突/持久化定向验证见验收。
+
+- 大图取消边框/方向角稳定2026-10-29：关闭请求入队即隐藏独立控制层，拒绝尾随UPDATE/CHECKPOINT，像素revision交接保留；4096×2160 QML及原相关软件/D3D11各8、GPU关闭6行通过。初移0.75px抗抖锁向，绘制方向最短角差按距离平滑，原落点/其他方向动态保持；核心新2/device11/direction3/相关39、Clippy/fmt/头/Release/标准D3D11冒烟通过。标准build/bin/Release已更新，运行中TransformReview保留；无实体或总check。见transform-resident-preview与direction-angle-smoothing设计/验收。
+
+- 实际4K变换颜色核优化2026-10-29：GPU颜色权重改float，几何/覆盖仍double、原图物化不变。原图GUI API普通持续P95 30.43→12.15ms，Warp60.57→三进程30.22–31.07ms；非实体/PhotoCraft配对，首帧/秒级收尾仍待。D3D11原27项两次、新1024²三核5项通过，线性最大4.232e-6。标准EXE被运行进程锁定未更新，独立build/bin/TransformReview/drawverse.exe链接及实际D3D11冒烟通过；原LNK1104保留，无全量。详见general-gpu-composition验收末节。
+
 - 密集绘画预算修订2026-10-29：GPU源传输与CPU瓦片缓存解耦，按内存/GPU能力取预算；计划65536引用/128MiB元数据、唯一源atlas按硬件扩列小步增长，上传8MiB分批，导航保留同文档/设备Weak身份。用户4096×1782原图64MiB缓存下原提前回退复现；最终普通3层5376/最高5层8960瓦片绘画/导航/曲线均GPU，六笔各读1瓦片。核心11/公开11、四ABI/Clippy/fmt/头/shader/Release/D3D11冒烟及原25笔两后端通过；两项旧LOD断言及初次导航增量/构建失败保留。标准Release更新；非超显存分块合成/任意文档永不CPU/全量/实体性能结论，详见general-gpu-composition末节。
 
 - 实际原图变换诊断2026-10-29：用户4096×2160 PNG打开后走D3D11精确GPU；独立GUI几何API普通/Warp持续节点采用P95 30.433/60.567ms，Warp最终交接约3秒。trace窗口GPU帧P95 63.973ms、CPU记录2.575ms，指向GPU工作量；非单shader/实体/PhotoCraft配对结论。新增实际图/真实控制点诊断，无新生产修复，原生鼠标干扰失败保留；置入/显隐本轮未测。见general-gpu-composition验收末节。

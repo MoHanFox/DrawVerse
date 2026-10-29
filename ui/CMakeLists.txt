@@ -10,7 +10,7 @@ add_library(drawverse_ui STATIC
     src/documents/DocumentManager.h src/documents/DocumentManager.cpp
     src/workspace/DockTree.h src/workspace/DockTree.cpp
     src/platform/TabletInput.h src/platform/TabletInput.cpp
-    src/platform/UiResources.h src/platform/UiScale.h
+    src/platform/ShortcutSettings.h src/platform/ShortcutSettings.h src/platform/UiResources.h src/platform/UiScale.h
     src/platform/MenuSurface.h src/platform/MenuSurface.cpp
     src/platform/MenuBlurLayer.h src/platform/MenuBlurLayer.cpp
     src/engine/PaintCoreClient.h src/engine/PaintCoreClient.cpp

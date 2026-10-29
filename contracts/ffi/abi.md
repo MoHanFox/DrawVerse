@@ -1,4 +1,10 @@
-# C ABI 1.89.0 契约
+# C ABI 1.90.0 契约
+
+## ABI 1.90 — 按设备与预算缓存变换显示源
+
+新增可选 `paint_session_read_transform_preview_assets(core, session, generation, source_id, max_edge, max_bytes, buffer, capacity, out_required)`。仅支持无选区活动自由变换；generation/source 校验、容量查询/复制协议与旧resident读取一致。`max_edge` 必须大于0且不超过有符号32位图像边界，`max_bytes` 至少36；不受旧2048包或CPU renderer单次8192边/16M输出限制。返回与kind1相同的24字节三图尺寸头和连续sRGB RGBA8预乘数据。以原尺寸优先，只有超过调用者设备边界/总字节预算时才同比缩小；空分区1×1透明。内部按renderer既有有界块渲染至完整包，块大小不决定纹理尺寸。地址空间/分配失败返回明确limit错误。
+
+单会话独立缓存一个 `(source_id,max_edge,max_bytes)` 不可变包，容量查询和复制必须使用同组参数；更换参数或源替换缓存，退出释放。旧resident kind1/3及其2048上限保持。Qt仅在minor≥90且选择大图网格路线时调用新入口，尺寸取所属窗口QRhi上限，字节预算取剩余GPU payload与进程内存预算的保守份额，并为mip/并行显示/多份主机数据留空间。旧核心继续旧包。后台准备，提交仍在核心按原图和用户插值物化；不代表任意设备或任意图片都能原尺寸缓存。
 
 ## ABI 1.89 — 有界最新显示快照
 

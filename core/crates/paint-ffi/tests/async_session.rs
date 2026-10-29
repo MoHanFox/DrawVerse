@@ -1200,6 +1200,69 @@ fn run_deferred_transform_packets(selected: bool, nested: bool) {
         );
         assert_eq!(packet.focus, 2);
         assert!(packet.columns <= 145 && packet.rows <= 145);
+        // New packet is opt-in, rejects selections and stale generations, and
+        // the query/copy pair returns an immutable bounded source.
+        let read_full = |generation, buffer, capacity, required| {
+            paint_session_read_transform_preview_assets(
+                h.core,
+                h.session,
+                generation,
+                packet.source_id,
+                16384,
+                128 * 1024 * 1024,
+                buffer,
+                capacity,
+                required,
+            )
+        };
+        let mut full_required = 0;
+        assert_eq!(
+            read_full(
+                packet.document_generation + 1,
+                ptr::null_mut(),
+                0,
+                &mut full_required
+            ),
+            PAINT_BUSY
+        );
+        assert_eq!(
+            read_full(
+                packet.document_generation,
+                ptr::null_mut(),
+                0,
+                &mut full_required
+            ),
+            if selected {
+                PAINT_UNSUPPORTED
+            } else {
+                PAINT_BUFFER_TOO_SMALL
+            }
+        );
+        if !selected {
+            assert!(full_required <= 128 * 1024 * 1024);
+            let mut full = vec![0; full_required as usize];
+            assert_eq!(
+                read_full(
+                    packet.document_generation,
+                    full.as_mut_ptr(),
+                    full.len() as u64,
+                    &mut full_required
+                ),
+                PAINT_OK
+            );
+            let mut again = vec![0; full_required as usize];
+            assert_eq!(
+                read_full(
+                    packet.document_generation,
+                    again.as_mut_ptr(),
+                    again.len() as u64,
+                    &mut full_required
+                ),
+                PAINT_OK
+            );
+            assert_eq!(full, again);
+        }
+
         let alternate = if selected {
             let mut required = 0;
             let read = |generation, buffer, capacity, required| {

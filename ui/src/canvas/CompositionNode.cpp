@@ -51,7 +51,7 @@ bool CompositionNode::supportsWindow(QQuickWindow *window){
 static void initializeCompositionResources(){Q_INIT_RESOURCE(composition_shaders);Q_INIT_RESOURCE(composition_precise_shaders);}
 
 namespace {
-std::atomic<quint64> reservedTextureBytes{0};
+auto &reservedTextureBytes=CompositionBudget::gpuReservedBytes;
 // Reserve payload for the current allocation plus every possible deferred frame.
 // This is deliberately conservative; driver overhead is not a payload byte count.
 class TextureReservation final {
@@ -128,6 +128,7 @@ public:
         rhi=static_cast<QRhi*>(ri->getResource(window,QSGRendererInterface::RhiResource));
         if(!rhi || !rhi->isTextureFormatSupported(QRhiTexture::RGBA32F,QRhiTexture::RenderTarget) ||
            rhi->resourceLimit(QRhi::TextureSizeMax)<4096)return fail("CPU: composition format/extent capability");
+        counters->maxTextureEdge=CompositionNode::textureLimit(window);
         const auto source=[](const char *name){QFile file(name);if(!file.open(QIODevice::ReadOnly))return QShader{};return QShader::fromSerialized(file.readAll());};
         vertex=source(":/composition/composition.vert.qsb");fragment=source(":/composition/composition.frag.qsb");meshVertex=source(":/composition/composition_transform.vert.qsb");
         if(!vertex.isValid() || !fragment.isValid() || !meshVertex.isValid())return fail("CPU: composition shaders unavailable");
@@ -136,23 +137,6 @@ public:
         bool doubles=false;
 #ifdef Q_OS_WIN
         auto *device=static_cast<ID3D11Device*>(ri->getResource(window,QSGRendererInterface::DeviceResource));
-        if(device && CompositionBudget::automaticGpu.load()){
-            IDXGIDevice *dxgi=nullptr;IDXGIAdapter *adapter=nullptr;IDXGIAdapter3 *budgetAdapter=nullptr;
-            if(SUCCEEDED(device->QueryInterface(__uuidof(IDXGIDevice),reinterpret_cast<void**>(&dxgi)))){
-                if(SUCCEEDED(dxgi->GetAdapter(&adapter))){
-                    DXGI_ADAPTER_DESC desc{};adapter->GetDesc(&desc);
-                    quint64 limit=desc.DedicatedVideoMemory?desc.DedicatedVideoMemory:desc.SharedSystemMemory;
-                    if(SUCCEEDED(adapter->QueryInterface(__uuidof(IDXGIAdapter3),reinterpret_cast<void**>(&budgetAdapter)))){
-                        DXGI_QUERY_VIDEO_MEMORY_INFO info{};
-                        if(SUCCEEDED(budgetAdapter->QueryVideoMemoryInfo(0,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&info)) && info.Budget)limit=info.Budget;
-                        budgetAdapter->Release();
-                    }
-                    if(limit)CompositionBudget::gpuBytes=limit-limit/10;
-                    adapter->Release();
-                }
-                dxgi->Release();
-            }
-        }
         D3D11_FEATURE_DATA_DOUBLES basic{};D3D11_FEATURE_DATA_D3D11_OPTIONS options{};
         doubles=device && SUCCEEDED(device->CheckFeatureSupport(D3D11_FEATURE_DOUBLES,&basic,sizeof(basic))) && basic.DoublePrecisionFloatShaderOps &&
             SUCCEEDED(device->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS,&options,sizeof(options))) && options.ExtendedDoublesShaderInstructions;
@@ -716,6 +700,36 @@ private:
 };
 }
 #endif
+int CompositionNode::textureLimit(QQuickWindow *window){
+#ifdef DRAWVERSE_HAS_COMPOSITION_RHI
+    auto *ri=window->rendererInterface();
+    auto *rhi=static_cast<QRhi*>(ri->getResource(window,QSGRendererInterface::RhiResource));
+    if(!rhi)return 0;
+#ifdef Q_OS_WIN
+    auto *device=ri->graphicsApi()==QSGRendererInterface::Direct3D11?static_cast<ID3D11Device*>(ri->getResource(window,QSGRendererInterface::DeviceResource)):nullptr;
+        if(device && CompositionBudget::automaticGpu.load()){
+            IDXGIDevice *dxgi=nullptr;IDXGIAdapter *adapter=nullptr;IDXGIAdapter3 *budgetAdapter=nullptr;
+            if(SUCCEEDED(device->QueryInterface(__uuidof(IDXGIDevice),reinterpret_cast<void**>(&dxgi)))){
+                if(SUCCEEDED(dxgi->GetAdapter(&adapter))){
+                    DXGI_ADAPTER_DESC desc{};adapter->GetDesc(&desc);
+                    quint64 limit=desc.DedicatedVideoMemory?desc.DedicatedVideoMemory:desc.SharedSystemMemory;
+                    if(SUCCEEDED(adapter->QueryInterface(__uuidof(IDXGIAdapter3),reinterpret_cast<void**>(&budgetAdapter)))){
+                        DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+                        if(SUCCEEDED(budgetAdapter->QueryVideoMemoryInfo(0,DXGI_MEMORY_SEGMENT_GROUP_LOCAL,&info)) && info.Budget)limit=info.Budget;
+                        budgetAdapter->Release();
+                    }
+                    if(limit)CompositionBudget::gpuBytes=limit-limit/10;
+                    adapter->Release();
+                }
+                dxgi->Release();
+            }
+        }
+#endif
+    return rhi->resourceLimit(QRhi::TextureSizeMax);
+#else
+    Q_UNUSED(window);return 0;
+#endif
+}
 quint64 CompositionNode::reservedPayloadBytes(){
 #ifdef DRAWVERSE_HAS_COMPOSITION_RHI
     return reservedTextureBytes.load();

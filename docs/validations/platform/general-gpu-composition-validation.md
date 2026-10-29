@@ -950,3 +950,53 @@ ABI1.89增加可协商LATEST_SNAPSHOT=256，仅显式请求把revision解释为�
 同一最终D3D11进程显式64 MiB显存：128²仍GPU、2048²真实预算不足CPU两行通过；原documentPixels四行、精确affine-2/Warp-0、窗口释放归零通过。其余两行 `white-mask-lod2`、`partial-edge-lod6` 仍以实际LOD1/5对预期2/6失败；取整视口/floor LOD逻辑本次未改，旧夹具失败保留，不能称整个入口全绿。独立 `image-budget-regression.txt` 原25笔/撤销/源增量及注入上传失败两功能通过；软件 `image-budget-software.txt` 原25笔与透明像素两功能通过。
 
 核心paint-render composition共11项（含新增6000引用、调用方瓦片/pin/元数据下界拒绝），公开composition_api共11项、四ABI均通过；相关两crate全target严格Clippy、fmt/生成头、嵌入shader DXBC检查、Release构建及实际标准应用D3D11 --preview退出0通过。日志 `artifacts/general-gpu-composition/first-move-cost/image-budget-{core,ffi,clippy,build-final,build-chunks,navigation-build}.*`，冒烟 `artifacts/image-budget-smoke.{txt,png}`。初次构建SDK的fxc未进PATH及随后生成头漂移失败保留，补齐本地SDK环境并由生成器更新头后通过；无源文件硬编码SDK路径。标准 `build/bin/Release` 已更新，ABI1.89/state45/文档格式保持；未跑总check、前后性能配对或实体笔，不承诺所有文档永不CPU。同期既有变换诊断文件与记录保留。
+
+
+## 2026-10-29：实际4K变换颜色核优化验收
+
+生产变更仅composition_sampling.glsl：颜色核权重多项式与权重乘法改float；几何坐标、透视逆矩阵、Warp重心/边界覆盖仍double，原始像素地址和16样本累加顺序保留。最终CPU原图物化/六种插值和历史未改；无ABI/state/文档格式变更，无代理分辨率下降或mip实现。预览不是逐位相同，按既有线性2e-5/窗口每通道1容差验收。
+
+D3D11原变换/六插值/透视/折叠/局部撤销/取消/快释放/资源复用/目标未确认关闭27项通过（含init/cleanup），artifacts/transform-float-kernel-tests；最终同组再次27项通过transform-kernel-final-tests。最终应用联合构建因运行中标准EXE LNK1104停止，新增测试尚未编入时第二组27项日志保留；随后独立构建tests成功，新增1024²三种核Warp回归5项（含init/cleanup）通过transform-kernel-dense-tests。所有相关线性误差最大4.231929779052734e-6，未放宽阈值。没有跑全量check或新实体/物理屏幕测试。
+
+原图GUI API诊断：普通修改前单进程持续P95 30.4332ms，修改后12.1461ms（115/120与116/120匹配）；Warp修改前60.5674ms，修改后三进程30.2217/31.0733/30.2230ms，匹配97/108/95个输入，均120输入。证据actual-image-transform-float、actual-image-warp-float-kernel、actual-image-warp-float-repeat及前节基线；无trace/抓图。它们是节点采用延迟，排除鼠标命中链路，不是实体/屏幕或PhotoCraft配对；修改前三轮同条件基线未补齐。首移仍有波动，不声称稳定改善，确认后仍秒级，未独立归因其变化。
+
+标准build/bin/Release/drawverse.exe被用户进程4512占用，未停止或替换。复用实际已编译对象与同一链接命令，仅替换EXE/PDB输出至build/bin/TransformReview，生成独立drawverse.exe；Qt运行依赖复制自标准包。独立应用--profile-dir隔离--preview冒烟退出0并生成真实PNG，日志transform-kernel-smoke；link日志build/transform-review-link.log。源/二进制摘要artifacts/transform-kernel-manifest.json。标准Release仍旧EXE，不能称已更新标准包。
+
+## 2026-10-29：PhotoCraft路线大图网格预览验收
+
+实现及边界见general-gpu-composition-design同日“大图交互网格”节。普通画质的大目标优先复用三图静态源、Qt mip和纯几何本地刷新；最高画质保留原尺寸精确合成，最终原图六插值/历史未改。预览代理最长边2048、RGBA8编码颜色过滤，非最终逐像素等价；没有完整移植PhotoCraft自适应细分或无限原图纹理。其他栈仍由原严格分割/后备规则决定。
+
+验证记录：
+- build/transform-mesh-d3d11-final.txt初轮9项通过。最终加入最高画质守卫后，transform-mesh-d3d11-verified.txt为35通过/1失败，失败为原小图compositionTransformReusesSource(warp-2)等待readback完成超时；新大图四行（含确认/取消、窗口像素、源QImage/上传身份、本地几何及最高画质边界）均通过。保留失败，未认定根因；原精确组单独复跑transform-mesh-exact-d3d11-repeat.txt 27项全部通过。
+- transform-mesh-software.txt 35项通过；原常驻完成交接/透明栈/非法几何/取消软件及D3D11各15项通过，transform-mesh-resident-{software,d3d11}.txt。新增提交夹具第一次历史深度断言失败保留在transform-mesh-d3d11.txt；按原正式性能夹具先ORA往返清建图历史，仍严格断言单条提交及撤销/重做，后续通过，未放宽断言。
+- 四ABI通过（transform-mesh-abi.txt），生成头及预编译shader检查随构建通过，最终应用嵌入shader字节核对通过（transform-mesh-embedded-shaders.txt）；git diff --check通过。未跑全量check。UI共同工作区构建一度撞到其他任务正在修改的UiResources.h重复声明，原日志保留；文件稳定后重试成功，没有把该项归因给本轮预览。
+
+实际用户4096×2160 PNG：artifacts/actual-image-{transform,warp}-mesh及对应-mesh-repeat各两独立进程，6次诊断均通过；普通持续120/120匹配，P95为6.3933/6.4289/10.8775ms；Warp为107/110/109个匹配，P95为12.6143/13.2393/12.1419ms。补充最高画质守卫后的最终二进制actual-image-{transform,warp}-mesh-final各一进程通过，普通120匹配/P95 6.3690ms，Warp107匹配/P95 10.6744ms。所有诊断无trace/抓图、排除鼠标命中，原始输入/节点/帧身份及来源摘要由原工具记录，均不是实体或物理屏幕延迟，也没有PhotoCraft配对。此前颜色float版普通单进程12.1461ms、Warp三进程30.2217/31.0733/30.2230ms为历史对照，未重新构建同批配对基线。最终Warp确认到最终节点仍约1.98–2.05秒；不能称秒级收尾已解决。
+
+标准EXE仍被已有用户进程锁定，最初drawverse_runtime构建LNK1104保留；测试及最终应用对象构建完成后，沿实际链接命令仅改EXE/PDB输出至build/bin/MeshTransformReview/drawverse.exe。该包沿用标准Release的同一已测试paint_ffi.dll，未以另一个core/target DLL替换；本轮无核心生产修改。最终独立应用D3D11 --profile-dir/--preview冒烟退出0，生成PNG且人工查看界面，artifacts/transform-mesh-smoke。标准Release未更新。源/二进制摘要见artifacts/transform-mesh-manifest.json。
+
+交付前补上会话结束/主帧接管时清除大图预览策略标记，避免影响随后由文件工作线程开启的置入会话。最终同源码构建transform-mesh-delivery-build.log通过；D3D11新大图/最高画质/视口拓扑/提前关闭9项及原主帧交接6项通过（transform-mesh-delivery-d3d11.txt、transform-mesh-delivery-handoff.txt）。最终重链接包的D3D11冒烟退出0并生成artifacts/transform-mesh-delivery-smoke/preview.png。此生命周期清理不改变上述持续拖动采样算法；性能原始记录仍保留其各自源码和二进制摘要。
+
+
+## 2026-10-29：按设备预算缓存原尺寸源的验收
+
+本节修订上一节固定2048代理的画质限制。ABI1.90新增read_transform_preview_assets可选入口，尺寸/总包预算由UI按所属窗口QRhi与进程预算传入，完整纹理不受单次renderer8192边/16M约束，内部按有界条带准备。选区、旧kind1/3、最高画质精确路径和最终原图物化/历史保持；细节见设计同日末节。
+
+核心：transform-adaptive-core.log四项通过，含9000宽实际编码跨条带逐像素一致、原图逐像素/旧2048包、单源Arc复用与退出释放，以及12000×8000在充足预算下完整保留/设备和内存预算降低时同比缩小/不足预算拒绝。transform-adaptive-public.log三项通过，含新入口选区/旧generation拒绝和查询/复制一致。严格Clippy（paint-ffi/paint-render全部targets）通过，生成头检查通过；独立build/transform-adaptive-abi四C11/C++20静态/共享ABI通过。没有总check。
+
+实际用户PNG（只读环境变量指定）：transform-adaptive-quality-final.txt三项通过（含init/cleanup）。原图4096×1782，源纹理4098×1794（包含瓦片对齐尾部和透明边界）；全部原图范围RGBA8最大通道误差0，更新复用同一QImage与单次上传，取消保持无历史。此结果证明输入纹理未丢细节，不是任意变形后与最终六插值逐像素等价的声明。
+
+transform-adaptive-large-final.txt七项通过：普通/Warp确认及取消四行，另9000×256完整源D3D11上传/复用、即时几何及窗口蓝色像素一行，含单历史、撤销重做及最高画质精确边界。策略JSON见artifacts/transform-adaptive-policy，实际硬件TextureSizeMax=16384；9000宽例原通用合成view unavailable，新路线独立读取设备能力并由核心严格三图分割确认，未要求先获得通用合成帧。12000×8000仅为预算计划测试，没有实际分配96MP纹理或量测其流畅度。
+
+原精确路线联合组transform-adaptive-regression-d3d11.txt为30通过/1失败，失败为旧transformResourcesFollowViewAndTopology首个update等待revision/CPU帧/geometry一致超时，单独复验transform-adaptive-topology-isolated.txt三项通过。失败原样保留，尚未统一归因；不可称完整批量回归全绿。
+
+探索性失败保留：transform-fullres-core.log首次缺Shared测试初始化字段、transform-fullres-build.log的kind局部插入错误、transform-fullres-public.log选区恒等初始源漏拒绝，修正后对应定向通过；transform-fullres-d3d11.txt质量夹具误以为尾部不对齐，改为允许至下一64像素瓦片且仍逐像素核对原图后误差0。初次Clippy元组复杂度失败保留transform-adaptive-clippy-initial-failure.log，替换具名缓存结构后通过。transform-adaptive-d3d11/device-d3d11/mesh-final等调查轮遇首次设备能力未送达而未进入网格，部分进程由本任务终止，保留部分日志，不计通过；能力改为独立发现且BEGIN直接读取当前窗口原子计数，最终五数据行同进程通过。wide-single初次依赖原通用合成就绪失败，修复能力/路线耦合后实际宽纹理通过，未放宽像素/上传/历史断言。
+
+首次预备仍可能重复构建旧2048源与完整源，且尚无所有resident工具/多窗口/在途资源的统一预留池；保守预算份额不是总峰值保证。最终确认收尾、任意超硬件范围图、真实设备故障、实体笔/物理屏幕和PhotoCraft同条件配对均不能从这些结果推出。当前只交付独立包，已有标准EXE及用户进程保持。
+
+更正上一节二进制说明：CMake中drawverse_ui链接drawverse_ffi_static，应用和Qt测试实际核心来自EXE内静态库；不能仅用同目录paint_ffi.dll身份判定其核心版本。此轮应用/测试重新静态链接ABI1.90，独立包另带匹配DLL供共享消费者，四ABI在独立目录验证。
+
+
+最终补验：软件通用合成组35项通过（transform-adaptive-software.txt），原常驻主帧交接/透明栈/非法中间几何/取消软件与D3D11各15项通过（transform-adaptive-resident-*.txt）。最终应用静态链接产物build/bin/FullResolutionTransformReview/drawverse.exe，D3D11隔离profile/preview冒烟退出0，实际PNG人工查看界面正常（artifacts/transform-adaptive-smoke）。应用嵌入shader字节检查transform-adaptive-embedded.txt通过，git diff --check通过。标准Release仍被已有用户进程使用，未停止或替换；新包包含当前匹配DLL，但应用核心来自静态链接。
+
+实际提供PNG的四个独立进程：artifacts/mohan-image-transform-adaptive/run-{1,2}普通持续P95 12.1362/12.3036ms，120输入分别匹配115/117；mohan-image-warp-adaptive/run-{1,2} Warp持续P95 9.3100/9.9408ms，120输入分别匹配115/118。全部工具判定通过，无trace/抓图、API驱动、DPR1.5，排除真实鼠标命中，不是实体/屏幕延迟或PhotoCraft配对。此PNG旧2048代理单进程基线mohan-image-transform-2048普通持续P95 6.3255ms/120匹配；完整纹理普通尾延迟更高，不能称画质提升没有任何耗时成本或性能再次翻倍。新四进程最终交接仍约1.33–1.62秒，未解决收尾。记录与源码/EXE摘要由原工具保留，最终交付摘要artifacts/transform-adaptive-manifest.json。
