@@ -1273,6 +1273,7 @@ impl Engine {
                     matches!(
                         action,
                         paint_core::HistoryAction::SelectAll
+                            | paint_core::HistoryAction::LayerAlphaSelection
                             | paint_core::HistoryAction::Selection
                             | paint_core::HistoryAction::Deselect
                             | paint_core::HistoryAction::InvertSelection
@@ -1293,6 +1294,7 @@ impl Engine {
             self.document.history_actions().get(index),
             Some(
                 paint_core::HistoryAction::SelectAll
+                    | paint_core::HistoryAction::LayerAlphaSelection
                     | paint_core::HistoryAction::Selection
                     | paint_core::HistoryAction::Deselect
                     | paint_core::HistoryAction::InvertSelection
@@ -1717,6 +1719,9 @@ impl Engine {
                         }
                     }
                     crate::selection_api::Edit::Styled(_, _, action) => *action,
+                    crate::selection_api::Edit::Layer(..) => {
+                        paint_core::HistoryAction::LayerAlphaSelection
+                    }
                     crate::selection_api::Edit::All => paint_core::HistoryAction::SelectAll,
                     crate::selection_api::Edit::Clear => paint_core::HistoryAction::Deselect,
                     crate::selection_api::Edit::Invert => {
@@ -1729,6 +1734,21 @@ impl Engine {
                         self.document.selection().apply(shape, op, w, h)?
                     }
                     crate::selection_api::Edit::All => paint_core::Selection::all(w, h),
+                    crate::selection_api::Edit::Layer(id, op) => {
+                        let next = self.document.selection().apply(
+                            self.document.layer_alpha_shape(id)?,
+                            op,
+                            w,
+                            h,
+                        )?;
+                        if next.to_text().len() > 1024 * 1024 {
+                            return Err(paint_core::Error::ResourceLimit(
+                                "layer alpha selection encoding",
+                            )
+                            .into());
+                        }
+                        next
+                    }
                     crate::selection_api::Edit::Clear => paint_core::Selection::default(),
                     crate::selection_api::Edit::Invert => {
                         self.document.selection().inverted(w, h)?

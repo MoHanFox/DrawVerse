@@ -96,8 +96,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 79) {
-            emit failure(QStringLiteral("当前功能需要核心 ABI 1.79 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 92) {
+            emit failure(QStringLiteral("当前功能需要核心 ABI 1.92 或兼容后续版本")); return;
         }
         m_fullResolutionResidentSupported=version.minor>=90;
         m_connection->transformSourcePairSupported.store(version.minor>=91);
@@ -475,8 +475,8 @@ public:
         // One entry per HistoryAction discriminant, in order. A missing entry used to fail the whole
         // publish ("无法识别的历史操作"), which silently froze every later UI update, so the list must
         // cover every kind the core can report and the check below treats the rest as unknown text.
-        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹"),QStringLiteral("复制图层"),QStringLiteral("粘贴图层"),QStringLiteral("合并图层"),QStringLiteral("液化"),QStringLiteral("液化 · 推拉"),QStringLiteral("液化 · 膨大"),QStringLiteral("液化 · 扭曲"),QStringLiteral("液化 · 重建"),QStringLiteral("液化 · 重置"),QStringLiteral("置入图片"),QStringLiteral("自由变换"),QStringLiteral("栅格化图片"),QStringLiteral("水平翻转"),QStringLiteral("垂直翻转"),QStringLiteral("清除选区内容"),QStringLiteral("曲线"),QStringLiteral("色阶"),QStringLiteral("色相/饱和度/明度")};
-        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge","layers","layers","layers","liquify","liquifyPush","liquifyBloat","liquifyTwirl","liquifyReconstruct","undo","page","move","layers","move","move","eraser","layers","layers","layers"};
+        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹"),QStringLiteral("复制图层"),QStringLiteral("粘贴图层"),QStringLiteral("合并图层"),QStringLiteral("液化"),QStringLiteral("液化 · 推拉"),QStringLiteral("液化 · 膨大"),QStringLiteral("液化 · 扭曲"),QStringLiteral("液化 · 重建"),QStringLiteral("液化 · 重置"),QStringLiteral("置入图片"),QStringLiteral("自由变换"),QStringLiteral("栅格化图片"),QStringLiteral("水平翻转"),QStringLiteral("垂直翻转"),QStringLiteral("清除选区内容"),QStringLiteral("曲线"),QStringLiteral("色阶"),QStringLiteral("色相/饱和度/明度"),QStringLiteral("选取不透明像素")};
+        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge","layers","layers","layers","liquify","liquifyPush","liquifyBloat","liquifyTwirl","liquifyReconstruct","undo","page","move","layers","move","move","eraser","layers","layers","layers","rectangleSelection"};
         for(uint32_t depth=0;depth<=info.undo_depth+info.redo_depth;++depth) {
             auto entry=dto<PaintHistoryEntry>();auto historyStatus=paint_session_history_entry(m_core,m_session,info.publication,depth,&entry);
             if(historyStatus==PAINT_BUSY)return false;if(!check(historyStatus))return false;
@@ -2185,6 +2185,15 @@ bool PaintCoreClient::editSelectionPath(const QVector<QPointF> &points,int opera
 }
 
 bool PaintCoreClient::selectAll(){return submitSelection(PAINT_SELECTION_ALL);}
+bool PaintCoreClient::selectLayerPixels(quint64 id,int operation) {
+    if(!m_ready || m_liquifyActive || m_transformActive || m_drawing || layerEditBusy() || m_fileBusy || m_closing || operation<0 || operation>3)return false;
+    uint64_t sequence=0;PaintStatus status;QString error;
+    {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;
+        status=paint_session_select_layer_alpha(m_connection->core,m_connection->session,id?id:m_active,static_cast<uint32_t>(operation),&sequence);
+        if(status!=PAINT_OK)error=immediateError(status);}
+    if(status!=PAINT_OK){showError(error);return false;}
+    m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
+}
 bool PaintCoreClient::clearSelection(){return submitSelection(PAINT_SELECTION_CLEAR);}
 bool PaintCoreClient::invertSelection(){return submitSelection(PAINT_SELECTION_INVERT);}
 void PaintCoreClient::persistLiquifyOptions() {

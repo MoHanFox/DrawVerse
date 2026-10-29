@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 91;
+pub const PAINT_ABI_MINOR: u32 = 92;
 
 #[path = "api_composition.rs"]
 mod composition;
@@ -1063,3 +1063,4 @@ pub const PAINT_ADJUSTMENT_HSL: u32 = 2;
 pub const PAINT_HISTORY_CURVES: u32 = 42;
 pub const PAINT_HISTORY_LEVELS: u32 = 43;
 pub const PAINT_HISTORY_HUE_SATURATION: u32 = 44;
+pub const PAINT_HISTORY_LAYER_ALPHA_SELECTION: u32 = 45;

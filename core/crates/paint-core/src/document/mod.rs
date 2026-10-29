@@ -27,6 +27,7 @@ mod layer_actions;
 mod liquify_result_history_tests;
 #[path = "stroke/document_outline.rs"]
 mod outline;
+mod selection_alpha;
 mod selection_pixels;
 pub use adjustment::Adjustment;
 #[path = "stroke/document_taper.rs"]

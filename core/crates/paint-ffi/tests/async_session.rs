@@ -28,6 +28,78 @@ macro_rules! dto {
 }
 
 #[test]
+fn layer_alpha_selection_public_fifo_validation_history_and_full_canvas_all() {
+    let h = Harness::new(64, 64);
+    let stroke = h.wait(h.stroke(20., 20.));
+    unsafe {
+        let mut sequence = 99;
+        assert_eq!(
+            paint_session_select_layer_alpha(h.core, h.session, 1, 4, &mut sequence),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        assert_eq!(
+            paint_session_select_layer_alpha(h.core, h.session, 0, 0, &mut sequence),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(sequence, 0);
+        assert_eq!(
+            paint_session_select_layer_alpha(h.core, h.session, 1, 0, &mut sequence),
+            PAINT_OK
+        );
+        let selected = h.wait(sequence);
+        assert_eq!(selected.last_error_status, PAINT_OK);
+        assert_eq!(selected.undo_depth, stroke.undo_depth + 1);
+        let mut step = dto!(PaintSelectionStep);
+        assert_eq!(
+            paint_session_selection_step(h.core, h.session, selected.publication, 0, &mut step),
+            PAINT_OK
+        );
+        assert_eq!(step.shape, PAINT_SELECTION_MASK);
+        assert!(step.width < 64. && step.height < 64.);
+        let undone = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(undone.undo_depth, stroke.undo_depth);
+        let redone = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_REDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!(redone.undo_depth, selected.undo_depth);
+        assert_eq!(
+            paint_session_select_layer_alpha(h.core, h.session, u64::MAX, 0, &mut sequence),
+            PAINT_OK
+        );
+        let failed = h.wait(sequence);
+        assert_ne!(failed.last_error_status, PAINT_OK);
+        assert_eq!(failed.undo_depth, redone.undo_depth);
+        assert_eq!(failed.revision, redone.revision);
+        let request = PaintSelectionEdit {
+            action: PAINT_SELECTION_ALL,
+            ..dto!(PaintSelectionEdit)
+        };
+        assert_eq!(
+            paint_session_edit_selection(h.core, h.session, &request, &mut sequence),
+            PAINT_OK
+        );
+        let all = h.wait(sequence);
+        // Error metadata retains the most recent failure across later successes.
+        assert_eq!(all.last_error_sequence, failed.last_error_sequence);
+        assert!(all.revision > failed.revision);
+        assert_eq!(
+            paint_session_selection_step(h.core, h.session, all.publication, 0, &mut step),
+            PAINT_OK
+        );
+        assert_eq!(step.shape, PAINT_SELECTION_RECTANGLE);
+        assert_eq!(
+            [step.x, step.y, step.width, step.height],
+            [0., 0., 64., 64.]
+        );
+    }
+}
+
+#[test]
 fn committed_stroke_receipts_are_exact_ordered_and_exclude_noop_cancel_and_failure() {
     let h = Harness::new(80, 40);
     let begin = |x: f64, opacity: f32, layer_id: u64| PaintCommand {

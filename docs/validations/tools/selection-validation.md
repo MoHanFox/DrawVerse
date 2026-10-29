@@ -23,3 +23,18 @@ Windows 原生截图 artifacts/selection-native.png 已目视检查透明棋盘�
 构建：cmake --build build/qt --config Release。运行：build/qt/bin/Release/drawverse.exe。完整测试：python tools/check.py。性能：python tools/measure_painting.py build/qt/bin/Release/drawverse.exe artifacts/selection-performance.json。
 
 选择步骤最多64；替换清空旧步骤，超限报错并保留旧状态。自由套索、羽化、魔棒、选择变换后续实施；边界为静态虚线。Windows本机及合成数位笔输入已验收，macOS/Linux和真实硬件仍待跨平台模块。Python插件最后，不创建虚假pytest。
+
+## 2026-10-30：从图层透明度载入选区
+
+交互方案保留全选/Ctrl+A的整画布语义，增加选择菜单“选取不透明像素”；Ctrl点击内容/蒙版缩略图替换像素选区，叠加Shift添加、Alt减去、两者相交，保持活动图层及图层多选。普通内容读取原图alpha（含隐式白底、偏移和裁剪），不受隐藏/锁定/自身显示属性或自身蒙版影响；组使用独立子树合成，蒙版使用白色可见覆盖1-alpha。保留8位半透明与孔洞。空层为启用的空选区，避免把空层误当作取消选区后允许全图编辑。
+
+实现：核心逐行分页、实际内容边界收紧，完整不透明矩形保留几何表示，9000×9000隐式白底无需整图蒙版。其余沿现有16MiB蒙版/1MiB文本编码预算，不新增4096边长门槛；超预算或源读取失败原子拒绝。ABI1.92新增`paint_session_select_layer_alpha`和历史kind45，四种组合复用既有选区运算及一次历史，选区历史往返继续复用合成像素。原DTO、文档/state45及全选ABI不变，Qt最低ABI1.92。
+
+实际定向证据：
+- `build/layer-alpha-core-final.txt`：新增核心5项通过，覆盖半透明128/255、孔洞、隐藏/锁定/属性隔离、负偏移裁剪、空层/9000²隐式白底、四组合、蒙版191/255与组子树、超预算不改revision/历史、撤销重做。
+- `build/layer-alpha-public-final.txt`：公开selection相关7项通过，含新FIFO/参数校验/未知ID失败原子性/历史/原全画布命令，以及原选区、剪贴和历史跳转回归。
+- `build/layer-alpha-final-ui-d3d11.txt`与`build/layer-alpha-final-ui-software.txt`：各5功能（加初始化/清理共7）通过。真实PNG菜单选区精确alpha字节8000ff、孔洞和边界、ORA保存重开、全选与撤销；真实缩略图鼠标四组合、不改变编辑目标/多选、Ctrl+Shift点击蒙版不误切显隐、普通点击保留；原蒙版链接/魔棒及68份打包QML源与字节码配对通过。
+- `build/layer-alpha-clippy-final.txt`严格Clippy，fmt、生成头检查、`build/layer-alpha-abi.txt`四项C/C++静态/共享ABI通过；`build/layer-alpha-build.log`最终Release库/工作流测试与应用对象构建通过。
+- 标准EXE由既有PID28584运行，保留进程与原文件。`build/layer-alpha-review-link.log`独立`build/bin/LayerAlphaReview/drawverse.exe`链接当前静态核心；`artifacts/layer-alpha-smoke`实际D3D11冒烟退出0，qt.log为空，生成preview.png。
+
+失败记录保留：初次9000²夹具误把Document::new透明背景视作隐式白底，改为显式white初始化后原断言通过，摘要`build/layer-alpha-initial-fixture.txt`；公开测试初次把last_error当作每次成功自动清除，原错误记录`build/layer-alpha-public-initial.txt`，按协议检查保留错误sequence及新revision后通过，未改变生产错误语义。初次QML编译访问拒绝日志`build/layer-alpha-build-initial.log`保留，同期另有Qt构建，不作统一归因，最终重建通过。同一工作区另有菜单整理/右键选择菜单等未提交修改；本模块提交仅包含自身改动，测试/运行包使用当时完整工作区。未跑总check、实体键鼠或大图性能对比，不以定向通过代表全量。

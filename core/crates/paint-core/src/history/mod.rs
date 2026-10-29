@@ -52,6 +52,7 @@ pub enum HistoryAction {
     Curves = 42,
     Levels = 43,
     HueSaturation = 44,
+    LayerAlphaSelection = 45,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }

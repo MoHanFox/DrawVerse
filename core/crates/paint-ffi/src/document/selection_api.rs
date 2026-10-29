@@ -16,8 +16,41 @@ pub(crate) enum Edit {
         paint_core::HistoryAction,
     ),
     All,
+    Layer(u64, SelectionOperation),
     Clear,
     Invert,
+}
+
+/// ABI 1.92: load a layer's intrinsic alpha (a mask's white coverage) as a selection.
+/// Operation is REPLACE, ADD, SUBTRACT or INTERSECT. Does not change the active layer.
+/// # Safety
+/// Valid handles and writable sequence; ownership follows contracts/ffi/abi.md.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_select_layer_alpha(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    layer: u64,
+    operation: u32,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        let operation = match operation {
+            PAINT_SELECTION_REPLACE => SelectionOperation::Replace,
+            PAINT_SELECTION_ADD => SelectionOperation::Add,
+            PAINT_SELECTION_SUBTRACT => SelectionOperation::Subtract,
+            PAINT_SELECTION_INTERSECT => SelectionOperation::Intersect,
+            _ => return Err(ApiError::invalid("layer alpha selection operation")),
+        };
+        if layer == 0 {
+            return Err(ApiError::invalid("layer alpha selection id"));
+        }
+        let sequence = runtime::registry()?
+            .session(core, session)?
+            .submit(Operation::Selection(Edit::Layer(layer, operation)))?;
+        pointers::write(out_sequence, sequence)
+    })
 }
 fn model(value: PaintSelectionEdit) -> ApiResult<Edit> {
     if value.reserved != [0; 3] {

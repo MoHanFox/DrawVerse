@@ -359,6 +359,7 @@ ApplicationWindow {
             Action { text: "椭圆选框（Shift+M）"; enabled: root.hasDocuments && (!PaintClient.liquifyActive && !PaintClient.transformActive && PaintClient.ready && !PaintClient.drawing); onTriggered: PaintClient.selectionTool=2 }
             MenuSeparator {}
             Action { objectName:"selectionAllAction"; text: "全选"; enabled: root.hasDocuments && (!PaintClient.liquifyActive && !PaintClient.transformActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy); onTriggered: PaintClient.selectAll() }
+                Action { objectName:"selectionLayerPixelsAction"; text: "选取不透明像素"; enabled: root.hasDocuments && PaintClient.ready && !root.editing && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy; onTriggered: PaintClient.selectLayerPixels() }
             Action { objectName:"selectionClearAction"; text: "取消选择"; enabled: root.hasDocuments && (PaintClient.selectionEnabled && !PaintClient.drawing && !PaintClient.layerEditBusy); onTriggered: PaintClient.clearSelection() }
             Action { objectName:"selectionInvertAction"; text: "反向选择"; enabled: root.hasDocuments && (!PaintClient.liquifyActive && !PaintClient.transformActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy); onTriggered: PaintClient.invertSelection() }
         }

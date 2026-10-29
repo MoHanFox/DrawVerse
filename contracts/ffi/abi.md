@@ -710,3 +710,9 @@ kind2与kind1一样按generation/source身份读取，不要求最新revision；
 ## ABI1.91：选区变换不可变源对
 
 resident读取kind4为16字节，两个LE u64依次为请求源的备用源ID和原位源ID；当前变换无源对则均0。source_id必须属于当前publication的活动源或当前选区变换源对，generation必须匹配；过期返回BUSY。kind0仍严格要求活动源及revision；kind1/3与完整尺寸transform读取允许读取当前选区变换的任一不可变源，不因普通几何更新失效。kind2仍为液化目的选区。短容量仅写required、不写buffer；取消/确认/新文档后旧源不可再读取。源对只持有当前会话，旧kind0–3包格式、DTO、符号、state45与文档格式不变。
+
+## ABI1.92：图层透明度选区
+
+新增`paint_session_select_layer_alpha(core, session, layer, operation, out_sequence)`：layer为非零实际图层ID，operation为既有REPLACE/ADD/SUBTRACT/INTERSECT（0–3）；零ID/非法操作同步拒绝并把sequence置0，不存在的非零ID在FIFO执行时报错。只修改像素选区，不改变活动图层、图层多选、可见性或像素。沿用选区发布/读取与一次可撤销历史，新增历史kind45/PAINT_HISTORY_LAYER_ALPHA_SELECTION。选区历史往返继续复用合成像素。
+
+普通内容按原图alpha，忽略自身显示属性/蒙版；组独立合成子树；蒙版按白色可见覆盖1-alpha。应用偏移并裁剪画布、保留8位半透明，空层为启用但覆盖为零的选区。完整不透明矩形使用几何表示，其他沿既有16MiB蒙版和1MiB文本编码预算；读取、分配或预算失败不发布候选。旧PAINT_SELECTION_ALL仍选整画布，所有DTO布局、原符号、文档与state45保持，Qt最低ABI1.92。

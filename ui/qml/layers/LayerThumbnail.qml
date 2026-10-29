@@ -46,7 +46,7 @@ Rectangle {
         onPositionChanged:mouse=>{if(pressed && (pressedButtons & Qt.LeftButton) && !dragging && root.node && !root.node.mask && Math.abs(mouse.x-origin.x)+Math.abs(mouse.y-origin.y)>10){dragging=true;PaintClient.beginLayerDrag(root.node.id)}}
         onClicked: mouse => {if(mouse.button===Qt.RightButton)root.contextRequested(mouse.x,mouse.y);else if(!dragging)root.clicked(mouse.modifiers)}
         ToolTip.delay:1000;ToolTip.visible: containsMouse
-        ToolTip.text: root.node && root.node.mask ? "编辑蒙版 · Shift 点击启用/禁用" : "编辑图层内容"
+        ToolTip.text: (root.node && root.node.mask ? "编辑蒙版 · Shift 点击启用/禁用" : "编辑图层内容") + "\nCtrl 点击载入选区 · 加 Shift 添加 · 加 Alt 减去 · 加两者相交"
         hoverEnabled: true
     }
 }

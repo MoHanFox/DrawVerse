@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 91
+#define PAINT_ABI_MINOR 92
 
 #define PAINT_ABI_PATCH 0
 
@@ -430,6 +430,8 @@
  * ABI 1.12: freehand lasso path and magic-wand region.
  */
 #define PAINT_HISTORY_LASSO_SELECTION 21
+
+#define PAINT_HISTORY_LAYER_ALPHA_SELECTION 45
 
 #define PAINT_HISTORY_LAYER_BLEND 10
 
@@ -3060,6 +3062,18 @@ PaintStatus paint_session_select_history(struct PaintCore *core,
                                          struct PaintSession *handle,
                                          const struct PaintHistorySelect *request,
                                          uint64_t *out_sequence);
+
+/**
+ * ABI 1.92: load a layer's intrinsic alpha (a mask's white coverage) as a selection.
+ * Operation is REPLACE, ADD, SUBTRACT or INTERSECT. Does not change the active layer.
+ * # Safety
+ * Valid handles and writable sequence; ownership follows contracts/ffi/abi.md.
+ */
+PaintStatus paint_session_select_layer_alpha(struct PaintCore *core,
+                                             struct PaintSession *session,
+                                             uint64_t layer,
+                                             uint32_t operation,
+                                             uint64_t *out_sequence);
 
 /**
  * Copy and enqueue a magic-wand selection.

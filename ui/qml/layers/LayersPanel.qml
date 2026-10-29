@@ -27,6 +27,15 @@ ColumnLayout {
     }
     property var control: selected.mask ? PaintClient.layers.find(function(l){return l.id===selected.parent}) || selected : selected
     property bool editable: !PaintClient.liquifyActive && !PaintClient.transformActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy
+    function loadThumbnailSelection(id, modifiers) {
+        if(!(modifiers & Qt.ControlModifier))return false
+        if(root.editable) {
+            const add=(modifiers & Qt.ShiftModifier)!==0
+            const subtract=(modifiers & Qt.AltModifier)!==0
+            PaintClient.selectLayerPixels(id,add ? (subtract ? 3 : 1) : (subtract ? 2 : 0))
+        }
+        return true
+    }
     property bool unlocked: editable && !(control.effectiveLocks & 4)
     property bool parentLocked: {
         let parent=control.parent
@@ -332,7 +341,7 @@ ColumnLayout {
                             visible:!row.modelData.group
                             node:row.modelData;selected:PaintClient.activeLayer===row.modelData.id
                             Rectangle {visible:row.modelData.image===true;width:11;height:11;anchors.right:parent.right;anchors.bottom:parent.bottom;color:Theme.surface;border.color:Theme.muted;border.width:1;Icon{anchors.fill:parent;anchors.margins:1;name:"page"}}
-                            onClicked:modifiers=>{root.forceActiveFocus();PaintClient.selectLayers(row.modelData.id,modifiers)}
+                            onClicked:modifiers=>{root.forceActiveFocus();if(!root.loadThumbnailSelection(row.modelData.id,modifiers))PaintClient.selectLayers(row.modelData.id,modifiers)}
                             onContextRequested:(x,y)=>root.openLayerContext(row.modelData.id,contentThumbnail,x,y,false)
                         }
                         Item {
@@ -367,6 +376,7 @@ ColumnLayout {
                             onContextRequested:(x,y)=>root.openLayerContext(row.maskNode.id,maskThumbnail,x,y,true)
                             onClicked:modifiers=>{
                                 root.forceActiveFocus()
+                                if(root.loadThumbnailSelection(row.maskNode.id,modifiers))return
                                 if(modifiers & Qt.ShiftModifier)PaintClient.setLayerProperties(row.maskNode.id,!row.maskNode.visible,row.maskNode.opacity)
                                 else PaintClient.selectLayer(row.maskNode.id)
                             }
