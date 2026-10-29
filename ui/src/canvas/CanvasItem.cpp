@@ -646,6 +646,13 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         }
         if(!node->image){node->image=new QSGSimpleTextureNode;node->appendChildNode(node->image);}
         node->image->setTexture(node->sources[0]->images[size_t(m_previewPart)]);node->image->setFiltering(QSGTexture::Linear);
+        // The background providers share resident textures with the mesh shader.
+        // Keep their sampler state aligned so a source switch cannot disable
+        // mipmaps after Qt has released the host image.
+        const auto mipmap=m_residentPreview->meshPreview?QSGTexture::Linear:QSGTexture::None;
+        static_cast<QSGOpaqueTextureMaterial*>(node->image->material())->setMipmapFiltering(mipmap);
+        if(auto *opaque=node->image->opaqueMaterial())static_cast<QSGOpaqueTextureMaterial*>(opaque)->setMipmapFiltering(mipmap);
+        node->image->markDirty(QSGNode::DirtyMaterial);
         node->image->setRect(m_presentationRect);return node;
     }
     if(node->sources[0]){delete node->image;node->image=nullptr;node->imageKey=0;node->sources={};}

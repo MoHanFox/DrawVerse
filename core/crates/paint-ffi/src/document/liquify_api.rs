@@ -274,15 +274,18 @@ pub unsafe extern "C" fn paint_session_read_transform_preview_assets(
         pointers::write(out_required, 0)?;
         let session = runtime::registry()?.session(core, session)?;
         let publication = session.publication();
-        let preview = publication
+        publication
             .resident_preview
             .as_ref()
             .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "pixel preview"))?;
-        if publication.info.document_generation != generation || preview.source.id != source_id {
+        if publication.info.document_generation != generation {
             return Err(ApiError::new(PAINT_BUSY, "transform source replaced"));
         }
+        let source = publication
+            .resident_source(source_id)
+            .ok_or_else(|| ApiError::new(PAINT_BUSY, "transform source replaced"))?;
         pointers::copy_buffer(
-            &session.transform_resident_assets(preview, max_edge, max_bytes)?,
+            &session.transform_source_assets(&source, max_edge, max_bytes)?,
             buffer,
             capacity,
             out_required,
@@ -375,6 +378,8 @@ pub unsafe extern "C" fn paint_session_liquify_preview_info(
 /// ABI 1.77: kind 2 = LE u32 width/height, four LE f32 identity UV coefficients,
 /// then width*height R8 destination selection coverage (only with the selected flag).
 /// ABI 1.78: kind 3 = LE u64 alternate source ID followed by its kind-1 static assets.
+/// ABI 1.91: kind 4 = alternate/identity source IDs (two LE u64, zero if absent).
+/// Full-resolution transform reads accept either source in the active pair.
 /// Mesh reads require the exact revision; static assets only require source/generation.
 /// Capacity probes write required only; insufficient buffers never receive partial bytes.
 /// # Safety
@@ -400,8 +405,8 @@ pub unsafe extern "C" fn paint_session_read_liquify_preview(
             .as_ref()
             .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "pixel preview"))?;
         if publication.info.document_generation != generation
-            || preview.source.id != source_id
-            || kind == 0 && preview.revision != revision
+            || publication.resident_source(source_id).is_none()
+            || kind == 0 && (preview.revision != revision || preview.source.id != source_id)
         {
             return Err(ApiError::new(PAINT_BUSY, "liquify preview replaced"));
         }
@@ -421,7 +426,15 @@ pub unsafe extern "C" fn paint_session_read_liquify_preview(
                 pointers::copy_buffer(&bytes, buffer, capacity, out_required)
             }
             1 => pointers::copy_buffer(
-                &session.resident_assets(preview)?,
+                &if source_id == preview.source.id {
+                    session.resident_assets(preview)?
+                } else {
+                    session.resident_source_assets(
+                        &publication
+                            .resident_source(source_id)
+                            .expect("validated source"),
+                    )?
+                },
                 buffer,
                 capacity,
                 out_required,
@@ -433,7 +446,7 @@ pub unsafe extern "C" fn paint_session_read_liquify_preview(
                 out_required,
             ),
             3 => {
-                let (id, assets) = session.resident_alternate_assets(preview.source.id)?;
+                let (id, assets) = session.resident_alternate_assets(source_id)?;
                 let needed = 8 + assets.len() as u64;
                 pointers::write(out_required, needed)?;
                 if capacity < needed {
@@ -442,6 +455,17 @@ pub unsafe extern "C" fn paint_session_read_liquify_preview(
                 let mut packet = Vec::with_capacity(needed as usize);
                 packet.extend(id.to_le_bytes());
                 packet.extend_from_slice(&assets);
+                pointers::copy_buffer(&packet, buffer, capacity, out_required)
+            }
+            4 => {
+                let mut packet = Vec::with_capacity(16);
+                let sources = publication.transform_sources.as_ref();
+                let alternate = sources
+                    .and_then(|sources| sources.iter().find(|source| source.id != source_id))
+                    .map_or(0, |source| source.id);
+                let identity = sources.map_or(0, |sources| sources[1].id);
+                packet.extend(alternate.to_le_bytes());
+                packet.extend(identity.to_le_bytes());
                 pointers::copy_buffer(&packet, buffer, capacity, out_required)
             }
             _ => Err(ApiError::invalid("liquify preview packet kind")),

@@ -1141,6 +1141,71 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!client.residentPreview(),30000);QCOMPARE(client.undoDepth(),0);QVERIFY(client.lastError().isEmpty());
         canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void selectedTransformFollowsLocalInput_data(){
+        QTest::addColumn<bool>("warp");QTest::addColumn<int>("feather");QTest::addColumn<int>("fixtureWidth");
+        for(bool warp:{false,true})for(int feather:{0,8})
+            QTest::newRow(qPrintable(QString("%1-%2").arg(warp?"warp":"affine").arg(feather)))<<warp<<feather<<2048;
+        QTest::newRow("wide-original-affine")<<false<<8<<9000;
+        QTest::newRow("wide-original-warp")<<true<<8<<9000;
+        QTest::newRow("small-affine")<<false<<8<<512;
+        QTest::newRow("small-warp")<<true<<8<<512;
+    }
+    void selectedTransformFollowsLocalInput(){
+        QFETCH(bool,warp);QFETCH(int,feather);QFETCH(int,fixtureWidth);const bool wide=fixtureWidth>4096;QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selected-entry.ini"));
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        const auto generation=client.generation();const auto path=fixtureWidth!=2048?QString():qEnvironmentVariable("DRAWVERSE_TRANSFORM_QUALITY_IMAGE");
+        if(!path.isEmpty())QVERIFY(client.openDocument(QUrl::fromLocalFile(path)));
+        else client.newDocument(fixtureWidth,wide?256:1152);
+        QTRY_VERIFY_WITH_TIMEOUT(!client.fileBusy() && client.generation()!=generation && !client.layerEditBusy(),30000);
+        const int width=client.documentWidth(),height=client.documentHeight();
+        client.setSelectionFeather(feather);
+        QVERIFY(client.editSelectionPath({{width*.1,height*.1},{width*.9,height*.15},{width*.85,height*.9},{width*.15,height*.85}},0,false));
+        QTRY_VERIFY(!client.layerEditBusy() && client.selectionEnabled());
+        const auto selection=client.selectionSteps();const auto depth=client.undoDepth();
+        QQuickWindow window;window.resize(1000,600);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({1000,600});canvas->setClient(&client);
+        auto observed=std::make_shared<CanvasPresentationObservation>();canvas->observePresentation(observed);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->fitToView();
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("Requires GPU resident display");
+        QTRY_VERIFY(canvas->compositionStatistics()["maxTextureEdge"].toInt()>0);
+        if(wide)QTRY_VERIFY(client.frameRevision()>=client.revision());
+        else QTRY_VERIFY(client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision());
+        QElapsedTimer elapsed;elapsed.start();QVERIFY(client.beginTransform());
+        while(client.transformPoints().size()!=16 && elapsed.elapsed()<30000)QTest::qWait(1);
+        QCOMPARE(client.transformPoints().size(),16);const auto controlsMs=elapsed.elapsed();const auto initial=client.transformPoints();
+        QVariantList latest;int updates=0;
+        do {
+            latest=initial;for(auto &point:latest)point=point.toPointF()+QPointF(20+updates,10);
+            if(warp)latest[5]=latest[5].toPointF()+QPointF(12,-8);
+            QVERIFY(client.updateTransform(latest,warp,2));++updates;QTest::qWait(1);
+        }while((!client.residentPreview() || elapsed.elapsed()<300) && elapsed.elapsed()<30000);
+        QVERIFY(client.residentPreview());const auto assetsMs=elapsed.elapsed();
+        QVERIFY(client.residentPreview()->meshPreview);QVERIFY(client.residentPreview()->fullResolution);
+        QTRY_VERIFY(client.residentPreview()->prepared);
+        const auto moving=client.residentPreview();const auto identity=moving->prepared;
+        QCOMPARE(moving->images[0].size(),QSize(qRound(initial[3].toPointF().x()-initial[0].toPointF().x())+2,
+            qRound(initial[12].toPointF().y()-initial[0].toPointF().y())+2));
+        QCOMPARE(moving->images[1].size(),QSize(width,height));
+        // Every accepted input must move the GUI mesh synchronously, without an actor round trip.
+        for(int i=0;i<24;++i){
+            latest=initial;for(auto &point:latest)point=point.toPointF()+QPointF(80+i,15);
+            if(warp)latest[5]=latest[5].toPointF()+QPointF(12,-8);
+            const auto sequence=client.residentPreview()->geometrySequence;
+            QVERIFY(client.updateTransform(latest,warp,2));
+            const auto frame=client.residentPreview();QVERIFY(frame->geometrySequence>sequence);QCOMPARE(frame->sourceId,moving->sourceId);
+            QVERIFY(QLineF(QPointF(frame->vertices.front()[0],frame->vertices.front()[1]),latest[0].toPointF()).length()<.01);
+            QCOMPARE(frame->images[0].cacheKey(),moving->images[0].cacheKey());
+        }
+        const auto expected=latest[0].toPointF();
+        QTRY_VERIFY_WITH_TIMEOUT(observed->snapshot().identity.resident && QLineF(observed->snapshot().identity.firstVertex,expected).length()<.01,30000);
+        const auto nodeMs=elapsed.elapsed();
+        QVERIFY(client.updateTransform(initial,false,2));QCOMPARE(client.residentPreview()->sourceId,identity->sourceId);
+        QVERIFY(client.updateTransform(latest,warp,2));QCOMPARE(client.residentPreview()->sourceId,moving->sourceId);
+        QTRY_VERIFY(moving->uploads->load()==1 && identity->uploads->load()==1);
+        qInfo()<<"selected entry controls/assets/latest node ms"<<controlsMs<<assetsMs<<nodeMs<<"early inputs"<<updates;
+        QVERIFY(client.finishTransform(false));QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy() && !client.residentPreview(),30000);
+        QCOMPARE(client.undoDepth(),depth);QCOMPARE(client.selectionSteps(),selection);QVERIFY(client.lastError().isEmpty());
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void actualTransformImageKeepsOriginalTexels(){
         const auto path=qEnvironmentVariable("DRAWVERSE_TRANSFORM_QUALITY_IMAGE");
         if(path.isEmpty())QSKIP("Set DRAWVERSE_TRANSFORM_QUALITY_IMAGE to validate an actual source PNG");

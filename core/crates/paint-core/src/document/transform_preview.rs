@@ -8,6 +8,16 @@ impl Document {
         self.transform.as_ref()?.preview_source.clone()
     }
 
+    /// Stable moving/identity sources for this selected transform. Geometry
+    /// updates can switch the active source without invalidating either image.
+    pub fn transform_preview_sources(&self) -> Option<[Arc<crate::ResidentPreviewSource>; 2]> {
+        let state = self.transform.as_ref()?;
+        Some([
+            state.preview_source.clone()?,
+            state.preview_identity.clone()?,
+        ])
+    }
+
     pub fn begin_transform_layers_deferred(&mut self, ids: &[u64]) -> Result<()> {
         self.begin_transform_layers(ids)?;
         if let Err(error) = self.enable_transform_deferred() {

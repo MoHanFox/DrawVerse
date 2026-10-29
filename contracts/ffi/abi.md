@@ -705,3 +705,8 @@ kind2与kind1一样按generation/source身份读取，不要求最新revision；
 ## ABI1.79：选区内容编辑
 
 既有layer_action新增kind4 CLEAR_SELECTED_PIXELS与kind5 COPY_SELECTED_PIXELS，沿用非粘贴操作的IDs/零target/无bytes约束。两者要求当前有启用选区，无选区拒绝；kind5完成后沿用只读clipboard sequence查询，原kind0整层复制及duplicate保持。kind4按选区覆盖清除目标普通像素层（组递归子层，自身蒙版仅显式选中时编辑），保留图层ID/选区，一次原子LayerEdit历史；历史kind41清除选区内容。预算/锁定/读取失败不发布候选，空操作不增加历史。Qt最低ABI1.79；DTO/符号/能力位/state45/behavior37/VBR保持。
+
+
+## ABI1.91：选区变换不可变源对
+
+resident读取kind4为16字节，两个LE u64依次为请求源的备用源ID和原位源ID；当前变换无源对则均0。source_id必须属于当前publication的活动源或当前选区变换源对，generation必须匹配；过期返回BUSY。kind0仍严格要求活动源及revision；kind1/3与完整尺寸transform读取允许读取当前选区变换的任一不可变源，不因普通几何更新失效。kind2仍为液化目的选区。短容量仅写required、不写buffer；取消/确认/新文档后旧源不可再读取。源对只持有当前会话，旧kind0–3包格式、DTO、符号、state45与文档格式不变。

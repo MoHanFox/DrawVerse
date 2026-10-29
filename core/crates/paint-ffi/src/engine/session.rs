@@ -115,6 +115,7 @@ pub(crate) struct Publication {
     pub adjustment_histogram: Option<Arc<Vec<f32>>>,
     pub committed_strokes: Arc<VecDeque<u64>>,
     pub resident_preview: Option<Arc<paint_core::ResidentPreview>>,
+    pub transform_sources: Option<[Arc<paint_core::ResidentPreviewSource>; 2]>,
     pub compute: String,
     pub transform: Option<paint_core::TransformGeometry>,
     pub history: Vec<PaintHistoryEntry>,
@@ -122,6 +123,27 @@ pub(crate) struct Publication {
     pub info: PaintSessionInfo,
     pub layers: Vec<LayerState>,
     pub error: String,
+}
+impl Publication {
+    pub(crate) fn resident_source(
+        &self,
+        id: u64,
+    ) -> Option<Arc<paint_core::ResidentPreviewSource>> {
+        self.resident_preview
+            .as_ref()
+            .filter(|preview| preview.source.id == id)
+            .map(|preview| preview.source.clone())
+            .or_else(|| {
+                self.transform_sources
+                    .as_ref()?
+                    .iter()
+                    .find(|source| source.id == id)
+                    .cloned()
+            })
+    }
+    fn has_resident_source(&self, id: u64) -> bool {
+        self.resident_source(id).is_some()
+    }
 }
 struct ViewSlot {
     preview_layer: u64,
@@ -168,7 +190,7 @@ struct Shared {
     preview_selection: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
     // Identity and deformed selection assets, bounded to one active session.
     preview_assets: Mutex<Vec<(u64, Arc<Vec<u8>>)>>,
-    transform_preview_assets: Mutex<Option<TransformAssetPacket>>,
+    transform_preview_assets: Mutex<Vec<TransformAssetPacket>>,
     move_preparation: Mutex<Option<Arc<MovePreparation>>>,
     move_preparation_request: AtomicU64,
     publication: Mutex<Arc<Publication>>,
@@ -264,7 +286,7 @@ impl Session {
             task_progress: Mutex::new(None),
             preview_selection: Mutex::new(None),
             preview_assets: Mutex::new(Vec::new()),
-            transform_preview_assets: Mutex::new(None),
+            transform_preview_assets: Mutex::new(Vec::new()),
             move_preparation: Mutex::new(None),
             move_preparation_request: AtomicU64::new(0),
             generation: AtomicU64::new(1),
@@ -588,42 +610,45 @@ impl Session {
         {
             return Ok(bytes);
         }
+        self.resident_source_assets(&preview.source)
+    }
+    pub(crate) fn resident_source_assets(
+        &self,
+        source: &Arc<paint_core::ResidentPreviewSource>,
+    ) -> ApiResult<Arc<Vec<u8>>> {
+        let publication = self.publication();
         if let Some((_, bytes)) = self
             .shared
             .preview_assets
             .lock()
             .map_err(|_| ApiError::internal())?
             .iter()
-            .find(|(id, _)| *id == preview.source.id)
+            .find(|(id, _)| *id == source.id)
         {
             return Ok(bytes.clone());
         }
-        let bytes = Arc::new(
-            if self.publication().info.flags & PAINT_SESSION_LAYER_MOVE != 0 {
-                let scale = self
-                    .shared
-                    .views
-                    .lock()
-                    .map_err(|_| ApiError::internal())?
-                    .iter()
-                    .take(2)
-                    .filter_map(|slot| slot.request)
-                    .map(|request| {
-                        (f64::from(request.width) / request.region.width)
-                            .max(f64::from(request.height) / request.region.height)
-                    })
-                    .reduce(f64::max)
-                    .unwrap_or(1.);
-                crate::liquify_api::move_preview_assets(&preview.source, scale)?
-            } else {
-                crate::liquify_api::preview_assets(&preview.source)?
-            },
-        );
+        let bytes = Arc::new(if publication.info.flags & PAINT_SESSION_LAYER_MOVE != 0 {
+            let scale = self
+                .shared
+                .views
+                .lock()
+                .map_err(|_| ApiError::internal())?
+                .iter()
+                .take(2)
+                .filter_map(|slot| slot.request)
+                .map(|request| {
+                    (f64::from(request.width) / request.region.width)
+                        .max(f64::from(request.height) / request.region.height)
+                })
+                .reduce(f64::max)
+                .unwrap_or(1.);
+            crate::liquify_api::move_preview_assets(source, scale)?
+        } else {
+            crate::liquify_api::preview_assets(source)?
+        });
         let current = self.publication();
-        if current
-            .resident_preview
-            .as_ref()
-            .is_none_or(|p| p.source.id != preview.source.id)
+        if current.info.document_generation != publication.info.document_generation
+            || !current.has_resident_source(source.id)
         {
             return Err(ApiError::new(PAINT_BUSY, "liquify source replaced"));
         }
@@ -635,19 +660,28 @@ impl Session {
         if assets.len() == 2 {
             assets.remove(0);
         }
-        assets.push((preview.source.id, bytes.clone()));
+        assets.push((source.id, bytes.clone()));
         Ok(bytes)
     }
+    #[cfg(test)]
     pub fn transform_resident_assets(
         &self,
         preview: &paint_core::ResidentPreview,
         max_edge: u32,
         max_bytes: u64,
     ) -> ApiResult<Arc<Vec<u8>>> {
+        self.transform_source_assets(&preview.source, max_edge, max_bytes)
+    }
+    pub fn transform_source_assets(
+        &self,
+        source: &Arc<paint_core::ResidentPreviewSource>,
+        max_edge: u32,
+        max_bytes: u64,
+    ) -> ApiResult<Arc<Vec<u8>>> {
         let publication = self.publication();
         if publication.info.flags & PAINT_SESSION_TRANSFORM == 0
-            || publication.selection.enabled()
-            || preview.source.selected
+            || source.selected
+            || !publication.has_resident_source(source.id)
         {
             return Err(ApiError::new(
                 PAINT_UNSUPPORTED,
@@ -659,9 +693,9 @@ impl Session {
             .transform_preview_assets
             .lock()
             .map_err(|_| ApiError::internal())?
-            .as_ref()
-            .filter(|packet| {
-                packet.source_id == preview.source.id
+            .iter()
+            .find(|packet| {
+                packet.source_id == source.id
                     && packet.max_edge == max_edge
                     && packet.max_bytes == max_bytes
             })
@@ -669,25 +703,25 @@ impl Session {
             return Ok(packet.bytes.clone());
         }
         let bytes = Arc::new(crate::liquify_api::transform_preview_assets(
-            &preview.source,
-            max_edge,
-            max_bytes,
+            source, max_edge, max_bytes,
         )?);
         let current = self.publication();
         if current.info.document_generation != publication.info.document_generation
-            || current
-                .resident_preview
-                .as_ref()
-                .is_none_or(|p| p.source.id != preview.source.id)
+            || !current.has_resident_source(source.id)
         {
             return Err(ApiError::new(PAINT_BUSY, "transform source replaced"));
         }
-        *self
+        let mut packets = self
             .shared
             .transform_preview_assets
             .lock()
-            .map_err(|_| ApiError::internal())? = Some(TransformAssetPacket {
-            source_id: preview.source.id,
+            .map_err(|_| ApiError::internal())?;
+        packets.retain(|packet| packet.source_id != source.id);
+        if packets.len() == 2 {
+            packets.remove(0);
+        }
+        packets.push(TransformAssetPacket {
+            source_id: source.id,
             max_edge,
             max_bytes,
             bytes: bytes.clone(),
@@ -695,14 +729,17 @@ impl Session {
         Ok(bytes)
     }
     pub fn resident_alternate_assets(&self, current_source: u64) -> ApiResult<(u64, Arc<Vec<u8>>)> {
-        self.shared
-            .preview_assets
-            .lock()
-            .map_err(|_| ApiError::internal())?
+        let publication = self.publication();
+        let sources = publication
+            .transform_sources
+            .as_ref()
+            .filter(|sources| sources.iter().any(|source| source.id == current_source))
+            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "no alternate resident source"))?;
+        let source = sources
             .iter()
-            .find(|(id, _)| *id != current_source)
-            .cloned()
-            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "no alternate resident source"))
+            .find(|source| source.id != current_source)
+            .ok_or_else(|| ApiError::new(PAINT_NOT_FOUND, "no alternate resident source"))?;
+        Ok((source.id, self.resident_source_assets(source)?))
     }
     pub fn resident_selection(
         &self,
@@ -997,6 +1034,7 @@ fn publish(
         adjustment_histogram: doc.adjustment_histogram(),
         committed_strokes: Arc::new(VecDeque::new()),
         resident_preview: doc.resident_preview().map(Arc::new),
+        transform_sources: doc.transform_preview_sources(),
         compute: doc.compute_backend_name(),
         transform: doc.transform_geometry(),
         selection: doc.selection().clone(),
@@ -1173,47 +1211,6 @@ impl Engine {
             && preparation.ids == ids)
             .then_some(preparation.source.clone())
             .flatten()
-    }
-    fn prepare_transform_assets(&mut self) -> ApiResult<()> {
-        // An unselected transform publishes its immutable source immediately.
-        // Its reader chooses the negotiated full-size packet or the legacy
-        // packet; eagerly encoding the latter stalls BEGIN and duplicates work.
-        // Feathered selections still need both identity and moving assets.
-        if !self.document.selection().enabled() {
-            return Ok(());
-        }
-        let Some(source) = self.document.transform_preparation_source() else {
-            return Ok(());
-        };
-        if self
-            .shared
-            .preview_assets
-            .lock()
-            .map_err(|_| ApiError::internal())?
-            .iter()
-            .any(|(id, _)| *id == source.id)
-        {
-            return Ok(());
-        }
-        // Prepare on the document actor before BEGIN is acknowledged, rather
-        // than making the first pointer update pay for full proxy compositing.
-        let bytes = match crate::liquify_api::preview_assets(&source) {
-            Ok(bytes) => Arc::new(bytes),
-            Err(error) => {
-                self.document.cancel_transform()?;
-                return Err(error);
-            }
-        };
-        let mut assets = self
-            .shared
-            .preview_assets
-            .lock()
-            .map_err(|_| ApiError::internal())?;
-        if assets.len() == 2 {
-            assets.remove(0);
-        }
-        assets.push((source.id, bytes));
-        Ok(())
     }
     fn default_view(&self) {
         let (width, height) = self.document.dimensions();
@@ -1608,7 +1605,6 @@ impl Engine {
                 }
                 if deferred {
                     self.document.begin_transform_layers_deferred(&ids)?;
-                    self.prepare_transform_assets()?;
                 } else {
                     self.document.begin_transform_layers(&ids)?;
                 }
@@ -1617,7 +1613,6 @@ impl Engine {
                 PAINT_TRANSFORM_BEGIN => self.document.begin_transform()?,
                 PAINT_TRANSFORM_ENABLE_RESIDENT => {
                     self.document.enable_transform_deferred()?;
-                    self.prepare_transform_assets()?;
                 }
                 PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL | PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL => {
                     if self.files.running() {
@@ -2055,7 +2050,7 @@ impl Engine {
                     .transform_preview_assets
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .take();
+                    .clear();
                 self.shared
                     .preview_selection
                     .lock()
@@ -2623,7 +2618,7 @@ mod actor_tests {
         assert!(!Arc::ptr_eq(&base.frame, &recreated.frame));
     }
     #[test]
-    fn transform_begin_publishes_unselected_source_and_prepares_selection_pair() {
+    fn transform_begin_defers_pixels_and_keeps_selection_pair_across_geometry_updates() {
         let session = Session::new(128, 128).unwrap();
         let run = |operation| {
             let seq = session.submit(operation).unwrap();
@@ -2665,7 +2660,7 @@ mod actor_tests {
             .transform_preview_assets
             .lock()
             .unwrap()
-            .is_none());
+            .is_empty());
         let shape =
             paint_core::SelectionShape::polygon(vec![[10., 10.], [90., 10.], [90., 90.]], true, 2.)
                 .unwrap();
@@ -2679,20 +2674,24 @@ mod actor_tests {
             true,
         ));
         let identity = publication.resident_preview.as_ref().unwrap();
-        let (prepared_id, prepared) = {
-            let assets = session.shared.preview_assets.lock().unwrap();
-            assert_eq!(assets.len(), 1);
-            assets[0].clone()
-        };
-        assert_ne!(
-            prepared_id, identity.source.id,
-            "initial feathered image differs from moving source"
+        assert!(
+            session.shared.preview_assets.lock().unwrap().is_empty(),
+            "selected BEGIN must not encode images on the actor"
         );
+        let sources = publication.transform_sources.as_ref().unwrap();
+        let prepared_id = sources[0].id;
+        assert_eq!(sources[1].id, identity.source.id);
         let alternate = session
             .resident_alternate_assets(identity.source.id)
             .unwrap();
         assert_eq!(alternate.0, prepared_id);
-        assert!(Arc::ptr_eq(&alternate.1, &prepared));
+        let prepared = alternate.1;
+        let full_identity = session
+            .transform_source_assets(&sources[1], 16384, 64 * 1024 * 1024)
+            .unwrap();
+        let full_moving = session
+            .transform_source_assets(&sources[0], 16384, 64 * 1024 * 1024)
+            .unwrap();
         let identity_bytes = session.resident_assets(identity).unwrap();
         let mut geometry = publication.transform.clone().unwrap();
         for point in &mut geometry.points {
@@ -2705,6 +2704,18 @@ mod actor_tests {
             ));
             let preview = moved.resident_preview.as_ref().unwrap();
             assert_eq!(preview.source.id, prepared_id);
+            assert!(Arc::ptr_eq(
+                &full_identity,
+                &session
+                    .transform_source_assets(&sources[1], 16384, 64 * 1024 * 1024)
+                    .unwrap()
+            ));
+            assert!(Arc::ptr_eq(
+                &full_moving,
+                &session
+                    .transform_source_assets(&sources[0], 16384, 64 * 1024 * 1024)
+                    .unwrap()
+            ));
             assert!(Arc::ptr_eq(
                 &prepared,
                 &session.resident_assets(preview).unwrap()

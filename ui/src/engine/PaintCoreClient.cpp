@@ -66,6 +66,7 @@ struct BackendConnection {
     CompositionViewRequest compositionView;
     std::atomic_bool residentPreviewPending{false};
     std::atomic_bool transformMeshAssets{false};
+    std::atomic_bool transformSourcePairSupported{false};
     std::atomic<quint32> transformMaxEdge{0};
     std::atomic<quint64> transformMaxBytes{0};
     std::atomic<quint64> fileJob{0};
@@ -99,6 +100,7 @@ public:
             emit failure(QStringLiteral("当前功能需要核心 ABI 1.79 或兼容后续版本")); return;
         }
         m_fullResolutionResidentSupported=version.minor>=90;
+        m_connection->transformSourcePairSupported.store(version.minor>=91);
         auto settings = preferences();
         {QMutexLocker lock(&m_catalog->mutex);
             if(!m_catalog->library){
@@ -706,16 +708,25 @@ public:
         const bool fullResolution=m_fullResolutionResidentSupported && m_connection->transformMeshAssets.load()
             && next->forward && !(info.focus&PAINT_RESIDENT_PREVIEW_SELECTED);
         const auto edge=m_connection->transformMaxEdge.load();
-        const auto budget=m_connection->transformMaxBytes.load();
-        const auto read=[&](quint32 kind,QByteArray &bytes,PaintStatus *result=nullptr) {
+        quint64 alternateId=0,identityId=0;
+        if(next->forward && m_connection->transformSourcePairSupported.load()){
+            std::array<uint8_t,16> sources{};uint64_t required=0;
+            if(paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,4,
+                sources.data(),sources.size(),&required)!=PAINT_OK || required!=sources.size())return;
+            alternateId=qFromLittleEndian<quint64>(sources.data());identityId=qFromLittleEndian<quint64>(sources.data()+8);
+        }
+        next->transformIdentity=identityId && identityId==next->sourceId;
+        const auto budget=m_connection->transformMaxBytes.load()/(alternateId?2:1);
+        const auto read=[&](quint32 kind,QByteArray &bytes,PaintStatus *result=nullptr,quint64 source=0) {
+            if(!source)source=info.source_id;
             uint64_t required=0;
-            auto s=kind==4?paint_session_read_transform_preview_assets(m_core,m_session,info.document_generation,info.source_id,edge,budget,nullptr,0,&required):
+            auto s=kind==4?paint_session_read_transform_preview_assets(m_core,m_session,info.document_generation,source,edge,budget,nullptr,0,&required):
                 paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,nullptr,0,&required);
             if(result)*result=s;
             if(s==PAINT_BUSY || s==PAINT_NOT_FOUND)return false;
             if(s!=PAINT_BUFFER_TOO_SMALL || (required>(kind==4?budget:64ull*1024*1024) || required>quint64(std::numeric_limits<qsizetype>::max()))){check(s);return false;}
             bytes.resize(qsizetype(required));
-            s=kind==4?paint_session_read_transform_preview_assets(m_core,m_session,info.document_generation,info.source_id,edge,budget,reinterpret_cast<uint8_t*>(bytes.data()),required,&required):
+            s=kind==4?paint_session_read_transform_preview_assets(m_core,m_session,info.document_generation,source,edge,budget,reinterpret_cast<uint8_t*>(bytes.data()),required,&required):
                 paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,kind,reinterpret_cast<uint8_t*>(bytes.data()),required,&required);
             if(result)*result=s;
             return s==PAINT_OK;
@@ -728,7 +739,7 @@ public:
         QByteArray mesh;
         const auto count=quint64(next->columns)*next->rows;
         if(next->columns<2 || next->rows<2 || count>257*257)return;
-        if(fullResolution){
+        {
             mesh.resize(qsizetype(count*16));uint64_t required=0;
             if(paint_session_read_resident_preview(m_core,m_session,info.document_generation,info.revision,info.source_id,0,
                 reinterpret_cast<uint8_t*>(mesh.data()),uint64_t(mesh.size()),&required)!=PAINT_OK || required!=uint64_t(mesh.size()))return;
@@ -768,17 +779,22 @@ public:
                 next->selection=QImage(int(w),int(h),QImage::Format_RGBA8888);if(next->selection.isNull())return;
                 for(quint32 y=0;y<h;++y){auto *row=next->selection.scanLine(int(y));for(quint32 x=0;x<w;++x){const auto value=quint8(mask[qsizetype(24+quint64(y)*w+x)]);row[x*4]=value;row[x*4+1]=value;row[x*4+2]=value;row[x*4+3]=255;}}
             }
-            if(next->forward && !fullResolution){
+            if(next->forward && fullResolution && alternateId){
+                auto prepared=std::make_shared<ResidentPreviewAssets>();prepared->sourceId=alternateId;
+                prepared->transformIdentity=alternateId==identityId;prepared->fullResolution=true;prepared->meshPreview=true;
+                QByteArray packet;if(!read(4,packet,nullptr,alternateId) || !decodeAssets(packet,*prepared,int(edge)))return;
+                next->prepared=prepared;
+            }else if(next->forward && !fullResolution){
                 QByteArray packet;PaintStatus result=PAINT_OK;
                 if(read(3,packet,&result)){
                     if(packet.size()<32)return;
                     auto prepared=std::make_shared<ResidentPreviewAssets>();prepared->sourceId=qFromLittleEndian<quint64>(packet.constData());
                     if(!prepared->sourceId || prepared->sourceId==next->sourceId || !decodeAssets(packet.sliced(8),*prepared))return;
+                    prepared->transformIdentity=prepared->sourceId==identityId;
                     next->prepared=prepared;
                 }else if(result!=PAINT_NOT_FOUND)return;
             }
         }
-        if(!fullResolution && !read(0,mesh))return;
         if(quint64(mesh.size())!=count*16)return;
         next->vertices.resize(qsizetype(count));
         for(qsizetype i=0;i<qsizetype(count);++i)for(int k=0;k<4;++k){
@@ -1218,6 +1234,8 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         const bool publishedTransform=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
         if(publishedTransform && !m_transformPublished){
             m_transformInitialPoints=transform.value("points").toList();m_residentPreviewFloor=info.revision;
+            m_transformInitialWarp=transform.value("warp").toBool();m_transformInitialInterpolation=transform.value("interpolation").toInt();
+            m_transformInitialSkewH=transform.value("skewH").toDouble();m_transformInitialSkewV=transform.value("skewV").toDouble();
             // Placement opens inside the file worker: opt in after file-result delivery.
             if(residentGpuPreviewEnabled() && !m_compositionTransform && !m_compositionTransformCpu)QTimer::singleShot(0,this,[this]{if(m_transformActive && m_transformPublished && !m_compositionTransform && !m_compositionTransformCpu && m_pendingTransform<=m_completedSequence && residentGpuPreviewEnabled())submitTransform(PAINT_TRANSFORM_ENABLE_RESIDENT);});
             emit transformChanged();
@@ -1706,15 +1724,16 @@ void PaintCoreClient::setTransformPreviewLimits(int edge,quint64 availableGpuByt
 bool PaintCoreClient::preferTransformMeshPreview() const {
     // The three-image split is valid only for a single Normal root and a
     // Normal foreground. Keep the exact compositor for every other stack.
-    if(!residentGpuPreviewEnabled() || !gpuCompositionEnabled() || highestCanvasQuality() || selectionEnabled() ||
-       !m_connection->transformMaxEdge.load() || m_connection->transformMaxBytes.load()<36)return false;
+    if(!residentGpuPreviewEnabled() || !gpuCompositionEnabled() || highestCanvasQuality() ||
+       (selectionEnabled() && !m_connection->transformSourcePairSupported.load()) ||
+       !m_connection->transformMaxEdge.load() || m_connection->transformMaxBytes.load()<(selectionEnabled()?72u:36u))return false;
     const auto targets=currentMoveTargets();if(targets.size()!=1)return false;
     // The general compositor can decline a large viewport while the cached
     // source texture still fits the device. Core resident splitting remains
     // authoritative; metadata permits only the conservative simple-root case.
     if(!m_compositionPacket || m_compositionPacket->info.key.document_generation!=m_generation ||
        m_compositionPacket->info.key.revision!=m_revision){
-        if(quint64(m_width)*m_height<=1024ull*1024)return false;
+        if(quint64(m_width)*m_height<=1024ull*1024 && !selectionEnabled())return false;
         bool found=false;
         for(const auto &entry:m_layers){const auto layer=entry.toMap();
             if(layer.value("mask").toBool() && layer.value("parent").toULongLong()==targets.front())return false;
@@ -1733,10 +1752,10 @@ bool PaintCoreClient::preferTransformMeshPreview() const {
         if(node.kind==PAINT_COMPOSITION_MASK)continue;
         if(node.layer_id==targets.front()){
             if(node.mask_index<quint32(m_compositionPacket->nodes.size()) || quint32(node.reserved)!=0)return false;
-            // Small edits retain the exact path. Large edits use the same
-            // bounded immutable assets as the established resident protocol.
+            // Unselected small edits retain the exact path. A selected split
+            // benefits from immediate geometry even when its moving part is small.
             const quint64 area=std::max<quint64>(quint64(node.white_width)*node.white_height,quint64(node.tile_count)*4096);
-            if(area<=1024ull*1024)return false;
+            if(area<=1024ull*1024 && !selectionEnabled())return false;
             found=true;
         }else if(found && quint32(node.reserved)!=0)return false;
     }
@@ -1757,6 +1776,15 @@ void PaintCoreClient::refreshTransformMeshPreview(){
     const auto first=m_residentPreview->vertices.front(),last=m_residentPreview->vertices.back();
     for(auto &v:vertices){v[2]=first[2]+v[2]*(last[2]-first[2]);v[3]=first[3]+v[3]*(last[3]-first[3]);}
     auto next=std::make_shared<ResidentPreviewFrame>(*m_residentPreview);
+    if(next->prepared){
+        const bool identity=m_transformPoints==m_transformInitialPoints && m_transformWarp==m_transformInitialWarp &&
+            m_transformInterpolation==m_transformInitialInterpolation && m_transformSkewH==m_transformInitialSkewH && m_transformSkewV==m_transformInitialSkewV;
+        if(next->transformIdentity!=identity){
+            const auto alternate=next->prepared;
+            next->prepared=std::make_shared<ResidentPreviewAssets>(*next);
+            static_cast<ResidentPreviewAssets&>(*next)=*alternate;
+        }
+    }
     next->meshPreview=true;next->meshNearest=m_transformInterpolation==0;next->geometrySequence=++m_transformMeshGeometry;
     next->columns=display.columns;next->rows=display.rows;next->vertices=std::move(vertices);
     m_residentPreview=std::move(next);

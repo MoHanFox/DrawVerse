@@ -1741,6 +1741,198 @@ fn resident_move_skips_coarse_cpu_frames_and_restores_full_resolution() {
 }
 
 #[test]
+fn selected_transform_sources_are_capacity_safe_and_survive_geometry_changes() {
+    let h = Harness::new(128, 96);
+    h.wait(h.stroke(40., 40.));
+    unsafe {
+        let mut seq = 0;
+        let selection = PaintSelectionEdit {
+            width: 96.,
+            height: 72.,
+            antialias: 1,
+            ..dto!(PaintSelectionEdit)
+        };
+        assert_eq!(
+            paint_session_edit_selection(h.core, h.session, &selection, &mut seq),
+            PAINT_OK
+        );
+        let selected = h.wait(seq);
+        let id = selected.active_layer_id;
+        assert_eq!(
+            paint_session_begin_transform_layers_deferred(h.core, h.session, &id, 1, &mut seq),
+            PAINT_OK
+        );
+        let begun = h.wait(seq);
+        let mut info = dto!(PaintResidentPreviewInfo);
+        assert_eq!(
+            paint_session_resident_preview_info(h.core, h.session, &mut info),
+            PAINT_OK
+        );
+        let read = |source, kind, buffer, capacity, required| {
+            paint_session_read_resident_preview(
+                h.core,
+                h.session,
+                info.document_generation,
+                info.revision,
+                source,
+                kind,
+                buffer,
+                capacity,
+                required,
+            )
+        };
+        let mut required = 0;
+        let mut metadata = [0xABu8; 16];
+        assert_eq!(
+            read(info.source_id, 4, ptr::null_mut(), 0, &mut required),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert_eq!(required, 16);
+        assert_eq!(
+            read(info.source_id, 4, metadata.as_mut_ptr(), 15, &mut required),
+            PAINT_BUFFER_TOO_SMALL
+        );
+        assert_eq!(metadata, [0xAB; 16]);
+        assert_eq!(
+            read(info.source_id, 4, metadata.as_mut_ptr(), 16, &mut required),
+            PAINT_OK
+        );
+        let moving = u64::from_le_bytes(metadata[..8].try_into().unwrap());
+        let identity = u64::from_le_bytes(metadata[8..].try_into().unwrap());
+        assert_eq!(identity, info.source_id);
+        assert_ne!(moving, identity);
+        assert_ne!(moving, 0);
+        let packet = |source| {
+            let mut size = 0;
+            assert_eq!(
+                paint_session_read_transform_preview_assets(
+                    h.core,
+                    h.session,
+                    info.document_generation,
+                    source,
+                    16384,
+                    8 * 1024 * 1024,
+                    ptr::null_mut(),
+                    0,
+                    &mut size
+                ),
+                PAINT_BUFFER_TOO_SMALL
+            );
+            let mut bytes = vec![0xAB; size as usize];
+            assert_eq!(
+                paint_session_read_transform_preview_assets(
+                    h.core,
+                    h.session,
+                    info.document_generation,
+                    source,
+                    16384,
+                    8 * 1024 * 1024,
+                    bytes.as_mut_ptr(),
+                    size - 1,
+                    &mut size
+                ),
+                PAINT_BUFFER_TOO_SMALL
+            );
+            assert!(bytes.iter().all(|&byte| byte == 0xAB));
+            assert_eq!(
+                paint_session_read_transform_preview_assets(
+                    h.core,
+                    h.session,
+                    info.document_generation,
+                    source,
+                    16384,
+                    8 * 1024 * 1024,
+                    bytes.as_mut_ptr(),
+                    size,
+                    &mut size
+                ),
+                PAINT_OK
+            );
+            bytes
+        };
+        let identity_bytes = packet(identity);
+        let moving_bytes = packet(moving);
+        let mut geometry = dto!(PaintTransform);
+        assert_eq!(
+            paint_session_transform_info(h.core, h.session, begun.publication, &mut geometry),
+            PAINT_OK
+        );
+        for point in geometry.points.chunks_mut(2) {
+            point[0] += 4.;
+        }
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_UPDATE,
+                &geometry,
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        h.wait(seq);
+        assert_eq!(packet(identity), identity_bytes);
+        assert_eq!(packet(moving), moving_bytes);
+        // Static metadata accepts the old active ID; exact-revision geometry does not.
+        assert_eq!(
+            read(identity, 4, metadata.as_mut_ptr(), 16, &mut required),
+            PAINT_OK
+        );
+        assert_eq!(
+            read(identity, 0, metadata.as_mut_ptr(), 16, &mut required),
+            PAINT_BUSY
+        );
+        assert_eq!(required, 0);
+        required = 99;
+        assert_eq!(
+            paint_session_read_transform_preview_assets(
+                h.core,
+                h.session,
+                info.document_generation + 1,
+                identity,
+                16384,
+                8 * 1024 * 1024,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_BUSY
+        );
+        assert_eq!(required, 0);
+        assert_eq!(
+            paint_session_transform(
+                h.core,
+                h.session,
+                PAINT_TRANSFORM_CANCEL,
+                ptr::null(),
+                &mut seq
+            ),
+            PAINT_OK
+        );
+        assert_eq!(h.wait(seq).undo_depth, selected.undo_depth);
+        assert_eq!(
+            read(identity, 4, metadata.as_mut_ptr(), 16, &mut required),
+            PAINT_NOT_FOUND
+        );
+        assert_eq!(
+            paint_session_read_transform_preview_assets(
+                h.core,
+                h.session,
+                info.document_generation,
+                moving,
+                16384,
+                8 * 1024 * 1024,
+                ptr::null_mut(),
+                0,
+                &mut required
+            ),
+            PAINT_NOT_FOUND
+        );
+        assert_eq!(required, 0);
+    }
+}
+
+#[test]
 fn selected_liquify_mask_is_static_stamped_and_capacity_safe() {
     let h = Harness::new(128, 96);
     h.wait(h.stroke(40., 40.));

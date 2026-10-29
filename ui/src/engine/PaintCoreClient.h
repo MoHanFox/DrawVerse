@@ -693,6 +693,9 @@ private:
     bool m_transformClosing=false;
     bool m_transformActive=false,m_transformWarp=false,m_transformPublished=false,m_transformLinked=true;
     QVariantList m_transformInitialPoints;
+    bool m_transformInitialWarp=false;
+    int m_transformInitialInterpolation=2;
+    qreal m_transformInitialSkewH=0,m_transformInitialSkewV=0;
     qreal m_transformSkewH=0,m_transformSkewV=0;
     int m_transformInterpolation=2,m_transformReference=4;
     quint64 m_pendingTransform=0,m_lastTransform=0;

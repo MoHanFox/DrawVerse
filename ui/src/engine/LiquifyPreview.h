@@ -13,6 +13,7 @@ struct ResidentPreviewAssets {
     quint64 sourceId=0;
     bool meshPreview=false;
     bool fullResolution=false;
+    bool transformIdentity=false;
     QImage selection;
     std::array<float,4> identity{};
     std::array<QImage,3> images;

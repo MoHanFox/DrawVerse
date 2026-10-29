@@ -1025,3 +1025,18 @@ transform-adaptive-large-final.txt七项通过：普通/Warp确认及取消四�
 
 探索性失败保留：transform-finish-core-initial-failure.log新四像素选区夹具未设置参考的[-13,9]偏移，修正夹具后通过；transform-finish-test-type-failure.log新增标量对照浮点类型未显式f64，修正后31项通过。此前进入阶段的未提交设计/验收说明一起纳入本轮提交。远端提交目标沿当前跟踪origin/develop，不修改master。
 最终补验：软件同组24项通过（transform-finish-resident-software.txt）；标准build/bin/Release/drawverse.exe实际D3D11独立profile/preview冒烟退出0，应用嵌入shader检查通过（transform-finish-embedded.txt），git diff --check通过。
+
+
+## 2026-10-29：选区变换连续输入修复
+
+修复前以用户4096×2160赛博朋克PNG建立大范围8px羽化套索，BEGIN取得控制点后持续1ms事件循环输入；`build/selected-transform-before.txt`的affine-8在30秒内没有交付resident源（整项32.4秒），原断言和失败保留。原因包括actor在BEGIN同步编码移动源、静态读图后再读精确revision网格反复失败，以及选区未启用本地几何。
+
+当前BEGIN只发布原位/移动不可变源，ABI1.91 kind4提供源对身份；图像读取允许同会话的任一源并缓存最多两包，网格先读且仍严格匹配revision。Qt普通质量下安全单根Normal选区按最新绝对输入立即生成几何，完整初始几何判定原位源，离开原位立即复用移动源；较小层同样可用。两源平分原会话设备/RAM预算，保持原尺寸或按真实预算缩放，不新增4096/8192边长门槛。QML背景材质和网格共享mip纹理时保持相同采样状态，避免源对切换警告。核心最后原图六插值、选区、历史和最终画布采用协议保持。
+
+最终D3D11：`build/selected-transform-final-verified-d3d11.txt`共17项通过（8选区行、原5大图行、原实际图进入/画质各1、init/cleanup）。实际PNG四行controls/assets/latest-node分别562/902/906、226/561/566、537/849/875、238/544/551ms，进入期间103–114次输入；首次最新位置节点约0.55–0.91秒，仍有冷准备，不是零延迟。每次随后24个UPDATE同步检查本地geometrySequence、最新首顶点与不可变QImage身份；原位往返立即换回正确源，两源各上传1次。选区移动图原尺寸含2px保护范围、静态底图4096×2160均直接校验；9000×256两行校验选区图及9000宽底图实际原尺寸上传，小层512×1152两行同步更新通过。小图/长图测试强制持续到300ms，不把304–309ms节点称为真实冷首帧。测量为GUI API/真实Qt呈现节点，非实体笔、物理屏幕延迟或PhotoCraft配对。原无选区PNG完整范围RGBA8最大误差0只适用于对应原测试，不能冒充选区全像素比较。
+
+正确性：`build/selected-transform-verified-history-d3d11.txt`34项通过，含原选区10上下文、新增dense普通/Warp像素与原位往返/确认/undo/redo/取消、原交接/透明堆栈/折叠及选区液化8上下文；最后放开较小选区后，`build/selected-transform-final-dense-d3d11.txt`再次4项通过，并以failOnWarning守卫mip警告。`build/selected-transform-verified-history-software.txt`同34项通过。新测试的dense夹具原先继承套件GPU关闭；后续又沿用暂停后的CPU revision和灰底未选中假定，导致失败，按实际GPU节点和清除后白底契约纠正，原像素/历史断言未放宽，日志`selected-transform-history-fixture-failure.txt`及`selected-transform-dense-initial-failure.txt`保留。长图旧夹具要求已知不支持的通用合成节点，改用原CPU首帧后尝试设备纹理，原尺寸/更新断言保持；`selected-transform-wide-fixture-failure.txt`保留。
+
+核心：`selected-transform-final-core.log`新actor源对1项；`selected-transform-public.log`新公开容量/过期generation/取消/跨几何静态包1项；原公开resident3及选区液化1分别见`selected-transform-public-resident.log`、`selected-transform-public-liquify.log`。`selected-transform-regression-core.log`原transform31通过、原4忽略；`selected-transform-clippy.log`paint-core/paint-ffi all-targets严格Clippy通过。四C/C++静态/动态ABI见`selected-transform-abi.txt`，生成头/shader/Release测试目标构建及diff通过；原fixture Vec初始化/断言类型编译错误、公开选区结构错误及生成头注释漂移分别保留在initial-build/public-type/header-drift failure日志。
+
+应用：当前标准Release仍被用户进程占用，未终止用户进程或替换其EXE。`build/bin/SelectedTransformReview/drawverse.exe`静态链接新核心/UI，Qt运行库完整，`build/selected-transform-review-link.log`及`selected-transform-embedded.txt`通过；独立profile实际D3D11预览冒烟`artifacts/selected-transform-smoke/exit-code.txt`为0，preview.png存在且qt.log空。`artifacts/selected-transform-manifest.json`记录核心库/头/EXE与源文件摘要。未跑总check；最高质量/有效复杂蒙版仍原路径，没有新增任意大图、统一跨resident在途预算、物理输入或配对性能结论。
