@@ -16,6 +16,8 @@ def main():
     parser.add_argument('output', type=Path)
     parser.add_argument('--operation', choices=['probe', 'move', 'transform'], default='probe')
     parser.add_argument('--size', type=int, choices=[1024, 4096], default=1024)
+    parser.add_argument('--image', type=Path, help='Actual image fixture; requires --timing-only. Warp drags control point 0.')
+    parser.add_argument('--api-driver', action='store_true', help='Direct GUI geometry API, disabled pane; excludes input hit testing')
     parser.add_argument('--software', action='store_true')
     parser.add_argument('--trace', action='store_true')
     parser.add_argument('--composition', action='store_true', help='G3 explicit general compositor; preserve the v4 fixture/input')
@@ -26,6 +28,10 @@ def main():
     args = parser.parse_args()
     if args.timing_only and not args.native_driver:
         parser.error('--timing-only requires --native-driver for the v6 timing boundary')
+    if args.image and not args.timing_only:
+        parser.error('--image requires --timing-only; synthetic pixel assertions do not apply')
+    if args.api_driver and (not args.native_driver or args.operation != 'transform'):
+        parser.error('--api-driver requires --native-driver --operation transform')
     if args.warp and (not args.native_driver or args.operation != 'transform'):
         parser.error('--warp requires --native-driver --operation transform')
     root = Path(__file__).resolve().parents[1]
@@ -37,6 +43,8 @@ def main():
             command = [os.sys.executable, str(Path(__file__).resolve()), str(exe), str(out/f'run-{index}'),
                        '--operation', args.operation, '--size', str(args.size)]
             command += ['--warp'] if args.warp else []
+            command += ['--image', str(args.image.resolve())] if args.image else []
+            command += ['--api-driver'] if args.api_driver else []
             command += ['--native-driver'] if args.native_driver else []
             command += ['--timing-only'] if args.timing_only else []
             command += ['--trace'] if args.trace else []
@@ -51,6 +59,8 @@ def main():
                       diff=subprocess.check_output(['git', 'status', '--short'], cwd=root, text=True),
                       executable=str(exe), executable_sha256=sha(exe), operation=args.operation,
                       size=args.size, software=args.software, trace=args.trace, composition=args.composition, native_driver=args.native_driver, warp=args.warp, timing_only=args.timing_only,
+                      image=str(args.image.resolve()) if args.image else None, image_sha256=sha(args.image) if args.image else None,
+                      api_driver=args.api_driver,
                       sources_sha256={f: sha(root/f) for f in files if (root/f).is_file()})
     (out/'invocation.json').write_text(json.dumps(invocation, indent=2), encoding='utf-8')
     env = os.environ.copy()
@@ -74,6 +84,10 @@ def main():
         env['DRAWVERSE_MOVE_COMPLETION_TRACE'] = str(out/'core-trace.json')
     if args.warp:
         env['DRAWVERSE_G0_WARP'] = '1'
+    if args.image:
+        env['DRAWVERSE_G0_IMAGE'] = str(args.image.resolve())
+    if args.api_driver:
+        env['DRAWVERSE_G0_API_DRIVER'] = '1'
     if args.native_driver:
         env['DRAWVERSE_G0_DRIVER'] = 'native-v5'
     # Freeze the paired reference even when the product enables GPU by default.

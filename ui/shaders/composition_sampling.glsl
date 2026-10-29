@@ -28,7 +28,7 @@ int sourceSlot(ivec2 tile){
     return slot;
 }
 vec4 sourcePixel(ivec2 local,ivec2 tile,int slot){
-    if(slot>=0)return texelFetch(atlas,ivec2(slot%32,slot/32)*64+local-tile*64,0);
+    if(slot>=0)return texelFetch(atlas,ivec2(slot%(textureSize(atlas,0).x/64),slot/(textureSize(atlas,0).x/64))*64+local-tile*64,0);
     return all(greaterThanEqual(local,ivec2(0))) && all(lessThan(local,sourceInfo.zw))?vec4(1):vec4(0);
 }
 vec4 sampleSource(ivec2 point){

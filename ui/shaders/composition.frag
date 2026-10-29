@@ -44,7 +44,7 @@ vec4 sampleSource(ivec2 point,ivec4 info,ivec2 origin,sampler2D pageMap){
     int slot=-1;
     if(all(greaterThanEqual(page,ivec2(0))) && all(lessThan(page,textureSize(pageMap,0))))
         slot=int(texelFetch(pageMap,page,0).r)-1;
-    if(slot>=0)return texelFetch(atlas,ivec2(slot%32,slot/32)*64+local-tile*64,0);
+    if(slot>=0)return texelFetch(atlas,ivec2(slot%(textureSize(atlas,0).x/64),slot/(textureSize(atlas,0).x/64))*64+local-tile*64,0);
     return all(greaterThanEqual(local,ivec2(0))) && all(lessThan(local,info.zw))?vec4(1):vec4(0);
 }
 // Alpha controls discrete Dissolve decisions in later passes. Keep CPU f32

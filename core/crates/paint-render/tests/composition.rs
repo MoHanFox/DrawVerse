@@ -716,3 +716,44 @@ fn nested_through_intrinsic_duplication_is_bounded_before_source_pins() {
     ));
     assert!(identities.is_empty());
 }
+
+#[test]
+fn dense_reference_budget_can_exceed_legacy_4096_without_removing_caller_limits() {
+    let mut doc = Document::new(128, 64).unwrap();
+    dab(&mut doc, (32., 32.), [1., 0., 0., 1.]);
+    dab(&mut doc, (96., 32.), [0., 0., 1., 1.]);
+    let layers = vec![doc.layers()[0].clone(); 3000];
+    let (pins, metadata) = estimate(&layers, Limits::default()).unwrap();
+    assert_eq!(pins, 6000 * TILE_BYTES);
+    assert!(metadata > 8 * 1024 * 1024);
+    assert_eq!(
+        estimate(
+            &layers,
+            Limits {
+                tiles: 4096,
+                ..Limits::default()
+            }
+        ),
+        Err(PlanError::Budget)
+    );
+    assert_eq!(
+        estimate(
+            &layers,
+            Limits {
+                pinned_bytes: pins - 1,
+                ..Limits::default()
+            }
+        ),
+        Err(PlanError::Budget)
+    );
+    assert_eq!(
+        estimate(
+            &layers,
+            Limits {
+                metadata_bytes: metadata - 1,
+                ..Limits::default()
+            }
+        ),
+        Err(PlanError::Budget)
+    );
+}

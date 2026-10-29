@@ -263,18 +263,27 @@ private slots:
         canvas->zoomBy(1.2);QTest::qWait(60);QVERIFY(client.adjustmentGpuPreview());QCOMPARE(client.compositionPacket()->pixels,QSize(4096,2160));
         QVERIFY(client.finishAdjustment(false));QTRY_VERIFY(!client.adjustmentActive());
     }
+    void configuredGpuBudgetFallsBackToCpu_data(){
+        QTest::addColumn<int>("side");QTest::newRow("small-fits")<<128;QTest::newRow("large-exceeds")<<2048;
+    }
     void configuredGpuBudgetFallsBackToCpu(){
+        QFETCH(int,side);
         const auto oldMemory=CompositionBudget::memoryBytes.load(),oldCache=CompositionBudget::cacheBytes.load(),oldGpu=CompositionBudget::gpuBytes.load();
         auto restore=qScopeGuard([&]{CompositionBudget::memoryBytes=oldMemory;CompositionBudget::cacheBytes=oldCache;CompositionBudget::gpuBytes=oldGpu;});
         QTemporaryDir temp;const auto path=temp.filePath("prefs.ini");
         {QSettings settings(path,QSettings::IniFormat);settings.setValue("performance/gpuMiB",64);settings.sync();}
-        PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());client.newDocument(128,128);
-        QTRY_VERIFY(client.documentWidth()==128 && !client.layerEditBusy());
+        PaintCoreClient client(nullptr,path);QTRY_VERIFY(client.ready());client.newDocument(side,side);
+        QTRY_VERIFY(client.documentWidth()==side && !client.layerEditBusy());
         QQuickWindow window;window.resize(256,256);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({256,256});canvas->setClient(&client);
         window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->actualSize();
         if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("D3D11 required");
-        QTRY_VERIFY(canvas->compositionStatistics()["fallback"].toString().contains("budget"));
-        QTRY_VERIFY(!client.frame().isNull() && client.frameRevision()==client.revision());
+        if(side==128){
+            QTRY_COMPARE(canvas->compositionStatistics()["nodeRevision"].toULongLong(),client.revision());
+            QCOMPARE(canvas->compositionStatistics()["failures"].toInt(),0);
+        }else{
+            QTRY_VERIFY(canvas->compositionStatistics()["fallback"].toString().contains("budget"));
+            QTRY_VERIFY(!client.frame().isNull() && client.frameRevision()==client.revision());
+        }
         QVERIFY(!window.grabWindow().isNull());
     }
     void panReprojectsPreviouslyOutsidePixels(){
@@ -396,6 +405,51 @@ private slots:
         QVERIFY(updates>1);
         save("dense-sustained",{{"updates",updates},{"elapsed_ms",double(clock.elapsed())},{"max_gap_ms",double(maxGap)}});
         QVERIFY(client.lastError().isEmpty());
+    }
+    void paintingImageBudgetRemainsOnGpu_data(){
+        QTest::addColumn<bool>("highest");QTest::newRow("normal")<<false;QTest::newRow("native")<<true;
+    }
+    void paintingImageBudgetRemainsOnGpu(){
+        QFETCH(bool,highest);
+        const auto path=qEnvironmentVariable("DRAWVERSE_BUDGET_PAINT_IMAGE");
+        if(path.isEmpty())QSKIP("Set DRAWVERSE_BUDGET_PAINT_IMAGE to the user PNG");
+        qputenv("DRAWVERSE_GPU_COMPOSITION","1");qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","0");
+        auto restore=qScopeGuard([]{qputenv("DRAWVERSE_CPU_DISPLAY_REFERENCE","1");});
+        QTemporaryDir temp;const auto prefs=temp.filePath("prefs.ini");
+        {QSettings settings(prefs,QSettings::IniFormat);settings.setValue("storage/memoryMiB",64);settings.setValue("performance/highestQuality",highest);settings.sync();}
+        PaintCoreClient client(nullptr,prefs);QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QVERIFY(client.openDocument(QUrl::fromLocalFile(path)));
+        QTRY_VERIFY_WITH_TIMEOUT(!client.fileBusy() && client.documentWidth()==4096 && client.documentHeight()==1782,30000);
+        QQuickWindow window;window.resize(640,480);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({640,480});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("D3D11 required");
+        const auto ready=[&]{return client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision();};
+        QTRY_VERIFY2_WITH_TIMEOUT(ready(),qPrintable(canvas->compositionStatistics()["fallback"].toString()),30000);
+        // Three independent dense rasters exceed the old 4096 tiles / 256 MiB.
+        for(int i=0;i<(highest?4:2);++i){
+            const auto depth=client.undoDepth();client.addLayer(QString("budget-%1").arg(i));QTRY_COMPARE(client.undoDepth(),depth+1);
+            client.setBrushColor(QColor::fromHsv(i*70,255,220));client.activateBucket();QVERIFY(client.bucketFill({0,0}));QTRY_COMPARE_WITH_TIMEOUT(client.undoDepth(),depth+2,30000);QTRY_VERIFY(!client.layerEditBusy());
+            QTRY_VERIFY2_WITH_TIMEOUT(ready(),qPrintable(canvas->compositionStatistics()["fallback"].toString()),30000);
+        }
+        QVERIFY(client.compositionPacket()->tiles.size()>(highest?8192:4096));
+        QVERIFY(canvas->compositionStatistics()["textureBytes"].toULongLong()>256ull*1024*1024);
+        const auto shot=window.grabWindow();QVERIFY(!shot.isNull());
+        const auto actual=shot.pixelColor(shot.width()/2,shot.height()/2),expected=QColor::fromHsv((highest?3:1)*70,255,220);
+        QVERIFY2(std::abs(actual.red()-expected.red())<=1 && std::abs(actual.green()-expected.green())<=1 && std::abs(actual.blue()-expected.blue())<=1,qPrintable(actual.name()));
+        client.activateBrush();client.setBrushColor(Qt::green);client.setBrushRadius(3);
+        for(int i=0;i<3;++i){
+            const auto depth=client.undoDepth();InputSample input;input.position={24.+i*128.,32.};
+            QVERIFY(client.beginStroke(input));client.endStroke();QTRY_COMPARE(client.undoDepth(),depth+1);
+            QTRY_VERIFY2_WITH_TIMEOUT(ready(),qPrintable(canvas->compositionStatistics()["fallback"].toString()),30000);
+            qInfo()<<"image budget stroke"<<i<<"read tiles"<<client.compositionPacket()->transportReadTiles;
+            QVERIFY(client.compositionPacket()->transportReadTiles<=4);
+            canvas->zoomBy(i%2?1/1.2:1.2);QTest::qWait(60);
+        }
+        QVERIFY(client.beginAdjustment(0));QTRY_VERIFY(!client.adjustmentBusy());QVERIFY(client.adjustmentGpuPreview());
+        QVERIFY(client.finishAdjustment(false));QTRY_VERIFY(!client.adjustmentActive());QTRY_VERIFY_WITH_TIMEOUT(ready(),30000);
+        qInfo()<<"image budget tiles"<<client.compositionPacket()->tiles.size()<<"GPU bytes"<<canvas->compositionStatistics()["textureBytes"];
+        QCOMPARE(canvas->compositionStatistics()["failures"].toInt(),0);
+        QVERIFY2(client.lastError().isEmpty(),qPrintable(client.lastError()));
     }
     void sustainedPaintingCadence_data(){
         QTest::addColumn<bool>("gpu");QTest::newRow("cpu")<<false;QTest::newRow("gpu")<<true;

@@ -25,10 +25,10 @@ pub const FEATURES: u64 =
 #[path = "composition_closures.rs"]
 mod closures;
 pub const MAX_NODES: usize = 4096;
-pub const MAX_TILES: usize = 4096;
+pub const MAX_TILES: usize = 65536;
 pub const MAX_PIN_BYTES: usize = MAX_TILES * TILE_BYTES;
-pub const MAX_METADATA_BYTES: usize = 8 * 1024 * 1024;
-const IDENTITY_CACHE_ENTRIES: usize = 8192;
+pub const MAX_METADATA_BYTES: usize = 128 * 1024 * 1024;
+const IDENTITY_CACHE_ENTRIES: usize = MAX_TILES * 2;
 static NEXT_CONTENT: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug)]

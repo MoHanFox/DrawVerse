@@ -928,3 +928,25 @@ ABI1.89增加可协商LATEST_SNAPSHOT=256，仅显式请求把revision解释为�
 | Warp持续P95 | 13.104 / 12.244 / 12.955 | 13.548 / 12.576 / 12.377 |
 
 普通连续360输入均匹配；Warp修复前311/360、最终310/360实际采用，合并的输入不算逐条显示。数据见analysis-all.json/final-*-three各轮raw.json及关联帧。**本次没有稳定端到端性能改善证据，Warp首帧/长尾和全部跟手问题未解决，不得宣称这几个卡顿已全部修复。** 结构性重复计算/全局通知/页表重建已减少，显隐局部合成正确性已闭合，但显隐无精确前后延迟配对；下一步仍需对GPU精确Warp采样、帧排队和复杂CPU后备分段归因。上述均非GPU完成/物理屏幕/实体笔延迟，未新增真实冷盘或任意文档全面流畅结论。
+
+
+## 2026-10-29：用户实际4096×2160图变换诊断
+
+原图为用户提供的“2024年4月21日14 (赛博朋克)_无水印.png”，只读打开，原图SHA256在各invocation.json。新增measure_general_gpu_g0.py --image（仅timing-only）及--api-driver：禁用交互面板，直接GUI几何API提交，排除鼠标命中/QML事件耗时。实际图Warp拖控制点0，旧基准Warp开启后整图平移不等同真实网格变形。原有合成夹具和有效性规则保持。
+
+证据artifacts/actual-image-{transform,warp}-api-before：各一独立D3D11进程通过，原图经ORA往返清历史。普通持续120输入匹配115，节点采用P95 30.4332ms；Warp匹配103，P95 60.5674ms、最大251.0792ms，对应帧提交P95 63.4968ms。Warp三阶段确认至最终节点交接约2974–3232ms。输入API调用P95分别0.8672/0.902ms；这些不是实体输入/物理屏幕延迟，不是PhotoCraft配对性能结论，也不是修复后成绩。
+
+独立trace进程actual-image-warp-api-trace通过，零trace丢弃：连续阶段96次composition.record，CPU准备P95 2.085ms、记录P95 2.575ms；QRhi前一完成帧GPU时长中位58.949/P95 63.973/最大141.250ms。该值含窗口GPU帧，非独立shader计时；支持主要瓶颈在GPU帧，不能把每毫秒归因给单一pass。代码每次几何更新全4096×2160线性RGBA32F精确采样，Warp额外scratch/over，双精度重心及最多16次源采样后再LOD。参考本地PhotoCraft transform_tex.rs按屏幕密度选择会话mip、warp_preview.rs按屏幕密度细分，解释架构差异但未量测其帧时。
+
+原生鼠标驱动三次失败保留actual-image-transform-before、actual-image-warp-before、actual-image-warp-before-repeat，均有额外鼠标事件，不计有效性能。API诊断不替代真实QML输入验收。仅验证打开后的普通栅格；置入图片路径、显隐本轮未测。当前新增诊断，尚无新的生产修复；下一步应分离交互预览采样与最终原图物化，验证缩放细节/折叠遮挡/提交取消及最高画质语义后再发布，不能以缩短轮询代替GPU工作量优化。
+
+
+## 2026-10-29：密集绘画预算与分批上传
+
+用户只读原图“2025年9月13日-漠·寒.png”为4096×1782，SHA256 `9778D0A32D7FC5F039B638D854E07A47718D1B7198487AA5318C690631D4AC19`。测试由 `DRAWVERSE_BUDGET_PAINT_IMAGE` 指定，不修改原图或用户设置。新增 `paintingImageBudgetRemainsOnGpu` 将CPU瓦片缓存显式设64 MiB；修复前普通画质首次显示真实失败 `CPU: composition transport 5`，见 `artifacts/image-budget-before.txt`。这复现了提前回退的一条路径，不证明用户原会话采用64 MiB。代码另有4096瓦片/大图256 MiB/小图64 MiB及全进程512 MiB源门槛。
+
+最终 `artifacts/image-budget-final.txt`：原图普通画质三个独立密集层5376瓦片、GPU计账625597392字节；最高画质五层8960瓦片、887799808字节（实际覆盖扩列atlas）。两行均通过原图显示、逐层密集填充、三笔单历史、缩放、曲线GPU预览、零render失败及窗口中心填充颜色通道差≤1；六笔每笔只读取一个变化瓦片。初次修复普通画质在导航后源增量断言失败，保留 `image-budget-after.txt`；最终同设备/文档导航保留Weak索引后原断言通过。源上传按8 MiB/批提交，非跨帧无限显存或超显存分块合成结论。
+
+同一最终D3D11进程显式64 MiB显存：128²仍GPU、2048²真实预算不足CPU两行通过；原documentPixels四行、精确affine-2/Warp-0、窗口释放归零通过。其余两行 `white-mask-lod2`、`partial-edge-lod6` 仍以实际LOD1/5对预期2/6失败；取整视口/floor LOD逻辑本次未改，旧夹具失败保留，不能称整个入口全绿。独立 `image-budget-regression.txt` 原25笔/撤销/源增量及注入上传失败两功能通过；软件 `image-budget-software.txt` 原25笔与透明像素两功能通过。
+
+核心paint-render composition共11项（含新增6000引用、调用方瓦片/pin/元数据下界拒绝），公开composition_api共11项、四ABI均通过；相关两crate全target严格Clippy、fmt/生成头、嵌入shader DXBC检查、Release构建及实际标准应用D3D11 --preview退出0通过。日志 `artifacts/general-gpu-composition/first-move-cost/image-budget-{core,ffi,clippy,build-final,build-chunks,navigation-build}.*`，冒烟 `artifacts/image-budget-smoke.{txt,png}`。初次构建SDK的fxc未进PATH及随后生成头漂移失败保留，补齐本地SDK环境并由生成器更新头后通过；无源文件硬编码SDK路径。标准 `build/bin/Release` 已更新，ABI1.89/state45/文档格式保持；未跑总check、前后性能配对或实体笔，不承诺所有文档永不CPU。同期既有变换诊断文件与记录保留。

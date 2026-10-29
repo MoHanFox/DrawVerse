@@ -19,7 +19,11 @@ struct CompositionBudget {
     inline static std::atomic<quint64> cacheBytes{256ull*1024*1024};
     inline static std::atomic<quint64> gpuBytes{1024ull*1024*1024};
     inline static std::atomic<bool> automaticGpu{true};
-    static quint64 transportLimit(){return std::min<quint64>(512ull*1024*1024,cacheBytes.load());}
+    // CPU page caching and immutable GPU source transport have different lifetimes.
+    // The source pool includes the displayed, replacement and in-flight packets.
+    static constexpr int maxTiles=65536;
+    static quint64 transportLimit(){return memoryBytes.load()/2;}
+    static quint64 planPinLimit(){return std::min({transportLimit()/2,gpuBytes.load(),quint64(maxTiles)*65536});}
     static quint64 cpuViewPixels(){return std::min<quint64>(16777216,(memoryBytes.load()-std::min(cacheBytes.load(),memoryBytes.load()/2))/64);}
     static quint64 viewPixels(){return std::min<quint64>(16777216,gpuBytes.load()/4);}
 };
@@ -135,7 +139,7 @@ struct CompositionCounters {
 class CompositionReader {
 public:
     ~CompositionReader();
-    void reset(PaintCore *core,PaintSession *session);
+    void reset(PaintCore *core,PaintSession *session,bool keepSources=false);
     CompositionPacketPtr poll(PaintCore *core,PaintSession *session,const PaintSessionInfo &state,
                               const CompositionViewRequest &view,QString &fallback);
 private:

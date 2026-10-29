@@ -7,7 +7,6 @@
 namespace {
 std::atomic<quint64> sourceBytes{0},geometryBytes{0};
 constexpr quint64 geometryCharge=512*1024,geometryLimit=32*1024*1024;
-constexpr quint64 sourceLimit=512ull*1024*1024;
 template<class T> T dto(){T value{};value.struct_size=sizeof(T);return value;}
 }
 CompositionTransform::~CompositionTransform(){geometryBytes.fetch_sub(geometryCharge);}
@@ -22,7 +21,7 @@ std::shared_ptr<CompositionTransform> CompositionTransform::allocate(){
 CompositionTileData::~CompositionTileData(){sourceBytes.fetch_sub(65536);}
 std::shared_ptr<CompositionTileData> CompositionTileData::allocate(){
     auto bytes=sourceBytes.load();
-    do {if(bytes+65536>std::min(sourceLimit,CompositionBudget::transportLimit()))return {};}
+    do {if(bytes+65536>CompositionBudget::transportLimit())return {};}
     while(!sourceBytes.compare_exchange_weak(bytes,bytes+65536));
     auto undo=qScopeGuard([]{sourceBytes.fetch_sub(65536);});
     try {
@@ -31,9 +30,9 @@ std::shared_ptr<CompositionTileData> CompositionTileData::allocate(){
     }catch(const std::bad_alloc &){return {};}
 }
 CompositionReader::~CompositionReader(){reset(m_core,m_session);}
-void CompositionReader::reset(PaintCore *core,PaintSession *session){
+void CompositionReader::reset(PaintCore *core,PaintSession *session,bool keepSources){
     if(m_lease && core && session)paint_session_release_composition(core,session,m_lease);
-    m_lease=0;m_packet.reset();m_cache.clear();m_core=nullptr;m_session=nullptr;
+    m_lease=0;m_packet.reset();if(!keepSources)m_cache.clear();m_core=nullptr;m_session=nullptr;
     m_attemptRevision=~quint64(0);m_serial=m_epoch=m_generation=0;
 }
 CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *session,const PaintSessionInfo &state,
@@ -42,7 +41,9 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         reset(core,session);fallback=QStringLiteral("CPU: disabled or active editing session");return {};
     }
     if(m_serial!=view.serial || m_epoch!=view.epoch || m_generation!=view.generation){
-        reset(core,session);m_serial=view.serial;m_epoch=view.epoch;m_generation=view.generation;
+        // Navigation changes sampling, not immutable source content identity.
+        reset(core,session,m_epoch==view.epoch && m_generation==view.generation);
+        m_serial=view.serial;m_epoch=view.epoch;m_generation=view.generation;
     }
     m_core=core;m_session=session;
     if(!m_lease){
@@ -68,9 +69,9 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         if(paint_core_composition_capabilities(core,1,&caps)==PAINT_OK)
             request.features|=caps.features & PAINT_COMPOSITION_LATEST_SNAPSHOT;
         request.revision=state.revision;request.request_id=++m_next;request.device_epoch=view.epoch;
-        const bool large=area>4194304;
-        request.max_nodes=64;request.max_tiles=4096;
-        request.max_pinned_bytes=std::min((large?256ull:64ull)*1024*1024,static_cast<unsigned long long>(CompositionBudget::transportLimit()));request.max_metadata_bytes=(large?8ull:2ull)*1024*1024;
+        request.max_nodes=64;request.max_tiles=std::min<quint32>(CompositionBudget::maxTiles,caps.max_tiles);
+        request.max_pinned_bytes=std::min<quint64>(CompositionBudget::planPinLimit(),caps.max_pinned_bytes);
+        request.max_metadata_bytes=std::min<quint64>(128ull*1024*1024,caps.max_metadata_bytes);
         const auto status=qEnvironmentVariable("DRAWVERSE_COMPOSITION_FAIL")=="busy"?PAINT_BUSY:paint_session_request_composition(core,session,&request,&m_lease);
         if(status==PAINT_BUSY || status==PAINT_CANCELLED){
             // A concurrent edit invalidates the requested snapshot, not GPU support.
@@ -95,7 +96,7 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         if(status!=PAINT_OK)return abandon(status);
         if(info.state==PAINT_COMPOSITION_PENDING)return {};
         if(info.state!=PAINT_COMPOSITION_READY)return abandon(info.status);
-        if(info.node_count>quint32(64) || info.tile_count>quint32(4096))return abandon(PAINT_LIMIT_EXCEEDED);
+        if(info.node_count>quint32(64) || info.tile_count>quint32(CompositionBudget::maxTiles))return abandon(PAINT_LIMIT_EXCEEDED);
         m_packet->info=info;
         for(quint32 i=0;i<info.node_count;++i){
             auto node=dto<PaintCompositionNode>();const auto result=paint_session_composition_node(core,session,&info.key,i,&node);
@@ -153,16 +154,15 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
             if(required!=65536)return abandon(PAINT_INTERNAL_ERROR);
             ++m_packet->transportReadTiles;
             data=std::move(mutableData);
-            // Keep both bounded plans' identities while a replacement is read.
-            // Clearing at 2048 thrashed even a single dense 4096x2160 image.
-            if(m_cache.size()>=8192)m_cache.erase(m_cache.begin());
+            // Keep weak identities for both bounded plans while reading a replacement.
+            if(m_cache.size()>=CompositionBudget::maxTiles*2)m_cache.erase(m_cache.begin());
             m_cache.insert(identity,data);++reads;
         }
         m_packet->data.append(std::move(data));
         if(reads>=128 || elapsed.elapsed()>=4)return {};
     }
     // Only the completed plan remains as a weak lookup table. While reading,
-    // at most the previous and next plan (4096 tiles each) can be represented.
+    // at most the previous and next negotiated plan can be represented.
     m_cache.clear();
     for(int i=0;i<m_packet->tiles.size();++i)m_cache.insert(m_packet->tiles[i].content_id,m_packet->data[i]);
     m_attemptRevision=m_packet->info.key.revision;

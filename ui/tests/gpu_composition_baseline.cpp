@@ -72,9 +72,13 @@ private slots:
         const bool nativeDriver=qEnvironmentVariable("DRAWVERSE_G0_DRIVER")=="native-v5";
         const bool general=compositionDisplayRequested();
         const bool captures=qEnvironmentVariable("DRAWVERSE_G0_CAPTURE")!="0";
+        const auto imagePath=qEnvironmentVariable("DRAWVERSE_G0_IMAGE");
+        const bool imageFixture=!imagePath.isEmpty();
+        const bool apiDriver=qEnvironmentVariableIntValue("DRAWVERSE_G0_API_DRIVER")==1;
         QJsonObject report{{"qt",qVersion()},{"passed",false},{"operation",transform?"transform":"move"},
             {"size",size},{"trace_enabled",tracing},{"composition_enabled",general},{"warp",warpMode},{"input","Qt mouse events to native window; not physical pen"}};
         QJsonArray rows;
+        if(apiDriver)report["input"]="direct GUI geometry API; input hit testing excluded; disabled pane";
         report["captures"]=captures;report["pixel_correctness_checked"]=captures;
         QJsonArray states;int statesDropped=0;
         const auto save=qScopeGuard([&]{report["rows"]=rows;report["trace"]=InteractionTrace::finish();report["trace_dropped"]=double(InteractionTrace::dropped);
@@ -82,6 +86,13 @@ private slots:
         QVERIFY(!output.isEmpty());QVERIFY(size==1024 || size==4096);
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("preferences.ini"));
         DRIVER_VERIFY(client.ready() && client.brushLibraryReady());
+        if(imageFixture){
+            QVERIFY2(!captures,"Actual-image timing uses independent pixel validation, not synthetic red/white assertions");
+            QVERIFY(client.openDocument(QUrl::fromLocalFile(imagePath)));
+            DRIVER_VERIFY_TIMEOUT(!client.fileBusy() && client.documentWidth()==size,60000);
+            report["fixture_image"]=imagePath;
+            report["fixture_pixels"]=QJsonArray{client.documentWidth(),client.documentHeight()};
+        }else{
         client.newDocument(size,size);DRIVER_COMPARE(client.documentWidth(),size);DRIVER_VERIFY(!client.layerEditBusy());
         client.addLayer("G0 patterned full raster");DRIVER_VERIFY(!client.layerEditBusy());
         client.activateBucket();client.setBrushColor(Qt::red);QVERIFY(client.bucketFill({0,0}));DRIVER_VERIFY_TIMEOUT(!client.layerEditBusy(),60000);
@@ -93,6 +104,7 @@ private slots:
             // history edit. Setup history itself may be budget-pruned at 4K.
             client.selectLayer(client.activeLayer());DRIVER_VERIFY_TIMEOUT(!client.layerEditBusy(),60000);
             QVERIFY(client.revision()>revision);QVERIFY(client.lastError().isEmpty());}
+        }
         // Freeze the fixture through the public document round trip, before
         // timing. This starts with an empty history so normal budget pruning of
         // setup strokes cannot invalidate the strict +1 transaction assertion.
@@ -108,11 +120,12 @@ private slots:
         std::unique_ptr<QObject> paneObject(component.createWithInitialProperties({{"ownClient",QVariant::fromValue(&client)},{"mainWindow",QVariant::fromValue(&window)}}));
         QVERIFY2(paneObject,qPrintable(component.errorString()));auto *pane=qobject_cast<QQuickItem*>(paneObject.get());QVERIFY(pane);
         pane->setParentItem(window.contentItem());pane->setSize({1024,720});
+        if(apiDriver)pane->setEnabled(false);
         auto *canvas=qvariant_cast<CanvasItem*>(pane->property("canvasView"));QVERIFY(canvas);
         auto observer=std::make_shared<CanvasPresentationObservation>(4096);canvas->observePresentation(observer);
         auto *overlay=pane->findChild<QQuickItem*>("transformOverlay");QVERIFY(overlay);
         window.show();window.requestActivate();QVERIFY(QTest::qWaitForWindowActive(&window));canvas->fitToView();canvas->forceActiveFocus();
-        const bool gpuExpected=general && quint64(size)*size<=4194304 && window.rendererInterface()->graphicsApi()!=QSGRendererInterface::Software;
+        const bool gpuExpected=general && (imageFixture || quint64(size)*size<=4194304) && window.rendererInterface()->graphicsApi()!=QSGRendererInterface::Software;
         if(!gpuExpected){
         DRIVER_VERIFY(client.frameRevision()>=client.revision() && !client.frame().isNull());
         // fitToView can schedule a newer viewport after the first frame. A
@@ -123,8 +136,8 @@ private slots:
         }
         if(gpuExpected){
             DRIVER_VERIFY_TIMEOUT(client.compositionPacket() && observer->snapshot().identity.composition &&
-                client.compositionPacket()->region==canvas->prefetchedDocumentRect() &&
-                client.compositionPacket()->pixels==QSize(qCeil(client.compositionPacket()->region.width()*canvas->zoom()*window.devicePixelRatio()),qCeil(client.compositionPacket()->region.height()*canvas->zoom()*window.devicePixelRatio())) &&
+                (imageFixture || (client.compositionPacket()->region==canvas->prefetchedDocumentRect() &&
+                client.compositionPacket()->pixels==QSize(qCeil(client.compositionPacket()->region.width()*canvas->zoom()*window.devicePixelRatio()),qCeil(client.compositionPacket()->region.height()*canvas->zoom()*window.devicePixelRatio())))) &&
                 observer->snapshot().identity.revision==client.revision() && observer->snapshot().identity.request==client.compositionPacket()->info.key.request_id,15000);
             if(!captures)DRIVER_VERIFY(client.cpuDisplaySuppressed() && client.cpuDisplaySuppressed(1));
         }
@@ -195,18 +208,26 @@ private slots:
             row["ready_before_press"]=transform?bool(anchor):bool(client.movePreparation());
             if(composition){row["ready_before_press"]=true;row["source_host_bytes"]=client.compositionPacket()->data.size()*65536.;row["composition_counters_before"]=QJsonObject::fromVariantMap(canvas->compositionStatistics());}
             row["ready_ns"]=double(InteractionTrace::now());row["begin_revision"]=double(client.revision());
-            const auto origin=toScreen({size*.3,size*.4});
+            // On actual images Warp must drag a mesh control point, rather
+            // than translating the entire image with Warp enabled.
+            const auto origin=toScreen(imageFixture && warpMode?QPointF{}:QPointF(size*.3,client.documentHeight()*.4));
+            const auto initialPoints=client.transformPoints();
             const auto send=[&](QEvent::Type type,QPoint delta,int index,qint64 planned){
                 const auto p=origin+QPointF(delta)*canvas->zoom();const qint64 start=InteractionTrace::now();
                 InteractionTrace::operation=phase*1000+index;
                 QMouseEvent event(type,p,window.mapToGlobal(p),type==QEvent::MouseMove?Qt::NoButton:Qt::LeftButton,
                     type==QEvent::MouseButtonRelease?Qt::NoButton:Qt::LeftButton,Qt::NoModifier);
-                ingress.planned=&event;QCoreApplication::sendEvent(&window,&event);ingress.planned=nullptr;
+                if(apiDriver){
+                    if(type==QEvent::MouseMove){auto points=initialPoints;
+                        for(int i=0;i<(warpMode?1:16);++i)points[i]=points[i].toPointF()+QPointF(delta);
+                        QVERIFY(client.updateTransform(points,warpMode,client.transformInterpolation()));
+                    }else if(type==QEvent::MouseButtonRelease)QVERIFY(client.checkpointTransform());
+                }else{ingress.planned=&event;QCoreApplication::sendEvent(&window,&event);ingress.planned=nullptr;}
                 inputs.append(QJsonObject{{"id",index},{"t0_ns",double(start)},{"planned_ns",double(planned)},
                     {"end_ns",double(InteractionTrace::now())},{"dx",delta.x()},{"dy",delta.y()},
                     {"sequence",double(client.moveSequence())},{"revision",double(client.revision())},{"event_type",int(type)}});
             };
-            ingress.armed=true;send(QEvent::MouseButtonPress,{},0,InteractionTrace::now());
+            ingress.armed=!apiDriver;send(QEvent::MouseButtonPress,{},0,InteractionTrace::now());
             const auto plan=InteractionTrace::now();
             const int attempts=phase==2?120:1;QPoint target;int sent=0;
             QTimer timer;timer.setInterval(8);timer.setTimerType(Qt::PreciseTimer);
@@ -243,6 +264,7 @@ private slots:
             }
             if(composition)row["target_gui_confirmed_ns"]=double(client.compositionTargetConfirmedNs());
             row["hold_ns"]=double(InteractionTrace::now());row["held_identity"]=identity(observer->snapshot().identity);
+            if(composition)row["composition_counters_held"]=QJsonObject::fromVariantMap(canvas->compositionStatistics());
             row["cpu_main_suppressed"]=client.cpuDisplaySuppressed();row["automatic_overview_suppressed"]=client.cpuDisplaySuppressed(1);
             if(composition && !captures)QVERIFY(client.cpuDisplaySuppressed());
             QCOMPARE(ingress.unexpected,0);

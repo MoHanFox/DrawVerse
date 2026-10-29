@@ -18,7 +18,8 @@ use std::{
     },
 };
 
-pub const PROCESS_PLAN_BYTES: usize = 512 * 1024 * 1024;
+// Two maximum plans, including metadata; charged on actual captured size.
+pub const PROCESS_PLAN_BYTES: usize = 8_858_370_048;
 pub const PROCESS_READ_BYTES: usize = 16 * 1024 * 1024;
 static PLAN_BYTES: AtomicUsize = AtomicUsize::new(0);
 static READ_BYTES: AtomicUsize = AtomicUsize::new(0);
