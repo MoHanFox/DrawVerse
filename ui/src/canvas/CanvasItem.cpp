@@ -1016,15 +1016,26 @@ void CanvasItem::refreshShortcutCursor() {
         if(physical.testFlag(Qt::ControlModifier))m_ctrlHeld=true;
     }
     if(releasedSpace || m_cursorShortcutModifiers!=readShortcutCursorModifiers())applyShortcutCursor();
+    else syncWindowCursor();
     updateCursorPoll();
 }
 void CanvasItem::applyShortcutCursor() {
     updateSamplingDemand();
     m_cursorShortcutModifiers=readShortcutCursorModifiers();
     setCursor(effectiveCursor());
-    if(tabletCursorOwner==this && m_observedWindow)m_observedWindow->setCursor(cursor());
+    syncWindowCursor();
     emit brushCursorChanged();
     updateCursorPoll();
+}
+void CanvasItem::syncWindowCursor() {
+    if(!m_observedWindow)return;
+    const bool mouseOwnsCursor=!tabletCursorOwner && m_cursorInside && m_interactive
+        && isVisible() && isEnabled() && m_observedWindow->isActive()
+        && (!m_client || !m_client->transformActive() || m_space || spaceHeld || m_panning);
+    // Quick caches the cursor item: restoring the native window cursor does not
+    // make setting the same item shape propagate again. Repair both input paths.
+    if((tabletCursorOwner==this || mouseOwnsCursor) && m_observedWindow->cursor().shape()!=cursor().shape())
+        m_observedWindow->setCursor(cursor());
 }
 void CanvasItem::updateCursorPoll() {
     if(m_interactive && isVisible() && isEnabled() && (m_cursorInside || m_penOwnsHover || tabletCursorOwner==this || m_altHeld || m_ctrlHeld || m_space || spaceHeld)){if(!m_shortcutStateTimer.isActive())m_shortcutStateTimer.start();}

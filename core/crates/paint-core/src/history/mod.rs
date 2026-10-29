@@ -53,6 +53,7 @@ pub enum HistoryAction {
     Levels = 43,
     HueSaturation = 44,
     LayerAlphaSelection = 45,
+    ResizeCanvas = 46,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }
@@ -66,6 +67,13 @@ pub(crate) struct TileChange {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Command {
+    Canvas {
+        before_size: [u32; 3],
+        after_size: [u32; 3],
+        before: Vec<Layer>,
+        after: Vec<Layer>,
+        selection: crate::Selection,
+    },
     LayerEdit {
         selection: Option<(crate::Selection, crate::Selection)>,
         before: Vec<Layer>,
@@ -287,6 +295,7 @@ impl Command {
     pub fn action(&self) -> HistoryAction {
         use HistoryAction::*;
         match self {
+            Self::Canvas { .. } => ResizeCanvas,
             Self::LayerEdit { .. } => Transform,
             Self::Stroke { .. } => Brush,
             Self::Selection { .. } => Selection,
@@ -333,7 +342,7 @@ impl Command {
     fn verify_tiles(&self, verified: &mut HistoryVerification) -> Result<()> {
         let mut verify = |tile: &Arc<Tile>| verified.verify(tile);
         match self {
-            Self::LayerEdit { before, after, .. } => {
+            Self::Canvas { before, after, .. } | Self::LayerEdit { before, after, .. } => {
                 for layer in before.iter().chain(after) {
                     for tile in layer
                         .tiles
@@ -383,6 +392,19 @@ impl Command {
     pub fn bytes(&self) -> usize {
         // Conservative bound: count both before and after even when shared by adjacent commands.
         let payload = match self {
+            Self::Canvas {
+                before,
+                after,
+                selection,
+                ..
+            } => {
+                selection.retained_bytes()
+                    + before
+                        .iter()
+                        .chain(after)
+                        .map(|l| l.retained_tile_count() * TILE_BYTES + 2048)
+                        .sum::<usize>()
+            }
             Self::LayerEdit {
                 before,
                 after,

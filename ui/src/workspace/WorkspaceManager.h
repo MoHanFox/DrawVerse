@@ -14,6 +14,7 @@ class QWindow;
 
 class WorkspaceManager final : public QObject, public QAbstractNativeEventFilter {
     Q_OBJECT
+    Q_PROPERTY(bool canvasAdjusting READ canvasAdjusting WRITE setCanvasAdjusting NOTIFY canvasAdjustingChanged)
     Q_PROPERTY(bool developerConsole READ developerConsole WRITE setDeveloperConsole NOTIFY developerConsoleChanged)
     Q_PROPERTY(bool windowsWindowFrames READ windowsWindowFrames CONSTANT)
     Q_PROPERTY(QVariantList leftGroups READ leftGroups NOTIFY groupsChanged)
@@ -38,6 +39,8 @@ class WorkspaceManager final : public QObject, public QAbstractNativeEventFilter
     Q_PROPERTY(int toolStripX READ toolStripX NOTIFY toolStripChanged)
     Q_PROPERTY(int toolStripY READ toolStripY NOTIFY toolStripChanged)
 public:
+    bool canvasAdjusting() const {return m_canvasAdjusting;}
+    void setCanvasAdjusting(bool value);
     bool developerConsole() const;
     void setDeveloperConsole(bool enabled);
     bool applyDeveloperConsole() const;
@@ -117,6 +120,7 @@ public:
     Q_INVOKABLE void saveLayout() const;
     bool restoreLayout();
 signals:
+    void canvasAdjustingChanged();
     void developerConsoleChanged();
     void groupsChanged();
     void dockMetricsChanged();
@@ -127,6 +131,8 @@ signals:
 protected:
     bool eventFilter(QObject *, QEvent *event) override;
 private:
+    bool m_canvasAdjusting=false;
+    QSet<QString> m_canvasSavedIcons;
     struct Group {
         QString id, location;
         QStringList panels;

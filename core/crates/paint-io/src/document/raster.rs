@@ -260,14 +260,29 @@ pub(crate) fn decode_document(
         &mut 0,
         token,
     )?;
-    Ok(Document::from_import_with_storage(
-        w,
-        h,
-        vec![layer],
-        0,
-        options,
-        storage,
-    )?)
+    let mut document = Document::from_import_with_storage(w, h, vec![layer], 0, options, storage)?;
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        let mut at = 8usize;
+        while at + 12 <= bytes.len() {
+            let n = u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+            let Some(end) = at.checked_add(n).and_then(|v| v.checked_add(12)) else {
+                break;
+            };
+            if end > bytes.len() {
+                break;
+            }
+            if n == 9 && &bytes[at + 4..at + 8] == b"pHYs" && bytes[at + 16] == 1 {
+                let ppm = u32::from_be_bytes(bytes[at + 8..at + 12].try_into().unwrap());
+                let dpi = (f64::from(ppm) * 0.0254).round() as u32;
+                if (1..=12000).contains(&dpi) {
+                    document.initialize_dpi(dpi)?;
+                }
+                break;
+            }
+            at = end;
+        }
+    }
+    Ok(document)
 }
 pub(crate) fn png(writer: impl Write, bytes: &[u8], w: u32, h: u32) -> Result<()> {
     image::codecs::png::PngEncoder::new(writer).write_image(
@@ -300,7 +315,26 @@ pub(crate) fn encode_snapshot(
         Format::Png | Format::WebP => {
             let bytes = merged(snapshot, token)?;
             if options.format == Format::Png {
-                png(writer, &bytes, snapshot.width, snapshot.height)?;
+                let mut encoded = Vec::new();
+                png(&mut encoded, &bytes, snapshot.width, snapshot.height)?;
+                let ppm = (f64::from(snapshot.dpi) / 0.0254).round() as u32;
+                let mut payload = Vec::from(&b"pHYs"[..]);
+                payload.extend(ppm.to_be_bytes());
+                payload.extend(ppm.to_be_bytes());
+                payload.push(1);
+                let mut crc = 0xffffffffu32;
+                for byte in &payload {
+                    crc ^= u32::from(*byte);
+                    for _ in 0..8 {
+                        crc = (crc >> 1) ^ if crc & 1 != 0 { 0xedb88320 } else { 0 };
+                    }
+                }
+                let mut writer = writer;
+                writer.write_all(&encoded[..33])?;
+                writer.write_all(&9u32.to_be_bytes())?;
+                writer.write_all(&payload)?;
+                writer.write_all(&(!crc).to_be_bytes())?;
+                writer.write_all(&encoded[33..])?;
             } else {
                 image::codecs::webp::WebPEncoder::new_lossless(writer).encode(
                     &bytes,

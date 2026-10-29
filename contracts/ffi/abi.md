@@ -716,3 +716,12 @@ resident读取kind4为16字节，两个LE u64依次为请求源的备用源ID和
 新增`paint_session_select_layer_alpha(core, session, layer, operation, out_sequence)`：layer为非零实际图层ID，operation为既有REPLACE/ADD/SUBTRACT/INTERSECT（0–3）；零ID/非法操作同步拒绝并把sequence置0，不存在的非零ID在FIFO执行时报错。只修改像素选区，不改变活动图层、图层多选、可见性或像素。沿用选区发布/读取与一次可撤销历史，新增历史kind45/PAINT_HISTORY_LAYER_ALPHA_SELECTION。选区历史往返继续复用合成像素。
 
 普通内容按原图alpha，忽略自身显示属性/蒙版；组独立合成子树；蒙版按白色可见覆盖1-alpha。应用偏移并裁剪画布、保留8位半透明，空层为启用但覆盖为零的选区。完整不透明矩形使用几何表示，其他沿既有16MiB蒙版和1MiB文本编码预算；读取、分配或预算失败不发布候选。旧PAINT_SELECTION_ALL仍选整画布，所有DTO布局、原符号、文档与state45保持，Qt最低ABI1.92。
+
+
+### ABI 1.93：调整画布
+
+`PaintCanvasResize` 为 48 字节、4 字节对齐的版本化 struct_size DTO；flags 仅 bit0 删除裁剪像素，reserved 必须 0。x/y 是旧文档坐标中的新左上角，width/height 为最终像素尺寸，dpi 为 1–12000 整数，fill 为线性 straight RGBA。宽高/原点沿核心一百万边界并受文档实际瓦片预算约束，所有输入在入队前验证。
+
+`paint_session_resize_canvas` 复制输入并返回真实队列序列；无 CPU/UI 直接修改，活动变换/液化和文件任务保持 BUSY。准备、页读取或历史存储失败原子回滚。确认单历史 kind46；不删除时保留画外源，删除时栅格清除框外内容及置入图原始引用，扩展填充仅新增区域。
+
+`paint_session_canvas_dpi` 按调用者提供的 publication 精确读取 DPI；publication 变化返回 BUSY，失败时输出重置为0。尺寸与 DPI 必须采用同次发布。原 DTO 布局和旧调用语义保持。

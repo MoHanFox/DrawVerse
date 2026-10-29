@@ -230,3 +230,65 @@ unsafe fn begin_layers(
         pointers::write(out_sequence, sequence)
     })
 }
+
+/// Resize canvas in one queued authoritative history transaction.
+/// # Safety
+/// Owned handles, initialized readable DTO and nonoverlapping writable sequence.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_resize_canvas(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    request: *const PaintCanvasResize,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        let v = pointers::read_sized(request)?;
+        if v.flags > 1
+            || v.reserved != 0
+            || v.width == 0
+            || v.height == 0
+            || v.width > 1_000_000
+            || v.height > 1_000_000
+            || !(1..=12000).contains(&v.dpi)
+            || v.x.unsigned_abs() > 1_000_000
+            || v.y.unsigned_abs() > 1_000_000
+        {
+            return Err(ApiError::invalid("canvas bounds/dpi/flags"));
+        }
+        let fill = paint_core::Pixel::from_straight(v.fill)?;
+        let sequence =
+            runtime::registry()?
+                .session(core, session)?
+                .submit(Operation::ResizeCanvas(
+                    v.x,
+                    v.y,
+                    v.width,
+                    v.height,
+                    v.dpi,
+                    v.flags != 0,
+                    fill,
+                ))?;
+        pointers::write(out_sequence, sequence)
+    })
+}
+/// Read DPI from the same immutable publication as session dimensions.
+/// # Safety
+/// Valid owned handles and writable output.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_canvas_dpi(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    publication: u64,
+    out_dpi: *mut u32,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_dpi, 0)?;
+        let state = runtime::registry()?.session(core, session)?.publication();
+        if state.info.publication != publication {
+            return Err(ApiError::new(PAINT_BUSY, "publication changed"));
+        }
+        pointers::write(out_dpi, state.dpi)
+    })
+}

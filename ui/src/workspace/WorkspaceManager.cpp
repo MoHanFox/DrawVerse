@@ -1144,3 +1144,10 @@ bool WorkspaceManager::restoreLayout() {
     if(migrated) saveLayout();
     emit groupsChanged(); return true;
 }
+
+void WorkspaceManager::setCanvasAdjusting(bool value){
+    if(value==m_canvasAdjusting)return;
+    if(value){m_canvasSavedIcons=m_iconGroups;for(const auto &g:m_groups)m_iconGroups.insert(g.id);}
+    else {m_iconGroups=m_canvasSavedIcons;m_canvasSavedIcons.clear();}
+    m_canvasAdjusting=value;emit canvasAdjustingChanged();emit groupsChanged();emit dockMetricsChanged();emit layoutChanged();
+}

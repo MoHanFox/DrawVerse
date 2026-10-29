@@ -96,8 +96,8 @@ public:
     void boot() {
         auto version = dto<PaintVersion>();
         if (!check(paint_core_version(&version))) return;
-        if (version.major != PAINT_ABI_MAJOR || version.minor < 92) {
-            emit failure(QStringLiteral("当前功能需要核心 ABI 1.92 或兼容后续版本")); return;
+        if (version.major != PAINT_ABI_MAJOR || version.minor < 93) {
+            emit failure(QStringLiteral("当前功能需要核心 ABI 1.93 或兼容后续版本")); return;
         }
         m_fullResolutionResidentSupported=version.minor>=90;
         m_connection->transformSourcePairSupported.store(version.minor>=91);
@@ -475,8 +475,8 @@ public:
         // One entry per HistoryAction discriminant, in order. A missing entry used to fail the whole
         // publish ("无法识别的历史操作"), which silently froze every later UI update, so the list must
         // cover every kind the core can report and the check below treats the rest as unknown text.
-        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹"),QStringLiteral("复制图层"),QStringLiteral("粘贴图层"),QStringLiteral("合并图层"),QStringLiteral("液化"),QStringLiteral("液化 · 推拉"),QStringLiteral("液化 · 膨大"),QStringLiteral("液化 · 扭曲"),QStringLiteral("液化 · 重建"),QStringLiteral("液化 · 重置"),QStringLiteral("置入图片"),QStringLiteral("自由变换"),QStringLiteral("栅格化图片"),QStringLiteral("水平翻转"),QStringLiteral("垂直翻转"),QStringLiteral("清除选区内容"),QStringLiteral("曲线"),QStringLiteral("色阶"),QStringLiteral("色相/饱和度/明度"),QStringLiteral("选取不透明像素")};
-        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge","layers","layers","layers","liquify","liquifyPush","liquifyBloat","liquifyTwirl","liquifyReconstruct","undo","page","move","layers","move","move","eraser","layers","layers","layers","rectangleSelection"};
+        const QStringList names{QStringLiteral("初始状态"),QStringLiteral("画笔"),QStringLiteral("橡皮擦"),QStringLiteral("全选"),QStringLiteral("矩形选区"),QStringLiteral("取消选区"),QStringLiteral("反选"),QStringLiteral("新建图层"),QStringLiteral("删除图层"),QStringLiteral("图层属性"),QStringLiteral("混合模式"),QStringLiteral("图层填充"),QStringLiteral("图层锁定"),QStringLiteral("移动图层"),QStringLiteral("新建图层组"),QStringLiteral("取消图层组"),QStringLiteral("图层归组"),QStringLiteral("添加蒙版"),QStringLiteral("剪贴蒙版"),QString(),QStringLiteral("椭圆选区"),QStringLiteral("套索"),QStringLiteral("魔棒"),QStringLiteral("释放剪贴蒙版"),QStringLiteral("多边形套索"),QStringLiteral("油漆桶"),QStringLiteral("涂抹"),QStringLiteral("复制图层"),QStringLiteral("粘贴图层"),QStringLiteral("合并图层"),QStringLiteral("液化"),QStringLiteral("液化 · 推拉"),QStringLiteral("液化 · 膨大"),QStringLiteral("液化 · 扭曲"),QStringLiteral("液化 · 重建"),QStringLiteral("液化 · 重置"),QStringLiteral("置入图片"),QStringLiteral("自由变换"),QStringLiteral("栅格化图片"),QStringLiteral("水平翻转"),QStringLiteral("垂直翻转"),QStringLiteral("清除选区内容"),QStringLiteral("曲线"),QStringLiteral("色阶"),QStringLiteral("色相/饱和度/明度"),QStringLiteral("选取不透明像素"),QStringLiteral("调整画布")};
+        const QStringList icons{"page","brush","eraser","rectangleSelection","rectangleSelection","rectangleSelection","rectangleSelection","plus","trash","layers","layers","layers","layers","move","folder","folder","folder","mask","layers","page","ellipseSelection","lassoSelection","wand","layers","polygonSelection","bucket","smudge","layers","layers","layers","liquify","liquifyPush","liquifyBloat","liquifyTwirl","liquifyReconstruct","undo","page","move","layers","move","move","eraser","layers","layers","layers","rectangleSelection",QStringLiteral("transform")};
         for(uint32_t depth=0;depth<=info.undo_depth+info.redo_depth;++depth) {
             auto entry=dto<PaintHistoryEntry>();auto historyStatus=paint_session_history_entry(m_core,m_session,info.publication,depth,&entry);
             if(historyStatus==PAINT_BUSY)return false;if(!check(historyStatus))return false;
@@ -488,6 +488,7 @@ public:
                 {"title",entry.kind==PAINT_HISTORY_INITIAL && (info.flags&PAINT_SESSION_LIQUIFY)?QStringLiteral("液化起始状态"):entry.kind==PAINT_HISTORY_INITIAL && (info.flags&PAINT_SESSION_TRANSFORM)?QStringLiteral("变换起始状态"):entry.kind==PAINT_HISTORY_RELEASE_CLIPPING?QStringLiteral("释放剪贴蒙版"):known?names[entry.kind]:QStringLiteral("未知操作")},
                 {"icon",entry.kind==PAINT_HISTORY_RELEASE_CLIPPING?QStringLiteral("layers"):known?icons[entry.kind]:QStringLiteral("page")}});
         }
+        uint32_t canvasDpi=72;status=paint_session_canvas_dpi(m_core,m_session,info.publication,&canvasDpi);if(status==PAINT_BUSY)return false;if(!check(status))return false;
         auto transform=dto<PaintTransform>();status=paint_session_transform_info(m_core,m_session,info.publication,&transform);if(status==PAINT_BUSY)return false;if(!check(status))return false;QVariantList transformPoints;for(int i=0;i<16;++i)transformPoints.append(QPointF(transform.points[i*2],transform.points[i*2+1]));
         uint64_t committed[4096];uint32_t count=0;const auto committedStatus=paint_session_committed_strokes(m_core,m_session,info.publication,m_strokeCommitCursor,committed,4096,&count);
         if(committedStatus==PAINT_BUSY)return false;if(!check(committedStatus))return false;
@@ -502,7 +503,7 @@ public:
         // above must remain retryable, or poll() also stops delivering pixels.
         m_connection->metadataPending.store(true);
         InteractionTrace::point("move.worker.metadata.emit",double(info.completed_sequence));
-        emit metadata(info, layers,{{"enabled",summary.enabled!=0},{"steps",steps},{"adjustmentHistogram",adjustmentHistogram}},history,{{"points",transformPoints},{"warp",transform.warp!=0},{"interpolation",transform.interpolation},{"skewH",transform.skew_h},{"skewV",transform.skew_v}},committedStrokes); m_publication = info.publication;m_strokeCommitCursor=info.completed_sequence;
+        emit metadata(info, layers,{{"dpi",canvasDpi},{"enabled",summary.enabled!=0},{"steps",steps},{"adjustmentHistogram",adjustmentHistogram}},history,{{"points",transformPoints},{"warp",transform.warp!=0},{"interpolation",transform.interpolation},{"skewH",transform.skew_h},{"skewV",transform.skew_v}},committedStrokes); m_publication = info.publication;m_strokeCommitCursor=info.completed_sequence;
         return true;
     }
     void transformInputActivity(){
@@ -1299,6 +1300,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         const bool progressGenerationChanged=m_generation!=info.document_generation;
         m_generation = info.document_generation;
         if(progressGenerationChanged)emit computationProgressChanged();
+        m_documentDpi=selection.value("dpi",72).toInt();
         m_revision = info.revision; m_width = static_cast<int>(info.width); m_height = static_cast<int>(info.height);
         // Closing metadata can precede the final pixels. Keep the resident
         // image until the primary frame can replace it without exposing the old frame.
@@ -1361,6 +1363,10 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         }
         if (changedLayers || activeChanged) pruneSelectedLayers();
         if (wasLiquify!=m_liquifyActive || wasTransform!=m_transformActive || wasTransformBusy!=transformBusy() || wasLiquifyBusy!=liquifyBusy() || propertiesChanged || wasReady != m_ready || wasModified != modified() || wasLayerBusy != layerEditBusy()) emit stateChanged();
+        if(m_pendingCanvasResize && info.completed_sequence>=m_pendingCanvasResize){
+            const bool success=info.last_error_status==PAINT_OK || info.last_error_sequence!=m_pendingCanvasResize;
+            m_pendingCanvasResize=0;emit canvasResizeFinished(success);
+        }
         requestLayerMovePreparation();
     });
     connect(m_worker,&BackendWorker::thumbnailReady,this,[this](quint64 generation,quint64 revision,quint64 id,const QString &image) {
@@ -3017,6 +3023,13 @@ bool PaintCoreClient::finishTransform(bool commit){
     m_transformClosing=true;emit transformChanged();
     if(!commit && m_compositionTransform){auto frame=std::make_shared<CompositionPacket>(*m_compositionEditBase);frame->preview=true;frame->geometrySequence=++m_compositionGeometry;frame->editSequence=m_compositionBeginSequence;m_compositionEditFrame=std::move(frame);emit frameChanged();}
     return true;
+}
+bool PaintCoreClient::resizeCanvas(int x,int y,int width,int height,int dpi,bool deletePixels,bool selectedColor){
+    if(!m_ready || m_closing || m_fileBusy || m_drawing || layerEditBusy() || m_transformActive || m_liquifyActive)return false;
+    clearLayerBlendPreview();clearError();auto request=dto<PaintCanvasResize>();request.x=x;request.y=y;request.width=width>0?uint32_t(width):0;request.height=height>0?uint32_t(height):0;request.dpi=dpi>0?uint32_t(dpi):0;request.flags=deletePixels?1u:0u;
+    const QColor color=selectedColor?m_color:QColor(Qt::white);request.fill[0]=linear(color.redF());request.fill[1]=linear(color.greenF());request.fill[2]=linear(color.blueF());request.fill[3]=color.alphaF();
+    uint64_t sequence=0;PaintStatus status;QString error;{QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_resize_canvas(m_connection->core,m_connection->session,&request,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
+    if(status!=PAINT_OK){showError(error);return false;}m_pendingCanvasResize=sequence;m_pendingLayer=sequence;m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
 }
 bool PaintCoreClient::flipImage(bool horizontal){if(m_transformActive || m_liquifyActive || layerEditBusy())return false;clearLayerBlendPreview();return submitTransform(horizontal?PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL:PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL);}
 bool PaintCoreClient::rasterizeImage(){return !m_transformActive && submitTransform(PAINT_TRANSFORM_RASTERIZE);}

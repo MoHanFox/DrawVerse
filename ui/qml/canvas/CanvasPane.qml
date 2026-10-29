@@ -4,6 +4,7 @@ import QtQuick.Window
 import QtQuick.Shapes
 import DrawVerse 1.0
 import "../theme"
+import "../menus"
 Rectangle {
     id:root
     property var ownClient: PaintClient
@@ -12,8 +13,9 @@ Rectangle {
     property var parkingParent
     property var mainWindow
     property bool savingBlocked: false
+    property alias canvasResizeOverlay:resizeOverlay
     property alias canvasView:canvas
-    readonly property bool editing:ownClient.liquifyActive || ownClient.transformActive
+    readonly property bool editing:ownClient.liquifyActive || ownClient.transformActive || resizeOverlay.visible
     property bool restoreEditingFocus: false
     onEditingChanged: {
         restoreEditingFocus=!editing
@@ -54,7 +56,7 @@ Rectangle {
         Loader {id:transformBelow;anchors.fill:parent;active:canvas.forwardPreview;sourceComponent:PaintCanvas {previewPart:1;interactive:false;client:root.ownClient;anchors.fill:parent;presentationRect:canvas.documentRect;opacity:0;layer.enabled:true;layer.textureSize:canvas.layer.textureSize}}
         Loader {id:transformAbove;anchors.fill:parent;active:canvas.forwardPreview;sourceComponent:PaintCanvas {previewPart:2;interactive:false;client:root.ownClient;anchors.fill:parent;presentationRect:canvas.documentRect;opacity:0;layer.enabled:true;layer.textureSize:canvas.layer.textureSize}}
         PaintCanvas {
-            id:canvas;initialFitRatio:.76;objectName:root.initialDocument?"mainCanvas":"documentCanvas:"+root.documentId;anchors.fill:parent;client:root.ownClient;focus:true;enabled:!root.savingBlocked
+            id:canvas;initialFitRatio:.76;objectName:root.initialDocument?"mainCanvas":"documentCanvas:"+root.documentId;anchors.fill:parent;client:root.ownClient;focus:true;enabled:!root.savingBlocked && !resizeOverlay.visible
             layer.enabled:forwardPreview
             layer.textureSize:Qt.size(Math.max(1,Math.min(2048,Math.ceil(width*Screen.devicePixelRatio))),Math.max(1,Math.min(2048,Math.ceil(height*Screen.devicePixelRatio))))
             layer.smooth:true
@@ -218,8 +220,28 @@ Rectangle {
         Rectangle {x:1;y:8;width:15;height:1;color:"white"}
         Rectangle {x:8;y:1;width:1;height:15;color:"white"}
     }
+    Item {
+        objectName:"selectionContextArea";anchors.fill:parent;z:14
+        enabled:root.ownClient.selectionEnabled && !root.editing && root.ownClient.ready && !root.ownClient.drawing && !root.ownClient.layerEditBusy && !root.ownClient.fileBusy && !root.savingBlocked
+        TapHandler {
+            acceptedButtons:Qt.RightButton
+            onTapped:event=>{canvas.forceActiveFocus();selectionContext.popup(event.position.x,event.position.y)}
+        }
+    }
+    GlassMenu {
+        id:selectionContext;objectName:"selectionContextMenu"
+        readonly property bool available:root.visible && root.ownClient.ready && root.ownClient.selectionEnabled && !root.editing && !root.ownClient.drawing && !root.ownClient.layerEditBusy && !root.ownClient.fileBusy && !root.savingBlocked
+        onAvailableChanged:if(!available)close()
+        Action {objectName:"contextDeselect";text:"取消选择";enabled:selectionContext.available;onTriggered:root.ownClient.clearSelection()}
+        Action {objectName:"contextInvertSelection";text:"反向选择";enabled:selectionContext.available;onTriggered:root.ownClient.invertSelection()}
+        MenuSeparator {}
+        Action {objectName:"contextFreeTransform";text:"自由变换";enabled:selectionContext.available;onTriggered:{transformOverlay.mode=0;root.ownClient.beginTransform()}}
+        Action {objectName:"contextDistort";text:"扭曲";enabled:selectionContext.available;onTriggered:{transformOverlay.mode=4;root.ownClient.beginTransform()}}
+        Action {objectName:"contextPerspective";text:"透视";enabled:selectionContext.available;onTriggered:{transformOverlay.mode=5;root.ownClient.beginTransform()}}
+    }
+    CanvasResizeOverlay {id:resizeOverlay;anchors.fill:parent;z:25;controller:root.ownClient;canvasView:canvas;visible:root.mainWindow && root.mainWindow.canvasResizeTarget===root;onFinished:root.mainWindow.endCanvasResize()}
     TransformOverlay {id:transformOverlay;anchors.fill:parent;z:15;controller:root.ownClient;canvasView:canvas}
-    Shortcut {sequence: ShortcutSettings.bindings.transform;context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.transformActive && !root.ownClient.liquifyActive;onActivated:root.ownClient.beginTransform()}
+    Shortcut {sequence: ShortcutSettings.bindings.transform;context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.editing;onActivated:root.ownClient.beginTransform()}
     Shortcut {sequence:"Escape";context:Qt.ApplicationShortcut;enabled:root.visible && root.ownClient.transformActive;onActivated:root.ownClient.finishTransform(false)}
     Shortcut {sequences:["Return","Enter"];context:Qt.ApplicationShortcut;enabled:root.visible && root.ownClient.transformActive && !root.ownClient.textInputFocused;onActivated:root.ownClient.finishTransform(true)}
     Shortcut {sequence:"Escape";context:Qt.ApplicationShortcut;enabled:root.visible && root.ownClient.liquifyActive && !root.ownClient.drawing;onActivated:root.ownClient.finishLiquify(false)}

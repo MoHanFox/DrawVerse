@@ -570,6 +570,28 @@ fn read_appearance(r: &mut impl Read) -> Result<crate::LayerAppearance> {
 fn encode_command(w: &mut impl Write, command: &Command) -> io::Result<()> {
     w.write_all(b"DVH7")?;
     match command {
+        Command::Canvas {
+            before_size,
+            after_size,
+            before,
+            after,
+            selection,
+        } => {
+            put_u8(w, 12)?;
+            for v in before_size.iter().chain(after_size) {
+                put_u32(w, *v)?;
+            }
+            let text = selection.to_text();
+            put_u32(w, text.len() as u32)?;
+            w.write_all(text.as_bytes())?;
+            for layers in [before, after] {
+                put_u32(w, layers.len() as u32)?;
+                for (i, l) in layers.iter().enumerate() {
+                    encode_layer(w, i, l)?;
+                }
+            }
+            Ok(())
+        }
         Command::LayerEdit {
             before,
             after,
@@ -693,6 +715,53 @@ fn decode_command<R: Read>(r: &mut CheckedReader<R>) -> Result<Command> {
         return Err(invalid());
     }
     match u8_value(r)? {
+        12 => {
+            let mut sizes = [[0; 3]; 2];
+            for size in &mut sizes {
+                for v in size.iter_mut() {
+                    *v = u32_value(r)?;
+                }
+                if size[0] == 0
+                    || size[1] == 0
+                    || size[0] > crate::MAX_DIMENSION
+                    || size[1] > crate::MAX_DIMENSION
+                    || !(1..=12000).contains(&size[2])
+                {
+                    return Err(invalid());
+                }
+            }
+            let n = u32_value(r)? as usize;
+            if n > 128 * 1024 * 1024 {
+                return Err(invalid());
+            }
+            let mut text = vec![0; n];
+            r.read_exact(&mut text).map_err(storage_error)?;
+            let selection =
+                crate::Selection::from_text(std::str::from_utf8(&text).map_err(storage_error)?)?;
+            let mut sets = Vec::new();
+            for _ in 0..2 {
+                let n = u32_value(r)? as usize;
+                if n == 0 || n > 4096 {
+                    return Err(invalid());
+                }
+                let mut layers = Vec::new();
+                for i in 0..n {
+                    let (at, l) = decode_layer(r)?;
+                    if at != i {
+                        return Err(invalid());
+                    }
+                    layers.push(l);
+                }
+                sets.push(layers);
+            }
+            Ok(Command::Canvas {
+                before_size: sizes[0],
+                after_size: sizes[1],
+                before: sets.remove(0),
+                after: sets.remove(0),
+                selection,
+            })
+        }
         11 => {
             let selection = if boolean(r)? {
                 let mut selections = Vec::new();

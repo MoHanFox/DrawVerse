@@ -44,6 +44,7 @@ pub(crate) enum Operation {
     DropBatch(Vec<u64>, u64, u32),
     RemoveBatch(Vec<u64>, bool),
     Transform(u32, Option<paint_core::TransformGeometry>),
+    ResizeCanvas(i32, i32, u32, u32, u32, bool, paint_core::Pixel),
     TransformLayers(Vec<u64>, bool),
     Liquify(u32, Option<paint_core::LiquifyDab>),
     LayerMove(u32, u64, i32, i32),
@@ -112,6 +113,7 @@ pub(crate) struct LayerState {
     pub clipping: PaintLayerClipping,
 }
 pub(crate) struct Publication {
+    pub dpi: u32,
     pub adjustment_histogram: Option<Arc<Vec<f32>>>,
     pub committed_strokes: Arc<VecDeque<u64>>,
     pub resident_preview: Option<Arc<paint_core::ResidentPreview>>,
@@ -1031,6 +1033,7 @@ fn publish(
         })
         .collect();
     Publication {
+        dpi: doc.dpi(),
         adjustment_histogram: doc.adjustment_histogram(),
         committed_strokes: Arc::new(VecDeque::new()),
         resident_preview: doc.resident_preview().map(Arc::new),
@@ -1348,7 +1351,9 @@ impl Engine {
         let barrier = matches!(command.operation, Operation::LayerMove(kind, ..) if kind != PAINT_LAYER_MOVE_UPDATE)
             || matches!(
                 command.operation,
-                Operation::TransformLayers(..) | Operation::LayerMoves(..)
+                Operation::ResizeCanvas(..)
+                    | Operation::TransformLayers(..)
+                    | Operation::LayerMoves(..)
             )
             || matches!(command.operation,Operation::Transform(kind,_) if kind!=PAINT_TRANSFORM_UPDATE && kind!=PAINT_TRANSFORM_CHECKPOINT)
             || matches!(
@@ -1610,6 +1615,12 @@ impl Engine {
                 } else {
                     self.document.begin_transform_layers(&ids)?;
                 }
+            }
+            Operation::ResizeCanvas(x, y, w, h, dpi, delete, fill) => {
+                if self.files.running() {
+                    return Err(paint_core::Error::Busy.into());
+                }
+                self.modified |= self.document.resize_canvas(x, y, w, h, dpi, delete, fill)?;
             }
             Operation::Transform(kind, g) => match kind {
                 PAINT_TRANSFORM_BEGIN => self.document.begin_transform()?,

@@ -621,6 +621,14 @@ pub(crate) fn decode(
             storage,
         )?;
     }
+    if names.contains("drawverse/dpi.txt") {
+        let bytes = entry(&mut zip, "drawverse/dpi.txt", 16)?;
+        let dpi = std::str::from_utf8(&bytes)
+            .map_err(|_| Error::Invalid("dpi encoding"))?
+            .parse::<u32>()
+            .map_err(|_| Error::Invalid("dpi value"))?;
+        document.initialize_dpi(dpi)?;
+    }
     document.initialize_selection(selection)?;
     Ok(document)
 }
@@ -779,6 +787,8 @@ pub(crate) fn encode(
         options,
     )?;
     zip.write_all(xml.as_bytes())?;
+    zip.start_file("drawverse/dpi.txt", options)?;
+    zip.write_all(snapshot.dpi.to_string().as_bytes())?;
     if extended {
         let fallback=format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><image w=\"{}\" h=\"{}\" version=\"0.0.6\" xmlns:dv=\"urn:drawverse:layers:1\" dv:editable=\"2\"><stack><layer name=\"DrawVerse 合成预览\" src=\"mergedimage.png\"/></stack></image>",snapshot.width,snapshot.height);
         zip.start_file("stack.xml", options)?;

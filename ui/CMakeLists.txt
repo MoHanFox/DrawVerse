@@ -40,7 +40,7 @@ set(_drawverse_ui_resources
     qml/app/Main.qml qml/app/WelcomeScreen.qml qml/app/WorkspaceStatusBar.qml
     qml/workspace/DockWorkspace.qml qml/workspace/DockTile.qml qml/workspace/DockDivider.qml qml/workspace/DockEdgePreview.qml qml/workspace/DockHintWindow.qml qml/workspace/FloatingPanel.qml qml/workspace/PanelGroup.qml qml/workspace/PanelFlyout.qml qml/workspace/PanelContent.qml
     qml/documents/DocumentArea.qml qml/documents/DocumentWindow.qml
-    qml/canvas/CanvasPane.qml qml/canvas/TaskProgressOverlay.qml qml/canvas/SelectionPresentation.qml qml/canvas/AdaptiveCursor.qml qml/canvas/TransformOverlay.qml qml/canvas/TransparencyGrid.qml qml/canvas/EyedropperRing.qml
+    qml/canvas/CanvasPane.qml qml/canvas/CanvasResizeOverlay.qml qml/canvas/TaskProgressOverlay.qml qml/canvas/SelectionPresentation.qml qml/canvas/AdaptiveCursor.qml qml/canvas/TransformOverlay.qml qml/canvas/TransparencyGrid.qml qml/canvas/EyedropperRing.qml
     qml/brushes/BrushLibraryPanel.qml qml/brushes/BrushSettingsPanel.qml qml/brushes/PressureCurveEditor.qml qml/brushes/SpeedCurveEditor.qml
     qml/brushes/BrushResourceThumbnail.qml qml/brushes/BrushResourcePicker.qml qml/brushes/BrushTipShapeControl.qml
     qml/layers/LayersPanel.qml qml/layers/LayerLock.qml qml/layers/LayerThumbnail.qml
@@ -51,7 +51,7 @@ set(_drawverse_ui_resources
     qml/tools/AdjustmentCurve.qml
     qml/tools/AdjustmentColorSlider.qml
     qml/tools/AdjustmentLevels.qml
-    qml/tools/ToolStrip.qml qml/tools/ToolVariantsPanel.qml qml/tools/SelectionOptionsBar.qml qml/tools/BucketOptionsBar.qml qml/tools/WandOptionsBar.qml qml/tools/SmudgeOptionsBar.qml qml/tools/LiquifyOptionsBar.qml qml/tools/TransformOptionsBar.qml
+    qml/tools/ToolStrip.qml qml/tools/ToolVariantsPanel.qml qml/tools/SelectionOptionsBar.qml qml/tools/BucketOptionsBar.qml qml/tools/WandOptionsBar.qml qml/tools/SmudgeOptionsBar.qml qml/tools/LiquifyOptionsBar.qml qml/tools/TransformOptionsBar.qml qml/tools/CanvasResizeOptionsBar.qml
     qml/preferences/PreferencesPanel.qml qml/preferences/StoragePreferences.qml qml/preferences/KeyboardShortcutsDialog.qml
     qml/controls/CompactCheckBox.qml qml/controls/CompactComboBox.qml qml/controls/CompactSlider.qml qml/controls/MappedSlider.qml qml/controls/ParameterSlider.qml qml/controls/PanelDialog.qml qml/controls/CompactSpinBox.qml qml/controls/CompactTextField.qml qml/controls/Icon.qml qml/controls/IconButton.qml qml/controls/ComboPopupWindow.qml qml/controls/LayerPercent.qml
     qml/menus/GlassMenu.qml qml/menus/GlassMenuItem.qml qml/menus/SideMenuWindow.qml

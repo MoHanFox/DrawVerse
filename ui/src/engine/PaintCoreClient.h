@@ -126,6 +126,7 @@ class PaintCoreClient final : public QObject {
     Q_PROPERTY(QVariantList collapsedGroups READ collapsedGroups NOTIFY groupExpansionChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
     Q_PROPERTY(QColor secondaryBrushColor READ secondaryBrushColor WRITE setSecondaryBrushColor NOTIFY brushChanged)
+    Q_PROPERTY(int documentDpi READ documentDpi NOTIFY stateChanged)
     Q_PROPERTY(QColor brushColor READ brushColor WRITE setBrushColor NOTIFY brushChanged)
     Q_PROPERTY(int brushWriteBlend READ brushWriteBlend WRITE setBrushWriteBlend NOTIFY brushChanged)
     Q_PROPERTY(qreal brushRadius READ brushRadius WRITE setBrushRadius NOTIFY brushChanged)
@@ -423,6 +424,8 @@ public:
     Q_INVOKABLE bool updateAdjustment(int kind,const QVariantList &lut,qreal hue,qreal saturation,qreal lightness,bool colorize=false);
     Q_INVOKABLE bool updateAdjustmentControls(int kind,const QVariantMap &values);
     Q_INVOKABLE bool finishAdjustment(bool commit);
+    int documentDpi() const {return m_documentDpi;}
+    Q_INVOKABLE bool resizeCanvas(int x,int y,int width,int height,int dpi,bool deletePixels,bool selectedColor);
     Q_INVOKABLE bool flipImage(bool horizontal);
     bool liquifyActive() const {return m_liquifyActive;}
     bool liquifyBusy() const {return m_pendingLiquify!=0 || layerEditBusy();}
@@ -533,6 +536,7 @@ signals:
     void computeChanged();
     void storageFinished(bool success);
     void stateChanged();
+    void canvasResizeFinished(bool success);
     void layerShortcutsChanged();
     void transformChanged();
     void historyScopeChanging(bool liquify);
@@ -653,6 +657,7 @@ private:
     bool submitLayerAction(quint32 kind, const QByteArray &bytes = {});
     quint64 m_pendingCopy = 0;
     quint64 m_pendingLayer = 0;
+    quint64 m_pendingCanvasResize = 0;
     /// Sequence of an in-flight lasso/wand selection edit; non-zero keeps layer edits busy.
 
     QVariantList m_layers;
@@ -664,6 +669,7 @@ private:
     bool dropLayers(const QList<quint64> &ids, quint64 target, int placement);
     QString m_error;
     QColor m_secondaryColor=Qt::white;
+    int m_documentDpi=72;
     QColor m_color{"#2ea99d"};
     // Colour of the stroke in progress: recent colours only advance on a committed stroke.
     QColor m_strokeColor;

@@ -61,6 +61,65 @@ signals:
 class WorkflowTests : public QObject {
     Q_OBJECT
 private slots:
+    void selectedCanvasKeepsToolAndSpaceWindowCursors() {
+        QTemporaryDir temp;
+        PaintCoreClient client(nullptr,temp.filePath("selected-cursor.ini"));
+        WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);
+        engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.setInitialProperties({{"createInitialDocument",true}});
+        engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        window->requestActivate();QVERIFY(QTest::qWaitForWindowActive(window));
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);canvas->forceActiveFocus();
+        client.brushLibrary()->setCursorOutline(true);client.brushLibrary()->setCursorCenter(true);
+        client.brushLibrary()->setCursorHoverOnly(false);
+        auto point=[&](int offset){return canvas->mapToScene(canvas->boundingRect().center()+QPointF(offset,0)).toPoint();};
+        auto move=[&](int offset){QTest::mouseMove(window,point(offset));};
+        move(-5);const bool initiallyVisible=canvas->brushCursorVisible();
+        if(!initiallyVisible)QTest::keyClick(window,Qt::Key_CapsLock);
+        QTRY_VERIFY(canvas->brushCursorVisible());
+        for(bool selected:{false,true}) {
+            if(selected){QVERIFY(client.selectAll());QTRY_VERIFY(client.selectionEnabled() && !client.layerEditBusy());}
+            for(int tool=0;tool<4;++tool) {
+                if(tool==0)client.activateBrush();else if(tool==1)client.activateEraser();
+                else if(tool==2)client.activateSmudge();else client.activateEyedropper();
+                move(tool+1);QTRY_COMPARE(canvas->cursor().shape(),Qt::BlankCursor);
+                // A native cursor restoration can leave Quick's cached item unchanged.
+                // Recover the window even though the item's requested shape is unchanged.
+                window->setCursor(Qt::ArrowCursor);move(tool+7);
+                QTRY_COMPARE(window->cursor().shape(),Qt::BlankCursor);
+                window->setCursor(Qt::ArrowCursor);
+                QTRY_COMPARE_WITH_TIMEOUT(window->cursor().shape(),Qt::BlankCursor,600);
+            }
+            client.activateBrush();move(15);const auto origin=canvas->documentRect().topLeft();
+            const auto depth=client.undoDepth();QTest::keyPress(window,Qt::Key_Space);
+            QCOMPARE(canvas->cursor().shape(),Qt::OpenHandCursor);
+            QCOMPARE(window->cursor().shape(),Qt::OpenHandCursor);
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,point(15));
+            QTest::mouseMove(window,point(15)+QPoint(12,9));
+            QCOMPARE(window->cursor().shape(),Qt::OpenHandCursor);
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,point(15)+QPoint(12,9));
+            QTest::keyRelease(window,Qt::Key_Space);
+            QCOMPARE(canvas->documentRect().topLeft(),origin+QPointF(12,9));
+            QCOMPARE(client.undoDepth(),depth);QVERIFY(!client.drawing());
+            QTRY_COMPARE(window->cursor().shape(),Qt::BlankCursor);
+            QTest::keyPress(window,Qt::Key_Control);QCOMPARE(window->cursor().shape(),Qt::SizeAllCursor);
+            QTest::keyRelease(window,Qt::Key_Control);QTRY_COMPARE(window->cursor().shape(),Qt::BlankCursor);
+            QTest::mouseMove(window,{5,5});QTRY_VERIFY(!canvas->brushCursorVisible());
+            QTRY_COMPARE(window->cursor().shape(),Qt::ArrowCursor);
+            move(20);QTRY_COMPARE(window->cursor().shape(),Qt::BlankCursor);
+        }
+        QVERIFY(client.beginTransform());
+        QTRY_VERIFY(client.transformActive() && !client.transformBusy() && client.transformPoints().size()==16);
+        move(22);QTRY_COMPARE(window->cursor().shape(),Qt::SizeAllCursor);
+        QTest::qWait(80);QCOMPARE(window->cursor().shape(),Qt::SizeAllCursor);
+        client.finishTransform(false);QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
+        move(24);QTRY_COMPARE(window->cursor().shape(),Qt::BlankCursor);
+        if(!initiallyVisible)QTest::keyClick(window,Qt::Key_CapsLock);
+        QVERIFY(client.lastError().isEmpty());client.shutdown();
+    }
     void menuLoadsIntrinsicLayerAlphaAndKeepsFullCanvasSelectAll() {
         QTemporaryDir temp;QImage image(64,32,QImage::Format_RGBA8888);image.fill(Qt::transparent);image.setPixelColor(12,6,QColor(90,40,20,128));image.setPixelColor(14,6,Qt::white);const auto path=temp.filePath("alpha.png");QVERIFY(image.save(path));
         PaintCoreClient client(nullptr,temp.filePath("menu-alpha.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());QTRY_VERIFY(client.ready());

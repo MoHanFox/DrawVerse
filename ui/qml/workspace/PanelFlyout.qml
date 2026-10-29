@@ -56,7 +56,7 @@ PanelWindow {
     readonly property bool workspaceHidden:sourceWindow && ("hasDocuments" in sourceWindow ? !sourceWindow.hasDocuments : ("workspaceHidden" in sourceWindow && sourceWindow.workspaceHidden))
     onWorkspaceHiddenChanged:if(workspaceHidden)close()
     property bool retainedLiquifyVisibility:false
-    readonly property bool liquifying:PaintClient.liquifyActive
+    readonly property bool liquifying:PaintClient.liquifyActive || Workspace.canvasAdjusting
     onLiquifyingChanged:{
         if(liquifying){retainedLiquifyVisibility=visible;if(visible){Workspace.watchPanelFlyout(root,ownerTile,false);hide()}}
         else if(retainedLiquifyVisibility){retainedLiquifyVisibility=false;visible=true;Workspace.watchPanelFlyout(root,ownerTile,true)}

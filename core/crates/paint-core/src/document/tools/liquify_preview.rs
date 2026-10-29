@@ -377,6 +377,7 @@ impl Document {
                 pool: Arc::clone(&self.pool),
                 width: self.width,
                 height: self.height,
+                dpi: self.dpi,
                 revision: self.revision,
                 layers,
                 selection: self.selection.clone(),

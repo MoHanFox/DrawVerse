@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 92;
+pub const PAINT_ABI_MINOR: u32 = 93;
 
 #[path = "api_composition.rs"]
 mod composition;
@@ -1064,3 +1064,19 @@ pub const PAINT_HISTORY_CURVES: u32 = 42;
 pub const PAINT_HISTORY_LEVELS: u32 = 43;
 pub const PAINT_HISTORY_HUE_SATURATION: u32 = 44;
 pub const PAINT_HISTORY_LAYER_ALPHA_SELECTION: u32 = 45;
+pub const PAINT_HISTORY_RESIZE_CANVAS: u32 = 46;
+
+/// ABI1.93: integer canvas bounds, metadata DPI, destructive crop flag and linear straight fill.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PaintCanvasResize {
+    pub struct_size: u32,
+    pub flags: u32,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub dpi: u32,
+    pub reserved: u32,
+    pub fill: [f32; 4],
+}

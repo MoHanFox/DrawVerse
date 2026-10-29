@@ -5525,3 +5525,48 @@ fn move_preparation_cleanup_is_allowed_during_resident_edits_without_changing_th
         }
     }
 }
+
+#[test]
+fn canvas_resize_publication_dpi_history_and_rejected_input() {
+    let h = Harness::new(70, 65);
+    unsafe {
+        let mut r = dto!(PaintCanvasResize);
+        r.width = 76;
+        r.height = 70;
+        r.x = -3;
+        r.y = -2;
+        r.dpi = 300;
+        r.fill = [1., 0., 0., 1.];
+        let mut seq = 9;
+        r.width = 0;
+        assert_eq!(
+            paint_session_resize_canvas(h.core, h.session, &r, &mut seq),
+            PAINT_INVALID_ARGUMENT
+        );
+        assert_eq!(seq, 0);
+        r.width = 76;
+        assert_eq!(
+            paint_session_resize_canvas(h.core, h.session, &r, &mut seq),
+            PAINT_OK
+        );
+        let state = h.wait(seq);
+        assert_eq!(state.last_error_status, PAINT_OK);
+        assert_eq!((state.width, state.height), (76, 70));
+        let mut dpi = 0;
+        assert_eq!(
+            paint_session_canvas_dpi(h.core, h.session, state.publication, &mut dpi),
+            PAINT_OK
+        );
+        assert_eq!(dpi, 300);
+        let state = h.wait(h.submit(PaintCommand {
+            kind: PAINT_COMMAND_UNDO,
+            ..dto!(PaintCommand)
+        }));
+        assert_eq!((state.width, state.height), (70, 65));
+        assert_eq!(
+            paint_session_canvas_dpi(h.core, h.session, state.publication, &mut dpi),
+            PAINT_OK
+        );
+        assert_eq!(dpi, 72);
+    }
+}

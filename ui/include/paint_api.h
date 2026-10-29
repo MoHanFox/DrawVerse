@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 92
+#define PAINT_ABI_MINOR 93
 
 #define PAINT_ABI_PATCH 0
 
@@ -475,6 +475,8 @@
 #define PAINT_HISTORY_REMOVE_LAYER 8
 
 #define PAINT_HISTORY_REPARENT 16
+
+#define PAINT_HISTORY_RESIZE_CANVAS 46
 
 #define PAINT_HISTORY_SCOPE_DOCUMENT 0
 
@@ -1355,6 +1357,21 @@ typedef struct PaintCompositionRequest {
  * Same versioned packet as ABI 1.62; usable by move and liquify.
  */
 typedef struct PaintLiquifyPreviewInfo PaintResidentPreviewInfo;
+
+/**
+ * ABI1.93: integer canvas bounds, metadata DPI, destructive crop flag and linear straight fill.
+ */
+typedef struct PaintCanvasResize {
+  uint32_t struct_size;
+  uint32_t flags;
+  int32_t x;
+  int32_t y;
+  uint32_t width;
+  uint32_t height;
+  uint32_t dpi;
+  uint32_t reserved;
+  float fill[4];
+} PaintCanvasResize;
 
 typedef struct PaintHistorySelect {
   uint32_t struct_size;
@@ -2446,6 +2463,16 @@ PaintStatus paint_session_bucket_fill(struct PaintCore *core,
                                       uint64_t *out_sequence);
 
 /**
+ * Read DPI from the same immutable publication as session dimensions.
+ * # Safety
+ * Valid owned handles and writable output.
+ */
+PaintStatus paint_session_canvas_dpi(struct PaintCore *core,
+                                     struct PaintSession *session,
+                                     uint64_t publication,
+                                     uint32_t *out_dpi);
+
+/**
  * ABI 1.80: invalidate any queued or completed move preparation.
  * # Safety
  * Valid session handles and writable nonoverlapping sequence are required.
@@ -3035,6 +3062,16 @@ PaintStatus paint_session_request_composition(struct PaintCore *core,
 PaintStatus paint_session_resident_preview_info(struct PaintCore *core,
                                                 struct PaintSession *session,
                                                 PaintResidentPreviewInfo *out_info);
+
+/**
+ * Resize canvas in one queued authoritative history transaction.
+ * # Safety
+ * Owned handles, initialized readable DTO and nonoverlapping writable sequence.
+ */
+PaintStatus paint_session_resize_canvas(struct PaintCore *core,
+                                        struct PaintSession *session,
+                                        const struct PaintCanvasResize *request,
+                                        uint64_t *out_sequence);
 
 /**
  * ABI 1.12: read one pixel of an already rendered viewport for the eyedropper. Read-only: the

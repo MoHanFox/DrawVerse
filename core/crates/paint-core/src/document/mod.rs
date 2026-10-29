@@ -12,6 +12,7 @@ pub const MAX_DIMENSION: u32 = 1_000_000;
 const MAX_DABS_PER_SEGMENT: usize = crate::MAX_INPUT_PAGE_DABS;
 const MAX_PIXEL_VISITS_PER_SEGMENT: usize = crate::MAX_INPUT_PAGE_VISITS;
 mod batch;
+mod canvas_resize;
 mod row_samples;
 use row_samples::RowSamples;
 #[path = "stroke/document_input_paging.rs"]
@@ -301,6 +302,7 @@ pub struct DirtyTiles {
 pub struct DocumentSnapshot {
     pub width: u32,
     pub height: u32,
+    pub dpi: u32,
     pub revision: u64,
     layers: Vec<Layer>,
     selection: crate::Selection,
@@ -524,6 +526,7 @@ pub struct Document {
     pool: Arc<crate::page_pool::PagePool>,
     width: u32,
     height: u32,
+    dpi: u32,
     layers: Vec<Layer>,
     active_layer: LayerId,
     next_layer_id: LayerId,
@@ -785,6 +788,7 @@ impl Document {
             compute: Arc::new(paint_ops::Cpu),
             width,
             height,
+            dpi: 72,
             layers: vec![Layer::new(1, "Layer 1".into())],
             active_layer: 1,
             next_layer_id: 2,
@@ -955,6 +959,7 @@ impl Document {
             pool: Arc::clone(&self.pool),
             width: self.width,
             height: self.height,
+            dpi: self.dpi,
             revision: self.revision,
             layers: self.layers.clone(),
             selection: self.selection.clone(),
@@ -1006,6 +1011,7 @@ impl Document {
             pool: Arc::clone(&self.pool),
             width: self.width,
             height: self.height,
+            dpi: self.dpi,
             revision: self.revision,
             layers,
         })
@@ -3256,6 +3262,30 @@ impl Document {
 
     fn apply_history(&mut self, command: &Command, forward: bool) {
         match command {
+            Command::Canvas {
+                before_size,
+                after_size,
+                before,
+                after,
+                selection,
+            } => {
+                let size = if forward { after_size } else { before_size };
+                self.width = size[0];
+                self.height = size[1];
+                self.dpi = size[2];
+                self.layers = if forward {
+                    after.clone()
+                } else {
+                    before.clone()
+                };
+                self.selection = if forward {
+                    crate::Selection::default()
+                } else {
+                    selection.clone()
+                };
+                self.selection_cache.clear();
+                self.dirty_all();
+            }
             Command::LayerEdit {
                 before,
                 after,

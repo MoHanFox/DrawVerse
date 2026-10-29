@@ -13,6 +13,7 @@ impl Document {
         if depth == undo {
             return Ok(false);
         }
+        let size = (self.width, self.height, self.dpi);
         let layers = self.layers.clone();
         let selection = self.selection.clone();
         let active = self.active_layer;
@@ -31,6 +32,7 @@ impl Document {
             let command = match stored.materialize_verified_in(Some(&self.pool), &mut verified) {
                 Ok(command) => command,
                 Err(error) => {
+                    (self.width, self.height, self.dpi) = size;
                     self.layers = layers;
                     self.selection = selection;
                     self.selection_cache.clear();
