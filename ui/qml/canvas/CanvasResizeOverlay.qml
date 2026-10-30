@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import "../theme"
 Item {
-    id:root;objectName:"canvasResizeOverlay"
+    id:root;objectName:"canvasResizeOverlay";clip:true
     required property var controller
     required property var canvasView
     signal finished()
@@ -60,6 +60,7 @@ Item {
     onOriginalRatioChanged:changed()
     onDeletePixelsChanged:changed()
     onSelectedColorChanged:changed()
+    onActiveFocusChanged:if(!activeFocus)spaceHeld=false
     Keys.onPressed:event=>{if(event.key===Qt.Key_Space){spaceHeld=true;event.accepted=true}}
     Keys.onReleased:event=>{if(event.key===Qt.Key_Space){spaceHeld=false;event.accepted=true}}
     onVisibleChanged:if(visible)root.forceActiveFocus();else{spaceHeld=false;historyTimer.stop()}
@@ -75,10 +76,15 @@ Item {
         model:{const f=root.frame,d=root.canvasView.documentRect;const l=Math.max(f.x,Math.min(f.x+f.width,d.x)),t=Math.max(f.y,Math.min(f.y+f.height,d.y)),r=Math.max(l,Math.min(f.x+f.width,d.x+d.width)),b=Math.max(t,Math.min(f.y+f.height,d.y+d.height));return [Qt.rect(f.x,f.y,f.width,t-f.y),Qt.rect(f.x,b,f.width,f.y+f.height-b),Qt.rect(f.x,t,l-f.x,b-t),Qt.rect(r,t,f.x+f.width-r,b-t)]}
         Rectangle {required property var modelData;x:modelData.x;y:modelData.y;width:Math.max(0,modelData.width);height:Math.max(0,modelData.height);color:root.selectedColor?root.controller.brushColor:"white"}
     }
-    Rectangle {x:0;y:0;width:parent.width;height:Math.max(0,root.frame.y);color:"#66000000"}
-    Rectangle {x:0;y:Math.max(0,root.frame.y+root.frame.height);width:parent.width;height:Math.max(0,parent.height-y);color:"#66000000"}
-    Rectangle {x:0;y:Math.max(0,root.frame.y);width:Math.max(0,root.frame.x);height:root.frame.height;color:"#66000000"}
-    Rectangle {x:Math.max(0,root.frame.x+root.frame.width);y:Math.max(0,root.frame.y);width:Math.max(0,parent.width-x);height:root.frame.height;color:"#66000000"}
+    // Partition the visible viewport once, even when the frame is partly offscreen.
+    readonly property real shadeLeft:Math.max(0,Math.min(width,frame.x))
+    readonly property real shadeRight:Math.max(shadeLeft,Math.min(width,frame.x+frame.width))
+    readonly property real shadeTop:Math.max(0,Math.min(height,frame.y))
+    readonly property real shadeBottom:Math.max(shadeTop,Math.min(height,frame.y+frame.height))
+    Rectangle {objectName:"resizeShadeTop";width:parent.width;height:root.shadeTop;color:"#66000000"}
+    Rectangle {objectName:"resizeShadeBottom";y:root.shadeBottom;width:parent.width;height:parent.height-y;color:"#66000000"}
+    Rectangle {objectName:"resizeShadeLeft";y:root.shadeTop;width:root.shadeLeft;height:root.shadeBottom-y;color:"#66000000"}
+    Rectangle {objectName:"resizeShadeRight";x:root.shadeRight;y:root.shadeTop;width:parent.width-x;height:root.shadeBottom-y;color:"#66000000"}
     Rectangle {x:root.frame.x;y:root.frame.y;width:root.frame.width;height:root.frame.height;color:"transparent";border.color:"#dddddd";border.width:1
         Repeater {model:mouse.pressed?2:0;Rectangle {required property int index;x:(index+1)*parent.width/3;width:1;height:parent.height;color:"#66ffffff"}}
         Repeater {model:mouse.pressed?2:0;Rectangle {required property int index;y:(index+1)*parent.height/3;height:1;width:parent.width;color:"#66ffffff"}}

@@ -35,6 +35,7 @@ class CanvasItem : public QQuickItem {
     Q_PROPERTY(QColor previousSampleColor READ previousSampleColor NOTIFY brushCursorChanged)
     Q_PROPERTY(QPointF cursorPosition READ cursorPosition NOTIFY brushCursorChanged)
     Q_PROPERTY(bool spacePanning READ spacePanning NOTIFY spacePanningChanged)
+    Q_PROPERTY(bool resizeNavigation MEMBER m_resizeNavigation)
     Q_PROPERTY(bool interactive READ interactive WRITE setInteractive NOTIFY interactiveChanged)
     Q_PROPERTY(qreal initialFitRatio READ initialFitRatio WRITE setInitialFitRatio NOTIFY viewChanged)
     Q_PROPERTY(QRectF selectionPreview READ selectionPreview NOTIFY selectionDragChanged)
@@ -237,6 +238,7 @@ private:
     void syncWindowCursor();
     void updateCursorPoll();
     bool m_selecting = false;
+    bool m_resizeNavigation = false;
     bool m_interactive = true, m_space = false, m_panning = false, m_stroke = false, m_tablet = false, m_fitPending = true;
     QElapsedTimer m_clock;
 };

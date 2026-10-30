@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 调整导航纠偏2026-10-30：恢复原缩放动画，禁用画布不截获空格、覆盖层失焦释放；越界遮罩视口内互斥分割。软件/D3D11原调整功能各1行扩展中间帧/250ms空格/越界几何通过，独立SelectionCanvasReview更新及D3D11冒烟0；标准EXE占用保留。见canvas-resize设计/验收末节，无实体/总check结论。
+
 - 调整草稿/三侧描边2026-10-30：ABI1.96追加居外/居中，原居内/羽化/填充事务保持。调整草稿独立撤销重做仅复用原工具条、编辑菜单与快捷键，不新增历史界面；中键/空格平移和滚轮缩放，确认单文档冷历史/取消无历史。核心7/公开七kind循环1、软件/D3D11各3功能、四ABI/Clippy/fmt/头通过。标准EXE占用，独立build/bin/SelectionCanvasReview及D3D11冒烟0。设计/验收见canvas-resize与selection-context-menu文档末节，无总check/实体/性能结论。
 
 

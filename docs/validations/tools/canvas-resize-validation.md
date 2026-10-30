@@ -43,3 +43,12 @@
 - Release UI 与核心构建通过。标准 EXE 被用户现有进程占用，未关闭进程或覆盖该 EXE；独立 `build/bin/SelectionCanvasReview/drawverse.exe` 静态链接新 UI/核心并附运行依赖，实际 D3D11 `--preview` 冒烟退出 0，日志及 PNG 在 build/selection-canvas-review-smoke.*。
 
 未运行总 check；未作实体输入、物理显示或新性能宣称。羽化/填充无反应的用户症状本轮未复现，用户随后确认正常；不把它描述为已定位的生产缺陷。
+
+
+## 2026-10-30 缩放动画、空格与越界遮罩回归
+
+用户指出上一版即时缩放、空格导航失效和角落黑块。删除即时分支，resizeNavigation 只允许调整会话在绘画禁用时运行原动画；禁用 Canvas 不截获空格，覆盖层自行处理并失焦释放。遮罩裁剪到视口，四块互斥分割。
+
+Release qt_ui_tests 构建、头检查及 diff --check 通过。扩展原 canvasResizeInteractiveCancelCommitDpiAndUndo：缩放开始值保持、40 ms 中间值及最终值；空格按住 250 ms 后仍由覆盖层持有并成功拖动；整图移出左上视口后逐块检查遮罩非负、位于视口内及两两不相交。原中键、独立历史、取消/确认和 DPI 检查保留。最终软件与实际 D3D11 各 3 passed（1 功能加初始化/清理），日志 resize-nav-{software,d3d11}-final.txt。测试首版误认为 captureLayoutPosition 返回值，编译失败保留，改用原无返回值接口后通过；早先 initial 日志未包含全部新增断言，不作为最终证据。
+
+标准 EXE 仍被用户进程占用；更新独立 build/bin/SelectionCanvasReview/drawverse.exe，实际 D3D11 --preview 冒烟退出 0，resize-nav-smoke.* 保留。未关闭用户进程，未新增历史界面。ABI/核心算法不变，未跑总 check，未作实体笔/物理显示或新性能结论。

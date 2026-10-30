@@ -59,6 +59,7 @@ Rectangle {
         PaintCanvas {
             id:canvas;initialFitRatio:.76;objectName:root.initialDocument?"mainCanvas":"documentCanvas:"+root.documentId;anchors.fill:parent;client:root.ownClient;focus:true;enabled:!root.savingBlocked && !resizeOverlay.visible
             readonly property var canvasResizeEditor:resizeOverlay.visible?resizeOverlay:null
+            resizeNavigation:resizeOverlay.visible
             layer.enabled:forwardPreview
             layer.textureSize:Qt.size(Math.max(1,Math.min(2048,Math.ceil(width*Screen.devicePixelRatio))),Math.max(1,Math.min(2048,Math.ceil(height*Screen.devicePixelRatio))))
             layer.smooth:true

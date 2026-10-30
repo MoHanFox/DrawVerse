@@ -4600,10 +4600,13 @@ private slots:
         QTest::mousePress(window,Qt::MiddleButton,Qt::NoModifier,navigationStart);QTest::mouseMove(window,navigationStart+QPoint(25,15));QTest::mouseRelease(window,Qt::MiddleButton,Qt::NoModifier,navigationStart+QPoint(25,15));
         QVERIFY(QLineF(rectBefore.topLeft(),canvas->documentRect().topLeft()).length()>20);
         const auto zoomBefore=canvas->zoom();QWheelEvent resizeWheel(navigationStart,window->mapToGlobal(navigationStart),{},QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QCoreApplication::sendEvent(window,&resizeWheel);QTRY_VERIFY(canvas->zoom()>zoomBefore);QCOMPARE(client.undoDepth(),depth);
+        QTest::qWait(200);const auto animatedStart=canvas->zoom();canvas->zoomBy(.8);QCOMPARE(canvas->zoom(),animatedStart);QTest::qWait(40);QVERIFY(canvas->zoom()<animatedStart);QVERIFY(canvas->zoom()>animatedStart*.8);QTest::qWait(180);QVERIFY(std::abs(canvas->zoom()-animatedStart*.8)<.00001);
+        canvas->captureLayoutPosition();canvas->panBy(-window->width(),-window->height());
+        QList<QRectF> shades;for(const auto &name:{"resizeShadeTop","resizeShadeBottom","resizeShadeLeft","resizeShadeRight"}){auto *shade=overlay->findChild<QQuickItem*>(name);QVERIFY(shade);const QRectF rect(shade->position(),shade->size());QVERIFY(rect.left()>=0 && rect.top()>=0 && rect.right()<=overlay->width() && rect.bottom()<=overlay->height());for(const auto &other:shades)QVERIFY(!rect.intersects(other));shades.append(rect);}canvas->restoreLayoutPosition();
         overlay->forceActiveFocus();overlay->setProperty("dpi",210);
         QTest::keyClick(window,Qt::Key_Z,Qt::ControlModifier);QTRY_COMPARE(overlay->property("dpi").toInt(),200);QCOMPARE(client.undoDepth(),depth);
         QTest::keyClick(window,Qt::Key_Z,Qt::ControlModifier|Qt::ShiftModifier);QTRY_COMPARE(overlay->property("dpi").toInt(),210);
-        QTest::keyPress(window,Qt::Key_Space);const auto spacePan=canvas->documentRect().topLeft();
+        QTest::keyPress(window,Qt::Key_Space);QTest::qWait(250);QVERIFY(overlay->property("spaceHeld").toBool());const auto spacePan=canvas->documentRect().topLeft();
         QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,navigationStart);QTest::mouseMove(window,navigationStart+QPoint(20,10));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,navigationStart+QPoint(20,10));QTest::keyRelease(window,Qt::Key_Space);
         QVERIFY(QLineF(spacePan,canvas->documentRect().topLeft()).length()>15);QCOMPARE(client.undoDepth(),depth);
         QVERIFY(!window->findChild<QObject*>("canvasResizeHistory"));QVERIFY(!window->findChild<QObject*>("canvasResizeUndo"));

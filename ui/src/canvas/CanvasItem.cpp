@@ -527,10 +527,6 @@ void CanvasItem::zoomBy(qreal factor) {zoomAround(factor,{width()/2,height()/2})
 void CanvasItem::zoomAround(qreal factor,QPointF position) {
     if(!m_interactive || !m_client || !std::isfinite(factor) || factor<=0 || width()<=0 || height()<=0)return;
     const auto target=std::clamp((m_zoomAnimating?m_zoomTarget:m_zoom)*factor,.00001,8.);
-    if(!isEnabled()) {
-        const auto anchor=documentPoint(position);stopNavigation();m_zoom=target;
-        m_pan+=position-(documentRect().topLeft()+anchor*m_zoom);emit viewChanged();update();return;
-    }
     m_velocity={};m_zoomFrom=m_zoom;m_zoomTarget=target;m_zoomAnchor=position;m_zoomDocument=documentPoint(position);
     m_zoomStarted=m_navigationClock.elapsed();m_navigationLast=m_zoomStarted;m_zoomAnimating=true;m_navigationTimer.start();
 }
@@ -538,7 +534,7 @@ void CanvasItem::stopNavigation() {
     m_navigationTimer.stop();m_zoomAnimating=false;m_velocity={};
 }
 void CanvasItem::animateNavigation() {
-    if(!isVisible() || !isEnabled() || !m_client){stopNavigation();return;}
+    if(!isVisible() || (!isEnabled() && !m_resizeNavigation) || !m_client){stopNavigation();return;}
     const auto now=m_navigationClock.elapsed();
     const auto dt=std::clamp((now-m_navigationLast)/1000.,0.,.032);m_navigationLast=now;
     if(m_zoomAnimating){
@@ -1085,7 +1081,7 @@ bool CanvasItem::eventFilter(QObject *watched, QEvent *event) {
             key->accept();return true;
         }
     }
-    if(m_interactive && isVisible() && (event->type()==QEvent::KeyPress || event->type()==QEvent::KeyRelease)) {
+    if(m_interactive && isVisible() && isEnabled() && (event->type()==QEvent::KeyPress || event->type()==QEvent::KeyRelease)) {
         auto *key=static_cast<QKeyEvent*>(event);
         if((key->key()==Qt::Key_Control || key->key()==Qt::Key_Alt) && !key->isAutoRepeat()) {
             const bool pressed=event->type()==QEvent::KeyPress;
