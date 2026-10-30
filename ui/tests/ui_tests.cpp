@@ -1562,15 +1562,16 @@ private slots:
             // center. Hover the exposed trailing edge, where the category arrow lives.
             QTest::mouseMove(content->window(),row->mapToScene({row->width()-12,row->height()/2}).toPoint());return row;
         };
-        auto *image=main->findChild<QObject*>("imageMenu"),*adjust=main->findChild<QObject*>("imageAdjustSubmenu"),*rotate=main->findChild<QObject*>("imageRotateSubmenu");QVERIFY(image && adjust && rotate);
+        auto *image=main->findChild<QObject*>("filterMenu"),*adjust=main->findChild<QObject*>("imageAdjustSubmenu"),*rotate=main->findChild<QObject*>("imageRotateSubmenu");QVERIFY(image && adjust && rotate);
         if(fallback)for(const auto &name:{"editMenu","imageMenu","imageAdjustSubmenu","imageRotateSubmenu","filterMenu","filterBlurSubmenu"})main->findChild<QObject*>(name)->setProperty("windowPopupsAvailable",false);
-        auto *entry=findVisualItem(main->contentItem(),"menuEntry:编辑");QVERIFY(entry);
+        auto *entry=findVisualItem(main->contentItem(),"menuEntry:滤镜");QVERIFY(entry);
         auto *edit=main->findChild<QObject*>("editMenu");QVERIFY(edit);
-        QCOMPARE(image->property("cascadeParent").value<QObject*>(),edit);
+        QCOMPARE(adjust->property("cascadeParent").value<QObject*>(),image);
         QVERIFY(!findVisualItem(main->contentItem(),"menuEntry:图像"));
         QTRY_COMPARE(main->position(),area.topLeft());QTRY_VERIFY(main->isExposed());QTest::qWait(50);
         if(QGuiApplication::platformName()!="offscreen"){QCursor::setPos(entry->mapToGlobal({entry->width()/2,14}).toPoint());QTest::qWait(30);}
-        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,entry->mapToScene({entry->width()/2,14}).toPoint());QTRY_VERIFY(edit->property("opened").toBool());QVERIFY(hover(edit,"图像"));QTRY_VERIFY(image->property("opened").toBool());auto *row=hover(image,"调整");QVERIFY(row);QTRY_VERIFY(row->property("hovered").toBool());QTRY_VERIFY(adjust->property("opened").toBool());
+        QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,entry->mapToScene({entry->width()/2,14}).toPoint());QTRY_VERIFY(image->property("opened").toBool());auto *row=hover(image,"调整");QVERIFY(row);QTRY_VERIFY(row->property("hovered").toBool());QTRY_VERIFY(adjust->property("opened").toBool());
+        QVERIFY(row->y()<30); // Adjust is the first filter category.
         auto *arrow=qobject_cast<QQuickItem*>(row->property("arrow").value<QObject*>());QVERIFY(arrow);QCOMPARE(arrow->width(),qreal(6));QCOMPARE(arrow->height(),qreal(8));QVERIFY(row->height()<30);
         auto *parentContent=qobject_cast<QQuickItem*>(image->property("contentItem").value<QObject*>()),*childContent=qobject_cast<QQuickItem*>(adjust->property("contentItem").value<QObject*>());QVERIFY(parentContent && childContent);QVERIFY(childContent->window()!=parentContent->window());
         if(fallback){QVERIFY(image->property("sideWindow").value<QObject*>());QVERIFY(adjust->property("sideWindow").value<QObject*>());}
@@ -1598,6 +1599,9 @@ private slots:
             }
         }
         QTest::mouseMove(childContent->window(),childContent->mapToScene({20,10}).toPoint());QVERIFY(image->property("opened").toBool());QVERIFY(adjust->property("opened").toBool());
+        QVERIFY(QMetaObject::invokeMethod(image,"close"));
+        auto *editEntry=findVisualItem(main->contentItem(),"menuEntry:编辑");QVERIFY(editEntry);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,editEntry->mapToScene({editEntry->width()/2,14}).toPoint());QTRY_VERIFY(edit->property("opened").toBool());QVERIFY(hover(edit,"图像"));
+        image=main->findChild<QObject*>("imageMenu");QTRY_VERIFY(image->property("opened").toBool());
         auto *rotateRow=hover(image,"画布旋转");QVERIFY(rotateRow);QTRY_VERIFY(rotateRow->property("hovered").toBool());QTRY_VERIFY(rotate->property("opened").toBool());QTRY_VERIFY(!adjust->property("visible").toBool());
         QVERIFY(!main->findChild<QObject*>("canvasRotateCwAction")->property("enabled").toBool());
         auto *fileEntry=findVisualItem(main->contentItem(),"menuEntry:文件");QVERIFY(fileEntry);
@@ -4579,6 +4583,33 @@ private slots:
         client.undo();QTRY_COMPARE(client.documentWidth(),128);QCOMPARE(client.documentDpi(),72);client.redo();QTRY_COMPARE(client.documentWidth(),144);QCOMPARE(client.documentDpi(),300);QCOMPARE(warnings,QStringList());
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
+    void selectionContextOperationsModalCancelApplyAndSingleUndo() {
+        QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection-operations.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;
+        connect(&engine,&QQmlEngine::warnings,this,[&](const QList<QQmlError>&errors){for(const auto &e:errors)warnings.append(e.toString());});
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));
+        QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());
+        client.newTransparentDocument(64,48);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
+        QVERIFY(client.editSelection(QRectF(12,10,24,20),0,0));QTRY_VERIFY(client.selectionEnabled());QTRY_VERIFY(!client.layerEditBusy());
+        auto *dialog=window->findChild<QQuickWindow*>("selectionEditWindow");QVERIFY(dialog);QCOMPARE(dialog->modality(),Qt::ApplicationModal);
+        auto trigger=[&](const char *name){auto *a=window->findChild<QObject*>(name);return a && QMetaObject::invokeMethod(a,"trigger");};
+        auto *cancel=dialog->findChild<QObject*>("selectionEditCancel");auto *apply=dialog->findChild<QObject*>("selectionEditApply");QVERIFY(cancel && apply);
+        const int depth=client.undoDepth();
+        QVERIFY(trigger("contextFill"));QTRY_VERIFY(dialog->isVisible());QVERIFY(QMetaObject::invokeMethod(cancel,"clicked"));QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth);
+        QVERIFY(trigger("contextFill"));QTRY_VERIFY(dialog->isVisible());dialog->findChild<QObject*>("selectionEditColor")->setProperty("currentIndex",1);
+        const auto preview=qEnvironmentVariable("DRAWVERSE_SELECTION_PREVIEW");if(!preview.isEmpty()){QTest::qWait(50);QVERIFY(dialog->grabWindow().save(preview+"-fill.png"));}
+        QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth+1);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("填充选区"));auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);
+        const auto renderedPixel=[&] {auto capture=canvas->grabToImage();if(!capture || !QTest::qWaitFor([&]{return !capture->image().isNull();},5000))return QColor();const auto image=capture->image();const auto p=canvas->documentRect().topLeft()+QPointF(20,18)*canvas->zoom();const auto scale=image.width()/canvas->width();return image.pixelColor(qRound(p.x()*scale),qRound(p.y()*scale));};
+        QTRY_COMPARE(renderedPixel(),QColor(Qt::white));
+        QVERIFY(trigger("contextCopyLayer"));QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+2);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("通过复制创建图层"));
+        client.undo();QTRY_COMPARE(client.layers().size(),1);QTRY_VERIFY(!client.layerEditBusy());client.redo();QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());
+        QVERIFY(trigger("contextCutLayer"));QTRY_COMPARE(client.layers().size(),3);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+3);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("通过剪切创建图层"));
+        client.undo();QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());
+        const auto toolFeather=client.selectionFeather();QVERIFY(trigger("contextFeather"));QTRY_VERIFY(dialog->isVisible());if(!preview.isEmpty()){QTest::qWait(50);QVERIFY(dialog->grabWindow().save(preview+"-feather.png"));}QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth+3);QCOMPARE(client.selectionFeather(),toolFeather);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("羽化选区"));
+        QVERIFY(trigger("contextStroke"));QTRY_VERIFY(dialog->isVisible());if(!preview.isEmpty()){QTest::qWait(50);QVERIFY(dialog->grabWindow().save(preview+"-stroke.png"));}dialog->findChild<QObject*>("selectionEditColor")->setProperty("currentIndex",2);QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth+4);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("描边选区"));
+        QVERIFY(!window->findChild<QObject*>("contextDistort"));QVERIFY(!window->findChild<QObject*>("contextPerspective"));
+        for(const auto &warning:warnings)QVERIFY2(!warning.contains("ReferenceError") && !warning.contains("TypeError") && !warning.contains("Binding loop"),qPrintable(warning));
+    }
+
     void selectionRightClickMenuUsesOwningDocumentAndDeselects() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("selection-context.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));

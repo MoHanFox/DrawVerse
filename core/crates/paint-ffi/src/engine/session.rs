@@ -38,6 +38,7 @@ pub(crate) enum Operation {
     Clipping(u64, bool),
     MaskLink(u64, bool),
     Selection(crate::selection_api::Edit),
+    SelectionPixels(u32, f64, [f32; 4]),
     Bucket(paint_core::BucketFill),
     Wand(paint_core::WandSelection),
     Drop(u64, u64, u32),
@@ -1252,7 +1253,10 @@ impl Engine {
         }
     }
     fn selection_only(&self, operation: &Operation) -> bool {
-        if matches!(operation, Operation::Selection(..) | Operation::Wand(..)) {
+        if matches!(
+            operation,
+            Operation::Selection(..) | Operation::SelectionPixels(0, ..) | Operation::Wand(..)
+        ) {
             return true;
         }
         if self.document.liquify_active() || self.document.transform_active() {
@@ -1277,6 +1281,7 @@ impl Engine {
                         action,
                         paint_core::HistoryAction::SelectAll
                             | paint_core::HistoryAction::LayerAlphaSelection
+                            | paint_core::HistoryAction::FeatherSelection
                             | paint_core::HistoryAction::Selection
                             | paint_core::HistoryAction::Deselect
                             | paint_core::HistoryAction::InvertSelection
@@ -1298,6 +1303,7 @@ impl Engine {
             Some(
                 paint_core::HistoryAction::SelectAll
                     | paint_core::HistoryAction::LayerAlphaSelection
+                    | paint_core::HistoryAction::FeatherSelection
                     | paint_core::HistoryAction::Selection
                     | paint_core::HistoryAction::Deselect
                     | paint_core::HistoryAction::InvertSelection
@@ -1364,6 +1370,7 @@ impl Engine {
                     | Operation::Clipping(..)
                     | Operation::MaskLink(..)
                     | Operation::Selection(..)
+                    | Operation::SelectionPixels(..)
                     | Operation::Bucket(..)
                     | Operation::Wand(..)
                     | Operation::Drop(..)
@@ -1717,6 +1724,11 @@ impl Engine {
                 let r = self.document.revision();
                 self.document.set_layer_clipping(id, enabled)?;
                 self.modified |= r != self.document.revision();
+            }
+            Operation::SelectionPixels(kind, amount, rgba) => {
+                let revision = self.document.revision();
+                self.document.edit_selected_pixels(kind, amount, rgba)?;
+                self.modified |= revision != self.document.revision();
             }
             Operation::Selection(edit) => {
                 let revision = self.document.revision();

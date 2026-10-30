@@ -597,6 +597,23 @@ fn encode_command(w: &mut impl Write, command: &Command) -> io::Result<()> {
             after,
             selection,
         } => {
+            if before.iter().map(|l| l.id).ne(after.iter().map(|l| l.id)) {
+                if selection.is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "structural selection result",
+                    ));
+                }
+                // Full-forest result; keep tag 11's subset/same-ID contract intact.
+                put_u8(w, 14)?;
+                for nodes in [before, after] {
+                    put_u32(w, nodes.len() as u32)?;
+                    for (i, layer) in nodes.iter().enumerate() {
+                        encode_layer(w, i, layer)?;
+                    }
+                }
+                return Ok(());
+            }
             put_u8(w, 11)?;
             put_u8(w, u8::from(selection.is_some()))?;
             if let Some((a, b)) = selection {
@@ -760,6 +777,35 @@ fn decode_command<R: Read>(r: &mut CheckedReader<R>) -> Result<Command> {
                 before: sets.remove(0),
                 after: sets.remove(0),
                 selection,
+            })
+        }
+        14 => {
+            let mut sets = Vec::new();
+            for _ in 0..2 {
+                let count = u32_value(r)? as usize;
+                if count == 0 || count > 4096 {
+                    return Err(invalid());
+                }
+                let mut nodes = Vec::with_capacity(count);
+                for i in 0..count {
+                    let (index, layer) = decode_layer(r)?;
+                    if index != i {
+                        return Err(invalid());
+                    }
+                    nodes.push(layer);
+                }
+                crate::document::groups::validate(&nodes).map_err(|_| invalid())?;
+                sets.push(nodes);
+            }
+            let after = sets.pop().expect("after");
+            let before = sets.pop().expect("before");
+            if before.iter().map(|l| l.id).eq(after.iter().map(|l| l.id)) {
+                return Err(invalid());
+            }
+            Ok(Command::LayerEdit {
+                before,
+                after,
+                selection: None,
             })
         }
         11 => {

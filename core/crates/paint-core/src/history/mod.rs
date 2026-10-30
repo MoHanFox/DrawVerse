@@ -54,6 +54,11 @@ pub enum HistoryAction {
     HueSaturation = 44,
     LayerAlphaSelection = 45,
     ResizeCanvas = 46,
+    FeatherSelection = 49,
+    CopySelectionLayer = 50,
+    CutSelectionLayer = 51,
+    FillSelection = 52,
+    StrokeSelection = 53,
     /// Automatic release of clipped layers whose base went away.
     ReleaseClipping = 23,
 }

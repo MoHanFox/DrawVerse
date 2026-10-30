@@ -341,3 +341,34 @@ pub unsafe extern "C" fn paint_session_selection_details(
         Ok(())
     })
 }
+
+/// ABI 1.95: current-selection operation: 0 feather, 1 copy layer, 2 cut layer,
+/// 3 fill, 4 inside stroke; amount in pixels, straight linear RGBA.
+/// # Safety
+/// Valid session handles and writable sequence; standard session ownership applies.
+#[no_mangle]
+pub unsafe extern "C" fn paint_session_selection_pixels(
+    core: *mut PaintCore,
+    session: *mut PaintSession,
+    kind: u32,
+    amount: f64,
+    red: f32,
+    green: f32,
+    blue: f32,
+    alpha: f32,
+    out_sequence: *mut u64,
+) -> PaintStatus {
+    boundary(|| unsafe {
+        pointers::write(out_sequence, 0)?;
+        runtime::outside_callback()?;
+        if kind > 4 || !amount.is_finite() || !(0.0..=1000.0).contains(&amount) {
+            return Err(ApiError::invalid("selection pixels parameters"));
+        }
+        let rgba = [red, green, blue, alpha];
+        paint_core::Pixel::from_straight(rgba)?;
+        let seq = runtime::registry()?
+            .session(core, session)?
+            .submit(Operation::SelectionPixels(kind, amount, rgba))?;
+        pointers::write(out_sequence, seq)
+    })
+}

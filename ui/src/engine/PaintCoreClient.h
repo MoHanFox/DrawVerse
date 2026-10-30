@@ -345,6 +345,7 @@ public:
     Q_INVOKABLE bool editSelection(QRectF rectangle, int shape, int operation);
     Q_INVOKABLE bool selectAll();
     Q_INVOKABLE bool selectLayerPixels(quint64 id = 0, int operation = 0);
+    Q_INVOKABLE bool selectionPixels(int kind, qreal amount=0, int color=0, qreal opacity=1);
     Q_INVOKABLE bool clearSelection();
     Q_INVOKABLE bool invertSelection();
     const QImage &frame(int view = 0) const { return m_frames[view == 1 ? 1 : 0]; }

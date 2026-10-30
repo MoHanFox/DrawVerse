@@ -15,7 +15,7 @@ pub const PAINT_INTERNAL_ERROR: PaintStatus = 9;
 pub const PAINT_BUFFER_TOO_SMALL: PaintStatus = 10;
 
 pub const PAINT_ABI_MAJOR: u32 = 1;
-pub const PAINT_ABI_MINOR: u32 = 93;
+pub const PAINT_ABI_MINOR: u32 = 95;
 
 #[path = "api_composition.rs"]
 mod composition;
@@ -1065,6 +1065,18 @@ pub const PAINT_HISTORY_LEVELS: u32 = 43;
 pub const PAINT_HISTORY_HUE_SATURATION: u32 = 44;
 pub const PAINT_HISTORY_LAYER_ALPHA_SELECTION: u32 = 45;
 pub const PAINT_HISTORY_RESIZE_CANVAS: u32 = 46;
+
+/// ABI1.95: current-selection operation kinds and stable history labels.
+pub const PAINT_SELECTION_PIXELS_FEATHER: u32 = 0;
+pub const PAINT_SELECTION_PIXELS_COPY_LAYER: u32 = 1;
+pub const PAINT_SELECTION_PIXELS_CUT_LAYER: u32 = 2;
+pub const PAINT_SELECTION_PIXELS_FILL: u32 = 3;
+pub const PAINT_SELECTION_PIXELS_STROKE: u32 = 4;
+pub const PAINT_HISTORY_FEATHER_SELECTION: u32 = 49;
+pub const PAINT_HISTORY_COPY_SELECTION_LAYER: u32 = 50;
+pub const PAINT_HISTORY_CUT_SELECTION_LAYER: u32 = 51;
+pub const PAINT_HISTORY_FILL_SELECTION: u32 = 52;
+pub const PAINT_HISTORY_STROKE_SELECTION: u32 = 53;
 
 /// ABI1.93: integer canvas bounds, metadata DPI, destructive crop flag and linear straight fill.
 #[repr(C)]

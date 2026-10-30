@@ -45,6 +45,7 @@ set(_drawverse_ui_resources
     qml/brushes/BrushResourceThumbnail.qml qml/brushes/BrushResourcePicker.qml qml/brushes/BrushTipShapeControl.qml
     qml/layers/LayersPanel.qml qml/layers/LayerLock.qml qml/layers/LayerThumbnail.qml
     qml/color/HsvSlider.qml
+    qml/tools/SelectionEditWindow.qml
     qml/tools/AdjustmentWindow.qml
     qml/tools/AdjustmentValue.qml
     qml/tools/AdjustmentHistogram.qml

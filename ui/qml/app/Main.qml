@@ -338,13 +338,6 @@ ApplicationWindow {
             GlassMenu {
                 id:imageMenu;objectName:"imageMenu";cascadeParent:editMenu
                 title: "图像"
-                GlassMenu {
-                    objectName:"imageAdjustSubmenu";title:"调整";cascadeParent:imageMenu
-                    Action { objectName:"adjustCurvesAction";shortcut: ShortcutSettings.bindings.curves;text:"曲线…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(0) }
-                    Action { objectName:"adjustLevelsAction";shortcut: ShortcutSettings.bindings.levels;text:"色阶…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(1) }
-                    Action { objectName:"adjustHsvAction";shortcut: ShortcutSettings.bindings.hsv;text:"色相/饱和度/明度…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(2) }
-                }
-                MenuSeparator {}
                 Action { objectName:"canvasSizeAction";text:"调整画布…";enabled:root.hasDocuments && PaintClient.ready && !root.editing && !PaintClient.fileBusy && !PaintClient.layerEditBusy && !PaintClient.drawing;onTriggered:root.beginCanvasResize() }
                 GlassMenu {
                     objectName:"imageRotateSubmenu";title:"画布旋转";cascadeParent:imageMenu
@@ -377,6 +370,13 @@ ApplicationWindow {
         GlassMenu {
             id:filterMenu;objectName:"filterMenu";topLevel:true
             title: "滤镜"
+                GlassMenu {
+                    objectName:"imageAdjustSubmenu";title:"调整";cascadeParent:filterMenu
+                    Action { objectName:"adjustCurvesAction";shortcut: ShortcutSettings.bindings.curves;text:"曲线…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(0) }
+                    Action { objectName:"adjustLevelsAction";shortcut: ShortcutSettings.bindings.levels;text:"色阶…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(1) }
+                    Action { objectName:"adjustHsvAction";shortcut: ShortcutSettings.bindings.hsv;text:"色相/饱和度/明度…";enabled:root.canAdjustImage;onTriggered:adjustmentWindow.openFor(2) }
+                }
+                MenuSeparator {}
             Action {objectName:"liquifyAction";text:"液化…";enabled: !root.canvasAdjusting && root.hasDocuments && (!PaintClient.liquifyActive && !PaintClient.transformActive && PaintClient.ready && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.fileBusy);onTriggered:PaintClient.beginLiquify()}
             MenuSeparator {}
             GlassMenu {

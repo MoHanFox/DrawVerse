@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 93
+#define PAINT_ABI_MINOR 95
 
 #define PAINT_ABI_PATCH 0
 
@@ -401,7 +401,11 @@
 
 #define PAINT_HISTORY_CLIPPING 18
 
+#define PAINT_HISTORY_COPY_SELECTION_LAYER 50
+
 #define PAINT_HISTORY_CURVES 42
+
+#define PAINT_HISTORY_CUT_SELECTION_LAYER 51
 
 #define PAINT_HISTORY_DESELECT 5
 
@@ -410,6 +414,10 @@
 #define PAINT_HISTORY_ELLIPSE_SELECTION 20
 
 #define PAINT_HISTORY_ERASER 2
+
+#define PAINT_HISTORY_FEATHER_SELECTION 49
+
+#define PAINT_HISTORY_FILL_SELECTION 52
 
 /**
  * ABI1.76: distinct reflection history labels, including pure free transforms.
@@ -489,6 +497,8 @@
 #define PAINT_HISTORY_SELECT_ALL 3
 
 #define PAINT_HISTORY_SMUDGE 26
+
+#define PAINT_HISTORY_STROKE_SELECTION 53
 
 #define PAINT_HISTORY_TRUNCATED 19
 
@@ -611,6 +621,19 @@
 #define PAINT_SELECTION_INVERT 3
 
 #define PAINT_SELECTION_MASK 3
+
+#define PAINT_SELECTION_PIXELS_COPY_LAYER 1
+
+#define PAINT_SELECTION_PIXELS_CUT_LAYER 2
+
+/**
+ * ABI1.95: current-selection operation kinds and stable history labels.
+ */
+#define PAINT_SELECTION_PIXELS_FEATHER 0
+
+#define PAINT_SELECTION_PIXELS_FILL 3
+
+#define PAINT_SELECTION_PIXELS_STROKE 4
 
 /**
  * ABI 1.12: rasterized shapes. The geometry fields stay the bounding box for old callers.
@@ -3158,6 +3181,22 @@ PaintStatus paint_session_selection_mask(struct PaintCore *core,
                                          uint8_t *bytes,
                                          uint32_t capacity,
                                          uint32_t *out_length);
+
+/**
+ * ABI 1.95: current-selection operation: 0 feather, 1 copy layer, 2 cut layer,
+ * 3 fill, 4 inside stroke; amount in pixels, straight linear RGBA.
+ * # Safety
+ * Valid session handles and writable sequence; standard session ownership applies.
+ */
+PaintStatus paint_session_selection_pixels(struct PaintCore *core,
+                                           struct PaintSession *session,
+                                           uint32_t kind,
+                                           double amount,
+                                           float red,
+                                           float green,
+                                           float blue,
+                                           float alpha,
+                                           uint64_t *out_sequence);
 
 /**
  * ABI 1.8: query one bounded selection step; inversion uses zero geometry.

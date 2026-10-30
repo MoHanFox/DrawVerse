@@ -28,6 +28,7 @@ mod layer_actions;
 mod liquify_result_history_tests;
 #[path = "stroke/document_outline.rs"]
 mod outline;
+mod selection_actions;
 mod selection_alpha;
 mod selection_pixels;
 pub use adjustment::Adjustment;
@@ -1094,6 +1095,10 @@ impl Document {
                 | crate::HistoryAction::HueSaturation
                 | crate::HistoryAction::ClearSelectionPixels
                 | crate::HistoryAction::Bucket
+                | crate::HistoryAction::CopySelectionLayer
+                | crate::HistoryAction::CutSelectionLayer
+                | crate::HistoryAction::FillSelection
+                | crate::HistoryAction::StrokeSelection
                 | crate::HistoryAction::ResizeCanvas
         ) {
             StoredCommand::prepare_result_in(&command, self.options.max_history_bytes, &self.pool)?
@@ -3296,10 +3301,15 @@ impl Document {
                     self.selection = if forward { b.clone() } else { a.clone() };
                     self.selection_cache.clear();
                 }
-                let layer = if forward { after } else { before };
-                for layer in layer {
-                    if let Some(at) = self.layers.iter().position(|l| l.id == layer.id) {
-                        self.layers[at] = layer.clone();
+                let layers = if forward { after } else { before };
+                if before.iter().map(|l| l.id).ne(after.iter().map(|l| l.id)) {
+                    // Structural result edits carry complete forests on both sides.
+                    self.layers = layers.clone();
+                } else {
+                    for layer in layers {
+                        if let Some(at) = self.layers.iter().position(|l| l.id == layer.id) {
+                            self.layers[at] = layer.clone();
+                        }
                     }
                 }
                 self.dirty_all();

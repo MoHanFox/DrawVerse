@@ -5,6 +5,7 @@ import QtQuick.Shapes
 import DrawVerse 1.0
 import "../theme"
 import "../menus"
+import "../tools"
 Rectangle {
     id:root
     property var ownClient: PaintClient
@@ -235,8 +236,17 @@ Rectangle {
         Action {objectName:"contextDeselect";text:"取消选择";enabled:selectionContext.available;onTriggered:root.ownClient.clearSelection()}
         Action {objectName:"contextInvertSelection";text:"反向选择";enabled:selectionContext.available;onTriggered:root.ownClient.invertSelection()}
         MenuSeparator {}
+        Action {objectName:"contextFeather";text:"羽化…";enabled:selectionContext.available;onTriggered:selectionEditWindow.openFor(0)}
+        MenuSeparator {}
+        Action {objectName:"contextCopyLayer";text:"通过复制创建图层";enabled:selectionContext.available;onTriggered:root.ownClient.selectionPixels(1)}
+        Action {objectName:"contextCutLayer";text:"通过剪切创建图层";enabled:selectionContext.available;onTriggered:root.ownClient.selectionPixels(2)}
+        MenuSeparator {}
+        Action {objectName:"contextFill";text:"填充…";enabled:selectionContext.available;onTriggered:selectionEditWindow.openFor(3)}
+        Action {objectName:"contextStroke";text:"描边…";enabled:selectionContext.available;onTriggered:selectionEditWindow.openFor(4)}
+        MenuSeparator {}
         Action {objectName:"contextFreeTransform";text:"自由变换";enabled:selectionContext.available;onTriggered:{transformOverlay.mode=0;root.ownClient.beginTransform()}}
     }
+    SelectionEditWindow {id:selectionEditWindow;controller:root.ownClient;transientParent:root.Window.window}
     CanvasResizeOverlay {id:resizeOverlay;anchors.fill:parent;z:25;controller:root.ownClient;canvasView:canvas;visible:root.mainWindow && root.mainWindow.canvasResizeTarget===root;onFinished:root.mainWindow.endCanvasResize()}
     TransformOverlay {id:transformOverlay;anchors.fill:parent;z:15;controller:root.ownClient;canvasView:canvas}
     Shortcut {sequence: ShortcutSettings.bindings.transform;context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.editing;onActivated:root.ownClient.beginTransform()}

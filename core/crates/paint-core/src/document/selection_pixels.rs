@@ -2,7 +2,7 @@
 use super::*;
 
 impl Document {
-    fn selection_pixel_bounds(&self) -> Result<[i64; 4]> {
+    pub(super) fn selection_pixel_bounds(&self) -> Result<[i64; 4]> {
         if !self.selection.enabled() {
             return Err(Error::InvalidArgument("pixel selection required"));
         }
@@ -49,7 +49,7 @@ impl Document {
         ])
     }
 
-    fn selection_pixel_layer(
+    pub(super) fn selection_pixel_layer(
         &self,
         original: &Layer,
         keep: bool,

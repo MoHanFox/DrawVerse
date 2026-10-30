@@ -28,6 +28,71 @@ macro_rules! dto {
 }
 
 #[test]
+fn selection_pixels_public_validation_fifo_single_history_and_undo() {
+    for kind in 0..=4 {
+        let h = Harness::new(64, 48);
+        unsafe {
+            let mut seq = 99;
+            assert_eq!(
+                paint_session_selection_pixels(h.core, h.session, 5, 1., 0., 0., 0., 1., &mut seq),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(seq, 0);
+            assert_eq!(
+                paint_session_selection_pixels(
+                    h.core,
+                    h.session,
+                    kind,
+                    f64::NAN,
+                    0.,
+                    0.,
+                    0.,
+                    1.,
+                    &mut seq
+                ),
+                PAINT_INVALID_ARGUMENT
+            );
+            assert_eq!(seq, 0);
+            let edit = PaintSelectionEdit {
+                action: PAINT_SELECTION_SHAPE,
+                shape: PAINT_SELECTION_RECTANGLE,
+                x: 12.,
+                y: 10.,
+                width: 24.,
+                height: 20.,
+                ..dto!(PaintSelectionEdit)
+            };
+            assert_eq!(
+                paint_session_edit_selection(h.core, h.session, &edit, &mut seq),
+                PAINT_OK
+            );
+            let before = h.wait(seq);
+            assert_eq!(
+                paint_session_selection_pixels(
+                    h.core, h.session, kind, 3., 1., 0., 0., 1., &mut seq
+                ),
+                PAINT_OK
+            );
+            let done = h.wait(seq);
+            assert_eq!(done.last_error_status, PAINT_OK);
+            assert_eq!(done.undo_depth, before.undo_depth + 1);
+            let undo = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_UNDO,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(undo.last_error_status, PAINT_OK);
+            assert_eq!(undo.undo_depth, before.undo_depth);
+            let redo = h.wait(h.submit(PaintCommand {
+                kind: PAINT_COMMAND_REDO,
+                ..dto!(PaintCommand)
+            }));
+            assert_eq!(redo.last_error_status, PAINT_OK);
+            assert_eq!(redo.undo_depth, done.undo_depth);
+        }
+    }
+}
+
+#[test]
 fn layer_alpha_selection_public_fifo_validation_history_and_full_canvas_all() {
     let h = Harness::new(64, 64);
     let stroke = h.wait(h.stroke(20., 20.));
