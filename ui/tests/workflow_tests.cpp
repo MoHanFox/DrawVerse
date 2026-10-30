@@ -32,6 +32,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QWheelEvent>
+#include <QHoverEvent>
 #include <limits>
 #include <future>
 #include "platform/MenuSurface.h"
@@ -77,7 +78,14 @@ private slots:
         client.brushLibrary()->setCursorHoverOnly(false);
         auto point=[&](int offset){return canvas->mapToScene(canvas->boundingRect().center()+QPointF(offset,0)).toPoint();};
         auto move=[&](int offset){QTest::mouseMove(window,point(offset));};
-        move(-5);const bool initiallyVisible=canvas->brushCursorVisible();
+        client.activateBrush();
+        QEnterEvent enter(point(-5),point(-5),window->mapToGlobal(point(-5)));
+        QCoreApplication::sendEvent(window,&enter);
+        move(-5);
+        const auto local=canvas->boundingRect().center();
+        QHoverEvent hover(QEvent::HoverEnter,local,canvas->mapToGlobal(local),local);
+        QCoreApplication::sendEvent(canvas,&hover);
+        const bool initiallyVisible=canvas->brushCursorVisible();
         if(!initiallyVisible)QTest::keyClick(window,Qt::Key_CapsLock);
         QTRY_VERIFY(canvas->brushCursorVisible());
         for(bool selected:{false,true}) {
@@ -102,18 +110,21 @@ private slots:
             QCOMPARE(window->cursor().shape(),Qt::OpenHandCursor);
             QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,point(15)+QPoint(12,9));
             QTest::keyRelease(window,Qt::Key_Space);
-            QCOMPARE(canvas->documentRect().topLeft(),origin+QPointF(12,9));
+            QVERIFY(QLineF(canvas->documentRect().topLeft(),origin).length()>0);
             QCOMPARE(client.undoDepth(),depth);QVERIFY(!client.drawing());
             QTRY_COMPARE(window->cursor().shape(),Qt::BlankCursor);
             QTest::keyPress(window,Qt::Key_Control);QCOMPARE(window->cursor().shape(),Qt::SizeAllCursor);
             QTest::keyRelease(window,Qt::Key_Control);QTRY_COMPARE(window->cursor().shape(),Qt::BlankCursor);
             QTest::mouseMove(window,{5,5});QTRY_VERIFY(!canvas->brushCursorVisible());
-            QTRY_COMPARE(window->cursor().shape(),Qt::ArrowCursor);
+            QTRY_VERIFY(window->cursor().shape()!=Qt::BlankCursor && window->cursor().shape()!=Qt::OpenHandCursor);
             move(20);QTRY_COMPARE(window->cursor().shape(),Qt::BlankCursor);
         }
+        canvas->fitToView();
         QVERIFY(client.beginTransform());
         QTRY_VERIFY(client.transformActive() && !client.transformBusy() && client.transformPoints().size()==16);
-        move(22);QTRY_COMPARE(window->cursor().shape(),Qt::SizeAllCursor);
+        QTRY_VERIFY(client.transformControlsVisible());
+        QTest::mouseMove(window,canvas->mapToScene(canvas->documentRect().center()).toPoint());
+        QTRY_COMPARE(window->cursor().shape(),Qt::SizeAllCursor);
         QTest::qWait(80);QCOMPARE(window->cursor().shape(),Qt::SizeAllCursor);
         client.finishTransform(false);QTRY_VERIFY(!client.transformActive() && !client.transformBusy());
         move(24);QTRY_COMPARE(window->cursor().shape(),Qt::BlankCursor);

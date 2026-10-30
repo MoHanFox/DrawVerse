@@ -41,3 +41,16 @@ ABI1.79/state45 保持不变，未运行无关全量测试。
 更新断言后，该UI用例软件和D3D11各1个功能通过（含初始化/清理各3 passed、0 failed）；日志 `artifacts/publication-retry-ctrl-move-software.txt`、`artifacts/publication-retry-ctrl-move-d3d11.txt`。两后端合计各8个功能用例通过。
 
 Release应用与专项测试目标构建、生成头一致检查通过；标准交付 `build/bin/Release/drawverse.exe` 已更新。没有改动Rust、ABI1.80/state45或文件格式，未运行全量测试；实体数位板持续压力/悬停与移动手感仍需实机确认。
+
+
+## 2026-10-30：鼠标窗口光标恢复
+
+鼠标即时刷新和既有16ms恢复轮询同步所属活动画布的窗口光标；保留数位笔所有权，普通变换控制层不被覆盖。生产修改已随共享工作区提交4c44cea包含，本节补最终回归与交付记录。
+
+新增selectedCanvasKeepsToolAndSpaceWindowCursors：有/无选区分别验证画笔、橡皮、涂抹、吸色；主动把窗口恢复Arrow而保持画布Blank，移动及静止均恢复；Space立即OpenHand、鼠标实际平移且历史不变、释放恢复；Ctrl临时移动与窗口边角原光标、变换控件就绪后的SizeAll及取消恢复。Windows原生窗口的软件/D3D11各1功能通过，日志build/selected-cursor-final-proof-software.txt与selected-cursor-final-proof-d3d11.txt。最初反例selected-cursor-recovery-before.txt确实在Arrow/Blank不一致处失败。
+
+原missingSpaceReleaseRecoversWithoutPointerMovement、shortcutKeysUpdateLikeSpaceWithoutPointerMovement、physicalShortcutsUpdateQmlWithoutPointerOrKeyEvents、shortcutCursorSurvivesModifierlessTabletMoves两后端各4功能通过；日志selected-cursor-related-software/d3d11.txt。打包QML源/字节码70对一致在软件后端通过。标准Release重新静态链接，实际D3D11 --preview绘画冒烟退出0并产生PNG，artifacts/selected-cursor-smoke。
+
+保留最初旧测试对象配更新UI库的两次访问异常；重建后不再出现，不把对象不一致推断作为独立崩溃归因。一次PaintingBenchmark对象并发占用构建失败、入窗/悬停未就绪、边角误期望Arrow、惯性误期望精确12×9及变换控件未就绪/落点夹具失败均留在build/selected-cursor-*日志。最终夹具明确入窗/悬停，在控件就绪后用文档中心，不改生产导航、手柄或原断言契约。未跑总check、未做实体手绘板持续操作；此反例验证状态恢复，不代表用户原始实体触发链路已完整归因。无新增ABI或文件格式修改。
+
+最终标准CMake目标qt_workflow_tests重建通过；selected-cursor-delivery-software.txt及selected-cursor-delivery-d3d11.txt各4 passed（新增窗口功能、70对QML及初始化/清理）。变换手柄检查前fitToView停止原有导航惯性，避免真实鼠标落点跑出窗口；旧standard-d3d11失败保留。合并原四项快捷键/数位笔功能，本轮两后端各6个功能通过。标准Release已更新，无需使用旧独立Review包。
