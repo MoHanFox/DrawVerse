@@ -24,3 +24,5 @@
 在暂存提交 4c44cea 上完成最终 Release 重建并重新静态链接独立包。新增命令序号回执的最终资源与 C++ 一致加载：软件及实际 Windows/D3D11 各 6 passed / 0 failed（四个功能行），包含比例 0:0、交换、DPI 输入未失焦直接 Return、真实边框拖动、取消/确认/撤销重做、选区右键及两种级联菜单。日志 `build/canvas-resize-ui-receipt-software.txt` 与 `build/canvas-resize-ui-receipt-d3d11.txt`；旧日志保留。
 
 `build/bin/CanvasResizeReview/drawverse.exe --preview ...` 在 D3D11 环境下完成三笔绘画与窗口抓图，退出 0，产物 `build/canvas-resize-app-smoke.png`。标准正在运行的 EXE 未替换。该冒烟不代替实体输入或所有调整组合验收。
+
+工具栏对齐续修：交换按钮的原生隐式高度抬高布局，取消/确定亦使用了未限定高度的默认按钮。现统一在36px栏内垂直居中，三按钮固定26px；取消/确定为close/check矢量图标加文字。参数区可横向滚动，为右侧操作留固定空间。Qt用例补充按钮/单位/DPI的中心及上下边界断言，并确认contextDistort/contextPerspective不存在。软件与实际D3D11各4 passed（两功能行），日志canvas-resize-alignment-software.txt与canvas-resize-alignment-d3d11.txt，截图canvas-resize-alignment.png；独立CanvasResizeReview已重新链接。

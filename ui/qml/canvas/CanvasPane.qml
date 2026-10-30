@@ -236,8 +236,6 @@ Rectangle {
         Action {objectName:"contextInvertSelection";text:"反向选择";enabled:selectionContext.available;onTriggered:root.ownClient.invertSelection()}
         MenuSeparator {}
         Action {objectName:"contextFreeTransform";text:"自由变换";enabled:selectionContext.available;onTriggered:{transformOverlay.mode=0;root.ownClient.beginTransform()}}
-        Action {objectName:"contextDistort";text:"扭曲";enabled:selectionContext.available;onTriggered:{transformOverlay.mode=4;root.ownClient.beginTransform()}}
-        Action {objectName:"contextPerspective";text:"透视";enabled:selectionContext.available;onTriggered:{transformOverlay.mode=5;root.ownClient.beginTransform()}}
     }
     CanvasResizeOverlay {id:resizeOverlay;anchors.fill:parent;z:25;controller:root.ownClient;canvasView:canvas;visible:root.mainWindow && root.mainWindow.canvasResizeTarget===root;onFinished:root.mainWindow.endCanvasResize()}
     TransformOverlay {id:transformOverlay;anchors.fill:parent;z:15;controller:root.ownClient;canvasView:canvas}

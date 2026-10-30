@@ -4558,7 +4558,16 @@ private slots:
         QVERIFY2(!engine.rootObjects().isEmpty(),qPrintable(warnings.join('\n')));auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);QTRY_VERIFY(client.ready());client.newTransparentDocument(128,96);QTRY_COMPARE(client.documentWidth(),128);QTRY_VERIFY(!client.layerEditBusy());
         auto *action=window->findChild<QObject*>("canvasSizeAction");QVERIFY(action);QVERIFY(action->property("enabled").toBool());const auto depth=client.undoDepth();
         const auto open=[&]()->QObject* {if(!QMetaObject::invokeMethod(action,"trigger"))return nullptr;return window->property("canvasResizeTarget").value<QObject*>();};
-        auto *pane=open();QVERIFY2(pane,qPrintable(warnings.join('\n')));auto *overlay=pane->findChild<QQuickItem*>("canvasResizeOverlay");QVERIFY(overlay);QVERIFY(overlay->isVisible());QVERIFY(workspace.canvasAdjusting());QVERIFY(!overlay->property("deletePixels").toBool());
+        auto *pane=open();QVERIFY2(pane,qPrintable(warnings.join('\n')));auto *overlay=pane->findChild<QQuickItem*>("canvasResizeOverlay");QVERIFY(overlay);QVERIFY(overlay->isVisible());QVERIFY(workspace.canvasAdjusting());
+        QTest::qWait(100);
+        auto *resizeBar=findVisualItem(window->contentItem(),"canvasResizeOptionsBar");QVERIFY(resizeBar);
+        for(const auto &name:{"canvasResizeCancel","canvasResizeConfirm","canvasResizeUnits","canvasResizeDpi"}){
+            auto *control=findVisualItem(window->contentItem(),name);QVERIFY(control);
+            const auto bounds=control->mapRectToItem(resizeBar,control->boundingRect());
+            QVERIFY2(bounds.top()>=0 && bounds.bottom()<=resizeBar->height(),name);
+            QVERIFY2(std::abs(bounds.center().y()-resizeBar->height()/2)<1,name);
+        }
+        QVERIFY(!window->findChild<QObject*>("contextDistort"));QVERIFY(!window->findChild<QObject*>("contextPerspective"));QVERIFY(!overlay->property("deletePixels").toBool());
         const auto capture=qEnvironmentVariable("DRAWVERSE_CANVAS_RESIZE_CAPTURE");if(!capture.isEmpty()){QTest::qWait(100);QVERIFY(window->grabWindow().save(capture));}
         auto *canvas=pane->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);QTest::qWait(100);const auto frame=overlay->property("frame").toRectF();const auto corner=overlay->mapToScene(frame.bottomRight()).toPoint();
         QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,corner);QTest::mouseMove(window,corner+QPoint(-24,-12));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,corner+QPoint(-24,-12));QVERIFY(overlay->property("pixelWidth").toInt()<128);
