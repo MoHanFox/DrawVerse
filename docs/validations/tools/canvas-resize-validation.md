@@ -18,3 +18,9 @@
 宽泛的 `cargo test -p paint-core history --lib --locked` 选中了与此次修改无关的 saturated mix 全算子长测试；运行约 20 分钟后主动中断该测试进程，不作为整个 history 入口通过。未执行总 check、实体数位笔、所有手柄/DPR组合、大图性能矩阵或 JPEG/WebP DPI 验收。选区右键菜单当前五项实际能力与其余参考项边界见 `docs/tools/selection-context-menu-design.md`。
 
 标准 Release EXE 正在运行而保留，交付独立 `build/bin/CanvasResizeReview/drawverse.exe`，静态链接本次核心与 UI。
+
+## 最终收尾复验（2026-10-30）
+
+在暂存提交 4c44cea 上完成最终 Release 重建并重新静态链接独立包。新增命令序号回执的最终资源与 C++ 一致加载：软件及实际 Windows/D3D11 各 6 passed / 0 failed（四个功能行），包含比例 0:0、交换、DPI 输入未失焦直接 Return、真实边框拖动、取消/确认/撤销重做、选区右键及两种级联菜单。日志 `build/canvas-resize-ui-receipt-software.txt` 与 `build/canvas-resize-ui-receipt-d3d11.txt`；旧日志保留。
+
+`build/bin/CanvasResizeReview/drawverse.exe --preview ...` 在 D3D11 环境下完成三笔绘画与窗口抓图，退出 0，产物 `build/canvas-resize-app-smoke.png`。标准正在运行的 EXE 未替换。该冒烟不代替实体输入或所有调整组合验收。
