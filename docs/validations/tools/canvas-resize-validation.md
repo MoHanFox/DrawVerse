@@ -26,3 +26,7 @@
 `build/bin/CanvasResizeReview/drawverse.exe --preview ...` 在 D3D11 环境下完成三笔绘画与窗口抓图，退出 0，产物 `build/canvas-resize-app-smoke.png`。标准正在运行的 EXE 未替换。该冒烟不代替实体输入或所有调整组合验收。
 
 工具栏对齐续修：交换按钮的原生隐式高度抬高布局，取消/确定亦使用了未限定高度的默认按钮。现统一在36px栏内垂直居中，三按钮固定26px；取消/确定为close/check矢量图标加文字。参数区可横向滚动，为右侧操作留固定空间。Qt用例补充按钮/单位/DPI的中心及上下边界断言，并确认contextDistort/contextPerspective不存在。软件与实际D3D11各4 passed（两功能行），日志canvas-resize-alignment-software.txt与canvas-resize-alignment-d3d11.txt，截图canvas-resize-alignment.png；独立CanvasResizeReview已重新链接。
+
+冷历史续修：调整画布进入现有 prepare_result_in，Canvas 命令引用前后不可变瓦片，计账尺寸/选择/图层元数据与瓦片引用；像素按文档 PagePool 的驻留/暂存预算换出，不额外编码完整历史。元数据超预算或存在非本池瓦片时仍走原编码后备。新增1/16驻留瓦片、保留/删除裁剪的重复跳转测试，检查 Arc 身份、注册瓦片不增长、暖缓存零额外 page read、尺寸/DPI/选区及驻留上限；故障测试显式降低元数据预算以覆盖编码后备。首轮不合理1字节历史预算触发既有减法下溢，改用有效1024字节；并发 scratch maintenance busy 改串行复验，未据此更改生产缓存策略。
+
+最终串行 canvas_resize 5项、history_travel 6项及 paint-core --lib 严格Clippy通过；保留初始失败记录，不作端到端耗时或全量验证结论。

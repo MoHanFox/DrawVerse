@@ -224,6 +224,32 @@ impl StoredCommand {
                     }
                 }
                 Some((bytes, managed))
+            } else if let Command::Canvas { before, after, .. } = command {
+                // Keep dimensions, selections and layer metadata in the history
+                // budget; pixel storage stays in the document's managed pages.
+                let mut pixel_bytes = 0usize;
+                let mut reference_bytes = 0usize;
+                let mut managed = true;
+                for layer in before.iter().chain(after) {
+                    pixel_bytes = pixel_bytes
+                        .saturating_add(layer.retained_tile_count().saturating_mul(TILE_BYTES));
+                    reference_bytes = reference_bytes.saturating_add(layer.name.len());
+                    for tile in layer
+                        .tiles
+                        .values()
+                        .chain(layer.placed.iter().flat_map(|p| p.source.tiles.values()))
+                    {
+                        reference_bytes = reference_bytes.saturating_add(512);
+                        managed &= tile.belongs_to(pool);
+                    }
+                }
+                Some((
+                    command
+                        .bytes()
+                        .saturating_sub(pixel_bytes)
+                        .saturating_add(reference_bytes),
+                    managed,
+                ))
             } else {
                 None
             };

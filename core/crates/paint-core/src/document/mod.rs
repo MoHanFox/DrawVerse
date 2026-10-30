@@ -1094,6 +1094,7 @@ impl Document {
                 | crate::HistoryAction::HueSaturation
                 | crate::HistoryAction::ClearSelectionPixels
                 | crate::HistoryAction::Bucket
+                | crate::HistoryAction::ResizeCanvas
         ) {
             StoredCommand::prepare_result_in(&command, self.options.max_history_bytes, &self.pool)?
         } else {

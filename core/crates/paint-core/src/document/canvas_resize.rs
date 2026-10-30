@@ -300,6 +300,7 @@ mod tests {
         assert_eq!(d.dimensions(), (160, 128));
         let size = d.dimensions();
         let rev = d.revision();
+        d.options.max_history_bytes = 1024; // Force the encoded fallback rather than result references.
         crate::history_storage::fail_writes_for_test(true);
         let result = d.resize_canvas(-32, 0, 192, 128, 144, false, Pixel::WHITE);
         crate::history_storage::fail_writes_for_test(false);
@@ -307,6 +308,52 @@ mod tests {
         assert_eq!(d.dimensions(), size);
         assert_eq!(d.revision(), rev);
         assert_eq!(d.dpi(), 300);
+    }
+    #[test]
+    fn canvas_result_history_reuses_warm_and_cold_page_identities() {
+        for resident in [1, 16] {
+            for delete in [false, true] {
+                let mut d = super::super::liquify_result_history_tests::document(resident);
+                d.set_selection(crate::Selection::all(128, 128)).unwrap();
+                let depth = d.history_depth().0;
+                let selection = d.selection.clone();
+                let before = d.layers.clone();
+                d.resize_canvas(16, 0, 96, 128, 300, delete, Pixel::WHITE)
+                    .unwrap();
+                assert!(matches!(
+                    d.history.undo.back(),
+                    Some(StoredCommand::Paged(..))
+                ));
+                assert_eq!(d.history_disk_bytes(), 0);
+                let after = d.layers.clone();
+                let stats = d.storage_stats();
+                for _ in 0..3 {
+                    d.select_history(depth).unwrap();
+                    assert_eq!(d.dimensions(), (128, 128));
+                    assert_eq!(d.dpi(), 72);
+                    assert_eq!(d.selection, selection);
+                    for (a, b) in d.layers.iter().zip(&before) {
+                        for (key, tile) in &a.tiles {
+                            assert!(Arc::ptr_eq(tile, &b.tiles[key]));
+                        }
+                    }
+                    d.select_history(depth + 1).unwrap();
+                    assert_eq!(d.dimensions(), (96, 128));
+                    assert_eq!(d.dpi(), 300);
+                    for (a, b) in d.layers.iter().zip(&after) {
+                        for (key, tile) in &a.tiles {
+                            assert!(Arc::ptr_eq(tile, &b.tiles[key]));
+                        }
+                    }
+                }
+                assert_eq!(d.storage_stats().registered_tiles, stats.registered_tiles);
+                if resident == 16 {
+                    assert_eq!(d.storage_stats().page_reads, stats.page_reads);
+                }
+                d.trim_storage().unwrap();
+                assert!(d.storage_stats().resident_tiles <= resident);
+            }
+        }
     }
     #[test]
     fn expansion_fills_only_new_region_and_invalid_is_atomic() {
