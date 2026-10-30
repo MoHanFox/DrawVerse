@@ -4590,6 +4590,26 @@ private slots:
         const auto capture=qEnvironmentVariable("DRAWVERSE_CANVAS_RESIZE_CAPTURE");if(!capture.isEmpty()){QTest::qWait(100);QVERIFY(window->grabWindow().save(capture));}
         auto *canvas=pane->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);QTest::qWait(100);const auto frame=overlay->property("frame").toRectF();const auto corner=overlay->mapToScene(frame.bottomRight()).toPoint();
         QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,corner);QTest::mouseMove(window,corner+QPoint(-24,-12));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,corner+QPoint(-24,-12));QVERIFY(overlay->property("pixelWidth").toInt()<128);
+        QVERIFY(QMetaObject::invokeMethod(overlay,"checkpoint"));
+        const int resizedWidth=overlay->property("pixelWidth").toInt();
+        QVERIFY(QMetaObject::invokeMethod(overlay,"undo"));QCOMPARE(overlay->property("pixelWidth").toInt(),128);QCOMPARE(client.undoDepth(),depth);
+        QVERIFY(QMetaObject::invokeMethod(overlay,"redo"));QCOMPARE(overlay->property("pixelWidth").toInt(),resizedWidth);
+        overlay->setProperty("dpi",200);QVERIFY(QMetaObject::invokeMethod(overlay,"undo"));QCOMPARE(overlay->property("dpi").toInt(),72);
+        QVERIFY(QMetaObject::invokeMethod(overlay,"redo"));QCOMPARE(overlay->property("dpi").toInt(),200);
+        const auto rectBefore=canvas->documentRect();const auto navigationStart=overlay->mapToScene(QPointF(30,30)).toPoint();
+        QTest::mousePress(window,Qt::MiddleButton,Qt::NoModifier,navigationStart);QTest::mouseMove(window,navigationStart+QPoint(25,15));QTest::mouseRelease(window,Qt::MiddleButton,Qt::NoModifier,navigationStart+QPoint(25,15));
+        QVERIFY(QLineF(rectBefore.topLeft(),canvas->documentRect().topLeft()).length()>20);
+        const auto zoomBefore=canvas->zoom();QWheelEvent resizeWheel(navigationStart,window->mapToGlobal(navigationStart),{},QPoint(0,120),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QCoreApplication::sendEvent(window,&resizeWheel);QTRY_VERIFY(canvas->zoom()>zoomBefore);QCOMPARE(client.undoDepth(),depth);
+        overlay->forceActiveFocus();overlay->setProperty("dpi",210);
+        QTest::keyClick(window,Qt::Key_Z,Qt::ControlModifier);QTRY_COMPARE(overlay->property("dpi").toInt(),200);QCOMPARE(client.undoDepth(),depth);
+        QTest::keyClick(window,Qt::Key_Z,Qt::ControlModifier|Qt::ShiftModifier);QTRY_COMPARE(overlay->property("dpi").toInt(),210);
+        QTest::keyPress(window,Qt::Key_Space);const auto spacePan=canvas->documentRect().topLeft();
+        QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,navigationStart);QTest::mouseMove(window,navigationStart+QPoint(20,10));QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,navigationStart+QPoint(20,10));QTest::keyRelease(window,Qt::Key_Space);
+        QVERIFY(QLineF(spacePan,canvas->documentRect().topLeft()).length()>15);QCOMPARE(client.undoDepth(),depth);
+        QVERIFY(!window->findChild<QObject*>("canvasResizeHistory"));QVERIFY(!window->findChild<QObject*>("canvasResizeUndo"));
+        overlay->setProperty("dpi",220);auto *undoTool=findVisualItem(window->contentItem(),"undoTool");auto *redoTool=findVisualItem(window->contentItem(),"redoTool");QVERIFY(undoTool && redoTool);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,undoTool->mapToScene(undoTool->boundingRect().center()).toPoint());QTRY_COMPARE(overlay->property("dpi").toInt(),210);QCOMPARE(client.undoDepth(),depth);
+        QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,redoTool->mapToScene(redoTool->boundingRect().center()).toPoint());QTRY_COMPARE(overlay->property("dpi").toInt(),220);QCOMPARE(client.undoDepth(),depth);
         overlay->setProperty("units",1);overlay->setProperty("ratioWidth",0);overlay->setProperty("ratioHeight",0);QVERIFY(QMetaObject::invokeMethod(overlay,"setSize",Q_ARG(QVariant,120),Q_ARG(QVariant,90)));QVERIFY(QMetaObject::invokeMethod(overlay,"swap"));QCOMPARE(overlay->property("pixelHeight").toInt(),160);QVERIFY(std::abs(overlay->property("ratio").toReal()-.75)<.0001);
         overlay->setProperty("ratioWidth",16);overlay->setProperty("ratioHeight",9);QVERIFY(QMetaObject::invokeMethod(overlay,"swap"));QVERIFY(std::abs(overlay->property("ratio").toReal()-9./16)<.0001);
         QVERIFY(QMetaObject::invokeMethod(overlay,"finished"));QTRY_VERIFY(!workspace.canvasAdjusting());QCOMPARE(client.undoDepth(),depth);QCOMPARE(client.documentWidth(),128);
@@ -4606,21 +4626,29 @@ private slots:
         client.newTransparentDocument(64,48);QTRY_COMPARE(client.documentWidth(),64);QTRY_VERIFY(!client.layerEditBusy());
         QVERIFY(client.editSelection(QRectF(12,10,24,20),0,0));QTRY_VERIFY(client.selectionEnabled());QTRY_VERIFY(!client.layerEditBusy());
         auto *dialog=window->findChild<QQuickWindow*>("selectionEditWindow");QVERIFY(dialog);QCOMPARE(dialog->modality(),Qt::ApplicationModal);
-        auto trigger=[&](const char *name){auto *a=window->findChild<QObject*>(name);return a && QMetaObject::invokeMethod(a,"trigger");};
+        auto trigger=[&](const char *name){
+            auto *action=window->findChild<QObject*>(name);auto *view=window->findChild<CanvasItem*>("mainCanvas");auto *menu=window->findChild<QObject*>("selectionContextMenu");
+            if(!action || !view || !menu)return false;
+            window->requestActivate();QTest::mouseClick(window,Qt::RightButton,Qt::NoModifier,view->mapToScene(view->boundingRect().center()).toPoint());
+            if(!QTest::qWaitFor([&]{return menu->property("opened").toBool();},3000))return false;
+            auto *row=findVisualItem(window->contentItem(),"glassMenuItem:"+action->property("text").toString());if(!row)return false;
+            QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,row->mapToScene(row->boundingRect().center()).toPoint());return true;
+        };
         auto *cancel=dialog->findChild<QObject*>("selectionEditCancel");auto *apply=dialog->findChild<QObject*>("selectionEditApply");QVERIFY(cancel && apply);
+        auto clickApply=[&] {auto *button=qobject_cast<QQuickItem*>(apply);if(!button)return false;dialog->requestActivate();QTest::qWait(30);QTest::mouseClick(dialog,Qt::LeftButton,Qt::NoModifier,button->mapToScene(button->boundingRect().center()).toPoint());return true;};
         const int depth=client.undoDepth();
         QVERIFY(trigger("contextFill"));QTRY_VERIFY(dialog->isVisible());QVERIFY(QMetaObject::invokeMethod(cancel,"clicked"));QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth);
         QVERIFY(trigger("contextFill"));QTRY_VERIFY(dialog->isVisible());dialog->findChild<QObject*>("selectionEditColor")->setProperty("currentIndex",1);
         const auto preview=qEnvironmentVariable("DRAWVERSE_SELECTION_PREVIEW");if(!preview.isEmpty()){QTest::qWait(50);QVERIFY(dialog->grabWindow().save(preview+"-fill.png"));}
-        QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth+1);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("填充选区"));auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);
+        QVERIFY(clickApply());QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth+1);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("填充选区"));auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);
         const auto renderedPixel=[&] {auto capture=canvas->grabToImage();if(!capture || !QTest::qWaitFor([&]{return !capture->image().isNull();},5000))return QColor();const auto image=capture->image();const auto p=canvas->documentRect().topLeft()+QPointF(20,18)*canvas->zoom();const auto scale=image.width()/canvas->width();return image.pixelColor(qRound(p.x()*scale),qRound(p.y()*scale));};
         QTRY_COMPARE(renderedPixel(),QColor(Qt::white));
         QVERIFY(trigger("contextCopyLayer"));QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+2);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("通过复制创建图层"));
         client.undo();QTRY_COMPARE(client.layers().size(),1);QTRY_VERIFY(!client.layerEditBusy());client.redo();QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());
         QVERIFY(trigger("contextCutLayer"));QTRY_COMPARE(client.layers().size(),3);QTRY_VERIFY(!client.layerEditBusy());QCOMPARE(client.undoDepth(),depth+3);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("通过剪切创建图层"));
         client.undo();QTRY_COMPARE(client.layers().size(),2);QTRY_VERIFY(!client.layerEditBusy());
-        const auto toolFeather=client.selectionFeather();QVERIFY(trigger("contextFeather"));QTRY_VERIFY(dialog->isVisible());if(!preview.isEmpty()){QTest::qWait(50);QVERIFY(dialog->grabWindow().save(preview+"-feather.png"));}QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth+3);QCOMPARE(client.selectionFeather(),toolFeather);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("羽化选区"));
-        QVERIFY(trigger("contextStroke"));QTRY_VERIFY(dialog->isVisible());if(!preview.isEmpty()){QTest::qWait(50);QVERIFY(dialog->grabWindow().save(preview+"-stroke.png"));}dialog->findChild<QObject*>("selectionEditColor")->setProperty("currentIndex",2);QVERIFY(QMetaObject::invokeMethod(apply,"clicked"));QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth+4);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("描边选区"));
+        const auto toolFeather=client.selectionFeather();QVERIFY(trigger("contextFeather"));QTRY_VERIFY(dialog->isVisible());if(!preview.isEmpty()){QTest::qWait(50);QVERIFY(dialog->grabWindow().save(preview+"-feather.png"));}QVERIFY(clickApply());QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth+3);QCOMPARE(client.selectionFeather(),toolFeather);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("羽化选区"));
+        QVERIFY(trigger("contextStroke"));QTRY_VERIFY(dialog->isVisible());if(!preview.isEmpty()){QTest::qWait(50);QVERIFY(dialog->grabWindow().save(preview+"-stroke.png"));}dialog->findChild<QObject*>("selectionEditColor")->setProperty("currentIndex",2);QVERIFY(clickApply());QTRY_VERIFY(!client.layerEditBusy());QTRY_VERIFY(!dialog->isVisible());QCOMPARE(client.undoDepth(),depth+4);QCOMPARE(client.historyEntries().last().toMap().value("title").toString(),QStringLiteral("描边选区"));
         QVERIFY(!window->findChild<QObject*>("contextDistort"));QVERIFY(!window->findChild<QObject*>("contextPerspective"));
         for(const auto &warning:warnings)QVERIFY2(!warning.contains("ReferenceError") && !warning.contains("TypeError") && !warning.contains("Binding loop"),qPrintable(warning));
     }

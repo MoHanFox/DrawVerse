@@ -29,12 +29,12 @@ macro_rules! dto {
 
 #[test]
 fn selection_pixels_public_validation_fifo_single_history_and_undo() {
-    for kind in 0..=4 {
+    for kind in 0..=6 {
         let h = Harness::new(64, 48);
         unsafe {
             let mut seq = 99;
             assert_eq!(
-                paint_session_selection_pixels(h.core, h.session, 5, 1., 0., 0., 0., 1., &mut seq),
+                paint_session_selection_pixels(h.core, h.session, 7, 1., 0., 0., 0., 1., &mut seq),
                 PAINT_INVALID_ARGUMENT
             );
             assert_eq!(seq, 0);

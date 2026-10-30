@@ -2,11 +2,11 @@
 use super::*;
 
 impl Document {
-    /// 0 feather, 1 copy to layer, 2 cut to layer, 3 fill, 4 inside stroke.
+    /// 0 feather, 1 copy to layer, 2 cut to layer, 3 fill, 4 inside stroke, 5 outside stroke, 6 centered stroke.
     pub fn edit_selected_pixels(&mut self, kind: u32, amount: f64, rgba: [f32; 4]) -> Result<()> {
         self.idle()?;
         if !self.selection.enabled()
-            || kind > 4
+            || kind > 6
             || !amount.is_finite()
             || !(0.0..=1000.0).contains(&amount)
         {
@@ -19,6 +19,8 @@ impl Document {
             CopySelectionLayer,
             CutSelectionLayer,
             FillSelection,
+            StrokeSelection,
+            StrokeSelection,
             StrokeSelection,
         ][kind as usize];
         if kind == 0 {
@@ -95,7 +97,16 @@ impl Document {
                 "selection operation requires a content layer",
             ));
         }
-        let bounds = self.selection_pixel_bounds()?;
+        let mut bounds = self.selection_pixel_bounds()?;
+        if kind >= 5 {
+            let margin = amount.ceil() as i64;
+            bounds = [
+                (bounds[0] - margin).max(0),
+                (bounds[1] - margin).max(0),
+                (bounds[2] + margin).min(i64::from(self.width)),
+                (bounds[3] + margin).min(i64::from(self.height)),
+            ];
+        }
         let mut result = self.layers.clone();
         if kind == 1 || kind == 2 {
             if self.next_layer_id == u64::MAX {
@@ -118,14 +129,15 @@ impl Document {
             }
             result.insert(at + 1, copy);
         } else {
-            if kind == 4 && amount == 0. {
+            if kind >= 4 && amount == 0. {
                 return Ok(());
             }
             let next = self.selection_color_layer(
                 &source,
                 bounds,
                 color,
-                if kind == 4 { amount } else { 0. },
+                if kind >= 4 { amount } else { 0. },
+                kind,
             )?;
             result[self.layer_index(id)?] = next;
         }
@@ -161,6 +173,7 @@ impl Document {
         b: [i64; 4],
         color: Pixel,
         stroke: f64,
+        kind: u32,
     ) -> Result<Layer> {
         let mut result = source.clone();
         result.placed = None;
@@ -180,7 +193,12 @@ impl Document {
             return Err(Error::ResourceLimit("selection color tiles"));
         }
         let distance = if stroke > 0. {
-            Some(self.selection_inside_distances()?)
+            Some(self.selection_distances(kind != 5)?)
+        } else {
+            None
+        };
+        let outside = if kind == 6 {
+            Some(self.selection_distances(false)?)
         } else {
             None
         };
@@ -214,9 +232,18 @@ impl Document {
                         {
                             alpha = 0.;
                         } else if let Some(d) = &distance {
-                            alpha *= ((stroke + 1.
-                                - d[y as usize * self.width as usize + x as usize].sqrt() as f64)
-                                .clamp(0., 1.)) as f32;
+                            let i = y as usize * self.width as usize + x as usize;
+                            let width = if kind == 6 { stroke / 2. } else { stroke };
+                            let band = |distance: f32| {
+                                ((width + 1. - distance.sqrt() as f64).clamp(0., 1.)) as f32
+                            };
+                            alpha = if kind == 5 {
+                                (1. - alpha) * band(d[i])
+                            } else if let Some(outer) = &outside {
+                                alpha * band(d[i]) + (1. - alpha) * band(outer[i])
+                            } else {
+                                alpha * band(d[i])
+                            };
                         }
                         let next = color.scaled(alpha).over(old);
                         changed |= next != old;
@@ -234,7 +261,7 @@ impl Document {
         }
         Ok(result)
     }
-    fn selection_inside_distances(&self) -> Result<Vec<f32>> {
+    fn selection_distances(&self, inside: bool) -> Result<Vec<f32>> {
         let (w, h) = (self.width as usize, self.height as usize);
         if w.saturating_mul(h) > crate::MAX_SELECTION_MASK_BYTES {
             return Err(Error::ResourceLimit("selection stroke mask"));
@@ -244,23 +271,23 @@ impl Document {
             let mut row = vec![0.; w];
             self.selection.coverage_span(0.5, y as f64 + 0.5, &mut row);
             for x in 0..w {
-                d[y * w + x] = if row[x] < 0.5 { 0. } else { 1e12 };
+                d[y * w + x] = if (row[x] < 0.5) == inside { 0. } else { 1e12 };
             }
         }
         // Exact squared Euclidean distance to the outside, including the document boundary.
         for y in 0..h {
             let mut row = Vec::with_capacity(w + 2);
-            row.push(0.);
+            row.push(if inside { 0. } else { 1e12 });
             row.extend_from_slice(&d[y * w..(y + 1) * w]);
-            row.push(0.);
+            row.push(if inside { 0. } else { 1e12 });
             let out = distance_line(&row);
             d[y * w..(y + 1) * w].copy_from_slice(&out[1..w + 1]);
         }
         for x in 0..w {
             let mut col = Vec::with_capacity(h + 2);
-            col.push(0.);
+            col.push(if inside { 0. } else { 1e12 });
             col.extend((0..h).map(|y| d[y * w + x]));
-            col.push(0.);
+            col.push(if inside { 0. } else { 1e12 });
             let out = distance_line(&col);
             for y in 0..h {
                 d[y * w + x] = out[y + 1];
@@ -372,6 +399,24 @@ mod tests {
         }
     }
     #[test]
+    fn stroke_positions_change_only_the_requested_side_and_restore() {
+        for kind in [4, 5, 6] {
+            let mut d = fixture();
+            let before = pixels(&d);
+            d.edit_selected_pixels(kind, 4., [1., 0., 0., 1.]).unwrap();
+            assert_eq!(d.pixel(10, 18).alpha(), if kind == 4 { 0. } else { 1. });
+            assert_eq!(d.pixel(13, 18).alpha(), if kind == 5 { 0. } else { 1. });
+            assert_eq!(d.pixel(8, 18).alpha(), if kind == 5 { 1. } else { 0. });
+            assert_eq!(d.pixel(15, 18).alpha(), if kind == 4 { 1. } else { 0. });
+            assert_eq!(d.pixel(22, 18).alpha(), 0.);
+            let after = pixels(&d);
+            d.undo().unwrap();
+            assert_eq!(pixels(&d), before);
+            d.redo().unwrap();
+            assert_eq!(pixels(&d), after);
+        }
+    }
+    #[test]
     fn selection_actions_copy_cut_selected_coverage_one_history_and_repeated_travel() {
         for kind in [1, 2] {
             let mut d = fixture();
@@ -449,7 +494,7 @@ mod tests {
         d.redo().unwrap();
         assert_eq!(d.selection, after);
         let revision = d.revision();
-        for (kind, amount) in [(5, 0.), (0, f64::NAN), (4, 1001.)] {
+        for (kind, amount) in [(7, 0.), (0, f64::NAN), (4, 1001.)] {
             assert!(d.edit_selected_pixels(kind, amount, [0.; 4]).is_err());
             assert_eq!(d.revision(), revision);
         }

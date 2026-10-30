@@ -16,7 +16,7 @@
 
 #define PAINT_ABI_MAJOR 1
 
-#define PAINT_ABI_MINOR 95
+#define PAINT_ABI_MINOR 96
 
 #define PAINT_ABI_PATCH 0
 
@@ -638,6 +638,10 @@
 #define PAINT_SELECTION_PIXELS_FILL 3
 
 #define PAINT_SELECTION_PIXELS_STROKE 4
+
+#define PAINT_SELECTION_PIXELS_STROKE_CENTER 6
+
+#define PAINT_SELECTION_PIXELS_STROKE_OUTSIDE 5
 
 /**
  * ABI 1.12: rasterized shapes. The geometry fields stay the bounding box for old callers.
@@ -3192,7 +3196,7 @@ PaintStatus paint_session_selection_mask(struct PaintCore *core,
 
 /**
  * ABI 1.95: current-selection operation: 0 feather, 1 copy layer, 2 cut layer,
- * 3 fill, 4 inside stroke; amount in pixels, straight linear RGBA.
+ * 3 fill, 4 inside stroke; ABI 1.96 adds 5 outside and 6 centered stroke; amount in pixels, straight linear RGBA.
  * # Safety
  * Valid session handles and writable sequence; standard session ownership applies.
  */

@@ -1,5 +1,8 @@
 # DrawVerse
 
+- 调整草稿/三侧描边2026-10-30：ABI1.96追加居外/居中，原居内/羽化/填充事务保持。调整草稿独立撤销重做仅复用原工具条、编辑菜单与快捷键，不新增历史界面；中键/空格平移和滚轮缩放，确认单文档冷历史/取消无历史。核心7/公开七kind循环1、软件/D3D11各3功能、四ABI/Clippy/fmt/头通过。标准EXE占用，独立build/bin/SelectionCanvasReview及D3D11冒烟0。设计/验收见canvas-resize与selection-context-menu文档末节，无总check/实体/性能结论。
+
+
 - 实际4K历史显示缓存2026-10-30：参考本地PhotoCraft共享状态/有界源缓存，最近两CPU包及预算内GPU atlas空槽优先/LRU复用；编辑期间同epoch/generation保留，GPU ready后交接resident，旋转显示尺寸随对应像素切换。用户4096×2160 PNG三进程各五轮，undo/redo节点中位变换381.975/386.793→31.859/31.883ms、旋转415.152/431.924→47.886/48.182ms，液化约32ms持平；首次undo79–108ms、热轮零源读/上传，非实体/屏幕/PhotoCraft配对。本图GPU计账+160MiB受原预算约束。三操作独立抓图恢复通过，实际D3D11定向54/软件51及四ABI通过，标准Release更新并独立D3D11冒烟退出0；原编译/液化交接/初始上传夹具失败保留，核心冷校验保持，无总check。见general-gpu-composition设计/验收同日节。
 
 - 历史共享结果入口2026-10-30：见 `docs/document/history-storage-design.md` / `docs/validations/document/history-storage-validation.md` 同日节；普通Stroke含小笔触按PagePool引用计账，数据驱动存储替代action白名单，结构编码及故障原子性保持。

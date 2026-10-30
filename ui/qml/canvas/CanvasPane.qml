@@ -58,6 +58,7 @@ Rectangle {
         Loader {id:transformAbove;anchors.fill:parent;active:canvas.forwardPreview;sourceComponent:PaintCanvas {previewPart:2;interactive:false;client:root.ownClient;anchors.fill:parent;presentationRect:canvas.documentRect;opacity:0;layer.enabled:true;layer.textureSize:canvas.layer.textureSize}}
         PaintCanvas {
             id:canvas;initialFitRatio:.76;objectName:root.initialDocument?"mainCanvas":"documentCanvas:"+root.documentId;anchors.fill:parent;client:root.ownClient;focus:true;enabled:!root.savingBlocked && !resizeOverlay.visible
+            readonly property var canvasResizeEditor:resizeOverlay.visible?resizeOverlay:null
             layer.enabled:forwardPreview
             layer.textureSize:Qt.size(Math.max(1,Math.min(2048,Math.ceil(width*Screen.devicePixelRatio))),Math.max(1,Math.min(2048,Math.ceil(height*Screen.devicePixelRatio))))
             layer.smooth:true
@@ -258,8 +259,8 @@ Rectangle {
     Shortcut {sequence: ShortcutSettings.bindings.larger;context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && !root.ownClient.drawing;onActivated:{if(root.ownClient.liquifyActive)root.ownClient.liquifySize=Math.min(15000,Math.max(root.ownClient.liquifySize+1,Math.round(root.ownClient.liquifySize*1.15)));else root.ownClient.brushRadius=Math.min(1000,root.ownClient.brushRadius*1.15)}}
     TaskProgressOverlay {anchors.fill:parent;z:30;controller:root.ownClient}
     BusyIndicator {objectName:"canvasBusy";anchors.centerIn:parent;running:!root.ownClient.ready;visible:running}
-    Shortcut {sequence: ShortcutSettings.bindings.undo;context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.drawing;onActivated:root.ownClient.undo()}
-    Shortcut {sequence:ShortcutSettings.bindings.redo;context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.drawing;onActivated:root.ownClient.redo()}
+    Shortcut {sequence: ShortcutSettings.bindings.undo;context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.drawing;onActivated:if(resizeOverlay.visible)resizeOverlay.undo();else root.ownClient.undo()}
+    Shortcut {sequence:ShortcutSettings.bindings.redo;context:Qt.ApplicationShortcut;enabled:root.visible && canvas.activeFocus && canvas.Window.window!==root.mainWindow && !root.ownClient.drawing;onActivated:if(resizeOverlay.visible)resizeOverlay.redo();else root.ownClient.redo()}
     Shortcut { context:Qt.ApplicationShortcut; sequence:ShortcutSettings.bindings.bucket; enabled:root.visible && canvas.activeFocus && !root.ownClient.drawing; onActivated:root.ownClient.activateBucket() }
     Shortcut { context:Qt.ApplicationShortcut; sequence:ShortcutSettings.bindings.wand; enabled:root.visible && canvas.activeFocus && !root.ownClient.drawing; onActivated:root.ownClient.activateWand() }
     Shortcut { context:Qt.ApplicationShortcut; sequence:ShortcutSettings.bindings.smudge; enabled:root.visible && canvas.activeFocus && !root.ownClient.drawing; onActivated:root.ownClient.activateSmudge() }

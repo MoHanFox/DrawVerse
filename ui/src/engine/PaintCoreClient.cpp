@@ -2208,7 +2208,8 @@ bool PaintCoreClient::selectLayerPixels(quint64 id,int operation) {
     m_pendingLayer=m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
 }
 bool PaintCoreClient::selectionPixels(int kind,qreal amount,int color,qreal opacity) {
-    if(!m_ready || !selectionEnabled() || m_liquifyActive || m_transformActive || m_drawing || layerEditBusy() || m_fileBusy || m_closing || kind<0 || kind>4)return false;
+    if(!selectionEnabled()){showError(QStringLiteral("请先创建选区"));return false;}
+    if(!m_ready || m_liquifyActive || m_transformActive || m_drawing || layerEditBusy() || m_fileBusy || m_closing || kind<0 || kind>6){showError(QStringLiteral("画布正在处理其他操作，请稍后重试"));return false;}
     QColor c=color==1?QColor(Qt::white):color==2?QColor(Qt::black):m_color;
     uint64_t sequence=0;
     QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;

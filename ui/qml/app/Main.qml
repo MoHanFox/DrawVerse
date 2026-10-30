@@ -363,9 +363,9 @@ ApplicationWindow {
             Action { objectName:"storagePreferencesAction"; text: "首选项…"; shortcut: ShortcutSettings.bindings.preferences; enabled: !PaintClient.closing; onTriggered: preferencesDialog.open() }
             Action { objectName:"keyboardShortcutsAction"; text: "键盘快捷键…"; enabled: !PaintClient.closing; onTriggered: shortcutsDialog.open() }
             MenuSeparator {}
-            Action { text: "撤销"; shortcut: ShortcutSettings.bindings.undo; enabled: !root.canvasAdjusting && root.hasDocuments && (PaintClient.undoDepth>0 && !PaintClient.drawing); onTriggered: PaintClient.undo() }
+            Action { text: "撤销"; shortcut: ShortcutSettings.bindings.undo; enabled:root.canvasAdjusting?root.canvasResizeTarget.canvasResizeOverlay.canUndo:root.hasDocuments && (PaintClient.undoDepth>0 && !PaintClient.drawing); onTriggered:if(root.canvasAdjusting)root.canvasResizeTarget.canvasResizeOverlay.undo();else PaintClient.undo() }
             Action {objectName:"freeTransformAction";text:"自由变换";shortcut: ShortcutSettings.bindings.transform;enabled: !root.canvasAdjusting && root.hasDocuments && (!PaintClient.textInputFocused && PaintClient.ready && !root.editing && !PaintClient.drawing && !PaintClient.fileBusy);onTriggered:PaintClient.beginTransform()}
-            Action { text: "重做"; shortcut: ShortcutSettings.bindings.redo; enabled: !root.canvasAdjusting && root.hasDocuments && (PaintClient.redoDepth>0 && !PaintClient.drawing); onTriggered: PaintClient.redo() }
+            Action { text: "重做"; shortcut: ShortcutSettings.bindings.redo; enabled:root.canvasAdjusting?root.canvasResizeTarget.canvasResizeOverlay.canRedo:root.hasDocuments && (PaintClient.redoDepth>0 && !PaintClient.drawing); onTriggered:if(root.canvasAdjusting)root.canvasResizeTarget.canvasResizeOverlay.redo();else PaintClient.redo() }
         }
         GlassMenu {
             id:filterMenu;objectName:"filterMenu";topLevel:true

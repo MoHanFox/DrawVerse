@@ -522,10 +522,15 @@ void CanvasItem::setInitialFitRatio(qreal ratio) {
     if(std::isfinite(ratio)) m_initialFitRatio=std::clamp(ratio,qreal(.1),qreal(1));
 }
 void CanvasItem::actualSize() { stopNavigation();m_zoom = 1; m_pan = {}; emit viewChanged(); update(); }
+void CanvasItem::panBy(qreal dx,qreal dy) { if(!std::isfinite(dx) || !std::isfinite(dy))return;stopNavigation();m_pan+=QPointF(dx,dy);emit viewChanged();update(); }
 void CanvasItem::zoomBy(qreal factor) {zoomAround(factor,{width()/2,height()/2});}
 void CanvasItem::zoomAround(qreal factor,QPointF position) {
     if(!m_interactive || !m_client || !std::isfinite(factor) || factor<=0 || width()<=0 || height()<=0)return;
     const auto target=std::clamp((m_zoomAnimating?m_zoomTarget:m_zoom)*factor,.00001,8.);
+    if(!isEnabled()) {
+        const auto anchor=documentPoint(position);stopNavigation();m_zoom=target;
+        m_pan+=position-(documentRect().topLeft()+anchor*m_zoom);emit viewChanged();update();return;
+    }
     m_velocity={};m_zoomFrom=m_zoom;m_zoomTarget=target;m_zoomAnchor=position;m_zoomDocument=documentPoint(position);
     m_zoomStarted=m_navigationClock.elapsed();m_navigationLast=m_zoomStarted;m_zoomAnimating=true;m_navigationTimer.start();
 }

@@ -8,6 +8,7 @@ import "../theme"
 Rectangle {
     id: root
     objectName: "toolStrip"
+    readonly property var resizeEditor:canvasView && ("canvasResizeEditor" in canvasView)?canvasView.canvasResizeEditor:null
     property var canvasView
     function focusCanvas() {
         if(canvasView) {canvasView.forceActiveFocus();canvasView.Window.window.requestActivate()}
@@ -81,8 +82,8 @@ Rectangle {
         IconButton {objectName:"smudgeTool";width:26;height:26;glyph:"smudge";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.smudgeTool;onClicked:{PaintClient.activateSmudge();root.focusCanvas()} tooltip:"涂抹 R"}
         IconButton {objectName:"eyedropperTool";width:26;height:26;glyph:"eyedropper";checkable:true;enabled:!PaintClient.liquifyActive;checked:!PaintClient.liquifyActive && PaintClient.eyedropperTool;onClicked:{PaintClient.activateEyedropper();root.focusCanvas()} tooltip:"吸色 I · Alt 临时吸色"}
         Rectangle {width:24;height:1;color:Theme.line;anchors.horizontalCenter:parent.horizontalCenter}
-        IconButton {width:26;height:26;glyph:"undo";enabled:!PaintClient.liquifyActive && PaintClient.undoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.undo();tooltip:"撤销 " + ShortcutSettings.bindings.undo}
-        IconButton {width:26;height:26;glyph:"redo";enabled:!PaintClient.liquifyActive && PaintClient.redoDepth>0 && !PaintClient.drawing;onClicked:PaintClient.redo();tooltip:"重做 " + ShortcutSettings.bindings.redo}
+        IconButton {objectName:"undoTool";width:26;height:26;glyph:"undo";enabled:root.resizeEditor?root.resizeEditor.canUndo:!PaintClient.liquifyActive && PaintClient.undoDepth>0 && !PaintClient.drawing;onClicked:if(root.resizeEditor)root.resizeEditor.undo();else PaintClient.undo();tooltip:"撤销 " + ShortcutSettings.bindings.undo}
+        IconButton {objectName:"redoTool";width:26;height:26;glyph:"redo";enabled:root.resizeEditor?root.resizeEditor.canRedo:!PaintClient.liquifyActive && PaintClient.redoDepth>0 && !PaintClient.drawing;onClicked:if(root.resizeEditor)root.resizeEditor.redo();else PaintClient.redo();tooltip:"重做 " + ShortcutSettings.bindings.redo}
     }
     Rectangle {width:22;height:22;color:PaintClient.brushColor;border.color:Theme.line;anchors.bottom:parent.bottom;anchors.bottomMargin:12;anchors.horizontalCenter:parent.horizontalCenter}
 }

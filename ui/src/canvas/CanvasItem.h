@@ -82,6 +82,7 @@ public:
     Q_INVOKABLE void fitToView();
     Q_INVOKABLE void actualSize();
     Q_INVOKABLE void zoomBy(qreal factor);
+    Q_INVOKABLE void panBy(qreal dx, qreal dy);
     Q_INVOKABLE void captureLayoutPosition();
     Q_INVOKABLE void restoreLayoutPosition();
     /// Normalized drag rectangle; Shift constrains it to a square (circle for the ellipse tool).

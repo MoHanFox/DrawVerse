@@ -14,14 +14,14 @@ PanelWindow {
     flags:Qt.Dialog | Qt.FramelessWindowHint
     modality:Qt.ApplicationModal
     color:"transparent"
-    readonly property int preferredHeight:kind===0?166:kind===4?250:216
+    readonly property int preferredHeight:(kind===0?166:kind===4?250:216)+(controller && controller.lastError.length?44:0)
     width:330;height:preferredHeight
     minimumWidth:330;maximumWidth:330
     minimumHeight:preferredHeight;maximumHeight:preferredHeight
     title:kind===0?"羽化选区":kind===3?"填充":"描边"
     function openFor(value) {
         if(!controller || !controller.selectionEnabled)return
-        kind=value;waiting=false;controller.clearError();amount.value=kind===0?5:1;opacity.value=100;colors.currentIndex=0
+        kind=value;waiting=false;controller.clearError();amount.value=kind===0?5:1;opacity.value=100;colors.currentIndex=0;position.currentIndex=0
         const owner=transientParent
         if(owner){x=owner.x+(owner.width-width)/2;y=owner.y+(owner.height-height)/2}
         show();requestActivate()
@@ -29,7 +29,7 @@ PanelWindow {
     function apply() {
         if(waiting)return
         controller.clearError()
-        waiting=controller.selectionPixels(kind,amount.value,colors.currentIndex,opacity.value/100)
+        waiting=controller.selectionPixels(kind===4?[4,6,5][position.currentIndex]:kind,amount.value,colors.currentIndex,opacity.value/100)
     }
     Connections {target:root.controller
         function onStateChanged(){if(root.waiting && !root.controller.layerEditBusy){root.waiting=false;if(!root.controller.lastError.length)root.hide()}}
@@ -69,7 +69,10 @@ PanelWindow {
             SpinBox {id:opacity;objectName:"selectionEditOpacity";from:0;to:100;value:100;editable:true;implicitWidth:128;implicitHeight:28}
             Label {text:"%"}
         }
-        Label {visible:root.kind===4;text:"位置：内部";color:Theme.text}
+        RowLayout {visible:root.kind===4;Layout.fillWidth:true
+            Label {text:"位置";Layout.fillWidth:true}
+            CompactComboBox {id:position;objectName:"selectionEditPosition";model:["居内","居中","居外"];Layout.preferredWidth:168}
+        }
     }
     ColumnLayout {
         anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.margins:12;spacing:6
