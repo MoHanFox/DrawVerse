@@ -54,6 +54,8 @@ pub enum HistoryAction {
     HueSaturation = 44,
     LayerAlphaSelection = 45,
     ResizeCanvas = 46,
+    RotateClockwise = 47,
+    RotateCounterclockwise = 48,
     FeatherSelection = 49,
     CopySelectionLayer = 50,
     CutSelectionLayer = 51,
@@ -77,7 +79,7 @@ pub(crate) enum Command {
         after_size: [u32; 3],
         before: Vec<Layer>,
         after: Vec<Layer>,
-        selection: crate::Selection,
+        selection: (crate::Selection, crate::Selection),
     },
     LayerEdit {
         selection: Option<(crate::Selection, crate::Selection)>,
@@ -160,6 +162,16 @@ impl HistoryVerification {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static FORCE_ENCODED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+/// Codec failure tests explicitly select the fallback backend.
+#[cfg(test)]
+pub(crate) fn force_encoded_for_test(enabled: bool) {
+    FORCE_ENCODED.with(|flag| flag.set(enabled));
+}
+
 impl StoredCommand {
     #[cfg(test)]
     pub fn prepare(command: &Command, max_bytes: usize) -> Result<Self> {
@@ -187,7 +199,11 @@ impl StoredCommand {
         max_bytes: usize,
         pool: &Arc<crate::page_pool::PagePool>,
     ) -> Result<Self> {
-        if command.bytes() > max_bytes {
+        #[cfg(test)]
+        if FORCE_ENCODED.with(|flag| flag.get()) {
+            return Self::prepare_in(command, max_bytes, pool.storage());
+        }
+        if command.bytes() > max_bytes || matches!(command, Command::Stroke { .. }) {
             let retained = if let Command::Stroke { changes, .. } = command {
                 // Charge the change table plus a conservative allowance per
                 // tile reference for Tile/Page/cache bookkeeping. No pixel pins.
@@ -429,7 +445,8 @@ impl Command {
                 selection,
                 ..
             } => {
-                selection.retained_bytes()
+                selection.0.retained_bytes()
+                    + selection.1.retained_bytes()
                     + before
                         .iter()
                         .chain(after)

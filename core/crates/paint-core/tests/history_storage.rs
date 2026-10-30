@@ -76,7 +76,7 @@ fn spilled_layer_deletion_undo_redo_and_branching_preserve_exact_pixels() {
     assert_eq!(doc.history_depth().1, 0);
 }
 #[test]
-fn noisy_large_stroke_spills_and_cancellation_preserves_existing_history() {
+fn noisy_large_stroke_shares_pages_and_cancellation_preserves_existing_history() {
     let mut doc = noisy_document();
     let original = pixels(&doc);
     let brush = Brush {
@@ -88,7 +88,8 @@ fn noisy_large_stroke_spills_and_cancellation_preserves_existing_history() {
     doc.end_stroke().unwrap();
     let painted = pixels(&doc);
     assert_ne!(painted, original);
-    assert!(doc.history_disk_bytes() > 0);
+    assert_eq!(doc.history_disk_bytes(), 0);
+    assert!(doc.history_bytes() <= 2 * TILE_BYTES + 256);
     doc.undo().unwrap();
     assert_eq!(pixels(&doc), original);
     doc.redo().unwrap();

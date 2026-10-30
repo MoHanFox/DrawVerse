@@ -428,6 +428,7 @@ public:
     int documentDpi() const {return m_documentDpi;}
     Q_INVOKABLE bool resizeCanvas(int x,int y,int width,int height,int dpi,bool deletePixels,bool selectedColor);
     Q_INVOKABLE bool flipImage(bool horizontal);
+    Q_INVOKABLE bool rotateImage(bool clockwise);
     bool liquifyActive() const {return m_liquifyActive;}
     bool liquifyBusy() const {return m_pendingLiquify!=0 || layerEditBusy();}
     bool liquifyCommitting() const {return m_liquifyCommitting;}

@@ -51,7 +51,7 @@ fn configured_directory_contains_pages_and_history_and_survives_snapshot() {
     )
     .unwrap();
     doc.end_stroke().unwrap();
-    assert!(doc.history_disk_bytes() > 0);
+    assert_eq!(doc.history_disk_bytes(), 0);
     assert!(doc.storage_stats().page_writes > 0);
     let root = base.path().join(".drawverse-scratch-v1");
     let run = fs::read_dir(&root)
@@ -64,7 +64,7 @@ fn configured_directory_contains_pages_and_history_and_survives_snapshot() {
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect::<Vec<_>>();
     assert!(names.iter().any(|n| n.starts_with("pages-")));
-    assert!(names.iter().any(|n| n.starts_with("history-")));
+    assert!(!names.iter().any(|n| n.starts_with("history-")));
     doc.undo().unwrap();
     assert_eq!(doc.snapshot().read_row(0, 120, 64).unwrap(), original);
     doc.redo().unwrap();

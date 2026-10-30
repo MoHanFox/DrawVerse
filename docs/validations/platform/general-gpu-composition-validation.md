@@ -1040,3 +1040,71 @@ transform-adaptive-large-final.txt七项通过：普通/Warp确认及取消四�
 核心：`selected-transform-final-core.log`新actor源对1项；`selected-transform-public.log`新公开容量/过期generation/取消/跨几何静态包1项；原公开resident3及选区液化1分别见`selected-transform-public-resident.log`、`selected-transform-public-liquify.log`。`selected-transform-regression-core.log`原transform31通过、原4忽略；`selected-transform-clippy.log`paint-core/paint-ffi all-targets严格Clippy通过。四C/C++静态/动态ABI见`selected-transform-abi.txt`，生成头/shader/Release测试目标构建及diff通过；原fixture Vec初始化/断言类型编译错误、公开选区结构错误及生成头注释漂移分别保留在initial-build/public-type/header-drift failure日志。
 
 应用：当前标准Release仍被用户进程占用，未终止用户进程或替换其EXE。`build/bin/SelectedTransformReview/drawverse.exe`静态链接新核心/UI，Qt运行库完整，`build/selected-transform-review-link.log`及`selected-transform-embedded.txt`通过；独立profile实际D3D11预览冒烟`artifacts/selected-transform-smoke/exit-code.txt`为0，preview.png存在且qt.log空。`artifacts/selected-transform-manifest.json`记录核心库/头/EXE与源文件摘要。未跑总check；最高质量/有效复杂蒙版仍原路径，没有新增任意大图、统一跨resident在途预算、物理输入或配对性能结论。
+
+
+## 2026-10-30：实际4K历史往返缓存与尺寸交接
+
+用户原图 `D:/PSD/2024年4月21日14 (赛博朋克)_无水印.png`，4096×2160，13,261,974字节，
+SHA256 `A023596781E0FF117BA43FBBD9C5AF103B723F6F93C916FD27CC936640C4C940`。
+本地 PhotoCraft 的 Arc 文档历史、step_damage 和 gpu_canvas 有界缓存只作代码结构参考，
+未复制代码、未运行同期PhotoCraft配对量测。原图只读。
+
+新增 `paint-io/examples/actual_history_bench.rs`：实际PNG自由变换平移、局部液化、顺时针90度旋转，
+各五轮撤销/重做，在计时外核对完整存储像素位指纹和宽高。4096驻留瓦片下核心undo/redo中位：
+transform 29.54/27.03ms（各355次冷页读取），liquify 0.036/0.036ms，rotate 22.44/18.52ms（各256次读取）。
+8192驻留瓦片诊断分别0.799/0.809、0.029/0.030、0.774/0.946ms，无冷页读取。
+日志 `build/actual-history-core.json` / `build/actual-history-core-resident8192.json`。
+未提高产品默认预算或跳过冷页校验；这些是热OS后备文件条件，非物理冷盘结果。
+
+Qt诊断 `qt_gpu_composition_baseline actualHistory` 使用独立临时偏好、实际D3D11窗口1024×720，
+调用真实GUI编辑API、观察匹配revision的非resident合成节点采用；每操作三个独立进程、各五轮往返。
+两组均关闭抓图，表中各方向15样本中位，单位ms：
+
+| 操作 | 原undo/redo节点采用 | 最终undo/redo节点采用 | 原元数据undo/redo | 最终元数据undo/redo |
+| --- | --- | --- | --- | --- |
+| 自由变换 | 381.975 / 386.793 | 31.859 / 31.883 | 38.471 / 36.270 | 15.016 / 14.492 |
+| 液化 | 32.117 / 32.014 | 32.189 / 31.692 | 14.367 / 13.515 | 15.288 / 14.909 |
+| 90度旋转 | 415.152 / 431.924 | 47.886 / 48.182 | 56.439 / 65.822 | 15.699 / 16.619 |
+
+原记录 `build/actual-history-{transform,liquify,rotate}-final-{1,2,3}.json/.log`，
+最终 `build/history-handoff-{transform,liquify,rotate}-final-{1,2,3}.json/.log`，九进程均通过。
+最终第三轮及以后每一步均断言 transportReadTiles=0、源GPU uploads增量=0；
+原transform/rotate常见每步重新上传2176×65536=136MiB。
+最终各进程首次undo范围：transform 78.736–80.656ms，liquify 84.514–89.146ms，rotate 79.020–107.701ms；
+首次redo分别33.550–35.843、19.930–38.264、67.616–89.693ms。不能把热中位代表首次恢复或无限历史深度。
+液化中位基本持平，不称所有操作等比例改善。节点采用不是实体按键到物理屏幕延迟。
+
+本图atlas预留使GPU payload计账459,541,504→627,313,664字节（增加160MiB），受原设备/进程预算约束。
+CPU最近两包保留受原transport预算约束，分配失败先放弃可选保留再重试。此取舍不是零额外内存，
+也不承诺任意深度历史免上传、任意文档永远GPU；复杂新拓扑/预算不足仍允许CPU后备。
+
+独立打开 `DRAWVERSE_HISTORY_CAPTURE=1` 的三个操作均通过五轮后的changed窗口图一致、
+额外undo恢复initial窗口图一致，日志 `build/history-handoff-{transform,liquify,rotate}-pixels.json/.log`，
+window_pixels_verified=true。抓图会改变同步/首次耗时，以上性能数据不含抓图。
+这覆盖最终窗口像素恢复，不冒充所有中间帧无闪烁证明或独立数学旋转真值。
+
+复现：设置 QT_QUICK_CONTROLS_STYLE=Basic、QSG_RHI_BACKEND=d3d11、DRAWVERSE_GPU_COMPOSITION=1、
+DRAWVERSE_G0_IMAGE为上述原图、DRAWVERSE_HISTORY_OPERATION=transform/liquify/rotate、
+DRAWVERSE_G0_REPORT为独立JSON绝对路径，然后执行 `build/bin/Release/qt_gpu_composition_baseline.exe actualHistory`。
+计时用DRAWVERSE_HISTORY_CAPTURE=0，像素复验单独设1。
+
+过程失败保留：初始atlas分配从0覆盖旧源导致热轮零上传断言失败，改为空槽优先/LRU；
+Qt slots宏冲突、QRectF声明编译失败均修复。新增编辑期间保留后液化三轮在commit后等待超时；
+诊断证实核心已提交而resident未释放，新GPU包抑制CPU帧后旧交接仍等CPU帧。
+最终由GPU ready回调在generation/epoch/revision守卫下释放resident，三轮与独立抓图通过。
+原失败见history-reuse-*-first、history-reuse-*-final及history-liquify-diagnostic日志。
+
+最终实际D3D11定向回归54通过、0失败/跳过，日志 `build/history-handoff-delivery-d3d11.log`：
+64MiB预算可容纳/拒绝、25笔增量、实际密集原图小笔触/持续输入、变换视口/拓扑资源、
+早关闭确认/取消、跨客户端旧epoch拒绝、窗口释放计账归零、移动与精确六插值/Warp/perspective/历史/快释放。
+首次组合回归53通过1失败，实际密集图首笔计入初始2176瓦片上传；同二进制独立复跑原测试三笔各读1瓦片通过。
+夹具此前以revision=0计数作为首次准备完成条件，与未上传默认0碰撞，已新增等待首次uploads>0；
+保留原每笔最多4上传/读瓦片及不可变数据指针断言，最终组合54通过。原失败日志
+`build/history-handoff-regressions-d3d11.log` 与独立复验 `build/history-handoff-dense-isolated.log` 保留。
+四ABI、Rust fmt、诊断example严格Clippy和diff whitespace通过；未跑总check或新增实体输入/物理显示验收。
+
+最终软件后备同组相关定向51通过、0失败/跳过（不含D3D11专用预算/密集源行），
+日志 `build/history-handoff-delivery-software.log`。完整标准Release构建/部署通过，
+`build/history-handoff-delivery-build.log`；独立profile实际D3D11应用 `--preview` 冒烟退出0，
+生成 `build/history-handoff-smoke.png`，标准 `build/bin/Release/drawverse.exe` 已更新。
+构建后生产源仅有缩进修正，最终测试二进制与标准应用已重新链接。原PNG最终SHA256与初始一致。

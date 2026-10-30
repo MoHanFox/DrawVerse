@@ -1403,7 +1403,10 @@ impl Engine {
             Operation::Transform(PAINT_TRANSFORM_COMMIT, _) => PAINT_TASK_TRANSFORM,
             Operation::Liquify(PAINT_LIQUIFY_COMMIT, _) => PAINT_TASK_LIQUIFY,
             Operation::Transform(
-                PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL | PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL,
+                PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL
+                | PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL
+                | PAINT_TRANSFORM_ROTATE_IMAGE_CW
+                | PAINT_TRANSFORM_ROTATE_IMAGE_CCW,
                 _,
             ) => PAINT_TASK_FLIP,
             _ => 0,
@@ -1640,6 +1643,14 @@ impl Engine {
                     }
                     self.document
                         .flip_image(kind == PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL)?;
+                    self.modified = true;
+                }
+                PAINT_TRANSFORM_ROTATE_IMAGE_CW | PAINT_TRANSFORM_ROTATE_IMAGE_CCW => {
+                    if self.files.running() {
+                        return Err(paint_core::Error::Busy.into());
+                    }
+                    self.document
+                        .rotate_image(kind == PAINT_TRANSFORM_ROTATE_IMAGE_CW)?;
                     self.modified = true;
                 }
                 PAINT_TRANSFORM_UPDATE => self

@@ -1603,7 +1603,7 @@ private slots:
         auto *editEntry=findVisualItem(main->contentItem(),"menuEntry:编辑");QVERIFY(editEntry);QTest::mouseClick(main,Qt::LeftButton,Qt::NoModifier,editEntry->mapToScene({editEntry->width()/2,14}).toPoint());QTRY_VERIFY(edit->property("opened").toBool());QVERIFY(hover(edit,"图像"));
         image=main->findChild<QObject*>("imageMenu");QTRY_VERIFY(image->property("opened").toBool());
         auto *rotateRow=hover(image,"画布旋转");QVERIFY(rotateRow);QTRY_VERIFY(rotateRow->property("hovered").toBool());QTRY_VERIFY(rotate->property("opened").toBool());QTRY_VERIFY(!adjust->property("visible").toBool());
-        QVERIFY(!main->findChild<QObject*>("canvasRotateCwAction")->property("enabled").toBool());
+        QVERIFY(main->findChild<QObject*>("canvasRotateCwAction")->property("enabled").toBool());
         auto *fileEntry=findVisualItem(main->contentItem(),"menuEntry:文件");QVERIFY(fileEntry);
         auto *rotateContent=qobject_cast<QQuickItem*>(rotate->property("contentItem").value<QObject*>());QVERIFY(rotateContent && rotateContent->window());
         QTest::mouseMove(rotateContent->window(),rotateContent->window()->mapFromGlobal(fileEntry->mapToGlobal({fileEntry->width()/2,14}).toPoint()));
@@ -4554,6 +4554,21 @@ private slots:
         QTRY_VERIFY(client.frameRevision()>=client.revision());QVERIFY(client.frame().cacheKey()!=key);
         QVERIFY(client.frame().pixelColor(32,32).alpha()>0);
         QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
+    void canvasRotationChangesDimensionsAndHistory() {
+        QTemporaryDir temp; PaintCoreClient client(nullptr,temp.filePath("rotate.ini"));
+        QTRY_VERIFY(client.ready()); client.newTransparentDocument(129,77);
+        QTRY_COMPARE(client.documentWidth(),129); QTRY_VERIFY(!client.layerEditBusy());
+        const int depth=client.undoDepth();
+        QVERIFY(client.rotateImage(true)); QTRY_COMPARE(client.undoDepth(),depth+1);
+        QTRY_COMPARE(client.documentWidth(),77); QCOMPARE(client.documentHeight(),129);
+        QTRY_VERIFY(!client.layerEditBusy()); client.undo();
+        QTRY_COMPARE(client.documentWidth(),129); QCOMPARE(client.documentHeight(),77);
+        QTRY_VERIFY(!client.layerEditBusy()); client.redo(); QTRY_COMPARE(client.documentWidth(),77);
+        QTRY_VERIFY(!client.layerEditBusy()); QVERIFY(client.rotateImage(false));
+        QTRY_COMPARE(client.undoDepth(),depth+2); QTRY_COMPARE(client.documentWidth(),129);
+        QCOMPARE(client.documentHeight(),77);
+        QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
     }
     void canvasResizeInteractiveCancelCommitDpiAndUndo() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("canvas-resize.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;QStringList warnings;

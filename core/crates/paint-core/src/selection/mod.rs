@@ -789,6 +789,56 @@ impl Selection {
         Self::from_steps(self.enabled(), steps)
     }
 
+    pub(crate) fn rotated(&self, width: u32, height: u32, clockwise: bool) -> Result<Self> {
+        let mut steps = self.steps().to_vec();
+        for step in &mut steps {
+            let Some(shape) = &mut step.shape else {
+                continue;
+            };
+            if shape.kind == SelectionKind::Polygon {
+                *shape = SelectionShape::polygon(
+                    shape
+                        .points
+                        .iter()
+                        .map(|p| {
+                            if clockwise {
+                                [height as f64 - p[1], p[0]]
+                            } else {
+                                [p[1], width as f64 - p[0]]
+                            }
+                        })
+                        .collect(),
+                    shape.antialias,
+                    shape.feather,
+                )?;
+            } else {
+                let (x, y, w, h) = (shape.x, shape.y, shape.width, shape.height);
+                shape.x = if clockwise { height as f64 - y - h } else { y };
+                shape.y = if clockwise { x } else { width as f64 - x - w };
+                shape.width = h;
+                shape.height = w;
+                if let Some(mask) = &mut shape.mask {
+                    let (w, h) = (mask.width as usize, mask.height as usize);
+                    let mut data = vec![0; w * h];
+                    for y in 0..h {
+                        for x in 0..w {
+                            let (nx, ny) = if clockwise {
+                                (h - 1 - y, x)
+                            } else {
+                                (y, w - 1 - x)
+                            };
+                            data[ny * h + nx] = mask.coverage[y * w + x];
+                        }
+                    }
+                    mask.width = h as u32;
+                    mask.height = w as u32;
+                    mask.coverage = data.into();
+                }
+            }
+        }
+        Self::from_steps(self.enabled(), steps)
+    }
+
     pub fn enabled(&self) -> bool {
         self.enabled
     }

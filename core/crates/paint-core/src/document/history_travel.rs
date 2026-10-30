@@ -299,6 +299,14 @@ mod tests {
         let depth = doc.history_depth();
         let selection = doc.selection.clone();
         let dirty = doc.dirty.clone();
+        // Exercise corruption of the encoded fallback independently of the
+        // default managed-reference storage policy.
+        let stored = &doc.history.undo[0];
+        let command = stored.materialize_in(Some(&doc.pool)).unwrap();
+        doc.history.undo[0] =
+            StoredCommand::prepare_in(&command, doc.options.max_history_bytes, doc.pool.storage())
+                .unwrap()
+                .with_action(stored.action());
         if let StoredCommand::Encoded(payload, _) = &mut doc.history.undo[0] {
             payload.truncate_for_test();
         } else {

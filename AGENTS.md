@@ -1,7 +1,13 @@
 # DrawVerse
 
+- 实际4K历史显示缓存2026-10-30：参考本地PhotoCraft共享状态/有界源缓存，最近两CPU包及预算内GPU atlas空槽优先/LRU复用；编辑期间同epoch/generation保留，GPU ready后交接resident，旋转显示尺寸随对应像素切换。用户4096×2160 PNG三进程各五轮，undo/redo节点中位变换381.975/386.793→31.859/31.883ms、旋转415.152/431.924→47.886/48.182ms，液化约32ms持平；首次undo79–108ms、热轮零源读/上传，非实体/屏幕/PhotoCraft配对。本图GPU计账+160MiB受原预算约束。三操作独立抓图恢复通过，实际D3D11定向54/软件51及四ABI通过，标准Release更新并独立D3D11冒烟退出0；原编译/液化交接/初始上传夹具失败保留，核心冷校验保持，无总check。见general-gpu-composition设计/验收同日节。
+
+- 历史共享结果入口2026-10-30：见 `docs/document/history-storage-design.md` / `docs/validations/document/history-storage-validation.md` 同日节；普通Stroke含小笔触按PagePool引用计账，数据驱动存储替代action白名单，结构编码及故障原子性保持。
+
 - 选区操作与菜单2026-10-30：调整整组移到滤镜首项级联；右键羽化当前组合选区、复制/剪切选区建层、填充及内侧描边接核心单事务，三个同风格 ApplicationModal 窗口确认后修改、取消无历史，绑定所属画布。ABI1.95/历史49–53，完整森林 LayerEdit 内部tag14与冷页/编码后备，普通内容层及既有预算/锁保护；核心6/原选区3/历史跳转6、公开1、软件/D3D11各5功能、四ABI/Clippy/fmt/头及标准Release/D3D11冒烟通过。初始坐标/编码/测试夹具失败保留，无总check/实体或新性能结论；同期旋转等工作区改动独立保留。见docs/tools/selection-context-menu-design.md及对应验收。
 
+
+- 画布90度旋转2026-10-30：双向整文档精确置换、交换宽高/DPI保持、单条冷编码历史回退；ABI1.94新增transform11/12及history47/48。设计/验收见docs/tools/canvas-rotation-design.md及docs/validations/tools/canvas-rotation-validation.md；核心4、公开2、软件/D3D11各4功能、四ABI/严格Clippy/头/fmt通过，标准Release更新，无总check/性能/实体结论。
 
 - 统一调整画布2026-10-30：图像大小/裁剪合并为编辑→图像→调整画布，八手柄/九宫格/尺寸提示、像素/比例0:0/交换、DPI、默认保留裁剪像素与白色/前景扩展填充；进入收起面板并隐藏浮窗，确认单历史、取消无历史。ABI1.93新增48字节DTO与精确publication DPI读取，ORA dpi.txt与PNG pHYs保存。核心4/历史跳转6/IO2/公开1、软件/D3D11各4功能与四ABI/严格Clippy/头/fmt通过；宽泛history长测试主动中断，旧失败保留，无总check/实体性能结论。标准EXE运行中保留，独立build/bin/CanvasResizeReview交付。菜单前三项图层/图像/选择；选区右键仅接入现有五项，其余参考能力未实现。见docs/tools/canvas-resize-design.md及对应验收。
 

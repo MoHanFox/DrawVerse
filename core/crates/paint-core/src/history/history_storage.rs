@@ -577,13 +577,15 @@ fn encode_command(w: &mut impl Write, command: &Command) -> io::Result<()> {
             after,
             selection,
         } => {
-            put_u8(w, 12)?;
+            put_u8(w, 13)?;
             for v in before_size.iter().chain(after_size) {
                 put_u32(w, *v)?;
             }
-            let text = selection.to_text();
-            put_u32(w, text.len() as u32)?;
-            w.write_all(text.as_bytes())?;
+            for value in [&selection.0, &selection.1] {
+                let text = value.to_text();
+                put_u32(w, text.len() as u32)?;
+                w.write_all(text.as_bytes())?;
+            }
             for layers in [before, after] {
                 put_u32(w, layers.len() as u32)?;
                 for (i, l) in layers.iter().enumerate() {
@@ -732,7 +734,7 @@ fn decode_command<R: Read>(r: &mut CheckedReader<R>) -> Result<Command> {
         return Err(invalid());
     }
     match u8_value(r)? {
-        12 => {
+        13 => {
             let mut sizes = [[0; 3]; 2];
             for size in &mut sizes {
                 for v in size.iter_mut() {
@@ -747,14 +749,20 @@ fn decode_command<R: Read>(r: &mut CheckedReader<R>) -> Result<Command> {
                     return Err(invalid());
                 }
             }
-            let n = u32_value(r)? as usize;
-            if n > 128 * 1024 * 1024 {
-                return Err(invalid());
+            let mut selections = Vec::new();
+            for _ in 0..2 {
+                let n = u32_value(r)? as usize;
+                if n > 128 * 1024 * 1024 {
+                    return Err(invalid());
+                }
+                let mut text = vec![0; n];
+                r.read_exact(&mut text).map_err(storage_error)?;
+                let selection = crate::Selection::from_text(
+                    std::str::from_utf8(&text).map_err(storage_error)?,
+                )?;
+                selections.push(selection);
             }
-            let mut text = vec![0; n];
-            r.read_exact(&mut text).map_err(storage_error)?;
-            let selection =
-                crate::Selection::from_text(std::str::from_utf8(&text).map_err(storage_error)?)?;
+            let selection = (selections.remove(0), selections.remove(0));
             let mut sets = Vec::new();
             for _ in 0..2 {
                 let n = u32_value(r)? as usize;

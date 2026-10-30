@@ -176,6 +176,9 @@ private:
     bool m_moveWarmupPending=false;
     QRectF m_imageRegion;
     quint64 m_generation = 0;
+    bool m_residentEditing=true;
+    QSize m_displayDocumentSize,m_pendingDocumentSize;
+    quint64 m_sizeRevision=0;
     QTimer m_liquifyTimer;
     QTimer m_viewTimer;
     QTimer m_navigationTimer;

@@ -81,7 +81,7 @@ struct CompositionViewRequest {
     quint64 serial=0,epoch=0,generation=0;
     QRectF region;
     QSize pixels;
-    bool enabled=false;
+    bool enabled=false,retainSources=false;
 };
 // Correctness-only observer. A result belongs to one explicit immutable
 // packet and request version; normal presentation never creates this observer.
@@ -149,4 +149,5 @@ private:
     quint64 m_lease=0,m_next=0,m_attemptRevision=~quint64(0),m_serial=0,m_epoch=0,m_generation=0;
     std::shared_ptr<CompositionPacket> m_packet;
     QHash<quint64,std::weak_ptr<const CompositionTileData>> m_cache;
+    QVector<CompositionPacketPtr> m_recent; // optional two-state immutable transport reuse
 };

@@ -71,3 +71,36 @@ Release核心单元192通过、4手工项忽略、1项耗时mix测试过滤；�
 Release同机样本，驻留1瓦片、64块密集源、四条共享结果、六次跳转：独立逐步校验1554次读/141.698ms，单请求共享402次读/37.146ms。这里只是核心恢复和OS热后备文件，非真实UI/物理冷盘，不代表8K/16K时延。`artifacts/history-transaction-release-core.txt`。Debug同样读取数，计时不用于产品结论。
 
 Release history定向65通过/4手工忽略（过滤已知mix性能项），公开history_storage3/paging3、原生历史元数据1、严格Clippy/fmt通过。首次Debug宽匹配误包含已知耗时mix用例，核对本人进程路径/PID/参数后停止，仅以上最终定向结果为验收，未声称全量通过。日志 `history-transaction-{core,travel,shared-final,public,native,clippy}.txt`。软件/D3D11直接历史三作用域及翻转四行、选区复制清除、鼠标/笔编辑结束回归通过，完整Release/四ABI/生成头通过；后端与构建日志 `history-transaction-{software,d3d11,workflow-software,workflow-d3d11,release,abi}.txt`。标准产物build/bin/Release/drawverse.exe；ABI1.79/state45不变。会话字段引用、Encoded恢复与真实冷盘/首次显示继续H1待办。
+
+
+## 2026-10-30：统一共享结果存储入口
+
+本地 PhotoCraft ops/history_select_cmds 只读参考，未复制代码。实现范围和架构取舍见
+`docs/document/history-storage-design.md` 同日节。结构命令仍走既有编码；本轮不是全快照迁移。
+
+- `cargo test --manifest-path core/Cargo.toml -p paint-core --release --locked --lib history`：88通过、5原忽略、163过滤，日志 `build/history-shared-core-validation.log`。
+- 新增 shared_stroke_history_tests 两项：100次小笔触在最低历史预算保留、跳转与分支正确；画笔/橡皮拒绝历史编码写入时仍成功，重做复用 Arc 身份。
+- history_storage/paging/storage 集成：3+3+2通过；公开 async_session/history_select_api：1通过。
+- paint-core all-targets 严格 Clippy、fmt、diff whitespace、生成头及四ABI检查通过。
+- 原编码故障注入测试改为显式选择编码后备，保留写失败/损坏回滚断言；原驻留/冷页损坏测试跟随新的 Paged 路径继续检验。
+
+已有 history_bench，Release同工作树改动前：1536²/576瓦片，commit 6.615ms、undo 18.316ms、redo 14.258ms，历史内存18577字节。
+最终复测：commit 6.205ms、undo 0.240ms、redo 0.123ms，历史元数据308864字节；首轮实现另测undo/redo 0.171/0.087ms。
+基线单进程，最终构建存在并发负载；仅核心调用、OS缓存条件，不是屏幕延迟、PhotoCraft配对或冷物理磁盘结论。
+引用表高于该易压缩例的旧历史体积；像素驻留和冷备份归PagePool预算，不是全进程内存上限。
+
+初始回归因旧“必须Encoded/Inline”的后端断言及故障测试未显式选编码而失败；调整测试前提后原像素/回滚断言通过。
+首次Release UI构建缺MSVC include环境而C1083 type_traits失败，已改用VsDevCmd环境重建。
+未跑总check，未新增实体输入性能结论。
+
+标准 `build/bin/Release/drawverse.exe` 已重新链接并部署，独立profile的实际D3D11 `--preview` 三笔绘画流程退出0，生成 `build/history-review-smoke.png`；此流程不是历史响应性能量测。
+
+重建 qt_ui_tests 后，`textFieldsKeepSpaceAndHistorySelectsDirectly` 在 offscreen/software 和实际D3D11各通过1功能（各含初始化/清理共3通过），日志 `build/history-ui-software.log` / `build/history-ui-d3d11.log`；验证四笔历史点击回到0、直接恢复4、每次revision仅+1、无中间深度发布及redo保留。软件行有既有字体FT_New_Face调试输出，功能通过。
+
+
+## 2026-10-30：实际原图历史与显示成本分离
+
+用户4096×2160PNG的核心完整像素往返校验、驻留4096/8192对照，以及真实D3D11历史节点采用、
+近期源传输/GPU缓存复用和旋转尺寸交接，统一见
+`docs/validations/platform/general-gpu-composition-validation.md` 的“实际4K历史往返缓存与尺寸交接”。
+核心冷页校验与显示瓦片重新上传是不同开销；本轮未提高默认驻留预算或跳过损坏校验。

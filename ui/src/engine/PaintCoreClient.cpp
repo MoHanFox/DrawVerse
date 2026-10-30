@@ -1680,7 +1680,7 @@ void PaintCoreClient::requestLayerMovePreparation() {
     if(status!=PAINT_OK)m_movePreparationPendingRequest=0;
 }
 CompositionPacketPtr PaintCoreClient::compositionPacket()const{
-    if(m_transformMeshPreview && (m_transformActive || m_residentPreview))return {};
+    if(m_transformMeshPreview && (m_transformActive || (m_residentPreview && (!m_compositionPacket || m_compositionPacket->info.key.revision<m_revision))))return {};
     if(!gpuCompositionEnabled() || m_blendPreviewLayer || m_compositionFinalFallback || m_compositionTransformCpu)return {};
     if(m_adjustmentBase){
         if(m_adjustmentFinalRevision && m_compositionPacket && m_compositionPacket->info.key.document_generation==m_generation && m_compositionPacket->info.key.revision>=m_adjustmentFinalRevision)return m_compositionPacket;
@@ -1867,6 +1867,11 @@ void PaintCoreClient::refreshCompositionMove(){
     emit frameChanged();
 }
 void PaintCoreClient::compositionPrimaryAdopted(quint64 generation,quint64 epoch,quint64 revision){
+    if(generation!=m_generation)return;
+    {QMutexLocker lock(&m_connection->mutex);if(epoch!=m_connection->compositionView.epoch)return;}
+    if(m_residentPreview && !m_liquifyActive && !m_layerMoveActive && !m_transformActive && revision>=m_revision){
+        m_residentPreview.reset();m_transformMeshPreview=false;m_connection->transformMeshAssets.store(false);emit frameChanged();
+    }
     if(m_adjustmentFinalRevision && generation==m_generation && revision>=m_adjustmentFinalRevision){
         {QMutexLocker lock(&m_connection->mutex);if(epoch!=m_connection->compositionView.epoch)return;}
         m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;emit frameChanged();return;
@@ -1881,6 +1886,8 @@ void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
         m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;emit stateChanged();emit frameChanged();
     }
     m_compositionDeviceAvailable=enabled;
+    const bool retainSources=enabled && gpuCompositionEnabled() && !m_closing &&
+        (m_transformActive || m_liquifyActive || m_layerMoveActive);
     enabled=enabled && gpuCompositionEnabled() && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive && !m_blendPreviewLayer;
     const bool native=highestCanvasQuality() && quint64(m_width)*m_height<=CompositionBudget::viewPixels();
     const QRectF targetRegion=native?QRectF(0,0,m_width,m_height):m_requestedRegions[0];
@@ -1889,8 +1896,8 @@ void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
         quint64(targetPixels.width())*targetPixels.height()<=CompositionBudget::viewPixels();
     {
         QMutexLocker lock(&m_connection->mutex);auto &view=m_connection->compositionView;
-        if(view.epoch!=epoch || view.enabled!=enabled || view.generation!=m_generation || view.region!=targetRegion || view.pixels!=targetPixels){
-            ++view.serial;view.epoch=epoch;view.enabled=enabled;view.generation=m_generation;view.region=targetRegion;view.pixels=targetPixels;
+        if(view.epoch!=epoch || view.enabled!=enabled || view.retainSources!=retainSources || view.generation!=m_generation || view.region!=targetRegion || view.pixels!=targetPixels){
+            ++view.serial;view.epoch=epoch;view.enabled=enabled;view.retainSources=retainSources;view.generation=m_generation;view.region=targetRegion;view.pixels=targetPixels;
             if(!enabled || (m_compositionPacket && m_compositionPacket->info.key.document_generation!=m_generation))m_compositionPacket.reset();
         }
     }
@@ -3000,8 +3007,8 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
     if(trace.active)trace.event.value=double(sequence);
     if(kind!=PAINT_TRANSFORM_UPDATE)m_pendingTransform=sequence;
     if(kind==PAINT_TRANSFORM_BEGIN){m_transformClosing=false;m_transformPoints.clear();m_transformInitialPoints.clear();m_transformPublished=false;m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();emit transformChanged();}
-    if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE || kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL)m_pendingMutation=sequence;
-    if(kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL)m_pendingLayer=sequence;
+    if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE || kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL || kind==PAINT_TRANSFORM_ROTATE_IMAGE_CW || kind==PAINT_TRANSFORM_ROTATE_IMAGE_CCW)m_pendingMutation=sequence;
+    if(kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL || kind==PAINT_TRANSFORM_ROTATE_IMAGE_CW || kind==PAINT_TRANSFORM_ROTATE_IMAGE_CCW)m_pendingLayer=sequence;
     if(kind==PAINT_TRANSFORM_UPDATE && !m_compositionTransform)
         QMetaObject::invokeMethod(m_worker,[worker=m_worker]{worker->transformInputActivity();},Qt::QueuedConnection);
     if(m_compositionTransform && kind!=PAINT_TRANSFORM_UPDATE){
@@ -3041,6 +3048,7 @@ bool PaintCoreClient::resizeCanvas(int x,int y,int width,int height,int dpi,bool
     uint64_t sequence=0;PaintStatus status;QString error;{QMutexLocker lock(&m_connection->mutex);if(!m_connection->session)return false;status=paint_session_resize_canvas(m_connection->core,m_connection->session,&request,&sequence);if(status!=PAINT_OK)error=immediateError(status);}
     if(status!=PAINT_OK){showError(error);return false;}m_pendingCanvasResize=sequence;m_pendingLayer=sequence;m_pendingMutation=sequence;m_modified=true;emit stateChanged();return true;
 }
+bool PaintCoreClient::rotateImage(bool clockwise){if(m_transformActive || m_liquifyActive || layerEditBusy())return false;clearLayerBlendPreview();return submitTransform(clockwise?PAINT_TRANSFORM_ROTATE_IMAGE_CW:PAINT_TRANSFORM_ROTATE_IMAGE_CCW);}
 bool PaintCoreClient::flipImage(bool horizontal){if(m_transformActive || m_liquifyActive || layerEditBusy())return false;clearLayerBlendPreview();return submitTransform(horizontal?PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL:PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL);}
 bool PaintCoreClient::rasterizeImage(){return !m_transformActive && submitTransform(PAINT_TRANSFORM_RASTERIZE);}
 

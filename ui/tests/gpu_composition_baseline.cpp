@@ -63,6 +63,70 @@ QJsonObject identity(const CanvasPresentationIdentity &i){
 class CompositionBaseline final : public QObject {
     Q_OBJECT
 private slots:
+    void actualHistory(){
+        const auto path=qEnvironmentVariable("DRAWVERSE_G0_IMAGE");
+        const auto output=qEnvironmentVariable("DRAWVERSE_G0_REPORT");
+        const auto operation=qEnvironmentVariable("DRAWVERSE_HISTORY_OPERATION");
+        QVERIFY(!path.isEmpty());QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("prefs.ini"));
+        QVERIFY(nativeWait([&]{return client.ready() && client.brushLibraryReady();},10000));
+        QVERIFY(client.openDocument(QUrl::fromLocalFile(path)));
+        QVERIFY(nativeWait([&]{return !client.fileBusy() && client.documentWidth()==4096;},60000));
+        QQuickWindow window;window.resize(1024,720);QQmlEngine engine;
+        QQmlComponent component(&engine,QUrl("qrc:/qml/canvas/CanvasPane.qml"));
+        std::unique_ptr<QObject> object(component.createWithInitialProperties({{"ownClient",QVariant::fromValue(&client)},{"mainWindow",QVariant::fromValue(&window)}}));
+        QVERIFY2(object,qPrintable(component.errorString()));auto *pane=qobject_cast<QQuickItem*>(object.get());QVERIFY(pane);
+        pane->setParentItem(window.contentItem());pane->setSize({1024,720});pane->setEnabled(false);
+        auto *canvas=qvariant_cast<CanvasItem*>(pane->property("canvasView"));QVERIFY(canvas);
+        auto observer=std::make_shared<CanvasPresentationObservation>(4096);canvas->observePresentation(observer);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->fitToView();
+        const auto adopted=[&]{const auto id=observer->snapshot().identity;return id.valid && id.composition && id.revision==client.revision() && !id.resident;};
+        QVERIFY(nativeWait(adopted,60000));
+        const bool capturePixels=qEnvironmentVariableIntValue("DRAWVERSE_HISTORY_CAPTURE")==1;
+        const auto initialImage=capturePixels?window.grabWindow():QImage();if(capturePixels)QVERIFY(!initialImage.isNull());
+        QJsonObject report{{"operation",operation},{"image",path},{"width",client.documentWidth()},{"height",client.documentHeight()},
+            {"api",int(window.rendererInterface()->graphicsApi())},{"initial_stats",QJsonObject::fromVariantMap(canvas->compositionStatistics())}};
+        QJsonArray rows;bool passed=false;
+        const auto save=qScopeGuard([&]{report["passed"]=passed;report["rows"]=rows;QFile file(output);if(file.open(QIODevice::WriteOnly))file.write(QJsonDocument(report).toJson());});
+        const auto depth=client.undoDepth();
+        if(operation=="transform"){
+            QVERIFY(client.beginTransform());QVERIFY(nativeWait([&]{return client.transformActive() && !client.layerEditBusy() && client.transformPoints().size()==16;},60000));
+            auto points=client.transformPoints();for(auto &point:points)point=point.toPointF()+QPointF(37,19);
+            QVERIFY(client.updateTransform(points,false,client.transformInterpolation()));
+            QVERIFY(client.finishTransform(true));
+        }else if(operation=="liquify"){
+            QVERIFY(client.beginLiquify());QVERIFY(nativeWait([&]{return client.liquifyActive() && !client.liquifyBusy();},60000));
+            client.setLiquifySize(600);client.setLiquifyStrength(50);
+            QVERIFY(client.beginStroke({{2048,1080},1}));client.strokeTo({{2108,1110},1});client.endStroke();
+            QVERIFY(nativeWait([&]{return !client.liquifyBusy();},60000));QVERIFY(client.finishLiquify(true));
+        }else {QVERIFY(operation=="rotate");QVERIFY(client.rotateImage(true));}
+        const bool committed=nativeWait([&]{return !client.transformActive() && !client.liquifyActive() && !client.layerEditBusy() && client.undoDepth()==depth+1 && adopted();},30000);
+        QVERIFY2(committed,qPrintable(QString("transform=%1 liquify=%2 busy=%3 depth=%4 expected=%5 revision=%6 identity=%7 error=%8 stats=%9").arg(client.transformActive()).arg(client.liquifyActive()).arg(client.layerEditBusy()).arg(client.undoDepth()).arg(depth+1).arg(client.revision()).arg(QString::fromUtf8(QJsonDocument(identity(observer->snapshot().identity)).toJson(QJsonDocument::Compact))).arg(client.lastError()).arg(QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(canvas->compositionStatistics())).toJson(QJsonDocument::Compact)))));
+        const auto changedImage=capturePixels?window.grabWindow():QImage();if(capturePixels)QVERIFY(changedImage!=initialImage);
+        for(int round=0;round<5;++round)for(bool redo:{false,true}){
+            const auto revision=client.revision();const auto stats=canvas->compositionStatistics();const auto t0=InteractionTrace::now();
+            if(redo)client.redo();else client.undo();
+            QVERIFY(nativeWait([&]{return client.revision()>revision && client.undoDepth()==depth+(redo?1:0) && !client.layerEditBusy();},60000));
+            const auto metadata=InteractionTrace::now();QVERIFY(nativeWait(adopted,60000));
+            const auto receipt=observer->snapshot();
+            if(round>=2){
+                QCOMPARE(canvas->compositionStatistics()["uploads"].toULongLong(),stats["uploads"].toULongLong());
+                QVERIFY(client.compositionPacket());QCOMPARE(client.compositionPacket()->transportReadTiles,quint64(0));
+            }
+            rows.append(QJsonObject{{"round",round},{"redo",redo},{"metadata_ms",double(metadata-t0)/1e6},
+                {"adoption_ms",double(receipt.ns-t0)/1e6},{"identity",identity(receipt.identity)},{"before",QJsonObject::fromVariantMap(stats)},
+                {"after",QJsonObject::fromVariantMap(canvas->compositionStatistics())}});
+            QVERIFY(client.lastError().isEmpty());
+        }
+        if(capturePixels){
+        QCOMPARE(window.grabWindow(),changedImage);
+        client.undo();QVERIFY(nativeWait([&]{return client.undoDepth()==depth && !client.layerEditBusy() && adopted();},60000));
+        const auto undoneImage=window.grabWindow();
+        if(undoneImage!=initialImage){initialImage.save(output+"-initial.png");undoneImage.save(output+"-undone.png");}
+        QCOMPARE(undoneImage,initialImage);
+        report["window_pixels_verified"]=true;
+        }
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QVERIFY(nativeWait([&]{return stopped.size()==1;},10000));passed=true;
+    }
     void measure(){
         const auto output=qEnvironmentVariable("DRAWVERSE_G0_REPORT");
         const bool transform=qEnvironmentVariable("DRAWVERSE_G0_OPERATION")=="transform";

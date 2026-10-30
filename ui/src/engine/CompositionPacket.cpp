@@ -32,13 +32,16 @@ std::shared_ptr<CompositionTileData> CompositionTileData::allocate(){
 CompositionReader::~CompositionReader(){reset(m_core,m_session);}
 void CompositionReader::reset(PaintCore *core,PaintSession *session,bool keepSources){
     if(m_lease && core && session)paint_session_release_composition(core,session,m_lease);
-    m_lease=0;m_packet.reset();if(!keepSources)m_cache.clear();m_core=nullptr;m_session=nullptr;
+    m_lease=0;m_packet.reset();if(!keepSources){m_cache.clear();m_recent.clear();}m_core=nullptr;m_session=nullptr;
     m_attemptRevision=~quint64(0);m_serial=m_epoch=m_generation=0;
 }
 CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *session,const PaintSessionInfo &state,
                                             const CompositionViewRequest &view,QString &fallback){
     if(!view.enabled || view.generation!=state.document_generation){
-        reset(core,session);fallback=QStringLiteral("CPU: disabled or active editing session");return {};
+        const bool retain=view.retainSources && m_epoch==view.epoch && m_generation==view.generation && view.generation==state.document_generation;
+        reset(core,session,retain);
+        if(retain){m_epoch=view.epoch;m_generation=view.generation;}
+        fallback=QStringLiteral("CPU: disabled or active editing session");return {};
     }
     if(m_serial!=view.serial || m_epoch!=view.epoch || m_generation!=view.generation){
         // Navigation changes sampling, not immutable source content identity.
@@ -146,7 +149,9 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         const auto index=m_packet->data.size();const auto identity=m_packet->tiles[index].content_id;
         auto data=m_cache.value(identity).lock();
         if(!data){
-            auto mutableData=CompositionTileData::allocate();if(!mutableData)return abandon(PAINT_LIMIT_EXCEEDED);
+            auto mutableData=CompositionTileData::allocate();
+            if(!mutableData){m_recent.clear();mutableData=CompositionTileData::allocate();}
+            if(!mutableData)return abandon(PAINT_LIMIT_EXCEEDED);
             uint64_t required=0;
             const auto status=paint_session_read_composition_tile(core,session,&m_packet->info.key,quint32(index),
                 reinterpret_cast<uint8_t*>(mutableData->bytes.data()),65536,&required);
@@ -161,11 +166,16 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         m_packet->data.append(std::move(data));
         if(reads>=128 || elapsed.elapsed()>=4)return {};
     }
-    // Only the completed plan remains as a weak lookup table. While reading,
-    // at most the previous and next negotiated plan can be represented.
-    m_cache.clear();
-    for(int i=0;i<m_packet->tiles.size();++i)m_cache.insert(m_packet->tiles[i].content_id,m_packet->data[i]);
     m_attemptRevision=m_packet->info.key.revision;
     auto result=CompositionPacketPtr(std::move(m_packet));paint_session_release_composition(core,session,m_lease);m_lease=0;
+    // Preserve both sides of a recent history transition. Allocation accounting
+    // remains process-wide; optional retention yields before rejecting a read.
+    if(!m_recent.isEmpty() && m_recent.last()->info.key.revision==result->info.key.revision)
+        m_recent.last()=result;
+    else m_recent.append(result);
+    while(m_recent.size()>2)m_recent.removeFirst();
+    m_cache.clear();
+    for(const auto &recent:m_recent)for(int i=0;i<recent->tiles.size();++i)
+        m_cache.insert(recent->tiles[i].content_id,recent->data[i]);
     fallback.clear();return result;
 }

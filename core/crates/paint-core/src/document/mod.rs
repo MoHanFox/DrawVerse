@@ -137,7 +137,9 @@ mod history_failure_tests {
             doc.begin_wet_brush_stroke(definition, InputPoint::new(96., 64., 1.), &carrier, false)
                 .unwrap();
             crate::history_storage::fail_writes_for_test(true);
+            crate::history::force_encoded_for_test(true);
             let result = doc.end_wet_brush_stroke();
+            crate::history::force_encoded_for_test(false);
             crate::history_storage::fail_writes_for_test(false);
             assert!(matches!(result, Err(Error::HistoryStorage(_))));
             assert_eq!(pixels(&doc), original);
@@ -163,7 +165,9 @@ mod history_failure_tests {
         let history = doc.history_depth();
         paint(&mut doc);
         crate::history_storage::fail_writes_for_test(true);
+        crate::history::force_encoded_for_test(true);
         let result = doc.end_stroke();
+        crate::history::force_encoded_for_test(false);
         crate::history_storage::fail_writes_for_test(false);
         assert!(matches!(result, Err(Error::HistoryStorage(_))));
         assert_eq!(pixels(&doc), original);
@@ -221,7 +225,17 @@ mod history_failure_tests {
             let mut doc = document();
             paint(&mut doc);
             doc.end_stroke().unwrap();
-            assert!(doc.history_disk_bytes() > 0);
+            let stored = doc.history.undo.back().unwrap();
+            let command = stored.materialize_in(Some(&doc.pool)).unwrap();
+            let action = stored.action();
+            let encoded = StoredCommand::prepare_in(
+                &command,
+                doc.options.max_history_bytes,
+                doc.pool.storage(),
+            )
+            .unwrap()
+            .with_action(action);
+            *doc.history.undo.back_mut().unwrap() = encoded;
             if redo {
                 doc.undo().unwrap();
             }
@@ -415,6 +429,7 @@ fn blend_preview_snapshot_shares_tiles_without_mutating_document() {
 
 #[test]
 fn history_actions_survive_encoded_eviction_undo_redo_and_branching() {
+    crate::history::force_encoded_for_test(true);
     use crate::HistoryAction::*;
     let mut doc = Document::with_options(
         128,
@@ -473,6 +488,7 @@ fn history_actions_survive_encoded_eviction_undo_redo_and_branching() {
     assert_eq!(doc.history_depth(), (3, 0));
     assert_eq!(doc.history_actions().last(), Some(&SelectAll));
     assert!(!doc.history_actions().contains(&Eraser));
+    crate::history::force_encoded_for_test(false);
 }
 
 #[derive(Debug)]
@@ -1083,32 +1099,11 @@ impl Document {
         self.commit_with_action(command, action)
     }
     fn commit_with_action(&mut self, command: Command, action: crate::HistoryAction) -> Result<()> {
-        let stored = if matches!(
-            action,
-            crate::HistoryAction::Liquify
-                | crate::HistoryAction::Transform
-                | crate::HistoryAction::FlipHorizontal
-                | crate::HistoryAction::FlipVertical
-                | crate::HistoryAction::Rasterize
-                | crate::HistoryAction::Curves
-                | crate::HistoryAction::Levels
-                | crate::HistoryAction::HueSaturation
-                | crate::HistoryAction::ClearSelectionPixels
-                | crate::HistoryAction::Bucket
-                | crate::HistoryAction::CopySelectionLayer
-                | crate::HistoryAction::CutSelectionLayer
-                | crate::HistoryAction::FillSelection
-                | crate::HistoryAction::StrokeSelection
-                | crate::HistoryAction::ResizeCanvas
-        ) {
-            StoredCommand::prepare_result_in(&command, self.options.max_history_bytes, &self.pool)?
-        } else {
-            StoredCommand::prepare_in(
-                &command,
-                self.options.max_history_bytes,
-                self.pool.storage(),
-            )?
-        };
+        // Storage follows the command's retained data, never its UI label.
+        // Managed results share PagePool identities; unsupported commands and
+        // reference tables exceeding the budget retain the encoded fallback.
+        let stored =
+            StoredCommand::prepare_result_in(&command, self.options.max_history_bytes, &self.pool)?;
         self.history.commit(
             stored.with_action(action),
             self.options.max_history_bytes,
@@ -3285,9 +3280,9 @@ impl Document {
                     before.clone()
                 };
                 self.selection = if forward {
-                    crate::Selection::default()
+                    selection.1.clone()
                 } else {
-                    selection.clone()
+                    selection.0.clone()
                 };
                 self.selection_cache.clear();
                 self.dirty_all();
@@ -3432,7 +3427,7 @@ impl Document {
 mod paging_failures {
     use super::*;
     #[test]
-    fn corrupt_inline_history_page_does_not_change_pixels_revision_or_stack() {
+    fn corrupt_shared_history_page_does_not_change_pixels_revision_or_stack() {
         let tiles = (0..2)
             .map(|x| {
                 let pixels = (0..4096)
@@ -3461,7 +3456,7 @@ mod paging_failures {
         doc.end_stroke().unwrap();
         assert!(matches!(
             doc.history.undo.back(),
-            Some(StoredCommand::Inline(..))
+            Some(StoredCommand::Paged(..))
         ));
         let pixel = doc.try_pixel(16, 16).unwrap();
         let revision = doc.revision();
@@ -3905,3 +3900,6 @@ mod tip_direction_stability_tests {
         assert!((s.tip_direction.unwrap() - std::f64::consts::FRAC_PI_2).abs() < 1e-6);
     }
 }
+
+#[cfg(test)]
+mod shared_stroke_history_tests;

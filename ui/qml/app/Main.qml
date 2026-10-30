@@ -341,8 +341,8 @@ ApplicationWindow {
                 Action { objectName:"canvasSizeAction";text:"调整画布…";enabled:root.hasDocuments && PaintClient.ready && !root.editing && !PaintClient.fileBusy && !PaintClient.layerEditBusy && !PaintClient.drawing;onTriggered:root.beginCanvasResize() }
                 GlassMenu {
                     objectName:"imageRotateSubmenu";title:"画布旋转";cascadeParent:imageMenu
-                    Action { objectName:"canvasRotateCwAction";text:"顺时针 90°（待支持）";enabled:false }
-                    Action { objectName:"canvasRotateCcwAction";text:"逆时针 90°（待支持）";enabled:false }
+                    Action { objectName:"canvasRotateCwAction";text:"顺时针 90°";enabled:!root.canvasAdjusting && root.hasDocuments && (PaintClient.ready && !PaintClient.fileBusy && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.transformActive && !PaintClient.liquifyActive);onTriggered:PaintClient.rotateImage(true) }
+                    Action { objectName:"canvasRotateCcwAction";text:"逆时针 90°";enabled:!root.canvasAdjusting && root.hasDocuments && (PaintClient.ready && !PaintClient.fileBusy && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.transformActive && !PaintClient.liquifyActive);onTriggered:PaintClient.rotateImage(false) }
                     Action { objectName:"canvasFlipVerticalAction";text:"垂直翻转";enabled: !root.canvasAdjusting && root.hasDocuments && (PaintClient.ready && !PaintClient.fileBusy && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.transformActive && !PaintClient.liquifyActive);onTriggered:PaintClient.flipImage(false) }
                     Action { objectName:"canvasFlipHorizontalAction";text:"水平翻转";enabled: !root.canvasAdjusting && root.hasDocuments && (PaintClient.ready && !PaintClient.fileBusy && !PaintClient.drawing && !PaintClient.layerEditBusy && !PaintClient.transformActive && !PaintClient.liquifyActive);onTriggered:PaintClient.flipImage(true) }
                 }

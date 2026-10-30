@@ -836,6 +836,8 @@ pub const PAINT_TRANSFORM_ENABLE_RESIDENT: u32 = 8;
 /// ABI 1.66: atomic full-document reflection, including hidden/locked layers and selection.
 pub const PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL: u32 = 9;
 pub const PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL: u32 = 10;
+pub const PAINT_TRANSFORM_ROTATE_IMAGE_CW: u32 = 11;
+pub const PAINT_TRANSFORM_ROTATE_IMAGE_CCW: u32 = 12;
 /// ABI1.76: distinct reflection history labels, including pure free transforms.
 pub const PAINT_HISTORY_FLIP_HORIZONTAL: u32 = 39;
 pub const PAINT_HISTORY_FLIP_VERTICAL: u32 = 40;
@@ -1065,6 +1067,8 @@ pub const PAINT_HISTORY_LEVELS: u32 = 43;
 pub const PAINT_HISTORY_HUE_SATURATION: u32 = 44;
 pub const PAINT_HISTORY_LAYER_ALPHA_SELECTION: u32 = 45;
 pub const PAINT_HISTORY_RESIZE_CANVAS: u32 = 46;
+pub const PAINT_HISTORY_ROTATE_CW: u32 = 47;
+pub const PAINT_HISTORY_ROTATE_CCW: u32 = 48;
 
 /// ABI1.95: current-selection operation kinds and stable history labels.
 pub const PAINT_SELECTION_PIXELS_FEATHER: u32 = 0;

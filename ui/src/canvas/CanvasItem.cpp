@@ -144,7 +144,7 @@ void CanvasItem::setClient(PaintCoreClient *client) {
     cancelLayerMove("move.cancel.clientChanged");
     if(m_client && m_interactive && !m_previewPart)m_client->setCompositionDevice(m_compositionEpoch,false);
     resetCompositionDevice();
-    stopNavigation();m_image={};m_overview={};m_residentPreview={};m_movePreparation={};m_moveWarmupPending=false;m_compositionPacket.reset();m_compositionFailed=false;m_compositionFailureReason.clear();
+    stopNavigation();m_displayDocumentSize={};m_pendingDocumentSize={};m_sizeRevision=0;m_image={};m_overview={};m_residentPreview={};m_movePreparation={};m_moveWarmupPending=false;m_compositionPacket.reset();m_compositionFailed=false;m_compositionFailureReason.clear();
     emit residentPresentationChanged();
     setTabletWindowCursor(false);
     endPicking();
@@ -412,6 +412,7 @@ void CanvasItem::refresh() {
     refreshPendingSample();
     if(m_previewPart){
         m_residentPreview=m_client->residentPreview();
+        m_residentEditing=m_client->transformActive() || m_client->liquifyActive() || m_client->layerMoveActive();
         const auto image=m_residentPreview?m_residentPreview->images[size_t(m_previewPart)]:QImage();
         m_image=image;update();
         return;
@@ -419,13 +420,27 @@ void CanvasItem::refresh() {
     if(m_interactive && window()){m_client->setTransformPreviewDevice(m_compositionCounters);m_client->setResidentGpuPreviewAvailable(gpuDisplay());m_client->setCompositionPrecisionAvailable(m_compositionCounters->preciseTransform.load()>0);
         const auto reserved=CompositionNode::reservedPayloadBytes(),budget=CompositionBudget::gpuBytes.load();
         m_client->setTransformPreviewLimits(m_compositionCounters->maxTextureEdge.load(),budget-std::min(budget,reserved));}
-    if (m_generation != m_client->generation()) { resetCompositionDevice();stopNavigation();m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
+    if (m_generation != m_client->generation()) { resetCompositionDevice();stopNavigation();m_displayDocumentSize={};m_pendingDocumentSize={};m_sizeRevision=0;m_overview={};endPicking();cancelSelectionDrag(); m_generation = m_client->generation(); m_fitPending = true; }
     retryCompositionIfPossible();
+    const QSize logicalSize(m_client->documentWidth(),m_client->documentHeight());
+    if(logicalSize!=m_pendingDocumentSize){m_pendingDocumentSize=logicalSize;m_sizeRevision=m_client->revision();}
     const int view = m_interactive ? 0 : 1;
     m_image = m_client->frame(view); m_imageRegion = m_client->frameRegion(view);
     m_imageRevision=m_client->frameRevision(view);
     if(m_interactive && window())m_client->setCompositionDevice(m_compositionEpoch,CompositionNode::supportsWindow(window()) && !m_compositionFailed && isVisible());
     m_compositionPacket=m_interactive && m_client->gpuCompositionEnabled()?m_client->compositionPacket():CompositionPacketPtr{};
+    // Keep old pixels and their canvas geometry together until the replacement
+    // publication arrives. In particular, rotation must not put a landscape
+    // packet over a portrait transparency grid while its sources are preparing.
+    const bool sizedPacket=m_compositionPacket &&
+        QSize(int(m_compositionPacket->info.document_width),int(m_compositionPacket->info.document_height))==logicalSize &&
+        m_compositionPacket->info.key.document_generation==m_generation && m_compositionPacket->info.key.revision>=m_sizeRevision;
+    const bool sizedFrame=!m_image.isNull() && m_imageRevision>=m_sizeRevision;
+    if(m_displayDocumentSize.isEmpty() || ((sizedPacket || sizedFrame) && m_displayDocumentSize!=logicalSize)){
+        m_displayDocumentSize=logicalSize;m_overview={};
+        if(!sizedFrame){m_image={};m_imageRegion={};}
+        emit viewChanged();
+    }
     m_compositionCounters->handoffRevision=m_interactive?m_client->compositionHandoffRevision():0;
     m_movePreparation=m_client->movePreparation();
     m_moveWarmupPending=m_movePreparation && m_movePreparation->uploads->load()==0;
@@ -434,6 +449,7 @@ void CanvasItem::refresh() {
     if(m_interactive && m_overview.isNull() && !m_viewTimer.isActive())m_viewTimer.start();
     const bool wasForward=forwardPreview();
     m_residentPreview=m_client->residentPreview();
+    m_residentEditing=m_client->transformActive() || m_client->liquifyActive() || m_client->layerMoveActive();
     if(wasForward!=forwardPreview())emit residentPresentationChanged();
     if (m_fitPending) fitToView();
     update();
@@ -485,7 +501,8 @@ QRectF CanvasItem::prefetchedDocumentRect() const {
 }
 QRectF CanvasItem::documentRect() const {
     if (!m_client) return {};
-    const QSizeF size(m_client->documentWidth() * m_zoom, m_client->documentHeight() * m_zoom);
+    const auto dimensions=m_displayDocumentSize.isEmpty()?QSize(m_client->documentWidth(),m_client->documentHeight()):m_displayDocumentSize;
+    const QSizeF size(dimensions.width()*m_zoom,dimensions.height()*m_zoom);
     return {QPointF((width() - size.width()) / 2, (height() - size.height()) / 2) + m_pan, size};
 }
 QPointF CanvasItem::documentPoint(QPointF local) const { return (local - documentRect().topLeft()) / m_zoom; }
@@ -582,7 +599,9 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     if ((!m_residentPreview && !m_movePreparation && !m_compositionPacket && m_image.isNull() && m_overview.isNull()) || !window()) { delete node; return nullptr; }
     if(!node)node=new CanvasNode;
     if(node->generation!=m_generation){node->generation=m_generation;node->displayedRevision=0;}
-    const bool useComposition=m_interactive && !m_previewPart && !m_residentPreview && m_compositionPacket &&
+    const bool finalResidentPacket=m_residentPreview && !m_residentEditing && m_compositionPacket &&
+        !m_compositionPacket->preview && m_compositionPacket->info.key.revision>=m_residentPreview->revision;
+    const bool useComposition=m_interactive && !m_previewPart && (!m_residentPreview || finalResidentPacket) && m_compositionPacket &&
         !m_compositionFailed && m_compositionPacket->info.key.device_epoch==m_compositionEpoch &&
         m_compositionPacket->info.key.document_generation==m_generation &&
         (node->composition || m_compositionPacket->preview || m_compositionPacket->info.key.revision>=node->displayedRevision);
@@ -704,7 +723,8 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         node->overviewKey=m_overview.cacheKey();
     }
     if(node->overviewTexture){
-        const QRectF document(0,0,m_client->documentWidth(),m_client->documentHeight());
+        const auto dimensions=m_displayDocumentSize.isEmpty()?QSize(m_client->documentWidth(),m_client->documentHeight()):m_displayDocumentSize;
+        const QRectF document{QPointF(),QSizeF(dimensions)};
         const auto cut=m_image.isNull()?QRectF():m_imageRegion.intersected(document);
         std::array<QRectF,4> regions{document,QRectF(),QRectF(),QRectF()};
         if(!cut.isEmpty())regions={QRectF(0,0,document.width(),cut.top()),

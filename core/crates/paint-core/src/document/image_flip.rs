@@ -134,6 +134,86 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn quarter_turn_nested_masks_hidden_locked_and_offsets() {
+        for clockwise in [true, false] {
+            let mut d = patterned();
+            let before = pixels(&d);
+            let selection = d.selection.clone();
+            let depth = d.history_depth().0;
+            let (w, h) = d.dimensions();
+            d.rotate_image(clockwise).unwrap();
+            for y in 0..h {
+                for x in 0..w {
+                    let (nx, ny) = if clockwise {
+                        (h - 1 - y, x)
+                    } else {
+                        (y, w - 1 - x)
+                    };
+                    let expected = before[(y * w + x) as usize];
+                    let actual = d.pixel(nx, ny);
+                    assert_eq!(actual, expected, "at {x},{y} clockwise={clockwise}");
+                }
+            }
+            d.select_history(depth).unwrap();
+            assert_eq!(pixels(&d), before);
+            assert_eq!(d.selection, selection);
+            d.redo().unwrap();
+            for _ in 0..3 {
+                d.rotate_image(clockwise).unwrap();
+            }
+            assert_eq!(pixels(&d), before);
+        }
+    }
+    #[test]
+    fn quarter_turn_preserves_placed_source_geometry() {
+        let mut source = Document::new(16, 16).unwrap();
+        source
+            .begin_stroke(
+                Brush {
+                    radius: 3.,
+                    ..Default::default()
+                },
+                InputPoint::new(4., 6., 1.),
+            )
+            .unwrap();
+        source.end_stroke().unwrap();
+        let mut d = Document::new(129, 77).unwrap();
+        let id = d
+            .place_image(source.layers[0].clone(), 16, 16, "placed".into())
+            .unwrap();
+        d.commit_transform().unwrap();
+        let source = d
+            .layer(id)
+            .unwrap()
+            .placed
+            .as_ref()
+            .unwrap()
+            .source
+            .tiles
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        let before = pixels(&d);
+        for _ in 0..4 {
+            d.rotate_image(true).unwrap();
+        }
+        assert_eq!(pixels(&d), before);
+        assert!(Arc::ptr_eq(
+            &source,
+            d.layer(id)
+                .unwrap()
+                .placed
+                .as_ref()
+                .unwrap()
+                .source
+                .tiles
+                .values()
+                .next()
+                .unwrap()
+        ));
+    }
     fn pixels(d: &Document) -> Vec<Pixel> {
         (0..d.height)
             .flat_map(|y| (0..d.width).map(move |x| d.pixel(x, y)))

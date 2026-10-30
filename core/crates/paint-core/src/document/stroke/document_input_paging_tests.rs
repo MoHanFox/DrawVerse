@@ -594,6 +594,7 @@ fn input_paging_document_tile_and_history_storage_failures_discard_input_and_com
         .unwrap();
     drain(&mut doc, budget);
     doc.begin_stroke_finish().unwrap();
+    crate::history::force_encoded_for_test(true);
     crate::history_storage::fail_writes_for_test(true);
     let result = loop {
         match doc.continue_stroke_page(budget) {
@@ -602,6 +603,7 @@ fn input_paging_document_tile_and_history_storage_failures_discard_input_and_com
         }
     };
     crate::history_storage::fail_writes_for_test(false);
+    crate::history::force_encoded_for_test(false);
     assert!(
         matches!(result, Err(Error::HistoryStorage(_))),
         "{result:?}"

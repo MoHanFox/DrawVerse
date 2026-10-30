@@ -204,7 +204,7 @@ impl Document {
             after_size: [width, height, dpi],
             before: self.layers.clone(),
             after,
-            selection: self.selection.clone(),
+            selection: (self.selection.clone(), crate::Selection::default()),
         };
         self.commit_with_action(command.clone(), crate::HistoryAction::ResizeCanvas)?;
         self.apply_history(&command, true);

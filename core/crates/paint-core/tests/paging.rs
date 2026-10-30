@@ -132,7 +132,7 @@ fn paged_multilayer_snapshot_cancel_and_disk_history_match_resident_document_exa
     assert_eq!(painted, bits(&resident.snapshot()));
     assert_ne!(painted, old_bits);
     assert_eq!(bits(&old), old_bits);
-    assert!(paged.history_disk_bytes() > 0);
+    assert_eq!(paged.history_disk_bytes(), 0);
     paged
         .begin_stroke(brush, InputPoint::new(10., 10., 0.6))
         .unwrap();

@@ -146,10 +146,10 @@ public:
         const int frameSlots=rhi->resourceLimit(QRhi::FramesInFlight);
         if(frameSlots<1 || frameSlots>8)return fail("CPU: composition in-flight budget");
         inFlightFrames=frameSlots;reservation=std::make_shared<TextureReservation>();
-        atlasCapacity=requiredAtlasCapacity(packet);
+        atlasCapacity=historyAtlasCapacity(packet);
         if(!reserveTargets(packet))return false;
         atlas.reset(rhi->newTexture(QRhiTexture::RGBA32F,atlasSize(atlasCapacity)));
-        slotIds.resize(size_t(atlasCapacity));
+        slotIds.resize(size_t(atlasCapacity));slotUse.resize(size_t(atlasCapacity));
         if(!atlas->create())return fail("CPU: composition atlas allocation");
         adjustmentLut.reset(rhi->newTexture(QRhiTexture::RGBA32F,{1024,5}));
         if(!adjustmentLut->create())return fail("CPU: adjustment LUT allocation");
@@ -214,13 +214,31 @@ private:
         int columns=32;while((capacity+columns-1)/columns>rows && columns<rows)columns*=2;
         return {columns*64,((capacity+columns-1)/columns)*64};
     }
-    bool reserveTargets(const CompositionPacketPtr &p){
+    quint64 payloadCharge(const CompositionPacketPtr &p,int atlasSlots)const{
         const quint64 surfaces=quint64(p->surfaceCount)+(scratch.texture || (p->transform && p->transform->geometry.warp)?1:0);
-        const auto atlasSlots=std::max(atlasCapacity,requiredAtlasCapacity(p));
+        return quint64(atlasSlots)*65536+quint64(p->info.document_width)*p->info.document_height*16*surfaces+
+            quint64(p->pixels.width())*p->pixels.height()*4+4ull*1024*1024+80ull*1024;
+    }
+    int historyAtlasCapacity(const CompositionPacketPtr &p)const{
+        const int minimum=requiredAtlasCapacity(p);
+        // Optional room for the other side of undo/redo. Never raise the
+        // negotiated budget or displace another window's reservation.
+        const quint64 budget=CompositionBudget::gpuBytes.load(),reserved=reservedTextureBytes.load();
+        const auto own=counters->textureBytes.load();
+        const quint64 available=budget-std::min(budget,reserved-std::min(reserved,own));
+        const auto base=payloadCharge(p,0);
+        const auto availableSlots=available>base?(available-base)/65536:0;
+        int desired=int(std::min({quint64(minimum)*2,quint64(CompositionBudget::maxTiles),availableSlots}));
+        const int alignment=minimum<=256?32:256;
+        desired=std::max(minimum,(desired/alignment)*alignment);
+        const auto extent=atlasSize(desired);const int limit=rhi->resourceLimit(QRhi::TextureSizeMax);
+        return extent.width()<=limit && extent.height()<=limit?desired:minimum;
+    }
+    bool reserveTargets(const CompositionPacketPtr &p,int requestedCapacity=0){
+        const auto atlasSlots=std::max({atlasCapacity,requiredAtlasCapacity(p),requestedCapacity});
         const auto extent=atlasSize(atlasSlots);const int limit=rhi->resourceLimit(QRhi::TextureSizeMax);
         if(atlasSlots>CompositionBudget::maxTiles || extent.width()>limit || extent.height()>limit)return fail("CPU: composition atlas extent capability");
-        const quint64 charge=quint64(atlasSlots)*65536+quint64(p->info.document_width)*p->info.document_height*16*surfaces+
-            quint64(p->pixels.width())*p->pixels.height()*4+4ull*1024*1024+80ull*1024;
+        const quint64 charge=payloadCharge(p,atlasSlots);
         if(charge>CompositionBudget::gpuBytes.load())return fail("CPU: composition GPU payload budget");
         if(!reservation->grow(charge))return fail("CPU: composition process/in-flight GPU payload budget");
         counters->textureBytes=charge;return true;
@@ -228,10 +246,10 @@ private:
     bool prepareTargets(){
         const QSize doc(int(packet->info.document_width),int(packet->info.document_height));
         const auto pixels=packet->pixels;
-        const auto needed=requiredAtlasCapacity(packet);
+        const auto needed=requiredAtlasCapacity(packet)>atlasCapacity?historyAtlasCapacity(packet):atlasCapacity;
         if(needed>atlasCapacity){
-            if(!reserveTargets(packet))return false;
-            passes.clear();completePasses=false;maps.clear();cache.clear();slotIds.assign(size_t(needed),0);
+            if(!reserveTargets(packet,needed))return false;
+            passes.clear();completePasses=false;maps.clear();cache.clear();slotIds.assign(size_t(needed),0);slotUse.assign(size_t(needed),0);
             atlas.reset(rhi->newTexture(QRhiTexture::RGBA32F,atlasSize(needed)));
             if(!atlas->create())return fail("CPU: composition atlas growth allocation");
             atlasCapacity=needed;changed=QRect(QPoint(),doc);
@@ -487,15 +505,22 @@ private:
         QHash<quint64,int> locations;
         // Retain every source needed by this packet before choosing eviction slots.
         for(const auto &tile:packet->tiles)if(cache.contains(tile.content_id))locations.insert(tile.content_id,cache.value(tile.content_id));
-        QSet<int> occupied;for(auto slot:locations)occupied.insert(slot);
-        int next=0;quint64 bytes=0,uploads=0;
+        ++useClock;
+        QSet<int> occupied;for(auto slot:locations){occupied.insert(slot);slotUse[size_t(slot)]=useClock;}
+        std::vector<int> candidates;candidates.reserve(size_t(atlasCapacity));
+        for(int slot=0;slot<atlasCapacity;++slot)if(!occupied.contains(slot))candidates.push_back(slot);
+        // Empty slots first, then least recently used sources outside this plan.
+        // Starting at slot zero evicted the entire previous history state even
+        // when the atlas had unused space for both sides.
+        std::sort(candidates.begin(),candidates.end(),[&](int a,int b){return slotUse[size_t(a)]<slotUse[size_t(b)];});
+        size_t candidate=0;quint64 bytes=0,uploads=0;
         const int frame=rhi->currentFrameSlot();
         if(frame<0 || frame>=staging.size())return fail("CPU: composition frame slot");
         staging[frame].clear();
         for(int i=0;i<packet->tiles.size();++i){
             const auto id=packet->tiles[i].content_id;if(locations.contains(id))continue;
-            while(occupied.contains(next))++next;
-            if(next>=atlasCapacity)return fail("CPU: composition cache full");
+            if(candidate>=candidates.size())return fail("CPU: composition cache full");
+            const int next=candidates[candidate++];slotUse[size_t(next)]=useClock;
             const auto previous=slotIds[size_t(next)];if(previous)cache.remove(previous);
             cache.insert(id,next);slotIds[size_t(next)]=id;locations.insert(id,next);occupied.insert(next);
             QRhiTextureSubresourceUploadDescription upload(packet->data[i]->bytes);upload.setDestinationTopLeft({(next%(atlas->pixelSize().width()/64))*64,(next/(atlas->pixelSize().width()/64))*64});upload.setSourceSize({64,64});
@@ -695,6 +720,7 @@ private:
     std::array<std::unique_ptr<QRhiGraphicsPipeline>,4> pipelines;
     QHash<quint64,int> cache;
     int atlasCapacity=32;
+    std::vector<quint64> slotUse;quint64 useClock=0;
     std::vector<quint64> slotIds;
     QVector<QVector<std::shared_ptr<const CompositionTileData>>> staging;
 };

@@ -491,9 +491,11 @@ fn wet_dual_extra_all_layer_sampling_and_history_commit_failure_are_atomic() {
         Some(&retained),
     )
     .unwrap();
+    crate::history::force_encoded_for_test(true);
     crate::history_storage::fail_writes_for_test(true);
     let result = doc.end_wet_ink_stroke();
     crate::history_storage::fail_writes_for_test(false);
+    crate::history::force_encoded_for_test(false);
     assert!(matches!(result, Err(Error::HistoryStorage(_))));
     assert_eq!(pixels(&doc), before);
     assert_eq!(doc.history_depth(), (0, 0));

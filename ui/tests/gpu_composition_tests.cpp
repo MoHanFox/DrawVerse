@@ -371,7 +371,11 @@ private slots:
         QQuickWindow window;window.resize(640,480);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({640,480});canvas->setClient(&client);window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));
         if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("D3D11 required");
         QTRY_VERIFY_WITH_TIMEOUT(client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision(),30000);
-        QVERIFY(client.compositionPacket()->tiles.size()>2048);client.setBrushRadius(3);
+        QVERIFY(client.compositionPacket()->tiles.size()>2048);
+        // Revision zero is also the initial counter value. Exclude the first
+        // full-image upload from the following incremental-stroke measurement.
+        QTRY_VERIFY_WITH_TIMEOUT(canvas->compositionStatistics()["uploads"].toULongLong()>0,30000);
+        client.setBrushRadius(3);
         QJsonArray rows;
         for(int i=0;i<3;++i){
             QHash<quint64,const CompositionTileData*> previous;
