@@ -1164,3 +1164,28 @@ DrawVerse 已有缓存三源、本地几何直发及 mip，但 `PaintCoreClient:
 选区观察与本地参考版本存在差异：PhotoCraft 当前 `carries_selection` / `draw_selection` 明确为普通自由变换映射原轮廓，实际 Transform Selection 的另一入口才在预览副本清 selection。不能把预览轮廓隐藏直接等同于原选区数据删除，也不能推定用户运行版本与本地源码相同。清除原选区涉及取消/历史语义，本轮不据观察擅自改变。
 
 后续会话改造的边界：进入后冻结不可变像素与原始选区，显示仅采用最新本地几何并按显示尺寸细分；对核心的几何同步离开逐输入显示关键路径，同时在 checkpoint/确认/撤销重做/显式核心取样前保持权威顺序，拒绝旧回调覆盖本地新几何。取消恢复完整原状态。必须分别验证高频真实窗口输入、最后绝对位置、快确认/取消及 CPU/最高画质后备，不能只以纹理上传次数为性能验收。
+
+
+## 2026-11-01：缓存变换会话改造验收条件（实施前）
+
+- 8888×5000 普通画质缓存源就绪后，连续几何输入期间核心 revision 保持稳定，GUI 与采用节点追随最新几何，源及上传身份不变；覆盖有/无选区、普通/Warp，并补高频窗口合成事件诊断（非实体输入）。
+- 检查点、快速确认、取消、会话内撤销重做、非法几何拒绝均保留最后有效输入和原始选区/像素；旧回调不得回跳。最终确认单历史、撤销恢复原图。
+- 显式取样/显示能力失效不丢弃本地几何，CPU/最高画质仍走原路径。仿射纯显示四顶点与原标量映射一致，透视/Warp 保留原密度与回归。
+- 记录实际定向结果与失败，不以 GUI 合成输入推导实体/屏幕延迟或 PhotoCraft 配对性能。
+
+
+### 实施结果与验证
+
+按用户要求，改造前的全部当前状态先以 `d4b52e8` 提交并推送 `origin/develop`，远端 hash 已核对。新改造仅在普通画质、安全 forward 缓存源就绪且无待处理历史命令时使用本地几何；旧 metadata 不能覆盖未同步输入。CHECKPOINT/COMMIT/UNDO/REDO 在 FIFO 中先提交最新一次 UPDATE，取消丢弃本地几何，generation 更换清理。纯显示仿射入口为2×2，透视/Warp 的原密度及最终原图网格/插值保持；既有 mip/源预算和选区原始数据保持。缓冲按已发布网格大小分配，容量变化沿原 BUFFER_TOO_SMALL 描述重试。
+
+- `build/cached-session-core.txt`：核心变换36通过、原忽略3；新增仿射两三角形与标量映射对照，以及透视/Warp仍细分。测试迭代格式修正后 `cached-session-affine-core-final.txt` 单项再次通过。`cached-session-ffi.txt` 原相关公开单元5通过；`cached-session-public-geometry-final.txt` 公开几何/原子缓冲集成1通过。初次公开入口测试过滤名写错，`cached-session-public-geometry.txt` 为0 tests，仅构建，不计通过。
+- `cached-session-boundaries-final.txt`：新增有/无选区×普通/Warp×取消/确认/历史/取样同步/显示能力失效20功能，以及init/upload两项故障后备，共24 passed含init/cleanup。96次持续更新保持核心revision稳定；同步后会话撤销重做、未检查点撤销再重做、无效几何拒绝、最终单历史/撤销原图和原选区通过。能力失效为UI能力开关，不是实际驱动故障。
+- `cached-session-d3d11-final.txt` 宽泛运行75 passed、5 failed含init/cleanup；其中原大图7、选区本地8、缓存源5、精确变换27、视口/拓扑1、快关闭2、客户端epoch1，共51相关功能通过。1个新选区冷准备5.7秒超过夹具5秒，最终改为与原大图入口一致的30秒资源准备等待并在上列20行复验通过，不作为启动性能通过。另4失败为旧 explicitFallback extent/group-budget/clipping-budget/operation-budget：前三项要求旧固定门槛/默认预算拒绝，当前能力已支持；最后一项未配置旧外部fixture。原日志保留，不称本次宽泛运行全绿。
+- `cached-session-software.txt`：小目标普通/Warp/选区3、原变换27、快关闭2，共32功能/34 passed，0 failed/skipped。
+- `cached-session-mouse-1ms.txt`、`cached-session-api-1ms.txt`：完整Main.qml、8888×5000、10%、普通画质，白层/小笔触/大小套索六场景×普通/Warp各12功能通过，各14 passed含init/cleanup。窗口合成鼠标3092输入/2305采用节点，API4829输入/2285采用节点；24场景核心revision全程保持稳定，缓存源/上传身份及主合成像素计数不变。请求1ms定时器不等于1000Hz实际交付；实际输入P95窗口11.838–18.240ms、API10.842–16.805ms。对应帧间隔P95窗口12.075–26.151ms、API12.010–19.397ms，采用节点年龄P95窗口12.851–19.039ms、API11.908–18.515ms；API调用含同步QML绑定P95 0.777–1.251ms。BEGIN到源可用记录窗口171–3384ms、API293–3223ms，未证明物理首帧。Warp仍有较高帧间隔，无同期PhotoCraft配对、实体输入或物理屏幕结论，不声称所有不跟手已消除。
+
+取样边界：核心原有 deferred 会话明确跳过CPU帧生成。本轮显式需求先同步最新几何，活动期间拒绝旧CPU像素，确认后验证新位置蓝色像素。`cached-session-session-final.txt` 的4个取样行曾错误要求活动 deferred 帧生成，失败保留；修正为现行未就绪/确认后取样契约后上述20行全部通过。未新增活动变换取色功能。最初 `cached-session-d3d11-first.txt` 的原位/移动源切换身份比较、预取截图尺寸及默认等待失败保留，最终夹具固定同一视口并在首次非原位后比较同一源；未删除像素/历史断言。
+
+四ABI最终 `cached-session-abi-final.txt` 全通过；初次 `cached-session-abi.txt` 旧夹具假定最少19顶点失败，现明确断言仿射2×2及Warp原19–145密度，结构/version/字节及原子缓冲契约不变，并更新contracts说明。相关core/render all-targets严格Clippy、fmt、生成头检查和diff检查通过，初次新增测试range-loop lint失败及修正后日志分别保留。未跑总check。
+
+标准应用对象重新编译，标准EXE因用户进程占用链接LNK1104，记录 `cached-session-app-build.txt`；未关闭标准版或LargeCanvasTransformReview。独立 `build/bin/CachedTransformReview/drawverse.exe` 链接当前静态核心/UI，SHA256 `72F1997CA193197B6EB384FB7EC3ADE484CC29B28F2EDBB78118FB8B8938F183`。嵌入shader精确检查通过；独立profile/D3D11 `--preview` 冒烟退出0，`cached-session-smoke.png` 三笔可见并人工查看。标准EXE未替换。

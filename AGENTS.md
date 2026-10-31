@@ -1,5 +1,7 @@
 # DrawVerse
 
+- 缓存变换会话2026-11-01：先以d4b52e8推送origin/develop当前状态；普通画质安全缓存就绪后输入只更新本地几何，检查点/确认/撤销重做前同步，旧回调拒绝回跳，仿射显示两三角形，透视/Warp与原图精度保持。核心36/原忽略3、公开5+1、会话20/后备2、原D3D11相关51/软件32、四ABI/Clippy/fmt/头通过。8888×5000完整QML窗口/API各12场景核心revision稳定；请求1ms非实体1000Hz，Warp帧间隔仍有较高值，无手感已解决结论。旧门槛4失败/冷准备超时/取样假设等原日志保留，无总check；deferred活动取样仍未就绪，确认后恢复。标准及旧review运行中保留，独立CachedTransformReview/D3D11冒烟0；见general-gpu-composition设计/验收末节。
+
 - 大画布稀疏变换跟手2026-11-01：用户确认普通画质；小目标在大文档改缓存网格，选区捕获跳过透明空瓦片并按实际生成量守预算。8888×5000/10% 完整QML六场景×普通/Warp，API与窗口鼠标各12功能通过，帧间隔P95约11.8–14.0/12.3–17.0ms，非实体/屏幕；大套索小笔触准备约2.6→0.8秒，大白层选区仍约2秒。核心35/原忽略3、公开5、D3D11相关52/软件10、四ABI/Clippy/fmt/头通过；原外角观察Warp误报/构建及宽正则Not Run保留。标准EXE占用，独立LargeCanvasTransformReview更新及D3D11冒烟0。见general-gpu-composition设计/验收末节，无总check/PhotoCraft配对。
 
 - 大图变换续修2026-11-01：用户确认绘画已解决；去选区BEGIN文档16M/物化16M/UI源4096门槛，范围扫描/既有格式覆盖分页，普通稀疏背景编码避免整图逐像素准备；真实预算及原子性保持。8888×5000白层无选区/全选确认撤销、白底/内容套索普通/Warp核心34+原忽略3、渲染6/公开5、D3D11相关9/软件3及四ABI/严格Clippy/头/fmt通过；调查失败保留，无总check/实体/PhotoCraft配对。标准EXE占用，独立build/bin/LargeCanvasTransformReview及D3D11冒烟0；见general-gpu-composition设计/验收末节。

@@ -33,12 +33,16 @@ static int composition_smoke(PaintCore *core) {
         for(int i=0;i<16;++i){geometry.points[i*2]=(i%4)*32.;geometry.points[i*2+1]=(i/4)*24.;}
         memset(&mesh,0,sizeof(mesh));mesh.struct_size=sizeof(mesh);
         COMPOSITION_CHECK(paint_transform_display_geometry(&geometry,&mesh,NULL,0)==PAINT_BUFFER_TOO_SMALL);
-        COMPOSITION_CHECK(mesh.version==1 && mesh.columns>=19 && mesh.rows>=19 && mesh.vertex_bytes<=145*145*16);
+        COMPOSITION_CHECK(mesh.version==1 && mesh.columns==2 && mesh.rows==2 && mesh.vertex_bytes==4*16);
         vertices=(float*)malloc((size_t)mesh.vertex_bytes);COMPOSITION_CHECK(vertices!=NULL);
         COMPOSITION_CHECK(paint_transform_display_geometry(&geometry,&mesh,vertices,mesh.vertex_bytes/4)==PAINT_OK);
         COMPOSITION_CHECK(vertices[0]==0.f && vertices[1]==0.f && vertices[2]==0.f && vertices[3]==0.f);
         COMPOSITION_CHECK(vertices[mesh.vertex_bytes/4-4]==96.f && vertices[mesh.vertex_bytes/4-3]==72.f);
         free(vertices);
+        geometry.warp=1;
+        COMPOSITION_CHECK(paint_transform_display_geometry(&geometry,&mesh,NULL,0)==PAINT_BUFFER_TOO_SMALL);
+        COMPOSITION_CHECK(mesh.version==1 && mesh.columns>=19 && mesh.rows>=19 && mesh.columns<=145 && mesh.rows<=145);
+        COMPOSITION_CHECK(mesh.vertex_bytes==(uint64_t)mesh.columns*mesh.rows*16);
     }
     PaintSession *session=NULL;
     PaintDocumentDesc desc;

@@ -359,11 +359,11 @@ public:
     QString compositionFallback()const{return m_blendPreviewLayer?QStringLiteral("CPU: blend mode hover preview"):m_compositionTransformCpu?QStringLiteral("CPU: composition transform closure"):(m_compositionEditFallbackReason.isEmpty()?m_compositionFallback:m_compositionEditFallbackReason);}
     void setCompositionDevice(quint64 epoch,bool enabled);
     bool cpuDisplaySuppressed(int view=0)const{return m_cpuViewSuppressed[view==1?1:0];}
-    void setCpuSamplingRequired(bool required){if(required!=m_cpuSamplingRequired){m_cpuSamplingRequired=required;refreshCpuDisplayDemand();}}
+    void setCpuSamplingRequired(bool required){if(required && !flushTransformGeometry())return;if(required!=m_cpuSamplingRequired){m_cpuSamplingRequired=required;refreshCpuDisplayDemand();}}
     ResidentPreviewPtr residentPreview() const { return gpuAccelerationEnabled() ? m_residentPreview : ResidentPreviewPtr{}; }
     ResidentPreviewPtr liquifyPreview() const { return residentPreview(); }
     ResidentPreviewAssetsPtr movePreparation() const { return gpuAccelerationEnabled() ? m_movePreparation : ResidentPreviewAssetsPtr{}; }
-    void setResidentGpuPreviewAvailable(bool value) { m_residentGpuPreviewAvailable=value; }
+    void setResidentGpuPreviewAvailable(bool value) { if(!value)flushTransformGeometry();m_residentGpuPreviewAvailable=value; }
     void setLiquifyGpuPreviewAvailable(bool value) { setResidentGpuPreviewAvailable(value); }
     QRectF frameRegion(int view = 0) const { return m_regions[view == 1 ? 1 : 0]; }
     quint64 frameRevision(int view = 0) const { return m_frameRevisions[view == 1 ? 1 : 0]; }
@@ -473,7 +473,7 @@ public:
     QVariantList selectedLayers() const;
     void pruneSelectedLayers();
     /// Eyedropper: sample the composited pixel at document coordinates. Read-only, no history.
-    Q_INVOKABLE QColor sampleDocumentPixel(qreal x, qreal y) const;
+    Q_INVOKABLE QColor sampleDocumentPixel(qreal x, qreal y);
     Q_INVOKABLE void setLayerProperties(quint64 id, bool visible, qreal opacity);
     Q_INVOKABLE bool setLayerFill(quint64 id, qreal fill);
     Q_INVOKABLE bool setLayerBlend(quint64 id, int blend);
@@ -583,9 +583,10 @@ private:
     bool prepareCompositionTransform();
     void refreshCompositionTransform(const PaintTransform *geometry=nullptr);
     bool preferTransformMeshPreview() const;
-    void refreshTransformMeshPreview();
+    bool refreshTransformMeshPreview(const PaintTransform *geometry=nullptr);
+    bool flushTransformGeometry();
     std::weak_ptr<CompositionCounters> m_transformPreviewDevice;
-    bool m_transformMeshPreview=false;
+    bool m_transformMeshPreview=false,m_transformMeshDirty=false;
     quint64 m_transformMeshGeometry=0;
     bool prepareCompositionMove(bool pick);
     void refreshCompositionMove();

@@ -35,6 +35,30 @@ impl TransformGeometry {
     /// Shared pure display geometry. It owns no document, pixels or GPU object.
     pub fn display_geometry(&self) -> Result<TransformDisplayGeometry> {
         self.validate()?;
+        // An affine surface is exactly two triangles, regardless of document
+        // size. Keep the dense mesh for perspective and final Warp sampling.
+        let [a, b, c, d] = [
+            self.points[0],
+            self.points[3],
+            self.points[15],
+            self.points[12],
+        ];
+        if !self.warp
+            && (b[0] + d[0] - a[0] - c[0]).abs() + (b[1] + d[1] - a[1] - c[1]).abs() < 1e-10
+        {
+            return Ok(TransformDisplayGeometry {
+                inverse: self.inverse_matrix().unwrap_or([0.; 9]),
+                columns: 2,
+                rows: 2,
+                vertices: [(0., 0.), (1., 0.), (0., 1.), (1., 1.)]
+                    .into_iter()
+                    .map(|(u, v)| {
+                        let p = self.map(u, v);
+                        [p[0] as f32, p[1] as f32, u as f32, v as f32]
+                    })
+                    .collect(),
+            });
+        }
         let mesh = mesh::TransformMesh::new(self);
         Ok(TransformDisplayGeometry {
             inverse: self.inverse_matrix().unwrap_or([0.; 9]),

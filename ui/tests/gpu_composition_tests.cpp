@@ -1161,6 +1161,55 @@ private slots:
         QCOMPARE(client.frame(),original);QVERIFY(client.lastError().isEmpty());
         save("transform-"+QString::fromLatin1(QTest::currentDataTag()),{{"passed",true},{"software_fallback",software},{"commit",commit},{"precise_capability",precise},{"side",side}});
     }
+    void cachedTransformGeometrySession_data(){
+        QTest::addColumn<bool>("selected");QTest::addColumn<bool>("warp");QTest::addColumn<int>("close");
+        for(bool selected:{false,true})for(bool warp:{false,true})for(int close=0;close<5;++close)
+            QTest::newRow(qPrintable(QString("%1-%2-%3").arg(selected?"selected":"whole",warp?"warp":"affine").arg(close)))<<selected<<warp<<close;
+    }
+    void cachedTransformGeometrySession(){
+        QFETCH(bool,selected);QFETCH(bool,warp);QFETCH(int,close);QTemporaryDir temp;
+        PaintCoreClient client(nullptr,temp.filePath("cached-session.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        client.newDocument(2048,1024);QTRY_VERIFY(client.documentWidth()==2048 && !client.layerEditBusy());
+        client.addLayer("blue");QTRY_VERIFY(client.layers().size()==2 && !client.layerEditBusy());
+        client.setBrushColor(Qt::blue);client.setBrushRadius(12);InputSample sample;sample.position={200,200};
+        const auto emptyDepth=client.undoDepth();QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),emptyDepth+1);
+        if(selected){client.setSelectionFeather(3);QVERIFY(client.editSelectionPath({QPointF(150,150),QPointF(260,150),QPointF(260,260),QPointF(150,260)},0,false));QTRY_VERIFY(client.selectionEnabled() && !client.layerEditBusy());}
+        QQuickWindow window;window.resize(800,500);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({800,500});canvas->setClient(&client);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->fitToView();
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("Cached geometry requires GPU display");
+        QTRY_VERIFY(client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision());
+        const auto rendered=[&]{client.requestViewport(0,{0,0,2048,1024},{1024,512});return client.frameRevision()==client.revision() && client.frame().size()==QSize(1024,512) && client.frameRegion()==QRectF(0,0,2048,1024);};
+        client.setCpuSamplingRequired(true);QTRY_VERIFY(rendered());client.setCpuSamplingRequired(false);const auto original=client.frame();const auto selection=client.selectionSteps();const auto depth=client.undoDepth();
+        QVERIFY(client.beginTransform());QTRY_VERIFY_WITH_TIMEOUT(client.residentPreview() && client.residentPreview()->meshPreview && !client.transformBusy(),30000);
+        QTest::qWait(80);const auto initial=client.transformPoints();auto warm=initial;for(auto &point:warm)point=point.toPointF()+QPointF(20,12);QVERIFY(client.updateTransform(warm,warp,2));const auto source=client.residentPreview();const auto revision=client.revision();
+        auto latest=initial;
+        for(int i=0;i<96;++i){latest=initial;for(auto &point:latest)point=point.toPointF()+QPointF(30+i/2,12);
+            if(warp)latest[5]=latest[5].toPointF()+QPointF(6,-4);
+            QVERIFY(client.updateTransform(latest,warp,2));QTest::qWait(1);QCOMPARE(client.transformPoints(),latest);}
+        QCOMPARE(client.revision(),revision);QCOMPARE(client.residentPreview()->images[0].cacheKey(),source->images[0].cacheKey());
+        auto invalid=latest;invalid[0]=invalid[3];QVERIFY(!client.updateTransform(invalid,false,2));QCOMPARE(client.transformPoints(),latest);
+        if(close==2){
+            QVERIFY(client.checkpointTransform());QTRY_VERIFY(!client.transformBusy());QVERIFY(client.revision()>revision);
+            client.undo();QTRY_VERIFY(!client.transformBusy() && client.transformPoints()==initial);
+            client.redo();QTRY_VERIFY(!client.transformBusy() && client.transformPoints()==latest);
+            // Undo also checkpoints an unfinished local drag, preserving its redo.
+            auto newer=latest;for(auto &point:newer)point=point.toPointF()+QPointF(7,0);
+            QVERIFY(client.updateTransform(newer,warp,2));client.undo();QTRY_VERIFY(!client.transformBusy() && client.transformPoints()==latest);
+            client.redo();QTRY_VERIFY(!client.transformBusy() && client.transformPoints()==newer);latest=newer;
+        }
+        if(close==3){client.setCpuSamplingRequired(true);QTRY_VERIFY(client.revision()>revision);QTRY_VERIFY(!client.transformBusy());QCOMPARE(client.transformPoints(),latest);
+            // Deferred transform sessions intentionally suspend CPU frames.
+            // Until confirmation, a sampler must refuse the stale original.
+            QVERIFY(!client.sampleDocumentPixel(277,212).isValid());client.setCpuSamplingRequired(false);}
+        if(close==4){client.setResidentGpuPreviewAvailable(false);QTRY_VERIFY(client.revision()>revision);QCOMPARE(client.transformPoints(),latest);}
+        const bool commit=close!=0;QVERIFY(client.finishTransform(commit));
+        QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy() && !client.residentPreview(),15000);
+        QTRY_VERIFY(rendered());QCOMPARE(client.undoDepth(),depth+(commit?1:0));
+        if(close==3){const auto picked=client.sampleDocumentPixel(277,212);QVERIFY(picked.isValid() && picked.blue()>200 && picked.red()<50);}
+        if(commit){QVERIFY(client.frame()!=original);client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(rendered());}
+        QCOMPARE(client.frame(),original);QCOMPARE(client.selectionSteps(),selection);QVERIFY2(client.lastError().isEmpty(),qPrintable(client.lastError()));
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE_WITH_TIMEOUT(stopped.size(),1,15000);
+    }
     void actualTransformEntryAcceptsEarlyDrag(){
         const auto path=qEnvironmentVariable("DRAWVERSE_TRANSFORM_QUALITY_IMAGE");
         if(path.isEmpty())QSKIP("Set DRAWVERSE_TRANSFORM_QUALITY_IMAGE to diagnose cold transform entry");

@@ -53,7 +53,7 @@ paint_session_composition_operation按完整Ready key读取一条操作，输出
 
 ## ABI 1.82 — 无会话的共享变换显示几何
 
-`paint_transform_display_geometry`校验现有PaintTransform并返回独立version1的PaintTransformDisplayGeometry（104字节，inverse偏移24）：columns/rows、vertex_bytes、原核心行优先xyuv网格、非Warp逆投影矩阵；Warp逆矩阵为0。每边最多145顶点，总顶点字节≤336400；调用方float容量最多84100，NULL/0查询返回BUFFER_TOO_SMALL并填描述，不部分写顶点。无文档、IO、GPU对象、历史或Actor等待；调用方须遵守缓冲非重叠及f32对齐，返回后不保留指针。该数值入口不是显示完成或GPU能力承诺，计划协议仍version1，文档/state45格式不变。
+`paint_transform_display_geometry`校验现有PaintTransform并返回独立version1的PaintTransformDisplayGeometry（104字节，inverse偏移24）：columns/rows、vertex_bytes、原核心行优先xyuv网格、非Warp逆投影矩阵；Warp逆矩阵为0。严格仿射非Warp显示可返回2×2顶点，透视/Warp保留有界细分；调用方以返回的行列和字节数为准，不假定固定最小密度。最终原图Warp网格不受此显示简化影响。每边最多145顶点，总顶点字节≤336400；调用方float容量最多84100，NULL/0查询返回BUFFER_TOO_SMALL并填描述，不部分写顶点。无文档、IO、GPU对象、历史或Actor等待；调用方须遵守缓冲非重叠及f32对齐，返回后不保留指针。该数值入口不是显示完成或GPU能力承诺，计划协议仍version1，文档/state45格式不变。
 
 ## ABI 1.81 — 不可变显示计划传输（G1）
 

@@ -284,3 +284,38 @@ fn complex_mask_sampling_workload() {
         }
     }
 }
+
+#[test]
+fn affine_display_is_two_triangles_without_changing_projective_or_warp_sampling() {
+    for angle in [0.0_f64, 0.37, -1.2] {
+        let mut geometry = TransformGeometry::rectangle(-32., 11., 8888., 5000.);
+        for point in &mut geometry.points {
+            let [x, y] = *point;
+            *point = [
+                x * angle.cos() - y * angle.sin() + 120.,
+                x * angle.sin() + y * angle.cos() - 75.,
+            ];
+        }
+        let display = geometry.display_geometry().unwrap();
+        assert_eq!(
+            (display.columns, display.rows, display.vertices.len()),
+            (2, 2, 4)
+        );
+        for (u, v) in [(0., 0.), (1., 1.), (0.37, 0.61), (0.93, 0.12)] {
+            let expected = geometry.map(u, v);
+            for (axis, expected) in expected.iter().enumerate() {
+                let a = f64::from(display.vertices[0][axis]);
+                let b = f64::from(display.vertices[1][axis]);
+                let d = f64::from(display.vertices[2][axis]);
+                assert!((a + u * (b - a) + v * (d - a) - expected).abs() < 0.002);
+            }
+        }
+        geometry.points[3][0] += 100.;
+        let perspective = geometry.display_geometry().unwrap();
+        assert!(perspective.columns > 2 && perspective.rows > 2);
+        geometry.warp = true;
+        geometry.points[5][1] += 80.;
+        let warped = geometry.display_geometry().unwrap();
+        assert!(warped.columns > 2 && warped.rows > 2);
+    }
+}

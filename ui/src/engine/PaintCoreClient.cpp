@@ -1227,7 +1227,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         const bool changedLayers = m_layers != layers;
         const bool activeChanged = info.active_layer_id != m_active;
         const bool changedGeneration = info.document_generation != m_generation;
-        if(changedGeneration){m_transformClosing=false;m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;clearCompositionEdit();m_residentPreview.reset();m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
+        if(changedGeneration){m_transformMeshDirty=false;m_transformClosing=false;m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;clearCompositionEdit();m_residentPreview.reset();m_blendPreviewLayer=0;m_layerThumbnails.clear();emit layerThumbnailsChanged();}
         else if(m_blendPreviewLayer && (info.revision!=m_revision || info.active_layer_id!=m_active))clearLayerBlendPreview();
         if(changedGeneration) m_nextDefaultLayer=1;
         if(changedGeneration && !m_collapsedGroups.isEmpty()) {m_collapsedGroups.clear(); emit groupExpansionChanged();}
@@ -1248,7 +1248,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(info.completed_sequence>=m_pendingTransform)m_transformActive=(info.flags&PAINT_SESSION_TRANSFORM)!=0;
         if(!m_transformActive && !m_residentPreview){m_transformMeshPreview=false;m_connection->transformMeshAssets.store(false);}
         if(controlsWereVisible!=transformControlsVisible())emit transformChanged();
-        if(info.completed_sequence>=m_lastTransform){const auto points=transform.value("points").toList();const bool warp=transform.value("warp").toBool();const int interpolation=transform.value("interpolation").toInt();const auto skewH=transform.value("skewH").toDouble(),skewV=transform.value("skewV").toDouble();if(points!=m_transformPoints || warp!=m_transformWarp || interpolation!=m_transformInterpolation || skewH!=m_transformSkewH || skewV!=m_transformSkewV){m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=skewH;m_transformSkewV=skewV;emit transformChanged();}}
+        if(!m_transformMeshDirty && info.completed_sequence>=m_lastTransform){const auto points=transform.value("points").toList();const bool warp=transform.value("warp").toBool();const int interpolation=transform.value("interpolation").toInt();const auto skewH=transform.value("skewH").toDouble(),skewV=transform.value("skewV").toDouble();if(points!=m_transformPoints || warp!=m_transformWarp || interpolation!=m_transformInterpolation || skewH!=m_transformSkewH || skewV!=m_transformSkewV){m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=skewH;m_transformSkewV=skewV;if(refreshTransformMeshPreview())emit frameChanged();emit transformChanged();}}
         if(m_compositionTransform && info.completed_sequence>=m_pendingTransform){
             if(publishedTransform){if(!m_compositionMoveConfirmed)m_compositionTargetNs=InteractionTrace::now();m_compositionMoveConfirmed=true;refreshCompositionTransform();}
             else {m_compositionFinalRevision=info.revision;}
@@ -1768,15 +1768,21 @@ bool PaintCoreClient::preferTransformMeshPreview() const {
     }
     return found;
 }
-void PaintCoreClient::refreshTransformMeshPreview(){
+bool PaintCoreClient::refreshTransformMeshPreview(const PaintTransform *input){
     if(!m_transformMeshPreview || !m_transformActive || m_transformClosing || !m_transformPublished ||
        !m_residentPreview || !m_residentPreview->forward || m_residentPreview->vertices.isEmpty() ||
-       m_transformPoints.size()!=16)return;
+       m_transformPoints.size()!=16)return false;
     auto geometry=dto<PaintTransform>();geometry.warp=m_transformWarp;geometry.interpolation=m_transformInterpolation;
     geometry.skew_h=m_transformSkewH;geometry.skew_v=m_transformSkewV;
     for(int i=0;i<16;++i){const auto p=m_transformPoints[i].toPointF();geometry.points[i*2]=p.x();geometry.points[i*2+1]=p.y();}
-    auto display=dto<PaintTransformDisplayGeometry>();QVector<std::array<float,4>> vertices(145*145);
-    if(paint_transform_display_geometry(&geometry,&display,reinterpret_cast<float*>(vertices.data()),84100)!=PAINT_OK)return;
+    if(input)geometry=*input;
+    auto display=dto<PaintTransformDisplayGeometry>();QVector<std::array<float,4>> vertices(m_residentPreview->vertices.size());
+    auto status=paint_transform_display_geometry(&geometry,&display,reinterpret_cast<float*>(vertices.data()),quint64(vertices.size())*4);
+    if(status==PAINT_BUFFER_TOO_SMALL){
+        vertices.resize(qsizetype(display.vertex_bytes/16));
+        status=paint_transform_display_geometry(&geometry,&display,reinterpret_cast<float*>(vertices.data()),quint64(vertices.size())*4);
+    }
+    if(status!=PAINT_OK)return false;
     vertices.resize(qsizetype(display.vertex_bytes/16));
     // Source UV endpoints include the transparent guard and any original
     // placement bounds. Reproject current input, never a delayed callback's xy.
@@ -1784,17 +1790,19 @@ void PaintCoreClient::refreshTransformMeshPreview(){
     for(auto &v:vertices){v[2]=first[2]+v[2]*(last[2]-first[2]);v[3]=first[3]+v[3]*(last[3]-first[3]);}
     auto next=std::make_shared<ResidentPreviewFrame>(*m_residentPreview);
     if(next->prepared){
-        const bool identity=m_transformPoints==m_transformInitialPoints && m_transformWarp==m_transformInitialWarp &&
-            m_transformInterpolation==m_transformInitialInterpolation && m_transformSkewH==m_transformInitialSkewH && m_transformSkewV==m_transformInitialSkewV;
+        bool identity=m_transformInitialPoints.size()==16 && bool(geometry.warp)==m_transformInitialWarp &&
+            int(geometry.interpolation)==m_transformInitialInterpolation && geometry.skew_h==m_transformInitialSkewH && geometry.skew_v==m_transformInitialSkewV;
+        for(int i=0;i<16 && identity;++i){const auto p=m_transformInitialPoints[i].toPointF();identity=geometry.points[i*2]==p.x() && geometry.points[i*2+1]==p.y();}
         if(next->transformIdentity!=identity){
             const auto alternate=next->prepared;
             next->prepared=std::make_shared<ResidentPreviewAssets>(*next);
             static_cast<ResidentPreviewAssets&>(*next)=*alternate;
         }
     }
-    next->meshPreview=true;next->meshNearest=m_transformInterpolation==0;next->geometrySequence=++m_transformMeshGeometry;
+    next->meshPreview=true;next->meshNearest=geometry.interpolation==0;next->geometrySequence=++m_transformMeshGeometry;
     next->columns=display.columns;next->rows=display.rows;next->vertices=std::move(vertices);
     m_residentPreview=std::move(next);
+    return true;
 }
 void PaintCoreClient::refreshCompositionTransform(const PaintTransform *geometry){
     if(!m_compositionTransform || !m_compositionMoveConfirmed || m_transformInitialPoints.size()!=16 || m_transformPoints.size()!=16)return;
@@ -1883,6 +1891,7 @@ void PaintCoreClient::compositionPrimaryAdopted(quint64 generation,quint64 epoch
     clearCompositionEdit();emit frameChanged();
 }
 void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
+    if(!enabled)flushTransformGeometry();
     if(m_adjustmentBase && (!enabled || m_adjustmentBase->info.key.device_epoch!=epoch)){
         m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;emit stateChanged();emit frameChanged();
     }
@@ -2349,6 +2358,7 @@ void PaintCoreClient::setLongTaskDelay(int value) {
 bool PaintCoreClient::selectHistory(int depth) {
     if(!m_ready || m_closing || m_drawing || m_fileBusy || layerEditBusy() || m_layerMoveActive || m_pendingLiquify || m_pendingTransform>m_completedSequence || depth<0 || depth>m_undo+m_redo)return false;
     if(depth==m_undo)return true;
+    if(m_transformMeshDirty){showError(QStringLiteral("请先结束当前变换拖动"));return false;}
     auto request=dto<PaintHistorySelect>();request.depth=static_cast<uint32_t>(depth);request.document_generation=m_generation;request.revision=m_revision;
     request.scope=m_transformActive?PAINT_HISTORY_SCOPE_TRANSFORM:m_liquifyActive?PAINT_HISTORY_SCOPE_LIQUIFY:PAINT_HISTORY_SCOPE_DOCUMENT;
     uint64_t sequence=0;PaintStatus status;QString error;
@@ -2363,8 +2373,9 @@ bool PaintCoreClient::selectHistory(int depth) {
 void PaintCoreClient::undo() { if (m_ready && !m_drawing && !m_layerMoveActive) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_UNDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_UNDO);else submit(Undo);} }
 void PaintCoreClient::redo() { if (m_ready && !m_drawing && !m_layerMoveActive) {if(m_transformActive)submitTransform(PAINT_TRANSFORM_REDO);else if(m_liquifyActive)submitLiquifyControl(PAINT_LIQUIFY_REDO);else submit(Redo);} }
 
-QColor PaintCoreClient::sampleDocumentPixel(qreal x, qreal y) const {
-    if(!m_connection || m_closing || !std::isfinite(x) || !std::isfinite(y)) return {};
+QColor PaintCoreClient::sampleDocumentPixel(qreal x, qreal y) {
+    if(!m_connection || m_closing || !std::isfinite(x) || !std::isfinite(y) || !flushTransformGeometry()) return {};
+    if(m_transformMeshPreview && (m_completedSequence<m_lastTransform || m_frameRevisions[0]<m_revision))return {};
     float rgba[4]={0,0,0,0};
     QMutexLocker lock(&m_connection->mutex);
     if(!m_connection->session) return {};
@@ -2996,6 +3007,7 @@ bool PaintCoreClient::saveStorageSettings(const QString &directory,int memoryMiB
 bool PaintCoreClient::placeImage(const QUrl &path){return submitFile(path,PAINT_FILE_PLACE,PAINT_FILE_AUTO);}
 bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometry){
     if(kind!=PAINT_TRANSFORM_UPDATE && kind!=PAINT_TRANSFORM_COMMIT && kind!=PAINT_TRANSFORM_CANCEL && kind!=PAINT_TRANSFORM_CHECKPOINT && !selectedContentVisible())return false;
+    if(kind!=PAINT_TRANSFORM_UPDATE && kind!=PAINT_TRANSFORM_BEGIN && kind!=PAINT_TRANSFORM_CANCEL && !flushTransformGeometry())return false;
     InteractionTrace::Scope trace("transform.submit");
     InteractionTrace::point("transform.submit.kind",kind);
     if(!m_ready || m_closing || m_fileBusy || m_drawing || (kind==PAINT_TRANSFORM_BEGIN && (m_liquifyActive || m_transformActive || layerEditBusy())))return false;
@@ -3008,7 +3020,8 @@ bool PaintCoreClient::submitTransform(quint32 kind,const PaintTransform *geometr
     }m_lastTransform=sequence;
     if(trace.active)trace.event.value=double(sequence);
     if(kind!=PAINT_TRANSFORM_UPDATE)m_pendingTransform=sequence;
-    if(kind==PAINT_TRANSFORM_BEGIN){m_transformClosing=false;m_transformPoints.clear();m_transformInitialPoints.clear();m_transformPublished=false;m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();emit transformChanged();}
+    if(kind==PAINT_TRANSFORM_BEGIN){m_transformMeshDirty=false;m_transformClosing=false;m_transformPoints.clear();m_transformInitialPoints.clear();m_transformPublished=false;m_transformActive=true;m_residentPreviewFloor=m_revision+1;m_residentPreview.reset();emit transformChanged();}
+    if(kind==PAINT_TRANSFORM_CANCEL)m_transformMeshDirty=false;
     if(kind==PAINT_TRANSFORM_COMMIT || kind==PAINT_TRANSFORM_RASTERIZE || kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL || kind==PAINT_TRANSFORM_ROTATE_IMAGE_CW || kind==PAINT_TRANSFORM_ROTATE_IMAGE_CCW)m_pendingMutation=sequence;
     if(kind==PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL || kind==PAINT_TRANSFORM_FLIP_IMAGE_VERTICAL || kind==PAINT_TRANSFORM_ROTATE_IMAGE_CW || kind==PAINT_TRANSFORM_ROTATE_IMAGE_CCW)m_pendingLayer=sequence;
     if(kind==PAINT_TRANSFORM_UPDATE && !m_compositionTransform)
@@ -3035,7 +3048,31 @@ bool PaintCoreClient::beginTransform(){
     if(submitTransform(PAINT_TRANSFORM_BEGIN))return true;
     if(m_compositionTransform)clearCompositionEdit();m_compositionTransformCpu=false;m_transformMeshPreview=false;m_connection->transformMeshAssets.store(false);return false;
 }
-bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int interpolation,qreal skewH,qreal skewV){if(!m_transformActive || m_transformClosing || !m_transformPublished || points.size()!=16)return false;auto g=dto<PaintTransform>();g.warp=warp;g.interpolation=interpolation;g.skew_h=qIsFinite(skewH)?skewH:m_transformSkewH;g.skew_v=qIsFinite(skewV)?skewV:m_transformSkewV;for(int i=0;i<16;++i){const auto p=points[i].toPointF();g.points[i*2]=p.x();g.points[i*2+1]=p.y();}if(!submitTransform(PAINT_TRANSFORM_UPDATE,&g))return false;m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;m_transformSkewH=g.skew_h;m_transformSkewV=g.skew_v;refreshCompositionTransform(&g);refreshTransformMeshPreview();if(m_transformMeshPreview)emit frameChanged();emit transformChanged();return true;}
+bool PaintCoreClient::flushTransformGeometry(){
+    if(!m_transformMeshDirty)return true;
+    auto geometry=dto<PaintTransform>();geometry.warp=m_transformWarp;geometry.interpolation=m_transformInterpolation;
+    geometry.skew_h=m_transformSkewH;geometry.skew_v=m_transformSkewV;
+    for(int i=0;i<16;++i){const auto p=m_transformPoints[i].toPointF();geometry.points[i*2]=p.x();geometry.points[i*2+1]=p.y();}
+    if(!submitTransform(PAINT_TRANSFORM_UPDATE,&geometry))return false;
+    m_transformMeshDirty=false;return true;
+}
+bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int interpolation,qreal skewH,qreal skewV){
+    if(!m_transformActive || m_transformClosing || !m_transformPublished || points.size()!=16)return false;
+    auto geometry=dto<PaintTransform>();geometry.warp=warp;geometry.interpolation=interpolation;
+    geometry.skew_h=qIsFinite(skewH)?skewH:m_transformSkewH;geometry.skew_v=qIsFinite(skewV)?skewV:m_transformSkewV;
+    for(int i=0;i<16;++i){const auto p=points[i].toPointF();geometry.points[i*2]=p.x();geometry.points[i*2+1]=p.y();}
+    const bool local=m_transformMeshPreview && residentGpuPreviewEnabled() && !highestCanvasQuality() &&
+        !m_cpuSamplingRequired && !transformBusy() && m_residentPreview && m_residentPreview->forward && !m_residentPreview->vertices.isEmpty();
+    // A cached session owns immutable pixels. Validate and display absolute input
+    // locally; only history boundaries need another authoritative actor update.
+    if(local){if(!refreshTransformMeshPreview(&geometry))return false;}
+    else if(!submitTransform(PAINT_TRANSFORM_UPDATE,&geometry))return false;
+    m_transformMeshDirty=local;
+    m_transformPoints=points;m_transformWarp=warp;m_transformInterpolation=interpolation;
+    m_transformSkewH=geometry.skew_h;m_transformSkewV=geometry.skew_v;
+    refreshCompositionTransform(&geometry);if(!local)refreshTransformMeshPreview();
+    if(m_transformMeshPreview)emit frameChanged();emit transformChanged();return true;
+}
 bool PaintCoreClient::checkpointTransform(){return m_transformActive && !m_transformClosing && submitTransform(PAINT_TRANSFORM_CHECKPOINT);}
 bool PaintCoreClient::finishTransform(bool commit){
     if(!m_transformActive || m_transformClosing || !submitTransform(commit?PAINT_TRANSFORM_COMMIT:PAINT_TRANSFORM_CANCEL))return false;
